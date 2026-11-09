@@ -7,6 +7,11 @@ license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+default = ["typescript"]
+# `js file.ts`: type annotations stripped before the run (swc's type stripper).
+typescript = ["dep:swc_ts_fast_strip", "dep:swc_common"]
+
 [dependencies]
 kern-core = { workspace = true }
 async-trait = { workspace = true }
@@ -17,6 +22,8 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 # Native QuickJS (no WASM). `loader`: ES module imports, for the sandbox `js` command.
 rquickjs = { version = "0.14", default-features = false, features = ["std", "loader"] }
+swc_ts_fast_strip = { version = "60", optional = true }
+swc_common = { version = "27", optional = true }
 
 [dev-dependencies]
 # The Code tests call the real built-in tools (Read, Write, Grep, ...) from a run.
