@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     deps::AgentDeps,
+    media::fit_for_model,
     messages::Message,
     provider::Effort,
     request_prefix::{RequestPrefix, build_request_prefix},
@@ -131,9 +132,10 @@ impl Agent {
         build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await
     }
 
-    /// History as the current model may receive it.
-    /// PORT (T3): withhold media the model cannot take (media.rs `fit_for_model`).
-    pub fn sendable(&self, messages: &[Message], _model: &str) -> Vec<Message> {
-        messages.to_vec()
+    /// History as the current model may receive it (media it cannot take is withheld, with a note).
+    pub fn sendable(&self, messages: &[Message], model: &str) -> Vec<Message> {
+        let hooks = self.deps.hooks.as_ref();
+        let accepts = hooks.input_modalities(&self.model_spec);
+        fit_for_model(messages, accepts.as_ref(), model, hooks)
     }
 }

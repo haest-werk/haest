@@ -29,6 +29,8 @@ pub mod request_prefix;
 pub mod session;
 pub mod skills;
 pub mod task_board;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod tool;
 pub mod tool_batch;
 pub mod tool_exec;

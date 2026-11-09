@@ -2,11 +2,10 @@
 //! fitted effort, provider-side web search. Built in one place because two
 //! callers must send the SAME prefix -- the loop, and compaction's warm summary
 //! request, which only hits the prompt cache when its prefix matches byte for byte.
-//!
-//! PORT (T3): fit the effort through effort.rs (`AgentHooks::reasoning`, `on_effort_fitted`).
 
 use crate::{
     deps::AgentDeps,
+    effort::fit_effort,
     provider::{Effort, ToolSpec, WebSearchConfig},
 };
 
@@ -20,8 +19,8 @@ pub struct RequestPrefix {
 
 pub async fn build_request_prefix(
     deps: &AgentDeps,
-    _spec: &str,
-    _model: &str,
+    spec: &str,
+    model: &str,
     effort: Option<Effort>,
 ) -> RequestPrefix {
     let tools = deps
@@ -37,7 +36,7 @@ pub async fn build_request_prefix(
     RequestPrefix {
         system: deps.system_prompt.system_prompt().await,
         tools,
-        effort,
+        effort: fit_effort(effort, spec, model, deps.hooks.as_ref()),
         web_search: deps.web_search.clone(),
     }
 }
