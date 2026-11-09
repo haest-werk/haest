@@ -65,6 +65,12 @@ pub trait Fs: Send + Sync {
     async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()>;
     async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()>;
     async fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
+    /// Set Unix permission bits (the session log is 0600 in a 0700 dir). The
+    /// default does nothing: a file system with no permissions (memory, a
+    /// host's own store) has nothing to set.
+    async fn chmod(&self, _path: &Path, _mode: u32) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Recursive mkdir that tolerates an existing directory, for any [`Fs`].

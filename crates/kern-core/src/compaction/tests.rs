@@ -1,0 +1,232 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use serde_json::{Value, json};
+
+use super::*;
+use crate::{
+    agent::AgentOptions,
+    deps::AgentDeps,
+    events::LoopEvent,
+    messages::{AssistantPart, ToolCall, ToolResultMessage},
+    provider::Effort,
+    testing::{ScriptedProvider, text_answer, tool_answer},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
+    workspace::ShutWorkspace,
+};
+
+fn assistant(input: u64) -> Message {
+    let mut m = AssistantMessage::start("fake", "m");
+    m.content.push(AssistantPart::ToolCall(ToolCall {
+        id: format!("t{input}"),
+        name: "X".into(),
+        input: JsonMap::new(),
+    }));
+    m.usage.input = input;
+    m.stop_reason = StopReason::ToolUse;
+    Message::Assistant(m)
+}
+
+fn tool(id: &str) -> Message {
+    Message::Tool(ToolResultMessage {
+        tool_call_id: id.into(),
+        tool_name: "X".into(),
+        content: "r".into(),
+        is_error: false,
+        media: Vec::new(),
+    })
+}
+
+fn history() -> Vec<Message> {
+    vec![
+        Message::user("u1"),
+        assistant(1),
+        tool("t1"),
+        Message::user("u2"),
+        assistant(2),
+        tool("t2"),
+        assistant(900),
+        tool("t900"),
+    ]
+}
+
+struct Echo;
+
+#[async_trait]
+impl Tool for Echo {
+    fn name(&self) -> &str {
+        "Echo"
+    }
+    fn description(&self) -> String {
+        "echo".into()
+    }
+    fn parameters(&self) -> Value {
+        json!({"type": "object", "properties": {}})
+    }
+    fn kind(&self) -> &str {
+        "agent.unknown"
+    }
+    async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
+        Ok(ToolOutput::text("ok"))
+    }
+}
+
+fn agent_with(provider: &Arc<ScriptedProvider>) -> Agent {
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Echo)];
+    let deps = AgentDeps::new(
+        Arc::new(provider.resolver()),
+        Arc::new(tools),
+        Arc::new("SYSTEM".to_string()),
+        "/",
+        Arc::new(ShutWorkspace),
+    );
+    let mut opts = AgentOptions::new("fake:m");
+    opts.effort = Some(Effort::High);
+    opts.history = history();
+    Agent::new(deps, opts)
+}
+
+fn empty_answer() -> AssistantMessage {
+    AssistantMessage::start("scripted", "m")
+}
+
+const CFG: CompactionConfig = CompactionConfig {
+    context_window: 1,
+    threshold: 0.0,
+    ceiling: None,
+    keep_recent: 3,
+};
+
+#[test]
+fn triggers_on_the_last_successful_request_not_the_sum() {
+    let cfg = CompactionConfig {
+        context_window: 1000,
+        threshold: 0.8,
+        ceiling: None,
+        keep_recent: 3,
+    };
+    assert!(needs_compaction(&history(), &cfg));
+    assert!(!needs_compaction(&history()[..6], &cfg));
+    let low_ceiling = CompactionConfig {
+        ceiling: Some(2),
+        ..cfg
+    };
+    assert!(needs_compaction(&history()[..6], &low_ceiling));
+}
+
+#[test]
+fn a_failed_request_never_triggers() {
+    let mut h = history();
+    if let Message::Assistant(a) = &mut h[6] {
+        a.stop_reason = StopReason::Error;
+    }
+    let cfg = CompactionConfig {
+        context_window: 1000,
+        threshold: 0.8,
+        ceiling: None,
+        keep_recent: 3,
+    };
+    assert!(!needs_compaction(&h[..7], &cfg));
+}
+
+#[test]
+fn the_cut_lands_on_a_user_message_so_no_tool_result_is_orphaned() {
+    let h = history();
+    assert_eq!(cut_index(&h, 3), 3);
+    assert!(matches!(h[cut_index(&h, 1)], Message::User(_)));
+    assert_eq!(cut_index(&[Message::user("only")], 5), 0);
+    assert_eq!(cut_index(&[], 5), 0);
+}
+
+#[tokio::test]
+async fn compact_replaces_the_head_with_a_summary_and_keeps_the_tail_verbatim() {
+    let p = ScriptedProvider::new([text_answer("THE SUMMARY")]);
+    let mut agent = agent_with(&p);
+    let res = compact(&mut agent, &CancellationToken::new(), &CFG)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(res.kept, 5);
+    let Message::User(first) = &agent.messages[0] else {
+        panic!("summary must be a user message")
+    };
+    assert!(first.content.contains("THE SUMMARY"));
+    assert_eq!(agent.messages[1..], history()[3..]);
+}
+
+#[tokio::test]
+async fn the_warm_summary_request_extends_the_last_loop_request() {
+    let p = ScriptedProvider::new([text_answer("answer"), text_answer("THE SUMMARY")]);
+    let mut agent = agent_with(&p);
+    let mut events: Vec<LoopEvent> = Vec::new();
+    agent.run("go", &mut events).await;
+    let res = compact(&mut agent, &CancellationToken::new(), &CFG)
+        .await
+        .unwrap()
+        .unwrap();
+    let reqs = p.requests();
+    let (looped, summary) = (&reqs[0], &reqs[1]);
+    assert_eq!(res.path, SummaryPath::Warm);
+    assert_eq!(summary.system, looped.system);
+    assert_eq!(summary.tools, looped.tools);
+    assert_eq!(summary.effort, looped.effort);
+    assert_eq!(summary.effort, Some(Effort::High));
+    assert_eq!(
+        summary.messages[..looped.messages.len()],
+        looped.messages[..]
+    );
+    assert!(matches!(summary.messages.last(), Some(Message::User(_))));
+    let Message::User(first) = &agent.messages[0] else {
+        panic!("summary must be a user message")
+    };
+    assert!(first.content.contains("THE SUMMARY"));
+}
+
+#[tokio::test]
+async fn a_warm_reply_without_text_falls_back_to_a_standalone_summary_of_the_head() {
+    let p = ScriptedProvider::new([
+        tool_answer(&[("x", "Echo", json!({}))]),
+        text_answer("COLD"),
+    ]);
+    let mut agent = agent_with(&p);
+    let res = compact(&mut agent, &CancellationToken::new(), &CFG)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(res.path, SummaryPath::Cold);
+    let reqs = p.requests();
+    assert_eq!(reqs.len(), 2);
+    assert!(reqs[1].tools.is_empty());
+    let sent = &reqs[1].messages;
+    assert_eq!(sent[..sent.len() - 1], history()[..3]);
+    assert_eq!(res.summary, "COLD");
+}
+
+#[tokio::test]
+async fn both_paths_empty_is_an_error_and_leaves_history_untouched() {
+    let p = ScriptedProvider::new([empty_answer(), empty_answer()]);
+    let mut agent = agent_with(&p);
+    let err = compact(&mut agent, &CancellationToken::new(), &CFG).await;
+    assert!(matches!(err, Err(CompactionError::Failed(_))));
+    assert_eq!(agent.messages, history());
+}
+
+#[tokio::test]
+async fn nothing_to_cut_sends_nothing() {
+    let p = ScriptedProvider::new([]);
+    let mut agent = agent_with(&p);
+    agent.replace_history(vec![Message::user("only")]);
+    let res = compact(&mut agent, &CancellationToken::new(), &CFG).await;
+    assert!(matches!(res, Ok(None)));
+    assert!(p.requests().is_empty());
+}
+
+#[test]
+fn compaction_can_run_inside_a_send_hook() {
+    fn assert_send<T: Send>(_: &T) {}
+    let p = ScriptedProvider::new([]);
+    let mut agent = agent_with(&p);
+    let cancel = CancellationToken::new();
+    let fut = compact(&mut agent, &cancel, &CFG);
+    assert_send(&fut);
+}

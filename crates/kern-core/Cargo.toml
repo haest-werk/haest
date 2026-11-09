@@ -20,6 +20,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 base64 = "0.22"
+# SKILL.md frontmatter (block scalars, lists); pure Rust.
+yaml-rust2 = { version = "0.13", default-features = false }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

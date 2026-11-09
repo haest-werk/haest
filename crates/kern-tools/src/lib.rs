@@ -24,8 +24,11 @@ pub mod fs_walk;
 pub mod net_guard;
 pub mod read;
 pub mod search;
+pub mod skill;
+pub mod tasks;
 #[cfg(test)]
 mod testkit;
+pub mod tool_search;
 pub mod web_fetch;
 
 pub use bash::{BashOptions, BashTool};
