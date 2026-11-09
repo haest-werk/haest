@@ -1676,6 +1676,7 @@ name = "kern-tools"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "futures",
  "globset",
  "htmd",
@@ -1684,8 +1685,10 @@ dependencies = [
  "libc",
  "reqwest",
  "rustls",
+ "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-util",
  "url",

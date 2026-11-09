@@ -43,18 +43,9 @@ impl Member {
     }
 }
 
-/// `find the bug!` -> `find-the-bug`: lowercase, dashes, at most 24 characters.
-pub(super) fn slug(text: &str) -> String {
-    let mut out = String::new();
-    for c in text.to_lowercase().chars() {
-        if c.is_ascii_lowercase() || c.is_ascii_digit() {
-            out.push(c);
-        } else if !out.is_empty() && !out.ends_with('-') {
-            out.push('-');
-        }
-    }
-    let out: String = out.trim_end_matches('-').chars().take(24).collect();
-    if out.is_empty() { "agent".into() } else { out }
+/// An agent's address from free text: at most 24 characters.
+fn slug(text: &str) -> String {
+    crate::slug::slug(text, 24, "agent")
 }
 
 #[derive(Default)]

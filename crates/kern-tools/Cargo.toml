@@ -22,6 +22,10 @@ url = "2"
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 htmd = "0.5"
+# GenerateImage: the Image API's base64 answer, the model list's setting specs.
+base64 = "0.22"
+serde = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 # process: the Grep test runs the real rg (when installed) to prove it takes our argv.

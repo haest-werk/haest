@@ -14,6 +14,7 @@
 //! | BashOutput, KillShell | `shell.exec` | [`bash_jobs`] over a [`jobs::JobHub`] the host owns |
 //! | WebFetch | `web.fetch` | [`web_fetch`] (PLUG POINT: [`web_fetch::WebFetchNet`]) |
 //! | Agent, SendMessage, StopAgent | `task.spawn`, `agent.unknown` | [`agents`] (PLUG POINT: [`agents::AgentDirectory`]; default [`agents::SubagentHub`]) |
+//! | GenerateImage | `image.generate` | [`image`] (PLUG POINT: [`image::ImageHttp`]; the key is the host's) |
 //!
 //! A turn the human did not start (a job that exited, a subagent's message for
 //! main) reaches the model through the host's [`inbox::Inbox`], counted by an
@@ -29,12 +30,14 @@ pub mod bash_jobs;
 mod canonical;
 pub mod files;
 pub mod fs_walk;
+pub mod image;
 pub mod inbox;
 pub mod jobs;
 pub mod net_guard;
 pub mod read;
 pub mod search;
 pub mod skill;
+mod slug;
 pub mod tasks;
 #[cfg(test)]
 mod testkit;
@@ -46,6 +49,7 @@ pub use agents::{AgentDirectory, SubagentHost, SubagentHub};
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;
 pub use files::{EditTool, WriteTool};
+pub use image::{ImageTool, ImageToolOptions};
 pub use inbox::Inbox;
 pub use jobs::{JobEvents, JobHub};
 pub use read::{ReadIntercept, ReadTool};
