@@ -32,7 +32,7 @@ use kern::{
     tool::Tool,
     tools::{
         BashOptions, BashTool, EditTool, ReadTool, WriteTool,
-        agents::{AgentRef, agent_tools},
+        agents::{AgentRef, AgentToolOptions, SubagentTypes, agent_tools_with},
     },
 };
 
@@ -92,8 +92,25 @@ pub fn work_tools(attachments: Arc<Attachments>, agents: Arc<NodeAgents>) -> Vec
         })),
         Arc::new(brain_search()),
     ];
-    tools.extend(agent_tools(agents, AgentRef::main(), true));
+    tools.extend(agent_tools_with(
+        agents,
+        AgentRef::main(),
+        true,
+        agent_options(),
+    ));
     tools
+}
+
+/// brain's kinds of sub-agent (`explore` only reads) and the models it offers.
+pub fn agent_options() -> AgentToolOptions {
+    AgentToolOptions {
+        types: Some(SubagentTypes {
+            names: vec!["explore".into(), "general".into()],
+            description: "explore: only reads and searches (the cheap, safe choice for finding things). general: your tools, file changes included (staged like yours). Default explore.".into(),
+            default: "explore".into(),
+        }),
+        models: Some(format!("The model to run it on (optional; defaults to yours): {MODEL}")),
+    }
 }
 
 pub fn brain_search() -> BrainSearch {

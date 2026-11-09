@@ -9,11 +9,29 @@ use kern_core::tool::{
 };
 use serde_json::{Value, json};
 
-use super::{AgentDirectory, AgentRef, SpawnInput};
+use super::{AgentDirectory, AgentRef, AgentToolOptions, SpawnInput};
 
 struct AgentTool {
     hub: Arc<dyn AgentDirectory>,
     me: AgentRef,
+    opts: AgentToolOptions,
+}
+
+impl AgentTool {
+    /// The named kind, else the host's default; None when the host has no kinds.
+    fn subagent_type(&self, input: &JsonMap) -> Result<Option<String>, ToolError> {
+        let Some(types) = &self.opts.types else {
+            return Ok(None);
+        };
+        let kind = opt_str(input, "subagent_type")?.unwrap_or(&types.default);
+        if !types.names.iter().any(|n| n == kind) {
+            return Err(ToolError::Input(format!(
+                "subagent_type \"{kind}\" is not one of: {}",
+                types.names.join(", ")
+            )));
+        }
+        Ok(Some(kind.to_string()))
+    }
 }
 
 #[async_trait]
@@ -28,17 +46,27 @@ impl Tool for AgentTool {
         "Start a subagent: a separate agent with its own context that does one self-contained task and returns its final answer to you. Use it to keep a big search or a side task out of your own context, or (run_in_background) to work in parallel -- its answer then arrives as a message. Give it a complete brief: it sees nothing of this conversation.".into()
     }
     fn parameters(&self) -> Value {
-        json!({
+        let model = self
+            .opts
+            .models
+            .as_deref()
+            .unwrap_or("provider:model to run it on (optional; defaults to yours)");
+        let mut params = json!({
             "type": "object",
             "properties": {
                 "description": {"type": "string", "description": "Short (3-5 words) label for the task"},
                 "prompt": {"type": "string", "description": "The complete brief: goal, what you know, what to return"},
                 "name": {"type": "string", "description": "Address for SendMessage (optional; derived from description)"},
-                "model": {"type": "string", "description": "provider:model to run it on (optional; defaults to yours)"},
+                "model": {"type": "string", "description": model},
                 "run_in_background": {"type": "boolean", "description": "Return at once; the answer arrives as a message"}
             },
             "required": ["description", "prompt"]
-        })
+        });
+        if let Some(types) = &self.opts.types {
+            params["properties"]["subagent_type"] =
+                json!({"type": "string", "enum": types.names, "description": types.description});
+        }
+        params
     }
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let spawn = SpawnInput {
@@ -47,6 +75,7 @@ impl Tool for AgentTool {
             name: opt_str(&input, "name")?.map(Into::into),
             model: opt_str(&input, "model")?.map(Into::into),
             background: opt_bool(&input, "run_in_background"),
+            subagent_type: self.subagent_type(&input)?,
         };
         let out = self
             .hub
@@ -141,11 +170,22 @@ pub fn agent_tools(
     me: AgentRef,
     can_spawn: bool,
 ) -> Vec<Arc<dyn Tool>> {
+    agent_tools_with(hub, me, can_spawn, AgentToolOptions::default())
+}
+
+/// [`agent_tools`] with the host's kinds of subagent and `model` text.
+pub fn agent_tools_with(
+    hub: Arc<dyn AgentDirectory>,
+    me: AgentRef,
+    can_spawn: bool,
+    opts: AgentToolOptions,
+) -> Vec<Arc<dyn Tool>> {
     let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
     if can_spawn {
         tools.push(Arc::new(AgentTool {
             hub: hub.clone(),
             me: me.clone(),
+            opts,
         }));
     }
     tools.push(Arc::new(SendMessageTool {

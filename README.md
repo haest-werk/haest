@@ -34,6 +34,8 @@ there. The rest is opt-in:
 | `workspace` | `kern::workspace` | yes |
 | `tools` | `kern::tools` | yes |
 | `mcp` | `kern::mcp` | yes |
+| `code` | `kern::code` (the Code tool, the sandbox `js` command) | yes |
+| `mods` | `kern::mods` (mods, approvals, plan mode) | yes |
 
 ```toml
 kern-lib = { git = "...", package = "kern-lib" }
@@ -56,10 +58,15 @@ cargo run -p kern-cli -- models       # the models kern knows
 | `KERN_MODEL` | `openrouter:anthropic/claude-sonnet-5.5` | `provider:model` (also `-m`) |
 | `KERN_WORKSPACE` | `sandbox` | `sandbox`: a simulated bash over a copy-on-write overlay, nothing reaches the disk until `/apply`; `real`: the real disk and bash (also `-w`) |
 | `OPENROUTER_API_KEY` | -- | for `openrouter:` models; `anthropic:` takes `ANTHROPIC_API_KEY`, `openai:` takes `OPENAI_API_KEY` |
+| `KERN_WEB_SEARCH` | `exa` | the provider's web search: `off`, `exa`, `auto`, `native`, `parallel`, `firecrawl`, `perplexity` |
+| `KERN_CODE` | `on` | the Code tool; `KERN_CODE_TOOLS` adds tools it may call (`Name` or `prefix*`) |
+| `KERN_APPROVALS` | `on` | ask on the terminal before an irreversible Bash command (real workspace) |
+| `KERN_PROJECT_MODS` | `0` | `1` also loads the repo's own mods from `.kern/mods` (they run with your trust) |
 
-More providers go in `~/.config/kern/providers.json` (`KERN_CONFIG_DIR`);
-sessions are saved under `~/.local/share/kern/sessions` (`KERN_DATA_DIR`).
-`cargo run -p kern-cli -- --help` lists every flag; each has a `KERN_*` twin.
+More providers go in `~/.config/kern/providers.json` (`KERN_CONFIG_DIR`), your
+mods in `~/.config/kern/mods`; sessions are saved under
+`~/.local/share/kern/sessions` (`KERN_DATA_DIR`). `cargo run -p kern-cli -- --help`
+lists every flag. In the REPL, `/help` lists the commands (`/plan` included).
 
 ## Embed it
 

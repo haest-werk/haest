@@ -19,7 +19,8 @@
 //! PLUG POINT: the tools speak to an [`AgentDirectory`], never to the hub, so a
 //! host with its own idea of a subagent (one that runs elsewhere, with its own
 //! types) implements that trait and keeps these tools. [`SubagentHub`] is the
-//! default, over a [`SubagentHost`].
+//! default, over a [`SubagentHost`]. [`AgentToolOptions`] gives the Agent tool
+//! the host's kinds of subagent (`subagent_type`) and its own `model` text.
 
 mod host;
 mod hub;
@@ -35,7 +36,7 @@ use tokio_util::sync::CancellationToken;
 pub use host::{SubagentCaps, SubagentEvent, SubagentHost};
 pub use hub::SubagentHub;
 pub use run::{RunOutcome, subagent_note};
-pub use tools::agent_tools;
+pub use tools::{agent_tools, agent_tools_with};
 
 /// The conversation's own agent.
 pub const MAIN: &str = "main";
@@ -67,6 +68,28 @@ pub struct SpawnInput {
     /// `provider:model`; None = the conversation's own.
     pub model: Option<String>,
     pub background: bool,
+    /// One of the host's [`SubagentTypes`] (the named one, else its default);
+    /// None when the host has none.
+    pub subagent_type: Option<String>,
+}
+
+/// A host's kinds of subagent, under the common `subagent_type` key: what
+/// the model may pick, and what it reads about each. The default hub has none.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubagentTypes {
+    pub names: Vec<String>,
+    /// The parameter's description: what each kind may do.
+    pub description: String,
+    /// What an Agent call that names no kind gets; one of `names`.
+    pub default: String,
+}
+
+/// PLUG POINT: what a host changes about the agent tools ([`agent_tools_with`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AgentToolOptions {
+    pub types: Option<SubagentTypes>,
+    /// The `model` parameter's description, e.g. the models this host offers.
+    pub models: Option<String>,
 }
 
 /// What a spawn hands back to the caller's turn.

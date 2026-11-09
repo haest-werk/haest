@@ -161,6 +161,18 @@ pub async fn work(gateway: &Arc<Gateway>) {
         (&spawns[0].0, spawns[0].1.prompt.as_str()),
         (&AgentRef::main(), "Notes about Q3")
     );
+    // brain's kinds: offered to the model, and an Agent call naming none gets explore.
+    let agent_schema = tool_schema(&requests[0].body, "Agent");
+    assert_eq!(
+        agent_schema["properties"]["subagent_type"]["enum"],
+        json!(["explore", "general"])
+    );
+    assert!(
+        agent_schema["properties"]["model"]["description"]
+            .as_str()
+            .is_some_and(|d| d.contains(MODEL))
+    );
+    assert_eq!(spawns[0].1.subagent_type.as_deref(), Some("explore"));
 
     // Clock: ten paused minutes under a one-minute cap, and the guard never stirred.
     assert!(!doc.guarded());

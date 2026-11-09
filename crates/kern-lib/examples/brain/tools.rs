@@ -132,11 +132,7 @@ impl Tool for DreamMaterial {
 }
 
 /// brain's agent hub: each sub-agent runs on its own node run. The fake answers
-/// for the node and keeps every spawn.
-///
-/// NOT COVERED (no plug point yet): brain's Agent tool also takes
-/// `subagent_type` (explore | general) and names its models in `model`'s
-/// description; kern's `agent_tools` has neither, and `SpawnInput` carries no type.
+/// for the node and keeps every spawn, `subagent_type` included (see `agent_options`).
 #[derive(Default)]
 pub struct NodeAgents {
     pub spawns: Mutex<Vec<(AgentRef, SpawnInput)>>,

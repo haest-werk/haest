@@ -4,9 +4,13 @@
 //! ```toml
 //! # everything
 //! kern-lib = { git = "...", package = "kern-lib" }
-//! # a host with its own provider transport, files and tools (brain)
-//! kern-lib = { git = "...", package = "kern-lib", default-features = false, features = ["providers"] }
+//! # a host with its own provider transport, files and tools (brain): the
+//! # transport plugs into kern-providers, its Fs into the sandbox, and it keeps
+//! # kern's Read / Write / Edit / Bash and agent tools
+//! kern-lib = { git = "...", package = "kern-lib", default-features = false, features = ["providers", "workspace", "tools"] }
 //! ```
+//!
+//! The example `crates/kern-lib/examples/brain` wires every plug point that way.
 
 pub use kern_core as core;
 pub use kern_core::*;
