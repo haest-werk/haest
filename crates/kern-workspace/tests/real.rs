@@ -132,3 +132,15 @@ async fn real_fs_reads_writes_and_lists_the_disk() {
     fs.remove(&p("moved"), true).await.unwrap();
     assert!(!Path::new(&p("moved")).exists());
 }
+
+#[tokio::test]
+async fn chmod_sets_the_mode_on_the_disk_so_a_session_file_stays_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_t, dir) = tempdir();
+    let fs = RealFs::new();
+    let f = dir.join("session.jsonl");
+    fs.write(&f, b"{}").await.unwrap();
+    fs.chmod(&f, 0o600).await.unwrap();
+    let mode = std::fs::metadata(&f).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+}

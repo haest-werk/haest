@@ -104,4 +104,19 @@ impl Fs for RealFs {
     async fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
         tokio::fs::rename(from, to).await
     }
+
+    /// Sets the permission bits (the session store makes its files 0600). A
+    /// no-op where the platform has no Unix modes.
+    async fn chmod(&self, path: &Path, mode: u32) -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).await
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (path, mode);
+            Ok(())
+        }
+    }
 }
