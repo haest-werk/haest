@@ -215,6 +215,15 @@ fn a_typescript_kern_session_file_replays() {
 }
 
 #[test]
+fn a_spend_replays_to_the_same_number_the_typescript_kern_wrote() {
+    // A real TS session's ledger: one bit past what a fast float parser keeps.
+    let line =
+        r#"{"type":"ledger","t":1,"ledger":{"usd":0.0072744056000000005,"unpricedTokens":0}}"#;
+    let usd = replay(line).ledger.unwrap().usd;
+    assert_eq!(usd.to_bits(), 0.0072744056000000005_f64.to_bits());
+}
+
+#[test]
 fn a_foreign_record_is_skipped_and_a_broken_kern_record_is_corrupt() {
     let text = [
         r#"{"type":"host_note","x":1}"#,
