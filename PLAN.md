@@ -29,9 +29,13 @@ Behaviour comes from there, file by file, tests included.
 | `kern-core` | messages, Provider/Tool/Fs/Workspace/AgentHooks contracts, the loop, guard, limits, ledger, media, effort, session log, compaction, system prompt, skills, task board, deferred tools | `core/*.ts` |
 | `kern-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible endpoint), OpenAI Responses, OpenRouter routing + web search, `providers.json`, the model catalog, a pluggable HTTP `Transport` | `providers/*.ts`, `shared/kern-models.ts` |
 | `kern-workspace` | real disk + real bash; bashkit sandbox over a copy-on-write overlay; `/changes` + `/apply`; net guard | `core/workspace-*.ts`, `overlay-changes.ts`, `shell-words.ts`, `fs-walk.ts`, `net-guard.ts` |
-| `kern-tools` | Read, Write, Edit, Glob, Grep, Bash, WebFetch, tasks, ToolSearch, Skill (wave 2: Code, Agent, Image) | `tools/*.ts` |
-| `kern-cli` | the `kern` binary: one-shot print mode, `--json` NDJSON events, a REPL, config, sessions + resume, compaction | new (the TS kern has no CLI; its host is the broker) |
-| `kern-lib` | the one dependency a host takes | -- |
+| `kern-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch, tasks, ToolSearch, Skill, Agent tools (`SubagentHub`, `AgentDirectory`, `AgentToolOptions`), GenerateImage | `tools/*.ts` |
+| `kern-mcp` | MCP client over `rmcp`: stdio + HTTP servers, their tools as kern tools | `core/mcp.ts` |
+| `kern-code` | the code VM (`rquickjs`), the Code tool over sibling tools, the sandbox `js` command | `core/code-vm*.ts`, `tools/code*.ts` |
+| `kern-mods` | mods in QuickJS: commands, prompt rewrite, tool wrapping, approvals, plan mode | `core/mods.ts` |
+| `kern-ts` | the ONE TypeScript stripper (`swc` strip_types) used by Code, `js` and mods | -- |
+| `kern-cli` | the `kern` binary: one-shot print mode, `--json` NDJSON events, a REPL, config, sessions + resume, compaction, MCP, Code, mods | new (the TS kern has no CLI; its host is the broker) |
+| `kern-lib` | the one dependency a host takes; features `providers`, `workspace`, `tools`, `mcp`, `code`, `mods` | -- |
 
 ## Brain's plug points (from its vendored patches, `brain/web/src/rooms/agent/kern/README.md`)
 
@@ -45,17 +49,43 @@ Behaviour comes from there, file by file, tests included.
 | Read: `createReadTool(intercept)` (brain media caps, `attachment:<id>`) | Read tool takes an optional intercept |
 | Bash without background jobs | jobs are an option of the Bash tool |
 | session-store: record types + replay only, the node writes the file | `SessionRecord` + `replay` are separate from the file writer (`SessionSink`) |
-| agent tools with brain's own hub (`subagent_type`, sub-agent runs on the node) | wave 2: Agent tools over a `SubagentHub` trait |
+| agent tools with brain's own hub (`subagent_type`, sub-agent runs on the node) | `AgentDirectory` (brain's hub) + `AgentToolOptions` (the `subagent_type` enum, the model text) |
+
+Beyond brain's patches: `ShellCommand` (kern-core) + `SandboxWorkspace::with_command`
+let a host add its own commands to the sandbox shell (the CLI adds `js`).
+Every row is exercised by `crates/kern-lib/examples/brain/` against fakes
+(`cargo run -p kern-lib --example brain`).
 
 ## Waves
 
 | Wave | Work | Status |
 |---|---|---|
 | 0 | Repo, workspace, the kern-core contract (messages, provider, tool, fs, workspace, events, deps, agent shell) | done |
-| 1 | T3 loop core, T4 session/compaction/context, T5 providers, T6 workspaces, T7 tools -- in parallel, one worktree each | running |
-| 1b | T8 `kern` CLI on top of wave 1, verified against a real model | next |
-| 2 | MCP client (`rmcp`), code VM + Code tool (`rquickjs`), mods (QuickJS), background jobs, Agent tools (sub-agents), Image tool | after 1b |
-| 3 | Brain plug-in proof (custom Transport, Fs, tools, ShutWorkspace, clock, tool_call_start, in one example), parity run (same prompts through TS kern and Rust kern), README | after 2 |
+| 1 | T3 loop core, T4 session/compaction/context, T5 providers, T6 workspaces, T7 tools -- in parallel, one worktree each | done |
+| 1b | T8 `kern` CLI on top of wave 1, verified against a real model | done |
+| 2 | MCP client (`rmcp`), code VM + Code tool (`rquickjs`), mods (QuickJS), background jobs, Agent tools (sub-agents), Image tool | library done; CLI wiring of jobs, sub-agents, GenerateImage: T16 in flight |
+| 3 | Brain plug-in proof (custom Transport, Fs, tools, ShutWorkspace, clock, tool_call_start, in one example), parity run, README | done |
+
+### Parity (2026-11-10)
+
+Every real TS kern session on this machine (14 files in `~/.rclaude/kern/sessions`)
+was replayed by both kerns (TS `SessionStore.load`, Rust `session::replay`) and the
+results compared field by field: **14 of 14 identical**. The run found one Rust bug
+(a float one bit off, fixed in 9e3607a). The port also found and fixed four TS kern
+bugs, shipped in remote-claude: the spill (2), absolute-path Glob, a custom
+`type: anthropic` provider dropping its headers, and Read numbering a phantom line
+after a closing newline.
+
+### Open
+
+| Code | Gap |
+|---|---|
+| G1 | The auto-mode judge is not ported |
+| G2 | The sandbox overlay lives in one process: a resumed sandbox session starts from a clean overlay |
+| G3 | MCP and compaction pass their tests but have not run against a live server / a real long session |
+| G4 | `mv` of a directory across bashkit mounts fails |
+| G5 | A PDF returned by an MCP tool stays text; it does not become media |
+| G6 | The repo has no git remote |
 
 Not in this plan (the consumers, each its own job once the library holds):
 remote-claude's broker-facing host in Rust (TS `host/`, 3.3k lines, 18 wire
