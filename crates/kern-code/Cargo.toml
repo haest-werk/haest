@@ -1,0 +1,24 @@
+[package]
+name = "kern-code"
+description = "kern's JavaScript engine (embedded QuickJS): the Code tool, which calls kern's tools from a short program, and the sandbox `js` command"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+kern-core = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+# Native QuickJS (no WASM). `loader`: ES module imports, for the sandbox `js` command.
+rquickjs = { version = "0.14", default-features = false, features = ["std", "loader"] }
+
+[dev-dependencies]
+# The Code tests call the real built-in tools (Read, Write, Grep, ...) from a run.
+kern-tools = { workspace = true }
+base64 = "0.22"
