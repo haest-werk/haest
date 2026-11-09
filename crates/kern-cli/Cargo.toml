@@ -1,0 +1,17 @@
+[package]
+name = "kern-cli"
+description = "kern, the command line agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "kern"
+path = "src/main.rs"
+
+[dependencies]
+kern-lib = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }

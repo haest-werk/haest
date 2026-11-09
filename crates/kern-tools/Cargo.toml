@@ -1,0 +1,12 @@
+[package]
+name = "kern-tools"
+description = "kern's built-in tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, tasks, ToolSearch, Skill"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+kern-core = { workspace = true }
+

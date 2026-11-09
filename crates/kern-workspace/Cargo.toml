@@ -1,0 +1,12 @@
+[package]
+name = "kern-workspace"
+description = "Workspaces for kern: the real disk + bash, and a bashkit sandbox over a copy-on-write overlay (or over any kern Fs)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+kern-core = { workspace = true }
+

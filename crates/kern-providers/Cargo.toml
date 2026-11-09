@@ -1,0 +1,12 @@
+[package]
+name = "kern-providers"
+description = "Model API adapters for kern: Anthropic Messages, OpenAI Chat Completions + Responses, OpenRouter, any OpenAI-compatible endpoint; pluggable HTTP transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+kern-core = { workspace = true }
+

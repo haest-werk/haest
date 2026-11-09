@@ -1,0 +1,23 @@
+[package]
+name = "kern-lib"
+description = "kern: an agent loop and tool harness you embed. One dependency, features pick the parts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "kern"
+
+[features]
+default = ["providers", "workspace", "tools"]
+providers = ["dep:kern-providers"]
+workspace = ["dep:kern-workspace"]
+tools = ["dep:kern-tools"]
+
+[dependencies]
+kern-core = { workspace = true }
+kern-providers = { workspace = true, optional = true }
+kern-workspace = { workspace = true, optional = true }
+kern-tools = { workspace = true, optional = true }
