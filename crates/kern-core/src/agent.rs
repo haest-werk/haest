@@ -5,22 +5,32 @@
 //!   - every tool call gets exactly one tool result, even on interrupt;
 //!   - input that arrives mid-turn (`AgentControl::steer`) is queued and
 //!     injected at the next step boundary (after the tool results), never dropped;
-//!   - the turn guard is asked before every model call, and its nudge rides in
-//!     at the same step boundary.
-//!
-//! PORT (T3): `run`, `sendable`, `request_prefix` from core/loop.ts.
+//!   - the turn guard (guard.rs) is asked before every model call, and its
+//!     nudge rides in at the same step boundary.
 
-use std::sync::{Arc, Mutex};
+#[cfg(test)]
+pub(crate) mod test_support;
+mod turn;
+
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     deps::AgentDeps,
+    events::{EventSink, TurnEnd},
+    guard::TurnGuard,
+    limits::TurnLimits,
     media::fit_for_model,
-    messages::Message,
+    messages::{Message, StopReason},
     provider::Effort,
     request_prefix::{RequestPrefix, build_request_prefix},
 };
+
+use turn::Turn;
 
 /// Steer or stop a running turn from another task. Cheap to clone.
 #[derive(Clone, Default)]
@@ -61,7 +71,6 @@ impl AgentControl {
     }
 
     /// Mark a turn as running; Err when one already is.
-    #[allow(dead_code)] // T3: run() calls it; remove this allow then
     pub(crate) fn begin(&self) -> Result<CancellationToken, String> {
         let mut c = self.inner.cancel.lock().unwrap();
         if c.is_some() {
@@ -72,9 +81,18 @@ impl AgentControl {
         Ok(token)
     }
 
-    #[allow(dead_code)] // T3: run() calls it; remove this allow then
     pub(crate) fn end(&self) {
         *self.inner.cancel.lock().unwrap() = None;
+    }
+}
+
+/// Ends the running turn however `run` stops: returning, or its future dropped.
+/// Anything still queued after the turn ended is a fresh turn for the caller.
+struct Running(AgentControl);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        self.0.end();
     }
 }
 
@@ -127,6 +145,37 @@ impl Agent {
         self.messages = messages;
     }
 
+    /// One human turn. Every event goes to `sink` in order, the last one is
+    /// [`crate::LoopEvent::TurnEnd`]; the return value is how that turn ended.
+    /// Input that arrives meanwhile goes through [`AgentControl::steer`]; stop it
+    /// with [`AgentControl::abort`] -- dropping this future mid-turn instead can
+    /// leave a tool call in history without its result.
+    pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnEnd {
+        let started = Instant::now();
+        let cancel = match self.control.begin() {
+            Ok(c) => c,
+            Err(e) => {
+                let mut turn = Turn::new(CancellationToken::new(), self.guard(), sink);
+                return turn.finish(TurnEnd::with_error(StopReason::Error, e), started);
+            }
+        };
+        let _running = Running(self.control.clone());
+        let mut turn = Turn::new(cancel, self.guard(), sink);
+        self.add_user(input, &mut turn).await;
+        let end = self.steps(&mut turn).await;
+        turn.finish(end, started)
+    }
+
+    /// A fresh guard per turn: its caps and clock start over.
+    fn guard(&self) -> TurnGuard {
+        TurnGuard::new(self.deps.hooks.clone(), self.deps.ledger.clone())
+    }
+
+    /// The hard caps for the current model spec; read fresh at every check.
+    fn limits(&self) -> Option<TurnLimits> {
+        self.deps.hooks.limits(&self.model_spec)
+    }
+
     /// Everything a model call sends ahead of the history; compaction reuses it.
     pub async fn request_prefix(&self, model: &str) -> RequestPrefix {
         build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await
@@ -139,3 +188,6 @@ impl Agent {
         fit_for_model(messages, accepts.as_ref(), model, hooks)
     }
 }
+
+#[cfg(test)]
+mod tests;
