@@ -73,6 +73,21 @@ async fn tool_writes_and_shell_writes_are_both_recorded_and_nothing_reaches_the_
 }
 
 #[tokio::test]
+async fn edits_are_recorded_with_a_writable_and_a_readable_mount_beside_the_project() {
+    let (_t, dir) = project();
+    let (_s, spill) = tempdir();
+    let (_k, skills) = tempdir();
+    let mounts = SandboxMounts::new(&dir).writable(&spill).readable(&skills);
+    let ws = SandboxWorkspace::open(mounts).await.unwrap();
+    ws.fs()
+        .write(&dir.join("answer.txt"), b"42\n")
+        .await
+        .unwrap();
+    let list = changes(&ws).list().await;
+    assert_eq!(rows(&list), [("/answer.txt", ChangeKind::Added, false)]);
+}
+
+#[tokio::test]
 async fn apply_puts_every_change_on_disk_after_which_nothing_is_left() {
     let (_t, dir) = project();
     let ws = sandbox_edits(&dir).await;

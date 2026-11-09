@@ -11,6 +11,8 @@
 pub use kern_core as core;
 pub use kern_core::*;
 
+#[cfg(feature = "mcp")]
+pub use kern_mcp as mcp;
 #[cfg(feature = "providers")]
 pub use kern_providers as providers;
 #[cfg(feature = "tools")]

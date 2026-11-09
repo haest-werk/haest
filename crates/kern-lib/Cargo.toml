@@ -11,13 +11,15 @@ publish.workspace = true
 name = "kern"
 
 [features]
-default = ["providers", "workspace", "tools"]
+default = ["providers", "workspace", "tools", "mcp"]
 providers = ["dep:kern-providers"]
 workspace = ["dep:kern-workspace"]
 tools = ["dep:kern-tools"]
+mcp = ["dep:kern-mcp"]
 
 [dependencies]
 kern-core = { workspace = true }
 kern-providers = { workspace = true, optional = true }
 kern-workspace = { workspace = true, optional = true }
 kern-tools = { workspace = true, optional = true }
+kern-mcp = { workspace = true, optional = true }

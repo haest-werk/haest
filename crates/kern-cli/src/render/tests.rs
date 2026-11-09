@@ -1,0 +1,98 @@
+use kern::{ToolOutput, ToolResultMessage};
+use serde_json::json;
+
+use super::*;
+
+fn call(name: &str, input: Value) -> ToolCall {
+    ToolCall {
+        id: "c".into(),
+        name: name.into(),
+        input: input.as_object().cloned().unwrap(),
+    }
+}
+
+fn render(json: bool, evs: &[LoopEvent]) -> (String, String) {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    {
+        let mut r = Renderer::new(&mut out, &mut err, json, false);
+        evs.iter().for_each(|e| r.event(e));
+    }
+    (
+        String::from_utf8(out).unwrap(),
+        String::from_utf8(err).unwrap(),
+    )
+}
+
+#[test]
+fn the_answer_goes_to_stdout_and_the_work_to_stderr() {
+    let c = call("Read", json!({"path": "src/a.rs", "limit": 5}));
+    let result = LoopEvent::ToolResult {
+        call: c.clone(),
+        message: ToolResultMessage {
+            tool_call_id: "c".into(),
+            tool_name: "Read".into(),
+            content: "x".into(),
+            is_error: false,
+            media: vec![],
+        },
+        output: ToolOutput::text("x"),
+        duration_ms: 3,
+    };
+    let (out, err) = render(
+        false,
+        &[
+            LoopEvent::TextDelta {
+                text: "Hello".into(),
+            },
+            result,
+        ],
+    );
+    assert_eq!(out, "Hello\n");
+    assert!(err.contains("Read src/a.rs"));
+}
+
+#[test]
+fn json_mode_writes_one_parseable_line_per_event() {
+    let (out, err) = render(
+        true,
+        &[
+            LoopEvent::TextDelta { text: "a".into() },
+            LoopEvent::Guard { text: "g".into() },
+        ],
+    );
+    let lines: Vec<Value> = out
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["type"], "text_delta");
+    assert!(err.is_empty());
+}
+
+#[test]
+fn a_notice_is_a_json_line_in_json_mode_and_stderr_otherwise() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    Renderer::new(&mut out, &mut err, true, false).warn("budget at half");
+    let line: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        (line["type"].as_str(), line["level"].as_str()),
+        (Some("notice"), Some("warning"))
+    );
+    assert!(err.is_empty());
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    Renderer::new(&mut out, &mut err, false, false).warn("budget at half");
+    assert!(out.is_empty());
+    assert_eq!(String::from_utf8(err).unwrap(), "budget at half\n");
+}
+
+#[test]
+fn a_summary_picks_the_input_that_says_what_happened() {
+    assert_eq!(
+        call_summary(&call(
+            "Bash",
+            json!({"timeout": 5, "command": "ls -la\nrm x"})
+        )),
+        "Bash ls -la"
+    );
+    assert_eq!(call_summary(&call("Thing", json!({"n": 1}))), "Thing");
+}
