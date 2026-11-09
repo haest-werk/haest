@@ -75,6 +75,10 @@ pub struct ExecResult {
 /// Exit code for "no such program", the shell convention every mode reports.
 pub const EXIT_NOT_FOUND: i32 = 127;
 
+/// Where a streamed command's output goes, chunk by chunk as it arrives:
+/// stdout and stderr interleaved, whole UTF-8 characters only.
+pub type OutputChunks = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// One path the sandbox changed, for `/changes` and `/apply`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Change {
@@ -115,6 +119,29 @@ pub trait Workspace: Send + Sync {
     fn fs(&self) -> Arc<dyn Fs>;
     /// A command line, interpreted by bash (real or simulated).
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult;
+    /// Like [`Workspace::shell`], but the output goes to `on_output` as it
+    /// arrives and NOT into the result, which only says how the command ended:
+    /// a background job may print for hours. The default runs
+    /// [`Workspace::shell`] and hands the whole output over once it ends; a
+    /// workspace with real processes streams.
+    async fn shell_streaming(
+        &self,
+        command: &str,
+        opts: ExecOptions,
+        on_output: OutputChunks,
+    ) -> ExecResult {
+        let r = self.shell(command, opts).await;
+        for text in [&r.stdout, &r.stderr] {
+            if !text.is_empty() {
+                on_output(text);
+            }
+        }
+        ExecResult {
+            stdout: String::new(),
+            stderr: String::new(),
+            ..r
+        }
+    }
     /// A program and its argv, no shell parsing.
     async fn run(&self, argv: &[String], opts: ExecOptions) -> ExecResult;
     /// What the model must know about this workspace, for the system prompt.
@@ -155,5 +182,33 @@ impl Workspace for ShutWorkspace {
     }
     fn prompt_note(&self) -> String {
         "You have no file system and no shell here; work only with the tools you were given.".into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn a_workspace_that_cannot_stream_hands_the_output_over_when_it_ends() {
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let into = seen.clone();
+        let opts = ExecOptions {
+            cwd: "/".into(),
+            cancel: CancellationToken::new(),
+            timeout: Duration::from_secs(1),
+        };
+        let r = ShutWorkspace
+            .shell_streaming(
+                "true",
+                opts,
+                Arc::new(move |s: &str| into.lock().unwrap().push(s.into())),
+            )
+            .await;
+        assert_eq!(*seen.lock().unwrap(), [NO_SHELL]);
+        assert_eq!(r.exit_code, EXIT_NOT_FOUND);
+        assert!(r.stdout.is_empty() && r.stderr.is_empty());
     }
 }

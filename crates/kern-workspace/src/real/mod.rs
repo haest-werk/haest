@@ -13,11 +13,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use kern_core::{
     fs::Fs,
-    workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
+    workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks, Workspace, WorkspaceMode},
 };
 
 pub use exec::kill_group;
-use exec::which;
+use exec::{Output, which};
 pub use fs::RealFs;
 
 pub struct RealWorkspace {
@@ -54,7 +54,19 @@ impl Workspace for RealWorkspace {
 
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
         let args = ["-c".to_string(), command.to_string()];
-        exec::spawn_collect("bash".as_ref(), &args, opts).await
+        exec::spawn_collect("bash".as_ref(), &args, opts, Output::Collect).await
+    }
+
+    /// The output streams straight from the pipes, nothing is kept: a
+    /// background job's dev server may print for hours.
+    async fn shell_streaming(
+        &self,
+        command: &str,
+        opts: ExecOptions,
+        on_output: OutputChunks,
+    ) -> ExecResult {
+        let args = ["-c".to_string(), command.to_string()];
+        exec::spawn_collect("bash".as_ref(), &args, opts, Output::Stream(on_output)).await
     }
 
     async fn run(&self, argv: &[String], opts: ExecOptions) -> ExecResult {
@@ -66,7 +78,7 @@ impl Workspace for RealWorkspace {
             };
         };
         match which(program, &opts.cwd) {
-            Some(bin) => exec::spawn_collect(&bin, args, opts).await,
+            Some(bin) => exec::spawn_collect(&bin, args, opts, Output::Collect).await,
             None => ExecResult {
                 stderr: format!("{program}: command not found"),
                 exit_code: EXIT_NOT_FOUND,

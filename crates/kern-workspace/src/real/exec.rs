@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use kern_core::workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult};
+use kern_core::workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
@@ -77,12 +77,66 @@ fn not_started(program: &str, e: &io::Error) -> ExecResult {
 
 type Sink = Arc<Mutex<Vec<u8>>>;
 
-async fn drain(mut from: impl AsyncRead + Unpin, into: Sink) {
+/// Where a pipe's bytes go: kept for the result, or handed on as text as they arrive.
+#[derive(Clone)]
+pub enum Output {
+    Collect,
+    Stream(OutputChunks),
+}
+
+/// How many bytes at the end of `b` begin a character the next chunk completes.
+fn cut_char(b: &[u8]) -> usize {
+    for back in 1..=b.len().min(3) {
+        let byte = b[b.len() - back];
+        if byte & 0xC0 == 0x80 {
+            continue;
+        }
+        let need = match byte {
+            0xC0..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF7 => 4,
+            _ => 1,
+        };
+        return if need > back { back } else { 0 };
+    }
+    0
+}
+
+/// The text at the front of `pending` that is whole characters (all of it at
+/// the end of the stream); bytes that are not UTF-8 become U+FFFD.
+fn whole_chars(pending: &mut Vec<u8>, end: bool) -> String {
+    let upto = if end {
+        pending.len()
+    } else {
+        pending.len() - cut_char(pending)
+    };
+    let text = String::from_utf8_lossy(&pending[..upto]).into_owned();
+    pending.drain(..upto);
+    text
+}
+
+async fn drain(mut from: impl AsyncRead + Unpin, into: Sink, stream: Option<OutputChunks>) {
     let mut chunk = vec![0u8; 16 * 1024];
+    let mut pending = Vec::new();
     loop {
-        match from.read(&mut chunk).await {
-            Ok(0) | Err(_) => return,
-            Ok(n) => into.lock().unwrap().extend_from_slice(&chunk[..n]),
+        let n = match from.read(&mut chunk).await {
+            Ok(0) | Err(_) => 0,
+            Ok(n) => n,
+        };
+        let Some(on_output) = &stream else {
+            if n == 0 {
+                return;
+            }
+            into.lock().unwrap().extend_from_slice(&chunk[..n]);
+            continue;
+        };
+        pending.extend_from_slice(&chunk[..n]);
+        let text = whole_chars(&mut pending, n == 0);
+        if !text.is_empty() {
+            on_output(&text);
+        }
+        if n == 0 {
+            return;
         }
     }
 }
@@ -91,9 +145,15 @@ fn take(s: &Sink) -> String {
     String::from_utf8_lossy(&std::mem::take(&mut *s.lock().unwrap())).into_owned()
 }
 
-/// Spawn `program args...` in its own process group and collect its output.
-/// The deadline and the cancel token both kill the group.
-pub async fn spawn_collect(program: &Path, args: &[String], opts: ExecOptions) -> ExecResult {
+/// Spawn `program args...` in its own process group and collect its output
+/// (or stream it: then the result carries none). The deadline and the cancel
+/// token both kill the group.
+pub async fn spawn_collect(
+    program: &Path,
+    args: &[String],
+    opts: ExecOptions,
+    output: Output,
+) -> ExecResult {
     let shown = program.display().to_string();
     let mut cmd = Command::new(program);
     cmd.args(args)
@@ -111,9 +171,21 @@ pub async fn spawn_collect(program: &Path, args: &[String], opts: ExecOptions) -
     };
     let pid = child.id().unwrap_or(0);
     let (out, err): (Sink, Sink) = Default::default();
+    let stream = match output {
+        Output::Collect => None,
+        Output::Stream(on_output) => Some(on_output),
+    };
     let readers = [
-        tokio::spawn(drain(child.stdout.take().expect("piped"), out.clone())),
-        tokio::spawn(drain(child.stderr.take().expect("piped"), err.clone())),
+        tokio::spawn(drain(
+            child.stdout.take().expect("piped"),
+            out.clone(),
+            stream.clone(),
+        )),
+        tokio::spawn(drain(
+            child.stderr.take().expect("piped"),
+            err.clone(),
+            stream,
+        )),
     ];
     // Done = the child exited AND both pipes closed (a background job may hold them).
     let finished = async {

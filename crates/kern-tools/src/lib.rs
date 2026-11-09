@@ -11,16 +11,23 @@
 //! | Write, Edit | `file.write`, `file.edit` | [`files`] |
 //! | Glob, Grep | `file.glob`, `text.search` | [`search`] over [`fs_walk`] |
 //! | Bash | `shell.exec` | [`bash`] |
+//! | BashOutput, KillShell | `shell.exec` | [`bash_jobs`] over a [`jobs::JobHub`] the host owns |
 //! | WebFetch | `web.fetch` | [`web_fetch`] (PLUG POINT: [`web_fetch::WebFetchNet`]) |
+//!
+//! A turn the human did not start (a job that exited) reaches the model
+//! through the host's [`inbox::Inbox`].
 
 use std::sync::Arc;
 
 use kern_core::tool::Tool;
 
 pub mod bash;
+pub mod bash_jobs;
 mod canonical;
 pub mod files;
 pub mod fs_walk;
+pub mod inbox;
+pub mod jobs;
 pub mod net_guard;
 pub mod read;
 pub mod search;
@@ -32,7 +39,10 @@ pub mod tool_search;
 pub mod web_fetch;
 
 pub use bash::{BashOptions, BashTool};
+pub use bash_jobs::job_tools;
 pub use files::{EditTool, WriteTool};
+pub use inbox::Inbox;
+pub use jobs::{JobEvents, JobHub};
 pub use read::{ReadIntercept, ReadTool};
 pub use search::{GlobTool, GrepTool};
 pub use web_fetch::{WebFetchNet, WebFetchTool};
@@ -59,16 +69,18 @@ impl Default for BuiltinOptions {
     }
 }
 
-/// The built-in tools, in the order the model sees them.
+/// The built-in tools, in the order the model sees them. With a job hub
+/// ([`BashOptions::jobs`]) BashOutput and KillShell follow Bash.
 pub fn builtin_tools(opts: BuiltinOptions) -> Vec<Arc<dyn Tool>> {
+    let jobs = opts.bash.jobs.clone().map(job_tools).unwrap_or_default();
     let mut tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(ReadTool::new(opts.read_intercept)),
         Arc::new(WriteTool),
         Arc::new(EditTool),
         Arc::new(BashTool::new(opts.bash)),
-        Arc::new(GrepTool),
-        Arc::new(GlobTool),
     ];
+    tools.extend(jobs);
+    tools.extend([Arc::new(GrepTool) as Arc<dyn Tool>, Arc::new(GlobTool)]);
     if let Some(net) = opts.web_fetch {
         tools.push(Arc::new(WebFetchTool::new(net)));
     }
@@ -101,6 +113,34 @@ mod tests {
             ..Default::default()
         });
         assert!(!names(&offline).contains(&"WebFetch".to_string()));
+    }
+
+    #[tokio::test]
+    async fn a_job_hub_adds_the_job_tools_after_bash() {
+        let hub = Arc::new(JobHub::new(Arc::new(inbox::NoInbox)));
+        let tools = builtin_tools(BuiltinOptions {
+            bash: BashOptions {
+                jobs: Some(hub),
+                ..Default::default()
+            },
+            web_fetch: None,
+            ..Default::default()
+        });
+        assert_eq!(
+            names(&tools),
+            [
+                "Read",
+                "Write",
+                "Edit",
+                "Bash",
+                "BashOutput",
+                "KillShell",
+                "Grep",
+                "Glob"
+            ]
+        );
+        let bash = &tools[3];
+        assert!(bash.parameters()["properties"]["run_in_background"].is_object());
     }
 
     #[test]

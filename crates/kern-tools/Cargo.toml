@@ -26,3 +26,9 @@ htmd = "0.5"
 [dev-dependencies]
 # process: the Grep test runs the real rg (when installed) to prove it takes our argv.
 tokio = { workspace = true, features = ["process"] }
+# testing: the scripted provider, for tests that run a whole agent turn.
+kern-core = { workspace = true, features = ["testing"] }
+# Background jobs are tested over the real workspace: real processes, a real process group.
+kern-workspace = { workspace = true }
+tempfile = "3"
+libc = "0.2"

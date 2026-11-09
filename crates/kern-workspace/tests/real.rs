@@ -4,13 +4,14 @@ mod common;
 
 use std::{
     path::Path,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use common::{argv, opts, tempdir};
 use kern_core::{
     fs::{FileKind, Fs},
-    workspace::{EXIT_NOT_FOUND, Workspace, WorkspaceMode},
+    workspace::{EXIT_NOT_FOUND, OutputChunks, Workspace, WorkspaceMode},
 };
 use kern_workspace::{RealFs, RealWorkspace};
 
@@ -48,6 +49,33 @@ async fn output_that_is_not_utf8_is_decoded_lossily() {
         .shell(r"printf 'ok\377'", opts(&dir))
         .await;
     assert_eq!(r.stdout, "ok\u{FFFD}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn streamed_output_arrives_while_the_command_runs_and_stays_out_of_the_result() {
+    let (_t, dir) = tempdir();
+    let seen = Arc::new(Mutex::new(String::new()));
+    let into = seen.clone();
+    let on_output: OutputChunks = Arc::new(move |s: &str| into.lock().unwrap().push_str(s));
+    let ws = RealWorkspace::new();
+    // A multi-byte character split across two writes arrives whole.
+    let run = ws.shell_streaming(
+        r"printf 'first \xc3'; sleep 0.05; printf '\xa9\n'; sleep 0.4; echo second >&2",
+        opts(&dir),
+        on_output,
+    );
+    tokio::pin!(run);
+    let early = tokio::select! {
+        r = &mut run => panic!("ended before the check: {r:?}"),
+        _ = tokio::time::sleep(Duration::from_millis(250)) => seen.lock().unwrap().clone(),
+    };
+    assert_eq!(early, "first \u{e9}\n");
+    let r = run.await;
+    assert_eq!(*seen.lock().unwrap(), "first \u{e9}\nsecond\n");
+    assert_eq!(
+        (r.stdout.as_str(), r.stderr.as_str(), r.exit_code),
+        ("", "", 0)
+    );
 }
 
 fn alive(pid: libc::pid_t) -> bool {

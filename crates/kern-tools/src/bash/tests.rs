@@ -88,6 +88,7 @@ async fn the_timeout_is_clamped_and_the_default_is_the_hosts() {
     bash(&ws, json!({"command": "c"})).await.unwrap();
     let tool = BashTool::new(BashOptions {
         default_timeout: Duration::from_secs(30),
+        ..Default::default()
     });
     tool.execute(input(json!({"command": "d"})), &ctx(ws.clone()))
         .await
@@ -117,9 +118,22 @@ async fn long_output_keeps_both_ends_and_says_it_was_cut() {
 }
 
 #[test]
-fn the_schema_has_no_background_switch_yet() {
+fn without_a_job_hub_there_is_no_background_switch() {
     let p = BashTool::default().parameters();
     assert!(p["properties"].get("run_in_background").is_none());
     let c = BashTool::default().canonical_input(&input(json!({"command": "ls", "timeout": 5})));
     assert_eq!(json!(c), json!({"command": "ls", "timeoutMs": 5}));
+}
+
+#[tokio::test]
+async fn without_a_job_hub_run_in_background_runs_the_command_now() {
+    let ws = answering(|_| ExecResult {
+        stdout: "now\n".into(),
+        ..Default::default()
+    });
+    let r = bash(&ws, json!({"command": "x", "run_in_background": true}))
+        .await
+        .unwrap();
+    assert_eq!(ws.calls().len(), 1);
+    assert_eq!(r.result.unwrap()["stdout"], "now\n");
 }
