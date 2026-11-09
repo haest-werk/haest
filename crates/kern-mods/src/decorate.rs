@@ -1,0 +1,115 @@
+//! The decorators a host composes to put mods in the loop -- no kern-core change:
+//!   - [`ModTools`]: a [`ToolSource`] whose every tool (the host's and the mods'
+//!     own) runs inside `tool.before` / `tool.after`;
+//!   - [`ModSystemPrompt`]: a [`SystemPrompt`] with what `system.prompt` appends;
+//!   - `prompt.submit` is [`Mods::rewrite_prompt`], called on the human's text
+//!     before it goes to `Agent::run`; commands are [`Mods::command`].
+
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use kern_core::{
+    deps::SystemPrompt,
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource},
+};
+use serde_json::Value;
+
+use crate::{api::ModToolCall, registry::Mods};
+
+/// A tool source with every mod's hooks around every tool, plus the tools mods add.
+pub struct ModTools {
+    inner: Arc<dyn ToolSource>,
+    mods: Arc<Mods>,
+}
+
+impl ModTools {
+    pub fn new(inner: Arc<dyn ToolSource>, mods: Arc<Mods>) -> Self {
+        Self { inner, mods }
+    }
+
+    /// `tools` plus every mod's tool, each wrapped in the `tool.before` /
+    /// `tool.after` hooks. A tool that runs OTHER tools (Code) should be handed
+    /// these wrapped siblings, so every call it makes passes the hooks too.
+    pub fn wrap(mods: &Arc<Mods>, tools: Vec<Arc<dyn Tool>>) -> Vec<Arc<dyn Tool>> {
+        tools
+            .into_iter()
+            .chain(mods.tools())
+            .map(|tool| {
+                Arc::new(ModTool {
+                    tool,
+                    mods: mods.clone(),
+                }) as Arc<dyn Tool>
+            })
+            .collect()
+    }
+}
+
+impl ToolSource for ModTools {
+    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+        Self::wrap(&self.mods, self.inner.tools())
+    }
+}
+
+/// One tool inside the hooks.
+struct ModTool {
+    tool: Arc<dyn Tool>,
+    mods: Arc<Mods>,
+}
+
+#[async_trait]
+impl Tool for ModTool {
+    fn name(&self) -> &str {
+        self.tool.name()
+    }
+    fn description(&self) -> String {
+        self.tool.description()
+    }
+    fn parameters(&self) -> Value {
+        self.tool.parameters()
+    }
+    fn kind(&self) -> &str {
+        self.tool.kind()
+    }
+    fn read_only(&self) -> bool {
+        self.tool.read_only()
+    }
+    fn canonical_input(&self, input: &JsonMap) -> JsonMap {
+        self.tool.canonical_input(input)
+    }
+
+    async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        let call = ModToolCall {
+            name: self.tool.name().to_string(),
+            input,
+            read_only: self.tool.read_only(),
+        };
+        let call = self.mods.before(call, ctx).await?;
+        let output = self.tool.execute(call.input.clone(), ctx).await?;
+        Ok(self.mods.after(&call, output, ctx).await)
+    }
+}
+
+/// A system prompt with what every mod's `system.prompt` hook appends.
+pub struct ModSystemPrompt {
+    inner: Arc<dyn SystemPrompt>,
+    mods: Arc<Mods>,
+}
+
+impl ModSystemPrompt {
+    pub fn new(inner: Arc<dyn SystemPrompt>, mods: Arc<Mods>) -> Self {
+        Self { inner, mods }
+    }
+}
+
+#[async_trait]
+impl SystemPrompt for ModSystemPrompt {
+    async fn system_prompt(&self) -> String {
+        let base = self.inner.system_prompt().await;
+        let added = self.mods.system_append().await;
+        match (base.is_empty(), added.is_empty()) {
+            (_, true) => base,
+            (true, false) => added,
+            (false, false) => format!("{base}\n\n{added}"),
+        }
+    }
+}
