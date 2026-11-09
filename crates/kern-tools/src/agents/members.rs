@@ -1,12 +1,46 @@
 //! The hub's table: every agent whose turn has not ended, and every name ever
 //! used. A finished agent leaves (its history with it); only its name stays.
 
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use kern_core::AgentControl;
 use tokio_util::sync::CancellationToken;
 
 use super::{AgentRef, MAIN, SpawnInput, SubagentCaps};
+
+/// Unique per hub, so the same agent name in a revived host is a different id.
+pub(super) fn run_id() -> String {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("{ms:x}{:x}", SEQ.fetch_add(1, Ordering::Relaxed))
+}
+
+/// One background answer owed ([`super::SubagentHub::answers_due`]); paid
+/// when dropped, so a run that ends any way still settles.
+pub(super) struct Due(Arc<AtomicUsize>);
+
+impl Due {
+    pub fn owe(count: &Arc<AtomicUsize>) -> Self {
+        count.fetch_add(1, Ordering::SeqCst);
+        Self(count.clone())
+    }
+}
+
+impl Drop for Due {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Status {

@@ -2,8 +2,14 @@
 //! child's cost reaches the parent's turn, the ledger is charged once), and
 //! StopAgent plus the post office's refusals.
 
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
 use kern_core::LoopEvent;
 use serde_json::json;
+use tokio::sync::Notify;
 
 use super::{
     caps,
@@ -71,4 +77,42 @@ async fn stop_ends_a_running_agent_and_the_post_office_refuses_who_is_not_runnin
     let refused = |to: &str| r.hub.deliver(&main.name, to, "x").unwrap_err();
     assert!(refused("slow").contains("finished"));
     assert!(refused("ghost").contains("no agent"));
+}
+
+// A one-shot host waits for background work before it exits. `running()` is
+// the wrong thing to wait on: the agent leaves it BEFORE its answer is handed
+// back, so a host that sees it empty can exit with the answer still in flight.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_background_answer_stays_due_until_it_has_reached_main() {
+    let release = Arc::new(Notify::new());
+    let wait = release.clone();
+    let mut r = Rig::new(
+        now(|_, n| match n {
+            0 => vec![call(
+                "a",
+                "Agent",
+                json!({"description": "slow", "name": "slow", "prompt": "p", "run_in_background": true}),
+            )],
+            _ => say("ok"),
+        }),
+        Box::new(move |_, _| {
+            let wait = wait.clone();
+            Box::pin(async move {
+                wait.notified().await;
+                say("found it")
+            })
+        }),
+        caps(),
+    );
+    assert_eq!(r.hub.answers_due(), 0);
+    r.turn("go").await;
+    assert_eq!(r.hub.answers_due(), 1);
+    release.notify_one();
+    let end = Instant::now() + Duration::from_secs(5);
+    while r.hub.answers_due() > 0 && Instant::now() < end {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(r.hub.answers_due(), 0);
+    let answer = (r.inbox.try_recv()).expect("in main's inbox by the time it is no longer due");
+    assert!(answer.contains("found it"));
 }

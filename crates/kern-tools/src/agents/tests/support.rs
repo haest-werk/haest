@@ -190,7 +190,7 @@ pub struct Rig {
     pub host: Arc<FakeHost>,
     pub main: Agent,
     pub events: Vec<LoopEvent>,
-    inbox: UnboundedReceiver<String>,
+    pub inbox: UnboundedReceiver<String>,
 }
 
 impl Rig {

@@ -1,12 +1,9 @@
 //! THE AGENT HUB: every subagent of one conversation, and the post office
 //! between them (the default [`AgentDirectory`]).
 
-use std::{
-    sync::{
-        Arc, Mutex, Weak,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::{SystemTime, UNIX_EPOCH},
+use std::sync::{
+    Arc, Mutex, Weak,
+    atomic::{AtomicUsize, Ordering},
 };
 
 use async_trait::async_trait;
@@ -16,38 +13,21 @@ use tokio_util::sync::CancellationToken;
 use super::{
     AgentDirectory, AgentRef, MAIN, SpawnInput, SpawnOutcome, SubagentCaps, SubagentEvent,
     SubagentHost,
-    members::{Members, Status},
-    run::{ChildHooks, ChildPrompt, drive, subagent_note},
+    members::{Due, Members, Status, run_id},
+    run::{ChildHooks, ChildPrompt, Run, drive, subagent_note},
     tools::agent_tools,
 };
 
 /// The tools a subagent does NOT get: the task list belongs to the conversation, not to a helper.
 const MAIN_ONLY: [&str; 4] = ["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"];
 
-/// Unique per hub, so the same agent name in a revived host is a different id.
-fn run_id() -> String {
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    format!("{ms:x}{:x}", SEQ.fetch_add(1, Ordering::Relaxed))
-}
-
-/// One agent's run, as its driver needs it.
-struct Run {
-    me: AgentRef,
-    id: String,
-    parent: String,
-    description: String,
-    stop: CancellationToken,
-}
-
 pub struct SubagentHub {
     host: Arc<dyn SubagentHost>,
     caps: SubagentCaps,
     run_id: String,
     members: Mutex<Members>,
+    /// Background agents whose answer has not been handed back yet.
+    due: Arc<AtomicUsize>,
     this: Weak<SubagentHub>,
 }
 
@@ -58,8 +38,17 @@ impl SubagentHub {
             caps,
             run_id: run_id(),
             members: Mutex::default(),
+            due: Arc::default(),
             this: this.clone(),
         })
+    }
+
+    /// Background agents whose answer has not reached its reader yet: running,
+    /// or finishing. A host that waits for background work (a one-shot run
+    /// before it exits) waits on this, never on [`Self::running`]: an agent
+    /// leaves the running set BEFORE its answer is handed back.
+    pub fn answers_due(&self) -> usize {
+        self.due.load(Ordering::SeqCst)
     }
 
     fn arc(&self) -> Arc<Self> {
@@ -217,7 +206,10 @@ impl AgentDirectory for SubagentHub {
             "Started agent \"{name}\" in the background. Its answer will arrive as a message; SendMessage reaches it while it runs."
         );
         let hub = self.arc();
+        let due = Due::owe(&self.due);
         tokio::spawn(async move {
+            // Dropped last: the answer is handed back before it stops being due.
+            let _due = due;
             let parent = run.parent.clone();
             let out = hub.run_member(run, agent, input.prompt, None).await;
             hub.hand_back(

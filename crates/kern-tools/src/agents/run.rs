@@ -16,9 +16,18 @@ use kern_core::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{SubagentCaps, SubagentEvent, SubagentHost};
+use super::{AgentRef, SubagentCaps, SubagentEvent, SubagentHost};
 
 const MINUTE_MS: u64 = 60_000;
+
+/// One agent's run, as its driver needs it.
+pub(super) struct Run {
+    pub me: AgentRef,
+    pub id: String,
+    pub parent: String,
+    pub description: String,
+    pub stop: CancellationToken,
+}
 
 /// How one subagent's turn ended.
 #[derive(Debug, Clone, PartialEq)]
