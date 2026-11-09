@@ -5,7 +5,10 @@
 //! guard notices, errors, the cost line -- goes to stderr. `--json` replaces all
 //! of it with one JSON line per event on stdout.
 
-use std::io::{IsTerminal, Write};
+use std::{
+    io::{IsTerminal, Write},
+    sync::mpsc::Sender,
+};
 
 use kern::{LoopEvent, StopReason, ToolCall, Usage};
 use serde_json::Value;
@@ -18,6 +21,9 @@ pub struct Renderer<O: Write, E: Write> {
     color: bool,
     /// The last thing written to stdout did not end a line.
     open_line: bool,
+    /// While the REPL prompt is open: where a line goes so it lands ABOVE the
+    /// prompt, never inside what the human is typing.
+    above: Option<Sender<String>>,
 }
 
 const DIM: &str = "\x1b[2m";
@@ -40,7 +46,18 @@ impl<O: Write, E: Write> Renderer<O, E> {
             json,
             color,
             open_line: false,
+            above: None,
         }
+    }
+
+    /// The prompt opened (Some: its printer) or closed (None).
+    pub fn set_above(&mut self, above: Option<Sender<String>>) {
+        self.above = above;
+    }
+
+    /// The REPL prompt is open: the human is (or may be) typing.
+    pub fn prompting(&self) -> bool {
+        self.above.is_some()
     }
 
     fn paint(&self, color: &str, text: &str) -> String {
@@ -62,7 +79,12 @@ impl<O: Write, E: Write> Renderer<O, E> {
     fn note(&mut self, color: &str, text: &str) {
         self.end_line();
         let line = self.paint(color, text);
-        let _ = writeln!(self.err, "{line}");
+        match &self.above {
+            Some(above) if above.send(line.clone()).is_ok() => {}
+            _ => {
+                let _ = writeln!(self.err, "{line}");
+            }
+        }
     }
 
     pub fn event(&mut self, ev: &LoopEvent) {

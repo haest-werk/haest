@@ -7,12 +7,14 @@
 //!   kern -r [id]             continue a session (the latest here without an id)
 //!   kern models | sessions   what kern knows / what it has saved
 
+mod agents;
 mod args;
 mod ask;
 mod changes;
 mod commands;
 mod config;
 mod host;
+mod inbox;
 mod models;
 mod mods;
 mod prompt;
@@ -79,7 +81,14 @@ async fn print_mode(rt: &mut Runtime, args: &Args) -> ExitCode {
         return fail(2, "nothing to ask: give a prompt, or pipe one on stdin");
     };
     let code = match commands::resolve(rt, &input).await {
-        Outcome::Send(text) => run::exit_code(&run::human(rt, &text).await),
+        Outcome::Send(text) => {
+            let end = run::human(rt, &text).await;
+            // Interrupted: the human wants out, not the background work's answers.
+            if end.stop_reason != kern::StopReason::Aborted {
+                run::settle(rt).await;
+            }
+            run::exit_code(&end)
+        }
         Outcome::Done | Outcome::Exit => ExitCode::SUCCESS,
     };
     if let Some(lost) = changes::unapplied(rt).await {
@@ -88,6 +97,29 @@ async fn print_mode(rt: &mut Runtime, args: &Args) -> ExitCode {
         ));
     }
     code
+}
+
+/// `1 background job`, `2 background jobs`.
+fn count(n: usize, noun: &str) -> String {
+    format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
+}
+
+/// kern is exiting: its subagents stopped and its background jobs killed
+/// (their process groups gone before the runtime shuts down), each said.
+async fn shutdown(rt: &Runtime) {
+    let running = rt.agents.running().len();
+    rt.agents.stop_all();
+    if running > 0 {
+        rt.host
+            .info(&format!("Stopped {}.", count(running, "subagent")));
+    }
+    if let Some(jobs) = &rt.jobs {
+        let killed = world::kill_jobs(jobs).await;
+        if killed > 0 {
+            rt.host
+                .info(&format!("Killed {}.", count(killed, "background job")));
+        }
+    }
 }
 
 #[tokio::main]
@@ -128,6 +160,7 @@ async fn main() -> ExitCode {
             Err(e) => fail(1, e),
         }
     };
+    shutdown(&rt).await;
     rt.mcp.close().await;
     rt.host.flush().await;
     code

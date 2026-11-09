@@ -36,21 +36,28 @@ pub struct Host {
     pub catalog: &'static Catalog,
     pub term: Arc<Mutex<Term>>,
     store: Mutex<Arc<JsonlSessionFile>>,
-    /// The model the system prompt names; kept in step with the agent's spec.
+    /// The model the system prompt names and a subagent starts on; kept in step
+    /// with the agent's spec.
     model: Mutex<String>,
+    /// The effort a subagent starts on; kept in step with the agent's.
+    effort: Mutex<Option<Effort>>,
     effort_notes: Mutex<HashSet<String>>,
+    /// Who reads the terminal: the REPL prompt, or one approval ask at a time.
+    pub stdin: tokio::sync::Mutex<()>,
 }
 
 impl Host {
     pub fn new(cfg: Config, term: Arc<Mutex<Term>>, store: Arc<JsonlSessionFile>) -> Self {
-        let model = cfg.model.clone();
+        let (model, effort) = (cfg.model.clone(), cfg.effort);
         Self {
             cfg,
             catalog: Catalog::builtin(),
             term,
             store: Mutex::new(store),
             model: Mutex::new(model),
+            effort: Mutex::new(effort),
             effort_notes: Mutex::default(),
+            stdin: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -77,6 +84,19 @@ impl Host {
 
     pub fn set_model(&self, spec: &str) {
         *self.model.lock().unwrap() = spec.to_string();
+    }
+
+    pub fn effort(&self) -> Option<Effort> {
+        *self.effort.lock().unwrap()
+    }
+
+    pub fn set_effort(&self, effort: Option<Effort>) {
+        *self.effort.lock().unwrap() = effort;
+    }
+
+    /// The REPL prompt is open (a line printed now lands above it).
+    pub fn prompting(&self) -> bool {
+        self.term.lock().unwrap().prompting()
     }
 
     pub fn info(&self, text: &str) {

@@ -5,8 +5,17 @@
 //!   KERN_CODE_TOOLS    comma list of extra tool names Code may call (exact, or `prefix*`)
 //!   KERN_APPROVALS     on (default) | off -- the built-in approval mod
 //!   KERN_PROJECT_MODS  1 = also load <cwd>/.kern/mods (repo code; off by default)
+//!   KERN_IMAGE_MODEL   GenerateImage's default model (`host/config.ts`); the tool
+//!                      exists only when OPENROUTER_API_KEY is set
+//!   KERN_IMAGE_MODELS  comma list of the other image models a call may pick
+//!                      (default: the library's list); the default model is always first
 
-use kern::provider::{WebSearchConfig, WebSearchEngine};
+use std::fmt;
+
+use kern::{
+    provider::{WebSearchConfig, WebSearchEngine},
+    tools::image::{DEFAULT_IMAGE_BASE_URL, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
+};
 
 use super::{Env, get};
 
@@ -18,6 +27,54 @@ pub struct Features {
     pub code: Option<Vec<String>>,
     pub approvals: bool,
     pub project_mods: bool,
+    /// GenerateImage's backend; None = no OpenRouter key, no tool.
+    pub image: Option<ImageConfig>,
+}
+
+/// What GenerateImage runs on: OpenRouter's Image API with the host's key.
+#[derive(Clone, PartialEq)]
+pub struct ImageConfig {
+    pub api_key: String,
+    pub base_url: String,
+    pub model: String,
+    /// Every model a call may pick, the default first.
+    pub models: Vec<String>,
+}
+
+impl fmt::Debug for ImageConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ImageConfig")
+            .field("api_key", &"<redacted>")
+            .field("base_url", &self.base_url)
+            .field("model", &self.model)
+            .field("models", &self.models)
+            .finish()
+    }
+}
+
+fn image(env: &Env) -> Option<ImageConfig> {
+    let api_key = get(env, "OPENROUTER_API_KEY")?.to_string();
+    let model = get(env, "KERN_IMAGE_MODEL").unwrap_or(DEFAULT_IMAGE_MODEL);
+    let others: Vec<&str> = match get(env, "KERN_IMAGE_MODELS") {
+        Some(raw) => raw
+            .split(',')
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .collect(),
+        None => DEFAULT_IMAGE_MODELS.to_vec(),
+    };
+    let models = std::iter::once(model)
+        .chain(others.into_iter().filter(|m| *m != model))
+        .map(String::from)
+        .collect();
+    Some(ImageConfig {
+        api_key,
+        base_url: get(env, "OPENROUTER_BASE_URL")
+            .unwrap_or(DEFAULT_IMAGE_BASE_URL)
+            .to_string(),
+        model: model.to_string(),
+        models,
+    })
 }
 
 const ENGINES: &str = "auto, native, exa, parallel, firecrawl, perplexity";
@@ -61,6 +118,7 @@ impl Features {
             code: flag(env, "KERN_CODE", "on", "off", true)?.then_some(extra),
             approvals: flag(env, "KERN_APPROVALS", "on", "off", true)?,
             project_mods: flag(env, "KERN_PROJECT_MODS", "1", "0", false)?,
+            image: image(env),
         })
     }
 }

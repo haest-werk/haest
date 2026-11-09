@@ -127,6 +127,7 @@ fn effort(rt: &mut Runtime, arg: &str) {
         },
     };
     rt.agent.effort = effort;
+    rt.host.set_effort(effort);
     rt.host.append(SessionRecord::Config {
         t: now_ms(),
         model: None,

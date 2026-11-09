@@ -62,6 +62,17 @@ cargo run -p kern-cli -- models       # the models kern knows
 | `KERN_CODE` | `on` | the Code tool; `KERN_CODE_TOOLS` adds tools it may call (`Name` or `prefix*`) |
 | `KERN_APPROVALS` | `on` | ask on the terminal before an irreversible Bash command (real workspace) |
 | `KERN_PROJECT_MODS` | `0` | `1` also loads the repo's own mods from `.kern/mods` (they run with your trust) |
+| `KERN_MAX_AGENT_DEPTH`, `KERN_MAX_SUBAGENTS` | `2`, `4` | how deep subagents nest and how many run at once; `0` = no Agent tool |
+| `KERN_SUBAGENT_USD`, `_STEPS`, `_MINUTES` | `1`, `50`, `15` | one subagent's spend, model calls and wall clock |
+| `KERN_MAX_AGENT_TURNS` | `30` | turns in a row a background job or subagent may start with no message from you; past it kern holds them until you post (`0` = no cap) |
+| `KERN_IMAGE_MODEL`, `KERN_IMAGE_MODELS` | the library's | GenerateImage's default model and the others a call may pick; the tool exists only with `OPENROUTER_API_KEY` |
+
+Background jobs (`run_in_background` on Bash, with BashOutput and KillShell)
+exist only in the real workspace; kern kills them when it exits. A job that
+exits, a subagent's message for main or a background subagent's answer is a
+turn you did not start: during a turn it is read at the turn's next step; at
+the prompt it is announced above the line you are typing and runs when you
+press Enter. `kern -p` waits for background subagents before it exits.
 
 More providers go in `~/.config/kern/providers.json` (`KERN_CONFIG_DIR`), your
 mods in `~/.config/kern/mods`; sessions are saved under

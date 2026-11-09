@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{Context, anyhow, bail};
 use kern::{
-    Agent, AgentDeps, AgentOptions,
+    Agent, AgentDeps, AgentOptions, Workspace,
     context::{InstructionOpts, PromptInputs, current_git_branch},
     fs::Fs,
     ledger::Ledger,
@@ -19,17 +19,21 @@ use kern::{
     session::{JsonlSessionFile, SessionRecord, iso_utc},
     skills::{Skill, SkillOpts, discover_skills},
     task_board::TaskBoard,
+    tool::Tool,
+    tools::{JobHub, agents::SubagentHub},
     workspace::RealFs,
 };
 
 use crate::{
+    agents::CliAgents,
     config::{Config, Env},
     host::{Host, Term, now_ms},
+    inbox::{self, InboxQueue},
     mods,
-    prompt::{CliPrompt, platform},
+    prompt::{AgentPrompt, CliPrompt, platform},
     session::{latest_in, new_session_id, sessions_dir},
-    tools::{CliTools, own_tools},
-    world::{connect_mcp, workspace_for},
+    tools::{CliTools, WrappedTools, own_tools},
+    world::{connect_mcp, jobs_for, workspace_for},
 };
 
 pub struct Runtime {
@@ -42,6 +46,12 @@ pub struct Runtime {
     pub mcp: Arc<McpHub>,
     pub mods: Arc<Mods>,
     pub session_id: String,
+    /// Turns the human did not start, waiting for main.
+    pub inbox: InboxQueue,
+    /// Main's subagents.
+    pub agents: Arc<SubagentHub>,
+    /// Background shell jobs; None in the sandbox.
+    pub jobs: Option<Arc<JobHub>>,
 }
 
 /// Which session this run writes: a new one, the one named, or the latest here.
@@ -117,43 +127,29 @@ pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Res
     }));
     let mcp = connect_mcp(&host, fs.as_ref(), &cfg.cwd).await;
     let mods = mods::load(&host, fs.as_ref()).await;
-    let own = own_tools(board.clone(), skills.clone(), fs.clone());
+    let (sender, inbox) = inbox::inbox(&host, cfg.max_agent_turns);
+    let jobs = jobs_for(cfg.workspace, sender.clone());
     let features = &cfg.features;
-    let tools = Arc::new(CliTools::new(
+    let own = own_tools(
+        board.clone(),
+        skills.clone(),
+        fs.clone(),
+        jobs.clone(),
+        features.image.as_ref(),
+    );
+    let wrapped = Arc::new(WrappedTools::new(
         own,
         mcp.clone(),
         mods.clone(),
         features.code.clone(),
-        cfg.deferred_tools,
     ));
-    let note = workspace.prompt_note();
-    let base = PromptInputs {
-        cwd: cfg.cwd.to_string_lossy().into_owned(),
-        platform: platform(),
-        date: iso_utc(now_ms())[..10].to_string(),
-        git_branch: current_git_branch(fs.as_ref(), &cfg.cwd).await,
-        workspace_note: (!note.trim().is_empty()).then_some(note),
-        append_system_prompt: cfg.append_system_prompt.clone(),
-        ..Default::default()
-    };
-    let prompt = CliPrompt {
-        fs: fs.clone(),
-        host: host.clone(),
-        skills: skills.clone(),
-        tools: tools.clone(),
-        instructions: InstructionOpts {
-            cwd: cfg.cwd.clone(),
-            home,
-            config_dir: None,
-        },
-        base,
-    };
-    let prompt = ModSystemPrompt::new(Arc::new(prompt), mods.clone());
+    let prompt = Arc::new(prompt_for(&cfg, &fs, &host, &skills, workspace.as_ref()).await);
     let ledger = Arc::new(Mutex::new(Ledger::new(cfg.ledger, host.clone())));
+    let none: Vec<Arc<dyn Tool>> = Vec::new();
     let mut deps = AgentDeps::new(
         Arc::new(registry),
-        tools,
-        Arc::new(prompt),
+        Arc::new(none),
+        Arc::new(String::new()),
         cfg.cwd.clone(),
         workspace,
     );
@@ -161,6 +157,25 @@ pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Res
     deps.hooks = host.clone();
     deps.ledger = Some(ledger.clone());
     deps.web_search = features.web_search.clone();
+    let agents = CliAgents {
+        host: host.clone(),
+        deps: deps.clone(),
+        tools: wrapped.clone(),
+        prompt: prompt.clone(),
+        mods: mods.clone(),
+        defer: cfg.deferred_tools,
+        inbox: sender,
+        log: Mutex::default(),
+    }
+    .hub(cfg.subagents);
+    let tools = Arc::new(CliTools::new(wrapped, agents.clone(), cfg.deferred_tools));
+    let main_prompt = AgentPrompt {
+        prompt,
+        model: None,
+        tools: tools.clone(),
+    };
+    deps.tools = tools;
+    deps.system_prompt = Arc::new(ModSystemPrompt::new(Arc::new(main_prompt), mods.clone()));
 
     let mut opts = AgentOptions::new(cfg.model.clone());
     opts.effort = cfg.effort;
@@ -182,6 +197,7 @@ pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Res
     }
     let agent = Agent::new(deps, opts);
     host.set_model(&agent.model_spec);
+    host.set_effort(agent.effort);
     if !resuming {
         init_store(&host, &agent, &session_id);
     }
@@ -195,5 +211,39 @@ pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Res
         mcp,
         mods,
         session_id,
+        inbox,
+        agents,
+        jobs,
     })
+}
+
+/// The system prompt's parts fixed for the process; the model and tools are per agent.
+async fn prompt_for(
+    cfg: &Config,
+    fs: &Arc<dyn Fs>,
+    host: &Arc<Host>,
+    skills: &Arc<Mutex<Vec<Skill>>>,
+    workspace: &dyn Workspace,
+) -> CliPrompt {
+    let note = workspace.prompt_note();
+    let base = PromptInputs {
+        cwd: cfg.cwd.to_string_lossy().into_owned(),
+        platform: platform(),
+        date: iso_utc(now_ms())[..10].to_string(),
+        git_branch: current_git_branch(fs.as_ref(), &cfg.cwd).await,
+        workspace_note: (!note.trim().is_empty()).then_some(note),
+        append_system_prompt: cfg.append_system_prompt.clone(),
+        ..Default::default()
+    };
+    CliPrompt {
+        fs: fs.clone(),
+        host: host.clone(),
+        skills: skills.clone(),
+        instructions: InstructionOpts {
+            cwd: cfg.cwd.clone(),
+            home: cfg.home.clone(),
+            config_dir: None,
+        },
+        base,
+    }
 }

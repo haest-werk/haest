@@ -96,3 +96,93 @@ fn features_default_as_the_ts_kern_and_refuse_garbage() {
         assert!(cfg(&[], &[(key, raw)]).is_err(), "{key}={raw}");
     }
 }
+
+#[test]
+fn agent_turns_and_subagent_caps_default_as_the_ts_kern() {
+    let c = cfg(&[], &[]).unwrap();
+    assert_eq!(c.max_agent_turns, 30);
+    let s = c.subagents;
+    assert_eq!(
+        (s.max_depth, s.max_concurrent, s.usd, s.steps, s.minutes),
+        (2, 4, 1.0, 50, 15)
+    );
+}
+
+#[test]
+fn agent_turns_and_subagent_caps_follow_their_variables() {
+    let c = cfg(
+        &[],
+        &[
+            ("KERN_MAX_AGENT_TURNS", "0"),
+            ("KERN_MAX_AGENT_DEPTH", "0"),
+            ("KERN_MAX_SUBAGENTS", "9"),
+            ("KERN_SUBAGENT_USD", "0.25"),
+            ("KERN_SUBAGENT_STEPS", "7"),
+            ("KERN_SUBAGENT_MINUTES", "3"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(c.max_agent_turns, 0);
+    let s = c.subagents;
+    assert_eq!(
+        (s.max_depth, s.max_concurrent, s.usd, s.steps, s.minutes),
+        (0, 9, 0.25, 7, 3)
+    );
+}
+
+#[test]
+fn garbage_agent_caps_are_refused() {
+    for key in [
+        "KERN_MAX_AGENT_TURNS",
+        "KERN_MAX_AGENT_DEPTH",
+        "KERN_MAX_SUBAGENTS",
+        "KERN_SUBAGENT_USD",
+        "KERN_SUBAGENT_STEPS",
+        "KERN_SUBAGENT_MINUTES",
+    ] {
+        for raw in ["many", "-1", "NaN"] {
+            assert!(cfg(&[], &[(key, raw)]).is_err(), "{key}={raw}");
+        }
+    }
+}
+
+#[test]
+fn generate_image_exists_only_with_an_openrouter_key_on_the_ts_defaults() {
+    assert_eq!(cfg(&[], &[]).unwrap().features.image, None);
+    let img = cfg(&[], &[("OPENROUTER_API_KEY", "k")])
+        .unwrap()
+        .features
+        .image
+        .unwrap();
+    use kern::tools::image::{DEFAULT_IMAGE_BASE_URL, DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
+    assert_eq!(img.api_key, "k");
+    assert_eq!(img.base_url, DEFAULT_IMAGE_BASE_URL);
+    assert_eq!(img.model, DEFAULT_IMAGE_MODEL);
+    assert_eq!(img.models, DEFAULT_IMAGE_MODELS.map(String::from).to_vec());
+    assert!(
+        !format!("{img:?}").contains("\"k\""),
+        "the key never prints"
+    );
+}
+
+#[test]
+fn image_models_put_the_default_first_once() {
+    let img = |extra: &[(&str, &str)]| {
+        let mut env = vec![("OPENROUTER_API_KEY", "k")];
+        env.extend_from_slice(extra);
+        cfg(&[], &env).unwrap().features.image.unwrap()
+    };
+    let i = img(&[
+        ("KERN_IMAGE_MODEL", "x/pic"),
+        ("KERN_IMAGE_MODELS", " a/one , x/pic,, b/two "),
+        ("OPENROUTER_BASE_URL", "http://local/v1"),
+    ]);
+    assert_eq!(i.model, "x/pic");
+    assert_eq!(i.models, ["x/pic", "a/one", "b/two"]);
+    assert_eq!(i.base_url, "http://local/v1");
+    let only = img(&[("KERN_IMAGE_MODEL", "x/pic"), ("KERN_IMAGE_MODELS", ",")]);
+    assert_eq!(only.models, ["x/pic"]);
+    let unlisted = img(&[("KERN_IMAGE_MODEL", "x/pic")]);
+    assert_eq!(unlisted.models.len(), 4);
+    assert_eq!(unlisted.models[0], "x/pic");
+}

@@ -86,6 +86,36 @@ fn a_notice_is_a_json_line_in_json_mode_and_stderr_otherwise() {
 }
 
 #[test]
+fn while_the_prompt_is_open_a_notice_goes_above_it_and_after_it_back_to_stderr() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let (tx, rx) = std::sync::mpsc::channel();
+    {
+        let mut r = Renderer::new(&mut out, &mut err, false, false);
+        r.set_above(Some(tx));
+        assert!(r.prompting());
+        r.info("job b1 exited");
+        r.set_above(None);
+        assert!(!r.prompting());
+        r.info("after");
+    }
+    assert_eq!(rx.try_iter().collect::<Vec<_>>(), ["job b1 exited"]);
+    assert_eq!(String::from_utf8(err).unwrap(), "after\n");
+    assert!(out.is_empty());
+}
+
+#[test]
+fn a_notice_falls_back_to_stderr_when_the_printer_is_gone() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    drop(rx);
+    let mut r = Renderer::new(&mut out, &mut err, false, false);
+    r.set_above(Some(tx));
+    r.info("still heard");
+    drop(r);
+    assert_eq!(String::from_utf8(err).unwrap(), "still heard\n");
+}
+
+#[test]
 fn a_summary_picks_the_input_that_says_what_happened() {
     assert_eq!(
         call_summary(&call(

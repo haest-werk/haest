@@ -9,13 +9,15 @@ use std::{collections::HashMap, path::PathBuf};
 
 use kern::{
     Effort, WorkspaceMode, deferred_tools::DeferMode, ledger::LedgerCaps, limits::TurnLimits,
+    tools::agents::SubagentCaps,
 };
 
 use crate::args::Args;
 
+mod agents;
 mod features;
 
-pub use features::Features;
+pub use features::{Features, ImageConfig};
 
 pub type Env = HashMap<String, String>;
 
@@ -45,6 +47,9 @@ pub struct Config {
     pub turn_tokens_set: bool,
     pub request_tokens_set: bool,
     pub ledger: LedgerCaps,
+    /// Turns in a row a job or an agent may start with no human message; 0 = no cap.
+    pub max_agent_turns: u32,
+    pub subagents: SubagentCaps,
     pub data_dir: PathBuf,
     pub config_dir: PathBuf,
     /// How MCP tools reach the model [KERN_DEFERRED_TOOLS]: proxy (default), grow, off.
@@ -128,6 +133,8 @@ impl Config {
                 max_usd: cap(env, "KERN_MAX_CONVERSATION_USD", 20.0)?,
                 max_unpriced_tokens: cap(env, "KERN_MAX_CONVERSATION_TOKENS", 20_000_000.0)? as u64,
             },
+            max_agent_turns: agents::max_agent_turns(env)?,
+            subagents: agents::subagent_caps(env)?,
             data_dir,
             config_dir,
             deferred_tools: match get(env, "KERN_DEFERRED_TOOLS") {
