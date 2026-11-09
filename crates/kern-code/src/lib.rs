@@ -12,7 +12,7 @@
 //!
 //! Wiring, for a host: build the Code tool with [`CodeTool::new`] over the
 //! names [`code_tool_names`] allows and the same tool list the model gets; give a
-//! sandbox shell [`js_command`] and [`not_here`] as builtins (see [`sandbox_js`]).
+//! sandbox shell the [`sandbox_commands`] (see [`sandbox_js`]).
 
 pub mod call_gate;
 pub mod code;
@@ -22,5 +22,5 @@ mod testkit;
 pub mod vm;
 
 pub use code::{CodeTool, code_callable, code_tool_names};
-pub use sandbox_js::{JsEnv, JsOutput, js_command, not_here, run_js};
+pub use sandbox_js::{JsEnv, JsOutput, js_command, not_here, run_js, sandbox_commands};
 pub use vm::{HostFn, VmBeat, VmLimits, VmRun, VmSpec, VmStop, run_in_vm};

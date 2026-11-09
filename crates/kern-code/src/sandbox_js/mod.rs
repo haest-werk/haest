@@ -15,26 +15,15 @@
 //!
 //! # Wiring it into a sandbox shell
 //!
-//! This crate knows no shell. A sandbox registers one builtin per name -- [`JS_COMMAND`]
-//! and each of [`NOT_HERE`] -- whose body is one call. For a bashkit `Builtin`:
+//! This crate knows no shell. [`sandbox_commands`] is `js` and each of
+//! [`NOT_HERE`] as kern-core [`kern_core::shell_command::ShellCommand`]s; a
+//! sandbox takes each one (`SandboxWorkspace::with_command`), and `js`'s note
+//! tells the model it is there.
 //!
-//! ```text
-//! async fn execute(&self, ctx: bashkit::Context<'_>) -> bashkit::Result<ExecResult> {
-//!     let env = JsEnv {
-//!         fs: self.kern_fs.clone(),                  // the kern Fs the sandbox's bashkit fs adapts
-//!         cwd: ctx.cwd.clone(),
-//!         env: ctx.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-//!         cancel: self.call_cancel(),                // the running shell call's interrupt
-//!         ends_at: self.call_ends_at(),              // the running shell call's deadline (Instant)
-//!     };
-//!     let out = js_command(ctx.args, &env).await;    // or not_here(name) for bun, node, ...
-//!     Ok(ExecResult { stdout: out.stdout, stderr: out.stderr, exit_code: out.exit_code, .. })
-//! }
-//! ```
-//!
-//! `ends_at` matters: a CPU-bound script never yields, so the engine checks the
-//! shell call's wall-clock deadline itself -- the only bound such a script cannot outrun.
+//! The shell call's deadline matters: a CPU-bound script never yields, so the
+//! engine checks that wall-clock deadline itself -- the only bound such a script cannot outrun.
 
+mod command;
 mod guest;
 #[cfg(test)]
 mod tests;
@@ -49,6 +38,7 @@ use std::{
 use kern_core::{fs::Fs, tool::resolve_path};
 use tokio_util::sync::CancellationToken;
 
+pub use command::{JsShellCommand, NotHere, sandbox_commands};
 pub use guest::JS_MODULES;
 
 use crate::vm::{VM_MEMORY_BYTES, VmLimits, VmRun, VmStop, run_in_vm};

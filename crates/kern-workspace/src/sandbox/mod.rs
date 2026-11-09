@@ -8,8 +8,10 @@
 //!
 //! PLUG POINT: [`SandboxWorkspace::over`] puts the same sandboxed bash over a
 //! host's OWN [`Fs`], so the file the agent writes with Write is the file `cat`
-//! shows, wherever the host keeps it.
+//! shows, wherever the host keeps it. [`SandboxWorkspace::with_command`] adds a
+//! command to the shell (kern-code's `js`).
 
+mod commands;
 mod exec;
 mod mounts;
 
@@ -18,6 +20,7 @@ use std::{io, sync::Arc};
 use async_trait::async_trait;
 use kern_core::{
     fs::Fs,
+    shell_command::ShellCommand,
     workspace::{ChangeSet, EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
 
@@ -27,9 +30,9 @@ use crate::{
     bridge::{BashkitFsOverKern, KernFsOverBashkit},
     overlay::OverlayChanges,
 };
+use exec::Shell;
 
-/// What the shell is, for every sandbox. (A script runner for JavaScript
-/// joins this note when the sandbox gets one.)
+/// What the shell is, for every sandbox. Each added command's own note follows it.
 const SHELL_NOTE: &str = "Bash is a simulated shell: coreutils, grep, rg, sed, awk, jq, find, diff, tar and friends, but NO git, bun, node, npm, python or network, and no other real programs (for a web page, use the WebFetch tool -- it runs outside the sandbox).";
 
 /// Where edits go in the default sandbox, and how they reach the disk.
@@ -40,7 +43,9 @@ pub struct SandboxWorkspace {
     shell_fs: Arc<dyn bashkit::FileSystem>,
     /// What the tools see: the same files.
     fs: Arc<dyn Fs>,
-    note: String,
+    /// A host's replacement for the built note.
+    note: Option<String>,
+    commands: Vec<Arc<dyn ShellCommand>>,
     changes: Option<Arc<OverlayChanges>>,
 }
 
@@ -54,7 +59,8 @@ impl SandboxWorkspace {
         Ok(Self {
             fs: Arc::new(KernFsOverBashkit::new(shell_fs.clone())),
             shell_fs,
-            note: format!("# Sandbox\nYou run in a SANDBOX. {SHELL_NOTE} {OVERLAY_NOTE}"),
+            note: None,
+            commands: Vec::new(),
             changes: Some(changes),
         })
     }
@@ -66,15 +72,32 @@ impl SandboxWorkspace {
         Self {
             shell_fs: Arc::new(BashkitFsOverKern::new(fs.clone())),
             fs,
-            note: format!("# Sandbox\nYou run in a SANDBOX. {SHELL_NOTE}"),
+            note: None,
+            commands: Vec::new(),
             changes: None,
         }
     }
 
     /// Replace the note the system prompt carries about this workspace.
     pub fn with_prompt_note(mut self, note: impl Into<String>) -> Self {
-        self.note = note.into();
+        self.note = Some(note.into());
         self
+    }
+
+    /// Add a command to the shell. Its note, if any, joins the prompt note. A
+    /// name the shell already has (a builtin, an earlier command): this one wins.
+    pub fn with_command(mut self, command: Arc<dyn ShellCommand>) -> Self {
+        self.commands.retain(|c| c.name() != command.name());
+        self.commands.push(command);
+        self
+    }
+
+    fn shell_world(&self) -> Shell<'_> {
+        Shell {
+            fs: self.shell_fs.clone(),
+            kern_fs: &self.fs,
+            commands: &self.commands,
+        }
     }
 
     /// The file system the shell runs over (the tools' [`Workspace::fs`] is the same files).
@@ -102,7 +125,7 @@ impl Workspace for SandboxWorkspace {
     }
 
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
-        exec::exec(self.shell_fs.clone(), command, &[], opts).await
+        exec::exec(self.shell_world(), command, &[], opts).await
     }
 
     async fn run(&self, argv: &[String], opts: ExecOptions) -> ExecResult {
@@ -113,11 +136,19 @@ impl Workspace for SandboxWorkspace {
                 ..Default::default()
             };
         }
-        exec::exec(self.shell_fs.clone(), RUN_ARGV, argv, opts).await
+        exec::exec(self.shell_world(), RUN_ARGV, argv, opts).await
     }
 
     fn prompt_note(&self) -> String {
-        self.note.clone()
+        if let Some(note) = &self.note {
+            return note.clone();
+        }
+        let mut parts = vec![SHELL_NOTE.to_string()];
+        parts.extend(self.commands.iter().filter_map(|c| c.note()));
+        if self.changes.is_some() {
+            parts.push(OVERLAY_NOTE.into());
+        }
+        format!("# Sandbox\nYou run in a SANDBOX. {}", parts.join(" "))
     }
 
     fn changes(&self) -> Option<Arc<dyn ChangeSet>> {

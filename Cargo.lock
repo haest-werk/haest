@@ -1459,9 +1459,11 @@ dependencies = [
  "kern-core",
  "kern-tools",
  "kern-ts",
+ "kern-workspace",
  "rquickjs",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-util",
 ]

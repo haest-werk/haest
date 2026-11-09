@@ -27,4 +27,7 @@ kern-ts = { workspace = true, optional = true }
 [dev-dependencies]
 # The Code tests call the real built-in tools (Read, Write, Grep, ...) from a run.
 kern-tools = { workspace = true }
+# `js` in a real sandbox shell, end to end.
+kern-workspace = { workspace = true }
+tempfile = "3"
 base64 = "0.22"

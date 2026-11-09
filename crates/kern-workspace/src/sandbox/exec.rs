@@ -8,7 +8,13 @@ use std::{
 };
 
 use bashkit::{Bash, ExecutionLimits, FileSystem, LimitExceeded};
-use kern_core::workspace::{ExecOptions, ExecResult};
+use kern_core::{
+    fs::Fs,
+    shell_command::ShellCommand,
+    workspace::{ExecOptions, ExecResult},
+};
+
+use super::commands::HostCommand;
 
 /// The per-call timeout is the caller's; this only bounds a runaway construct.
 const HARD_DEADLINE: Duration = Duration::from_secs(600);
@@ -23,9 +29,26 @@ const USER: &str = "user";
 const EXIT_TIMEOUT: i32 = 124;
 const EXIT_INTERRUPTED: i32 = 130;
 
-fn shell(fs: Arc<dyn FileSystem>, opts: &ExecOptions) -> Bash {
-    Bash::builder()
-        .fs(fs)
+/// What a sandbox runs one call over: the shell's file system, the same files
+/// as kern sees them, and the host's extra commands.
+pub(crate) struct Shell<'a> {
+    pub fs: Arc<dyn FileSystem>,
+    pub kern_fs: &'a Arc<dyn Fs>,
+    pub commands: &'a [Arc<dyn ShellCommand>],
+}
+
+fn shell(world: &Shell<'_>, opts: &ExecOptions, ends_at: Instant) -> Bash {
+    let mut builder = Bash::builder().fs(world.fs.clone());
+    for command in world.commands {
+        let builtin = HostCommand {
+            command: command.clone(),
+            fs: world.kern_fs.clone(),
+            cancel: opts.cancel.clone(),
+            ends_at,
+        };
+        builder = builder.builtin(command.name(), Box::new(builtin));
+    }
+    builder
         .cwd(opts.cwd.clone())
         .username(USER)
         .limits(
@@ -49,13 +72,13 @@ enum Stopped {
 
 /// Run `script` (with `positional` as `$1...`) and report it the way a real shell would.
 pub(crate) async fn exec(
-    fs: Arc<dyn FileSystem>,
+    world: Shell<'_>,
     script: &str,
     positional: &[String],
     opts: ExecOptions,
 ) -> ExecResult {
     let started = Instant::now();
-    let mut bash = shell(fs, &opts);
+    let mut bash = shell(&world, &opts, started + opts.timeout);
     // A CPU-bound script never yields to the select below, so the deadline and
     // the cancel ALSO raise the shell's own flag from another task: it stops at
     // the next command.

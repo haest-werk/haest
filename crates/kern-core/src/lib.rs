@@ -27,6 +27,7 @@ pub mod pricing;
 pub mod provider;
 pub mod request_prefix;
 pub mod session;
+pub mod shell_command;
 pub mod skills;
 pub mod task_board;
 #[cfg(any(test, feature = "testing"))]
