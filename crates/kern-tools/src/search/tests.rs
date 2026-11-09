@@ -56,11 +56,11 @@ struct Fixture(PathBuf);
 
 impl Fixture {
     fn new() -> Self {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("kern-tools-{}-{nanos}", std::process::id()));
+        // A counter, not the clock: macOS clocks tick in microseconds, so two tests
+        // starting together got ONE dir and the first to finish deleted it under the other.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("kern-tools-{}-{n}", std::process::id()));
         let put = |rel: &str, text: &str| {
             let p = dir.join(rel);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
