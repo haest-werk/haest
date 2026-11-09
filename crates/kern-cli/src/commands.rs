@@ -1,12 +1,14 @@
 //! Slash commands typed at the prompt -- the TS kern host's set, plus /exit.
-//! A line naming a skill (`/review src/a.rs`) expands to that skill's body and
-//! goes to the model; anything else starting with `/` is sent as typed.
+//! Then the mods' commands (/plan is one), then skills: a line naming a skill
+//! (`/review src/a.rs`) expands to that skill's body and goes to the model;
+//! anything else starting with `/` is sent as typed.
 
 use std::sync::Arc;
 
 use kern::{
     Effort,
     ledger::LedgerCap,
+    mods::CommandOutcome,
     session::SessionRecord,
     skills::{discover_skills, load_skill_body},
 };
@@ -50,11 +52,24 @@ pub async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
         "skills" => skills(rt).await,
         "changes" => changes::show(rt).await,
         "apply" => changes::apply(rt).await,
-        "help" => rt.host.info(HELP),
+        "help" => help(rt),
         "exit" | "quit" => return Outcome::Exit,
-        _ => return skill_or_text(rt, name, args, line).await,
+        _ => match rt.mods.command(name, args).await {
+            CommandOutcome::Unknown => return skill_or_text(rt, name, args, line).await,
+            CommandOutcome::Prompt(text) => return Outcome::Send(text),
+            CommandOutcome::Handled => {}
+        },
     }
     Outcome::Done
+}
+
+fn help(rt: &Runtime) {
+    let mods: Vec<String> = rt.mods.commands().iter().map(|c| format!("/{c}")).collect();
+    if mods.is_empty() {
+        return rt.host.info(HELP);
+    }
+    rt.host
+        .info(&format!("{HELP}\nFrom mods: {}", mods.join(", ")));
 }
 
 async fn skill_or_text(rt: &Runtime, name: &str, args: &str, line: &str) -> Outcome {

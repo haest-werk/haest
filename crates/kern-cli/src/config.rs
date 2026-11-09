@@ -13,6 +13,10 @@ use kern::{
 
 use crate::args::Args;
 
+mod features;
+
+pub use features::Features;
+
 pub type Env = HashMap<String, String>;
 
 /// The model when none is configured.
@@ -45,6 +49,7 @@ pub struct Config {
     pub config_dir: PathBuf,
     /// How MCP tools reach the model [KERN_DEFERRED_TOOLS]: proxy (default), grow, off.
     pub deferred_tools: DeferMode,
+    pub features: Features,
     pub debug: bool,
 }
 
@@ -129,6 +134,7 @@ impl Config {
                 None => DeferMode::Proxy,
                 Some(raw) => raw.parse()?,
             },
+            features: Features::from(env)?,
             debug: get(env, "KERN_DEBUG").is_some(),
         })
     }
@@ -157,62 +163,4 @@ impl Config {
 }
 
 #[cfg(test)]
-mod tests {
-    use clap::Parser;
-
-    use super::*;
-
-    fn cfg(argv: &[&str], env: &[(&str, &str)]) -> Result<Config, String> {
-        let args =
-            Args::try_parse_from(std::iter::once("kern").chain(argv.iter().copied())).unwrap();
-        let env: Env = env
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
-        Config::from(&args, &env, PathBuf::from("/work"))
-    }
-
-    #[test]
-    fn a_flag_beats_its_variable_and_the_defaults_fill_the_rest() {
-        let c = cfg(
-            &["-m", "anthropic:x"],
-            &[("KERN_MODEL", "openai:y"), ("HOME", "/h")],
-        )
-        .unwrap();
-        assert_eq!(c.model, "anthropic:x");
-        assert_eq!(c.workspace, WorkspaceMode::Sandbox);
-        assert_eq!(c.data_dir, PathBuf::from("/h/.local/share/kern"));
-        assert_eq!(c.cwd, PathBuf::from("/work"));
-        assert_eq!(cfg(&[], &[]).unwrap().model, DEFAULT_MODEL);
-    }
-
-    #[test]
-    fn garbage_caps_and_levels_are_refused_never_uncapped() {
-        assert!(cfg(&[], &[("KERN_MAX_TURN_USD", "lots")]).is_err());
-        assert!(cfg(&["-e", "extreme"], &[]).is_err());
-        assert!(cfg(&["-w", "shut"], &[]).is_err());
-    }
-
-    #[test]
-    fn token_caps_follow_the_window_unless_set() {
-        let c = cfg(&[], &[]).unwrap();
-        let l = c.limits_for(200_000);
-        assert_eq!(
-            (l.max_request_tokens, l.max_turn_tokens),
-            (180_000, 2_000_000)
-        );
-        let set = cfg(&[], &[("KERN_MAX_REQUEST_TOKENS", "0")]).unwrap();
-        assert_eq!(set.limits_for(200_000).max_request_tokens, 0);
-        assert_eq!(c.compact_at, 400_000);
-    }
-
-    #[test]
-    fn resume_without_an_id_means_the_latest_here() {
-        assert_eq!(cfg(&["-r"], &[]).unwrap().resume, Some(String::new()));
-        assert_eq!(
-            cfg(&["--resume", "abc"], &[]).unwrap().resume,
-            Some("abc".into())
-        );
-        assert_eq!(cfg(&[], &[]).unwrap().resume, None);
-    }
-}
+mod tests;

@@ -91,6 +91,11 @@ impl Host {
         self.term.lock().unwrap().error(text);
     }
 
+    /// A question answered on the next line (see `ask.rs`).
+    pub fn ask(&self, question: &str) {
+        self.term.lock().unwrap().ask(question);
+    }
+
     /// The model's window: KERN_CONTEXT_WINDOW, else the catalog's, else 200K.
     pub fn window(&self, spec: &str) -> u64 {
         self.cfg

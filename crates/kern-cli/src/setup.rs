@@ -9,24 +9,27 @@ use std::{
 
 use anyhow::{Context, anyhow, bail};
 use kern::{
-    Agent, AgentDeps, AgentOptions, Workspace, WorkspaceMode,
+    Agent, AgentDeps, AgentOptions,
     context::{InstructionOpts, PromptInputs, current_git_branch},
-    fs::{Fs, ensure_dir},
+    fs::Fs,
     ledger::Ledger,
-    mcp::{McpHub, load_project_mcp_config},
+    mcp::McpHub,
+    mods::{ModSystemPrompt, Mods},
     providers::{ProviderRegistry, RegistryOptions},
     session::{JsonlSessionFile, SessionRecord, iso_utc},
-    skills::{Skill, SkillOpts, discover_skills, skill_roots},
+    skills::{Skill, SkillOpts, discover_skills},
     task_board::TaskBoard,
-    workspace::{RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace},
+    workspace::RealFs,
 };
 
 use crate::{
     config::{Config, Env},
     host::{Host, Term, now_ms},
+    mods,
     prompt::{CliPrompt, platform},
     session::{latest_in, new_session_id, sessions_dir},
     tools::{CliTools, own_tools},
+    world::{connect_mcp, workspace_for},
 };
 
 pub struct Runtime {
@@ -37,6 +40,7 @@ pub struct Runtime {
     pub skills: Arc<Mutex<Vec<Skill>>>,
     pub skill_opts: SkillOpts,
     pub mcp: Arc<McpHub>,
+    pub mods: Arc<Mods>,
     pub session_id: String,
 }
 
@@ -76,45 +80,6 @@ pub fn init_store(host: &Host, agent: &Agent, id: &str) {
     }
 }
 
-async fn workspace_for(
-    cfg: &Config,
-    fs: &Arc<dyn Fs>,
-    skill_opts: &SkillOpts,
-    spill: &Path,
-) -> anyhow::Result<Arc<dyn Workspace>> {
-    if cfg.workspace == WorkspaceMode::Real {
-        return Ok(Arc::new(RealWorkspace::new()));
-    }
-    // The spill dir is mounted read-write, so the path in a spill notice is real.
-    ensure_dir(fs.as_ref(), spill).await?;
-    let mut mounts = SandboxMounts::new(&cfg.cwd).writable(spill);
-    for dir in skill_roots(fs.as_ref(), skill_opts).await {
-        if fs.exists(&dir).await {
-            mounts = mounts.readable(dir);
-        }
-    }
-    let ws = SandboxWorkspace::open(mounts)
-        .await
-        .context("opening the sandbox")?;
-    Ok(Arc::new(ws))
-}
-
-async fn connect_mcp(host: &Host, fs: &dyn Fs, cwd: &Path) -> Arc<McpHub> {
-    let hub = Arc::new(McpHub::new());
-    match load_project_mcp_config(fs, cwd).await {
-        Ok(configs) if !configs.is_empty() => {
-            hub.connect(&configs, &|m: &str| kern::tool::ToolHost::log(host, m))
-                .await;
-            for f in hub.failures() {
-                host.warn(&format!("MCP server {} did not start: {}", f.name, f.error));
-            }
-        }
-        Ok(_) => {}
-        Err(e) => host.warn(&format!(".mcp.json not loaded: {e}")),
-    }
-    hub
-}
-
 pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Result<Runtime> {
     let fs: Arc<dyn Fs> = Arc::new(RealFs::new());
     let opts = RegistryOptions {
@@ -151,15 +116,22 @@ pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Res
         }
     }));
     let mcp = connect_mcp(&host, fs.as_ref(), &cfg.cwd).await;
+    let mods = mods::load(&host, fs.as_ref()).await;
     let own = own_tools(board.clone(), skills.clone(), fs.clone());
-    let tools = Arc::new(CliTools::new(own, mcp.clone(), cfg.deferred_tools));
+    let features = &cfg.features;
+    let tools = Arc::new(CliTools::new(
+        own,
+        mcp.clone(),
+        mods.clone(),
+        features.code.clone(),
+        cfg.deferred_tools,
+    ));
     let note = workspace.prompt_note();
     let base = PromptInputs {
         cwd: cfg.cwd.to_string_lossy().into_owned(),
         platform: platform(),
         date: iso_utc(now_ms())[..10].to_string(),
         git_branch: current_git_branch(fs.as_ref(), &cfg.cwd).await,
-        tool_names: tools.names(),
         workspace_note: (!note.trim().is_empty()).then_some(note),
         append_system_prompt: cfg.append_system_prompt.clone(),
         ..Default::default()
@@ -168,6 +140,7 @@ pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Res
         fs: fs.clone(),
         host: host.clone(),
         skills: skills.clone(),
+        tools: tools.clone(),
         instructions: InstructionOpts {
             cwd: cfg.cwd.clone(),
             home,
@@ -175,6 +148,7 @@ pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Res
         },
         base,
     };
+    let prompt = ModSystemPrompt::new(Arc::new(prompt), mods.clone());
     let ledger = Arc::new(Mutex::new(Ledger::new(cfg.ledger, host.clone())));
     let mut deps = AgentDeps::new(
         Arc::new(registry),
@@ -186,6 +160,7 @@ pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Res
     deps.spill_dir = Some(spill);
     deps.hooks = host.clone();
     deps.ledger = Some(ledger.clone());
+    deps.web_search = features.web_search.clone();
 
     let mut opts = AgentOptions::new(cfg.model.clone());
     opts.effort = cfg.effort;
@@ -218,6 +193,7 @@ pub async fn build(cfg: Config, env: Env, term: Arc<Mutex<Term>>) -> anyhow::Res
         skills,
         skill_opts,
         mcp,
+        mods,
         session_id,
     })
 }

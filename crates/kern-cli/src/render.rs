@@ -153,6 +153,21 @@ impl<O: Write, E: Write> Renderer<O, E> {
         self.notice(Level::Info, text);
     }
 
+    /// A question the human answers on the next line: stderr with no newline,
+    /// or an `ask` line on stdout in json mode.
+    pub fn ask(&mut self, question: &str) {
+        if self.json {
+            let line = serde_json::json!({"type": "ask", "text": question});
+            let _ = writeln!(self.out, "{line}");
+            let _ = self.out.flush();
+            return;
+        }
+        self.end_line();
+        let text = self.paint(YELLOW, question);
+        let _ = write!(self.err, "{text}");
+        let _ = self.err.flush();
+    }
+
     pub fn warn(&mut self, text: &str) {
         self.notice(Level::Warning, text);
     }

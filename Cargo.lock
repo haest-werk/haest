@@ -1442,6 +1442,7 @@ dependencies = [
  "async-trait",
  "clap",
  "kern-lib",
+ "libc",
  "rustyline",
  "serde_json",
  "tokio",
@@ -1487,8 +1488,10 @@ dependencies = [
 name = "kern-lib"
 version = "0.1.0"
 dependencies = [
+ "kern-code",
  "kern-core",
  "kern-mcp",
+ "kern-mods",
  "kern-providers",
  "kern-tools",
  "kern-workspace",

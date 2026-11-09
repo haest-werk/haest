@@ -8,11 +8,13 @@
 //!   kern models | sessions   what kern knows / what it has saved
 
 mod args;
+mod ask;
 mod changes;
 mod commands;
 mod config;
 mod host;
 mod models;
+mod mods;
 mod prompt;
 mod render;
 mod repl;
@@ -20,6 +22,7 @@ mod run;
 mod session;
 mod setup;
 mod tools;
+mod world;
 
 use std::{
     io::{IsTerminal, Read},
@@ -76,7 +79,7 @@ async fn print_mode(rt: &mut Runtime, args: &Args) -> ExitCode {
         return fail(2, "nothing to ask: give a prompt, or pipe one on stdin");
     };
     let code = match commands::resolve(rt, &input).await {
-        Outcome::Send(text) => run::exit_code(&run::turn(rt, &text).await),
+        Outcome::Send(text) => run::exit_code(&run::human(rt, &text).await),
         Outcome::Done | Outcome::Exit => ExitCode::SUCCESS,
     };
     if let Some(lost) = changes::unapplied(rt).await {

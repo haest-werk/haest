@@ -6,14 +6,14 @@ use rustyline::{DefaultEditor, error::ReadlineError};
 use crate::{
     changes,
     commands::{Outcome, resolve},
-    run::turn,
+    run::human,
     setup::Runtime,
 };
 
 async fn handle(rt: &mut Runtime, line: &str) -> bool {
     match resolve(rt, line).await {
         Outcome::Send(text) => {
-            turn(rt, &text).await;
+            human(rt, &text).await;
             true
         }
         Outcome::Done => true,

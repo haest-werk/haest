@@ -11,11 +11,15 @@ publish.workspace = true
 name = "kern"
 
 [features]
-default = ["providers", "workspace", "tools", "mcp"]
+default = ["providers", "workspace", "tools", "mcp", "code", "mods"]
 providers = ["dep:kern-providers"]
 workspace = ["dep:kern-workspace"]
 tools = ["dep:kern-tools"]
 mcp = ["dep:kern-mcp"]
+# The QuickJS engine: the Code tool and the sandbox `js` command.
+code = ["dep:kern-code"]
+# Mods: JS/TS files that hook tools, prompts and commands; approvals and plan mode.
+mods = ["dep:kern-mods"]
 
 [dependencies]
 kern-core = { workspace = true }
@@ -23,3 +27,5 @@ kern-providers = { workspace = true, optional = true }
 kern-workspace = { workspace = true, optional = true }
 kern-tools = { workspace = true, optional = true }
 kern-mcp = { workspace = true, optional = true }
+kern-code = { workspace = true, optional = true }
+kern-mods = { workspace = true, optional = true }

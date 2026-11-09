@@ -47,6 +47,12 @@ pub async fn turn(rt: &mut Runtime, input: &str) -> TurnEnd {
     end
 }
 
+/// A turn the human started: the mods' `prompt.submit` may rewrite the text first.
+pub async fn human(rt: &mut Runtime, input: &str) -> TurnEnd {
+    let text = rt.mods.rewrite_prompt(input).await;
+    turn(rt, &text).await
+}
+
 /// How a print-mode run exits: 0 answered, 130 interrupted, 1 anything else.
 pub fn exit_code(end: &TurnEnd) -> ExitCode {
     match end.stop_reason {
