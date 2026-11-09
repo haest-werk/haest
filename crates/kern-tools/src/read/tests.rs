@@ -169,6 +169,19 @@ async fn an_offset_past_the_end_is_an_empty_read_not_an_error() {
     ));
 }
 
+#[tokio::test]
+async fn a_closing_newline_ends_the_last_line_and_adds_no_line_of_its_own() {
+    // Ten lines, as `wc -l` counts them: the model must see ten, not eleven.
+    let ws = TestWorkspace::with_files([("/p/ten.txt", "x\n".repeat(10))]);
+    let r = read(&ws, json!({"file_path": "ten.txt"})).await.unwrap();
+    assert_eq!(shown_lines(&r.content), 10);
+    assert_eq!(r.content.lines().last(), Some("10\tx"));
+    // A blank line the file really has is still shown.
+    let ws = TestWorkspace::with_files([("/p/gap.txt", "a\n\n")]);
+    let r = read(&ws, json!({"file_path": "gap.txt"})).await.unwrap();
+    assert_eq!(shown_lines(&r.content), 2);
+}
+
 /// Answers `attachment:<id>` itself; everything else goes to the fs.
 struct Attachments;
 #[async_trait]
