@@ -4,8 +4,9 @@
 //!
 //! PLUG POINT: the host implements [`Inbox`]. It runs the text as a turn when the
 //! agent is idle, or steers it into the turn running
-//! ([`kern_core::AgentControl::steer`]); either way it should count these
-//! turns first, so two agents (or a job loop) cannot start turns forever.
+//! ([`kern_core::AgentControl::steer`]); either way it should pass through an
+//! [`crate::turn_gate::AgentTurnGate`] first, so two agents (or a job loop)
+//! cannot start turns forever.
 
 use tokio::sync::mpsc::UnboundedSender;
 

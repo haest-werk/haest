@@ -13,14 +13,17 @@
 //! | Bash | `shell.exec` | [`bash`] |
 //! | BashOutput, KillShell | `shell.exec` | [`bash_jobs`] over a [`jobs::JobHub`] the host owns |
 //! | WebFetch | `web.fetch` | [`web_fetch`] (PLUG POINT: [`web_fetch::WebFetchNet`]) |
+//! | Agent, SendMessage, StopAgent | `task.spawn`, `agent.unknown` | [`agents`] (PLUG POINT: [`agents::AgentDirectory`]; default [`agents::SubagentHub`]) |
 //!
-//! A turn the human did not start (a job that exited) reaches the model
-//! through the host's [`inbox::Inbox`].
+//! A turn the human did not start (a job that exited, a subagent's message for
+//! main) reaches the model through the host's [`inbox::Inbox`], counted by an
+//! [`turn_gate::AgentTurnGate`].
 
 use std::sync::Arc;
 
 use kern_core::tool::Tool;
 
+pub mod agents;
 pub mod bash;
 pub mod bash_jobs;
 mod canonical;
@@ -36,8 +39,10 @@ pub mod tasks;
 #[cfg(test)]
 mod testkit;
 pub mod tool_search;
+pub mod turn_gate;
 pub mod web_fetch;
 
+pub use agents::{AgentDirectory, SubagentHost, SubagentHub};
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;
 pub use files::{EditTool, WriteTool};
@@ -45,6 +50,7 @@ pub use inbox::Inbox;
 pub use jobs::{JobEvents, JobHub};
 pub use read::{ReadIntercept, ReadTool};
 pub use search::{GlobTool, GrepTool};
+pub use turn_gate::AgentTurnGate;
 pub use web_fetch::{WebFetchNet, WebFetchTool};
 
 /// What a host can change about the built-in tools.
