@@ -1,7 +1,8 @@
 //! The host side of one Code run ([`super::CodeTool`]): what the guest's
 //! `tools.X()` and `see()` reach. Each inner call goes through the gate, is counted
-//! against the cap, runs through kern-core's tool execution (spill, error results
-//! and canonical envelopes exactly as in the loop), has its spend folded in, and
+//! against the cap, runs through kern-core's tool execution (error results and
+//! canonical envelopes exactly as in the loop, but NO spill: the program gets a
+//! big result whole and filters it, which is why Code exists), has its spend folded in, and
 //! is REPORTED as a start / end pair ([`ToolHost::on_inner_call`]) so the
 //! transcript shows it as a row of its own -- the "transparent wrapper" Claude
 //! Code's REPL tool used, adapted: the Code row stays, its calls appear beneath it.
@@ -12,7 +13,7 @@ use futures::FutureExt;
 use kern_core::{
     messages::{MediaPart, ToolCall},
     tool::{JsonMap, NoHost, Tool, ToolContext, ToolHost, ToolOutput},
-    tool_exec::{ToolIndex, execute_tool},
+    tool_exec::{ToolIndex, run_tool},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -144,7 +145,7 @@ impl Bridge {
         ctx.tool_call_id = Some(call.id.clone());
         let out = self
             .gate
-            .run(!tool.read_only(), execute_tool(&self.tools, &call, &ctx))
+            .run(!tool.read_only(), run_tool(&self.tools, &call, &ctx))
             .await;
         if let Some(row) = row {
             row.end(&out);

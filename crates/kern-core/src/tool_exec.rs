@@ -151,7 +151,17 @@ pub fn tool_result_message(call: &ToolCall, out: &ToolOutput) -> ToolResultMessa
     }
 }
 
+/// One call as the loop runs it: [`run_tool`], then a result too big for the
+/// context is spilled to a file.
 pub async fn execute_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> ToolOutput {
+    let out = run_tool(tools, call, ctx).await;
+    spill_if_huge(out, &call.name, ctx).await
+}
+
+/// One call with every error answered as a result, and NO spill: the output
+/// whole. For a caller whose results never enter the context -- the Code
+/// tool's program filters a big result itself, which is the reason it exists.
+pub async fn run_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> ToolOutput {
     let Some(tool) = tools.get(&call.name) else {
         return ToolOutput::error(format!(
             "Unknown tool \"{}\". Available: {}",
@@ -168,7 +178,7 @@ pub async fn execute_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext)
         ));
     }
     match tool.execute(call.input.clone(), ctx).await {
-        Ok(out) => spill_if_huge(out, &call.name, ctx).await,
+        Ok(out) => out,
         Err(e) => {
             // An Input error is a message written FOR the model; anything else gets named.
             let message = e.to_string();

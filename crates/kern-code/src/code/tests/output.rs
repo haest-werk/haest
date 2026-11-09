@@ -32,6 +32,19 @@ async fn promises_inside_the_returned_value_are_awaited_and_the_calls_ran_at_onc
 }
 
 #[tokio::test]
+async fn an_inner_result_reaches_the_program_whole_however_big() {
+    // Over the loop's spill size: the program, not the context, is what reads it.
+    let mut big = Probe::new("mcp__s__big", true, 0);
+    big.answer = ToolOutput::text("x".repeat(50_000));
+    let out = run(
+        &code_over(vec![Arc::new(big)], &[]),
+        "const r = await tools.mcp__s__big({}); return r.length",
+    )
+    .await;
+    assert_eq!(returned(&out), Some(json!(50_000)));
+}
+
+#[tokio::test]
 async fn a_call_nobody_awaited_still_finishes_before_the_result() {
     let ws = MemWorkspace::with_files([("/p/keep.txt", "")]);
     let code = "tools.Write({ file_path: 'late.txt', content: 'landed' }); return 'done'";
