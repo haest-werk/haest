@@ -74,6 +74,24 @@ async fn custom_providers_come_from_providers_json_by_dialect() {
 }
 
 #[tokio::test]
+async fn a_custom_anthropic_provider_sends_its_configured_headers() {
+    let t = FakeTransport::new([FakeReply::status(
+        400,
+        r#"{"error":{"message":"stop here"}}"#,
+    )]);
+    let custom = BTreeMap::from([(
+        "proxy".to_string(),
+        json!({"type": "anthropic", "baseURL": "http://proxy", "apiKey": "x",
+               "headers": {"x-proxy-auth": "tok"}}),
+    )]);
+    let reg = ProviderRegistry::new(HashMap::new(), custom, opts(&t));
+    let r = reg.resolve("proxy:claude").unwrap();
+    collect(r.provider.stream(request(&r.model))).await;
+    let sent = &t.requests()[0].headers;
+    assert!(sent.contains(&("x-proxy-auth".to_string(), "tok".to_string())));
+}
+
+#[tokio::test]
 async fn openai_speaks_responses_while_openrouter_and_custom_servers_speak_chat_completions() {
     let t = FakeTransport::new(
         (0..3).map(|_| FakeReply::status(400, r#"{"error":{"message":"stop here"}}"#)),

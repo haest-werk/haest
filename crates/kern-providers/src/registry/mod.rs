@@ -161,6 +161,7 @@ impl ProviderRegistry {
                     AnthropicOptions {
                         api_key: need(env, "ANTHROPIC_API_KEY", name)?,
                         base_url: env_opt(env, "ANTHROPIC_BASE_URL"),
+                        headers: Vec::new(),
                     },
                     t,
                 )
@@ -226,6 +227,7 @@ impl ProviderRegistry {
                     AnthropicOptions {
                         api_key: cfg.api_key(&self.env),
                         base_url: cfg.base_url.clone(),
+                        headers: cfg.headers.clone(),
                     },
                     t,
                 )

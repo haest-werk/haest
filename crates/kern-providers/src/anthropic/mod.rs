@@ -30,6 +30,8 @@ pub struct AnthropicOptions {
     pub api_key: String,
     /// None = `https://api.anthropic.com`.
     pub base_url: Option<String>,
+    /// Sent on every request (a proxy that authenticates by header).
+    pub headers: Vec<(String, String)>,
 }
 
 pub struct AnthropicProvider {
@@ -54,14 +56,16 @@ impl AnthropicProvider {
 
     fn http_request(&self, req: &ProviderRequest) -> HttpRequest {
         let base = self.opts.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL);
+        let mut headers = vec![
+            ("x-api-key".into(), self.opts.api_key.clone()),
+            ("anthropic-version".into(), API_VERSION.into()),
+            ("content-type".into(), "application/json".into()),
+            ("accept".into(), "application/json".into()),
+        ];
+        headers.extend(self.opts.headers.iter().cloned());
         HttpRequest {
             url: format!("{}/v1/messages", base.trim_end_matches('/')),
-            headers: vec![
-                ("x-api-key".into(), self.opts.api_key.clone()),
-                ("anthropic-version".into(), API_VERSION.into()),
-                ("content-type".into(), "application/json".into()),
-                ("accept".into(), "application/json".into()),
-            ],
+            headers,
             body: build_anthropic_params(req),
         }
     }

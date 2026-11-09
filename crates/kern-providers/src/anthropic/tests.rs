@@ -16,6 +16,7 @@ fn provider(t: &Arc<FakeTransport>) -> AnthropicProvider {
         AnthropicOptions {
             api_key: "k".into(),
             base_url: None,
+            headers: Vec::new(),
         },
         t.clone(),
     )
