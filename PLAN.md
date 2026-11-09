@@ -63,7 +63,7 @@ Every row is exercised by `crates/kern-lib/examples/brain/` against fakes
 | 0 | Repo, workspace, the kern-core contract (messages, provider, tool, fs, workspace, events, deps, agent shell) | done |
 | 1 | T3 loop core, T4 session/compaction/context, T5 providers, T6 workspaces, T7 tools -- in parallel, one worktree each | done |
 | 1b | T8 `kern` CLI on top of wave 1, verified against a real model | done |
-| 2 | MCP client (`rmcp`), code VM + Code tool (`rquickjs`), mods (QuickJS), background jobs, Agent tools (sub-agents), Image tool | library done; CLI wiring of jobs, sub-agents, GenerateImage: T16 in flight |
+| 2 | MCP client (`rmcp`), code VM + Code tool (`rquickjs`), mods (QuickJS), background jobs, Agent tools (sub-agents), Image tool | done; in the CLI too (jobs, subagents, GenerateImage, inbox turns), each checked live |
 | 3 | Brain plug-in proof (custom Transport, Fs, tools, ShutWorkspace, clock, tool_call_start, in one example), parity run, README | done |
 
 ### Parity (2026-11-10)

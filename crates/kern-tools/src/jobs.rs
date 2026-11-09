@@ -153,8 +153,11 @@ impl Shared {
 
 /// One conversation's background jobs. The host owns it and hands it to the
 /// Bash tool ([`crate::BashOptions::jobs`]); dropping it kills every job still
-/// running -- call [`JobHub::kill_all`] before the tokio runtime shuts down,
-/// so the kill gets to run.
+/// running. [`JobHub::kill_all`] only CANCELS: each job's own task does the
+/// kill, on the runtime. A host that exits calls it, then keeps the runtime up
+/// until every killed job has an `exit_code` (a killed job leaves
+/// [`JobHub::running`] at once, before its process is gone; the CLI's
+/// `kill_jobs` waits this way), or the processes outlive it.
 pub struct JobHub {
     shared: Arc<Shared>,
 }
