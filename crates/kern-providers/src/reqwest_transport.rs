@@ -26,6 +26,9 @@ impl Default for ReqwestTransport {
 
 impl ReqwestTransport {
     pub fn new() -> Self {
+        // reqwest takes the process-wide TLS provider; this installs ring only
+        // when the host has not installed one of its own.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         Self::with_client(reqwest::Client::new())
     }
 

@@ -22,7 +22,10 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 async-stream = "0.3"
 bytes = "1"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "stream", "system-proxy"] }
+# TLS on ring, the same provider kern-tools uses: one crypto stack in the
+# binary and no C toolchain (aws-lc-sys needs cmake) to build it.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "stream", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
