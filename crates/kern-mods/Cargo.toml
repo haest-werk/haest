@@ -19,7 +19,8 @@ regex = "1"
 # File mods: the engine (the same build the Code tool links), and TypeScript
 # type stripping in pure Rust (no node, no bun at runtime).
 rquickjs = { version = "0.14", default-features = false, features = ["std"] }
-oxc = { version = "0.96", features = ["transformer", "codegen", "semantic"] }
+# `.ts` mod files: the same type stripper as the sandbox `js` command.
+kern-ts = { workspace = true }
 
 [dev-dependencies]
 kern-core = { workspace = true, features = ["testing"] }

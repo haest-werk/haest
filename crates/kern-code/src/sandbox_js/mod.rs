@@ -38,8 +38,6 @@
 mod guest;
 #[cfg(test)]
 mod tests;
-#[cfg(feature = "typescript")]
-mod typescript;
 
 use std::{
     collections::BTreeMap,
@@ -128,7 +126,7 @@ fn runnable(source: String, path: &Path) -> Result<String, String> {
     let name = path
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    typescript::strip_types(&source, &name)
+    kern_ts::strip_types(&source, &name)
 }
 
 #[cfg(not(feature = "typescript"))]

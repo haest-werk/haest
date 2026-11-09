@@ -17,6 +17,9 @@ kern-providers = { path = "crates/kern-providers" }
 kern-workspace = { path = "crates/kern-workspace" }
 kern-tools = { path = "crates/kern-tools" }
 kern-mcp = { path = "crates/kern-mcp" }
+kern-code = { path = "crates/kern-code" }
+kern-mods = { path = "crates/kern-mods" }
+kern-ts = { path = "crates/kern-ts" }
 kern-lib = { path = "crates/kern-lib" }
 
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time"] }

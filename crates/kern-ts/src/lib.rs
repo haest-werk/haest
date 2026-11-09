@@ -1,4 +1,5 @@
-//! `js file.ts`: the types go before the engine sees the code. QuickJS runs
+//! TypeScript to JavaScript for kern's embedded QuickJS (the sandbox `js`
+//! command, `.ts` mod files): the ONE stripper both use. QuickJS runs
 //! JavaScript only; this is swc's type stripper (the one Node uses for
 //! `--experimental-strip-types`). Plain type annotations are erased in place, so
 //! line numbers -- the `(line N)` of an error -- stay the script's own; syntax
@@ -38,7 +39,7 @@ impl Diagnostics {
 }
 
 /// `source` as JavaScript; Err is why it could not be (a syntax error, first diagnostic first).
-pub(crate) fn strip_types(source: &str, filename: &str) -> Result<String, String> {
+pub fn strip_types(source: &str, filename: &str) -> Result<String, String> {
     match strip(source, filename, "strip-only") {
         Err((ErrorCode::UnsupportedSyntax, _)) => {
             strip(source, filename, "transform").map_err(|(_, why)| why)
