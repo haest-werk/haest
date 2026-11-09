@@ -9,4 +9,14 @@ publish.workspace = true
 
 [dependencies]
 kern-core = { workspace = true }
+tokio = { workspace = true, features = ["fs", "process", "io-util"] }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+# Pinned: pre-1.0, and it sits behind kern's own Fs (PLAN.md D4, R1).
+bashkit = { version = "=0.20.3", default-features = false, features = ["realfs", "jq"] }
+similar = "3"
+libc = "0.2"
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"
