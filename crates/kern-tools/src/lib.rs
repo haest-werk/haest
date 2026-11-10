@@ -97,6 +97,29 @@ pub fn builtin_tools(opts: BuiltinOptions) -> Vec<Arc<dyn Tool>> {
     tools
 }
 
+/// The word that picks a built-in tool (the `tools` setting): `read`, `write`,
+/// `edit`, `bash` (with its job tools), `grep`, `glob`, `web_fetch`.
+pub fn builtin_word(tool: &str) -> Option<&'static str> {
+    Some(match tool {
+        "Read" => "read",
+        "Write" => "write",
+        "Edit" => "edit",
+        "Bash" | "BashOutput" | "KillShell" => "bash",
+        "Grep" => "grep",
+        "Glob" => "glob",
+        "WebFetch" => "web_fetch",
+        _ => return None,
+    })
+}
+
+/// The built-in tools whose word `on` takes, in [`builtin_tools`]' order.
+pub fn builtin_tools_where(on: impl Fn(&str) -> bool, opts: BuiltinOptions) -> Vec<Arc<dyn Tool>> {
+    builtin_tools(opts)
+        .into_iter()
+        .filter(|t| builtin_word(t.name()).is_some_and(&on))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +174,29 @@ mod tests {
         );
         let bash = &tools[3];
         assert!(bash.parameters()["properties"]["run_in_background"].is_object());
+    }
+
+    #[tokio::test]
+    async fn a_host_picks_built_ins_by_word_and_bash_brings_its_job_tools() {
+        let pick = |words: &'static [&str], jobs| {
+            let opts = BuiltinOptions {
+                bash: BashOptions {
+                    jobs,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            names(&builtin_tools_where(|w| words.contains(&w), opts))
+        };
+        assert!(pick(&[], None).is_empty());
+        assert_eq!(pick(&["web_fetch", "read"], None), ["Read", "WebFetch"]);
+        let hub = Arc::new(JobHub::new(Arc::new(inbox::NoInbox)));
+        assert_eq!(
+            pick(&["bash"], Some(hub)),
+            ["Bash", "BashOutput", "KillShell"]
+        );
+        let every = builtin_tools(BuiltinOptions::default());
+        assert!(every.iter().all(|t| builtin_word(t.name()).is_some()));
     }
 
     #[test]

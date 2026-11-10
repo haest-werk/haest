@@ -10,8 +10,9 @@
 //! Unreadable or malformed files are skipped, never an error: one broken skill
 //! must not blank the whole list.
 //!
-//! `agents_dirs` opts into the cross-agent `.agents/skills` convention as well
-//! (`~/.agents/skills` + each project level); kern always does.
+//! `agents_dirs` reads the cross-agent `.agents/skills` convention
+//! (`~/.agents/skills` + each project level); `claude_dirs` reads Claude
+//! Code's (`<config dir>/skills` + each project level's `.claude/skills`).
 
 use std::path::{Path, PathBuf};
 
@@ -34,8 +35,10 @@ pub struct SkillScanRoots {
     pub cwd: PathBuf,
     pub home: PathBuf,
     pub plugins: Vec<PluginRoot>,
-    /// Also read `.agents/skills` at user and project level.
+    /// Read `.agents/skills` at user and project level.
     pub agents_dirs: bool,
+    /// Read `<config dir>/skills` and `.claude/skills` at project level.
+    pub claude_dirs: bool,
 }
 
 /// What a SKILL.md's frontmatter says, before it is placed (source, path, plugin).
@@ -131,14 +134,19 @@ fn scan_plan(roots: &SkillScanRoots) -> Vec<ScanStep> {
     if roots.agents_dirs {
         plan.push(step(roots.home.join(".agents/skills"), SkillSource::User));
     }
-    plan.push(step(roots.config_dir.join("skills"), SkillSource::User));
-    let dot_dirs: &[&str] = if roots.agents_dirs {
-        &[".agents", ".claude"]
-    } else {
-        &[".claude"]
-    };
+    if roots.claude_dirs {
+        plan.push(step(roots.config_dir.join("skills"), SkillSource::User));
+    }
+    // At one level `.claude` is read last, so it wins a tie.
+    let dot_dirs: Vec<&str> = [
+        (roots.agents_dirs, ".agents"),
+        (roots.claude_dirs, ".claude"),
+    ]
+    .into_iter()
+    .filter_map(|(on, d)| on.then_some(d))
+    .collect();
     // Farthest ancestor first so the cwd's own skills overwrite.
-    let project = project_skill_dirs(&roots.cwd, &roots.home, dot_dirs);
+    let project = project_skill_dirs(&roots.cwd, &roots.home, &dot_dirs);
     plan.extend(
         project
             .into_iter()

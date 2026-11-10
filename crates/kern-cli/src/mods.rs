@@ -1,28 +1,27 @@
-//! Mods in the CLI: the built-in approval mod and plan mode, the human's mods
-//! (`<config dir>/mods`) and, with KERN_PROJECT_MODS=1, the project's
-//! (`<cwd>/.kern/mods`). An approval ask goes to the terminal; with no terminal
-//! to ask on, it is a deny that says why. The terminal has one reader at a
-//! time: asks from main and from subagents take turns, and one raised while
-//! the REPL prompt is open waits for it (announced above the prompt).
+//! Approval asks on the terminal. With no terminal to ask on, an ask is a deny
+//! that says why. The terminal has one reader at a time: asks from main and
+//! from subagents take turns, and one raised while the REPL prompt is open
+//! waits for it (announced above the prompt).
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use kern::{
-    fs::Fs,
-    mods::{
-        Answer, ApprovalGate, ApprovalRequest, Decision, ModConfig, ModHost, Mods, Prompter,
-        load_mods,
-    },
-    tool::ToolHost,
+    mods::{Answer, ApprovalRequest, Prompter},
+    runtime::Ui,
 };
-use tokio_util::sync::CancellationToken;
 
-use crate::{ask, host::Host};
+use crate::{ask, term::TermUi};
 
-struct TermPrompter {
-    host: Arc<Host>,
+pub struct TermPrompter {
+    ui: Arc<TermUi>,
     interactive: bool,
+}
+
+impl TermPrompter {
+    pub fn new(ui: Arc<TermUi>, interactive: bool) -> Self {
+        Self { ui, interactive }
+    }
 }
 
 fn question(req: &ApprovalRequest) -> String {
@@ -47,85 +46,37 @@ fn answer(line: Option<&str>) -> Answer {
 impl Prompter for TermPrompter {
     async fn prompt(&self, req: &ApprovalRequest) -> Answer {
         if !self.interactive {
-            self.host.warn(&format!(
-                "Denied {}: {} -- approval needed and there is no terminal to ask on (KERN_APPROVALS=off turns approvals off).",
+            self.ui.warn(&format!(
+                "Denied {}: {} -- approval needed and there is no terminal to ask on (--approvals=false turns approvals off).",
                 req.tool_name, req.description
             ));
             return Answer::Deny;
         }
-        let _terminal = match self.host.stdin.try_lock() {
+        let _terminal = match self.ui.stdin.try_lock() {
             Ok(free) => free,
             Err(_) => {
-                let when = if self.host.prompting() {
+                let when = if self.ui.prompting() {
                     "press Enter at the prompt to answer it"
                 } else {
                     "it is asked after the question before it"
                 };
-                self.host.info(&format!(
+                self.ui.info(&format!(
                     "{} waits for your approval: {} -- {when}.",
                     req.tool_name, req.description
                 ));
-                self.host.stdin.lock().await
+                self.ui.stdin.lock().await
             }
         };
-        self.host.ask(&question(req));
+        self.ui.ask(&question(req));
         answer(ask::read_line().await.as_deref())
     }
 
     fn auto_approved(&self, req: &ApprovalRequest) {
-        self.host.info(&format!(
+        self.ui.info(&format!(
             "Allowed {} (always): {}",
             req.tool_name, req.description
         ));
     }
-}
-
-pub struct CliModHost {
-    host: Arc<Host>,
-    gate: ApprovalGate<TermPrompter>,
-}
-
-impl CliModHost {
-    pub fn new(host: Arc<Host>, interactive: bool) -> Self {
-        let prompter = TermPrompter {
-            host: host.clone(),
-            interactive,
-        };
-        Self {
-            host,
-            gate: ApprovalGate::new(prompter),
-        }
-    }
-}
-
-#[async_trait]
-impl ModHost for CliModHost {
-    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
-        self.gate.ask(req, cancel).await
-    }
-
-    fn notice(&self, text: &str) {
-        self.host.info(text);
-    }
-
-    fn error(&self, text: &str) {
-        self.host.error(text);
-    }
-
-    fn log(&self, message: &str) {
-        ToolHost::log(self.host.as_ref(), message);
-    }
-}
-
-/// Every mod this conversation runs, the human's ask on the terminal when there
-/// is one. Plan mode announces its own switches (through `notice`).
-pub async fn load(host: &Arc<Host>, fs: &dyn Fs) -> Arc<Mods> {
-    let cfg = &host.cfg;
-    let mut mods = ModConfig::new(&cfg.cwd, cfg.workspace, &cfg.config_dir);
-    mods.approvals = cfg.features.approvals;
-    mods.project_mods = cfg.features.project_mods;
-    let mod_host = Arc::new(CliModHost::new(host.clone(), ask::interactive()));
-    Arc::new(load_mods(mods, fs, mod_host).await)
 }
 
 #[cfg(test)]

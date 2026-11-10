@@ -5,11 +5,13 @@
 //!
 //! | Plug point | Where |
 //! |---|---|
+//! | `settings::settle` over brain's own TOML (a profile per kind of run) | config.rs |
+//! | `builtin_tools_where`: the built-ins the settings pick | `run_tools` |
 //! | `Transport` (the node's gateway); OpenRouter routing off | gateway.rs, `models` |
 //! | `Fs` (BrainFs, writes staged) under `SandboxWorkspace::over` | brain_fs.rs, `runs::work` |
 //! | `ShutWorkspace` (the dream run) | `runs::dream` |
 //! | Read with a `ReadIntercept` (`attachment:<id>`) | tools.rs |
-//! | Bash without background jobs | `work_tools` |
+//! | Bash without background jobs | `run_tools` |
 //! | a host tool (`brain_search`, `dream_material`) | tools.rs |
 //! | `AgentHooks::now_ms` (a pause does not count) | host.rs, `runs::work` + `runs::clock` |
 //! | `LoopEvent::ToolCallStart` (narration taken out of the doc) | doc.rs |
@@ -17,6 +19,7 @@
 //! | Agent tools over the host's own `AgentDirectory` | tools.rs |
 
 mod brain_fs;
+mod config;
 mod doc;
 mod gateway;
 mod host;
@@ -29,10 +32,12 @@ use kern::{
     AgentDeps, ModelResolver, ResolvedModel, Workspace,
     provider::parse_model_spec,
     providers::{CompatFlavor, CompatOptions, CompatProvider, RetryPolicy},
+    settings::Settings,
     tool::Tool,
     tools::{
-        BashOptions, BashTool, EditTool, ReadTool, WriteTool,
+        BashOptions, BuiltinOptions,
         agents::{AgentRef, AgentToolOptions, SubagentTypes, agent_tools_with},
+        builtin_tools_where,
     },
 };
 
@@ -78,26 +83,34 @@ pub fn models(gateway: Arc<Gateway>) -> Arc<dyn ModelResolver> {
     })
 }
 
-/// brain's tools for a work run: kern's Read (with the attachment intercept),
-/// Write, Edit and Bash (no background jobs), brain's own search, and the agent
-/// tools over the node's hub. Glob and Grep are brain's own on the node.
-pub fn work_tools(attachments: Arc<Attachments>, agents: Arc<NodeAgents>) -> Vec<Arc<dyn Tool>> {
-    let mut tools: Vec<Arc<dyn Tool>> = vec![
-        Arc::new(ReadTool::new(Some(attachments))),
-        Arc::new(WriteTool),
-        Arc::new(EditTool),
-        Arc::new(BashTool::new(BashOptions {
+/// A run's tools as its settings pick them: kern's built-ins (`tools`; Read
+/// with the attachment intercept, Bash with no background jobs, no WebFetch:
+/// the node fetches), brain's own (`own`), and the agent tools over the node's
+/// hub (`agents`).
+pub fn run_tools(
+    s: &Settings,
+    own: Vec<Arc<dyn Tool>>,
+    attachments: Arc<Attachments>,
+    agents: Arc<NodeAgents>,
+) -> Vec<Arc<dyn Tool>> {
+    let opts = BuiltinOptions {
+        read_intercept: Some(attachments),
+        bash: BashOptions {
             jobs: None,
             ..Default::default()
-        })),
-        Arc::new(brain_search()),
-    ];
-    tools.extend(agent_tools_with(
-        agents,
-        AgentRef::main(),
-        true,
-        agent_options(),
-    ));
+        },
+        web_fetch: None,
+    };
+    let mut tools = builtin_tools_where(|w| s.tools.has(w), opts);
+    tools.extend(own);
+    if s.agents {
+        tools.extend(agent_tools_with(
+            agents,
+            AgentRef::main(),
+            true,
+            agent_options(),
+        ));
+    }
     tools
 }
 

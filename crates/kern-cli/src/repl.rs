@@ -17,7 +17,7 @@ use crate::{
     changes,
     commands::{Outcome, resolve},
     run::{agent_turns, human},
-    setup::Runtime,
+    term::Runtime,
 };
 
 async fn handle(rt: &mut Runtime, line: &str) -> bool {
@@ -79,7 +79,7 @@ pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()>
             String::new()
         },
     ));
-    let history = rt.host.cfg.data_dir.join("history");
+    let history = rt.host.settings.data_dir.join("history");
     let mut editor = DefaultEditor::new()?;
     let _ = editor.load_history(&history);
     let above = above_prompt(&mut editor);
@@ -102,15 +102,15 @@ pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()>
             }
         }
         // The terminal is the prompt's: an approval ask waits for it to return.
-        let host = rt.host.clone();
-        let terminal = host.stdin.lock().await;
-        host.term.lock().unwrap().set_above(above.clone());
+        let ui = rt.ui.clone();
+        let terminal = ui.stdin.lock().await;
+        ui.term.lock().unwrap().set_above(above.clone());
         let (ed, line) = tokio::task::spawn_blocking(move || {
             let line = editor.readline("> ");
             (editor, line)
         })
         .await?;
-        host.term.lock().unwrap().set_above(None);
+        ui.term.lock().unwrap().set_above(None);
         drop(terminal);
         editor = ed;
         go_on = match line {

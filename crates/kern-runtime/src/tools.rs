@@ -1,15 +1,18 @@
-//! The tools a CLI conversation offers, composed as the TS kern does
-//! (`host/runtime.ts`): the built-ins (Bash with background jobs in the real
-//! workspace), the task list, Skill, GenerateImage (with an OpenRouter key) and
-//! every connected MCP server's tools; the Code tool over them; all of it
-//! inside the mods' `tool.before` / `tool.after` hooks -- [`WrappedTools`], the
-//! list every subagent starts from. Main's list ([`CliTools`]) adds main's
-//! agent tools, NOT mod-wrapped, and defers the MCP schemas behind ToolSearch
-//! (KERN_DEFERRED_TOOLS) so a big server does not ride on every call.
+//! The tools a conversation offers, composed as the TS kern does
+//! (`host/runtime.ts`), each only when its setting turns it on: the built-ins
+//! `tools` names (Bash with background jobs in the real workspace), the task
+//! list, Skill, GenerateImage (`image`), and every connected MCP server's tools
+//! (`mcp`); the Code tool over them (`code`); all of it inside the mods'
+//! `tool.before` / `tool.after` hooks -- [`WrappedTools`], the list every
+//! subagent starts from. Main's list ([`MainTools`]) adds main's agent tools
+//! (`agents`), NOT mod-wrapped, and defers the MCP schemas behind ToolSearch
+//! (`deferred_tools`) so a big server does not ride on every call.
 
 use std::sync::{Arc, Mutex};
 
-use kern::{
+use kern_settings::{ImageConfig, Picked};
+
+use crate::kern::{
     code::{CodeTool, code_tool_names},
     deferred_tools::{DeferMode, ToolDeferral},
     fs::Fs,
@@ -21,37 +24,40 @@ use kern::{
     tools::{
         BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub,
         agents::{AgentRef, SubagentHub},
-        builtin_tools,
+        builtin_tools_where,
         skill::create_skill_tool,
         tasks::create_task_tools,
         tool_search::deferral_tools,
     },
 };
 
-use crate::config::ImageConfig;
-
-/// Everything but MCP: built-ins (BashOutput / KillShell with a job hub), task
-/// tools, Skill (over the host's disk: a user skill lives outside any sandbox
-/// mount) and GenerateImage.
+/// Everything but MCP: the built-ins, task tools, Skill (over the host's disk:
+/// a user skill lives outside any sandbox mount) and GenerateImage.
 pub fn own_tools(
+    picked: &Picked,
     board: Arc<TaskBoard>,
     skills: Arc<Mutex<Vec<Skill>>>,
     host_fs: Arc<dyn Fs>,
     jobs: Option<Arc<JobHub>>,
     image: Option<&ImageConfig>,
 ) -> Vec<Arc<dyn Tool>> {
-    let mut tools = builtin_tools(BuiltinOptions {
+    let opts = BuiltinOptions {
         bash: BashOptions {
             jobs,
             ..Default::default()
         },
         ..Default::default()
-    });
-    tools.extend(create_task_tools(board));
-    tools.push(create_skill_tool(
-        move || skills.lock().unwrap().clone(),
-        host_fs,
-    ));
+    };
+    let mut tools = builtin_tools_where(|w| picked.has(w), opts);
+    if picked.has("tasks") {
+        tools.extend(create_task_tools(board));
+    }
+    if picked.has("skill") {
+        tools.push(create_skill_tool(
+            move || skills.lock().unwrap().clone(),
+            host_fs,
+        ));
+    }
     if let Some(cfg) = image {
         let opts = ImageToolOptions {
             base_url: cfg.base_url.clone(),
@@ -82,7 +88,7 @@ impl ToolSource for BaseTools {
 pub struct WrappedTools {
     base: Arc<BaseTools>,
     mods: Arc<Mods>,
-    /// The extra names Code may call (KERN_CODE_TOOLS); None = no Code tool.
+    /// The extra names Code may call (`code_tools`); None = no Code tool.
     code: Option<Vec<String>>,
 }
 
@@ -140,15 +146,16 @@ impl ToolSource for Deferred {
     }
 }
 
-/// Main's list (TS `tools()`): the wrapped tools and main's agent tools, deferred.
-pub struct CliTools {
+/// Main's list (TS `tools()`): the wrapped tools and main's agent tools
+/// (none when `agents` is off), deferred.
+pub struct MainTools {
     wrapped: Arc<WrappedTools>,
-    hub: Arc<SubagentHub>,
+    hub: Option<Arc<SubagentHub>>,
     deferral: Arc<ToolDeferral>,
 }
 
-impl CliTools {
-    pub fn new(wrapped: Arc<WrappedTools>, hub: Arc<SubagentHub>, mode: DeferMode) -> Self {
+impl MainTools {
+    pub fn new(wrapped: Arc<WrappedTools>, hub: Option<Arc<SubagentHub>>, mode: DeferMode) -> Self {
         Self {
             wrapped,
             hub,
@@ -157,10 +164,65 @@ impl CliTools {
     }
 }
 
-impl ToolSource for CliTools {
+impl ToolSource for MainTools {
     fn tools(&self) -> Vec<Arc<dyn Tool>> {
         let mut all = self.wrapped.tools();
-        all.extend(self.hub.tools_for(&AgentRef::main()));
+        if let Some(hub) = &self.hub {
+            all.extend(hub.tools_for(&AgentRef::main()));
+        }
         advertise(&self.deferral, &all)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use kern_settings::{
+        registry::find,
+        value::{check, split_list},
+    };
+
+    use super::*;
+
+    fn picked(raw: &str) -> Picked {
+        let words = check(find("tools").unwrap(), raw).unwrap();
+        Picked::from_words(split_list(&words))
+    }
+
+    fn names(tools: &[Arc<dyn Tool>]) -> Vec<String> {
+        tools.iter().map(|t| t.name().to_string()).collect()
+    }
+
+    #[test]
+    fn the_settings_words_are_the_words_kern_tools_picks_by() {
+        let all = picked("all");
+        let built = builtin_tools_where(|w| all.has(w), BuiltinOptions::default());
+        assert_eq!(
+            names(&built),
+            ["Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch"]
+        );
+    }
+
+    #[test]
+    fn task_and_skill_tools_follow_their_words() {
+        let board = Arc::new(TaskBoard::new(|_| {}));
+        let fs: Arc<dyn Fs> = Arc::new(crate::kern::MemFs::new());
+        let skills = Arc::new(Mutex::new(Vec::new()));
+        let build = |raw| {
+            own_tools(
+                &picked(raw),
+                board.clone(),
+                skills.clone(),
+                fs.clone(),
+                None,
+                None,
+            )
+        };
+        assert!(build("none").is_empty());
+        let with = names(&build("tasks,skill"));
+        assert!(
+            with.contains(&"Skill".to_string()) && with.len() > 1,
+            "{with:?}"
+        );
+        assert!(!with.contains(&"Read".to_string()));
     }
 }

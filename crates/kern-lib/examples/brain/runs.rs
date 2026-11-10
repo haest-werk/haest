@@ -6,7 +6,7 @@ use kern::{
     Agent, AgentOptions, ShutWorkspace, StopReason, TurnEnd,
     session::{SessionRecord, SessionSink, replay},
     tool::Tool,
-    tools::{BashOptions, BashTool, ReadTool, agents::AgentRef},
+    tools::agents::AgentRef,
     workspace::SandboxWorkspace,
 };
 use serde_json::json;
@@ -14,12 +14,12 @@ use serde_json::json;
 use crate::{
     CWD, MODEL, T0,
     brain_fs::BrainFs,
-    deps,
+    brain_search, config, deps,
     doc::DocSink,
     gateway::{Call, Gateway, reply, tool_names, tool_schema},
     host::{BrainHost, NodeSessions, PAUSE_MS, RunClock},
+    run_tools,
     tools::{Attachments, DREAM_MEMORY, DreamMaterial, NodeAgents, SUB_ANSWER, SUB_COST_USD},
-    work_tools,
 };
 
 const NARRATION: &str = "Let me read the attachment first.";
@@ -39,9 +39,17 @@ pub async fn work(gateway: &Arc<Gateway>) {
     )]));
     let agents = Arc::new(NodeAgents::default());
     let sessions = Arc::new(NodeSessions::default());
+    let s = config::settings(None);
     // The owner pauses before the second model call; brain's clock leaves it out.
-    let host = Arc::new(BrainHost::new(RunClock::new(T0, true), sessions.clone(), 2));
-    let tools = work_tools(attachments.clone(), agents.clone());
+    let clock = RunClock::new(T0, true);
+    let host = Arc::new(BrainHost::new(
+        clock,
+        sessions.clone(),
+        2,
+        config::limits(&s),
+    ));
+    let own: Vec<Arc<dyn Tool>> = vec![Arc::new(brain_search())];
+    let tools = run_tools(&s, own, attachments.clone(), agents.clone());
     let workspace = Arc::new(SandboxWorkspace::over(brain.clone()));
     let mut agent = Agent::new(
         deps(gateway, tools, workspace, host.clone()),
@@ -108,7 +116,8 @@ pub async fn work(gateway: &Arc<Gateway>) {
             "the run holds no key"
         );
     }
-    // Bash without jobs: no run_in_background in its schema, no job tools.
+    // brain.toml picked these; bash came without jobs: no run_in_background
+    // in its schema, no job tools. Grep, Glob and WebFetch stayed off.
     let offered = tool_names(&requests[0].body);
     assert_eq!(
         offered,
@@ -189,18 +198,20 @@ pub async fn work(gateway: &Arc<Gateway>) {
     assert_eq!(replayed.messages, agent.messages);
 }
 
-/// A dream run: no files, no shell, only what the node hands it.
+/// A dream run (brain.toml's `dream` profile): no files, no shell, only what
+/// the node hands it.
 pub async fn dream(gateway: &Arc<Gateway>) {
+    let s = config::settings(Some("dream"));
+    let sessions = Arc::new(NodeSessions::default());
     let host = Arc::new(BrainHost::new(
         RunClock::new(T0, true),
-        Arc::new(NodeSessions::default()),
+        sessions,
         0,
+        config::limits(&s),
     ));
-    let tools: Vec<Arc<dyn Tool>> = vec![
-        Arc::new(DreamMaterial),
-        Arc::new(ReadTool::new(None)),
-        Arc::new(BashTool::new(BashOptions::default())),
-    ];
+    let agents = Arc::new(NodeAgents::default());
+    let own: Vec<Arc<dyn Tool>> = vec![Arc::new(DreamMaterial)];
+    let tools = run_tools(&s, own, Arc::new(Attachments::new(&[])), agents);
     let deps = deps(gateway, tools, Arc::new(ShutWorkspace), host);
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));
     gateway.script([
@@ -217,7 +228,13 @@ pub async fn dream(gateway: &Arc<Gateway>) {
     let mut doc = DocSink::default();
     let end = agent.run("Dream.", &mut doc).await;
     assert_eq!(end, TurnEnd::new(StopReason::EndTurn));
-    assert_eq!(gateway.take_requests().len(), 2);
+    let requests = gateway.take_requests();
+    assert_eq!(requests.len(), 2);
+    // The profile took write, edit and the agents away.
+    assert_eq!(
+        tool_names(&requests[0].body),
+        ["Read", "Bash", "dream_material"]
+    );
     assert!(doc.output("d1").content.contains(DREAM_MEMORY));
     assert!(doc.output("d2").is_error, "no file system in a dream");
     let d3 = doc.output("d3");
@@ -230,12 +247,15 @@ pub async fn dream(gateway: &Arc<Gateway>) {
 /// The counter-proof for the clock: the same pause on a clock that counts it
 /// stops the turn at its cap, before the third model call.
 pub async fn clock(gateway: &Arc<Gateway>) {
+    let limits = config::limits(&config::settings(None));
+    assert_eq!(limits.max_turn_ms, 60_000, "brain.toml's one-minute cap");
     let host = Arc::new(BrainHost::new(
         RunClock::new(T0, false),
         Arc::new(NodeSessions::default()),
         2,
+        limits,
     ));
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(crate::brain_search())];
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(brain_search())];
     let deps = deps(gateway, tools, Arc::new(ShutWorkspace), host.clone());
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));
     gateway.script([

@@ -11,7 +11,7 @@ publish.workspace = true
 name = "kern"
 
 [features]
-default = ["providers", "workspace", "tools", "mcp", "code", "mods"]
+default = ["providers", "workspace", "tools", "mcp", "code", "mods", "settings"]
 providers = ["dep:kern-providers"]
 workspace = ["dep:kern-workspace"]
 tools = ["dep:kern-tools"]
@@ -20,6 +20,10 @@ mcp = ["dep:kern-mcp"]
 code = ["dep:kern-code"]
 # Mods: JS/TS files that hook tools, prompts and commands; approvals and plan mode.
 mods = ["dep:kern-mods"]
+# Settings: one name per setting, from TOML files, KERN_* variables and flags.
+settings = ["dep:kern-settings", "tools"]
+# The whole conversation built from its settings, behind a host's UI (the CLI's base).
+runtime = ["dep:kern-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods"]
 
 [dependencies]
 kern-core = { workspace = true }
@@ -29,6 +33,8 @@ kern-tools = { workspace = true, optional = true }
 kern-mcp = { workspace = true, optional = true }
 kern-code = { workspace = true, optional = true }
 kern-mods = { workspace = true, optional = true }
+kern-settings = { workspace = true, optional = true }
+kern-runtime = { workspace = true, optional = true }
 
 # The brain example (examples/brain): what a host implementing the plug points needs.
 [dev-dependencies]

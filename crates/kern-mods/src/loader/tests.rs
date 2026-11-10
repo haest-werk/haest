@@ -9,7 +9,19 @@ use crate::testkit::*;
 const HOME_MODS: &str = "/home/cfg/mods";
 
 fn cfg(workspace: WorkspaceMode) -> ModConfig {
-    ModConfig::new(CWD, workspace, "/home/cfg")
+    let mut cfg = ModConfig::new(CWD, workspace, "/home/cfg");
+    cfg.user_mods = true;
+    cfg
+}
+
+#[test]
+fn no_mod_dir_is_read_unless_asked_for() {
+    let bare = ModConfig::new(CWD, WorkspaceMode::Sandbox, "/home/cfg");
+    assert!(bare.mod_dirs().is_empty());
+    assert_eq!(
+        cfg(WorkspaceMode::Sandbox).mod_dirs(),
+        [PathBuf::from(HOME_MODS)]
+    );
 }
 
 #[tokio::test]

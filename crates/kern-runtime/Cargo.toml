@@ -1,0 +1,25 @@
+[package]
+name = "kern-runtime"
+description = "kern assembled from its settings: providers, workspace, tools, MCP, mods, subagents and the session file, for any host with a UI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+kern-core = { workspace = true }
+kern-providers = { workspace = true }
+kern-workspace = { workspace = true }
+kern-tools = { workspace = true }
+kern-mcp = { workspace = true }
+kern-code = { workspace = true }
+kern-mods = { workspace = true }
+kern-settings = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+# Session ids: random v4 UUIDs.
+uuid = { version = "1", features = ["v4"] }

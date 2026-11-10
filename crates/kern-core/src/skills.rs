@@ -51,6 +51,25 @@ pub struct Skill {
     pub path: PathBuf,
 }
 
+/// Which skill dirs kern reads. None of them is read unless the host says so.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SkillSources {
+    /// `~/.agents/skills` and every project level's `.agents/skills`.
+    pub agents: bool,
+    /// `<config dir>/skills` and every project level's `.claude/skills`.
+    pub claude: bool,
+    /// Claude Code's installed, enabled plugins.
+    pub plugins: bool,
+}
+
+impl SkillSources {
+    pub const ALL: Self = Self {
+        agents: true,
+        claude: true,
+        plugins: true,
+    };
+}
+
 /// Where kern looks for skills.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillOpts {
@@ -58,15 +77,21 @@ pub struct SkillOpts {
     pub home: PathBuf,
     /// The user-level config dir (`~/.claude` unless the host says otherwise).
     pub config_dir: PathBuf,
+    pub sources: SkillSources,
 }
 
 async fn kern_scan_roots(fs: &dyn Fs, opts: &SkillOpts) -> SkillScanRoots {
+    let plugins = match opts.sources.plugins {
+        true => read_installed_plugins(&opts.config_dir, fs).await,
+        false => Vec::new(),
+    };
     SkillScanRoots {
         config_dir: opts.config_dir.clone(),
         cwd: opts.cwd.clone(),
         home: opts.home.clone(),
-        plugins: read_installed_plugins(&opts.config_dir, fs).await,
-        agents_dirs: true,
+        plugins,
+        agents_dirs: opts.sources.agents,
+        claude_dirs: opts.sources.claude,
     }
 }
 

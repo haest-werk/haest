@@ -9,17 +9,13 @@ use kern::{
     Effort,
     ledger::LedgerCap,
     mods::CommandOutcome,
+    runtime::{init_store, now_ms, open_store, sessions::new_session_id},
     session::SessionRecord,
     skills::{discover_skills, load_skill_body},
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::{
-    changes,
-    host::now_ms,
-    session::new_session_id,
-    setup::{Runtime, init_store, open_store},
-};
+use crate::{changes, term::Runtime};
 
 pub enum Outcome {
     /// Send this to the model as the human's turn.
@@ -174,7 +170,7 @@ fn budget(rt: &mut Runtime, args: &str) {
 /// Fresh session: new id, new file, empty history and task list; the ledger carries over.
 fn clear(rt: &mut Runtime) {
     let id = new_session_id();
-    match open_store(&rt.fs, &rt.host.cfg.data_dir, &id) {
+    match open_store(&rt.fs, &rt.host.settings.data_dir, &id) {
         Ok(store) => rt.host.swap_store(Arc::new(store)),
         Err(e) => return rt.host.error(&format!("Not cleared: {e}")),
     }

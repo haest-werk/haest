@@ -7,21 +7,22 @@
 //!     (KERN_MAX_AGENT_TURNS); held items ride in with the human's next message;
 //!   - nothing is dropped: an item waits here until a turn takes it.
 //!
-//! The REPL never runs one under an open prompt: it is announced above the
-//! prompt and runs when the prompt returns (see `repl.rs`).
+//! A host with an input line never runs one under an open prompt: the
+//! [`Ui`](crate::Ui) announces it and the host runs it when the prompt returns.
 
 use std::{collections::VecDeque, sync::Arc};
 
-use kern::{
-    AgentControl,
-    tools::{AgentTurnGate, Inbox},
+use crate::{
+    Host,
+    kern::{
+        AgentControl,
+        tools::{AgentTurnGate, Inbox},
+    },
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use crate::host::Host;
-
 /// The sending end the jobs and the subagent hub hold: queues, and tells the human.
-pub struct CliInbox {
+pub struct InboxSender {
     tx: UnboundedSender<String>,
     host: Arc<Host>,
 }
@@ -36,15 +37,9 @@ fn headline(text: &str) -> String {
     head
 }
 
-impl Inbox for CliInbox {
+impl Inbox for InboxSender {
     fn submit(&self, text: String) {
-        let head = headline(&text);
-        if self.host.prompting() {
-            self.host
-                .info(&format!("{head}\nkern takes it when you press Enter."));
-        } else {
-            self.host.info(&head);
-        }
+        self.host.ui.arrival(&headline(&text));
         let _ = self.tx.send(text);
     }
 }
@@ -58,11 +53,11 @@ pub struct InboxQueue {
 }
 
 /// The conversation's inbox: the end jobs and agents submit to, the end its turns take from.
-pub fn inbox(host: &Arc<Host>, max_agent_turns: u32) -> (Arc<CliInbox>, InboxQueue) {
+pub fn inbox(host: &Arc<Host>, max_agent_turns: u32) -> (Arc<InboxSender>, InboxQueue) {
     let (tx, rx) = unbounded_channel();
     let notice = host.clone();
     let gate = AgentTurnGate::new(max_agent_turns, move |text| notice.warn(text));
-    let sender = CliInbox {
+    let sender = InboxSender {
         tx,
         host: host.clone(),
     };

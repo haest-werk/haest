@@ -1,4 +1,4 @@
-//! `kern`: the command line agent.
+//! `kern`: the command line agent, a terminal over `kern::runtime`.
 //!
 //!   kern                     a conversation in this directory
 //!   kern "fix the test"      the same, starting with that
@@ -6,40 +6,41 @@
 //!   kern --json -p "..."     every loop event as one JSON line
 //!   kern -r [id]             continue a session (the latest here without an id)
 //!   kern models | sessions   what kern knows / what it has saved
+//!   kern settings            every setting, its value and where it came from
 
 mod agents;
 mod args;
 mod ask;
 mod changes;
 mod commands;
-mod config;
-mod host;
-mod inbox;
 mod models;
 mod mods;
-mod prompt;
 mod render;
 mod repl;
 mod run;
 mod session;
-mod setup;
-mod tools;
-mod world;
+mod show;
+mod term;
 
 use std::{
+    collections::HashMap,
     io::{IsTerminal, Read},
+    path::PathBuf,
     process::ExitCode,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
-use clap::Parser;
+use kern::{
+    runtime::{BuildOptions, sessions, world},
+    settings::{LoadInputs, Loaded},
+    workspace::RealFs,
+};
 
 use crate::{
     args::{Args, Command},
     commands::Outcome,
-    config::{Config, Env},
-    render::Renderer,
-    setup::Runtime,
+    mods::TermPrompter,
+    term::{Runtime, TermUi},
 };
 
 fn fail(code: u8, msg: impl std::fmt::Display) -> ExitCode {
@@ -47,22 +48,26 @@ fn fail(code: u8, msg: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(code)
 }
 
-fn subcommand(cmd: &Command, cfg: &Config) -> ExitCode {
+fn subcommand(cmd: &Command, loaded: &Loaded) -> ExitCode {
+    let s = &loaded.settings;
     match cmd {
         Command::Models => print!("{}", models::render(kern::providers::Catalog::builtin())),
         Command::Sessions { here } => {
-            let dir = session::sessions_dir(&cfg.data_dir);
-            let cwd = cfg.cwd.to_string_lossy();
-            let rows: Vec<String> = session::list_sessions(&dir)
+            let dir = sessions::sessions_dir(&s.data_dir);
+            let cwd = s.cwd.to_string_lossy();
+            let rows: Vec<String> = sessions::list_sessions(&dir)
                 .iter()
-                .filter(|s| !here || s.cwd == cwd)
-                .map(|s| session::format_row(s, !here))
+                .filter(|info| !here || info.cwd == cwd)
+                .map(|info| session::format_row(info, !here))
                 .collect();
             if rows.is_empty() {
                 eprintln!("No saved sessions{}.", if *here { " here" } else { "" });
             }
             rows.iter().for_each(|r| println!("{r}"));
         }
+        Command::Settings => show::settings_report(loaded)
+            .iter()
+            .for_each(|l| println!("{l}")),
     }
     ExitCode::SUCCESS
 }
@@ -122,27 +127,49 @@ async fn shutdown(rt: &Runtime) {
     }
 }
 
+/// The working directory: `-C`, else the process's; real and a directory.
+fn working_dir(args: &Args) -> Result<PathBuf, String> {
+    let dir = match &args.cwd {
+        Some(d) => d.clone(),
+        None => std::env::current_dir().map_err(|_| "the current directory is gone".to_string())?,
+    };
+    match std::fs::canonicalize(&dir) {
+        Ok(real) if real.is_dir() => Ok(real),
+        _ => Err(format!("{} is not a directory", dir.display())),
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
-    let args = Args::parse();
-    let env: Env = std::env::vars().collect();
-    let Ok(cwd) = std::env::current_dir() else {
-        return fail(2, "the current directory is gone");
-    };
-    let mut cfg = match Config::from(&args, &env, cwd) {
+    let cli = match args::parse_from(std::env::args_os()) {
         Ok(c) => c,
+        Err(e) => e.exit(),
+    };
+    let args = &cli.args;
+    let env: HashMap<String, String> = std::env::vars().collect();
+    let cwd = match working_dir(args) {
+        Ok(d) => d,
         Err(e) => return fail(2, e),
     };
-    match std::fs::canonicalize(&cfg.cwd) {
-        Ok(dir) if dir.is_dir() => cfg.cwd = dir,
-        _ => return fail(2, format!("{} is not a directory", cfg.cwd.display())),
-    }
+    let inputs = LoadInputs {
+        cwd,
+        env: &env,
+        flags: &cli.settings,
+    };
+    let loaded = match kern::settings::load(&RealFs::new(), inputs).await {
+        Ok(l) => l,
+        Err(e) => return fail(2, e),
+    };
     if let Some(cmd) = &args.command {
-        return subcommand(cmd, &cfg);
+        return subcommand(cmd, &loaded);
     }
     let print = args.print || args.json || !std::io::stdin().is_terminal();
-    let term = Arc::new(Mutex::new(Renderer::terminal(args.json)));
-    let mut rt = match setup::build(cfg, env, term).await {
+    let ui = Arc::new(TermUi::new(args.json));
+    let prompter = TermPrompter::new(ui.clone(), ask::interactive());
+    let opts = BuildOptions {
+        resume: args.resume.clone(),
+    };
+    let mut rt = match kern::runtime::build(loaded.settings, env, ui, prompter, opts).await {
         Ok(rt) => rt,
         Err(e) => return fail(2, format!("{e:#}")),
     };
@@ -153,7 +180,7 @@ async fn main() -> ExitCode {
         );
     }
     let code = if print {
-        print_mode(&mut rt, &args).await
+        print_mode(&mut rt, args).await
     } else {
         match repl::repl(&mut rt, args.prompt_text()).await {
             Ok(()) => ExitCode::SUCCESS,

@@ -7,7 +7,7 @@
 
 use kern::core::workspace::{Change, ChangeKind, ChangeSet};
 
-use crate::setup::Runtime;
+use crate::term::Runtime;
 
 /// Diff text shown by /changes before it is cut; the full list is always shown.
 const MAX_DIFF_CHARS: usize = 12_000;
@@ -89,7 +89,7 @@ pub async fn apply(rt: &Runtime) {
         format!(
             "Applied {} change(s) to {}:\n{}",
             report.applied.len(),
-            rt.host.cfg.cwd.display(),
+            rt.host.settings.cwd.display(),
             lines_of(&report.applied)
         )
     };

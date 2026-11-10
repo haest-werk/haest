@@ -22,7 +22,35 @@ fn opts() -> SkillOpts {
         cwd: "/r/proj".into(),
         home: "/r/home".into(),
         config_dir: "/r/home/.claude".into(),
+        sources: SkillSources::ALL,
     }
+}
+
+#[tokio::test]
+async fn each_skill_source_is_read_only_when_asked_for() {
+    let fixture = || {
+        fs_with(&[
+            ("/r/home/.claude/skills", "u1", "", "Body text."),
+            ("/r/home/.agents/skills", "u2", "", "Body text."),
+            ("/r/proj/.agents/skills", "p1", "", "Body text."),
+            ("/r/proj/.claude/skills", "p2", "", "Body text."),
+        ])
+    };
+    let found = |sources| async move {
+        let skills = discover_skills(&fixture(), &SkillOpts { sources, ..opts() }).await;
+        names(&skills).join(",")
+    };
+    let agents = SkillSources {
+        agents: true,
+        ..Default::default()
+    };
+    let claude = SkillSources {
+        claude: true,
+        ..Default::default()
+    };
+    assert_eq!(found(SkillSources::default()).await, "");
+    assert_eq!(found(agents).await, "p1,u2");
+    assert_eq!(found(claude).await, "p2,u1");
 }
 
 fn names(skills: &[Skill]) -> Vec<&str> {
@@ -184,6 +212,7 @@ fn roots(plugins: bool, agents_dirs: bool) -> SkillScanRoots {
             vec![]
         },
         agents_dirs,
+        claude_dirs: true,
     }
 }
 

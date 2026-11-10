@@ -19,9 +19,7 @@ use kern::{
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-/// The turn's time cap.
-pub const TIME_CAP_MS: u64 = 60_000;
-/// How long the owner keeps the run paused: ten times the cap.
+/// How long the owner keeps the run paused: ten times brain.toml's time cap.
 pub const PAUSE_MS: u64 = 600_000;
 
 /// brain's PauseGate, reduced to its clock: wall time without the pauses.
@@ -102,15 +100,23 @@ pub struct BrainHost {
     /// The owner pauses the run before this model call (1-based); 0 = never.
     pause_before_call: usize,
     calls: AtomicUsize,
+    /// The run's caps, from its settings.
+    limits: TurnLimits,
 }
 
 impl BrainHost {
-    pub fn new(clock: RunClock, sessions: Arc<dyn SessionSink>, pause_before_call: usize) -> Self {
+    pub fn new(
+        clock: RunClock,
+        sessions: Arc<dyn SessionSink>,
+        pause_before_call: usize,
+        limits: TurnLimits,
+    ) -> Self {
         Self {
             clock,
             sessions,
             pause_before_call,
             calls: AtomicUsize::new(0),
+            limits,
         }
     }
 }
@@ -134,10 +140,7 @@ impl AgentHooks for BrainHost {
     }
 
     fn limits(&self, _spec: &str) -> Option<TurnLimits> {
-        Some(TurnLimits {
-            max_turn_ms: TIME_CAP_MS,
-            ..Default::default()
-        })
+        Some(self.limits.clone())
     }
 
     fn now_ms(&self) -> u64 {

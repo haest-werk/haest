@@ -1,40 +1,40 @@
-//! The CLI as a kern host: the one object the loop, the ledger and the task
-//! board report to. It persists every record to the session file, prints what
-//! the human must hear, answers the per-model questions from the catalog, and
-//! compacts the conversation before a model call that would overflow.
+//! A conversation's host: the one object the loop, the ledger and the task
+//! board report to. It persists every record to the session file, tells the
+//! human through the [`Ui`], answers the per-model questions from the catalog,
+//! and compacts the conversation before a model call that would overflow.
 
 use std::{
     collections::HashSet,
-    io::{Stderr, Stdout},
     sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
-use kern::{
-    Agent, AgentHooks, Effort,
-    catalog::{InputModality, Reasoning},
-    compaction::{CompactionConfig, compact, needs_compaction},
-    ledger::{LedgerHooks, LedgerSnapshot},
-    limits::TurnLimits,
-    messages::MediaPart,
-    providers::Catalog,
-    session::{JsonlSessionFile, SessionRecord, SessionSink},
-    tool::ToolHost,
-};
+use kern_settings::Settings;
 use tokio_util::sync::CancellationToken;
 
-use crate::{config::Config, render::Renderer};
-
-pub type Term = Renderer<Stdout, Stderr>;
+use crate::{
+    Ui,
+    kern::{
+        Agent, AgentHooks, Effort,
+        catalog::{InputModality, Reasoning},
+        compaction::{CompactionConfig, compact, needs_compaction},
+        ledger::{LedgerHooks, LedgerSnapshot},
+        limits::TurnLimits,
+        messages::MediaPart,
+        providers::Catalog,
+        session::{JsonlSessionFile, SessionRecord, SessionSink},
+        tool::ToolHost,
+    },
+};
 
 /// Messages kept verbatim after a compaction summary (the TS kern's number).
 const KEEP_RECENT: usize = 12;
 const COMPACT_SHARE: f64 = 0.8;
 
 pub struct Host {
-    pub cfg: Config,
+    pub settings: Settings,
     pub catalog: &'static Catalog,
-    pub term: Arc<Mutex<Term>>,
+    pub ui: Arc<dyn Ui>,
     store: Mutex<Arc<JsonlSessionFile>>,
     /// The model the system prompt names and a subagent starts on; kept in step
     /// with the agent's spec.
@@ -42,22 +42,19 @@ pub struct Host {
     /// The effort a subagent starts on; kept in step with the agent's.
     effort: Mutex<Option<Effort>>,
     effort_notes: Mutex<HashSet<String>>,
-    /// Who reads the terminal: the REPL prompt, or one approval ask at a time.
-    pub stdin: tokio::sync::Mutex<()>,
 }
 
 impl Host {
-    pub fn new(cfg: Config, term: Arc<Mutex<Term>>, store: Arc<JsonlSessionFile>) -> Self {
-        let (model, effort) = (cfg.model.clone(), cfg.effort);
+    pub fn new(settings: Settings, ui: Arc<dyn Ui>, store: Arc<JsonlSessionFile>) -> Self {
+        let (model, effort) = (settings.model.clone(), settings.effort);
         Self {
-            cfg,
+            settings,
             catalog: Catalog::builtin(),
-            term,
+            ui,
             store: Mutex::new(store),
             model: Mutex::new(model),
             effort: Mutex::new(effort),
             effort_notes: Mutex::default(),
-            stdin: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -94,31 +91,21 @@ impl Host {
         *self.effort.lock().unwrap() = effort;
     }
 
-    /// The REPL prompt is open (a line printed now lands above it).
-    pub fn prompting(&self) -> bool {
-        self.term.lock().unwrap().prompting()
-    }
-
     pub fn info(&self, text: &str) {
-        self.term.lock().unwrap().info(text);
+        self.ui.info(text);
     }
 
     pub fn warn(&self, text: &str) {
-        self.term.lock().unwrap().warn(text);
+        self.ui.warn(text);
     }
 
     pub fn error(&self, text: &str) {
-        self.term.lock().unwrap().error(text);
+        self.ui.error(text);
     }
 
-    /// A question answered on the next line (see `ask.rs`).
-    pub fn ask(&self, question: &str) {
-        self.term.lock().unwrap().ask(question);
-    }
-
-    /// The model's window: KERN_CONTEXT_WINDOW, else the catalog's, else 200K.
+    /// The model's window: the `context_window` setting, else the catalog's, else 200K.
     pub fn window(&self, spec: &str) -> u64 {
-        self.cfg
+        self.settings
             .window(self.catalog.model(spec).map(|m| m.context_window))
     }
 
@@ -126,7 +113,7 @@ impl Host {
         CompactionConfig {
             context_window: self.window(spec),
             threshold: COMPACT_SHARE,
-            ceiling: (self.cfg.compact_at > 0).then_some(self.cfg.compact_at),
+            ceiling: (self.settings.compact_at > 0).then_some(self.settings.compact_at),
             keep_recent: KEEP_RECENT,
         }
     }
@@ -165,15 +152,15 @@ pub fn now_ms() -> u64 {
 
 impl ToolHost for Host {
     fn log(&self, message: &str) {
-        if self.cfg.debug {
-            self.term.lock().unwrap().info(&format!("[kern] {message}"));
+        if self.settings.debug {
+            self.ui.debug(message);
         }
     }
 }
 
 #[async_trait]
 impl AgentHooks for Host {
-    fn on_message(&self, msg: &kern::Message) {
+    fn on_message(&self, msg: &crate::kern::Message) {
         self.append(SessionRecord::Message {
             t: now_ms(),
             message: msg.clone(),
@@ -187,7 +174,7 @@ impl AgentHooks for Host {
     }
 
     fn limits(&self, spec: &str) -> Option<TurnLimits> {
-        Some(self.cfg.limits_for(self.window(spec)))
+        Some(self.settings.limits_for(self.window(spec)))
     }
 
     fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
@@ -229,7 +216,7 @@ impl LedgerHooks for Host {
     }
 }
 
-/// The cost line's session total.
+/// The conversation's spend so far.
 pub fn session_usd(agent: &Agent) -> Option<f64> {
     let ledger = agent.deps().ledger.as_ref()?;
     Some(ledger.lock().unwrap().snapshot().usd)

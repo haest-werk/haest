@@ -1,7 +1,7 @@
 //! Loading the mods of one conversation, in this order:
 //!   1. built-in: the approval mod (`approvals`, with auto mode's judge when the
 //!      host has one) and plan mode (`/plan`);
-//!   2. the human's own: `<config_dir>/mods/*.ts|js|mjs`;
+//!   2. the human's own: `<config_dir>/mods/*.ts|js|mjs` -- with `user_mods`;
 //!   3. the project's: `<cwd>/.kern/mods/*.ts|js|mjs` -- ONLY with `project_mods`.
 //!      A repo's mod is code from that repo running inside the host with full
 //!      trust; cloning a repo must never be enough to run it.
@@ -29,6 +29,8 @@ pub struct ModConfig {
     pub workspace: WorkspaceMode,
     /// The host's own config directory: the human's mods are in `<config_dir>/mods`.
     pub config_dir: PathBuf,
+    /// Load `<config_dir>/mods`. Off by default: a host asks for them.
+    pub user_mods: bool,
     /// Also load `<cwd>/.kern/mods`. Off by default (see the module doc).
     pub project_mods: bool,
     /// The built-in approval mod. On by default.
@@ -49,6 +51,7 @@ impl ModConfig {
             cwd: cwd.into(),
             workspace,
             config_dir: config_dir.into(),
+            user_mods: false,
             project_mods: false,
             approvals: true,
             auto: None,
@@ -58,7 +61,10 @@ impl ModConfig {
 
     /// Where mod files are looked for, in load order.
     pub fn mod_dirs(&self) -> Vec<PathBuf> {
-        let mut dirs = vec![self.config_dir.join("mods")];
+        let mut dirs = Vec::new();
+        if self.user_mods {
+            dirs.push(self.config_dir.join("mods"));
+        }
         if self.project_mods {
             dirs.push(self.cwd.join(".kern").join("mods"));
         }

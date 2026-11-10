@@ -82,7 +82,7 @@ impl Tool for SkillTool {
 mod tests {
     use kern_core::{
         fs::MemFs,
-        skills::{SkillOpts, discover_skills},
+        skills::{SkillOpts, SkillSources, discover_skills},
         workspace::ShutWorkspace,
     };
 
@@ -103,6 +103,7 @@ mod tests {
             cwd: "/w".into(),
             home: "/h".into(),
             config_dir: "/h/.claude".into(),
+            sources: SkillSources::ALL,
         };
         let skills = discover_skills(fs.as_ref(), &opts).await;
         create_skill_tool(move || skills.clone(), fs)

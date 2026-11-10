@@ -8,7 +8,7 @@ fn contents(files: &[InstructionFile]) -> Vec<&str> {
 }
 
 #[tokio::test]
-async fn by_default_only_agents_md_is_read_and_claude_files_wait_for_an_opt_in() {
+async fn each_kind_of_instruction_file_is_read_only_when_asked_for() {
     let fs = MemFs::with_files([
         ("/r/home/.claude/CLAUDE.md", "claude user"),
         ("/r/home/.agents/AGENTS.md", "agents user"),
@@ -21,8 +21,20 @@ async fn by_default_only_agents_md_is_read_and_claude_files_wait_for_an_opt_in()
         cwd: "/r/home/repo".into(),
         home: "/r/home".into(),
         config_dir: None,
+        agents_files: false,
         claude_files: false,
     };
+    assert!(find_instruction_files(&fs, &opts).await.is_empty());
+    opts.claude_files = true;
+    let files = find_instruction_files(&fs, &opts).await;
+    let claude_only = [
+        "claude user",
+        "repo claude",
+        "repo dot claude",
+        "repo local",
+    ];
+    assert_eq!(contents(&files), claude_only);
+    (opts.agents_files, opts.claude_files) = (true, false);
     let files = find_instruction_files(&fs, &opts).await;
     assert_eq!(contents(&files), ["agents user", "repo agents"]);
     opts.claude_files = true;
@@ -52,6 +64,7 @@ async fn user_files_first_then_outermost_project_dir_down_to_cwd_empty_files_ski
         cwd: "/r/home/repo/pkg".into(),
         home: "/r/home".into(),
         config_dir: Some("/r/home/.claude".into()),
+        agents_files: true,
         claude_files: true,
     };
     let files = find_instruction_files(&fs, &opts).await;
@@ -70,6 +83,7 @@ async fn outside_home_the_chain_runs_from_the_root_and_long_files_are_cut() {
         cwd: "/w".into(),
         home: "/home/u".into(),
         config_dir: None,
+        agents_files: true,
         claude_files: false,
     };
     let files = find_instruction_files(&fs, &opts).await;
@@ -102,6 +116,29 @@ fn the_prompt_carries_environment_instructions_and_skills_and_omits_empty_sectio
     let bare = build_system_prompt(&PromptInputs::default());
     assert!(!bare.contains("# Instructions"));
     assert!(!bare.contains("\n\n\n"));
+}
+
+#[test]
+fn the_prompt_teaches_only_the_tools_the_call_has_and_the_identity_can_be_replaced() {
+    let with = |tools: &[&str]| {
+        build_system_prompt(&PromptInputs {
+            tool_names: tools.iter().map(|t| t.to_string()).collect(),
+            ..Default::default()
+        })
+    };
+    let none = with(&[]);
+    assert!(!none.contains("Tool discipline") && none.contains("- Tools: none"));
+    let all = with(&["Read", "Write", "Edit", "Bash", "Grep", "Glob"]);
+    assert!(all.contains("- Use Read, Grep and Glob to look at code; use Bash for builds"));
+    assert!(all.contains("Write only for new files"));
+    let read = with(&["Read"]);
+    assert!(read.contains("- Use Read to look at code.\n- Paths may be"));
+    assert!(!read.contains("Edit") && !read.contains("Bash for"));
+    let own = build_system_prompt(&PromptInputs {
+        identity: Some("You are brain's reader.".into()),
+        ..Default::default()
+    });
+    assert!(own.starts_with("You are brain's reader.") && !own.contains("You are kern"));
 }
 
 #[tokio::test]

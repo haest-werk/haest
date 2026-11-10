@@ -9,9 +9,12 @@ use std::{
     time::Duration,
 };
 
-use kern::{LoopEvent, StopReason, TurnEnd};
+use kern::{
+    LoopEvent, StopReason, TurnEnd,
+    runtime::{session_usd, world::kill_jobs},
+};
 
-use crate::{host::session_usd, setup::Runtime, world::kill_jobs};
+use crate::term::Runtime;
 
 /// How often print mode looks again while a background subagent still works.
 const SETTLE_POLL: Duration = Duration::from_millis(250);
@@ -39,7 +42,7 @@ fn watch_interrupts(rt: &Runtime) -> tokio::task::JoinHandle<()> {
 }
 
 pub async fn turn(rt: &mut Runtime, input: &str) -> TurnEnd {
-    let term = rt.host.term.clone();
+    let term = rt.ui.term.clone();
     let watcher = watch_interrupts(rt);
     let control = rt.agent.control();
     let mut usage = None;
@@ -62,7 +65,7 @@ pub async fn turn(rt: &mut Runtime, input: &str) -> TurnEnd {
     watcher.abort();
     if let Some(u) = usage {
         let total = session_usd(&rt.agent);
-        rt.host.term.lock().unwrap().usage(&u, total);
+        rt.ui.term.lock().unwrap().usage(&u, total);
     }
     rt.host.flush().await;
     end
