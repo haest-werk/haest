@@ -24,7 +24,7 @@ fn tool(tools: &[Arc<dyn Tool>], name: &str) -> Arc<dyn Tool> {
 async fn planning_with_the_task_tools_is_persisted_and_survives_a_revive() {
     let fs = Arc::new(MemFs::new());
     let file = Arc::new(JsonlSessionFile::new(fs.clone(), Path::new("/data"), "s1").unwrap());
-    file.init("c1", "/w", 0);
+    file.create("c1", "/w", 0).await.unwrap();
     let sink = file.clone();
     let board = Arc::new(TaskBoard::new(move |tasks| {
         sink.append(&SessionRecord::Tasks {

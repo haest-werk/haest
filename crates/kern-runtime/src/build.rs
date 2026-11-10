@@ -20,13 +20,13 @@ use crate::{
         now_ms,
         providers::{CustomProviders, ProviderRegistry, RegistryOptions, RoutingEnv},
         session::SessionRecord,
-        skills::{Skill, SkillOpts, scan_roots, skill_scan_roots, skills_in},
+        skills::{Skill, SkillScanRoots, scan_roots, skill_scan_roots, skills_in},
         task_board::TaskBoard,
         tool::Tool,
     },
     mods,
     prompt::{AgentPrompt, RuntimePrompt, skill_opts},
-    store::{init_store, open_session, restore},
+    store::{create, open_session, record_start, restore},
     tools::{MainTools, WrappedTools, image_options, own_tools},
     world::{World, connect_mcp, jobs_for, workspace_for},
 };
@@ -70,11 +70,11 @@ pub struct BuildOptions {
     pub resume: Option<String>,
 }
 
-/// What the conversation finds in its world: the skills, the workspace (its
-/// sandbox mounts the skill dirs, worked out once with them), the prompt's
+/// What the conversation finds in its world: the skill roots and the skills
+/// in them, the workspace (its sandbox mounts those same roots), the prompt's
 /// fixed parts.
 struct Found {
-    skill_opts: SkillOpts,
+    skill_roots: SkillScanRoots,
     skills: Arc<Mutex<Vec<Skill>>>,
     workspace: Arc<dyn Workspace>,
     prompt: Arc<RuntimePrompt>,
@@ -86,13 +86,12 @@ async fn find(
     fs: &Arc<dyn Fs>,
     spill: &Path,
 ) -> anyhow::Result<Found> {
-    let skill_opts = skill_opts(&host.settings);
-    let roots = skill_scan_roots(fs.as_ref(), &skill_opts).await;
-    let skills = Arc::new(Mutex::new(skills_in(&roots, fs.as_ref()).await));
-    let workspace = workspace_for(&host.settings, world, &scan_roots(&roots), spill).await?;
+    let skill_roots = skill_scan_roots(fs.as_ref(), &skill_opts(&host.settings)).await;
+    let skills = Arc::new(Mutex::new(skills_in(fs.as_ref(), &skill_roots).await));
+    let workspace = workspace_for(&host.settings, world, &scan_roots(&skill_roots), spill).await?;
     let prompt = Arc::new(RuntimePrompt::new(host, fs, &skills, workspace.as_ref()).await);
     Ok(Found {
-        skill_opts,
+        skill_roots,
         skills,
         workspace,
         prompt,
@@ -131,25 +130,23 @@ where
         routing,
     } = inputs;
     let fs = world.fs();
-    let (session_id, store, resuming) =
-        open_session(&fs, &settings, opts.resume.as_deref(), ui.clone()).await?;
-    let host = Arc::new(Host::new(settings, ui.clone(), store));
+    let session = open_session(&fs, &settings, opts.resume.as_deref(), ui.clone()).await?;
+    let spill = settings.spill_dir(session.store.session_id());
+    let host = Arc::new(Host::new(settings, ui.clone(), session.store.clone()));
     let s = &host.settings;
-    let spill = s.spill_dir(&session_id);
 
-    // The MCP servers and the mods start while the files are found.
-    let (mcp, mods, found) = tokio::join!(
+    // Whatever can fail runs before anything starts, so a failed build has
+    // started nothing and left no file: the files are found, then a new
+    // session's file is created. Then the MCP servers and the mods start,
+    // together; from there on nothing fails.
+    let found = find(&host, &world, &fs, &spill).await?;
+    if session.saved.is_none() {
+        create(&session.store, &s.cwd).await?;
+    }
+    let (mcp, mods) = tokio::join!(
         connect_mcp(&host, &world, mcp_servers),
         mods::load(&host, fs.as_ref(), prompter),
-        find(&host, &world, &fs, &spill),
     );
-    let found = match found {
-        Ok(found) => found,
-        Err(e) => {
-            mcp.close().await;
-            return Err(e);
-        }
-    };
 
     let board = task_board(&host);
     let (sender, inbox) = inbox::inbox(&host, s.max_agent_turns);
@@ -220,14 +217,15 @@ where
 
     let mut agent_opts = AgentOptions::new(s.model.clone());
     agent_opts.effort = s.effort;
-    if resuming {
-        restore(&host, &ledger, &board, &mut agent_opts).await?;
+    let resumed = session.saved.is_some();
+    if let Some(saved) = session.saved {
+        restore(&host, saved, &ledger, &board, &mut agent_opts);
     }
     let agent = Agent::new(deps, agent_opts);
     host.set_model(&agent.model_spec);
     host.set_effort(agent.effort);
-    if !resuming {
-        init_store(&host, &agent, &session_id);
+    if !resumed {
+        record_start(&host, &agent);
     }
     Ok(Runtime {
         agent,
@@ -236,10 +234,9 @@ where
         fs,
         board,
         skills: found.skills,
-        skill_opts: found.skill_opts,
+        skill_roots: found.skill_roots,
         mcp,
         mods,
-        session_id,
         inbox,
         agents,
         jobs,

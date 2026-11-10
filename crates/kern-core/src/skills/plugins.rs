@@ -19,7 +19,7 @@ async fn read_json(fs: &dyn Fs, path: &Path) -> Option<Value> {
     serde_json::from_slice(&fs.read(path).await.ok()?).ok()
 }
 
-pub async fn read_installed_plugins(config_dir: &Path, fs: &dyn Fs) -> Vec<PluginRoot> {
+pub async fn read_installed_plugins(fs: &dyn Fs, config_dir: &Path) -> Vec<PluginRoot> {
     let installed = read_json(fs, &config_dir.join("plugins/installed_plugins.json")).await;
     let settings = read_json(fs, &config_dir.join("settings.json")).await;
     let enabled = settings.as_ref().and_then(|s| s.get("enabledPlugins"));
@@ -71,7 +71,7 @@ mod tests {
             ("/cfg/settings.json", settings.to_string()),
         ]);
         assert_eq!(
-            read_installed_plugins(Path::new("/cfg"), &fs).await,
+            read_installed_plugins(&fs, Path::new("/cfg")).await,
             [PluginRoot {
                 name: "a".into(),
                 path: "/p/a/2".into()
@@ -83,7 +83,7 @@ mod tests {
     async fn a_config_dir_without_plugins_is_empty_not_an_error() {
         let fs = MemFs::new();
         assert!(
-            read_installed_plugins(Path::new("/missing"), &fs)
+            read_installed_plugins(&fs, Path::new("/missing"))
                 .await
                 .is_empty()
         );

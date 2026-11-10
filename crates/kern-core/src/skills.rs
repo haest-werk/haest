@@ -78,15 +78,16 @@ pub struct SkillOpts {
 /// list): [`skills_in`] scans them, [`scan_roots`] lists the dirs a sandbox mounts.
 pub async fn skill_scan_roots(fs: &dyn Fs, opts: &SkillOpts) -> SkillScanRoots {
     let plugins = match opts.sources.plugins {
-        true => read_installed_plugins(&opts.config_dir, fs).await,
+        true => read_installed_plugins(fs, &opts.config_dir).await,
         false => Vec::new(),
     };
     SkillScanRoots {
         config_dir: opts.config_dir.clone(),
         cwd: opts.cwd.clone(),
         home: opts.home.clone(),
+        agents: opts.sources.agents,
+        claude: opts.sources.claude,
         plugins,
-        sources: opts.sources,
     }
 }
 
@@ -100,12 +101,12 @@ fn by_name(a: &Skill, b: &Skill) -> Ordering {
 
 /// Every skill kern can offer, sorted by name.
 pub async fn discover_skills(fs: &dyn Fs, opts: &SkillOpts) -> Vec<Skill> {
-    skills_in(&skill_scan_roots(fs, opts).await, fs).await
+    skills_in(fs, &skill_scan_roots(fs, opts).await).await
 }
 
 /// Every skill under `roots`, sorted by name.
-pub async fn skills_in(roots: &SkillScanRoots, fs: &dyn Fs) -> Vec<Skill> {
-    let mut skills = scan_skills(roots, fs).await;
+pub async fn skills_in(fs: &dyn Fs, roots: &SkillScanRoots) -> Vec<Skill> {
+    let mut skills = scan_skills(fs, roots).await;
     skills.sort_by(by_name);
     skills
 }

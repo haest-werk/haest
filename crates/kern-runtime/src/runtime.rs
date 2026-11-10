@@ -1,6 +1,7 @@
 //! A built conversation, and what a host changes on it while it runs: the
 //! model, the effort, a fresh session (/clear), the skill list. Each change
-//! goes to the agent, the host and the session file together.
+//! goes to the agent, the host and the session file together; the host's own
+//! setters are crate-private, so these are the only way to make one.
 
 use std::sync::{Arc, Mutex};
 
@@ -16,12 +17,11 @@ use crate::{
         mods::Mods,
         now_ms,
         session::SessionRecord,
-        skills::{Skill, SkillOpts, discover_skills},
+        skills::{Skill, SkillScanRoots, skills_in},
         task_board::TaskBoard,
         tools::{JobHub, agents::SubagentHub},
     },
-    sessions::new_session_id,
-    store::{init_store, open_store},
+    store::{new_session, record_start},
 };
 
 pub struct Runtime<U: ?Sized> {
@@ -32,10 +32,10 @@ pub struct Runtime<U: ?Sized> {
     pub fs: Arc<dyn Fs>,
     pub board: Arc<TaskBoard>,
     pub skills: Arc<Mutex<Vec<Skill>>>,
-    pub skill_opts: SkillOpts,
+    /// Where the skills were found at the start; the sandbox mounts these.
+    pub(crate) skill_roots: SkillScanRoots,
     pub mcp: Arc<McpHub>,
     pub mods: Arc<Mods>,
-    pub session_id: String,
     /// Turns the human did not start, waiting for main.
     pub inbox: InboxQueue,
     /// Main's subagents (none run when `agents` is off).
@@ -45,6 +45,11 @@ pub struct Runtime<U: ?Sized> {
 }
 
 impl<U: ?Sized> Runtime<U> {
+    /// The session file records go to now; /clear changes it.
+    pub fn session_id(&self) -> String {
+        self.host.store().session_id().to_string()
+    }
+
     /// Main's model from the next call on; a spec that does not resolve
     /// changes nothing. The session file records it, so a resume keeps it.
     pub fn set_model(&mut self, spec: &str) -> anyhow::Result<()> {
@@ -75,28 +80,23 @@ impl<U: ?Sized> Runtime<U> {
         });
     }
 
-    /// A fresh session: new id, new file, empty history and task list. The
-    /// ledger carries over. If the new file cannot be opened, nothing changes.
-    pub fn clear(&mut self) -> anyhow::Result<()> {
-        let id = new_session_id();
-        let store = open_store(
-            &self.fs,
-            &self.host.settings.data_dir,
-            &id,
-            self.host.ui.clone(),
-        )?;
+    /// A fresh session: new id, new file, empty history and task list; the
+    /// ledger carries over. The new file is on disk, header first, before
+    /// anything switches to it: if it cannot be created, nothing changes.
+    pub async fn clear(&mut self) -> anyhow::Result<()> {
+        let store = new_session(&self.fs, &self.host.settings, self.host.ui.clone()).await?;
         self.host.swap_store(Arc::new(store));
         self.agent.replace_history(Vec::new());
-        init_store(&self.host, &self.agent, &id);
         self.board.restore(Vec::new());
-        self.session_id = id;
+        record_start(&self.host, &self.agent);
         Ok(())
     }
 
-    /// The skill dirs read again; the list the Skill tool and the prompt
-    /// offer from now on.
+    /// The skill dirs found at the start, read again: a skill added to one
+    /// is offered from now on. A plugin installed since the start is not (its
+    /// dir is not in the sandbox); a new conversation picks it up.
     pub async fn rescan_skills(&self) -> Vec<Skill> {
-        let found = discover_skills(self.fs.as_ref(), &self.skill_opts).await;
+        let found = skills_in(self.fs.as_ref(), &self.skill_roots).await;
         *self.skills.lock().unwrap() = found.clone();
         found
     }

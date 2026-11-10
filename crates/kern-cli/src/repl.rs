@@ -72,7 +72,7 @@ pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()>
         "kern {} -- {} -- {workspace} workspace -- session {}{}\n/help for commands, Ctrl+D to quit.",
         env!("CARGO_PKG_VERSION"),
         rt.agent.model_spec,
-        rt.session_id,
+        rt.session_id(),
         if restored > 0 {
             format!(" ({restored} messages restored)")
         } else {

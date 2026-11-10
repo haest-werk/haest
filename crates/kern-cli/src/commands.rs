@@ -35,7 +35,7 @@ pub async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
             h.compact_now(&mut rt.agent, &CancellationToken::new(), false)
                 .await;
         }
-        "clear" => clear(rt),
+        "clear" => clear(rt).await,
         "skills" => skills(rt).await,
         "changes" => changes::show(rt).await,
         "apply" => changes::apply(rt).await,
@@ -145,12 +145,12 @@ fn budget(rt: &mut Runtime, args: &str) {
     rt.host.info(&text);
 }
 
-fn clear(rt: &mut Runtime) {
-    match rt.clear() {
+async fn clear(rt: &mut Runtime) {
+    match rt.clear().await {
         Ok(()) => rt
             .host
-            .info(&format!("Started a fresh session ({}).", rt.session_id)),
-        Err(e) => rt.host.error(&format!("Not cleared: {e}")),
+            .info(&format!("Started a fresh session ({}).", rt.session_id())),
+        Err(e) => rt.host.error(&format!("Not cleared: {e:#}")),
     }
 }
 

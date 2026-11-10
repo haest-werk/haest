@@ -1,6 +1,6 @@
 //! The session file a run writes: which one (new, named, or the latest in the
-//! cwd), opened with its write errors going to the [`Ui`], started with a
-//! header, and read back into place on a resume.
+//! cwd), opened with its write errors going to the [`Ui`], created with its
+//! header before anything starts, and read back into place on a resume.
 
 use std::{
     path::Path,
@@ -17,14 +17,23 @@ use crate::{
         fs::Fs,
         ledger::Ledger,
         now_ms,
-        session::{JsonlSessionFile, SessionRecord},
+        session::{JsonlSessionFile, ReplayedSession, SessionRecord},
         task_board::TaskBoard,
     },
     sessions::{latest_in, new_session_id, sessions_dir},
 };
 
+/// The session a run writes, opened and, on a resume, read. Nothing has
+/// started yet, so an error here fails the build with nothing to undo.
+pub(crate) struct OpenSession {
+    pub store: Arc<JsonlSessionFile>,
+    /// What a resumed session saved; None = a new session, its file not
+    /// created yet ([`create`]).
+    pub saved: Option<ReplayedSession>,
+}
+
 /// The session file `id` under `data_dir`; a failed write is the [`Ui`]'s error.
-pub(crate) fn open_store(
+fn open_store(
     fs: &Arc<dyn Fs>,
     data_dir: &Path,
     id: &str,
@@ -36,33 +45,59 @@ pub(crate) fn open_store(
     .map_err(|e| anyhow!("{e}"))
 }
 
-/// The session this run writes, opened: a new one (`resume` None), the latest
-/// in the cwd (`Some("")`), or the one named. True when it resumes.
+/// The session this run writes: a new one (`resume` None), the latest in the
+/// cwd (`Some("")`), or the one named.
 pub(crate) async fn open_session(
     fs: &Arc<dyn Fs>,
     s: &Settings,
     resume: Option<&str>,
     ui: Arc<dyn Ui>,
-) -> anyhow::Result<(String, Arc<JsonlSessionFile>, bool)> {
-    let (id, resuming) = match resume {
-        None => (new_session_id(), false),
+) -> anyhow::Result<OpenSession> {
+    let id = match resume {
+        None => {
+            let store = open_store(fs, &s.data_dir, &new_session_id(), ui)?;
+            let store = Arc::new(store);
+            return Ok(OpenSession { store, saved: None });
+        }
         Some("") => latest_in(fs.as_ref(), &sessions_dir(&s.data_dir), &s.cwd)
             .await
-            .map(|id| (id, true))
             .ok_or_else(|| anyhow!("no saved session in {} to resume", s.cwd.display()))?,
-        Some(id) => (id.to_string(), true),
+        Some(id) => id.to_string(),
     };
-    let store = Arc::new(open_store(fs, &s.data_dir, &id, ui)?);
-    if resuming && !store.exists().await {
+    let store = open_store(fs, &s.data_dir, &id, ui)?;
+    if !store.exists().await {
         bail!("no saved session \"{id}\" (kern sessions lists them)");
     }
-    Ok((id, store, resuming))
+    let saved = store.load().await.context("reading the session")?;
+    Ok(OpenSession {
+        store: Arc::new(store),
+        saved: Some(saved),
+    })
 }
 
-/// A new session file: header, the model and effort it starts on, the ledger so far.
-pub(crate) fn init_store(host: &Host, agent: &Agent, id: &str) {
-    host.store()
-        .init(id, &host.settings.cwd.to_string_lossy(), now_ms());
+/// A new session's file, on disk with its header. Until it is, nothing of the
+/// session has been written: a session that cannot be saved fails here.
+pub(crate) async fn create(store: &JsonlSessionFile, cwd: &Path) -> anyhow::Result<()> {
+    let id = store.session_id();
+    store
+        .create(id, &cwd.to_string_lossy(), now_ms())
+        .await
+        .with_context(|| format!("creating the session file {}", store.path().display()))
+}
+
+/// A new session with its file created: what /clear starts.
+pub(crate) async fn new_session(
+    fs: &Arc<dyn Fs>,
+    s: &Settings,
+    ui: Arc<dyn Ui>,
+) -> anyhow::Result<JsonlSessionFile> {
+    let store = open_store(fs, &s.data_dir, &new_session_id(), ui)?;
+    create(&store, &s.cwd).await?;
+    Ok(store)
+}
+
+/// What a new session starts on: the model, the effort, the ledger so far.
+pub(crate) fn record_start(host: &Host, agent: &Agent) {
     host.append(SessionRecord::Config {
         t: now_ms(),
         model: Some(agent.model_spec.clone()),
@@ -78,13 +113,13 @@ pub(crate) fn init_store(host: &Host, agent: &Agent, id: &str) {
 }
 
 /// A saved session back in place: its ledger, task list, model, effort and history.
-pub(crate) async fn restore(
+pub(crate) fn restore(
     host: &Host,
+    saved: ReplayedSession,
     ledger: &Mutex<Ledger>,
     board: &TaskBoard,
     opts: &mut AgentOptions,
-) -> anyhow::Result<()> {
-    let saved = host.store().load().await.context("reading the session")?;
+) {
     if saved.corrupt_lines > 0 {
         host.warn(&format!(
             "Skipped {} torn line(s) in the session file.",
@@ -102,5 +137,4 @@ pub(crate) async fn restore(
         opts.effort = effort;
     }
     opts.history = saved.messages;
-    Ok(())
 }

@@ -64,7 +64,7 @@ impl Host {
     }
 
     /// A fresh session file (/clear); records go there from now on.
-    pub fn swap_store(&self, store: Arc<JsonlSessionFile>) {
+    pub(crate) fn swap_store(&self, store: Arc<JsonlSessionFile>) {
         *self.store.lock().unwrap() = store;
     }
 
@@ -80,7 +80,7 @@ impl Host {
         self.model.lock().unwrap().clone()
     }
 
-    pub fn set_model(&self, spec: &str) {
+    pub(crate) fn set_model(&self, spec: &str) {
         *self.model.lock().unwrap() = spec.to_string();
     }
 
@@ -88,7 +88,7 @@ impl Host {
         *self.effort.lock().unwrap()
     }
 
-    pub fn set_effort(&self, effort: Option<Effort>) {
+    pub(crate) fn set_effort(&self, effort: Option<Effort>) {
         *self.effort.lock().unwrap() = effort;
     }
 

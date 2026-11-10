@@ -4,7 +4,7 @@
 //! Roots, in the order Claude Code resolves them:
 //! - user: `<config dir>/skills/<name>/SKILL.md`
 //! - project: `<dir>/.claude/skills/<name>/SKILL.md` for the cwd and every
-//!   ancestor below the home directory
+//!   ancestor below the home directory (or up to the root, outside it)
 //! - plugin: `<plugin path>/skills/<name>/SKILL.md`, named `plugin:name`
 //!
 //! Unreadable or malformed files are skipped, never an error: one broken skill
@@ -17,10 +17,10 @@
 use std::path::{Path, PathBuf};
 
 use super::{
-    Skill, SkillSource, SkillSources,
+    Skill, SkillSource,
     frontmatter::{Meta, MetaMap, read_meta, split_frontmatter},
 };
-use crate::fs::{Fs, normalize};
+use crate::{context::project_chain, fs::Fs};
 
 /// A plugin whose `skills/` dir is scanned, its skills named `name:skill`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,15 +29,19 @@ pub struct PluginRoot {
     pub path: PathBuf,
 }
 
+/// Where a skill scan reads, worked out: [`super::skill_scan_roots`] makes one
+/// from [`super::SkillOpts`]. Each field is one fact the scan reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillScanRoots {
     pub config_dir: PathBuf,
     pub cwd: PathBuf,
     pub home: PathBuf,
+    /// `.agents/skills`: `~/.agents/skills` and every project level's.
+    pub agents: bool,
+    /// Claude Code's: `<config dir>/skills` and every project level's `.claude/skills`.
+    pub claude: bool,
+    /// The plugins whose `skills/` dirs are read; empty = none.
     pub plugins: Vec<PluginRoot>,
-    /// `agents`: `.agents/skills` at user and project level; `claude`:
-    /// `<config dir>/skills` and `.claude/skills` at project level.
-    pub sources: SkillSources,
 }
 
 /// What a SKILL.md's frontmatter says, before it is placed (source, path, plugin).
@@ -98,22 +102,14 @@ pub fn parse_skill_file(content: &str, fallback_name: &str) -> Option<SkillMeta>
     })
 }
 
-/// Project skill dirs, nearest first; within one level in REVERSE `dot_dirs` order,
-/// so after the caller's reverse the LAST dot dir is read last and wins.
+/// Project skill dirs, the farthest level first so the cwd's own are read
+/// last and win; at one level in `dot_dirs` order, so the last one wins a tie.
+/// The levels are [`project_chain`]'s, the same as the instruction files'.
 fn project_skill_dirs(cwd: &Path, home: &Path, dot_dirs: &[&str]) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    let stop = normalize(home);
-    let mut dir = normalize(cwd);
-    while dir != stop {
-        let Some(parent) = dir.parent().map(Path::to_path_buf) else {
-            break;
-        };
-        for d in dot_dirs.iter().rev() {
-            dirs.push(dir.join(d).join("skills"));
-        }
-        dir = parent;
-    }
-    dirs
+    project_chain(cwd, home)
+        .into_iter()
+        .flat_map(|level| dot_dirs.iter().map(move |d| level.join(d).join("skills")))
+        .collect()
 }
 
 struct ScanStep {
@@ -129,7 +125,7 @@ fn scan_plan(roots: &SkillScanRoots) -> Vec<ScanStep> {
         source,
         plugin: None,
     };
-    let SkillSources { agents, claude, .. } = roots.sources;
+    let (agents, claude) = (roots.agents, roots.claude);
     let mut plan = Vec::new();
     if agents {
         plan.push(step(roots.home.join(".agents/skills"), SkillSource::User));
@@ -142,14 +138,8 @@ fn scan_plan(roots: &SkillScanRoots) -> Vec<ScanStep> {
         .into_iter()
         .filter_map(|(on, d)| on.then_some(d))
         .collect();
-    // Farthest ancestor first so the cwd's own skills overwrite.
     let project = project_skill_dirs(&roots.cwd, &roots.home, &dot_dirs);
-    plan.extend(
-        project
-            .into_iter()
-            .rev()
-            .map(|d| step(d, SkillSource::Project)),
-    );
+    plan.extend(project.into_iter().map(|d| step(d, SkillSource::Project)));
     plan.extend(roots.plugins.iter().map(|p| ScanStep {
         dir: p.path.join("skills"),
         source: SkillSource::Plugin,
@@ -192,7 +182,7 @@ async fn scan_dir(fs: &dyn Fs, step: &ScanStep) -> Vec<Skill> {
 
 /// Nearest definition wins: project over user, like Claude Code. Plugins are namespaced.
 /// Order: where each name was first seen.
-pub async fn scan_skills(roots: &SkillScanRoots, fs: &dyn Fs) -> Vec<Skill> {
+pub async fn scan_skills(fs: &dyn Fs, roots: &SkillScanRoots) -> Vec<Skill> {
     let mut by_name: Vec<Skill> = Vec::new();
     for step in scan_plan(roots) {
         for skill in scan_dir(fs, &step).await {

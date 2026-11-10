@@ -26,7 +26,8 @@ pub trait SessionSink: Send + Sync {
 }
 
 enum Job {
-    Init(String),
+    /// The header, and where the create's outcome goes.
+    Create(String, oneshot::Sender<io::Result<()>>),
     Line(String),
     Flush(oneshot::Sender<()>),
 }
@@ -84,11 +85,23 @@ impl JsonlSessionFile {
         self.fs.exists(&self.path).await
     }
 
-    /// Create the file with its header (0600, in a 0700 dir). No-op if it exists.
+    /// Create the file with its header (0600, in a 0700 dir); no-op if it
+    /// exists. Resolves once the header is on disk, in order with the records
+    /// appended before it; an error here is the caller's, not `on_error`'s.
     /// `created_ms`: milliseconds since the epoch, for the header's `createdAt`.
-    pub fn init(&self, conversation_id: &str, cwd: &str, created_ms: u64) {
+    pub async fn create(
+        &self,
+        conversation_id: &str,
+        cwd: &str,
+        created_ms: u64,
+    ) -> io::Result<()> {
         let header = SessionRecord::header(&self.session_id, conversation_id, cwd, created_ms);
-        let _ = self.tx.send(Job::Init(line_of(&header)));
+        let (done, outcome) = oneshot::channel();
+        let stopped = || io::Error::other("the session writer has stopped");
+        self.tx
+            .send(Job::Create(line_of(&header), done))
+            .map_err(|_| stopped())?;
+        outcome.await.map_err(|_| stopped())?
     }
 
     /// Flush, then replay the file. Never fails on a bad line (see [`replay`]);
@@ -127,7 +140,10 @@ async fn write_queue(
 ) {
     while let Some(job) = rx.recv().await {
         let res = match job {
-            Job::Init(header) => create(fs.as_ref(), &path, &header).await,
+            Job::Create(header, done) => {
+                let _ = done.send(create(fs.as_ref(), &path, &header).await);
+                Ok(())
+            }
             Job::Line(line) => fs.append(&path, line.as_bytes()).await,
             Job::Flush(done) => {
                 let _ = done.send(());

@@ -1,0 +1,144 @@
+//! A conversation's session over its life. A build that fails has started
+//! nothing and left no file; what a host changes while it runs (model,
+//! effort, /clear) is in the session file; a /clear that cannot create its
+//! file changes nothing.
+
+use std::{collections::BTreeMap, path::Path, sync::Arc};
+
+use kern_settings::Settings;
+
+use super::{hardcoded, keyed};
+use crate::{
+    BuildOptions, RuntimeInputs, World, build,
+    kern::{
+        Effort, WorkspaceMode,
+        fs::{Fs, MemFs},
+        mcp::{McpServerConfig, McpTransport},
+        task_board::NewTask,
+    },
+    sessions::list_sessions,
+    testkit::{Deny, Recorded},
+};
+
+const SESSIONS: &str = "/data/sessions";
+const OTHER: &str = "openrouter:openai/gpt-5.5";
+
+/// An MCP server at a closed local port: starting it fails at once, with a warning.
+fn closed_server() -> McpServerConfig {
+    McpServerConfig {
+        name: "closed".into(),
+        transport: McpTransport::Http {
+            url: "http://127.0.0.1:9/mcp".into(),
+            headers: BTreeMap::new(),
+        },
+    }
+}
+
+/// `settings` over `fs`, the closed server listed: the build's error, and
+/// everything the Ui was told.
+async fn failed_build(settings: Settings, fs: Arc<MemFs>) -> (String, Vec<String>) {
+    let mut inputs = RuntimeInputs::new(settings, World::Fs(fs));
+    inputs.mcp_servers = vec![closed_server()];
+    let ui = Arc::new(Recorded::default());
+    let err = build(inputs, ui.clone(), Deny, BuildOptions::default())
+        .await
+        .err()
+        .expect("the build fails");
+    (format!("{err:#}"), ui.warnings())
+}
+
+/// A file where the sessions dir goes: no session file can be created.
+async fn block_sessions(fs: &MemFs) {
+    let _ = fs.remove(Path::new(SESSIONS), true).await;
+    fs.mkdir(Path::new("/data"), true).await.unwrap();
+    fs.write(Path::new(SESSIONS), b"not a dir").await.unwrap();
+}
+
+#[tokio::test]
+async fn a_workspace_that_cannot_open_fails_the_build_before_a_server_starts() {
+    let fs = Arc::new(MemFs::new());
+    let settings = Settings {
+        workspace: WorkspaceMode::Real,
+        ..hardcoded()
+    };
+    let (err, heard) = failed_build(settings, fs.clone()).await;
+    assert!(err.contains("real disk"), "{err}");
+    assert_eq!(heard, Vec::<String>::new(), "no server was started");
+    let left = list_sessions(fs.as_ref(), Path::new(SESSIONS)).await;
+    assert!(left.is_empty(), "no session file is left behind");
+}
+
+#[tokio::test]
+async fn a_session_that_cannot_be_saved_fails_the_build_before_a_server_starts() {
+    let fs = Arc::new(MemFs::new());
+    block_sessions(&fs).await;
+    let (err, heard) = failed_build(hardcoded(), fs).await;
+    assert!(err.contains("session file"), "{err}");
+    assert_eq!(heard, Vec::<String>::new(), "no server was started");
+}
+
+#[tokio::test]
+async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothing() {
+    let fs = Arc::new(MemFs::new());
+    let mut rt = keyed(&fs, None).await;
+    let before = rt.agent.model_spec.clone();
+    assert!(rt.set_model("nowhere:x").is_err());
+    assert_eq!(
+        (rt.agent.model_spec.as_str(), rt.host.model()),
+        (before.as_str(), before.clone())
+    );
+
+    rt.set_model(OTHER).unwrap();
+    rt.set_effort(Some(Effort::High));
+    assert_eq!(
+        (rt.host.model(), rt.host.effort()),
+        (OTHER.to_string(), Some(Effort::High))
+    );
+    rt.host.flush().await;
+
+    let back = keyed(&fs, Some(rt.session_id())).await;
+    assert_eq!(back.agent.model_spec, OTHER);
+    assert_eq!(back.agent.effort, Some(Effort::High));
+}
+
+#[tokio::test]
+async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resumes() {
+    let fs = Arc::new(MemFs::new());
+    let mut rt = keyed(&fs, None).await;
+    rt.set_model(OTHER).unwrap();
+    rt.board.create(NewTask {
+        subject: "old work".into(),
+        ..Default::default()
+    });
+    let old = rt.session_id();
+
+    rt.clear().await.unwrap();
+    assert_ne!(rt.session_id(), old);
+    assert!(rt.board.list().is_empty());
+    rt.host.flush().await;
+
+    let fresh = keyed(&fs, Some(rt.session_id())).await;
+    assert_eq!(fresh.agent.model_spec, OTHER);
+    assert!(fresh.board.list().is_empty());
+    let resumed = keyed(&fs, Some(old)).await;
+    let kept = resumed.board.list().len();
+    assert_eq!(kept, 1, "the old session keeps its tasks");
+}
+
+#[tokio::test]
+async fn a_clear_that_cannot_create_its_file_changes_nothing() {
+    let fs = Arc::new(MemFs::new());
+    let mut rt = keyed(&fs, None).await;
+    rt.board.create(NewTask {
+        subject: "kept".into(),
+        ..Default::default()
+    });
+    let id = rt.session_id();
+    rt.host.flush().await;
+    block_sessions(&fs).await;
+
+    let err = rt.clear().await.expect_err("the clear fails");
+    assert!(format!("{err:#}").contains("session file"), "{err:#}");
+    assert_eq!(rt.session_id(), id);
+    assert_eq!(rt.board.list().len(), 1);
+}

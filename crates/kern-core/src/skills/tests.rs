@@ -203,6 +203,8 @@ fn roots(plugins: bool, agents_dirs: bool) -> SkillScanRoots {
         config_dir: CONFIG.into(),
         cwd: CWD.into(),
         home: HOME.into(),
+        agents: agents_dirs,
+        claude: true,
         plugins: if plugins {
             vec![PluginRoot {
                 name: "toolkit".into(),
@@ -211,16 +213,11 @@ fn roots(plugins: bool, agents_dirs: bool) -> SkillScanRoots {
         } else {
             vec![]
         },
-        sources: SkillSources {
-            agents: agents_dirs,
-            claude: true,
-            plugins,
-        },
     }
 }
 
 async fn scanned(plugins: bool, agents_dirs: bool) -> HashMap<String, Skill> {
-    scan_skills(&roots(plugins, agents_dirs), &scan_fixture())
+    scan_skills(&scan_fixture(), &roots(plugins, agents_dirs))
         .await
         .into_iter()
         .map(|s| (s.name.clone(), s))
@@ -233,6 +230,24 @@ fn scan_roots_name_every_directory_the_scan_reads_plugin_roots_included() {
     assert!(dirs.contains(&Path::new(CONFIG).join("skills")));
     assert!(dirs.contains(&Path::new(REPO).join(".claude/skills")));
     assert!(dirs.contains(&Path::new(PLUGIN).join("skills")));
+}
+
+#[test]
+fn outside_home_every_level_up_to_the_root_is_a_project_level() {
+    let outside = SkillScanRoots {
+        cwd: "/srv/app".into(),
+        ..roots(false, false)
+    };
+    let project: Vec<_> = scan_roots(&outside)
+        .into_iter()
+        .filter(|d| !d.starts_with(CONFIG))
+        .collect();
+    let want = [
+        "/.claude/skills",
+        "/srv/.claude/skills",
+        "/srv/app/.claude/skills",
+    ];
+    assert_eq!(project, want.map(std::path::PathBuf::from));
 }
 
 #[tokio::test]
