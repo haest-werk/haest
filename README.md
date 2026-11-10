@@ -140,6 +140,11 @@ never from a project's file or a profile: a repo cannot trust itself.
 `config_dir` comes only from the environment or a flag. Codex does the same
 (`projects.<path>.trust_level`).
 
+`.mcp.json` fills in `${NAME}` and `${NAME:-default}` from kern's environment
+in a server's `command`, `args`, `env`, `url` and `headers` values, as Claude
+Code does. A variable with no value and no default stays as written, and kern
+says which server names it.
+
 ### The `claude` profile
 
 `--profile claude` turns on what kern reads of Claude Code: AGENTS.md and the

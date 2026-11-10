@@ -56,12 +56,14 @@ async fn note_untrusted(fs: &dyn Fs, path: &Path, root: &Path, notes: &mut Vec<S
     }
 }
 
-/// The project's `.mcp.json` servers: with `mcp` on, in a trusted dir.
+/// The project's `.mcp.json` servers: with `mcp` on, in a trusted dir, its
+/// `${NAME}`s filled in from `env`.
 pub(crate) async fn mcp_servers(
     fs: &dyn Fs,
     cwd: &Path,
     mcp: bool,
     trusted: bool,
+    env: &HashMap<String, String>,
     notes: &mut Vec<String>,
 ) -> Vec<McpServerConfig> {
     if !mcp {
@@ -71,10 +73,16 @@ pub(crate) async fn mcp_servers(
         note_untrusted(fs, &project_mcp_path(cwd), cwd, notes).await;
         return Vec::new();
     }
-    load_project_mcp_config(fs, cwd).await.unwrap_or_else(|e| {
-        notes.push(format!(".mcp.json not loaded: {e}"));
-        Vec::new()
-    })
+    match load_project_mcp_config(fs, cwd, &|name| env.get(name).cloned()).await {
+        Ok(project) => {
+            notes.extend(project.notes);
+            project.servers
+        }
+        Err(e) => {
+            notes.push(format!(".mcp.json not loaded: {e}"));
+            Vec::new()
+        }
+    }
 }
 
 /// `project_mods` off outside a trusted dir (they are the repo's code).

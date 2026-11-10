@@ -11,7 +11,9 @@
 //!
 //! ```ignore
 //! let hub = Arc::new(McpHub::new());
-//! hub.connect(&load_project_mcp_config(fs, cwd).await?, &|m| eprintln!("{m}")).await;
+//! let project = load_project_mcp_config(fs, cwd, &|name| env.get(name).cloned()).await?;
+//! project.notes.iter().for_each(|n| eprintln!("{n}"));
+//! hub.connect(&project.servers, &|m| eprintln!("{m}")).await;
 //! for f in hub.failures() { /* tell the human */ }
 //! // hub is a ToolSource: the loop asks it for tools before every model call.
 //! hub.close().await; // or drop it: every server shuts down either way
@@ -27,7 +29,8 @@ mod transport;
 mod test_server;
 
 pub use config::{
-    McpConfigError, McpServerConfig, McpTransport, load_project_mcp_config, project_mcp_path,
+    McpConfigError, McpServerConfig, McpTransport, ProjectMcp, load_project_mcp_config,
+    project_mcp_path,
 };
 pub use hub::{CALL_TIMEOUT, CONNECT_TIMEOUT, McpFailure, McpHub};
 pub use result::mcp_result_to_output;

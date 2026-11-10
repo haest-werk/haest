@@ -161,7 +161,7 @@ impl Loader {
         handed::gate_project_mods(fs, &cwd, &mut s.project_mods, resolved.trusted, &mut notes)
             .await;
         let mcp_servers =
-            handed::mcp_servers(fs, &cwd, config.mcp, resolved.trusted, &mut notes).await;
+            handed::mcp_servers(fs, &cwd, config.mcp, resolved.trusted, &env, &mut notes).await;
         let providers = load_custom_providers(fs, &config.settings.config_dir)
             .await
             .map_err(|e| e.0)?;

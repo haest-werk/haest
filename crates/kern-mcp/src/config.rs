@@ -6,7 +6,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use kern_core::fs::{Fs, read_text_if_present};
+use kern_core::{
+    expand::expand_vars,
+    fs::{Fs, read_text_if_present},
+};
 use serde_json::{Map, Value};
 
 /// A project's MCP servers: `<cwd>/.mcp.json`.
@@ -94,13 +97,25 @@ pub enum McpConfigError {
     },
 }
 
+/// What a project's `.mcp.json` gave.
+#[derive(Debug, Default)]
+pub struct ProjectMcp {
+    pub servers: Vec<McpServerConfig>,
+    /// One per server that names a variable with no value and no default
+    /// (passed as written, as Claude Code does): the host shows them.
+    pub notes: Vec<String>,
+}
+
 /// Read `<cwd>/.mcp.json`; no file means no servers. An entry with a string `url`
 /// is HTTP (whatever its `type` says), one with a string `command` is stdio and
-/// runs in `cwd`; anything else is skipped.
+/// runs in `cwd`; anything else is skipped. `${NAME}` and `${NAME:-default}` in
+/// a `command`, `args`, `env`, `url` or `headers` value are filled in from
+/// `vars` ([`expand_vars`]).
 pub async fn load_project_mcp_config(
     fs: &dyn Fs,
     cwd: &Path,
-) -> Result<Vec<McpServerConfig>, McpConfigError> {
+    vars: &dyn Fn(&str) -> Option<String>,
+) -> Result<ProjectMcp, McpConfigError> {
     let path = project_mcp_path(cwd);
     let read = read_text_if_present(fs, &path).await;
     let Some(text) = read.map_err(|source| McpConfigError::Read {
@@ -108,44 +123,86 @@ pub async fn load_project_mcp_config(
         source,
     })?
     else {
-        return Ok(Vec::new());
+        return Ok(ProjectMcp::default());
     };
     let parsed: Value = serde_json::from_str(&text).map_err(|source| McpConfigError::Parse {
         path: path.clone(),
         source,
     })?;
     let Some(servers) = parsed.get("mcpServers").and_then(Value::as_object) else {
-        return Ok(Vec::new());
+        return Ok(ProjectMcp::default());
     };
-    let mut out = Vec::new();
+    let mut out = ProjectMcp::default();
     for (name, raw) in servers {
         let invalid = |problem: String| McpConfigError::Invalid {
             path: path.clone(),
             server: name.clone(),
             problem,
         };
-        if let Some(transport) = parse_server(raw, cwd).map_err(invalid)? {
-            out.push(McpServerConfig {
+        let mut fill = Fill {
+            vars,
+            unset: Vec::new(),
+        };
+        if let Some(transport) = parse_server(raw, cwd, &mut fill).map_err(invalid)? {
+            out.servers.push(McpServerConfig {
                 name: name.clone(),
                 transport,
             });
+        }
+        if !fill.unset.is_empty() {
+            let names: Vec<String> = fill.unset.iter().map(|n| format!("${{{n}}}")).collect();
+            out.notes.push(format!(
+                "{}: server \"{name}\" names {}, which is not set and has no default: passed as written",
+                path.display(),
+                names.join(", ")
+            ));
         }
     }
     Ok(out)
 }
 
-fn parse_server(raw: &Value, cwd: &Path) -> Result<Option<McpTransport>, String> {
+/// One server's values with their variables filled in, and the names left unset.
+struct Fill<'a> {
+    vars: &'a dyn Fn(&str) -> Option<String>,
+    unset: Vec<String>,
+}
+
+impl Fill<'_> {
+    fn text(&mut self, text: &str) -> String {
+        let (filled, unset) = expand_vars(text, self.vars);
+        for name in unset {
+            if !self.unset.contains(&name) {
+                self.unset.push(name);
+            }
+        }
+        filled
+    }
+
+    fn list(&mut self, items: Vec<String>) -> Vec<String> {
+        items.iter().map(|s| self.text(s)).collect()
+    }
+
+    fn map(&mut self, map: BTreeMap<String, String>) -> BTreeMap<String, String> {
+        map.into_iter().map(|(k, v)| (k, self.text(&v))).collect()
+    }
+}
+
+fn parse_server(
+    raw: &Value,
+    cwd: &Path,
+    fill: &mut Fill<'_>,
+) -> Result<Option<McpTransport>, String> {
     if let Some(url) = raw.get("url").and_then(Value::as_str) {
         return Ok(Some(McpTransport::Http {
-            url: url.to_string(),
-            headers: string_map(raw, "headers")?,
+            url: fill.text(url),
+            headers: fill.map(string_map(raw, "headers")?),
         }));
     }
     if let Some(command) = raw.get("command").and_then(Value::as_str) {
         return Ok(Some(McpTransport::Stdio {
-            command: command.to_string(),
-            args: string_list(raw, "args")?,
-            env: string_map(raw, "env")?,
+            command: fill.text(command),
+            args: fill.list(string_list(raw, "args")?),
+            env: fill.map(string_map(raw, "env")?),
             cwd: Some(cwd.to_path_buf()),
         }));
     }
@@ -180,74 +237,4 @@ fn strings_of(map: &Map<String, Value>) -> Option<BTreeMap<String, String>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use kern_core::fs::MemFs;
-    use serde_json::json;
-
-    const CWD: &str = "/p";
-
-    fn fs_with(config: Value) -> MemFs {
-        MemFs::with_files([("/p/.mcp.json", config.to_string())])
-    }
-
-    #[tokio::test]
-    async fn reads_stdio_and_http_servers_in_claude_code_format() {
-        let fs = fs_with(json!({
-            "mcpServers": {
-                "local": {"command": "node", "args": ["s.js"], "env": {"A": "1"}},
-                "remote": {"type": "http", "url": "https://x/mcp", "headers": {"H": "v"}},
-                "junk": {"nothing": true},
-            }
-        }));
-        let cfg = load_project_mcp_config(&fs, Path::new(CWD)).await.unwrap();
-        let kinds: Vec<_> = cfg
-            .iter()
-            .map(|c| format!("{}:{}", c.name, c.type_name()))
-            .collect();
-        assert_eq!(kinds, ["local:stdio", "remote:http"]);
-        assert_eq!(
-            cfg[0].transport,
-            McpTransport::Stdio {
-                command: "node".into(),
-                args: vec!["s.js".into()],
-                env: BTreeMap::from([("A".into(), "1".into())]),
-                cwd: Some(PathBuf::from(CWD)),
-            }
-        );
-        assert_eq!(
-            cfg[1].transport,
-            McpTransport::Http {
-                url: "https://x/mcp".into(),
-                headers: BTreeMap::from([("H".into(), "v".into())]),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn no_file_means_no_servers() {
-        let cfg = load_project_mcp_config(&MemFs::new(), Path::new(CWD)).await;
-        assert!(cfg.unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn a_file_without_servers_means_no_servers() {
-        let fs = fs_with(json!({"other": 1}));
-        let cfg = load_project_mcp_config(&fs, Path::new(CWD)).await;
-        assert!(cfg.unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn broken_json_is_an_error_the_host_can_report() {
-        let fs = MemFs::with_files([("/p/.mcp.json", "{not json")]);
-        let err = load_project_mcp_config(&fs, Path::new(CWD)).await;
-        assert!(matches!(err, Err(McpConfigError::Parse { .. })));
-    }
-
-    #[tokio::test]
-    async fn an_argv_that_is_not_all_strings_is_refused_naming_the_server() {
-        let fs = fs_with(json!({"mcpServers": {"s": {"command": "x", "args": ["--port", 1]}}}));
-        let err = load_project_mcp_config(&fs, Path::new(CWD)).await;
-        assert!(matches!(err, Err(McpConfigError::Invalid { server, .. }) if server == "s"));
-    }
-}
+mod tests;

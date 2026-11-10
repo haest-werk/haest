@@ -17,6 +17,7 @@ pub mod deferred_tools;
 pub mod deps;
 pub mod effort;
 pub mod events;
+pub mod expand;
 pub mod fs;
 pub mod guard;
 pub mod handed;
