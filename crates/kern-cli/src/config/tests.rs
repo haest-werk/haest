@@ -58,6 +58,20 @@ fn resume_without_an_id_means_the_latest_here() {
 }
 
 #[test]
+fn claude_files_are_read_only_on_the_flag_or_its_variable() {
+    let on =
+        |argv: &[&str], env: &[(&str, &str)]| cfg(argv, env).unwrap().features.claude_context_files;
+    assert!(!on(&[], &[]));
+    assert!(on(&["--use-claude-context-files"], &[]));
+    assert!(on(&[], &[("KERN_CLAUDE_CONTEXT_FILES", "1")]));
+    assert!(on(
+        &["--use-claude-context-files"],
+        &[("KERN_CLAUDE_CONTEXT_FILES", "0")]
+    ));
+    assert!(cfg(&[], &[("KERN_CLAUDE_CONTEXT_FILES", "yes")]).is_err());
+}
+
+#[test]
 fn features_default_as_the_ts_kern_and_refuse_garbage() {
     let f = cfg(&[], &[]).unwrap().features;
     assert_eq!(

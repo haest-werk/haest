@@ -3,6 +3,43 @@ use std::path::{Path, PathBuf};
 use super::*;
 use crate::fs::MemFs;
 
+fn contents(files: &[InstructionFile]) -> Vec<&str> {
+    files.iter().map(|f| f.content.as_str()).collect()
+}
+
+#[tokio::test]
+async fn by_default_only_agents_md_is_read_and_claude_files_wait_for_an_opt_in() {
+    let fs = MemFs::with_files([
+        ("/r/home/.claude/CLAUDE.md", "claude user"),
+        ("/r/home/.agents/AGENTS.md", "agents user"),
+        ("/r/home/repo/AGENTS.md", "repo agents"),
+        ("/r/home/repo/CLAUDE.md", "repo claude"),
+        ("/r/home/repo/.claude/CLAUDE.md", "repo dot claude"),
+        ("/r/home/repo/CLAUDE.local.md", "repo local"),
+    ]);
+    let mut opts = InstructionOpts {
+        cwd: "/r/home/repo".into(),
+        home: "/r/home".into(),
+        config_dir: None,
+        claude_files: false,
+    };
+    let files = find_instruction_files(&fs, &opts).await;
+    assert_eq!(contents(&files), ["agents user", "repo agents"]);
+    opts.claude_files = true;
+    let files = find_instruction_files(&fs, &opts).await;
+    assert_eq!(
+        contents(&files),
+        [
+            "claude user",
+            "agents user",
+            "repo agents",
+            "repo claude",
+            "repo dot claude",
+            "repo local"
+        ]
+    );
+}
+
 #[tokio::test]
 async fn user_files_first_then_outermost_project_dir_down_to_cwd_empty_files_skipped() {
     let fs = MemFs::with_files([
@@ -15,10 +52,10 @@ async fn user_files_first_then_outermost_project_dir_down_to_cwd_empty_files_ski
         cwd: "/r/home/repo/pkg".into(),
         home: "/r/home".into(),
         config_dir: Some("/r/home/.claude".into()),
+        claude_files: true,
     };
     let files = find_instruction_files(&fs, &opts).await;
-    let contents: Vec<&str> = files.iter().map(|f| f.content.as_str()).collect();
-    assert_eq!(contents, ["user rules", "repo agents", "pkg rules"]);
+    assert_eq!(contents(&files), ["user rules", "repo agents", "pkg rules"]);
     assert_eq!(files[1].path, PathBuf::from("/r/home/repo/AGENTS.md"));
 }
 
@@ -27,12 +64,13 @@ async fn outside_home_the_chain_runs_from_the_root_and_long_files_are_cut() {
     let long = "x".repeat(MAX_FILE_CHARS + 10);
     let fs = MemFs::with_files([
         ("/AGENTS.md", "root rules"),
-        ("/w/CLAUDE.md", long.as_str()),
+        ("/w/AGENTS.md", long.as_str()),
     ]);
     let opts = InstructionOpts {
         cwd: "/w".into(),
         home: "/home/u".into(),
         config_dir: None,
+        claude_files: false,
     };
     let files = find_instruction_files(&fs, &opts).await;
     assert_eq!(files[0].content, "root rules");

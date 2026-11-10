@@ -1,5 +1,5 @@
-//! The command line. Every flag has a `KERN_*` environment twin (the TS kern's
-//! names); a flag wins over its variable.
+//! The command line. A flag that names a `[KERN_*]` variable has that twin (the
+//! TS kern's names, except where noted); the flag wins over its variable.
 
 use std::path::PathBuf;
 
@@ -47,6 +47,11 @@ pub struct Args {
     /// Text appended to the system prompt.
     #[arg(long)]
     pub append_system_prompt: Option<String>,
+
+    /// Also read Claude Code's instruction files (CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md,
+    /// ~/.claude/CLAUDE.md). Without it kern reads AGENTS.md only [KERN_CLAUDE_CONTEXT_FILES=1].
+    #[arg(long)]
+    pub use_claude_context_files: bool,
 
     #[command(subcommand)]
     pub command: Option<Command>,

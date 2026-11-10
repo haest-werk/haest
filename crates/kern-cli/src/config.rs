@@ -112,6 +112,8 @@ impl Config {
             max_turn_ms: (cap(env, "KERN_MAX_TURN_MINUTES", 60.0)? * 60_000.0) as u64,
             max_repeats: cap(env, "KERN_MAX_REPEATS", 6.0)? as u32,
         };
+        let mut features = Features::from(env)?;
+        features.claude_context_files |= args.use_claude_context_files;
         Ok(Self {
             cwd: args.cwd.clone().unwrap_or(cwd),
             home,
@@ -141,7 +143,7 @@ impl Config {
                 None => DeferMode::Proxy,
                 Some(raw) => raw.parse()?,
             },
-            features: Features::from(env)?,
+            features,
             debug: get(env, "KERN_DEBUG").is_some(),
         })
     }

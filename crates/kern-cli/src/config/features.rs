@@ -5,6 +5,8 @@
 //!   KERN_CODE_TOOLS    comma list of extra tool names Code may call (exact, or `prefix*`)
 //!   KERN_APPROVALS     on (default) | off -- the built-in approval mod
 //!   KERN_PROJECT_MODS  1 = also load <cwd>/.kern/mods (repo code; off by default)
+//!   KERN_CLAUDE_CONTEXT_FILES  1 = also read Claude Code's CLAUDE.md files
+//!                      (off by default: AGENTS.md only; kern's own, not the TS kern's)
 //!   KERN_IMAGE_MODEL   GenerateImage's default model (`host/config.ts`); the tool
 //!                      exists only when OPENROUTER_API_KEY is set
 //!   KERN_IMAGE_MODELS  comma list of the other image models a call may pick
@@ -27,6 +29,8 @@ pub struct Features {
     pub code: Option<Vec<String>>,
     pub approvals: bool,
     pub project_mods: bool,
+    /// Read CLAUDE.md files besides AGENTS.md (`--use-claude-context-files` sets it too).
+    pub claude_context_files: bool,
     /// GenerateImage's backend; None = no OpenRouter key, no tool.
     pub image: Option<ImageConfig>,
 }
@@ -118,6 +122,7 @@ impl Features {
             code: flag(env, "KERN_CODE", "on", "off", true)?.then_some(extra),
             approvals: flag(env, "KERN_APPROVALS", "on", "off", true)?,
             project_mods: flag(env, "KERN_PROJECT_MODS", "1", "0", false)?,
+            claude_context_files: flag(env, "KERN_CLAUDE_CONTEXT_FILES", "1", "0", false)?,
             image: image(env),
         })
     }

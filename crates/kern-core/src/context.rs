@@ -1,9 +1,10 @@
 //! System prompt assembly: identity, environment, instruction files, skills.
 //!
-//! Instruction files follow both conventions in the wild: AGENTS.md (the
-//! cross-agent standard) and CLAUDE.md (Claude Code), user level first, then
-//! every directory from the outermost project dir down to cwd, so the most
-//! specific file is read last and wins on conflict.
+//! Instruction files are AGENTS.md (the cross-agent standard); Claude Code's
+//! CLAUDE.md family is read only when the host opts in
+//! ([`InstructionOpts::claude_files`]). User level first, then every directory
+//! from the outermost project dir down to cwd, so the most specific file is
+//! read last and wins on conflict.
 //!
 //! Nothing here reads the process: files come through a kern [`Fs`]; the home
 //! dir, platform and date are the caller's.
@@ -30,8 +31,11 @@ pub struct InstructionFile {
     pub content: String,
 }
 
+/// The one name read without an opt-in; every other name below is Claude Code's.
+const AGENTS_FILE: &str = "AGENTS.md";
+const USER_FILES: [&str; 2] = ["CLAUDE.md", AGENTS_FILE];
 const PROJECT_FILES: [&str; 4] = [
-    "AGENTS.md",
+    AGENTS_FILE,
     "CLAUDE.md",
     ".claude/CLAUDE.md",
     "CLAUDE.local.md",
@@ -73,33 +77,48 @@ fn project_chain(cwd: &Path, home: &Path) -> Vec<PathBuf> {
     chain
 }
 
-/// Where to look; `config_dir` defaults to `<home>/.claude`.
+/// Where to look.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstructionOpts {
     pub cwd: PathBuf,
     pub home: PathBuf,
+    /// Claude Code's user dir (`<home>/.claude` when None); read only with `claude_files`.
     pub config_dir: Option<PathBuf>,
+    /// Also read Claude Code's files: `CLAUDE.md`, `.claude/CLAUDE.md`,
+    /// `CLAUDE.local.md` and the user's `~/.claude/CLAUDE.md`. Off = AGENTS.md only.
+    pub claude_files: bool,
 }
 
-pub async fn find_instruction_files(fs: &dyn Fs, opts: &InstructionOpts) -> Vec<InstructionFile> {
-    let config = opts
-        .config_dir
-        .clone()
-        .unwrap_or_else(|| opts.home.join(".claude"));
-    let mut user_dirs = vec![config];
+/// Every path to try, in reading order: user dirs, then the project chain.
+fn candidates(opts: &InstructionOpts) -> Vec<PathBuf> {
+    let wanted = |f: &str| opts.claude_files || f == AGENTS_FILE;
+    let mut user_dirs = Vec::new();
+    if opts.claude_files {
+        let claude = opts.config_dir.clone();
+        user_dirs.push(claude.unwrap_or_else(|| opts.home.join(".claude")));
+    }
     let agents = opts.home.join(".agents");
     if !user_dirs.contains(&agents) {
         user_dirs.push(agents);
     }
-    let user = user_dirs
-        .iter()
-        .flat_map(|d| [d.join("CLAUDE.md"), d.join("AGENTS.md")]);
-    let project = project_chain(&opts.cwd, &opts.home)
-        .into_iter()
-        .flat_map(|d| PROJECT_FILES.map(|f| d.join(f)));
+    let dirs = [
+        (user_dirs, &USER_FILES[..]),
+        (project_chain(&opts.cwd, &opts.home), &PROJECT_FILES[..]),
+    ];
+    let mut out = Vec::new();
+    for (dirs, names) in dirs {
+        for dir in dirs {
+            let wanted_names = names.iter().copied().filter(|f| wanted(f));
+            out.extend(wanted_names.map(|f| dir.join(f)));
+        }
+    }
+    out
+}
+
+pub async fn find_instruction_files(fs: &dyn Fs, opts: &InstructionOpts) -> Vec<InstructionFile> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
-    for path in user.chain(project) {
+    for path in candidates(opts) {
         if !seen.insert(path.clone()) {
             continue;
         }

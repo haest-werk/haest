@@ -243,6 +243,7 @@ async fn prompt_for(
             cwd: cfg.cwd.clone(),
             home: cfg.home.clone(),
             config_dir: None,
+            claude_files: cfg.features.claude_context_files,
         },
         base,
     }

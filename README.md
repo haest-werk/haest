@@ -62,6 +62,7 @@ cargo run -p kern-cli -- models       # the models kern knows
 | `KERN_CODE` | `on` | the Code tool; `KERN_CODE_TOOLS` adds tools it may call (`Name` or `prefix*`) |
 | `KERN_APPROVALS` | `on` | ask on the terminal before an irreversible Bash command (real workspace) |
 | `KERN_PROJECT_MODS` | `0` | `1` also loads the repo's own mods from `.kern/mods` (they run with your trust) |
+| `KERN_CLAUDE_CONTEXT_FILES` | `0` | instruction files: kern reads `AGENTS.md` (`~/.agents/AGENTS.md`, then every directory down to here); `1` also reads Claude Code's `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` and `~/.claude/CLAUDE.md` (also `--use-claude-context-files`) |
 | `KERN_MAX_AGENT_DEPTH`, `KERN_MAX_SUBAGENTS` | `2`, `4` | how deep subagents nest and how many run at once; `0` = no Agent tool |
 | `KERN_SUBAGENT_USD`, `_STEPS`, `_MINUTES` | `1`, `50`, `15` | one subagent's spend, model calls and wall clock |
 | `KERN_MAX_AGENT_TURNS` | `30` | turns in a row a background job or subagent may start with no message from you; past it kern holds them until you post (`0` = no cap) |
