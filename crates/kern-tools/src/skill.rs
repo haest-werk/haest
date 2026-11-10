@@ -12,23 +12,31 @@ use kern_core::{
 };
 use serde_json::{Value, json};
 
-type SkillList = Box<dyn Fn() -> Vec<Skill> + Send + Sync>;
-
-struct SkillTool {
-    skills: SkillList,
+/// What the Skill tool reads.
+#[derive(Clone)]
+pub struct SkillToolOptions {
+    /// The current list, asked on every call.
+    skills: Arc<dyn Fn() -> Vec<Skill> + Send + Sync>,
+    /// The body is the host's reading: a user skill lives outside any sandbox mount.
     host_fs: Arc<dyn Fs>,
 }
 
-/// `skills`: the current list, asked on every call. `host_fs`: the body is the
-/// host's reading -- a user skill lives outside any sandbox mount.
-pub fn create_skill_tool(
-    skills: impl Fn() -> Vec<Skill> + Send + Sync + 'static,
-    host_fs: Arc<dyn Fs>,
-) -> Arc<dyn Tool> {
-    Arc::new(SkillTool {
-        skills: Box::new(skills),
-        host_fs,
-    })
+impl SkillToolOptions {
+    pub fn new(
+        skills: impl Fn() -> Vec<Skill> + Send + Sync + 'static,
+        host_fs: Arc<dyn Fs>,
+    ) -> Self {
+        Self {
+            skills: Arc::new(skills),
+            host_fs,
+        }
+    }
+}
+
+struct SkillTool(SkillToolOptions);
+
+pub fn create_skill_tool(opts: SkillToolOptions) -> Arc<dyn Tool> {
+    Arc::new(SkillTool(opts))
 }
 
 #[async_trait]
@@ -58,7 +66,7 @@ impl Tool for SkillTool {
     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
         let raw = req_str(&input, "skill")?;
         let name = raw.strip_prefix('/').unwrap_or(raw);
-        let offered: Vec<Skill> = (self.skills)()
+        let offered: Vec<Skill> = (self.0.skills)()
             .into_iter()
             .filter(|s| s.model_invocable)
             .collect();
@@ -73,7 +81,8 @@ impl Tool for SkillTool {
                 "No skill named \"{name}\". Available: {known}"
             )));
         };
-        let body = load_skill_body(self.host_fs.as_ref(), skill, opt_str(&input, "args")?).await?;
+        let body =
+            load_skill_body(self.0.host_fs.as_ref(), skill, opt_str(&input, "args")?).await?;
         Ok(ToolOutput::text(body))
     }
 }
@@ -106,7 +115,7 @@ mod tests {
             sources: SkillSources::ALL,
         };
         let skills = discover_skills(fs.as_ref(), &opts).await;
-        create_skill_tool(move || skills.clone(), fs)
+        create_skill_tool(SkillToolOptions::new(move || skills.clone(), fs))
     }
 
     fn input(v: Value) -> JsonMap {

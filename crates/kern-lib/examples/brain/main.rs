@@ -100,8 +100,12 @@ pub fn run_tools(
             ..Default::default()
         },
         web_fetch: None,
+        ..Default::default()
     };
-    let mut tools = builtin_tools_where(|w| s.tools.has(w), opts);
+    // A word on whose option is None here (web_fetch, tasks, skill) would be
+    // an error, never a tool quietly missing; brain's runs turn on none of them.
+    let mut tools = builtin_tools_where(|w| s.tools.has(w), opts)
+        .expect("brain's runs pick only built-ins it gives the options for");
     tools.extend(own);
     if s.agents {
         tools.extend(agent_tools_with(

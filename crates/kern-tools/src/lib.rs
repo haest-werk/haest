@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use kern_core::tool::Tool;
+use kern_core::{task_board::TaskBoard, tool::Tool};
 
 pub mod agents;
 pub mod bash;
@@ -54,6 +54,8 @@ pub use inbox::Inbox;
 pub use jobs::{JobEvents, JobHub};
 pub use read::{ReadIntercept, ReadTool};
 pub use search::{GlobTool, GrepTool};
+pub use skill::{SkillToolOptions, create_skill_tool};
+pub use tasks::create_task_tools;
 pub use turn_gate::AgentTurnGate;
 pub use web_fetch::{WebFetchNet, WebFetchTool};
 
@@ -67,6 +69,11 @@ pub struct BuiltinOptions {
     /// WebFetch's resolver and HTTP client; None = no WebFetch tool at all (a
     /// host with its own fetch, or no door to the network).
     pub web_fetch: Option<WebFetchNet>,
+    /// The board the task tools work on (the host keeps it, to save it with
+    /// the session); None = no task tools.
+    pub tasks: Option<Arc<TaskBoard>>,
+    /// What the Skill tool reads; None = no Skill tool.
+    pub skill: Option<SkillToolOptions>,
 }
 
 impl Default for BuiltinOptions {
@@ -75,6 +82,8 @@ impl Default for BuiltinOptions {
             read_intercept: None,
             bash: BashOptions::default(),
             web_fetch: Some(WebFetchNet::default()),
+            tasks: None,
+            skill: None,
         }
     }
 }
@@ -94,11 +103,14 @@ pub fn builtin_tools(opts: BuiltinOptions) -> Vec<Arc<dyn Tool>> {
     if let Some(net) = opts.web_fetch {
         tools.push(Arc::new(WebFetchTool::new(net)));
     }
+    tools.extend(opts.tasks.map(create_task_tools).unwrap_or_default());
+    tools.extend(opts.skill.map(create_skill_tool));
     tools
 }
 
 /// The word that picks a built-in tool (the `tools` setting): `read`, `write`,
-/// `edit`, `bash` (with its job tools), `grep`, `glob`, `web_fetch`.
+/// `edit`, `bash` (with its job tools), `grep`, `glob`, `web_fetch`, `tasks`,
+/// `skill`.
 pub fn builtin_word(tool: &str) -> Option<&'static str> {
     Some(match tool {
         "Read" => "read",
@@ -108,16 +120,33 @@ pub fn builtin_word(tool: &str) -> Option<&'static str> {
         "Grep" => "grep",
         "Glob" => "glob",
         "WebFetch" => "web_fetch",
+        "TaskCreate" | "TaskUpdate" | "TaskList" | "TaskGet" => "tasks",
+        "Skill" => "skill",
         _ => return None,
     })
 }
 
-/// The built-in tools whose word `on` takes, in [`builtin_tools`]' order.
-pub fn builtin_tools_where(on: impl Fn(&str) -> bool, opts: BuiltinOptions) -> Vec<Arc<dyn Tool>> {
-    builtin_tools(opts)
+/// The built-in tools whose word `on` takes, in [`builtin_tools`]' order. A
+/// word that is on while the option its tool needs is None is an error: a
+/// tool must never be silently missing.
+pub fn builtin_tools_where(
+    on: impl Fn(&str) -> bool,
+    opts: BuiltinOptions,
+) -> Result<Vec<Arc<dyn Tool>>, String> {
+    let needs = [
+        ("web_fetch", opts.web_fetch.is_some()),
+        ("tasks", opts.tasks.is_some()),
+        ("skill", opts.skill.is_some()),
+    ];
+    if let Some((word, _)) = needs.iter().find(|(word, given)| !given && on(word)) {
+        return Err(format!(
+            "the tools setting has {word} on, but BuiltinOptions.{word} is None"
+        ));
+    }
+    Ok(builtin_tools(opts)
         .into_iter()
         .filter(|t| builtin_word(t.name()).is_some_and(&on))
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -186,7 +215,7 @@ mod tests {
                 },
                 ..Default::default()
             };
-            names(&builtin_tools_where(|w| words.contains(&w), opts))
+            names(&builtin_tools_where(|w| words.contains(&w), opts).unwrap())
         };
         assert!(pick(&[], None).is_empty());
         assert_eq!(pick(&["web_fetch", "read"], None), ["Read", "WebFetch"]);
@@ -197,6 +226,32 @@ mod tests {
         );
         let every = builtin_tools(BuiltinOptions::default());
         assert!(every.iter().all(|t| builtin_word(t.name()).is_some()));
+    }
+
+    #[test]
+    fn a_word_that_is_on_is_never_silently_dropped() {
+        let skills = || Vec::new();
+        let fs = Arc::new(kern_core::fs::MemFs::new());
+        let given = BuiltinOptions {
+            tasks: Some(Arc::new(TaskBoard::default())),
+            skill: Some(SkillToolOptions::new(skills, fs)),
+            ..Default::default()
+        };
+        let pick = |word: &str, opts: BuiltinOptions| builtin_tools_where(|w| w == word, opts);
+        let tasks = pick("tasks", given.clone()).unwrap();
+        assert_eq!(
+            names(&tasks),
+            ["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
+        );
+        assert_eq!(names(&pick("skill", given).unwrap()), ["Skill"]);
+        for word in ["web_fetch", "tasks", "skill"] {
+            let none = BuiltinOptions {
+                web_fetch: None,
+                ..Default::default()
+            };
+            let err = pick(word, none).err().unwrap();
+            assert!(err.contains(word), "{err}");
+        }
     }
 
     #[test]

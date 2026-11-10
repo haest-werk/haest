@@ -109,12 +109,3 @@ fn a_word_set_answers_by_word_in_one_order_and_refuses_a_word_it_does_not_know()
     assert_eq!(SkillSources::ALL.words(), SkillSources::WORDS);
     assert_eq!(ContextSources::ALL.words(), ["agents", "claude"]);
 }
-
-#[test]
-fn the_tool_words_are_the_words_kern_tools_picks_its_built_ins_by() {
-    let every = kern_tools::builtin_tools(kern_tools::BuiltinOptions::default());
-    for tool in &every {
-        let word = kern_tools::builtin_word(tool.name()).unwrap();
-        assert!(BuiltinTools::WORDS.contains(&word), "{word}");
-    }
-}

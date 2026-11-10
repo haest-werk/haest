@@ -23,12 +23,10 @@ use crate::kern::{
     task_board::TaskBoard,
     tool::{Tool, ToolSource},
     tools::{
-        BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub,
+        BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub, SkillToolOptions,
         agents::{AgentRef, SubagentHub},
         builtin_tools_where,
         image::DEFAULT_IMAGE_BASE_URL,
-        skill::create_skill_tool,
-        tasks::create_task_tools,
         tool_search::deferral_tools,
     },
 };
@@ -48,18 +46,15 @@ pub fn own_tools(
             jobs,
             ..Default::default()
         },
-        ..Default::default()
-    };
-    let mut tools = builtin_tools_where(|w| picked.has(w), opts);
-    if picked.tasks {
-        tools.extend(create_task_tools(board));
-    }
-    if picked.skill {
-        tools.push(create_skill_tool(
+        tasks: Some(board),
+        skill: Some(SkillToolOptions::new(
             move || skills.lock().unwrap().clone(),
             host_fs,
-        ));
-    }
+        )),
+        ..Default::default()
+    };
+    let mut tools = builtin_tools_where(|w| picked.has(w), opts)
+        .expect("every option a built-in needs is given");
     if let Some(opts) = image {
         tools.push(Arc::new(ImageTool::new(opts)));
     }
@@ -206,13 +201,25 @@ mod tests {
     }
 
     #[test]
-    fn the_settings_words_are_the_words_kern_tools_picks_by() {
-        let all = BuiltinTools::ALL;
-        let built = builtin_tools_where(|w| all.has(w), BuiltinOptions::default());
-        assert_eq!(
-            names(&built),
-            ["Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch"]
-        );
+    fn every_tools_word_picks_a_built_in_and_every_built_in_has_a_word() {
+        let skills = Arc::new(Mutex::new(Vec::new()));
+        let fs: Arc<dyn Fs> = Arc::new(crate::kern::MemFs::new());
+        let every = |picked: &BuiltinTools| {
+            let board = Arc::new(TaskBoard::default());
+            own_tools(picked, board, skills.clone(), fs.clone(), None, None)
+        };
+        for word in BuiltinTools::WORDS {
+            let one = BuiltinTools::from_words([*word]).unwrap();
+            assert!(!every(&one).is_empty(), "{word} picks nothing");
+        }
+        for tool in every(&BuiltinTools::ALL) {
+            let word = crate::kern::tools::builtin_word(tool.name());
+            assert!(
+                word.is_some_and(|w| BuiltinTools::WORDS.contains(&w)),
+                "{}",
+                tool.name()
+            );
+        }
     }
 
     #[test]
