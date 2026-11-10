@@ -1,6 +1,6 @@
 [package]
 name = "kern-config"
-description = "kern's settings loader: TOML files, KERN_* variables and flags, in that order, into the values the runtime is handed"
+description = "kern's settings loader: a builder over TOML files, KERN_* variables and flags, laid in the order a host adds them, into the values the runtime is handed"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

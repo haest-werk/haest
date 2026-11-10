@@ -44,8 +44,15 @@ pub struct Config {
 
 impl Config {
     pub fn bare(cwd: impl Into<PathBuf>, home: impl Into<PathBuf>) -> Self {
+        Settings::bare(cwd, home).into()
+    }
+}
+
+/// These settings, and the loader's four bare.
+impl From<Settings> for Config {
+    fn from(settings: Settings) -> Self {
         Self {
-            settings: Settings::bare(cwd, home),
+            settings,
             profile: None,
             trusted_dirs: Vec::new(),
             env_passthrough: EnvPassthrough::Core,

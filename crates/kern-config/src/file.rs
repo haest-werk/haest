@@ -16,12 +16,72 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use kern_core::fs::{Fs, normalize};
 use toml::{Table, Value};
 
 use crate::{
     registry::{Def, Scope, find},
     value::check,
 };
+
+/// A file the host named (it must be there), else `<config dir>/config.toml`
+/// (None when there is none).
+pub async fn read_user_file(
+    fs: &dyn Fs,
+    named: Option<PathBuf>,
+    config_dir: &Path,
+) -> Result<Option<FileLayer>, String> {
+    let (path, required) = match named {
+        Some(path) => (path, true),
+        None => (config_dir.join("config.toml"), false),
+    };
+    match read(fs, &path).await? {
+        Some(text) => parse_file(&path, &text, FileKind::User).map(Some),
+        None if required => Err(format!("{}: no such file", path.display())),
+        None => Ok(None),
+    }
+}
+
+/// A trusted project's `.kern/config.toml`.
+pub async fn read_project_file(fs: &dyn Fs, path: &Path) -> Result<FileLayer, String> {
+    let text = read(fs, path).await?.unwrap_or_default();
+    parse_file(path, &text, FileKind::Project)
+}
+
+/// The nearest `.kern/config.toml` from `cwd` up, not counting the home dir's own.
+pub async fn find_project_file(fs: &dyn Fs, cwd: &Path, home: &Path) -> Option<PathBuf> {
+    let home = normalize(home);
+    let mut dir = normalize(cwd);
+    loop {
+        if dir == home {
+            return None;
+        }
+        let path = dir.join(".kern/config.toml");
+        if fs.exists(&path).await {
+            return Some(path);
+        }
+        dir = dir.parent()?.to_path_buf();
+    }
+}
+
+/// `<root>/.kern/config.toml`: the root is what must be trusted.
+pub fn project_root(path: &Path) -> &Path {
+    path.parent()
+        .and_then(Path::parent)
+        .unwrap_or(Path::new("/"))
+}
+
+/// The file's text; None when there is no file.
+async fn read(fs: &dyn Fs, path: &Path) -> Result<Option<String>, String> {
+    if !fs.exists(path).await {
+        return Ok(None);
+    }
+    let bytes = fs
+        .read(path)
+        .await
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+}
 
 /// A setting's checked value, by its definition.
 pub type Entries = Vec<(&'static Def, String)>;
@@ -35,14 +95,14 @@ pub struct FileLayer {
 
 /// Which file it is decides what it may set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileKind {
+enum FileKind {
     /// `<config dir>/config.toml`.
     User,
     /// A trusted project's `.kern/config.toml`.
     Project,
 }
 
-pub fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<FileLayer, String> {
+fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<FileLayer, String> {
     let at = |e: String| format!("{}: {e}", path.display());
     let table: Table = text
         .parse()

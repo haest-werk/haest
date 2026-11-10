@@ -2,7 +2,29 @@
 //! typed settings read: `true` / `false`, a comma list (`none` and an empty
 //! list are ""), a number, a word. Garbage is refused, never read as a default.
 
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
+
+use kern_core::fs::normalize;
+
 use crate::registry::{Def, Kind};
+
+/// A variable's value, trimmed; None when it is unset or empty.
+pub(crate) fn env_var<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
+    env.get(key).map(|v| v.trim()).filter(|v| !v.is_empty())
+}
+
+/// `~/x` -> home/x, `x` -> cwd/x, normalized: every path a setting names.
+pub(crate) fn absolute(dir: &str, cwd: &Path, home: &Path) -> PathBuf {
+    let path = match dir.strip_prefix("~/") {
+        Some(rest) => home.join(rest),
+        None if dir == "~" => home.to_path_buf(),
+        None => cwd.join(dir),
+    };
+    normalize(&path)
+}
 
 /// true / 1 / on / yes and false / 0 / off / no, any case.
 pub fn parse_bool(raw: &str) -> Option<bool> {

@@ -39,25 +39,18 @@ pub fn settings_report(loaded: &Loaded) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, path::PathBuf};
-
-    use kern::{
-        config::{LoadInputs, load},
-        fs::MemFs,
-    };
+    use kern::{config::Loader, fs::MemFs, settings::Settings};
 
     use super::*;
 
     #[tokio::test]
     async fn each_row_names_its_value_and_source_and_an_unset_one_says_so() {
         let flags = vec![("tools".to_string(), "read".to_string())];
-        let env = HashMap::from([("HOME".to_string(), "/h".to_string())]);
-        let inputs = LoadInputs {
-            cwd: PathBuf::from("/w"),
-            env: &env,
-            flags: &flags,
-        };
-        let loaded = load(&MemFs::new(), inputs).await.unwrap();
+        let loaded = Loader::new(Settings::bare("/w", "/h"))
+            .flags(&flags)
+            .load(&MemFs::new())
+            .await
+            .unwrap();
         let report = settings_report(&loaded);
         let row = |key: &str| {
             report

@@ -2,6 +2,7 @@
 //! file read only when trusted, profiles, garbage refused.
 
 mod handed;
+mod loader;
 mod typed;
 
 use std::{collections::HashMap, path::PathBuf};
@@ -14,32 +15,31 @@ use super::*;
 const HOME: &str = "/h";
 const USER_FILE: &str = "/h/.config/kern/config.toml";
 
-/// Everything a run in `cwd` with these files, variables and flags loads.
+fn files(files: &[(&str, &str)]) -> MemFs {
+    MemFs::with_files(files.iter().map(|(p, t)| (*p, t.as_bytes())))
+}
+
+fn owned(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+/// Everything the `kern` command loads in `cwd`, with these files, variables
+/// (`HOME` is /h) and flags.
 async fn run(
     cwd: &str,
-    files: &[(&str, &str)],
+    fs: &[(&str, &str)],
     env: &[(&str, &str)],
     flags: &[(&str, &str)],
 ) -> Result<Loaded, String> {
-    let fs = MemFs::with_files(files.iter().map(|(p, t)| (*p, t.as_bytes())));
-    let mut env: HashMap<String, String> = env
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
+    let env: HashMap<String, String> = owned(&[&[("HOME", HOME)], env].concat())
+        .into_iter()
         .collect();
-    env.entry("HOME".into()).or_insert_with(|| HOME.into());
-    let flags: Vec<(String, String)> = flags
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
-    load(
-        &fs,
-        LoadInputs {
-            cwd: PathBuf::from(cwd),
-            env: &env,
-            flags: &flags,
-        },
-    )
-    .await
+    Loader::standard(Settings::bare(cwd, HOME), &env, &owned(flags))
+        .load(&files(fs))
+        .await
 }
 
 async fn settings(env: &[(&str, &str)], flags: &[(&str, &str)]) -> Settings {

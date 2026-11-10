@@ -13,7 +13,7 @@ use kern_providers::{
 
 use crate::{
     fields::{CORE_VARS, EnvPassthrough},
-    resolve::env_var,
+    value::env_var,
 };
 
 /// What a process kern starts gets of `env`, by `env_passthrough`.

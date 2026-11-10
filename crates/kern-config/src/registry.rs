@@ -64,7 +64,7 @@ impl Def {
 
     /// `skill-catalog` (without the dashes in front).
     pub fn flag(&self) -> String {
-        self.key.replace('_', "-")
+        flag_name(self.key)
     }
 
     const fn short(mut self, c: char) -> Self {
@@ -150,4 +150,9 @@ pub const DEFS: &[Def] = &[
 
 pub fn find(key: &str) -> Option<&'static Def> {
     DEFS.iter().find(|d| d.key == key)
+}
+
+/// A setting's flag, without the dashes in front: `skill_catalog` -> `skill-catalog`.
+pub fn flag_name(key: &str) -> String {
+    key.replace('_', "-")
 }

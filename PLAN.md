@@ -31,6 +31,7 @@ Behaviour comes from there, file by file, tests included.
 | D15 | The library reads NOTHING it was not handed: no file, variable or flag of its own, no real disk unless handed `World::Disk`, no inherited env for a child. `kern-settings` is plain typed values (`Settings::bare`, word sets that fail to compile on a typo); `kern-config` is the OPT-IN loader (files, `KERN_*`, flags) whose `Loaded` is passed straight into `RuntimeInputs` | A host with hardcoded settings (brain) needs no loader, and the node's environment cannot change what a run may do. Config files are the loader's; content files (AGENTS.md, skills, sessions, mods) stay the runtime's, through the handed `Fs` |
 | D16 | `RuntimeInputs { settings, world, keys, providers, mcp_servers, routing }`. `World::Disk { child_env }` or `World::Fs(fs)` (the host's files: the sandbox over them, no real process, no stdio MCP server). Provider keys through a `KeySource` (a closure, a map, a vault). Trust is the loader's: it lists a project's MCP servers and turns its mods on only in a trusted dir | Each thing a run may touch is a value the host chose, so a test can prove it (`kern-runtime` builds a whole conversation over a `MemFs` with no keys) |
 | D17 | `env_passthrough = none \| core \| all`, default `core`; the `claude` profile sets `all`. Same words and `core` list as Codex's `shell_environment_policy.inherit` (whose default is `all`). With no `PATH` handed in, a program is looked up on `/usr/bin:/bin`, as `execvp` does | A key in the human's shell stays with kern unless asked; `none` still runs bash |
+| D18 | The loader is a builder: `Loader::new(defaults)` then the layers in the order they win (`.xdg_dirs .user_file .file .project_file .profile .env .flags`), `.load(fs)` last. A layer not added is not read; `Loader::standard` is the CLI's chain. Built on our own registry, not `config` (config-rs) or figment: those replace only the merge (40 lines) and need serde on every settings type, where `flatten` cannot go with `deny_unknown_fields`, so a typo would pass | .NET's `ConfigurationBuilder` shape: the order is the code, readable, and a host takes only the sources it wants |
 
 ## Crate map
 
@@ -81,6 +82,7 @@ Every row is exercised by `crates/kern-lib/examples/brain/` against fakes
 | 3 | Brain plug-in proof (custom Transport, Fs, tools, ShutWorkspace, clock, tool_call_start, in one example), parity run, README | done |
 | 4 | Settings + runtime (D8-D14): `kern-settings`, `kern-runtime`, the CLI rebuilt on them, the brain example on `settle`; checked live (bare vs `--profile claude` tokens, an untrusted project file skipped, a trusted one read) | done |
 | 5 | Nothing ambient (D15-D17): `kern-settings` plain values, the loader split out as `kern-config`, `RuntimeInputs` + `World` + `KeySource` + `ChildEnv`, `env_passthrough`, brain's settings written out; checked live (real bash under `none` / `core` / `all`: 5 / 14 / 109 variables, the API key only under `all`) | done |
+| 6 | The loader as a builder (D18): `Loader`, one merge over ordered layers (`stack.rs`), the CLI on `Loader::standard` | done |
 
 ### Parity (2026-11-10)
 

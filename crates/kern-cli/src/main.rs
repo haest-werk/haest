@@ -31,8 +31,9 @@ use std::{
 };
 
 use kern::{
-    config::{LoadInputs, Loaded},
+    config::{Loaded, Loader},
     runtime::{BuildOptions, RuntimeInputs, Ui, World, sessions, world},
+    settings::Settings,
     workspace::RealFs,
 };
 
@@ -152,12 +153,12 @@ async fn main() -> ExitCode {
         Ok(d) => d,
         Err(e) => return fail(2, e),
     };
-    let inputs = LoadInputs {
-        cwd,
-        env: &env,
-        flags: &cli.settings,
-    };
-    let loaded = match kern::config::load(&RealFs, inputs).await {
+    let home = env.get("HOME").map(|h| h.trim()).filter(|h| !h.is_empty());
+    let defaults = Settings::bare(cwd, home.unwrap_or("/"));
+    let loaded = match Loader::standard(defaults, &env, &cli.settings)
+        .load(&RealFs)
+        .await
+    {
         Ok(l) => l,
         Err(e) => return fail(2, e),
     };

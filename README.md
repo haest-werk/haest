@@ -22,7 +22,7 @@ Decisions and status live in [PLAN.md](PLAN.md), working rules in
 | `kern-mods` | mods: change how kern behaves without forking it, in Rust or as `.js`/`.ts` files |
 | `kern-ts` | the one TypeScript stripper Code, `js` and mods share |
 | `kern-settings` | the settings as plain typed values (`Settings::bare`), no files, no environment, no flags |
-| `kern-config` | the opt-in loader: TOML files, `KERN_*` variables and flags, profiles, trust; plus what the runtime is handed beside the settings (keys, `providers.json`, `.mcp.json`, a child's environment) |
+| `kern-config` | the opt-in loader, a builder (`Loader`): TOML files, `KERN_*` variables and flags in the order a host adds them, profiles, trust; plus what the runtime is handed beside the settings (keys, `providers.json`, `.mcp.json`, a child's environment) |
 | `kern-runtime` | a whole conversation built from what a host hands it, behind its `Ui`; what the CLI is made of |
 | `kern-lib` | the facade a host depends on: `use kern::...` |
 | `kern-cli` | the `kern` binary |
@@ -78,9 +78,9 @@ Every setting has one name, written three ways:
 | the environment | `KERN_` + upper snake | `KERN_SKILL_CATALOG=1` |
 | the command line | kebab-case | `--skill-catalog` |
 
-Each layer wins over the one before:
+The `kern` command reads these layers, each winning over the ones before it:
 
-1. the bare defaults
+1. the bare defaults (`$XDG_DATA_HOME` / `$XDG_CONFIG_HOME` move their dirs)
 2. `~/.config/kern/config.toml` (`$XDG_CONFIG_HOME/kern`; `KERN_CONFIG_DIR` or `--config-dir` moves it)
 3. the project's `.kern/config.toml` (the nearest from here up), only inside `trusted_dirs`
 4. the profile (`profile = "claude"`, `KERN_PROFILE`, `--profile`)
@@ -186,8 +186,26 @@ let settings = Settings {
 };
 ```
 
-or opts into kern's own files, variables and flags with the `config` feature:
-`kern::config::load` returns the settings and everything the runtime is handed
+or opts into kern's own files, variables and flags with the `config` feature,
+picking the layers and their order. Each layer wins over the ones before it;
+a layer left out is not read:
+
+```rust
+use kern::config::Loader;
+
+let loaded = Loader::new(Settings::bare(&cwd, &home)) // the defaults: bare, or the host's own
+    .xdg_dirs(&env)     // the dirs under $XDG_DATA_HOME, $XDG_CONFIG_HOME
+    .user_file()        // <config dir>/config.toml; .file(path) for one the host names
+    .project_file()     // the project's .kern/config.toml, inside trusted_dirs only
+    .profile()          // the profile `profile` names
+    .env(&env)          // KERN_* variables (and the provider keys)
+    .flags(&flags)      // --model, -e, ...
+    .load(&fs)
+    .await?;
+```
+
+That chain is `Loader::standard(defaults, &env, &flags)`, what the `kern`
+command reads. `loaded` holds the settings and everything the runtime is handed
 beside them. `kern::runtime::build` takes a `RuntimeInputs`: the settings, the
 `World` (the real disk with the environment a child gets, or the host's own
 `Fs`, where no real process starts), a `KeySource` for provider keys (a
