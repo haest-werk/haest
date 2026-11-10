@@ -11,7 +11,7 @@ use std::{
 use common::{argv, opts, real, tempdir};
 use kern_core::{
     ChildEnv,
-    fs::{FileKind, Fs},
+    fs::{FileKind, Fs, read_text_if_present},
     workspace::{EXIT_NOT_FOUND, OutputChunks, Workspace, WorkspaceMode},
 };
 use kern_workspace::{RealFs, RealWorkspace};
@@ -190,6 +190,25 @@ async fn real_fs_reads_writes_and_lists_the_disk() {
     assert!(fs.remove(&p("moved"), false).await.is_err());
     fs.remove(&p("moved"), true).await.unwrap();
     assert!(!Path::new(&p("moved")).exists());
+}
+
+#[tokio::test]
+async fn a_config_under_a_file_is_absent_but_one_that_cannot_be_read_is_an_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_t, dir) = tempdir();
+    let fs = RealFs::new();
+    std::fs::write(dir.join("plain"), "a file where a dir is expected").unwrap();
+    let under_a_file = read_text_if_present(&fs, &dir.join("plain/config.toml")).await;
+    assert_eq!(under_a_file.unwrap(), None, "no such file can exist there");
+
+    let locked = dir.join("locked.toml");
+    std::fs::write(&locked, "model = \"x\"").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let unreadable = read_text_if_present(&fs, &locked).await;
+    assert!(
+        unreadable.is_err(),
+        "a file that is there is never a silent default"
+    );
 }
 
 #[tokio::test]
