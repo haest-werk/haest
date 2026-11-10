@@ -33,6 +33,7 @@ use std::{
 use kern::{
     config::{Loaded, Loader, env_var},
     runtime::{BuildOptions, RuntimeInputs, Ui, World, sessions, world},
+    session::sessions_dir,
     settings::Settings,
     workspace::RealFs,
 };
@@ -54,7 +55,7 @@ async fn subcommand(cmd: &Command, loaded: &Loaded) -> ExitCode {
     match cmd {
         Command::Models => print!("{}", models::render(kern::providers::Catalog::builtin())),
         Command::Sessions { here } => {
-            let dir = sessions::sessions_dir(&s.data_dir);
+            let dir = sessions_dir(&s.data_dir);
             let cwd = s.cwd.to_string_lossy();
             let rows: Vec<String> = sessions::list_sessions(&RealFs, &dir)
                 .await

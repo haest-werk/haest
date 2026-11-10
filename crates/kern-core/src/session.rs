@@ -138,18 +138,36 @@ pub struct ReplayedSession {
 #[error("invalid session id \"{0}\"")]
 pub struct InvalidSessionId(pub String);
 
-/// `<data_dir>/sessions/<id>.jsonl`. The id is `[a-zA-Z0-9_-]+`, so it cannot escape the dir.
-pub fn session_path(data_dir: &Path, session_id: &str) -> Result<PathBuf, InvalidSessionId> {
-    let ok = !session_id.is_empty()
-        && session_id
+/// Where a data dir's sessions are: `<data_dir>/sessions`.
+pub fn sessions_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("sessions")
+}
+
+/// A session id is `[a-zA-Z0-9_-]+`, so its file cannot escape the dir.
+fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
-    if !ok {
-        return Err(InvalidSessionId(session_id.into()));
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Session `id`'s file in a [`sessions_dir`]: `<dir>/<id>.jsonl`.
+pub fn session_file(dir: &Path, id: &str) -> Result<PathBuf, InvalidSessionId> {
+    match valid_id(id) {
+        true => Ok(dir.join(format!("{id}.jsonl"))),
+        false => Err(InvalidSessionId(id.into())),
     }
-    Ok(data_dir
-        .join("sessions")
-        .join(format!("{session_id}.jsonl")))
+}
+
+/// The session id a file name in a [`sessions_dir`] stands for; None for a
+/// file that is not a session's.
+pub fn session_id_of(file_name: &str) -> Option<&str> {
+    file_name.strip_suffix(".jsonl").filter(|id| valid_id(id))
+}
+
+/// `<data_dir>/sessions/<id>.jsonl`.
+pub fn session_path(data_dir: &Path, session_id: &str) -> Result<PathBuf, InvalidSessionId> {
+    session_file(&sessions_dir(data_dir), session_id)
 }
 
 /// The user message that stands in for everything a compaction summarised.

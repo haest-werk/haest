@@ -17,10 +17,10 @@ use crate::{
         fs::Fs,
         ledger::Ledger,
         now_ms,
-        session::{JsonlSessionFile, ReplayedSession, SessionRecord},
+        session::{JsonlSessionFile, ReplayedSession, SessionRecord, sessions_dir},
         task_board::TaskBoard,
     },
-    sessions::{latest_in, new_session_id, sessions_dir},
+    sessions::{latest_in, new_session_id},
 };
 
 /// The session a run writes, opened and, on a resume, read. Nothing has

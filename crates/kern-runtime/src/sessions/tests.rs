@@ -3,6 +3,7 @@
 
 use std::{
     io,
+    path::PathBuf,
     sync::{
         Mutex,
         atomic::{AtomicU64, Ordering},
@@ -23,6 +24,9 @@ use crate::kern::{
 struct Spy {
     inner: MemFs,
     heads: Mutex<Vec<(String, usize)>>,
+    /// Every file last written at the same instant, and a stat answers the
+    /// later the earlier its id sorts, as a busy disk might.
+    tied: bool,
 }
 
 impl Spy {
@@ -30,7 +34,7 @@ impl Spy {
         let spy = Self::default();
         spy.inner.mkdir(Path::new(DIR), true).await.unwrap();
         for (id, cwd, text) in sessions {
-            let path = file_of(Path::new(DIR), id);
+            let path = session_file(Path::new(DIR), id).unwrap();
             let text = session_text(id, cwd, text);
             spy.inner.write(&path, text.as_bytes()).await.unwrap();
             // Distinct last writes, a millisecond apart at least.
@@ -61,7 +65,15 @@ impl Fs for Spy {
         self.inner.append(p, d).await
     }
     async fn stat(&self, p: &Path) -> io::Result<FsStat> {
-        self.inner.stat(p).await
+        let mut stat = self.inner.stat(p).await?;
+        if self.tied {
+            let first = p.file_stem().and_then(|s| s.to_str()?.bytes().next());
+            for _ in 0..b'z'.saturating_sub(first.unwrap_or(b'z')) {
+                tokio::task::yield_now().await;
+            }
+            stat.modified = Some(UNIX_EPOCH + Duration::from_secs(1));
+        }
+        Ok(stat)
     }
     async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
         self.inner.read_dir(p).await
@@ -102,7 +114,8 @@ fn tempdir() -> PathBuf {
 }
 
 fn write_session(dir: &Path, id: &str, cwd: &str, ask: &str) {
-    std::fs::write(file_of(dir, id), session_text(id, cwd, ask)).unwrap();
+    let path = session_file(dir, id).unwrap();
+    std::fs::write(path, session_text(id, cwd, ask)).unwrap();
 }
 
 #[tokio::test]
@@ -140,10 +153,10 @@ async fn resume_without_an_id_takes_the_latest_session_in_this_directory() {
 }
 
 #[tokio::test]
-async fn a_long_first_question_grows_the_read_and_the_rest_is_never_read() {
+async fn a_long_first_question_takes_one_more_read_and_the_rest_is_never_read() {
     let ask = format!("the question\n{}", "x".repeat(FIRST_READ * 2));
     let spy = Spy::with_sessions(&[("long", "/p", &ask)]).await;
-    let path = file_of(Path::new(DIR), "long");
+    let path = session_file(Path::new(DIR), "long").unwrap();
     let rest = format!("\n{}", "y".repeat(MAX_READ * 4));
     spy.inner.append(&path, rest.as_bytes()).await.unwrap();
     let list = list_sessions(&spy, Path::new(DIR)).await;
@@ -152,8 +165,28 @@ async fn a_long_first_question_grows_the_read_and_the_rest_is_never_read() {
         ("/p", "the question")
     );
     let reads: Vec<usize> = spy.heads().into_iter().map(|(_, n)| n).collect();
-    assert_eq!(reads[0], FIRST_READ);
-    assert!(reads.iter().all(|&n| n < MAX_READ), "{reads:?}");
+    assert_eq!(reads, [FIRST_READ, MAX_READ]);
+}
+
+#[tokio::test]
+async fn a_file_exactly_one_read_long_is_read_once_and_whole() {
+    let fill = FIRST_READ - session_text("exact", "/p", "").len();
+    let ask = "q".repeat(fill);
+    let spy = Spy::with_sessions(&[("exact", "/p", &ask)]).await;
+    let list = list_sessions(&spy, Path::new(DIR)).await;
+    assert_eq!(list[0].preview, ask[..70]);
+    assert_eq!(spy.heads(), [("exact".to_string(), FIRST_READ)]);
+}
+
+#[tokio::test]
+async fn sessions_last_written_at_the_same_instant_come_in_id_order() {
+    let mut spy = Spy::with_sessions(&[("c", "/p", "3"), ("a", "/p", "1"), ("b", "/p", "2")]).await;
+    spy.tied = true;
+    let list = list_sessions(&spy, Path::new(DIR)).await;
+    let ids: Vec<&str> = list.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["a", "b", "c"]);
+    let latest = latest_in(&spy, Path::new(DIR), Path::new("/p")).await;
+    assert_eq!(latest.as_deref(), Some("a"));
 }
 
 #[tokio::test]

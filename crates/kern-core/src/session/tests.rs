@@ -169,6 +169,14 @@ fn session_ids_cannot_escape_the_sessions_dir() {
     );
 }
 
+#[test]
+fn only_a_file_a_session_could_have_written_names_a_session() {
+    assert_eq!(session_id_of("a_B-1.jsonl"), Some("a_B-1"));
+    for other in ["a.b.jsonl", ".jsonl", "notes.txt", "a.jsonl.bak"] {
+        assert_eq!(session_id_of(other), None, "{other}");
+    }
+}
+
 /// A file as the TypeScript kern writes it (shapes from its session-store tests and
 /// host), plus a record kind a host keeps for itself and a torn final line.
 fn ts_fixture() -> String {
