@@ -1,8 +1,8 @@
 //! System prompt assembly: identity, environment, instruction files, skills.
 //!
-//! Instruction files are read only when the host asks: AGENTS.md (the
-//! cross-agent standard, [`InstructionOpts::agents_files`]) and Claude Code's
-//! CLAUDE.md family ([`InstructionOpts::claude_files`]). User level first, then
+//! Instruction files are read only when the host asks ([`ContextSources`]):
+//! AGENTS.md (the cross-agent standard) and Claude Code's CLAUDE.md family.
+//! User level first, then
 //! every directory from the outermost project dir down to cwd, so the most
 //! specific file is read last and wins on conflict.
 //!
@@ -76,34 +76,39 @@ fn project_chain(cwd: &Path, home: &Path) -> Vec<PathBuf> {
     chain
 }
 
+crate::word_set! {
+    /// Which instruction files kern reads (`context`). None unless the host says so.
+    pub ContextSources {
+        /// `AGENTS.md`: `~/.agents/AGENTS.md`, then every dir down to cwd.
+        agents,
+        /// Claude Code's: `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`
+        /// and the user's `~/.claude/CLAUDE.md`.
+        claude,
+    }
+}
+
 /// Where to look.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstructionOpts {
     pub cwd: PathBuf,
     pub home: PathBuf,
-    /// Claude Code's user dir (`<home>/.claude` when None); read only with `claude_files`.
+    /// Claude Code's user dir (`<home>/.claude` when None); read only with `claude`.
     pub config_dir: Option<PathBuf>,
-    /// Read `AGENTS.md`: `~/.agents/AGENTS.md`, then every dir down to cwd.
-    pub agents_files: bool,
-    /// Read Claude Code's files: `CLAUDE.md`, `.claude/CLAUDE.md`,
-    /// `CLAUDE.local.md` and the user's `~/.claude/CLAUDE.md`.
-    pub claude_files: bool,
+    pub sources: ContextSources,
 }
 
 /// Every path to try, in reading order: user dirs, then the project chain.
 fn candidates(opts: &InstructionOpts) -> Vec<PathBuf> {
-    let wanted = |f: &str| match f == AGENTS_FILE {
-        true => opts.agents_files,
-        false => opts.claude_files,
-    };
+    let ContextSources { agents, claude } = opts.sources;
+    let wanted = |f: &str| if f == AGENTS_FILE { agents } else { claude };
     let mut user_dirs = Vec::new();
-    if opts.claude_files {
-        let claude = opts.config_dir.clone();
-        user_dirs.push(claude.unwrap_or_else(|| opts.home.join(".claude")));
+    if claude {
+        let dir = opts.config_dir.clone();
+        user_dirs.push(dir.unwrap_or_else(|| opts.home.join(".claude")));
     }
-    let agents = opts.home.join(".agents");
-    if opts.agents_files && !user_dirs.contains(&agents) {
-        user_dirs.push(agents);
+    let agents_dir = opts.home.join(".agents");
+    if agents && !user_dirs.contains(&agents_dir) {
+        user_dirs.push(agents_dir);
     }
     let dirs = [
         (user_dirs, &USER_FILES[..]),

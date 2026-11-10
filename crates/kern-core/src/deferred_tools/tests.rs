@@ -95,7 +95,7 @@ fn a_host_names_its_own_always_loaded_tools() {
 
 #[test]
 fn modes_parse_their_own_names() {
-    for m in DeferMode::ALL {
+    for &m in DeferMode::ALL {
         assert_eq!(m.as_str().parse::<DeferMode>().unwrap(), m);
     }
     assert!("eager".parse::<DeferMode>().is_err());

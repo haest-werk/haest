@@ -120,6 +120,20 @@ fn every_setting_reads_back_as_the_text_it_was_set_from() {
 }
 
 #[test]
+fn every_word_a_choice_offers_is_one_its_field_takes() {
+    for def in DEFS {
+        let Kind::Choice(words) = def.kind else {
+            continue;
+        };
+        for word in words {
+            let mut c = Config::bare("/w", "/h");
+            set(&mut c, def.key, word).unwrap_or_else(|e| panic!("{} = {word}: {e}", def.key));
+            assert_eq!(get(&c, def.key).as_deref(), Some(*word), "{}", def.key);
+        }
+    }
+}
+
+#[test]
 fn an_unknown_name_is_refused() {
     let mut c = Config::bare("/w", "/h");
     assert!(set(&mut c, "tool", "read").is_err());

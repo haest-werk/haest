@@ -36,6 +36,7 @@ pub mod testing;
 pub mod tool;
 pub mod tool_batch;
 pub mod tool_exec;
+pub mod words;
 pub mod workspace;
 
 pub use agent::{Agent, AgentControl, AgentOptions};

@@ -8,7 +8,7 @@
 //!
 //! PLUG POINT: implement [`Workspace`] to give the agent a different world.
 
-use std::{fmt, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -16,44 +16,16 @@ use tokio_util::sync::CancellationToken;
 
 use crate::fs::{Fs, ShutFs};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WorkspaceMode {
-    /// A simulated bash over a copy-on-write overlay of the project. Writes stay in memory.
-    Sandbox,
-    /// The real disk and the real bash.
-    Real,
-    /// No files and no shell.
-    Shut,
-}
-
-impl WorkspaceMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            WorkspaceMode::Sandbox => "sandbox",
-            WorkspaceMode::Real => "real",
-            WorkspaceMode::Shut => "shut",
-        }
-    }
-}
-
-impl fmt::Display for WorkspaceMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for WorkspaceMode {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "sandbox" => Ok(Self::Sandbox),
-            "real" => Ok(Self::Real),
-            "shut" => Ok(Self::Shut),
-            _ => Err(format!(
-                "unknown workspace mode \"{s}\" (sandbox, real, shut)"
-            )),
-        }
+crate::word_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum WorkspaceMode ("workspace mode") {
+        /// A simulated bash over a copy-on-write overlay of the project. Writes stay in memory.
+        Sandbox = "sandbox",
+        /// The real disk and the real bash.
+        Real = "real",
+        /// No files and no shell.
+        Shut = "shut",
     }
 }
 

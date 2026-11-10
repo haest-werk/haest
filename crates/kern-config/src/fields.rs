@@ -10,17 +10,19 @@ use kern_settings::{BuiltinTools, ContextSources, Settings, SkillSources, WordSe
 
 use crate::value::{parse_bool, split_list};
 
-/// What a process kern starts (bash, a background job, an MCP server) gets of
-/// kern's own environment. Codex's `shell_environment_policy.inherit`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum EnvPassthrough {
-    /// Nothing: an MCP server gets only its own `env`.
-    None,
-    /// PATH, HOME, the user, the locale and the temp dirs ([`CORE_VARS`]).
-    #[default]
-    Core,
-    /// Every variable, API keys included (Claude Code's way).
-    All,
+kern_core::word_enum! {
+    /// What a process kern starts (bash, a background job, an MCP server) gets of
+    /// kern's own environment. Codex's `shell_environment_policy.inherit`.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub enum EnvPassthrough ("env_passthrough") {
+        /// Nothing: an MCP server gets only its own `env`.
+        None = "none",
+        /// PATH, HOME, the user, the locale and the temp dirs ([`CORE_VARS`]).
+        #[default]
+        Core = "core",
+        /// Every variable, API keys included (Claude Code's way).
+        All = "all",
+    }
 }
 
 /// `core`: Codex's list.
@@ -80,7 +82,7 @@ macro_rules! word {
         }
     )+};
 }
-word!(Effort, WorkspaceMode, DeferMode);
+word!(Effort, WorkspaceMode, DeferMode, EnvPassthrough);
 
 macro_rules! number {
     ($($t:ty),+) => {$(
@@ -157,36 +159,16 @@ impl<T: Raw> Raw for Option<T> {
     }
 }
 
-/// `off` is None.
-struct Engine(Option<WebSearchEngine>);
-
-impl Raw for Engine {
+/// `web_search`: `off` is a value (no search), not unset. WebSearchEngine is
+/// not [`Raw`] itself, so this is the only `Option` of it.
+impl Raw for Option<WebSearchEngine> {
     fn to_raw(&self) -> Option<String> {
-        Some(self.0.map_or("off", WebSearchEngine::as_str).into())
+        Some(self.map_or("off", WebSearchEngine::as_str).into())
     }
     fn from_raw(raw: &str) -> Result<Self, String> {
         match raw {
-            "off" => Ok(Self(None)),
-            engine => engine.parse().map(|e| Self(Some(e))),
-        }
-    }
-}
-
-impl Raw for EnvPassthrough {
-    fn to_raw(&self) -> Option<String> {
-        let word = match self {
-            Self::None => "none",
-            Self::Core => "core",
-            Self::All => "all",
-        };
-        Some(word.into())
-    }
-    fn from_raw(raw: &str) -> Result<Self, String> {
-        match raw {
-            "none" => Ok(Self::None),
-            "core" => Ok(Self::Core),
-            "all" => Ok(Self::All),
-            other => Err(format!("\"{other}\" must be none, core or all")),
+            "off" => Ok(None),
+            engine => engine.parse().map(Some),
         }
     }
 }
@@ -221,6 +203,7 @@ fields! {
     "code" => settings.code,
     "code_tools" => settings.code_tools,
     "agents" => settings.agents,
+    "web_search" => settings.web_search,
     "image" => settings.image,
     "image_model" => settings.image_model,
     "image_models" => settings.image_models,
@@ -253,20 +236,7 @@ fields! {
     "debug" => settings.debug,
 }
 
-/// `web_search` is the one setting whose "off" is a value, not unset.
-fn web_search(c: &Config) -> Option<String> {
-    Engine(c.settings.web_search).to_raw()
-}
-
-fn set_web_search(c: &mut Config, raw: &str) -> Result<(), String> {
-    c.settings.web_search = Engine::from_raw(raw)?.0;
-    Ok(())
-}
-
 fn field(key: &str) -> Option<(Get, Set)> {
-    if key == "web_search" {
-        return Some((web_search, set_web_search));
-    }
     FIELDS
         .iter()
         .find(|(k, _, _)| *k == key)

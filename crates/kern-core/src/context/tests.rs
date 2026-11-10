@@ -21,11 +21,10 @@ async fn each_kind_of_instruction_file_is_read_only_when_asked_for() {
         cwd: "/r/home/repo".into(),
         home: "/r/home".into(),
         config_dir: None,
-        agents_files: false,
-        claude_files: false,
+        sources: ContextSources::NONE,
     };
     assert!(find_instruction_files(&fs, &opts).await.is_empty());
-    opts.claude_files = true;
+    opts.sources.claude = true;
     let files = find_instruction_files(&fs, &opts).await;
     let claude_only = [
         "claude user",
@@ -34,10 +33,10 @@ async fn each_kind_of_instruction_file_is_read_only_when_asked_for() {
         "repo local",
     ];
     assert_eq!(contents(&files), claude_only);
-    (opts.agents_files, opts.claude_files) = (true, false);
+    (opts.sources.agents, opts.sources.claude) = (true, false);
     let files = find_instruction_files(&fs, &opts).await;
     assert_eq!(contents(&files), ["agents user", "repo agents"]);
-    opts.claude_files = true;
+    opts.sources.claude = true;
     let files = find_instruction_files(&fs, &opts).await;
     assert_eq!(
         contents(&files),
@@ -64,8 +63,7 @@ async fn user_files_first_then_outermost_project_dir_down_to_cwd_empty_files_ski
         cwd: "/r/home/repo/pkg".into(),
         home: "/r/home".into(),
         config_dir: Some("/r/home/.claude".into()),
-        agents_files: true,
-        claude_files: true,
+        sources: ContextSources::ALL,
     };
     let files = find_instruction_files(&fs, &opts).await;
     assert_eq!(contents(&files), ["user rules", "repo agents", "pkg rules"]);
@@ -83,8 +81,10 @@ async fn outside_home_the_chain_runs_from_the_root_and_long_files_are_cut() {
         cwd: "/w".into(),
         home: "/home/u".into(),
         config_dir: None,
-        agents_files: true,
-        claude_files: false,
+        sources: ContextSources {
+            agents: true,
+            claude: false,
+        },
     };
     let files = find_instruction_files(&fs, &opts).await;
     assert_eq!(files[0].content, "root rules");

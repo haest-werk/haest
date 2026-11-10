@@ -32,8 +32,7 @@ pub fn instruction_opts(s: &Settings) -> InstructionOpts {
         cwd: s.cwd.clone(),
         home: s.home.clone(),
         config_dir: None,
-        agents_files: s.context.agents,
-        claude_files: s.context.claude,
+        sources: s.context,
     }
 }
 

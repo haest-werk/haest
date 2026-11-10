@@ -51,23 +51,17 @@ pub struct Skill {
     pub path: PathBuf,
 }
 
-/// Which skill dirs kern reads. None of them is read unless the host says so.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SkillSources {
-    /// `~/.agents/skills` and every project level's `.agents/skills`.
-    pub agents: bool,
-    /// `<config dir>/skills` and every project level's `.claude/skills`.
-    pub claude: bool,
-    /// Claude Code's installed, enabled plugins.
-    pub plugins: bool,
-}
-
-impl SkillSources {
-    pub const ALL: Self = Self {
-        agents: true,
-        claude: true,
-        plugins: true,
-    };
+crate::word_set! {
+    /// Which skill dirs kern reads (`skills`). None of them is read unless the
+    /// host says so.
+    pub SkillSources {
+        /// `~/.agents/skills` and every project level's `.agents/skills`.
+        agents,
+        /// `<config dir>/skills` and every project level's `.claude/skills`.
+        claude,
+        /// Claude Code's installed, enabled plugins.
+        plugins,
+    }
 }
 
 /// Where kern looks for skills.
@@ -90,8 +84,7 @@ async fn kern_scan_roots(fs: &dyn Fs, opts: &SkillOpts) -> SkillScanRoots {
         cwd: opts.cwd.clone(),
         home: opts.home.clone(),
         plugins,
-        agents_dirs: opts.sources.agents,
-        claude_dirs: opts.sources.claude,
+        sources: opts.sources,
     }
 }
 

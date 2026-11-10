@@ -211,8 +211,11 @@ fn roots(plugins: bool, agents_dirs: bool) -> SkillScanRoots {
         } else {
             vec![]
         },
-        agents_dirs,
-        claude_dirs: true,
+        sources: SkillSources {
+            agents: agents_dirs,
+            claude: true,
+            plugins,
+        },
     }
 }
 

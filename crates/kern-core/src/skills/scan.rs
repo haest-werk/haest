@@ -10,14 +10,14 @@
 //! Unreadable or malformed files are skipped, never an error: one broken skill
 //! must not blank the whole list.
 //!
-//! `agents_dirs` reads the cross-agent `.agents/skills` convention
-//! (`~/.agents/skills` + each project level); `claude_dirs` reads Claude
-//! Code's (`<config dir>/skills` + each project level's `.claude/skills`).
+//! The `agents` source reads the cross-agent `.agents/skills` convention
+//! (`~/.agents/skills` + each project level); `claude` reads Claude Code's
+//! (`<config dir>/skills` + each project level's `.claude/skills`).
 
 use std::path::{Path, PathBuf};
 
 use super::{
-    Skill, SkillSource,
+    Skill, SkillSource, SkillSources,
     frontmatter::{Meta, MetaMap, read_meta, split_frontmatter},
 };
 use crate::fs::{Fs, normalize};
@@ -35,10 +35,9 @@ pub struct SkillScanRoots {
     pub cwd: PathBuf,
     pub home: PathBuf,
     pub plugins: Vec<PluginRoot>,
-    /// Read `.agents/skills` at user and project level.
-    pub agents_dirs: bool,
-    /// Read `<config dir>/skills` and `.claude/skills` at project level.
-    pub claude_dirs: bool,
+    /// `agents`: `.agents/skills` at user and project level; `claude`:
+    /// `<config dir>/skills` and `.claude/skills` at project level.
+    pub sources: SkillSources,
 }
 
 /// What a SKILL.md's frontmatter says, before it is placed (source, path, plugin).
@@ -130,21 +129,19 @@ fn scan_plan(roots: &SkillScanRoots) -> Vec<ScanStep> {
         source,
         plugin: None,
     };
+    let SkillSources { agents, claude, .. } = roots.sources;
     let mut plan = Vec::new();
-    if roots.agents_dirs {
+    if agents {
         plan.push(step(roots.home.join(".agents/skills"), SkillSource::User));
     }
-    if roots.claude_dirs {
+    if claude {
         plan.push(step(roots.config_dir.join("skills"), SkillSource::User));
     }
     // At one level `.claude` is read last, so it wins a tie.
-    let dot_dirs: Vec<&str> = [
-        (roots.agents_dirs, ".agents"),
-        (roots.claude_dirs, ".claude"),
-    ]
-    .into_iter()
-    .filter_map(|(on, d)| on.then_some(d))
-    .collect();
+    let dot_dirs: Vec<&str> = [(agents, ".agents"), (claude, ".claude")]
+        .into_iter()
+        .filter_map(|(on, d)| on.then_some(d))
+        .collect();
     // Farthest ancestor first so the cwd's own skills overwrite.
     let project = project_skill_dirs(&roots.cwd, &roots.home, &dot_dirs);
     plan.extend(

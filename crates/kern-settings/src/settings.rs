@@ -17,7 +17,7 @@ use kern_tools::{
     image::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
 };
 
-use crate::sets::{BuiltinTools, ContextSources};
+use crate::{ContextSources, sets::BuiltinTools};
 
 /// The model when none is configured.
 pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";

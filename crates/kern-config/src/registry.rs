@@ -3,19 +3,27 @@
 //! `--skill-catalog` on the command line. Its default is the bare value
 //! (`Config::bare`): every capability off until asked for, every brake on.
 
+use kern_core::{Effort, deferred_tools::DeferMode, provider::WebSearchEngine};
 use kern_settings::{BuiltinTools, ContextSources, SkillSources, WordSet};
+
+use crate::fields::EnvPassthrough;
 
 pub use kern_settings::DEFAULT_MODEL;
 
-const WEB_SEARCH: &[&str] = &[
-    "off",
-    "auto",
-    "native",
-    "exa",
-    "parallel",
-    "firecrawl",
-    "perplexity",
-];
+/// `off`, then every engine.
+const WEB_SEARCH: [&str; WebSearchEngine::WORDS.len() + 1] = {
+    let mut words = ["off"; WebSearchEngine::WORDS.len() + 1];
+    let mut i = 0;
+    while i < WebSearchEngine::WORDS.len() {
+        words[i + 1] = WebSearchEngine::WORDS[i];
+        i += 1;
+    }
+    words
+};
+
+/// The workspaces a setting may pick: `shut` (no files, no shell) is for a
+/// host that writes its settings out, never a file or flag.
+const WORKSPACES: &[&str] = &["sandbox", "real"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -105,7 +113,7 @@ use Kind::{Bool, Choice, List, Number, Path, Text};
 pub const DEFS: &[Def] = &[
     def("profile", PROFILE, Text, "A named set of settings: claude (built in: everything Claude Code has that kern reads), or a [profiles.<name>] table in a config file"),
     def("model", MODEL, Text, "provider:model").short('m'),
-    def("effort", MODEL, Choice(&["off", "low", "medium", "high", "xhigh", "max"]), "Reasoning effort (unset: the model's own default)").short('e'),
+    def("effort", MODEL, Choice(Effort::WORDS), "Reasoning effort (unset: the model's own default)").short('e'),
     def("system_prompt", MODEL, Text, "Replaces kern's own identity text at the top of the system prompt"),
     def("append_system_prompt", MODEL, Text, "Text appended to the system prompt"),
     def("context", CONTEXT, List(Some(ContextSources::WORDS)), "Instruction files: agents (AGENTS.md: ~/.agents/AGENTS.md, then every dir down to here), claude (CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md, ~/.claude/CLAUDE.md)"),
@@ -115,14 +123,14 @@ pub const DEFS: &[Def] = &[
     def("code", TOOLS, Bool, "The Code tool: a JavaScript run that calls the other tools"),
     def("code_tools", TOOLS, List(None), "Extra tool names Code may call (exact, or prefix*)"),
     def("agents", TOOLS, Bool, "Agent, SendMessage and StopAgent: subagents"),
-    def("web_search", TOOLS, Choice(WEB_SEARCH), "The provider's web search, by engine"),
+    def("web_search", TOOLS, Choice(&WEB_SEARCH), "The provider's web search, by engine"),
     def("image", TOOLS, Bool, "GenerateImage, over OpenRouter (needs OPENROUTER_API_KEY)"),
     def("image_model", TOOLS, Text, "GenerateImage's default model"),
     def("image_models", TOOLS, List(None), "The other image models a call may pick (unset: the library's list)"),
     def("mcp", TOOLS, Bool, "Start the project's MCP servers (.mcp.json); a trusted dir only"),
-    def("deferred_tools", TOOLS, Choice(&["proxy", "grow", "off"]), "How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off)"),
-    def("workspace", WORK, Choice(&["sandbox", "real"]), "sandbox: a simulated bash over a copy-on-write overlay (nothing reaches the disk until /apply); real: the real disk and bash").short('w'),
-    def("env_passthrough", WORK, Choice(&["none", "core", "all"]), "What a process kern starts (bash, a background job, an MCP server) gets of kern's environment: none, core (PATH, HOME, the user, the locale, the temp dirs), all (every variable, API keys included)"),
+    def("deferred_tools", TOOLS, Choice(DeferMode::WORDS), "How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off)"),
+    def("workspace", WORK, Choice(WORKSPACES), "sandbox: a simulated bash over a copy-on-write overlay (nothing reaches the disk until /apply); real: the real disk and bash").short('w'),
+    def("env_passthrough", WORK, Choice(EnvPassthrough::WORDS), "What a process kern starts (bash, a background job, an MCP server) gets of kern's environment: none, core (PATH, HOME, the user, the locale, the temp dirs), all (every variable, API keys included)"),
     def("mods", WORK, Bool, "Your mods in <config dir>/mods"),
     def("project_mods", WORK, Bool, "The project's mods in .kern/mods (its code runs; a trusted dir only)"),
     def("approvals", WORK, Bool, "The built-in approval mod: asks before a tool changes anything"),

@@ -7,7 +7,7 @@
 //! PLUG POINT: implement [`Provider`] for a new model API, or [`ModelResolver`]
 //! to decide which provider serves a `provider:model` spec.
 
-use std::{fmt, str::FromStr, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
@@ -16,53 +16,17 @@ use tokio_util::sync::CancellationToken;
 
 use crate::messages::{AssistantMessage, Message, StopReason};
 
-/// kern's reasoning levels. `Off` turns reasoning off where the model allows it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Effort {
-    Off,
-    Low,
-    Medium,
-    High,
-    Xhigh,
-    Max,
-}
-
-impl Effort {
-    pub const ALL: [Effort; 6] = [
-        Effort::Off,
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::Xhigh,
-        Effort::Max,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Effort::Off => "off",
-            Effort::Low => "low",
-            Effort::Medium => "medium",
-            Effort::High => "high",
-            Effort::Xhigh => "xhigh",
-            Effort::Max => "max",
-        }
-    }
-}
-
-impl fmt::Display for Effort {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for Effort {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Effort::ALL
-            .into_iter()
-            .find(|e| e.as_str() == s)
-            .ok_or_else(|| format!("unknown effort \"{s}\" (off, low, medium, high, xhigh, max)"))
+crate::word_enum! {
+    /// kern's reasoning levels. `Off` turns reasoning off where the model allows it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Effort ("effort") {
+        Off = "off",
+        Low = "low",
+        Medium = "medium",
+        High = "high",
+        Xhigh = "xhigh",
+        Max = "max",
     }
 }
 
@@ -75,48 +39,18 @@ pub struct ToolSpec {
     pub parameters: Value,
 }
 
-/// A provider-side web search (OpenRouter's `openrouter:web_search` server tool).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WebSearchEngine {
-    /// The model's native search where it has one, else Exa.
-    Auto,
-    Native,
-    Exa,
-    Parallel,
-    Firecrawl,
-    Perplexity,
-}
-
-impl WebSearchEngine {
-    pub const ALL: [WebSearchEngine; 6] = [
-        WebSearchEngine::Auto,
-        WebSearchEngine::Native,
-        WebSearchEngine::Exa,
-        WebSearchEngine::Parallel,
-        WebSearchEngine::Firecrawl,
-        WebSearchEngine::Perplexity,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            WebSearchEngine::Auto => "auto",
-            WebSearchEngine::Native => "native",
-            WebSearchEngine::Exa => "exa",
-            WebSearchEngine::Parallel => "parallel",
-            WebSearchEngine::Firecrawl => "firecrawl",
-            WebSearchEngine::Perplexity => "perplexity",
-        }
-    }
-}
-
-impl FromStr for WebSearchEngine {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        WebSearchEngine::ALL
-            .into_iter()
-            .find(|e| e.as_str() == s)
-            .ok_or_else(|| format!("unknown web search engine \"{s}\""))
+crate::word_enum! {
+    /// A provider-side web search (OpenRouter's `openrouter:web_search` server tool).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum WebSearchEngine ("web search engine") {
+        /// The model's native search where it has one, else Exa.
+        Auto = "auto",
+        Native = "native",
+        Exa = "exa",
+        Parallel = "parallel",
+        Firecrawl = "firecrawl",
+        Perplexity = "perplexity",
     }
 }
 
@@ -250,7 +184,7 @@ mod tests {
 
     #[test]
     fn effort_parses_its_own_names() {
-        for e in Effort::ALL {
+        for &e in Effort::ALL {
             assert_eq!(e.as_str().parse::<Effort>().unwrap(), e);
         }
         assert!("extreme".parse::<Effort>().is_err());

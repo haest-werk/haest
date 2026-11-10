@@ -25,6 +25,6 @@ mod settings;
 #[cfg(test)]
 mod tests;
 
-pub use kern_core::skills::SkillSources;
-pub use sets::{BuiltinTools, ContextSources, WordSet};
+pub use kern_core::{context::ContextSources, skills::SkillSources, words::WordSet};
+pub use sets::BuiltinTools;
 pub use settings::{DEFAULT_MODEL, Limits, Settings};

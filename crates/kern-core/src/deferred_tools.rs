@@ -13,45 +13,19 @@
 //! Built-in tools are never deferred: they are few, small and used constantly.
 //! The ToolSearch / CallTool tools themselves live in `kern-tools` (`tool_search`).
 
-use std::{collections::HashSet, fmt, str::FromStr, sync::Arc, sync::Mutex};
+use std::{collections::HashSet, sync::Arc, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
 
 use crate::tool::Tool;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DeferMode {
-    Off,
-    Proxy,
-    Grow,
-}
-
-impl DeferMode {
-    pub const ALL: [DeferMode; 3] = [DeferMode::Off, DeferMode::Proxy, DeferMode::Grow];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            DeferMode::Off => "off",
-            DeferMode::Proxy => "proxy",
-            DeferMode::Grow => "grow",
-        }
-    }
-}
-
-impl fmt::Display for DeferMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for DeferMode {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        DeferMode::ALL
-            .into_iter()
-            .find(|m| m.as_str() == s)
-            .ok_or_else(|| format!("unknown deferred-tools mode \"{s}\" (off, proxy, grow)"))
+crate::word_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum DeferMode ("deferred-tools mode") {
+        Off = "off",
+        Proxy = "proxy",
+        Grow = "grow",
     }
 }
 
