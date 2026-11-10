@@ -10,21 +10,19 @@ use std::{
 use kern_settings::Settings;
 
 use crate::{
-    Agents, Host, Ui,
-    inbox::{self, InboxQueue},
+    Agents, Host, Runtime, Ui, inbox,
     kern::{
         Agent, AgentDeps, AgentOptions, KeySource, Workspace,
         fs::Fs,
         ledger::Ledger,
-        mcp::{McpHub, McpServerConfig},
-        mods::{ModSystemPrompt, Mods, Prompter},
+        mcp::McpServerConfig,
+        mods::{ModSystemPrompt, Prompter},
         now_ms,
         providers::{CustomProviders, ProviderRegistry, RegistryOptions, RoutingEnv},
         session::SessionRecord,
         skills::{Skill, SkillOpts, scan_roots, skill_scan_roots, skills_in},
         task_board::TaskBoard,
         tool::Tool,
-        tools::{JobHub, agents::SubagentHub},
     },
     mods,
     prompt::{AgentPrompt, RuntimePrompt, skill_opts},
@@ -63,26 +61,6 @@ impl RuntimeInputs {
             routing: None,
         }
     }
-}
-
-pub struct Runtime<U: ?Sized> {
-    pub agent: Agent,
-    pub host: Arc<Host>,
-    /// The host's own UI, as it handed it in.
-    pub ui: Arc<U>,
-    pub fs: Arc<dyn Fs>,
-    pub board: Arc<TaskBoard>,
-    pub skills: Arc<Mutex<Vec<Skill>>>,
-    pub skill_opts: SkillOpts,
-    pub mcp: Arc<McpHub>,
-    pub mods: Arc<Mods>,
-    pub session_id: String,
-    /// Turns the human did not start, waiting for main.
-    pub inbox: InboxQueue,
-    /// Main's subagents (none run when `agents` is off).
-    pub agents: Arc<SubagentHub>,
-    /// Background shell jobs; None unless Bash runs in the real workspace.
-    pub jobs: Option<Arc<JobHub>>,
 }
 
 /// What a host decides per run, beside the settings.

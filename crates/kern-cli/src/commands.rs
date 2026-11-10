@@ -3,17 +3,7 @@
 //! (`/review src/a.rs`) expands to that skill's body and goes to the model;
 //! anything else starting with `/` is sent as typed.
 
-use std::sync::Arc;
-
-use kern::{
-    Effort,
-    ledger::LedgerCap,
-    mods::CommandOutcome,
-    now_ms,
-    runtime::{init_store, open_store, sessions::new_session_id},
-    session::SessionRecord,
-    skills::{discover_skills, load_skill_body},
-};
+use kern::{Effort, ledger::LedgerCap, mods::CommandOutcome, skills::load_skill_body};
 use tokio_util::sync::CancellationToken;
 
 use crate::{changes, term::Runtime};
@@ -94,17 +84,10 @@ fn model(rt: &mut Runtime, spec: &str) {
     if spec.is_empty() {
         return rt.host.info(&format!("Model: {}", rt.agent.model_spec));
     }
-    if let Err(e) = rt.agent.deps().models.resolve(spec) {
-        return rt.host.error(&format!("Model not changed: {e}"));
+    match rt.set_model(spec) {
+        Ok(()) => rt.host.info(&format!("Model set to {spec}")),
+        Err(e) => rt.host.error(&format!("Model not changed: {e}")),
     }
-    rt.agent.model_spec = spec.to_string();
-    rt.host.set_model(spec);
-    rt.host.append(SessionRecord::Config {
-        t: now_ms(),
-        model: Some(spec.to_string()),
-        effort: None,
-    });
-    rt.host.info(&format!("Model set to {spec}"));
 }
 
 fn effort(rt: &mut Runtime, arg: &str) {
@@ -123,13 +106,7 @@ fn effort(rt: &mut Runtime, arg: &str) {
             }
         },
     };
-    rt.agent.effort = effort;
-    rt.host.set_effort(effort);
-    rt.host.append(SessionRecord::Config {
-        t: now_ms(),
-        model: None,
-        effort: Some(effort),
-    });
+    rt.set_effort(effort);
     rt.host.info(&format!("Effort set to {}", label(effort)));
 }
 
@@ -168,22 +145,17 @@ fn budget(rt: &mut Runtime, args: &str) {
     rt.host.info(&text);
 }
 
-/// Fresh session: new id, new file, empty history and task list; the ledger carries over.
 fn clear(rt: &mut Runtime) {
-    let id = new_session_id();
-    match open_store(&rt.fs, &rt.host.settings.data_dir, &id, rt.host.ui.clone()) {
-        Ok(store) => rt.host.swap_store(Arc::new(store)),
-        Err(e) => return rt.host.error(&format!("Not cleared: {e}")),
+    match rt.clear() {
+        Ok(()) => rt
+            .host
+            .info(&format!("Started a fresh session ({}).", rt.session_id)),
+        Err(e) => rt.host.error(&format!("Not cleared: {e}")),
     }
-    rt.session_id = id.clone();
-    rt.agent.replace_history(Vec::new());
-    init_store(&rt.host, &rt.agent, &id);
-    rt.board.restore(Vec::new());
-    rt.host.info(&format!("Started a fresh session ({id})."));
 }
 
 async fn skills(rt: &mut Runtime) {
-    let found = discover_skills(rt.fs.as_ref(), &rt.skill_opts).await;
+    let found = rt.rescan_skills().await;
     let lines: Vec<String> = found
         .iter()
         .map(|s| {
@@ -195,7 +167,6 @@ async fn skills(rt: &mut Runtime) {
             format!("- /{}{only}: {}", s.name, s.description)
         })
         .collect();
-    *rt.skills.lock().unwrap() = found;
     if lines.is_empty() {
         rt.host.info("No skills found.");
     } else {

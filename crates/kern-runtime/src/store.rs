@@ -24,7 +24,7 @@ use crate::{
 };
 
 /// The session file `id` under `data_dir`; a failed write is the [`Ui`]'s error.
-pub fn open_store(
+pub(crate) fn open_store(
     fs: &Arc<dyn Fs>,
     data_dir: &Path,
     id: &str,
@@ -60,7 +60,7 @@ pub(crate) async fn open_session(
 }
 
 /// A new session file: header, the model and effort it starts on, the ledger so far.
-pub fn init_store(host: &Host, agent: &Agent, id: &str) {
+pub(crate) fn init_store(host: &Host, agent: &Agent, id: &str) {
     host.store()
         .init(id, &host.settings.cwd.to_string_lossy(), now_ms());
     host.append(SessionRecord::Config {
