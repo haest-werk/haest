@@ -26,7 +26,9 @@ mod transport;
 #[cfg(test)]
 mod test_server;
 
-pub use config::{McpConfigError, McpServerConfig, McpTransport, load_project_mcp_config};
+pub use config::{
+    McpConfigError, McpServerConfig, McpTransport, load_project_mcp_config, project_mcp_path,
+};
 pub use hub::{CALL_TIMEOUT, CONNECT_TIMEOUT, McpFailure, McpHub};
 pub use result::mcp_result_to_output;
 pub use tool::{McpTool, mcp_kind, mcp_tool_name};

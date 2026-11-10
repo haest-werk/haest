@@ -8,8 +8,6 @@ use kern_settings::{BuiltinTools, ContextSources, SkillSources, WordSet};
 
 use crate::fields::EnvPassthrough;
 
-pub use kern_settings::DEFAULT_MODEL;
-
 /// `off`, then every engine.
 const WEB_SEARCH: [&str; WebSearchEngine::WORDS.len() + 1] = {
     let mut words = ["off"; WebSearchEngine::WORDS.len() + 1];
@@ -116,6 +114,7 @@ pub const DEFS: &[Def] = &[
     def("effort", MODEL, Choice(Effort::WORDS), "Reasoning effort (unset: the model's own default)").short('e'),
     def("system_prompt", MODEL, Text, "Replaces kern's own identity text at the top of the system prompt"),
     def("append_system_prompt", MODEL, Text, "Text appended to the system prompt"),
+    def("provider_routing", MODEL, Text, "OpenRouter's provider routing, as JSON: {\"global\": {\"banned\": [...], \"favorites\": [...]}, \"overrides\": ..., \"project\": ...}").scope(Scope::User),
     def("context", CONTEXT, List(Some(ContextSources::WORDS)), "Instruction files: agents (AGENTS.md: ~/.agents/AGENTS.md, then every dir down to here), claude (CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md, ~/.claude/CLAUDE.md)"),
     def("skills", CONTEXT, List(Some(SkillSources::WORDS)), "Where skills come from: agents (~/.agents/skills, .agents/skills), claude (~/.claude/skills, .claude/skills), plugins (Claude Code's installed plugins); /<name> runs one"),
     def("skill_catalog", CONTEXT, Bool, "List the skills in the system prompt, so the model picks them on its own"),

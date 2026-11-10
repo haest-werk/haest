@@ -5,7 +5,6 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::{
     fields::{Config, set},
-    file::{Entries, FileLayer},
     registry::{Def, Kind, find},
     source::Source,
     value::{absolute, check},
@@ -13,6 +12,9 @@ use crate::{
 
 /// Checked values, each with where it came from.
 pub(crate) type Tagged = Vec<(&'static Def, String, Source)>;
+
+/// Checked values of one profile table: where they came from is the profile.
+pub(crate) type Entries = Vec<(&'static Def, String)>;
 
 /// One value a host handed in, not yet checked: a variable's, a flag's.
 #[derive(Debug, Clone, PartialEq)]
@@ -69,19 +71,6 @@ impl Layer {
             values,
             profiles: BTreeMap::new(),
         })
-    }
-
-    pub fn file(file: FileLayer) -> Self {
-        let source = Source::File(file.path);
-        let values = file
-            .base
-            .into_iter()
-            .map(|(def, value)| (def, value, source.clone()))
-            .collect();
-        Self {
-            values,
-            profiles: file.profiles,
-        }
     }
 }
 

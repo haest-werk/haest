@@ -15,7 +15,7 @@ use crate::{
     file, handed, profiles,
     registry::{DEFS, flag_name},
     source::{ProjectFile, Resolved, Source},
-    stack::{Given, Layer, Pending, Slot, Stack},
+    stack::{Given, Pending, Slot, Stack},
     value::{absolute, env_var, split_list},
 };
 
@@ -124,7 +124,8 @@ impl Loader {
     /// keys, OpenRouter's routing and a child process's environment from:
     /// without `.env()` those are empty.
     pub fn env(mut self, env: &HashMap<String, String>) -> Self {
-        self.env.extend(env.clone());
+        self.env
+            .extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
         let given = DEFS.iter().filter_map(|def| {
             let var = def.env();
             let raw = env_var(env, &var)?;
@@ -149,8 +150,12 @@ impl Loader {
     /// Read every layer and lay each over the ones before it; then read what
     /// the runtime is handed beside the settings.
     pub async fn load(self, fs: &dyn Fs) -> Result<Loaded, String> {
-        let env = self.env.clone();
-        let (mut config, resolved, mut notes) = self.resolve(fs).await?;
+        let Loader {
+            defaults,
+            stack,
+            env,
+        } = self;
+        let (mut config, resolved, mut notes) = resolve(defaults, stack, fs).await?;
         let cwd = config.settings.cwd.clone();
         let s = &mut config.settings;
         handed::gate_project_mods(fs, &cwd, &mut s.project_mods, resolved.trusted, &mut notes)
@@ -160,9 +165,10 @@ impl Loader {
         let providers = load_custom_providers(fs, &config.settings.config_dir)
             .await
             .map_err(|e| e.0)?;
+        let routing = config.provider_routing.as_deref();
         Ok(Loaded {
             child_env: handed::child_env(config.env_passthrough, &env),
-            routing: handed::routing(&env, &mut notes),
+            routing: handed::routing(routing, &resolved.source("provider_routing"), &mut notes),
             keys: env,
             config,
             resolved,
@@ -171,72 +177,67 @@ impl Loader {
             notes,
         })
     }
+}
 
-    /// The layers in their order of reading: what is in hand (variables,
-    /// flags), the files (from the config dir those give), the project's file
-    /// (by the trust those give), the profile (that all of them name).
-    async fn resolve(self, fs: &dyn Fs) -> Result<(Config, Resolved, Vec<String>), String> {
-        let Loader {
-            defaults,
-            mut stack,
-            ..
-        } = self;
-        let (cwd, home) = (defaults.cwd.clone(), defaults.home.clone());
-        let at = |path: &str| absolute(path, &cwd, &home);
-        let mut notes = Vec::new();
+/// The layers in their order of reading: what is in hand (variables, flags),
+/// the files (from the config dir those give), the project's file (by the
+/// trust those give), the profile (that all of them name).
+async fn resolve(
+    defaults: Settings,
+    mut stack: Stack,
+    fs: &dyn Fs,
+) -> Result<(Config, Resolved, Vec<String>), String> {
+    let (cwd, home) = (defaults.cwd.clone(), defaults.home.clone());
+    let at = |path: &str| absolute(path, &cwd, &home);
+    let mut notes = Vec::new();
 
-        stack.read_values()?;
-        let config_dir = stack
-            .last("config_dir")
-            .map_or_else(|| defaults.config_dir.clone(), at);
-        for slot in &mut stack.0 {
-            if let Slot::Pending(Pending::File(named)) = slot {
-                let named = named.as_deref().map(|p| at(&p.to_string_lossy()));
-                let read = file::read_user_file(fs, named, &config_dir).await?;
-                *slot = Slot::Read(read.map(Layer::file).unwrap_or_default());
-            }
+    stack.read_values()?;
+    let config_dir = stack
+        .last("config_dir")
+        .map_or_else(|| defaults.config_dir.clone(), at);
+    for slot in &mut stack.0 {
+        if let Slot::Pending(Pending::File(named)) = slot {
+            let named = named.as_deref().map(|p| at(&p.to_string_lossy()));
+            let read = file::read_user_file(fs, named, &config_dir).await?;
+            *slot = Slot::Read(read.unwrap_or_default());
         }
+    }
 
-        let trusted_dirs: Vec<PathBuf> = stack
-            .last("trusted_dirs")
-            .map(split_list)
-            .unwrap_or_default()
-            .iter()
-            .map(|dir| at(dir))
-            .collect();
-        let trusted = |dir: &Path| trusted_dirs.iter().any(|t| normalize(dir).starts_with(t));
-        let project_file = if stack.has(&Pending::Project) {
-            read_project(fs, &cwd, &home, &trusted, &mut stack).await?
+    let trusted_dirs: Vec<PathBuf> = stack
+        .last("trusted_dirs")
+        .map(split_list)
+        .unwrap_or_default()
+        .iter()
+        .map(|dir| at(dir))
+        .collect();
+    let trusted = |dir: &Path| trusted_dirs.iter().any(|t| normalize(dir).starts_with(t));
+    let project_file = if stack.has(&Pending::Project) {
+        read_project(fs, &cwd, &home, &trusted, &mut stack).await?
+    } else {
+        ProjectFile::None
+    };
+    if let ProjectFile::Untrusted(path) = &project_file {
+        notes.push(handed::untrusted(path, file::project_root(path)));
+    }
+
+    if let Some(name) = stack.last("profile").map(String::from) {
+        if stack.has(&Pending::Profile) {
+            let layer = profiles::layer(&name, &stack)?;
+            stack.fill(&Pending::Profile, &layer);
         } else {
-            ProjectFile::None
-        };
-        if let ProjectFile::Untrusted(path) = &project_file {
             notes.push(format!(
-                "Skipped {}: {} is not in trusted_dirs.",
-                path.display(),
-                file::project_root(path).display()
+                "profile \"{name}\" is set, but this loader reads no profile (Loader::profile): not applied."
             ));
         }
-
-        if let Some(name) = stack.last("profile").map(String::from) {
-            if stack.has(&Pending::Profile) {
-                let layer = profiles::layer(&name, &stack)?;
-                stack.fill(&Pending::Profile, &layer);
-            } else {
-                notes.push(format!(
-                    "profile \"{name}\" is set, but this loader reads no profile (Loader::profile): not applied."
-                ));
-            }
-        }
-
-        let (config, sources) = stack.fold(Config::from(defaults))?;
-        let resolved = Resolved {
-            sources,
-            project_file,
-            trusted: trusted(&cwd),
-        };
-        Ok((config, resolved, notes))
     }
+
+    let (config, sources) = stack.fold(Config::from(defaults))?;
+    let resolved = Resolved {
+        sources,
+        project_file,
+        trusted: trusted(&cwd),
+    };
+    Ok((config, resolved, notes))
 }
 
 /// The nearest `.kern/config.toml`: read into the project layer when its
@@ -254,7 +255,7 @@ async fn read_project(
     if !trusted(file::project_root(&path)) {
         return Ok(ProjectFile::Untrusted(path));
     }
-    let layer = Layer::file(file::read_project_file(fs, &path).await?);
+    let layer = file::read_project_file(fs, &path).await?;
     stack.fill(&Pending::Project, &layer);
     Ok(ProjectFile::Read(path))
 }

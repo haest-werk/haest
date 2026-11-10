@@ -34,7 +34,7 @@ mod tests;
 use serde::Serialize;
 
 pub use normalize::{
-    ROUTING_ENV, is_empty_routing, normalize_project_routing, normalize_routing, parse_routing,
+    is_empty_routing, normalize_project_routing, normalize_routing, parse_routing,
 };
 pub use patterns::{MatchKind, match_kind, pattern_matches, pattern_refusal, specificity};
 

@@ -36,7 +36,7 @@ async fn a_child_gets_core_by_default_nothing_with_none_and_everything_with_all(
 }
 
 #[tokio::test]
-async fn the_keys_are_the_environment_and_the_routing_variable_is_parsed_or_noted() {
+async fn the_keys_are_the_environment_and_routing_is_parsed_or_noted_with_its_source() {
     let routing = r#"{"global": {"banned": ["novita"], "favorites": []}}"#;
     let mut env = ENV.to_vec();
     env.push(("KERN_PROVIDER_ROUTING", routing));
@@ -46,15 +46,14 @@ async fn the_keys_are_the_environment_and_the_routing_variable_is_parsed_or_note
         Some("k")
     );
     assert!(r.routing.is_some() && r.notes.is_empty());
-    let bad = run("/w", &[], &[("KERN_PROVIDER_ROUTING", "{nope")], &[])
-        .await
-        .unwrap();
-    assert!(bad.routing.is_none());
-    assert!(
-        bad.notes[0].contains("KERN_PROVIDER_ROUTING"),
-        "{:?}",
-        bad.notes
-    );
+    let noted = |r: Loaded, from: &str| {
+        assert!(r.routing.is_none());
+        assert!(r.notes[0].contains(from), "{:?}", r.notes);
+    };
+    let bad_var = run("/w", &[], &[("KERN_PROVIDER_ROUTING", "{nope")], &[]);
+    noted(bad_var.await.unwrap(), "KERN_PROVIDER_ROUTING");
+    let bad_flag = run("/w", &[], &[], &[("provider_routing", "{nope")]);
+    noted(bad_flag.await.unwrap(), "--provider-routing");
 }
 
 #[tokio::test]

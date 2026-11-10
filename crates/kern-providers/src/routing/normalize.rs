@@ -10,10 +10,6 @@ use super::{
     pattern_refusal, unique,
 };
 
-/// The environment variable a host puts the routing scopes in, as JSON:
-/// the fleet scope's `global` + `overrides`, and an optional `project` scope.
-pub const ROUTING_ENV: &str = "KERN_PROVIDER_ROUTING";
-
 fn slug_list(v: Option<&Value>) -> Vec<String> {
     let Some(list) = v.and_then(Value::as_array) else {
         return Vec::new();
@@ -82,14 +78,17 @@ pub fn is_empty_routing(config: &ProjectRouting) -> bool {
         && config.priority.is_none()
 }
 
-/// The scopes in [`ROUTING_ENV`]'s JSON, or None when empty. Malformed JSON is
-/// an `Err` the caller reports and then routes as if unset -- loudly, never fatally.
+/// The routing scopes in a host's JSON (kern's `provider_routing` setting):
+/// the fleet scope's `global` + `overrides`, and an optional `project` scope.
+/// None when empty. Malformed JSON is an `Err` the caller reports, naming
+/// where the JSON came from, and then routes as if unset -- loudly, never
+/// fatally.
 pub fn parse_routing(raw: &str) -> Result<Option<RoutingEnv>, String> {
     if raw.trim().is_empty() {
         return Ok(None);
     }
-    let parsed: Value = serde_json::from_str(raw)
-        .map_err(|e| format!("{ROUTING_ENV} is not valid JSON, ignoring it: {e}"))?;
+    let parsed: Value =
+        serde_json::from_str(raw).map_err(|e| format!("not valid JSON, ignoring it: {e}"))?;
     let fleet = normalize_routing(&parsed);
     let project = parsed
         .get("project")

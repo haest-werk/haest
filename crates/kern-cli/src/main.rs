@@ -31,7 +31,7 @@ use std::{
 };
 
 use kern::{
-    config::{Loaded, Loader},
+    config::{Loaded, Loader, env_var},
     runtime::{BuildOptions, RuntimeInputs, Ui, World, sessions, world},
     settings::Settings,
     workspace::RealFs,
@@ -153,8 +153,8 @@ async fn main() -> ExitCode {
         Ok(d) => d,
         Err(e) => return fail(2, e),
     };
-    let home = env.get("HOME").map(|h| h.trim()).filter(|h| !h.is_empty());
-    let defaults = Settings::bare(cwd, home.unwrap_or("/"));
+    let home = env_var(&env, "HOME").unwrap_or("/");
+    let defaults = Settings::bare(cwd, home);
     let loaded = match Loader::standard(defaults, &env, &cli.settings)
         .load(&RealFs)
         .await

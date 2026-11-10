@@ -11,16 +11,15 @@
 //!
 //! An unknown key is an error naming the file: a typo must not silently do nothing.
 
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use kern_core::fs::{Fs, normalize};
+use kern_core::{context::project_chain, fs::Fs, fs::read_text_if_present};
 use toml::{Table, Value};
 
 use crate::{
     registry::{Def, Scope, find},
+    source::Source,
+    stack::{Entries, Layer},
     value::check,
 };
 
@@ -30,7 +29,7 @@ pub async fn read_user_file(
     fs: &dyn Fs,
     named: Option<PathBuf>,
     config_dir: &Path,
-) -> Result<Option<FileLayer>, String> {
+) -> Result<Option<Layer>, String> {
     let (path, required) = match named {
         Some(path) => (path, true),
         None => (config_dir.join("config.toml"), false),
@@ -43,25 +42,20 @@ pub async fn read_user_file(
 }
 
 /// A trusted project's `.kern/config.toml`.
-pub async fn read_project_file(fs: &dyn Fs, path: &Path) -> Result<FileLayer, String> {
+pub async fn read_project_file(fs: &dyn Fs, path: &Path) -> Result<Layer, String> {
     let text = read(fs, path).await?.unwrap_or_default();
     parse_file(path, &text, FileKind::Project)
 }
 
 /// The nearest `.kern/config.toml` from `cwd` up, not counting the home dir's own.
 pub async fn find_project_file(fs: &dyn Fs, cwd: &Path, home: &Path) -> Option<PathBuf> {
-    let home = normalize(home);
-    let mut dir = normalize(cwd);
-    loop {
-        if dir == home {
-            return None;
-        }
+    for dir in project_chain(cwd, home).iter().rev() {
         let path = dir.join(".kern/config.toml");
         if fs.exists(&path).await {
             return Some(path);
         }
-        dir = dir.parent()?.to_path_buf();
     }
+    None
 }
 
 /// `<root>/.kern/config.toml`: the root is what must be trusted.
@@ -71,26 +65,10 @@ pub fn project_root(path: &Path) -> &Path {
         .unwrap_or(Path::new("/"))
 }
 
-/// The file's text; None when there is no file.
 async fn read(fs: &dyn Fs, path: &Path) -> Result<Option<String>, String> {
-    if !fs.exists(path).await {
-        return Ok(None);
-    }
-    let bytes = fs
-        .read(path)
+    read_text_if_present(fs, path)
         .await
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
-}
-
-/// A setting's checked value, by its definition.
-pub type Entries = Vec<(&'static Def, String)>;
-
-#[derive(Debug, Default)]
-pub struct FileLayer {
-    pub path: PathBuf,
-    pub base: Entries,
-    pub profiles: BTreeMap<String, Entries>,
+        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Which file it is decides what it may set.
@@ -102,65 +80,68 @@ enum FileKind {
     Project,
 }
 
-fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<FileLayer, String> {
+fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<Layer, String> {
     let at = |e: String| format!("{}: {e}", path.display());
     let table: Table = text
         .parse()
         .map_err(|e: toml::de::Error| at(e.to_string()))?;
-    let mut layer = FileLayer {
-        path: path.to_path_buf(),
-        ..Default::default()
-    };
+    let source = Source::File(path.to_path_buf());
+    let mut layer = Layer::default();
     for (key, value) in &table {
-        if key == "profiles" {
-            let Value::Table(profiles) = value else {
-                return Err(at("profiles must be a table of [profiles.<name>]".into()));
-            };
-            for (name, body) in profiles {
-                let Value::Table(body) = body else {
-                    return Err(at(format!("profiles.{name} must be a table")));
-                };
-                let entries =
-                    entries(body, kind, true).map_err(|e| at(format!("profiles.{name}: {e}")))?;
-                layer.profiles.insert(name.clone(), entries);
-            }
+        if key != "profiles" {
+            let (def, value) = entry(key, value, kind, false).map_err(at)?;
+            layer.values.push((def, value, source.clone()));
             continue;
         }
-        let mut one = Table::new();
-        one.insert(key.clone(), value.clone());
-        layer.base.extend(entries(&one, kind, false).map_err(at)?);
+        let Value::Table(profiles) = value else {
+            return Err(at("profiles must be a table of [profiles.<name>]".into()));
+        };
+        for (name, body) in profiles {
+            let Value::Table(body) = body else {
+                return Err(at(format!("profiles.{name} must be a table")));
+            };
+            let entries = body
+                .iter()
+                .map(|(key, value)| entry(key, value, kind, true))
+                .collect::<Result<Entries, String>>()
+                .map_err(|e| at(format!("profiles.{name}: {e}")))?;
+            layer.profiles.insert(name.clone(), entries);
+        }
     }
     Ok(layer)
 }
 
-fn entries(table: &Table, kind: FileKind, in_profile: bool) -> Result<Entries, String> {
-    let mut out = Vec::new();
-    for (key, value) in table {
-        let def = find(key)
-            .ok_or_else(|| format!("unknown setting \"{key}\" (kern settings lists them)"))?;
-        match def.scope {
-            Scope::Process => {
-                return Err(format!(
-                    "{key} is set by {} or --{} only: it says where this file is",
-                    def.env(),
-                    def.flag()
-                ));
-            }
-            Scope::User if kind == FileKind::Project => {
-                return Err(format!(
-                    "{key} can't be set in a project's file: a project does not trust itself"
-                ));
-            }
-            _ => {}
+/// One `key = value` of a file, checked: a known setting, one this file (and
+/// a profile in it) may set, a value of its kind.
+fn entry(
+    key: &str,
+    value: &Value,
+    kind: FileKind,
+    in_profile: bool,
+) -> Result<(&'static Def, String), String> {
+    let def =
+        find(key).ok_or_else(|| format!("unknown setting \"{key}\" (kern settings lists them)"))?;
+    match def.scope {
+        Scope::Process => {
+            return Err(format!(
+                "{key} is set by {} or --{} only: it says where this file is",
+                def.env(),
+                def.flag()
+            ));
         }
-        if in_profile && (key == "profile" || def.scope == Scope::User) {
-            return Err(format!("{key} can't be set in a profile"));
+        Scope::User if kind == FileKind::Project => {
+            return Err(format!(
+                "{key} can't be set in a project's file: a project does not trust itself"
+            ));
         }
-        let raw = raw(value)
-            .ok_or_else(|| format!("{key}: a string, number, true/false or a list of strings"))?;
-        out.push((def, check(def, &raw).map_err(|e| format!("{key}: {e}"))?));
+        _ => {}
     }
-    Ok(out)
+    if in_profile && (key == "profile" || def.scope == Scope::User) {
+        return Err(format!("{key} can't be set in a profile"));
+    }
+    let raw = raw(value)
+        .ok_or_else(|| format!("{key}: a string, number, true/false or a list of strings"))?;
+    Ok((def, check(def, &raw).map_err(|e| format!("{key}: {e}"))?))
 }
 
 /// A TOML value as the text a variable would hold; an empty list is `none`.

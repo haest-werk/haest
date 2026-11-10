@@ -6,8 +6,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use kern_core::fs::Fs;
+use kern_core::fs::{Fs, read_text_if_present};
 use serde_json::{Map, Value};
+
+/// A project's MCP servers: `<cwd>/.mcp.json`.
+pub fn project_mcp_path(cwd: &Path) -> PathBuf {
+    cwd.join(".mcp.json")
+}
 
 /// One MCP server to connect.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,17 +101,15 @@ pub async fn load_project_mcp_config(
     fs: &dyn Fs,
     cwd: &Path,
 ) -> Result<Vec<McpServerConfig>, McpConfigError> {
-    let path = cwd.join(".mcp.json");
-    if !fs.exists(&path).await {
+    let path = project_mcp_path(cwd);
+    let read = read_text_if_present(fs, &path).await;
+    let Some(text) = read.map_err(|source| McpConfigError::Read {
+        path: path.clone(),
+        source,
+    })?
+    else {
         return Ok(Vec::new());
-    }
-    let text = fs
-        .read_to_string(&path)
-        .await
-        .map_err(|source| McpConfigError::Read {
-            path: path.clone(),
-            source,
-        })?;
+    };
     let parsed: Value = serde_json::from_str(&text).map_err(|source| McpConfigError::Parse {
         path: path.clone(),
         source,

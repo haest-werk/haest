@@ -53,8 +53,8 @@ pub struct RegistryOptions {
     pub transport: Arc<dyn Transport>,
     pub retry: RetryPolicy,
     /// OpenRouter provider routing to send ([`crate::routing::parse_routing`]
-    /// reads `KERN_PROVIDER_ROUTING`'s JSON). None = none: a host whose
-    /// gateway routes leaves it off.
+    /// reads the host's JSON: kern's `provider_routing` setting). None = none:
+    /// a host whose gateway routes leaves it off.
     pub routing: Option<RoutingEnv>,
     /// OpenRouter's app attribution: `X-Title` (None = not sent).
     pub app_title: Option<String>,

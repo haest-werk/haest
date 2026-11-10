@@ -90,6 +90,17 @@ pub async fn ensure_dir(fs: &dyn Fs, path: &Path) -> io::Result<()> {
     fs.mkdir(path, true).await
 }
 
+/// A file a host may or may not have (a config file, `.mcp.json`): its text,
+/// None when there is no such file. One read: no `exists` first. Strict
+/// UTF-8, like [`Fs::read_to_string`].
+pub async fn read_text_if_present(fs: &dyn Fs, path: &Path) -> io::Result<Option<String>> {
+    match fs.read_to_string(path).await {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// A NUL byte in the first 8000 bytes: binary, the way git and grep guess it.
 pub fn looks_binary(buf: &[u8]) -> bool {
     buf.iter().take(8000).any(|&b| b == 0)

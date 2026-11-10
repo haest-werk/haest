@@ -7,23 +7,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use kern_core::fs::normalize;
+use kern_core::tool::resolve_path;
 
 use crate::registry::{Def, Kind};
 
-/// A variable's value, trimmed; None when it is unset or empty.
-pub(crate) fn env_var<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
+/// A variable's value, trimmed; None when it is unset or empty. How the loader
+/// reads every variable, for a host to read its own the same way (`HOME`).
+pub fn env_var<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
     env.get(key).map(|v| v.trim()).filter(|v| !v.is_empty())
 }
 
 /// `~/x` -> home/x, `x` -> cwd/x, normalized: every path a setting names.
 pub(crate) fn absolute(dir: &str, cwd: &Path, home: &Path) -> PathBuf {
-    let path = match dir.strip_prefix("~/") {
-        Some(rest) => home.join(rest),
-        None if dir == "~" => home.to_path_buf(),
-        None => cwd.join(dir),
-    };
-    normalize(&path)
+    match dir.strip_prefix("~/") {
+        Some(rest) => resolve_path(home, rest),
+        None if dir == "~" => resolve_path(home, "."),
+        None => resolve_path(cwd, dir),
+    }
 }
 
 /// true / 1 / on / yes and false / 0 / off / no, any case.

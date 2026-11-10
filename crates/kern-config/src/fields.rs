@@ -1,5 +1,5 @@
 //! Every setting as a field. [`Config`] holds the runtime's [`Settings`] and
-//! the four only a loader reads; [`set`] and [`get`] go by the setting's name,
+//! the five only a loader reads; [`set`] and [`get`] go by the setting's name,
 //! in the one spelling [`crate::value::check`] gives a value, so what a file
 //! says and what `kern settings` shows are the same text.
 
@@ -42,6 +42,9 @@ pub struct Config {
     pub env_passthrough: EnvPassthrough,
     /// Start the project's `.mcp.json` servers (a trusted dir only).
     pub mcp: bool,
+    /// OpenRouter's provider routing, the JSON as written: parsed into
+    /// [`crate::Loaded::routing`].
+    pub provider_routing: Option<String>,
 }
 
 impl Config {
@@ -59,6 +62,7 @@ impl From<Settings> for Config {
             trusted_dirs: Vec::new(),
             env_passthrough: EnvPassthrough::Core,
             mcp: false,
+            provider_routing: None,
         }
     }
 }
@@ -196,6 +200,7 @@ fields! {
     "effort" => settings.effort,
     "system_prompt" => settings.system_prompt,
     "append_system_prompt" => settings.append_system_prompt,
+    "provider_routing" => provider_routing,
     "context" => settings.context,
     "skills" => settings.skills,
     "skill_catalog" => settings.skill_catalog,

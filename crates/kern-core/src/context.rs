@@ -42,9 +42,6 @@ const PROJECT_FILES: [&str; 4] = [
 const MAX_FILE_CHARS: usize = 60_000;
 
 async fn read_if_present(fs: &dyn Fs, path: &Path) -> Option<InstructionFile> {
-    if !fs.exists(path).await {
-        return None;
-    }
     let bytes = fs.read(path).await.ok()?;
     let text = String::from_utf8_lossy(&bytes);
     let content = text.trim();
@@ -61,8 +58,11 @@ async fn read_if_present(fs: &dyn Fs, path: &Path) -> Option<InstructionFile> {
     })
 }
 
-/// Directories from the outermost ancestor below `home` (or the fs root) down to cwd.
-fn project_chain(cwd: &Path, home: &Path) -> Vec<PathBuf> {
+/// The dirs a project's files may sit in: from the outermost ancestor below
+/// `home` (or the fs root) down to `cwd`. Never `home` itself: its files are
+/// the user's, not a project's.
+pub fn project_chain(cwd: &Path, home: &Path) -> Vec<PathBuf> {
+    let home = normalize(home);
     let mut chain = Vec::new();
     let mut cur = normalize(cwd);
     while cur != home {

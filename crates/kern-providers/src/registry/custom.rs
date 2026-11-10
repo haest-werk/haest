@@ -9,7 +9,7 @@ use std::{
 use kern_core::{
     KeySource,
     catalog::{ModelPricing, OpenRouterEffort, Reasoning},
-    fs::Fs,
+    fs::{Fs, read_text_if_present},
 };
 use serde_json::Value;
 
@@ -166,13 +166,12 @@ pub async fn load_custom_providers(
     config_dir: &Path,
 ) -> Result<BTreeMap<String, Value>, ProviderConfigError> {
     let file = config_dir.join("providers.json");
-    if !fs.exists(&file).await {
-        return Ok(BTreeMap::new());
-    }
-    let text = fs
-        .read_to_string(&file)
+    let Some(text) = read_text_if_present(fs, &file)
         .await
-        .map_err(|e| ProviderConfigError(format!("{}: {e}", file.display())))?;
+        .map_err(|e| ProviderConfigError(format!("{}: {e}", file.display())))?
+    else {
+        return Ok(BTreeMap::new());
+    };
     let parsed: Value = serde_json::from_str(&text)
         .map_err(|e| ProviderConfigError(format!("{} is not valid JSON: {e}", file.display())))?;
     Ok(match parsed {

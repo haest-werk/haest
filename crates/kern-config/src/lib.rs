@@ -12,23 +12,23 @@
 //! everything Claude Code has that kern reads.
 //!
 //! Beside the settings, [`Loader::load`] reads what the runtime is handed with
-//! them: the provider keys (the environment), `providers.json`, the OpenRouter
-//! routing variable, a trusted project's `.mcp.json`, and the environment a
-//! child process gets (`env_passthrough`).
+//! them: the provider keys (the environment), `providers.json`, OpenRouter's
+//! routing (`provider_routing`, parsed), a trusted project's `.mcp.json`, and
+//! the environment a child process gets (`env_passthrough`).
 //!
-//! [`registry::DEFS`] is the one list: a host builds its flags from it.
+//! [`DEFS`] is the one list: a host builds its flags from it.
 
 mod fields;
 mod file;
-pub mod handed;
+mod handed;
 mod loader;
-pub mod profiles;
-pub mod registry;
+mod profiles;
+mod registry;
 mod source;
 mod stack;
 #[cfg(test)]
 mod tests;
-pub mod value;
+mod value;
 
 use std::collections::HashMap;
 
@@ -38,8 +38,9 @@ use kern_providers::{CustomProviders, RoutingEnv};
 
 pub use fields::{CORE_VARS, Config, EnvPassthrough, get, set};
 pub use loader::Loader;
-pub use registry::{DEFAULT_MODEL, DEFS, Def, Kind, Scope};
+pub use registry::{DEFS, Def, Kind, Scope};
 pub use source::{ProjectFile, Resolved, Source};
+pub use value::env_var;
 
 /// The settings, where each came from, and what the runtime is handed with them.
 #[derive(Debug, Clone)]
@@ -50,7 +51,7 @@ pub struct Loaded {
     pub child_env: ChildEnv,
     /// The environment, as the source of the provider keys.
     pub keys: HashMap<String, String>,
-    /// `KERN_PROVIDER_ROUTING`, parsed.
+    /// `provider_routing`, parsed.
     pub routing: Option<RoutingEnv>,
     /// `<config dir>/providers.json`.
     pub providers: CustomProviders,

@@ -61,6 +61,7 @@ const SAMPLES: &[(&str, &str)] = &[
     ("effort", "xhigh"),
     ("system_prompt", "You are terse."),
     ("append_system_prompt", "Answer in French."),
+    ("provider_routing", r#"{"global": {"banned": ["novita"]}}"#),
     ("context", "agents"),
     ("skills", "claude,plugins"),
     ("tools", "read,bash,skill"),
