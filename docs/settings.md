@@ -1,0 +1,710 @@
+# kern settings
+
+<!-- Written from the settings registry (crates/kern-config/src/registry.rs).
+     Edit the registry, then rewrite this file:
+     KERN_BLESS=1 cargo test -p kern-config reference -->
+
+kern starts bare: no tools, no instruction files, no skills, no MCP, no mods,
+in the sandbox, with every brake on. Each setting below turns one thing on or
+changes one limit.
+
+A setting has one name, written three ways: a key in a TOML config file, a
+`KERN_*` variable, a flag. Each layer wins over the ones before it:
+
+1. the defaults below
+2. your `~/.config/kern/config.toml` (`$XDG_CONFIG_HOME/kern`, or `config_dir`)
+3. the nearest `.kern/config.toml` from the working dir up, inside `trusted_dirs` only
+4. the profile `profile` names
+5. `KERN_*` variables
+6. flags
+
+`kern settings` shows what a run gets and where each value came from; it takes
+the same flags. [environment.md](environment.md) covers what kern reads from
+its environment and what a process it starts gets. [examples/](examples/) has
+whole config files.
+
+| Group | Settings |
+|---|---|
+| Profile | [`profile`](#profile) |
+| Model and prompt | [`model`](#model), [`effort`](#effort), [`system_prompt`](#system_prompt), [`append_system_prompt`](#append_system_prompt), [`provider_routing`](#provider_routing) |
+| Context | [`context`](#context), [`skills`](#skills), [`skill_catalog`](#skill_catalog) |
+| Tools | [`tools`](#tools), [`code`](#code), [`code_tools`](#code_tools), [`agents`](#agents), [`web_search`](#web_search), [`image`](#image), [`image_model`](#image_model), [`image_models`](#image_models), [`mcp`](#mcp), [`deferred_tools`](#deferred_tools) |
+| Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
+| Limits | [`max_turn_usd`](#max_turn_usd), [`max_turn_tokens`](#max_turn_tokens), [`max_request_tokens`](#max_request_tokens), [`max_turn_steps`](#max_turn_steps), [`max_turn_minutes`](#max_turn_minutes), [`max_repeats`](#max_repeats), [`max_conversation_usd`](#max_conversation_usd), [`max_conversation_tokens`](#max_conversation_tokens), [`context_window`](#context_window), [`compact_at`](#compact_at) |
+| Subagents | [`max_agent_turns`](#max_agent_turns), [`max_agent_depth`](#max_agent_depth), [`max_subagents`](#max_subagents), [`subagent_usd`](#subagent_usd), [`subagent_steps`](#subagent_steps), [`subagent_minutes`](#subagent_minutes) |
+| Paths | [`data_dir`](#data_dir), [`config_dir`](#config_dir), [`debug`](#debug) |
+| [Profiles](#profiles) | the built-in ones, and your own |
+
+## Profile
+
+### `profile`
+
+A named set of settings: claude (built in: everything Claude Code has that kern reads), or a [profiles.&lt;name>] table in a config file.
+
+- Takes: text
+- Default: unset
+- Set in: a config file (yours, or a trusted project's), its variable, its flag; not inside a profile
+
+```text
+config.toml   profile = "claude"
+variable      KERN_PROFILE=claude
+flag          --profile claude
+```
+
+## Model and prompt
+
+### `model`
+
+provider:model.
+
+- Takes: text
+- Default: `openrouter:anthropic/claude-sonnet-5.5`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   model = "anthropic:claude-opus-5-5"
+variable      KERN_MODEL=anthropic:claude-opus-5-5
+flag          --model anthropic:claude-opus-5-5   or   -m anthropic:claude-opus-5-5
+```
+
+### `effort`
+
+Reasoning effort (unset: the model's own default).
+
+- Takes: one of `off`, `low`, `medium`, `high`, `xhigh`, `max`
+- Default: unset
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   effort = "high"
+variable      KERN_EFFORT=high
+flag          --effort high   or   -e high
+```
+
+### `system_prompt`
+
+Replaces kern's own identity text at the top of the system prompt.
+
+- Takes: text
+- Default: unset
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   system_prompt = "You are a terse code reviewer."
+variable      KERN_SYSTEM_PROMPT='You are a terse code reviewer.'
+flag          --system-prompt 'You are a terse code reviewer.'
+```
+
+### `append_system_prompt`
+
+Text appended to the system prompt.
+
+- Takes: text
+- Default: unset
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   append_system_prompt = "Answer in British English."
+variable      KERN_APPEND_SYSTEM_PROMPT='Answer in British English.'
+flag          --append-system-prompt 'Answer in British English.'
+```
+
+### `provider_routing`
+
+OpenRouter's provider routing, as JSON: {"global": {"banned": [...], "favorites": [...]}, "overrides": ..., "project": ...}.
+
+- Takes: text
+- Default: unset
+- Set in: your own config file, its variable, its flag; never a project's file or a profile
+
+```text
+config.toml   provider_routing = '{"global": {"banned": ["novita"]}}'
+variable      KERN_PROVIDER_ROUTING='{"global": {"banned": ["novita"]}}'
+flag          --provider-routing '{"global": {"banned": ["novita"]}}'
+```
+
+## Context
+
+### `context`
+
+Instruction files: agents (AGENTS.md: ~/.agents/AGENTS.md, then every dir down to here), claude (CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md, ~/.claude/CLAUDE.md).
+
+- Takes: a list of `agents`, `claude`; `all` (every one) or `none`
+- Default: none
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   context = ["agents"]
+variable      KERN_CONTEXT=agents
+flag          --context agents
+```
+
+### `skills`
+
+Where skills come from: agents (~/.agents/skills, .agents/skills), claude (~/.claude/skills, .claude/skills), plugins (Claude Code's installed plugins); /&lt;name> runs one.
+
+- Takes: a list of `agents`, `claude`, `plugins`; `all` (every one) or `none`
+- Default: none
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   skills = ["agents", "claude"]
+variable      KERN_SKILLS=agents,claude
+flag          --skills agents,claude
+```
+
+### `skill_catalog`
+
+List the skills in the system prompt, so the model picks them on its own.
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `false`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   skill_catalog = true
+variable      KERN_SKILL_CATALOG=true
+flag          --skill-catalog
+```
+
+## Tools
+
+### `tools`
+
+Built-in tools: read, write, edit, bash, grep, glob, web_fetch, tasks, skill (all = every one).
+
+- Takes: a list of `read`, `write`, `edit`, `bash`, `grep`, `glob`, `web_fetch`, `tasks`, `skill`; `all` (every one) or `none`
+- Default: none
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   tools = ["read", "grep", "glob", "bash"]
+variable      KERN_TOOLS=read,grep,glob,bash
+flag          --tools read,grep,glob,bash
+```
+
+### `code`
+
+The Code tool: a JavaScript run that calls the other tools.
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `false`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   code = true
+variable      KERN_CODE=true
+flag          --code
+```
+
+### `code_tools`
+
+Extra tool names Code may call (exact, or prefix*).
+
+- Takes: a list: comma-separated, or a TOML array; `none` is empty
+- Default: none
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   code_tools = ["Bash", "mcp__github__*"]
+variable      KERN_CODE_TOOLS='Bash,mcp__github__*'
+flag          --code-tools 'Bash,mcp__github__*'
+```
+
+### `agents`
+
+Agent, SendMessage and StopAgent: subagents.
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `false`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   agents = true
+variable      KERN_AGENTS=true
+flag          --agents
+```
+
+### `web_search`
+
+The provider's web search, by engine.
+
+- Takes: one of `off`, `auto`, `native`, `exa`, `parallel`, `firecrawl`, `perplexity`
+- Default: `off`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   web_search = "native"
+variable      KERN_WEB_SEARCH=native
+flag          --web-search native
+```
+
+### `image`
+
+GenerateImage, over OpenRouter (needs OPENROUTER_API_KEY).
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `false`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   image = true
+variable      KERN_IMAGE=true
+flag          --image
+```
+
+### `image_model`
+
+GenerateImage's default model.
+
+- Takes: text
+- Default: `google/gemini-nano-banana-2.1`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   image_model = "black-forest-labs/flux-3-image"
+variable      KERN_IMAGE_MODEL=black-forest-labs/flux-3-image
+flag          --image-model black-forest-labs/flux-3-image
+```
+
+### `image_models`
+
+The other image models a call may pick (unset: the library's list).
+
+- Takes: a list: comma-separated, or a TOML array; `none` is empty
+- Default: unset
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   image_models = ["openai/gpt-image-2.6-sunburst", "black-forest-labs/flux-3-image"]
+variable      KERN_IMAGE_MODELS=openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image
+flag          --image-models openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image
+```
+
+### `mcp`
+
+Start the project's MCP servers (.mcp.json); a trusted dir only.
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `false`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   mcp = true
+variable      KERN_MCP=true
+flag          --mcp
+```
+
+### `deferred_tools`
+
+How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off).
+
+- Takes: one of `off`, `proxy`, `grow`
+- Default: `proxy`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   deferred_tools = "grow"
+variable      KERN_DEFERRED_TOOLS=grow
+flag          --deferred-tools grow
+```
+
+## Workspace, mods and trust
+
+### `workspace`
+
+sandbox: a simulated bash over a copy-on-write overlay (nothing reaches the disk until /apply); real: the real disk and bash.
+
+- Takes: one of `sandbox`, `real`
+- Default: `sandbox`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   workspace = "real"
+variable      KERN_WORKSPACE=real
+flag          --workspace real   or   -w real
+```
+
+### `env_passthrough`
+
+What a process kern starts (bash, a background job, an MCP server) gets of kern's environment: none, core (PATH, HOME, the user, the locale, the temp dirs), all (every variable, API keys included).
+
+- Takes: one of `none`, `core`, `all`
+- Default: `core`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   env_passthrough = "none"
+variable      KERN_ENV_PASSTHROUGH=none
+flag          --env-passthrough none
+```
+
+### `env`
+
+A variable every process kern starts gets, the sandbox's shell included, over env_passthrough: NAME=VALUE, or NAME for kern's own value; repeat it for more. In a file: an [env] table. ${NAME} and ${NAME:-default} in a value are filled in from kern's environment.
+
+- Takes: `NAME=VALUE`, or `NAME` for kern's own value; repeat the flag for more
+- Default: none
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   [env]
+              GH_TOKEN = "${GITHUB_TOKEN}"
+variable      KERN_ENV='GH_TOKEN=${GITHUB_TOKEN}'
+flag          --env 'GH_TOKEN=${GITHUB_TOKEN}'   or   -E 'GH_TOKEN=${GITHUB_TOKEN}'
+```
+
+### `mods`
+
+Your mods in &lt;config dir>/mods.
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `false`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   mods = true
+variable      KERN_MODS=true
+flag          --mods
+```
+
+### `project_mods`
+
+The project's mods in .kern/mods (its code runs; a trusted dir only).
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `false`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   project_mods = true
+variable      KERN_PROJECT_MODS=true
+flag          --project-mods
+```
+
+### `approvals`
+
+The built-in approval mod: asks before a tool changes anything.
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `true`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   approvals = false
+variable      KERN_APPROVALS=false
+flag          --approvals=false
+```
+
+### `trusted_dirs`
+
+Dirs whose project files kern reads (.kern/config.toml, .mcp.json, .kern/mods), with every dir inside them.
+
+- Takes: a list: comma-separated, or a TOML array; `none` is empty
+- Default: none
+- Set in: your own config file, its variable, its flag; never a project's file or a profile
+
+```text
+config.toml   trusted_dirs = ["~/projects", "~/work"]
+variable      KERN_TRUSTED_DIRS='~/projects,~/work'
+flag          --trusted-dirs '~/projects,~/work'
+```
+
+## Limits
+
+### `max_turn_usd`
+
+One turn's spend (0 = no cap).
+
+- Takes: a number, 0 or more
+- Default: `2`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_turn_usd = 5
+variable      KERN_MAX_TURN_USD=5
+flag          --max-turn-usd 5
+```
+
+### `max_turn_tokens`
+
+One turn's tokens (unset: 10x the model's window; 0 = no cap).
+
+- Takes: a number, 0 or more
+- Default: unset
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_turn_tokens = 2000000
+variable      KERN_MAX_TURN_TOKENS=2000000
+flag          --max-turn-tokens 2000000
+```
+
+### `max_request_tokens`
+
+One model call's input tokens (unset: 90% of the window; 0 = no cap).
+
+- Takes: a number, 0 or more
+- Default: unset
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_request_tokens = 150000
+variable      KERN_MAX_REQUEST_TOKENS=150000
+flag          --max-request-tokens 150000
+```
+
+### `max_turn_steps`
+
+Model calls in one turn (0 = no cap).
+
+- Takes: a number, 0 or more
+- Default: `100`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_turn_steps = 200
+variable      KERN_MAX_TURN_STEPS=200
+flag          --max-turn-steps 200
+```
+
+### `max_turn_minutes`
+
+One turn's wall clock (0 = no cap).
+
+- Takes: a number, 0 or more
+- Default: `60`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_turn_minutes = 30
+variable      KERN_MAX_TURN_MINUTES=30
+flag          --max-turn-minutes 30
+```
+
+### `max_repeats`
+
+The same tool call in a row before the guard stops it (0 = no cap).
+
+- Takes: a number, 0 or more
+- Default: `6`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_repeats = 10
+variable      KERN_MAX_REPEATS=10
+flag          --max-repeats 10
+```
+
+### `max_conversation_usd`
+
+The whole conversation's spend (0 = no cap).
+
+- Takes: a number, 0 or more
+- Default: `20`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_conversation_usd = 50
+variable      KERN_MAX_CONVERSATION_USD=50
+flag          --max-conversation-usd 50
+```
+
+### `max_conversation_tokens`
+
+Tokens of models with no price (0 = no cap).
+
+- Takes: a number, 0 or more
+- Default: `20000000`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_conversation_tokens = 50000000
+variable      KERN_MAX_CONVERSATION_TOKENS=50000000
+flag          --max-conversation-tokens 50000000
+```
+
+### `context_window`
+
+The model's window in tokens (unset: the catalog's, else 200000).
+
+- Takes: a number, 0 or more
+- Default: unset
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   context_window = 1000000
+variable      KERN_CONTEXT_WINDOW=1000000
+flag          --context-window 1000000
+```
+
+### `compact_at`
+
+Compact the conversation past this many tokens (0 = at 80% of the window only).
+
+- Takes: a number, 0 or more
+- Default: `400000`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   compact_at = 300000
+variable      KERN_COMPACT_AT=300000
+flag          --compact-at 300000
+```
+
+## Subagents
+
+### `max_agent_turns`
+
+Turns in a row a job or an agent starts with no human message; past it kern holds them (0 = no cap).
+
+- Takes: a number, 0 or more
+- Default: `30`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_agent_turns = 10
+variable      KERN_MAX_AGENT_TURNS=10
+flag          --max-agent-turns 10
+```
+
+### `max_agent_depth`
+
+How deep agents nest, main = 0 (0 = no Agent tool).
+
+- Takes: a number, 0 or more
+- Default: `2`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_agent_depth = 1
+variable      KERN_MAX_AGENT_DEPTH=1
+flag          --max-agent-depth 1
+```
+
+### `max_subagents`
+
+Subagents running at once, across the tree (0 = no Agent tool).
+
+- Takes: a number, 0 or more
+- Default: `4`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   max_subagents = 8
+variable      KERN_MAX_SUBAGENTS=8
+flag          --max-subagents 8
+```
+
+### `subagent_usd`
+
+One subagent's spend.
+
+- Takes: a number, 0 or more
+- Default: `1`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   subagent_usd = 0.5
+variable      KERN_SUBAGENT_USD=0.5
+flag          --subagent-usd 0.5
+```
+
+### `subagent_steps`
+
+One subagent's model calls.
+
+- Takes: a number, 0 or more
+- Default: `50`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   subagent_steps = 25
+variable      KERN_SUBAGENT_STEPS=25
+flag          --subagent-steps 25
+```
+
+### `subagent_minutes`
+
+One subagent's wall clock.
+
+- Takes: a number, 0 or more
+- Default: `15`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   subagent_minutes = 5
+variable      KERN_SUBAGENT_MINUTES=5
+flag          --subagent-minutes 5
+```
+
+## Paths
+
+### `data_dir`
+
+Sessions, history and spill files (unset: $XDG_DATA_HOME/kern, else ~/.local/share/kern).
+
+- Takes: a directory: `~/x` is under your home dir, `x` under the working dir
+- Default: `~/.local/share/kern`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   data_dir = "~/.kern/data"
+variable      KERN_DATA_DIR='~/.kern/data'
+flag          --data-dir '~/.kern/data'
+```
+
+### `config_dir`
+
+config.toml, providers and mods (unset: $XDG_CONFIG_HOME/kern, else ~/.config/kern).
+
+- Takes: a directory: `~/x` is under your home dir, `x` under the working dir
+- Default: `~/.config/kern`
+- Set in: its variable or its flag only: it says where the config file is
+
+```text
+config.toml   (not in a file)
+variable      KERN_CONFIG_DIR='~/dotfiles/kern'
+flag          --config-dir '~/dotfiles/kern'
+```
+
+### `debug`
+
+Log what kern does under the hood.
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `false`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   debug = true
+variable      KERN_DEBUG=true
+flag          --debug
+```
+
+## Profiles
+
+`profile` picks a named set of settings. It sits over the config files and
+under the variables and flags. A `[profiles.<name>]` table in a config file
+adds to a built-in profile (its keys win) or makes a new one:
+
+```toml
+profile = "review"
+
+[profiles.review]
+tools = ["read", "grep", "glob"]
+```
+
+### `claude` (built in)
+
+| Setting | Value |
+|---|---|
+| [`context`](#context) | `agents,claude` |
+| [`skills`](#skills) | `all` |
+| [`skill_catalog`](#skill_catalog) | `true` |
+| [`tools`](#tools) | `all` |
+| [`agents`](#agents) | `true` |
+| [`web_search`](#web_search) | `native` |
+| [`mcp`](#mcp) | `true` |
+| [`workspace`](#workspace) | `real` |
+| [`env_passthrough`](#env_passthrough) | `all` |

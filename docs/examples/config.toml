@@ -1,0 +1,47 @@
+# ~/.config/kern/config.toml: your own settings, read on every run.
+# Every key is in ../settings.md; `kern settings` shows what a run gets and
+# where each value came from. A KERN_* variable or a flag wins over this file.
+
+model = "openrouter:anthropic/claude-sonnet-5.5"
+effort = "medium"
+
+# What goes into the system prompt: AGENTS.md files, and your skills.
+context = ["agents"]
+skills = ["agents", "claude"]
+skill_catalog = true
+
+# kern starts with no tools: turn on the ones you want.
+tools = ["read", "write", "edit", "bash", "grep", "glob", "web_fetch", "tasks", "skill"]
+agents = true
+web_search = "native"
+
+# Projects whose own .kern/config.toml, .mcp.json and .kern/mods kern reads.
+# Only your own file, KERN_TRUSTED_DIRS or --trusted-dirs can say this.
+trusted_dirs = ["~/projects"]
+
+# What a process kern starts gets of your environment: none, core or all.
+env_passthrough = "core"
+
+# Brakes: what one turn and one conversation may spend.
+max_turn_usd = 3
+max_conversation_usd = 25
+
+# OpenRouter's provider routing, as JSON (your own file only).
+provider_routing = '{"global": {"banned": ["novita"]}}'
+
+# Variables every process kern starts gets, the sandbox's shell included.
+# ${NAME} comes from kern's environment; ${NAME:-default} when it is unset.
+[env]
+GH_TOKEN = "${GITHUB_TOKEN}"
+NODE_ENV = "${NODE_ENV:-development}"
+PAGER = "cat"
+
+# `kern --profile review`: read-only, careful.
+[profiles.review]
+tools = ["read", "grep", "glob"]
+effort = "high"
+approvals = true
+
+# Adds to the built-in claude profile (its keys win over the built-in ones).
+[profiles.claude]
+max_turn_usd = 5

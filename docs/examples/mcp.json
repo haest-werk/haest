@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "${GITHUB_MCP_BIN:-github-mcp-server}",
+      "args": ["stdio"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}" }
+    },
+    "docs": {
+      "type": "http",
+      "url": "${DOCS_MCP_URL:-https://mcp.example.com}/mcp",
+      "headers": { "Authorization": "Bearer ${DOCS_MCP_TOKEN}" }
+    }
+  }
+}

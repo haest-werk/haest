@@ -64,6 +64,9 @@ cargo run -p kern-cli -- settings     # every setting, its value and where it ca
 cargo run -p kern-cli -- models       # the models kern knows
 ```
 
+Every provider's key and endpoint variable is in
+[docs/environment.md](docs/environment.md#provider-keys).
+
 ## Settings
 
 kern starts bare: no tools, no instruction files, no skills, no MCP, no mods,
@@ -107,43 +110,13 @@ GH_TOKEN = "${GITHUB_TOKEN}"
 tools = ["read", "grep", "glob"]
 ```
 
-| Switch | Bare | Turns on |
-|---|---|---|
-| `tools` | none | built-ins: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `web_fetch`, `tasks`, `skill` (`all`) |
-| `context` | none | instruction files: `agents` (`~/.agents/AGENTS.md`, then every `AGENTS.md` down to here), `claude` (`CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `~/.claude/CLAUDE.md`) |
-| `skills`, `skill_catalog` | none, false | skill dirs (`agents`, `claude`, `plugins`); the catalog lists them in the system prompt |
-| `agents` | false | Agent, SendMessage, StopAgent |
-| `code` | false | the Code tool (`code_tools` adds names it may call) |
-| `web_search` | `off` | the provider's search: `auto`, `native`, `exa`, `parallel`, `firecrawl`, `perplexity` |
-| `image` | false | GenerateImage (needs `OPENROUTER_API_KEY`) |
-| `mcp` | false | the project's `.mcp.json` servers |
-| `mods`, `project_mods` | false | your mods (`<config dir>/mods`), the project's (`.kern/mods`) |
-| `workspace` | `sandbox` | `sandbox`: a simulated bash over a copy-on-write overlay, nothing reaches the disk until `/apply`; `real`: the real disk and bash |
-| `env_passthrough` | `core` | what a process kern starts (real bash, a background job, an MCP server) gets of kern's environment: `none`, `core` (`PATH`, `HOME`, `SHELL`, `USER`, `LOGNAME`, the locale, the temp dirs), `all` (every variable, API keys included) |
-| `env` | none | variables every process kern starts gets, the sandbox's shell included, over `env_passthrough`: `-E NAME=VALUE` (repeat it), `-E NAME` (kern's own value), `KERN_ENV` (one), an `[env]` table in a file |
-| `approvals` | true | ask before a tool changes anything |
+The rest is in `docs/`:
 
-The caps (turn, conversation, subagents), the model, the effort and the paths
-are settings too: `kern --help`, groups Limits, Subagents and Paths. So is
-OpenRouter's provider routing (`provider_routing`, JSON), from your own
-`config.toml`, `KERN_PROVIDER_ROUTING` or `--provider-routing`, never from a
-project's file.
-
-`env_passthrough` follows Codex's `shell_environment_policy.inherit` (same
-three words, same `core` list); kern's default is `core`, so a key in your
-shell stays with kern unless you pass `all`. With `none` a child gets no
-`PATH`: bash is still found on the system's default path, as `execvp` does.
-
-`env` passes a variable on purpose, the way `docker run -e` does (`-e` is
-`--effort` here, so it is `-E`). The layers add to each other name by name:
-your `config.toml`, a trusted project's, the profile, `KERN_ENV`, then the
-flags, a later one winning for a name both set. A value fills in `${NAME}` and
-`${NAME:-default}` from kern's environment, so a key can move under another
-name without being written down (`GH_TOKEN = "${GITHUB_TOKEN}"`). A variable
-whose `${NAME}` has no value and no default is not passed, and kern says
-which. The sandbox's shell gets these variables and nothing else of your
-environment. `kern settings` lists each name and where it came from, never
-its value.
+| Doc | What |
+|---|---|
+| [docs/settings.md](docs/settings.md) | every setting: what it does, what it takes, its default, where it may be set, and an example in all three spellings; the built-in profiles. Written from the registry, so it is always the code's |
+| [docs/environment.md](docs/environment.md) | the variables kern reads (`KERN_*`, `HOME`, the XDG dirs, provider keys), what a process kern starts gets (`env_passthrough`), passing a variable on purpose (`-E`, `[env]`), `${NAME}` in config files, recipes |
+| [docs/examples/](docs/examples/) | a whole `config.toml`, a project's `.kern/config.toml`, `.mcp.json`, `providers.json` and `KERN_*` exports, each loaded by a test |
 
 ### Trust
 
@@ -154,11 +127,6 @@ comes from your own `config.toml`, `KERN_TRUSTED_DIRS` or `--trusted-dirs`,
 never from a project's file or a profile: a repo cannot trust itself.
 `config_dir` comes only from the environment or a flag. Codex does the same
 (`projects.<path>.trust_level`).
-
-`.mcp.json` fills in `${NAME}` and `${NAME:-default}` from kern's environment
-in a server's `command`, `args`, `env`, `url` and `headers` values, as Claude
-Code does. A variable with no value and no default stays as written, and kern
-says which server names it.
 
 ### The `claude` profile
 
@@ -183,7 +151,8 @@ turn you did not start: during a turn it is read at the turn's next step; at
 the prompt it is announced above the line you are typing and runs when you
 press Enter. `kern -p` waits for background subagents before it exits.
 
-More providers go in `<config dir>/providers.json`, your mods in
+More providers go in `<config dir>/providers.json`
+([an example](docs/examples/providers.json)), your mods in
 `<config dir>/mods`; sessions are saved under `~/.local/share/kern/sessions`
 (`data_dir`). In the REPL, `/help` lists the commands (`/plan` included).
 

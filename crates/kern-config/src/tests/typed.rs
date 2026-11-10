@@ -54,70 +54,27 @@ async fn code_web_search_and_switch_words_read_as_asked() {
     assert_eq!(s.image_models, Some(Vec::new()));
 }
 
-/// A value of each kind that is not the bare one, as `check` spells it.
-const SAMPLES: &[(&str, &str)] = &[
-    ("profile", "claude"),
-    ("model", "a:b"),
-    ("effort", "xhigh"),
-    ("system_prompt", "You are terse."),
-    ("append_system_prompt", "Answer in French."),
-    ("provider_routing", r#"{"global": {"banned": ["novita"]}}"#),
-    ("context", "agents"),
-    ("skills", "claude,plugins"),
-    ("tools", "read,bash,skill"),
-    ("code_tools", "Bash,mcp__gh__*"),
-    ("web_search", "perplexity"),
-    ("image_models", "a/one,b/two"),
-    ("deferred_tools", "grow"),
-    ("workspace", "real"),
-    ("env_passthrough", "none"),
-    ("env", "GH_TOKEN=${GITHUB_TOKEN}"),
-    ("trusted_dirs", "/p,/q"),
-    ("max_turn_usd", "0.5"),
-    ("max_turn_tokens", "0"),
-    ("max_request_tokens", "5000"),
-    ("max_conversation_tokens", "123"),
-    ("context_window", "1000000"),
-    ("max_subagents", "9"),
-    ("subagent_usd", "0.25"),
-    ("data_dir", "/d"),
-];
-
+/// Every setting's bare value round-trips, and its example (what the settings
+/// reference shows) is a value it takes that is not the bare one.
 #[test]
 fn every_setting_reads_back_as_the_text_it_was_set_from() {
     let bare = Config::bare("/w", "/h");
     for def in DEFS {
-        // The bare value round-trips and leaves everything as it was.
         if let Some(raw) = get(&bare, def.key) {
             let mut c = bare.clone();
             set(&mut c, def.key, &raw).unwrap_or_else(|e| panic!("{}: {e}", def.key));
             assert_eq!(c, bare, "{} = {raw}", def.key);
         }
-        let flipped = match def.kind {
-            Kind::Bool => get(&bare, def.key).map(|v| (v == "false").to_string()),
-            _ => None,
+        let raw = check(def, def.example).unwrap_or_else(|e| panic!("{}: {e}", def.key));
+        let mut c = bare.clone();
+        set(&mut c, def.key, &raw).unwrap();
+        assert_ne!(c, bare, "{}: the example {raw} is the bare value", def.key);
+        let shown = match def.kind {
+            // A variable reads back as its name: its value may be a key.
+            Kind::Vars => var_parts(&raw).0,
+            _ => raw.as_str(),
         };
-        let sample = SAMPLES
-            .iter()
-            .find(|(k, _)| *k == def.key)
-            .map(|(_, v)| v.to_string());
-        assert!(
-            get(&bare, def.key).is_some() || sample.is_some(),
-            "{}: no bare value and no sample, so nothing here exercises it",
-            def.key
-        );
-        for raw in flipped.into_iter().chain(sample) {
-            let raw = check(def, &raw).unwrap();
-            let mut c = bare.clone();
-            set(&mut c, def.key, &raw).unwrap();
-            assert_ne!(c, bare, "{} = {raw} changes nothing", def.key);
-            let shown = match def.kind {
-                // A variable reads back as its name: its value may be a key.
-                Kind::Vars => var_parts(&raw).0,
-                _ => raw.as_str(),
-            };
-            assert_eq!(get(&c, def.key).as_deref(), Some(shown), "{}", def.key);
-        }
+        assert_eq!(get(&c, def.key).as_deref(), Some(shown), "{}", def.key);
     }
 }
 

@@ -1,0 +1,15 @@
+{
+  "local": {
+    "type": "openai",
+    "baseURL": "http://localhost:1234/v1",
+    "apiKeyEnv": "LOCAL_LLM_KEY",
+    "reasoningEffort": { "efforts": ["low", "medium", "high"], "mandatory": false },
+    "pricing": { "qwen3-coder": { "input": 0, "cachedInput": 0, "output": 0 } }
+  },
+  "gateway": {
+    "type": "anthropic",
+    "baseURL": "https://llm-gateway.example.com",
+    "apiKeyEnv": "GATEWAY_API_KEY",
+    "headers": { "X-Team": "platform" }
+  }
+}

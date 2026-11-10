@@ -1,0 +1,21 @@
+# <project>/.kern/config.toml: this project's settings, over your own file.
+# kern reads it only when the project is inside one of your trusted_dirs.
+# A project's file can't set trusted_dirs, provider_routing or config_dir:
+# a repo must not trust itself.
+
+context = ["agents", "claude"]
+
+# The real files and bash: builds and tests need them.
+workspace = "real"
+
+# Start this project's .mcp.json servers.
+mcp = true
+
+# The Code tool, and the MCP tools it may call.
+code = true
+code_tools = ["Bash", "mcp__github__*"]
+
+# What this project's tools need, on top of your own [env].
+[env]
+DATABASE_URL = "${DATABASE_URL:-postgres://localhost:5432/app_dev}"
+RUST_LOG = "info"

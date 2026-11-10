@@ -1,8 +1,10 @@
 //! The rules: bare by default, each layer over the one before, a project's
 //! file read only when trusted, profiles, garbage refused.
 
+mod examples;
 mod handed;
 mod loader;
+mod reference;
 mod typed;
 
 use std::{collections::HashMap, path::PathBuf};

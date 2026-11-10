@@ -138,7 +138,7 @@ fn entries(key: &str, value: &Value, kind: FileKind, in_profile: bool) -> Result
         }
         _ => {}
     }
-    if in_profile && (key == "profile" || def.scope == Scope::User) {
+    if in_profile && !def.profile_may_set() {
         return Err(format!("{key} can't be set in a profile"));
     }
     let checked = |raw: &str| check(def, raw).map_err(|e| format!("{key}: {e}"));
