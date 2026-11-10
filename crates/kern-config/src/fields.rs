@@ -86,7 +86,13 @@ macro_rules! word {
         }
     )+};
 }
-word!(Effort, WorkspaceMode, DeferMode, EnvPassthrough);
+word!(
+    Effort,
+    WorkspaceMode,
+    DeferMode,
+    EnvPassthrough,
+    WebSearchEngine
+);
 
 macro_rules! number {
     ($($t:ty),+) => {$(
@@ -163,26 +169,34 @@ impl<T: Raw> Raw for Option<T> {
     }
 }
 
-/// `web_search`: `off` is a value (no search), not unset. WebSearchEngine is
-/// not [`Raw`] itself, so this is the only `Option` of it.
-impl Raw for Option<WebSearchEngine> {
-    fn to_raw(&self) -> Option<String> {
-        Some(self.map_or("off", WebSearchEngine::as_str).into())
-    }
-    fn from_raw(raw: &str) -> Result<Self, String> {
-        match raw {
-            "off" => Ok(None),
-            engine => engine.parse().map(Some),
-        }
-    }
-}
-
 type Get = fn(&Config) -> Option<String>;
 type Set = fn(&mut Config, &str) -> Result<(), String>;
 
-/// `key => the field it is`.
+/// `web_search`: `off` is a value (no search), not unset, so it does not go
+/// by the `Option` rule every other optional setting follows.
+const WEB_SEARCH: (&str, Get, Set) = (
+    "web_search",
+    |c| {
+        Some(
+            c.settings
+                .web_search
+                .map_or("off", WebSearchEngine::as_str)
+                .into(),
+        )
+    },
+    |c, raw| {
+        c.settings.web_search = match raw {
+            "off" => None,
+            engine => Some(engine.parse()?),
+        };
+        Ok(())
+    },
+);
+
+/// `key => the field it is`, read and written by its [`Raw`]; then the
+/// settings that have their own get and set.
 macro_rules! fields {
-    ($($key:literal => $($path:ident).+),+ $(,)?) => {
+    ($($key:literal => $($path:ident).+),+ $(,)?; $($own:expr),* $(,)?) => {
         const FIELDS: &[(&str, Get, Set)] = &[$((
             $key,
             |c| Raw::to_raw(&c.$($path).+),
@@ -190,7 +204,7 @@ macro_rules! fields {
                 c.$($path).+ = Raw::from_raw(raw)?;
                 Ok(())
             },
-        )),+];
+        ),)+ $($own),*];
     };
 }
 
@@ -208,7 +222,6 @@ fields! {
     "code" => settings.code,
     "code_tools" => settings.code_tools,
     "agents" => settings.agents,
-    "web_search" => settings.web_search,
     "image" => settings.image,
     "image_model" => settings.image_model,
     "image_models" => settings.image_models,
@@ -238,7 +251,8 @@ fields! {
     "subagent_minutes" => settings.subagents.minutes,
     "data_dir" => settings.data_dir,
     "config_dir" => settings.config_dir,
-    "debug" => settings.debug,
+    "debug" => settings.debug;
+    WEB_SEARCH,
 }
 
 fn field(key: &str) -> Option<(Get, Set)> {

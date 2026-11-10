@@ -130,7 +130,7 @@ async fn read_edit_input<'a>(
     input: &'a JsonMap,
     cwd: &Path,
 ) -> Result<EditInput<'a>, ToolError> {
-    let path = kern_core::tool::resolve_path(cwd, req_str(input, "file_path")?);
+    let path = kern_core::fs::resolve_path(cwd, req_str(input, "file_path")?);
     let old = req_str(input, "old_string")?;
     let new = any_str(input, "new_string")?;
     if old == new {

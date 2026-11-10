@@ -6,7 +6,7 @@
 //! `kern-workspace` can put a sandboxed bash over ANY `Fs`, so the file the agent
 //! writes with Write is the file `cat` shows.
 //!
-//! Paths are absolute. A relative path is the caller's bug ([`crate::tool::resolve_path`]).
+//! Paths are absolute. A relative path is the caller's bug ([`resolve_path`]).
 
 use std::{
     io,
@@ -53,10 +53,10 @@ pub trait Fs: Send + Sync {
         let bytes = self.read(path).await?;
         String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
-    /// The first `max` bytes (all of a shorter file). Listing saved sessions
-    /// reads every session file this way, so the default (the whole file,
-    /// then cut) costs a host with long sessions; a file system that can stop
-    /// early should.
+    /// The first `max` bytes (all of a shorter file), for a caller that needs
+    /// only the start of many files (a list of saved sessions). The default
+    /// reads the whole file, then cuts it; a file system that can stop early
+    /// should.
     async fn read_head(&self, path: &Path, max: usize) -> io::Result<Vec<u8>> {
         let mut bytes = self.read(path).await?;
         bytes.truncate(max);
@@ -128,6 +128,17 @@ pub fn normalize(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// Absolute paths stay; relative ones are taken from `cwd`. Dots are resolved
+/// lexically ([`normalize`]).
+pub fn resolve_path(cwd: &Path, p: &str) -> PathBuf {
+    let path = Path::new(p);
+    if path.is_absolute() {
+        normalize(path)
+    } else {
+        normalize(&cwd.join(path))
+    }
 }
 
 pub(crate) fn not_found(path: &Path) -> io::Error {

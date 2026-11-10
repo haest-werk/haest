@@ -18,8 +18,7 @@ use crate::messages::{AssistantMessage, Message, StopReason};
 
 crate::word_enum! {
     /// kern's reasoning levels. `Off` turns reasoning off where the model allows it.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-    #[serde(rename_all = "lowercase")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
     pub enum Effort ("effort") {
         Off = "off",
         Low = "low",
@@ -41,8 +40,7 @@ pub struct ToolSpec {
 
 crate::word_enum! {
     /// A provider-side web search (OpenRouter's `openrouter:web_search` server tool).
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-    #[serde(rename_all = "lowercase")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum WebSearchEngine ("web search engine") {
         /// The model's native search where it has one, else Exa.
         Auto = "auto",

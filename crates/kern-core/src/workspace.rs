@@ -17,8 +17,7 @@ use tokio_util::sync::CancellationToken;
 use crate::fs::{Fs, ShutFs};
 
 crate::word_enum! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-    #[serde(rename_all = "lowercase")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum WorkspaceMode ("workspace mode") {
         /// A simulated bash over a copy-on-write overlay of the project. Writes stay in memory.
         Sandbox = "sandbox",

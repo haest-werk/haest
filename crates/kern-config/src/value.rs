@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use kern_core::tool::resolve_path;
+use kern_core::fs::resolve_path;
 
 use crate::registry::{Def, Kind};
 

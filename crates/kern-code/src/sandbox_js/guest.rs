@@ -16,10 +16,7 @@ use std::{
 };
 
 use futures::FutureExt;
-use kern_core::{
-    fs::{Fs, ensure_dir},
-    tool::resolve_path,
-};
+use kern_core::fs::{Fs, ensure_dir, resolve_path};
 use serde_json::{Value, json};
 
 use crate::vm::{HostFn, VmSpec};

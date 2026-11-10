@@ -15,13 +15,10 @@
 
 use std::{collections::HashSet, sync::Arc, sync::Mutex};
 
-use serde::{Deserialize, Serialize};
-
 use crate::tool::Tool;
 
 crate::word_enum! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-    #[serde(rename_all = "lowercase")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum DeferMode ("deferred-tools mode") {
         Off = "off",
         Proxy = "proxy",

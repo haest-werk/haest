@@ -8,10 +8,7 @@
 //! PLUG POINT: implement [`Tool`] to add a tool; implement [`ToolHost`] to receive
 //! what tools publish, report and log.
 
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -19,7 +16,7 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    fs::normalize,
+    fs::resolve_path,
     messages::{MediaPart, ToolCall},
     workspace::Workspace,
 };
@@ -238,16 +235,6 @@ pub fn opt_bool(input: &JsonMap, key: &str) -> bool {
         || matches!(input.get(key), Some(Value::String(s)) if s == "true")
 }
 
-/// Absolute paths stay; relative ones are taken from `cwd`. Dots are resolved lexically.
-pub fn resolve_path(cwd: &Path, p: &str) -> PathBuf {
-    let path = Path::new(p);
-    if path.is_absolute() {
-        normalize(path)
-    } else {
-        normalize(&cwd.join(path))
-    }
-}
-
 /// Keep the head and tail of long output; the middle is where nothing useful
 /// lives. `max` counts characters, never splitting one.
 pub fn truncate_middle(text: &str, max: usize) -> (String, bool) {
@@ -296,14 +283,5 @@ mod tests {
         assert!(cut);
         assert!(t.starts_with("ab") && t.ends_with("ij") && t.contains("6 characters truncated"));
         assert_eq!(truncate_middle("short", 10), ("short".to_string(), false));
-    }
-
-    #[test]
-    fn relative_paths_resolve_from_cwd() {
-        assert_eq!(
-            resolve_path(Path::new("/p"), "a/../b.txt"),
-            PathBuf::from("/p/b.txt")
-        );
-        assert_eq!(resolve_path(Path::new("/p"), "/abs"), PathBuf::from("/abs"));
     }
 }

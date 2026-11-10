@@ -59,20 +59,22 @@ pub use tasks::create_task_tools;
 pub use turn_gate::AgentTurnGate;
 pub use web_fetch::{WebFetchNet, WebFetchTool};
 
-/// What a host can change about the built-in tools.
+/// What a host can change about the built-in tools. An option left None has
+/// no tool: [`builtin_tools`] leaves it out, and [`builtin_tools_where`]
+/// refuses a pick that turns its word on (a tool is never silently missing).
 #[derive(Clone)]
 pub struct BuiltinOptions {
     /// PLUG POINT: asked before the workspace fs on every Read, so a host can
     /// answer some paths itself (an `attachment:<id>` that is no path at all).
     pub read_intercept: Option<Arc<dyn ReadIntercept>>,
     pub bash: BashOptions,
-    /// WebFetch's resolver and HTTP client; None = no WebFetch tool at all (a
-    /// host with its own fetch, or no door to the network).
+    /// WebFetch's resolver and HTTP client (a host with its own fetch, or no
+    /// door to the network, leaves it None).
     pub web_fetch: Option<WebFetchNet>,
     /// The board the task tools work on (the host keeps it, to save it with
-    /// the session); None = no task tools.
+    /// the session).
     pub tasks: Option<Arc<TaskBoard>>,
-    /// What the Skill tool reads; None = no Skill tool.
+    /// What the Skill tool reads.
     pub skill: Option<SkillToolOptions>,
 }
 
@@ -175,6 +177,16 @@ mod tests {
             ..Default::default()
         });
         assert!(!names(&offline).contains(&"WebFetch".to_string()));
+    }
+
+    /// kern-core's prompt and Code go by FILE_TOOLS: a renamed tool here
+    /// would drop its path line silently.
+    #[test]
+    fn every_file_tool_kern_core_names_is_a_builtin() {
+        let all = names(&builtin_tools(BuiltinOptions::default()));
+        for name in kern_core::tool::FILE_TOOLS {
+            assert!(all.iter().any(|t| t == name), "{name} is not a built-in");
+        }
     }
 
     #[tokio::test]

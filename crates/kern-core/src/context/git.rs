@@ -2,10 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{
-    fs::{Fs, normalize},
-    tool::resolve_path,
-};
+use crate::fs::{Fs, normalize, resolve_path};
 
 async fn read_text(fs: &dyn Fs, path: &Path) -> Option<String> {
     let bytes = fs.read(path).await.ok()?;

@@ -12,10 +12,8 @@ use std::{
 
 use async_trait::async_trait;
 use kern_core::{
-    fs::{FileKind, Fs, MemFs},
-    tool::{
-        InnerCallEvent, JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput, resolve_path,
-    },
+    fs::{FileKind, Fs, MemFs, resolve_path},
+    tool::{InnerCallEvent, JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput},
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
 use serde_json::{Value, json};

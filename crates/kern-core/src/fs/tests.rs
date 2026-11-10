@@ -41,3 +41,12 @@ fn normalize_resolves_dots_lexically() {
     assert_eq!(normalize(Path::new("/a/./b/../c")), PathBuf::from("/a/c"));
     assert_eq!(normalize(Path::new("/../x")), PathBuf::from("/x"));
 }
+
+#[test]
+fn relative_paths_resolve_from_cwd() {
+    assert_eq!(
+        resolve_path(Path::new("/p"), "a/../b.txt"),
+        PathBuf::from("/p/b.txt")
+    );
+    assert_eq!(resolve_path(Path::new("/p"), "/abs"), PathBuf::from("/abs"));
+}

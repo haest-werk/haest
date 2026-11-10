@@ -121,8 +121,8 @@ impl Loader {
     }
 
     /// `KERN_*` variables. `env` is also what [`Loaded`] takes the provider
-    /// keys, OpenRouter's routing and a child process's environment from:
-    /// without `.env()` those are empty.
+    /// keys and a child process's environment from: without `.env()` those
+    /// are empty.
     pub fn env(mut self, env: &HashMap<String, String>) -> Self {
         self.env
             .extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));

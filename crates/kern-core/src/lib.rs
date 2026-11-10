@@ -39,6 +39,10 @@ pub mod tool_exec;
 pub mod words;
 pub mod workspace;
 
+/// For [`word_enum!`]'s serde impls in any crate, whatever serde it depends on.
+#[doc(hidden)]
+pub use serde as __serde;
+
 pub use agent::{Agent, AgentControl, AgentOptions};
 pub use deps::{AgentDeps, AgentHooks, NoHooks, SystemPrompt, now_ms};
 pub use events::{EventSink, LoopEvent, TurnEnd};

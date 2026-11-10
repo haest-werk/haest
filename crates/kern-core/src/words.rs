@@ -76,8 +76,10 @@ macro_rules! word_set {
     };
 }
 
-/// An enum whose values are words: `ALL`, `WORDS`, `as_str`, `Display` and
-/// `FromStr` (whose error names `$what` and the words) from one list.
+/// An enum whose values are words: `ALL`, `WORDS`, `as_str`, `Display`,
+/// `FromStr` (whose error names `$what` and the words) and serde, all from one
+/// list -- a config file, a flag and the session file write the same word.
+/// Do not derive `Serialize`/`Deserialize` on it.
 #[macro_export]
 macro_rules! word_enum {
     (
@@ -116,5 +118,49 @@ macro_rules! word_enum {
                 })
             }
         }
+
+        impl $crate::__serde::Serialize for $name {
+            fn serialize<S: $crate::__serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(self.as_str())
+            }
+        }
+
+        impl<'de> $crate::__serde::Deserialize<'de> for $name {
+            fn deserialize<D: $crate::__serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                let word = <String as $crate::__serde::Deserialize>::deserialize(d)?;
+                word.parse().map_err(<D::Error as $crate::__serde::de::Error>::custom)
+            }
+        }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        deferred_tools::DeferMode,
+        provider::{Effort, WebSearchEngine},
+        workspace::WorkspaceMode,
+    };
+
+    /// What the session file writes is the word a config reads, and back.
+    fn round_trips<T>(all: &[T], word: fn(&T) -> &'static str)
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug,
+    {
+        for v in all {
+            let json = serde_json::to_value(v).unwrap();
+            assert_eq!(json, serde_json::Value::from(word(v)));
+            assert_eq!(&serde_json::from_value::<T>(json).unwrap(), v);
+        }
+    }
+
+    #[test]
+    fn every_word_enum_writes_and_reads_its_own_words() {
+        round_trips(Effort::ALL, |v| v.as_str());
+        round_trips(WebSearchEngine::ALL, |v| v.as_str());
+        round_trips(WorkspaceMode::ALL, |v| v.as_str());
+        round_trips(DeferMode::ALL, |v| v.as_str());
+        let err = serde_json::from_str::<Effort>("\"huge\"").unwrap_err();
+        assert!(err.to_string().contains("unknown effort"), "{err}");
+    }
 }

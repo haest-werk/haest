@@ -35,7 +35,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use kern_core::{fs::Fs, tool::resolve_path};
+use kern_core::fs::{Fs, resolve_path};
 use tokio_util::sync::CancellationToken;
 
 pub use command::{JsShellCommand, NotHere, sandbox_commands};
