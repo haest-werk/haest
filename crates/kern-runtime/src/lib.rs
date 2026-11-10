@@ -28,6 +28,7 @@ pub mod inbox;
 pub mod mods;
 pub mod prompt;
 pub mod sessions;
+mod store;
 #[cfg(test)]
 mod testkit;
 #[cfg(test)]
@@ -48,7 +49,8 @@ mod kern {
 }
 
 pub use agents::Agents;
-pub use build::{BuildOptions, Runtime, RuntimeInputs, build, init_store, open_store};
+pub use build::{BuildOptions, Runtime, RuntimeInputs, build};
 pub use host::{Host, session_usd};
+pub use store::{init_store, open_store};
 pub use ui::Ui;
 pub use world::World;

@@ -14,12 +14,11 @@ use crate::{
     inbox::InboxSender,
     kern::{
         AgentDeps, Effort, SystemPrompt,
-        deferred_tools::DeferMode,
         mods::{ModSystemPrompt, Mods},
         tool::{Tool, ToolSource},
         tools::{
             Inbox,
-            agents::{SubagentCaps, SubagentEvent, SubagentHost, SubagentHub},
+            agents::{SubagentEvent, SubagentHost, SubagentHub},
         },
     },
     prompt::{AgentPrompt, RuntimePrompt},
@@ -34,12 +33,13 @@ pub struct Agents {
     pub tools: Arc<WrappedTools>,
     pub prompt: Arc<RuntimePrompt>,
     pub mods: Arc<Mods>,
-    pub defer: DeferMode,
     pub inbox: Arc<InboxSender>,
 }
 
 impl Agents {
-    pub fn hub(self, caps: SubagentCaps) -> Arc<SubagentHub> {
+    /// The hub, capped by the settings' `subagents`.
+    pub fn hub(self) -> Arc<SubagentHub> {
+        let caps = self.host.settings.subagents;
         SubagentHub::new(Arc::new(self), caps)
     }
 }
@@ -76,7 +76,7 @@ impl SubagentHost for Agents {
     }
 
     fn tool_source(&self, tools: Vec<Arc<dyn Tool>>) -> Arc<dyn ToolSource> {
-        Arc::new(Deferred::new(tools, self.defer))
+        Arc::new(Deferred::new(tools, self.host.settings.deferred_tools))
     }
 
     fn on_activity(&self, running: &[String]) {

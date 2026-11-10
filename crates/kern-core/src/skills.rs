@@ -74,7 +74,9 @@ pub struct SkillOpts {
     pub sources: SkillSources,
 }
 
-async fn kern_scan_roots(fs: &dyn Fs, opts: &SkillOpts) -> SkillScanRoots {
+/// Where `opts`' skills live, worked out once (it reads Claude Code's plugin
+/// list): [`skills_in`] scans them, [`scan_roots`] lists the dirs a sandbox mounts.
+pub async fn skill_scan_roots(fs: &dyn Fs, opts: &SkillOpts) -> SkillScanRoots {
     let plugins = match opts.sources.plugins {
         true => read_installed_plugins(&opts.config_dir, fs).await,
         false => Vec::new(),
@@ -98,14 +100,14 @@ fn by_name(a: &Skill, b: &Skill) -> Ordering {
 
 /// Every skill kern can offer, sorted by name.
 pub async fn discover_skills(fs: &dyn Fs, opts: &SkillOpts) -> Vec<Skill> {
-    let mut skills = scan_skills(&kern_scan_roots(fs, opts).await, fs).await;
-    skills.sort_by(by_name);
-    skills
+    skills_in(&skill_scan_roots(fs, opts).await, fs).await
 }
 
-/// Every directory kern's skills can live in -- a sandbox mounts these read-only.
-pub async fn skill_roots(fs: &dyn Fs, opts: &SkillOpts) -> Vec<PathBuf> {
-    scan_roots(&kern_scan_roots(fs, opts).await)
+/// Every skill under `roots`, sorted by name.
+pub async fn skills_in(roots: &SkillScanRoots, fs: &dyn Fs) -> Vec<Skill> {
+    let mut skills = scan_skills(roots, fs).await;
+    skills.sort_by(by_name);
+    skills
 }
 
 /// The skill body the model receives when it invokes a skill.

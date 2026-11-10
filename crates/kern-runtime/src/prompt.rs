@@ -48,11 +48,10 @@ pub fn skill_opts(s: &Settings) -> SkillOpts {
 
 pub struct RuntimePrompt {
     pub fs: Arc<dyn Fs>,
+    /// Its settings say which instruction files to read (`context`) and
+    /// whether the skill list goes in (`skill_catalog`).
     pub host: Arc<Host>,
     pub skills: Arc<Mutex<Vec<Skill>>>,
-    pub instructions: InstructionOpts,
-    /// The skill list goes in the prompt (`skill_catalog`).
-    pub catalog: bool,
     /// Everything but the instructions, skills, tools and model, fixed for the process.
     pub base: PromptInputs,
 }
@@ -81,18 +80,17 @@ impl RuntimePrompt {
             fs: fs.clone(),
             host: host.clone(),
             skills: skills.clone(),
-            instructions: instruction_opts(s),
-            catalog: s.skill_catalog,
             base,
         }
     }
 
     pub async fn build(&self, model: String, tool_names: Vec<String>) -> String {
+        let s = &self.host.settings;
         let mut p = self.base.clone();
         p.model = model;
         p.tool_names = tool_names;
-        p.instructions = find_instruction_files(self.fs.as_ref(), &self.instructions).await;
-        if self.catalog {
+        p.instructions = find_instruction_files(self.fs.as_ref(), &instruction_opts(s)).await;
+        if s.skill_catalog {
             p.skills = self.skills.lock().unwrap().clone();
         }
         build_system_prompt(&p)

@@ -3,7 +3,7 @@
 //! the real workspace only) and the MCP servers the host listed.
 
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -18,7 +18,6 @@ use crate::{
         code::sandbox_commands,
         fs::{Fs, ensure_dir},
         mcp::{McpHub, McpServerConfig, McpTransport},
-        skills::{SkillOpts, skill_roots},
         tools::{Inbox, JobHub},
         workspace::{RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace},
     },
@@ -82,12 +81,13 @@ pub async fn kill_jobs(jobs: &JobHub) -> usize {
 }
 
 /// The `workspace` setting's workspace in this world. The disk's sandbox
-/// mounts the skill dirs the `skills` setting reads (read-only) and the spill
-/// dir (read-write); a host's Fs is the sandbox's whole world.
+/// mounts the skill dirs (read-only; `scan_roots` of the `skills` setting's
+/// roots) and the spill dir (read-write); a host's Fs is the sandbox's whole
+/// world.
 pub async fn workspace_for(
     s: &Settings,
     world: &World,
-    skill_opts: &SkillOpts,
+    skill_dirs: &[PathBuf],
     spill: &Path,
 ) -> anyhow::Result<Arc<dyn Workspace>> {
     let fs = world.fs();
@@ -104,9 +104,9 @@ pub async fn workspace_for(
             // The spill dir is mounted read-write, so the path in a spill notice is real.
             ensure_dir(fs.as_ref(), spill).await?;
             let mut mounts = SandboxMounts::new(&s.cwd).writable(spill);
-            for dir in skill_roots(fs.as_ref(), skill_opts).await {
-                if fs.exists(&dir).await {
-                    mounts = mounts.readable(dir);
+            for dir in skill_dirs {
+                if fs.exists(dir).await {
+                    mounts = mounts.readable(dir.clone());
                 }
             }
             SandboxWorkspace::open(mounts)
@@ -188,14 +188,13 @@ mod tests {
             workspace: WorkspaceMode::Real,
             ..settings()
         };
-        let opts = crate::prompt::skill_opts(&s);
         let world = World::Fs(Arc::new(MemFs::new()));
-        let err = workspace_for(&s, &world, &opts, Path::new("/d/spill"))
+        let err = workspace_for(&s, &world, &[], Path::new("/d/spill"))
             .await
             .err()
             .unwrap();
         assert!(err.to_string().contains("real disk"), "{err}");
-        let sandbox = workspace_for(&settings(), &world, &opts, Path::new("/d/spill")).await;
+        let sandbox = workspace_for(&settings(), &world, &[], Path::new("/d/spill")).await;
         assert!(sandbox.is_ok());
     }
 
@@ -205,7 +204,6 @@ mod tests {
             workspace: WorkspaceMode::Shut,
             ..settings()
         };
-        let opts = crate::prompt::skill_opts(&s);
         let worlds = [
             World::Fs(Arc::new(MemFs::new())),
             World::Disk {
@@ -213,7 +211,7 @@ mod tests {
             },
         ];
         for world in worlds {
-            let ws = workspace_for(&s, &world, &opts, Path::new("/d/spill"))
+            let ws = workspace_for(&s, &world, &[], Path::new("/d/spill"))
                 .await
                 .unwrap();
             assert_eq!(ws.mode(), WorkspaceMode::Shut);

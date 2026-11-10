@@ -171,7 +171,7 @@ fn budget(rt: &mut Runtime, args: &str) {
 /// Fresh session: new id, new file, empty history and task list; the ledger carries over.
 fn clear(rt: &mut Runtime) {
     let id = new_session_id();
-    match open_store(&rt.fs, &rt.host.settings.data_dir, &id) {
+    match open_store(&rt.fs, &rt.host.settings.data_dir, &id, rt.host.ui.clone()) {
         Ok(store) => rt.host.swap_store(Arc::new(store)),
         Err(e) => return rt.host.error(&format!("Not cleared: {e}")),
     }

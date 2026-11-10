@@ -7,29 +7,28 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::{Context, anyhow, bail};
 use kern_settings::Settings;
 
 use crate::{
     Agents, Host, Ui,
     inbox::{self, InboxQueue},
     kern::{
-        Agent, AgentDeps, AgentOptions, KeySource,
+        Agent, AgentDeps, AgentOptions, KeySource, Workspace,
         fs::Fs,
         ledger::Ledger,
         mcp::{McpHub, McpServerConfig},
         mods::{ModSystemPrompt, Mods, Prompter},
         now_ms,
         providers::{CustomProviders, ProviderRegistry, RegistryOptions, RoutingEnv},
-        session::{JsonlSessionFile, SessionRecord},
-        skills::{Skill, SkillOpts, discover_skills},
+        session::SessionRecord,
+        skills::{Skill, SkillOpts, scan_roots, skill_scan_roots, skills_in},
         task_board::TaskBoard,
         tool::Tool,
         tools::{JobHub, agents::SubagentHub},
     },
     mods,
     prompt::{AgentPrompt, RuntimePrompt, skill_opts},
-    sessions::{latest_in, new_session_id, sessions_dir},
+    store::{init_store, open_session, restore},
     tools::{MainTools, WrappedTools, image_options, own_tools},
     world::{World, connect_mcp, jobs_for, workspace_for},
 };
@@ -93,45 +92,44 @@ pub struct BuildOptions {
     pub resume: Option<String>,
 }
 
-/// Which session this run writes: a new one, the one named, or the latest here.
-async fn session_id_for(
-    fs: &dyn Fs,
-    s: &Settings,
-    resume: Option<&str>,
-) -> anyhow::Result<(String, bool)> {
-    match resume {
-        None => Ok((new_session_id(), false)),
-        Some("") => latest_in(fs, &sessions_dir(&s.data_dir), &s.cwd)
-            .await
-            .map(|id| (id, true))
-            .ok_or_else(|| anyhow!("no saved session in {} to resume", s.cwd.display())),
-        Some(id) => Ok((id.to_string(), true)),
-    }
+/// What the conversation finds in its world: the skills, the workspace (its
+/// sandbox mounts the skill dirs, worked out once with them), the prompt's
+/// fixed parts.
+struct Found {
+    skill_opts: SkillOpts,
+    skills: Arc<Mutex<Vec<Skill>>>,
+    workspace: Arc<dyn Workspace>,
+    prompt: Arc<RuntimePrompt>,
 }
 
-pub fn open_store(fs: &Arc<dyn Fs>, data_dir: &Path, id: &str) -> anyhow::Result<JsonlSessionFile> {
-    JsonlSessionFile::with_error_handler(fs.clone(), data_dir, id, |e| {
-        eprintln!("kern: session log write failed: {e}")
+async fn find(
+    host: &Arc<Host>,
+    world: &World,
+    fs: &Arc<dyn Fs>,
+    spill: &Path,
+) -> anyhow::Result<Found> {
+    let skill_opts = skill_opts(&host.settings);
+    let roots = skill_scan_roots(fs.as_ref(), &skill_opts).await;
+    let skills = Arc::new(Mutex::new(skills_in(&roots, fs.as_ref()).await));
+    let workspace = workspace_for(&host.settings, world, &scan_roots(&roots), spill).await?;
+    let prompt = Arc::new(RuntimePrompt::new(host, fs, &skills, workspace.as_ref()).await);
+    Ok(Found {
+        skill_opts,
+        skills,
+        workspace,
+        prompt,
     })
-    .map_err(|e| anyhow!("{e}"))
 }
 
-/// A new session file: header, the model and effort it starts on, the ledger so far.
-pub fn init_store(host: &Host, agent: &Agent, id: &str) {
-    host.store()
-        .init(id, &host.settings.cwd.to_string_lossy(), now_ms());
-    host.append(SessionRecord::Config {
-        t: now_ms(),
-        model: Some(agent.model_spec.clone()),
-        effort: Some(agent.effort),
-    });
-    if let Some(ledger) = &agent.deps().ledger {
-        let snapshot = ledger.lock().unwrap().snapshot();
-        host.append(SessionRecord::Ledger {
+/// The task list, saved to the session file on every change.
+fn task_board(host: &Arc<Host>) -> Arc<TaskBoard> {
+    let host = host.clone();
+    Arc::new(TaskBoard::new(move |tasks| {
+        host.append(SessionRecord::Tasks {
             t: now_ms(),
-            ledger: snapshot,
-        });
-    }
+            tasks: tasks.to_vec(),
+        })
+    }))
 }
 
 /// The whole conversation, from what the host hands in; `prompter` answers
@@ -155,35 +153,27 @@ where
         routing,
     } = inputs;
     let fs = world.fs();
-    let reg_opts = RegistryOptions {
-        routing,
-        ..Default::default()
-    };
-    let registry = ProviderRegistry::new(keys.clone(), providers, reg_opts);
-    let (session_id, resuming) =
-        session_id_for(fs.as_ref(), &settings, opts.resume.as_deref()).await?;
-    let store = Arc::new(open_store(&fs, &settings.data_dir, &session_id)?);
-    if resuming && !store.exists().await {
-        bail!("no saved session \"{session_id}\" (kern sessions lists them)");
-    }
-    let host = Arc::new(Host::new(settings, ui.clone(), store.clone()));
+    let (session_id, store, resuming) =
+        open_session(&fs, &settings, opts.resume.as_deref(), ui.clone()).await?;
+    let host = Arc::new(Host::new(settings, ui.clone(), store));
     let s = &host.settings;
-
-    let skill_opts = skill_opts(s);
-    let skills = Arc::new(Mutex::new(discover_skills(fs.as_ref(), &skill_opts).await));
     let spill = s.spill_dir(&session_id);
-    let workspace = workspace_for(s, &world, &skill_opts, &spill).await?;
-    let board = Arc::new(TaskBoard::new({
-        let host = host.clone();
-        move |tasks| {
-            host.append(SessionRecord::Tasks {
-                t: now_ms(),
-                tasks: tasks.to_vec(),
-            })
+
+    // The MCP servers and the mods start while the files are found.
+    let (mcp, mods, found) = tokio::join!(
+        connect_mcp(&host, &world, mcp_servers),
+        mods::load(&host, fs.as_ref(), prompter),
+        find(&host, &world, &fs, &spill),
+    );
+    let found = match found {
+        Ok(found) => found,
+        Err(e) => {
+            mcp.close().await;
+            return Err(e);
         }
-    }));
-    let mcp = connect_mcp(&host, &world, mcp_servers).await;
-    let mods = mods::load(&host, fs.as_ref(), prompter).await;
+    };
+
+    let board = task_board(&host);
     let (sender, inbox) = inbox::inbox(&host, s.max_agent_turns);
     let jobs = jobs_for(s, sender.clone());
     let image = image_options(s, keys.as_ref()).unwrap_or_else(|why| {
@@ -193,7 +183,7 @@ where
     let own = own_tools(
         &s.tools,
         board.clone(),
-        skills.clone(),
+        found.skills.clone(),
         fs.clone(),
         jobs.clone(),
         image,
@@ -204,57 +194,56 @@ where
         mods.clone(),
         s.code_tools(),
     ));
-    let prompt = Arc::new(RuntimePrompt::new(&host, &fs, &skills, workspace.as_ref()).await);
     let ledger = Arc::new(Mutex::new(Ledger::new(s.ledger(), host.clone())));
+    let reg_opts = RegistryOptions {
+        routing,
+        ..Default::default()
+    };
+    let registry = ProviderRegistry::new(keys, providers, reg_opts);
+
+    // The conversation's deps. Tools and prompt are each agent's own: the hub
+    // gives every subagent its own, and main's tools hold the hub.
     let none: Vec<Arc<dyn Tool>> = Vec::new();
-    let mut deps = AgentDeps::new(
+    let empty = AgentDeps::new(
         Arc::new(registry),
         Arc::new(none),
         Arc::new(String::new()),
         s.cwd.clone(),
-        workspace,
+        found.workspace,
     );
-    deps.spill_dir = Some(spill);
-    deps.hooks = host.clone();
-    deps.ledger = Some(ledger.clone());
-    deps.web_search = s.web_search_config();
+    let shared = AgentDeps {
+        spill_dir: Some(spill),
+        hooks: host.clone(),
+        ledger: Some(ledger.clone()),
+        web_search: s.web_search_config(),
+        ..empty
+    };
     let agents = Agents {
         host: host.clone(),
-        deps: deps.clone(),
+        deps: shared.clone(),
         tools: wrapped.clone(),
-        prompt: prompt.clone(),
+        prompt: found.prompt.clone(),
         mods: mods.clone(),
-        defer: s.deferred_tools,
         inbox: sender,
     }
-    .hub(s.subagents);
+    .hub();
     let main_hub = s.agents.then(|| agents.clone());
     let tools = Arc::new(MainTools::new(wrapped, main_hub, s.deferred_tools));
     let main_prompt = AgentPrompt {
-        prompt,
+        prompt: found.prompt,
         model: None,
         tools: tools.clone(),
     };
-    deps.tools = tools;
-    deps.system_prompt = Arc::new(ModSystemPrompt::new(Arc::new(main_prompt), mods.clone()));
+    let deps = AgentDeps {
+        tools,
+        system_prompt: Arc::new(ModSystemPrompt::new(Arc::new(main_prompt), mods.clone())),
+        ..shared
+    };
 
     let mut agent_opts = AgentOptions::new(s.model.clone());
     agent_opts.effort = s.effort;
     if resuming {
-        let saved = store.load().await.context("reading the session")?;
-        if saved.corrupt_lines > 0 {
-            host.warn(&format!(
-                "Skipped {} torn line(s) in the session file.",
-                saved.corrupt_lines
-            ));
-        }
-        if let Some(l) = &saved.ledger {
-            ledger.lock().unwrap().restore(l);
-        }
-        board.restore(saved.tasks.unwrap_or_default());
-        agent_opts.model = saved.model.unwrap_or(agent_opts.model);
-        agent_opts.effort = saved.effort.unwrap_or(agent_opts.effort);
-        agent_opts.history = saved.messages;
+        restore(&host, &ledger, &board, &mut agent_opts).await?;
     }
     let agent = Agent::new(deps, agent_opts);
     host.set_model(&agent.model_spec);
@@ -268,8 +257,8 @@ where
         ui,
         fs,
         board,
-        skills,
-        skill_opts,
+        skills: found.skills,
+        skill_opts: found.skill_opts,
         mcp,
         mods,
         session_id,
