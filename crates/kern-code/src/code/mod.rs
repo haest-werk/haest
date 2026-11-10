@@ -30,7 +30,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
 use kern_core::tool::{
-    JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, opt_num, req_str,
+    FILE_TOOLS, JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, opt_num, req_str,
 };
 use serde_json::{Value, json};
 
@@ -42,7 +42,6 @@ use bridge::Bridge;
 use render::render_code_output;
 
 pub const CODE_TOOL_NAME: &str = "Code";
-const BUILTINS: [&str; 5] = ["Read", "Write", "Edit", "Grep", "Glob"];
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 const MAX_TIMEOUT_MS: u64 = 300_000;
 pub const MEMORY_BYTES: usize = VM_MEMORY_BYTES;
@@ -61,7 +60,7 @@ pub fn code_callable(t: &dyn Tool, extra: &[String]) -> bool {
     if name == CODE_TOOL_NAME {
         return false;
     }
-    if BUILTINS.contains(&name) || (name.starts_with("mcp__") && t.read_only()) {
+    if FILE_TOOLS.contains(&name) || (name.starts_with("mcp__") && t.read_only()) {
         return true;
     }
     extra.iter().any(|p| matches(name, p))

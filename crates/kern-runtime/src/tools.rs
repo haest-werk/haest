@@ -17,6 +17,7 @@ use crate::kern::{
     code::{CodeTool, code_tool_names},
     deferred_tools::{DeferMode, ToolDeferral},
     fs::Fs,
+    handed::openrouter_base_url,
     mcp::McpHub,
     mods::{ModTools, Mods},
     skills::Skill,
@@ -26,7 +27,6 @@ use crate::kern::{
         BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub, SkillToolOptions,
         agents::{AgentRef, SubagentHub},
         builtin_tools_where,
-        image::DEFAULT_IMAGE_BASE_URL,
         tool_search::deferral_tools,
     },
 };
@@ -73,11 +73,8 @@ pub fn image_options(
     let key = keys.key("OPENROUTER_API_KEY").ok_or(
         "image is on, but the host has no OPENROUTER_API_KEY: no GenerateImage.".to_string(),
     )?;
-    let base_url = keys
-        .key("OPENROUTER_BASE_URL")
-        .unwrap_or_else(|| DEFAULT_IMAGE_BASE_URL.into());
     let opts = ImageToolOptions {
-        base_url,
+        base_url: openrouter_base_url(keys),
         ..ImageToolOptions::new(key)
     };
     Ok(Some(
@@ -270,7 +267,7 @@ mod tests {
         let opts = image_options(&on, &with_key).unwrap().unwrap();
         assert_eq!(
             (opts.api_key.as_str(), opts.base_url.as_str()),
-            ("k", DEFAULT_IMAGE_BASE_URL)
+            ("k", crate::kern::handed::OPENROUTER_URL)
         );
         assert_eq!(opts.models, on.image_models());
         let local = keys(&[

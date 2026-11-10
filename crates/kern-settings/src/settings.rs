@@ -8,13 +8,10 @@ use kern_core::{
     Effort, WorkspaceMode,
     deferred_tools::DeferMode,
     ledger::LedgerCaps,
-    limits::TurnLimits,
+    limits::{SubagentCaps, TurnLimits},
+    media::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
     provider::{WebSearchConfig, WebSearchEngine},
     skills::SkillSources,
-};
-use kern_tools::{
-    agents::SubagentCaps,
-    image::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
 };
 
 use crate::{ContextSources, sets::BuiltinTools};

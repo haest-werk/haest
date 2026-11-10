@@ -3,8 +3,11 @@
 
 use std::path::PathBuf;
 
-use kern_core::{WorkspaceMode, provider::WebSearchEngine};
-use kern_tools::image::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
+use kern_core::{
+    WorkspaceMode,
+    media::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
+    provider::WebSearchEngine,
+};
 
 use super::*;
 

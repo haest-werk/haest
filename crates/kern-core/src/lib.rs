@@ -40,7 +40,7 @@ pub mod words;
 pub mod workspace;
 
 pub use agent::{Agent, AgentControl, AgentOptions};
-pub use deps::{AgentDeps, AgentHooks, NoHooks, SystemPrompt};
+pub use deps::{AgentDeps, AgentHooks, NoHooks, SystemPrompt, now_ms};
 pub use events::{EventSink, LoopEvent, TurnEnd};
 pub use fs::{Fs, MemFs};
 pub use handed::{ChildEnv, KeySource};

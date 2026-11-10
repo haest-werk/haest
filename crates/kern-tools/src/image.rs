@@ -26,19 +26,12 @@ mod tool;
 use std::{fmt, sync::Arc};
 
 pub use catalog::ImageCatalog;
+use kern_core::handed::OPENROUTER_URL;
+pub use kern_core::media::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
 pub use request::{
     HttpReply, ImageHttp, ImageReply, ReqwestImageHttp, call_image_api, sniff_image_type,
 };
 pub use tool::ImageTool;
-
-pub const DEFAULT_IMAGE_MODEL: &str = "google/gemini-nano-banana-2.1";
-/// What a call may pick by default: the default, exact text + transparency, multi-reference edits.
-pub const DEFAULT_IMAGE_MODELS: [&str; 3] = [
-    DEFAULT_IMAGE_MODEL,
-    "openai/gpt-image-2.6-sunburst",
-    "black-forest-labs/flux-3-image",
-];
-pub const DEFAULT_IMAGE_BASE_URL: &str = "https://openrouter.ai/api/v1";
 
 /// What GenerateImage runs on. Clones share the model list read so far.
 #[derive(Clone)]
@@ -60,7 +53,7 @@ impl ImageToolOptions {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
-            base_url: DEFAULT_IMAGE_BASE_URL.into(),
+            base_url: OPENROUTER_URL.into(),
             model: DEFAULT_IMAGE_MODEL.into(),
             models: DEFAULT_IMAGE_MODELS.map(String::from).to_vec(),
             http: Arc::new(ReqwestImageHttp),

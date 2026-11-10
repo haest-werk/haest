@@ -26,6 +26,10 @@ use crate::{
 
 pub type JsonMap = Map<String, Value>;
 
+/// The built-in tools that work on files by path (kern-tools'). The prompt's
+/// path line and its workspace note go by them; a Code run may always call them.
+pub const FILE_TOOLS: [&str; 5] = ["Read", "Write", "Edit", "Grep", "Glob"];
+
 /// What a tool's run produced.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

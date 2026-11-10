@@ -8,5 +8,5 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+# kern-core only: a host that writes its settings out pulls in no tools, no HTTP.
 kern-core = { workspace = true }
-kern-tools = { workspace = true }

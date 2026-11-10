@@ -3,7 +3,10 @@
 //! host appends. An empty section is left out.
 
 use super::InstructionFile;
-use crate::skills::{Skill, skills_prompt_block};
+use crate::{
+    skills::{Skill, skills_prompt_block},
+    tool::FILE_TOOLS,
+};
 
 /// Everything the system prompt says, gathered by the caller.
 #[derive(Debug, Clone, Default)]
@@ -20,7 +23,8 @@ pub struct PromptInputs {
     pub tool_names: Vec<String>,
     /// How to read and answer `<channel>` turns; None when there is no way to answer.
     pub channel_guide: Option<String>,
-    /// What the workspace can and cannot do (the sandbox's limits); None for the real one.
+    /// What the workspace can and cannot do (the sandbox's limits); None for
+    /// the real one. Said only to a call with Bash or a file tool.
     pub workspace_note: Option<String>,
     pub append_system_prompt: Option<String>,
 }
@@ -60,10 +64,7 @@ fn tool_discipline(tools: &[String]) -> String {
         (false, true) => lines.push("- Use Write for new files or full rewrites.".into()),
         (false, false) => {}
     }
-    if ["Read", "Write", "Edit", "Grep", "Glob"]
-        .iter()
-        .any(|n| has(n))
-    {
+    if FILE_TOOLS.iter().any(|n| has(n)) {
         lines.push("- Paths may be absolute or relative to the working directory.".into());
     }
     match lines.is_empty() {
@@ -111,11 +112,20 @@ pub fn build_system_prompt(p: &PromptInputs) -> String {
     .join("\n");
     let opt = |s: &Option<String>| s.clone().unwrap_or_default();
     let identity = p.identity.clone().unwrap_or_else(|| IDENTITY.to_string());
+    // The workspace's limits only matter to a call that can touch it.
+    let touches_workspace = p
+        .tool_names
+        .iter()
+        .any(|t| t == "Bash" || FILE_TOOLS.contains(&t.as_str()));
+    let workspace_note = match touches_workspace {
+        true => opt(&p.workspace_note),
+        false => String::new(),
+    };
     [
         identity,
         tool_discipline(&p.tool_names),
         env,
-        opt(&p.workspace_note),
+        workspace_note,
         instructions(&p.instructions),
         skills_prompt_block(&p.skills),
         opt(&p.channel_guide),

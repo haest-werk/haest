@@ -22,6 +22,7 @@ use std::{
 
 use kern_core::{
     KeySource,
+    handed::openrouter_base_url,
     provider::{ModelResolver, Provider, ResolvedModel, parse_model_spec},
 };
 
@@ -174,10 +175,7 @@ impl ProviderRegistry {
             CompatFlavor::OpenRouter,
             need(keys, "OPENROUTER_API_KEY", "openrouter")?,
         );
-        opts.base_url = Some(
-            keys.key("OPENROUTER_BASE_URL")
-                .unwrap_or_else(|| "https://openrouter.ai/api/v1".into()),
-        );
+        opts.base_url = Some(openrouter_base_url(keys));
         if let Some(url) = &self.opts.app_url {
             opts.headers.push(("HTTP-Referer".into(), url.clone()));
         }

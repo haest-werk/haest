@@ -49,6 +49,6 @@ mod kern {
 
 pub use agents::Agents;
 pub use build::{BuildOptions, Runtime, RuntimeInputs, build, init_store, open_store};
-pub use host::{Host, now_ms, session_usd};
+pub use host::{Host, session_usd};
 pub use ui::Ui;
 pub use world::World;

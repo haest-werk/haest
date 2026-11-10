@@ -141,6 +141,24 @@ fn the_prompt_teaches_only_the_tools_the_call_has_and_the_identity_can_be_replac
     assert!(own.starts_with("You are brain's reader.") && !own.contains("You are kern"));
 }
 
+#[test]
+fn the_workspace_note_goes_only_to_a_call_that_can_touch_the_workspace() {
+    const NOTE: &str = "SANDBOX LIMITS";
+    let with = |tools: &[&str]| {
+        build_system_prompt(&PromptInputs {
+            tool_names: tools.iter().map(|t| t.to_string()).collect(),
+            workspace_note: Some(NOTE.into()),
+            ..Default::default()
+        })
+    };
+    for touches in [&["Bash"][..], &["Glob"], &["WebFetch", "Edit"]] {
+        assert!(with(touches).contains(NOTE), "{touches:?}");
+    }
+    for not in [&[][..], &["WebFetch", "mcp__gh__search"]] {
+        assert!(!with(not).contains(NOTE), "{not:?}");
+    }
+}
+
 #[tokio::test]
 async fn a_repo_on_a_branch_from_a_subdirectory() {
     let fs = MemFs::with_files([

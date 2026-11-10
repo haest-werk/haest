@@ -17,6 +17,16 @@ use crate::{
     messages::{MediaKind, MediaPart, Message, UserMessage},
 };
 
+/// GenerateImage's default model (the `image_model` setting's default).
+pub const DEFAULT_IMAGE_MODEL: &str = "google/gemini-nano-banana-2.1";
+/// What a GenerateImage call may pick by default: the default, exact text +
+/// transparency, multi-reference edits.
+pub const DEFAULT_IMAGE_MODELS: [&str; 3] = [
+    DEFAULT_IMAGE_MODEL,
+    "openai/gpt-image-2.6-sunburst",
+    "black-forest-labs/flux-3-image",
+];
+
 /// Every provider kern speaks accepts exactly these four image types.
 const IMAGE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 

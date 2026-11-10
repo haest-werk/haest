@@ -1,15 +1,13 @@
 //! The GenerateImage tool: check the call, pay for one picture, save it, show it.
 
-use std::{
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use kern_core::{
     fs::ensure_dir,
     media::{data_url, media_from_bytes, media_type_from_name},
     messages::MediaPart,
+    now_ms,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str},
 };
 use serde_json::{Map, Value, json};
@@ -115,9 +113,7 @@ fn output_path(
     let base = match requested {
         Some(p) => ctx.resolve(p),
         None => {
-            let ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |d| d.as_millis());
+            let ms = now_ms();
             ctx.resolve(&format!(
                 "generated/{}-{ms}.{ext}",
                 slug(prompt, 40, "image")

@@ -19,11 +19,11 @@ use crate::{
             find_instruction_files,
         },
         fs::Fs,
+        now_ms,
         session::iso_utc,
         skills::{Skill, SkillOpts},
         tool::ToolSource,
     },
-    now_ms,
 };
 
 /// Which instruction files the `context` setting asks for.
@@ -89,13 +89,6 @@ impl RuntimePrompt {
 
     pub async fn build(&self, model: String, tool_names: Vec<String>) -> String {
         let mut p = self.base.clone();
-        // The sandbox's limits only matter to a call that can touch it.
-        let touches_files = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
-            .iter()
-            .any(|t| tool_names.iter().any(|n| n == t));
-        if !touches_files {
-            p.workspace_note = None;
-        }
         p.model = model;
         p.tool_names = tool_names;
         p.instructions = find_instruction_files(self.fs.as_ref(), &self.instructions).await;

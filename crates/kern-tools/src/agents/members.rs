@@ -7,10 +7,9 @@ use std::{
         Arc,
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
 };
 
-use kern_core::AgentControl;
+use kern_core::{AgentControl, now_ms};
 use tokio_util::sync::CancellationToken;
 
 use super::{AgentRef, MAIN, SpawnInput, SubagentCaps};
@@ -18,11 +17,7 @@ use super::{AgentRef, MAIN, SpawnInput, SubagentCaps};
 /// Unique per hub, so the same agent name in a revived host is a different id.
 pub(super) fn run_id() -> String {
     static SEQ: AtomicU64 = AtomicU64::new(0);
-    let ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    format!("{ms:x}{:x}", SEQ.fetch_add(1, Ordering::Relaxed))
+    format!("{:x}{:x}", now_ms(), SEQ.fetch_add(1, Ordering::Relaxed))
 }
 
 /// One background answer owed ([`super::SubagentHub::answers_due`]); paid

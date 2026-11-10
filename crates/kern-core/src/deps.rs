@@ -83,11 +83,15 @@ pub trait AgentHooks: ToolHost {
     /// Milliseconds since the epoch, the clock the turn guard's time cap reads.
     /// A host that pauses runs returns a clock that stands still while paused.
     fn now_ms(&self) -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
+        now_ms()
     }
+}
+
+/// Milliseconds since the epoch, by the wall clock.
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// Hooks that change nothing.

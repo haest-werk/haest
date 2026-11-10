@@ -2,14 +2,12 @@
 //! that never happened. Both turn every failure into a value the loop can put
 //! in history -- nothing here fails.
 
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 
 use crate::{
+    deps::now_ms,
     fs::ensure_dir,
     messages::{AssistantMessage, StopReason, ToolCall, ToolResultMessage, Usage},
     tool::{Tool, ToolContext, ToolError, ToolOutput},
@@ -68,10 +66,7 @@ async fn spill(content: &str, tool_name: &str, ctx: &ToolContext) -> String {
     let Some(dir) = &ctx.spill_dir else {
         return "it was NOT saved (no spill directory) -- call the tool again with a narrower request".into();
     };
-    let ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
+    let ms = now_ms();
     // The call id keeps two calls spilling in the same millisecond (a parallel batch) apart.
     let id = ctx
         .tool_call_id

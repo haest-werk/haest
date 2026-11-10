@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+pub use kern_core::limits::SubagentCaps;
 use kern_core::{
     AgentDeps, LoopEvent,
     provider::Effort,
@@ -11,35 +12,6 @@ use kern_core::{
 };
 
 use crate::inbox::Inbox;
-
-/// The caps on the subagent tree. `max_depth` and `max_concurrent` are NOT
-/// "0 = off": 0 means no subagents at all (no Agent tool). The three per-agent
-/// caps replace the conversation's turn caps for each subagent's one turn.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SubagentCaps {
-    /// How deep agents may nest (main = 0); KERN_MAX_AGENT_DEPTH.
-    pub max_depth: u32,
-    /// Subagents running at once, across the tree; KERN_MAX_SUBAGENTS.
-    pub max_concurrent: usize,
-    /// One subagent's spend; KERN_SUBAGENT_USD.
-    pub usd: f64,
-    /// One subagent's model calls; KERN_SUBAGENT_STEPS.
-    pub steps: u32,
-    /// One subagent's wall clock; KERN_SUBAGENT_MINUTES.
-    pub minutes: u64,
-}
-
-impl Default for SubagentCaps {
-    fn default() -> Self {
-        Self {
-            max_depth: 2,
-            max_concurrent: 4,
-            usd: 1.0,
-            steps: 50,
-            minutes: 15,
-        }
-    }
-}
 
 /// A subagent's life, for the host's transcript (its own card, never the parent's).
 #[derive(Debug, Clone)]
