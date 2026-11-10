@@ -102,7 +102,9 @@ pub async fn workspace_for(
         (WorkspaceMode::Sandbox, World::Fs(fs)) => SandboxWorkspace::over(fs.clone()),
         (WorkspaceMode::Sandbox, World::Disk { .. }) => {
             // The spill dir is mounted read-write, so the path in a spill notice is real.
-            ensure_dir(fs.as_ref(), spill).await?;
+            ensure_dir(fs.as_ref(), spill)
+                .await
+                .with_context(|| format!("creating the spill dir {}", spill.display()))?;
             let mut mounts = SandboxMounts::new(&s.cwd).writable(spill);
             for dir in skill_dirs {
                 if fs.exists(dir).await {
@@ -196,6 +198,21 @@ mod tests {
         assert!(err.to_string().contains("real disk"), "{err}");
         let sandbox = workspace_for(&settings(), &world, &[], Path::new("/d/spill")).await;
         assert!(sandbox.is_ok());
+    }
+
+    /// The sandbox on the disk makes its spill dir first: when it cannot, the
+    /// error says which dir (a bare "Not a directory" names nothing to fix).
+    #[tokio::test]
+    async fn a_spill_dir_that_cannot_be_made_is_named_in_the_error() {
+        let world = World::Disk {
+            child_env: ChildEnv::default(),
+        };
+        let spill = Path::new("/dev/null/spill");
+        let err = workspace_for(&settings(), &world, &[], spill)
+            .await
+            .err()
+            .unwrap();
+        assert!(format!("{err:#}").contains("/dev/null/spill"), "{err:#}");
     }
 
     #[tokio::test]
