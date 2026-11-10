@@ -4,7 +4,7 @@
 
 use std::{ffi::OsString, path::PathBuf};
 
-use clap::{Arg, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{Arg, ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
 use kern::config::{DEFS, Def, Kind};
 
 #[derive(Debug, Parser)]
@@ -86,6 +86,7 @@ fn setting_arg(def: &Def) -> Arg {
         Kind::Number => arg.value_name("N"),
         Kind::Path => arg.value_name("DIR"),
         Kind::Choice(_) | Kind::Text => arg.value_name("VALUE"),
+        Kind::Vars => arg.action(ArgAction::Append).value_name("NAME=VALUE"),
     };
     match def.short {
         Some(c) => arg.short(c),
@@ -98,11 +99,12 @@ pub fn command() -> clap::Command {
         .fold(Args::command(), |cmd, d| cmd.arg(setting_arg(d)))
 }
 
+/// Every value given, a repeated flag's each in its order.
 fn settings_of(m: &ArgMatches) -> Vec<(String, String)> {
     DEFS.iter()
-        .filter_map(|d| {
-            m.get_one::<String>(d.key)
-                .map(|v| (d.key.to_string(), v.clone()))
+        .flat_map(|d| {
+            let given = m.get_many::<String>(d.key).into_iter().flatten();
+            given.map(|v| (d.key.to_string(), v.clone()))
         })
         .collect()
 }
@@ -167,6 +169,14 @@ mod tests {
             c.settings,
             [("env_passthrough".to_string(), "none".to_string())]
         );
+        assert_eq!(c.args.prompt, ["go"]);
+    }
+
+    #[test]
+    fn env_repeats_in_its_order_and_a_bare_name_is_passed_as_given() {
+        let c = cli(&["-E", "A=1", "--env", "B", "-E", "A=2", "go"]);
+        let env = [("env", "A=1"), ("env", "B"), ("env", "A=2")];
+        assert_eq!(c.settings, env.map(|(k, v)| (k.to_string(), v.to_string())));
         assert_eq!(c.args.prompt, ["go"]);
     }
 

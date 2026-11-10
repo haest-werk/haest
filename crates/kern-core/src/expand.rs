@@ -21,14 +21,14 @@ pub fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> (Stri
             Some((name, default)) => (name, Some(default)),
             None => (inner, None),
         };
-        let value = is_name(name)
+        let value = is_var_name(name)
             .then(|| lookup(name).or_else(|| default.map(str::to_string)))
             .flatten();
         match value {
             Some(v) => out.push_str(&v),
             None => {
                 out.push_str(written);
-                if is_name(name) && !unset.iter().any(|n| n == name) {
+                if is_var_name(name) && !unset.iter().any(|n| n == name) {
                     unset.push(name.to_string());
                 }
             }
@@ -39,8 +39,23 @@ pub fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> (Stri
     (out, unset)
 }
 
+/// [`expand_vars`]'s unset names, as a note says them: `names ${A}, which is
+/// not set and has no default`.
+pub fn unset_note(unset: &[String]) -> String {
+    let names: Vec<String> = unset.iter().map(|n| format!("${{{n}}}")).collect();
+    let (is, has) = if names.len() == 1 {
+        ("is", "has")
+    } else {
+        ("are", "have")
+    };
+    format!(
+        "names {}, which {is} not set and {has} no default",
+        names.join(", ")
+    )
+}
+
 /// A shell variable name: a letter or `_`, then letters, digits and `_`.
-fn is_name(s: &str) -> bool {
+pub fn is_var_name(s: &str) -> bool {
     let mut chars = s.chars();
     chars
         .next()

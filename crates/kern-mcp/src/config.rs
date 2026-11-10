@@ -7,7 +7,7 @@ use std::{
 };
 
 use kern_core::{
-    expand::expand_vars,
+    expand::{expand_vars, unset_note},
     fs::{Fs, read_text_if_present},
 };
 use serde_json::{Map, Value};
@@ -150,11 +150,10 @@ pub async fn load_project_mcp_config(
             });
         }
         if !fill.unset.is_empty() {
-            let names: Vec<String> = fill.unset.iter().map(|n| format!("${{{n}}}")).collect();
             out.notes.push(format!(
-                "{}: server \"{name}\" names {}, which is not set and has no default: passed as written",
+                "{}: server \"{name}\" {}: passed as written",
                 path.display(),
-                names.join(", ")
+                unset_note(&fill.unset)
             ));
         }
     }

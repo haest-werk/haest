@@ -9,6 +9,7 @@ use std::{
 
 use bashkit::{Bash, ExecutionLimits, FileSystem, LimitExceeded};
 use kern_core::{
+    ChildEnv,
     fs::Fs,
     shell_command::ShellCommand,
     workspace::{ExecOptions, ExecResult},
@@ -30,15 +31,19 @@ const EXIT_TIMEOUT: i32 = 124;
 const EXIT_INTERRUPTED: i32 = 130;
 
 /// What a sandbox runs one call over: the shell's file system, the same files
-/// as kern sees them, and the host's extra commands.
+/// as kern sees them, the host's extra commands and the variables it passes.
 pub(crate) struct Shell<'a> {
     pub fs: Arc<dyn FileSystem>,
     pub kern_fs: &'a Arc<dyn Fs>,
     pub commands: &'a [Arc<dyn ShellCommand>],
+    pub env: &'a ChildEnv,
 }
 
 fn shell(world: &Shell<'_>, opts: &ExecOptions, ends_at: Instant) -> Bash {
     let mut builder = Bash::builder().fs(world.fs.clone());
+    for (name, value) in world.env.vars() {
+        builder = builder.env(name, value);
+    }
     for command in world.commands {
         let builtin = HostCommand {
             command: command.clone(),

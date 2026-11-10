@@ -6,8 +6,8 @@ use std::{collections::BTreeMap, path::PathBuf};
 use crate::{
     fields::{Config, set},
     registry::{Def, Kind, find},
-    source::Source,
-    value::{absolute, check},
+    source::{Source, var_key},
+    value::{absolute, check, var_parts},
 };
 
 /// Checked values, each with where it came from.
@@ -139,10 +139,8 @@ impl Stack {
 
     /// Every layer over `config`, in order, and where each value came from. A
     /// layer still pending read nothing (no project file, no profile named).
-    pub fn fold(
-        self,
-        mut config: Config,
-    ) -> Result<(Config, BTreeMap<&'static str, Source>), String> {
+    /// A variable of `env` has a source of its own (`env.NAME`).
+    pub fn fold(self, mut config: Config) -> Result<(Config, BTreeMap<String, Source>), String> {
         let (cwd, home) = (config.settings.cwd.clone(), config.settings.home.clone());
         let mut sources = BTreeMap::new();
         let values = self.0.into_iter().flat_map(|slot| match slot {
@@ -150,12 +148,19 @@ impl Stack {
             Slot::Pending(_) => Vec::new(),
         });
         for (def, value, source) in values {
-            let value = match def.kind {
-                Kind::Path => absolute(&value, &cwd, &home).display().to_string(),
-                _ => value,
+            let (value, key) = match def.kind {
+                Kind::Path => (
+                    absolute(&value, &cwd, &home).display().to_string(),
+                    def.key.to_string(),
+                ),
+                Kind::Vars => {
+                    let key = var_key(def.key, var_parts(&value).0);
+                    (value, key)
+                }
+                _ => (value, def.key.to_string()),
             };
             set(&mut config, def.key, &value).map_err(|e| format!("{}: {e}", def.key))?;
-            sources.insert(def.key, source);
+            sources.insert(key, source);
         }
         Ok((config, sources))
     }

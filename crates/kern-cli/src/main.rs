@@ -178,6 +178,7 @@ async fn main() -> ExitCode {
         world: World::Disk {
             child_env: loaded.child_env,
         },
+        env: loaded.env,
         keys: Arc::new(loaded.keys),
         providers: loaded.providers,
         mcp_servers: loaded.mcp_servers,

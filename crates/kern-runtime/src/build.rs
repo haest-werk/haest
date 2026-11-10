@@ -12,7 +12,7 @@ use kern_settings::Settings;
 use crate::{
     Agents, Host, Runtime, Ui, inbox,
     kern::{
-        Agent, AgentDeps, AgentOptions, KeySource, Workspace,
+        Agent, AgentDeps, AgentOptions, ChildEnv, KeySource, Workspace,
         fs::Fs,
         ledger::Ledger,
         mcp::McpServerConfig,
@@ -36,6 +36,10 @@ use crate::{
 pub struct RuntimeInputs {
     pub settings: Settings,
     pub world: World,
+    /// Variables the host passes on purpose (`--env`): every process kern
+    /// starts gets them over the world's `child_env`, the sandbox's shell
+    /// included (it gets nothing else of the host's environment).
+    pub env: ChildEnv,
     /// What the host answers for a provider variable (`OPENROUTER_API_KEY`,
     /// `ANTHROPIC_BASE_URL`, ...): its environment, a vault, a fixed map.
     pub keys: Arc<dyn KeySource>,
@@ -48,13 +52,14 @@ pub struct RuntimeInputs {
 }
 
 impl RuntimeInputs {
-    /// The settings in this world, and nothing else: no keys, no custom
-    /// providers, no MCP servers, no routing.
+    /// The settings in this world, and nothing else: no variables passed, no
+    /// keys, no custom providers, no MCP servers, no routing.
     pub fn new(settings: Settings, world: World) -> Self {
         let no_keys = |_: &str| None;
         Self {
             settings,
             world,
+            env: ChildEnv::default(),
             keys: Arc::new(no_keys),
             providers: CustomProviders::new(),
             mcp_servers: Vec::new(),
@@ -83,12 +88,14 @@ struct Found {
 async fn find(
     host: &Arc<Host>,
     world: &World,
+    env: &ChildEnv,
     fs: &Arc<dyn Fs>,
     spill: &Path,
 ) -> anyhow::Result<Found> {
     let skill_roots = skill_scan_roots(fs.as_ref(), &skill_opts(&host.settings)).await;
     let skills = Arc::new(Mutex::new(skills_in(fs.as_ref(), &skill_roots).await));
-    let workspace = workspace_for(&host.settings, world, &scan_roots(&skill_roots), spill).await?;
+    let skill_dirs = scan_roots(&skill_roots);
+    let workspace = workspace_for(&host.settings, world, env, &skill_dirs, spill).await?;
     let prompt = Arc::new(RuntimePrompt::new(host, fs, &skills, workspace.as_ref()).await);
     Ok(Found {
         skill_roots,
@@ -124,6 +131,7 @@ where
     let RuntimeInputs {
         settings,
         world,
+        env,
         keys,
         providers,
         mcp_servers,
@@ -139,12 +147,12 @@ where
     // started nothing and left no file: the files are found, then a new
     // session's file is created. Then the MCP servers and the mods start,
     // together; from there on nothing fails.
-    let found = find(&host, &world, &fs, &spill).await?;
+    let found = find(&host, &world, &env, &fs, &spill).await?;
     if session.saved.is_none() {
         create(&session.store, &s.cwd).await?;
     }
     let (mcp, mods) = tokio::join!(
-        connect_mcp(&host, &world, mcp_servers),
+        connect_mcp(&host, &world, &env, mcp_servers),
         mods::load(&host, fs.as_ref(), prompter),
     );
 

@@ -4,7 +4,7 @@
 use kern_core::provider::WebSearchEngine;
 
 use super::*;
-use crate::value::check;
+use crate::value::{check, var_parts};
 
 #[tokio::test]
 async fn caps_and_subagents_follow_their_variables() {
@@ -71,6 +71,7 @@ const SAMPLES: &[(&str, &str)] = &[
     ("deferred_tools", "grow"),
     ("workspace", "real"),
     ("env_passthrough", "none"),
+    ("env", "GH_TOKEN=${GITHUB_TOKEN}"),
     ("trusted_dirs", "/p,/q"),
     ("max_turn_usd", "0.5"),
     ("max_turn_tokens", "0"),
@@ -110,12 +111,12 @@ fn every_setting_reads_back_as_the_text_it_was_set_from() {
             let mut c = bare.clone();
             set(&mut c, def.key, &raw).unwrap();
             assert_ne!(c, bare, "{} = {raw} changes nothing", def.key);
-            assert_eq!(
-                get(&c, def.key).as_deref(),
-                Some(raw.as_str()),
-                "{}",
-                def.key
-            );
+            let shown = match def.kind {
+                // A variable reads back as its name: its value may be a key.
+                Kind::Vars => var_parts(&raw).0,
+                _ => raw.as_str(),
+            };
+            assert_eq!(get(&c, def.key).as_deref(), Some(shown), "{}", def.key);
         }
     }
 }

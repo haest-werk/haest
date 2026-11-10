@@ -46,10 +46,11 @@ impl World {
         }
     }
 
-    /// The environment of a process kern starts; None = it starts none.
-    pub fn child_env(&self) -> Option<&ChildEnv> {
+    /// The environment of a process kern starts: `child_env` with the
+    /// variables the host passes on purpose on top. None = it starts none.
+    pub fn child_env(&self, passed: &ChildEnv) -> Option<ChildEnv> {
         match self {
-            World::Disk { child_env } => Some(child_env),
+            World::Disk { child_env } => Some(child_env.with(passed)),
             World::Fs(_) => None,
         }
     }
@@ -83,24 +84,24 @@ pub async fn kill_jobs(jobs: &JobHub) -> usize {
 /// The `workspace` setting's workspace in this world. The disk's sandbox
 /// mounts the skill dirs (read-only; `scan_roots` of the `skills` setting's
 /// roots) and the spill dir (read-write); a host's Fs is the sandbox's whole
-/// world.
+/// world. `passed` (the variables the host passes on purpose) reaches the
+/// shell either way: the sandbox's alone, real bash's over `child_env`.
 pub async fn workspace_for(
     s: &Settings,
     world: &World,
+    passed: &ChildEnv,
     skill_dirs: &[PathBuf],
     spill: &Path,
 ) -> anyhow::Result<Arc<dyn Workspace>> {
     let fs = world.fs();
-    let ws = match (s.workspace, world) {
+    let ws = match (s.workspace, world.child_env(passed)) {
         (WorkspaceMode::Shut, _) => return Ok(Arc::new(ShutWorkspace)),
-        (WorkspaceMode::Real, World::Disk { child_env }) => {
-            return Ok(Arc::new(RealWorkspace::new(child_env.clone())));
-        }
-        (WorkspaceMode::Real, World::Fs(_)) => {
+        (WorkspaceMode::Real, Some(env)) => return Ok(Arc::new(RealWorkspace::new(env))),
+        (WorkspaceMode::Real, None) => {
             bail!("workspace = real needs the real disk; this host hands kern its own files")
         }
-        (WorkspaceMode::Sandbox, World::Fs(fs)) => SandboxWorkspace::over(fs.clone()),
-        (WorkspaceMode::Sandbox, World::Disk { .. }) => {
+        (WorkspaceMode::Sandbox, None) => SandboxWorkspace::over(fs),
+        (WorkspaceMode::Sandbox, Some(_)) => {
             // The spill dir is mounted read-write, so the path in a spill notice is real.
             ensure_dir(fs.as_ref(), spill)
                 .await
@@ -118,14 +119,19 @@ pub async fn workspace_for(
     };
     let ws = sandbox_commands()
         .into_iter()
-        .fold(ws, SandboxWorkspace::with_command);
+        .fold(ws.with_env(passed.clone()), SandboxWorkspace::with_command);
     Ok(Arc::new(ws))
 }
 
 /// The MCP servers the host listed, started. A stdio server is a real
 /// process: in a world without them it is skipped, and the host is told.
-pub async fn connect_mcp(host: &Host, world: &World, servers: Vec<McpServerConfig>) -> Arc<McpHub> {
-    let Some(child_env) = world.child_env() else {
+pub async fn connect_mcp(
+    host: &Host,
+    world: &World,
+    passed: &ChildEnv,
+    servers: Vec<McpServerConfig>,
+) -> Arc<McpHub> {
+    let Some(child_env) = world.child_env(passed) else {
         let (stdio, http): (Vec<_>, Vec<_>) = servers
             .into_iter()
             .partition(|s| matches!(s.transport, McpTransport::Stdio { .. }));
@@ -137,7 +143,7 @@ pub async fn connect_mcp(host: &Host, world: &World, servers: Vec<McpServerConfi
         }
         return start(host, McpHub::new(), http).await;
     };
-    start(host, McpHub::with_env(child_env.clone()), servers).await
+    start(host, McpHub::with_env(child_env), servers).await
 }
 
 async fn start(host: &Host, hub: McpHub, servers: Vec<McpServerConfig>) -> Arc<McpHub> {
@@ -156,114 +162,4 @@ async fn start(host: &Host, hub: McpHub, servers: Vec<McpServerConfig>) -> Arc<M
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use crate::{
-        kern::{fs::MemFs, tools::inbox::NoInbox},
-        testkit::{host, settings},
-    };
-
-    use super::*;
-
-    #[tokio::test]
-    async fn a_world_of_the_hosts_files_starts_no_stdio_server_and_says_which() {
-        let (host, ui) = host(settings());
-        let server = McpServerConfig {
-            name: "gh".into(),
-            transport: McpTransport::Stdio {
-                command: "gh-mcp".into(),
-                args: Vec::new(),
-                env: BTreeMap::new(),
-                cwd: None,
-            },
-        };
-        let world = World::Fs(Arc::new(MemFs::new()));
-        let hub = connect_mcp(&host, &world, vec![server]).await;
-        assert!(hub.tools().is_empty());
-        assert_eq!(ui.warnings().len(), 1, "{:?}", ui.warnings());
-    }
-
-    #[tokio::test]
-    async fn the_real_workspace_needs_the_real_disk() {
-        let s = Settings {
-            workspace: WorkspaceMode::Real,
-            ..settings()
-        };
-        let world = World::Fs(Arc::new(MemFs::new()));
-        let err = workspace_for(&s, &world, &[], Path::new("/d/spill"))
-            .await
-            .err()
-            .unwrap();
-        assert!(err.to_string().contains("real disk"), "{err}");
-        let sandbox = workspace_for(&settings(), &world, &[], Path::new("/d/spill")).await;
-        assert!(sandbox.is_ok());
-    }
-
-    /// The sandbox on the disk makes its spill dir first: when it cannot, the
-    /// error says which dir (a bare "Not a directory" names nothing to fix).
-    #[tokio::test]
-    async fn a_spill_dir_that_cannot_be_made_is_named_in_the_error() {
-        let world = World::Disk {
-            child_env: ChildEnv::default(),
-        };
-        let spill = Path::new("/dev/null/spill");
-        let err = workspace_for(&settings(), &world, &[], spill)
-            .await
-            .err()
-            .unwrap();
-        assert!(format!("{err:#}").contains("/dev/null/spill"), "{err:#}");
-    }
-
-    #[tokio::test]
-    async fn a_shut_workspace_is_shut_in_any_world() {
-        let s = Settings {
-            workspace: WorkspaceMode::Shut,
-            ..settings()
-        };
-        let worlds = [
-            World::Fs(Arc::new(MemFs::new())),
-            World::Disk {
-                child_env: ChildEnv::default(),
-            },
-        ];
-        for world in worlds {
-            let ws = workspace_for(&s, &world, &[], Path::new("/d/spill"))
-                .await
-                .unwrap();
-            assert_eq!(ws.mode(), WorkspaceMode::Shut);
-        }
-    }
-
-    #[test]
-    fn background_jobs_exist_only_for_bash_in_the_real_workspace() {
-        let jobs = |workspace, bash| {
-            let mut s = Settings {
-                workspace,
-                ..settings()
-            };
-            s.tools.bash = bash;
-            jobs_for(&s, Arc::new(NoInbox)).is_some()
-        };
-        assert!(!jobs(WorkspaceMode::Sandbox, true));
-        assert!(!jobs(WorkspaceMode::Real, false));
-        assert!(jobs(WorkspaceMode::Real, true));
-    }
-
-    #[tokio::test]
-    async fn killing_at_exit_counts_the_jobs_and_waits_until_they_are_gone() {
-        let jobs = JobHub::new(Arc::new(NoInbox));
-        let env: ChildEnv = std::env::vars().collect();
-        let ws: Arc<dyn Workspace> = Arc::new(RealWorkspace::new(env));
-        let cwd = std::env::temp_dir();
-        for _ in 0..2 {
-            jobs.start(ws.clone(), "sleep 30", "s", cwd.clone())
-                .unwrap();
-        }
-        assert_eq!(kill_jobs(&jobs).await, 2);
-        assert!(jobs.running().is_empty());
-        let ended = ["b1", "b2"].map(|id| jobs.get(id).and_then(|j| j.exit_code));
-        assert!(ended.iter().all(Option::is_some), "{ended:?}");
-        assert_eq!(kill_jobs(&jobs).await, 0);
-    }
-}
+mod tests;

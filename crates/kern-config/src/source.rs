@@ -36,7 +36,7 @@ pub enum ProjectFile {
 /// Where each value came from, and what trust decided.
 #[derive(Debug, Clone)]
 pub struct Resolved {
-    pub(crate) sources: BTreeMap<&'static str, Source>,
+    pub(crate) sources: BTreeMap<String, Source>,
     pub project_file: ProjectFile,
     /// The working directory is inside a trusted dir.
     pub trusted: bool,
@@ -46,4 +46,14 @@ impl Resolved {
     pub fn source(&self, key: &str) -> Source {
         self.sources.get(key).cloned().unwrap_or(Source::Default)
     }
+
+    /// Where variable `name` of a [`crate::Kind::Vars`] setting (`env`) came from.
+    pub fn var_source(&self, key: &str, name: &str) -> Source {
+        self.source(&var_key(key, name))
+    }
+}
+
+/// The key a variable's source is kept under: `env.GH_TOKEN`.
+pub(crate) fn var_key(key: &str, name: &str) -> String {
+    format!("{key}.{name}")
 }

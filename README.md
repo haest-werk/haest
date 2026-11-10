@@ -100,6 +100,9 @@ tools = ["read", "grep", "glob", "bash"]
 context = ["agents"]
 trusted_dirs = ["~/projects"]
 
+[env]
+GH_TOKEN = "${GITHUB_TOKEN}"
+
 [profiles.review]
 tools = ["read", "grep", "glob"]
 ```
@@ -117,6 +120,7 @@ tools = ["read", "grep", "glob"]
 | `mods`, `project_mods` | false | your mods (`<config dir>/mods`), the project's (`.kern/mods`) |
 | `workspace` | `sandbox` | `sandbox`: a simulated bash over a copy-on-write overlay, nothing reaches the disk until `/apply`; `real`: the real disk and bash |
 | `env_passthrough` | `core` | what a process kern starts (real bash, a background job, an MCP server) gets of kern's environment: `none`, `core` (`PATH`, `HOME`, `SHELL`, `USER`, `LOGNAME`, the locale, the temp dirs), `all` (every variable, API keys included) |
+| `env` | none | variables every process kern starts gets, the sandbox's shell included, over `env_passthrough`: `-E NAME=VALUE` (repeat it), `-E NAME` (kern's own value), `KERN_ENV` (one), an `[env]` table in a file |
 | `approvals` | true | ask before a tool changes anything |
 
 The caps (turn, conversation, subagents), the model, the effort and the paths
@@ -129,6 +133,17 @@ project's file.
 three words, same `core` list); kern's default is `core`, so a key in your
 shell stays with kern unless you pass `all`. With `none` a child gets no
 `PATH`: bash is still found on the system's default path, as `execvp` does.
+
+`env` passes a variable on purpose, the way `docker run -e` does (`-e` is
+`--effort` here, so it is `-E`). The layers add to each other name by name:
+your `config.toml`, a trusted project's, the profile, `KERN_ENV`, then the
+flags, a later one winning for a name both set. A value fills in `${NAME}` and
+`${NAME:-default}` from kern's environment, so a key can move under another
+name without being written down (`GH_TOKEN = "${GITHUB_TOKEN}"`). A variable
+whose `${NAME}` has no value and no default is not passed, and kern says
+which. The sandbox's shell gets these variables and nothing else of your
+environment. `kern settings` lists each name and where it came from, never
+its value.
 
 ### Trust
 

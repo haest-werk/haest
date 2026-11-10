@@ -3,12 +3,12 @@
 //! in the one spelling [`crate::value::check`] gives a value, so what a file
 //! says and what `kern settings` shows are the same text.
 
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use kern_core::{Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine};
 use kern_settings::{BuiltinTools, ContextSources, Settings, SkillSources, WordSet};
 
-use crate::value::{parse_bool, split_list};
+use crate::value::{parse_bool, split_list, var, var_parts};
 
 kern_core::word_enum! {
     /// What a process kern starts (bash, a background job, an MCP server) gets of
@@ -40,6 +40,9 @@ pub struct Config {
     /// As written: made absolute when trust is decided.
     pub trusted_dirs: Vec<String>,
     pub env_passthrough: EnvPassthrough,
+    /// `env`: each variable's value as written; its `${NAME}`s are filled in
+    /// when loaded ([`crate::Loaded::env`]).
+    pub env: BTreeMap<String, String>,
     /// Start the project's `.mcp.json` servers (a trusted dir only).
     pub mcp: bool,
     /// OpenRouter's provider routing, the JSON as written: parsed into
@@ -61,6 +64,7 @@ impl From<Settings> for Config {
             profile: None,
             trusted_dirs: Vec::new(),
             env_passthrough: EnvPassthrough::Core,
+            env: BTreeMap::new(),
             mcp: false,
             provider_routing: None,
         }
@@ -193,6 +197,20 @@ const WEB_SEARCH: (&str, Get, Set) = (
     },
 );
 
+/// `env`: a `NAME=VALUE` adds that variable to the ones set before it. It
+/// reads back as the names only: a value may be a key, and `kern settings`
+/// shows what [`get`] gives.
+const ENV: (&str, Get, Set) = (
+    "env",
+    |c| (!c.env.is_empty()).then(|| c.env.keys().cloned().collect::<Vec<_>>().join(",")),
+    |c, raw| {
+        let entry = var(raw)?;
+        let (name, value) = var_parts(&entry);
+        c.env.insert(name.into(), value.into());
+        Ok(())
+    },
+);
+
 /// `key => the field it is`, read and written by its [`Raw`]; then the
 /// settings that have their own get and set.
 macro_rules! fields {
@@ -253,6 +271,7 @@ fields! {
     "config_dir" => settings.config_dir,
     "debug" => settings.debug;
     WEB_SEARCH,
+    ENV,
 }
 
 fn field(key: &str) -> Option<(Get, Set)> {

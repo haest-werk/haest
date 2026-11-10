@@ -37,6 +37,9 @@ pub enum Kind {
     /// A comma list, or a TOML array. `Some` = only these words, plus `all`
     /// (every one of them) and `none` (an empty list).
     List(Option<&'static [&'static str]>),
+    /// Variables, one `NAME=VALUE` each: a repeated flag, a TOML table. A
+    /// value adds to the ones before it; a name set twice keeps the later value.
+    Vars,
 }
 
 /// Where a setting may come from.
@@ -104,7 +107,7 @@ const LIMITS: &str = "Limits";
 const AGENTS: &str = "Subagents";
 const PATHS: &str = "Paths";
 
-use Kind::{Bool, Choice, List, Number, Path, Text};
+use Kind::{Bool, Choice, List, Number, Path, Text, Vars};
 
 /// One row per setting, in the order `--help` and `kern settings` list them.
 #[rustfmt::skip]
@@ -130,6 +133,7 @@ pub const DEFS: &[Def] = &[
     def("deferred_tools", TOOLS, Choice(DeferMode::WORDS), "How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off)"),
     def("workspace", WORK, Choice(WORKSPACES), "sandbox: a simulated bash over a copy-on-write overlay (nothing reaches the disk until /apply); real: the real disk and bash").short('w'),
     def("env_passthrough", WORK, Choice(EnvPassthrough::WORDS), "What a process kern starts (bash, a background job, an MCP server) gets of kern's environment: none, core (PATH, HOME, the user, the locale, the temp dirs), all (every variable, API keys included)"),
+    def("env", WORK, Vars, "A variable every process kern starts gets, the sandbox's shell included, over env_passthrough: NAME=VALUE, or NAME for kern's own value; repeat it for more. In a file: an [env] table. ${NAME} and ${NAME:-default} in a value are filled in from kern's environment").short('E'),
     def("mods", WORK, Bool, "Your mods in <config dir>/mods"),
     def("project_mods", WORK, Bool, "The project's mods in .kern/mods (its code runs; a trusted dir only)"),
     def("approvals", WORK, Bool, "The built-in approval mod: asks before a tool changes anything"),

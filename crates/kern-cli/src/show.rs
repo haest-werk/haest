@@ -1,7 +1,7 @@
 //! `kern settings`: every setting, its value and where it came from, under
 //! the files kern read (or skipped) to get there.
 
-use kern::config::{DEFS, Loaded, ProjectFile, Source, get};
+use kern::config::{DEFS, Def, Kind, Loaded, ProjectFile, Source, get};
 
 const NONE: &str = "-";
 
@@ -23,18 +23,31 @@ pub fn settings_report(loaded: &Loaded) -> Vec<String> {
     out.push(format!("this dir:     {} ({trusted})", s.cwd.display()));
     out.push(String::new());
     for def in DEFS {
-        let value = get(&loaded.config, def.key);
-        let source = r.source(def.key);
-        let (value, from) = match value.as_deref() {
-            None if source == Source::Default => (NONE.to_string(), NONE.to_string()),
-            None => (NONE.to_string(), source.to_string()),
-            Some("") => ("none".to_string(), source.to_string()),
-            Some(v) => (v.to_string(), source.to_string()),
-        };
-        out.push(format!("{:<24} {:<40} {from}", def.key, value));
+        for (value, from) in rows(loaded, def) {
+            out.push(format!("{:<24} {:<40} {from}", def.key, value));
+        }
     }
     out.extend(loaded.notes.iter().map(|n| format!("\nnote: {n}")));
     out
+}
+
+/// A setting's value and where it came from. A setting of variables (`env`)
+/// is a row per variable: its name, never its value.
+fn rows(loaded: &Loaded, def: &Def) -> Vec<(String, String)> {
+    let r = &loaded.resolved;
+    let value = get(&loaded.config, def.key);
+    if let (Kind::Vars, Some(names)) = (def.kind, &value) {
+        let from = |name: &str| r.var_source(def.key, name).to_string();
+        return names.split(',').map(|n| (n.to_string(), from(n))).collect();
+    }
+    let source = r.source(def.key);
+    let row = match value.as_deref() {
+        None if source == Source::Default => (NONE.to_string(), NONE.to_string()),
+        None => (NONE.to_string(), source.to_string()),
+        Some("") => ("none".to_string(), source.to_string()),
+        Some(v) => (v.to_string(), source.to_string()),
+    };
+    vec![row]
 }
 
 #[cfg(test)]
@@ -69,5 +82,27 @@ mod tests {
             ["env_passthrough", "core", "default"]
         );
         assert_eq!(row("max_turn_usd"), ["max_turn_usd", "2", "default"]);
+        assert_eq!(row("env"), ["env", "-", "-"]);
+    }
+
+    #[tokio::test]
+    async fn each_variable_is_a_row_of_its_name_and_source_and_no_value_is_shown() {
+        let flags = vec![
+            ("env".to_string(), "GH_TOKEN=s3cret".to_string()),
+            ("env".to_string(), "A=also-s3cret".to_string()),
+        ];
+        let loaded = Loader::new(Settings::bare("/w", "/h"))
+            .flags(&flags)
+            .load(&MemFs::new())
+            .await
+            .unwrap();
+        let report = settings_report(&loaded);
+        let rows: Vec<Vec<&str>> = report
+            .iter()
+            .filter(|l| l.starts_with("env "))
+            .map(|l| l.split_whitespace().collect())
+            .collect();
+        assert_eq!(rows, [["env", "A", "--env"], ["env", "GH_TOKEN", "--env"]]);
+        assert!(!report.join("\n").contains("s3cret"), "{report:#?}");
     }
 }

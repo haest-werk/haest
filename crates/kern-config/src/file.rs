@@ -5,6 +5,9 @@
 //! context = ["agents"]
 //! trusted_dirs = ["~/projects"]
 //!
+//! [env]
+//! GH_TOKEN = "${GITHUB_TOKEN}"
+//!
 //! [profiles.review]
 //! tools = ["read", "grep", "glob"]
 //! ```
@@ -17,10 +20,10 @@ use kern_core::{context::project_chain, fs::Fs, fs::read_text_if_present};
 use toml::{Table, Value};
 
 use crate::{
-    registry::{Def, Scope, find},
+    registry::{Kind, Scope, find},
     source::Source,
     stack::{Entries, Layer},
-    value::check,
+    value::{check, named_var},
 };
 
 /// A file the host named (it must be there), else `<config dir>/config.toml`
@@ -89,8 +92,10 @@ fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<Layer, String> 
     let mut layer = Layer::default();
     for (key, value) in &table {
         if key != "profiles" {
-            let (def, value) = entry(key, value, kind, false).map_err(at)?;
-            layer.values.push((def, value, source.clone()));
+            let entries = entries(key, value, kind, false).map_err(at)?;
+            layer
+                .values
+                .extend(entries.into_iter().map(|(def, v)| (def, v, source.clone())));
             continue;
         }
         let Value::Table(profiles) = value else {
@@ -100,25 +105,22 @@ fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<Layer, String> 
             let Value::Table(body) = body else {
                 return Err(at(format!("profiles.{name} must be a table")));
             };
-            let entries = body
-                .iter()
-                .map(|(key, value)| entry(key, value, kind, true))
-                .collect::<Result<Entries, String>>()
-                .map_err(|e| at(format!("profiles.{name}: {e}")))?;
-            layer.profiles.insert(name.clone(), entries);
+            let mut table = Entries::new();
+            for (key, value) in body {
+                let entries = entries(key, value, kind, true)
+                    .map_err(|e| at(format!("profiles.{name}: {e}")))?;
+                table.extend(entries);
+            }
+            layer.profiles.insert(name.clone(), table);
         }
     }
     Ok(layer)
 }
 
 /// One `key = value` of a file, checked: a known setting, one this file (and
-/// a profile in it) may set, a value of its kind.
-fn entry(
-    key: &str,
-    value: &Value,
-    kind: FileKind,
-    in_profile: bool,
-) -> Result<(&'static Def, String), String> {
+/// a profile in it) may set, a value of its kind. A table of variables
+/// (`[env]`) is one value per variable.
+fn entries(key: &str, value: &Value, kind: FileKind, in_profile: bool) -> Result<Entries, String> {
     let def =
         find(key).ok_or_else(|| format!("unknown setting \"{key}\" (kern settings lists them)"))?;
     match def.scope {
@@ -139,9 +141,27 @@ fn entry(
     if in_profile && (key == "profile" || def.scope == Scope::User) {
         return Err(format!("{key} can't be set in a profile"));
     }
+    let checked = |raw: &str| check(def, raw).map_err(|e| format!("{key}: {e}"));
+    if def.kind == Kind::Vars {
+        let Value::Table(vars) = value else {
+            return Err(format!("{key} must be a table: [{key}] NAME = \"value\""));
+        };
+        return vars
+            .iter()
+            .map(|(name, value)| {
+                let text = raw(value)
+                    .filter(|_| !value.is_array())
+                    .ok_or_else(|| format!("{key}.{name}: a string, number or true/false"))?;
+                Ok((
+                    def,
+                    named_var(name, &text).map_err(|e| format!("{key}: {e}"))?,
+                ))
+            })
+            .collect();
+    }
     let raw = raw(value)
         .ok_or_else(|| format!("{key}: a string, number, true/false or a list of strings"))?;
-    Ok((def, check(def, &raw).map_err(|e| format!("{key}: {e}"))?))
+    Ok(vec![(def, checked(&raw)?)])
 }
 
 /// A TOML value as the text a variable would hold; an empty list is `none`.

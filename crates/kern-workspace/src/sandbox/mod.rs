@@ -3,7 +3,8 @@
 //! [`SandboxMounts`]): the project is a copy-on-write overlay -- reads from
 //! disk, writes in memory until `/apply`.
 //!
-//! No host environment reaches the shell (no API keys), no network, no real
+//! No host environment reaches the shell (no API keys) unless the host passes
+//! a variable on purpose ([`SandboxWorkspace::with_env`]); no network, no real
 //! binaries.
 //!
 //! PLUG POINT: [`SandboxWorkspace::over`] puts the same sandboxed bash over a
@@ -19,6 +20,7 @@ use std::{io, sync::Arc};
 
 use async_trait::async_trait;
 use kern_core::{
+    ChildEnv,
     fs::Fs,
     shell_command::ShellCommand,
     workspace::{ChangeSet, EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
@@ -46,6 +48,8 @@ pub struct SandboxWorkspace {
     /// A host's replacement for the built note.
     note: Option<String>,
     commands: Vec<Arc<dyn ShellCommand>>,
+    /// The variables the host passes the shell.
+    env: ChildEnv,
     changes: Option<Arc<OverlayChanges>>,
 }
 
@@ -61,6 +65,7 @@ impl SandboxWorkspace {
             shell_fs,
             note: None,
             commands: Vec::new(),
+            env: ChildEnv::default(),
             changes: Some(changes),
         })
     }
@@ -74,8 +79,17 @@ impl SandboxWorkspace {
             fs,
             note: None,
             commands: Vec::new(),
+            env: ChildEnv::default(),
             changes: None,
         }
+    }
+
+    /// Variables every command in the shell sees, over the shell's own
+    /// (`HOME`, `USER`, ...). The host's environment never reaches the shell
+    /// any other way.
+    pub fn with_env(mut self, env: ChildEnv) -> Self {
+        self.env = env;
+        self
     }
 
     /// Replace the note the system prompt carries about this workspace.
@@ -97,6 +111,7 @@ impl SandboxWorkspace {
             fs: self.shell_fs.clone(),
             kern_fs: &self.fs,
             commands: &self.commands,
+            env: &self.env,
         }
     }
 

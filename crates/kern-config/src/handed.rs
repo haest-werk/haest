@@ -2,9 +2,16 @@
 //! the environment a child process gets, OpenRouter's routing, the project's
 //! MCP servers. The runtime reads none of it itself.
 
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::Path,
+};
 
-use kern_core::{ChildEnv, fs::Fs};
+use kern_core::{
+    ChildEnv,
+    expand::{expand_vars, unset_note},
+    fs::Fs,
+};
 use kern_mcp::{McpServerConfig, load_project_mcp_config, project_mcp_path};
 use kern_providers::{RoutingEnv, routing::parse_routing};
 
@@ -25,6 +32,26 @@ pub(crate) fn child_env(policy: EnvPassthrough, env: &HashMap<String, String>) -
     };
     vars.sort();
     ChildEnv::new(vars)
+}
+
+/// `env`'s variables, each `${NAME}` filled in from kern's `env`. One that
+/// names a variable with no value and no default is not passed: a note says so.
+pub(crate) fn passed_env(
+    vars: &BTreeMap<String, String>,
+    env: &HashMap<String, String>,
+    notes: &mut Vec<String>,
+) -> ChildEnv {
+    let lookup = |name: &str| env.get(name).cloned();
+    vars.iter()
+        .filter_map(|(name, written)| {
+            let (value, unset) = expand_vars(written, &lookup);
+            if unset.is_empty() {
+                return Some((name.clone(), value));
+            }
+            notes.push(format!("env {name} {}: not passed", unset_note(&unset)));
+            None
+        })
+        .collect()
 }
 
 /// `provider_routing`, parsed. Malformed: a note naming where it came from,

@@ -14,7 +14,7 @@
 //! Beside the settings, [`Loader::load`] reads what the runtime is handed with
 //! them: the provider keys (the environment), `providers.json`, OpenRouter's
 //! routing (`provider_routing`, parsed), a trusted project's `.mcp.json`, and
-//! the environment a child process gets (`env_passthrough`).
+//! the environment a child process gets (`env_passthrough`, and `env` on top).
 //!
 //! [`DEFS`] is the one list: a host builds its flags from it.
 
@@ -49,6 +49,9 @@ pub struct Loaded {
     pub resolved: Resolved,
     /// What a process kern starts gets of the environment (`env_passthrough`).
     pub child_env: ChildEnv,
+    /// The variables passed on purpose (`env`), filled in: every process kern
+    /// starts gets them over `child_env`, the sandbox's shell included.
+    pub env: ChildEnv,
     /// The environment, as the source of the provider keys.
     pub keys: HashMap<String, String>,
     /// `provider_routing`, parsed.

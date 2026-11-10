@@ -89,6 +89,81 @@ async fn mcp_servers_are_read_only_with_mcp_on_in_a_trusted_dir() {
     assert_eq!(names, ["gh"]);
 }
 
+/// `env` adds variable by variable, each layer over the one before; a value's
+/// `${NAME}`s come from kern's environment.
+#[tokio::test]
+async fn env_vars_layer_name_by_name_and_each_says_where_it_came_from() {
+    let user = r#"trusted_dirs = ["/w"]
+[env]
+GH_TOKEN = "${GITHUB_TOKEN}"
+A = "file"
+B = "${MISSING:-fallback}"
+PORT = 8080
+SPACED = "  x  ""#;
+    let project = (
+        "/w/.kern/config.toml",
+        "[env]\nA = \"project\"\nPROJ = \"1\"",
+    );
+    let env = [
+        ("GITHUB_TOKEN", "ghp"),
+        ("OWN", "mine"),
+        ("KERN_ENV", "V=var"),
+    ];
+    let flags = [("env", "A=flag"), ("env", "OWN"), ("env", "GONE")];
+    let r = run("/w", &[(USER_FILE, user), project], &env, &flags)
+        .await
+        .unwrap();
+    let passed: Vec<(&str, &str)> = r
+        .env
+        .vars()
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        passed,
+        [
+            ("A", "flag"),
+            ("B", "fallback"),
+            ("GH_TOKEN", "ghp"),
+            ("OWN", "mine"),
+            ("PORT", "8080"),
+            ("PROJ", "1"),
+            ("SPACED", "  x  "),
+            ("V", "var"),
+        ]
+    );
+    assert_eq!(r.notes.len(), 1, "{:?}", r.notes);
+    assert!(r.notes[0].contains("GONE"), "{:?}", r.notes);
+    let src = |name: &str| r.resolved.var_source("env", name).to_string();
+    assert_eq!(
+        [src("A"), src("GH_TOKEN"), src("PROJ"), src("V")],
+        ["--env", USER_FILE, "/w/.kern/config.toml", "KERN_ENV"]
+    );
+    assert_eq!(r.child_env.get("GH_TOKEN"), None, "env is handed beside it");
+
+    let untrusted = run("/w", &[project], &[], &[]).await.unwrap();
+    assert!(untrusted.env.vars().is_empty());
+}
+
+#[tokio::test]
+async fn a_bad_variable_is_refused_by_its_name_and_never_shows_its_value() {
+    let cases: [(Pairs, Pairs, &str); 4] = [
+        (&[(USER_FILE, "env = \"A=secret\"")], &[], "[env]"),
+        (
+            &[(USER_FILE, "[env]\n\"bad-name\" = \"secret\"")],
+            &[],
+            "bad-name",
+        ),
+        (&[(USER_FILE, "[env]\n\"A=B\" = \"secret\"")], &[], "A=B"),
+        (&[], &[("env", "1X=secret")], "--env"),
+    ];
+    for (files, flags, names) in cases {
+        let err = run("/w", files, &[], flags).await.unwrap_err();
+        assert!(err.contains(names), "{names}: {err}");
+        assert!(!err.contains("secret"), "{err}");
+    }
+}
+
 #[tokio::test]
 async fn project_mods_stay_on_only_in_a_trusted_dir() {
     let a_mod = ("/w/.kern/mods/m.ts", "export default {}");
