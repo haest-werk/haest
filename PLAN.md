@@ -83,6 +83,7 @@ Every row is exercised by `crates/kern-lib/examples/brain/` against fakes
 | 4 | Settings + runtime (D8-D14): `kern-settings`, `kern-runtime`, the CLI rebuilt on them, the brain example on `settle`; checked live (bare vs `--profile claude` tokens, an untrusted project file skipped, a trusted one read) | done |
 | 5 | Nothing ambient (D15-D17): `kern-settings` plain values, the loader split out as `kern-config`, `RuntimeInputs` + `World` + `KeySource` + `ChildEnv`, `env_passthrough`, brain's settings written out; checked live (real bash under `none` / `core` / `all`: 5 / 14 / 109 variables, the API key only under `all`) | done |
 | 6 | The loader as a builder (D18): `Loader`, one merge over ordered layers (`stack.rs`), the CLI on `Loader::standard` | done |
+| 7 | Cleanup pass (/simplify, then a review agent): word lists declared once on their type; `builtin_tools_where` no longer drops `tasks` + `skill` (bug); session listing reads 16 KB a file (doubling to 256 KB) and a resume stops at its match; kern-config parses a file into one `Layer`, `provider_routing` is a registry setting; one `FILE_TOOLS`, `now_ms`, OpenRouter URL; `build()` split (`store.rs`, `runtime.rs`), MCP and mods start beside file discovery, skill roots worked out once; `Runtime::{set_model, set_effort, clear, rescan_skills}`; checked live (print, resume, sessions, routing source, the REPL's /model /effort /clear /skills) | done |
 
 ### Parity (2026-11-10)
 

@@ -120,7 +120,10 @@ tools = ["read", "grep", "glob"]
 | `approvals` | true | ask before a tool changes anything |
 
 The caps (turn, conversation, subagents), the model, the effort and the paths
-are settings too: `kern --help`, groups Limits, Subagents and Paths.
+are settings too: `kern --help`, groups Limits, Subagents and Paths. So is
+OpenRouter's provider routing (`provider_routing`, JSON), from your own
+`config.toml`, `KERN_PROVIDER_ROUTING` or `--provider-routing`, never from a
+project's file.
 
 `env_passthrough` follows Codex's `shell_environment_policy.inherit` (same
 three words, same `core` list); kern's default is `core`, so a key in your
@@ -212,8 +215,11 @@ beside them. `kern::runtime::build` takes a `RuntimeInputs`: the settings, the
 closure, a map, a vault), the custom providers, the MCP servers and the
 OpenRouter routing. What is not in there does not exist for kern. It builds a
 whole conversation behind a `Ui` and an approval `Prompter` -- the CLI is that
-plus a terminal. A host that owns some parts takes the runtime's pieces, or
-only `kern::tools::builtin_tools_where(|w| settings.tools.has(w), ..)`.
+plus a terminal. While it runs, the host changes it through the `Runtime`:
+`set_model`, `set_effort`, `clear` (a fresh session file) and `rescan_skills`,
+each applied to the agent, the host and the session file together. A host that
+owns some parts takes the runtime's pieces, or only
+`kern::tools::builtin_tools_where(|w| settings.tools.has(w), ..)`.
 
 [`crates/kern-lib/examples/brain`](crates/kern-lib/examples/brain/) wires all of
 them the way brain does, against fakes (no network, no keys), and asserts each
