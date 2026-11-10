@@ -1,6 +1,6 @@
 [package]
 name = "kern-settings"
-description = "kern's settings: one name per setting, read from TOML files, KERN_* variables and flags, in that order"
+description = "kern's settings as plain values: what a conversation is built from. No files, no environment, no flags"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,8 +10,3 @@ publish.workspace = true
 [dependencies]
 kern-core = { workspace = true }
 kern-tools = { workspace = true }
-# The config files: ~/.config/kern/config.toml and a trusted project's .kern/config.toml.
-toml = "1.1"
-
-[dev-dependencies]
-tokio = { workspace = true }

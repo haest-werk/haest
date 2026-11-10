@@ -5,6 +5,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use kern_core::ChildEnv;
+
 use super::*;
 
 /// A fresh directory under the system temp dir, removed on drop.
@@ -66,7 +68,8 @@ fn alive(pid: &str) -> bool {
 #[tokio::test]
 async fn a_stdio_server_answers_calls_and_its_process_ends_on_close() {
     let dir = TempDir::new();
-    let hub = McpHub::new();
+    // The server script runs sed: it needs a PATH, handed in like a host would.
+    let hub = McpHub::with_env(std::env::vars().collect());
     hub.connect(&[sh("local", SH_SERVER, &dir, &[])], &|_| {})
         .await;
     assert_eq!(hub.failures(), []);
@@ -81,11 +84,12 @@ async fn a_stdio_server_answers_calls_and_its_process_ends_on_close() {
 }
 
 #[tokio::test]
-async fn a_stdio_server_runs_in_its_cwd_with_its_env_over_this_process_env() {
+async fn a_stdio_server_runs_in_its_cwd_with_the_handed_env_and_its_own_and_nothing_else() {
     let dir = TempDir::new();
     // Not an MCP server: it records what it was given and exits, so connecting fails.
-    let script = r#"printf '%s|%s|%s' "$KERN_MCP_TEST" "$(pwd -P)" "${PATH:+inherited}" > seen"#;
-    let hub = McpHub::new();
+    let script =
+        r#"printf '%s|%s|%s|%s' "$KERN_MCP_TEST" "$(pwd -P)" "$HANDED" "${HOME-unset}" > seen"#;
+    let hub = McpHub::with_env(ChildEnv::new([("HANDED".into(), "h".into())]));
     hub.connect(
         &[sh("probe", script, &dir, &[("KERN_MCP_TEST", "v")])],
         &|_| {},
@@ -93,5 +97,5 @@ async fn a_stdio_server_runs_in_its_cwd_with_its_env_over_this_process_env() {
     .await;
     assert_eq!(hub.failures()[0].name, "probe");
     let seen = std::fs::read_to_string(dir.0.join("seen")).unwrap();
-    assert_eq!(seen, format!("v|{}|inherited", dir.0.display()));
+    assert_eq!(seen, format!("v|{}|h|unset", dir.0.display()));
 }

@@ -19,6 +19,7 @@ pub mod effort;
 pub mod events;
 pub mod fs;
 pub mod guard;
+pub mod handed;
 pub mod ledger;
 pub mod limits;
 pub mod media;
@@ -41,6 +42,7 @@ pub use agent::{Agent, AgentControl, AgentOptions};
 pub use deps::{AgentDeps, AgentHooks, NoHooks, SystemPrompt};
 pub use events::{EventSink, LoopEvent, TurnEnd};
 pub use fs::{Fs, MemFs};
+pub use handed::{ChildEnv, KeySource};
 pub use messages::{
     AssistantMessage, AssistantPart, Message, StopReason, ToolCall, ToolResultMessage, Usage,
     UserMessage,

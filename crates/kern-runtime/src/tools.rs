@@ -10,9 +10,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use kern_settings::{ImageConfig, Picked};
+use kern_settings::{BuiltinTools, Settings, WordSet};
 
 use crate::kern::{
+    KeySource,
     code::{CodeTool, code_tool_names},
     deferred_tools::{DeferMode, ToolDeferral},
     fs::Fs,
@@ -25,21 +26,22 @@ use crate::kern::{
         BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub,
         agents::{AgentRef, SubagentHub},
         builtin_tools_where,
+        image::DEFAULT_IMAGE_BASE_URL,
         skill::create_skill_tool,
         tasks::create_task_tools,
         tool_search::deferral_tools,
     },
 };
 
-/// Everything but MCP: the built-ins, task tools, Skill (over the host's disk:
+/// Everything but MCP: the built-ins, task tools, Skill (over the host's Fs:
 /// a user skill lives outside any sandbox mount) and GenerateImage.
 pub fn own_tools(
-    picked: &Picked,
+    picked: &BuiltinTools,
     board: Arc<TaskBoard>,
     skills: Arc<Mutex<Vec<Skill>>>,
     host_fs: Arc<dyn Fs>,
     jobs: Option<Arc<JobHub>>,
-    image: Option<&ImageConfig>,
+    image: Option<ImageToolOptions>,
 ) -> Vec<Arc<dyn Tool>> {
     let opts = BuiltinOptions {
         bash: BashOptions {
@@ -49,24 +51,43 @@ pub fn own_tools(
         ..Default::default()
     };
     let mut tools = builtin_tools_where(|w| picked.has(w), opts);
-    if picked.has("tasks") {
+    if picked.tasks {
         tools.extend(create_task_tools(board));
     }
-    if picked.has("skill") {
+    if picked.skill {
         tools.push(create_skill_tool(
             move || skills.lock().unwrap().clone(),
             host_fs,
         ));
     }
-    if let Some(cfg) = image {
-        let opts = ImageToolOptions {
-            base_url: cfg.base_url.clone(),
-            ..ImageToolOptions::new(cfg.api_key.clone())
-        };
-        let opts = opts.with_models(cfg.model.clone(), cfg.models.clone());
+    if let Some(opts) = image {
         tools.push(Arc::new(ImageTool::new(opts)));
     }
     tools
+}
+
+/// GenerateImage's options: `image` on, over OpenRouter with the key the host
+/// answers for `OPENROUTER_API_KEY`. On without one: why there is none.
+pub fn image_options(
+    s: &Settings,
+    keys: &dyn KeySource,
+) -> Result<Option<ImageToolOptions>, String> {
+    if !s.image {
+        return Ok(None);
+    }
+    let key = keys.key("OPENROUTER_API_KEY").ok_or(
+        "image is on, but the host has no OPENROUTER_API_KEY: no GenerateImage.".to_string(),
+    )?;
+    let base_url = keys
+        .key("OPENROUTER_BASE_URL")
+        .unwrap_or_else(|| DEFAULT_IMAGE_BASE_URL.into());
+    let opts = ImageToolOptions {
+        base_url,
+        ..ImageToolOptions::new(key)
+    };
+    Ok(Some(
+        opts.with_models(s.image_model.clone(), s.image_models()),
+    ))
 }
 
 /// The conversation's own tools and the MCP servers' as they are now (a server
@@ -176,17 +197,9 @@ impl ToolSource for MainTools {
 
 #[cfg(test)]
 mod tests {
-    use kern_settings::{
-        registry::find,
-        value::{check, split_list},
-    };
+    use std::collections::HashMap;
 
     use super::*;
-
-    fn picked(raw: &str) -> Picked {
-        let words = check(find("tools").unwrap(), raw).unwrap();
-        Picked::from_words(split_list(&words))
-    }
 
     fn names(tools: &[Arc<dyn Tool>]) -> Vec<String> {
         tools.iter().map(|t| t.name().to_string()).collect()
@@ -194,7 +207,7 @@ mod tests {
 
     #[test]
     fn the_settings_words_are_the_words_kern_tools_picks_by() {
-        let all = picked("all");
+        let all = BuiltinTools::ALL;
         let built = builtin_tools_where(|w| all.has(w), BuiltinOptions::default());
         assert_eq!(
             names(&built),
@@ -203,13 +216,13 @@ mod tests {
     }
 
     #[test]
-    fn task_and_skill_tools_follow_their_words() {
+    fn task_and_skill_tools_follow_their_switches() {
         let board = Arc::new(TaskBoard::new(|_| {}));
         let fs: Arc<dyn Fs> = Arc::new(crate::kern::MemFs::new());
         let skills = Arc::new(Mutex::new(Vec::new()));
-        let build = |raw| {
+        let build = |picked: BuiltinTools| {
             own_tools(
-                &picked(raw),
+                &picked,
                 board.clone(),
                 skills.clone(),
                 fs.clone(),
@@ -217,12 +230,47 @@ mod tests {
                 None,
             )
         };
-        assert!(build("none").is_empty());
-        let with = names(&build("tasks,skill"));
+        assert!(build(BuiltinTools::NONE).is_empty());
+        let with = names(&build(BuiltinTools {
+            tasks: true,
+            skill: true,
+            ..BuiltinTools::NONE
+        }));
         assert!(
             with.contains(&"Skill".to_string()) && with.len() > 1,
             "{with:?}"
         );
         assert!(!with.contains(&"Read".to_string()));
+    }
+
+    #[test]
+    fn generate_image_needs_the_switch_and_a_key_the_host_answers_and_says_when_it_has_none() {
+        let on = Settings {
+            image: true,
+            ..crate::testkit::settings()
+        };
+        let keys = |pairs: &[(&str, &str)]| -> HashMap<String, String> {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect()
+        };
+        let with_key = keys(&[("OPENROUTER_API_KEY", "k")]);
+        let off = crate::testkit::settings();
+        assert!(image_options(&off, &with_key).unwrap().is_none());
+        let none = image_options(&on, &keys(&[])).unwrap_err();
+        assert!(none.contains("OPENROUTER_API_KEY"), "{none}");
+        let opts = image_options(&on, &with_key).unwrap().unwrap();
+        assert_eq!(
+            (opts.api_key.as_str(), opts.base_url.as_str()),
+            ("k", DEFAULT_IMAGE_BASE_URL)
+        );
+        assert_eq!(opts.models, on.image_models());
+        let local = keys(&[
+            ("OPENROUTER_API_KEY", "k"),
+            ("OPENROUTER_BASE_URL", "http://l/v1"),
+        ]);
+        let opts = image_options(&on, &local).unwrap().unwrap();
+        assert_eq!(opts.base_url, "http://l/v1");
     }
 }

@@ -7,6 +7,7 @@ use std::{
 };
 
 use kern_core::{
+    KeySource,
     catalog::{ModelPricing, OpenRouterEffort, Reasoning},
     fs::Fs,
 };
@@ -129,11 +130,12 @@ impl CustomProviderConfig {
         })
     }
 
-    /// The key itself, else the one its env var holds, else `"none"` (a local server takes any).
-    pub fn api_key(&self, env: &HashMap<String, String>) -> String {
+    /// The key itself, else the one the host has under `apiKeyEnv`, else
+    /// `"none"` (a local server takes any).
+    pub fn api_key(&self, keys: &dyn KeySource) -> String {
         self.api_key
             .clone()
-            .or_else(|| self.api_key_env.as_ref().and_then(|k| env.get(k).cloned()))
+            .or_else(|| self.api_key_env.as_ref().and_then(|k| keys.key(k)))
             .unwrap_or_else(|| "none".into())
     }
 }
@@ -142,9 +144,9 @@ impl CustomProviderConfig {
 pub fn custom_compat_options(
     name: &str,
     cfg: &CustomProviderConfig,
-    env: &HashMap<String, String>,
+    keys: &dyn KeySource,
 ) -> CompatOptions {
-    let mut opts = CompatOptions::new(name, CompatFlavor::Generic, cfg.api_key(env));
+    let mut opts = CompatOptions::new(name, CompatFlavor::Generic, cfg.api_key(keys));
     opts.base_url = cfg.base_url.clone();
     opts.headers = cfg.headers.clone();
     opts.reasoning_effort = cfg.reasoning_effort.clone();
@@ -153,7 +155,12 @@ pub fn custom_compat_options(
     opts
 }
 
-/// The raw entries of `<config_dir>/providers.json`, read through `fs`; empty when there is none.
+/// providers.json's entries by name, as JSON: each is checked when its
+/// provider is first resolved, so one bad entry blocks only itself.
+pub type CustomProviders = BTreeMap<String, Value>;
+
+/// The raw entries of `<config_dir>/providers.json`, read through `fs`; empty
+/// when there is none. A loader's helper: the registry is handed the result.
 pub async fn load_custom_providers(
     fs: &dyn Fs,
     config_dir: &Path,
@@ -174,36 +181,28 @@ pub async fn load_custom_providers(
     })
 }
 
-/// `name` from `env`, or the error that names the variable.
+/// The key `name`, or the error that names it.
 pub(super) fn need(
-    env: &HashMap<String, String>,
-    key: &str,
+    keys: &dyn KeySource,
+    name: &str,
     provider: &str,
 ) -> Result<String, ProviderConfigError> {
-    env.get(key)
-        .filter(|v| !v.is_empty())
-        .cloned()
-        .ok_or_else(|| {
-            ProviderConfigError(format!(
-                "provider \"{provider}\" needs {key} in the environment"
-            ))
-        })
-}
-
-/// A non-empty env value.
-pub(super) fn env_opt(env: &HashMap<String, String>, key: &str) -> Option<String> {
-    env.get(key).filter(|v| !v.is_empty()).cloned()
+    keys.key(name).ok_or_else(|| {
+        ProviderConfigError(format!(
+            "provider \"{provider}\" needs {name}, and the host has none"
+        ))
+    })
 }
 
 /// docs.paperinstruments.com/docs/ultramarine/chat-completions (2026-10-17): top-level
 /// `reasoning_effort` low/high/max only, reasoning cannot be disabled, no cost in the reply.
 pub fn paper_instruments_options(
-    env: &HashMap<String, String>,
+    keys: &dyn KeySource,
 ) -> Result<CompatOptions, ProviderConfigError> {
-    let key = need(env, "PAPERINSTRUMENTS_API_KEY", "paperinstruments")?;
+    let key = need(keys, "PAPERINSTRUMENTS_API_KEY", "paperinstruments")?;
     let mut opts = CompatOptions::new("paperinstruments", CompatFlavor::Generic, key);
     opts.base_url = Some(
-        env_opt(env, "PAPERINSTRUMENTS_BASE_URL")
+        keys.key("PAPERINSTRUMENTS_BASE_URL")
             .unwrap_or_else(|| "https://api.paperinstruments.com/v1".into()),
     );
     opts.reasoning_effort = Some(Reasoning {

@@ -1,51 +1,50 @@
-//! brain's kern settings: its own TOML text, read through `kern::settings`.
-//! No `KERN_*` variable and no flag reaches a run: the node's environment must
-//! not change what a person's brain can do. Bare is the start; this file turns
-//! on what brain uses, and a profile per kind of run turns it back off.
+//! brain's kern settings, written out. No file, no `KERN_*` variable and no
+//! flag reaches a run: the node's environment must not change what a person's
+//! brain can do, and nothing in kern reads one on its own. Bare is the start;
+//! a work run turns on what brain uses, a dream turns most of it back off.
 //!
-//! PLUG POINT: `settings::settle` (inputs a host already holds, no file reads).
-
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+//! PLUG POINT: `settings::Settings`, hardcoded (no loader).
 
 use kern::{
     limits::TurnLimits,
-    settings::{Inputs, Settings, settle},
+    settings::{BuiltinTools, Limits, Settings},
 };
 
 use crate::CWD;
 
-pub const BRAIN_TOML: &str = r#"
-# A work run: kern's file tools and its bash. Glob and Grep are brain's own,
-# on the node; WebFetch is the node's too.
-tools = ["read", "write", "edit", "bash"]
-agents = true
-max_turn_minutes = 1
+/// A work run: kern's file tools and its bash. Glob and Grep are brain's own,
+/// on the node; WebFetch is the node's too.
+pub fn work() -> Settings {
+    let bare = Settings::bare(CWD, "/node");
+    Settings {
+        tools: BuiltinTools {
+            read: true,
+            write: true,
+            edit: true,
+            bash: true,
+            ..BuiltinTools::NONE
+        },
+        agents: true,
+        limits: Limits {
+            max_turn_minutes: 1.0,
+            ..bare.limits.clone()
+        },
+        ..bare
+    }
+}
 
-[profiles.dream]
-# A dream reads what the node hands it: nothing that writes, no agents. Read
-# and Bash stay, over a shut workspace: they reach no file and no shell.
-tools = ["read", "bash"]
-agents = false
-"#;
-
-/// brain's settings for a run, with a profile (`dream`) or without.
-pub fn settings(profile: Option<&str>) -> Settings {
-    let flags: Vec<(String, String)> = profile
-        .map(|p| ("profile".to_string(), p.to_string()))
-        .into_iter()
-        .collect();
-    let inputs = Inputs {
-        cwd: Path::new(CWD),
-        home: Path::new("/node"),
-        env: &HashMap::new(),
-        flags: &flags,
-        user_file: Some((PathBuf::from("brain.toml"), BRAIN_TOML.into())),
-        project_file: None,
-    };
-    settle(&inputs).expect("brain.toml checks").settings
+/// A dream reads what the node hands it: nothing that writes, no agents. Read
+/// and Bash stay, over a shut workspace: they reach no file and no shell.
+pub fn dream() -> Settings {
+    Settings {
+        tools: BuiltinTools {
+            read: true,
+            bash: true,
+            ..BuiltinTools::NONE
+        },
+        agents: false,
+        ..work()
+    }
 }
 
 /// The turn caps a run's host hands the loop (the gateway's models are not in

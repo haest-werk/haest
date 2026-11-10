@@ -21,13 +21,16 @@ Behaviour comes from there, file by file, tests included.
 | D5 | P1 default: kern mods run in embedded QuickJS (`rquickjs`), no `node:` APIs | The Code tool needs QuickJS anyway (wave 2) |
 | D6 | P2 default: brain runs the Rust kern as its OWN child process that holds no keys, replacing the Bun rooms child; the library also allows linking in-process | Brain's trust boundary ("kern for the loop, Rust for the trust boundary") stays as built |
 | D7 | Every brain patch to the vendored copy is a plug point in the library from day 1 (table below) | Otherwise brain forks again |
-| D8 | ONE settings system (`kern-settings`): bare defaults < `<config dir>/config.toml` < a trusted project's `.kern/config.toml` < the profile < `KERN_*` < flags. One name per setting: `snake_case` in TOML, `KERN_UPPER_SNAKE`, `--kebab-case`. TOML only | The world's convention (Codex, cargo, git); one registry means a new setting is one row, never three parsers |
+| D8 | ONE settings loader (`kern-config`): bare < `<config dir>/config.toml` < a trusted project's `.kern/config.toml` < the profile < `KERN_*` < flags. One name per setting: `snake_case` in TOML, `KERN_UPPER_SNAKE`, `--kebab-case`. TOML only | The world's convention (Codex, cargo, git); one registry means a new setting is one row, never three parsers |
 | D9 | Bare by default: every capability (tools, context files, skills, agents, Code, web search, image, MCP, mods) off until asked for; every brake (approvals, caps, sandbox) on | kern is "the opposite of `--bare`": a run carries only what it was given. Bare is 179 input tokens a turn, the claude profile 45,764 |
 | D10 | Profiles: `claude` built in, `[profiles.<name>]` in any config file adds to it or defines a new one; `--profile` / `KERN_PROFILE` | One switch for "behave like Claude Code", and named sets for a host's kinds of run (brain's `dream`) |
 | D11 | The `claude` profile is what kern READS of Claude Code, not parity; the gaps are listed (`profiles.rs`, README) | A profile that claimed parity would lie |
 | D12 | A project's `.kern/config.toml`, `.mcp.json` and `.kern/mods` are read only inside `trusted_dirs`, which only the human's own file, env or flags set | A cloned repo must not configure, start commands or run code by itself (Codex's `trust_level`) |
 | D13 | AGENTS.md is off in bare too (`context = ["agents"]` turns it on) | D9 has no exceptions |
-| D14 | `kern-runtime` composes the conversation from `Settings`; the CLI is the runtime plus a terminal (`Ui`, `Prompter`); a host may take the pieces instead | Every host builds on the same library; the CLI owns display only |
+| D14 | `kern-runtime` composes the conversation from what it is handed; the CLI is the runtime plus a terminal (`Ui`, `Prompter`); a host may take the pieces instead | Every host builds on the same library; the CLI owns display only |
+| D15 | The library reads NOTHING it was not handed: no file, variable or flag of its own, no real disk unless handed `World::Disk`, no inherited env for a child. `kern-settings` is plain typed values (`Settings::bare`, word sets that fail to compile on a typo); `kern-config` is the OPT-IN loader (files, `KERN_*`, flags) whose `Loaded` is passed straight into `RuntimeInputs` | A host with hardcoded settings (brain) needs no loader, and the node's environment cannot change what a run may do. Config files are the loader's; content files (AGENTS.md, skills, sessions, mods) stay the runtime's, through the handed `Fs` |
+| D16 | `RuntimeInputs { settings, world, keys, providers, mcp_servers, routing }`. `World::Disk { child_env }` or `World::Fs(fs)` (the host's files: the sandbox over them, no real process, no stdio MCP server). Provider keys through a `KeySource` (a closure, a map, a vault). Trust is the loader's: it lists a project's MCP servers and turns its mods on only in a trusted dir | Each thing a run may touch is a value the host chose, so a test can prove it (`kern-runtime` builds a whole conversation over a `MemFs` with no keys) |
+| D17 | `env_passthrough = none \| core \| all`, default `core`; the `claude` profile sets `all`. Same words and `core` list as Codex's `shell_environment_policy.inherit` (whose default is `all`). With no `PATH` handed in, a program is looked up on `/usr/bin:/bin`, as `execvp` does | A key in the human's shell stays with kern unless asked; `none` still runs bash |
 
 ## Crate map
 
@@ -41,10 +44,11 @@ Behaviour comes from there, file by file, tests included.
 | `kern-code` | the code VM (`rquickjs`), the Code tool over sibling tools, the sandbox `js` command | `core/code-vm*.ts`, `tools/code*.ts` |
 | `kern-mods` | mods in QuickJS: commands, prompt rewrite, tool wrapping, approvals, plan mode | `core/mods.ts` |
 | `kern-ts` | the ONE TypeScript stripper (`swc` strip_types) used by Code, `js` and mods | -- |
-| `kern-settings` | the settings registry (one row per setting), TOML/env/flag layers with provenance, profiles, trust, typed `Settings` | new (D8) |
-| `kern-runtime` | the conversation built from `Settings`: providers, workspace, tools, MCP, mods, subagents, inbox, session file, behind a `Ui` | the CLI's composition, moved (D14); `host/runtime.ts` |
-| `kern-cli` | the `kern` binary on `kern-runtime`: flags generated from the registry, `kern settings`, print mode, `--json` NDJSON events, a REPL, sessions + resume | new (the TS kern has no CLI; its host is the broker) |
-| `kern-lib` | the one dependency a host takes; features `providers`, `workspace`, `tools`, `mcp`, `code`, `mods`, `settings` (default), `runtime` | -- |
+| `kern-settings` | typed `Settings` (`Settings::bare`), `BuiltinTools` / `ContextSources` / `SkillSources` word sets; no I/O | new (D15) |
+| `kern-config` | the opt-in loader: the registry (one row per setting), TOML/env/flag layers with provenance, profiles, trust, `env_passthrough`; reads the keys, `providers.json`, routing and a trusted `.mcp.json` for the runtime | new (D8, D15) |
+| `kern-runtime` | the conversation built from `RuntimeInputs`: providers, workspace, tools, MCP, mods, subagents, inbox, session file, behind a `Ui` | the CLI's composition, moved (D14, D16); `host/runtime.ts` |
+| `kern-cli` | the `kern` binary on `kern-config` + `kern-runtime`: flags generated from the registry, `kern settings`, print mode, `--json` NDJSON events, a REPL, sessions + resume | new (the TS kern has no CLI; its host is the broker) |
+| `kern-lib` | the one dependency a host takes; features `providers`, `workspace`, `tools`, `mcp`, `code`, `mods`, `settings` (default), `config`, `runtime` | -- |
 
 ## Brain's plug points (from its vendored patches, `brain/web/src/rooms/agent/kern/README.md`)
 
@@ -59,7 +63,7 @@ Behaviour comes from there, file by file, tests included.
 | Bash without background jobs | jobs are an option of the Bash tool |
 | session-store: record types + replay only, the node writes the file | `SessionRecord` + `replay` are separate from the file writer (`SessionSink`) |
 | agent tools with brain's own hub (`subagent_type`, sub-agent runs on the node) | `AgentDirectory` (brain's hub) + `AgentToolOptions` (the `subagent_type` enum, the model text) |
-| brain decides each run's tools and caps itself | `settings::settle` over brain's own TOML (a profile per kind of run, no `KERN_*` read) + `tools::builtin_tools_where` |
+| brain decides each run's tools and caps itself | `settings::Settings` written out in Rust, one per kind of run (no loader, nothing read) + `tools::builtin_tools_where` |
 
 Beyond brain's patches: `ShellCommand` (kern-core) + `SandboxWorkspace::with_command`
 let a host add its own commands to the sandbox shell (the CLI adds `js`).
@@ -76,6 +80,7 @@ Every row is exercised by `crates/kern-lib/examples/brain/` against fakes
 | 2 | MCP client (`rmcp`), code VM + Code tool (`rquickjs`), mods (QuickJS), background jobs, Agent tools (sub-agents), Image tool | done; in the CLI too (jobs, subagents, GenerateImage, inbox turns), each checked live |
 | 3 | Brain plug-in proof (custom Transport, Fs, tools, ShutWorkspace, clock, tool_call_start, in one example), parity run, README | done |
 | 4 | Settings + runtime (D8-D14): `kern-settings`, `kern-runtime`, the CLI rebuilt on them, the brain example on `settle`; checked live (bare vs `--profile claude` tokens, an untrusted project file skipped, a trusted one read) | done |
+| 5 | Nothing ambient (D15-D17): `kern-settings` plain values, the loader split out as `kern-config`, `RuntimeInputs` + `World` + `KeySource` + `ChildEnv`, `env_passthrough`, brain's settings written out; checked live (real bash under `none` / `core` / `all`: 5 / 14 / 109 variables, the API key only under `all`) | done |
 
 ### Parity (2026-11-10)
 

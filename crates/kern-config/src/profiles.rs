@@ -13,6 +13,8 @@ const CLAUDE: &[(&str, &str)] = &[
     ("web_search", "native"),
     ("mcp", "true"),
     ("workspace", "real"),
+    // Claude Code hands its whole environment to what it starts.
+    ("env_passthrough", "all"),
 ];
 
 pub const BUILTIN: &[(&str, &[(&str, &str)])] = &[("claude", CLAUDE)];

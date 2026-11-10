@@ -3,7 +3,8 @@
 //! log, config) -- through the same [`Fs`] interface as everything else.
 //!
 //! Children get their own process group so a timeout or an interrupt kills the
-//! whole tree, not just bash.
+//! whole tree, not just bash. Every child runs with the [`ChildEnv`] the host
+//! handed in and nothing else; a program is found on THAT env's `PATH`.
 
 mod exec;
 mod fs;
@@ -12,6 +13,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use kern_core::{
+    ChildEnv,
     fs::Fs,
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks, Workspace, WorkspaceMode},
 };
@@ -22,23 +24,34 @@ pub use fs::RealFs;
 
 pub struct RealWorkspace {
     fs: Arc<dyn Fs>,
+    env: ChildEnv,
 }
 
 impl RealWorkspace {
-    /// The real disk through a fresh [`RealFs`].
-    pub fn new() -> Self {
-        Self::with_fs(Arc::new(RealFs))
+    /// The real disk through a fresh [`RealFs`]; children get `env`.
+    pub fn new(env: ChildEnv) -> Self {
+        Self::with_fs(Arc::new(RealFs), env)
     }
 
     /// Pass the host's own real [`Fs`] to share one instance.
-    pub fn with_fs(fs: Arc<dyn Fs>) -> Self {
-        Self { fs }
+    pub fn with_fs(fs: Arc<dyn Fs>, env: ChildEnv) -> Self {
+        Self { fs, env }
     }
-}
 
-impl Default for RealWorkspace {
-    fn default() -> Self {
-        Self::new()
+    fn not_found(program: &str) -> ExecResult {
+        ExecResult {
+            stderr: format!("{program}: command not found"),
+            exit_code: EXIT_NOT_FOUND,
+            ..Default::default()
+        }
+    }
+
+    async fn bash(&self, command: &str, opts: ExecOptions, output: Output) -> ExecResult {
+        let Some(bash) = which("bash", &opts.cwd, &self.env) else {
+            return Self::not_found("bash");
+        };
+        let args = ["-c".to_string(), command.to_string()];
+        exec::spawn_collect(&bash, &args, opts, output, &self.env).await
     }
 }
 
@@ -53,8 +66,7 @@ impl Workspace for RealWorkspace {
     }
 
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
-        let args = ["-c".to_string(), command.to_string()];
-        exec::spawn_collect("bash".as_ref(), &args, opts, Output::Collect).await
+        self.bash(command, opts, Output::Collect).await
     }
 
     /// The output streams straight from the pipes, nothing is kept: a
@@ -65,8 +77,7 @@ impl Workspace for RealWorkspace {
         opts: ExecOptions,
         on_output: OutputChunks,
     ) -> ExecResult {
-        let args = ["-c".to_string(), command.to_string()];
-        exec::spawn_collect("bash".as_ref(), &args, opts, Output::Stream(on_output)).await
+        self.bash(command, opts, Output::Stream(on_output)).await
     }
 
     async fn run(&self, argv: &[String], opts: ExecOptions) -> ExecResult {
@@ -77,13 +88,9 @@ impl Workspace for RealWorkspace {
                 ..Default::default()
             };
         };
-        match which(program, &opts.cwd) {
-            Some(bin) => exec::spawn_collect(&bin, args, opts, Output::Collect).await,
-            None => ExecResult {
-                stderr: format!("{program}: command not found"),
-                exit_code: EXIT_NOT_FOUND,
-                ..Default::default()
-            },
+        match which(program, &opts.cwd, &self.env) {
+            Some(bin) => exec::spawn_collect(&bin, args, opts, Output::Collect, &self.env).await,
+            None => Self::not_found(program),
         }
     }
 

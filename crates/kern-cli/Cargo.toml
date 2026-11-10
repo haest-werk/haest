@@ -12,7 +12,7 @@ name = "kern"
 path = "src/main.rs"
 
 [dependencies]
-kern-lib = { workspace = true, features = ["runtime"] }
+kern-lib = { workspace = true, features = ["runtime", "config"] }
 tokio = { workspace = true, features = ["signal"] }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }

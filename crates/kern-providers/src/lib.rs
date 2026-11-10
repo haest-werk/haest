@@ -40,7 +40,7 @@ pub use catalog::Catalog;
 pub use compat::{CompatFlavor, CompatOptions, CompatProvider};
 pub use http::RetryPolicy;
 pub use registry::{
-    CustomProviderConfig, ProviderConfigError, ProviderRegistry, RegistryOptions,
+    CustomProviderConfig, CustomProviders, ProviderConfigError, ProviderRegistry, RegistryOptions,
     load_custom_providers,
 };
 pub use reqwest_transport::ReqwestTransport;

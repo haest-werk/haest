@@ -20,7 +20,7 @@ use crate::{
         },
         fs::Fs,
         session::iso_utc,
-        skills::{Skill, SkillOpts, SkillSources},
+        skills::{Skill, SkillOpts},
         tool::ToolSource,
     },
     now_ms,
@@ -32,8 +32,8 @@ pub fn instruction_opts(s: &Settings) -> InstructionOpts {
         cwd: s.cwd.clone(),
         home: s.home.clone(),
         config_dir: None,
-        agents_files: s.context.has("agents"),
-        claude_files: s.context.has("claude"),
+        agents_files: s.context.agents,
+        claude_files: s.context.claude,
     }
 }
 
@@ -43,11 +43,7 @@ pub fn skill_opts(s: &Settings) -> SkillOpts {
         cwd: s.cwd.clone(),
         home: s.home.clone(),
         config_dir: s.home.join(".claude"),
-        sources: SkillSources {
-            agents: s.skills.has("agents"),
-            claude: s.skills.has("claude"),
-            plugins: s.skills.has("plugins"),
-        },
+        sources: s.skills,
     }
 }
 

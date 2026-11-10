@@ -1,14 +1,12 @@
-//! For tests: settings (the bare defaults plus these flags, in `/w`, no files),
-//! and a host whose [`Ui`] keeps every warning.
+//! For tests: bare settings in `/w`, and a host whose [`Ui`] keeps every warning.
 
 use std::{
-    collections::HashMap,
     path::Path,
     sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
-use kern_settings::{Inputs, Settings, settle};
+use kern_settings::Settings;
 
 use crate::{
     Host, Ui,
@@ -19,20 +17,8 @@ use crate::{
     },
 };
 
-pub fn settings(flags: &[(&str, &str)]) -> Settings {
-    let flags: Vec<(String, String)> = flags
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
-    let inputs = Inputs {
-        cwd: Path::new("/w"),
-        home: Path::new("/h"),
-        env: &HashMap::new(),
-        flags: &flags,
-        user_file: None,
-        project_file: None,
-    };
-    settle(&inputs).unwrap().settings
+pub fn settings() -> Settings {
+    Settings::bare("/w", "/h")
 }
 
 /// Keeps what the runtime warned about.
@@ -55,11 +41,11 @@ impl Ui for Recorded {
     }
 }
 
-/// A host on `settings(flags)`; its session file is in memory. Needs a tokio runtime.
-pub fn host(flags: &[(&str, &str)]) -> (Arc<Host>, Arc<Recorded>) {
+/// A host on these settings; its session file is in memory. Needs a tokio runtime.
+pub fn host(settings: Settings) -> (Arc<Host>, Arc<Recorded>) {
     let ui = Arc::new(Recorded::default());
     let store = JsonlSessionFile::new(Arc::new(MemFs::new()), Path::new("/d"), "t").unwrap();
-    let host = Host::new(settings(flags), ui.clone(), Arc::new(store));
+    let host = Host::new(settings, ui.clone(), Arc::new(store));
     (Arc::new(host), ui)
 }
 

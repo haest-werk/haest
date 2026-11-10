@@ -3,8 +3,6 @@
 //! must not stop kern from answering -- it just routes as if that override
 //! were absent.
 
-use std::collections::HashMap;
-
 use serde_json::Value;
 
 use super::{
@@ -84,12 +82,12 @@ pub fn is_empty_routing(config: &ProjectRouting) -> bool {
         && config.priority.is_none()
 }
 
-/// The scopes in [`ROUTING_ENV`], or None when unset or empty. Malformed JSON is
+/// The scopes in [`ROUTING_ENV`]'s JSON, or None when empty. Malformed JSON is
 /// an `Err` the caller reports and then routes as if unset -- loudly, never fatally.
-pub fn routing_from_env(env: &HashMap<String, String>) -> Result<Option<RoutingEnv>, String> {
-    let Some(raw) = env.get(ROUTING_ENV).filter(|v| !v.is_empty()) else {
+pub fn parse_routing(raw: &str) -> Result<Option<RoutingEnv>, String> {
+    if raw.trim().is_empty() {
         return Ok(None);
-    };
+    }
     let parsed: Value = serde_json::from_str(raw)
         .map_err(|e| format!("{ROUTING_ENV} is not valid JSON, ignoring it: {e}"))?;
     let fleet = normalize_routing(&parsed);

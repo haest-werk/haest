@@ -113,7 +113,7 @@ impl Host {
         CompactionConfig {
             context_window: self.window(spec),
             threshold: COMPACT_SHARE,
-            ceiling: (self.settings.compact_at > 0).then_some(self.settings.compact_at),
+            ceiling: Some(self.settings.limits.compact_at).filter(|n| *n > 0),
             keep_recent: KEEP_RECENT,
         }
     }

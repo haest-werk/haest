@@ -2,7 +2,7 @@
 //! server shaped like it): effort dialect, reasoning_content replay, booked cost.
 //! Asserted on the wire body and the folded usage; no network.
 
-use std::collections::{BTreeMap, HashMap};
+use std::{collections::HashMap, sync::Arc};
 
 use kern_core::{
     catalog::{InputModality, ModelPricing, OpenRouterEffort, Reasoning},
@@ -212,12 +212,12 @@ fn pi_env() -> HashMap<String, String> {
     HashMap::from([("PAPERINSTRUMENTS_API_KEY".to_string(), "k".to_string())])
 }
 
-fn registry(env: HashMap<String, String>) -> ProviderRegistry {
+fn registry(keys: HashMap<String, String>) -> ProviderRegistry {
     let opts = RegistryOptions {
         transport: FakeTransport::new([]),
         ..RegistryOptions::default()
     };
-    ProviderRegistry::new(env, BTreeMap::new(), opts)
+    ProviderRegistry::new(Arc::new(keys), Default::default(), opts)
 }
 
 #[test]

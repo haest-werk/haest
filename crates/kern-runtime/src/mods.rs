@@ -1,7 +1,8 @@
 //! Mods: the built-in approval mod and plan mode (`approvals`), the human's
 //! mods in `<config dir>/mods` (`mods`) and the project's in `.kern/mods`
-//! (`project_mods`, a trusted dir only: they are the repo's code). An approval
-//! ask goes to the host's [`Prompter`]; the host decides how a human answers.
+//! (`project_mods`: the repo's code, so a loader turns it on only in a trusted
+//! dir). An approval ask goes to the host's [`Prompter`]; the host decides how
+//! a human answers.
 
 use std::sync::Arc;
 
@@ -43,43 +44,17 @@ impl<P: Prompter + 'static> ModHost for RuntimeModHost<P> {
     }
 }
 
-/// Every mod the settings turn on, the human's answers through `prompter`.
-/// Project mods outside a trusted dir are skipped, and the host is told.
+/// Every mod the settings turn on, read through `fs`, the human's answers
+/// through `prompter`.
 pub async fn load<P: Prompter + 'static>(host: &Arc<Host>, fs: &dyn Fs, prompter: P) -> Arc<Mods> {
     let s = &host.settings;
     let mut cfg = ModConfig::new(&s.cwd, s.workspace, &s.config_dir);
     cfg.approvals = s.approvals;
     cfg.user_mods = s.mods;
-    cfg.project_mods = s.project_mods && s.trusted;
-    if s.project_mods && !s.trusted && fs.exists(&s.cwd.join(".kern").join("mods")).await {
-        host.warn(&format!(
-            "project_mods is on, but {} is not in trusted_dirs: its .kern/mods were not loaded.",
-            s.cwd.display()
-        ));
-    }
+    cfg.project_mods = s.project_mods;
     let mod_host = Arc::new(RuntimeModHost {
         host: host.clone(),
         gate: ApprovalGate::new(prompter),
     });
     Arc::new(load_mods(cfg, fs, mod_host).await)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        kern::fs::MemFs,
-        testkit::{Deny, host},
-    };
-
-    use super::*;
-
-    #[tokio::test]
-    async fn an_untrusted_dir_is_warned_about_only_when_it_has_mods() {
-        let (host, ui) = host(&[("project_mods", "true")]);
-        load(&host, &MemFs::new(), Deny).await;
-        assert_eq!(ui.warnings(), Vec::<String>::new());
-        let fs = MemFs::with_files([("/w/.kern/mods/m.ts", "export default {}")]);
-        load(&host, &fs, Deny).await;
-        assert_eq!(ui.warnings().len(), 1);
-    }
 }

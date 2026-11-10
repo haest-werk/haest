@@ -27,3 +27,13 @@ pub fn opts(cwd: &Path) -> ExecOptions {
 pub fn argv(words: &[&str]) -> Vec<String> {
     words.iter().map(|w| w.to_string()).collect()
 }
+
+/// The test process's own environment, handed on as a host would.
+pub fn host_env() -> kern_core::ChildEnv {
+    std::env::vars().collect()
+}
+
+/// The real workspace with the test process's environment.
+pub fn real() -> kern_workspace::RealWorkspace {
+    kern_workspace::RealWorkspace::new(host_env())
+}

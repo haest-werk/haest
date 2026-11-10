@@ -88,6 +88,49 @@ pub enum WebSearchEngine {
     Perplexity,
 }
 
+impl WebSearchEngine {
+    pub const ALL: [WebSearchEngine; 6] = [
+        WebSearchEngine::Auto,
+        WebSearchEngine::Native,
+        WebSearchEngine::Exa,
+        WebSearchEngine::Parallel,
+        WebSearchEngine::Firecrawl,
+        WebSearchEngine::Perplexity,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WebSearchEngine::Auto => "auto",
+            WebSearchEngine::Native => "native",
+            WebSearchEngine::Exa => "exa",
+            WebSearchEngine::Parallel => "parallel",
+            WebSearchEngine::Firecrawl => "firecrawl",
+            WebSearchEngine::Perplexity => "perplexity",
+        }
+    }
+}
+
+impl FromStr for WebSearchEngine {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        WebSearchEngine::ALL
+            .into_iter()
+            .find(|e| e.as_str() == s)
+            .ok_or_else(|| format!("unknown web search engine \"{s}\""))
+    }
+}
+
+impl WebSearchConfig {
+    /// `engine` with kern's result caps: 5 a search, 15 across one model call.
+    pub fn new(engine: WebSearchEngine) -> Self {
+        Self {
+            engine,
+            max_results: 5,
+            max_total_results: 15,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearchConfig {

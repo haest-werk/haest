@@ -1,260 +1,200 @@
-//! The resolved values, typed: what a host builds a conversation from.
+//! The values a conversation is built from, typed. A host writes them out
+//! (`Settings { tools: BuiltinTools::ALL, ..Settings::bare(cwd, home) }`) or
+//! has a loader fill them in (kern-config: files, `KERN_*` variables, flags).
 
-mod backends;
+use std::path::PathBuf;
 
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
-
-pub use backends::ImageConfig;
 use kern_core::{
-    Effort, WorkspaceMode, deferred_tools::DeferMode, ledger::LedgerCaps, limits::TurnLimits,
-    provider::WebSearchConfig,
+    Effort, WorkspaceMode,
+    deferred_tools::DeferMode,
+    ledger::LedgerCaps,
+    limits::TurnLimits,
+    provider::{WebSearchConfig, WebSearchEngine},
+    skills::SkillSources,
 };
-use kern_tools::agents::SubagentCaps;
-
-use crate::{
-    resolve::{Resolved, absolute},
-    value::{parse_bool, split_list},
+use kern_tools::{
+    agents::SubagentCaps,
+    image::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
 };
 
-/// Which of a list setting's words are on.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Picked(Vec<String>);
+use crate::sets::{BuiltinTools, ContextSources};
 
-impl Picked {
-    /// Words as a list setting holds them once checked ([`crate::value::check`]).
-    pub fn from_words(words: Vec<String>) -> Self {
-        Self(words)
-    }
+/// The model when none is configured.
+pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 
-    pub fn has(&self, word: &str) -> bool {
-        self.0.iter().any(|w| w == word)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn words(&self) -> &[String] {
-        &self.0
-    }
+/// The caps. 0 = no cap, everywhere.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Limits {
+    /// One turn's spend.
+    pub max_turn_usd: f64,
+    /// One turn's tokens; None = 10x the model's window.
+    pub max_turn_tokens: Option<u64>,
+    /// One model call's input tokens; None = 90% of the window.
+    pub max_request_tokens: Option<u64>,
+    /// Model calls in one turn.
+    pub max_turn_steps: u32,
+    /// One turn's wall clock.
+    pub max_turn_minutes: f64,
+    /// The same tool call in a row before the guard stops it.
+    pub max_repeats: u32,
+    /// The whole conversation's spend.
+    pub max_conversation_usd: f64,
+    /// Tokens of models with no price, across the conversation.
+    pub max_conversation_tokens: u64,
+    /// The model's window; None = the catalog's, else 200K.
+    pub context_window: Option<u64>,
+    /// Compact past this many tokens; 0 = at 80% of the window only.
+    pub compact_at: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
+    /// Where kern works: relative paths, the instruction files and skills up from it.
     pub cwd: PathBuf,
+    /// Where `~/.agents`, `~/.claude` and the default dirs are.
     pub home: PathBuf,
+    /// `provider:model`.
     pub model: String,
+    /// None = the model's own default.
     pub effort: Option<Effort>,
-    pub workspace: WorkspaceMode,
     /// Replaces kern's identity text.
     pub system_prompt: Option<String>,
     pub append_system_prompt: Option<String>,
-    /// Instruction files: `agents`, `claude`.
-    pub context: Picked,
-    /// Skill dirs: `agents`, `claude`, `plugins`.
-    pub skills: Picked,
+    pub context: ContextSources,
+    pub skills: SkillSources,
+    /// The skill list goes in the system prompt.
     pub skill_catalog: bool,
-    /// Built-in tools by their setting word (`read`, `web_fetch`, ...).
-    pub tools: Picked,
-    /// None = no Code tool; Some = the extra names it may call.
-    pub code: Option<Vec<String>>,
+    pub tools: BuiltinTools,
+    /// The Code tool: a JavaScript run that calls the other tools.
+    pub code: bool,
+    /// Extra tool names Code may call (exact, or `prefix*`).
+    pub code_tools: Vec<String>,
+    /// Agent, SendMessage and StopAgent.
     pub agents: bool,
-    /// None = off.
-    pub web_search: Option<WebSearchConfig>,
-    /// GenerateImage's backend; None = off (or on with no OpenRouter key: see `notes`).
-    pub image: Option<ImageConfig>,
-    pub mcp: bool,
+    /// The provider's web search; None = off.
+    pub web_search: Option<WebSearchEngine>,
+    /// GenerateImage, over OpenRouter with the host's key.
+    pub image: bool,
+    pub image_model: String,
+    /// The other models a call may pick; None = kern-tools' list.
+    pub image_models: Option<Vec<String>>,
+    /// How MCP tools reach the model.
     pub deferred_tools: DeferMode,
+    pub workspace: WorkspaceMode,
+    /// The human's mods in `<config_dir>/mods`.
     pub mods: bool,
+    /// The project's mods in `.kern/mods`: the repo's code, runs as asked.
     pub project_mods: bool,
+    /// The built-in approval mod: asks before a tool changes anything.
     pub approvals: bool,
-    /// The working directory is inside a trusted dir: its .mcp.json and
-    /// .kern/mods may run.
-    pub trusted: bool,
-    /// None = the catalog's window for the current model (200K for one it does not know).
-    pub context_window: Option<u64>,
-    /// Auto-compaction ceiling in tokens; 0 = 80% of the window only.
-    pub compact_at: u64,
-    /// The turn caps; the two token caps at 0 here follow the model's window (see `limits_for`).
-    pub limits: TurnLimits,
-    pub turn_tokens_set: bool,
-    pub request_tokens_set: bool,
-    pub ledger: LedgerCaps,
-    /// Turns in a row a job or an agent may start with no human message; 0 = no cap.
+    pub limits: Limits,
+    /// Turns in a row a job or an agent starts with no human message; 0 = no cap.
     pub max_agent_turns: u32,
     pub subagents: SubagentCaps,
+    /// Sessions, history and spill files.
     pub data_dir: PathBuf,
+    /// The human's mods dir is `<config_dir>/mods`.
     pub config_dir: PathBuf,
+    /// Log what kern does under the hood.
     pub debug: bool,
-    /// What the host should tell the human: a setting asked for and not honoured.
-    pub notes: Vec<String>,
-}
-
-/// Reads one resolved value; every value was checked when it was read in.
-struct Read<'a>(&'a Resolved);
-
-impl Read<'_> {
-    fn text(&self, key: &str) -> Option<String> {
-        self.0.get(key).filter(|v| !v.is_empty()).map(String::from)
-    }
-
-    fn flag(&self, key: &str) -> bool {
-        self.0.get(key).and_then(parse_bool).unwrap_or(false)
-    }
-
-    fn list(&self, key: &str) -> Vec<String> {
-        self.0.get(key).map(split_list).unwrap_or_default()
-    }
-
-    fn num(&self, key: &str) -> f64 {
-        self.0.get(key).and_then(|v| v.parse().ok()).unwrap_or(0.0)
-    }
-
-    fn opt_num(&self, key: &str) -> Option<f64> {
-        self.0.get(key).and_then(|v| v.parse().ok())
-    }
-
-    fn parsed<T: std::str::FromStr<Err = String>>(&self, key: &str) -> Result<Option<T>, String> {
-        self.text(key).map(|v| v.parse()).transpose()
-    }
-}
-
-fn env_var<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
-    env.get(key).map(|v| v.trim()).filter(|v| !v.is_empty())
 }
 
 impl Settings {
-    /// `env` is read for what is not kern's to name: XDG dirs and the OpenRouter key.
-    pub fn from(
-        r: &Resolved,
-        cwd: PathBuf,
-        home: PathBuf,
-        env: &HashMap<String, String>,
-    ) -> Result<Self, String> {
-        let s = Read(r);
-        let mut notes = Vec::new();
-        let effort = s.parsed("effort")?;
-        let workspace = s.parsed("workspace")?.unwrap_or(WorkspaceMode::Sandbox);
-        let data_dir = s
-            .text("data_dir")
-            .map(|d| absolute(&d, &cwd, &home))
-            .or_else(|| env_var(env, "XDG_DATA_HOME").map(|d| PathBuf::from(d).join("kern")))
-            .unwrap_or_else(|| home.join(".local/share/kern"));
-        let web_search = backends::web_search(&s)?;
-        let image = match s.flag("image") {
-            false => None,
-            true => {
-                let img = backends::image(&s, env);
-                if img.is_none() {
-                    notes.push(
-                        "image is on, but OPENROUTER_API_KEY is not set: no GenerateImage.".into(),
-                    );
-                }
-                img
-            }
-        };
-        let d = SubagentCaps::default();
-        Ok(Self {
-            model: s
-                .text("model")
-                .unwrap_or_else(|| crate::registry::DEFAULT_MODEL.into()),
-            effort,
-            workspace,
-            system_prompt: s.text("system_prompt"),
-            append_system_prompt: s.text("append_system_prompt"),
-            context: Picked(s.list("context")),
-            skills: Picked(s.list("skills")),
-            skill_catalog: s.flag("skill_catalog"),
-            tools: Picked(s.list("tools")),
-            code: s.flag("code").then(|| s.list("code_tools")),
-            agents: s.flag("agents"),
-            web_search,
-            image,
-            mcp: s.flag("mcp"),
-            deferred_tools: s.parsed("deferred_tools")?.unwrap_or(DeferMode::Proxy),
-            mods: s.flag("mods"),
-            project_mods: s.flag("project_mods"),
-            approvals: s.flag("approvals"),
-            trusted: r.trusted,
-            context_window: s
-                .opt_num("context_window")
-                .map(|n| n as u64)
-                .filter(|n| *n > 1000),
-            compact_at: s.num("compact_at") as u64,
-            limits: TurnLimits {
-                max_turn_usd: s.num("max_turn_usd"),
-                max_turn_tokens: s.num("max_turn_tokens") as u64,
-                max_request_tokens: s.num("max_request_tokens") as u64,
-                max_turn_steps: s.num("max_turn_steps") as u32,
-                max_turn_ms: (s.num("max_turn_minutes") * 60_000.0) as u64,
-                max_repeats: s.num("max_repeats") as u32,
+    /// Bare kern: every capability off until asked for, every brake on.
+    pub fn bare(cwd: impl Into<PathBuf>, home: impl Into<PathBuf>) -> Self {
+        let home = home.into();
+        Self {
+            cwd: cwd.into(),
+            model: DEFAULT_MODEL.into(),
+            effort: None,
+            system_prompt: None,
+            append_system_prompt: None,
+            context: ContextSources::NONE,
+            skills: SkillSources::default(),
+            skill_catalog: false,
+            tools: BuiltinTools::NONE,
+            code: false,
+            code_tools: Vec::new(),
+            agents: false,
+            web_search: None,
+            image: false,
+            image_model: DEFAULT_IMAGE_MODEL.into(),
+            image_models: None,
+            deferred_tools: DeferMode::Proxy,
+            workspace: WorkspaceMode::Sandbox,
+            mods: false,
+            project_mods: false,
+            approvals: true,
+            limits: Limits {
+                max_turn_usd: 2.0,
+                max_turn_tokens: None,
+                max_request_tokens: None,
+                max_turn_steps: 100,
+                max_turn_minutes: 60.0,
+                max_repeats: 6,
+                max_conversation_usd: 20.0,
+                max_conversation_tokens: 20_000_000,
+                context_window: None,
+                compact_at: 400_000,
             },
-            turn_tokens_set: r.is_set("max_turn_tokens"),
-            request_tokens_set: r.is_set("max_request_tokens"),
-            ledger: LedgerCaps {
-                max_usd: s.num("max_conversation_usd"),
-                max_unpriced_tokens: s.num("max_conversation_tokens") as u64,
-            },
-            max_agent_turns: s.num("max_agent_turns") as u32,
-            subagents: SubagentCaps {
-                max_depth: s
-                    .opt_num("max_agent_depth")
-                    .map_or(d.max_depth, |n| n as u32),
-                max_concurrent: s
-                    .opt_num("max_subagents")
-                    .map_or(d.max_concurrent, |n| n as usize),
-                usd: s.opt_num("subagent_usd").unwrap_or(d.usd),
-                steps: s.opt_num("subagent_steps").map_or(d.steps, |n| n as u32),
-                minutes: s
-                    .opt_num("subagent_minutes")
-                    .map_or(d.minutes, |n| n as u64),
-            },
-            data_dir,
-            config_dir: config_dir(r.get("config_dir"), env, &cwd, &home),
-            debug: s.flag("debug"),
-            notes,
-            cwd,
+            max_agent_turns: 30,
+            subagents: SubagentCaps::default(),
+            data_dir: home.join(".local/share/kern"),
+            config_dir: home.join(".config/kern"),
+            debug: false,
             home,
-        })
+        }
     }
 
     /// The model's window: the override, else the catalog's, else 200K.
     pub fn window(&self, catalog_window: Option<u64>) -> u64 {
-        self.context_window.or(catalog_window).unwrap_or(200_000)
+        let set = self.limits.context_window.filter(|n| *n > 1000);
+        set.or(catalog_window).unwrap_or(200_000)
     }
 
-    /// The turn caps for a model with this window: an unset token cap follows it
-    /// (request: 90% of the window; turn: 10x the window).
+    /// The turn caps for a model with this window: an unset token cap follows it.
     pub fn limits_for(&self, window: u64) -> TurnLimits {
-        let mut l = self.limits.clone();
-        if !self.request_tokens_set {
-            l.max_request_tokens = window * 9 / 10;
+        let l = &self.limits;
+        TurnLimits {
+            max_turn_usd: l.max_turn_usd,
+            max_turn_tokens: l.max_turn_tokens.unwrap_or(window * 10),
+            max_request_tokens: l.max_request_tokens.unwrap_or(window * 9 / 10),
+            max_turn_steps: l.max_turn_steps,
+            max_turn_ms: (l.max_turn_minutes * 60_000.0) as u64,
+            max_repeats: l.max_repeats,
         }
-        if !self.turn_tokens_set {
-            l.max_turn_tokens = window * 10;
+    }
+
+    /// The conversation's caps.
+    pub fn ledger(&self) -> LedgerCaps {
+        LedgerCaps {
+            max_usd: self.limits.max_conversation_usd,
+            max_unpriced_tokens: self.limits.max_conversation_tokens,
         }
-        l
+    }
+
+    /// None = no Code tool; Some = the extra names it may call.
+    pub fn code_tools(&self) -> Option<Vec<String>> {
+        self.code.then(|| self.code_tools.clone())
+    }
+
+    pub fn web_search_config(&self) -> Option<WebSearchConfig> {
+        self.web_search.map(WebSearchConfig::new)
+    }
+
+    /// Every model GenerateImage may pick: `image_model` first, once.
+    pub fn image_models(&self) -> Vec<String> {
+        let others = match &self.image_models {
+            Some(list) => list.clone(),
+            None => DEFAULT_IMAGE_MODELS.map(String::from).to_vec(),
+        };
+        let model = &self.image_model;
+        std::iter::once(model.clone())
+            .chain(others.into_iter().filter(|m| m != model))
+            .collect()
     }
 
     pub fn spill_dir(&self, session_id: &str) -> PathBuf {
         self.data_dir.join("spill").join(session_id)
     }
-}
-
-/// `<config dir>`: the setting (relative to `cwd`), else $XDG_CONFIG_HOME/kern,
-/// else ~/.config/kern.
-pub fn config_dir(
-    set: Option<&str>,
-    env: &HashMap<String, String>,
-    cwd: &Path,
-    home: &Path,
-) -> PathBuf {
-    set.map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(|d| absolute(d, cwd, home))
-        .or_else(|| env_var(env, "XDG_CONFIG_HOME").map(|d| PathBuf::from(d).join("kern")))
-        .unwrap_or_else(|| home.join(".config/kern"))
 }

@@ -39,7 +39,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
     )]));
     let agents = Arc::new(NodeAgents::default());
     let sessions = Arc::new(NodeSessions::default());
-    let s = config::settings(None);
+    let s = config::work();
     // The owner pauses before the second model call; brain's clock leaves it out.
     let clock = RunClock::new(T0, true);
     let host = Arc::new(BrainHost::new(
@@ -198,10 +198,10 @@ pub async fn work(gateway: &Arc<Gateway>) {
     assert_eq!(replayed.messages, agent.messages);
 }
 
-/// A dream run (brain.toml's `dream` profile): no files, no shell, only what
-/// the node hands it.
+/// A dream run (`config::dream`): no files, no shell, only what the node
+/// hands it.
 pub async fn dream(gateway: &Arc<Gateway>) {
-    let s = config::settings(Some("dream"));
+    let s = config::dream();
     let sessions = Arc::new(NodeSessions::default());
     let host = Arc::new(BrainHost::new(
         RunClock::new(T0, true),
@@ -230,7 +230,7 @@ pub async fn dream(gateway: &Arc<Gateway>) {
     assert_eq!(end, TurnEnd::new(StopReason::EndTurn));
     let requests = gateway.take_requests();
     assert_eq!(requests.len(), 2);
-    // The profile took write, edit and the agents away.
+    // The dream's settings took write, edit and the agents away.
     assert_eq!(
         tool_names(&requests[0].body),
         ["Read", "Bash", "dream_material"]
@@ -247,8 +247,8 @@ pub async fn dream(gateway: &Arc<Gateway>) {
 /// The counter-proof for the clock: the same pause on a clock that counts it
 /// stops the turn at its cap, before the third model call.
 pub async fn clock(gateway: &Arc<Gateway>) {
-    let limits = config::limits(&config::settings(None));
-    assert_eq!(limits.max_turn_ms, 60_000, "brain.toml's one-minute cap");
+    let limits = config::limits(&config::work());
+    assert_eq!(limits.max_turn_ms, 60_000, "a work run's one-minute cap");
     let host = Arc::new(BrainHost::new(
         RunClock::new(T0, false),
         Arc::new(NodeSessions::default()),

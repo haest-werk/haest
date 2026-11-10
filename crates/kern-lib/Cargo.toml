@@ -20,9 +20,12 @@ mcp = ["dep:kern-mcp"]
 code = ["dep:kern-code"]
 # Mods: JS/TS files that hook tools, prompts and commands; approvals and plan mode.
 mods = ["dep:kern-mods"]
-# Settings: one name per setting, from TOML files, KERN_* variables and flags.
+# Settings as plain values a host writes out: no files, no environment, no flags.
 settings = ["dep:kern-settings", "tools"]
-# The whole conversation built from its settings, behind a host's UI (the CLI's base).
+# The loader: settings from TOML files, KERN_* variables and flags, plus what
+# the runtime is handed beside them (keys, providers.json, .mcp.json, child env).
+config = ["dep:kern-config", "settings", "providers", "mcp"]
+# The whole conversation built from what a host hands in, behind its UI (the CLI's base).
 runtime = ["dep:kern-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods"]
 
 [dependencies]
@@ -34,6 +37,7 @@ kern-mcp = { workspace = true, optional = true }
 kern-code = { workspace = true, optional = true }
 kern-mods = { workspace = true, optional = true }
 kern-settings = { workspace = true, optional = true }
+kern-config = { workspace = true, optional = true }
 kern-runtime = { workspace = true, optional = true }
 
 # The brain example (examples/brain): what a host implementing the plug points needs.

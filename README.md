@@ -21,8 +21,9 @@ Decisions and status live in [PLAN.md](PLAN.md), working rules in
 | `kern-code` | embedded QuickJS: the Code tool and the sandbox `js` command |
 | `kern-mods` | mods: change how kern behaves without forking it, in Rust or as `.js`/`.ts` files |
 | `kern-ts` | the one TypeScript stripper Code, `js` and mods share |
-| `kern-settings` | every setting once: TOML files, `KERN_*` variables and flags, profiles, trust, typed `Settings` |
-| `kern-runtime` | a whole conversation built from `Settings` behind a host's `Ui`; what the CLI is made of |
+| `kern-settings` | the settings as plain typed values (`Settings::bare`), no files, no environment, no flags |
+| `kern-config` | the opt-in loader: TOML files, `KERN_*` variables and flags, profiles, trust; plus what the runtime is handed beside the settings (keys, `providers.json`, `.mcp.json`, a child's environment) |
+| `kern-runtime` | a whole conversation built from what a host hands it, behind its `Ui`; what the CLI is made of |
 | `kern-lib` | the facade a host depends on: `use kern::...` |
 | `kern-cli` | the `kern` binary |
 
@@ -39,13 +40,14 @@ there. The rest is opt-in:
 | `mcp` | `kern::mcp` | yes |
 | `code` | `kern::code` (the Code tool, the sandbox `js` command) | yes |
 | `mods` | `kern::mods` (mods, approvals, plan mode) | yes |
-| `settings` | `kern::settings` (files, variables, flags, profiles, trust) | yes |
-| `runtime` | `kern::runtime` (the conversation built from settings) and everything above | no |
+| `settings` | `kern::settings` (the values, plain) | yes |
+| `config` | `kern::config` (the loader: files, variables, flags, profiles, trust) | no |
+| `runtime` | `kern::runtime` (the conversation built from what it is handed) and everything above but `config` | no |
 
 ```toml
 kern-lib = { git = "...", package = "kern-lib" }
-# the whole conversation from settings, behind your own UI (the CLI's way)
-kern-lib = { git = "...", package = "kern-lib", features = ["runtime"] }
+# the whole conversation with kern's own files, variables and flags (the CLI's way)
+kern-lib = { git = "...", package = "kern-lib", features = ["runtime", "config"] }
 # a host with its own transport, files and tools (the brain example)
 kern-lib = { git = "...", package = "kern-lib", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
@@ -114,10 +116,16 @@ tools = ["read", "grep", "glob"]
 | `mcp` | false | the project's `.mcp.json` servers |
 | `mods`, `project_mods` | false | your mods (`<config dir>/mods`), the project's (`.kern/mods`) |
 | `workspace` | `sandbox` | `sandbox`: a simulated bash over a copy-on-write overlay, nothing reaches the disk until `/apply`; `real`: the real disk and bash |
+| `env_passthrough` | `core` | what a process kern starts (real bash, a background job, an MCP server) gets of kern's environment: `none`, `core` (`PATH`, `HOME`, `SHELL`, `USER`, `LOGNAME`, the locale, the temp dirs), `all` (every variable, API keys included) |
 | `approvals` | true | ask before a tool changes anything |
 
 The caps (turn, conversation, subagents), the model, the effort and the paths
 are settings too: `kern --help`, groups Limits, Subagents and Paths.
+
+`env_passthrough` follows Codex's `shell_environment_policy.inherit` (same
+three words, same `core` list); kern's default is `core`, so a key in your
+shell stays with kern unless you pass `all`. With `none` a child gets no
+`PATH`: bash is still found on the system's default path, as `execvp` does.
 
 ### Trust
 
@@ -134,7 +142,8 @@ never from a project's file or a profile: a repo cannot trust itself.
 `--profile claude` turns on what kern reads of Claude Code: AGENTS.md and the
 CLAUDE.md family, skills from `.agents`, `.claude` and installed plugins, the
 skill catalog, every built-in tool, subagents, native web search, the project's
-MCP servers (in a trusted dir) and the real workspace. It is NOT parity: kern
+MCP servers (in a trusted dir), the real workspace, and your whole environment
+for what kern starts (`env_passthrough = all`). It is NOT parity: kern
 does not read Claude Code's agents, commands, hooks, permissions, user or
 plugin MCP servers, `@` imports, rules, memory or output styles.
 
@@ -164,17 +173,33 @@ and `Workspace` for files and shell, `Tool` and `ReadIntercept` for tools,
 `AgentHooks` for the clock, persistence and caps, `EventSink` for events,
 `SessionSink` for session records, `AgentDirectory` for sub-agents.
 
-Settings come the same way to every host. `kern::settings::load` reads the
-files, the variables and the flags as the CLI does; `kern::settings::settle`
-takes inputs a host already holds (its own TOML text, its own variables, or
-none). `kern::runtime::build` turns `Settings` into a whole conversation behind
-a `Ui` and an approval `Prompter` -- the CLI is that plus a terminal. A host
-that owns some parts takes the runtime's pieces, or only
-`kern::tools::builtin_tools_where(|w| settings.tools.has(w), ..)`.
+Nothing in the library reads a file, a variable or a flag of its own accord.
+A host writes its settings out:
+
+```rust
+use kern::settings::{BuiltinTools, Settings};
+
+let settings = Settings {
+    tools: BuiltinTools { read: true, bash: true, ..BuiltinTools::NONE },
+    agents: true,
+    ..Settings::bare("/work", "/home/me")
+};
+```
+
+or opts into kern's own files, variables and flags with the `config` feature:
+`kern::config::load` returns the settings and everything the runtime is handed
+beside them. `kern::runtime::build` takes a `RuntimeInputs`: the settings, the
+`World` (the real disk with the environment a child gets, or the host's own
+`Fs`, where no real process starts), a `KeySource` for provider keys (a
+closure, a map, a vault), the custom providers, the MCP servers and the
+OpenRouter routing. What is not in there does not exist for kern. It builds a
+whole conversation behind a `Ui` and an approval `Prompter` -- the CLI is that
+plus a terminal. A host that owns some parts takes the runtime's pieces, or
+only `kern::tools::builtin_tools_where(|w| settings.tools.has(w), ..)`.
 
 [`crates/kern-lib/examples/brain`](crates/kern-lib/examples/brain/) wires all of
 them the way brain does, against fakes (no network, no keys), and asserts each
-one. Its settings are its own TOML with a profile per kind of run; no `KERN_*`
+one. Its settings are written out in Rust, one per kind of run; no `KERN_*`
 variable reaches it:
 
 ```sh

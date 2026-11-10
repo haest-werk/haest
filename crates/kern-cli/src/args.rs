@@ -5,7 +5,7 @@
 use std::{ffi::OsString, path::PathBuf};
 
 use clap::{Arg, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
-use kern::settings::{DEFS, Def, Kind};
+use kern::config::{DEFS, Def, Kind};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -84,6 +84,7 @@ fn setting_arg(def: &Def) -> Arg {
             .value_name("BOOL"),
         Kind::List(_) => arg.value_name("LIST"),
         Kind::Number => arg.value_name("N"),
+        Kind::Path => arg.value_name("DIR"),
         Kind::Choice(_) | Kind::Text => arg.value_name("VALUE"),
     };
     match def.short {
@@ -157,6 +158,16 @@ mod tests {
         assert_eq!(c.settings, [("mcp".to_string(), "true".to_string())]);
         assert_eq!(c.args.prompt, ["list files"]);
         assert_eq!(cli(&["--mcp=false"]).settings[0].1, "false");
+    }
+
+    #[test]
+    fn the_env_passthrough_is_one_flag_with_three_words() {
+        let c = cli(&["--env-passthrough", "none", "go"]);
+        assert_eq!(
+            c.settings,
+            [("env_passthrough".to_string(), "none".to_string())]
+        );
+        assert_eq!(c.args.prompt, ["go"]);
     }
 
     #[test]

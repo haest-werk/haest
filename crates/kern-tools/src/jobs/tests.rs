@@ -61,7 +61,7 @@ impl Rig {
             hub: Arc::new(JobHub::with_events(Arc::new(tx), events.clone())),
             events,
             notices,
-            ws: Arc::new(RealWorkspace::new()),
+            ws: Arc::new(RealWorkspace::new(std::env::vars().collect())),
             dir,
             _tmp: tmp,
         }

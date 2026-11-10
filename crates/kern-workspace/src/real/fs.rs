@@ -8,7 +8,7 @@ use std::{io, path::Path};
 
 use async_trait::async_trait;
 use kern_core::fs::{DirEntry, FileKind, Fs, FsStat};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// The host's disk through tokio's file system calls.
 #[derive(Debug, Default, Clone, Copy)]
@@ -34,6 +34,13 @@ fn kind_of(t: std::fs::FileType) -> FileKind {
 impl Fs for RealFs {
     async fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
         tokio::fs::read(path).await
+    }
+
+    async fn read_head(&self, path: &Path, max: usize) -> io::Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        let file = tokio::fs::File::open(path).await?;
+        file.take(max as u64).read_to_end(&mut buf).await?;
+        Ok(buf)
     }
 
     async fn write(&self, path: &Path, data: &[u8]) -> io::Result<()> {

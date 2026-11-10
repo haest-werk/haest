@@ -1,6 +1,6 @@
 //! The layers, each over the one before:
 //!
-//!   1. the bare defaults
+//!   1. bare ([`Config::bare`]), its dirs under `$XDG_DATA_HOME` / `$XDG_CONFIG_HOME` when set
 //!   2. `<config dir>/config.toml` (yours)
 //!   3. `.kern/config.toml` of the project (only inside `trusted_dirs`)
 //!   4. the profile (`profile`), built in or from a file
@@ -18,10 +18,11 @@ use std::{
 use kern_core::fs::normalize;
 
 use crate::{
+    fields::{Config, set},
     file::{Entries, FileKind, FileLayer, parse_file},
     profiles,
-    registry::{DEFS, Def, Scope, find},
-    value::{check, split_list},
+    registry::{DEFS, Def, Kind, Scope, find},
+    value::check,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,39 +55,26 @@ pub enum ProjectFile {
     Untrusted(PathBuf),
 }
 
+/// Where each value came from, and what trust decided.
 #[derive(Debug, Clone)]
 pub struct Resolved {
-    values: BTreeMap<&'static str, (String, Source)>,
-    pub profile: Option<String>,
+    sources: BTreeMap<&'static str, Source>,
     pub project_file: ProjectFile,
     /// The working directory is inside a trusted dir.
     pub trusted: bool,
 }
 
 impl Resolved {
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.values.get(key).map(|(v, _)| v.as_str())
-    }
-
-    pub fn source(&self, key: &str) -> Option<&Source> {
-        self.values.get(key).map(|(_, s)| s)
-    }
-
-    /// The value came from somewhere other than the defaults.
-    pub fn is_set(&self, key: &str) -> bool {
-        self.source(key).is_some_and(|s| *s != Source::Default)
-    }
-
-    /// Every setting in registry order: its definition, value (None = unset) and source.
-    pub fn rows(&self) -> impl Iterator<Item = (&'static Def, Option<&str>, Option<&Source>)> {
-        DEFS.iter()
-            .map(|d| (d, self.get(d.key), self.source(d.key)))
+    pub fn source(&self, key: &str) -> Source {
+        self.sources.get(key).cloned().unwrap_or(Source::Default)
     }
 }
 
+/// What the layers are read from: text already in hand, no file reads.
 pub struct Inputs<'a> {
     pub cwd: &'a Path,
     pub home: &'a Path,
+    /// The `KERN_*` variables, and `XDG_DATA_HOME` / `XDG_CONFIG_HOME`.
     pub env: &'a HashMap<String, String>,
     /// `(key, raw)` per flag given, in order.
     pub flags: &'a [(String, String)],
@@ -100,7 +88,7 @@ fn env_layer(env: &HashMap<String, String>) -> Result<Entries, String> {
     let mut out = Vec::new();
     for def in DEFS {
         let var = def.env();
-        let Some(raw) = env.get(&var).map(|v| v.trim()).filter(|v| !v.is_empty()) else {
+        let Some(raw) = env_var(env, &var) else {
             continue;
         };
         out.push((def, check(def, raw).map_err(|e| format!("{var} {e}"))?));
@@ -118,6 +106,10 @@ fn flag_layer(flags: &[(String, String)]) -> Result<Entries, String> {
         ));
     }
     Ok(out)
+}
+
+pub(crate) fn env_var<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
+    env.get(key).map(|v| v.trim()).filter(|v| !v.is_empty())
 }
 
 /// The last value `key` has across these layers.
@@ -140,7 +132,13 @@ pub(crate) fn absolute(dir: &str, cwd: &Path, home: &Path) -> PathBuf {
     normalize(&path)
 }
 
-pub fn resolve(inputs: &Inputs) -> Result<Resolved, String> {
+/// `$XDG_<VAR>/kern`, when that variable is set.
+pub(crate) fn xdg(env: &HashMap<String, String>, var: &str) -> Option<PathBuf> {
+    env_var(env, var).map(|d| PathBuf::from(d).join("kern"))
+}
+
+pub fn resolve(inputs: &Inputs) -> Result<(Config, Resolved), String> {
+    let (cwd, home) = (inputs.cwd, inputs.home);
     let user = match &inputs.user_file {
         Some((path, text)) => parse_file(path, text, FileKind::User)?,
         None => FileLayer::default(),
@@ -149,10 +147,10 @@ pub fn resolve(inputs: &Inputs) -> Result<Resolved, String> {
     let flags = flag_layer(inputs.flags)?;
 
     let trusted_dirs: Vec<PathBuf> = last("trusted_dirs", &[&user.base, &env, &flags])
-        .map(split_list)
+        .map(crate::value::split_list)
         .unwrap_or_default()
         .iter()
-        .map(|d| absolute(d, inputs.cwd, inputs.home))
+        .map(|d| absolute(d, cwd, home))
         .collect();
     let trusted = |dir: &Path| trusted_dirs.iter().any(|t| normalize(dir).starts_with(t));
 
@@ -179,39 +177,48 @@ pub fn resolve(inputs: &Inputs) -> Result<Resolved, String> {
         Some(name) => profile_entries(name, &user, &project)?,
     };
 
-    let mut values: BTreeMap<&'static str, (String, Source)> = BTreeMap::new();
-    for def in DEFS {
-        if let Some(d) = def.default {
-            let v = check(def, d).expect("a registry default checks");
-            values.insert(def.key, (v, Source::Default));
-        }
-    }
-    let file = |l: &FileLayer| Source::File(l.path.clone());
-    let layers: [(&Entries, Source); 3] = [
-        (&user.base, file(&user)),
-        (&project.base, file(&project)),
-        (
-            &profile_entries,
-            Source::Profile(profile.clone().unwrap_or_default()),
-        ),
+    let mut config = Config::bare(cwd, home);
+    let s = &mut config.settings;
+    s.data_dir = xdg(inputs.env, "XDG_DATA_HOME").unwrap_or(s.data_dir.clone());
+    s.config_dir = xdg(inputs.env, "XDG_CONFIG_HOME").unwrap_or(s.config_dir.clone());
+    let in_file = |l: &FileLayer| {
+        let path = l.path.clone();
+        move |_: &Def| Source::File(path.clone())
+    };
+    let name = profile.clone().unwrap_or_default();
+    let layers = [
+        tagged(&user.base, in_file(&user)),
+        tagged(&project.base, in_file(&project)),
+        tagged(&profile_entries, |_| Source::Profile(name.clone())),
+        tagged(&env, |d| Source::Env(d.env())),
+        tagged(&flags, |d| Source::Flag(d.flag())),
     ];
-    for (entries, source) in layers {
-        for (def, v) in entries {
-            values.insert(def.key, (v.clone(), source.clone()));
-        }
+    let mut sources = BTreeMap::new();
+    for (def, v, source) in layers.into_iter().flatten() {
+        let raw = match def.kind {
+            Kind::Path => absolute(&v, cwd, home).display().to_string(),
+            _ => v,
+        };
+        set(&mut config, def.key, &raw).map_err(|e| format!("{}: {e}", def.key))?;
+        sources.insert(def.key, source);
     }
-    for (def, v) in &env {
-        values.insert(def.key, (v.clone(), Source::Env(def.env())));
-    }
-    for (def, v) in &flags {
-        values.insert(def.key, (v.clone(), Source::Flag(def.flag())));
-    }
-    Ok(Resolved {
-        values,
-        profile,
+    let resolved = Resolved {
+        sources,
         project_file,
-        trusted: trusted(inputs.cwd),
-    })
+        trusted: trusted(cwd),
+    };
+    Ok((config, resolved))
+}
+
+/// One layer's values, each with where it came from.
+fn tagged(
+    entries: &Entries,
+    source: impl Fn(&Def) -> Source,
+) -> Vec<(&'static Def, String, Source)> {
+    entries
+        .iter()
+        .map(|(d, v)| (*d, v.clone(), source(d)))
+        .collect()
 }
 
 /// The built-in profile of that name, then each file's table of it on top.

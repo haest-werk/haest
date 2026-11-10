@@ -53,6 +53,13 @@ pub trait Fs: Send + Sync {
         let bytes = self.read(path).await?;
         String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
+    /// The first `max` bytes (all of a shorter file). The default reads the
+    /// whole file; a file system that can stop early should.
+    async fn read_head(&self, path: &Path, max: usize) -> io::Result<Vec<u8>> {
+        let mut bytes = self.read(path).await?;
+        bytes.truncate(max);
+        Ok(bytes)
+    }
     /// Create or replace. The parent directory must exist.
     async fn write(&self, path: &Path, data: &[u8]) -> io::Result<()>;
     async fn append(&self, path: &Path, data: &[u8]) -> io::Result<()>;

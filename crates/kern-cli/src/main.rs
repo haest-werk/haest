@@ -31,8 +31,8 @@ use std::{
 };
 
 use kern::{
-    runtime::{BuildOptions, sessions, world},
-    settings::{LoadInputs, Loaded},
+    config::{LoadInputs, Loaded},
+    runtime::{BuildOptions, RuntimeInputs, Ui, World, sessions, world},
     workspace::RealFs,
 };
 
@@ -48,14 +48,15 @@ fn fail(code: u8, msg: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(code)
 }
 
-fn subcommand(cmd: &Command, loaded: &Loaded) -> ExitCode {
-    let s = &loaded.settings;
+async fn subcommand(cmd: &Command, loaded: &Loaded) -> ExitCode {
+    let s = &loaded.config.settings;
     match cmd {
         Command::Models => print!("{}", models::render(kern::providers::Catalog::builtin())),
         Command::Sessions { here } => {
             let dir = sessions::sessions_dir(&s.data_dir);
             let cwd = s.cwd.to_string_lossy();
-            let rows: Vec<String> = sessions::list_sessions(&dir)
+            let rows: Vec<String> = sessions::list_sessions(&RealFs, &dir)
+                .await
                 .iter()
                 .filter(|info| !here || info.cwd == cwd)
                 .map(|info| session::format_row(info, !here))
@@ -156,20 +157,31 @@ async fn main() -> ExitCode {
         env: &env,
         flags: &cli.settings,
     };
-    let loaded = match kern::settings::load(&RealFs::new(), inputs).await {
+    let loaded = match kern::config::load(&RealFs, inputs).await {
         Ok(l) => l,
         Err(e) => return fail(2, e),
     };
     if let Some(cmd) = &args.command {
-        return subcommand(cmd, &loaded);
+        return subcommand(cmd, &loaded).await;
     }
     let print = args.print || args.json || !std::io::stdin().is_terminal();
     let ui = Arc::new(TermUi::new(args.json));
+    loaded.notes.iter().for_each(|n| ui.warn(n));
     let prompter = TermPrompter::new(ui.clone(), ask::interactive());
     let opts = BuildOptions {
         resume: args.resume.clone(),
     };
-    let mut rt = match kern::runtime::build(loaded.settings, env, ui, prompter, opts).await {
+    let inputs = RuntimeInputs {
+        settings: loaded.config.settings,
+        world: World::Disk {
+            child_env: loaded.child_env,
+        },
+        keys: Arc::new(loaded.keys),
+        providers: loaded.providers,
+        mcp_servers: loaded.mcp_servers,
+        routing: loaded.routing,
+    };
+    let mut rt = match kern::runtime::build(inputs, ui, prompter, opts).await {
         Ok(rt) => rt,
         Err(e) => return fail(2, format!("{e:#}")),
     };

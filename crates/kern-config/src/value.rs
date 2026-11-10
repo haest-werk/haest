@@ -35,7 +35,7 @@ pub fn check(def: &Def, raw: &str) -> Result<String, String> {
             .filter(|n| n.is_finite() && *n >= 0.0)
             .map(|_| raw.to_string())
             .ok_or_else(|| format!("\"{raw}\" must be a number >= 0")),
-        Kind::Text => Ok(raw.to_string()),
+        Kind::Text | Kind::Path => Ok(raw.to_string()),
         Kind::Choice(words) => words
             .iter()
             .find(|w| w.eq_ignore_ascii_case(raw))

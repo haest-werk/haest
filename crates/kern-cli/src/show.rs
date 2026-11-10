@@ -1,14 +1,14 @@
 //! `kern settings`: every setting, its value and where it came from, under
 //! the files kern read (or skipped) to get there.
 
-use kern::settings::{Loaded, ProjectFile, Source};
+use kern::config::{DEFS, Loaded, ProjectFile, Source, get};
 
 const NONE: &str = "-";
 
 /// The report, one line each.
 pub fn settings_report(loaded: &Loaded) -> Vec<String> {
     let r = &loaded.resolved;
-    let s = &loaded.settings;
+    let s = &loaded.config.settings;
     let user = s.config_dir.join("config.toml");
     let mut out = vec![format!("config file:  {}", user.display())];
     out.push(match &r.project_file {
@@ -19,42 +19,45 @@ pub fn settings_report(loaded: &Loaded) -> Vec<String> {
             p.display()
         ),
     });
-    let trusted = if s.trusted { "trusted" } else { "not trusted" };
+    let trusted = if r.trusted { "trusted" } else { "not trusted" };
     out.push(format!("this dir:     {} ({trusted})", s.cwd.display()));
     out.push(String::new());
-    for (def, value, source) in r.rows() {
-        let value = match value {
-            None => NONE,
-            Some("") => "none",
-            Some(v) => v,
+    for def in DEFS {
+        let value = get(&loaded.config, def.key);
+        let source = r.source(def.key);
+        let (value, from) = match value.as_deref() {
+            None if source == Source::Default => (NONE.to_string(), NONE.to_string()),
+            None => (NONE.to_string(), source.to_string()),
+            Some("") => ("none".to_string(), source.to_string()),
+            Some(v) => (v.to_string(), source.to_string()),
         };
-        let from = source.map_or(NONE.to_string(), Source::to_string);
         out.push(format!("{:<24} {:<40} {from}", def.key, value));
     }
-    out.extend(s.notes.iter().map(|n| format!("\nnote: {n}")));
+    out.extend(loaded.notes.iter().map(|n| format!("\nnote: {n}")));
     out
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, path::Path};
+    use std::{collections::HashMap, path::PathBuf};
 
-    use kern::settings::{Inputs, settle};
+    use kern::{
+        config::{LoadInputs, load},
+        fs::MemFs,
+    };
 
     use super::*;
 
-    #[test]
-    fn each_row_names_its_value_and_source_and_an_unset_one_says_so() {
+    #[tokio::test]
+    async fn each_row_names_its_value_and_source_and_an_unset_one_says_so() {
         let flags = vec![("tools".to_string(), "read".to_string())];
-        let loaded = settle(&Inputs {
-            cwd: Path::new("/w"),
-            home: Path::new("/h"),
-            env: &HashMap::new(),
+        let env = HashMap::from([("HOME".to_string(), "/h".to_string())]);
+        let inputs = LoadInputs {
+            cwd: PathBuf::from("/w"),
+            env: &env,
             flags: &flags,
-            user_file: None,
-            project_file: None,
-        })
-        .unwrap();
+        };
+        let loaded = load(&MemFs::new(), inputs).await.unwrap();
         let report = settings_report(&loaded);
         let row = |key: &str| {
             report
@@ -68,5 +71,10 @@ mod tests {
         assert_eq!(row("tools"), ["tools", "read", "--tools"]);
         assert_eq!(row("context"), ["context", "none", "default"]);
         assert_eq!(row("effort"), ["effort", "-", "-"]);
+        assert_eq!(
+            row("env_passthrough"),
+            ["env_passthrough", "core", "default"]
+        );
+        assert_eq!(row("max_turn_usd"), ["max_turn_usd", "2", "default"]);
     }
 }

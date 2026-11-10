@@ -1,6 +1,9 @@
-//! kern assembled from its [`Settings`](kern_settings::Settings): what turns a
-//! settings file into a running conversation. Every host builds on it -- the
-//! CLI with a terminal [`Ui`], brain with its own pieces.
+//! kern assembled from what a host hands it ([`RuntimeInputs`]): the
+//! [`Settings`](kern_settings::Settings), the [`World`] (the real disk with the
+//! environment a child gets, or the host's own Fs), the provider keys, the
+//! custom providers, the MCP servers, the routing. The runtime reads no file,
+//! variable or flag of its own; kern-config is the opt-in loader that fills
+//! these in from kern's files, `KERN_*` variables and flags.
 //!
 //! Two ways in:
 //!   - [`build`]: the whole conversation (providers, workspace, tools, MCP,
@@ -15,8 +18,8 @@
 //!     needs no runtime at all.
 //!
 //! Every switch is honoured here, once: a capability the settings leave off is
-//! never built, and what lives in the project (its `.mcp.json`, its mods) runs
-//! only in a trusted dir.
+//! never built. Trust is the loader's: it lists a project's MCP servers and
+//! turns its mods on only in a trusted dir.
 
 mod agents;
 mod build;
@@ -27,6 +30,8 @@ pub mod prompt;
 pub mod sessions;
 #[cfg(test)]
 mod testkit;
+#[cfg(test)]
+mod tests;
 pub mod tools;
 mod ui;
 pub mod world;
@@ -43,6 +48,7 @@ mod kern {
 }
 
 pub use agents::Agents;
-pub use build::{BuildOptions, Runtime, build, init_store, open_store};
+pub use build::{BuildOptions, Runtime, RuntimeInputs, build, init_store, open_store};
 pub use host::{Host, now_ms, session_usd};
 pub use ui::Ui;
+pub use world::World;

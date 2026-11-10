@@ -6,31 +6,30 @@
 //! Chat Completions, "anthropic" = Messages); the built-in `openai` provider
 //! alone speaks the Responses API.
 //!
-//! The environment is a map the host passes in, and providers.json is read
-//! through a kern [`Fs`]: the registry never reads the process environment or
-//! the disk on its own.
+//! Everything is handed in: keys come from the host's [`KeySource`],
+//! providers.json's entries arrive parsed ([`load_custom_providers`] is the
+//! loader's helper), routing arrives parsed. The registry reads no environment
+//! and no file.
 
 mod custom;
 #[cfg(test)]
 mod tests;
 
 use std::{
-    collections::{BTreeMap, HashMap},
-    path::Path,
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 
 use kern_core::{
-    fs::Fs,
+    KeySource,
     provider::{ModelResolver, Provider, ResolvedModel, parse_model_spec},
 };
-use serde_json::Value;
 
+use custom::need;
 pub use custom::{
-    CustomProviderConfig, Dialect, custom_compat_options, load_custom_providers,
+    CustomProviderConfig, CustomProviders, Dialect, custom_compat_options, load_custom_providers,
     paper_instruments_options,
 };
-use custom::{env_opt, need};
 
 use crate::{
     anthropic::{AnthropicOptions, AnthropicProvider},
@@ -38,7 +37,7 @@ use crate::{
     http::RetryPolicy,
     reqwest_transport::ReqwestTransport,
     responses::{ResponsesOptions, ResponsesProvider},
-    routing::routing_from_env,
+    routing::RoutingEnv,
     transport::Transport,
 };
 
@@ -53,9 +52,10 @@ pub struct RegistryOptions {
     /// How every provider's requests travel.
     pub transport: Arc<dyn Transport>,
     pub retry: RetryPolicy,
-    /// Send OpenRouter provider routing read from `KERN_PROVIDER_ROUTING` in the env.
-    /// Off unless asked: a host whose gateway routes leaves it off.
-    pub openrouter_routing: bool,
+    /// OpenRouter provider routing to send ([`crate::routing::parse_routing`]
+    /// reads `KERN_PROVIDER_ROUTING`'s JSON). None = none: a host whose
+    /// gateway routes leaves it off.
+    pub routing: Option<RoutingEnv>,
     /// OpenRouter's app attribution: `X-Title` (None = not sent).
     pub app_title: Option<String>,
     /// OpenRouter's app attribution: `HTTP-Referer` (None = not sent).
@@ -67,7 +67,7 @@ impl Default for RegistryOptions {
         Self {
             transport: Arc::new(ReqwestTransport::new()),
             retry: RetryPolicy::default(),
-            openrouter_routing: false,
+            routing: None,
             app_title: Some("kern".into()),
             app_url: None,
         }
@@ -75,50 +75,22 @@ impl Default for RegistryOptions {
 }
 
 pub struct ProviderRegistry {
-    env: HashMap<String, String>,
-    custom: BTreeMap<String, Value>,
+    keys: Arc<dyn KeySource>,
+    custom: CustomProviders,
     opts: RegistryOptions,
-    warnings: Vec<String>,
     cache: Mutex<HashMap<String, Arc<dyn Provider>>>,
 }
 
 impl ProviderRegistry {
-    /// `custom` is providers.json's object ([`load_custom_providers`]); each entry is
-    /// checked when its provider is first resolved, so one bad entry blocks only itself.
-    pub fn new(
-        env: HashMap<String, String>,
-        custom: BTreeMap<String, Value>,
-        opts: RegistryOptions,
-    ) -> Self {
-        let mut warnings = Vec::new();
-        if opts.openrouter_routing
-            && let Err(e) = routing_from_env(&env)
-        {
-            warnings.push(e);
-        }
+    /// The built-ins and `custom` (providers.json's entries; empty = none),
+    /// their keys from `keys`.
+    pub fn new(keys: Arc<dyn KeySource>, custom: CustomProviders, opts: RegistryOptions) -> Self {
         Self {
-            env,
+            keys,
             custom,
             opts,
-            warnings,
             cache: Mutex::default(),
         }
-    }
-
-    /// [`ProviderRegistry::new`] with providers.json read from `config_dir` through `fs`.
-    pub async fn load(
-        fs: &dyn Fs,
-        config_dir: &Path,
-        env: HashMap<String, String>,
-        opts: RegistryOptions,
-    ) -> Result<Self, ProviderConfigError> {
-        let custom = load_custom_providers(fs, config_dir).await?;
-        Ok(Self::new(env, custom, opts))
-    }
-
-    /// Configuration problems that did not stop the registry (a malformed routing env var).
-    pub fn warnings(&self) -> &[String] {
-        &self.warnings
     }
 
     pub fn names(&self) -> Vec<String> {
@@ -152,15 +124,15 @@ impl ProviderRegistry {
             let cfg = CustomProviderConfig::from_json(name, raw)?;
             return Ok(self.build_custom(name, &cfg));
         }
-        let env = &self.env;
+        let keys = self.keys.as_ref();
         let t = self.opts.transport.clone();
         let retry = self.opts.retry.clone();
         Ok(match name {
             "anthropic" => Arc::new(
                 AnthropicProvider::new(
                     AnthropicOptions {
-                        api_key: need(env, "ANTHROPIC_API_KEY", name)?,
-                        base_url: env_opt(env, "ANTHROPIC_BASE_URL"),
+                        api_key: need(keys, "ANTHROPIC_API_KEY", name)?,
+                        base_url: keys.key("ANTHROPIC_BASE_URL"),
                         headers: Vec::new(),
                     },
                     t,
@@ -172,8 +144,8 @@ impl ProviderRegistry {
                 ResponsesProvider::new(
                     ResponsesOptions {
                         id: "openai".into(),
-                        api_key: need(env, "OPENAI_API_KEY", name)?,
-                        base_url: env_opt(env, "OPENAI_BASE_URL"),
+                        api_key: need(keys, "OPENAI_API_KEY", name)?,
+                        base_url: keys.key("OPENAI_BASE_URL"),
                         headers: Vec::new(),
                     },
                     t,
@@ -184,7 +156,7 @@ impl ProviderRegistry {
                 Arc::new(CompatProvider::new(self.openrouter_options()?, t).with_retry(retry))
             }
             "paperinstruments" => {
-                Arc::new(CompatProvider::new(paper_instruments_options(env)?, t).with_retry(retry))
+                Arc::new(CompatProvider::new(paper_instruments_options(keys)?, t).with_retry(retry))
             }
             _ => {
                 return Err(ProviderConfigError(format!(
@@ -196,14 +168,14 @@ impl ProviderRegistry {
     }
 
     fn openrouter_options(&self) -> Result<CompatOptions, ProviderConfigError> {
-        let env = &self.env;
+        let keys = self.keys.as_ref();
         let mut opts = CompatOptions::new(
             "openrouter",
             CompatFlavor::OpenRouter,
-            need(env, "OPENROUTER_API_KEY", "openrouter")?,
+            need(keys, "OPENROUTER_API_KEY", "openrouter")?,
         );
         opts.base_url = Some(
-            env_opt(env, "OPENROUTER_BASE_URL")
+            keys.key("OPENROUTER_BASE_URL")
                 .unwrap_or_else(|| "https://openrouter.ai/api/v1".into()),
         );
         if let Some(url) = &self.opts.app_url {
@@ -212,9 +184,7 @@ impl ProviderRegistry {
         if let Some(title) = &self.opts.app_title {
             opts.headers.push(("X-Title".into(), title.clone()));
         }
-        if self.opts.openrouter_routing {
-            opts.routing = routing_from_env(env).unwrap_or(None);
-        }
+        opts.routing = self.opts.routing.clone();
         Ok(opts)
     }
 
@@ -225,7 +195,7 @@ impl ProviderRegistry {
             Dialect::Anthropic => Arc::new(
                 AnthropicProvider::new(
                     AnthropicOptions {
-                        api_key: cfg.api_key(&self.env),
+                        api_key: cfg.api_key(self.keys.as_ref()),
                         base_url: cfg.base_url.clone(),
                         headers: cfg.headers.clone(),
                     },
@@ -234,7 +204,7 @@ impl ProviderRegistry {
                 .with_retry(retry),
             ),
             Dialect::OpenAi => Arc::new(
-                CompatProvider::new(custom_compat_options(name, cfg, &self.env), t)
+                CompatProvider::new(custom_compat_options(name, cfg, self.keys.as_ref()), t)
                     .with_retry(retry),
             ),
         }

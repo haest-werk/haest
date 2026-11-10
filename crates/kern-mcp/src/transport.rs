@@ -5,21 +5,29 @@
 use std::{collections::BTreeMap, path::PathBuf, process::Stdio};
 
 use http::{HeaderName, HeaderValue};
+use kern_core::ChildEnv;
 use rmcp::transport::{
     StreamableHttpClientTransport, TokioChildProcess,
     streamable_http_client::StreamableHttpClientTransportConfig,
 };
 
-/// `command args...` with this process's environment plus `env`, in `cwd`. Its
-/// stderr is ignored; it is killed when the connection drops.
+/// `command args...` with the host's handed env plus the server's own `env`
+/// over it -- not this process's environment -- in `cwd`. A bare command is
+/// found on that env's PATH. Its stderr is ignored; it is killed when the
+/// connection drops.
 pub(crate) fn stdio(
     command: &str,
     args: &[String],
+    handed: &ChildEnv,
     env: &BTreeMap<String, String>,
     cwd: Option<&PathBuf>,
 ) -> Result<TokioChildProcess, String> {
     let mut cmd = tokio::process::Command::new(command);
-    cmd.args(args).envs(env).kill_on_drop(true);
+    cmd.args(args)
+        .env_clear()
+        .envs(handed.vars().iter().map(|(k, v)| (k, v)))
+        .envs(env)
+        .kill_on_drop(true);
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }

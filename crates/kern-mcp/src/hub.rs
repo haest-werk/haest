@@ -7,7 +7,10 @@ use std::{
 };
 
 use futures::future::join_all;
-use kern_core::tool::{Tool, ToolSource};
+use kern_core::{
+    ChildEnv,
+    tool::{Tool, ToolSource},
+};
 use rmcp::{
     RoleClient, ServiceExt,
     model::{ClientCapabilities, ClientConfig, Implementation},
@@ -48,6 +51,8 @@ struct Server {
 pub struct McpHub {
     servers: Mutex<Vec<Server>>,
     failures: Mutex<Vec<McpFailure>>,
+    /// What a stdio server's process gets, under its own `env`; nothing else.
+    env: ChildEnv,
 }
 
 fn timed_out(name: &str, what: &str, after: Duration) -> String {
@@ -92,7 +97,7 @@ where
     Ok(Server { client, tools })
 }
 
-async fn start_config(cfg: &McpServerConfig) -> Result<Server, String> {
+async fn start_config(cfg: &McpServerConfig, handed: &ChildEnv) -> Result<Server, String> {
     match &cfg.transport {
         McpTransport::Stdio {
             command,
@@ -100,11 +105,8 @@ async fn start_config(cfg: &McpServerConfig) -> Result<Server, String> {
             env,
             cwd,
         } => {
-            start(
-                &cfg.name,
-                transport::stdio(command, args, env, cwd.as_ref())?,
-            )
-            .await
+            let child = transport::stdio(command, args, handed, env, cwd.as_ref())?;
+            start(&cfg.name, child).await
         }
         McpTransport::Http { url, headers } => {
             start(&cfg.name, transport::http(url, headers)?).await
@@ -113,8 +115,17 @@ async fn start_config(cfg: &McpServerConfig) -> Result<Server, String> {
 }
 
 impl McpHub {
+    /// A hub whose stdio servers get their own `env` and nothing else.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A hub whose stdio servers get `env`, with each one's own `env` over it.
+    pub fn with_env(env: ChildEnv) -> Self {
+        Self {
+            env,
+            ..Self::default()
+        }
     }
 
     /// Connect every server at once. One that fails is logged and recorded in
@@ -122,7 +133,7 @@ impl McpHub {
     /// order of `configs`.
     pub async fn connect(&self, configs: &[McpServerConfig], log: &(dyn Fn(&str) + Sync)) {
         let started = join_all(configs.iter().map(|cfg| async move {
-            let res = start_config(cfg).await;
+            let res = start_config(cfg, &self.env).await;
             self.settle(&cfg.name, res, log)
         }))
         .await;

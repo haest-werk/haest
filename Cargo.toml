@@ -21,6 +21,7 @@ kern-code = { path = "crates/kern-code" }
 kern-mods = { path = "crates/kern-mods" }
 kern-ts = { path = "crates/kern-ts" }
 kern-settings = { path = "crates/kern-settings" }
+kern-config = { path = "crates/kern-config" }
 kern-runtime = { path = "crates/kern-runtime" }
 kern-lib = { path = "crates/kern-lib" }
 

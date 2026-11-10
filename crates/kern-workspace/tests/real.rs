@@ -8,17 +8,44 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::{argv, opts, tempdir};
+use common::{argv, opts, real, tempdir};
 use kern_core::{
+    ChildEnv,
     fs::{FileKind, Fs},
     workspace::{EXIT_NOT_FOUND, OutputChunks, Workspace, WorkspaceMode},
 };
 use kern_workspace::{RealFs, RealWorkspace};
 
 #[tokio::test]
+async fn a_child_sees_only_the_env_the_host_handed_in() {
+    let (_t, dir) = tempdir();
+    let path = std::env::var("PATH").unwrap();
+    let env = ChildEnv::new([("PATH".into(), path), ("ONLY".into(), "1".into())]);
+    let r = RealWorkspace::new(env)
+        .shell("echo \"${HOME-unset} $ONLY\"", opts(&dir))
+        .await;
+    assert_eq!(r.stdout, "unset 1\n");
+}
+
+#[tokio::test]
+async fn with_nothing_handed_in_bash_still_runs_from_the_systems_default_path() {
+    let (_t, dir) = tempdir();
+    let bare = RealWorkspace::new(ChildEnv::default());
+    let r = bare.shell("echo \"${HOME-unset}\"", opts(&dir)).await;
+    assert_eq!(
+        (r.stdout.as_str(), r.exit_code),
+        ("unset\n", 0),
+        "{}",
+        r.stderr
+    );
+    let ls = bare.run(&argv(&["ls"]), opts(&dir)).await;
+    assert_eq!(ls.exit_code, 0, "{}", ls.stderr);
+}
+
+#[tokio::test]
 async fn shell_runs_bash_in_the_given_directory_and_reports_both_streams() {
     let (_t, dir) = tempdir();
-    let ws = RealWorkspace::new();
+    let ws = real();
     assert_eq!(ws.mode(), WorkspaceMode::Real);
     let r = ws.shell("pwd; echo oops >&2; exit 3", opts(&dir)).await;
     assert_eq!(r.stdout.trim(), dir.to_str().unwrap());
@@ -30,7 +57,7 @@ async fn shell_runs_bash_in_the_given_directory_and_reports_both_streams() {
 #[tokio::test]
 async fn run_passes_argv_untouched_and_reports_a_missing_program_as_127() {
     let (_t, dir) = tempdir();
-    let ws = RealWorkspace::new();
+    let ws = real();
     let r = ws
         .run(&argv(&["echo", "a  b", "$HOME", "*"]), opts(&dir))
         .await;
@@ -45,9 +72,7 @@ async fn run_passes_argv_untouched_and_reports_a_missing_program_as_127() {
 #[tokio::test]
 async fn output_that_is_not_utf8_is_decoded_lossily() {
     let (_t, dir) = tempdir();
-    let r = RealWorkspace::new()
-        .shell(r"printf 'ok\377'", opts(&dir))
-        .await;
+    let r = real().shell(r"printf 'ok\377'", opts(&dir)).await;
     assert_eq!(r.stdout, "ok\u{FFFD}");
 }
 
@@ -57,7 +82,7 @@ async fn streamed_output_arrives_while_the_command_runs_and_stays_out_of_the_res
     let seen = Arc::new(Mutex::new(String::new()));
     let into = seen.clone();
     let on_output: OutputChunks = Arc::new(move |s: &str| into.lock().unwrap().push_str(s));
-    let ws = RealWorkspace::new();
+    let ws = real();
     // A multi-byte character split across two writes arrives whole.
     let run = ws.shell_streaming(
         r"printf 'first \xc3'; sleep 0.05; printf '\xa9\n'; sleep 0.4; echo second >&2",
@@ -89,7 +114,7 @@ async fn a_timeout_kills_the_whole_process_group_not_just_bash() {
     let mut o = opts(&dir);
     o.timeout = Duration::from_millis(500);
     let started = Instant::now();
-    let r = RealWorkspace::new()
+    let r = real()
         .shell("sleep 30 & echo $! > child.pid; wait", o)
         .await;
     assert!(r.timed_out);
@@ -116,7 +141,7 @@ async fn cancel_kills_a_long_sleep_quickly() {
         cancel.cancel();
     });
     let started = Instant::now();
-    let r = RealWorkspace::new().shell("sleep 30", o).await;
+    let r = real().shell("sleep 30", o).await;
     assert!(started.elapsed() < Duration::from_secs(3));
     assert!(!r.timed_out);
     assert_ne!(r.exit_code, 0);

@@ -1,9 +1,8 @@
-//! One conversation built from its settings: providers, workspace, tools (MCP
-//! servers included), mods, subagents, the inbox and the session file --
-//! resumed or new -- and the agent over all of it.
+//! One conversation built from what the host hands in: providers, workspace,
+//! tools (MCP servers included), mods, subagents, the inbox and the session
+//! file -- resumed or new -- and the agent over all of it.
 
 use std::{
-    collections::HashMap,
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -15,25 +14,56 @@ use crate::{
     Agents, Host, Ui,
     inbox::{self, InboxQueue},
     kern::{
-        Agent, AgentDeps, AgentOptions,
+        Agent, AgentDeps, AgentOptions, KeySource,
         fs::Fs,
         ledger::Ledger,
-        mcp::McpHub,
+        mcp::{McpHub, McpServerConfig},
         mods::{ModSystemPrompt, Mods, Prompter},
-        providers::{ProviderRegistry, RegistryOptions},
+        providers::{CustomProviders, ProviderRegistry, RegistryOptions, RoutingEnv},
         session::{JsonlSessionFile, SessionRecord},
         skills::{Skill, SkillOpts, discover_skills},
         task_board::TaskBoard,
         tool::Tool,
         tools::{JobHub, agents::SubagentHub},
-        workspace::RealFs,
     },
     mods, now_ms,
     prompt::{AgentPrompt, RuntimePrompt, skill_opts},
     sessions::{latest_in, new_session_id, sessions_dir},
-    tools::{MainTools, WrappedTools, own_tools},
-    world::{connect_mcp, jobs_for, workspace_for},
+    tools::{MainTools, WrappedTools, image_options, own_tools},
+    world::{World, connect_mcp, jobs_for, workspace_for},
 };
+
+/// Everything a conversation is built from. kern reads no file, variable or
+/// flag of its own: what is not in here does not exist for it.
+pub struct RuntimeInputs {
+    pub settings: Settings,
+    pub world: World,
+    /// What the host answers for a provider variable (`OPENROUTER_API_KEY`,
+    /// `ANTHROPIC_BASE_URL`, ...): its environment, a vault, a fixed map.
+    pub keys: Arc<dyn KeySource>,
+    /// providers.json's entries, by name.
+    pub providers: CustomProviders,
+    /// The MCP servers to start.
+    pub mcp_servers: Vec<McpServerConfig>,
+    /// OpenRouter's `provider` routing; None = none goes out.
+    pub routing: Option<RoutingEnv>,
+}
+
+impl RuntimeInputs {
+    /// The settings in this world, and nothing else: no keys, no custom
+    /// providers, no MCP servers, no routing.
+    pub fn new(settings: Settings, world: World) -> Self {
+        let no_keys = |_: &str| None;
+        Self {
+            settings,
+            world,
+            keys: Arc::new(no_keys),
+            providers: CustomProviders::new(),
+            mcp_servers: Vec::new(),
+            routing: None,
+        }
+    }
+}
 
 pub struct Runtime<U: ?Sized> {
     pub agent: Agent,
@@ -63,10 +93,15 @@ pub struct BuildOptions {
 }
 
 /// Which session this run writes: a new one, the one named, or the latest here.
-fn session_id_for(s: &Settings, resume: Option<&str>) -> anyhow::Result<(String, bool)> {
+async fn session_id_for(
+    fs: &dyn Fs,
+    s: &Settings,
+    resume: Option<&str>,
+) -> anyhow::Result<(String, bool)> {
     match resume {
         None => Ok((new_session_id(), false)),
-        Some("") => latest_in(&sessions_dir(&s.data_dir), &s.cwd)
+        Some("") => latest_in(fs, &sessions_dir(&s.data_dir), &s.cwd)
+            .await
             .map(|id| (id, true))
             .ok_or_else(|| anyhow!("no saved session in {} to resume", s.cwd.display())),
         Some(id) => Ok((id.to_string(), true)),
@@ -98,11 +133,10 @@ pub fn init_store(host: &Host, agent: &Agent, id: &str) {
     }
 }
 
-/// The whole conversation. `env` carries the provider keys; `prompter` answers
+/// The whole conversation, from what the host hands in; `prompter` answers
 /// the approval mod's asks.
 pub async fn build<U, P>(
-    settings: Settings,
-    env: HashMap<String, String>,
+    inputs: RuntimeInputs,
     ui: Arc<U>,
     prompter: P,
     opts: BuildOptions,
@@ -111,29 +145,33 @@ where
     U: Ui + 'static,
     P: Prompter + 'static,
 {
-    let fs: Arc<dyn Fs> = Arc::new(RealFs::new());
+    let RuntimeInputs {
+        settings,
+        world,
+        keys,
+        providers,
+        mcp_servers,
+        routing,
+    } = inputs;
+    let fs = world.fs();
     let reg_opts = RegistryOptions {
-        openrouter_routing: true,
+        routing,
         ..Default::default()
     };
-    let registry = ProviderRegistry::load(fs.as_ref(), &settings.config_dir, env, reg_opts)
-        .await
-        .map_err(|e| anyhow!("{}", e.0))?;
-    let (session_id, resuming) = session_id_for(&settings, opts.resume.as_deref())?;
+    let registry = ProviderRegistry::new(keys.clone(), providers, reg_opts);
+    let (session_id, resuming) =
+        session_id_for(fs.as_ref(), &settings, opts.resume.as_deref()).await?;
     let store = Arc::new(open_store(&fs, &settings.data_dir, &session_id)?);
     if resuming && !store.exists().await {
         bail!("no saved session \"{session_id}\" (kern sessions lists them)");
     }
-    let notes = settings.notes.clone();
     let host = Arc::new(Host::new(settings, ui.clone(), store.clone()));
-    notes.iter().for_each(|n| host.warn(n));
-    registry.warnings().iter().for_each(|w| host.warn(w));
     let s = &host.settings;
 
     let skill_opts = skill_opts(s);
     let skills = Arc::new(Mutex::new(discover_skills(fs.as_ref(), &skill_opts).await));
     let spill = s.spill_dir(&session_id);
-    let workspace = workspace_for(s, &fs, &skill_opts, &spill).await?;
+    let workspace = workspace_for(s, &world, &skill_opts, &spill).await?;
     let board = Arc::new(TaskBoard::new({
         let host = host.clone();
         move |tasks| {
@@ -143,26 +181,30 @@ where
             })
         }
     }));
-    let mcp = connect_mcp(&host, fs.as_ref()).await;
+    let mcp = connect_mcp(&host, &world, mcp_servers).await;
     let mods = mods::load(&host, fs.as_ref(), prompter).await;
     let (sender, inbox) = inbox::inbox(&host, s.max_agent_turns);
     let jobs = jobs_for(s, sender.clone());
+    let image = image_options(s, keys.as_ref()).unwrap_or_else(|why| {
+        host.warn(&why);
+        None
+    });
     let own = own_tools(
         &s.tools,
         board.clone(),
         skills.clone(),
         fs.clone(),
         jobs.clone(),
-        s.image.as_ref(),
+        image,
     );
     let wrapped = Arc::new(WrappedTools::new(
         own,
         mcp.clone(),
         mods.clone(),
-        s.code.clone(),
+        s.code_tools(),
     ));
     let prompt = Arc::new(RuntimePrompt::new(&host, &fs, &skills, workspace.as_ref()).await);
-    let ledger = Arc::new(Mutex::new(Ledger::new(s.ledger, host.clone())));
+    let ledger = Arc::new(Mutex::new(Ledger::new(s.ledger(), host.clone())));
     let none: Vec<Arc<dyn Tool>> = Vec::new();
     let mut deps = AgentDeps::new(
         Arc::new(registry),
@@ -174,7 +216,7 @@ where
     deps.spill_dir = Some(spill);
     deps.hooks = host.clone();
     deps.ledger = Some(ledger.clone());
-    deps.web_search = s.web_search.clone();
+    deps.web_search = s.web_search_config();
     let agents = Agents {
         host: host.clone(),
         deps: deps.clone(),

@@ -5,7 +5,7 @@
 //!
 //! | Plug point | Where |
 //! |---|---|
-//! | `settings::settle` over brain's own TOML (a profile per kind of run) | config.rs |
+//! | `settings::Settings` written out, one per kind of run (no loader) | config.rs |
 //! | `builtin_tools_where`: the built-ins the settings pick | `run_tools` |
 //! | `Transport` (the node's gateway); OpenRouter routing off | gateway.rs, `models` |
 //! | `Fs` (BrainFs, writes staged) under `SandboxWorkspace::over` | brain_fs.rs, `runs::work` |
@@ -32,7 +32,7 @@ use kern::{
     AgentDeps, ModelResolver, ResolvedModel, Workspace,
     provider::parse_model_spec,
     providers::{CompatFlavor, CompatOptions, CompatProvider, RetryPolicy},
-    settings::Settings,
+    settings::{Settings, WordSet},
     tool::Tool,
     tools::{
         BashOptions, BuiltinOptions,

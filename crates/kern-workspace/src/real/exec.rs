@@ -10,7 +10,10 @@ use std::{
     time::Duration,
 };
 
-use kern_core::workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks};
+use kern_core::{
+    ChildEnv,
+    workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks},
+};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
@@ -33,9 +36,13 @@ pub fn kill_group(pid: u32) {
     }
 }
 
+/// Where a bare name is looked up when the host hands in no `PATH`: the
+/// system's default, as `execvp` does. The child still gets no `PATH`.
+const DEFAULT_PATH: &str = "/usr/bin:/bin";
+
 /// Where `program` would run from: a path with a slash is taken from `cwd`,
-/// a bare name is looked up on `PATH`. None = no such executable file.
-pub fn which(program: &str, cwd: &Path) -> Option<PathBuf> {
+/// a bare name is looked up on `env`'s `PATH`, else on [`DEFAULT_PATH`].
+pub fn which(program: &str, cwd: &Path, env: &ChildEnv) -> Option<PathBuf> {
     if program.is_empty() {
         return None;
     }
@@ -43,8 +50,8 @@ pub fn which(program: &str, cwd: &Path) -> Option<PathBuf> {
         let p = cwd.join(program);
         return is_executable(&p).then_some(p);
     }
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
+    let path = env.get("PATH").unwrap_or(DEFAULT_PATH);
+    std::env::split_paths(path)
         .map(|dir| dir.join(program))
         .find(|p| is_executable(p))
 }
@@ -145,14 +152,15 @@ fn take(s: &Sink) -> String {
     String::from_utf8_lossy(&std::mem::take(&mut *s.lock().unwrap())).into_owned()
 }
 
-/// Spawn `program args...` in its own process group and collect its output
-/// (or stream it: then the result carries none). The deadline and the cancel
-/// token both kill the group.
+/// Spawn `program args...` in its own process group, with `env` and nothing
+/// else, and collect its output (or stream it: then the result carries none).
+/// The deadline and the cancel token both kill the group.
 pub async fn spawn_collect(
     program: &Path,
     args: &[String],
     opts: ExecOptions,
     output: Output,
+    env: &ChildEnv,
 ) -> ExecResult {
     let shown = program.display().to_string();
     let mut cmd = Command::new(program);
@@ -161,6 +169,8 @@ pub async fn spawn_collect(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .env_clear()
+        .envs(env.vars().iter().map(|(k, v)| (k, v)))
         .env("TERM", "dumb")
         .env("NO_COLOR", "1")
         .process_group(0)

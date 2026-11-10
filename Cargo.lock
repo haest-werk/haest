@@ -1469,6 +1469,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kern-config"
+version = "0.1.0"
+dependencies = [
+ "kern-core",
+ "kern-mcp",
+ "kern-providers",
+ "kern-settings",
+ "tokio",
+ "toml",
+]
+
+[[package]]
 name = "kern-core"
 version = "0.1.0"
 dependencies = [
@@ -1491,6 +1503,7 @@ dependencies = [
  "bytes",
  "futures",
  "kern-code",
+ "kern-config",
  "kern-core",
  "kern-mcp",
  "kern-mods",
@@ -1582,8 +1595,6 @@ version = "0.1.0"
 dependencies = [
  "kern-core",
  "kern-tools",
- "tokio",
- "toml",
 ]
 
 [[package]]
