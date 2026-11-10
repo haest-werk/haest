@@ -88,20 +88,29 @@ impl MemFs {
             .skip(1)
             .take_while(move |(k, _)| k.starts_with(dir))
     }
-}
 
-#[async_trait]
-impl Fs for MemFs {
-    async fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+    /// The file's bytes, up to `max` of them, copied out from under the lock.
+    fn copy(&self, path: &Path, max: usize) -> io::Result<Vec<u8>> {
         let p = normalize(path);
         match self.nodes.lock().unwrap().get(&p) {
-            Some(Node::File { data, .. }) => Ok(data.clone()),
+            Some(Node::File { data, .. }) => Ok(data[..max.min(data.len())].to_vec()),
             Some(Node::Dir) => Err(io::Error::new(
                 io::ErrorKind::IsADirectory,
                 p.display().to_string(),
             )),
             None => Err(not_found(&p)),
         }
+    }
+}
+
+#[async_trait]
+impl Fs for MemFs {
+    async fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        self.copy(path, usize::MAX)
+    }
+
+    async fn read_head(&self, path: &Path, max: usize) -> io::Result<Vec<u8>> {
+        self.copy(path, max)
     }
 
     async fn write(&self, path: &Path, data: &[u8]) -> io::Result<()> {

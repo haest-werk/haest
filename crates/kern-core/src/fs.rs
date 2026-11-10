@@ -53,8 +53,10 @@ pub trait Fs: Send + Sync {
         let bytes = self.read(path).await?;
         String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
-    /// The first `max` bytes (all of a shorter file). The default reads the
-    /// whole file; a file system that can stop early should.
+    /// The first `max` bytes (all of a shorter file). Listing saved sessions
+    /// reads every session file this way, so the default (the whole file,
+    /// then cut) costs a host with long sessions; a file system that can stop
+    /// early should.
     async fn read_head(&self, path: &Path, max: usize) -> io::Result<Vec<u8>> {
         let mut bytes = self.read(path).await?;
         bytes.truncate(max);

@@ -6,6 +6,12 @@ use super::*;
 async fn memfs_reads_what_it_wrote_and_lists_direct_children_only() {
     let fs = MemFs::with_files([("/p/a.txt", "A"), ("/p/sub/b.txt", "B")]);
     assert_eq!(fs.read_to_string(Path::new("/p/a.txt")).await.unwrap(), "A");
+    let head = |max| fs.read_head(Path::new("/p/a.txt"), max);
+    assert_eq!(
+        (head(0).await.unwrap(), head(9).await.unwrap()),
+        (vec![], b"A".to_vec())
+    );
+    assert!(fs.read_head(Path::new("/p/sub"), 1).await.is_err());
     let names: Vec<_> = fs
         .read_dir(Path::new("/p"))
         .await

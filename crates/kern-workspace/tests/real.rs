@@ -157,6 +157,12 @@ async fn real_fs_reads_writes_and_lists_the_disk() {
     fs.append(&p("sub/b.txt"), b" two").await.unwrap();
     assert_eq!(fs.read_to_string(&p("sub/b.txt")).await.unwrap(), "one two");
     assert_eq!(std::fs::read_to_string(p("sub/b.txt")).unwrap(), "one two");
+    let b = p("sub/b.txt");
+    let head = |max| fs.read_head(&b, max);
+    assert_eq!(
+        (head(3).await.unwrap(), head(99).await.unwrap()),
+        (b"one".to_vec(), b"one two".to_vec())
+    );
     assert_eq!(fs.stat(&p("sub/b.txt")).await.unwrap().size, 7);
     assert!(fs.write(&p("nope/x"), b"x").await.is_err());
 
