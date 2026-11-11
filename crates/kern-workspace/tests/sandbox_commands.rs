@@ -138,6 +138,49 @@ async fn a_command_gets_what_a_pipe_feeds_it_byte_for_byte() {
 }
 
 #[tokio::test]
+async fn every_sandbox_has_xan_over_its_own_files_and_pipes() {
+    let (_t, dir) = tempdir();
+    std::fs::write(dir.join("sales.csv"), "region,amount\nnorth,120\nsouth,80\nnorth,30\n").unwrap();
+    let ws = sandbox(&dir).await;
+    assert!(ws.prompt_note().contains("xan does CSV"));
+    let r = ws
+        .shell(
+            "xan groupby region 'sum(amount) as total' sales.csv | xan sort -s total -NR > /tmp/t.csv; \
+             cat /tmp/t.csv; xan filter 'amount > 50' < sales.csv | xan count",
+            opts(&dir),
+        )
+        .await;
+    assert_eq!((r.stdout.as_str(), r.stderr.as_str()), ("region,total\nnorth,150\nsouth,80\n2\n", ""));
+    // A file the shell wrote (in the overlay, not on disk) is one xan reads.
+    let r = ws.shell("printf 'a\\n1\\n2\\n' > n.csv && xan agg 'sum(a)' n.csv", opts(&dir)).await;
+    assert_eq!(r.stdout, "sum(a)\n3\n");
+    let r = ws.shell("xan filter 'nope > 1' sales.csv; echo $?", opts(&dir)).await;
+    assert!(r.stderr.contains("no column `nope`"), "{r:?}");
+    assert_eq!(r.stdout, "1\n");
+}
+
+/// A host's own `xan`.
+struct OtherXan;
+
+#[async_trait]
+impl ShellCommand for OtherXan {
+    fn name(&self) -> &str {
+        "xan"
+    }
+    async fn run(&self, _call: ShellCall) -> ExecResult {
+        ExecResult { stdout: "the host's\n".into(), ..Default::default() }
+    }
+}
+
+#[tokio::test]
+async fn a_hosts_xan_replaces_the_sandboxs() {
+    let (_t, dir) = tempdir();
+    let ws = SandboxWorkspace::over(Arc::new(kern_core::fs::MemFs::new())).with_command(Arc::new(OtherXan));
+    assert_eq!(ws.shell("xan count", opts(&dir)).await.stdout, "the host's\n");
+    assert!(!ws.prompt_note().contains("xan does CSV"));
+}
+
+#[tokio::test]
 async fn the_hosts_variables_win_over_the_shells_own() {
     let (_t, dir) = tempdir();
     let env = ChildEnv::new(

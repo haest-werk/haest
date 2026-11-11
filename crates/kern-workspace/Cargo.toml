@@ -16,6 +16,9 @@ async-trait = { workspace = true }
 bashkit = { version = "=0.20.3", default-features = false, features = ["realfs", "jq"] }
 similar = "3"
 libc = "0.2"
+# xan (sandbox/xan): RFC 4180 CSV, and its =~ / match().
+csv = "1"
+regex = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

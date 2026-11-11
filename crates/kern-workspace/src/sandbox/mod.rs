@@ -10,11 +10,13 @@
 //! PLUG POINT: [`SandboxWorkspace::over`] puts the same sandboxed bash over a
 //! host's OWN [`Fs`], so the file the agent writes with Write is the file `cat`
 //! shows, wherever the host keeps it. [`SandboxWorkspace::with_command`] adds a
-//! command to the shell (kern-code's `js`).
+//! command to the shell (kern-code's `js`). Every sandbox has `xan` (CSV verbs,
+//! `xan/`) beyond bashkit's builtins.
 
 mod commands;
 mod exec;
 mod mounts;
+mod xan;
 
 use std::{io, sync::Arc};
 
@@ -36,6 +38,12 @@ use exec::Shell;
 
 /// What the shell is, for every sandbox. Each added command's own note follows it.
 const SHELL_NOTE: &str = "Bash is a simulated shell: coreutils, grep, rg, sed, awk, jq, find, diff, tar and friends, but NO git, bun, node, npm, python or network, and no other real programs (for a web page, use the WebFetch tool -- it runs outside the sandbox).";
+
+/// The commands every sandbox has beyond bashkit's builtins (`xan`). A host's
+/// command of the same name replaces one.
+fn own_commands() -> Vec<Arc<dyn ShellCommand>> {
+    vec![xan::command()]
+}
 
 /// Where edits go in the default sandbox, and how they reach the disk.
 const OVERLAY_NOTE: &str = "Reads come from the real project; every file you write or edit lives in memory until the human reviews it with /changes and puts it on disk with /apply -- otherwise it is discarded when this conversation ends. When you finish edits worth keeping, tell the human to run /changes and /apply. If the task needs real builds, tests or git, say so plainly -- the human can relaunch this conversation with the real file system.";
@@ -64,7 +72,7 @@ impl SandboxWorkspace {
             fs: Arc::new(KernFsOverBashkit::new(shell_fs.clone())),
             shell_fs,
             note: None,
-            commands: Vec::new(),
+            commands: own_commands(),
             env: ChildEnv::default(),
             changes: Some(changes),
         })
@@ -78,7 +86,7 @@ impl SandboxWorkspace {
             shell_fs: Arc::new(BashkitFsOverKern::new(fs.clone())),
             fs,
             note: None,
-            commands: Vec::new(),
+            commands: own_commands(),
             env: ChildEnv::default(),
             changes: None,
         }

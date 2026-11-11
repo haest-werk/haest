@@ -68,7 +68,11 @@ Behaviour comes from there, file by file, tests included.
 | brain decides each run's tools and caps itself | `settings::Settings` written out in Rust, one per kind of run (no loader, nothing read) + `tools::builtin_tools_where` |
 
 Beyond brain's patches: `ShellCommand` (kern-core) + `SandboxWorkspace::with_command`
-let a host add its own commands to the sandbox shell (the CLI adds `js`).
+let a host add its own commands to the sandbox shell (the CLI adds `js`). Every
+sandbox has `xan` (`sandbox/xan/`, 2026-11-11): the CSV verbs TS kern's just-bash had
+and brain's skills teach (headers, count, head, select, filter, sort, groupby, agg,
+stats, frequency) with the part of moonblade's expressions they need; bashkit has
+only a line-based `csv`.
 Every row is exercised by `crates/kern-lib/examples/brain/` against fakes
 (`cargo run -p kern-lib --example brain`).
 
