@@ -183,7 +183,7 @@ impl Tool for CodeTool {
             media: tally.seen,
             cost_usd: nonzero(tally.cost_usd),
             child_cost_usd: nonzero(tally.child_cost_usd),
-            result: None,
+            ..Default::default()
         })
     }
 }

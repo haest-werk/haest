@@ -52,6 +52,11 @@ pub struct ToolOutput {
     /// The tool already fit `content` to its own budget: the generic spill must not touch it.
     #[serde(default)]
     pub sized: bool,
+    /// The finished call's title for a host's display, when only the outcome can
+    /// tell ("Notified you: X", "Took you to X"); None = the host's own title for
+    /// the call. The model never sees it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 impl ToolOutput {
@@ -70,6 +75,10 @@ impl ToolOutput {
     }
     pub fn with_result(mut self, result: Value) -> Self {
         self.result = Some(result);
+        self
+    }
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
         self
     }
 }
@@ -283,5 +292,17 @@ mod tests {
         assert!(cut);
         assert!(t.starts_with("ab") && t.ends_with("ij") && t.contains("6 characters truncated"));
         assert_eq!(truncate_middle("short", 10), ("short".to_string(), false));
+    }
+
+    #[test]
+    fn a_title_is_the_hosts_and_absent_unless_set() {
+        let plain = serde_json::to_value(ToolOutput::text("sent")).unwrap();
+        assert!(plain.get("title").is_none());
+        let titled = ToolOutput::text("sent").with_title("Notified you: done");
+        assert_eq!(
+            serde_json::to_value(&titled).unwrap()["title"],
+            "Notified you: done"
+        );
+        assert_eq!(titled.content, "sent");
     }
 }
