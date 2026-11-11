@@ -6,7 +6,7 @@
 //! PLUG POINT: implement [`ShellCommand`] and give it to a sandbox
 //! (`kern_workspace::SandboxWorkspace::with_command`).
 
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Instant};
+use std::{borrow::Cow, collections::BTreeMap, path::PathBuf, sync::Arc, time::Instant};
 
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
@@ -20,8 +20,9 @@ pub struct ShellCall {
     pub cwd: PathBuf,
     /// The shell's exported variables.
     pub env: BTreeMap<String, String>,
-    /// What a pipe feeds it (`a | cmd`); None when nothing does.
-    pub stdin: Option<String>,
+    /// What a pipe feeds it (`a | cmd`), byte for byte (a document piped into a
+    /// converter is binary); None when nothing does. [`ShellCall::stdin_text`] for text.
+    pub stdin: Option<Vec<u8>>,
     /// The shell's files, as kern's tools see them.
     pub fs: Arc<dyn Fs>,
     /// The shell call's interrupt.
@@ -29,6 +30,13 @@ pub struct ShellCall {
     /// The shell call's deadline. A CPU-bound command never yields to a timer,
     /// so it checks this clock itself.
     pub ends_at: Instant,
+}
+
+impl ShellCall {
+    /// The stdin as text (invalid UTF-8 replaced).
+    pub fn stdin_text(&self) -> Option<Cow<'_, str>> {
+        self.stdin.as_deref().map(String::from_utf8_lossy)
+    }
 }
 
 #[async_trait]

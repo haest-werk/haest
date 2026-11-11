@@ -28,7 +28,7 @@ impl Builtin for HostCommand {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
-            stdin: ctx.stdin.map(|s| s.text_lossy().into_owned()),
+            stdin: ctx.stdin.map(|s| s.as_bytes().to_vec()),
             fs: self.fs.clone(),
             cancel: self.cancel.clone(),
             ends_at: self.ends_at,

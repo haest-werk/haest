@@ -53,9 +53,10 @@ fn shell(world: &Shell<'_>, opts: &ExecOptions, ends_at: Instant) -> Bash {
         };
         builder = builder.builtin(command.name(), Box::new(builtin));
     }
+    // bashkit sets `$USER` from the user name at build: a host's own wins.
     builder
         .cwd(opts.cwd.clone())
-        .username(USER)
+        .username(world.env.get("USER").unwrap_or(USER))
         .limits(
             ExecutionLimits::new()
                 .timeout(HARD_DEADLINE)

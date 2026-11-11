@@ -12,6 +12,7 @@ use std::{
 use async_trait::async_trait;
 use common::{opts, tempdir};
 use kern_core::{
+    ChildEnv,
     shell_command::{ShellCall, ShellCommand},
     workspace::{ExecResult, Workspace},
 };
@@ -34,7 +35,7 @@ impl ShellCommand for Shout {
     }
     async fn run(&self, call: ShellCall) -> ExecResult {
         *self.deadline.lock().unwrap() = Some(call.ends_at);
-        let stdin = call.stdin.unwrap_or_default();
+        let stdin = call.stdin_text().unwrap_or_default().into_owned();
         let seen = format!("{}|{}\n", call.args.join(","), stdin.trim());
         call.fs
             .write(&call.cwd.join("seen.txt"), seen.as_bytes())
@@ -102,4 +103,49 @@ async fn its_note_joins_the_prompt_and_a_later_command_by_the_same_name_replaces
     assert!(!ws.prompt_note().contains("shout"));
     let r = ws.shell("echo hi | shout", opts(&dir)).await;
     assert_eq!((r.stdout.as_str(), r.exit_code), ("", 0));
+}
+
+/// Keeps the bytes a pipe fed it.
+#[derive(Default)]
+struct Taste {
+    fed: Mutex<Option<Vec<u8>>>,
+}
+
+#[async_trait]
+impl ShellCommand for Taste {
+    fn name(&self) -> &str {
+        "taste"
+    }
+    async fn run(&self, call: ShellCall) -> ExecResult {
+        *self.fed.lock().unwrap() = call.stdin;
+        ExecResult::default()
+    }
+}
+
+#[tokio::test]
+async fn a_command_gets_what_a_pipe_feeds_it_byte_for_byte() {
+    // A document piped into a converter is binary: not UTF-8, NULs inside.
+    let bytes: &[u8] = &[0x50, 0x4b, 0x03, 0x04, 0xff, 0x00, 0xc3, 0x28, 0x80];
+    let (_t, dir) = tempdir();
+    std::fs::write(dir.join("book.xlsx"), bytes).unwrap();
+    let taste = Arc::new(Taste::default());
+    let ws = sandbox(&dir).await.with_command(taste.clone());
+    let r = ws.shell("cat book.xlsx | taste", opts(&dir)).await;
+    assert_eq!(r.exit_code, 0, "{r:?}");
+    assert_eq!(taste.fed.lock().unwrap().as_deref(), Some(bytes));
+    ws.shell("taste", opts(&dir)).await;
+    assert_eq!(*taste.fed.lock().unwrap(), None);
+}
+
+#[tokio::test]
+async fn the_hosts_variables_win_over_the_shells_own() {
+    let (_t, dir) = tempdir();
+    let env = ChildEnv::new(
+        [("USER", "brain"), ("HOME", "/tmp")].map(|(k, v)| (k.to_string(), v.to_string())),
+    );
+    let ws = sandbox(&dir).await.with_env(env);
+    let r = ws.shell("echo $USER $HOME", opts(&dir)).await;
+    assert_eq!(r.stdout, "brain /tmp\n");
+    let bare = sandbox(&dir).await;
+    assert_eq!(bare.shell("echo $USER", opts(&dir)).await.stdout, "user\n");
 }
