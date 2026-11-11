@@ -107,7 +107,6 @@ after a closing newline.
 | G3 | MCP and compaction pass their tests but have not run against a live server / a real long session |
 | G4 | `mv` of a directory across bashkit mounts fails |
 | G5 | A PDF returned by an MCP tool stays text; it does not become media |
-| G6 | The repo has no git remote |
 | G7 | The `claude` profile does not read Claude Code's agents, commands, hooks, permissions, user or plugin MCP servers, `@` imports, rules, memory or output styles (D11) |
 
 Not in this plan (the consumers, each its own job once the library holds):

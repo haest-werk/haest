@@ -45,12 +45,15 @@ there. The rest is opt-in:
 | `runtime` | `kern::runtime` (the conversation built from what it is handed) and everything above but `config` | no |
 
 ```toml
-kern-lib = { git = "...", package = "kern-lib" }
+kern-lib = { git = "ssh://git@github.com/icanhasjonas/kern.git", package = "kern-lib" }
 # the whole conversation with kern's own files, variables and flags (the CLI's way)
-kern-lib = { git = "...", package = "kern-lib", features = ["runtime", "config"] }
+kern-lib = { git = "ssh://git@github.com/icanhasjonas/kern.git", package = "kern-lib", features = ["runtime", "config"] }
 # a host with its own transport, files and tools (the brain example)
-kern-lib = { git = "...", package = "kern-lib", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
+kern-lib = { git = "ssh://git@github.com/icanhasjonas/kern.git", package = "kern-lib", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
+
+The repo is private: cargo fetches it over ssh with your GitHub key (the
+agent's, no `git-fetch-with-cli` needed). Add `rev = "<commit>"` to pin one.
 
 ## Run the CLI
 
