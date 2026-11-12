@@ -7,7 +7,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use kern_core::{
     fs::Fs,
-    skills::{Skill, load_skill_body},
+    skills::{DiskSkills, Skill, SkillSet},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str},
 };
 use serde_json::{Value, json};
@@ -15,21 +15,34 @@ use serde_json::{Value, json};
 /// What the Skill tool reads.
 #[derive(Clone)]
 pub struct SkillToolOptions {
-    /// The current list, asked on every call.
-    skills: Arc<dyn Fn() -> Vec<Skill> + Send + Sync>,
-    /// The body is the host's reading: a user skill lives outside any sandbox mount.
-    host_fs: Arc<dyn Fs>,
+    /// The skills, asked on every call.
+    set: Arc<dyn SkillSet>,
+    /// The parameter lists the offered names (`enum`): a weak model can't misspell one.
+    name_enum: bool,
 }
 
 impl SkillToolOptions {
+    /// SKILL.md files: `skills` is the current list, the bodies are read from
+    /// `host_fs` (a user skill lives outside any sandbox mount).
     pub fn new(
         skills: impl Fn() -> Vec<Skill> + Send + Sync + 'static,
         host_fs: Arc<dyn Fs>,
     ) -> Self {
+        Self::over(Arc::new(DiskSkills::new(skills, host_fs)))
+    }
+
+    /// A host's own skills.
+    pub fn over(set: Arc<dyn SkillSet>) -> Self {
         Self {
-            skills: Arc::new(skills),
-            host_fs,
+            set,
+            name_enum: false,
         }
+    }
+
+    /// Name the offered skills in the parameter's `enum`.
+    pub fn with_name_enum(mut self) -> Self {
+        self.name_enum = true;
+        self
     }
 }
 
@@ -51,39 +64,48 @@ impl Tool for SkillTool {
         true
     }
     fn description(&self) -> String {
-        "Load a skill by name. Returns its full instructions; follow them. Only names listed under \"# Skills\" in the system prompt are valid.".into()
+        "Load a skill by name (your instructions list the skills). Call it before you start a task a skill is for; it returns the skill's instructions: follow them.".into()
     }
     fn parameters(&self) -> Value {
+        let mut skill = json!({"type": "string", "description": "The skill name"});
+        if self.0.name_enum {
+            let names: Vec<String> = self.0.set.offered().into_iter().map(|c| c.name).collect();
+            skill["enum"] = json!(names);
+        }
         json!({
             "type": "object",
             "properties": {
-                "skill": {"type": "string", "description": "The skill name"},
+                "skill": skill,
                 "args": {"type": "string", "description": "Optional arguments for the skill"}
             },
             "required": ["skill"]
         })
     }
     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let raw = req_str(&input, "skill")?;
-        let name = raw.strip_prefix('/').unwrap_or(raw);
-        let offered: Vec<Skill> = (self.0.skills)()
-            .into_iter()
-            .filter(|s| s.model_invocable)
-            .collect();
-        let Some(skill) = offered.iter().find(|s| s.name == name) else {
-            let known: Vec<&str> = offered.iter().map(|s| s.name.as_str()).collect();
-            let known = if known.is_empty() {
+        let raw = req_str(&input, "skill")?.trim();
+        let asked = raw.strip_prefix('/').unwrap_or(raw);
+        let offered: Vec<String> = self.0.set.offered().into_iter().map(|c| c.name).collect();
+        // Exact first; else the one name that differs only in case.
+        let name = offered.iter().find(|n| *n == asked).or_else(|| {
+            let mut alike = offered.iter().filter(|n| n.eq_ignore_ascii_case(asked));
+            alike.next().filter(|_| alike.next().is_none())
+        });
+        let Some(name) = name else {
+            let known = if offered.is_empty() {
                 "(none)".to_string()
             } else {
-                known.join(", ")
+                offered.join(", ")
             };
             return Err(ToolError::Input(format!(
-                "No skill named \"{name}\". Available: {known}"
+                "No skill named \"{asked}\". Available: {known}"
             )));
         };
-        let body =
-            load_skill_body(self.0.host_fs.as_ref(), skill, opt_str(&input, "args")?).await?;
-        Ok(ToolOutput::text(body))
+        let body = self.0.set.load(name, opt_str(&input, "args")?).await?;
+        // Read whole: a skill's instructions spilled to a file would go unread.
+        Ok(ToolOutput {
+            sized: true,
+            ..ToolOutput::text(body)
+        })
     }
 }
 
@@ -147,5 +169,38 @@ mod tests {
         };
         // The refusal names what the model may call, and only that.
         assert!(msg.contains("deploy") && !msg.contains("secret"));
+    }
+
+    #[tokio::test]
+    async fn a_hosts_own_skills_load_through_the_tool_named_by_an_enum() {
+        use kern_core::skills::{InlineSkill, InlineSkills, SkillCard};
+        let notes = InlineSkill {
+            card: SkillCard {
+                name: "notes".into(),
+                description: "Mine.".into(),
+                when: String::new(),
+                origin: Some("personal".into()),
+            },
+            body: "My way.".into(),
+        };
+        let set = Arc::new(InlineSkills::merged([vec![notes]]));
+        let t = create_skill_tool(SkillToolOptions::over(set.clone()).with_name_enum());
+        assert_eq!(
+            t.parameters()["properties"]["skill"]["enum"],
+            json!(["notes"])
+        );
+        let plain = create_skill_tool(SkillToolOptions::over(set));
+        assert!(
+            plain.parameters()["properties"]["skill"]
+                .get("enum")
+                .is_none()
+        );
+        let ctx = ToolContext::new("/w", Arc::new(ShutWorkspace));
+        let out = t
+            .execute(input(json!({"skill": " Notes "})), &ctx)
+            .await
+            .unwrap();
+        assert_eq!(out.content, "Skill notes (personal): Mine.\n\nMy way.");
+        assert!(out.sized, "a skill is read whole, never spilled to a file");
     }
 }

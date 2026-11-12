@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use super::*;
 use crate::fs::MemFs;
@@ -82,10 +82,102 @@ async fn the_prompt_lists_model_invocable_skills_only_never_bodies() {
         ),
     ]);
     let block = skills_prompt_block(&discover_skills(&fs, &opts()).await);
-    assert!(block.contains("visible"));
-    assert!(!block.contains("hidden"));
-    assert!(!block.contains("SECRET BODY"));
+    assert_eq!(
+        block,
+        "# Skills\nSkills are packaged instructions for specific tasks. When a task matches a skill below, call the `Skill` tool with its name BEFORE doing the task, then follow what it returns.\n\n- visible: does visible"
+    );
     assert_eq!(skills_prompt_block(&[]), "");
+}
+
+fn card(name: &str, origin: Option<&str>, when: &str) -> SkillCard {
+    SkillCard {
+        name: name.into(),
+        description: format!("{}'s {name}", origin.unwrap_or("nobody")),
+        when: when.into(),
+        origin: origin.map(String::from),
+    }
+}
+
+fn inline(name: &str, origin: &str, body: &str) -> InlineSkill {
+    InlineSkill {
+        card: card(name, Some(origin), ""),
+        body: body.into(),
+    }
+}
+
+#[test]
+fn a_hosts_cards_list_their_origin_and_when_under_its_own_intro() {
+    let cards = [
+        card("standup", Some("from /team/"), "a standup"),
+        card("typst", None, ""),
+    ];
+    assert_eq!(
+        skill_cards_block("Skills: pick one.", &cards),
+        "Skills: pick one.\n- standup (from /team/): from /team/'s standup Use when: a standup\n- typst: nobody's typst"
+    );
+    assert_eq!(skill_cards_block("Skills: pick one.", &[]), "");
+}
+
+#[tokio::test]
+async fn inline_skills_keep_the_first_of_a_name_and_load_their_body() {
+    let set = InlineSkills::merged([
+        vec![inline("standup", "from /team/", "TEAM")],
+        vec![
+            inline("standup", "personal", "MINE"),
+            inline("notes", "personal", "MY NOTES"),
+        ],
+        vec![
+            inline("board", "built in", "BOARD"),
+            inline("notes", "built in", "THEIRS"),
+        ],
+    ]);
+    let offered: Vec<(String, Option<String>)> = set
+        .offered()
+        .into_iter()
+        .map(|c| (c.name, c.origin))
+        .collect();
+    let want = |n: &str, o: &str| (n.to_string(), Some(o.to_string()));
+    assert_eq!(
+        offered,
+        [
+            want("board", "built in"),
+            want("notes", "personal"),
+            want("standup", "from /team/")
+        ]
+    );
+    assert_eq!(
+        set.load("notes", None).await.unwrap(),
+        "Skill notes (personal): personal's notes\n\nMY NOTES"
+    );
+    assert_eq!(
+        set.load("standup", Some(" friday ")).await.unwrap(),
+        "Skill standup (from /team/): from /team/'s standup\n\nARGUMENTS: friday\n\nTEAM"
+    );
+    let missing = set.load("nope", None).await.unwrap_err();
+    assert_eq!(missing.kind(), io::ErrorKind::NotFound);
+}
+
+#[tokio::test]
+async fn disk_skills_offer_what_the_model_may_invoke_and_load_like_before() {
+    let fs: Arc<dyn Fs> = Arc::new(fs_with(&[
+        ("/r/home/.claude/skills", "visible", "", "THE BODY"),
+        (
+            "/r/home/.claude/skills",
+            "hidden",
+            "disable-model-invocation: true\n",
+            "NOPE",
+        ),
+    ]));
+    let skills = discover_skills(fs.as_ref(), &opts()).await;
+    let set = DiskSkills::new(move || skills.clone(), fs);
+    let offered: Vec<String> = set.offered().into_iter().map(|c| c.name).collect();
+    assert_eq!(offered, ["visible"]);
+    let body = set.load("visible", Some("a b")).await.unwrap();
+    assert!(
+        body.contains("THE BODY") && body.contains("ARGUMENTS: a b"),
+        "{body}"
+    );
+    assert!(set.load("hidden", None).await.is_err());
 }
 
 #[tokio::test]

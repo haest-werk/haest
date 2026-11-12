@@ -190,7 +190,13 @@ pub trait Tool: Send + Sync {
 /// Where the loop gets its tools, asked again before every model call (deferred
 /// tools and MCP servers change the list mid-conversation).
 pub trait ToolSource: Send + Sync {
+    /// The tools the next model call advertises.
     fn tools(&self) -> Vec<Arc<dyn Tool>>;
+    /// The tools a call may run: the advertised ones, plus any the source keeps
+    /// back (a deferred tool the model calls by name runs instead of failing).
+    fn callable(&self) -> Vec<Arc<dyn Tool>> {
+        self.tools()
+    }
 }
 
 impl ToolSource for Vec<Arc<dyn Tool>> {

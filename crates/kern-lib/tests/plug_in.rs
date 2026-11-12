@@ -12,6 +12,9 @@
 //! | `SubagentHub` over the host's `SubagentHost` | `kerns_own_hub_runs_a_sub_agent_with_the_hosts_tool_and_command` |
 //! | `Inbox`: a background sub-agent's answer | `a_background_sub_agent_answers_through_the_hosts_inbox` |
 //! | `AgentHooks::before_model_call` refusing | `a_hook_may_refuse_a_model_call_and_end_the_turn` |
+//! | `SkillSet`: the host's own skills, kern's Skill tool and prompt list | `the_hosts_own_skills_load_through_kerns_skill_tool` |
+//! | `DeferredTools`: the host's own tools behind ToolSearch, grow | `a_host_defers_its_own_tools_and_a_loaded_one_joins_the_list` |
+//! | the same, proxy (CallTool) | `in_proxy_mode_the_list_never_changes_and_call_tool_runs_a_deferred_one` |
 
 use std::{
     collections::VecDeque,
@@ -28,13 +31,16 @@ use kern::{
     Agent, AgentControl, AgentDeps, AgentHooks, AgentOptions, AssistantMessage, AssistantPart,
     Effort, ExecResult, Fs, LoopEvent, MemFs, Message, Provider, ProviderEvent, ProviderRequest,
     ResolvedModel, StopReason, ToolCall, TurnEnd, Usage, Workspace,
+    deferred_tools::{DeferMode, ToolDeferral},
     provider::ProviderStream,
     shell_command::{ShellCall, ShellCommand},
+    skills::{InlineSkill, InlineSkills, SkillCard, SkillSet, skill_cards_block},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput, req_str},
     tools::{
-        BuiltinOptions, Inbox,
+        BuiltinOptions, Inbox, SkillToolOptions,
         agents::{AgentRef, SubagentCaps, SubagentEvent, SubagentHost, SubagentHub},
-        builtin_tools_where,
+        builtin_tools_where, create_skill_tool,
+        tool_search::DeferredTools,
     },
     workspace::SandboxWorkspace,
 };
@@ -653,4 +659,186 @@ async fn a_hook_may_refuse_a_model_call_and_end_the_turn() {
         })
         .collect();
     assert_eq!(kinds, ["user", "assistant", "tool"]);
+}
+
+// ---------------------------------------------------------------------------
+// The host's own skills (not SKILL.md files on disk) through kern's Skill tool
+// and prompt list; the host's own tools deferred behind ToolSearch.
+
+fn skill(name: &str, origin: &str, description: &str, when: &str, body: &str) -> InlineSkill {
+    InlineSkill {
+        card: SkillCard {
+            name: name.into(),
+            description: description.into(),
+            when: when.into(),
+            origin: Some(origin.into()),
+        },
+        body: body.into(),
+    }
+}
+
+#[tokio::test]
+async fn the_hosts_own_skills_load_through_kerns_skill_tool() {
+    let mut r = rig(
+        vec![
+            vec![call("c1", "Skill", json!({"skill": "standup"}))],
+            say("Did it your way."),
+        ],
+        vec![],
+        0,
+    );
+    // The person's own standup wins over the built-in one of that name.
+    let set = Arc::new(InlineSkills::merged([
+        vec![skill(
+            "standup",
+            "yours",
+            "How you run a standup",
+            "a standup",
+            "1. What I did.",
+        )],
+        vec![
+            skill("standup", "built in", "A standup", "", "THE DEFAULT"),
+            skill("board", "built in", "Keep a board", "", "Columns."),
+        ],
+    ]));
+    let intro = "Skills: load one with Skill before you start.";
+    let mut deps = r.app.deps();
+    let mut tools = r.app.base_tools();
+    tools.push(create_skill_tool(
+        SkillToolOptions::over(set.clone()).with_name_enum(),
+    ));
+    deps.tools = Arc::new(tools);
+    deps.system_prompt = Arc::new(format!(
+        "{}\n\n{}",
+        r.app.prompt(),
+        skill_cards_block(intro, &set.offered())
+    ));
+    r.agent = Agent::new(deps, AgentOptions::new(MODEL));
+
+    assert_eq!(
+        r.turn("Standup time.").await,
+        TurnEnd::new(StopReason::EndTurn)
+    );
+    let first = &r.app.provider.requests(false)[0];
+    assert!(
+        first.system.contains(
+            "Skills: load one with Skill before you start.\n- board (built in): Keep a board\n- standup (yours): How you run a standup Use when: a standup"
+        ),
+        "{}",
+        first.system
+    );
+    assert!(
+        !first.system.contains("1. What I did."),
+        "bodies never ride in the prompt"
+    );
+    assert_eq!(
+        r.output("c1").content,
+        "Skill standup (yours): How you run a standup\n\n1. What I did."
+    );
+}
+
+/// The rig's agent over `source` instead of its plain list.
+fn deferring(r: &mut Rig, source: DeferredTools) {
+    let mut deps = r.app.deps();
+    deps.tools = Arc::new(source);
+    r.agent = Agent::new(deps, AgentOptions::new(MODEL));
+}
+
+#[tokio::test]
+async fn a_host_defers_its_own_tools_and_a_loaded_one_joins_the_list() {
+    let mut r = rig(
+        vec![
+            vec![call("c1", "ToolSearch", json!({"query": "figure records"}))],
+            vec![call("c2", "lookup", json!({"key": "q3"}))],
+            // Never searched for: called by name, it runs anyway.
+            vec![call(
+                "c3",
+                "Write",
+                json!({"file_path": "/work/q3.md", "content": "up"}),
+            )],
+            say("Q3 is up 12%, written down."),
+        ],
+        vec![],
+        0,
+    );
+    let tools = r.app.base_tools();
+    deferring(
+        &mut r,
+        DeferredTools::new(
+            tools,
+            ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Bash".to_string()]),
+        ),
+    );
+    assert_eq!(
+        r.turn("How was Q3?").await,
+        TurnEnd::new(StopReason::EndTurn)
+    );
+
+    let seen = r.app.provider.requests(false);
+    assert_eq!(
+        seen[0].tools,
+        ["Bash", "ToolSearch"],
+        "only Bash and the search go out"
+    );
+    let found = &r.output("c1").content;
+    assert!(found.contains("\"name\":\"lookup\""), "{found}");
+    assert_eq!(
+        seen[1].tools,
+        ["Bash", "ToolSearch", "lookup"],
+        "a loaded tool joins"
+    );
+    assert_eq!(r.output("c2").content, "up 12%");
+    assert!(!r.output("c3").is_error, "{:?}", r.output("c3"));
+    assert_eq!(r.file("/work/q3.md").await, "up");
+    // Loaded tools keep the host's order: the list depends on what is loaded,
+    // never on the order it loaded in.
+    assert_eq!(
+        seen[3].tools,
+        ["Bash", "ToolSearch", "Write", "lookup"],
+        "a tool called by name counts as loaded"
+    );
+}
+
+#[tokio::test]
+async fn in_proxy_mode_the_list_never_changes_and_call_tool_runs_a_deferred_one() {
+    let mut r = rig(
+        vec![
+            vec![call("c1", "ToolSearch", json!({"query": "select:lookup"}))],
+            vec![call(
+                "c2",
+                "CallTool",
+                json!({"name": "lookup", "input": {"key": "q2"}}),
+            )],
+            say("Q2 was flat."),
+        ],
+        vec![],
+        0,
+    );
+    let tools = r.app.base_tools();
+    deferring(
+        &mut r,
+        DeferredTools::new(
+            tools,
+            ToolDeferral::new(DeferMode::Proxy).deferring_all_except(["Bash".to_string()]),
+        ),
+    );
+    assert_eq!(r.turn("And Q2?").await, TurnEnd::new(StopReason::EndTurn));
+    let lists: Vec<Vec<String>> = r
+        .app
+        .provider
+        .requests(false)
+        .into_iter()
+        .map(|s| s.tools)
+        .collect();
+    assert!(
+        lists
+            .iter()
+            .all(|l| l == &["Bash", "ToolSearch", "CallTool"]),
+        "the cached prefix holds: {lists:?}"
+    );
+    let c2 = r.output("c2");
+    assert_eq!(
+        (c2.content.as_str(), c2.title.as_deref()),
+        ("flat", Some("Looked up q2"))
+    );
 }

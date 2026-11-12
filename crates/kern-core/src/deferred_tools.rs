@@ -10,12 +10,26 @@
 //!          changes the list -- and tools sit at the FRONT of the cached prefix.
 //!   off    every tool, every call (the old behaviour).
 //!
-//! Built-in tools are never deferred: they are few, small and used constantly.
+//! What defers: MCP tools by default (built-ins are few, small and used
+//! constantly). A host with many tools of its own defers every tool but a list
+//! it always needs ([`ToolDeferral::deferring_all_except`]).
+//!
+//! A deferred tool the model calls by name, without ToolSearch, still runs
+//! ([`ToolDeferral::callable`]) and counts as loaded: a prompt that names a tool,
+//! or a resumed conversation that called one ([`ToolDeferral::load_called`]),
+//! never meets "Unknown tool".
+//!
 //! The ToolSearch / CallTool tools themselves live in `kern-tools` (`tool_search`).
 
 use std::{collections::HashSet, sync::Arc, sync::Mutex};
 
-use crate::tool::Tool;
+use async_trait::async_trait;
+use serde_json::Value;
+
+use crate::{
+    messages::Message,
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
+};
 
 crate::word_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +41,8 @@ crate::word_enum! {
 }
 
 const MAX_MATCHES: usize = 5;
+
+type Tools = Vec<Arc<dyn Tool>>;
 
 /// MCP tools a conversation host needs on every turn, by name suffix: a reply to
 /// another conversation must not wait on a ToolSearch.
@@ -73,6 +89,8 @@ pub struct ToolDeferral {
     mode: DeferMode,
     loaded: Mutex<HashSet<String>>,
     always_loaded: Vec<String>,
+    /// `Some`: every tool defers but these names. `None`: MCP tools only.
+    all_but: Option<HashSet<String>>,
 }
 
 impl ToolDeferral {
@@ -81,12 +99,20 @@ impl ToolDeferral {
             mode,
             loaded: Mutex::default(),
             always_loaded: DEFAULT_ALWAYS_LOADED.map(String::from).to_vec(),
+            all_but: None,
         }
     }
 
     /// Name suffixes of MCP tools that are never deferred (replaces the default).
     pub fn with_always_loaded(mut self, suffixes: impl IntoIterator<Item = String>) -> Self {
         self.always_loaded = suffixes.into_iter().collect();
+        self
+    }
+
+    /// Defer EVERY tool, the host's own too, except these names (the ones
+    /// nearly every turn uses). MCP tools matching [`Self::with_always_loaded`] stay too.
+    pub fn deferring_all_except(mut self, names: impl IntoIterator<Item = String>) -> Self {
+        self.all_but = Some(names.into_iter().collect());
         self
     }
 
@@ -100,13 +126,63 @@ impl ToolDeferral {
         loaded.extend(names.into_iter().map(Into::into));
     }
 
+    /// Every tool `history` called counts as loaded: a resumed conversation
+    /// keeps the tools it was using.
+    pub fn load_called(&self, history: &[Message]) {
+        let called = history.iter().flat_map(|m| match m {
+            Message::Assistant(a) => a.tool_calls().map(|c| c.name.clone()).collect(),
+            _ => Vec::new(),
+        });
+        self.load(called);
+    }
+
     fn is_deferrable(&self, t: &dyn Tool) -> bool {
         let name = t.name();
-        name.starts_with("mcp__")
-            && !self
+        let mcp = name.starts_with("mcp__");
+        if mcp
+            && self
                 .always_loaded
                 .iter()
                 .any(|s| name.ends_with(s.as_str()))
+        {
+            return false;
+        }
+        match &self.all_but {
+            Some(keep) => !keep.contains(name),
+            None => mcp,
+        }
+    }
+
+    /// `all` split into (deferred, eager); `None` when nothing defers.
+    fn split(&self, all: &[Arc<dyn Tool>]) -> Option<(Tools, Tools)> {
+        if self.mode == DeferMode::Off {
+            return None;
+        }
+        let (deferred, eager): (Vec<_>, Vec<_>) = all
+            .iter()
+            .cloned()
+            .partition(|t| self.is_deferrable(t.as_ref()));
+        (!deferred.is_empty()).then_some((deferred, eager))
+    }
+
+    /// Every tool a call may run: the advertised ones and every deferred one,
+    /// which loads itself when the model calls it by name.
+    pub fn callable(
+        self: &Arc<Self>,
+        all: &[Arc<dyn Tool>],
+        deferral_tools: impl FnOnce(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>>,
+    ) -> Vec<Arc<dyn Tool>> {
+        let Some((deferred, mut out)) = self.split(all) else {
+            return all.to_vec();
+        };
+        out.extend(deferral_tools(&deferred));
+        out.extend(deferred.into_iter().map(|tool| {
+            Arc::new(Loading {
+                tool,
+                deferral: self.clone(),
+            }) as Arc<dyn Tool>
+        }));
+        out
     }
 
     /// The tools this call advertises, given every tool the agent has and the deferral tools to add.
@@ -115,16 +191,9 @@ impl ToolDeferral {
         all: &[Arc<dyn Tool>],
         deferral_tools: impl FnOnce(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>>,
     ) -> Vec<Arc<dyn Tool>> {
-        if self.mode == DeferMode::Off {
+        let Some((deferred, eager)) = self.split(all) else {
             return all.to_vec();
-        }
-        let (deferred, eager): (Vec<_>, Vec<_>) = all
-            .iter()
-            .cloned()
-            .partition(|t| self.is_deferrable(t.as_ref()));
-        if deferred.is_empty() {
-            return all.to_vec();
-        }
+        };
         let grown: Vec<Arc<dyn Tool>> = if self.mode == DeferMode::Grow {
             let loaded = self.loaded.lock().unwrap();
             deferred
@@ -139,6 +208,38 @@ impl ToolDeferral {
         out.extend(deferral_tools(&deferred));
         out.extend(grown);
         out
+    }
+}
+
+/// A deferred tool as a call runs it: called by name, it counts as loaded.
+struct Loading {
+    tool: Arc<dyn Tool>,
+    deferral: Arc<ToolDeferral>,
+}
+
+#[async_trait]
+impl Tool for Loading {
+    fn name(&self) -> &str {
+        self.tool.name()
+    }
+    fn description(&self) -> String {
+        self.tool.description()
+    }
+    fn parameters(&self) -> Value {
+        self.tool.parameters()
+    }
+    fn kind(&self) -> &str {
+        self.tool.kind()
+    }
+    fn read_only(&self) -> bool {
+        self.tool.read_only()
+    }
+    fn canonical_input(&self, input: &JsonMap) -> JsonMap {
+        self.tool.canonical_input(input)
+    }
+    async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        self.deferral.load([self.tool.name()]);
+        self.tool.execute(input, ctx).await
     }
 }
 

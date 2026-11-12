@@ -1,13 +1,14 @@
 //! ToolSearch (and, in proxy mode, CallTool): how a model reaches a deferred tool
-//! ([`kern_core::deferred_tools`]). ToolSearch's description carries the deferred
-//! tool NAMES, so the model knows what exists without paying for the schemas.
+//! ([`kern_core::deferred_tools`]). ToolSearch's description lists each deferred
+//! tool's name and first sentence, so the model knows what exists and what it is
+//! for without paying for the schemas.
 
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use kern_core::{
     deferred_tools::{DeferMode, ToolDeferral, search_tools},
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, req_str},
 };
 use serde_json::{Value, json};
 
@@ -21,6 +22,21 @@ fn schema_block(t: &dyn Tool) -> String {
         s(&t.parameters())
     )
 }
+
+/// What a deferred tool is for, in the line ToolSearch lists it on: its
+/// description's first sentence, at most [`HINT_CHARS`]. A bare name list
+/// leaves a weaker model guessing which tool to load.
+fn hint(description: &str) -> String {
+    let line = description.lines().next().unwrap_or("").trim();
+    let sentence = line.find(". ").map_or(line, |i| &line[..=i]);
+    if sentence.chars().count() <= HINT_CHARS {
+        return sentence.to_string();
+    }
+    let cut: String = sentence.chars().take(HINT_CHARS - 3).collect();
+    format!("{}...", cut.trim_end())
+}
+
+const HINT_CHARS: usize = 120;
 
 struct ToolSearch {
     deferral: Arc<ToolDeferral>,
@@ -44,10 +60,17 @@ impl Tool for ToolSearch {
         } else {
             "After loading, call it directly by its name."
         };
-        let names: Vec<&str> = self.deferred.iter().map(|t| t.name()).collect();
+        let lines: Vec<String> = self
+            .deferred
+            .iter()
+            .map(|t| match hint(&t.description()) {
+                h if h.is_empty() => format!("- {}", t.name()),
+                h => format!("- {}: {h}", t.name()),
+            })
+            .collect();
         format!(
-            "Load the full schema of deferred tools before using them. {how} Query \"select:name1,name2\" for exact tools, or keywords to search. Deferred tools: {}",
-            names.join(", ")
+            "Load the full schema of deferred tools before using them. {how} Query \"select:name1,name2\" for exact tools, or keywords to search. Deferred tools:\n{}",
+            lines.join("\n")
         )
     }
     fn parameters(&self) -> Value {
@@ -113,6 +136,38 @@ impl Tool for CallTool {
             _ => JsonMap::new(),
         };
         tool.execute(args, ctx).await
+    }
+}
+
+/// One agent's tool list behind its own deferral: what a host hands the loop
+/// (`AgentDeps::tools`) to defer some of its tools.
+pub struct DeferredTools {
+    tools: Vec<Arc<dyn Tool>>,
+    deferral: Arc<ToolDeferral>,
+}
+
+impl DeferredTools {
+    pub fn new(tools: Vec<Arc<dyn Tool>>, deferral: ToolDeferral) -> Self {
+        Self {
+            tools,
+            deferral: Arc::new(deferral),
+        }
+    }
+
+    /// Its deferral, e.g. to [`ToolDeferral::load_called`] a resumed history.
+    pub fn deferral(&self) -> &Arc<ToolDeferral> {
+        &self.deferral
+    }
+}
+
+impl ToolSource for DeferredTools {
+    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+        self.deferral
+            .advertise(&self.tools, deferral_tools(self.deferral.clone()))
+    }
+    fn callable(&self) -> Vec<Arc<dyn Tool>> {
+        self.deferral
+            .callable(&self.tools, deferral_tools(self.deferral.clone()))
     }
 }
 

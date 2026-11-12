@@ -119,6 +119,34 @@ fn the_messaging_tools_stay_loaded_so_a_channel_guide_can_name_them() {
     assert!(!shown.contains(&"mcp__x__weather".to_string()));
 }
 
+// A bare name list left gpt-6-luna guessing: it never loaded `open_page` to
+// take someone to a page. Each deferred tool gets its first sentence.
+#[test]
+fn tool_search_says_what_each_deferred_tool_is_for_in_one_short_line() {
+    let long = "x".repeat(300);
+    let mut tools = all();
+    tools.push(Arc::new(Fake(
+        "mcp__x__open_page",
+        "Take the person's tab to a page. Use it when they ask to go somewhere.\nMore.",
+    )));
+    tools.push(Arc::new(Fake(
+        "mcp__x__long",
+        Box::leak(long.into_boxed_str()),
+    )));
+    tools.push(Arc::new(Fake("mcp__x__bare", "")));
+    let d = deferral(DeferMode::Grow);
+    let text = find(&advertise(&d, &tools), "ToolSearch").description();
+    let lines: Vec<&str> = text.lines().skip_while(|l| !l.starts_with("- ")).collect();
+    assert_eq!(lines.len(), 5, "{text}");
+    assert_eq!(lines[0], "- mcp__x__weather: current weather for a city");
+    assert_eq!(
+        lines[2],
+        "- mcp__x__open_page: Take the person's tab to a page."
+    );
+    assert_eq!(lines[3], format!("- mcp__x__long: {}...", "x".repeat(117)));
+    assert_eq!(lines[4], "- mcp__x__bare");
+}
+
 #[tokio::test]
 async fn keyword_search_ranks_name_hits_over_description_hits() {
     let pool = &all()[1..];

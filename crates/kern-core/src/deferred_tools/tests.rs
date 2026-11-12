@@ -93,6 +93,84 @@ fn a_host_names_its_own_always_loaded_tools() {
     );
 }
 
+fn host_tools() -> Vec<Arc<dyn Tool>> {
+    vec![
+        Arc::new(Named("Read", "Read")),
+        Arc::new(Named("send_notification", "notify the person")),
+        Arc::new(Named("search_transcripts", "earlier conversations")),
+        Arc::new(Named("mcp__x__weather", "current weather for a city")),
+    ]
+}
+
+#[test]
+fn a_host_may_defer_every_tool_but_the_ones_it_always_needs() {
+    let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]);
+    assert_eq!(
+        names(&d.advertise(&host_tools(), marker)),
+        ["Read", "ToolSearch"]
+    );
+    d.load(["send_notification"]);
+    assert_eq!(
+        names(&d.advertise(&host_tools(), marker)),
+        ["Read", "ToolSearch", "send_notification"]
+    );
+    // The default stays MCP only: a host's own tools are never deferred unasked.
+    let mcp = ToolDeferral::new(DeferMode::Grow);
+    assert_eq!(
+        names(&mcp.advertise(&host_tools(), marker)),
+        [
+            "Read",
+            "send_notification",
+            "search_transcripts",
+            "ToolSearch"
+        ]
+    );
+}
+
+#[test]
+fn every_tool_is_callable_and_calling_a_deferred_one_loads_it() {
+    let d = Arc::new(ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]));
+    let callable = d.callable(&host_tools(), marker);
+    assert_eq!(
+        names(&callable),
+        [
+            "Read",
+            "ToolSearch",
+            "send_notification",
+            "search_transcripts",
+            "mcp__x__weather"
+        ]
+    );
+    let notify = callable
+        .iter()
+        .find(|t| t.name() == "send_notification")
+        .unwrap();
+    let ctx = ToolContext::new("/", Arc::new(crate::workspace::ShutWorkspace));
+    let out = futures::executor::block_on(notify.execute(JsonMap::new(), &ctx)).unwrap();
+    assert_eq!(out.content, "send_notification");
+    assert_eq!(
+        names(&d.advertise(&host_tools(), marker)),
+        ["Read", "ToolSearch", "send_notification"],
+        "a direct call loads the tool, as ToolSearch would"
+    );
+}
+
+#[test]
+fn the_tools_a_resumed_conversation_called_count_as_loaded() {
+    use crate::{messages::Message, testing::tool_answer};
+    let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]);
+    let called = |name: &str| Message::Assistant(tool_answer(&[("c", name, json!({}))]));
+    d.load_called(&[
+        Message::user("hi"),
+        called("search_transcripts"),
+        called("Read"),
+    ]);
+    assert_eq!(
+        names(&d.advertise(&host_tools(), marker)),
+        ["Read", "ToolSearch", "search_transcripts"]
+    );
+}
+
 #[test]
 fn modes_parse_their_own_names() {
     for &m in DeferMode::ALL {

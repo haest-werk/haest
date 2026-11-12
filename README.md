@@ -225,6 +225,9 @@ cargo run -p kern-lib --example brain
 `cargo test` runs it as well. A host that takes kern's own pieces where brain
 brings its own -- its own `Provider`, a `ShellCommand` in the sandbox shell,
 a tool that titles its calls, kern's `SubagentHub` over its `SubagentHost` and
-`Inbox`, steering a running turn, a hook that ends the turn -- is
+`Inbox`, steering a running turn, a hook that ends the turn, its own skills
+behind kern's Skill tool (`SkillSet`, `InlineSkills`), its own tools held back
+behind ToolSearch with a list that always loads (`DeferredTools`,
+`ToolDeferral::deferring_all_except`) -- is
 [`crates/kern-lib/tests/plug_in.rs`](crates/kern-lib/tests/plug_in.rs), from
 outside the crate, the public API only.

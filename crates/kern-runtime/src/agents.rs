@@ -22,7 +22,7 @@ use crate::{
         },
     },
     prompt::{AgentPrompt, RuntimePrompt},
-    tools::{Deferred, WrappedTools},
+    tools::{WrappedTools, deferred},
 };
 
 pub struct Agents {
@@ -76,7 +76,7 @@ impl SubagentHost for Agents {
     }
 
     fn tool_source(&self, tools: Vec<Arc<dyn Tool>>) -> Arc<dyn ToolSource> {
-        Arc::new(Deferred::new(tools, self.host.settings.deferred_tools))
+        Arc::new(deferred(tools, self.host.settings.deferred_tools))
     }
 
     fn on_activity(&self, running: &[String]) {

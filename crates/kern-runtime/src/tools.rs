@@ -27,7 +27,7 @@ use crate::kern::{
         BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub, SkillToolOptions,
         agents::{AgentRef, SubagentHub},
         builtin_tools_where,
-        tool_search::deferral_tools,
+        tool_search::{DeferredTools, deferral_tools},
     },
 };
 
@@ -133,30 +133,9 @@ impl ToolSource for WrappedTools {
     }
 }
 
-/// `all` as one call advertises it: MCP schemas behind ToolSearch, per the deferral's mode.
-fn advertise(deferral: &Arc<ToolDeferral>, all: &[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>> {
-    deferral.advertise(all, deferral_tools(deferral.clone()))
-}
-
 /// A subagent's fixed list behind its own deferral (ToolSearch loads per agent).
-pub struct Deferred {
-    tools: Vec<Arc<dyn Tool>>,
-    deferral: Arc<ToolDeferral>,
-}
-
-impl Deferred {
-    pub fn new(tools: Vec<Arc<dyn Tool>>, mode: DeferMode) -> Self {
-        Self {
-            tools,
-            deferral: Arc::new(ToolDeferral::new(mode)),
-        }
-    }
-}
-
-impl ToolSource for Deferred {
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
-        advertise(&self.deferral, &self.tools)
-    }
+pub fn deferred(tools: Vec<Arc<dyn Tool>>, mode: DeferMode) -> DeferredTools {
+    DeferredTools::new(tools, ToolDeferral::new(mode))
 }
 
 /// Main's list (TS `tools()`): the wrapped tools and main's agent tools
@@ -177,13 +156,24 @@ impl MainTools {
     }
 }
 
-impl ToolSource for MainTools {
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+impl MainTools {
+    fn all(&self) -> Vec<Arc<dyn Tool>> {
         let mut all = self.wrapped.tools();
         if let Some(hub) = &self.hub {
             all.extend(hub.tools_for(&AgentRef::main()));
         }
-        advertise(&self.deferral, &all)
+        all
+    }
+}
+
+impl ToolSource for MainTools {
+    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+        let d = &self.deferral;
+        d.advertise(&self.all(), deferral_tools(d.clone()))
+    }
+    fn callable(&self) -> Vec<Arc<dyn Tool>> {
+        let d = &self.deferral;
+        d.callable(&self.all(), deferral_tools(d.clone()))
     }
 }
 

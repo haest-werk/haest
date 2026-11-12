@@ -208,7 +208,7 @@ impl Agent {
             tool_call_id: None,
             spill_dir: self.deps.spill_dir.clone(),
         };
-        let tools = ToolIndex::new(self.deps.tools.tools());
+        let tools = ToolIndex::new(self.deps.tools.callable());
         let mut delivery = Delivery {
             limits: self.limits(),
             guard: &mut t.guard,

@@ -250,6 +250,46 @@ async fn the_hook_before_each_model_call_may_replace_history() {
     assert!(matches!(&sent[0], Message::User(u) if u.content == "new"));
 }
 
+/// Advertises its first tool only; the rest it keeps back, callable by name.
+struct KeptBack(Vec<Arc<dyn crate::tool::Tool>>);
+
+impl crate::tool::ToolSource for KeptBack {
+    fn tools(&self) -> Vec<Arc<dyn crate::tool::Tool>> {
+        self.0[..1].to_vec()
+    }
+    fn callable(&self) -> Vec<Arc<dyn crate::tool::Tool>> {
+        self.0.clone()
+    }
+}
+
+#[tokio::test]
+async fn a_tool_the_source_keeps_back_runs_when_the_model_calls_it_by_name() {
+    let p = ScriptedProvider::new([
+        tool_answer(&[("c1", "Hidden", json!({}))]),
+        text_answer("done"),
+    ]);
+    let (mut agent, _) = agent_with(&p, Opts::default());
+    let hidden = FnTool::arc("Hidden", true, |_, _| async {
+        Ok(crate::tool::ToolOutput::text("ran"))
+    });
+    agent.deps.tools = Arc::new(KeptBack(vec![echo_tool(), hidden]));
+    collect(&mut agent, "go").await;
+    let sent: Vec<String> = p.requests()[0]
+        .tools
+        .iter()
+        .map(|t| t.name.clone())
+        .collect();
+    assert_eq!(sent, ["Echo"], "only the advertised tool is sent");
+    assert!(
+        agent
+            .messages
+            .iter()
+            .any(|m| matches!(m, Message::Tool(r) if r.content == "ran" && !r.is_error)),
+        "the kept-back tool ran: {:?}",
+        agent.messages
+    );
+}
+
 #[test]
 fn a_turn_is_a_send_future() {
     fn assert_send<T: Send>(_: T) {}

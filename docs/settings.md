@@ -298,6 +298,10 @@ flag          --mcp
 ### `deferred_tools`
 
 How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off).
+ToolSearch lists each held-back tool with its description's first sentence. A
+host linking kern can hold back its own tools too, all but a list it names
+(`ToolDeferral::deferring_all_except`, `DeferredTools`); a held-back tool the
+model calls by name still runs, and loads.
 
 - Takes: one of `off`, `proxy`, `grow`
 - Default: `proxy`

@@ -3,11 +3,15 @@
 //! disclosure -- only name + description reach the system prompt; the body loads
 //! on demand (the `Skill` tool).
 //!
+//! A host's skills plug in as a [`SkillSet`]: SKILL.md files on disk
+//! ([`DiskSkills`]) or skills it holds itself ([`InlineSkills`]).
+//!
 //! Every read goes through a kern [`Fs`]; home and config dirs are passed in.
 
 mod frontmatter;
 mod plugins;
 mod scan;
+mod set;
 #[cfg(test)]
 mod tests;
 
@@ -21,6 +25,10 @@ use serde::{Deserialize, Serialize};
 
 pub use plugins::read_installed_plugins;
 pub use scan::{PluginRoot, SkillMeta, SkillScanRoots, parse_skill_file, scan_roots, scan_skills};
+pub use set::{
+    DEFAULT_SKILLS_INTRO, DiskSkills, InlineSkill, InlineSkills, SkillCard, SkillSet,
+    first_of_each_name, skill_cards_block,
+};
 
 use crate::fs::Fs;
 
@@ -91,12 +99,27 @@ pub async fn skill_scan_roots(fs: &dyn Fs, opts: &SkillOpts) -> SkillScanRoots {
     }
 }
 
+impl Skill {
+    /// Its line in the prompt's list.
+    pub fn card(&self) -> SkillCard {
+        SkillCard {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            when: String::new(),
+            origin: None,
+        }
+    }
+}
+
 /// Case-insensitive first, the way a locale sort reads names.
+fn by_name_str(a: &str, b: &str) -> Ordering {
+    a.to_lowercase()
+        .cmp(&b.to_lowercase())
+        .then_with(|| a.cmp(b))
+}
+
 fn by_name(a: &Skill, b: &Skill) -> Ordering {
-    a.name
-        .to_lowercase()
-        .cmp(&b.name.to_lowercase())
-        .then_with(|| a.name.cmp(&b.name))
+    by_name_str(&a.name, &b.name)
 }
 
 /// Every skill kern can offer, sorted by name.
@@ -121,30 +144,16 @@ pub async fn load_skill_body(fs: &dyn Fs, skill: &Skill, args: Option<&str>) -> 
         skill.name,
         dir.display()
     );
-    let arg_line = match args.map(str::trim).filter(|a| !a.is_empty()) {
-        Some(a) => format!("\n\nARGUMENTS: {a}"),
-        None => String::new(),
-    };
+    let arg_line = set::argument_line(args);
     Ok(format!("{header}{arg_line}\n\n{}", body.trim()))
 }
 
 /// The system-prompt block that advertises model-invocable skills; empty when there are none.
 pub fn skills_prompt_block(skills: &[Skill]) -> String {
-    let offered: Vec<String> = skills
+    let offered: Vec<SkillCard> = skills
         .iter()
         .filter(|s| s.model_invocable)
-        .map(|s| format!("- {}: {}", s.name, s.description))
+        .map(Skill::card)
         .collect();
-    if offered.is_empty() {
-        return String::new();
-    }
-    [
-        "# Skills".to_string(),
-        "Skills are packaged instructions for specific tasks. When a task matches a skill below, call the `Skill` tool with its name BEFORE doing the task, then follow what it returns.".into(),
-        String::new(),
-    ]
-    .into_iter()
-    .chain(offered)
-    .collect::<Vec<_>>()
-    .join("\n")
+    skill_cards_block(DEFAULT_SKILLS_INTRO, &offered)
 }
