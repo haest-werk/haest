@@ -222,6 +222,8 @@ pub fn opt_num(input: &JsonMap, key: &str) -> Result<Option<f64>, ToolError> {
     let bad = || ToolError::Input(format!("\"{key}\" must be a number"));
     match input.get(key) {
         None | Some(Value::Null) => Ok(None),
+        // Models send "" for a number they mean to leave out.
+        Some(Value::String(s)) if s.trim().is_empty() => Ok(None),
         Some(Value::Number(n)) => n
             .as_f64()
             .filter(|f| f.is_finite())

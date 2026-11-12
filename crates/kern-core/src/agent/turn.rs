@@ -112,11 +112,15 @@ impl Agent {
     /// One model call and the tools it asked for. How the turn ends, or None to go on.
     async fn step(&mut self, t: &mut Turn<'_>) -> Option<TurnEnd> {
         let cancel = t.cancel.clone();
-        self.deps
+        if let Err(why) = self
+            .deps
             .hooks
             .clone()
             .before_model_call(self, &cancel)
-            .await;
+            .await
+        {
+            return Some(TurnEnd::with_error(StopReason::Error, why));
+        }
         let msg = self.call_model(t).await;
         t.usage.add(&msg.usage);
         t.guard.called(&msg.usage);

@@ -133,10 +133,15 @@ impl AgentHooks for BrainHost {
     }
 
     /// Where brain's run waits while paused: every tool call has its result.
-    async fn before_model_call(&self, _agent: &mut Agent, _cancel: &CancellationToken) {
+    async fn before_model_call(
+        &self,
+        _agent: &mut Agent,
+        _cancel: &CancellationToken,
+    ) -> Result<(), String> {
         if self.calls.fetch_add(1, Ordering::SeqCst) + 1 == self.pause_before_call {
             self.clock.pause_for(PAUSE_MS);
         }
+        Ok(())
     }
 
     fn limits(&self, _spec: &str) -> Option<TurnLimits> {

@@ -32,7 +32,9 @@ pub async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
         "budget" => budget(rt, args),
         "compact" => {
             let h = rt.host.clone();
-            h.compact_now(&mut rt.agent, &CancellationToken::new(), false)
+            // A failure was said to the UI; /compact has nothing more to do.
+            let _ = h
+                .compact_now(&mut rt.agent, &CancellationToken::new(), false)
                 .await;
         }
         "clear" => clear(rt).await,

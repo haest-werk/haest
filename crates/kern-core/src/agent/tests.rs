@@ -202,10 +202,40 @@ struct Compacting;
 impl ToolHost for Compacting {}
 #[async_trait]
 impl AgentHooks for Compacting {
-    async fn before_model_call(&self, agent: &mut Agent, _: &CancellationToken) {
+    async fn before_model_call(
+        &self,
+        agent: &mut Agent,
+        _: &CancellationToken,
+    ) -> Result<(), String> {
         let last = agent.messages.last().cloned();
         agent.replace_history(last.into_iter().collect());
+        Ok(())
     }
+}
+
+/// A host that cannot go on (its summary failed): the turn ends there.
+struct Refusing;
+impl ToolHost for Refusing {}
+#[async_trait]
+impl AgentHooks for Refusing {
+    async fn before_model_call(&self, _: &mut Agent, _: &CancellationToken) -> Result<(), String> {
+        Err("couldn't summarise the earlier conversation".into())
+    }
+}
+
+#[tokio::test]
+async fn the_hook_before_a_model_call_may_end_the_turn_as_an_error_without_the_call() {
+    let p = ScriptedProvider::new([text_answer("never")]);
+    let (mut agent, _) = agent_with(&p, Opts::default());
+    agent.deps.hooks = Arc::new(Refusing);
+    let events = collect(&mut agent, "go").await;
+    let (reason, _, error) = end(&events);
+    assert_eq!(reason, StopReason::Error);
+    assert_eq!(
+        error.as_deref(),
+        Some("couldn't summarise the earlier conversation")
+    );
+    assert!(p.requests().is_empty(), "no model call was made");
 }
 
 #[tokio::test]

@@ -46,8 +46,17 @@ pub trait AgentHooks: ToolHost {
     /// Every message appended to history, in order: the persistence hook.
     fn on_message(&self, _msg: &Message) {}
 
-    /// Runs before each model call; may replace history (compaction).
-    async fn before_model_call(&self, _agent: &mut Agent, _cancel: &CancellationToken) {}
+    /// Runs before each model call; may replace history (compaction). `Err`
+    /// ends the turn there, as an error with that text, without the call: the
+    /// host's way out when it cannot go on (a summary that failed would
+    /// otherwise be tried again before every call, each try paid).
+    async fn before_model_call(
+        &self,
+        _agent: &mut Agent,
+        _cancel: &CancellationToken,
+    ) -> Result<(), String> {
+        Ok(())
+    }
 
     /// Hard turn caps for a model spec, checked before every model call.
     /// None = uncapped.

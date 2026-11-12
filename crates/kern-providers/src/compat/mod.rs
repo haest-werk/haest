@@ -32,7 +32,7 @@ pub use stream::{StreamState, apply_chunk, finish_message};
 
 use crate::{
     compat_effort::reasoning_effort_extras,
-    driver::{Call, Step, StreamFold, drive, openai_json},
+    driver::{Call, Step, StreamFold, drive, openai_error},
     http::{RetryPolicy, bearer_headers},
     routing::RoutingEnv,
     sse::SseEvent,
@@ -169,7 +169,12 @@ impl StreamFold for CompatFold {
         if ev.data.starts_with("[DONE]") {
             return Ok(Step::End);
         }
-        let chunk = openai_json(ev)?;
+        // A payload that is not JSON (a proxy's keep-alive, a stray line) is
+        // skipped, as the TS kern did; an `{error}` ends the stream.
+        let Ok(chunk) = serde_json::from_str::<serde_json::Value>(&ev.data) else {
+            return Ok(Step::Continue);
+        };
+        let chunk = openai_error(chunk)?;
         apply_chunk(&chunk, &mut self.msg, &mut self.st, out);
         Ok(Step::Continue)
     }

@@ -120,7 +120,13 @@ impl Host {
     }
 
     /// Compact now. `auto`: the loop's own check, so nothing to cut stays silent.
-    pub async fn compact_now(&self, agent: &mut Agent, cancel: &CancellationToken, auto: bool) {
+    /// `Err`: the summary failed (said to the UI already); history is as it was.
+    pub async fn compact_now(
+        &self,
+        agent: &mut Agent,
+        cancel: &CancellationToken,
+        auto: bool,
+    ) -> Result<(), String> {
         let cfg = self.compaction_for(&agent.model_spec);
         match compact(agent, cancel, &cfg).await {
             Ok(None) if !auto => self.info("Nothing to compact yet."),
@@ -139,8 +145,13 @@ impl Host {
                     res.kept
                 ));
             }
-            Err(e) => self.error(&format!("Compaction failed: {e}")),
+            Err(e) => {
+                let why = format!("Compaction failed: {e}");
+                self.error(&why);
+                return Err(why);
+            }
         }
+        Ok(())
     }
 }
 
@@ -161,10 +172,17 @@ impl AgentHooks for Host {
         });
     }
 
-    async fn before_model_call(&self, agent: &mut Agent, cancel: &CancellationToken) {
+    /// A full window is summarised first. A summary that fails ends the turn:
+    /// tried again before every call it would cost two summary calls a step.
+    async fn before_model_call(
+        &self,
+        agent: &mut Agent,
+        cancel: &CancellationToken,
+    ) -> Result<(), String> {
         if needs_compaction(&agent.messages, &self.compaction_for(&agent.model_spec)) {
-            self.compact_now(agent, cancel, true).await;
+            self.compact_now(agent, cancel, true).await?;
         }
+        Ok(())
     }
 
     fn limits(&self, spec: &str) -> Option<TurnLimits> {

@@ -74,3 +74,35 @@ fn reasoning_content_is_thinking_and_also_kept_apart_for_replay() {
     assert_eq!(out.len(), 2);
     assert_eq!(msg.provider_data.unwrap()["reasoning_content"], json!("ab"));
 }
+
+// A `data:` payload that is not JSON (a proxy's keep-alive, a stray line) is
+// skipped, as the TS kern did; the stream goes on. An `{error}` still ends it.
+#[test]
+fn a_data_frame_that_is_not_json_is_skipped_and_the_stream_goes_on() {
+    let mut fold = CompatFold {
+        msg: AssistantMessage::start("p", "m"),
+        st: StreamState::default(),
+        opts: std::sync::Arc::new(CompatOptions::new("t", CompatFlavor::Generic, "k")),
+        model: "m".into(),
+    };
+    let frame = |data: &str| crate::sse::SseEvent {
+        event: None,
+        data: data.into(),
+    };
+    let mut out = Vec::new();
+    assert_eq!(
+        fold.on_event(&frame("keep-alive"), &mut out),
+        Ok(crate::driver::Step::Continue)
+    );
+    let text = json!({"choices": [{"index": 0, "delta": {"content": "hi"}}]}).to_string();
+    assert_eq!(
+        fold.on_event(&frame(&text), &mut out),
+        Ok(crate::driver::Step::Continue)
+    );
+    assert!(!out.is_empty(), "the chunk after the junk was applied");
+    let err = json!({"error": {"message": "over the limit"}}).to_string();
+    assert_eq!(
+        fold.on_event(&frame(&err), &mut out),
+        Err("over the limit".to_string())
+    );
+}

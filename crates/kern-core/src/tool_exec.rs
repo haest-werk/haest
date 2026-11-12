@@ -172,7 +172,17 @@ pub async fn run_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> 
             call.name
         ));
     }
-    match tool.execute(call.input.clone(), ctx).await {
+    // A tool that panics (its own bug) is a failed call like any other: the
+    // loop, and whatever host drives it, goes on with a result in history.
+    let run = std::panic::AssertUnwindSafe(tool.execute(call.input.clone(), ctx));
+    let done = match futures::FutureExt::catch_unwind(run).await {
+        Ok(done) => done,
+        Err(panic) => Err(ToolError::Failed(format!(
+            "panicked: {}",
+            panic_text(panic.as_ref())
+        ))),
+    };
+    match done {
         Ok(out) => out,
         Err(e) => {
             // An Input error is a message written FOR the model; anything else gets named.
@@ -184,6 +194,15 @@ pub async fn run_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> 
             ToolOutput::error(content).with_result(error_result(&message))
         }
     }
+}
+
+/// What a panic said: its `&str` or `String` payload, else that it said nothing.
+fn panic_text(panic: &(dyn std::any::Any + Send)) -> String {
+    panic
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| panic.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "no message".into())
 }
 
 fn error_result(message: &str) -> Value {

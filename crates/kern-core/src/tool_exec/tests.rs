@@ -267,3 +267,33 @@ fn a_result_message_carries_the_call_and_the_output() {
     assert_eq!(e.stop_reason, StopReason::Error);
     assert_eq!(e.error_message.as_deref(), Some("why"));
 }
+
+#[tokio::test]
+async fn a_tool_that_panics_is_a_failed_result_and_the_loop_goes_on() {
+    let boom = FnTool::arc("Boom", false, |_, _| async move {
+        let none: Option<u8> = None;
+        #[allow(clippy::unnecessary_literal_unwrap)]
+        let _ = none.expect("the tool's own bug");
+        Ok(ToolOutput::text("never"))
+    });
+    let ws = Arc::new(MemWorkspace::default());
+    let tools = ToolIndex::new(vec![boom]);
+    let out = execute_tool(&tools, &call("t1", "Boom", json!({})), &ctx_on(ws, None)).await;
+    assert!(out.is_error);
+    assert!(out.content.starts_with("Boom failed: "), "{}", out.content);
+    assert!(
+        out.content.contains("the tool's own bug"),
+        "{}",
+        out.content
+    );
+}
+
+#[tokio::test]
+async fn an_empty_string_for_a_number_is_no_number() {
+    let input = json!({"offset": "", "limit": "  ", "n": "3"});
+    let map = input.as_object().unwrap();
+    assert_eq!(opt_num(map, "offset").unwrap(), None);
+    assert_eq!(opt_num(map, "limit").unwrap(), None);
+    assert_eq!(opt_num(map, "n").unwrap(), Some(3.0));
+    assert!(opt_num(&json!({"x": "abc"}).as_object().unwrap().clone(), "x").is_err());
+}

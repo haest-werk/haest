@@ -101,6 +101,11 @@ pub(crate) fn drive<F: StreamFold>(call: Call, mut fold: F) -> ProviderStream {
 pub(crate) fn openai_json(ev: &SseEvent) -> Result<Value, String> {
     let v: Value = serde_json::from_str(&ev.data)
         .map_err(|e| format!("could not parse a stream event as JSON: {e}"))?;
+    openai_error(v)
+}
+
+/// The event itself, or the `error` it carries as the stream's failure.
+pub(crate) fn openai_error(v: Value) -> Result<Value, String> {
     match v.get("error") {
         None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(v),
         Some(err) => Err(err

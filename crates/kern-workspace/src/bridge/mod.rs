@@ -41,6 +41,10 @@ pub(crate) fn bashkit_from_io(e: io::Error) -> bashkit::Error {
         ErrorKind::NotADirectory => io::Error::new(ErrorKind::NotADirectory, "not a directory"),
         ErrorKind::IsADirectory => io::Error::other("is a directory"),
         ErrorKind::DirectoryNotEmpty => io::Error::other("directory not empty"),
+        // A host that says WHY it refuses ("can't edit there; tell them
+        // instead") is heard: its message stays. An OS error or a bare kind
+        // reads like a shell's.
+        ErrorKind::PermissionDenied if e.get_ref().is_some() => e,
         ErrorKind::PermissionDenied => {
             io::Error::new(ErrorKind::PermissionDenied, "Permission denied")
         }
