@@ -74,7 +74,9 @@ and brain's skills teach (headers, count, head, select, filter, sort, groupby, a
 stats, frequency) with the part of moonblade's expressions they need; bashkit has
 only a line-based `csv`.
 Every row is exercised by `crates/kern-lib/examples/brain/` against fakes
-(`cargo run -p kern-lib --example brain`).
+(`cargo run -p kern-lib --example brain`, and under `cargo test`). A second
+host that takes kern's own hub, shell commands and steering instead is
+`crates/kern-lib/tests/plug_in.rs`.
 
 ## Waves
 

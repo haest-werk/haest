@@ -40,7 +40,14 @@ kern-settings = { workspace = true, optional = true }
 kern-config = { workspace = true, optional = true }
 kern-runtime = { workspace = true, optional = true }
 
-# The brain example (examples/brain): what a host implementing the plug points needs.
+# The brain example runs under `cargo test` too, so a change that breaks a
+# plug point brain uses fails the suite, not only a `cargo run` nobody did.
+[[example]]
+name = "brain"
+path = "examples/brain/main.rs"
+test = true
+
+# The brain example and tests/plug_in.rs: what a host implementing the plug points needs.
 [dev-dependencies]
 tokio = { workspace = true }
 tokio-util = { workspace = true }

@@ -1,7 +1,9 @@
 //! kern embedded the way brain embeds it, against fakes: no network, no keys.
 //! Every row of PLAN.md's "Brain's plug points" table is wired through a
 //! public plug point and ASSERTED, so `cargo run -p kern-lib --example brain`
-//! exiting 0 is the proof.
+//! exiting 0 is the proof; `cargo test` runs the same (`[[example]] test`).
+//! A host that takes kern's own sub-agent hub, shell commands and steering
+//! instead: `tests/plug_in.rs`.
 //!
 //! | Plug point | Where |
 //! |---|---|
@@ -54,11 +56,20 @@ pub const T0: u64 = 1_800_000_000_000;
 
 #[tokio::main]
 async fn main() {
+    every_run().await;
+    println!("brain example: every plug point held");
+}
+
+async fn every_run() {
     let gateway = Arc::new(Gateway::default());
     runs::work(&gateway).await;
     runs::dream(&gateway).await;
     runs::clock(&gateway).await;
-    println!("brain example: every plug point held");
+}
+
+#[tokio::test]
+async fn every_plug_point_brain_uses_holds() {
+    every_run().await;
 }
 
 /// `gateway:<model>` -> the OpenAI-compatible adapter over the node's gateway.
