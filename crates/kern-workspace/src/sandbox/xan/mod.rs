@@ -49,7 +49,10 @@ impl ShellCommand for Xan {
 
     async fn run(&self, call: ShellCall) -> ExecResult {
         match run(&call).await {
-            Ok(stdout) => ExecResult { stdout, ..Default::default() },
+            Ok(stdout) => ExecResult {
+                stdout,
+                ..Default::default()
+            },
             Err(Fail { msg, code }) => ExecResult {
                 stderr: format!("xan: {msg}\n"),
                 exit_code: code,
@@ -68,13 +71,19 @@ type R<T> = Result<T, Fail>;
 
 /// The input or an expression is wrong.
 fn fail(msg: impl Into<String>) -> Fail {
-    Fail { msg: msg.into(), code: 1 }
+    Fail {
+        msg: msg.into(),
+        code: 1,
+    }
 }
 
 /// The command line is wrong.
 fn usage(verb: Option<&str>, msg: impl Into<String>) -> Fail {
     let how = verb.map_or("xan --help".to_string(), |v| format!("xan {v} --help"));
-    Fail { msg: format!("{} ({how} shows how)", msg.into()), code: 2 }
+    Fail {
+        msg: format!("{} ({how} shows how)", msg.into()),
+        code: 2,
+    }
 }
 
 macro_rules! expr_help {
@@ -164,7 +173,11 @@ const VERBS: &[Verb] = &[
     Verb {
         name: "sort",
         args: &[],
-        flags: &[('s', "select", true), ('N', "numeric", false), ('R', "reverse", false)],
+        flags: &[
+            ('s', "select", true),
+            ('N', "numeric", false),
+            ('R', "reverse", false),
+        ],
         help: "xan sort [-s columns] [-N] [-R] [file]: rows in order of those columns (all of them by default).\n\
                -N compares numbers (text after them), -R reverses. Rows that tie keep their order.\n",
     },
@@ -201,7 +214,11 @@ const VERBS: &[Verb] = &[
     Verb {
         name: "frequency",
         args: &[],
-        flags: &[('s', "select", true), ('l', "limit", true), ('A', "all", false)],
+        flags: &[
+            ('s', "select", true),
+            ('l', "limit", true),
+            ('A', "all", false),
+        ],
         help: "xan frequency [-s columns] [-l N] [-A] [file]: field, value, count: each column's most common values,\n\
                most first (-l: how many per column, 10; -A or -l 0: all). An empty cell is <empty>.\n",
     },
@@ -233,15 +250,30 @@ impl Parsed {
 
     fn count(&self, flag: &str, verb: &Verb) -> R<Option<usize>> {
         self.get(flag)
-            .map(|v| v.trim().parse().map_err(|_| usage(Some(verb.name), format!("--{flag} takes a number, not `{v}`"))))
+            .map(|v| {
+                v.trim().parse().map_err(|_| {
+                    usage(
+                        Some(verb.name),
+                        format!("--{flag} takes a number, not `{v}`"),
+                    )
+                })
+            })
             .transpose()
     }
 }
 
 fn parse_args(verb: &Verb, args: &[String]) -> R<Parsed> {
     let specs: Vec<(char, &'static str, bool)> = COMMON.iter().chain(verb.flags).copied().collect();
-    let unknown = |a: &str| usage(Some(verb.name), format!("xan {} has no option {a}", verb.name));
-    let mut p = Parsed { flags: HashMap::new(), pos: Vec::new() };
+    let unknown = |a: &str| {
+        usage(
+            Some(verb.name),
+            format!("xan {} has no option {a}", verb.name),
+        )
+    };
+    let mut p = Parsed {
+        flags: HashMap::new(),
+        pos: Vec::new(),
+    };
     let mut it = args.iter();
     let mut only_positional = false;
     while let Some(a) = it.next() {
@@ -256,13 +288,25 @@ fn parse_args(verb: &Verb, args: &[String]) -> R<Parsed> {
         let mut value_for = |long: &'static str, inline: Option<&str>| -> R<String> {
             match inline.filter(|v| !v.is_empty()) {
                 Some(v) => Ok(v.to_string()),
-                None => it.next().cloned().ok_or_else(|| usage(Some(verb.name), format!("--{long} needs a value"))),
+                None => it
+                    .next()
+                    .cloned()
+                    .ok_or_else(|| usage(Some(verb.name), format!("--{long} needs a value"))),
             }
         };
         if let Some(long) = a.strip_prefix("--") {
-            let (name, inline) = long.split_once('=').map_or((long, None), |(n, v)| (n, Some(v)));
-            let &(_, long, takes) = specs.iter().find(|s| s.1 == name).ok_or_else(|| unknown(a))?;
-            let v = if takes { value_for(long, inline)? } else { String::new() };
+            let (name, inline) = long
+                .split_once('=')
+                .map_or((long, None), |(n, v)| (n, Some(v)));
+            let &(_, long, takes) = specs
+                .iter()
+                .find(|s| s.1 == name)
+                .ok_or_else(|| unknown(a))?;
+            let v = if takes {
+                value_for(long, inline)?
+            } else {
+                String::new()
+            };
             p.flags.insert(long, v);
             continue;
         }
@@ -270,7 +314,10 @@ fn parse_args(verb: &Verb, args: &[String]) -> R<Parsed> {
         // the rest of the word (-l5, -d';') or the next argument.
         let shorts = &a[1..];
         for (k, c) in shorts.char_indices() {
-            let &(_, long, takes) = specs.iter().find(|s| s.0 == c).ok_or_else(|| unknown(&format!("-{c}")))?;
+            let &(_, long, takes) = specs
+                .iter()
+                .find(|s| s.0 == c)
+                .ok_or_else(|| unknown(&format!("-{c}")))?;
             if takes {
                 let v = value_for(long, Some(&shorts[k + c.len_utf8()..]))?;
                 p.flags.insert(long, v);
@@ -313,12 +360,16 @@ fn cell(row: &[String], i: usize) -> &str {
 async fn input(call: &ShellCall, file: Option<&str>) -> R<String> {
     match file {
         Some(f) if f != "-" => {
-            let bytes = call.fs.read(&resolve_path(&call.cwd, f)).await.map_err(|e| {
-                fail(match e.kind() {
-                    io::ErrorKind::NotFound => format!("{f}: no such file"),
-                    _ => format!("{f}: {e}"),
-                })
-            })?;
+            let bytes = call
+                .fs
+                .read(&resolve_path(&call.cwd, f))
+                .await
+                .map_err(|e| {
+                    fail(match e.kind() {
+                        io::ErrorKind::NotFound => format!("{f}: no such file"),
+                        _ => format!("{f}: {e}"),
+                    })
+                })?;
             Ok(String::from_utf8_lossy(&bytes).into_owned())
         }
         _ => call
@@ -370,11 +421,17 @@ fn read_table(text: &str, delim: u8, has_headers: bool, clock: &mut Clock) -> R<
     } else {
         (0..width).map(|i| i.to_string()).collect()
     };
-    Ok(Table { headers, rows, has_headers })
+    Ok(Table {
+        headers,
+        rows,
+        has_headers,
+    })
 }
 
 fn write_csv(header: Option<&[String]>, rows: impl IntoIterator<Item = Vec<String>>) -> R<String> {
-    let mut w = csv::WriterBuilder::new().flexible(true).from_writer(Vec::new());
+    let mut w = csv::WriterBuilder::new()
+        .flexible(true)
+        .from_writer(Vec::new());
     let broke = |e: csv::Error| fail(format!("writing the CSV: {e}"));
     if let Some(h) = header {
         w.write_record(h).map_err(broke)?;
@@ -382,7 +439,9 @@ fn write_csv(header: Option<&[String]>, rows: impl IntoIterator<Item = Vec<Strin
     for r in rows {
         w.write_record(&r).map_err(broke)?;
     }
-    let bytes = w.into_inner().map_err(|e| fail(format!("writing the CSV: {e}")))?;
+    let bytes = w
+        .into_inner()
+        .map_err(|e| fail(format!("writing the CSV: {e}")))?;
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
@@ -394,7 +453,8 @@ async fn run(call: &ShellCall) -> R<String> {
         return Ok(HELP.into());
     }
     let names = VERBS.iter().map(|v| v.name).collect::<Vec<_>>().join(", ");
-    let verb = verb(first).ok_or_else(|| usage(None, format!("no verb `{first}`; xan has {names}")))?;
+    let verb =
+        verb(first).ok_or_else(|| usage(None, format!("no verb `{first}`; xan has {names}")))?;
     let rest = &call.args[1..];
     if rest.iter().any(|a| a == "--help" || a == "-h") {
         return Ok(verb.help.into());
@@ -402,18 +462,28 @@ async fn run(call: &ShellCall) -> R<String> {
     let p = parse_args(verb, rest)?;
     let need = verb.args.len();
     if p.pos.len() < need {
-        return Err(usage(Some(verb.name), format!("xan {} needs {}", verb.name, verb.args.join(" and "))));
+        return Err(usage(
+            Some(verb.name),
+            format!("xan {} needs {}", verb.name, verb.args.join(" and ")),
+        ));
     }
     if p.pos.len() > need + 1 {
         return Err(usage(
             Some(verb.name),
-            format!("one input at a time; extra: {} (quote an expression with spaces)", p.pos[need + 1..].join(" ")),
+            format!(
+                "one input at a time; extra: {} (quote an expression with spaces)",
+                p.pos[need + 1..].join(" ")
+            ),
         ));
     }
     let file = p.pos.get(need).map(String::as_str);
     let text = input(call, file).await?;
     let delim = delimiter(&p, file, &text)?;
-    let mut clock = Clock { ends_at: call.ends_at, cancel: call.cancel.clone(), n: 0 };
+    let mut clock = Clock {
+        ends_at: call.ends_at,
+        cancel: call.cancel.clone(),
+        n: 0,
+    };
     let t = read_table(&text, delim, !p.has("no-headers"), &mut clock)?;
     let header = t.has_headers.then_some(t.headers.as_slice());
     let columns = |flag: &str| -> R<Vec<usize>> {
@@ -423,10 +493,16 @@ async fn run(call: &ShellCall) -> R<String> {
         }
     };
     match verb.name {
-        "headers" if p.has("just-names") => Ok(t.headers.iter().map(|h| format!("{h}\n")).collect()),
+        "headers" if p.has("just-names") => {
+            Ok(t.headers.iter().map(|h| format!("{h}\n")).collect())
+        }
         "headers" => {
             let w = t.headers.len().saturating_sub(1).to_string().len();
-            Ok(t.headers.iter().enumerate().map(|(i, h)| format!("{i:<w$}   {h}\n")).collect())
+            Ok(t.headers
+                .iter()
+                .enumerate()
+                .map(|(i, h)| format!("{i:<w$}   {h}\n"))
+                .collect())
         }
         "count" => Ok(format!("{}\n", t.rows.len())),
         "head" => {
@@ -435,14 +511,21 @@ async fn run(call: &ShellCall) -> R<String> {
         }
         "select" => {
             let cols = select(&p.pos[0], &t.headers).map_err(fail)?;
-            let pick = |r: &[String]| cols.iter().map(|&i| cell(r, i).to_string()).collect::<Vec<_>>();
+            let pick = |r: &[String]| {
+                cols.iter()
+                    .map(|&i| cell(r, i).to_string())
+                    .collect::<Vec<_>>()
+            };
             let h = header.map(pick);
             write_csv(h.as_deref(), t.rows.iter().map(|r| pick(r)))
         }
         "filter" => {
             let e = compile(&p.pos[0], &t.headers).map_err(fail)?;
             let invert = p.has("invert");
-            let limit = p.count("limit", verb)?.filter(|n| *n > 0).unwrap_or(usize::MAX);
+            let limit = p
+                .count("limit", verb)?
+                .filter(|n| *n > 0)
+                .unwrap_or(usize::MAX);
             let mut kept = Vec::new();
             for r in &t.rows {
                 clock.tick()?;
@@ -479,8 +562,16 @@ async fn run(call: &ShellCall) -> R<String> {
         "agg" => aggregate(&t, &[], &p.pos[0], &mut clock),
         "stats" => stats(&t, &columns("select")?),
         "frequency" => {
-            let limit = if p.has("all") { usize::MAX } else { p.count("limit", verb)?.unwrap_or(10) };
-            frequency(&t, &columns("select")?, if limit == 0 { usize::MAX } else { limit })
+            let limit = if p.has("all") {
+                usize::MAX
+            } else {
+                p.count("limit", verb)?.unwrap_or(10)
+            };
+            frequency(
+                &t,
+                &columns("select")?,
+                if limit == 0 { usize::MAX } else { limit },
+            )
         }
         _ => unreachable!("every verb in VERBS has an arm"),
     }
@@ -511,7 +602,11 @@ fn aggregate(t: &Table, keys: &[usize], spec: &str, clock: &mut Clock) -> R<Stri
     let mut index: HashMap<Vec<String>, usize> = HashMap::new();
     if keys.is_empty() {
         // agg: one group, even over no rows (count 0, sum 0).
-        groups.push(Group { key: Vec::new(), rows: 0, vals: vec![Vec::new(); slots.len()] });
+        groups.push(Group {
+            key: Vec::new(),
+            rows: 0,
+            vals: vec![Vec::new(); slots.len()],
+        });
         index.insert(Vec::new(), 0);
     }
     for r in &t.rows {
@@ -521,7 +616,11 @@ fn aggregate(t: &Table, keys: &[usize], spec: &str, clock: &mut Clock) -> R<Stri
             Some(&g) => g,
             None => {
                 index.insert(key.clone(), groups.len());
-                groups.push(Group { key, rows: 0, vals: vec![Vec::new(); slots.len()] });
+                groups.push(Group {
+                    key,
+                    rows: 0,
+                    vals: vec![Vec::new(); slots.len()],
+                });
                 groups.len() - 1
             }
         };
@@ -533,28 +632,66 @@ fn aggregate(t: &Table, keys: &[usize], spec: &str, clock: &mut Clock) -> R<Stri
             }
         }
     }
-    let header: Vec<String> = keys.iter().map(|&i| t.headers[i].clone()).chain(items.iter().map(|(n, _)| n.clone())).collect();
+    let header: Vec<String> = keys
+        .iter()
+        .map(|&i| t.headers[i].clone())
+        .chain(items.iter().map(|(n, _)| n.clone()))
+        .collect();
     let rows = groups.into_iter().map(|g| {
-        let done: Vec<Value> = slots.iter().zip(&g.vals).map(|(s, v)| s.func.finish(v, g.rows, s.arg.is_none())).collect();
-        g.key.into_iter().chain(items.iter().map(|(_, e)| e.eval(&[], &done).text())).collect::<Vec<_>>()
+        let done: Vec<Value> = slots
+            .iter()
+            .zip(&g.vals)
+            .map(|(s, v)| s.func.finish(v, g.rows, s.arg.is_none()))
+            .collect();
+        g.key
+            .into_iter()
+            .chain(items.iter().map(|(_, e)| e.eval(&[], &done).text()))
+            .collect::<Vec<_>>()
     });
     write_csv(Some(&header), rows)
 }
 
 const STATS: &[&str] = &[
-    "field", "count", "count_empty", "type", "sum", "mean", "median", "stddev", "min", "max", "lex_first", "lex_last",
-    "min_length", "max_length",
+    "field",
+    "count",
+    "count_empty",
+    "type",
+    "sum",
+    "mean",
+    "median",
+    "stddev",
+    "min",
+    "max",
+    "lex_first",
+    "lex_last",
+    "min_length",
+    "max_length",
 ];
 
 fn stats(t: &Table, cols: &[usize]) -> R<String> {
     let header: Vec<String> = STATS.iter().map(|s| s.to_string()).collect();
     let rows = cols.iter().map(|&c| {
-        let vals: Vec<Value> = t.rows.iter().map(|r| Value::Str(cell(r, c).to_string())).collect();
-        let present: Vec<&str> = t.rows.iter().map(|r| cell(r, c)).filter(|s| !s.trim().is_empty()).collect();
+        let vals: Vec<Value> = t
+            .rows
+            .iter()
+            .map(|r| Value::Str(cell(r, c).to_string()))
+            .collect();
+        let present: Vec<&str> = t
+            .rows
+            .iter()
+            .map(|r| cell(r, c))
+            .filter(|s| !s.trim().is_empty())
+            .collect();
         let (mut ints, mut floats, mut texts) = (0, 0, 0);
         for s in &present {
             match parse_num(s) {
-                Some(_) if s.trim().bytes().all(|b| b.is_ascii_digit() || b == b'-' || b == b'+') => ints += 1,
+                Some(_)
+                    if s.trim()
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || b == b'-' || b == b'+') =>
+                {
+                    ints += 1
+                }
                 Some(_) => floats += 1,
                 None => texts += 1,
             }
@@ -566,7 +703,13 @@ fn stats(t: &Table, cols: &[usize]) -> R<String> {
             (false, true) => "string".to_string(),
             (true, true) => format!("{number_type}|string"),
         };
-        let numeric = |f: AggFn| if ints + floats > 0 { f.finish(&vals, vals.len(), false).text() } else { String::new() };
+        let numeric = |f: AggFn| {
+            if ints + floats > 0 {
+                f.finish(&vals, vals.len(), false).text()
+            } else {
+                String::new()
+            }
+        };
         let lengths = present.iter().map(|s| s.chars().count());
         vec![
             t.headers[c].clone(),
@@ -581,7 +724,10 @@ fn stats(t: &Table, cols: &[usize]) -> R<String> {
             numeric(AggFn::Max),
             AggFn::LexFirst.finish(&vals, vals.len(), false).text(),
             AggFn::LexLast.finish(&vals, vals.len(), false).text(),
-            lengths.clone().min().map_or(String::new(), |n| n.to_string()),
+            lengths
+                .clone()
+                .min()
+                .map_or(String::new(), |n| n.to_string()),
             lengths.max().map_or(String::new(), |n| n.to_string()),
         ]
     });
@@ -600,7 +746,11 @@ fn frequency(t: &Table, cols: &[usize], limit: usize) -> R<String> {
         ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
         for (v, count) in ranked.into_iter().take(limit) {
             let value = if v.is_empty() { "<empty>" } else { v };
-            out.push(vec![t.headers[c].clone(), value.to_string(), count.to_string()]);
+            out.push(vec![
+                t.headers[c].clone(),
+                value.to_string(),
+                count.to_string(),
+            ]);
         }
     }
     write_csv(Some(&header), out)

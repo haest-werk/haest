@@ -273,13 +273,23 @@ impl AggFn {
                 })
             }
             AggFn::Min | AggFn::Max => {
-                let best = |a: f64, b: f64| if self == AggFn::Min { a.min(b) } else { a.max(b) };
+                let best = |a: f64, b: f64| {
+                    if self == AggFn::Min {
+                        a.min(b)
+                    } else {
+                        a.max(b)
+                    }
+                };
                 match nums().reduce(best) {
                     Some(n) => Value::Num(n),
                     // No number at all: the text, in order.
                     None => {
                         let texts = present().map(Value::text);
-                        let t = if self == AggFn::Min { texts.min() } else { texts.max() };
+                        let t = if self == AggFn::Min {
+                            texts.min()
+                        } else {
+                            texts.max()
+                        };
                         t.map_or(Value::Null, Value::Str)
                     }
                 }
@@ -287,7 +297,9 @@ impl AggFn {
             AggFn::First => present().next().cloned().unwrap_or(Value::Null),
             AggFn::Last => present().next_back().cloned().unwrap_or(Value::Null),
             AggFn::Values => Value::Str(present().map(Value::text).collect::<Vec<_>>().join("|")),
-            AggFn::DistinctValues => Value::Str(distinct(vals).into_iter().collect::<Vec<_>>().join("|")),
+            AggFn::DistinctValues => {
+                Value::Str(distinct(vals).into_iter().collect::<Vec<_>>().join("|"))
+            }
             AggFn::Cardinality => Value::Num(distinct(vals).len() as f64),
             AggFn::Mode => {
                 let mut counts: Vec<(String, usize)> = Vec::new();
@@ -299,7 +311,10 @@ impl AggFn {
                 }
                 // The most frequent; on a tie, the first seen.
                 let top = counts.iter().map(|(_, c)| *c).max();
-                counts.into_iter().find(|(_, c)| Some(*c) == top).map_or(Value::Null, |(v, _)| Value::Str(v))
+                counts
+                    .into_iter()
+                    .find(|(_, c)| Some(*c) == top)
+                    .map_or(Value::Null, |(v, _)| Value::Str(v))
             }
             AggFn::Var | AggFn::Stddev => {
                 let v: Vec<f64> = nums().collect();
@@ -310,8 +325,14 @@ impl AggFn {
                 let var = v.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / v.len() as f64;
                 Value::Num(if self == AggFn::Var { var } else { var.sqrt() })
             }
-            AggFn::LexFirst => present().map(Value::text).min().map_or(Value::Null, Value::Str),
-            AggFn::LexLast => present().map(Value::text).max().map_or(Value::Null, Value::Str),
+            AggFn::LexFirst => present()
+                .map(Value::text)
+                .min()
+                .map_or(Value::Null, Value::Str),
+            AggFn::LexLast => present()
+                .map(Value::text)
+                .max()
+                .map_or(Value::Null, Value::Str),
             AggFn::All => Value::Bool(vals.iter().all(Value::truthy)),
             AggFn::Any => Value::Bool(vals.iter().any(Value::truthy)),
         }
@@ -320,7 +341,10 @@ impl AggFn {
 
 /// The distinct non-empty values, sorted.
 fn distinct(vals: &[Value]) -> std::collections::BTreeSet<String> {
-    vals.iter().filter(|v| !v.is_empty()).map(Value::text).collect()
+    vals.iter()
+        .filter(|v| !v.is_empty())
+        .map(Value::text)
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -344,11 +368,20 @@ impl Expr {
             Expr::Lit(v) => v.clone(),
             Expr::Col(i) => Value::Str(row.get(*i).cloned().unwrap_or_default()),
             Expr::Agg(slot) => aggs.get(*slot).cloned().unwrap_or(Value::Null),
-            Expr::Neg(e) => e.eval(row, aggs).num().map_or(Value::Null, |n| Value::Num(-n)),
+            Expr::Neg(e) => e
+                .eval(row, aggs)
+                .num()
+                .map_or(Value::Null, |n| Value::Num(-n)),
             Expr::Not(e) => Value::Bool(!e.eval(row, aggs).truthy()),
-            Expr::Match(e, re, negate) => Value::Bool(re.is_match(&e.eval(row, aggs).text()) != *negate),
-            Expr::Bin(Bin::Or, a, b) => Value::Bool(a.eval(row, aggs).truthy() || b.eval(row, aggs).truthy()),
-            Expr::Bin(Bin::And, a, b) => Value::Bool(a.eval(row, aggs).truthy() && b.eval(row, aggs).truthy()),
+            Expr::Match(e, re, negate) => {
+                Value::Bool(re.is_match(&e.eval(row, aggs).text()) != *negate)
+            }
+            Expr::Bin(Bin::Or, a, b) => {
+                Value::Bool(a.eval(row, aggs).truthy() || b.eval(row, aggs).truthy())
+            }
+            Expr::Bin(Bin::And, a, b) => {
+                Value::Bool(a.eval(row, aggs).truthy() && b.eval(row, aggs).truthy())
+            }
             Expr::Bin(op, a, b) => binary(*op, a.eval(row, aggs), b.eval(row, aggs)),
             Expr::Call(f, args) => call(*f, args.iter().map(|a| a.eval(row, aggs)).collect()),
         }
@@ -421,7 +454,10 @@ fn call(f: Func, args: Vec<Value>) -> Value {
         Func::IsEmpty => Value::Bool(args[0].is_empty()),
         Func::IsNumeric => Value::Bool(!args[0].is_empty() && args[0].num().is_some()),
         Func::Not => Value::Bool(!args[0].truthy()),
-        Func::Coalesce => args.into_iter().find(|v| !v.is_empty()).unwrap_or(Value::Null),
+        Func::Coalesce => args
+            .into_iter()
+            .find(|v| !v.is_empty())
+            .unwrap_or(Value::Null),
         Func::If => {
             let mut it = args.into_iter();
             let cond = it.next().is_some_and(|c| c.truthy());
@@ -448,7 +484,8 @@ enum Tok {
 
 /// The operators, longest first so `**` is not read as `*` `*`.
 const OPS: &[&str] = &[
-    "||", "&&", "==", "!=", "<=", ">=", "=~", "!~", "++", "**", "//", "<", ">", "=", "+", "-", "*", "/", "%", "!",
+    "||", "&&", "==", "!=", "<=", ">=", "=~", "!~", "++", "**", "//", "<", ">", "=", "+", "-", "*",
+    "/", "%", "!",
 ];
 
 /// Each token and the byte where it starts.
@@ -478,11 +515,15 @@ fn tokenize(src: &str) -> Result<Vec<(Tok, usize)>, String> {
             Tok::Str(s)
         } else if c.is_ascii_digit() || (c == '.' && b.get(i + 1).is_some_and(u8::is_ascii_digit)) {
             let end = number_end(b, i);
-            let n = src[i..end].parse().map_err(|_| format!("not a number: {}", &src[i..end]))?;
+            let n = src[i..end]
+                .parse()
+                .map_err(|_| format!("not a number: {}", &src[i..end]))?;
             i = end;
             Tok::Num(n)
         } else if c.is_alphabetic() || c == '_' {
-            let end = src[i..].find(|ch: char| !(ch.is_alphanumeric() || ch == '_')).map_or(src.len(), |n| i + n);
+            let end = src[i..]
+                .find(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+                .map_or(src.len(), |n| i + n);
             let word = &src[i..end];
             i = end;
             Tok::Ident(word.into())
@@ -534,7 +575,9 @@ fn read_string(src: &str, start: usize) -> Result<(String, usize), String> {
             _ => out.push(c),
         }
     }
-    Err(format!("a string that starts at position {start} never ends"))
+    Err(format!(
+        "a string that starts at position {start} never ends"
+    ))
 }
 
 // ---- parser --------------------------------------------------------------
@@ -596,7 +639,13 @@ pub fn compile_aggs(src: &str, headers: &[String]) -> Result<Aggs, String> {
         match p.next() {
             Tok::Comma => continue,
             Tok::End => break,
-            t => return Err(format!("expected `,` or the end after `{}`, got {}", src[start..end].trim(), describe(&t))),
+            t => {
+                return Err(format!(
+                    "expected `,` or the end after `{}`, got {}",
+                    src[start..end].trim(),
+                    describe(&t)
+                ));
+            }
         }
     }
     Ok((p.aggs.take().unwrap_or_default(), items))
@@ -682,7 +731,11 @@ impl<'a> Parser<'a> {
     fn expect_end(&mut self) -> Result<(), String> {
         match self.next() {
             Tok::End => Ok(()),
-            t => Err(format!("unexpected {} at position {}", describe(&t), self.toks[self.pos.saturating_sub(1)].1)),
+            t => Err(format!(
+                "unexpected {} at position {}",
+                describe(&t),
+                self.toks[self.pos.saturating_sub(1)].1
+            )),
         }
     }
 
@@ -700,7 +753,9 @@ impl<'a> Parser<'a> {
                 left = Expr::Match(Box::new(left), re, negate);
                 continue;
             }
-            let Some((bp, op)) = infix(self.peek()) else { break };
+            let Some((bp, op)) = infix(self.peek()) else {
+                break;
+            };
             if bp < min {
                 break;
             }
@@ -715,7 +770,10 @@ impl<'a> Parser<'a> {
     fn pattern(&mut self) -> Result<Regex, String> {
         match self.next() {
             Tok::Str(p) => Regex::new(&p).map_err(|e| format!("bad pattern \"{p}\": {e}")),
-            t => Err(format!("a pattern is a string literal (\"^a.*\"), got {}", describe(&t))),
+            t => Err(format!(
+                "a pattern is a string literal (\"^a.*\"), got {}",
+                describe(&t)
+            )),
         }
     }
 
@@ -755,7 +813,12 @@ impl<'a> Parser<'a> {
         }
         resolve_name(self.headers, name)
             .map(Expr::Col)
-            .ok_or_else(|| format!("no column `{name}`; the columns are {}", column_list(self.headers)))
+            .ok_or_else(|| {
+                format!(
+                    "no column `{name}`; the columns are {}",
+                    column_list(self.headers)
+                )
+            })
     }
 
     /// The arguments up to `)`.
@@ -770,7 +833,12 @@ impl<'a> Parser<'a> {
             match self.next() {
                 Tok::Comma => continue,
                 Tok::RParen => return Ok(args),
-                t => return Err(format!("expected `,` or `)` in a call, got {}", describe(&t))),
+                t => {
+                    return Err(format!(
+                        "expected `,` or `)` in a call, got {}",
+                        describe(&t)
+                    ));
+                }
             }
         }
     }
@@ -788,9 +856,12 @@ impl<'a> Parser<'a> {
             if self.aggs.is_some() && !self.in_agg {
                 return Err("a column is outside an aggregation: group by it, or aggregate it (first(col(...)))".into());
             }
-            return i
-                .map(Expr::Col)
-                .ok_or_else(|| format!("no such column in col(); the columns are {}", column_list(self.headers)));
+            return i.map(Expr::Col).ok_or_else(|| {
+                format!(
+                    "no such column in col(); the columns are {}",
+                    column_list(self.headers)
+                )
+            });
         }
         if name == "match" {
             let subject = self.expr(0)?;
@@ -816,14 +887,23 @@ impl<'a> Parser<'a> {
             let arg = match (func, args.len()) {
                 (AggFn::Count, 0) => None,
                 (_, 1) => args.pop(),
-                _ => return Err(format!("{name}() takes one argument{}", if func == AggFn::Count { " or none" } else { "" })),
+                _ => {
+                    return Err(format!(
+                        "{name}() takes one argument{}",
+                        if func == AggFn::Count { " or none" } else { "" }
+                    ));
+                }
             };
             let slots = self.aggs.as_mut().expect("in a groupby");
             slots.push(AggSlot { func, arg });
             return Ok(Expr::Agg(slots.len() - 1));
         }
         let Some(func) = Func::named(name) else {
-            let hint = if AggFn::named(name).is_some() { " (an aggregation: use it in groupby or agg)" } else { "" };
+            let hint = if AggFn::named(name).is_some() {
+                " (an aggregation: use it in groupby or agg)"
+            } else {
+                ""
+            };
             return Err(format!("unknown function {name}(){hint}"));
         };
         let args = self.args()?;

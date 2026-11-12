@@ -8,7 +8,10 @@ pub fn resolve_name(headers: &[String], name: &str) -> Option<usize> {
         return Some(i);
     }
     let want = name.trim().to_lowercase();
-    let mut loose = headers.iter().enumerate().filter(|(_, h)| h.trim().to_lowercase() == want);
+    let mut loose = headers
+        .iter()
+        .enumerate()
+        .filter(|(_, h)| h.trim().to_lowercase() == want);
     match (loose.next(), loose.next()) {
         (Some((i, _)), None) => Some(i),
         _ => None,
@@ -32,15 +35,19 @@ fn one(headers: &[String], item: &str, quoted: bool) -> Result<usize, String> {
     if let Some(i) = resolve_name(headers, item) {
         return Ok(i);
     }
-    if !quoted
-        && let Ok(i) = item.trim().parse::<usize>()
-    {
+    if !quoted && let Ok(i) = item.trim().parse::<usize>() {
         if i < headers.len() {
             return Ok(i);
         }
-        return Err(format!("column index {i} is past the last column ({})", headers.len().saturating_sub(1)));
+        return Err(format!(
+            "column index {i} is past the last column ({})",
+            headers.len().saturating_sub(1)
+        ));
     }
-    Err(format!("no column `{item}`; the columns are {}", column_list(headers)))
+    Err(format!(
+        "no column `{item}`; the columns are {}",
+        column_list(headers)
+    ))
 }
 
 /// One item of a selection.
@@ -79,8 +86,17 @@ pub fn select(spec: &str, headers: &[String]) -> Result<Vec<usize>, String> {
     let mut picked = Vec::new();
     let mut dropped = Vec::new();
     let mut any_positive = false;
-    for Item { text, quoted, negate } in items(spec) {
-        let item = if quoted { text } else { text.trim().to_string() };
+    for Item {
+        text,
+        quoted,
+        negate,
+    } in items(spec)
+    {
+        let item = if quoted {
+            text
+        } else {
+            text.trim().to_string()
+        };
         if item.is_empty() && !quoted {
             continue;
         }
@@ -91,9 +107,21 @@ pub fn select(spec: &str, headers: &[String]) -> Result<Vec<usize>, String> {
         } else if resolve_name(headers, &item).is_none()
             && let Some((a, b)) = item.split_once(':')
         {
-            let from = if a.trim().is_empty() { 0 } else { one(headers, a, false)? };
-            let to = if b.trim().is_empty() { headers.len().saturating_sub(1) } else { one(headers, b, false)? };
-            if from <= to { (from..=to).collect() } else { (to..=from).rev().collect() }
+            let from = if a.trim().is_empty() {
+                0
+            } else {
+                one(headers, a, false)?
+            };
+            let to = if b.trim().is_empty() {
+                headers.len().saturating_sub(1)
+            } else {
+                one(headers, b, false)?
+            };
+            if from <= to {
+                (from..=to).collect()
+            } else {
+                (to..=from).rev().collect()
+            }
         } else {
             vec![one(headers, &item, false)?]
         };
