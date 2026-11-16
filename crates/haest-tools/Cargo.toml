@@ -12,6 +12,8 @@ categories.workspace = true
 
 [dependencies]
 haest-core = { workspace = true }
+# WebFetch's and GenerateImage's requests; re-exported as `haest_tools::http`.
+haest-http = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 serde_json = { workspace = true }
@@ -19,11 +21,9 @@ tokio = { workspace = true, features = ["net"] }
 tokio-util = { workspace = true }
 # Glob: the pattern matcher only; the directory walk goes through the workspace Fs.
 globset = { version = "0.4", default-features = false }
-# WebFetch: WHATWG URL parsing (odd IPv4 spellings normalise the way a browser's do),
-# a GET client that never follows redirects on its own, and HTML -> Markdown.
+# WebFetch: WHATWG URL parsing (odd IPv4 spellings normalise the way a browser's do)
+# and HTML -> Markdown.
 url = "2"
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2"] }
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
 htmd = "0.5"
 # GenerateImage: the Image API's base64 answer, the model list's setting specs.
 base64 = "0.22"

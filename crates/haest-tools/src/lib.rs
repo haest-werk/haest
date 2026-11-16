@@ -37,7 +37,7 @@
 //! | KillShell | stops a background job and everything it started | no | `bash` | the [`JobHub`] (only with one) |
 //! | Grep | ripgrep over the files | yes | `grep` | an `rg` the workspace can run |
 //! | Glob | files by glob pattern, newest first | yes | `glob` | the workspace's files |
-//! | WebFetch | one public web page as markdown, or as media | yes | `web_fetch` | a [`WebFetchNet`] (the default resolves with the system and fetches with reqwest) |
+//! | WebFetch | one public web page as markdown, or as media | yes | `web_fetch` | a [`WebFetchNet`] (the default resolves with the system and fetches with its own guarded client) |
 //! | TaskCreate, TaskUpdate | add or change a task | no | `tasks` | a [`TaskBoard`] |
 //! | TaskList, TaskGet | the whole list, or one task | yes | `tasks` | the same [`TaskBoard`] |
 //! | Skill | a skill's full instructions | yes | `skill` | [`SkillToolOptions`] |
@@ -49,6 +49,10 @@
 //! | Agent, SendMessage, StopAgent | start, message and stop subagents | no | [`SubagentHub::tools_for`], [`agents::agent_tools`] | an [`AgentDirectory`]; the default [`SubagentHub`] needs a [`SubagentParent`] |
 //! | ToolSearch (and CallTool) | loads a deferred tool's schema (calls one, in proxy mode) | ToolSearch only | [`tool_search::DeferredTools`] | a [`ToolDeferral`](haest_core::deferred_tools::ToolDeferral) |
 //! | GenerateImage | makes an image with an image model, saves and shows it | no | [`ImageTool`] | an Image API key ([`ImageToolOptions`]) |
+//!
+//! WebFetch and GenerateImage make their requests through [`http::HttpClient`]
+//! (haest-http, re-exported as [`http`]), so a host or a test can hand either
+//! one its own client.
 //!
 //! A turn the human did not start (a background job that exited, a subagent's
 //! message for main) reaches the model through the host's [`Inbox`], counted
@@ -125,6 +129,11 @@ mod testkit;
 pub mod tool_search;
 pub mod turn_gate;
 pub mod web_fetch;
+
+/// The HTTP seam WebFetch and GenerateImage send through: implement
+/// [`http::HttpClient`] to give either tool a client of your own.
+#[doc(inline)]
+pub use haest_http as http;
 
 pub use agents::{AgentDirectory, SubagentHub, SubagentParent};
 pub use bash::{BashOptions, BashTool};

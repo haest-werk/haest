@@ -6,9 +6,11 @@
 //! not reach any of them. So a URL passes only when it is http(s) and EVERY
 //! address its host resolves to is public; the caller re-checks each redirect hop.
 //!
-//! [`assert_public_url`] returns the addresses it checked, and the default HTTP
-//! client connects ONLY to those (DNS pinning), so a name that answers
-//! public-then-private (rebinding) cannot slip between the check and the connect.
+//! [`assert_public_url`] checks a URL before it is fetched, and WebFetch's
+//! default HTTP client checks again when it connects: it resolves names
+//! through the same [`Resolve`] and refuses any name with a blocked address, so
+//! a name that answers public-then-private (rebinding) cannot slip between the
+//! check and the connect.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -106,7 +108,8 @@ pub fn host_port(url: &Url) -> String {
 }
 
 /// The addresses a fetch of `url` may connect to: every address its host
-/// resolves to, all of them public. Connect only to these (DNS pinning).
+/// resolves to, all of them public. A client that resolves the name again
+/// must check again when it connects (WebFetch's default does).
 ///
 /// Check every redirect hop again: a public page may redirect to a private
 /// one.
@@ -159,22 +162,34 @@ pub async fn assert_public_url(url: &Url, resolve: &dyn Resolve) -> Result<Vec<I
     let addresses = match url.host() {
         Some(Host::Ipv4(ip)) => vec![IpAddr::V4(ip)],
         Some(Host::Ipv6(ip)) => vec![IpAddr::V6(ip)],
-        Some(Host::Domain(name)) => resolve
-            .resolve(name)
-            .await
-            .map_err(|e| format!("could not resolve {name}: {e}"))?,
+        Some(Host::Domain(name)) => return resolve_public(name, resolve).await,
         None => return Err(format!("{url} has no host")),
     };
+    all_public(&host_port(url), addresses)
+}
+
+/// Every address `name` resolves to, all of them public: what WebFetch's
+/// client connects to (the check again, at connect time).
+pub(crate) async fn resolve_public(
+    name: &str,
+    resolve: &dyn Resolve,
+) -> Result<Vec<IpAddr>, String> {
+    let addresses = resolve
+        .resolve(name)
+        .await
+        .map_err(|e| format!("could not resolve {name}: {e}"))?;
+    all_public(name, addresses)
+}
+
+/// `addresses` when there is one and every one is public; else why not,
+/// naming the host as `shown`.
+fn all_public(shown: &str, addresses: Vec<IpAddr>) -> Result<Vec<IpAddr>, String> {
     if addresses.is_empty() {
-        return Err(format!(
-            "{} resolves to no address",
-            url.host_str().unwrap_or_default()
-        ));
+        return Err(format!("{shown} resolves to no address"));
     }
     if let Some(ip) = addresses.iter().find(|ip| is_blocked(**ip)) {
         return Err(format!(
-            "refusing {}: {ip} is a private, local or reserved address. haest only fetches the public internet.",
-            host_port(url)
+            "refusing {shown}: {ip} is a private, local or reserved address. haest only fetches the public internet."
         ));
     }
     Ok(addresses)

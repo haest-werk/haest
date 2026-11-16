@@ -1,128 +1,61 @@
-//! WebFetch's HTTP seam: one GET, never following a redirect (WebFetch follows
-//! them by hand so the net guard sees every hop), connecting only to the
-//! addresses the guard checked.
-//!
-//! PLUG POINT: implement [`HttpGet`] for a host's own transport (or a test's fake
-//! web). [`ReqwestGet`] is the default.
+//! WebFetch's default HTTP client: haest's reqwest client
+//! ([`ReqwestClient::configured`]) that follows no redirect (WebFetch follows
+//! them by hand so the net guard sees every hop) and resolves names through
+//! the guard's [`Resolve`] when it connects, refusing a name with any blocked
+//! address. What it connects to is what was checked, at the moment of
+//! connecting: a name that rebinds to a private address after the guard's
+//! first look is refused, not reached.
 
-use std::net::{IpAddr, SocketAddr};
+use std::{net::SocketAddr, sync::Arc};
 
-use async_trait::async_trait;
-use futures::{StreamExt, stream::BoxStream};
-use url::{Host, Url};
+use haest_http::{
+    ReqwestClient,
+    reqwest::{
+        dns::{self, Addrs, Name, Resolving},
+        redirect,
+    },
+};
 
-/// A response body, chunk by chunk, so a cap can stop it without buffering it all.
-pub type Body = BoxStream<'static, Result<Vec<u8>, String>>;
+use crate::net_guard::{Resolve, resolve_public};
 
-/// One HTTP response as WebFetch reads it: status, headers, and the body as a
-/// stream.
-pub struct HttpResponse {
-    /// The status code; a 3xx with a `location` header is a redirect.
-    pub status: u16,
-    /// Header names in any case; read them with [`HttpResponse::header`].
-    pub headers: Vec<(String, String)>,
-    /// The body, chunk by chunk.
-    pub body: Body,
+/// reqwest's resolver for WebFetch: names resolve through `resolve`, and with
+/// `guard` on (always, outside this module's tests) a name with any blocked
+/// address does not resolve at all.
+struct Guarded {
+    resolve: Arc<dyn Resolve>,
+    guard: bool,
 }
 
-impl HttpResponse {
-    /// A whole body in one chunk (tests, a host whose transport buffers).
-    pub fn buffered(status: u16, headers: &[(&str, &str)], body: impl Into<Vec<u8>>) -> Self {
-        let body: Vec<u8> = body.into();
-        Self {
-            status,
-            headers: headers
-                .iter()
-                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-                .collect(),
-            body: futures::stream::iter([Ok(body)]).boxed(),
-        }
-    }
-
-    /// One header's value; the name is matched case-insensitively.
-    pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
-    }
-
-    /// Whether the status is a success (2xx).
-    pub fn ok(&self) -> bool {
-        (200..300).contains(&self.status)
-    }
-}
-
-/// PLUG POINT: WebFetch's HTTP client, one GET at a time. [`ReqwestGet`] is
-/// the default; a host's own transport or a test's fake web implements it.
-#[async_trait]
-pub trait HttpGet: Send + Sync {
-    /// ONE GET of `url`; a redirect comes back as a 3xx response, never followed.
-    /// `pinned` are the addresses the net guard checked for the URL's host: an
-    /// implementation that resolves names itself connects only to those.
-    /// `user_agent` is WebFetch's own. An Err is a reason the model reads.
-    async fn get(
-        &self,
-        url: &Url,
-        pinned: &[IpAddr],
-        user_agent: &str,
-    ) -> Result<HttpResponse, String>;
-}
-
-/// The default [`HttpGet`]: reqwest with rustls, no proxy, no redirects, DNS
-/// pinned to `pinned`.
-///
-/// It installs rustls's `ring` provider as the process default when no
-/// provider is installed yet.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ReqwestGet;
-
-#[async_trait]
-impl HttpGet for ReqwestGet {
-    async fn get(
-        &self,
-        url: &Url,
-        pinned: &[IpAddr],
-        user_agent: &str,
-    ) -> Result<HttpResponse, String> {
-        // reqwest takes the process-wide provider when one is installed; this
-        // installs ring only when nobody has installed one yet.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let mut builder = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
-            .user_agent(user_agent);
-        if let Some(Host::Domain(name)) = url.host() {
-            // The port in a pinned address is ignored: the URL's port is used.
-            let addrs: Vec<SocketAddr> = pinned.iter().map(|ip| SocketAddr::new(*ip, 0)).collect();
-            builder = builder.resolve_to_addrs(name, &addrs);
-        }
-        let client = builder.build().map_err(|e| e.to_string())?;
-        let res = client
-            .get(url.clone())
-            .send()
-            .await
-            .map_err(|e| format!("could not fetch {url}: {e}"))?;
-        let headers = res
-            .headers()
-            .iter()
-            .filter_map(|(k, v)| Some((k.as_str().to_string(), v.to_str().ok()?.to_string())))
-            .collect();
-        let status = res.status().as_u16();
-        // Chunks until the end or the first error; the response drops with the stream.
-        let body = futures::stream::unfold(Some(res), |state| async move {
-            let mut res = state?;
-            match res.chunk().await {
-                Ok(Some(chunk)) => Some((Ok(chunk.to_vec()), Some(res))),
-                Ok(None) => None,
-                Err(e) => Some((Err(e.to_string()), None)),
-            }
-        })
-        .boxed();
-        Ok(HttpResponse {
-            status,
-            headers,
-            body,
+impl dns::Resolve for Guarded {
+    fn resolve(&self, name: Name) -> Resolving {
+        let (resolve, guard) = (self.resolve.clone(), self.guard);
+        Box::pin(async move {
+            let addresses = if guard {
+                resolve_public(name.as_str(), resolve.as_ref()).await?
+            } else {
+                resolve.resolve(name.as_str()).await?
+            };
+            // The port is the URL's: reqwest replaces this 0.
+            let addrs: Addrs = Box::new(addresses.into_iter().map(|ip| SocketAddr::new(ip, 0)));
+            Ok(addrs)
         })
     }
 }
+
+/// WebFetch's default client over `resolve`: no redirects, the guard at connect time.
+pub(super) fn guarded_client(resolve: Arc<dyn Resolve>) -> ReqwestClient {
+    client(resolve, true)
+}
+
+fn client(resolve: Arc<dyn Resolve>, guard: bool) -> ReqwestClient {
+    ReqwestClient::configured(move |builder| {
+        let dns = Guarded {
+            resolve: resolve.clone(),
+            guard,
+        };
+        builder.redirect(redirect::Policy::none()).dns_resolver(dns)
+    })
+}
+
+#[cfg(test)]
+mod tests;

@@ -1,4 +1,4 @@
-//! Ported from tools/image.test.ts. The Image API is a fake transport; the
+//! Ported from tools/image.test.ts. The Image API is a fake HTTP client; the
 //! workspace is in memory. Runs through `run_call`, as the loop does, so a
 //! refusal is an error result.
 
@@ -11,10 +11,10 @@ use haest_core::{
     messages::{MediaKind, ToolCall},
     tool::{Tool, ToolContext, ToolOutput, ToolServices},
 };
+use haest_http::{HttpClient, HttpError, Method, Request, Response};
 use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
 
-use super::{HttpReply, ImageHttp, ImageTool, ImageToolOptions};
+use super::{ImageTool, ImageToolOptions};
 use crate::testkit::{self, CWD, TestWorkspace};
 
 const JPEG: [u8; 10] = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0];
@@ -31,41 +31,44 @@ fn models() -> Value {
     ]})
 }
 
-fn image_answer(bytes: &[u8]) -> HttpReply {
+/// A canned answer: its status and body.
+type Canned = (u16, String);
+
+fn json_answer(status: u16, body: &Value) -> Canned {
+    (status, body.to_string())
+}
+
+fn image_answer(bytes: &[u8]) -> Canned {
     use base64::{Engine, engine::general_purpose::STANDARD};
-    HttpReply::json(
+    json_answer(
         200,
         &json!({"data": [{"b64_json": STANDARD.encode(bytes)}], "usage": {"cost": 0.04}}),
     )
 }
 
 struct FakeApi {
-    list: Mutex<HttpReply>,
-    answer: Mutex<HttpReply>,
+    list: Mutex<Canned>,
+    answer: Mutex<Canned>,
     gets: Mutex<usize>,
     /// (url, bearer key, body) of every POST.
     posted: Mutex<Vec<(String, String, Value)>>,
 }
 
 #[async_trait]
-impl ImageHttp for FakeApi {
-    async fn get(&self, url: &str, _: CancellationToken) -> Result<HttpReply, String> {
-        assert!(url.ends_with("/images/models"));
-        *self.gets.lock().unwrap() += 1;
-        Ok(self.list.lock().unwrap().clone())
-    }
-    async fn post_json(
-        &self,
-        url: &str,
-        key: &str,
-        body: &Value,
-        _: CancellationToken,
-    ) -> Result<HttpReply, String> {
-        self.posted
-            .lock()
-            .unwrap()
-            .push((url.into(), key.into(), body.clone()));
-        Ok(self.answer.lock().unwrap().clone())
+impl HttpClient for FakeApi {
+    async fn send(&self, req: Request) -> Result<Response, HttpError> {
+        let (status, body) = if req.method == Method::Get {
+            assert!(req.url.ends_with("/images/models"));
+            *self.gets.lock().unwrap() += 1;
+            self.list.lock().unwrap().clone()
+        } else {
+            let auth = req.header("authorization").unwrap_or_default();
+            let key = auth.strip_prefix("Bearer ").unwrap_or_default().to_string();
+            let sent = (req.url.clone(), key, req.json());
+            self.posted.lock().unwrap().push(sent);
+            self.answer.lock().unwrap().clone()
+        };
+        Ok(Response::new(status, body))
     }
 }
 
@@ -90,7 +93,7 @@ struct Rig {
 impl Rig {
     fn new() -> Self {
         let api = Arc::new(FakeApi {
-            list: Mutex::new(HttpReply::json(200, &models())),
+            list: Mutex::new(json_answer(200, &models())),
             answer: Mutex::new(image_answer(&JPEG)),
             gets: Mutex::default(),
             posted: Mutex::default(),
@@ -208,10 +211,7 @@ async fn a_call_the_model_cannot_take_is_refused_before_any_spend() {
 #[tokio::test]
 async fn an_unreadable_model_list_does_not_block_the_call() {
     let r = Rig::new();
-    *r.api.list.lock().unwrap() = HttpReply {
-        status: 503,
-        body: b"down".to_vec(),
-    };
+    *r.api.list.lock().unwrap() = (503, "down".into());
     let out = r
         .run(json!({"prompt": "x", "settings": {"quality": "high"}}))
         .await;
@@ -226,12 +226,12 @@ async fn an_unreadable_model_list_does_not_block_the_call() {
 #[tokio::test]
 async fn a_refusal_or_an_answer_without_an_image_is_an_error_the_model_can_act_on() {
     let r = Rig::new();
-    *r.api.answer.lock().unwrap() = HttpReply::json(400, &json!({"error": {"message": "unsafe"}}));
+    *r.api.answer.lock().unwrap() = json_answer(400, &json!({"error": {"message": "unsafe"}}));
     assert!(r.run(json!({"prompt": "x"})).await.is_error);
-    *r.api.answer.lock().unwrap() = HttpReply::json(200, &json!({"data": []}));
+    *r.api.answer.lock().unwrap() = json_answer(200, &json!({"data": []}));
     assert!(r.run(json!({"prompt": "x"})).await.is_error);
     // An SVG (a page a browser would run) is never written.
-    let svg = HttpReply::json(
+    let svg = json_answer(
         200,
         &json!({"data": [{"b64_json": "PHN2Zz4=", "media_type": "image/svg+xml"}]}),
     );

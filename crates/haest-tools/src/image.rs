@@ -13,8 +13,8 @@
 //! and charges to the ledger, so the turn total and the caps both count it.
 //! Ported from the TS haest's `tools/image.ts`.
 //!
-//! PLUG POINT: [`ImageHttp`] (the transport) and the API key are the host's;
-//! haest never reads a key from the environment.
+//! PLUG POINT: [`ImageToolOptions::http`] (any [`HttpClient`]) and the API key
+//! are the host's; haest never reads a key from the environment.
 //!
 //! Start from [`ImageToolOptions::new`] and [`ImageTool::new`]. GenerateImage
 //! is not one of the [`builtin_tools`](crate::builtin_tools): a host adds it
@@ -32,9 +32,8 @@ use std::{fmt, sync::Arc};
 pub use catalog::ImageCatalog;
 pub use haest_core::__private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
 use haest_core::handed::OPENROUTER_URL;
-pub use request::{
-    HttpReply, ImageHttp, ImageReply, ReqwestImageHttp, call_image_api, sniff_image_type,
-};
+use haest_http::{HttpClient, ReqwestClient};
+pub use request::{ImageReply, call_image_api, sniff_image_type};
 pub use tool::ImageTool;
 
 /// What GenerateImage runs on. Clones share the model list read so far.
@@ -48,15 +47,16 @@ pub struct ImageToolOptions {
     pub model: String,
     /// Every model a call may pick, the default first.
     pub models: Vec<String>,
-    /// The transport for the model list and the image request.
-    pub http: Arc<dyn ImageHttp>,
+    /// The client for the model list and the image request.
+    pub http: Arc<dyn HttpClient>,
     /// The model list read so far, shared by clones of these options.
     pub catalog: Arc<ImageCatalog>,
 }
 
 impl ImageToolOptions {
     /// The defaults, with the host's key: OpenRouter's Image API,
-    /// [`DEFAULT_IMAGE_MODEL`] among [`DEFAULT_IMAGE_MODELS`], reqwest.
+    /// [`DEFAULT_IMAGE_MODEL`] among [`DEFAULT_IMAGE_MODELS`], the shared
+    /// [`ReqwestClient::new`] (built on the first request, never here).
     ///
     /// ```
     /// use haest_tools::ImageToolOptions;
@@ -72,7 +72,7 @@ impl ImageToolOptions {
             base_url: OPENROUTER_URL.into(),
             model: DEFAULT_IMAGE_MODEL.into(),
             models: DEFAULT_IMAGE_MODELS.map(String::from).to_vec(),
-            http: Arc::new(ReqwestImageHttp),
+            http: Arc::new(ReqwestClient::new()),
             catalog: Arc::default(),
         }
     }

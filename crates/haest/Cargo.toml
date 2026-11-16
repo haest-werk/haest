@@ -19,7 +19,7 @@ default = ["providers", "workspace", "tools", "mcp", "code", "mods", "settings"]
 http = ["dep:haest-http"]
 providers = ["dep:haest-providers", "http"]
 workspace = ["dep:haest-workspace"]
-tools = ["dep:haest-tools"]
+tools = ["dep:haest-tools", "http"]
 mcp = ["dep:haest-mcp"]
 # The QuickJS engine: the Code tool and the sandbox `js` command.
 code = ["dep:haest-code"]

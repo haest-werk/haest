@@ -90,7 +90,7 @@ async fn a_host_is_refused_when_any_address_it_resolves_to_is_private() {
     assert_eq!(
         ok,
         [PUBLIC.parse::<IpAddr>().unwrap()],
-        "the checked addresses, for pinning"
+        "the checked addresses"
     );
 }
 

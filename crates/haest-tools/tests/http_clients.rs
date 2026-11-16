@@ -1,7 +1,7 @@
-//! Where haest-tools' own HTTP clients connect: only where they were told, never
-//! through a proxy the process environment names (PLAN D15: the library reads
-//! nothing it was not handed), and WebFetch only to the addresses the net guard
-//! approved (the DNS-rebinding defence).
+//! Where haest-tools' default HTTP clients connect: only where they were told,
+//! never through a proxy the process environment names (PLAN D15: the library
+//! reads nothing it was not handed; a proxy would be sent the Image API's key
+//! and every page WebFetch reads).
 //!
 //! Its own test binary: every test here runs with HTTP_PROXY, HTTPS_PROXY and
 //! ALL_PROXY pointing at a listener that must see nothing, which no other
@@ -9,17 +9,17 @@
 
 use std::{
     io::{Read, Write},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener},
+    net::{IpAddr, TcpListener},
     sync::{Arc, Mutex, OnceLock},
+    time::Duration,
 };
 
+use async_trait::async_trait;
 use haest_tools::{
-    image::{ImageHttp, ReqwestImageHttp},
-    web_fetch::{HttpGet, ReqwestGet},
+    ImageToolOptions, WebFetchNet, http::Request, image::call_image_api, net_guard::Resolve,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
-use url::Url;
 
 /// The request heads one listener was sent, lowercased.
 type Seen = Arc<Mutex<Vec<String>>>;
@@ -28,11 +28,6 @@ type Seen = Arc<Mutex<Vec<String>>>;
 fn listener() -> (String, Seen) {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", l.local_addr().unwrap());
-    (url, serve(l))
-}
-
-/// Answer every request `l` accepts `200 {}`; what it was sent.
-fn serve(l: TcpListener) -> Seen {
     let seen = Seen::default();
     let keep = seen.clone();
     std::thread::spawn(move || {
@@ -43,7 +38,7 @@ fn serve(l: TcpListener) -> Seen {
             );
         }
     });
-    seen
+    (url, seen)
 }
 
 /// The head of one request (its body read and dropped, so closing never resets).
@@ -93,76 +88,58 @@ fn proxy_in_env() -> Seen {
 async fn the_image_api_and_its_key_go_straight_to_the_api_never_through_an_env_proxy() {
     let proxy = proxy_in_env();
     let (api, direct) = listener();
-    let http = ReqwestImageHttp;
+    let opts = ImageToolOptions::new("image-api-key");
     let cancel = CancellationToken::new();
-    let posted = http
-        .post_json(
-            &format!("{api}/images"),
-            "image-api-key",
-            &json!({"model": "m"}),
-            cancel.clone(),
-        )
+    let listed = opts
+        .catalog
+        .model_params(&api, "m", opts.http.as_ref(), cancel.clone())
         .await;
-    let listed = http.get(&format!("{api}/models"), cancel).await;
+    // `{}` is no image: refused, but only after the API answered.
+    let posted = call_image_api(
+        opts.http.as_ref(),
+        &api,
+        &opts.api_key,
+        "m",
+        &json!({"model": "m"}),
+        cancel,
+    )
+    .await;
 
     assert!(
         !asked_for(&proxy, &api),
         "the env proxy was sent the API's requests"
     );
-    assert_eq!(posted.unwrap().status, 200);
-    assert_eq!(listed.unwrap().status, 200);
+    assert!(
+        matches!(listed, Ok(None)),
+        "an unreadable list checks nothing"
+    );
+    assert!(posted.is_err());
     let direct = direct.lock().unwrap();
     assert_eq!(direct.len(), 2);
-    assert!(direct[0].contains("authorization: bearer image-api-key"));
+    assert!(direct[1].contains("authorization: bearer image-api-key"));
 }
 
-/// One WebFetch GET of `url`, connecting to `pinned`: its status, or why it failed.
-async fn fetch(url: &str, pinned: &[IpAddr]) -> Result<u16, String> {
-    let url = Url::parse(url).unwrap();
-    ReqwestGet
-        .get(&url, pinned, "haest-test")
-        .await
-        .map(|res| res.status)
-}
+/// Every name is one address the guard lets through, which nothing answers.
+struct Documentation;
 
-#[tokio::test]
-async fn webfetch_connects_to_the_pinned_address_and_never_resolves_the_name_again() {
-    let proxy = proxy_in_env();
-    let (base, seen) = listener();
-    // A name no DNS answers for: only the pinned address can reach the listener.
-    let url = base.replace("127.0.0.1", "pinned.invalid");
-    assert_eq!(fetch(&url, &[Ipv4Addr::LOCALHOST.into()]).await, Ok(200));
-    assert!(seen.lock().unwrap()[0].contains("host: pinned.invalid:"));
-    assert!(
-        !asked_for(&proxy, &url),
-        "the env proxy was sent WebFetch's request"
-    );
+#[async_trait]
+impl Resolve for Documentation {
+    async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, String> {
+        Ok(vec!["192.0.2.1".parse().unwrap()])
+    }
 }
 
 #[tokio::test]
-async fn webfetch_reaches_only_the_pinned_address_when_dns_names_another() {
+async fn webfetch_never_goes_through_an_env_proxy() {
     let proxy = proxy_in_env();
-    // localhost resolves to both loopbacks; one listener on each, same port:
-    // a client that looked the name up again could land on either.
-    let v4 = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = v4.local_addr().unwrap().port();
-    let v6 = TcpListener::bind((Ipv6Addr::LOCALHOST, port))
-        .expect("this test needs the IPv6 loopback, and the port free on it");
-    let (on_v4, on_v6) = (serve(v4), serve(v6));
-    let url = format!("http://localhost:{port}/");
-
-    assert_eq!(fetch(&url, &[Ipv6Addr::LOCALHOST.into()]).await, Ok(200));
-    assert_eq!(
-        (on_v4.lock().unwrap().len(), on_v6.lock().unwrap().len()),
-        (0, 1)
-    );
-    assert_eq!(fetch(&url, &[Ipv4Addr::LOCALHOST.into()]).await, Ok(200));
-    assert_eq!(
-        (on_v4.lock().unwrap().len(), on_v6.lock().unwrap().len()),
-        (1, 1)
-    );
+    let url = "http://site.test:8080/page";
+    let net = WebFetchNet::new(Arc::new(Documentation));
+    // Through the proxy this would be answered at once; direct, nothing answers.
+    let sent =
+        tokio::time::timeout(Duration::from_millis(500), net.http.send(Request::get(url))).await;
+    assert!(!matches!(sent, Ok(Ok(_))), "something answered");
     assert!(
-        !asked_for(&proxy, &url),
+        !asked_for(&proxy, url),
         "the env proxy was sent WebFetch's request"
     );
 }

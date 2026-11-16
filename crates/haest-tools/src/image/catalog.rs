@@ -11,12 +11,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+use haest_http::{HttpClient, Request};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    request::ImageHttp,
+    request::exchange,
     settings::{ModelSettings, SettingSpec},
 };
 
@@ -46,16 +47,15 @@ fn settings_of(params: &serde_json::Map<String, Value>) -> ModelSettings {
 
 async fn fetch(
     base_url: &str,
-    http: &dyn ImageHttp,
+    http: &dyn HttpClient,
     cancel: CancellationToken,
 ) -> Result<Models, String> {
-    let res = http
-        .get(&format!("{base_url}/images/models"), cancel)
-        .await?;
-    if !res.ok() {
-        return Err(format!("the image model list answered HTTP {}", res.status));
+    let get = Request::get(format!("{base_url}/images/models"));
+    let (status, body) = exchange(http, get, cancel).await?;
+    if !(200..300).contains(&status) {
+        return Err(format!("the image model list answered HTTP {status}"));
     }
-    let list: Value = serde_json::from_slice(&res.body).map_err(|e| e.to_string())?;
+    let list: Value = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
     let models: HashMap<String, ModelSettings> = list["data"]
         .as_array()
         .into_iter()
@@ -79,7 +79,7 @@ impl ImageCatalog {
     async fn all(
         &self,
         base_url: &str,
-        http: &dyn ImageHttp,
+        http: &dyn HttpClient,
         cancel: CancellationToken,
     ) -> Option<Models> {
         let kept = self.kept.lock().unwrap().get(base_url).cloned();
@@ -109,7 +109,7 @@ impl ImageCatalog {
         &self,
         base_url: &str,
         model: &str,
-        http: &dyn ImageHttp,
+        http: &dyn HttpClient,
         cancel: CancellationToken,
     ) -> Result<Option<ModelSettings>, String> {
         let Some(all) = self.all(base_url, http, cancel).await else {

@@ -55,35 +55,28 @@ use crate::canonical::pick;
 /// };
 /// use haest_tools::{
 ///     ImageTool, ImageToolOptions,
-///     image::{HttpReply, ImageHttp},
+///     http::{HttpClient, HttpError, Method, Request, Response},
 /// };
 /// use haest_workspace::SandboxWorkspace;
-/// use serde_json::{Value, json};
-/// use tokio_util::sync::CancellationToken;
+/// use serde_json::json;
 ///
 /// /// One model, which takes an aspect ratio and draws a PNG for $0.04.
 /// struct FakeApi;
 ///
 /// #[async_trait]
-/// impl ImageHttp for FakeApi {
-///     async fn get(&self, _url: &str, _: CancellationToken) -> Result<HttpReply, String> {
-///         let aspect = json!({"type": "enum", "values": ["1:1", "16:9"]});
-///         let models = json!({"data": [
-///             {"id": "vendor/pic", "supported_parameters": {"aspect_ratio": aspect}}
-///         ]});
-///         Ok(HttpReply::json(200, &models))
-///     }
-///     async fn post_json(
-///         &self,
-///         _url: &str,
-///         _api_key: &str,
-///         body: &Value,
-///         _: CancellationToken,
-///     ) -> Result<HttpReply, String> {
-///         assert_eq!(body["aspect_ratio"], "16:9");
+/// impl HttpClient for FakeApi {
+///     async fn send(&self, req: Request) -> Result<Response, HttpError> {
+///         if req.method == Method::Get {
+///             let aspect = json!({"type": "enum", "values": ["1:1", "16:9"]});
+///             let models = json!({"data": [
+///                 {"id": "vendor/pic", "supported_parameters": {"aspect_ratio": aspect}}
+///             ]});
+///             return Ok(Response::json(200, &models));
+///         }
+///         assert_eq!(req.json()["aspect_ratio"], "16:9");
 ///         // A PNG signature is enough to count as a PNG.
 ///         let image = json!({"data": [{"b64_json": "iVBORw0KGgo="}], "usage": {"cost": 0.04}});
-///         Ok(HttpReply::json(200, &image))
+///         Ok(Response::json(200, &image))
 ///     }
 /// }
 ///

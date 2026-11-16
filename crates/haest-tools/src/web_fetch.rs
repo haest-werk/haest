@@ -9,14 +9,14 @@
 //! Read in pieces.
 //!
 //! PLUG POINT: [`WebFetchNet`] -- the resolver and the HTTP client, real DNS and
-//! reqwest unless a host (or a test) injects its own. Start from
-//! [`WebFetchTool`].
+//! a guarded reqwest client unless a host (or a test) injects its own. Start
+//! from [`WebFetchTool`].
 
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use futures::StreamExt;
 use haest_core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str};
+use haest_http::{HttpClient, HttpError, Request, Response};
 use serde_json::{Value, json};
 use url::Url;
 
@@ -27,8 +27,6 @@ use crate::{
 };
 
 mod http;
-
-pub use http::{Body, HttpGet, HttpResponse, ReqwestGet};
 
 const MAX_BYTES: usize = 5 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 5;
@@ -71,38 +69,51 @@ pub fn markdown_of(html: &str) -> String {
 
 /// WebFetch's two network seams: how names resolve and how a GET is made.
 ///
-/// The default is the system resolver ([`SystemResolve`]) and reqwest
-/// ([`ReqwestGet`]). A host with its own DNS or HTTP stack, or a test with a
-/// fake web, replaces either.
+/// [`new`](Self::new) (and `Default`, over the system resolver,
+/// [`SystemResolve`]) pairs the resolver with WebFetch's own reqwest client,
+/// which follows no redirect and, when it connects, resolves through the same
+/// resolver and refuses any blocked address. A host with its own DNS starts
+/// from `new(its_resolver)`; a host with its own HTTP stack, or a test with a
+/// fake web, replaces `http`. That client is sent one GET per hop and must not
+/// follow redirects; it should connect only to public addresses.
 #[derive(Clone)]
 pub struct WebFetchNet {
     /// Name -> addresses, for the net guard.
     pub resolve: Arc<dyn Resolve>,
-    /// One GET, connecting only to the addresses the guard checked.
-    pub http: Arc<dyn HttpGet>,
+    /// One GET per hop, redirects handed back, never followed.
+    pub http: Arc<dyn HttpClient>,
 }
 
-impl Default for WebFetchNet {
-    fn default() -> Self {
+impl WebFetchNet {
+    /// The guard over `resolve`, and WebFetch's own client resolving through
+    /// it. Nothing is built until the first fetch.
+    pub fn new(resolve: Arc<dyn Resolve>) -> Self {
         Self {
-            resolve: Arc::new(SystemResolve),
-            http: Arc::new(ReqwestGet),
+            http: Arc::new(http::guarded_client(resolve.clone())),
+            resolve,
         }
     }
 }
 
+impl Default for WebFetchNet {
+    fn default() -> Self {
+        Self::new(Arc::new(SystemResolve))
+    }
+}
+
 /// GET `url`, following redirects by hand so each hop is guarded.
-async fn guarded_get(url: &Url, net: &WebFetchNet) -> Result<(HttpResponse, Url), ToolError> {
+async fn guarded_get(url: &Url, net: &WebFetchNet) -> Result<(Response, Url), ToolError> {
     let mut at = url.clone();
     for _ in 0..=MAX_REDIRECTS {
-        let pinned = assert_public_url(&at, net.resolve.as_ref())
+        assert_public_url(&at, net.resolve.as_ref())
             .await
             .map_err(ToolError::Input)?;
+        let get = Request::get(at.as_str()).with_header("user-agent", USER_AGENT);
         let res = net
             .http
-            .get(&at, &pinned, USER_AGENT)
+            .send(get)
             .await
-            .map_err(ToolError::Input)?;
+            .map_err(|e| ToolError::Input(format!("could not fetch {at}: {}", e.report())))?;
         let location = match res.status {
             300..=399 => res.header("location").map(str::to_string),
             _ => None,
@@ -121,7 +132,7 @@ async fn guarded_get(url: &Url, net: &WebFetchNet) -> Result<(HttpResponse, Url)
 }
 
 /// The body, refusing anything past MAX_BYTES instead of buffering it.
-async fn capped_body(res: &mut HttpResponse) -> Result<Vec<u8>, ToolError> {
+async fn capped_body(res: Response) -> Result<Vec<u8>, ToolError> {
     let declared: u64 = res
         .header("content-length")
         .and_then(|v| v.trim().parse().ok())
@@ -131,24 +142,16 @@ async fn capped_body(res: &mut HttpResponse) -> Result<Vec<u8>, ToolError> {
             "the response is {declared} bytes; the limit is {MAX_BYTES}"
         )));
     }
-    let mut body = Vec::new();
-    while let Some(chunk) = res.body.next().await {
-        let chunk = chunk.map_err(ToolError::Input)?;
-        if body.len() + chunk.len() > MAX_BYTES {
-            return Err(ToolError::Input(format!(
-                "the response passed the {MAX_BYTES}-byte limit"
-            )));
-        }
-        body.extend_from_slice(&chunk);
+    match res.body.bytes(MAX_BYTES).await {
+        Ok(body) => Ok(body.to_vec()),
+        Err(HttpError::TooLarge(_)) => Err(ToolError::Input(format!(
+            "the response passed the {MAX_BYTES}-byte limit"
+        ))),
+        Err(e) => Err(ToolError::Input(e.report())),
     }
-    Ok(body)
 }
 
-async fn to_output(
-    url: &Url,
-    mut res: HttpResponse,
-    ctx: &ToolContext,
-) -> Result<ToolOutput, ToolError> {
+async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
     let media_type = res
         .header("content-type")
         .unwrap_or("application/octet-stream")
@@ -157,13 +160,10 @@ async fn to_output(
         .unwrap_or_default()
         .trim()
         .to_ascii_lowercase();
-    let body = capped_body(&mut res).await?;
-    let head = format!(
-        "{url} -- HTTP {} {media_type}, {} bytes",
-        res.status,
-        body.len()
-    );
-    if is_text_type(&media_type) || !res.ok() {
+    let (status, ok) = (res.status, res.is_success());
+    let body = capped_body(res).await?;
+    let head = format!("{url} -- HTTP {status} {media_type}, {} bytes", body.len());
+    if is_text_type(&media_type) || !ok {
         let text = String::from_utf8_lossy(&body);
         let shown = if media_type.contains("html") {
             markdown_of(&text)
@@ -172,7 +172,7 @@ async fn to_output(
         };
         return Ok(ToolOutput {
             content: format!("{head}\n\n{shown}"),
-            is_error: !res.ok(),
+            is_error: !ok,
             ..Default::default()
         });
     }
@@ -208,11 +208,10 @@ async fn to_output(
 /// };
 /// use haest_tools::{
 ///     WebFetchNet, WebFetchTool,
+///     http::{HttpClient, HttpError, Request, Response},
 ///     net_guard::Resolve,
-///     web_fetch::{HttpGet, HttpResponse},
 /// };
 /// use serde_json::json;
-/// use url::Url;
 ///
 /// /// Every name is one public address that serves one page.
 /// struct FakeWeb;
@@ -225,10 +224,10 @@ async fn to_output(
 /// }
 ///
 /// #[async_trait]
-/// impl HttpGet for FakeWeb {
-///     async fn get(&self, _url: &Url, _pinned: &[IpAddr], _ua: &str) -> Result<HttpResponse, String> {
+/// impl HttpClient for FakeWeb {
+///     async fn send(&self, _req: Request) -> Result<Response, HttpError> {
 ///         let html = "<h1>Hello</h1><script>track()</script>";
-///         Ok(HttpResponse::buffered(200, &[("Content-Type", "text/html")], html))
+///         Ok(Response::new(200, html).with_header("Content-Type", "text/html"))
 ///     }
 /// }
 ///

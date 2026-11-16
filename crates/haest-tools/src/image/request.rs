@@ -4,109 +4,38 @@
 //! provider's own words when it gave them: the model tunes its next call from
 //! it. Ported from the TS haest's `tools/image-request.ts`.
 //!
-//! PLUG POINT: [`ImageHttp`], the two HTTP exchanges the tool makes; a host
-//! supplies its own transport, a test a fake. [`ReqwestImageHttp`] is the default.
+//! The tool's two exchanges (`GET /images/models`, `POST /images`) go through
+//! the [`HttpClient`] in [`ImageToolOptions::http`](super::ImageToolOptions::http).
 
-use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use haest_core::tool::spelled;
+use haest_http::{Bytes, HttpClient, Request};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-/// One HTTP response from the Image API: its status and whole body.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct HttpReply {
-    /// The HTTP status code.
-    pub status: u16,
-    /// The whole body.
-    pub body: Vec<u8>,
-}
+/// The largest answer read: far past any image an Image API returns, short of
+/// a runaway body filling memory.
+const MAX_ANSWER: usize = 64 * 1024 * 1024;
 
-impl HttpReply {
-    /// A reply with `body` as its JSON text (a fake API's answer).
-    pub fn json(status: u16, body: &Value) -> Self {
-        Self {
-            status,
-            body: body.to_string().into_bytes(),
-        }
-    }
-
-    /// Whether the status is a success (2xx).
-    pub fn ok(&self) -> bool {
-        (200..300).contains(&self.status)
-    }
-}
-
-/// PLUG POINT: the two HTTP exchanges GenerateImage makes. An Err is a
-/// transport failure, said to the model as is; an HTTP error status is a
-/// reply, not an Err.
-#[async_trait]
-pub trait ImageHttp: Send + Sync {
-    /// GET `url` (the model list; no key). Gives up promptly when `cancel` fires.
-    async fn get(&self, url: &str, cancel: CancellationToken) -> Result<HttpReply, String>;
-    /// POST `body` as JSON to `url` with `Authorization: Bearer <api_key>`.
-    async fn post_json(
-        &self,
-        url: &str,
-        api_key: &str,
-        body: &Value,
-        cancel: CancellationToken,
-    ) -> Result<HttpReply, String>;
-}
-
-/// The default [`ImageHttp`]: reqwest with rustls, no proxy (none from the
-/// environment either: a proxy would be sent the API key).
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ReqwestImageHttp;
-
-impl ReqwestImageHttp {
-    async fn send(
-        req: reqwest::RequestBuilder,
-        cancel: CancellationToken,
-    ) -> Result<HttpReply, String> {
-        let exchange = async {
-            let res = req.send().await.map_err(|e| e.to_string())?;
-            let status = res.status().as_u16();
-            let body = res.bytes().await.map_err(|e| e.to_string())?.to_vec();
-            Ok(HttpReply { status, body })
-        };
-        tokio::select! {
-            r = exchange => r,
-            _ = cancel.cancelled() => Err("interrupted".into()),
-        }
-    }
-
-    fn client() -> Result<reqwest::Client, String> {
-        // reqwest takes the process-wide provider when one is installed; this
-        // installs ring only when nobody has installed one yet.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        // A proxy from HTTP(S)_PROXY / ALL_PROXY would be sent the API key (D15).
-        reqwest::Client::builder()
-            .no_proxy()
-            .build()
-            .map_err(|e| e.to_string())
-    }
-}
-
-#[async_trait]
-impl ImageHttp for ReqwestImageHttp {
-    async fn get(&self, url: &str, cancel: CancellationToken) -> Result<HttpReply, String> {
-        Self::send(Self::client()?.get(url), cancel).await
-    }
-
-    async fn post_json(
-        &self,
-        url: &str,
-        api_key: &str,
-        body: &Value,
-        cancel: CancellationToken,
-    ) -> Result<HttpReply, String> {
-        let req = Self::client()?
-            .post(url)
-            .bearer_auth(api_key)
-            .header("Content-Type", "application/json")
-            .body(body.to_string());
-        Self::send(req, cancel).await
+/// Send `req` and read the whole answer: its status and body. An HTTP error
+/// status is an answer, not an Err.
+///
+/// # Errors
+///
+/// No answer (said to the model as is), or `cancel` fired.
+pub(super) async fn exchange(
+    http: &dyn HttpClient,
+    req: Request,
+    cancel: CancellationToken,
+) -> Result<(u16, Bytes), String> {
+    let exchange = async {
+        let res = http.send(req).await.map_err(|e| e.report())?;
+        let body = res.body.bytes(MAX_ANSWER).await.map_err(|e| e.report())?;
+        Ok((res.status, body))
+    };
+    tokio::select! {
+        r = exchange => r,
+        _ = cancel.cancelled() => Err("interrupted".into()),
     }
 }
 
@@ -180,18 +109,20 @@ fn refusal(model: &str, status: u16, answer: &Value) -> String {
 /// answer has no image, or the image is not a PNG, JPEG, WebP or GIF (an SVG
 /// never is).
 pub async fn call_image_api(
-    http: &dyn ImageHttp,
+    http: &dyn HttpClient,
     base_url: &str,
     api_key: &str,
     model: &str,
     body: &Value,
     cancel: CancellationToken,
 ) -> Result<ImageReply, String> {
-    let url = format!("{base_url}/images");
-    let res = http.post_json(&url, api_key, body, cancel).await?;
-    let answer: Value = serde_json::from_slice(&res.body).unwrap_or(Value::Null);
-    if !res.ok() {
-        return Err(refusal(model, res.status, &answer));
+    let req = Request::post(format!("{base_url}/images"))
+        .with_header("authorization", format!("Bearer {api_key}"))
+        .with_json(body);
+    let (status, res) = exchange(http, req, cancel).await?;
+    let answer: Value = serde_json::from_slice(&res).unwrap_or(Value::Null);
+    if !(200..300).contains(&status) {
+        return Err(refusal(model, status, &answer));
     }
     let first = &answer["data"][0];
     let Some(b64) = first["b64_json"].as_str().filter(|s| !s.is_empty()) else {
