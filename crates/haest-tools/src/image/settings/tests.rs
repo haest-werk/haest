@@ -3,9 +3,9 @@
 
 use serde_json::{Value, json};
 
-use super::{ImageSettingsCode, ModelSettings, check_image_settings, max_references, svg_only};
+use super::{ImageSettingsError, ModelSettings, check_image_settings, max_references, svg_only};
 use crate::testkit::input;
-use ImageSettingsCode::*;
+use ImageSettingsError::*;
 
 fn params(v: Value) -> ModelSettings {
     serde_json::from_value(v).unwrap()
@@ -30,10 +30,12 @@ fn gpt() -> ModelSettings {
     }))
 }
 
-fn check(model: &str, p: Option<&ModelSettings>, v: Value) -> Result<Value, ImageSettingsCode> {
-    check_image_settings(model, p, &input(v))
-        .map(Value::Object)
-        .map_err(|e| e.code)
+fn check(model: &str, p: Option<&ModelSettings>, v: Value) -> Result<Value, ImageSettingsError> {
+    check_image_settings(model, p, &input(v)).map(Value::Object)
+}
+
+fn refused(model: &str, p: Option<&ModelSettings>, v: Value) -> ImageSettingsError {
+    check(model, p, v).expect_err("refused")
 }
 
 #[test]
@@ -63,28 +65,17 @@ fn settings_the_model_takes_pass_through_as_the_api_expects_them() {
 #[test]
 fn each_kind_of_bad_call_is_refused_by_branch() {
     let (b, g) = (banana(), gpt());
-    assert_eq!(
-        check("banana", Some(&b), json!({"quality": "high"})),
-        Err(NotOffered)
-    );
-    assert_eq!(
-        check("banana", Some(&b), json!({"colour": "red"})),
-        Err(UnknownSetting)
-    );
-    assert_eq!(
-        check("banana", Some(&b), json!({"aspect_ratio": "7:3"})),
-        Err(BadValue)
-    );
-    assert_eq!(
-        check("gpt", Some(&g), json!({"output_compression": 101})),
-        Err(BadValue)
-    );
-    assert_eq!(check("banana", Some(&b), json!({"n": 2})), Err(OnePerCall));
+    let e = refused("banana", Some(&b), json!({"quality": "high"}));
+    assert!(matches!(e, NotOffered { model, name, .. } if model == "banana" && name == "quality"));
+    let e = refused("banana", Some(&b), json!({"colour": "red"}));
+    assert!(matches!(e, UnknownSetting { name, .. } if name == "colour"));
+    let e = refused("banana", Some(&b), json!({"aspect_ratio": "7:3"}));
+    assert!(matches!(e, BadValue { name, value, .. } if name == "aspect_ratio" && value == "7:3"));
+    let e = refused("gpt", Some(&g), json!({"output_compression": 101}));
+    assert!(matches!(e, BadValue { value, .. } if value == 101));
+    assert_eq!(refused("banana", Some(&b), json!({"n": 2})), OnePerCall);
     let transparent_jpeg = json!({"background": "transparent", "output_format": "jpeg"});
-    assert_eq!(
-        check("gpt", Some(&g), transparent_jpeg),
-        Err(TransparentJpeg)
-    );
+    assert_eq!(refused("gpt", Some(&g), transparent_jpeg), TransparentJpeg);
 }
 
 #[test]
@@ -94,16 +85,20 @@ fn with_no_model_list_only_the_shapes_of_seed_and_size_are_checked() {
         check("x", None, json!({"quality": "anything", "seed": 7})),
         Ok(want)
     );
-    assert_eq!(check("x", None, json!({"seed": -1})), Err(BadValue));
-    assert_eq!(check("x", None, json!({"size": "big"})), Err(BadValue));
+    let e = refused("x", None, json!({"seed": -1}));
+    assert!(matches!(e, BadValue { name, .. } if name == "seed"));
+    let e = refused("x", None, json!({"size": "big"}));
+    assert!(matches!(e, BadValue { name, .. } if name == "size"));
     assert!(check("x", None, json!({"size": "1024x1536"})).is_ok());
 }
 
 #[test]
-fn an_svg_only_model_is_refused_whatever_the_call() {
+fn an_svg_only_model_is_refused_whatever_the_call_and_svg_out_by_any_model() {
     let svg = params(json!({"output_format": {"type": "enum", "values": ["svg"]}}));
     assert!(svg_only(Some(&svg)));
-    assert_eq!(check("svg", Some(&svg), json!({})), Err(Svg));
+    let e = refused("svg", Some(&svg), json!({}));
+    assert!(matches!(e, SvgOnly { model } if model == "svg"));
+    assert_eq!(refused("x", None, json!({"output_format": "svg"})), Svg);
 }
 
 #[test]

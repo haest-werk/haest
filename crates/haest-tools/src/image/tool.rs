@@ -211,7 +211,7 @@ impl Tool for ImageTool {
         let params = params.as_ref();
         let takes = describe_model(params);
         let settings = check_image_settings(&chosen, params, &given)
-            .map_err(|e| ToolError::Input(e.message))?;
+            .map_err(|e| ToolError::Input(report(&e)))?;
         let max = max_references(params);
         if params.is_some() && refs.len() as u64 > max {
             let most = if max > 0 {

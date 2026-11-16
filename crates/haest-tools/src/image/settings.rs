@@ -48,36 +48,57 @@ const IMAGE_SETTINGS: [&str; 8] = [
     "seed",
 ];
 
-/// Why a call was refused: the branch, as data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImageSettingsCode {
-    /// A setting GenerateImage does not have at all.
-    UnknownSetting,
-    /// A setting this model does not take.
-    NotOffered,
-    /// A value the model does not take for a setting it has.
-    BadValue,
-    /// `n`: GenerateImage makes one picture per call.
-    OnePerCall,
-    /// SVG out, or a model that only makes SVG: it is never written.
-    Svg,
-    /// A transparent background asked for as a JPEG.
-    TransparentJpeg,
-}
-
-/// A call's settings refused, with a message for the model that names what
-/// the model takes.
+/// Why a call's settings were refused. Its text is for the model: it names the
+/// model and, where it helps, what the model takes.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-#[error("{message}")]
-pub struct ImageSettingsError {
-    /// Which rule refused it.
-    pub code: ImageSettingsCode,
-    /// What to tell the model.
-    pub message: String,
-}
-
-fn refuse<T>(code: ImageSettingsCode, message: String) -> Result<T, ImageSettingsError> {
-    Err(ImageSettingsError { code, message })
+pub enum ImageSettingsError {
+    /// A setting GenerateImage does not have at all.
+    #[error("GenerateImage has no setting \"{name}\". {model} takes: {takes}.")]
+    UnknownSetting {
+        /// The image model.
+        model: String,
+        /// The setting the call passed.
+        name: String,
+        /// What the model takes ([`describe_model`]).
+        takes: String,
+    },
+    /// A setting this model does not take.
+    #[error("{model} has no \"{name}\" setting. {model} takes: {takes}.")]
+    NotOffered {
+        /// The image model.
+        model: String,
+        /// The setting the call passed.
+        name: String,
+        /// What the model takes ([`describe_model`]).
+        takes: String,
+    },
+    /// A value the model does not take for a setting it has.
+    #[error("{model}'s {name} is {expected} (not {value}).")]
+    BadValue {
+        /// The image model.
+        model: String,
+        /// The setting.
+        name: String,
+        /// The value the call passed (shown as JSON).
+        value: Value,
+        /// What the setting takes: `one of: 1:1, 16:9`, `a whole number from 0 to 100`.
+        expected: String,
+    },
+    /// `n`: GenerateImage makes one picture per call.
+    #[error("GenerateImage makes one picture per call; call it again for another.")]
+    OnePerCall,
+    /// `output_format` svg: a browser runs SVG as a page, so it is never written.
+    #[error("output_format svg is never written (a browser runs SVG as a page); use png or webp.")]
+    Svg,
+    /// A model that only makes SVG ([`svg_only`]), whatever the call.
+    #[error("{model} only makes SVG, which is never written; pick another model.")]
+    SvgOnly {
+        /// The image model.
+        model: String,
+    },
+    /// A transparent background asked for as a JPEG.
+    #[error("A transparent background needs output_format png or webp (jpeg has no transparency).")]
+    TransparentJpeg,
 }
 
 fn values_of(spec: &SettingSpec) -> Vec<String> {
@@ -133,14 +154,10 @@ pub fn describe_model(params: Option<&ModelSettings>) -> String {
 fn check_combination(out: &Map<String, Value>) -> Result<(), ImageSettingsError> {
     let is = |k: &str, v: &str| out.get(k).and_then(Value::as_str) == Some(v);
     if is("output_format", "svg") {
-        let why =
-            "output_format svg is never written (a browser runs SVG as a page); use png or webp.";
-        return refuse(ImageSettingsCode::Svg, why.into());
+        return Err(ImageSettingsError::Svg);
     }
     if is("background", "transparent") && is("output_format", "jpeg") {
-        let why =
-            "A transparent background needs output_format png or webp (jpeg has no transparency).";
-        return refuse(ImageSettingsCode::TransparentJpeg, why.into());
+        return Err(ImageSettingsError::TransparentJpeg);
     }
     Ok(())
 }
@@ -152,22 +169,22 @@ fn check_given(
     name: &str,
     value: &Value,
 ) -> Result<Value, ImageSettingsError> {
-    let takes = || format!("{model} takes: {}.", describe_model(params));
     if name == "n" {
-        let why = "GenerateImage makes one picture per call; call it again for another.";
-        return refuse(ImageSettingsCode::OnePerCall, why.into());
+        return Err(ImageSettingsError::OnePerCall);
     }
-    if !IMAGE_SETTINGS.contains(&name) {
-        let why = format!("GenerateImage has no setting \"{name}\". {}", takes());
-        return refuse(ImageSettingsCode::UnknownSetting, why);
+    let unknown = !IMAGE_SETTINGS.contains(&name);
+    let spec = params.and_then(|p| p.get(name));
+    if unknown || (params.is_some() && spec.is_none()) {
+        let (model, name, takes) = (model.into(), name.into(), describe_model(params));
+        return Err(if unknown {
+            ImageSettingsError::UnknownSetting { model, name, takes }
+        } else {
+            ImageSettingsError::NotOffered { model, name, takes }
+        });
     }
-    match (params, params.and_then(|p| p.get(name))) {
-        (_, Some(spec)) => check_one(model, name, spec, value),
-        (Some(_), None) => refuse(
-            ImageSettingsCode::NotOffered,
-            format!("{model} has no \"{name}\" setting. {}", takes()),
-        ),
-        (None, None) => free_value(model, name, value),
+    match spec {
+        Some(spec) => check_one(model, name, spec, value),
+        None => free_value(model, name, value),
     }
 }
 
@@ -198,12 +215,12 @@ fn with_defaults(out: &mut Map<String, Value>, params: Option<&ModelSettings>) {
 ///
 /// # Errors
 ///
-/// The first setting refused, with its [`ImageSettingsCode`].
+/// The first setting refused, as an [`ImageSettingsError`].
 ///
 /// # Examples
 ///
 /// ```
-/// use haest_tools::image::settings::{ImageSettingsCode, ModelSettings, SettingSpec, check_image_settings};
+/// use haest_tools::image::settings::{ImageSettingsError, ModelSettings, SettingSpec, check_image_settings};
 /// use serde_json::{Map, json};
 ///
 /// let aspect = SettingSpec {
@@ -217,7 +234,7 @@ fn with_defaults(out: &mut Map<String, Value>, params: Option<&ModelSettings>) {
 /// let fields = check_image_settings("vendor/pic", Some(&model), &given(json!({}))).unwrap();
 /// assert_eq!(fields["aspect_ratio"], "1:1");
 /// let err = check_image_settings("vendor/pic", Some(&model), &given(json!({"quality": "high"})));
-/// assert_eq!(err.unwrap_err().code, ImageSettingsCode::NotOffered);
+/// assert!(matches!(err.unwrap_err(), ImageSettingsError::NotOffered { name, .. } if name == "quality"));
 /// ```
 pub fn check_image_settings(
     model: &str,
@@ -225,8 +242,8 @@ pub fn check_image_settings(
     given: &Map<String, Value>,
 ) -> Result<Map<String, Value>, ImageSettingsError> {
     if svg_only(params) {
-        let why = format!("{model} only makes SVG, which is never written; pick another model.");
-        return refuse(ImageSettingsCode::Svg, why);
+        let model = model.into();
+        return Err(ImageSettingsError::SvgOnly { model });
     }
     let mut out = Map::new();
     for (name, value) in given.iter().filter(|(_, v)| !v.is_null()) {
