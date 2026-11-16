@@ -8,12 +8,13 @@ use std::{
 use async_trait::async_trait;
 use url::Url;
 
-use super::{Resolve, assert_public_url, blocked_address};
+use super::{Resolve, assert_public_url, is_blocked};
 
 const PUBLIC: &str = "93.184.215.14";
 
 #[test]
 fn private_loopback_link_local_cgnat_and_mapped_addresses_are_blocked_public_ones_pass() {
+    let blocked = |ip: &str| is_blocked(ip.parse().unwrap());
     for ip in [
         "127.0.0.1",
         "10.1.2.3",
@@ -34,9 +35,8 @@ fn private_loopback_link_local_cgnat_and_mapped_addresses_are_blocked_public_one
         "198.18.0.1",       // benchmarking
         "64:ff9b::a14:70c", // NAT64 of 10.20.7.12
         "ff02::1",          // IPv6 multicast
-        "not-an-ip",
     ] {
-        assert!(blocked_address(ip).is_some(), "{ip} must be blocked");
+        assert!(blocked(ip), "{ip} must be blocked");
     }
     for ip in [
         PUBLIC,
@@ -46,7 +46,7 @@ fn private_loopback_link_local_cgnat_and_mapped_addresses_are_blocked_public_one
         "100.128.0.1",
         "::ffff:1.1.1.1",
     ] {
-        assert_eq!(blocked_address(ip), None, "{ip} is public");
+        assert!(!blocked(ip), "{ip} is public");
     }
 }
 

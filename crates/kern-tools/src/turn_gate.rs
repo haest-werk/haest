@@ -12,14 +12,6 @@
 
 use kern_core::guard::NUDGE_SHARE;
 
-/// Who started a turn: the human, another conversation or agent, or one of kern's own background jobs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputOrigin {
-    Human,
-    Agent,
-    Background,
-}
-
 pub struct AgentTurnGate {
     /// Turns in a row with no human message; 0 = no cap.
     cap: u32,

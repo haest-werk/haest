@@ -49,7 +49,6 @@ pub enum ImageSettingsCode {
     OnePerCall,
     Svg,
     TransparentJpeg,
-    TooManyReferences,
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]

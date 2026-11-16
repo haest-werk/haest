@@ -59,18 +59,6 @@ pub fn is_blocked(ip: IpAddr) -> bool {
     }
 }
 
-fn why_blocked(ip: IpAddr) -> Option<String> {
-    is_blocked(ip).then(|| format!("{ip} is a private, local or reserved address"))
-}
-
-/// Why `ip` may not be fetched, or None when it is a public address.
-pub fn blocked_address(ip: &str) -> Option<String> {
-    match ip.parse::<IpAddr>() {
-        Err(_) => Some(format!("\"{ip}\" is not an IP address")),
-        Ok(addr) => why_blocked(addr),
-    }
-}
-
 /// PLUG POINT: name -> addresses. The default asks the system resolver; a test
 /// (or a host with its own DNS) injects another.
 #[async_trait]
@@ -128,13 +116,11 @@ pub async fn assert_public_url(url: &Url, resolve: &dyn Resolve) -> Result<Vec<I
             url.host_str().unwrap_or_default()
         ));
     }
-    for ip in &addresses {
-        if let Some(why) = why_blocked(*ip) {
-            return Err(format!(
-                "refusing {}: {why}. kern only fetches the public internet.",
-                host_port(url)
-            ));
-        }
+    if let Some(ip) = addresses.iter().find(|ip| is_blocked(**ip)) {
+        return Err(format!(
+            "refusing {}: {ip} is a private, local or reserved address. kern only fetches the public internet.",
+            host_port(url)
+        ));
     }
     Ok(addresses)
 }
