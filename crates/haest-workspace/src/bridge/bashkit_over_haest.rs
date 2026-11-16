@@ -37,14 +37,14 @@ type Result<T> = bashkit::Result<T>;
 ///   of this object, so `chmod +x f && ./f` works;
 /// - no settable times: `touch` on an existing file succeeds and leaves the
 ///   time to the `Fs`.
-pub struct BashkitFsOverHaest {
+pub(crate) struct BashkitFsOverHaest {
     fs: Arc<dyn Fs>,
     modes: Mutex<HashMap<PathBuf, u32>>,
 }
 
 impl BashkitFsOverHaest {
     /// Wrap `fs` so a bashkit shell can run over it.
-    pub fn new(fs: Arc<dyn Fs>) -> Self {
+    pub(crate) fn new(fs: Arc<dyn Fs>) -> Self {
         Self {
             fs,
             modes: Mutex::default(),

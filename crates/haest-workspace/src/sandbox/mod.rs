@@ -53,9 +53,8 @@ const OVERLAY_NOTE: &str = "Reads come from the real project; every file you wri
 /// copy-on-write overlay ([`open`](Self::open)), or the host's own [`Fs`]
 /// ([`over`](Self::over)).
 ///
-/// The tools ([`Workspace::fs`]) and the shell ([`shell_fs`](Self::shell_fs))
-/// see the same files: a file written with the Write tool is the file `cat`
-/// shows.
+/// The tools ([`Workspace::fs`]) and the shell see the same files: a file
+/// written with the Write tool is the file `cat` shows.
 ///
 /// Each [`shell`](Workspace::shell) call gets a FRESH shell over those files:
 /// variables, functions and `cd` do not outlive the call, files do.
@@ -172,10 +171,18 @@ impl SandboxWorkspace {
     /// is `fs`, and the tools write to `fs` itself. No overlay and no changes
     /// to review -- the host decides what a write means.
     ///
-    /// The shell sees `fs` through [`BashkitFsOverHaest`]: what a haest `Fs`
-    /// cannot hold (symlinks, permission bits, set times) is listed there. An
-    /// error the host's `Fs` returns with a message of its own ("you can't edit
-    /// there; tell them instead") reaches the shell's stderr as written.
+    /// Every path the shell names is normalized (`/a/./b/../c` is `/a/c`)
+    /// before it reaches `fs`. What a haest `Fs` cannot hold, stated:
+    /// - no symlinks: `ln -s` fails;
+    /// - no permission bits: a `chmod` is remembered in memory, for the life
+    ///   of this workspace, so `chmod +x f && ./f` works;
+    /// - no settable times: `touch` on an existing file succeeds and leaves the
+    ///   time to `fs`.
+    ///
+    /// An error `fs` returns reads like a shell's (`cat: f: No such file or
+    /// directory`), except a permission refusal with a message of the host's
+    /// own ("you can't edit there; tell them instead"), which reaches the
+    /// shell's stderr as written.
     pub fn over(fs: Arc<dyn Fs>) -> Self {
         Self::with_parts(Arc::new(BashkitFsOverHaest::new(fs.clone())), fs, None)
     }
@@ -238,12 +245,6 @@ impl SandboxWorkspace {
             commands: &self.commands,
             env: &self.env,
         }
-    }
-
-    /// The file system the shell runs over, as bashkit sees it (the tools'
-    /// [`Workspace::fs`] is the same files).
-    pub fn shell_fs(&self) -> Arc<dyn bashkit::FileSystem> {
-        self.shell_fs.clone()
     }
 
     /// The project overlay's edits, typed; [`Workspace::changes`] is the same

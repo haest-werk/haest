@@ -9,8 +9,8 @@
 mod bashkit_over_haest;
 mod haest_over_bashkit;
 
-pub use bashkit_over_haest::BashkitFsOverHaest;
-pub use haest_over_bashkit::HaestFsOverBashkit;
+pub(crate) use bashkit_over_haest::BashkitFsOverHaest;
+pub(crate) use haest_over_bashkit::HaestFsOverBashkit;
 
 use std::io::{self, ErrorKind};
 

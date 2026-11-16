@@ -81,8 +81,8 @@ struct Scanned {
 /// [`Workspace::changes`](haest_core::workspace::Workspace::changes), or typed
 /// through [`SandboxWorkspace::overlay_changes`](crate::SandboxWorkspace::overlay_changes).
 ///
-/// Every mutation that goes through [`recorder`](Self::recorder) -- haest's
-/// tools and the simulated shell alike -- first records the path it touched
+/// Every mutation to the project -- haest's tools and the simulated shell
+/// alike -- first records the path it touched
 /// and what the real file looked like right then: a hash of its content, "a
 /// directory", "a symlink to X", or "absent". From that:
 ///
@@ -118,7 +118,7 @@ impl OverlayChanges {
     ///
     /// Nothing is recorded until mutations go through
     /// [`recorder`](Self::recorder).
-    pub fn new(
+    pub(crate) fn new(
         overlay: Arc<dyn bashkit::FileSystem>,
         disk: Arc<dyn Fs>,
         root: impl Into<PathBuf>,
@@ -135,7 +135,7 @@ impl OverlayChanges {
 
     /// The overlay, recording what every mutation touches before it lands.
     /// Mount THIS, never the bare overlay, or edits go unrecorded.
-    pub fn recorder(&self) -> Arc<dyn bashkit::FileSystem> {
+    pub(crate) fn recorder(&self) -> Arc<dyn bashkit::FileSystem> {
         Arc::new(Recorder {
             inner: self.overlay.inner().clone(),
             book: self.book.clone(),

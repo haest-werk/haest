@@ -92,10 +92,9 @@
 //!
 //! A host that keeps its files somewhere else (a database, a synced store)
 //! implements haest's [`Fs`] and hands it to [`SandboxWorkspace::over`]. The
-//! tools write to that `Fs`, and the shell runs over the same object through
-//! [`BashkitFsOverHaest`], so the file the agent writes with Write is the file
-//! `cat` shows. There is no overlay and no changes to review: the host decides
-//! what a write means.
+//! tools write to that `Fs`, and the shell runs over the same object, so the
+//! file the agent writes with Write is the file `cat` shows. There is no
+//! overlay and no changes to review: the host decides what a write means.
 //!
 //! ```
 //! use std::{path::Path, sync::Arc, time::Duration};
@@ -125,8 +124,9 @@
 //! # }
 //! ```
 //!
-//! [`HaestFsOverBashkit`] is the other direction: a bashkit file system seen as
-//! a haest `Fs` (what the tools see inside the default sandbox).
+//! bashkit, the simulated bash under both sandboxes, stays inside this crate:
+//! no bashkit type is part of its API, so a bashkit upgrade is never a
+//! breaking change for a host.
 //!
 //! Ported from the TS haest's `core/workspace-real.ts`, `workspace-sandbox.ts`
 //! and `overlay-changes.ts`.
@@ -149,15 +149,9 @@ mod overlay;
 mod real;
 mod sandbox;
 
-pub use bridge::{BashkitFsOverHaest, HaestFsOverBashkit};
 pub use overlay::OverlayChanges;
 pub use real::{RealFs, RealWorkspace, kill_group};
 pub use sandbox::{SandboxMounts, SandboxWorkspace};
-
-/// The bashkit this crate is built on (pinned: it is pre-1.0), for a host that
-/// implements its own `bashkit::FileSystem` or reads
-/// [`SandboxWorkspace::shell_fs`].
-pub use bashkit;
 
 use haest_core::workspace::{EXIT_NOT_FOUND, ExecResult};
 

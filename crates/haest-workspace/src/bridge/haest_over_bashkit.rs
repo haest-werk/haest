@@ -32,18 +32,18 @@ const MAX_HOPS: usize = 40;
 /// `cat` does, and lists a link as [`FileKind::Symlink`] without following
 /// it. [`chmod`](Fs::chmod) follows a link too, and sets the bits wherever the
 /// path lives: on the real disk through a writable mount, in memory elsewhere.
-pub struct HaestFsOverBashkit {
+pub(crate) struct HaestFsOverBashkit {
     inner: Arc<dyn FileSystem>,
 }
 
 impl HaestFsOverBashkit {
     /// Wrap `inner` so haest's tools can read and write it.
-    pub fn new(inner: Arc<dyn FileSystem>) -> Self {
+    pub(crate) fn new(inner: Arc<dyn FileSystem>) -> Self {
         Self { inner }
     }
 
     /// The bashkit file system this view reads and writes.
-    pub fn inner(&self) -> &Arc<dyn FileSystem> {
+    pub(crate) fn inner(&self) -> &Arc<dyn FileSystem> {
         &self.inner
     }
 
