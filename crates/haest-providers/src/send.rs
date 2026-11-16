@@ -21,20 +21,28 @@ use tokio_util::sync::CancellationToken;
 
 use crate::retry::{RetryPolicy, retry_after, should_retry};
 
-/// How a provider sends its requests: the HTTP client and the retry policy.
-/// Every provider holds one; `with_retry` sets its policy.
+/// How long one try waits for its status and headers unless a provider is
+/// told otherwise (`with_headers_timeout`): ten minutes, as long as the SDKs
+/// allow.
+pub(crate) const HEADERS_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// How a provider sends its requests: the HTTP client, the retry policy, and
+/// how long one try waits for its status and headers. Every provider holds
+/// one; `with_retry` and `with_headers_timeout` set it.
 #[derive(Clone)]
 pub(crate) struct Sender {
     pub(crate) http: Arc<dyn HttpClient>,
     pub(crate) retry: RetryPolicy,
+    pub(crate) headers_timeout: Duration,
 }
 
 impl Sender {
-    /// Over `http`, with the default [`RetryPolicy`].
+    /// Over `http`, with the default [`RetryPolicy`] and [`HEADERS_TIMEOUT`].
     pub(crate) fn new(http: Arc<dyn HttpClient>) -> Self {
         Self {
             http,
             retry: RetryPolicy::default(),
+            headers_timeout: HEADERS_TIMEOUT,
         }
     }
 
@@ -77,7 +85,7 @@ impl Sender {
     /// One try: the answer's status and headers, or no answer within
     /// `headers_timeout` (dropping the request, which cancels it).
     async fn try_once(&self, req: &Request) -> Result<Response, HttpError> {
-        let wait = self.retry.headers_timeout;
+        let wait = self.headers_timeout;
         tokio::time::timeout(wait, self.http.send(req.clone()))
             .await
             .unwrap_or(Err(HttpError::Timeout(wait)))

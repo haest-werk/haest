@@ -13,8 +13,8 @@ use haest_http::Response;
 /// the official SDKs do.
 ///
 /// A try is repeated after no answer (a connection failure, or no status and
-/// headers within `headers_timeout`: [`HttpError::is_retryable`]), or a 408,
-/// 409, 429 or 5xx answer. The server has the last word: an
+/// headers within the provider's `with_headers_timeout`, ten minutes by
+/// default: [`HttpError::is_retryable`]), or a 408, 409, 429 or 5xx answer. The server has the last word: an
 /// `x-should-retry: false` header stops the retries, `true` retries any
 /// status. The wait is the server's `retry-after-ms` or `retry-after` when it
 /// names one under a minute, else `initial_delay` doubled per retry up to
@@ -45,21 +45,15 @@ pub struct RetryPolicy {
     pub initial_delay: Duration,
     /// The longest backoff. A server's own `retry-after` may ask for longer, up to a minute.
     pub max_delay: Duration,
-    /// How long one try waits for the status and headers before it counts as
-    /// unanswered; the body then takes as long as it takes. A long prompt can
-    /// sit in a queue before the first byte.
-    pub headers_timeout: Duration,
 }
 
 impl Default for RetryPolicy {
-    /// The SDKs' policy: 3 retries, 0.5 s doubling to at most 8 s, and ten
-    /// minutes for each try's status, as long as the SDKs allow.
+    /// The SDKs' policy: 3 retries, 0.5 s doubling to at most 8 s.
     fn default() -> Self {
         Self {
             max_retries: 3,
             initial_delay: Duration::from_millis(500),
             max_delay: Duration::from_secs(8),
-            headers_timeout: Duration::from_secs(600),
         }
     }
 }

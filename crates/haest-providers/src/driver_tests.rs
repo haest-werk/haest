@@ -34,7 +34,6 @@ fn quick() -> RetryPolicy {
         max_retries: 3,
         initial_delay: Duration::from_millis(1),
         max_delay: Duration::from_millis(2),
-        ..RetryPolicy::default()
     }
 }
 
@@ -123,7 +122,6 @@ async fn cancelling_during_a_retry_backoff_ends_as_aborted() {
         max_retries: 3,
         initial_delay: Duration::from_secs(3600),
         max_delay: Duration::from_secs(3600),
-        ..RetryPolicy::default()
     };
     let p = CompatProvider::new(CompatOptions::new("local", "k"), t.clone()).with_retry(slow);
     let req = request("m");
@@ -163,7 +161,7 @@ async fn a_cancelled_stream_ends_with_done_even_while_the_body_hangs() {
 
 /// A server that takes every request and never sends a status.
 #[derive(Default)]
-struct Silent(std::sync::atomic::AtomicUsize);
+pub(crate) struct Silent(pub(crate) std::sync::atomic::AtomicUsize);
 
 #[async_trait]
 impl HttpClient for Silent {
@@ -178,10 +176,11 @@ async fn a_try_with_no_status_in_time_counts_as_unanswered_and_is_retried() {
     let silent = Arc::new(Silent::default());
     let retry = RetryPolicy {
         max_retries: 1,
-        headers_timeout: Duration::from_millis(20),
         ..quick()
     };
-    let p = CompatProvider::new(CompatOptions::new("local", "k"), silent.clone()).with_retry(retry);
+    let p = CompatProvider::new(CompatOptions::new("local", "k"), silent.clone())
+        .with_retry(retry)
+        .with_headers_timeout(Duration::from_millis(20));
     let (_, msg) = tokio::time::timeout(Duration::from_secs(5), collect(p.stream(request("m"))))
         .await
         .expect("the headers timeout ends a silent server's wait");

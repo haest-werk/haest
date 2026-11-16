@@ -23,6 +23,7 @@ mod tests_custom;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use haest_core::{
@@ -43,16 +44,17 @@ use crate::{
     responses::{ResponsesOptions, ResponsesProvider},
     retry::RetryPolicy,
     routing::RoutingScopes,
+    send::HEADERS_TIMEOUT,
 };
 
 const BUILTIN: [&str; 4] = ["anthropic", "openai", "openrouter", "paperinstruments"];
 
 /// What every provider a [`ProviderRegistry`] builds shares: the HTTP client,
-/// the retry policy and OpenRouter's extras.
+/// the retry policy, the headers timeout and OpenRouter's extras.
 ///
 /// The default sends over the process's shared [`ReqwestClient`], retries as
-/// the SDKs do, sends no routing, and tells OpenRouter the app is `haest`
-/// (`X-Title`) with no URL. Change a field with struct update syntax:
+/// the SDKs do, waits ten minutes for each try's status, sends no routing,
+/// and tells OpenRouter the app is `haest` (`X-Title`) with no URL. Change a field with struct update syntax:
 /// `RegistryOptions { http, ..RegistryOptions::default() }`. The default
 /// builds nothing: the shared client is built on the first request, so a host
 /// that brings its own never pays for it.
@@ -61,6 +63,9 @@ pub struct RegistryOptions {
     pub http: Arc<dyn HttpClient>,
     /// How every provider retries a refused or unanswered request.
     pub retry: RetryPolicy,
+    /// How long each try waits for its status and headers before it counts
+    /// as unanswered ([`AnthropicProvider::with_headers_timeout`]).
+    pub headers_timeout: Duration,
     /// OpenRouter provider routing to send ([`crate::routing::parse_routing`]
     /// reads the host's JSON: haest's `provider_routing` setting). None = none:
     /// a host whose gateway routes leaves it off.
@@ -76,6 +81,7 @@ impl Default for RegistryOptions {
         Self {
             http: Arc::new(ReqwestClient::new()),
             retry: RetryPolicy::default(),
+            headers_timeout: HEADERS_TIMEOUT,
             routing: None,
             app_title: Some("haest".into()),
             app_url: None,
@@ -160,10 +166,23 @@ impl ProviderRegistry {
 
     fn build(&self, name: &str) -> Result<Arc<dyn Provider>, ModelError> {
         let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
+        let wait = self.opts.headers_timeout;
         Ok(match self.options(name)? {
-            Options::Anthropic(o) => Arc::new(AnthropicProvider::new(o, http).with_retry(retry)),
-            Options::Compat(o) => Arc::new(CompatProvider::new(*o, http).with_retry(retry)),
-            Options::Responses(o) => Arc::new(ResponsesProvider::new(o, http).with_retry(retry)),
+            Options::Anthropic(o) => Arc::new(
+                AnthropicProvider::new(o, http)
+                    .with_retry(retry)
+                    .with_headers_timeout(wait),
+            ),
+            Options::Compat(o) => Arc::new(
+                CompatProvider::new(*o, http)
+                    .with_retry(retry)
+                    .with_headers_timeout(wait),
+            ),
+            Options::Responses(o) => Arc::new(
+                ResponsesProvider::new(o, http)
+                    .with_retry(retry)
+                    .with_headers_timeout(wait),
+            ),
         })
     }
 

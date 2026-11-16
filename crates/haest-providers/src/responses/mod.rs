@@ -13,7 +13,7 @@ mod tests;
 #[cfg(test)]
 mod tests_convert;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
 
@@ -96,6 +96,14 @@ impl ResponsesProvider {
     /// The same provider with `retry` instead of the default policy.
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.sender.retry = retry;
+        self
+    }
+
+    /// The same provider waiting at most `wait` for each try's status and
+    /// headers (default ten minutes); past it the try counts as unanswered,
+    /// as [`AnthropicProvider::with_headers_timeout`](crate::AnthropicProvider::with_headers_timeout) says.
+    pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
+        self.sender.headers_timeout = wait;
         self
     }
 

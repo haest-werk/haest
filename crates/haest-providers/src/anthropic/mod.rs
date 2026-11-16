@@ -12,7 +12,7 @@ mod stream;
 #[cfg(test)]
 mod tests;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
 use serde_json::{Value, json};
@@ -109,6 +109,16 @@ impl AnthropicProvider {
     /// The same provider with `retry` instead of the default policy.
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.sender.retry = retry;
+        self
+    }
+
+    /// The same provider waiting at most `wait` for each try's status and
+    /// headers (default ten minutes, as long as the SDKs allow; a long prompt
+    /// can sit in a queue before the first byte). A try with no answer by
+    /// then counts as unanswered, and the [`RetryPolicy`] may try again; the
+    /// body then takes as long as it takes.
+    pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
+        self.sender.headers_timeout = wait;
         self
     }
 
