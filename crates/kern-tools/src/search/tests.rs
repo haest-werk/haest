@@ -2,7 +2,11 @@
 //! when it is installed (the argv must be one rg accepts); the exit-code and
 //! output handling is pinned with a scripted workspace.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use kern_core::{
@@ -52,32 +56,18 @@ impl Workspace for HostRun {
 }
 
 /// The TS fixture on disk: src/a.ts has the needle, src/b.md does not, node_modules has one too.
-struct Fixture(PathBuf);
-
-impl Fixture {
-    fn new() -> Self {
-        // A counter, not the clock: macOS clocks tick in microseconds, so two tests
-        // starting together got ONE dir and the first to finish deleted it under the other.
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("kern-tools-{}-{n}", std::process::id()));
-        let put = |rel: &str, text: &str| {
-            let p = dir.join(rel);
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::write(p, text).unwrap();
-        };
-        put("src/a.ts", "const needle = 1\n");
-        put("src/b.md", "no match here\n");
-        put("node_modules/x/c.ts", "needle\n");
-        put("src/flags.txt", "use -rf here\n");
-        Self(dir)
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
+fn fixture() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let put = |rel: &str, text: &str| {
+        let p = dir.path().join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    };
+    put("src/a.ts", "const needle = 1\n");
+    put("src/b.md", "no match here\n");
+    put("node_modules/x/c.ts", "needle\n");
+    put("src/flags.txt", "use -rf here\n");
+    dir
 }
 
 fn has_rg() -> bool {
@@ -87,7 +77,7 @@ fn has_rg() -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
-async fn grep_real(dir: &PathBuf, v: Value) -> Result<ToolOutput, ToolError> {
+async fn grep_real(dir: &Path, v: Value) -> Result<ToolOutput, ToolError> {
     GrepTool
         .execute(input(v), &ToolContext::new(dir, Arc::new(HostRun)))
         .await
@@ -99,22 +89,21 @@ async fn grep_finds_files_content_honours_glob_and_takes_a_pattern_that_starts_w
         eprintln!("rg is not installed: skipping the real-rg grep test");
         return;
     }
-    let fx = Fixture::new();
-    let files = grep_real(&fx.0, json!({"pattern": "needle"}))
-        .await
-        .unwrap();
+    let fx = fixture();
+    let dir = fx.path();
+    let files = grep_real(dir, json!({"pattern": "needle"})).await.unwrap();
     assert!(files.content.contains("src/a.ts"));
     let content = grep_real(
-        &fx.0,
+        dir,
         json!({"pattern": "needle", "output_mode": "content", "glob": "*.ts"}),
     )
     .await
     .unwrap();
     assert!(content.content.contains(":1:const needle"));
-    let none = grep_real(&fx.0, json!({"pattern": "zzz"})).await.unwrap();
+    let none = grep_real(dir, json!({"pattern": "zzz"})).await.unwrap();
     assert!(!none.is_error);
     assert!(!none.content.contains("src/"));
-    let dash = grep_real(&fx.0, json!({"pattern": "-rf"})).await.unwrap();
+    let dash = grep_real(dir, json!({"pattern": "-rf"})).await.unwrap();
     assert!(dash.content.contains("flags.txt"));
 }
 
