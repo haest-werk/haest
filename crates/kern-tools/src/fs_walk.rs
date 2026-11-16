@@ -147,20 +147,16 @@ pub async fn glob_fs(
         }],
         visited: 0,
     };
-    while let Some(next) = w.stack.pop() {
-        if cancel.is_cancelled() {
-            break;
-        }
-        if !w.visit(next).await {
-            return Ok(GlobResult {
-                hits: w.hits,
-                capped: true,
-            });
-        }
+    let mut capped = false;
+    while !capped
+        && !cancel.is_cancelled()
+        && let Some(next) = w.stack.pop()
+    {
+        capped = !w.visit(next).await;
     }
     Ok(GlobResult {
         hits: w.hits,
-        capped: false,
+        capped,
     })
 }
 
