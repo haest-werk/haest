@@ -16,7 +16,7 @@ use futures::FutureExt;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
-use super::{HostFn, MAX_ENGINES, VmBeat, VmCaps, VmRun, VmSpec, VmStop, run_with_slots};
+use super::{MAX_ENGINES, NativeFn, VmBeat, VmCaps, VmRun, VmSpec, VmStop, run_with_slots};
 
 fn caps(timeout_ms: u64) -> VmCaps {
     VmCaps {
@@ -26,18 +26,18 @@ fn caps(timeout_ms: u64) -> VmCaps {
     }
 }
 
-/// A host fn from a closure over its args.
-fn host_fn<F, Fut>(f: F) -> HostFn
+/// A native fn from a closure over its args.
+fn native_fn<F, Fut>(f: F) -> NativeFn
 where
     F: Fn(Vec<String>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<String, String>> + Send + 'static,
 {
-    Arc::new(move |args| f(args).boxed())
+    Arc::new(move |args| f(args).map(|r| r.map_err(Into::into)).boxed())
 }
 
-fn spec(fns: impl IntoIterator<Item = (&'static str, HostFn)>) -> VmSpec {
+fn spec(fns: impl IntoIterator<Item = (&'static str, NativeFn)>) -> VmSpec {
     VmSpec {
-        host_fns: fns.into_iter().map(|(n, f)| (n.to_string(), f)).collect(),
+        native_fns: fns.into_iter().map(|(n, f)| (n.to_string(), f)).collect(),
         ..Default::default()
     }
 }
@@ -107,7 +107,7 @@ async fn no_more_than_four_engines_run_at_once_the_rest_wait_their_turn() {
     let live = Arc::new(AtomicUsize::new(0));
     let peak = Arc::new(AtomicUsize::new(0));
     let (l, p) = (live.clone(), peak.clone());
-    let hold = host_fn(move |_| {
+    let hold = native_fn(move |_| {
         let (l, p) = (l.clone(), p.clone());
         async move {
             p.fetch_max(l.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
@@ -137,7 +137,7 @@ async fn no_more_than_four_engines_run_at_once_the_rest_wait_their_turn() {
 
 #[tokio::test]
 async fn a_run_waiting_for_a_slot_can_be_interrupted_without_ever_starting() {
-    let hold = host_fn(|_| async {
+    let hold = native_fn(|_| async {
         tokio::time::sleep(Duration::from_millis(400)).await;
         Ok("ok".to_string())
     });

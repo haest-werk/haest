@@ -1,4 +1,4 @@
-//! The host side of one Code run ([`super::CodeTool`]): what the guest's
+//! haest's side of one Code run ([`super::CodeTool`]): what the guest's
 //! `tools.X()` and `see()` reach. Each inner call goes through the gate, is counted
 //! against the cap, runs through haest-core's tool execution (error results and
 //! canonical envelopes exactly as in the loop, but NO spill: the program gets a
@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use super::{render::CallRecord, report::InnerRow};
 use crate::{
     call_gate::CallGate,
-    vm::{HostFn, VmSpec},
+    vm::{NativeFn, VmSpec},
 };
 
 /// The most tool calls one Code run may make (100); a call past it throws in
@@ -245,25 +245,25 @@ impl Bridge {
     }
 
     /// The guest this bridge answers: its API, the schemas as data (describe() answers
-    /// inside the engine, no round trip), and the two host functions.
+    /// inside the engine, no round trip), and the two native functions.
     pub fn spec(self: &Arc<Self>) -> VmSpec {
         let mut values = serde_json::Map::new();
         values.insert("__schemas".into(), Value::Object(self.schemas.clone()));
         values.insert("__refuse".into(), json!(self.refuse("NAME")));
         let me = self.clone();
-        let call: HostFn = Arc::new(move |args| {
+        let call: NativeFn = Arc::new(move |args| {
             let me = me.clone();
-            async move { me.call(arg(&args, 0), arg(&args, 1)).await }.boxed()
+            async move { Ok(me.call(arg(&args, 0), arg(&args, 1)).await?) }.boxed()
         });
         let me = self.clone();
-        let see: HostFn = Arc::new(move |args| {
+        let see: NativeFn = Arc::new(move |args| {
             let me = me.clone();
-            async move { me.see(arg(&args, 0)).await }.boxed()
+            async move { Ok(me.see(arg(&args, 0)).await?) }.boxed()
         });
         VmSpec {
             prelude: GUEST_API.into(),
             values,
-            host_fns: [("__call".to_string(), call), ("__see".to_string(), see)].into(),
+            native_fns: [("__call".to_string(), call), ("__see".to_string(), see)].into(),
             ..Default::default()
         }
     }

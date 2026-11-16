@@ -1,8 +1,8 @@
-//! One engine run, ON its own thread ([`super::host`]): a fresh QuickJS runtime,
+//! One engine run, ON its own thread ([`super::thread`]): a fresh QuickJS runtime,
 //! torn down after it. The guest reaches exactly what the job names -- JSON
 //! values, the prelude that builds its API, async functions haest answers, module
 //! sources in module mode -- plus one pure built-in, `__path` (posix path ops),
-//! which needs no host at all ([`super::setup`]).
+//! which needs nothing from haest ([`super::setup`]).
 //!
 //! Bounded on every axis: QuickJS memory and stack caps; the interrupt handler
 //! stops a CPU loop when the job's deadline passes or haest sets the stop flag (an
@@ -15,15 +15,15 @@ use std::{rc::Rc, sync::Arc, time::Duration};
 use rquickjs::{Coerced, Context, Ctx, Exception, Persistent, Promise, Runtime, Value};
 
 use super::{
-    host::VmPort,
     parts::{BASE_PRELUDE, error_text},
     setup::{BEAT, Clock, JobModules, Shared, eval_code, eval_prelude, install},
+    thread::VmPort,
     types::{ToVm, VmJob, VmRun},
 };
 
 const STACK_BYTES: usize = 512 * 1024;
 const NEVER_SETTLES: &str =
-    "The code awaited a promise that can never settle (no host call is running).";
+    "The code awaited a promise that can never settle (no native call is running).";
 
 pub(crate) fn run_engine(job: &VmJob, port: &VmPort) -> VmRun {
     let rt = match Runtime::new() {

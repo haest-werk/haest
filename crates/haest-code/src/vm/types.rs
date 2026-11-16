@@ -1,5 +1,5 @@
 //! What crosses between haest and an engine thread ([`super::run_in_vm`] <->
-//! [`super::host`]), and a run's result.
+//! [`super::thread`]), and a run's result.
 
 use std::{
     collections::HashMap,

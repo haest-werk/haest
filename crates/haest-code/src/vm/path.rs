@@ -1,7 +1,7 @@
-//! The engine's one built-in host function (`__path`): posix path operations,
+//! The engine's one built-in native function (`__path`): posix path operations,
 //! pure -- Node's `path.posix`, so a script's `path.join` behaves the way its
 //! author expects. No file system and no process behind it: `resolve` with no
-//! absolute argument resolves from `/`, never from the host's own directory.
+//! absolute argument resolves from `/`, never from the process's own directory.
 
 use haest_core::tool::spelled;
 use serde_json::{Value, json};

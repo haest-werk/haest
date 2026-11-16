@@ -1,5 +1,5 @@
 //! The thread protocol (code-vm-run.test.ts `createWorkerHandler`): haest's side
-//! of [`crate::vm::host`] driven by hand -- calls out, answers and a stop in.
+//! of [`crate::vm::thread`] driven by hand -- calls out, answers and a stop in.
 
 use std::{
     sync::{
@@ -12,7 +12,7 @@ use std::{
 use super::caps;
 use crate::vm::{
     VmCaps, VmRun, VmStop,
-    host::{Engine, spawn_engine},
+    thread::{Engine, spawn_engine},
     types::{FromVm, ToVm, VmJob},
 };
 

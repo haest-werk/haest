@@ -10,7 +10,7 @@ use std::{
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use super::{caps, host_fn, run, spec};
+use super::{caps, native_fn, run, spec};
 use crate::vm::{VmCaps, VmSpec};
 
 #[tokio::test]
@@ -68,12 +68,12 @@ async fn async_calls_resolve_reject_into_the_guest_and_unawaited_ones_finish_fir
     let s = spec([
         (
             "__ok",
-            host_fn(|a| async move { Ok(format!("got {}", a[0])) }),
+            native_fn(|a| async move { Ok(format!("got {}", a[0])) }),
         ),
-        ("__bad", host_fn(|_| async { Err("denied".to_string()) })),
+        ("__bad", native_fn(|_| async { Err("denied".to_string()) })),
         (
             "__late",
-            host_fn(move |_| {
+            native_fn(move |_| {
                 let seen = late_seen.clone();
                 async move {
                     tokio::time::sleep(Duration::from_millis(30)).await;

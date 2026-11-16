@@ -1,5 +1,5 @@
 //! What one run puts into a fresh QuickJS context before the code runs
-//! ([`super::engine`]): `__log`, `__path`, the job's JSON values, its async host
+//! ([`super::engine`]): `__log`, `__path`, the job's JSON values, its async native
 //! functions, and -- in module mode -- the importable modules. Nothing else: the
 //! guest has no fs, network, timers or process of its own.
 
@@ -23,9 +23,9 @@ use rquickjs::{
 };
 
 use super::{
-    host::VmPort,
     parts::{Logs, as_function},
     path::path_op,
+    thread::VmPort,
     types::{VmBeat, VmJob, VmStop},
 };
 
@@ -34,7 +34,7 @@ pub(crate) const BEAT: Duration = Duration::from_millis(1000);
 
 type Settlers = (Persistent<Function<'static>>, Persistent<Function<'static>>);
 
-/// What the guest's host functions and the run loop share, on the engine thread.
+/// What the guest's native functions and the run loop share, on the engine thread.
 pub(crate) struct Shared {
     pub logs: RefCell<Logs>,
     /// Every call haest has yet to answer: its promise's resolve and reject.

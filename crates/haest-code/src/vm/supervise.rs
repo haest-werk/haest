@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     STOP_GRACE, VmSpec,
-    host::Engine,
+    thread::Engine,
     types::{FromVm, ToVm, VmBeat, VmCaps, VmRun, VmStop},
 };
 
@@ -79,10 +79,10 @@ pub(super) async fn supervise(
                         f(b);
                     }
                 }
-                Some(FromVm::Call { call_id, name, args }) => match spec.host_fns.get(&name) {
-                    Some(f) => answering.push(f(args).map(move |r| (call_id, r)).boxed()),
+                Some(FromVm::Call { call_id, name, args }) => match spec.native_fns.get(&name) {
+                    Some(f) => answering.push(f(args).map(move |r| (call_id, r.map_err(|e| e.to_string()))).boxed()),
                     None => {
-                        let text = format!("no host function {name}");
+                        let text = format!("no native function {name}");
                         let _ = stopper.to_vm.send(ToVm::Answer { call_id, ok: false, text });
                     }
                 },

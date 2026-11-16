@@ -14,7 +14,7 @@
 //! A thread cannot be killed from outside; an abandoned one keeps its stop flag
 //! set and ends at its next interrupt poll. At most [`MAX_ENGINES`] runs at once.
 //!
-//! The guest has NO host reach of its own: what it can do is exactly the
+//! The guest reaches nothing of its own: what it can do is exactly the
 //! [`VmSpec`] -- JSON values, a prelude, async functions answered here, module
 //! sources. Every run also gets `console` (into the [`VmRun`]'s logs) and a
 //! pure posix `path` helper the prelude can build on; nothing else: no file
@@ -24,13 +24,13 @@
 //! it ended.
 
 mod engine;
-mod host;
 mod parts;
 mod path;
 mod setup;
 mod supervise;
 #[cfg(test)]
 mod tests;
+mod thread;
 mod types;
 
 use std::{
@@ -49,15 +49,17 @@ use tokio_util::sync::CancellationToken;
 
 pub use types::{VmBeat, VmCaps, VmRun, VmStop};
 
-use host::spawn_engine;
+use thread::spawn_engine;
 use types::VmJob;
 
-/// What a host function answers: `Ok` resolves the guest's promise with the
-/// text, `Err` rejects it with an `Error` carrying the message.
-pub type HostFuture = BoxFuture<'static, Result<String, String>>;
+/// What a native function answers: `Ok` resolves the guest's promise with the
+/// text, `Err` rejects it with an `Error` whose message is the error's text
+/// (its `Display`; a `String` turns into one with `.into()`).
+pub type NativeFuture =
+    BoxFuture<'static, Result<String, Box<dyn std::error::Error + Send + Sync>>>;
 /// A guest function haest answers later: a promise in the guest, its args as
 /// strings (each one `String(arg)`; pass objects as JSON text).
-pub type HostFn = Arc<dyn Fn(Vec<String>) -> HostFuture + Send + Sync>;
+pub type NativeFn = Arc<dyn Fn(Vec<String>) -> NativeFuture + Send + Sync>;
 
 /// What one run's guest gets, and nothing more.
 ///
@@ -71,7 +73,7 @@ pub struct VmSpec {
     pub values: Map<String, Value>,
     /// Global functions answered here, later, by name: a promise in the
     /// guest; an `Err` is an Error it can catch.
-    pub host_fns: BTreeMap<String, HostFn>,
+    pub native_fns: BTreeMap<String, NativeFn>,
     /// None: function mode -- the code is the body of an async function, and
     /// its `return` value is [`VmRun::value`]. Some: module mode -- the code is
     /// an ES module, and these are the modules it may import (exact name ->
@@ -97,13 +99,13 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 /// Runs `code` against `spec` on an engine thread of its own and waits for it
 /// to end. Never fails: every way a run can end is a [`VmRun`].
 ///
-/// The run ends when the code has settled AND every host function call it
+/// The run ends when the code has settled AND every native function call it
 /// started has answered -- a call nobody awaited still finishes -- or when
 /// it is stopped. Code that awaits a promise nothing can settle ends at once
 /// with an error saying so.
 ///
 /// `caps` bounds it: [`VmCaps::timeout_ms`] stops it (wall clock, from
-/// when the engine starts, waiting on host functions included), memory past
+/// when the engine starts, waiting on native functions included), memory past
 /// [`VmCaps::memory_bytes`] is an error inside the guest, and console
 /// output past [`VmCaps::max_log_chars`] is dropped.
 ///
@@ -123,18 +125,18 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 /// use std::sync::Arc;
 ///
 /// use futures::FutureExt;
-/// use haest_code::{HostFn, VmCaps, run_in_vm, vm::VmSpec};
+/// use haest_code::{NativeFn, VmCaps, run_in_vm, vm::VmSpec};
 /// use tokio_util::sync::CancellationToken;
 ///
 /// # #[tokio::main]
 /// # async fn main() {
-/// // One host function: the guest's `shout(text)` resolves to the text in capitals.
-/// let shout: HostFn = Arc::new(|args| {
+/// // One native function: the guest's `shout(text)` resolves to the text in capitals.
+/// let shout: NativeFn = Arc::new(|args| {
 ///     let text = args.first().cloned().unwrap_or_default();
 ///     async move { Ok(text.to_uppercase()) }.boxed()
 /// });
 /// let mut spec = VmSpec::default();
-/// spec.host_fns.insert("shout".into(), shout);
+/// spec.native_fns.insert("shout".into(), shout);
 /// spec.values.insert("WHO".into(), "haest".into());
 ///
 /// let caps = VmCaps { timeout_ms: 5_000, memory_bytes: 16 << 20, max_log_chars: 10_000 };
@@ -188,7 +190,7 @@ pub(crate) async fn run_with_slots(
         code: code.to_string(),
         prelude: spec.prelude.clone(),
         values: spec.values.clone(),
-        async_names: spec.host_fns.keys().cloned().collect(),
+        async_names: spec.native_fns.keys().cloned().collect(),
         modules: spec.modules.clone(),
         filename: spec.filename.clone().unwrap_or_else(|| "code.js".into()),
         caps,
