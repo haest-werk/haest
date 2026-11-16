@@ -202,3 +202,6 @@ pub async fn scan_skills(fs: &dyn Fs, roots: &SkillScanRoots) -> Vec<Skill> {
 pub fn scan_roots(roots: &SkillScanRoots) -> Vec<PathBuf> {
     scan_plan(roots).into_iter().map(|s| s.dir).collect()
 }
+
+#[cfg(test)]
+mod tests;
