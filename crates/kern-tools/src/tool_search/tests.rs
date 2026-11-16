@@ -1,6 +1,5 @@
-use kern_core::workspace::ShutWorkspace;
-
 use super::*;
+use crate::testkit::{input, shut_ctx as ctx};
 
 /// A tool that answers with its name and the input it ran with.
 struct Fake(&'static str, &'static str);
@@ -31,10 +30,6 @@ fn all() -> Vec<Arc<dyn Tool>> {
         Arc::new(Fake("mcp__x__weather", "current weather for a city")),
         Arc::new(Fake("mcp__x__stocks", "stock quotes")),
     ]
-}
-
-fn ctx() -> ToolContext {
-    ToolContext::new("/tmp", Arc::new(ShutWorkspace))
 }
 
 fn advertise(d: &Arc<ToolDeferral>, all: &[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>> {
@@ -74,8 +69,7 @@ async fn grow_adds_what_tool_search_loads_and_proxy_never_changes_the_list() {
     for mode in [DeferMode::Grow, DeferMode::Proxy] {
         let d = deferral(mode);
         let search = find(&advertise(&d, &all()), "ToolSearch");
-        let mut q = JsonMap::new();
-        q.insert("query".into(), json!("select:mcp__x__weather"));
+        let q = input(json!({"query": "select:mcp__x__weather"}));
         let out = search.execute(q, &ctx()).await.unwrap();
         assert!(out.content.contains("\"name\":\"mcp__x__weather\""));
         let want: &[&str] = if mode == DeferMode::Grow {
@@ -91,16 +85,11 @@ async fn grow_adds_what_tool_search_loads_and_proxy_never_changes_the_list() {
 async fn call_tool_runs_the_named_deferred_tool_with_its_input() {
     let d = deferral(DeferMode::Proxy);
     let call = find(&advertise(&d, &all()), "CallTool");
-    let input = json!({"name": "mcp__x__stocks", "input": {"symbol": "AAPL"}});
-    let out = call
-        .execute(input.as_object().cloned().unwrap(), &ctx())
-        .await
-        .unwrap();
+    let stocks = input(json!({"name": "mcp__x__stocks", "input": {"symbol": "AAPL"}}));
+    let out = call.execute(stocks, &ctx()).await.unwrap();
     assert_eq!(out.content, "mcp__x__stocks ran with {\"symbol\":\"AAPL\"}");
-    let unknown = json!({"name": "mcp__x__nope", "input": {}});
-    let err = call
-        .execute(unknown.as_object().cloned().unwrap(), &ctx())
-        .await;
+    let unknown = input(json!({"name": "mcp__x__nope", "input": {}}));
+    let err = call.execute(unknown, &ctx()).await;
     assert!(matches!(err, Err(ToolError::Input(_))));
 }
 
@@ -160,8 +149,7 @@ async fn keyword_search_ranks_name_hits_over_description_hits() {
     assert_eq!(hits("quotes"), ["mcp__x__stocks"]);
     let d = deferral(DeferMode::Grow);
     let search = find(&advertise(&d, &all()), "ToolSearch");
-    let mut q = JsonMap::new();
-    q.insert("query".into(), json!("no such thing"));
+    let q = input(json!({"query": "no such thing"}));
     assert!(matches!(
         search.execute(q, &ctx()).await,
         Err(ToolError::Input(_))

@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use kern_core::{
     fs::{Fs, MemFs},
     tool::{JsonMap, ToolContext},
-    workspace::{ExecOptions, ExecResult, Workspace, WorkspaceMode},
+    workspace::{ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode},
 };
 use serde_json::Value;
 
@@ -101,6 +101,11 @@ impl Workspace for TestWorkspace {
 
 pub fn ctx(ws: Arc<TestWorkspace>) -> ToolContext {
     ToolContext::new(CWD, ws)
+}
+
+/// For a tool that never touches a workspace (tasks, skills, agents, ToolSearch).
+pub fn shut_ctx() -> ToolContext {
+    ToolContext::new(CWD, Arc::new(ShutWorkspace))
 }
 
 pub fn input(v: Value) -> JsonMap {

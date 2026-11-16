@@ -12,7 +12,7 @@ use crate::{
         AgentDirectory, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome, SubagentTypes,
         agent_tools, agent_tools_with,
     },
-    testkit::{TestWorkspace, ctx, input},
+    testkit::{input, shut_ctx},
 };
 
 /// Keeps every spawn it is asked for.
@@ -70,7 +70,7 @@ async fn the_hosts_kinds_reach_the_model_and_the_spawn_with_its_default_and_a_re
     );
     assert_eq!(p["properties"]["model"]["description"], "one of: a:x, b:y");
 
-    let c = ctx(TestWorkspace::with_files::<&str, &str>([]));
+    let c = shut_ctx();
     let brief = |kind: Option<&str>| {
         let mut v = json!({"description": "look", "prompt": "find x"});
         if let Some(k) = kind {
@@ -104,8 +104,7 @@ async fn with_no_kinds_there_is_no_subagent_type_at_all() {
             .get("subagent_type")
             .is_none()
     );
-    let c = ctx(TestWorkspace::with_files::<&str, &str>([]));
     let v = input(json!({"description": "look", "prompt": "x", "subagent_type": "explore"}));
-    tool.execute(v, &c).await.unwrap();
+    tool.execute(v, &shut_ctx()).await.unwrap();
     assert_eq!(dir.0.lock().unwrap()[0].subagent_type, None);
 }

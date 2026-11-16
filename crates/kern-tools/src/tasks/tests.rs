@@ -3,18 +3,10 @@ use std::path::Path;
 use kern_core::{
     fs::MemFs,
     session::{JsonlSessionFile, SessionRecord, SessionSink},
-    workspace::ShutWorkspace,
 };
 
 use super::*;
-
-fn ctx() -> ToolContext {
-    ToolContext::new("/", Arc::new(ShutWorkspace))
-}
-
-fn input(v: Value) -> JsonMap {
-    v.as_object().cloned().unwrap_or_default()
-}
+use crate::testkit::{input, shut_ctx as ctx};
 
 fn tool(tools: &[Arc<dyn Tool>], name: &str) -> Arc<dyn Tool> {
     tools.iter().find(|t| t.name() == name).cloned().unwrap()

@@ -1,9 +1,10 @@
 //! Ported from tools/image-settings.test.ts. Shapes as the Image API's
 //! `/images/models` published them on 2026-11-05.
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use super::{ImageSettingsCode, ModelSettings, check_image_settings, max_references, svg_only};
+use crate::testkit::input;
 use ImageSettingsCode::*;
 
 fn params(v: Value) -> ModelSettings {
@@ -29,12 +30,8 @@ fn gpt() -> ModelSettings {
     }))
 }
 
-fn given(v: Value) -> Map<String, Value> {
-    v.as_object().cloned().unwrap()
-}
-
 fn check(model: &str, p: Option<&ModelSettings>, v: Value) -> Result<Value, ImageSettingsCode> {
-    check_image_settings(model, p, &given(v))
+    check_image_settings(model, p, &input(v))
         .map(Value::Object)
         .map_err(|e| e.code)
 }

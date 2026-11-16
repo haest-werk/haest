@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::{HttpReply, ImageHttp, ImageTool, ImageToolOptions};
-use crate::testkit::{CWD, TestWorkspace};
+use crate::testkit::{self, CWD, TestWorkspace};
 
 const JPEG: [u8; 10] = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0];
 const BASE: &str = "https://images.test/api/v1";
@@ -112,7 +112,7 @@ impl Rig {
         let call = ToolCall {
             id: "g".into(),
             name: "GenerateImage".into(),
-            input: input.as_object().cloned().unwrap(),
+            input: testkit::input(input),
         };
         execute_tool(&ToolIndex::new(vec![self.tool.clone()]), &call, &ctx).await
     }

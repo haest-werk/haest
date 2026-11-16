@@ -114,10 +114,10 @@ mod tests {
     use kern_core::{
         fs::MemFs,
         skills::{SkillOpts, SkillSources, discover_skills},
-        workspace::ShutWorkspace,
     };
 
     use super::*;
+    use crate::testkit::{input, shut_ctx};
 
     async fn tool() -> Arc<dyn Tool> {
         let fs: Arc<dyn Fs> = Arc::new(MemFs::with_files([
@@ -140,14 +140,10 @@ mod tests {
         create_skill_tool(SkillToolOptions::new(move || skills.clone(), fs))
     }
 
-    fn input(v: Value) -> JsonMap {
-        v.as_object().cloned().unwrap()
-    }
-
     #[tokio::test]
     async fn a_listed_skill_loads_its_body_with_or_without_a_slash() {
         let t = tool().await;
-        let ctx = ToolContext::new("/w", Arc::new(ShutWorkspace));
+        let ctx = shut_ctx();
         for name in ["deploy", "/deploy"] {
             let out = t
                 .execute(input(json!({"skill": name, "args": "prod"})), &ctx)
@@ -160,7 +156,7 @@ mod tests {
     #[tokio::test]
     async fn a_skill_the_model_may_not_invoke_is_refused_like_an_unknown_one() {
         let t = tool().await;
-        let ctx = ToolContext::new("/w", Arc::new(ShutWorkspace));
+        let ctx = shut_ctx();
         let hidden = t.execute(input(json!({"skill": "secret"})), &ctx).await;
         assert!(matches!(hidden, Err(ToolError::Input(_))));
         let res = t.execute(input(json!({"skill": "nope"})), &ctx).await;
@@ -195,9 +191,8 @@ mod tests {
                 .get("enum")
                 .is_none()
         );
-        let ctx = ToolContext::new("/w", Arc::new(ShutWorkspace));
         let out = t
-            .execute(input(json!({"skill": " Notes "})), &ctx)
+            .execute(input(json!({"skill": " Notes "})), &shut_ctx())
             .await
             .unwrap();
         assert_eq!(out.content, "Skill notes (personal): Mine.\n\nMy way.");
