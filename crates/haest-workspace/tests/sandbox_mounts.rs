@@ -19,9 +19,13 @@ async fn a_writable_mount_goes_through_to_the_disk_and_a_readable_one_is_read_on
     let (_o, out) = tempdir();
     let (_s, skills) = tempdir();
     std::fs::write(skills.join("SKILL.md"), "skill\n").unwrap();
-    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).writable(&out).readable(&skills))
-        .await
-        .unwrap();
+    let ws = SandboxWorkspace::open(
+        SandboxMounts::new(&dir)
+            .with_writable(&out)
+            .with_readable(&skills),
+    )
+    .await
+    .unwrap();
 
     ws.fs().write(&out.join("kept.txt"), b"kept").await.unwrap();
     assert_eq!(
@@ -47,7 +51,7 @@ async fn chmod_through_the_tools_reaches_a_writable_mount_on_disk() {
     let file = out.join("log.jsonl");
     std::fs::write(&file, "x").unwrap();
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
-    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).writable(&out))
+    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).with_writable(&out))
         .await
         .unwrap();
 
@@ -60,7 +64,7 @@ async fn a_writable_dir_inside_the_project_writes_through_to_the_disk() {
     let (_t, dir) = tempdir();
     let spill = dir.join("spill");
     std::fs::create_dir(&spill).unwrap();
-    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).writable(&spill))
+    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).with_writable(&spill))
         .await
         .unwrap();
 
@@ -82,7 +86,7 @@ async fn a_readable_dir_around_the_project_shows_its_other_files() {
     let dir = home.join("project");
     std::fs::create_dir(&dir).unwrap();
     std::fs::write(home.join("notes.md"), "around\n").unwrap();
-    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).readable(&home))
+    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).with_readable(&home))
         .await
         .unwrap();
 

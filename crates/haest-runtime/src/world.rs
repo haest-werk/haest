@@ -180,12 +180,12 @@ pub async fn workspace_for(
         (WorkspaceMode::Sandbox, Some(_)) => {
             // The spill dir is mounted read-write, so the path in a spill notice is real.
             private_spill_dir(fs.as_ref(), spill).await?;
-            let mut mounts = SandboxMounts::new(&s.cwd).writable(spill);
+            let mut mounts = SandboxMounts::new(&s.cwd).with_writable(spill);
             // A skill dir in the project is the project's: the overlay holds
             // it, so the model can edit it and the edit is a change to review.
             for dir in skill_dirs.iter().filter(|d| !d.starts_with(&s.cwd)) {
                 if fs.exists(dir).await {
-                    mounts = mounts.readable(dir.clone());
+                    mounts = mounts.with_readable(dir.clone());
                 }
             }
             SandboxWorkspace::open(mounts)

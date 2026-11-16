@@ -73,7 +73,9 @@ async fn edits_are_recorded_with_a_writable_and_a_readable_mount_beside_the_proj
     let (_t, dir) = project();
     let (_s, spill) = tempdir();
     let (_k, skills) = tempdir();
-    let mounts = SandboxMounts::new(&dir).writable(&spill).readable(&skills);
+    let mounts = SandboxMounts::new(&dir)
+        .with_writable(&spill)
+        .with_readable(&skills);
     let ws = SandboxWorkspace::open(mounts).await.unwrap();
     ws.fs()
         .write(&dir.join("answer.txt"), b"42\n")

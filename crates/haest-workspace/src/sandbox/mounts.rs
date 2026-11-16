@@ -42,8 +42,8 @@ const MEMORY_BYTES: u64 = 256 * 1024 * 1024;
 /// use haest_workspace::SandboxMounts;
 ///
 /// let mounts = SandboxMounts::new("/work/project")
-///     .writable("/var/spill")
-///     .readable("/home/me/.claude/skills");
+///     .with_writable("/var/spill")
+///     .with_readable("/home/me/.claude/skills");
 /// assert_eq!(mounts.writable.len(), 1);
 /// ```
 #[derive(Debug, Clone, Default)]
@@ -66,12 +66,12 @@ impl SandboxMounts {
     }
     /// Add a real directory the sandbox writes through to, at once and for
     /// good (it is not one of the changes to review).
-    pub fn writable(mut self, dir: impl Into<PathBuf>) -> Self {
+    pub fn with_writable(mut self, dir: impl Into<PathBuf>) -> Self {
         self.writable.push(dir.into());
         self
     }
     /// Add a real directory the sandbox may read and never write.
-    pub fn readable(mut self, dir: impl Into<PathBuf>) -> Self {
+    pub fn with_readable(mut self, dir: impl Into<PathBuf>) -> Self {
         self.readable.push(dir.into());
         self
     }
@@ -165,10 +165,10 @@ mod tests {
     fn nested_dirs_all_mount_and_a_dir_listed_twice_keeps_its_first_role() {
         let p = |s: &str| PathBuf::from(s);
         let m = SandboxMounts::new("/proj")
-            .writable("/proj/spill")
-            .writable("/proj/")
-            .readable("/home")
-            .readable("/proj/spill");
+            .with_writable("/proj/spill")
+            .with_writable("/proj/")
+            .with_readable("/home")
+            .with_readable("/proj/spill");
         assert_eq!(
             roles(&m),
             [
