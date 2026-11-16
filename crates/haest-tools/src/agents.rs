@@ -20,7 +20,11 @@
 //! host with its own idea of a subagent (one that runs elsewhere, with its own
 //! types) implements that trait and keeps these tools. [`SubagentHub`] is the
 //! default, over a [`SubagentParent`]. [`AgentToolOptions`] gives the Agent tool
-//! the host's kinds of subagent (`subagent_type`) and its own `model` text.
+//! the host's kinds of subagent (`subagent_type`) and its own `model` text: to
+//! [`agent_tools_with`] directly, or to the hub through
+//! [`SubagentParent::agent_tool_options`], whose
+//! [`subagent_tools`](SubagentParent::subagent_tools) then says what each kind
+//! may use.
 //!
 //! | Tool | Kind | What it does |
 //! |---|---|---|
@@ -137,13 +141,15 @@ pub struct SpawnInput {
     /// `run_in_background`: return at once; the answer arrives as a message.
     pub background: bool,
     /// One of the host's [`SubagentTypes`] (the named one, else its default);
-    /// None when the host has none. The default [`SubagentHub`] has none and
-    /// ignores it.
+    /// None when the host has none. The default [`SubagentHub`] builds the
+    /// subagent from that kind's tools ([`SubagentParent::subagent_tools`]).
     pub subagent_type: Option<String>,
 }
 
 /// A host's kinds of subagent, under the common `subagent_type` key: what
-/// the model may pick, and what it reads about each. The default hub has none.
+/// the model may pick, and what it reads about each. The default hub has the
+/// ones its parent gives ([`SubagentParent::agent_tool_options`]); none unless
+/// it gives some.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubagentTypes {
     /// The kinds the model may name; the parameter's `enum`. An Agent call

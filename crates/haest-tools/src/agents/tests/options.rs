@@ -7,10 +7,11 @@ use haest_core::tool::{Tool, ToolError};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
+use super::support::{Rig, call, explore_or_general, now, say};
 use crate::{
     agents::{
         AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
-        SubagentTypes, agent_tools, agent_tools_with,
+        SubagentCaps, SubagentTypes, agent_tools, agent_tools_with,
     },
     testkit::{input, shut_ctx},
 };
@@ -90,6 +91,43 @@ async fn the_hosts_kinds_reach_the_model_and_the_spawn_with_its_default_and_a_re
         .map(|s| s.subagent_type.clone())
         .collect();
     assert_eq!(seen, [Some("explore".into()), Some("general".into())]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_hubs_agent_tool_offers_the_parents_kinds_and_each_kind_gets_its_own_tools() {
+    let main = now(|_, n| match n {
+        0 => vec![call(
+            "a",
+            "Agent",
+            json!({"description": "look", "prompt": "x"}),
+        )],
+        1 => vec![call(
+            "b",
+            "Agent",
+            json!({"description": "fix", "prompt": "y", "subagent_type": "general"}),
+        )],
+        _ => say("ok"),
+    });
+    let mut r = Rig::with_kinds(
+        main,
+        now(|_, _| say("done")),
+        SubagentCaps::default(),
+        Some(explore_or_general()),
+    );
+    let agent = r.hub.tools_for(&AgentRef::main()).remove(0);
+    assert_eq!(
+        agent.parameters()["properties"]["subagent_type"]["enum"],
+        json!(["explore", "general"])
+    );
+
+    r.turn("go").await;
+    let seen = r.provider_sub_tools();
+    assert_eq!(seen.len(), 2, "{seen:?}");
+    // The default kind, explore, has no tools of the parent's; general has them.
+    assert!(!seen[0].contains(&"Glob".to_string()), "{seen:?}");
+    assert!(seen[1].contains(&"Glob".to_string()), "{seen:?}");
+    // Neither gets the conversation's task list.
+    assert!(seen.iter().flatten().all(|t| t != "TaskCreate"));
 }
 
 #[tokio::test]

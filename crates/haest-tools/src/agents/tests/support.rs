@@ -21,7 +21,10 @@ use haest_core::{
 use serde_json::Value;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use super::super::{AgentRef, SubagentCaps, SubagentEvent, SubagentHub, SubagentParent};
+use super::super::{
+    AgentRef, AgentToolOptions, SubagentCaps, SubagentEvent, SubagentHub, SubagentParent,
+    SubagentTypes,
+};
 use crate::{GlobTool, inbox::Inbox, testkit::TestWorkspace};
 
 pub type Script =
@@ -139,6 +142,18 @@ pub struct FakeParent {
     pub activity: Mutex<Vec<usize>>,
     /// (agent id, event kind) in order.
     pub events: Mutex<Vec<(String, &'static str)>>,
+    /// The host's kinds of subagent: `explore` (no tools of its own, the
+    /// default) and `general` (the base tools); None = no kinds.
+    kinds: Option<SubagentTypes>,
+}
+
+/// The kinds a host with kinds has: `explore` (the default) and `general`.
+pub fn explore_or_general() -> SubagentTypes {
+    SubagentTypes {
+        names: vec!["explore".into(), "general".into()],
+        description: "explore only looks".into(),
+        default: "explore".into(),
+    }
 }
 
 impl Inbox for FakeParent {
@@ -181,6 +196,18 @@ impl SubagentParent for FakeParent {
     fn default_model(&self) -> (String, Option<Effort>) {
         ("fake:main-model".into(), None)
     }
+    fn agent_tool_options(&self) -> AgentToolOptions {
+        AgentToolOptions {
+            types: self.kinds.clone(),
+            ..Default::default()
+        }
+    }
+    fn subagent_tools(&self, subagent_type: Option<&str>) -> Vec<Arc<dyn Tool>> {
+        match subagent_type {
+            Some("explore") => Vec::new(),
+            _ => self.base_tools(),
+        }
+    }
     fn on_activity(&self, running: &[String]) {
         self.activity.lock().unwrap().push(running.len());
     }
@@ -205,6 +232,16 @@ pub struct Rig {
 
 impl Rig {
     pub fn new(main: Script, sub: Script, caps: SubagentCaps) -> Self {
+        Self::with_kinds(main, sub, caps, None)
+    }
+
+    /// A conversation whose host has `kinds` of subagent.
+    pub fn with_kinds(
+        main: Script,
+        sub: Script,
+        caps: SubagentCaps,
+        kinds: Option<SubagentTypes>,
+    ) -> Self {
         let provider = Arc::new(Roles {
             main,
             sub,
@@ -223,6 +260,7 @@ impl Rig {
             tx,
             activity: Mutex::default(),
             events: Mutex::default(),
+            kinds,
         });
         let hub = SubagentHub::new(parent.clone(), caps);
         let mut tools = parent.base_tools();
@@ -239,6 +277,11 @@ impl Rig {
             events: Vec::new(),
             inbox,
         }
+    }
+
+    /// The tool names each subagent's model calls offered, in call order.
+    pub fn provider_sub_tools(&self) -> Vec<Vec<String>> {
+        self.parent.provider.sub_tools.lock().unwrap().clone()
     }
 
     pub fn main_tools(&self) -> Vec<String> {

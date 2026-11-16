@@ -15,7 +15,7 @@ use super::{
     SubagentEvent, SubagentParent,
     members::{Due, Members, Status, run_id},
     run::{ChildFacts, ChildHooks, ChildPrompt, Run, drive, subagent_note},
-    tools::agent_tools,
+    tools::agent_tools_with,
 };
 
 /// Every subagent of one conversation, run in this process: the default
@@ -24,8 +24,8 @@ use super::{
 /// A spawn checks the caps (depth, and how many run at once across the tree),
 /// takes a unique name, and builds an [`Agent`] from the parent's
 /// [`deps`](SubagentParent::deps) with its own tools (the parent's
-/// [`base_tools`](SubagentParent::base_tools) minus the task tools, plus its own
-/// agent tools), its own system prompt (the parent's, then
+/// [`subagent_tools`](SubagentParent::subagent_tools) for its kind minus the
+/// task tools, plus its own agent tools), its own system prompt (the parent's, then
 /// [`subagent_note`](super::subagent_note)) and its own turn caps. It runs one
 /// turn; its final answer is the result.
 ///
@@ -158,10 +158,13 @@ impl SubagentHub {
     }
 
     /// The agent tools `me` gets: Agent only while it may still nest (and
-    /// `max_concurrent` is not 0), SendMessage and StopAgent always.
+    /// `max_concurrent` is not 0), SendMessage and StopAgent always. The Agent
+    /// tool offers the parent's kinds of subagent
+    /// ([`SubagentParent::agent_tool_options`]).
     pub fn tools_for(&self, me: &AgentRef) -> Vec<Arc<dyn Tool>> {
         let can_spawn = me.depth < self.caps.max_depth && self.caps.max_concurrent > 0;
-        agent_tools(self.arc(), me.clone(), can_spawn)
+        let opts = self.parent.agent_tool_options();
+        agent_tools_with(self.arc(), me.clone(), can_spawn, opts)
     }
 
     /// Stop every running subagent, as StopAgent does for one. A background
@@ -180,20 +183,20 @@ impl SubagentHub {
         self.parent.on_activity(&ids);
     }
 
-    /// The agent for `run`: the conversation's deps with its own tools, prompt
-    /// and hooks. No task tools: the task list belongs to the conversation, not
-    /// to a helper.
-    fn build(&self, run: &Run, model: Option<String>) -> Agent {
+    /// The agent for `run`: the conversation's deps with its own tools (its
+    /// kind's, [`SubagentParent::subagent_tools`]), prompt and hooks. No task
+    /// tools: the task list belongs to the conversation, not to a helper.
+    fn build(&self, run: &Run, input: &SpawnInput) -> Agent {
         let mut tools: Vec<Arc<dyn Tool>> = self
             .parent
-            .base_tools()
+            .subagent_tools(input.subagent_type.as_deref())
             .into_iter()
             .filter(|t| crate::builtin_word(t.name()) != Some("tasks"))
             .collect();
         tools.extend(self.tools_for(&run.me));
         let source = self.parent.tool_source(tools);
         let (main_model, effort) = self.parent.default_model();
-        let model = model.unwrap_or(main_model);
+        let model = input.model.clone().unwrap_or(main_model);
         let base = self.parent.deps();
         let deps = AgentDeps {
             tools: source.clone(),
@@ -295,7 +298,7 @@ impl AgentDirectory for SubagentHub {
             }
         };
         // The parent is asked with the table unlocked: it may call the hub back.
-        let agent = self.build(&run, input.model.clone());
+        let agent = self.build(&run, &input);
         let name = run.me.name.clone();
         self.members.lock().unwrap().attach(&name, agent.control());
         if !input.background {

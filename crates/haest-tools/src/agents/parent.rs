@@ -12,6 +12,7 @@ use haest_core::{
     tool::{InnerCallEvent, Tool, ToolSource},
 };
 
+use super::AgentToolOptions;
 use crate::inbox::Inbox;
 
 /// A subagent's life, for the host's transcript (its own card, never the parent's).
@@ -59,6 +60,21 @@ pub trait SubagentParent: Inbox {
     async fn system_prompt(&self, model_spec: &str, tools: &[Arc<dyn Tool>]) -> String;
     /// What a subagent runs on when the call names no model: the conversation's own.
     fn default_model(&self) -> (String, Option<Effort>);
+    /// What the Agent tool of every agent here offers the model: the host's
+    /// kinds of subagent (`subagent_type`) and the `model` parameter's text.
+    /// Default: no kinds, haest's own text.
+    fn agent_tool_options(&self) -> AgentToolOptions {
+        AgentToolOptions::default()
+    }
+    /// The tools a subagent of `subagent_type` starts from: one of the kinds in
+    /// [`agent_tool_options`](Self::agent_tool_options) (the call's, else the
+    /// default kind), None when the host has none. The hub drops the
+    /// conversation-only ones and adds the agent's own agent tools, as for
+    /// [`base_tools`](Self::base_tools). Default: `base_tools`, whatever the kind.
+    fn subagent_tools(&self, subagent_type: Option<&str>) -> Vec<Arc<dyn Tool>> {
+        let _ = subagent_type;
+        self.base_tools()
+    }
     /// Where an agent's tool list goes through (deferral); default: as it is.
     fn tool_source(&self, tools: Vec<Arc<dyn Tool>>) -> Arc<dyn ToolSource> {
         Arc::new(tools)
