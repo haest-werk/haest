@@ -76,10 +76,10 @@ pub struct InstructionFile {
 /// haest's own name, read with the `agents` source; every other name below is
 /// Claude Code's, read with `claude`.
 const AGENTS_FILE: &str = "AGENTS.md";
-const USER_FILES: [&str; 2] = ["CLAUDE.md", AGENTS_FILE];
+const CLAUDE_FILE: &str = "CLAUDE.md";
 const PROJECT_FILES: [&str; 4] = [
     AGENTS_FILE,
-    "CLAUDE.md",
+    CLAUDE_FILE,
     ".claude/CLAUDE.md",
     "CLAUDE.local.md",
 ];
@@ -145,28 +145,25 @@ pub struct InstructionOptions {
     pub sources: ContextSources,
 }
 
-/// Every path to try, in reading order: user dirs, then the project chain.
+/// Every path to try, in reading order: the user's file of each convention
+/// (`~/.claude/CLAUDE.md`, `~/.agents/AGENTS.md`), then the project chain.
+///
+/// The TS haest crosses the user dirs with both names (it also tries
+/// `~/.claude/AGENTS.md` and `~/.agents/CLAUDE.md`); neither convention puts
+/// a file there, so haest reads each convention's own.
 fn candidates(opts: &InstructionOptions) -> Vec<PathBuf> {
     let ContextSources { agents, claude } = opts.sources;
     let wanted = |f: &str| if f == AGENTS_FILE { agents } else { claude };
-    let mut user_dirs = Vec::new();
-    if claude {
-        user_dirs.push(opts.claude_dir.clone());
-    }
-    let agents_dir = opts.home.join(".agents");
-    if agents && !user_dirs.contains(&agents_dir) {
-        user_dirs.push(agents_dir);
-    }
-    let dirs = [
-        (user_dirs, &USER_FILES[..]),
-        (project_chain(&opts.cwd, &opts.home), &PROJECT_FILES[..]),
-    ];
     let mut out = Vec::new();
-    for (dirs, names) in dirs {
-        for dir in dirs {
-            let wanted_names = names.iter().copied().filter(|f| wanted(f));
-            out.extend(wanted_names.map(|f| dir.join(f)));
-        }
+    if claude {
+        out.push(opts.claude_dir.join(CLAUDE_FILE));
+    }
+    if agents {
+        out.push(opts.home.join(".agents").join(AGENTS_FILE));
+    }
+    for dir in project_chain(&opts.cwd, &opts.home) {
+        let names = PROJECT_FILES.iter().copied().filter(|f| wanted(f));
+        out.extend(names.map(|f| dir.join(f)));
     }
     out
 }

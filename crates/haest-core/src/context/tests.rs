@@ -16,6 +16,9 @@ async fn each_kind_of_instruction_file_is_read_only_when_asked_for() {
         ("/r/home/repo/CLAUDE.md", "repo claude"),
         ("/r/home/repo/.claude/CLAUDE.md", "repo dot claude"),
         ("/r/home/repo/CLAUDE.local.md", "repo local"),
+        // Neither convention's user file: never read.
+        ("/r/home/.claude/AGENTS.md", "crossed"),
+        ("/r/home/.agents/CLAUDE.md", "crossed"),
     ]);
     let mut opts = InstructionOptions {
         cwd: "/r/home/repo".into(),
