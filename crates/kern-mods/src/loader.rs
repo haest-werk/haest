@@ -1,6 +1,7 @@
 //! Loading the mods of one conversation, in this order:
 //!   1. built-in: the approval mod (`approvals`, with auto mode's judge when the
-//!      host has one) and plan mode (`/plan`);
+//!      host has one; a gate, so it judges a call after every mod's rewrite)
+//!      and plan mode (`/plan`);
 //!   2. the human's own: `<config_dir>/mods/*.ts|js|mjs` -- with `user_mods`;
 //!   3. the project's: `<cwd>/.kern/mods/*.ts|js|mjs` -- ONLY with `project_mods`.
 //!      A repo's mod is code from that repo running inside the host with full

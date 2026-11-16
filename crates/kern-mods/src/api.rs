@@ -134,6 +134,13 @@ pub trait Mod: Send + Sync {
     /// Who this mod is in a report: a built-in's name or a file's path.
     fn name(&self) -> &str;
 
+    /// A gate (the approval mod) judges a call as it will run: its
+    /// `tool.before` goes after every other mod's, on the input they rewrote,
+    /// so no later rewrite slips past it. Gates run in load order.
+    fn is_gate(&self) -> bool {
+        false
+    }
+
     /// `tool.before`: before every tool call. [`Before::Deny`] refuses it (the
     /// model reads the reason), [`Before::Input`] replaces its input.
     async fn tool_before(

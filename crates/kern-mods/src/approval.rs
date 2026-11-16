@@ -136,6 +136,11 @@ impl Mod for ApprovalMod {
         "approval"
     }
 
+    /// The command judged is the one that runs, after every mod's rewrite.
+    fn is_gate(&self) -> bool {
+        true
+    }
+
     async fn tool_before(
         &self,
         call: &ModToolCall,

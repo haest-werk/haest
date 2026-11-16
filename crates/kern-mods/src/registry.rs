@@ -1,5 +1,7 @@
 //! Every loaded mod, in load order, and running one event across all of them.
-//! Load order is event order: the first mod's `tool.before` decides first.
+//! Load order is event order: the first mod's `tool.before` decides first,
+//! except a gate's ([`Mod::is_gate`], the approval mod), which judges after
+//! every other mod has had its say, on the call as it will run.
 
 use std::sync::Arc;
 
@@ -69,7 +71,8 @@ impl Mods {
         mut call: ModToolCall,
         ctx: &ToolContext,
     ) -> Result<ModToolCall, ToolError> {
-        for m in &self.list {
+        let (gates, rest): (Vec<_>, Vec<_>) = self.list.iter().partition(|m| m.is_gate());
+        for m in rest.into_iter().chain(gates) {
             match m.tool_before(&call, ctx, &self.env).await {
                 Ok(Before::Pass) => {}
                 Ok(Before::Input(input)) => call.input = input,
