@@ -148,13 +148,3 @@ pub use skill::{SkillToolOptions, skill_tool};
 pub use tasks::task_tools;
 pub use turn_gate::AgentTurnGate;
 pub use web_fetch::{WebFetchNet, WebFetchTool};
-
-/// `e` and every cause under it, joined by `": "`: the line a model reads
-/// when the top error alone is too short to act on.
-pub(crate) fn report(e: &dyn std::error::Error) -> String {
-    let chain = std::iter::successors(Some(e), |e| e.source());
-    chain
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(": ")
-}

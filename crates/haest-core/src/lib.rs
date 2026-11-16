@@ -148,6 +148,7 @@ pub mod context;
 pub mod deferred_tools;
 pub mod deps;
 mod effort;
+pub mod error;
 pub mod events;
 mod expand;
 mod frontmatter;

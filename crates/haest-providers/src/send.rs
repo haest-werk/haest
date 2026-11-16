@@ -14,6 +14,7 @@ use std::{
 };
 
 use futures::StreamExt;
+use haest_core::error::report;
 use haest_http::{Bytes, HttpClient, HttpError, Method, Request, Response};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -67,7 +68,7 @@ impl Sender {
                 Err(e) if retries_left && e.is_retryable() => {
                     sleep(retry.backoff(attempt), cancel).await?
                 }
-                Err(e) => return Err(e.report()),
+                Err(e) => return Err(report(&e)),
             }
             attempt += 1;
         }

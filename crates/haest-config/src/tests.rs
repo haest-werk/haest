@@ -9,7 +9,7 @@ mod typed;
 
 use std::{collections::HashMap, path::PathBuf};
 
-use haest_core::fs::MemFs;
+use haest_core::{error::report, fs::MemFs};
 use haest_settings::{Settings, WordSet};
 
 use super::*;
@@ -44,17 +44,6 @@ async fn run(
     Loader::standard(Settings::bare(cwd, HOME), &env, &owned(flags))
         .load(&files(fs))
         .await
-}
-
-/// The error and every cause under it, as a host shows it.
-fn report(e: &ConfigError) -> String {
-    let mut line = e.to_string();
-    let mut cause = std::error::Error::source(e);
-    while let Some(c) = cause {
-        line = format!("{line}: {c}");
-        cause = c.source();
-    }
-    line
 }
 
 async fn settings(env: &[(&str, &str)], flags: &[(&str, &str)]) -> Settings {

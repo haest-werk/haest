@@ -4,7 +4,8 @@
 //! anything else starting with `/` is sent as typed.
 
 use haest::{
-    Effort, core::ledger::ConversationCap, core::skills::load_skill_body, mods::CommandOutcome,
+    Effort, core::error::report, core::ledger::ConversationCap, core::skills::load_skill_body,
+    mods::CommandOutcome,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -157,9 +158,7 @@ async fn clear(rt: &mut Runtime) {
         Ok(()) => rt
             .hooks
             .info(&format!("Started a fresh session ({}).", rt.session_id())),
-        Err(e) => rt
-            .hooks
-            .error(&format!("Not cleared: {}", crate::report(e))),
+        Err(e) => rt.hooks.error(&format!("Not cleared: {}", report(&e))),
     }
 }
 

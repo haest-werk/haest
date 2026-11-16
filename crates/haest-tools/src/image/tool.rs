@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use haest_core::{
     __private::data_url,
+    error::report,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str},
 };
 use serde_json::{Map, Value, json};
@@ -242,7 +243,7 @@ impl Tool for ImageTool {
             cancel,
         )
         .await
-        .map_err(|e| ToolError::Failed(crate::report(&e)))?;
+        .map_err(|e| ToolError::Failed(report(&e)))?;
         let path = output_path(
             ctx,
             opt_str(&input, "file_path")?,

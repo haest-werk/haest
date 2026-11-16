@@ -4,7 +4,7 @@
 
 use std::{collections::BTreeMap, path::Path, process::Stdio, sync::OnceLock};
 
-use haest_core::ChildEnv;
+use haest_core::{ChildEnv, error::report};
 use haest_http::{
     build_reqwest,
     reqwest::{
@@ -98,7 +98,7 @@ fn http_client() -> Result<reqwest::Client, String> {
         return Ok(client.clone());
     }
     let builder = reqwest_builder().pool_max_idle_per_host(0);
-    let built = build_reqwest(builder).map_err(|e| e.report())?;
+    let built = build_reqwest(builder).map_err(|e| report(&e))?;
     Ok(CLIENT.get_or_init(|| built).clone())
 }
 

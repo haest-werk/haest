@@ -1,7 +1,7 @@
 //! One guarded GET: every redirect hop checked by the net guard, and a body
 //! refused past the byte cap instead of buffered.
 
-use haest_core::tool::ToolError;
+use haest_core::{error::report, tool::ToolError};
 use haest_http::{HttpError, Request, Response};
 use url::Url;
 
@@ -22,13 +22,13 @@ pub(super) async fn guarded_get(
     for _ in 0..=MAX_REDIRECTS {
         assert_public_url(&at, net.resolve.as_ref())
             .await
-            .map_err(|e| ToolError::Input(crate::report(&e)))?;
+            .map_err(|e| ToolError::Input(report(&e)))?;
         let get = Request::get(at.as_str()).with_header("user-agent", USER_AGENT);
         let res = net
             .http
             .send(get)
             .await
-            .map_err(|e| ToolError::Input(format!("could not fetch {at}: {}", e.report())))?;
+            .map_err(|e| ToolError::Input(format!("could not fetch {at}: {}", report(&e))))?;
         let location = match res.status {
             300..=399 => res.header("location").map(str::to_string),
             _ => None,
@@ -62,6 +62,6 @@ pub(super) async fn capped_body(res: Response) -> Result<Vec<u8>, ToolError> {
         Err(HttpError::TooLarge(_)) => Err(ToolError::Input(format!(
             "the response passed the {MAX_BYTES}-byte limit"
         ))),
-        Err(e) => Err(ToolError::Input(e.report())),
+        Err(e) => Err(ToolError::Input(report(&e))),
     }
 }

@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use haest_core::error::report;
 use haest_http::{Bytes, HttpError, Method, Request};
 use serde_json::Value;
 
@@ -124,7 +125,7 @@ impl GithubTracker {
         let (status, answer) = self
             .exchange(self.request(method, url, body.as_ref()))
             .await
-            .map_err(|e| TrackerError::Failed(format!("GitHub did not answer: {}", e.report())))?;
+            .map_err(|e| TrackerError::Failed(format!("GitHub did not answer: {}", report(&e))))?;
         let json: Value = if answer.is_empty() {
             Value::Null
         } else {

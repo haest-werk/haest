@@ -8,16 +8,20 @@ pub type BoxError = Box<dyn Error + Send + Sync>;
 /// Why a request got no answer, or its answer broke off.
 ///
 /// An answer with an error status (a 404, a 529) is not an `HttpError`: it is
-/// a [`Response`](crate::Response) whose status says so. Each variant carries
-/// its cause; [`report`](Self::report) says the whole story in one line.
+/// a [`Response`](crate::Response) whose status says so. A variant's own text
+/// is short ("no connection"); its cause is its [`source`](Error::source),
+/// never in that text. Show one with its causes (haest-core's
+/// `error::report`).
 ///
 /// ```
+/// use std::error::Error;
+///
 /// use haest_http::HttpError;
 ///
 /// let refused = HttpError::Connect("connection refused".into());
 /// assert!(refused.is_retryable());
-/// // The report carries the cause, not only the variant's own words.
-/// assert!(refused.report().ends_with("connection refused"));
+/// // The cause is the source, not part of the variant's own words.
+/// assert_eq!(refused.source().unwrap().to_string(), "connection refused");
 ///
 /// assert!(!HttpError::TooLarge(1024).is_retryable());
 /// ```
@@ -50,37 +54,11 @@ impl HttpError {
     pub fn is_retryable(&self) -> bool {
         matches!(self, Self::Connect(_) | Self::Timeout(_))
     }
-
-    /// The error and every cause under it, joined by `": "`: the line a human
-    /// or a model reads (a client's own top message is often generic, its
-    /// cause says what broke).
-    pub fn report(&self) -> String {
-        let mut line = self.to_string();
-        let mut cause = self.source();
-        while let Some(e) = cause {
-            line.push_str(": ");
-            line.push_str(&e.to_string());
-            cause = e.source();
-        }
-        line
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[derive(Debug, thiserror::Error)]
-    #[error("outer")]
-    struct Outer(#[source] std::io::Error);
-
-    #[test]
-    fn the_report_walks_every_cause() {
-        let inner = std::io::Error::other("reset by peer");
-        let e = HttpError::Connect(Box::new(Outer(inner)));
-        let report = e.report();
-        assert!(report.contains("outer") && report.ends_with("reset by peer"));
-    }
 
     #[test]
     fn only_a_missing_answer_is_worth_another_try() {

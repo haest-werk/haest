@@ -34,7 +34,7 @@ use std::{
 
 use haest::{
     config::{Loaded, Loader, env_var},
-    core::session::sessions_dir,
+    core::{error::report, session::sessions_dir},
     runtime::{BuildError, SessionError, Ui, sessions, world},
     settings::Settings,
     workspace::RealFs,
@@ -130,22 +130,18 @@ async fn shutdown(rt: &Runtime) {
     }
 }
 
-/// An error and every cause under it, joined by `": "`: the line the human reads.
-fn report(e: impl std::error::Error + Send + Sync + 'static) -> String {
-    format!("{:#}", anyhow::Error::new(e))
-}
-
 /// What a failed build tells the human; a model it cannot use, or a session
 /// that is not there, says where to find another.
 fn build_failed(e: BuildError) -> String {
     match e {
-        BuildError::Model(e) => {
-            format!("{e}. Set its key, or pick another model with -m (haest models lists them).")
-        }
+        BuildError::Model(e) => format!(
+            "{}. Set its key, or pick another model with -m (haest models lists them).",
+            report(&e)
+        ),
         BuildError::Session(e @ SessionError::NotFound { .. }) => {
             format!("{e} (haest sessions lists them)")
         }
-        e => report(e),
+        e => report(&e),
     }
 }
 
@@ -187,7 +183,7 @@ async fn main() -> ExitCode {
         .await
     {
         Ok(l) => l,
-        Err(e) => return fail(2, report(e)),
+        Err(e) => return fail(2, report(&e)),
     };
     if let Some(cmd) = &args.command {
         return subcommand(cmd, &loaded).await;
@@ -235,7 +231,7 @@ mod tests {
         );
     }
 
-    /// A cause under the error is part of the line, as anyhow's `{:#}` printed it.
+    /// A cause under the error is part of the line.
     #[test]
     fn a_failed_build_reports_every_cause() {
         let source = std::io::Error::other("disk full");

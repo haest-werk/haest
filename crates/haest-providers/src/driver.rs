@@ -6,6 +6,7 @@
 
 use futures::StreamExt;
 use haest_core::{
+    error::report,
     messages::AssistantMessage,
     provider::{ProviderEvent, ProviderStream},
 };
@@ -62,7 +63,7 @@ pub(crate) fn drive<F: StreamFold>(
                     let (events, ended) = match next {
                         Some(Ok(bytes)) => (parser.push(&bytes), false),
                         Some(Err(e)) => {
-                            failure = Some(e.report());
+                            failure = Some(report(&e));
                             break 'read;
                         }
                         None => (parser.finish(), true),
