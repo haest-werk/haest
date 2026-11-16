@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde::Deserialize;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -34,8 +35,10 @@ fn settings_of(params: &serde_json::Map<String, Value>) -> ModelSettings {
     params
         .iter()
         .map(|(name, spec)| {
-            let spec = serde_json::from_value::<SettingSpec>(spec.clone()).unwrap_or_default();
-            (name.clone(), spec)
+            (
+                name.clone(),
+                SettingSpec::deserialize(spec).unwrap_or_default(),
+            )
         })
         .collect()
 }

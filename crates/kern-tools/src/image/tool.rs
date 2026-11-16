@@ -147,7 +147,7 @@ async fn save_and_show(
         reply.model.as_str(),
     );
     let part = media_from_bytes(&reply.bytes, mt, &file_name(path)).ok();
-    let url = ctx.host.publish(reply.bytes.clone(), mt).await;
+    let url = ctx.host.publish(reply.bytes, mt).await;
     let cost = reply
         .cost_usd
         .map_or_else(String::new, |c| format!(", ${c:.3}"));
