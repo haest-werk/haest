@@ -24,6 +24,7 @@ mod term;
 
 use std::{
     collections::HashMap,
+    ffi::OsString,
     io::{IsTerminal, Read},
     path::PathBuf,
     process::ExitCode,
@@ -139,6 +140,13 @@ fn build_failed(e: &anyhow::Error) -> String {
     }
 }
 
+/// The environment's variables whose name and value are both Unicode; any
+/// other is skipped (`std::env::vars` would panic on it).
+fn unicode_vars(vars: impl Iterator<Item = (OsString, OsString)>) -> HashMap<String, String> {
+    vars.filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+        .collect()
+}
+
 /// The working directory: `-C`, else the process's; real and a directory.
 fn working_dir(args: &Args) -> Result<PathBuf, String> {
     let dir = match &args.cwd {
@@ -158,7 +166,7 @@ async fn main() -> ExitCode {
         Err(e) => e.exit(),
     };
     let args = &cli.args;
-    let env: HashMap<String, String> = std::env::vars().collect();
+    let env = unicode_vars(std::env::vars_os());
     let cwd = match working_dir(args) {
         Ok(d) => d,
         Err(e) => return fail(2, e),
