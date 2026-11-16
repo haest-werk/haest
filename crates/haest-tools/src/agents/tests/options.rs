@@ -56,7 +56,7 @@ fn kinds() -> AgentToolOptions {
             description: "explore only reads".into(),
             default: "explore".into(),
         }),
-        models: Some("one of: a:x, b:y".into()),
+        model_description: Some("one of: a:x, b:y".into()),
     }
 }
 

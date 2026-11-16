@@ -48,7 +48,7 @@ impl Tool for AgentTool {
     fn parameters(&self) -> Value {
         let model = self
             .opts
-            .models
+            .model_description
             .as_deref()
             .unwrap_or("provider:model to run it on (optional; defaults to yours)");
         let mut params = json!({

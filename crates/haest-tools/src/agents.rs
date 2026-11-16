@@ -166,8 +166,9 @@ pub struct SubagentTypes {
 pub struct AgentToolOptions {
     /// The host's kinds of subagent: adds the `subagent_type` parameter.
     pub types: Option<SubagentTypes>,
-    /// The `model` parameter's description, e.g. the models this host offers.
-    pub models: Option<String>,
+    /// The `model` parameter's description, e.g. the models this host offers;
+    /// None = haest's own ("provider:model to run it on ...").
+    pub model_description: Option<String>,
 }
 
 /// An agent tool's refusal, for the model to correct: it goes back as an

@@ -140,7 +140,9 @@ pub fn agent_options() -> AgentToolOptions {
             description: "explore: only reads and searches (the cheap, safe choice for finding things). general: your tools, file changes included (staged like yours). Default explore.".into(),
             default: "explore".into(),
         }),
-        models: Some(format!("The model to run it on (optional; defaults to yours): {MODEL}")),
+        model_description: Some(format!(
+            "The model to run it on (optional; defaults to yours): {MODEL}"
+        )),
     }
 }
 
