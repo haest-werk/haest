@@ -3,9 +3,11 @@
 Status: built on this branch, 2026-11-17: the seam, budgets (G3) and the five follow-ups
 (G-H1 to G-H5), so brain can drop its own `Hub`. Decided by the owner: the subagent hub lives in haest, and
 a host's own hub (brain's `Hub` in `node/src/web/agent/run/agents.rs`) shrinks to an
-implementation of a seam on haest's side. Names follow `main` at `1c7372a` (0.2.0) plus this
-branch. Brain's copy still compiles against an older haest (`AgentDirectory` returning
-`Result<_, String>`, `AgentToolOptions::models`); the rows below use today's names.
+implementation of a seam on haest's side. Names follow haest 0.2.0 (`main` at `d05f75e`) plus
+this branch; every haest-tools item is at the crate root (`haest_tools::MemberRun`), every cap
+type in `haest_core::caps`. Brain's copy still compiles against an older haest
+(`AgentDirectory` returning `Result<_, String>`, `AgentToolOptions::models`); the rows below
+use today's names.
 
 ## What brain's hub does that `SubagentHub` + `SubagentParent` cannot say today
 
@@ -15,11 +17,11 @@ messages flushed first, its cost summed). haest's hub builds every member from t
 `deps()` and tells the parent about it only through two synchronous callbacks
 (`on_activity`, `on_subagent`).
 
-| Code | brain's hub | haest at `1c7372a` |
+| Code | brain's hub | haest 0.2.0 |
 |---|---|---|
 | B1 | `HubHost::start_run(name, model, stop)`: an async start per helper, BEFORE its loop exists; it can refuse (the model reads why) and returns the helper's run | nothing: `deps()` is synchronous and the same for every member; no refusal |
 | B2 | a name is held while the run starts and counts toward `max_running`; a refused start frees it (it never ran, so it is not "finished") | the name is taken in `Members::reserve` and only `leave` frees it (into `finished`) |
-| B3 | the started run decides the helper's model (the node maps "haiku" to an id) | `input.model`, else `default_model()` |
+| B3 | the started run decides the helper's model (the node maps "haiku" to an id) | `input.model_spec`, else `default_model()` |
 | B4 | the started run's limits are the helper's caps, in its note too (`NoteCaps`) | every member gets the hub's `SubagentCaps`, note included |
 | B5 | `HubHost::new_agent(name, run, tools, prompt)`: the helper's loop over ITS run (models through its token, its own record log, the run's pause gate, events tagged with its name) | the parent's deps, hooks wrapped in `ChildHooks` (no `on_message`, no `before_model_call`) |
 | B6 | `HubHost::stop_run(run, reason, answer)` after the turn, awaited BEFORE the answer goes back: flush, close the run, read its cost and model calls | `on_subagent(Stopped { ok })`: synchronous, no answer, no spend, no handle, no reason beyond `ok` |
@@ -55,7 +57,7 @@ pub trait SubagentParent: Inbox {
     ) -> Result<Box<dyn MemberRun>, AgentError> {
         Ok(Box::new(InProcessRun))
     }
-    /// The note under the member's system prompt; `member` has its run's model and caps.
+    /// The note under the member's system prompt; `member` has its run's model spec and caps.
     fn subagent_note(&self, member: &MemberStart) -> String { haest's }   // B14, G-H5
 }
 
@@ -77,13 +79,13 @@ impl SubagentHub {
 /// A started member's run: what the host decided about it, and its end.
 #[async_trait]
 pub trait MemberRun: Send + Sync {
-    fn model(&self) -> Option<String> { None }      // B3
-    fn caps(&self) -> Option<MemberCaps> { None }   // B4
-    fn deps(&self) -> Option<AgentDeps> { None }    // B5
+    fn model_spec(&self) -> Option<String> { None }  // B3
+    fn caps(&self) -> Option<MemberCaps> { None }    // B4
+    fn deps(&self) -> Option<SharedDeps> { None }    // B5
     async fn end(self: Box<Self>, end: MemberEnd) {} // B6
 }
 
-pub struct MemberStart { name, id, parent, depth, input: SpawnInput, model, caps: MemberCaps }
+pub struct MemberStart { name, id, parent, depth, input: SpawnInput, model_spec, caps: MemberCaps }
 pub struct MemberEnd { ending: Ending, answer: String, spend: Spend }
 #[non_exhaustive]
 pub enum Ending { Answered, Stopped, CallerCancelled, Capped(String), Failed(String), Crashed(String) }
@@ -101,8 +103,9 @@ A spawn, in order:
    a refusal here drops the hold;
 4. `start_member`, awaited. An `Err` is the spawn's refusal, as is: the name is freed (never
    "finished": nothing ran), the hold released, `end` never called;
-5. the agent is built from the handle: its `deps()` (else the parent's), its `model()`
-   (else the call's, else the default), its `caps()` (else `MemberStart::caps`);
+5. the agent is built from the handle: its `deps()` (else the parent's), its `model_spec()`
+   (else the call's, else the default), its `caps()` (else `MemberStart::caps`, applied over
+   the deps' `turn_caps`);
 6. the turn runs; `on_subagent` sees `Started`, every `Loop` event, `Stopped` as today;
 7. it leaves the table (a message for it is refused from here), late messages are taken;
 8. `end`, awaited, with how it ended, the answer as the caller gets it, and the spend;
@@ -120,7 +123,8 @@ A spawn, in order:
   Taking `self: Box<Self>` makes "end exactly once" a type fact: the hub gives the handle up.
 - **The handle overrides `deps`, not single fields.** brain's helper differs in its models
   (its token), its hooks (its log, the pause gate, tagged events) and nothing else of note; a
-  host that builds a run elsewhere builds its deps whole. Own deps are used as they are,
+  host that builds a run elsewhere builds its `SharedDeps` whole, as `SubagentParent::deps`
+  does for the conversation. Own deps are used as they are,
   hooks included: the default member's `ChildHooks` (no persistence, inner calls to
   `on_subagent`) are for a member that borrows the parent's hooks. The hub still sets the
   member's tools, prompt (parent's + note) and turn caps.
@@ -141,11 +145,11 @@ A spawn, in order:
 | brain (`run/agents.rs`, `run/chat.rs`) | haest | Notes |
 |---|---|---|
 | `HubHost` | `SubagentParent` (+ `Inbox`) | |
-| `HubHost::start_run(name, model, stop)` | `SubagentParent::start_member(&MemberStart, cancel)` | `MemberStart::{name, input.model, ..}`; `Err(String)` -> `Err(AgentError::Refused(text))` |
+| `HubHost::start_run(name, model, stop)` | `SubagentParent::start_member(&MemberStart, cancel)` | `MemberStart::{name, input.model_spec, ..}`; `Err(String)` -> `Err(AgentError::Refused(text))` |
 | `GatewayRun` | the host's `impl MemberRun` holding it | |
-| `run.model` | `MemberRun::model()` | |
+| `run.model` | `MemberRun::model_spec()` | |
 | `NoteCaps` from `run.limits` | `MemberRun::caps() -> MemberCaps` | the note and the member's turn caps both read it |
-| `HubHost::new_agent(name, run, tools, prompt)` | `MemberRun::deps()` | the hub supplies tools and prompt; drop brain's own Agent construction |
+| `HubHost::new_agent(name, run, tools, prompt)` | `MemberRun::deps() -> Option<SharedDeps>` | the hub supplies tools and prompt; drop brain's own Agent construction |
 | `HubHost::stop_run(run, reason, answer) -> (cost, calls)` | `MemberRun::end(MemberEnd)` | reason: `Ending` (`Answered` = "done", `Stopped` and `CallerCancelled` = "stopped"); cost: `spend.usd()`; calls: `spend.model_calls` |
 | `Event::AgentStart` | emitted from `start_member` (or `on_subagent(Started)`) | prompt, kind, background in `MemberStart::input`, model from its own run |
 | `Event::AgentEnd` | emitted from `MemberRun::end` | |
@@ -175,7 +179,7 @@ A spawn, in order:
 | G-H2 | a delivery event (B10) | `SubagentEvent::Message { from: Sender, to, text }` through `on_subagent`, keyed by the receiving member's id; one for main by the sending member's, the person's to main by `"main"`. `SubagentEvent` and `Ending` are now `#[non_exhaustive]` | `from: Sender` instead of `from: String` + `person: bool`: the sender's kind is the variant, and a third kind of sender would not need a second flag |
 | G-H3 | message vs answer for main (B12) | `Inbox::submit_answer(text)`, default `submit` | no |
 | G-H4 | idle signal (B13) | `SubagentHub::idle()`, `settled(timeout) -> bool` on a `watch` bumped as each spawn closes | the hub counts every spawn from the call until its answer is back (starting, running, its `end`, the hand-back), not members plus `answers_due`: one counter, and a member's `end` is inside it. `settled` says whether it settled |
-| G-H5 | the host's own note (B14) | `SubagentParent::subagent_note(&MemberStart) -> String`, default haest's `subagent_note` | returns `String`, not `Option<String>`: the default IS haest's text, and a parent that only adds a line calls `agents::subagent_note` itself. `member` carries the run's own model and caps (`MemberRun::model`, `caps`), so the note says what the member really runs under |
+| G-H5 | the host's own note (B14) | `SubagentParent::subagent_note(&MemberStart) -> String`, default haest's `subagent_note` | returns `String`, not `Option<String>`: the default IS haest's text, and a parent that only adds a line calls `haest_tools::subagent_note` itself. `member` carries the run's own model spec and caps (`MemberRun::model_spec`, `caps`), so the note says what the member really runs under |
 
 Durable subagents (`durable-runs.md` R6) build on `MemberRun::deps` (a member's own sink)
 and `end` (its record closed).
@@ -189,12 +193,13 @@ and `end` (its record closed).
   exactly once (`release` takes it by value).
 - The Agent tool's `budget {usd, minutes}`, offered only when `AgentToolOptions::budget_caps`
   is Some; `SubagentHub::tools_for` sets it from its caps when `SubagentCaps::budgets` is on
-  (the `subagent_budgets` setting, default off; the `claude` profile leaves it off).
+  (the `subagent_budgets` setting, `SubagentCapSettings::budgets`, default off; the `claude`
+  profile leaves it off).
 - Each value only tightens (an absent one = the cap); `SpawnInput::budget` carries the
   clamped values to any `AgentDirectory`.
 - The time must fit what is left of the caller's turn (`ToolContext::turn_time_left`, filled
   by the loop from its guard). Q6 (refuse or shrink) is decided in ONE function,
-  `agents::budget::fit_time`: refuse, with what is left.
+  `fit_time` in haest-tools' `agents/budget.rs`: refuse, with what is left.
 - The hub holds the USD (step 2 above) and runs the member under the budget's caps. A child
   with no cap (the cap is 0 and none asked) does not fit under a capped turn or ledger: the
   model is told what is left and names an amount.

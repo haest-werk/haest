@@ -20,6 +20,14 @@ with the TypeScript haest unless an entry says otherwise: the session file,
   also under `cargo test`): the finished-run shortcut, and a kill and a
   resume on the memory store.
 
+- The `notebook` example runs its helpers on haest's `SubagentHub` through
+  `SubagentParent::start_member`: each helper on a node run of its own (its
+  token, model spec and caps), closed by `MemberRun::end`. A new panel run
+  puts a helper in the background: the person writes to it (`deliver_as`),
+  the panel hears `SubagentEvent::Message`, its answer reaches main through
+  `Inbox::submit_answer`, the run waits on `SubagentHub::settled`, and every
+  helper reads the notebook's own note.
+
 ### haest-core
 
 Durable runs, opt-in: a host that hands no run store gets the haest it had.
@@ -58,9 +66,84 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   releases: a run resumed by a binary built with another toolchain still
   counts its repeats. Repeat detection within a turn is unchanged.
 
+- New `Ledger::{reserve, release, available, held}` and
+  `ledger::{Hold, NotAvailable}`: USD held on the conversation's budget.
+  Available is the cap less what is spent and held, floored at 0, `None`
+  with no USD cap. `Hold` is `#[must_use]`; `release` takes it by value.
+  Holds live in memory: a snapshot does not save them, a restore keeps the
+  ones in flight.
+- `caps::SubagentCaps` gains `budgets: bool` (default false); a literal
+  written out in full adds it.
+- `ToolContext` gains `turn_time_left: Option<Duration>`: what is left of
+  the turn's time cap on the host's clock, filled by the loop for every
+  tool call; `None` with no time cap, and in `ToolContext::new`.
+
 ### haest-mods
 
 - `ModTools` forwards the wrapped tool's `Tool::on_resume`.
+
+### haest-tools
+
+- New `SubagentParent::start_member(&MemberStart, &CancellationToken)`,
+  default `InProcessRun` (the member haest has always run). It runs before
+  a member's loop exists: an `Err` refuses the spawn (the name is freed,
+  nothing runs, no end follows), an `Ok` hands back the member's
+  `MemberRun`.
+- New `MemberRun`, every method a default: `model_spec()`, `caps()`,
+  `deps() -> Option<SharedDeps>` (used as given, hooks included) and
+  `end(MemberEnd)`, awaited once after the member's turn and before its
+  answer goes back. New `InProcessRun`, `MemberStart`, `MemberEnd`,
+  `MemberCaps`, `Ending` and `Spend`; `MemberStart`, `MemberEnd` and
+  `Ending` are `#[non_exhaustive]`.
+- `subagent_note` takes `&MemberCaps` (was `&SubagentCaps`): pass
+  `&MemberCaps::from(caps)`.
+- A background spawn's reply names the member's model spec.
+- StopAgent on a member whose start has not returned: it never sends a
+  model call, and its end is `Ending::Stopped`.
+- Subagent budgets, opt-in (`subagent_budgets`): the Agent tool takes a
+  `budget {usd, minutes}` when `AgentToolOptions::budget_caps` is `Some`,
+  which `SubagentHub::tools_for` sets from its caps when
+  `SubagentCaps::budgets` is on. Each value only tightens the caps; a time
+  that does not fit what is left of the caller's turn is refused with what
+  is left. The hub holds the budget's USD on the ledger while the member
+  runs, so members running at once cannot overshoot the cap together.
+- `SpawnInput` gains `budget` and `AgentToolOptions` gains `budget_caps`,
+  both `Option<SubagentBudget>`; a literal written out in full adds `None`.
+  New `SubagentBudget { usd, time }`.
+- `AgentError` gains `OverBudget { asked, available }` and
+  `OverTime { asked, left, setting }`, and no longer derives `Eq`.
+- New `SubagentHub::deliver_as(Sender, to, text)` and
+  `Sender::{Agent, Person}` (`#[non_exhaustive]`): the person writes to a
+  running subagent, or to main, under "[Message from <name>, the person you
+  work for]". SendMessage is `Sender::Agent` and reads as before.
+- `SubagentEvent` gains `Message { from: Sender, to, text }`, through
+  `on_subagent` for every delivery (a refused one fires nothing).
+  `SubagentEvent` is `#[non_exhaustive]`: a `match` outside haest-tools
+  needs a `_` arm.
+- New `Inbox::submit_answer(text)`, default `submit`: the hub hands a
+  background answer for main to it, and a message for main to `submit`
+  (was: both to `submit`).
+- New `SubagentHub::idle()` and `SubagentHub::settled(timeout) -> bool`:
+  no spawn in flight, each counted from the call until its answer is back.
+  `settled` is true once idle, false when the timeout runs out.
+- New `SubagentParent::subagent_note(&MemberStart) -> String`, default
+  haest's `subagent_note`: the note under a member's system prompt, given
+  the model spec and caps its run names.
+
+### haest-code
+
+- The Code tool hands its caller's `turn_time_left` on to the calls it
+  makes.
+
+### haest-settings
+
+- `SubagentCapSettings` gains `budgets` (the `subagent_budgets` setting,
+  default off; the `claude` profile leaves it off).
+
+### haest-config
+
+- New setting `subagent_budgets`: `HAEST_SUBAGENT_BUDGETS`,
+  `--subagent-budgets`, in docs/settings.md and docs/examples/config.toml.
 
 ## 0.2.0 (2026-11-17)
 
