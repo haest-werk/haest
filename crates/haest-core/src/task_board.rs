@@ -38,7 +38,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::deps::now_ms;
+use crate::deps::{Clock, WallClock};
 
 crate::word_enum! {
     /// Where a task stands. `as_str` is the wire name (`in_progress`).
@@ -155,7 +155,6 @@ pub struct NewTask {
 }
 
 type OnChange = Box<dyn Fn(&[Task]) + Send + Sync>;
-type Clock = Box<dyn Fn() -> u64 + Send + Sync>;
 
 struct State {
     /// Insertion order is list order.
@@ -205,7 +204,7 @@ impl State {
 pub struct TaskBoard {
     state: Mutex<State>,
     on_change: OnChange,
-    now: Clock,
+    clock: Box<dyn Clock>,
 }
 
 impl Default for TaskBoard {
@@ -216,15 +215,16 @@ impl Default for TaskBoard {
 
 impl TaskBoard {
     /// An empty board that hands every new snapshot to `on_change`; the clock
-    /// is the system's ([`now_ms`]).
+    /// is the [`WallClock`].
     pub fn new(on_change: impl Fn(&[Task]) + Send + Sync + 'static) -> Self {
-        Self::with_clock(on_change, now_ms)
+        Self::with_clock(on_change, WallClock)
     }
 
-    /// Same, with the clock `updated_at` reads (a host's paused clock, a test's fixed one).
+    /// Same, with the clock `updated_at` reads (a host's paused clock, a test's
+    /// fixed one; any `Fn() -> u64` is a [`Clock`]).
     pub fn with_clock(
         on_change: impl Fn(&[Task]) + Send + Sync + 'static,
-        now: impl Fn() -> u64 + Send + Sync + 'static,
+        clock: impl Clock + 'static,
     ) -> Self {
         Self {
             state: Mutex::new(State {
@@ -232,7 +232,7 @@ impl TaskBoard {
                 next: 1,
             }),
             on_change: Box::new(on_change),
-            now: Box::new(now),
+            clock: Box::new(clock),
         }
     }
 
@@ -265,7 +265,7 @@ impl TaskBoard {
                 blocked_by: Vec::new(),
                 blocks: Vec::new(),
                 owner: None,
-                updated_at: (self.now)(),
+                updated_at: self.clock.now_ms(),
                 completed_at: None,
             };
             s.next += 1;
@@ -304,7 +304,7 @@ impl TaskBoard {
                 s.remove(id);
                 None
             } else {
-                let now = (self.now)();
+                let now = self.clock.now_ms();
                 set_fields(&mut s.tasks[at], &patch, now);
                 for b in &patch.add_blocked_by {
                     s.link(b, id)?;
