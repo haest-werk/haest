@@ -44,7 +44,8 @@ const PATH_API: [&str; 8] = [
     "normalize",
     "isAbsolute",
 ];
-/// The importable modules, bare names (`node:` works too).
+/// The modules a `js` script can import or `require`, by bare name (with a
+/// `node:` prefix too).
 pub const JS_MODULES: [&str; 3] = ["fs", "fs/promises", "path"];
 
 fn sync_api() -> Vec<String> {

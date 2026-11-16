@@ -1,11 +1,43 @@
-//! TypeScript to JavaScript for haest's embedded QuickJS (the sandbox `js`
-//! command, `.ts` mod files): the ONE stripper both use. QuickJS runs
-//! JavaScript only; this is swc's type stripper (the one Node uses for
-//! `--experimental-strip-types`). Plain type annotations are erased in place, so
-//! line numbers -- the `(line N)` of an error -- stay the script's own; syntax
-//! that has to become code (an `enum`, a `namespace`) is transformed instead.
+//! TypeScript to JavaScript, in pure Rust, for haest's embedded QuickJS.
+//!
+//! QuickJS runs JavaScript only. haest runs TypeScript in two places: the
+//! sandbox shell's `js file.ts` command (`haest-code`) and `.ts` mod files
+//! (`haest-mods`). Both go through this crate's one function,
+//! [`strip_types`], so a script and a mod see the same TypeScript rules. No
+//! node, bun or deno is needed at runtime.
+//!
+//! The stripper is swc's (`swc_ts_fast_strip`, the one Node uses for
+//! `--experimental-strip-types`). Plain type annotations are erased in place,
+//! so line numbers -- the `(line N)` of an error -- stay the script's own.
+//! Syntax that has to become code (an `enum`, a `namespace`, a constructor
+//! parameter property) is transformed instead, and then lines can move.
+//! Nothing is type-checked: a type error is not an error here.
+//!
+//! # When to use it directly
+//!
+//! Through `haest-code` and `haest-mods` you never call it yourself. Take this
+//! crate when you embed a JavaScript engine of your own and want TypeScript in
+//! it with the same rules and the same limits ([`MAX_SOURCE_BYTES`]).
+//!
+//! # Examples
+//!
+//! ```
+//! let ts = "const n: number = 1\nconsole.log(n as number)";
+//! let js = haest_ts::strip_types(ts, "main.ts").unwrap();
+//! assert!(!js.contains("number"));
+//! // Line 2 is still line 2.
+//! assert!(js.lines().nth(1).unwrap().contains("console.log(n"));
+//!
+//! // An enum has no JavaScript form of its own: it becomes code.
+//! let js = haest_ts::strip_types("enum Color { Red, Green }", "colors.ts").unwrap();
+//! assert!(!js.contains("enum "));
+//!
+//! // A syntax error is an Err that names the problem.
+//! assert!(haest_ts::strip_types("const = ;", "broken.ts").is_err());
+//! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(missing_docs)]
 
 use std::{
     io::{self, Write},
@@ -40,11 +72,14 @@ impl Diagnostics {
     }
 }
 
-/// The longest source stripped. swc recurses once per level of nesting with no
-/// limit of its own, and one byte can open a level (`(`), so the stack it runs
-/// on is sized by the source (below), never the caller's: a tokio worker's 2
-/// MiB held about 600 unclosed `(` in a release build, and an overflow aborts
-/// the whole process.
+/// The longest source [`strip_types`] accepts, in bytes (128 KiB); a longer
+/// one is an `Err`, never stripped.
+///
+/// The cap is about the stack, not time. swc recurses once per level of
+/// nesting with no limit of its own, and one byte can open a level (`(`), so
+/// the stack it runs on is sized by the source, never the caller's: a tokio
+/// worker's 2 MiB held about 600 unclosed `(` in a release build, and a stack
+/// overflow aborts the whole process.
 pub const MAX_SOURCE_BYTES: usize = 128 * 1024;
 
 /// Stack per byte of source, over a measured worst of one unclosed `(` a byte:
@@ -53,9 +88,43 @@ pub const MAX_SOURCE_BYTES: usize = 128 * 1024;
 const STACK_PER_BYTE: usize = if cfg!(debug_assertions) { 24 } else { 4 } << 10;
 const STACK_BASE: usize = 8 << 20;
 
-/// `source` as JavaScript; Err is why it could not be (a syntax error, first
-/// diagnostic first, or a source too long to strip safely). swc runs on a
-/// thread of its own, with a stack for the deepest this source can nest.
+/// Turns TypeScript `source` into JavaScript that QuickJS can run.
+///
+/// Type annotations, `as` casts, interfaces and type-only imports are
+/// replaced by spaces, so every line and column keeps its place. When the
+/// source has syntax that must become code (an `enum`, a `namespace`, a
+/// constructor parameter property), the whole file is transformed instead and
+/// its lines can move. Types are not checked. The source is read as an ES
+/// module.
+///
+/// `filename` is used for two things: a name ending in `x` (`app.tsx`) is
+/// parsed as TSX, and it names the file in the stripper's own diagnostics.
+/// Nothing is read from disk. JSX in a `.tsx` file is left as JSX, which
+/// QuickJS cannot run.
+///
+/// The work runs on a new thread with a stack sized for this source, and the
+/// call blocks until it is done: from async code, it holds the current task's
+/// thread for that long (a few milliseconds for a script).
+///
+/// # Errors
+///
+/// The `Err` is a message for a human or a model:
+/// - the source is longer than [`MAX_SOURCE_BYTES`];
+/// - it is not valid TypeScript (the first diagnostic swc reports);
+/// - the stripper's thread could not start, or failed on this source.
+///
+/// A panic inside swc comes back as an `Err`; this function does not panic.
+///
+/// # Examples
+///
+/// ```
+/// let ts = "export const greet = (who: string): string => `hi ${who}`";
+/// let js = haest_ts::strip_types(ts, "greet.ts")?;
+/// assert!(!js.contains("string"));
+/// // The types became spaces: every column is where it was.
+/// assert_eq!(js.find("=>"), ts.find("=>"));
+/// # Ok::<(), String>(())
+/// ```
 pub fn strip_types(source: &str, filename: &str) -> Result<String, String> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(format!(

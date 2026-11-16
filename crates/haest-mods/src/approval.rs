@@ -1,7 +1,7 @@
 //! THE APPROVAL MOD (built in): in the REAL workspace, a Bash command that can
 //! destroy work the human cannot get back waits for their Allow. The sandbox
 //! never asks -- its writes live in memory and vanish anyway. A host turns it
-//! off with `ModConfig::approvals`.
+//! off with [`ModConfig::approvals`](crate::ModConfig::approvals).
 //!
 //! The list is about irreversibility, not about danger in general: deleting
 //! recursively, rewriting git history or the remote, wiping a disk, killing
@@ -75,7 +75,34 @@ static IRREVERSIBLE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     ]
 });
 
-/// Why `command` needs the human's go-ahead, or None.
+/// Why a shell `command` can destroy work the human cannot get back, or None
+/// when it cannot.
+///
+/// The reason completes the sentence "a command that ...": "deletes files
+/// recursively or by force", "force-pushes, rewriting the remote". The list
+/// is about irreversibility, not danger in general: deleting recursively or
+/// by force (`rm -rf`, `find -delete`), rewriting git history or the remote
+/// (`push --force`, `reset --hard`, `clean -f`, `branch -D`, `stash drop`,
+/// `checkout -- <file>`, `checkout .`, `restore .`), writing over a disk
+/// (`mkfs`, `shred`, `dd if=`), killing processes by name or with `-9`, and
+/// `sudo`. A match anywhere in the line counts, so `cd x && rm -rf y` asks.
+/// It is a pattern match on the text, not a shell parser: it errs toward
+/// asking (`git restore --staged .` asks, though it only unstages).
+///
+/// [`ApprovalMod`] asks the human about exactly these commands unless auto
+/// mode judges instead.
+///
+/// # Examples
+///
+/// ```
+/// use haest_mods::irreversible_reason;
+///
+/// assert!(irreversible_reason("rm -v -rf build").is_some());
+/// assert!(irreversible_reason("git push origin +main").is_some());
+/// assert!(irreversible_reason("make && sudo make install").is_some());
+/// assert_eq!(irreversible_reason("rm notes.txt"), None);
+/// assert_eq!(irreversible_reason("git push"), None);
+/// ```
 pub fn irreversible_reason(command: &str) -> Option<&'static str> {
     IRREVERSIBLE
         .iter()
@@ -83,30 +110,58 @@ pub fn irreversible_reason(command: &str) -> Option<&'static str> {
         .map(|(_, why)| *why)
 }
 
-/// What auto mode makes of one Bash command.
+/// What auto mode's [`AutoJudge`] makes of one Bash command.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BashVerdict {
-    /// Run it; `note` (if any) tells the human what auto mode let through.
-    Run { note: Option<String> },
+    /// Run it without asking.
+    Run {
+        /// A line the human sees about what auto mode let through, if any.
+        note: Option<String>,
+    },
     /// Ask the human first; the reason completes "a command that ...".
     Ask(String),
 }
 
-/// PLUG POINT: auto mode's judge. When it is on it judges every Bash command
-/// instead of the irreversible list alone.
+/// PLUG POINT: auto mode's judge for [`ApprovalMod`]. When it is on, it
+/// judges every Bash command in the real workspace instead of the
+/// irreversible list ([`irreversible_reason`]) alone: it may ask about more,
+/// or let a delete through that git can bring back.
+///
+/// haest ships no judge (the TypeScript haest's is not ported); a host that
+/// has one hands it in through [`ModConfig::auto`](crate::ModConfig::auto).
 #[async_trait]
 pub trait AutoJudge: Send + Sync {
+    /// Whether auto mode is on right now. Asked before every command, so a
+    /// host can switch it mid-conversation; off = the irreversible list decides.
     fn on(&self) -> bool;
+    /// The verdict on `command`, about to run in `ctx`. `ctx.cancel` fires
+    /// when the human interrupts the call.
     async fn judge(&self, command: &str, ctx: &ToolContext) -> BashVerdict;
 }
 
+/// THE APPROVAL MOD (built in): in the REAL workspace, a Bash command that can
+/// destroy work the human cannot get back waits for their Allow.
+///
+/// The sandbox never asks -- its writes live in memory and vanish anyway --
+/// and no other tool is judged. Which commands ask is
+/// [`irreversible_reason`]'s list, unless auto mode ([`AutoJudge`]) is on.
+/// The ask goes to the host's [`ModHost::ask`](crate::ModHost::ask) with the
+/// exact command as its key, so an ALWAYS covers that command only; a Deny
+/// (or no answer) refuses the call and the model reads why.
+///
+/// It is a gate ([`Mod::is_gate`]): it judges the command as it will run,
+/// after every other mod has rewritten it. [`load_mods`](crate::load_mods)
+/// adds it unless [`ModConfig::approvals`](crate::ModConfig::approvals) is
+/// off. [`ApprovalGate`](crate::ApprovalGate#examples)'s example shows it
+/// with a whole host.
 #[derive(Default)]
 pub struct ApprovalMod {
     auto: Option<Arc<dyn AutoJudge>>,
 }
 
 impl ApprovalMod {
-    /// `auto`, when on, judges every command instead of the list alone.
+    /// The approval mod. `auto`, when it is on, judges every command instead
+    /// of the list alone; None = the list ([`ApprovalMod::default`]).
     pub fn new(auto: Option<Arc<dyn AutoJudge>>) -> Self {
         Self { auto }
     }

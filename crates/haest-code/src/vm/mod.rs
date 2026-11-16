@@ -15,7 +15,13 @@
 //! set and ends at its next interrupt poll. At most [`MAX_ENGINES`] runs at once.
 //!
 //! The guest has NO host reach of its own: what it can do is exactly the
-//! [`VmSpec`] -- JSON values, a prelude, async functions answered here, module sources.
+//! [`VmSpec`] -- JSON values, a prelude, async functions answered here, module
+//! sources. Every run also gets `console` (into the [`VmRun`]'s logs) and a
+//! pure posix `path` helper the prelude can build on; nothing else: no file
+//! system, network, timer or process.
+//!
+//! Start from [`run_in_vm`]; [`VmLimits`] bounds a run and [`VmRun`] is how
+//! it ended.
 
 mod engine;
 mod host;
@@ -46,35 +52,101 @@ pub use types::{VmBeat, VmLimits, VmRun, VmStop};
 use host::spawn_engine;
 use types::VmJob;
 
-/// What a host function answers: the text, or the message of the Error the guest sees.
+/// What a host function answers: `Ok` resolves the guest's promise with the
+/// text, `Err` rejects it with an `Error` carrying the message.
 pub type HostFuture = BoxFuture<'static, Result<String, String>>;
-/// A guest function haest answers later: a promise in the guest, its args as strings.
+/// A guest function haest answers later: a promise in the guest, its args as
+/// strings (each one `String(arg)`; pass objects as JSON text).
 pub type HostFn = Arc<dyn Fn(Vec<String>) -> HostFuture + Send + Sync>;
 
 /// What one run's guest gets, and nothing more.
+///
+/// The default is a bare run in function mode: `console`, no globals, no host
+/// functions.
 #[derive(Clone, Default)]
 pub struct VmSpec {
     /// Runs before the code, after the base prelude (console, `__settle`): builds the guest API.
     pub prelude: String,
     /// JSON globals, set before the prelude.
     pub values: Map<String, Value>,
-    /// Answered here, later: a promise in the guest; an `Err` is an Error it can catch.
+    /// Global functions answered here, later, by name: a promise in the
+    /// guest; an `Err` is an Error it can catch.
     pub host_fns: BTreeMap<String, HostFn>,
-    /// Run as an ES module; these are the importable modules (name -> source).
+    /// None: function mode -- the code is the body of an async function, and
+    /// its `return` value is [`VmRun::value`]. Some: module mode -- the code is
+    /// an ES module, and these are the modules it may import (exact name ->
+    /// source); there is no value.
     pub modules: Option<HashMap<String, String>>,
     /// Shown in stacks and error lines; default `code.js`.
     pub filename: Option<String>,
 }
 
+/// The default memory limit of a run's engine, 64 MiB (the Code tool's and
+/// the sandbox `js` command's).
 pub const VM_MEMORY_BYTES: usize = 64 * 1024 * 1024;
+/// The most runs at once in this process (4); [`run_in_vm`] waits for a free
+/// one.
 pub const MAX_ENGINES: usize = 4;
+/// How long a run asked to stop has before it is abandoned and reported
+/// [`killed`](VmRun::killed).
 pub const STOP_GRACE: Duration = Duration::from_millis(500);
 
 /// At most MAX_ENGINES runs at once; the rest wait their turn (or their abort).
 static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINES));
 
-/// Run `code` against `spec`. Never fails: every way a run can end is a [`VmRun`].
-/// `cancel` is the human's interrupt; `on_beat` hears about once a second how a long run is doing.
+/// Runs `code` against `spec` on an engine thread of its own and waits for it
+/// to end. Never fails: every way a run can end is a [`VmRun`].
+///
+/// The run ends when the code has settled AND every host function call it
+/// started has answered -- a call nobody awaited still finishes -- or when
+/// it is stopped. Code that awaits a promise nothing can settle ends at once
+/// with an error saying so.
+///
+/// `limits` bounds it: [`VmLimits::timeout_ms`] stops it (wall clock, from
+/// when the engine starts, waiting on host functions included), memory past
+/// [`VmLimits::memory_bytes`] is an error inside the guest, and console
+/// output past [`VmLimits::max_log_chars`] is dropped.
+///
+/// `cancel` is the human's interrupt: it stops the run, even a CPU loop,
+/// within one interrupt poll, and what it printed is kept
+/// ([`VmStop::Interrupted`]). A run that does not stop within [`STOP_GRACE`]
+/// is abandoned ([`VmRun::killed`]). Cancelled while waiting for one of the
+/// [`MAX_ENGINES`] slots, it returns at once, stopped. Dropping the returned
+/// future stops the run too.
+///
+/// `on_beat` hears, about once a second and on the task awaiting this call,
+/// how a long run is doing.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use futures::FutureExt;
+/// use haest_code::{HostFn, VmLimits, run_in_vm, vm::VmSpec};
+/// use tokio_util::sync::CancellationToken;
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// // One host function: the guest's `shout(text)` resolves to the text in capitals.
+/// let shout: HostFn = Arc::new(|args| {
+///     let text = args.first().cloned().unwrap_or_default();
+///     async move { Ok(text.to_uppercase()) }.boxed()
+/// });
+/// let mut spec = VmSpec::default();
+/// spec.host_fns.insert("shout".into(), shout);
+/// spec.values.insert("WHO".into(), "haest".into());
+///
+/// let limits = VmLimits { timeout_ms: 5_000, memory_bytes: 16 << 20, max_log_chars: 10_000 };
+/// let code = "console.log('working'); return { said: await shout('hi ' + WHO) }";
+/// let run = run_in_vm(code, &spec, limits, &CancellationToken::new(), None).await;
+///
+/// assert_eq!(run.error, None);
+/// assert_eq!(run.stdout, "working\n");
+/// let value: serde_json::Value = serde_json::from_str(run.value.as_deref().unwrap()).unwrap();
+/// assert_eq!(value["said"], "HI HAEST");
+/// # }
+/// ```
 pub async fn run_in_vm(
     code: &str,
     spec: &VmSpec,

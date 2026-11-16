@@ -8,30 +8,47 @@ use std::{
 
 use serde_json::{Map, Value};
 
+/// The bounds of one engine run, for [`run_in_vm`](super::run_in_vm).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VmLimits {
+    /// Wall-clock deadline in milliseconds, from when the engine starts; past
+    /// it the run is stopped as [`VmStop::Timeout`], even mid-loop.
     pub timeout_ms: u64,
+    /// QuickJS heap limit in bytes; an allocation past it is an error in the guest.
     pub memory_bytes: usize,
+    /// Console output kept, in characters; the rest is dropped and
+    /// [`VmRun::logs_truncated`] set.
     pub max_log_chars: usize,
 }
 
 /// Why a run was cut short.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VmStop {
+    /// It reached [`VmLimits::timeout_ms`].
     Timeout,
+    /// The caller's cancel token fired.
     Interrupted,
 }
 
+/// How one engine run ended: its value or error, what it printed, and whether
+/// it was stopped.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct VmRun {
-    /// Function mode: the code's return value -- a string as is, anything else as JSON.
+    /// Function mode: the code's return value -- a string as is, anything
+    /// else as JSON (indented two spaces), with the promises inside a plain
+    /// object or array (a few levels deep) awaited first. None for
+    /// `undefined`, in module mode, or when the run failed.
     pub value: Option<String>,
-    /// `Name: message (line N)`.
+    /// The uncaught error, `Name: message (line N)` with the line in the
+    /// code's own numbering; or why the engine could not run it.
     pub error: Option<String>,
     /// Interleaved, non-log levels tagged (`[warn] ...`): what the Code tool shows the model.
     pub logs: String,
+    /// `console.log`, `info` and `debug` lines.
     pub stdout: String,
+    /// `console.warn` and `error` lines.
     pub stderr: String,
+    /// Console output passed [`VmLimits::max_log_chars`] and the rest was dropped.
     pub logs_truncated: bool,
     /// Why the run was cut short, or None.
     pub stopped: Option<VmStop>,
@@ -59,9 +76,14 @@ impl VmRun {
 /// handler, so a CPU loop beats too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VmBeat {
+    /// Time since the engine started, in milliseconds.
     pub elapsed_ms: u64,
+    /// Host function calls the guest has made so far.
     pub calls: u64,
+    /// Of those, the ones not answered yet.
     pub inflight: u64,
+    /// The engine's heap use, as last measured; it is measured only while the
+    /// run waits on haest, so a CPU loop's beats repeat the last figure.
     pub memory_bytes: u64,
 }
 

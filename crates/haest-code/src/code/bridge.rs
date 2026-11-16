@@ -25,8 +25,10 @@ use crate::{
     vm::{HostFn, VmSpec},
 };
 
+/// The most tool calls one Code run may make (100); a call past it throws in
+/// the program, telling it to return what it has.
 pub const MAX_CALLS: usize = 100;
-/// Pictures one run may put in front of the model (Claude Code's REPL: 4 a result).
+/// Pictures one run may put in front of the model with `see()` (Claude Code's REPL: 4 a result).
 pub const MAX_SEEN: usize = 4;
 const READ_CONCURRENCY: usize = 8;
 

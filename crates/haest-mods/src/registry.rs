@@ -12,24 +12,47 @@ use crate::api::{Before, Mod, ModEnv, ModError, ModToolCall};
 /// What the model reads for a call the human interrupted while a mod was deciding.
 const INTERRUPTED: &str = "Interrupted by the user before this tool ran.";
 
-/// What running a slash command found.
+/// What [`Mods::command`] did with a slash command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandOutcome {
-    /// No mod has this command.
+    /// No mod has this command: the host handles the line (or says it is unknown).
     Unknown,
-    /// The mod handled the line itself; nothing goes to the model.
+    /// The mod handled the line itself, or failed (reported to the human);
+    /// nothing goes to the model.
     Handled,
-    /// The text to send to the model.
+    /// The text to send to the model, as if the human had typed it.
     Prompt(String),
 }
 
-/// Every mod one conversation loaded, and the environment they all see.
+/// Every mod one conversation loaded, in load order, and the environment they
+/// all see.
+///
+/// Load order is event order: the first mod's `tool.before` decides first,
+/// except a gate's ([`Mod::is_gate`], the approval mod), which judges after
+/// every other mod has had its say, on the call as it will run. A mod that
+/// fails in an event is reported through the host's
+/// [`ModHost::error`](crate::ModHost::error) (unless the human interrupted
+/// that tool call) and never takes the conversation down; what else happens
+/// depends on the event:
+///
+/// | Event | A mod fails |
+/// |---|---|
+/// | `tool.before` | the call is refused and does not run: a guard that broke must not wave anything through |
+/// | `tool.after` | the output stays as it was: the call happened, and the model must not retry it |
+/// | `prompt.submit` | the text stays as it was |
+/// | `system.prompt` | that mod adds nothing |
+/// | a slash command | [`CommandOutcome::Handled`] |
+///
+/// Build one with [`load_mods`](crate::load_mods), or with [`Mods::new`] and
+/// [`Mods::add`]; share it as an `Arc` between [`ModTools`](crate::ModTools),
+/// [`ModSystemPrompt`](crate::ModSystemPrompt) and the host's input path.
 pub struct Mods {
     env: ModEnv,
     list: Vec<Arc<dyn Mod>>,
 }
 
 impl Mods {
+    /// No mods yet, in `env`.
     pub fn new(env: ModEnv) -> Self {
         Self {
             env,
@@ -37,12 +60,13 @@ impl Mods {
         }
     }
 
-    /// Add a mod after every mod already here.
+    /// Add a mod after every mod already here (logged through [`ModHost::log`](crate::ModHost::log)).
     pub fn add(&mut self, m: Arc<dyn Mod>) {
         self.env.host.log(&format!("mod loaded: {}", m.name()));
         self.list.push(m);
     }
 
+    /// The environment every mod's events get.
     pub fn env(&self) -> &ModEnv {
         &self.env
     }
@@ -113,8 +137,9 @@ impl Mods {
         output
     }
 
-    /// A human message after every `prompt.submit` hook. A mod that fails leaves
-    /// the text as it was.
+    /// A human message after every `prompt.submit` hook, in load order, each
+    /// seeing the text the one before left. A mod that fails leaves the text
+    /// as it was. Call it on the human's text before it goes to the agent.
     pub async fn rewrite_prompt(&self, text: &str) -> String {
         let mut text = text.to_string();
         for m in &self.list {
@@ -127,7 +152,9 @@ impl Mods {
         text
     }
 
-    /// What every `system.prompt` hook appends, joined; empty for none.
+    /// What every `system.prompt` hook appends, in load order, joined by a
+    /// blank line; empty when none adds anything. [`ModSystemPrompt`](crate::ModSystemPrompt)
+    /// puts it after the host's prompt.
     pub async fn system_append(&self) -> String {
         let mut parts = Vec::new();
         for m in &self.list {
@@ -161,11 +188,41 @@ impl Mods {
             .find(|m| m.commands().iter().any(|c| bare(c) == name))
     }
 
+    /// Whether a mod answers the slash command `name` (with or without its `/`).
     pub fn has_command(&self, name: &str) -> bool {
         self.command_owner(name).is_some()
     }
 
-    /// Run a mod's slash command (`name` with or without its `/`).
+    /// Run a mod's slash command: `name` with or without its `/`, `args` the
+    /// rest of the human's line.
+    ///
+    /// When two mods answer the same name, the one loaded later runs. A host
+    /// sends [`CommandOutcome::Prompt`] to the model as the human's message.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::sync::Arc;
+    /// # use haest_core::workspace::WorkspaceMode;
+    /// # use haest_mods::{ApprovalRequest, Decision, ModHost};
+    /// use haest_mods::{CommandOutcome, ModEnv, Mods, PlanMod};
+    /// # struct Terminal;
+    /// # #[async_trait::async_trait]
+    /// # impl ModHost for Terminal {
+    /// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+    /// #     fn notice(&self, _: &str) {}
+    /// # }
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let mut mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Sandbox, Arc::new(Terminal)));
+    /// mods.add(Arc::new(PlanMod::default()));
+    ///
+    /// assert_eq!(mods.commands(), ["plan"]);
+    /// assert_eq!(mods.command("/plan", "").await, CommandOutcome::Handled);
+    /// assert_eq!(mods.command("/deploy", "now").await, CommandOutcome::Unknown);
+    /// # }
+    /// ```
     pub async fn command(&self, name: &str, args: &str) -> CommandOutcome {
         let Some(m) = self.command_owner(name) else {
             return CommandOutcome::Unknown;

@@ -13,6 +13,7 @@
 //!
 //! The token is the host's: handed in with [`GithubTracker::with_token`], never
 //! read from the environment. Without one, public repositories can be read.
+//! Deleting an issue needs a token with admin rights on the repository.
 //!
 //! PLUG POINT: [`http::Http`], how the requests travel ([`http::ReqwestHttp`]
 //! by default).
@@ -41,6 +42,57 @@ const API: &str = "https://api.github.com";
 const MAX_PAGES: u32 = 10;
 const MAX_PER_PAGE: usize = 100;
 
+/// The issues of one GitHub repository, as a [`Tracker`].
+///
+/// Statuses are `open`, `closed` and `not_planned`; there are no priorities;
+/// the relations are parent / child (sub-issues) and depends_on / blocks
+/// (issue dependencies). An id is the issue number (`42` or `#42`), or
+/// `owner/repo#42` for another repository's issue in a link. Pull requests
+/// are skipped everywhere: the issues API lists them too, but they are not
+/// issues here.
+///
+/// GitHub's answers map to [`TrackerError`]: 404 and 410 are `NotFound`, 422
+/// is `Invalid` with GitHub's reasons, anything else (a 401 without a token,
+/// a 403, no answer) is `Failed`. A list reads at most 10 pages.
+///
+/// # Examples
+///
+/// A fake [`Http`] answers in place of GitHub, so this runs offline; a host
+/// leaves the default and hands in a token.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_issues::{
+///     IssueFilter, Tracker,
+///     github::{GithubTracker, http::{Http, HttpCall, HttpReply}},
+/// };
+/// use serde_json::json;
+///
+/// /// GitHub with one open issue.
+/// struct OneIssue;
+///
+/// #[async_trait::async_trait]
+/// impl Http for OneIssue {
+///     async fn send(&self, call: HttpCall) -> Result<HttpReply, String> {
+///         assert!(call.url.starts_with("https://api.github.com/repos/owner/repo/issues?state=open"));
+///         assert_eq!(call.header("authorization"), Some("Bearer a token"));
+///         Ok(HttpReply::json(200, &json!([{
+///             "number": 7, "title": "Docs for haest-issues", "state": "open",
+///             "repository_url": "https://api.github.com/repos/owner/repo",
+///         }])))
+///     }
+/// }
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// let github = GithubTracker::new("owner", "repo")
+///     .with_token("a token")
+///     .with_http(Arc::new(OneIssue));
+/// let open = github.list(&IssueFilter { limit: 10, ..Default::default() }).await.unwrap();
+/// assert_eq!((open[0].id.as_str(), open[0].status.as_str()), ("7", "open"));
+/// # }
+/// ```
 pub struct GithubTracker {
     owner: String,
     repo: String,
@@ -62,7 +114,12 @@ impl fmt::Debug for GithubTracker {
 }
 
 impl GithubTracker {
-    /// The issues of `owner/repo` on github.com, with no token.
+    /// The issues of `owner/repo` on github.com, with no token, over
+    /// [`ReqwestHttp`]. Nothing is sent until the first call.
+    ///
+    /// # Panics
+    ///
+    /// When reqwest cannot build its HTTP client ([`ReqwestHttp::new`]).
     pub fn new(owner: impl Into<String>, repo: impl Into<String>) -> Self {
         Self {
             owner: owner.into(),
@@ -81,13 +138,16 @@ impl GithubTracker {
         self
     }
 
+    /// The tracker sending its requests through `http`: a host's own client,
+    /// a recorder, a test's fake.
     pub fn with_http(mut self, http: Arc<dyn Http>) -> Self {
         self.http = http;
         self
     }
 
     /// Another API root: GitHub Enterprise Server's `https://HOST/api/v3`
-    /// (its GraphQL endpoint is then `https://HOST/api/graphql`).
+    /// (its GraphQL endpoint is then `https://HOST/api/graphql`). The token,
+    /// if any, goes to this host.
     pub fn with_api_url(mut self, url: &str) -> Self {
         let url = url.trim_end_matches('/');
         self.graphql = match url.strip_suffix("/v3") {

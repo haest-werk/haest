@@ -15,15 +15,21 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::Value;
 
+/// The HTTP methods GitHub's issue API needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
+    /// `GET`: read an issue, a list, a search.
     Get,
+    /// `POST`: create an issue, add a link, a GraphQL call.
     Post,
+    /// `PATCH`: update an issue.
     Patch,
+    /// `DELETE`: remove a link.
     Delete,
 }
 
 impl Method {
+    /// The method as it goes on the wire: `GET`, `POST`, `PATCH`, `DELETE`.
     pub fn as_str(self) -> &'static str {
         match self {
             Method::Get => "GET",
@@ -34,12 +40,17 @@ impl Method {
     }
 }
 
-/// One request. `body` goes out as JSON.
+/// One request to GitHub, ready to send.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HttpCall {
+    /// The method.
     pub method: Method,
+    /// The whole URL, query included, already encoded.
     pub url: String,
+    /// Every header to send, lowercase names (`authorization` carries the
+    /// token, when there is one; `content-type` comes with a body).
     pub headers: Vec<(String, String)>,
+    /// The body, sent as JSON text; None = no body.
     pub body: Option<Value>,
 }
 
@@ -56,11 +67,14 @@ impl HttpCall {
 /// The answer: its status and whole body.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HttpReply {
+    /// The HTTP status code.
     pub status: u16,
+    /// The whole body, as received; GitHub answers JSON (or nothing).
     pub body: Vec<u8>,
 }
 
 impl HttpReply {
+    /// A reply of `status` with `body` as its JSON text: what a fake answers.
     pub fn json(status: u16, body: &Value) -> Self {
         Self {
             status,
@@ -68,14 +82,23 @@ impl HttpReply {
         }
     }
 
+    /// Whether the status is a success (2xx).
     pub fn ok(&self) -> bool {
         (200..300).contains(&self.status)
     }
 }
 
+/// PLUG POINT: how [`GithubTracker`](super::GithubTracker) sends its
+/// requests. [`ReqwestHttp`] is the default; the [tracker's
+/// docs](super::GithubTracker#examples) have a fake.
 #[async_trait]
 pub trait Http: Send + Sync {
-    /// Send `call`; Err is why no answer came (the connection, a timeout).
+    /// Send `call` and read the whole answer.
+    ///
+    /// # Errors
+    ///
+    /// Why no answer came: the connection, a timeout, a body too large. An
+    /// answer with an error status (a 404) is an `Ok` reply, not an `Err`.
     async fn send(&self, call: HttpCall) -> Result<HttpReply, String>;
 }
 
@@ -84,7 +107,8 @@ const MAX_BODY: usize = 16 * 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The default: reqwest with rustls, no proxy (none from the environment
-/// either: it would be sent the token), a 60 s limit per request.
+/// either: it would be sent the token), a 60 s limit per request. An answer
+/// over 16 MiB is an error.
 #[derive(Debug, Clone)]
 pub struct ReqwestHttp {
     client: reqwest::Client,
@@ -97,6 +121,14 @@ impl Default for ReqwestHttp {
 }
 
 impl ReqwestHttp {
+    /// The default client. It installs rustls' ring crypto provider for the
+    /// whole process when none is installed yet (one already installed is
+    /// used as is).
+    ///
+    /// # Panics
+    ///
+    /// When reqwest cannot build the client, which does not happen with the
+    /// ring provider on a supported platform.
     pub fn new() -> Self {
         // reqwest takes the process-wide provider when one is installed; this
         // installs ring only when nobody has installed one yet.
@@ -109,7 +141,8 @@ impl ReqwestHttp {
         Self::with_client(client)
     }
 
-    /// Bring a configured client (a proxy, root certificates).
+    /// A configured client of the host's (a proxy, root certificates, its own
+    /// timeout); the 16 MiB answer limit still holds.
     pub fn with_client(client: reqwest::Client) -> Self {
         Self { client }
     }

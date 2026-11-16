@@ -16,20 +16,39 @@ use serde_json::Value;
 
 use crate::{api::ModToolCall, registry::Mods};
 
-/// A tool source with every mod's hooks around every tool, plus the tools mods add.
+/// The agent's tool source with the mods in it: every tool runs inside every
+/// mod's `tool.before` / `tool.after`, and the tools mods add are offered
+/// beside the host's.
+///
+/// Give it to the agent in place of the host's own [`ToolSource`]
+/// (`AgentDeps::new(models, Arc::new(ModTools::new(tools, mods)), ...)`). The
+/// list is built again each time the loop asks, so a mod that registers a
+/// tool later is offered from the next model call.
+///
+/// A wrapped call goes: every mod's `tool.before` (gates last), then the tool
+/// with the input they left, then every mod's `tool.after`. A refusal comes
+/// back as [`ToolError::Input`] (`Refused: <reason>`), which the model reads;
+/// a mod that failed in `tool.before` as [`ToolError::Failed`], and the tool
+/// does not run.
 pub struct ModTools {
     inner: Arc<dyn ToolSource>,
     mods: Arc<Mods>,
 }
 
 impl ModTools {
+    /// `inner`'s tools, and every mod's, inside `mods`' hooks.
     pub fn new(inner: Arc<dyn ToolSource>, mods: Arc<Mods>) -> Self {
         Self { inner, mods }
     }
 
     /// `tools` plus every mod's tool, each wrapped in the `tool.before` /
-    /// `tool.after` hooks. A tool that runs OTHER tools (Code) should be handed
-    /// these wrapped siblings, so every call it makes passes the hooks too.
+    /// `tool.after` hooks: the list [`ModTools`] offers, for a host that
+    /// builds a tool list rather than a source. A tool that runs OTHER tools
+    /// (Code) should be handed these wrapped siblings, so every call it makes
+    /// passes the hooks too.
+    ///
+    /// The mods' tools come after `tools`, in load order. A wrapped tool keeps
+    /// its name, description, schema, kind and `read_only`.
     pub fn wrap(mods: &Arc<Mods>, tools: Vec<Arc<dyn Tool>>) -> Vec<Arc<dyn Tool>> {
         tools
             .into_iter()
@@ -89,13 +108,20 @@ impl Tool for ModTool {
     }
 }
 
-/// A system prompt with what every mod's `system.prompt` hook appends.
+/// The agent's system prompt with the mods' additions: the host's prompt, a
+/// blank line, then what every mod's `system.prompt` hook returns
+/// ([`Mods::system_append`]).
+///
+/// Asked before every model call, so a mod's addition can change between
+/// calls (plan mode's brief comes and goes with `/plan`). Give it to the agent
+/// in place of the host's own [`SystemPrompt`].
 pub struct ModSystemPrompt {
     inner: Arc<dyn SystemPrompt>,
     mods: Arc<Mods>,
 }
 
 impl ModSystemPrompt {
+    /// `inner`, with what `mods` append.
     pub fn new(inner: Arc<dyn SystemPrompt>, mods: Arc<Mods>) -> Self {
         Self { inner, mods }
     }

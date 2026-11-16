@@ -11,34 +11,48 @@ use haest_core::{
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-/// One tool call as a mod sees it.
+/// One tool call as a mod sees it, in `tool.before` and `tool.after`.
+///
+/// A mod file's handler gets the same value as its `call` argument, in
+/// camelCase: `{ name, input, readOnly }`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModToolCall {
+    /// The tool's name, as the model called it (`Bash`, `Write`, `mcp__github__search`).
     pub name: String,
+    /// The input the tool will run with: the model's, or an earlier mod's replacement.
     pub input: JsonMap,
     /// The tool declares it changes nothing ([`Tool::read_only`]).
     pub read_only: bool,
 }
 
-/// What a `tool.before` hook decided.
+/// What a [`Mod::tool_before`] hook decided about one tool call.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Before {
     /// Let the call through as it is.
     Pass,
-    /// Refuse it: the model reads the reason. The first deny wins.
+    /// Refuse it: the model reads `Refused: <reason>` as the call's error
+    /// result, and the tool does not run. The first deny wins; later mods are
+    /// not asked.
     Deny(String),
     /// Replace its input, for the hooks after this one and for the tool.
     Input(JsonMap),
 }
 
-/// An Allow / Deny prompt for the human.
+/// An Allow / Deny prompt for the human, raised by a mod through [`ModHost::ask`].
+///
+/// A mod file builds one as the `req` of `haest.ask(req, signal)`, in
+/// camelCase: `{ toolName, description, inputPreview, toolUseId?, key? }`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApprovalRequest {
+    /// The tool the ask is about (`Bash`); [`ApprovalGate`](crate::ApprovalGate) scopes ALWAYS to it.
     pub tool_name: String,
+    /// The question, in one sentence: "haest wants to run a command that deletes files recursively".
     pub description: String,
+    /// What the human reads to decide: the command, the start of the input.
     pub input_preview: String,
+    /// The tool call this ask holds up, when the mod knows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_use_id: Option<String>,
     /// What the human's ALWAYS on this ask covers (asks with the same tool and key
@@ -47,15 +61,18 @@ pub struct ApprovalRequest {
     pub key: Option<String>,
 }
 
-/// The human's answer to one ask.
+/// The human's answer to one ask: what [`ModHost::ask`] returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Decision {
+    /// The human allowed it.
     Allow,
+    /// The human refused it, did not answer in time, or the call was interrupted.
     Deny,
 }
 
 impl Decision {
+    /// `"allow"` or `"deny"`: the word a mod file's `haest.ask` promise resolves to.
     pub fn as_str(self) -> &'static str {
         match self {
             Decision::Allow => "allow",
@@ -66,18 +83,28 @@ impl Decision {
 
 /// A mod failed in one of its events. The host reports it to the human; it never
 /// takes the host down.
+///
+/// What a failure means depends on the event; [`Mods`](crate::Mods) has the
+/// rules (a failed `tool.before` refuses the call, a failed `tool.after`
+/// leaves the output as it was).
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 #[error("{0}")]
 pub struct ModError(pub String);
 
 impl ModError {
+    /// A failure with this message.
     pub fn new(message: impl Into<String>) -> Self {
         Self(message.into())
     }
 }
 
-/// PLUG POINT: what a host (a CLI, a control panel) gives mods. `ask` and
-/// `notice` reach the human; how is the host's business.
+/// PLUG POINT: how mods reach the human, implemented by the host (a CLI, a
+/// control panel, a chat app).
+///
+/// `ask` and `notice` reach the human; how is the host's business. Most hosts
+/// answer `ask` with an [`ApprovalGate`](crate::ApprovalGate) over their own
+/// [`Prompter`](crate::Prompter), which keeps the rules every host must keep.
+/// [`ApprovalGate`](crate::ApprovalGate#examples)'s example is a whole host.
 #[async_trait]
 pub trait ModHost: Send + Sync {
     /// The human's Allow / Deny. Deny when `cancel` fires (an interrupt) or the
@@ -89,19 +116,27 @@ pub trait ModHost: Send + Sync {
     fn error(&self, text: &str) {
         self.notice(text)
     }
-    /// haest's diagnostic log.
+    /// haest's diagnostic log, for lines the human need not see (each mod as
+    /// it loads). Default: dropped.
     fn log(&self, _message: &str) {}
 }
 
 /// Where haest runs, and the human: what every mod event can reach.
+///
+/// One per conversation, shared by every mod in [`Mods`](crate::Mods); the
+/// events get it as their `haest` argument.
 #[derive(Clone)]
 pub struct ModEnv {
+    /// The conversation's working directory.
     pub cwd: PathBuf,
+    /// The workspace the agent's tools run in: [`ApprovalMod`](crate::ApprovalMod) asks only in `Real`.
     pub workspace: WorkspaceMode,
+    /// The host's ask, notice, error and log.
     pub host: Arc<dyn ModHost>,
 }
 
 impl ModEnv {
+    /// The environment for one conversation's mods.
     pub fn new(cwd: impl Into<PathBuf>, workspace: WorkspaceMode, host: Arc<dyn ModHost>) -> Self {
         Self {
             cwd: cwd.into(),
@@ -110,8 +145,9 @@ impl ModEnv {
         }
     }
 
-    /// The human's Allow / Deny; Deny on interrupt or timeout. An ask under an
-    /// already-interrupted call is a Deny at once, never a prompt.
+    /// The human's Allow / Deny, through the host; Deny on interrupt or
+    /// timeout. An ask under an already-interrupted call (`cancel` fired) is a
+    /// Deny at once, never a prompt.
     pub async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
         if cancel.is_cancelled() {
             return Decision::Deny;
@@ -119,6 +155,7 @@ impl ModEnv {
         self.host.ask(req, cancel).await
     }
 
+    /// A line the human sees, through the host.
     pub fn notice(&self, text: &str) {
         self.host.notice(text)
     }
@@ -126,7 +163,14 @@ impl ModEnv {
 
 /// A NATIVE mod: plain Rust with the same events a mod file has. Every method
 /// has a default that does nothing, so a mod implements only what it hooks.
-/// Built-ins (approval, plan) are mods like this; so is a host's own.
+/// Built-ins ([`ApprovalMod`](crate::ApprovalMod), [`PlanMod`](crate::PlanMod))
+/// are mods like this; so is a host's own. The [crate docs](crate#a-native-mod)
+/// have one.
+///
+/// A mod is put in a conversation with [`Mods::add`](crate::Mods::add); every
+/// event runs across the mods in the order they were added. An `Err` from an
+/// event is reported to the human through [`ModHost::error`], and never takes
+/// the conversation down.
 ///
 /// A mod runs with the HOST's full trust, sandbox or not.
 #[async_trait]
@@ -143,6 +187,10 @@ pub trait Mod: Send + Sync {
 
     /// `tool.before`: before every tool call. [`Before::Deny`] refuses it (the
     /// model reads the reason), [`Before::Input`] replaces its input.
+    ///
+    /// `ctx.cancel` fires when the human interrupts the call; an ask made here
+    /// should pass it on. An `Err` refuses the call: a guard that broke must
+    /// not wave anything through.
     async fn tool_before(
         &self,
         _call: &ModToolCall,
@@ -152,7 +200,10 @@ pub trait Mod: Send + Sync {
         Ok(Before::Pass)
     }
 
-    /// `tool.after`: after it ran; Some replaces the output.
+    /// `tool.after`: after the call ran; Some replaces the output the model
+    /// reads. Every mod sees the output as the mods before it left it. An
+    /// `Err` leaves the output as it was: the call happened, and the model
+    /// must not retry it.
     async fn tool_after(
         &self,
         _call: &ModToolCall,
@@ -163,7 +214,8 @@ pub trait Mod: Send + Sync {
         Ok(None)
     }
 
-    /// `prompt.submit`: a human message before the model sees it; Some rewrites it.
+    /// `prompt.submit`: a human message before the model sees it; Some rewrites
+    /// it. Runs when the host calls [`Mods::rewrite_prompt`](crate::Mods::rewrite_prompt).
     async fn prompt_submit(
         &self,
         _text: &str,
@@ -172,12 +224,16 @@ pub trait Mod: Send + Sync {
         Ok(None)
     }
 
-    /// `system.prompt`: text appended to the system prompt, asked before every model call.
+    /// `system.prompt`: text appended to the system prompt, asked before every
+    /// model call (through [`ModSystemPrompt`](crate::ModSystemPrompt)). None
+    /// or empty adds nothing.
     async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, ModError> {
         Ok(None)
     }
 
     /// Tools this mod adds (asked again before every model call).
+    /// [`ModTools`](crate::ModTools) runs them inside every mod's hooks, the
+    /// same as the host's own.
     fn tools(&self) -> Vec<Arc<dyn Tool>> {
         Vec::new()
     }
@@ -188,7 +244,8 @@ pub trait Mod: Send + Sync {
     }
 
     /// Run one of [`Mod::commands`]: Some text goes to the model; None = the mod
-    /// handled the line itself.
+    /// handled the line itself. `name` comes without its `/`; `args` is the
+    /// rest of the line.
     async fn command(
         &self,
         _name: &str,

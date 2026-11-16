@@ -25,16 +25,27 @@ use crate::{
     registry::Mods,
 };
 
+/// Which mods [`load_mods`] loads for one conversation, and where from.
+///
+/// [`ModConfig::new`] is the bare default: the approval mod and plan mode, no
+/// mod files. Set the fields to change it.
 pub struct ModConfig {
+    /// The conversation's working directory: the project's mods are in
+    /// `<cwd>/.haest/mods`, and every mod sees it as [`ModEnv::cwd`].
     pub cwd: PathBuf,
+    /// The workspace the agent's tools run in; the approval mod asks only in
+    /// [`WorkspaceMode::Real`].
     pub workspace: WorkspaceMode,
     /// The host's own config directory: the human's mods are in `<config_dir>/mods`.
     pub config_dir: PathBuf,
     /// Load `<config_dir>/mods`. Off by default: a host asks for them.
     pub user_mods: bool,
-    /// Also load `<cwd>/.haest/mods`. Off by default (see the module doc).
+    /// Also load `<cwd>/.haest/mods`. Off by default: a repository's mod is
+    /// that repository's code running in the host with full trust, and
+    /// cloning a repository must never be enough to run it. Turn it on only
+    /// for a directory the human trusts.
     pub project_mods: bool,
-    /// The built-in approval mod. On by default.
+    /// The built-in approval mod ([`ApprovalMod`]). On by default.
     pub approvals: bool,
     /// Auto mode's judge for the approval mod; None = the irreversible list alone.
     pub auto: Option<Arc<dyn AutoJudge>>,
@@ -43,6 +54,8 @@ pub struct ModConfig {
 }
 
 impl ModConfig {
+    /// The defaults for a conversation in `cwd`: approvals on, no mod files,
+    /// no auto mode, no plan listener.
     pub fn new(
         cwd: impl Into<PathBuf>,
         workspace: WorkspaceMode,
@@ -60,7 +73,9 @@ impl ModConfig {
         }
     }
 
-    /// Where mod files are looked for, in load order.
+    /// Where mod files are looked for, in load order: `<config_dir>/mods`
+    /// with [`user_mods`](Self::user_mods), then `<cwd>/.haest/mods` with
+    /// [`project_mods`](Self::project_mods). Empty by default.
     pub fn mod_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = Vec::new();
         if self.user_mods {
@@ -78,7 +93,9 @@ fn is_mod_file(name: &str) -> bool {
     code && !name.ends_with(".d.ts")
 }
 
-/// The mod files in `dir`, by name; none when it cannot be read (it does not exist).
+/// The mod files in `dir`, sorted by name: every `.ts`, `.js` and `.mjs`
+/// file, but not a `.d.ts` declaration file. None when `dir` cannot be read
+/// (it does not exist); subdirectories are not searched.
 pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs.read_dir(dir).await else {
         return Vec::new();
@@ -92,8 +109,28 @@ pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
     names.into_iter().map(|n| dir.join(n)).collect()
 }
 
-/// Every mod for one conversation. `fs` is the HOST's own files (the real disk),
-/// never the agent's workspace.
+/// Every mod for one conversation, in the order their events run.
+///
+/// 1. Built in: the approval mod (with [`ModConfig::approvals`], and auto
+///    mode's judge when [`ModConfig::auto`] has one), then plan mode, always.
+/// 2. The human's own mod files, `<config_dir>/mods/*`, with [`ModConfig::user_mods`].
+/// 3. The project's, `<cwd>/.haest/mods/*`, with [`ModConfig::project_mods`] only.
+///
+/// Each directory's files load in name order ([`mod_files`]); each one runs
+/// its default export now ([`JsMod::load`]). A mod that fails to load is
+/// reported through [`ModHost::error`] and skipped; the rest still load, so
+/// this never fails. A host's own native mods go in afterwards with
+/// [`Mods::add`].
+///
+/// `fs` is the HOST's own files (the real disk), never the agent's
+/// workspace: a mod file the agent wrote in its sandbox must not load.
+///
+/// Must be called inside a tokio runtime, or every mod file fails to load.
+///
+/// # Examples
+///
+/// The [crate docs](crate#putting-mods-in-the-loop) load a mod file from a
+/// [`MemFs`](haest_core::MemFs) and put it around an agent.
 pub async fn load_mods(cfg: ModConfig, fs: &dyn Fs, host: Arc<dyn ModHost>) -> Mods {
     load_mods_with(cfg, fs, host, Limits::default()).await
 }

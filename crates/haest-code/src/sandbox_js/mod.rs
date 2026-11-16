@@ -1,7 +1,7 @@
 //! `js <file> [args]` in the SANDBOX shell: runs a JavaScript or TypeScript file
 //! in haest's QuickJS engine ([`crate::vm`], the one the Code tool uses), as an ES
 //! module, with Node-shaped fs / path / process over the sandbox's own file
-//! system ([`guest`]). Output and exit codes behave like a CLI: console.log ->
+//! system. Output and exit codes behave like a CLI: console.log ->
 //! stdout, console.error -> stderr, an uncaught error -> `✗ Uncaught ...` and exit 1.
 //!
 //! Deliberately NOT called `bun` or `node`: it is neither -- no npm packages, no
@@ -13,12 +13,31 @@
 //! No tools from here: a script runs inside a Bash call, below the tool layer, so
 //! its calls could not be gated or shown. The Code tool is the way to call tools.
 //!
+//! # What a script has
+//!
+//! | Name | What |
+//! |---|---|
+//! | `fs`, `fs/promises` | `readFile`, `writeFile`, `appendFile`, `readdir`, `mkdir` (`{ recursive }`), `stat`, `rm` (`{ recursive, force }`), `unlink`, `rename`, `copyFile`, `access`: async only, text only |
+//! | `path` | Node's `path.posix`: `join`, `resolve`, `dirname`, `basename`, `extname`, `relative`, `normalize`, `isAbsolute`, `sep`, `delimiter` |
+//! | `process` | `argv` (`['js', '/abs/script.js', ...args]`), `env` (the shell's exported variables), `cwd()`, `exit(code)`, `stdout.write`, `stderr.write` |
+//! | `console` | `log`, `info` and `debug` to stdout; `warn` and `error` to stderr |
+//!
+//! The modules ([`JS_MODULES`]) are imported (`import { readFile } from
+//! 'fs/promises'`, a `node:` prefix works too) or `require`d; importing
+//! anything else fails the run, and `require` of it throws. Every `*Sync`
+//! name exists and throws, naming the async call to use instead. Paths resolve against the shell's working directory, over
+//! the sandbox's files: in the default sandbox, writes land in its
+//! copy-on-write overlay, not on disk. Top-level `await` works. There is no
+//! stdin: a pipe into `js` is not passed to the script.
+//!
 //! # Wiring it into a sandbox shell
 //!
 //! This crate knows no shell. [`sandbox_commands`] is `js` and each of
 //! [`NOT_HERE`] as haest-core [`haest_core::shell_command::ShellCommand`]s; a
 //! sandbox takes each one (`SandboxWorkspace::with_command`), and `js`'s note
-//! tells the model it is there.
+//! tells the model it is there. The [crate docs](crate#the-sandbox-js-command)
+//! wire one up. Without a shell, [`js_command`] runs the same command over
+//! any [`Fs`].
 //!
 //! The shell call's deadline matters: a CPU-bound script never yields, so the
 //! engine checks that wall-clock deadline itself -- the only bound such a script cannot outrun.
@@ -51,14 +70,19 @@ use guest::{JsScript, js_script_spec};
 pub const JS_COMMAND: &str = "js";
 /// Runtime names that answer with a pointer to `js` instead of pretending.
 pub const NOT_HERE: [&str; 7] = ["bun", "bunx", "node", "npx", "deno", "tsx", "ts-node"];
-/// The shell call's own deadline is the real bound; this caps a script with none.
+/// The longest a script runs (5 minutes). The shell call's own deadline is the
+/// real bound; this caps a script with none, and one with a later one.
 pub const JS_TIMEOUT: Duration = Duration::from_secs(300);
+/// The most console output a script may print, in characters, stdout and
+/// stderr together; the rest is dropped and stderr says so.
 pub const JS_MAX_OUTPUT: usize = 1_000_000;
 
 /// Where a `js` command runs: the sandbox's files and the shell call it is part of.
 #[derive(Clone)]
 pub struct JsEnv {
+    /// The files the script's `fs` reads and writes: the sandbox's own.
     pub fs: Arc<dyn Fs>,
+    /// The shell's working directory: relative paths, `process.cwd()` and the script's own path resolve against it.
     pub cwd: PathBuf,
     /// The shell's exported variables: the script's `process.env`.
     pub env: BTreeMap<String, String>,
@@ -88,7 +112,8 @@ No npm packages, no network. To call haest's tools from code, use the Code tool.
     )
 }
 
-/// What `bun`, `node`, ... answer in the sandbox: a pointer to `js`, exit 127.
+/// What `bun`, `node`, ... answer in the sandbox: a pointer to `js` on
+/// stderr, exit 127 (the shell's "command not found").
 pub fn not_here(name: &str) -> ExecResult {
     output(
         "",
@@ -123,7 +148,50 @@ fn runnable(source: String, path: &Path) -> Result<String, String> {
     Ok(source)
 }
 
-/// `js <file> [args]` -- `args` are the command's arguments, not including `js` itself.
+/// Runs `js <file> [args]` as the shell would: reads the file from `env.fs`,
+/// strips its types when it is TypeScript, and runs it with [`run_js`].
+///
+/// `args` are the command's arguments, not including `js` itself. The answer
+/// is a CLI's: no file is a usage message and exit 2, `-h` / `--help` the
+/// usage on stdout and exit 0, a file that is missing, unreadable or not
+/// valid TypeScript exit 1 with the reason on stderr. A file is TypeScript by
+/// its extension: `.ts`, `.mts`, `.cts`, `.tsx`, `.mtsx`, `.ctsx`. Without
+/// the `typescript` feature such a file is refused.
+///
+/// `env.cancel` stops the script; so does the shell call's deadline,
+/// `env.ends_at`.
+///
+/// # Examples
+///
+/// ```
+/// use std::{path::Path, sync::Arc, time::{Duration, Instant}};
+///
+/// use haest_code::{JsEnv, js_command};
+/// use haest_core::{Fs, MemFs};
+/// use tokio_util::sync::CancellationToken;
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let fs = Arc::new(MemFs::with_files([(
+///     "/work/sum.js",
+///     "import { readFile, writeFile } from 'fs/promises'
+///      const nums = (await readFile('nums.txt', 'utf8')).trim().split('\\n').map(Number)
+///      await writeFile('total.txt', String(nums.reduce((a, b) => a + b, 0)))",
+/// ), ("/work/nums.txt", "1\n2\n3\n")]));
+/// let env = JsEnv {
+///     fs: fs.clone(),
+///     cwd: "/work".into(),
+///     env: Default::default(),
+///     cancel: CancellationToken::new(),
+///     ends_at: Some(Instant::now() + Duration::from_secs(20)),
+/// };
+/// let run = js_command(&["sum.js".to_string()], &env).await;
+/// assert_eq!(run.exit_code, 0, "{}", run.stderr);
+/// assert_eq!(fs.read_to_string(Path::new("/work/total.txt")).await.unwrap(), "6");
+///
+/// assert_eq!(js_command(&["missing.js".to_string()], &env).await.exit_code, 1);
+/// # }
+/// ```
 pub async fn js_command(args: &[String], env: &JsEnv) -> ExecResult {
     let Some(file) = args.first() else {
         return output("", usage(), 2);
@@ -145,8 +213,16 @@ pub async fn js_command(args: &[String], env: &JsEnv) -> ExecResult {
     }
 }
 
-/// Run JavaScript already in hand, as the module at `path` (absolute: `process.argv[1]`,
-/// and its file name in error lines), with `args` after it in argv.
+/// Runs JavaScript already in hand, as the module at `path` (absolute:
+/// `process.argv[1]`, and its file name in error lines), with `args` after it
+/// in argv. Nothing is read from `path`; `code` must already be JavaScript.
+///
+/// The run gets the script API in the [module docs](self#what-a-script-has),
+/// [`VM_MEMORY_BYTES`] of memory, and until
+/// `env.ends_at` (at most [`JS_TIMEOUT`]). The result is a CLI's: what it
+/// printed, and the exit code it passed to `process.exit`, else 1 when it
+/// threw or was stopped, else 0. An uncaught error, a stop (`env.cancel` or
+/// the deadline) and output past [`JS_MAX_OUTPUT`] each add a line to stderr.
 pub async fn run_js(path: &Path, code: &str, args: &[String], env: &JsEnv) -> ExecResult {
     let exit_code = Arc::new(Mutex::new(None));
     let mut argv = vec![JS_COMMAND.to_string(), path.display().to_string()];

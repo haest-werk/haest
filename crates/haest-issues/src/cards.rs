@@ -11,9 +11,9 @@
 //! | depends_on / blocks | `depends_on:` on the one that waits |
 //! | relates_to | `relates_to:` (read both ways) |
 //!
-//! Every key the card has survives a write, unknown ones included
-//! ([`front`]). The directory and the file system are the host's: nothing here
-//! picks a path.
+//! Every key the card has survives a write, unknown ones included, so a card
+//! another program wrote keeps what that program put there. The directory and
+//! the file system are the host's: nothing here picks a path.
 
 use std::{
     io::ErrorKind,
@@ -47,6 +47,57 @@ use front::{Front, Val};
 
 type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
 
+/// A [`Tracker`] over a directory of markdown cards (the [module
+/// docs](self) map each field to its frontmatter key).
+///
+/// - **Statuses** inbox, open, in-progress, in-review, done, archived. A new
+///   card starts in the inbox; a list with no statuses given shows the first
+///   four. A card whose `status:` is none of these reads as inbox.
+/// - **Priorities** low, medium, high. **Relations** all of [`Relation::ALL`].
+/// - **Ids** are the title as a slug of ASCII letters, digits and dashes, at
+///   most 60 characters (`Fix the login` is `fix-the-login`), with `-2`,
+///   `-3`... when the name is taken, and `task-<ms>` for a title with nothing
+///   to slug. An id is never a path: one with a `/` or `\`, a leading dot or
+///   a control character is refused.
+/// - **Lists and searches** come newest first. A search finds the cards whose
+///   id, title, tags and body hold every word, case ignored.
+/// - **Writes** go to a hidden file beside the card, renamed over it, so a
+///   reader never sees half a card; and one tracker writes one card at a
+///   time. Two trackers over the same directory (or another program) do not
+///   wait for each other.
+/// - **Links** live on one card and read from both (`blocks` is the other
+///   card's `depends_on`). A card cannot link to itself, and a parent or
+///   dependency that would make a loop is refused.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::{Fs, MemFs};
+/// use haest_issues::{Link, LinkChange, NewIssue, Relation, Tracker, cards::CardTracker};
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let fs = Arc::new(MemFs::default());
+/// let board = CardTracker::new(fs.clone(), "/project/cards");
+///
+/// let new = |title: &str| NewIssue { title: title.into(), ..NewIssue::default() };
+/// let login = board.create(new("Fix the login")).await.unwrap();
+/// let tests = board.create(new("Add login tests")).await.unwrap();
+/// assert!(fs.exists("/project/cards/fix-the-login.md".as_ref()).await);
+///
+/// // The tests wait on the fix; the fix then reads as blocking them.
+/// let waits = Link::new(Relation::DependsOn, &login.id);
+/// board.link(&tests.id, &waits, LinkChange::Add).await.unwrap();
+/// let fix = board.get(&login.id).await.unwrap();
+/// assert!(fix.links.contains(&Link::new(Relation::Blocks, &tests.id)));
+///
+/// // The other way round would be a loop.
+/// let back = Link::new(Relation::DependsOn, &tests.id);
+/// assert!(board.link(&login.id, &back, LinkChange::Add).await.is_err());
+/// # }
+/// ```
 pub struct CardTracker {
     fs: Arc<dyn Fs>,
     dir: PathBuf,
@@ -56,7 +107,9 @@ pub struct CardTracker {
 }
 
 impl CardTracker {
-    /// The cards in `dir` (made on the first create), through `fs`.
+    /// The cards in `dir`, read and written through `fs` (the host's: a
+    /// sandbox's, the real disk). The directory is made on the first write;
+    /// until then the board is empty. Nothing is read here.
     pub fn new(fs: Arc<dyn Fs>, dir: impl Into<PathBuf>) -> Self {
         Self {
             fs,
@@ -66,7 +119,9 @@ impl CardTracker {
         }
     }
 
-    /// The clock a new card's `created:` (and a fallback id) comes from.
+    /// The clock, in Unix milliseconds, a new card's `created:` (and a
+    /// fallback id) comes from; the system clock by default. A test passes
+    /// its own to fix the dates.
     pub fn with_clock(mut self, now_ms: impl Fn() -> u64 + Send + Sync + 'static) -> Self {
         self.now_ms = Arc::new(now_ms);
         self

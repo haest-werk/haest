@@ -17,6 +17,12 @@
 //!
 //! Each tool's description and schema are written from the tracker's
 //! [`TrackerInfo`]: the statuses, priorities and relations it accepts.
+//!
+//! Every call gives up when the turn is cancelled (an input error the model
+//! reads as "interrupted") or after two minutes (a failure). A tracker's
+//! `NotFound` and `Invalid` reach the model as input errors it can fix,
+//! `Failed` as a failure. Ids may come as strings or numbers (`42`), and a
+//! list of labels as an array or one comma-separated string.
 
 use std::{future::Future, sync::Arc, time::Duration};
 
@@ -44,7 +50,9 @@ macro_rules! issue_tool {
 mod read;
 mod write;
 
-/// The kind of the one tool whose effect cannot be undone.
+/// The kind of IssueDelete, the one tool whose effect cannot be undone: a
+/// host that asks the human before irreversible calls gates on it. (haest's
+/// built-in approval mod judges Bash only.)
 pub const DELETE_KIND: &str = "issue.delete";
 
 /// How long one tool call may take, every request of it together.
@@ -58,13 +66,21 @@ pub(crate) struct Shared {
     info: TrackerInfo,
 }
 
-/// The seven tools, named `Issue*` (IssueList, IssueGet, ...).
+/// The seven issue tools over `tracker`, named `Issue*`: IssueList,
+/// IssueSearch, IssueGet, IssueCreate, IssueUpdate, IssueDelete, IssueLink,
+/// in that order.
+///
+/// Put them in the agent's tool list beside its others. The [crate
+/// docs](crate#examples) call them on a board of cards.
 pub fn issue_tools(tracker: Arc<dyn Tracker>) -> Vec<Arc<dyn Tool>> {
     issue_tools_named(tracker, "Issue")
 }
 
 /// The seven tools named `<noun>List`, `<noun>Get`, ...: two trackers on one
 /// agent need two nouns (`Issue` for GitHub, `Card` for the board).
+///
+/// [`TrackerInfo`] is read once, here: the tools' descriptions and schemas
+/// do not follow a tracker that changes what it accepts later.
 pub fn issue_tools_named(tracker: Arc<dyn Tracker>, noun: &str) -> Vec<Arc<dyn Tool>> {
     let shared = Arc::new(Shared {
         info: tracker.info(),

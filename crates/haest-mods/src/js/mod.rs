@@ -50,7 +50,57 @@ fn ctx_json(ctx: &ToolContext) -> Value {
     json!({ "cwd": ctx.cwd, "toolCallId": ctx.tool_call_id })
 }
 
-/// One loaded mod file.
+/// One loaded mod file: a `.js` or `.ts` ES module run in embedded QuickJS,
+/// whose default export receives the `haest` API.
+///
+/// ```js
+/// export default function (haest) {
+///   haest.on('tool.before', call =>
+///     call.name === 'Bash' && /rm -rf \//.test(String(call.input.command))
+///       ? { deny: 'not on my watch' } : undefined)
+/// }
+/// ```
+///
+/// # The `haest` API
+///
+/// | Member | What |
+/// |---|---|
+/// | `haest.cwd` | the conversation's working directory |
+/// | `haest.workspace` | `'sandbox'`, `'real'` or `'shut'` |
+/// | `haest.on(event, fn)` | hook `'tool.before'`, `'tool.after'`, `'prompt.submit'` or `'system.prompt'`; any other name throws |
+/// | `haest.tool(t)` | add a tool: `{ name, execute(input, ctx) }`, and optionally `description`, `parameters` (a JSON Schema), `kind`, `readOnly`; a second tool of the same name replaces the first |
+/// | `haest.command(name, run)` | add a slash command (a leading `/` is dropped): `run(args)` returns text for the model, or nothing |
+/// | `haest.ask(req, ctx.signal)` | a promise of `'allow'` or `'deny'` from the human; `req` is an [`ApprovalRequest`](crate::ApprovalRequest) in camelCase, and with `ctx.signal` the ask ends as a deny when that call is interrupted |
+/// | `haest.notice(text)` | a line the human sees |
+///
+/// What each event's handler gets and may return:
+///
+/// | Event | Called with | Returns |
+/// |---|---|---|
+/// | `tool.before` | `call`, `ctx` | `{ deny: reason }` refuses, `{ input: {...} }` replaces the input for the handlers after it, anything else passes |
+/// | `tool.after` | `call`, `output`, `ctx` | a new output (`{ content, isError }`), or nothing to keep it |
+/// | `prompt.submit` | `text` | the new text, or nothing |
+/// | `system.prompt` | nothing | text to append, or nothing |
+///
+/// `call` is a [`ModToolCall`] and `output` a tool output, both in camelCase.
+/// `ctx` is `{ cwd, toolCallId, signal }`; a tool's `execute` gets it too,
+/// and returns a string or `{ content, isError }`. `tool.before`,
+/// `tool.after`, `execute` and commands may be async; `prompt.submit` and
+/// `system.prompt` must answer at once (a returned promise is an error).
+/// Several handlers of one event run in the order they were added. A handler
+/// that throws is a failed event ([`Mods`](crate::Mods) says what that means).
+///
+/// # What a mod file cannot do
+///
+/// There is no `node:` API, no `import`, no timer, no network and no file
+/// access: a mod reaches the world through the `haest` API alone. Each file
+/// has its own QuickJS runtime on its own thread, so mods share nothing. The
+/// runtime has 128 MiB of memory. Code that runs 10 s without a pause
+/// (awaiting does not count) is stopped: every call into the mod in flight
+/// then fails, and the next call runs as usual. The default export must
+/// return within 30 s. A host cannot change these limits.
+///
+/// The thread stops when the `JsMod` and every tool it added are dropped.
 pub struct JsMod {
     name: String,
     thread: Arc<JsThread>,
@@ -58,9 +108,52 @@ pub struct JsMod {
 }
 
 impl JsMod {
-    /// Run one mod file: strip its types (`.ts`), evaluate it in a fresh QuickJS
-    /// runtime on its own thread, and call its default export with the `haest`
-    /// API. Err = why it did not load (the host reports it and moves on).
+    /// Runs one mod file: strips its types (a `.ts` path, through
+    /// `haest-ts`), evaluates `source` as an ES module in a fresh QuickJS
+    /// runtime on its own thread, and calls its default export with the
+    /// `haest` API. `path` names the mod ([`Mod::name`]) and its errors; the
+    /// file is not read, `source` is the code.
+    ///
+    /// What the default export registers (events, tools, commands) is in
+    /// place when this returns.
+    ///
+    /// [`load_mods`](crate::load_mods) calls this for every file in the mod
+    /// directories; a host calls it to load one file of its own, then
+    /// [`Mods::add`](crate::Mods::add)s it.
+    ///
+    /// # Errors
+    ///
+    /// The `Err` says why the mod did not load, for the human: no tokio
+    /// runtime is running, the TypeScript or JavaScript does not parse, the
+    /// module threw, its default export is not a function, its top-level
+    /// `await` never finished, or the default export threw or did not return
+    /// within 30 s.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::{path::Path, sync::Arc};
+    /// # use haest_core::workspace::WorkspaceMode;
+    /// # use haest_mods::{ApprovalRequest, Decision, ModHost};
+    /// use haest_mods::{JsMod, Mod, ModEnv};
+    /// # struct Terminal;
+    /// # #[async_trait::async_trait]
+    /// # impl ModHost for Terminal {
+    /// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+    /// #     fn notice(&self, _: &str) {}
+    /// # }
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Arc::new(Terminal));
+    /// let source = "export default (haest: any) => haest.on('prompt.submit', (t: string) => t.trim())";
+    /// let m = JsMod::load(Path::new("/mods/trim.ts"), source.into(), &env).await.unwrap();
+    /// assert_eq!(m.prompt_submit("  hello  ", &env).await.unwrap().as_deref(), Some("hello"));
+    ///
+    /// let broken = JsMod::load(Path::new("/mods/broken.js"), "export default 42".into(), &env).await;
+    /// assert!(broken.is_err());
+    /// # }
+    /// ```
     pub async fn load(path: &Path, source: String, haest: &ModEnv) -> Result<Self, String> {
         Self::load_with(path, source, haest, Limits::default()).await
     }
