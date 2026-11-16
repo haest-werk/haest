@@ -30,7 +30,7 @@ pub(super) struct Run {
 
 /// How one subagent's turn ended.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RunOutcome {
+pub(super) struct RunOutcome {
     /// The final answer, or the reason there is none.
     pub text: String,
     /// What the turn spent, already charged to the ledger.

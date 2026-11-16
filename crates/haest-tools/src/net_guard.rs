@@ -99,7 +99,7 @@ impl Resolve for SystemResolve {
 
 /// `url`'s `host[:port]`, the way a browser's `URL.host` shows it (no port
 /// when it is the scheme's default).
-pub fn host_port(url: &Url) -> String {
+pub(crate) fn host_port(url: &Url) -> String {
     let host = url.host_str().unwrap_or_default();
     match url.port() {
         Some(p) => format!("{host}:{p}"),

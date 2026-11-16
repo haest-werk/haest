@@ -100,7 +100,7 @@ use tokio_util::sync::CancellationToken;
 
 pub use hub::SubagentHub;
 pub use parent::{SubagentCaps, SubagentEvent, SubagentParent};
-pub use run::{RunOutcome, subagent_note};
+pub use run::subagent_note;
 pub use tools::{agent_tools, agent_tools_with};
 
 /// The conversation's own agent.

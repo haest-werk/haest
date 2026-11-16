@@ -3,7 +3,7 @@
 //!
 //! rg respects .gitignore natively and runs through
 //! [`Workspace::run`](haest_core::workspace::Workspace::run); Glob walks the
-//! workspace `Fs` ([`crate::fs_walk`]) and skips node_modules/.git explicitly.
+//! workspace `Fs` (`fs_walk.rs`) and skips node_modules/.git explicitly.
 //! The rg argv uses only flags the real rg and a sandbox's rg both accept.
 //! Nothing the model sends can be read as a flag: the pattern sits behind `-e`,
 //! `--glob`/`--type` take the next argument as their value, and a target that
@@ -36,11 +36,15 @@ const GREP_MAX_LINE_CHARS: usize = 500;
 /// The Glob tool (`Glob`, kind `file.glob`, read-only): files by glob pattern,
 /// newest first.
 ///
-/// Input: `pattern` (`src/**/*.ts`; the language is on [`crate::fs_walk`]) and
-/// an optional `path` to search from (default: the context's `cwd`). It
-/// returns absolute paths, at most 200 with a count of the rest, and says so
-/// when the walk stopped at [`WALK_LIMIT`] entries. node_modules and .git are
-/// skipped; a cancelled call returns what it found so far.
+/// Input: `pattern` (`src/**/*.ts`) and an optional `path` to search from
+/// (default: the context's `cwd`). It returns absolute paths, at most 200 with
+/// a count of the rest, and says so when the walk stopped at 100,000 entries.
+/// node_modules and .git are skipped; a cancelled call returns what it found
+/// so far.
+///
+/// The pattern language is the TS haest's (Bun's glob): `*` stops at `/`,
+/// `**` crosses directories, `?`, `[...]`, `{a,b}`, dot files match, case
+/// matters, and a leading `!` negates the whole pattern.
 pub struct GlobTool;
 
 #[async_trait]

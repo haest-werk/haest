@@ -4,34 +4,8 @@
 //! through the workspace, so the sandbox's in-memory files are found exactly
 //! like real ones.
 //!
-//! The pattern language is the TS haest's (Bun's glob): `*` stops at `/`, `**`
-//! crosses directories, `?`, `[...]`, `{a,b}`, dot files match, case matters, and
-//! a leading `!` negates the whole pattern.
-//!
-//! ```
-//! use std::path::Path;
-//!
-//! use haest_core::fs::MemFs;
-//! use haest_tools::fs_walk::glob_fs;
-//! use tokio_util::sync::CancellationToken;
-//!
-//! # #[tokio::main]
-//! # async fn main() {
-//! let fs = MemFs::with_files([
-//!     ("/p/src/a.rs", ""),
-//!     ("/p/src/deep/b.rs", ""),
-//!     ("/p/node_modules/c.rs", ""),
-//! ]);
-//! let found = glob_fs(&fs, Path::new("/p"), "**/*.rs", &CancellationToken::new())
-//!     .await
-//!     .unwrap();
-//! let mut paths: Vec<_> = found.hits.iter().map(|h| h.path.display().to_string()).collect();
-//! paths.sort();
-//! // node_modules is never entered.
-//! assert_eq!(paths, ["/p/src/a.rs", "/p/src/deep/b.rs"]);
-//! assert!(!found.capped);
-//! # }
-//! ```
+//! The pattern language is the TS haest's (Bun's glob), as
+//! [`GlobTool`](crate::GlobTool) states it.
 
 use std::{
     path::{Path, PathBuf},
@@ -77,15 +51,6 @@ fn static_prefix(pattern: &str) -> (String, String) {
 }
 
 /// One compiled pattern, matched against paths relative to the walk's start.
-///
-/// ```
-/// use haest_tools::fs_walk::Matcher;
-///
-/// let m = Matcher::new("src/*.rs").unwrap();
-/// assert!(m.is_match("src/a.rs"));
-/// assert!(!m.is_match("src/deep/a.rs"));
-/// assert!(Matcher::new("!*.md").unwrap().is_match("a.rs"));
-/// ```
 pub struct Matcher {
     glob: GlobMatcher,
     negate: bool,

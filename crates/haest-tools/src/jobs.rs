@@ -125,7 +125,7 @@ pub struct Taken {
 
 /// The text the model gets, through the [`Inbox`], for a job that exited on
 /// its own: which job, how it ended, and to read it with BashOutput.
-pub fn exit_notice(job: &Job) -> String {
+fn exit_notice(job: &Job) -> String {
     format!(
         "[Background job {} {}: {}]\nRead what it printed with BashOutput (bash_id \"{}\") if it matters for the task.",
         job.id,

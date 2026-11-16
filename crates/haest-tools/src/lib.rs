@@ -115,7 +115,7 @@ pub mod bash;
 pub mod bash_jobs;
 mod canonical;
 pub mod files;
-pub mod fs_walk;
+mod fs_walk;
 pub mod image;
 pub mod inbox;
 pub mod jobs;
