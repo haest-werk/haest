@@ -32,15 +32,13 @@ pub use stream::{StreamState, apply_chunk, finish_message};
 
 use crate::{
     compat_effort::reasoning_effort_extras,
-    driver::{Call, Step, StreamFold, drive, openai_error},
-    http::{RetryPolicy, bearer_headers},
+    driver::{Step, StreamFold, drive, openai_error},
+    http::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint},
     routing::RoutingEnv,
     sse::SseEvent,
     transport::{HttpRequest, Transport},
     web_search::web_search_tool,
 };
-
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
 /// OpenAI itself is NOT a flavor here: it speaks Responses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,7 +82,7 @@ impl CompatOptions {
 }
 
 pub struct CompatProvider {
-    opts: Arc<CompatOptions>,
+    opts: CompatOptions,
     transport: Arc<dyn Transport>,
     retry: RetryPolicy,
 }
@@ -92,7 +90,7 @@ pub struct CompatProvider {
 impl CompatProvider {
     pub fn new(opts: CompatOptions, transport: Arc<dyn Transport>) -> Self {
         Self {
-            opts: Arc::new(opts),
+            opts,
             transport,
             retry: RetryPolicy::default(),
         }
@@ -108,9 +106,8 @@ impl CompatProvider {
     }
 
     fn http_request(&self, req: &ProviderRequest) -> HttpRequest {
-        let base = self.opts.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL);
         HttpRequest {
-            url: format!("{}/chat/completions", base.trim_end_matches('/')),
+            url: endpoint(&self.opts.base_url, OPENAI_URL, "chat/completions"),
             headers: bearer_headers(&self.opts.api_key, &self.opts.headers),
             body: build_compat_body(&self.opts, req),
         }
@@ -159,9 +156,8 @@ pub fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> Value {
 struct CompatFold {
     msg: AssistantMessage,
     st: StreamState,
-    opts: Arc<CompatOptions>,
-    /// The model asked for: the price key, even if the server names it differently.
-    model: String,
+    /// The configured price of the model asked for (even if the server names it differently).
+    price: Option<ModelPricing>,
 }
 
 impl StreamFold for CompatFold {
@@ -184,7 +180,7 @@ impl StreamFold for CompatFold {
         if let Some(err) = failure {
             mark_stream_failed(&mut self.msg, cancel, err);
         }
-        book_priced_cost(&mut self.msg.usage, self.opts.pricing.get(&self.model));
+        book_priced_cost(&mut self.msg.usage, self.price.as_ref());
         self.msg
     }
 }
@@ -195,18 +191,17 @@ impl kern_core::provider::Provider for CompatProvider {
     }
 
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
-        let call = Call {
-            transport: self.transport.clone(),
-            request: self.http_request(&req),
-            cancel: req.cancel.clone(),
-            retry: self.retry.clone(),
-        };
         let fold = CompatFold {
             msg: AssistantMessage::start(&self.opts.id, &req.model),
             st: StreamState::default(),
-            opts: self.opts.clone(),
-            model: req.model.clone(),
+            price: self.opts.pricing.get(&req.model).cloned(),
         };
-        drive(call, fold)
+        drive(
+            &self.transport,
+            &self.retry,
+            self.http_request(&req),
+            req.cancel,
+            fold,
+        )
     }
 }

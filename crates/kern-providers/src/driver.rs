@@ -36,17 +36,16 @@ pub(crate) trait StreamFold: Send + 'static {
     fn finish(self, failure: Option<&str>, cancel: &CancellationToken) -> AssistantMessage;
 }
 
-/// Everything a call needs besides the fold.
-pub(crate) struct Call {
-    pub transport: Arc<dyn Transport>,
-    pub request: HttpRequest,
-    pub cancel: CancellationToken,
-    pub retry: RetryPolicy,
-}
-
-pub(crate) fn drive<F: StreamFold>(call: Call, mut fold: F) -> ProviderStream {
+/// Send `request` over `transport` and fold its stream; `cancel` is the request's.
+pub(crate) fn drive<F: StreamFold>(
+    transport: &Arc<dyn Transport>,
+    retry: &RetryPolicy,
+    request: HttpRequest,
+    cancel: CancellationToken,
+    mut fold: F,
+) -> ProviderStream {
+    let (transport, retry) = (transport.clone(), retry.clone());
     Box::pin(async_stream::stream! {
-        let Call { transport, request, cancel, retry } = call;
         let mut failure: Option<String> = None;
         match http::send(&*transport, &request, &cancel, &retry).await {
             Err(e) => failure = Some(e),

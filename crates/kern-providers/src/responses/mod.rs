@@ -15,12 +15,10 @@ use kern_core::provider::{Provider, ProviderRequest, ProviderStream};
 pub use convert::{build_responses_body, reasoning_params, to_responses_input};
 
 use crate::{
-    driver::{Call, drive},
-    http::{RetryPolicy, bearer_headers},
+    driver::drive,
+    http::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint},
     transport::{HttpRequest, Transport},
 };
-
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
 #[derive(Debug, Clone, Default)]
 pub struct ResponsesOptions {
@@ -53,9 +51,8 @@ impl ResponsesProvider {
     }
 
     fn http_request(&self, req: &ProviderRequest) -> HttpRequest {
-        let base = self.opts.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL);
         HttpRequest {
-            url: format!("{}/responses", base.trim_end_matches('/')),
+            url: endpoint(&self.opts.base_url, OPENAI_URL, "responses"),
             headers: bearer_headers(&self.opts.api_key, &self.opts.headers),
             body: build_responses_body(&self.opts.id, req),
         }
@@ -68,12 +65,13 @@ impl Provider for ResponsesProvider {
     }
 
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
-        let call = Call {
-            transport: self.transport.clone(),
-            request: self.http_request(&req),
-            cancel: req.cancel.clone(),
-            retry: self.retry.clone(),
-        };
-        drive(call, stream::ResponsesFold::new(&self.opts.id, &req.model))
+        let fold = stream::ResponsesFold::new(&self.opts.id, &req.model);
+        drive(
+            &self.transport,
+            &self.retry,
+            self.http_request(&req),
+            req.cancel,
+            fold,
+        )
     }
 }

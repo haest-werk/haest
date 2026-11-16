@@ -74,6 +74,15 @@ pub(crate) fn random_hex(n: usize) -> String {
     out
 }
 
+/// OpenAI's own API: where both OpenAI dialects go when no base URL is set.
+pub(crate) const OPENAI_URL: &str = "https://api.openai.com/v1";
+
+/// `path` under `base` (None = `default`), however many slashes `base` ends in.
+pub(crate) fn endpoint(base: &Option<String>, default: &str, path: &str) -> String {
+    let base = base.as_deref().unwrap_or(default);
+    format!("{}/{path}", base.trim_end_matches('/'))
+}
+
 /// The OpenAI dialects' headers: a bearer key and JSON, then `extra` (which wins on a clash).
 pub(crate) fn bearer_headers(api_key: &str, extra: &[(String, String)]) -> Vec<(String, String)> {
     let mut headers = vec![

@@ -82,8 +82,7 @@ fn a_data_frame_that_is_not_json_is_skipped_and_the_stream_goes_on() {
     let mut fold = CompatFold {
         msg: AssistantMessage::start("p", "m"),
         st: StreamState::default(),
-        opts: std::sync::Arc::new(CompatOptions::new("t", CompatFlavor::Generic, "k")),
-        model: "m".into(),
+        price: None,
     };
     let frame = |data: &str| crate::sse::SseEvent {
         event: None,

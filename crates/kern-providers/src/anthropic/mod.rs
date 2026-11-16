@@ -16,8 +16,8 @@ pub use convert::{
 };
 
 use crate::{
-    driver::{Call, drive},
-    http::RetryPolicy,
+    driver::drive,
+    http::{RetryPolicy, endpoint},
     transport::{HttpRequest, Transport},
 };
 
@@ -55,7 +55,6 @@ impl AnthropicProvider {
     }
 
     fn http_request(&self, req: &ProviderRequest) -> HttpRequest {
-        let base = self.opts.base_url.as_deref().unwrap_or(DEFAULT_BASE_URL);
         let mut headers = vec![
             ("x-api-key".into(), self.opts.api_key.clone()),
             ("anthropic-version".into(), API_VERSION.into()),
@@ -64,7 +63,7 @@ impl AnthropicProvider {
         ];
         headers.extend(self.opts.headers.iter().cloned());
         HttpRequest {
-            url: format!("{}/v1/messages", base.trim_end_matches('/')),
+            url: endpoint(&self.opts.base_url, DEFAULT_BASE_URL, "v1/messages"),
             headers,
             body: build_anthropic_params(req),
         }
@@ -95,12 +94,13 @@ impl Provider for AnthropicProvider {
     }
 
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
-        let call = Call {
-            transport: self.transport.clone(),
-            request: self.http_request(&req),
-            cancel: req.cancel.clone(),
-            retry: self.retry.clone(),
-        };
-        drive(call, stream::AnthropicFold::new(&req.model))
+        let fold = stream::AnthropicFold::new(&req.model);
+        drive(
+            &self.transport,
+            &self.retry,
+            self.http_request(&req),
+            req.cancel,
+            fold,
+        )
     }
 }
