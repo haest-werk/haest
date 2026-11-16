@@ -18,6 +18,9 @@
 //! A job that EXITS on its own tells the model through the host's [`Inbox`], as a
 //! turn the human did not start. A job the model killed says nothing (it knows),
 //! nor does one killed at shutdown.
+//!
+//! Start from [`JobHub`]: the host makes one per conversation and hands it to
+//! Bash through [`BashOptions::jobs`](crate::BashOptions::jobs).
 
 mod entry;
 #[cfg(test)]
@@ -38,16 +41,23 @@ use entry::{Entry, Jobs};
 
 /// Rolling output kept per job, in bytes; older output is dropped from the front.
 pub const MAX_BUFFER: usize = 1_000_000;
+/// Jobs one hub runs at once; [`JobHub::start`] refuses one more.
 pub const MAX_JOBS: usize = 8;
 /// Finished jobs kept for BashOutput; older ones (and their up-to-1MB output) are forgotten.
 pub const MAX_FINISHED: usize = 16;
 /// A job has no timeout; this only keeps the deadline arithmetic finite.
 const NO_DEADLINE: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 
+/// Where a job is in its life.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobStatus {
+    /// Started and not stopped.
     Running,
+    /// Ended on its own; [`Job::exit_code`] says how.
     Exited,
+    /// Stopped by [`JobHub::kill`] (KillShell, [`JobHub::kill_all`], the hub
+    /// dropped). It leaves the running set at once; [`Job::exit_code`] is set
+    /// when its process is gone.
     Killed,
 }
 
@@ -56,11 +66,16 @@ pub enum JobStatus {
 pub struct Job {
     /// The model's short id: "b1", "b2", ... per hub.
     pub id: String,
+    /// The command line, as the model gave it.
     pub command: String,
+    /// What it is for (Bash passes the call's `description`, else the command).
     pub description: String,
+    /// Running, exited or killed.
     pub status: JobStatus,
-    /// Set once the job has ended (a killed one: the signal's code).
+    /// Set once the job has ended (a killed one: the code the workspace
+    /// reports for the kill, e.g. `128 + 9`).
     pub exit_code: Option<i32>,
+    /// When it was started.
     pub started: Instant,
 }
 
@@ -79,6 +94,10 @@ impl Job {
 }
 
 /// What a host hears about jobs, for its transcript. All optional.
+///
+/// Called as things happen (a start from [`JobHub::start`], the rest from the
+/// job's own task), never while the hub's table is locked: a handler may call
+/// the hub back.
 pub trait JobEvents: Send + Sync {
     /// Every start and stop: the full set of running jobs, never a delta.
     fn on_change(&self, _running: &[Job]) {}
@@ -88,13 +107,15 @@ pub trait JobEvents: Send + Sync {
     fn on_exit(&self, _job: &Job) {}
 }
 
+/// [`JobEvents`] that hears nothing: what [`JobHub::new`] uses.
 #[derive(Debug, Default)]
 pub struct NoJobEvents;
 impl JobEvents for NoJobEvents {}
 
-/// What BashOutput hands out.
+/// What BashOutput hands out ([`JobHub::take`]).
 #[derive(Debug, Clone)]
 pub struct Taken {
+    /// The job as it stands.
     pub job: Job,
     /// Output new since the last take.
     pub fresh: String,
@@ -102,7 +123,8 @@ pub struct Taken {
     pub missed: usize,
 }
 
-/// The model's notice for a job that exited on its own.
+/// The text the model gets, through the [`Inbox`], for a job that exited on
+/// its own: which job, how it ended, and to read it with BashOutput.
 pub fn exit_notice(job: &Job) -> String {
     format!(
         "[Background job {} {}: {}]\nRead what it printed with BashOutput (bash_id \"{}\") if it matters for the task.",
@@ -158,16 +180,49 @@ impl Shared {
 /// until every killed job has an `exit_code` (a killed job leaves
 /// [`JobHub::running`] at once, before its process is gone; the CLI's
 /// `kill_jobs` waits this way), or the processes outlive it.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::fs::MemFs;
+/// use haest_tools::JobHub;
+/// use haest_workspace::SandboxWorkspace;
+/// use tokio::sync::mpsc::unbounded_channel;
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// // The host's inbox: here a queue it drains.
+/// let (inbox, mut notices) = unbounded_channel::<String>();
+/// let hub = JobHub::new(Arc::new(inbox));
+/// let ws = Arc::new(SandboxWorkspace::over(Arc::new(MemFs::new())));
+/// let job = hub.start(ws, "echo built", "build", "/".into()).unwrap();
+/// assert_eq!(job.id, "b1");
+///
+/// // It exited on its own, so the model is told.
+/// let notice = notices.recv().await.unwrap();
+/// assert!(notice.contains("b1"));
+/// let taken = hub.take("b1").unwrap();
+/// assert_eq!(taken.fresh, "built\n");
+/// assert_eq!(taken.job.exit_code, Some(0));
+/// // Read once: the next look has nothing new.
+/// assert_eq!(hub.take("b1").unwrap().fresh, "");
+/// # }
+/// ```
 pub struct JobHub {
     shared: Arc<Shared>,
 }
 
 impl JobHub {
-    /// Exit notices go to `inbox` (Bash tells the model it will be told).
+    /// A hub with no jobs yet. Exit notices go to `inbox` (Bash tells the
+    /// model it will be told).
     pub fn new(inbox: Arc<dyn Inbox>) -> Self {
         Self::with_events(inbox, Arc::new(NoJobEvents))
     }
 
+    /// The same, with `events` hearing every start, output chunk and end for
+    /// the host's transcript.
     pub fn with_events(inbox: Arc<dyn Inbox>, events: Arc<dyn JobEvents>) -> Self {
         Self {
             shared: Arc::new(Shared {
@@ -178,10 +233,13 @@ impl JobHub {
         }
     }
 
+    /// The jobs still running, in start order.
     pub fn running(&self) -> Vec<Job> {
         self.shared.jobs.lock().unwrap().running()
     }
 
+    /// The job `id` as it stands, running or ended; None when it is unknown
+    /// or long forgotten ([`MAX_FINISHED`]).
     pub fn get(&self, id: &str) -> Option<Job> {
         let jobs = self.shared.jobs.lock().unwrap();
         jobs.get(id).map(|e| e.job.clone())
@@ -193,8 +251,14 @@ impl JobHub {
         jobs.get(id).map(|e| e.output.clone())
     }
 
-    /// Start `command` in `cwd` through `workspace`; it runs until it exits or is killed.
-    /// Needs a tokio runtime; Err (for the model) when [`MAX_JOBS`] already run.
+    /// Start `command` in `cwd` through `workspace`
+    /// ([`Workspace::shell_streaming`]); it runs until it exits or is killed,
+    /// with no timeout.
+    ///
+    /// # Errors
+    ///
+    /// A message for the model when [`MAX_JOBS`] already run, or when there is
+    /// no tokio runtime to run the job on.
     pub fn start(
         &self,
         workspace: Arc<dyn Workspace>,
@@ -221,13 +285,16 @@ impl JobHub {
         Ok(job)
     }
 
-    /// New output since the last call, and the job as it stands.
+    /// New output since the last call, and the job as it stands; None for an
+    /// unknown id. What it returns counts as read.
     pub fn take(&self, id: &str) -> Option<Taken> {
         let mut jobs = self.shared.jobs.lock().unwrap();
         jobs.get_mut(id).map(Entry::take)
     }
 
-    /// False when the job is unknown or no longer running.
+    /// Stop job `id`: it is marked killed and its run is cancelled, which the
+    /// workspace turns into killing its process group. False when the job is
+    /// unknown or no longer running.
     pub fn kill(&self, id: &str) -> bool {
         let mut jobs = self.shared.jobs.lock().unwrap();
         match jobs.get_mut(id) {
@@ -240,6 +307,8 @@ impl JobHub {
         }
     }
 
+    /// [`kill`](Self::kill) every running job. It returns before their
+    /// processes are gone: see the type's docs for a host that exits.
     pub fn kill_all(&self) {
         for job in self.running() {
             self.kill(&job.id);

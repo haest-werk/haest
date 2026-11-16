@@ -14,10 +14,14 @@ use url::{Host, Url};
 /// A response body, chunk by chunk, so a cap can stop it without buffering it all.
 pub type Body = BoxStream<'static, Result<Vec<u8>, String>>;
 
+/// One HTTP response as WebFetch reads it: status, headers, and the body as a
+/// stream.
 pub struct HttpResponse {
+    /// The status code; a 3xx with a `location` header is a redirect.
     pub status: u16,
     /// Header names in any case; read them with [`HttpResponse::header`].
     pub headers: Vec<(String, String)>,
+    /// The body, chunk by chunk.
     pub body: Body,
 }
 
@@ -43,17 +47,20 @@ impl HttpResponse {
             .map(|(_, v)| v.as_str())
     }
 
-    /// 2xx.
+    /// Whether the status is a success (2xx).
     pub fn ok(&self) -> bool {
         (200..300).contains(&self.status)
     }
 }
 
+/// PLUG POINT: WebFetch's HTTP client, one GET at a time. [`ReqwestGet`] is
+/// the default; a host's own transport or a test's fake web implements it.
 #[async_trait]
 pub trait HttpGet: Send + Sync {
     /// ONE GET of `url`; a redirect comes back as a 3xx response, never followed.
     /// `pinned` are the addresses the net guard checked for the URL's host: an
     /// implementation that resolves names itself connects only to those.
+    /// `user_agent` is WebFetch's own. An Err is a reason the model reads.
     async fn get(
         &self,
         url: &Url,
@@ -62,7 +69,11 @@ pub trait HttpGet: Send + Sync {
     ) -> Result<HttpResponse, String>;
 }
 
-/// The default: reqwest with rustls, no proxy, no redirects, DNS pinned to `pinned`.
+/// The default [`HttpGet`]: reqwest with rustls, no proxy, no redirects, DNS
+/// pinned to `pinned`.
+///
+/// It installs rustls's `ring` provider as the process default when no
+/// provider is installed yet.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ReqwestGet;
 

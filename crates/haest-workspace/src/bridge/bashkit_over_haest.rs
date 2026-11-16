@@ -22,12 +22,28 @@ use super::bashkit_from_io;
 
 type Result<T> = bashkit::Result<T>;
 
+/// Any haest [`Fs`] as a bashkit `FileSystem`: what puts a sandboxed bash over
+/// a host's own storage ([`SandboxWorkspace::over`](crate::SandboxWorkspace::over)
+/// builds one).
+///
+/// Every path is normalized (`/a/./b/../c` is `/a/c`) before it reaches the
+/// `Fs`. An error the `Fs` returns reads like a shell's (`cat: f: No such file
+/// or directory`), except a permission refusal with a message of the host's
+/// own, which keeps it: the model reads why.
+///
+/// What a haest `Fs` cannot hold, stated:
+/// - no symlinks: `ln -s` fails;
+/// - no permission bits: a `chmod` is remembered here, in memory, for the life
+///   of this object, so `chmod +x f && ./f` works;
+/// - no settable times: `touch` on an existing file succeeds and leaves the
+///   time to the `Fs`.
 pub struct BashkitFsOverHaest {
     fs: Arc<dyn Fs>,
     modes: Mutex<HashMap<PathBuf, u32>>,
 }
 
 impl BashkitFsOverHaest {
+    /// Wrap `fs` so a bashkit shell can run over it.
     pub fn new(fs: Arc<dyn Fs>) -> Self {
         Self {
             fs,

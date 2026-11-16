@@ -1,6 +1,11 @@
 //! TaskCreate / TaskUpdate / TaskList / TaskGet over the conversation's
-//! [`TaskBoard`]. Names and keys are Claude Code's (`subject`, `activeForm`,
-//! `taskId`, `addBlockedBy`) on purpose: every frontier model has seen them.
+//! [`TaskBoard`] ([`create_task_tools`]). Names and keys are Claude Code's
+//! (`subject`, `activeForm`, `taskId`, `addBlockedBy`) on purpose: every
+//! frontier model has seen them.
+//!
+//! The board is the host's: it keeps it to show the list live and to save it
+//! with the session. The task list belongs to the conversation, so the default
+//! subagent hub gives no subagent these tools.
 
 use std::sync::Arc;
 
@@ -67,7 +72,32 @@ struct TaskUpdate(Arc<TaskBoard>);
 struct TaskList(Arc<TaskBoard>);
 struct TaskGet(Arc<TaskBoard>);
 
-/// The four task tools over one board.
+/// The four task tools over one board: TaskCreate, TaskUpdate (both kind
+/// `todo.write`), TaskList and TaskGet (read-only).
+///
+/// An unknown task id, a bad status or a blocker that is not a task comes back
+/// as an input error the model corrects.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::{task_board::TaskBoard, tool::ToolContext, workspace::ShutWorkspace};
+/// use haest_tools::create_task_tools;
+/// use serde_json::json;
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let board = Arc::new(TaskBoard::default());
+/// let tools = create_task_tools(board.clone());
+/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+/// let input = json!({"subject": "Write the docs"});
+/// tools[0].execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// // The host sees the model's list on its own board.
+/// assert_eq!(board.list()[0].subject, "Write the docs");
+/// # }
+/// ```
 pub fn create_task_tools(board: Arc<TaskBoard>) -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(TaskCreate(board.clone())),

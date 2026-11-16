@@ -1,10 +1,13 @@
-//! Grep (ripgrep) and Glob, both through the workspace. rg respects .gitignore
-//! natively and runs through `Workspace::run`; Glob walks the workspace `Fs`
-//! ([`crate::fs_walk`]) and skips node_modules/.git explicitly. The rg argv uses
-//! only flags the real rg and a sandbox's rg both accept. Nothing the model sends
-//! can be read as a flag: the pattern sits behind `-e`, `--glob`/`--type` take
-//! the next argument as their value, and a target that starts with `-` gets `./`
-//! ([`target_arg`]).
+//! Grep (ripgrep) and Glob, the two search tools ([`GrepTool`], [`GlobTool`]),
+//! both through the workspace.
+//!
+//! rg respects .gitignore natively and runs through
+//! [`Workspace::run`](haest_core::workspace::Workspace::run); Glob walks the
+//! workspace `Fs` ([`crate::fs_walk`]) and skips node_modules/.git explicitly.
+//! The rg argv uses only flags the real rg and a sandbox's rg both accept.
+//! Nothing the model sends can be read as a flag: the pattern sits behind `-e`,
+//! `--glob`/`--type` take the next argument as their value, and a target that
+//! starts with `-` gets `./`.
 
 use std::time::Duration;
 
@@ -28,6 +31,14 @@ const GLOB_LIMIT: usize = 200;
 const GREP_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_LINE_CHARS: usize = 500;
 
+/// The Glob tool (`Glob`, kind `file.glob`, read-only): files by glob pattern,
+/// newest first.
+///
+/// Input: `pattern` (`src/**/*.ts`; the language is on [`crate::fs_walk`]) and
+/// an optional `path` to search from (default: the context's `cwd`). It
+/// returns absolute paths, at most 200 with a count of the rest, and says so
+/// when the walk stopped at [`WALK_LIMIT`] entries. node_modules and .git are
+/// skipped; a cancelled call returns what it found so far.
 pub struct GlobTool;
 
 #[async_trait]
@@ -144,6 +155,21 @@ fn target_arg(target: &str) -> String {
     }
 }
 
+/// The Grep tool (`Grep`, kind `text.search`, read-only): ripgrep over the
+/// workspace's files.
+///
+/// It runs `rg` through the workspace ([`Workspace::run`](haest_core::workspace::Workspace::run)),
+/// in the context's `cwd`, with a 60 s timeout: the real disk needs an `rg` on
+/// the host's `PATH`, the sandbox has its own. With no `rg` (exit 127) the
+/// model is told to use Bash with grep instead.
+///
+/// Input: `pattern` (a regex), and optional `path`, `glob`, `type`,
+/// `output_mode` (`files_with_matches`, the default; `content` with line
+/// numbers; `count`), `case_insensitive`, `context` (lines, content mode),
+/// `multiline` and `head_limit` (lines of output). Lines over 500 characters
+/// are cut, and the whole answer is kept to haest-core's [`TRUNCATE_CHARS`].
+/// Files rg could not
+/// read are named in a closing note; a search with no match says so.
 pub struct GrepTool;
 
 #[async_trait]

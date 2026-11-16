@@ -163,8 +163,12 @@ impl Tool for StopAgentTool {
     }
 }
 
-/// The agent tools `me` gets: Agent only when it may still spawn
-/// (`can_spawn`), SendMessage and StopAgent always.
+/// The agent tools `me` gets, over `hub`: Agent only when it may still spawn
+/// (`can_spawn`), SendMessage and StopAgent always. Each is bound to `me`: it
+/// is the `from` of every spawn and message.
+///
+/// [`SubagentHub::tools_for`](super::SubagentHub::tools_for) works out
+/// `can_spawn` from the hub's caps.
 pub fn agent_tools(
     hub: Arc<dyn AgentDirectory>,
     me: AgentRef,
@@ -173,7 +177,8 @@ pub fn agent_tools(
     agent_tools_with(hub, me, can_spawn, AgentToolOptions::default())
 }
 
-/// [`agent_tools`] with the host's kinds of subagent and `model` text.
+/// [`agent_tools`] with the host's kinds of subagent and `model` text
+/// ([`AgentToolOptions`]). The module docs have an example.
 pub fn agent_tools_with(
     hub: Arc<dyn AgentDirectory>,
     me: AgentRef,

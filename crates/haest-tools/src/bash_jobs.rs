@@ -1,4 +1,8 @@
-//! BashOutput / KillShell: reading and stopping background jobs ([`crate::jobs`]).
+//! BashOutput / KillShell: reading and stopping background jobs
+//! ([`crate::jobs`]). [`job_tools`] makes both over one [`JobHub`];
+//! [`builtin_tools`](crate::builtin_tools) adds them after Bash when
+//! [`BashOptions::jobs`](crate::BashOptions::jobs) is set.
+//!
 //! Keys follow the common agent-tool convention (`bash_id`, `shell_id`), so
 //! models already know the calls.
 
@@ -31,6 +35,14 @@ fn id_schema(key: &str) -> Value {
     })
 }
 
+/// The BashOutput tool (`BashOutput`, kind `shell.exec`): a background job's
+/// output since the model last looked, and how the job stands. Made by
+/// [`job_tools`].
+///
+/// Input: `bash_id`. Reading marks the output read (so this is not
+/// read-only). When the job printed more than the 1 MB buffer holds between
+/// two looks, a note says how many bytes were dropped. An unknown id is an
+/// input error that lists the running jobs.
 pub struct BashOutputTool {
     jobs: Arc<JobHub>,
 }
@@ -74,6 +86,11 @@ impl Tool for BashOutputTool {
     }
 }
 
+/// The KillShell tool (`KillShell`, kind `shell.exec`): stops a background job
+/// and everything it started ([`JobHub::kill`]). Made by [`job_tools`].
+///
+/// Input: `shell_id`. A job that already ended is reported as such; an
+/// unknown id is an input error that lists the running jobs.
 pub struct KillShellTool {
     jobs: Arc<JobHub>,
 }
@@ -103,7 +120,8 @@ impl Tool for KillShellTool {
     }
 }
 
-/// The tools that read and stop the jobs of `jobs`, in the order the model sees them.
+/// The tools that read and stop the jobs of `jobs`, in the order the model
+/// sees them: BashOutput, KillShell.
 pub fn job_tools(jobs: Arc<JobHub>) -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(BashOutputTool { jobs: jobs.clone() }),

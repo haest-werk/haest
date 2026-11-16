@@ -15,6 +15,10 @@
 //!
 //! PLUG POINT: [`ImageHttp`] (the transport) and the API key are the host's;
 //! haest never reads a key from the environment.
+//!
+//! Start from [`ImageToolOptions::new`] and [`ImageTool::new`]. GenerateImage
+//! is not one of the [`builtin_tools`](crate::builtin_tools): a host adds it
+//! when it has a key.
 
 mod catalog;
 mod request;
@@ -44,12 +48,24 @@ pub struct ImageToolOptions {
     pub model: String,
     /// Every model a call may pick, the default first.
     pub models: Vec<String>,
+    /// The transport for the model list and the image request.
     pub http: Arc<dyn ImageHttp>,
+    /// The model list read so far, shared by clones of these options.
     pub catalog: Arc<ImageCatalog>,
 }
 
 impl ImageToolOptions {
-    /// The defaults, with the host's key.
+    /// The defaults, with the host's key: OpenRouter's Image API,
+    /// [`DEFAULT_IMAGE_MODEL`] among [`DEFAULT_IMAGE_MODELS`], reqwest.
+    ///
+    /// ```
+    /// use haest_tools::ImageToolOptions;
+    ///
+    /// let opts = ImageToolOptions::new("sk-...").with_models("vendor/fast", ["vendor/sharp"]);
+    /// assert_eq!(opts.models, ["vendor/fast", "vendor/sharp"]);
+    /// // The key is never printed.
+    /// assert!(!format!("{opts:?}").contains("sk-"));
+    /// ```
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),

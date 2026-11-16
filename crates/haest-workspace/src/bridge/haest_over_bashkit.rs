@@ -23,11 +23,20 @@ use super::io_from_bashkit;
 /// Links followed per lookup before giving up (Linux MAXSYMLINKS).
 const MAX_HOPS: usize = 40;
 
+/// A bashkit `FileSystem` as a haest [`Fs`]: how haest's tools see the files of
+/// the default sandbox, the same files its shell sees.
+///
+/// bashkit's in-memory layers never follow a symlink themselves. This view
+/// follows one in the LAST path component for `read`, `write`, `append`,
+/// `stat` and `read_dir` (up to 40 links, then an error), the way the shell's
+/// `cat` does, and lists a link as [`FileKind::Symlink`] without following
+/// it. [`chmod`](Fs::chmod) does nothing here.
 pub struct HaestFsOverBashkit {
     inner: Arc<dyn FileSystem>,
 }
 
 impl HaestFsOverBashkit {
+    /// Wrap `inner` so haest's tools can read and write it.
     pub fn new(inner: Arc<dyn FileSystem>) -> Self {
         Self { inner }
     }

@@ -3,7 +3,8 @@
 //! `GET /images/models`): `{type: 'enum', values}`, `{type: 'range', min, max}`,
 //! or `{type: 'boolean'}` meaning "takes it". Every refusal names the model and
 //! lists what it takes, so the model fixes the call and tries again.
-//! Ported from the TS haest's `tools/image-settings.ts`.
+//! [`check_image_settings`] is the check; [`describe_model`] the one-line
+//! summary. Ported from the TS haest's `tools/image-settings.ts`.
 
 use std::collections::HashMap;
 
@@ -14,17 +15,22 @@ use serde_json::{Map, Value};
 /// What a model publishes for one setting.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct SettingSpec {
+    /// `enum`, `range` or `boolean` ("takes it"); None or another word is
+    /// taken as "takes it" too.
     #[serde(rename = "type", default)]
     pub kind: Option<String>,
+    /// An `enum`'s allowed values.
     #[serde(default)]
     pub values: Option<Vec<Value>>,
+    /// A `range`'s lowest whole number; None = no bound.
     #[serde(default)]
     pub min: Option<f64>,
+    /// A `range`'s highest whole number; None = no bound.
     #[serde(default)]
     pub max: Option<f64>,
 }
 
-/// A model's settings by name.
+/// A model's settings by name, as the Image API's model list publishes them.
 pub type ModelSettings = HashMap<String, SettingSpec>;
 
 /// The settings a call may pass, besides what to draw and the references.
@@ -42,18 +48,28 @@ const IMAGE_SETTINGS: [&str; 8] = [
 /// Why a call was refused: the branch, as data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageSettingsCode {
+    /// A setting GenerateImage does not have at all.
     UnknownSetting,
+    /// A setting this model does not take.
     NotOffered,
+    /// A value the model does not take for a setting it has.
     BadValue,
+    /// `n`: GenerateImage makes one picture per call.
     OnePerCall,
+    /// SVG out, or a model that only makes SVG: it is never written.
     Svg,
+    /// A transparent background asked for as a JPEG.
     TransparentJpeg,
 }
 
+/// A call's settings refused, with a message for the model that names what
+/// the model takes.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 #[error("{message}")]
 pub struct ImageSettingsError {
+    /// Which rule refused it.
     pub code: ImageSettingsCode,
+    /// What to tell the model.
     pub message: String,
 }
 
@@ -237,6 +253,34 @@ fn with_defaults(out: &mut Map<String, Value>, params: Option<&ModelSettings>) {
 /// The request fields for `given` (the call's settings), checked against the
 /// model's own (None: the model list could not be read). Defaults where the
 /// model offers them: square, at 1K.
+///
+/// A null setting counts as not given. With no list to check against, only
+/// the names, `seed`, `size` and the rules no model states (no SVG, no
+/// transparent JPEG) are checked.
+///
+/// # Errors
+///
+/// The first setting refused, with its [`ImageSettingsCode`].
+///
+/// # Examples
+///
+/// ```
+/// use haest_tools::image::settings::{ImageSettingsCode, ModelSettings, SettingSpec, check_image_settings};
+/// use serde_json::{Map, json};
+///
+/// let aspect = SettingSpec {
+///     kind: Some("enum".into()),
+///     values: Some(vec![json!("1:1"), json!("16:9")]),
+///     ..Default::default()
+/// };
+/// let model = ModelSettings::from([("aspect_ratio".to_string(), aspect)]);
+/// let given = |v: serde_json::Value| v.as_object().cloned().unwrap_or_else(Map::new);
+///
+/// let fields = check_image_settings("vendor/pic", Some(&model), &given(json!({}))).unwrap();
+/// assert_eq!(fields["aspect_ratio"], "1:1");
+/// let err = check_image_settings("vendor/pic", Some(&model), &given(json!({"quality": "high"})));
+/// assert_eq!(err.unwrap_err().code, ImageSettingsCode::NotOffered);
+/// ```
 pub fn check_image_settings(
     model: &str,
     params: Option<&ModelSettings>,

@@ -9,7 +9,8 @@
 //! Read in pieces.
 //!
 //! PLUG POINT: [`WebFetchNet`] -- the resolver and the HTTP client, real DNS and
-//! reqwest unless a host (or a test) injects its own.
+//! reqwest unless a host (or a test) injects its own. Start from
+//! [`WebFetchTool`].
 
 use std::{sync::Arc, time::Duration};
 
@@ -50,7 +51,16 @@ fn is_text_type(media_type: &str) -> bool {
     TEXT_PREFIXES.iter().any(|p| media_type.starts_with(p)) || media_type.ends_with("+json")
 }
 
-/// HTML as markdown: ATX headings, fenced code, no scripts / styles / embeds.
+/// `html` as markdown: ATX headings, fenced code, no scripts, styles or embeds
+/// (`script`, `style`, `noscript`, `iframe`, `svg`, `template`). HTML the
+/// converter cannot read comes back as it is.
+///
+/// ```
+/// use haest_tools::web_fetch::markdown_of;
+///
+/// let md = markdown_of("<h1>Title</h1><script>track()</script><p>Body</p>");
+/// assert!(md.starts_with("# Title") && md.contains("Body") && !md.contains("track"));
+/// ```
 pub fn markdown_of(html: &str) -> String {
     htmd::HtmlToMarkdown::builder()
         .skip_tags(SKIPPED_TAGS.to_vec())
@@ -59,10 +69,16 @@ pub fn markdown_of(html: &str) -> String {
         .unwrap_or_else(|_| html.to_string())
 }
 
-/// The two network seams.
+/// WebFetch's two network seams: how names resolve and how a GET is made.
+///
+/// The default is the system resolver ([`SystemResolve`]) and reqwest
+/// ([`ReqwestGet`]). A host with its own DNS or HTTP stack, or a test with a
+/// fake web, replaces either.
 #[derive(Clone)]
 pub struct WebFetchNet {
+    /// Name -> addresses, for the net guard.
     pub resolve: Arc<dyn Resolve>,
+    /// One GET, connecting only to the addresses the guard checked.
     pub http: Arc<dyn HttpGet>,
 }
 
@@ -168,11 +184,74 @@ async fn to_output(
     media_output(&label, body, &media_type, ctx).await
 }
 
+/// The WebFetch tool (`WebFetch`, kind `web.fetch`, read-only): one public
+/// web page into the context.
+///
+/// Input: `url`. One GET with redirects followed by hand (at most 5, each hop
+/// checked by the net guard), a 5 MB cap on the body (refused, never cut) and
+/// a 30 s timeout. HTML comes back as markdown ([`markdown_of`]), other text
+/// as it is, an image, PDF, audio or video as media; an HTTP error status is
+/// an error result with the body. A refusal, a timeout or an interrupt is a
+/// [`ToolError::Input`] the model reads.
+///
+/// # Examples
+///
+/// Over a fake web, so nothing leaves the process:
+///
+/// ```
+/// use std::{net::IpAddr, sync::Arc};
+///
+/// use async_trait::async_trait;
+/// use haest_core::{
+///     tool::{Tool, ToolContext},
+///     workspace::ShutWorkspace,
+/// };
+/// use haest_tools::{
+///     WebFetchNet, WebFetchTool,
+///     net_guard::Resolve,
+///     web_fetch::{HttpGet, HttpResponse},
+/// };
+/// use serde_json::json;
+/// use url::Url;
+///
+/// /// Every name is one public address that serves one page.
+/// struct FakeWeb;
+///
+/// #[async_trait]
+/// impl Resolve for FakeWeb {
+///     async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, String> {
+///         Ok(vec!["93.184.215.14".parse().unwrap()])
+///     }
+/// }
+///
+/// #[async_trait]
+/// impl HttpGet for FakeWeb {
+///     async fn get(&self, _url: &Url, _pinned: &[IpAddr], _ua: &str) -> Result<HttpResponse, String> {
+///         let html = "<h1>Hello</h1><script>track()</script>";
+///         Ok(HttpResponse::buffered(200, &[("Content-Type", "text/html")], html))
+///     }
+/// }
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let web = Arc::new(FakeWeb);
+/// let tool = WebFetchTool::new(WebFetchNet { resolve: web.clone(), http: web });
+/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+/// let input = json!({"url": "https://example.test/"});
+/// let out = tool.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// assert!(out.content.contains("# Hello") && !out.content.contains("track"));
+///
+/// // A private address is refused before any request is made.
+/// let input = json!({"url": "http://127.0.0.1:8080/admin"});
+/// assert!(tool.execute(input.as_object().unwrap().clone(), &ctx).await.is_err());
+/// # }
+/// ```
 pub struct WebFetchTool {
     net: WebFetchNet,
 }
 
 impl WebFetchTool {
+    /// WebFetch over `net`.
     pub fn new(net: WebFetchNet) -> Self {
         Self { net }
     }

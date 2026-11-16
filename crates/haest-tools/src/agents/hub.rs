@@ -18,6 +18,102 @@ use super::{
     tools::agent_tools,
 };
 
+/// Every subagent of one conversation, run in this process: the default
+/// [`AgentDirectory`].
+///
+/// A spawn checks the caps (depth, and how many run at once across the tree),
+/// takes a unique name, and builds an [`Agent`] from the host's
+/// [`deps`](SubagentHost::deps) with its own tools (the host's
+/// [`base_tools`](SubagentHost::base_tools) minus the task tools, plus its own
+/// agent tools), its own system prompt (the host's, then
+/// [`subagent_note`](super::subagent_note)) and its own turn caps. It runs one
+/// turn; its final answer is the result.
+///
+/// - A foreground agent stops with the caller's turn; a background one runs
+///   on, and its answer is steered into the subagent that started it, or
+///   submitted to the host's inbox when main started it or its starter has
+///   finished. [`answers_due`](Self::answers_due) counts the ones on their way.
+/// - A message ([`deliver`](AgentDirectory::deliver)) lands at the receiver's
+///   next step; one for "main" goes to the host's inbox. Messages that reach an
+///   agent after it finished are appended to its answer, unread.
+/// - A finished agent's name stays taken, so a message for it is refused, never
+///   delivered to a newcomer.
+/// - A crash inside a subagent comes back as its answer, never as a panic.
+///
+/// # Panics
+///
+/// A background spawn outside a tokio runtime: the agent runs on a task of
+/// its own.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use async_trait::async_trait;
+/// use haest_core::{
+///     AgentDeps,
+///     provider::Effort,
+///     // haest-core's `testing` feature: a provider that answers from a script.
+///     testing::{ScriptedProvider, text_answer},
+///     tool::Tool,
+///     workspace::ShutWorkspace,
+/// };
+/// use haest_tools::{
+///     Inbox, SubagentHost, SubagentHub,
+///     agents::{AgentDirectory, AgentRef, SpawnInput, SubagentCaps},
+/// };
+/// use tokio_util::sync::CancellationToken;
+///
+/// struct Host(Arc<ScriptedProvider>);
+///
+/// impl Inbox for Host {
+///     fn submit(&self, text: String) {
+///         println!("for main: {text}");
+///     }
+/// }
+///
+/// #[async_trait]
+/// impl SubagentHost for Host {
+///     fn deps(&self) -> AgentDeps {
+///         let models = Arc::new(self.0.resolver());
+///         let prompt = Arc::new("You are a helper.".to_string());
+///         AgentDeps::new(models, Arc::new(self.base_tools()), prompt, "/", Arc::new(ShutWorkspace))
+///     }
+///     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
+///         Vec::new()
+///     }
+///     async fn system_prompt(&self, _model: &str, _tools: &[Arc<dyn Tool>]) -> String {
+///         "You are a helper.".into()
+///     }
+///     fn default_model(&self) -> (String, Option<Effort>) {
+///         ("scripted:m".into(), None)
+///     }
+/// }
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let provider = ScriptedProvider::new([text_answer("42 files")]);
+/// let hub = SubagentHub::new(Arc::new(Host(provider)), SubagentCaps::default());
+///
+/// // Main's agent tools; a host adds them to main's tool list.
+/// let tools = hub.tools_for(&AgentRef::main());
+/// let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
+/// assert_eq!(names, ["Agent", "SendMessage", "StopAgent"]);
+///
+/// // What the Agent tool does: one subagent turn, its final answer back.
+/// let input = SpawnInput {
+///     description: "count files".into(),
+///     prompt: "How many files are there?".into(),
+///     ..Default::default()
+/// };
+/// let out = hub.spawn(&AgentRef::main(), input, CancellationToken::new()).await.unwrap();
+/// assert_eq!(out.text, "42 files");
+/// assert!(hub.running().is_empty());
+/// # }
+/// ```
+///
+/// [`Agent`]: haest_core::Agent
 pub struct SubagentHub {
     host: Arc<dyn SubagentHost>,
     caps: SubagentCaps,
@@ -29,6 +125,7 @@ pub struct SubagentHub {
 }
 
 impl SubagentHub {
+    /// A hub with no subagents yet, over `host`, under `caps`.
     pub fn new(host: Arc<dyn SubagentHost>, caps: SubagentCaps) -> Arc<Self> {
         Arc::new_cyclic(|this| Self {
             host,
@@ -67,6 +164,8 @@ impl SubagentHub {
         agent_tools(self.arc(), me.clone(), can_spawn)
     }
 
+    /// Stop every running subagent, as StopAgent does for one. A background
+    /// one's answer still arrives, saying it stopped early.
     pub fn stop_all(&self) {
         for name in self.running() {
             self.stop(&name);

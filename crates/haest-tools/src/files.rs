@@ -1,7 +1,10 @@
-//! Write / Edit (Read lives in `read.rs`). Names and parameter keys follow the
-//! Claude Code convention (`file_path`, `old_string`, ...) on purpose: every
-//! frontier model has seen millions of those calls, and hosts' legacy renderers
-//! already understand them.
+//! Write and Edit: the tools that change a file ([`WriteTool`], [`EditTool`];
+//! Read lives in [`crate::read`]). Both go through the workspace's files, so in
+//! the default sandbox an edit stays in memory until `/apply`.
+//!
+//! Names and parameter keys follow the Claude Code convention (`file_path`,
+//! `old_string`, ...) on purpose: every frontier model has seen millions of
+//! those calls, and hosts' legacy renderers already understand them.
 
 use std::path::Path;
 
@@ -24,6 +27,12 @@ fn any_str<'a>(input: &'a JsonMap, key: &str) -> Result<&'a str, ToolError> {
     }
 }
 
+/// The Write tool (`Write`, kind `file.write`): creates a file, or replaces
+/// one whole, making its parent directories.
+///
+/// Input: `file_path` (absolute, or relative to the context's `cwd`) and
+/// `content` (may be empty). The model is told whether it created or
+/// overwrote the file, and how many bytes it wrote.
 pub struct WriteTool;
 
 #[async_trait]
@@ -68,6 +77,16 @@ impl Tool for WriteTool {
     }
 }
 
+/// The Edit tool (`Edit`, kind `file.edit`): replaces an exact string in an
+/// existing file.
+///
+/// Input: `file_path`, `old_string` (must match byte for byte), `new_string`
+/// (must differ from it, may be empty) and optional `replace_all`. The
+/// replacement is literal: `$&` and friends mean nothing here.
+///
+/// Refused with a [`ToolError::Input`] that says what to do: no such file
+/// (use Write), `old_string` not found, found more than once without
+/// `replace_all`, identical strings, or a file over 32 MB.
 pub struct EditTool;
 
 #[async_trait]

@@ -44,8 +44,18 @@ fn in_net(ip: u128, net: u128, bits: u8, width: u8) -> bool {
     (ip >> shift) == (net >> shift)
 }
 
-/// Is `ip` private, local or reserved? An IPv4-mapped IPv6 address
-/// (`::ffff:127.0.0.1`) is judged as the IPv4 address it carries.
+/// Whether `ip` is private, local or reserved: loopback, the private ranges,
+/// link-local (cloud metadata), carrier-grade NAT, multicast, and the IPv6
+/// forms that embed an IPv4 address (NAT64, 6to4). An IPv4-mapped IPv6
+/// address (`::ffff:127.0.0.1`) is judged as the IPv4 address it carries.
+///
+/// ```
+/// use haest_tools::net_guard::is_blocked;
+///
+/// assert!(is_blocked("169.254.169.254".parse().unwrap()));
+/// assert!(is_blocked("::ffff:10.0.0.1".parse().unwrap()));
+/// assert!(!is_blocked("93.184.215.14".parse().unwrap()));
+/// ```
 pub fn is_blocked(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => BLOCKED_V4
@@ -60,14 +70,18 @@ pub fn is_blocked(ip: IpAddr) -> bool {
     }
 }
 
-/// PLUG POINT: name -> addresses. The default asks the system resolver; a test
-/// (or a host with its own DNS) injects another.
+/// PLUG POINT: name -> addresses. The default asks the system resolver
+/// ([`SystemResolve`]); a test (or a host with its own DNS) injects another
+/// through [`WebFetchNet::resolve`](crate::WebFetchNet::resolve).
 #[async_trait]
 pub trait Resolve: Send + Sync {
+    /// Every address `host` (a DNS name, never an IP literal) resolves to, or
+    /// why it does not resolve. The guard refuses the URL unless every one is
+    /// public.
     async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, String>;
 }
 
-/// The system resolver.
+/// The system resolver (`getaddrinfo`, through tokio).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SystemResolve;
 
@@ -81,7 +95,8 @@ impl Resolve for SystemResolve {
     }
 }
 
-/// `host[:port]`, the way a browser's `URL.host` shows it.
+/// `url`'s `host[:port]`, the way a browser's `URL.host` shows it (no port
+/// when it is the scheme's default).
 pub fn host_port(url: &Url) -> String {
     let host = url.host_str().unwrap_or_default();
     match url.port() {
@@ -90,8 +105,47 @@ pub fn host_port(url: &Url) -> String {
     }
 }
 
-/// The addresses a fetch of `url` may connect to; an error, written for the
-/// model, unless `url` is http(s) to a host whose EVERY address is public.
+/// The addresses a fetch of `url` may connect to: every address its host
+/// resolves to, all of them public. Connect only to these (DNS pinning).
+///
+/// Check every redirect hop again: a public page may redirect to a private
+/// one.
+///
+/// # Errors
+///
+/// A reason, written for the model, when `url` is not http(s), carries a user
+/// name or password, has no host, does not resolve (or to no address), or
+/// resolves to any address [`is_blocked`] refuses.
+///
+/// # Examples
+///
+/// ```
+/// use std::net::IpAddr;
+///
+/// use async_trait::async_trait;
+/// use haest_tools::net_guard::{Resolve, assert_public_url};
+/// use url::Url;
+///
+/// /// A name that answers one public and one private address.
+/// struct Rebinding;
+///
+/// #[async_trait]
+/// impl Resolve for Rebinding {
+///     async fn resolve(&self, _: &str) -> Result<Vec<IpAddr>, String> {
+///         Ok(vec!["93.184.215.14".parse().unwrap(), "10.0.0.5".parse().unwrap()])
+///     }
+/// }
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let public = Url::parse("https://93.184.215.14/page").unwrap();
+/// assert_eq!(assert_public_url(&public, &Rebinding).await.unwrap().len(), 1);
+/// let sneaky = Url::parse("https://example.test/").unwrap();
+/// assert!(assert_public_url(&sneaky, &Rebinding).await.is_err());
+/// let file = Url::parse("file:///etc/passwd").unwrap();
+/// assert!(assert_public_url(&file, &Rebinding).await.is_err());
+/// # }
+/// ```
 pub async fn assert_public_url(url: &Url, resolve: &dyn Resolve) -> Result<Vec<IpAddr>, String> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err(format!(

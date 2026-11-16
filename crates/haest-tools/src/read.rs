@@ -1,15 +1,23 @@
-//! Read. Same name and keys as Claude Code's (`file_path`, `offset`, `limit`,
-//! `allow_large`) on purpose -- every frontier model has seen millions of those calls.
+//! Read: a file into the model's context. Start from [`ReadTool`].
+//!
+//! Same name and keys as Claude Code's (`file_path`, `offset`, `limit`,
+//! `allow_large`) on purpose -- every frontier model has seen millions of those
+//! calls. Text comes back as numbered lines (`  12\tthe line`); an image, PDF,
+//! audio or video file comes back as media the model sees ([`media_output`]);
+//! any other binary file, a directory, or a file over 32 MB is refused with
+//! what to do instead.
 //!
 //! READ SIZES ITSELF. It used to go through the generic spill, which saved a big
 //! read to a file and told the model to Read THAT in pieces: a Read answered with
 //! "go Read a copy of what you just read". Now it returns as many whole lines as
 //! fit its budget and says where to continue ([`text_output`]):
-//!   - default budget 25,000 tokens, Claude Code's own Read limit;
+//!   - default budget 25,000 tokens ([`READ_TOKEN_BUDGET`]), Claude Code's own
+//!     Read limit, and at most 2,000 lines;
 //!   - `allow_large: true` lifts that (and the 2,000-line default) up to the room
 //!     the context has left, so "I need the whole file" is one call, not ten;
-//!   - neither ever exceeds that room, so a read cannot push the next model call
-//!     over the request cap.
+//!   - neither ever exceeds that room
+//!     ([`ToolContext::context_room_tokens`](haest_core::tool::ToolContext::context_room_tokens)),
+//!     so a read cannot push the next model call over the request cap.
 //!
 //! PLUG POINT: [`ReadIntercept`] -- a host answers some paths itself before the
 //! workspace fs is asked.
@@ -51,13 +59,57 @@ pub(crate) fn within_cap(stat: &FsStat, shown: &str, instead: &str) -> Result<()
     )))
 }
 
-/// A path the host answers itself before the workspace fs is asked: media that
-/// must go through the host's own caps, an `attachment:<id>` that is no path at
-/// all, a document converted to Markdown (page it with [`text_output`]).
+/// A host's own answer to some Read calls, asked before the workspace fs: media
+/// that must go through the host's own caps, an `attachment:<id>` that is no
+/// path at all, a document converted to Markdown (page it with
+/// [`text_output`]).
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use async_trait::async_trait;
+/// use haest_core::{
+///     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
+///     workspace::ShutWorkspace,
+/// };
+/// use haest_tools::{ReadIntercept, ReadTool, read::text_output};
+/// use serde_json::json;
+///
+/// /// `attachment:<id>` is a document the host keeps, not a file.
+/// struct Attachments;
+///
+/// #[async_trait]
+/// impl ReadIntercept for Attachments {
+///     async fn intercept(
+///         &self,
+///         raw_path: &str,
+///         input: &JsonMap,
+///         ctx: &ToolContext,
+///     ) -> Option<Result<ToolOutput, ToolError>> {
+///         let id = raw_path.strip_prefix("attachment:")?;
+///         let text = format!("# Attachment {id}\nfirst line\n");
+///         // Paged like a file: offset, limit and the budget all apply.
+///         Some(text_output(&text, text.len(), input, ctx, ""))
+///     }
+/// }
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let read = ReadTool::new(Some(Arc::new(Attachments)));
+/// // No files at all: only the intercept can answer.
+/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+/// let input = json!({"file_path": "attachment:7", "offset": 2});
+/// let out = read.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// assert_eq!(out.content, "2\tfirst line");
+/// # }
+/// ```
 #[async_trait]
 pub trait ReadIntercept: Send + Sync {
-    /// `raw_path` is `file_path` as the model sent it, unresolved. None = read it
-    /// from the workspace fs as usual.
+    /// The answer to one Read call, or None to read it from the workspace fs
+    /// as usual. `raw_path` is `file_path` as the model sent it, unresolved;
+    /// `input` is the whole call (`offset`, `limit`, `allow_large`).
     async fn intercept(
         &self,
         raw_path: &str,
@@ -66,8 +118,18 @@ pub trait ReadIntercept: Send + Sync {
     ) -> Option<Result<ToolOutput, ToolError>>;
 }
 
-/// An image / PDF / audio / video (a file Read, a URL WebFetch) goes to the model
-/// as media, and to the transcript as a URL when the host can publish it.
+/// A tool result that hands `bytes` to the model as media (an image, PDF,
+/// audio or video), and to the transcript as a URL when the host can publish
+/// it ([`ToolHost::publish`](haest_core::tool::ToolHost::publish)).
+///
+/// Read uses it for a media file, WebFetch for a media URL. `label` names it
+/// in the text the model reads (`label: image (image/png, 120 bytes),
+/// attached.`); its last path segment names the media part.
+///
+/// # Errors
+///
+/// [`ToolError::Input`] when `media_type` is not one haest sends to a model,
+/// or `bytes` is over that kind's size limit.
 pub async fn media_output(
     label: &str,
     bytes: Vec<u8>,
@@ -92,13 +154,23 @@ pub async fn media_output(
     })
 }
 
-/// The Read tool, optionally with a host's [`ReadIntercept`] in front of the fs.
+/// The Read tool (`Read`, kind `file.read`, read-only): one file from the
+/// workspace, optionally with a host's [`ReadIntercept`] in front of the fs.
+///
+/// Input: `file_path` (absolute, or relative to the context's `cwd`), and
+/// optional `offset` (1-based first line), `limit` (lines) and `allow_large`.
+/// The module docs say how a read sizes itself.
+///
+/// A missing file, a directory, a binary file that is not media, a file over
+/// 32 MB: each is a [`ToolError::Input`] that tells the model what to do
+/// instead. A byte-order mark is dropped.
 #[derive(Default, Clone)]
 pub struct ReadTool {
     intercept: Option<Arc<dyn ReadIntercept>>,
 }
 
 impl ReadTool {
+    /// Read, with `intercept` asked first on every call when there is one.
     pub fn new(intercept: Option<Arc<dyn ReadIntercept>>) -> Self {
         Self { intercept }
     }

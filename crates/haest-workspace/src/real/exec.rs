@@ -31,7 +31,14 @@ fn group_of(pid: u32) -> Option<libc::pid_t> {
 }
 
 /// Kill a detached child's whole process group (the child, and everything it
-/// spawned). A pid of 0 or 1 is refused: nothing is signalled.
+/// spawned) with SIGKILL.
+///
+/// `pid` is the id of a child that leads its own group, as
+/// [`RealWorkspace`](crate::RealWorkspace) starts every child; when the group
+/// is gone already, the process alone is signalled. A pid of 0 or 1 is refused
+/// and nothing is signalled: `kill(0)` is the caller's own group, `kill(-1)`
+/// every process the caller may signal. Errors are ignored: a process that
+/// has exited is the goal.
 pub fn kill_group(pid: u32) {
     let Some(pid) = group_of(pid) else {
         return;

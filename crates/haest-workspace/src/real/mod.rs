@@ -1,6 +1,7 @@
 //! The real workspace: the host's disk and the host's bash. The opt-out from
 //! the sandbox, and always what the HOST itself uses for its own files (session
-//! log, config) -- through the same [`Fs`] interface as everything else.
+//! log, config) -- through the same [`Fs`] interface as everything else
+//! ([`RealFs`]).
 //!
 //! Children get their own process group so a timeout or an interrupt kills the
 //! whole tree, not just bash. Every child runs with the [`ChildEnv`] the host
@@ -21,18 +22,77 @@ use haest_core::{
 pub use exec::kill_group;
 pub use fs::RealFs;
 
+/// The real disk and the real `bash`: the workspace where the agent's edits
+/// land on disk at once and its commands are real programs.
+///
+/// - [`Workspace::shell`] runs `bash -c <command>`; [`Workspace::run`] runs a
+///   program with its argv, no shell parsing. A bare program name is looked up
+///   on the `PATH` in the [`ChildEnv`] (`/usr/bin:/bin` when it has none), a
+///   name with a `/` is taken from the call's `cwd`. Not found: exit 127 and
+///   `<program>: command not found` on stderr. An empty argv: exit 127.
+/// - A child gets the [`ChildEnv`] and nothing else of the host's environment,
+///   plus `TERM=dumb` and `NO_COLOR=1`. Its stdin is empty.
+/// - A child leads its own process group. The call's timeout and its cancel
+///   token both kill the whole group (`npm run dev` spawning node spawning
+///   esbuild), as does dropping the call's future before it ends. A timeout
+///   sets [`ExecResult::timed_out`]; a killed child reports exit `128 + 9`.
+/// - A call ends when the child has exited AND its output pipes have closed:
+///   a command that leaves a process behind holding them (`server &`) runs
+///   until that process closes them or the timeout kills the group.
+/// - Output is decoded as UTF-8, invalid bytes replaced.
+///
+/// [`Workspace::prompt_note`] is empty: the real world needs no explaining.
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use haest_core::{
+///     ChildEnv,
+///     workspace::{ExecOptions, Workspace},
+/// };
+/// use haest_workspace::RealWorkspace;
+/// use tokio_util::sync::CancellationToken;
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// // The children see this PATH and no other variable of the host's.
+/// let env = ChildEnv::new([("PATH".to_string(), "/usr/bin:/bin".to_string())]);
+/// let ws = RealWorkspace::new(env);
+/// let opts = ExecOptions {
+///     cwd: std::env::temp_dir(),
+///     cancel: CancellationToken::new(),
+///     timeout: Duration::from_secs(10),
+/// };
+/// let r = ws.shell("echo \"HOME is [$HOME]\"", opts.clone()).await;
+/// assert_eq!(r.stdout, "HOME is []\n");
+///
+/// let r = ws.run(&["no-such-program".to_string()], opts).await;
+/// assert_eq!(r.exit_code, 127);
+/// # }
+/// ```
+///
+/// [`Workspace`]: haest_core::workspace::Workspace
+/// [`Workspace::shell`]: haest_core::workspace::Workspace::shell
+/// [`Workspace::run`]: haest_core::workspace::Workspace::run
+/// [`Workspace::prompt_note`]: haest_core::workspace::Workspace::prompt_note
+/// [`ExecResult::timed_out`]: haest_core::workspace::ExecResult::timed_out
 pub struct RealWorkspace {
     fs: Arc<dyn Fs>,
     env: ChildEnv,
 }
 
 impl RealWorkspace {
-    /// The real disk through a fresh [`RealFs`]; children get `env`.
+    /// The real disk through a fresh [`RealFs`]; every child process gets `env`
+    /// and nothing else.
     pub fn new(env: ChildEnv) -> Self {
         Self::with_fs(Arc::new(RealFs), env)
     }
 
-    /// Pass the host's own real [`Fs`] to share one instance.
+    /// The same, with the host's own [`Fs`] for the files, so the host and the
+    /// tools share one instance. `fs` should be the real disk: the shell
+    /// always is.
     pub fn with_fs(fs: Arc<dyn Fs>, env: ChildEnv) -> Self {
         Self { fs, env }
     }

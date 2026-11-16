@@ -1,10 +1,37 @@
-//! Glob over any [`Fs`]. globset only MATCHES here (pure string work); the
-//! directory walk goes through the workspace, so the sandbox's in-memory files
-//! are found exactly like real ones.
+//! Glob over any [`Fs`]: the walk behind the Glob tool ([`glob_fs`]).
+//!
+//! globset only MATCHES here (pure string work); the directory walk goes
+//! through the workspace, so the sandbox's in-memory files are found exactly
+//! like real ones.
 //!
 //! The pattern language is the TS haest's (Bun's glob): `*` stops at `/`, `**`
 //! crosses directories, `?`, `[...]`, `{a,b}`, dot files match, case matters, and
 //! a leading `!` negates the whole pattern.
+//!
+//! ```
+//! use std::path::Path;
+//!
+//! use haest_core::fs::MemFs;
+//! use haest_tools::fs_walk::glob_fs;
+//! use tokio_util::sync::CancellationToken;
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//! let fs = MemFs::with_files([
+//!     ("/p/src/a.rs", ""),
+//!     ("/p/src/deep/b.rs", ""),
+//!     ("/p/node_modules/c.rs", ""),
+//! ]);
+//! let found = glob_fs(&fs, Path::new("/p"), "**/*.rs", &CancellationToken::new())
+//!     .await
+//!     .unwrap();
+//! let mut paths: Vec<_> = found.hits.iter().map(|h| h.path.display().to_string()).collect();
+//! paths.sort();
+//! // node_modules is never entered.
+//! assert_eq!(paths, ["/p/src/a.rs", "/p/src/deep/b.rs"]);
+//! assert!(!found.capped);
+//! # }
+//! ```
 
 use std::{
     path::{Path, PathBuf},
@@ -19,14 +46,19 @@ const SKIP_DIRS: [&str; 2] = ["node_modules", ".git"];
 /// A walk that visits this many entries stops and says so, never hangs a turn.
 pub const WALK_LIMIT: usize = 100_000;
 
+/// One file a glob matched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobHit {
+    /// Its absolute path.
     pub path: PathBuf,
+    /// When it last changed; the Unix epoch when the `Fs` does not say.
     pub mtime: SystemTime,
 }
 
+/// What a walk found ([`glob_fs`]).
 #[derive(Debug, Default)]
 pub struct GlobResult {
+    /// The matching files, in walk order.
     pub hits: Vec<GlobHit>,
     /// True when [`WALK_LIMIT`] stopped the walk before the tree was exhausted.
     pub capped: bool,
@@ -45,12 +77,27 @@ fn static_prefix(pattern: &str) -> (String, String) {
 }
 
 /// One compiled pattern, matched against paths relative to the walk's start.
+///
+/// ```
+/// use haest_tools::fs_walk::Matcher;
+///
+/// let m = Matcher::new("src/*.rs").unwrap();
+/// assert!(m.is_match("src/a.rs"));
+/// assert!(!m.is_match("src/deep/a.rs"));
+/// assert!(Matcher::new("!*.md").unwrap().is_match("a.rs"));
+/// ```
 pub struct Matcher {
     glob: GlobMatcher,
     negate: bool,
 }
 
 impl Matcher {
+    /// `pattern`, compiled; a leading `!` negates it.
+    ///
+    /// # Errors
+    ///
+    /// A pattern globset cannot parse (an unclosed `[`), with a message for
+    /// the model.
     pub fn new(pattern: &str) -> Result<Self, String> {
         let (negate, body) = match pattern.strip_prefix('!') {
             Some(rest) => (true, rest),
@@ -67,6 +114,7 @@ impl Matcher {
         })
     }
 
+    /// Whether `rel`, a `/`-separated path relative to the walk's start, matches.
     pub fn is_match(&self, rel: &str) -> bool {
         self.glob.is_match(rel) != self.negate
     }
@@ -124,6 +172,18 @@ impl Walk<'_> {
 }
 
 /// Every file under `base` matching `pattern`, in walk order.
+///
+/// The leading segments with no glob syntax pick where the walk starts
+/// (`src/**/*.ts` walks `base/src` only; an absolute `/src/*.ts` walks
+/// `/src`), the rest is matched against the path below it. A directory that
+/// cannot be read is skipped. A symlink is matched like a file and never
+/// descended, so a link loop cannot spin the walk; node_modules and .git are
+/// never entered. The walk stops after [`WALK_LIMIT`] entries
+/// ([`GlobResult::capped`]), and when `cancel` fires, with what it found so far.
+///
+/// # Errors
+///
+/// An invalid pattern, with a message for the model.
 pub async fn glob_fs(
     fs: &dyn Fs,
     base: &Path,

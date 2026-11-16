@@ -13,14 +13,17 @@ use haest_core::tool::spelled;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-/// A response: its status and whole body.
+/// One HTTP response from the Image API: its status and whole body.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HttpReply {
+    /// The HTTP status code.
     pub status: u16,
+    /// The whole body.
     pub body: Vec<u8>,
 }
 
 impl HttpReply {
+    /// A reply with `body` as its JSON text (a fake API's answer).
     pub fn json(status: u16, body: &Value) -> Self {
         Self {
             status,
@@ -28,11 +31,15 @@ impl HttpReply {
         }
     }
 
+    /// Whether the status is a success (2xx).
     pub fn ok(&self) -> bool {
         (200..300).contains(&self.status)
     }
 }
 
+/// PLUG POINT: the two HTTP exchanges GenerateImage makes. An Err is a
+/// transport failure, said to the model as is; an HTTP error status is a
+/// reply, not an Err.
 #[async_trait]
 pub trait ImageHttp: Send + Sync {
     /// GET `url` (the model list; no key). Gives up promptly when `cancel` fires.
@@ -47,7 +54,8 @@ pub trait ImageHttp: Send + Sync {
     ) -> Result<HttpReply, String>;
 }
 
-/// The default: reqwest with rustls, no proxy (none from the environment either).
+/// The default [`ImageHttp`]: reqwest with rustls, no proxy (none from the
+/// environment either: a proxy would be sent the API key).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ReqwestImageHttp;
 
@@ -105,9 +113,14 @@ impl ImageHttp for ReqwestImageHttp {
 /// The picture an image model made.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImageReply {
+    /// The image, decoded.
     pub bytes: Vec<u8>,
+    /// What the bytes are (`image/png`, `image/jpeg`, `image/webp`,
+    /// `image/gif`): read from the bytes, else as the answer named it.
     pub media_type: String,
+    /// The model that made it.
     pub model: String,
+    /// What the API billed for it, when it said.
     pub cost_usd: Option<f64>,
 }
 
@@ -122,7 +135,15 @@ const SIGNATURES: [(&str, Signature); 4] = [
     ("image/gif", &[(0, b"GIF")]),
 ];
 
-/// What the bytes are, by their first bytes (a model may say png and send jpeg).
+/// What the bytes are, by their first bytes (a model may say png and send
+/// jpeg): `image/png`, `image/jpeg`, `image/webp` or `image/gif`, else None.
+///
+/// ```
+/// use haest_tools::image::sniff_image_type;
+///
+/// assert_eq!(sniff_image_type(&[0xff, 0xd8, 0xff, 0xe0]), Some("image/jpeg"));
+/// assert_eq!(sniff_image_type(b"<svg"), None);
+/// ```
 pub fn sniff_image_type(b: &[u8]) -> Option<&'static str> {
     let at = |offset: usize, sig: &[u8]| b.get(offset..offset + sig.len()) == Some(sig);
     SIGNATURES
@@ -147,7 +168,17 @@ fn refusal(model: &str, status: u16, answer: &Value) -> String {
     format!("{model} refused the request (HTTP {status}): {why}{provider}")
 }
 
-/// Send one image request; Err is the reason, said to the model as is.
+/// Send one image request (`POST {base_url}/images` with `body`) and read the
+/// picture out of the answer (`data[0].b64_json`, `usage.cost`).
+///
+/// `body` is sent as given: GenerateImage checks it first.
+///
+/// # Errors
+///
+/// The reason, said to the model as is: the transport failed, the API refused
+/// (its status and its own words, the provider's too when it gave them), the
+/// answer has no image, or the image is not a PNG, JPEG, WebP or GIF (an SVG
+/// never is).
 pub async fn call_image_api(
     http: &dyn ImageHttp,
     base_url: &str,

@@ -8,7 +8,8 @@ use serde_json::json;
 
 const DEFAULT_LINE_LIMIT: usize = 2000;
 const MAX_LINE_CHARS: usize = 2000;
-/// Claude Code's Read limit, in tokens.
+/// The most one Read returns without `allow_large`, in tokens (about four
+/// characters each): Claude Code's own Read limit.
 pub const READ_TOKEN_BUDGET: u64 = 25_000;
 /// `allow_large` with no known context room (no request cap configured).
 const LARGE_FALLBACK_TOKENS: u64 = 100_000;
@@ -82,9 +83,23 @@ fn at_least_one(input: &JsonMap, key: &str, default: usize) -> Result<usize, Too
     })
 }
 
-/// A text read, numbered and paged by `offset` / `limit` / `allow_large`. Public
-/// for a host's [`super::ReadIntercept`]: a converted document pages like a file.
-/// `header` goes in front of the numbered lines; `bytes` is the source's size.
+/// `text` as Read returns a text file: numbered lines, paged by the call's
+/// `offset` / `limit` / `allow_large` in `input`, and sized to the read budget.
+///
+/// Public for a host's [`ReadIntercept`](super::ReadIntercept): a converted
+/// document pages like a file. `header` goes in front of the numbered lines;
+/// `bytes` is the source's size, for the transcript's envelope.
+///
+/// Each line is `<number>\t<line>`, the numbers right-aligned, a line over
+/// 2,000 characters cut. When lines are left, a closing note says how many
+/// and which `offset` continues. An `offset` past the end returns a one-line
+/// note instead of lines. The output is marked
+/// [`sized`](haest_core::tool::ToolOutput::sized): the generic spill leaves it
+/// alone.
+///
+/// # Errors
+///
+/// [`ToolError::Input`] when `offset` or `limit` is not a number.
 pub fn text_output(
     text: &str,
     bytes: usize,

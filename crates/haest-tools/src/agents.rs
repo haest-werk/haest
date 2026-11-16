@@ -21,6 +21,66 @@
 //! types) implements that trait and keeps these tools. [`SubagentHub`] is the
 //! default, over a [`SubagentHost`]. [`AgentToolOptions`] gives the Agent tool
 //! the host's kinds of subagent (`subagent_type`) and its own `model` text.
+//!
+//! | Tool | Kind | What it does |
+//! |---|---|---|
+//! | Agent | `task.spawn` | runs a subagent on a brief and returns its final answer (or, with `run_in_background`, returns at once; the answer arrives as a message) |
+//! | SendMessage | `agent.unknown` | a message to `main` or a running subagent, read at its next step |
+//! | StopAgent | `agent.unknown` | stops a running subagent |
+//!
+//! None is read-only. Start from [`SubagentHub::new`] and
+//! [`SubagentHub::tools_for`], or [`agent_tools_with`] over your own
+//! directory.
+//!
+//! # Examples
+//!
+//! A directory of the host's own: every subagent runs elsewhere, and its
+//! answer comes back as the Agent call's result.
+//!
+//! ```
+//! use std::sync::Arc;
+//!
+//! use async_trait::async_trait;
+//! use haest_core::{tool::ToolContext, workspace::ShutWorkspace};
+//! use haest_tools::agents::{
+//!     AgentDirectory, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome, agent_tools_with,
+//! };
+//! use serde_json::json;
+//! use tokio_util::sync::CancellationToken;
+//!
+//! struct Remote;
+//!
+//! #[async_trait]
+//! impl AgentDirectory for Remote {
+//!     async fn spawn(
+//!         &self,
+//!         from: &AgentRef,
+//!         input: SpawnInput,
+//!         _cancel: CancellationToken,
+//!     ) -> Result<SpawnOutcome, String> {
+//!         // Here the host would run `input.prompt` somewhere.
+//!         let text = format!("{} asked: {}", from.name, input.description);
+//!         Ok(SpawnOutcome { text, cost_usd: 0.01 })
+//!     }
+//!     fn deliver(&self, _from: &str, to: &str, _text: &str) -> Result<String, String> {
+//!         Err(format!("\"{to}\" is not running"))
+//!     }
+//!     fn stop(&self, _name: &str) -> bool {
+//!         false
+//!     }
+//! }
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//! let tools = agent_tools_with(Arc::new(Remote), AgentRef::main(), true, AgentToolOptions::default());
+//! let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+//! let input = json!({"description": "find the bug", "prompt": "Look at parse.rs."});
+//! let out = tools[0].execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+//! assert_eq!(out.content, "main asked: find the bug");
+//! // Its spend counts toward the caller's turn, never charged twice.
+//! assert_eq!(out.child_cost_usd, Some(0.01));
+//! # }
+//! ```
 
 mod host;
 mod hub;
@@ -44,7 +104,9 @@ pub const MAIN: &str = "main";
 /// An agent as the tools know it: its address and how deep it runs (main = 0).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentRef {
+    /// Its address: [`MAIN`], or a subagent's unique name.
     pub name: String,
+    /// How many spawns deep it runs: main is 0, its subagents 1.
     pub depth: u32,
 }
 
@@ -62,14 +124,20 @@ impl AgentRef {
 /// `name`, `model`, `run_in_background`), so every model already knows it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SpawnInput {
+    /// A short label for the task (3-5 words).
     pub description: String,
+    /// The complete brief: the subagent sees nothing else of the conversation.
     pub prompt: String,
+    /// The address the caller asked for; the hub makes one from the
+    /// description when None, and keeps names unique.
     pub name: Option<String>,
     /// `provider:model`; None = the conversation's own.
     pub model: Option<String>,
+    /// `run_in_background`: return at once; the answer arrives as a message.
     pub background: bool,
     /// One of the host's [`SubagentTypes`] (the named one, else its default);
-    /// None when the host has none.
+    /// None when the host has none. The default [`SubagentHub`] has none and
+    /// ignores it.
     pub subagent_type: Option<String>,
 }
 
@@ -77,6 +145,8 @@ pub struct SpawnInput {
 /// the model may pick, and what it reads about each. The default hub has none.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubagentTypes {
+    /// The kinds the model may name; the parameter's `enum`. An Agent call
+    /// that names another is an input error.
     pub names: Vec<String>,
     /// The parameter's description: what each kind may do.
     pub description: String,
@@ -87,6 +157,7 @@ pub struct SubagentTypes {
 /// PLUG POINT: what a host changes about the agent tools ([`agent_tools_with`]).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AgentToolOptions {
+    /// The host's kinds of subagent: adds the `subagent_type` parameter.
     pub types: Option<SubagentTypes>,
     /// The `model` parameter's description, e.g. the models this host offers.
     pub models: Option<String>,
@@ -103,18 +174,23 @@ pub struct SpawnOutcome {
 
 /// What the agent tools need from a hub. An Err is a refusal (a cap, an
 /// unknown name) the model corrects: it goes back as an input error.
+///
+/// [`SubagentHub`] is the default; the module docs implement one of a host's
+/// own.
 #[async_trait]
 pub trait AgentDirectory: Send + Sync {
-    /// Run a subagent for `from`; `cancel` is the caller's turn (a foreground
-    /// agent stops with it).
+    /// Agent: run a subagent for `from`; `cancel` is the caller's turn (a
+    /// foreground agent stops with it). The outcome's text is the Agent call's
+    /// result, its cost the call's `child_cost_usd`.
     async fn spawn(
         &self,
         from: &AgentRef,
         input: SpawnInput,
         cancel: CancellationToken,
     ) -> Result<SpawnOutcome, String>;
-    /// SendMessage: what to tell the sender.
+    /// SendMessage: hand `text` from agent `from` to agent `to`, and say what
+    /// to tell the sender. The SendMessage tool refuses `to == from` itself.
     fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, String>;
-    /// StopAgent: false when `name` is not running.
+    /// StopAgent: stop the agent `name`; false when it is not running.
     fn stop(&self, name: &str) -> bool;
 }

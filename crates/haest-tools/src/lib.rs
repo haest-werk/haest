@@ -1,26 +1,106 @@
-//! haest's built-in tools. PORT (T7): `tools/*.ts`.
+//! haest's built-in tools: the [`Tool`]s an agent reads, writes, searches,
+//! runs commands, fetches pages, keeps a task list and starts subagents with.
+//!
+//! Each tool is a plain [`Tool`] from haest-core: a name, a JSON Schema for its
+//! input, and an `execute` that gets a [`ToolContext`]. Names and input keys
+//! are Claude Code's (`Read`, `file_path`, `old_string`, ...) on purpose: every
+//! frontier model has seen millions of those calls.
+//!
+//! Most hosts take this crate as `haest::tools` (the `tools` feature of the
+//! `haest` crate, on by default), and haest-runtime builds the list from the
+//! settings. Depend on it directly when you run haest-core's agent loop with
+//! your own composition: some of these tools beside your own, over your own
+//! workspace.
+//!
+//! # Where the tools work
 //!
 //! Every tool here touches files and commands ONLY through `ctx.workspace`
-//! (`fs()`, `shell`, `run`), so the sandbox's in-memory files and the real disk
-//! look the same to them. WebFetch is the one exception: it runs in the HOST,
+//! ([`Workspace::fs`], [`Workspace::shell`], [`Workspace::run`]), so the
+//! sandbox's in-memory files, a host's own store and the real disk all look
+//! the same to them. haest-workspace has the workspaces that ship with haest;
+//! any [`Workspace`] works. WebFetch is the one exception: it runs in the HOST,
 //! never through the workspace, behind the net guard ([`net_guard`]).
 //!
-//! | Tool | Kind | Module |
-//! |---|---|---|
-//! | Read | `file.read` | [`read`] (PLUG POINT: [`read::ReadIntercept`]) |
-//! | Write, Edit | `file.write`, `file.edit` | [`files`] |
-//! | Glob, Grep | `file.glob`, `text.search` | [`search`] over [`fs_walk`] |
-//! | Bash | `shell.exec` | [`bash`] |
-//! | BashOutput, KillShell | `shell.exec` | [`bash_jobs`] over a [`jobs::JobHub`] the host owns |
-//! | WebFetch | `web.fetch` | [`web_fetch`] (PLUG POINT: [`web_fetch::WebFetchNet`]) |
-//! | Agent, SendMessage, StopAgent | `task.spawn`, `agent.unknown` | [`agents`] (PLUG POINT: [`agents::AgentDirectory`]; default [`agents::SubagentHub`]) |
-//! | GenerateImage | `image.generate` | [`image`] (PLUG POINT: [`image::ImageHttp`]; the key is the host's) |
+//! # The built-in tools
 //!
-//! A turn the human did not start (a job that exited, a subagent's message for
-//! main) reaches the model through the host's [`inbox::Inbox`], counted by an
-//! [`turn_gate::AgentTurnGate`].
+//! [`builtin_tools`] makes these, in this order; [`builtin_tools_where`] picks
+//! some by their word (the `tools` setting). Read-only tools may run in
+//! parallel within one model step.
+//!
+//! | Tool | What it does | Read-only | Word | Needs from the host |
+//! |---|---|---|---|---|
+//! | Read | a file's lines, numbered and paged; an image, PDF, audio or video file as media | yes | `read` | the workspace's files; optionally a [`ReadIntercept`] |
+//! | Write | creates or overwrites a file, making its directories | no | `write` | the workspace's files |
+//! | Edit | replaces an exact, unique string in a file | no | `edit` | the workspace's files |
+//! | Bash | runs a command line in the workspace's shell | no | `bash` | the workspace's shell; a [`JobHub`] for `run_in_background` |
+//! | BashOutput | a background job's output since the last look | no | `bash` | the [`JobHub`] (only with one) |
+//! | KillShell | stops a background job and everything it started | no | `bash` | the [`JobHub`] (only with one) |
+//! | Grep | ripgrep over the files | yes | `grep` | an `rg` the workspace can run |
+//! | Glob | files by glob pattern, newest first | yes | `glob` | the workspace's files |
+//! | WebFetch | one public web page as markdown, or as media | yes | `web_fetch` | a [`WebFetchNet`] (the default resolves with the system and fetches with reqwest) |
+//! | TaskCreate, TaskUpdate | add or change a task | no | `tasks` | a [`TaskBoard`] |
+//! | TaskList, TaskGet | the whole list, or one task | yes | `tasks` | the same [`TaskBoard`] |
+//! | Skill | a skill's full instructions | yes | `skill` | [`SkillToolOptions`] |
+//!
+//! Tools a host builds on their own, with no word:
+//!
+//! | Tool | What it does | Read-only | Built by | Needs from the host |
+//! |---|---|---|---|---|
+//! | Agent, SendMessage, StopAgent | start, message and stop subagents | no | [`SubagentHub::tools_for`], [`agents::agent_tools`] | an [`AgentDirectory`]; the default [`SubagentHub`] needs a [`SubagentHost`] |
+//! | ToolSearch (and CallTool) | loads a deferred tool's schema (calls one, in proxy mode) | ToolSearch only | [`tool_search::DeferredTools`] | a [`ToolDeferral`](haest_core::deferred_tools::ToolDeferral) |
+//! | GenerateImage | makes an image with an image model, saves and shows it | no | [`ImageTool`] | an Image API key ([`ImageToolOptions`]) |
+//!
+//! A turn the human did not start (a background job that exited, a subagent's
+//! message for main) reaches the model through the host's [`Inbox`], counted
+//! by an [`AgentTurnGate`] so two agents cannot start turns forever.
+//!
+//! # Example
+//!
+//! The built-ins over a sandboxed shell on files in memory: what Write puts
+//! there, `cat` and Read see.
+//!
+//! ```
+//! use std::sync::Arc;
+//!
+//! use haest_core::{fs::MemFs, tool::ToolContext};
+//! use haest_tools::{BuiltinOptions, builtin_tools};
+//! use haest_workspace::SandboxWorkspace;
+//! use serde_json::json;
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//! let ws = SandboxWorkspace::over(Arc::new(MemFs::new()));
+//! let ctx = ToolContext::new("/project", Arc::new(ws));
+//! // No WebFetch: this example stays offline.
+//! let tools = builtin_tools(BuiltinOptions { web_fetch: None, ..Default::default() });
+//! let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
+//! assert_eq!(names, ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]);
+//!
+//! let call = |name: &str, input: serde_json::Value| {
+//!     let tool = tools.iter().find(|t| t.name() == name).unwrap().clone();
+//!     let ctx = ctx.clone();
+//!     async move { tool.execute(input.as_object().unwrap().clone(), &ctx).await }
+//! };
+//! call("Write", json!({"file_path": "notes.md", "content": "hello\n"})).await.unwrap();
+//! let out = call("Bash", json!({"command": "cat /project/notes.md"})).await.unwrap();
+//! assert_eq!(out.content, "hello\n");
+//! let out = call("Read", json!({"file_path": "notes.md"})).await.unwrap();
+//! assert_eq!(out.content, "1\thello");
+//! # }
+//! ```
+//!
+//! Ported from the TS haest's `tools/*.ts`.
+//!
+//! [`Tool`]: haest_core::tool::Tool
+//! [`ToolContext`]: haest_core::tool::ToolContext
+//! [`Workspace`]: haest_core::workspace::Workspace
+//! [`Workspace::fs`]: haest_core::workspace::Workspace::fs
+//! [`Workspace::shell`]: haest_core::workspace::Workspace::shell
+//! [`Workspace::run`]: haest_core::workspace::Workspace::run
+//! [`TaskBoard`]: haest_core::task_board::TaskBoard
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(missing_docs)]
 
 use std::sync::Arc;
 
@@ -63,11 +143,15 @@ pub use web_fetch::{WebFetchNet, WebFetchTool};
 /// What a host can change about the built-in tools. An option left None has
 /// no tool: [`builtin_tools`] leaves it out, and [`builtin_tools_where`]
 /// refuses a pick that turns its word on (a tool is never silently missing).
+///
+/// The default has WebFetch on the real network and no task tools or Skill.
 #[derive(Clone)]
 pub struct BuiltinOptions {
     /// PLUG POINT: asked before the workspace fs on every Read, so a host can
     /// answer some paths itself (an `attachment:<id>` that is no path at all).
     pub read_intercept: Option<Arc<dyn ReadIntercept>>,
+    /// Bash's default timeout, and the job hub that adds background jobs
+    /// (with BashOutput and KillShell).
     pub bash: BashOptions,
     /// WebFetch's resolver and HTTP client (a host with its own fetch, or no
     /// door to the network, leaves it None).
@@ -91,8 +175,12 @@ impl Default for BuiltinOptions {
     }
 }
 
-/// The built-in tools, in the order the model sees them. With a job hub
-/// ([`BashOptions::jobs`]) BashOutput and KillShell follow Bash.
+/// Every built-in tool `opts` makes possible, in the order the model sees
+/// them: Read, Write, Edit, Bash, then BashOutput and KillShell with a job hub
+/// ([`BashOptions::jobs`]), Grep, Glob, then WebFetch, the four task tools and
+/// Skill when their option is given.
+///
+/// The crate docs have an example; [`builtin_tools_where`] picks some.
 pub fn builtin_tools(opts: BuiltinOptions) -> Vec<Arc<dyn Tool>> {
     let jobs = opts.bash.jobs.clone().map(job_tools).unwrap_or_default();
     let mut tools: Vec<Arc<dyn Tool>> = vec![
@@ -111,9 +199,17 @@ pub fn builtin_tools(opts: BuiltinOptions) -> Vec<Arc<dyn Tool>> {
     tools
 }
 
-/// The word that picks a built-in tool (the `tools` setting): `read`, `write`,
-/// `edit`, `bash` (with its job tools), `grep`, `glob`, `web_fetch`, `tasks`,
-/// `skill`.
+/// The word that picks the built-in tool named `tool` (the `tools` setting):
+/// `read`, `write`, `edit`, `bash` (with its job tools), `grep`, `glob`,
+/// `web_fetch`, `tasks`, `skill`. None for any other name.
+///
+/// ```
+/// use haest_tools::builtin_word;
+///
+/// assert_eq!(builtin_word("KillShell"), Some("bash"));
+/// assert_eq!(builtin_word("TaskGet"), Some("tasks"));
+/// assert_eq!(builtin_word("GenerateImage"), None);
+/// ```
 pub fn builtin_word(tool: &str) -> Option<&'static str> {
     Some(match tool {
         "Read" => "read",
@@ -129,9 +225,40 @@ pub fn builtin_word(tool: &str) -> Option<&'static str> {
     })
 }
 
-/// The built-in tools whose word `on` takes, in [`builtin_tools`]' order. A
-/// word that is on while the option its tool needs is None is an error: a
-/// tool must never be silently missing.
+/// The built-in tools whose word ([`builtin_word`]) `on` takes, in
+/// [`builtin_tools`]' order.
+///
+/// # Errors
+///
+/// When `on` takes `web_fetch`, `tasks` or `skill` while the option that tool
+/// needs is None: a tool the host asked for is never silently missing. The
+/// message names the word.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::task_board::TaskBoard;
+/// use haest_tools::{BuiltinOptions, builtin_tools_where};
+///
+/// let names = |tools: Vec<Arc<dyn haest_core::tool::Tool>>| {
+///     tools.iter().map(|t| t.name().to_string()).collect::<Vec<_>>()
+/// };
+/// let read_only = |w: &str| matches!(w, "read" | "grep" | "glob");
+/// let tools = builtin_tools_where(read_only, BuiltinOptions::default()).unwrap();
+/// assert_eq!(names(tools), ["Read", "Grep", "Glob"]);
+///
+/// // The task tools need a board to work on.
+/// let tasks = |w: &str| w == "tasks";
+/// assert!(builtin_tools_where(tasks, BuiltinOptions::default()).is_err());
+/// let opts = BuiltinOptions {
+///     tasks: Some(Arc::new(TaskBoard::default())),
+///     ..Default::default()
+/// };
+/// let tools = builtin_tools_where(tasks, opts).unwrap();
+/// assert_eq!(names(tools), ["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]);
+/// ```
 pub fn builtin_tools_where(
     on: impl Fn(&str) -> bool,
     opts: BuiltinOptions,
@@ -153,130 +280,4 @@ pub fn builtin_tools_where(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn names(tools: &[Arc<dyn Tool>]) -> Vec<String> {
-        tools.iter().map(|t| t.name().to_string()).collect()
-    }
-
-    #[test]
-    fn the_builtin_list_has_every_tool_with_its_kind_and_web_fetch_is_optional() {
-        let all = builtin_tools(BuiltinOptions::default());
-        assert_eq!(
-            names(&all),
-            ["Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch"]
-        );
-        let kinds: Vec<_> = all.iter().map(|t| t.kind()).collect();
-        assert_eq!(
-            kinds,
-            [
-                "file.read",
-                "file.write",
-                "file.edit",
-                "shell.exec",
-                "text.search",
-                "file.glob",
-                "web.fetch"
-            ]
-        );
-        let read_only: Vec<_> = all
-            .iter()
-            .filter(|t| t.read_only())
-            .map(|t| t.name())
-            .collect();
-        assert_eq!(read_only, ["Read", "Grep", "Glob", "WebFetch"]);
-        let offline = builtin_tools(BuiltinOptions {
-            web_fetch: None,
-            ..Default::default()
-        });
-        assert!(!names(&offline).contains(&"WebFetch".to_string()));
-    }
-
-    /// haest-core's prompt and Code go by FILE_TOOLS: a renamed tool here
-    /// would drop its path line silently.
-    #[test]
-    fn every_file_tool_haest_core_names_is_a_builtin() {
-        let all = names(&builtin_tools(BuiltinOptions::default()));
-        for name in haest_core::tool::FILE_TOOLS {
-            assert!(all.iter().any(|t| t == name), "{name} is not a built-in");
-        }
-    }
-
-    #[tokio::test]
-    async fn a_job_hub_adds_the_job_tools_after_bash() {
-        let hub = Arc::new(JobHub::new(Arc::new(inbox::NoInbox)));
-        let tools = builtin_tools(BuiltinOptions {
-            bash: BashOptions {
-                jobs: Some(hub),
-                ..Default::default()
-            },
-            web_fetch: None,
-            ..Default::default()
-        });
-        assert_eq!(
-            names(&tools),
-            [
-                "Read",
-                "Write",
-                "Edit",
-                "Bash",
-                "BashOutput",
-                "KillShell",
-                "Grep",
-                "Glob"
-            ]
-        );
-        let bash = &tools[3];
-        assert!(bash.parameters()["properties"]["run_in_background"].is_object());
-    }
-
-    #[tokio::test]
-    async fn a_host_picks_built_ins_by_word_and_bash_brings_its_job_tools() {
-        let pick = |words: &'static [&str], jobs| {
-            let opts = BuiltinOptions {
-                bash: BashOptions {
-                    jobs,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            names(&builtin_tools_where(|w| words.contains(&w), opts).unwrap())
-        };
-        assert!(pick(&[], None).is_empty());
-        assert_eq!(pick(&["web_fetch", "read"], None), ["Read", "WebFetch"]);
-        let hub = Arc::new(JobHub::new(Arc::new(inbox::NoInbox)));
-        assert_eq!(
-            pick(&["bash"], Some(hub)),
-            ["Bash", "BashOutput", "KillShell"]
-        );
-        let every = builtin_tools(BuiltinOptions::default());
-        assert!(every.iter().all(|t| builtin_word(t.name()).is_some()));
-    }
-
-    #[test]
-    fn a_word_that_is_on_is_never_silently_dropped() {
-        let skills = || Vec::new();
-        let fs = Arc::new(haest_core::fs::MemFs::new());
-        let given = BuiltinOptions {
-            tasks: Some(Arc::new(TaskBoard::default())),
-            skill: Some(SkillToolOptions::new(skills, fs)),
-            ..Default::default()
-        };
-        let pick = |word: &str, opts: BuiltinOptions| builtin_tools_where(|w| w == word, opts);
-        let tasks = pick("tasks", given.clone()).unwrap();
-        assert_eq!(
-            names(&tasks),
-            ["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]
-        );
-        assert_eq!(names(&pick("skill", given).unwrap()), ["Skill"]);
-        for word in ["web_fetch", "tasks", "skill"] {
-            let none = BuiltinOptions {
-                web_fetch: None,
-                ..Default::default()
-            };
-            let err = pick(word, none).err().unwrap();
-            assert!(err.contains(word), "{err}");
-        }
-    }
-}
+mod tests;

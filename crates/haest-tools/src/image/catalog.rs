@@ -24,7 +24,8 @@ const FRESH: Duration = Duration::from_secs(60 * 60);
 
 type Models = Arc<HashMap<String, ModelSettings>>;
 
-/// The model lists read so far, by base URL.
+/// The Image API's model lists read so far, by base URL, each kept an hour.
+/// [`ImageToolOptions`](super::ImageToolOptions) holds one; `Default` is empty.
 #[derive(Default)]
 pub struct ImageCatalog {
     kept: Mutex<HashMap<String, (Instant, Models)>>,
@@ -97,7 +98,13 @@ impl ImageCatalog {
         }
     }
 
-    /// What `model` takes; None when unknown (the list could not be read). Err when the list says it does not exist.
+    /// What `model` takes, from the list at `base_url` (read through `http`
+    /// when there is no copy under an hour old); None when the list could not
+    /// be read and no copy is kept.
+    ///
+    /// # Errors
+    ///
+    /// When the list was read and `model` is not on it.
     pub async fn model_params(
         &self,
         base_url: &str,

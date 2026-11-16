@@ -20,11 +20,102 @@ use super::{
 };
 use crate::canonical::pick;
 
+/// The GenerateImage tool (`GenerateImage`, kind `image.generate`): one
+/// picture from a prompt, or an edit of reference images, with an image model.
+///
+/// Input: `prompt`, and optional `file_path` (default
+/// `generated/<slug>-<ms>.<ext>` under the context's `cwd`),
+/// `reference_images` (paths in the workspace), `model` (one of
+/// [`ImageToolOptions::models`]) and `settings` (the model's own: aspect
+/// ratio, resolution, ...).
+///
+/// Before anything is paid for, the model and every setting are checked
+/// against the Image API's model list ([`settings`](super::settings)); a
+/// refusal tells the model what the chosen image model takes. Then one request
+/// is sent, and the picture is written into the workspace under the extension
+/// its bytes have, published to the host, and attached so the model sees it.
+/// The spend comes back as the output's
+/// [`cost_usd`](haest_core::tool::ToolOutput::cost_usd).
+///
+/// Every refusal is a [`ToolError::Input`]; the Image API's own refusal is a
+/// [`ToolError::Failed`] with its words.
+///
+/// # Examples
+///
+/// Over a fake Image API, so nothing is paid for:
+///
+/// ```
+/// use std::{path::Path, sync::Arc};
+///
+/// use async_trait::async_trait;
+/// use haest_core::{
+///     fs::{Fs, MemFs},
+///     tool::{Tool, ToolContext},
+/// };
+/// use haest_tools::{
+///     ImageTool, ImageToolOptions,
+///     image::{HttpReply, ImageHttp},
+/// };
+/// use haest_workspace::SandboxWorkspace;
+/// use serde_json::{Value, json};
+/// use tokio_util::sync::CancellationToken;
+///
+/// /// One model, which takes an aspect ratio and draws a PNG for $0.04.
+/// struct FakeApi;
+///
+/// #[async_trait]
+/// impl ImageHttp for FakeApi {
+///     async fn get(&self, _url: &str, _: CancellationToken) -> Result<HttpReply, String> {
+///         let aspect = json!({"type": "enum", "values": ["1:1", "16:9"]});
+///         let models = json!({"data": [
+///             {"id": "vendor/pic", "supported_parameters": {"aspect_ratio": aspect}}
+///         ]});
+///         Ok(HttpReply::json(200, &models))
+///     }
+///     async fn post_json(
+///         &self,
+///         _url: &str,
+///         _api_key: &str,
+///         body: &Value,
+///         _: CancellationToken,
+///     ) -> Result<HttpReply, String> {
+///         assert_eq!(body["aspect_ratio"], "16:9");
+///         // A PNG signature is enough to count as a PNG.
+///         let image = json!({"data": [{"b64_json": "iVBORw0KGgo="}], "usage": {"cost": 0.04}});
+///         Ok(HttpReply::json(200, &image))
+///     }
+/// }
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let opts = ImageToolOptions {
+///     http: Arc::new(FakeApi),
+///     ..ImageToolOptions::new("the host's key")
+/// };
+/// let tool = ImageTool::new(opts.with_models("vendor/pic", ["vendor/other"]));
+/// let files = Arc::new(MemFs::new());
+/// let ctx = ToolContext::new("/work", Arc::new(SandboxWorkspace::over(files.clone())));
+///
+/// let input = json!({
+///     "prompt": "a lighthouse at dusk",
+///     "file_path": "art/lighthouse",
+///     "settings": {"aspect_ratio": "16:9"}
+/// });
+/// let out = tool.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// assert_eq!(out.cost_usd, Some(0.04));
+/// assert!(files.exists(Path::new("/work/art/lighthouse.png")).await);
+///
+/// // A setting the model does not take is refused before anything is sent.
+/// let input = json!({"prompt": "x", "settings": {"quality": "high"}});
+/// assert!(tool.execute(input.as_object().unwrap().clone(), &ctx).await.is_err());
+/// # }
+/// ```
 pub struct ImageTool {
     opts: ImageToolOptions,
 }
 
 impl ImageTool {
+    /// GenerateImage over `opts`.
     pub fn new(opts: ImageToolOptions) -> Self {
         Self { opts }
     }

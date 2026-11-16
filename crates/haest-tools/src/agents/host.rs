@@ -16,22 +16,33 @@ use crate::inbox::Inbox;
 /// A subagent's life, for the host's transcript (its own card, never the parent's).
 #[derive(Debug, Clone)]
 pub enum SubagentEvent {
+    /// Its turn is about to run.
     Started {
+        /// Its address.
         name: String,
+        /// The agent that started it.
         parent: String,
+        /// The Agent call's `description`.
         description: String,
     },
     /// One event of its turn.
     Loop(LoopEvent),
     /// A tool it ran made a call of its own (Code).
     InnerCall(InnerCallEvent),
+    /// Its turn ended.
     Stopped {
+        /// It ended its turn with an answer: not stopped, not out of budget,
+        /// no error.
         ok: bool,
     },
 }
 
-/// The host's side of the default hub. [`Inbox::submit`] takes what is for
-/// main: a message to "main", and a background answer whose starter has finished.
+/// The host's side of the default hub ([`SubagentHub`](super::SubagentHub)):
+/// what a subagent is built from, and where its activity goes.
+/// [`Inbox::submit`] takes what is for main: a message to "main", and a
+/// background answer whose starter has finished.
+///
+/// [`SubagentHub`](super::SubagentHub)'s docs implement one.
 #[async_trait]
 pub trait SubagentHost: Inbox {
     /// The conversation's own deps. A subagent shares its models, cwd, workspace,
@@ -50,7 +61,9 @@ pub trait SubagentHost: Inbox {
     fn tool_source(&self, tools: Vec<Arc<dyn Tool>>) -> Arc<dyn ToolSource> {
         Arc::new(tools)
     }
-    /// The running set changed (agent ids): the host's roster of subagents.
+    /// The running set changed: the ids of every subagent running now, for
+    /// the host's roster. An id (`haest-<name>-<hub>`) is unique across hubs;
+    /// a name only within one.
     fn on_activity(&self, _running: &[String]) {}
     /// One subagent's activity, keyed by its id.
     fn on_subagent(&self, _id: &str, _event: SubagentEvent) {}

@@ -1,6 +1,10 @@
 //! The Skill tool: the model's door into progressive disclosure. The system
 //! prompt lists name + description; calling this returns the full SKILL.md
 //! body with its base directory so relative references resolve.
+//!
+//! Start from [`SkillToolOptions`], then [`create_skill_tool`] (or set
+//! [`BuiltinOptions::skill`](crate::BuiltinOptions::skill)). Finding the skills
+//! is haest-core's ([`haest_core::skills`]).
 
 use std::sync::Arc;
 
@@ -12,7 +16,8 @@ use haest_core::{
 };
 use serde_json::{Value, json};
 
-/// What the Skill tool reads.
+/// What the Skill tool reads: the skills it offers and where their bodies
+/// come from.
 #[derive(Clone)]
 pub struct SkillToolOptions {
     /// The skills, asked on every call.
@@ -22,8 +27,9 @@ pub struct SkillToolOptions {
 }
 
 impl SkillToolOptions {
-    /// SKILL.md files: `skills` is the current list, the bodies are read from
-    /// `host_fs` (a user skill lives outside any sandbox mount).
+    /// SKILL.md files: `skills` is the current list (asked on every call, so
+    /// a host may change it), the bodies are read from `host_fs` (a user skill
+    /// lives outside any sandbox mount).
     pub fn new(
         skills: impl Fn() -> Vec<Skill> + Send + Sync + 'static,
         host_fs: Arc<dyn Fs>,
@@ -31,7 +37,8 @@ impl SkillToolOptions {
         Self::over(Arc::new(DiskSkills::new(skills, host_fs)))
     }
 
-    /// A host's own skills.
+    /// A host's own skills, from any [`SkillSet`] (skills kept in a database,
+    /// written inline).
     pub fn over(set: Arc<dyn SkillSet>) -> Self {
         Self {
             set,
@@ -39,7 +46,8 @@ impl SkillToolOptions {
         }
     }
 
-    /// Name the offered skills in the parameter's `enum`.
+    /// Name the offered skills in the parameter's `enum`, so a weak model
+    /// cannot misspell one. The schema then changes when the list does.
     pub fn with_name_enum(mut self) -> Self {
         self.name_enum = true;
         self
@@ -48,6 +56,46 @@ impl SkillToolOptions {
 
 struct SkillTool(SkillToolOptions);
 
+/// The Skill tool (`Skill`, kind `skill.invoke`, read-only) over `opts`.
+///
+/// Input: `skill` (a name; a leading `/` is dropped, and a name that differs
+/// from exactly one offered skill only in case is that skill) and optional
+/// `args`. It returns the skill's body whole, never spilled to a file. A name
+/// it does not offer is an input error that lists what it does offer; a skill
+/// the model may not invoke is not offered.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::{
+///     skills::{InlineSkill, InlineSkills, SkillCard},
+///     tool::ToolContext,
+///     workspace::ShutWorkspace,
+/// };
+/// use haest_tools::{SkillToolOptions, create_skill_tool};
+/// use serde_json::json;
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let release = InlineSkill {
+///     card: SkillCard {
+///         name: "release".into(),
+///         description: "How we ship.".into(),
+///         when: String::new(),
+///         origin: None,
+///     },
+///     body: "Tag, build, publish.".into(),
+/// };
+/// let set = Arc::new(InlineSkills::merged([vec![release]]));
+/// let skill = create_skill_tool(SkillToolOptions::over(set));
+/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+/// let input = json!({"skill": "/release"});
+/// let out = skill.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// assert!(out.content.contains("Tag, build, publish."));
+/// # }
+/// ```
 pub fn create_skill_tool(opts: SkillToolOptions) -> Arc<dyn Tool> {
     Arc::new(SkillTool(opts))
 }

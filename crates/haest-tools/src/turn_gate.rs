@@ -12,6 +12,31 @@
 
 use haest_core::guard::NUDGE_SHARE;
 
+/// The counter between the inbox and the agent: how many turns in a row ran
+/// with no human message, and what is held once that reaches the cap.
+///
+/// Not thread-safe on its own (`&mut self`): a host keeps it beside its inbox
+/// queue, behind the same lock.
+///
+/// # Examples
+///
+/// ```
+/// use haest_tools::AgentTurnGate;
+///
+/// let mut gate = AgentTurnGate::new(4, |notice| eprintln!("{notice}"));
+/// assert_eq!(gate.agent_turn("m1").as_deref(), Some("m1"));
+/// // From half the cap a turn runs with a nudge in front of its text.
+/// for m in ["m2", "m3", "m4"] {
+///     let text = gate.agent_turn(m).unwrap();
+///     assert!(text != m && text.ends_with(m));
+/// }
+/// // At the cap it is held (and the human hears why, once).
+/// assert_eq!(gate.agent_turn("m5"), None);
+/// // The human's next message carries what was held, and the count starts over.
+/// let text = gate.human("what happened?");
+/// assert!(text.contains("m5") && text.ends_with("what happened?"));
+/// assert_eq!(gate.agent_turn("m6").as_deref(), Some("m6"));
+/// ```
 pub struct AgentTurnGate {
     /// Turns in a row with no human message; 0 = no cap.
     cap: u32,
@@ -22,6 +47,9 @@ pub struct AgentTurnGate {
 }
 
 impl AgentTurnGate {
+    /// A gate that holds at `cap` turns in a row with no human message (0 =
+    /// never). `notice` tells the human, once per hold, that messages are
+    /// being held and why.
     pub fn new(cap: u32, notice: impl Fn(&str) + Send + Sync + 'static) -> Self {
         Self {
             cap,
@@ -31,7 +59,8 @@ impl AgentTurnGate {
         }
     }
 
-    /// The human posted: the streak ends, and anything held rides in ahead of their text.
+    /// The human posted `text`: the streak ends, and anything held rides in
+    /// ahead of their text. Returns the message to run.
     pub fn human(&mut self, text: &str) -> String {
         self.streak = 0;
         if self.held.is_empty() {
@@ -43,7 +72,9 @@ impl AgentTurnGate {
         )
     }
 
-    /// A turn the human did not start. The text to run it with, or None: held.
+    /// A turn the human did not start. The text to run it with (from half the
+    /// cap, with a nudge that counts the streak in front), or None: held until
+    /// the human posts.
     pub fn agent_turn(&mut self, text: &str) -> Option<String> {
         if self.cap > 0 && self.streak >= self.cap {
             if self.held.is_empty() {

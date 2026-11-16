@@ -35,11 +35,15 @@ pub(super) struct Run {
 pub struct RunOutcome {
     /// The final answer, or the reason there is none.
     pub text: String,
+    /// What the turn spent, already charged to the ledger.
     pub cost_usd: f64,
+    /// It ended its turn with an answer (no stop, no cap, no error).
     pub ok: bool,
 }
 
-/// Appended to a subagent's system prompt: who it is, who reads its answer, its caps, how to talk.
+/// The text appended to a subagent's system prompt: who it is (`name`), who
+/// started it and reads its answer (`parent`), what for (`description`), its
+/// caps, and how to talk to other agents.
 pub fn subagent_note(name: &str, parent: &str, description: &str, caps: &SubagentCaps) -> String {
     format!(
         "# You are a subagent

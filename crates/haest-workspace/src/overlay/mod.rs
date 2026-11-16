@@ -74,15 +74,51 @@ struct Scanned {
     original: Original,
 }
 
-/// What a sandbox changed, and putting it on the real disk.
+/// What a sandbox changed in the project, and putting it on the real disk:
+/// `/changes` and `/apply` (haest-core's [`ChangeSet`]).
+///
+/// [`SandboxWorkspace::open`](crate::SandboxWorkspace::open) builds one over
+/// its project overlay; a host reaches it through
+/// [`Workspace::changes`](haest_core::workspace::Workspace::changes), or typed
+/// through [`SandboxWorkspace::overlay_changes`](crate::SandboxWorkspace::overlay_changes).
+///
+/// Every mutation that goes through [`recorder`](Self::recorder) -- haest's
+/// tools and the simulated shell alike -- first records the path it touched
+/// and what the real file looked like right then: a hash of its content, "a
+/// directory", "a symlink to X", or "absent". From that:
+///
+/// - [`list`](ChangeSet::list): every touched path whose overlay version
+///   differs from the real disk, by its path inside the project (`/src/a.ts`),
+///   a directory before its files. A path whose real file changed since the
+///   first touch (the human edited it) is a [`conflict`](haest_core::workspace::Change::conflict).
+/// - [`diff`](ChangeSet::diff): a unified diff of one change.
+/// - [`apply`](ChangeSet::apply): writes (or deletes) every change that is not
+///   a conflict, and reports each as applied, skipped or failed. An applied
+///   change is no longer listed; a skipped or failed one stays.
+///
+/// `apply` never writes through a symlink: not one on the real disk on the
+/// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),
+/// and not one the sandbox made ([`Symlink`](haest_core::workspace::ApplyFailureCode::Symlink));
+/// the human makes that link. A write the disk refuses is
+/// [`WriteFailed`](haest_core::workspace::ApplyFailureCode::WriteFailed) and
+/// stops nothing else.
+///
+/// Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
+/// directory, not file by file -- an edit the human made INSIDE it meanwhile
+/// does not count as a conflict.
+///
+/// The crate docs have an example of the whole round.
 pub struct OverlayChanges {
     book: Arc<Book>,
     overlay: HaestFsOverBashkit,
 }
 
 impl OverlayChanges {
-    /// `overlay`: the project overlay; `disk`: the real file system; `root`: the
-    /// project dir it overlays.
+    /// A change ledger over `overlay`, the copy-on-write layer over the project
+    /// directory `root` on `disk`, the real file system.
+    ///
+    /// Nothing is recorded until mutations go through
+    /// [`recorder`](Self::recorder).
     pub fn new(
         overlay: Arc<dyn bashkit::FileSystem>,
         disk: Arc<dyn Fs>,

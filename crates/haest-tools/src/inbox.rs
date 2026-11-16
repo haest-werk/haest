@@ -10,11 +10,20 @@
 
 use tokio::sync::mpsc::UnboundedSender;
 
+/// Where the tools leave a turn the human did not start, for the host to run.
+///
+/// Used by [`JobHub`](crate::JobHub) (a job that exited on its own) and the
+/// default [`SubagentHub`](crate::SubagentHub) (a message for main, a late
+/// background answer). An `UnboundedSender<String>` is one: the host drains
+/// the receiver.
 pub trait Inbox: Send + Sync {
+    /// Leave `text`, the whole user message of a turn to run. It should return
+    /// at once: it is called from inside a tool call or a job's task.
     fn submit(&self, text: String);
 }
 
-/// The queue form: the host drains the receiving end.
+/// The queue form: the host drains the receiving end. A closed receiver drops
+/// the text.
 impl Inbox for UnboundedSender<String> {
     fn submit(&self, text: String) {
         let _ = self.send(text);

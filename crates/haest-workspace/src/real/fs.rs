@@ -13,11 +13,41 @@ use async_trait::async_trait;
 use haest_core::fs::{DirEntry, FileKind, Fs, FsStat};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// The host's disk through tokio's file system calls.
+/// The host's disk as a haest [`Fs`], through tokio's file system calls.
+///
+/// Paths mean what they say: it is rooted at `/`, so a host passes absolute
+/// paths ([`resolve_path`](haest_core::fs::resolve_path) makes one).
+///
+/// - [`stat`](Fs::stat) follows a symlink; [`read_dir`](Fs::read_dir) reports
+///   one as [`FileKind::Symlink`] without following it, so a walk never
+///   descends a link loop.
+/// - [`read`](Fs::read) and [`read_head`](Fs::read_head) open regular files
+///   only. A FIFO, a socket or a device is refused at once with
+///   [`InvalidInput`](io::ErrorKind::InvalidInput), never waited on: a FIFO
+///   would block until a writer came, `/dev/zero` never ends.
+/// - [`chmod`](Fs::chmod) sets Unix permission bits (a no-op elsewhere).
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::fs::Fs;
+/// use haest_workspace::RealFs;
+///
+/// # #[tokio::main]
+/// # async fn main() -> std::io::Result<()> {
+/// let dir = tempfile::tempdir()?;
+/// let path = dir.path().join("a.txt");
+/// RealFs.write(&path, b"hello").await?;
+/// assert_eq!(RealFs.read_head(&path, 2).await?, b"he");
+/// assert!(RealFs.read(std::path::Path::new("/dev/null")).await.is_err());
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RealFs;
 
 impl RealFs {
+    /// The real disk. Same as the unit value `RealFs`.
     pub fn new() -> Self {
         Self
     }

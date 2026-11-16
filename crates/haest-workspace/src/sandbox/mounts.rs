@@ -1,11 +1,5 @@
-//! The sandbox's mount table: every path identical to the real one.
-//!
-//! ```text
-//!   <cwd>        copy-on-write overlay of the project: reads from disk, writes in memory
-//!   <writable>   real read-write dirs the host must persist (the spill dir)
-//!   <readable>   real read-only dirs (skill directories)
-//!   everything else  an in-memory scratch disk (/tmp and friends)
-//! ```
+//! The sandbox's mount table: every path identical to the real one (the table
+//! is on [`SandboxMounts`]).
 
 use std::{
     io,
@@ -24,27 +18,56 @@ use crate::{overlay::OverlayChanges, real::RealFs as Disk};
 /// before writes fail.
 const MEMORY_BYTES: u64 = 256 * 1024 * 1024;
 
+/// Which real directories the default sandbox
+/// ([`SandboxWorkspace::open`](crate::SandboxWorkspace::open)) shows, and how.
+///
+/// Every directory is mounted at its own path, so a path means the same inside
+/// the sandbox and out.
+///
+/// ```text
+///   cwd         copy-on-write overlay of the project: reads from disk, writes in memory
+///   writable    real read-write dirs the host must persist (the spill dir)
+///   readable    real read-only dirs (skill directories)
+///   any other   an in-memory scratch disk (/tmp and friends)
+/// ```
+///
+/// Mount points never nest: the first claim on a subtree wins (`cwd`, then
+/// each writable dir, then each readable one), and a later directory inside
+/// or above one already mounted is left out without an error.
+///
+/// ```
+/// use haest_workspace::SandboxMounts;
+///
+/// let mounts = SandboxMounts::new("/work/project")
+///     .writable("/var/spill")
+///     .readable("/home/me/.claude/skills");
+/// assert_eq!(mounts.writable.len(), 1);
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct SandboxMounts {
     /// The project: overlaid, never written.
     pub cwd: PathBuf,
     /// Real directories the sandbox may write through to. Must already exist.
     pub writable: Vec<PathBuf>,
-    /// Real directories the sandbox may read.
+    /// Real directories the sandbox may read. Must already exist.
     pub readable: Vec<PathBuf>,
 }
 
 impl SandboxMounts {
+    /// The project at `cwd`, and nothing else real.
     pub fn new(cwd: impl Into<PathBuf>) -> Self {
         Self {
             cwd: cwd.into(),
             ..Default::default()
         }
     }
+    /// Add a real directory the sandbox writes through to, at once and for
+    /// good (it is not part of `/changes`).
     pub fn writable(mut self, dir: impl Into<PathBuf>) -> Self {
         self.writable.push(dir.into());
         self
     }
+    /// Add a real directory the sandbox may read and never write.
     pub fn readable(mut self, dir: impl Into<PathBuf>) -> Self {
         self.readable.push(dir.into());
         self

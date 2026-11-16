@@ -1,8 +1,9 @@
 //! Bash: run one shell command in the session working directory, through the
-//! workspace -- the real bash, or the sandbox's simulated one. With a job hub
-//! ([`BashOptions::jobs`]) it also takes `run_in_background`: the command keeps
-//! running and the call returns at once ([`crate::jobs`]); BashOutput and
-//! KillShell ([`crate::bash_jobs`]) read and stop it.
+//! workspace -- the real bash, or the sandbox's simulated one ([`BashTool`]).
+//!
+//! With a job hub ([`BashOptions::jobs`]) it also takes `run_in_background`:
+//! the command keeps running and the call returns at once ([`crate::jobs`]);
+//! BashOutput and KillShell ([`crate::bash_jobs`]) read and stop it.
 
 use std::{
     sync::Arc,
@@ -24,6 +25,9 @@ use crate::{canonical::pick, jobs::JobHub};
 const MIN_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// What a host sets on the Bash tool.
+///
+/// The default: a 120 s timeout, no background jobs.
 #[derive(Debug, Clone)]
 pub struct BashOptions {
     /// The timeout when a call names none (clamped to 1s..600s).
@@ -41,12 +45,49 @@ impl Default for BashOptions {
     }
 }
 
+/// The Bash tool (`Bash`, kind `shell.exec`): one command line in the
+/// workspace's shell ([`Workspace::shell`](haest_core::workspace::Workspace::shell)),
+/// in the context's `cwd`.
+///
+/// Input: `command`, and optional `description` and `timeout` (ms, clamped to
+/// 1 s..600 s; default [`BashOptions::default_timeout`]). With a job hub it
+/// also takes `run_in_background`, which starts a [`JobHub`] job and returns
+/// at once with its id.
+///
+/// The model gets stdout then stderr, kept to haest-core's
+/// [`TRUNCATE_CHARS`] (the middle cut), with a note when the
+/// timeout killed it, when the call was interrupted, or when it exited
+/// non-zero; any of those makes the result an error. The transcript gets a
+/// `shell` envelope: stdout, stderr, exit code, duration. Each call is a fresh
+/// shell: `cd` does not persist.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::{fs::MemFs, tool::{Tool, ToolContext}};
+/// use haest_tools::{BashOptions, BashTool};
+/// use haest_workspace::SandboxWorkspace;
+/// use serde_json::json;
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let ctx = ToolContext::new("/", Arc::new(SandboxWorkspace::over(Arc::new(MemFs::new()))));
+/// let bash = BashTool::new(BashOptions::default());
+/// let input = json!({"command": "echo hi; exit 3"});
+/// let out = bash.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// assert!(out.is_error);
+/// assert_eq!(out.content, "hi\n\n[exit code 3]");
+/// # }
+/// ```
 pub struct BashTool {
     default_timeout: Duration,
     jobs: Option<Arc<JobHub>>,
 }
 
 impl BashTool {
+    /// Bash with `opts`; the default timeout is clamped to 1 s..600 s.
     pub fn new(opts: BashOptions) -> Self {
         Self {
             default_timeout: opts.default_timeout.clamp(MIN_TIMEOUT, MAX_TIMEOUT),
