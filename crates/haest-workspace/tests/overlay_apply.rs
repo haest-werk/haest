@@ -26,7 +26,6 @@ fn is_link(p: &Path) -> bool {
     fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn apply_never_writes_or_deletes_through_a_symlink_in_the_project() {
     use std::os::unix::fs::symlink;
@@ -136,7 +135,6 @@ async fn a_directory_that_became_a_file_and_a_file_that_became_a_directory_are_a
 
 /// B38: what the disk refuses, and a link the sandbox made, are each reported
 /// as failed with their code -- never as a conflict, never lost.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_change_that_cannot_be_applied_is_reported_and_the_others_still_are() {
     use std::os::unix::fs::PermissionsExt;

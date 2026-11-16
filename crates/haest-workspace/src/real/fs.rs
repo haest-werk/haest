@@ -61,18 +61,13 @@ fn readable(path: &Path, t: std::fs::FileType) -> io::Result<()> {
     if t.is_file() || t.is_dir() {
         return Ok(());
     }
-    #[cfg(unix)]
-    let what = {
-        use std::os::unix::fs::FileTypeExt;
-        match () {
-            _ if t.is_fifo() => "a FIFO (named pipe)",
-            _ if t.is_socket() => "a socket",
-            _ if t.is_char_device() || t.is_block_device() => "a device",
-            _ => "not a regular file",
-        }
+    use std::os::unix::fs::FileTypeExt;
+    let what = match () {
+        _ if t.is_fifo() => "a FIFO (named pipe)",
+        _ if t.is_socket() => "a socket",
+        _ if t.is_char_device() || t.is_block_device() => "a device",
+        _ => "not a regular file",
     };
-    #[cfg(not(unix))]
-    let what = "not a regular file";
     Err(io::Error::new(
         io::ErrorKind::InvalidInput,
         format!("{} is {what}: only files are read", path.display()),
@@ -87,9 +82,7 @@ fn readable(path: &Path, t: std::fs::FileType) -> io::Result<()> {
 async fn open_file(path: &Path) -> io::Result<tokio::fs::File> {
     readable(path, tokio::fs::metadata(path).await?.file_type())?;
     let mut options = tokio::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    options.custom_flags(libc::O_NONBLOCK);
+    options.read(true).custom_flags(libc::O_NONBLOCK);
     let file = options.open(path).await?;
     readable(path, file.metadata().await?.file_type())?;
     Ok(file)
@@ -184,23 +177,14 @@ impl Fs for RealFs {
         tokio::fs::rename(from, to).await
     }
 
-    /// Sets the permission bits (the session store makes its files 0600). A
-    /// no-op where the platform has no Unix modes.
+    /// Sets the permission bits (the session store makes its files 0600).
     async fn chmod(&self, path: &Path, mode: u32) -> io::Result<()> {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).await
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (path, mode);
-            Ok(())
-        }
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).await
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use std::{
         ffi::CString, os::unix::ffi::OsStrExt, os::unix::fs::OpenOptionsExt, time::Duration,

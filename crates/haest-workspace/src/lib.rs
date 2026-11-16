@@ -13,6 +13,11 @@
 //! [`ShutWorkspace`](haest_core::workspace::ShutWorkspace), with neither files
 //! nor a shell, lives in haest-core.
 //!
+//! Unix only (macOS, Linux): the real workspace runs every child in a process
+//! group of its own and kills the group, and the real disk refuses FIFOs and
+//! devices by their Unix file type. On any other target the crate does not
+//! compile.
+//!
 //! Most hosts take this crate as `haest::workspace` (the `workspace` feature
 //! of the `haest` crate, on by default), and haest-runtime picks one from the
 //! `workspace` setting. Depend on it directly when you build a conversation by
@@ -133,6 +138,11 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
+
+#[cfg(not(unix))]
+compile_error!(
+    "haest-workspace runs on Unix only (macOS, Linux): process groups and Unix file types"
+);
 
 mod bridge;
 mod overlay;

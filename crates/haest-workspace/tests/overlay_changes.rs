@@ -163,7 +163,6 @@ async fn a_binary_file_is_named_in_the_diff_not_dumped_into_it() {
 /// to a directory, or a loop inside a new directory -- is listed as one change
 /// and reported as not applied, never an error and never applied as a copy of
 /// what it points to.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_symlink_the_sandbox_made_is_listed_and_reported_never_applied_as_a_copy() {
     let (_t, dir) = project();
