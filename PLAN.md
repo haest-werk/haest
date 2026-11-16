@@ -75,8 +75,8 @@ sandbox has `xan` (`sandbox/xan/`, 2026-11-11): the CSV verbs TS haest's just-ba
 and brain's skills teach (headers, count, head, select, filter, sort, groupby, agg,
 stats, frequency) with the part of moonblade's expressions they need; bashkit has
 only a line-based `csv`.
-Every row is exercised by `crates/haest/examples/brain/` against fakes
-(`cargo run -p haest --example brain`, and under `cargo test`). A second
+Every row is exercised by `crates/haest/examples/notebook/` against fakes
+(`cargo run -p haest --example notebook`, and under `cargo test`). A second
 host that takes haest's own hub, shell commands and steering instead is
 `crates/haest/tests/plug_in.rs`.
 
@@ -128,7 +128,7 @@ types), and brain switching from its vendored TS copy to the crate.
 - `haest -p "..."` runs a real multi-step task with tools against a real model,
   and `haest --resume <id>` continues it from the session file.
 - A TS haest session file replays in the Rust haest.
-- The brain example compiles and runs against fakes using only plug points.
+- The notebook example compiles and runs against fakes using only plug points.
 
 ## Risks
 

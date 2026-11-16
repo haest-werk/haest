@@ -49,14 +49,14 @@ haest-settings = { workspace = true, optional = true }
 haest-config = { workspace = true, optional = true }
 haest-runtime = { workspace = true, optional = true }
 
-# The brain example runs under `cargo test` too, so a change that breaks a
-# plug point brain uses fails the suite, not only a `cargo run` nobody did.
+# The notebook example runs under `cargo test` too, so a change that breaks a
+# plug point it uses fails the suite, not only a `cargo run` nobody did.
 [[example]]
-name = "brain"
-path = "examples/brain/main.rs"
+name = "notebook"
+path = "examples/notebook/main.rs"
 test = true
 
-# The brain example and tests/plug_in.rs: what a host implementing the plug points needs.
+# The notebook example and tests/plug_in.rs: what a host implementing the plug points needs.
 [dev-dependencies]
 # The front page's runnable examples drive whole turns with the scripted model.
 haest-core = { workspace = true, features = ["testing"] }

@@ -1,4 +1,4 @@
-//! The host's say in the loop: brain's run clock, where a pause does not count
+//! The host's say in the loop: the notebook's run clock, where a pause does not count
 //! toward the turn's time cap, and its session records, which the NODE writes
 //! (haest writes no file).
 //!
@@ -19,10 +19,10 @@ use haest::{
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-/// How long the owner keeps the run paused: ten times brain.toml's time cap.
+/// How long the owner keeps the run paused: ten times notebook.toml's time cap.
 pub const PAUSE_MS: u64 = 600_000;
 
-/// brain's PauseGate, reduced to its clock: wall time without the pauses.
+/// The notebook's PauseGate, reduced to its clock: wall time without the pauses.
 /// `leave_out_pauses: false` is a plain wall clock, the counter-proof.
 pub struct RunClock {
     wall: AtomicU64,
@@ -94,7 +94,7 @@ impl NodeSessions {
     }
 }
 
-pub struct BrainHost {
+pub struct NotebookHost {
     pub clock: RunClock,
     sessions: Arc<dyn SessionSink>,
     /// The owner pauses the run before this model call (1-based); 0 = never.
@@ -104,7 +104,7 @@ pub struct BrainHost {
     caps: TurnCaps,
 }
 
-impl BrainHost {
+impl NotebookHost {
     pub fn new(
         clock: RunClock,
         sessions: Arc<dyn SessionSink>,
@@ -121,10 +121,10 @@ impl BrainHost {
     }
 }
 
-impl ToolServices for BrainHost {}
+impl ToolServices for NotebookHost {}
 
 #[async_trait]
-impl AgentHooks for BrainHost {
+impl AgentHooks for NotebookHost {
     fn on_message(&self, msg: &Message) {
         self.sessions.append(&SessionRecord::Message {
             t: self.clock.now(),
@@ -132,7 +132,7 @@ impl AgentHooks for BrainHost {
         });
     }
 
-    /// Where brain's run waits while paused: every tool call has its result.
+    /// Where the notebook's run waits while paused: every tool call has its result.
     async fn before_model_call(
         &self,
         _agent: &mut Agent,
@@ -145,14 +145,14 @@ impl AgentHooks for BrainHost {
     }
 }
 
-impl TurnCapsSource for BrainHost {
+impl TurnCapsSource for NotebookHost {
     fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
         Some(self.caps.clone())
     }
 }
 
 /// The turn's time cap reads the run clock: a pause does not count.
-impl Clock for BrainHost {
+impl Clock for NotebookHost {
     fn now_ms(&self) -> u64 {
         self.clock.now()
     }

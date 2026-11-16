@@ -1,6 +1,6 @@
-//! brain's side of the tool list, faked: what the node answers.
+//! The notebook's side of the tool list, faked: what the node answers.
 //!
-//! PLUG POINTS: `ReadIntercept` (Read's `attachment:<id>`), `Tool` (brain's own
+//! PLUG POINTS: `ReadIntercept` (Read's `attachment:<id>`), `Tool` (the notebook's own
 //! tools), `AgentDirectory` (subagents run on the node, not in this process).
 
 use std::{collections::HashMap, sync::Mutex};
@@ -53,25 +53,25 @@ impl ReadIntercept for Attachments {
     }
 }
 
-/// brain_search: the node's ranked full-text search over the brain.
-pub struct BrainSearch {
-    /// The brain's index: path, title, text.
+/// notebook_search: the node's ranked full-text search over the notebook.
+pub struct NotebookSearch {
+    /// The the notebook's index: path, title, text.
     pub notes: Vec<(&'static str, &'static str, &'static str)>,
 }
 
 #[async_trait]
-impl Tool for BrainSearch {
+impl Tool for NotebookSearch {
     fn name(&self) -> &str {
-        "brain_search"
+        "notebook_search"
     }
     fn kind(&self) -> &str {
-        "brain.search"
+        "notebook.search"
     }
     fn read_only(&self) -> bool {
         true
     }
     fn description(&self) -> String {
-        "Full-text search across the brain, limited to what the person asking may see.".into()
+        "Full-text search across the notebook, limited to what the person asking may see.".into()
     }
     fn parameters(&self) -> Value {
         json!({
@@ -130,14 +130,14 @@ impl Tool for DreamMaterial {
     }
 }
 
-/// brain's agent hub: each subagent runs on its own node run. The fake answers
+/// The notebook's agent hub: each subagent runs on its own node run. The fake answers
 /// for the node and keeps every spawn, `subagent_type` included (see `agent_options`).
 #[derive(Default)]
 pub struct NodeAgents {
     pub spawns: Mutex<Vec<(AgentRef, SpawnInput)>>,
 }
 
-pub const SUB_ANSWER: &str = "Two related notes: /brain/notes/plan.md, /brain/notes/q2.md";
+pub const SUB_ANSWER: &str = "Two related notes: /notebook/notes/plan.md, /notebook/notes/q2.md";
 pub const SUB_COST_USD: f64 = 0.002;
 
 #[async_trait]

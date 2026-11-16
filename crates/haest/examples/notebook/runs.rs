@@ -12,13 +12,12 @@ use haest::{
 use serde_json::json;
 
 use crate::{
-    CWD, MODEL, T0,
-    brain_fs::BrainFs,
-    brain_search, config, deps,
+    CWD, MODEL, T0, config, deps,
     doc::DocSink,
     gateway::{Call, Gateway, reply, tool_names, tool_schema},
-    host::{BrainHost, NodeSessions, PAUSE_MS, RunClock},
-    run_tools,
+    host::{NodeSessions, NotebookHost, PAUSE_MS, RunClock},
+    notebook_fs::NotebookFs,
+    notebook_search, run_tools,
     tools::{Attachments, DREAM_MEMORY, DreamMaterial, NodeAgents, SUB_ANSWER, SUB_COST_USD},
 };
 
@@ -26,11 +25,11 @@ const NARRATION: &str = "Let me read the attachment first.";
 const ANSWER: &str = "Today's note is staged for your review.";
 const NOTE: &str = "# Today\nQ3 revenue up 12%.\n";
 
-/// A work run: the sandboxed bash over BrainFs, every brain tool, a pause
+/// A work run: the sandboxed bash over NotebookFs, every notebook tool, a pause
 /// mid-turn, records to the node.
 pub async fn work(gateway: &Arc<Gateway>) {
-    let brain = Arc::new(BrainFs::new(&[(
-        "/brain/notes/plan.md",
+    let notebook = Arc::new(NotebookFs::new(&[(
+        "/notebook/notes/plan.md",
         "Ship the Q3 review.\n",
     )]));
     let attachments = Arc::new(Attachments::new(&[(
@@ -40,17 +39,17 @@ pub async fn work(gateway: &Arc<Gateway>) {
     let agents = Arc::new(NodeAgents::default());
     let sessions = Arc::new(NodeSessions::default());
     let s = config::work();
-    // The owner pauses before the second model call; brain's clock leaves it out.
+    // The owner pauses before the second model call; the notebook's clock leaves it out.
     let clock = RunClock::new(T0, true);
-    let host = Arc::new(BrainHost::new(
+    let host = Arc::new(NotebookHost::new(
         clock,
         sessions.clone(),
         2,
         config::turn_caps(&s),
     ));
-    let own: Vec<Arc<dyn Tool>> = vec![Arc::new(brain_search())];
+    let own: Vec<Arc<dyn Tool>> = vec![Arc::new(notebook_search())];
     let tools = run_tools(&s, own, attachments.clone(), agents.clone());
-    let workspace = Arc::new(SandboxWorkspace::over(brain.clone()));
+    let workspace = Arc::new(SandboxWorkspace::over(notebook.clone()));
     let mut agent = Agent::new(
         deps(gateway, tools, workspace, host.clone()),
         AgentOptions::new(MODEL),
@@ -61,11 +60,15 @@ pub async fn work(gateway: &Arc<Gateway>) {
             NARRATION,
             &[
                 Call("c1", "Read", json!({"file_path": "attachment:a1"})),
-                Call("c2", "Read", json!({"file_path": "/brain/notes/plan.md"})),
+                Call(
+                    "c2",
+                    "Read",
+                    json!({"file_path": "/notebook/notes/plan.md"}),
+                ),
                 Call(
                     "c3",
                     "Write",
-                    json!({"file_path": "/brain/notes/today.md", "content": NOTE}),
+                    json!({"file_path": "/notebook/notes/today.md", "content": NOTE}),
                 ),
                 Call(
                     "c4",
@@ -77,7 +80,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         reply(
             "Now related notes.",
             &[
-                Call("c5", "brain_search", json!({"query": "revenue"})),
+                Call("c5", "notebook_search", json!({"query": "revenue"})),
                 Call(
                     "c6",
                     "Agent",
@@ -116,7 +119,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
             "the run holds no key"
         );
     }
-    // brain.toml picked these; bash came without jobs: no run_in_background
+    // notebook.toml picked these; bash came without jobs: no run_in_background
     // in its schema, no job tools. Grep, Glob and WebFetch stayed off.
     let first = requests[0].json_body();
     let offered = tool_names(&first);
@@ -127,7 +130,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
             "Write",
             "Edit",
             "Bash",
-            "brain_search",
+            "notebook_search",
             "Agent",
             "SendMessage",
             "StopAgent"
@@ -155,12 +158,12 @@ pub async fn work(gateway: &Arc<Gateway>) {
         "{c4:?}"
     );
     assert_eq!(
-        brain.staged().await,
-        [(PathBuf::from("/brain/notes/today.md"), NOTE.to_string())]
+        notebook.staged().await,
+        [(PathBuf::from("/notebook/notes/today.md"), NOTE.to_string())]
     );
 
     // RuntimeHooks tool and agent tools: answered by the node.
-    assert!(doc.output("c5").content.contains("/brain/notes/q2.md"));
+    assert!(doc.output("c5").content.contains("/notebook/notes/q2.md"));
     let c6 = doc.output("c6");
     assert_eq!(
         (c6.content.as_str(), c6.child_cost_usd),
@@ -171,7 +174,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         (&spawns[0].0, spawns[0].1.prompt.as_str()),
         (&AgentRef::main(), "Notes about Q3")
     );
-    // brain's kinds: offered to the model, and an Agent call naming none gets explore.
+    // The notebook's kinds: offered to the model, and an Agent call naming none gets explore.
     let agent_schema = tool_schema(&first, "Agent");
     assert_eq!(
         agent_schema["properties"]["subagent_type"]["enum"],
@@ -204,7 +207,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
 pub async fn dream(gateway: &Arc<Gateway>) {
     let s = config::dream();
     let sessions = Arc::new(NodeSessions::default());
-    let host = Arc::new(BrainHost::new(
+    let host = Arc::new(NotebookHost::new(
         RunClock::new(T0, true),
         sessions,
         0,
@@ -220,8 +223,12 @@ pub async fn dream(gateway: &Arc<Gateway>) {
             "",
             &[
                 Call("d1", "dream_material", json!({})),
-                Call("d2", "Read", json!({"file_path": "/brain/notes/plan.md"})),
-                Call("d3", "Bash", json!({"command": "ls /brain"})),
+                Call(
+                    "d2",
+                    "Read",
+                    json!({"file_path": "/notebook/notes/plan.md"}),
+                ),
+                Call("d3", "Bash", json!({"command": "ls /notebook"})),
             ],
         ),
         reply("Dreamt: one memory kept.", &[]),
@@ -254,21 +261,24 @@ pub async fn clock(gateway: &Arc<Gateway>) {
         std::time::Duration::from_secs(60),
         "a work run's one-minute cap"
     );
-    let host = Arc::new(BrainHost::new(
+    let host = Arc::new(NotebookHost::new(
         RunClock::new(T0, false),
         Arc::new(NodeSessions::default()),
         2,
         caps,
     ));
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(brain_search())];
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(notebook_search())];
     let deps = deps(gateway, tools, Arc::new(ShutWorkspace), host.clone());
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));
     gateway.script([
         reply(
             "",
-            &[Call("s1", "brain_search", json!({"query": "revenue"}))],
+            &[Call("s1", "notebook_search", json!({"query": "revenue"}))],
         ),
-        reply("", &[Call("s2", "brain_search", json!({"query": "plan"}))]),
+        reply(
+            "",
+            &[Call("s2", "notebook_search", json!({"query": "plan"}))],
+        ),
         reply("never sent", &[]),
     ]);
     let mut doc = DocSink::default();

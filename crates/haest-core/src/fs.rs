@@ -3,7 +3,7 @@
 //! an [`Fs`]. Nothing in haest touches `std::fs` for the agent directly.
 //!
 //! PLUG POINT: a host with its own storage implements [`Fs`] (the `haest`
-//! crate's `brain` example stages every write for review); `haest-workspace`
+//! crate's `notebook` example stages every write for review); `haest-workspace`
 //! has the real disk (`RealFs`) and can put a sandboxed bash over ANY `Fs`, so
 //! the file the agent writes with Write is the file `cat` shows. A
 //! [`Workspace`](crate::Workspace) hands its `Fs` to the tools.

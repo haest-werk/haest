@@ -1,6 +1,7 @@
-//! brain's BrainFs, faked: the brain as the node lets the asker see it, and
-//! every change the run makes STAGED for the asker -- nothing reaches the brain
-//! while the run works; the asker reviews the changes and applies them.
+//! The notebook's file system, faked: the notebook as the node lets the asker
+//! see it, and every change the run makes STAGED for the asker -- nothing
+//! reaches the notebook while the run works; the asker reviews the changes and
+//! applies them.
 //! Read, Write, Edit and the sandboxed Bash all go through it, so the file the
 //! agent writes is the file `cat` shows.
 //!
@@ -16,15 +17,15 @@ use std::{
 use async_trait::async_trait;
 use haest::core::fs::{DirEntry, Fs, FsStat, MemFs};
 
-pub struct BrainFs {
-    /// What the run sees: the brain, plus what the run changed.
+pub struct NotebookFs {
+    /// What the run sees: the notebook, plus what the run changed.
     view: MemFs,
     /// Every path the run changed: the review the asker gets.
     staged: Mutex<BTreeSet<PathBuf>>,
 }
 
-impl BrainFs {
-    /// The brain as the asker may see it.
+impl NotebookFs {
+    /// The notebook as the asker may see it.
     pub fn new(files: &[(&str, &str)]) -> Self {
         Self {
             view: MemFs::with_files(files.iter().copied()),
@@ -49,7 +50,7 @@ impl BrainFs {
 }
 
 #[async_trait]
-impl Fs for BrainFs {
+impl Fs for NotebookFs {
     async fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
         self.view.read(path).await
     }

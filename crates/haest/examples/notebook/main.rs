@@ -1,7 +1,9 @@
-//! haest embedded the way brain embeds it, against fakes: no network, no keys.
-//! Every row of PLAN.md's "Brain's plug points" table is wired through a
-//! public plug point and ASSERTED, so `cargo run -p haest --example brain`
-//! exiting 0 is the proof; `cargo test` runs the same (`[[example]] test`).
+//! haest embedded in a notebook: a shared knowledge base whose node runs
+//! the agent and brings its own parts. Against fakes: no network, no keys.
+//! Every row of PLAN.md's plug-point table (from a real host's patches) is
+//! wired through a public plug point and ASSERTED, so
+//! `cargo run -p haest --example notebook` exiting 0 is the proof; `cargo
+//! test` runs the same (`[[example]] test`).
 //! A host that takes haest's own subagent hub, shell commands and steering
 //! instead: `tests/plug_in.rs`.
 //!
@@ -10,21 +12,21 @@
 //! | `settings::Settings` written out, one per kind of run (no loader) | config.rs |
 //! | `builtin_tools_where`: the built-ins the settings pick | `run_tools` |
 //! | `http::HttpClient` (the node's gateway); OpenRouter routing off | gateway.rs, `models` |
-//! | `Fs` (BrainFs, writes staged) under `SandboxWorkspace::over` | brain_fs.rs, `runs::work` |
+//! | `Fs` (NotebookFs, writes staged) under `SandboxWorkspace::over` | notebook_fs.rs, `runs::work` |
 //! | `ShutWorkspace` (the dream run) | `runs::dream` |
 //! | Read with a `ReadIntercept` (`attachment:<id>`) | tools.rs |
 //! | Bash without background jobs | `run_tools` |
-//! | a host tool (`brain_search`, `dream_material`) | tools.rs |
+//! | a host tool (`notebook_search`, `dream_material`) | tools.rs |
 //! | `Clock` (a pause does not count), `TurnCapsSource` | host.rs, `runs::work` + `runs::clock` |
 //! | `LoopEvent::ToolCallStart` (narration taken out of the doc) | doc.rs |
 //! | `SessionSink` + `replay`, no JSONL writer of haest's | host.rs, `runs::work` |
 //! | Agent tools over the host's own `AgentDirectory` | tools.rs |
 
-mod brain_fs;
 mod config;
 mod doc;
 mod gateway;
 mod host;
+mod notebook_fs;
 mod runs;
 mod tools;
 
@@ -44,19 +46,19 @@ use haest::{
 
 use crate::{
     gateway::{BASE_URL, Gateway},
-    host::BrainHost,
-    tools::{Attachments, BrainSearch, NodeAgents},
+    host::NotebookHost,
+    tools::{Attachments, NodeAgents, NotebookSearch},
 };
 
 pub const MODEL: &str = "gateway:anthropic/claude-sonnet-5";
-pub const CWD: &str = "/brain";
+pub const CWD: &str = "/notebook";
 /// The run clock's start, milliseconds since the epoch.
 pub const T0: u64 = 1_800_000_000_000;
 
 #[tokio::main]
 async fn main() {
     every_run().await;
-    println!("brain example: every plug point held");
+    println!("notebook example: every plug point held");
 }
 
 async fn every_run() {
@@ -67,7 +69,7 @@ async fn every_run() {
 }
 
 #[tokio::test]
-async fn every_plug_point_brain_uses_holds() {
+async fn every_plug_point_the_notebook_uses_holds() {
     every_run().await;
 }
 
@@ -83,7 +85,7 @@ pub fn models(gateway: Arc<Gateway>) -> Arc<dyn ModelResolver> {
     Arc::new(move |spec: &str| {
         let (id, model) = parse_model_spec(spec)?;
         if id != "gateway" {
-            // brain runs every model through its gateway.
+            // The notebook runs every model through its gateway.
             return Err(ModelError::UnknownProvider {
                 provider: id.into(),
                 known: vec!["gateway".into()],
@@ -98,7 +100,7 @@ pub fn models(gateway: Arc<Gateway>) -> Arc<dyn ModelResolver> {
 
 /// A run's tools as its settings pick them: haest's built-ins (`tools`; Read
 /// with the attachment intercept, Bash with no background jobs, no WebFetch:
-/// the node fetches), brain's own (`own`), and the agent tools over the node's
+/// the node fetches), the notebook's own (`own`), and the agent tools over the node's
 /// hub (`agents`).
 pub fn run_tools(
     s: &Settings,
@@ -116,9 +118,9 @@ pub fn run_tools(
         ..Default::default()
     };
     // A word on whose option is None here (web_fetch, tasks, skill) would be
-    // an error, never a tool quietly missing; brain's runs turn on none of them.
+    // an error, never a tool quietly missing; the notebook's runs turn on none of them.
     let mut tools = builtin_tools_where(|w| s.tools.has(w), opts)
-        .expect("brain's runs pick only built-ins it gives the options for");
+        .expect("the notebook's runs pick only built-ins it gives the options for");
     tools.extend(own);
     if s.agents {
         tools.extend(agent_tools_with(
@@ -131,7 +133,7 @@ pub fn run_tools(
     tools
 }
 
-/// brain's kinds of subagent (`explore` only reads) and the models it offers.
+/// The notebook's kinds of subagent (`explore` only reads) and the models it offers.
 pub fn agent_options() -> AgentToolOptions {
     AgentToolOptions {
         types: Some(SubagentTypes {
@@ -145,11 +147,11 @@ pub fn agent_options() -> AgentToolOptions {
     }
 }
 
-pub fn brain_search() -> BrainSearch {
-    BrainSearch {
+pub fn notebook_search() -> NotebookSearch {
+    NotebookSearch {
         notes: vec![
-            ("/brain/notes/plan.md", "Plan", "Ship the Q3 review."),
-            ("/brain/notes/q2.md", "Q2", "Revenue flat in Q2."),
+            ("/notebook/notes/plan.md", "Plan", "Ship the Q3 review."),
+            ("/notebook/notes/q2.md", "Q2", "Revenue flat in Q2."),
         ],
     }
 }
@@ -159,9 +161,10 @@ pub fn deps(
     gateway: &Arc<Gateway>,
     tools: Vec<Arc<dyn Tool>>,
     workspace: Arc<dyn Workspace>,
-    host: Arc<BrainHost>,
+    host: Arc<NotebookHost>,
 ) -> AgentDeps {
-    let system = Arc::new("You work inside a person's brain, a shared knowledge base.".to_string());
+    let system =
+        Arc::new("You work inside a person's notebook, a shared knowledge base.".to_string());
     let mut deps = AgentDeps::new(
         models(gateway.clone()),
         Arc::new(tools),

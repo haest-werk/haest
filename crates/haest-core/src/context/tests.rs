@@ -138,10 +138,10 @@ fn the_tool_guide_and_workspace_note_are_said_as_given_and_the_identity_can_be_r
     let bare = build_system_prompt(&PromptInputs::default());
     assert!(!bare.contains(GUIDE) && !bare.contains(NOTE));
     let own = build_system_prompt(&PromptInputs {
-        identity: Some("You are brain's reader.".into()),
+        identity: Some("You are the notebook's reader.".into()),
         ..Default::default()
     });
-    assert!(own.starts_with("You are brain's reader.") && !own.contains("You are haest"));
+    assert!(own.starts_with("You are the notebook's reader.") && !own.contains("You are haest"));
 }
 
 #[tokio::test]

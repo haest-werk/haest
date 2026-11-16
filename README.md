@@ -58,7 +58,7 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 haest = "0.2"
 # the whole conversation with haest's own files, variables and flags (the CLI's way)
 haest = { version = "0.2", features = ["runtime", "config"] }
-# a host with its own HTTP client, files and tools (the brain example)
+# a host with its own HTTP client, files and tools (the notebook example)
 haest = { version = "0.2", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
 
@@ -222,17 +222,18 @@ each applied to the agent, the host and the session file together. A host that
 owns some parts takes the runtime's pieces, or only
 `haest::tools::builtin_tools_where(|w| settings.tools.has(w), ..)`.
 
-[`crates/haest/examples/brain`](https://github.com/haest-werk/haest/tree/main/crates/haest/examples/brain/) wires all of
-them the way brain does, against fakes (no network, no keys), and asserts each
-one. Its settings are written out in Rust, one per kind of run; no `HAEST_*`
-variable reaches it:
+[`crates/haest/examples/notebook`](https://github.com/haest-werk/haest/tree/main/crates/haest/examples/notebook/)
+is a host that brings its own parts (a knowledge base whose node runs the
+agent). It wires all of them against fakes (no network, no keys) and asserts
+each one. Its settings are written out in Rust, one per kind of run; no
+`HAEST_*` variable reaches it:
 
 ```sh
-cargo run -p haest --example brain
+cargo run -p haest --example notebook
 ```
 
-`cargo test` runs it as well. A host that takes haest's own pieces where brain
-brings its own -- its own `Provider`, a `ShellCommand` in the sandbox shell,
+`cargo test` runs it as well. A host that takes haest's own pieces where the
+notebook brings its own -- its own `Provider`, a `ShellCommand` in the sandbox shell,
 a tool that titles its calls, haest's `SubagentHub` over its `SubagentParent` and
 `Inbox`, steering a running turn, a hook that ends the turn, its own skills
 behind haest's Skill tool (`SkillSet`, `InlineSkills`), its own tools held back

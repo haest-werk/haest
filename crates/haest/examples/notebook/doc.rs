@@ -1,4 +1,4 @@
-//! brain's document view of a run: the model's text streams into the doc, and
+//! The notebook's document view of a run: the model's text streams into the doc, and
 //! the narration before a tool call ("Let me look that up") is taken back out
 //! the moment the call starts, so the doc keeps only the answer.
 //!

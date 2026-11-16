@@ -1,7 +1,8 @@
-//! brain's haest settings, written out. No file, no `HAEST_*` variable and no
-//! flag reaches a run: the node's environment must not change what a person's
-//! brain can do, and nothing in haest reads one on its own. Bare is the start;
-//! a work run turns on what brain uses, a dream turns most of it back off.
+//! The notebook's haest settings, written out. No file, no `HAEST_*` variable
+//! and no flag reaches a run: the node's environment must not change what a
+//! person's notebook can do, and nothing in haest reads one on its own. Bare
+//! is the start; a work run turns on what the notebook uses, a dream turns
+//! most of it back off.
 //!
 //! PLUG POINT: `settings::Settings`, hardcoded (no loader).
 
@@ -12,7 +13,7 @@ use haest::{
 
 use crate::CWD;
 
-/// A work run: haest's file tools and its bash. Glob and Grep are brain's own,
+/// A work run: haest's file tools and its bash. Glob and Grep are the notebook's own,
 /// on the node; WebFetch is the node's too.
 pub fn work() -> Settings {
     let bare = Settings::bare(CWD, "/node");

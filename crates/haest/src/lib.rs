@@ -202,9 +202,9 @@
 //! - [`settings`] lists every setting; the
 //!   [settings reference](https://github.com/haest-werk/haest/blob/main/docs/settings.md)
 //!   explains each one.
-//! - The [brain example](https://github.com/haest-werk/haest/tree/main/crates/haest/examples/brain/)
+//! - The [notebook example](https://github.com/haest-werk/haest/tree/main/crates/haest/examples/notebook/)
 //!   wires every plug point the way a real host does, against fakes;
-//!   `cargo run -p haest --example brain` runs it.
+//!   `cargo run -p haest --example notebook` runs it.
 //! - `cargo install haest-cli` gets the `haest` command line agent.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]

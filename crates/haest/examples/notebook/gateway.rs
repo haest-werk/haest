@@ -1,4 +1,4 @@
-//! brain's model gateway, faked: the node answers `/agent/llm/v1/chat/completions`
+//! The notebook's model gateway, faked: the node answers `/agent/llm/v1/chat/completions`
 //! on its unix socket and holds the keys; the run holds none. Here it answers a
 //! scripted conversation in OpenAI-compatible SSE and keeps every request.
 //!
