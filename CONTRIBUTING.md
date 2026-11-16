@@ -17,7 +17,15 @@
 - **Dependencies** a single crate uses go in THAT crate's `Cargo.toml`, not the
   workspace table (parallel work never collides there).
 - **Gates before every commit:** `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`
-  and `cargo test --workspace` all clean.
+  and `cargo test --workspace` all clean (the doctests are in it), and the docs
+  build the way docs.rs builds them, without a warning:
+  `RUSTDOCFLAGS="-D warnings --cfg docsrs" cargo +nightly doc --workspace --all-features --no-deps`.
+- **Docs are part of the API.** Every crate has `#![warn(missing_docs)]`: a
+  public item gets a doc that says what it is for in plain words, and the types
+  a host constructs or implements get a runnable example. Links between items
+  are intra-doc links (`[`Agent`]`); a link to a file in the repo is an absolute
+  `https://github.com/haest-werk/haest/blob/main/...` URL, because crates.io and
+  docs.rs resolve a relative one against the wrong folder.
 - **Worktrees** for parallel work live in `.claude/worktrees/<slug>` on a branch
   `wt/<slug>`; integrate with `git rebase main` then a fast-forward merge on `main`.
 - **Commits:** `git commit -F - <<'EOF'` (quoted heredoc, never `-m "..."`), a

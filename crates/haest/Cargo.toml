@@ -30,9 +30,12 @@ settings = ["dep:haest-settings", "tools"]
 config = ["dep:haest-config", "settings", "providers", "mcp"]
 # The whole conversation built from what a host hands in, behind its UI (the CLI's base).
 runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods"]
+# Fakes for a host's tests: a scripted model that records every request.
+testing = ["haest-core/testing"]
 
 [dependencies]
 haest-core = { workspace = true }
+async-trait = { workspace = true }
 haest-providers = { workspace = true, optional = true }
 haest-workspace = { workspace = true, optional = true }
 haest-tools = { workspace = true, optional = true }
@@ -52,6 +55,8 @@ test = true
 
 # The brain example and tests/plug_in.rs: what a host implementing the plug points needs.
 [dev-dependencies]
+# The front page's runnable examples drive whole turns with the scripted model.
+haest-core = { workspace = true, features = ["testing"] }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
