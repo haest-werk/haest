@@ -5,8 +5,8 @@
 //! (`mcp`); the Code tool over them (`code`); all of it inside the mods'
 //! `tool.before` / `tool.after` hooks -- [`WrappedTools`], the list every
 //! subagent starts from. Main's list ([`MainTools`]) adds main's agent tools
-//! (`agents`), NOT mod-wrapped, and defers the MCP schemas behind ToolSearch
-//! (`deferred_tools`) so a big server does not ride on every call.
+//! (`agents`), NOT mod-wrapped; the build defers the MCP schemas behind
+//! ToolSearch (`deferred_tools`) so a big server does not ride on every call.
 
 use std::sync::{Arc, Mutex};
 
@@ -15,7 +15,6 @@ use haest_settings::{BuiltinTools, Settings, WordSet};
 use crate::haest::{
     KeySource,
     code::{CodeTool, code_tool_names},
-    core::deferred_tools::{DeferMode, ToolDeferral},
     core::fs::Fs,
     core::handed::openrouter_base_url,
     core::skills::Skill,
@@ -27,7 +26,6 @@ use crate::haest::{
         BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub, SkillToolOptions,
         agents::{AgentRef, SubagentHub},
         builtin_tools_where,
-        tool_search::deferral_tools,
     },
 };
 
@@ -158,45 +156,28 @@ impl ToolSource for WrappedTools {
 }
 
 /// Main's list (TS `tools()`): the wrapped tools and main's agent tools
-/// (none when `agents` is off), deferred.
-///
-/// A [`ToolSource`]: what a call offers is the `deferred_tools` setting's
-/// choice (the MCP tools behind ToolSearch, or all up front), and a deferred
-/// tool the model calls by name still runs.
+/// (none when `agents` is off). The build puts it behind haest-tools'
+/// `DeferredTools`, which defers as the `deferred_tools` setting says.
 pub struct MainTools {
     wrapped: Arc<WrappedTools>,
     hub: Option<Arc<SubagentHub>>,
-    deferral: Arc<ToolDeferral>,
 }
 
 impl MainTools {
     /// Main's list over `wrapped`, with `hub`'s agent tools for main (None =
-    /// no agent tools), deferred by `mode`.
-    pub fn new(wrapped: Arc<WrappedTools>, hub: Option<Arc<SubagentHub>>, mode: DeferMode) -> Self {
-        Self {
-            wrapped,
-            hub,
-            deferral: Arc::new(ToolDeferral::new(mode)),
-        }
-    }
-
-    fn all(&self) -> Vec<Arc<dyn Tool>> {
-        let mut all = self.wrapped.tools();
-        if let Some(hub) = &self.hub {
-            all.extend(hub.tools_for(&AgentRef::main()));
-        }
-        all
+    /// no agent tools).
+    pub fn new(wrapped: Arc<WrappedTools>, hub: Option<Arc<SubagentHub>>) -> Self {
+        Self { wrapped, hub }
     }
 }
 
 impl ToolSource for MainTools {
     fn tools(&self) -> Vec<Arc<dyn Tool>> {
-        let d = &self.deferral;
-        d.advertise(&self.all(), deferral_tools(d.clone()))
-    }
-    fn callable(&self) -> Vec<Arc<dyn Tool>> {
-        let d = &self.deferral;
-        d.callable(&self.all(), deferral_tools(d.clone()))
+        let mut all = self.wrapped.tools();
+        if let Some(hub) = &self.hub {
+            all.extend(hub.tools_for(&AgentRef::main()));
+        }
+        all
     }
 }
 

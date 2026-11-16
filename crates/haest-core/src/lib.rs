@@ -183,6 +183,7 @@ pub mod __private {
     /// whatever serde it depends on.
     pub use serde;
 
+    pub use crate::deferred_tools::split::{advertised_tools, callable_tools};
     pub use crate::effort::nearest_accepted_effort;
     pub use crate::expand::{expand_vars, is_var_name, unset_note};
     pub use crate::frontmatter::{block_end, inline_list, split_frontmatter, unquote};

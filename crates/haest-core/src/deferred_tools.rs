@@ -11,18 +11,17 @@
 //!   changes the list -- and tools sit at the FRONT of the cached prefix.
 //! - `off`: every tool, every call (the old behaviour).
 //!
-//! [`ToolDeferral`] holds one agent's state. A host's
-//! [`ToolSource`](crate::ToolSource) asks it
-//! which tools to advertise ([`ToolDeferral::advertise`]) and which a call may
-//! run ([`ToolDeferral::callable`]); the ToolSearch tool calls
+//! [`ToolDeferral`] holds one agent's state. haest-tools' `DeferredTools`
+//! asks it which tools to advertise and which a call may run, over any
+//! [`ToolSource`](crate::ToolSource); the ToolSearch tool calls
 //! [`search_tools`] and [`ToolDeferral::load`].
 //!
 //! What defers: MCP tools by default (built-ins are few, small and used
 //! constantly). A host with many tools of its own defers every tool but a list
 //! it always needs ([`ToolDeferral::deferring_all_except`]).
 //!
-//! A deferred tool the model calls by name, without ToolSearch, still runs
-//! ([`ToolDeferral::callable`]) and counts as loaded: a prompt that names a tool,
+//! A deferred tool the model calls by name, without ToolSearch, still runs and
+//! counts as loaded: a prompt that names a tool,
 //! or a resumed conversation that called one ([`ToolDeferral::load_called`]),
 //! never meets "Unknown tool".
 //!
@@ -30,13 +29,7 @@
 
 use std::{collections::HashSet, sync::Arc, sync::Mutex};
 
-use async_trait::async_trait;
-use serde_json::Value;
-
-use crate::{
-    messages::Message,
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
-};
+use crate::{messages::Message, tool::Tool};
 
 crate::word_enum! {
     /// How deferred tools reach the model; see the [module docs](self).
@@ -103,56 +96,18 @@ pub fn search_tools(pool: &[Arc<dyn Tool>], query: &str) -> Vec<Arc<dyn Tool>> {
 ///
 /// # Examples
 ///
-/// A host's tool source that defers through it:
+/// A host makes one per agent and hands it to haest-tools' `DeferredTools`,
+/// with its own tools that every turn needs kept out of deferral:
 ///
 /// ```
-/// # use std::sync::Arc;
-/// # use async_trait::async_trait;
-/// # use haest_core::{ToolContext, ToolError, ToolOutput, tool::JsonMap};
-/// # struct Named(&'static str);
-/// # #[async_trait]
-/// # impl Tool for Named {
-/// #     fn name(&self) -> &str { self.0 }
-/// #     fn description(&self) -> String { String::new() }
-/// #     fn parameters(&self) -> serde_json::Value { serde_json::json!({"type": "object"}) }
-/// #     fn kind(&self) -> &str { "example" }
-/// #     async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-/// #         Ok(ToolOutput::text("ok"))
-/// #     }
-/// # }
-/// use haest_core::{
-///     Tool, ToolSource,
-///     deferred_tools::{DeferMode, ToolDeferral},
-/// };
+/// use haest_core::deferred_tools::{DeferMode, ToolDeferral};
 ///
-/// struct Tools {
-///     all: Vec<Arc<dyn Tool>>,
-///     deferral: Arc<ToolDeferral>,
-/// }
-///
-/// impl ToolSource for Tools {
-///     // A real host adds its ToolSearch tool in the closures (haest-tools has one).
-///     fn tools(&self) -> Vec<Arc<dyn Tool>> {
-///         self.deferral.advertise(&self.all, |_deferred| Vec::new())
-///     }
-///     fn callable(&self) -> Vec<Arc<dyn Tool>> {
-///         self.deferral.callable(&self.all, |_deferred| Vec::new())
-///     }
-/// }
-///
-/// let all: Vec<Arc<dyn Tool>> = vec![Arc::new(Named("Read")), Arc::new(Named("mcp__docs__search"))];
-/// let source = Tools { all, deferral: Arc::new(ToolDeferral::new(DeferMode::Grow)) };
-/// let names = |tools: Vec<Arc<dyn Tool>>| -> Vec<String> {
-///     tools.iter().map(|t| t.name().to_string()).collect()
-/// };
-///
-/// // The MCP tool is not advertised, but a call to it by name still runs.
-/// assert_eq!(names(source.tools()), ["Read"]);
-/// assert_eq!(names(source.callable()), ["Read", "mcp__docs__search"]);
-///
-/// // Once loaded, `grow` advertises it.
-/// source.deferral.load(["mcp__docs__search"]);
-/// assert_eq!(names(source.tools()), ["Read", "mcp__docs__search"]);
+/// let deferral = ToolDeferral::new(DeferMode::Grow)
+///     .deferring_all_except(["Read".to_string(), "Bash".to_string()]);
+/// assert_eq!(deferral.mode(), DeferMode::Grow);
+/// // What ToolSearch does when the model asks for a schema; in `grow` the
+/// // tool joins the advertised list from the next call on.
+/// deferral.load(["mcp__docs__search"]);
 /// ```
 pub struct ToolDeferral {
     mode: DeferMode,
@@ -226,7 +181,8 @@ impl ToolDeferral {
         }
     }
 
-    /// `all` split into (deferred, eager); `None` when nothing defers.
+    /// `all` split into the deferred tools and the rest, in `all` order;
+    /// None when nothing defers (`off`, or no tool matches).
     fn split(&self, all: &[Arc<dyn Tool>]) -> Option<(Tools, Tools)> {
         if self.mode == DeferMode::Off {
             return None;
@@ -237,92 +193,9 @@ impl ToolDeferral {
             .partition(|t| self.is_deferrable(t.as_ref()));
         (!deferred.is_empty()).then_some((deferred, eager))
     }
-
-    /// Every tool a call may run: the advertised ones and every deferred one,
-    /// which loads itself when the model calls it by name.
-    ///
-    /// `deferral_tools` builds the tools that reach deferred ones (ToolSearch,
-    /// and CallTool for `proxy`) from the deferred list; it is called only when
-    /// something defers. With nothing deferring this is `all`.
-    pub fn callable(
-        self: &Arc<Self>,
-        all: &[Arc<dyn Tool>],
-        deferral_tools: impl FnOnce(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>>,
-    ) -> Vec<Arc<dyn Tool>> {
-        let Some((deferred, mut out)) = self.split(all) else {
-            return all.to_vec();
-        };
-        out.extend(deferral_tools(&deferred));
-        out.extend(deferred.into_iter().map(|tool| {
-            Arc::new(Loading {
-                tool,
-                deferral: self.clone(),
-            }) as Arc<dyn Tool>
-        }));
-        out
-    }
-
-    /// The tools this call advertises, given every tool the agent has and the deferral tools to add.
-    ///
-    /// The tools that do not defer, in `all` order, then what
-    /// `deferral_tools` returns, then (in `grow`) the loaded deferred ones.
-    /// With nothing deferring this is `all`, and `deferral_tools` is not called.
-    pub fn advertise(
-        &self,
-        all: &[Arc<dyn Tool>],
-        deferral_tools: impl FnOnce(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>>,
-    ) -> Vec<Arc<dyn Tool>> {
-        let Some((deferred, eager)) = self.split(all) else {
-            return all.to_vec();
-        };
-        let grown: Vec<Arc<dyn Tool>> = if self.mode == DeferMode::Grow {
-            let loaded = self.loaded.lock().unwrap();
-            deferred
-                .iter()
-                .filter(|t| loaded.contains(t.name()))
-                .cloned()
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let mut out = eager;
-        out.extend(deferral_tools(&deferred));
-        out.extend(grown);
-        out
-    }
 }
 
-/// A deferred tool as a call runs it: called by name, it counts as loaded.
-struct Loading {
-    tool: Arc<dyn Tool>,
-    deferral: Arc<ToolDeferral>,
-}
-
-#[async_trait]
-impl Tool for Loading {
-    fn name(&self) -> &str {
-        self.tool.name()
-    }
-    fn description(&self) -> String {
-        self.tool.description()
-    }
-    fn parameters(&self) -> Value {
-        self.tool.parameters()
-    }
-    fn kind(&self) -> &str {
-        self.tool.kind()
-    }
-    fn read_only(&self) -> bool {
-        self.tool.read_only()
-    }
-    fn canonical_input(&self, input: &JsonMap) -> JsonMap {
-        self.tool.canonical_input(input)
-    }
-    async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        self.deferral.load([self.tool.name()]);
-        self.tool.execute(input, ctx).await
-    }
-}
+pub(crate) mod split;
 
 #[cfg(test)]
 mod tests;

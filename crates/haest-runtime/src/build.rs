@@ -14,6 +14,7 @@ use crate::{
     Agents, Runtime, RuntimeHooks, Ui,
     haest::{
         Agent, AgentDeps, AgentOptions, ChildEnv, KeySource, Workspace,
+        core::deferred_tools::ToolDeferral,
         core::fs::Fs,
         core::ledger::Ledger,
         core::session::SessionRecord,
@@ -24,6 +25,7 @@ use crate::{
         mods::{ModSystemPrompt, Prompter},
         now_ms,
         providers::{CustomProviders, ProviderRegistry, RegistryOptions, RoutingEnv},
+        tools::tool_search::DeferredTools,
     },
     inbox, mods,
     prompt::{AgentPrompt, RuntimePrompt, skill_options},
@@ -283,7 +285,10 @@ where
     }
     .hub();
     let main_hub = s.agents.then(|| agents.clone());
-    let tools = Arc::new(MainTools::new(wrapped, main_hub, s.deferred_tools));
+    let tools = Arc::new(DeferredTools::new(
+        MainTools::new(wrapped, main_hub),
+        ToolDeferral::new(s.deferred_tools),
+    ));
     let main_prompt = AgentPrompt {
         prompt: found.prompt,
         model: None,

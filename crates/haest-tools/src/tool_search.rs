@@ -3,14 +3,15 @@
 //! tool's name and first sentence, so the model knows what exists and what it is
 //! for without paying for the schemas.
 //!
-//! Start from [`DeferredTools`]: a tool list behind a [`ToolDeferral`], handed
-//! to the loop as its [`ToolSource`]. Which tools are deferred, and when one
+//! Start from [`DeferredTools`]: a [`ToolSource`] behind a [`ToolDeferral`],
+//! handed to the loop as its own source. Which tools are deferred, and when one
 //! counts as loaded, is the deferral's (haest-core).
 
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use haest_core::{
+    __private::{advertised_tools, callable_tools},
     deferred_tools::{DeferMode, ToolDeferral, search_tools},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, req_str},
 };
@@ -143,14 +144,15 @@ impl Tool for CallTool {
     }
 }
 
-/// One agent's tool list behind its own deferral: what a host hands the loop
+/// One agent's tools behind its own deferral: what a host hands the loop
 /// ([`AgentDeps::tools`](haest_core::AgentDeps::tools)) to defer some of its
 /// tools.
 ///
-/// Before every model call it advertises the tools the deferral does not
-/// hold back, plus ToolSearch (and CallTool in proxy mode) over the ones it
-/// does. A deferred tool the model calls by name still runs
-/// ([`ToolSource::callable`]).
+/// Before every model call it asks the inner [`ToolSource`] for its tools and
+/// advertises the ones the deferral does not hold back, plus ToolSearch (and
+/// CallTool in proxy mode) over the ones it does. A deferred tool the model
+/// calls by name still runs ([`ToolSource::callable`]). The inner source may
+/// be a fixed `Vec` or one whose tools change between calls.
 ///
 /// # Examples
 ///
@@ -171,15 +173,15 @@ impl Tool for CallTool {
 /// assert!(source.callable().iter().any(|t| t.name() == "Bash"));
 /// ```
 pub struct DeferredTools {
-    tools: Vec<Arc<dyn Tool>>,
+    source: Box<dyn ToolSource>,
     deferral: Arc<ToolDeferral>,
 }
 
 impl DeferredTools {
-    /// `tools`, deferred as `deferral` says.
-    pub fn new(tools: Vec<Arc<dyn Tool>>, deferral: ToolDeferral) -> Self {
+    /// The tools `source` has, deferred as `deferral` says.
+    pub fn new(source: impl ToolSource + 'static, deferral: ToolDeferral) -> Self {
         Self {
-            tools,
+            source: Box::new(source),
             deferral: Arc::new(deferral),
         }
     }
@@ -192,25 +194,28 @@ impl DeferredTools {
 
 impl ToolSource for DeferredTools {
     fn tools(&self) -> Vec<Arc<dyn Tool>> {
-        self.deferral
-            .advertise(&self.tools, deferral_tools(self.deferral.clone()))
+        advertised_tools(
+            &self.deferral,
+            &self.source.tools(),
+            deferral_tools(self.deferral.clone()),
+        )
     }
     fn callable(&self) -> Vec<Arc<dyn Tool>> {
-        self.deferral
-            .callable(&self.tools, deferral_tools(self.deferral.clone()))
+        callable_tools(
+            &self.deferral,
+            &self.source.callable(),
+            deferral_tools(self.deferral.clone()),
+        )
     }
 }
 
 /// The deferral tools for one agent: ToolSearch, plus CallTool in proxy mode.
-/// Pass the result to [`ToolDeferral::advertise`]; [`DeferredTools`] does.
 ///
 /// The returned function takes the deferred tools and makes the deferral
 /// tools over them: ToolSearch (read-only, kind `agent.unknown`) loads the
 /// schemas a `query` names (`select:a,b`, or keywords) into the deferral;
 /// CallTool runs a deferred tool by `name` with its `input`.
-pub fn deferral_tools(
-    deferral: Arc<ToolDeferral>,
-) -> impl Fn(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>> {
+fn deferral_tools(deferral: Arc<ToolDeferral>) -> impl Fn(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>> {
     move |deferred: &[Arc<dyn Tool>]| {
         let search: Arc<dyn Tool> = Arc::new(ToolSearch {
             deferral: deferral.clone(),

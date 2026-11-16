@@ -1,7 +1,10 @@
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-use super::*;
+use super::{
+    split::{advertised_tools, callable_tools},
+    *,
+};
 use crate::tool::{JsonMap, ToolContext, ToolError, ToolOutput};
 
 struct Named(&'static str, &'static str);
@@ -66,36 +69,39 @@ fn only_grow_adds_what_was_loaded() {
         d.load(["mcp__x__weather"]);
     }
     assert_eq!(
-        names(&grow.advertise(&all(), marker)),
+        names(&advertised_tools(&grow, &all(), marker)),
         ["Read", "ToolSearch", "mcp__x__weather"]
     );
     assert_eq!(
-        names(&proxy.advertise(&all(), marker)),
+        names(&advertised_tools(&proxy, &all(), marker)),
         ["Read", "ToolSearch"]
     );
     let off = ToolDeferral::new(DeferMode::Off);
-    assert_eq!(names(&off.advertise(&all(), marker)), names(&all()));
+    assert_eq!(
+        names(&advertised_tools(&off, &all(), marker)),
+        names(&all())
+    );
 }
 
 #[test]
 fn nothing_deferrable_adds_no_search_tool() {
     let d = ToolDeferral::new(DeferMode::Proxy);
     let builtins = &all()[..1];
-    assert_eq!(names(&d.advertise(builtins, marker)), ["Read"]);
+    assert_eq!(names(&advertised_tools(&d, builtins, marker)), ["Read"]);
 }
 
 #[test]
 fn no_mcp_tool_is_kept_loaded_unless_a_host_names_it() {
     let d = ToolDeferral::new(DeferMode::Proxy);
     let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Named("mcp__host__send_message", "send"))];
-    assert_eq!(names(&d.advertise(&tools, marker)), ["ToolSearch"]);
+    assert_eq!(names(&advertised_tools(&d, &tools, marker)), ["ToolSearch"]);
 }
 
 #[test]
 fn a_host_names_its_own_always_loaded_tools() {
     let d = ToolDeferral::new(DeferMode::Proxy).with_always_loaded(["__weather".to_string()]);
     assert_eq!(
-        names(&d.advertise(&all(), marker)),
+        names(&advertised_tools(&d, &all(), marker)),
         ["Read", "mcp__x__weather", "ToolSearch"]
     );
 }
@@ -113,18 +119,18 @@ fn host_tools() -> Vec<Arc<dyn Tool>> {
 fn a_host_may_defer_every_tool_but_the_ones_it_always_needs() {
     let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]);
     assert_eq!(
-        names(&d.advertise(&host_tools(), marker)),
+        names(&advertised_tools(&d, &host_tools(), marker)),
         ["Read", "ToolSearch"]
     );
     d.load(["send_notification"]);
     assert_eq!(
-        names(&d.advertise(&host_tools(), marker)),
+        names(&advertised_tools(&d, &host_tools(), marker)),
         ["Read", "ToolSearch", "send_notification"]
     );
     // The default stays MCP only: a host's own tools are never deferred unasked.
     let mcp = ToolDeferral::new(DeferMode::Grow);
     assert_eq!(
-        names(&mcp.advertise(&host_tools(), marker)),
+        names(&advertised_tools(&mcp, &host_tools(), marker)),
         [
             "Read",
             "send_notification",
@@ -137,7 +143,7 @@ fn a_host_may_defer_every_tool_but_the_ones_it_always_needs() {
 #[test]
 fn every_tool_is_callable_and_calling_a_deferred_one_loads_it() {
     let d = Arc::new(ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]));
-    let callable = d.callable(&host_tools(), marker);
+    let callable = callable_tools(&d, &host_tools(), marker);
     assert_eq!(
         names(&callable),
         [
@@ -156,7 +162,7 @@ fn every_tool_is_callable_and_calling_a_deferred_one_loads_it() {
     let out = futures::executor::block_on(notify.execute(JsonMap::new(), &ctx)).unwrap();
     assert_eq!(out.content, "send_notification");
     assert_eq!(
-        names(&d.advertise(&host_tools(), marker)),
+        names(&advertised_tools(&d, &host_tools(), marker)),
         ["Read", "ToolSearch", "send_notification"],
         "a direct call loads the tool, as ToolSearch would"
     );
@@ -173,7 +179,7 @@ fn the_tools_a_resumed_conversation_called_count_as_loaded() {
         called("Read"),
     ]);
     assert_eq!(
-        names(&d.advertise(&host_tools(), marker)),
+        names(&advertised_tools(&d, &host_tools(), marker)),
         ["Read", "ToolSearch", "search_transcripts"]
     );
 }

@@ -33,7 +33,7 @@ fn all() -> Vec<Arc<dyn Tool>> {
 }
 
 fn advertise(d: &Arc<ToolDeferral>, all: &[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>> {
-    d.advertise(all, deferral_tools(d.clone()))
+    advertised_tools(d, all, deferral_tools(d.clone()))
 }
 
 fn names(d: &Arc<ToolDeferral>) -> Vec<String> {
@@ -155,4 +155,31 @@ async fn keyword_search_ranks_name_hits_over_description_hits() {
         search.execute(q, &ctx()).await,
         Err(ToolError::Input(_))
     ));
+}
+
+/// A source whose tools change between calls, as an MCP server's do.
+struct Changing(Arc<std::sync::Mutex<Vec<Arc<dyn Tool>>>>);
+
+impl ToolSource for Changing {
+    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+#[test]
+fn deferred_tools_ask_their_source_again_before_every_call() {
+    let list = Arc::new(std::sync::Mutex::new(all()[..1].to_vec()));
+    let source = DeferredTools::new(Changing(list.clone()), ToolDeferral::new(DeferMode::Grow));
+    let shown = |s: &DeferredTools| -> Vec<String> {
+        s.tools().iter().map(|t| t.name().to_string()).collect()
+    };
+    assert_eq!(shown(&source), ["Read"]);
+    *list.lock().unwrap() = all();
+    assert_eq!(shown(&source), ["Read", "ToolSearch"]);
+    assert!(
+        source
+            .callable()
+            .iter()
+            .any(|t| t.name() == "mcp__x__stocks")
+    );
 }
