@@ -87,13 +87,13 @@ pub fn issue_tools_named(tracker: Arc<dyn Tracker>, noun: &str) -> Vec<Arc<dyn T
     });
     let named = |verb: &str| format!("{noun}{verb}");
     vec![
-        Arc::new(read::List::new(named("List"), shared.clone())),
-        Arc::new(read::Search::new(named("Search"), shared.clone())),
-        Arc::new(read::Get::new(named("Get"), shared.clone())),
-        Arc::new(write::Create::new(named("Create"), shared.clone())),
-        Arc::new(write::Update::new(named("Update"), shared.clone())),
-        Arc::new(write::Delete::new(named("Delete"), shared.clone())),
-        Arc::new(write::Link::new(named("Link"), shared)),
+        Arc::new(read::IssueListTool::new(named("List"), shared.clone())),
+        Arc::new(read::IssueSearchTool::new(named("Search"), shared.clone())),
+        Arc::new(read::IssueGetTool::new(named("Get"), shared.clone())),
+        Arc::new(write::IssueCreateTool::new(named("Create"), shared.clone())),
+        Arc::new(write::IssueUpdateTool::new(named("Update"), shared.clone())),
+        Arc::new(write::IssueDeleteTool::new(named("Delete"), shared.clone())),
+        Arc::new(write::IssueLinkTool::new(named("Link"), shared)),
     ]
 }
 

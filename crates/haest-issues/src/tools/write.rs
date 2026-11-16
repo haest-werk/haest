@@ -8,19 +8,19 @@ use haest_core::tool::{
 use serde_json::{Value, json};
 
 use super::{DELETE_KIND, Shared, id_in, line, run, words_in};
-use crate::tracker::{IssuePatch, Link as TrackerLink, LinkChange, NewIssue, Relation};
+use crate::tracker::{IssuePatch, Link, LinkChange, NewIssue, Relation};
 
-issue_tool!(Create);
-issue_tool!(Update);
-issue_tool!(Delete);
-issue_tool!(Link);
+issue_tool!(IssueCreateTool);
+issue_tool!(IssueUpdateTool);
+issue_tool!(IssueDeleteTool);
+issue_tool!(IssueLinkTool);
 
 fn opt_string(input: &JsonMap, key: &str) -> Result<Option<String>, ToolError> {
     Ok(opt_str(input, key)?.map(str::to_string))
 }
 
 #[async_trait]
-impl Tool for Create {
+impl Tool for IssueCreateTool {
     fn name(&self) -> &str {
         &self.name
     }
@@ -68,7 +68,7 @@ impl Tool for Create {
 }
 
 #[async_trait]
-impl Tool for Update {
+impl Tool for IssueUpdateTool {
     fn name(&self) -> &str {
         &self.name
     }
@@ -127,7 +127,7 @@ impl Tool for Update {
 }
 
 #[async_trait]
-impl Tool for Delete {
+impl Tool for IssueDeleteTool {
     fn name(&self) -> &str {
         &self.name
     }
@@ -164,7 +164,7 @@ fn meaning(r: Relation) -> &'static str {
 }
 
 #[async_trait]
-impl Tool for Link {
+impl Tool for IssueLinkTool {
     fn name(&self) -> &str {
         &self.name
     }
@@ -210,7 +210,7 @@ impl Tool for Link {
         } else {
             (LinkChange::Add, "Linked")
         };
-        let link = TrackerLink::new(relation, target.clone());
+        let link = Link::new(relation, target.clone());
         run(ctx, self.s.tracker.link(&id, &link, change)).await?;
         Ok(ToolOutput::text(format!(
             "{done}: {id} {} {target}",

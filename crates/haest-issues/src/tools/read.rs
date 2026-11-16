@@ -7,10 +7,10 @@ use serde_json::{Value, json};
 use super::{Shared, id_in, limit_in, line, lines, run, words_in};
 use crate::tracker::{Issue, IssueFilter};
 
-issue_tool!(List);
+issue_tool!(IssueListTool);
 
 #[async_trait]
-impl Tool for List {
+impl Tool for IssueListTool {
     fn name(&self) -> &str {
         &self.name
     }
@@ -63,10 +63,10 @@ impl Tool for List {
     }
 }
 
-issue_tool!(Search);
+issue_tool!(IssueSearchTool);
 
 #[async_trait]
-impl Tool for Search {
+impl Tool for IssueSearchTool {
     fn name(&self) -> &str {
         &self.name
     }
@@ -100,7 +100,7 @@ impl Tool for Search {
     }
 }
 
-issue_tool!(Get);
+issue_tool!(IssueGetTool);
 
 /// An issue in full: its line, its fields, its links, its body.
 pub(super) fn full(i: &Issue) -> String {
@@ -141,7 +141,7 @@ fn grouped_links(i: &Issue) -> Vec<(&'static str, Vec<&str>)> {
 }
 
 #[async_trait]
-impl Tool for Get {
+impl Tool for IssueGetTool {
     fn name(&self) -> &str {
         &self.name
     }

@@ -69,10 +69,10 @@ fn id_param() -> Value {
     json!({"type": "string", "description": "The task id, e.g. \"3\""})
 }
 
-struct TaskCreate(Arc<TaskBoard>);
-struct TaskUpdate(Arc<TaskBoard>);
-struct TaskList(Arc<TaskBoard>);
-struct TaskGet(Arc<TaskBoard>);
+struct TaskCreateTool(Arc<TaskBoard>);
+struct TaskUpdateTool(Arc<TaskBoard>);
+struct TaskListTool(Arc<TaskBoard>);
+struct TaskGetTool(Arc<TaskBoard>);
 
 /// The four task tools over one board: TaskCreate, TaskUpdate (both kind
 /// `todo.write`), TaskList and TaskGet (read-only).
@@ -102,15 +102,15 @@ struct TaskGet(Arc<TaskBoard>);
 /// ```
 pub fn task_tools(board: Arc<TaskBoard>) -> Vec<Arc<dyn Tool>> {
     vec![
-        Arc::new(TaskCreate(board.clone())),
-        Arc::new(TaskUpdate(board.clone())),
-        Arc::new(TaskList(board.clone())),
-        Arc::new(TaskGet(board)),
+        Arc::new(TaskCreateTool(board.clone())),
+        Arc::new(TaskUpdateTool(board.clone())),
+        Arc::new(TaskListTool(board.clone())),
+        Arc::new(TaskGetTool(board)),
     ]
 }
 
 #[async_trait]
-impl Tool for TaskCreate {
+impl Tool for TaskCreateTool {
     fn name(&self) -> &str {
         "TaskCreate"
     }
@@ -145,7 +145,7 @@ impl Tool for TaskCreate {
 }
 
 #[async_trait]
-impl Tool for TaskUpdate {
+impl Tool for TaskUpdateTool {
     fn name(&self) -> &str {
         "TaskUpdate"
     }
@@ -191,7 +191,7 @@ impl Tool for TaskUpdate {
 }
 
 #[async_trait]
-impl Tool for TaskList {
+impl Tool for TaskListTool {
     fn name(&self) -> &str {
         "TaskList"
     }
@@ -218,7 +218,7 @@ impl Tool for TaskList {
 }
 
 #[async_trait]
-impl Tool for TaskGet {
+impl Tool for TaskGetTool {
     fn name(&self) -> &str {
         "TaskGet"
     }

@@ -43,13 +43,13 @@ fn hint(description: &str) -> String {
 
 const HINT_CHARS: usize = 120;
 
-struct ToolSearch {
+struct ToolSearchTool {
     deferral: Arc<ToolDeferral>,
     deferred: Vec<Arc<dyn Tool>>,
 }
 
 #[async_trait]
-impl Tool for ToolSearch {
+impl Tool for ToolSearchTool {
     fn name(&self) -> &str {
         "ToolSearch"
     }
@@ -103,12 +103,12 @@ impl Tool for ToolSearch {
     }
 }
 
-struct CallTool {
+struct CallToolTool {
     by_name: HashMap<String, Arc<dyn Tool>>,
 }
 
 #[async_trait]
-impl Tool for CallTool {
+impl Tool for CallToolTool {
     fn name(&self) -> &str {
         "CallTool"
     }
@@ -217,7 +217,7 @@ impl ToolSource for DeferredTools {
 /// CallTool runs a deferred tool by `name` with its `input`.
 fn deferral_tools(deferral: Arc<ToolDeferral>) -> impl Fn(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>> {
     move |deferred: &[Arc<dyn Tool>]| {
-        let search: Arc<dyn Tool> = Arc::new(ToolSearch {
+        let search: Arc<dyn Tool> = Arc::new(ToolSearchTool {
             deferral: deferral.clone(),
             deferred: deferred.to_vec(),
         });
@@ -228,7 +228,7 @@ fn deferral_tools(deferral: Arc<ToolDeferral>) -> impl Fn(&[Arc<dyn Tool>]) -> V
             .iter()
             .map(|t| (t.name().to_string(), t.clone()))
             .collect();
-        vec![search, Arc::new(CallTool { by_name })]
+        vec![search, Arc::new(CallToolTool { by_name })]
     }
 }
 
