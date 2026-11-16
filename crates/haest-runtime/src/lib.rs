@@ -5,8 +5,9 @@
 //! A host hands the runtime everything it may use ([`RuntimeInputs`]): the
 //! [`Settings`](haest_settings::Settings), the [`World`] (the real disk with
 //! the environment a child process gets, or the host's own
-//! [`Fs`](haest_core::fs::Fs)), the provider keys, the custom providers, the
-//! MCP servers and OpenRouter's routing. The runtime reads no file, variable or
+//! [`Fs`](haest_core::fs::Fs)), the variables passed on purpose, the provider
+//! keys, the custom providers, the MCP servers, OpenRouter's routing and the
+//! HTTP client the model calls go through. The runtime reads no file, variable or
 //! flag of its own: what is not handed in does not exist for it. haest-config
 //! is the opt-in loader that fills these in from haest's files, `HAEST_*`
 //! variables and flags, the way the `haest` command does.

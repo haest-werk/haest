@@ -216,14 +216,17 @@ That chain is `Loader::standard(defaults, &env, &flags)`, what the `haest`
 command reads. `loaded` holds the settings and everything the runtime is handed
 beside them. `haest::runtime::build` takes a `RuntimeInputs`: the settings, the
 `World` (the real disk with the environment a child gets, or the host's own
-`Fs`, where no real process starts), a `KeySource` for provider keys (a
-closure, a map, a vault), the custom providers, the MCP servers and the
-OpenRouter routing. What is not in there does not exist for haest. It builds a
-whole conversation behind a `Ui` and an approval `Prompter` -- the CLI is that
-plus a terminal. While it runs, the host changes it through the `Runtime`:
-`set_model_spec`, `set_effort`, `clear` (a fresh session file) and `rescan_skills`,
-each applied to the agent, the host and the session file together. A host that
-owns some parts takes the runtime's pieces, or only
+`Fs`, where no real process starts), the variables passed on purpose, a
+`KeySource` for provider keys (a closure, a map, a vault), the custom
+providers, the MCP servers, the OpenRouter routing and the `HttpClient` the
+model calls go through. What is not in there does not exist for haest. It
+builds a whole conversation behind a `Ui` and an approval `Prompter` -- the CLI
+is that plus a terminal. The host runs it through the `Runtime`: `human_turn`
+for what the human types, `next_agent_turn` for what a job or a subagent left
+in the inbox, `shut_down` at the end. In between it changes it with
+`set_model_spec`, `set_effort`, `clear` (a fresh session file) and
+`rescan_skills`, each applied to the agent, the runtime's hooks and the session
+file together. A host that owns some parts takes the runtime's pieces, or only
 `haest::tools::builtin_tools_where(|w| settings.tools.has(w), ..)`.
 
 [`crates/haest/examples/notebook`](https://github.com/haest-werk/haest/tree/main/crates/haest/examples/notebook/)
