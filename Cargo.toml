@@ -7,23 +7,26 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 rust-version = "1.88"
-publish = false
+repository = "https://github.com/haest-werk/haest"
+readme = "README.md"
+keywords = ["agent", "llm", "ai", "tools", "mcp"]
+categories = ["development-tools"]
 
 # Shared by more than one crate. A dependency only one crate uses goes in that
 # crate's own Cargo.toml, so parallel work on two crates never edits this table.
 [workspace.dependencies]
-haest-core = { path = "crates/haest-core" }
-haest-providers = { path = "crates/haest-providers" }
-haest-workspace = { path = "crates/haest-workspace" }
-haest-tools = { path = "crates/haest-tools" }
-haest-mcp = { path = "crates/haest-mcp" }
-haest-code = { path = "crates/haest-code" }
-haest-mods = { path = "crates/haest-mods" }
-haest-ts = { path = "crates/haest-ts" }
-haest-settings = { path = "crates/haest-settings" }
-haest-config = { path = "crates/haest-config" }
-haest-runtime = { path = "crates/haest-runtime" }
-haest = { path = "crates/haest" }
+haest-core = { version = "0.1.0", path = "crates/haest-core" }
+haest-providers = { version = "0.1.0", path = "crates/haest-providers" }
+haest-workspace = { version = "0.1.0", path = "crates/haest-workspace" }
+haest-tools = { version = "0.1.0", path = "crates/haest-tools" }
+haest-mcp = { version = "0.1.0", path = "crates/haest-mcp" }
+haest-code = { version = "0.1.0", path = "crates/haest-code" }
+haest-mods = { version = "0.1.0", path = "crates/haest-mods" }
+haest-ts = { version = "0.1.0", path = "crates/haest-ts" }
+haest-settings = { version = "0.1.0", path = "crates/haest-settings" }
+haest-config = { version = "0.1.0", path = "crates/haest-config" }
+haest-runtime = { version = "0.1.0", path = "crates/haest-runtime" }
+haest = { version = "0.1.0", path = "crates/haest" }
 
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-util = "0.7"

@@ -102,7 +102,7 @@ async fn a_redirect_to_a_private_address_is_refused_before_it_is_fetched() {
             .route("https://site.test/go", || {
                 HttpResponse::buffered(302, &[("location", "http://nas.test/admin")], "")
             })
-            .ip("nas.test", "172.20.7.12"),
+            .ip("nas.test", "172.16.0.12"),
     );
     assert!(matches!(
         fetch(&web, "https://site.test/go").await,

@@ -18,7 +18,7 @@ fn private_loopback_link_local_cgnat_and_mapped_addresses_are_blocked_public_one
     for ip in [
         "127.0.0.1",
         "10.1.2.3",
-        "172.20.7.12",
+        "172.16.0.12",
         "192.168.1.1",
         "169.254.169.254",
         "100.64.0.1",

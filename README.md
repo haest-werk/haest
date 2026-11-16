@@ -231,3 +231,7 @@ behind ToolSearch with a list that always loads (`DeferredTools`,
 `ToolDeferral::deferring_all_except`) -- is
 [`crates/haest/tests/plug_in.rs`](crates/haest/tests/plug_in.rs), from
 outside the crate, the public API only.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
