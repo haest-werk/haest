@@ -305,6 +305,7 @@ where
         MainTools::new(wrapped, main_hub),
         ToolDeferral::new(s.deferred_tools),
     ));
+    let deferral = tools.deferral().clone();
     let main_prompt = AgentPrompt {
         prompt: found.prompt,
         model: None,
@@ -321,6 +322,8 @@ where
     let resumed = session.saved.is_some();
     if let Some(saved) = session.saved {
         restore(&hooks, saved, &ledger, &board, &mut agent_opts);
+        // The deferred tools it was using stay loaded: no new ToolSearch for them.
+        deferral.load_called(&agent_opts.history);
     }
     let agent = Agent::new(deps, agent_opts);
     hooks.set_model(agent.model_spec());
