@@ -1,18 +1,15 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::*;
 use crate::{
-    agent::AgentOptions,
-    deps::AgentDeps,
+    agent::test_support::{self, Opts},
     events::LoopEvent,
     messages::{AssistantPart, ToolCall, ToolResultMessage},
     provider::Effort,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
-    workspace::ShutWorkspace,
+    tool::JsonMap,
 };
 
 fn assistant(input: u64) -> Message {
@@ -50,46 +47,19 @@ fn history() -> Vec<Message> {
     ]
 }
 
-struct Echo;
-
-#[async_trait]
-impl Tool for Echo {
-    fn name(&self) -> &str {
-        "Echo"
-    }
-    fn description(&self) -> String {
-        "echo".into()
-    }
-    fn parameters(&self) -> Value {
-        json!({"type": "object", "properties": {}})
-    }
-    fn kind(&self) -> &str {
-        "agent.unknown"
-    }
-    async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-        Ok(ToolOutput::text("ok"))
-    }
-}
-
+/// The loop tests' agent (Echo, one model), at high effort, on [`history`].
 fn agent_with(provider: &Arc<ScriptedProvider>) -> Agent {
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Echo)];
-    let deps = AgentDeps::new(
-        Arc::new(provider.resolver()),
-        Arc::new(tools),
-        Arc::new("SYSTEM".to_string()),
-        "/",
-        Arc::new(ShutWorkspace),
-    );
-    let mut opts = AgentOptions::new("fake:m");
-    opts.effort = Some(Effort::High);
-    opts.history = history();
-    Agent::new(deps, opts)
+    let (mut agent, _) = test_support::agent_with(provider, Opts::default());
+    agent.effort = Some(Effort::High);
+    agent.messages = history();
+    agent
 }
 
 fn empty_answer() -> AssistantMessage {
     AssistantMessage::start("scripted", "m")
 }
 
+/// Compact whenever asked.
 const CFG: CompactionConfig = CompactionConfig {
     context_window: 1,
     threshold: 0.0,
@@ -97,19 +67,21 @@ const CFG: CompactionConfig = CompactionConfig {
     keep_recent: 3,
 };
 
+/// Compact at 800 tokens.
+const AT_800: CompactionConfig = CompactionConfig {
+    context_window: 1000,
+    threshold: 0.8,
+    ceiling: None,
+    keep_recent: 3,
+};
+
 #[test]
 fn triggers_on_the_last_successful_request_not_the_sum() {
-    let cfg = CompactionConfig {
-        context_window: 1000,
-        threshold: 0.8,
-        ceiling: None,
-        keep_recent: 3,
-    };
-    assert!(needs_compaction(&history(), &cfg));
-    assert!(!needs_compaction(&history()[..6], &cfg));
+    assert!(needs_compaction(&history(), &AT_800));
+    assert!(!needs_compaction(&history()[..6], &AT_800));
     let low_ceiling = CompactionConfig {
         ceiling: Some(2),
-        ..cfg
+        ..AT_800
     };
     assert!(needs_compaction(&history()[..6], &low_ceiling));
 }
@@ -120,13 +92,7 @@ fn a_failed_request_never_triggers() {
     if let Message::Assistant(a) = &mut h[6] {
         a.stop_reason = StopReason::Error;
     }
-    let cfg = CompactionConfig {
-        context_window: 1000,
-        threshold: 0.8,
-        ceiling: None,
-        keep_recent: 3,
-    };
-    assert!(!needs_compaction(&h[..7], &cfg));
+    assert!(!needs_compaction(&h[..7], &AT_800));
 }
 
 #[test]

@@ -157,15 +157,12 @@ async fn a_write_is_a_barrier_and_nothing_runs_beside_it() {
 
 async fn rooms(calls: &[(String, String, serde_json::Value)]) -> Vec<u64> {
     let g = gauge();
-    let mut limits = uncapped();
-    limits.max_request_tokens = 100_000;
     let p = ScriptedProvider::new([answer(calls)]);
     let (mut agent, _) = agent_with(
         &p,
         Opts {
             tools: Some(vec![timed_tool("S", true, g.clone())]),
-            limits: Some(limits),
-            ..Default::default()
+            ..capped(|l| l.max_request_tokens = 100_000)
         },
     );
     collect(&mut agent, "go").await;

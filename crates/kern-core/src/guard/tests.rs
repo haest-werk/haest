@@ -26,22 +26,10 @@ fn guards(events: &[LoopEvent]) -> usize {
     count(events, |e| matches!(e, LoopEvent::Guard { .. }))
 }
 
-fn limits(f: impl FnOnce(&mut TurnLimits)) -> Option<TurnLimits> {
-    let mut l = uncapped();
-    f(&mut l);
-    Some(l)
-}
-
 #[tokio::test]
 async fn the_same_call_with_the_same_result_is_nudged_at_half_the_cap_and_stopped_at_the_cap() {
     let p = ScriptedProvider::new(same(20));
-    let (mut agent, _) = agent_with(
-        &p,
-        Opts {
-            limits: limits(|l| l.max_repeats = 4),
-            ..Default::default()
-        },
-    );
+    let (mut agent, _) = agent_with(&p, capped(|l| l.max_repeats = 4));
     let events = collect(&mut agent, "go").await;
     assert_eq!(p.requests().len(), 4);
     assert_eq!(end(&events).0, StopReason::MaxTokens);
@@ -54,13 +42,7 @@ async fn the_nudge_reaches_the_model_as_input_and_the_human_as_a_notice_never_as
     let mut script = same(3);
     script.push(text_answer("done"));
     let p = ScriptedProvider::new(script);
-    let (mut agent, _) = agent_with(
-        &p,
-        Opts {
-            limits: limits(|l| l.max_repeats = 4),
-            ..Default::default()
-        },
-    );
+    let (mut agent, _) = agent_with(&p, capped(|l| l.max_repeats = 4));
     let events = collect(&mut agent, "go").await;
     assert_eq!(count(&events, |e| matches!(e, LoopEvent::User { .. })), 1);
     let users = agent
@@ -88,8 +70,7 @@ async fn a_call_whose_result_changes_is_progress_not_a_loop() {
         &p,
         Opts {
             tools: Some(vec![counter]),
-            limits: limits(|l| l.max_repeats = 2),
-            ..Default::default()
+            ..capped(|l| l.max_repeats = 2)
         },
     );
     let events = collect(&mut agent, "go").await;
@@ -104,13 +85,7 @@ async fn key_order_does_not_hide_a_repeat() {
         echo("b", json!({"y": 2, "x": 1})),
         echo("c", json!({"x": 1, "y": 2})),
     ]);
-    let (mut agent, _) = agent_with(
-        &p,
-        Opts {
-            limits: limits(|l| l.max_repeats = 2),
-            ..Default::default()
-        },
-    );
+    let (mut agent, _) = agent_with(&p, capped(|l| l.max_repeats = 2));
     collect(&mut agent, "go").await;
     assert_eq!(p.requests().len(), 2);
 }
@@ -124,13 +99,7 @@ async fn an_a_b_a_b_cycle_is_caught() {
         )
     });
     let p = ScriptedProvider::new(cycle);
-    let (mut agent, _) = agent_with(
-        &p,
-        Opts {
-            limits: limits(|l| l.max_repeats = 3),
-            ..Default::default()
-        },
-    );
+    let (mut agent, _) = agent_with(&p, capped(|l| l.max_repeats = 3));
     collect(&mut agent, "go").await;
     assert_eq!(p.requests().len(), 5);
 }
@@ -139,13 +108,7 @@ async fn an_a_b_a_b_cycle_is_caught() {
 async fn the_step_cap_stops_the_turn_with_one_nudge_on_the_way() {
     let distinct = (0..50).map(|i| echo(&format!("t{i}"), json!({"v": i.to_string()})));
     let p = ScriptedProvider::new(distinct);
-    let (mut agent, _) = agent_with(
-        &p,
-        Opts {
-            limits: limits(|l| l.max_turn_steps = 6),
-            ..Default::default()
-        },
-    );
+    let (mut agent, _) = agent_with(&p, capped(|l| l.max_turn_steps = 6));
     let events = collect(&mut agent, "go").await;
     assert_eq!(p.requests().len(), 6);
     assert_eq!(guards(&events), 1);
@@ -155,7 +118,7 @@ async fn the_step_cap_stops_the_turn_with_one_nudge_on_the_way() {
 fn wall_time_on_the_hosts_clock_is_nudged_at_half_and_stopped_at_the_cap() {
     let clock = Arc::new(TestHooks::default());
     let mut guard = TurnGuard::new(clock.clone(), None);
-    let l = limits(|l| l.max_turn_ms = 1000);
+    let l = Some(limits(|l| l.max_turn_ms = 1000));
     let u = Usage::default();
     assert_eq!(guard.nudge(&u, l.as_ref()), None);
     clock.set_now(600);
@@ -169,13 +132,7 @@ fn wall_time_on_the_hosts_clock_is_nudged_at_half_and_stopped_at_the_cap() {
 #[tokio::test]
 async fn a_model_that_answers_without_tools_is_never_nudged() {
     let p = ScriptedProvider::new([text_answer("hi")]);
-    let (mut agent, _) = agent_with(
-        &p,
-        Opts {
-            limits: limits(|l| l.max_turn_steps = 1),
-            ..Default::default()
-        },
-    );
+    let (mut agent, _) = agent_with(&p, capped(|l| l.max_turn_steps = 1));
     let events = collect(&mut agent, "go").await;
     assert_eq!(guards(&events), 0);
     assert_eq!(end(&events).0, StopReason::EndTurn);
@@ -184,7 +141,7 @@ async fn a_model_that_answers_without_tools_is_never_nudged() {
 #[test]
 fn room_is_what_the_request_cap_leaves_after_the_last_request_and_the_results_since() {
     let mut guard = TurnGuard::new(Arc::new(TestHooks::default()), None);
-    let l = limits(|l| l.max_request_tokens = 1000);
+    let l = Some(limits(|l| l.max_request_tokens = 1000));
     assert_eq!(guard.room(None), None);
     assert_eq!(guard.too_big(400, l.as_ref()), None);
     assert_eq!(guard.room(l.as_ref()), Some(600));

@@ -27,15 +27,6 @@ fn usage(input: u64, output: u64, cost: Option<f64>) -> Usage {
     }
 }
 
-fn capped(f: impl FnOnce(&mut TurnLimits)) -> Opts {
-    let mut l = uncapped();
-    f(&mut l);
-    Opts {
-        limits: Some(l),
-        ..Default::default()
-    }
-}
-
 #[tokio::test]
 async fn a_turn_stops_once_its_reported_cost_reaches_the_usd_cap() {
     let p = looping(usage(1, 1, Some(1.0)));
@@ -146,10 +137,7 @@ fn an_image_counts_as_its_token_cost_not_its_base64() {
 #[test]
 fn a_zero_request_cap_refuses_nothing() {
     assert_eq!(request_too_big(u64::MAX, &uncapped()), None);
-    let l = TurnLimits {
-        max_request_tokens: 10,
-        ..uncapped()
-    };
+    let l = limits(|l| l.max_request_tokens = 10);
     assert_eq!(request_too_big(10, &l), None);
     assert!(request_too_big(11, &l).is_some());
 }

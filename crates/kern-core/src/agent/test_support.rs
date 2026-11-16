@@ -166,6 +166,21 @@ pub struct Opts {
     pub spill_dir: Option<&'static str>,
 }
 
+/// Every cap off but what `f` turns on.
+pub fn limits(f: impl FnOnce(&mut TurnLimits)) -> TurnLimits {
+    let mut l = uncapped();
+    f(&mut l);
+    l
+}
+
+/// The default agent with only the caps `f` turns on.
+pub fn capped(f: impl FnOnce(&mut TurnLimits)) -> Opts {
+    Opts {
+        limits: Some(limits(f)),
+        ..Default::default()
+    }
+}
+
 /// An agent on `fake:m1` served by `p`, with Echo unless `opts.tools` says otherwise.
 pub fn agent_with(p: &Arc<ScriptedProvider>, opts: Opts) -> (Agent, Arc<TestHooks>) {
     let hooks = Arc::new(TestHooks {

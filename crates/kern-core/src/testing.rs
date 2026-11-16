@@ -68,19 +68,18 @@ impl Provider for ScriptedProvider {
             m.error_message = Some("scripted provider: out of script".into());
             m
         });
-        let mut events = Vec::new();
-        for part in &msg.content {
-            match part {
-                AssistantPart::Text { text } => events.push(ProviderEvent::TextDelta(text.clone())),
+        let mut events: Vec<ProviderEvent> = (msg.content.iter())
+            .map(|part| match part {
+                AssistantPart::Text { text } => ProviderEvent::TextDelta(text.clone()),
                 AssistantPart::Thinking { thinking, .. } => {
-                    events.push(ProviderEvent::ThinkingDelta(thinking.clone()))
+                    ProviderEvent::ThinkingDelta(thinking.clone())
                 }
-                AssistantPart::ToolCall(c) => events.push(ProviderEvent::ToolCallStart {
+                AssistantPart::ToolCall(c) => ProviderEvent::ToolCallStart {
                     id: c.id.clone(),
                     name: c.name.clone(),
-                }),
-            }
-        }
+                },
+            })
+            .collect();
         events.push(ProviderEvent::Done(msg));
         Box::pin(stream::iter(events))
     }
