@@ -119,6 +119,11 @@ impl Agent {
         // A summary the hook paid for counts toward this turn, and may stop it.
         let side = self.take_side_spend();
         t.usage.add(&side);
+        // Cancelled while the hook ran (an Esc during the summary): the turn
+        // was aborted, whatever the hook made of it.
+        if cancel.is_cancelled() {
+            return Some(TurnEnd::new(StopReason::Aborted));
+        }
         if let Err(why) = ready {
             return Some(TurnEnd::with_error(StopReason::Error, why));
         }

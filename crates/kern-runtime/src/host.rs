@@ -120,7 +120,8 @@ impl Host {
     }
 
     /// Compact now. `auto`: the loop's own check, so nothing to cut stays silent.
-    /// `Err`: the summary failed (said to the UI already); history is as it was.
+    /// `Err`: no summary; history is as it was. Said to the UI already, unless
+    /// `cancel` fired: the human stopped it, and the turn ends as aborted.
     pub async fn compact_now(
         &self,
         agent: &mut Agent,
@@ -146,7 +147,9 @@ impl Host {
             Err(e) => {
                 charge(agent, &e.usage());
                 let why = format!("Compaction failed: {e}");
-                self.error(&why);
+                if !cancel.is_cancelled() {
+                    self.error(&why);
+                }
                 return Err(why);
             }
         }

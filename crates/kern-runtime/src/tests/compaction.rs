@@ -1,15 +1,17 @@
 //! The host compacts before a model call that would overflow. What the
 //! summary calls cost goes on the conversation's ledger once, whether the
-//! summary came out or not.
+//! summary came out or not; an Esc while it is written ends the turn as
+//! cancelled, with no failure shown.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{
     Host,
     kern::{
-        Agent, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message, Provider,
-        ResolvedModel, ShutWorkspace, StopReason, Tool, TurnEnd,
+        Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
+        Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason, Tool, TurnEnd,
         ledger::{Ledger, LedgerCaps},
+        provider::ProviderStream,
         testing::{ScriptedProvider, text_answer},
     },
     testkit::{host, settings},
@@ -66,4 +68,39 @@ async fn a_failed_compaction_goes_on_the_conversations_bill_once() {
     assert_eq!(end.stop_reason, StopReason::Error, "{:?}", end.error);
     assert_eq!(replies.requests().len(), 2, "the warm and the cold summary");
     assert_eq!(ledger.lock().unwrap().usd, 0.75);
+}
+
+/// The human presses Esc as each request goes out, once `control` is set.
+struct EscOnEveryCall {
+    replies: Arc<ScriptedProvider>,
+    control: OnceLock<AgentControl>,
+}
+
+impl Provider for EscOnEveryCall {
+    fn id(&self) -> &str {
+        "scripted"
+    }
+
+    fn stream(&self, req: ProviderRequest) -> ProviderStream {
+        if let Some(control) = self.control.get() {
+            control.abort();
+        }
+        self.replies.stream(req)
+    }
+}
+
+#[tokio::test]
+async fn an_esc_while_the_summary_is_written_ends_the_turn_cancelled_with_no_failure_shown() {
+    let replies = ScriptedProvider::new([text_answer("SUMMARY"), text_answer("never")]);
+    let esc = Arc::new(EscOnEveryCall {
+        replies: replies.clone(),
+        control: OnceLock::new(),
+    });
+    let (host, ui) = host(settings());
+    let (mut agent, _) = full(&host, esc.clone());
+    let _ = esc.control.set(agent.control());
+    let end = turn(&mut agent).await;
+    assert_eq!(end, TurnEnd::new(StopReason::Aborted));
+    assert_eq!(ui.warnings(), Vec::<String>::new(), "no failure shown");
+    assert_eq!(replies.requests().len(), 1, "the summary call only");
 }

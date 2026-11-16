@@ -12,7 +12,11 @@ use crate::{
 };
 
 /// A host that compacts before every model call, as the runtime's does.
-struct CompactsFirst(Option<TurnLimits>);
+/// `esc`: the human cancels the turn as the summary is asked for.
+struct CompactsFirst {
+    caps: Option<TurnLimits>,
+    esc: bool,
+}
 impl ToolHost for CompactsFirst {}
 #[async_trait]
 impl AgentHooks for CompactsFirst {
@@ -21,13 +25,16 @@ impl AgentHooks for CompactsFirst {
         agent: &mut Agent,
         cancel: &CancellationToken,
     ) -> Result<(), String> {
+        if self.esc {
+            agent.control().abort();
+        }
         compact(agent, cancel, &CFG)
             .await
             .map(drop)
             .map_err(|e| e.to_string())
     }
     fn limits(&self, _: &str) -> Option<TurnLimits> {
-        self.0.clone()
+        self.caps.clone()
     }
 }
 
@@ -40,7 +47,7 @@ fn costly_empty(input: u64) -> AssistantMessage {
 
 fn compacting(p: &Arc<ScriptedProvider>, caps: Option<TurnLimits>) -> Agent {
     let mut agent = agent_with(p);
-    agent.deps.hooks = Arc::new(CompactsFirst(caps));
+    agent.deps.hooks = Arc::new(CompactsFirst { caps, esc: false });
     agent
 }
 
@@ -71,6 +78,22 @@ async fn a_failed_compaction_still_counts_toward_the_turn() {
     let (reason, usage, _) = end(&events);
     assert_eq!(reason, StopReason::Error);
     assert_eq!(usage.input, 1000);
+}
+
+/// Esc while the summary is written: the turn was cancelled, not failed.
+#[tokio::test]
+async fn a_summary_cancelled_part_way_ends_the_turn_aborted_and_still_counts_toward_it() {
+    let p = ScriptedProvider::new([text_answer("SUM"), text_answer("never")]);
+    let mut agent = agent_with(&p);
+    agent.deps.hooks = Arc::new(CompactsFirst {
+        caps: None,
+        esc: true,
+    });
+    let events = collect(&mut agent, "go").await;
+    let (reason, usage, error) = end(&events);
+    assert_eq!((reason, error), (StopReason::Aborted, None));
+    assert_eq!(usage.input, 10);
+    assert_eq!(p.requests().len(), 1, "the summary call only");
 }
 
 #[tokio::test]

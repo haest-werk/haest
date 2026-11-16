@@ -49,7 +49,8 @@ pub trait AgentHooks: ToolHost {
     /// Runs before each model call; may replace history (compaction). `Err`
     /// ends the turn there, as an error with that text, without the call: the
     /// host's way out when it cannot go on (a summary that failed would
-    /// otherwise be tried again before every call, each try paid).
+    /// otherwise be tried again before every call, each try paid). A turn
+    /// cancelled while it ran ends as aborted, whatever it returns.
     async fn before_model_call(
         &self,
         _agent: &mut Agent,
