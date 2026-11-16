@@ -3,8 +3,11 @@
 //! continue on [summary, ...tail]. The summary request is the last loop request
 //! plus one instruction (see [`SummaryPath`]), so it costs a cache read, not a re-read.
 //!
-//! The cut always lands on a USER message, so the tail never starts with an
-//! orphaned tool result and every tool call in it keeps its result.
+//! The cut lands before a user or an assistant message, never between a tool
+//! call and its result, so the tail never starts with an orphaned tool result
+//! and every tool call in it keeps its result.
+
+use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -46,16 +49,45 @@ pub fn needs_compaction(messages: &[Message], cfg: &CompactionConfig) -> bool {
     last_assistant(messages).is_some_and(|a| a.usage.context_tokens() as f64 >= trigger)
 }
 
-/// Index of the first kept message: the latest user message at or before len-keep_recent.
+/// Index of the first kept message: the latest at or before len-keep_recent
+/// where a tail may start (see [`tail_starts`]); 0 = nothing to cut.
 pub fn cut_index(messages: &[Message], keep_recent: usize) -> usize {
     if messages.is_empty() {
         return 0;
     }
     let start = (messages.len() - 1).min(messages.len().saturating_sub(keep_recent).max(1));
-    (1..=start)
-        .rev()
-        .find(|&i| matches!(messages[i], Message::User(_)))
-        .unwrap_or(0)
+    let starts = tail_starts(messages);
+    (1..=start).rev().find(|&i| starts[i]).unwrap_or(0)
+}
+
+/// Per message: may the kept tail start there? At a user message or an
+/// assistant message (the summary is a user message, so roles still
+/// alternate), never at a tool result, and never where a result after the cut
+/// answers a call before it. One long agentic turn has no user message to cut
+/// at, and must still compact.
+fn tail_starts(messages: &[Message]) -> Vec<bool> {
+    // For each result, where its call is: the latest call of that id before it.
+    let mut called_at: HashMap<&str, usize> = HashMap::new();
+    let mut call_of = vec![usize::MAX; messages.len()];
+    for (i, m) in messages.iter().enumerate() {
+        match m {
+            Message::Assistant(a) => called_at.extend(a.tool_calls().map(|c| (c.id.as_str(), i))),
+            Message::Tool(r) => {
+                call_of[i] = called_at
+                    .get(r.tool_call_id.as_str())
+                    .copied()
+                    .unwrap_or(usize::MAX)
+            }
+            Message::User(_) => {}
+        }
+    }
+    let mut earliest_answered = usize::MAX;
+    let mut starts = vec![false; messages.len()];
+    for i in (0..messages.len()).rev() {
+        earliest_answered = earliest_answered.min(call_of[i]);
+        starts[i] = !matches!(messages[i], Message::Tool(_)) && earliest_answered >= i;
+    }
+    starts
 }
 
 fn warm_instruction(kept: usize) -> String {

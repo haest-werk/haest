@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use serde_json::json;
 
@@ -97,13 +97,59 @@ fn a_failed_request_never_triggers() {
     assert!(!needs_compaction(&h[..7], &AT_800));
 }
 
+/// Every tool result in `tail` answers a call in `tail`, before it.
+fn answered_within(tail: &[Message]) -> bool {
+    let mut called = HashSet::new();
+    tail.iter().all(|m| match m {
+        Message::Assistant(a) => {
+            called.extend(a.tool_calls().map(|c| c.id.as_str()));
+            true
+        }
+        Message::Tool(r) => called.contains(r.tool_call_id.as_str()),
+        Message::User(_) => true,
+    })
+}
+
 #[test]
-fn the_cut_lands_on_a_user_message_so_no_tool_result_is_orphaned() {
+fn the_cut_is_the_latest_that_orphans_no_tool_result() {
     let h = history();
-    assert_eq!(cut_index(&h, 3), 3);
-    assert!(matches!(h[cut_index(&h, 1)], Message::User(_)));
+    for keep in 0..=h.len() + 1 {
+        let cut = cut_index(&h, keep);
+        assert!(cut == 0 || answered_within(&h[cut..]), "keep {keep}");
+    }
+    assert_eq!(
+        cut_index(&h, 3),
+        4,
+        "before the call at 4, not its result at 5"
+    );
+    assert_eq!(cut_index(&h, 5), 3, "before a user message");
     assert_eq!(cut_index(&[Message::user("only")], 5), 0);
     assert_eq!(cut_index(&[], 5), 0);
+}
+
+/// The human spoke once, then only calls and their results.
+fn one_long_turn(steps: u64) -> Vec<Message> {
+    let mut h = vec![Message::user("go")];
+    for i in 0..steps {
+        h.extend([assistant(i), tool(&format!("t{i}"))]);
+    }
+    h
+}
+
+#[tokio::test]
+async fn one_long_agentic_turn_can_be_compacted() {
+    let h = one_long_turn(20);
+    let cut = cut_index(&h, 12);
+    assert!(cut > 0, "a turn of calls and results alone must have a cut");
+    assert!(answered_within(&h[cut..]));
+    let p = ScriptedProvider::new([text_answer("THE SUMMARY")]);
+    let mut agent = agent_with(&p);
+    agent.messages = h.clone();
+    let res = compact(&mut agent, &CancellationToken::new(), &CFG).await;
+    let res = res.unwrap().expect("something to compact");
+    assert_eq!(agent.messages[1..], h[h.len() - res.kept..]);
+    assert!(matches!(&agent.messages[0], Message::User(u) if u.content.contains("THE SUMMARY")));
+    assert!(answered_within(&agent.messages));
 }
 
 #[tokio::test]
@@ -114,12 +160,13 @@ async fn compact_replaces_the_head_with_a_summary_and_keeps_the_tail_verbatim() 
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(res.kept, 5);
+    let cut = cut_index(&history(), CFG.keep_recent);
+    assert_eq!(res.kept, history().len() - cut);
     let Message::User(first) = &agent.messages[0] else {
         panic!("summary must be a user message")
     };
     assert!(first.content.contains("THE SUMMARY"));
-    assert_eq!(agent.messages[1..], history()[3..]);
+    assert_eq!(agent.messages[1..], history()[cut..]);
 }
 
 #[tokio::test]
@@ -166,7 +213,8 @@ async fn a_warm_reply_without_text_falls_back_to_a_standalone_summary_of_the_hea
     assert_eq!(reqs.len(), 2);
     assert!(reqs[1].tools.is_empty());
     let sent = &reqs[1].messages;
-    assert_eq!(sent[..sent.len() - 1], history()[..3]);
+    let cut = cut_index(&history(), CFG.keep_recent);
+    assert_eq!(sent[..sent.len() - 1], history()[..cut]);
     assert_eq!(res.summary, "COLD");
 }
 
