@@ -19,6 +19,7 @@ haest-providers = { workspace = true }
 haest-mcp = { workspace = true }
 # The config files: ~/.config/haest/config.toml and a trusted project's .haest/config.toml.
 toml = "1.1"
+thiserror = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

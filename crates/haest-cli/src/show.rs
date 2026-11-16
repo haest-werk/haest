@@ -1,7 +1,7 @@
 //! `haest settings`: every setting, its value and where it came from, under
 //! the files haest read (or skipped) to get there.
 
-use haest::config::{DEFS, Def, Kind, Loaded, ProjectFile, Source, get};
+use haest::config::{DEFS, Def, Kind, Loaded, ProjectFile, Source};
 
 const NONE: &str = "-";
 
@@ -35,7 +35,7 @@ pub fn settings_report(loaded: &Loaded) -> Vec<String> {
 /// is a row per variable: its name, never its value.
 fn rows(loaded: &Loaded, def: &Def) -> Vec<(String, String)> {
     let r = &loaded.resolved;
-    let value = get(&loaded.config, def.key);
+    let value = loaded.config.get(def.key);
     if let (Kind::Vars, Some(names)) = (def.kind, &value) {
         let from = |name: &str| r.var_source(def.key, name).to_string();
         return names.split(',').map(|n| (n.to_string(), from(n))).collect();

@@ -83,7 +83,7 @@
 //! use haest_settings::{BuiltinTools, Settings};
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() -> Result<(), String> {
+//! # async fn main() -> Result<(), haest_config::ConfigError> {
 //! let fs = MemFs::with_files([
 //!     (
 //!         "/home/me/.config/haest/config.toml",
@@ -130,6 +130,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
+mod error;
 mod fields;
 mod file;
 mod handed;
@@ -148,7 +149,8 @@ use haest_core::ChildEnv;
 use haest_mcp::McpServerConfig;
 use haest_providers::{CustomProviders, RoutingScopes};
 
-pub use fields::{CORE_VARS, Config, EnvPassthrough, get, set};
+pub use error::{ConfigError, SetError};
+pub use fields::{CORE_VARS, Config, EnvPassthrough};
 pub use loader::Loader;
 pub use registry::{DEFS, Def, Kind, Scope};
 pub use source::{ProjectFile, Resolved, Source};

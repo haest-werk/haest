@@ -86,7 +86,7 @@ fn set_in(def: &Def) -> &'static str {
 }
 
 fn default_of(def: &Def) -> String {
-    match get(&Config::bare("<cwd>", "~"), def.key).as_deref() {
+    match Config::bare("<cwd>", "~").get(def.key).as_deref() {
         None if def.kind == Kind::Vars => "none".into(),
         None => "unset".into(),
         Some("") => "none".into(),

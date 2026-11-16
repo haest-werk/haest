@@ -4,7 +4,8 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::{
-    fields::{Config, set},
+    ConfigError,
+    fields::Config,
     registry::{Def, Kind, find},
     source::{Source, var_key},
     value::{absolute, check, var_parts},
@@ -57,16 +58,20 @@ pub(crate) struct Layer {
 
 impl Layer {
     /// Every value checked against its setting; an error names where it came from.
-    pub fn checked(given: Vec<Given>) -> Result<Self, String> {
+    pub fn checked(given: Vec<Given>) -> Result<Self, ConfigError> {
         let values = given
             .into_iter()
             .map(|g| {
-                let def = find(&g.key)
-                    .ok_or_else(|| format!("{}: unknown setting \"{}\"", g.source, g.key))?;
-                let value = check(def, &g.raw).map_err(|e| format!("{} {e}", g.source))?;
-                Ok((def, value, g.source))
+                let checked = match find(&g.key) {
+                    None => Err(format!("unknown setting \"{}\"", g.key)),
+                    Some(def) => check(def, &g.raw).map(|value| (def, value)),
+                };
+                match checked {
+                    Ok((def, value)) => Ok((def, value, g.source)),
+                    Err(why) => Err(ConfigError::Invalid { at: g.source, why }),
+                }
             })
-            .collect::<Result<_, String>>()?;
+            .collect::<Result<_, _>>()?;
         Ok(Self {
             values,
             profiles: BTreeMap::new(),
@@ -93,7 +98,7 @@ impl Stack {
     }
 
     /// Check every layer of values in hand.
-    pub fn read_values(&mut self) -> Result<(), String> {
+    pub fn read_values(&mut self) -> Result<(), ConfigError> {
         for slot in &mut self.0 {
             if let Slot::Pending(Pending::Values(given)) = slot {
                 *slot = Slot::Read(Layer::checked(std::mem::take(given))?);
@@ -141,7 +146,10 @@ impl Stack {
     /// layer still pending read nothing (no project file, no profile named).
     /// A variable of `env` has a source of its own (`env.NAME`), and `env` as
     /// a whole the last layer that passed one.
-    pub fn fold(self, mut config: Config) -> Result<(Config, BTreeMap<String, Source>), String> {
+    pub fn fold(
+        self,
+        mut config: Config,
+    ) -> Result<(Config, BTreeMap<String, Source>), ConfigError> {
         let (cwd, home) = (config.settings.cwd.clone(), config.settings.home.clone());
         let mut sources = BTreeMap::new();
         let values = self.0.into_iter().flat_map(|slot| match slot {
@@ -161,7 +169,10 @@ impl Stack {
                 }
                 _ => (value, def.key.to_string()),
             };
-            set(&mut config, def.key, &value).map_err(|e| format!("{}: {e}", def.key))?;
+            if let Err(e) = config.set(def.key, &value) {
+                let why = e.to_string();
+                return Err(ConfigError::Invalid { at: source, why });
+            }
             sources.insert(key, source);
         }
         Ok((config, sources))

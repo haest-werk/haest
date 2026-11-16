@@ -187,7 +187,7 @@ async fn main() -> ExitCode {
         .await
     {
         Ok(l) => l,
-        Err(e) => return fail(2, e),
+        Err(e) => return fail(2, report(e)),
     };
     if let Some(cmd) = &args.command {
         return subcommand(cmd, &loaded).await;

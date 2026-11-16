@@ -39,11 +39,22 @@ async fn run(
     fs: &[(&str, &str)],
     env: &[(&str, &str)],
     flags: &[(&str, &str)],
-) -> Result<Loaded, String> {
+) -> Result<Loaded, ConfigError> {
     let env = vars(&[&[("HOME", HOME)], env].concat());
     Loader::standard(Settings::bare(cwd, HOME), &env, &owned(flags))
         .load(&files(fs))
         .await
+}
+
+/// The error and every cause under it, as a host shows it.
+fn report(e: &ConfigError) -> String {
+    let mut line = e.to_string();
+    let mut cause = std::error::Error::source(e);
+    while let Some(c) = cause {
+        line = format!("{line}: {c}");
+        cause = c.source();
+    }
+    line
 }
 
 async fn settings(env: &[(&str, &str)], flags: &[(&str, &str)]) -> Settings {
@@ -118,7 +129,11 @@ async fn a_project_can_not_trust_itself_or_say_where_the_config_lives() {
     for body in ["trusted_dirs = [\"/\"]", "config_dir = \"/x\""] {
         let project = ("/w/.haest/config.toml", body);
         let err = run("/w", &[project, trust], &[], &[]).await.unwrap_err();
-        assert!(err.starts_with("/w/.haest/config.toml"), "{err}");
+        let in_project = Source::File(project.0.into());
+        assert!(
+            matches!(&err, ConfigError::Invalid { at, .. } if *at == in_project),
+            "{err}"
+        );
     }
 }
 
@@ -158,7 +173,14 @@ tools = ["read", "grep"]"#;
     let err = run("/w", &files, &[], &[("profile", "nope")])
         .await
         .unwrap_err();
-    assert!(err.contains("claude") && err.contains("review"), "{err}");
+    let ConfigError::UnknownProfile { name, known } = err else {
+        panic!("{err}");
+    };
+    let named = |n: &str| known.iter().any(|k| k == n);
+    assert!(
+        name == "nope" && named("claude") && named("review"),
+        "{known:?}"
+    );
 }
 
 type Pairs = &'static [(&'static str, &'static str)];
@@ -191,7 +213,7 @@ async fn garbage_is_refused_and_names_where_it_was() {
         ),
     ];
     for (files, env, flags, names) in cases {
-        let err = run("/w", files, env, flags).await.unwrap_err();
+        let err = report(&run("/w", files, env, flags).await.unwrap_err());
         assert!(err.contains(names), "{names}: {err}");
     }
 }
@@ -202,17 +224,12 @@ async fn garbage_is_refused_and_names_where_it_was() {
 async fn a_number_setting_reads_what_it_was_given_or_refuses_it_by_name() {
     for def in DEFS.iter().filter(|d| d.kind == Kind::Number) {
         match run("/w", &[], &[], &[(def.key, "0.5")]).await {
-            Ok(r) => assert_eq!(
-                get(&r.config, def.key).as_deref(),
-                Some("0.5"),
-                "{}",
-                def.key
-            ),
-            Err(e) => assert!(e.contains(&format!("--{}", def.flag())), "{}: {e}", def.key),
+            Ok(r) => assert_eq!(r.config.get(def.key).as_deref(), Some("0.5"), "{}", def.key),
+            Err(e) => assert!(report(&e).contains(&format!("--{}", def.flag())), "{e}"),
         }
     }
     let file = [(USER_FILE, "subagent_minutes = 0.5")];
-    let err = run("/w", &file, &[], &[]).await.unwrap_err();
+    let err = report(&run("/w", &file, &[], &[]).await.unwrap_err());
     assert!(
         err.contains(USER_FILE) && err.contains("subagent_minutes"),
         "{err}"
@@ -220,7 +237,7 @@ async fn a_number_setting_reads_what_it_was_given_or_refuses_it_by_name() {
     let err = run("/w", &[], &[("HAEST_MAX_TURN_STEPS", "2.5")], &[])
         .await
         .unwrap_err();
-    assert!(err.contains("HAEST_MAX_TURN_STEPS"), "{err}");
+    assert!(report(&err).contains("HAEST_MAX_TURN_STEPS"), "{err}");
     let whole = [(USER_FILE, "subagent_steps = 30.0\nsubagent_usd = 0.5")];
     let s = run("/w", &whole, &[], &[]).await.unwrap().config.settings;
     assert_eq!((s.subagents.steps, s.subagents.usd), (30, 0.5));

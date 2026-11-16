@@ -63,7 +63,7 @@ async fn providers_json_comes_from_the_config_dir_and_a_broken_one_stops_the_loa
     let r = run("/w", &[(path, file)], &[], &[]).await.unwrap();
     assert!(r.providers.contains_key("local"));
     let err = run("/w", &[(path, "{nope")], &[], &[]).await.unwrap_err();
-    assert!(err.contains("providers.json"), "{err}");
+    assert!(matches!(err, ConfigError::Providers(_)), "{err}");
 }
 
 const MCP_JSON: &str = r#"{"mcpServers": {"gh": {"command": "gh-mcp"}}}"#;
@@ -174,7 +174,7 @@ async fn a_bad_variable_is_refused_by_its_name_and_never_shows_its_value() {
         (&[], &[("env", "1X=secret")], "--env"),
     ];
     for (files, flags, names) in cases {
-        let err = run("/w", files, &[], flags).await.unwrap_err();
+        let err = report(&run("/w", files, &[], flags).await.unwrap_err());
         assert!(err.contains(names), "{names}: {err}");
         assert!(!err.contains("secret"), "{err}");
     }

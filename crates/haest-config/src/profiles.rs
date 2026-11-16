@@ -2,6 +2,7 @@
 //! these (its keys win) or defines a new one.
 
 use crate::{
+    ConfigError,
     source::Source,
     stack::{Given, Layer, Stack},
 };
@@ -29,16 +30,16 @@ pub fn builtin(name: &str) -> Option<&'static [(&'static str, &'static str)]> {
 }
 
 /// The profile `name`: the built-in one, then each layer's table of it on top.
-pub(crate) fn layer(name: &str, stack: &Stack) -> Result<Layer, String> {
+pub(crate) fn layer(name: &str, stack: &Stack) -> Result<Layer, ConfigError> {
     let builtin = builtin(name);
     let tables = stack.profile_tables(name);
     if builtin.is_none() && tables.is_empty() {
-        let mut known: Vec<&str> = BUILTIN.iter().map(|(n, _)| *n).collect();
-        known.extend(stack.profile_names());
-        return Err(format!(
-            "unknown profile \"{name}\" (known: {})",
-            known.join(", ")
-        ));
+        let builtins = BUILTIN.iter().map(|(n, _)| *n);
+        let known = builtins.chain(stack.profile_names()).map(String::from);
+        return Err(ConfigError::UnknownProfile {
+            name: name.into(),
+            known: known.collect(),
+        });
     }
     let source = Source::Profile(name.to_string());
     let given = builtin

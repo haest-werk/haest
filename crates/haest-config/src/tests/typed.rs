@@ -63,21 +63,22 @@ async fn code_web_search_and_switch_words_read_as_asked() {
 fn every_setting_reads_back_as_the_text_it_was_set_from() {
     let bare = Config::bare("/w", "/h");
     for def in DEFS {
-        if let Some(raw) = get(&bare, def.key) {
+        if let Some(raw) = bare.get(def.key) {
             let mut c = bare.clone();
-            set(&mut c, def.key, &raw).unwrap_or_else(|e| panic!("{}: {e}", def.key));
+            c.set(def.key, &raw)
+                .unwrap_or_else(|e| panic!("{}: {e}", def.key));
             assert_eq!(c, bare, "{} = {raw}", def.key);
         }
         let raw = check(def, def.example).unwrap_or_else(|e| panic!("{}: {e}", def.key));
         let mut c = bare.clone();
-        set(&mut c, def.key, &raw).unwrap();
+        c.set(def.key, &raw).unwrap();
         assert_ne!(c, bare, "{}: the example {raw} is the bare value", def.key);
         let shown = match def.kind {
             // A variable reads back as its name: its value may be a key.
             Kind::Vars => var_parts(&raw).0,
             _ => raw.as_str(),
         };
-        assert_eq!(get(&c, def.key).as_deref(), Some(shown), "{}", def.key);
+        assert_eq!(c.get(def.key).as_deref(), Some(shown), "{}", def.key);
     }
 }
 
@@ -89,8 +90,9 @@ fn every_word_a_choice_offers_is_one_its_field_takes() {
         };
         for word in words {
             let mut c = Config::bare("/w", "/h");
-            set(&mut c, def.key, word).unwrap_or_else(|e| panic!("{} = {word}: {e}", def.key));
-            assert_eq!(get(&c, def.key).as_deref(), Some(*word), "{}", def.key);
+            c.set(def.key, word)
+                .unwrap_or_else(|e| panic!("{} = {word}: {e}", def.key));
+            assert_eq!(c.get(def.key).as_deref(), Some(*word), "{}", def.key);
         }
     }
 }
@@ -98,8 +100,8 @@ fn every_word_a_choice_offers_is_one_its_field_takes() {
 #[test]
 fn an_unknown_name_is_refused() {
     let mut c = Config::bare("/w", "/h");
-    assert!(set(&mut c, "tool", "read").is_err());
-    assert_eq!(get(&c, "tool"), None);
+    assert!(c.set("tool", "read").is_err());
+    assert_eq!(c.get("tool"), None);
 }
 
 #[test]

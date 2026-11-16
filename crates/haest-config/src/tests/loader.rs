@@ -37,7 +37,8 @@ async fn a_layer_not_added_is_not_read() {
 #[tokio::test]
 async fn a_file_the_host_names_must_be_there_and_is_read_as_the_users_own() {
     let err = bare().file(NAMED).load(&MemFs::new()).await.unwrap_err();
-    assert!(err.contains(NAMED), "{err}");
+    let missing = matches!(&err, ConfigError::NoSuchFile { path } if path.as_os_str() == NAMED);
+    assert!(missing, "{err}");
     let fs = files(&[(NAMED, "trusted_dirs = [\"/w\"]")]);
     assert!(bare().file(NAMED).load(&fs).await.unwrap().resolved.trusted);
 }

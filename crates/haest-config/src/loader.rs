@@ -10,7 +10,7 @@ use haest_providers::load_custom_providers;
 use haest_settings::Settings;
 
 use crate::{
-    Loaded,
+    ConfigError, Loaded,
     fields::Config,
     file, handed, profiles,
     registry::{DEFS, flag_name},
@@ -40,7 +40,7 @@ use crate::{
 /// # use std::collections::HashMap;
 /// # use haest_config::Loader;
 /// # use haest_settings::Settings;
-/// # async fn host(fs: &dyn haest_core::fs::Fs, env: HashMap<String, String>, flags: Vec<(String, String)>) -> Result<(), String> {
+/// # async fn host(fs: &dyn haest_core::fs::Fs, env: HashMap<String, String>, flags: Vec<(String, String)>) -> Result<(), haest_config::ConfigError> {
 /// let loaded = Loader::new(Settings::bare("/work", "/home/me"))
 ///     .xdg_dirs(&env) // the default dirs under $XDG_DATA_HOME, $XDG_CONFIG_HOME
 ///     .user_file() // <config dir>/config.toml
@@ -62,7 +62,7 @@ use crate::{
 /// use haest_settings::{Settings, WordSet};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), String> {
+/// # async fn main() -> Result<(), haest_config::ConfigError> {
 /// let fs = MemFs::with_files([("/etc/myhost/haest.toml", "tools = [\"read\"]\nmodel = \"a:file\"")]);
 /// let flags = [("model".to_string(), "a:flag".to_string())];
 /// let loaded = Loader::new(Settings::bare("/srv/app", "/root"))
@@ -212,15 +212,16 @@ impl Loader {
     ///
     /// # Errors
     ///
-    /// A message naming where the problem is, when: a setting is unknown, or
-    /// its value is not one it takes; a file the host named with
+    /// A [`ConfigError`] naming where the problem is, when: a setting is
+    /// unknown, or its value is not one it takes; a project's file sets what
+    /// only you may (`trusted_dirs`, `provider_routing`) or a profile sets
+    /// `profile`, `trusted_dirs` or `provider_routing`; a file sets
+    /// `config_dir` (only a variable or a flag may) (all
+    /// [`Invalid`](ConfigError::Invalid)); a file the host named with
     /// [`file`](Self::file) is not there; a config file cannot be read or is
-    /// not TOML; a project's file sets what only you may (`trusted_dirs`,
-    /// `provider_routing`) or a profile sets `profile`, `trusted_dirs` or
-    /// `provider_routing`; a file sets `config_dir` (only a variable or a flag
-    /// may); `profile` names a profile there is none of; `providers.json` is
-    /// malformed.
-    pub async fn load(self, fs: &dyn Fs) -> Result<Loaded, String> {
+    /// not TOML; `profile` names a profile there is none of; `providers.json`
+    /// is malformed.
+    pub async fn load(self, fs: &dyn Fs) -> Result<Loaded, ConfigError> {
         let Loader {
             defaults,
             stack,
@@ -232,9 +233,7 @@ impl Loader {
         handed::gate_project_mods(fs, &cwd, project_mods, resolved.trusted, &mut notes).await;
         let mcp_servers =
             handed::mcp_servers(fs, &cwd, config.mcp, resolved.trusted, &env, &mut notes).await;
-        let providers = load_custom_providers(fs, &config.settings.config_dir)
-            .await
-            .map_err(|e| e.to_string())?;
+        let providers = load_custom_providers(fs, &config.settings.config_dir).await?;
         let routing = config.provider_routing.as_deref();
         Ok(Loaded {
             child_env: handed::child_env(config.env_passthrough, &env),
@@ -257,7 +256,7 @@ async fn resolve(
     defaults: Settings,
     mut stack: Stack,
     fs: &dyn Fs,
-) -> Result<(Config, Resolved, Vec<String>), String> {
+) -> Result<(Config, Resolved, Vec<String>), ConfigError> {
     let (cwd, home) = (defaults.cwd.clone(), defaults.home.clone());
     let at = |path: &str| absolute(path, &cwd, &home);
     let mut notes = Vec::new();
@@ -319,7 +318,7 @@ async fn read_project(
     home: &Path,
     trusted: &dyn Fn(&Path) -> bool,
     stack: &mut Stack,
-) -> Result<ProjectFile, String> {
+) -> Result<ProjectFile, ConfigError> {
     let Some(path) = file::find_project_file(fs, cwd, home).await else {
         return Ok(ProjectFile::None);
     };

@@ -1,16 +1,20 @@
 //! Every setting as a field. [`Config`] holds the runtime's [`Settings`] and
-//! the ones only a loader reads; [`set`] and [`get`] go by the setting's name,
-//! in the one spelling [`crate::value::check`] gives a value, so what a file
-//! says and what `haest settings` shows are the same text.
+//! the ones only a loader reads; [`Config::set`] and [`Config::get`] go by the
+//! setting's name, in the one spelling [`crate::value::check`] gives a value,
+//! so what a file says and what `haest settings` shows are the same text.
+
+mod raw;
 
 use std::{collections::BTreeMap, path::PathBuf};
 
-use haest_core::{
-    Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine, words::UnknownWord,
-};
-use haest_settings::{BuiltinTools, ContextSources, Settings, SkillSources, WordSet};
+use haest_core::provider::WebSearchEngine;
+use haest_settings::Settings;
 
-use crate::value::{number, parse_bool, split_list, var, var_parts};
+use self::raw::Raw;
+use crate::{
+    SetError,
+    value::{var, var_parts},
+};
 
 haest_core::word_enum! {
     /// What a process haest starts (bash, a background job, an MCP server) gets of
@@ -40,7 +44,8 @@ pub const CORE_VARS: &[&str] = &[
 /// Every setting's value: the runtime's [`Settings`], and the settings only
 /// the loader reads.
 ///
-/// [`get`] and [`set`] reach any of them by the setting's name.
+/// [`get`](Self::get) and [`set`](Self::set) reach any of them by the
+/// setting's name.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// What the runtime is handed.
@@ -70,6 +75,51 @@ impl Config {
     pub fn bare(cwd: impl Into<PathBuf>, home: impl Into<PathBuf>) -> Self {
         Settings::bare(cwd, home).into()
     }
+
+    /// Set the setting named `key` from `raw`, its value in the checked
+    /// spelling: `true` / `false`, a number, a word, a comma list of words in
+    /// any order (empty for none), text; for `env`, one `NAME=VALUE`, added to
+    /// the ones there.
+    ///
+    /// This is how the loader writes a value it has checked. It does not check
+    /// where the value may come from ([`Scope`](crate::Scope)), nor take every
+    /// spelling a layer may use (`all` or `none` for a list, a word in another
+    /// case).
+    ///
+    /// # Errors
+    ///
+    /// [`SetError::Unknown`] when there is no setting `key`,
+    /// [`SetError::Value`] when `raw` is not a value it takes. Either way
+    /// nothing changes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use haest_config::{Config, SetError};
+    ///
+    /// let mut c = Config::bare("/work", "/home/me");
+    /// c.set("tools", "grep,read").unwrap();
+    /// c.set("max_turn_usd", "5").unwrap();
+    /// assert_eq!(c.get("tools").as_deref(), Some("read,grep"));
+    /// assert_eq!(c.settings.limits.max_turn_usd, 5.0);
+    ///
+    /// assert!(matches!(c.set("tool", "read"), Err(SetError::Unknown { .. })));
+    /// assert!(matches!(c.set("max_turn_steps", "2.5"), Err(SetError::Value { .. })));
+    /// ```
+    pub fn set(&mut self, key: &str, raw: &str) -> Result<(), SetError> {
+        let (_, set) = field(key).ok_or_else(|| SetError::Unknown { key: key.into() })?;
+        set(self, raw).map_err(|why| SetError::Value {
+            key: key.into(),
+            why,
+        })
+    }
+
+    /// The setting `key`'s value, in the checked spelling ([`set`](Self::set)
+    /// reads it back); None = unset (or no such setting). `env` gives its
+    /// variables' names only: a value may be a key.
+    pub fn get(&self, key: &str) -> Option<String> {
+        field(key).and_then(|(get, _)| get(self))
+    }
 }
 
 /// These settings, and the loader's own at their defaults (as [`Config::bare`]).
@@ -84,121 +134,6 @@ impl From<Settings> for Config {
             mcp: false,
             provider_routing: None,
         }
-    }
-}
-
-/// A value in the checked spelling, and back. None = unset.
-trait Raw: Sized {
-    /// A count: a whole number up to this, never a fraction (`0.5` read as 0
-    /// would turn a cap off). None = any number.
-    const WHOLE_UP_TO: Option<f64> = None;
-    fn to_raw(&self) -> Option<String>;
-    fn from_raw(raw: &str) -> Result<Self, String>;
-}
-
-/// A type that already reads and writes itself as one word.
-macro_rules! word {
-    ($($t:ty),+) => {$(
-        impl Raw for $t {
-            fn to_raw(&self) -> Option<String> {
-                Some(self.as_str().into())
-            }
-            fn from_raw(raw: &str) -> Result<Self, String> {
-                raw.parse().map_err(|e: UnknownWord| e.to_string())
-            }
-        }
-    )+};
-}
-word!(
-    Effort,
-    WorkspaceMode,
-    DeferMode,
-    EnvPassthrough,
-    WebSearchEngine
-);
-
-impl Raw for f64 {
-    fn to_raw(&self) -> Option<String> {
-        Some(self.to_string())
-    }
-    fn from_raw(raw: &str) -> Result<Self, String> {
-        number(raw, None)
-    }
-}
-
-macro_rules! count {
-    ($($t:ty),+) => {$(
-        impl Raw for $t {
-            const WHOLE_UP_TO: Option<f64> = Some(<$t>::MAX as f64);
-            fn to_raw(&self) -> Option<String> {
-                Some(self.to_string())
-            }
-            fn from_raw(raw: &str) -> Result<Self, String> {
-                number(raw, Self::WHOLE_UP_TO).map(|n| n as $t)
-            }
-        }
-    )+};
-}
-count!(u32, u64, usize);
-
-macro_rules! words {
-    ($($t:ty),+) => {$(
-        impl Raw for $t {
-            fn to_raw(&self) -> Option<String> {
-                Some(self.words().join(","))
-            }
-            fn from_raw(raw: &str) -> Result<Self, String> {
-                let words = split_list(raw);
-                <$t>::from_words(words.iter().map(String::as_str)).map_err(|e| e.to_string())
-            }
-        }
-    )+};
-}
-words!(BuiltinTools, ContextSources, SkillSources);
-
-impl Raw for bool {
-    fn to_raw(&self) -> Option<String> {
-        Some(self.to_string())
-    }
-    fn from_raw(raw: &str) -> Result<Self, String> {
-        parse_bool(raw).ok_or_else(|| format!("\"{raw}\" must be true or false"))
-    }
-}
-
-impl Raw for String {
-    fn to_raw(&self) -> Option<String> {
-        Some(self.clone())
-    }
-    fn from_raw(raw: &str) -> Result<Self, String> {
-        Ok(raw.into())
-    }
-}
-
-impl Raw for PathBuf {
-    fn to_raw(&self) -> Option<String> {
-        Some(self.display().to_string())
-    }
-    fn from_raw(raw: &str) -> Result<Self, String> {
-        Ok(raw.into())
-    }
-}
-
-impl Raw for Vec<String> {
-    fn to_raw(&self) -> Option<String> {
-        Some(self.join(","))
-    }
-    fn from_raw(raw: &str) -> Result<Self, String> {
-        Ok(split_list(raw))
-    }
-}
-
-impl<T: Raw> Raw for Option<T> {
-    const WHOLE_UP_TO: Option<f64> = T::WHOLE_UP_TO;
-    fn to_raw(&self) -> Option<String> {
-        self.as_ref().and_then(T::to_raw)
-    }
-    fn from_raw(raw: &str) -> Result<Self, String> {
-        T::from_raw(raw).map(Some)
     }
 }
 
@@ -228,7 +163,7 @@ const WEB_SEARCH: (&str, Get, Set) = (
 
 /// `env`: a `NAME=VALUE` adds that variable to the ones set before it. It
 /// reads back as the names only: a value may be a key, and `haest settings`
-/// shows what [`get`] gives.
+/// shows what [`Config::get`] gives.
 const ENV: (&str, Get, Set) = (
     "env",
     |c| (!c.env.is_empty()).then(|| c.env.keys().cloned().collect::<Vec<_>>().join(",")),
@@ -320,44 +255,4 @@ fn field(key: &str) -> Option<(Get, Set)> {
         .iter()
         .find(|(k, _, _)| *k == key)
         .map(|(_, g, s)| (*g, *s))
-}
-
-/// Set the setting named `key` on `c` from `raw`, its value in the checked
-/// spelling: `true` / `false`, a number, a word, a comma list of words in any
-/// order (empty for none), text; for `env`, one `NAME=VALUE`, added to the
-/// ones there.
-///
-/// This is how the loader writes a value it has checked. It does not check
-/// where the value may come from ([`Scope`](crate::Scope)), nor take every
-/// spelling a layer may use (`all` or `none` for a list, a word in another
-/// case).
-///
-/// # Errors
-///
-/// When there is no setting `key`, or `raw` is not a value it takes.
-///
-/// # Examples
-///
-/// ```
-/// use haest_config::{Config, get, set};
-///
-/// let mut c = Config::bare("/work", "/home/me");
-/// set(&mut c, "tools", "grep,read").unwrap();
-/// set(&mut c, "max_turn_usd", "5").unwrap();
-/// assert_eq!(get(&c, "tools").as_deref(), Some("read,grep"));
-/// assert_eq!(c.settings.limits.max_turn_usd, 5.0);
-///
-/// assert!(set(&mut c, "tool", "read").is_err());
-/// assert!(set(&mut c, "max_turn_steps", "2.5").is_err());
-/// ```
-pub fn set(c: &mut Config, key: &str, raw: &str) -> Result<(), String> {
-    let (_, set) = field(key).ok_or_else(|| format!("unknown setting \"{key}\""))?;
-    set(c, raw)
-}
-
-/// The setting `key`'s value on `c`, in the checked spelling ([`set`] reads it
-/// back); None = unset (or no such setting). `env` gives its variables' names
-/// only: a value may be a key.
-pub fn get(c: &Config, key: &str) -> Option<String> {
-    field(key).and_then(|(get, _)| get(c))
 }

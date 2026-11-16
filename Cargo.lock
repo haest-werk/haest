@@ -982,6 +982,7 @@ dependencies = [
  "haest-mcp",
  "haest-providers",
  "haest-settings",
+ "thiserror",
  "tokio",
  "toml",
 ]

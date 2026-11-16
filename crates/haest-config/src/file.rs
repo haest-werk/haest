@@ -20,6 +20,7 @@ use haest_core::{context::project_chain, fs::Fs, fs::read_text_if_present};
 use toml::{Table, Value};
 
 use crate::{
+    ConfigError,
     registry::{Kind, Scope, find},
     source::Source,
     stack::{Entries, Layer},
@@ -32,20 +33,20 @@ pub async fn read_user_file(
     fs: &dyn Fs,
     named: Option<PathBuf>,
     config_dir: &Path,
-) -> Result<Option<Layer>, String> {
+) -> Result<Option<Layer>, ConfigError> {
     let (path, required) = match named {
         Some(path) => (path, true),
         None => (config_dir.join("config.toml"), false),
     };
     match read(fs, &path).await? {
         Some(text) => parse_file(&path, &text, FileKind::User).map(Some),
-        None if required => Err(format!("{}: no such file", path.display())),
+        None if required => Err(ConfigError::NoSuchFile { path }),
         None => Ok(None),
     }
 }
 
 /// A trusted project's `.haest/config.toml`.
-pub async fn read_project_file(fs: &dyn Fs, path: &Path) -> Result<Layer, String> {
+pub async fn read_project_file(fs: &dyn Fs, path: &Path) -> Result<Layer, ConfigError> {
     let text = read(fs, path).await?.unwrap_or_default();
     parse_file(path, &text, FileKind::Project)
 }
@@ -68,10 +69,13 @@ pub fn project_root(path: &Path) -> &Path {
         .unwrap_or(Path::new("/"))
 }
 
-async fn read(fs: &dyn Fs, path: &Path) -> Result<Option<String>, String> {
+async fn read(fs: &dyn Fs, path: &Path) -> Result<Option<String>, ConfigError> {
     read_text_if_present(fs, path)
         .await
-        .map_err(|e| format!("{}: {e}", path.display()))
+        .map_err(|source| ConfigError::Read {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 /// Which file it is decides what it may set.
@@ -83,12 +87,16 @@ enum FileKind {
     Project,
 }
 
-fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<Layer, String> {
-    let at = |e: String| format!("{}: {e}", path.display());
-    let table: Table = text
-        .parse()
-        .map_err(|e: toml::de::Error| at(e.to_string()))?;
+fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<Layer, ConfigError> {
     let source = Source::File(path.to_path_buf());
+    let at = |why: String| ConfigError::Invalid {
+        at: source.clone(),
+        why,
+    };
+    let table: Table = text.parse().map_err(|source| ConfigError::Toml {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let mut layer = Layer::default();
     for (key, value) in &table {
         if key != "profiles" {
