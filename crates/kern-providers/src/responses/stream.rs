@@ -15,7 +15,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    driver::{Step, StreamFold, count, openai_json, parse_args, text_of},
+    driver::{Step, StreamFold, count, openai_json, parse_args, str_field, text_of},
     sse::SseEvent,
 };
 
@@ -74,12 +74,6 @@ impl ResponsesFold {
     }
 
     fn item_added(&mut self, index: u64, item: &Value) -> Option<ProviderEvent> {
-        let field = |k: &str| {
-            item.get(k)
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string()
-        };
         let part = match item.get("type").and_then(Value::as_str)? {
             "reasoning" => AssistantPart::Thinking {
                 thinking: String::new(),
@@ -90,8 +84,8 @@ impl ResponsesFold {
                 text: String::new(),
             },
             "function_call" => AssistantPart::ToolCall(ToolCall {
-                id: field("call_id"),
-                name: field("name"),
+                id: str_field(item, "call_id"),
+                name: str_field(item, "name"),
                 input: Default::default(),
             }),
             _ => return None,

@@ -9,6 +9,8 @@ use kern_core::{
 };
 use serde_json::{Value, json};
 
+use crate::driver::text_of;
+
 #[derive(Debug, Default)]
 pub(crate) struct SearchAcc {
     /// Cited pages by URL, in first-cited order.
@@ -25,25 +27,16 @@ impl SearchAcc {
             if a.get("type").and_then(Value::as_str) != Some("url_citation") {
                 continue;
             }
-            let cite = a.get("url_citation");
-            let Some(url) = cite
-                .and_then(|c| c.get("url"))
-                .and_then(Value::as_str)
-                .filter(|u| !u.is_empty())
-            else {
+            let cite = a.get("url_citation").unwrap_or(&Value::Null);
+            let Some(url) = text_of(cite.get("url")) else {
                 continue;
             };
             if self.sources.iter().any(|s| s.url == url) {
                 continue;
             }
-            let title = cite
-                .and_then(|c| c.get("title"))
-                .and_then(Value::as_str)
-                .filter(|t| !t.is_empty())
-                .map(str::to_string);
             self.sources.push(WebSource {
                 url: url.to_string(),
-                title,
+                title: text_of(cite.get("title")).map(str::to_string),
             });
         }
     }

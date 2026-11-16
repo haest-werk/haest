@@ -10,7 +10,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    driver::{Step, StreamFold, count, parse_object, text_of},
+    driver::{Step, StreamFold, count, parse_object, str_field, text_of},
     sse::SseEvent,
 };
 
@@ -40,10 +40,6 @@ fn stop_reason(reason: Option<&str>) -> StopReason {
         "refusal" => StopReason::Refusal,
         _ => StopReason::EndTurn,
     }
-}
-
-fn str_field(v: &Value, key: &str) -> String {
-    v.get(key).and_then(Value::as_str).unwrap_or("").to_string()
 }
 
 /// The part a `content_block_start` opens, or None for a block kern does not keep.

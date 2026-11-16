@@ -14,7 +14,7 @@ use kern_core::{
 use serde_json::{Map, Value};
 
 use crate::{
-    driver::{count, parse_args, text_of},
+    driver::{count, parse_args, str_field, text_of},
     http::random_hex,
     web_search::SearchAcc,
 };
@@ -118,28 +118,19 @@ fn apply_content(d: &Value, st: &mut StreamState, out: &mut Vec<ProviderEvent>) 
 /// The first fragment for an index carries id + name; later ones append arguments.
 fn apply_tool_delta(tc: &Value, st: &mut StreamState, out: &mut Vec<ProviderEvent>) {
     let index = tc.get("index").and_then(Value::as_i64).unwrap_or(0);
-    let field = |key: &str| {
-        tc.pointer(&format!("/function/{key}"))
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string()
-    };
+    let function = tc.get("function").unwrap_or(&Value::Null);
     if let Some(existing) = st.tools.get_mut(&index) {
         // Some servers send the name only on a later fragment.
         if existing.name.is_empty() {
-            existing.name = field("name");
+            existing.name = str_field(function, "name");
         }
-        existing.args.push_str(&field("arguments"));
+        existing.args.push_str(&str_field(function, "arguments"));
         return;
     }
     let acc = ToolAcc {
-        id: tc
-            .get("id")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string(),
-        name: field("name"),
-        args: field("arguments"),
+        id: str_field(tc, "id"),
+        name: str_field(function, "name"),
+        args: str_field(function, "arguments"),
     };
     out.push(ProviderEvent::ToolCallStart {
         id: acc.id.clone(),

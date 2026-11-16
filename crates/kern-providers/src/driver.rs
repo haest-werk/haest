@@ -124,6 +124,11 @@ pub(crate) fn text_of(v: Option<&Value>) -> Option<&str> {
     v.and_then(Value::as_str).filter(|s| !s.is_empty())
 }
 
+/// `v`'s string field `key`, or "" when it has none.
+pub(crate) fn str_field(v: &Value, key: &str) -> String {
+    v.get(key).and_then(Value::as_str).unwrap_or("").to_string()
+}
+
 /// Streamed tool arguments (JSON text) -> an input object; blank text is no
 /// arguments. Both OpenAI dialects stream arguments the same way.
 pub(crate) fn parse_args(args: &str) -> Map<String, Value> {
