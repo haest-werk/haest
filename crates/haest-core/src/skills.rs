@@ -133,7 +133,7 @@ pub async fn skills_in(fs: &dyn Fs, roots: &SkillScanRoots) -> Vec<Skill> {
 /// The skill body the model receives when it invokes a skill.
 pub async fn load_skill_body(fs: &dyn Fs, skill: &Skill, args: Option<&str>) -> io::Result<String> {
     let text = String::from_utf8_lossy(&fs.read(&skill.path).await?).replace("\r\n", "\n");
-    let body = frontmatter::split_frontmatter(&text).map_or(text.as_str(), |(_, b)| b);
+    let body = crate::frontmatter::split_frontmatter(&text).map_or(text.as_str(), |(_, b)| b);
     let dir = skill.path.parent().unwrap_or(Path::new("/"));
     let header = format!(
         "Skill \"{}\" loaded. Base directory: {}\nRelative paths in this skill resolve against that directory.",

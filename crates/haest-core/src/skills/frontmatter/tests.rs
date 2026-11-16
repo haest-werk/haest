@@ -1,15 +1,6 @@
 use super::*;
 
 #[test]
-fn the_head_ends_at_the_first_fence() {
-    let (head, body) = split_frontmatter("---\na: 1\nb: 2\n---\n\nbody\n---\nmore").unwrap();
-    assert_eq!(head, ["a: 1", "b: 2"]);
-    assert_eq!(body, "\nbody\n---\nmore");
-    assert!(split_frontmatter("# no block").is_none());
-    assert!(split_frontmatter("---\nunclosed").is_none());
-}
-
-#[test]
 fn the_flat_reader_skips_blocks_and_unquotes() {
     let meta = flat_meta(&[
         "name: \"x: y\\n\\x41\"",
@@ -61,12 +52,4 @@ fn ampersands_stars_and_a_small_alias_still_read() {
     assert_eq!(meta["argument-hint"], Meta::Str("*.rs & *.toml".into()));
     let tools = Meta::List(vec!["Read".into(), "Grep".into()]);
     assert_eq!((&meta["tools"], &meta["allowed-tools"]), (&tools, &tools));
-}
-
-#[test]
-fn unquote_needs_a_matched_pair() {
-    assert_eq!(unquote("'it''"), "it'");
-    assert_eq!(unquote("\"unbalanced"), "\"unbalanced");
-    assert_eq!(unquote("he said \"hi\""), "he said \"hi\"");
-    assert_eq!(unquote("'a\\nb'"), "a\\nb");
 }

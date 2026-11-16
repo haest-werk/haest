@@ -18,10 +18,11 @@ use std::path::{Path, PathBuf};
 
 use super::{
     Skill, SkillSource,
-    frontmatter::{Meta, MetaMap, read_meta, split_frontmatter},
+    frontmatter::{Meta, MetaMap, read_meta},
 };
 use crate::{
     context::project_chain,
+    frontmatter::split_frontmatter,
     fs::{Fs, read_lossy},
 };
 

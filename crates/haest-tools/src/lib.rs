@@ -37,7 +37,6 @@ pub mod net_guard;
 pub mod read;
 pub mod search;
 pub mod skill;
-mod slug;
 pub mod tasks;
 #[cfg(test)]
 mod testkit;

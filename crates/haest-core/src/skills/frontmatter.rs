@@ -1,5 +1,6 @@
 //! The two frontmatter readers a SKILL.md needs: strict YAML, and the flat
-//! `key: value` line reader that takes over when YAML refuses.
+//! `key: value` line reader ([`crate::frontmatter`]) that takes over when YAML
+//! refuses.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -7,6 +8,8 @@ use yaml_rust2::{
     Event, Yaml, YamlLoader,
     parser::{EventReceiver, Parser},
 };
+
+use crate::frontmatter::{block_end, inline_list, unquote};
 
 /// One frontmatter value, as the skill reader asks about it.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,16 +22,6 @@ pub(super) enum Meta {
 }
 
 pub(super) type MetaMap = BTreeMap<String, Meta>;
-
-/// `---\n<head>\n---\n<body>` -> (head lines, body), or None when there is no block.
-/// The head ends at the FIRST `\n---` after the opening fence.
-pub(super) fn split_frontmatter(content: &str) -> Option<(Vec<&str>, &str)> {
-    let rest = content.strip_prefix("---\n")?;
-    let end = rest.find("\n---")?;
-    let after = &rest[end + 4..];
-    let body = after.strip_prefix('\n').unwrap_or(after);
-    Some((rest[..end].split('\n').collect(), body))
-}
 
 /// What expanding its aliases may add to a frontmatter, in [`ExpandedSize`]
 /// units. yaml-rust2 expands an alias by copying its anchor, so nine levels of
@@ -136,105 +129,13 @@ fn flat_meta(lines: &[&str]) -> MetaMap {
             i = end;
             continue;
         }
-        let parsed = if value.starts_with('[') && value.ends_with(']') && value.len() >= 2 {
-            Meta::List(inline_list(value))
-        } else {
-            Meta::Str(unquote(value))
+        let parsed = match inline_list(value) {
+            Some(items) => Meta::List(items),
+            None => Meta::Str(unquote(value)),
         };
         meta.insert(key.to_string(), parsed);
     }
     meta
-}
-
-/// Nothing at all (a nested block) or a block-scalar indicator (`|`, `>-`, `|+2`).
-fn opens_a_block(value: &str) -> bool {
-    let Some(rest) = value.strip_prefix(['|', '>']) else {
-        return value.is_empty();
-    };
-    let rest = rest.strip_prefix(['-', '+']).unwrap_or(rest);
-    rest.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// One past the last indented line under `lines[head]`, or None when it opens no block.
-/// A blank line does not end the block; trailing blanks stay out of it.
-fn block_end(lines: &[&str], head: usize, value: &str) -> Option<usize> {
-    if !opens_a_block(value) {
-        return None;
-    }
-    let mut last = head;
-    for (i, line) in lines.iter().enumerate().skip(head + 1) {
-        let indented = line.starts_with(char::is_whitespace) && !line.trim().is_empty();
-        if indented {
-            last = i;
-        } else if !line.trim().is_empty() {
-            break;
-        }
-    }
-    (last != head).then_some(last + 1)
-}
-
-fn inline_list(raw: &str) -> Vec<String> {
-    raw[1..raw.len() - 1]
-        .split(',')
-        .map(|s| unquote(s.trim()))
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-/// A matched pair of quotes at both ends is unwrapped; escapes are undone for a
-/// DOUBLE-quoted scalar only (a single-quoted one has none). Anything else stays as is.
-pub(super) fn unquote(raw: &str) -> String {
-    let mut chars = raw.chars();
-    let (Some(q), Some(last)) = (chars.next(), chars.next_back()) else {
-        return raw.to_string();
-    };
-    if (q != '"' && q != '\'') || last != q {
-        return raw.to_string();
-    }
-    let inner = chars.as_str();
-    if q == '"' {
-        unescape(inner)
-    } else {
-        inner.to_string()
-    }
-}
-
-/// The inverse of a double-quoted scalar's escapes, in one pass.
-fn unescape(inner: &str) -> String {
-    let mut out = String::with_capacity(inner.len());
-    let mut chars = inner.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        let Some(e) = chars.next() else {
-            out.push('\\');
-            break;
-        };
-        let hex = || {
-            let mut probe = chars.clone();
-            let h: String = probe.by_ref().take(2).collect();
-            (h.len() == 2 && h.bytes().all(|b| b.is_ascii_hexdigit()))
-                .then(|| u8::from_str_radix(&h, 16).ok())
-                .flatten()
-        };
-        match e {
-            'n' => out.push('\n'),
-            'r' => out.push('\r'),
-            't' => out.push('\t'),
-            'x' => match hex() {
-                Some(b) => {
-                    out.push(char::from(b));
-                    chars.next();
-                    chars.next();
-                }
-                None => out.push('x'),
-            },
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 #[cfg(test)]

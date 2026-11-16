@@ -1,9 +1,10 @@
-//! A name made from free text: an agent's address, a generated file's name.
+//! A name made from free text: an agent's address, a generated file's name, a
+//! board card's id.
 
 /// `Find the bug!` -> `find-the-bug`: lowercase ASCII letters and digits, every
 /// other run one dash, none at the ends, at most `max` characters; `fallback`
 /// when nothing is left.
-pub(crate) fn slug(text: &str, max: usize, fallback: &str) -> String {
+pub fn slug(text: &str, max: usize, fallback: &str) -> String {
     let mut out = String::new();
     for c in text.to_lowercase().chars() {
         if c.is_ascii_lowercase() || c.is_ascii_digit() {

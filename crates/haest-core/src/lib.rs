@@ -18,6 +18,7 @@ pub mod deps;
 pub mod effort;
 pub mod events;
 pub mod expand;
+pub mod frontmatter;
 pub mod fs;
 pub mod guard;
 pub mod handed;
@@ -32,6 +33,7 @@ pub mod request_prefix;
 pub mod session;
 pub mod shell_command;
 pub mod skills;
+pub mod slug;
 pub mod task_board;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
