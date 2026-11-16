@@ -48,10 +48,8 @@ async fn code_web_search_and_switch_words_read_as_asked() {
         &[],
     )
     .await;
-    assert_eq!(
-        s.code_tools(),
-        Some(vec!["Bash".into(), "mcp__gh__*".into()])
-    );
+    assert!(s.code);
+    assert_eq!(s.code_tools, ["Bash", "mcp__gh__*"]);
     assert_eq!(s.web_search, Some(WebSearchEngine::Exa));
     assert!(!s.approvals);
     assert_eq!(s.image_models, Some(Vec::new()));

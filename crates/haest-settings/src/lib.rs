@@ -79,11 +79,13 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
+mod limits;
 mod sets;
 mod settings;
 #[cfg(test)]
 mod tests;
 
 pub use haest_core::{context::ContextSources, skills::SkillSources, words::WordSet};
+pub use limits::{Limits, SubagentLimits};
 pub use sets::BuiltinTools;
-pub use settings::{DEFAULT_MODEL, Limits, Settings, SubagentLimits};
+pub use settings::{DEFAULT_MODEL, Settings};

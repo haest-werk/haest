@@ -286,7 +286,7 @@ where
         own,
         mcp.clone(),
         mods.clone(),
-        s.code_tools(),
+        s.code.then(|| s.code_tools.clone()),
     ));
     let ledger = Ledger::new(s.conversation_caps(), hooks.clone()).with_remedies(hooks.remedies());
     let ledger = Arc::new(Mutex::new(ledger));

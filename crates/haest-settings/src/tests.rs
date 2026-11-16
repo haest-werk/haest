@@ -20,7 +20,7 @@ fn bare_turns_every_capability_off_and_every_brake_on() {
     let s = bare();
     assert!(s.tools.is_empty() && s.context.is_empty() && s.skills.is_empty());
     assert!(!s.skill_catalog && !s.agents && !s.code && !s.image && !s.mods && !s.project_mods);
-    assert_eq!((s.web_search_config(), s.code_tools()), (None, None));
+    assert_eq!(s.web_search_config(), None);
     assert!(s.approvals);
     assert_eq!(s.workspace, WorkspaceMode::Sandbox);
     assert_eq!(s.limits.max_turn_usd, 2.0);
@@ -65,14 +65,11 @@ fn agent_turns_and_subagent_caps_default_as_the_ts_haest() {
 }
 
 #[test]
-fn code_and_web_search_are_off_until_switched_on() {
+fn web_search_is_off_until_switched_on() {
     let s = Settings {
-        code: true,
-        code_tools: vec!["mcp__gh__*".into()],
         web_search: Some(WebSearchEngine::Exa),
         ..bare()
     };
-    assert_eq!(s.code_tools(), Some(vec!["mcp__gh__*".to_string()]));
     let w = s.web_search_config().unwrap();
     assert_eq!(
         (w.engine, w.max_results, w.max_total_results),
@@ -83,21 +80,21 @@ fn code_and_web_search_are_off_until_switched_on() {
 #[test]
 fn image_models_put_the_chosen_one_first_once() {
     assert_eq!(
-        bare().image_models(),
+        bare().image_model_choices(),
         DEFAULT_IMAGE_MODELS.map(String::from).to_vec()
     );
-    assert_eq!(bare().image_models()[0], DEFAULT_IMAGE_MODEL);
+    assert_eq!(bare().image_model_choices()[0], DEFAULT_IMAGE_MODEL);
     let s = Settings {
         image_model: "x/pic".into(),
         image_models: Some(vec!["a/one".into(), "x/pic".into(), "b/two".into()]),
         ..bare()
     };
-    assert_eq!(s.image_models(), ["x/pic", "a/one", "b/two"]);
+    assert_eq!(s.image_model_choices(), ["x/pic", "a/one", "b/two"]);
     let only = Settings {
         image_models: Some(Vec::new()),
         ..s
     };
-    assert_eq!(only.image_models(), ["x/pic"]);
+    assert_eq!(only.image_model_choices(), ["x/pic"]);
 }
 
 #[test]

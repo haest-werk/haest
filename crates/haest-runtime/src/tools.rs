@@ -94,9 +94,10 @@ pub fn image_options(
         base_url: openrouter_base_url(keys),
         ..ImageToolOptions::new(key)
     };
-    Ok(Some(
-        opts.with_models(s.image_model.clone(), s.image_models()),
-    ))
+    Ok(Some(opts.with_models(
+        s.image_model.clone(),
+        s.image_model_choices(),
+    )))
 }
 
 /// The conversation's own tools and the MCP servers' as they are now (a server
@@ -254,7 +255,7 @@ mod tests {
             (opts.api_key.as_str(), opts.base_url.as_str()),
             ("k", crate::haest::core::handed::OPENROUTER_URL)
         );
-        assert_eq!(opts.models, on.image_models());
+        assert_eq!(opts.models, on.image_model_choices());
         let local = keys(&[
             ("OPENROUTER_API_KEY", "k"),
             ("OPENROUTER_BASE_URL", "http://l/v1"),
