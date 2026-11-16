@@ -27,11 +27,11 @@ use kern_core::{
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
+use convert::reasoning_effort_extras;
 pub use convert::{flavor_extras, to_chat_messages, to_chat_tools};
 pub use stream::{StreamState, apply_chunk, finish_message};
 
 use crate::{
-    compat_effort::reasoning_effort_extras,
     driver::{Step, StreamFold, drive, openai_error},
     http::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint},
     routing::RoutingEnv,
@@ -56,7 +56,8 @@ pub struct CompatOptions {
     pub base_url: Option<String>,
     /// Sent on every request, after (and over) the defaults.
     pub headers: Vec<(String, String)>,
-    /// A top-level `reasoning_effort` provider's accepted levels ([`crate::compat_effort`]).
+    /// A provider that takes a top-level `reasoning_effort`: the levels it accepts
+    /// (kern's effort is fitted to the nearest; off only when it lists `none`).
     pub reasoning_effort: Option<Reasoning>,
     /// Price per model id, for a provider whose API returns no cost (kern-core `pricing`).
     pub pricing: HashMap<String, ModelPricing>,

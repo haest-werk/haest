@@ -6,11 +6,11 @@ use kern_core::{
     messages::{AssistantMessage, AssistantPart, StopReason, ToolCall},
     provider::{ProviderEvent, mark_stream_failed},
 };
-use serde_json::{Map, Value};
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    driver::{Step, StreamFold, count, text_of},
+    driver::{Step, StreamFold, count, parse_object, text_of},
     sse::SseEvent,
 };
 
@@ -107,14 +107,11 @@ fn apply_delta(acc: &mut BlockAcc, delta: &Value) -> Option<ProviderEvent> {
     }
 }
 
+/// A tool call's streamed input replaces the one its start carried.
 fn finish_block(b: BlockAcc) -> AssistantPart {
     match b.part {
         AssistantPart::ToolCall(mut call) if !b.json.is_empty() => {
-            call.input = match serde_json::from_str::<Value>(&b.json) {
-                Ok(Value::Object(m)) => m,
-                Ok(other) => Map::from_iter([("value".to_string(), other)]),
-                Err(_) => Map::from_iter([("_unparsed".to_string(), Value::String(b.json))]),
-            };
+            call.input = parse_object(&b.json);
             AssistantPart::ToolCall(call)
         }
         part => part,

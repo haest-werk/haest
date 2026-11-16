@@ -6,6 +6,8 @@
 //! applied here and nowhere else.
 
 use kern_core::{
+    catalog::Reasoning,
+    effort::nearest_accepted_effort,
     messages::{AssistantMessage, Message},
     provider::{Effort, ToolSpec},
 };
@@ -188,4 +190,21 @@ pub fn flavor_extras(
         extras.insert("provider".into(), json!(provider));
     }
     extras
+}
+
+/// The effort dialect of a direct OpenAI-compatible provider: a top-level
+/// `reasoning_effort` that takes only the levels the provider lists and 400s on
+/// anything else (Paper Instruments: low / high / max, no `medium`, no off).
+/// Empty when either is absent or nothing fits.
+pub(super) fn reasoning_effort_extras(
+    dialect: Option<&Reasoning>,
+    effort: Option<Effort>,
+) -> Map<String, Value> {
+    let level = dialect
+        .zip(effort)
+        .and_then(|(dialect, effort)| nearest_accepted_effort(effort, dialect));
+    level
+        .map(|level| ("reasoning_effort".to_string(), json!(level)))
+        .into_iter()
+        .collect()
 }

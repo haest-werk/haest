@@ -14,9 +14,8 @@ use kern_core::{
 use serde_json::{Map, Value};
 
 use crate::{
-    driver::{count, text_of},
+    driver::{count, parse_args, text_of},
     http::random_hex,
-    tool_args::parse_args,
     web_search::SearchAcc,
 };
 

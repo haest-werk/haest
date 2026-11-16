@@ -38,7 +38,7 @@ pub enum Dialect {
 ///
 /// `reasoningEffort` and `pricing` apply to `type: "openai"` only.
 /// `reasoningEffort`: send a top-level `reasoning_effort`, fitted to the listed
-/// levels ([`crate::compat_effort`]). Absent = no effort is sent.
+/// levels ([`CompatOptions::reasoning_effort`]). Absent = no effort is sent.
 /// `pricing`: USD per 1M tokens per model id, for an API that returns no cost; a
 /// catalog row's `pricing` fills in for a model not listed here.
 #[derive(Debug, Clone, PartialEq)]

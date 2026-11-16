@@ -11,7 +11,7 @@ use kern_core::{
     messages::AssistantMessage,
     provider::{ProviderEvent, ProviderStream},
 };
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -122,4 +122,23 @@ pub(crate) fn count(v: Option<&Value>) -> u64 {
 /// A non-empty JSON string.
 pub(crate) fn text_of(v: Option<&Value>) -> Option<&str> {
     v.and_then(Value::as_str).filter(|s| !s.is_empty())
+}
+
+/// Streamed tool arguments (JSON text) -> an input object; blank text is no
+/// arguments. Both OpenAI dialects stream arguments the same way.
+pub(crate) fn parse_args(args: &str) -> Map<String, Value> {
+    if args.trim().is_empty() {
+        return Map::new();
+    }
+    parse_object(args)
+}
+
+/// Never fails: a non-object is `{ value }`, unparseable text `{ _unparsed }`,
+/// which the loop answers as a model error.
+pub(crate) fn parse_object(text: &str) -> Map<String, Value> {
+    match serde_json::from_str::<Value>(text) {
+        Ok(Value::Object(m)) => m,
+        Ok(other) => Map::from_iter([("value".to_string(), other)]),
+        Err(_) => Map::from_iter([("_unparsed".to_string(), Value::String(text.to_string()))]),
+    }
 }

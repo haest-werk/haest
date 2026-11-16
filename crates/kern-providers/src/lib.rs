@@ -15,7 +15,6 @@
 pub mod anthropic;
 pub mod catalog;
 pub mod compat;
-pub mod compat_effort;
 mod driver;
 mod http;
 mod openai_media;
@@ -23,12 +22,11 @@ pub mod registry;
 mod reqwest_transport;
 pub mod responses;
 pub mod routing;
-pub mod sse;
+mod sse;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
-pub mod tool_args;
 pub mod transport;
-pub mod web_search;
+mod web_search;
 
 #[cfg(test)]
 mod driver_tests;

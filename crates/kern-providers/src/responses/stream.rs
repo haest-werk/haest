@@ -15,9 +15,8 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    driver::{Step, StreamFold, count, openai_json, text_of},
+    driver::{Step, StreamFold, count, openai_json, parse_args, text_of},
     sse::SseEvent,
-    tool_args::parse_args,
 };
 
 struct ItemAcc {

@@ -12,9 +12,22 @@ use serde_json::json;
 use crate::{
     RetryPolicy,
     compat::{CompatFlavor, CompatOptions, CompatProvider},
+    driver::parse_args,
     testing::{FakeEnd, FakeReply, FakeTransport, chat_sse, collect, kinds, request},
     transport::TransportError,
 };
+
+#[test]
+fn tool_arguments_parse_blanks_are_empty_and_garbage_is_surfaced() {
+    use serde_json::Value;
+    assert_eq!(Value::Object(parse_args(r#"{"a":1}"#)), json!({"a": 1}));
+    assert!(parse_args("  ").is_empty());
+    assert_eq!(Value::Object(parse_args("5")), json!({"value": 5}));
+    assert_eq!(
+        Value::Object(parse_args("{bad")),
+        json!({"_unparsed": "{bad"})
+    );
+}
 
 fn quick() -> RetryPolicy {
     RetryPolicy {
