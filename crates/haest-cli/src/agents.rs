@@ -55,9 +55,10 @@ impl AgentLog {
             }
             SubagentEvent::Stopped { ok } => {
                 self.names.remove(id);
-                Some(match ok {
-                    true => (Level::Info, format!("[{name}] finished")),
-                    false => (Level::Warning, format!("[{name}] stopped early")),
+                Some(if *ok {
+                    (Level::Info, format!("[{name}] finished"))
+                } else {
+                    (Level::Warning, format!("[{name}] stopped early"))
                 })
             }
             SubagentEvent::Loop(_) | SubagentEvent::InnerCall(_) => None,

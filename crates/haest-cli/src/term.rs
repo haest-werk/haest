@@ -40,6 +40,12 @@ impl TermUi {
         self.term.lock().unwrap().ask(question);
     }
 
+    /// The REPL prompt is open (a line printed now lands above it): an
+    /// arrival waits for Enter, an approval asks above the prompt.
+    pub fn prompting(&self) -> bool {
+        self.term.lock().unwrap().prompting()
+    }
+
     fn notice(&self, level: Level, text: &str) {
         self.term.lock().unwrap().notice(level, text);
     }
@@ -62,15 +68,11 @@ impl Ui for TermUi {
         crate::remedy::remedy(limit)
     }
 
-    /// The REPL prompt is open (a line printed now lands above it).
-    fn prompting(&self) -> bool {
-        self.term.lock().unwrap().prompting()
-    }
-
     fn arrival(&self, headline: &str) {
-        match self.prompting() {
-            true => self.info(&format!("{headline}\nhaest takes it when you press Enter.")),
-            false => self.info(headline),
+        if self.prompting() {
+            self.info(&format!("{headline}\nhaest takes it when you press Enter."));
+        } else {
+            self.info(headline);
         }
     }
 

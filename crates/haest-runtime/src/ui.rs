@@ -47,15 +47,6 @@ pub trait Ui: Send + Sync {
         self.info(&format!("[haest] {text}"));
     }
 
-    /// The human's input line is open: what arrives now waits for it.
-    ///
-    /// The runtime never asks; it is here for the host's own code (its
-    /// [`arrival`](Self::arrival), its approval prompter) to share. False by
-    /// default.
-    fn prompting(&self) -> bool {
-        false
-    }
-
     /// A turn the human did not start arrived (a job ended, an agent wrote):
     /// its first line, cut short. By default an [`info`](Self::info) line.
     ///

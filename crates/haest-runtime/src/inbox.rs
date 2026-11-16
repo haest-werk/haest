@@ -87,7 +87,7 @@ pub fn inbox(hooks: &Arc<RuntimeHooks>, max_agent_turns: u32) -> (Arc<InboxSende
 
 impl InboxQueue {
     /// A queue over `rx` with `gate`; [`inbox`] makes one with its sender.
-    pub fn new(rx: UnboundedReceiver<String>, gate: AgentTurnGate) -> Self {
+    pub(crate) fn new(rx: UnboundedReceiver<String>, gate: AgentTurnGate) -> Self {
         Self {
             rx,
             ready: VecDeque::new(),
