@@ -139,7 +139,8 @@ impl Stack {
 
     /// Every layer over `config`, in order, and where each value came from. A
     /// layer still pending read nothing (no project file, no profile named).
-    /// A variable of `env` has a source of its own (`env.NAME`).
+    /// A variable of `env` has a source of its own (`env.NAME`), and `env` as
+    /// a whole the last layer that passed one.
     pub fn fold(self, mut config: Config) -> Result<(Config, BTreeMap<String, Source>), String> {
         let (cwd, home) = (config.settings.cwd.clone(), config.settings.home.clone());
         let mut sources = BTreeMap::new();
@@ -154,6 +155,7 @@ impl Stack {
                     def.key.to_string(),
                 ),
                 Kind::Vars => {
+                    sources.insert(def.key.to_string(), source.clone());
                     let key = var_key(def.key, var_parts(&value).0);
                     (value, key)
                 }

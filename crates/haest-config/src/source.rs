@@ -60,8 +60,8 @@ impl Resolved {
     /// Where `key`'s value came from: the last layer that set it, else
     /// [`Source::Default`] (also for a key that is no setting).
     ///
-    /// For `env`, whose variables each have their own source, ask
-    /// [`var_source`](Self::var_source).
+    /// For `env`, whose layers add variables, the last layer that passed one;
+    /// each variable's own is [`var_source`](Self::var_source).
     pub fn source(&self, key: &str) -> Source {
         self.sources.get(key).cloned().unwrap_or(Source::Default)
     }

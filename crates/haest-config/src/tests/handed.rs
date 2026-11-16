@@ -145,6 +145,19 @@ SPACED = "  x  ""#;
     assert!(untrusted.passed_env.vars().is_empty());
 }
 
+/// `env` as a whole came from the last layer that passed a variable, as any
+/// other setting's source is the last layer that set it.
+#[tokio::test]
+async fn env_as_a_whole_came_from_the_last_layer_that_passed_a_variable() {
+    let from_flag = run("/w", &[], &[("HAEST_ENV", "A=1")], &[("env", "B=2")]).await;
+    let r = from_flag.unwrap();
+    assert_eq!(r.resolved.source("env"), Source::Flag("env".into()));
+    let from_var = run("/w", &[], &[("HAEST_ENV", "A=1")], &[]).await.unwrap();
+    assert_eq!(from_var.resolved.source("env"), Source::Env("HAEST_ENV".into()));
+    let none = run("/w", &[], &[], &[]).await.unwrap();
+    assert_eq!(none.resolved.source("env"), Source::Default);
+}
+
 #[tokio::test]
 async fn a_bad_variable_is_refused_by_its_name_and_never_shows_its_value() {
     let cases: [(Pairs, Pairs, &str); 4] = [
