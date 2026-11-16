@@ -4,7 +4,7 @@
 
 use haest::{
     config::DEFS,
-    core::{ledger::ConversationCap, remedy::Limit},
+    core::{caps::ConversationCap, remedy::Limit},
 };
 
 /// What the human can do about `limit` here; None for a limit with no way past it.

@@ -1,4 +1,6 @@
-//! Hard caps on one turn ([`TurnCaps`]) and on subagents ([`SubagentCaps`]).
+//! Hard caps on one turn ([`TurnCaps`]), on subagents ([`SubagentCaps`]) and
+//! on a whole conversation ([`ConversationCaps`], which the
+//! [`Ledger`](crate::ledger::Ledger) enforces).
 //! A turn cap is checked by the loop BEFORE every model call -- the only
 //! point where stopping keeps history valid (every tool call already has its
 //! result). One tool-result flood once cost ~$50 in a single turn; nothing in the
@@ -14,6 +16,8 @@
 //! [`ModelFacts::turn_caps`](crate::ModelFacts::turn_caps).
 
 use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
 
 use crate::{media::messages_for_estimate, messages::Message, provider::ToolSpec};
 
@@ -97,6 +101,44 @@ pub(crate) fn request_too_big(estimate: u64, caps: &TurnCaps) -> Option<String> 
         "Model call refused: the request is ~{estimate} tokens, the cap is {}. Compact or clear the conversation, then continue.",
         caps.max_request_tokens
     ))
+}
+
+/// A conversation's two caps: the defaults a host configures, or the caps in
+/// force ([`Ledger::caps`](crate::ledger::Ledger::caps)).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationCaps {
+    /// USD across the conversation; 0 = no cap.
+    pub max_usd: f64,
+    /// Tokens billed by calls that reported no price; 0 = no cap.
+    pub max_unpriced_tokens: u64,
+}
+
+/// The conversation caps the human set; a None field = the configured default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationCapOverrides {
+    /// The USD cap the human set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_usd: Option<f64>,
+    /// The unpriced-token cap the human set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_unpriced_tokens: Option<u64>,
+}
+
+impl ConversationCapOverrides {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.max_usd.is_none() && self.max_unpriced_tokens.is_none()
+    }
+}
+
+/// One conversation cap the human sets ([`Ledger::set_cap`](crate::ledger::Ledger::set_cap)).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConversationCap {
+    /// USD across the conversation; 0 = no cap.
+    Usd(f64),
+    /// Tokens billed by calls that reported no price; 0 = no cap.
+    UnpricedTokens(u64),
 }
 
 #[cfg(test)]

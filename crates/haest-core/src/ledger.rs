@@ -23,38 +23,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    caps::{ConversationCap, ConversationCapOverrides, ConversationCaps},
     messages::Usage,
     remedy::{Limit, Remedies},
 };
-
-/// A conversation's two caps: the defaults a host configures, or the caps in
-/// force ([`Ledger::caps`]).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversationCaps {
-    /// USD across the conversation; 0 = no cap.
-    pub max_usd: f64,
-    /// Tokens billed by calls that reported no price; 0 = no cap.
-    pub max_unpriced_tokens: u64,
-}
-
-/// Caps the human set; a None field = the configured default.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapOverrides {
-    /// The USD cap the human set.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_usd: Option<f64>,
-    /// The unpriced-token cap the human set.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_unpriced_tokens: Option<u64>,
-}
-
-impl CapOverrides {
-    fn is_empty(&self) -> bool {
-        self.max_usd.is_none() && self.max_unpriced_tokens.is_none()
-    }
-}
 
 /// A ledger's whole state, as the session log keeps it.
 ///
@@ -69,7 +41,7 @@ pub struct LedgerSnapshot {
     /// The caps the human set ([`Ledger::set_cap`]); absent = the configured
     /// defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub caps: Option<CapOverrides>,
+    pub caps: Option<ConversationCapOverrides>,
 }
 
 /// Where a [`Ledger`] reports: snapshots to persist, warnings for the human.
@@ -84,15 +56,6 @@ pub trait LedgerHooks: Send + Sync {
     /// A crossing is the spend reaching 80% of a cap; setting a new cap
     /// re-arms it.
     fn warn(&self, text: &str);
-}
-
-/// One cap the human sets ([`Ledger::set_cap`]).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ConversationCap {
-    /// USD across the conversation; 0 = no cap.
-    Usd(f64),
-    /// Tokens billed by calls that reported no price; 0 = no cap.
-    UnpricedTokens(u64),
 }
 
 /// Share of a cap at which the human is warned.
@@ -113,7 +76,8 @@ enum Measure {
 /// use std::sync::{Arc, Mutex};
 ///
 /// use haest_core::{
-///     ledger::{Ledger, ConversationCap, ConversationCaps, LedgerHooks, LedgerSnapshot},
+///     caps::{ConversationCap, ConversationCaps},
+///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
 ///     messages::Usage,
 /// };
 ///
@@ -144,7 +108,7 @@ enum Measure {
 pub struct Ledger {
     usd: f64,
     unpriced_tokens: u64,
-    set: CapOverrides,
+    set: ConversationCapOverrides,
     warned_usd: bool,
     warned_tokens: bool,
     defaults: ConversationCaps,
@@ -159,7 +123,7 @@ impl Ledger {
         Self {
             usd: 0.0,
             unpriced_tokens: 0,
-            set: CapOverrides::default(),
+            set: ConversationCapOverrides::default(),
             warned_usd: false,
             warned_tokens: false,
             defaults,

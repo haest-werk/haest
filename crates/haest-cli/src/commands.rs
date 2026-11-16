@@ -4,7 +4,7 @@
 //! anything else starting with `/` is sent as typed.
 
 use haest::{
-    Effort, core::error::report, core::ledger::ConversationCap, core::skills::load_skill_body,
+    Effort, core::caps::ConversationCap, core::error::report, core::skills::load_skill_body,
     mods::CommandOutcome,
 };
 use tokio_util::sync::CancellationToken;

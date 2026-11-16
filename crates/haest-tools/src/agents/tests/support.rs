@@ -10,7 +10,8 @@ use std::{
 use async_trait::async_trait;
 use haest_core::{
     Agent, AgentDeps, AgentOptions, LoopEvent, Message, SharedDeps,
-    ledger::{ConversationCaps, Ledger, LedgerHooks, LedgerSnapshot},
+    caps::ConversationCaps,
+    ledger::{Ledger, LedgerHooks, LedgerSnapshot},
     provider::{Effort, ModelError, ResolvedModel},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
 };

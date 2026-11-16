@@ -5,8 +5,8 @@
 use std::time::Duration;
 
 use haest_core::{
+    caps::ConversationCaps,
     caps::{SubagentCaps, TurnCaps},
-    ledger::ConversationCaps,
 };
 
 use crate::Settings;

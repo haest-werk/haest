@@ -14,7 +14,7 @@
 //!
 //! ```
 //! use haest_core::{
-//!     ledger::ConversationCap,
+//!     caps::ConversationCap,
 //!     remedy::{Limit, Remedies},
 //! };
 //!
@@ -33,7 +33,7 @@
 
 use std::{fmt, sync::Arc, time::Duration};
 
-use crate::ledger::ConversationCap;
+use crate::caps::ConversationCap;
 
 /// A limit haest holds a conversation to, with its number: a cap a turn or
 /// the conversation reached (or nears), or the sandbox keeping edits off the
