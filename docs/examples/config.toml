@@ -25,6 +25,9 @@ env_passthrough = "core"
 # Brakes: what one turn and one conversation may spend.
 max_turn_usd = 3
 max_conversation_usd = 25
+# At 80% of any of those caps (a subagent's own too): no new subagents, and the
+# model is told once to finish with what it has. Off unless set.
+wind_down_at = 0.8
 
 # A subagent may get tighter caps than subagent_usd and subagent_minutes (the
 # Agent tool's budget); its spend is held on the conversation's budget while

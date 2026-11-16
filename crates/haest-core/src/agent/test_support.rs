@@ -31,11 +31,13 @@ pub fn uncapped() -> TurnCaps {
     TurnCaps::default()
 }
 
-/// Records what the loop persists; serves fixed limits and a settable clock.
+/// Records what the loop persists and warns; serves fixed limits and a
+/// settable clock.
 #[derive(Default)]
 pub struct TestHooks {
     pub caps: Option<TurnCaps>,
     pub persisted: Mutex<Vec<Message>>,
+    pub warnings: Mutex<Vec<String>>,
     pub now: AtomicU64,
 }
 
@@ -51,6 +53,9 @@ impl ToolServices for TestHooks {}
 impl AgentHooks for TestHooks {
     fn on_message(&self, msg: &Message) {
         self.persisted.lock().unwrap().push(msg.clone());
+    }
+    fn on_warning(&self, text: &str) {
+        self.warnings.lock().unwrap().push(text.to_string());
     }
 }
 

@@ -112,6 +112,7 @@ impl TurnCapsSource for ChildCaps {
             max_turn_usd: self.subagent.usd,
             max_turn_steps: self.subagent.steps,
             max_turn_time: self.subagent.time,
+            subagent: true,
             ..base
         })
     }

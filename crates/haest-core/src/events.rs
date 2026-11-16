@@ -11,9 +11,12 @@
 //!    [`ToolCallStart`](LoopEvent::ToolCallStart) events, then
 //!    [`LoopEvent::Assistant`] with the whole answer;
 //! 3. one [`LoopEvent::ToolResult`] per tool call, in call order (an aborted
-//!    turn still answers every call); then a [`LoopEvent::Guard`] if the turn
-//!    guard nudged, and a [`LoopEvent::User`] if steering input was queued.
-//!    Back to 2 while the model calls tools or steering arrived;
+//!    turn still answers every call); then the turn's thresholds: a
+//!    [`LoopEvent::Guard`] if the model was reminded (the guard's nudge),
+//!    another for the wind-down notice (a warning to the human goes to
+//!    [`AgentHooks::on_warning`](crate::AgentHooks::on_warning)); and a
+//!    [`LoopEvent::User`] if steering input was queued. Back to 2 while the
+//!    model calls tools or steering arrived;
 //! 4. [`LoopEvent::TurnEnd`], always last, exactly once.
 //!
 //! A model call that never went out (no provider for the spec) is an

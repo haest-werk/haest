@@ -46,7 +46,11 @@
 //!   TypeScript haest's JSON shape: either haest resumes the other's sessions.
 //! - Spend: [`caps`] caps one turn, [`ledger`] one conversation, and the
 //!   loop checks both before every model call. [`remedy`] adds the host's way
-//!   past a cap to haest's message about it.
+//!   past a cap to haest's message about it. [`threshold`]: a meter crossing
+//!   a mark fires an action (remind the model, warn the human, wind down,
+//!   compact, stop); the guard's nudge, the ledger's warning and compaction
+//!   are thresholds, and a host adds its own. [`wind_down`] (opt-in) stops
+//!   new work at a set share of a cap.
 //! - Context: [`context`] builds the system prompt, [`compaction`] summarises
 //!   a full window, [`deferred_tools`] keeps large tool lists out of the request.
 //! - Durable runs (opt-in): [`run`] lets a turn stopped part way go on where
@@ -179,9 +183,11 @@ mod stable_hash;
 pub mod task_board;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+pub mod threshold;
 pub mod tool;
 mod tool_batch;
 mod tool_exec;
+pub mod wind_down;
 pub mod words;
 pub mod workspace;
 
@@ -206,7 +212,6 @@ pub mod __private {
 
     pub use crate::deferred_tools::split::{advertised_tools, callable_tools};
     pub use crate::expand::{expand_vars, is_var_name, unset_note};
-    pub use crate::guard::NUDGE_SHARE;
     pub use crate::panics::panic_message;
     pub use crate::tool_exec::{ToolIndex, run_call, run_unspilled};
 }

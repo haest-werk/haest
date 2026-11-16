@@ -218,6 +218,9 @@
 //! - The [notebook example](https://github.com/haest-werk/haest/tree/main/crates/haest/examples/notebook/)
 //!   wires every plug point the way a real host does, against fakes;
 //!   `cargo run -p haest --example notebook` runs it.
+//! - [`core::threshold`]: a meter crossing a mark fires an action (remind
+//!   the model, warn the human, wind down, stop). A host adds its own
+//!   beside haest's; `cargo run -p haest --example threshold` runs two.
 //! - `cargo install haest-cli` gets the `haest` command line agent.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]

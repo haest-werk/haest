@@ -113,6 +113,18 @@ name = "broker"
 required-features = ["transport-broker"]
 test = true
 
+# Wind-down (`wind_down_at`) with a host's subagents, against a scripted model.
+[[example]]
+name = "wind_down"
+path = "examples/wind_down.rs"
+test = true
+
+# A host's own thresholds (remind the model, warn the human), against a scripted model.
+[[example]]
+name = "threshold"
+path = "examples/threshold.rs"
+test = true
+
 # The notebook example and tests/plug_in.rs: what a host implementing the plug points needs.
 [dev-dependencies]
 # The front page's runnable examples drive whole turns with the scripted model.

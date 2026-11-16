@@ -8,7 +8,8 @@ use std::{
 };
 
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, LoopEvent, Message, caps::ConversationCaps, ledger::Ledger,
+    Agent, AgentDeps, AgentOptions, LoopEvent, Message, SharedDeps, caps::ConversationCaps,
+    ledger::Ledger,
 };
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
@@ -87,6 +88,7 @@ impl Rig {
             hub: OnceLock::new(),
             idle_at_answer: Mutex::default(),
             host,
+            adjust: Mutex::default(),
         });
         let hub = SubagentHub::new(parent.clone(), caps);
         let _ = parent.hub.set(Arc::downgrade(&hub));
@@ -105,6 +107,18 @@ impl Rig {
             events: Vec::new(),
             inbox,
         }
+    }
+
+    /// Change the conversation's deps: main's from now on, and every
+    /// subagent's when it starts.
+    pub fn adjust(&mut self, f: impl Fn(&mut SharedDeps) + Send + Sync + 'static) {
+        *self.parent.adjust.lock().unwrap() = Some(Box::new(f));
+        let deps = AgentDeps {
+            tools: self.main.deps().tools.clone(),
+            system_prompt: Arc::new("main".to_string()),
+            shared: self.parent.deps(),
+        };
+        self.main = Agent::new(deps, AgentOptions::new("fake:main-model"));
     }
 
     /// The tool names each subagent's model calls offered, in call order.

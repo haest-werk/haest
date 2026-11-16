@@ -2,6 +2,7 @@
 //! The output format, promises, inner-call rows and see() are in [`output`].
 
 mod output;
+mod wind_down;
 
 use std::{
     sync::Arc,

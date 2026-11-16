@@ -30,6 +30,7 @@ use crate::{
     provider::{Effort, ModelResolver, WebSearchOptions},
     remedy::Remedies,
     run::RunStore,
+    threshold::{Thresholds, TurnSite},
     tool::{ToolServices, ToolSource},
     workspace::Workspace,
 };
@@ -179,6 +180,12 @@ pub trait AgentHooks: ToolServices {
     /// a host that resumes after a crash knows they may have run. A durable
     /// run ([`crate::run`]) flushes its own records before this.
     async fn before_effects(&self) {}
+
+    /// A turn's threshold warned the human
+    /// ([`Action::Warn`](crate::threshold::Action::Warn)): the human must hear
+    /// `text`, which ends with the host's remedy; the model does not see it.
+    /// Called at the step boundary it fired at, once per firing.
+    fn on_warning(&self, _text: &str) {}
 }
 
 /// Milliseconds since the Unix epoch, by the wall clock; 0 if the clock is
@@ -270,12 +277,18 @@ pub struct SharedDeps {
     /// Where durable runs keep their records ([`Agent::run_durable`]).
     /// None = no run is durable: [`Agent::run`] never touches a store either way.
     pub run_store: Option<Arc<dyn RunStore>>,
+    /// What a turn checks as it runs ([`threshold`](crate::threshold)): the
+    /// guard's nudges unless set. Wind-down is a set of them
+    /// ([`Thresholds::wind_down`]). Every agent keeps its own record of which
+    /// have fired.
+    pub thresholds: Thresholds<TurnSite>,
 }
 
 impl SharedDeps {
     /// The minimum: models, a working directory and a workspace. Everything
     /// else off: no spill directory, [`NoHooks`], [`NoFacts`], no turn caps,
-    /// the [`WallClock`], no ledger, no web search, no remedies, no run store.
+    /// the [`WallClock`], no ledger, no web search, no remedies, no run
+    /// store; the guard's nudges are the only thresholds.
     pub fn new(
         models: Arc<dyn ModelResolver>,
         cwd: impl Into<PathBuf>,
@@ -294,6 +307,7 @@ impl SharedDeps {
             web_search: None,
             remedies: Remedies::default(),
             run_store: None,
+            thresholds: Thresholds::default(),
         }
     }
 }

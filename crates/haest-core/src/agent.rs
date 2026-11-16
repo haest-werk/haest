@@ -22,12 +22,16 @@ mod durable;
 pub(crate) mod test_support;
 mod turn;
 
-use std::time::Instant;
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     caps::TurnCaps,
+    compaction::last_context_tokens,
     deps::AgentDeps,
     events::{EventSink, TurnOutcome},
     guard::TurnGuard,
@@ -35,6 +39,7 @@ use crate::{
     messages::{Message, StopReason, Usage},
     provider::Effort,
     request_prefix::{RequestPrefix, build_request_prefix},
+    threshold::{TurnSite, Watch},
 };
 
 pub use control::AgentControl;
@@ -132,11 +137,15 @@ pub struct Agent {
     /// Model calls made for this conversation outside the loop's own (the
     /// compaction summary in a hook) since the running turn last looked.
     side_spend: Usage,
+    /// The turn's thresholds and which have fired, across turns: this agent's
+    /// own, following [`SharedDeps::thresholds`](crate::SharedDeps::thresholds).
+    thresholds: Arc<Mutex<Watch<TurnSite>>>,
 }
 
 impl Agent {
     /// An idle agent with `deps` and `opts`. Nothing is sent until [`Agent::run`].
     pub fn new(deps: AgentDeps, opts: AgentOptions) -> Self {
+        let thresholds = Watch::new(deps.shared.thresholds.clone());
         Self {
             history: opts.history,
             model_spec: opts.model_spec,
@@ -144,6 +153,7 @@ impl Agent {
             deps,
             control: AgentControl::new(),
             side_spend: Usage::default(),
+            thresholds: Arc::new(Mutex::new(thresholds)),
         }
     }
 
@@ -249,13 +259,20 @@ impl Agent {
         turn.finish(end, started)
     }
 
-    /// A fresh guard per turn: its caps and clock start over.
+    /// A fresh guard per turn: its caps and clock start over, and the
+    /// thresholds that fire once a turn re-arm.
     fn guard(&self) -> TurnGuard {
+        {
+            let mut watch = self.thresholds.lock().unwrap();
+            watch.follow(&self.deps.shared.thresholds);
+            watch.next_turn();
+        }
         TurnGuard::new(
             self.deps.shared.clock.clone(),
             self.deps.shared.ledger.clone(),
             self.deps.shared.remedies.clone(),
         )
+        .with_thresholds(self.thresholds.clone(), last_context_tokens(&self.history))
     }
 
     /// The hard caps for the current model spec; read fresh at every check.

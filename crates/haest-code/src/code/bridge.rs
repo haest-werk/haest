@@ -108,6 +108,8 @@ impl Bridge {
             run_key: None,
             resumed: false,
             turn_time_left: ctx.turn_time_left,
+            // A tool Code calls winds down with the turn that called Code.
+            wind_down: ctx.wind_down.clone(),
         };
         Arc::new(Self {
             tools,

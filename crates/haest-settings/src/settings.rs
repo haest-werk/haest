@@ -10,6 +10,7 @@ use haest_core::{
     deferred_tools::DeferMode,
     provider::{WebSearchEngine, WebSearchOptions},
     skills::SkillSources,
+    wind_down::WindDown,
 };
 
 use crate::{CapSettings, ContextSources, SubagentCapSettings, sets::BuiltinTools};
@@ -106,6 +107,10 @@ pub struct Settings {
     pub approvals: bool,
     /// The spend, token, step and time caps.
     pub caps: CapSettings,
+    /// The share of a cap (a turn's, a subagent's, the conversation's) at
+    /// which a run stops starting subagents and the model is told once to
+    /// conclude: haest-core's [`WindDown`]. Bare: off.
+    pub wind_down_at: WindDown,
     /// Turns in a row a background job or an agent may start with no human
     /// message; past it haest holds them. 0 = no cap.
     pub max_agent_turns: u32,
@@ -125,7 +130,7 @@ impl Settings {
     /// for, every brake on.
     ///
     /// No tools, no instruction files, no skills, no Code, no agents, no web
-    /// search, no image tool, no mods; approvals on, the sandbox workspace,
+    /// search, no image tool, no mods, no wind-down; approvals on, the sandbox workspace,
     /// [`DEFAULT_MODEL`], MCP tools behind ToolSearch, and the caps in
     /// [`CapSettings`] at their bare values (2 USD and 100 model calls a turn, 20
     /// USD a conversation, ...). `data_dir` is `<home>/.local/share/haest` and
@@ -175,6 +180,7 @@ impl Settings {
                 context_window: None,
                 compact_at: 400_000,
             },
+            wind_down_at: WindDown::OFF,
             max_agent_turns: 30,
             subagents: SubagentCapSettings::default(),
             data_dir: home.join(".local/share/haest"),

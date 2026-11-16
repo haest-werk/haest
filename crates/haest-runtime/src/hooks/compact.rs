@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 use super::RuntimeHooks;
 use crate::haest::{
     Agent,
-    core::compaction::{CompactionError, CompactionOptions, compact},
+    core::compaction::{COMPACT_SHARE, CompactionError, CompactionOptions, compact},
     core::error::report,
     core::messages::Usage,
     core::session::SessionRecord,
@@ -16,7 +16,6 @@ use crate::haest::{
 
 /// Messages kept verbatim after a compaction summary (the TS haest's number).
 const KEEP_RECENT: usize = 12;
-const COMPACT_SHARE: f64 = 0.8;
 
 impl RuntimeHooks {
     /// When to compact a conversation on the model `spec`: at 80% of its

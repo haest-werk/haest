@@ -4,7 +4,8 @@
 use std::path::PathBuf;
 
 use haest_core::{
-    Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine, words::UnknownWord,
+    Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine,
+    wind_down::WindDown, words::UnknownWord,
 };
 use haest_settings::{BuiltinTools, ContextSources, SkillSources, WordSet};
 
@@ -16,6 +17,8 @@ pub(super) trait Raw: Sized {
     /// A count: a whole number up to this, never a fraction (`0.5` read as 0
     /// would turn a cap off). None = any number.
     const WHOLE_UP_TO: Option<f64> = None;
+    /// The largest number it takes, a fraction or not; None = no bound.
+    const UP_TO: Option<f64> = None;
     fn to_raw(&self) -> Option<String>;
     fn from_raw(raw: &str) -> Result<Self, String>;
 }
@@ -118,8 +121,20 @@ impl Raw for Vec<String> {
     }
 }
 
+/// A share from 0 to 1, 0 = off.
+impl Raw for WindDown {
+    const UP_TO: Option<f64> = Some(1.0);
+    fn to_raw(&self) -> Option<String> {
+        Some(self.share().to_string())
+    }
+    fn from_raw(raw: &str) -> Result<Self, String> {
+        WindDown::at(number(raw, None)?).map_err(|e| e.to_string())
+    }
+}
+
 impl<T: Raw> Raw for Option<T> {
     const WHOLE_UP_TO: Option<f64> = T::WHOLE_UP_TO;
+    const UP_TO: Option<f64> = T::UP_TO;
     fn to_raw(&self) -> Option<String> {
         self.as_ref().and_then(T::to_raw)
     }

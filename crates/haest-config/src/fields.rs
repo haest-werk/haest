@@ -264,6 +264,18 @@ macro_rules! fields {
                 _ => None,
             }
         }
+
+        /// The largest number `key`'s field takes, when its type has one
+        /// ([`Raw::UP_TO`]): a share is at most 1.
+        pub(crate) fn up_to(key: &str) -> Option<f64> {
+            fn of<T: Raw>(_: fn(&Config) -> &T) -> Option<f64> {
+                T::UP_TO
+            }
+            match key {
+                $($key => of(|c| &c.$($path).+),)+
+                _ => None,
+            }
+        }
     };
 }
 
@@ -300,6 +312,7 @@ fields! {
     "max_repeats" => settings.caps.max_repeats,
     "max_conversation_usd" => settings.caps.max_conversation_usd,
     "max_conversation_tokens" => settings.caps.max_conversation_tokens,
+    "wind_down_at" => settings.wind_down_at,
     "context_window" => settings.caps.context_window,
     "compact_at" => settings.caps.compact_at,
     "max_agent_turns" => settings.max_agent_turns,

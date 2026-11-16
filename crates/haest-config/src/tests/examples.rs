@@ -52,6 +52,7 @@ async fn the_example_files_load_together_and_do_what_they_say() {
     let s = &r.config.settings;
     assert_eq!(s.tools, BuiltinTools::ALL);
     assert!(s.subagent_caps().budgets, "the budget parameter is on");
+    assert_eq!(s.wind_down_at.share(), 0.8, "winds down at 80%");
     assert_eq!(
         s.workspace,
         WorkspaceMode::Real,

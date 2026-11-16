@@ -115,6 +115,30 @@ async fn try_keyed(
 }
 
 #[tokio::test]
+async fn the_wind_down_setting_reaches_the_conversation_and_is_off_unless_set() {
+    use haest_core::{
+        threshold::{Action, Mark},
+        wind_down::WindDown,
+    };
+
+    // The marks of the conversation's wind-down thresholds.
+    let marks = |rt: &Runtime<Recorded>| -> Vec<Mark> {
+        let thresholds = &rt.agent().deps().shared.thresholds;
+        let winding = thresholds.iter().filter(|t| t.action() == Action::WindDown);
+        winding.map(|t| t.mark()).collect()
+    };
+    let fs = Arc::new(MemFs::new());
+    let off = keyed_with(&fs, hardcoded(), BuildOptions::default()).await;
+    assert!(marks(&off).is_empty());
+    let on = Settings {
+        wind_down_at: WindDown::at(0.8).unwrap(),
+        ..hardcoded()
+    };
+    let on = keyed_with(&fs, on, BuildOptions::default()).await;
+    assert_eq!(marks(&on), [Mark::share(0.8); 5]);
+}
+
+#[tokio::test]
 async fn a_key_the_host_hands_in_is_the_key_haest_uses() {
     let rt = keyed(&Arc::new(MemFs::new()), Resume::New).await;
     assert!(

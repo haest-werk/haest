@@ -9,11 +9,66 @@
 //!
 //! The host runs what reaches its [`crate::Inbox`] through [`AgentTurnGate::agent_turn`],
 //! and the human's own messages through [`AgentTurnGate::human`].
+//!
+//! The gate is a threshold site ([`AgentTurnSite`]): the nudge is its default
+//! threshold, and [`AgentTurnGate::with_thresholds`] changes it.
+
+use std::sync::Arc;
 
 use haest_core::{
-    __private::NUDGE_SHARE,
     remedy::{Limit, Remedies},
+    threshold::{
+        Action, Crossing, Mark, Meter, NUDGE_SHARE, Reading, Rearm, Site, Threshold, Thresholds,
+        Watch,
+    },
 };
+
+/// Checked by an [`AgentTurnGate`] at every turn no human started: reads
+/// [`Meter::Turns`] (the turns in a row so far, this one included, against
+/// the gate's cap), and reminds the model (in front of the turn's text) or
+/// warns the human (the gate's notice).
+///
+/// Its default is the gate's nudge: from half the cap ([`NUDGE_SHARE`]) every
+/// such turn carries the count.
+#[derive(Debug, Clone, Copy)]
+pub struct AgentTurnSite;
+
+impl Site for AgentTurnSite {
+    const NAME: &'static str = "on a turn no human started";
+
+    fn serves(meter: Meter, action: Action) -> bool {
+        meter == Meter::Turns && matches!(action, Action::Remind | Action::Warn)
+    }
+
+    fn defaults() -> Vec<Arc<dyn Threshold>> {
+        vec![Arc::new(StreakNudge)]
+    }
+}
+
+/// The gate's nudge: the streak, and where it holds.
+struct StreakNudge;
+
+impl Threshold for StreakNudge {
+    fn meter(&self) -> Meter {
+        Meter::Turns
+    }
+    fn mark(&self) -> Mark {
+        Mark::share(NUDGE_SHARE)
+    }
+    fn action(&self) -> Action {
+        Action::Remind
+    }
+    fn rearm(&self) -> Rearm {
+        Rearm::NextTurn
+    }
+    fn text(&self, r: &Reading) -> String {
+        format!(
+            "This is turn {} in a row started by another conversation or a background job, with no message from the human since. If you are trading messages with another agent or restarting jobs, make sure it is still going somewhere; if it is not, stop. At {} haest holds further messages until the human posts.",
+            r.value as u64,
+            r.cap.unwrap_or_default() as u64
+        )
+    }
+}
 
 /// The counter between the inbox and the agent: how many turns in a row ran
 /// with no human message, and what is held once that reaches the cap.
@@ -48,6 +103,7 @@ pub struct AgentTurnGate {
     remedies: Remedies,
     streak: u32,
     held: Vec<String>,
+    thresholds: Watch<AgentTurnSite>,
 }
 
 impl AgentTurnGate {
@@ -61,6 +117,7 @@ impl AgentTurnGate {
             remedies: Remedies::default(),
             streak: 0,
             held: Vec::new(),
+            thresholds: Watch::default(),
         }
     }
 
@@ -68,6 +125,13 @@ impl AgentTurnGate {
     /// notice that messages are being held.
     pub fn with_remedies(mut self, remedies: Remedies) -> Self {
         self.remedies = remedies;
+        self
+    }
+
+    /// What every turn no human started checks, in place of the nudge
+    /// ([`AgentTurnSite`]).
+    pub fn with_thresholds(mut self, thresholds: Thresholds<AgentTurnSite>) -> Self {
+        self.thresholds = Watch::new(thresholds);
         self
     }
 
@@ -85,8 +149,8 @@ impl AgentTurnGate {
     }
 
     /// A turn the human did not start. The text to run it with (from half the
-    /// cap, with a nudge that counts the streak in front), or None: held until
-    /// the human posts.
+    /// cap, with a nudge that counts the streak in front: the reminders due),
+    /// or None: held until the human posts. A warning due goes to the notice.
     pub fn agent_turn(&mut self, text: &str) -> Option<String> {
         if self.cap > 0 && self.streak >= self.cap {
             if self.held.is_empty() {
@@ -100,14 +164,23 @@ impl AgentTurnGate {
             return None;
         }
         self.streak += 1;
-        let nudge_from = (f64::from(self.cap) * NUDGE_SHARE).ceil() as u32;
-        if self.cap == 0 || self.streak < nudge_from {
+        self.thresholds.next_turn();
+        let reading = Reading {
+            meter: Meter::Turns,
+            value: f64::from(self.streak),
+            cap: (self.cap > 0).then_some(f64::from(self.cap)),
+            limit: Some(Limit::AgentTurns(self.cap)),
+        };
+        let read = |m: Meter| (m == Meter::Turns).then_some(reading);
+        for warning in self.thresholds.check(read, Action::Warn) {
+            (self.notice)(&warning.remedied_text(&self.remedies));
+        }
+        let reminders = self.thresholds.check(read, Action::Remind);
+        if reminders.is_empty() {
             return Some(text.to_string());
         }
-        Some(format!(
-            "[haest guard] This is turn {} in a row started by another conversation or a background job, with no message from the human since. If you are trading messages with another agent or restarting jobs, make sure it is still going somewhere; if it is not, stop. At {} haest holds further messages until the human posts.\n\n{text}",
-            self.streak, self.cap
-        ))
+        let said: Vec<String> = reminders.iter().map(Crossing::text).collect();
+        Some(format!("[haest guard] {}\n\n{text}", said.join(" ")))
     }
 }
 

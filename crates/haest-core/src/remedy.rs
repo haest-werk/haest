@@ -35,9 +35,9 @@ use std::{fmt, sync::Arc, time::Duration};
 
 use crate::caps::ConversationCap;
 
-/// A limit haest holds a conversation to, with its number: a cap a turn or
-/// the conversation reached (or nears), or the sandbox keeping edits off the
-/// disk. What a host's [`Remedies`] answers.
+/// A limit haest holds a conversation to, with its number: a cap a turn, a
+/// subagent or the conversation reached (or nears), or the sandbox keeping
+/// edits off the disk. What a host's [`Remedies`] answers.
 ///
 /// "Cap" is haest's word for a maximum that stops something; this is named
 /// `Limit` because it also covers [`SandboxEdits`](Self::SandboxEdits), which
@@ -65,6 +65,43 @@ pub enum Limit {
     /// The sandbox keeps every edit in memory until the human applies it
     /// (haest-workspace's `SandboxWorkspace`).
     SandboxEdits,
+    /// A subagent made this many model calls
+    /// ([`SubagentCaps::steps`](crate::caps::SubagentCaps::steps)).
+    SubagentSteps(u32),
+    /// A subagent ran this long ([`SubagentCaps::time`](crate::caps::SubagentCaps::time)).
+    SubagentTime(Duration),
+    /// A subagent spent this much ([`SubagentCaps::usd`](crate::caps::SubagentCaps::usd)).
+    SubagentUsd(f64),
+}
+
+impl Limit {
+    /// The plain name of the setting that sets this limit (`max_turn_steps`),
+    /// as haest's own messages name it. haest-config's registry has a row of
+    /// this name for every limit.
+    ///
+    /// ```
+    /// use haest_core::remedy::Limit;
+    ///
+    /// assert_eq!(Limit::TurnSteps(40).setting(), "max_turn_steps");
+    /// assert_eq!(Limit::SubagentUsd(0.5).setting(), "subagent_usd");
+    /// ```
+    pub fn setting(&self) -> &'static str {
+        match self {
+            Limit::TurnSteps(_) => "max_turn_steps",
+            Limit::TurnTime(_) => "max_turn_minutes",
+            Limit::TurnUsd(_) => "max_turn_usd",
+            Limit::TurnTokens(_) => "max_turn_tokens",
+            Limit::Repeats(_) => "max_repeats",
+            Limit::RequestTokens(_) => "max_request_tokens",
+            Limit::Conversation(ConversationCap::Usd(_)) => "max_conversation_usd",
+            Limit::Conversation(ConversationCap::UnpricedTokens(_)) => "max_conversation_tokens",
+            Limit::AgentTurns(_) => "max_agent_turns",
+            Limit::SandboxEdits => "workspace",
+            Limit::SubagentSteps(_) => "subagent_steps",
+            Limit::SubagentTime(_) => "subagent_minutes",
+            Limit::SubagentUsd(_) => "subagent_usd",
+        }
+    }
 }
 
 type Remedy = dyn Fn(Limit) -> Option<String> + Send + Sync;

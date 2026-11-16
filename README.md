@@ -21,7 +21,7 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 
 | Crate | What |
 |---|---|
-| `haest-core` | the loop and the contracts: messages, `Provider`, `Tool`, `Fs`, `Workspace`, `AgentHooks`, events; turn guard, caps, ledger, session log, compaction, task board |
+| `haest-core` | the loop and the contracts: messages, `Provider`, `Tool`, `Fs`, `Workspace`, `AgentHooks`, events; turn guard, caps, ledger, thresholds (a host's own beside the guard's nudge, the ledger's warning, compaction and wind-down, opt-in), session log, compaction, task board |
 | `haest-http` | the HTTP seam (`HttpClient`) the model calls, GenerateImage and the GitHub tracker send through, and its default over reqwest and rustls; the one place haest builds a reqwest client. WebFetch sends through a guarded client of its own, MCP servers through rmcp's |
 | `haest-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible server, OpenRouter), OpenAI Responses; `providers.json`; the model catalog; requests over any `HttpClient` |
 | `haest-workspace` | the real disk and bash, or a bashkit sandbox over a copy-on-write overlay (or over any `Fs`) whose edits are a change set the human reviews and applies |
@@ -99,7 +99,9 @@ provider's key and endpoint variable is in
 
 haest starts bare: no tools, no instruction files, no skills, no MCP, no mods,
 no web search, in the sandbox. Every brake is on: approvals, turn caps and
-conversation caps. A run gets what you turn on.
+conversation caps. A run gets what you turn on. New behaviour is opt-in too:
+`wind_down_at = 0.8` stops new subagents at 80% of a cap and tells the model
+once to conclude; it is off unless set, the `claude` profile included.
 
 Every setting has one name, written three ways:
 

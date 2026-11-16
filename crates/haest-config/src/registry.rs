@@ -207,6 +207,8 @@ pub const DEFS: &[Def] = &[
     def("max_repeats", CAPS, Number, "10", "The same tool call in a row before the guard stops it (0 = no cap)"),
     def("max_conversation_usd", CAPS, Number, "50", "The whole conversation's spend (0 = no cap)"),
     def("max_conversation_tokens", CAPS, Number, "50000000", "Tokens of models with no price (0 = no cap)"),
+    def("wind_down_at", CAPS, Number, "0.8", "At this share of a cap, no new subagents and the model is told once to conclude (0 = off)")
+        .detail("Watches the conversation's USD and unpriced tokens, and the turn's USD, tokens and wall clock. A subagent watches the conversation's and its own (subagent_usd, subagent_minutes, max_turn_tokens) the same way, and winds down alone. One share for every cap. The guard's nudge at half a cap is separate and stays on."),
     def("context_window", CAPS, Number, "1000000", "The model's window in tokens (unset: the catalog's, else 200000)"),
     def("compact_at", CAPS, Number, "300000", "Compact the conversation past this many tokens (0 = at 80% of the window only)"),
     def("max_agent_turns", AGENTS, Number, "10", "Turns in a row a job or an agent starts with no human message; past it haest holds them (0 = no cap)"),

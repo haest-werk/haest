@@ -78,7 +78,10 @@
 //! person writes to a running subagent through the hub
 //! ([`SubagentHub::deliver_as`]).
 //! Main is depth 0, an agent at the depth cap gets no Agent tool, and at
-//! most `max_concurrent` run at once across the whole tree.
+//! most `max_concurrent` run at once across the whole tree. Wind-down
+//! (opt-in, [`haest_core::wind_down`]): once the caller's turn is past its
+//! share of a cap, the Agent tool starts nothing and says why
+//! ([`AgentError::WindingDown`]), whatever directory it speaks to.
 //!
 //! The agent tools speak to an [`AgentDirectory`], never to the hub, so a
 //! host with its own idea of a subagent implements that trait and keeps the
@@ -198,5 +201,5 @@ pub use search::{GlobTool, GrepTool};
 pub use skill::{SkillToolOptions, skill_tool};
 pub use tasks::task_tools;
 pub use tool_search::DeferredTools;
-pub use turn_gate::AgentTurnGate;
+pub use turn_gate::{AgentTurnGate, AgentTurnSite};
 pub use web_fetch::{WebFetchNet, WebFetchTool, markdown_of};

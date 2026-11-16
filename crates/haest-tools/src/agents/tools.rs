@@ -9,7 +9,9 @@ use haest_core::tool::{
 };
 use serde_json::{Value, json};
 
-use super::{AgentDirectory, AgentRef, AgentToolOptions, SpawnInput, SubagentBudget, budget};
+use super::{
+    AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SubagentBudget, budget,
+};
 
 struct AgentTool {
     hub: Arc<dyn AgentDirectory>,
@@ -94,6 +96,7 @@ impl Tool for AgentTool {
         params
     }
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        refuse_while_winding_down(ctx)?;
         let spawn = SpawnInput {
             description: req_str(&input, "description")?.into(),
             prompt: req_str(&input, "prompt")?.into(),
@@ -113,6 +116,15 @@ impl Tool for AgentTool {
             child_cost_usd: Some(out.cost_usd),
             ..Default::default()
         })
+    }
+}
+
+/// No new subagent while the caller's turn winds down
+/// ([`ToolContext::wind_down`]): the refusal says why.
+fn refuse_while_winding_down(ctx: &ToolContext) -> Result<(), ToolError> {
+    match ctx.wind_down.check() {
+        Some(w) => Err(ToolError::Input(AgentError::WindingDown(w).to_string())),
+        None => Ok(()),
     }
 }
 

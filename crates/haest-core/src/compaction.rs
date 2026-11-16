@@ -10,7 +10,8 @@
 //! The loop never compacts on its own. A host checks [`needs_compaction`] and
 //! calls [`compact`], usually from
 //! [`AgentHooks::before_model_call`](crate::AgentHooks::before_model_call);
-//! [`compact`]'s docs show the whole hook.
+//! [`compact`]'s docs show the whole hook. That check is the compaction
+//! threshold: [`CompactionOptions`] is one.
 
 use std::collections::HashMap;
 
@@ -21,9 +22,20 @@ use crate::{
     messages::{AssistantMessage, Message, StopReason, Usage},
     provider::ModelError,
     session::compaction_summary_message,
+    threshold::{Action, Mark, Meter, Reading, Rearm, Threshold},
 };
 
+/// The share of the window at which haest-runtime compacts (its
+/// [`CompactionOptions::threshold`]).
+pub const COMPACT_SHARE: f64 = 0.8;
+
 /// When to compact, and how much to keep.
+///
+/// It is the compaction threshold ([`threshold`](crate::threshold)): it reads
+/// [`Meter::ContextTokens`] against the window, its mark is `threshold` of
+/// the window or `ceiling` when that is lower, and it compacts at every check
+/// it is past the mark ([`Rearm::EveryCheck`]: a check that found nothing to
+/// cut tries again at the next). [`needs_compaction`] is its check.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompactionOptions {
     /// The model's context window, in tokens.
@@ -36,6 +48,28 @@ pub struct CompactionOptions {
     pub keep_recent: usize,
 }
 
+impl Threshold for CompactionOptions {
+    fn meter(&self) -> Meter {
+        Meter::ContextTokens
+    }
+    fn mark(&self) -> Mark {
+        let share = Mark::share(self.threshold);
+        match self.ceiling {
+            Some(ceiling) => share.or_at(ceiling as f64),
+            None => share,
+        }
+    }
+    fn action(&self) -> Action {
+        Action::Compact
+    }
+    fn rearm(&self) -> Rearm {
+        Rearm::EveryCheck
+    }
+    fn text(&self, r: &Reading) -> String {
+        format!("The context holds {} tokens.", r.value)
+    }
+}
+
 fn last_assistant(messages: &[Message]) -> Option<&AssistantMessage> {
     messages.iter().rev().find_map(|m| match m {
         Message::Assistant(a) if a.stop_reason != StopReason::Error => Some(a),
@@ -43,15 +77,27 @@ fn last_assistant(messages: &[Message]) -> Option<&AssistantMessage> {
     })
 }
 
+/// What the last successful request put in the context window; 0 before any.
+pub(crate) fn last_context_tokens(messages: &[Message]) -> u64 {
+    last_assistant(messages).map_or(0, |a| a.usage.context_tokens())
+}
+
 /// The LAST successful request filled the trigger (not the sum of every request).
 ///
 /// The trigger is `context_window * threshold`, or `ceiling` when that is
-/// lower; a request "filled" it when its [`Usage::context_tokens`] reached
-/// it. A failed request never triggers, and an empty history is never due.
+/// lower ([`CompactionOptions`]' mark); a request "filled" it when its
+/// [`Usage::context_tokens`] reached it. A failed request never triggers, and
+/// an empty history is never due.
 pub fn needs_compaction(messages: &[Message], cfg: &CompactionOptions) -> bool {
-    let fraction = cfg.context_window as f64 * cfg.threshold;
-    let trigger = cfg.ceiling.map_or(fraction, |c| fraction.min(c as f64));
-    last_assistant(messages).is_some_and(|a| a.usage.context_tokens() as f64 >= trigger)
+    last_assistant(messages).is_some_and(|a| {
+        let reading = Reading {
+            meter: Meter::ContextTokens,
+            value: a.usage.context_tokens() as f64,
+            cap: Some(cfg.context_window as f64),
+            limit: None,
+        };
+        cfg.mark().reached(&reading)
+    })
 }
 
 /// Index of the first kept message: the latest at or before len-keep_recent

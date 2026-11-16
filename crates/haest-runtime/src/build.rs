@@ -18,6 +18,7 @@ use crate::{
         core::session::SessionRecord,
         core::skills::{Skill, SkillScanRoots, skills_in},
         core::task_board::TaskBoard,
+        core::threshold::Thresholds,
         mods::{ApprovalGate, ModSystemPrompt, Prompter},
         now_ms,
         providers::{ProviderRegistry, RegistryOptions},
@@ -210,6 +211,7 @@ where
         ledger: Some(ledger.clone()),
         web_search: s.web_search_options(),
         remedies: hooks.remedies(),
+        thresholds: Thresholds::default().wind_down(s.wind_down_at),
         ..SharedDeps::new(Arc::new(registry), s.cwd.clone(), found.workspace)
     };
     let subagents = RuntimeParent {

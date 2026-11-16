@@ -1,6 +1,6 @@
 # Budgets: wind-down, subagent budgets, tool costs (plan, opt-in)
 
-Status: plan, 2026-11-16. Names follow `main` at `1c7372a` (0.2.0): `caps::{TurnCaps,
+Status: plan, 2026-11-16; W and W2 built 2026-11-17. Names follow `main` at `1c7372a` (0.2.0): `caps::{TurnCaps,
 SubagentCaps}` hold `Duration`s (minutes only at the settings boundary), `Clock` sits on
 `AgentDeps`, the hub's parent is `SubagentParent`, public errors are typed, and every
 library message about a cap ends with the host's remedy through `remedy::{Limit, Remedies}`.
@@ -38,36 +38,84 @@ Setting: `wind_down_at`, a share between 0 and 1. 0 = off, the default.
 Differs from the guard's nudge: the nudge says "you are burning X, find the exit" at
 50% of each turn cap. Wind-down changes behaviour: spawns stop.
 
-## W2. Thresholds: wind-down becomes one action (decided direction, 2026-11-17)
+## W2. Thresholds: wind-down becomes one action (as built, 2026-11-17)
 
-haest already has five hard-coded thresholds of one shape, a meter crossing a mark fires
-an action:
-
-| Today | Meter | Mark | Action | Fires again |
-|---|---|---|---|---|
-| the guard's nudge | each turn cap: USD, tokens, steps, time, repeats | 50% (`NUDGE_SHARE`) | tell the model | next turn |
-| the agent-turn gate | a subagent's turns | 50% | tell the model | -- |
-| the ledger's warning | conversation USD, unpriced tokens | 80% (`WARN_SHARE`) | tell the human | never (saved) |
-| auto-compaction | context tokens | 80% of the window, or `compact_at` | compact | once compaction drops it |
-| wind-down (built, unmerged) | the conversation and turn caps | `wind_down_at` | refuse new subagents + tell the model | next turn |
-
-The cap itself is the same shape at 100%: stop.
+Built on `wt/wind-down`, on the 0.2.0 names; W is its wind-down action. Code:
+`haest_core::threshold`, runnable: `cargo run -p haest --example threshold`.
 
 A threshold = a meter + a mark + an action + when it fires again.
 
-- **Meters:** context tokens, steps, turns, wall time, USD, tokens; turn scope or
-  conversation scope. A fixed list, no expression language.
-- **Mark:** a share of the meter's cap, or an absolute value.
-- **Actions:** remind the model, warn the human, wind down (refuse new subagents), compact, stop.
-- **Fires again:** never, next turn, or once the meter falls back under the mark.
+| Part | As built |
+|---|---|
+| `Meter` | `ContextTokens`, `Steps`, `Turns`, `WallTime`, `Usd(Scope)`, `Tokens(Scope)`, with `Scope::{Turn, Conversation}`. A fixed list, no expression language |
+| `Mark` | `Mark::share(0.8)` of the meter's cap, `Mark::at(v)` in the meter's unit, or both (`or_at`: whichever comes first). A share of a meter with no cap never fires |
+| `Action` | `Remind` (the model), `Warn` (the human), `WindDown` (no new subagents), `Compact`, `Stop` |
+| `Rearm` | `Never`, `NextTurn`, `BelowMark`, and `EveryCheck` (below) |
 
-The five become default thresholds with today's numbers, so nothing changes until a host
-changes them; the existing tests pin that. `wind_down_at` stays as the named shortcut for
-the wind-down threshold. A threshold is a trait, so a host or a mod adds its own.
+`Threshold` is a trait: meter, mark, action, rearm, the text it says, and an optional
+`closing` said once after every reminder that shares it. A threshold is checked where its
+meter is read, a `Site`. A site holds a `Thresholds<S>` list (`Default` = the site's
+defaults) and a `Watch<S>` that remembers which fired. A threshold a site cannot check is
+refused with a typed `NotServed` when it is added, never ignored.
 
-Built after Wave C of the 0.2.0 review lands: the guard, the ledger's warning and the
-compaction threshold are what it is moving. `wt/wind-down` is not merged; it is rebuilt on
-this, and its tests stay as the wind-down threshold's acceptance.
+| Site | Set on | Checks | Reads | Can |
+|---|---|---|---|---|
+| `TurnSite` | `SharedDeps::thresholds` | at every step boundary; Stop before every model call | context tokens (cap: the new `TurnCaps::context_window`), steps, wall time, the turn's and the conversation's USD and tokens | remind, warn, wind down, stop |
+| `LedgerSite` | `Ledger::with_thresholds` | at every charge | the conversation's USD and unpriced tokens | warn |
+| `AgentTurnSite` (haest-tools) | `AgentTurnGate::with_thresholds` | at every turn no human started | turns | remind, warn |
+| compaction | `CompactionOptions` is the threshold, `needs_compaction` its check | before every model call, in the host's hook | context tokens | compact |
+
+The five defaults keep today's numbers and behaviour. Their existing tests pass unchanged:
+
+| Default | Meter | Mark | Action | Rearm | Pinned by |
+|---|---|---|---|---|---|
+| the guard's nudge | steps, wall time, the turn's USD and tokens | `NUDGE_SHARE` (0.5) | remind | next turn | `guard/tests.rs` |
+| the agent-turn gate's nudge | turns no human started | 0.5 | remind | next turn (each such turn) | `turn_gate.rs` tests, its doctest |
+| the ledger's warning | the conversation's USD and unpriced tokens | `WARN_SHARE` (0.8) | warn | below mark; `set_cap` and a restore settle it | `ledger` tests, its doctests |
+| compaction | context tokens | `COMPACT_SHARE` (0.8) of the window, or `compact_at` when lower | compact | every check | `compaction` tests, haest-runtime's compaction tests |
+| wind-down (off) | the conversation's USD and unpriced tokens, the turn's USD, tokens and wall time | `wind_down_at` | wind down | next turn | `wind_down/tests.rs`, haest-tools `agents/tests/wind_down.rs`, haest-config `tests/wind_down.rs` |
+
+`wind_down_at` stays the named setting: haest-runtime adds `Thresholds::default().wind_down(at)`,
+which is nothing when it is 0. The tools' live question (`ToolContext::wind_down`,
+`WindDownWatch`) asks `Thresholds::past`, which keeps no state: a spawn is refused for as
+long as the run is past the mark, and the notice is said once a turn.
+
+Where the table this replaced was wrong, checked against the code:
+
+- **Compaction** fires at every check past the mark, not "once compaction drops it":
+  `needs_compaction` runs before every call, and a check that cut nothing tries again at the
+  next. Hence a fourth rearm, `EveryCheck`.
+- **The ledger's warning** re-arms below the mark (a raised cap), not "never": `Watch::settle`
+  is how `set_cap` and a restored ledger take the spend so far as already heard.
+- **The gate** counts turns no human started, not a subagent's turns, and nudges at every
+  such turn from half its cap.
+- **Repeats** are not a threshold: the repeat check keeps one count per distinct tool call,
+  not one meter. It stays in the guard, and its nudge still ends with the same way out.
+
+Not thresholds: the caps themselves (a turn stops AT a cap; a Stop threshold stops it
+earlier), the request cap (one request, not a meter), the repeat check.
+
+Decided while building:
+
+- A turn's warning goes to `AgentHooks::on_warning` (default: nothing), the way the ledger's
+  goes to `LedgerHooks::warn` and the gate's to its notice. A new `LoopEvent` would have broken
+  every exhaustive match on it, an existing test's included. haest-runtime sends it to `Ui::warn`.
+- The reminders due at one boundary reach the model as ONE `[haest guard]` message: each text,
+  then each distinct closing once. For the defaults it is the old nudge, byte for byte.
+- Each agent keeps its own `Watch<TurnSite>` while it lives. A host that changes
+  `SharedDeps::thresholds` between turns keeps the fired state of the thresholds it kept
+  (the same `Arc`, `Watch::follow`).
+- A durable run's step ends at the one boundary, `after_tools`, whose first act is
+  `at_boundary` (the thresholds); a resumed step goes through it too. The turn's record
+  (`TurnState::nudged`) lists the thresholds that fired, `threshold <n>: <action> on
+  <meter>`, beside the nudged repeats, so a resumed turn neither reminds twice nor says it
+  is winding down twice.
+- On the Agent tool, wind-down is asked before a budget: a turn that winds down starts no
+  subagent, whatever budget it asks for.
+- Compact is no turn threshold: the loop never compacts on its own, so `TurnSite` refuses it.
+- Naming: the mechanism is "thresholds" and remind is `Action::Remind`, as decided. "Fires
+  again" is `Rearm` in the code: a short noun the four kinds read well after
+  (`Rearm::BelowMark`).
 
 ## S. Subagent budgets (agent-core's `clampUsd` + spawn reservation)
 
@@ -129,7 +177,7 @@ hold as S), so parallel paid calls cannot overshoot together.
 
 1. S's ledger holds (reserve, release, available).
 2. S: the `budget` parameter, the clamp, the spawn checks.
-3. W: wind-down.
+3. W: wind-down. Built, as W2's thresholds.
 4. T, when a parallel paid tool exists.
 
 Each with tests first (behaviour, not wording), settings rows with examples, and
@@ -139,5 +187,6 @@ Each with tests first (behaviour, not wording), settings rows with examples, and
 
 Numbered after `durable-runs.md`'s Q1-Q4, so a code means one question across both plans.
 
-- **Q5.** Wind-down share: one setting for every cap, or one per cap?
+- **Q5.** Wind-down share: one setting for every cap, or one per cap? Built as one;
+  `WindDown::share_for` is the one place a per-cap share would go.
 - **Q6.** A subagent whose minutes do not fit: refuse (agent-core) or shrink it to fit?

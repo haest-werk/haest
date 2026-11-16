@@ -161,6 +161,39 @@ fn a_stop_ends_with_the_hosts_remedy_for_the_cap_that_stopped_it() {
     assert!(refused.ends_with(" REMEDY-REQUEST"), "{refused}");
 }
 
+/// Regression: a subagent's stop handed the host the TURN cap's limit, so its
+/// remedy named `max_turn_usd` for a cap `subagent_usd` sets.
+#[test]
+fn a_subagents_stop_hands_the_host_the_subagent_cap_that_stopped_it() {
+    let clock = Arc::new(TestHooks::default());
+    let remedies = Remedies::new(|limit| match limit {
+        Limit::SubagentUsd(_) => Some("REMEDY-USD".into()),
+        Limit::SubagentSteps(_) => Some("REMEDY-STEPS".into()),
+        Limit::SubagentTime(_) => Some("REMEDY-TIME".into()),
+        _ => None,
+    });
+    let subagent = |f: fn(&mut TurnCaps)| TurnCaps {
+        subagent: true,
+        ..turn_caps(f)
+    };
+    let mut g = TurnGuard::new(clock.clone(), None, remedies);
+    let spent = Usage {
+        cost_usd: Some(1.0),
+        ..Default::default()
+    };
+    let usd = g.stop(&spent, Some(&subagent(|l| l.max_turn_usd = 0.5)));
+    assert!(usd.unwrap().ends_with(" REMEDY-USD"));
+    g.called(&Usage::default());
+    let steps = g.stop(&spent, Some(&subagent(|l| l.max_turn_steps = 1)));
+    assert!(steps.unwrap().ends_with(" REMEDY-STEPS"));
+    clock.set_now(2000);
+    let time = g.stop(
+        &spent,
+        Some(&subagent(|l| l.max_turn_time = Duration::from_secs(1))),
+    );
+    assert!(time.unwrap().ends_with(" REMEDY-TIME"));
+}
+
 #[test]
 fn room_is_what_the_request_cap_leaves_after_the_last_request_and_the_results_since() {
     let mut guard = TurnGuard::new(Arc::new(TestHooks::default()), None, Remedies::default());

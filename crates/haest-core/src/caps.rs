@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{media::messages_for_estimate, messages::Message, provider::ToolSpec};
+use crate::{media::messages_for_estimate, messages::Message, provider::ToolSpec, remedy::Limit};
 
 /// The hard caps on one turn. 0 (or a zero duration) turns a cap off;
 /// `Default` is every cap off.
@@ -44,6 +44,43 @@ pub struct TurnCaps {
     pub max_turn_time: Duration,
     /// Stop the turn once one tool call (same input, same result) has repeated this often.
     pub max_repeats: u32,
+    /// The model's context window, in tokens: what a threshold on
+    /// [`Meter::ContextTokens`](crate::threshold::Meter::ContextTokens) takes
+    /// its share of. 0 = unknown. No turn stops at it: the provider holds the
+    /// model to it.
+    pub context_window: u64,
+    /// These are a subagent's caps: its one turn's USD, model calls and wall
+    /// time come from its [`SubagentCaps`], so a message about one of those
+    /// names the subagent's setting, and a host's remedy gets
+    /// [`Limit::SubagentUsd`], [`Limit::SubagentSteps`] or
+    /// [`Limit::SubagentTime`]. haest-tools' hub sets it; false otherwise.
+    pub subagent: bool,
+}
+
+impl TurnCaps {
+    /// The [`Limit`] for `max_turn_usd`: the turn's, or the subagent's.
+    pub(crate) fn usd_limit(&self) -> Limit {
+        match self.subagent {
+            true => Limit::SubagentUsd(self.max_turn_usd),
+            false => Limit::TurnUsd(self.max_turn_usd),
+        }
+    }
+
+    /// The [`Limit`] for `max_turn_steps`: the turn's, or the subagent's.
+    pub(crate) fn steps_limit(&self) -> Limit {
+        match self.subagent {
+            true => Limit::SubagentSteps(self.max_turn_steps),
+            false => Limit::TurnSteps(self.max_turn_steps),
+        }
+    }
+
+    /// The [`Limit`] for `max_turn_time`: the turn's, or the subagent's.
+    pub(crate) fn time_limit(&self) -> Limit {
+        match self.subagent {
+            true => Limit::SubagentTime(self.max_turn_time),
+            false => Limit::TurnTime(self.max_turn_time),
+        }
+    }
 }
 
 /// PLUG POINT: the [`TurnCaps`] for a model spec, asked before every model

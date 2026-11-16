@@ -128,6 +128,21 @@ impl Agent {
         t.sink.emit(LoopEvent::Guard { text });
     }
 
+    /// The turn's thresholds at a step boundary: the reminders (the guard's
+    /// nudge among them) reach the model as one input, warnings the human
+    /// (through the host's hook), and the wind-down notice the model, once a
+    /// turn.
+    fn at_boundary(&mut self, t: &mut Turn<'_>) {
+        let caps = self.turn_caps();
+        let nudge = t.guard.nudge(&t.usage, caps.as_ref());
+        self.inject_nudge(nudge, t);
+        for text in t.guard.warnings(&t.usage, caps.as_ref()) {
+            self.deps.shared.hooks.on_warning(&text);
+        }
+        let notice = t.guard.wind_down_notice(&t.usage, caps.as_ref());
+        self.inject_nudge(notice, t);
+    }
+
     /// A turn stops on its own only before a model call: every tool call already has its result.
     pub(super) async fn steps(&mut self, t: &mut Turn<'_>) -> TurnOutcome {
         loop {
@@ -189,12 +204,11 @@ impl Agent {
         None
     }
 
-    /// The step boundary after a model call's tool results: the guard's
-    /// nudge, then queued steering. A resumed durable run (durable.rs) ends
-    /// its replayed step here too.
+    /// The step boundary after a model call's tool results: the turn's
+    /// thresholds ([`at_boundary`](Self::at_boundary)), then queued steering.
+    /// A resumed durable run (durable.rs) ends its replayed step here too.
     pub(super) async fn after_tools(&mut self, t: &mut Turn<'_>) {
-        let nudge = t.guard.nudge(&t.usage, self.turn_caps().as_ref());
-        self.inject_nudge(nudge, t);
+        self.at_boundary(t);
         self.inject_queued(t).await;
         t.record_turn();
     }
@@ -264,6 +278,7 @@ impl Agent {
             run_key: t.journal.as_ref().map(|j| j.key().clone()),
             resumed: false,
             turn_time_left: t.guard.time_left(caps.as_ref()),
+            wind_down: t.guard.wind_down_watch(&t.usage, caps.clone()),
         };
         let tools = ToolIndex::new(self.deps.tools.callable());
         let mut delivery = Delivery {

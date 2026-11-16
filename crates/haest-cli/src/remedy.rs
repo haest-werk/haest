@@ -14,26 +14,16 @@ pub fn remedy(limit: Limit, slash: bool) -> Option<String> {
     Some(match limit {
         Limit::RequestTokens(_) if !slash => format!(
             "A `clear` control starts the conversation over. {}",
-            sets_the_cap("max_request_tokens")
+            sets_the_cap(limit.setting())
         ),
-        Limit::Conversation(ConversationCap::Usd(_)) if !slash => {
-            sets_the_cap("max_conversation_usd")
-        }
-        Limit::Conversation(ConversationCap::UnpricedTokens(_)) if !slash => {
-            sets_the_cap("max_conversation_tokens")
-        }
+        Limit::Conversation(_) if !slash => sets_the_cap(limit.setting()),
         Limit::SandboxEdits if !slash => format!(
             "They stay in the sandbox; haest started with --{} real edits the real file system.",
-            setting("workspace").flag()
+            setting(limit.setting()).flag()
         ),
-        Limit::TurnSteps(_) => sets_the_cap("max_turn_steps"),
-        Limit::TurnTime(_) => sets_the_cap("max_turn_minutes"),
-        Limit::TurnUsd(_) => sets_the_cap("max_turn_usd"),
-        Limit::TurnTokens(_) => sets_the_cap("max_turn_tokens"),
-        Limit::Repeats(_) => sets_the_cap("max_repeats"),
         Limit::RequestTokens(_) => format!(
             "/compact or /clear makes it smaller. {}",
-            sets_the_cap("max_request_tokens")
+            sets_the_cap(limit.setting())
         ),
         Limit::Conversation(ConversationCap::Usd(cap)) => {
             format!("Raise it with /budget {}.", cap * 2.0)
@@ -41,11 +31,19 @@ pub fn remedy(limit: Limit, slash: bool) -> Option<String> {
         Limit::Conversation(ConversationCap::UnpricedTokens(cap)) => {
             format!("Raise it with /budget tokens {}.", cap * 2)
         }
-        Limit::AgentTurns(_) => sets_the_cap("max_agent_turns"),
         Limit::SandboxEdits => format!(
             "The human reviews them with /changes and puts them on disk with /apply, and can relaunch haest with --{} real for the real file system.",
-            setting("workspace").flag()
+            setting(limit.setting()).flag()
         ),
+        Limit::TurnSteps(_)
+        | Limit::TurnTime(_)
+        | Limit::TurnUsd(_)
+        | Limit::TurnTokens(_)
+        | Limit::Repeats(_)
+        | Limit::AgentTurns(_)
+        | Limit::SubagentSteps(_)
+        | Limit::SubagentTime(_)
+        | Limit::SubagentUsd(_) => sets_the_cap(limit.setting()),
         _ => return None,
     })
 }
@@ -78,6 +76,9 @@ mod tests {
             Limit::Conversation(ConversationCap::UnpricedTokens(1)),
             Limit::AgentTurns(1),
             Limit::SandboxEdits,
+            Limit::SubagentSteps(1),
+            Limit::SubagentTime(std::time::Duration::from_secs(60)),
+            Limit::SubagentUsd(1.0),
         ];
         for limit in limits {
             assert!(remedy(limit, true).is_some(), "{limit:?}");
@@ -87,6 +88,13 @@ mod tests {
                 "no slash command over stdio: {driven}"
             );
         }
+    }
+
+    #[test]
+    fn a_subagents_cap_points_at_the_subagent_setting_not_the_turns() {
+        let text = remedy(Limit::SubagentUsd(0.5), true).unwrap();
+        assert!(text.contains(&setting("subagent_usd").env()), "{text}");
+        assert!(!text.contains(&setting("max_turn_usd").env()), "{text}");
     }
 
     #[test]

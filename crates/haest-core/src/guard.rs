@@ -1,16 +1,22 @@
 //! THE TURN GUARD: everything that can tell a turn it is going nowhere, read in
-//! one place. Each signal has two levels:
+//! one place. Each cap has two levels:
 //!
-//! - NUDGE at half the cap -- one message to the model, once per signal per turn,
+//! - NUDGE at half the cap -- one message to the model, once per cap per turn,
 //!   injected after the tool results: what it is burning and the way out.
 //! - STOP at the cap -- the turn ends before the next model call.
 //!
 //! The nudge lets a stuck model find the exit on its own; the stop is what makes
-//! a stuck model cost a KNOWN amount. Signals: model calls, wall time (the
+//! a stuck model cost a KNOWN amount. Caps: model calls, wall time (the
 //! host's clock, [`Clock`](crate::Clock)), turn spend (USD and tokens), REPEATS --
 //! the same tool, same input, same result, a model learning nothing (an A,B,A,B
 //! cycle counts too) -- and the conversation ledger, which stops but never
 //! nudges (it is the human's number, see [`ledger`](crate::ledger)).
+//!
+//! The guard is the turn's threshold site ([`TurnSite`](crate::threshold::TurnSite),
+//! `guard/turn_site.rs`): the nudges on the step, time, USD and token caps
+//! are its default thresholds, and a host's own (remind, warn, wind down,
+//! stop) run beside them. The repeat check nudges the same way but is no
+//! threshold: it keeps one count per distinct call.
 //!
 //! The caps are passed to every check, read fresh by the caller: the request
 //! cap follows the model's window, and the model may change mid-turn.
@@ -22,6 +28,7 @@ mod signature;
 mod state;
 #[cfg(test)]
 mod tests;
+mod turn_site;
 
 use std::{
     collections::HashSet,
@@ -37,31 +44,20 @@ use crate::{
     ledger::Ledger,
     messages::{ToolCall, Usage},
     remedy::{Limit, Remedies},
+    threshold::{NUDGE_SHARE, WAY_OUT, minutes},
     tool::ToolOutput,
 };
 
-/// The share of a cap at which the model is nudged: half.
-pub const NUDGE_SHARE: f64 = 0.5;
-
 const CONTINUE: &str = "Post a message to continue; the turn caps reset each turn.";
-const WAY_OUT: &str = "If you are making progress, carry on. If you are repeating yourself or waiting on something that will not change, stop: try a different approach, or end your turn and tell the human what is blocking you.";
 
+/// One cap, as the stop reads it.
 struct Gauge {
-    key: String,
     used: f64,
     cap: f64,
-    /// Below this a nudge is not due (defaults to half the cap).
-    nudge_at: Option<f64>,
-    /// For the model, at the nudge.
-    nudge: String,
     /// For the human, at the stop.
     stop: String,
     /// Which cap, for the host's remedy at the stop.
     limit: Limit,
-}
-
-fn minutes(ms: f64) -> String {
-    format!("{} min", (ms / 60_000.0).round())
 }
 
 struct Repeat {
@@ -81,9 +77,13 @@ pub(crate) struct TurnGuard {
     steps: u64,
     /// In first-seen order: the order the nudges list them in.
     repeats: Vec<Repeat>,
-    nudged: HashSet<String>,
+    /// The repeats nudged this turn.
+    nudged: HashSet<u64>,
     /// Floor of the NEXT request: the last one sent, plus what came back since.
     next_request_tokens: u64,
+    /// The turn's thresholds: the guard's own nudges unless
+    /// [`with_thresholds`](Self::with_thresholds) hands it the agent's.
+    turn: turn_site::TurnThresholds,
 }
 
 impl TurnGuard {
@@ -104,6 +104,7 @@ impl TurnGuard {
             repeats: Vec::new(),
             nudged: HashSet::new(),
             next_request_tokens: 0,
+            turn: Default::default(),
         }
     }
 
@@ -118,6 +119,7 @@ impl TurnGuard {
         self.steps += 1;
         self.charge(u);
         self.next_request_tokens += u.output;
+        self.turn.context = u.context_tokens();
     }
 
     /// A tool answered: its own spend is charged, and an identical call+result is counted.
@@ -128,6 +130,7 @@ impl TurnGuard {
                 ..Default::default()
             });
         }
+        self.turn.answered(out);
         let key = signature(call, out);
         match self.repeats.iter_mut().find(|r| r.key == key) {
             Some(r) => r.count += 1,
@@ -140,39 +143,37 @@ impl TurnGuard {
         self.next_request_tokens += (out.content.chars().count() as u64).div_ceil(4);
     }
 
-    /// Why the turn must stop before the next model call, or None.
+    /// Why the turn must stop before the next model call, or None: the
+    /// ledger, a cap, then a threshold that stops it.
     pub(crate) fn stop(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
         let ledger = self.ledger.as_ref();
         if let Some(why) = ledger.and_then(|l| l.lock().unwrap().exhausted()) {
             return Some(format!("Turn stopped: {why}"));
         }
-        self.gauges(usage, caps)
+        let at_cap = self
+            .gauges(usage, caps)
             .into_iter()
             .find(|g| g.cap > 0.0 && g.used >= g.cap)
             .map(|g| {
                 let text = format!("Turn stopped: {} {CONTINUE}", g.stop);
                 self.remedies.add_to(text, g.limit)
-            })
+            });
+        at_cap.or_else(|| self.threshold_stop(usage, caps))
     }
 
-    /// The nudge due now (each signal once per turn), or None.
+    /// The nudge due now, or None: every repeat at half its cap and every
+    /// reminder due (each once per turn), in one message.
     pub(crate) fn nudge(&mut self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
-        let due: Vec<Gauge> = self
-            .gauges(usage, caps)
-            .into_iter()
-            .filter(|g| {
-                g.cap > 0.0
-                    && g.used >= g.nudge_at.unwrap_or(g.cap * NUDGE_SHARE)
-                    && !self.nudged.contains(&g.key)
-            })
-            .collect();
-        if due.is_empty() {
+        let repeats = self.repeat_nudges(caps);
+        let (reminders, mut closings) = self.reminders(usage, caps);
+        if repeats.is_empty() && reminders.is_empty() {
             return None;
         }
-        let text: Vec<&str> = due.iter().map(|g| g.nudge.as_str()).collect();
-        let text = format!("[haest guard] {} {WAY_OUT}", text.join(" "));
-        self.nudged.extend(due.into_iter().map(|g| g.key));
-        Some(text)
+        if !repeats.is_empty() && !closings.iter().any(|c| c == WAY_OUT) {
+            closings.insert(0, WAY_OUT.to_string());
+        }
+        let text = [repeats, reminders, closings].concat();
+        Some(format!("[haest guard] {}", text.join(" ")))
     }
 
     /// Records the request about to go out (its estimated input tokens); why
@@ -211,58 +212,33 @@ impl TurnGuard {
         let mut out = self.repeat_gauges(l.max_repeats);
         out.extend([
             Gauge {
-                key: "steps".into(),
                 used: steps as f64,
                 cap: l.max_turn_steps as f64,
-                nudge_at: None,
-                nudge: format!(
-                    "You have made {steps} model calls this turn; the turn stops at {}.",
-                    l.max_turn_steps
-                ),
                 stop: format!(
                     "it made {steps} model calls, the cap is {}.",
                     l.max_turn_steps
                 ),
-                limit: Limit::TurnSteps(l.max_turn_steps),
+                limit: l.steps_limit(),
             },
             Gauge {
-                key: "time".into(),
                 used: elapsed,
                 cap: time_cap,
-                nudge_at: None,
-                nudge: format!(
-                    "This turn has run for {}; it stops at {}.",
-                    minutes(elapsed),
-                    minutes(time_cap)
-                ),
                 stop: format!(
                     "it ran for {}, the cap is {}.",
-                    minutes(elapsed),
-                    minutes(time_cap)
+                    minutes(elapsed / 1000.0),
+                    minutes(time_cap / 1000.0)
                 ),
-                limit: Limit::TurnTime(l.max_turn_time),
+                limit: l.time_limit(),
             },
             Gauge {
-                key: "usd".into(),
                 used: usd,
                 cap: l.max_turn_usd,
-                nudge_at: None,
-                nudge: format!(
-                    "This turn has spent ${usd:.2}; it stops at ${}.",
-                    l.max_turn_usd
-                ),
                 stop: format!("it spent ${usd:.2}, the cap is ${}.", l.max_turn_usd),
-                limit: Limit::TurnUsd(l.max_turn_usd),
+                limit: l.usd_limit(),
             },
             Gauge {
-                key: "tokens".into(),
                 used: tokens as f64,
                 cap: l.max_turn_tokens as f64,
-                nudge_at: None,
-                nudge: format!(
-                    "This turn has billed {tokens} tokens; it stops at {}.",
-                    l.max_turn_tokens
-                ),
                 stop: format!(
                     "it billed {tokens} tokens, the cap is {}.",
                     l.max_turn_tokens
@@ -274,18 +250,31 @@ impl TurnGuard {
     }
 
     fn repeat_gauges(&self, cap: u32) -> Vec<Gauge> {
-        let nudge_at = (cap as f64 * NUDGE_SHARE).ceil().max(2.0);
         self.repeats
             .iter()
-            .map(|Repeat { key, name, count }| Gauge {
-                key: format!("repeat:{key:016x}"),
+            .map(|Repeat { name, count, .. }| Gauge {
                 used: *count as f64,
                 cap: cap as f64,
-                nudge_at: Some(nudge_at),
-                nudge: format!("You have called {name} with identical input {count} times this turn and got the identical result every time -- you look stuck in a loop, and calling it again will not change the answer. At {cap} repeats the turn is stopped."),
                 stop: format!("{name} was called {count} times with identical input and returned the identical result each time -- haest was stuck in a loop (the cap is {cap} repeats)."),
                 limit: Limit::Repeats(cap),
             })
             .collect()
+    }
+
+    /// Each repeat at half its cap (at least two calls), once per turn.
+    fn repeat_nudges(&mut self, caps: Option<&TurnCaps>) -> Vec<String> {
+        let Some(cap) = caps.map(|c| c.max_repeats).filter(|cap| *cap > 0) else {
+            return Vec::new();
+        };
+        let nudge_at = (cap as f64 * NUDGE_SHARE).ceil().max(2.0);
+        let due = self
+            .repeats
+            .iter()
+            .filter(|r| r.count as f64 >= nudge_at && !self.nudged.contains(&r.key));
+        let due: Vec<(u64, String)> = due
+            .map(|Repeat { key, name, count }| (*key, format!("You have called {name} with identical input {count} times this turn and got the identical result every time -- you look stuck in a loop, and calling it again will not change the answer. At {cap} repeats the turn is stopped.")))
+            .collect();
+        self.nudged.extend(due.iter().map(|(key, _)| *key));
+        due.into_iter().map(|(_, text)| text).collect()
     }
 }

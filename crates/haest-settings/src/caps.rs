@@ -108,7 +108,8 @@ impl Settings {
     ///
     /// An unset token cap follows the window: `max_turn_tokens` is 10x it,
     /// `max_request_tokens` 90% of it. One set to `Some(0)` stays 0, no cap.
-    /// A negative or non-finite `max_turn_minutes` is no cap.
+    /// A negative or non-finite `max_turn_minutes` is no cap. The window
+    /// itself goes along, for a threshold on the context's size.
     pub fn turn_caps_for(&self, window: u64) -> TurnCaps {
         let l = &self.caps;
         TurnCaps {
@@ -118,6 +119,8 @@ impl Settings {
             max_turn_steps: l.max_turn_steps,
             max_turn_time: minutes(l.max_turn_minutes),
             max_repeats: l.max_repeats,
+            context_window: window,
+            subagent: false,
         }
     }
 

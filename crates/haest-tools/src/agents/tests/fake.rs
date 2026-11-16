@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use async_trait::async_trait;
 use haest_core::{
-    SharedDeps,
+    LoopEvent, SharedDeps,
     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
     provider::{Effort, ModelError, ResolvedModel},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
@@ -101,7 +101,12 @@ pub struct FakeParent {
     /// Whether the hub called itself idle as each answer landed.
     pub idle_at_answer: Mutex<Vec<bool>>,
     pub host: Host,
+    /// What a test changes in the conversation's deps
+    /// ([`super::support::Rig::adjust`]).
+    pub adjust: Mutex<Option<Box<Adjust>>>,
 }
+
+type Adjust = dyn Fn(&mut SharedDeps) + Send + Sync;
 
 /// The kinds a host with kinds has: `explore` (the default) and `general`.
 pub fn explore_or_general() -> SubagentTypes {
@@ -143,10 +148,14 @@ impl SubagentParent for FakeParent {
                 model,
             })
         };
-        SharedDeps {
+        let mut d = SharedDeps {
             ledger: Some(self.ledger.clone()),
             ..SharedDeps::new(Arc::new(models), "/p", self.ws.clone())
+        };
+        if let Some(adjust) = &*self.adjust.lock().unwrap() {
+            adjust(&mut d);
         }
+        d
     }
     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
         vec![Arc::new(GlobTool), Arc::new(TaskCreate)]
@@ -201,6 +210,7 @@ impl SubagentParent for FakeParent {
     fn on_subagent(&self, id: &str, event: SubagentEvent) {
         let kind = match event {
             SubagentEvent::Started { .. } => "started",
+            SubagentEvent::Loop(LoopEvent::Guard { .. }) => "guard",
             SubagentEvent::Loop(_) => "loop",
             SubagentEvent::InnerCall(_) => "inner",
             SubagentEvent::Stopped { .. } => "stopped",

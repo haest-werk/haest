@@ -6,6 +6,7 @@ mod edges;
 mod effects;
 mod resume;
 mod shortcut;
+mod thresholds;
 
 use std::{
     future::Future,

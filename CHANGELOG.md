@@ -16,11 +16,24 @@ haest-transport (the connections). All of it is opt-in: each is a facade
 feature outside `default`, every new setting is off by default, and the
 `claude` profile leaves them off.
 
+Thresholds: a meter crossing a mark fires an action. The guard's nudge, the
+agent-turn gate's nudge, the ledger's warning and compaction are now
+default thresholds with the same numbers and behaviour, a host adds its own
+beside them, and wind-down (new, opt-in, off by default) is one of them.
+Breaking for a host that writes `SharedDeps`, `TurnCaps`, `ToolContext` or
+`Settings` out in full; everything built with `::new`, `Default` or `..`
+compiles as before.
+
 ### Bug fixes
 
 - The caps settings are listed under "Caps" again, as 0.2.0 meant; the
   `Limits` -> `CapSettings` type rename had renamed the heading to
   "CapSettings" in `docs/settings.md` and `haest settings`.
+- A subagent stopped at its own USD, step or time cap handed the host's
+  remedy the turn cap's limit, so the `haest` command told the model to
+  raise `max_turn_usd`, `max_turn_steps` or `max_turn_minutes` for a cap
+  that `subagent_usd`, `subagent_steps` or `subagent_minutes` sets. The
+  guard now takes the limit from the caps (`TurnCaps::subagent`).
 
 ### Behaviour changes
 
@@ -65,6 +78,8 @@ feature outside `default`, every new setting is off by default, and the
 - A watcher's terminal writes an answer whole when its streamed pieces were
   not seen (replayed from the ring), and shows approval asks and their
   withdrawal as lines.
+- The remedy for a cap names its setting through `Limit::setting()`, and
+  the three subagent caps have one.
 
 ### haest (the facade)
 
@@ -87,6 +102,10 @@ feature outside `default`, every new setting is off by default, and the
   `transport-broker` (pulls a WebSocket client on rustls).
 - New examples, each run by `cargo test`: `wire`, `session`, `stdio`,
   `control_socket` and `broker`.
+- New examples, both run by `cargo test`: `threshold` (a host's own
+  thresholds: remind the model at 60% of the window, warn the human at the
+  third model call) and `wind_down` (`wind_down_at` with a host's
+  subagents).
 
 ### haest-core
 
@@ -138,6 +157,47 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   the turn's time cap on the host's clock, filled by the loop for every
   tool call; `None` with no time cap, and in `ToolContext::new`.
 
+Thresholds; wind-down, opt-in:
+
+- New module `threshold`. A `Threshold` (a trait) is a `Meter` (context
+  tokens, steps, turns, wall time, USD, tokens; each in a turn's or the
+  conversation's `Scope`), a `Mark` (a share of the meter's cap, a value,
+  or whichever comes first), an `Action` (remind the model, warn the human,
+  wind down, compact, stop) and a `Rearm` (never, next turn, below the mark,
+  every check). A `Site` checks a `Thresholds<S>` list and remembers what
+  fired in a `Watch<S>`; a threshold a site cannot check is refused
+  (`NotServed`). Sites: `TurnSite` and `LedgerSite` here, haest-tools'
+  `AgentTurnSite`; compaction's threshold is `CompactionOptions`.
+- New `SharedDeps::thresholds: Thresholds<TurnSite>`: what a turn checks,
+  the guard's nudges unless set. Remind, warn and wind down at every step
+  boundary (a resumed durable run's too); stop before every model call.
+  Each agent keeps which fired for as long as it lives, and a durable run
+  records the turn's in `TurnState::nudged`, so a resumed turn does not
+  fire them again.
+- New `AgentHooks::on_warning(text)`, default nothing: a turn's warning
+  threshold fired, and the human must hear it. No new `LoopEvent`.
+- New `Ledger::with_thresholds(Thresholds<LedgerSite>)`: the ledger's
+  warning by default.
+- `CompactionOptions` implements `Threshold`; `needs_compaction` is its
+  check, unchanged. New `compaction::COMPACT_SHARE` (0.8).
+- `__private::NUDGE_SHARE` -> `threshold::NUDGE_SHARE`; new
+  `threshold::WARN_SHARE`.
+- `TurnCaps` gains `context_window: u64` (the cap `Meter::ContextTokens`
+  takes a share of; 0 = unknown) and `subagent: bool` (these are a
+  subagent's caps: a stop's remedy and a wind-down refusal name the
+  `subagent_*` setting).
+- New module `wind_down`: `WindDown` (`WindDown::at(share)`, 0 = off, the
+  default; `BadShare` outside 0 to 1), `Thresholds::<TurnSite>::wind_down(at)`
+  adds its thresholds (the conversation's USD and unpriced tokens, the
+  turn's USD, tokens and wall time, at one share). Past the mark a tool
+  that starts new work refuses, and the model is told once a turn to
+  conclude. `WindingDown` is what a refusal states, `WindDownWatch` what a
+  tool asks.
+- `ToolContext` gains `wind_down: WindDownWatch` (never winding down by
+  default). A tool that starts new work asks `ctx.wind_down.check()`.
+- `remedy::Limit` gains `SubagentSteps`, `SubagentTime` and `SubagentUsd`,
+  and `Limit::setting()`, the plain name of the setting behind each limit.
+
 ### haest-tools
 
 - New `SubagentParent::start_member(&MemberStart, &CancellationToken)`,
@@ -185,11 +245,19 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
 - New `SubagentParent::subagent_note(&MemberStart) -> String`, default
   haest's `subagent_note`: the note under a member's system prompt, given
   the model spec and caps its run names.
+- New `AgentTurnSite` and `AgentTurnGate::with_thresholds`: the gate's nudge
+  is its default threshold.
+- The Agent tool starts nothing while its turn winds down, whatever
+  `AgentDirectory` it speaks to, before it looks at a budget: new
+  `AgentError::WindingDown(WindingDown)`, which says what was spent of which
+  cap, then the host's remedy.
+- The hub runs its subagents on caps marked `subagent`.
 
 ### haest-code
 
 - The Code tool hands its caller's `turn_time_left` on to the calls it
   makes.
+- A tool the Code tool calls sees the caller's wind-down.
 
 ### haest-mods
 
@@ -199,6 +267,8 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
 
 - `SubagentCapSettings` gains `budgets` (the `subagent_budgets` setting,
   default off; the `claude` profile leaves it off).
+- `Settings` gains `wind_down_at: WindDown` (bare: off).
+- `turn_caps_for` fills `TurnCaps::context_window` with the window.
 
 ### haest-config
 
@@ -212,6 +282,9 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   breaks).
 - docs/settings.md: a process-scoped setting's "Set in" reads "its variable
   or its flag only, never a config file".
+- New setting `wind_down_at` (`HAEST_WIND_DOWN_AT`, `--wind-down-at`): a
+  share from 0 to 1, 0 = off, the default; the `claude` profile leaves it
+  off. A value above 1 is refused at load, naming its source.
 
 ### haest-runtime
 
@@ -220,6 +293,9 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   own `human_turn`, `next_agent_turn`, `run` and `shut_down`, so a session
   runs the turn loop a host without one runs. New at the root: `HubUi` (a
   `Ui` whose lines are `notice` frames) and `subagent_frame`.
+- `wind_down_at` reaches the conversation as wind-down thresholds, for main
+  and every subagent of its hub.
+- A turn's warning threshold reaches the human through `Ui::warn`.
 
 ### haest-wire (new)
 

@@ -8,6 +8,7 @@ use super::{NoServices, ToolServices};
 use crate::{
     fs::resolve_path,
     run::{EffectKey, RunKey},
+    wind_down::WindDownWatch,
     workspace::Workspace,
 };
 
@@ -45,12 +46,16 @@ pub struct ToolContext {
     /// the tool runs outside the loop. The Agent tool fits a subagent's time
     /// into it.
     pub turn_time_left: Option<Duration>,
+    /// Whether the turn is winding down ([`wind_down`](crate::wind_down)): a
+    /// tool that would start new work asks it first, and refuses while it
+    /// says so. Never, unless the host turned wind-down on.
+    pub wind_down: WindDownWatch,
 }
 
 impl ToolContext {
     /// A context for running a tool outside the loop (tests, a host command):
     /// a fresh cancel token, [`NoServices`], no context cap, no call id, no
-    /// spill directory, no durable run, no turn time cap.
+    /// spill directory, no durable run, no turn time cap, never winding down.
     pub fn new(cwd: impl Into<PathBuf>, workspace: Arc<dyn Workspace>) -> Self {
         Self {
             cwd: cwd.into(),
@@ -63,6 +68,7 @@ impl ToolContext {
             run_key: None,
             resumed: false,
             turn_time_left: None,
+            wind_down: WindDownWatch::default(),
         }
     }
 

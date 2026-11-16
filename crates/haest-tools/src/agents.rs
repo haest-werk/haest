@@ -17,7 +17,7 @@ mod tools;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use haest_core::caps::SubagentCaps;
+use haest_core::{caps::SubagentCaps, wind_down::WindingDown};
 use tokio_util::sync::CancellationToken;
 
 pub use budget::SubagentBudget;
@@ -165,6 +165,11 @@ pub enum AgentError {
         /// The setting that caps the caller's turn.
         setting: &'static str,
     },
+    /// The caller's turn is winding down: spend crossed its share of a cap
+    /// ([`haest_core::wind_down`]), so no new subagent starts. The text states
+    /// what was spent of which cap, then the host's remedy.
+    #[error("{}", .0.refusal("no new subagents"))]
+    WindingDown(WindingDown),
 }
 
 /// What a spawn hands back to the caller's turn.

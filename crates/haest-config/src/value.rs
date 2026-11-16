@@ -10,7 +10,7 @@ use std::{
 use haest_core::{__private::is_var_name, fs::resolve_path};
 
 use crate::{
-    fields::whole_up_to,
+    fields::{up_to, whole_up_to},
     registry::{Def, Kind},
 };
 
@@ -83,7 +83,12 @@ pub fn check(def: &Def, raw: &str) -> Result<String, String> {
         Kind::Bool => parse_bool(word)
             .map(|b| b.to_string())
             .ok_or_else(|| format!("\"{word}\" must be true or false")),
-        Kind::Number => number(word, whole_up_to(def.key)).map(|_| word.to_string()),
+        Kind::Number => match (number(word, whole_up_to(def.key))?, up_to(def.key)) {
+            (n, Some(max)) if n > max => {
+                Err(format!("\"{word}\" must be a number from 0 to {max}"))
+            }
+            _ => Ok(word.to_string()),
+        },
         Kind::Text | Kind::Path => Ok(word.to_string()),
         Kind::Choice(words) => words
             .iter()

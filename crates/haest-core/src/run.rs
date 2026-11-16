@@ -191,8 +191,10 @@ pub struct TurnState {
     /// Identical tool calls with identical results, in first-seen order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repeats: Vec<RepeatCount>,
-    /// The caps the model was already nudged about this turn, so a resumed
-    /// turn does not nudge again.
+    /// What the model was already told this turn, so a resumed turn does not
+    /// tell it again: each repeat nudged (`repeat:<key>`), and each of the
+    /// turn's thresholds that fired (`threshold <n>: <action> on <meter>`;
+    /// the guard's nudges among them).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nudged: Vec<String>,
     /// The least the next request will hold, in tokens: what a tool result may

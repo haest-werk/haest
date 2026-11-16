@@ -9,7 +9,8 @@ use crate::{
 impl TurnGuard {
     /// What the caps count now, with the turn's `usage`: a `turn` record.
     pub(crate) fn state(&self, usage: &Usage) -> TurnState {
-        let mut nudged: Vec<String> = self.nudged.iter().cloned().collect();
+        let repeats = self.nudged.iter().map(|key| format!("{REPEAT}{key:016x}"));
+        let mut nudged: Vec<String> = repeats.chain(self.turn.fired_keys()).collect();
         nudged.sort();
         TurnState {
             usage: usage.clone(),
@@ -27,8 +28,9 @@ impl TurnGuard {
         }
     }
 
-    /// Go on from `state`: its model calls, repeats and nudges count, and its
-    /// time cap counts on from its elapsed time (the stop itself does not count).
+    /// Go on from `state`: its model calls, repeats, nudges and fired
+    /// thresholds count, and its time cap counts on from its elapsed time
+    /// (the stop itself does not count).
     pub(crate) fn restore(&mut self, state: &TurnState) {
         self.steps = state.steps;
         self.started = self.clock.now_ms().saturating_sub(state.elapsed_ms);
@@ -41,10 +43,16 @@ impl TurnGuard {
                 })
             })
             .collect();
-        self.nudged = state.nudged.iter().cloned().collect();
+        let repeat = |key: &String| u64::from_str_radix(key.strip_prefix(REPEAT)?, 16).ok();
+        self.nudged = state.nudged.iter().filter_map(repeat).collect();
+        self.turn.restore_fired(&state.nudged);
         self.next_request_tokens = state.request_tokens;
     }
 }
+
+/// A nudged repeat's key in [`TurnState::nudged`]; the rest name the turn's
+/// thresholds that fired.
+const REPEAT: &str = "repeat:";
 
 #[cfg(test)]
 mod tests {

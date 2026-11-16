@@ -10,6 +10,7 @@ mod rules;
 mod script;
 mod seam;
 mod support;
+mod wind_down;
 
 use serde_json::json;
 use tokio_util::sync::CancellationToken;

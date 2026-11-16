@@ -206,6 +206,11 @@ impl AgentHooks for RuntimeHooks {
             ));
         }
     }
+
+    /// A turn's warning threshold: the human hears it as the ledger's.
+    fn on_warning(&self, text: &str) {
+        RuntimeHooks::warn(self, text);
+    }
 }
 
 /// The token caps follow the model's window.
