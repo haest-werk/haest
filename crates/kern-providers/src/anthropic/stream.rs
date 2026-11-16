@@ -136,10 +136,34 @@ impl AnthropicFold {
     }
 }
 
+/// The events the fold reads. As in the SDK, any other is skipped unread.
+const FOLDED: [&str; 5] = [
+    "error",
+    "message_start",
+    "content_block_start",
+    "content_block_delta",
+    "message_delta",
+];
+
+/// An event whose data is not JSON. One the fold reads fails the stream (an
+/// `error` with its text as the server sent it, as the SDK says it); any other
+/// -- a proxy's keep-alive, a trailing `[DONE]` -- is skipped.
+fn not_json(sse: &SseEvent, e: serde_json::Error) -> Result<Step, String> {
+    match sse.event.as_deref() {
+        Some("error") => Err(sse.data.clone()),
+        Some(kind) if FOLDED.contains(&kind) => {
+            Err(format!("could not parse a stream event as JSON: {e}"))
+        }
+        _ => Ok(Step::Continue),
+    }
+}
+
 impl StreamFold for AnthropicFold {
     fn on_event(&mut self, sse: &SseEvent, out: &mut Vec<ProviderEvent>) -> Result<Step, String> {
-        let ev: Value = serde_json::from_str(&sse.data)
-            .map_err(|e| format!("could not parse a stream event as JSON: {e}"))?;
+        let ev: Value = match serde_json::from_str(&sse.data) {
+            Ok(ev) => ev,
+            Err(e) => return not_json(sse, e),
+        };
         let kind = ev
             .get("type")
             .and_then(Value::as_str)

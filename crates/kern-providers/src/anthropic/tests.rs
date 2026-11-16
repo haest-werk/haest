@@ -136,6 +136,51 @@ async fn a_stream_that_dies_keeps_text_but_not_the_half_built_tool_call() {
     }
 }
 
+/// A finished answer with a tool call, with what a proxy may add: a non-JSON
+/// keep-alive between events, an event kern has no use for, a trailing `[DONE]`.
+#[tokio::test]
+async fn data_kern_does_not_use_is_skipped_and_the_answer_keeps_its_tool_call() {
+    let head = typed_sse(&[
+        start(),
+        block_start(
+            0,
+            json!({"type": "tool_use", "id": "tu_1", "name": "Read", "input": {"file_path": "a"}}),
+        ),
+    ]);
+    let tail = typed_sse(&[
+        json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 3}}),
+        json!({"type": "message_stop"}),
+    ]);
+    let body = format!(
+        "{head}data: keep-alive\n\nevent: proxy_status\ndata: <ok>\n\n{tail}data: [DONE]\n\n"
+    );
+    let t = FakeTransport::new([FakeReply::sse(body)]);
+    let (_, msg) = collect(provider(&t).stream(request("claude-sonnet-5"))).await;
+    assert_eq!(msg.error_message, None);
+    assert_eq!(msg.stop_reason, StopReason::ToolUse);
+    assert_eq!(msg.tool_calls().count(), 1);
+}
+
+/// An event kern folds whose data is not JSON still fails the stream; an
+/// `error` event's text is the failure, as the server said it.
+#[tokio::test]
+async fn a_malformed_event_kern_uses_still_fails_the_stream() {
+    let head = typed_sse(&[
+        start(),
+        block_start(0, json!({"type": "text", "text": "part"})),
+    ]);
+    let broken = format!("{head}event: content_block_delta\ndata: {{\"index\": 0,\n\n");
+    let erroring = format!("{head}event: error\ndata: upstream overloaded\n\n");
+    for (body, said) in [(broken, None), (erroring, Some("upstream overloaded"))] {
+        let t = FakeTransport::new([FakeReply::sse(body.clone())]);
+        let (_, msg) = collect(provider(&t).stream(request("claude-sonnet-5"))).await;
+        assert_eq!(msg.stop_reason, StopReason::Error, "{body}");
+        if let Some(said) = said {
+            assert_eq!(msg.error_message.as_deref(), Some(said));
+        }
+    }
+}
+
 fn assistant(provider: &str) -> Message {
     let mut m = AssistantMessage::start(provider, "m");
     m.content = vec![
