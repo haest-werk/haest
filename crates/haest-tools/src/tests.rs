@@ -120,6 +120,6 @@ fn a_word_that_is_on_is_never_silently_dropped() {
             ..Default::default()
         };
         let err = pick(word, none).err().unwrap();
-        assert!(err.contains(word), "{err}");
+        assert_eq!(err.word, word);
     }
 }

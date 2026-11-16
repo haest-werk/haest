@@ -15,6 +15,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use async_trait::async_trait;
+use haest_http::BoxError;
 use url::{Host, Url};
 
 const BLOCKED_V4: [(Ipv4Addr, u8); 11] = [
@@ -78,9 +79,9 @@ pub fn is_blocked(ip: IpAddr) -> bool {
 #[async_trait]
 pub trait Resolve: Send + Sync {
     /// Every address `host` (a DNS name, never an IP literal) resolves to, or
-    /// why it does not resolve. The guard refuses the URL unless every one is
-    /// public.
-    async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, String>;
+    /// why it does not resolve (only its text reaches the model). The guard
+    /// refuses the URL unless every address is public.
+    async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, BoxError>;
 }
 
 /// The system resolver (`getaddrinfo`, through tokio).
@@ -89,12 +90,57 @@ pub struct SystemResolve;
 
 #[async_trait]
 impl Resolve for SystemResolve {
-    async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, String> {
-        let addrs = tokio::net::lookup_host((host, 0))
-            .await
-            .map_err(|e| e.to_string())?;
+    async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, BoxError> {
+        let addrs = tokio::net::lookup_host((host, 0)).await?;
         Ok(addrs.map(|a| a.ip()).collect())
     }
+}
+
+/// Why the net guard refuses a URL ([`assert_public_url`]). Its text is
+/// written for the model; [`Unresolved`](Self::Unresolved) carries the
+/// resolver's own error as its source.
+#[derive(Debug, thiserror::Error)]
+pub enum UrlRefused {
+    /// Not http or https (`file:`, `ftp:`, ...).
+    #[error("only http and https URLs can be fetched, not {scheme}:")]
+    NotHttp {
+        /// The URL's scheme.
+        scheme: String,
+    },
+    /// A user name or password in the URL.
+    #[error("URLs with credentials in them are not fetched")]
+    Credentials,
+    /// No host to fetch from.
+    #[error("{url} has no host")]
+    NoHost {
+        /// The URL, as given.
+        url: String,
+    },
+    /// The name did not resolve.
+    #[error("could not resolve {host}")]
+    Unresolved {
+        /// The name.
+        host: String,
+        /// The resolver's reason.
+        #[source]
+        source: BoxError,
+    },
+    /// The name resolved to no address at all.
+    #[error("{host} resolves to no address")]
+    NoAddress {
+        /// The name.
+        host: String,
+    },
+    /// An address is private, local or reserved ([`is_blocked`]).
+    #[error(
+        "refusing {host}: {ip} is a private, local or reserved address. haest only fetches the public internet."
+    )]
+    Blocked {
+        /// The host, as the URL names it (`host[:port]`).
+        host: String,
+        /// The first address [`is_blocked`] refuses.
+        ip: IpAddr,
+    },
 }
 
 /// `url`'s `host[:port]`, the way a browser's `URL.host` shows it (no port
@@ -116,9 +162,9 @@ pub(crate) fn host_port(url: &Url) -> String {
 ///
 /// # Errors
 ///
-/// A reason, written for the model, when `url` is not http(s), carries a user
-/// name or password, has no host, does not resolve (or to no address), or
-/// resolves to any address [`is_blocked`] refuses.
+/// [`UrlRefused`] when `url` is not http(s), carries a user name or password,
+/// has no host, does not resolve (or to no address), or resolves to any
+/// address [`is_blocked`] refuses.
 ///
 /// # Examples
 ///
@@ -126,7 +172,10 @@ pub(crate) fn host_port(url: &Url) -> String {
 /// use std::net::IpAddr;
 ///
 /// use async_trait::async_trait;
-/// use haest_tools::net_guard::{Resolve, assert_public_url};
+/// use haest_tools::{
+///     http::BoxError,
+///     net_guard::{Resolve, UrlRefused, assert_public_url},
+/// };
 /// use url::Url;
 ///
 /// /// A name that answers one public and one private address.
@@ -134,7 +183,7 @@ pub(crate) fn host_port(url: &Url) -> String {
 ///
 /// #[async_trait]
 /// impl Resolve for Rebinding {
-///     async fn resolve(&self, _: &str) -> Result<Vec<IpAddr>, String> {
+///     async fn resolve(&self, _: &str) -> Result<Vec<IpAddr>, BoxError> {
 ///         Ok(vec!["93.184.215.14".parse().unwrap(), "10.0.0.5".parse().unwrap()])
 ///     }
 /// }
@@ -144,26 +193,32 @@ pub(crate) fn host_port(url: &Url) -> String {
 /// let public = Url::parse("https://93.184.215.14/page").unwrap();
 /// assert_eq!(assert_public_url(&public, &Rebinding).await.unwrap().len(), 1);
 /// let sneaky = Url::parse("https://example.test/").unwrap();
-/// assert!(assert_public_url(&sneaky, &Rebinding).await.is_err());
+/// let refused = assert_public_url(&sneaky, &Rebinding).await.unwrap_err();
+/// assert!(matches!(refused, UrlRefused::Blocked { .. }));
 /// let file = Url::parse("file:///etc/passwd").unwrap();
 /// assert!(assert_public_url(&file, &Rebinding).await.is_err());
 /// # }
 /// ```
-pub async fn assert_public_url(url: &Url, resolve: &dyn Resolve) -> Result<Vec<IpAddr>, String> {
+pub async fn assert_public_url(
+    url: &Url,
+    resolve: &dyn Resolve,
+) -> Result<Vec<IpAddr>, UrlRefused> {
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(format!(
-            "only http and https URLs can be fetched, not {}:",
-            url.scheme()
-        ));
+        let scheme = url.scheme().to_string();
+        return Err(UrlRefused::NotHttp { scheme });
     }
     if !url.username().is_empty() || url.password().is_some() {
-        return Err("URLs with credentials in them are not fetched".into());
+        return Err(UrlRefused::Credentials);
     }
     let addresses = match url.host() {
         Some(Host::Ipv4(ip)) => vec![IpAddr::V4(ip)],
         Some(Host::Ipv6(ip)) => vec![IpAddr::V6(ip)],
         Some(Host::Domain(name)) => return resolve_public(name, resolve).await,
-        None => return Err(format!("{url} has no host")),
+        None => {
+            return Err(UrlRefused::NoHost {
+                url: url.to_string(),
+            });
+        }
     };
     all_public(&host_port(url), addresses)
 }
@@ -173,24 +228,23 @@ pub async fn assert_public_url(url: &Url, resolve: &dyn Resolve) -> Result<Vec<I
 pub(crate) async fn resolve_public(
     name: &str,
     resolve: &dyn Resolve,
-) -> Result<Vec<IpAddr>, String> {
-    let addresses = resolve
-        .resolve(name)
-        .await
-        .map_err(|e| format!("could not resolve {name}: {e}"))?;
+) -> Result<Vec<IpAddr>, UrlRefused> {
+    let addresses = (resolve.resolve(name).await).map_err(|source| UrlRefused::Unresolved {
+        host: name.to_string(),
+        source,
+    })?;
     all_public(name, addresses)
 }
 
 /// `addresses` when there is one and every one is public; else why not,
 /// naming the host as `shown`.
-fn all_public(shown: &str, addresses: Vec<IpAddr>) -> Result<Vec<IpAddr>, String> {
+fn all_public(shown: &str, addresses: Vec<IpAddr>) -> Result<Vec<IpAddr>, UrlRefused> {
+    let host = || shown.to_string();
     if addresses.is_empty() {
-        return Err(format!("{shown} resolves to no address"));
+        return Err(UrlRefused::NoAddress { host: host() });
     }
-    if let Some(ip) = addresses.iter().find(|ip| is_blocked(**ip)) {
-        return Err(format!(
-            "refusing {shown}: {ip} is a private, local or reserved address. haest only fetches the public internet."
-        ));
+    if let Some(&ip) = addresses.iter().find(|ip| is_blocked(**ip)) {
+        return Err(UrlRefused::Blocked { host: host(), ip });
     }
     Ok(addresses)
 }

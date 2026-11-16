@@ -16,7 +16,10 @@ use std::{
 
 use async_trait::async_trait;
 use haest_tools::{
-    ImageToolOptions, WebFetchNet, http::Request, image::call_image_api, net_guard::Resolve,
+    ImageToolOptions, WebFetchNet,
+    http::{BoxError, Request},
+    image::call_image_api,
+    net_guard::Resolve,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -124,7 +127,7 @@ struct Documentation;
 
 #[async_trait]
 impl Resolve for Documentation {
-    async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, String> {
+    async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, BoxError> {
         Ok(vec!["192.0.2.1".parse().unwrap()])
     }
 }

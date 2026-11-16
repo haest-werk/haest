@@ -9,7 +9,7 @@
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use haest_core::tool::spelled;
-use haest_http::{Bytes, HttpClient, Request};
+use haest_http::{Bytes, HttpClient, HttpError, Request};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -17,25 +17,78 @@ use tokio_util::sync::CancellationToken;
 /// a runaway body filling memory.
 const MAX_ANSWER: usize = 64 * 1024 * 1024;
 
+/// Why an Image API call made no picture. The text is written for the model,
+/// which tunes its next call from it.
+#[derive(Debug, thiserror::Error)]
+pub enum ImageError {
+    /// No answer came, or it broke off (the cause is the HTTP error's).
+    #[error(transparent)]
+    NoAnswer(#[from] HttpError),
+    /// The call's cancel token fired.
+    #[error("interrupted")]
+    Interrupted,
+    /// The API answered with an error status.
+    #[error("{model} refused the request (HTTP {status}): {reason}{}", provider_note(.provider.as_deref()))]
+    Refused {
+        /// The model asked.
+        model: String,
+        /// The HTTP status.
+        status: u16,
+        /// The API's own words, or "no reason given".
+        reason: String,
+        /// The provider's own words, when it gave them and they differ (at most 600 chars).
+        provider: Option<String>,
+    },
+    /// The answer holds no image.
+    #[error("{model} made no image: {reason}")]
+    NoImage {
+        /// The model asked.
+        model: String,
+        /// The API's words, or "no image in the answer".
+        reason: String,
+    },
+    /// The answer is not a PNG, JPEG, WebP or GIF (an SVG never is).
+    #[error(
+        "{model} answered with something that is not a png/jpeg/webp/gif image; nothing was written"
+    )]
+    NotAnImage {
+        /// The model asked.
+        model: String,
+    },
+    /// The model list was read and `model` is not on it
+    /// ([`ImageCatalog::model_params`](super::ImageCatalog::model_params)).
+    #[error("{model} is not on the Image API's model list (GET {base_url}/images/models)")]
+    UnknownModel {
+        /// The model asked.
+        model: String,
+        /// The Image API's base URL.
+        base_url: String,
+    },
+}
+
+fn provider_note(provider: Option<&str>) -> String {
+    provider.map_or_else(String::new, |p| format!(" (provider: {p})"))
+}
+
 /// Send `req` and read the whole answer: its status and body. An HTTP error
 /// status is an answer, not an Err.
 ///
 /// # Errors
 ///
-/// No answer (said to the model as is), or `cancel` fired.
+/// [`ImageError::NoAnswer`], or [`ImageError::Interrupted`] when `cancel` fired.
 pub(super) async fn exchange(
     http: &dyn HttpClient,
     req: Request,
     cancel: CancellationToken,
-) -> Result<(u16, Bytes), String> {
+) -> Result<(u16, Bytes), ImageError> {
     let exchange = async {
-        let res = http.send(req).await.map_err(|e| e.report())?;
-        let body = res.body.bytes(MAX_ANSWER).await.map_err(|e| e.report())?;
+        let res = http.send(req).await?;
+        let body = res.body.bytes(MAX_ANSWER).await?;
         Ok((res.status, body))
     };
     tokio::select! {
         r = exchange => r,
-        _ = cancel.cancelled() => Err("interrupted".into()),
+        _ = cancel.cancelled() => Err(ImageError::Interrupted),
     }
 }
 
@@ -81,20 +134,20 @@ pub fn sniff_image_type(b: &[u8]) -> Option<&'static str> {
         .map(|(t, _)| *t)
 }
 
-fn refusal(model: &str, status: u16, answer: &Value) -> String {
+fn refusal(model: &str, status: u16, answer: &Value) -> ImageError {
     let error = &answer["error"];
-    let why = error["message"].as_str().unwrap_or("no reason given");
+    let reason = error["message"].as_str().unwrap_or("no reason given");
     let raw = match &error["metadata"]["raw"] {
         Value::Null => String::new(),
         other => spelled(other),
     };
-    let provider = if !raw.is_empty() && raw != why {
-        let raw: String = raw.chars().take(600).collect();
-        format!(" (provider: {raw})")
-    } else {
-        String::new()
-    };
-    format!("{model} refused the request (HTTP {status}): {why}{provider}")
+    let provider = (!raw.is_empty() && raw != reason).then(|| raw.chars().take(600).collect());
+    ImageError::Refused {
+        model: model.into(),
+        status,
+        reason: reason.into(),
+        provider,
+    }
 }
 
 /// Send one image request (`POST {base_url}/images` with `body`) and read the
@@ -104,10 +157,9 @@ fn refusal(model: &str, status: u16, answer: &Value) -> String {
 ///
 /// # Errors
 ///
-/// The reason, said to the model as is: no answer came, the API refused
+/// [`ImageError`]: no answer came, the call was interrupted, the API refused
 /// (its status and its own words, the provider's too when it gave them), the
-/// answer has no image, or the image is not a PNG, JPEG, WebP or GIF (an SVG
-/// never is).
+/// answer has no image, or the image is not a PNG, JPEG, WebP or GIF.
 pub async fn call_image_api(
     http: &dyn HttpClient,
     base_url: &str,
@@ -115,7 +167,7 @@ pub async fn call_image_api(
     model: &str,
     body: &Value,
     cancel: CancellationToken,
-) -> Result<ImageReply, String> {
+) -> Result<ImageReply, ImageError> {
     let req = Request::post(format!("{base_url}/images"))
         .with_header("authorization", format!("Bearer {api_key}"))
         .with_json(body);
@@ -126,15 +178,16 @@ pub async fn call_image_api(
     }
     let first = &answer["data"][0];
     let Some(b64) = first["b64_json"].as_str().filter(|s| !s.is_empty()) else {
-        let why = answer["error"]["message"]
+        let reason = answer["error"]["message"]
             .as_str()
             .unwrap_or("no image in the answer");
-        return Err(format!("{model} made no image: {why}"));
+        return Err(ImageError::NoImage {
+            model: model.into(),
+            reason: reason.into(),
+        });
     };
-    let not_an_image = || {
-        format!(
-            "{model} answered with something that is not a png/jpeg/webp/gif image; nothing was written"
-        )
+    let not_an_image = || ImageError::NotAnImage {
+        model: model.into(),
     };
     let bytes = STANDARD.decode(b64.trim()).map_err(|_| not_an_image())?;
     let media_type = sniff_image_type(&bytes)

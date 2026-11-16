@@ -12,7 +12,7 @@ use haest_core::workspace::Workspace;
 use haest_workspace::RealWorkspace;
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
-use super::{Job, JobEvents, JobHub, JobStatus, MAX_FINISHED, MAX_JOBS};
+use super::{Job, JobError, JobEvents, JobHub, JobStatus, MAX_FINISHED, MAX_JOBS};
 use crate::testkit::{TestWorkspace, stdout};
 
 #[derive(Default)]
@@ -175,7 +175,7 @@ async fn at_most_max_jobs_run_at_once() {
     let refused = r
         .hub
         .start(r.ws.clone(), "sleep 30", "one too many", r.dir.clone());
-    assert!(refused.is_err());
+    assert!(matches!(refused, Err(JobError::TooMany { max: MAX_JOBS })));
     r.hub.kill_all();
     until(5000, || r.events.exit_count() == MAX_JOBS).await;
     assert_eq!(r.events.exit_count(), MAX_JOBS);

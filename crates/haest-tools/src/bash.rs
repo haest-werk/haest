@@ -20,7 +20,10 @@ use haest_core::{
 };
 use serde_json::{Value, json};
 
-use crate::{canonical::pick, jobs::JobHub};
+use crate::{
+    canonical::pick,
+    jobs::{JobError, JobHub},
+};
 
 const MIN_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_TIMEOUT: Duration = Duration::from_secs(600);
@@ -175,7 +178,7 @@ fn run_in_background(
     let description = opt_str(input, "description")?.unwrap_or(command);
     let job = jobs
         .start(ctx.workspace.clone(), command, description, ctx.cwd.clone())
-        .map_err(ToolError::Failed)?;
+        .map_err(|e: JobError| ToolError::Failed(e.to_string()))?;
     Ok(ToolOutput::text(format!(
         "Started background job {id}. Read its output with BashOutput (bash_id \"{id}\"), stop it with KillShell. You will be told when it exits -- do not poll in a loop.",
         id = job.id

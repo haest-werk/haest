@@ -112,6 +112,21 @@ pub trait JobEvents: Send + Sync {
 pub struct NoJobEvents;
 impl JobEvents for NoJobEvents {}
 
+/// Why [`JobHub::start`] started nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum JobError {
+    /// As many jobs run as one hub allows ([`MAX_JOBS`]): the model stops one
+    /// first.
+    #[error("{max} background jobs are already running; KillShell one first")]
+    TooMany {
+        /// How many may run at once.
+        max: usize,
+    },
+    /// Called outside a tokio runtime: a job runs on a task of its own.
+    #[error("background jobs need a tokio runtime")]
+    NoRuntime,
+}
+
 /// What BashOutput hands out ([`JobHub::take`]).
 #[derive(Debug, Clone)]
 pub struct Taken {
@@ -257,24 +272,21 @@ impl JobHub {
     ///
     /// # Errors
     ///
-    /// A message for the model when [`MAX_JOBS`] already run, or when there is
-    /// no tokio runtime to run the job on.
+    /// [`JobError::TooMany`] when [`MAX_JOBS`] already run,
+    /// [`JobError::NoRuntime`] when there is no tokio runtime to run the job on.
     pub fn start(
         &self,
         workspace: Arc<dyn Workspace>,
         command: &str,
         description: &str,
         cwd: PathBuf,
-    ) -> Result<Job, String> {
-        let rt = tokio::runtime::Handle::try_current()
-            .map_err(|_| "background jobs need a tokio runtime".to_string())?;
+    ) -> Result<Job, JobError> {
+        let rt = tokio::runtime::Handle::try_current().map_err(|_| JobError::NoRuntime)?;
         let stop = CancellationToken::new();
         let (job, running) = {
             let mut jobs = self.shared.jobs.lock().unwrap();
             if jobs.running().len() >= MAX_JOBS {
-                return Err(format!(
-                    "{MAX_JOBS} background jobs are already running; KillShell one first"
-                ));
+                return Err(JobError::TooMany { max: MAX_JOBS });
             }
             let job = jobs.add(command, description, stop.clone());
             (job, jobs.running())

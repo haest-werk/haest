@@ -17,7 +17,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    request::exchange,
+    request::{ImageError, exchange},
     settings::{ModelSettings, SettingSpec},
 };
 
@@ -45,17 +45,15 @@ fn settings_of(params: &serde_json::Map<String, Value>) -> ModelSettings {
         .collect()
 }
 
-async fn fetch(
-    base_url: &str,
-    http: &dyn HttpClient,
-    cancel: CancellationToken,
-) -> Result<Models, String> {
+/// The list at `base_url`; None when it could not be read or names no model
+/// (the caller falls back to its last good copy, or goes unchecked).
+async fn fetch(base_url: &str, http: &dyn HttpClient, cancel: CancellationToken) -> Option<Models> {
     let get = Request::get(format!("{base_url}/images/models"));
-    let (status, body) = exchange(http, get, cancel).await?;
+    let (status, body) = exchange(http, get, cancel).await.ok()?;
     if !(200..300).contains(&status) {
-        return Err(format!("the image model list answered HTTP {status}"));
+        return None;
     }
-    let list: Value = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
+    let list: Value = serde_json::from_slice(&body).ok()?;
     let models: HashMap<String, ModelSettings> = list["data"]
         .as_array()
         .into_iter()
@@ -68,10 +66,7 @@ async fn fetch(
             ))
         })
         .collect();
-    if models.is_empty() {
-        return Err("the image model list was empty".into());
-    }
-    Ok(Arc::new(models))
+    (!models.is_empty()).then(|| Arc::new(models))
 }
 
 impl ImageCatalog {
@@ -89,12 +84,12 @@ impl ImageCatalog {
             return Some(models.clone());
         }
         match fetch(base_url, http, cancel).await {
-            Ok(models) => {
+            Some(models) => {
                 let entry = (Instant::now(), models.clone());
                 self.kept.lock().unwrap().insert(base_url.into(), entry);
                 Some(models)
             }
-            Err(_) => kept.map(|(_, models)| models),
+            None => kept.map(|(_, models)| models),
         }
     }
 
@@ -104,22 +99,24 @@ impl ImageCatalog {
     ///
     /// # Errors
     ///
-    /// When the list was read and `model` is not on it.
+    /// [`ImageError::UnknownModel`] when the list was read and `model` is not
+    /// on it.
     pub async fn model_params(
         &self,
         base_url: &str,
         model: &str,
         http: &dyn HttpClient,
         cancel: CancellationToken,
-    ) -> Result<Option<ModelSettings>, String> {
+    ) -> Result<Option<ModelSettings>, ImageError> {
         let Some(all) = self.all(base_url, http, cancel).await else {
             return Ok(None);
         };
         match all.get(model) {
             Some(params) => Ok(Some(params.clone())),
-            None => Err(format!(
-                "{model} is not on the Image API's model list (GET {base_url}/images/models)"
-            )),
+            None => Err(ImageError::UnknownModel {
+                model: model.into(),
+                base_url: base_url.into(),
+            }),
         }
     }
 }

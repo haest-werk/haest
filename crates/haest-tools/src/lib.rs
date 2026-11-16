@@ -141,7 +141,7 @@ pub use bash_jobs::job_tools;
 pub use files::{EditTool, WriteTool};
 pub use image::{ImageTool, ImageToolOptions};
 pub use inbox::Inbox;
-pub use jobs::{JobEvents, JobHub};
+pub use jobs::{JobError, JobEvents, JobHub};
 pub use read::{ReadIntercept, ReadTool};
 pub use search::{GlobTool, GrepTool};
 pub use skill::{SkillToolOptions, skill_tool};
@@ -234,14 +234,24 @@ pub fn builtin_word(tool: &str) -> Option<&'static str> {
     })
 }
 
+/// A tool the `tools` setting turns on whose [`BuiltinOptions`] field is None:
+/// what [`builtin_tools_where`] refuses, so a tool the host asked for is
+/// never silently missing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("the tools setting has {word} on, but BuiltinOptions.{word} is None")]
+pub struct MissingOption {
+    /// The tool's word, the same as the option's field: `web_fetch`, `tasks`
+    /// or `skill`.
+    pub word: &'static str,
+}
+
 /// The built-in tools whose word ([`builtin_word`]) `on` takes, in
 /// [`builtin_tools`]' order.
 ///
 /// # Errors
 ///
-/// When `on` takes `web_fetch`, `tasks` or `skill` while the option that tool
-/// needs is None: a tool the host asked for is never silently missing. The
-/// message names the word.
+/// [`MissingOption`] when `on` takes `web_fetch`, `tasks` or `skill` while the
+/// option that tool needs is None.
 ///
 /// # Examples
 ///
@@ -260,7 +270,8 @@ pub fn builtin_word(tool: &str) -> Option<&'static str> {
 ///
 /// // The task tools need a board to work on.
 /// let tasks = |w: &str| w == "tasks";
-/// assert!(builtin_tools_where(tasks, BuiltinOptions::default()).is_err());
+/// let missing = builtin_tools_where(tasks, BuiltinOptions::default()).err();
+/// assert_eq!(missing.map(|m| m.word), Some("tasks"));
 /// let opts = BuiltinOptions {
 ///     tasks: Some(Arc::new(TaskBoard::default())),
 ///     ..Default::default()
@@ -271,21 +282,29 @@ pub fn builtin_word(tool: &str) -> Option<&'static str> {
 pub fn builtin_tools_where(
     on: impl Fn(&str) -> bool,
     opts: BuiltinOptions,
-) -> Result<Vec<Arc<dyn Tool>>, String> {
+) -> Result<Vec<Arc<dyn Tool>>, MissingOption> {
     let needs = [
         ("web_fetch", opts.web_fetch.is_some()),
         ("tasks", opts.tasks.is_some()),
         ("skill", opts.skill.is_some()),
     ];
-    if let Some((word, _)) = needs.iter().find(|(word, given)| !given && on(word)) {
-        return Err(format!(
-            "the tools setting has {word} on, but BuiltinOptions.{word} is None"
-        ));
+    if let Some(&(word, _)) = needs.iter().find(|(word, given)| !given && on(word)) {
+        return Err(MissingOption { word });
     }
     Ok(builtin_tools(opts)
         .into_iter()
         .filter(|t| builtin_word(t.name()).is_some_and(&on))
         .collect())
+}
+
+/// `e` and every cause under it, joined by `": "`: the line a model reads
+/// when the top error alone is too short to act on.
+pub(crate) fn report(e: &dyn std::error::Error) -> String {
+    let chain = std::iter::successors(Some(e), |e| e.source());
+    chain
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(": ")
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ use haest_core::{
     messages::MediaKind,
     tool::{Tool, ToolError, ToolOutput},
 };
-use haest_http::{Body, Bytes, HttpClient, HttpError, Request, Response};
+use haest_http::{Body, BoxError, Bytes, HttpClient, HttpError, Request, Response};
 use serde_json::{Value, json};
 
 use super::{WebFetchNet, WebFetchTool, markdown_of};
@@ -58,7 +58,7 @@ impl FakeWeb {
 
 #[async_trait]
 impl Resolve for FakeWeb {
-    async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, String> {
+    async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, BoxError> {
         self.resolved.lock().unwrap().push(host.into());
         let ip = self.ips.get(host).map_or(PUBLIC, String::as_str);
         Ok(vec![ip.parse().unwrap()])

@@ -9,7 +9,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use haest_http::{HttpClient, Request};
+use haest_http::{BoxError, HttpClient, Request};
 
 use super::{client, guarded_client};
 use crate::net_guard::Resolve;
@@ -19,7 +19,7 @@ struct Loopback;
 
 #[async_trait]
 impl Resolve for Loopback {
-    async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, String> {
+    async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, BoxError> {
         Ok(vec![Ipv4Addr::LOCALHOST.into()])
     }
 }

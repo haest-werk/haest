@@ -33,7 +33,7 @@ pub use catalog::ImageCatalog;
 pub use haest_core::__private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
 use haest_core::handed::OPENROUTER_URL;
 use haest_http::{HttpClient, ReqwestClient};
-pub use request::{ImageReply, call_image_api, sniff_image_type};
+pub use request::{ImageError, ImageReply, call_image_api, sniff_image_type};
 pub use tool::ImageTool;
 
 /// What GenerateImage runs on. Clones share the model list read so far.

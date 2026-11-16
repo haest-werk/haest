@@ -107,7 +107,7 @@ async fn guarded_get(url: &Url, net: &WebFetchNet) -> Result<(Response, Url), To
     for _ in 0..=MAX_REDIRECTS {
         assert_public_url(&at, net.resolve.as_ref())
             .await
-            .map_err(ToolError::Input)?;
+            .map_err(|e| ToolError::Input(crate::report(&e)))?;
         let get = Request::get(at.as_str()).with_header("user-agent", USER_AGENT);
         let res = net
             .http
@@ -208,7 +208,7 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
 /// };
 /// use haest_tools::{
 ///     WebFetchNet, WebFetchTool,
-///     http::{HttpClient, HttpError, Request, Response},
+///     http::{BoxError, HttpClient, HttpError, Request, Response},
 ///     net_guard::Resolve,
 /// };
 /// use serde_json::json;
@@ -218,7 +218,7 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
 ///
 /// #[async_trait]
 /// impl Resolve for FakeWeb {
-///     async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, String> {
+///     async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, BoxError> {
 ///         Ok(vec!["93.184.215.14".parse().unwrap()])
 ///     }
 /// }

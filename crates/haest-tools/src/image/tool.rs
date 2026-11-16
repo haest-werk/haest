@@ -324,7 +324,7 @@ impl Tool for ImageTool {
             .catalog
             .model_params(&o.base_url, &chosen, http, cancel.clone())
             .await
-            .map_err(ToolError::Input)?;
+            .map_err(|e| ToolError::Input(e.to_string()))?;
         let params = params.as_ref();
         let takes = describe_model(params);
         let settings = check_image_settings(&chosen, params, &given)
@@ -360,7 +360,7 @@ impl Tool for ImageTool {
             cancel,
         )
         .await
-        .map_err(ToolError::Failed)?;
+        .map_err(|e| ToolError::Failed(crate::report(&e)))?;
         let path = output_path(
             ctx,
             opt_str(&input, "file_path")?,
