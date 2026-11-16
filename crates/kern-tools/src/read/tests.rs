@@ -9,8 +9,8 @@ use kern_core::{
 };
 use serde_json::{Value, json};
 
-use super::{READ_TOKEN_BUDGET, ReadIntercept, ReadTool};
-use crate::testkit::{TestWorkspace, ctx, input};
+use super::{MAX_FILE_BYTES, READ_TOKEN_BUDGET, ReadIntercept, ReadTool};
+use crate::testkit::{ClaimedSizeFs, TestWorkspace, ctx, input};
 
 async fn read(ws: &Arc<TestWorkspace>, v: Value) -> Result<ToolOutput, ToolError> {
     ReadTool::default()
@@ -231,4 +231,26 @@ async fn an_intercept_answers_its_own_paths_and_leaves_the_rest_to_the_fs() {
 fn the_canonical_input_names_the_path() {
     let c = ReadTool::default().canonical_input(&input(json!({"file_path": "a", "limit": 5})));
     assert_eq!(json!(c), json!({"path": "a", "limit": 5}));
+}
+
+#[tokio::test]
+async fn a_file_over_the_size_cap_is_refused_from_its_stat_before_any_of_it_is_read() {
+    let huge = ClaimedSizeFs::new([("/p/huge.log", "line\n")], 5 << 30);
+    let mut answers = Vec::new();
+    for call in [
+        json!({"file_path": "huge.log"}),
+        json!({"file_path": "huge.log", "offset": 10, "limit": 5}),
+    ] {
+        answers.push(ReadTool::default().execute(input(call), &huge.ctx()).await);
+    }
+    assert_eq!(huge.reads(), 0, "Read loaded a 5 GB file whole");
+    assert!(answers.iter().all(is_input_error));
+    // At the cap a file still reads; one byte over, it does not.
+    for (size, reads) in [(MAX_FILE_BYTES, true), (MAX_FILE_BYTES + 1, false)] {
+        let fs = ClaimedSizeFs::new([("/p/f.log", "line\n")], size);
+        let r = ReadTool::default()
+            .execute(input(json!({"file_path": "f.log"})), &fs.ctx())
+            .await;
+        assert_eq!(r.is_ok(), reads, "{size} bytes");
+    }
 }

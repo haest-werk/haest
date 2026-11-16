@@ -18,7 +18,7 @@ use std::{path::Path, sync::Arc};
 
 use async_trait::async_trait;
 use kern_core::{
-    fs::looks_binary,
+    fs::{FsStat, looks_binary},
     media::{media_from_bytes, media_type_from_name},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
 };
@@ -30,6 +30,26 @@ mod paging;
 
 pub(crate) use paging::clip_line;
 pub use paging::{READ_TOKEN_BUDGET, text_output};
+
+/// The largest file Read or Edit loads. Either holds the whole file at once,
+/// about three times its size while it is decoded and paged, so a bigger one is
+/// refused from its stat before any of it is read. Far above any text a model
+/// should page through (Read's 25,000-token budget is about 100 KB), and above
+/// the 20 MB the largest media may be.
+pub(crate) const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Refuse a file over [`MAX_FILE_BYTES`] by its stat, saying what to do instead.
+pub(crate) fn within_cap(stat: &FsStat, shown: &str, instead: &str) -> Result<(), ToolError> {
+    if stat.size <= MAX_FILE_BYTES {
+        return Ok(());
+    }
+    let mb = |b: u64| b / (1024 * 1024);
+    Err(ToolError::Input(format!(
+        "{shown} is {} MB, over the {} MB this tool loads; {instead}",
+        mb(stat.size),
+        mb(MAX_FILE_BYTES)
+    )))
+}
 
 /// A path the host answers itself before the workspace fs is asked: media that
 /// must go through the host's own caps, an `attachment:<id>` that is no path at
@@ -89,14 +109,19 @@ impl ReadTool {
         let fs = ctx.workspace.fs();
         let path = ctx.resolve(req_str(input, "file_path")?);
         let shown = path.display().to_string();
-        if !fs.exists(&path).await {
+        let Ok(stat) = fs.stat(&path).await else {
             return Err(ToolError::Input(format!("File does not exist: {shown}")));
-        }
-        if fs.stat(&path).await?.is_dir() {
+        };
+        if stat.is_dir() {
             return Err(ToolError::Input(format!(
                 "{shown} is a directory; use Glob or Bash ls"
             )));
         }
+        within_cap(
+            &stat,
+            &shown,
+            "use Grep to find what you need, or Bash (head, tail, sed -n) for a part",
+        )?;
         let buf = fs.read(&path).await?;
         if let Some(media_type) = media_type_from_name(&shown) {
             return media_output(&shown, buf, media_type, ctx).await;

@@ -3,14 +3,18 @@
 //! these tests defend what the TOOLS do with a workspace, not the workspace.
 
 use std::{
+    io,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
 use async_trait::async_trait;
 use kern_core::{
-    fs::{Fs, MemFs},
+    fs::{DirEntry, Fs, FsStat, MemFs},
     tool::{JsonMap, ToolContext},
     workspace::{ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode},
 };
@@ -117,5 +121,69 @@ pub fn stdout(text: &str) -> ExecResult {
     ExecResult {
         stdout: text.to_string(),
         ..Default::default()
+    }
+}
+
+/// Files whose stat claims `size` bytes, with whole reads counted: what a tool
+/// does with a file too big to hold, without one on disk.
+pub struct ClaimedSizeFs {
+    mem: MemFs,
+    size: u64,
+    pub whole_reads: AtomicUsize,
+}
+
+impl ClaimedSizeFs {
+    pub fn new<P: AsRef<Path>>(
+        files: impl IntoIterator<Item = (P, &'static str)>,
+        size: u64,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            mem: MemFs::with_files(files),
+            size,
+            whole_reads: AtomicUsize::new(0),
+        })
+    }
+
+    pub fn reads(&self) -> usize {
+        self.whole_reads.load(Ordering::SeqCst)
+    }
+
+    /// A context over these files, a sandboxed shell beside them.
+    pub fn ctx(self: &Arc<Self>) -> ToolContext {
+        let ws = kern_workspace::SandboxWorkspace::over(self.clone());
+        ToolContext::new(CWD, Arc::new(ws))
+    }
+}
+
+#[async_trait]
+impl Fs for ClaimedSizeFs {
+    async fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        self.whole_reads.fetch_add(1, Ordering::SeqCst);
+        self.mem.read(path).await
+    }
+    async fn write(&self, path: &Path, data: &[u8]) -> io::Result<()> {
+        self.mem.write(path, data).await
+    }
+    async fn append(&self, path: &Path, data: &[u8]) -> io::Result<()> {
+        self.mem.append(path, data).await
+    }
+    async fn stat(&self, path: &Path) -> io::Result<FsStat> {
+        let mut stat = self.mem.stat(path).await?;
+        if stat.is_file() {
+            stat.size = self.size;
+        }
+        Ok(stat)
+    }
+    async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
+        self.mem.read_dir(path).await
+    }
+    async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()> {
+        self.mem.mkdir(path, recursive).await
+    }
+    async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()> {
+        self.mem.remove(path, recursive).await
+    }
+    async fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        self.mem.rename(from, to).await
     }
 }

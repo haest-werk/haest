@@ -12,7 +12,7 @@ use kern_core::{
 };
 use serde_json::{Value, json};
 
-use crate::canonical::pick;
+use crate::{canonical::pick, read::within_cap};
 
 /// A string input that may be empty (a file's content, a replacement).
 fn any_str<'a>(input: &'a JsonMap, key: &str) -> Result<&'a str, ToolError> {
@@ -114,12 +114,17 @@ impl Tool for EditTool {
             ));
         }
         let fs = ctx.workspace.fs();
-        if !fs.exists(&path).await {
+        let Ok(stat) = fs.stat(&path).await else {
             return Err(ToolError::Input(format!(
                 "File does not exist: {}. Use Write to create it.",
                 path.display()
             )));
-        }
+        };
+        within_cap(
+            &stat,
+            &path.display().to_string(),
+            "change it with Bash (sed)",
+        )?;
         let text = fs.read_to_string(&path).await?;
         let all = opt_bool(&input, "replace_all");
         let (replaced, count) = replace_checked(&text, old, new, all, &path)?;

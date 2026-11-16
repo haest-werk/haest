@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use super::{EditTool, WriteTool};
 use crate::{
     read::ReadTool,
-    testkit::{TestWorkspace, ctx, input},
+    testkit::{ClaimedSizeFs, TestWorkspace, ctx, input},
 };
 
 async fn run(tool: &dyn Tool, ws: &Arc<TestWorkspace>, v: Value) -> Result<ToolOutput, ToolError> {
@@ -137,4 +137,13 @@ fn edit_canonical_input_uses_the_transcript_keys() {
         json!(c),
         json!({"path": "a", "oldText": "o", "newText": "n"})
     );
+}
+
+#[tokio::test]
+async fn edit_refuses_a_file_over_the_size_cap_before_reading_it() {
+    let huge = ClaimedSizeFs::new([("/p/huge.txt", "a\n")], 5 << 30);
+    let call = json!({"file_path": "huge.txt", "old_string": "a", "new_string": "b"});
+    let r = EditTool.execute(input(call), &huge.ctx()).await;
+    assert_eq!(huge.reads(), 0, "Edit loaded a 5 GB file whole");
+    assert!(matches!(r, Err(ToolError::Input(_))));
 }
