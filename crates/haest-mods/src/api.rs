@@ -61,23 +61,16 @@ pub struct ApprovalRequest {
     pub key: Option<String>,
 }
 
-/// The human's answer to one ask: what [`ModUi::ask`] returns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Decision {
-    /// The human allowed it.
-    Allow,
-    /// The human refused it, did not answer in time, or the call was interrupted.
-    Deny,
-}
-
-impl Decision {
-    /// `"allow"` or `"deny"`: the word a mod file's `haest.ask` promise resolves to.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Decision::Allow => "allow",
-            Decision::Deny => "deny",
-        }
+haest_core::word_enum! {
+    /// The human's answer to one ask: what [`ModUi::ask`] returns. Its word
+    /// (`"allow"`, `"deny"`) is what a mod file's `haest.ask` promise
+    /// resolves to.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Decision ("decision") {
+        /// The human allowed it.
+        Allow = "allow",
+        /// The human refused it, did not answer in time, or the call was interrupted.
+        Deny = "deny",
     }
 }
 
