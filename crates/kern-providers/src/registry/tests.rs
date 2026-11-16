@@ -99,6 +99,31 @@ async fn a_custom_anthropic_provider_sends_its_configured_headers() {
     assert!(sent.contains(&("x-proxy-auth".to_string(), "tok".to_string())));
 }
 
+/// A configured header replaces a default of the same name, whatever its case:
+/// a proxy that takes its key in `x-api-key` gets that one only.
+#[tokio::test]
+async fn a_configured_header_replaces_the_anthropic_default_of_that_name() {
+    let t = FakeTransport::new([FakeReply::status(400, "")]);
+    let custom = CustomProviders::from([(
+        "proxy".to_string(),
+        json!({"type": "anthropic", "baseURL": "http://proxy",
+               "headers": {"X-Api-Key": "tok", "Accept": "text/event-stream"}}),
+    )]);
+    let reg = ProviderRegistry::new(keys(&[]), custom, opts(&t));
+    let r = reg.resolve("proxy:claude").unwrap();
+    collect(r.provider.stream(request(&r.model))).await;
+    let sent = &t.requests()[0].headers;
+    let values = |name: &str| -> Vec<&str> {
+        sent.iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+            .collect()
+    };
+    assert_eq!(values("x-api-key"), ["tok"]);
+    assert_eq!(values("accept"), ["text/event-stream"]);
+    assert_eq!(values("anthropic-version").len(), 1);
+}
+
 #[tokio::test]
 async fn openai_speaks_responses_while_openrouter_and_custom_servers_speak_chat_completions() {
     let t = FakeTransport::new(

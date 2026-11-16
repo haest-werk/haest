@@ -17,7 +17,7 @@ pub use convert::{
 
 use crate::{
     driver::drive,
-    http::{RetryPolicy, endpoint},
+    http::{RetryPolicy, endpoint, with_headers},
     transport::{HttpRequest, Transport},
 };
 
@@ -30,7 +30,8 @@ pub struct AnthropicOptions {
     pub api_key: String,
     /// None = `https://api.anthropic.com`.
     pub base_url: Option<String>,
-    /// Sent on every request (a proxy that authenticates by header).
+    /// Sent on every request (a proxy that authenticates by header); one
+    /// named like a default (`x-api-key`, in any case) replaces it.
     pub headers: Vec<(String, String)>,
 }
 
@@ -55,16 +56,15 @@ impl AnthropicProvider {
     }
 
     fn http_request(&self, req: &ProviderRequest) -> HttpRequest {
-        let mut headers = vec![
-            ("x-api-key".into(), self.opts.api_key.clone()),
-            ("anthropic-version".into(), API_VERSION.into()),
-            ("content-type".into(), "application/json".into()),
-            ("accept".into(), "application/json".into()),
+        let defaults = [
+            ("x-api-key", self.opts.api_key.clone()),
+            ("anthropic-version", API_VERSION.into()),
+            ("content-type", "application/json".into()),
+            ("accept", "application/json".into()),
         ];
-        headers.extend(self.opts.headers.iter().cloned());
         HttpRequest {
             url: endpoint(&self.opts.base_url, DEFAULT_BASE_URL, "v1/messages"),
-            headers,
+            headers: with_headers(defaults, &self.opts.headers),
             body: build_anthropic_params(req),
         }
     }

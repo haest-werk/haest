@@ -85,11 +85,25 @@ pub(crate) fn endpoint(base: &Option<String>, default: &str, path: &str) -> Stri
 
 /// The OpenAI dialects' headers: a bearer key and JSON, then `extra` (which wins on a clash).
 pub(crate) fn bearer_headers(api_key: &str, extra: &[(String, String)]) -> Vec<(String, String)> {
-    let mut headers = vec![
-        ("authorization".to_string(), format!("Bearer {api_key}")),
-        ("content-type".to_string(), "application/json".to_string()),
-        ("accept".to_string(), "application/json".to_string()),
+    let defaults = [
+        ("authorization", format!("Bearer {api_key}")),
+        ("content-type", "application/json".to_string()),
+        ("accept", "application/json".to_string()),
     ];
+    with_headers(defaults, extra)
+}
+
+/// A dialect's `defaults`, then the configured `extra`: one of the same name,
+/// in any case, replaces the default (a header sent twice reaches the server
+/// as two values, and one that reads the first never sees the configured one).
+pub(crate) fn with_headers<const N: usize>(
+    defaults: [(&str, String); N],
+    extra: &[(String, String)],
+) -> Vec<(String, String)> {
+    let mut headers: Vec<(String, String)> = defaults
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
     for (name, value) in extra {
         headers.retain(|(k, _)| !k.eq_ignore_ascii_case(name));
         headers.push((name.clone(), value.clone()));
