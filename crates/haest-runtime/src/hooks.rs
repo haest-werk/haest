@@ -2,7 +2,9 @@
 //! ledger and the task board report to. It persists every record to the
 //! session file, tells the human through the [`Ui`], answers the per-model
 //! questions from the catalog, and compacts the conversation before a model
-//! call that would overflow.
+//! call that would overflow (compact.rs).
+
+mod compact;
 
 use std::{
     collections::HashSet,
@@ -13,15 +15,16 @@ use async_trait::async_trait;
 use haest_settings::Settings;
 use tokio_util::sync::CancellationToken;
 
+use self::compact::compaction_failed;
 use crate::{
     Ui,
     haest::{
         Agent, AgentHooks, Effort,
         core::caps::TurnCaps,
         core::catalog::{InputModality, ModelFacts, Reasoning},
-        core::compaction::{CompactionConfig, CompactionError, compact, needs_compaction},
+        core::compaction::needs_compaction,
         core::ledger::{LedgerHooks, LedgerSnapshot},
-        core::messages::{MediaPart, Usage},
+        core::messages::MediaPart,
         core::remedy::Remedies,
         core::session::{JsonlSessionFile, SessionRecord, SessionSink},
         core::tool::ToolServices,
@@ -29,10 +32,6 @@ use crate::{
         providers::Catalog,
     },
 };
-
-/// Messages kept verbatim after a compaction summary (the TS haest's number).
-const KEEP_RECENT: usize = 12;
-const COMPACT_SHARE: f64 = 0.8;
 
 /// The runtime's hooks: what the agent loop, the ledger, the task list and
 /// the tools report to.
@@ -157,77 +156,6 @@ impl RuntimeHooks {
     pub fn window(&self, spec: &str) -> u64 {
         self.settings
             .window(self.catalog.model(spec).map(|m| m.context_window))
-    }
-
-    /// When to compact a conversation on the model `spec`: at 80% of its
-    /// [`window`](Self::window), or at the `compact_at` setting when that is
-    /// lower and not 0. About the last 12 messages are kept as they are.
-    pub fn compaction_for(&self, spec: &str) -> CompactionConfig {
-        CompactionConfig {
-            context_window: self.window(spec),
-            threshold: COMPACT_SHARE,
-            ceiling: Some(self.settings.limits.compact_at).filter(|n| *n > 0),
-            keep_recent: KEEP_RECENT,
-        }
-    }
-
-    /// Compact `agent`'s conversation now: the older messages become one
-    /// summary, the latest are kept, and the session file records it. What
-    /// the summary calls cost goes on the conversation's spend either way.
-    ///
-    /// `auto`: the loop's own check, so nothing to cut stays silent; a host's
-    /// /compact passes false and the human hears "Nothing to compact yet."
-    /// `cancel` stops the summary call.
-    ///
-    /// # Errors
-    ///
-    /// When no summary came out: the history is as it was. The error is said
-    /// to the UI already, unless `cancel` fired: then the human stopped it,
-    /// and the turn ends as aborted.
-    pub async fn compact_now(
-        &self,
-        agent: &mut Agent,
-        cancel: &CancellationToken,
-        auto: bool,
-    ) -> Result<(), CompactionError> {
-        let cfg = self.compaction_for(agent.model_spec());
-        match compact(agent, cancel, &cfg).await {
-            Ok(None) if !auto => self.info("Nothing to compact yet."),
-            Ok(None) => {}
-            Ok(Some(res)) => {
-                charge(agent, &res.usage);
-                self.append(SessionRecord::Compaction {
-                    t: now_ms(),
-                    summary: res.summary,
-                    kept: res.kept,
-                });
-                self.info(&format!(
-                    "Conversation compacted; kept the last {} messages.",
-                    res.kept
-                ));
-            }
-            Err(e) => {
-                charge(agent, &e.usage());
-                if !cancel.is_cancelled() {
-                    self.error(&compaction_failed(&e));
-                }
-                return Err(e);
-            }
-        }
-        Ok(())
-    }
-}
-
-/// What the human and a failed turn are told when a summary did not come out.
-fn compaction_failed(e: &CompactionError) -> String {
-    format!("Compaction failed: {e}")
-}
-
-/// What the summary calls cost goes on the conversation's bill, summary or
-/// not. The loop only counts it toward the turn's caps (`take_side_spend`).
-fn charge(agent: &Agent, usage: &Usage) {
-    if let Some(ledger) = &agent.deps().ledger {
-        ledger.lock().unwrap().charge(usage);
     }
 }
 

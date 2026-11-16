@@ -165,6 +165,7 @@ mod build;
 mod error;
 mod hooks;
 pub mod inbox;
+mod inputs;
 pub mod mods;
 pub mod prompt;
 mod runtime;
@@ -193,9 +194,10 @@ mod haest {
 }
 
 pub use agents::Agents;
-pub use build::{BuildOptions, Resume, RuntimeInputs, build};
+pub use build::build;
 pub use error::{BuildError, SessionError};
 pub use hooks::{RuntimeHooks, session_usd};
+pub use inputs::{BuildOptions, Resume, RuntimeInputs};
 pub use runtime::Runtime;
 pub use ui::Ui;
 pub use world::World;

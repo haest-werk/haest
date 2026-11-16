@@ -46,6 +46,7 @@
 
 mod command;
 mod guest;
+mod source;
 #[cfg(test)]
 mod tests;
 
@@ -67,6 +68,7 @@ pub use guest::JS_MODULES;
 
 use crate::vm::{VmLimits, VmRun, VmStop, run_in_vm};
 use guest::{JsScript, js_script_spec};
+use source::{is_jsx, runnable};
 
 /// The command's name in the sandbox shell.
 pub const JS_COMMAND: &str = "js";
@@ -127,44 +129,6 @@ pub fn not_here(name: &str) -> ExecResult {
         ),
         127,
     )
-}
-
-fn extension(path: &Path) -> &str {
-    path.extension().and_then(|e| e.to_str()).unwrap_or("")
-}
-
-fn is_typescript(path: &Path) -> bool {
-    matches!(extension(path), "ts" | "mts" | "cts")
-}
-
-/// A JSX file: the engine runs no JSX, and the type stripper leaves it in.
-fn is_jsx(path: &Path) -> bool {
-    matches!(extension(path), "tsx" | "mtsx" | "ctsx" | "jsx")
-}
-
-/// The file as JavaScript. Stripping blocks for as long as it parses, so it
-/// runs on tokio's blocking pool, not on the shell call's worker.
-#[cfg(feature = "typescript")]
-async fn runnable(source: String, path: &Path) -> Result<String, String> {
-    if !is_typescript(path) {
-        return Ok(source);
-    }
-    let name = path
-        .file_name()
-        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    let strip = tokio::task::spawn_blocking(move || haest_ts::strip_types(&source, &name));
-    match strip.await {
-        Ok(stripped) => stripped.map_err(|e| e.to_string()),
-        Err(_) => Err(haest_ts::StripError::Panicked.to_string()),
-    }
-}
-
-#[cfg(not(feature = "typescript"))]
-async fn runnable(source: String, path: &Path) -> Result<String, String> {
-    if is_typescript(path) {
-        return Err("TypeScript is not supported in this build; write JavaScript".into());
-    }
-    Ok(source)
 }
 
 /// Runs `js <file> [args]` as the shell would: reads the file from `env.fs`,
