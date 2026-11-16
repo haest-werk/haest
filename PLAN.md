@@ -119,7 +119,7 @@ after a closing newline.
 
 Not in this plan (the consumers, each its own job once the library holds):
 remote-claude's broker-facing host in Rust (TS `host/`, 3.3k lines, 18 wire
-types), and brain switching from its vendored TS copy to the crate.
+types). brain has switched from its vendored TS copy to the crate (D6).
 
 ## Done means
 

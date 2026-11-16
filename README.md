@@ -1,10 +1,11 @@
 # haest
 
 One Rust agent loop and tool harness. A model call, the tools it asks for, the
-results fed back, until the model answers without tools. Three hosts embed it:
-the `haest` CLI, remote-claude's agent host and brain.
+results fed back, until the model answers without tools. Two hosts embed it:
+the `haest` CLI and brain.
 
-It is a port of the TypeScript haest in remote-claude (`src/haest-agent-host`).
+It is a port of the TypeScript haest in remote-claude (`src/haest-agent-host`),
+which remote-claude's agent host still runs.
 Session files keep the TS haest's JSON shape, so either haest resumes the other's.
 Decisions and status live in
 [PLAN.md](https://github.com/haest-werk/haest/blob/main/PLAN.md), working rules in
