@@ -80,8 +80,8 @@ impl Ui for TermUi {
         }
     }
 
-    fn subagents_running(&self, names: &[String]) {
-        if let Some(text) = self.log.lock().unwrap().activity(names.len()) {
+    fn subagents_running(&self, ids: &[String]) {
+        if let Some(text) = self.log.lock().unwrap().activity(ids.len()) {
             self.notice(Level::Info, &text);
         }
     }

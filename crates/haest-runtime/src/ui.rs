@@ -70,9 +70,8 @@ pub trait Ui: Send + Sync {
     fn subagent(&self, _id: &str, _event: &SubagentEvent) {}
 
     /// The subagents running now, each time that set changes: their ids (the
-    /// `id` [`subagent`](Self::subagent) gets), despite the parameter's name.
-    /// Ignored by default.
-    fn subagents_running(&self, _names: &[String]) {}
+    /// `id` [`subagent`](Self::subagent) gets). Ignored by default.
+    fn subagents_running(&self, _ids: &[String]) {}
 
     /// How the human gets past `limit` in this host (its command, its
     /// setting): added after haest's message about it, which names neither.

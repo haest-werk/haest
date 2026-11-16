@@ -73,7 +73,8 @@ pub struct InstructionFile {
     pub content: String,
 }
 
-/// The one name read without an opt-in; every other name below is Claude Code's.
+/// haest's own name, read with the `agents` source; every other name below is
+/// Claude Code's, read with `claude`.
 const AGENTS_FILE: &str = "AGENTS.md";
 const USER_FILES: [&str; 2] = ["CLAUDE.md", AGENTS_FILE];
 const PROJECT_FILES: [&str; 4] = [

@@ -139,9 +139,9 @@ pub enum StopReason {
 
 crate::word_enum! {
     /// What sort of media a [`MediaPart`] is. The words are OpenRouter's
-    /// modality names (`file` = a PDF), so gating against a model's catalog
-    /// row is a set lookup. [`MediaKind::as_str`] is also the word a model or
-    /// a human reads for the kind.
+    /// modality names (`file` = a PDF), one for one with a catalog row's
+    /// [`InputModality`](crate::catalog::InputModality). [`MediaKind::as_str`]
+    /// is also the word a model or a human reads for the kind.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum MediaKind ("media kind") {
         /// A picture.

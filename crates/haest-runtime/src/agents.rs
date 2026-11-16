@@ -99,8 +99,8 @@ impl SubagentParent for Agents {
         Arc::new(DeferredTools::new(tools, deferral))
     }
 
-    fn on_activity(&self, running: &[String]) {
-        self.hooks.ui.subagents_running(running);
+    fn on_activity(&self, ids: &[String]) {
+        self.hooks.ui.subagents_running(ids);
     }
 
     fn on_subagent(&self, id: &str, event: SubagentEvent) {

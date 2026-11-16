@@ -1,7 +1,8 @@
 //! OpenAI Chat Completions adapter -- OpenRouter and any compatible server
 //! (OpenAI itself goes through [`crate::responses`]).
-//! Request building lives in `convert`, stream folding in `stream`; this file
-//! only wires the transport between them.
+//! Message conversion lives in `convert`, chunk accumulation in `stream`;
+//! this file holds the provider, the request body ([`build_compat_body`]) and
+//! the fold that runs each SSE event through `stream` into the answer.
 //!
 //! [`CompatProvider`] is the provider, configured by [`CompatOptions`]; its
 //! [`CompatFlavor`] picks OpenRouter's extras or the plain body. The
