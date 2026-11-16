@@ -13,19 +13,19 @@
 //! A host serves [`TurnCaps`] per model spec from
 //! [`AgentHooks::turn_caps`](crate::AgentHooks::turn_caps).
 
-use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use crate::{media::messages_for_estimate, messages::Message, provider::ToolSpec};
 
-/// The hard caps on one turn. 0 turns a cap off; `Default` is every cap off.
+/// The hard caps on one turn. 0 (or a zero duration) turns a cap off;
+/// `Default` is every cap off.
 ///
 /// A turn that reaches a cap stops before its next model call with
 /// [`StopReason::MaxTokens`](crate::StopReason::MaxTokens) and says which cap
 /// in its error; at half a cap the model is nudged first.
 /// `max_request_tokens` works per call instead: a call over it is never sent,
 /// and the turn ends with [`StopReason::Error`](crate::StopReason::Error).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct TurnCaps {
     /// Stop the turn once it has spent this much (only providers that report cost).
     pub max_turn_usd: f64,
@@ -35,8 +35,9 @@ pub struct TurnCaps {
     pub max_request_tokens: u64,
     /// Stop the turn after this many model calls.
     pub max_turn_steps: u32,
-    /// Stop the turn once it has run this long (wall clock, ms).
-    pub max_turn_ms: u64,
+    /// Stop the turn once it has run this long (wall clock, on the host's
+    /// [`AgentHooks::now_ms`](crate::AgentHooks::now_ms)).
+    pub max_turn_time: Duration,
     /// Stop the turn once one tool call (same input, same result) has repeated this often.
     pub max_repeats: u32,
 }
@@ -57,7 +58,7 @@ pub struct SubagentCaps {
     /// One subagent's model calls.
     pub steps: u32,
     /// One subagent's wall clock.
-    pub minutes: u64,
+    pub time: Duration,
 }
 
 impl Default for SubagentCaps {
@@ -67,7 +68,7 @@ impl Default for SubagentCaps {
             max_concurrent: 4,
             usd: 1.0,
             steps: 50,
-            minutes: 15,
+            time: Duration::from_secs(15 * 60),
         }
     }
 }

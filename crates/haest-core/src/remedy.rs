@@ -31,7 +31,7 @@
 //! assert_eq!(remedies.add_to("Stopped.", Limit::TurnSteps(40)), "Stopped.");
 //! ```
 
-use std::{fmt, sync::Arc};
+use std::{fmt, sync::Arc, time::Duration};
 
 use crate::ledger::ConversationCap;
 
@@ -43,8 +43,8 @@ use crate::ledger::ConversationCap;
 pub enum Limit {
     /// A turn made this many model calls ([`TurnCaps::max_turn_steps`](crate::caps::TurnCaps::max_turn_steps)).
     TurnSteps(u32),
-    /// A turn ran this long, in ms ([`TurnCaps::max_turn_ms`](crate::caps::TurnCaps::max_turn_ms)).
-    TurnMs(u64),
+    /// A turn ran this long ([`TurnCaps::max_turn_time`](crate::caps::TurnCaps::max_turn_time)).
+    TurnTime(Duration),
     /// A turn spent this much ([`TurnCaps::max_turn_usd`](crate::caps::TurnCaps::max_turn_usd)).
     TurnUsd(f64),
     /// A turn billed this many tokens ([`TurnCaps::max_turn_tokens`](crate::caps::TurnCaps::max_turn_tokens)).

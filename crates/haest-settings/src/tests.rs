@@ -42,7 +42,7 @@ fn token_caps_follow_the_window_unless_set() {
         (l.max_request_tokens, l.max_turn_tokens),
         (180_000, 2_000_000)
     );
-    assert_eq!(l.max_turn_ms, 3_600_000);
+    assert_eq!(l.max_turn_time, std::time::Duration::from_secs(3600));
     s.limits.max_request_tokens = Some(0);
     assert_eq!(s.turn_caps_for(200_000).max_request_tokens, 0);
     assert_eq!(

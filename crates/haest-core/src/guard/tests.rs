@@ -1,8 +1,11 @@
 //! A haest that loops must cost a known amount: nudged at half a cap, stopped at it.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
 };
 
 use serde_json::{Value, json};
@@ -118,7 +121,7 @@ async fn the_step_cap_stops_the_turn_with_one_nudge_on_the_way() {
 fn wall_time_on_the_hosts_clock_is_nudged_at_half_and_stopped_at_the_cap() {
     let clock = Arc::new(TestHooks::default());
     let mut guard = TurnGuard::new(clock.clone(), None, Remedies::default());
-    let l = Some(turn_caps(|l| l.max_turn_ms = 1000));
+    let l = Some(turn_caps(|l| l.max_turn_time = Duration::from_secs(1)));
     let u = Usage::default();
     assert_eq!(guard.nudge(&u, l.as_ref()), None);
     clock.set_now(600);
@@ -142,13 +145,13 @@ async fn a_model_that_answers_without_tools_is_never_nudged() {
 fn a_stop_ends_with_the_hosts_remedy_for_the_cap_that_stopped_it() {
     let clock = Arc::new(TestHooks::default());
     let remedies = Remedies::new(|limit| match limit {
-        Limit::TurnMs(1000) => Some("REMEDY-TIME".into()),
+        Limit::TurnTime(t) if t == Duration::from_secs(1) => Some("REMEDY-TIME".into()),
         Limit::RequestTokens(10) => Some("REMEDY-REQUEST".into()),
         _ => None,
     });
     let mut guard = TurnGuard::new(clock.clone(), None, remedies);
     let l = Some(turn_caps(|l| {
-        l.max_turn_ms = 1000;
+        l.max_turn_time = Duration::from_secs(1);
         l.max_request_tokens = 10;
     }));
     clock.set_now(1000);

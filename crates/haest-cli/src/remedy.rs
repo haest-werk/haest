@@ -11,7 +11,7 @@ use haest::{
 pub fn remedy(limit: Limit) -> Option<String> {
     Some(match limit {
         Limit::TurnSteps(_) => sets_the_cap("max_turn_steps"),
-        Limit::TurnMs(_) => sets_the_cap("max_turn_minutes"),
+        Limit::TurnTime(_) => sets_the_cap("max_turn_minutes"),
         Limit::TurnUsd(_) => sets_the_cap("max_turn_usd"),
         Limit::TurnTokens(_) => sets_the_cap("max_turn_tokens"),
         Limit::Repeats(_) => sets_the_cap("max_repeats"),
@@ -53,7 +53,7 @@ mod tests {
     fn every_limit_names_a_setting_haest_has() {
         let limits = [
             Limit::TurnSteps(1),
-            Limit::TurnMs(1),
+            Limit::TurnTime(std::time::Duration::from_secs(60)),
             Limit::TurnUsd(1.0),
             Limit::TurnTokens(1),
             Limit::Repeats(1),

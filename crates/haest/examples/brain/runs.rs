@@ -248,7 +248,11 @@ pub async fn dream(gateway: &Arc<Gateway>) {
 /// stops the turn at its cap, before the third model call.
 pub async fn clock(gateway: &Arc<Gateway>) {
     let caps = config::turn_caps(&config::work());
-    assert_eq!(caps.max_turn_ms, 60_000, "a work run's one-minute cap");
+    assert_eq!(
+        caps.max_turn_time,
+        std::time::Duration::from_secs(60),
+        "a work run's one-minute cap"
+    );
     let host = Arc::new(BrainHost::new(
         RunClock::new(T0, false),
         Arc::new(NodeSessions::default()),

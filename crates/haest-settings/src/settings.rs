@@ -1,9 +1,9 @@
-//! [`Settings`], the values a conversation is built from, and [`Limits`], its
-//! caps. A host writes them out
+//! [`Settings`], the values a conversation is built from, and [`Limits`] and
+//! [`SubagentLimits`], its caps. A host writes them out
 //! (`Settings { tools: BuiltinTools::ALL, ..Settings::bare(cwd, home) }`) or
 //! has a loader fill them in (haest-config: files, `HAEST_*` variables, flags).
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use haest_core::{
     Effort, WorkspaceMode,
@@ -50,6 +50,43 @@ pub struct Limits {
     pub context_window: Option<u64>,
     /// Compact the conversation past this many tokens; 0 = at 80% of the window only. Bare: 400K.
     pub compact_at: u64,
+}
+
+/// The subagent tree's caps as settings hold them: the `max_agent_depth`,
+/// `max_subagents`, `subagent_usd`, `subagent_steps` and `subagent_minutes`
+/// settings. [`Settings::subagent_caps`] turns them into haest-core's
+/// [`SubagentCaps`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SubagentLimits {
+    /// How deep agents may nest (main = 0); 0 = no Agent tool.
+    pub max_depth: u32,
+    /// Subagents running at once, across the tree; 0 = no Agent tool.
+    pub max_concurrent: usize,
+    /// One subagent's spend in USD.
+    pub usd: f64,
+    /// One subagent's model calls.
+    pub steps: u32,
+    /// One subagent's wall clock, in minutes.
+    pub minutes: u64,
+}
+
+impl Default for SubagentLimits {
+    /// haest-core's [`SubagentCaps::default`], in minutes.
+    fn default() -> Self {
+        let c = SubagentCaps::default();
+        Self {
+            max_depth: c.max_depth,
+            max_concurrent: c.max_concurrent,
+            usd: c.usd,
+            steps: c.steps,
+            minutes: c.time.as_secs() / 60,
+        }
+    }
+}
+
+/// A duration of `m` minutes; a negative or non-finite one is zero (no cap).
+fn minutes(m: f64) -> Duration {
+    Duration::try_from_secs_f64(m * 60.0).unwrap_or(Duration::ZERO)
 }
 
 /// Everything a conversation is built from, as plain values.
@@ -141,8 +178,9 @@ pub struct Settings {
     /// Turns in a row a background job or an agent may start with no human
     /// message; past it haest holds them. 0 = no cap.
     pub max_agent_turns: u32,
-    /// The caps on the subagent tree: depth, how many at once, and each one's budget.
-    pub subagents: SubagentCaps,
+    /// The caps on the subagent tree: depth, how many at once, and each one's
+    /// budget ([`Settings::subagent_caps`] for haest-tools).
+    pub subagents: SubagentLimits,
     /// Where sessions, the REPL's history and spilled tool output go.
     pub data_dir: PathBuf,
     /// haest's own config dir; the human's mods are in `<config_dir>/mods`.
@@ -207,7 +245,7 @@ impl Settings {
                 compact_at: 400_000,
             },
             max_agent_turns: 30,
-            subagents: SubagentCaps::default(),
+            subagents: SubagentLimits::default(),
             data_dir: home.join(".local/share/haest"),
             config_dir: home.join(".config/haest"),
             debug: false,
@@ -238,7 +276,7 @@ impl Settings {
     ///
     /// An unset token cap follows the window: `max_turn_tokens` is 10x it,
     /// `max_request_tokens` 90% of it. One set to `Some(0)` stays 0, no cap.
-    /// The wall clock comes out in milliseconds.
+    /// A negative or non-finite `max_turn_minutes` is no cap.
     pub fn turn_caps_for(&self, window: u64) -> TurnCaps {
         let l = &self.limits;
         TurnCaps {
@@ -246,7 +284,7 @@ impl Settings {
             max_turn_tokens: l.max_turn_tokens.unwrap_or(window * 10),
             max_request_tokens: l.max_request_tokens.unwrap_or(window * 9 / 10),
             max_turn_steps: l.max_turn_steps,
-            max_turn_ms: (l.max_turn_minutes * 60_000.0) as u64,
+            max_turn_time: minutes(l.max_turn_minutes),
             max_repeats: l.max_repeats,
         }
     }
@@ -257,6 +295,19 @@ impl Settings {
         ConversationCaps {
             max_usd: self.limits.max_conversation_usd,
             max_unpriced_tokens: self.limits.max_conversation_tokens,
+        }
+    }
+
+    /// The caps on the subagent tree, for haest-tools' hub: `subagents` with
+    /// its minutes as a duration.
+    pub fn subagent_caps(&self) -> SubagentCaps {
+        let s = &self.subagents;
+        SubagentCaps {
+            max_depth: s.max_depth,
+            max_concurrent: s.max_concurrent,
+            usd: s.usd,
+            steps: s.steps,
+            time: Duration::from_secs(s.minutes.saturating_mul(60)),
         }
     }
 

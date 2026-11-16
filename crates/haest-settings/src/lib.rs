@@ -86,4 +86,4 @@ mod tests;
 
 pub use haest_core::{context::ContextSources, skills::SkillSources, words::WordSet};
 pub use sets::BuiltinTools;
-pub use settings::{DEFAULT_MODEL, Limits, Settings};
+pub use settings::{DEFAULT_MODEL, Limits, Settings, SubagentLimits};

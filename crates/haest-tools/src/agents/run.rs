@@ -2,7 +2,7 @@
 //! hooks: the conversation's, with its own caps and nothing persisted), and
 //! what comes back (its last answer, or why there is none).
 
-use std::{collections::HashSet, panic::AssertUnwindSafe, sync::Arc};
+use std::{collections::HashSet, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use futures::FutureExt;
@@ -18,8 +18,6 @@ use haest_core::{
 use tokio_util::sync::CancellationToken;
 
 use super::{AgentRef, SubagentCaps, SubagentEvent, SubagentParent};
-
-const MINUTE_MS: u64 = 60_000;
 
 /// One agent's run, as its driver needs it.
 pub(super) struct Run {
@@ -52,9 +50,19 @@ You are agent \"{name}\", started by \"{parent}\" for: {description}
 
 Do the task, then end your turn with your COMPLETE answer: your final message is returned to \"{parent}\" verbatim, and nobody else reads your transcript. Nobody will answer questions -- if something is ambiguous, take the sensible reading and say which one you took.
 
-Your caps: ${}, {} model calls, {} minutes. Messages from other agents arrive as user messages starting with [Message from agent ...]; reach a running agent (or \"main\", the conversation's own agent) with SendMessage.",
-        caps.usd, caps.steps, caps.minutes
+Your caps: ${}, {} model calls, {}. Messages from other agents arrive as user messages starting with [Message from agent ...]; reach a running agent (or \"main\", the conversation's own agent) with SendMessage.",
+        caps.usd,
+        caps.steps,
+        wall_clock(caps.time)
     )
+}
+
+/// A subagent's time cap as its note says it: whole minutes, else seconds.
+fn wall_clock(time: Duration) -> String {
+    match time.as_secs() {
+        s if s % 60 == 0 => format!("{} minutes", s / 60),
+        s => format!("{s} seconds"),
+    }
 }
 
 /// The parent's system prompt for this agent's model and tools, then its note.
@@ -107,7 +115,7 @@ impl AgentHooks for ChildHooks {
         Some(TurnCaps {
             max_turn_usd: self.caps.usd,
             max_turn_steps: self.caps.steps,
-            max_turn_ms: self.caps.minutes * MINUTE_MS,
+            max_turn_time: self.caps.time,
             ..base
         })
     }

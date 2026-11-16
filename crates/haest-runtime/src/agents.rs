@@ -57,7 +57,7 @@ impl Agents {
     /// The hub, capped by the settings' `subagents` (how deep they nest, how
     /// many run at once, each one's spend, steps and time).
     pub fn hub(self) -> Arc<SubagentHub> {
-        let caps = self.hooks.settings.subagents;
+        let caps = self.hooks.settings.subagent_caps();
         SubagentHub::new(Arc::new(self), caps)
     }
 }

@@ -247,6 +247,7 @@ impl TurnGuard {
         let usd = usage.cost_usd.unwrap_or(0.0);
         let tokens = usage.context_tokens();
         let steps = self.steps;
+        let time_cap = l.max_turn_time.as_millis() as f64;
         let mut out = self.repeat_gauges(l.max_repeats);
         out.extend([
             Gauge {
@@ -267,19 +268,19 @@ impl TurnGuard {
             Gauge {
                 key: "time".into(),
                 used: elapsed,
-                cap: l.max_turn_ms as f64,
+                cap: time_cap,
                 nudge_at: None,
                 nudge: format!(
                     "This turn has run for {}; it stops at {}.",
                     minutes(elapsed),
-                    minutes(l.max_turn_ms as f64)
+                    minutes(time_cap)
                 ),
                 stop: format!(
                     "it ran for {}, the cap is {}.",
                     minutes(elapsed),
-                    minutes(l.max_turn_ms as f64)
+                    minutes(time_cap)
                 ),
-                limit: Limit::TurnMs(l.max_turn_ms),
+                limit: Limit::TurnTime(l.max_turn_time),
             },
             Gauge {
                 key: "usd".into(),
