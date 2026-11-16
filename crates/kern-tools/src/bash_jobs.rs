@@ -10,19 +10,17 @@ use kern_core::tool::{
 };
 use serde_json::{Value, json};
 
-use crate::jobs::{Job, JobHub, MAX_BUFFER};
+use crate::jobs::{JobHub, MAX_BUFFER};
 
-/// The job, or an error that names the ones running.
-fn known(jobs: &JobHub, id: &str) -> Result<Job, ToolError> {
-    jobs.get(id).ok_or_else(|| {
-        let running: Vec<String> = jobs.running().into_iter().map(|j| j.id).collect();
-        let running = if running.is_empty() {
-            "none".to_string()
-        } else {
-            running.join(", ")
-        };
-        ToolError::Input(format!("no background job \"{id}\"; running: {running}"))
-    })
+/// No job `id`: the error names the ones running.
+fn unknown(jobs: &JobHub, id: &str) -> ToolError {
+    let running: Vec<String> = jobs.running().into_iter().map(|j| j.id).collect();
+    let running = if running.is_empty() {
+        "none".to_string()
+    } else {
+        running.join(", ")
+    };
+    ToolError::Input(format!("no background job \"{id}\"; running: {running}"))
 }
 
 fn id_schema(key: &str) -> Value {
@@ -54,11 +52,7 @@ impl Tool for BashOutputTool {
     }
     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
         let id = req_str(&input, "bash_id")?;
-        known(&self.jobs, id)?;
-        let got = self
-            .jobs
-            .take(id)
-            .ok_or_else(|| ToolError::Input(format!("no background job \"{id}\"")))?;
+        let got = self.jobs.take(id).ok_or_else(|| unknown(&self.jobs, id))?;
         let missed = if got.missed > 0 {
             format!(
                 "[{} bytes dropped: the buffer keeps the last {MAX_BUFFER}]\n",
@@ -100,7 +94,7 @@ impl Tool for KillShellTool {
     }
     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
         let id = req_str(&input, "shell_id")?;
-        let job = known(&self.jobs, id)?;
+        let job = self.jobs.get(id).ok_or_else(|| unknown(&self.jobs, id))?;
         Ok(ToolOutput::text(if self.jobs.kill(id) {
             format!("Killed job {id} ({}).", job.command)
         } else {
