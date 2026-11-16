@@ -5,7 +5,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-pub use haest_core::caps::SubagentCaps;
 use haest_core::{
     AgentDeps, LoopEvent,
     provider::Effort,

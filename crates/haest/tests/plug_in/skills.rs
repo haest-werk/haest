@@ -4,7 +4,7 @@
 use haest::{
     core::deferred_tools::{DeferMode, ToolDeferral},
     core::skills::{InlineSkill, InlineSkills, SkillCard, SkillSet, skill_cards_block},
-    tools::{SkillToolOptions, skill_tool, tool_search::DeferredTools},
+    tools::{DeferredTools, SkillToolOptions, skill_tool},
 };
 
 use super::*;

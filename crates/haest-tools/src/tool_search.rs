@@ -161,7 +161,7 @@ impl Tool for CallToolTool {
 ///     deferred_tools::{DeferMode, ToolDeferral},
 ///     tool::ToolSource,
 /// };
-/// use haest_tools::{BuiltinOptions, builtin_tools, tool_search::DeferredTools};
+/// use haest_tools::{BuiltinOptions, DeferredTools, builtin_tools};
 ///
 /// let tools = builtin_tools(BuiltinOptions { web_fetch: None, ..Default::default() });
 /// // Proxy mode, every tool deferred but Read.

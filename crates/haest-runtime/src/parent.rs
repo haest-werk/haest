@@ -16,11 +16,7 @@ use crate::{
         core::deferred_tools::ToolDeferral,
         core::tool::{Tool, ToolSource},
         mods::{ModSystemPrompt, Mods},
-        tools::{
-            Inbox,
-            agents::{SubagentEvent, SubagentHub, SubagentParent},
-            tool_search::DeferredTools,
-        },
+        tools::{DeferredTools, Inbox, SubagentEvent, SubagentHub, SubagentParent},
     },
     inbox::InboxSender,
     prompt::{AgentPrompt, RuntimePrompt},

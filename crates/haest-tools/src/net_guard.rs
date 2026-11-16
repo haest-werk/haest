@@ -79,7 +79,7 @@ fn in_v6(ip: Ipv6Addr, (net, bits): (Ipv6Addr, u8)) -> bool {
 /// it carries.
 ///
 /// ```
-/// use haest_tools::net_guard::is_blocked;
+/// use haest_tools::is_blocked;
 ///
 /// assert!(is_blocked("169.254.169.254".parse().unwrap()));
 /// assert!(is_blocked("::ffff:10.0.0.1".parse().unwrap()));
@@ -202,10 +202,7 @@ pub(crate) fn host_port(url: &Url) -> String {
 /// use std::net::IpAddr;
 ///
 /// use async_trait::async_trait;
-/// use haest_tools::{
-///     http::BoxError,
-///     net_guard::{Resolve, UrlRefused, assert_public_url},
-/// };
+/// use haest_tools::{Resolve, UrlRefused, assert_public_url, http::BoxError};
 /// use url::Url;
 ///
 /// /// A name that answers one public and one private address.

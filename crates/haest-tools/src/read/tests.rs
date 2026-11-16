@@ -193,7 +193,7 @@ impl ReadIntercept for Attachments {
         ctx: &ToolContext,
     ) -> Option<Result<ToolOutput, ToolError>> {
         let id = raw_path.strip_prefix("attachment:")?;
-        Some(super::text_output(
+        Some(super::read_text_output(
             &format!("converted {id}\nline two"),
             9,
             input,

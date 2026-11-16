@@ -37,8 +37,7 @@ use haest::{
     providers::{CompatFlavor, CompatOptions, CompatProvider, RetryPolicy},
     settings::{Settings, WordSet},
     tools::{
-        BashOptions, BuiltinOptions,
-        agents::{AgentRef, AgentToolOptions, SubagentTypes, agent_tools_with},
+        AgentRef, AgentToolOptions, BashOptions, BuiltinOptions, SubagentTypes, agent_tools_with,
         builtin_tools_where,
     },
 };

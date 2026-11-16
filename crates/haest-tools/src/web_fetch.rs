@@ -54,7 +54,7 @@ fn is_text_type(media_type: &str) -> bool {
 /// converter cannot read comes back as it is.
 ///
 /// ```
-/// use haest_tools::web_fetch::markdown_of;
+/// use haest_tools::markdown_of;
 ///
 /// let md = markdown_of("<h1>Title</h1><script>track()</script><p>Body</p>");
 /// assert!(md.starts_with("# Title") && md.contains("Body") && !md.contains("track"));
@@ -177,9 +177,8 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
 ///     workspace::ShutWorkspace,
 /// };
 /// use haest_tools::{
-///     WebFetchNet, WebFetchTool,
+///     Resolve, WebFetchNet, WebFetchTool,
 ///     http::{BoxError, HttpClient, HttpError, Request, Response},
-///     net_guard::Resolve,
 /// };
 /// use serde_json::json;
 ///

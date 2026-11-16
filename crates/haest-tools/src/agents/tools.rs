@@ -178,7 +178,7 @@ pub fn agent_tools(
 }
 
 /// [`agent_tools`] with the host's kinds of subagent and `model` text
-/// ([`AgentToolOptions`]). The module docs have an example.
+/// ([`AgentToolOptions`]). [`AgentDirectory`] has an example.
 pub fn agent_tools_with(
     hub: Arc<dyn AgentDirectory>,
     me: AgentRef,

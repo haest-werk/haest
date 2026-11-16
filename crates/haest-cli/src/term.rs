@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use haest::{core::remedy::Limit, runtime::Ui, tools::agents::SubagentEvent};
+use haest::{core::remedy::Limit, runtime::Ui, tools::SubagentEvent};
 
 use crate::{
     agents::AgentLog,

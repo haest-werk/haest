@@ -20,7 +20,7 @@ use crate::{
         mcp::McpHub,
         mods::{ApprovalGate, Mods},
         now_ms,
-        tools::{JobHub, agents::SubagentHub},
+        tools::{JobHub, SubagentHub},
     },
     inbox::InboxQueue,
     store::{new_session, record_start},

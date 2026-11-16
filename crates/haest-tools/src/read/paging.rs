@@ -101,7 +101,7 @@ fn at_least_one(input: &JsonMap, key: &str, default: usize) -> Result<usize, Too
 /// # Errors
 ///
 /// [`ToolError::Input`] when `offset` or `limit` is not a number.
-pub fn text_output(
+pub fn read_text_output(
     text: &str,
     bytes: usize,
     input: &JsonMap,

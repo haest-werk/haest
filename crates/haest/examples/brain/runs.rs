@@ -6,7 +6,7 @@ use haest::{
     Agent, AgentOptions, ShutWorkspace, StopReason, TurnOutcome,
     core::session::{SessionRecord, SessionSink, replay},
     core::tool::Tool,
-    tools::agents::AgentRef,
+    tools::AgentRef,
     workspace::SandboxWorkspace,
 };
 use serde_json::json;

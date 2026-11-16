@@ -10,7 +10,7 @@
 //! READ SIZES ITSELF. It used to go through the generic spill, which saved a big
 //! read to a file and told the model to Read THAT in pieces: a Read answered with
 //! "go Read a copy of what you just read". Now it returns as many whole lines as
-//! fit its budget and says where to continue ([`text_output`]):
+//! fit its budget and says where to continue ([`read_text_output`]):
 //!   - default budget 25,000 tokens ([`READ_TOKEN_BUDGET`]), Claude Code's own
 //!     Read limit, and at most 2,000 lines;
 //!   - `allow_large: true` lifts that (and the 2,000-line default) up to the room
@@ -37,7 +37,7 @@ use crate::canonical::pick;
 mod paging;
 
 pub(crate) use paging::clip_line;
-pub use paging::{READ_TOKEN_BUDGET, text_output};
+pub use paging::{READ_TOKEN_BUDGET, read_text_output};
 
 /// The largest file Read or Edit loads. Either holds the whole file at once,
 /// about three times its size while it is decoded and paged, so a bigger one is
@@ -62,7 +62,7 @@ pub(crate) fn within_cap(stat: &FsStat, shown: &str, instead: &str) -> Result<()
 /// A host's own answer to some Read calls, asked before the workspace fs: media
 /// that must go through the host's own caps, an `attachment:<id>` that is no
 /// path at all, a document converted to Markdown (page it with
-/// [`text_output`]).
+/// [`read_text_output`]).
 ///
 /// # Examples
 ///
@@ -74,7 +74,7 @@ pub(crate) fn within_cap(stat: &FsStat, shown: &str, instead: &str) -> Result<()
 ///     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
 ///     workspace::ShutWorkspace,
 /// };
-/// use haest_tools::{ReadIntercept, ReadTool, read::text_output};
+/// use haest_tools::{ReadIntercept, ReadTool, read_text_output};
 /// use serde_json::json;
 ///
 /// /// `attachment:<id>` is a document the host keeps, not a file.
@@ -91,7 +91,7 @@ pub(crate) fn within_cap(stat: &FsStat, shown: &str, instead: &str) -> Result<()
 ///         let id = raw_path.strip_prefix("attachment:")?;
 ///         let text = format!("# Attachment {id}\nfirst line\n");
 ///         // Paged like a file: offset, limit and the budget all apply.
-///         Some(text_output(&text, text.len(), input, ctx, ""))
+///         Some(read_text_output(&text, text.len(), input, ctx, ""))
 ///     }
 /// }
 ///
@@ -207,7 +207,7 @@ impl ReadTool {
         let text = String::from_utf8_lossy(&buf);
         // A decoder drops the byte-order mark; so does Read.
         let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-        text_output(text, buf.len(), input, ctx, "")
+        read_text_output(text, buf.len(), input, ctx, "")
     }
 }
 

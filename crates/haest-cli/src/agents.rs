@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use haest::{LoopEvent, tools::agents::SubagentEvent};
+use haest::{LoopEvent, tools::SubagentEvent};
 
 use crate::render::{Level, result_line};
 

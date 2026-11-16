@@ -2,7 +2,7 @@
 //! decides how it looks (a terminal, a web panel, a log).
 
 use haest_core::remedy::Limit;
-use haest_tools::agents::SubagentEvent;
+use haest_tools::SubagentEvent;
 
 /// PLUG POINT: how the human hears from a conversation.
 ///

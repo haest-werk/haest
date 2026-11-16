@@ -23,10 +23,8 @@ use crate::haest::{
     mcp::McpHub,
     mods::{ModTools, Mods},
     tools::{
-        BashOptions, BuiltinOptions, GenerateImageOptions, GenerateImageTool, JobHub,
-        SkillToolOptions,
-        agents::{AgentRef, SubagentHub},
-        builtin_tools_where,
+        AgentRef, BashOptions, BuiltinOptions, GenerateImageOptions, GenerateImageTool, JobHub,
+        SkillToolOptions, SubagentHub, builtin_tools_where,
     },
 };
 

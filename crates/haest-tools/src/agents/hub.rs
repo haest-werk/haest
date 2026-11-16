@@ -11,7 +11,7 @@ use haest_core::tool::Tool;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AgentDirectory, AgentError, AgentRef, MAIN, SpawnInput, SpawnOutcome, SubagentCaps,
+    AgentDirectory, AgentError, AgentRef, MAIN_AGENT, SpawnInput, SpawnOutcome, SubagentCaps,
     SubagentParent,
     members::{Due, Members, Status, run_id},
     run::Run,
@@ -55,16 +55,14 @@ mod member_run;
 /// use async_trait::async_trait;
 /// use haest_core::{
 ///     AgentDeps,
+///     caps::SubagentCaps,
 ///     provider::Effort,
 ///     // haest-core's `testing` feature: a provider that answers from a script.
 ///     testing::{ScriptedProvider, text_answer},
 ///     tool::Tool,
 ///     workspace::ShutWorkspace,
 /// };
-/// use haest_tools::{
-///     Inbox, SubagentParent, SubagentHub,
-///     agents::{AgentDirectory, AgentRef, SpawnInput, SubagentCaps},
-/// };
+/// use haest_tools::{AgentDirectory, AgentRef, Inbox, SpawnInput, SubagentHub, SubagentParent};
 /// use tokio_util::sync::CancellationToken;
 ///
 /// struct Parent(Arc<ScriptedProvider>);
@@ -229,7 +227,7 @@ impl AgentDirectory for SubagentHub {
 
     fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError> {
         let body = format!("[Message from agent \"{from}\"]\n\n{text}");
-        if to == MAIN {
+        if to == MAIN_AGENT {
             self.parent.submit(body);
             return Ok("Delivered to main.".into());
         }

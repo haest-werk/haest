@@ -121,7 +121,7 @@ const SIGNATURES: [(&str, Signature); 4] = [
 /// jpeg): `image/png`, `image/jpeg`, `image/webp` or `image/gif`, else None.
 ///
 /// ```
-/// use haest_tools::image::sniff_image_type;
+/// use haest_tools::sniff_image_type;
 ///
 /// assert_eq!(sniff_image_type(&[0xff, 0xd8, 0xff, 0xe0]), Some("image/jpeg"));
 /// assert_eq!(sniff_image_type(b"<svg"), None);

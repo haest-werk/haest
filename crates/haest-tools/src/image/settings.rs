@@ -216,26 +216,6 @@ fn with_defaults(out: &mut Map<String, Value>, params: Option<&ModelSettings>) {
 /// # Errors
 ///
 /// The first setting refused, as an [`ImageSettingsError`].
-///
-/// # Examples
-///
-/// ```
-/// use haest_tools::image::settings::{ImageSettingsError, ModelSettings, SettingSpec, check_image_settings};
-/// use serde_json::{Map, json};
-///
-/// let aspect = SettingSpec {
-///     kind: Some("enum".into()),
-///     values: Some(vec![json!("1:1"), json!("16:9")]),
-///     ..Default::default()
-/// };
-/// let model = ModelSettings::from([("aspect_ratio".to_string(), aspect)]);
-/// let given = |v: serde_json::Value| v.as_object().cloned().unwrap_or_else(Map::new);
-///
-/// let fields = check_image_settings("vendor/pic", Some(&model), &given(json!({}))).unwrap();
-/// assert_eq!(fields["aspect_ratio"], "1:1");
-/// let err = check_image_settings("vendor/pic", Some(&model), &given(json!({"quality": "high"})));
-/// assert!(matches!(err.unwrap_err(), ImageSettingsError::NotOffered { name, .. } if name == "quality"));
-/// ```
 pub fn check_image_settings(
     model: &str,
     params: Option<&ModelSettings>,

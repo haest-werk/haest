@@ -12,7 +12,7 @@ use std::{
 use haest_core::{AgentControl, now_ms};
 use tokio_util::sync::CancellationToken;
 
-use super::{AgentError, AgentRef, MAIN, SpawnInput, SubagentCaps};
+use super::{AgentError, AgentRef, MAIN_AGENT, SpawnInput, SubagentCaps};
 
 /// Unique per hub, so the same agent name in a revived host is a different id.
 pub(super) fn run_id() -> String {
@@ -100,7 +100,7 @@ impl Members {
 
     /// Who a message can reach right now, for a refusal.
     pub fn reachable(&self) -> Vec<String> {
-        let mut names = vec![MAIN.to_string()];
+        let mut names = vec![MAIN_AGENT.to_string()];
         names.extend(self.running().map(|m| m.me.name.clone()));
         names
     }
@@ -131,7 +131,7 @@ impl Members {
             Some(n) => slug(n),
             None => format!("{}-{seq}", slug(&input.description)),
         };
-        if name == MAIN || self.known(&name) {
+        if name == MAIN_AGENT || self.known(&name) {
             // `{name}-{seq}` may be taken too (an agent asked to be "x-3"): count on.
             let base = name;
             name = (seq..)

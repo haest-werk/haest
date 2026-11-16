@@ -9,9 +9,8 @@ use async_trait::async_trait;
 use haest::{
     core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
     tools::{
-        ReadIntercept,
-        agents::{AgentDirectory, AgentError, AgentRef, SpawnInput, SpawnOutcome},
-        read::text_output,
+        AgentDirectory, AgentError, AgentRef, ReadIntercept, SpawnInput, SpawnOutcome,
+        read_text_output,
     },
 };
 use serde_json::{Value, json};
@@ -48,7 +47,7 @@ impl ReadIntercept for Attachments {
         let id = raw_path.strip_prefix("attachment:")?;
         self.answered.lock().unwrap().push(raw_path.to_string());
         Some(match self.docs.get(id) {
-            Some(md) => text_output(md, md.len(), input, ctx, ""),
+            Some(md) => read_text_output(md, md.len(), input, ctx, ""),
             None => Err(ToolError::Input(format!("no attachment \"{id}\""))),
         })
     }

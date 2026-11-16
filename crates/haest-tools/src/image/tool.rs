@@ -26,7 +26,7 @@ use crate::canonical::pick;
 /// ratio, resolution, ...).
 ///
 /// Before anything is paid for, the model and every setting are checked
-/// against the Image API's model list ([`settings`](super::settings)); a
+/// against the Image API's model list ([`ImageCatalog`](crate::ImageCatalog)); a
 /// refusal tells the model what the chosen image model takes. Then one request
 /// is sent, and the picture is written into the workspace under the extension
 /// its bytes have, published to the host, and attached so the model sees it.

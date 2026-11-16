@@ -19,7 +19,13 @@
 //! sandbox's in-memory files, a host's own store and the real disk all look
 //! the same to them. haest-workspace has the workspaces that ship with haest;
 //! any [`Workspace`] works. WebFetch is the one exception: it runs in the HOST,
-//! never through the workspace, behind the net guard ([`net_guard`]).
+//! never through the workspace, behind the net guard: [`assert_public_url`]
+//! lets a URL through only when it is http(s) and every address its host
+//! resolves to is public (no localhost, LAN or cloud metadata endpoint, see
+//! [`is_blocked`]), on the first request and on every redirect hop. The
+//! default client resolves names through the same [`Resolve`] when it
+//! connects, so a name that answers public, then private, cannot slip
+//! between the check and the connect.
 //!
 //! # The built-in tools
 //!
@@ -46,8 +52,8 @@
 //!
 //! | Tool | What it does | Read-only | Built by | Needs from the host |
 //! |---|---|---|---|---|
-//! | Agent, SendMessage, StopAgent | start, message and stop subagents | no | [`SubagentHub::tools_for`], [`agents::agent_tools`] | an [`AgentDirectory`]; the default [`SubagentHub`] needs a [`SubagentParent`] |
-//! | ToolSearch (and CallTool) | loads a deferred tool's schema (calls one, in proxy mode) | ToolSearch only | [`tool_search::DeferredTools`] | a [`ToolDeferral`](haest_core::deferred_tools::ToolDeferral) |
+//! | Agent, SendMessage, StopAgent | start, message and stop subagents | no | [`SubagentHub::tools_for`], [`agent_tools`] | an [`AgentDirectory`]; the default [`SubagentHub`] needs a [`SubagentParent`] |
+//! | ToolSearch (and CallTool) | loads a deferred tool's schema (calls one, in proxy mode) | ToolSearch only | [`DeferredTools`] | a [`ToolDeferral`](haest_core::deferred_tools::ToolDeferral) |
 //! | GenerateImage | makes an image with an image model, saves and shows it | no | [`GenerateImageTool`] | an Image API key ([`GenerateImageOptions`]) |
 //!
 //! WebFetch and GenerateImage make their requests through [`http::HttpClient`]
@@ -57,6 +63,29 @@
 //! A turn the human did not start (a background job that exited, a subagent's
 //! message for main) reaches the model through the host's [`Inbox`], counted
 //! by an [`AgentTurnGate`] so two agents cannot start turns forever.
+//!
+//! # Subagents
+//!
+//! A subagent is a second [`Agent`] loop in this process with its own
+//! history, its own turn caps ([`SubagentCaps`]) and the conversation's
+//! shared ledger, so the whole tree stays under the conversation's budget.
+//! Its spend comes back as the Agent call's `child_cost_usd`: the parent's
+//! turn (and its USD cap) counts it, and the ledger is not charged twice.
+//!
+//! The conversation's own loop is [`MAIN_AGENT`]; every subagent has a
+//! unique name. A message lands at the receiver's next step boundary
+//! ([`AgentControl::steer`]); one for main goes to the host's [`Inbox`].
+//! Main is depth 0, an agent at the depth cap gets no Agent tool, and at
+//! most `max_concurrent` run at once across the whole tree.
+//!
+//! The agent tools speak to an [`AgentDirectory`], never to the hub, so a
+//! host with its own idea of a subagent implements that trait and keeps the
+//! tools. [`SubagentHub`] is the default, over a [`SubagentParent`].
+//! [`AgentToolOptions`] gives the Agent tool the host's kinds of subagent
+//! (`subagent_type`) and its own `model` text: to [`agent_tools_with`]
+//! directly, or to the hub through [`SubagentParent::agent_tool_options`],
+//! whose [`subagent_tools`](SubagentParent::subagent_tools) then says what
+//! each kind may use.
 //!
 //! # Example
 //!
@@ -102,49 +131,64 @@
 //! [`Workspace::shell`]: haest_core::workspace::Workspace::shell
 //! [`Workspace::run`]: haest_core::workspace::Workspace::run
 //! [`TaskBoard`]: haest_core::task_board::TaskBoard
+//! [`Agent`]: haest_core::Agent
+//! [`AgentControl::steer`]: haest_core::AgentControl::steer
+//! [`SubagentCaps`]: haest_core::caps::SubagentCaps
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
-pub mod agents;
-pub mod bash;
-pub mod bash_jobs;
+mod agents;
+mod bash;
+mod bash_jobs;
 mod builtins;
 mod canonical;
-pub mod files;
+mod files;
 mod fs_walk;
-pub mod image;
-pub mod inbox;
-pub mod jobs;
-pub mod net_guard;
-pub mod read;
-pub mod search;
-pub mod skill;
-pub mod tasks;
+mod image;
+mod inbox;
+mod jobs;
+mod net_guard;
+mod read;
+mod search;
+mod skill;
+mod tasks;
 #[cfg(test)]
 mod testkit;
-pub mod tool_search;
-pub mod turn_gate;
-pub mod web_fetch;
+mod tool_search;
+mod turn_gate;
+mod web_fetch;
 
 /// The HTTP seam WebFetch and GenerateImage send through: implement
 /// [`http::HttpClient`] to give either tool a client of your own.
 #[doc(inline)]
 pub use haest_http as http;
 
-pub use agents::{AgentDirectory, SubagentHub, SubagentParent};
+pub use agents::{
+    AgentDirectory, AgentError, AgentRef, AgentToolOptions, MAIN_AGENT, SpawnInput, SpawnOutcome,
+    SubagentEvent, SubagentHub, SubagentParent, SubagentTypes, agent_tools, agent_tools_with,
+    subagent_note,
+};
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;
 pub use builtins::{
     BuiltinOptions, MissingOption, builtin_tools, builtin_tools_where, builtin_word,
 };
 pub use files::{EditTool, WriteTool};
-pub use image::{GenerateImageOptions, GenerateImageTool};
-pub use inbox::Inbox;
-pub use jobs::{JobError, JobEvents, JobHub};
-pub use read::{ReadIntercept, ReadTool};
+pub use image::{
+    DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS, GenerateImageOptions, GenerateImageTool,
+    ImageCatalog, ImageError, ImageReply, ModelSettings, SettingSpec, call_image_api,
+    sniff_image_type,
+};
+pub use inbox::{Inbox, NoInbox};
+pub use jobs::{
+    Job, JobError, JobEvents, JobHub, JobStatus, MAX_FINISHED, MAX_JOBS, NoJobEvents, Taken,
+};
+pub use net_guard::{Resolve, SystemResolve, UrlRefused, assert_public_url, is_blocked};
+pub use read::{READ_TOKEN_BUDGET, ReadIntercept, ReadTool, media_output, read_text_output};
 pub use search::{GlobTool, GrepTool};
 pub use skill::{SkillToolOptions, skill_tool};
 pub use tasks::task_tools;
+pub use tool_search::DeferredTools;
 pub use turn_gate::AgentTurnGate;
-pub use web_fetch::{WebFetchNet, WebFetchTool};
+pub use web_fetch::{WebFetchNet, WebFetchTool, markdown_of};

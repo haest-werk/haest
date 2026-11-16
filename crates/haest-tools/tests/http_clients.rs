@@ -22,8 +22,7 @@ use haest_core::{
     workspace::ShutWorkspace,
 };
 use haest_tools::{
-    GenerateImageOptions, WebFetchNet, WebFetchTool, http::BoxError, image::call_image_api,
-    net_guard::Resolve,
+    GenerateImageOptions, Resolve, WebFetchNet, WebFetchTool, call_image_api, http::BoxError,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
