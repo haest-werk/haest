@@ -12,7 +12,10 @@ use kern_core::{
 };
 use serde_json::{Map, Value, json};
 
-use crate::openai_media::{ToolMedia, responses_tool_media_item, responses_user_content};
+use crate::{
+    openai_media::{RESPONSES, with_tool_media},
+    result_text,
+};
 
 /// gpt-5.5 accepts none|low|medium|high|xhigh ('max' and 'minimal' are 400s), so ours clamp onto those.
 fn effort_name(effort: Effort) -> &'static str {
@@ -85,36 +88,17 @@ fn assistant_items(msg: &AssistantMessage, provider_id: &str, out: &mut Vec<Valu
 /// A tool's media rides a user item after the run of function_call_outputs (same rule as Chat Completions).
 pub fn to_responses_input(messages: &[Message], provider_id: &str) -> Vec<Value> {
     let mut out = Vec::new();
-    let mut tool_media: ToolMedia = Vec::new();
-    let flush = |tool_media: &mut ToolMedia, out: &mut Vec<Value>| {
-        if !tool_media.is_empty() {
-            out.push(responses_tool_media_item(tool_media));
-        }
-        tool_media.clear();
-    };
-    for m in messages {
-        if !matches!(m, Message::Tool(_)) {
-            flush(&mut tool_media, &mut out);
-        }
+    with_tool_media(messages, &RESPONSES, &mut out, |m, out| {
         match m {
-            Message::User(u) => out.push(
-                json!({"role": "user", "content": responses_user_content(&u.content, &u.media)}),
-            ),
-            Message::Tool(t) => {
-                let output = if t.content.is_empty() {
-                    "(empty)"
-                } else {
-                    &t.content
-                };
-                out.push(json!({"type": "function_call_output", "call_id": t.tool_call_id, "output": output}));
-                if !t.media.is_empty() {
-                    tool_media.push((t.tool_name.clone(), t.media.clone()));
-                }
-            }
-            Message::Assistant(a) => assistant_items(a, provider_id, &mut out),
-        }
+        Message::User(u) => out.push(
+            json!({"role": "user", "content": RESPONSES.user_content(&u.content, &u.media)}),
+        ),
+        Message::Tool(t) => out.push(
+            json!({"type": "function_call_output", "call_id": t.tool_call_id, "output": result_text(t)}),
+        ),
+        Message::Assistant(a) => assistant_items(a, provider_id, out),
     }
-    flush(&mut tool_media, &mut out);
+    });
     out
 }
 

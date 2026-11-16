@@ -13,6 +13,8 @@ use kern_core::{
 };
 use serde_json::{Map, Value, json};
 
+use crate::result_text;
+
 fn cache() -> Value {
     json!({"type": "ephemeral"})
 }
@@ -92,11 +94,7 @@ fn user_blocks(text: &str, media: &[MediaPart]) -> Vec<Value> {
 }
 
 fn tool_result_block(msg: &ToolResultMessage) -> Value {
-    let text = if msg.content.is_empty() {
-        "(empty)"
-    } else {
-        &msg.content
-    };
+    let text = result_text(msg);
     let content = if msg.media.is_empty() {
         Value::String(text.to_string())
     } else {

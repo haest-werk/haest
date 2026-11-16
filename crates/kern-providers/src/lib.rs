@@ -18,7 +18,7 @@ pub mod compat;
 pub mod compat_effort;
 mod driver;
 mod http;
-pub mod openai_media;
+mod openai_media;
 pub mod registry;
 mod reqwest_transport;
 pub mod responses;
@@ -47,3 +47,12 @@ pub use reqwest_transport::ReqwestTransport;
 pub use responses::{ResponsesOptions, ResponsesProvider};
 pub use routing::RoutingEnv;
 pub use transport::{ByteStream, HttpRequest, HttpResponse, Transport, TransportError};
+
+/// A tool result's text as every dialect sends it: never empty.
+pub(crate) fn result_text(msg: &kern_core::messages::ToolResultMessage) -> &str {
+    if msg.content.is_empty() {
+        "(empty)"
+    } else {
+        &msg.content
+    }
+}

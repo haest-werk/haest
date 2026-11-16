@@ -13,7 +13,8 @@ use serde_json::{Map, Value, json};
 
 use super::CompatFlavor;
 use crate::{
-    openai_media::{ToolMedia, tool_media_message, user_content},
+    openai_media::{CHAT, with_tool_media},
+    result_text,
     routing::{RoutingEnv, provider_routing_field},
 };
 
@@ -102,43 +103,16 @@ pub fn to_chat_messages(
         json!(system)
     };
     out.push(json!({"role": "system", "content": system_content}));
-    // A `tool` message carries text only, so a tool's media rides a user message --
-    // AFTER the whole run of tool results: one between two of them orphans the rest.
-    let mut tool_media: ToolMedia = Vec::new();
-    let flush = |tool_media: &mut ToolMedia, out: &mut Vec<Value>| {
-        if !tool_media.is_empty() {
-            out.push(tool_media_message(tool_media));
+    with_tool_media(messages, &CHAT, &mut out, |m, out| match m {
+        Message::User(u) => {
+            out.push(json!({"role": "user", "content": CHAT.user_content(&u.content, &u.media)}))
         }
-        tool_media.clear();
-    };
-    for m in messages {
-        if !matches!(m, Message::Tool(_)) {
-            flush(&mut tool_media, &mut out);
-        }
-        match m {
-            Message::User(u) => {
-                out.push(json!({"role": "user", "content": user_content(&u.content, &u.media)}))
-            }
-            Message::Tool(t) => {
-                let content = if t.content.is_empty() {
-                    "(empty)"
-                } else {
-                    &t.content
-                };
-                out.push(
-                    json!({"role": "tool", "tool_call_id": t.tool_call_id, "content": content}),
-                );
-                if !t.media.is_empty() {
-                    tool_media.push((t.tool_name.clone(), t.media.clone()));
-                }
-            }
-            Message::Assistant(a) if !a.content.is_empty() => {
-                out.push(assistant_msg(a, provider_id))
-            }
-            Message::Assistant(_) => {}
-        }
-    }
-    flush(&mut tool_media, &mut out);
+        Message::Tool(t) => out.push(
+            json!({"role": "tool", "tool_call_id": t.tool_call_id, "content": result_text(t)}),
+        ),
+        Message::Assistant(a) if !a.content.is_empty() => out.push(assistant_msg(a, provider_id)),
+        Message::Assistant(_) => {}
+    });
     if cache {
         mark_last_user_cacheable(&mut out);
     }
