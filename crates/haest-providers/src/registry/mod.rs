@@ -33,7 +33,7 @@ use haest_core::{
 pub(crate) use builtin::paper_instruments_options;
 use builtin::{anthropic_options, openai_options, openrouter_options};
 pub use custom::{CustomProviderConfig, CustomProviders, Dialect, load_custom_providers};
-pub use error::{EntryProblem, ProviderConfigError, ProvidersFileError};
+pub use error::{EntryProblem, ProvidersFileError};
 
 use haest_http::{HttpClient, ReqwestClient};
 
@@ -86,17 +86,26 @@ impl Default for RegistryOptions {
 /// Turns a `provider:model` spec into a live provider: the built-ins and the
 /// providers.json entries it was handed.
 ///
-/// A provider is built on its name's first [`resolve_spec`](Self::resolve_spec)
-/// and kept: later specs with that name share it, and the key it read then
-/// stays its key. A name that fails is tried again on the next resolve. As
-/// haest-core's [`ModelResolver`] it is what the agent loop asks for a model;
-/// it is `Send + Sync` and may be shared.
+/// It is haest-core's [`ModelResolver`], what the agent loop asks for a model:
+/// [`resolve`](ModelResolver::resolve) turns a spec into the provider and its
+/// model id. A provider is built on its name's first resolve and kept: later
+/// specs with that name share it, and the key it read then stays its key. A
+/// name that fails is tried again on the next resolve. It is `Send + Sync`
+/// and may be shared.
+///
+/// Resolving sends nothing. The provider name is everything before the first
+/// `:`; the model id is the rest, colons and slashes included. It fails with
+/// [`ModelError::BadSpec`] or [`ModelError::UnknownProvider`] for a spec it
+/// cannot place, [`ModelError::MissingKey`] when a built-in's key is missing
+/// from the [`KeySource`], and [`ModelError::Unavailable`] (the
+/// [`EntryProblem`] its source) when the providers.json entry cannot be used.
 ///
 /// # Examples
 ///
 /// ```
 /// use std::{collections::HashMap, sync::Arc};
 ///
+/// use haest_core::{ModelError, ModelResolver};
 /// use haest_providers::{CustomProviders, ProviderRegistry, RegistryOptions};
 ///
 /// let keys = HashMap::from([("ANTHROPIC_API_KEY".to_string(), "sk-ant-...".to_string())]);
@@ -106,13 +115,13 @@ impl Default for RegistryOptions {
 /// .unwrap();
 /// let registry = ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions::default());
 ///
-/// let opus = registry.resolve_spec("anthropic:claude-opus-5-5").unwrap();
+/// let opus = registry.resolve("anthropic:claude-opus-5-5").unwrap();
 /// assert_eq!((opus.provider.id(), opus.model.as_str()), ("anthropic", "claude-opus-5-5"));
-/// assert_eq!(registry.resolve_spec("local:qwen3-coder").unwrap().provider.id(), "local");
+/// assert_eq!(registry.resolve("local:qwen3-coder").unwrap().provider.id(), "local");
 ///
-/// // No OPENROUTER_API_KEY: the error says so.
-/// let err = registry.resolve_spec("openrouter:z-ai/glm-5.3").unwrap_err();
-/// assert!(err.to_string().contains("OPENROUTER_API_KEY"));
+/// // No OPENROUTER_API_KEY: the error names it.
+/// let err = registry.resolve("openrouter:z-ai/glm-5.3").unwrap_err();
+/// assert!(matches!(err, ModelError::MissingKey { key, .. } if key == "OPENROUTER_API_KEY"));
 /// ```
 pub struct ProviderRegistry {
     keys: Arc<dyn KeySource>,
@@ -149,37 +158,7 @@ impl ProviderRegistry {
             .collect()
     }
 
-    /// `openrouter:z-ai/glm-5` -> (the openrouter provider, `z-ai/glm-5`). Built once per name.
-    ///
-    /// The provider name is everything before the first `:`; the model id is
-    /// the rest, colons and slashes included. Resolving sends nothing.
-    ///
-    /// # Errors
-    ///
-    /// [`ProviderConfigError::Spec`] when the spec has no `provider:` part or
-    /// the name is neither a built-in nor a providers.json entry,
-    /// [`MissingKey`](ProviderConfigError::MissingKey) when a built-in's key
-    /// is missing from the [`KeySource`], and
-    /// [`BadEntry`](ProviderConfigError::BadEntry) when the providers.json
-    /// entry cannot be used.
-    pub fn resolve_spec(&self, spec: &str) -> Result<ResolvedModel, ProviderConfigError> {
-        let (name, model) = parse_model_spec(spec)?;
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        let provider = match cache.get(name) {
-            Some(p) => p.clone(),
-            None => {
-                let p = self.build(name)?;
-                cache.insert(name.to_string(), p.clone());
-                p
-            }
-        };
-        Ok(ResolvedModel {
-            provider,
-            model: model.to_string(),
-        })
-    }
-
-    fn build(&self, name: &str) -> Result<Arc<dyn Provider>, ProviderConfigError> {
+    fn build(&self, name: &str) -> Result<Arc<dyn Provider>, ModelError> {
         let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
         Ok(match self.options(name)? {
             Options::Anthropic(o) => Arc::new(AnthropicProvider::new(o, http).with_retry(retry)),
@@ -189,10 +168,15 @@ impl ProviderRegistry {
     }
 
     /// `name`'s options: its providers.json entry, else the built-in.
-    fn options(&self, name: &str) -> Result<Options, ProviderConfigError> {
+    fn options(&self, name: &str) -> Result<Options, ModelError> {
         let keys = self.keys.as_ref();
         if let Some(raw) = self.custom.get(name) {
-            let cfg = CustomProviderConfig::from_json(name, raw)?;
+            let cfg = CustomProviderConfig::from_json(raw).map_err(|problem| {
+                ModelError::Unavailable {
+                    provider: name.to_string(),
+                    source: Box::new(problem),
+                }
+            })?;
             return Ok(match cfg.dialect {
                 Dialect::Anthropic => Options::Anthropic(cfg.anthropic_options(name, keys)),
                 Dialect::OpenAi => Options::Compat(Box::new(cfg.compat_options(name, keys))),
@@ -207,8 +191,7 @@ impl ProviderRegistry {
                 return Err(ModelError::UnknownProvider {
                     provider: name.into(),
                     known: self.names(),
-                }
-                .into());
+                });
             }
         })
     }
@@ -221,14 +204,23 @@ enum Options {
     Responses(ResponsesOptions),
 }
 
-/// [`resolve_spec`](ProviderRegistry::resolve_spec): a bad spec or an unknown
-/// provider is that [`ModelError`]; a provider it cannot build is
-/// [`ModelError::Unavailable`] holding the [`ProviderConfigError`].
+/// `openrouter:z-ai/glm-5` -> (the openrouter provider, `z-ai/glm-5`), the
+/// provider built once per name ([`ProviderRegistry`] has the rules).
 impl ModelResolver for ProviderRegistry {
     fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
-        self.resolve_spec(spec).map_err(|e| match e {
-            ProviderConfigError::Spec(e) => e,
-            e => ModelError::Unavailable(Box::new(e)),
+        let (name, model) = parse_model_spec(spec)?;
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let provider = match cache.get(name) {
+            Some(p) => p.clone(),
+            None => {
+                let p = self.build(name)?;
+                cache.insert(name.to_string(), p.clone());
+                p
+            }
+        };
+        Ok(ResolvedModel {
+            provider,
+            model: model.to_string(),
         })
     }
 }

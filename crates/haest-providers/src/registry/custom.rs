@@ -12,7 +12,7 @@ use haest_core::{
 };
 use serde_json::Value;
 
-use super::{EntryProblem, ProviderConfigError, ProvidersFileError};
+use super::{EntryProblem, ProvidersFileError};
 use crate::{anthropic::AnthropicOptions, catalog::Catalog, compat::CompatOptions};
 
 haest_core::word_enum! {
@@ -125,8 +125,8 @@ impl CustomProviderConfig {
     ///
     /// # Errors
     ///
-    /// [`ProviderConfigError::BadEntry`] naming the entry when it is not a
-    /// JSON object, its `type` is neither `"openai"` nor `"anthropic"`,
+    /// The [`EntryProblem`] when the entry is not a JSON object, its `type`
+    /// is neither `"openai"` nor `"anthropic"`,
     /// `reasoningEffort` lacks an `efforts` array or a `mandatory` boolean, or
     /// a `pricing` row lacks a numeric `input`, `cachedInput` or `output`, or
     /// has a `cacheWrite` that is not a number.
@@ -137,20 +137,16 @@ impl CustomProviderConfig {
     ///
     /// let entry = json!({"type": "anthropic", "baseURL": "https://llm-gateway.example.com",
     ///                    "apiKeyEnv": "GATEWAY_API_KEY", "headers": {"X-Team": "platform"}});
-    /// let cfg = CustomProviderConfig::from_json("gateway", &entry).unwrap();
+    /// let cfg = CustomProviderConfig::from_json(&entry).unwrap();
     /// assert_eq!(cfg.dialect, Dialect::Anthropic);
     /// assert_eq!(cfg.headers, [("X-Team".to_string(), "platform".to_string())]);
     ///
     /// let bad = json!({"pricing": {"m": {"input": 1}}});
-    /// assert!(CustomProviderConfig::from_json("bad", &bad).is_err());
+    /// assert!(CustomProviderConfig::from_json(&bad).is_err());
     /// ```
-    pub fn from_json(name: &str, v: &Value) -> Result<Self, ProviderConfigError> {
-        let bad = |problem| ProviderConfigError::BadEntry {
-            provider: name.to_string(),
-            problem,
-        };
+    pub fn from_json(v: &Value) -> Result<Self, EntryProblem> {
         if !v.is_object() {
-            return Err(bad(EntryProblem::NotAnObject));
+            return Err(EntryProblem::NotAnObject);
         }
         let headers = v
             .get("headers")
@@ -160,13 +156,13 @@ impl CustomProviderConfig {
             .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
             .collect();
         Ok(Self {
-            dialect: dialect(v.get("type")).map_err(bad)?,
+            dialect: dialect(v.get("type"))?,
             base_url: opt_string(v, "baseURL"),
             api_key: opt_string(v, "apiKey"),
             api_key_env: opt_string(v, "apiKeyEnv"),
             headers,
-            reasoning_effort: reasoning(v.get("reasoningEffort")).map_err(bad)?,
-            pricing: pricing(v.get("pricing")).map_err(bad)?,
+            reasoning_effort: reasoning(v.get("reasoningEffort"))?,
+            pricing: pricing(v.get("pricing"))?,
         })
     }
 

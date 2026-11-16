@@ -68,7 +68,7 @@ async fn the_example_files_load_together_and_do_what_they_say() {
         ["gateway", "local"]
     );
     for (name, entry) in &r.providers {
-        CustomProviderConfig::from_json(name, entry).unwrap_or_else(|e| panic!("{name}: {e}"));
+        CustomProviderConfig::from_json(entry).unwrap_or_else(|e| panic!("{name}: {e}"));
     }
 }
 

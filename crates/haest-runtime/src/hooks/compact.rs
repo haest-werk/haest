@@ -8,6 +8,7 @@ use super::RuntimeHooks;
 use crate::haest::{
     Agent,
     core::compaction::{CompactionConfig, CompactionError, compact},
+    core::error::report,
     core::messages::Usage,
     core::session::SessionRecord,
     now_ms,
@@ -79,7 +80,7 @@ impl RuntimeHooks {
 
 /// What the human and a failed turn are told when a summary did not come out.
 pub(super) fn compaction_failed(e: &CompactionError) -> String {
-    format!("Compaction failed: {e}")
+    format!("Compaction failed: {}", report(e))
 }
 
 /// What the summary calls cost goes on the conversation's bill, summary or

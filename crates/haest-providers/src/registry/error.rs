@@ -1,43 +1,14 @@
-//! Why a provider cannot be built, and why providers.json cannot be read.
+//! What is wrong with a providers.json entry, and why providers.json cannot be read.
 
 use std::path::PathBuf;
 
-use haest_core::{provider::ModelError, words::UnknownWord};
-
-/// Why [`ProviderRegistry::resolve_spec`](super::ProviderRegistry::resolve_spec)
-/// cannot give a provider. Its text is said to the human as is.
-///
-/// The variant says what to do: [`Spec`](Self::Spec), pick another model;
-/// [`MissingKey`](Self::MissingKey), hand in that key;
-/// [`BadEntry`](Self::BadEntry), fix that providers.json entry.
-#[derive(Debug, thiserror::Error)]
-pub enum ProviderConfigError {
-    /// The spec is not `provider:model`, or no provider goes by its name
-    /// ([`ModelError::BadSpec`], [`ModelError::UnknownProvider`]).
-    #[error(transparent)]
-    Spec(#[from] ModelError),
-    /// A built-in provider's key: the host's
-    /// [`KeySource`](haest_core::KeySource) has none by that name.
-    #[error("provider \"{provider}\" needs {key}, and the host has none")]
-    MissingKey {
-        /// The built-in provider.
-        provider: String,
-        /// The name the host was asked for (`OPENROUTER_API_KEY`).
-        key: String,
-    },
-    /// A providers.json entry that cannot be used. Only specs of that
-    /// provider fail; every other entry still resolves.
-    #[error("provider \"{provider}\": {problem}")]
-    BadEntry {
-        /// The entry's name.
-        provider: String,
-        /// What is wrong with it.
-        problem: EntryProblem,
-    },
-}
+use haest_core::words::UnknownWord;
 
 /// What is wrong with one providers.json entry
 /// ([`CustomProviderConfig::from_json`](super::CustomProviderConfig::from_json)).
+/// Resolving a spec of that provider fails with
+/// [`ModelError::Unavailable`](haest_core::ModelError::Unavailable), this as
+/// its source; every other entry still resolves.
 #[derive(Debug, thiserror::Error)]
 pub enum EntryProblem {
     /// The entry is not a JSON object.

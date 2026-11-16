@@ -31,8 +31,20 @@ pub(super) fn registry(keys: Arc<dyn KeySource>, custom: CustomProviders) -> Pro
 }
 
 fn missing_key(reg: &ProviderRegistry, spec: &str) -> Option<String> {
-    match reg.resolve_spec(spec) {
-        Err(ProviderConfigError::MissingKey { key, .. }) => Some(key),
+    match reg.resolve(spec) {
+        Err(ModelError::MissingKey { key, .. }) => Some(key),
+        _ => None,
+    }
+}
+
+/// The entry `spec`'s provider failed with, and the provider it names; None
+/// when it did not fail as a bad providers.json entry.
+pub(super) fn bad_entry(reg: &ProviderRegistry, spec: &str) -> Option<(String, EntryProblem)> {
+    match reg.resolve(spec) {
+        Err(ModelError::Unavailable { provider, source }) => {
+            let problem = source.downcast::<EntryProblem>().ok()?;
+            Some((provider, *problem))
+        }
         _ => None,
     }
 }
@@ -40,8 +52,6 @@ fn missing_key(reg: &ProviderRegistry, spec: &str) -> Option<String> {
 #[test]
 fn built_ins_need_their_key_and_the_error_names_it() {
     let reg = registry(keys(&[]), CustomProviders::new());
-    let missing = reg.resolve("openrouter:x/y").unwrap_err();
-    assert!(matches!(missing, ModelError::Unavailable(_)));
     assert_eq!(
         missing_key(&reg, "openrouter:x/y").as_deref(),
         Some("OPENROUTER_API_KEY")

@@ -23,7 +23,14 @@ impl fmt::Debug for ResolvedModel {
 }
 
 /// Why a model spec cannot be served: what [`ModelResolver::resolve`] and
-/// [`parse_model_spec`] refuse. The loop shows its text to the human.
+/// [`parse_model_spec`] refuse. The loop shows it to the human with its
+/// causes ([`report`](crate::error::report)).
+///
+/// The variant says what to do: [`BadSpec`](Self::BadSpec) and
+/// [`UnknownProvider`](Self::UnknownProvider), pick another model;
+/// [`MissingKey`](Self::MissingKey), hand in that key;
+/// [`Unavailable`](Self::Unavailable), fix the provider's configuration
+/// (its source says what is wrong).
 #[derive(Debug, thiserror::Error)]
 pub enum ModelError {
     /// The spec is not `<provider>:<model>`.
@@ -42,10 +49,25 @@ pub enum ModelError {
         /// The providers there are.
         known: Vec<String>,
     },
-    /// The provider is known but cannot be built: a key it needs is not set,
-    /// its configuration is bad. Its text is the resolver's own.
-    #[error(transparent)]
-    Unavailable(Box<dyn std::error::Error + Send + Sync>),
+    /// The provider needs a key the host's [`KeySource`](crate::KeySource)
+    /// does not have.
+    #[error("provider \"{provider}\" needs {key}, and the host has none")]
+    MissingKey {
+        /// The provider.
+        provider: String,
+        /// The name the host was asked for (`OPENROUTER_API_KEY`).
+        key: String,
+    },
+    /// The provider is known but cannot be built: its configuration is bad
+    /// (a providers.json entry, say). Only specs of that provider fail.
+    #[error("provider \"{provider}\" cannot be used")]
+    Unavailable {
+        /// The provider.
+        provider: String,
+        /// What is wrong with it: the resolver's own reason.
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 /// Turns a `provider:model` spec into a live provider. The loop asks it before
@@ -87,8 +109,8 @@ pub trait ModelResolver: Send + Sync {
     ///
     /// # Errors
     ///
-    /// [`ModelError`]: a bad spec, an unknown provider, one that cannot be
-    /// built (a missing key).
+    /// [`ModelError`]: a bad spec, an unknown provider, a missing key, a
+    /// provider that cannot be built.
     fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError>;
 }
 

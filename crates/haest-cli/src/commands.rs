@@ -90,7 +90,9 @@ fn model(rt: &mut Runtime, spec: &str) {
     }
     match rt.set_model(spec) {
         Ok(()) => rt.hooks.info(&format!("Model set to {spec}")),
-        Err(e) => rt.hooks.error(&format!("Model not changed: {e}")),
+        Err(e) => rt
+            .hooks
+            .error(&format!("Model not changed: {}", report(&e))),
     }
 }
 

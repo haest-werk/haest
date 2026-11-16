@@ -6,7 +6,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use haest_core::{
     catalog::{InputModality, ModelPricing},
-    provider::{Effort, ModelResolver},
+    provider::{Effort, ModelError, ModelResolver},
 };
 use serde_json::{Value, json};
 
@@ -15,7 +15,7 @@ use super::tests_direct::{body_of, close, final_message};
 use crate::{
     catalog::Catalog,
     registry::{
-        CustomProviderConfig, EntryProblem, ProviderConfigError, ProviderRegistry, RegistryOptions,
+        CustomProviderConfig, EntryProblem, ProviderRegistry, RegistryOptions,
         paper_instruments_options,
     },
     testing::FakeHttp,
@@ -43,8 +43,8 @@ fn paperinstruments_resolves_with_its_key_and_names_the_env_var_without_one() {
         "paperinstruments"
     );
     assert!(matches!(
-        registry(HashMap::new()).resolve_spec(spec),
-        Err(ProviderConfigError::MissingKey { key, .. }) if key == "PAPERINSTRUMENTS_API_KEY"
+        registry(HashMap::new()).resolve(spec),
+        Err(ModelError::MissingKey { key, .. }) if key == "PAPERINSTRUMENTS_API_KEY"
     ));
 }
 
@@ -94,7 +94,7 @@ fn cfg() -> Value {
 
 #[test]
 fn effort_is_fitted_on_the_wire_and_cost_booked_from_the_entry() {
-    let parsed = CustomProviderConfig::from_json("mine", &cfg()).unwrap();
+    let parsed = CustomProviderConfig::from_json(&cfg()).unwrap();
     let opts = parsed.compat_options("mine", &HashMap::new());
     assert_eq!(
         body_of(&opts, Some(Effort::Xhigh))["reasoning_effort"],
@@ -120,13 +120,9 @@ fn a_malformed_price_is_refused_at_load_not_booked_as_nan() {
     for row in rows {
         let mut bad = cfg();
         bad["pricing"] = json!({ "m1": row });
-        let err = CustomProviderConfig::from_json("mine", &bad).unwrap_err();
+        let err = CustomProviderConfig::from_json(&bad).unwrap_err();
         assert!(
-            matches!(
-                &err,
-                ProviderConfigError::BadEntry { provider, problem: EntryProblem::Pricing { model, .. } }
-                    if provider == "mine" && model == "m1"
-            ),
+            matches!(&err, EntryProblem::Pricing { model, .. } if model == "m1"),
             "{err}"
         );
     }

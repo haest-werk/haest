@@ -72,7 +72,7 @@
 //! use std::{collections::HashMap, sync::Arc};
 //!
 //! use futures::StreamExt;
-//! use haest_core::{Message, ProviderEvent, ProviderRequest, StopReason};
+//! use haest_core::{Message, ModelResolver, ProviderEvent, ProviderRequest, StopReason};
 //! use haest_providers::{
 //!     CustomProviders, ProviderRegistry, RegistryOptions,
 //!     http::{HttpClient, HttpError, Request, Response, async_trait},
@@ -107,7 +107,7 @@
 //!         RegistryOptions { http: Arc::new(Canned), ..RegistryOptions::default() },
 //!     );
 //!
-//!     let resolved = registry.resolve_spec("openrouter:anthropic/claude-sonnet-5.5").unwrap();
+//!     let resolved = registry.resolve("openrouter:anthropic/claude-sonnet-5.5").unwrap();
 //!     assert_eq!(resolved.model, "anthropic/claude-sonnet-5.5");
 //!
 //!     let request = ProviderRequest {
@@ -231,8 +231,8 @@ pub use anthropic::{AnthropicOptions, AnthropicProvider};
 pub use catalog::Catalog;
 pub use compat::{CompatFlavor, CompatOptions, CompatProvider};
 pub use registry::{
-    CustomProviderConfig, CustomProviders, Dialect, EntryProblem, ProviderConfigError,
-    ProviderRegistry, ProvidersFileError, RegistryOptions, load_custom_providers,
+    CustomProviderConfig, CustomProviders, Dialect, EntryProblem, ProviderRegistry,
+    ProvidersFileError, RegistryOptions, load_custom_providers,
 };
 pub use responses::{ResponsesOptions, ResponsesProvider};
 pub use retry::RetryPolicy;

@@ -53,7 +53,7 @@ async fn failed_build(settings: Settings, fs: Arc<MemFs>) -> (BuildError, Vec<St
 /// A model the build cannot use for want of `key`: the provider is known,
 /// the host handed in no such key.
 fn no_key(err: &BuildError, key: &str) -> bool {
-    matches!(err, BuildError::Model(ModelError::Unavailable(why)) if why.to_string().contains(key))
+    matches!(err, BuildError::Model(ModelError::MissingKey { key: k, .. }) if k == key)
 }
 
 /// A file where the sessions dir goes: no session file can be created.

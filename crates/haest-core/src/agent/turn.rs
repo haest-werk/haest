@@ -9,6 +9,7 @@ use crate::{
     agent::Agent,
     caps::{TurnCaps, estimate_request_tokens},
     deps::AgentHooks,
+    error::report,
     events::{EventSink, LoopEvent, TurnOutcome},
     guard::TurnGuard,
     media::user_message,
@@ -155,7 +156,7 @@ impl Agent {
     async fn call_model(&mut self, t: &mut Turn<'_>) -> AssistantMessage {
         let resolved = match self.deps.models.resolve(&self.model_spec) {
             Ok(r) => r,
-            Err(e) => return refuse(&self.model_spec, &e.to_string(), t),
+            Err(e) => return refuse(&self.model_spec, &report(&e), t),
         };
         t.sink.emit(LoopEvent::ModelStart {
             provider: resolved.provider.id().to_string(),

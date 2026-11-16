@@ -7,7 +7,7 @@ use haest_core::{fs::MemFs, messages::Message, provider::ModelResolver};
 use serde_json::json;
 
 use super::{
-    tests::{keys, opts, registry},
+    tests::{bad_entry, keys, opts, registry},
     *,
 };
 use crate::testing::{FakeHttp, FakeReply, collect, request, request_with, typed_sse};
@@ -143,33 +143,22 @@ fn a_type_haest_does_not_speak_is_refused_and_no_type_is_chat_completions() {
     ]);
     let reg = registry(keys(&[]), custom);
     for name in ["typo", "number"] {
-        let e = reg.resolve_spec(&format!("{name}:m")).unwrap_err();
+        let e = bad_entry(&reg, &format!("{name}:m"));
         assert!(
-            matches!(&e, ProviderConfigError::BadEntry { provider, problem: EntryProblem::UnknownType(_) } if provider == name),
-            "{e}"
+            matches!(&e, Some((provider, EntryProblem::UnknownType(_))) if provider == name),
+            "{e:?}"
         );
     }
-    let plain = CustomProviderConfig::from_json("plain", &json!({})).unwrap();
+    let plain = CustomProviderConfig::from_json(&json!({})).unwrap();
     assert_eq!(plain.dialect, Dialect::OpenAi);
-    assert!(reg.resolve_spec("plain:m").is_ok());
+    assert!(reg.resolve("plain:m").is_ok());
 }
 
 #[test]
 fn an_entry_that_is_not_an_object_is_refused() {
     let custom = CustomProviders::from([("local".to_string(), json!("http://localhost:1234/v1"))]);
-    let e = registry(keys(&[]), custom)
-        .resolve_spec("local:m")
-        .unwrap_err();
-    assert!(
-        matches!(
-            &e,
-            ProviderConfigError::BadEntry {
-                problem: EntryProblem::NotAnObject,
-                ..
-            }
-        ),
-        "{e}"
-    );
+    let e = bad_entry(&registry(keys(&[]), custom), "local:m");
+    assert!(matches!(&e, Some((_, EntryProblem::NotAnObject))), "{e:?}");
 }
 
 #[tokio::test]
@@ -195,8 +184,8 @@ fn one_bad_custom_entry_blocks_only_itself() {
     ]);
     let reg = registry(keys(&[]), custom);
     assert!(matches!(
-        reg.resolve_spec("bad:m"),
-        Err(ProviderConfigError::BadEntry { provider, problem: EntryProblem::ReasoningEffort }) if provider == "bad"
+        bad_entry(&reg, "bad:m"),
+        Some((provider, EntryProblem::ReasoningEffort)) if provider == "bad"
     ));
     assert!(reg.resolve("good:m").is_ok());
 }
