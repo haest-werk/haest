@@ -115,26 +115,27 @@ impl Usage {
     }
 }
 
-/// Why a model call ended ([`AssistantMessage::stop_reason`]), or a whole
-/// turn ([`TurnOutcome::stop_reason`](crate::TurnOutcome::stop_reason)).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StopReason {
-    /// The model finished its answer.
-    EndTurn,
-    /// The model stopped so the tools it called could run.
-    ToolUse,
-    /// The answer hit its output token limit. For a turn: a turn cap or the
-    /// conversation budget stopped it, and the turn's `error` says which.
-    MaxTokens,
-    /// The model or the provider's filter declined to answer.
-    Refusal,
-    /// Cancelled: [`AgentControl::abort`](crate::AgentControl::abort), or the
-    /// request's cancel token.
-    Aborted,
-    /// The call failed, or never went out; the message's `error_message` (or
-    /// the turn's `error`) says why.
-    Error,
+crate::word_enum! {
+    /// Why a model call ended ([`AssistantMessage::stop_reason`]), or a whole
+    /// turn ([`TurnOutcome::stop_reason`](crate::TurnOutcome::stop_reason)).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum StopReason ("stop reason") {
+        /// The model finished its answer.
+        EndTurn = "end_turn",
+        /// The model stopped so the tools it called could run.
+        ToolUse = "tool_use",
+        /// The answer hit its output token limit. For a turn: a turn cap or the
+        /// conversation budget stopped it, and the turn's `error` says which.
+        MaxTokens = "max_tokens",
+        /// The model or the provider's filter declined to answer.
+        Refusal = "refusal",
+        /// Cancelled: [`AgentControl::abort`](crate::AgentControl::abort), or the
+        /// request's cancel token.
+        Aborted = "aborted",
+        /// The call failed, or never went out; the message's `error_message` (or
+        /// the turn's `error`) says why.
+        Error = "error",
+    }
 }
 
 crate::word_enum! {

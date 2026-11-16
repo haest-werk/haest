@@ -80,31 +80,33 @@ pub struct Change {
     pub conflict: bool,
 }
 
-/// What happened to a path in the sandbox.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ChangeKind {
-    /// It is new.
-    Added,
-    /// Its contents changed.
-    Modified,
-    /// It was removed.
-    Deleted,
+crate::word_enum! {
+    /// What happened to a path in the sandbox.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ChangeKind ("change kind") {
+        /// It is new.
+        Added = "added",
+        /// Its contents changed.
+        Modified = "modified",
+        /// It was removed.
+        Deleted = "deleted",
+    }
 }
 
-/// Why a change was not applied. The words are the TS haest's (`ApplyFailure`
-/// in `overlay-apply.ts`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ApplyFailureCode {
-    /// A symlink on the real disk is on its way, so the write could land
-    /// outside the project.
-    OutsideProject,
-    /// The change is a symlink the sandbox made, or sits behind one: applying
-    /// never makes a link.
-    Symlink,
-    /// The disk refused it (permissions, a full disk).
-    WriteFailed,
+crate::word_enum! {
+    /// Why a change was not applied. The words are the TS haest's (`ApplyFailure`
+    /// in `overlay-apply.ts`).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ApplyFailureCode ("apply failure") {
+        /// A symlink on the real disk is on its way, so the write could land
+        /// outside the project.
+        OutsideProject = "outside-project",
+        /// The change is a symlink the sandbox made, or sits behind one: applying
+        /// never makes a link.
+        Symlink = "symlink",
+        /// The disk refused it (permissions, a full disk).
+        WriteFailed = "write-failed",
+    }
 }
 
 /// A change applying could not put on disk. It stays in the sandbox, still listed.

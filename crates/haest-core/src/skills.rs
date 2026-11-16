@@ -76,16 +76,17 @@ pub use set::{
 
 use crate::fs::Fs;
 
-/// Which kind of skill dir a skill was found in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SkillSource {
-    /// The user's own: `<claude dir>/skills` or `~/.agents/skills`.
-    User,
-    /// A project's: `.claude/skills` or `.agents/skills` in the cwd or a dir above it.
-    Project,
-    /// An installed Claude Code plugin's `skills/` dir.
-    Plugin,
+crate::word_enum! {
+    /// Which kind of skill dir a skill was found in.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum SkillSource ("skill source") {
+        /// The user's own: `<claude dir>/skills` or `~/.agents/skills`.
+        User = "user",
+        /// A project's: `.claude/skills` or `.agents/skills` in the cwd or a dir above it.
+        Project = "project",
+        /// An installed Claude Code plugin's `skills/` dir.
+        Plugin = "plugin",
+    }
 }
 
 /// A `SKILL.md` read off disk: its frontmatter and where it is. The body is

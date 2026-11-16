@@ -14,7 +14,6 @@
 
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -111,18 +110,19 @@ fn warm_instruction(kept: usize) -> String {
     )
 }
 
-/// Which request wrote a compaction summary.
-///
-/// Warm: the main loop's last request again (same system, tools, effort, history) plus the summary
-/// instruction, so the provider's prompt cache serves everything but the new rows.
-/// Cold: a standalone summary request; its prefix matches nothing, so the whole head is read at full price.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SummaryPath {
-    /// The loop's last request plus the instruction: mostly a cache read.
-    Warm,
-    /// A standalone request over the cut head, after the warm one gave no summary.
-    Cold,
+crate::word_enum! {
+    /// Which request wrote a compaction summary.
+    ///
+    /// Warm: the main loop's last request again (same system, tools, effort, history) plus the summary
+    /// instruction, so the provider's prompt cache serves everything but the new rows.
+    /// Cold: a standalone summary request; its prefix matches nothing, so the whole head is read at full price.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum SummaryPath ("summary path") {
+        /// The loop's last request plus the instruction: mostly a cache read.
+        Warm = "warm",
+        /// A standalone request over the cut head, after the warm one gave no summary.
+        Cold = "cold",
+    }
 }
 
 /// One summary call: what it cost, and its text if the reply is a summary, else why not.

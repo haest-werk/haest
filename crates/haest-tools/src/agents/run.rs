@@ -143,19 +143,12 @@ impl AgentHooks for ChildHooks {
     }
 }
 
-fn reason(r: StopReason) -> String {
-    serde_json::to_value(r)
-        .ok()
-        .and_then(|v| v.as_str().map(String::from))
-        .unwrap_or_default()
-}
-
 fn outcome(stop: StopReason, error: Option<&str>, cost: Option<f64>, text: &str) -> RunOutcome {
     let ok = stop == StopReason::EndTurn && error.is_none();
     let why = if ok {
         String::new()
     } else {
-        let why = error.map_or_else(|| reason(stop), String::from);
+        let why = error.unwrap_or(stop.as_str());
         format!("\n\n[the agent stopped early: {why}]")
     };
     let text = if text.is_empty() { "(no answer)" } else { text };

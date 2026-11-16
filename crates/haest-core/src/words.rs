@@ -247,11 +247,14 @@ macro_rules! word_enum {
 #[cfg(test)]
 mod tests {
     use crate::{
+        catalog::{InputModality, OpenRouterEffort},
+        compaction::SummaryPath,
         deferred_tools::DeferMode,
-        messages::MediaKind,
+        messages::{MediaKind, StopReason},
         provider::{Effort, WebSearchEngine},
+        skills::SkillSource,
         task_board::TaskStatus,
-        workspace::WorkspaceMode,
+        workspace::{ApplyFailureCode, ChangeKind, WorkspaceMode},
     };
 
     /// What the session file writes is the word a config reads, and back.
@@ -274,6 +277,13 @@ mod tests {
         round_trips(DeferMode::ALL, |v| v.as_str());
         round_trips(TaskStatus::ALL, |v| v.as_str());
         round_trips(MediaKind::ALL, |v| v.as_str());
+        round_trips(StopReason::ALL, |v| v.as_str());
+        round_trips(InputModality::ALL, |v| v.as_str());
+        round_trips(OpenRouterEffort::ALL, |v| v.as_str());
+        round_trips(SummaryPath::ALL, |v| v.as_str());
+        round_trips(ChangeKind::ALL, |v| v.as_str());
+        round_trips(ApplyFailureCode::ALL, |v| v.as_str());
+        round_trips(SkillSource::ALL, |v| v.as_str());
         let err = serde_json::from_str::<Effort>("\"huge\"").unwrap_err();
         assert!(err.to_string().contains("unknown effort"), "{err}");
         assert!("eager".parse::<DeferMode>().is_err());

@@ -31,43 +31,45 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A kind of input a model accepts, in OpenRouter's names (`file` is a PDF).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum InputModality {
-    /// Text.
-    Text,
-    /// An image.
-    Image,
-    /// A document: a PDF.
-    File,
-    /// Audio.
-    Audio,
-    /// Video.
-    Video,
+crate::word_enum! {
+    /// A kind of input a model accepts, in OpenRouter's names (`file` is a PDF).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum InputModality ("input modality") {
+        /// Text.
+        Text = "text",
+        /// An image.
+        Image = "image",
+        /// A document: a PDF.
+        File = "file",
+        /// Audio.
+        Audio = "audio",
+        /// Video.
+        Video = "video",
+    }
 }
 
+crate::word_enum! {
 /// A reasoning level in OpenRouter's vocabulary (`reasoning.supported_efforts`).
 ///
 /// Wider than haest's own [`Effort`](crate::Effort): `none` and `minimal` have
 /// no haest name; each of haest's levels but `off` has one of the same name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum OpenRouterEffort {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum OpenRouterEffort ("reasoning effort") {
     /// Reasoning off.
-    None,
+    None = "none",
     /// Less than `low`; haest never asks for it.
-    Minimal,
+    Minimal = "minimal",
     /// `low`.
-    Low,
+    Low = "low",
     /// `medium`.
-    Medium,
+    Medium = "medium",
     /// `high`.
-    High,
+    High = "high",
     /// `xhigh`.
-    Xhigh,
+    Xhigh = "xhigh",
     /// `max`.
-    Max,
+    Max = "max",
+}
 }
 
 /// How a model reasons: whether it can stop, and the levels it accepts.
