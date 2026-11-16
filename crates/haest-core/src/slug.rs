@@ -8,9 +8,8 @@
 /// other run one dash, none at the ends, at most `max` characters; `fallback`
 /// when nothing is left.
 ///
-/// A letter outside ASCII counts as "other" (`café` -> `caf`). The cut at
-/// `max` comes after the ends are trimmed, so it may leave a dash at the end
-/// (`slug("ab cd", 3, ..)` is `ab-`).
+/// A letter outside ASCII counts as "other" (`café` -> `caf`). A cut at
+/// `max` that ends on a dash drops it (`slug("ab cd", 3, ..)` is `ab`).
 ///
 /// # Examples
 ///
@@ -29,8 +28,13 @@ pub fn slug(text: &str, max: usize, fallback: &str) -> String {
             out.push('-');
         }
     }
-    let out: String = out.trim_end_matches('-').chars().take(max).collect();
-    if out.is_empty() { fallback.into() } else { out }
+    let cut: String = out.chars().take(max).collect();
+    let out = cut.trim_end_matches('-');
+    if out.is_empty() {
+        fallback.into()
+    } else {
+        out.into()
+    }
 }
 
 #[cfg(test)]
@@ -46,5 +50,11 @@ mod tests {
         assert_eq!(slug("abcdefghij", 4, "agent"), "abcd");
         assert_eq!(slug("!!!", 24, "agent"), "agent");
         assert_eq!(slug("café au lait", 40, "image"), "caf-au-lait");
+    }
+
+    #[test]
+    fn the_cut_at_max_leaves_no_dash_at_the_end() {
+        assert_eq!(slug("ab cd", 3, "agent"), "ab");
+        assert_eq!(slug("a b", 2, "agent"), "a");
     }
 }
