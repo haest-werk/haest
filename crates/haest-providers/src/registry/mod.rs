@@ -183,6 +183,7 @@ impl ProviderRegistry {
             let cfg = CustomProviderConfig::from_json(name, raw)?;
             return Ok(match cfg.dialect {
                 Dialect::Anthropic => self.anthropic(AnthropicOptions {
+                    id: name.into(),
                     api_key: cfg.api_key(keys),
                     base_url: cfg.base_url.clone(),
                     headers: cfg.headers.clone(),
@@ -192,6 +193,7 @@ impl ProviderRegistry {
         }
         Ok(match name {
             "anthropic" => self.anthropic(AnthropicOptions {
+                id: name.into(),
                 api_key: need(keys, "ANTHROPIC_API_KEY", name)?,
                 base_url: keys.key("ANTHROPIC_BASE_URL"),
                 headers: Vec::new(),

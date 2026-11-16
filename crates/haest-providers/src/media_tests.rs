@@ -78,7 +78,7 @@ fn types(v: &Value) -> Vec<String> {
 
 #[test]
 fn anthropic_a_user_turn_carries_text_then_an_image_block_then_a_document_block() {
-    let msgs = to_anthropic_messages(&[user("look", vec![img(), pdf()])]);
+    let msgs = to_anthropic_messages(&[user("look", vec![img(), pdf()])], "anthropic");
     let blocks = &msgs[0]["content"];
     assert_eq!(types(blocks), ["text", "image", "document"]);
     let data: Vec<_> = blocks
@@ -92,7 +92,7 @@ fn anthropic_a_user_turn_carries_text_then_an_image_block_then_a_document_block(
 
 #[test]
 fn anthropic_tool_media_rides_inside_the_tool_result() {
-    let out = to_anthropic_messages(&parallel_tools());
+    let out = to_anthropic_messages(&parallel_tools(), "anthropic");
     let results = &out[2]["content"];
     assert_eq!(types(results), ["tool_result", "tool_result"]);
     assert_eq!(types(&results[0]["content"]), ["text", "image"]);
@@ -102,7 +102,7 @@ fn anthropic_tool_media_rides_inside_the_tool_result() {
 #[test]
 fn anthropic_gets_no_audio_it_becomes_a_text_block() {
     let audio = part(MediaKind::Audio, "audio/wav", "CC", "x.wav");
-    let msgs = to_anthropic_messages(&[user("hear", vec![audio])]);
+    let msgs = to_anthropic_messages(&[user("hear", vec![audio])], "anthropic");
     assert_eq!(types(&msgs[0]["content"]), ["text", "text"]);
 }
 

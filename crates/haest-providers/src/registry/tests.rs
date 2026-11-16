@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 use haest_core::{
     fs::MemFs,
+    messages::Message,
     provider::{ModelError, ModelResolver},
 };
 use serde_json::json;
@@ -9,7 +10,7 @@ use serde_json::json;
 use super::*;
 use crate::{
     routing::parse_routing,
-    testing::{FakeHttp, FakeReply, collect, request},
+    testing::{FakeHttp, FakeReply, collect, request, request_with, typed_sse},
 };
 
 /// What the host answers for these names (nothing else).
@@ -85,11 +86,55 @@ async fn custom_providers_come_from_providers_json_by_dialect() {
     let custom = load_custom_providers(&fs, Path::new("/cfg")).await.unwrap();
     let reg = registry(keys(&[]), custom);
     assert_eq!(reg.resolve("local:qwen").unwrap().provider.id(), "local");
-    assert_eq!(
-        reg.resolve("proxy:claude").unwrap().provider.id(),
-        "anthropic"
-    );
+    assert_eq!(reg.resolve("proxy:claude").unwrap().provider.id(), "proxy");
     assert!(reg.names().contains(&"local".to_string()));
+}
+
+/// Anthropic signs thinking per endpoint: a gateway's signature sent to
+/// Anthropic itself (or the other way round) is a refused request.
+#[tokio::test]
+async fn a_custom_anthropic_entry_is_its_own_provider_and_its_thinking_replays_only_to_itself() {
+    let signed = typed_sse(&[
+        json!({"type": "message_start", "message": {"model": "claude", "usage": {}}}),
+        json!({"type": "content_block_start", "index": 0,
+               "content_block": {"type": "thinking", "thinking": "hmm", "signature": "gateway-sig"}}),
+        json!({"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": "hi"}}),
+        json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 1}}),
+    ]);
+    let t = FakeHttp::new([
+        FakeReply::sse(signed),
+        FakeReply::status(400, ""),
+        FakeReply::status(400, ""),
+    ]);
+    let custom = CustomProviders::from([(
+        "gateway".to_string(),
+        json!({"type": "anthropic", "baseURL": "http://gateway"}),
+    )]);
+    let reg = ProviderRegistry::new(keys(&[("ANTHROPIC_API_KEY", "k")]), custom, opts(&t));
+    let gateway = reg.resolve("gateway:claude").unwrap();
+    assert_eq!(gateway.provider.id(), "gateway");
+    let (_, answer) = collect(gateway.provider.stream(request(&gateway.model))).await;
+    assert_eq!(answer.provider, "gateway");
+
+    let history = vec![
+        Message::user("hi"),
+        Message::Assistant(answer),
+        Message::user("again"),
+    ];
+    for spec in ["gateway:claude", "anthropic:claude"] {
+        let r = reg.resolve(spec).unwrap();
+        collect(r.provider.stream(request_with(&r.model, history.clone()))).await;
+    }
+    let replays_thinking = |i: usize| {
+        let body = t.requests()[i].json();
+        body["messages"][1]["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|block| block["type"] == "thinking")
+    };
+    assert!(replays_thinking(1), "to the gateway that signed it");
+    assert!(!replays_thinking(2), "never to Anthropic itself");
 }
 
 #[tokio::test]

@@ -4,7 +4,8 @@
 //!   - roles strictly alternate, so consecutive same-role messages merge
 //!     (tool results + a queued user message become ONE user turn);
 //!   - every tool_use needs its tool_result in the very next user turn;
-//!   - thinking blocks replay only with their signature, and only to Anthropic.
+//!   - thinking blocks replay only with their signature, and only to the
+//!     provider (the endpoint) that signed them.
 
 use haest_core::{
     __private::dropped_note,
@@ -33,8 +34,8 @@ fn safe_tool_id(id: &str) -> String {
     if safe.is_empty() { "tool".into() } else { safe }
 }
 
-fn assistant_blocks(msg: &AssistantMessage) -> Vec<Value> {
-    let replay_thinking = msg.provider == "anthropic";
+fn assistant_blocks(msg: &AssistantMessage, provider_id: &str) -> Vec<Value> {
+    let replay_thinking = msg.provider == provider_id;
     let mut out = Vec::new();
     for part in &msg.content {
         match part {
@@ -111,11 +112,11 @@ fn tool_result_block(msg: &ToolResultMessage) -> Value {
     block
 }
 
-fn blocks_of(msg: &Message) -> (&'static str, Vec<Value>) {
+fn blocks_of(msg: &Message, provider_id: &str) -> (&'static str, Vec<Value>) {
     match msg {
         Message::User(u) => ("user", user_blocks(&u.content, &u.media)),
         Message::Tool(t) => ("user", vec![tool_result_block(t)]),
-        Message::Assistant(a) => ("assistant", assistant_blocks(a)),
+        Message::Assistant(a) => ("assistant", assistant_blocks(a, provider_id)),
     }
 }
 
@@ -123,13 +124,13 @@ fn blocks_of(msg: &Message) -> (&'static str, Vec<Value>) {
 ///
 /// Consecutive messages of one role merge into one turn (tool results and a
 /// queued user message become one user turn). Thinking replays only from a
-/// message whose provider is `anthropic`, and only with its signature. Images
+/// message whose provider is `provider_id`, and only with its signature. Images
 /// and PDFs go as base64 blocks; audio and video, which the API does not take,
 /// become a text note. The newest block gets a prompt-cache breakpoint.
-pub(crate) fn to_anthropic_messages(messages: &[Message]) -> Vec<Value> {
+pub(crate) fn to_anthropic_messages(messages: &[Message], provider_id: &str) -> Vec<Value> {
     let mut out: Vec<(&'static str, Vec<Value>)> = Vec::new();
     for msg in messages {
-        let (role, blocks) = blocks_of(msg);
+        let (role, blocks) = blocks_of(msg, provider_id);
         if blocks.is_empty() {
             continue;
         }

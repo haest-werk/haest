@@ -26,9 +26,9 @@ pub(crate) struct AnthropicFold {
 }
 
 impl AnthropicFold {
-    pub fn new(model: &str) -> Self {
+    pub fn new(provider_id: &str, model: &str) -> Self {
         Self {
-            msg: AssistantMessage::start("anthropic", model),
+            msg: AssistantMessage::start(provider_id, model),
             blocks: BTreeMap::new(),
         }
     }

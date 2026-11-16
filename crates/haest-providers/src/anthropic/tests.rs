@@ -14,6 +14,7 @@ use crate::testing::{FakeEnd, FakeHttp, FakeReply, collect, kinds, request, type
 fn provider(t: &Arc<FakeHttp>) -> AnthropicProvider {
     AnthropicProvider::new(
         AnthropicOptions {
+            id: "anthropic".into(),
             api_key: "k".into(),
             base_url: None,
             headers: Vec::new(),
@@ -221,12 +222,15 @@ fn types(content: &Value) -> Vec<&str> {
 
 #[test]
 fn tool_results_and_queued_input_merge_into_one_user_turn_ids_sanitised_tail_cached() {
-    let msgs = to_anthropic_messages(&[
-        Message::user("go"),
-        assistant("anthropic"),
-        tool_result("call.1", "x"),
-        Message::user("also this"),
-    ]);
+    let msgs = to_anthropic_messages(
+        &[
+            Message::user("go"),
+            assistant("anthropic"),
+            tool_result("call.1", "x"),
+            Message::user("also this"),
+        ],
+        "anthropic",
+    );
     let roles: Vec<_> = msgs.iter().map(|m| m["role"].as_str().unwrap()).collect();
     assert_eq!(roles, ["user", "assistant", "user"]);
     let last = &msgs[2]["content"];
@@ -237,11 +241,16 @@ fn tool_results_and_queued_input_merge_into_one_user_turn_ids_sanitised_tail_cac
 }
 
 #[test]
-fn thinking_is_replayed_only_to_anthropic_never_from_another_provider() {
-    let own = to_anthropic_messages(&[Message::user("a"), assistant("anthropic")]);
-    let foreign = to_anthropic_messages(&[Message::user("a"), assistant("openrouter")]);
-    assert_eq!(types(&own[1]["content"]), ["thinking", "tool_use"]);
-    assert_eq!(types(&foreign[1]["content"]), ["tool_use"]);
+fn thinking_is_replayed_only_to_the_provider_that_signed_it() {
+    let replayed = |from: &str, to: &str| {
+        let msgs = to_anthropic_messages(&[Message::user("a"), assistant(from)], to);
+        types(&msgs[1]["content"]) == ["thinking", "tool_use"]
+    };
+    assert!(replayed("anthropic", "anthropic"));
+    assert!(replayed("gateway", "gateway"));
+    assert!(!replayed("openrouter", "anthropic"));
+    assert!(!replayed("gateway", "anthropic"));
+    assert!(!replayed("anthropic", "gateway"));
 }
 
 #[test]
@@ -262,7 +271,7 @@ fn effort_maps_to_adaptive_thinking_on_current_models_and_a_budget_on_legacy_one
     );
     assert!(thinking_params("claude-sonnet-5", None).is_empty());
     assert!(thinking_params("claude-sonnet-5", Some(Effort::Off)).is_empty());
-    let params = build_anthropic_params(&request("claude-sonnet-5"));
+    let params = build_anthropic_params("anthropic", &request("claude-sonnet-5"));
     assert_eq!(
         params["system"],
         json!([{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}])
