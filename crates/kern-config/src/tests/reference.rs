@@ -10,6 +10,7 @@ use toml::Value;
 
 use super::*;
 use crate::{
+    fields::whole_up_to,
     profiles::BUILTIN,
     registry::{Def, Scope},
     value::var_parts,
@@ -56,6 +57,7 @@ fn takes(def: &Def) -> String {
             "`true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`"
                 .into()
         }
+        Kind::Number if whole_up_to(def.key).is_some() => "a whole number, 0 or more".into(),
         Kind::Number => "a number, 0 or more".into(),
         Kind::Text => "text".into(),
         Kind::Path => "a directory: `~/x` is under your home dir, `x` under the working dir".into(),

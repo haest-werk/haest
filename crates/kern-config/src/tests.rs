@@ -196,6 +196,36 @@ async fn garbage_is_refused_and_names_where_it_was() {
     }
 }
 
+/// A count (steps, minutes, tokens) given a fraction must not quietly become a
+/// smaller one: `subagent_minutes = 0.5` read as 0 would turn the cap off.
+#[tokio::test]
+async fn a_number_setting_reads_what_it_was_given_or_refuses_it_by_name() {
+    for def in DEFS.iter().filter(|d| d.kind == Kind::Number) {
+        match run("/w", &[], &[], &[(def.key, "0.5")]).await {
+            Ok(r) => assert_eq!(
+                get(&r.config, def.key).as_deref(),
+                Some("0.5"),
+                "{}",
+                def.key
+            ),
+            Err(e) => assert!(e.contains(&format!("--{}", def.flag())), "{}: {e}", def.key),
+        }
+    }
+    let file = [(USER_FILE, "subagent_minutes = 0.5")];
+    let err = run("/w", &file, &[], &[]).await.unwrap_err();
+    assert!(
+        err.contains(USER_FILE) && err.contains("subagent_minutes"),
+        "{err}"
+    );
+    let err = run("/w", &[], &[("KERN_MAX_TURN_STEPS", "2.5")], &[])
+        .await
+        .unwrap_err();
+    assert!(err.contains("KERN_MAX_TURN_STEPS"), "{err}");
+    let whole = [(USER_FILE, "subagent_steps = 30.0\nsubagent_usd = 0.5")];
+    let s = run("/w", &whole, &[], &[]).await.unwrap().config.settings;
+    assert_eq!((s.subagents.steps, s.subagents.usd), (30, 0.5));
+}
+
 #[tokio::test]
 async fn lists_take_all_none_and_any_order_and_come_out_in_one() {
     let tools =

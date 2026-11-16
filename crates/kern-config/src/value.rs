@@ -9,7 +9,10 @@ use std::{
 
 use kern_core::{expand::is_var_name, fs::resolve_path};
 
-use crate::registry::{Def, Kind};
+use crate::{
+    fields::whole_up_to,
+    registry::{Def, Kind},
+};
 
 /// A variable's value, trimmed; None when it is unset or empty. How the loader
 /// reads every variable, for a host to read its own the same way (`HOME`).
@@ -44,6 +47,23 @@ pub fn split_list(raw: &str) -> Vec<String> {
         .collect()
 }
 
+/// A number >= 0; with `whole_up_to`, a whole one no larger (a count: a
+/// fraction would be cut to a smaller count, and 0 is "no cap").
+pub(crate) fn number(raw: &str, whole_up_to: Option<f64>) -> Result<f64, String> {
+    let n = raw
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|n| n.is_finite() && *n >= 0.0);
+    match (n, whole_up_to) {
+        (None, _) => Err(format!("\"{raw}\" must be a number >= 0")),
+        (Some(n), Some(max)) if n.fract() != 0.0 || n > max => {
+            Err(format!("\"{raw}\" must be a whole number from 0 to {max}"))
+        }
+        (Some(n), _) => Ok(n),
+    }
+}
+
 /// `raw` as `def` takes it, or why not.
 pub fn check(def: &Def, raw: &str) -> Result<String, String> {
     let word = raw.trim();
@@ -51,12 +71,7 @@ pub fn check(def: &Def, raw: &str) -> Result<String, String> {
         Kind::Bool => parse_bool(word)
             .map(|b| b.to_string())
             .ok_or_else(|| format!("\"{word}\" must be true or false")),
-        Kind::Number => word
-            .parse::<f64>()
-            .ok()
-            .filter(|n| n.is_finite() && *n >= 0.0)
-            .map(|_| word.to_string())
-            .ok_or_else(|| format!("\"{word}\" must be a number >= 0")),
+        Kind::Number => number(word, whole_up_to(def.key)).map(|_| word.to_string()),
         Kind::Text | Kind::Path => Ok(word.to_string()),
         Kind::Choice(words) => words
             .iter()

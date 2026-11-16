@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 use kern_core::{Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine};
 use kern_settings::{BuiltinTools, ContextSources, Settings, SkillSources, WordSet};
 
-use crate::value::{parse_bool, split_list, var, var_parts};
+use crate::value::{number, parse_bool, split_list, var, var_parts};
 
 kern_core::word_enum! {
     /// What a process kern starts (bash, a background job, an MCP server) gets of
@@ -73,6 +73,9 @@ impl From<Settings> for Config {
 
 /// A value in the checked spelling, and back. None = unset.
 trait Raw: Sized {
+    /// A count: a whole number up to this, never a fraction (`0.5` read as 0
+    /// would turn a cap off). None = any number.
+    const WHOLE_UP_TO: Option<f64> = None;
     fn to_raw(&self) -> Option<String>;
     fn from_raw(raw: &str) -> Result<Self, String>;
 }
@@ -98,19 +101,29 @@ word!(
     WebSearchEngine
 );
 
-macro_rules! number {
+impl Raw for f64 {
+    fn to_raw(&self) -> Option<String> {
+        Some(self.to_string())
+    }
+    fn from_raw(raw: &str) -> Result<Self, String> {
+        number(raw, None)
+    }
+}
+
+macro_rules! count {
     ($($t:ty),+) => {$(
         impl Raw for $t {
+            const WHOLE_UP_TO: Option<f64> = Some(<$t>::MAX as f64);
             fn to_raw(&self) -> Option<String> {
                 Some(self.to_string())
             }
             fn from_raw(raw: &str) -> Result<Self, String> {
-                raw.parse::<f64>().map(|n| n as $t).map_err(|e| e.to_string())
+                number(raw, Self::WHOLE_UP_TO).map(|n| n as $t)
             }
         }
     )+};
 }
-number!(f64, u32, u64, usize);
+count!(u32, u64, usize);
 
 macro_rules! words {
     ($($t:ty),+) => {$(
@@ -165,6 +178,7 @@ impl Raw for Vec<String> {
 }
 
 impl<T: Raw> Raw for Option<T> {
+    const WHOLE_UP_TO: Option<f64> = T::WHOLE_UP_TO;
     fn to_raw(&self) -> Option<String> {
         self.as_ref().and_then(T::to_raw)
     }
@@ -223,6 +237,18 @@ macro_rules! fields {
                 Ok(())
             },
         ),)+ $($own),*];
+
+        /// Whether `key`'s field is a count, and its largest value: what its
+        /// type says ([`Raw::WHOLE_UP_TO`]), so the check and the field agree.
+        pub(crate) fn whole_up_to(key: &str) -> Option<f64> {
+            fn of<T: Raw>(_: fn(&Config) -> &T) -> Option<f64> {
+                T::WHOLE_UP_TO
+            }
+            match key {
+                $($key => of(|c| &c.$($path).+),)+
+                _ => None,
+            }
+        }
     };
 }
 

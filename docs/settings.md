@@ -431,7 +431,7 @@ flag          --max-turn-usd 5
 
 One turn's tokens (unset: 10x the model's window; 0 = no cap).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: unset
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -445,7 +445,7 @@ flag          --max-turn-tokens 2000000
 
 One model call's input tokens (unset: 90% of the window; 0 = no cap).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: unset
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -459,7 +459,7 @@ flag          --max-request-tokens 150000
 
 Model calls in one turn (0 = no cap).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: `100`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -487,7 +487,7 @@ flag          --max-turn-minutes 30
 
 The same tool call in a row before the guard stops it (0 = no cap).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: `6`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -515,7 +515,7 @@ flag          --max-conversation-usd 50
 
 Tokens of models with no price (0 = no cap).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: `20000000`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -529,7 +529,7 @@ flag          --max-conversation-tokens 50000000
 
 The model's window in tokens (unset: the catalog's, else 200000).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: unset
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -543,7 +543,7 @@ flag          --context-window 1000000
 
 Compact the conversation past this many tokens (0 = at 80% of the window only).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: `400000`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -559,7 +559,7 @@ flag          --compact-at 300000
 
 Turns in a row a job or an agent starts with no human message; past it kern holds them (0 = no cap).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: `30`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -573,7 +573,7 @@ flag          --max-agent-turns 10
 
 How deep agents nest, main = 0 (0 = no Agent tool).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: `2`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -587,7 +587,7 @@ flag          --max-agent-depth 1
 
 Subagents running at once, across the tree (0 = no Agent tool).
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: `4`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -615,7 +615,7 @@ flag          --subagent-usd 0.5
 
 One subagent's model calls.
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: `50`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
@@ -629,7 +629,7 @@ flag          --subagent-steps 25
 
 One subagent's wall clock.
 
-- Takes: a number, 0 or more
+- Takes: a whole number, 0 or more
 - Default: `15`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
