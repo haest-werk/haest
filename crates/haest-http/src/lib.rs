@@ -13,9 +13,10 @@
 //! TLS ([`build_reqwest`]): the MCP client, which needs a reqwest client of
 //! its own, gets it from here too.
 //!
-//! Through the facade it is `haest::http`; haest-providers re-exports it as
-//! `haest_providers::http`, so an implementation needs no other crate:
-//! [`async_trait`] and [`Bytes`] are re-exported here.
+//! Through the facade it is `haest::http`; every crate that sends re-exports
+//! it as `http` (`haest_providers::http`, `haest_tools::http`,
+//! `haest_issues::http`), so an implementation needs no other crate:
+//! [`async_trait`](macro@async_trait) and [`Bytes`] are re-exported here.
 //!
 //! # Examples
 //!
