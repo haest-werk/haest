@@ -12,9 +12,10 @@
 //!
 //! # haest-core or `haest`
 //!
-//! Most hosts depend on the [`haest`](https://docs.rs/haest) facade: it
-//! re-exports this crate at its root and adds model providers, workspaces,
-//! tools and an MCP client behind features. Depend on haest-core directly when
+//! Most hosts depend on the [`haest`](https://docs.rs/haest) facade: it puts
+//! this crate's key types at its root and the crate itself under
+//! `haest::core`, and adds model providers, workspaces, tools and an MCP
+//! client behind features. Depend on haest-core directly when
 //! you write a plug-in crate (a provider, a set of tools, a workspace) and
 //! want the contracts and nothing else, or when your host brings every plug
 //! point itself.
