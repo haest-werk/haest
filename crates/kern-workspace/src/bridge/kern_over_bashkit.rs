@@ -113,6 +113,13 @@ impl Fs for KernFsOverBashkit {
         Ok(stat_of(&m))
     }
 
+    async fn read_link(&self, path: &Path) -> io::Result<PathBuf> {
+        self.inner
+            .read_link(&normalize(path))
+            .await
+            .map_err(io_from_bashkit)
+    }
+
     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
         let p = self.follow(path).await?;
         let mut out: Vec<DirEntry> = self

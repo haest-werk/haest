@@ -179,8 +179,10 @@ impl FileSystem for BashkitFsOverKern {
     }
 
     async fn read_link(&self, path: &Path) -> Result<PathBuf> {
-        self.stat_path(&normalize(path)).await?;
-        Err(err(ErrorKind::InvalidInput, "not a symbolic link"))
+        self.fs
+            .read_link(&normalize(path))
+            .await
+            .map_err(bashkit_from_io)
     }
 
     async fn chmod(&self, path: &Path, mode: u32) -> Result<()> {

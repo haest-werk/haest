@@ -6,7 +6,9 @@ mod common;
 use std::{fs, path::Path, sync::Arc};
 
 use common::{opts, sandbox, tempdir};
-use kern_core::workspace::{ApplyReport, Change, ChangeKind, ChangeSet, Workspace};
+use kern_core::workspace::{
+    ApplyFailureCode, ApplyReport, Change, ChangeKind, ChangeSet, Workspace,
+};
 use kern_workspace::{SandboxMounts, SandboxWorkspace};
 
 fn project() -> (tempfile::TempDir, std::path::PathBuf) {
@@ -85,9 +87,13 @@ async fn edits_are_recorded_with_a_writable_and_a_readable_mount_beside_the_proj
 async fn apply_puts_every_change_on_disk_after_which_nothing_is_left() {
     let (_t, dir) = project();
     let ws = sandbox_edits(&dir).await;
-    let ApplyReport { applied, skipped } = changes(&ws).apply().await.unwrap();
+    let ApplyReport {
+        applied,
+        skipped,
+        failed,
+    } = changes(&ws).apply().await.unwrap();
     assert_eq!(applied.len(), 4);
-    assert!(skipped.is_empty());
+    assert!(skipped.is_empty() && failed.is_empty());
     assert_eq!(read(&dir, "edit.txt"), "new line\n");
     assert_eq!(read(&dir, "src/new.txt"), "fresh\n");
     assert!(!dir.join("gone.txt").exists());
@@ -99,7 +105,9 @@ async fn a_file_the_human_edited_meanwhile_is_a_conflict_skipped_not_overwritten
     let (_t, dir) = project();
     let ws = sandbox_edits(&dir).await;
     fs::write(dir.join("edit.txt"), "the human was here\n").unwrap();
-    let ApplyReport { applied, skipped } = changes(&ws).apply().await.unwrap();
+    let ApplyReport {
+        applied, skipped, ..
+    } = changes(&ws).apply().await.unwrap();
     let skipped: Vec<_> = skipped.iter().map(|c| c.path.as_str()).collect();
     assert_eq!(skipped, ["/edit.txt"]);
     assert!(applied.iter().all(|c| c.path != "/edit.txt"));
@@ -149,6 +157,76 @@ async fn a_binary_file_is_named_in_the_diff_not_dumped_into_it() {
         changes(&ws).diff(blob).await,
         "Binary file /blob.bin differs\n"
     );
+}
+
+/// B37: a link the sandbox made -- out of the workspace, dangling, to a file,
+/// to a directory, or a loop inside a new directory -- is listed as one change
+/// and reported as not applied, never an error and never applied as a copy of
+/// what it points to.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_symlink_the_sandbox_made_is_listed_and_reported_never_applied_as_a_copy() {
+    let (_t, dir) = project();
+    fs::create_dir(dir.join("d")).unwrap();
+    fs::write(dir.join("d/a.txt"), "A\n").unwrap();
+    let ws = sandbox(&dir).await;
+    let r = ws
+        .shell(
+            "ln -s /etc sub && ln -s missing dangling && ln -s keep.txt l && ln -s d dl \
+             && mkdir n && ln -s .. n/up && echo ok > fine.txt",
+            opts(&dir),
+        )
+        .await;
+    assert_eq!(r.exit_code, 0, "{r:?}");
+    // The shell resolves a link on its way; a tool's write does not.
+    ws.fs()
+        .write(&dir.join("dl/behind.txt"), b"x\n")
+        .await
+        .unwrap();
+    let set = changes(&ws);
+    let list = set.list().await;
+    assert!(list.iter().all(|c| c.kind == ChangeKind::Added), "{list:?}");
+    let listed: Vec<_> = list.iter().map(|c| c.path.as_str()).collect();
+    assert_eq!(
+        listed,
+        [
+            "/dangling",
+            "/dl",
+            "/dl/behind.txt",
+            "/fine.txt",
+            "/l",
+            "/n",
+            "/n/up",
+            "/sub"
+        ]
+    );
+    let links = ["/dangling", "/dl", "/dl/behind.txt", "/l", "/n/up", "/sub"];
+
+    let l = set
+        .list()
+        .await
+        .into_iter()
+        .find(|c| c.path == "/l")
+        .unwrap();
+    assert!(set.diff(&l).await.contains("keep.txt"));
+
+    let report = set.apply().await.expect("a link is not a failed apply");
+    let failed: Vec<_> = report
+        .failed
+        .iter()
+        .map(|f| (f.change.path.as_str(), f.code))
+        .collect();
+    assert_eq!(failed, links.map(|p| (p, ApplyFailureCode::Symlink)));
+    let applied: Vec<_> = report.applied.iter().map(|c| c.path.as_str()).collect();
+    assert_eq!(applied, ["/fine.txt", "/n"]);
+    assert!(report.skipped.is_empty());
+    for link in links {
+        let on_disk = dir.join(link.trim_start_matches('/'));
+        assert!(fs::symlink_metadata(&on_disk).is_err(), "{link} on disk");
+    }
+    // Still listed: nothing was lost.
+    let left: Vec<_> = set.list().await.into_iter().map(|c| c.path).collect();
+    assert_eq!(left, links);
 }
 
 #[tokio::test]

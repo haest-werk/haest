@@ -53,6 +53,22 @@ async fn memfs_refuses_a_dir_into_itself_and_removing_the_root() {
     assert!(fs.exists(Path::new("/a/x")).await);
 }
 
+/// The default `read_link`: a file system without links has none, and a
+/// missing path is still missing.
+#[tokio::test]
+async fn a_file_system_without_links_says_no_path_is_one() {
+    use io::ErrorKind::{InvalidInput, NotFound};
+    let fs = MemFs::with_files([("/d/a", "1")]);
+    for (p, want) in [
+        ("/d/a", InvalidInput),
+        ("/d", InvalidInput),
+        ("/nope", NotFound),
+    ] {
+        let got = fs.read_link(Path::new(p)).await.unwrap_err().kind();
+        assert_eq!(got, want, "{p}");
+    }
+}
+
 #[test]
 fn normalize_resolves_dots_lexically() {
     assert_eq!(normalize(Path::new("/a/./b/../c")), PathBuf::from("/a/c"));

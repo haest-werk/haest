@@ -1,7 +1,7 @@
 //! Whether a project path's real location is `root/path`. A symlink on the way
 //! (`vendor -> ~/.ssh`, or `hosts -> /etc/hosts` itself) would take a write or
 //! a delete wherever it points, and /apply never reaches outside the project
-//! or through a link: such a path is refused and flagged instead.
+//! or through a link: such a path is refused instead (`apply.rs`).
 
 use std::{
     collections::HashMap,

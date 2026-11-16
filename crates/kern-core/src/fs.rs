@@ -69,6 +69,17 @@ pub trait Fs: Send + Sync {
         self.stat(path).await.is_ok()
     }
     async fn stat(&self, path: &Path) -> io::Result<FsStat>;
+    /// The target of the symbolic link at `path`, the link itself not
+    /// followed; `InvalidInput` when `path` is not a link. The default is a
+    /// file system with no links (memory, a host's own store): every path
+    /// that exists is not one.
+    async fn read_link(&self, path: &Path) -> io::Result<PathBuf> {
+        self.stat(path).await?;
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{}: not a symbolic link", path.display()),
+        ))
+    }
     /// Entries sorted by name.
     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>>;
     async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()>;

@@ -1,4 +1,6 @@
-//! What a path looked like: a file (its content hash), a directory, or absent.
+//! What a path looked like: a file (its content hash), a directory, a symlink
+//! (its target's hash), or absent. A link is never followed: a link to a file
+//! is not that file, and one that dangles or leaves the project is still there.
 
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
@@ -11,6 +13,7 @@ use kern_core::fs::{FileKind, Fs};
 pub(crate) enum Original {
     File(u64),
     Dir,
+    Link(u64),
     Absent,
 }
 
@@ -21,6 +24,9 @@ fn hash_of(bytes: &[u8]) -> u64 {
 }
 
 pub(crate) async fn state_of(fs: &dyn Fs, path: &Path) -> Original {
+    if let Ok(target) = fs.read_link(path).await {
+        return Original::Link(hash_of(target.as_os_str().as_encoded_bytes()));
+    }
     if !fs.exists(path).await {
         return Original::Absent;
     }

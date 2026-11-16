@@ -16,6 +16,11 @@ pub(crate) async fn file_bytes(fs: &dyn Fs, path: &Path) -> Vec<u8> {
     fs.read(path).await.unwrap_or_default()
 }
 
+/// The one line a symlink gets: where it points.
+pub(crate) fn link(path: &str, target: &Path) -> String {
+    format!("Symbolic link {path} -> {}\n", target.display())
+}
+
 /// `a<path>` -> `b<path>`; empty when both sides are empty, one line when
 /// either side is binary.
 pub(crate) fn unified(path: &str, before: &[u8], after: &[u8]) -> String {

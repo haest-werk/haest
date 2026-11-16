@@ -6,7 +6,7 @@ mod common;
 use std::{fs, path::Path};
 
 use common::{opts, sandbox, tempdir};
-use kern_core::workspace::Workspace;
+use kern_core::workspace::{ApplyFailureCode, Workspace};
 
 async fn run(ws: &impl Workspace, dir: &Path, command: &str) {
     let r = ws.shell(command, opts(dir)).await;
@@ -61,27 +61,26 @@ async fn apply_never_writes_or_deletes_through_a_symlink_in_the_project() {
     let set = ws.changes().unwrap();
     let list = set.list().await;
     let through_a_link = |p: &str| p.starts_with("/vendor") || p == "/hosts" || p == "/ilink";
-    for c in &list {
-        assert_eq!(c.conflict, through_a_link(&c.path), "{c:?} in {list:?}");
-    }
-    for p in [
-        "/vendor/authorized_keys",
-        "/vendor/new.txt",
-        "/hosts",
-        "/ilink",
-    ] {
+    // A link on the way is no conflict: nobody edited anything on disk.
+    assert!(list.iter().all(|c| !c.conflict), "{list:?}");
+    for p in ["/vendor/authorized_keys", "/vendor/new.txt", "/ilink"] {
         assert!(list.iter().any(|c| c.path == p), "{p} in {list:?}");
     }
 
     let report = set.apply().await.unwrap();
-    assert!(report.applied.iter().any(|c| c.path == "/ok.txt"));
+    let applied: Vec<_> = report.applied.iter().map(|c| c.path.as_str()).collect();
+    assert_eq!(applied, ["/ok.txt"], "{report:?}");
+    assert!(report.skipped.is_empty(), "{report:?}");
     assert!(
-        report.applied.iter().all(|c| !through_a_link(&c.path)),
+        report
+            .failed
+            .iter()
+            .all(|f| through_a_link(&f.change.path) && f.code == ApplyFailureCode::OutsideProject),
         "{report:?}"
     );
-    for p in ["/vendor/authorized_keys", "/hosts", "/ilink"] {
+    for p in ["/vendor/authorized_keys", "/vendor/new.txt", "/ilink"] {
         assert!(
-            report.skipped.iter().any(|c| c.path == p),
+            report.failed.iter().any(|f| f.change.path == p),
             "{p} in {report:?}"
         );
     }
@@ -103,10 +102,10 @@ async fn apply_never_writes_or_deletes_through_a_symlink_in_the_project() {
         assert!(is_link(&dir.join(link)), "{link}");
     }
     assert_eq!(fs::read_to_string(dir.join("ok.txt")).unwrap(), "new\n");
-    // Refused, still listed and flagged: the human decides.
+    // Refused and still listed: the human decides.
     let left = set.list().await;
     assert!(
-        !left.is_empty() && left.iter().all(|c| c.conflict),
+        !left.is_empty() && left.iter().all(|c| through_a_link(&c.path)),
         "{left:?}"
     );
 }
@@ -126,30 +125,54 @@ async fn a_directory_that_became_a_file_and_a_file_that_became_a_directory_are_a
     .await;
     run(&ws, &dir, "rm out && mkdir out && echo y > out/a").await;
     let report = ws.changes().unwrap().apply().await.unwrap();
-    assert!(report.skipped.is_empty(), "{report:?}");
+    assert!(
+        report.skipped.is_empty() && report.failed.is_empty(),
+        "{report:?}"
+    );
     assert_eq!(fs::read_to_string(dir.join("build")).unwrap(), "x\n");
     assert_eq!(fs::read_to_string(dir.join("out/a")).unwrap(), "y\n");
     assert!(ws.changes().unwrap().list().await.is_empty());
 }
 
+/// B38: what the disk refuses, and a link the sandbox made, are each reported
+/// as failed with their code -- never as a conflict, never lost.
 #[cfg(unix)]
 #[tokio::test]
 async fn a_change_that_cannot_be_applied_is_reported_and_the_others_still_are() {
+    use std::os::unix::fs::PermissionsExt;
     let (_t, dir) = tempdir();
     fs::write(dir.join("ok.txt"), "old\n").unwrap();
+    fs::create_dir(dir.join("locked")).unwrap();
     let ws = sandbox(&dir).await;
-    // A link the sandbox made: there is nothing it can be written as.
-    run(&ws, &dir, "ln -s /etc/hosts l && echo new > ok.txt").await;
+    run(
+        &ws,
+        &dir,
+        "ln -s /etc/hosts l && echo x > locked/new.txt && echo new > ok.txt",
+    )
+    .await;
+    let mode = |m| fs::Permissions::from_mode(m);
+    fs::set_permissions(dir.join("locked"), mode(0o555)).unwrap();
     let set = ws.changes().unwrap();
-    let report = set
-        .apply()
-        .await
-        .expect("one failed change is not a failed apply");
-    let paths =
-        |cs: &[kern_core::workspace::Change]| cs.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
-    assert_eq!(paths(&report.applied), ["/ok.txt"]);
-    assert_eq!(paths(&report.skipped), ["/l"]);
+    let report = set.apply().await;
+    fs::set_permissions(dir.join("locked"), mode(0o755)).unwrap();
+    let report = report.expect("one failed change is not a failed apply");
+    let failed: Vec<_> = report
+        .failed
+        .iter()
+        .map(|f| (f.change.path.as_str(), f.code))
+        .collect();
+    assert_eq!(
+        failed,
+        [
+            ("/l", ApplyFailureCode::Symlink),
+            ("/locked/new.txt", ApplyFailureCode::WriteFailed),
+        ]
+    );
+    let applied: Vec<_> = report.applied.iter().map(|c| c.path.as_str()).collect();
+    assert_eq!(applied, ["/ok.txt"]);
+    assert!(report.skipped.is_empty(), "{report:?}");
     assert_eq!(fs::read_to_string(dir.join("ok.txt")).unwrap(), "new\n");
     // Still listed: nothing was lost.
-    assert_eq!(paths(&set.list().await), ["/l"]);
+    let left: Vec<_> = set.list().await.into_iter().map(|c| c.path).collect();
+    assert_eq!(left, ["/l", "/locked/new.txt"]);
 }

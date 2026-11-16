@@ -8,16 +8,18 @@
 //! Applying compares three things per path: the real file at first touch, the
 //! real file now, and the overlay's version. If the real file moved in between
 //! (the human edited it), the path is a CONFLICT and is skipped -- named, never
-//! overwritten. Everything else is written (or deleted) on the real disk.
+//! overwritten. Everything else is written (or deleted) on the real disk,
+//! unless `apply.rs` refuses it: a symlink on the real disk on its way, or a
+//! symlink the sandbox made. A refused change is reported as failed with its
+//! code, and stays listed.
 //!
 //! Paths here are the overlay's own (`/src/a.ts`); `root` maps them to the disk.
-//! A path with a symlink on the real disk anywhere on its way (`links.rs`) is
-//! flagged as a conflict and never applied: /apply writes, creates and deletes
-//! only at `root/path` itself, never through a link out of the project.
+//! A symlink is compared as a link (`state.rs`), never as what it points to.
 //! Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
 //! directory, not file by file -- an edit the human made INSIDE it meanwhile
 //! does not count as a conflict.
 
+mod apply;
 mod diff;
 mod links;
 mod recorder;
@@ -33,11 +35,10 @@ use std::{
 use async_trait::async_trait;
 use kern_core::{
     fs::{Fs, normalize},
-    workspace::{ApplyReport, Change, ChangeKind, ChangeSet},
+    workspace::{ApplyReport, Change, ChangeKind, ChangeSet, FailedChange},
 };
 
 use crate::bridge::KernFsOverBashkit;
-use links::Links;
 use recorder::Recorder;
 use state::{Original, state_of, walk};
 
@@ -126,7 +127,6 @@ impl OverlayChanges {
 
     async fn scan(&self) -> Vec<Scanned> {
         let mut out = Vec::new();
-        let mut links = Links::new(self.book.disk.as_ref(), &self.book.root);
         for (path, original) in self.candidates().await {
             let real = self.book.real(&path);
             let (now, mine) = tokio::join!(
@@ -145,7 +145,7 @@ impl OverlayChanges {
                 change: Change {
                     path: path.to_string_lossy().into_owned(),
                     kind,
-                    conflict: original != now || links.through_a_link(&path).await,
+                    conflict: original != now,
                 },
                 path,
                 original,
@@ -154,45 +154,6 @@ impl OverlayChanges {
         // Path order: a directory before its files.
         out.sort_by(|a, b| a.path.cmp(&b.path));
         out
-    }
-
-    async fn write(&self, c: &Change, path: &Path) -> io::Result<()> {
-        let disk = self.book.disk.as_ref();
-        let real = self.book.real(path);
-        // Again here: a link may have appeared on disk since the scan.
-        if Links::new(disk, &self.book.root).through_a_link(path).await {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!("{}: a symlink on the way; not applied", real.display()),
-            ));
-        }
-        if c.kind == ChangeKind::Deleted {
-            return match disk.remove(&real, true).await {
-                // Gone already, or under a directory that became a file.
-                Err(e)
-                    if !matches!(
-                        e.kind(),
-                        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-                    ) =>
-                {
-                    Err(e)
-                }
-                _ => Ok(()),
-            };
-        }
-        let dir = self.overlay.stat(path).await?.is_dir();
-        // A directory that became a file, or a file that became a directory
-        // (`rm -rf build && echo x > build`): the old one goes first.
-        if disk.stat(&real).await.is_ok_and(|s| s.is_dir() != dir) {
-            disk.remove(&real, true).await?;
-        }
-        if dir {
-            return disk.mkdir(&real, true).await;
-        }
-        if let Some(parent) = real.parent() {
-            disk.mkdir(parent, true).await?;
-        }
-        disk.write(&real, &self.overlay.read(path).await?).await
     }
 }
 
@@ -205,9 +166,14 @@ impl ChangeSet for OverlayChanges {
     }
 
     /// A unified diff of one changed text file; empty for a directory, one line
-    /// for a binary file.
+    /// for a binary file or a symlink.
     async fn diff(&self, c: &Change) -> String {
         let path = normalize(Path::new(&c.path));
+        if c.kind != ChangeKind::Deleted
+            && let Ok(target) = self.overlay.read_link(&path).await
+        {
+            return diff::link(&c.path, &target);
+        }
         let before = match c.kind {
             ChangeKind::Added => Vec::new(),
             _ => diff::file_bytes(self.book.disk.as_ref(), &self.book.real(&path)).await,
@@ -220,22 +186,36 @@ impl ChangeSet for OverlayChanges {
     }
 
     /// Write every non-conflicting change to the real disk. Returns what was
-    /// applied and what was skipped: a conflict, or a change that could not be
-    /// written (a symlink the sandbox made, a disk error). One that fails
-    /// stops nothing else, and stays listed like a conflict.
+    /// applied, what was skipped (a conflict), and what failed, each with why
+    /// (a symlink, a disk error). One that fails stops nothing else, and stays
+    /// listed like a conflict.
     async fn apply(&self) -> io::Result<ApplyReport> {
         let mut report = ApplyReport::default();
         for s in self.scan().await {
-            if !s.change.conflict && self.write(&s.change, &s.path).await.is_ok() {
-                self.book.touched.lock().unwrap().remove(&s.path);
-                report.applied.push(s.change);
-                continue;
-            }
+            let refused = if s.change.conflict {
+                None
+            } else {
+                match self.put(s.change.kind, &s.path).await {
+                    Ok(()) => {
+                        self.book.touched.lock().unwrap().remove(&s.path);
+                        report.applied.push(s.change);
+                        continue;
+                    }
+                    Err(refusal) => Some(refusal),
+                }
+            };
             // A file found inside a created directory: remember it, so it is
             // still listed once its directory is applied.
             let mut touched = self.book.touched.lock().unwrap();
             touched.entry(s.path).or_insert(s.original);
-            report.skipped.push(s.change);
+            match refused {
+                Some((code, reason)) => report.failed.push(FailedChange {
+                    change: s.change,
+                    code,
+                    reason,
+                }),
+                None => report.skipped.push(s.change),
+            }
         }
         Ok(report)
     }

@@ -5,7 +5,9 @@
 //! The sandbox lives in this process: what is not applied when kern exits is
 //! gone, so [`unapplied`] is asked before every exit.
 
-use kern::core::workspace::{Change, ChangeKind, ChangeSet};
+use std::path::Path;
+
+use kern::core::workspace::{ApplyReport, Change, ChangeKind, ChangeSet};
 
 use crate::term::Runtime;
 
@@ -75,6 +77,42 @@ pub async fn show(rt: &Runtime) {
     ));
 }
 
+/// What /apply tells the human, and whether it is a warning (something was
+/// left in the sandbox).
+fn apply_message(report: &ApplyReport, cwd: &Path) -> (String, bool) {
+    let mut text = if report.applied.is_empty() {
+        "Nothing applied.".to_string()
+    } else {
+        format!(
+            "Applied {} change(s) to {}:\n{}",
+            report.applied.len(),
+            cwd.display(),
+            lines_of(&report.applied)
+        )
+    };
+    if !report.skipped.is_empty() {
+        text.push_str(&format!(
+            "\n\nSkipped {} -- changed on disk since the sandbox read them, so applying would overwrite your edit:\n{}",
+            report.skipped.len(),
+            lines_of(&report.skipped)
+        ));
+    }
+    if !report.failed.is_empty() {
+        let lines: Vec<_> = report
+            .failed
+            .iter()
+            .map(|f| format!("{}  ({})", line_of(&f.change), f.reason))
+            .collect();
+        text.push_str(&format!(
+            "\n\nNot applied {} -- still in the sandbox:\n{}",
+            report.failed.len(),
+            lines.join("\n")
+        ));
+    }
+    let left = !report.skipped.is_empty() || !report.failed.is_empty();
+    (text, left)
+}
+
 pub async fn apply(rt: &Runtime) {
     let Some(set) = rt.agent.deps().workspace.changes() else {
         return rt.host.info(REAL_FS);
@@ -83,24 +121,10 @@ pub async fn apply(rt: &Runtime) {
         Ok(r) => r,
         Err(e) => return rt.host.error(&format!("Apply failed: {e}")),
     };
-    let done = if report.applied.is_empty() {
-        "Nothing applied.".to_string()
-    } else {
-        format!(
-            "Applied {} change(s) to {}:\n{}",
-            report.applied.len(),
-            rt.host.settings.cwd.display(),
-            lines_of(&report.applied)
-        )
-    };
-    if report.skipped.is_empty() {
-        return rt.host.info(&done);
+    match apply_message(&report, &rt.host.settings.cwd) {
+        (text, true) => rt.host.warn(&text),
+        (text, false) => rt.host.info(&text),
     }
-    rt.host.warn(&format!(
-        "{done}\n\nSkipped {} -- changed on disk since the sandbox read them, so applying would overwrite your edit:\n{}",
-        report.skipped.len(),
-        lines_of(&report.skipped)
-    ));
 }
 
 /// What exiting now would throw away, as the warning to print; None = nothing.
@@ -131,6 +155,39 @@ mod tests {
         assert_eq!(line_of(&c(ChangeKind::Added, false)), "+ src/a.rs");
         assert_eq!(line_of(&c(ChangeKind::Deleted, false)), "- src/a.rs");
         assert!(line_of(&c(ChangeKind::Modified, true)).starts_with("~ src/a.rs  (CONFLICT"));
+    }
+
+    #[test]
+    fn apply_names_every_failed_change_and_warns_while_any_is_left() {
+        use kern::core::workspace::{ApplyFailureCode, FailedChange};
+        let change = |path: &str| Change {
+            path: path.into(),
+            kind: ChangeKind::Added,
+            conflict: false,
+        };
+        let failed = |path: &str| FailedChange {
+            change: change(path),
+            code: ApplyFailureCode::Symlink,
+            reason: "why".into(),
+        };
+        let report = ApplyReport {
+            applied: vec![change("/ok.txt")],
+            skipped: vec![],
+            failed: vec![failed("/l"), failed("/sub")],
+        };
+        let (text, warn) = apply_message(&report, Path::new("/p"));
+        assert!(warn);
+        for path in ["ok.txt", "l", "sub"] {
+            assert!(
+                text.lines().any(|l| l.starts_with(&format!("+ {path}"))),
+                "{path}: {text}"
+            );
+        }
+        let all_applied = ApplyReport {
+            applied: vec![change("/ok.txt")],
+            ..Default::default()
+        };
+        assert!(!apply_message(&all_applied, Path::new("/p")).1);
     }
 
     #[test]

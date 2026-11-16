@@ -69,10 +69,39 @@ pub enum ChangeKind {
     Deleted,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Why a change was not applied. The words are the TS kern's (`ApplyFailure`
+/// in `overlay-apply.ts`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ApplyFailureCode {
+    /// A symlink on the real disk is on its way, so the write could land
+    /// outside the project.
+    OutsideProject,
+    /// The change is a symlink the sandbox made, or sits behind one: /apply
+    /// never makes a link.
+    Symlink,
+    /// The disk refused it (permissions, a full disk).
+    WriteFailed,
+}
+
+/// A change /apply could not put on disk. It stays in the sandbox, still listed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailedChange {
+    #[serde(flatten)]
+    pub change: Change,
+    pub code: ApplyFailureCode,
+    /// Why, for the human.
+    pub reason: String,
+}
+
+/// What /apply did with every change.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApplyReport {
     pub applied: Vec<Change>,
+    /// Conflicts: left alone so the human's edit survives.
     pub skipped: Vec<Change>,
+    /// Not applied, each with why.
+    pub failed: Vec<FailedChange>,
 }
 
 /// What a sandbox changed, and putting it on the real disk.
@@ -181,5 +210,40 @@ mod tests {
         assert_eq!(*seen.lock().unwrap(), [NO_SHELL]);
         assert_eq!(r.exit_code, EXIT_NOT_FOUND);
         assert!(r.stdout.is_empty() && r.stderr.is_empty());
+    }
+
+    /// The TS kern's `ApplyResult`: a failed change is the change's own keys
+    /// plus `code` and `reason`.
+    #[test]
+    fn an_apply_report_has_the_ts_kerns_wire_shape() {
+        let change = Change {
+            path: "/l".into(),
+            kind: ChangeKind::Added,
+            conflict: false,
+        };
+        let report = ApplyReport {
+            applied: vec![],
+            skipped: vec![],
+            failed: vec![FailedChange {
+                change,
+                code: ApplyFailureCode::Symlink,
+                reason: "why".into(),
+            }],
+        };
+        let wire = serde_json::json!({
+            "applied": [],
+            "skipped": [],
+            "failed": [{"path": "/l", "kind": "added", "conflict": false, "code": "symlink", "reason": "why"}],
+        });
+        assert_eq!(serde_json::to_value(&report).unwrap(), wire);
+        assert_eq!(serde_json::from_value::<ApplyReport>(wire).unwrap(), report);
+        let words = [
+            (ApplyFailureCode::OutsideProject, "outside-project"),
+            (ApplyFailureCode::Symlink, "symlink"),
+            (ApplyFailureCode::WriteFailed, "write-failed"),
+        ];
+        for (code, word) in words {
+            assert_eq!(serde_json::to_value(code).unwrap(), word);
+        }
     }
 }

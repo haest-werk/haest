@@ -4,7 +4,10 @@
 //! names); `read_dir` reports a link as [`FileKind::Symlink`] without following
 //! it, so a walk never descends a link loop.
 
-use std::{io, path::Path};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 use async_trait::async_trait;
 use kern_core::fs::{DirEntry, FileKind, Fs, FsStat};
@@ -110,6 +113,10 @@ impl Fs for RealFs {
             size: m.len(),
             modified: m.modified().ok(),
         })
+    }
+
+    async fn read_link(&self, path: &Path) -> io::Result<PathBuf> {
+        tokio::fs::read_link(path).await
     }
 
     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
