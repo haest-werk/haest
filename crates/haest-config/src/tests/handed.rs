@@ -114,7 +114,7 @@ SPACED = "  x  ""#;
         .await
         .unwrap();
     let passed: Vec<(&str, &str)> = r
-        .env
+        .passed_env
         .vars()
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
@@ -142,7 +142,7 @@ SPACED = "  x  ""#;
     assert_eq!(r.child_env.get("GH_TOKEN"), None, "env is handed beside it");
 
     let untrusted = run("/w", &[project], &[], &[]).await.unwrap();
-    assert!(untrusted.env.vars().is_empty());
+    assert!(untrusted.passed_env.vars().is_empty());
 }
 
 #[tokio::test]

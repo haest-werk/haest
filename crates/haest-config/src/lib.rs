@@ -164,7 +164,7 @@ pub use value::env_var;
 /// |---|---|
 /// | `settings` | `config.settings` |
 /// | `world` | `World::Disk { child_env }` |
-/// | `env` | `env` |
+/// | `passed_env` | `passed_env` |
 /// | `keys` | `Arc::new(keys)` (a `HashMap` is a `KeySource`) |
 /// | `providers` | `providers` |
 /// | `mcp_servers` | `mcp_servers` |
@@ -183,7 +183,7 @@ pub struct Loaded {
     pub child_env: ChildEnv,
     /// The variables passed on purpose (`env`), filled in: every process haest
     /// starts gets them over `child_env`, the sandbox's shell included.
-    pub env: ChildEnv,
+    pub passed_env: ChildEnv,
     /// The environment [`Loader::env`] was given, as the source of the
     /// provider keys; empty when the loader reads no variables.
     pub keys: HashMap<String, String>,

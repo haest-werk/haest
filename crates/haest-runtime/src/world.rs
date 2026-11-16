@@ -52,7 +52,7 @@ pub enum World {
     /// server) gets `child_env` and nothing else of the host's environment.
     Disk {
         /// The environment every process haest starts gets, before the
-        /// variables the host passes on purpose ([`RuntimeInputs::env`](crate::RuntimeInputs::env)).
+        /// variables the host passes on purpose ([`RuntimeInputs::passed_env`](crate::RuntimeInputs::passed_env)).
         child_env: ChildEnv,
     },
     /// The host's own files: everything haest reads and writes goes through
@@ -73,9 +73,9 @@ impl World {
 
     /// The environment of a process haest starts: `child_env` with the
     /// variables the host passes on purpose on top. None = it starts none.
-    pub fn child_env(&self, passed: &ChildEnv) -> Option<ChildEnv> {
+    pub fn child_env(&self, passed_env: &ChildEnv) -> Option<ChildEnv> {
         match self {
-            World::Disk { child_env } => Some(child_env.with(passed)),
+            World::Disk { child_env } => Some(child_env.with(passed_env)),
             World::Fs(_) => None,
         }
     }
@@ -124,7 +124,7 @@ async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> anyhow::Result<()> {
 /// The `workspace` setting's workspace in this world. The disk's sandbox
 /// mounts the skill dirs (read-only; `SkillScanRoots::dirs` of the `skills` setting's
 /// roots) and the spill dir (read-write); a host's Fs is the sandbox's whole
-/// world. On the disk the spill dir is made first, private. `passed` (the
+/// world. On the disk the spill dir is made first, private. `passed_env` (the
 /// variables the host passes on purpose) reaches the shell either way: the
 /// sandbox's alone, real bash's over `child_env`. The sandbox tells the model
 /// how the human applies its edits with `remedies`. `workspace = shut` is a
@@ -138,13 +138,13 @@ async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> anyhow::Result<()> {
 pub async fn workspace_for(
     s: &Settings,
     world: &World,
-    passed: &ChildEnv,
+    passed_env: &ChildEnv,
     skill_dirs: &[PathBuf],
     spill: &Path,
     remedies: Remedies,
 ) -> anyhow::Result<Arc<dyn Workspace>> {
     let fs = world.fs();
-    let ws = match (s.workspace, world.child_env(passed)) {
+    let ws = match (s.workspace, world.child_env(passed_env)) {
         (WorkspaceMode::Shut, _) => return Ok(Arc::new(ShutWorkspace)),
         (WorkspaceMode::Real, Some(env)) => {
             private_spill_dir(fs.as_ref(), spill).await?;
@@ -169,7 +169,7 @@ pub async fn workspace_for(
         }
     };
     let ws = sandbox_commands().into_iter().fold(
-        ws.with_env(passed.clone()).with_remedies(remedies),
+        ws.with_env(passed_env.clone()).with_remedies(remedies),
         SandboxWorkspace::with_command,
     );
     Ok(Arc::new(ws))
@@ -180,16 +180,16 @@ pub async fn workspace_for(
 ///
 /// Every server starts at once; one that fails is a [`warn`](RuntimeHooks::warn), and
 /// the hub holds the rest. A stdio server's process gets the world's
-/// `child_env` with `passed` over it, then its own `env`. With `debug` on,
+/// `child_env` with `passed_env` over it, then its own `env`. With `debug` on,
 /// each server's line (how many tools, or why it failed) goes to the
 /// [`Ui::debug`](crate::Ui::debug).
 pub async fn connect_mcp(
     hooks: &RuntimeHooks,
     world: &World,
-    passed: &ChildEnv,
+    passed_env: &ChildEnv,
     servers: Vec<McpServerConfig>,
 ) -> Arc<McpHub> {
-    let Some(child_env) = world.child_env(passed) else {
+    let Some(child_env) = world.child_env(passed_env) else {
         let (stdio, http): (Vec<_>, Vec<_>) = servers
             .into_iter()
             .partition(|s| matches!(s.transport, McpTransport::Stdio { .. }));

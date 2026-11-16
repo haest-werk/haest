@@ -53,7 +53,7 @@ pub struct Config {
     /// [`crate::Loaded::child_env`].
     pub env_passthrough: EnvPassthrough,
     /// `env`: each variable's value as written; its `${NAME}`s are filled in
-    /// when loaded ([`crate::Loaded::env`]).
+    /// when loaded ([`crate::Loaded::passed_env`]).
     pub env: BTreeMap<String, String>,
     /// Start the project's `.mcp.json` servers (a trusted dir only).
     pub mcp: bool,

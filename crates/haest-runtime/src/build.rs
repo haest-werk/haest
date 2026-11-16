@@ -53,7 +53,7 @@ pub struct RuntimeInputs {
     /// every process haest starts gets them over the world's `child_env`, the
     /// sandbox's shell included (it gets nothing else of the host's
     /// environment).
-    pub env: ChildEnv,
+    pub passed_env: ChildEnv,
     /// What the host answers for a provider variable (`OPENROUTER_API_KEY`,
     /// `ANTHROPIC_BASE_URL`, ...): its environment, a vault, a fixed map. A
     /// closure `Fn(&str) -> Option<String>` and a `HashMap<String, String>`
@@ -86,7 +86,7 @@ impl RuntimeInputs {
         Self {
             settings,
             world,
-            env: ChildEnv::default(),
+            passed_env: ChildEnv::default(),
             keys: Arc::new(no_keys),
             providers: CustomProviders::new(),
             mcp_servers: Vec::new(),
@@ -136,7 +136,7 @@ struct Found {
 async fn find(
     hooks: &Arc<RuntimeHooks>,
     world: &World,
-    env: &ChildEnv,
+    passed_env: &ChildEnv,
     fs: &Arc<dyn Fs>,
     spill: &Path,
 ) -> anyhow::Result<Found> {
@@ -145,7 +145,7 @@ async fn find(
     let skill_dirs = skill_roots.dirs();
     let remedies = hooks.remedies();
     let workspace =
-        workspace_for(&hooks.settings, world, env, &skill_dirs, spill, remedies).await?;
+        workspace_for(&hooks.settings, world, passed_env, &skill_dirs, spill, remedies).await?;
     let prompt = Arc::new(RuntimePrompt::new(hooks, fs, &skills, workspace.as_ref()).await);
     Ok(Found {
         skill_roots,
@@ -216,7 +216,7 @@ where
     let RuntimeInputs {
         settings,
         world,
-        env,
+        passed_env,
         keys,
         providers,
         mcp_servers,
@@ -248,12 +248,12 @@ where
     // started nothing and left no file: the model is checked (above), the
     // files are found, then a new session's file is created. Then the MCP servers and the mods start,
     // together; from there on nothing fails.
-    let found = find(&hooks, &world, &env, &fs, &spill).await?;
+    let found = find(&hooks, &world, &passed_env, &fs, &spill).await?;
     if session.saved.is_none() {
         create(&session.store, &s.cwd).await?;
     }
     let (mcp, mods) = tokio::join!(
-        connect_mcp(&hooks, &world, &env, mcp_servers),
+        connect_mcp(&hooks, &world, &passed_env, mcp_servers),
         mods::load(&hooks, fs.as_ref(), prompter),
     );
 

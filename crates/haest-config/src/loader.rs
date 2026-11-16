@@ -238,7 +238,7 @@ impl Loader {
         let routing = config.provider_routing.as_deref();
         Ok(Loaded {
             child_env: handed::child_env(config.env_passthrough, &env),
-            env: handed::passed_env(&config.env, &env, &mut notes),
+            passed_env: handed::passed_env(&config.env, &env, &mut notes),
             routing: handed::routing(routing, &resolved.source("provider_routing"), &mut notes),
             keys: env,
             config,

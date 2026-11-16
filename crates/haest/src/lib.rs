@@ -338,7 +338,7 @@ pub fn runtime_inputs(loaded: config::Loaded) -> runtime::RuntimeInputs {
         world: runtime::World::Disk {
             child_env: loaded.child_env,
         },
-        env: loaded.env,
+        passed_env: loaded.passed_env,
         keys: std::sync::Arc::new(loaded.keys),
         providers: loaded.providers,
         mcp_servers: loaded.mcp_servers,
