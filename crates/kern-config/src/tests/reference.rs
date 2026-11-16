@@ -92,14 +92,17 @@ fn default_of(def: &Def) -> String {
     }
 }
 
-/// The help as a sentence of markdown: a `<name>` must not read as a tag.
+/// The help as a sentence of markdown (a `<name>` must not read as a tag),
+/// then the reference's own detail in the same paragraph.
 fn help(def: &Def) -> String {
-    let text = def.help.replace('<', "&lt;");
-    if text.ends_with('.') {
-        text
-    } else {
-        text + "."
+    let mut text = def.help.replace('<', "&lt;");
+    if !text.ends_with('.') {
+        text.push('.');
     }
+    if let Some(detail) = def.detail {
+        text = format!("{text}\n{}", detail.replace('<', "&lt;"));
+    }
+    text
 }
 
 /// The example as a config file says it; None when no file may set it.

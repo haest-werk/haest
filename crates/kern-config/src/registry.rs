@@ -66,6 +66,9 @@ pub struct Def {
     /// what the settings reference shows in each spelling.
     pub example: &'static str,
     pub help: &'static str,
+    /// More for the settings reference only, after `help`: what `--help` has
+    /// no room for (a host's own API, the fine print).
+    pub detail: Option<&'static str>,
 }
 
 impl Def {
@@ -94,6 +97,11 @@ impl Def {
         self.scope = s;
         self
     }
+
+    const fn detail(mut self, text: &'static str) -> Self {
+        self.detail = Some(text);
+        self
+    }
 }
 
 const fn def(
@@ -111,6 +119,7 @@ const fn def(
         scope: Scope::Any,
         example,
         help,
+        detail: None,
     }
 }
 
@@ -147,7 +156,8 @@ pub const DEFS: &[Def] = &[
     def("image_model", TOOLS, Text, "black-forest-labs/flux-3-image", "GenerateImage's default model"),
     def("image_models", TOOLS, List(None), "openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image", "The other image models a call may pick (unset: the library's list)"),
     def("mcp", TOOLS, Bool, "true", "Start the project's MCP servers (.mcp.json); a trusted dir only"),
-    def("deferred_tools", TOOLS, Choice(DeferMode::WORDS), "grow", "How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off)"),
+    def("deferred_tools", TOOLS, Choice(DeferMode::WORDS), "grow", "How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off)")
+        .detail("ToolSearch lists each held-back tool with its description's first sentence. A host linking kern can hold back its own tools too, all but a list it names (`ToolDeferral::deferring_all_except`, `DeferredTools`); a held-back tool the model calls by name still runs, and loads."),
     def("workspace", WORK, Choice(WORKSPACES), "real", "sandbox: a simulated bash over a copy-on-write overlay (nothing reaches the disk until /apply); real: the real disk and bash").short('w'),
     def("env_passthrough", WORK, Choice(EnvPassthrough::WORDS), "none", "What a process kern starts (bash, a background job, an MCP server) gets of kern's environment: none, core (PATH, HOME, the user, the locale, the temp dirs), all (every variable, API keys included)"),
     def("env", WORK, Vars, "GH_TOKEN=${GITHUB_TOKEN}", "A variable every process kern starts gets, the sandbox's shell included, over env_passthrough: NAME=VALUE, or NAME for kern's own value; repeat it for more. In a file: an [env] table. ${NAME} and ${NAME:-default} in a value are filled in from kern's environment").short('E'),
