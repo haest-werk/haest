@@ -3,15 +3,11 @@
 //! builtin calls it.
 
 use std::{
-    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use haest_core::{
-    fs::{Fs, MemFs},
-    workspace::ExecResult,
-};
+use haest_core::{fs::MemFs, workspace::ExecResult};
 use tokio_util::sync::CancellationToken;
 
 use super::{JsEnv, NOT_HERE, js_command, not_here};
@@ -40,6 +36,10 @@ async fn js(fs: &Arc<MemFs>, line: &str) -> ExecResult {
 #[cfg(feature = "typescript")]
 #[tokio::test]
 async fn a_typescript_module_reads_project_files_and_writes_through_the_workspace() {
+    use std::path::Path;
+
+    use haest_core::fs::Fs;
+
     let fs = with_script(
         "temp/sum.ts",
         "import { readFile, writeFile } from 'fs/promises'
