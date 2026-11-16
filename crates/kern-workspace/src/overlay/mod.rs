@@ -71,7 +71,6 @@ struct Scanned {
 /// What a sandbox changed, and putting it on the real disk.
 pub struct OverlayChanges {
     book: Arc<Book>,
-    overlay_bk: Arc<dyn bashkit::FileSystem>,
     overlay: KernFsOverBashkit,
 }
 
@@ -89,8 +88,7 @@ impl OverlayChanges {
                 disk,
                 root: root.into(),
             }),
-            overlay: KernFsOverBashkit::new(overlay.clone()),
-            overlay_bk: overlay,
+            overlay: KernFsOverBashkit::new(overlay),
         }
     }
 
@@ -98,7 +96,7 @@ impl OverlayChanges {
     /// Mount THIS, never the bare overlay, or edits go unrecorded.
     pub fn recorder(&self) -> Arc<dyn bashkit::FileSystem> {
         Arc::new(Recorder {
-            inner: self.overlay_bk.clone(),
+            inner: self.overlay.inner().clone(),
             book: self.book.clone(),
         })
     }

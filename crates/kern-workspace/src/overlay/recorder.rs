@@ -22,19 +22,13 @@ pub(crate) struct Recorder {
     pub(crate) book: Arc<Book>,
 }
 
-impl Recorder {
-    async fn touch(&self, path: &Path) {
-        self.book.remember(path).await;
-    }
-}
-
 #[async_trait]
 impl FileSystemExt for Recorder {
     fn usage(&self) -> FsUsage {
         self.inner.usage()
     }
     async fn mkfifo(&self, path: &Path, mode: u32) -> Result<()> {
-        self.touch(path).await;
+        self.book.remember(path).await;
         self.inner.mkfifo(path, mode).await
     }
     fn limits(&self) -> FsLimits {
@@ -57,19 +51,19 @@ impl FileSystem for Recorder {
         self.inner.read_file(path).await
     }
     async fn write_file(&self, path: &Path, content: &[u8]) -> Result<()> {
-        self.touch(path).await;
+        self.book.remember(path).await;
         self.inner.write_file(path, content).await
     }
     async fn append_file(&self, path: &Path, content: &[u8]) -> Result<()> {
-        self.touch(path).await;
+        self.book.remember(path).await;
         self.inner.append_file(path, content).await
     }
     async fn mkdir(&self, path: &Path, recursive: bool) -> Result<()> {
-        self.touch(path).await;
+        self.book.remember(path).await;
         self.inner.mkdir(path, recursive).await
     }
     async fn remove(&self, path: &Path, recursive: bool) -> Result<()> {
-        self.touch(path).await;
+        self.book.remember(path).await;
         self.inner.remove(path, recursive).await
     }
     async fn stat(&self, path: &Path) -> Result<Metadata> {
@@ -85,27 +79,27 @@ impl FileSystem for Recorder {
         self.inner.exists(path).await
     }
     async fn rename(&self, from: &Path, to: &Path) -> Result<()> {
-        self.touch(from).await;
-        self.touch(to).await;
+        self.book.remember(from).await;
+        self.book.remember(to).await;
         self.inner.rename(from, to).await
     }
     async fn copy(&self, from: &Path, to: &Path) -> Result<()> {
-        self.touch(to).await;
+        self.book.remember(to).await;
         self.inner.copy(from, to).await
     }
     async fn symlink(&self, target: &Path, link: &Path) -> Result<()> {
-        self.touch(link).await;
+        self.book.remember(link).await;
         self.inner.symlink(target, link).await
     }
     async fn read_link(&self, path: &Path) -> Result<PathBuf> {
         self.inner.read_link(path).await
     }
     async fn chmod(&self, path: &Path, mode: u32) -> Result<()> {
-        self.touch(path).await;
+        self.book.remember(path).await;
         self.inner.chmod(path, mode).await
     }
     async fn set_modified_time(&self, path: &Path, time: SystemTime) -> Result<()> {
-        self.touch(path).await;
+        self.book.remember(path).await;
         self.inner.set_modified_time(path, time).await
     }
     fn as_search_capable(&self) -> Option<&dyn SearchCapable> {

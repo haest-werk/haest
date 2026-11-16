@@ -20,8 +20,9 @@ use kern_core::fs::normalize;
 
 use crate::{overlay::OverlayChanges, real::RealFs as Disk};
 
-/// What the project overlay may hold in memory before writes fail.
-const OVERLAY_MEMORY_BYTES: u64 = 256 * 1024 * 1024;
+/// What the project overlay (and, apart, the scratch disk) may hold in memory
+/// before writes fail.
+const MEMORY_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone, Default)]
 pub struct SandboxMounts {
@@ -69,11 +70,11 @@ fn disjoint(paths: &[PathBuf], taken: &[PathBuf]) -> Vec<PathBuf> {
     out
 }
 
-/// No limit but the overlay's memory, and the path checks.
-fn limits(bytes: u64) -> FsLimits {
+/// No limit but the memory, and the path checks.
+fn limits() -> FsLimits {
     let d = FsLimits::default();
     FsLimits::unlimited()
-        .max_total_bytes(bytes)
+        .max_total_bytes(MEMORY_BYTES)
         .max_path_depth(d.max_path_depth)
         .max_filename_length(d.max_filename_length)
         .max_path_length(d.max_path_length)
@@ -90,7 +91,7 @@ const SEEDED: [&str; 3] = ["/dev", "/home", "/tmp"];
 /// The copy-on-write overlay of `cwd` and its change ledger.
 pub(crate) async fn project_overlay(cwd: &Path) -> io::Result<OverlayChanges> {
     let lower = real_dir(cwd, RealFsMode::ReadOnly).await?;
-    let overlay = OverlayFs::with_limits(lower, limits(OVERLAY_MEMORY_BYTES));
+    let overlay = OverlayFs::with_limits(lower, limits());
     for dir in SEEDED {
         // Straight on the upper layer: no whiteout, the project's own shows through.
         let _ = overlay.upper().remove(Path::new(dir), true).await;
@@ -104,12 +105,11 @@ pub(crate) async fn sandbox_fs(
     m: &SandboxMounts,
     changes: &OverlayChanges,
 ) -> io::Result<Arc<MountableFs>> {
-    let base = Arc::new(InMemoryFs::with_limits(limits(OVERLAY_MEMORY_BYTES)));
+    let base = Arc::new(InMemoryFs::with_limits(limits()));
     let cwd = normalize(&m.cwd);
-    let writable = disjoint(&m.writable, std::slice::from_ref(&cwd));
-    let taken: Vec<PathBuf> = std::iter::once(cwd.clone())
-        .chain(writable.iter().cloned())
-        .collect();
+    let mut taken = vec![cwd.clone()];
+    let writable = disjoint(&m.writable, &taken);
+    taken.extend(writable.iter().cloned());
     let readable = disjoint(&m.readable, &taken);
 
     let mut table: Vec<(PathBuf, Arc<dyn FileSystem>)> = vec![(cwd, changes.recorder())];

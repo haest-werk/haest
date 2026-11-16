@@ -42,7 +42,7 @@ const SHELL_NOTE: &str = "Bash is a simulated shell: coreutils, grep, rg, sed, a
 /// The commands every sandbox has beyond bashkit's builtins (`xan`). A host's
 /// command of the same name replaces one.
 fn own_commands() -> Vec<Arc<dyn ShellCommand>> {
-    vec![xan::command()]
+    vec![Arc::new(xan::Xan)]
 }
 
 /// Where edits go in the default sandbox, and how they reach the disk.
@@ -67,28 +67,30 @@ impl SandboxWorkspace {
     /// Fails when a mounted directory does not exist.
     pub async fn open(mounts: SandboxMounts) -> io::Result<Self> {
         let changes = Arc::new(mounts::project_overlay(&mounts.cwd).await?);
-        let shell_fs: Arc<dyn bashkit::FileSystem> = mounts::sandbox_fs(&mounts, &changes).await?;
-        Ok(Self {
-            fs: Arc::new(KernFsOverBashkit::new(shell_fs.clone())),
-            shell_fs,
-            note: None,
-            commands: own_commands(),
-            env: ChildEnv::default(),
-            changes: Some(changes),
-        })
+        let shell_fs = mounts::sandbox_fs(&mounts, &changes).await?;
+        let fs = Arc::new(KernFsOverBashkit::new(shell_fs.clone()));
+        Ok(Self::with_parts(shell_fs, fs, Some(changes)))
     }
 
     /// A sandboxed bash over a host's own file system: the shell's whole world
     /// is `fs`, and the tools write to `fs` itself. No overlay and no
     /// `/changes` -- the host decides what a write means.
     pub fn over(fs: Arc<dyn Fs>) -> Self {
+        Self::with_parts(Arc::new(BashkitFsOverKern::new(fs.clone())), fs, None)
+    }
+
+    fn with_parts(
+        shell_fs: Arc<dyn bashkit::FileSystem>,
+        fs: Arc<dyn Fs>,
+        changes: Option<Arc<OverlayChanges>>,
+    ) -> Self {
         Self {
-            shell_fs: Arc::new(BashkitFsOverKern::new(fs.clone())),
+            shell_fs,
             fs,
             note: None,
             commands: own_commands(),
             env: ChildEnv::default(),
-            changes: None,
+            changes,
         }
     }
 

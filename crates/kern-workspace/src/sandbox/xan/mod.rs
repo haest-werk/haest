@@ -14,7 +14,7 @@ mod select;
 #[cfg(test)]
 mod tests;
 
-use std::{collections::HashMap, io, sync::Arc, time::Instant};
+use std::{collections::HashMap, io, time::Instant};
 
 use async_trait::async_trait;
 use kern_core::{
@@ -28,10 +28,6 @@ use expr::{AggFn, Value, compile, compile_aggs, parse_num};
 use select::select;
 
 /// The sandbox's `xan`.
-pub(crate) fn command() -> Arc<dyn ShellCommand> {
-    Arc::new(Xan)
-}
-
 pub(crate) struct Xan;
 
 const NOTE: &str = "xan does CSV: `xan headers f.csv`, count, head, select, `filter 'amount > 100 and status eq \"paid\"'`, \
