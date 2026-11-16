@@ -36,7 +36,23 @@ pub(crate) struct Tally {
     pub cost_usd: f64,
     pub child_cost_usd: f64,
     pub seen: Vec<MediaPart>,
+    /// Pictures promised to a see() still reading them: counted against the
+    /// cap with `seen`, so two calls at once cannot pass it together.
+    pub held: usize,
     pub notes: Vec<String>,
+}
+
+/// A see()'s claim on its pictures; what is not used goes back when it ends,
+/// however it ends (an error, or the run dropping the call).
+struct Held<'a> {
+    tally: &'a Mutex<Tally>,
+    left: usize,
+}
+
+impl Drop for Held<'_> {
+    fn drop(&mut self) {
+        self.tally.lock().unwrap().held -= self.left;
+    }
 }
 
 pub(crate) struct Bridge {
@@ -177,12 +193,21 @@ impl Bridge {
     /// Each image is a gated Read; its media rides on the Code result, up to MAX_SEEN a run.
     async fn see(&self, args_json: &str) -> Result<String, String> {
         let input: SeeInput = serde_json::from_str(args_json).map_err(|e| format!("see(): {e}"))?;
-        let already = self.tally.lock().unwrap().seen.len();
-        if already + input.images.len() > MAX_SEEN {
-            return Err(format!(
-                "see() shows at most {MAX_SEEN} pictures per run; {already} already attached."
-            ));
-        }
+        // Claimed before the first Read is awaited.
+        let mut held = {
+            let mut tally = self.tally.lock().unwrap();
+            let already = tally.seen.len() + tally.held;
+            if already + input.images.len() > MAX_SEEN {
+                return Err(format!(
+                    "see() shows at most {MAX_SEEN} pictures per run; {already} already attached or on the way."
+                ));
+            }
+            tally.held += input.images.len();
+            Held {
+                tally: &self.tally,
+                left: input.images.len(),
+            }
+        };
         for img in &input.images {
             let path = img
                 .path
@@ -198,6 +223,8 @@ impl Bridge {
                 return Err(format!("see(): {path} is not an image or PDF"));
             }
             let mut tally = self.tally.lock().unwrap();
+            tally.held -= 1;
+            held.left -= 1;
             tally.seen.extend(out.media);
             let label = format!(
                 "[picture {}: {}]",

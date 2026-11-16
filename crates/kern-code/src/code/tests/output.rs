@@ -200,3 +200,31 @@ async fn see_stops_at_its_cap_per_run_and_refuses_a_non_image() {
     assert_eq!(returned(&out), Some(json!(want)));
     assert_eq!(out.media.len(), MAX_SEEN);
 }
+
+#[tokio::test]
+async fn see_holds_its_cap_when_calls_run_at_once() {
+    // A Read that takes a while, as a real one does: both see() calls are in flight.
+    let mut read = Probe::new("Read", true, 30);
+    read.answer = ToolOutput::text("a picture");
+    read.answer.media = vec![MediaPart {
+        kind: MediaKind::Image,
+        media_type: "image/png".into(),
+        data: STANDARD.encode(PNG),
+        name: "s.png".into(),
+    }];
+    let batch = |from: usize| {
+        (from..from + MAX_SEEN)
+            .map(|i| format!("{{ path: 's{i}.png' }}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let code = format!(
+        "const r = await Promise.allSettled([see({{ images: [{}] }}), see({{ images: [{}] }})])
+       return r.map(x => x.status)",
+        batch(0),
+        batch(MAX_SEEN)
+    );
+    let out = run(&code_over(vec![Arc::new(read)], &[]), &code).await;
+    assert_eq!(out.media.len(), MAX_SEEN, "{}", out.content);
+    assert_eq!(returned(&out), Some(json!(["fulfilled", "rejected"])));
+}
