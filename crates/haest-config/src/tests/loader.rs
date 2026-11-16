@@ -14,10 +14,10 @@ async fn a_layer_added_later_wins_whatever_kind_it_is() {
     let fs = files(&[(NAMED, "model = \"a:file\"")]);
     let env = vars(&[("HAEST_MODEL", "a:env")]);
     let file_last = bare().env(&env).file(NAMED).load(&fs).await.unwrap();
-    assert_eq!(file_last.config.settings.model, "a:file");
+    assert_eq!(file_last.config.settings.model_spec, "a:file");
     assert_eq!(file_last.resolved.source("model").to_string(), NAMED);
     let env_last = bare().file(NAMED).env(&env).load(&fs).await.unwrap();
-    assert_eq!(env_last.config.settings.model, "a:env");
+    assert_eq!(env_last.config.settings.model_spec, "a:env");
 }
 
 #[tokio::test]
@@ -27,7 +27,7 @@ async fn a_layer_not_added_is_not_read() {
     let flags = owned(&[("model", "a:flag")]);
     let only_flags = bare().flags(&flags).load(&fs).await.unwrap();
     assert!(only_flags.config.settings.tools.is_empty());
-    assert_eq!(only_flags.config.settings.model, "a:flag");
+    assert_eq!(only_flags.config.settings.model_spec, "a:flag");
     assert!(only_flags.keys.is_empty() && only_flags.child_env.vars().is_empty());
 
     let nothing = bare().xdg_dirs(&env).load(&fs).await.unwrap();

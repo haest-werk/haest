@@ -40,15 +40,15 @@ use crate::{
 /// and a model call that would overflow the window is compacted first. It is
 /// the ledger's [`LedgerHooks`] (the spend goes to the session file) and the
 /// tools' [`ToolServices`] (their log lines reach [`Ui::debug`] with `debug` on).
-/// It answers the per-model questions (window, limits, input kinds, effort
+/// It answers the per-model questions (window, caps, input kinds, effort
 /// levels) from the settings and the built-in catalog, and keeps the model and
 /// effort the conversation is on now, which a subagent starts on.
 ///
 /// [`build`](crate::build) makes one, shared as [`Runtime::hooks`](crate::Runtime::hooks).
 /// A host that takes the pieces makes its own with [`RuntimeHooks::new`].
 pub struct RuntimeHooks {
-    /// The run's settings, as handed in. Their `model` and `effort` are what
-    /// the run started from: the ones in use now are [`model`](Self::model)
+    /// The run's settings, as handed in. Their `model_spec` and `effort` are
+    /// what the run started from: the ones in use now are [`model_spec`](Self::model_spec)
     /// and [`effort`](Self::effort).
     pub settings: Settings,
     /// haest's built-in model catalog: windows, input kinds, effort levels.
@@ -58,7 +58,7 @@ pub struct RuntimeHooks {
     store: Mutex<Arc<JsonlSessionFile>>,
     /// The model the system prompt names and a subagent starts on; kept in step
     /// with the agent's spec.
-    model: Mutex<String>,
+    model_spec: Mutex<String>,
     /// The effort a subagent starts on; kept in step with the agent's.
     effort: Mutex<Option<Effort>>,
     effort_notes: Mutex<HashSet<String>>,
@@ -73,13 +73,13 @@ impl RuntimeHooks {
     /// or nowhere. [`build`](crate::build) sees to that for its own. Needs a
     /// tokio runtime, as the session file does.
     pub fn new(settings: Settings, ui: Arc<dyn Ui>, store: Arc<JsonlSessionFile>) -> Self {
-        let (model, effort) = (settings.model.clone(), settings.effort);
+        let (model_spec, effort) = (settings.model_spec.clone(), settings.effort);
         Self {
             settings,
             catalog: Catalog::builtin(),
             ui,
             store: Mutex::new(store),
-            model: Mutex::new(model),
+            model_spec: Mutex::new(model_spec),
             effort: Mutex::new(effort),
             effort_notes: Mutex::default(),
         }
@@ -116,14 +116,14 @@ impl RuntimeHooks {
         self.store().flush().await;
     }
 
-    /// The model the conversation is on now: what the system prompt names and
-    /// a subagent starts on.
-    pub fn model(&self) -> String {
-        self.model.lock().unwrap().clone()
+    /// The model spec the conversation is on now: what the system prompt names
+    /// and a subagent starts on.
+    pub fn model_spec(&self) -> String {
+        self.model_spec.lock().unwrap().clone()
     }
 
-    pub(crate) fn set_model(&self, spec: &str) {
-        *self.model.lock().unwrap() = spec.to_string();
+    pub(crate) fn set_model_spec(&self, spec: &str) {
+        *self.model_spec.lock().unwrap() = spec.to_string();
     }
 
     /// The effort the conversation is on now (None = the model's default):

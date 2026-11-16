@@ -81,7 +81,7 @@ impl SubagentParent for Agents {
     async fn system_prompt(&self, model_spec: &str, tools: &[Arc<dyn Tool>]) -> String {
         let prompt = AgentPrompt {
             prompt: self.prompt.clone(),
-            model: Some(model_spec.to_string()),
+            model_spec: Some(model_spec.to_string()),
             tools: Arc::new(tools.to_vec()),
         };
         ModSystemPrompt::new(Arc::new(prompt), self.mods.clone())
@@ -90,7 +90,7 @@ impl SubagentParent for Agents {
     }
 
     fn default_model(&self) -> (String, Option<Effort>) {
-        (self.hooks.model(), self.hooks.effort())
+        (self.hooks.model_spec(), self.hooks.effort())
     }
 
     /// The agent's fixed list behind its own deferral (ToolSearch loads per agent).

@@ -114,12 +114,12 @@ async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
     let saved = fs.read_to_string(&file).await.unwrap();
 
     let keyless = Settings {
-        model: "anthropic:claude-opus-5-5".into(),
+        model_spec: "anthropic:claude-opus-5-5".into(),
         ..hardcoded()
     };
     let opts = BuildOptions {
         resume: Resume::Id(id),
-        model_given: true,
+        model_spec_given: true,
         ..BuildOptions::default()
     };
     let built = try_keyed(&fs, keyless, opts).await;
@@ -137,16 +137,16 @@ async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothi
     let fs = Arc::new(MemFs::new());
     let mut rt = keyed(&fs, Resume::New).await;
     let before = rt.agent().model_spec().to_string();
-    assert!(rt.set_model("nowhere:x").is_err());
+    assert!(rt.set_model_spec("nowhere:x").is_err());
     assert_eq!(
-        (rt.agent().model_spec(), rt.hooks.model()),
+        (rt.agent().model_spec(), rt.hooks.model_spec()),
         (before.as_str(), before.clone())
     );
 
-    rt.set_model(OTHER).unwrap();
+    rt.set_model_spec(OTHER).unwrap();
     rt.set_effort(Some(Effort::High));
     assert_eq!(
-        (rt.hooks.model(), rt.hooks.effort()),
+        (rt.hooks.model_spec(), rt.hooks.effort()),
         (OTHER.to_string(), Some(Effort::High))
     );
     rt.hooks.flush().await;
@@ -162,7 +162,7 @@ async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothi
 async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
     let fs = Arc::new(MemFs::new());
     let mut rt = keyed(&fs, Resume::New).await;
-    rt.set_model(OTHER).unwrap();
+    rt.set_model_spec(OTHER).unwrap();
     rt.set_effort(Some(Effort::High));
     rt.hooks.flush().await;
     let id = rt.session_id();
@@ -173,13 +173,13 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
     assert_eq!(on(&plain), (OTHER.to_string(), Some(Effort::High)));
 
     let given = Settings {
-        model: GIVEN.into(),
+        model_spec: GIVEN.into(),
         effort: Some(Effort::Low),
         ..hardcoded()
     };
-    let opts = |model_given, effort_given| BuildOptions {
+    let opts = |model_spec_given, effort_given| BuildOptions {
         resume: Resume::Id(id.clone()),
-        model_given,
+        model_spec_given,
         effort_given,
     };
     let model_only = keyed_with(&fs, given.clone(), opts(true, false)).await;
@@ -196,7 +196,7 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
 async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resumes() {
     let fs = Arc::new(MemFs::new());
     let mut rt = keyed(&fs, Resume::New).await;
-    rt.set_model(OTHER).unwrap();
+    rt.set_model_spec(OTHER).unwrap();
     rt.board.create(NewTask {
         subject: "old work".into(),
         ..Default::default()

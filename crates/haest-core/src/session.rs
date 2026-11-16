@@ -44,7 +44,7 @@
 //!
 //! let s = replay(&file);
 //! assert_eq!(s.messages, [Message::user("hi")]);
-//! assert_eq!(s.model.as_deref(), Some("openrouter:example/model-1"));
+//! assert_eq!(s.model_spec.as_deref(), Some("openrouter:example/model-1"));
 //! assert_eq!(s.corrupt_lines, 1);
 //! ```
 
@@ -114,8 +114,8 @@ pub enum SessionRecord {
         #[serde(deserialize_with = "millis")]
         t: u64,
         /// The new model spec; absent (or empty) = unchanged.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        model: Option<String>,
+        #[serde(rename = "model", default, skip_serializing_if = "Option::is_none")]
+        model_spec: Option<String>,
         /// Absent = unchanged; `null` = back to the model's default.
         #[serde(
             default,

@@ -68,7 +68,7 @@ fn wall_clock(time: Duration) -> String {
 /// The parent's system prompt for this agent's model and tools, then its note.
 pub(super) struct ChildPrompt {
     pub parent: Arc<dyn SubagentParent>,
-    pub model: String,
+    pub model_spec: String,
     pub tools: Arc<dyn ToolSource>,
     pub note: String,
 }
@@ -78,7 +78,7 @@ impl SystemPrompt for ChildPrompt {
     async fn system_prompt(&self) -> String {
         let base = self
             .parent
-            .system_prompt(&self.model, &self.tools.tools())
+            .system_prompt(&self.model_spec, &self.tools.tools())
             .await;
         format!("{base}\n\n{}", self.note)
     }

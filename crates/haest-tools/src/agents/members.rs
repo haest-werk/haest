@@ -184,7 +184,7 @@ mod tests {
             description: "work".into(),
             prompt: String::new(),
             name: Some(name.into()),
-            model: None,
+            model_spec: None,
             background: true,
             subagent_type: None,
         }

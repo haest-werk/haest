@@ -24,7 +24,7 @@ fn bare_turns_every_capability_off_and_every_brake_on() {
     assert!(s.approvals);
     assert_eq!(s.workspace, WorkspaceMode::Sandbox);
     assert_eq!(s.caps.max_turn_usd, 2.0);
-    assert_eq!(s.model, DEFAULT_MODEL);
+    assert_eq!(s.model_spec, DEFAULT_MODEL);
     assert_eq!(
         (s.data_dir, s.config_dir),
         (

@@ -137,7 +137,7 @@ pub struct SpawnInput {
     /// description when None, and keeps names unique.
     pub name: Option<String>,
     /// `provider:model`; None = the conversation's own.
-    pub model: Option<String>,
+    pub model_spec: Option<String>,
     /// `run_in_background`: return at once; the answer arrives as a message.
     pub background: bool,
     /// One of the host's [`SubagentTypes`] (the named one, else its default);

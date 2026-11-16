@@ -103,7 +103,7 @@ pub(crate) async fn new_session(
 pub(crate) fn record_start(hooks: &RuntimeHooks, agent: &Agent) {
     hooks.append(SessionRecord::Config {
         t: now_ms(),
-        model: Some(agent.model_spec().to_string()),
+        model_spec: Some(agent.model_spec().to_string()),
         effort: Some(agent.effort()),
     });
     if let Some(ledger) = &agent.deps().ledger {
@@ -124,11 +124,11 @@ pub(crate) fn start_on(
     opts: &BuildOptions,
 ) -> (String, Option<Effort>) {
     let model = saved
-        .and_then(|r| r.model.clone())
-        .filter(|_| !opts.model_given);
+        .and_then(|r| r.model_spec.clone())
+        .filter(|_| !opts.model_spec_given);
     let effort = saved.and_then(|r| r.effort).filter(|_| !opts.effort_given);
     (
-        model.unwrap_or_else(|| s.model.clone()),
+        model.unwrap_or_else(|| s.model_spec.clone()),
         effort.unwrap_or(s.effort),
     )
 }
@@ -136,10 +136,12 @@ pub(crate) fn start_on(
 /// A resume on a model or effort this run asked for: recorded like a switch,
 /// so the next resume goes on with it.
 pub(crate) fn record_given(hooks: &RuntimeHooks, agent: &Agent, opts: &BuildOptions) {
-    if opts.model_given || opts.effort_given {
+    if opts.model_spec_given || opts.effort_given {
         hooks.append(SessionRecord::Config {
             t: now_ms(),
-            model: opts.model_given.then(|| agent.model_spec().to_string()),
+            model_spec: opts
+                .model_spec_given
+                .then(|| agent.model_spec().to_string()),
             effort: opts.effort_given.then_some(agent.effort()),
         });
     }

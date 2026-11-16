@@ -70,7 +70,7 @@ use crate::{
 ///     .load(&fs)
 ///     .await?;
 /// assert_eq!(loaded.config.settings.tools.words(), ["read"]);
-/// assert_eq!(loaded.config.settings.model, "a:flag");
+/// assert_eq!(loaded.config.settings.model_spec, "a:flag");
 /// assert!(loaded.keys.is_empty(), "no .env(): no variables, no keys");
 /// # Ok(())
 /// # }

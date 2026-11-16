@@ -100,7 +100,7 @@ async fn outside_home_the_chain_runs_from_the_root_and_long_files_are_cut() {
 fn the_prompt_carries_environment_instructions_and_skills_and_omits_empty_sections() {
     let prompt = build_system_prompt(&PromptInputs {
         cwd: "/w".into(),
-        model: "openrouter:x".into(),
+        model_spec: "openrouter:x".into(),
         platform: "darwin".into(),
         date: "2026-09-28".into(),
         git_branch: None,

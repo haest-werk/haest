@@ -21,7 +21,7 @@ pub struct PromptInputs {
     /// The working directory, as the model should read it.
     pub cwd: String,
     /// The model, as the model should read it.
-    pub model: String,
+    pub model_spec: String,
     /// The platform, e.g. `linux` or `darwin`.
     pub platform: String,
     /// Today's date, in whatever form the host likes.
@@ -126,7 +126,7 @@ pub fn build_system_prompt(p: &PromptInputs) -> String {
         format!("- Working directory: {}", p.cwd),
         format!("- Platform: {}", p.platform),
         format!("- Date: {}", p.date),
-        format!("- Model: {}", p.model),
+        format!("- Model: {}", p.model_spec),
         branch,
         format!("- Tools: {tools}"),
     ]

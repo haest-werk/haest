@@ -112,7 +112,7 @@ impl RuntimePrompt {
     pub async fn build(&self, model: String, tool_names: Vec<String>) -> String {
         let s = &self.hooks.settings;
         let mut p = self.base.clone();
-        p.model = model;
+        p.model_spec = model;
         p.tool_names = tool_names;
         p.instructions = find_instruction_files(self.fs.as_ref(), &instruction_options(s)).await;
         if s.skill_catalog {
@@ -130,8 +130,8 @@ pub struct AgentPrompt {
     /// The parts every agent shares.
     pub prompt: Arc<RuntimePrompt>,
     /// The model the prompt names; None = the conversation's current one
-    /// ([`RuntimeHooks::model`]), as for main.
-    pub model: Option<String>,
+    /// ([`RuntimeHooks::model_spec`]), as for main.
+    pub model_spec: Option<String>,
     /// The agent's tools: the prompt names the ones its next call offers.
     pub tools: Arc<dyn ToolSource>,
 }
@@ -140,9 +140,9 @@ pub struct AgentPrompt {
 impl SystemPrompt for AgentPrompt {
     async fn system_prompt(&self) -> String {
         let model = self
-            .model
+            .model_spec
             .clone()
-            .unwrap_or_else(|| self.prompt.hooks.model());
+            .unwrap_or_else(|| self.prompt.hooks.model_spec());
         let names = self
             .tools
             .tools()

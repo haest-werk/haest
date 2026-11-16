@@ -217,7 +217,7 @@ closure, a map, a vault), the custom providers, the MCP servers and the
 OpenRouter routing. What is not in there does not exist for haest. It builds a
 whole conversation behind a `Ui` and an approval `Prompter` -- the CLI is that
 plus a terminal. While it runs, the host changes it through the `Runtime`:
-`set_model`, `set_effort`, `clear` (a fresh session file) and `rescan_skills`,
+`set_model_spec`, `set_effort`, `clear` (a fresh session file) and `rescan_skills`,
 each applied to the agent, the host and the session file together. A host that
 owns some parts takes the runtime's pieces, or only
 `haest::tools::builtin_tools_where(|w| settings.tools.has(w), ..)`.

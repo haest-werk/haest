@@ -236,7 +236,7 @@ where
     let deferral = tools.deferral().clone();
     let main_prompt = AgentPrompt {
         prompt: found.prompt,
-        model: None,
+        model_spec: None,
         tools: tools.clone(),
     };
     let deps = AgentDeps {
@@ -254,7 +254,7 @@ where
         deferral.load_called(&agent_opts.history);
     }
     let agent = Agent::new(deps, agent_opts);
-    hooks.set_model(agent.model_spec());
+    hooks.set_model_spec(agent.model_spec());
     hooks.set_effort(agent.effort());
     if resumed {
         record_given(&hooks, &agent, &opts);

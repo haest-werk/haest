@@ -36,13 +36,13 @@ impl SubagentHub {
         tools.extend(self.tools_for(&run.me));
         let source = self.parent.tool_source(tools);
         let (main_model, effort) = self.parent.default_model();
-        let model = input.model.clone().unwrap_or(main_model);
+        let model = input.model_spec.clone().unwrap_or(main_model);
         let base = self.parent.deps();
         let deps = AgentDeps {
             tools: source.clone(),
             system_prompt: Arc::new(ChildPrompt {
                 parent: self.parent.clone(),
-                model: model.clone(),
+                model_spec: model.clone(),
                 tools: source,
                 note: subagent_note(&run.me.name, &run.parent, &run.description, &self.caps),
             }),

@@ -26,7 +26,7 @@ pub struct ReplayedSession {
     /// as interrupted.
     pub messages: Vec<Message>,
     /// The last model spec a config record named.
-    pub model: Option<String>,
+    pub model_spec: Option<String>,
     /// None = no config record set it; `Some(None)` = set back to the model's default.
     pub effort: Option<Option<Effort>>,
     /// The last ledger record; None when there was none.
@@ -114,9 +114,13 @@ fn apply(s: &mut ReplayedSession, r: SessionRecord) {
             s.messages
                 .splice(..from, [compaction_summary_message(&summary)]);
         }
-        SessionRecord::Config { model, effort, .. } => {
+        SessionRecord::Config {
+            model_spec: model,
+            effort,
+            ..
+        } => {
             if let Some(m) = model.filter(|m| !m.is_empty()) {
-                s.model = Some(m);
+                s.model_spec = Some(m);
             }
             if effort.is_some() {
                 s.effort = effort;

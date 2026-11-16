@@ -74,7 +74,7 @@ effort = "low""#;
     .unwrap();
     let s = &r.config.settings;
     assert_eq!(s.tools.words(), ["read", "bash"]);
-    assert_eq!(s.model, "a:env");
+    assert_eq!(s.model_spec, "a:env");
     assert_eq!(s.effort, Some(haest_core::Effort::High));
     let src = |k: &str| r.resolved.source(k).to_string();
     assert_eq!(src("tools"), USER_FILE);

@@ -43,7 +43,7 @@
 //!    it, run what waits there, one turn at a time ([`InboxQueue::take`](inbox::InboxQueue::take)
 //!    and [`InboxQueue::agent_turn`](inbox::InboxQueue::agent_turn)).
 //! 3. Between turns, make the changes the human asks for:
-//!    [`Runtime::set_model`], [`Runtime::set_effort`], [`Runtime::clear`],
+//!    [`Runtime::set_model_spec`], [`Runtime::set_effort`], [`Runtime::clear`],
 //!    [`Runtime::rescan_skills`].
 //! 4. Flush the session file after every turn ([`RuntimeHooks::flush`]). At the end,
 //!    stop the subagents, kill the background jobs ([`world::kill_jobs`]),

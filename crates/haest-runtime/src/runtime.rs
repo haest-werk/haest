@@ -116,13 +116,13 @@ impl<U: ?Sized> Runtime<U> {
     ///
     /// When `spec` does not resolve (an unknown provider, no key for it):
     /// then nothing changes.
-    pub fn set_model(&mut self, spec: &str) -> Result<(), ModelError> {
+    pub fn set_model_spec(&mut self, spec: &str) -> Result<(), ModelError> {
         self.agent.deps().models.resolve(spec)?;
         self.agent.set_model_spec(spec);
-        self.hooks.set_model(spec);
+        self.hooks.set_model_spec(spec);
         self.hooks.append(SessionRecord::Config {
             t: now_ms(),
-            model: Some(spec.to_string()),
+            model_spec: Some(spec.to_string()),
             effort: None,
         });
         Ok(())
@@ -137,7 +137,7 @@ impl<U: ?Sized> Runtime<U> {
         self.hooks.set_effort(effort);
         self.hooks.append(SessionRecord::Config {
             t: now_ms(),
-            model: None,
+            model_spec: None,
             effort: Some(effort),
         });
     }

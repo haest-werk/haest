@@ -73,7 +73,7 @@ impl Tool for AgentTool {
             description: req_str(&input, "description")?.into(),
             prompt: req_str(&input, "prompt")?.into(),
             name: opt_str(&input, "name")?.map(Into::into),
-            model: opt_str(&input, "model")?.map(Into::into),
+            model_spec: opt_str(&input, "model")?.map(Into::into),
             background: opt_bool(&input, "run_in_background"),
             subagent_type: self.subagent_type(&input)?,
         };

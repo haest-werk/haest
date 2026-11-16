@@ -85,14 +85,14 @@ async fn round_trips_messages_and_config_through_a_private_jsonl_file() {
     s.append(&msg(1, "one"));
     s.append(&SessionRecord::Config {
         t: 2,
-        model: Some("openrouter:m".into()),
+        model_spec: Some("openrouter:m".into()),
         effort: Some(Some(Effort::High)),
     });
     s.append(&msg(3, "two line"));
     s.flush().await;
     let back = store(&fs).load().await.unwrap();
     assert_eq!(texts(&back.messages), ["one", "two line"]);
-    assert_eq!(back.model.as_deref(), Some("openrouter:m"));
+    assert_eq!(back.model_spec.as_deref(), Some("openrouter:m"));
     assert_eq!(back.effort, Some(Some(Effort::High)));
     let modes = fs.modes.lock().unwrap().clone();
     assert!(modes.contains(&(PathBuf::from("/data/sessions"), 0o700)));
@@ -215,7 +215,7 @@ fn a_typescript_haest_session_file_replays() {
     };
     assert_eq!(t.content, "a\u{2028}b");
     assert_eq!(texts(&s.messages)[3], "two");
-    assert_eq!(s.model.as_deref(), Some("openrouter:m"));
+    assert_eq!(s.model_spec.as_deref(), Some("openrouter:m"));
     assert_eq!(s.effort, Some(None));
     let ledger = s.ledger.unwrap();
     assert_eq!((ledger.usd, ledger.unpriced_tokens), (0.25, 120));
@@ -259,7 +259,7 @@ fn records_serialize_in_the_typescript_shape() {
         (
             SessionRecord::Config {
                 t: 2,
-                model: Some("openrouter:m".into()),
+                model_spec: Some("openrouter:m".into()),
                 effort: Some(Some(Effort::High)),
             },
             r#"{"type":"config","t":2,"model":"openrouter:m","effort":"high"}"#,
@@ -267,7 +267,7 @@ fn records_serialize_in_the_typescript_shape() {
         (
             SessionRecord::Config {
                 t: 3,
-                model: None,
+                model_spec: None,
                 effort: Some(None),
             },
             r#"{"type":"config","t":3,"effort":null}"#,

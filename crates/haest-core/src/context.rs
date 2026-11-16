@@ -38,7 +38,7 @@
 //!
 //! let prompt = build_system_prompt(&PromptInputs {
 //!     cwd: "/home/me/work".into(),
-//!     model: "anthropic:claude-x".into(),
+//!     model_spec: "anthropic:claude-x".into(),
 //!     platform: "linux".into(),
 //!     date: "2026-01-01".into(),
 //!     instructions,

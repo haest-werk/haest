@@ -88,7 +88,7 @@ fn model(rt: &mut Runtime, spec: &str) {
             .hooks
             .info(&format!("Model: {}", rt.agent().model_spec()));
     }
-    match rt.set_model(spec) {
+    match rt.set_model_spec(spec) {
         Ok(()) => rt.hooks.info(&format!("Model set to {spec}")),
         Err(e) => rt
             .hooks

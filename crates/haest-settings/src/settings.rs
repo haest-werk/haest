@@ -15,7 +15,7 @@ use haest_core::{
 
 use crate::{CapSettings, ContextSources, SubagentCapSettings, sets::BuiltinTools};
 
-/// The model a run uses when none is configured: [`Settings::bare`]'s `model`.
+/// The model a run uses when none is configured: [`Settings::bare`]'s `model_spec`.
 pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 
 /// Everything a conversation is built from, as plain values.
@@ -24,8 +24,9 @@ pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 /// is read from a file, a variable or a flag, and nothing touches a disk (the
 /// paths are only values until a runtime uses them). Each field is the haest
 /// setting of the same name, so `skill_catalog` is also the TOML key
-/// haest-config reads into it, `HAEST_SKILL_CATALOG` and `--skill-catalog`; the
-/// caps are grouped in [`CapSettings`] and [`SubagentCapSettings`].
+/// haest-config reads into it, `HAEST_SKILL_CATALOG` and `--skill-catalog`
+/// (`model_spec` is the `model` setting); the caps are grouped in
+/// [`CapSettings`] and [`SubagentCapSettings`].
 ///
 /// The helper methods turn fields into what the loop and the tools take:
 /// [`turn_caps_for`](Self::turn_caps_for), [`conversation_caps`](Self::conversation_caps),
@@ -39,7 +40,7 @@ pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 ///
 /// // A review run: reads the project's AGENTS.md, may read and search, never writes.
 /// let review = Settings {
-///     model: "anthropic:claude-opus-5-5".into(),
+///     model_spec: "anthropic:claude-opus-5-5".into(),
 ///     context: ContextSources { agents: true, ..ContextSources::NONE },
 ///     tools: BuiltinTools { read: true, grep: true, glob: true, ..BuiltinTools::NONE },
 ///     append_system_prompt: Some("Review only; do not change files.".into()),
@@ -55,9 +56,10 @@ pub struct Settings {
     /// The human's home: where `~/.agents` and `~/.claude` are, and where
     /// [`Settings::bare`] puts `data_dir` and `config_dir`.
     pub home: PathBuf,
-    /// The model, as `provider:model` (`openrouter:anthropic/claude-sonnet-5.5`).
+    /// The `model` setting: the model spec, `provider:model`
+    /// (`openrouter:anthropic/claude-sonnet-5.5`).
     /// Bare: [`DEFAULT_MODEL`].
-    pub model: String,
+    pub model_spec: String,
     /// Reasoning effort; None sends none, and the model uses its own default.
     pub effort: Option<Effort>,
     /// Replaces haest's own identity text at the top of the system prompt; None keeps it.
@@ -141,7 +143,7 @@ impl Settings {
         let home = home.into();
         Self {
             cwd: cwd.into(),
-            model: DEFAULT_MODEL.into(),
+            model_spec: DEFAULT_MODEL.into(),
             effort: None,
             system_prompt: None,
             append_system_prompt: None,

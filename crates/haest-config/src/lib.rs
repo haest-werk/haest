@@ -114,7 +114,7 @@
 //!     loaded.resolved.source("max_turn_usd"),
 //!     Source::Env("HAEST_MAX_TURN_USD".into())
 //! );
-//! assert_eq!(settings.model, "anthropic:claude-opus-5-5");
+//! assert_eq!(settings.model_spec, "anthropic:claude-opus-5-5");
 //! assert_eq!(loaded.resolved.source("model").to_string(), "--model");
 //!
 //! // The provider key is the runtime's to use; a process haest starts gets

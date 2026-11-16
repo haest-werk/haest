@@ -85,7 +85,7 @@ impl Cli {
         };
         BuildOptions {
             resume,
-            model_given: given("model"),
+            model_spec_given: given("model"),
             effort_given: given("effort"),
         }
     }
@@ -225,10 +225,10 @@ mod tests {
     fn a_model_or_effort_flag_is_one_the_run_asked_for() {
         let o = cli(&["-r", "-m", "a:b"]).build_options();
         assert_eq!(o.resume, Resume::Latest);
-        assert!(o.model_given && !o.effort_given);
+        assert!(o.model_spec_given && !o.effort_given);
         let o = cli(&["-r", "abc", "-e", "low"]).build_options();
-        assert!(!o.model_given && o.effort_given);
+        assert!(!o.model_spec_given && o.effort_given);
         let o = cli(&["-r"]).build_options();
-        assert!(!o.model_given && !o.effort_given);
+        assert!(!o.model_spec_given && !o.effort_given);
     }
 }

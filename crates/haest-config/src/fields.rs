@@ -204,7 +204,7 @@ macro_rules! fields {
 
 fields! {
     "profile" => profile,
-    "model" => settings.model,
+    "model" => settings.model_spec,
     "effort" => settings.effort,
     "system_prompt" => settings.system_prompt,
     "append_system_prompt" => settings.append_system_prompt,

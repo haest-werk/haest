@@ -98,7 +98,7 @@ pub struct BuildOptions {
     pub resume: Resume,
     /// The settings' model was asked for on purpose for this run (a flag):
     /// a resume goes on with it, not with the one the session saved.
-    pub model_given: bool,
+    pub model_spec_given: bool,
     /// The same, for the effort.
     pub effort_given: bool,
 }
