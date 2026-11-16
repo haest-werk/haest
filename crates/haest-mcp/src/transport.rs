@@ -8,9 +8,8 @@ use haest_core::ChildEnv;
 use haest_http::{
     build_reqwest,
     reqwest::{
-        self, StatusCode,
+        self,
         header::{HeaderName, HeaderValue},
-        redirect,
     },
     reqwest_builder,
 };
@@ -86,41 +85,19 @@ pub(crate) fn http(
     ))
 }
 
-/// How many redirects one request may follow.
-const MAX_REDIRECTS: usize = 10;
-
-/// rmcp's default client, minus the proxy it would take from the environment:
-/// HTTP(S)_PROXY / ALL_PROXY would be sent the server's headers (D15). Like
-/// rmcp's, it keeps no idle connections (a reused one can stall ~40 ms) and
-/// follows only a same-origin 307 or 308: a 301-303 turns the POST into a GET
-/// without the message, and another origin would be sent the session id and
-/// the headers. Built once (by haest-http, which sets up TLS) and shared by
-/// every HTTP server.
+/// haest's reqwest client ([`reqwest_builder`]: no proxy from the
+/// environment, which would be sent the server's headers (D15); a redirect
+/// followed only as a same-origin 307 or 308, so another origin is never sent
+/// the session id and the headers, and a POST never turns into a GET without
+/// the message). Like rmcp's own, it keeps no idle connections (a reused one
+/// can stall ~40 ms). Built once (by haest-http, which sets up TLS) and shared
+/// by every HTTP server.
 fn http_client() -> Result<reqwest::Client, String> {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     if let Some(client) = CLIENT.get() {
         return Ok(client.clone());
     }
-    let redirects = redirect::Policy::custom(|attempt| {
-        let keeps_body = matches!(
-            attempt.status(),
-            StatusCode::TEMPORARY_REDIRECT | StatusCode::PERMANENT_REDIRECT
-        );
-        let same_origin = attempt
-            .previous()
-            .first()
-            .is_some_and(|first| first.origin() == attempt.url().origin());
-        if !keeps_body || !same_origin {
-            attempt.stop()
-        } else if attempt.previous().len() > MAX_REDIRECTS {
-            attempt.error(format!("exceeded {MAX_REDIRECTS} redirects"))
-        } else {
-            attempt.follow()
-        }
-    });
-    let builder = reqwest_builder()
-        .pool_max_idle_per_host(0)
-        .redirect(redirects);
+    let builder = reqwest_builder().pool_max_idle_per_host(0);
     let built = build_reqwest(builder).map_err(|e| e.report())?;
     Ok(CLIENT.get_or_init(|| built).clone())
 }

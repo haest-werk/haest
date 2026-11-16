@@ -8,16 +8,51 @@ use std::{
 
 use async_trait::async_trait;
 use futures::StreamExt;
+use reqwest::{StatusCode, redirect};
 
 use crate::{Body, HttpClient, HttpError, Method, Request, Response};
 
-/// reqwest's client builder as haest starts every client: no proxy, whatever
-/// `HTTP(S)_PROXY`, `ALL_PROXY` or the OS's settings say. The environment does
-/// not shape a run, and a proxy haest was not handed would be sent the keys
-/// and tokens (in clear, for an `http://` URL). Add a proxy on the builder
-/// when you want one; build it with [`build_reqwest`].
+/// How many redirects one request may follow.
+const MAX_REDIRECTS: usize = 10;
+
+/// reqwest's client builder as haest starts every client. Change either on
+/// the builder when you want otherwise; build it with [`build_reqwest`].
+///
+/// - **No proxy**, whatever `HTTP(S)_PROXY`, `ALL_PROXY` or the OS's settings
+///   say. The environment does not shape a run, and a proxy haest was not
+///   handed would be sent the keys and tokens (in clear, for an `http://` URL).
+/// - **A redirect is followed only within the request's origin** (scheme,
+///   host and port) **and only a 307 or 308**, which repeat the request as it
+///   was sent; at most 10. Any other redirect comes back as the answer. On a
+///   redirect to another origin reqwest drops only `Authorization`, `Cookie`
+///   and `Proxy-Authorization`: an `x-api-key`, a host's own headers and a
+///   307's body (a whole prompt) would go along. A 301, 302 or 303 turns a
+///   POST into a GET without its body, a different request than the one sent.
 pub fn reqwest_builder() -> reqwest::ClientBuilder {
-    reqwest::Client::builder().no_proxy()
+    reqwest::Client::builder()
+        .no_proxy()
+        .redirect(same_origin_redirects())
+}
+
+/// Follow a 307 or 308 to the first request's origin; hand back any other redirect.
+fn same_origin_redirects() -> redirect::Policy {
+    redirect::Policy::custom(|attempt| {
+        let keeps_request = matches!(
+            attempt.status(),
+            StatusCode::TEMPORARY_REDIRECT | StatusCode::PERMANENT_REDIRECT
+        );
+        let same_origin = attempt
+            .previous()
+            .first()
+            .is_some_and(|first| first.origin() == attempt.url().origin());
+        if !keeps_request || !same_origin {
+            attempt.stop()
+        } else if attempt.previous().len() > MAX_REDIRECTS {
+            attempt.error(format!("more than {MAX_REDIRECTS} redirects"))
+        } else {
+            attempt.follow()
+        }
+    })
 }
 
 /// Build `builder` into a client: the one place haest builds one.
@@ -49,8 +84,9 @@ struct Own {
 }
 
 /// The default [`HttpClient`]: reqwest over rustls (ring), HTTP/1.1 and 2,
-/// no proxy ([`reqwest_builder`]), redirects followed (at most 10), no
-/// timeout of its own. The body streams as it arrives.
+/// no proxy, a redirect followed only within the request's origin
+/// ([`reqwest_builder`]), no timeout of its own. The body streams as it
+/// arrives.
 ///
 /// Building one never builds a reqwest client and never fails: the client is
 /// built on the first request, and a failure to build is that request's
