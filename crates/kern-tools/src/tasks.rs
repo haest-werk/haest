@@ -7,11 +7,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use kern_core::{
     task_board::{KernTask, KernTaskStatus, NewTask, PatchStatus, TaskBoard, TaskError, TaskPatch},
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str, spelled},
 };
 use serde_json::{Value, json};
-
-use crate::canonical::spelled;
 
 const STATUSES: [&str; 4] = ["pending", "in_progress", "completed", "deleted"];
 

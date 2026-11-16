@@ -11,7 +11,7 @@ use crate::{
     fs::ensure_dir,
     messages::{AssistantMessage, StopReason, ToolCall, ToolResultMessage, Usage},
     panics::panic_message,
-    tool::{Tool, ToolContext, ToolError, ToolOutput},
+    tool::{Tool, ToolContext, ToolError, ToolOutput, spelled},
 };
 
 /// A model call that never went out (no provider, a refused request).
@@ -167,7 +167,7 @@ pub async fn run_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> 
     };
     // A provider that could not parse the model's arguments hands them over raw.
     if let Some(raw) = call.input.get("_unparsed") {
-        let raw = raw.as_str().map_or_else(|| raw.to_string(), str::to_string);
+        let raw = spelled(raw);
         return ToolOutput::error(format!(
             "Your arguments for {} were not valid JSON: {raw}",
             call.name

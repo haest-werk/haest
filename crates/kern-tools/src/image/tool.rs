@@ -8,7 +8,7 @@ use kern_core::{
     media::{data_url, media_from_bytes, media_type_from_name},
     messages::MediaPart,
     now_ms,
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str, spelled},
 };
 use serde_json::{Map, Value, json};
 
@@ -17,10 +17,7 @@ use super::{
     request::{ImageReply, call_image_api},
     settings::{check_image_settings, describe_model, max_references},
 };
-use crate::{
-    canonical::{pick, spelled},
-    slug::slug,
-};
+use crate::{canonical::pick, slug::slug};
 
 pub struct ImageTool {
     opts: ImageToolOptions,

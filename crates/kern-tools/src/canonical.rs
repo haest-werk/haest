@@ -4,21 +4,12 @@
 //! drops), never `null`.
 
 use kern_core::tool::JsonMap;
-use serde_json::Value;
 
 /// `(canonical key, input key)` pairs; input keys the call did not send are left out.
 pub(crate) fn pick(input: &JsonMap, keys: &[(&str, &str)]) -> JsonMap {
     keys.iter()
         .filter_map(|(to, from)| input.get(*from).map(|v| ((*to).to_string(), v.clone())))
         .collect()
-}
-
-/// A value as a reader spells it: a string as itself, anything else as JSON (`16:9`, `80`, `true`).
-pub(crate) fn spelled(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        other => other.to_string(),
-    }
 }
 
 #[cfg(test)]

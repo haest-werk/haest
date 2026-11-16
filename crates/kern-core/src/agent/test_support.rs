@@ -22,7 +22,7 @@ use crate::{
     limits::TurnLimits,
     messages::{AssistantMessage, Message, StopReason, Usage},
     testing::{ScriptedProvider, tool_answer},
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput, spelled},
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
 
@@ -140,9 +140,7 @@ impl Tool for FnTool {
 /// `echo:<v>`, a write (not read-only), like the default tool of every loop test.
 pub fn echo_tool() -> Arc<dyn Tool> {
     FnTool::arc("Echo", false, |input, _| async move {
-        let v = input.get("v").map_or("undefined".into(), |v| {
-            v.as_str().map_or_else(|| v.to_string(), str::to_string)
-        });
+        let v = input.get("v").map_or("undefined".into(), spelled);
         Ok(ToolOutput::text(format!("echo:{v}")))
     })
 }

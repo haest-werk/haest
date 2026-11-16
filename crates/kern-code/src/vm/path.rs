@@ -3,18 +3,13 @@
 //! author expects. No file system and no process behind it: `resolve` with no
 //! absolute argument resolves from `/`, never from the host's own directory.
 
+use kern_core::tool::spelled;
 use serde_json::{Value, json};
 
 /// Run `op` over `args_json` (a JSON array, every item taken as a string); the result as JSON.
 pub(crate) fn path_op(op: &str, args_json: &str) -> Result<String, String> {
     let args: Vec<Value> = serde_json::from_str(args_json).map_err(|e| e.to_string())?;
-    let args: Vec<String> = args
-        .into_iter()
-        .map(|v| match v {
-            Value::String(s) => s,
-            other => other.to_string(),
-        })
-        .collect();
+    let args: Vec<String> = args.iter().map(spelled).collect();
     let arg = |i: usize| args.get(i).map_or("", String::as_str);
     let out = match op {
         "join" => json!(join(&args)),

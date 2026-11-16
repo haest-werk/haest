@@ -9,10 +9,9 @@
 
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD};
+use kern_core::tool::spelled;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
-
-use crate::canonical::spelled;
 
 /// A response: its status and whole body.
 #[derive(Debug, Clone, Default, PartialEq)]

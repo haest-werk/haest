@@ -7,10 +7,9 @@
 
 use std::collections::HashMap;
 
+use kern_core::tool::spelled;
 use serde::Deserialize;
 use serde_json::{Map, Value};
-
-use crate::canonical::spelled;
 
 /// What a model publishes for one setting.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
