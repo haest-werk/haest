@@ -81,11 +81,23 @@ pub async fn kill_jobs(jobs: &JobHub) -> usize {
     ids.len()
 }
 
+/// The spill dir on the disk, made private (0700) as the session dir is:
+/// spilled output is file contents and command output.
+async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> anyhow::Result<()> {
+    let made = async {
+        ensure_dir(fs, spill).await?;
+        fs.chmod(spill, 0o700).await
+    };
+    made.await
+        .with_context(|| format!("creating the spill dir {}", spill.display()))
+}
+
 /// The `workspace` setting's workspace in this world. The disk's sandbox
 /// mounts the skill dirs (read-only; `scan_roots` of the `skills` setting's
 /// roots) and the spill dir (read-write); a host's Fs is the sandbox's whole
-/// world. `passed` (the variables the host passes on purpose) reaches the
-/// shell either way: the sandbox's alone, real bash's over `child_env`.
+/// world. On the disk the spill dir is made first, private. `passed` (the
+/// variables the host passes on purpose) reaches the shell either way: the
+/// sandbox's alone, real bash's over `child_env`.
 pub async fn workspace_for(
     s: &Settings,
     world: &World,
@@ -96,16 +108,17 @@ pub async fn workspace_for(
     let fs = world.fs();
     let ws = match (s.workspace, world.child_env(passed)) {
         (WorkspaceMode::Shut, _) => return Ok(Arc::new(ShutWorkspace)),
-        (WorkspaceMode::Real, Some(env)) => return Ok(Arc::new(RealWorkspace::new(env))),
+        (WorkspaceMode::Real, Some(env)) => {
+            private_spill_dir(fs.as_ref(), spill).await?;
+            return Ok(Arc::new(RealWorkspace::new(env)));
+        }
         (WorkspaceMode::Real, None) => {
             bail!("workspace = real needs the real disk; this host hands kern its own files")
         }
         (WorkspaceMode::Sandbox, None) => SandboxWorkspace::over(fs),
         (WorkspaceMode::Sandbox, Some(_)) => {
             // The spill dir is mounted read-write, so the path in a spill notice is real.
-            ensure_dir(fs.as_ref(), spill)
-                .await
-                .with_context(|| format!("creating the spill dir {}", spill.display()))?;
+            private_spill_dir(fs.as_ref(), spill).await?;
             let mut mounts = SandboxMounts::new(&s.cwd).writable(spill);
             for dir in skill_dirs {
                 if fs.exists(dir).await {

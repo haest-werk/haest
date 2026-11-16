@@ -19,6 +19,11 @@ fn vars(pairs: &[(&str, &str)]) -> ChildEnv {
         .collect()
 }
 
+/// A dir of this test run's own on the real disk (not made yet).
+fn scratch(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("kern-world-{name}-{}", std::process::id()))
+}
+
 /// What `script` prints in `ws`.
 async fn run(ws: &dyn Workspace, script: &str) -> String {
     let opts = ExecOptions {
@@ -53,10 +58,12 @@ async fn real_bash_gets_the_passed_variables_over_child_env() {
         ..settings()
     };
     let passed = vars(&[("SHARED", "passed"), ("GH_TOKEN", "t0k")]);
-    let ws = workspace_for(&s, &world, &passed, &[], Path::new("/d/spill"))
+    let spill = scratch("real-bash");
+    let ws = workspace_for(&s, &world, &passed, &[], &spill)
         .await
         .unwrap();
     let out = run(ws.as_ref(), "printf '%s|%s' \"$SHARED\" \"$GH_TOKEN\"").await;
+    let _ = std::fs::remove_dir_all(&spill);
     assert_eq!(out, "passed|t0k");
     let processes = world.child_env(&passed).unwrap();
     assert_eq!(processes.get("PATH"), Some(path.as_str()));
@@ -111,6 +118,39 @@ async fn a_spill_dir_that_cannot_be_made_is_named_in_the_error() {
         .err()
         .unwrap();
     assert!(format!("{err:#}").contains("/dev/null/spill"), "{err:#}");
+}
+
+/// Spilled output is file contents and command output: on the disk its dir
+/// is private (0700), as the session dir is, whichever workspace spills
+/// into it (the spill itself makes the dir only when it is missing).
+#[cfg(unix)]
+#[tokio::test]
+async fn the_spill_dir_on_the_disk_is_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = scratch("spill-mode");
+    let world = World::Disk {
+        child_env: ChildEnv::default(),
+    };
+    for (mode, name) in [
+        (WorkspaceMode::Sandbox, "sandbox"),
+        (WorkspaceMode::Real, "real"),
+    ] {
+        let cwd = root.join(name);
+        std::fs::create_dir_all(&cwd).unwrap();
+        let s = Settings {
+            workspace: mode,
+            cwd: cwd.clone(),
+            ..settings()
+        };
+        let spill = cwd.join("data/spill/session");
+        let ws = workspace_for(&s, &world, &ChildEnv::default(), &[], &spill)
+            .await
+            .unwrap();
+        ensure_dir(ws.fs().as_ref(), &spill).await.unwrap();
+        let bits = std::fs::metadata(&spill).unwrap().permissions().mode() & 0o777;
+        assert_eq!(bits, 0o700, "{name} workspace: {bits:o}");
+    }
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[tokio::test]
