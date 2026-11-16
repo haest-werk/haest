@@ -15,10 +15,7 @@ use rquickjs::{Context, Ctx, Function, Module, Object, Runtime, Value};
 use tokio::{runtime::Handle, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 
-use super::{
-    channel::{JsMeta, Limits, Reply, ToJs},
-    strip::strip_types,
-};
+use super::channel::{JsMeta, Limits, Reply, ToJs};
 use crate::api::ModHost;
 
 const BOOTSTRAP: &str = include_str!("bootstrap.js");
@@ -121,8 +118,16 @@ fn kern<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
     ctx.globals().get("__kern")
 }
 
-fn is_ts(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e == "ts")
+/// A `.ts` mod as JavaScript, through kern's one type stripper (kern-ts), so its
+/// error lines are the file's own.
+fn runnable(path: &Path, source: String) -> Result<String, String> {
+    if path.extension().is_none_or(|e| e != "ts") {
+        return Ok(source);
+    }
+    let name = path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    kern_ts::strip_types(&source, &name).map_err(|why| format!("it is not valid TypeScript: {why}"))
 }
 
 pub(super) struct Js {
@@ -148,11 +153,7 @@ enum Loaded {
 
 impl Js {
     fn init(setup: Setup, own: mpsc::Sender<ToJs>) -> Result<Js, String> {
-        let code = if is_ts(&setup.path) {
-            strip_types(&setup.path, &setup.source)?
-        } else {
-            setup.source
-        };
+        let code = runnable(&setup.path, setup.source)?;
         let rt = Runtime::new().map_err(|e| e.to_string())?;
         rt.set_memory_limit(setup.limits.memory_bytes);
         let slice = Arc::new(Slice {

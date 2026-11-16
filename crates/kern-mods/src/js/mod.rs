@@ -20,7 +20,6 @@
 
 mod channel;
 mod outbox;
-mod strip;
 #[cfg(test)]
 mod tests;
 mod thread;

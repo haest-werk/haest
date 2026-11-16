@@ -77,11 +77,8 @@ fn is_mod_file(name: &str) -> bool {
     code && !name.ends_with(".d.ts")
 }
 
-/// The mod files in `dir`, by name; none when it does not exist.
+/// The mod files in `dir`, by name; none when it cannot be read (it does not exist).
 pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
-    if !fs.exists(dir).await {
-        return Vec::new();
-    }
     let Ok(entries) = fs.read_dir(dir).await else {
         return Vec::new();
     };
