@@ -181,28 +181,6 @@ async fn cancel_kills_a_long_sleep_quickly() {
     assert_ne!(r.exit_code, 0);
 }
 
-/// kill_group(0) would be kill(0): SIGKILL to the caller's own process group.
-/// Tried in a copy of this test binary that leads a group of its own, so
-/// nothing else is in reach. (1, kill(-1), is never tried: it would reach
-/// every process the user owns; exec.rs tests the refusal without a signal.)
-#[test]
-fn kill_group_never_signals_the_callers_own_group() {
-    if std::env::var_os("HAEST_TEST_KILL_OWN_GROUP").is_some() {
-        haest_workspace::kill_group(0);
-        return;
-    }
-    use std::os::unix::process::CommandExt;
-    let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["kill_group_never_signals_the_callers_own_group", "--exact"])
-        .env("HAEST_TEST_KILL_OWN_GROUP", "1")
-        .process_group(0)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success(), "the copy was killed: {status:?}");
-}
-
 #[tokio::test]
 async fn real_fs_reads_writes_and_lists_the_disk() {
     let (_t, dir) = tempdir();

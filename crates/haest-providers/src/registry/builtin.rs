@@ -2,9 +2,9 @@
 //! key and its base URL, under the standard variable names.
 
 use haest_core::{
+    __private::openrouter_base_url,
     KeySource, ModelError,
     catalog::{OpenRouterEffort, Reasoning},
-    handed::openrouter_base_url,
 };
 
 use super::RegistryOptions;

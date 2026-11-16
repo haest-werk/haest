@@ -108,7 +108,7 @@ fn is_mod_file(name: &str) -> bool {
 /// The mod files in `dir`, sorted by name: every `.ts`, `.js` and `.mjs`
 /// file, but not a `.d.ts` declaration file. None when `dir` cannot be read
 /// (it does not exist); subdirectories are not searched.
-pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
+pub(crate) async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs.read_dir(dir).await else {
         return Vec::new();
     };
@@ -128,8 +128,9 @@ pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 /// 2. The human's own mod files, `<config_dir>/mods/*`, with [`ModOptions::user_mods`].
 /// 3. The project's, `<cwd>/.haest/mods/*`, with [`ModOptions::project_mods`] only.
 ///
-/// Each directory's files load in name order ([`mod_files`]); each one runs
-/// its default export now ([`JsMod::load_with`], within
+/// Each directory's `.ts`, `.js` and `.mjs` files (not `.d.ts`) load in name
+/// order (subdirectories are not searched); each one runs its default export
+/// now ([`JsMod::load_with`], within
 /// [`ModOptions::caps`]). A mod that fails to load is
 /// reported through [`ModUi::error`] and skipped; the rest still load, so
 /// this never fails. A host's own native mods go in afterwards with

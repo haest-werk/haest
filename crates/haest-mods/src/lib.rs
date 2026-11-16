@@ -293,6 +293,6 @@ pub use approval::{ApprovalMod, AutoJudge, BashVerdict, SHELL_TOOLS, irreversibl
 pub use decorate::{ModSystemPrompt, ModTools};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter};
 pub use js::{JsMod, ModCaps, ModLoadError};
-pub use loader::{ModOptions, load_mods, mod_files};
+pub use loader::{ModOptions, load_mods};
 pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PLANNING_TOOLS, PlanListener, PlanMod};
 pub use registry::{CommandOutcome, Mods};

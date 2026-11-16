@@ -7,8 +7,8 @@ use haest_settings::{BuiltinTools, Settings, WordSet};
 use crate::haest::{
     KeySource,
     code::{CodeTool, code_tool_names},
+    core::__private::openrouter_base_url,
     core::fs::Fs,
-    core::handed::openrouter_base_url,
     core::skills::Skill,
     core::task_board::TaskBoard,
     core::tool::{Tool, ToolSource},
@@ -254,7 +254,7 @@ mod tests {
         let opts = image_options(&on, &with_key).unwrap().unwrap();
         assert_eq!(
             (opts.api_key.as_str(), opts.base_url.as_str()),
-            ("k", crate::haest::core::handed::OPENROUTER_URL)
+            ("k", crate::haest::core::__private::OPENROUTER_URL)
         );
         assert_eq!(opts.models, on.image_model_choices());
         let local = keys(&[

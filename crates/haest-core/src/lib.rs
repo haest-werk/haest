@@ -198,6 +198,17 @@ pub mod __private {
         "black-forest-labs/flux-3-image",
     ];
 
+    /// OpenRouter's API: haest's OpenRouter provider and GenerateImage both
+    /// call it.
+    pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1";
+
+    /// Where this host's OpenRouter is: its `OPENROUTER_BASE_URL` key, else
+    /// [`OPENROUTER_URL`].
+    pub fn openrouter_base_url(keys: &dyn crate::KeySource) -> String {
+        keys.key("OPENROUTER_BASE_URL")
+            .unwrap_or_else(|| OPENROUTER_URL.into())
+    }
+
     pub use crate::context::prompt::FILE_TOOLS;
     pub use crate::deferred_tools::split::{advertised_tools, callable_tools};
     pub use crate::effort::nearest_accepted_effort;

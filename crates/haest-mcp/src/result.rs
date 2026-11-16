@@ -95,27 +95,7 @@ fn truthy(v: &Value) -> bool {
 ///
 /// It reads the JSON, not rmcp's types, so a part rmcp would refuse still
 /// reaches the model as a line.
-///
-/// ```
-/// use serde_json::json;
-///
-/// let out = haest_mcp::mcp_result_to_output(&json!({
-///     "content": [
-///         {"type": "text", "text": "two files changed"},
-///         {"type": "image", "data": "AQID", "mimeType": "image/png"},
-///     ],
-/// }));
-/// assert!(out.content.starts_with("two files changed\n"));
-/// assert_eq!(out.media.len(), 1);
-/// assert!(!out.is_error);
-///
-/// let failed = haest_mcp::mcp_result_to_output(&json!({
-///     "content": [{"type": "text", "text": "no such repo"}],
-///     "isError": true,
-/// }));
-/// assert!(failed.is_error);
-/// ```
-pub fn mcp_result_to_output(res: &Value) -> ToolOutput {
+pub(crate) fn mcp_result_to_output(res: &Value) -> ToolOutput {
     let parts = res
         .get("content")
         .and_then(Value::as_array)

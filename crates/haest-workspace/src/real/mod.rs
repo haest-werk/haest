@@ -19,7 +19,6 @@ use haest_core::{
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks, Workspace, WorkspaceMode},
 };
 
-pub use exec::kill_group;
 pub use fs::RealFs;
 
 /// The real disk and the real `bash`: the workspace where the agent's edits

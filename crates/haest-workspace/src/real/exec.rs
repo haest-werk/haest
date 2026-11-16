@@ -39,7 +39,7 @@ fn group_of(pid: u32) -> Option<libc::pid_t> {
 /// and nothing is signalled: `kill(0)` is the caller's own group, `kill(-1)`
 /// every process the caller may signal. Errors are ignored: a process that
 /// has exited is the goal.
-pub fn kill_group(pid: u32) {
+pub(crate) fn kill_group(pid: u32) {
     let Some(pid) = group_of(pid) else {
         return;
     };
@@ -259,5 +259,30 @@ mod tests {
         assert_eq!(group_of(1), None);
         assert_eq!(group_of(u32::MAX), None);
         assert_eq!(group_of(4242), Some(4242));
+    }
+
+    /// kill_group(0) would be kill(0): SIGKILL to the caller's own process group.
+    /// Tried in a copy of this test binary that leads a group of its own, so
+    /// nothing else is in reach. (1, kill(-1), is never tried: it would reach
+    /// every process the user owns; the test above checks the refusal without a signal.)
+    #[test]
+    fn kill_group_never_signals_the_callers_own_group() {
+        if std::env::var_os("HAEST_TEST_KILL_OWN_GROUP").is_some() {
+            kill_group(0);
+            return;
+        }
+        use std::os::unix::process::CommandExt;
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "real::exec::tests::kill_group_never_signals_the_callers_own_group",
+                "--exact",
+            ])
+            .env("HAEST_TEST_KILL_OWN_GROUP", "1")
+            .process_group(0)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "the copy was killed: {status:?}");
     }
 }

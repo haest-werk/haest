@@ -85,11 +85,7 @@ fn fnv1a(parts: &[&str], salt: u32) -> u32 {
 ///
 /// Unlike the name the model sees ([`mcp_tool_name`]), the kind keeps the
 /// original names, unchanged and uncut.
-///
-/// ```
-/// assert_eq!(haest_mcp::mcp_kind("docs.site", "search docs"), "mcp.docs.site.search docs");
-/// ```
-pub fn mcp_kind(server: &str, tool: &str) -> String {
+pub(crate) fn mcp_kind(server: &str, tool: &str) -> String {
     format!("mcp.{server}.{tool}")
 }
 

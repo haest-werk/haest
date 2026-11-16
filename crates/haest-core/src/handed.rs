@@ -46,15 +46,6 @@ impl KeySource for HashMap<String, String> {
     }
 }
 
-/// OpenRouter's API: haest's OpenRouter provider and GenerateImage both call it.
-pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1";
-
-/// Where this host's OpenRouter is: its `OPENROUTER_BASE_URL` key, else [`OPENROUTER_URL`].
-pub fn openrouter_base_url(keys: &dyn KeySource) -> String {
-    keys.key("OPENROUTER_BASE_URL")
-        .unwrap_or_else(|| OPENROUTER_URL.into())
-}
-
 /// The environment of every process the agent starts: a real shell, its
 /// background jobs, an MCP server. A child gets these variables and nothing
 /// else -- not the host's own environment, not its keys -- unless the host put

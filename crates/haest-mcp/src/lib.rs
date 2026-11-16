@@ -22,8 +22,8 @@
 //! - [`McpServerConfig`]: one server to connect, written out (a name over
 //!   [`McpTransport::stdio`] or [`McpTransport::http`]) or read from a
 //!   project's `.mcp.json` ([`load_project_mcp_config`]).
-//! - [`mcp_tool_name`] and [`mcp_kind`]: the names a server's tools get.
-//! - [`mcp_result_to_output`]: what the model reads of a tool's result.
+//! - [`mcp_tool_name`]: the name the model sees for a server's tool, for a
+//!   host that names MCP tools in its own lists (deferral, `code_tools`).
 //!
 //! `haest::mcp` is this crate, behind the facade's `mcp` feature, and
 //! haest-runtime connects the servers a host lists in its `RuntimeInputs` by
@@ -42,8 +42,8 @@
 //! A tool is [`read_only`](haest_core::tool::Tool::read_only), and may run
 //! beside other tools, only when its server says so (`readOnlyHint`). A tool
 //! the server did not describe says what it is and which server it is on.
-//! A result the server marks `isError` is an error output the model reads
-//! ([`mcp_result_to_output`]); a JSON-RPC error, or a server that asks for
+//! A result the server marks `isError` is an error output the model reads;
+//! text and images reach it, anything else as a line; a JSON-RPC error, or a server that asks for
 //! input or answers with a task, is a failed call, and so is any call after
 //! [`McpHub::close`].
 //!
@@ -213,8 +213,7 @@ mod test_server;
 pub use config::{HttpTransport, McpServerConfig, McpTransport, StdioTransport};
 pub use hub::{CALL_TIMEOUT, CONNECT_TIMEOUT, McpFailure, McpHub, McpStartError};
 pub use project::{McpConfigError, ProjectMcp, load_project_mcp_config, project_mcp_path};
-pub use result::mcp_result_to_output;
-pub use tool::{mcp_kind, mcp_tool_name};
+pub use tool::mcp_tool_name;
 
 /// rmcp, re-exported for a host that connects its own transport
 /// ([`McpHub::connect_transport`]) and needs its types.
