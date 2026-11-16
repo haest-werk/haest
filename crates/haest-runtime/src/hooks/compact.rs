@@ -26,7 +26,7 @@ impl RuntimeHooks {
         CompactionConfig {
             context_window: self.window(spec),
             threshold: COMPACT_SHARE,
-            ceiling: Some(self.settings.limits.compact_at).filter(|n| *n > 0),
+            ceiling: Some(self.settings.caps.compact_at).filter(|n| *n > 0),
             keep_recent: KEEP_RECENT,
         }
     }

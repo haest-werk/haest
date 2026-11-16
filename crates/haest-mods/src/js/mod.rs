@@ -38,7 +38,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::{Before, Mod, ModEnv, ModToolCall};
 use channel::{JsMeta, JsThread};
-pub use load::{ModLimits, ModLoadError};
+pub use load::{ModCaps, ModLoadError};
 use tool::JsTool;
 
 /// What a handler of a tool event sees as `ctx` (`signal` is added in the runtime).
@@ -91,12 +91,12 @@ fn ctx_json(ctx: &ToolContext) -> Value {
 /// There is no `node:` API, no `import`, no timer, no network and no file
 /// access: a mod reaches the world through the `haest` API alone. Each file
 /// has its own QuickJS runtime on its own thread, so mods share nothing.
-/// [`ModLimits`] bounds it: by default the runtime has 128 MiB of memory,
+/// [`ModCaps`] bounds it: by default the runtime has 128 MiB of memory,
 /// code that runs 10 s without a pause (awaiting does not count) is stopped
 /// (every call into the mod in flight then fails, and the next call runs as
 /// usual), and the default export must return within 30 s. A host sets other
-/// limits with [`JsMod::load_with`] or
-/// [`ModConfig::limits`](crate::ModConfig::limits).
+/// caps with [`JsMod::load_with`] or
+/// [`ModConfig::caps`](crate::ModConfig::caps).
 ///
 /// The thread stops when the `JsMod` and every tool it added are dropped.
 pub struct JsMod {

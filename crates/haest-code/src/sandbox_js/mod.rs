@@ -66,7 +66,7 @@ use tokio_util::sync::CancellationToken;
 pub use command::{JsShellCommand, NotHere, sandbox_commands};
 pub use guest::JS_MODULES;
 
-use crate::vm::{VmLimits, VmRun, VmStop, run_in_vm};
+use crate::vm::{VmCaps, VmRun, VmStop, run_in_vm};
 use guest::{JsScript, js_script_spec};
 use source::{is_jsx, runnable};
 
@@ -228,16 +228,16 @@ pub async fn run_js(path: &Path, code: &str, args: &[String], env: &JsEnv) -> Ex
         end.saturating_duration_since(Instant::now())
     });
     let timeout = left.min(JS_TIMEOUT);
-    let limits = VmLimits {
+    let caps = VmCaps {
         timeout_ms: timeout.as_millis() as u64,
         max_log_chars: JS_MAX_OUTPUT,
-        ..VmLimits::default()
+        ..VmCaps::default()
     };
     let filename = path
         .file_name()
         .map_or_else(|| "script.js".into(), |n| n.to_string_lossy().into_owned());
     let spec = js_script_spec(script, &filename);
-    let run = run_in_vm(code, &spec, limits, &env.cancel, None).await;
+    let run = run_in_vm(code, &spec, caps, &env.cancel, None).await;
     let exited = *exit_code.lock().unwrap();
     cli_result(run, exited, timeout)
 }

@@ -86,7 +86,7 @@ async fn the_example_profiles_read_as_their_comments_say() {
     let review = profile("review").await;
     assert_eq!(review.tools.words(), ["read", "grep", "glob"]);
     let claude = profile("claude").await;
-    assert_eq!(claude.limits.max_turn_usd, 5.0);
+    assert_eq!(claude.caps.max_turn_usd, 5.0);
     assert_eq!(
         claude.workspace,
         WorkspaceMode::Real,

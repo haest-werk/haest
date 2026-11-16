@@ -23,7 +23,7 @@ fn bare_turns_every_capability_off_and_every_brake_on() {
     assert_eq!(s.web_search_config(), None);
     assert!(s.approvals);
     assert_eq!(s.workspace, WorkspaceMode::Sandbox);
-    assert_eq!(s.limits.max_turn_usd, 2.0);
+    assert_eq!(s.caps.max_turn_usd, 2.0);
     assert_eq!(s.model, DEFAULT_MODEL);
     assert_eq!(
         (s.data_dir, s.config_dir),
@@ -43,13 +43,13 @@ fn token_caps_follow_the_window_unless_set() {
         (180_000, 2_000_000)
     );
     assert_eq!(l.max_turn_time, std::time::Duration::from_secs(3600));
-    s.limits.max_request_tokens = Some(0);
+    s.caps.max_request_tokens = Some(0);
     assert_eq!(s.turn_caps_for(200_000).max_request_tokens, 0);
     assert_eq!(
         (s.window(None), s.window(Some(1_000_000))),
         (200_000, 1_000_000)
     );
-    s.limits.context_window = Some(50_000);
+    s.caps.context_window = Some(50_000);
     assert_eq!(s.window(Some(1_000_000)), 50_000);
 }
 

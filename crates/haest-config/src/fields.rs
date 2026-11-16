@@ -101,7 +101,7 @@ impl Config {
     /// c.set("tools", "grep,read").unwrap();
     /// c.set("max_turn_usd", "5").unwrap();
     /// assert_eq!(c.get("tools").as_deref(), Some("read,grep"));
-    /// assert_eq!(c.settings.limits.max_turn_usd, 5.0);
+    /// assert_eq!(c.settings.caps.max_turn_usd, 5.0);
     ///
     /// assert!(matches!(c.set("tool", "read"), Err(SetError::Unknown { .. })));
     /// assert!(matches!(c.set("max_turn_steps", "2.5"), Err(SetError::Value { .. })));
@@ -227,16 +227,16 @@ fields! {
     "project_mods" => settings.project_mods,
     "approvals" => settings.approvals,
     "trusted_dirs" => trusted_dirs,
-    "max_turn_usd" => settings.limits.max_turn_usd,
-    "max_turn_tokens" => settings.limits.max_turn_tokens,
-    "max_request_tokens" => settings.limits.max_request_tokens,
-    "max_turn_steps" => settings.limits.max_turn_steps,
-    "max_turn_minutes" => settings.limits.max_turn_minutes,
-    "max_repeats" => settings.limits.max_repeats,
-    "max_conversation_usd" => settings.limits.max_conversation_usd,
-    "max_conversation_tokens" => settings.limits.max_conversation_tokens,
-    "context_window" => settings.limits.context_window,
-    "compact_at" => settings.limits.compact_at,
+    "max_turn_usd" => settings.caps.max_turn_usd,
+    "max_turn_tokens" => settings.caps.max_turn_tokens,
+    "max_request_tokens" => settings.caps.max_request_tokens,
+    "max_turn_steps" => settings.caps.max_turn_steps,
+    "max_turn_minutes" => settings.caps.max_turn_minutes,
+    "max_repeats" => settings.caps.max_repeats,
+    "max_conversation_usd" => settings.caps.max_conversation_usd,
+    "max_conversation_tokens" => settings.caps.max_conversation_tokens,
+    "context_window" => settings.caps.context_window,
+    "compact_at" => settings.caps.compact_at,
     "max_agent_turns" => settings.max_agent_turns,
     "max_agent_depth" => settings.subagents.max_depth,
     "max_subagents" => settings.subagents.max_concurrent,

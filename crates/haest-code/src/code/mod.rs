@@ -62,7 +62,7 @@ use serde_json::{Value, json};
 pub use bridge::{MAX_CALLS, MAX_SEEN};
 pub use render::{OUTPUT_BEGIN, OUTPUT_END};
 
-use crate::vm::{VM_MEMORY_BYTES, VmBeat, VmLimits, run_in_vm};
+use crate::vm::{VM_MEMORY_BYTES, VmBeat, VmCaps, run_in_vm};
 use bridge::Bridge;
 use render::render_code_output;
 
@@ -132,7 +132,7 @@ fn description(names: &[String]) -> String {
 
 Callable: {}.",
         VM_MEMORY_BYTES / 1024 / 1024,
-        VmLimits::default().timeout_ms / 1000,
+        VmCaps::default().timeout_ms / 1000,
         MAX_TIMEOUT_MS / 1000,
         names.join(", ")
     )
@@ -230,7 +230,7 @@ impl Tool for CodeTool {
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let code = req_str(&input, "code")?;
         let timeout_ms = opt_num(&input, "timeout")?
-            .unwrap_or(VmLimits::default().timeout_ms as f64)
+            .unwrap_or(VmCaps::default().timeout_ms as f64)
             .clamp(1000.0, MAX_TIMEOUT_MS as f64) as u64;
         let allowed: HashSet<&str> = self.names.iter().map(String::as_str).collect();
         let tools = self
@@ -243,12 +243,12 @@ impl Tool for CodeTool {
         let inner = ctx.cancel.child_token();
         let _stop_inner = inner.clone().drop_guard();
         let bridge = Bridge::new(tools, ctx, inner);
-        let limits = VmLimits {
+        let caps = VmCaps {
             timeout_ms,
-            ..VmLimits::default()
+            ..VmCaps::default()
         };
         let beat = |b: VmBeat| ctx.services.log(&beat_line(ctx, b));
-        let run = run_in_vm(code, &bridge.spec(), limits, &ctx.cancel, Some(&beat)).await;
+        let run = run_in_vm(code, &bridge.spec(), caps, &ctx.cancel, Some(&beat)).await;
         if run.killed {
             ctx.services.log(&format!(
                 "[code {}] did not stop when asked; its engine was abandoned",

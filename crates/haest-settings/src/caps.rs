@@ -1,4 +1,4 @@
-//! [`Limits`] and [`SubagentLimits`], the caps as settings hold them, and
+//! [`CapSettings`] and [`SubagentCapSettings`], the caps as settings hold them, and
 //! the [`Settings`] methods that turn them into what the loop, the ledger and
 //! the subagent hub take.
 
@@ -19,7 +19,7 @@ use crate::Settings;
 /// conversation's [`ConversationCaps`]. The loop checks them before each model call;
 /// the human goes past a turn cap by sending another message.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Limits {
+pub struct CapSettings {
     /// One turn's spend in USD; only calls whose cost is known count. Bare: 2.
     pub max_turn_usd: f64,
     /// One turn's billed tokens; None = 10x the model's window.
@@ -48,7 +48,7 @@ pub struct Limits {
 /// settings. [`Settings::subagent_caps`] turns them into haest-core's
 /// [`SubagentCaps`].
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SubagentLimits {
+pub struct SubagentCapSettings {
     /// How deep agents may nest (main = 0); 0 = no Agent tool.
     pub max_depth: u32,
     /// Subagents running at once, across the tree; 0 = no Agent tool.
@@ -61,7 +61,7 @@ pub struct SubagentLimits {
     pub minutes: u64,
 }
 
-impl Default for SubagentLimits {
+impl Default for SubagentCapSettings {
     /// haest-core's [`SubagentCaps::default`], in minutes.
     fn default() -> Self {
         let c = SubagentCaps::default();
@@ -81,7 +81,7 @@ fn minutes(m: f64) -> Duration {
 }
 
 impl Settings {
-    /// The model's context window in tokens: [`Limits::context_window`] when
+    /// The model's context window in tokens: [`CapSettings::context_window`] when
     /// set above 1000, else `catalog_window` (the catalog row's, for a model
     /// the catalog knows), else 200K.
     ///
@@ -91,11 +91,11 @@ impl Settings {
     /// let mut s = Settings::bare("/w", "/h");
     /// assert_eq!(s.window(None), 200_000);
     /// assert_eq!(s.window(Some(1_000_000)), 1_000_000);
-    /// s.limits.context_window = Some(50_000);
+    /// s.caps.context_window = Some(50_000);
     /// assert_eq!(s.window(Some(1_000_000)), 50_000);
     /// ```
     pub fn window(&self, catalog_window: Option<u64>) -> u64 {
-        let set = self.limits.context_window.filter(|n| *n > 1000);
+        let set = self.caps.context_window.filter(|n| *n > 1000);
         set.or(catalog_window).unwrap_or(200_000)
     }
 
@@ -106,7 +106,7 @@ impl Settings {
     /// `max_request_tokens` 90% of it. One set to `Some(0)` stays 0, no cap.
     /// A negative or non-finite `max_turn_minutes` is no cap.
     pub fn turn_caps_for(&self, window: u64) -> TurnCaps {
-        let l = &self.limits;
+        let l = &self.caps;
         TurnCaps {
             max_turn_usd: l.max_turn_usd,
             max_turn_tokens: l.max_turn_tokens.unwrap_or(window * 10),
@@ -121,8 +121,8 @@ impl Settings {
     /// `max_conversation_usd` and `max_conversation_tokens`.
     pub fn conversation_caps(&self) -> ConversationCaps {
         ConversationCaps {
-            max_usd: self.limits.max_conversation_usd,
-            max_unpriced_tokens: self.limits.max_conversation_tokens,
+            max_usd: self.caps.max_conversation_usd,
+            max_unpriced_tokens: self.caps.max_conversation_tokens,
         }
     }
 

@@ -4,7 +4,7 @@
 //! sources in module mode -- plus one pure built-in, `__path` (posix path ops),
 //! which needs no host at all ([`super::setup`]).
 //!
-//! Bounded on every axis: QuickJS memory and stack limits; the interrupt handler
+//! Bounded on every axis: QuickJS memory and stack caps; the interrupt handler
 //! stops a CPU loop when the job's deadline passes or haest sets the stop flag (an
 //! atomic -- it reaches the handler even while the loop runs, where no message
 //! could); a run parked on haest's answers ends on the stop message. A run ends
@@ -30,7 +30,7 @@ pub(crate) fn run_engine(job: &VmJob, port: &VmPort) -> VmRun {
         Ok(rt) => rt,
         Err(e) => return VmRun::failed(format!("haest's JS engine could not start: {e}")),
     };
-    rt.set_memory_limit(job.limits.memory_bytes);
+    rt.set_memory_limit(job.caps.memory_bytes);
     rt.set_max_stack_size(STACK_BYTES);
     if let Some(modules) = &job.modules {
         let m = JobModules(Arc::new(modules.clone()));
@@ -40,7 +40,7 @@ pub(crate) fn run_engine(job: &VmJob, port: &VmPort) -> VmRun {
         Ok(c) => c,
         Err(e) => return VmRun::failed(format!("haest's JS engine could not start: {e}")),
     };
-    let shared = Shared::new(job.limits.max_log_chars);
+    let shared = Shared::new(job.caps.max_log_chars);
     let clock = Clock::new(job, shared.clone(), Box::new(port.beats()));
     let run = Run {
         job,

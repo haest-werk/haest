@@ -23,7 +23,7 @@ use crate::{
     api::{ApprovalRequest, Decision, ModEnv, ModUi},
     decorate::ModTools,
     gate::{ApprovalAnswer, Prompter},
-    js::{JsMod, ModLimits, ModLoadError},
+    js::{JsMod, ModCaps, ModLoadError},
     registry::Mods,
 };
 
@@ -194,17 +194,17 @@ impl Tool for Probe {
     }
 }
 
-/// Limits short enough that a runaway mod is stopped inside a test.
-pub(crate) fn test_limits() -> ModLimits {
-    ModLimits {
+/// Caps short enough that a runaway mod is stopped inside a test.
+pub(crate) fn test_caps() -> ModCaps {
+    ModCaps {
         slice: Duration::from_millis(300),
-        ..ModLimits::default()
+        ..ModCaps::default()
     }
 }
 
 /// Load `source` as the mod file `file`.
 pub(crate) async fn js(file: &str, source: &str, haest: &ModEnv) -> Result<JsMod, ModLoadError> {
-    JsMod::load_with(Path::new(file), source.into(), haest, test_limits()).await
+    JsMod::load_with(Path::new(file), source.into(), haest, test_caps()).await
 }
 
 /// `tools` wrapped in `mods`' hooks, plus the mods' own tools.

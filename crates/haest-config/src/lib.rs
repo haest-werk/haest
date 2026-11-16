@@ -109,7 +109,7 @@
 //!
 //! // The variable beats the file, the flag beats everything, and each value
 //! // says where it came from.
-//! assert_eq!(settings.limits.max_turn_usd, 3.0);
+//! assert_eq!(settings.caps.max_turn_usd, 3.0);
 //! assert_eq!(
 //!     loaded.resolved.source("max_turn_usd"),
 //!     Source::Env("HAEST_MAX_TURN_USD".into())

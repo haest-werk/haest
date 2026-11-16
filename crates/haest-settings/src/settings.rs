@@ -13,7 +13,7 @@ use haest_core::{
     skills::SkillSources,
 };
 
-use crate::{ContextSources, Limits, SubagentLimits, sets::BuiltinTools};
+use crate::{CapSettings, ContextSources, SubagentCapSettings, sets::BuiltinTools};
 
 /// The model a run uses when none is configured: [`Settings::bare`]'s `model`.
 pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
@@ -25,7 +25,7 @@ pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 /// paths are only values until a runtime uses them). Each field is the haest
 /// setting of the same name, so `skill_catalog` is also the TOML key
 /// haest-config reads into it, `HAEST_SKILL_CATALOG` and `--skill-catalog`; the
-/// caps are grouped in [`Limits`] and [`SubagentLimits`].
+/// caps are grouped in [`CapSettings`] and [`SubagentCapSettings`].
 ///
 /// The helper methods turn fields into what the loop and the tools take:
 /// [`turn_caps_for`](Self::turn_caps_for), [`conversation_caps`](Self::conversation_caps),
@@ -103,13 +103,13 @@ pub struct Settings {
     /// The built-in approval mod: asks before a tool changes anything. Bare: on.
     pub approvals: bool,
     /// The spend, token, step and time caps.
-    pub limits: Limits,
+    pub caps: CapSettings,
     /// Turns in a row a background job or an agent may start with no human
     /// message; past it haest holds them. 0 = no cap.
     pub max_agent_turns: u32,
     /// The caps on the subagent tree: depth, how many at once, and each one's
     /// budget ([`Settings::subagent_caps`] for haest-tools).
-    pub subagents: SubagentLimits,
+    pub subagents: SubagentCapSettings,
     /// Where sessions, the REPL's history and spilled tool output go.
     pub data_dir: PathBuf,
     /// haest's own config dir; the human's mods are in `<config_dir>/mods`.
@@ -125,7 +125,7 @@ impl Settings {
     /// No tools, no instruction files, no skills, no Code, no agents, no web
     /// search, no image tool, no mods; approvals on, the sandbox workspace,
     /// [`DEFAULT_MODEL`], MCP tools behind ToolSearch, and the caps in
-    /// [`Limits`] at their bare values (2 USD and 100 model calls a turn, 20
+    /// [`CapSettings`] at their bare values (2 USD and 100 model calls a turn, 20
     /// USD a conversation, ...). `data_dir` is `<home>/.local/share/haest` and
     /// `config_dir` `<home>/.config/haest`. Neither path is checked or created.
     ///
@@ -161,7 +161,7 @@ impl Settings {
             mods: false,
             project_mods: false,
             approvals: true,
-            limits: Limits {
+            caps: CapSettings {
                 max_turn_usd: 2.0,
                 max_turn_tokens: None,
                 max_request_tokens: None,
@@ -174,7 +174,7 @@ impl Settings {
                 compact_at: 400_000,
             },
             max_agent_turns: 30,
-            subagents: SubagentLimits::default(),
+            subagents: SubagentCapSettings::default(),
             data_dir: home.join(".local/share/haest"),
             config_dir: home.join(".config/haest"),
             debug: false,

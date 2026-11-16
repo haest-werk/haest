@@ -155,7 +155,7 @@ const MODEL: &str = "Model and prompt";
 const CONTEXT: &str = "Context";
 const TOOLS: &str = "Tools";
 const WORK: &str = "Workspace, mods and trust";
-const LIMITS: &str = "Limits";
+const CAPS: &str = "CapSettings";
 const AGENTS: &str = "Subagents";
 const PATHS: &str = "Paths";
 
@@ -197,16 +197,16 @@ pub const DEFS: &[Def] = &[
     def("project_mods", WORK, Bool, "true", "The project's mods in .haest/mods (its code runs; a trusted dir only)"),
     def("approvals", WORK, Bool, "false", "The built-in approval mod: asks before a tool changes anything"),
     def("trusted_dirs", WORK, List(None), "~/projects,~/work", "Dirs whose project files haest reads (.haest/config.toml, .mcp.json, .haest/mods), with every dir inside them").scope(Scope::User),
-    def("max_turn_usd", LIMITS, Number, "5", "One turn's spend (0 = no cap)"),
-    def("max_turn_tokens", LIMITS, Number, "2000000", "One turn's tokens (unset: 10x the model's window; 0 = no cap)"),
-    def("max_request_tokens", LIMITS, Number, "150000", "One model call's input tokens (unset: 90% of the window; 0 = no cap)"),
-    def("max_turn_steps", LIMITS, Number, "200", "Model calls in one turn (0 = no cap)"),
-    def("max_turn_minutes", LIMITS, Number, "30", "One turn's wall clock (0 = no cap)"),
-    def("max_repeats", LIMITS, Number, "10", "The same tool call in a row before the guard stops it (0 = no cap)"),
-    def("max_conversation_usd", LIMITS, Number, "50", "The whole conversation's spend (0 = no cap)"),
-    def("max_conversation_tokens", LIMITS, Number, "50000000", "Tokens of models with no price (0 = no cap)"),
-    def("context_window", LIMITS, Number, "1000000", "The model's window in tokens (unset: the catalog's, else 200000)"),
-    def("compact_at", LIMITS, Number, "300000", "Compact the conversation past this many tokens (0 = at 80% of the window only)"),
+    def("max_turn_usd", CAPS, Number, "5", "One turn's spend (0 = no cap)"),
+    def("max_turn_tokens", CAPS, Number, "2000000", "One turn's tokens (unset: 10x the model's window; 0 = no cap)"),
+    def("max_request_tokens", CAPS, Number, "150000", "One model call's input tokens (unset: 90% of the window; 0 = no cap)"),
+    def("max_turn_steps", CAPS, Number, "200", "Model calls in one turn (0 = no cap)"),
+    def("max_turn_minutes", CAPS, Number, "30", "One turn's wall clock (0 = no cap)"),
+    def("max_repeats", CAPS, Number, "10", "The same tool call in a row before the guard stops it (0 = no cap)"),
+    def("max_conversation_usd", CAPS, Number, "50", "The whole conversation's spend (0 = no cap)"),
+    def("max_conversation_tokens", CAPS, Number, "50000000", "Tokens of models with no price (0 = no cap)"),
+    def("context_window", CAPS, Number, "1000000", "The model's window in tokens (unset: the catalog's, else 200000)"),
+    def("compact_at", CAPS, Number, "300000", "Compact the conversation past this many tokens (0 = at 80% of the window only)"),
     def("max_agent_turns", AGENTS, Number, "10", "Turns in a row a job or an agent starts with no human message; past it haest holds them (0 = no cap)"),
     def("max_agent_depth", AGENTS, Number, "1", "How deep agents nest, main = 0 (0 = no Agent tool)"),
     def("max_subagents", AGENTS, Number, "8", "Subagents running at once, across the tree (0 = no Agent tool)"),

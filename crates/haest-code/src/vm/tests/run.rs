@@ -10,15 +10,15 @@ use std::{
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use super::{host_fn, limits, run, spec};
-use crate::vm::{VmLimits, VmSpec};
+use super::{caps, host_fn, run, spec};
+use crate::vm::{VmCaps, VmSpec};
 
 #[tokio::test]
 async fn function_mode_logs_the_returned_value_and_values_set_as_globals() {
     let mut s = VmSpec::default();
     s.values.insert("N".into(), json!(21));
     let code = "console.log('hi', N); console.error('oops'); return { n: N * 2 }";
-    let r = run(code, &s, limits(5000), &CancellationToken::new()).await;
+    let r = run(code, &s, caps(5000), &CancellationToken::new()).await;
     assert_eq!(r.stdout, "hi 21\n");
     assert_eq!(r.stderr, "oops\n");
     let v: Value = serde_json::from_str(r.value.as_deref().unwrap()).unwrap();
@@ -30,7 +30,7 @@ async fn an_uncaught_error_names_its_line() {
     let r = run(
         "const a = 1\nnull.x()",
         &VmSpec::default(),
-        limits(5000),
+        caps(5000),
         &CancellationToken::new(),
     )
     .await;
@@ -51,13 +51,13 @@ async fn module_mode_imports_what_the_job_provides_and_refuses_the_rest() {
     let ok = run(
         "import { v } from 'm'\nconsole.log(v)",
         &s,
-        limits(5000),
+        caps(5000),
         &never,
     )
     .await;
     assert_eq!(ok.stdout, "7\n");
     assert_eq!(ok.error, None);
-    let missing = run("import x from 'nope'", &s, limits(5000), &never).await;
+    let missing = run("import x from 'nope'", &s, caps(5000), &never).await;
     assert!(missing.error.is_some());
 }
 
@@ -84,7 +84,7 @@ async fn async_calls_resolve_reject_into_the_guest_and_unawaited_ones_finish_fir
         ),
     ]);
     let code = "__late(); let e; try { await __bad() } catch (x) { e = x.message } return [await __ok('a'), e]";
-    let r = run(code, &s, limits(5000), &CancellationToken::new()).await;
+    let r = run(code, &s, caps(5000), &CancellationToken::new()).await;
     let v: Value = serde_json::from_str(r.value.as_deref().unwrap()).unwrap();
     assert_eq!(v, json!(["got a", "denied"]));
     assert_eq!(*seen.lock().unwrap(), vec!["late".to_string()]);
@@ -96,7 +96,7 @@ async fn a_promise_that_can_never_settle_is_an_error_not_a_hang() {
     let r = run(
         code,
         &VmSpec::default(),
-        limits(5000),
+        caps(5000),
         &CancellationToken::new(),
     )
     .await;
@@ -110,7 +110,7 @@ async fn the_guest_has_no_host_reach_of_its_own() {
     let r = run(
         code,
         &VmSpec::default(),
-        limits(5000),
+        caps(5000),
         &CancellationToken::new(),
     )
     .await;
@@ -121,9 +121,9 @@ async fn the_guest_has_no_host_reach_of_its_own() {
 #[tokio::test]
 async fn memory_is_capped() {
     let s = VmSpec::default();
-    let tight = VmLimits {
+    let tight = VmCaps {
         memory_bytes: 8 << 20,
-        ..limits(10_000)
+        ..caps(10_000)
     };
     let code = "const a = []; for (;;) a.push('x'.repeat(1024) + a.length)";
     let r = run(code, &s, tight, &CancellationToken::new()).await;

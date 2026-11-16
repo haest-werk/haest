@@ -14,7 +14,7 @@ const HOME_MODS: &str = "/home/cfg/mods";
 fn cfg(workspace: WorkspaceMode) -> ModConfig {
     let mut cfg = ModConfig::new(CWD, workspace, "/home/cfg");
     cfg.user_mods = true;
-    cfg.limits = test_limits();
+    cfg.caps = test_caps();
     cfg
 }
 
@@ -56,7 +56,7 @@ async fn the_hosts_limits_bound_every_mod_file_it_loads() {
     )]);
     let ui = TestUi::new();
     let mut quick = cfg(WorkspaceMode::Sandbox);
-    quick.limits.load_timeout = Duration::from_millis(200);
+    quick.caps.load_timeout = Duration::from_millis(200);
     let started = Instant::now();
     let mods = load_mods(quick, &fs, ui.clone()).await;
     assert!(started.elapsed() < Duration::from_secs(5));

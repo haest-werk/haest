@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     STOP_GRACE, VmSpec,
     host::Engine,
-    types::{FromVm, ToVm, VmBeat, VmLimits, VmRun, VmStop},
+    types::{FromVm, ToVm, VmBeat, VmCaps, VmRun, VmStop},
 };
 
 type Answering = FuturesUnordered<BoxFuture<'static, (u64, Result<String, String>)>>;
@@ -56,12 +56,12 @@ impl Stopper {
 pub(super) async fn supervise(
     engine: Engine,
     spec: &VmSpec,
-    limits: VmLimits,
+    caps: VmCaps,
     stop: Arc<AtomicBool>,
     cancel: &CancellationToken,
     on_beat: Option<&(dyn Fn(VmBeat) + Send + Sync)>,
 ) -> VmRun {
-    let deadline = Instant::now() + Duration::from_millis(limits.timeout_ms);
+    let deadline = Instant::now() + Duration::from_millis(caps.timeout_ms);
     let mut answering = Answering::new();
     let Engine { to_vm, mut from_vm } = engine;
     let mut stopper = Stopper {

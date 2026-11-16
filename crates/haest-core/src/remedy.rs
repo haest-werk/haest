@@ -38,6 +38,10 @@ use crate::ledger::ConversationCap;
 /// A limit haest holds a conversation to, with its number: a cap a turn or
 /// the conversation reached (or nears), or the sandbox keeping edits off the
 /// disk. What a host's [`Remedies`] answers.
+///
+/// "Cap" is haest's word for a maximum that stops something; this is named
+/// `Limit` because it also covers [`SandboxEdits`](Self::SandboxEdits), which
+/// is no cap.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub enum Limit {

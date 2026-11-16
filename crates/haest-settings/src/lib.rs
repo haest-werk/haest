@@ -4,7 +4,7 @@
 //! [`Settings`] is one struct of public fields. [`Settings::bare`] fills it the
 //! way haest starts: every capability off until asked for (no tools, no
 //! instruction files, no skills, no Code, no agents, no web search, no mods)
-//! and every brake on (approvals, the caps in [`Limits`], the sandbox
+//! and every brake on (approvals, the caps in [`CapSettings`], the sandbox
 //! workspace). A host changes the fields it wants and keeps the rest with
 //! struct update syntax (`..Settings::bare(cwd, home)`).
 //!
@@ -79,13 +79,13 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
-mod limits;
+mod caps;
 mod sets;
 mod settings;
 #[cfg(test)]
 mod tests;
 
+pub use caps::{CapSettings, SubagentCapSettings};
 pub use haest_core::{context::ContextSources, skills::SkillSources, words::WordSet};
-pub use limits::{Limits, SubagentLimits};
 pub use sets::BuiltinTools;
 pub use settings::{DEFAULT_MODEL, Settings};

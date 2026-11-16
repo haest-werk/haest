@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     channel::{JsMeta, Reply, ToJs},
-    load::{ModLimits, ModLoadError},
+    load::{ModCaps, ModLoadError},
 };
 use crate::api::ModUi;
 
@@ -29,7 +29,7 @@ pub(crate) struct Setup {
     pub source: String,
     pub ui: Arc<dyn ModUi>,
     pub meta: Arc<Mutex<JsMeta>>,
-    pub limits: ModLimits,
+    pub caps: ModCaps,
     pub runtime: Handle,
 }
 
@@ -159,9 +159,9 @@ impl Js {
         let engine = |e: rquickjs::Error| ModLoadError::Evaluate(e.to_string());
         let code = runnable(&setup.path, setup.source)?;
         let rt = Runtime::new().map_err(engine)?;
-        rt.set_memory_limit(setup.limits.memory_bytes);
+        rt.set_memory_limit(setup.caps.memory_bytes);
         let slice = Arc::new(Slice {
-            limit: setup.limits.slice,
+            limit: setup.caps.slice,
             since: Mutex::default(),
         });
         let watch = slice.clone();

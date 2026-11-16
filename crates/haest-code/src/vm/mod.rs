@@ -20,7 +20,7 @@
 //! pure posix `path` helper the prelude can build on; nothing else: no file
 //! system, network, timer or process.
 //!
-//! Start from [`run_in_vm`]; [`VmLimits`] bounds a run and [`VmRun`] is how
+//! Start from [`run_in_vm`]; [`VmCaps`] bounds a run and [`VmRun`] is how
 //! it ended.
 
 mod engine;
@@ -47,7 +47,7 @@ use serde_json::{Map, Value};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
-pub use types::{VmBeat, VmLimits, VmRun, VmStop};
+pub use types::{VmBeat, VmCaps, VmRun, VmStop};
 
 use host::spawn_engine;
 use types::VmJob;
@@ -102,10 +102,10 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 /// it is stopped. Code that awaits a promise nothing can settle ends at once
 /// with an error saying so.
 ///
-/// `limits` bounds it: [`VmLimits::timeout_ms`] stops it (wall clock, from
+/// `caps` bounds it: [`VmCaps::timeout_ms`] stops it (wall clock, from
 /// when the engine starts, waiting on host functions included), memory past
-/// [`VmLimits::memory_bytes`] is an error inside the guest, and console
-/// output past [`VmLimits::max_log_chars`] is dropped.
+/// [`VmCaps::memory_bytes`] is an error inside the guest, and console
+/// output past [`VmCaps::max_log_chars`] is dropped.
 ///
 /// `cancel` is the human's interrupt: it stops the run, even a CPU loop,
 /// within one interrupt poll, and what it printed is kept
@@ -123,7 +123,7 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 /// use std::sync::Arc;
 ///
 /// use futures::FutureExt;
-/// use haest_code::{HostFn, VmLimits, run_in_vm, vm::VmSpec};
+/// use haest_code::{HostFn, VmCaps, run_in_vm, vm::VmSpec};
 /// use tokio_util::sync::CancellationToken;
 ///
 /// # #[tokio::main]
@@ -137,9 +137,9 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 /// spec.host_fns.insert("shout".into(), shout);
 /// spec.values.insert("WHO".into(), "haest".into());
 ///
-/// let limits = VmLimits { timeout_ms: 5_000, memory_bytes: 16 << 20, max_log_chars: 10_000 };
+/// let caps = VmCaps { timeout_ms: 5_000, memory_bytes: 16 << 20, max_log_chars: 10_000 };
 /// let code = "console.log('working'); return { said: await shout('hi ' + WHO) }";
-/// let run = run_in_vm(code, &spec, limits, &CancellationToken::new(), None).await;
+/// let run = run_in_vm(code, &spec, caps, &CancellationToken::new(), None).await;
 ///
 /// assert_eq!(run.error, None);
 /// assert_eq!(run.stdout, "working\n");
@@ -150,11 +150,11 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 pub async fn run_in_vm(
     code: &str,
     spec: &VmSpec,
-    limits: VmLimits,
+    caps: VmCaps,
     cancel: &CancellationToken,
     on_beat: Option<&(dyn Fn(VmBeat) + Send + Sync)>,
 ) -> VmRun {
-    run_with_slots(&ENGINES, code, spec, limits, cancel, on_beat).await
+    run_with_slots(&ENGINES, code, spec, caps, cancel, on_beat).await
 }
 
 /// A dropped run future stops its engine too.
@@ -170,7 +170,7 @@ pub(crate) async fn run_with_slots(
     slots: &Semaphore,
     code: &str,
     spec: &VmSpec,
-    limits: VmLimits,
+    caps: VmCaps,
     cancel: &CancellationToken,
     on_beat: Option<&(dyn Fn(VmBeat) + Send + Sync)>,
 ) -> VmRun {
@@ -191,11 +191,11 @@ pub(crate) async fn run_with_slots(
         async_names: spec.host_fns.keys().cloned().collect(),
         modules: spec.modules.clone(),
         filename: spec.filename.clone().unwrap_or_else(|| "code.js".into()),
-        limits,
+        caps,
         stop: stop.clone(),
     };
     match spawn_engine(job) {
-        Ok(engine) => supervise::supervise(engine, spec, limits, stop, cancel, on_beat).await,
+        Ok(engine) => supervise::supervise(engine, spec, caps, stop, cancel, on_beat).await,
         Err(e) => VmRun::failed(format!("haest's JS engine could not start: {e}")),
     }
 }

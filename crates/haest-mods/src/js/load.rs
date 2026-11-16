@@ -1,5 +1,5 @@
 //! Loading one file mod ([`JsMod::load`], [`JsMod::load_with`]): the bounds it
-//! runs in ([`ModLimits`]) and why it did not load ([`ModLoadError`]).
+//! runs in ([`ModCaps`]) and why it did not load ([`ModLoadError`]).
 
 use std::{
     io,
@@ -23,13 +23,13 @@ use crate::api::ModEnv;
 /// ```
 /// use std::time::Duration;
 ///
-/// use haest_mods::ModLimits;
+/// use haest_mods::ModCaps;
 ///
-/// let strict = ModLimits { load_timeout: Duration::from_secs(5), ..ModLimits::default() };
+/// let strict = ModCaps { load_timeout: Duration::from_secs(5), ..ModCaps::default() };
 /// assert_eq!(strict.memory_bytes, 128 << 20);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ModLimits {
+pub struct ModCaps {
     /// The longest the mod's code may run without pausing (awaiting does not
     /// count). Past it the code is stopped: every call into the mod in flight
     /// fails, and the next call runs as usual.
@@ -40,7 +40,7 @@ pub struct ModLimits {
     pub load_timeout: Duration,
 }
 
-impl Default for ModLimits {
+impl Default for ModCaps {
     fn default() -> Self {
         Self {
             slice: Duration::from_secs(10),
@@ -81,13 +81,13 @@ pub enum ModLoadError {
     /// The engine's own words.
     #[error("{0}")]
     Export(String),
-    /// Its default export did not return within [`ModLimits::load_timeout`].
+    /// Its default export did not return within [`ModCaps::load_timeout`].
     #[error("its default export did not return within {}s", .0.as_secs_f64())]
     Timeout(Duration),
 }
 
 impl JsMod {
-    /// Runs one mod file within the default [`ModLimits`]: strips its types
+    /// Runs one mod file within the default [`ModCaps`]: strips its types
     /// (a `.ts` path, through `haest-ts`), evaluates `source` as an ES module
     /// in a fresh QuickJS runtime on its own thread, and calls its default
     /// export with the `haest` API. `path` names the mod
@@ -134,20 +134,20 @@ impl JsMod {
     /// # }
     /// ```
     pub async fn load(path: &Path, source: String, haest: &ModEnv) -> Result<Self, ModLoadError> {
-        Self::load_with(path, source, haest, ModLimits::default()).await
+        Self::load_with(path, source, haest, ModCaps::default()).await
     }
 
-    /// [`load`](Self::load) within these `limits`.
+    /// [`load`](Self::load) within these `caps`.
     ///
     /// # Errors
     ///
     /// As [`load`](Self::load); [`ModLoadError::Timeout`] after
-    /// `limits.load_timeout`.
+    /// `caps.load_timeout`.
     pub async fn load_with(
         path: &Path,
         source: String,
         haest: &ModEnv,
-        limits: ModLimits,
+        caps: ModCaps,
     ) -> Result<Self, ModLoadError> {
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| ModLoadError::NoRuntime)?;
         let meta = Arc::new(Mutex::new(JsMeta::default()));
@@ -156,12 +156,12 @@ impl JsMod {
             source,
             ui: haest.ui.clone(),
             meta: meta.clone(),
-            limits,
+            caps,
             runtime,
         };
         let thread = Arc::new(JsThread::new(thread::start(setup).await?));
         let env = json!({ "env": { "cwd": haest.cwd, "workspace": haest.workspace.as_str() } });
-        let wait = limits.load_timeout;
+        let wait = caps.load_timeout;
         match tokio::time::timeout(wait, thread.call("load", env, None)).await {
             Err(_) => Err(ModLoadError::Timeout(wait)),
             Ok(Err(CallError::Failed(words))) => Err(ModLoadError::Export(words)),

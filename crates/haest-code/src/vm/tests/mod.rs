@@ -16,10 +16,10 @@ use futures::FutureExt;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
-use super::{HostFn, MAX_ENGINES, VmBeat, VmLimits, VmRun, VmSpec, VmStop, run_with_slots};
+use super::{HostFn, MAX_ENGINES, VmBeat, VmCaps, VmRun, VmSpec, VmStop, run_with_slots};
 
-fn limits(timeout_ms: u64) -> VmLimits {
-    VmLimits {
+fn caps(timeout_ms: u64) -> VmCaps {
+    VmCaps {
         timeout_ms,
         memory_bytes: 32 << 20,
         max_log_chars: 10_000,
@@ -43,9 +43,9 @@ fn spec(fns: impl IntoIterator<Item = (&'static str, HostFn)>) -> VmSpec {
 }
 
 /// A run on a private pool, so parallel tests never queue behind each other.
-async fn run(code: &str, spec: &VmSpec, limits: VmLimits, cancel: &CancellationToken) -> VmRun {
+async fn run(code: &str, spec: &VmSpec, caps: VmCaps, cancel: &CancellationToken) -> VmRun {
     let slots = Semaphore::new(MAX_ENGINES);
-    run_with_slots(&slots, code, spec, limits, cancel, None).await
+    run_with_slots(&slots, code, spec, caps, cancel, None).await
 }
 
 fn cancel_after(ms: u64) -> CancellationToken {
@@ -62,7 +62,7 @@ fn cancel_after(ms: u64) -> CancellationToken {
 async fn an_interrupt_stops_a_cpu_loop_at_once_and_what_it_printed_is_kept() {
     let started = Instant::now();
     let code = "console.log('before'); while (true) {}";
-    let r = run(code, &VmSpec::default(), limits(30_000), &cancel_after(100)).await;
+    let r = run(code, &VmSpec::default(), caps(30_000), &cancel_after(100)).await;
     assert_eq!(r.stopped, Some(VmStop::Interrupted));
     assert!(!r.killed);
     assert_eq!(r.stdout, "before\n");
@@ -74,7 +74,7 @@ async fn the_deadline_stops_a_cpu_loop_and_is_reported_as_a_timeout() {
     let r = run(
         "while (true) {}",
         &VmSpec::default(),
-        limits(300),
+        caps(300),
         &CancellationToken::new(),
     )
     .await;
@@ -92,7 +92,7 @@ async fn a_cpu_bound_run_keeps_sending_heartbeats() {
         &slots,
         "while (true) {}",
         &spec,
-        limits(30_000),
+        caps(30_000),
         &cancel,
         Some(&on_beat),
     )
@@ -124,7 +124,7 @@ async fn no_more_than_four_engines_run_at_once_the_rest_wait_their_turn() {
             &slots,
             "return await __hold()",
             &spec,
-            limits(30_000),
+            caps(30_000),
             &never,
             None,
         )
@@ -149,7 +149,7 @@ async fn a_run_waiting_for_a_slot_can_be_interrupted_without_ever_starting() {
             &slots,
             "return await __hold()",
             &spec,
-            limits(30_000),
+            caps(30_000),
             &never,
             None,
         )
@@ -158,7 +158,7 @@ async fn a_run_waiting_for_a_slot_can_be_interrupted_without_ever_starting() {
     let waiting = async {
         tokio::task::yield_now().await;
         cancel.cancel();
-        run_with_slots(&slots, "return 1", &spec, limits(30_000), &cancel, None).await
+        run_with_slots(&slots, "return 1", &spec, caps(30_000), &cancel, None).await
     };
     let (busy, waiting) = tokio::join!(busy, waiting);
     assert_eq!(waiting.stopped, Some(VmStop::Interrupted));

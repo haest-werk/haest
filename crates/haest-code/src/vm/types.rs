@@ -14,13 +14,13 @@ use serde_json::{Map, Value};
 /// [`VM_MEMORY_BYTES`](super::VM_MEMORY_BYTES), 100,000 characters of output.
 ///
 /// ```
-/// use haest_code::VmLimits;
+/// use haest_code::VmCaps;
 ///
-/// let quick = VmLimits { timeout_ms: 5_000, ..VmLimits::default() };
+/// let quick = VmCaps { timeout_ms: 5_000, ..VmCaps::default() };
 /// assert_eq!(quick.memory_bytes, haest_code::vm::VM_MEMORY_BYTES);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VmLimits {
+pub struct VmCaps {
     /// Wall-clock deadline in milliseconds, from when the engine starts; past
     /// it the run is stopped as [`VmStop::Timeout`], even mid-loop.
     pub timeout_ms: u64,
@@ -31,7 +31,7 @@ pub struct VmLimits {
     pub max_log_chars: usize,
 }
 
-impl Default for VmLimits {
+impl Default for VmCaps {
     fn default() -> Self {
         Self {
             timeout_ms: 60_000,
@@ -44,7 +44,7 @@ impl Default for VmLimits {
 /// Why a run was cut short.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VmStop {
-    /// It reached [`VmLimits::timeout_ms`].
+    /// It reached [`VmCaps::timeout_ms`].
     Timeout,
     /// The caller's cancel token fired.
     Interrupted,
@@ -68,7 +68,7 @@ pub struct VmRun {
     pub stdout: String,
     /// `console.warn` and `error` lines.
     pub stderr: String,
-    /// Console output passed [`VmLimits::max_log_chars`] and the rest was dropped.
+    /// Console output passed [`VmCaps::max_log_chars`] and the rest was dropped.
     pub logs_truncated: bool,
     /// Why the run was cut short, or None.
     pub stopped: Option<VmStop>,
@@ -119,7 +119,7 @@ pub(crate) struct VmJob {
     /// ES module mode: importable name -> source. None = function mode (`return` works).
     pub modules: Option<HashMap<String, String>>,
     pub filename: String,
-    pub limits: VmLimits,
+    pub caps: VmCaps,
     /// haest sets it to stop the run; the interrupt handler reads it, so it reaches
     /// a CPU loop where no message could.
     pub stop: Arc<AtomicBool>,

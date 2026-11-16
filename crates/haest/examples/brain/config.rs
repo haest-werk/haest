@@ -7,7 +7,7 @@
 
 use haest::{
     core::caps::TurnCaps,
-    settings::{BuiltinTools, Limits, Settings},
+    settings::{BuiltinTools, CapSettings, Settings},
 };
 
 use crate::CWD;
@@ -25,9 +25,9 @@ pub fn work() -> Settings {
             ..BuiltinTools::NONE
         },
         agents: true,
-        limits: Limits {
+        caps: CapSettings {
             max_turn_minutes: 1.0,
-            ..bare.limits.clone()
+            ..bare.caps.clone()
         },
         ..bare
     }

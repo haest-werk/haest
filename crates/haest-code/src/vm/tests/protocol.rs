@@ -9,9 +9,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::limits;
+use super::caps;
 use crate::vm::{
-    VmLimits, VmRun, VmStop,
+    VmCaps, VmRun, VmStop,
     host::{Engine, spawn_engine},
     types::{FromVm, ToVm, VmJob},
 };
@@ -24,7 +24,7 @@ fn job(code: &str, async_names: &[&str]) -> VmJob {
         async_names: async_names.iter().map(|s| s.to_string()).collect(),
         modules: None,
         filename: "code.js".into(),
-        limits: limits(5000),
+        caps: caps(5000),
         stop: Arc::new(AtomicBool::new(false)),
     }
 }
@@ -94,7 +94,7 @@ async fn the_stop_flag_and_the_deadline_both_stop_a_cpu_loop() {
     let (_, run) = drive(spawn_engine(flagged).unwrap(), |_, _| None).await;
     assert_eq!(run.stopped, Some(VmStop::Interrupted));
     let mut timed = job("while (true) {}", &[]);
-    timed.limits = VmLimits {
+    timed.caps = VmCaps {
         timeout_ms: 200,
         memory_bytes: 32 << 20,
         max_log_chars: 100,

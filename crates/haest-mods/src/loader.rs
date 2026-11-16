@@ -20,7 +20,7 @@ use haest_core::{error::report, fs::Fs, workspace::WorkspaceMode};
 use crate::{
     api::{ModEnv, ModUi},
     approval::{ApprovalMod, AutoJudge, SHELL_TOOLS},
-    js::{JsMod, ModLimits},
+    js::{JsMod, ModCaps},
     plan::{PLANNING_TOOLS, PlanListener, PlanMod},
     registry::Mods,
 };
@@ -57,14 +57,14 @@ pub struct ModConfig {
     /// The tools plan mode lets run though they are not read-only, by name.
     /// [`PLANNING_TOOLS`] by default.
     pub planning_tools: Vec<String>,
-    /// The bounds every mod file runs in. [`ModLimits::default`] by default.
-    pub limits: ModLimits,
+    /// The bounds every mod file runs in. [`ModCaps::default`] by default.
+    pub caps: ModCaps,
 }
 
 impl ModConfig {
     /// The defaults for a conversation in `cwd`: approvals on over
     /// [`SHELL_TOOLS`], no mod files, no auto mode, no plan listener, the
-    /// [`PLANNING_TOOLS`], the default [`ModLimits`].
+    /// [`PLANNING_TOOLS`], the default [`ModCaps`].
     pub fn new(
         cwd: impl Into<PathBuf>,
         workspace: WorkspaceMode,
@@ -81,7 +81,7 @@ impl ModConfig {
             shell_tools: SHELL_TOOLS.iter().map(|t| t.to_string()).collect(),
             on_plan_change: None,
             planning_tools: PLANNING_TOOLS.iter().map(|t| t.to_string()).collect(),
-            limits: ModLimits::default(),
+            caps: ModCaps::default(),
         }
     }
 
@@ -130,7 +130,7 @@ pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 ///
 /// Each directory's files load in name order ([`mod_files`]); each one runs
 /// its default export now ([`JsMod::load_with`], within
-/// [`ModConfig::limits`]). A mod that fails to load is
+/// [`ModConfig::caps`]). A mod that fails to load is
 /// reported through [`ModUi::error`] and skipped; the rest still load, so
 /// this never fails. A host's own native mods go in afterwards with
 /// [`Mods::add`].
@@ -157,7 +157,7 @@ pub async fn load_mods(cfg: ModConfig, fs: &dyn Fs, ui: Arc<dyn ModUi>) -> Mods 
     for dir in cfg.mod_dirs() {
         for path in mod_files(fs, &dir).await {
             let loaded = match fs.read_to_string(&path).await {
-                Ok(source) => JsMod::load_with(&path, source, &env, cfg.limits)
+                Ok(source) => JsMod::load_with(&path, source, &env, cfg.caps)
                     .await
                     .map_err(|e| report(&e)),
                 Err(e) => Err(e.to_string()),
