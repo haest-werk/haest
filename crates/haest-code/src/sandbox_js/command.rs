@@ -17,8 +17,8 @@ const JS_NOTE: &str = "To run a script you wrote, use `js <file.js|file.ts> [arg
 #[cfg(not(feature = "typescript"))]
 const JS_NOTE: &str = "To run a script you wrote, use `js <file.js> [args]`: plain JavaScript as an ES module with async fs (fs.promises / 'fs/promises'), path and process over the sandbox's files -- no npm packages, no sync fs, no TypeScript.";
 
-/// `js` ([`JsShellCommand`]) and a [`NotHere`] for every name in
-/// [`NOT_HERE`], ready for `SandboxWorkspace::with_command`. Only `js` has a
+/// `js` and, for every name in [`NOT_HERE`](crate::NOT_HERE), a command that
+/// points to it, ready for `SandboxWorkspace::with_command`. Only `js` has a
 /// note for the system prompt; the others stay unadvertised.
 pub fn sandbox_commands() -> Vec<Arc<dyn ShellCommand>> {
     let mut out: Vec<Arc<dyn ShellCommand>> = vec![Arc::new(JsShellCommand)];
@@ -32,7 +32,7 @@ pub fn sandbox_commands() -> Vec<Arc<dyn ShellCommand>> {
 
 /// The sandbox shell's `js <file> [args]` command: [`js_command`] over the
 /// shell call's files, working directory, variables, interrupt and deadline.
-pub struct JsShellCommand;
+pub(crate) struct JsShellCommand;
 
 #[async_trait]
 impl ShellCommand for JsShellCommand {
@@ -60,7 +60,7 @@ impl ShellCommand for JsShellCommand {
 
 /// A runtime name (`bun`, `node`, ...) that answers with a pointer to `js`
 /// and exit 127 ([`not_here`]); the field is the name.
-pub struct NotHere(pub &'static str);
+pub(crate) struct NotHere(pub &'static str);
 
 #[async_trait]
 impl ShellCommand for NotHere {

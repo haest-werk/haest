@@ -46,7 +46,7 @@ const PATH_API: [&str; 8] = [
 ];
 /// The modules a `js` script can import or `require`, by bare name (with a
 /// `node:` prefix too).
-pub const JS_MODULES: [&str; 3] = ["fs", "fs/promises", "path"];
+pub(crate) const JS_MODULES: [&str; 3] = ["fs", "fs/promises", "path"];
 
 fn sync_api() -> Vec<String> {
     let mut names: Vec<String> = PROMISE_API

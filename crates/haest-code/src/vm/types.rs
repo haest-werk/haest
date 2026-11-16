@@ -17,7 +17,7 @@ use serde_json::{Map, Value};
 /// use haest_code::VmCaps;
 ///
 /// let quick = VmCaps { timeout_ms: 5_000, ..VmCaps::default() };
-/// assert_eq!(quick.memory_bytes, haest_code::vm::VM_MEMORY_BYTES);
+/// assert_eq!(quick.memory_bytes, haest_code::VM_MEMORY_BYTES);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VmCaps {

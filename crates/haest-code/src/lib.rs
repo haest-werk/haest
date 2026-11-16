@@ -5,21 +5,21 @@
 //!   filters and joins their results, and returns only what matters -- one
 //!   model step instead of twenty, and the intermediate results never enter
 //!   the context.
-//! - The sandbox shell's **`js` command** ([`sandbox_js`]): `js script.ts`
+//! - The sandbox shell's **`js` command** ([`js_command`]): `js script.ts`
 //!   runs a JavaScript or TypeScript file as an ES module, with Node-shaped
 //!   `fs`, `path` and `process` over the sandbox's own files.
 //!
-//! Both run on the same engine ([`vm`]): QuickJS (native, through
+//! Both run on the same engine ([`run_in_vm`]): QuickJS (native, through
 //! `rquickjs`) on a thread of its own per run, with a memory limit, a
 //! wall-clock deadline that stops even a CPU loop, and no reach of its own --
 //! no file system, network, process or timer except what haest hands the run.
 //!
 //! | Piece | What | Ported from |
 //! |---|---|---|
-//! | [`vm`] | one engine run on a thread of its own: limits, stop, heartbeat | `core/code-vm*.ts` |
-//! | `call_gate` (inside [`code`]) | writes alone, reads together, for one run's tool calls | `core/call-gate.ts` |
-//! | [`code`] | the Code tool: a short program that calls haest's tools | `tools/code*.ts` |
-//! | [`sandbox_js`] | the sandbox shell's `js <file>` command over a haest [`Fs`](haest_core::Fs) | `core/sandbox-js*.ts` |
+//! | [`run_in_vm`] | one engine run on a thread of its own: caps, stop, heartbeat | `core/code-vm*.ts` |
+//! | the Code tool's call gate | writes alone, reads together, for one run's tool calls | `core/call-gate.ts` |
+//! | [`CodeTool`] | the Code tool: a short program that calls haest's tools | `tools/code*.ts` |
+//! | [`js_command`], [`sandbox_commands`] | the sandbox shell's `js <file>` command over a haest [`Fs`](haest_core::Fs) | `core/sandbox-js*.ts` |
 //!
 //! Feature `typescript` (default): `js file.ts` strips the types first
 //! (`haest-ts`). Without it, a TypeScript file is refused with a message
@@ -119,12 +119,19 @@
 #![warn(missing_docs)]
 
 mod call_gate;
-pub mod code;
-pub mod sandbox_js;
+mod code;
+mod sandbox_js;
 #[cfg(test)]
 mod testkit;
-pub mod vm;
+mod vm;
 
-pub use code::{CodeTool, code_callable, code_tool_names};
-pub use sandbox_js::{JsEnv, js_command, not_here, run_js, sandbox_commands};
-pub use vm::{NativeFn, NativeFuture, VmBeat, VmCaps, VmRun, VmSpec, VmStop, run_in_vm};
+pub use code::{
+    CodeTool, MAX_CALLS, MAX_SEEN, OUTPUT_BEGIN, OUTPUT_END, code_callable, code_tool_names,
+};
+pub use sandbox_js::{
+    JS_MAX_OUTPUT, JS_TIMEOUT, JsEnv, NOT_HERE, js_command, run_js, sandbox_commands,
+};
+pub use vm::{
+    MAX_ENGINES, NativeFn, NativeFuture, STOP_GRACE, VM_MEMORY_BYTES, VmBeat, VmCaps, VmRun,
+    VmSpec, VmStop, run_in_vm,
+};

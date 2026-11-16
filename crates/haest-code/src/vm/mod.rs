@@ -125,7 +125,7 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 /// use std::sync::Arc;
 ///
 /// use futures::FutureExt;
-/// use haest_code::{NativeFn, VmCaps, run_in_vm, vm::VmSpec};
+/// use haest_code::{NativeFn, VmCaps, VmSpec, run_in_vm};
 /// use tokio_util::sync::CancellationToken;
 ///
 /// # #[tokio::main]
