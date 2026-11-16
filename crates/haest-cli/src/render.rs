@@ -1,10 +1,11 @@
-//! Turning loop events into terminal output.
+//! Turning the session's stream into terminal output.
 //!
 //! stdout carries the ANSWER only (the model's text), so `haest -p ... > out.md`
 //! captures exactly that. Everything about the work -- tool calls, thinking,
-//! guard notices, errors, the cost line -- goes to stderr. `--json` replaces all
-//! of it with one JSON line per event on stdout, each in haest-wire's envelope
-//! (`v`, `sid`, `seq`, `ts`, `path`, then the event's own fields).
+//! guard notices, errors, the cost line, subagents -- goes to stderr. `--json`
+//! replaces all of it with one JSON line per frame on stdout, each in
+//! haest-wire's envelope (`v`, `sid`, `seq`, `ts`, `path`, then the frame's
+//! own fields).
 
 use std::{
     io::{IsTerminal, Write},
@@ -13,12 +14,15 @@ use std::{
 
 use haest::{
     LoopEvent, StopReason, ToolCall, Usage,
-    wire::{Framer, Outbound, Path, encode_line},
+    session::{Body, Frame},
+    wire::{Framer, Outbound, Path, State, encode_line},
 };
 use serde::Serialize;
 use serde_json::Value;
 
 pub use haest::wire::Level;
+
+use crate::agents::AgentLog;
 
 /// How events are written.
 pub struct Renderer<O: Write, E: Write> {
@@ -34,8 +38,12 @@ pub struct Renderer<O: Write, E: Write> {
     /// While the REPL prompt is open: where a line goes so it lands ABOVE the
     /// prompt, never inside what the human is typing.
     above: Option<Sender<String>>,
-    /// Numbers the json lines: one stream per run.
+    /// Numbers the json lines written here directly (not from a stream).
     framer: Framer,
+    /// Subagents' names, for their lines.
+    agents: AgentLog,
+    /// The last turn's usage, for the cost line once the turn is over.
+    usage: Option<Usage>,
 }
 
 const DIM: &str = "\x1b[2m";
@@ -61,6 +69,71 @@ impl<O: Write, E: Write> Renderer<O, E> {
             shown_error: None,
             above: None,
             framer: Framer::new(uuid::Uuid::new_v4().to_string()),
+            agents: AgentLog::default(),
+            usage: None,
+        }
+    }
+
+    /// One frame of the session's stream: in json mode its line as it is;
+    /// otherwise what the human reads of it. The cost line comes after a
+    /// turn of the conversation's own, with the session's total from the
+    /// status that follows it.
+    pub fn frame(&mut self, frame: &Frame) {
+        if self.json {
+            let _ = self.out.write_all(encode_line(frame).as_bytes());
+            let _ = self.out.flush();
+            return;
+        }
+        let subagent = frame.path.0.get(1).map(String::as_str);
+        match (&frame.body, subagent) {
+            (Body::Loop(ev), None) => {
+                if let LoopEvent::TurnEnd { usage, .. } = ev {
+                    self.usage = Some(usage.clone());
+                }
+                self.event(ev);
+            }
+            (Body::Loop(ev), Some(id)) => {
+                if let Some((level, text)) = self.agents.loop_event(id, ev) {
+                    self.notice(level, &text);
+                }
+            }
+            (Body::Wire(wire), subagent) => self.wire(wire, subagent),
+        }
+    }
+
+    /// One of the wire's own frames, in text mode.
+    fn wire(&mut self, frame: &Outbound, subagent: Option<&str>) {
+        match (frame, subagent) {
+            (Outbound::Notice { level, text }, _) => self.notice(*level, text),
+            (Outbound::Ask { text }, _) => self.ask(text),
+            (Outbound::Status(now), None) if now.state == State::Idle => {
+                if let Some(usage) = self.usage.take() {
+                    self.usage(&usage, now.usd);
+                }
+            }
+            (
+                Outbound::SubagentStarted {
+                    name,
+                    parent,
+                    description,
+                },
+                Some(id),
+            ) => {
+                let (level, text) = self.agents.started(id, name, parent, description);
+                self.notice(level, &text);
+            }
+            (Outbound::SubagentStopped { ok }, Some(id)) => {
+                let (level, text) = self.agents.stopped(id, *ok);
+                self.notice(level, &text);
+            }
+            (Outbound::Gap { missed, .. }, _) => {
+                let n = missed.map_or("Some".to_string(), |n| n.to_string());
+                self.note(
+                    DIM,
+                    &format!("({n} events not shown: the terminal fell behind)"),
+                );
+            }
+            _ => {}
         }
     }
 

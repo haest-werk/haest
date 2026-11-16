@@ -36,6 +36,7 @@ use haest::{
     config::{Loaded, Loader, env_var},
     core::{error::report, session::sessions_dir},
     runtime::{BuildError, SessionError, Ui, list_sessions},
+    session::{Backend, Hub, HubOptions, start},
     settings::Settings,
     workspace::RealFs,
 };
@@ -44,6 +45,7 @@ use crate::{
     args::{Args, Command},
     commands::Outcome,
     mods::TermPrompter,
+    run::{Brakes, Session},
     term::{Runtime, TermUi},
 };
 
@@ -87,23 +89,36 @@ fn print_input(args: &Args) -> Option<String> {
 }
 
 /// `input` asked once ([`print_input`], read before the build).
-async fn print_mode(rt: &mut Runtime, input: &str) -> ExitCode {
-    let code = match commands::resolve(rt, input).await {
-        Outcome::Send(text) => {
-            let end = run::human(rt, &text).await;
-            // Interrupted: the human wants out, not the background work's answers.
-            if end.stop_reason != haest::StopReason::Aborted {
-                run::settle(rt).await;
+async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode {
+    let input = input.to_string();
+    let outcome = session
+        .with(move |rt| Box::pin(async move { commands::resolve(rt, &input).await }))
+        .await;
+    let code = match outcome {
+        Ok(Outcome::Send(text)) => match run::human(session, text).await {
+            Some(end) => {
+                // Interrupted: the human wants out, not the background work's answers.
+                if end.stop_reason != haest::StopReason::Aborted {
+                    run::settle(session, brakes).await;
+                }
+                run::exit_code(&end)
             }
-            run::exit_code(&end)
-        }
-        Outcome::Done | Outcome::Exit => ExitCode::SUCCESS,
+            None => ExitCode::FAILURE,
+        },
+        Ok(Outcome::Done | Outcome::Exit) => ExitCode::SUCCESS,
+        Err(_) => ExitCode::FAILURE,
     };
-    if let Some(lost) = changes::unapplied(rt).await {
-        rt.hooks.warn(&format!(
-            "{lost}\nRun with -w real to edit the project directly, or interactively and /apply."
-        ));
-    }
+    let _ = session
+        .with(|rt| {
+            Box::pin(async move {
+                if let Some(lost) = changes::unapplied(rt).await {
+                    rt.hooks.warn(&format!(
+                        "{lost}\nRun with -w real to edit the project directly, or interactively and /apply."
+                    ));
+                }
+            })
+        })
+        .await;
     code
 }
 
@@ -186,30 +201,64 @@ async fn main() -> ExitCode {
         return subcommand(cmd, &loaded).await;
     }
     let print = args.print || args.json || !std::io::stdin().is_terminal();
-    let ui = Arc::new(TermUi::new(args.json));
+    // The stream first: what the build says is in it, and the terminal shows it.
+    let ring = HubOptions {
+        ring: loaded.config.event_ring,
+        ..HubOptions::default()
+    };
+    let hub = Hub::new(uuid::Uuid::new_v4().to_string(), ring);
+    let ui = Arc::new(TermUi::with_hub(args.json, hub.clone()));
+    let shown = term::show(ui.term.clone(), hub.subscribe(0));
     loaded.notes.iter().for_each(|n| ui.warn(n));
     // What print mode asks, read before the build: with nothing to ask, the
     // run fails having created no session.
     let input = match print.then(|| print_input(args)) {
-        Some(None) => return fail(2, "nothing to ask: give a prompt, or pipe one on stdin"),
+        Some(None) => {
+            let why = "nothing to ask: give a prompt, or pipe one on stdin";
+            return ended(hub, shown, 2, why).await;
+        }
         asked => asked.flatten(),
     };
     let prompter = TermPrompter::new(ui.clone(), ask::interactive());
     let opts = cli.build_options();
     let inputs = haest::runtime_inputs(loaded);
-    let mut rt = match haest::runtime::build(inputs, ui, prompter, opts).await {
+    let rt = match haest::runtime::build(inputs, ui.clone(), prompter, opts).await {
         Ok(rt) => rt,
-        Err(e) => return fail(2, build_failed(e)),
+        Err(e) => return ended(hub, shown, 2, build_failed(e)).await,
     };
+    let brakes = Arc::new(Brakes::of(&rt));
+    let session = start(rt, hub.clone());
+    let interrupts = run::watch_interrupts(brakes.clone(), hub.subscribe(hub.last_seq()));
     let code = match input {
-        Some(input) => print_mode(&mut rt, &input).await,
-        None => match repl::repl(&mut rt, args.prompt_text()).await {
+        Some(input) => print_mode(&session, &brakes, &input).await,
+        None => match repl::repl(&session, &ui, args.prompt_text()).await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => fail(1, e),
         },
     };
-    shutdown(&rt).await;
+    // What haest stops is said; then the session closes the conversation
+    // (MCP servers, the session file) and its stream, which the terminal
+    // shows to its end.
+    let _ = session
+        .with(|rt| Box::pin(async move { shutdown(rt).await }))
+        .await;
+    session.close().await;
+    let _ = shown.await;
+    interrupts.abort();
     code
+}
+
+/// A run that ends before its session starts: the stream closes, the
+/// terminal shows what it holds, then [`fail`] says why.
+async fn ended(
+    hub: Hub,
+    shown: tokio::task::JoinHandle<()>,
+    code: u8,
+    why: impl std::fmt::Display,
+) -> ExitCode {
+    hub.close();
+    let _ = shown.await;
+    fail(code, why)
 }
 
 #[cfg(test)]

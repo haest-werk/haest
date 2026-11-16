@@ -31,6 +31,10 @@ max_conversation_usd = 25
 # it runs, so subagents running at once cannot overshoot it together.
 subagent_budgets = true
 
+# Frames kept for a peer that catches up on a running conversation's stream
+# (a control socket, a broker link), besides the running turn.
+event_ring = 5000
+
 # OpenRouter's provider routing, as JSON (your own file only).
 provider_routing = '{"global": {"banned": ["novita"]}}'
 

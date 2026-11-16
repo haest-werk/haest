@@ -1,0 +1,294 @@
+//! The session driver: owns the [`Driven`] on its own task, runs one turn at
+//! a time, makes changes between turns, and decides what runs next.
+
+mod turn;
+
+use std::{collections::VecDeque, time::Duration};
+
+use haest_core::{TurnOutcome, error::BoxError};
+use haest_wire::{Origin, Outbound, Path, Snapshot, State};
+use tokio::sync::{mpsc, oneshot};
+
+use crate::{BoxFuture, Control, Driven, DrivenStatus, History, Hub, Input, SessionError};
+
+/// How often the driver looks again while work it waits for is still out
+/// (a background subagent's answer) and someone waits for it to settle.
+const SETTLE_POLL: Duration = Duration::from_millis(250);
+
+/// Work a host runs on the conversation between turns.
+pub(crate) type Job<D> = Box<dyn for<'a> FnOnce(&'a mut D) -> BoxFuture<'a, ()> + Send>;
+
+/// Where a turn's outcome goes, for the one who sent its input.
+pub(crate) type Waiter = oneshot::Sender<Result<TurnOutcome, SessionError>>;
+
+/// What a handle asks of the driver.
+pub(crate) enum Command<D> {
+    Submit {
+        input: Input,
+        done: Option<Waiter>,
+    },
+    Control {
+        control: Control,
+        reply: oneshot::Sender<Result<(), SessionError>>,
+    },
+    Snapshot(oneshot::Sender<Snapshot>),
+    History(oneshot::Sender<History>),
+    With(Job<D>),
+    Hold(oneshot::Sender<()>),
+    Release,
+    Idle(oneshot::Sender<()>),
+    Settled(oneshot::Sender<()>),
+    Close(oneshot::Sender<()>),
+}
+
+/// Input steered into the last turn and not read by its end: it runs next.
+struct Leftover {
+    human: bool,
+    waiters: Vec<Waiter>,
+    /// How the turn it was steered into ended: theirs, if its text is gone.
+    outcome: TurnOutcome,
+}
+
+pub(crate) struct Driver<D> {
+    driven: D,
+    hub: Hub,
+    rx: mpsc::UnboundedReceiver<Command<D>>,
+    /// Every handle is gone: nothing more can arrive.
+    orphaned: bool,
+    /// Inputs that wait for a turn of their own.
+    queue: VecDeque<(Input, Vec<Waiter>)>,
+    /// Requests that wait for the running turn to end.
+    deferred: VecDeque<Command<D>>,
+    leftover: Option<Leftover>,
+    /// Holds taken: no turn starts while any is.
+    holds: usize,
+    /// What the conversation said about itself after the last change.
+    status: DrivenStatus,
+    idle: Vec<oneshot::Sender<()>>,
+    settled: Vec<oneshot::Sender<()>>,
+}
+
+/// Whether the driver goes on after a request.
+/// A turn's input, and how it runs.
+pub(super) enum TurnInput {
+    /// A person's text: [`Driven::human_turn`] makes it ready and runs it.
+    Human(String),
+    /// Ready as it is (through the gate already): [`Driven::run`].
+    Ready(String),
+}
+
+enum Flow {
+    Go,
+    Stop(Option<oneshot::Sender<()>>),
+}
+
+impl<D: Driven> Driver<D> {
+    pub(crate) fn new(driven: D, hub: Hub, rx: mpsc::UnboundedReceiver<Command<D>>) -> Self {
+        let status = driven.status();
+        Self {
+            driven,
+            hub,
+            rx,
+            orphaned: false,
+            queue: VecDeque::new(),
+            deferred: VecDeque::new(),
+            leftover: None,
+            holds: 0,
+            status,
+            idle: Vec::new(),
+            settled: Vec::new(),
+        }
+    }
+
+    /// The driver's life: requests between turns, turns when there is one
+    /// to run, and a wait for the next request or arrival.
+    pub(crate) async fn run(mut self) {
+        self.publish_status(State::Idle);
+        loop {
+            while let Some(cmd) = self.deferred.pop_front() {
+                if let Flow::Stop(reply) = self.between(cmd).await {
+                    return self.finish(reply).await;
+                }
+            }
+            if self.orphaned {
+                return self.finish(None).await;
+            }
+            if self.holds == 0
+                && let Some((input, waiters)) = self.next_turn()
+            {
+                self.turn(input, waiters).await;
+                continue;
+            }
+            wake(&mut self.idle);
+            if !self.driven.expecting() {
+                wake(&mut self.settled);
+            }
+            let poll = !self.settled.is_empty();
+            let free = self.holds == 0;
+            tokio::select! {
+                cmd = self.rx.recv() => match cmd {
+                    Some(cmd) => self.deferred.push_back(cmd),
+                    None => self.orphaned = true,
+                },
+                _ = self.driven.arrival(), if free => {}
+                _ = tokio::time::sleep(SETTLE_POLL), if poll => {}
+            }
+        }
+    }
+
+    /// The next turn to run, and who waits for it: what the last turn left
+    /// unread, then the next turn nobody asked for
+    /// ([`Driven::next_agent_turn`]), then the queued inputs in order (a
+    /// person's through `human_turn`, another program's through the gate).
+    fn next_turn(&mut self) -> Option<(TurnInput, Vec<Waiter>)> {
+        if let Some(left) = self.leftover.take() {
+            match self.driven.take_unread() {
+                Some(text) if left.human => return Some((TurnInput::Human(text), left.waiters)),
+                Some(text) => match self.driven.gate_agent(text) {
+                    Some(text) => return Some((TurnInput::Ready(text), left.waiters)),
+                    None => fail(left.waiters, || SessionError::Held),
+                },
+                // A request between turns took it: it went with that turn.
+                None => {
+                    for w in left.waiters {
+                        let _ = w.send(Ok(left.outcome.clone()));
+                    }
+                }
+            }
+        }
+        if let Some(text) = self.driven.next_agent_turn() {
+            return Some((TurnInput::Ready(text), Vec::new()));
+        }
+        while let Some((input, waiters)) = self.queue.pop_front() {
+            match input.origin {
+                Origin::Human => return Some((TurnInput::Human(input.text), waiters)),
+                Origin::Agent => match self.driven.gate_agent(input.text) {
+                    Some(text) => return Some((TurnInput::Ready(text), waiters)),
+                    None => fail(waiters, || SessionError::Held),
+                },
+            }
+        }
+        None
+    }
+
+    /// One request, between turns.
+    async fn between(&mut self, cmd: Command<D>) -> Flow {
+        match cmd {
+            Command::Submit { input, done } => {
+                self.queue.push_back((input, done.into_iter().collect()));
+                if self.holds > 0 {
+                    self.publish_status(State::Idle);
+                }
+            }
+            Command::Control { control, reply } => {
+                let done = self.change(control).await;
+                let _ = reply.send(done);
+                self.refresh();
+            }
+            Command::Snapshot(tx) => {
+                self.status = self.driven.status();
+                let _ = tx.send(self.snapshot(State::Idle));
+            }
+            Command::History(tx) => {
+                let seq = self.hub.last_seq();
+                let messages = self.driven.history();
+                let _ = tx.send(History { seq, messages });
+            }
+            Command::With(job) => {
+                job(&mut self.driven).await;
+                self.refresh();
+            }
+            Command::Hold(tx) => {
+                self.holds += 1;
+                let _ = tx.send(());
+            }
+            Command::Release => self.holds = self.holds.saturating_sub(1),
+            Command::Idle(tx) => self.idle.push(tx),
+            Command::Settled(tx) => self.settled.push(tx),
+            Command::Close(tx) => return Flow::Stop(Some(tx)),
+        }
+        Flow::Go
+    }
+
+    /// A change between turns; nothing changes when it fails.
+    async fn change(&mut self, control: Control) -> Result<(), SessionError> {
+        let failed = |what| move |source: BoxError| SessionError::Control { what, source };
+        match control {
+            Control::Interrupt => Ok(()),
+            Control::SetModelSpec(spec) => self
+                .driven
+                .set_model_spec(&spec)
+                .map_err(failed("set the model")),
+            Control::SetEffort(effort) => {
+                self.driven.set_effort(effort);
+                Ok(())
+            }
+            Control::Clear => self.driven.clear().await.map_err(failed("clear")),
+        }
+    }
+
+    /// The conversation may have changed: say so when it did.
+    fn refresh(&mut self) {
+        let now = self.driven.status();
+        if now != self.status {
+            self.status = now;
+            self.publish_status(State::Idle);
+        }
+    }
+
+    fn snapshot(&self, state: State) -> Snapshot {
+        snapshot(&self.status, state, self.queue.len(), self.hub.last_seq())
+    }
+
+    fn publish_status(&mut self, state: State) {
+        let status = Outbound::Status(self.snapshot(state));
+        self.hub.publish(Path::main(), status);
+    }
+
+    /// The end: what waits is refused, the conversation closes what it
+    /// started and saves, the stream closes.
+    async fn finish(mut self, reply: Option<oneshot::Sender<()>>) {
+        for (_, waiters) in self.queue.drain(..) {
+            fail(waiters, || SessionError::Closed);
+        }
+        if let Some(left) = self.leftover.take() {
+            fail(left.waiters, || SessionError::Closed);
+        }
+        self.driven.close().await;
+        self.hub.close();
+        wake(&mut self.idle);
+        wake(&mut self.settled);
+        if let Some(reply) = reply {
+            let _ = reply.send(());
+        }
+        // Anything still asked gets its reply dropped: the handle reads Closed.
+    }
+}
+
+/// The conversation now, as a peer reads it.
+fn snapshot(status: &DrivenStatus, state: State, queued: usize, last_seq: u64) -> Snapshot {
+    Snapshot {
+        state,
+        session: status.session.clone(),
+        model_spec: status.model_spec.clone(),
+        effort: status.effort.map(|e| e.as_str().to_string()),
+        usd: status.usd,
+        queued,
+        messages: status.messages,
+        last_seq,
+    }
+}
+
+/// Everyone waiting here is told.
+fn wake(waiting: &mut Vec<oneshot::Sender<()>>) {
+    for w in waiting.drain(..) {
+        let _ = w.send(());
+    }
+}
+
+/// Every waiter gets `why`.
+fn fail(waiters: Vec<Waiter>, why: impl Fn() -> SessionError) {
+    for w in waiters {
+        let _ = w.send(Err(why()));
+    }
+}

@@ -1,0 +1,195 @@
+//! What the `haest` binary's tests run it in: a home of its own, and a model
+//! that answers from a script over a local socket.
+
+#![allow(dead_code)]
+
+use std::{
+    collections::VecDeque,
+    io::{BufRead, BufReader, Read, Write},
+    net::{TcpListener, TcpStream},
+    path::PathBuf,
+    process::{Command, Output, Stdio},
+    sync::{Arc, Mutex},
+};
+
+use serde_json::{Value, json};
+
+/// A home of its own (haest's files and data under it) with a project dir in
+/// it; gone at the end.
+pub struct Home(pub PathBuf);
+
+impl Home {
+    pub fn new(name: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!("haest-cli-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("w")).unwrap();
+        Home(dir)
+    }
+
+    /// `haest <args>` in the project, stdin empty, its environment only HOME
+    /// and what the caller adds.
+    pub fn command(&self, args: &[&str]) -> Command {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_haest"));
+        cmd.arg("-C")
+            .arg(self.0.join("w"))
+            .args(args)
+            .env_clear()
+            .env("HOME", &self.0)
+            .stdin(Stdio::null());
+        cmd
+    }
+
+    /// [`Self::command`] with `vars`, run to its end.
+    pub fn haest(&self, args: &[&str], vars: &[(&str, &str)]) -> Output {
+        let mut cmd = self.command(args);
+        cmd.envs(vars.iter().copied()).output().unwrap()
+    }
+
+    /// The session files haest saved.
+    pub fn sessions(&self) -> Vec<PathBuf> {
+        match std::fs::read_dir(self.0.join(".local/share/haest/sessions")) {
+            Ok(dir) => dir.map(|e| e.unwrap().path()).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// The provider `local` (an OpenAI-compatible server at `model`), its key
+    /// read from `LOCAL_KEY`: run with `-m local:m` and [`LOCAL_KEY`].
+    pub fn serve(&self, model: &FakeModel) {
+        let dir = self.0.join(".config/haest");
+        std::fs::create_dir_all(&dir).unwrap();
+        let providers = json!({"local": {
+            "type": "openai",
+            "baseURL": format!("{}/v1", model.url),
+            "apiKeyEnv": "LOCAL_KEY",
+        }});
+        std::fs::write(dir.join("providers.json"), providers.to_string()).unwrap();
+    }
+}
+
+impl Drop for Home {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The variable the `local` provider's key is read from, with a value.
+pub const LOCAL_KEY: (&str, &str) = ("LOCAL_KEY", "k");
+
+pub fn stderr(out: &Output) -> String {
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+/// One answer of the [`FakeModel`].
+#[derive(Debug, Clone)]
+pub enum Reply {
+    /// Text, then the end of the answer.
+    Text(String),
+    /// One tool call: its name and its input.
+    Tool(String, Value),
+}
+
+/// An OpenAI-compatible model on a local socket: each request gets the next
+/// reply of its script, streamed; with the script used up, "out of script".
+pub struct FakeModel {
+    pub url: String,
+    script: Arc<Mutex<VecDeque<Reply>>>,
+    /// Every request's body, in order.
+    pub requests: Arc<Mutex<Vec<Value>>>,
+}
+
+impl FakeModel {
+    pub fn new(script: impl IntoIterator<Item = Reply>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let script = Arc::new(Mutex::new(script.into_iter().collect::<VecDeque<_>>()));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let (s, r) = (script.clone(), requests.clone());
+        std::thread::spawn(move || {
+            for conn in listener.incoming() {
+                let Ok(conn) = conn else { return };
+                let (s, r) = (s.clone(), r.clone());
+                std::thread::spawn(move || answer(conn, &s, &r));
+            }
+        });
+        Self {
+            url,
+            script,
+            requests,
+        }
+    }
+
+    /// The bodies of the requests so far.
+    pub fn requests(&self) -> Vec<Value> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+fn answer(conn: TcpStream, script: &Mutex<VecDeque<Reply>>, requests: &Mutex<Vec<Value>>) {
+    let mut reader = BufReader::new(conn.try_clone().unwrap());
+    let mut length = 0;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            return;
+        }
+        let line = line.trim_end();
+        if line.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            length = value.trim().parse().unwrap_or(0);
+        }
+    }
+    let mut body = vec![0; length];
+    if reader.read_exact(&mut body).is_err() {
+        return;
+    }
+    requests
+        .lock()
+        .unwrap()
+        .push(serde_json::from_slice(&body).unwrap_or(Value::Null));
+    let reply = script.lock().unwrap().pop_front();
+    let mut conn = conn;
+    let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
+    let _ = conn.write_all(head.as_bytes());
+    let _ = conn.write_all(sse(reply).as_bytes());
+    let _ = conn.flush();
+}
+
+/// A reply as a chat completions stream.
+fn sse(reply: Option<Reply>) -> String {
+    let chunk = |delta: Value, reason: Option<&str>| {
+        json!({"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m",
+               "choices": [{"index": 0, "delta": delta, "finish_reason": reason}]})
+    };
+    let chunks = match reply {
+        Some(Reply::Text(text)) => vec![
+            chunk(json!({"content": text}), None),
+            chunk(json!({}), Some("stop")),
+        ],
+        Some(Reply::Tool(name, input)) => {
+            let call = json!({"index": 0, "id": "call-1", "type": "function",
+                              "function": {"name": name, "arguments": input.to_string()}});
+            vec![
+                chunk(json!({"tool_calls": [call]}), None),
+                chunk(json!({}), Some("tool_calls")),
+            ]
+        }
+        None => vec![
+            chunk(json!({"content": "out of script"}), None),
+            chunk(json!({}), Some("stop")),
+        ],
+    };
+    let usage = json!({"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m",
+                       "choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 2}});
+    let mut body: String = chunks
+        .iter()
+        .chain([&usage])
+        .map(|c| format!("data: {c}\n\n"))
+        .collect();
+    body.push_str("data: [DONE]\n\n");
+    body
+}

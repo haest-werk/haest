@@ -28,9 +28,19 @@ serde_json = { workspace = true }
 futures = { workspace = true }
 # Session ids: random v4 UUIDs.
 uuid = { version = "1", features = ["v4"] }
+haest-session = { workspace = true, optional = true, features = ["approvals"] }
+haest-wire = { workspace = true, optional = true }
+
+[features]
+# The conversation behind a haest-session session: `Runtime` as its `Driven`,
+# and a `Ui` that tells the session's stream. Off by default.
+session = ["dep:haest-session", "dep:haest-wire"]
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }
+# server: the session tests close a real MCP server over an in-memory duplex.
+rmcp = { version = "3.9", default-features = false, features = ["client", "server"] }
+tokio = { workspace = true, features = ["io-util"] }
 
 [package.metadata.docs.rs]
 all-features = true

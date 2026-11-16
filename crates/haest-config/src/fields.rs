@@ -65,13 +65,16 @@ pub struct Config {
     /// OpenRouter's provider routing, the JSON as written: parsed into
     /// [`crate::Loaded::routing`].
     pub provider_routing: Option<String>,
+    /// Frames a host's session keeps for a peer that catches up, besides the
+    /// running turn (haest-session's `HubOptions::ring`). Default 1000.
+    pub event_ring: usize,
 }
 
 impl Config {
     /// Bare haest working in `cwd` with `home` as the home dir
     /// ([`Settings::bare`]), and the loader's own settings at their defaults:
     /// no profile, no trusted dirs, `env_passthrough = core`, no `env`, `mcp`
-    /// off, no routing.
+    /// off, no routing, a ring of 1000 frames.
     pub fn bare(cwd: impl Into<PathBuf>, home: impl Into<PathBuf>) -> Self {
         Settings::bare(cwd, home).into()
     }
@@ -133,6 +136,7 @@ impl From<Settings> for Config {
             env: BTreeMap::new(),
             mcp: false,
             provider_routing: None,
+            event_ring: 1000,
         }
     }
 }
@@ -244,6 +248,7 @@ fields! {
     "subagent_steps" => settings.subagents.steps,
     "subagent_minutes" => settings.subagents.minutes,
     "subagent_budgets" => settings.subagents.budgets,
+    "event_ring" => event_ring,
     "data_dir" => settings.data_dir,
     "config_dir" => settings.config_dir,
     "debug" => settings.debug;

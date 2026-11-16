@@ -1,0 +1,34 @@
+[package]
+name = "haest-session"
+description = "A haest conversation another program can watch and drive while it runs: the session driver, its event hub (numbered frames, a replay ring, a bounded broadcast), the Backend seam transports attach to"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+# Approval asks answered over the session (a Prompter for haest-mods' gate).
+approvals = ["dep:haest-mods"]
+
+[dependencies]
+haest-core = { workspace = true }
+haest-wire = { workspace = true }
+haest-mods = { workspace = true, optional = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+haest-core = { workspace = true, features = ["testing"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+futures = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

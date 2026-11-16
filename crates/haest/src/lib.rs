@@ -191,6 +191,7 @@
 //! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags | no |
 //! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI | no |
 //! | `wire` | [`wire`]: the envelope around a conversation's events, the requests a peer sends, a replay ring with gaps, an NDJSON codec | no |
+//! | `session` | [`session`]: a conversation another program watches and drives while it runs (input mid-turn, catch-up, approvals over it); with `runtime`, the whole conversation is one | no |
 //! | `testing` | [`core::testing`]: a scripted model and other fakes for tests | no |
 //!
 //! ```toml
@@ -270,6 +271,9 @@ pub use haest_providers as providers;
 #[cfg(feature = "runtime")]
 #[doc(inline)]
 pub use haest_runtime as runtime;
+#[cfg(feature = "session")]
+#[doc(inline)]
+pub use haest_session as session;
 #[cfg(feature = "settings")]
 #[doc(inline)]
 pub use haest_settings as settings;

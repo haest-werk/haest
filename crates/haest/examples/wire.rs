@@ -81,3 +81,9 @@ fn main() {
         other => panic!("a stale frame must be refused, got {other:?}"),
     }
 }
+
+/// `cargo test` runs the example, so a change that breaks it fails the suite.
+#[test]
+fn the_example_runs() {
+    main();
+}

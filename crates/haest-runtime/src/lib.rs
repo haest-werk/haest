@@ -49,6 +49,11 @@
 //! 4. At the end, [`Runtime::shut_down`]: the subagents stopped, the
 //!    background jobs killed, the MCP servers closed, the session flushed.
 //!
+//! With feature `session`, a host hands the runtime to haest-session's
+//! `start` instead, and the session's driver runs this same life with these
+//! same methods (`Runtime` is its `Driven`): peers watch the stream and send
+//! input, and [`HubUi`] puts the runtime's lines in that stream.
+//!
 //! # Examples
 //!
 //! A whole conversation over a host's own files, behind a host's UI. It
@@ -154,6 +159,8 @@ mod mods;
 mod parent;
 mod prompt;
 mod runtime;
+#[cfg(feature = "session")]
+mod session;
 mod sessions;
 mod store;
 #[cfg(test)]
@@ -187,6 +194,9 @@ pub use mods::mods_for;
 pub use parent::RuntimeParent;
 pub use prompt::{AgentPrompt, RuntimePrompt, instruction_options, skill_options};
 pub use runtime::{Runtime, ShutDown};
+#[cfg(feature = "session")]
+#[cfg_attr(docsrs, doc(cfg(feature = "session")))]
+pub use session::{HubUi, subagent_frame};
 pub use sessions::{SessionInfo, list_sessions};
 pub use tools::{MainTools, NoImageKey, WrappedTools, image_options, own_tools};
 pub use ui::Ui;

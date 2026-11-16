@@ -32,6 +32,7 @@ whole config files.
 | Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
 | Caps | [`max_turn_usd`](#max_turn_usd), [`max_turn_tokens`](#max_turn_tokens), [`max_request_tokens`](#max_request_tokens), [`max_turn_steps`](#max_turn_steps), [`max_turn_minutes`](#max_turn_minutes), [`max_repeats`](#max_repeats), [`max_conversation_usd`](#max_conversation_usd), [`max_conversation_tokens`](#max_conversation_tokens), [`context_window`](#context_window), [`compact_at`](#compact_at) |
 | Subagents | [`max_agent_turns`](#max_agent_turns), [`max_agent_depth`](#max_agent_depth), [`max_subagents`](#max_subagents), [`subagent_usd`](#subagent_usd), [`subagent_steps`](#subagent_steps), [`subagent_minutes`](#subagent_minutes), [`subagent_budgets`](#subagent_budgets) |
+| Watching and driving | [`event_ring`](#event_ring) |
 | Paths | [`data_dir`](#data_dir), [`config_dir`](#config_dir), [`debug`](#debug) |
 | [Profiles](#profiles) | the built-in ones, and your own |
 
@@ -652,6 +653,22 @@ Off, the Agent tool's parameters are Claude Code's. On, each value only tightens
 config.toml   subagent_budgets = true
 variable      HAEST_SUBAGENT_BUDGETS=true
 flag          --subagent-budgets
+```
+
+## Watching and driving
+
+### `event_ring`
+
+Frames kept for a peer that catches up on the conversation's stream, besides the running turn.
+
+- Takes: a whole number, 0 or more
+- Default: `1000`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   event_ring = 5000
+variable      HAEST_EVENT_RING=5000
+flag          --event-ring 5000
 ```
 
 ## Paths

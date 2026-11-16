@@ -24,7 +24,8 @@ mcp = ["dep:haest-mcp"]
 # The QuickJS engine: the Code tool and the sandbox `js` command.
 code = ["dep:haest-code"]
 # Mods: JS/TS files that hook tools, prompts and commands; approvals and plan mode.
-mods = ["dep:haest-mods"]
+# With `session` too: approval asks answered over the session.
+mods = ["dep:haest-mods", "haest-session?/approvals"]
 # Settings as plain values a host writes out: no files, no environment, no flags.
 settings = ["dep:haest-settings"]
 # The loader: settings from TOML files, HAEST_* variables and flags, plus what
@@ -35,6 +36,10 @@ runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "
 # The wire format: the envelope around a conversation's events, requests, the
 # replay ring, the NDJSON line codec. serde only.
 wire = ["dep:haest-wire"]
+# A conversation another program watches and drives while it runs: the session
+# driver, its handle and stream. With `runtime`, the runtime is one; with
+# `mods`, approval asks go over it.
+session = ["dep:haest-session", "wire", "haest-runtime?/session"]
 # Fakes for a host's tests: a scripted model that records every request.
 testing = ["haest-core/testing"]
 
@@ -52,6 +57,7 @@ haest-settings = { workspace = true, optional = true }
 haest-config = { workspace = true, optional = true }
 haest-runtime = { workspace = true, optional = true }
 haest-wire = { workspace = true, optional = true }
+haest-session = { workspace = true, optional = true }
 
 # The notebook example runs under `cargo test` too, so a change that breaks a
 # plug point it uses fails the suite, not only a `cargo run` nobody did.
@@ -70,6 +76,12 @@ test = true
 [[example]]
 name = "wire"
 required-features = ["wire"]
+test = true
+
+# A session over an agent: a watcher, input mid-turn, a late peer catching up.
+[[example]]
+name = "session"
+required-features = ["session"]
 test = true
 
 # The notebook example and tests/plug_in.rs: what a host implementing the plug points needs.

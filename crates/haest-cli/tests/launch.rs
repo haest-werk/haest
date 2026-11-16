@@ -1,60 +1,11 @@
 //! The `haest` binary as a human launches it: what a run that cannot start
 //! leaves behind, and what an odd environment does to a launch.
 
-use std::{
-    path::PathBuf,
-    process::{Command, Output, Stdio},
-};
+mod support;
 
-/// A home of its own (haest's files and data under it) with a project dir in
-/// it; gone at the end.
-struct Home(PathBuf);
+use std::path::PathBuf;
 
-impl Home {
-    fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("haest-cli-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("w")).unwrap();
-        Home(dir)
-    }
-
-    /// `haest <args>` in the project, stdin empty, its environment only HOME
-    /// and what the caller adds.
-    fn command(&self, args: &[&str]) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_haest"));
-        cmd.arg("-C")
-            .arg(self.0.join("w"))
-            .args(args)
-            .env_clear()
-            .env("HOME", &self.0)
-            .stdin(Stdio::null());
-        cmd
-    }
-
-    /// [`Self::command`] with `vars`, run to its end.
-    fn haest(&self, args: &[&str], vars: &[(&str, &str)]) -> Output {
-        let mut cmd = self.command(args);
-        cmd.envs(vars.iter().copied()).output().unwrap()
-    }
-
-    /// The session files haest saved.
-    fn sessions(&self) -> Vec<PathBuf> {
-        match std::fs::read_dir(self.0.join(".local/share/haest/sessions")) {
-            Ok(dir) => dir.map(|e| e.unwrap().path()).collect(),
-            Err(_) => Vec::new(),
-        }
-    }
-}
-
-impl Drop for Home {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-fn stderr(out: &Output) -> String {
-    String::from_utf8_lossy(&out.stderr).into_owned()
-}
+use support::{Home, stderr};
 
 /// A run that fails before its first turn leaves no new, empty session for
 /// `haest -r` to resume instead of the real previous one.

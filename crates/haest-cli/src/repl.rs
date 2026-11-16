@@ -3,31 +3,45 @@
 //!
 //! Turns the human did not start (`inbox.rs`) never run under an open prompt:
 //! the prompt owns the terminal (an approval ask would fight it for stdin) and
-//! output would land in the half-typed line. So one that arrives while the
-//! prompt waits is announced ABOVE it (rustyline's external printer), and runs
-//! as soon as the prompt returns: Enter on an empty line runs it at once; a
-//! typed line runs after it, since it came first. Whatever arrives during a
-//! turn is steered into it, and what is left runs right after.
+//! output would land in the half-typed line. So the prompt holds the session
+//! (no turn starts while it is open); one that arrives meanwhile is announced
+//! ABOVE it (rustyline's external printer), and runs as soon as the prompt
+//! returns: Enter on an empty line runs it at once; a typed line runs after
+//! it, since it came first. Whatever arrives during a turn is steered into
+//! it, and what is left runs right after.
 
 use std::sync::mpsc::Sender;
 
+use haest::runtime::Ui;
 use rustyline::{DefaultEditor, ExternalPrinter, error::ReadlineError};
 
 use crate::{
     changes,
     commands::{Outcome, resolve},
-    run::{agent_turns, human},
-    term::Runtime,
+    run::Session,
+    term::{Runtime, TermUi},
 };
 
-async fn handle(rt: &mut Runtime, line: &str) -> bool {
-    match resolve(rt, line).await {
+/// One line the human typed: a slash command runs on the conversation; text
+/// goes as the human's turn, after the turns that waited. False = quit.
+async fn handle(session: &Session, line: &str) -> anyhow::Result<bool> {
+    // Held, so the line is queued before a turn could start that it would
+    // be steered into.
+    let hold = session.hold().await?;
+    let line = line.to_string();
+    let outcome = session
+        .with(move |rt| Box::pin(async move { resolve(rt, &line).await }))
+        .await?;
+    match outcome {
         Outcome::Send(text) => {
-            human(rt, &text).await;
-            true
+            let turn = session.send_input(haest::session::Input::human(text))?;
+            drop(hold);
+            // Its end, or the gate's refusal: either way the prompt is back.
+            let _ = turn.await;
+            Ok(true)
         }
-        Outcome::Done => true,
-        Outcome::Exit => false,
+        Outcome::Done => Ok(true),
+        Outcome::Exit => Ok(false),
     }
 }
 
@@ -90,7 +104,8 @@ impl QuitGuard {
     }
 }
 
-pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()> {
+/// The first line on the terminal, and where the line history is kept.
+fn welcome(rt: &Runtime) -> std::path::PathBuf {
     let restored = rt.agent().history().len();
     let workspace = rt.agent().deps().shared.workspace.mode();
     rt.hooks.info(&format!(
@@ -104,28 +119,39 @@ pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()>
             String::new()
         },
     ));
-    let history = rt.hooks.settings.data_dir.join("history");
+    rt.hooks.settings.data_dir.join("history")
+}
+
+pub async fn repl(session: &Session, ui: &TermUi, first: Option<String>) -> anyhow::Result<()> {
+    let history = session
+        .with(|rt| Box::pin(async move { welcome(rt) }))
+        .await?;
     let mut editor = DefaultEditor::new()?;
     let _ = editor.load_history(&history);
     let above = above_prompt(&mut editor);
 
     let mut go_on = match first {
-        Some(p) => handle(rt, &p).await,
+        Some(p) => handle(session, &p).await?,
         None => true,
     };
     let mut guard = QuitGuard::default();
     loop {
         if go_on {
             guard.went_on();
-            agent_turns(rt).await;
+            // Every turn that waits runs before the prompt opens.
+            session.idle().await;
         } else {
-            match guard.quit(before_quitting(rt).await) {
-                Some(lost) => rt.hooks.warn(&lost),
+            let lost = session
+                .with(|rt| Box::pin(async move { before_quitting(rt).await }))
+                .await?;
+            match guard.quit(lost) {
+                Some(lost) => ui.warn(&lost),
                 None => break,
             }
         }
-        // The terminal is the prompt's: an approval ask waits for it to return.
-        let ui = rt.ui.clone();
+        // No turn starts while the prompt is open; the terminal is the
+        // prompt's (an approval ask waits for it to return).
+        let hold = session.hold().await?;
         let terminal = ui.stdin.lock().await;
         ui.term.lock().unwrap().set_above(above.clone());
         let (ed, line) = tokio::task::spawn_blocking(move || {
@@ -135,13 +161,15 @@ pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()>
         .await?;
         ui.term.lock().unwrap().set_above(None);
         drop(terminal);
+        drop(hold);
         editor = ed;
         go_on = match line {
             Ok(line) if line.trim().is_empty() => true,
             Ok(line) => {
                 let _ = editor.add_history_entry(line.as_str());
-                agent_turns(rt).await;
-                handle(rt, &line).await
+                // What arrived while the prompt was open came first.
+                session.idle().await;
+                handle(session, &line).await?
             }
             Err(ReadlineError::Interrupted) => true,
             Err(ReadlineError::Eof) => false,

@@ -4,7 +4,9 @@
 
 use std::collections::HashMap;
 
-use haest::{LoopEvent, tools::SubagentEvent};
+use haest::LoopEvent;
+#[cfg(test)]
+use haest::tools::SubagentEvent;
 
 use crate::render::{Level, result_line};
 
@@ -23,46 +25,73 @@ impl AgentLog {
         Some(format!("Subagents running: {running}"))
     }
 
+    /// One subagent event, whichever: the lines the renderer makes from the
+    /// stream's frames, in one call.
+    #[cfg(test)]
     pub fn event(&mut self, id: &str, event: &SubagentEvent) -> Option<(Level, String)> {
-        let name = self
-            .names
-            .get(id)
-            .cloned()
-            .unwrap_or_else(|| id.to_string());
         match event {
             SubagentEvent::Started {
                 name,
                 parent,
                 description,
-            } => {
-                self.names.insert(id.to_string(), name.clone());
-                Some((
-                    Level::Info,
-                    format!("[{name}] started by {parent}: {description}"),
-                ))
-            }
-            SubagentEvent::Loop(LoopEvent::ToolResult {
+            } => Some(self.started(id, name, parent, description)),
+            SubagentEvent::Loop(ev) => self.loop_event(id, ev),
+            SubagentEvent::Stopped { ok } => Some(self.stopped(id, *ok)),
+            // Inner calls and messages stay off the log.
+            _ => None,
+        }
+    }
+
+    /// The name the subagent `id` goes by: the one it started with.
+    fn name(&self, id: &str) -> String {
+        self.names
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| id.to_string())
+    }
+
+    /// It started: its name is kept for its lines.
+    pub fn started(
+        &mut self,
+        id: &str,
+        name: &str,
+        parent: &str,
+        description: &str,
+    ) -> (Level, String) {
+        self.names.insert(id.to_string(), name.to_string());
+        (
+            Level::Info,
+            format!("[{name}] started by {parent}: {description}"),
+        )
+    }
+
+    /// One of its loop events: a line for a tool it ran or a guard notice,
+    /// nothing for its streaming.
+    pub fn loop_event(&mut self, id: &str, ev: &LoopEvent) -> Option<(Level, String)> {
+        let name = self.name(id);
+        match ev {
+            LoopEvent::ToolResult {
                 call,
                 output,
                 duration_ms,
                 ..
-            }) => {
+            } => {
                 let line = result_line(call, output.is_error, *duration_ms);
                 Some((Level::Info, format!("[{name}] {line}")))
             }
-            SubagentEvent::Loop(LoopEvent::Guard { text }) => {
-                Some((Level::Warning, format!("[{name}] ! {text}")))
-            }
-            SubagentEvent::Stopped { ok } => {
-                self.names.remove(id);
-                Some(if *ok {
-                    (Level::Info, format!("[{name}] finished"))
-                } else {
-                    (Level::Warning, format!("[{name}] stopped early"))
-                })
-            }
-            // The rest of its turn, its inner calls and messages stay off the log.
+            LoopEvent::Guard { text } => Some((Level::Warning, format!("[{name}] ! {text}"))),
             _ => None,
+        }
+    }
+
+    /// It stopped: finished, or stopped early (a warning).
+    pub fn stopped(&mut self, id: &str, ok: bool) -> (Level, String) {
+        let name = self.name(id);
+        self.names.remove(id);
+        if ok {
+            (Level::Info, format!("[{name}] finished"))
+        } else {
+            (Level::Warning, format!("[{name}] stopped early"))
         }
     }
 }

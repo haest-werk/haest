@@ -147,14 +147,16 @@ pub enum Outbound {
         /// The ask's number.
         ask: u64,
     },
-    /// A subagent's turn is about to run; its path names it.
+    /// A subagent's turn is about to run; its path holds its id.
     SubagentStarted {
+        /// Its address, as the agent tools name it (unique while it runs).
+        name: String,
         /// The agent that started it.
         parent: String,
         /// What it was asked to do, in short.
         description: String,
     },
-    /// A subagent's turn ended; its path names it.
+    /// A subagent's turn ended; its path holds its id.
     SubagentStopped {
         /// It ended with an answer: not stopped, not out of budget, no error.
         ok: bool,
@@ -248,6 +250,7 @@ mod tests {
             },
             Outbound::ApprovalWithdrawn { ask: 3 },
             Outbound::SubagentStarted {
+                name: "reader".into(),
                 parent: "main".into(),
                 description: "d".into(),
             },

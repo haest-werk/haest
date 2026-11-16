@@ -1,21 +1,24 @@
-//! Running turns: events to the terminal, Ctrl+C to stop one, the cost line
-//! after, and the session file flushed before the next prompt. What reaches
-//! main's inbox meanwhile is steered into the turn running (TS `turns.ts`);
-//! what is left runs as the next turn, through the gate (`inbox.rs`).
+//! Running turns: the session runs them (haest-session's driver over the
+//! runtime). What reaches main's inbox while a turn runs is steered into it
+//! (TS `turns.ts`); what is left runs as the next turn, through the gate
+//! (`inbox.rs`); the session file is flushed after every turn. Here: Ctrl+C,
+//! print mode's wait for background work, and the exit code.
 
-use std::{process::ExitCode, time::Duration};
+use std::{process::ExitCode, sync::Arc, time::Duration};
 
 use haest::{
-    AgentControl, LoopEvent, StopReason, TurnOutcome,
-    runtime::{RuntimeHooks, kill_jobs, session_usd},
-    tools::JobHub,
+    AgentControl, StopReason, TurnOutcome,
+    runtime::{RuntimeHooks, kill_jobs},
+    session::{Backend, Body, Frame, Input, SessionHandle, Subscription},
+    tools::{JobHub, SubagentHub},
+    wire::{Outbound, State},
 };
-use tokio::{sync::oneshot, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 use crate::term::Runtime;
 
-/// How often print mode looks again while a background subagent still works.
-const SETTLE_POLL: Duration = Duration::from_millis(250);
+/// The conversation, running: a session over the runtime.
+pub type Session = SessionHandle<Runtime>;
 
 /// How long the second Ctrl+C gives the cancelled turn to end on its own, and
 /// then the session writer to land what it holds, before haest exits anyway.
@@ -49,98 +52,94 @@ async fn turn_ended(control: &AgentControl) {
     }
 }
 
+/// What Ctrl+C reaches while the session owns the runtime: taken from it
+/// before it starts.
+pub struct Brakes {
+    control: AgentControl,
+    hooks: Arc<RuntimeHooks>,
+    jobs: Option<Arc<JobHub>>,
+    subagents: Arc<SubagentHub>,
+}
+
+impl Brakes {
+    pub fn of(rt: &Runtime) -> Self {
+        Self {
+            control: rt.agent().control(),
+            hooks: rt.hooks.clone(),
+            jobs: rt.jobs.clone(),
+            subagents: rt.subagents.clone(),
+        }
+    }
+}
+
+/// Whether `frame` says a turn of the conversation's own has started.
+fn turn_started(frame: &Frame) -> bool {
+    frame.path.is_main()
+        && matches!(&frame.body, Body::Wire(Outbound::Status(s)) if s.state == State::Running)
+}
+
 /// Ctrl+C stops the running turn; a second Ctrl+C in the same turn quits
 /// (a tool that ignores the stop must not hold the terminal hostage), after
-/// [`wind_down`]. Watches until `done` (the turn ended); a quit under way by
-/// then still runs to its exit.
-fn watch_interrupts(rt: &Runtime, mut done: oneshot::Receiver<()>) -> JoinHandle<()> {
-    let control = rt.agent().control();
-    let hooks = rt.hooks.clone();
-    let jobs = rt.jobs.clone();
+/// [`wind_down`]. Between turns it does nothing here: the prompt reads its
+/// own Ctrl+C, and print mode's wait has its own ([`settle`]). `stream`
+/// says when a new turn starts; the watch ends with it.
+pub fn watch_interrupts(brakes: Arc<Brakes>, mut stream: Subscription) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut asked = false;
         loop {
             tokio::select! {
-                _ = &mut done => return,
+                frame = stream.recv() => match frame {
+                    Some(frame) => asked &= !turn_started(&frame),
+                    None => return,
+                },
                 signal = tokio::signal::ctrl_c() => {
                     if signal.is_err() {
                         return;
                     }
-                    control.abort();
+                    if !brakes.control.running() {
+                        continue;
+                    }
+                    brakes.control.abort();
                     if asked {
-                        wind_down(turn_ended(&control), &hooks, jobs.as_deref(), QUIT_GRACE).await;
+                        let ended = turn_ended(&brakes.control);
+                        wind_down(ended, &brakes.hooks, brakes.jobs.as_deref(), QUIT_GRACE).await;
                         std::process::exit(130);
                     }
                     asked = true;
-                    hooks.warn("Stopping the turn... (Ctrl+C again to quit)");
+                    brakes.hooks.warn("Stopping the turn... (Ctrl+C again to quit)");
                 }
             }
         }
     })
 }
 
-/// What a turn runs on.
-enum Input<'a> {
-    /// The human's text: through the mods, with what the gate held.
-    Human(&'a str),
-    /// A turn the inbox holds, already through the gate.
-    Agent(&'a str),
-}
-
-/// One turn, its events on the terminal, the cost line after; Ctrl+C stops it.
-async fn turn(rt: &mut Runtime, input: Input<'_>) -> TurnOutcome {
-    let term = rt.ui.term.clone();
-    let (done, watching) = oneshot::channel();
-    let watcher = watch_interrupts(rt, watching);
-    let mut usage = None;
-    let mut sink = |ev: LoopEvent| {
-        if let LoopEvent::TurnEnd { usage: u, .. } = &ev {
-            usage = Some(u.clone());
-        }
-        term.lock().unwrap().event(&ev);
-    };
-    let end = match input {
-        Input::Human(text) => rt.human_turn(text, &mut sink).await,
-        Input::Agent(text) => rt.run(text, &mut sink).await,
-    };
-    // The watcher stops; one winding haest down for a second Ctrl+C exits instead.
-    let _ = done.send(());
-    let _ = watcher.await;
-    if let Some(u) = usage {
-        let total = session_usd(rt.agent());
-        rt.ui.term.lock().unwrap().usage(&u, total);
-    }
-    end
-}
-
 /// A turn the human started: the mods' `prompt.submit` may rewrite the text
-/// first, then anything the gate held rides in ahead of it.
-pub async fn human(rt: &mut Runtime, input: &str) -> TurnOutcome {
-    turn(rt, Input::Human(input)).await
+/// first, then anything the gate held rides in ahead of it (the session's
+/// way with a person's input). Its end, or None when the session is gone.
+pub async fn human(session: &Session, text: String) -> Option<TurnOutcome> {
+    session.turn(Input::human(text)).await.ok()
 }
 
-/// Every turn the human did not start that waits, one at a time, each through the gate.
-pub async fn agent_turns(rt: &mut Runtime) {
-    while let Some(text) = rt.next_agent_turn() {
-        turn(rt, Input::Agent(&text)).await;
-    }
-}
-
-/// Print mode, after the human's turn: run what waits, and while a background
-/// subagent still works, wait for its answer and run that too. Ctrl+C stops
-/// the subagents and the wait.
-pub async fn settle(rt: &mut Runtime) {
+/// Print mode, after the human's turn: what waits runs, and while a
+/// background subagent still works, its answer is waited for and run too
+/// (the session does both). Ctrl+C between turns stops the subagents and
+/// the wait.
+pub async fn settle(session: &Session, brakes: &Brakes) {
+    let settled = session.settled();
+    tokio::pin!(settled);
     loop {
-        agent_turns(rt).await;
-        if rt.subagents.answers_due() == 0 && rt.inbox.waiting() == 0 {
-            return;
-        }
         tokio::select! {
-            _ = rt.inbox.wait() => {}
-            _ = tokio::time::sleep(SETTLE_POLL) => {}
-            _ = tokio::signal::ctrl_c() => {
-                rt.hooks.warn("Stopping the subagents.");
-                rt.subagents.stop_all();
+            _ = &mut settled => return,
+            signal = tokio::signal::ctrl_c() => {
+                if signal.is_err() {
+                    return settled.await;
+                }
+                if brakes.control.running() {
+                    // The interrupt watch stops the turn; the wait goes on.
+                    continue;
+                }
+                brakes.hooks.warn("Stopping the subagents.");
+                brakes.subagents.stop_all();
                 return;
             }
         }
