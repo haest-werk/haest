@@ -11,6 +11,24 @@ fn call(name: &str, input: Value) -> ToolCall {
     }
 }
 
+/// `Read src/a.rs`, done in 3 ms; failed or not.
+pub(crate) fn read_result(is_error: bool) -> LoopEvent {
+    let mut output = ToolOutput::text("x");
+    output.is_error = is_error;
+    LoopEvent::ToolResult {
+        call: call("Read", json!({"path": "src/a.rs", "limit": 5})),
+        message: ToolResultMessage {
+            tool_call_id: "c".into(),
+            tool_name: "Read".into(),
+            content: "x".into(),
+            is_error,
+            media: vec![],
+        },
+        output,
+        duration_ms: 3,
+    }
+}
+
 fn render(json: bool, evs: &[LoopEvent]) -> (String, String) {
     let (mut out, mut err) = (Vec::new(), Vec::new());
     {
@@ -25,28 +43,10 @@ fn render(json: bool, evs: &[LoopEvent]) -> (String, String) {
 
 #[test]
 fn the_answer_goes_to_stdout_and_the_work_to_stderr() {
-    let c = call("Read", json!({"path": "src/a.rs", "limit": 5}));
-    let result = LoopEvent::ToolResult {
-        call: c.clone(),
-        message: ToolResultMessage {
-            tool_call_id: "c".into(),
-            tool_name: "Read".into(),
-            content: "x".into(),
-            is_error: false,
-            media: vec![],
-        },
-        output: ToolOutput::text("x"),
-        duration_ms: 3,
+    let hello = LoopEvent::TextDelta {
+        text: "Hello".into(),
     };
-    let (out, err) = render(
-        false,
-        &[
-            LoopEvent::TextDelta {
-                text: "Hello".into(),
-            },
-            result,
-        ],
-    );
+    let (out, err) = render(false, &[hello, read_result(false)]);
     assert_eq!(out, "Hello\n");
     assert!(err.contains("Read src/a.rs"));
 }

@@ -1,34 +1,8 @@
 //! What the human sees of a subagent: its start, its tools, its guard notices
 //! and its end, under its name; nothing of its streaming.
 
-use kern::{ToolCall, ToolOutput, ToolResultMessage};
-
 use super::*;
-
-fn tool_result(is_error: bool) -> SubagentEvent {
-    let call = ToolCall {
-        id: "c".into(),
-        name: "Read".into(),
-        input: serde_json::json!({"path": "src/a.rs"})
-            .as_object()
-            .cloned()
-            .unwrap(),
-    };
-    let mut output = ToolOutput::text("x");
-    output.is_error = is_error;
-    SubagentEvent::Loop(LoopEvent::ToolResult {
-        call,
-        message: ToolResultMessage {
-            tool_call_id: "c".into(),
-            tool_name: "Read".into(),
-            content: "x".into(),
-            is_error,
-            media: vec![],
-        },
-        output,
-        duration_ms: 3,
-    })
-}
+use crate::render::tests::read_result;
 
 fn started() -> SubagentEvent {
     SubagentEvent::Started {
@@ -45,7 +19,7 @@ fn a_subagents_start_tools_and_end_each_read_as_a_line_under_its_name() {
     let lines: Vec<_> = [
         started(),
         SubagentEvent::Loop(LoopEvent::TextDelta { text: "hm".into() }),
-        tool_result(false),
+        SubagentEvent::Loop(read_result(false)),
         SubagentEvent::Loop(LoopEvent::Guard {
             text: "half the budget".into(),
         }),

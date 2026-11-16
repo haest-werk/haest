@@ -56,15 +56,23 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn each_row_names_its_value_and_source_and_an_unset_one_says_so() {
-        let flags = vec![("tools".to_string(), "read".to_string())];
+    /// The report for bare settings in `/w` with these flags.
+    async fn report(flags: &[(&str, &str)]) -> Vec<String> {
+        let flags: Vec<(String, String)> = flags
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         let loaded = Loader::new(Settings::bare("/w", "/h"))
             .flags(&flags)
             .load(&MemFs::new())
             .await
             .unwrap();
-        let report = settings_report(&loaded);
+        settings_report(&loaded)
+    }
+
+    #[tokio::test]
+    async fn each_row_names_its_value_and_source_and_an_unset_one_says_so() {
+        let report = report(&[("tools", "read")]).await;
         let row = |key: &str| {
             report
                 .iter()
@@ -87,16 +95,7 @@ mod tests {
 
     #[tokio::test]
     async fn each_variable_is_a_row_of_its_name_and_source_and_no_value_is_shown() {
-        let flags = vec![
-            ("env".to_string(), "GH_TOKEN=s3cret".to_string()),
-            ("env".to_string(), "A=also-s3cret".to_string()),
-        ];
-        let loaded = Loader::new(Settings::bare("/w", "/h"))
-            .flags(&flags)
-            .load(&MemFs::new())
-            .await
-            .unwrap();
-        let report = settings_report(&loaded);
+        let report = report(&[("env", "GH_TOKEN=s3cret"), ("env", "A=also-s3cret")]).await;
         let rows: Vec<Vec<&str>> = report
             .iter()
             .filter(|l| l.starts_with("env "))

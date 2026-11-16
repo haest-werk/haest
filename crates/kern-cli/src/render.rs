@@ -233,4 +233,4 @@ fn call_summary(call: &ToolCall) -> String {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
