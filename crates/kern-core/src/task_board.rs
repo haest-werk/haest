@@ -11,24 +11,15 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::deps::{AgentHooks, NoHooks};
+use crate::deps::now_ms;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum KernTaskStatus {
-    Pending,
-    InProgress,
-    Completed,
-}
-
-impl KernTaskStatus {
-    /// The wire name (`in_progress`).
-    pub fn as_str(self) -> &'static str {
-        match self {
-            KernTaskStatus::Pending => "pending",
-            KernTaskStatus::InProgress => "in_progress",
-            KernTaskStatus::Completed => "completed",
-        }
+crate::word_enum! {
+    /// `as_str` is the wire name (`in_progress`).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum KernTaskStatus ("task status") {
+        Pending = "pending",
+        InProgress = "in_progress",
+        Completed = "completed",
     }
 }
 
@@ -89,7 +80,6 @@ pub struct NewTask {
 type OnChange = Box<dyn Fn(&[KernTask]) + Send + Sync>;
 type Clock = Box<dyn Fn() -> u64 + Send + Sync>;
 
-#[derive(Default)]
 struct State {
     /// Insertion order is list order.
     tasks: Vec<KernTask>,
@@ -146,7 +136,7 @@ impl Default for TaskBoard {
 impl TaskBoard {
     /// A board that hands every new snapshot to `on_change`; the clock is the system's.
     pub fn new(on_change: impl Fn(&[KernTask]) + Send + Sync + 'static) -> Self {
-        Self::with_clock(on_change, || NoHooks.now_ms())
+        Self::with_clock(on_change, now_ms)
     }
 
     /// Same, with the clock `updated_at` reads (a host's paused clock, a test's fixed one).

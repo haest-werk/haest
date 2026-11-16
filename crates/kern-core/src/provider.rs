@@ -179,12 +179,4 @@ mod tests {
         assert!(parse_model_spec("no-provider").is_err());
         assert!(parse_model_spec(":model").is_err());
     }
-
-    #[test]
-    fn effort_parses_its_own_names() {
-        for &e in Effort::ALL {
-            assert_eq!(e.as_str().parse::<Effort>().unwrap(), e);
-        }
-        assert!("extreme".parse::<Effort>().is_err());
-    }
 }

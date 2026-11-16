@@ -170,11 +170,3 @@ fn the_tools_a_resumed_conversation_called_count_as_loaded() {
         ["Read", "ToolSearch", "search_transcripts"]
     );
 }
-
-#[test]
-fn modes_parse_their_own_names() {
-    for &m in DeferMode::ALL {
-        assert_eq!(m.as_str().parse::<DeferMode>().unwrap(), m);
-    }
-    assert!("eager".parse::<DeferMode>().is_err());
-}
