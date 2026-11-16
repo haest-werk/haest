@@ -28,6 +28,7 @@ use crate::canonical::pick;
 
 mod paging;
 
+pub(crate) use paging::clip_line;
 pub use paging::{READ_TOKEN_BUDGET, text_output};
 
 /// A path the host answers itself before the workspace fs is asked: media that

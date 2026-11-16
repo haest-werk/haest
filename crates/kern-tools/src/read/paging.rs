@@ -1,6 +1,8 @@
 //! A text read, numbered and paged by `offset` / `limit` / `allow_large`, sized
 //! to its own budget so the generic spill never touches it.
 
+use std::borrow::Cow;
+
 use kern_core::tool::{JsonMap, ToolContext, ToolError, ToolOutput, opt_bool, opt_num};
 use serde_json::json;
 
@@ -22,6 +24,15 @@ fn budget_chars(allow_large: bool, room: Option<u64>) -> u64 {
     tokens.saturating_mul(CHARS_PER_TOKEN)
 }
 
+/// `line` as shown to the model: at most `max` characters, then a note that it was cut.
+pub(crate) fn clip_line(line: &str, max: usize) -> Cow<'_, str> {
+    if line.chars().count() <= max {
+        return Cow::Borrowed(line);
+    }
+    let head: String = line.chars().take(max).collect();
+    Cow::Owned(format!("{head}... [line truncated]"))
+}
+
 /// Numbered lines from `start` (1-based), as many as fit `budget` characters (always at least one).
 fn numbered_lines(lines: &[&str], start: usize, limit: usize, budget: u64) -> Vec<String> {
     let end = lines.len().min((start - 1).saturating_add(limit));
@@ -29,13 +40,7 @@ fn numbered_lines(lines: &[&str], start: usize, limit: usize, budget: u64) -> Ve
     let mut out = Vec::new();
     let mut used: u64 = 0;
     for (i, l) in lines.iter().enumerate().take(end).skip(start - 1) {
-        let body = if l.chars().count() > MAX_LINE_CHARS {
-            let head: String = l.chars().take(MAX_LINE_CHARS).collect();
-            format!("{head}... [line truncated]")
-        } else {
-            (*l).to_string()
-        };
-        let line = format!("{:>width$}\t{body}", i + 1);
+        let line = format!("{:>width$}\t{}", i + 1, clip_line(l, MAX_LINE_CHARS));
         let len = line.chars().count() as u64;
         if !out.is_empty() && used + len + 1 > budget {
             break;

@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use crate::{
     canonical::pick,
     fs_walk::{WALK_LIMIT, glob_fs},
+    read::clip_line,
 };
 
 const GLOB_LIMIT: usize = 200;
@@ -214,17 +215,10 @@ impl Tool for GrepTool {
 
 /// Long lines clipped, `head_limit` applied, the whole thing bounded.
 fn format_matches(stdout: &str, head: Option<f64>) -> String {
-    let all: Vec<String> = stdout
+    let all: Vec<_> = stdout
         .split('\n')
         .filter(|l| !l.is_empty())
-        .map(|l| {
-            if l.chars().count() > MAX_LINE_CHARS {
-                let cut: String = l.chars().take(MAX_LINE_CHARS).collect();
-                format!("{cut}... [line truncated]")
-            } else {
-                l.to_string()
-            }
-        })
+        .map(|l| clip_line(l, MAX_LINE_CHARS))
         .collect();
     let keep = match head {
         Some(h) if h > 0.0 => (h.floor() as usize).min(all.len()),
