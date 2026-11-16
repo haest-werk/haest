@@ -216,24 +216,34 @@ pub mod __private {
 pub use prelude::*;
 
 /// The key types, the ones this crate's root re-exports: glob-import them
-/// with `use haest_core::prelude::*;`. It holds types, traits and
-/// [`now_ms`] only, never a module, so a glob import shadows nothing.
+/// with `use haest_core::prelude::*;`. It holds types, traits and functions
+/// only, never a module, so a glob import shadows nothing.
+///
+/// Every trait here comes with the types its methods name, so implementing
+/// one ([`Fs`], [`Provider`], [`ModelFacts`], [`AgentHooks`], [`Workspace`])
+/// needs no other import, and a tool gets its argument helpers
+/// ([`req_str`], [`opt_str`], [`opt_num`], [`opt_bool`], [`truncate_middle`]).
 pub mod prelude {
     pub use crate::agent::{Agent, AgentControl, AgentOptions};
-    pub use crate::catalog::{ModelFacts, NoFacts};
+    pub use crate::caps::TurnCaps;
+    pub use crate::catalog::{InputModality, ModelFacts, NoFacts, Reasoning};
     pub use crate::deps::{AgentDeps, AgentHooks, Clock, NoHooks, SystemPrompt, WallClock, now_ms};
     pub use crate::events::{EventSink, LoopEvent, TurnOutcome};
-    pub use crate::fs::{Fs, MemFs};
+    pub use crate::fs::{DirEntry, FileKind, Fs, FsStat, MemFs};
     pub use crate::handed::{ChildEnv, KeySource};
     pub use crate::messages::{
-        AssistantMessage, AssistantPart, Message, StopReason, ToolCall, ToolResultMessage, Usage,
-        UserMessage,
+        AssistantMessage, AssistantPart, MediaPart, Message, StopReason, ToolCall,
+        ToolResultMessage, Usage, UserMessage,
     };
     pub use crate::provider::{
-        Effort, ModelError, ModelResolver, Provider, ProviderEvent, ProviderRequest, ResolvedModel,
+        Effort, ModelError, ModelResolver, Provider, ProviderEvent, ProviderRequest,
+        ProviderStream, ResolvedModel,
     };
     pub use crate::tool::{
-        JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices, ToolSource,
+        InnerCallEvent, JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices,
+        ToolSource, opt_bool, opt_num, opt_str, req_str, truncate_middle,
     };
-    pub use crate::workspace::{ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode};
+    pub use crate::workspace::{
+        ChangeSet, ExecOptions, ExecResult, OutputChunks, ShutWorkspace, Workspace, WorkspaceMode,
+    };
 }

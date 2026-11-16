@@ -111,7 +111,6 @@
 //! correct; it goes back to the model as is.
 //!
 //! ```
-//! use haest::core::tool::req_str;
 //! use haest::prelude::*;
 //! use serde_json::{Value, json};
 //!
@@ -175,7 +174,7 @@
 //! #     fn parameters(&self) -> Value { json!({"type": "object"}) }
 //! #     fn kind(&self) -> &str { "shout" }
 //! #     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-//! #         Ok(ToolOutput::text(haest::core::tool::req_str(&input, "text")?.to_uppercase()))
+//! #         Ok(ToolOutput::text(req_str(&input, "text")?.to_uppercase()))
 //! #     }
 //! # }
 //! use haest::core::testing::{ScriptedProvider, text_answer, tool_answer};
