@@ -10,7 +10,7 @@ use std::{
 
 use serde_json::{Value, json};
 
-use super::*;
+use super::{signature::canonical, *};
 use crate::{
     agent::test_support::*,
     events::LoopEvent,

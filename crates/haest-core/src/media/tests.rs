@@ -1,5 +1,7 @@
-use super::*;
-use crate::{deps::NoHooks, messages::ToolResultMessage};
+use std::collections::HashSet;
+
+use super::{fit::fit_media, *};
+use crate::{catalog::InputModality, deps::NoHooks, messages::ToolResultMessage};
 
 fn png() -> MediaPart {
     media_from_bytes(&[1, 2, 3], "image/png", "shot.png").unwrap()

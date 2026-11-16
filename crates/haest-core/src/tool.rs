@@ -15,11 +15,21 @@
 //! error or a panic included, into exactly one result in history. The
 //! `req_*` / `opt_*` helpers read arguments the way models actually send them.
 
+mod args;
+mod context;
+#[cfg(test)]
+mod tests;
+mod truncate;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+
+pub use args::{opt_bool, opt_num, opt_str, req_str, spelled};
+pub use context::ToolContext;
+pub use truncate::{TRUNCATE_CHARS, truncate_middle};
 
 use crate::messages::{MediaPart, ToolCall};
 
@@ -284,52 +294,7 @@ impl ToolSource for Vec<Arc<dyn Tool>> {
     }
 }
 
-/// Keep the head and tail of long output; the middle is where nothing useful
-/// lives. `max` counts characters, never splitting one.
-///
-/// Returns the text and whether it was cut. A cut text keeps `max / 2`
-/// characters at each end around a line saying how many were dropped, so it
-/// is a little longer than `max`.
-///
-/// ```
-/// use haest_core::tool::truncate_middle;
-///
-/// let (short, cut) = truncate_middle("abc", 10);
-/// assert_eq!((short.as_str(), cut), ("abc", false));
-///
-/// let (long, cut) = truncate_middle(&"x".repeat(100), 10);
-/// assert!(cut && long.starts_with("xxxxx") && long.ends_with("xxxxx"));
-/// ```
-pub fn truncate_middle(text: &str, max: usize) -> (String, bool) {
-    let len = text.chars().count();
-    if len <= max {
-        return (text.to_string(), false);
-    }
-    let half = max / 2;
-    let head: String = text.chars().take(half).collect();
-    let tail: String = text.chars().skip(len - half).collect();
-    (
-        format!(
-            "{head}\n\n... [{} characters truncated] ...\n\n{tail}",
-            len - max
-        ),
-        true,
-    )
-}
-
-/// The default `truncate_middle` budget, in characters.
-pub const TRUNCATE_CHARS: usize = 30_000;
-
 /// The most any one tool result may put into the model's context (~5k
 /// tokens), in characters. A longer result goes to a file and the model gets
 /// a preview, unless the tool set [`ToolOutput::sized`].
 pub const MAX_TOOL_OUTPUT: usize = 20_000;
-
-mod args;
-mod context;
-
-pub use args::{opt_bool, opt_num, opt_str, req_str, spelled};
-pub use context::ToolContext;
-
-#[cfg(test)]
-mod tests;
