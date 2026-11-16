@@ -14,6 +14,7 @@ categories.workspace = true
 serde_json = { workspace = true }
 swc_ts_fast_strip = "60"
 swc_common = "27"
+thiserror = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

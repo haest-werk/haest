@@ -1135,6 +1135,7 @@ dependencies = [
  "serde_json",
  "swc_common",
  "swc_ts_fast_strip",
+ "thiserror",
 ]
 
 [[package]]

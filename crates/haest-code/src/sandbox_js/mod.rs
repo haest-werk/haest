@@ -142,19 +142,25 @@ fn is_jsx(path: &Path) -> bool {
     matches!(extension(path), "tsx" | "mtsx" | "ctsx" | "jsx")
 }
 
+/// The file as JavaScript. Stripping blocks for as long as it parses, so it
+/// runs on tokio's blocking pool, not on the shell call's worker.
 #[cfg(feature = "typescript")]
-fn runnable(source: String, path: &Path) -> Result<String, String> {
+async fn runnable(source: String, path: &Path) -> Result<String, String> {
     if !is_typescript(path) {
         return Ok(source);
     }
     let name = path
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    haest_ts::strip_types(&source, &name)
+    let strip = tokio::task::spawn_blocking(move || haest_ts::strip_types(&source, &name));
+    match strip.await {
+        Ok(stripped) => stripped.map_err(|e| e.to_string()),
+        Err(_) => Err(haest_ts::StripError::Panicked.to_string()),
+    }
 }
 
 #[cfg(not(feature = "typescript"))]
-fn runnable(source: String, path: &Path) -> Result<String, String> {
+async fn runnable(source: String, path: &Path) -> Result<String, String> {
     if is_typescript(path) {
         return Err("TypeScript is not supported in this build; write JavaScript".into());
     }
@@ -226,7 +232,7 @@ pub async fn js_command(args: &[String], env: &JsEnv) -> ExecResult {
         Ok(s) => s,
         Err(e) => return output("", format!("js: {file}: {e}\n"), 1),
     };
-    match runnable(source, &path) {
+    match runnable(source, &path).await {
         Ok(code) => run_js(&path, &code, &args[1..], env).await,
         Err(e) => output("", format!("js: {file}: {e}\n"), 1),
     }

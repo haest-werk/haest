@@ -33,7 +33,8 @@
 //! assert!(!js.contains("enum "));
 //!
 //! // A syntax error is an Err that names the problem.
-//! assert!(haest_ts::strip_types("const = ;", "broken.ts").is_err());
+//! let err = haest_ts::strip_types("const = ;", "broken.ts").unwrap_err();
+//! assert!(matches!(err, haest_ts::StripError::Syntax { .. }));
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -88,6 +89,33 @@ pub const MAX_SOURCE_BYTES: usize = 128 * 1024;
 const STACK_PER_BYTE: usize = if cfg!(debug_assertions) { 24 } else { 4 } << 10;
 const STACK_BASE: usize = 8 << 20;
 
+/// Why [`strip_types`] gave no JavaScript.
+#[derive(Debug, thiserror::Error)]
+pub enum StripError {
+    /// The source is longer than [`MAX_SOURCE_BYTES`]; it was not parsed.
+    #[error(
+        "{} KB of TypeScript is past the {} KB haest strips; write it as JavaScript, or split it",
+        bytes >> 10,
+        MAX_SOURCE_BYTES >> 10
+    )]
+    TooLong {
+        /// The source's length.
+        bytes: usize,
+    },
+    /// It is not valid TypeScript.
+    #[error("{message}")]
+    Syntax {
+        /// The first diagnostic swc reports, for a human or a model.
+        message: String,
+    },
+    /// The stripper's thread could not start.
+    #[error("the TypeScript stripper could not start")]
+    Spawn(#[source] io::Error),
+    /// swc panicked on this source.
+    #[error("the TypeScript stripper failed on this source")]
+    Panicked,
+}
+
 /// Turns TypeScript `source` into JavaScript that QuickJS can run.
 ///
 /// Type annotations, `as` casts, interfaces and type-only imports are
@@ -103,15 +131,16 @@ const STACK_BASE: usize = 8 << 20;
 /// QuickJS cannot run.
 ///
 /// The work runs on a new thread with a stack sized for this source, and the
-/// call blocks until it is done: from async code, it holds the current task's
-/// thread for that long (a few milliseconds for a script).
+/// call blocks until it is done: from async code, call it through
+/// `tokio::task::spawn_blocking` (or the like), so it does not hold a worker.
 ///
 /// # Errors
 ///
-/// The `Err` is a message for a human or a model:
-/// - the source is longer than [`MAX_SOURCE_BYTES`];
-/// - it is not valid TypeScript (the first diagnostic swc reports);
-/// - the stripper's thread could not start, or failed on this source.
+/// A [`StripError`]: the source is longer than [`MAX_SOURCE_BYTES`]
+/// ([`TooLong`](StripError::TooLong)); it is not valid TypeScript
+/// ([`Syntax`](StripError::Syntax), with swc's first diagnostic); the
+/// stripper's thread could not start ([`Spawn`](StripError::Spawn)) or
+/// panicked on this source ([`Panicked`](StripError::Panicked)).
 ///
 /// A panic inside swc comes back as an `Err`; this function does not panic.
 ///
@@ -123,24 +152,23 @@ const STACK_BASE: usize = 8 << 20;
 /// assert!(!js.contains("string"));
 /// // The types became spaces: every column is where it was.
 /// assert_eq!(js.find("=>"), ts.find("=>"));
-/// # Ok::<(), String>(())
+/// # Ok::<(), haest_ts::StripError>(())
 /// ```
-pub fn strip_types(source: &str, filename: &str) -> Result<String, String> {
+pub fn strip_types(source: &str, filename: &str) -> Result<String, StripError> {
     if source.len() > MAX_SOURCE_BYTES {
-        return Err(format!(
-            "{} KB of TypeScript is past the {} KB haest strips; write it as JavaScript, or split it",
-            source.len() >> 10,
-            MAX_SOURCE_BYTES >> 10
-        ));
+        return Err(StripError::TooLong {
+            bytes: source.len(),
+        });
     }
     let (owned, name) = (source.to_string(), filename.to_string());
-    std::thread::Builder::new()
+    let stripped = std::thread::Builder::new()
         .name("haest-ts".into())
         .stack_size(STACK_BASE + source.len() * STACK_PER_BYTE)
         .spawn(move || strip_here(&owned, &name))
-        .map_err(|e| format!("the TypeScript stripper could not start: {e}"))?
+        .map_err(StripError::Spawn)?
         .join()
-        .map_err(|_| "the TypeScript stripper failed on this source".to_string())?
+        .map_err(|_| StripError::Panicked)?;
+    stripped.map_err(|message| StripError::Syntax { message })
 }
 
 fn strip_here(source: &str, filename: &str) -> Result<String, String> {
@@ -191,7 +219,7 @@ mod tests {
 
     /// `strip_types` on a fresh thread with a tokio worker's stack (2 MiB),
     /// where the sandbox's `js` calls it. An overflow aborts the test binary.
-    fn on_a_worker_stack(source: String, filename: &'static str) -> Result<String, String> {
+    fn on_a_worker_stack(source: String, filename: &'static str) -> Result<String, StripError> {
         std::thread::Builder::new()
             .stack_size(2 << 20)
             .spawn(move || strip_types(&source, filename))
@@ -220,11 +248,13 @@ mod tests {
         assert!(on_a_worker_stack("(".repeat(K), "a.ts").is_err());
         assert!(on_a_worker_stack("<a>".repeat(K), "a.tsx").is_err());
         // Past what a stack is sized for: refused before swc sees it.
-        assert!(on_a_worker_stack("(".repeat(200_000), "a.ts").is_err());
+        let long = on_a_worker_stack("(".repeat(200_000), "a.ts");
+        assert!(matches!(long, Err(StripError::TooLong { bytes: 200_000 })));
     }
 
     #[test]
     fn a_syntax_error_is_an_error() {
-        assert!(strip_types("const = ;", "a.ts").is_err());
+        let err = strip_types("const = ;", "a.ts").unwrap_err();
+        assert!(matches!(err, StripError::Syntax { .. }), "{err:?}");
     }
 }
