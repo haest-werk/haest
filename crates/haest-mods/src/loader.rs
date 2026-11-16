@@ -15,7 +15,7 @@ use std::{
     sync::Arc,
 };
 
-use haest_core::{fs::Fs, workspace::WorkspaceMode};
+use haest_core::{error::report, fs::Fs, workspace::WorkspaceMode};
 
 use crate::{
     api::{ModEnv, ModUi},
@@ -159,7 +159,7 @@ pub async fn load_mods(cfg: ModConfig, fs: &dyn Fs, ui: Arc<dyn ModUi>) -> Mods 
             let loaded = match fs.read_to_string(&path).await {
                 Ok(source) => JsMod::load_with(&path, source, &env, cfg.limits)
                     .await
-                    .map_err(|e| chain(&e)),
+                    .map_err(|e| report(&e)),
                 Err(e) => Err(e.to_string()),
             };
             match loaded {
@@ -172,17 +172,6 @@ pub async fn load_mods(cfg: ModConfig, fs: &dyn Fs, ui: Arc<dyn ModUi>) -> Mods 
         }
     }
     mods
-}
-
-/// The error and every cause under it, for the human's one line.
-fn chain(e: &dyn std::error::Error) -> String {
-    let mut line = e.to_string();
-    let mut cause = e.source();
-    while let Some(c) = cause {
-        line = format!("{line}: {c}");
-        cause = c.source();
-    }
-    line
 }
 
 #[cfg(test)]

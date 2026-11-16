@@ -27,6 +27,7 @@ thiserror = { workspace = true }
 async-stream = "0.3"
 
 [dev-dependencies]
+haest-core = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["test-util"] }
 
 [package.metadata.docs.rs]

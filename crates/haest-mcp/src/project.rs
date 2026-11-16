@@ -29,11 +29,12 @@ pub fn project_mcp_path(cwd: &Path) -> PathBuf {
 
 /// Why `.mcp.json` could not be used. A host reports it and goes on without the file.
 ///
-/// Every variant's message starts with the file's path.
+/// Every variant's message starts with the file's path; the io or JSON error
+/// is the source, so show it with its causes (`haest_core::error::report`).
 #[derive(Debug, thiserror::Error)]
 pub enum McpConfigError {
     /// The file is there but could not be read.
-    #[error("{}: {source}", path.display())]
+    #[error("{}", path.display())]
     Read {
         /// The `.mcp.json` it is about.
         path: PathBuf,
@@ -41,7 +42,7 @@ pub enum McpConfigError {
         source: std::io::Error,
     },
     /// The file is not JSON.
-    #[error("{}: {source}", path.display())]
+    #[error("{} is not valid JSON", path.display())]
     Parse {
         /// The `.mcp.json` it is about.
         path: PathBuf,

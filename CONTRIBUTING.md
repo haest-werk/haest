@@ -18,8 +18,13 @@
 - **Errors are types.** No `Result<_, String>` and no `anyhow` in a library's
   public signatures: a `thiserror` enum with one variant per case a caller can
   act on, each carrying the values it names (`TaskError::UnknownId { id,
-  existing }`), and the source error when there is one. Its `Display` is the
-  text the human or model reads. A trait a host implements may return
+  existing }`), and the source error when there is one, as its source
+  (`#[source]`, `#[from]` or a field named `source`). Its `Display` is its
+  own words, never its source's: a variant with a source does not print it,
+  or the chain says that cause twice (`ConfigError::Read` is
+  `"{path}"`, not `"{path}: {source}"`). Show any error to the human or the
+  model with `haest_core::error::report`, which walks the chain; `{e}` alone
+  drops the cause. A trait a host implements may return
   `Box<dyn Error + Send + Sync>` when only the text matters to haest
   (`AgentHooks::before_model_call`). A private parser may keep `String`.
   Binaries (haest-cli) use `anyhow`.

@@ -3,7 +3,9 @@
 
 use std::path::Path;
 
-use haest_core::{fs::MemFs, messages::Message, provider::ModelResolver};
+use haest_core::{
+    fs::MemFs, messages::Message, provider::ModelResolver, testing::assert_causes_said_once,
+};
 use serde_json::json;
 
 use super::{
@@ -159,6 +161,23 @@ fn an_entry_that_is_not_an_object_is_refused() {
     let custom = CustomProviders::from([("local".to_string(), json!("http://localhost:1234/v1"))]);
     let e = bad_entry(&registry(keys(&[]), custom), "local:m");
     assert!(matches!(&e, Some((_, EntryProblem::NotAnObject))), "{e:?}");
+}
+
+/// A providers.json that is not JSON, or an entry with a bad price, says
+/// each cause once.
+#[tokio::test]
+async fn a_broken_providers_json_says_each_cause_once() {
+    let fs = MemFs::with_files([("/cfg/providers.json", "{not json")]);
+    let e = load_custom_providers(&fs, Path::new("/cfg"))
+        .await
+        .unwrap_err();
+    assert_causes_said_once(&e);
+    let custom = CustomProviders::from([(
+        "p".to_string(),
+        json!({"pricing": {"m": {"input": "free"}}}),
+    )]);
+    let e = registry(keys(&[]), custom).resolve("p:m").unwrap_err();
+    assert_causes_said_once(&e);
 }
 
 #[tokio::test]

@@ -23,7 +23,7 @@ pub enum EntryProblem {
     #[error("reasoningEffort needs \"efforts\" (array) and \"mandatory\" (boolean)")]
     ReasoningEffort,
     /// A `pricing` row is not `{input, cachedInput, output, cacheWrite?}`, in numbers.
-    #[error("pricing.{model}: {source}")]
+    #[error("pricing.{model} cannot be read")]
     Pricing {
         /// The model id the row is for.
         model: String,
@@ -34,11 +34,11 @@ pub enum EntryProblem {
 
 /// Why `<config dir>/providers.json` could not be read
 /// ([`load_custom_providers`](super::load_custom_providers)). Every variant's
-/// message starts with the file's path.
+/// message starts with the file's path; the io or JSON error is the source.
 #[derive(Debug, thiserror::Error)]
 pub enum ProvidersFileError {
     /// The file is there but could not be read.
-    #[error("{}: {source}", path.display())]
+    #[error("{}", path.display())]
     Read {
         /// The providers.json it is about.
         path: PathBuf,
@@ -46,7 +46,7 @@ pub enum ProvidersFileError {
         source: std::io::Error,
     },
     /// The file is not JSON.
-    #[error("{} is not valid JSON: {source}", path.display())]
+    #[error("{} is not valid JSON", path.display())]
     Parse {
         /// The providers.json it is about.
         path: PathBuf,

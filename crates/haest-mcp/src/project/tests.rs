@@ -1,5 +1,5 @@
 use super::*;
-use haest_core::fs::MemFs;
+use haest_core::{fs::MemFs, testing::assert_causes_said_once};
 use serde_json::json;
 
 const CWD: &str = "/p";
@@ -105,7 +105,11 @@ async fn no_file_or_a_file_without_servers_means_no_servers() {
 #[tokio::test]
 async fn broken_json_is_an_error_the_host_can_report() {
     let fs = MemFs::with_files([("/p/.mcp.json", "{not json")]);
-    assert!(matches!(load(&fs).await, Err(McpConfigError::Parse { .. })));
+    let Err(err) = load(&fs).await else {
+        panic!("broken JSON was read");
+    };
+    assert!(matches!(err, McpConfigError::Parse { .. }));
+    assert_causes_said_once(&err);
 }
 
 #[tokio::test]

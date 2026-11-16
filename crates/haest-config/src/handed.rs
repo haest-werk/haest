@@ -10,6 +10,7 @@ use std::{
 use haest_core::{
     __private::{expand_vars, unset_note},
     ChildEnv,
+    error::report,
     fs::Fs,
 };
 use haest_mcp::{McpServerConfig, load_project_mcp_config, project_mcp_path};
@@ -108,7 +109,7 @@ pub(crate) async fn mcp_servers(
             project.servers
         }
         Err(e) => {
-            notes.push(format!(".mcp.json not loaded: {e}"));
+            notes.push(format!(".mcp.json not loaded: {}", report(&e)));
             Vec::new()
         }
     }

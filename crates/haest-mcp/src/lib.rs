@@ -158,7 +158,7 @@
 //! ```no_run
 //! use std::{path::Path, sync::Arc};
 //!
-//! use haest_core::{ChildEnv, fs::Fs};
+//! use haest_core::{ChildEnv, error::report, fs::Fs};
 //! use haest_mcp::{McpHub, McpServerConfig, ProjectMcp, load_project_mcp_config};
 //!
 //! # async fn host(fs: &dyn Fs) {
@@ -174,7 +174,7 @@
 //! let project = match load_project_mcp_config(fs, Path::new("/repo"), &vars).await {
 //!     Ok(project) => project,
 //!     Err(e) => {
-//!         eprintln!(".mcp.json not loaded: {e}");
+//!         eprintln!(".mcp.json not loaded: {}", report(&e));
 //!         ProjectMcp::default()
 //!     }
 //! };

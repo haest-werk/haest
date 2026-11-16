@@ -207,7 +207,7 @@ impl Tool for ImageTool {
             .catalog
             .model_params(&o.base_url, &chosen, http, cancel.clone())
             .await
-            .map_err(|e| ToolError::Input(e.to_string()))?;
+            .map_err(|e| ToolError::Input(report(&e)))?;
         let params = params.as_ref();
         let takes = describe_model(params);
         let settings = check_image_settings(&chosen, params, &given)

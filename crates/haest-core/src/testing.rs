@@ -176,3 +176,35 @@ pub fn tool_answer(calls: &[(&str, &str, Value)]) -> AssistantMessage {
     };
     m
 }
+
+/// Panics unless `e`'s [`report`](crate::error::report) says each cause
+/// under it once: no error in the chain prints its own source in its text
+/// (the rule in [`error`](crate::error)).
+///
+/// # Examples
+///
+/// ```should_panic
+/// use haest_core::testing::assert_causes_said_once;
+///
+/// /// Prints its source and also hands it out as the source: said twice.
+/// #[derive(Debug, thiserror::Error)]
+/// #[error("reading the file: {source}")]
+/// struct Twice {
+///     source: std::io::Error,
+/// }
+///
+/// assert_causes_said_once(&Twice { source: std::io::Error::other("denied") });
+/// ```
+pub fn assert_causes_said_once(e: &dyn std::error::Error) {
+    let line = crate::error::report(e);
+    let mut cause = e.source();
+    while let Some(c) = cause {
+        let text = c.to_string();
+        let said = line.matches(text.as_str()).count();
+        assert!(
+            text.is_empty() || said == 1,
+            "\"{text}\" is said {said} times in: {line}"
+        );
+        cause = c.source();
+    }
+}

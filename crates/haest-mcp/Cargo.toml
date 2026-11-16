@@ -30,6 +30,7 @@ rmcp = { version = "3.9", default-features = false, features = [
 haest-http = { workspace = true }
 
 [dev-dependencies]
+haest-core = { workspace = true, features = ["testing"] }
 # server: the tests run a real MCP server over an in-memory duplex, never the network.
 rmcp = { version = "3.9", default-features = false, features = ["client", "server"] }
 tokio = { workspace = true, features = ["test-util", "io-util"] }

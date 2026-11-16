@@ -28,7 +28,7 @@ pub(super) async fn runnable(source: String, path: &Path) -> Result<String, Stri
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
     let strip = tokio::task::spawn_blocking(move || haest_ts::strip_types(&source, &name));
     match strip.await {
-        Ok(stripped) => stripped.map_err(|e| e.to_string()),
+        Ok(stripped) => stripped.map_err(|e| haest_core::error::report(&e)),
         Err(_) => Err(haest_ts::StripError::Panicked.to_string()),
     }
 }
