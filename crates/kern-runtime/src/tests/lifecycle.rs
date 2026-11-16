@@ -7,7 +7,7 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 use kern_settings::Settings;
 
-use super::{hardcoded, keyed, keyed_with};
+use super::{hardcoded, keyed, keyed_with, openrouter_key, try_keyed};
 use crate::{
     BuildOptions, RuntimeInputs, World, build,
     kern::{
@@ -39,6 +39,7 @@ fn closed_server() -> McpServerConfig {
 /// everything the Ui was told.
 async fn failed_build(settings: Settings, fs: Arc<MemFs>) -> (String, Vec<String>) {
     let mut inputs = RuntimeInputs::new(settings, World::Fs(fs));
+    inputs.keys = openrouter_key();
     inputs.mcp_servers = vec![closed_server()];
     let ui = Arc::new(Recorded::default());
     let err = build(inputs, ui.clone(), Deny, BuildOptions::default())
@@ -76,6 +77,50 @@ async fn a_session_that_cannot_be_saved_fails_the_build_before_a_server_starts()
     let (err, heard) = failed_build(hardcoded(), fs).await;
     assert!(err.contains("session file"), "{err}");
     assert_eq!(heard, Vec::<String>::new(), "no server was started");
+}
+
+/// A model the build cannot use (no key for it) fails the build before
+/// anything is written: no new, empty session is left for `-r` to pick up.
+#[tokio::test]
+async fn a_model_the_build_cannot_use_fails_it_and_leaves_no_session_file() {
+    let fs = Arc::new(MemFs::new());
+    let inputs = RuntimeInputs::new(hardcoded(), World::Fs(fs.clone()));
+    let ui = Arc::new(Recorded::default());
+    let built = build(inputs, ui, Deny, BuildOptions::default()).await;
+    let left = list_sessions(fs.as_ref(), Path::new(SESSIONS)).await;
+    assert!(left.is_empty(), "no session file is left behind");
+    let err = format!("{:#}", built.err().expect("the build fails"));
+    assert!(err.contains("OPENROUTER_API_KEY"), "{err}");
+}
+
+/// A resume onto a model it cannot use fails before it writes anything: the
+/// saved session is as it was.
+#[tokio::test]
+async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
+    let fs = Arc::new(MemFs::new());
+    let rt = keyed(&fs, None).await;
+    rt.host.flush().await;
+    let id = rt.session_id();
+    let file = Path::new(SESSIONS).join(format!("{id}.jsonl"));
+    let saved = fs.read_to_string(&file).await.unwrap();
+
+    let keyless = Settings {
+        model: "anthropic:claude-opus-5-5".into(),
+        ..hardcoded()
+    };
+    let opts = BuildOptions {
+        resume: Some(id),
+        model_given: true,
+        ..BuildOptions::default()
+    };
+    let built = try_keyed(&fs, keyless, opts).await;
+    if let Ok(rt) = &built {
+        rt.host.flush().await;
+    }
+    let now = fs.read_to_string(&file).await.unwrap();
+    assert_eq!(now, saved, "the session is as it was");
+    let err = format!("{:#}", built.err().expect("the build fails"));
+    assert!(err.contains("ANTHROPIC_API_KEY"), "{err}");
 }
 
 #[tokio::test]

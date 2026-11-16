@@ -144,13 +144,23 @@ where
     } = inputs;
     let fs = world.fs();
     let session = open_session(&fs, &settings, opts.resume.as_deref(), ui.clone()).await?;
+    // The model the conversation starts on is one it can use (its provider
+    // known, its key there), or the build fails with nothing written: a run
+    // that cannot start leaves no session for a resume to pick up.
+    let (model, effort) = start_on(&settings, session.saved.as_ref(), &opts);
+    let reg_opts = RegistryOptions {
+        routing,
+        ..Default::default()
+    };
+    let registry = ProviderRegistry::new(keys.clone(), providers, reg_opts);
+    registry.resolve_spec(&model)?;
     let spill = settings.spill_dir(session.store.session_id());
     let host = Arc::new(Host::new(settings, ui.clone(), session.store.clone()));
     let s = &host.settings;
 
     // Whatever can fail runs before anything starts, so a failed build has
-    // started nothing and left no file: the files are found, then a new
-    // session's file is created. Then the MCP servers and the mods start,
+    // started nothing and left no file: the model is checked (above), the
+    // files are found, then a new session's file is created. Then the MCP servers and the mods start,
     // together; from there on nothing fails.
     let found = find(&host, &world, &env, &fs, &spill).await?;
     if session.saved.is_none() {
@@ -183,11 +193,6 @@ where
         s.code_tools(),
     ));
     let ledger = Arc::new(Mutex::new(Ledger::new(s.ledger(), host.clone())));
-    let reg_opts = RegistryOptions {
-        routing,
-        ..Default::default()
-    };
-    let registry = ProviderRegistry::new(keys, providers, reg_opts);
 
     // The conversation's deps. Tools and prompt are each agent's own: the hub
     // gives every subagent its own, and main's tools hold the hub.
@@ -228,7 +233,6 @@ where
         ..shared
     };
 
-    let (model, effort) = start_on(s, session.saved.as_ref(), &opts);
     let mut agent_opts = AgentOptions::new(model);
     agent_opts.effort = effort;
     let resumed = session.saved.is_some();

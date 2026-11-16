@@ -32,6 +32,7 @@ use std::{
 
 use kern::{
     config::{Loaded, Loader, env_var},
+    providers::ProviderConfigError,
     runtime::{RuntimeInputs, Ui, World, sessions, world},
     session::sessions_dir,
     settings::Settings,
@@ -84,11 +85,9 @@ fn print_input(args: &Args) -> Option<String> {
     })
 }
 
-async fn print_mode(rt: &mut Runtime, args: &Args) -> ExitCode {
-    let Some(input) = print_input(args) else {
-        return fail(2, "nothing to ask: give a prompt, or pipe one on stdin");
-    };
-    let code = match commands::resolve(rt, &input).await {
+/// `input` asked once ([`print_input`], read before the build).
+async fn print_mode(rt: &mut Runtime, input: &str) -> ExitCode {
+    let code = match commands::resolve(rt, input).await {
         Outcome::Send(text) => {
             let end = run::human(rt, &text).await;
             // Interrupted: the human wants out, not the background work's answers.
@@ -127,6 +126,16 @@ async fn shutdown(rt: &Runtime) {
             rt.host
                 .info(&format!("Killed {}.", count(killed, "background job")));
         }
+    }
+}
+
+/// What a failed build tells the human; a model it cannot use says how to get one.
+fn build_failed(e: &anyhow::Error) -> String {
+    match e.downcast_ref::<ProviderConfigError>() {
+        Some(e) => {
+            format!("{e}. Set its key, or pick another model with -m (kern models lists them).")
+        }
+        None => format!("{e:#}"),
     }
 }
 
@@ -169,6 +178,12 @@ async fn main() -> ExitCode {
     let print = args.print || args.json || !std::io::stdin().is_terminal();
     let ui = Arc::new(TermUi::new(args.json));
     loaded.notes.iter().for_each(|n| ui.warn(n));
+    // What print mode asks, read before the build: with nothing to ask, the
+    // run fails having created no session.
+    let input = match print.then(|| print_input(args)) {
+        Some(None) => return fail(2, "nothing to ask: give a prompt, or pipe one on stdin"),
+        asked => asked.flatten(),
+    };
     let prompter = TermPrompter::new(ui.clone(), ask::interactive());
     let opts = cli.build_options();
     let inputs = RuntimeInputs {
@@ -184,21 +199,14 @@ async fn main() -> ExitCode {
     };
     let mut rt = match kern::runtime::build(inputs, ui, prompter, opts).await {
         Ok(rt) => rt,
-        Err(e) => return fail(2, format!("{e:#}")),
+        Err(e) => return fail(2, build_failed(&e)),
     };
-    if let Err(e) = rt.agent.deps().models.resolve(&rt.agent.model_spec) {
-        return fail(
-            2,
-            format!("{e}. Set its key, or pick another model with -m (kern models lists them)."),
-        );
-    }
-    let code = if print {
-        print_mode(&mut rt, args).await
-    } else {
-        match repl::repl(&mut rt, args.prompt_text()).await {
+    let code = match input {
+        Some(input) => print_mode(&mut rt, &input).await,
+        None => match repl::repl(&mut rt, args.prompt_text()).await {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => fail(1, e),
-        }
+        },
     };
     shutdown(&rt).await;
     rt.mcp.close().await;
