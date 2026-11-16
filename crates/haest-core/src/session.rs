@@ -21,7 +21,8 @@
 //! a record of a kind haest does not know is skipped, not counted corrupt.
 //! [`SessionSink`] is where records go; [`JsonlSessionFile`] writes them through an [`crate::Fs`].
 //!
-//! Where the file lives: `<data_dir>/sessions/<id>.jsonl` ([`session_path`]).
+//! Where the file lives: `<data_dir>/sessions/<id>.jsonl` ([`session_file`] in
+//! the [`sessions_dir`]).
 //! A resumed conversation starts from a [`ReplayedSession`]: its messages,
 //! model, effort, ledger and task list.
 //!
@@ -249,16 +250,6 @@ pub fn session_file(dir: &Path, id: &str) -> Result<PathBuf, InvalidSessionId> {
 /// file that is not a session's (`a.jsonl` -> `a`, `notes.txt` -> None).
 pub fn session_id_of(file_name: &str) -> Option<&str> {
     file_name.strip_suffix(".jsonl").filter(|id| valid_id(id))
-}
-
-/// The session file for `session_id` under a data dir:
-/// `<data_dir>/sessions/<session_id>.jsonl`.
-///
-/// # Errors
-///
-/// [`InvalidSessionId`] unless `session_id` is `[a-zA-Z0-9_-]+`.
-pub fn session_path(data_dir: &Path, session_id: &str) -> Result<PathBuf, InvalidSessionId> {
-    session_file(&sessions_dir(data_dir), session_id)
 }
 
 /// The user message that stands in for everything a compaction summarised:

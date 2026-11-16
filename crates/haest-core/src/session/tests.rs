@@ -163,10 +163,11 @@ async fn a_torn_last_line_is_counted_not_fatal() {
 
 #[test]
 fn session_ids_cannot_escape_the_sessions_dir() {
-    assert!(session_path(Path::new(DATA), "../etc").is_err());
-    assert!(session_path(Path::new(DATA), "").is_err());
+    let dir = sessions_dir(Path::new(DATA));
+    assert!(session_file(&dir, "../etc").is_err());
+    assert!(session_file(&dir, "").is_err());
     assert_eq!(
-        session_path(Path::new(DATA), "a_B-1").unwrap(),
+        session_file(&dir, "a_B-1").unwrap(),
         PathBuf::from("/data/sessions/a_B-1.jsonl")
     );
 }

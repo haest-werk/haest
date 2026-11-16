@@ -10,7 +10,7 @@ use std::{
 use async_trait::async_trait;
 use tokio::sync::{mpsc, oneshot};
 
-use super::{InvalidSessionId, ReplayedSession, SessionRecord, replay, session_path};
+use super::{InvalidSessionId, ReplayedSession, SessionRecord, replay, session_file, sessions_dir};
 use crate::fs::{Fs, ensure_dir};
 
 /// Where a conversation's records go. `append` is synchronous so the loop's
@@ -112,7 +112,7 @@ impl JsonlSessionFile {
         session_id: &str,
         on_error: impl Fn(io::Error) + Send + 'static,
     ) -> Result<Self, InvalidSessionId> {
-        let path = session_path(data_dir, session_id)?;
+        let path = session_file(&sessions_dir(data_dir), session_id)?;
         let (tx, rx) = mpsc::unbounded_channel();
         tokio::spawn(write_queue(fs.clone(), path.clone(), rx, on_error));
         Ok(Self {
