@@ -66,7 +66,7 @@ impl World {
     /// ([`RealFs`]) or the host's own.
     pub fn fs(&self) -> Arc<dyn Fs> {
         match self {
-            World::Disk { .. } => Arc::new(RealFs::new()),
+            World::Disk { .. } => Arc::new(RealFs),
             World::Fs(fs) => fs.clone(),
         }
     }

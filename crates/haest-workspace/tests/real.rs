@@ -206,7 +206,7 @@ fn kill_group_never_signals_the_callers_own_group() {
 #[tokio::test]
 async fn real_fs_reads_writes_and_lists_the_disk() {
     let (_t, dir) = tempdir();
-    let fs = RealFs::new();
+    let fs = RealFs;
     let p = |rel: &str| dir.join(rel);
     fs.mkdir(&p("sub/deep"), true).await.unwrap();
     fs.write(&p("sub/b.txt"), b"one").await.unwrap();
@@ -252,7 +252,7 @@ async fn real_fs_reads_writes_and_lists_the_disk() {
 async fn a_config_under_a_file_is_absent_but_one_that_cannot_be_read_is_an_error() {
     use std::os::unix::fs::PermissionsExt;
     let (_t, dir) = tempdir();
-    let fs = RealFs::new();
+    let fs = RealFs;
     std::fs::write(dir.join("plain"), "a file where a dir is expected").unwrap();
     let under_a_file = read_text_if_present(&fs, &dir.join("plain/config.toml")).await;
     assert_eq!(under_a_file.unwrap(), None, "no such file can exist there");
@@ -271,7 +271,7 @@ async fn a_config_under_a_file_is_absent_but_one_that_cannot_be_read_is_an_error
 async fn chmod_sets_the_mode_on_the_disk_so_a_session_file_stays_private() {
     use std::os::unix::fs::PermissionsExt;
     let (_t, dir) = tempdir();
-    let fs = RealFs::new();
+    let fs = RealFs;
     let f = dir.join("session.jsonl");
     fs.write(&f, b"{}").await.unwrap();
     fs.chmod(&f, 0o600).await.unwrap();

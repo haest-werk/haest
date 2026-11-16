@@ -46,13 +46,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RealFs;
 
-impl RealFs {
-    /// The real disk. Same as the unit value `RealFs`.
-    pub fn new() -> Self {
-        Self
-    }
-}
-
 fn kind_of(t: std::fs::FileType) -> FileKind {
     if t.is_symlink() {
         FileKind::Symlink
