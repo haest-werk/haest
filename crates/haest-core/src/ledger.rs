@@ -234,19 +234,34 @@ impl Ledger {
         Some(self.remedies.add_to(text, self.limit(m)))
     }
 
-    /// One line for the human: what was spent of each cap.
+    /// One line for the human: what was spent of each cap, "(no cap)" for
+    /// one that is off.
     pub fn summary(&self) -> String {
-        let ConversationCaps {
-            max_usd,
-            max_unpriced_tokens,
-        } = self.caps();
-        let cap = |on: bool, text: String| if on { text } else { "no cap".into() };
-        let usd_cap = cap(max_usd > 0.0, format!("${max_usd}"));
-        let token_cap = cap(max_unpriced_tokens > 0, max_unpriced_tokens.to_string());
         format!(
-            "Conversation budget: ${:.2} of {usd_cap} spent; {} unpriced tokens of {token_cap}.",
-            self.usd, self.unpriced_tokens
+            "Conversation budget: {}; {}.",
+            self.spent(Measure::Usd),
+            self.spent(Measure::Tokens)
         )
+    }
+
+    /// What `m` stands at against its cap: "$8.00 spent of $10",
+    /// "900 unpriced tokens billed (no cap)".
+    fn spent(&self, m: Measure) -> String {
+        let caps = self.caps();
+        let (used, cap) = match m {
+            Measure::Usd => (
+                format!("${:.2} spent", self.usd),
+                (caps.max_usd > 0.0).then(|| format!("${}", caps.max_usd)),
+            ),
+            Measure::Tokens => (
+                format!("{} unpriced tokens billed", self.unpriced_tokens),
+                (caps.max_unpriced_tokens > 0).then(|| caps.max_unpriced_tokens.to_string()),
+            ),
+        };
+        match cap {
+            Some(cap) => format!("{used} of {cap}"),
+            None => format!("{used} (no cap)"),
+        }
     }
 
     fn over(&self, m: Measure, share: f64) -> bool {
@@ -285,7 +300,10 @@ impl Ledger {
                 continue;
             }
             *self.warned(m) = true;
-            let text = format!("{} haest stops at the cap.", self.summary());
+            let text = format!(
+                "Conversation budget: {}. haest stops at the cap.",
+                self.spent(m)
+            );
             self.hooks.warn(&self.remedies.add_to(text, self.limit(m)));
         }
     }

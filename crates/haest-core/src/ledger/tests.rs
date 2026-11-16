@@ -157,6 +157,33 @@ fn the_human_is_warned_once_on_crossing_80_percent_and_again_after_a_raise() {
 }
 
 #[test]
+fn the_summary_names_an_uncapped_measure_as_having_no_cap() {
+    let (mut ledger, _) = ledger_with(10.0, 0);
+    ledger.charge(&cost(1.0));
+    let summary = ledger.summary();
+    assert!(summary.contains("$1.00"), "{summary}");
+    assert!(summary.contains("$10"), "{summary}");
+    assert!(summary.contains("(no cap)"), "{summary}");
+    assert!(!summary.contains("of no cap"), "{summary}");
+}
+
+#[test]
+fn the_warning_names_only_the_cap_it_crossed() {
+    let (mut ledger, rec) = ledger_with(10.0, 1000);
+    ledger.charge(&cost(8.0));
+    ledger.charge(&Usage {
+        input: 900,
+        ..Default::default()
+    });
+    let warned = rec.warnings.lock().unwrap().clone();
+    assert_eq!(warned.len(), 2, "{warned:?}");
+    assert!(warned[0].contains("$8.00"), "{warned:?}");
+    assert!(!warned[0].contains("tokens"), "{warned:?}");
+    assert!(warned[1].contains("900"), "{warned:?}");
+    assert!(!warned[1].contains('$'), "{warned:?}");
+}
+
+#[test]
 fn the_warning_and_the_stop_end_with_the_hosts_remedy_for_the_cap_in_force() {
     let (ledger, rec) = ledger_with(10.0, 0);
     let mut ledger = ledger.with_remedies(Remedies::new(|limit| match limit {
