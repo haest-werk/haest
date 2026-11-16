@@ -323,11 +323,13 @@ pub use haest_workspace as workspace;
 /// What the loader read, as the runtime's inputs on the real disk: the
 /// settings, the child environment and the variables passed on purpose, the
 /// provider keys (the loader's environment), providers.json, the trusted
-/// `.mcp.json` servers and the OpenRouter routing.
+/// `.mcp.json` servers and the OpenRouter routing, sent over the default
+/// reqwest client.
 ///
 /// Show [`Loaded::notes`](config::Loaded::notes) to the human first: they are
 /// not part of the inputs. A host in another world sets
-/// [`world`](runtime::RuntimeInputs::world) on the result.
+/// [`world`](runtime::RuntimeInputs::world) on the result; one with its own
+/// HTTP client sets [`http`](runtime::RuntimeInputs::http).
 #[cfg(all(feature = "config", feature = "runtime"))]
 #[cfg_attr(docsrs, doc(cfg(all(feature = "config", feature = "runtime"))))]
 pub fn runtime_inputs(loaded: config::Loaded) -> runtime::RuntimeInputs {
@@ -341,5 +343,6 @@ pub fn runtime_inputs(loaded: config::Loaded) -> runtime::RuntimeInputs {
         providers: loaded.providers,
         mcp_servers: loaded.mcp_servers,
         routing: loaded.routing,
+        http: std::sync::Arc::new(http::ReqwestClient::new()),
     }
 }

@@ -21,10 +21,12 @@ use crate::{
         core::skills::{Skill, SkillScanRoots, skills_in},
         core::task_board::TaskBoard,
         core::tool::Tool,
+        http::{HttpClient, ReqwestClient},
         mcp::McpServerConfig,
         mods::{ModSystemPrompt, Prompter},
         now_ms,
         providers::{CustomProviders, ProviderRegistry, RegistryOptions, RoutingEnv},
+        tools::ImageToolOptions,
         tools::tool_search::DeferredTools,
     },
     inbox, mods,
@@ -65,11 +67,17 @@ pub struct RuntimeInputs {
     pub mcp_servers: Vec<McpServerConfig>,
     /// OpenRouter's `provider` routing; None = none goes out.
     pub routing: Option<RoutingEnv>,
+    /// How the model calls and GenerateImage's requests are sent: the host's
+    /// own client (a gateway, a recorder) or the shared [`ReqwestClient`].
+    /// WebFetch keeps its own client, which checks every address it connects
+    /// to; MCP servers keep rmcp's.
+    pub http: Arc<dyn HttpClient>,
 }
 
 impl RuntimeInputs {
     /// The settings in this world, and nothing else: no variables passed, no
-    /// keys, no custom providers, no MCP servers, no routing.
+    /// keys, no custom providers, no MCP servers, no routing, the shared
+    /// [`ReqwestClient`] (built on the first request).
     ///
     /// With no keys, [`build`] fails unless the model's provider needs none:
     /// set [`keys`](Self::keys) for the providers the settings use.
@@ -83,6 +91,7 @@ impl RuntimeInputs {
             providers: CustomProviders::new(),
             mcp_servers: Vec::new(),
             routing: None,
+            http: Arc::new(ReqwestClient::new()),
         }
     }
 }
@@ -200,6 +209,7 @@ where
         providers,
         mcp_servers,
         routing,
+        http,
     } = inputs;
     let fs = world.fs();
     let session = open_session(&fs, &settings, opts.resume.as_deref(), ui.clone()).await?;
@@ -208,6 +218,7 @@ where
     // that cannot start leaves no session for a resume to pick up.
     let (model, effort) = start_on(&settings, session.saved.as_ref(), &opts);
     let reg_opts = RegistryOptions {
+        http: http.clone(),
         routing,
         ..Default::default()
     };
@@ -237,10 +248,13 @@ where
     let board = task_board(&hooks);
     let (sender, inbox) = inbox::inbox(&hooks, s.max_agent_turns);
     let jobs = jobs_for(s, sender.clone());
-    let image = image_options(s, keys.as_ref()).unwrap_or_else(|why| {
-        hooks.warn(&why);
-        None
-    });
+    let image = match image_options(s, keys.as_ref()) {
+        Ok(opts) => opts.map(|o| ImageToolOptions { http, ..o }),
+        Err(why) => {
+            hooks.warn(&why);
+            None
+        }
+    };
     let own = own_tools(
         &s.tools,
         board.clone(),

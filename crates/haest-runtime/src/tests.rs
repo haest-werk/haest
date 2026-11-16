@@ -2,15 +2,23 @@
 //! hardcoded settings over a host's own files finds its instructions there,
 //! writes its session there, and has no key it was not given.
 
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
+use async_trait::async_trait;
+use futures::StreamExt;
 use haest_settings::{BuiltinTools, ContextSources, Settings};
+use serde_json::json;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     BuildOptions, Runtime, RuntimeInputs, World, build,
     haest::{
-        KeySource,
+        KeySource, Message, ProviderEvent, ProviderRequest, ShutWorkspace, ToolContext,
         core::fs::{Fs, MemFs},
+        http::{HttpClient, HttpError, Request, Response},
     },
     testkit::{Deny, Recorded},
 };
@@ -115,6 +123,72 @@ async fn a_key_the_host_hands_in_is_the_key_haest_uses() {
             .resolve(rt.agent().model_spec())
             .is_ok()
     );
+}
+
+/// A host's gateway: the URL of every request it is sent, each refused.
+#[derive(Default)]
+struct Gateway(Mutex<Vec<String>>);
+
+#[async_trait]
+impl HttpClient for Gateway {
+    async fn send(&self, req: Request) -> Result<Response, HttpError> {
+        self.0.lock().unwrap().push(req.url);
+        Ok(Response::json(
+            400,
+            &json!({"error": {"message": "refused"}}),
+        ))
+    }
+}
+
+#[tokio::test]
+async fn model_calls_and_generate_image_go_through_the_hosts_client() {
+    let gateway = Arc::new(Gateway::default());
+    let settings = Settings {
+        image: true,
+        ..hardcoded()
+    };
+    let mut inputs = RuntimeInputs::new(settings, World::Fs(Arc::new(MemFs::new())));
+    inputs.keys = openrouter_key();
+    inputs.http = gateway.clone();
+    let rt = build(
+        inputs,
+        Arc::new(Recorded::default()),
+        Deny,
+        BuildOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let model = rt
+        .agent()
+        .deps()
+        .models
+        .resolve(rt.agent().model_spec())
+        .unwrap();
+    let req = ProviderRequest {
+        model: model.model,
+        system: String::new(),
+        messages: vec![Message::user("hi")],
+        tools: vec![],
+        cancel: CancellationToken::new(),
+        effort: None,
+        max_tokens: None,
+        web_search: None,
+    };
+    let events: Vec<ProviderEvent> = model.provider.stream(req).collect().await;
+    assert!(matches!(events.last(), Some(ProviderEvent::Done(_))));
+    assert_eq!(gateway.0.lock().unwrap().len(), 1, "the model call");
+
+    let tools = rt.agent().deps().tools.tools();
+    let image = tools.iter().find(|t| t.name() == "GenerateImage").unwrap();
+    let ctx = ToolContext::new("/w", Arc::new(ShutWorkspace));
+    let input = json!({"prompt": "a lighthouse"});
+    let made = image
+        .execute(input.as_object().unwrap().clone(), &ctx)
+        .await;
+    assert!(made.is_err(), "the gateway refused it");
+    let sent = gateway.0.lock().unwrap().clone();
+    assert!(sent[1].ends_with("/images/models") && sent[2].ends_with("/images"));
 }
 
 mod compaction;

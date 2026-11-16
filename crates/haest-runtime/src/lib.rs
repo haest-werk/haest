@@ -186,6 +186,7 @@ mod haest {
     pub use haest_mcp as mcp;
     pub use haest_mods as mods;
     pub use haest_providers as providers;
+    pub use haest_providers::http;
     pub use haest_tools as tools;
     pub use haest_workspace as workspace;
 }

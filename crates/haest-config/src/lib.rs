@@ -169,6 +169,7 @@ pub use value::env_var;
 /// | `providers` | `providers` |
 /// | `mcp_servers` | `mcp_servers` |
 /// | `routing` | `routing` |
+/// | `http` | not loaded: the host's own client, or `Arc::new(ReqwestClient::new())` |
 ///
 /// Show the human every [`notes`](Self::notes) line before the run starts.
 #[derive(Debug, Clone)]
