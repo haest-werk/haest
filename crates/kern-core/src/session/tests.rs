@@ -52,6 +52,8 @@ impl Fs for ModeFs {
     }
 }
 
+mod interrupted;
+
 const DATA: &str = "/data";
 
 fn store(fs: &Arc<ModeFs>) -> JsonlSessionFile {

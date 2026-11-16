@@ -23,7 +23,10 @@ mod file;
 mod tests;
 mod time;
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -31,7 +34,12 @@ use serde_json::Value;
 pub use file::{JsonlSessionFile, SessionSink};
 pub use time::iso_utc;
 
-use crate::{ledger::LedgerSnapshot, messages::Message, provider::Effort, task_board::KernTask};
+use crate::{
+    ledger::LedgerSnapshot,
+    messages::{Message, ToolCall, ToolResultMessage},
+    provider::Effort,
+    task_board::KernTask,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -201,11 +209,54 @@ fn parse_line(line: &str) -> Line {
     }
 }
 
+const INTERRUPTED: &str =
+    "Interrupted: kern stopped before this tool call returned, so it may or may not have run.";
+
+/// A log that ends mid-tool (the process was killed) holds calls with no
+/// result, and every provider refuses that history. Each such call is answered
+/// after its siblings' results with an error saying so. Never written: the
+/// file keeps what happened and every replay makes the same repair, so a
+/// resumed conversation's history -- what a later compaction counted its tail
+/// on -- is rebuilt exactly.
+fn answer_interrupted(messages: Vec<Message>) -> Vec<Message> {
+    let mut out = Vec::with_capacity(messages.len());
+    let mut rest = messages.into_iter().peekable();
+    while let Some(m) = rest.next() {
+        let Message::Assistant(a) = &m else {
+            out.push(m);
+            continue;
+        };
+        let calls: Vec<ToolCall> = a.tool_calls().cloned().collect();
+        out.push(m);
+        let mut answered = HashSet::new();
+        while let Some(Message::Tool(r)) = rest.peek() {
+            answered.insert(r.tool_call_id.clone());
+            out.extend(rest.next());
+        }
+        out.extend(
+            calls
+                .into_iter()
+                .filter(|c| !answered.contains(&c.id))
+                .map(|c| {
+                    Message::Tool(ToolResultMessage {
+                        tool_call_id: c.id,
+                        tool_name: c.name,
+                        content: INTERRUPTED.into(),
+                        is_error: true,
+                        media: Vec::new(),
+                    })
+                }),
+        );
+    }
+    out
+}
+
 fn apply(s: &mut ReplayedSession, r: SessionRecord) {
     match r {
         SessionRecord::Header { .. } => {}
         SessionRecord::Message { message, .. } => s.messages.push(message),
         SessionRecord::Compaction { summary, kept, .. } => {
+            s.messages = answer_interrupted(std::mem::take(&mut s.messages));
             let from = s.messages.len().saturating_sub(kept);
             s.messages
                 .splice(..from, [compaction_summary_message(&summary)]);
@@ -224,7 +275,8 @@ fn apply(s: &mut ReplayedSession, r: SessionRecord) {
 }
 
 /// Rebuild a session from a file's text. Split on '\n' only: U+2028/2029 are
-/// legal inside JSON strings and must not end a line. Never fails.
+/// legal inside JSON strings and must not end a line. Never fails. A tool call
+/// left without a result comes back answered as interrupted ([`answer_interrupted`]).
 pub fn replay(text: &str) -> ReplayedSession {
     let mut s = ReplayedSession::default();
     for line in text.split('\n') {
@@ -238,5 +290,6 @@ pub fn replay(text: &str) -> ReplayedSession {
             Line::Corrupt => s.corrupt_lines += 1,
         }
     }
+    s.messages = answer_interrupted(s.messages);
     s
 }
