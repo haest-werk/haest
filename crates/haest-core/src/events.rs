@@ -2,7 +2,8 @@
 //! [`EventSink`] the host passes to [`Agent::run`](crate::Agent::run).
 //!
 //! A host renders them, a CLI prints them, `--json` writes each as one NDJSON
-//! line (the serde shape is stable). One turn emits:
+//! line (the serde shape is stable, and a Rust program reads such a line back
+//! with `serde_json::from_str::<LoopEvent>`). One turn emits:
 //!
 //! 1. [`LoopEvent::User`] for the turn's input;
 //! 2. per model call: [`LoopEvent::ModelStart`], the stream's
@@ -29,7 +30,7 @@
 //! assert_eq!(lines, [r#"{"type":"text_delta","text":"hi"}"#]);
 //! ```
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     messages::{AssistantMessage, StopReason, ToolCall, ToolResultMessage, Usage, UserMessage},
@@ -38,7 +39,7 @@ use crate::{
 
 /// One thing that happened in a turn. Serialized with a snake_case `type` tag
 /// and camelCase fields (`{"type":"turn_end","stopReason":"end_turn",...}`).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(
     tag = "type",
     rename_all = "snake_case",
@@ -168,5 +169,63 @@ impl EventSink for tokio::sync::mpsc::UnboundedSender<LoopEvent> {
 impl EventSink for Vec<LoopEvent> {
     fn emit(&mut self, ev: LoopEvent) {
         self.push(ev)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{text_answer, tool_answer};
+
+    /// What `--json` writes, a Rust program reads back as the same event.
+    #[test]
+    fn every_event_reads_back_from_its_json_line() {
+        let call = tool_answer(&[("c1", "Read", serde_json::json!({"path": "/a"}))]);
+        let call = call.tool_calls().next().unwrap().clone();
+        let events = [
+            LoopEvent::User {
+                message: UserMessage {
+                    content: "hi".into(),
+                    media: Vec::new(),
+                },
+            },
+            LoopEvent::ModelStart {
+                provider: "p".into(),
+                model: "m".into(),
+            },
+            LoopEvent::TextDelta { text: "t".into() },
+            LoopEvent::ThinkingDelta { text: "r".into() },
+            LoopEvent::ToolCallStart {
+                id: "c1".into(),
+                name: "Read".into(),
+            },
+            LoopEvent::Assistant {
+                message: text_answer("done"),
+            },
+            LoopEvent::ToolResult {
+                call: call.clone(),
+                message: ToolResultMessage {
+                    tool_call_id: call.id.clone(),
+                    tool_name: call.name.clone(),
+                    content: "content".into(),
+                    is_error: false,
+                    media: Vec::new(),
+                },
+                output: ToolOutput::text("content"),
+                duration_ms: 3,
+            },
+            LoopEvent::Guard { text: "g".into() },
+            LoopEvent::TurnEnd {
+                stop_reason: StopReason::EndTurn,
+                usage: Usage::default(),
+                duration_ms: 9,
+                error: None,
+            },
+        ];
+        for ev in events {
+            let line = serde_json::to_string(&ev).unwrap();
+            let back: LoopEvent = serde_json::from_str(&line).unwrap();
+            assert_eq!(serde_json::to_string(&back).unwrap(), line);
+        }
     }
 }
