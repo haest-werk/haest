@@ -22,9 +22,10 @@ east,apple,n/a,paid,missing
 south,apple,200,paid,
 ";
 
-async fn xan(args: &[&str], stdin: Option<&str>) -> ExecResult {
+/// `xan args` in `/data` (sales.csv, t.tsv), 10s from its deadline.
+fn call(args: &[&str], stdin: Option<&str>) -> ShellCall {
     let fs = MemFs::with_files([("/data/sales.csv", SALES), ("/data/t.tsv", "a\tb\n1\t2\n")]);
-    Xan.run(ShellCall {
+    ShellCall {
         args: args.iter().map(|a| a.to_string()).collect(),
         cwd: PathBuf::from("/data"),
         env: Default::default(),
@@ -32,12 +33,23 @@ async fn xan(args: &[&str], stdin: Option<&str>) -> ExecResult {
         fs: Arc::new(fs),
         cancel: CancellationToken::new(),
         ends_at: Instant::now() + Duration::from_secs(10),
-    })
-    .await
+    }
+}
+
+async fn xan(args: &[&str], stdin: Option<&str>) -> ExecResult {
+    Xan.run(call(args, stdin)).await
+}
+
+async fn ok_stdin(args: &[&str], stdin: &str) -> String {
+    ok_in(args, Some(stdin)).await
 }
 
 async fn ok(args: &[&str]) -> String {
-    let r = xan(args, None).await;
+    ok_in(args, None).await
+}
+
+async fn ok_in(args: &[&str], stdin: Option<&str>) -> String {
+    let r = xan(args, stdin).await;
     assert_eq!(r.exit_code, 0, "xan {args:?} failed: {}", r.stderr);
     r.stdout
 }
@@ -229,12 +241,6 @@ async fn sums_of_money_come_out_as_the_sum() {
     assert_eq!(out, "sum(x)\n0.3\n");
 }
 
-async fn ok_stdin(args: &[&str], stdin: &str) -> String {
-    let r = xan(args, Some(stdin)).await;
-    assert_eq!(r.exit_code, 0, "xan {args:?} failed: {}", r.stderr);
-    r.stdout
-}
-
 #[tokio::test]
 async fn stats_says_each_columns_type_and_numbers() {
     let out = ok(&["stats", "-s", "amount,region", "sales.csv"]).await;
@@ -318,17 +324,9 @@ async fn it_stops_when_the_shell_calls_time_is_up() {
     let big: String = std::iter::once("n\n".to_string())
         .chain((0..5000).map(|i| format!("{i}\n")))
         .collect();
-    let r = Xan
-        .run(ShellCall {
-            args: vec!["count".into()],
-            cwd: PathBuf::from("/"),
-            env: Default::default(),
-            stdin: Some(big.into_bytes()),
-            fs: Arc::new(MemFs::new()),
-            cancel: CancellationToken::new(),
-            ends_at: Instant::now(),
-        })
-        .await;
+    let mut c = call(&["count"], Some(&big));
+    c.ends_at = Instant::now();
+    let r = Xan.run(c).await;
     assert_eq!(r.exit_code, 1);
     assert!(r.stderr.contains("ran out of time"), "{}", r.stderr);
 }

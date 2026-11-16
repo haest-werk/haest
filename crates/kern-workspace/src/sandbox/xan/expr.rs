@@ -253,6 +253,11 @@ impl AggFn {
         let nums = || vals.iter().filter(|v| !v.is_empty()).filter_map(Value::num);
         let present = || vals.iter().filter(|v| !v.is_empty());
         let num_or_null = |n: Option<f64>| n.map_or(Value::Null, Value::Num);
+        // The least (or the greatest) value present, as text.
+        let lex = |least: bool| {
+            let texts = present().map(Value::text);
+            if least { texts.min() } else { texts.max() }.map_or(Value::Null, Value::Str)
+        };
         match self {
             AggFn::Count if counted_rows => Value::Num(rows as f64),
             AggFn::Count => Value::Num(vals.iter().filter(|v| v.truthy()).count() as f64),
@@ -283,15 +288,7 @@ impl AggFn {
                 match nums().reduce(best) {
                     Some(n) => Value::Num(n),
                     // No number at all: the text, in order.
-                    None => {
-                        let texts = present().map(Value::text);
-                        let t = if self == AggFn::Min {
-                            texts.min()
-                        } else {
-                            texts.max()
-                        };
-                        t.map_or(Value::Null, Value::Str)
-                    }
+                    None => lex(self == AggFn::Min),
                 }
             }
             AggFn::First => present().next().cloned().unwrap_or(Value::Null),
@@ -325,14 +322,8 @@ impl AggFn {
                 let var = v.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / v.len() as f64;
                 Value::Num(if self == AggFn::Var { var } else { var.sqrt() })
             }
-            AggFn::LexFirst => present()
-                .map(Value::text)
-                .min()
-                .map_or(Value::Null, Value::Str),
-            AggFn::LexLast => present()
-                .map(Value::text)
-                .max()
-                .map_or(Value::Null, Value::Str),
+            AggFn::LexFirst => lex(true),
+            AggFn::LexLast => lex(false),
             AggFn::All => Value::Bool(vals.iter().all(Value::truthy)),
             AggFn::Any => Value::Bool(vals.iter().any(Value::truthy)),
         }
@@ -414,11 +405,9 @@ fn binary(op: Bin, a: Value, b: Value) -> Value {
         Bin::Add => x + y,
         Bin::Sub => x - y,
         Bin::Mul => x * y,
-        Bin::Div if y == 0.0 => return Value::Null,
+        Bin::Div | Bin::IntDiv | Bin::Mod if y == 0.0 => return Value::Null,
         Bin::Div => x / y,
-        Bin::IntDiv if y == 0.0 => return Value::Null,
         Bin::IntDiv => (x / y).floor(),
-        Bin::Mod if y == 0.0 => return Value::Null,
         Bin::Mod => x.rem_euclid(y),
         Bin::Pow => x.powf(y),
         _ => unreachable!("handled above"),

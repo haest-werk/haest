@@ -428,16 +428,16 @@ fn write_csv(header: Option<&[String]>, rows: impl IntoIterator<Item = Vec<Strin
     let mut w = csv::WriterBuilder::new()
         .flexible(true)
         .from_writer(Vec::new());
-    let broke = |e: csv::Error| fail(format!("writing the CSV: {e}"));
+    fn broke(e: impl std::fmt::Display) -> Fail {
+        fail(format!("writing the CSV: {e}"))
+    }
     if let Some(h) = header {
         w.write_record(h).map_err(broke)?;
     }
     for r in rows {
         w.write_record(&r).map_err(broke)?;
     }
-    let bytes = w
-        .into_inner()
-        .map_err(|e| fail(format!("writing the CSV: {e}")))?;
+    let bytes = w.into_inner().map_err(broke)?;
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
@@ -594,15 +594,16 @@ fn aggregate(t: &Table, keys: &[usize], spec: &str, clock: &mut Clock) -> R<Stri
         rows: usize,
         vals: Vec<Vec<Value>>,
     }
+    let group = |key| Group {
+        key,
+        rows: 0,
+        vals: vec![Vec::new(); slots.len()],
+    };
     let mut groups: Vec<Group> = Vec::new();
     let mut index: HashMap<Vec<String>, usize> = HashMap::new();
     if keys.is_empty() {
         // agg: one group, even over no rows (count 0, sum 0).
-        groups.push(Group {
-            key: Vec::new(),
-            rows: 0,
-            vals: vec![Vec::new(); slots.len()],
-        });
+        groups.push(group(Vec::new()));
         index.insert(Vec::new(), 0);
     }
     for r in &t.rows {
@@ -612,11 +613,7 @@ fn aggregate(t: &Table, keys: &[usize], spec: &str, clock: &mut Clock) -> R<Stri
             Some(&g) => g,
             None => {
                 index.insert(key.clone(), groups.len());
-                groups.push(Group {
-                    key,
-                    rows: 0,
-                    vals: vec![Vec::new(); slots.len()],
-                });
+                groups.push(group(key));
                 groups.len() - 1
             }
         };
