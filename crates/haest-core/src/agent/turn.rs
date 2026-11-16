@@ -9,7 +9,7 @@ use crate::{
     agent::Agent,
     caps::{TurnCaps, estimate_request_tokens},
     deps::AgentHooks,
-    events::{EventSink, LoopEvent, TurnEnd},
+    events::{EventSink, LoopEvent, TurnOutcome},
     guard::TurnGuard,
     media::user_message,
     messages::{AssistantMessage, AssistantPart, Message, StopReason, ToolCall, Usage},
@@ -42,7 +42,7 @@ impl<'s> Turn<'s> {
     }
 
     /// The `TurnEnd` event, then the same ending for the caller.
-    pub(super) fn finish(&mut self, end: TurnEnd, started: Instant) -> TurnEnd {
+    pub(super) fn finish(&mut self, end: TurnOutcome, started: Instant) -> TurnOutcome {
         self.sink.emit(LoopEvent::TurnEnd {
             stop_reason: end.stop_reason,
             usage: self.usage.clone(),
@@ -92,13 +92,13 @@ impl Agent {
     }
 
     /// A turn stops on its own only before a model call: every tool call already has its result.
-    pub(super) async fn steps(&mut self, t: &mut Turn<'_>) -> TurnEnd {
+    pub(super) async fn steps(&mut self, t: &mut Turn<'_>) -> TurnOutcome {
         loop {
             if t.cancel.is_cancelled() {
-                return TurnEnd::new(StopReason::Aborted);
+                return TurnOutcome::new(StopReason::Aborted);
             }
             if let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref()) {
-                return TurnEnd::with_error(StopReason::MaxTokens, over);
+                return TurnOutcome::with_error(StopReason::MaxTokens, over);
             }
             if let Some(end) = self.step(t).await {
                 return end;
@@ -107,7 +107,7 @@ impl Agent {
     }
 
     /// One model call and the tools it asked for. How the turn ends, or None to go on.
-    async fn step(&mut self, t: &mut Turn<'_>) -> Option<TurnEnd> {
+    async fn step(&mut self, t: &mut Turn<'_>) -> Option<TurnOutcome> {
         let cancel = t.cancel.clone();
         let ready = self
             .deps
@@ -121,21 +121,21 @@ impl Agent {
         // Cancelled while the hook ran (an Esc during the summary): the turn
         // was aborted, whatever the hook made of it.
         if cancel.is_cancelled() {
-            return Some(TurnEnd::new(StopReason::Aborted));
+            return Some(TurnOutcome::new(StopReason::Aborted));
         }
         if let Err(why) = ready {
-            return Some(TurnEnd::with_error(StopReason::Error, why.to_string()));
+            return Some(TurnOutcome::with_error(StopReason::Error, why.to_string()));
         }
         if side != Usage::default()
             && let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref())
         {
-            return Some(TurnEnd::with_error(StopReason::MaxTokens, over));
+            return Some(TurnOutcome::with_error(StopReason::MaxTokens, over));
         }
         let msg = self.call_model(t).await;
         t.usage.add(&msg.usage);
         t.guard.called(&msg.usage);
         if matches!(msg.stop_reason, StopReason::Error | StopReason::Aborted) {
-            return Some(TurnEnd {
+            return Some(TurnOutcome {
                 stop_reason: msg.stop_reason,
                 error: msg.error_message,
             });
@@ -143,7 +143,7 @@ impl Agent {
         let calls: Vec<ToolCall> = msg.tool_calls().cloned().collect();
         if calls.is_empty() {
             let steered = self.inject_queued(t).await;
-            return (!steered).then(|| TurnEnd::new(msg.stop_reason));
+            return (!steered).then(|| TurnOutcome::new(msg.stop_reason));
         }
         self.run_tools(&calls, t).await;
         let nudge = t.guard.nudge(&t.usage, self.turn_caps().as_ref());

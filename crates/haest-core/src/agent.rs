@@ -30,7 +30,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     caps::TurnCaps,
     deps::AgentDeps,
-    events::{EventSink, TurnEnd},
+    events::{EventSink, TurnOutcome},
     guard::TurnGuard,
     media::fit_for_model,
     messages::{Message, StopReason, Usage},
@@ -357,16 +357,16 @@ impl Agent {
     ///
     /// A provider error, an unknown model spec and a tool that fails or
     /// panics are values, not panics: the turn goes on, or ends with a
-    /// `TurnEnd` saying why. (A hook that panics is the host's own panic.)
+    /// `TurnOutcome` saying why. (A hook that panics is the host's own panic.)
     /// Called while a turn of this agent is already running (from inside a
     /// hook), it ends at once with [`StopReason::Error`] and touches nothing.
-    pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnEnd {
+    pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
         let started = Instant::now();
         let cancel = match self.control.begin() {
             Ok(c) => c,
             Err(e) => {
                 let mut turn = Turn::new(CancellationToken::new(), self.guard(), sink);
-                return turn.finish(TurnEnd::with_error(StopReason::Error, e), started);
+                return turn.finish(TurnOutcome::with_error(StopReason::Error, e), started);
             }
         };
         let _running = Running(self.control.clone());

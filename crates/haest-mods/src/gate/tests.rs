@@ -18,7 +18,7 @@ fn bash(command: &str) -> ApprovalRequest {
 
 #[tokio::test]
 async fn always_covers_that_exact_command_not_every_later_irreversible_one() {
-    let human = Human::answering([Answer::AllowAlways]);
+    let human = Human::answering([ApprovalAnswer::AllowAlways]);
     let gate = ApprovalGate::new(human.clone());
     let none = CancellationToken::new();
     assert_eq!(
@@ -48,7 +48,7 @@ async fn always_covers_that_exact_command_not_every_later_irreversible_one() {
 
 #[tokio::test]
 async fn an_ask_under_an_already_interrupted_turn_is_a_deny_at_once_never_a_prompt() {
-    let human = Human::answering([Answer::Allow]);
+    let human = Human::answering([ApprovalAnswer::Allow]);
     let gate = ApprovalGate::new(human.clone());
     let interrupted = CancellationToken::new();
     interrupted.cancel();
@@ -70,7 +70,7 @@ async fn an_ask_nobody_answers_is_a_deny_after_the_timeout() {
 
 #[tokio::test]
 async fn revoking_always_for_a_tool_makes_its_asks_prompt_again() {
-    let human = Human::answering([Answer::AllowAlways, Answer::Deny]);
+    let human = Human::answering([ApprovalAnswer::AllowAlways, ApprovalAnswer::Deny]);
     let gate = ApprovalGate::new(human.clone());
     let none = CancellationToken::new();
     assert_eq!(gate.ask(bash("rm -rf a"), &none).await, Decision::Allow);

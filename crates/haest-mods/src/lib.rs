@@ -291,7 +291,7 @@ mod testkit;
 pub use api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModError, ModToolCall, ModUi};
 pub use approval::{ApprovalMod, AutoJudge, BashVerdict, irreversible_reason};
 pub use decorate::{ModSystemPrompt, ModTools};
-pub use gate::{ASK_TIMEOUT, Answer, ApprovalGate, Prompter};
+pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, Prompter};
 pub use js::JsMod;
 pub use loader::{ModConfig, load_mods, mod_files};
 pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PlanListener, PlanMod};

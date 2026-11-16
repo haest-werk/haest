@@ -64,7 +64,7 @@ async fn a_text_only_answer_ends_the_turn_after_one_model_call() {
     let (stop, usage, _) = end(&events);
     assert_eq!(stop, StopReason::EndTurn);
     assert_eq!(usage.input, 10);
-    assert_eq!(returned, TurnEnd::new(StopReason::EndTurn));
+    assert_eq!(returned, TurnOutcome::new(StopReason::EndTurn));
 }
 
 #[tokio::test]

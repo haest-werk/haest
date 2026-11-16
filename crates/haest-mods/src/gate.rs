@@ -20,7 +20,7 @@ use crate::api::{ApprovalRequest, Decision};
 
 /// How the human answered one prompt: what a [`Prompter`] returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Answer {
+pub enum ApprovalAnswer {
     /// Allow this one call.
     Allow,
     /// Allow, and every later ask with the same tool and key.
@@ -39,7 +39,7 @@ pub trait Prompter: Send + Sync {
     /// Ask and wait for the answer. The future is dropped when the ask is
     /// withdrawn (interrupt, timeout): a late answer must go nowhere, so take
     /// the prompt down when it is dropped.
-    async fn prompt(&self, req: &ApprovalRequest) -> Answer;
+    async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer;
     /// An ask an earlier ALWAYS answered, without a prompt: show it, so the
     /// human's record of what ran stays complete. Default: nothing.
     fn auto_approved(&self, _req: &ApprovalRequest) {}
@@ -77,7 +77,7 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// use async_trait::async_trait;
 /// use haest_core::{ShutWorkspace, ToolContext, workspace::WorkspaceMode};
 /// use haest_mods::{
-///     Answer, ApprovalGate, ApprovalMod, ApprovalRequest, Decision, ModEnv, ModUi, ModTools,
+///     ApprovalAnswer, ApprovalGate, ApprovalMod, ApprovalRequest, Decision, ModEnv, ModUi, ModTools,
 ///     Mods, Prompter,
 /// };
 /// use serde_json::json;
@@ -100,10 +100,10 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 ///
 /// #[async_trait]
 /// impl Prompter for Human {
-///     async fn prompt(&self, req: &ApprovalRequest) -> Answer {
+///     async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer {
 ///         let mut seen = self.0.lock().unwrap();
 ///         seen.push(req.input_preview.clone());
-///         if seen.len() == 1 { Answer::AllowAlways } else { Answer::Deny }
+///         if seen.len() == 1 { ApprovalAnswer::AllowAlways } else { ApprovalAnswer::Deny }
 ///     }
 /// }
 ///
@@ -191,16 +191,16 @@ impl<P: Prompter> ApprovalGate<P> {
         }
         let answer = tokio::select! {
             a = self.prompter.prompt(&req) => a,
-            _ = cancel.cancelled() => Answer::Deny,
-            _ = tokio::time::sleep(self.timeout) => Answer::Deny,
+            _ = cancel.cancelled() => ApprovalAnswer::Deny,
+            _ = tokio::time::sleep(self.timeout) => ApprovalAnswer::Deny,
         };
         match answer {
-            Answer::Allow => Decision::Allow,
-            Answer::AllowAlways => {
+            ApprovalAnswer::Allow => Decision::Allow,
+            ApprovalAnswer::AllowAlways => {
                 self.always.lock().unwrap().insert(key);
                 Decision::Allow
             }
-            Answer::Deny => Decision::Deny,
+            ApprovalAnswer::Deny => Decision::Deny,
         }
     }
 

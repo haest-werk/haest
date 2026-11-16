@@ -13,7 +13,7 @@ use crate::{
     haest::{
         core::fs::MemFs,
         core::session::JsonlSessionFile,
-        mods::{Answer, ApprovalRequest, Prompter},
+        mods::{ApprovalAnswer, ApprovalRequest, Prompter},
     },
 };
 
@@ -54,7 +54,7 @@ pub struct Deny;
 
 #[async_trait]
 impl Prompter for Deny {
-    async fn prompt(&self, _: &ApprovalRequest) -> Answer {
-        Answer::Deny
+    async fn prompt(&self, _: &ApprovalRequest) -> ApprovalAnswer {
+        ApprovalAnswer::Deny
     }
 }

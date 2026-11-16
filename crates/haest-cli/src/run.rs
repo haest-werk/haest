@@ -6,7 +6,7 @@
 use std::{process::ExitCode, time::Duration};
 
 use haest::{
-    AgentControl, LoopEvent, StopReason, TurnEnd,
+    AgentControl, LoopEvent, StopReason, TurnOutcome,
     runtime::{RuntimeHooks, session_usd, world::kill_jobs},
     tools::JobHub,
 };
@@ -79,7 +79,7 @@ fn watch_interrupts(rt: &Runtime, mut done: oneshot::Receiver<()>) -> JoinHandle
     })
 }
 
-pub async fn turn(rt: &mut Runtime, input: &str) -> TurnEnd {
+pub async fn turn(rt: &mut Runtime, input: &str) -> TurnOutcome {
     let term = rt.ui.term.clone();
     let (done, watching) = oneshot::channel();
     let watcher = watch_interrupts(rt, watching);
@@ -104,7 +104,7 @@ pub async fn turn(rt: &mut Runtime, input: &str) -> TurnEnd {
 
 /// A turn the human started: the mods' `prompt.submit` may rewrite the text
 /// first, then anything the gate held rides in ahead of it.
-pub async fn human(rt: &mut Runtime, input: &str) -> TurnEnd {
+pub async fn human(rt: &mut Runtime, input: &str) -> TurnOutcome {
     let text = rt.mods.rewrite_prompt(input).await;
     let text = rt.inbox.human(&text);
     turn(rt, &text).await
@@ -141,7 +141,7 @@ pub async fn settle(rt: &mut Runtime) {
 }
 
 /// How a print-mode run exits: 0 answered, 130 interrupted, 1 anything else.
-pub fn exit_code(end: &TurnEnd) -> ExitCode {
+pub fn exit_code(end: &TurnOutcome) -> ExitCode {
     match end.stop_reason {
         StopReason::Aborted => ExitCode::from(130),
         StopReason::EndTurn if end.error.is_none() => ExitCode::SUCCESS,
@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn only_a_clean_answer_exits_zero() {
         let code = |r, e: Option<&str>| {
-            let mut end = TurnEnd::new(r);
+            let mut end = TurnOutcome::new(r);
             end.error = e.map(String::from);
             exit_code(&end)
         };

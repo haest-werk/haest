@@ -36,7 +36,7 @@ use async_trait::async_trait;
 use haest::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, Effort,
     ExecResult, Fs, LoopEvent, MemFs, Message, ModelError, Provider, ProviderEvent,
-    ProviderRequest, ResolvedModel, StopReason, ToolCall, TurnEnd, Usage, Workspace,
+    ProviderRequest, ResolvedModel, StopReason, ToolCall, TurnOutcome, Usage, Workspace,
     core::provider::ProviderStream,
     core::shell_command::{ShellCall, ShellCommand},
     core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
@@ -347,13 +347,13 @@ fn main_rig(main: Vec<Vec<AssistantPart>>) -> Rig {
 }
 
 impl Rig {
-    async fn turn(&mut self, text: &str) -> TurnEnd {
+    async fn turn(&mut self, text: &str) -> TurnOutcome {
         self.agent.run(text, &mut self.events).await
     }
 
     /// A turn that ends on the model's answer.
     async fn answered(&mut self, text: &str) {
-        assert_eq!(self.turn(text).await, TurnEnd::new(StopReason::EndTurn));
+        assert_eq!(self.turn(text).await, TurnOutcome::new(StopReason::EndTurn));
     }
 
     /// The agent again, over the host's deps as `edit` changes them.

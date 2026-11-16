@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     RuntimeHooks,
     haest::{
-        Agent, Effort, EventSink, TurnEnd,
+        Agent, Effort, EventSink, TurnOutcome,
         core::fs::Fs,
         core::session::SessionRecord,
         core::skills::{Skill, SkillScanRoots, skills_in},
@@ -80,7 +80,7 @@ impl<U: ?Sized> Runtime<U> {
     /// One turn of main: `input` (the human's text after the mods and the
     /// inbox, or a turn the inbox holds), every event to `sink`. What reaches
     /// the [`inbox`](Self::inbox) while it runs is steered into it.
-    pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnEnd {
+    pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
         let control = self.agent.control();
         let run = self.agent.run(input, sink);
         tokio::pin!(run);

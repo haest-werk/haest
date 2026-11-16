@@ -10,7 +10,7 @@ use crate::{
     haest::{
         Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
         ModelError, Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason, Tool,
-        TurnEnd,
+        TurnOutcome,
         core::ledger::{ConversationCaps, Ledger},
         core::provider::ProviderStream,
         core::testing::{ScriptedProvider, text_answer},
@@ -51,7 +51,7 @@ fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<M
     (agent, ledger)
 }
 
-async fn turn(agent: &mut Agent) -> TurnEnd {
+async fn turn(agent: &mut Agent) -> TurnOutcome {
     let mut events: Vec<LoopEvent> = Vec::new();
     agent.run("go", &mut events).await
 }
@@ -104,7 +104,7 @@ async fn an_esc_while_the_summary_is_written_ends_the_turn_cancelled_with_no_fai
     let (mut agent, _) = full(&hooks, esc.clone());
     let _ = esc.control.set(agent.control());
     let end = turn(&mut agent).await;
-    assert_eq!(end, TurnEnd::new(StopReason::Aborted));
+    assert_eq!(end, TurnOutcome::new(StopReason::Aborted));
     assert_eq!(ui.warnings(), Vec::<String>::new(), "no failure shown");
     assert_eq!(replies.requests().len(), 1, "the summary call only");
 }

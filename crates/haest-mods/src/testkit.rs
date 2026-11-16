@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     api::{ApprovalRequest, Decision, ModEnv, ModUi},
     decorate::ModTools,
-    gate::{Answer, Prompter},
+    gate::{ApprovalAnswer, Prompter},
     js::{JsMod, Limits},
     registry::Mods,
 };
@@ -90,13 +90,13 @@ impl ModUi for TestUi {
 /// answers), counting the prompts and the asks an earlier ALWAYS answered.
 #[derive(Default)]
 pub(crate) struct Human {
-    answers: Mutex<VecDeque<Answer>>,
+    answers: Mutex<VecDeque<ApprovalAnswer>>,
     prompts: AtomicUsize,
     receipts: AtomicUsize,
 }
 
 impl Human {
-    pub fn answering(answers: impl IntoIterator<Item = Answer>) -> Arc<Self> {
+    pub fn answering(answers: impl IntoIterator<Item = ApprovalAnswer>) -> Arc<Self> {
         Arc::new(Self {
             answers: Mutex::new(answers.into_iter().collect()),
             ..Default::default()
@@ -112,7 +112,7 @@ impl Human {
 
 #[async_trait]
 impl Prompter for Arc<Human> {
-    async fn prompt(&self, _req: &ApprovalRequest) -> Answer {
+    async fn prompt(&self, _req: &ApprovalRequest) -> ApprovalAnswer {
         self.prompts.fetch_add(1, Ordering::SeqCst);
         let next = self.answers.lock().unwrap().pop_front();
         match next {

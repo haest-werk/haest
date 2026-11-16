@@ -18,7 +18,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    Answer, ApprovalGate, ApprovalMod, ApprovalRequest, CommandOutcome, Decision, ModEnv,
+    ApprovalAnswer, ApprovalGate, ApprovalMod, ApprovalRequest, CommandOutcome, Decision, ModEnv,
     ModSystemPrompt, ModTools, ModUi, Mods, PLAN_PROMPT, PlanMod, testkit::*,
 };
 
@@ -60,7 +60,7 @@ fn tool_results(agent: &Agent) -> Vec<&ToolResultMessage> {
 #[tokio::test]
 async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_lets_the_next_through()
 {
-    let human = Human::answering([Answer::Deny, Answer::AllowAlways]);
+    let human = Human::answering([ApprovalAnswer::Deny, ApprovalAnswer::AllowAlways]);
     // A prompt past those two answers is a deny soon, not a hang.
     let gate = ApprovalGate::new(human.clone()).with_timeout(Duration::from_secs(5));
     let ui = Arc::new(GateUi(gate));

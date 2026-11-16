@@ -3,7 +3,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use haest::{
-    Agent, AgentOptions, ShutWorkspace, StopReason, TurnEnd,
+    Agent, AgentOptions, ShutWorkspace, StopReason, TurnOutcome,
     core::session::{SessionRecord, SessionSink, replay},
     core::tool::Tool,
     tools::agents::AgentRef,
@@ -93,7 +93,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         .await;
     assert_eq!(
         end,
-        TurnEnd::new(StopReason::EndTurn),
+        TurnOutcome::new(StopReason::EndTurn),
         "the work run ends on its own"
     );
 
@@ -227,7 +227,7 @@ pub async fn dream(gateway: &Arc<Gateway>) {
     ]);
     let mut doc = DocSink::default();
     let end = agent.run("Dream.", &mut doc).await;
-    assert_eq!(end, TurnEnd::new(StopReason::EndTurn));
+    assert_eq!(end, TurnOutcome::new(StopReason::EndTurn));
     let requests = gateway.take_requests();
     assert_eq!(requests.len(), 2);
     // The dream's settings took write, edit and the agents away.

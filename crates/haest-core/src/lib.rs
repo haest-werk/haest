@@ -220,7 +220,7 @@ pub use prelude::*;
 pub mod prelude {
     pub use crate::agent::{Agent, AgentControl, AgentOptions};
     pub use crate::deps::{AgentDeps, AgentHooks, NoHooks, SystemPrompt, now_ms};
-    pub use crate::events::{EventSink, LoopEvent, TurnEnd};
+    pub use crate::events::{EventSink, LoopEvent, TurnOutcome};
     pub use crate::fs::{Fs, MemFs};
     pub use crate::handed::{ChildEnv, KeySource};
     pub use crate::messages::{

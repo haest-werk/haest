@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest::{
-    mods::{Answer, ApprovalRequest, Prompter},
+    mods::{ApprovalAnswer, ApprovalRequest, Prompter},
     runtime::Ui,
 };
 
@@ -34,23 +34,23 @@ fn question(req: &ApprovalRequest) -> String {
 }
 
 /// y / yes, a / always; anything else (an empty line included) is no.
-fn answer(line: Option<&str>) -> Answer {
+fn answer(line: Option<&str>) -> ApprovalAnswer {
     match line.map(|l| l.trim().to_ascii_lowercase()).as_deref() {
-        Some("y" | "yes") => Answer::Allow,
-        Some("a" | "always") => Answer::AllowAlways,
-        _ => Answer::Deny,
+        Some("y" | "yes") => ApprovalAnswer::Allow,
+        Some("a" | "always") => ApprovalAnswer::AllowAlways,
+        _ => ApprovalAnswer::Deny,
     }
 }
 
 #[async_trait]
 impl Prompter for TermPrompter {
-    async fn prompt(&self, req: &ApprovalRequest) -> Answer {
+    async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer {
         if !self.interactive {
             self.ui.warn(&format!(
                 "Denied {}: {} -- approval needed and there is no terminal to ask on (--approvals=false turns approvals off).",
                 req.tool_name, req.description
             ));
-            return Answer::Deny;
+            return ApprovalAnswer::Deny;
         }
         let _terminal = match self.ui.stdin.try_lock() {
             Ok(free) => free,
@@ -85,11 +85,11 @@ mod tests {
 
     #[test]
     fn only_yes_or_always_allow_and_silence_is_no() {
-        assert_eq!(answer(Some("y\n")), Answer::Allow);
-        assert_eq!(answer(Some(" YES ")), Answer::Allow);
-        assert_eq!(answer(Some("a\n")), Answer::AllowAlways);
-        assert_eq!(answer(Some("\n")), Answer::Deny);
-        assert_eq!(answer(Some("sure")), Answer::Deny);
-        assert_eq!(answer(None), Answer::Deny);
+        assert_eq!(answer(Some("y\n")), ApprovalAnswer::Allow);
+        assert_eq!(answer(Some(" YES ")), ApprovalAnswer::Allow);
+        assert_eq!(answer(Some("a\n")), ApprovalAnswer::AllowAlways);
+        assert_eq!(answer(Some("\n")), ApprovalAnswer::Deny);
+        assert_eq!(answer(Some("sure")), ApprovalAnswer::Deny);
+        assert_eq!(answer(None), ApprovalAnswer::Deny);
     }
 }

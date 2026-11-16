@@ -60,7 +60,7 @@
 //!
 //! use async_trait::async_trait;
 //! use haest_core::fs::{Fs, MemFs};
-//! use haest_mods::{Answer, ApprovalRequest, Prompter};
+//! use haest_mods::{ApprovalAnswer, ApprovalRequest, Prompter};
 //! use haest_runtime::{BuildOptions, RuntimeInputs, Ui, World, build};
 //! use haest_settings::{BuiltinTools, ContextSources, Settings};
 //!
@@ -84,8 +84,8 @@
 //!
 //! #[async_trait]
 //! impl Prompter for DenyAll {
-//!     async fn prompt(&self, _: &ApprovalRequest) -> Answer {
-//!         Answer::Deny
+//!     async fn prompt(&self, _: &ApprovalRequest) -> ApprovalAnswer {
+//!         ApprovalAnswer::Deny
 //!     }
 //! }
 //!
