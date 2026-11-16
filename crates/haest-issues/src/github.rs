@@ -1,23 +1,4 @@
-//! GitHub Issues as a [`Tracker`](crate::Tracker): the issues of one
-//! repository, over the REST API. Deleting an issue is the one GraphQL call
-//! (REST has no endpoint for it).
-//!
-//! | Tracker | GitHub |
-//! |---|---|
-//! | id | the issue number (`42`; `owner/repo#42` for another repository's issue in a link) |
-//! | status `open` / `closed` / `not_planned` | `state` + `state_reason` (`completed`, `not_planned`) |
-//! | labels | labels (created on the fly by GitHub when new) |
-//! | priority | none: GitHub issues have no priority field |
-//! | parent / child | sub-issues |
-//! | depends_on / blocks | issue dependencies ("blocked by" / "blocking") |
-//! | relates_to | none |
-//!
-//! The token is the host's: handed in with [`GithubTracker::with_token`], never
-//! read from the environment. Without one, public repositories can be read.
-//! Deleting an issue needs a token with admin rights on the repository.
-//!
-//! PLUG POINT: [`GithubTracker::with_http`], how the requests travel (any
-//! [`HttpClient`]; the shared [`ReqwestClient`] by default).
+//! [`GithubTracker`]: GitHub Issues as a [`Tracker`](crate::Tracker).
 
 use std::{fmt, sync::Arc};
 
@@ -36,6 +17,26 @@ use wire::{STATUSES, is_pull_request};
 const API: &str = "https://api.github.com";
 
 /// The issues of one GitHub repository, as a [`Tracker`](crate::Tracker).
+///
+/// Over the REST API; deleting an issue is the one GraphQL call (REST has
+/// no endpoint for it).
+///
+/// | Tracker | GitHub |
+/// |---|---|
+/// | id | the issue number (`42`; `owner/repo#42` for another repository's issue in a link) |
+/// | status `open` / `closed` / `not_planned` | `state` + `state_reason` (`completed`, `not_planned`) |
+/// | labels | labels (created on the fly by GitHub when new) |
+/// | priority | none: GitHub issues have no priority field |
+/// | parent / child | sub-issues |
+/// | depends_on / blocks | issue dependencies ("blocked by" / "blocking") |
+/// | relates_to | none |
+///
+/// The token is the host's: handed in with [`GithubTracker::with_token`], never
+/// read from the environment. Without one, public repositories can be read.
+/// Deleting an issue needs a token with admin rights on the repository.
+///
+/// PLUG POINT: [`GithubTracker::with_http`], how the requests travel (any
+/// [`HttpClient`]; the shared [`ReqwestClient`] by default).
 ///
 /// Statuses are `open`, `closed` and `not_planned`; there are no priorities;
 /// the relations are parent / child (sub-issues) and depends_on / blocks
@@ -58,8 +59,7 @@ const API: &str = "https://api.github.com";
 /// use std::sync::Arc;
 ///
 /// use haest_issues::{
-///     IssueFilter, Tracker,
-///     github::GithubTracker,
+///     GithubTracker, IssueFilter, Tracker,
 ///     http::{HttpClient, HttpError, Request, Response, async_trait},
 /// };
 /// use serde_json::json;

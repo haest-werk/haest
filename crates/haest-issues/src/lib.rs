@@ -9,9 +9,9 @@
 //! - [`Tracker`] is the contract the tools talk to (list, search, get,
 //!   create, update, delete, link). Implement it for another tracker and every
 //!   tool works on it unchanged.
-//! - [`github::GithubTracker`]: the issues of one GitHub repository, over the
+//! - [`GithubTracker`]: the issues of one GitHub repository, over the
 //!   REST API; the token is the host's to hand in.
-//! - [`cards::CardTracker`]: board cards, one markdown file per card with its
+//! - [`CardTracker`]: board cards, one markdown file per card with its
 //!   fields in YAML frontmatter, in a directory the host names.
 //! - [`issue_tools`]: the seven haest tools (IssueList, IssueSearch, IssueGet,
 //!   IssueCreate, IssueUpdate, IssueDelete, IssueLink) over any tracker;
@@ -27,7 +27,7 @@
 //! use std::sync::Arc;
 //!
 //! use haest_core::{MemFs, ShutWorkspace, ToolContext};
-//! use haest_issues::{Tracker, cards::CardTracker, issue_tools};
+//! use haest_issues::{CardTracker, Tracker, issue_tools};
 //! use serde_json::json;
 //!
 //! # #[tokio::main(flavor = "current_thread")]
@@ -64,7 +64,7 @@
 //! ```
 //! use std::sync::Arc;
 //!
-//! use haest_issues::{github::GithubTracker, issue_tools_named};
+//! use haest_issues::{GithubTracker, issue_tools_named};
 //!
 //! let github = GithubTracker::new("owner", "repo").with_token("a token the host holds");
 //! let tools = issue_tools_named(Arc::new(github), "Github");
@@ -94,7 +94,7 @@
 //!
 //! [`http::HttpClient`] is a plug point in haest's style: the one narrow trait
 //! the model calls and the tools send through, a reqwest default, a fake in the tests
-//! ([`GithubTracker::with_http`](github::GithubTracker::with_http)).
+//! ([`GithubTracker::with_http`]).
 //!
 //! [`ToolError::Input`]: haest_core::tool::ToolError::Input
 //! [`ToolError::Failed`]: haest_core::tool::ToolError::Failed
@@ -102,8 +102,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
-pub mod cards;
-pub mod github;
+mod cards;
+mod github;
 #[cfg(test)]
 mod testkit;
 mod tools;
@@ -114,6 +114,8 @@ mod tracker;
 #[doc(inline)]
 pub use haest_http as http;
 
+pub use cards::CardTracker;
+pub use github::GithubTracker;
 pub use tools::{DELETE_KIND, issue_tools, issue_tools_named};
 pub use tracker::{
     Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, Tracker, TrackerError,

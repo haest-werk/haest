@@ -17,7 +17,7 @@ use haest_core::{
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::{Tool, ToolContext},
 };
-use haest_issues::{Tracker, cards::CardTracker, github::GithubTracker, issue_tools};
+use haest_issues::{CardTracker, GithubTracker, Tracker, issue_tools};
 use haest_workspace::RealFs;
 use serde_json::json;
 

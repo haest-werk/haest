@@ -21,7 +21,7 @@ two backends.
 
 ```rust
 use std::sync::Arc;
-use haest_issues::{cards::CardTracker, github::GithubTracker, issue_tools, issue_tools_named};
+use haest_issues::{CardTracker, GithubTracker, issue_tools, issue_tools_named};
 use haest_workspace::RealFs;
 
 // GitHub: the token is yours to hand in; nothing is read from the environment.

@@ -4,7 +4,7 @@
 //! Its own test binary: it reads the process-wide TLS provider, which any
 //! test that sends a request installs.
 
-use haest_issues::github::GithubTracker;
+use haest_issues::GithubTracker;
 
 #[test]
 fn making_a_tracker_builds_no_client_and_sets_up_no_tls() {

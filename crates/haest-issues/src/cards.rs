@@ -1,20 +1,4 @@
-//! Board cards as a [`Tracker`](crate::Tracker): one markdown file per card,
-//! `<id>.md` in one directory, its frontmatter the card's fields and its body
-//! the description.
-//!
-//! | Tracker | Card |
-//! |---|---|
-//! | id | the file name without `.md`, derived from the title at create and never changed |
-//! | status | `status:` (inbox, open, in-progress, in-review, done, archived); the file never moves |
-//! | priority | `priority:` (low, medium, high) |
-//! | labels | `tags:` |
-//! | parent / child | `epic:` on the child |
-//! | depends_on / blocks | `depends_on:` on the one that waits |
-//! | relates_to | `relates_to:` (read both ways) |
-//!
-//! Every key the card has survives a write, unknown ones included, so a card
-//! another program wrote keeps what that program put there. The directory and
-//! the file system are the host's: nothing here picks a path.
+//! [`CardTracker`]: board cards as a [`Tracker`](crate::Tracker).
 
 use std::{
     io::ErrorKind,
@@ -39,8 +23,23 @@ mod links;
 use card::{ID_MAX, check_id, issue_of};
 use front::Front;
 
-/// A [`Tracker`](crate::Tracker) over a directory of markdown cards (the
-/// [module docs](self) map each field to its frontmatter key).
+/// A [`Tracker`](crate::Tracker) over a directory of markdown cards: one
+/// file per card, `<id>.md` in one directory, its frontmatter the card's
+/// fields and its body the description.
+///
+/// | Tracker | Card |
+/// |---|---|
+/// | id | the file name without `.md`, derived from the title at create and never changed |
+/// | status | `status:` (inbox, open, in-progress, in-review, done, archived); the file never moves |
+/// | priority | `priority:` (low, medium, high) |
+/// | labels | `tags:` |
+/// | parent / child | `epic:` on the child |
+/// | depends_on / blocks | `depends_on:` on the one that waits |
+/// | relates_to | `relates_to:` (read both ways) |
+///
+/// Every key the card has survives a write, unknown ones included, so a card
+/// another program wrote keeps what that program put there. The directory and
+/// the file system are the host's: nothing here picks a path.
 ///
 /// - **Statuses** inbox, open, in-progress, in-review, done, archived. A new
 ///   card starts in the inbox; a list with no statuses given shows the first
@@ -71,7 +70,7 @@ use front::Front;
 /// use std::sync::Arc;
 ///
 /// use haest_core::{Fs, MemFs};
-/// use haest_issues::{Link, LinkChange, NewIssue, Relation, Tracker, cards::CardTracker};
+/// use haest_issues::{CardTracker, Link, LinkChange, NewIssue, Relation, Tracker};
 ///
 /// # #[tokio::main]
 /// # async fn main() {
