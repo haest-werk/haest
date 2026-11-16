@@ -55,10 +55,6 @@ const MAX_MATCHES: usize = 5;
 
 type Tools = Vec<Arc<dyn Tool>>;
 
-/// MCP tools a conversation host needs on every turn, by name suffix: a reply to
-/// another conversation must not wait on a ToolSearch.
-pub const DEFAULT_ALWAYS_LOADED: [&str; 2] = ["__send_message", "__list_conversations"];
-
 /// Exact `select:a,b`, else keyword match over name + description, best first (at most 5).
 ///
 /// `select:` returns the named tools in `pool` order, unknown names skipped.
@@ -102,8 +98,8 @@ pub fn search_tools(pool: &[Arc<dyn Tool>], query: &str) -> Vec<Arc<dyn Tool>> {
 /// One agent's deferral state: which deferred tools it has loaded. Shared (`Arc`)
 /// between the host's tool source and the ToolSearch tool that loads them.
 ///
-/// By default MCP tools (names starting `mcp__`) defer, except those ending
-/// in one of [`DEFAULT_ALWAYS_LOADED`].
+/// By default MCP tools (names starting `mcp__`) defer, except those a host
+/// keeps loaded ([`with_always_loaded`](Self::with_always_loaded)).
 ///
 /// # Examples
 ///
@@ -172,12 +168,14 @@ impl ToolDeferral {
         Self {
             mode,
             loaded: Mutex::default(),
-            always_loaded: DEFAULT_ALWAYS_LOADED.map(String::from).to_vec(),
+            always_loaded: Vec::new(),
             all_but: None,
         }
     }
 
-    /// Name suffixes of MCP tools that are never deferred (replaces the default).
+    /// Name suffixes of MCP tools that are never deferred: the ones a turn
+    /// must not wait on a ToolSearch for (a host's `__send_message`, so a
+    /// reply to another conversation goes out at once). None by default.
     pub fn with_always_loaded(mut self, suffixes: impl IntoIterator<Item = String>) -> Self {
         self.always_loaded = suffixes.into_iter().collect();
         self

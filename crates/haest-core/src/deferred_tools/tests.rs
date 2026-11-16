@@ -85,6 +85,13 @@ fn nothing_deferrable_adds_no_search_tool() {
 }
 
 #[test]
+fn no_mcp_tool_is_kept_loaded_unless_a_host_names_it() {
+    let d = ToolDeferral::new(DeferMode::Proxy);
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Named("mcp__host__send_message", "send"))];
+    assert_eq!(names(&d.advertise(&tools, marker)), ["ToolSearch"]);
+}
+
+#[test]
 fn a_host_names_its_own_always_loaded_tools() {
     let d = ToolDeferral::new(DeferMode::Proxy).with_always_loaded(["__weather".to_string()]);
     assert_eq!(

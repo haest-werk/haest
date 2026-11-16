@@ -94,8 +94,9 @@ async fn call_tool_runs_the_named_deferred_tool_with_its_input() {
 }
 
 #[test]
-fn the_messaging_tools_stay_loaded_so_a_channel_guide_can_name_them() {
-    let d = deferral(DeferMode::Proxy);
+fn a_hosts_messaging_tools_stay_loaded_so_a_channel_guide_can_name_them() {
+    let suffixes = ["__send_message", "__list_conversations"].map(String::from);
+    let d = Arc::new(ToolDeferral::new(DeferMode::Proxy).with_always_loaded(suffixes));
     let mut with_host = all();
     with_host.push(Arc::new(Fake("mcp__host__send_message", "send")));
     with_host.push(Arc::new(Fake("mcp__host__list_conversations", "list")));
