@@ -9,7 +9,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::SubagentCaps;
-use support::{Rig, call, now, say};
+use support::{Rig, call, now, say, spawns};
 
 pub(super) fn caps() -> SubagentCaps {
     SubagentCaps::default()
@@ -19,14 +19,10 @@ pub(super) fn caps() -> SubagentCaps {
 async fn a_foreground_agent_runs_its_answer_becomes_the_tool_result_and_the_host_sees_it_start_stream_and_stop()
  {
     let mut r = Rig::new(
-        now(|_, n| match n {
-            0 => vec![call(
-                "a",
-                "Agent",
-                json!({"description": "find the bug", "prompt": "look at x"}),
-            )],
-            _ => say("thanks"),
-        }),
+        spawns(
+            json!({"description": "find the bug", "prompt": "look at x"}),
+            "thanks",
+        ),
         now(|_, _| say("the bug is in x.ts")),
         caps(),
     );
@@ -45,14 +41,7 @@ async fn the_same_agent_in_a_revived_host_gets_a_new_id() {
     let mut ids = Vec::new();
     for _ in 0..2 {
         let mut r = Rig::new(
-            now(|_, n| match n {
-                0 => vec![call(
-                    "a",
-                    "Agent",
-                    json!({"description": "scout", "prompt": "p"}),
-                )],
-                _ => say("ok"),
-            }),
+            spawns(json!({"description": "scout", "prompt": "p"}), "ok"),
             now(|_, _| say("done")),
             caps(),
         );
@@ -80,14 +69,10 @@ fn no_concurrent_subagents_means_no_agent_tool_to_call_and_fail() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_subagents_system_prompt_names_its_own_tools_and_model_not_mains() {
     let mut r = Rig::new(
-        now(|_, n| match n {
-            0 => vec![call(
-                "a",
-                "Agent",
-                json!({"description": "x", "prompt": "p", "model": "fake:other-model"}),
-            )],
-            _ => say("ok"),
-        }),
+        spawns(
+            json!({"description": "x", "prompt": "p", "model": "fake:other-model"}),
+            "ok",
+        ),
         now(|_, _| say("done")),
         caps(),
     );
@@ -102,14 +87,7 @@ async fn a_subagents_system_prompt_names_its_own_tools_and_model_not_mains() {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_deepest_agent_gets_no_agent_tool_and_no_subagent_gets_the_task_list() {
     let mut r = Rig::new(
-        now(|_, n| match n {
-            0 => vec![call(
-                "a",
-                "Agent",
-                json!({"description": "leaf", "prompt": "p"}),
-            )],
-            _ => say("ok"),
-        }),
+        spawns(json!({"description": "leaf", "prompt": "p"}), "ok"),
         now(|_, _| say("leaf done")),
         SubagentCaps {
             max_depth: 1,
@@ -175,14 +153,10 @@ async fn past_the_concurrency_cap_a_spawn_is_refused_with_the_cap_named() {
 async fn a_background_agent_answers_later_as_a_message_and_send_message_reaches_main_while_it_runs()
 {
     let mut r = Rig::new(
-        now(|_, n| match n {
-            0 => vec![call(
-                "a",
-                "Agent",
-                json!({"description": "scout", "name": "scout", "prompt": "p", "run_in_background": true}),
-            )],
-            _ => say("noted"),
-        }),
+        spawns(
+            json!({"description": "scout", "name": "scout", "prompt": "p", "run_in_background": true}),
+            "noted",
+        ),
         now(|_, n| match n {
             0 => vec![call(
                 "s",
@@ -216,14 +190,10 @@ async fn a_background_answer_whose_starter_already_finished_reaches_main_instead
     let release = CancellationToken::new();
     let gate = release.clone();
     let mut r = Rig::new(
-        now(|_, n| match n {
-            0 => vec![call(
-                "a",
-                "Agent",
-                json!({"description": "mid", "name": "mid", "prompt": "p"}),
-            )],
-            _ => say("ok"),
-        }),
+        spawns(
+            json!({"description": "mid", "name": "mid", "prompt": "p"}),
+            "ok",
+        ),
         Box::new(move |req, _| {
             let gate = gate.clone();
             Box::pin(async move {
@@ -262,14 +232,7 @@ async fn a_background_answer_whose_starter_already_finished_reaches_main_instead
 #[tokio::test(flavor = "multi_thread")]
 async fn a_subagent_that_runs_past_its_step_cap_stops_and_says_so_in_its_answer() {
     let mut r = Rig::new(
-        now(|_, n| match n {
-            0 => vec![call(
-                "a",
-                "Agent",
-                json!({"description": "looper", "prompt": "p"}),
-            )],
-            _ => say("ok"),
-        }),
+        spawns(json!({"description": "looper", "prompt": "p"}), "ok"),
         now(|_, n| {
             vec![call(
                 &format!("l{n}"),

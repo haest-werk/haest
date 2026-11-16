@@ -47,6 +47,14 @@ pub fn call(id: &str, name: &str, input: Value) -> AssistantPart {
     })
 }
 
+/// Main's script: one Agent call with `input`, then `then` on every later call.
+pub fn spawns(input: Value, then: &'static str) -> Script {
+    now(move |_, n| match n {
+        0 => vec![call("a", "Agent", input.clone())],
+        _ => say(then),
+    })
+}
+
 /// Every call costs $0.01.
 pub const CALL_USD: f64 = 0.01;
 

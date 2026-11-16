@@ -13,21 +13,14 @@ use tokio::sync::Notify;
 
 use super::{
     caps,
-    support::{CALL_USD, Rig, call, now, say},
+    support::{CALL_USD, Rig, now, say, spawns},
 };
 use crate::agents::{AgentDirectory, AgentRef};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_childs_spend_counts_in_the_parents_turn_and_is_charged_to_the_ledger_once() {
     let mut r = Rig::new(
-        now(|_, n| match n {
-            0 => vec![call(
-                "a",
-                "Agent",
-                json!({"description": "x", "prompt": "p"}),
-            )],
-            _ => say("ok"),
-        }),
+        spawns(json!({"description": "x", "prompt": "p"}), "ok"),
         now(|_, _| say("done")),
         caps(),
     );
@@ -50,14 +43,10 @@ async fn a_childs_spend_counts_in_the_parents_turn_and_is_charged_to_the_ledger_
 #[tokio::test(flavor = "multi_thread")]
 async fn stop_ends_a_running_agent_and_the_post_office_refuses_who_is_not_running() {
     let mut r = Rig::new(
-        now(|_, n| match n {
-            0 => vec![call(
-                "a",
-                "Agent",
-                json!({"description": "slow", "name": "slow", "prompt": "p", "run_in_background": true}),
-            )],
-            _ => say("ok"),
-        }),
+        spawns(
+            json!({"description": "slow", "name": "slow", "prompt": "p", "run_in_background": true}),
+            "ok",
+        ),
         Box::new(|_, _| Box::pin(std::future::pending())),
         caps(),
     );
@@ -87,14 +76,10 @@ async fn a_background_answer_stays_due_until_it_has_reached_main() {
     let release = Arc::new(Notify::new());
     let wait = release.clone();
     let mut r = Rig::new(
-        now(|_, n| match n {
-            0 => vec![call(
-                "a",
-                "Agent",
-                json!({"description": "slow", "name": "slow", "prompt": "p", "run_in_background": true}),
-            )],
-            _ => say("ok"),
-        }),
+        spawns(
+            json!({"description": "slow", "name": "slow", "prompt": "p", "run_in_background": true}),
+            "ok",
+        ),
         Box::new(move |_, _| {
             let wait = wait.clone();
             Box::pin(async move {
