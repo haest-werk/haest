@@ -168,11 +168,25 @@ impl OverlayChanges {
         }
         if c.kind == ChangeKind::Deleted {
             return match disk.remove(&real, true).await {
-                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+                // Gone already, or under a directory that became a file.
+                Err(e)
+                    if !matches!(
+                        e.kind(),
+                        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                    ) =>
+                {
+                    Err(e)
+                }
                 _ => Ok(()),
             };
         }
-        if self.overlay.stat(path).await?.is_dir() {
+        let dir = self.overlay.stat(path).await?.is_dir();
+        // A directory that became a file, or a file that became a directory
+        // (`rm -rf build && echo x > build`): the old one goes first.
+        if disk.stat(&real).await.is_ok_and(|s| s.is_dir() != dir) {
+            disk.remove(&real, true).await?;
+        }
+        if dir {
             return disk.mkdir(&real, true).await;
         }
         if let Some(parent) = real.parent() {
@@ -206,21 +220,22 @@ impl ChangeSet for OverlayChanges {
     }
 
     /// Write every non-conflicting change to the real disk. Returns what was
-    /// applied and what was skipped.
+    /// applied and what was skipped: a conflict, or a change that could not be
+    /// written (a symlink the sandbox made, a disk error). One that fails
+    /// stops nothing else, and stays listed like a conflict.
     async fn apply(&self) -> io::Result<ApplyReport> {
         let mut report = ApplyReport::default();
         for s in self.scan().await {
-            if s.change.conflict {
-                // A file found inside a created directory: remember it, so it is
-                // still listed once its directory is applied.
-                let mut touched = self.book.touched.lock().unwrap();
-                touched.entry(s.path).or_insert(s.original);
-                report.skipped.push(s.change);
+            if !s.change.conflict && self.write(&s.change, &s.path).await.is_ok() {
+                self.book.touched.lock().unwrap().remove(&s.path);
+                report.applied.push(s.change);
                 continue;
             }
-            self.write(&s.change, &s.path).await?;
-            self.book.touched.lock().unwrap().remove(&s.path);
-            report.applied.push(s.change);
+            // A file found inside a created directory: remember it, so it is
+            // still listed once its directory is applied.
+            let mut touched = self.book.touched.lock().unwrap();
+            touched.entry(s.path).or_insert(s.original);
+            report.skipped.push(s.change);
         }
         Ok(report)
     }

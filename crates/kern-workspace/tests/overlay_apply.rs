@@ -110,3 +110,46 @@ async fn apply_never_writes_or_deletes_through_a_symlink_in_the_project() {
         "{left:?}"
     );
 }
+
+#[tokio::test]
+async fn a_directory_that_became_a_file_and_a_file_that_became_a_directory_are_applied() {
+    let (_t, dir) = tempdir();
+    fs::create_dir(dir.join("build")).unwrap();
+    fs::write(dir.join("build/old.o"), "obj").unwrap();
+    fs::write(dir.join("out"), "a file\n").unwrap();
+    let ws = sandbox(&dir).await;
+    run(
+        &ws,
+        &dir,
+        "echo a > build/new.o && rm -rf build && echo x > build",
+    )
+    .await;
+    run(&ws, &dir, "rm out && mkdir out && echo y > out/a").await;
+    let report = ws.changes().unwrap().apply().await.unwrap();
+    assert!(report.skipped.is_empty(), "{report:?}");
+    assert_eq!(fs::read_to_string(dir.join("build")).unwrap(), "x\n");
+    assert_eq!(fs::read_to_string(dir.join("out/a")).unwrap(), "y\n");
+    assert!(ws.changes().unwrap().list().await.is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_change_that_cannot_be_applied_is_reported_and_the_others_still_are() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("ok.txt"), "old\n").unwrap();
+    let ws = sandbox(&dir).await;
+    // A link the sandbox made: there is nothing it can be written as.
+    run(&ws, &dir, "ln -s /etc/hosts l && echo new > ok.txt").await;
+    let set = ws.changes().unwrap();
+    let report = set
+        .apply()
+        .await
+        .expect("one failed change is not a failed apply");
+    let paths =
+        |cs: &[kern_core::workspace::Change]| cs.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
+    assert_eq!(paths(&report.applied), ["/ok.txt"]);
+    assert_eq!(paths(&report.skipped), ["/l"]);
+    assert_eq!(fs::read_to_string(dir.join("ok.txt")).unwrap(), "new\n");
+    // Still listed: nothing was lost.
+    assert_eq!(paths(&set.list().await), ["/l"]);
+}
