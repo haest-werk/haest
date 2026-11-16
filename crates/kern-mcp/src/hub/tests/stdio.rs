@@ -84,6 +84,34 @@ async fn a_stdio_server_answers_calls_and_its_process_ends_on_close() {
 }
 
 #[tokio::test]
+async fn a_stdio_server_process_ends_when_the_hub_is_dropped_though_its_tools_are_held() {
+    let dir = TempDir::new();
+    let hub = McpHub::with_env(std::env::vars().collect());
+    hub.connect(&[sh("local", SH_SERVER, &dir, &[])], &|_| {})
+        .await;
+    // A loop still holds the tools it was handed when the host drops the hub.
+    let tools = hub.tools();
+    let pid = tools[0]
+        .execute(JsonMap::new(), &ctx())
+        .await
+        .unwrap()
+        .content;
+    assert!(alive(&pid), "the server is not running while connected");
+    drop(hub);
+    // Dropping does not wait: the kill lands on the runtime shortly after.
+    let gone = async {
+        while alive(&pid) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    };
+    assert!(
+        tokio::time::timeout(SETTLE, gone).await.is_ok(),
+        "the server process outlived the hub"
+    );
+    assert!(tools[0].execute(JsonMap::new(), &ctx()).await.is_err());
+}
+
+#[tokio::test]
 async fn a_stdio_server_runs_in_its_cwd_with_the_handed_env_and_its_own_and_nothing_else() {
     let dir = TempDir::new();
     // Not an MCP server: it records what it was given and exits, so connecting fails.
