@@ -1,9 +1,4 @@
-//! What the agent works in, as the host hands it ([`World`]): the workspace
-//! (the sandbox by default, with `js` in its shell; [`workspace_for`]),
-//! background jobs (Bash in the real workspace only; [`jobs_for`],
-//! [`kill_jobs`]) and the MCP servers the host listed ([`connect_mcp`]).
-//! [`build`](crate::build) uses each of these; a host that takes the pieces
-//! calls them itself.
+//! What the agent works in: [`World`] and the pieces built from it.
 
 use std::{
     io,
@@ -29,6 +24,13 @@ use crate::{
 };
 
 /// Where the agent's files are and whether it may start real processes.
+///
+/// The runtime builds what the agent works in from it: the workspace
+/// (the sandbox by default, with `js` in its shell; [`workspace_for`]),
+/// background jobs (Bash in the real workspace only; [`jobs_for`],
+/// [`kill_jobs`]) and the MCP servers the host listed ([`connect_mcp`]).
+/// [`build`](crate::build) uses each of these; a host that takes the pieces
+/// calls them itself.
 ///
 /// ```
 /// use std::sync::Arc;

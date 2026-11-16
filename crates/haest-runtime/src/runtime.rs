@@ -70,7 +70,7 @@ pub struct Runtime<U: ?Sized> {
     /// the end.
     pub subagents: Arc<SubagentHub>,
     /// Background shell jobs; None unless Bash runs in the real workspace.
-    /// Kill them at the end ([`kill_jobs`](crate::world::kill_jobs)).
+    /// Kill them at the end ([`kill_jobs`](crate::kill_jobs)).
     pub jobs: Option<Arc<JobHub>>,
 }
 

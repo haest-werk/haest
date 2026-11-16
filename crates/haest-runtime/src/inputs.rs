@@ -84,7 +84,7 @@ pub enum Resume {
     New,
     /// The session written last of those that started in the settings' `cwd`.
     Latest,
-    /// The saved session with this id ([`SessionInfo::id`](crate::sessions::SessionInfo::id)).
+    /// The saved session with this id ([`SessionInfo::id`](crate::SessionInfo::id)).
     Id(String),
 }
 

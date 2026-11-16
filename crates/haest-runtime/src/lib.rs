@@ -21,9 +21,9 @@
 //! - [`build`]: the whole conversation behind one [`Ui`] and the host's
 //!   approval [`Prompter`](haest_mods::Prompter), returned as a [`Runtime`].
 //! - The pieces, one by one, for a host that owns some parts itself (its own
-//!   models, files or tools): [`tools::own_tools`],
-//!   [`prompt::instruction_options`], [`prompt::skill_options`],
-//!   [`world::workspace_for`], [`world::connect_mcp`], [`mods::load`]. A host
+//!   models, files or tools): [`own_tools`], [`image_options`],
+//!   [`instruction_options`], [`skill_options`], [`workspace_for`],
+//!   [`jobs_for`], [`connect_mcp`], [`mods_for`], [`inbox`]. A host
 //!   that wants only the built-in tools picks them with
 //!   `haest_tools::builtin_tools_where(|w| settings.tools.has(w), ..)` and
 //!   needs no runtime at all.
@@ -38,15 +38,15 @@
 //! 1. [`build`] it. Whatever can fail does so before anything starts: a build
 //!    that fails has started no MCP server or mod and left no session file.
 //! 2. Run turns with [`Runtime::run`]: the human's text first through the
-//!    mods' `rewrite_prompt` and [`InboxQueue::human`](inbox::InboxQueue::human).
+//!    mods' `rewrite_prompt` and [`InboxQueue::human`].
 //!    While a turn runs, `run` steers what reaches the inbox into it; after
-//!    it, run what waits there, one turn at a time ([`InboxQueue::take`](inbox::InboxQueue::take)
-//!    and [`InboxQueue::agent_turn`](inbox::InboxQueue::agent_turn)).
+//!    it, run what waits there, one turn at a time ([`InboxQueue::take`]
+//!    and [`InboxQueue::agent_turn`]).
 //! 3. Between turns, make the changes the human asks for:
 //!    [`Runtime::set_model_spec`], [`Runtime::set_effort`], [`Runtime::clear`],
 //!    [`Runtime::rescan_skills`].
 //! 4. Flush the session file after every turn ([`RuntimeHooks::flush`]). At the end,
-//!    stop the subagents, kill the background jobs ([`world::kill_jobs`]),
+//!    stop the subagents, kill the background jobs ([`kill_jobs`]),
 //!    close the MCP servers and flush once more.
 //!
 //! # Examples
@@ -123,7 +123,7 @@
 //!
 //! ```no_run
 //! use haest_core::LoopEvent;
-//! use haest_runtime::{Runtime, Ui, world::kill_jobs};
+//! use haest_runtime::{Runtime, Ui, kill_jobs};
 //!
 //! /// A turn the human started, then every turn waiting in the inbox.
 //! async fn human<U: Ui>(rt: &mut Runtime<U>, text: &str) {
@@ -163,21 +163,21 @@
 mod build;
 mod error;
 mod hooks;
-pub mod inbox;
+mod inbox;
 mod inputs;
-pub mod mods;
+mod mods;
 mod parent;
-pub mod prompt;
+mod prompt;
 mod runtime;
-pub mod sessions;
+mod sessions;
 mod store;
 #[cfg(test)]
 mod testkit;
 #[cfg(test)]
 mod tests;
-pub mod tools;
+mod tools;
 mod ui;
-pub mod world;
+mod world;
 
 /// The names the runtime's code uses, laid out as the `haest` facade lays
 /// them out: core's key types at the root, its modules under `core`.
@@ -196,8 +196,13 @@ mod haest {
 pub use build::build;
 pub use error::{BuildError, SessionError};
 pub use hooks::{RuntimeHooks, session_usd};
+pub use inbox::{InboxQueue, InboxSender, inbox};
 pub use inputs::{BuildOptions, Resume, RuntimeInputs};
+pub use mods::mods_for;
 pub use parent::RuntimeParent;
+pub use prompt::{AgentPrompt, RuntimePrompt, instruction_options, skill_options};
 pub use runtime::Runtime;
+pub use sessions::{SessionInfo, list_sessions};
+pub use tools::{MainTools, NoImageKey, WrappedTools, image_options, own_tools};
 pub use ui::Ui;
-pub use world::World;
+pub use world::{WorkspaceError, World, connect_mcp, jobs_for, kill_jobs, workspace_for};

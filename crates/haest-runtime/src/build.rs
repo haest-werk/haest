@@ -171,7 +171,7 @@ where
     let gate = ApprovalGate::new(prompter);
     let (mcp, mods) = tokio::join!(
         connect_mcp(&hooks, &world, &passed_env, mcp_servers),
-        mods::load(&hooks, fs.as_ref(), &gate),
+        mods::mods_for(&hooks, fs.as_ref(), &gate),
     );
 
     let board = task_board(&hooks);

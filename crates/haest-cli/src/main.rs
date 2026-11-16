@@ -35,7 +35,7 @@ use std::{
 use haest::{
     config::{Loaded, Loader, env_var},
     core::{error::report, session::sessions_dir},
-    runtime::{BuildError, SessionError, Ui, sessions, world},
+    runtime::{BuildError, SessionError, Ui, kill_jobs, list_sessions},
     settings::Settings,
     workspace::RealFs,
 };
@@ -59,7 +59,7 @@ async fn subcommand(cmd: &Command, loaded: &Loaded) -> ExitCode {
         Command::Sessions { here } => {
             let dir = sessions_dir(&s.data_dir);
             let cwd = s.cwd.to_string_lossy();
-            let rows: Vec<String> = sessions::list_sessions(&RealFs, &dir)
+            let rows: Vec<String> = list_sessions(&RealFs, &dir)
                 .await
                 .iter()
                 .filter(|info| !here || info.cwd == cwd)
@@ -122,7 +122,7 @@ async fn shutdown(rt: &Runtime) {
             .info(&format!("Stopped {}.", count(running, "subagent")));
     }
     if let Some(jobs) = &rt.jobs {
-        let killed = world::kill_jobs(jobs).await;
+        let killed = kill_jobs(jobs).await;
         if killed > 0 {
             rt.hooks
                 .info(&format!("Killed {}.", count(killed, "background job")));

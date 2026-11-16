@@ -1,9 +1,4 @@
-//! The system prompt, built before every model call: instruction files are read
-//! fresh (an edited AGENTS.md takes effect on the next call), the tool names are
-//! the list this call advertises; skills are the list found at start or at the
-//! last /skills, in the prompt only with `skill_catalog`. Main and every
-//! subagent build it the same way, each naming its OWN model and tools (TS
-//! `runtime.ts systemPrompt`).
+//! The system prompt: [`RuntimePrompt`] and [`AgentPrompt`].
 
 use std::{
     path::PathBuf,
@@ -60,6 +55,13 @@ fn claude_dir(s: &Settings) -> PathBuf {
 
 /// The system prompt's parts that every agent of the conversation shares, and
 /// how to build one for a given model and tool list ([`build`](Self::build)).
+///
+/// The prompt is built before every model call: instruction files are read
+/// fresh (an edited AGENTS.md takes effect on the next call), the tool names
+/// are the list this call advertises; skills are the list found at start or at
+/// the last /skills, in the prompt only with `skill_catalog`. Main and every
+/// subagent build it the same way, each naming its OWN model and tools (TS
+/// `runtime.ts systemPrompt`).
 ///
 /// Wrap it in an [`AgentPrompt`] to give an agent its prompt.
 pub struct RuntimePrompt {
@@ -156,7 +158,7 @@ impl SystemPrompt for AgentPrompt {
 /// The platform the system prompt names: Rust's `std::env::consts::OS`, with
 /// `macos` as `darwin`, the name the TS haest (and most models' training data)
 /// uses.
-pub fn platform() -> String {
+fn platform() -> String {
     match std::env::consts::OS {
         "macos" => "darwin".into(),
         os => os.into(),

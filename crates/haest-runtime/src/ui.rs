@@ -51,7 +51,7 @@ pub trait Ui: Send + Sync {
     /// its first line, cut short. By default an [`info`](Self::info) line.
     ///
     /// The text itself waits in the inbox
-    /// ([`InboxQueue`](crate::inbox::InboxQueue)) for the host to run.
+    /// ([`InboxQueue`](crate::InboxQueue)) for the host to run.
     fn arrival(&self, headline: &str) {
         self.info(headline);
     }

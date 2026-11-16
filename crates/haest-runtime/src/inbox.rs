@@ -1,20 +1,4 @@
-//! THE INBOX: turns the human did not start -- a background job that exited, a
-//! subagent's message for main, a background subagent's answer. The TS haest's
-//! `host/turns.ts`, for a terminal:
-//!   - while a turn runs, what arrives is steered into it (read at its next step);
-//!   - what that turn left unread, and what arrived after it, run as the NEXT
-//!     turn -- one at a time, never two at once -- through the ping-pong gate
-//!     (the `max_agent_turns` setting); held items ride in with the human's
-//!     next message;
-//!   - nothing is dropped: an item waits here until a turn takes it.
-//!
-//! A host with an input line never runs one under an open prompt: the
-//! [`Ui`](crate::Ui) announces it and the host runs it when the prompt returns.
-//!
-//! [`inbox`] makes the two ends: the [`InboxSender`] the jobs and the
-//! subagents submit to, and the [`InboxQueue`] the host takes turns from
-//! ([`Runtime::inbox`](crate::Runtime::inbox)). The crate docs show a host's
-//! turn loop over it.
+//! The inbox: [`inbox`], [`InboxSender`], [`InboxQueue`].
 
 use std::{collections::VecDeque, sync::Arc};
 
@@ -70,9 +54,27 @@ pub struct InboxQueue {
 
 /// The conversation's inbox: the end jobs and agents submit to, the end its turns take from.
 ///
+/// It holds the turns the human did not start: a background job that exited,
+/// a subagent's message for main, a background subagent's answer. As the TS
+/// haest's `host/turns.ts`, for a terminal:
+///   - while a turn runs, what arrives is steered into it (read at its next step);
+///   - what that turn left unread, and what arrived after it, run as the NEXT
+///     turn -- one at a time, never two at once -- through the ping-pong gate
+///     (the `max_agent_turns` setting); held items ride in with the human's
+///     next message;
+///   - nothing is dropped: an item waits here until a turn takes it.
+///
+/// A host with an input line never runs one under an open prompt: the
+/// [`Ui`](crate::Ui) announces it and the host runs it when the prompt returns.
+///
+/// The two ends: the [`InboxSender`] the jobs and the subagents submit to,
+/// and the [`InboxQueue`] the host takes turns from
+/// ([`Runtime::inbox`](crate::Runtime::inbox)). The crate docs show a host's
+/// turn loop over it.
+///
 /// `max_agent_turns` is the gate's cap: turns in a row with no message from
 /// the human before the rest are held (0 = no cap). The human hears through
-/// `host` when the gate starts holding.
+/// `hooks` when the gate starts holding.
 pub fn inbox(hooks: &Arc<RuntimeHooks>, max_agent_turns: u32) -> (Arc<InboxSender>, InboxQueue) {
     let (tx, rx) = unbounded_channel();
     let notice = hooks.clone();

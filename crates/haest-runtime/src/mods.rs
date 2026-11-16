@@ -1,8 +1,4 @@
-//! Mods: the built-in approval mod and plan mode (`approvals`), the human's
-//! mods in `<config dir>/mods` (`mods`) and the project's in `.haest/mods`
-//! (`project_mods`: the repo's code, so a loader turns it on only in a trusted
-//! dir). An approval ask goes through the conversation's [`ApprovalGate`] to
-//! the host's prompter; the host decides how a human answers.
+//! [`mods_for`]: the conversation's mods.
 
 use std::sync::Arc;
 
@@ -18,13 +14,15 @@ use crate::{
 /// Every mod the settings turn on, read through `fs`, the human's answers
 /// through `gate`.
 ///
-/// `approvals` turns on the built-in approval mod, `mods` the human's,
-/// `project_mods` the project's (whoever loaded the settings decided whether
-/// the project is trusted). A mod's notices and errors, and one that does not
-/// load, go to the host's [`Ui`](crate::Ui); an approval ask goes through
-/// `gate` (an ask nobody answers is a deny after its timeout). Never fails:
+/// `approvals` turns on the built-in approval mod and plan mode, `mods` the
+/// human's mods in `<config dir>/mods`, `project_mods` the project's in
+/// `.haest/mods` (the repo's code, so a loader turns it on only in a trusted
+/// dir; whoever loaded the settings decided). A mod's lines, and one that does
+/// not load, go to the host's [`Ui`](crate::Ui). An approval ask goes through
+/// `gate` ([`ApprovalGate`]) to the host's prompter, which decides how a human
+/// answers; an ask nobody answers is a deny after its timeout. Never fails:
 /// the mods that loaded are the ones returned.
-pub async fn load(hooks: &Arc<RuntimeHooks>, fs: &dyn Fs, gate: &ApprovalGate) -> Arc<Mods> {
+pub async fn mods_for(hooks: &Arc<RuntimeHooks>, fs: &dyn Fs, gate: &ApprovalGate) -> Arc<Mods> {
     let s = &hooks.settings;
     let mut cfg = ModOptions::new(&s.cwd, s.workspace, &s.config_dir);
     cfg.approvals = s.approvals;

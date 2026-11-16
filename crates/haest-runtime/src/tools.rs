@@ -1,12 +1,4 @@
-//! The tools a conversation offers, composed as the TS haest does
-//! (`host/runtime.ts`), each only when its setting turns it on: the built-ins
-//! `tools` names (Bash with background jobs in the real workspace), the task
-//! list, Skill, GenerateImage (`image`), and every connected MCP server's tools
-//! (`mcp`); the Code tool over them (`code`); all of it inside the mods'
-//! `tool.before` / `tool.after` hooks -- [`WrappedTools`], the list every
-//! subagent starts from. Main's list ([`MainTools`]) adds main's agent tools
-//! (`agents`), NOT mod-wrapped; the build defers the MCP schemas behind
-//! ToolSearch (`deferred_tools`) so a big server does not ride on every call.
+//! The tools a conversation offers: [`own_tools`], [`WrappedTools`], [`MainTools`].
 
 use std::sync::{Arc, Mutex};
 
@@ -31,10 +23,20 @@ use crate::haest::{
 /// Everything but MCP: the built-ins, task tools, Skill (over the host's Fs:
 /// a user skill lives outside any sandbox mount) and GenerateImage.
 ///
+/// The first part of the tools a conversation offers, composed as the TS
+/// haest does (`host/runtime.ts`), each only when its setting turns it on: the built-ins
+/// `tools` names (Bash with background jobs in the real workspace), the task
+/// list, Skill, GenerateImage (`image`), and every connected MCP server's tools
+/// (`mcp`); the Code tool over them (`code`); all of it inside the mods'
+/// `tool.before` / `tool.after` hooks -- [`WrappedTools`], the list every
+/// subagent starts from. Main's list ([`MainTools`]) adds main's agent tools
+/// (`agents`), NOT mod-wrapped; the build defers the MCP schemas behind
+/// ToolSearch (`deferred_tools`) so a big server does not ride on every call.
+///
 /// `picked` is the `tools` setting: only the built-ins it names are made.
 /// The task tools work on `board`, Skill offers what `skills` holds when it is
 /// called, Bash leaves background jobs to `jobs` when there is a hub
-/// ([`jobs_for`](crate::world::jobs_for)), and GenerateImage is there when
+/// ([`jobs_for`](crate::jobs_for)), and GenerateImage is there when
 /// `image` is ([`image_options`]).
 pub fn own_tools(
     picked: &BuiltinTools,

@@ -1,10 +1,5 @@
-//! Saved sessions, through the host's [`Fs`]: the list ([`list_sessions`]),
-//! and which file a resume without an id means ([`latest_in`]). Only the head
-//! of each file is read: the header and the first user message, in 16 KB
-//! unless the first question is longer (then up to 256 KB), so listing stays
-//! fast however long the conversations got. The paths and which file names
-//! are sessions are haest-core's ([`session_file`], [`session_id_of`]); the
-//! dir is [`sessions_dir`](haest_core::session::sessions_dir)`(data_dir)`.
+//! Saved sessions: [`list_sessions`], and which one a resume without an id
+//! means.
 
 use std::{
     future::ready,
@@ -44,7 +39,7 @@ pub struct SessionInfo {
 }
 
 /// A new session id: a random v4 UUID, so ids do not collide across machines.
-pub fn new_session_id() -> String {
+pub(crate) fn new_session_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
@@ -146,11 +141,18 @@ async fn newest_first(fs: &dyn Fs, dir: &Path) -> Vec<Entry> {
 /// Unreadable files, and files with no header, are skipped; a missing `dir` is
 /// an empty list.
 ///
+/// Only the head of each file is read: the header and the first user
+/// message, in 16 KB unless the first question is longer (then up to 256 KB),
+/// so listing stays fast however long the conversations got. The paths and
+/// which file names are sessions are haest-core's ([`session_file`],
+/// [`session_id_of`]); the dir is
+/// [`sessions_dir`](haest_core::session::sessions_dir)`(data_dir)`.
+///
 /// ```
 /// use std::path::Path;
 ///
 /// use haest_core::fs::MemFs;
-/// use haest_runtime::sessions::list_sessions;
+/// use haest_runtime::list_sessions;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
@@ -178,7 +180,7 @@ pub async fn list_sessions(fs: &dyn Fs, dir: &Path) -> Vec<SessionInfo> {
 /// The id of the most recently written session in `dir` that started in
 /// `cwd`: what a resume without an id picks. Headers are read newest first,
 /// stopping at the first match. None when no session started there.
-pub async fn latest_in(fs: &dyn Fs, dir: &Path, cwd: &Path) -> Option<String> {
+pub(crate) async fn latest_in(fs: &dyn Fs, dir: &Path, cwd: &Path) -> Option<String> {
     let here = cwd.to_string_lossy();
     for e in newest_first(fs, dir).await {
         if cwd_of(fs, &e).await.is_some_and(|c| c == here) {

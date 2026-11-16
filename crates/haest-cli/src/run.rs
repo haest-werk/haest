@@ -7,7 +7,7 @@ use std::{process::ExitCode, time::Duration};
 
 use haest::{
     AgentControl, LoopEvent, StopReason, TurnOutcome,
-    runtime::{RuntimeHooks, session_usd, world::kill_jobs},
+    runtime::{RuntimeHooks, kill_jobs, session_usd},
     tools::JobHub,
 };
 use tokio::{sync::oneshot, task::JoinHandle};
