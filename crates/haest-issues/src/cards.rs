@@ -24,8 +24,8 @@ use std::{
 use async_trait::async_trait;
 use haest_core::{
     __private::slug,
+    Clock, WallClock,
     fs::{FileKind, Fs, ensure_dir},
-    now_ms,
     session::iso_utc,
 };
 use tokio::sync::Mutex;
@@ -44,8 +44,6 @@ use card::{
     status_of,
 };
 use front::{Front, Val};
-
-type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
 
 /// A [`Tracker`] over a directory of markdown cards (the [module
 /// docs](self) map each field to its frontmatter key).
@@ -101,7 +99,7 @@ type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
 pub struct CardTracker {
     fs: Arc<dyn Fs>,
     dir: PathBuf,
-    now_ms: Clock,
+    clock: Box<dyn Clock>,
     /// One write at a time: a read-change-write must not lose another's change.
     writes: Mutex<()>,
 }
@@ -114,16 +112,16 @@ impl CardTracker {
         Self {
             fs,
             dir: dir.into(),
-            now_ms: Arc::new(now_ms),
+            clock: Box::new(WallClock),
             writes: Mutex::new(()),
         }
     }
 
-    /// The clock, in Unix milliseconds, a new card's `created:` (and a
-    /// fallback id) comes from; the system clock by default. A test passes
-    /// its own to fix the dates.
-    pub fn with_clock(mut self, now_ms: impl Fn() -> u64 + Send + Sync + 'static) -> Self {
-        self.now_ms = Arc::new(now_ms);
+    /// The clock a new card's `created:` (and a fallback id) comes from; the
+    /// [`WallClock`] by default. A test passes its own to fix the dates (any
+    /// `Fn() -> u64` is a [`Clock`]).
+    pub fn with_clock(mut self, clock: impl Clock + 'static) -> Self {
+        self.clock = Box::new(clock);
         self
     }
 
@@ -287,7 +285,7 @@ impl Tracker for CardTracker {
             one_of(p, &as_strings(PRIORITIES), "priority")?;
         }
         let _one_writer = self.writes.lock().await;
-        let now = (self.now_ms)();
+        let now = self.clock.now_ms();
         let id = self.new_id(title, now).await;
         let mut front = Front {
             keys: Vec::new(),
