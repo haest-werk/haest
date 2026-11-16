@@ -58,10 +58,6 @@ fn on_board(e: TaskError) -> ToolError {
     ToolError::Input(e.0)
 }
 
-fn owned(v: Option<&str>) -> Option<String> {
-    v.map(String::from)
-}
-
 fn id_param() -> Value {
     json!({"type": "string", "description": "The task id, e.g. \"3\""})
 }
@@ -106,8 +102,8 @@ impl Tool for TaskCreate {
     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
         let t = self.0.create(NewTask {
             subject: req_str(&input, "subject")?.into(),
-            description: owned(opt_str(&input, "description")?),
-            active_form: owned(opt_str(&input, "activeForm")?),
+            description: opt_str(&input, "description")?.map(Into::into),
+            active_form: opt_str(&input, "activeForm")?.map(Into::into),
         });
         Ok(ToolOutput::text(format!(
             "Task #{} created: {}",
@@ -147,10 +143,10 @@ impl Tool for TaskUpdate {
         let id = req_str(&input, "taskId")?;
         let patch = TaskPatch {
             status: status(&input)?,
-            subject: owned(opt_str(&input, "subject")?),
-            description: owned(opt_str(&input, "description")?),
-            active_form: owned(opt_str(&input, "activeForm")?),
-            owner: owned(opt_str(&input, "owner")?),
+            subject: opt_str(&input, "subject")?.map(Into::into),
+            description: opt_str(&input, "description")?.map(Into::into),
+            active_form: opt_str(&input, "activeForm")?.map(Into::into),
+            owner: opt_str(&input, "owner")?.map(Into::into),
             add_blocked_by: ids(&input, "addBlockedBy")?,
             add_blocks: ids(&input, "addBlocks")?,
         };
