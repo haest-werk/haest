@@ -125,7 +125,7 @@ pub async fn agent_turns(rt: &mut Runtime) {
 pub async fn settle(rt: &mut Runtime) {
     loop {
         agent_turns(rt).await;
-        if rt.agents.answers_due() == 0 && rt.inbox.waiting() == 0 {
+        if rt.subagents.answers_due() == 0 && rt.inbox.waiting() == 0 {
             return;
         }
         tokio::select! {
@@ -133,7 +133,7 @@ pub async fn settle(rt: &mut Runtime) {
             _ = tokio::time::sleep(SETTLE_POLL) => {}
             _ = tokio::signal::ctrl_c() => {
                 rt.hooks.warn("Stopping the subagents.");
-                rt.agents.stop_all();
+                rt.subagents.stop_all();
                 return;
             }
         }

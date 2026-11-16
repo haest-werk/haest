@@ -148,7 +148,7 @@
 //!
 //! /// The host is done: nothing haest started outlives it, and the session is on disk.
 //! async fn shut_down<U: Ui>(rt: &Runtime<U>) {
-//!     rt.agents.stop_all();
+//!     rt.subagents.stop_all();
 //!     if let Some(jobs) = &rt.jobs {
 //!         kill_jobs(jobs).await;
 //!     }
@@ -160,13 +160,13 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
-mod agents;
 mod build;
 mod error;
 mod hooks;
 pub mod inbox;
 mod inputs;
 pub mod mods;
+mod parent;
 pub mod prompt;
 mod runtime;
 pub mod sessions;
@@ -193,11 +193,11 @@ mod haest {
     pub use haest_workspace as workspace;
 }
 
-pub use agents::Agents;
 pub use build::build;
 pub use error::{BuildError, SessionError};
 pub use hooks::{RuntimeHooks, session_usd};
 pub use inputs::{BuildOptions, Resume, RuntimeInputs};
+pub use parent::RuntimeParent;
 pub use runtime::Runtime;
 pub use ui::Ui;
 pub use world::World;

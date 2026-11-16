@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    Agents, BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui,
+    BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, RuntimeParent, Ui,
     haest::{
         Agent, AgentDeps, AgentOptions, ChildEnv, ModelResolver, Workspace,
         core::deferred_tools::ToolDeferral,
@@ -219,7 +219,7 @@ where
         remedies: hooks.remedies(),
         ..empty
     };
-    let agents = Agents {
+    let subagents = RuntimeParent {
         hooks: hooks.clone(),
         deps: shared.clone(),
         tools: wrapped.clone(),
@@ -228,7 +228,7 @@ where
         inbox: sender,
     }
     .hub();
-    let main_hub = s.agents.then(|| agents.clone());
+    let main_hub = s.agents.then(|| subagents.clone());
     let tools = Arc::new(DeferredTools::new(
         MainTools::new(wrapped, main_hub),
         ToolDeferral::new(s.deferred_tools),
@@ -272,7 +272,7 @@ where
         mcp,
         mods,
         inbox,
-        agents,
+        subagents,
         jobs,
     })
 }

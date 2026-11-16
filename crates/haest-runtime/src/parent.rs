@@ -27,13 +27,14 @@ use crate::{
     tools::WrappedTools,
 };
 
-/// What a conversation's subagents are made from: the
-/// [`SubagentParent`] behind its [`SubagentHub`].
+/// The runtime's [`SubagentParent`]: what a conversation's subagents are
+/// made from, behind its [`SubagentHub`].
 ///
-/// [`build`](crate::build) fills one in and turns it into the hub
-/// ([`Agents::hub`]), shared as [`Runtime::agents`](crate::Runtime::agents). A
-/// host that takes the pieces fills one in itself.
-pub struct Agents {
+/// [`build`](crate::build) fills one in and [`hub`](Self::hub) turns it into
+/// the hub, which is [`Runtime::subagents`](crate::Runtime::subagents) (the
+/// parent itself is then the hub's). A host that takes the pieces fills one
+/// in itself.
+pub struct RuntimeParent {
     /// The runtime's hooks: the settings' caps, the current model and
     /// effort, the [`Ui`](crate::Ui) a subagent's life goes to.
     pub hooks: Arc<RuntimeHooks>,
@@ -53,7 +54,7 @@ pub struct Agents {
     pub inbox: Arc<InboxSender>,
 }
 
-impl Agents {
+impl RuntimeParent {
     /// The hub, capped by the settings' `subagents` (how deep they nest, how
     /// many run at once, each one's spend, steps and time).
     pub fn hub(self) -> Arc<SubagentHub> {
@@ -62,14 +63,14 @@ impl Agents {
     }
 }
 
-impl Inbox for Agents {
+impl Inbox for RuntimeParent {
     fn submit(&self, text: String) {
         self.inbox.submit(text);
     }
 }
 
 #[async_trait]
-impl SubagentParent for Agents {
+impl SubagentParent for RuntimeParent {
     fn deps(&self) -> AgentDeps {
         self.deps.clone()
     }

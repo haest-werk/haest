@@ -64,7 +64,7 @@ pub struct Runtime<U: ?Sized> {
     pub inbox: InboxQueue,
     /// Main's subagents (none run when `agents` is off); `stop_all` them at
     /// the end.
-    pub agents: Arc<SubagentHub>,
+    pub subagents: Arc<SubagentHub>,
     /// Background shell jobs; None unless Bash runs in the real workspace.
     /// Kill them at the end ([`kill_jobs`](crate::world::kill_jobs)).
     pub jobs: Option<Arc<JobHub>>,

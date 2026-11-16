@@ -115,8 +115,8 @@ fn count(n: usize, noun: &str) -> String {
 /// haest is exiting: its subagents stopped and its background jobs killed
 /// (their process groups gone before the runtime shuts down), each said.
 async fn shutdown(rt: &Runtime) {
-    let running = rt.agents.running().len();
-    rt.agents.stop_all();
+    let running = rt.subagents.running().len();
+    rt.subagents.stop_all();
     if running > 0 {
         rt.hooks
             .info(&format!("Stopped {}.", count(running, "subagent")));
