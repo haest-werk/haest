@@ -160,11 +160,24 @@ mod tests {
     }
 
     #[test]
-    fn the_builtin_list_has_every_tool_and_web_fetch_is_optional() {
+    fn the_builtin_list_has_every_tool_with_its_kind_and_web_fetch_is_optional() {
         let all = builtin_tools(BuiltinOptions::default());
         assert_eq!(
             names(&all),
             ["Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch"]
+        );
+        let kinds: Vec<_> = all.iter().map(|t| t.kind()).collect();
+        assert_eq!(
+            kinds,
+            [
+                "file.read",
+                "file.write",
+                "file.edit",
+                "shell.exec",
+                "text.search",
+                "file.glob",
+                "web.fetch"
+            ]
         );
         let read_only: Vec<_> = all
             .iter()
@@ -264,25 +277,5 @@ mod tests {
             let err = pick(word, none).err().unwrap();
             assert!(err.contains(word), "{err}");
         }
-    }
-
-    #[test]
-    fn every_tool_states_its_canonical_kind() {
-        let kinds: Vec<_> = builtin_tools(BuiltinOptions::default())
-            .iter()
-            .map(|t| t.kind().to_string())
-            .collect();
-        assert_eq!(
-            kinds,
-            [
-                "file.read",
-                "file.write",
-                "file.edit",
-                "shell.exec",
-                "text.search",
-                "file.glob",
-                "web.fetch"
-            ]
-        );
     }
 }

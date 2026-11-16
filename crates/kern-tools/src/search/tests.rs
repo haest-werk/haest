@@ -94,7 +94,7 @@ async fn grep_real(dir: &PathBuf, v: Value) -> Result<ToolOutput, ToolError> {
 }
 
 #[tokio::test]
-async fn grep_finds_files_content_and_honours_glob() {
+async fn grep_finds_files_content_honours_glob_and_takes_a_pattern_that_starts_with_a_dash() {
     if !has_rg() {
         eprintln!("rg is not installed: skipping the real-rg grep test");
         return;
@@ -114,17 +114,8 @@ async fn grep_finds_files_content_and_honours_glob() {
     let none = grep_real(&fx.0, json!({"pattern": "zzz"})).await.unwrap();
     assert!(!none.is_error);
     assert!(!none.content.contains("src/"));
-}
-
-#[tokio::test]
-async fn grep_takes_a_pattern_that_starts_with_a_dash() {
-    if !has_rg() {
-        eprintln!("rg is not installed: skipping the real-rg grep test");
-        return;
-    }
-    let fx = Fixture::new();
-    let r = grep_real(&fx.0, json!({"pattern": "-rf"})).await.unwrap();
-    assert!(r.content.contains("flags.txt"));
+    let dash = grep_real(&fx.0, json!({"pattern": "-rf"})).await.unwrap();
+    assert!(dash.content.contains("flags.txt"));
 }
 
 fn rg_answering(answer: ExecResult) -> Arc<TestWorkspace> {
