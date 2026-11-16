@@ -192,7 +192,7 @@ mod haest {
 }
 
 pub use agents::Agents;
-pub use build::{BuildOptions, RuntimeInputs, build};
+pub use build::{BuildOptions, Resume, RuntimeInputs, build};
 pub use hooks::{RuntimeHooks, session_usd};
 pub use runtime::Runtime;
 pub use ui::Ui;

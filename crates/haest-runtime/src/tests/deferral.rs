@@ -8,7 +8,7 @@ use serde_json::json;
 
 use super::{hardcoded, keyed_with};
 use crate::{
-    BuildOptions, Runtime,
+    BuildOptions, Resume, Runtime,
     haest::{
         Message,
         core::deferred_tools::DeferMode,
@@ -54,7 +54,7 @@ async fn a_resumed_conversation_keeps_the_deferred_tools_its_history_called() {
     rt.hooks.flush().await;
 
     let resume = BuildOptions {
-        resume: Some(rt.session_id()),
+        resume: Resume::Id(rt.session_id()),
         ..BuildOptions::default()
     };
     let back = keyed_with(&fs, grow, resume).await;

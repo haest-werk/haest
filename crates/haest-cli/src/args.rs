@@ -7,7 +7,7 @@ use std::{ffi::OsString, path::PathBuf};
 use clap::{Arg, ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
 use haest::{
     config::{DEFS, Def, Kind},
-    runtime::BuildOptions,
+    runtime::{BuildOptions, Resume},
 };
 
 #[derive(Debug, Parser)]
@@ -30,8 +30,8 @@ pub struct Args {
     pub json: bool,
 
     /// Continue a session: its id, or the latest session in this directory when no id is given.
-    #[arg(short, long, num_args = 0..=1, default_missing_value = "")]
-    pub resume: Option<String>,
+    #[arg(short, long, num_args = 0..=1)]
+    pub resume: Option<Option<String>>,
 
     /// Work in this directory instead of the current one.
     #[arg(short = 'C', long, global = true)]
@@ -76,8 +76,13 @@ impl Cli {
     /// session's own; a variable or a file does not).
     pub fn build_options(&self) -> BuildOptions {
         let given = |key: &str| self.settings.iter().any(|(k, _)| k == key);
+        // `-r ""` is `-r`, as it always was.
+        let resume = match self.args.resume.clone() {
+            None => Resume::New,
+            Some(id) => id.filter(|id| !id.is_empty()).map_or(Resume::Latest, Resume::Id),
+        };
         BuildOptions {
-            resume: self.args.resume.clone(),
+            resume,
             model_given: given("model"),
             effort_given: given("effort"),
         }
@@ -207,15 +212,17 @@ mod tests {
 
     #[test]
     fn resume_without_an_id_means_the_latest_here() {
-        assert_eq!(cli(&["-r"]).args.resume, Some(String::new()));
-        assert_eq!(cli(&["--resume", "abc"]).args.resume, Some("abc".into()));
-        assert_eq!(cli(&[]).args.resume, None);
+        let resume = |argv: &[&str]| cli(argv).build_options().resume;
+        assert_eq!(resume(&["-r"]), Resume::Latest);
+        assert_eq!(resume(&["--resume", ""]), Resume::Latest);
+        assert_eq!(resume(&["--resume", "abc"]), Resume::Id("abc".into()));
+        assert_eq!(resume(&[]), Resume::New);
     }
 
     #[test]
     fn a_model_or_effort_flag_is_one_the_run_asked_for() {
         let o = cli(&["-r", "-m", "a:b"]).build_options();
-        assert_eq!(o.resume, Some(String::new()));
+        assert_eq!(o.resume, Resume::Latest);
         assert!(o.model_given && !o.effort_given);
         let o = cli(&["-r", "abc", "-e", "low"]).build_options();
         assert!(!o.model_given && o.effort_given);

@@ -14,7 +14,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    BuildOptions, Runtime, RuntimeInputs, World, build,
+    BuildOptions, Resume, Runtime, RuntimeInputs, World, build,
     haest::{
         KeySource, Message, ProviderEvent, ProviderRequest, ShutWorkspace, ToolContext,
         core::fs::{Fs, MemFs},
@@ -88,7 +88,7 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
 }
 
 /// A conversation over `fs` with an OpenRouter key; `resume` as [`BuildOptions`].
-async fn keyed(fs: &Arc<MemFs>, resume: Option<String>) -> Runtime<Recorded> {
+async fn keyed(fs: &Arc<MemFs>, resume: Resume) -> Runtime<Recorded> {
     let opts = BuildOptions {
         resume,
         ..BuildOptions::default()
@@ -115,7 +115,7 @@ async fn try_keyed(
 
 #[tokio::test]
 async fn a_key_the_host_hands_in_is_the_key_haest_uses() {
-    let rt = keyed(&Arc::new(MemFs::new()), None).await;
+    let rt = keyed(&Arc::new(MemFs::new()), Resume::New).await;
     assert!(
         rt.agent()
             .deps()

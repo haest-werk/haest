@@ -9,7 +9,7 @@ use haest_settings::Settings;
 
 use super::{hardcoded, keyed, keyed_with, openrouter_key, try_keyed};
 use crate::{
-    BuildOptions, RuntimeInputs, World, build,
+    BuildOptions, Resume, RuntimeInputs, World, build,
     haest::{
         Effort, WorkspaceMode,
         core::fs::{Fs, MemFs},
@@ -98,7 +98,7 @@ async fn a_model_the_build_cannot_use_fails_it_and_leaves_no_session_file() {
 #[tokio::test]
 async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
     let fs = Arc::new(MemFs::new());
-    let rt = keyed(&fs, None).await;
+    let rt = keyed(&fs, Resume::New).await;
     rt.hooks.flush().await;
     let id = rt.session_id();
     let file = Path::new(SESSIONS).join(format!("{id}.jsonl"));
@@ -109,7 +109,7 @@ async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
         ..hardcoded()
     };
     let opts = BuildOptions {
-        resume: Some(id),
+        resume: Resume::Id(id),
         model_given: true,
         ..BuildOptions::default()
     };
@@ -126,7 +126,7 @@ async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
 #[tokio::test]
 async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothing() {
     let fs = Arc::new(MemFs::new());
-    let mut rt = keyed(&fs, None).await;
+    let mut rt = keyed(&fs, Resume::New).await;
     let before = rt.agent().model_spec().to_string();
     assert!(rt.set_model("nowhere:x").is_err());
     assert_eq!(
@@ -142,7 +142,7 @@ async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothi
     );
     rt.hooks.flush().await;
 
-    let back = keyed(&fs, Some(rt.session_id())).await;
+    let back = keyed(&fs, Resume::Id(rt.session_id())).await;
     assert_eq!(back.agent().model_spec(), OTHER);
     assert_eq!(back.agent().effort(), Some(Effort::High));
 }
@@ -152,7 +152,7 @@ async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothi
 #[tokio::test]
 async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
     let fs = Arc::new(MemFs::new());
-    let mut rt = keyed(&fs, None).await;
+    let mut rt = keyed(&fs, Resume::New).await;
     rt.set_model(OTHER).unwrap();
     rt.set_effort(Some(Effort::High));
     rt.hooks.flush().await;
@@ -160,7 +160,7 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
     let on =
         |rt: &crate::Runtime<Recorded>| (rt.agent().model_spec().to_string(), rt.agent().effort());
 
-    let plain = keyed(&fs, Some(id.clone())).await;
+    let plain = keyed(&fs, Resume::Id(id.clone())).await;
     assert_eq!(on(&plain), (OTHER.to_string(), Some(Effort::High)));
 
     let given = Settings {
@@ -169,7 +169,7 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
         ..hardcoded()
     };
     let opts = |model_given, effort_given| BuildOptions {
-        resume: Some(id.clone()),
+        resume: Resume::Id(id.clone()),
         model_given,
         effort_given,
     };
@@ -179,14 +179,14 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
     assert_eq!(on(&both), (GIVEN.to_string(), Some(Effort::Low)));
     both.hooks.flush().await;
 
-    let next = keyed(&fs, Some(id)).await;
+    let next = keyed(&fs, Resume::Id(id)).await;
     assert_eq!(on(&next), (GIVEN.to_string(), Some(Effort::Low)));
 }
 
 #[tokio::test]
 async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resumes() {
     let fs = Arc::new(MemFs::new());
-    let mut rt = keyed(&fs, None).await;
+    let mut rt = keyed(&fs, Resume::New).await;
     rt.set_model(OTHER).unwrap();
     rt.board.create(NewTask {
         subject: "old work".into(),
@@ -199,10 +199,10 @@ async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resu
     assert!(rt.board.list().is_empty());
     rt.hooks.flush().await;
 
-    let fresh = keyed(&fs, Some(rt.session_id())).await;
+    let fresh = keyed(&fs, Resume::Id(rt.session_id())).await;
     assert_eq!(fresh.agent().model_spec(), OTHER);
     assert!(fresh.board.list().is_empty());
-    let resumed = keyed(&fs, Some(old)).await;
+    let resumed = keyed(&fs, Resume::Id(old)).await;
     let kept = resumed.board.list().len();
     assert_eq!(kept, 1, "the old session keeps its tasks");
 }
@@ -210,7 +210,7 @@ async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resu
 #[tokio::test]
 async fn a_clear_that_cannot_create_its_file_changes_nothing() {
     let fs = Arc::new(MemFs::new());
-    let mut rt = keyed(&fs, None).await;
+    let mut rt = keyed(&fs, Resume::New).await;
     rt.board.create(NewTask {
         subject: "kept".into(),
         ..Default::default()

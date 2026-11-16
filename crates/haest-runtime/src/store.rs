@@ -11,7 +11,7 @@ use anyhow::{Context, anyhow, bail};
 use haest_settings::Settings;
 
 use crate::{
-    BuildOptions, RuntimeHooks, Ui,
+    BuildOptions, Resume, RuntimeHooks, Ui,
     haest::{
         Agent, AgentOptions, Effort,
         core::fs::Fs,
@@ -45,23 +45,22 @@ fn open_store(
     .map_err(|e| anyhow!("{e}"))
 }
 
-/// The session this run writes: a new one (`resume` None), the latest in the
-/// cwd (`Some("")`), or the one named.
+/// The session this run writes, as `resume` says.
 pub(crate) async fn open_session(
     fs: &Arc<dyn Fs>,
     s: &Settings,
-    resume: Option<&str>,
+    resume: &Resume,
     ui: Arc<dyn Ui>,
 ) -> anyhow::Result<OpenSession> {
     let id = match resume {
-        None => {
+        Resume::New => {
             let store = Arc::new(open_store(fs, &s.data_dir, &new_session_id(), ui)?);
             return Ok(OpenSession { store, saved: None });
         }
-        Some("") => latest_in(fs.as_ref(), &sessions_dir(&s.data_dir), &s.cwd)
+        Resume::Latest => latest_in(fs.as_ref(), &sessions_dir(&s.data_dir), &s.cwd)
             .await
             .ok_or_else(|| anyhow!("no saved session in {} to resume", s.cwd.display()))?,
-        Some(id) => id.to_string(),
+        Resume::Id(id) => id.clone(),
     };
     let store = open_store(fs, &s.data_dir, &id, ui)?;
     if !store.exists().await {

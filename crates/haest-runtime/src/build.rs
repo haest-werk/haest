@@ -96,14 +96,26 @@ impl RuntimeInputs {
     }
 }
 
+/// Which session a run writes: a new one, or a saved one it goes on with.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Resume {
+    /// A new session.
+    #[default]
+    New,
+    /// The session written last of those that started in the settings' `cwd`.
+    Latest,
+    /// The saved session with this id ([`SessionInfo::id`](crate::sessions::SessionInfo::id)).
+    Id(String),
+}
+
 /// What a host decides per run, beside the settings: which session to write,
 /// and whether the settings' model and effort were asked for on purpose.
 ///
 /// The default is a new session on the settings' model and effort.
 #[derive(Debug, Clone, Default)]
 pub struct BuildOptions {
-    /// None = a new session; Some("") = the latest one in the cwd; Some(id) = that one.
-    pub resume: Option<String>,
+    /// The session to write: a new one, or one to go on with.
+    pub resume: Resume,
     /// The settings' model was asked for on purpose for this run (a flag):
     /// a resume goes on with it, not with the one the session saved.
     pub model_given: bool,
@@ -212,7 +224,7 @@ where
         http,
     } = inputs;
     let fs = world.fs();
-    let session = open_session(&fs, &settings, opts.resume.as_deref(), ui.clone()).await?;
+    let session = open_session(&fs, &settings, &opts.resume, ui.clone()).await?;
     // The model the conversation starts on is one it can use (its provider
     // known, its key there), or the build fails with nothing written: a run
     // that cannot start leaves no session for a resume to pick up.

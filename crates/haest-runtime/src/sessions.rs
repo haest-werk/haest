@@ -31,7 +31,7 @@ const AT_ONCE: usize = 16;
 /// One saved session, as a list of them shows it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionInfo {
-    /// Its id: what [`BuildOptions::resume`](crate::BuildOptions::resume) takes.
+    /// Its id: what [`Resume::Id`](crate::Resume::Id) takes.
     pub id: String,
     /// The working dir it started in, from its header.
     pub cwd: String,
