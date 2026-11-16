@@ -15,7 +15,7 @@ use std::{
 
 use futures::StreamExt;
 use haest_core::error::report;
-use haest_http::{Bytes, HttpClient, HttpError, Method, Request, Response};
+use haest_http::{HttpClient, HttpError, Request, Response};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -158,43 +158,29 @@ pub(crate) fn endpoint(base: &Option<String>, default: &str, path: &str) -> Stri
     format!("{}/{path}", base.trim_end_matches('/'))
 }
 
-/// The OpenAI dialects' headers: a bearer key and JSON, then `extra` (which wins on a clash).
-pub(crate) fn bearer_headers(api_key: &str, extra: &[(String, String)]) -> Vec<(String, String)> {
-    let defaults = [
-        ("authorization", format!("Bearer {api_key}")),
-        ("content-type", "application/json".to_string()),
-        ("accept", "application/json".to_string()),
-    ];
-    with_headers(defaults, extra)
-}
-
-/// A dialect's `defaults`, then the configured `extra`: one of the same name,
-/// in any case, replaces the default (a header sent twice reaches the server
-/// as two values, and one that reads the first never sees the configured one).
-pub(crate) fn with_headers<const N: usize>(
-    defaults: [(&str, String); N],
+/// A model call to one of the OpenAI dialects: `body` POSTed as JSON to `url`
+/// with a bearer key, then the configured `extra` headers ([`configured`]).
+pub(crate) fn bearer_post(
+    url: String,
+    api_key: &str,
+    body: &Value,
     extra: &[(String, String)],
-) -> Vec<(String, String)> {
-    let mut headers: Vec<(String, String)> = defaults
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect();
-    for (name, value) in extra {
-        headers.retain(|(k, _)| !k.eq_ignore_ascii_case(name));
-        headers.push((name.clone(), value.clone()));
-    }
-    headers
+) -> Request {
+    let req = Request::post(url)
+        .with_header("authorization", format!("Bearer {api_key}"))
+        .with_json(body)
+        .with_header("accept", "application/json");
+    configured(req, extra)
 }
 
-/// A model call: `body` POSTed as JSON to `url` with `headers` (which carry
-/// the key and the content type).
-pub(crate) fn json_post(url: String, headers: Vec<(String, String)>, body: &Value) -> Request {
-    Request {
-        method: Method::Post,
-        url,
-        headers,
-        body: Bytes::from(body.to_string()),
-    }
+/// `req` with the configured `extra` headers over the dialect's own: one of
+/// the same name, in any case, replaces it ([`Request::with_header`]; a
+/// header sent twice reaches the server as two values, and one that reads the
+/// first never sees the configured one).
+pub(crate) fn configured(req: Request, extra: &[(String, String)]) -> Request {
+    extra
+        .iter()
+        .fold(req, |req, (name, value)| req.with_header(name, value))
 }
 
 #[cfg(test)]

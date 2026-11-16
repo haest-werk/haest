@@ -24,7 +24,7 @@ use haest_http::{HttpClient, Request};
 use crate::{
     driver::drive,
     retry::RetryPolicy,
-    send::{Sender, endpoint, json_post, with_headers},
+    send::{Sender, configured, endpoint},
 };
 
 const DEFAULT_MAX_TOKENS: u32 = 32_000;
@@ -113,17 +113,13 @@ impl AnthropicProvider {
     }
 
     fn http_request(&self, req: &ProviderRequest) -> Request {
-        let defaults = [
-            ("x-api-key", self.opts.api_key.clone()),
-            ("anthropic-version", API_VERSION.into()),
-            ("content-type", "application/json".into()),
-            ("accept", "application/json".into()),
-        ];
-        json_post(
-            endpoint(&self.opts.base_url, DEFAULT_BASE_URL, "v1/messages"),
-            with_headers(defaults, &self.opts.headers),
-            &build_anthropic_params(&self.opts.id, req),
-        )
+        let url = endpoint(&self.opts.base_url, DEFAULT_BASE_URL, "v1/messages");
+        let post = Request::post(url)
+            .with_header("x-api-key", &self.opts.api_key)
+            .with_header("anthropic-version", API_VERSION)
+            .with_json(&build_anthropic_params(&self.opts.id, req))
+            .with_header("accept", "application/json");
+        configured(post, &self.opts.headers)
     }
 }
 

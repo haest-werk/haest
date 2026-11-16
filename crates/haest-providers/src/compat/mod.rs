@@ -43,7 +43,7 @@ use crate::{
     driver::{Step, StreamFold, drive, openai_error},
     retry::RetryPolicy,
     routing::RoutingScopes,
-    send::{OPENAI_URL, Sender, bearer_headers, endpoint, json_post},
+    send::{OPENAI_URL, Sender, bearer_post, endpoint},
     sse::SseEvent,
     web_search::web_search_tool,
 };
@@ -160,10 +160,11 @@ impl CompatProvider {
     }
 
     fn http_request(&self, req: &ProviderRequest) -> Request {
-        json_post(
+        bearer_post(
             endpoint(&self.opts.base_url, OPENAI_URL, "chat/completions"),
-            bearer_headers(&self.opts.api_key, &self.opts.headers),
+            &self.opts.api_key,
             &build_compat_body(&self.opts, req),
+            &self.opts.headers,
         )
     }
 }

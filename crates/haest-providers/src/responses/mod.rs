@@ -24,7 +24,7 @@ use haest_http::{HttpClient, Request};
 use crate::{
     driver::drive,
     retry::RetryPolicy,
-    send::{OPENAI_URL, Sender, bearer_headers, endpoint, json_post},
+    send::{OPENAI_URL, Sender, bearer_post, endpoint},
 };
 
 /// Where a [`ResponsesProvider`] sends its requests, and with which key.
@@ -100,10 +100,11 @@ impl ResponsesProvider {
     }
 
     fn http_request(&self, req: &ProviderRequest) -> Request {
-        json_post(
+        bearer_post(
             endpoint(&self.opts.base_url, OPENAI_URL, "responses"),
-            bearer_headers(&self.opts.api_key, &self.opts.headers),
+            &self.opts.api_key,
             &build_responses_body(&self.opts.id, req),
+            &self.opts.headers,
         )
     }
 }
