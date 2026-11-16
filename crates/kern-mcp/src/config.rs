@@ -10,7 +10,7 @@ use kern_core::{
     expand::{expand_vars, unset_note},
     fs::{Fs, read_text_if_present},
 };
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 /// A project's MCP servers: `<cwd>/.mcp.json`.
 pub fn project_mcp_path(cwd: &Path) -> PathBuf {
@@ -62,14 +62,6 @@ impl McpServerConfig {
                 env: BTreeMap::new(),
                 cwd: None,
             },
-        }
-    }
-
-    /// `"http"` or `"stdio"`, the `.mcp.json` type names.
-    pub fn type_name(&self) -> &'static str {
-        match self.transport {
-            McpTransport::Http { .. } => "http",
-            McpTransport::Stdio { .. } => "stdio",
         }
     }
 }
@@ -209,14 +201,15 @@ fn parse_server(
 }
 
 fn string_list(raw: &Value, key: &str) -> Result<Vec<String>, String> {
+    let bad = || format!("\"{key}\" must be an array of strings");
     match raw.get(key) {
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Array(items)) => items
             .iter()
             .map(|v| v.as_str().map(str::to_string))
             .collect::<Option<_>>()
-            .ok_or_else(|| format!("\"{key}\" must be an array of strings")),
-        Some(_) => Err(format!("\"{key}\" must be an array of strings")),
+            .ok_or_else(bad),
+        Some(_) => Err(bad()),
     }
 }
 
@@ -224,15 +217,13 @@ fn string_map(raw: &Value, key: &str) -> Result<BTreeMap<String, String>, String
     let bad = || format!("\"{key}\" must be an object of strings");
     match raw.get(key) {
         None | Some(Value::Null) => Ok(BTreeMap::new()),
-        Some(Value::Object(map)) => strings_of(map).ok_or_else(bad),
+        Some(Value::Object(map)) => map
+            .iter()
+            .map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
+            .collect::<Option<_>>()
+            .ok_or_else(bad),
         Some(_) => Err(bad()),
     }
-}
-
-fn strings_of(map: &Map<String, Value>) -> Option<BTreeMap<String, String>> {
-    map.iter()
-        .map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
-        .collect()
 }
 
 #[cfg(test)]

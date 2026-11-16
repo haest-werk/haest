@@ -26,11 +26,8 @@ async fn reads_stdio_and_http_servers_in_claude_code_format() {
         }
     }));
     let cfg = load(&fs).await.unwrap().servers;
-    let kinds: Vec<_> = cfg
-        .iter()
-        .map(|c| format!("{}:{}", c.name, c.type_name()))
-        .collect();
-    assert_eq!(kinds, ["local:stdio", "remote:http"]);
+    let names: Vec<_> = cfg.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["local", "remote"]);
     assert_eq!(
         cfg[0].transport,
         McpTransport::Stdio {
@@ -99,12 +96,8 @@ async fn variables_are_filled_in_where_claude_code_fills_them() {
 }
 
 #[tokio::test]
-async fn no_file_means_no_servers() {
+async fn no_file_or_a_file_without_servers_means_no_servers() {
     assert!(load(&MemFs::new()).await.unwrap().servers.is_empty());
-}
-
-#[tokio::test]
-async fn a_file_without_servers_means_no_servers() {
     let fs = fs_with(json!({"other": 1}));
     assert!(load(&fs).await.unwrap().servers.is_empty());
 }
