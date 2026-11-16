@@ -25,25 +25,32 @@
 //! ```
 
 /// Splits `---\n<head>\n---\n<body>` into the head's lines and the body;
-/// None when `content` does not start with `---\n` or the head never ends.
+/// None when the first line of `content` is not a fence or the head never ends.
 ///
-/// The head ends at the FIRST later line that is `---` (trailing blanks
-/// allowed; `---foo` or `----` is a head line); the body starts on the line
-/// after that fence. The head may be empty (`---\n---\n`). Line ends must be
-/// `\n`: turn `\r\n` into `\n` first.
+/// A fence is a line that is `---` plus trailing blanks (a CRLF line's `\r`
+/// is one); `---foo` or `----` is not. The head ends at the FIRST fence after
+/// the opening one, and the body starts on the line after it. The head may
+/// be empty (`---\n---\n`). Each head line keeps its own bytes: a CRLF file's
+/// lines end in `\r`, which trimming a value drops.
 pub fn split_frontmatter(content: &str) -> Option<(Vec<&str>, &str)> {
-    let rest = content.strip_prefix("---\n")?;
+    let mut lines = content.split_inclusive('\n');
+    let opener = lines.next().filter(|l| l.ends_with('\n') && is_fence(l))?;
+    let mut read = opener.len();
     let mut head = Vec::new();
-    let mut read = 0;
-    for line in rest.split_inclusive('\n') {
+    for line in lines {
         read += line.len();
         let line = line.strip_suffix('\n').unwrap_or(line);
-        if line.trim_end() == "---" {
-            return Some((head, &rest[read..]));
+        if is_fence(line) {
+            return Some((head, &content[read..]));
         }
         head.push(line);
     }
     None
+}
+
+/// `---`, then nothing but blanks.
+fn is_fence(line: &str) -> bool {
+    line.trim_end() == "---"
 }
 
 /// Nothing at all (a nested block) or a block-scalar indicator (`|`, `>-`, `|+2`).
@@ -185,6 +192,20 @@ mod tests {
         assert!(split_frontmatter("---\na: 1\n----\nbody").is_none());
         let (_, body) = split_frontmatter("---\na: 1\n---").unwrap();
         assert_eq!(body, "");
+    }
+
+    #[test]
+    fn the_opening_fence_is_a_fence_like_the_closing_one() {
+        let (head, body) = split_frontmatter("--- \na: 1\n---\nbody").unwrap();
+        assert_eq!(head, ["a: 1"]);
+        assert_eq!(body, "body");
+        // A CRLF file: each head line keeps its own bytes, `\r` included.
+        let (head, body) = split_frontmatter("---\r\na: 1\r\n---\r\nbody\r\n").unwrap();
+        assert_eq!(head, ["a: 1\r"]);
+        assert_eq!(body, "body\r\n");
+        assert!(split_frontmatter("---foo\na: 1\n---\n").is_none());
+        assert!(split_frontmatter("----\na: 1\n---\n").is_none());
+        assert!(split_frontmatter("---").is_none());
     }
 
     #[test]
