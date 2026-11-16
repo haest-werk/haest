@@ -1,11 +1,11 @@
-//! Ported from tools/tools.test.ts (Grep + Glob). Grep runs against the REAL rg
-//! when it is installed (the argv must be one rg accepts); the exit-code and
-//! output handling is pinned with a scripted workspace.
+//! Ported from tools/tools.test.ts (Grep; Glob in `glob.rs`). Grep runs against
+//! the REAL rg when it is installed and the sandbox's rg (`sandbox.rs`): the argv
+//! must be one both accept. The exit-code and output handling is pinned with a
+//! scripted workspace.
 
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -16,11 +16,11 @@ use kern_core::{
 };
 use serde_json::{Value, json};
 
-use super::{GlobTool, GrepTool};
-use crate::{
-    files::WriteTool,
-    testkit::{TestWorkspace, ctx, input, stdout},
-};
+use super::GrepTool;
+use crate::testkit::{TestWorkspace, ctx, input, stdout};
+
+mod glob;
+mod sandbox;
 
 /// Programs run for real in a directory on disk: the only way to know rg takes our argv.
 struct HostRun;
@@ -107,6 +107,36 @@ async fn grep_finds_files_content_honours_glob_and_takes_a_pattern_that_starts_w
     assert!(dash.content.contains("flags.txt"));
 }
 
+#[tokio::test]
+async fn a_path_that_looks_like_a_flag_is_searched_as_a_path_and_runs_nothing() {
+    if !has_rg() {
+        eprintln!("rg is not installed: skipping the real-rg grep test");
+        return;
+    }
+    let fx = fixture();
+    let dir = fx.path();
+    let ran = dir.join("ran");
+    // Read as a flag, `--pre=sh` runs every file under cwd through sh: this one leaves a mark.
+    std::fs::write(dir.join("mark.sh"), format!("touch '{}'\n", ran.display())).unwrap();
+    let missing = grep_real(dir, json!({"pattern": "x", "path": "--pre=sh"})).await;
+    assert!(!ran.exists(), "rg ran the files under cwd as scripts");
+    assert!(matches!(missing, Err(ToolError::Input(_))));
+    std::fs::write(dir.join("--pre=sh"), "x\n").unwrap();
+    let found = grep_real(dir, json!({"pattern": "x", "path": "--pre=sh"}))
+        .await
+        .unwrap();
+    assert_eq!(
+        same_file(dir, found.content.trim()),
+        same_file(dir, "--pre=sh")
+    );
+    assert!(!ran.exists());
+}
+
+/// Where a path rg printed (relative to `dir`) really is.
+fn same_file(dir: &Path, printed: &str) -> PathBuf {
+    std::fs::canonicalize(dir.join(printed)).expect("rg printed a real path")
+}
+
 fn rg_answering(answer: ExecResult) -> Arc<TestWorkspace> {
     TestWorkspace::answering([("/p/.keep", "")], move |_| answer.clone())
 }
@@ -149,6 +179,20 @@ async fn grep_builds_one_argv_with_the_pattern_behind_e() {
         .await
         .unwrap();
     assert_eq!(ws.calls()[1].argv, ["rg", "-l", "-e", "y", "."]);
+    // A target rg would read as a flag, or a bare `-` it would read as stdin, names a file.
+    for (path, arg) in [("--pre=rm", "./--pre=rm"), ("-", "./-")] {
+        GrepTool
+            .execute(
+                input(json!({"pattern": "y", "path": path})),
+                &ctx(ws.clone()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            ws.calls().last().unwrap().argv,
+            ["rg", "-l", "-e", "y", arg]
+        );
+    }
     let bad = GrepTool
         .execute(
             input(json!({"pattern": "y", "output_mode": "lines"})),
@@ -207,58 +251,4 @@ async fn head_limit_keeps_the_first_lines_and_long_lines_are_clipped() {
         .unwrap();
     let c = all.content.lines().find(|l| l.starts_with("c:3:")).unwrap();
     assert!(c.chars().count() < 600);
-}
-
-#[tokio::test]
-async fn glob_skips_node_modules_and_finds_files_write_created() {
-    let ws = TestWorkspace::with_files([
-        ("/p/src/a.ts", "const needle = 1\n"),
-        ("/p/src/b.md", "no match here\n"),
-        ("/p/node_modules/x/c.ts", "needle\n"),
-    ]);
-    let c = ctx(ws);
-    WriteTool
-        .execute(
-            input(json!({"file_path": "src/new.ts", "content": "x"})),
-            &c,
-        )
-        .await
-        .unwrap();
-    let r = GlobTool
-        .execute(input(json!({"pattern": "**/*.ts"})), &c)
-        .await
-        .unwrap();
-    assert!(r.content.contains("src/a.ts"));
-    assert!(r.content.contains("src/new.ts"));
-    assert!(!r.content.contains("node_modules"));
-}
-
-#[tokio::test]
-async fn glob_lists_the_newest_first_and_caps_the_list() {
-    let ws = TestWorkspace::with_files([("/p/old.txt", "")]);
-    let c = ctx(ws);
-    tokio::time::sleep(Duration::from_millis(5)).await;
-    WriteTool
-        .execute(input(json!({"file_path": "new.txt", "content": ""})), &c)
-        .await
-        .unwrap();
-    let r = GlobTool
-        .execute(input(json!({"pattern": "*.txt"})), &c)
-        .await
-        .unwrap();
-    assert_eq!(
-        r.content.lines().collect::<Vec<_>>(),
-        ["/p/new.txt", "/p/old.txt"]
-    );
-    let many = TestWorkspace::with_files((0..250).map(|i| (format!("/q/f{i}.ts"), "")));
-    let r = GlobTool
-        .execute(input(json!({"pattern": "*.ts", "path": "/q"})), &ctx(many))
-        .await
-        .unwrap();
-    assert_eq!(
-        r.content.lines().filter(|l| l.starts_with("/q/")).count(),
-        200
-    );
-    let note = r.content.lines().last().unwrap();
-    assert!(!note.starts_with("/q/") && note.contains("50"));
 }

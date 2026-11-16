@@ -1,7 +1,10 @@
 //! Grep (ripgrep) and Glob, both through the workspace. rg respects .gitignore
 //! natively and runs through `Workspace::run`; Glob walks the workspace `Fs`
 //! ([`crate::fs_walk`]) and skips node_modules/.git explicitly. The rg argv uses
-//! only flags the real rg and a sandbox's rg both accept (`-e`, not `--`).
+//! only flags the real rg and a sandbox's rg both accept. Nothing the model sends
+//! can be read as a flag: the pattern sits behind `-e`, `--glob`/`--type` take
+//! the next argument as their value, and a target that starts with `-` gets `./`
+//! ([`target_arg`]).
 
 use std::time::Duration;
 
@@ -129,6 +132,18 @@ fn rg_args(input: &JsonMap) -> Result<Vec<String>, ToolError> {
     Ok(args)
 }
 
+/// The search target as an argument rg can only read as a path. rg reads one that
+/// starts with `-` as a flag (`--pre=sh` runs every file under cwd as a script, and
+/// Grep is read-only, so no approval stands in the way) and a bare `-` as stdin,
+/// after `--` too; `./` in front names the same file.
+fn target_arg(target: &str) -> String {
+    if target.starts_with('-') {
+        format!("./{target}")
+    } else {
+        target.to_string()
+    }
+}
+
 pub struct GrepTool;
 
 #[async_trait]
@@ -184,7 +199,7 @@ impl Tool for GrepTool {
         let head = opt_num(&input, "head_limit")?;
         let mut argv = vec!["rg".to_string()];
         argv.extend(rg_args(&input)?);
-        argv.extend(["-e".into(), pattern.into(), target.into()]);
+        argv.extend(["-e".into(), pattern.into(), target_arg(target)]);
         let opts = ExecOptions {
             cwd: ctx.cwd.clone(),
             cancel: ctx.cancel.clone(),
