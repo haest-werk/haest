@@ -1,6 +1,6 @@
 //! A conversation for the hub tests: main and subagents answer from separate
-//! scripts (a subagent is told apart by its system prompt), a host that records
-//! what the hub tells it, and a main loop that runs what reaches its inbox.
+//! scripts ([`super::script`]), a host that records what the hub tells it, and
+//! a main loop that runs what reaches its inbox.
 
 use std::{
     sync::{Arc, Mutex},
@@ -8,103 +8,24 @@ use std::{
 };
 
 use async_trait::async_trait;
-use futures::future::BoxFuture;
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, LoopEvent, Message,
-    StopReason, ToolCall, Usage,
+    Agent, AgentDeps, AgentOptions, LoopEvent, Message,
     ledger::{ConversationCaps, Ledger, LedgerHooks, LedgerSnapshot},
-    provider::{
-        Effort, ModelError, Provider, ProviderEvent, ProviderRequest, ProviderStream, ResolvedModel,
-    },
+    provider::{Effort, ModelError, ResolvedModel},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
 };
 use serde_json::Value;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use super::super::{
-    AgentRef, AgentToolOptions, SubagentCaps, SubagentEvent, SubagentHub, SubagentParent,
-    SubagentTypes,
+pub use super::script::{CALL_USD, Script, call, now, say, spawns};
+use super::{
+    super::{
+        AgentRef, AgentToolOptions, SubagentCaps, SubagentEvent, SubagentHub, SubagentParent,
+        SubagentTypes,
+    },
+    script::Roles,
 };
 use crate::{GlobTool, inbox::Inbox, testkit::TestWorkspace};
-
-pub type Script =
-    Box<dyn Fn(ProviderRequest, usize) -> BoxFuture<'static, Vec<AssistantPart>> + Send + Sync>;
-
-/// A script that answers at once.
-pub fn now(
-    f: impl Fn(&ProviderRequest, usize) -> Vec<AssistantPart> + Send + Sync + 'static,
-) -> Script {
-    Box::new(move |req, n| {
-        let parts = f(&req, n);
-        Box::pin(async move { parts })
-    })
-}
-
-pub fn say(text: &str) -> Vec<AssistantPart> {
-    vec![AssistantPart::Text { text: text.into() }]
-}
-
-pub fn call(id: &str, name: &str, input: Value) -> AssistantPart {
-    AssistantPart::ToolCall(ToolCall {
-        id: id.into(),
-        name: name.into(),
-        input: input.as_object().cloned().unwrap_or_default(),
-    })
-}
-
-/// Main's script: one Agent call with `input`, then `then` on every later call.
-pub fn spawns(input: Value, then: &'static str) -> Script {
-    now(move |_, n| match n {
-        0 => vec![call("a", "Agent", input.clone())],
-        _ => say(then),
-    })
-}
-
-/// Every call costs $0.01.
-pub const CALL_USD: f64 = 0.01;
-
-pub struct Roles {
-    main: Script,
-    sub: Script,
-    calls: Mutex<(usize, usize)>,
-    pub sub_tools: Mutex<Vec<Vec<String>>>,
-    pub sub_systems: Mutex<Vec<String>>,
-}
-
-impl Provider for Roles {
-    fn id(&self) -> &str {
-        "fake"
-    }
-    fn stream(&self, req: ProviderRequest) -> ProviderStream {
-        let is_sub = req.system.contains("# You are a subagent");
-        let n = {
-            let mut c = self.calls.lock().unwrap();
-            let slot = if is_sub { &mut c.1 } else { &mut c.0 };
-            *slot += 1;
-            *slot - 1
-        };
-        if is_sub {
-            let names = req.tools.iter().map(|t| t.name.clone()).collect();
-            self.sub_tools.lock().unwrap().push(names);
-            self.sub_systems.lock().unwrap().push(req.system.clone());
-        }
-        let (model, cancel) = (req.model.clone(), req.cancel.clone());
-        let parts = (if is_sub { &self.sub } else { &self.main })(req, n);
-        Box::pin(futures::stream::once(async move {
-            let mut m = AssistantMessage::start("fake", &model);
-            tokio::select! {
-                content = parts => {
-                    let tools = content.iter().any(|p| matches!(p, AssistantPart::ToolCall(_)));
-                    m.stop_reason = if tools { StopReason::ToolUse } else { StopReason::EndTurn };
-                    m.content = content;
-                    m.usage = Usage { cost_usd: Some(CALL_USD), ..Default::default() };
-                }
-                _ = cancel.cancelled() => m.stop_reason = StopReason::Aborted,
-            }
-            ProviderEvent::Done(m)
-        }))
-    }
-}
 
 /// A tool only main may have.
 struct TaskCreate;

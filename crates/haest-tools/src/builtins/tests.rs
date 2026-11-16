@@ -1,4 +1,5 @@
 use super::*;
+use crate::{JobHub, inbox};
 
 fn names(tools: &[Arc<dyn Tool>]) -> Vec<String> {
     tools.iter().map(|t| t.name().to_string()).collect()

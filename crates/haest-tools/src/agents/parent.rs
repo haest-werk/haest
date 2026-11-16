@@ -28,9 +28,16 @@ pub enum SubagentEvent {
         description: String,
     },
     /// One event of its turn.
-    Loop(LoopEvent),
+    Loop(
+        /// The event, as the subagent's own loop emitted it.
+        LoopEvent,
+    ),
     /// A tool it ran made a call of its own (Code).
-    InnerCall(InnerCallEvent),
+    InnerCall(
+        /// The inner call, as the subagent's tool reported it (its
+        /// `parent_id` is the id of that tool's call).
+        InnerCallEvent,
+    ),
     /// Its turn ended.
     Stopped {
         /// It ended its turn with an answer: not stopped, not out of budget,

@@ -3,6 +3,7 @@
 
 mod options;
 mod rules;
+mod script;
 mod support;
 
 use serde_json::json;

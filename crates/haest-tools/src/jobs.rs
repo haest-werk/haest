@@ -23,6 +23,7 @@
 //! Bash through [`BashOptions::jobs`](crate::BashOptions::jobs).
 
 mod entry;
+mod task;
 #[cfg(test)]
 pub(crate) mod tests;
 
@@ -30,14 +31,15 @@ use std::{
     fmt,
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
-use haest_core::workspace::{ExecOptions, OutputChunks, Workspace};
+use haest_core::workspace::Workspace;
 use tokio_util::sync::CancellationToken;
 
 use crate::inbox::Inbox;
-use entry::{Entry, Jobs};
+use entry::Entry;
+use task::{Shared, run};
 
 /// Rolling output kept per job, in bytes; older output is dropped from the front.
 pub const MAX_BUFFER: usize = 1_000_000;
@@ -45,8 +47,6 @@ pub const MAX_BUFFER: usize = 1_000_000;
 pub const MAX_JOBS: usize = 8;
 /// Finished jobs kept for BashOutput; older ones (and their up-to-1MB output) are forgotten.
 pub const MAX_FINISHED: usize = 16;
-/// A job has no timeout; this only keeps the deadline arithmetic finite.
-const NO_DEADLINE: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 
 /// Where a job is in its life.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,56 +136,6 @@ pub struct Taken {
     pub fresh: String,
     /// Bytes that fell off the front of the buffer before they were taken.
     pub missed: usize,
-}
-
-/// The text the model gets, through the [`Inbox`], for a job that exited on
-/// its own: which job, how it ended, and to read it with BashOutput.
-fn exit_notice(job: &Job) -> String {
-    format!(
-        "[Background job {} {}: {}]\nRead what it printed with BashOutput (bash_id \"{}\") if it matters for the task.",
-        job.id,
-        job.state(),
-        job.command,
-        job.id
-    )
-}
-
-struct Shared {
-    jobs: Mutex<Jobs>,
-    events: Arc<dyn JobEvents>,
-    inbox: Arc<dyn Inbox>,
-}
-
-impl Shared {
-    fn output(&self, id: &str, chunk: &str) {
-        let job = {
-            let mut jobs = self.jobs.lock().unwrap();
-            let Some(e) = jobs.get_mut(id) else { return };
-            e.append(chunk);
-            e.job.clone()
-        };
-        self.events.on_output(&job, chunk, false);
-    }
-
-    fn finish(&self, id: &str, code: i32) {
-        let (job, running) = {
-            let mut jobs = self.jobs.lock().unwrap();
-            let Some(e) = jobs.get_mut(id) else { return };
-            e.job.exit_code = Some(code);
-            if e.job.status == JobStatus::Running {
-                e.job.status = JobStatus::Exited;
-            }
-            let job = e.job.clone();
-            jobs.forget_old_finished();
-            (job, jobs.running())
-        };
-        self.events.on_output(&job, "", true);
-        self.events.on_change(&running);
-        self.events.on_exit(&job);
-        if job.status == JobStatus::Exited {
-            self.inbox.submit(exit_notice(&job));
-        }
-    }
 }
 
 /// One conversation's background jobs. The host owns it and hands it to the
@@ -339,24 +289,4 @@ impl fmt::Debug for JobHub {
         let ids: Vec<String> = self.running().into_iter().map(|j| j.id).collect();
         f.debug_struct("JobHub").field("running", &ids).finish()
     }
-}
-
-async fn run(
-    shared: Arc<Shared>,
-    workspace: Arc<dyn Workspace>,
-    job: Job,
-    cwd: PathBuf,
-    stop: CancellationToken,
-) {
-    let (to, id) = (shared.clone(), job.id.clone());
-    let on_output: OutputChunks = Arc::new(move |chunk: &str| to.output(&id, chunk));
-    let opts = ExecOptions {
-        cwd,
-        cancel: stop,
-        timeout: NO_DEADLINE,
-    };
-    let r = workspace
-        .shell_streaming(&job.command, opts, on_output)
-        .await;
-    shared.finish(&job.id, r.exit_code);
 }

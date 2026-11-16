@@ -21,6 +21,7 @@
 //! when it has a key.
 
 mod catalog;
+mod files;
 mod request;
 pub mod settings;
 #[cfg(test)]
