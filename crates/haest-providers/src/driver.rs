@@ -57,7 +57,7 @@ pub(crate) fn drive<F: StreamFold>(
                     let next = tokio::select! {
                         biased;
                         _ = cancel.cancelled() => {
-                            failure = Some("request aborted".into());
+                            failure = Some(send::ABORTED.into());
                             break 'read;
                         }
                         next = body.next() => next,

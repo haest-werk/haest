@@ -179,10 +179,15 @@ fn retry_after(resp: &Response) -> Option<Duration> {
         .then(|| Duration::from_secs_f64(ms / 1000.0))
 }
 
+/// Why a request or its stream ended early when its cancel token fired. The
+/// message is marked aborted and this text is never shown (haest-core's
+/// `mark_stream_failed`); it only makes the end a failure.
+pub(crate) const ABORTED: &str = "request aborted";
+
 async fn sleep(delay: Duration, cancel: &CancellationToken) -> Result<(), String> {
     tokio::select! {
         biased;
-        _ = cancel.cancelled() => Err("request aborted".into()),
+        _ = cancel.cancelled() => Err(ABORTED.into()),
         _ = tokio::time::sleep(delay) => Ok(()),
     }
 }
@@ -210,11 +215,11 @@ pub(crate) async fn send(
     let mut attempt = 0;
     loop {
         if cancel.is_cancelled() {
-            return Err("request aborted".into());
+            return Err(ABORTED.into());
         }
         let sent = tokio::select! {
             biased;
-            _ = cancel.cancelled() => return Err("request aborted".into()),
+            _ = cancel.cancelled() => return Err(ABORTED.into()),
             sent = try_once(http, req, retry) => sent,
         };
         let retries_left = attempt < retry.max_retries;
