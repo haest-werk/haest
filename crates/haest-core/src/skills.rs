@@ -11,8 +11,9 @@
 //!
 //! The pieces, in the order a host meets them:
 //! - [`discover_skills`] with a [`SkillOptions`]: every [`Skill`] in the dirs the
-//!   sources name, sorted by name. ([`skill_scan_roots`] + [`skills_in`] is
-//!   the same in two steps, for a host that also needs the dirs: [`scan_roots`].)
+//!   sources name, sorted by name. ([`SkillScanRoots::find`] + [`skills_in`]
+//!   is the same in two steps, for a host that also needs the dirs:
+//!   [`SkillScanRoots::dirs`].)
 //! - [`skills_prompt_block`]: the system prompt's list of the skills the model
 //!   may pick ([`skill_cards_block`] for a host's own intro and cards).
 //! - [`DiskSkills`] / [`InlineSkills`]: the [`SkillSet`] the `Skill` tool
@@ -67,7 +68,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 pub use plugins::read_installed_plugins;
-pub use scan::{PluginRoot, SkillMeta, SkillScanRoots, parse_skill_file, scan_roots, scan_skills};
+pub use scan::{PluginRoot, SkillMeta, SkillScanRoots, parse_skill_file, scan_skills};
 pub use set::{
     DEFAULT_SKILLS_INTRO, DiskSkills, InlineSkill, InlineSkills, SkillCard, SkillSet,
     first_of_each_name, skill_cards_block,
@@ -148,23 +149,6 @@ pub struct SkillOptions {
     pub sources: SkillSources,
 }
 
-/// Where `opts`' skills live, worked out once (it reads Claude Code's plugin
-/// list): [`skills_in`] scans them, [`scan_roots`] lists the dirs a sandbox mounts.
-pub async fn skill_scan_roots(fs: &dyn Fs, opts: &SkillOptions) -> SkillScanRoots {
-    let plugins = match opts.sources.plugins {
-        true => read_installed_plugins(fs, &opts.claude_dir).await,
-        false => Vec::new(),
-    };
-    SkillScanRoots {
-        claude_dir: opts.claude_dir.clone(),
-        cwd: opts.cwd.clone(),
-        home: opts.home.clone(),
-        agents: opts.sources.agents,
-        claude: opts.sources.claude,
-        plugins,
-    }
-}
-
 impl Skill {
     /// Its line in the prompt's list.
     pub fn card(&self) -> SkillCard {
@@ -190,7 +174,7 @@ fn by_name(a: &str, b: &str) -> Ordering {
 /// Never fails: a dir that is missing, or a SKILL.md that cannot be read or
 /// parsed, is skipped.
 pub async fn discover_skills(fs: &dyn Fs, opts: &SkillOptions) -> Vec<Skill> {
-    skills_in(fs, &skill_scan_roots(fs, opts).await).await
+    skills_in(fs, &SkillScanRoots::find(fs, opts).await).await
 }
 
 /// Every skill under `roots`, sorted by name: [`scan_skills`], sorted.

@@ -17,7 +17,7 @@ use crate::{
         core::fs::Fs,
         core::ledger::Ledger,
         core::session::SessionRecord,
-        core::skills::{Skill, SkillScanRoots, scan_roots, skill_scan_roots, skills_in},
+        core::skills::{Skill, SkillScanRoots, skills_in},
         core::task_board::TaskBoard,
         core::tool::Tool,
         mcp::McpServerConfig,
@@ -116,9 +116,9 @@ async fn find(
     fs: &Arc<dyn Fs>,
     spill: &Path,
 ) -> anyhow::Result<Found> {
-    let skill_roots = skill_scan_roots(fs.as_ref(), &skill_options(&hooks.settings)).await;
+    let skill_roots = SkillScanRoots::find(fs.as_ref(), &skill_options(&hooks.settings)).await;
     let skills = Arc::new(Mutex::new(skills_in(fs.as_ref(), &skill_roots).await));
-    let skill_dirs = scan_roots(&skill_roots);
+    let skill_dirs = skill_roots.dirs();
     let remedies = hooks.remedies();
     let workspace =
         workspace_for(&hooks.settings, world, env, &skill_dirs, spill, remedies).await?;

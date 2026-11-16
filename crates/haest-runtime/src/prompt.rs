@@ -43,7 +43,7 @@ pub fn instruction_options(s: &Settings) -> InstructionOptions {
 
 /// Which skill dirs the `skills` setting asks for, under `cwd` and `home`,
 /// with `~/.claude` as Claude Code's user dir (its skills and its plugin
-/// list): what `skill_scan_roots` takes.
+/// list): what `SkillScanRoots::find` takes.
 pub fn skill_options(s: &Settings) -> SkillOptions {
     SkillOptions {
         cwd: s.cwd.clone(),

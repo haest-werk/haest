@@ -17,8 +17,9 @@
 use std::path::{Path, PathBuf};
 
 use super::{
-    Skill, SkillSource,
+    Skill, SkillOptions, SkillSource,
     frontmatter::{Meta, MetaMap, read_meta},
+    read_installed_plugins,
 };
 use crate::{
     context::project_chain,
@@ -35,22 +36,38 @@ pub struct PluginRoot {
     pub path: PathBuf,
 }
 
-/// Where a skill scan reads, worked out: [`super::skill_scan_roots`] makes one
-/// from [`super::SkillOptions`]. Each field is one fact the scan reads.
+/// Where a skill scan reads: the host's [`SkillOptions`] with Claude Code's
+/// plugin list read once ([`find`](Self::find)). [`scan_skills`] and
+/// [`skills_in`](super::skills_in) scan it, [`dirs`](Self::dirs) lists the
+/// dirs a sandbox mounts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillScanRoots {
-    /// Claude Code's user dir (`<home>/.claude` unless the host says otherwise).
-    pub claude_dir: PathBuf,
-    /// The project dir the project levels are counted from.
-    pub cwd: PathBuf,
-    /// The user's home dir.
-    pub home: PathBuf,
-    /// `.agents/skills`: `~/.agents/skills` and every project level's.
-    pub agents: bool,
-    /// Claude Code's: `<claude dir>/skills` and every project level's `.claude/skills`.
-    pub claude: bool,
+    /// The dirs to start from and the sources that are on.
+    pub opts: SkillOptions,
     /// The plugins whose `skills/` dirs are read; empty = none.
     pub plugins: Vec<PluginRoot>,
+}
+
+impl SkillScanRoots {
+    /// Where `opts`' skills live: with the `plugins` source on, the installed
+    /// and enabled plugins in Claude Code's list, read now.
+    pub async fn find(fs: &dyn Fs, opts: &SkillOptions) -> Self {
+        let plugins = match opts.sources.plugins {
+            true => read_installed_plugins(fs, &opts.claude_dir).await,
+            false => Vec::new(),
+        };
+        Self {
+            opts: opts.clone(),
+            plugins,
+        }
+    }
+
+    /// Every directory a skill scan may read, for a host that must grant
+    /// access to them (a sandbox's mounts). Lists them whether or not they
+    /// exist.
+    pub fn dirs(&self) -> Vec<PathBuf> {
+        scan_plan(self).into_iter().map(|s| s.dir).collect()
+    }
 }
 
 /// What a SKILL.md's frontmatter says, before it is placed (source, path,
@@ -162,20 +179,21 @@ fn scan_plan(roots: &SkillScanRoots) -> Vec<ScanStep> {
         source,
         plugin: None,
     };
-    let (agents, claude) = (roots.agents, roots.claude);
+    let opts = &roots.opts;
+    let (agents, claude) = (opts.sources.agents, opts.sources.claude);
     let mut plan = Vec::new();
     if agents {
-        plan.push(step(roots.home.join(".agents/skills"), SkillSource::User));
+        plan.push(step(opts.home.join(".agents/skills"), SkillSource::User));
     }
     if claude {
-        plan.push(step(roots.claude_dir.join("skills"), SkillSource::User));
+        plan.push(step(opts.claude_dir.join("skills"), SkillSource::User));
     }
     // At one level `.claude` is read last, so it wins a tie.
     let dot_dirs: Vec<&str> = [(agents, ".agents"), (claude, ".claude")]
         .into_iter()
         .filter_map(|(on, d)| on.then_some(d))
         .collect();
-    let project = project_skill_dirs(&roots.cwd, &roots.home, &dot_dirs);
+    let project = project_skill_dirs(&opts.cwd, &opts.home, &dot_dirs);
     plan.extend(project.into_iter().map(|d| step(d, SkillSource::Project)));
     plan.extend(roots.plugins.iter().map(|p| ScanStep {
         dir: p.path.join("skills"),
@@ -236,12 +254,6 @@ pub async fn scan_skills(fs: &dyn Fs, roots: &SkillScanRoots) -> Vec<Skill> {
         }
     }
     by_name
-}
-
-/// Every directory a skill scan may read, for a host that must grant access
-/// to them (a sandbox's mounts). Lists them whether or not they exist.
-pub fn scan_roots(roots: &SkillScanRoots) -> Vec<PathBuf> {
-    scan_plan(roots).into_iter().map(|s| s.dir).collect()
 }
 
 #[cfg(test)]

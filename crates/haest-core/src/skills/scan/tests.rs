@@ -3,7 +3,7 @@
 use std::{collections::HashMap, path::Path};
 
 use super::*;
-use crate::fs::MemFs;
+use crate::{fs::MemFs, skills::SkillSources};
 
 #[test]
 fn parse_reads_invocation_flags_defaulting_both_to_on() {
@@ -104,11 +104,16 @@ fn scan_fixture() -> MemFs {
 
 fn roots(plugins: bool, agents_dirs: bool) -> SkillScanRoots {
     SkillScanRoots {
-        claude_dir: CLAUDE_DIR.into(),
-        cwd: CWD.into(),
-        home: HOME.into(),
-        agents: agents_dirs,
-        claude: true,
+        opts: SkillOptions {
+            cwd: CWD.into(),
+            home: HOME.into(),
+            claude_dir: CLAUDE_DIR.into(),
+            sources: SkillSources {
+                agents: agents_dirs,
+                claude: true,
+                plugins,
+            },
+        },
         plugins: if plugins {
             vec![PluginRoot {
                 name: "toolkit".into(),
@@ -129,8 +134,8 @@ async fn scanned(plugins: bool, agents_dirs: bool) -> HashMap<String, Skill> {
 }
 
 #[test]
-fn scan_roots_name_every_directory_the_scan_reads_plugin_roots_included() {
-    let dirs = scan_roots(&roots(true, false));
+fn the_dirs_are_every_directory_the_scan_reads_plugin_roots_included() {
+    let dirs = roots(true, false).dirs();
     assert!(dirs.contains(&Path::new(CLAUDE_DIR).join("skills")));
     assert!(dirs.contains(&Path::new(REPO).join(".claude/skills")));
     assert!(dirs.contains(&Path::new(PLUGIN).join("skills")));
@@ -138,11 +143,10 @@ fn scan_roots_name_every_directory_the_scan_reads_plugin_roots_included() {
 
 #[test]
 fn outside_home_every_level_up_to_the_root_is_a_project_level() {
-    let outside = SkillScanRoots {
-        cwd: "/srv/app".into(),
-        ..roots(false, false)
-    };
-    let project: Vec<_> = scan_roots(&outside)
+    let mut outside = roots(false, false);
+    outside.opts.cwd = "/srv/app".into();
+    let project: Vec<_> = outside
+        .dirs()
         .into_iter()
         .filter(|d| !d.starts_with(CLAUDE_DIR))
         .collect();

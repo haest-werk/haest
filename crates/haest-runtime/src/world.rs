@@ -122,7 +122,7 @@ async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> anyhow::Result<()> {
 }
 
 /// The `workspace` setting's workspace in this world. The disk's sandbox
-/// mounts the skill dirs (read-only; `scan_roots` of the `skills` setting's
+/// mounts the skill dirs (read-only; `SkillScanRoots::dirs` of the `skills` setting's
 /// roots) and the spill dir (read-write); a host's Fs is the sandbox's whole
 /// world. On the disk the spill dir is made first, private. `passed` (the
 /// variables the host passes on purpose) reaches the shell either way: the
