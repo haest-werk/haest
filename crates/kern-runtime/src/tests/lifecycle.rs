@@ -7,7 +7,7 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 use kern_settings::Settings;
 
-use super::{hardcoded, keyed};
+use super::{hardcoded, keyed, keyed_with};
 use crate::{
     BuildOptions, RuntimeInputs, World, build,
     kern::{
@@ -22,6 +22,7 @@ use crate::{
 
 const SESSIONS: &str = "/data/sessions";
 const OTHER: &str = "openrouter:openai/gpt-5.5";
+const GIVEN: &str = "openrouter:z-ai/glm-5";
 
 /// An MCP server at a closed local port: starting it fails at once, with a warning.
 fn closed_server() -> McpServerConfig {
@@ -99,6 +100,41 @@ async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothi
     let back = keyed(&fs, Some(rt.session_id())).await;
     assert_eq!(back.agent.model_spec, OTHER);
     assert_eq!(back.agent.effort, Some(Effort::High));
+}
+
+/// A resume goes on with the session's own model and effort, unless this run
+/// asked for its own on purpose: that one wins, and the next resume keeps it.
+#[tokio::test]
+async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
+    let fs = Arc::new(MemFs::new());
+    let mut rt = keyed(&fs, None).await;
+    rt.set_model(OTHER).unwrap();
+    rt.set_effort(Some(Effort::High));
+    rt.host.flush().await;
+    let id = rt.session_id();
+    let on = |rt: &crate::Runtime<Recorded>| (rt.agent.model_spec.clone(), rt.agent.effort);
+
+    let plain = keyed(&fs, Some(id.clone())).await;
+    assert_eq!(on(&plain), (OTHER.to_string(), Some(Effort::High)));
+
+    let given = Settings {
+        model: GIVEN.into(),
+        effort: Some(Effort::Low),
+        ..hardcoded()
+    };
+    let opts = |model_given, effort_given| BuildOptions {
+        resume: Some(id.clone()),
+        model_given,
+        effort_given,
+    };
+    let model_only = keyed_with(&fs, given.clone(), opts(true, false)).await;
+    assert_eq!(on(&model_only), (GIVEN.to_string(), Some(Effort::High)));
+    let both = keyed_with(&fs, given, opts(true, true)).await;
+    assert_eq!(on(&both), (GIVEN.to_string(), Some(Effort::Low)));
+    both.host.flush().await;
+
+    let next = keyed(&fs, Some(id)).await;
+    assert_eq!(on(&next), (GIVEN.to_string(), Some(Effort::Low)));
 }
 
 #[tokio::test]

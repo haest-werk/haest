@@ -71,12 +71,19 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
 
 /// A conversation over `fs` with an OpenRouter key; `resume` as [`BuildOptions`].
 async fn keyed(fs: &Arc<MemFs>, resume: Option<String>) -> Runtime<Recorded> {
-    let mut inputs = RuntimeInputs::new(hardcoded(), World::Fs(fs.clone()));
+    let opts = BuildOptions {
+        resume,
+        ..BuildOptions::default()
+    };
+    keyed_with(fs, hardcoded(), opts).await
+}
+
+/// The same on `settings`, built with `opts`.
+async fn keyed_with(fs: &Arc<MemFs>, settings: Settings, opts: BuildOptions) -> Runtime<Recorded> {
+    let mut inputs = RuntimeInputs::new(settings, World::Fs(fs.clone()));
     inputs.keys = Arc::new(|name: &str| (name == "OPENROUTER_API_KEY").then(|| "k".to_string()));
     let ui = Arc::new(Recorded::default());
-    build(inputs, ui, Deny, BuildOptions { resume })
-        .await
-        .unwrap()
+    build(inputs, ui, Deny, opts).await.unwrap()
 }
 
 #[tokio::test]

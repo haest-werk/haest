@@ -26,7 +26,7 @@ use crate::{
     },
     mods,
     prompt::{AgentPrompt, RuntimePrompt, skill_opts},
-    store::{create, open_session, record_start, restore},
+    store::{create, open_session, record_given, record_start, restore, start_on},
     tools::{MainTools, WrappedTools, image_options, own_tools},
     world::{World, connect_mcp, jobs_for, workspace_for},
 };
@@ -73,6 +73,11 @@ impl RuntimeInputs {
 pub struct BuildOptions {
     /// None = a new session; Some("") = the latest one in the cwd; Some(id) = that one.
     pub resume: Option<String>,
+    /// The settings' model was asked for on purpose for this run (a flag):
+    /// a resume goes on with it, not with the one the session saved.
+    pub model_given: bool,
+    /// The same, for the effort.
+    pub effort_given: bool,
 }
 
 /// What the conversation finds in its world: the skill roots and the skills
@@ -223,8 +228,9 @@ where
         ..shared
     };
 
-    let mut agent_opts = AgentOptions::new(s.model.clone());
-    agent_opts.effort = s.effort;
+    let (model, effort) = start_on(s, session.saved.as_ref(), &opts);
+    let mut agent_opts = AgentOptions::new(model);
+    agent_opts.effort = effort;
     let resumed = session.saved.is_some();
     if let Some(saved) = session.saved {
         restore(&host, saved, &ledger, &board, &mut agent_opts);
@@ -232,7 +238,9 @@ where
     let agent = Agent::new(deps, agent_opts);
     host.set_model(&agent.model_spec);
     host.set_effort(agent.effort);
-    if !resumed {
+    if resumed {
+        record_given(&host, &agent, &opts);
+    } else {
         record_start(&host, &agent);
     }
     Ok(Runtime {

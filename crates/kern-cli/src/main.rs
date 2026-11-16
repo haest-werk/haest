@@ -32,7 +32,7 @@ use std::{
 
 use kern::{
     config::{Loaded, Loader, env_var},
-    runtime::{BuildOptions, RuntimeInputs, Ui, World, sessions, world},
+    runtime::{RuntimeInputs, Ui, World, sessions, world},
     session::sessions_dir,
     settings::Settings,
     workspace::RealFs,
@@ -170,9 +170,7 @@ async fn main() -> ExitCode {
     let ui = Arc::new(TermUi::new(args.json));
     loaded.notes.iter().for_each(|n| ui.warn(n));
     let prompter = TermPrompter::new(ui.clone(), ask::interactive());
-    let opts = BuildOptions {
-        resume: args.resume.clone(),
-    };
+    let opts = cli.build_options();
     let inputs = RuntimeInputs {
         settings: loaded.config.settings,
         world: World::Disk {

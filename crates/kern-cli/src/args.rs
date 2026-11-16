@@ -5,7 +5,10 @@
 use std::{ffi::OsString, path::PathBuf};
 
 use clap::{Arg, ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
-use kern::config::{DEFS, Def, Kind};
+use kern::{
+    config::{DEFS, Def, Kind},
+    runtime::BuildOptions,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -65,6 +68,20 @@ impl Args {
 pub struct Cli {
     pub args: Args,
     pub settings: Vec<(String, String)>,
+}
+
+impl Cli {
+    /// What this run asks of the build: the session to resume, and whether a
+    /// flag picked the model or the effort (a flag wins over a resumed
+    /// session's own; a variable or a file does not).
+    pub fn build_options(&self) -> BuildOptions {
+        let given = |key: &str| self.settings.iter().any(|(k, _)| k == key);
+        BuildOptions {
+            resume: self.args.resume.clone(),
+            model_given: given("model"),
+            effort_given: given("effort"),
+        }
+    }
 }
 
 fn setting_arg(def: &Def) -> Arg {
@@ -193,5 +210,16 @@ mod tests {
         assert_eq!(cli(&["-r"]).args.resume, Some(String::new()));
         assert_eq!(cli(&["--resume", "abc"]).args.resume, Some("abc".into()));
         assert_eq!(cli(&[]).args.resume, None);
+    }
+
+    #[test]
+    fn a_model_or_effort_flag_is_one_the_run_asked_for() {
+        let o = cli(&["-r", "-m", "a:b"]).build_options();
+        assert_eq!(o.resume, Some(String::new()));
+        assert!(o.model_given && !o.effort_given);
+        let o = cli(&["-r", "abc", "-e", "low"]).build_options();
+        assert!(!o.model_given && o.effort_given);
+        let o = cli(&["-r"]).build_options();
+        assert!(!o.model_given && !o.effort_given);
     }
 }

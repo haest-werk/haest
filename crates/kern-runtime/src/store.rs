@@ -11,9 +11,9 @@ use anyhow::{Context, anyhow, bail};
 use kern_settings::Settings;
 
 use crate::{
-    Host, Ui,
+    BuildOptions, Host, Ui,
     kern::{
-        Agent, AgentOptions,
+        Agent, AgentOptions, Effort,
         fs::Fs,
         ledger::Ledger,
         now_ms,
@@ -111,7 +111,38 @@ pub(crate) fn record_start(host: &Host, agent: &Agent) {
     }
 }
 
-/// A saved session back in place: its ledger, task list, model, effort and history.
+/// The model and effort the conversation starts on: the settings', except
+/// that a resume goes on with the ones the session saved, unless the host
+/// says this run asked for its own ([`BuildOptions`]).
+pub(crate) fn start_on(
+    s: &Settings,
+    saved: Option<&ReplayedSession>,
+    opts: &BuildOptions,
+) -> (String, Option<Effort>) {
+    let model = saved
+        .and_then(|r| r.model.clone())
+        .filter(|_| !opts.model_given);
+    let effort = saved.and_then(|r| r.effort).filter(|_| !opts.effort_given);
+    (
+        model.unwrap_or_else(|| s.model.clone()),
+        effort.unwrap_or(s.effort),
+    )
+}
+
+/// A resume on a model or effort this run asked for: recorded like a switch,
+/// so the next resume goes on with it.
+pub(crate) fn record_given(host: &Host, agent: &Agent, opts: &BuildOptions) {
+    if opts.model_given || opts.effort_given {
+        host.append(SessionRecord::Config {
+            t: now_ms(),
+            model: opts.model_given.then(|| agent.model_spec.clone()),
+            effort: opts.effort_given.then_some(agent.effort),
+        });
+    }
+}
+
+/// A saved session back in place: its ledger, task list and history (the
+/// model and effort are [`start_on`]'s).
 pub(crate) fn restore(
     host: &Host,
     saved: ReplayedSession,
@@ -129,11 +160,5 @@ pub(crate) fn restore(
         ledger.lock().unwrap().restore(l);
     }
     board.restore(saved.tasks.unwrap_or_default());
-    if let Some(model) = saved.model {
-        opts.model = model;
-    }
-    if let Some(effort) = saved.effort {
-        opts.effort = effort;
-    }
     opts.history = saved.messages;
 }
