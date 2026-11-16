@@ -1,9 +1,9 @@
 # Budgets: wind-down, subagent budgets, tool costs (plan, opt-in)
 
-Status: plan, 2026-11-16. Built after the 0.2.0 clean-code pass lands on `main`; that
-pass renames the cap types (minutes become `Duration`), splits `AgentHooks` (a `Clock`
-trait), renames the subagent hub and makes public errors typed. Names below follow
-`main` at `eb1a493` and change with it.
+Status: plan, 2026-11-16. Names follow `main` at `1c7372a` (0.2.0): `caps::{TurnCaps,
+SubagentCaps}` hold `Duration`s (minutes only at the settings boundary), `Clock` sits on
+`AgentDeps`, the hub's parent is `SubagentParent`, public errors are typed, and every
+library message about a cap ends with the host's remedy through `remedy::{Limit, Remedies}`.
 
 Source: protokol agent-core, `usage-budget.ts`, `budget-ledger.ts`, `tool-gate.ts`,
 `tool-budget.ts`, `agent-tool.ts`.
@@ -17,8 +17,8 @@ plain name, and the host adds its own remedy (the 0.2.0 rule).
 | | Where |
 |---|---|
 | Conversation ledger: USD + unpriced tokens; posting again does not reset it; the human raises it; saved in the session log; warns the human at 80% | `haest-core` `ledger.rs` |
-| Turn caps: USD, tokens, request size, steps, wall time, repeats; nudges the model at 50%, stops at the cap | `limits.rs`, `guard.rs` |
-| Subagent caps: depth, how many at once, and each one's USD, steps and minutes | `limits.rs` `SubagentCaps` |
+| Turn caps: USD, tokens, request size, steps, wall time, repeats; nudges the model at 50%, stops at the cap | `caps.rs` `TurnCaps`, `guard.rs` (crate-private) |
+| Subagent caps: depth, how many at once, and each one's USD, steps and time | `caps.rs` `SubagentCaps` |
 | A tool's own spend, reported after the call: `ToolOutput::cost_usd` (charged to the ledger), `child_cost_usd` (already charged) | `tool.rs` |
 
 ## W. Wind-down (agent-core's "soft phase")
@@ -53,7 +53,8 @@ With the setting on, the Agent tool takes an optional `budget`:
   left, so the model can ask for less. When the child ends, the hold is released and
   its real spend stays (it charged the ledger itself, call by call).
 - **Time must fit.** The child's minutes must fit what is left of the parent turn's
-  wall time (`max_turn_ms`); otherwise refused with what is left.
+  wall time (`TurnCaps::max_turn_time`); otherwise refused with what is left. Minutes
+  exist only in the tool's parameter; inside it is a `Duration`.
 - Concurrent children are why the hold matters. Each subagent checks the shared ledger
   only before its own model calls, so 4 running at once can each pass the check and
   overshoot together. Holding each child's cap up front closes that.

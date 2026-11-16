@@ -1,8 +1,9 @@
 # Durable runs (plan, opt-in)
 
 Status: plan, 2026-11-16. Nothing here is built. Type and file names follow `main` at
-`eb1a493`; the 0.2.0 clean-code pass renames the cap types, `AgentHooks` and the
-subagent hub, so the names below get updated when this is built.
+`1c7372a` (0.2.0): `caps::TurnCaps` (`max_turn_time: Duration`), `SubagentParent`
+(`agents/parent.rs`), the hub's member run in `agents/hub/member_run.rs`, `ModelFacts` and
+`Clock` on `AgentDeps`.
 
 ## Goal
 
@@ -41,7 +42,7 @@ the log. What is missing:
 | J2 | Turn state is not in the log: turn spend, step count, start time, the guard's repeat counts. A resumed turn would start with fresh turn caps | `agent/turn.rs` `Turn` |
 | J3 | No intent before effect. `on_message` only queues the record; nothing waits for the assistant message (its tool calls ARE the intents) to land before a tool with side effects runs | `session/file.rs` write queue |
 | J4 | A tool cannot say whether running it again is safe; `read_only()` is the only signal | `tool.rs` |
-| J5 | Subagents keep no log ("neither persists its messages nor compacts", `agents/host.rs`). A crash runs, and pays for, every subagent again from the start | `haest-tools` `agents/` |
+| J5 | Subagents keep no log ("neither persists its messages nor compacts", `agents/parent.rs`). A crash runs, and pays for, every subagent again from the start | `haest-tools` `agents/` |
 | J6 | No run key: nothing maps "this job" to "its result" | -- |
 | J7 | Background jobs (Bash `run_in_background`, background agents) die with the process | `haest-tools` `jobs.rs` |
 
@@ -89,12 +90,14 @@ side effects. The `durable-agent` crate fences each tool step the same way (a du
 A new default method on `Tool`, so existing tools compile unchanged:
 
 ```rust
-fn on_resume(&self) -> Resume {
-    if self.read_only() { Resume::Rerun } else { Resume::Report }
+fn on_resume(&self) -> OnResume {
+    if self.read_only() { OnResume::Rerun } else { OnResume::Report }
 }
 ```
 
-| `Resume` | Meaning |
+(Named `OnResume`: `haest_runtime::Resume` already names which session a build resumes.)
+
+| `OnResume` | Meaning |
 |---|---|
 | `Rerun` | running it again is safe (reads; a Write of the same bytes) |
 | `Report` | answer the call "interrupted: it may or may not have run; check before retrying" (today's behaviour, now chosen per tool) |

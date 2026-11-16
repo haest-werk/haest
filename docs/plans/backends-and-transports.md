@@ -1,8 +1,8 @@
 # Backends and transports (plan, opt-in)
 
-Status: plan, 2026-11-16. Nothing here is built. Names follow `main` at `eb1a493`; the 0.2.0
-clean-code pass renames some of them (`AgentHooks`, the subagent hub), so update the names
-when this is built.
+Status: plan, 2026-11-16. Nothing here is built. Written against `eb1a493`; the 0.2.0 names
+are in (`1c7372a`): `SubagentParent` (`agents/parent.rs`), `ToolServices`, `RuntimeHooks`,
+`ModUi`. Line numbers below are from `eb1a493`; find the code by name.
 
 ## Goal
 
@@ -74,7 +74,7 @@ rounds (`agent-runtime.ts:25`, `152-180`). haest steers at the next step boundar
 | Inbox + gate | `haest-runtime/src/inbox.rs:76-151` | human vs agent origin (`human`, `agent_turn`): the ping-pong cap counts agent turns only |
 | Between-turn changes | `runtime.rs:88-133` | `set_model`, `set_effort`, `clear`: agent, host and session file in step |
 | Approvals | `haest-mods/src/gate.rs:23-46` | `Prompter::prompt -> Answer {Allow, AllowAlways, Deny}`; unanswered asks deny after 10 min (50) |
-| Subagents | `haest-tools/src/agents.rs:19-23`, `181-196`; `agents/host.rs:16-38`, `68-69` | `AgentDirectory` is the plug point for a subagent that runs elsewhere; `SubagentEvent` is not `Serialize` |
+| Subagents | `haest-tools/src/agents.rs:19-23`, `181-196`; `agents/parent.rs` (was `agents/host.rs`) | `AgentDirectory` is the plug point for a subagent that runs elsewhere; `SubagentEvent` is not `Serialize` |
 | `--json` | `haest-cli/src/render.rs:94-100`, `165-184` | output only: `LoopEvent` lines plus `notice` and `ask` lines; no seq, no version, no input side |
 
 ### Three wire vocabularies for the same session
