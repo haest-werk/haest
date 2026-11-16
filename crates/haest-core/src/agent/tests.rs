@@ -135,6 +135,30 @@ async fn abort_mid_turn_still_answers_every_pending_tool_call() {
 }
 
 #[tokio::test]
+async fn a_failed_answer_leaves_no_tool_call_without_a_result_in_history() {
+    let mut failed = echo("a", json!({"v": "1"}));
+    failed.stop_reason = StopReason::Error;
+    failed.error_message = Some("the stream broke".into());
+    let p = ScriptedProvider::new([failed, text_answer("ok")]);
+    let (mut agent, hooks) = agent_with(&p, Opts::default());
+    let ended = agent.run("go", &mut Vec::new()).await;
+    assert_eq!(ended.stop_reason, StopReason::Error);
+    let calls = |messages: &[Message]| {
+        messages
+            .iter()
+            .filter_map(|m| match m {
+                Message::Assistant(a) => Some(a.tool_calls().count()),
+                _ => None,
+            })
+            .sum::<usize>()
+    };
+    assert_eq!(calls(agent.history()), 0);
+    assert_eq!(calls(&hooks.persisted.lock().unwrap()), 0);
+    agent.run("again", &mut Vec::new()).await;
+    assert_eq!(calls(&p.requests()[1].messages), 0);
+}
+
+#[tokio::test]
 async fn input_steered_mid_turn_lands_after_the_tool_results_in_the_same_turn() {
     let p = ScriptedProvider::new([
         tool_answer(&[("a", "Echo", json!({"v": "1"}))]),

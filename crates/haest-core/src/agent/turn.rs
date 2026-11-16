@@ -13,7 +13,7 @@ use crate::{
     events::{EventSink, LoopEvent, TurnEnd},
     guard::TurnGuard,
     media::user_message,
-    messages::{AssistantMessage, Message, StopReason, ToolCall, Usage},
+    messages::{AssistantMessage, AssistantPart, Message, StopReason, ToolCall, Usage},
     provider::ProviderEvent,
     tool::{ToolContext, ToolServices},
     tool_batch::{Answer, Answers, run_tool_batches},
@@ -183,9 +183,15 @@ impl Agent {
                 }
             }
         }
-        let msg = done.unwrap_or_else(|| {
+        let mut msg = done.unwrap_or_else(|| {
             error_assistant(&resolved.model, "provider ended without a response")
         });
+        if matches!(msg.stop_reason, StopReason::Error | StopReason::Aborted) {
+            // A failed answer runs no tool, so a call in it would stay in
+            // history with no result, and the next request would be refused.
+            msg.content
+                .retain(|part| !matches!(part, AssistantPart::ToolCall(_)));
+        }
         append(
             &mut self.history,
             self.deps.hooks.as_ref(),
