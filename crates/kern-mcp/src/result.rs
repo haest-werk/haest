@@ -7,11 +7,7 @@ use base64::{
     alphabet::STANDARD,
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
 };
-use kern_core::{
-    media::media_from_bytes,
-    messages::{MediaKind, MediaPart},
-    tool::ToolOutput,
-};
+use kern_core::{media::media_from_bytes, messages::MediaPart, tool::ToolOutput};
 use serde_json::Value;
 
 fn field<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
@@ -20,15 +16,6 @@ fn field<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
 
 fn part_type(p: &Value) -> &str {
     field(p, "type").unwrap_or("unknown")
-}
-
-fn kind_name(kind: MediaKind) -> &'static str {
-    match kind {
-        MediaKind::Image => "image",
-        MediaKind::File => "file",
-        MediaKind::Audio => "audio",
-        MediaKind::Video => "video",
-    }
 }
 
 /// Base64 the way a lenient decoder reads it: padding optional, whitespace ignored.
@@ -55,7 +42,7 @@ fn mcp_media(p: &Value, index: usize, media: &mut Vec<MediaPart>) -> String {
     };
     match media_from_bytes(&bytes, mime, &name) {
         Ok(part) => {
-            let line = format!("[{} {} attached]", kind_name(part.kind), part.name);
+            let line = format!("[{} {} attached]", part.kind.as_str(), part.name);
             media.push(part);
             line
         }
@@ -130,6 +117,7 @@ pub fn mcp_result_to_output(res: &Value) -> ToolOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kern_core::messages::MediaKind;
     use serde_json::json;
 
     #[test]

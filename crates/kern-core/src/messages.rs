@@ -80,15 +80,17 @@ pub enum StopReason {
     Error,
 }
 
-/// OpenRouter's modality names (`file` = a PDF), so gating against a model's
-/// catalog row is a set lookup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MediaKind {
-    Image,
-    File,
-    Audio,
-    Video,
+crate::word_enum! {
+    /// OpenRouter's modality names (`file` = a PDF), so gating against a model's
+    /// catalog row is a set lookup. [`MediaKind::as_str`] is also the word a
+    /// model or a human reads for the kind.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum MediaKind ("media kind") {
+        Image = "image",
+        File = "file",
+        Audio = "audio",
+        Video = "video",
+    }
 }
 
 /// Non-text input riding a user turn or a tool result. Bytes travel inline as
@@ -233,6 +235,27 @@ mod tests {
         };
         assert_eq!(a.tool_calls().count(), 1);
         assert_eq!(a.stop_reason, StopReason::ToolUse);
+        assert_eq!(serde_json::to_value(&msg).unwrap(), ts);
+    }
+
+    #[test]
+    fn a_ts_user_turn_with_media_round_trips() {
+        let ts = json!({
+            "role": "user",
+            "content": "see these",
+            "media": [
+                {"kind": "image", "mediaType": "image/png", "data": "AA==", "name": "a.png"},
+                {"kind": "file", "mediaType": "application/pdf", "data": "AA==", "name": "b.pdf"},
+                {"kind": "audio", "mediaType": "audio/wav", "data": "AA==", "name": "c.wav"},
+                {"kind": "video", "mediaType": "video/mp4", "data": "AA==", "name": "d.mp4"}
+            ]
+        });
+        let msg: Message = serde_json::from_value(ts.clone()).unwrap();
+        let Message::User(u) = &msg else {
+            panic!("not user")
+        };
+        let kinds: Vec<_> = u.media.iter().map(|p| p.kind).collect();
+        assert_eq!(kinds, MediaKind::ALL);
         assert_eq!(serde_json::to_value(&msg).unwrap(), ts);
     }
 

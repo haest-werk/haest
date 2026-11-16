@@ -79,8 +79,7 @@ pub async fn media_output(
         .map_or_else(|| label.to_string(), |n| n.to_string_lossy().into_owned());
     let part = media_from_bytes(&bytes, media_type, &name).map_err(ToolError::Input)?;
     let len = bytes.len();
-    let kind = serde_json::to_value(part.kind).unwrap_or(Value::Null);
-    let kind = kind.as_str().unwrap_or("media").to_string();
+    let kind = part.kind.as_str();
     let mut result = json!({"kind": "file", "mediaType": media_type, "bytes": len});
     if let Some(url) = ctx.host.publish(bytes, media_type).await {
         result["url"] = Value::String(url);

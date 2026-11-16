@@ -80,15 +80,6 @@ fn kb(bytes: usize) -> String {
     format!("{} KB", ((bytes as f64 / 1024.0).round() as usize).max(1))
 }
 
-fn kind_name(kind: MediaKind) -> &'static str {
-    match kind {
-        MediaKind::Image => "image",
-        MediaKind::File => "file",
-        MediaKind::Audio => "audio",
-        MediaKind::Video => "video",
-    }
-}
-
 /// A media part, or the reason these bytes cannot be one (said to the model verbatim).
 pub fn media_from_bytes(bytes: &[u8], media_type: &str, name: &str) -> Result<MediaPart, String> {
     let Some(kind) = media_kind_of(media_type) else {
@@ -100,7 +91,7 @@ pub fn media_from_bytes(bytes: &[u8], media_type: &str, name: &str) -> Result<Me
         return Err(format!(
             "{name} is {}; the limit for {} input is {}",
             kb(bytes.len()),
-            kind_name(kind),
+            kind.as_str(),
             kb(max_bytes(kind))
         ));
     }
@@ -127,7 +118,7 @@ fn modality(kind: MediaKind) -> InputModality {
 
 /// What the model reads in place of a part it cannot receive.
 pub fn dropped_note(p: &MediaPart, model: &str) -> String {
-    let kind = kind_name(p.kind);
+    let kind = p.kind.as_str();
     format!(
         "[{kind} \"{}\" ({}, {}) not shown: {model} does not accept {kind} input. Switch to a model that does to see it.]",
         p.name,

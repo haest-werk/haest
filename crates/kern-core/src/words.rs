@@ -138,6 +138,7 @@ macro_rules! word_enum {
 mod tests {
     use crate::{
         deferred_tools::DeferMode,
+        messages::MediaKind,
         provider::{Effort, WebSearchEngine},
         task_board::KernTaskStatus,
         workspace::WorkspaceMode,
@@ -162,6 +163,7 @@ mod tests {
         round_trips(WorkspaceMode::ALL, |v| v.as_str());
         round_trips(DeferMode::ALL, |v| v.as_str());
         round_trips(KernTaskStatus::ALL, |v| v.as_str());
+        round_trips(MediaKind::ALL, |v| v.as_str());
         let err = serde_json::from_str::<Effort>("\"huge\"").unwrap_err();
         assert!(err.to_string().contains("unknown effort"), "{err}");
         assert!("eager".parse::<DeferMode>().is_err());
