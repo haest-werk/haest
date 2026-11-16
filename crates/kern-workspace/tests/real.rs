@@ -132,6 +132,40 @@ async fn a_timeout_kills_the_whole_process_group_not_just_bash() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_dropped_run_kills_the_whole_process_group() {
+    let (_t, dir) = tempdir();
+    let pid_file = dir.join("child.pid");
+    let started = async {
+        loop {
+            if let Ok(s) = std::fs::read_to_string(&pid_file)
+                && s.ends_with('\n')
+            {
+                break s.trim().parse::<libc::pid_t>().unwrap();
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    };
+    let ws = real();
+    // A Code run that times out drops its calls mid-way, just so.
+    let pid = tokio::select! {
+        _ = ws.shell("sleep 30 & echo $! > child.pid; wait", opts(&dir)) => {
+            panic!("the shell ended on its own")
+        }
+        pid = started => pid,
+    };
+    let gone = Instant::now() + Duration::from_secs(2);
+    while alive(pid) && Instant::now() < gone {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let survived = alive(pid);
+    if survived {
+        // SAFETY: our own test's sleep; kill(2) touches no memory of ours.
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+    }
+    assert!(!survived, "the background child outlived the dropped run");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn cancel_kills_a_long_sleep_quickly() {
     let (_t, dir) = tempdir();
     let o = opts(&dir);

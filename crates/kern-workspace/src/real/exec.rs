@@ -149,6 +149,19 @@ async fn drain(mut from: impl AsyncRead + Unpin, into: Sink, stream: Option<Outp
     }
 }
 
+/// Kills the child's whole group if the run is dropped before it ends (a
+/// Code run that times out drops its calls in flight): `kill_on_drop` alone
+/// kills only bash, and `sleep 1000 &` or `npm run dev` would run on.
+struct KillGroupOnDrop(Option<u32>);
+
+impl Drop for KillGroupOnDrop {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            kill_group(pid);
+        }
+    }
+}
+
 fn take(s: &Sink) -> String {
     String::from_utf8_lossy(&std::mem::take(&mut *s.lock().unwrap())).into_owned()
 }
@@ -181,6 +194,7 @@ pub async fn spawn_collect(
         Err(e) => return not_started(&shown, &e),
     };
     let pid = child.id().unwrap_or(0);
+    let mut on_drop = KillGroupOnDrop(Some(pid));
     let (out, err): (Sink, Sink) = Default::default();
     let readers = [
         tokio::spawn(drain(
@@ -217,6 +231,8 @@ pub async fn spawn_collect(
             tokio::time::timeout(DRAIN_GRACE, &mut finished).await.ok().and_then(Result::ok)
         }
     };
+    // It ended, or was killed above: the run was not dropped.
+    on_drop.0 = None;
     ExecResult {
         stdout: take(&out),
         stderr: take(&err),
