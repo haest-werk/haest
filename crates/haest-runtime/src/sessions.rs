@@ -1,9 +1,10 @@
-//! Saved sessions, through the host's [`Fs`]: the list, and which file a
-//! resume without an id means. Only the head of each file is read: the header
-//! and the first user message, in [`FIRST_READ`] bytes unless the first
-//! question is longer, so listing stays fast however long the conversations
-//! got. The paths and which file names are sessions are haest-core's
-//! ([`session_file`], [`session_id_of`]).
+//! Saved sessions, through the host's [`Fs`]: the list ([`list_sessions`]),
+//! and which file a resume without an id means ([`latest_in`]). Only the head
+//! of each file is read: the header and the first user message, in 16 KB
+//! unless the first question is longer (then up to 256 KB), so listing stays
+//! fast however long the conversations got. The paths and which file names
+//! are sessions are haest-core's ([`session_file`], [`session_id_of`]); the
+//! dir is [`sessions_dir`](haest_core::session::sessions_dir)`(data_dir)`.
 
 use std::{
     future::ready,
@@ -27,17 +28,22 @@ const MAX_READ: usize = 256 * 1024;
 /// Files stat'd or read at once while listing.
 const AT_ONCE: usize = 16;
 
+/// One saved session, as a list of them shows it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionInfo {
+    /// Its id: what [`BuildOptions::resume`](crate::BuildOptions::resume) takes.
     pub id: String,
+    /// The working dir it started in, from its header.
     pub cwd: String,
     /// Last write, ms since the epoch.
     pub modified_ms: u64,
-    /// The first line of the first thing the human asked.
+    /// The first line of the first thing the human asked, cut to 70
+    /// characters; empty when it asked nothing yet, or the question is too
+    /// long to read cheaply.
     pub preview: String,
 }
 
-/// A new session id: a v4 UUID, so ids never collide across machines.
+/// A new session id: a random v4 UUID, so ids do not collide across machines.
 pub fn new_session_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
@@ -135,7 +141,23 @@ async fn newest_first(fs: &dyn Fs, dir: &Path) -> Vec<Entry> {
     out
 }
 
-/// Every session in `dir`, newest first. Unreadable files are skipped.
+/// Every session in `dir` (`sessions_dir(data_dir)`), newest first by last
+/// write; ties in id order, so the order is the same on every call.
+/// Unreadable files, and files with no header, are skipped; a missing `dir` is
+/// an empty list.
+///
+/// ```
+/// use std::path::Path;
+///
+/// use haest_core::fs::MemFs;
+/// use haest_runtime::sessions::list_sessions;
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// let none = list_sessions(&MemFs::new(), Path::new("/data/sessions")).await;
+/// assert!(none.is_empty());
+/// # }
+/// ```
 pub async fn list_sessions(fs: &dyn Fs, dir: &Path) -> Vec<SessionInfo> {
     stream::iter(newest_first(fs, dir).await)
         .map(|e| async move {
@@ -153,8 +175,9 @@ pub async fn list_sessions(fs: &dyn Fs, dir: &Path) -> Vec<SessionInfo> {
         .await
 }
 
-/// The most recently written session started in `cwd`: headers read newest
-/// first, stopping at the first match.
+/// The id of the most recently written session in `dir` that started in
+/// `cwd`: what a resume without an id picks. Headers are read newest first,
+/// stopping at the first match. None when no session started there.
 pub async fn latest_in(fs: &dyn Fs, dir: &Path, cwd: &Path) -> Option<String> {
     let here = cwd.to_string_lossy();
     for e in newest_first(fs, dir).await {

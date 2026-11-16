@@ -18,10 +18,31 @@ const MAX_NAME: usize = 64;
 /// `_` and 8 hex digits: what a name that is too long or already taken ends in.
 const TAG_LEN: usize = 9;
 
-/// `mcp__<server>__<tool>` as every provider accepts it (`[A-Za-z0-9_-]`, at most
-/// 64): any other character becomes `_`, as Claude Code does, and a name over 64
-/// is cut and tagged with a hash of the two original names. The name a tool gets
-/// when no other tool has it ([`unique_tool_name`] settles that).
+/// The name the model sees for `server`'s tool `tool`: `mcp__<server>__<tool>`
+/// as every provider accepts it.
+///
+/// Only `A-Z`, `a-z`, `0-9`, `_` and `-` are kept; any other character becomes
+/// `_`, as Claude Code does. A name over 64 characters is cut and tagged with
+/// `_` and 8 hex digits, a hash of the two original names, so the same tool
+/// gets the same name every run (a resumed session's calls still match).
+///
+/// This is the name a tool gets when no other tool in its [`McpHub`] has it.
+/// When one already does (two servers or tools that differ only in characters
+/// a provider rejects, or past the 64th), the later one gets a tagged name
+/// instead. The tool keeps its own name for calls to its server.
+///
+/// [`McpHub`]: crate::McpHub
+///
+/// ```
+/// use haest_mcp::mcp_tool_name;
+///
+/// assert_eq!(mcp_tool_name("github", "create_issue"), "mcp__github__create_issue");
+/// assert_eq!(mcp_tool_name("docs.site", "search docs"), "mcp__docs_site__search_docs");
+///
+/// let long = mcp_tool_name("server", &"t".repeat(100));
+/// assert_eq!(long.len(), 64);
+/// assert_eq!(long, mcp_tool_name("server", &"t".repeat(100)));
+/// ```
 pub fn mcp_tool_name(server: &str, tool: &str) -> String {
     unique_tool_name(server, tool, &HashSet::new())
 }
@@ -59,13 +80,37 @@ fn fnv1a(parts: &[&str], salt: u32) -> u32 {
     })
 }
 
-/// Canonical kind of an MCP tool: `mcp.<server>.<tool>`.
+/// The [`kind`](haest_core::tool::Tool::kind) of `server`'s tool `tool`:
+/// `mcp.<server>.<tool>`, with both names as the server gives them.
+///
+/// Unlike the name the model sees ([`mcp_tool_name`]), the kind keeps the
+/// original names, unchanged and uncut.
+///
+/// ```
+/// assert_eq!(haest_mcp::mcp_kind("docs.site", "search docs"), "mcp.docs.site.search docs");
+/// ```
 pub fn mcp_kind(server: &str, tool: &str) -> String {
     format!("mcp.{server}.{tool}")
 }
 
-/// A tool of a connected MCP server. Calls go to the server for as long as it is
-/// connected; after the hub closes, a call fails (the transport is gone).
+/// A tool of a connected MCP server, as a haest [`Tool`].
+///
+/// [`McpHub::tools`](crate::McpHub::tools) hands them out, as `Arc<dyn Tool>`;
+/// there is no other way to get one. Its name is the hub's
+/// ([`mcp_tool_name`]), its kind [`mcp_kind`], its description and input
+/// schema the server's (a tool the server did not describe says what it is
+/// and which server it is on), and it is
+/// [`read_only`](Tool::read_only) only when the server's `readOnlyHint` says
+/// so.
+///
+/// A call goes to the server for as long as it is connected, and fails once
+/// the hub has closed. It fails after [`CALL_TIMEOUT`](crate::CALL_TIMEOUT),
+/// and at once when the call's cancel token fires; either way the server is
+/// told the call was cancelled. A result the server marks `isError` is an
+/// error output the model reads ([`mcp_result_to_output`]); a JSON-RPC error,
+/// or a server that asks for input or answers with a task, is a failed call.
+///
+/// [`mcp_result_to_output`]: crate::mcp_result_to_output
 pub struct McpTool {
     server: String,
     /// The tool's own name on its server: what a call asks for.

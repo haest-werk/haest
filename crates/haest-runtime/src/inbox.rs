@@ -4,11 +4,17 @@
 //!   - while a turn runs, what arrives is steered into it (read at its next step);
 //!   - what that turn left unread, and what arrived after it, run as the NEXT
 //!     turn -- one at a time, never two at once -- through the ping-pong gate
-//!     (HAEST_MAX_AGENT_TURNS); held items ride in with the human's next message;
+//!     (the `max_agent_turns` setting); held items ride in with the human's
+//!     next message;
 //!   - nothing is dropped: an item waits here until a turn takes it.
 //!
 //! A host with an input line never runs one under an open prompt: the
 //! [`Ui`](crate::Ui) announces it and the host runs it when the prompt returns.
+//!
+//! [`inbox`] makes the two ends: the [`InboxSender`] the jobs and the
+//! subagents submit to, and the [`InboxQueue`] the host takes turns from
+//! ([`Runtime::inbox`](crate::Runtime::inbox)). The crate docs show a host's
+//! turn loop over it.
 
 use std::{collections::VecDeque, sync::Arc};
 
@@ -22,6 +28,10 @@ use crate::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 /// The sending end the jobs and the subagent hub hold: queues, and tells the human.
+///
+/// Its [`Inbox::submit`] queues the text for main and shows the human its
+/// first line, cut short ([`Ui::arrival`](crate::Ui::arrival)). Made by
+/// [`inbox`].
 pub struct InboxSender {
     tx: UnboundedSender<String>,
     host: Arc<Host>,
@@ -45,6 +55,12 @@ impl Inbox for InboxSender {
 }
 
 /// The receiving end, with the gate every turn the human did not start passes.
+///
+/// A host reads it two ways: while a turn runs, [`arrival`](Self::arrival)
+/// gives each item as it comes, to steer into the turn; between turns,
+/// [`take`](Self::take) gives everything waiting as one input, to run through
+/// [`agent_turn`](Self::agent_turn). The human's own text goes through
+/// [`human`](Self::human), which ends the gate's count.
 pub struct InboxQueue {
     rx: UnboundedReceiver<String>,
     /// Received while no turn ran, not yet taken (print mode's wait).
@@ -53,6 +69,10 @@ pub struct InboxQueue {
 }
 
 /// The conversation's inbox: the end jobs and agents submit to, the end its turns take from.
+///
+/// `max_agent_turns` is the gate's cap: turns in a row with no message from
+/// the human before the rest are held (0 = no cap). The human hears through
+/// `host` when the gate starts holding.
 pub fn inbox(host: &Arc<Host>, max_agent_turns: u32) -> (Arc<InboxSender>, InboxQueue) {
     let (tx, rx) = unbounded_channel();
     let notice = host.clone();
@@ -65,6 +85,7 @@ pub fn inbox(host: &Arc<Host>, max_agent_turns: u32) -> (Arc<InboxSender>, Inbox
 }
 
 impl InboxQueue {
+    /// A queue over `rx` with `gate`; [`inbox`] makes one with its sender.
     pub fn new(rx: UnboundedReceiver<String>, gate: AgentTurnGate) -> Self {
         Self {
             rx,
@@ -73,17 +94,25 @@ impl InboxQueue {
         }
     }
 
-    /// The human posted: anything held rides in ahead of their text.
+    /// The human posted: the gate's count starts over, and anything it held
+    /// rides in ahead of their text. Returns the text to run the turn with.
     pub fn human(&mut self, text: &str) -> String {
         self.gate.human(text)
     }
 
-    /// A turn the human did not start: the text to run it with, or None (held).
+    /// A turn the human did not start: the text to run it with, or None
+    /// (held until the human posts). From half the cap on, the text carries a
+    /// note on how many such turns ran in a row.
     pub fn agent_turn(&mut self, text: &str) -> Option<String> {
         self.gate.agent_turn(text)
     }
 
-    /// The next arrival (a turn running steers it in).
+    /// The next arrival (a turn running steers it in): what [`wait`](Self::wait)
+    /// kept first, else the next item to come. Waits until there is one; None
+    /// only once every sender is gone.
+    ///
+    /// Cancel-safe: in a `select!` beside the running turn, an item is never
+    /// lost when the turn's branch wins.
     pub async fn arrival(&mut self) -> Option<String> {
         match self.ready.pop_front() {
             Some(text) => Some(text),
@@ -91,7 +120,9 @@ impl InboxQueue {
         }
     }
 
-    /// Wait for an arrival and keep it for [`Self::take`].
+    /// Wait for an arrival and keep it for [`Self::take`]: how a host with no
+    /// turn running (print mode, waiting on a background subagent) sleeps
+    /// until there is work. Cancel-safe, as [`arrival`](Self::arrival).
     pub async fn wait(&mut self) {
         if let Some(text) = self.rx.recv().await {
             self.ready.push_back(text);
@@ -100,6 +131,10 @@ impl InboxQueue {
 
     /// Everything waiting, oldest first, as one turn's input: what the last
     /// turn left unread, then what arrived since. None when nothing waits.
+    ///
+    /// `control` is the main agent's ([`Agent::control`](haest_core::Agent::control)):
+    /// its queue holds what was steered into the last turn and not read. Run
+    /// the text through [`agent_turn`](Self::agent_turn) before the turn.
     pub fn take(&mut self, control: &AgentControl) -> Option<String> {
         let mut parts: Vec<String> = control.take_queued().into_iter().collect();
         parts.extend(self.ready.drain(..));

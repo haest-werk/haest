@@ -27,19 +27,35 @@ use crate::{
     tools::WrappedTools,
 };
 
+/// What a conversation's subagents are made from: the
+/// [`SubagentHost`] behind its [`SubagentHub`].
+///
+/// [`build`](crate::build) fills one in and turns it into the hub
+/// ([`Agents::hub`]), shared as [`Runtime::agents`](crate::Runtime::agents). A
+/// host that takes the pieces fills one in itself.
 pub struct Agents {
+    /// The conversation's host: the settings' caps, the current model and
+    /// effort, the [`Ui`](crate::Ui) a subagent's life goes to.
     pub host: Arc<Host>,
     /// The conversation's deps. Their tools and prompt are left out (empty):
     /// the hub replaces both for every agent, and main's tools hold the hub.
     pub deps: AgentDeps,
+    /// The tools a subagent starts from: every tool but the agent tools,
+    /// inside the mods' hooks.
     pub tools: Arc<WrappedTools>,
+    /// The system prompt's fixed parts; each subagent's names its own model
+    /// and tools.
     pub prompt: Arc<RuntimePrompt>,
+    /// The mods: their hooks wrap a subagent's tools and add to its prompt.
     pub mods: Arc<Mods>,
+    /// Where a subagent's message for main, or a background subagent's
+    /// answer, goes.
     pub inbox: Arc<InboxSender>,
 }
 
 impl Agents {
-    /// The hub, capped by the settings' `subagents`.
+    /// The hub, capped by the settings' `subagents` (how deep they nest, how
+    /// many run at once, each one's spend, steps and time).
     pub fn hub(self) -> Arc<SubagentHub> {
         let caps = self.host.settings.subagents;
         SubagentHub::new(Arc::new(self), caps)

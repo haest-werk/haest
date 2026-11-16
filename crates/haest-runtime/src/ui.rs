@@ -3,30 +3,73 @@
 
 use haest_tools::agents::SubagentEvent;
 
+/// PLUG POINT: how the human hears from a conversation.
+///
+/// The runtime calls it from whatever task it runs on, so it is `Send + Sync`
+/// and should return quickly. A host implements the three levels; the rest
+/// have defaults that fall back on them. The turn's own output (text, tool
+/// calls, usage) does not come through here: it is the events
+/// [`Agent::run`](haest_core::Agent::run) hands the host's sink.
+///
+/// ```
+/// use haest_runtime::Ui;
+///
+/// /// Everything as a log line.
+/// struct Log;
+///
+/// impl Ui for Log {
+///     fn info(&self, text: &str) {
+///         eprintln!("info: {text}");
+///     }
+///     fn warn(&self, text: &str) {
+///         eprintln!("warn: {text}");
+///     }
+///     fn error(&self, text: &str) {
+///         eprintln!("error: {text}");
+///     }
+/// }
+/// ```
 pub trait Ui: Send + Sync {
+    /// A notice that needs nothing from the human: the conversation was
+    /// compacted, a model was sent a lower effort than asked, a mod's notice.
     fn info(&self, text: &str);
+    /// Something was skipped or held, and the run goes on: an MCP server did
+    /// not start, attachments a model cannot read were withheld, the inbox
+    /// holds turns until the human writes.
     fn warn(&self, text: &str);
+    /// Something failed: a compaction, a write to the session file, a mod.
     fn error(&self, text: &str);
 
-    /// What haest does under the hood (the `debug` setting is on).
+    /// What haest does under the hood; called only with the `debug` setting
+    /// on. By default an [`info`](Self::info) line starting `[haest] `.
     fn debug(&self, text: &str) {
         self.info(&format!("[haest] {text}"));
     }
 
     /// The human's input line is open: what arrives now waits for it.
+    ///
+    /// The runtime never asks; it is here for the host's own code (its
+    /// [`arrival`](Self::arrival), its approval prompter) to share. False by
+    /// default.
     fn prompting(&self) -> bool {
         false
     }
 
     /// A turn the human did not start arrived (a job ended, an agent wrote):
-    /// its first line, cut short.
+    /// its first line, cut short. By default an [`info`](Self::info) line.
+    ///
+    /// The text itself waits in the inbox
+    /// ([`InboxQueue`](crate::inbox::InboxQueue)) for the host to run.
     fn arrival(&self, headline: &str) {
         self.info(headline);
     }
 
-    /// A subagent's life: started, a tool it ran, a guard notice, stopped.
+    /// A subagent's life, keyed by its id: started, a tool it ran, a guard
+    /// notice, stopped. Ignored by default.
     fn subagent(&self, _id: &str, _event: &SubagentEvent) {}
 
-    /// The subagents running now, by name.
+    /// The subagents running now, each time that set changes: their ids (the
+    /// `id` [`subagent`](Self::subagent) gets), despite the parameter's name.
+    /// Ignored by default.
     fn subagents_running(&self, _names: &[String]) {}
 }

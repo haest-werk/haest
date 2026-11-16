@@ -23,12 +23,19 @@ const WEB_SEARCH: [&str; WebSearchEngine::WORDS.len() + 1] = {
 /// host that writes its settings out, never a file or flag.
 const WORKSPACES: &[&str] = &["sandbox", "real"];
 
+/// What values a setting takes, and how a raw one is checked and spelled.
+///
+/// Whatever layer a value comes from, it is checked against its kind and
+/// written the one way the typed settings read (`On` reads as `true`, `bash,
+/// read` as `read,bash`), so a file, a variable and a flag mean the same.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     /// true / false (also 1 / 0, on / off, yes / no).
     Bool,
-    /// A number >= 0.
+    /// A number >= 0. A setting that counts something (steps, tokens) takes a
+    /// whole number only: a fraction is refused, never cut to a smaller count.
     Number,
+    /// Any text, as written.
     Text,
     /// A dir: `~/x` is in the home dir, `x` in the working dir.
     Path,
@@ -42,7 +49,8 @@ pub enum Kind {
     Vars,
 }
 
-/// Where a setting may come from.
+/// Where a setting may come from. A layer that sets one it may not is an
+/// error naming the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
     /// Any file, any profile, the environment and flags.
@@ -53,18 +61,36 @@ pub enum Scope {
     Process,
 }
 
+/// One setting: its name, what it takes, where it may come from, and the text
+/// `--help` and the settings reference show for it. [`DEFS`] holds them all.
+///
+/// ```
+/// use haest_config::{DEFS, Kind};
+///
+/// let catalog = DEFS.iter().find(|d| d.key == "skill_catalog").unwrap();
+/// assert_eq!(catalog.env(), "HAEST_SKILL_CATALOG");
+/// assert_eq!(catalog.flag(), "skill-catalog");
+/// assert_eq!(catalog.kind, Kind::Bool);
+///
+/// let model = DEFS.iter().find(|d| d.key == "model").unwrap();
+/// assert_eq!(model.short, Some('m'));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Def {
     /// The TOML name; the flag and the variable are spelled from it.
     pub key: &'static str,
     /// The heading it is listed under.
     pub group: &'static str,
+    /// What values it takes.
     pub kind: Kind,
+    /// Its one-letter flag (`-m` for `model`), if it has one.
     pub short: Option<char>,
+    /// Where it may come from.
     pub scope: Scope,
     /// A value that is not the default, as a flag or a variable holds it:
     /// what the settings reference shows in each spelling.
     pub example: &'static str,
+    /// One line on what it does: `--help`'s text.
     pub help: &'static str,
     /// More for the settings reference only, after `help`: what `--help` has
     /// no room for (a host's own API, the fine print).
@@ -72,12 +98,13 @@ pub struct Def {
 }
 
 impl Def {
-    /// `HAEST_SKILL_CATALOG`.
+    /// Its variable: `HAEST_` and the name in upper case (`HAEST_SKILL_CATALOG`).
     pub fn env(&self) -> String {
         format!("HAEST_{}", self.key.to_ascii_uppercase())
     }
 
-    /// `skill-catalog` (without the dashes in front).
+    /// Its flag, without the dashes in front: the name with `-` for `_`
+    /// (`skill-catalog`).
     pub fn flag(&self) -> String {
         flag_name(self.key)
     }
@@ -134,8 +161,13 @@ const PATHS: &str = "Paths";
 
 use Kind::{Bool, Choice, List, Number, Path, Text, Vars};
 
-/// One row per setting, in the order `--help` and `haest settings` list them:
-/// key, heading, kind, an example value, help.
+/// Every setting haest has, one row each, in the order `--help` and
+/// `haest settings` list them: key, heading, kind, an example value, help.
+///
+/// The one list: the loader checks every value against it, a host builds its
+/// flags from it, and
+/// [docs/settings.md](https://github.com/haest-werk/haest/blob/main/docs/settings.md)
+/// is written from it.
 #[rustfmt::skip]
 pub const DEFS: &[Def] = &[
     def("profile", PROFILE, Text, "claude", "A named set of settings: claude (built in: everything Claude Code has that haest reads), or a [profiles.<name>] table in a config file"),

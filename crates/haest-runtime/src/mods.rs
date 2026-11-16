@@ -46,6 +46,13 @@ impl<P: Prompter + 'static> ModHost for RuntimeModHost<P> {
 
 /// Every mod the settings turn on, read through `fs`, the human's answers
 /// through `prompter`.
+///
+/// `approvals` turns on the built-in approval mod, `mods` the human's,
+/// `project_mods` the project's (whoever loaded the settings decided whether
+/// the project is trusted). A mod's notices and errors, and one that does not
+/// load, go to the host's [`Ui`](crate::Ui); an approval ask goes to
+/// `prompter`, and an ask nobody answers is a deny after 10 minutes. Never
+/// fails: the mods that loaded are the ones returned.
 pub async fn load<P: Prompter + 'static>(host: &Arc<Host>, fs: &dyn Fs, prompter: P) -> Arc<Mods> {
     let s = &host.settings;
     let mut cfg = ModConfig::new(&s.cwd, s.workspace, &s.config_dir);

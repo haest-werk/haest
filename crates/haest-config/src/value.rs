@@ -14,8 +14,20 @@ use crate::{
     registry::{Def, Kind},
 };
 
-/// A variable's value, trimmed; None when it is unset or empty. How the loader
-/// reads every variable, for a host to read its own the same way (`HOME`).
+/// The variable `key`'s value in `env`, trimmed; None when it is unset or
+/// empty. How the loader reads every variable, for a host to read its own the
+/// same way (`HOME`).
+///
+/// ```
+/// use std::collections::HashMap;
+///
+/// let env = HashMap::from([
+///     ("HOME".to_string(), " /home/me ".to_string()),
+///     ("HAEST_MODEL".to_string(), String::new()),
+/// ]);
+/// assert_eq!(haest_config::env_var(&env, "HOME"), Some("/home/me"));
+/// assert_eq!(haest_config::env_var(&env, "HAEST_MODEL"), None);
+/// ```
 pub fn env_var<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
     env.get(key).map(|v| v.trim()).filter(|v| !v.is_empty())
 }

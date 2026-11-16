@@ -32,9 +32,27 @@ use crate::{
 const KEEP_RECENT: usize = 12;
 const COMPACT_SHARE: f64 = 0.8;
 
+/// The conversation's host: what the agent loop, the ledger, the task list and
+/// the tools report to.
+///
+/// It is the loop's [`AgentHooks`]: every message goes to the session file,
+/// and a model call that would overflow the window is compacted first. It is
+/// the ledger's [`LedgerHooks`] (the spend goes to the session file) and the
+/// tools' [`ToolHost`] (their log lines reach [`Ui::debug`] with `debug` on).
+/// It answers the per-model questions (window, limits, input kinds, effort
+/// levels) from the settings and the built-in catalog, and keeps the model and
+/// effort the conversation is on now, which a subagent starts on.
+///
+/// [`build`](crate::build) makes one, shared as [`Runtime::host`](crate::Runtime::host).
+/// A host that takes the pieces makes its own with [`Host::new`].
 pub struct Host {
+    /// The run's settings, as handed in. Their `model` and `effort` are what
+    /// the run started from: the ones in use now are [`model`](Self::model)
+    /// and [`effort`](Self::effort).
     pub settings: Settings,
+    /// haest's built-in model catalog: windows, input kinds, effort levels.
     pub catalog: &'static Catalog,
+    /// The host's UI, as a trait object.
     pub ui: Arc<dyn Ui>,
     store: Mutex<Arc<JsonlSessionFile>>,
     /// The model the system prompt names and a subagent starts on; kept in step
@@ -46,6 +64,13 @@ pub struct Host {
 }
 
 impl Host {
+    /// A host on `settings` that tells the human through `ui` and writes to the
+    /// session file `store`, starting on the settings' model and effort.
+    ///
+    /// Create `store`'s file first ([`JsonlSessionFile::create`] writes its
+    /// header): a record appended before that lands in a file with no header,
+    /// or nowhere. [`build`](crate::build) sees to that for its own. Needs a
+    /// tokio runtime, as the session file does.
     pub fn new(settings: Settings, ui: Arc<dyn Ui>, store: Arc<JsonlSessionFile>) -> Self {
         let (model, effort) = (settings.model.clone(), settings.effort);
         Self {
@@ -59,6 +84,8 @@ impl Host {
         }
     }
 
+    /// The session file records go to now. [`Runtime::clear`](crate::Runtime::clear)
+    /// swaps it, so ask again rather than keep it.
     pub fn store(&self) -> Arc<JsonlSessionFile> {
         self.store.lock().unwrap().clone()
     }
@@ -68,14 +95,21 @@ impl Host {
         *self.store.lock().unwrap() = store;
     }
 
+    /// Queue `record` for the session file. It returns at once: the write runs
+    /// in order on the file's own task, and a failed one goes to
+    /// [`Ui::error`].
     pub fn append(&self, record: SessionRecord) {
         self.store().append(&record);
     }
 
+    /// Wait until every record queued so far is written. A host awaits it
+    /// after each turn and before it exits.
     pub async fn flush(&self) {
         self.store().flush().await;
     }
 
+    /// The model the conversation is on now: what the system prompt names and
+    /// a subagent starts on.
     pub fn model(&self) -> String {
         self.model.lock().unwrap().clone()
     }
@@ -84,6 +118,8 @@ impl Host {
         *self.model.lock().unwrap() = spec.to_string();
     }
 
+    /// The effort the conversation is on now (None = the model's default):
+    /// what a subagent starts on.
     pub fn effort(&self) -> Option<Effort> {
         *self.effort.lock().unwrap()
     }
@@ -92,24 +128,31 @@ impl Host {
         *self.effort.lock().unwrap() = effort;
     }
 
+    /// [`Ui::info`], through the host.
     pub fn info(&self, text: &str) {
         self.ui.info(text);
     }
 
+    /// [`Ui::warn`], through the host.
     pub fn warn(&self, text: &str) {
         self.ui.warn(text);
     }
 
+    /// [`Ui::error`], through the host.
     pub fn error(&self, text: &str) {
         self.ui.error(text);
     }
 
-    /// The model's window: the `context_window` setting, else the catalog's, else 200K.
+    /// The window of the model `spec`, in tokens: the `context_window`
+    /// setting, else the catalog's, else 200K.
     pub fn window(&self, spec: &str) -> u64 {
         self.settings
             .window(self.catalog.model(spec).map(|m| m.context_window))
     }
 
+    /// When to compact a conversation on the model `spec`: at 80% of its
+    /// [`window`](Self::window), or at the `compact_at` setting when that is
+    /// lower and not 0. About the last 12 messages are kept as they are.
     pub fn compaction_for(&self, spec: &str) -> CompactionConfig {
         CompactionConfig {
             context_window: self.window(spec),
@@ -119,9 +162,19 @@ impl Host {
         }
     }
 
-    /// Compact now. `auto`: the loop's own check, so nothing to cut stays silent.
-    /// `Err`: no summary; history is as it was. Said to the UI already, unless
-    /// `cancel` fired: the human stopped it, and the turn ends as aborted.
+    /// Compact `agent`'s conversation now: the older messages become one
+    /// summary, the latest are kept, and the session file records it. What
+    /// the summary calls cost goes on the conversation's spend either way.
+    ///
+    /// `auto`: the loop's own check, so nothing to cut stays silent; a host's
+    /// /compact passes false and the human hears "Nothing to compact yet."
+    /// `cancel` stops the summary call.
+    ///
+    /// # Errors
+    ///
+    /// When no summary came out: the history is as it was. The error is said
+    /// to the UI already, unless `cancel` fired: then the human stopped it,
+    /// and the turn ends as aborted.
     pub async fn compact_now(
         &self,
         agent: &mut Agent,
@@ -238,7 +291,9 @@ impl LedgerHooks for Host {
     }
 }
 
-/// The conversation's spend so far.
+/// The conversation's spend so far, in US dollars, from `agent`'s ledger.
+/// None when the agent has no ledger (one [`build`](crate::build) made always
+/// has). A resumed session's spend includes what it cost before.
 pub fn session_usd(agent: &Agent) -> Option<f64> {
     let ledger = agent.deps().ledger.as_ref()?;
     Some(ledger.lock().unwrap().snapshot().usd)

@@ -1,6 +1,7 @@
-//! One conversation built from what the host hands in: providers, workspace,
-//! tools (MCP servers included), mods, subagents, the inbox and the session
-//! file -- resumed or new -- and the agent over all of it.
+//! One conversation built from what the host hands in ([`RuntimeInputs`],
+//! [`BuildOptions`]): providers, workspace, tools (MCP servers included),
+//! mods, subagents, the inbox and the session file -- resumed or new -- and
+//! the agent over all of it ([`build`]).
 
 use std::{
     path::Path,
@@ -33,19 +34,31 @@ use crate::{
 
 /// Everything a conversation is built from. haest reads no file, variable or
 /// flag of its own: what is not in here does not exist for it.
+///
+/// Start from [`RuntimeInputs::new`] (the settings and the world, nothing
+/// else) and set the fields the host has. haest-config's `Loaded` has a field
+/// for each; its docs show which goes where.
 pub struct RuntimeInputs {
+    /// Every setting of the run: which capabilities are on, the limits, the
+    /// model, where the sessions go.
     pub settings: Settings,
+    /// Where the agent's files are, and whether it may start real processes.
     pub world: World,
-    /// Variables the host passes on purpose (`--env`): every process haest
-    /// starts gets them over the world's `child_env`, the sandbox's shell
-    /// included (it gets nothing else of the host's environment).
+    /// Variables the host passes on purpose (haest-config's `env` setting):
+    /// every process haest starts gets them over the world's `child_env`, the
+    /// sandbox's shell included (it gets nothing else of the host's
+    /// environment).
     pub env: ChildEnv,
     /// What the host answers for a provider variable (`OPENROUTER_API_KEY`,
-    /// `ANTHROPIC_BASE_URL`, ...): its environment, a vault, a fixed map.
+    /// `ANTHROPIC_BASE_URL`, ...): its environment, a vault, a fixed map. A
+    /// closure `Fn(&str) -> Option<String>` and a `HashMap<String, String>`
+    /// are both a [`KeySource`]. GenerateImage asks it for
+    /// `OPENROUTER_API_KEY` too.
     pub keys: Arc<dyn KeySource>,
-    /// providers.json's entries, by name.
+    /// providers.json's entries, by name: providers beside the built-in ones.
     pub providers: CustomProviders,
-    /// The MCP servers to start.
+    /// The MCP servers to start. In a [`World::Fs`] the stdio ones are skipped
+    /// with a warning: they are real processes.
     pub mcp_servers: Vec<McpServerConfig>,
     /// OpenRouter's `provider` routing; None = none goes out.
     pub routing: Option<RoutingEnv>,
@@ -54,6 +67,9 @@ pub struct RuntimeInputs {
 impl RuntimeInputs {
     /// The settings in this world, and nothing else: no variables passed, no
     /// keys, no custom providers, no MCP servers, no routing.
+    ///
+    /// With no keys, [`build`] fails unless the model's provider needs none:
+    /// set [`keys`](Self::keys) for the providers the settings use.
     pub fn new(settings: Settings, world: World) -> Self {
         let no_keys = |_: &str| None;
         Self {
@@ -68,7 +84,10 @@ impl RuntimeInputs {
     }
 }
 
-/// What a host decides per run, beside the settings.
+/// What a host decides per run, beside the settings: which session to write,
+/// and whether the settings' model and effort were asked for on purpose.
+///
+/// The default is a new session on the settings' model and effort.
 #[derive(Debug, Clone, Default)]
 pub struct BuildOptions {
     /// None = a new session; Some("") = the latest one in the cwd; Some(id) = that one.
@@ -121,8 +140,43 @@ fn task_board(host: &Arc<Host>) -> Arc<TaskBoard> {
     }))
 }
 
-/// The whole conversation, from what the host hands in; `prompter` answers
-/// the approval mod's asks.
+/// Build the whole conversation from what the host hands in, behind `ui`;
+/// `prompter` answers the approval mod's asks.
+///
+/// It opens the session `opts` names (a new one, the latest in the cwd, or one
+/// by id) and puts a resumed one back in place: its history, task list,
+/// spend, model and effort (the settings' model or effort instead, when
+/// [`BuildOptions`] says the run asked for it). It finds the skills and opens
+/// the workspace the settings pick, creates a new session's file with its
+/// header, then starts the MCP servers and the mods together, and assembles
+/// the tools, the subagent hub, the inbox and the agent over all of it. The
+/// session file then holds the model and effort the conversation starts on.
+///
+/// What goes wrong after that start is told to `ui`, never returned: an MCP
+/// server that did not start, a stdio server a [`World::Fs`] cannot run, a mod
+/// that did not load, GenerateImage turned on with no key for it, torn lines
+/// skipped in a resumed session.
+///
+/// Needs a tokio runtime: the session file's writer, the servers and the
+/// background jobs run on it.
+///
+/// # Errors
+///
+/// Whatever can fail does so before any MCP server or mod starts, and before
+/// a new session's file is written: a build that fails has started nothing
+/// and left no file for a resume to pick up. It fails when:
+///
+/// - the session to resume is not there, or cannot be read;
+/// - the model it would start on cannot be used: its provider is unknown, or
+///   the host hands in no key for it (a `ProviderConfigError` from
+///   haest-providers, which the error downcasts to);
+/// - the workspace cannot open: `workspace = real` in a [`World::Fs`], the
+///   spill dir cannot be made, the sandbox fails to open;
+/// - a new session's file cannot be created.
+///
+/// # Examples
+///
+/// The crate docs build a whole conversation over a host's files.
 pub async fn build<U, P>(
     inputs: RuntimeInputs,
     ui: Arc<U>,

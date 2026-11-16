@@ -26,7 +26,9 @@ use crate::{
     },
 };
 
-/// Which instruction files the `context` setting asks for.
+/// Which instruction files the `context` setting asks for (AGENTS.md,
+/// CLAUDE.md and their kin), looked for from `cwd` and `home`: what
+/// `find_instruction_files` takes.
 pub fn instruction_opts(s: &Settings) -> InstructionOpts {
     InstructionOpts {
         cwd: s.cwd.clone(),
@@ -36,7 +38,9 @@ pub fn instruction_opts(s: &Settings) -> InstructionOpts {
     }
 }
 
-/// Which skill dirs the `skills` setting asks for.
+/// Which skill dirs the `skills` setting asks for, under `cwd` and `home`,
+/// with `~/.claude` as Claude Code's user dir (its skills and its plugin
+/// list): what `skill_scan_roots` takes.
 pub fn skill_opts(s: &Settings) -> SkillOpts {
     SkillOpts {
         cwd: s.cwd.clone(),
@@ -46,11 +50,17 @@ pub fn skill_opts(s: &Settings) -> SkillOpts {
     }
 }
 
+/// The system prompt's parts that every agent of the conversation shares, and
+/// how to build one for a given model and tool list ([`build`](Self::build)).
+///
+/// Wrap it in an [`AgentPrompt`] to give an agent its prompt.
 pub struct RuntimePrompt {
+    /// Where the instruction files are read from.
     pub fs: Arc<dyn Fs>,
     /// Its settings say which instruction files to read (`context`) and
     /// whether the skill list goes in (`skill_catalog`).
     pub host: Arc<Host>,
+    /// The skills found; listed in the prompt with `skill_catalog` on.
     pub skills: Arc<Mutex<Vec<Skill>>>,
     /// Everything but the instructions, skills, tools and model, fixed for the process.
     pub base: PromptInputs,
@@ -58,6 +68,10 @@ pub struct RuntimePrompt {
 
 impl RuntimePrompt {
     /// The parts fixed for the process; the model and tools are per agent.
+    ///
+    /// Reads them once, now: the identity text (`system_prompt`), the working
+    /// dir, the platform, today's date, the git branch, the workspace's own
+    /// note, `append_system_prompt`.
     pub async fn new(
         host: &Arc<Host>,
         fs: &Arc<dyn Fs>,
@@ -84,6 +98,9 @@ impl RuntimePrompt {
         }
     }
 
+    /// The system prompt for an agent on `model` offered `tool_names`: the
+    /// fixed parts, the instruction files read again now, and the skill list
+    /// with `skill_catalog` on.
     pub async fn build(&self, model: String, tool_names: Vec<String>) -> String {
         let s = &self.host.settings;
         let mut p = self.base.clone();
@@ -99,9 +116,15 @@ impl RuntimePrompt {
 
 /// One agent's prompt: its model (None = the conversation's current one) and
 /// the tools its next call advertises. Wrap it in the mods' `ModSystemPrompt`.
+///
+/// It is a [`SystemPrompt`]: the loop asks it before every model call.
 pub struct AgentPrompt {
+    /// The parts every agent shares.
     pub prompt: Arc<RuntimePrompt>,
+    /// The model the prompt names; None = the conversation's current one
+    /// ([`Host::model`]), as for main.
     pub model: Option<String>,
+    /// The agent's tools: the prompt names the ones its next call offers.
     pub tools: Arc<dyn ToolSource>,
 }
 
@@ -122,7 +145,9 @@ impl SystemPrompt for AgentPrompt {
     }
 }
 
-/// `macos` -> `darwin`: the name the TS haest (and most models' training data) uses.
+/// The platform the system prompt names: Rust's `std::env::consts::OS`, with
+/// `macos` as `darwin`, the name the TS haest (and most models' training data)
+/// uses.
 pub fn platform() -> String {
     match std::env::consts::OS {
         "macos" => "darwin".into(),

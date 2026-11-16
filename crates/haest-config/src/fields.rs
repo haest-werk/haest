@@ -12,10 +12,13 @@ use crate::value::{number, parse_bool, split_list, var, var_parts};
 
 haest_core::word_enum! {
     /// What a process haest starts (bash, a background job, an MCP server) gets of
-    /// haest's own environment. Codex's `shell_environment_policy.inherit`.
+    /// haest's own environment: the `env_passthrough` setting. Codex's
+    /// `shell_environment_policy.inherit`. What the `env` setting passes on
+    /// purpose comes on top, whichever it is.
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
     pub enum EnvPassthrough ("env_passthrough") {
-        /// Nothing: an MCP server gets only its own `env`.
+        /// Nothing: a process gets only what `env` passes, and an MCP server
+        /// its own `env` too.
         None = "none",
         /// PATH, HOME, the user, the locale and the temp dirs ([`CORE_VARS`]).
         #[default]
@@ -25,20 +28,27 @@ haest_core::word_enum! {
     }
 }
 
-/// `core`: Codex's list.
+/// The variables `env_passthrough = core` passes on, when haest has them:
+/// `PATH`, the shell, the temp dirs, `HOME`, the locale and the user. Codex's list.
 pub const CORE_VARS: &[&str] = &[
     "PATH", "SHELL", "TMPDIR", "TEMP", "TMP", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "LOGNAME",
     "USER",
 ];
 
-/// Every setting's value.
+/// Every setting's value: the runtime's [`Settings`], and the settings only
+/// the loader reads.
+///
+/// [`get`] and [`set`] reach any of them by the setting's name.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// What the runtime is handed.
     pub settings: Settings,
+    /// The profile `profile` names, if any; its values are already laid in.
     pub profile: Option<String>,
     /// As written: made absolute when trust is decided.
     pub trusted_dirs: Vec<String>,
+    /// What a process haest starts gets of haest's environment; applied in
+    /// [`crate::Loaded::child_env`].
     pub env_passthrough: EnvPassthrough,
     /// `env`: each variable's value as written; its `${NAME}`s are filled in
     /// when loaded ([`crate::Loaded::env`]).
@@ -51,12 +61,16 @@ pub struct Config {
 }
 
 impl Config {
+    /// Bare haest working in `cwd` with `home` as the home dir
+    /// ([`Settings::bare`]), and the loader's own settings at their defaults:
+    /// no profile, no trusted dirs, `env_passthrough = core`, no `env`, `mcp`
+    /// off, no routing.
     pub fn bare(cwd: impl Into<PathBuf>, home: impl Into<PathBuf>) -> Self {
         Settings::bare(cwd, home).into()
     }
 }
 
-/// These settings, and the loader's own bare.
+/// These settings, and the loader's own at their defaults (as [`Config::bare`]).
 impl From<Settings> for Config {
     fn from(settings: Settings) -> Self {
         Self {
@@ -307,13 +321,42 @@ fn field(key: &str) -> Option<(Get, Set)> {
         .map(|(_, g, s)| (*g, *s))
 }
 
-/// Set `key` from its checked value.
+/// Set the setting named `key` on `c` from `raw`, its value in the checked
+/// spelling: `true` / `false`, a number, a word, a comma list of words in any
+/// order (empty for none), text; for `env`, one `NAME=VALUE`, added to the
+/// ones there.
+///
+/// This is how the loader writes a value it has checked. It does not check
+/// where the value may come from ([`Scope`](crate::Scope)), nor take every
+/// spelling a layer may use (`all` or `none` for a list, a word in another
+/// case).
+///
+/// # Errors
+///
+/// When there is no setting `key`, or `raw` is not a value it takes.
+///
+/// # Examples
+///
+/// ```
+/// use haest_config::{Config, get, set};
+///
+/// let mut c = Config::bare("/work", "/home/me");
+/// set(&mut c, "tools", "grep,read").unwrap();
+/// set(&mut c, "max_turn_usd", "5").unwrap();
+/// assert_eq!(get(&c, "tools").as_deref(), Some("read,grep"));
+/// assert_eq!(c.settings.limits.max_turn_usd, 5.0);
+///
+/// assert!(set(&mut c, "tool", "read").is_err());
+/// assert!(set(&mut c, "max_turn_steps", "2.5").is_err());
+/// ```
 pub fn set(c: &mut Config, key: &str, raw: &str) -> Result<(), String> {
     let (_, set) = field(key).ok_or_else(|| format!("unknown setting \"{key}\""))?;
     set(c, raw)
 }
 
-/// `key`'s value in the checked spelling; None = unset (or no such setting).
+/// The setting `key`'s value on `c`, in the checked spelling ([`set`] reads it
+/// back); None = unset (or no such setting). `env` gives its variables' names
+/// only: a value may be a key.
 pub fn get(c: &Config, key: &str) -> Option<String> {
     field(key).and_then(|(get, _)| get(c))
 }

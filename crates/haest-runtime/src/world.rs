@@ -1,6 +1,9 @@
 //! What the agent works in, as the host hands it ([`World`]): the workspace
-//! (the sandbox by default, with `js` in its shell), background jobs (Bash in
-//! the real workspace only) and the MCP servers the host listed.
+//! (the sandbox by default, with `js` in its shell; [`workspace_for`]),
+//! background jobs (Bash in the real workspace only; [`jobs_for`],
+//! [`kill_jobs`]) and the MCP servers the host listed ([`connect_mcp`]).
+//! [`build`](crate::build) uses each of these; a host that takes the pieces
+//! calls them itself.
 
 use std::{
     path::{Path, PathBuf},
@@ -24,13 +27,33 @@ use crate::{
 };
 
 /// Where the agent's files are and whether it may start real processes.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::{ChildEnv, fs::MemFs};
+/// use haest_runtime::World;
+///
+/// // The real disk; what haest starts gets PATH and nothing else.
+/// let path = std::env::var("PATH").unwrap_or_default();
+/// let disk = World::Disk { child_env: ChildEnv::new(vec![("PATH".into(), path)]) };
+/// assert!(disk.child_env(&ChildEnv::default()).is_some());
+///
+/// // The host's own files; haest starts no process at all.
+/// let own = World::Fs(Arc::new(MemFs::new()));
+/// assert!(own.child_env(&ChildEnv::default()).is_none());
+/// ```
 #[derive(Clone)]
 pub enum World {
     /// The real disk: sessions, skills and instruction files are read and
     /// written there, `workspace = real` edits it, the sandbox overlays it.
     /// Every process haest starts (real bash, a background job, a stdio MCP
     /// server) gets `child_env` and nothing else of the host's environment.
-    Disk { child_env: ChildEnv },
+    Disk {
+        /// The environment every process haest starts gets, before the
+        /// variables the host passes on purpose ([`RuntimeInputs::env`](crate::RuntimeInputs::env)).
+        child_env: ChildEnv,
+    },
     /// The host's own files: everything haest reads and writes goes through
     /// this [`Fs`], the sandbox runs over it, and no real process starts
     /// (no real workspace, no background jobs, no stdio MCP server).
@@ -38,7 +61,8 @@ pub enum World {
 }
 
 impl World {
-    /// The [`Fs`] everything is read from and written to.
+    /// The [`Fs`] everything is read from and written to: the real disk's
+    /// ([`RealFs`]) or the host's own.
     pub fn fs(&self) -> Arc<dyn Fs> {
         match self {
             World::Disk { .. } => Arc::new(RealFs::new()),
@@ -59,9 +83,10 @@ impl World {
 /// How long haest waits at exit for killed jobs to be gone.
 const KILL_WAIT: Duration = Duration::from_secs(3);
 
-/// Background jobs, as the TS haest (`host/jobs.ts`): Bash in the real
-/// workspace only -- the sandbox has no real processes to leave running. A job
-/// that exits on its own tells main through the inbox.
+/// The background-job hub, when the settings let Bash leave jobs running: the
+/// `bash` tool on, in the real workspace (the sandbox has no real processes to
+/// leave running). As the TS haest's `host/jobs.ts`. A job that exits on its
+/// own tells main through `inbox`.
 pub fn jobs_for(s: &Settings, inbox: Arc<dyn Inbox>) -> Option<Arc<JobHub>> {
     let real_bash = s.workspace == WorkspaceMode::Real && s.tools.bash;
     real_bash.then(|| Arc::new(JobHub::new(inbox)))
@@ -70,6 +95,9 @@ pub fn jobs_for(s: &Settings, inbox: Arc<dyn Inbox>) -> Option<Arc<JobHub>> {
 /// Kill every running job and wait until each one's process group is gone
 /// (a job's task does the kill; the runtime must not shut down first).
 /// Returns how many were killed.
+///
+/// Waits at most 3 seconds; a job still alive by then is left. Call it before
+/// the host exits, or a job outlives it.
 pub async fn kill_jobs(jobs: &JobHub) -> usize {
     let ids: Vec<String> = jobs.running().into_iter().map(|j| j.id).collect();
     jobs.kill_all();
@@ -97,7 +125,14 @@ async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> anyhow::Result<()> {
 /// roots) and the spill dir (read-write); a host's Fs is the sandbox's whole
 /// world. On the disk the spill dir is made first, private. `passed` (the
 /// variables the host passes on purpose) reaches the shell either way: the
-/// sandbox's alone, real bash's over `child_env`.
+/// sandbox's alone, real bash's over `child_env`. `workspace = shut` is a
+/// workspace with no files and no shell, in any world.
+///
+/// # Errors
+///
+/// When `workspace = real` in a [`World::Fs`] (the real workspace needs the
+/// real disk), when the spill dir cannot be made, or when the sandbox cannot
+/// open.
 pub async fn workspace_for(
     s: &Settings,
     world: &World,
@@ -138,6 +173,12 @@ pub async fn workspace_for(
 
 /// The MCP servers the host listed, started. A stdio server is a real
 /// process: in a world without them it is skipped, and the host is told.
+///
+/// Every server starts at once; one that fails is a [`warn`](Host::warn), and
+/// the hub holds the rest. A stdio server's process gets the world's
+/// `child_env` with `passed` over it, then its own `env`. With `debug` on,
+/// each server's line (how many tools, or why it failed) goes to the
+/// [`Ui::debug`](crate::Ui::debug).
 pub async fn connect_mcp(
     host: &Host,
     world: &World,

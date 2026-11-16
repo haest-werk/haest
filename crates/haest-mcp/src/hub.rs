@@ -25,17 +25,23 @@ use crate::{
     transport,
 };
 
-/// How long a server may take to start, and again to list its tools.
+/// How long a server may take to start and answer MCP's `initialize`, and
+/// again to list its tools: 15 seconds each. Past it, the server is a failure.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-/// How long one tool call may run.
+/// How long one tool call may run: 10 minutes. Past it, the call fails and is
+/// cancelled on the server.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// How long closing may wait for one server; a server that hangs is left to die alone.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A server that did not connect, and why.
+/// A server that did not connect, and why: what [`McpHub::failures`] lists.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpFailure {
+    /// The server's name, as configured.
     pub name: String,
+    /// Why it failed: the program did not start, the connection or the tool
+    /// list timed out, the server answered with an error, a header could not
+    /// be sent.
     pub error: String,
 }
 
@@ -76,8 +82,17 @@ fn admit(servers: &mut Vec<Server>, name: &str, started: Started) {
     });
 }
 
-/// Connected MCP servers. Share it (`Arc<McpHub>`) as the loop's [`ToolSource`]:
-/// servers connected later show up on the next model call.
+/// The MCP servers a conversation is connected to, and their tools.
+///
+/// Make one ([`McpHub::new`], or [`McpHub::with_env`] to give stdio servers an
+/// environment), [`connect`](McpHub::connect) servers to it, and share it
+/// (`Arc<McpHub>`) as the loop's [`ToolSource`]: the loop asks it for the tools
+/// before every model call, so servers connected later show up on the next
+/// one. A server that fails is kept in [`failures`](McpHub::failures), never
+/// returned as an error.
+///
+/// [`close`](McpHub::close) shuts every server down; dropping the hub does too,
+/// without waiting. The crate docs have a whole example.
 #[derive(Default)]
 pub struct McpHub {
     servers: Mutex<Vec<Server>>,
@@ -141,12 +156,15 @@ async fn start_config(cfg: &McpServerConfig, handed: &ChildEnv) -> Result<Starte
 }
 
 impl McpHub {
-    /// A hub whose stdio servers get their own `env` and nothing else.
+    /// A hub with no servers, whose stdio servers get their own `env` and
+    /// nothing else, not even `PATH`.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// A hub whose stdio servers get `env`, with each one's own `env` over it.
+    /// A hub with no servers, whose stdio servers get `env`, with each one's
+    /// own `env` over it. A host passes the variables it means a server to
+    /// have (haest-config's `env_passthrough` is one way to pick them).
     pub fn with_env(env: ChildEnv) -> Self {
         Self {
             env,
@@ -154,9 +172,38 @@ impl McpHub {
         }
     }
 
-    /// Connect every server at once. One that fails is logged and recorded in
-    /// [`failures`](Self::failures), never returned as an error. Tools keep the
-    /// order of `configs`, and so does the naming (the first keeps a contested name).
+    /// Connect every server in `configs`, all at once, and wait until each has
+    /// connected and listed its tools or failed.
+    ///
+    /// One that fails is logged and recorded in [`failures`](Self::failures),
+    /// never returned as an error. `log` gets one line per server: how many
+    /// tools it has, or why it failed. The tools are added in the order of
+    /// `configs` (not the order the servers answered), so when two would get
+    /// the same name the earlier server keeps the plain one
+    /// ([`mcp_tool_name`](crate::mcp_tool_name)).
+    ///
+    /// Dropping the future before it finishes adds no server; the ones that
+    /// had started are shut down as they are dropped.
+    ///
+    /// # Examples
+    ///
+    /// A server that cannot start is a failure to report, not an error:
+    ///
+    /// ```
+    /// use haest_mcp::{McpHub, McpServerConfig};
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let hub = McpHub::new();
+    /// let broken = McpServerConfig::stdio("broken", "/no/such/program");
+    /// hub.connect(&[broken], &|line| println!("{line}")).await;
+    ///
+    /// assert!(hub.tools().is_empty());
+    /// let failed = hub.failures();
+    /// assert_eq!(failed[0].name, "broken");
+    /// println!("MCP server {} did not start: {}", failed[0].name, failed[0].error);
+    /// # }
+    /// ```
     pub async fn connect(&self, configs: &[McpServerConfig], log: &(dyn Fn(&str) + Sync)) {
         let started = join_all(configs.iter().map(|cfg| async move {
             let res = start_config(cfg, &self.env).await;
@@ -173,6 +220,14 @@ impl McpHub {
 
     /// PLUG POINT: connect a server over any rmcp transport (an in-process
     /// server, a socket the host opened), with the same naming and failure rules.
+    ///
+    /// `name` is the server's name, as [`McpServerConfig::name`] would be. The
+    /// transport is anything rmcp can serve a client over: an
+    /// `AsyncRead + AsyncWrite` pair such as one end of `tokio::io::duplex`, a
+    /// child process, an HTTP client transport. Its tools are added as soon as
+    /// it has listed them; a failure goes to [`failures`](Self::failures) and
+    /// `log`, as with [`connect`](Self::connect). The crate docs' first
+    /// example connects a server in the same process this way.
     pub async fn connect_transport<T, E, A>(
         &self,
         name: &str,
@@ -215,7 +270,9 @@ impl McpHub {
         self.servers.lock().unwrap()
     }
 
-    /// Every connected server's tools.
+    /// Every connected server's tools: the servers in the order they were
+    /// added, each one's tools in the order it listed them. Empty after
+    /// [`close`](Self::close).
     pub fn tools(&self) -> Vec<Arc<dyn Tool>> {
         self.lock_servers()
             .iter()
@@ -223,7 +280,8 @@ impl McpHub {
             .collect()
     }
 
-    /// The servers that did not connect, in the order they failed.
+    /// Every server that did not connect since the hub was made, in the order
+    /// they failed.
     pub fn failures(&self) -> Vec<McpFailure> {
         self.failures.lock().unwrap().clone()
     }
@@ -231,6 +289,10 @@ impl McpHub {
     /// Shut every server down (a stdio server's process included) and forget
     /// them; their tools fail from now on. Dropping the hub does the same
     /// without waiting.
+    ///
+    /// Waits up to 10 seconds for each server, all at once; one that hangs is
+    /// left to die on its own. The hub stays usable: servers connected after
+    /// are offered as before.
     pub async fn close(&self) {
         let servers = std::mem::take(&mut *self.lock_servers());
         join_all(servers.into_iter().map(|s| close_quietly(s.client))).await;

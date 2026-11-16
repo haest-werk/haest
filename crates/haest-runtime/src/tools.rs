@@ -33,6 +33,12 @@ use crate::haest::{
 
 /// Everything but MCP: the built-ins, task tools, Skill (over the host's Fs:
 /// a user skill lives outside any sandbox mount) and GenerateImage.
+///
+/// `picked` is the `tools` setting: only the built-ins it names are made.
+/// The task tools work on `board`, Skill offers what `skills` holds when it is
+/// called, Bash leaves background jobs to `jobs` when there is a hub
+/// ([`jobs_for`](crate::world::jobs_for)), and GenerateImage is there when
+/// `image` is ([`image_options`]).
 pub fn own_tools(
     picked: &BuiltinTools,
     board: Arc<TaskBoard>,
@@ -63,6 +69,15 @@ pub fn own_tools(
 
 /// GenerateImage's options: `image` on, over OpenRouter with the key the host
 /// answers for `OPENROUTER_API_KEY`. On without one: why there is none.
+///
+/// None with `image` off. The endpoint is `OPENROUTER_BASE_URL` when the host
+/// answers one, and the models are the `image_model` and `image_models`
+/// settings'.
+///
+/// # Errors
+///
+/// With `image` on and no `OPENROUTER_API_KEY`: the text to warn the human
+/// with. [`build`](crate::build) warns and goes on without GenerateImage.
 pub fn image_options(
     s: &Settings,
     keys: &dyn KeySource,
@@ -98,6 +113,11 @@ impl ToolSource for BaseTools {
 }
 
 /// Every tool but the agent tools, inside the mods' hooks (TS `baseTools()`).
+///
+/// A [`ToolSource`]: the conversation's own tools, then every connected MCP
+/// server's tools as they are at each call, then the Code tool when `code` is
+/// on, all wrapped in the mods' `tool.before` / `tool.after` hooks. Every
+/// subagent starts from this list.
 pub struct WrappedTools {
     base: Arc<BaseTools>,
     mods: Arc<Mods>,
@@ -106,6 +126,10 @@ pub struct WrappedTools {
 }
 
 impl WrappedTools {
+    /// `own` and `mcp`'s tools inside `mods`' hooks. `code`: None = no Code
+    /// tool; Some(extra) = a Code tool that may call the file tools, the
+    /// read-only MCP tools, and the tools `extra` names (the `code_tools`
+    /// setting: exact names, or `prefix*`).
     pub fn new(
         own: Vec<Arc<dyn Tool>>,
         mcp: Arc<McpHub>,
@@ -135,6 +159,10 @@ impl ToolSource for WrappedTools {
 
 /// Main's list (TS `tools()`): the wrapped tools and main's agent tools
 /// (none when `agents` is off), deferred.
+///
+/// A [`ToolSource`]: what a call offers is the `deferred_tools` setting's
+/// choice (the MCP tools behind ToolSearch, or all up front), and a deferred
+/// tool the model calls by name still runs.
 pub struct MainTools {
     wrapped: Arc<WrappedTools>,
     hub: Option<Arc<SubagentHub>>,
@@ -142,6 +170,8 @@ pub struct MainTools {
 }
 
 impl MainTools {
+    /// Main's list over `wrapped`, with `hub`'s agent tools for main (None =
+    /// no agent tools), deferred by `mode`.
     pub fn new(wrapped: Arc<WrappedTools>, hub: Option<Arc<SubagentHub>>, mode: DeferMode) -> Self {
         Self {
             wrapped,

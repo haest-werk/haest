@@ -82,9 +82,39 @@ fn truthy(v: &Value) -> bool {
     }
 }
 
-/// Text parts joined by newlines; image/audio parts as media plus a line each;
-/// no text at all falls back to the structured content, then to `(no content)`.
-/// Only `isError: true` is an error.
+/// What the model reads of an MCP `tools/call` result (`res`, its JSON).
+///
+/// Every part of `content` becomes one line or more, joined by newlines: a
+/// text part its text, a resource its text (or `[resource <uri>]` when it has
+/// none). An image or audio part haest can send becomes media on the output
+/// ([`ToolOutput::media`]) and a line saying it is attached; one with no data,
+/// data that is not base64 or a type haest cannot send is a line saying it was
+/// omitted, and so is a part of any other type. With no text at all, the
+/// output is the `structuredContent` as JSON, else `(no content)`. Only
+/// `isError: true` makes it an error output.
+///
+/// It reads the JSON, not rmcp's types, so a part rmcp would refuse still
+/// reaches the model as a line.
+///
+/// ```
+/// use serde_json::json;
+///
+/// let out = haest_mcp::mcp_result_to_output(&json!({
+///     "content": [
+///         {"type": "text", "text": "two files changed"},
+///         {"type": "image", "data": "AQID", "mimeType": "image/png"},
+///     ],
+/// }));
+/// assert!(out.content.starts_with("two files changed\n"));
+/// assert_eq!(out.media.len(), 1);
+/// assert!(!out.is_error);
+///
+/// let failed = haest_mcp::mcp_result_to_output(&json!({
+///     "content": [{"type": "text", "text": "no such repo"}],
+///     "isError": true,
+/// }));
+/// assert!(failed.is_error);
+/// ```
 pub fn mcp_result_to_output(res: &Value) -> ToolOutput {
     let parts = res
         .get("content")
