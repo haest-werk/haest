@@ -186,7 +186,7 @@ pub const DEFS: &[Def] = &[
     def("web_search", TOOLS, Choice(&WEB_SEARCH), "native", "The provider's web search, by engine"),
     def("image", TOOLS, Bool, "true", "GenerateImage, over OpenRouter (needs OPENROUTER_API_KEY)"),
     def("image_model", TOOLS, Text, "black-forest-labs/flux-3-image", "GenerateImage's default model"),
-    def("image_models", TOOLS, List(None), "openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image", "The other image models a call may pick (unset: the library's list)"),
+    def("image_models", TOOLS, List(None), "openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image", "The other image models a call may pick"),
     def("mcp", TOOLS, Bool, "true", "Start the project's MCP servers (.mcp.json); a trusted dir only"),
     def("deferred_tools", TOOLS, Choice(DeferMode::WORDS), "grow", "How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off)")
         .detail("ToolSearch lists each held-back tool with its description's first sentence. A host linking haest can hold back its own tools too, all but a list it names (`ToolDeferral::deferring_all_except`, `DeferredTools`); a held-back tool the model calls by name still runs, and loads."),

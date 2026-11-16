@@ -258,7 +258,7 @@ flag          --image
 GenerateImage's default model.
 
 - Takes: text
-- Default: `google/gemini-nano-banana-2.1`
+- Default: unset: the tool's own, `google/gemini-nano-banana-2.1`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
 ```text
@@ -269,10 +269,10 @@ flag          --image-model black-forest-labs/flux-3-image
 
 ### `image_models`
 
-The other image models a call may pick (unset: the library's list).
+The other image models a call may pick.
 
 - Takes: a list: comma-separated, or a TOML array; `none` is empty
-- Default: unset
+- Default: unset: the tool's own, `google/gemini-nano-banana-2.1`, `openai/gpt-image-2.6-sunburst`, `black-forest-labs/flux-3-image`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
 ```text

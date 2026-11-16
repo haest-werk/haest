@@ -3,11 +3,7 @@
 
 use std::path::PathBuf;
 
-use haest_core::{
-    __private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
-    WorkspaceMode,
-    provider::WebSearchEngine,
-};
+use haest_core::{WorkspaceMode, provider::WebSearchEngine};
 
 use super::*;
 
@@ -75,26 +71,6 @@ fn web_search_is_off_until_switched_on() {
         (w.engine, w.max_results, w.max_total_results),
         (WebSearchEngine::Exa, 5, 15)
     );
-}
-
-#[test]
-fn image_models_put_the_chosen_one_first_once() {
-    assert_eq!(
-        bare().image_model_choices(),
-        DEFAULT_IMAGE_MODELS.map(String::from).to_vec()
-    );
-    assert_eq!(bare().image_model_choices()[0], DEFAULT_IMAGE_MODEL);
-    let s = Settings {
-        image_model: "x/pic".into(),
-        image_models: Some(vec!["a/one".into(), "x/pic".into(), "b/two".into()]),
-        ..bare()
-    };
-    assert_eq!(s.image_model_choices(), ["x/pic", "a/one", "b/two"]);
-    let only = Settings {
-        image_models: Some(Vec::new()),
-        ..s
-    };
-    assert_eq!(only.image_model_choices(), ["x/pic"]);
 }
 
 #[test]

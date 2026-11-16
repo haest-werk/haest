@@ -88,9 +88,23 @@ fn set_in(def: &Def) -> &'static str {
 fn default_of(def: &Def) -> String {
     match Config::bare("<cwd>", "~").get(def.key).as_deref() {
         None if def.kind == Kind::Vars => "none".into(),
-        None => "unset".into(),
+        None => match tool_default(def.key) {
+            Some(own) => format!("unset: the tool's own, {own}"),
+            None => "unset".into(),
+        },
         Some("") => "none".into(),
         Some(v) => format!("`{v}`"),
+    }
+}
+
+/// What a key left unset means when the tool, not the config, holds the
+/// default: the reader sees the real value, read from the tool itself.
+fn tool_default(key: &str) -> Option<String> {
+    use haest_tools::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
+    match key {
+        "image_model" => Some(format!("`{DEFAULT_IMAGE_MODEL}`")),
+        "image_models" => Some(DEFAULT_IMAGE_MODELS.map(|m| format!("`{m}`")).join(", ")),
+        _ => None,
     }
 }
 

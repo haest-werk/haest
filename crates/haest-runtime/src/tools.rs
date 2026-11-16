@@ -95,10 +95,13 @@ pub fn image_options(
         base_url: openrouter_base_url(keys),
         ..GenerateImageOptions::new(key)
     };
-    Ok(Some(opts.with_models(
-        s.image_model.clone(),
-        s.image_model_choices(),
-    )))
+    // Unset, each is the tool's own.
+    let model = s.image_model.clone().unwrap_or_else(|| opts.model.clone());
+    let others = s
+        .image_models
+        .clone()
+        .unwrap_or_else(|| opts.models.clone());
+    Ok(Some(opts.with_models(model, others)))
 }
 
 /// The conversation's own tools and the MCP servers' as they are now (a server
@@ -192,6 +195,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+    use crate::haest::tools::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
 
     fn names(tools: &[Arc<dyn Tool>]) -> Vec<String> {
         tools.iter().map(|t| t.name().to_string()).collect()
@@ -256,12 +260,34 @@ mod tests {
             (opts.api_key.as_str(), opts.base_url.as_str()),
             ("k", crate::haest::core::__private::OPENROUTER_URL)
         );
-        assert_eq!(opts.models, on.image_model_choices());
+        assert_eq!(opts.model, DEFAULT_IMAGE_MODEL);
+        assert_eq!(opts.models, DEFAULT_IMAGE_MODELS);
         let local = keys(&[
             ("OPENROUTER_API_KEY", "k"),
             ("OPENROUTER_BASE_URL", "http://l/v1"),
         ]);
         let opts = image_options(&on, &local).unwrap().unwrap();
         assert_eq!(opts.base_url, "http://l/v1");
+    }
+
+    #[test]
+    fn the_image_settings_put_the_chosen_model_first_once() {
+        let key = HashMap::from([("OPENROUTER_API_KEY".to_string(), "k".to_string())]);
+        let with = |model: Option<&str>, others: Option<Vec<&str>>| {
+            let s = Settings {
+                image: true,
+                image_model: model.map(String::from),
+                image_models: others.map(|o| o.into_iter().map(String::from).collect()),
+                ..crate::testkit::settings()
+            };
+            image_options(&s, &key).unwrap().unwrap().models
+        };
+        assert_eq!(with(None, None), DEFAULT_IMAGE_MODELS);
+        let chosen = with(Some("x/pic"), Some(vec!["a/one", "x/pic", "b/two"]));
+        assert_eq!(chosen, ["x/pic", "a/one", "b/two"]);
+        assert_eq!(with(Some("x/pic"), Some(vec![])), ["x/pic"]);
+        let first = with(Some("x/pic"), None);
+        assert_eq!(first[0], "x/pic");
+        assert_eq!(first.len(), DEFAULT_IMAGE_MODELS.len() + 1);
     }
 }

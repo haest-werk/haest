@@ -23,6 +23,8 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+# The image tool's own models, for docs/settings.md's "Default" of an unset key.
+haest-tools = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

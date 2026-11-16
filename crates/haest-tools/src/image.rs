@@ -32,11 +32,23 @@ use std::{fmt, sync::Arc};
 
 pub use catalog::ImageCatalog;
 use haest_core::__private::OPENROUTER_URL;
-pub use haest_core::__private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
 use haest_http::{HttpClient, ReqwestClient};
 pub use request::{ImageError, ImageReply, call_image_api, sniff_image_type};
 pub use settings::{ModelSettings, SettingSpec};
 pub use tool::GenerateImageTool;
+
+/// The model GenerateImage uses unless told otherwise, as an OpenRouter
+/// model id.
+pub const DEFAULT_IMAGE_MODEL: &str = "google/gemini-nano-banana-2.1";
+
+/// The models a GenerateImage call may pick from unless told otherwise: the
+/// default, one for exact text and transparency, one for edits from several
+/// references.
+pub const DEFAULT_IMAGE_MODELS: [&str; 3] = [
+    DEFAULT_IMAGE_MODEL,
+    "openai/gpt-image-2.6-sunburst",
+    "black-forest-labs/flux-3-image",
+];
 
 /// What GenerateImage runs on. Clones share the model list read so far.
 #[derive(Clone)]

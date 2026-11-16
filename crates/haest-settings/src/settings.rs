@@ -6,7 +6,6 @@
 use std::path::PathBuf;
 
 use haest_core::{
-    __private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
     Effort, WorkspaceMode,
     deferred_tools::DeferMode,
     provider::{WebSearchEngine, WebSearchOptions},
@@ -30,8 +29,8 @@ pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 ///
 /// The helper methods turn fields into what the loop and the tools take:
 /// [`turn_caps_for`](Self::turn_caps_for), [`conversation_caps`](Self::conversation_caps),
-/// [`subagent_caps`](Self::subagent_caps), [`web_search_options`](Self::web_search_options),
-/// [`image_model_choices`](Self::image_model_choices) and [`spill_dir`](Self::spill_dir).
+/// [`subagent_caps`](Self::subagent_caps), [`web_search_options`](Self::web_search_options)
+/// and [`spill_dir`](Self::spill_dir).
 ///
 /// # Examples
 ///
@@ -84,10 +83,11 @@ pub struct Settings {
     pub web_search: Option<WebSearchEngine>,
     /// GenerateImage, over OpenRouter with the host's `OPENROUTER_API_KEY`.
     pub image: bool,
-    /// GenerateImage's default model, an OpenRouter model id.
-    pub image_model: String,
-    /// The other models a GenerateImage call may pick; None = haest's list
-    /// (haest-tools' `DEFAULT_IMAGE_MODELS`).
+    /// GenerateImage's default model, an OpenRouter model id; None = the
+    /// tool's own (haest-tools' `DEFAULT_IMAGE_MODEL`).
+    pub image_model: Option<String>,
+    /// The other models a GenerateImage call may pick; None = the tool's
+    /// list (haest-tools' `DEFAULT_IMAGE_MODELS`).
     pub image_models: Option<Vec<String>>,
     /// How MCP tools reach the model: behind ToolSearch, or all on every call.
     pub deferred_tools: DeferMode,
@@ -156,7 +156,7 @@ impl Settings {
             agents: false,
             web_search: None,
             image: false,
-            image_model: DEFAULT_IMAGE_MODEL.into(),
+            image_model: None,
             image_models: None,
             deferred_tools: DeferMode::Proxy,
             workspace: WorkspaceMode::Sandbox,
@@ -189,32 +189,6 @@ impl Settings {
     /// model call).
     pub fn web_search_options(&self) -> Option<WebSearchOptions> {
         self.web_search.map(WebSearchOptions::new)
-    }
-
-    /// Every model GenerateImage may pick: `image_model` first, then
-    /// `image_models` (or haest's list) without it, so each appears once.
-    /// The field `image_models` is the list as set; this is what a call may
-    /// choose from.
-    ///
-    /// ```
-    /// use haest_settings::Settings;
-    ///
-    /// let s = Settings {
-    ///     image_model: "b/two".into(),
-    ///     image_models: Some(vec!["a/one".into(), "b/two".into()]),
-    ///     ..Settings::bare("/w", "/h")
-    /// };
-    /// assert_eq!(s.image_model_choices(), ["b/two", "a/one"]);
-    /// ```
-    pub fn image_model_choices(&self) -> Vec<String> {
-        let others = match &self.image_models {
-            Some(list) => list.clone(),
-            None => DEFAULT_IMAGE_MODELS.map(String::from).to_vec(),
-        };
-        let model = &self.image_model;
-        std::iter::once(model.clone())
-            .chain(others.into_iter().filter(|m| m != model))
-            .collect()
     }
 
     /// Where one session's spilled tool output goes:
