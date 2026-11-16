@@ -12,18 +12,18 @@ publish = false
 # Shared by more than one crate. A dependency only one crate uses goes in that
 # crate's own Cargo.toml, so parallel work on two crates never edits this table.
 [workspace.dependencies]
-kern-core = { path = "crates/kern-core" }
-kern-providers = { path = "crates/kern-providers" }
-kern-workspace = { path = "crates/kern-workspace" }
-kern-tools = { path = "crates/kern-tools" }
-kern-mcp = { path = "crates/kern-mcp" }
-kern-code = { path = "crates/kern-code" }
-kern-mods = { path = "crates/kern-mods" }
-kern-ts = { path = "crates/kern-ts" }
-kern-settings = { path = "crates/kern-settings" }
-kern-config = { path = "crates/kern-config" }
-kern-runtime = { path = "crates/kern-runtime" }
-kern-lib = { path = "crates/kern-lib" }
+haest-core = { path = "crates/haest-core" }
+haest-providers = { path = "crates/haest-providers" }
+haest-workspace = { path = "crates/haest-workspace" }
+haest-tools = { path = "crates/haest-tools" }
+haest-mcp = { path = "crates/haest-mcp" }
+haest-code = { path = "crates/haest-code" }
+haest-mods = { path = "crates/haest-mods" }
+haest-ts = { path = "crates/haest-ts" }
+haest-settings = { path = "crates/haest-settings" }
+haest-config = { path = "crates/haest-config" }
+haest-runtime = { path = "crates/haest-runtime" }
+haest = { path = "crates/haest" }
 
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-util = "0.7"

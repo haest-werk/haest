@@ -1,5 +1,5 @@
-# <project>/.kern/config.toml: this project's settings, over your own file.
-# kern reads it only when the project is inside one of your trusted_dirs.
+# <project>/.haest/config.toml: this project's settings, over your own file.
+# haest reads it only when the project is inside one of your trusted_dirs.
 # A project's file can't set trusted_dirs, provider_routing or config_dir:
 # a repo must not trust itself.
 

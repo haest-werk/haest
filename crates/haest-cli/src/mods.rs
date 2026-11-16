@@ -1,0 +1,95 @@
+//! Approval asks on the terminal. With no terminal to ask on, an ask is a deny
+//! that says why. The terminal has one reader at a time: asks from main and
+//! from subagents take turns, and one raised while the REPL prompt is open
+//! waits for it (announced above the prompt).
+
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use haest::{
+    mods::{Answer, ApprovalRequest, Prompter},
+    runtime::Ui,
+};
+
+use crate::{ask, term::TermUi};
+
+pub struct TermPrompter {
+    ui: Arc<TermUi>,
+    interactive: bool,
+}
+
+impl TermPrompter {
+    pub fn new(ui: Arc<TermUi>, interactive: bool) -> Self {
+        Self { ui, interactive }
+    }
+}
+
+fn question(req: &ApprovalRequest) -> String {
+    let mut q = format!("Allow {}? {}", req.tool_name, req.description);
+    let preview = req.input_preview.trim();
+    if !preview.is_empty() && preview != req.description.trim() {
+        q.push_str(&format!("\n  {preview}"));
+    }
+    q + "\n[y]es / [a]lways / [N]o: "
+}
+
+/// y / yes, a / always; anything else (an empty line included) is no.
+fn answer(line: Option<&str>) -> Answer {
+    match line.map(|l| l.trim().to_ascii_lowercase()).as_deref() {
+        Some("y" | "yes") => Answer::Allow,
+        Some("a" | "always") => Answer::AllowAlways,
+        _ => Answer::Deny,
+    }
+}
+
+#[async_trait]
+impl Prompter for TermPrompter {
+    async fn prompt(&self, req: &ApprovalRequest) -> Answer {
+        if !self.interactive {
+            self.ui.warn(&format!(
+                "Denied {}: {} -- approval needed and there is no terminal to ask on (--approvals=false turns approvals off).",
+                req.tool_name, req.description
+            ));
+            return Answer::Deny;
+        }
+        let _terminal = match self.ui.stdin.try_lock() {
+            Ok(free) => free,
+            Err(_) => {
+                let when = if self.ui.prompting() {
+                    "press Enter at the prompt to answer it"
+                } else {
+                    "it is asked after the question before it"
+                };
+                self.ui.info(&format!(
+                    "{} waits for your approval: {} -- {when}.",
+                    req.tool_name, req.description
+                ));
+                self.ui.stdin.lock().await
+            }
+        };
+        self.ui.ask(&question(req));
+        answer(ask::read_line().await.as_deref())
+    }
+
+    fn auto_approved(&self, req: &ApprovalRequest) {
+        self.ui.info(&format!(
+            "Allowed {} (always): {}",
+            req.tool_name, req.description
+        ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_yes_or_always_allow_and_silence_is_no() {
+        assert_eq!(answer(Some("y\n")), Answer::Allow);
+        assert_eq!(answer(Some(" YES ")), Answer::Allow);
+        assert_eq!(answer(Some("a\n")), Answer::AllowAlways);
+        assert_eq!(answer(Some("\n")), Answer::Deny);
+        assert_eq!(answer(Some("sure")), Answer::Deny);
+        assert_eq!(answer(None), Answer::Deny);
+    }
+}

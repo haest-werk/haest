@@ -1,25 +1,25 @@
-# kern settings
+# haest settings
 
-<!-- Written from the settings registry (crates/kern-config/src/registry.rs).
+<!-- Written from the settings registry (crates/haest-config/src/registry.rs).
      Edit the registry, then rewrite this file:
-     KERN_BLESS=1 cargo test -p kern-config reference -->
+     HAEST_BLESS=1 cargo test -p haest-config reference -->
 
-kern starts bare: no tools, no instruction files, no skills, no MCP, no mods,
+haest starts bare: no tools, no instruction files, no skills, no MCP, no mods,
 in the sandbox, with every brake on. Each setting below turns one thing on or
 changes one limit.
 
 A setting has one name, written three ways: a key in a TOML config file, a
-`KERN_*` variable, a flag. Each layer wins over the ones before it:
+`HAEST_*` variable, a flag. Each layer wins over the ones before it:
 
 1. the defaults below
-2. your `~/.config/kern/config.toml` (`$XDG_CONFIG_HOME/kern`, or `config_dir`)
-3. the nearest `.kern/config.toml` from the working dir up, inside `trusted_dirs` only
+2. your `~/.config/haest/config.toml` (`$XDG_CONFIG_HOME/haest`, or `config_dir`)
+3. the nearest `.haest/config.toml` from the working dir up, inside `trusted_dirs` only
 4. the profile `profile` names
-5. `KERN_*` variables
+5. `HAEST_*` variables
 6. flags
 
-`kern settings` shows what a run gets and where each value came from; it takes
-the same flags. [environment.md](environment.md) covers what kern reads from
+`haest settings` shows what a run gets and where each value came from; it takes
+the same flags. [environment.md](environment.md) covers what haest reads from
 its environment and what a process it starts gets. [examples/](examples/) has
 whole config files.
 
@@ -39,7 +39,7 @@ whole config files.
 
 ### `profile`
 
-A named set of settings: claude (built in: everything Claude Code has that kern reads), or a [profiles.&lt;name>] table in a config file.
+A named set of settings: claude (built in: everything Claude Code has that haest reads), or a [profiles.&lt;name>] table in a config file.
 
 - Takes: text
 - Default: unset
@@ -47,7 +47,7 @@ A named set of settings: claude (built in: everything Claude Code has that kern 
 
 ```text
 config.toml   profile = "claude"
-variable      KERN_PROFILE=claude
+variable      HAEST_PROFILE=claude
 flag          --profile claude
 ```
 
@@ -63,7 +63,7 @@ provider:model.
 
 ```text
 config.toml   model = "anthropic:claude-opus-5-5"
-variable      KERN_MODEL=anthropic:claude-opus-5-5
+variable      HAEST_MODEL=anthropic:claude-opus-5-5
 flag          --model anthropic:claude-opus-5-5   or   -m anthropic:claude-opus-5-5
 ```
 
@@ -77,13 +77,13 @@ Reasoning effort (unset: the model's own default).
 
 ```text
 config.toml   effort = "high"
-variable      KERN_EFFORT=high
+variable      HAEST_EFFORT=high
 flag          --effort high   or   -e high
 ```
 
 ### `system_prompt`
 
-Replaces kern's own identity text at the top of the system prompt.
+Replaces haest's own identity text at the top of the system prompt.
 
 - Takes: text
 - Default: unset
@@ -91,7 +91,7 @@ Replaces kern's own identity text at the top of the system prompt.
 
 ```text
 config.toml   system_prompt = "You are a terse code reviewer."
-variable      KERN_SYSTEM_PROMPT='You are a terse code reviewer.'
+variable      HAEST_SYSTEM_PROMPT='You are a terse code reviewer.'
 flag          --system-prompt 'You are a terse code reviewer.'
 ```
 
@@ -105,7 +105,7 @@ Text appended to the system prompt.
 
 ```text
 config.toml   append_system_prompt = "Answer in British English."
-variable      KERN_APPEND_SYSTEM_PROMPT='Answer in British English.'
+variable      HAEST_APPEND_SYSTEM_PROMPT='Answer in British English.'
 flag          --append-system-prompt 'Answer in British English.'
 ```
 
@@ -119,7 +119,7 @@ OpenRouter's provider routing, as JSON: {"global": {"banned": [...], "favorites"
 
 ```text
 config.toml   provider_routing = '{"global": {"banned": ["novita"]}}'
-variable      KERN_PROVIDER_ROUTING='{"global": {"banned": ["novita"]}}'
+variable      HAEST_PROVIDER_ROUTING='{"global": {"banned": ["novita"]}}'
 flag          --provider-routing '{"global": {"banned": ["novita"]}}'
 ```
 
@@ -135,7 +135,7 @@ Instruction files: agents (AGENTS.md: ~/.agents/AGENTS.md, then every dir down t
 
 ```text
 config.toml   context = ["agents"]
-variable      KERN_CONTEXT=agents
+variable      HAEST_CONTEXT=agents
 flag          --context agents
 ```
 
@@ -149,7 +149,7 @@ Where skills come from: agents (~/.agents/skills, .agents/skills), claude (~/.cl
 
 ```text
 config.toml   skills = ["agents", "claude"]
-variable      KERN_SKILLS=agents,claude
+variable      HAEST_SKILLS=agents,claude
 flag          --skills agents,claude
 ```
 
@@ -163,7 +163,7 @@ List the skills in the system prompt, so the model picks them on its own.
 
 ```text
 config.toml   skill_catalog = true
-variable      KERN_SKILL_CATALOG=true
+variable      HAEST_SKILL_CATALOG=true
 flag          --skill-catalog
 ```
 
@@ -179,7 +179,7 @@ Built-in tools: read, write, edit, bash, grep, glob, web_fetch, tasks, skill (al
 
 ```text
 config.toml   tools = ["read", "grep", "glob", "bash"]
-variable      KERN_TOOLS=read,grep,glob,bash
+variable      HAEST_TOOLS=read,grep,glob,bash
 flag          --tools read,grep,glob,bash
 ```
 
@@ -193,7 +193,7 @@ The Code tool: a JavaScript run that calls the other tools.
 
 ```text
 config.toml   code = true
-variable      KERN_CODE=true
+variable      HAEST_CODE=true
 flag          --code
 ```
 
@@ -207,7 +207,7 @@ Extra tool names Code may call (exact, or prefix*).
 
 ```text
 config.toml   code_tools = ["Bash", "mcp__github__*"]
-variable      KERN_CODE_TOOLS='Bash,mcp__github__*'
+variable      HAEST_CODE_TOOLS='Bash,mcp__github__*'
 flag          --code-tools 'Bash,mcp__github__*'
 ```
 
@@ -221,7 +221,7 @@ Agent, SendMessage and StopAgent: subagents.
 
 ```text
 config.toml   agents = true
-variable      KERN_AGENTS=true
+variable      HAEST_AGENTS=true
 flag          --agents
 ```
 
@@ -235,7 +235,7 @@ The provider's web search, by engine.
 
 ```text
 config.toml   web_search = "native"
-variable      KERN_WEB_SEARCH=native
+variable      HAEST_WEB_SEARCH=native
 flag          --web-search native
 ```
 
@@ -249,7 +249,7 @@ GenerateImage, over OpenRouter (needs OPENROUTER_API_KEY).
 
 ```text
 config.toml   image = true
-variable      KERN_IMAGE=true
+variable      HAEST_IMAGE=true
 flag          --image
 ```
 
@@ -263,7 +263,7 @@ GenerateImage's default model.
 
 ```text
 config.toml   image_model = "black-forest-labs/flux-3-image"
-variable      KERN_IMAGE_MODEL=black-forest-labs/flux-3-image
+variable      HAEST_IMAGE_MODEL=black-forest-labs/flux-3-image
 flag          --image-model black-forest-labs/flux-3-image
 ```
 
@@ -277,7 +277,7 @@ The other image models a call may pick (unset: the library's list).
 
 ```text
 config.toml   image_models = ["openai/gpt-image-2.6-sunburst", "black-forest-labs/flux-3-image"]
-variable      KERN_IMAGE_MODELS=openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image
+variable      HAEST_IMAGE_MODELS=openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image
 flag          --image-models openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image
 ```
 
@@ -291,14 +291,14 @@ Start the project's MCP servers (.mcp.json); a trusted dir only.
 
 ```text
 config.toml   mcp = true
-variable      KERN_MCP=true
+variable      HAEST_MCP=true
 flag          --mcp
 ```
 
 ### `deferred_tools`
 
 How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off).
-ToolSearch lists each held-back tool with its description's first sentence. A host linking kern can hold back its own tools too, all but a list it names (`ToolDeferral::deferring_all_except`, `DeferredTools`); a held-back tool the model calls by name still runs, and loads.
+ToolSearch lists each held-back tool with its description's first sentence. A host linking haest can hold back its own tools too, all but a list it names (`ToolDeferral::deferring_all_except`, `DeferredTools`); a held-back tool the model calls by name still runs, and loads.
 
 - Takes: one of `off`, `proxy`, `grow`
 - Default: `proxy`
@@ -306,7 +306,7 @@ ToolSearch lists each held-back tool with its description's first sentence. A ho
 
 ```text
 config.toml   deferred_tools = "grow"
-variable      KERN_DEFERRED_TOOLS=grow
+variable      HAEST_DEFERRED_TOOLS=grow
 flag          --deferred-tools grow
 ```
 
@@ -322,13 +322,13 @@ sandbox: a simulated bash over a copy-on-write overlay (nothing reaches the disk
 
 ```text
 config.toml   workspace = "real"
-variable      KERN_WORKSPACE=real
+variable      HAEST_WORKSPACE=real
 flag          --workspace real   or   -w real
 ```
 
 ### `env_passthrough`
 
-What a process kern starts (bash, a background job, an MCP server) gets of kern's environment: none, core (PATH, HOME, the user, the locale, the temp dirs), all (every variable, API keys included).
+What a process haest starts (bash, a background job, an MCP server) gets of haest's environment: none, core (PATH, HOME, the user, the locale, the temp dirs), all (every variable, API keys included).
 
 - Takes: one of `none`, `core`, `all`
 - Default: `core`
@@ -336,22 +336,22 @@ What a process kern starts (bash, a background job, an MCP server) gets of kern'
 
 ```text
 config.toml   env_passthrough = "none"
-variable      KERN_ENV_PASSTHROUGH=none
+variable      HAEST_ENV_PASSTHROUGH=none
 flag          --env-passthrough none
 ```
 
 ### `env`
 
-A variable every process kern starts gets, the sandbox's shell included, over env_passthrough: NAME=VALUE, or NAME for kern's own value; repeat it for more. In a file: an [env] table. ${NAME} and ${NAME:-default} in a value are filled in from kern's environment.
+A variable every process haest starts gets, the sandbox's shell included, over env_passthrough: NAME=VALUE, or NAME for haest's own value; repeat it for more. In a file: an [env] table. ${NAME} and ${NAME:-default} in a value are filled in from haest's environment.
 
-- Takes: `NAME=VALUE`, or `NAME` for kern's own value; repeat the flag for more
+- Takes: `NAME=VALUE`, or `NAME` for haest's own value; repeat the flag for more
 - Default: none
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
 ```text
 config.toml   [env]
               GH_TOKEN = "${GITHUB_TOKEN}"
-variable      KERN_ENV='GH_TOKEN=${GITHUB_TOKEN}'
+variable      HAEST_ENV='GH_TOKEN=${GITHUB_TOKEN}'
 flag          --env 'GH_TOKEN=${GITHUB_TOKEN}'   or   -E 'GH_TOKEN=${GITHUB_TOKEN}'
 ```
 
@@ -365,13 +365,13 @@ Your mods in &lt;config dir>/mods.
 
 ```text
 config.toml   mods = true
-variable      KERN_MODS=true
+variable      HAEST_MODS=true
 flag          --mods
 ```
 
 ### `project_mods`
 
-The project's mods in .kern/mods (its code runs; a trusted dir only).
+The project's mods in .haest/mods (its code runs; a trusted dir only).
 
 - Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
 - Default: `false`
@@ -379,7 +379,7 @@ The project's mods in .kern/mods (its code runs; a trusted dir only).
 
 ```text
 config.toml   project_mods = true
-variable      KERN_PROJECT_MODS=true
+variable      HAEST_PROJECT_MODS=true
 flag          --project-mods
 ```
 
@@ -393,13 +393,13 @@ The built-in approval mod: asks before a tool changes anything.
 
 ```text
 config.toml   approvals = false
-variable      KERN_APPROVALS=false
+variable      HAEST_APPROVALS=false
 flag          --approvals=false
 ```
 
 ### `trusted_dirs`
 
-Dirs whose project files kern reads (.kern/config.toml, .mcp.json, .kern/mods), with every dir inside them.
+Dirs whose project files haest reads (.haest/config.toml, .mcp.json, .haest/mods), with every dir inside them.
 
 - Takes: a list: comma-separated, or a TOML array; `none` is empty
 - Default: none
@@ -407,7 +407,7 @@ Dirs whose project files kern reads (.kern/config.toml, .mcp.json, .kern/mods), 
 
 ```text
 config.toml   trusted_dirs = ["~/projects", "~/work"]
-variable      KERN_TRUSTED_DIRS='~/projects,~/work'
+variable      HAEST_TRUSTED_DIRS='~/projects,~/work'
 flag          --trusted-dirs '~/projects,~/work'
 ```
 
@@ -423,7 +423,7 @@ One turn's spend (0 = no cap).
 
 ```text
 config.toml   max_turn_usd = 5
-variable      KERN_MAX_TURN_USD=5
+variable      HAEST_MAX_TURN_USD=5
 flag          --max-turn-usd 5
 ```
 
@@ -437,7 +437,7 @@ One turn's tokens (unset: 10x the model's window; 0 = no cap).
 
 ```text
 config.toml   max_turn_tokens = 2000000
-variable      KERN_MAX_TURN_TOKENS=2000000
+variable      HAEST_MAX_TURN_TOKENS=2000000
 flag          --max-turn-tokens 2000000
 ```
 
@@ -451,7 +451,7 @@ One model call's input tokens (unset: 90% of the window; 0 = no cap).
 
 ```text
 config.toml   max_request_tokens = 150000
-variable      KERN_MAX_REQUEST_TOKENS=150000
+variable      HAEST_MAX_REQUEST_TOKENS=150000
 flag          --max-request-tokens 150000
 ```
 
@@ -465,7 +465,7 @@ Model calls in one turn (0 = no cap).
 
 ```text
 config.toml   max_turn_steps = 200
-variable      KERN_MAX_TURN_STEPS=200
+variable      HAEST_MAX_TURN_STEPS=200
 flag          --max-turn-steps 200
 ```
 
@@ -479,7 +479,7 @@ One turn's wall clock (0 = no cap).
 
 ```text
 config.toml   max_turn_minutes = 30
-variable      KERN_MAX_TURN_MINUTES=30
+variable      HAEST_MAX_TURN_MINUTES=30
 flag          --max-turn-minutes 30
 ```
 
@@ -493,7 +493,7 @@ The same tool call in a row before the guard stops it (0 = no cap).
 
 ```text
 config.toml   max_repeats = 10
-variable      KERN_MAX_REPEATS=10
+variable      HAEST_MAX_REPEATS=10
 flag          --max-repeats 10
 ```
 
@@ -507,7 +507,7 @@ The whole conversation's spend (0 = no cap).
 
 ```text
 config.toml   max_conversation_usd = 50
-variable      KERN_MAX_CONVERSATION_USD=50
+variable      HAEST_MAX_CONVERSATION_USD=50
 flag          --max-conversation-usd 50
 ```
 
@@ -521,7 +521,7 @@ Tokens of models with no price (0 = no cap).
 
 ```text
 config.toml   max_conversation_tokens = 50000000
-variable      KERN_MAX_CONVERSATION_TOKENS=50000000
+variable      HAEST_MAX_CONVERSATION_TOKENS=50000000
 flag          --max-conversation-tokens 50000000
 ```
 
@@ -535,7 +535,7 @@ The model's window in tokens (unset: the catalog's, else 200000).
 
 ```text
 config.toml   context_window = 1000000
-variable      KERN_CONTEXT_WINDOW=1000000
+variable      HAEST_CONTEXT_WINDOW=1000000
 flag          --context-window 1000000
 ```
 
@@ -549,7 +549,7 @@ Compact the conversation past this many tokens (0 = at 80% of the window only).
 
 ```text
 config.toml   compact_at = 300000
-variable      KERN_COMPACT_AT=300000
+variable      HAEST_COMPACT_AT=300000
 flag          --compact-at 300000
 ```
 
@@ -557,7 +557,7 @@ flag          --compact-at 300000
 
 ### `max_agent_turns`
 
-Turns in a row a job or an agent starts with no human message; past it kern holds them (0 = no cap).
+Turns in a row a job or an agent starts with no human message; past it haest holds them (0 = no cap).
 
 - Takes: a whole number, 0 or more
 - Default: `30`
@@ -565,7 +565,7 @@ Turns in a row a job or an agent starts with no human message; past it kern hold
 
 ```text
 config.toml   max_agent_turns = 10
-variable      KERN_MAX_AGENT_TURNS=10
+variable      HAEST_MAX_AGENT_TURNS=10
 flag          --max-agent-turns 10
 ```
 
@@ -579,7 +579,7 @@ How deep agents nest, main = 0 (0 = no Agent tool).
 
 ```text
 config.toml   max_agent_depth = 1
-variable      KERN_MAX_AGENT_DEPTH=1
+variable      HAEST_MAX_AGENT_DEPTH=1
 flag          --max-agent-depth 1
 ```
 
@@ -593,7 +593,7 @@ Subagents running at once, across the tree (0 = no Agent tool).
 
 ```text
 config.toml   max_subagents = 8
-variable      KERN_MAX_SUBAGENTS=8
+variable      HAEST_MAX_SUBAGENTS=8
 flag          --max-subagents 8
 ```
 
@@ -607,7 +607,7 @@ One subagent's spend.
 
 ```text
 config.toml   subagent_usd = 0.5
-variable      KERN_SUBAGENT_USD=0.5
+variable      HAEST_SUBAGENT_USD=0.5
 flag          --subagent-usd 0.5
 ```
 
@@ -621,7 +621,7 @@ One subagent's model calls.
 
 ```text
 config.toml   subagent_steps = 25
-variable      KERN_SUBAGENT_STEPS=25
+variable      HAEST_SUBAGENT_STEPS=25
 flag          --subagent-steps 25
 ```
 
@@ -635,7 +635,7 @@ One subagent's wall clock.
 
 ```text
 config.toml   subagent_minutes = 5
-variable      KERN_SUBAGENT_MINUTES=5
+variable      HAEST_SUBAGENT_MINUTES=5
 flag          --subagent-minutes 5
 ```
 
@@ -643,35 +643,35 @@ flag          --subagent-minutes 5
 
 ### `data_dir`
 
-Sessions, history and spill files (unset: $XDG_DATA_HOME/kern, else ~/.local/share/kern).
+Sessions, history and spill files (unset: $XDG_DATA_HOME/haest, else ~/.local/share/haest).
 
 - Takes: a directory: `~/x` is under your home dir, `x` under the working dir
-- Default: `~/.local/share/kern`
+- Default: `~/.local/share/haest`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
 ```text
-config.toml   data_dir = "~/.kern/data"
-variable      KERN_DATA_DIR='~/.kern/data'
-flag          --data-dir '~/.kern/data'
+config.toml   data_dir = "~/.haest/data"
+variable      HAEST_DATA_DIR='~/.haest/data'
+flag          --data-dir '~/.haest/data'
 ```
 
 ### `config_dir`
 
-config.toml, providers and mods (unset: $XDG_CONFIG_HOME/kern, else ~/.config/kern).
+config.toml, providers and mods (unset: $XDG_CONFIG_HOME/haest, else ~/.config/haest).
 
 - Takes: a directory: `~/x` is under your home dir, `x` under the working dir
-- Default: `~/.config/kern`
+- Default: `~/.config/haest`
 - Set in: its variable or its flag only: it says where the config file is
 
 ```text
 config.toml   (not in a file)
-variable      KERN_CONFIG_DIR='~/dotfiles/kern'
-flag          --config-dir '~/dotfiles/kern'
+variable      HAEST_CONFIG_DIR='~/dotfiles/haest'
+flag          --config-dir '~/dotfiles/haest'
 ```
 
 ### `debug`
 
-Log what kern does under the hood.
+Log what haest does under the hood.
 
 - Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
 - Default: `false`
@@ -679,7 +679,7 @@ Log what kern does under the hood.
 
 ```text
 config.toml   debug = true
-variable      KERN_DEBUG=true
+variable      HAEST_DEBUG=true
 flag          --debug
 ```
 

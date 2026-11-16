@@ -1,0 +1,21 @@
+[package]
+name = "haest-config"
+description = "haest's settings loader: a builder over TOML files, HAEST_* variables and flags, laid in the order a host adds them, into the values the runtime is handed"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+haest-core = { workspace = true }
+haest-settings = { workspace = true }
+# providers.json and the OpenRouter routing variable, read here and handed in.
+haest-providers = { workspace = true }
+# A trusted project's .mcp.json, read here and handed in.
+haest-mcp = { workspace = true }
+# The config files: ~/.config/haest/config.toml and a trusted project's .haest/config.toml.
+toml = "1.1"
+
+[dev-dependencies]
+tokio = { workspace = true }

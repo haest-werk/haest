@@ -1,0 +1,57 @@
+[package]
+name = "haest"
+description = "haest: an agent loop and tool harness you embed. One dependency, features pick the parts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "haest"
+
+[features]
+default = ["providers", "workspace", "tools", "mcp", "code", "mods", "settings"]
+providers = ["dep:haest-providers"]
+workspace = ["dep:haest-workspace"]
+tools = ["dep:haest-tools"]
+mcp = ["dep:haest-mcp"]
+# The QuickJS engine: the Code tool and the sandbox `js` command.
+code = ["dep:haest-code"]
+# Mods: JS/TS files that hook tools, prompts and commands; approvals and plan mode.
+mods = ["dep:haest-mods"]
+# Settings as plain values a host writes out: no files, no environment, no flags.
+settings = ["dep:haest-settings", "tools"]
+# The loader: settings from TOML files, HAEST_* variables and flags, plus what
+# the runtime is handed beside them (keys, providers.json, .mcp.json, child env).
+config = ["dep:haest-config", "settings", "providers", "mcp"]
+# The whole conversation built from what a host hands in, behind its UI (the CLI's base).
+runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods"]
+
+[dependencies]
+haest-core = { workspace = true }
+haest-providers = { workspace = true, optional = true }
+haest-workspace = { workspace = true, optional = true }
+haest-tools = { workspace = true, optional = true }
+haest-mcp = { workspace = true, optional = true }
+haest-code = { workspace = true, optional = true }
+haest-mods = { workspace = true, optional = true }
+haest-settings = { workspace = true, optional = true }
+haest-config = { workspace = true, optional = true }
+haest-runtime = { workspace = true, optional = true }
+
+# The brain example runs under `cargo test` too, so a change that breaks a
+# plug point brain uses fails the suite, not only a `cargo run` nobody did.
+[[example]]
+name = "brain"
+path = "examples/brain/main.rs"
+test = true
+
+# The brain example and tests/plug_in.rs: what a host implementing the plug points needs.
+[dev-dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+bytes = "1"

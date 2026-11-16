@@ -1,11 +1,11 @@
-# kern and its environment
+# haest and its environment
 
-kern reads a few variables of its own environment, and passes on only what
+haest reads a few variables of its own environment, and passes on only what
 you allow. Nothing else of your environment reaches a model, a tool or a
-process kern starts.
+process haest starts.
 
-1. [Variables kern reads](#variables-kern-reads)
-2. [What a process kern starts gets](#what-a-process-kern-starts-gets)
+1. [Variables haest reads](#variables-haest-reads)
+2. [What a process haest starts gets](#what-a-process-haest-starts-gets)
 3. [Passing a variable on purpose: `env`](#passing-a-variable-on-purpose-env)
 4. [`${NAME}` in config files](#name-in-config-files)
 5. [Recipes](#recipes)
@@ -13,34 +13,34 @@ process kern starts.
 Every setting, with its three spellings, is in [settings.md](settings.md).
 Whole example files are in [examples/](examples/).
 
-## Variables kern reads
+## Variables haest reads
 
-### Settings: `KERN_*`
+### Settings: `HAEST_*`
 
-Every setting is also a variable: `KERN_` and the setting's name in upper
-case (`tools` is `KERN_TOOLS`, `max_turn_usd` is `KERN_MAX_TURN_USD`). A
+Every setting is also a variable: `HAEST_` and the setting's name in upper
+case (`tools` is `HAEST_TOOLS`, `max_turn_usd` is `HAEST_MAX_TURN_USD`). A
 variable wins over the config files and loses to a flag. An empty variable
 counts as unset. [settings.md](settings.md) lists them all.
 
 ```sh
-KERN_TOOLS=read,grep,glob kern "what does this repo do?"
-export KERN_MAX_TURN_USD=1   # every run in this shell
+HAEST_TOOLS=read,grep,glob haest "what does this repo do?"
+export HAEST_MAX_TURN_USD=1   # every run in this shell
 ```
 
-### Where kern keeps its files
+### Where haest keeps its files
 
 | Variable | What it changes |
 |---|---|
 | `HOME` | your home dir: `~` in a path setting, and the default dirs below |
-| `XDG_CONFIG_HOME` | `config_dir` becomes `$XDG_CONFIG_HOME/kern` (else `~/.config/kern`) |
-| `XDG_DATA_HOME` | `data_dir` becomes `$XDG_DATA_HOME/kern` (else `~/.local/share/kern`) |
-| `KERN_CONFIG_DIR` | `config_dir` itself: where `config.toml`, `providers.json` and your mods are |
-| `KERN_DATA_DIR` | `data_dir` itself: sessions, history and spill files |
+| `XDG_CONFIG_HOME` | `config_dir` becomes `$XDG_CONFIG_HOME/haest` (else `~/.config/haest`) |
+| `XDG_DATA_HOME` | `data_dir` becomes `$XDG_DATA_HOME/haest` (else `~/.local/share/haest`) |
+| `HAEST_CONFIG_DIR` | `config_dir` itself: where `config.toml`, `providers.json` and your mods are |
+| `HAEST_DATA_DIR` | `data_dir` itself: sessions, history and spill files |
 
 ### Provider keys
 
-kern reads a provider's key when a run uses that provider (`-m
-provider:model`). The keys stay with kern: a process kern starts gets one only
+haest reads a provider's key when a run uses that provider (`-m
+provider:model`). The keys stay with haest: a process haest starts gets one only
 under `env_passthrough = all`, or when you pass it with `env`.
 
 | Provider | Key | Endpoint override |
@@ -58,7 +58,7 @@ gateway.
 
 ### Variables a config file names
 
-`${NAME}` in an `[env]` value or in `.mcp.json` is read from kern's
+`${NAME}` in an `[env]` value or in `.mcp.json` is read from haest's
 environment: see [`${NAME}` in config files](#name-in-config-files).
 
 ### Proxy variables: not read for model requests
@@ -68,22 +68,22 @@ WebFetch. For them `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` (in
 either case) and the operating system's proxy settings are not read, so your
 shell never sends a provider key through a proxy. To reach a provider
 through a gateway, point its endpoint override (`ANTHROPIC_BASE_URL`, a
-`providers.json` entry's `baseURL`) at it. A program that embeds kern and
+`providers.json` entry's `baseURL`) at it. A program that embeds haest and
 wants a proxy hands in an HTTP client configured with one.
 
-## What a process kern starts gets
+## What a process haest starts gets
 
-kern starts a process for real bash (`workspace = real`), each background job
+haest starts a process for real bash (`workspace = real`), each background job
 of it, and each stdio MCP server. Such a process gets an environment built
 from scratch, in this order, a later one winning for the same name:
 
-1. what `env_passthrough` lets through of kern's environment
+1. what `env_passthrough` lets through of haest's environment
 2. the variables in `env`
 3. for an MCP server, its own `env` in `.mcp.json`
 
 | `env_passthrough` | A process gets |
 |---|---|
-| `none` | nothing of kern's environment (bash is still found on `/usr/bin:/bin`) |
+| `none` | nothing of haest's environment (bash is still found on `/usr/bin:/bin`) |
 | `core` (the default) | `PATH`, `SHELL`, `TMPDIR`, `TEMP`, `TMP`, `HOME`, `LANG`, `LC_ALL`, `LC_CTYPE`, `LOGNAME`, `USER` |
 | `all` | every variable, API keys included (the `claude` profile sets this, as Claude Code does) |
 
@@ -96,19 +96,19 @@ gets the variables in `env`, and only those.
 
 ## Passing a variable on purpose: `env`
 
-`env` hands a variable to every process kern starts and to the sandbox's
+`env` hands a variable to every process haest starts and to the sandbox's
 shell, the way `docker run -e` does. It is a flag you repeat, a variable, and
 a table in a config file:
 
 ```sh
-kern -E GH_TOKEN='${GITHUB_TOKEN}'   # under another name, filled in by kern
-kern -E GITHUB_TOKEN                 # a bare name: kern's own value, same name
-kern -E NODE_ENV=test -E CI=1        # repeat it for more
-KERN_ENV='PAGER=cat' kern            # the variable holds one
+haest -E GH_TOKEN='${GITHUB_TOKEN}'   # under another name, filled in by haest
+haest -E GITHUB_TOKEN                 # a bare name: haest's own value, same name
+haest -E NODE_ENV=test -E CI=1        # repeat it for more
+HAEST_ENV='PAGER=cat' haest            # the variable holds one
 ```
 
 ```toml
-# config.toml, or a trusted project's .kern/config.toml
+# config.toml, or a trusted project's .haest/config.toml
 [env]
 GH_TOKEN = "${GITHUB_TOKEN}"
 NODE_ENV = "${NODE_ENV:-development}"
@@ -118,24 +118,24 @@ PAGER = "cat"
 `-e` is `--effort`, so `env` is `-E`.
 
 Each layer adds to the ones before it name by name: your `config.toml`, a
-trusted project's, the profile, `KERN_ENV`, then the flags. A name set twice
+trusted project's, the profile, `HAEST_ENV`, then the flags. A name set twice
 keeps the later value. `env` lands on top of `env_passthrough`, so
 `-E HOME=/tmp/h` beats the `HOME` that `core` passes.
 
 Single quotes around `'${GITHUB_TOKEN}'` keep your shell from filling it in:
-kern does it instead, so the key never sits in kern's command line, where
+haest does it instead, so the key never sits in haest's command line, where
 `ps` would show it.
 
-`kern settings` lists each name and where it came from, never its value:
+`haest settings` lists each name and where it came from, never its value:
 
 ```text
-env                      GH_TOKEN                                 /home/me/.config/kern/config.toml
+env                      GH_TOKEN                                 /home/me/.config/haest/config.toml
 env                      NODE_ENV                                 --env
 ```
 
 ## `${NAME}` in config files
 
-Two places fill in variables from kern's environment, with Claude Code's
+Two places fill in variables from haest's environment, with Claude Code's
 syntax:
 
 | Written | Becomes |
@@ -144,11 +144,11 @@ syntax:
 | `${NAME:-default}` | `NAME`'s value, else `default` |
 | `$NAME`, `${not a name}` | itself: only a braced name is filled in |
 
-- `[env]` values (and `-E`, `KERN_ENV`). A variable whose `${NAME}` has no
-  value and no default is not passed, and kern says which.
+- `[env]` values (and `-E`, `HAEST_ENV`). A variable whose `${NAME}` has no
+  value and no default is not passed, and haest says which.
 - `.mcp.json`: a server's `command`, `args`, `env`, `url` and `headers`
   values. One with no value and no default stays as written, as in Claude
-  Code, and kern says which server names it.
+  Code, and haest says which server names it.
 
 A variable set to an empty value counts as set: `${EMPTY:-x}` is empty.
 
@@ -157,18 +157,18 @@ A variable set to an empty value counts as set: `${EMPTY:-x}` is empty.
 Give bash in the real workspace a GitHub token and nothing else of yours:
 
 ```sh
-kern --workspace real --tools bash --env-passthrough none \
+haest --workspace real --tools bash --env-passthrough none \
   -E PATH=/usr/bin:/bin -E GH_TOKEN='${GITHUB_TOKEN}'
 ```
 
 Run like Claude Code, whole environment included:
 
 ```sh
-kern --profile claude
+haest --profile claude
 ```
 
 Keep the default `core`, and add what this project's tools need, in its
-`.kern/config.toml` (read only inside your `trusted_dirs`):
+`.haest/config.toml` (read only inside your `trusted_dirs`):
 
 ```toml
 [env]
@@ -188,5 +188,5 @@ Start an MCP server with a key under the name it wants
 Check what a run would get before running it:
 
 ```sh
-kern settings --profile claude -E GH_TOKEN='${GITHUB_TOKEN}'
+haest settings --profile claude -E GH_TOKEN='${GITHUB_TOKEN}'
 ```

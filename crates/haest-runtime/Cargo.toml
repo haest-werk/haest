@@ -1,0 +1,30 @@
+[package]
+name = "haest-runtime"
+description = "haest assembled from its settings: providers, workspace, tools, MCP, mods, subagents and the session file, for any host with a UI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+haest-core = { workspace = true }
+haest-providers = { workspace = true }
+haest-workspace = { workspace = true }
+haest-tools = { workspace = true }
+haest-mcp = { workspace = true }
+haest-code = { workspace = true }
+haest-mods = { workspace = true }
+haest-settings = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+# Listing sessions: stats and heads read a few at a time.
+futures = { workspace = true }
+# Session ids: random v4 UUIDs.
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+haest-core = { workspace = true, features = ["testing"] }

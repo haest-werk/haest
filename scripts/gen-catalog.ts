@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 /**
- * Generates kern's bundled model catalog, crates/kern-providers/catalog/models.json,
- * from the TypeScript catalog module (the file that exports KERN_MODEL_GROUPS and
- * KERN_DEFAULT_MODEL). The JSON is committed; the crate loads it with include_str!.
+ * Generates haest's bundled model catalog, crates/haest-providers/catalog/models.json,
+ * from the TypeScript catalog module (the file that exports HAEST_MODEL_GROUPS and
+ * HAEST_DEFAULT_MODEL). The JSON is committed; the crate loads it with include_str!.
  *
- *   bun scripts/gen-catalog.ts <path/to/kern-models.ts>
+ *   bun scripts/gen-catalog.ts <path/to/haest-models.ts>
  *
  * The rows are copied, never translated: same keys, same order, same values, so a
  * catalog refresh on the TypeScript side is one run of this script.
@@ -29,7 +29,7 @@ interface Group {
   models: Row[]
 }
 
-/** Every reason this row would not load as a kern-core `ModelInfo`. */
+/** Every reason this row would not load as a haest-core `ModelInfo`. */
 function problems(row: Row): string[] {
   const out: string[] = []
   if (!/^[^:]+:.+/.test(row.spec)) out.push('spec is not provider:model')
@@ -44,15 +44,15 @@ function problems(row: Row): string[] {
 
 const source = process.argv[2]
 if (!source) {
-  console.error('usage: bun scripts/gen-catalog.ts <path/to/kern-models.ts>')
+  console.error('usage: bun scripts/gen-catalog.ts <path/to/haest-models.ts>')
   process.exit(2)
 }
 
-const mod = (await import(resolve(source))) as { KERN_MODEL_GROUPS?: Group[]; KERN_DEFAULT_MODEL?: string }
-const groups = mod.KERN_MODEL_GROUPS
-const defaultModel = mod.KERN_DEFAULT_MODEL
+const mod = (await import(resolve(source))) as { HAEST_MODEL_GROUPS?: Group[]; HAEST_DEFAULT_MODEL?: string }
+const groups = mod.HAEST_MODEL_GROUPS
+const defaultModel = mod.HAEST_DEFAULT_MODEL
 if (!Array.isArray(groups) || typeof defaultModel !== 'string') {
-  console.error(`${source} does not export KERN_MODEL_GROUPS and KERN_DEFAULT_MODEL`)
+  console.error(`${source} does not export HAEST_MODEL_GROUPS and HAEST_DEFAULT_MODEL`)
   process.exit(1)
 }
 
@@ -63,10 +63,10 @@ const dupes = specs.filter((s, i) => specs.indexOf(s) !== i)
 bad.push(...dupes.map(s => `${s}: listed twice`))
 if (!specs.includes(defaultModel)) bad.push(`default model ${defaultModel} is not in the catalog`)
 if (bad.length) {
-  console.error(`refusing to write a catalog kern cannot load:\n  ${bad.join('\n  ')}`)
+  console.error(`refusing to write a catalog haest cannot load:\n  ${bad.join('\n  ')}`)
   process.exit(1)
 }
 
-const out = join(import.meta.dir, '..', 'crates', 'kern-providers', 'catalog', 'models.json')
+const out = join(import.meta.dir, '..', 'crates', 'haest-providers', 'catalog', 'models.json')
 await Bun.write(out, `${JSON.stringify({ defaultModel, groups }, null, 2)}\n`)
 console.log(`wrote ${rows.length} models in ${groups.length} groups to ${out}`)

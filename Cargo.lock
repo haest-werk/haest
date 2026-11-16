@@ -919,6 +919,217 @@ dependencies = [
 ]
 
 [[package]]
+name = "haest"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "haest-code",
+ "haest-config",
+ "haest-core",
+ "haest-mcp",
+ "haest-mods",
+ "haest-providers",
+ "haest-runtime",
+ "haest-settings",
+ "haest-tools",
+ "haest-workspace",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "haest-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "clap",
+ "haest",
+ "libc",
+ "rustyline",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "haest-code"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "futures",
+ "haest-core",
+ "haest-tools",
+ "haest-ts",
+ "haest-workspace",
+ "rquickjs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "haest-config"
+version = "0.1.0"
+dependencies = [
+ "haest-core",
+ "haest-mcp",
+ "haest-providers",
+ "haest-settings",
+ "tokio",
+ "toml",
+]
+
+[[package]]
+name = "haest-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "yaml-rust2",
+]
+
+[[package]]
+name = "haest-mcp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "futures",
+ "haest-core",
+ "http",
+ "reqwest",
+ "rmcp",
+ "rustls",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "haest-mods"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "haest-core",
+ "haest-ts",
+ "regex",
+ "rquickjs",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "haest-providers"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "bytes",
+ "futures",
+ "haest-core",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "haest-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "haest-code",
+ "haest-core",
+ "haest-mcp",
+ "haest-mods",
+ "haest-providers",
+ "haest-settings",
+ "haest-tools",
+ "haest-workspace",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
+name = "haest-settings"
+version = "0.1.0"
+dependencies = [
+ "haest-core",
+]
+
+[[package]]
+name = "haest-tools"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "futures",
+ "globset",
+ "haest-core",
+ "haest-workspace",
+ "htmd",
+ "libc",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
+name = "haest-ts"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "swc_common",
+ "swc_ts_fast_strip",
+]
+
+[[package]]
+name = "haest-workspace"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bashkit",
+ "csv",
+ "haest-core",
+ "libc",
+ "regex",
+ "similar",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1441,217 +1652,6 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "kern-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "clap",
- "kern-lib",
- "libc",
- "rustyline",
- "serde_json",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "kern-code"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "futures",
- "kern-core",
- "kern-tools",
- "kern-ts",
- "kern-workspace",
- "rquickjs",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "kern-config"
-version = "0.1.0"
-dependencies = [
- "kern-core",
- "kern-mcp",
- "kern-providers",
- "kern-settings",
- "tokio",
- "toml",
-]
-
-[[package]]
-name = "kern-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "futures",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-util",
- "yaml-rust2",
-]
-
-[[package]]
-name = "kern-lib"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "futures",
- "kern-code",
- "kern-config",
- "kern-core",
- "kern-mcp",
- "kern-mods",
- "kern-providers",
- "kern-runtime",
- "kern-settings",
- "kern-tools",
- "kern-workspace",
- "serde_json",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "kern-mcp"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "futures",
- "http",
- "kern-core",
- "reqwest",
- "rmcp",
- "rustls",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "kern-mods"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "kern-core",
- "kern-ts",
- "regex",
- "rquickjs",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "kern-providers"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "async-trait",
- "bytes",
- "futures",
- "kern-core",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "kern-runtime"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "kern-code",
- "kern-core",
- "kern-mcp",
- "kern-mods",
- "kern-providers",
- "kern-settings",
- "kern-tools",
- "kern-workspace",
- "serde_json",
- "tokio",
- "tokio-util",
- "uuid",
-]
-
-[[package]]
-name = "kern-settings"
-version = "0.1.0"
-dependencies = [
- "kern-core",
-]
-
-[[package]]
-name = "kern-tools"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "futures",
- "globset",
- "htmd",
- "kern-core",
- "kern-workspace",
- "libc",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "url",
-]
-
-[[package]]
-name = "kern-ts"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "swc_common",
- "swc_ts_fast_strip",
-]
-
-[[package]]
-name = "kern-workspace"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bashkit",
- "csv",
- "kern-core",
- "libc",
- "regex",
- "similar",
- "tempfile",
- "tokio",
- "tokio-util",
 ]
 
 [[package]]

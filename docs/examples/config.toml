@@ -1,6 +1,6 @@
-# ~/.config/kern/config.toml: your own settings, read on every run.
-# Every key is in ../settings.md; `kern settings` shows what a run gets and
-# where each value came from. A KERN_* variable or a flag wins over this file.
+# ~/.config/haest/config.toml: your own settings, read on every run.
+# Every key is in ../settings.md; `haest settings` shows what a run gets and
+# where each value came from. A HAEST_* variable or a flag wins over this file.
 
 model = "openrouter:anthropic/claude-sonnet-5.5"
 effort = "medium"
@@ -10,16 +10,16 @@ context = ["agents"]
 skills = ["agents", "claude"]
 skill_catalog = true
 
-# kern starts with no tools: turn on the ones you want.
+# haest starts with no tools: turn on the ones you want.
 tools = ["read", "write", "edit", "bash", "grep", "glob", "web_fetch", "tasks", "skill"]
 agents = true
 web_search = "native"
 
-# Projects whose own .kern/config.toml, .mcp.json and .kern/mods kern reads.
-# Only your own file, KERN_TRUSTED_DIRS or --trusted-dirs can say this.
+# Projects whose own .haest/config.toml, .mcp.json and .haest/mods haest reads.
+# Only your own file, HAEST_TRUSTED_DIRS or --trusted-dirs can say this.
 trusted_dirs = ["~/projects"]
 
-# What a process kern starts gets of your environment: none, core or all.
+# What a process haest starts gets of your environment: none, core or all.
 env_passthrough = "core"
 
 # Brakes: what one turn and one conversation may spend.
@@ -29,14 +29,14 @@ max_conversation_usd = 25
 # OpenRouter's provider routing, as JSON (your own file only).
 provider_routing = '{"global": {"banned": ["novita"]}}'
 
-# Variables every process kern starts gets, the sandbox's shell included.
-# ${NAME} comes from kern's environment; ${NAME:-default} when it is unset.
+# Variables every process haest starts gets, the sandbox's shell included.
+# ${NAME} comes from haest's environment; ${NAME:-default} when it is unset.
 [env]
 GH_TOKEN = "${GITHUB_TOKEN}"
 NODE_ENV = "${NODE_ENV:-development}"
 PAGER = "cat"
 
-# `kern --profile review`: read-only, careful.
+# `haest --profile review`: read-only, careful.
 [profiles.review]
 tools = ["read", "grep", "glob"]
 effort = "high"

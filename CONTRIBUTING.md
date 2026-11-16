@@ -1,15 +1,15 @@
-# Working on kern
+# Working on haest
 
-- **Port, don't reinvent.** Behaviour comes from the TypeScript kern at
-  `~/projects/remote-claude/src/kern-agent-host/` (`core/`, `providers/`, `tools/`).
+- **Port, don't reinvent.** Behaviour comes from the TypeScript haest at
+  `~/projects/remote-claude/src/haest-agent-host/` (`core/`, `providers/`, `tools/`).
   Read the TS file and its test first; keep its doc comments' intent.
-- **The contract is in `kern-core`** (`messages`, `provider`, `tool`, `fs`,
+- **The contract is in `haest-core`** (`messages`, `provider`, `tool`, `fs`,
   `workspace`, `events`, `deps`, `agent`). Change it only when a port truly
   needs it, and say so in the commit message.
-- **Agnostic.** kern ships to anyone: no person's name, no host-specific path or
+- **Agnostic.** haest ships to anyone: no person's name, no host-specific path or
   product name in code, prompts, defaults or fixtures. A host injects what it needs.
 - **Wire-compatible serde.** Anything that lands in a session file or an NDJSON
-  event keeps the TS kern's JSON shape (camelCase keys, same tags).
+  event keeps the TS haest's JSON shape (camelCase keys, same tags).
 - **Tests defend behaviour.** A test fails only when behaviour changed: never
   assert wording, formatting or source text. Port every TS test as a behaviour test.
 - **Files stay small.** About 300 lines per `.rs` file, tests included in a

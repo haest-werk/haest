@@ -1,0 +1,13 @@
+[package]
+name = "haest-ts"
+description = "TypeScript to JavaScript for haest's embedded QuickJS: swc's type stripper, line numbers kept"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+swc_ts_fast_strip = "60"
+swc_common = "27"
