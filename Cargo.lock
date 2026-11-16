@@ -1002,6 +1002,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "haest-http"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "reqwest",
+ "rustls",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "haest-issues"
 version = "0.2.0"
 dependencies = [

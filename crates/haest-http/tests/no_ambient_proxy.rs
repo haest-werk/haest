@@ -1,7 +1,7 @@
-//! The default transport reads no proxy from the environment (D15): with
-//! every proxy variable pointing at a listener of its own, a request still
-//! goes straight to its server, so a key never travels through a proxy haest
-//! was not handed. A test binary of its own: it sets the process's variables.
+//! The default client reads no proxy from the environment (D15): with every
+//! proxy variable pointing at a listener of its own, a request still goes
+//! straight to its server, so a key never travels through a proxy haest was
+//! not handed. A test binary of its own: it sets the process's variables.
 
 use std::{
     io::{Read, Write},
@@ -11,8 +11,8 @@ use std::{
     time::Duration,
 };
 
-use haest_providers::{HttpRequest, ReqwestTransport, Transport};
-use tokio_util::sync::CancellationToken;
+use haest_http::{HttpClient, Request, ReqwestClient};
+use serde_json::json;
 
 /// Answers every connection with an empty 200, and says each time it was reached.
 fn serve(listener: TcpListener) -> mpsc::Receiver<()> {
@@ -30,7 +30,7 @@ fn serve(listener: TcpListener) -> mpsc::Receiver<()> {
 }
 
 #[tokio::test]
-async fn the_default_transport_goes_direct_whatever_the_proxy_variables_say() {
+async fn the_default_client_goes_direct_whatever_the_proxy_variables_say() {
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
     let proxy_url = format!("http://{}", proxy.local_addr().unwrap());
@@ -48,15 +48,10 @@ async fn the_default_transport_goes_direct_whatever_the_proxy_variables_say() {
     }
     let (reached, proxied) = (serve(server), serve(proxy));
 
-    let req = HttpRequest {
-        url,
-        headers: vec![("x-api-key".into(), "secret".into())],
-        body: serde_json::json!({}),
-    };
-    let resp = ReqwestTransport::new()
-        .post(req, CancellationToken::new())
-        .await
-        .unwrap();
+    let req = Request::post(url)
+        .with_header("x-api-key", "secret")
+        .with_json(&json!({}));
+    let resp = ReqwestClient::new().send(req).await.unwrap();
     assert_eq!(resp.status, 200);
     assert!(
         reached.recv_timeout(Duration::from_secs(2)).is_ok(),

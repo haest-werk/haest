@@ -1,0 +1,131 @@
+//! One request, ready to send.
+
+use bytes::Bytes;
+use serde_json::Value;
+
+/// The HTTP methods haest sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Method {
+    /// `GET`: read (a web page, a model list, an issue).
+    Get,
+    /// `POST`: a model call, an image request, a new issue.
+    Post,
+    /// `PATCH`: change part of something (an issue).
+    Patch,
+    /// `DELETE`: remove something (an issue's link).
+    Delete,
+}
+
+impl Method {
+    /// The method as it goes on the wire: `GET`, `POST`, `PATCH`, `DELETE`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Method::Get => "GET",
+            Method::Post => "POST",
+            Method::Patch => "PATCH",
+            Method::Delete => "DELETE",
+        }
+    }
+}
+
+/// One request, ready to send: everything an [`HttpClient`](crate::HttpClient)
+/// is handed.
+///
+/// ```
+/// use haest_http::{Method, Request};
+/// use serde_json::json;
+///
+/// let req = Request::post("https://api.example.com/v1/items")
+///     .with_header("Authorization", "Bearer sk-...")
+///     .with_json(&json!({"name": "first"}));
+/// assert_eq!(req.method, Method::Post);
+/// assert_eq!(req.header("content-type"), Some("application/json"));
+/// assert_eq!(req.json()["name"], "first");
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct Request {
+    /// The method.
+    pub method: Method,
+    /// The whole URL, query included, already encoded.
+    pub url: String,
+    /// Header names and values, in order; read one with [`header`](Self::header).
+    pub headers: Vec<(String, String)>,
+    /// The body; empty = none.
+    pub body: Bytes,
+}
+
+impl Request {
+    /// `method` on `url`, no headers, no body.
+    pub fn new(method: Method, url: impl Into<String>) -> Self {
+        Self {
+            method,
+            url: url.into(),
+            headers: Vec::new(),
+            body: Bytes::new(),
+        }
+    }
+
+    /// A GET of `url`.
+    pub fn get(url: impl Into<String>) -> Self {
+        Self::new(Method::Get, url)
+    }
+
+    /// A POST to `url`, no body yet.
+    pub fn post(url: impl Into<String>) -> Self {
+        Self::new(Method::Post, url)
+    }
+
+    /// This request with `name: value`. A header of the same name, in any
+    /// case, is replaced: a header sent twice reaches the server as two
+    /// values, and one that reads the first never sees the second.
+    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        let name = name.into();
+        self.headers.retain(|(k, _)| !k.eq_ignore_ascii_case(&name));
+        self.headers.push((name, value.into()));
+        self
+    }
+
+    /// This request with `body` as its JSON text, and `content-type: application/json`.
+    pub fn with_json(mut self, body: &Value) -> Self {
+        self.body = Bytes::from(body.to_string());
+        self.with_header("content-type", "application/json")
+    }
+
+    /// A header's value, by case-insensitive name.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        find_header(&self.headers, name)
+    }
+
+    /// The body as JSON; Null when it is empty or not JSON (what a fake
+    /// reads to check what was sent).
+    pub fn json(&self) -> Value {
+        serde_json::from_slice(&self.body).unwrap_or(Value::Null)
+    }
+}
+
+/// `name`'s value in `headers`, matched case-insensitively.
+pub(crate) fn find_header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.as_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_header_set_twice_is_sent_once_with_the_last_value() {
+        let req = Request::get("https://a.test/")
+            .with_header("Accept", "text/html")
+            .with_header("accept", "application/json");
+        assert_eq!(req.headers.len(), 1);
+        assert_eq!(req.header("ACCEPT"), Some("application/json"));
+    }
+
+    #[test]
+    fn a_body_that_is_not_json_reads_as_null() {
+        assert_eq!(Request::get("https://a.test/").json(), Value::Null);
+    }
+}

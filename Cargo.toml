@@ -16,6 +16,7 @@ categories = ["development-tools"]
 # crate's own Cargo.toml, so parallel work on two crates never edits this table.
 [workspace.dependencies]
 haest-core = { version = "0.2.0", path = "crates/haest-core" }
+haest-http = { version = "0.2.0", path = "crates/haest-http" }
 haest-providers = { version = "0.2.0", path = "crates/haest-providers" }
 haest-workspace = { version = "0.2.0", path = "crates/haest-workspace" }
 haest-tools = { version = "0.2.0", path = "crates/haest-tools" }

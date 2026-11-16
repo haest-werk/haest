@@ -1,0 +1,30 @@
+[package]
+name = "haest-http"
+description = "haest's one HTTP seam: a small request/response client trait every haest part sends through, and its default over reqwest and rustls"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+futures = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+bytes = "1"
+# TLS on ring: one crypto stack in the binary and no C toolchain (aws-lc-sys
+# needs cmake) to build it. No `system-proxy`: the default client reads no
+# proxy settings (D15). `stream`: a model's answer is read as it arrives.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "stream"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
