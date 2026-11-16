@@ -27,16 +27,23 @@
 /// Splits `---\n<head>\n---\n<body>` into the head's lines and the body;
 /// None when `content` does not start with `---\n` or the head never ends.
 ///
-/// The head ends at the FIRST later line that starts with `---`; one newline
-/// after that fence is dropped from the body. The head needs at least one
-/// line: `---\n---\n` finds no closing fence and is None. Line ends must be
+/// The head ends at the FIRST later line that is `---` (trailing blanks
+/// allowed; `---foo` or `----` is a head line); the body starts on the line
+/// after that fence. The head may be empty (`---\n---\n`). Line ends must be
 /// `\n`: turn `\r\n` into `\n` first.
 pub fn split_frontmatter(content: &str) -> Option<(Vec<&str>, &str)> {
     let rest = content.strip_prefix("---\n")?;
-    let end = rest.find("\n---")?;
-    let after = &rest[end + 4..];
-    let body = after.strip_prefix('\n').unwrap_or(after);
-    Some((rest[..end].split('\n').collect(), body))
+    let mut head = Vec::new();
+    let mut read = 0;
+    for line in rest.split_inclusive('\n') {
+        read += line.len();
+        let line = line.strip_suffix('\n').unwrap_or(line);
+        if line.trim_end() == "---" {
+            return Some((head, &rest[read..]));
+        }
+        head.push(line);
+    }
+    None
 }
 
 /// Nothing at all (a nested block) or a block-scalar indicator (`|`, `>-`, `|+2`).
@@ -161,6 +168,23 @@ mod tests {
         assert_eq!(body, "\nbody\n---\nmore");
         assert!(split_frontmatter("# no block").is_none());
         assert!(split_frontmatter("---\nunclosed").is_none());
+    }
+
+    #[test]
+    fn an_empty_head_is_a_head() {
+        let (head, body) = split_frontmatter("---\n---\nbody").unwrap();
+        assert!(head.is_empty());
+        assert_eq!(body, "body");
+    }
+
+    #[test]
+    fn only_a_line_of_three_dashes_closes_the_head() {
+        let (head, body) = split_frontmatter("---\na: 1\n---foo\n---\nbody").unwrap();
+        assert_eq!(head, ["a: 1", "---foo"]);
+        assert_eq!(body, "body");
+        assert!(split_frontmatter("---\na: 1\n----\nbody").is_none());
+        let (_, body) = split_frontmatter("---\na: 1\n---").unwrap();
+        assert_eq!(body, "");
     }
 
     #[test]
