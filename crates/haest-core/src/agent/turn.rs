@@ -3,7 +3,6 @@
 
 use std::{sync::Arc, time::Instant};
 
-use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -14,7 +13,7 @@ use crate::{
     guard::TurnGuard,
     media::user_message,
     messages::{AssistantMessage, AssistantPart, Message, StopReason, ToolCall, Usage},
-    provider::ProviderEvent,
+    provider::{NO_RESPONSE, ProviderEvent, final_message},
     tool::{ToolContext, ToolServices},
     tool_batch::{Answer, Answers, run_tool_batches},
     tool_exec::{ToolIndex, error_assistant, tool_result_message},
@@ -169,23 +168,17 @@ impl Agent {
             return refuse(&resolved.model, &too_big, t);
         }
         let req = prefix.request(resolved.model.clone(), messages, t.cancel.clone());
-        let mut stream = resolved.provider.stream(req);
-        let mut done = None;
-        while let Some(ev) = stream.next().await {
-            match ev {
-                ProviderEvent::Done(m) => done = Some(m),
-                ProviderEvent::TextDelta(text) => t.sink.emit(LoopEvent::TextDelta { text }),
-                ProviderEvent::ThinkingDelta(text) => {
-                    t.sink.emit(LoopEvent::ThinkingDelta { text })
-                }
-                ProviderEvent::ToolCallStart { id, name } => {
-                    t.sink.emit(LoopEvent::ToolCallStart { id, name })
-                }
+        let done = final_message(resolved.provider.stream(req), |ev| match ev {
+            ProviderEvent::TextDelta(text) => t.sink.emit(LoopEvent::TextDelta { text }),
+            ProviderEvent::ThinkingDelta(text) => t.sink.emit(LoopEvent::ThinkingDelta { text }),
+            ProviderEvent::ToolCallStart { id, name } => {
+                t.sink.emit(LoopEvent::ToolCallStart { id, name })
             }
-        }
-        let mut msg = done.unwrap_or_else(|| {
-            error_assistant(&resolved.model, "provider ended without a response")
-        });
+            // final_message keeps it.
+            ProviderEvent::Done(_) => {}
+        })
+        .await;
+        let mut msg = done.unwrap_or_else(|| error_assistant(&resolved.model, NO_RESPONSE));
         if matches!(msg.stop_reason, StopReason::Error | StopReason::Aborted) {
             // A failed answer runs no tool, so a call in it would stay in
             // history with no result, and the next request would be refused.

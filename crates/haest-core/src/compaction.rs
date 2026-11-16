@@ -14,14 +14,13 @@
 
 use std::collections::HashMap;
 
-use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::Agent,
     messages::{AssistantMessage, Message, StopReason, Usage},
-    provider::{ModelError, Provider, ProviderEvent, ProviderRequest},
+    provider::{ModelError, NO_RESPONSE, Provider, ProviderRequest, final_message},
     session::compaction_summary_message,
 };
 
@@ -164,20 +163,13 @@ fn summary_text(msg: &AssistantMessage, cancel: &CancellationToken) -> Result<St
 
 async fn ask(provider: &dyn Provider, req: ProviderRequest) -> Summary {
     let cancel = req.cancel.clone();
-    let mut done = None;
-    let mut stream = provider.stream(req);
-    while let Some(ev) = stream.next().await {
-        if let ProviderEvent::Done(msg) = ev {
-            done = Some(msg);
-        }
-    }
-    match done {
+    match final_message(provider.stream(req), |_| {}).await {
         Some(msg) => Summary {
             text: summary_text(&msg, &cancel),
             usage: msg.usage,
         },
         None => Summary {
-            text: Err("provider ended without a response".into()),
+            text: Err(NO_RESPONSE.into()),
             usage: Usage::default(),
         },
     }

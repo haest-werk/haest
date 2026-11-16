@@ -17,7 +17,7 @@
 
 use std::{fmt, sync::Arc};
 
-use futures::stream::BoxStream;
+use futures::{StreamExt, stream::BoxStream};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -149,6 +149,26 @@ pub enum ProviderEvent {
 /// What [`Provider::stream`] returns: a boxed, `'static`, `Send` stream of
 /// [`ProviderEvent`]s.
 pub type ProviderStream = BoxStream<'static, ProviderEvent>;
+
+/// Why a model call has no answer when its stream ended without a
+/// [`ProviderEvent::Done`].
+pub(crate) const NO_RESPONSE: &str = "provider ended without a response";
+
+/// The answer `stream` ends with, every event before it handed to `delta`;
+/// None when the stream ended without a [`ProviderEvent::Done`] ([`NO_RESPONSE`]).
+pub(crate) async fn final_message(
+    mut stream: ProviderStream,
+    mut delta: impl FnMut(ProviderEvent),
+) -> Option<AssistantMessage> {
+    let mut done = None;
+    while let Some(ev) = stream.next().await {
+        match ev {
+            ProviderEvent::Done(m) => done = Some(m),
+            other => delta(other),
+        }
+    }
+    done
+}
 
 /// A model API: turns a [`ProviderRequest`] into a stream of
 /// [`ProviderEvent`]s.
