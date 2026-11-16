@@ -18,6 +18,7 @@
 
 mod args;
 mod context;
+mod resume;
 #[cfg(test)]
 mod tests;
 mod truncate;
@@ -30,6 +31,7 @@ use serde_json::{Map, Value};
 
 pub use args::{opt_bool, opt_num, opt_str, req_str, spelled};
 pub use context::ToolContext;
+pub use resume::OnResume;
 pub use truncate::{TRUNCATE_CHARS, truncate_middle};
 
 pub use crate::slug::slug;
@@ -253,6 +255,20 @@ pub trait Tool: Send + Sync {
     /// time; any other call runs alone.
     fn read_only(&self) -> bool {
         false
+    }
+    /// What a resumed durable run ([`crate::run`]) does with a call of this
+    /// tool that may have run before the stop: it started, and its result
+    /// never landed.
+    ///
+    /// The default: a read-only tool runs again ([`OnResume::Rerun`]), any
+    /// other is answered as interrupted ([`OnResume::Report`]). Only durable
+    /// runs ask; a plain turn never does.
+    fn on_resume(&self) -> OnResume {
+        if self.read_only() {
+            OnResume::Rerun
+        } else {
+            OnResume::Report
+        }
     }
     /// Canonical input shape for a host's transcript. Defaults to the raw input.
     fn canonical_input(&self, input: &JsonMap) -> JsonMap {

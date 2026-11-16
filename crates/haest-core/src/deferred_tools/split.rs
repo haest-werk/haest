@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use super::{DeferMode, ToolDeferral};
-use crate::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput};
+use crate::tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput};
 
 /// The tools this call advertises, given every tool the agent has.
 ///
@@ -83,6 +83,9 @@ impl Tool for Loading {
     }
     fn read_only(&self) -> bool {
         self.tool.read_only()
+    }
+    fn on_resume(&self) -> OnResume {
+        self.tool.on_resume()
     }
     fn canonical_input(&self, input: &JsonMap) -> JsonMap {
         self.tool.canonical_input(input)

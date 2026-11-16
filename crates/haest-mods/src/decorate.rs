@@ -10,7 +10,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use haest_core::{
     deps::SystemPrompt,
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource},
+    tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput, ToolSource},
 };
 use serde_json::Value;
 
@@ -91,6 +91,9 @@ impl Tool for ModTool {
     }
     fn read_only(&self) -> bool {
         self.tool.read_only()
+    }
+    fn on_resume(&self) -> OnResume {
+        self.tool.on_resume()
     }
     fn canonical_input(&self, input: &JsonMap) -> JsonMap {
         self.tool.canonical_input(input)

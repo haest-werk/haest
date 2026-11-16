@@ -83,6 +83,40 @@ fn only_grow_adds_what_was_loaded() {
     );
 }
 
+/// A tool that can look up what it did when a durable run resumes it.
+struct LooksUp;
+
+#[async_trait]
+impl Tool for LooksUp {
+    fn name(&self) -> &str {
+        "mcp__x__pay"
+    }
+    fn description(&self) -> String {
+        "pay".into()
+    }
+    fn parameters(&self) -> Value {
+        json!({"type": "object"})
+    }
+    fn kind(&self) -> &str {
+        "agent.unknown"
+    }
+    fn on_resume(&self) -> crate::tool::OnResume {
+        crate::tool::OnResume::Lookup
+    }
+    async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
+        Ok(ToolOutput::text("paid"))
+    }
+}
+
+#[test]
+fn a_deferred_tool_keeps_what_it_does_on_resume() {
+    let d = Arc::new(ToolDeferral::new(DeferMode::Proxy));
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(LooksUp)];
+    let callable = callable_tools(&d, &tools, marker);
+    let pay = callable.iter().find(|t| t.name() == "mcp__x__pay").unwrap();
+    assert_eq!(pay.on_resume(), crate::tool::OnResume::Lookup);
+}
+
 #[test]
 fn nothing_deferrable_adds_no_search_tool() {
     let d = ToolDeferral::new(DeferMode::Proxy);

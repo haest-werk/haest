@@ -5,7 +5,11 @@ use std::{path::PathBuf, sync::Arc};
 use tokio_util::sync::CancellationToken;
 
 use super::{NoServices, ToolServices};
-use crate::{fs::resolve_path, workspace::Workspace};
+use crate::{
+    fs::resolve_path,
+    run::{EffectKey, RunKey},
+    workspace::Workspace,
+};
 
 /// What one tool call may use: where it runs, how it learns it was cancelled,
 /// the workspace and the host's services.
@@ -30,11 +34,17 @@ pub struct ToolContext {
     pub tool_call_id: Option<String>,
     /// Where results too big for the context are written.
     pub spill_dir: Option<PathBuf>,
+    /// The durable run this call belongs to ([`crate::run`]); None outside one.
+    pub run_key: Option<RunKey>,
+    /// This call may have run before: a resumed durable run runs it again
+    /// ([`OnResume`](super::OnResume)). False for every first run.
+    pub resumed: bool,
 }
 
 impl ToolContext {
     /// A context for running a tool outside the loop (tests, a host command):
-    /// a fresh cancel token, [`NoServices`], no context cap, no call id, no spill directory.
+    /// a fresh cancel token, [`NoServices`], no context cap, no call id, no
+    /// spill directory, no durable run.
     pub fn new(cwd: impl Into<PathBuf>, workspace: Arc<dyn Workspace>) -> Self {
         Self {
             cwd: cwd.into(),
@@ -44,6 +54,8 @@ impl ToolContext {
             context_room_tokens: None,
             tool_call_id: None,
             spill_dir: None,
+            run_key: None,
+            resumed: false,
         }
     }
 
@@ -51,5 +63,13 @@ impl ToolContext {
     /// `cwd`, and `.` / `..` are resolved without touching any file system.
     pub fn resolve(&self, p: &str) -> PathBuf {
         resolve_path(&self.cwd, p)
+    }
+
+    /// This call's effect key ([`RunKey::effect_key`]): the same every time
+    /// the run runs this call, resumed or not. Hand it to an outside API as
+    /// its idempotency key. None outside a durable run, or with no call id.
+    pub fn effect_key(&self) -> Option<EffectKey> {
+        let id = self.tool_call_id.as_deref()?;
+        Some(self.run_key.as_ref()?.effect_key(id))
     }
 }

@@ -10,7 +10,7 @@ use haest_core::{
     Agent, AgentDeps, AgentOptions, Message, ToolResultMessage,
     deps::SystemPrompt,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::{Tool, ToolSource},
+    tool::{OnResume, Tool, ToolSource},
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use serde_json::json;
@@ -140,4 +140,45 @@ async fn plan_mode_lets_the_hosts_planning_tools_through_and_no_others() {
     tools[0].execute(input(json!({})), &ctx()).await.unwrap();
     assert!(tools[1].execute(input(json!({})), &ctx()).await.is_err());
     assert_eq!((notes.ran().len(), tasks.ran().len()), (1, 0));
+}
+
+/// A payment tool that can look up what it did when a durable run resumes it.
+struct Pay;
+
+#[async_trait::async_trait]
+impl Tool for Pay {
+    fn name(&self) -> &str {
+        "Pay"
+    }
+    fn description(&self) -> String {
+        "pay".into()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        json!({"type": "object"})
+    }
+    fn kind(&self) -> &str {
+        "agent.unknown"
+    }
+    fn on_resume(&self) -> OnResume {
+        OnResume::Lookup
+    }
+    async fn execute(
+        &self,
+        _: haest_core::tool::JsonMap,
+        _: &haest_core::ToolContext,
+    ) -> Result<haest_core::ToolOutput, haest_core::ToolError> {
+        Ok(haest_core::ToolOutput::text("paid"))
+    }
+}
+
+#[test]
+fn a_wrapped_tool_keeps_what_it_does_on_resume() {
+    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real));
+    let tools = wrapped(
+        mods,
+        vec![Arc::new(Pay), Probe::new("Write"), Probe::read_only("Read")],
+    );
+    assert_eq!(find(&tools, "Pay").on_resume(), OnResume::Lookup);
+    assert_eq!(find(&tools, "Write").on_resume(), OnResume::Report);
+    assert_eq!(find(&tools, "Read").on_resume(), OnResume::Rerun);
 }

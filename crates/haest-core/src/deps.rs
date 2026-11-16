@@ -29,6 +29,7 @@ use crate::{
     messages::{MediaPart, Message},
     provider::{Effort, ModelResolver, WebSearchOptions},
     remedy::Remedies,
+    run::RunStore,
     tool::{ToolServices, ToolSource},
     workspace::Workspace,
 };
@@ -166,6 +167,18 @@ pub trait AgentHooks: ToolServices {
 
     /// A model call's effort was fitted: `used` went out instead of what was asked.
     fn on_effort_fitted(&self, _model: &str, _used: Effort) {}
+
+    /// Awaited before the loop runs a batch of tool calls that holds a tool
+    /// with side effects (one that is not
+    /// [`read_only`](crate::Tool::read_only)); read-only batches do not wait.
+    /// Default: returns at once.
+    ///
+    /// A host that persists messages itself awaits its sink's
+    /// [`flush`](crate::session::SessionSink::flush) here: the answer that
+    /// asked for the calls (the intent) then lands before their effects, so
+    /// a host that resumes after a crash knows they may have run. A durable
+    /// run ([`crate::run`]) flushes its own records before this.
+    async fn before_effects(&self) {}
 }
 
 /// Milliseconds since the Unix epoch, by the wall clock; 0 if the clock is
@@ -254,12 +267,15 @@ pub struct SharedDeps {
     /// The host's way past a turn cap or the request cap, added to the
     /// turn's error when one stops it; none unless set.
     pub remedies: Remedies,
+    /// Where durable runs keep their records ([`Agent::run_durable`]).
+    /// None = no run is durable: [`Agent::run`] never touches a store either way.
+    pub run_store: Option<Arc<dyn RunStore>>,
 }
 
 impl SharedDeps {
     /// The minimum: models, a working directory and a workspace. Everything
     /// else off: no spill directory, [`NoHooks`], [`NoFacts`], no turn caps,
-    /// the [`WallClock`], no ledger, no web search, no remedies.
+    /// the [`WallClock`], no ledger, no web search, no remedies, no run store.
     pub fn new(
         models: Arc<dyn ModelResolver>,
         cwd: impl Into<PathBuf>,
@@ -277,6 +293,7 @@ impl SharedDeps {
             ledger: None,
             web_search: None,
             remedies: Remedies::default(),
+            run_store: None,
         }
     }
 }

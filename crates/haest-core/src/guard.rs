@@ -19,6 +19,7 @@
 //! through a [`TurnCapsSource`](crate::caps::TurnCapsSource) and never drives the guard itself.
 
 mod signature;
+mod state;
 #[cfg(test)]
 mod tests;
 

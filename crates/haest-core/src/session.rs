@@ -13,6 +13,7 @@
 //! | `config` | model / effort changed |
 //! | `ledger` | the conversation's spend so far (absolute; the last one wins -- [`crate::ledger`]) |
 //! | `tasks` | the whole task list (absolute; the last one wins -- [`crate::task_board`]) |
+//! | `run`, `turn`, `run_end` | a durable run's start, turn state and result ([`crate::run`]); [`replay`] skips them |
 //!
 //! The JSON shape is the TypeScript haest's, so either haest resumes the other's file.
 //!
@@ -59,10 +60,17 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use file::{JsonlSessionFile, SessionSink};
+pub(crate) use replay::{INTERRUPTED, Line, answer_interrupted, compact, parse_line};
 pub use replay::{ReplayedSession, replay};
 pub use time::iso_utc;
 
-use crate::{ledger::LedgerSnapshot, messages::Message, provider::Effort, task_board::Task};
+use crate::{
+    ledger::LedgerSnapshot,
+    messages::Message,
+    provider::Effort,
+    run::{RunEnd, RunKey, TurnState},
+    task_board::Task,
+};
 
 /// One line of a session file. Serialized with a `type` tag (`header`,
 /// `message`, ...) and camelCase fields, the TypeScript haest's shape.
@@ -140,16 +148,53 @@ pub enum SessionRecord {
         /// Every task, in list order.
         tasks: Vec<Task>,
     },
+    /// A durable run started ([`crate::run`]). A later `run` record in the
+    /// same log starts the run over.
+    Run {
+        /// When it was written, in ms since the epoch.
+        #[serde(deserialize_with = "millis")]
+        t: u64,
+        /// The run's key.
+        key: RunKey,
+        /// The input's hash ([`input_hash`](crate::run::input_hash)).
+        input_hash: String,
+        /// How many messages the history held when the run started.
+        #[serde(default)]
+        base: usize,
+    },
+    /// What a durable run's turn caps count now; the last one wins.
+    Turn {
+        /// When it was written, in ms since the epoch.
+        #[serde(deserialize_with = "millis")]
+        t: u64,
+        /// The turn's spend, model calls, time and repeat counts.
+        #[serde(flatten)]
+        state: TurnState,
+    },
+    /// A durable run ended on its own: a second start returns this.
+    RunEnd {
+        /// When it was written, in ms since the epoch.
+        #[serde(deserialize_with = "millis")]
+        t: u64,
+        /// The run's key.
+        key: RunKey,
+        /// How it ended.
+        #[serde(flatten)]
+        end: RunEnd,
+    },
 }
 
 /// The record kinds haest knows; any other `type` belongs to whoever wrote it.
-const KINDS: [&str; 6] = [
+const KINDS: [&str; 9] = [
     "header",
     "message",
     "compaction",
     "config",
     "ledger",
     "tasks",
+    "run",
+    "turn",
+    "run_end",
 ];
 
 impl SessionRecord {

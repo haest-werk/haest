@@ -14,11 +14,12 @@
 
 use std::time::Instant;
 
-use futures::{StreamExt, stream::FuturesOrdered};
+use futures::{StreamExt, future::BoxFuture, stream::FuturesOrdered};
 
 use crate::{
     messages::{ToolCall, Usage},
-    tool::{ToolContext, ToolOutput},
+    session::INTERRUPTED,
+    tool::{OnResume, ToolContext, ToolOutput},
     tool_exec::{ToolIndex, fold_spend, run_call},
 };
 
@@ -69,8 +70,16 @@ pub(crate) trait Answers: Send {
     /// Tokens the next batch may add to the context; read once per batch, after
     /// every answer before it was delivered. None = uncapped.
     fn room(&self) -> Option<u64>;
-    /// One answer, in CALL order.
-    fn answer(&mut self, answer: Answer);
+    /// One answer, in CALL order; `usage` is the turn's, this answer's spend folded in.
+    fn answer(&mut self, answer: Answer, usage: &Usage);
+    /// Awaited before a batch that holds a call with side effects: the intent lands first.
+    fn before_effects(&mut self) -> BoxFuture<'_, ()>;
+}
+
+/// Whether `call` runs a tool with side effects: a tool `tools` knows that is
+/// not read-only. An unknown name runs nothing.
+fn has_effects(tools: &ToolIndex, call: &ToolCall) -> bool {
+    tools.get(&call.name).is_some_and(|t| !t.read_only())
 }
 
 /// Run `calls` batch by batch and deliver every answer in CALL order -- history,
@@ -81,7 +90,8 @@ pub(crate) trait Answers: Send {
 /// Each call gets a clone of `ctx` with its own call id and its share of
 /// [`Answers::room`]. Every call is answered, failures and panics included; a
 /// call that starts after `ctx.cancel` fired is answered as interrupted
-/// without running.
+/// without running. Before a batch that holds a call with side effects,
+/// [`Answers::before_effects`] is awaited.
 pub(crate) async fn run_tool_batches(
     calls: &[ToolCall],
     tools: &ToolIndex,
@@ -90,6 +100,9 @@ pub(crate) async fn run_tool_batches(
     to: &mut dyn Answers,
 ) {
     for batch in tool_batches(calls, tools) {
+        if batch.iter().any(|c| has_effects(tools, c)) {
+            to.before_effects().await;
+        }
         let room = room_share(to.room(), batch.len());
         let started = Instant::now();
         let mut running: FuturesOrdered<_> = batch
@@ -106,12 +119,57 @@ pub(crate) async fn run_tool_batches(
             .collect();
         while let Some((call, output, duration_ms)) = running.next().await {
             fold_spend(usage, &output);
-            to.answer(Answer {
+            let answer = Answer {
                 call: call.clone(),
                 output,
                 duration_ms,
-            });
+            };
+            to.answer(answer, usage);
         }
+    }
+}
+
+/// A call a resumed durable run answers by its tool's [`OnResume`]: it may
+/// have run before the stop.
+pub(crate) struct Redo {
+    /// The call, with no result in history.
+    pub(crate) call: ToolCall,
+    /// What its tool said to do.
+    pub(crate) how: OnResume,
+}
+
+/// Answer each of `redo` in order, one at a time: [`OnResume::Report`] as
+/// interrupted without running, the others run again with
+/// [`ToolContext::resumed`] set. Delivered and folded as [`run_tool_batches`] does.
+pub(crate) async fn redo_calls(
+    redo: &[Redo],
+    tools: &ToolIndex,
+    ctx: &ToolContext,
+    usage: &mut Usage,
+    to: &mut dyn Answers,
+) {
+    for Redo { call, how } in redo {
+        let started = Instant::now();
+        let output = match how {
+            OnResume::Report => ToolOutput::error(INTERRUPTED),
+            OnResume::Rerun | OnResume::Lookup => {
+                if has_effects(tools, call) {
+                    to.before_effects().await;
+                }
+                let mut ctx = ctx.clone();
+                ctx.context_room_tokens = to.room();
+                ctx.tool_call_id = Some(call.id.clone());
+                ctx.resumed = true;
+                run_call(tools, call, &ctx).await
+            }
+        };
+        fold_spend(usage, &output);
+        let answer = Answer {
+            call: call.clone(),
+            output,
+            duration_ms: started.elapsed().as_millis() as u64,
+        };
+        to.answer(answer, usage);
     }
 }
 

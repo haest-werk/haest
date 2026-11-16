@@ -1,9 +1,30 @@
 # Durable runs (plan, opt-in)
 
-Status: plan, 2026-11-16. Nothing here is built. Type and file names follow `main` at
+Status: P1 and P2 built (2026-11-16, `haest_core::run`, `Agent::run_durable`); P3-P5
+are plans. Type and file names follow `main` at
 `1c7372a` (0.2.0): `caps::TurnCaps` (`max_turn_time: Duration`), `SubagentParent`
 (`agents/parent.rs`), the hub's member run in `agents/hub/member_run.rs`, `ModelFacts` and
 `Clock` on `AgentDeps`.
+
+### Built in P1 + P2, and where it differs from the design below
+
+- `RunStore` (R7) with the memory provider only, on `SharedDeps::run_store` (a subagent
+  shares its parent's store, which P4's child keys need); `Agent::run_durable(key, input, sink)`.
+- The `turn` record keeps `elapsedMs`, not `startedMs`: a resumed turn's time cap counts on
+  from the time it had run, so the time the run was stopped does not count. It also keeps
+  `nudged` (no second nudge after a resume) and `requestTokens` (the room a tool result has).
+- `turn` is written after every model call and every tool result, so a crash mid-step loses
+  no spend or repeat count.
+- `run` keeps `base`, the history's length at the start: a resume checks the agent's history
+  against it and cuts back a history that already holds the run's messages.
+- A run that ends with an error or an abort writes no `run_end`: a second start resumes it
+  (a provider error is retried, not served forever).
+- Which pending calls "may have run": only the first batch of the last answer's calls without
+  a result. A later batch with side effects cannot have started (results land in call order,
+  and the loop flushes before every batch with side effects), so it runs once.
+- The guard's repeat keys and the effect keys use a hash that is the same in every build
+  (FNV-1a), so a resume after a deploy built with another toolchain still matches.
+- No `durable` setting yet: a memory store is useless across processes, so the row comes with P3.
 
 ## Goal
 

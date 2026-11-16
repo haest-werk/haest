@@ -56,6 +56,12 @@ name = "notebook"
 path = "examples/notebook/main.rs"
 test = true
 
+# A durable run on the memory store: the finished-run shortcut, a kill and a resume.
+[[example]]
+name = "durable_run"
+path = "examples/durable_run.rs"
+test = true
+
 # The notebook example and tests/plug_in.rs: what a host implementing the plug points needs.
 [dev-dependencies]
 # The front page's runnable examples drive whole turns with the scripted model.

@@ -104,6 +104,9 @@ impl Bridge {
             context_room_tokens: None,
             tool_call_id: None,
             spill_dir: ctx.spill_dir.clone(),
+            // A program's inner calls have no stable ids: no effect keys for them.
+            run_key: None,
+            resumed: false,
         };
         Arc::new(Self {
             tools,

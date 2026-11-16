@@ -39,13 +39,13 @@ pub struct ReplayedSession {
 }
 
 /// One line: a record, a line that is someone else's (skipped), or garbage (counted).
-enum Line {
+pub(crate) enum Line {
     Record(Box<SessionRecord>),
     Foreign,
     Corrupt,
 }
 
-fn parse_line(line: &str) -> Line {
+pub(crate) fn parse_line(line: &str) -> Line {
     let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(line) else {
         return Line::Corrupt;
     };
@@ -62,7 +62,8 @@ fn parse_line(line: &str) -> Line {
     }
 }
 
-const INTERRUPTED: &str =
+/// The answer to a tool call that has no result because haest stopped mid-call.
+pub(crate) const INTERRUPTED: &str =
     "Interrupted: haest stopped before this tool call returned, so it may or may not have run.";
 
 /// A log that ends mid-tool (the process was killed) holds calls with no
@@ -71,7 +72,7 @@ const INTERRUPTED: &str =
 /// file keeps what happened and every replay makes the same repair, so a
 /// resumed conversation's history -- what a later compaction counted its tail
 /// on -- is rebuilt exactly.
-fn answer_interrupted(messages: Vec<Message>) -> Vec<Message> {
+pub(crate) fn answer_interrupted(messages: Vec<Message>) -> Vec<Message> {
     let mut out = Vec::with_capacity(messages.len());
     let mut rest = messages.into_iter().peekable();
     while let Some(m) = rest.next() {
@@ -109,10 +110,7 @@ fn apply(s: &mut ReplayedSession, r: SessionRecord) {
         SessionRecord::Header { .. } => {}
         SessionRecord::Message { message, .. } => s.messages.push(message),
         SessionRecord::Compaction { summary, kept, .. } => {
-            s.messages = answer_interrupted(std::mem::take(&mut s.messages));
-            let from = s.messages.len().saturating_sub(kept);
-            s.messages
-                .splice(..from, [compaction_summary_message(&summary)]);
+            compact(&mut s.messages, &summary, kept);
         }
         SessionRecord::Config {
             model_spec: model,
@@ -128,7 +126,16 @@ fn apply(s: &mut ReplayedSession, r: SessionRecord) {
         }
         SessionRecord::Ledger { ledger, .. } => s.ledger = Some(ledger),
         SessionRecord::Tasks { tasks, .. } => s.tasks = Some(tasks),
+        // A durable run's own records (crate::run): the conversation is in its messages.
+        SessionRecord::Run { .. } | SessionRecord::Turn { .. } | SessionRecord::RunEnd { .. } => {}
     }
+}
+
+/// A compaction record: keep the `kept` latest messages behind the summary.
+pub(crate) fn compact(messages: &mut Vec<Message>, summary: &str, kept: usize) {
+    *messages = answer_interrupted(std::mem::take(messages));
+    let from = messages.len().saturating_sub(kept);
+    messages.splice(..from, [compaction_summary_message(summary)]);
 }
 
 /// Rebuild a session from a file's text. Split on '\n' only: U+2028/2029 are

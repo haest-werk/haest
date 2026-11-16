@@ -17,6 +17,7 @@
 //! land in call order.
 
 mod control;
+mod durable;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod turn;

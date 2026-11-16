@@ -14,6 +14,54 @@ with the TypeScript haest unless an entry says otherwise: the session file,
   `Limits` -> `CapSettings` type rename had renamed the heading to
   "CapSettings" in `docs/settings.md` and `haest settings`.
 
+### haest (the facade)
+
+- New example `durable_run` (`cargo run -p haest --example durable_run`,
+  also under `cargo test`): the finished-run shortcut, and a kill and a
+  resume on the memory store.
+
+### haest-core
+
+Durable runs, opt-in: a host that hands no run store gets the haest it had.
+
+- New module `run`: `RunKey` (`new`, `as_str`, `child`, `effect_key`),
+  `EffectKey`, `input_hash`, `TurnState`, `RepeatCount`, `RunEnd`,
+  `RunOutcome`, `Served` (`Fresh`, `Resumed`, `Stored`), `RunError`
+  (`NoStore`, `InputMismatch`, `HistoryMismatch`, `TurnRunning`, `Store`),
+  `ReplayedRun`, `replay_run`.
+- New plug point `run::RunStore` (`sink(key)`, `load(key)`) and
+  `run::MemoryRunStore` (`new`, `lines`, `keys`), on the new field
+  `SharedDeps::run_store: Option<Arc<dyn RunStore>>` (default `None`, set
+  by `SharedDeps::new`; a struct literal adds it). A subagent shares its
+  parent's store. haest deletes no run.
+- New `Agent::run_durable(&key, input, sink) -> Result<RunOutcome,
+  RunError>`: a finished run under the key returns its stored result (no
+  model call, no event), an unfinished one resumes, and another input
+  under the key is refused. `Agent::run` never touches a store.
+- `SessionRecord` gains `Run { t, key, input_hash, base }`,
+  `Turn { t, state }` and `RunEnd { t, key, end }`: the kinds `run`, `turn`
+  and `run_end` in the file. An exhaustive `match` adds them.
+  `session::replay` skips them, and so does any reader that does not know
+  them (the TypeScript haest included), so the conversation reads the same.
+- `ToolContext` gains `run_key: Option<RunKey>`, `resumed: bool` and
+  `effect_key()`. A struct literal adds `run_key: None, resumed: false`;
+  `ToolContext::new` sets both.
+- New `Tool::on_resume() -> tool::OnResume` (`Rerun`, `Report`, `Lookup`;
+  default `Rerun` for a read-only tool, else `Report`): what a call that
+  may have run before the stop does on resume. A tool wrapper forwards it,
+  as `DeferredTools` does.
+- New `AgentHooks::before_effects()` (async, default returns at once),
+  awaited before a batch of tool calls that holds a tool that is not
+  read-only. A host that keeps its own session file flushes it there.
+- The turn guard's repeat key is a hash that is the same in every build
+  (FNV-1a), not `DefaultHasher`, whose output may change between Rust
+  releases: a run resumed by a binary built with another toolchain still
+  counts its repeats. Repeat detection within a turn is unchanged.
+
+### haest-mods
+
+- `ModTools` forwards the wrapped tool's `Tool::on_resume`.
+
 ## 0.2.0 (2026-11-17)
 
 A breaking release that settles haest's names and seams before anyone else
