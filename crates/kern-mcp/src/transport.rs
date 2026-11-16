@@ -60,11 +60,49 @@ pub(crate) fn http(
     headers: &BTreeMap<String, String>,
 ) -> Result<StreamableHttpClientTransport<reqwest::Client>, String> {
     let headers = header_map(headers)?;
+    let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(headers);
+    Ok(StreamableHttpClientTransport::with_client(
+        http_client()?,
+        config,
+    ))
+}
+
+/// How many redirects one request may follow.
+const MAX_REDIRECTS: usize = 10;
+
+/// rmcp's default client, minus the proxy it would take from the environment:
+/// HTTP(S)_PROXY / ALL_PROXY would be sent the server's headers (D15). Like
+/// rmcp's, it keeps no idle connections (a reused one can stall ~40 ms) and
+/// follows only a same-origin 307 or 308: a 301-303 turns the POST into a GET
+/// without the message, and another origin would be sent the session id and
+/// the headers.
+fn http_client() -> Result<reqwest::Client, String> {
     // reqwest takes the process-wide TLS provider when one is installed; this
     // installs ring only when nobody has installed one yet.
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(headers);
-    Ok(StreamableHttpClientTransport::from_config(config))
+    let redirects = reqwest::redirect::Policy::custom(|attempt| {
+        let keeps_body = matches!(
+            attempt.status(),
+            reqwest::StatusCode::TEMPORARY_REDIRECT | reqwest::StatusCode::PERMANENT_REDIRECT
+        );
+        let same_origin = attempt
+            .previous()
+            .first()
+            .is_some_and(|first| first.origin() == attempt.url().origin());
+        if !keeps_body || !same_origin {
+            attempt.stop()
+        } else if attempt.previous().len() > MAX_REDIRECTS {
+            attempt.error(format!("exceeded {MAX_REDIRECTS} redirects"))
+        } else {
+            attempt.follow()
+        }
+    });
+    reqwest::Client::builder()
+        .no_proxy()
+        .pool_max_idle_per_host(0)
+        .redirect(redirects)
+        .build()
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

@@ -24,7 +24,7 @@ rmcp = { version = "3.9", default-features = false, features = [
     "reqwest-tls-no-provider",
 ] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
-# Named only: the client type rmcp's HTTP transport is generic over, and its header types.
+# The client rmcp's HTTP transport runs on, built here (no env proxy), and its header types.
 reqwest = { version = "0.13", default-features = false }
 http = "1"
 

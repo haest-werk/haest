@@ -48,7 +48,7 @@ pub trait ImageHttp: Send + Sync {
     ) -> Result<HttpReply, String>;
 }
 
-/// The default: reqwest with rustls.
+/// The default: reqwest with rustls, no proxy (none from the environment either).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ReqwestImageHttp;
 
@@ -73,7 +73,9 @@ impl ReqwestImageHttp {
         // reqwest takes the process-wide provider when one is installed; this
         // installs ring only when nobody has installed one yet.
         let _ = rustls::crypto::ring::default_provider().install_default();
+        // A proxy from HTTP(S)_PROXY / ALL_PROXY would be sent the API key (D15).
         reqwest::Client::builder()
+            .no_proxy()
             .build()
             .map_err(|e| e.to_string())
     }
