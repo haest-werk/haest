@@ -29,7 +29,7 @@ use tokio_util::sync::CancellationToken;
 
 use convert::reasoning_effort_extras;
 pub use convert::{flavor_extras, to_chat_messages, to_chat_tools};
-pub use stream::{StreamState, apply_chunk, finish_message};
+pub(crate) use stream::{StreamState, apply_chunk, finish_message};
 
 use crate::{
     driver::{Step, StreamFold, drive, openai_error},
