@@ -11,7 +11,10 @@ use kern_core::{
 };
 use serde_json::{Value, json};
 
-use super::{tests::run_body, *};
+use super::{
+    tests::{body_with, finished as chunk, run_body, usage_chunk},
+    *,
+};
 use crate::{
     catalog::Catalog,
     registry::{
@@ -22,15 +25,6 @@ use crate::{
 };
 
 const MODEL: &str = "ultramarine-1-flash";
-
-fn chunk(delta: Value, finish: Option<&str>) -> Value {
-    json!({"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m",
-        "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]})
-}
-
-fn usage_chunk(usage: Value) -> Value {
-    json!({"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m", "choices": [], "usage": usage})
-}
 
 fn mandatory_low_high_max() -> Reasoning {
     use OpenRouterEffort as O;
@@ -47,9 +41,7 @@ fn direct() -> CompatOptions {
 }
 
 fn body_of(opts: &CompatOptions, effort: Option<Effort>) -> Value {
-    let mut req = request(MODEL);
-    req.effort = effort;
-    build_compat_body(opts, &req)
+    body_with(opts, MODEL, effort)
 }
 
 async fn final_message(opts: CompatOptions, chunks: &[Value]) -> AssistantMessage {

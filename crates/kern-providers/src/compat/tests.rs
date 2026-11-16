@@ -8,10 +8,20 @@ use super::*;
 use crate::testing::{FakeReply, FakeTransport, chat_sse, collect, request, request_with};
 
 pub(super) fn chunk(delta: Value) -> Value {
+    finished(delta, None)
+}
+
+/// A chunk that ends the choice with `reason`.
+pub(super) fn finished(delta: Value, reason: Option<&str>) -> Value {
     json!({
         "id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m",
-        "choices": [{"index": 0, "delta": delta, "finish_reason": null}],
+        "choices": [{"index": 0, "delta": delta, "finish_reason": reason}],
     })
+}
+
+/// The last chunk of an `include_usage` stream: no choices, the usage.
+pub(super) fn usage_chunk(usage: Value) -> Value {
+    json!({"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m", "choices": [], "usage": usage})
 }
 
 pub(super) fn openrouter() -> CompatOptions {
@@ -41,22 +51,17 @@ fn input(v: Value) -> serde_json::Map<String, Value> {
 
 #[tokio::test]
 async fn text_reasoning_fragmented_tool_calls_usage_and_cost_fold_into_one_message() {
-    let mut finish = chunk(json!({}));
-    finish["choices"][0]["finish_reason"] = json!("tool_calls");
-    let mut usage = chunk(json!({}));
-    usage["choices"] = json!([]);
-    usage["usage"] = json!({
-        "prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,
-        "prompt_tokens_details": {"cached_tokens": 60}, "cost": 0.01,
-    });
     let (events, msg) = run(&[
         chunk(json!({"reasoning": "think"})),
         chunk(json!({"content": "Hel"})),
         chunk(json!({"content": "lo"})),
         chunk(json!({"tool_calls": [{"index": 0, "id": "call_1", "function": {"name": "Read", "arguments": "{\"file_"}}]})),
         chunk(json!({"tool_calls": [{"index": 0, "function": {"arguments": "path\":\"a\"}"}}]})),
-        finish,
-        usage,
+        finished(json!({}), Some("tool_calls")),
+        usage_chunk(json!({
+            "prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,
+            "prompt_tokens_details": {"cached_tokens": 60}, "cost": 0.01,
+        })),
     ])
     .await;
     let texts = events
@@ -139,7 +144,7 @@ async fn a_tool_call_streamed_without_an_id_gets_one() {
     assert!(call.id.starts_with("call_") && call.id.len() > 5);
 }
 
-fn body_with(opts: &CompatOptions, model: &str, effort: Option<Effort>) -> Value {
+pub(super) fn body_with(opts: &CompatOptions, model: &str, effort: Option<Effort>) -> Value {
     let mut req = request(model);
     req.effort = effort;
     build_compat_body(opts, &req)

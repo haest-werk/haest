@@ -75,41 +75,18 @@ impl FakeReply {
     }
 
     /// Then end the body this way instead of cleanly.
-    pub fn then(self, end: FakeEnd) -> Self {
-        match self {
-            FakeReply::Response {
-                status,
-                headers,
-                chunks,
-                ..
-            } => FakeReply::Response {
-                status,
-                headers,
-                chunks,
-                end,
-            },
-            other => other,
+    pub fn then(mut self, then: FakeEnd) -> Self {
+        if let FakeReply::Response { end, .. } = &mut self {
+            *end = then;
         }
+        self
     }
 
-    pub fn header(self, name: &str, value: &str) -> Self {
-        match self {
-            FakeReply::Response {
-                status,
-                mut headers,
-                chunks,
-                end,
-            } => {
-                headers.push((name.into(), value.into()));
-                FakeReply::Response {
-                    status,
-                    headers,
-                    chunks,
-                    end,
-                }
-            }
-            other => other,
+    pub fn header(mut self, name: &str, value: &str) -> Self {
+        if let FakeReply::Response { headers, .. } = &mut self {
+            headers.push((name.into(), value.into()));
         }
+        self
     }
 }
 
@@ -127,10 +104,6 @@ impl FakeTransport {
             replies: Mutex::new(replies.into_iter().collect()),
             requests: Mutex::default(),
         })
-    }
-
-    pub fn push(&self, reply: FakeReply) {
-        self.replies.lock().unwrap().push_back(reply);
     }
 
     /// Every request so far.
@@ -158,17 +131,15 @@ impl Transport for FakeTransport {
     ) -> Result<HttpResponse, TransportError> {
         self.requests.lock().unwrap().push(req);
         let reply = self.replies.lock().unwrap().pop_front();
-        let Some(reply) = reply else {
-            return Err(TransportError::other("fake transport: out of replies"));
-        };
         let (status, headers, chunks, end) = match reply {
-            FakeReply::Error(e) => return Err(e),
-            FakeReply::Response {
+            None => return Err(TransportError::other("fake transport: out of replies")),
+            Some(FakeReply::Error(e)) => return Err(e),
+            Some(FakeReply::Response {
                 status,
                 headers,
                 chunks,
                 end,
-            } => (status, headers, chunks, end),
+            }) => (status, headers, chunks, end),
         };
         let head = stream::iter(chunks.into_iter().map(Ok));
         let body = match end {
@@ -187,7 +158,7 @@ impl Transport for FakeTransport {
 }
 
 /// One SSE event; `event` None sends only the `data:` line.
-pub fn sse_event(event: Option<&str>, data: &Value) -> String {
+fn sse_event(event: Option<&str>, data: &Value) -> String {
     match event {
         Some(name) => format!("event: {name}\ndata: {data}\n\n"),
         None => format!("data: {data}\n\n"),
