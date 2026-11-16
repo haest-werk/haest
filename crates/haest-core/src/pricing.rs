@@ -8,7 +8,7 @@
 //! call); the ledger ([`crate::ledger`]) then charges whatever cost the
 //! message carries.
 
-use crate::{caps::billed_tokens, catalog::ModelPricing, messages::Usage};
+use crate::{catalog::ModelPricing, messages::Usage};
 
 const PER: f64 = 1_000_000.0;
 
@@ -30,7 +30,7 @@ const PER: f64 = 1_000_000.0;
 /// ```
 pub fn book_priced_cost(usage: &mut Usage, pricing: Option<&ModelPricing>) {
     let Some(p) = pricing else { return };
-    if usage.cost_usd.is_some() || billed_tokens(usage) == 0 {
+    if usage.cost_usd.is_some() || usage.context_tokens() == 0 {
         return;
     }
     let cost = usage.input as f64 * p.input

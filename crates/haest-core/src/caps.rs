@@ -15,11 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    media::messages_for_estimate,
-    messages::{Message, Usage},
-    provider::ToolSpec,
-};
+use crate::{media::messages_for_estimate, messages::Message, provider::ToolSpec};
 
 /// The hard caps on one turn. 0 turns a cap off; `Default` is every cap off.
 ///
@@ -74,12 +70,6 @@ impl Default for SubagentCaps {
             minutes: 15,
         }
     }
-}
-
-/// Every token the provider bills for, cached or not
-/// ([`Usage::context_tokens`]).
-pub fn billed_tokens(u: &Usage) -> u64 {
-    u.context_tokens()
 }
 
 /// Rough input size of one request: ~4 characters per token over the text sent,

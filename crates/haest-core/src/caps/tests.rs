@@ -6,7 +6,9 @@ use serde_json::json;
 use super::*;
 use crate::{
     agent::test_support::*,
-    messages::{AssistantMessage, AssistantPart, MediaKind, MediaPart, StopReason, UserMessage},
+    messages::{
+        AssistantMessage, AssistantPart, MediaKind, MediaPart, StopReason, Usage, UserMessage,
+    },
     testing::{ScriptedProvider, text_answer},
     tool::ToolOutput,
 };

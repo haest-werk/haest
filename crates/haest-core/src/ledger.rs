@@ -23,7 +23,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    caps::billed_tokens,
     messages::Usage,
     remedy::{Limit, Remedies},
 };
@@ -216,9 +215,9 @@ impl Ledger {
     pub fn charge(&mut self, u: &Usage) {
         match u.cost_usd {
             Some(c) => self.usd += c,
-            None => self.unpriced_tokens += billed_tokens(u),
+            None => self.unpriced_tokens += u.context_tokens(),
         }
-        if u.cost_usd.is_none() && billed_tokens(u) == 0 {
+        if u.cost_usd.is_none() && u.context_tokens() == 0 {
             return;
         }
         self.hooks.persist(&self.snapshot());

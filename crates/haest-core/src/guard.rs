@@ -27,7 +27,7 @@ use std::{
 use serde_json::{Map, Value};
 
 use crate::{
-    caps::{TurnCaps, billed_tokens, request_too_big},
+    caps::{TurnCaps, request_too_big},
     deps::AgentHooks,
     ledger::Ledger,
     messages::{ToolCall, Usage},
@@ -245,7 +245,7 @@ impl TurnGuard {
         let Some(l) = caps else { return Vec::new() };
         let elapsed = self.clock.now_ms().saturating_sub(self.started) as f64;
         let usd = usage.cost_usd.unwrap_or(0.0);
-        let tokens = billed_tokens(usage);
+        let tokens = usage.context_tokens();
         let steps = self.steps;
         let mut out = self.repeat_gauges(l.max_repeats);
         out.extend([
