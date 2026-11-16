@@ -4,19 +4,17 @@
 //! error event, cancellation -- still ends with `Done`; the fold decides what
 //! of the half-built message survives.
 
-use std::sync::Arc;
-
 use futures::StreamExt;
 use haest_core::{
     messages::AssistantMessage,
     provider::{ProviderEvent, ProviderStream},
 };
-use haest_http::{HttpClient, Request};
+use haest_http::Request;
 use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    send::{self, RetryPolicy},
+    send::{self, Sender},
     sse::{SseEvent, SseParser},
 };
 
@@ -36,18 +34,17 @@ pub(crate) trait StreamFold: Send + 'static {
     fn finish(self, failure: Option<&str>, cancel: &CancellationToken) -> AssistantMessage;
 }
 
-/// Send `request` over `http` and fold its stream; `cancel` is the request's.
+/// Send `request` with `sender` and fold its stream; `cancel` is the request's.
 pub(crate) fn drive<F: StreamFold>(
-    http: &Arc<dyn HttpClient>,
-    retry: &RetryPolicy,
+    sender: &Sender,
     request: Request,
     cancel: CancellationToken,
     mut fold: F,
 ) -> ProviderStream {
-    let (http, retry) = (http.clone(), retry.clone());
+    let sender = sender.clone();
     Box::pin(async_stream::stream! {
         let mut failure: Option<String> = None;
-        match send::send(&*http, &request, &cancel, &retry).await {
+        match sender.send(&request, &cancel).await {
             Err(e) => failure = Some(e),
             Ok(resp) => {
                 let mut body = resp.body;

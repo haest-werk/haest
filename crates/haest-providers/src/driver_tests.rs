@@ -12,7 +12,7 @@ use serde_json::json;
 
 use crate::{
     RetryPolicy,
-    compat::{CompatFlavor, CompatOptions, CompatProvider},
+    compat::{CompatOptions, CompatProvider},
     driver::parse_args,
     testing::{FakeEnd, FakeHttp, FakeReply, chat_sse, collect, kinds, request},
 };
@@ -39,11 +39,7 @@ fn quick() -> RetryPolicy {
 }
 
 fn provider(t: &Arc<FakeHttp>) -> CompatProvider {
-    CompatProvider::new(
-        CompatOptions::new("local", CompatFlavor::Generic, "k"),
-        t.clone(),
-    )
-    .with_retry(quick())
+    CompatProvider::new(CompatOptions::new("local", "k"), t.clone()).with_retry(quick())
 }
 
 fn hello() -> FakeReply {
@@ -129,11 +125,7 @@ async fn cancelling_during_a_retry_backoff_ends_as_aborted() {
         max_delay: Duration::from_secs(3600),
         ..RetryPolicy::default()
     };
-    let p = CompatProvider::new(
-        CompatOptions::new("local", CompatFlavor::Generic, "k"),
-        t.clone(),
-    )
-    .with_retry(slow);
+    let p = CompatProvider::new(CompatOptions::new("local", "k"), t.clone()).with_retry(slow);
     let req = request("m");
     let cancel = req.cancel.clone();
     let stream = p.stream(req);
@@ -189,11 +181,7 @@ async fn a_try_with_no_status_in_time_counts_as_unanswered_and_is_retried() {
         headers_timeout: Duration::from_millis(20),
         ..quick()
     };
-    let p = CompatProvider::new(
-        CompatOptions::new("local", CompatFlavor::Generic, "k"),
-        silent.clone(),
-    )
-    .with_retry(retry);
+    let p = CompatProvider::new(CompatOptions::new("local", "k"), silent.clone()).with_retry(retry);
     let (_, msg) = tokio::time::timeout(Duration::from_secs(5), collect(p.stream(request("m"))))
         .await
         .expect("the headers timeout ends a silent server's wait");

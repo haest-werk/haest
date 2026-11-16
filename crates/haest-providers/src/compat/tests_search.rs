@@ -50,7 +50,7 @@ fn openrouter_gets_the_server_tool_after_the_function_tools_a_generic_server_nev
         body["tools"][1]["parameters"],
         json!({"engine": "exa", "max_results": 5, "max_total_results": 15})
     );
-    let local = CompatOptions::new("local", CompatFlavor::Generic, "k");
+    let local = CompatOptions::new("local", "k");
     assert_eq!(tool_types(&build_compat_body(&local, &req)), ["function"]);
 }
 

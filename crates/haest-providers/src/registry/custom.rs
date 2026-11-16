@@ -14,10 +14,7 @@ use haest_core::{
 use serde_json::Value;
 
 use super::{EntryProblem, ProviderConfigError, ProvidersFileError};
-use crate::{
-    catalog::Catalog,
-    compat::{CompatFlavor, CompatOptions},
-};
+use crate::{anthropic::AnthropicOptions, catalog::Catalog, compat::CompatOptions};
 
 haest_core::word_enum! {
 /// The wire dialect of a custom provider: its providers.json `type`.
@@ -183,25 +180,29 @@ impl CustomProviderConfig {
             .or_else(|| self.api_key_env.as_ref().and_then(|k| keys.key(k)))
             .unwrap_or_else(|| "none".into())
     }
-}
 
-/// A `type: "openai"` entry as compat options; the entry's prices over the catalog's.
-///
-/// The provider is `name`, [`CompatFlavor::Generic`], with the entry's URL,
-/// key ([`CustomProviderConfig::api_key`]), headers and effort levels. Its
-/// prices are the built-in catalog's for `name:` models, then the entry's own.
-pub(crate) fn custom_compat_options(
-    name: &str,
-    cfg: &CustomProviderConfig,
-    keys: &dyn KeySource,
-) -> CompatOptions {
-    let mut opts = CompatOptions::new(name, CompatFlavor::Generic, cfg.api_key(keys));
-    opts.base_url = cfg.base_url.clone();
-    opts.headers = cfg.headers.clone();
-    opts.reasoning_effort = cfg.reasoning_effort.clone();
-    opts.pricing = Catalog::builtin().provider_pricing(name);
-    opts.pricing.extend(cfg.pricing.clone());
-    opts
+    /// A `type: "anthropic"` entry as the options of the provider `name`: the
+    /// entry's URL, key ([`api_key`](Self::api_key)) and headers.
+    pub(crate) fn anthropic_options(&self, name: &str, keys: &dyn KeySource) -> AnthropicOptions {
+        let mut opts = AnthropicOptions::new(name, self.api_key(keys));
+        opts.base_url = self.base_url.clone();
+        opts.headers = self.headers.clone();
+        opts
+    }
+
+    /// A `type: "openai"` entry as the options of the provider `name`, the
+    /// plain body: the entry's URL, key ([`api_key`](Self::api_key)), headers
+    /// and effort levels. Its prices are the built-in catalog's for `name:`
+    /// models, then the entry's own over them.
+    pub(crate) fn compat_options(&self, name: &str, keys: &dyn KeySource) -> CompatOptions {
+        let mut opts = CompatOptions::new(name, self.api_key(keys));
+        opts.base_url = self.base_url.clone();
+        opts.headers = self.headers.clone();
+        opts.reasoning_effort = self.reasoning_effort.clone();
+        opts.pricing = Catalog::builtin().provider_pricing(name);
+        opts.pricing.extend(self.pricing.clone());
+        opts
+    }
 }
 
 /// providers.json's entries by name, as JSON: each is checked when its
@@ -288,7 +289,7 @@ pub(crate) fn paper_instruments_options(
     keys: &dyn KeySource,
 ) -> Result<CompatOptions, ProviderConfigError> {
     let key = need(keys, "PAPERINSTRUMENTS_API_KEY", "paperinstruments")?;
-    let mut opts = CompatOptions::new("paperinstruments", CompatFlavor::Generic, key);
+    let mut opts = CompatOptions::new("paperinstruments", key);
     opts.base_url = Some(
         keys.key("PAPERINSTRUMENTS_BASE_URL")
             .unwrap_or_else(|| "https://api.paperinstruments.com/v1".into()),

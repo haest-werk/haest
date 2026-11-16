@@ -77,7 +77,8 @@ async fn every_plug_point_brain_uses_holds() {
 /// `provider` object goes out (`routing: None`, the default).
 pub fn models(gateway: Arc<Gateway>) -> Arc<dyn ModelResolver> {
     // The run holds no keys: the gateway adds them.
-    let mut opts = CompatOptions::new("gateway", CompatFlavor::OpenRouter, "");
+    let mut opts = CompatOptions::new("gateway", "");
+    opts.flavor = CompatFlavor::OpenRouter;
     opts.base_url = Some(BASE_URL.into());
     let provider = Arc::new(CompatProvider::new(opts, gateway).with_retry(RetryPolicy::none()));
     Arc::new(move |spec: &str| {

@@ -10,12 +10,7 @@ use super::*;
 use crate::testing::{FakeEnd, FakeHttp, FakeReply, collect, kinds, request, typed_sse};
 
 fn provider(t: &Arc<FakeHttp>) -> ResponsesProvider {
-    let opts = ResponsesOptions {
-        id: "openai".into(),
-        api_key: "k".into(),
-        ..Default::default()
-    };
-    ResponsesProvider::new(opts, t.clone())
+    ResponsesProvider::new(ResponsesOptions::new("openai", "k"), t.clone())
 }
 
 async fn run(events: &[Value]) -> (Vec<ProviderEvent>, AssistantMessage) {

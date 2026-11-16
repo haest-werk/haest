@@ -6,7 +6,7 @@
 //! ```
 //! use haest_core::Provider;
 //! use haest_providers::{
-//!     CompatFlavor, CompatOptions, CompatProvider,
+//!     CompatOptions, CompatProvider,
 //!     testing::{FakeHttp, FakeReply, chat_sse, collect, request},
 //! };
 //! use serde_json::json;
@@ -16,7 +16,7 @@
 //! let http = FakeHttp::new([FakeReply::sse(chat_sse(&[
 //!     json!({"choices": [{"index": 0, "delta": {"content": "hi"}}]}),
 //! ]))]);
-//! let opts = CompatOptions::new("test", CompatFlavor::Generic, "key");
+//! let opts = CompatOptions::new("test", "key");
 //! let provider = CompatProvider::new(opts, http.clone());
 //!
 //! let (_events, message) = collect(provider.stream(request("some-model"))).await;

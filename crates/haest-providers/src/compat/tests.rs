@@ -25,7 +25,10 @@ pub(super) fn usage_chunk(usage: Value) -> Value {
 }
 
 pub(super) fn openrouter() -> CompatOptions {
-    CompatOptions::new("openrouter", CompatFlavor::OpenRouter, "k")
+    CompatOptions {
+        flavor: CompatFlavor::OpenRouter,
+        ..CompatOptions::new("openrouter", "k")
+    }
 }
 
 pub(super) fn or_request() -> ProviderRequest {
@@ -200,7 +203,7 @@ fn openrouter_gets_every_haest_effort_level_unchanged_and_off_as_reasoning_disab
 
 #[test]
 fn generic_servers_get_plain_strings_and_no_vendor_fields() {
-    let local = CompatOptions::new("local", CompatFlavor::Generic, "k");
+    let local = CompatOptions::new("local", "k");
     let body = body_with(&local, "anthropic/claude-sonnet-5", Some(Effort::High));
     assert!(body.get("reasoning").is_none());
     assert!(body.get("reasoning_effort").is_none());

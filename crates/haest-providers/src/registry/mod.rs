@@ -29,8 +29,8 @@ use haest_core::{
 };
 
 use custom::need;
+pub(crate) use custom::paper_instruments_options;
 pub use custom::{CustomProviderConfig, CustomProviders, Dialect, load_custom_providers};
-pub(crate) use custom::{custom_compat_options, paper_instruments_options};
 pub use error::{EntryProblem, ProviderConfigError, ProvidersFileError};
 
 use haest_http::{HttpClient, ReqwestClient};
@@ -39,8 +39,8 @@ use crate::{
     anthropic::{AnthropicOptions, AnthropicProvider},
     compat::{CompatFlavor, CompatOptions, CompatProvider},
     responses::{ResponsesOptions, ResponsesProvider},
+    retry::RetryPolicy,
     routing::RoutingScopes,
-    send::RetryPolicy,
 };
 
 const BUILTIN: [&str; 4] = ["anthropic", "openai", "openrouter", "paperinstruments"];
@@ -178,39 +178,38 @@ impl ProviderRegistry {
     }
 
     fn build(&self, name: &str) -> Result<Arc<dyn Provider>, ProviderConfigError> {
+        let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
+        Ok(match self.options(name)? {
+            Options::Anthropic(o) => Arc::new(AnthropicProvider::new(o, http).with_retry(retry)),
+            Options::Compat(o) => Arc::new(CompatProvider::new(*o, http).with_retry(retry)),
+            Options::Responses(o) => Arc::new(ResponsesProvider::new(o, http).with_retry(retry)),
+        })
+    }
+
+    /// `name`'s options: its providers.json entry, else the built-in.
+    fn options(&self, name: &str) -> Result<Options, ProviderConfigError> {
         let keys = self.keys.as_ref();
         if let Some(raw) = self.custom.get(name) {
             let cfg = CustomProviderConfig::from_json(name, raw)?;
             return Ok(match cfg.dialect {
-                Dialect::Anthropic => self.anthropic(AnthropicOptions {
-                    id: name.into(),
-                    api_key: cfg.api_key(keys),
-                    base_url: cfg.base_url.clone(),
-                    headers: cfg.headers.clone(),
-                }),
-                Dialect::OpenAi => self.compat(custom_compat_options(name, &cfg, keys)),
+                Dialect::Anthropic => Options::Anthropic(cfg.anthropic_options(name, keys)),
+                Dialect::OpenAi => Options::Compat(Box::new(cfg.compat_options(name, keys))),
             });
         }
         Ok(match name {
-            "anthropic" => self.anthropic(AnthropicOptions {
-                id: name.into(),
-                api_key: need(keys, "ANTHROPIC_API_KEY", name)?,
-                base_url: keys.key("ANTHROPIC_BASE_URL"),
-                headers: Vec::new(),
-            }),
+            "anthropic" => {
+                let mut opts = AnthropicOptions::new(name, need(keys, "ANTHROPIC_API_KEY", name)?);
+                opts.base_url = keys.key("ANTHROPIC_BASE_URL");
+                Options::Anthropic(opts)
+            }
             // Responses, not Chat Completions: OpenAI refuses function tools + reasoning effort there.
             "openai" => {
-                let opts = ResponsesOptions {
-                    id: "openai".into(),
-                    api_key: need(keys, "OPENAI_API_KEY", name)?,
-                    base_url: keys.key("OPENAI_BASE_URL"),
-                    headers: Vec::new(),
-                };
-                let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
-                Arc::new(ResponsesProvider::new(opts, http).with_retry(retry))
+                let mut opts = ResponsesOptions::new(name, need(keys, "OPENAI_API_KEY", name)?);
+                opts.base_url = keys.key("OPENAI_BASE_URL");
+                Options::Responses(opts)
             }
-            "openrouter" => self.compat(self.openrouter_options()?),
-            "paperinstruments" => self.compat(paper_instruments_options(keys)?),
+            "openrouter" => Options::Compat(Box::new(self.openrouter_options()?)),
+            "paperinstruments" => Options::Compat(Box::new(paper_instruments_options(keys)?)),
             _ => {
                 return Err(ModelError::UnknownProvider {
                     provider: name.into(),
@@ -221,23 +220,11 @@ impl ProviderRegistry {
         })
     }
 
-    fn anthropic(&self, opts: AnthropicOptions) -> Arc<dyn Provider> {
-        let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
-        Arc::new(AnthropicProvider::new(opts, http).with_retry(retry))
-    }
-
-    fn compat(&self, opts: CompatOptions) -> Arc<dyn Provider> {
-        let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
-        Arc::new(CompatProvider::new(opts, http).with_retry(retry))
-    }
-
     fn openrouter_options(&self) -> Result<CompatOptions, ProviderConfigError> {
         let keys = self.keys.as_ref();
-        let mut opts = CompatOptions::new(
-            "openrouter",
-            CompatFlavor::OpenRouter,
-            need(keys, "OPENROUTER_API_KEY", "openrouter")?,
-        );
+        let key = need(keys, "OPENROUTER_API_KEY", "openrouter")?;
+        let mut opts = CompatOptions::new("openrouter", key);
+        opts.flavor = CompatFlavor::OpenRouter;
         opts.base_url = Some(openrouter_base_url(keys));
         if let Some(url) = &self.opts.app_url {
             opts.headers.push(("HTTP-Referer".into(), url.clone()));
@@ -248,6 +235,13 @@ impl ProviderRegistry {
         opts.routing = self.opts.routing.clone();
         Ok(opts)
     }
+}
+
+/// A provider's options, by the wire dialect it speaks, before it is built.
+enum Options {
+    Anthropic(AnthropicOptions),
+    Compat(Box<CompatOptions>),
+    Responses(ResponsesOptions),
 }
 
 /// [`resolve_spec`](ProviderRegistry::resolve_spec): a bad spec or an unknown

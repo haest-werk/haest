@@ -19,7 +19,7 @@ use crate::{
     catalog::Catalog,
     registry::{
         CustomProviderConfig, EntryProblem, ProviderConfigError, ProviderRegistry, RegistryOptions,
-        custom_compat_options, paper_instruments_options,
+        paper_instruments_options,
     },
     testing::{FakeHttp, chat_sse, request, request_with},
 };
@@ -35,7 +35,7 @@ fn mandatory_low_high_max() -> Reasoning {
 }
 
 fn direct() -> CompatOptions {
-    let mut opts = CompatOptions::new("direct", CompatFlavor::Generic, "k");
+    let mut opts = CompatOptions::new("direct", "k");
     opts.reasoning_effort = Some(mandatory_low_high_max());
     opts
 }
@@ -274,7 +274,7 @@ fn cfg() -> Value {
 #[test]
 fn effort_is_fitted_on_the_wire_and_cost_booked_from_the_entry() {
     let parsed = CustomProviderConfig::from_json("mine", &cfg()).unwrap();
-    let opts = custom_compat_options("mine", &parsed, &HashMap::new());
+    let opts = parsed.compat_options("mine", &HashMap::new());
     assert_eq!(
         body_of(&opts, Some(Effort::Xhigh))["reasoning_effort"],
         json!("max")

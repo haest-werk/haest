@@ -39,8 +39,9 @@ pub(crate) use stream::{StreamState, apply_chunk, finish_message};
 
 use crate::{
     driver::{Step, StreamFold, drive, openai_error},
+    retry::RetryPolicy,
     routing::RoutingScopes,
-    send::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint, json_post},
+    send::{OPENAI_URL, Sender, bearer_headers, endpoint, json_post},
     sse::SseEvent,
     web_search::web_search_tool,
 };
@@ -64,15 +65,16 @@ pub enum CompatFlavor {
 
 /// How a [`CompatProvider`] reaches its server and what it sends.
 ///
-/// [`CompatOptions::new`] sets the three required fields and leaves the rest
-/// empty; set the others on the value it returns.
+/// [`CompatOptions::new`] takes the two fields every provider needs and
+/// leaves the rest plain ([`CompatFlavor::Generic`], no extras); set the
+/// others on the value it returns.
 #[derive(Debug, Clone)]
 pub struct CompatOptions {
     /// The provider's name: its [`Provider::id`](haest_core::Provider::id),
     /// stored on every message it answers. Reasoning replays only to the
     /// provider whose id a message carries.
     pub id: String,
-    /// OpenRouter's extras, or the plain body.
+    /// OpenRouter's extras, or the plain body ([`CompatFlavor::Generic`], the default).
     pub flavor: CompatFlavor,
     /// Sent as `Authorization: Bearer <api_key>`.
     pub api_key: String,
@@ -92,11 +94,12 @@ pub struct CompatOptions {
 }
 
 impl CompatOptions {
-    /// A provider `id` of `flavor` with nothing else configured.
-    pub fn new(id: impl Into<String>, flavor: CompatFlavor, api_key: impl Into<String>) -> Self {
+    /// The provider `id`, sending `api_key` to OpenAI's own URL with the plain
+    /// body ([`CompatFlavor::Generic`]) and nothing else configured.
+    pub fn new(id: impl Into<String>, api_key: impl Into<String>) -> Self {
         Self {
             id: id.into(),
-            flavor,
+            flavor: CompatFlavor::Generic,
             api_key: api_key.into(),
             base_url: None,
             headers: Vec::new(),
@@ -126,17 +129,16 @@ impl CompatOptions {
 /// use std::sync::Arc;
 ///
 /// use haest_core::Provider;
-/// use haest_providers::{CompatFlavor, CompatOptions, CompatProvider, http::ReqwestClient};
+/// use haest_providers::{CompatOptions, CompatProvider, http::ReqwestClient};
 ///
-/// let mut opts = CompatOptions::new("local", CompatFlavor::Generic, "none");
+/// let mut opts = CompatOptions::new("local", "none");
 /// opts.base_url = Some("http://localhost:1234/v1".into());
 /// let provider = CompatProvider::new(opts, Arc::new(ReqwestClient::new()));
 /// assert_eq!(provider.id(), "local");
 /// ```
 pub struct CompatProvider {
     opts: CompatOptions,
-    http: Arc<dyn HttpClient>,
-    retry: RetryPolicy,
+    sender: Sender,
 }
 
 impl CompatProvider {
@@ -145,14 +147,13 @@ impl CompatProvider {
     pub fn new(opts: CompatOptions, http: Arc<dyn HttpClient>) -> Self {
         Self {
             opts,
-            http,
-            retry: RetryPolicy::default(),
+            sender: Sender::new(http),
         }
     }
 
     /// The same provider with `retry` instead of the default policy.
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
-        self.retry = retry;
+        self.sender.retry = retry;
         self
     }
 
@@ -253,12 +254,6 @@ impl haest_core::provider::Provider for CompatProvider {
             st: StreamState::default(),
             price: self.opts.pricing.get(&req.model).cloned(),
         };
-        drive(
-            &self.http,
-            &self.retry,
-            self.http_request(&req),
-            req.cancel,
-            fold,
-        )
+        drive(&self.sender, self.http_request(&req), req.cancel, fold)
     }
 }

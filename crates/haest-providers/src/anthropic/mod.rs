@@ -23,7 +23,8 @@ use haest_http::{HttpClient, Request};
 
 use crate::{
     driver::drive,
-    send::{RetryPolicy, endpoint, json_post, with_headers},
+    retry::RetryPolicy,
+    send::{Sender, endpoint, json_post, with_headers},
 };
 
 const DEFAULT_MAX_TOKENS: u32 = 32_000;
@@ -31,7 +32,10 @@ const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 const API_VERSION: &str = "2023-06-01";
 
 /// Where an [`AnthropicProvider`] sends its requests, and with which key.
-#[derive(Debug, Clone, Default)]
+///
+/// [`AnthropicOptions::new`] takes the two fields every provider needs; set
+/// the others on the value it returns.
+#[derive(Debug, Clone)]
 pub struct AnthropicOptions {
     /// The provider's name: its [`Provider::id`], stored on every message it
     /// answers. Thinking replays, with its signature, only to the provider
@@ -44,6 +48,19 @@ pub struct AnthropicOptions {
     /// Sent on every request (a proxy that authenticates by header); one
     /// named like a default (`x-api-key`, in any case) replaces it.
     pub headers: Vec<(String, String)>,
+}
+
+impl AnthropicOptions {
+    /// The provider `id`, sending `api_key` to Anthropic's own API with no
+    /// extra headers.
+    pub fn new(id: impl Into<String>, api_key: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            api_key: api_key.into(),
+            base_url: None,
+            headers: Vec::new(),
+        }
+    }
 }
 
 /// Anthropic's Messages API as a [`Provider`].
@@ -68,11 +85,7 @@ pub struct AnthropicOptions {
 /// use haest_providers::{AnthropicOptions, AnthropicProvider, RetryPolicy, http::ReqwestClient};
 ///
 /// let provider = AnthropicProvider::new(
-///     AnthropicOptions {
-///         id: "anthropic".into(),
-///         api_key: "sk-ant-...".into(),
-///         ..AnthropicOptions::default()
-///     },
+///     AnthropicOptions::new("anthropic", "sk-ant-..."),
 ///     Arc::new(ReqwestClient::new()),
 /// )
 /// .with_retry(RetryPolicy::none());
@@ -80,8 +93,7 @@ pub struct AnthropicOptions {
 /// ```
 pub struct AnthropicProvider {
     opts: AnthropicOptions,
-    http: Arc<dyn HttpClient>,
-    retry: RetryPolicy,
+    sender: Sender,
 }
 
 impl AnthropicProvider {
@@ -90,14 +102,13 @@ impl AnthropicProvider {
     pub fn new(opts: AnthropicOptions, http: Arc<dyn HttpClient>) -> Self {
         Self {
             opts,
-            http,
-            retry: RetryPolicy::default(),
+            sender: Sender::new(http),
         }
     }
 
     /// The same provider with `retry` instead of the default policy.
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
-        self.retry = retry;
+        self.sender.retry = retry;
         self
     }
 
@@ -147,12 +158,6 @@ impl Provider for AnthropicProvider {
 
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
         let fold = stream::AnthropicFold::new(&self.opts.id, &req.model);
-        drive(
-            &self.http,
-            &self.retry,
-            self.http_request(&req),
-            req.cancel,
-            fold,
-        )
+        drive(&self.sender, self.http_request(&req), req.cancel, fold)
     }
 }

@@ -209,6 +209,7 @@ mod driver;
 mod openai_media;
 mod registry;
 mod responses;
+mod retry;
 pub mod routing;
 mod send;
 mod sse;
@@ -234,8 +235,8 @@ pub use registry::{
     ProviderRegistry, ProvidersFileError, RegistryOptions, load_custom_providers,
 };
 pub use responses::{ResponsesOptions, ResponsesProvider};
+pub use retry::RetryPolicy;
 pub use routing::RoutingScopes;
-pub use send::RetryPolicy;
 
 /// A tool result's text as every dialect sends it: never empty.
 pub(crate) fn result_text(msg: &haest_core::messages::ToolResultMessage) -> &str {

@@ -20,7 +20,8 @@ fn routing_json() -> Value {
 
 /// OpenRouter options with the routing variable's JSON parsed as a loader does.
 fn openrouter(routing: &str) -> CompatOptions {
-    let mut opts = CompatOptions::new("openrouter", CompatFlavor::OpenRouter, "k");
+    let mut opts = CompatOptions::new("openrouter", "k");
+    opts.flavor = CompatFlavor::OpenRouter;
     opts.routing = parse_routing(routing).unwrap_or(None);
     opts
 }

@@ -23,11 +23,15 @@ use haest_http::{HttpClient, Request};
 
 use crate::{
     driver::drive,
-    send::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint, json_post},
+    retry::RetryPolicy,
+    send::{OPENAI_URL, Sender, bearer_headers, endpoint, json_post},
 };
 
 /// Where a [`ResponsesProvider`] sends its requests, and with which key.
-#[derive(Debug, Clone, Default)]
+///
+/// [`ResponsesOptions::new`] takes the two fields every provider needs; set
+/// the others on the value it returns.
+#[derive(Debug, Clone)]
 pub struct ResponsesOptions {
     /// The provider's name: its [`Provider::id`], stored on every message it
     /// answers. Reasoning replays only to the provider whose id a message carries.
@@ -38,6 +42,19 @@ pub struct ResponsesOptions {
     pub base_url: Option<String>,
     /// Sent on every request, after (and over) the defaults.
     pub headers: Vec<(String, String)>,
+}
+
+impl ResponsesOptions {
+    /// The provider `id`, sending `api_key` to OpenAI's own API with no extra
+    /// headers.
+    pub fn new(id: impl Into<String>, api_key: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            api_key: api_key.into(),
+            base_url: None,
+            headers: Vec::new(),
+        }
+    }
 }
 
 /// OpenAI's Responses API as a [`Provider`]: the built-in `openai` provider.
@@ -57,14 +74,13 @@ pub struct ResponsesOptions {
 /// use haest_core::Provider;
 /// use haest_providers::{ResponsesOptions, ResponsesProvider, http::ReqwestClient};
 ///
-/// let opts = ResponsesOptions { id: "openai".into(), api_key: "sk-...".into(), ..Default::default() };
+/// let opts = ResponsesOptions::new("openai", "sk-...");
 /// let provider = ResponsesProvider::new(opts, Arc::new(ReqwestClient::new()));
 /// assert_eq!(provider.id(), "openai");
 /// ```
 pub struct ResponsesProvider {
     opts: ResponsesOptions,
-    http: Arc<dyn HttpClient>,
-    retry: RetryPolicy,
+    sender: Sender,
 }
 
 impl ResponsesProvider {
@@ -73,14 +89,13 @@ impl ResponsesProvider {
     pub fn new(opts: ResponsesOptions, http: Arc<dyn HttpClient>) -> Self {
         Self {
             opts,
-            http,
-            retry: RetryPolicy::default(),
+            sender: Sender::new(http),
         }
     }
 
     /// The same provider with `retry` instead of the default policy.
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
-        self.retry = retry;
+        self.sender.retry = retry;
         self
     }
 
@@ -100,12 +115,6 @@ impl Provider for ResponsesProvider {
 
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
         let fold = stream::ResponsesFold::new(&self.opts.id, &req.model);
-        drive(
-            &self.http,
-            &self.retry,
-            self.http_request(&req),
-            req.cancel,
-            fold,
-        )
+        drive(&self.sender, self.http_request(&req), req.cancel, fold)
     }
 }
