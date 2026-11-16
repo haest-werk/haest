@@ -221,7 +221,7 @@
 //!
 //! | Feature | Brings | Default |
 //! |---|---|---|
-//! | `http` | [`http`]: the one HTTP seam every request goes through, and its default over reqwest; on with `providers` and `tools` | yes |
+//! | `http` | [`http`]: the HTTP seam the model calls and GenerateImage send through, and its default over reqwest (WebFetch and MCP servers keep clients of their own); on with `providers` and `tools` | yes |
 //! | `providers` | [`providers`]: Anthropic Messages, OpenAI Chat Completions and Responses, OpenRouter, any OpenAI-compatible server | yes |
 //! | `workspace` | [`workspace`]: the real disk and bash, or a sandbox over a copy-on-write overlay | yes |
 //! | `tools` | [`tools`]: Read, Write, Edit, Glob, Grep, Bash, WebFetch, tasks, sub-agents and more | yes |

@@ -19,7 +19,7 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | Crate | What |
 |---|---|
 | `haest-core` | the loop and the contracts: messages, `Provider`, `Tool`, `Fs`, `Workspace`, `AgentHooks`, events; turn guard, limits, ledger, session log, compaction, task board |
-| `haest-http` | the one HTTP seam every request goes through (`HttpClient`), and its default over reqwest and rustls; the one place haest builds a reqwest client |
+| `haest-http` | the HTTP seam (`HttpClient`) the model calls, GenerateImage and the GitHub tracker send through, and its default over reqwest and rustls; the one place haest builds a reqwest client. WebFetch sends through a guarded client of its own, MCP servers through rmcp's |
 | `haest-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible server, OpenRouter), OpenAI Responses; `providers.json`; the model catalog; requests over any `HttpClient` |
 | `haest-workspace` | the real disk and bash, or a bashkit sandbox over a copy-on-write overlay (or over any `Fs`); `/changes` and `/apply` |
 | `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch, tasks, ToolSearch, Skill, Agent / SendMessage / StopAgent, GenerateImage |
@@ -43,7 +43,7 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 
 | Feature | Brings | Default |
 |---|---|---|
-| `http` | `haest::http` (the one HTTP seam: `HttpClient` and its reqwest default); on with `providers` and `tools` | yes |
+| `http` | `haest::http` (the HTTP seam: `HttpClient` and its reqwest default; not WebFetch's or MCP's clients); on with `providers` and `tools` | yes |
 | `providers` | `haest::providers` | yes |
 | `workspace` | `haest::workspace` | yes |
 | `tools` | `haest::tools` | yes |

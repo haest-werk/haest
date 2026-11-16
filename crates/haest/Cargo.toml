@@ -15,7 +15,7 @@ name = "haest"
 
 [features]
 default = ["providers", "workspace", "tools", "mcp", "code", "mods", "settings"]
-# The one HTTP seam: on with every part that sends requests.
+# The HTTP seam: on with every part that sends requests through it.
 http = ["dep:haest-http"]
 providers = ["dep:haest-providers", "http"]
 workspace = ["dep:haest-workspace"]

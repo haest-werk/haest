@@ -101,7 +101,7 @@ struct Own {
 ///
 /// use haest_http::{HttpClient, ReqwestClient, reqwest};
 ///
-/// // What every haest part uses unless it is handed another.
+/// // What the model calls, GenerateImage and the GitHub tracker use unless handed another.
 /// let shared: Arc<dyn HttpClient> = Arc::new(ReqwestClient::new());
 ///
 /// // A host's own: through its proxy, a shorter connect timeout.
@@ -119,6 +119,10 @@ pub struct ReqwestClient {
 impl ReqwestClient {
     /// The process's shared client, built on the first request through any
     /// `ReqwestClient::new()`.
+    ///
+    /// That first request also installs ring as the process's rustls
+    /// provider when none is installed ([`build_reqwest`]), for the whole
+    /// process: a host that wants its own provider installs it before then.
     pub fn new() -> Self {
         Self::default()
     }

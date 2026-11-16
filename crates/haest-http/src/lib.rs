@@ -1,17 +1,26 @@
-//! haest's one HTTP seam: every request a haest part sends goes through an
-//! [`HttpClient`].
+//! haest's HTTP seam: the [`HttpClient`] trait haest's parts send through,
+//! and its default.
 //!
-//! The model calls (haest-providers), WebFetch and GenerateImage (haest-tools)
-//! and the GitHub tracker (haest-issues) build a [`Request`] and hand it to the
-//! client they were given; what comes back is a [`Response`] whose body
-//! streams. [`ReqwestClient`] is the default: reqwest over rustls, no proxy,
-//! one connection pool shared by the whole process, built on the first
-//! request. A host hands in its own client to send everything somewhere else
-//! (a gateway, a recorder, a test's fake); a test's fake is one method.
+//! The model calls (haest-providers), GenerateImage (haest-tools) and the
+//! GitHub tracker (haest-issues) build a [`Request`] and hand it to the client
+//! they were given; what comes back is a [`Response`] whose body streams.
+//! [`ReqwestClient`] is the default: reqwest over rustls, no proxy, a redirect
+//! followed only within its origin, one connection pool shared by the whole
+//! process, built on the first request. A host hands in its own client to send
+//! those somewhere else (a gateway, a recorder, a test's fake); a test's fake
+//! is one method.
+//!
+//! Two parts do not send through the client a host hands the others:
+//!
+//! - **WebFetch** sends through an `HttpClient` of its own, which checks every
+//!   address it connects to (haest-tools' `WebFetchNet`; a host's client there
+//!   gives that check up).
+//! - **An MCP server's streamable HTTP** runs on rmcp's transport, which takes
+//!   only a `reqwest::Client`: haest-mcp builds it here, with the same
+//!   settings, but its requests never pass an `HttpClient`.
 //!
 //! This crate is also the one place haest builds a reqwest client and touches
-//! TLS ([`build_reqwest`]): the MCP client, which needs a reqwest client of
-//! its own, gets it from here too.
+//! TLS ([`build_reqwest`]).
 //!
 //! Through the facade it is `haest::http`; every crate that sends re-exports
 //! it as `http` (`haest_providers::http`, `haest_tools::http`,

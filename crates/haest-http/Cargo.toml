@@ -1,6 +1,6 @@
 [package]
 name = "haest-http"
-description = "haest's one HTTP seam: a small request/response client trait every haest part sends through, and its default over reqwest and rustls"
+description = "haest's HTTP seam: a small request/response client trait haest's model calls and tools send through, and its default over reqwest and rustls"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

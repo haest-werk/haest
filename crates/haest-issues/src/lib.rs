@@ -92,8 +92,8 @@
 //! - the one tool that cannot be undone says so in its `kind`
 //!   ([`DELETE_KIND`]), for a host that asks the human first.
 //!
-//! [`http::HttpClient`] is a plug point in haest's style: one narrow trait
-//! every haest crate sends through, a reqwest default, a fake in the tests
+//! [`http::HttpClient`] is a plug point in haest's style: the one narrow trait
+//! the model calls and the tools send through, a reqwest default, a fake in the tests
 //! ([`GithubTracker::with_http`](github::GithubTracker::with_http)).
 //!
 //! [`ToolError::Input`]: haest_core::tool::ToolError::Input

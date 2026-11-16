@@ -1,23 +1,29 @@
 # haest-http
 
-The one HTTP seam of [haest](https://github.com/haest-werk/haest), an agent
+The HTTP seam of [haest](https://github.com/haest-werk/haest), an agent
 loop and tool harness you embed in a Rust program.
 
-Every request a haest part sends goes through an `HttpClient`: the model calls
-([haest-providers](https://crates.io/crates/haest-providers)), WebFetch and
-GenerateImage ([haest-tools](https://crates.io/crates/haest-tools)). One trait
-with one method, one `Request`, one `Response` whose body streams, one
-`HttpError`.
+The model calls ([haest-providers](https://crates.io/crates/haest-providers)),
+GenerateImage ([haest-tools](https://crates.io/crates/haest-tools)) and the
+GitHub tracker send every request through the `HttpClient` they are handed.
+One trait with one method, one `Request`, one `Response` whose body streams,
+one `HttpError`. Two parts do not take that client: WebFetch sends through an
+`HttpClient` of its own that checks every address it connects to, and an MCP
+server's streamable HTTP runs on rmcp's reqwest client (built here, but not
+an `HttpClient`).
 
 - `ReqwestClient` is the default: reqwest over rustls (ring), no proxy from
-  the environment, one connection pool shared by the process, built on the
-  first request. `ReqwestClient::configured` is a client of its own, with
-  your proxy, certificates or timeouts.
+  the environment, a redirect followed only within its origin (a 307 or
+  308), one connection pool shared by the process, built on the first
+  request. `ReqwestClient::configured` is a client of its own, with your
+  proxy, certificates or timeouts.
 - `build_reqwest` is the one place haest builds a reqwest client. It installs
   ring as the process's rustls provider when none is installed, so building a
-  client never panics for want of one; a provider you installed is kept. The
-  MCP client ([haest-mcp](https://crates.io/crates/haest-mcp)), whose SDK
-  runs only on reqwest, gets its client from here too.
+  client never panics for want of one; a provider you installed is kept. That
+  install is process-wide and happens at the first request, so install your
+  own before it. The MCP client
+  ([haest-mcp](https://crates.io/crates/haest-mcp)), whose SDK runs only on
+  reqwest, gets its client from here too.
 - Implement `HttpClient` to send everything somewhere else: a gateway, a
   recorder, a fake for tests.
 

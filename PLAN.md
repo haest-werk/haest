@@ -39,7 +39,7 @@ Behaviour comes from there, file by file, tests included.
 | Crate | What | Ported from |
 |---|---|---|
 | `haest-core` | messages, Provider/Tool/Fs/Workspace/AgentHooks contracts, the loop, guard, limits, ledger, media, effort, session log, compaction, system prompt, skills, task board, deferred tools | `core/*.ts` |
-| `haest-http` | the one HTTP seam: `HttpClient` (one `send`), `Request`, `Response`, `HttpError`; the default `ReqwestClient`; the one place a reqwest client is built and TLS set up | new (T2) |
+| `haest-http` | the HTTP seam: `HttpClient` (one `send`), `Request`, `Response`, `HttpError`; the default `ReqwestClient`; the one place a reqwest client is built and TLS set up. WebFetch keeps a guarded client of its own and MCP servers rmcp's, whatever client the host hands in | new (T2) |
 | `haest-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible endpoint), OpenAI Responses, OpenRouter routing + web search, `providers.json`, the model catalog, requests over any `HttpClient` | `providers/*.ts`, `shared/haest-models.ts` |
 | `haest-workspace` | real disk + real bash; bashkit sandbox over a copy-on-write overlay; `/changes` + `/apply`; net guard | `core/workspace-*.ts`, `overlay-changes.ts`, `shell-words.ts`, `fs-walk.ts`, `net-guard.ts` |
 | `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch, tasks, ToolSearch, Skill, Agent tools (`SubagentHub`, `AgentDirectory`, `AgentToolOptions`), GenerateImage | `tools/*.ts` |
