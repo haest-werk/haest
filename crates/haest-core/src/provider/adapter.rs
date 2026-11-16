@@ -1,5 +1,4 @@
-//! What every provider adapter does at the end of a failed stream. Reached
-//! through [`__private`](crate::__private).
+//! What every provider adapter does at the end of a failed stream.
 
 use std::fmt;
 
@@ -15,7 +14,7 @@ use crate::messages::{AssistantMessage, StopReason};
 /// # Examples
 ///
 /// ```
-/// use haest_core::{AssistantMessage, StopReason, __private::mark_stream_failed};
+/// use haest_core::{AssistantMessage, StopReason, provider::mark_stream_failed};
 /// use tokio_util::sync::CancellationToken;
 ///
 /// let cancel = CancellationToken::new();

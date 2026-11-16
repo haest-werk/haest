@@ -9,7 +9,7 @@
 //! message placed after the run of tool results ([`with_tool_media`]).
 
 use haest_core::{
-    __private::{data_url, dropped_note},
+    media::{data_url, dropped_note},
     messages::{MediaKind, MediaPart, Message},
 };
 use serde_json::{Value, json};

@@ -3,15 +3,15 @@
 //! where an indented block starts and ends). Not a YAML parser: each piece
 //! answers one question about one line, and the caller assembles the rest.
 //!
-//! A helper the haest crates share: the SKILL.md reader ([`crate::skills`],
-//! its fallback when strict YAML refuses) and any format kept as markdown with
-//! a head, such as `haest-issues`' board cards. Start from
+//! For a tool that reads a format kept as markdown with a head, such as
+//! `haest-issues`' board cards; haest's SKILL.md reader ([`crate::skills`])
+//! falls back to it when strict YAML refuses. Start from
 //! [`split_frontmatter`].
 //!
 //! # Examples
 //!
 //! ```
-//! use haest_core::__private::{inline_list, split_frontmatter, unquote};
+//! use haest_core::frontmatter::{inline_list, split_frontmatter, unquote};
 //!
 //! let card = "---\ntitle: \"Fix the \\\"login\\\" bug\"\nlabels: [auth, 'p1']\n---\nSteps to reproduce.\n";
 //! let (head, body) = split_frontmatter(card).unwrap();

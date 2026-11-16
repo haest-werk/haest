@@ -4,12 +4,11 @@
 use std::path::{Path, PathBuf};
 
 use haest_core::{
-    __private::slug,
     fs::ensure_dir,
     media::{media_from_bytes, media_type_from_name},
     messages::MediaPart,
     now_ms,
-    tool::{ToolContext, ToolError, ToolOutput, spelled},
+    tool::{ToolContext, ToolError, ToolOutput, slug, spelled},
 };
 use serde_json::{Value, json};
 

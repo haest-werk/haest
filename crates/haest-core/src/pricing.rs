@@ -21,7 +21,7 @@ const PER: f64 = 1_000_000.0;
 /// # Examples
 ///
 /// ```
-/// use haest_core::{Usage, catalog::ModelPricing, __private::book_priced_cost};
+/// use haest_core::{Usage, catalog::ModelPricing, provider::book_priced_cost};
 ///
 /// let price = ModelPricing { input: 2.0, cached_input: 0.2, output: 8.0, cache_write: None };
 /// let mut usage = Usage { input: 500_000, output: 100_000, ..Default::default() };

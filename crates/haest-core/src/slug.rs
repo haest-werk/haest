@@ -1,8 +1,8 @@
 //! A name made from free text: an agent's address, a generated file's name, a
 //! board card's id.
 //!
-//! A helper the haest crates share (`haest-tools`, `haest-providers`,
-//! `haest-issues`), so every generated name is spelled one way.
+//! At [`tool::slug`](crate::tool::slug), so every generated name is spelled
+//! one way.
 
 /// `Find the bug!` -> `find-the-bug`: lowercase ASCII letters and digits, every
 /// other run one dash, none at the ends, at most `max` characters; `fallback`
@@ -14,7 +14,7 @@
 /// # Examples
 ///
 /// ```
-/// use haest_core::__private::slug;
+/// use haest_core::tool::slug;
 ///
 /// assert_eq!(slug("  Find the BUG!  in x.ts", 24, "agent"), "find-the-bug-in-x-ts");
 /// assert_eq!(slug("!!!", 24, "agent"), "agent");

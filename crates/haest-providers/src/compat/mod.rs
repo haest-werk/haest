@@ -25,11 +25,11 @@ mod tests_stream;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use haest_core::{
-    __private::book_priced_cost,
-    __private::mark_stream_failed,
     catalog::{ModelPricing, Reasoning},
     messages::AssistantMessage,
-    provider::{ProviderEvent, ProviderRequest, ProviderStream},
+    provider::{
+        ProviderEvent, ProviderRequest, ProviderStream, book_priced_cost, mark_stream_failed,
+    },
 };
 use haest_http::{HttpClient, Request};
 use serde_json::{Value, json};

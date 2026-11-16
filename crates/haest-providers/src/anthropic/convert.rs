@@ -8,7 +8,7 @@
 //!     provider (the endpoint) that signed them.
 
 use haest_core::{
-    __private::dropped_note,
+    media::dropped_note,
     messages::{AssistantMessage, AssistantPart, MediaKind, MediaPart, Message, ToolResultMessage},
     provider::{Effort, ToolSpec},
 };

@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use haest_core::{
-    __private::data_url,
     error::report,
+    media::data_url,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str},
 };
 use serde_json::{Map, Value, json};

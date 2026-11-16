@@ -120,7 +120,7 @@ pub struct Reasoning {
 }
 
 /// A model's price in USD per 1M tokens, for a provider whose API returns no
-/// cost of its own ([`crate::pricing::book_priced_cost`]).
+/// cost of its own ([`book_priced_cost`](crate::provider::book_priced_cost)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelPricing {

@@ -6,10 +6,9 @@
 //! applied here and nowhere else.
 
 use haest_core::{
-    __private::nearest_accepted_effort,
     catalog::Reasoning,
     messages::{AssistantMessage, Message},
-    provider::{Effort, ToolSpec},
+    provider::{Effort, ToolSpec, nearest_accepted_effort},
 };
 use serde_json::{Map, Value, json};
 

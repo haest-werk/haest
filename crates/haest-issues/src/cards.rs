@@ -7,9 +7,9 @@ use std::{
 };
 
 use haest_core::{
-    __private::slug,
     Clock, WallClock,
     fs::{FileKind, Fs, ensure_dir},
+    tool::slug,
 };
 use tokio::sync::Mutex;
 

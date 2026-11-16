@@ -14,13 +14,29 @@
 //!
 //! Also here: the request's parts ([`ToolSpec`], [`Effort`],
 //! [`WebSearchOptions`]) and [`parse_model_spec`], which adapters share.
+//!
+//! # Writing a provider
+//!
+//! What every adapter in `haest-providers` uses, for one of your own:
+//!
+//! - [`mark_stream_failed`]: the `Done` of a call that failed or was aborted.
+//! - [`nearest_accepted_effort`]: the reasoning level the model's catalog row
+//!   accepts, for an API that refuses any level it does not list.
+//! - [`book_priced_cost`]: a cost from the configured price, for an API that
+//!   returns none.
+//! - [`data_url`](crate::media::data_url) and
+//!   [`dropped_note`](crate::media::dropped_note): media the wire format
+//!   carries as a `data:` URL, or cannot carry at all.
 
 use futures::{StreamExt, stream::BoxStream};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+pub use adapter::mark_stream_failed;
 pub use resolve::{ModelError, ModelResolver, ResolvedModel, parse_model_spec};
+
+pub use crate::{effort::nearest_accepted_effort, pricing::book_priced_cost};
 
 use crate::messages::{AssistantMessage, Message};
 
@@ -240,7 +256,7 @@ pub trait Provider: Send + Sync {
     fn stream(&self, req: ProviderRequest) -> ProviderStream;
 }
 
-pub(crate) mod adapter;
+mod adapter;
 mod resolve;
 #[cfg(test)]
 mod tests;

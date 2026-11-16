@@ -91,8 +91,8 @@ pub(crate) fn fit_effort(
 /// ```
 /// use haest_core::{
 ///     Effort,
-///     __private::nearest_accepted_effort,
 ///     catalog::{OpenRouterEffort as O, Reasoning},
+///     provider::nearest_accepted_effort,
 /// };
 ///
 /// let row = Reasoning { mandatory: false, efforts: vec![O::Low, O::High] };

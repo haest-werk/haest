@@ -13,7 +13,8 @@
 //! The loop gives every call a [`ToolContext`] (working directory, cancel
 //! token, workspace, the host's services) and turns whatever comes back, an
 //! error or a panic included, into exactly one result in history. The
-//! `req_*` / `opt_*` helpers read arguments the way models actually send them.
+//! `req_*` / `opt_*` helpers read arguments the way models actually send them,
+//! and [`slug`] makes a name (a file's, an id) from free text.
 
 mod args;
 mod context;
@@ -30,6 +31,8 @@ use serde_json::{Map, Value};
 pub use args::{opt_bool, opt_num, opt_str, req_str, spelled};
 pub use context::ToolContext;
 pub use truncate::{TRUNCATE_CHARS, truncate_middle};
+
+pub use crate::slug::slug;
 
 use crate::messages::{MediaPart, ToolCall};
 

@@ -11,7 +11,8 @@
 //! Who uses what: tools, MCP and a host's
 //! [`AgentHooks::attach_media`] build parts with [`media_from_bytes`]; the
 //! loop fits them to each model call; provider adapters write what their
-//! wire format cannot carry as a note or a `data:` URL.
+//! wire format cannot carry as a note ([`dropped_note`]) or a `data:` URL
+//! ([`data_url`]).
 //!
 //! # Examples
 //!
@@ -34,7 +35,7 @@
 mod fit;
 #[cfg(test)]
 mod tests;
-pub(crate) mod wire;
+mod wire;
 
 use std::path::Path;
 
@@ -43,7 +44,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) use fit::fit_for_model;
-pub(crate) use wire::dropped_note;
+pub use wire::{data_url, dropped_note};
 
 use crate::{
     deps::AgentHooks,

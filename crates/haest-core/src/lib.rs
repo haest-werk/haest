@@ -151,7 +151,7 @@ mod effort;
 pub mod error;
 pub mod events;
 mod expand;
-mod frontmatter;
+pub mod frontmatter;
 pub mod fs;
 mod guard;
 pub mod handed;
@@ -211,15 +211,9 @@ pub mod __private {
 
     pub use crate::context::prompt::FILE_TOOLS;
     pub use crate::deferred_tools::split::{advertised_tools, callable_tools};
-    pub use crate::effort::nearest_accepted_effort;
     pub use crate::expand::{expand_vars, is_var_name, unset_note};
-    pub use crate::frontmatter::{block_end, inline_list, split_frontmatter, unquote};
     pub use crate::guard::NUDGE_SHARE;
-    pub use crate::media::wire::{data_url, dropped_note};
     pub use crate::panics::panic_message;
-    pub use crate::pricing::book_priced_cost;
-    pub use crate::provider::adapter::mark_stream_failed;
-    pub use crate::slug::slug;
     pub use crate::tool_exec::{ToolIndex, run_call, run_unspilled};
 }
 

@@ -1,6 +1,5 @@
 //! How a provider adapter writes media its wire format cannot carry as a
-//! part: as a note the model reads, or as a `data:` URL. Reached through
-//! [`__private`](crate::__private).
+//! part: as a note the model reads, or as a `data:` URL.
 
 use super::{kb, raw_bytes};
 use crate::messages::MediaPart;
