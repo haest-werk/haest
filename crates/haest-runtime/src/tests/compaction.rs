@@ -10,7 +10,7 @@ use crate::{
     haest::{
         Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
         Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason, Tool, TurnEnd,
-        core::ledger::{Ledger, LedgerCaps},
+        core::ledger::{ConversationCaps, Ledger},
         core::provider::ProviderStream,
         core::testing::{ScriptedProvider, text_answer},
     },
@@ -21,7 +21,7 @@ use crate::{
 /// next model call compacts first; its ledger has no cap.
 fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<Mutex<Ledger>>) {
     let ledger = Arc::new(Mutex::new(Ledger::new(
-        LedgerCaps::default(),
+        ConversationCaps::default(),
         hooks.clone(),
     )));
     let resolve = move |_: &str| -> Result<ResolvedModel, String> {

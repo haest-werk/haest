@@ -12,7 +12,7 @@ use std::sync::{
 use async_trait::async_trait;
 use haest::{
     Agent, AgentHooks, Message,
-    core::limits::TurnLimits,
+    core::caps::TurnCaps,
     core::session::{SessionRecord, SessionSink},
     core::tool::ToolServices,
 };
@@ -101,7 +101,7 @@ pub struct BrainHost {
     pause_before_call: usize,
     calls: AtomicUsize,
     /// The run's caps, from its settings.
-    limits: TurnLimits,
+    limits: TurnCaps,
 }
 
 impl BrainHost {
@@ -109,7 +109,7 @@ impl BrainHost {
         clock: RunClock,
         sessions: Arc<dyn SessionSink>,
         pause_before_call: usize,
-        limits: TurnLimits,
+        limits: TurnCaps,
     ) -> Self {
         Self {
             clock,
@@ -144,7 +144,7 @@ impl AgentHooks for BrainHost {
         Ok(())
     }
 
-    fn limits(&self, _spec: &str) -> Option<TurnLimits> {
+    fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
         Some(self.limits.clone())
     }
 

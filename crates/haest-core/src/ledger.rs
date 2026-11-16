@@ -20,13 +20,13 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{limits::billed_tokens, messages::Usage};
+use crate::{caps::billed_tokens, messages::Usage};
 
 /// A conversation's two caps: the defaults a host configures, or the caps in
 /// force ([`Ledger::caps`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LedgerCaps {
+pub struct ConversationCaps {
     /// USD across the conversation; 0 = no cap.
     pub max_usd: f64,
     /// Tokens billed by calls that reported no price; 0 = no cap.
@@ -82,7 +82,7 @@ pub trait LedgerHooks: Send + Sync {
 
 /// One cap the human sets (`/budget`).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LedgerCap {
+pub enum ConversationCap {
     /// USD across the conversation; 0 = no cap.
     Usd(f64),
     /// Tokens billed by calls that reported no price; 0 = no cap.
@@ -107,7 +107,7 @@ enum Measure {
 /// use std::sync::{Arc, Mutex};
 ///
 /// use haest_core::{
-///     ledger::{Ledger, LedgerCap, LedgerCaps, LedgerHooks, LedgerSnapshot},
+///     ledger::{Ledger, ConversationCap, ConversationCaps, LedgerHooks, LedgerSnapshot},
 ///     messages::Usage,
 /// };
 ///
@@ -122,7 +122,7 @@ enum Measure {
 /// }
 ///
 /// let warnings = Arc::new(Warnings::default());
-/// let caps = LedgerCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
+/// let caps = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
 /// let mut ledger = Ledger::new(caps, warnings.clone());
 ///
 /// ledger.charge(&Usage { cost_usd: Some(0.85), ..Usage::default() });
@@ -132,7 +132,7 @@ enum Measure {
 /// ledger.charge(&Usage { cost_usd: Some(0.20), ..Usage::default() });
 /// assert!(ledger.exhausted().is_some()); // no further model call in this conversation
 ///
-/// ledger.set_cap(LedgerCap::Usd(2.0)); // the human raises it
+/// ledger.set_cap(ConversationCap::Usd(2.0)); // the human raises it
 /// assert!(ledger.exhausted().is_none());
 /// ```
 pub struct Ledger {
@@ -144,14 +144,14 @@ pub struct Ledger {
     set: CapOverrides,
     warned_usd: bool,
     warned_tokens: bool,
-    defaults: LedgerCaps,
+    defaults: ConversationCaps,
     hooks: Arc<dyn LedgerHooks>,
 }
 
 impl Ledger {
     /// An empty ledger with `defaults` as its caps; `hooks` hear every charge
     /// and every new cap.
-    pub fn new(defaults: LedgerCaps, hooks: Arc<dyn LedgerHooks>) -> Self {
+    pub fn new(defaults: ConversationCaps, hooks: Arc<dyn LedgerHooks>) -> Self {
         Self {
             usd: 0.0,
             unpriced_tokens: 0,
@@ -164,8 +164,8 @@ impl Ledger {
     }
 
     /// The caps in force: each one the human set, else the default.
-    pub fn caps(&self) -> LedgerCaps {
-        LedgerCaps {
+    pub fn caps(&self) -> ConversationCaps {
+        ConversationCaps {
             max_usd: self.set.max_usd.unwrap_or(self.defaults.max_usd),
             max_unpriced_tokens: self
                 .set
@@ -210,10 +210,10 @@ impl Ledger {
     }
 
     /// `/budget`: a new cap. The warning re-arms, so the next crossing is heard too.
-    pub fn set_cap(&mut self, cap: LedgerCap) {
+    pub fn set_cap(&mut self, cap: ConversationCap) {
         match cap {
-            LedgerCap::Usd(v) => self.set.max_usd = Some(v),
-            LedgerCap::UnpricedTokens(v) => self.set.max_unpriced_tokens = Some(v),
+            ConversationCap::Usd(v) => self.set.max_usd = Some(v),
+            ConversationCap::UnpricedTokens(v) => self.set.max_unpriced_tokens = Some(v),
         }
         self.rearm();
         self.hooks.persist(&self.snapshot());
@@ -221,7 +221,7 @@ impl Ledger {
 
     /// Why no further model call may go out in this conversation, or None.
     pub fn exhausted(&self) -> Option<String> {
-        let LedgerCaps {
+        let ConversationCaps {
             max_usd,
             max_unpriced_tokens,
         } = self.caps();
@@ -244,7 +244,7 @@ impl Ledger {
 
     /// One line for the human: what was spent of each cap.
     pub fn summary(&self) -> String {
-        let LedgerCaps {
+        let ConversationCaps {
             max_usd,
             max_unpriced_tokens,
         } = self.caps();

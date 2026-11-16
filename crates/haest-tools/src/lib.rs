@@ -135,8 +135,8 @@ pub use inbox::Inbox;
 pub use jobs::{JobEvents, JobHub};
 pub use read::{ReadIntercept, ReadTool};
 pub use search::{GlobTool, GrepTool};
-pub use skill::{SkillToolOptions, create_skill_tool};
-pub use tasks::create_task_tools;
+pub use skill::{SkillToolOptions, skill_tool};
+pub use tasks::task_tools;
 pub use turn_gate::AgentTurnGate;
 pub use web_fetch::{WebFetchNet, WebFetchTool};
 
@@ -194,8 +194,8 @@ pub fn builtin_tools(opts: BuiltinOptions) -> Vec<Arc<dyn Tool>> {
     if let Some(net) = opts.web_fetch {
         tools.push(Arc::new(WebFetchTool::new(net)));
     }
-    tools.extend(opts.tasks.map(create_task_tools).unwrap_or_default());
-    tools.extend(opts.skill.map(create_skill_tool));
+    tools.extend(opts.tasks.map(task_tools).unwrap_or_default());
+    tools.extend(opts.skill.map(skill_tool));
     tools
 }
 

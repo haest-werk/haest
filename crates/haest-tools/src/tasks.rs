@@ -1,5 +1,5 @@
 //! TaskCreate / TaskUpdate / TaskList / TaskGet over the conversation's
-//! [`TaskBoard`] ([`create_task_tools`]). Names and keys are Claude Code's
+//! [`TaskBoard`] ([`task_tools`]). Names and keys are Claude Code's
 //! (`subject`, `activeForm`, `taskId`, `addBlockedBy`) on purpose: every
 //! frontier model has seen them.
 //!
@@ -84,13 +84,13 @@ struct TaskGet(Arc<TaskBoard>);
 /// use std::sync::Arc;
 ///
 /// use haest_core::{task_board::TaskBoard, tool::ToolContext, workspace::ShutWorkspace};
-/// use haest_tools::create_task_tools;
+/// use haest_tools::task_tools;
 /// use serde_json::json;
 ///
 /// # #[tokio::main]
 /// # async fn main() {
 /// let board = Arc::new(TaskBoard::default());
-/// let tools = create_task_tools(board.clone());
+/// let tools = task_tools(board.clone());
 /// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
 /// let input = json!({"subject": "Write the docs"});
 /// tools[0].execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
@@ -98,7 +98,7 @@ struct TaskGet(Arc<TaskBoard>);
 /// assert_eq!(board.list()[0].subject, "Write the docs");
 /// # }
 /// ```
-pub fn create_task_tools(board: Arc<TaskBoard>) -> Vec<Arc<dyn Tool>> {
+pub fn task_tools(board: Arc<TaskBoard>) -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(TaskCreate(board.clone())),
         Arc::new(TaskUpdate(board.clone())),

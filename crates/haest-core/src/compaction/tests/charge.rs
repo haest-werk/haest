@@ -5,16 +5,16 @@ use async_trait::async_trait;
 
 use super::*;
 use crate::{
-    agent::test_support::{collect, end, limits},
+    agent::test_support::{collect, end, turn_caps},
+    caps::TurnCaps,
     deps::AgentHooks,
-    limits::TurnLimits,
     tool::ToolServices,
 };
 
 /// A host that compacts before every model call, as the runtime's does.
 /// `esc`: the human cancels the turn as the summary is asked for.
 struct CompactsFirst {
-    caps: Option<TurnLimits>,
+    caps: Option<TurnCaps>,
     esc: bool,
 }
 impl ToolServices for CompactsFirst {}
@@ -33,7 +33,7 @@ impl AgentHooks for CompactsFirst {
             .map(drop)
             .map_err(|e| e.to_string())
     }
-    fn limits(&self, _: &str) -> Option<TurnLimits> {
+    fn turn_caps(&self, _: &str) -> Option<TurnCaps> {
         self.caps.clone()
     }
 }
@@ -45,7 +45,7 @@ fn costly_empty(input: u64) -> AssistantMessage {
     m
 }
 
-fn compacting(p: &Arc<ScriptedProvider>, caps: Option<TurnLimits>) -> Agent {
+fn compacting(p: &Arc<ScriptedProvider>, caps: Option<TurnCaps>) -> Agent {
     let mut agent = agent_with(p);
     agent.deps.hooks = Arc::new(CompactsFirst { caps, esc: false });
     agent
@@ -109,7 +109,7 @@ async fn a_summary_counts_toward_the_turn_with_the_call_after_it() {
 #[tokio::test]
 async fn a_summary_that_spends_past_the_turn_cap_stops_the_turn_before_the_model_call() {
     let p = ScriptedProvider::new([costly_empty(5000), text_answer("SUM"), text_answer("never")]);
-    let caps = limits(|l| l.max_turn_tokens = 1000);
+    let caps = turn_caps(|l| l.max_turn_tokens = 1000);
     let mut agent = compacting(&p, Some(caps));
     let events = collect(&mut agent, "go").await;
     let (reason, _, error) = end(&events);

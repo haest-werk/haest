@@ -137,7 +137,7 @@ fn an_image_counts_as_its_token_cost_not_its_base64() {
 #[test]
 fn a_zero_request_cap_refuses_nothing() {
     assert_eq!(request_too_big(u64::MAX, &uncapped()), None);
-    let l = limits(|l| l.max_request_tokens = 10);
+    let l = turn_caps(|l| l.max_request_tokens = 10);
     assert_eq!(request_too_big(10, &l), None);
     assert!(request_too_big(11, &l).is_some());
 }

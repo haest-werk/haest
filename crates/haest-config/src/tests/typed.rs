@@ -22,8 +22,8 @@ async fn caps_and_subagents_follow_their_variables() {
         &[],
     )
     .await;
-    assert_eq!(s.limits_for(200_000).max_request_tokens, 0);
-    assert_eq!(s.limits_for(200_000).max_turn_ms, 90_000);
+    assert_eq!(s.turn_caps_for(200_000).max_request_tokens, 0);
+    assert_eq!(s.turn_caps_for(200_000).max_turn_ms, 90_000);
     assert_eq!(s.max_agent_turns, 0);
     let c = s.subagents;
     assert_eq!(

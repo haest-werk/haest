@@ -37,14 +37,14 @@ fn bare_turns_every_capability_off_and_every_brake_on() {
 #[test]
 fn token_caps_follow_the_window_unless_set() {
     let mut s = bare();
-    let l = s.limits_for(200_000);
+    let l = s.turn_caps_for(200_000);
     assert_eq!(
         (l.max_request_tokens, l.max_turn_tokens),
         (180_000, 2_000_000)
     );
     assert_eq!(l.max_turn_ms, 3_600_000);
     s.limits.max_request_tokens = Some(0);
-    assert_eq!(s.limits_for(200_000).max_request_tokens, 0);
+    assert_eq!(s.turn_caps_for(200_000).max_request_tokens, 0);
     assert_eq!(
         (s.window(None), s.window(Some(1_000_000))),
         (200_000, 1_000_000)

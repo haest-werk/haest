@@ -7,9 +7,9 @@ use std::path::PathBuf;
 
 use haest_core::{
     Effort, WorkspaceMode,
+    caps::{SubagentCaps, TurnCaps},
     deferred_tools::DeferMode,
-    ledger::LedgerCaps,
-    limits::{SubagentCaps, TurnLimits},
+    ledger::ConversationCaps,
     media::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
     provider::{WebSearchConfig, WebSearchEngine},
     skills::SkillSources,
@@ -23,9 +23,9 @@ pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 /// The caps on one turn (one human message) and on the whole conversation.
 ///
 /// 0 means no cap, for every field. A token cap left `None` follows the
-/// model's context window instead; [`Settings::limits_for`] turns these into
-/// the loop's per-turn [`TurnLimits`] and [`Settings::ledger`] into the
-/// conversation's [`LedgerCaps`]. The loop checks them before each model call;
+/// model's context window instead; [`Settings::turn_caps_for`] turns these into
+/// the loop's per-turn [`TurnCaps`] and [`Settings::ledger`] into the
+/// conversation's [`ConversationCaps`]. The loop checks them before each model call;
 /// the human goes past a turn cap by sending another message.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Limits {
@@ -62,7 +62,7 @@ pub struct Limits {
 /// caps are grouped in [`Limits`] and [`SubagentCaps`].
 ///
 /// The helper methods turn fields into what the loop and the tools take:
-/// [`limits_for`](Self::limits_for), [`ledger`](Self::ledger),
+/// [`turn_caps_for`](Self::turn_caps_for), [`ledger`](Self::ledger),
 /// [`code_tools`](Self::code_tools()), [`web_search_config`](Self::web_search_config),
 /// [`image_models`](Self::image_models()) and [`spill_dir`](Self::spill_dir).
 ///
@@ -239,9 +239,9 @@ impl Settings {
     /// An unset token cap follows the window: `max_turn_tokens` is 10x it,
     /// `max_request_tokens` 90% of it. One set to `Some(0)` stays 0, no cap.
     /// The wall clock comes out in milliseconds.
-    pub fn limits_for(&self, window: u64) -> TurnLimits {
+    pub fn turn_caps_for(&self, window: u64) -> TurnCaps {
         let l = &self.limits;
-        TurnLimits {
+        TurnCaps {
             max_turn_usd: l.max_turn_usd,
             max_turn_tokens: l.max_turn_tokens.unwrap_or(window * 10),
             max_request_tokens: l.max_request_tokens.unwrap_or(window * 9 / 10),
@@ -253,8 +253,8 @@ impl Settings {
 
     /// The caps that span the whole conversation, for haest-core's ledger:
     /// `max_conversation_usd` and `max_conversation_tokens`.
-    pub fn ledger(&self) -> LedgerCaps {
-        LedgerCaps {
+    pub fn conversation_caps(&self) -> ConversationCaps {
+        ConversationCaps {
             max_usd: self.limits.max_conversation_usd,
             max_unpriced_tokens: self.limits.max_conversation_tokens,
         }

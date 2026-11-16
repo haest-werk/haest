@@ -29,7 +29,7 @@ impl LedgerHooks for Recorder {
 
 fn ledger_with(max_usd: f64, max_unpriced_tokens: u64) -> (Ledger, Arc<Recorder>) {
     let rec = Arc::new(Recorder::default());
-    let caps = LedgerCaps {
+    let caps = ConversationCaps {
         max_usd,
         max_unpriced_tokens,
     };
@@ -137,7 +137,7 @@ fn the_last_snapshot_restores_the_spend_and_a_raised_cap_and_raising_lets_it_con
     let (mut a, a_saved) = ledger_with(5.0, 0);
     a.charge(&cost(6.0));
     assert!(a.exhausted().is_some());
-    a.set_cap(LedgerCap::Usd(10.0));
+    a.set_cap(ConversationCap::Usd(10.0));
     let (mut b, _) = ledger_with(5.0, 0);
     b.restore(a_saved.saved.lock().unwrap().last().unwrap());
     assert_eq!(b.usd, 6.0);
@@ -151,7 +151,7 @@ fn the_human_is_warned_once_on_crossing_80_percent_and_again_after_a_raise() {
     ledger.charge(&cost(8.0));
     ledger.charge(&cost(1.0));
     assert_eq!(rec.warnings.lock().unwrap().len(), 1);
-    ledger.set_cap(LedgerCap::Usd(20.0));
+    ledger.set_cap(ConversationCap::Usd(20.0));
     ledger.charge(&cost(8.0));
     assert_eq!(rec.warnings.lock().unwrap().len(), 2);
 }
@@ -173,7 +173,7 @@ fn a_call_that_billed_nothing_is_not_persisted() {
 fn a_snapshot_names_only_the_caps_the_human_set_and_keeps_the_ts_shape() {
     let (mut ledger, _) = ledger_with(5.0, 100);
     assert_eq!(ledger.snapshot().caps, None);
-    ledger.set_cap(LedgerCap::UnpricedTokens(200));
+    ledger.set_cap(ConversationCap::UnpricedTokens(200));
     let s = serde_json::to_value(ledger.snapshot()).unwrap();
     assert_eq!(
         s,

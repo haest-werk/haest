@@ -2,7 +2,7 @@
 //! prompt lists name + description; calling this returns the full SKILL.md
 //! body with its base directory so relative references resolve.
 //!
-//! Start from [`SkillToolOptions`], then [`create_skill_tool`] (or set
+//! Start from [`SkillToolOptions`], then [`skill_tool`] (or set
 //! [`BuiltinOptions::skill`](crate::BuiltinOptions::skill)). Finding the skills
 //! is haest-core's ([`haest_core::skills`]).
 
@@ -74,7 +74,7 @@ struct SkillTool(SkillToolOptions);
 ///     tool::ToolContext,
 ///     workspace::ShutWorkspace,
 /// };
-/// use haest_tools::{SkillToolOptions, create_skill_tool};
+/// use haest_tools::{SkillToolOptions, skill_tool};
 /// use serde_json::json;
 ///
 /// # #[tokio::main]
@@ -89,14 +89,14 @@ struct SkillTool(SkillToolOptions);
 ///     body: "Tag, build, publish.".into(),
 /// };
 /// let set = Arc::new(InlineSkills::merged([vec![release]]));
-/// let skill = create_skill_tool(SkillToolOptions::over(set));
+/// let skill = skill_tool(SkillToolOptions::over(set));
 /// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
 /// let input = json!({"skill": "/release"});
 /// let out = skill.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
 /// assert!(out.content.contains("Tag, build, publish."));
 /// # }
 /// ```
-pub fn create_skill_tool(opts: SkillToolOptions) -> Arc<dyn Tool> {
+pub fn skill_tool(opts: SkillToolOptions) -> Arc<dyn Tool> {
     Arc::new(SkillTool(opts))
 }
 
@@ -161,7 +161,7 @@ impl Tool for SkillTool {
 mod tests {
     use haest_core::{
         fs::MemFs,
-        skills::{SkillOpts, SkillSources, discover_skills},
+        skills::{SkillOptions, SkillSources, discover_skills},
     };
 
     use super::*;
@@ -178,14 +178,14 @@ mod tests {
                 "---\nname: secret\ndescription: x\ndisable-model-invocation: true\n---\n\nHIDDEN\n",
             ),
         ]));
-        let opts = SkillOpts {
+        let opts = SkillOptions {
             cwd: "/w".into(),
             home: "/h".into(),
             config_dir: "/h/.claude".into(),
             sources: SkillSources::ALL,
         };
         let skills = discover_skills(fs.as_ref(), &opts).await;
-        create_skill_tool(SkillToolOptions::new(move || skills.clone(), fs))
+        skill_tool(SkillToolOptions::new(move || skills.clone(), fs))
     }
 
     #[tokio::test]
@@ -228,12 +228,12 @@ mod tests {
             body: "My way.".into(),
         };
         let set = Arc::new(InlineSkills::merged([vec![notes]]));
-        let t = create_skill_tool(SkillToolOptions::over(set.clone()).with_name_enum());
+        let t = skill_tool(SkillToolOptions::over(set.clone()).with_name_enum());
         assert_eq!(
             t.parameters()["properties"]["skill"]["enum"],
             json!(["notes"])
         );
-        let plain = create_skill_tool(SkillToolOptions::over(set));
+        let plain = skill_tool(SkillToolOptions::over(set));
         assert!(
             plain.parameters()["properties"]["skill"]
                 .get("enum")

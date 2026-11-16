@@ -8,10 +8,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::Agent,
+    caps::{TurnCaps, estimate_request_tokens},
     deps::AgentHooks,
     events::{EventSink, LoopEvent, TurnEnd},
     guard::TurnGuard,
-    limits::{TurnLimits, estimate_request_tokens},
     media::user_message,
     messages::{AssistantMessage, Message, StopReason, ToolCall, Usage},
     provider::ProviderEvent,
@@ -98,7 +98,7 @@ impl Agent {
             if t.cancel.is_cancelled() {
                 return TurnEnd::new(StopReason::Aborted);
             }
-            if let Some(over) = t.guard.stop(&t.usage, self.limits().as_ref()) {
+            if let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref()) {
                 return TurnEnd::with_error(StopReason::MaxTokens, over);
             }
             if let Some(end) = self.step(t).await {
@@ -128,7 +128,7 @@ impl Agent {
             return Some(TurnEnd::with_error(StopReason::Error, why));
         }
         if side != Usage::default()
-            && let Some(over) = t.guard.stop(&t.usage, self.limits().as_ref())
+            && let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref())
         {
             return Some(TurnEnd::with_error(StopReason::MaxTokens, over));
         }
@@ -147,7 +147,7 @@ impl Agent {
             return (!steered).then(|| TurnEnd::new(msg.stop_reason));
         }
         self.run_tools(&calls, t).await;
-        let nudge = t.guard.nudge(&t.usage, self.limits().as_ref());
+        let nudge = t.guard.nudge(&t.usage, self.turn_caps().as_ref());
         self.inject_nudge(nudge, t);
         self.inject_queued(t).await;
         None
@@ -165,7 +165,7 @@ impl Agent {
         let prefix = self.request_prefix(&resolved.model).await;
         let messages = self.sendable(&self.messages, &resolved.model);
         let estimate = estimate_request_tokens(&prefix.system, &messages, &prefix.tools);
-        if let Some(too_big) = t.guard.too_big(estimate, self.limits().as_ref()) {
+        if let Some(too_big) = t.guard.too_big(estimate, self.turn_caps().as_ref()) {
             return refuse(&resolved.model, &too_big, t);
         }
         let req = prefix.request(resolved.model.clone(), messages, t.cancel.clone());
@@ -213,7 +213,7 @@ impl Agent {
         };
         let tools = ToolIndex::new(self.deps.tools.callable());
         let mut delivery = Delivery {
-            limits: self.limits(),
+            caps: self.turn_caps(),
             guard: &mut t.guard,
             messages: &mut self.messages,
             hooks: self.deps.hooks.as_ref(),
@@ -235,7 +235,7 @@ fn refuse(model: &str, error: &str, t: &mut Turn<'_>) -> AssistantMessage {
 
 /// Where the loop's tool answers land: the guard, history, the sink.
 struct Delivery<'a> {
-    limits: Option<TurnLimits>,
+    caps: Option<TurnCaps>,
     guard: &'a mut TurnGuard,
     messages: &'a mut Vec<Message>,
     hooks: &'a dyn AgentHooks,
@@ -244,7 +244,7 @@ struct Delivery<'a> {
 
 impl Answers for Delivery<'_> {
     fn room(&self) -> Option<u64> {
-        self.guard.room(self.limits.as_ref())
+        self.guard.room(self.caps.as_ref())
     }
 
     fn answer(&mut self, a: Answer) {

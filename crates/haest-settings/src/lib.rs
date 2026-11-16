@@ -28,7 +28,7 @@
 //!
 //! [haest-runtime](https://docs.rs/haest-runtime/) builds a whole conversation
 //! from a `Settings`. A host that builds its own takes the parts it needs:
-//! [`Settings::limits_for`] and [`Settings::ledger`] for the loop's caps,
+//! [`Settings::turn_caps_for`] and [`Settings::ledger`] for the loop's caps,
 //! [`WordSet::has`] on [`Settings::tools`] for haest-tools'
 //! `builtin_tools_where`.
 //!
@@ -71,7 +71,7 @@
 //!
 //! let settings = Settings::bare("/w", "/h");
 //! let window = settings.window(Some(1_000_000));
-//! let caps = settings.limits_for(window);
+//! let caps = settings.turn_caps_for(window);
 //! assert_eq!(caps.max_request_tokens, 900_000); // 90% of the window
 //! assert_eq!(caps.max_turn_tokens, 10_000_000); // 10x the window
 //! ```

@@ -24,7 +24,7 @@ async fn planning_with_the_task_tools_is_persisted_and_survives_a_revive() {
             tasks: tasks.to_vec(),
         })
     }));
-    let tools = create_task_tools(board.clone());
+    let tools = task_tools(board.clone());
     let create = tool(&tools, "TaskCreate");
     for subject in ["write schema", "write api"] {
         create
@@ -74,7 +74,7 @@ async fn planning_with_the_task_tools_is_persisted_and_survives_a_revive() {
 #[tokio::test]
 async fn bad_ids_and_statuses_go_back_as_input_errors() {
     let board = Arc::new(TaskBoard::default());
-    let tools = create_task_tools(board.clone());
+    let tools = task_tools(board.clone());
     let update = tool(&tools, "TaskUpdate");
     let unknown = update
         .execute(input(json!({"taskId": "9", "status": "completed"})), &ctx())
@@ -100,7 +100,7 @@ async fn bad_ids_and_statuses_go_back_as_input_errors() {
 #[tokio::test]
 async fn dependencies_and_deletes_reach_the_board() {
     let board = Arc::new(TaskBoard::default());
-    let tools = create_task_tools(board.clone());
+    let tools = task_tools(board.clone());
     let create = tool(&tools, "TaskCreate");
     for s in ["schema", "api"] {
         create
@@ -133,7 +133,7 @@ async fn dependencies_and_deletes_reach_the_board() {
 
 #[test]
 fn only_the_readers_are_read_only() {
-    let tools = create_task_tools(Arc::new(TaskBoard::default()));
+    let tools = task_tools(Arc::new(TaskBoard::default()));
     let ro: Vec<&str> = tools
         .iter()
         .filter(|t| t.read_only())

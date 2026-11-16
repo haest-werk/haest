@@ -12,7 +12,7 @@ use futures::future::BoxFuture;
 use haest_core::{
     Agent, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, LoopEvent, Message,
     StopReason, ToolCall, Usage,
-    ledger::{Ledger, LedgerCaps, LedgerHooks, LedgerSnapshot},
+    ledger::{ConversationCaps, Ledger, LedgerHooks, LedgerSnapshot},
     provider::{Effort, Provider, ProviderEvent, ProviderRequest, ProviderStream, ResolvedModel},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
 };
@@ -215,7 +215,7 @@ impl Rig {
             provider,
             ws: TestWorkspace::with_files([("/p/a.txt", "a")]),
             ledger: Arc::new(Mutex::new(Ledger::new(
-                LedgerCaps::default(),
+                ConversationCaps::default(),
                 Arc::new(Quiet),
             ))),
             tx,

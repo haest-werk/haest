@@ -23,9 +23,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::Agent,
+    caps::TurnCaps,
     catalog::{InputModality, Reasoning},
     ledger::Ledger,
-    limits::TurnLimits,
     messages::{MediaPart, Message},
     provider::{Effort, ModelResolver, WebSearchConfig},
     tool::{ToolServices, ToolSource},
@@ -72,7 +72,7 @@ impl SystemPrompt for String {
 ///
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace,
-///     StopReason, Tool, ToolServices, limits::TurnLimits,
+///     StopReason, Tool, ToolServices, caps::TurnCaps,
 ///     testing::{ScriptedProvider, tool_answer},
 /// };
 ///
@@ -88,8 +88,8 @@ impl SystemPrompt for String {
 ///     fn on_message(&self, msg: &Message) {
 ///         self.saved.lock().unwrap().push(msg.clone());
 ///     }
-///     fn limits(&self, _spec: &str) -> Option<TurnLimits> {
-///         Some(TurnLimits { max_turn_steps: 1, ..TurnLimits::default() })
+///     fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
+///         Some(TurnCaps { max_turn_steps: 1, ..TurnCaps::default() })
 ///     }
 /// }
 ///
@@ -147,7 +147,7 @@ pub trait AgentHooks: ToolServices {
     /// Hard turn caps for a model spec ([`Agent::model_spec`]), checked before
     /// every model call. Asked again at every check, so caps may follow the
     /// model. None = uncapped.
-    fn limits(&self, _spec: &str) -> Option<TurnLimits> {
+    fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
         None
     }
 

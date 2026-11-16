@@ -3,7 +3,9 @@
 //! (`/review src/a.rs`) expands to that skill's body and goes to the model;
 //! anything else starting with `/` is sent as typed.
 
-use haest::{Effort, core::ledger::LedgerCap, core::skills::load_skill_body, mods::CommandOutcome};
+use haest::{
+    Effort, core::ledger::ConversationCap, core::skills::load_skill_body, mods::CommandOutcome,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{changes, term::Runtime};
@@ -137,9 +139,9 @@ fn budget(rt: &mut Runtime, args: &str) {
         ));
     };
     let cap = if tokens {
-        LedgerCap::UnpricedTokens(value as u64)
+        ConversationCap::UnpricedTokens(value as u64)
     } else {
-        LedgerCap::Usd(value)
+        ConversationCap::Usd(value)
     };
     let mut l = ledger.lock().unwrap();
     l.set_cap(cap);

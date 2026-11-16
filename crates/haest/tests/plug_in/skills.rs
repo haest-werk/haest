@@ -4,7 +4,7 @@
 use haest::{
     core::deferred_tools::{DeferMode, ToolDeferral},
     core::skills::{InlineSkill, InlineSkills, SkillCard, SkillSet, skill_cards_block},
-    tools::{SkillToolOptions, create_skill_tool, tool_search::DeferredTools},
+    tools::{SkillToolOptions, skill_tool, tool_search::DeferredTools},
 };
 
 use super::*;
@@ -43,7 +43,7 @@ async fn the_hosts_own_skills_load_through_haests_skill_tool() {
     ]));
     let intro = "Skills: load one with Skill before you start.";
     let mut tools = r.app.base_tools();
-    tools.push(create_skill_tool(
+    tools.push(skill_tool(
         SkillToolOptions::over(set.clone()).with_name_enum(),
     ));
     let prompt = format!(

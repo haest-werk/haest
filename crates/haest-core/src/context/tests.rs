@@ -17,7 +17,7 @@ async fn each_kind_of_instruction_file_is_read_only_when_asked_for() {
         ("/r/home/repo/.claude/CLAUDE.md", "repo dot claude"),
         ("/r/home/repo/CLAUDE.local.md", "repo local"),
     ]);
-    let mut opts = InstructionOpts {
+    let mut opts = InstructionOptions {
         cwd: "/r/home/repo".into(),
         home: "/r/home".into(),
         config_dir: None,
@@ -59,7 +59,7 @@ async fn user_files_first_then_outermost_project_dir_down_to_cwd_empty_files_ski
         ("/r/home/repo/pkg/.claude/CLAUDE.md", "pkg rules"),
         ("/r/home/repo/pkg/CLAUDE.md", "   "),
     ]);
-    let opts = InstructionOpts {
+    let opts = InstructionOptions {
         cwd: "/r/home/repo/pkg".into(),
         home: "/r/home".into(),
         config_dir: Some("/r/home/.claude".into()),
@@ -77,7 +77,7 @@ async fn outside_home_the_chain_runs_from_the_root_and_long_files_are_cut() {
         ("/AGENTS.md", "root rules"),
         ("/w/AGENTS.md", long.as_str()),
     ]);
-    let opts = InstructionOpts {
+    let opts = InstructionOptions {
         cwd: "/w".into(),
         home: "/home/u".into(),
         config_dir: None,

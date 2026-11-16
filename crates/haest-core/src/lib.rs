@@ -38,7 +38,7 @@
 //! - [`Tool`] to add a tool, [`AgentHooks`] to change how the loop behaves.
 //! - [`messages`]: the history as data. Session files and events keep the
 //!   TypeScript haest's JSON shape: either haest resumes the other's sessions.
-//! - Spend: [`limits`] caps one turn, [`ledger`] one conversation, and
+//! - Spend: [`caps`] caps one turn, [`ledger`] one conversation, and
 //!   [`guard`] enforces both before every model call.
 //! - Context: [`context`] builds the system prompt, [`compaction`] summarises
 //!   a full window, [`deferred_tools`] keeps large tool lists out of the request.
@@ -139,6 +139,7 @@
 #![warn(missing_docs)]
 
 pub mod agent;
+pub mod caps;
 pub mod catalog;
 pub mod compaction;
 pub mod context;
@@ -152,7 +153,6 @@ pub mod fs;
 pub mod guard;
 pub mod handed;
 pub mod ledger;
-pub mod limits;
 pub mod media;
 pub mod messages;
 pub mod panics;

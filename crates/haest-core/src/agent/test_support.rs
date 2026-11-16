@@ -15,11 +15,11 @@ use serde_json::Value;
 
 use crate::{
     agent::{Agent, AgentOptions},
+    caps::TurnCaps,
     deps::{AgentDeps, AgentHooks},
     events::LoopEvent,
     fs::{Fs, MemFs},
     ledger::Ledger,
-    limits::TurnLimits,
     messages::{AssistantMessage, Message, StopReason, Usage},
     testing::{ScriptedProvider, tool_answer},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices, spelled},
@@ -27,14 +27,14 @@ use crate::{
 };
 
 /// Every cap off; a test turns on the one it is about.
-pub fn uncapped() -> TurnLimits {
-    TurnLimits::default()
+pub fn uncapped() -> TurnCaps {
+    TurnCaps::default()
 }
 
 /// Records what the loop persists; serves fixed limits and a settable clock.
 #[derive(Default)]
 pub struct TestHooks {
-    pub limits: Option<TurnLimits>,
+    pub caps: Option<TurnCaps>,
     pub persisted: Mutex<Vec<Message>>,
     pub now: AtomicU64,
 }
@@ -52,8 +52,8 @@ impl AgentHooks for TestHooks {
     fn on_message(&self, msg: &Message) {
         self.persisted.lock().unwrap().push(msg.clone());
     }
-    fn limits(&self, _spec: &str) -> Option<TurnLimits> {
-        self.limits.clone()
+    fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
+        self.caps.clone()
     }
     fn now_ms(&self) -> u64 {
         self.now.load(Ordering::SeqCst)
@@ -158,23 +158,23 @@ pub fn with_usage(mut msg: AssistantMessage, usage: &Usage) -> AssistantMessage 
 #[derive(Default)]
 pub struct Opts {
     pub tools: Option<Vec<Arc<dyn Tool>>>,
-    pub limits: Option<TurnLimits>,
+    pub caps: Option<TurnCaps>,
     pub ledger: Option<Arc<Mutex<Ledger>>>,
     pub workspace: Option<Arc<dyn Workspace>>,
     pub spill_dir: Option<&'static str>,
 }
 
 /// Every cap off but what `f` turns on.
-pub fn limits(f: impl FnOnce(&mut TurnLimits)) -> TurnLimits {
+pub fn turn_caps(f: impl FnOnce(&mut TurnCaps)) -> TurnCaps {
     let mut l = uncapped();
     f(&mut l);
     l
 }
 
 /// The default agent with only the caps `f` turns on.
-pub fn capped(f: impl FnOnce(&mut TurnLimits)) -> Opts {
+pub fn capped(f: impl FnOnce(&mut TurnCaps)) -> Opts {
     Opts {
-        limits: Some(limits(f)),
+        caps: Some(turn_caps(f)),
         ..Default::default()
     }
 }
@@ -182,7 +182,7 @@ pub fn capped(f: impl FnOnce(&mut TurnLimits)) -> Opts {
 /// An agent on `fake:m1` served by `p`, with Echo unless `opts.tools` says otherwise.
 pub fn agent_with(p: &Arc<ScriptedProvider>, opts: Opts) -> (Agent, Arc<TestHooks>) {
     let hooks = Arc::new(TestHooks {
-        limits: opts.limits,
+        caps: opts.caps,
         ..Default::default()
     });
     let tools: Vec<Arc<dyn Tool>> = opts.tools.unwrap_or_else(|| vec![echo_tool()]);

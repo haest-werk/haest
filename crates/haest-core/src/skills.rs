@@ -10,7 +10,7 @@
 //! Nothing is read unless the host turns a source on ([`SkillSources`]).
 //!
 //! The pieces, in the order a host meets them:
-//! - [`discover_skills`] with a [`SkillOpts`]: every [`Skill`] in the dirs the
+//! - [`discover_skills`] with a [`SkillOptions`]: every [`Skill`] in the dirs the
 //!   sources name, sorted by name. ([`skill_scan_roots`] + [`skills_in`] is
 //!   the same in two steps, for a host that also needs the dirs: [`scan_roots`].)
 //! - [`skills_prompt_block`]: the system prompt's list of the skills the model
@@ -25,7 +25,7 @@
 //!
 //! use haest_core::{
 //!     Fs, MemFs,
-//!     skills::{DiskSkills, SkillOpts, SkillSet, SkillSources, discover_skills, skills_prompt_block},
+//!     skills::{DiskSkills, SkillOptions, SkillSet, SkillSources, discover_skills, skills_prompt_block},
 //! };
 //!
 //! # #[tokio::main(flavor = "current_thread")]
@@ -34,7 +34,7 @@
 //!     "/home/me/.claude/skills/release/SKILL.md",
 //!     "---\nname: release\ndescription: Cut a release\n---\nBump the version, tag, push.\n",
 //! )]));
-//! let opts = SkillOpts {
+//! let opts = SkillOptions {
 //!     cwd: "/home/me/project".into(),
 //!     home: "/home/me".into(),
 //!     config_dir: "/home/me/.claude".into(),
@@ -134,7 +134,7 @@ crate::word_set! {
 /// Where haest looks for skills: the dirs to start from and the sources that
 /// are on.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SkillOpts {
+pub struct SkillOptions {
     /// The project dir. Its skill dirs count, and every level's above it up
     /// to `home` (not `home` itself; up to `/` for a dir outside `home`).
     pub cwd: PathBuf,
@@ -149,7 +149,7 @@ pub struct SkillOpts {
 
 /// Where `opts`' skills live, worked out once (it reads Claude Code's plugin
 /// list): [`skills_in`] scans them, [`scan_roots`] lists the dirs a sandbox mounts.
-pub async fn skill_scan_roots(fs: &dyn Fs, opts: &SkillOpts) -> SkillScanRoots {
+pub async fn skill_scan_roots(fs: &dyn Fs, opts: &SkillOptions) -> SkillScanRoots {
     let plugins = match opts.sources.plugins {
         true => read_installed_plugins(fs, &opts.config_dir).await,
         false => Vec::new(),
@@ -188,7 +188,7 @@ fn by_name(a: &str, b: &str) -> Ordering {
 ///
 /// Never fails: a dir that is missing, or a SKILL.md that cannot be read or
 /// parsed, is skipped.
-pub async fn discover_skills(fs: &dyn Fs, opts: &SkillOpts) -> Vec<Skill> {
+pub async fn discover_skills(fs: &dyn Fs, opts: &SkillOptions) -> Vec<Skill> {
     skills_in(fs, &skill_scan_roots(fs, opts).await).await
 }
 

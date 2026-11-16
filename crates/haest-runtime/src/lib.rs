@@ -22,7 +22,7 @@
 //!   approval [`Prompter`](haest_mods::Prompter), returned as a [`Runtime`].
 //! - The pieces, one by one, for a host that owns some parts itself (its own
 //!   models, files or tools): [`tools::own_tools`],
-//!   [`prompt::instruction_opts`], [`prompt::skill_opts`],
+//!   [`prompt::instruction_options`], [`prompt::skill_options`],
 //!   [`world::workspace_for`], [`world::connect_mcp`], [`mods::load`]. A host
 //!   that wants only the built-in tools picks them with
 //!   `haest_tools::builtin_tools_where(|w| settings.tools.has(w), ..)` and

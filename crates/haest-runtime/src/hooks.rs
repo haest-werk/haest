@@ -17,10 +17,10 @@ use crate::{
     Ui,
     haest::{
         Agent, AgentHooks, Effort,
+        core::caps::TurnCaps,
         core::catalog::{InputModality, Reasoning},
         core::compaction::{CompactionConfig, compact, needs_compaction},
         core::ledger::{LedgerHooks, LedgerSnapshot},
-        core::limits::TurnLimits,
         core::messages::{MediaPart, Usage},
         core::session::{JsonlSessionFile, SessionRecord, SessionSink},
         core::tool::ToolServices,
@@ -249,8 +249,8 @@ impl AgentHooks for RuntimeHooks {
         Ok(())
     }
 
-    fn limits(&self, spec: &str) -> Option<TurnLimits> {
-        Some(self.settings.limits_for(self.window(spec)))
+    fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
+        Some(self.settings.turn_caps_for(self.window(spec)))
     }
 
     fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {

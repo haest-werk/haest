@@ -15,12 +15,12 @@ use crate::{
     haest::{
         SystemPrompt, Workspace,
         core::context::{
-            InstructionOpts, PromptInputs, build_system_prompt, current_git_branch,
+            InstructionOptions, PromptInputs, build_system_prompt, current_git_branch,
             find_instruction_files,
         },
         core::fs::Fs,
         core::session::iso_utc,
-        core::skills::{Skill, SkillOpts},
+        core::skills::{Skill, SkillOptions},
         core::tool::ToolSource,
         now_ms,
     },
@@ -29,8 +29,8 @@ use crate::{
 /// Which instruction files the `context` setting asks for (AGENTS.md,
 /// CLAUDE.md and their kin), looked for from `cwd` and `home`: what
 /// `find_instruction_files` takes.
-pub fn instruction_opts(s: &Settings) -> InstructionOpts {
-    InstructionOpts {
+pub fn instruction_options(s: &Settings) -> InstructionOptions {
+    InstructionOptions {
         cwd: s.cwd.clone(),
         home: s.home.clone(),
         config_dir: None,
@@ -41,8 +41,8 @@ pub fn instruction_opts(s: &Settings) -> InstructionOpts {
 /// Which skill dirs the `skills` setting asks for, under `cwd` and `home`,
 /// with `~/.claude` as Claude Code's user dir (its skills and its plugin
 /// list): what `skill_scan_roots` takes.
-pub fn skill_opts(s: &Settings) -> SkillOpts {
-    SkillOpts {
+pub fn skill_options(s: &Settings) -> SkillOptions {
+    SkillOptions {
         cwd: s.cwd.clone(),
         home: s.home.clone(),
         config_dir: s.home.join(".claude"),
@@ -106,7 +106,7 @@ impl RuntimePrompt {
         let mut p = self.base.clone();
         p.model = model;
         p.tool_names = tool_names;
-        p.instructions = find_instruction_files(self.fs.as_ref(), &instruction_opts(s)).await;
+        p.instructions = find_instruction_files(self.fs.as_ref(), &instruction_options(s)).await;
         if s.skill_catalog {
             p.skills = self.skills.lock().unwrap().clone();
         }

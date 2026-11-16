@@ -36,7 +36,7 @@ pub struct PluginRoot {
 }
 
 /// Where a skill scan reads, worked out: [`super::skill_scan_roots`] makes one
-/// from [`super::SkillOpts`]. Each field is one fact the scan reads.
+/// from [`super::SkillOptions`]. Each field is one fact the scan reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillScanRoots {
     /// The user-level config dir (`~/.claude`).

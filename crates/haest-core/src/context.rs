@@ -20,14 +20,14 @@
 //! use haest_core::{
 //!     MemFs,
 //!     context::{
-//!         ContextSources, InstructionOpts, PromptInputs, build_system_prompt,
+//!         ContextSources, InstructionOptions, PromptInputs, build_system_prompt,
 //!         find_instruction_files,
 //!     },
 //! };
 //!
 //! let fs = MemFs::with_files([("/home/me/work/AGENTS.md", "Run the tests before you commit.")]);
 //!
-//! let opts = InstructionOpts {
+//! let opts = InstructionOptions {
 //!     cwd: "/home/me/work".into(),
 //!     home: "/home/me".into(),
 //!     config_dir: None,
@@ -131,7 +131,7 @@ crate::word_set! {
 
 /// Where [`find_instruction_files`] looks, and for which files.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InstructionOpts {
+pub struct InstructionOptions {
     /// The working directory: the innermost project dir.
     pub cwd: PathBuf,
     /// The user's home: its `.agents` / `.claude` dirs hold the user's files,
@@ -144,7 +144,7 @@ pub struct InstructionOpts {
 }
 
 /// Every path to try, in reading order: user dirs, then the project chain.
-fn candidates(opts: &InstructionOpts) -> Vec<PathBuf> {
+fn candidates(opts: &InstructionOptions) -> Vec<PathBuf> {
     let ContextSources { agents, claude } = opts.sources;
     let wanted = |f: &str| if f == AGENTS_FILE { agents } else { claude };
     let mut user_dirs = Vec::new();
@@ -174,7 +174,10 @@ fn candidates(opts: &InstructionOpts) -> Vec<PathBuf> {
 /// reading order: the user's files first, then each project dir from the
 /// outermost down to `cwd`. Each path is read once; a file that cannot be
 /// read is skipped, so this never fails.
-pub async fn find_instruction_files(fs: &dyn Fs, opts: &InstructionOpts) -> Vec<InstructionFile> {
+pub async fn find_instruction_files(
+    fs: &dyn Fs,
+    opts: &InstructionOptions,
+) -> Vec<InstructionFile> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for path in candidates(opts) {

@@ -27,10 +27,10 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    caps::TurnCaps,
     deps::AgentDeps,
     events::{EventSink, TurnEnd},
     guard::TurnGuard,
-    limits::TurnLimits,
     media::fit_for_model,
     messages::{Message, StopReason, Usage},
     provider::Effort,
@@ -339,8 +339,8 @@ impl Agent {
     }
 
     /// The hard caps for the current model spec; read fresh at every check.
-    fn limits(&self) -> Option<TurnLimits> {
-        self.deps.hooks.limits(&self.model_spec)
+    fn turn_caps(&self) -> Option<TurnCaps> {
+        self.deps.hooks.turn_caps(&self.model_spec)
     }
 
     /// Everything a model call sends ahead of the history; compaction reuses it.

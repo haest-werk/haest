@@ -17,8 +17,8 @@ fn fs_with(skills: &[(&str, &str, &str, &str)]) -> MemFs {
     }))
 }
 
-fn opts() -> SkillOpts {
-    SkillOpts {
+fn opts() -> SkillOptions {
+    SkillOptions {
         cwd: "/r/proj".into(),
         home: "/r/home".into(),
         config_dir: "/r/home/.claude".into(),
@@ -37,7 +37,7 @@ async fn each_skill_source_is_read_only_when_asked_for() {
         ])
     };
     let found = |sources| async move {
-        let skills = discover_skills(&fixture(), &SkillOpts { sources, ..opts() }).await;
+        let skills = discover_skills(&fixture(), &SkillOptions { sources, ..opts() }).await;
         names(&skills).join(",")
     };
     let agents = SkillSources {

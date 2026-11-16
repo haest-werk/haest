@@ -8,7 +8,7 @@
 //! call); the ledger ([`crate::ledger`]) then charges whatever cost the
 //! message carries.
 
-use crate::{catalog::ModelPricing, limits::billed_tokens, messages::Usage};
+use crate::{caps::billed_tokens, catalog::ModelPricing, messages::Usage};
 
 const PER: f64 = 1_000_000.0;
 

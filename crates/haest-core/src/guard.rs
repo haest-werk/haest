@@ -12,11 +12,11 @@
 //! cycle counts too) -- and the conversation ledger, which stops but never
 //! nudges (it is the human's number, see [`ledger`](crate::ledger)).
 //!
-//! The limits are passed to every check, read fresh by the caller: the request
+//! The caps are passed to every check, read fresh by the caller: the request
 //! cap follows the model's window, and the model may change mid-turn.
 //!
 //! The loop makes a fresh [`TurnGuard`] for every turn; a host sets the caps
-//! through [`AgentHooks::limits`] and never drives the guard itself.
+//! through [`AgentHooks::turn_caps`] and never drives the guard itself.
 
 use std::{
     collections::{HashSet, hash_map::DefaultHasher},
@@ -27,9 +27,9 @@ use std::{
 use serde_json::{Map, Value};
 
 use crate::{
+    caps::{TurnCaps, billed_tokens, request_too_big},
     deps::AgentHooks,
     ledger::Ledger,
-    limits::{TurnLimits, billed_tokens, request_too_big},
     messages::{ToolCall, Usage},
     tool::ToolOutput,
 };
@@ -178,21 +178,21 @@ impl TurnGuard {
     }
 
     /// Why the turn must stop before the next model call, or None.
-    pub fn stop(&self, usage: &Usage, limits: Option<&TurnLimits>) -> Option<String> {
+    pub fn stop(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
         let ledger = self.ledger.as_ref();
         if let Some(why) = ledger.and_then(|l| l.lock().unwrap().exhausted()) {
             return Some(format!("Turn stopped: {why}"));
         }
-        self.gauges(usage, limits)
+        self.gauges(usage, caps)
             .into_iter()
             .find(|g| g.cap > 0.0 && g.used >= g.cap)
             .map(|g| format!("Turn stopped: {} {CONTINUE}", g.stop))
     }
 
     /// The nudge due now (each signal once per turn), or None.
-    pub fn nudge(&mut self, usage: &Usage, limits: Option<&TurnLimits>) -> Option<String> {
+    pub fn nudge(&mut self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
         let due: Vec<Gauge> = self
-            .gauges(usage, limits)
+            .gauges(usage, caps)
             .into_iter()
             .filter(|g| {
                 g.cap > 0.0
@@ -211,20 +211,20 @@ impl TurnGuard {
 
     /// Records the request about to go out (its estimated input tokens); why
     /// it must not, or None.
-    pub fn too_big(&mut self, estimate: u64, limits: Option<&TurnLimits>) -> Option<String> {
+    pub fn too_big(&mut self, estimate: u64, caps: Option<&TurnCaps>) -> Option<String> {
         self.next_request_tokens = estimate;
-        limits.and_then(|l| request_too_big(estimate, l))
+        caps.and_then(|l| request_too_big(estimate, l))
     }
 
     /// Tokens one more tool result may add before the next request is refused by
     /// `too_big`; None when uncapped.
-    pub fn room(&self, limits: Option<&TurnLimits>) -> Option<u64> {
-        let cap = limits?.max_request_tokens;
+    pub fn room(&self, caps: Option<&TurnCaps>) -> Option<u64> {
+        let cap = caps?.max_request_tokens;
         (cap > 0).then(|| cap.saturating_sub(self.next_request_tokens))
     }
 
-    fn gauges(&self, usage: &Usage, limits: Option<&TurnLimits>) -> Vec<Gauge> {
-        let Some(l) = limits else { return Vec::new() };
+    fn gauges(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Vec<Gauge> {
+        let Some(l) = caps else { return Vec::new() };
         let elapsed = self.clock.now_ms().saturating_sub(self.started) as f64;
         let usd = usage.cost_usd.unwrap_or(0.0);
         let tokens = billed_tokens(usage);

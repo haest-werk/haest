@@ -46,7 +46,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         clock,
         sessions.clone(),
         2,
-        config::limits(&s),
+        config::turn_caps(&s),
     ));
     let own: Vec<Arc<dyn Tool>> = vec![Arc::new(brain_search())];
     let tools = run_tools(&s, own, attachments.clone(), agents.clone());
@@ -207,7 +207,7 @@ pub async fn dream(gateway: &Arc<Gateway>) {
         RunClock::new(T0, true),
         sessions,
         0,
-        config::limits(&s),
+        config::turn_caps(&s),
     ));
     let agents = Arc::new(NodeAgents::default());
     let own: Vec<Arc<dyn Tool>> = vec![Arc::new(DreamMaterial)];
@@ -247,13 +247,13 @@ pub async fn dream(gateway: &Arc<Gateway>) {
 /// The counter-proof for the clock: the same pause on a clock that counts it
 /// stops the turn at its cap, before the third model call.
 pub async fn clock(gateway: &Arc<Gateway>) {
-    let limits = config::limits(&config::work());
-    assert_eq!(limits.max_turn_ms, 60_000, "a work run's one-minute cap");
+    let caps = config::turn_caps(&config::work());
+    assert_eq!(caps.max_turn_ms, 60_000, "a work run's one-minute cap");
     let host = Arc::new(BrainHost::new(
         RunClock::new(T0, false),
         Arc::new(NodeSessions::default()),
         2,
-        limits,
+        caps,
     ));
     let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(brain_search())];
     let deps = deps(gateway, tools, Arc::new(ShutWorkspace), host.clone());

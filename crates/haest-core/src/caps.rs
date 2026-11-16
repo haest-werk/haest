@@ -1,4 +1,5 @@
-//! Hard turn limits, checked by the loop BEFORE every model call -- the only
+//! Hard caps on one turn ([`TurnCaps`]) and on subagents ([`SubagentCaps`]).
+//! A turn cap is checked by the loop BEFORE every model call -- the only
 //! point where stopping keeps history valid (every tool call already has its
 //! result). One tool-result flood once cost ~$50 in a single turn; nothing in the
 //! harness assumed a turn could get that expensive, so now nothing may.
@@ -8,8 +9,8 @@
 //! cap that SPANS turns is the conversation ledger ([`ledger`](crate::ledger));
 //! the guard that reads all of them, and nudges at half, is [`guard`](crate::guard).
 //!
-//! A host serves [`TurnLimits`] per model spec from
-//! [`AgentHooks::limits`](crate::AgentHooks::limits).
+//! A host serves [`TurnCaps`] per model spec from
+//! [`AgentHooks::turn_caps`](crate::AgentHooks::turn_caps).
 
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +29,7 @@ use crate::{
 /// and the turn ends with [`StopReason::Error`](crate::StopReason::Error).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TurnLimits {
+pub struct TurnCaps {
     /// Stop the turn once it has spent this much (only providers that report cost).
     pub max_turn_usd: f64,
     /// Stop the turn once it has billed this many tokens: the cap that works for EVERY provider.
@@ -91,14 +92,14 @@ pub fn estimate_request_tokens(system: &str, messages: &[Message], tools: &[Tool
 }
 
 /// Why this request must not be sent, or None: `estimate` is over
-/// [`TurnLimits::max_request_tokens`] and that cap is on.
-pub fn request_too_big(estimate: u64, limits: &TurnLimits) -> Option<String> {
-    if limits.max_request_tokens == 0 || estimate <= limits.max_request_tokens {
+/// [`TurnCaps::max_request_tokens`] and that cap is on.
+pub fn request_too_big(estimate: u64, caps: &TurnCaps) -> Option<String> {
+    if caps.max_request_tokens == 0 || estimate <= caps.max_request_tokens {
         return None;
     }
     Some(format!(
         "Model call refused: the request is ~{estimate} tokens, the cap is {} (HAEST_MAX_REQUEST_TOKENS). Run /compact or /clear, then continue.",
-        limits.max_request_tokens
+        caps.max_request_tokens
     ))
 }
 

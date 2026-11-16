@@ -6,7 +6,7 @@
 //! PLUG POINT: `settings::Settings`, hardcoded (no loader).
 
 use haest::{
-    core::limits::TurnLimits,
+    core::caps::TurnCaps,
     settings::{BuiltinTools, Limits, Settings},
 };
 
@@ -49,6 +49,6 @@ pub fn dream() -> Settings {
 
 /// The turn caps a run's host hands the loop (the gateway's models are not in
 /// haest's catalog: the default window).
-pub fn limits(s: &Settings) -> TurnLimits {
-    s.limits_for(s.window(None))
+pub fn turn_caps(s: &Settings) -> TurnCaps {
+    s.turn_caps_for(s.window(None))
 }

@@ -26,7 +26,7 @@ use crate::{
         providers::{CustomProviders, ProviderRegistry, RegistryOptions, RoutingEnv},
     },
     inbox, mods,
-    prompt::{AgentPrompt, RuntimePrompt, skill_opts},
+    prompt::{AgentPrompt, RuntimePrompt, skill_options},
     store::{create, open_session, record_given, record_start, restore, start_on},
     tools::{MainTools, WrappedTools, image_options, own_tools},
     world::{World, connect_mcp, jobs_for, workspace_for},
@@ -116,7 +116,7 @@ async fn find(
     fs: &Arc<dyn Fs>,
     spill: &Path,
 ) -> anyhow::Result<Found> {
-    let skill_roots = skill_scan_roots(fs.as_ref(), &skill_opts(&hooks.settings)).await;
+    let skill_roots = skill_scan_roots(fs.as_ref(), &skill_options(&hooks.settings)).await;
     let skills = Arc::new(Mutex::new(skills_in(fs.as_ref(), &skill_roots).await));
     let skill_dirs = scan_roots(&skill_roots);
     let workspace = workspace_for(&hooks.settings, world, env, &skill_dirs, spill).await?;
@@ -250,7 +250,10 @@ where
         mods.clone(),
         s.code_tools(),
     ));
-    let ledger = Arc::new(Mutex::new(Ledger::new(s.ledger(), hooks.clone())));
+    let ledger = Arc::new(Mutex::new(Ledger::new(
+        s.conversation_caps(),
+        hooks.clone(),
+    )));
 
     // The conversation's deps. Tools and prompt are each agent's own: the hub
     // gives every subagent its own, and main's tools hold the hub.

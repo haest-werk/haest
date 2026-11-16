@@ -118,7 +118,7 @@ async fn the_step_cap_stops_the_turn_with_one_nudge_on_the_way() {
 fn wall_time_on_the_hosts_clock_is_nudged_at_half_and_stopped_at_the_cap() {
     let clock = Arc::new(TestHooks::default());
     let mut guard = TurnGuard::new(clock.clone(), None);
-    let l = Some(limits(|l| l.max_turn_ms = 1000));
+    let l = Some(turn_caps(|l| l.max_turn_ms = 1000));
     let u = Usage::default();
     assert_eq!(guard.nudge(&u, l.as_ref()), None);
     clock.set_now(600);
@@ -141,7 +141,7 @@ async fn a_model_that_answers_without_tools_is_never_nudged() {
 #[test]
 fn room_is_what_the_request_cap_leaves_after_the_last_request_and_the_results_since() {
     let mut guard = TurnGuard::new(Arc::new(TestHooks::default()), None);
-    let l = Some(limits(|l| l.max_request_tokens = 1000));
+    let l = Some(turn_caps(|l| l.max_request_tokens = 1000));
     assert_eq!(guard.room(None), None);
     assert_eq!(guard.too_big(400, l.as_ref()), None);
     assert_eq!(guard.room(l.as_ref()), Some(600));

@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use haest_core::{
     Agent, AgentHooks, LoopEvent, StopReason, SystemPrompt,
+    caps::TurnCaps,
     catalog::{InputModality, Reasoning},
-    limits::TurnLimits,
     messages::MediaPart,
     panics::panic_message,
     provider::Effort,
@@ -102,9 +102,9 @@ impl ToolServices for ChildHooks {
 
 #[async_trait]
 impl AgentHooks for ChildHooks {
-    fn limits(&self, spec: &str) -> Option<TurnLimits> {
-        let base = self.hooks.limits(spec).unwrap_or_default();
-        Some(TurnLimits {
+    fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
+        let base = self.hooks.turn_caps(spec).unwrap_or_default();
+        Some(TurnCaps {
             max_turn_usd: self.caps.usd,
             max_turn_steps: self.caps.steps,
             max_turn_ms: self.caps.minutes * MINUTE_MS,
