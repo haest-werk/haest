@@ -12,9 +12,9 @@ use std::sync::{
 use async_trait::async_trait;
 use haest::{
     Agent, AgentHooks, Message,
-    limits::TurnLimits,
-    session::{SessionRecord, SessionSink},
-    tool::ToolHost,
+    core::limits::TurnLimits,
+    core::session::{SessionRecord, SessionSink},
+    core::tool::ToolHost,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;

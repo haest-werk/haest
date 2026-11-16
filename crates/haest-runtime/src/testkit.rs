@@ -11,9 +11,9 @@ use haest_settings::Settings;
 use crate::{
     Host, Ui,
     haest::{
-        fs::MemFs,
+        core::fs::MemFs,
+        core::session::JsonlSessionFile,
         mods::{Answer, ApprovalRequest, Prompter},
-        session::JsonlSessionFile,
     },
 };
 

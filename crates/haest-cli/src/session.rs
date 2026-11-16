@@ -1,6 +1,6 @@
 //! `haest sessions`: one line per saved session.
 
-use haest::{runtime::sessions::SessionInfo, session::iso_utc};
+use haest::{core::session::iso_utc, runtime::sessions::SessionInfo};
 
 /// `2026-11-10 08:30Z  <id>  <cwd>  <preview>`.
 pub fn format_row(s: &SessionInfo, show_cwd: bool) -> String {

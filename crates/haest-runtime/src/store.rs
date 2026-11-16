@@ -14,11 +14,11 @@ use crate::{
     BuildOptions, Host, Ui,
     haest::{
         Agent, AgentOptions, Effort,
-        fs::Fs,
-        ledger::Ledger,
+        core::fs::Fs,
+        core::ledger::Ledger,
+        core::session::{JsonlSessionFile, ReplayedSession, SessionRecord, sessions_dir},
+        core::task_board::TaskBoard,
         now_ms,
-        session::{JsonlSessionFile, ReplayedSession, SessionRecord, sessions_dir},
-        task_board::TaskBoard,
     },
     sessions::{latest_in, new_session_id},
 };

@@ -3,7 +3,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use haest::{AgentHooks, tool::ToolHost};
+use haest::{AgentHooks, core::tool::ToolHost};
 use tokio_util::sync::CancellationToken;
 
 use super::*;

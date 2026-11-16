@@ -186,10 +186,12 @@ pub mod tools;
 mod ui;
 pub mod world;
 
-/// The names the runtime's code uses, as haest spells them.
+/// The names the runtime's code uses, laid out as the `haest` facade lays
+/// them out: core's key types at the root, its modules under `core`.
 mod haest {
     pub use haest_code as code;
-    pub use haest_core::*;
+    pub use haest_core as core;
+    pub use haest_core::prelude::*;
     pub use haest_mcp as mcp;
     pub use haest_mods as mods;
     pub use haest_providers as providers;

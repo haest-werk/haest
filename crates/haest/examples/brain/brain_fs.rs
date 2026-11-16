@@ -4,7 +4,7 @@
 //! Read, Write, Edit and the sandboxed Bash all go through it, so the file the
 //! agent writes is the file `cat` shows.
 //!
-//! PLUG POINT: `haest::fs::Fs`, under `SandboxWorkspace::over`.
+//! PLUG POINT: `haest::core::fs::Fs`, under `SandboxWorkspace::over`.
 
 use std::{
     collections::BTreeSet,
@@ -14,7 +14,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use haest::fs::{DirEntry, Fs, FsStat, MemFs};
+use haest::core::fs::{DirEntry, Fs, FsStat, MemFs};
 
 pub struct BrainFs {
     /// What the run sees: the brain, plus what the run changed.

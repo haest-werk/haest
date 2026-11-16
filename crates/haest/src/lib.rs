@@ -111,8 +111,8 @@
 //! correct; it goes back to the model as is.
 //!
 //! ```
-//! use haest::tool::JsonMap;
-//! use haest::{Tool, ToolContext, ToolError, ToolOutput, async_trait};
+//! use haest::core::tool::req_str;
+//! use haest::prelude::*;
 //! use serde_json::{Value, json};
 //!
 //! struct Shout;
@@ -143,7 +143,7 @@
 //!         input: JsonMap,
 //!         _ctx: &ToolContext,
 //!     ) -> Result<ToolOutput, ToolError> {
-//!         let text = haest::tool::req_str(&input, "text")?;
+//!         let text = req_str(&input, "text")?;
 //!         Ok(ToolOutput::text(text.to_uppercase()))
 //!     }
 //! }
@@ -154,7 +154,7 @@
 //!
 //! # Test your host
 //!
-//! The `testing` feature brings [`testing::ScriptedProvider`], a model that
+//! The `testing` feature brings [`core::testing::ScriptedProvider`], a model that
 //! answers from a script and records every request, so a test drives whole
 //! turns with no network and no keys:
 //!
@@ -165,8 +165,7 @@
 //!
 //! ```
 //! # use std::sync::Arc;
-//! # use haest::tool::JsonMap;
-//! # use haest::{Tool, ToolContext, ToolError, ToolOutput, async_trait};
+//! # use haest::prelude::*;
 //! # use serde_json::{Value, json};
 //! # struct Shout;
 //! # #[async_trait]
@@ -176,10 +175,10 @@
 //! #     fn parameters(&self) -> Value { json!({"type": "object"}) }
 //! #     fn kind(&self) -> &str { "shout" }
 //! #     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-//! #         Ok(ToolOutput::text(haest::tool::req_str(&input, "text")?.to_uppercase()))
+//! #         Ok(ToolOutput::text(haest::core::tool::req_str(&input, "text")?.to_uppercase()))
 //! #     }
 //! # }
-//! use haest::testing::{ScriptedProvider, text_answer, tool_answer};
+//! use haest::core::testing::{ScriptedProvider, text_answer, tool_answer};
 //! use haest::{Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason};
 //!
 //! # tokio::runtime::Runtime::new().unwrap().block_on(async {
@@ -213,8 +212,12 @@
 //!
 //! # Features
 //!
-//! [`core`] (the loop and the contracts, re-exported at the root) is always
-//! there; every other part is a feature, so a host links only what it uses.
+//! [`core`] (the loop and the contracts) is always there: its key types at
+//! the root (`haest::Agent`, `haest::Tool`) and in [`prelude`], its modules
+//! under [`core`] (`haest::core::fs`, `haest::core::session`). Every other
+//! part is a feature, so a host links only what it uses, and each one has a
+//! module of its name at the root: `haest::workspace` is always the workspace
+//! crate.
 //!
 //! | Feature | Brings | Default |
 //! |---|---|---|
@@ -227,7 +230,7 @@
 //! | `settings` | [`settings`]: every setting as a plain value a host writes out in Rust | yes |
 //! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags | no |
 //! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI | no |
-//! | `testing` | [`testing`]: a scripted model and other fakes for tests | no |
+//! | `testing` | [`core::testing`]: a scripted model and other fakes for tests | no |
 //!
 //! ```toml
 //! # a host with its own provider transport, files and tools:
@@ -255,12 +258,35 @@
 #![warn(missing_docs)]
 
 #[doc(inline)]
-pub use haest_core as core;
-pub use haest_core::*;
+pub use haest_core::prelude::*;
 
 /// Marks an `impl Tool` (or any other async trait impl in haest) so its
 /// `async fn`s compile; the same macro haest's traits are declared with.
 pub use async_trait::async_trait;
+
+#[doc(inline)]
+pub use haest_core as core;
+
+/// The key types and [`async_trait`], for a glob import:
+/// `use haest::prelude::*;`.
+///
+/// Glob-import this rather than the facade's root: the root also holds
+/// [`core`], which a glob import would let shadow the standard library's
+/// `core`.
+///
+/// ```
+/// use haest::prelude::*;
+///
+/// // `core` is still the standard library's.
+/// let none: core::option::Option<Message> = None;
+/// assert!(none.is_none());
+/// ```
+pub mod prelude {
+    #[doc(no_inline)]
+    pub use crate::async_trait;
+    #[doc(no_inline)]
+    pub use haest_core::prelude::*;
+}
 
 #[cfg(feature = "code")]
 #[doc(inline)]

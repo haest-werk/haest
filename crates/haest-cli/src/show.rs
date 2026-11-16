@@ -52,7 +52,7 @@ fn rows(loaded: &Loaded, def: &Def) -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
-    use haest::{config::Loader, fs::MemFs, settings::Settings};
+    use haest::{config::Loader, core::fs::MemFs, settings::Settings};
 
     use super::*;
 

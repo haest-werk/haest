@@ -15,14 +15,14 @@ use haest_settings::{BuiltinTools, Settings, WordSet};
 use crate::haest::{
     KeySource,
     code::{CodeTool, code_tool_names},
-    deferred_tools::{DeferMode, ToolDeferral},
-    fs::Fs,
-    handed::openrouter_base_url,
+    core::deferred_tools::{DeferMode, ToolDeferral},
+    core::fs::Fs,
+    core::handed::openrouter_base_url,
+    core::skills::Skill,
+    core::task_board::TaskBoard,
+    core::tool::{Tool, ToolSource},
     mcp::McpHub,
     mods::{ModTools, Mods},
-    skills::Skill,
-    task_board::TaskBoard,
-    tool::{Tool, ToolSource},
     tools::{
         BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub, SkillToolOptions,
         agents::{AgentRef, SubagentHub},
@@ -268,7 +268,7 @@ mod tests {
         let opts = image_options(&on, &with_key).unwrap().unwrap();
         assert_eq!(
             (opts.api_key.as_str(), opts.base_url.as_str()),
-            ("k", crate::haest::handed::OPENROUTER_URL)
+            ("k", crate::haest::core::handed::OPENROUTER_URL)
         );
         assert_eq!(opts.models, on.image_models());
         let local = keys(&[

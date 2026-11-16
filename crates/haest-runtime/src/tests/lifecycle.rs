@@ -12,9 +12,9 @@ use crate::{
     BuildOptions, RuntimeInputs, World, build,
     haest::{
         Effort, WorkspaceMode,
-        fs::{Fs, MemFs},
+        core::fs::{Fs, MemFs},
+        core::task_board::NewTask,
         mcp::{McpServerConfig, McpTransport},
-        task_board::NewTask,
     },
     sessions::list_sessions,
     testkit::{Deny, Recorded},

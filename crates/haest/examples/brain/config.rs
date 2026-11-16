@@ -6,7 +6,7 @@
 //! PLUG POINT: `settings::Settings`, hardcoded (no loader).
 
 use haest::{
-    limits::TurnLimits,
+    core::limits::TurnLimits,
     settings::{BuiltinTools, Limits, Settings},
 };
 

@@ -35,8 +35,10 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 
 ## haest features
 
-`haest::core` (re-exported at the root, `haest::Agent`, `haest::fs`, ...) is always
-there. The rest is opt-in:
+`haest::core` is always there: its key types at the root (`haest::Agent`,
+`haest::Tool`) and in `haest::prelude` (glob-import that one), its modules under
+`haest::core` (`haest::core::fs`, `haest::core::session`). The rest is opt-in,
+each part a module of its name (`haest::workspace` is always the workspace crate):
 
 | Feature | Brings | Default |
 |---|---|---|

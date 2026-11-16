@@ -176,17 +176,27 @@ pub mod workspace;
 #[doc(hidden)]
 pub use serde as __serde;
 
-pub use agent::{Agent, AgentControl, AgentOptions};
-pub use deps::{AgentDeps, AgentHooks, NoHooks, SystemPrompt, now_ms};
-pub use events::{EventSink, LoopEvent, TurnEnd};
-pub use fs::{Fs, MemFs};
-pub use handed::{ChildEnv, KeySource};
-pub use messages::{
-    AssistantMessage, AssistantPart, Message, StopReason, ToolCall, ToolResultMessage, Usage,
-    UserMessage,
-};
-pub use provider::{
-    Effort, ModelResolver, Provider, ProviderEvent, ProviderRequest, ResolvedModel,
-};
-pub use tool::{Tool, ToolContext, ToolError, ToolHost, ToolOutput, ToolSource};
-pub use workspace::{ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode};
+#[doc(inline)]
+pub use prelude::*;
+
+/// The key types, the ones this crate's root re-exports: glob-import them
+/// with `use haest_core::prelude::*;`. It holds types, traits and
+/// [`now_ms`] only, never a module, so a glob import shadows nothing.
+pub mod prelude {
+    pub use crate::agent::{Agent, AgentControl, AgentOptions};
+    pub use crate::deps::{AgentDeps, AgentHooks, NoHooks, SystemPrompt, now_ms};
+    pub use crate::events::{EventSink, LoopEvent, TurnEnd};
+    pub use crate::fs::{Fs, MemFs};
+    pub use crate::handed::{ChildEnv, KeySource};
+    pub use crate::messages::{
+        AssistantMessage, AssistantPart, Message, StopReason, ToolCall, ToolResultMessage, Usage,
+        UserMessage,
+    };
+    pub use crate::provider::{
+        Effort, ModelResolver, Provider, ProviderEvent, ProviderRequest, ResolvedModel,
+    };
+    pub use crate::tool::{
+        JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput, ToolSource,
+    };
+    pub use crate::workspace::{ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode};
+}

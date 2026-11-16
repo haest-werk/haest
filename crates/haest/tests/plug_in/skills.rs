@@ -2,8 +2,8 @@
 //! tool and prompt list; the host's own tools deferred behind ToolSearch.
 
 use haest::{
-    deferred_tools::{DeferMode, ToolDeferral},
-    skills::{InlineSkill, InlineSkills, SkillCard, SkillSet, skill_cards_block},
+    core::deferred_tools::{DeferMode, ToolDeferral},
+    core::skills::{InlineSkill, InlineSkills, SkillCard, SkillSet, skill_cards_block},
     tools::{SkillToolOptions, create_skill_tool, tool_search::DeferredTools},
 };
 

@@ -10,7 +10,7 @@ use crate::{
     BuildOptions, Runtime, RuntimeInputs, World, build,
     haest::{
         KeySource,
-        fs::{Fs, MemFs},
+        core::fs::{Fs, MemFs},
     },
     testkit::{Deny, Recorded},
 };

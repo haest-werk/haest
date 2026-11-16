@@ -15,7 +15,7 @@ use async_trait::async_trait;
 
 use super::*;
 use crate::haest::{
-    fs::{DirEntry, FsStat, MemFs},
+    core::fs::{DirEntry, FsStat, MemFs},
     workspace::RealFs,
 };
 

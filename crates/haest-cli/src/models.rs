@@ -1,6 +1,6 @@
 //! `haest models`: the catalog, grouped, with each model's window and price.
 
-use haest::{catalog::ModelInfo, providers::Catalog};
+use haest::{core::catalog::ModelInfo, providers::Catalog};
 
 fn window(tokens: u64) -> String {
     if tokens >= 1_000_000 && tokens % 1_000_000 == 0 {

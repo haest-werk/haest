@@ -6,7 +6,7 @@ use haest_core::workspace::ExecOptions;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    haest::{fs::MemFs, tools::inbox::NoInbox},
+    haest::{core::fs::MemFs, tools::inbox::NoInbox},
     testkit::{host, settings},
 };
 

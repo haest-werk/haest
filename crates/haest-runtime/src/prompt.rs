@@ -14,15 +14,15 @@ use crate::{
     Host,
     haest::{
         SystemPrompt, Workspace,
-        context::{
+        core::context::{
             InstructionOpts, PromptInputs, build_system_prompt, current_git_branch,
             find_instruction_files,
         },
-        fs::Fs,
+        core::fs::Fs,
+        core::session::iso_utc,
+        core::skills::{Skill, SkillOpts},
+        core::tool::ToolSource,
         now_ms,
-        session::iso_utc,
-        skills::{Skill, SkillOpts},
-        tool::ToolSource,
     },
 };
 

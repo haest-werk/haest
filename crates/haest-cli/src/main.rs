@@ -33,9 +33,9 @@ use std::{
 
 use haest::{
     config::{Loaded, Loader, env_var},
+    core::session::sessions_dir,
     providers::ProviderConfigError,
     runtime::{RuntimeInputs, Ui, World, sessions, world},
-    session::sessions_dir,
     settings::Settings,
     workspace::RealFs,
 };

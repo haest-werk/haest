@@ -166,7 +166,7 @@ mod tests {
     use haest::{
         Message, ToolResultMessage,
         core::fs::{Fs, MemFs},
-        session::{JsonlSessionFile, SessionRecord},
+        core::session::{JsonlSessionFile, SessionRecord},
         settings::Settings,
     };
 

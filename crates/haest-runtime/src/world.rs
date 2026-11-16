@@ -19,7 +19,7 @@ use crate::{
     haest::{
         ChildEnv, ShutWorkspace, Workspace, WorkspaceMode,
         code::sandbox_commands,
-        fs::{Fs, ensure_dir},
+        core::fs::{Fs, ensure_dir},
         mcp::{McpHub, McpServerConfig, McpTransport},
         tools::{Inbox, JobHub},
         workspace::{RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace},
@@ -206,7 +206,7 @@ async fn start(host: &Host, hub: McpHub, servers: Vec<McpServerConfig>) -> Arc<M
         return hub;
     }
     hub.connect(&servers, &|m: &str| {
-        crate::haest::tool::ToolHost::log(host, m)
+        crate::haest::core::tool::ToolHost::log(host, m)
     })
     .await;
     for f in hub.failures() {

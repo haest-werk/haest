@@ -32,10 +32,10 @@ use std::sync::Arc;
 
 use haest::{
     AgentDeps, ModelResolver, ResolvedModel, Workspace,
-    provider::parse_model_spec,
+    core::provider::parse_model_spec,
+    core::tool::Tool,
     providers::{CompatFlavor, CompatOptions, CompatProvider, RetryPolicy},
     settings::{Settings, WordSet},
-    tool::Tool,
     tools::{
         BashOptions, BuiltinOptions,
         agents::{AgentRef, AgentToolOptions, SubagentTypes, agent_tools_with},

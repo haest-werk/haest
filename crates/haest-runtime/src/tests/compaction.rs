@@ -10,9 +10,9 @@ use crate::{
     haest::{
         Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
         Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason, Tool, TurnEnd,
-        ledger::{Ledger, LedgerCaps},
-        provider::ProviderStream,
-        testing::{ScriptedProvider, text_answer},
+        core::ledger::{Ledger, LedgerCaps},
+        core::provider::ProviderStream,
+        core::testing::{ScriptedProvider, text_answer},
     },
     testkit::{host, settings},
 };

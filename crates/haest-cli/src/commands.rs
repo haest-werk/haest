@@ -3,7 +3,7 @@
 //! (`/review src/a.rs`) expands to that skill's body and goes to the model;
 //! anything else starting with `/` is sent as typed.
 
-use haest::{Effort, ledger::LedgerCap, mods::CommandOutcome, skills::load_skill_body};
+use haest::{Effort, core::ledger::LedgerCap, core::skills::load_skill_body, mods::CommandOutcome};
 use tokio_util::sync::CancellationToken;
 
 use crate::{changes, term::Runtime};

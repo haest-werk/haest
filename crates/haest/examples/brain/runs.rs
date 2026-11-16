@@ -4,8 +4,8 @@ use std::{path::PathBuf, sync::Arc};
 
 use haest::{
     Agent, AgentOptions, ShutWorkspace, StopReason, TurnEnd,
-    session::{SessionRecord, SessionSink, replay},
-    tool::Tool,
+    core::session::{SessionRecord, SessionSink, replay},
+    core::tool::Tool,
     tools::agents::AgentRef,
     workspace::SandboxWorkspace,
 };

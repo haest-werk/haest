@@ -4,7 +4,7 @@
 //!
 //! PLUG POINT: `LoopEvent::ToolCallStart`, through the host's `EventSink`.
 
-use haest::{EventSink, LoopEvent, tool::ToolOutput};
+use haest::{EventSink, LoopEvent, core::tool::ToolOutput};
 
 #[derive(Default)]
 pub struct DocSink {

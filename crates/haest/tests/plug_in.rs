@@ -37,9 +37,9 @@ use haest::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, Effort,
     ExecResult, Fs, LoopEvent, MemFs, Message, Provider, ProviderEvent, ProviderRequest,
     ResolvedModel, StopReason, ToolCall, TurnEnd, Usage, Workspace,
-    provider::ProviderStream,
-    shell_command::{ShellCall, ShellCommand},
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
+    core::provider::ProviderStream,
+    core::shell_command::{ShellCall, ShellCommand},
+    core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
     tools::{
         BuiltinOptions, Inbox,
         agents::{AgentRef, SubagentCaps, SubagentEvent, SubagentHost, SubagentHub},

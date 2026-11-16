@@ -16,15 +16,15 @@ use crate::{
     Ui,
     haest::{
         Agent, AgentHooks, Effort,
-        catalog::{InputModality, Reasoning},
-        compaction::{CompactionConfig, compact, needs_compaction},
-        ledger::{LedgerHooks, LedgerSnapshot},
-        limits::TurnLimits,
-        messages::{MediaPart, Usage},
+        core::catalog::{InputModality, Reasoning},
+        core::compaction::{CompactionConfig, compact, needs_compaction},
+        core::ledger::{LedgerHooks, LedgerSnapshot},
+        core::limits::TurnLimits,
+        core::messages::{MediaPart, Usage},
+        core::session::{JsonlSessionFile, SessionRecord, SessionSink},
+        core::tool::ToolHost,
         now_ms,
         providers::Catalog,
-        session::{JsonlSessionFile, SessionRecord, SessionSink},
-        tool::ToolHost,
     },
 };
 

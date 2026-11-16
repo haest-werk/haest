@@ -16,8 +16,8 @@ use futures::{StreamExt, stream};
 
 use crate::haest::{
     Message,
-    fs::Fs,
-    session::{SessionRecord, session_file, session_id_of},
+    core::fs::Fs,
+    core::session::{SessionRecord, session_file, session_id_of},
 };
 
 /// The first read of a session file: the header and, nearly always, the first

@@ -12,11 +12,11 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     Host,
     haest::{
-        fs::Fs,
+        core::fs::Fs,
+        core::tool::ToolHost,
         mods::{
             ApprovalGate, ApprovalRequest, Decision, ModConfig, ModHost, Mods, Prompter, load_mods,
         },
-        tool::ToolHost,
     },
 };
 

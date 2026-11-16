@@ -7,7 +7,7 @@ use std::{collections::HashMap, sync::Mutex};
 
 use async_trait::async_trait;
 use haest::{
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
+    core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
     tools::{
         ReadIntercept,
         agents::{AgentDirectory, AgentRef, SpawnInput, SpawnOutcome},

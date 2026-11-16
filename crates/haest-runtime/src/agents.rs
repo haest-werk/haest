@@ -13,9 +13,9 @@ use crate::{
     Host,
     haest::{
         AgentDeps, Effort, SystemPrompt,
-        deferred_tools::ToolDeferral,
+        core::deferred_tools::ToolDeferral,
+        core::tool::{Tool, ToolSource},
         mods::{ModSystemPrompt, Mods},
-        tool::{Tool, ToolSource},
         tools::{
             Inbox,
             agents::{SubagentEvent, SubagentHost, SubagentHub},
