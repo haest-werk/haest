@@ -1,5 +1,6 @@
 //! What a hostile or runaway command line cannot do to the process xan runs
-//! in: overflow its stack, or hold a worker past the shell call's deadline.
+//! in: overflow its stack, hold a worker past the shell call's deadline, or
+//! panic.
 
 use std::time::{Duration, Instant};
 
@@ -149,4 +150,21 @@ async fn mode_counts_each_value_once_not_against_every_other() {
     // A tie goes to the value seen first.
     let tie = ok_in(&["agg", "mode(x)"], Some("x\nb\na\na\nb\n")).await;
     assert_eq!(tie, "mode(x)\nb\n");
+}
+
+#[tokio::test]
+async fn a_range_over_an_empty_input_is_an_error_not_a_panic() {
+    for args in [
+        &["stats", "-s", ":"][..],
+        &["frequency", "-s", ":"],
+        &["sort", "-s", ":"],
+        &["select", ":"],
+        &["select", "0:"],
+        &["groupby", ":", "count()"],
+    ] {
+        let r = timed(args, "", false).await;
+        assert_eq!((r.exit_code, r.stdout.as_str()), (1, ""), "{args:?}");
+    }
+    // With no range, an empty input is simply empty.
+    assert_eq!(timed(&["stats"], "", false).await.exit_code, 0);
 }

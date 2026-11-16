@@ -107,6 +107,10 @@ pub fn select(spec: &str, headers: &[String]) -> Result<Vec<usize>, String> {
         } else if resolve_name(headers, &item).is_none()
             && let Some((a, b)) = item.split_once(':')
         {
+            if headers.is_empty() {
+                // A range over no columns is none (the selection then fails).
+                continue;
+            }
             let from = if a.trim().is_empty() {
                 0
             } else {
