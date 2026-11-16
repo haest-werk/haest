@@ -11,11 +11,15 @@
 //! overwritten. Everything else is written (or deleted) on the real disk.
 //!
 //! Paths here are the overlay's own (`/src/a.ts`); `root` maps them to the disk.
+//! A path with a symlink on the real disk anywhere on its way (`links.rs`) is
+//! flagged as a conflict and never applied: /apply writes, creates and deletes
+//! only at `root/path` itself, never through a link out of the project.
 //! Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
 //! directory, not file by file -- an edit the human made INSIDE it meanwhile
 //! does not count as a conflict.
 
 mod diff;
+mod links;
 mod recorder;
 mod state;
 
@@ -33,6 +37,7 @@ use kern_core::{
 };
 
 use crate::bridge::KernFsOverBashkit;
+use links::Links;
 use recorder::Recorder;
 use state::{Original, state_of, walk};
 
@@ -121,6 +126,7 @@ impl OverlayChanges {
 
     async fn scan(&self) -> Vec<Scanned> {
         let mut out = Vec::new();
+        let mut links = Links::new(self.book.disk.as_ref(), &self.book.root);
         for (path, original) in self.candidates().await {
             let real = self.book.real(&path);
             let (now, mine) = tokio::join!(
@@ -139,7 +145,7 @@ impl OverlayChanges {
                 change: Change {
                     path: path.to_string_lossy().into_owned(),
                     kind,
-                    conflict: original != now,
+                    conflict: original != now || links.through_a_link(&path).await,
                 },
                 path,
                 original,
@@ -153,6 +159,13 @@ impl OverlayChanges {
     async fn write(&self, c: &Change, path: &Path) -> io::Result<()> {
         let disk = self.book.disk.as_ref();
         let real = self.book.real(path);
+        // Again here: a link may have appeared on disk since the scan.
+        if Links::new(disk, &self.book.root).through_a_link(path).await {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("{}: a symlink on the way; not applied", real.display()),
+            ));
+        }
         if c.kind == ChangeKind::Deleted {
             return match disk.remove(&real, true).await {
                 Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
