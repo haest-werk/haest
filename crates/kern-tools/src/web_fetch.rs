@@ -176,11 +176,6 @@ impl WebFetchTool {
     pub fn new(net: WebFetchNet) -> Self {
         Self { net }
     }
-
-    async fn fetch(&self, url: &Url, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let (res, at) = guarded_get(url, &self.net).await?;
-        to_output(&at, res, ctx).await
-    }
 }
 
 impl Default for WebFetchTool {
@@ -217,9 +212,13 @@ impl Tool for WebFetchTool {
         let raw = req_str(&input, "url")?;
         let url = Url::parse(raw)
             .map_err(|_| ToolError::Input(format!("\"{raw}\" is not a valid URL")))?;
+        let fetch = async {
+            let (res, at) = guarded_get(&url, &self.net).await?;
+            to_output(&at, res, ctx).await
+        };
         tokio::select! {
             _ = ctx.cancel.cancelled() => Err(ToolError::Input("the fetch was interrupted".into())),
-            done = tokio::time::timeout(TIMEOUT, self.fetch(&url, ctx)) => done.unwrap_or_else(|_| {
+            done = tokio::time::timeout(TIMEOUT, fetch) => done.unwrap_or_else(|_| {
                 Err(ToolError::Input(format!("the fetch timed out after {}s", TIMEOUT.as_secs())))
             }),
         }
