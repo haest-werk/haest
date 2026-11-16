@@ -31,9 +31,12 @@ const MEMORY_BYTES: u64 = 256 * 1024 * 1024;
 ///   any other   an in-memory scratch disk (/tmp and friends)
 /// ```
 ///
-/// Mount points never nest: the first claim on a subtree wins (`cwd`, then
-/// each writable dir, then each readable one), and a later directory inside
-/// or above one already mounted is left out without an error.
+/// Mounts may nest, as on a real mount table: a path belongs to the deepest
+/// mount that holds it. A writable dir inside the project writes through to
+/// the disk while the rest of the project stays copy-on-write; a project
+/// inside a readable dir stays the overlay, and the readable dir's other files
+/// show around it. The same directory listed twice keeps its first role
+/// (`cwd`, then writable, then readable).
 ///
 /// ```
 /// use haest_workspace::SandboxMounts;
@@ -74,20 +77,29 @@ impl SandboxMounts {
     }
 }
 
-fn inside(child: &Path, parent: &Path) -> bool {
-    normalize(child).starts_with(normalize(parent))
+/// What a mounted directory is in the sandbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Role {
+    /// The project: the recording copy-on-write overlay.
+    Project,
+    /// Real, read-write.
+    Writable,
+    /// Real, read-only.
+    Readable,
 }
 
-/// Mount points may not nest: the first claim on a subtree wins.
-fn disjoint(paths: &[PathBuf], taken: &[PathBuf]) -> Vec<PathBuf> {
-    let mut out: Vec<PathBuf> = Vec::new();
-    for p in paths {
-        let clash = taken
-            .iter()
-            .chain(&out)
-            .any(|t| inside(p, t) || inside(t, p));
-        if !clash {
-            out.push(normalize(p));
+/// Every directory to mount, once each: the same directory listed twice keeps
+/// its first role (`cwd`, then writable, then readable). Nesting is the mount
+/// table's to resolve (the deepest mount holding a path wins).
+fn roles(m: &SandboxMounts) -> Vec<(PathBuf, Role)> {
+    let claims = std::iter::once((&m.cwd, Role::Project))
+        .chain(m.writable.iter().map(|d| (d, Role::Writable)))
+        .chain(m.readable.iter().map(|d| (d, Role::Readable)));
+    let mut out: Vec<(PathBuf, Role)> = Vec::new();
+    for (dir, role) in claims {
+        let dir = normalize(dir);
+        if !out.iter().any(|(taken, _)| *taken == dir) {
+            out.push((dir, role));
         }
     }
     out
@@ -129,24 +141,13 @@ pub(crate) async fn sandbox_fs(
     changes: &OverlayChanges,
 ) -> io::Result<Arc<MountableFs>> {
     let base = Arc::new(InMemoryFs::with_limits(limits()));
-    let cwd = normalize(&m.cwd);
-    let mut taken = vec![cwd.clone()];
-    let writable = disjoint(&m.writable, &taken);
-    taken.extend(writable.iter().cloned());
-    let readable = disjoint(&m.readable, &taken);
-
-    let mut table: Vec<(PathBuf, Arc<dyn FileSystem>)> = vec![(cwd, changes.recorder())];
-    for dir in writable {
-        let fs = real_dir(&dir, RealFsMode::ReadWrite).await?;
-        table.push((dir, fs));
-    }
-    for dir in readable {
-        let fs = real_dir(&dir, RealFsMode::ReadOnly).await?;
-        table.push((dir, fs));
-    }
-
     let fs = Arc::new(MountableFs::new(base.clone()));
-    for (point, mounted) in table {
+    for (point, role) in roles(m) {
+        let mounted = match role {
+            Role::Project => changes.recorder(),
+            Role::Writable => real_dir(&point, RealFsMode::ReadWrite).await?,
+            Role::Readable => real_dir(&point, RealFsMode::ReadOnly).await?,
+        };
         // The scratch disk holds every mount point's ancestors, so `ls /` and
         // `cd ..` walk to a mount the way they would on the real disk.
         base.add_dir(&point, 0o755);
@@ -161,18 +162,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mounts_never_nest_the_first_claim_wins() {
+    fn nested_dirs_all_mount_and_a_dir_listed_twice_keeps_its_first_role() {
         let p = |s: &str| PathBuf::from(s);
-        let got = disjoint(
-            &[
-                p("/proj/sub"),
-                p("/spill"),
-                p("/spill/x"),
-                p("/"),
-                p("/other"),
-            ],
-            &[p("/proj")],
+        let m = SandboxMounts::new("/proj")
+            .writable("/proj/spill")
+            .writable("/proj/")
+            .readable("/home")
+            .readable("/proj/spill");
+        assert_eq!(
+            roles(&m),
+            [
+                (p("/proj"), Role::Project),
+                (p("/proj/spill"), Role::Writable),
+                (p("/home"), Role::Readable),
+            ]
         );
-        assert_eq!(got, [p("/spill"), p("/other")]);
     }
 }

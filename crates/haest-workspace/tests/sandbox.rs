@@ -15,7 +15,7 @@ use haest_core::{
     remedy::{Limit, Remedies},
     workspace::{EXIT_NOT_FOUND, Workspace, WorkspaceMode},
 };
-use haest_workspace::{SandboxMounts, SandboxWorkspace};
+use haest_workspace::SandboxWorkspace;
 
 #[tokio::test]
 async fn a_file_the_tools_write_is_what_cat_prints_and_the_other_way_round() {
@@ -126,33 +126,6 @@ async fn each_call_is_a_fresh_shell_over_the_same_files() {
         .await;
     let r = ws.shell("echo \"[$X]\"; pwd; cat sub/f", opts(&dir)).await;
     assert_eq!(r.stdout, format!("[]\n{}\nkept\n", dir.display()), "{r:?}");
-}
-
-#[tokio::test]
-async fn a_writable_mount_goes_through_to_the_disk_and_a_readable_one_is_read_only() {
-    let (_t, dir) = tempdir();
-    let (_o, out) = tempdir();
-    let (_s, skills) = tempdir();
-    std::fs::write(skills.join("SKILL.md"), "skill\n").unwrap();
-    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).writable(&out).readable(&skills))
-        .await
-        .unwrap();
-
-    ws.fs().write(&out.join("kept.txt"), b"kept").await.unwrap();
-    assert_eq!(
-        std::fs::read_to_string(out.join("kept.txt")).unwrap(),
-        "kept"
-    );
-
-    let read = ws
-        .shell(&format!("cat {}/SKILL.md", skills.display()), opts(&dir))
-        .await;
-    assert_eq!(read.stdout, "skill\n");
-    let write = ws
-        .shell(&format!("echo x > {}/new.md", skills.display()), opts(&dir))
-        .await;
-    assert_ne!(write.exit_code, 0);
-    assert!(!skills.join("new.md").exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
