@@ -2,12 +2,12 @@
 //! server shaped like it): effort dialect, reasoning_content replay, booked cost.
 //! Asserted on the wire body and the folded usage; no network.
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use haest_core::{
-    catalog::{InputModality, ModelPricing, OpenRouterEffort, Reasoning},
+    catalog::{ModelPricing, OpenRouterEffort, Reasoning},
     messages::{AssistantMessage, Message},
-    provider::{Effort, ModelResolver},
+    provider::Effort,
 };
 use serde_json::{Value, json};
 
@@ -15,14 +15,7 @@ use super::{
     tests::{body_with, finished as chunk, run_body, usage_chunk},
     *,
 };
-use crate::{
-    catalog::Catalog,
-    registry::{
-        CustomProviderConfig, EntryProblem, ProviderConfigError, ProviderRegistry, RegistryOptions,
-        paper_instruments_options,
-    },
-    testing::{FakeHttp, chat_sse, request, request_with},
-};
+use crate::testing::{chat_sse, request, request_with};
 
 const MODEL: &str = "ultramarine-1-flash";
 
@@ -40,11 +33,11 @@ fn direct() -> CompatOptions {
     opts
 }
 
-fn body_of(opts: &CompatOptions, effort: Option<Effort>) -> Value {
+pub(super) fn body_of(opts: &CompatOptions, effort: Option<Effort>) -> Value {
     body_with(opts, MODEL, effort)
 }
 
-async fn final_message(opts: CompatOptions, chunks: &[Value]) -> AssistantMessage {
+pub(super) async fn final_message(opts: CompatOptions, chunks: &[Value]) -> AssistantMessage {
     run_body(opts, request(MODEL), chat_sse(chunks)).await.1
 }
 
@@ -166,7 +159,7 @@ fn priced() -> CompatOptions {
     opts
 }
 
-fn close(a: Option<f64>, b: f64) -> bool {
+pub(super) fn close(a: Option<f64>, b: f64) -> bool {
     a.is_some_and(|a| (a - b).abs() < 1e-10)
 }
 
@@ -197,116 +190,4 @@ async fn an_unpriced_model_books_nothing_and_a_reported_cost_is_never_overwritte
     reported_usage["cost"] = json!(7);
     let reported = final_message(priced(), &[text, usage_chunk(reported_usage)]).await;
     assert_eq!(reported.usage.cost_usd, Some(7.0));
-}
-
-// -- paperinstruments built-in + catalog row
-
-fn pi_env() -> HashMap<String, String> {
-    HashMap::from([("PAPERINSTRUMENTS_API_KEY".to_string(), "k".to_string())])
-}
-
-fn registry(keys: HashMap<String, String>) -> ProviderRegistry {
-    let opts = RegistryOptions {
-        http: FakeHttp::new([]),
-        ..RegistryOptions::default()
-    };
-    ProviderRegistry::new(Arc::new(keys), Default::default(), opts)
-}
-
-#[test]
-fn paperinstruments_resolves_with_its_key_and_names_the_env_var_without_one() {
-    let spec = "paperinstruments:ultramarine-1-flash";
-    assert_eq!(
-        registry(pi_env()).resolve(spec).unwrap().provider.id(),
-        "paperinstruments"
-    );
-    let err = registry(HashMap::new())
-        .resolve(spec)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("PAPERINSTRUMENTS_API_KEY"), "{err}");
-}
-
-#[tokio::test]
-async fn paperinstruments_sends_a_level_the_api_accepts_and_prices_ultramarine_from_the_catalog() {
-    let opts = paper_instruments_options(&pi_env()).unwrap();
-    assert_eq!(
-        opts.base_url.as_deref(),
-        Some("https://api.paperinstruments.com/v1")
-    );
-    assert_eq!(
-        body_of(&opts, Some(Effort::Medium))["reasoning_effort"],
-        json!("high")
-    );
-    let msg = final_message(
-        opts,
-        &[
-            chunk(json!({"content": "x"}), Some("stop")),
-            usage_chunk(json!({"prompt_tokens": 1_000_000, "completion_tokens": 0})),
-        ],
-    )
-    .await;
-    assert!(close(msg.usage.cost_usd, 0.15), "{:?}", msg.usage.cost_usd);
-}
-
-#[test]
-fn the_catalog_row_takes_images_and_says_reasoning_cannot_be_turned_off() {
-    let c = Catalog::builtin();
-    let spec = "paperinstruments:ultramarine-1-flash";
-    assert!(
-        c.input_modalities(spec)
-            .unwrap()
-            .contains(&InputModality::Image)
-    );
-    assert!(c.reasoning(spec).unwrap().mandatory);
-}
-
-// -- providers.json entries declare the same dialect + pricing
-
-fn cfg() -> Value {
-    json!({
-        "type": "openai", "baseURL": "http://x/v1",
-        "reasoningEffort": {"mandatory": true, "efforts": ["low", "high", "max"]},
-        "pricing": {"m1": {"input": 1, "cachedInput": 0.5, "output": 2}},
-    })
-}
-
-#[test]
-fn effort_is_fitted_on_the_wire_and_cost_booked_from_the_entry() {
-    let parsed = CustomProviderConfig::from_json("mine", &cfg()).unwrap();
-    let opts = parsed.compat_options("mine", &HashMap::new());
-    assert_eq!(
-        body_of(&opts, Some(Effort::Xhigh))["reasoning_effort"],
-        json!("max")
-    );
-    assert_eq!(
-        opts.pricing.get("m1"),
-        Some(&ModelPricing {
-            input: 1.0,
-            cached_input: 0.5,
-            output: 2.0,
-            cache_write: None
-        })
-    );
-}
-
-#[test]
-fn a_malformed_price_is_refused_at_load_not_booked_as_nan() {
-    let rows = [
-        json!({"input": 1}),
-        json!({"input": 1, "cachedInput": 0.5, "output": 2, "cacheWrite": "free"}),
-    ];
-    for row in rows {
-        let mut bad = cfg();
-        bad["pricing"] = json!({ "m1": row });
-        let err = CustomProviderConfig::from_json("mine", &bad).unwrap_err();
-        assert!(
-            matches!(
-                &err,
-                ProviderConfigError::BadEntry { provider, problem: EntryProblem::Pricing { model, .. } }
-                    if provider == "mine" && model == "m1"
-            ),
-            "{err}"
-        );
-    }
 }

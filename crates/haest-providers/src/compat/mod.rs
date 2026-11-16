@@ -12,6 +12,8 @@ mod stream;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_configured;
+#[cfg(test)]
 mod tests_direct;
 #[cfg(test)]
 mod tests_routing;

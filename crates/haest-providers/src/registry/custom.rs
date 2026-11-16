@@ -1,5 +1,4 @@
-//! `providers.json`: the custom providers a haest config dir declares, and the
-//! built-in direct provider configured the same way.
+//! `providers.json`: the custom providers a haest config dir declares.
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -259,49 +258,4 @@ pub async fn load_custom_providers(
         Value::Object(map) => Ok(map.into_iter().collect()),
         _ => Err(ProvidersFileError::NotAnObject { path }),
     }
-}
-
-/// The key `key`, or the error that names it.
-pub(super) fn need(
-    keys: &dyn KeySource,
-    key: &str,
-    provider: &str,
-) -> Result<String, ProviderConfigError> {
-    keys.key(key)
-        .ok_or_else(|| ProviderConfigError::MissingKey {
-            provider: provider.into(),
-            key: key.into(),
-        })
-}
-
-/// The built-in `paperinstruments` provider's options: Chat Completions at
-/// `PAPERINSTRUMENTS_BASE_URL` (else `https://api.paperinstruments.com/v1`),
-/// with the key `PAPERINSTRUMENTS_API_KEY`, its effort levels and the
-/// catalog's prices.
-///
-/// docs.paperinstruments.com/docs/ultramarine/chat-completions (2026-10-17): top-level
-/// `reasoning_effort` low/high/max only, reasoning cannot be disabled, no cost in the reply.
-///
-/// # Errors
-///
-/// A [`ProviderConfigError`] when `keys` has no `PAPERINSTRUMENTS_API_KEY`.
-pub(crate) fn paper_instruments_options(
-    keys: &dyn KeySource,
-) -> Result<CompatOptions, ProviderConfigError> {
-    let key = need(keys, "PAPERINSTRUMENTS_API_KEY", "paperinstruments")?;
-    let mut opts = CompatOptions::new("paperinstruments", key);
-    opts.base_url = Some(
-        keys.key("PAPERINSTRUMENTS_BASE_URL")
-            .unwrap_or_else(|| "https://api.paperinstruments.com/v1".into()),
-    );
-    opts.reasoning_effort = Some(Reasoning {
-        mandatory: true,
-        efforts: vec![
-            OpenRouterEffort::Low,
-            OpenRouterEffort::High,
-            OpenRouterEffort::Max,
-        ],
-    });
-    opts.pricing = Catalog::builtin().provider_pricing("paperinstruments");
-    Ok(opts)
 }

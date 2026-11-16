@@ -12,10 +12,13 @@
 //! loader's helper), routing arrives parsed. The registry reads no environment
 //! and no file.
 
+mod builtin;
 mod custom;
 mod error;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_custom;
 
 use std::{
     collections::HashMap,
@@ -24,12 +27,11 @@ use std::{
 
 use haest_core::{
     KeySource,
-    handed::openrouter_base_url,
     provider::{ModelError, ModelResolver, Provider, ResolvedModel, parse_model_spec},
 };
 
-use custom::need;
-pub(crate) use custom::paper_instruments_options;
+pub(crate) use builtin::paper_instruments_options;
+use builtin::{anthropic_options, openai_options, openrouter_options};
 pub use custom::{CustomProviderConfig, CustomProviders, Dialect, load_custom_providers};
 pub use error::{EntryProblem, ProviderConfigError, ProvidersFileError};
 
@@ -37,7 +39,7 @@ use haest_http::{HttpClient, ReqwestClient};
 
 use crate::{
     anthropic::{AnthropicOptions, AnthropicProvider},
-    compat::{CompatFlavor, CompatOptions, CompatProvider},
+    compat::{CompatOptions, CompatProvider},
     responses::{ResponsesOptions, ResponsesProvider},
     retry::RetryPolicy,
     routing::RoutingScopes,
@@ -197,18 +199,9 @@ impl ProviderRegistry {
             });
         }
         Ok(match name {
-            "anthropic" => {
-                let mut opts = AnthropicOptions::new(name, need(keys, "ANTHROPIC_API_KEY", name)?);
-                opts.base_url = keys.key("ANTHROPIC_BASE_URL");
-                Options::Anthropic(opts)
-            }
-            // Responses, not Chat Completions: OpenAI refuses function tools + reasoning effort there.
-            "openai" => {
-                let mut opts = ResponsesOptions::new(name, need(keys, "OPENAI_API_KEY", name)?);
-                opts.base_url = keys.key("OPENAI_BASE_URL");
-                Options::Responses(opts)
-            }
-            "openrouter" => Options::Compat(Box::new(self.openrouter_options()?)),
+            "anthropic" => Options::Anthropic(anthropic_options(keys)?),
+            "openai" => Options::Responses(openai_options(keys)?),
+            "openrouter" => Options::Compat(Box::new(openrouter_options(keys, &self.opts)?)),
             "paperinstruments" => Options::Compat(Box::new(paper_instruments_options(keys)?)),
             _ => {
                 return Err(ModelError::UnknownProvider {
@@ -218,22 +211,6 @@ impl ProviderRegistry {
                 .into());
             }
         })
-    }
-
-    fn openrouter_options(&self) -> Result<CompatOptions, ProviderConfigError> {
-        let keys = self.keys.as_ref();
-        let key = need(keys, "OPENROUTER_API_KEY", "openrouter")?;
-        let mut opts = CompatOptions::new("openrouter", key);
-        opts.flavor = CompatFlavor::OpenRouter;
-        opts.base_url = Some(openrouter_base_url(keys));
-        if let Some(url) = &self.opts.app_url {
-            opts.headers.push(("HTTP-Referer".into(), url.clone()));
-        }
-        if let Some(title) = &self.opts.app_title {
-            opts.headers.push(("X-Title".into(), title.clone()));
-        }
-        opts.routing = self.opts.routing.clone();
-        Ok(opts)
     }
 }
 
