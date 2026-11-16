@@ -315,3 +315,27 @@ pub use haest_tools as tools;
 #[cfg(feature = "workspace")]
 #[doc(inline)]
 pub use haest_workspace as workspace;
+
+/// What the loader read, as the runtime's inputs on the real disk: the
+/// settings, the child environment and the variables passed on purpose, the
+/// provider keys (the loader's environment), providers.json, the trusted
+/// `.mcp.json` servers and the OpenRouter routing.
+///
+/// Show [`Loaded::notes`](config::Loaded::notes) to the human first: they are
+/// not part of the inputs. A host in another world sets
+/// [`world`](runtime::RuntimeInputs::world) on the result.
+#[cfg(all(feature = "config", feature = "runtime"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "config", feature = "runtime"))))]
+pub fn runtime_inputs(loaded: config::Loaded) -> runtime::RuntimeInputs {
+    runtime::RuntimeInputs {
+        settings: loaded.config.settings,
+        world: runtime::World::Disk {
+            child_env: loaded.child_env,
+        },
+        env: loaded.env,
+        keys: std::sync::Arc::new(loaded.keys),
+        providers: loaded.providers,
+        mcp_servers: loaded.mcp_servers,
+        routing: loaded.routing,
+    }
+}

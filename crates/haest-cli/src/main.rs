@@ -36,7 +36,7 @@ use haest::{
     config::{Loaded, Loader, env_var},
     core::session::sessions_dir,
     providers::ProviderConfigError,
-    runtime::{RuntimeInputs, Ui, World, sessions, world},
+    runtime::{Ui, sessions, world},
     settings::Settings,
     workspace::RealFs,
 };
@@ -195,17 +195,7 @@ async fn main() -> ExitCode {
     };
     let prompter = TermPrompter::new(ui.clone(), ask::interactive());
     let opts = cli.build_options();
-    let inputs = RuntimeInputs {
-        settings: loaded.config.settings,
-        world: World::Disk {
-            child_env: loaded.child_env,
-        },
-        env: loaded.env,
-        keys: Arc::new(loaded.keys),
-        providers: loaded.providers,
-        mcp_servers: loaded.mcp_servers,
-        routing: loaded.routing,
-    };
+    let inputs = haest::runtime_inputs(loaded);
     let mut rt = match haest::runtime::build(inputs, ui, prompter, opts).await {
         Ok(rt) => rt,
         Err(e) => return fail(2, build_failed(&e)),

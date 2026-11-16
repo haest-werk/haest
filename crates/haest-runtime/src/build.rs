@@ -38,8 +38,9 @@ use crate::{
 /// flag of its own: what is not in here does not exist for it.
 ///
 /// Start from [`RuntimeInputs::new`] (the settings and the world, nothing
-/// else) and set the fields the host has. haest-config's `Loaded` has a field
-/// for each; its docs show which goes where.
+/// else) and set the fields the host has. A host that loads haest's own
+/// files with haest-config gets all of them from its `Loaded` with the
+/// facade's `haest::runtime_inputs`.
 pub struct RuntimeInputs {
     /// Every setting of the run: which capabilities are on, the limits, the
     /// model, where the sessions go.
