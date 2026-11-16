@@ -1,11 +1,36 @@
 //! The flat frontmatter line reader: `---\n<head>\n---\n<body>` and the
 //! `key: value` subset in the head (inline `[a, b]` lists, quoted scalars, and
-//! where an indented block starts and ends). Shared by the SKILL.md reader
-//! (its fallback when strict YAML refuses) and any format kept as markdown with
-//! a head, such as haest-issues' board cards.
+//! where an indented block starts and ends). Not a YAML parser: each piece
+//! answers one question about one line, and the caller assembles the rest.
+//!
+//! A helper the haest crates share: the SKILL.md reader ([`crate::skills`],
+//! its fallback when strict YAML refuses) and any format kept as markdown with
+//! a head, such as `haest-issues`' board cards. Start from
+//! [`split_frontmatter`].
+//!
+//! # Examples
+//!
+//! ```
+//! use haest_core::frontmatter::{inline_list, split_frontmatter, unquote};
+//!
+//! let card = "---\ntitle: \"Fix the \\\"login\\\" bug\"\nlabels: [auth, 'p1']\n---\nSteps to reproduce.\n";
+//! let (head, body) = split_frontmatter(card).unwrap();
+//! assert_eq!(head, ["title: \"Fix the \\\"login\\\" bug\"", "labels: [auth, 'p1']"]);
+//! assert_eq!(body, "Steps to reproduce.\n");
+//!
+//! let (_, title) = head[0].split_once(": ").unwrap();
+//! assert_eq!(unquote(title), "Fix the \"login\" bug");
+//! let (_, labels) = head[1].split_once(": ").unwrap();
+//! assert_eq!(inline_list(labels).unwrap(), ["auth", "p1"]);
+//! ```
 
-/// `---\n<head>\n---\n<body>` -> (head lines, body), or None when there is no block.
-/// The head ends at the FIRST `\n---` after the opening fence.
+/// Splits `---\n<head>\n---\n<body>` into the head's lines and the body;
+/// None when `content` does not start with `---\n` or the head never ends.
+///
+/// The head ends at the FIRST later line that starts with `---`; one newline
+/// after that fence is dropped from the body. The head needs at least one
+/// line: `---\n---\n` finds no closing fence and is None. Line ends must be
+/// `\n`: turn `\r\n` into `\n` first.
 pub fn split_frontmatter(content: &str) -> Option<(Vec<&str>, &str)> {
     let rest = content.strip_prefix("---\n")?;
     let end = rest.find("\n---")?;
@@ -23,9 +48,15 @@ fn opens_a_block(value: &str) -> bool {
     rest.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// One past the last indented line under `lines[head]` (whose value is
-/// `value`), or None when it opens no block. A blank line does not end the
-/// block; trailing blanks stay out of it.
+/// Where the indented block under the key at `lines[head]` ends: one past its
+/// last indented line, so `lines[head + 1..end]` is the block. None when the
+/// key opens no block.
+///
+/// `value` is that key's text after the `:`, trimmed. The key opens a block
+/// when `value` is empty (a nested list or map follows) or a block-scalar
+/// indicator (`|`, `>-`, `|+2`), AND at least one indented line follows. A
+/// blank line does not end the block; trailing blanks stay out of it. The
+/// next line that is neither blank nor indented ends it.
 pub fn block_end(lines: &[&str], head: usize, value: &str) -> Option<usize> {
     if !opens_a_block(value) {
         return None;
@@ -42,8 +73,11 @@ pub fn block_end(lines: &[&str], head: usize, value: &str) -> Option<usize> {
     (last != head).then_some(last + 1)
 }
 
-/// `[a, 'b', ]` -> its items, unquoted, empty ones dropped; None when `value`
-/// is not an inline list.
+/// The items of an inline list, `[a, 'b', ]` -> `["a", "b"]`: each trimmed
+/// and [`unquote`]d, empty ones dropped. None when `value` is not wrapped in
+/// `[` and `]`.
+///
+/// Items split on every comma, even one inside quotes.
 pub fn inline_list(value: &str) -> Option<Vec<String>> {
     let inner = value.strip_prefix('[')?.strip_suffix(']')?;
     Some(
@@ -55,8 +89,13 @@ pub fn inline_list(value: &str) -> Option<Vec<String>> {
     )
 }
 
-/// A matched pair of quotes at both ends is unwrapped; escapes are undone for a
-/// DOUBLE-quoted scalar only (a single-quoted one has none). Anything else stays as is.
+/// A scalar without its quotes: a matched pair at both ends is unwrapped.
+/// Anything else comes back as is.
+///
+/// Escapes are undone for a DOUBLE-quoted scalar only: `\n`, `\r`, `\t`,
+/// `\xHH`, and a backslash before any other character stands for that
+/// character. A single-quoted scalar is taken literally (YAML's `''` is not
+/// undone).
 pub fn unquote(raw: &str) -> String {
     let mut chars = raw.chars();
     let (Some(q), Some(last)) = (chars.next(), chars.next_back()) else {

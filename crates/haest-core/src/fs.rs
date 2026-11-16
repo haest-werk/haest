@@ -1,12 +1,46 @@
 //! The file system the agent sees. Every file operation haest performs -- tools,
-//! spilled output, the session log, instruction files -- goes through an [`Fs`].
-//! Nothing in haest touches `std::fs` for the agent directly.
+//! spilled output, the session log, instruction files, skills -- goes through
+//! an [`Fs`]. Nothing in haest touches `std::fs` for the agent directly.
 //!
-//! PLUG POINT: a host with its own storage (brain's `BrainFs`) implements [`Fs`];
-//! `haest-workspace` can put a sandboxed bash over ANY `Fs`, so the file the agent
-//! writes with Write is the file `cat` shows.
+//! PLUG POINT: a host with its own storage implements [`Fs`] (the `haest`
+//! crate's `brain` example stages every write for review); `haest-workspace`
+//! has the real disk (`RealFs`) and can put a sandboxed bash over ANY `Fs`, so
+//! the file the agent writes with Write is the file `cat` shows. A
+//! [`Workspace`](crate::Workspace) hands its `Fs` to the tools.
 //!
-//! Paths are absolute. A relative path is the caller's bug ([`resolve_path`]).
+//! Here: the trait, [`MemFs`] (in memory: tests, scratch, a sandbox with no
+//! disk), [`ShutFs`] (refuses everything), and the path helpers every
+//! implementation and tool shares.
+//!
+//! Paths are absolute. A relative path is the caller's bug: resolve it against
+//! the cwd first ([`resolve_path`]).
+//!
+//! # Examples
+//!
+//! ```
+//! use std::path::Path;
+//!
+//! use haest_core::fs::{Fs, MemFs, ensure_dir, read_text_if_present};
+//!
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> std::io::Result<()> {
+//! let fs = MemFs::with_files([("/project/README.md", "# Hello")]);
+//! assert_eq!(fs.read_to_string(Path::new("/project/README.md")).await?, "# Hello");
+//!
+//! ensure_dir(&fs, Path::new("/project/notes")).await?;
+//! fs.write(Path::new("/project/notes/a.md"), b"first").await?;
+//! fs.append(Path::new("/project/notes/a.md"), b", second").await?;
+//! assert_eq!(fs.read(Path::new("/project/notes/a.md")).await?, b"first, second");
+//!
+//! let names: Vec<String> = fs.read_dir(Path::new("/project")).await?
+//!     .into_iter().map(|e| e.name).collect();
+//! assert_eq!(names, ["README.md", "notes"]);
+//!
+//! // A file a host may or may not have: None, not an error.
+//! assert_eq!(read_text_if_present(&fs, Path::new("/project/.mcp.json")).await?, None);
+//! # Ok(())
+//! # }
+//! ```
 
 use std::{
     io,
@@ -16,39 +50,132 @@ use std::{
 
 use async_trait::async_trait;
 
+/// What a path is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileKind {
+    /// A file (anything that is neither a directory nor a link).
     File,
+    /// A directory.
     Dir,
+    /// A symbolic link, as [`Fs::read_dir`] reports one; [`Fs::stat`] follows
+    /// links, so it reports what the link names instead.
     Symlink,
 }
 
+/// What [`Fs::stat`] knows about a path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FsStat {
+    /// File, directory or link.
     pub kind: FileKind,
+    /// Size in bytes (0 for a directory in [`MemFs`]; whatever the platform says on disk).
     pub size: u64,
+    /// When it last changed; None where the file system keeps no time.
     pub modified: Option<SystemTime>,
 }
 
 impl FsStat {
+    /// Is it a directory?
     pub fn is_dir(&self) -> bool {
         self.kind == FileKind::Dir
     }
+    /// Is it a file?
     pub fn is_file(&self) -> bool {
         self.kind == FileKind::File
     }
 }
 
+/// One entry of a directory listing ([`Fs::read_dir`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirEntry {
+    /// The entry's own name, no directory part.
     pub name: String,
+    /// What it is; a link is [`FileKind::Symlink`], not followed.
     pub kind: FileKind,
 }
 
+/// A file system: the one way haest reads and writes files.
+///
+/// Every path is absolute (see [`resolve_path`]). Errors are `io::Error`s with
+/// the [`io::ErrorKind`] `std::fs` would give for the same failure: callers
+/// match on them ([`read_text_if_present`] treats `NotFound` and
+/// `NotADirectory` as "no file"; the sandboxed shell turns each kind into its
+/// own error).
+///
+/// Eight methods are required. The rest have defaults built on them; override
+/// one when the store can do it better ([`Fs::read_head`] that stops early,
+/// [`Fs::read_link`] and [`Fs::chmod`] on a store that has links and modes).
+///
+/// Implementations here: [`MemFs`] and [`ShutFs`]; `haest-workspace` has the
+/// real disk (`RealFs`) and a copy-on-write sandbox over any `Fs`.
+///
+/// # Examples
+///
+/// A host's own store, here a read-only view over a [`MemFs`]:
+///
+/// ```
+/// use std::{io, path::Path};
+///
+/// use async_trait::async_trait;
+/// use haest_core::fs::{DirEntry, Fs, FsStat, MemFs};
+///
+/// struct ReadOnly(MemFs);
+///
+/// fn refused() -> io::Error {
+///     io::Error::new(io::ErrorKind::PermissionDenied, "read-only")
+/// }
+///
+/// #[async_trait]
+/// impl Fs for ReadOnly {
+///     async fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+///         self.0.read(path).await
+///     }
+///     async fn stat(&self, path: &Path) -> io::Result<FsStat> {
+///         self.0.stat(path).await
+///     }
+///     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
+///         self.0.read_dir(path).await
+///     }
+///     async fn write(&self, _: &Path, _: &[u8]) -> io::Result<()> {
+///         Err(refused())
+///     }
+///     async fn append(&self, _: &Path, _: &[u8]) -> io::Result<()> {
+///         Err(refused())
+///     }
+///     async fn mkdir(&self, _: &Path, _: bool) -> io::Result<()> {
+///         Err(refused())
+///     }
+///     async fn remove(&self, _: &Path, _: bool) -> io::Result<()> {
+///         Err(refused())
+///     }
+///     async fn rename(&self, _: &Path, _: &Path) -> io::Result<()> {
+///         Err(refused())
+///     }
+/// }
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// let fs = ReadOnly(MemFs::with_files([("/docs/a.md", "A")]));
+/// assert_eq!(fs.read_to_string(Path::new("/docs/a.md")).await.unwrap(), "A");
+/// assert!(fs.exists(Path::new("/docs")).await);
+/// let err = fs.write(Path::new("/docs/b.md"), b"B").await.unwrap_err();
+/// assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+/// # }
+/// ```
 #[async_trait]
 pub trait Fs: Send + Sync {
+    /// The whole file's bytes.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when nothing is there, and an error for a directory. An
+    /// implementation may refuse what is not a regular file: the real disk
+    /// refuses a FIFO or a device (`InvalidInput`) rather than block on it.
     async fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
-    /// Strict UTF-8; invalid bytes are `InvalidData`.
+    /// The whole file as text.
+    ///
+    /// # Errors
+    ///
+    /// [`Fs::read`]'s, and `InvalidData` when the bytes are not strict UTF-8.
     async fn read_to_string(&self, path: &Path) -> io::Result<String> {
         let bytes = self.read(path).await?;
         String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
@@ -62,17 +189,40 @@ pub trait Fs: Send + Sync {
         bytes.truncate(max);
         Ok(bytes)
     }
-    /// Create or replace. The parent directory must exist.
+    /// Create the file or replace its contents with `data`.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when the parent directory does not exist (it is never
+    /// created: see [`ensure_dir`]), and an error when `path` is a directory.
     async fn write(&self, path: &Path, data: &[u8]) -> io::Result<()>;
+    /// Add `data` to the end of the file, creating it when it is missing.
+    /// The session log writes every record this way.
+    ///
+    /// # Errors
+    ///
+    /// As [`Fs::write`]: the parent directory must exist, and `path` must not
+    /// be a directory.
     async fn append(&self, path: &Path, data: &[u8]) -> io::Result<()>;
+    /// Is anything at `path`? Any error from [`Fs::stat`] counts as no.
     async fn exists(&self, path: &Path) -> bool {
         self.stat(path).await.is_ok()
     }
+    /// What is at `path`, following symbolic links: what a read or a write
+    /// cares about is the file a link names.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when nothing is there (a dangling link included).
     async fn stat(&self, path: &Path) -> io::Result<FsStat>;
     /// The target of the symbolic link at `path`, the link itself not
     /// followed; `InvalidInput` when `path` is not a link. The default is a
     /// file system with no links (memory, a host's own store): every path
     /// that exists is not one.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when nothing is there, `InvalidInput` when it is not a link.
     async fn read_link(&self, path: &Path) -> io::Result<PathBuf> {
         self.stat(path).await?;
         Err(io::Error::new(
@@ -80,10 +230,38 @@ pub trait Fs: Send + Sync {
             format!("{}: not a symbolic link", path.display()),
         ))
     }
-    /// Entries sorted by name.
+    /// The directory's direct children, sorted by name. A link is listed as
+    /// [`FileKind::Symlink`] and not followed, so a walk never descends a
+    /// link loop.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when nothing is there, `NotADirectory` for a file.
     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>>;
+    /// Create a directory. `recursive` creates every missing parent too and
+    /// accepts a directory that is already there, like `mkdir -p`.
+    ///
+    /// # Errors
+    ///
+    /// Without `recursive`: `AlreadyExists` when something is at `path`, and
+    /// `NotFound` when the parent is missing. Either way, an error when a file
+    /// sits where a directory should be.
     async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()>;
+    /// Delete a file, a link (not what it names) or a directory. A directory
+    /// with anything in it needs `recursive`, which deletes it all.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when nothing is there, and an error for a non-empty
+    /// directory without `recursive`.
     async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()>;
+    /// Move a file or a whole directory tree from `from` to `to`, replacing a
+    /// file at `to`. The parent of `to` must exist.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when `from` (or `to`'s parent) is missing; `InvalidInput`
+    /// when `to` is inside the directory `from`.
     async fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
     /// Set Unix permission bits (the session log is 0600 in a 0700 dir). The
     /// default does nothing: a file system with no permissions (memory, a
@@ -93,7 +271,15 @@ pub trait Fs: Send + Sync {
     }
 }
 
-/// Recursive mkdir that tolerates an existing directory, for any [`Fs`].
+/// Make sure a directory is at `path`: [`Fs::mkdir`] with `recursive`, skipped
+/// when anything is already there.
+///
+/// A FILE at `path` counts as there too: the call returns `Ok` and no
+/// directory is made, so a later write under it fails instead.
+///
+/// # Errors
+///
+/// [`Fs::mkdir`]'s, such as a file where one of the parents should be.
 pub async fn ensure_dir(fs: &dyn Fs, path: &Path) -> io::Result<()> {
     if fs.exists(path).await {
         return Ok(());
@@ -106,6 +292,11 @@ pub async fn ensure_dir(fs: &dyn Fs, path: &Path) -> io::Result<()> {
 /// of its dirs should be. One read: no `exists` first. A file that is there
 /// but cannot be read is an error, never a silent default. Strict UTF-8, like
 /// [`Fs::read_to_string`].
+///
+/// # Errors
+///
+/// Any read error other than `NotFound` and `NotADirectory`, and
+/// `InvalidData` for text that is not UTF-8.
 pub async fn read_text_if_present(fs: &dyn Fs, path: &Path) -> io::Result<Option<String>> {
     match fs.read_to_string(path).await {
         Ok(text) => Ok(Some(text)),
@@ -121,12 +312,29 @@ pub async fn read_text_if_present(fs: &dyn Fs, path: &Path) -> io::Result<Option
     }
 }
 
-/// A NUL byte in the first 8000 bytes: binary, the way git and grep guess it.
+/// Is `buf` binary? True when a NUL byte is in its first 8000 bytes, the way
+/// git and grep guess it.
 pub fn looks_binary(buf: &[u8]) -> bool {
     buf.iter().take(8000).any(|&b| b == 0)
 }
 
 /// `/a/./b/../c` -> `/a/c`, without touching any file system.
+///
+/// The result is always absolute: a relative `path` is read from `/`, and a
+/// `..` at the root stays at the root (`/../x` -> `/x`). Links are not
+/// followed, so `..` after a link goes up from the link, not its target.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::{Path, PathBuf};
+///
+/// use haest_core::fs::normalize;
+///
+/// assert_eq!(normalize(Path::new("/a/./b/../c")), PathBuf::from("/a/c"));
+/// assert_eq!(normalize(Path::new("/../x")), PathBuf::from("/x"));
+/// assert_eq!(normalize(Path::new("a/b")), PathBuf::from("/a/b"));
+/// ```
 pub fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::from("/");
     for c in path.components() {
@@ -141,8 +349,20 @@ pub fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-/// Absolute paths stay; relative ones are taken from `cwd`. Dots are resolved
-/// lexically ([`normalize`]).
+/// The absolute path a tool's `p` names: an absolute `p` as it is, a relative
+/// one taken from `cwd`. Dots are resolved lexically ([`normalize`]).
+///
+/// # Examples
+///
+/// ```
+/// use std::path::{Path, PathBuf};
+///
+/// use haest_core::fs::resolve_path;
+///
+/// let cwd = Path::new("/project");
+/// assert_eq!(resolve_path(cwd, "src/../README.md"), PathBuf::from("/project/README.md"));
+/// assert_eq!(resolve_path(cwd, "/etc/hosts"), PathBuf::from("/etc/hosts"));
+/// ```
 pub fn resolve_path(cwd: &Path, p: &str) -> PathBuf {
     // `join` keeps an absolute `p` as it is.
     normalize(&cwd.join(p))

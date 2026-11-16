@@ -6,7 +6,11 @@ use async_trait::async_trait;
 
 use super::{DirEntry, Fs, FsStat};
 
-/// An [`Fs`] that refuses everything: a workspace with no files at all.
+/// An [`Fs`] that refuses everything: a workspace with no files at all
+/// ([`ShutWorkspace`](crate::ShutWorkspace)).
+///
+/// Every call fails with `PermissionDenied` (but [`Fs::chmod`], which has
+/// nothing to set), so [`Fs::exists`] is false for every path.
 #[derive(Debug, Default)]
 pub struct ShutFs;
 

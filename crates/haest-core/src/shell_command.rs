@@ -4,7 +4,8 @@
 //! inside the shell call it is part of (pipes, `&&`, redirects all work).
 //!
 //! PLUG POINT: implement [`ShellCommand`] and give it to a sandbox
-//! (`haest_workspace::SandboxWorkspace::with_command`).
+//! (`haest_workspace::SandboxWorkspace::with_command`). Each run gets a
+//! [`ShellCall`] and answers with an [`ExecResult`], as a program would.
 
 use std::{borrow::Cow, collections::BTreeMap, path::PathBuf, sync::Arc, time::Instant};
 
@@ -13,10 +14,13 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{fs::Fs, workspace::ExecResult};
 
-/// One run of a [`ShellCommand`].
+/// One run of a [`ShellCommand`]: its arguments and everything of the shell
+/// call it is part of.
 pub struct ShellCall {
     /// The arguments, not including the command's own name.
     pub args: Vec<String>,
+    /// The shell's working directory, absolute. Resolve a relative path
+    /// argument against it ([`crate::fs::resolve_path`]).
     pub cwd: PathBuf,
     /// The shell's exported variables.
     pub env: BTreeMap<String, String>,
@@ -39,9 +43,68 @@ impl ShellCall {
     }
 }
 
+/// A command a simulated shell runs in-process, by name, like a program.
+///
+/// The sandbox calls [`ShellCommand::run`] inside the shell call, so the
+/// command's output goes through pipes and redirects like any program's.
+/// Only `stdout`, `stderr` and `exit_code` of the result are used.
+///
+/// Cancellation: the shell call may be dropped at any `.await` when it is
+/// interrupted or runs out of time. Work that does not await (a long
+/// computation) checks [`ShellCall::cancel`] and [`ShellCall::ends_at`]
+/// itself.
+///
+/// # Examples
+///
+/// ```
+/// use std::{path::PathBuf, sync::Arc, time::{Duration, Instant}};
+///
+/// use async_trait::async_trait;
+/// use haest_core::{
+///     ExecResult, MemFs,
+///     shell_command::{ShellCall, ShellCommand},
+/// };
+/// use tokio_util::sync::CancellationToken;
+///
+/// /// `upper`: stdin, or the arguments, in capitals.
+/// struct Upper;
+///
+/// #[async_trait]
+/// impl ShellCommand for Upper {
+///     fn name(&self) -> &str {
+///         "upper"
+///     }
+///     fn note(&self) -> Option<String> {
+///         Some("`upper [text]` prints stdin or its arguments in capitals.".into())
+///     }
+///     async fn run(&self, call: ShellCall) -> ExecResult {
+///         let text = match call.stdin_text() {
+///             Some(stdin) => stdin.into_owned(),
+///             None => call.args.join(" "),
+///         };
+///         ExecResult { stdout: text.to_uppercase(), ..Default::default() }
+///     }
+/// }
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// let call = ShellCall {
+///     args: vec![],
+///     cwd: PathBuf::from("/project"),
+///     env: Default::default(),
+///     stdin: Some(b"hello\n".to_vec()),
+///     fs: Arc::new(MemFs::new()),
+///     cancel: CancellationToken::new(),
+///     ends_at: Instant::now() + Duration::from_secs(10),
+/// };
+/// let out = Upper.run(call).await;
+/// assert_eq!((out.stdout.as_str(), out.exit_code), ("HELLO\n", 0));
+/// # }
+/// ```
 #[async_trait]
 pub trait ShellCommand: Send + Sync {
-    /// The name the shell runs it by.
+    /// The name the shell runs it by. In the sandbox it replaces a builtin or
+    /// an earlier command of the same name.
     fn name(&self) -> &str;
     /// What the model must know about it, for the workspace's system prompt
     /// note. None: it is not advertised (a command that only answers a habit,
@@ -50,5 +113,7 @@ pub trait ShellCommand: Send + Sync {
         None
     }
     /// Stdout, stderr and the exit code, as a program would end. `timed_out` is the shell's to set.
+    ///
+    /// Never fails: a failure is a nonzero exit code and a reason on stderr.
     async fn run(&self, call: ShellCall) -> ExecResult;
 }

@@ -33,6 +33,30 @@ fn err(kind: ErrorKind, p: &Path) -> io::Error {
 }
 
 /// An in-memory [`Fs`]: tests, scratch space, a sandbox with no disk behind it.
+///
+/// Files and directories only: no links ([`Fs::read_link`] says no path is
+/// one) and no permissions ([`Fs::chmod`] does nothing). Paths are
+/// [`normalize`]d on the way in. It starts with `/` alone, and `/` cannot be
+/// removed. Safe to share between tasks; every call takes one short lock.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+///
+/// use haest_core::{Fs, MemFs};
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() -> std::io::Result<()> {
+/// let fs = MemFs::with_files([("/p/a.txt", "A"), ("/p/sub/b.txt", "B")]);
+/// fs.rename(Path::new("/p/sub"), Path::new("/p/moved")).await?;
+/// assert_eq!(fs.read_to_string(Path::new("/p/moved/b.txt")).await?, "B");
+/// assert!(fs.remove(Path::new("/p"), false).await.is_err(), "not empty");
+/// fs.remove(Path::new("/p"), true).await?;
+/// assert!(!fs.exists(Path::new("/p/a.txt")).await);
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct MemFs {
     nodes: Mutex<BTreeMap<PathBuf, Node>>,
@@ -49,11 +73,13 @@ impl Default for MemFs {
 }
 
 impl MemFs {
+    /// An empty file system: only the root directory `/`.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Seed files (parents created), for tests.
+    /// A file system holding these `(path, contents)` files, every parent
+    /// directory created. A path given twice keeps the last contents.
     pub fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
         files: impl IntoIterator<Item = (P, D)>,
     ) -> Self {

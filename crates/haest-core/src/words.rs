@@ -1,10 +1,21 @@
-//! Values written as words, declared once. [`word_enum!`] is one value out of
-//! several (`effort = "high"`), [`word_set!`] is several switches on at once
-//! (`tools = ["read", "bash"]`). Each declares its words where the type is, so
-//! a config file, a flag and the code all go by the same list, and a new word
-//! is one line.
+//! Values written as words, declared once. [`word_enum!`](crate::word_enum) is
+//! one value out of several (`effort = "high"`), [`word_set!`](crate::word_set)
+//! is several switches on at once (`tools = ["read", "bash"]`). Each declares
+//! its words where the type is, so a config file, a flag, the session file and
+//! the code all go by the same list, and a new word is one line.
+//!
+//! haest's own word types are built this way: [`Effort`](crate::Effort),
+//! [`WorkspaceMode`](crate::WorkspaceMode),
+//! [`MediaKind`](crate::messages::MediaKind) and the other enums, and
+//! [`SkillSources`](crate::skills::SkillSources) and
+//! [`ContextSources`](crate::context::ContextSources) as sets. `haest-config`
+//! and `haest-settings` declare theirs with the same macros; a host may too.
+//! Both macros are exported at the crate root.
 
 /// A set of switches named by words, in one fixed order.
+///
+/// [`word_set!`](crate::word_set) implements it; read a list setting with
+/// [`WordSet::from_words`] and write it back with [`WordSet::words`].
 pub trait WordSet: Sized + Default {
     /// Every word, in the order a list setting writes them.
     const WORDS: &'static [&'static str];
@@ -24,11 +35,16 @@ pub trait WordSet: Sized + Default {
             .collect()
     }
 
+    /// True when no word is on.
     fn is_empty(&self) -> bool {
         self.words().is_empty()
     }
 
-    /// The set with these words on, or the first word it does not know.
+    /// The set with these words on (every other one off).
+    ///
+    /// # Errors
+    ///
+    /// The first word the set does not know, as written.
     fn from_words<'a>(words: impl IntoIterator<Item = &'a str>) -> Result<Self, String> {
         let mut set = Self::default();
         for w in words {
@@ -40,7 +56,36 @@ pub trait WordSet: Sized + Default {
     }
 }
 
-/// One struct of `bool`s per word, with `NONE`, `ALL` and its [`WordSet`].
+/// Declares a struct with one `pub bool` field per word, the constants `NONE`
+/// and `ALL`, and its [`WordSet`](crate::words::WordSet).
+///
+/// The field name is the word. The struct derives `Debug`, `Clone`, `Copy`,
+/// `Default` (all off), `PartialEq` and `Eq` itself, so derive none of them.
+/// Doc comments on the struct and on each field are kept.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::{word_set, words::WordSet};
+///
+/// word_set! {
+///     /// Which rooms the lights are on in.
+///     pub Rooms {
+///         /// The kitchen.
+///         kitchen,
+///         /// The hall.
+///         hall,
+///     }
+/// }
+///
+/// let on = Rooms::from_words(["hall"]).unwrap();
+/// assert!(on.hall && !on.kitchen);
+/// assert_eq!(on.words(), ["hall"]);
+/// assert_eq!(Rooms::WORDS, ["kitchen", "hall"]);
+/// assert_eq!(Rooms::from_words(["attic"]), Err("attic".to_string()));
+/// assert!(Rooms::NONE.is_empty());
+/// assert_eq!(Rooms::ALL.words(), ["kitchen", "hall"]);
+/// ```
 #[macro_export]
 macro_rules! word_set {
     ($(#[$doc:meta])* $vis:vis $name:ident { $($(#[$fdoc:meta])* $field:ident),+ $(,)? }) => {
@@ -51,7 +96,9 @@ macro_rules! word_set {
         }
 
         impl $name {
+            /// Every word off.
             pub const NONE: Self = Self { $($field: false,)+ };
+            /// Every word on.
             pub const ALL: Self = Self { $($field: true,)+ };
         }
 
@@ -76,10 +123,45 @@ macro_rules! word_set {
     };
 }
 
-/// An enum whose values are words: `ALL`, `WORDS`, `as_str`, `Display`,
-/// `FromStr` (whose error names `$what` and the words) and serde, all from one
-/// list -- a config file, a flag and the session file write the same word.
-/// Do not derive `Serialize`/`Deserialize` on it.
+/// Declares an enum whose values are words, with `ALL`, `WORDS`, `as_str`,
+/// `Display`, `FromStr` and serde, all from one list: a config file, a flag
+/// and the session file write the same word.
+///
+/// `$what` (the literal in parentheses) names the setting in `FromStr`'s
+/// error: `unknown effort "huge" (off, low, ...)`. Serde reads and writes the
+/// bare word, and a wrong word fails with that same message.
+///
+/// The enum must derive `Clone` and `Copy` (`as_str` takes it by value). Do
+/// not derive `Serialize` or `Deserialize`: the macro implements both, through
+/// haest-core's own serde, so the declaring crate needs no serde dependency.
+/// Other attributes and doc comments, on the enum and on each variant, are kept.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::word_enum;
+///
+/// word_enum! {
+///     /// How loud a note is.
+///     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///     pub enum Volume ("volume") {
+///         /// Barely there.
+///         Quiet = "quiet",
+///         /// Heard across the room.
+///         Loud = "loud",
+///     }
+/// }
+///
+/// assert_eq!(Volume::Loud.as_str(), "loud");
+/// assert_eq!(Volume::Quiet.to_string(), "quiet");
+/// assert_eq!("loud".parse::<Volume>(), Ok(Volume::Loud));
+/// assert_eq!(Volume::WORDS, ["quiet", "loud"]);
+/// assert_eq!(
+///     "shouty".parse::<Volume>().unwrap_err(),
+///     "unknown volume \"shouty\" (quiet, loud)"
+/// );
+/// assert_eq!(serde_json::to_string(&Volume::Loud).unwrap(), "\"loud\"");
+/// ```
 #[macro_export]
 macro_rules! word_enum {
     (
@@ -94,9 +176,12 @@ macro_rules! word_enum {
         }
 
         impl $name {
+            /// Every value, in the order declared.
             pub const ALL: &'static [$name] = &[$($name::$variant),+];
+            /// Every value's word, in the order of [`Self::ALL`].
             pub const WORDS: &'static [&'static str] = &[$($word),+];
 
+            /// The word this value is written as.
             pub fn as_str(self) -> &'static str {
                 match self {
                     $($name::$variant => $word,)+

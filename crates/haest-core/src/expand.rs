@@ -1,10 +1,30 @@
 //! `${NAME}` and `${NAME:-default}` in a config value: Claude Code's
 //! `.mcp.json` syntax, and the one haest uses wherever a file names a variable.
+//!
+//! A helper the haest crates share (`haest-config`, `haest-mcp`); the loop
+//! does not use it. Start from [`expand_vars`].
 
-/// `text` with its variables filled in from `lookup`, and the names that had
-/// neither a value nor a default: those stay as written, for the caller to
-/// report. A variable set to "" is set, so its default is not used. `$NAME`
-/// without braces, and `${...}` that is not a variable name, stay as written.
+/// `text` with its `${NAME}` and `${NAME:-default}` filled in from `lookup`,
+/// plus the names that had neither a value nor a default.
+///
+/// An unset name with no default stays as written, and is named once in the
+/// list for the caller to report ([`unset_note`]). A variable set to "" is
+/// set, so its default is not used. `$NAME` without braces, and a `${...}`
+/// whose inside is not a variable name ([`is_var_name`]), stay as written and
+/// are not reported. Nothing is expanded twice: a value that holds `${X}`
+/// stays as it came.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::expand::{expand_vars, unset_note};
+///
+/// let env = |name: &str| (name == "TOKEN").then(|| "t0k".to_string());
+/// let (text, unset) = expand_vars("${BASE:-https://api.example.com}/mcp?k=${TOKEN}&u=${USER_ID}", &env);
+/// assert_eq!(text, "https://api.example.com/mcp?k=t0k&u=${USER_ID}");
+/// assert_eq!(unset, ["USER_ID"]);
+/// assert_eq!(unset_note(&unset), "names ${USER_ID}, which is not set and has no default");
+/// ```
 pub fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> (String, Vec<String>) {
     let mut out = String::with_capacity(text.len());
     let mut unset: Vec<String> = Vec::new();
@@ -39,8 +59,9 @@ pub fn expand_vars(text: &str, lookup: &dyn Fn(&str) -> Option<String>) -> (Stri
     (out, unset)
 }
 
-/// [`expand_vars`]'s unset names, as a note says them: `names ${A}, which is
-/// not set and has no default`.
+/// [`expand_vars`]'s unset names as the end of a sentence: `names ${A}, which
+/// is not set and has no default` (`are`/`have` for more than one). The caller
+/// writes the start (`env TOKEN names ${A}, ...`).
 pub fn unset_note(unset: &[String]) -> String {
     let names: Vec<String> = unset.iter().map(|n| format!("${{{n}}}")).collect();
     let (is, has) = if names.len() == 1 {
@@ -54,7 +75,8 @@ pub fn unset_note(unset: &[String]) -> String {
     )
 }
 
-/// A shell variable name: a letter or `_`, then letters, digits and `_`.
+/// Is `s` a shell variable name: an ASCII letter or `_`, then ASCII letters,
+/// digits and `_`?
 pub fn is_var_name(s: &str) -> bool {
     let mut chars = s.chars();
     chars

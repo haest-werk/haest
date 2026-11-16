@@ -1,12 +1,28 @@
 //! What a caught panic said. `panic!("literal")` carries a `&'static str`,
 //! a formatted `panic!` or an `expect` a `String`; any other payload
 //! (`std::panic::panic_any`) says nothing haest can show.
+//!
+//! A helper the haest crates share (a tool or a script engine that catches a
+//! panic and reports it instead of dying); hosts rarely need it.
 
 use std::any::Any;
 
 /// The panic's text, None when its payload is not text. Pass the payload
 /// itself, `payload.as_ref()` on the `Box` that `catch_unwind` returns: a
 /// `&Box` coerces to the box as the `Any` and never matches.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::panics::panic_message;
+///
+/// fn tool() {
+///     panic!("disk on fire");
+/// }
+///
+/// let payload = std::panic::catch_unwind(tool).unwrap_err();
+/// assert_eq!(panic_message(payload.as_ref()), Some("disk on fire"));
+/// ```
 pub fn panic_message(payload: &(dyn Any + Send)) -> Option<&str> {
     if let Some(s) = payload.downcast_ref::<&str>() {
         return Some(s);

@@ -6,6 +6,33 @@
 //! Pure state: `on_change` hands every new snapshot to whoever persists and
 //! publishes it (the host). Ids are short counters ("1", "2", ...), stable for the
 //! session; a restored snapshot continues the count.
+//!
+//! Start from [`TaskBoard`]. A host writes each snapshot as a
+//! [`SessionRecord::Tasks`](crate::session::SessionRecord::Tasks) and hands the
+//! replayed list back to [`TaskBoard::restore`] on resume.
+//!
+//! # Examples
+//!
+//! ```
+//! use std::sync::{Arc, Mutex};
+//!
+//! use haest_core::task_board::{HaestTaskStatus, NewTask, PatchStatus, TaskBoard, TaskPatch};
+//!
+//! let published = Arc::new(Mutex::new(0));
+//! let seen = published.clone();
+//! let board = TaskBoard::new(move |_tasks| *seen.lock().unwrap() += 1);
+//!
+//! let schema = board.create(NewTask { subject: "Write the schema".into(), ..Default::default() });
+//! let api = board.create(NewTask { subject: "Write the API".into(), ..Default::default() });
+//! board.update(&api.id, TaskPatch { add_blocked_by: vec![schema.id.clone()], ..Default::default() })?;
+//! let done = TaskPatch { status: Some(PatchStatus::Set(HaestTaskStatus::Completed)), ..Default::default() };
+//! board.update(&schema.id, done)?;
+//!
+//! assert_eq!(board.get("2")?.blocked_by, ["1"]);
+//! assert_eq!(board.get("1")?.status, HaestTaskStatus::Completed);
+//! assert_eq!(*published.lock().unwrap(), 4, "one snapshot per change");
+//! # Ok::<(), haest_core::task_board::TaskError>(())
+//! ```
 
 use std::sync::Mutex;
 
@@ -14,33 +41,46 @@ use serde::{Deserialize, Serialize};
 use crate::deps::now_ms;
 
 crate::word_enum! {
-    /// `as_str` is the wire name (`in_progress`).
+    /// Where a task stands. `as_str` is the wire name (`in_progress`).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum HaestTaskStatus ("task status") {
+        /// Not started; every new task begins here.
         Pending = "pending",
+        /// Being worked on now.
         InProgress = "in_progress",
+        /// Done.
         Completed = "completed",
     }
 }
 
+/// One task on the list, in Claude Code's shape (camelCase on the wire).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HaestTask {
+    /// The board's counter as text ("1", "2", ...).
     pub id: String,
+    /// What to do, in a line.
     pub subject: String,
+    /// The details, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Present-continuous label shown while in_progress ("Running tests").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_form: Option<String>,
+    /// Where it stands.
     pub status: HaestTaskStatus,
+    /// The ids that must finish before this one.
     #[serde(default)]
     pub blocked_by: Vec<String>,
+    /// The ids waiting on this one (the other end of `blocked_by`).
     #[serde(default)]
     pub blocks: Vec<String>,
+    /// Who works on it, free text, if the model named anyone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// When it last changed, by the board's clock (ms since the epoch).
     pub updated_at: u64,
+    /// When it was last marked completed; never cleared.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<u64>,
 }
@@ -48,32 +88,47 @@ pub struct HaestTask {
 /// What an update may set: a status, or removing the task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatchStatus {
+    /// Move the task to this status.
     Set(HaestTaskStatus),
+    /// Remove the task, and every link to it from the others.
     Deleted,
 }
 
-/// Only the fields that are `Some` change; an absent field leaves the task's value alone.
+/// A change to one task ([`TaskBoard::update`]). Only the fields that are
+/// `Some` change; an absent field leaves the task's value alone. The `add_*`
+/// lists add links and never remove one.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TaskPatch {
+    /// A new subject.
     pub subject: Option<String>,
+    /// A new description.
     pub description: Option<String>,
+    /// A new present-continuous label.
     pub active_form: Option<String>,
+    /// A new status, or [`PatchStatus::Deleted`].
     pub status: Option<PatchStatus>,
+    /// A new owner.
     pub owner: Option<String>,
+    /// Ids that must finish before this task (both ends get the link).
     pub add_blocked_by: Vec<String>,
+    /// Ids that wait on this task (both ends get the link).
     pub add_blocks: Vec<String>,
 }
 
-/// A refusal the model can correct (an unknown id, a self-dependency).
+/// A refusal the model can correct (an unknown id, a self-dependency). The
+/// text is for the model: an unknown id lists the ids that exist.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct TaskError(pub String);
 
-/// The new subject of a task.
+/// What [`TaskBoard::create`] needs to make a task.
 #[derive(Debug, Clone, Default)]
 pub struct NewTask {
+    /// What to do, in a line.
     pub subject: String,
+    /// The details, if any.
     pub description: Option<String>,
+    /// Present-continuous label shown while in_progress ("Running tests").
     pub active_form: Option<String>,
 }
 
@@ -121,6 +176,12 @@ impl State {
     }
 }
 
+/// The conversation's task list: create, update, list. Shared by reference
+/// (an `Arc`) between the Task tools and the host.
+///
+/// Every change hands the whole new list to `on_change`, with the board's lock
+/// released, so `on_change` may read the board. [`Default`] is a board whose
+/// `on_change` does nothing.
 pub struct TaskBoard {
     state: Mutex<State>,
     on_change: OnChange,
@@ -134,7 +195,8 @@ impl Default for TaskBoard {
 }
 
 impl TaskBoard {
-    /// A board that hands every new snapshot to `on_change`; the clock is the system's.
+    /// An empty board that hands every new snapshot to `on_change`; the clock
+    /// is the system's ([`now_ms`]).
     pub fn new(on_change: impl Fn(&[HaestTask]) + Send + Sync + 'static) -> Self {
         Self::with_clock(on_change, now_ms)
     }
@@ -154,15 +216,23 @@ impl TaskBoard {
         }
     }
 
+    /// Every task, in the order they were created.
     pub fn list(&self) -> Vec<HaestTask> {
         self.state.lock().unwrap().tasks.clone()
     }
 
+    /// The task with this id.
+    ///
+    /// # Errors
+    ///
+    /// A [`TaskError`] naming the ids that exist, when none matches.
     pub fn get(&self, id: &str) -> Result<HaestTask, TaskError> {
         let s = self.state.lock().unwrap();
         s.find(id).map(|i| s.tasks[i].clone())
     }
 
+    /// Add a task at the end of the list, `pending`, with the next id; fires
+    /// `on_change`. Returns the new task.
     pub fn create(&self, input: NewTask) -> HaestTask {
         let task = {
             let mut s = self.state.lock().unwrap();
@@ -186,7 +256,18 @@ impl TaskBoard {
         task
     }
 
-    /// The updated task, or None when the patch deleted it.
+    /// Apply `patch` to task `id`; fires `on_change`. Returns the updated
+    /// task, or None when the patch deleted it.
+    ///
+    /// `updated_at` is stamped from the board's clock; setting `completed`
+    /// stamps `completed_at` too.
+    ///
+    /// # Errors
+    ///
+    /// A [`TaskError`] when `id` or an id in `add_blocked_by` / `add_blocks`
+    /// does not exist, or when the task would block itself. Every check runs
+    /// before the first change: a refused patch changes nothing and fires
+    /// nothing.
     pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Option<HaestTask>, TaskError> {
         let out = {
             let mut s = self.state.lock().unwrap();
@@ -219,6 +300,8 @@ impl TaskBoard {
     }
 
     /// Replace the whole list (session replay); does not fire `on_change`.
+    /// The next id is one past the highest numeric id in `tasks` (an id that
+    /// is not a number counts as 0); an empty list starts again at "1".
     pub fn restore(&self, tasks: Vec<HaestTask>) {
         let mut s = self.state.lock().unwrap();
         let max = tasks

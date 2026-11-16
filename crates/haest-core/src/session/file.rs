@@ -17,9 +17,13 @@ use crate::fs::{Fs, ensure_dir};
 /// `on_message` hook can call it; records land in call order.
 ///
 /// PLUG POINT: a host that keeps the file itself (or ships records elsewhere)
-/// implements this; haest's own is [`JsonlSessionFile`].
+/// implements this; haest's own is [`JsonlSessionFile`]. To resume with
+/// [`replay`], keep each record as one line of its JSON (`serde_json`).
 #[async_trait]
 pub trait SessionSink: Send + Sync {
+    /// Queue or write one record. It runs on the loop's path (a host calls it
+    /// from [`AgentHooks::on_message`](crate::AgentHooks::on_message)), so it
+    /// must not block for long. Errors are the sink's own to report.
     fn append(&self, record: &SessionRecord);
     /// Resolves once every record appended so far has landed. Default: nothing queued.
     async fn flush(&self) {}
@@ -38,6 +42,33 @@ enum Job {
 /// [`SessionSink::flush`] waits for the queue -- a host awaits it before exiting.
 ///
 /// Must be created inside a tokio runtime (the writer task is spawned there).
+/// The writer stops when the value is dropped, after what is queued.
+///
+/// # Examples
+///
+/// ```
+/// use std::{path::Path, sync::Arc};
+///
+/// use haest_core::{
+///     MemFs, Message,
+///     session::{JsonlSessionFile, SessionRecord, SessionSink},
+/// };
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() -> std::io::Result<()> {
+/// let fs = Arc::new(MemFs::new());
+/// let file = JsonlSessionFile::new(fs.clone(), Path::new("/data"), "s1").unwrap();
+/// file.create("conversation-1", "/project", 0).await?;
+/// file.append(&SessionRecord::Message { t: 1, message: Message::user("hi") });
+/// file.flush().await;
+///
+/// // Later, or in another process: the same file, replayed.
+/// let again = JsonlSessionFile::new(fs, Path::new("/data"), "s1").unwrap();
+/// assert_eq!(again.path(), Path::new("/data/sessions/s1.jsonl"));
+/// assert_eq!(again.load().await?.messages, [Message::user("hi")]);
+/// # Ok(())
+/// # }
+/// ```
 pub struct JsonlSessionFile {
     path: PathBuf,
     session_id: String,
@@ -46,7 +77,17 @@ pub struct JsonlSessionFile {
 }
 
 impl JsonlSessionFile {
-    /// `<data_dir>/sessions/<session_id>.jsonl`; write errors are dropped.
+    /// The session file `<data_dir>/sessions/<session_id>.jsonl`, through
+    /// `fs`; errors of queued writes are dropped. Nothing is written until
+    /// [`JsonlSessionFile::create`] or the first record.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidSessionId`] unless `session_id` is `[a-zA-Z0-9_-]+`.
+    ///
+    /// # Panics
+    ///
+    /// Outside a tokio runtime.
     pub fn new(
         fs: Arc<dyn Fs>,
         data_dir: &Path,
@@ -55,7 +96,16 @@ impl JsonlSessionFile {
         Self::with_error_handler(fs, data_dir, session_id, |_| {})
     }
 
-    /// Same, handing every failed write to `on_error`; later writes still run.
+    /// Same, handing every failed queued write to `on_error` (on the writer
+    /// task); later writes still run.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidSessionId`] unless `session_id` is `[a-zA-Z0-9_-]+`.
+    ///
+    /// # Panics
+    ///
+    /// Outside a tokio runtime.
     pub fn with_error_handler(
         fs: Arc<dyn Fs>,
         data_dir: &Path,
@@ -73,14 +123,17 @@ impl JsonlSessionFile {
         })
     }
 
+    /// The file's path: `<data_dir>/sessions/<session_id>.jsonl`.
     pub fn path(&self) -> &Path {
         &self.path
     }
 
+    /// The session's id, as given.
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
 
+    /// Is the file there? Does not wait for queued writes.
     pub async fn exists(&self) -> bool {
         self.fs.exists(&self.path).await
     }
@@ -89,6 +142,11 @@ impl JsonlSessionFile {
     /// exists. Resolves once the header is on disk, in order with the records
     /// appended before it; an error here is the caller's, not `on_error`'s.
     /// `created_ms`: milliseconds since the epoch, for the header's `createdAt`.
+    ///
+    /// # Errors
+    ///
+    /// The file system's, from making the dir, writing the header or setting
+    /// the modes; or `Other` when the writer task has stopped.
     pub async fn create(
         &self,
         conversation_id: &str,
@@ -106,6 +164,10 @@ impl JsonlSessionFile {
 
     /// Flush, then replay the file. Never fails on a bad line (see [`replay`]);
     /// invalid UTF-8 from a torn write is replaced, not fatal.
+    ///
+    /// # Errors
+    ///
+    /// The file system's read error: `NotFound` when there is no file yet.
     pub async fn load(&self) -> io::Result<ReplayedSession> {
         SessionSink::flush(self).await;
         let bytes = self.fs.read(&self.path).await?;

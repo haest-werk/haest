@@ -1,12 +1,15 @@
-//! Fitting the effort to what the current model accepts. Pure.
+//! Fitting the reasoning level ([`Effort`]) to what the current model accepts,
+//! by its catalog row ([`Reasoning`]). Pure.
 //!
-//! Like media fitting, this happens per REQUEST and never touches the stored
-//! setting: `off` stays `off`, so switching to a model that can stop thinking
-//! gets `off` again.
+//! Like media fitting ([`crate::media`]), this happens per REQUEST and never
+//! touches the stored setting: `off` stays `off`, so switching to a model that
+//! can stop thinking gets `off` again.
 //!
-//! The one fit today: `off` on a model whose reasoning is mandatory. OpenRouter
-//! answers `enabled: false` there with a 400 on every turn, so the model gets
-//! the cheapest thinking it takes instead.
+//! The loop's one fit, [`fit_effort`]: `off` on a model whose reasoning is
+//! mandatory. OpenRouter answers `enabled: false` there with a 400 on every
+//! turn, so the model gets the cheapest thinking it takes instead.
+//! [`nearest_accepted_effort`] is for provider adapters (`haest-providers`)
+//! whose API refuses any level it does not list.
 
 use crate::{
     catalog::{OpenRouterEffort, Reasoning},
@@ -23,7 +26,18 @@ const LEVELS: [Effort; 5] = [
     Effort::Max,
 ];
 
-/// The OpenRouter name of a haest level (`Off` has none: it is `None` only where listed).
+/// The OpenRouter level with the same name as haest's `e`; None for
+/// [`Effort::Off`], which maps to [`OpenRouterEffort::None`] only where a
+/// model lists it ([`nearest_accepted_effort`] decides that).
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::{Effort, catalog::OpenRouterEffort, effort::as_openrouter};
+///
+/// assert_eq!(as_openrouter(Effort::High), Some(OpenRouterEffort::High));
+/// assert_eq!(as_openrouter(Effort::Off), None);
+/// ```
 pub fn as_openrouter(e: Effort) -> Option<OpenRouterEffort> {
     Some(match e {
         Effort::Off => return None,
@@ -46,7 +60,14 @@ fn cheapest_level(r: &Reasoning) -> Effort {
         .unwrap_or(Effort::Low)
 }
 
-/// The effort THIS model may receive for `spec`; `effort` as asked whenever the catalog has no objection.
+/// The effort the model behind `spec` may receive: `effort` as asked unless it
+/// is [`Effort::Off`] and the host's catalog row says reasoning is mandatory.
+///
+/// Then the answer is the cheapest haest level the row lists (`low` when it
+/// lists none), and [`AgentHooks::on_effort_fitted`] hears about it with
+/// `model` (the provider's model id, for the human). The row comes from
+/// [`AgentHooks::reasoning`]; a host that returns None there gets `effort`
+/// back unchanged. None stays None: the model's own default.
 pub fn fit_effort(
     effort: Option<Effort>,
     spec: &str,
@@ -64,11 +85,33 @@ pub fn fit_effort(
     Some(used)
 }
 
+/// The level `accepted` lists that is nearest `effort`, a tie going UP; None
+/// means send no level at all.
+///
 /// For a wire dialect that 400s on any level it does not list (a direct
-/// `reasoning_effort` API, unlike OpenRouter which maps them): the accepted
-/// level nearest `effort`, a tie going UP. `Off` is `none` where listed, the
-/// cheapest level when reasoning is mandatory, else None = send no level at all.
-/// None too when nothing haest knows is listed.
+/// `reasoning_effort` API, unlike OpenRouter, which maps them). Only haest's
+/// own levels (`low` to `max`) are candidates, never `minimal`, so a row that
+/// lists none of them gives None.
+///
+/// [`Effort::Off`] is `none` where listed; else, when reasoning is mandatory,
+/// the cheapest listed level (`low` when none is listed); else None.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::{
+///     Effort,
+///     catalog::{OpenRouterEffort as O, Reasoning},
+///     effort::nearest_accepted_effort,
+/// };
+///
+/// let row = Reasoning { mandatory: false, efforts: vec![O::Low, O::High] };
+/// // `medium` is one step from both: the tie goes up.
+/// assert_eq!(nearest_accepted_effort(Effort::Medium, &row), Some(O::High));
+/// assert_eq!(nearest_accepted_effort(Effort::Max, &row), Some(O::High));
+/// // Off, on a model that may stop thinking but lists no `none`: send nothing.
+/// assert_eq!(nearest_accepted_effort(Effort::Off, &row), None);
+/// ```
 pub fn nearest_accepted_effort(effort: Effort, accepted: &Reasoning) -> Option<OpenRouterEffort> {
     if effort == Effort::Off {
         if accepted.efforts.contains(&OpenRouterEffort::None) {

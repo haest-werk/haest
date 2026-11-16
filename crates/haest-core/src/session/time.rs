@@ -1,7 +1,18 @@
 //! A JS `Date.prototype.toISOString()` for the header's `createdAt`, without a
 //! date crate: the caller passes the clock, this only formats it.
 
-/// Milliseconds since the epoch -> `2026-11-10T08:30:00.000Z` (UTC, millisecond precision).
+/// Milliseconds since the epoch -> `2026-11-10T08:30:00.000Z` (UTC, millisecond
+/// precision): the text JavaScript's `Date.prototype.toISOString()` gives, so
+/// a session header reads the same from either haest.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::session::iso_utc;
+///
+/// assert_eq!(iso_utc(0), "1970-01-01T00:00:00.000Z");
+/// assert_eq!(iso_utc(1_709_211_909_007), "2024-02-29T13:05:09.007Z");
+/// ```
 pub fn iso_utc(ms: u64) -> String {
     let secs = ms / 1000;
     let (days, rem) = (secs / 86_400, secs % 86_400);

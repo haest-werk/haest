@@ -3,12 +3,31 @@
 //!
 //! Only from a configured price: a model with none stays unpriced, because an
 //! invented number in the ledger is worse than a missing one.
+//!
+//! A helper for provider adapters (`haest-providers` calls it once per model
+//! call); the ledger ([`crate::ledger`]) then charges whatever cost the
+//! message carries.
 
 use crate::{catalog::ModelPricing, limits::billed_tokens, messages::Usage};
 
 const PER: f64 = 1_000_000.0;
 
-/// Sets `usage.cost_usd` from `pricing` when the provider gave no cost and tokens were billed.
+/// Sets `usage.cost_usd` from `pricing` when the provider gave no cost and
+/// tokens were billed. A cost already there wins; no `pricing` changes nothing.
+///
+/// Prices are USD per 1M tokens ([`ModelPricing`]); a cache write with no
+/// price of its own is billed as input.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::{Usage, catalog::ModelPricing, pricing::book_priced_cost};
+///
+/// let price = ModelPricing { input: 2.0, cached_input: 0.2, output: 8.0, cache_write: None };
+/// let mut usage = Usage { input: 500_000, output: 100_000, ..Default::default() };
+/// book_priced_cost(&mut usage, Some(&price));
+/// assert_eq!(usage.cost_usd, Some(1.8)); // 0.5 * $2 + 0.1 * $8
+/// ```
 pub fn book_priced_cost(usage: &mut Usage, pricing: Option<&ModelPricing>) {
     let Some(p) = pricing else { return };
     if usage.cost_usd.is_some() || billed_tokens(usage) == 0 {

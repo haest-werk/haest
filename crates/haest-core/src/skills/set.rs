@@ -13,7 +13,9 @@ use crate::fs::Fs;
 /// One skill as the model is offered it: a line of the prompt's list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillCard {
+    /// The name the model loads it by.
     pub name: String,
+    /// What it is for, in a line.
     pub description: String,
     /// When to load it ("Use when: ..."); empty = not said.
     pub when: String,
@@ -22,13 +24,43 @@ pub struct SkillCard {
 }
 
 /// Where the Skill tool and the prompt's list get a host's skills.
+///
+/// haest has two: [`DiskSkills`] (SKILL.md files) and [`InlineSkills`] (held
+/// in memory). A host whose skills live elsewhere (a database) implements it.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::skills::{InlineSkill, InlineSkills, SkillCard, SkillSet};
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() -> std::io::Result<()> {
+/// let card = SkillCard {
+///     name: "standup".into(),
+///     description: "Write the daily standup".into(),
+///     when: "the user asks for a standup".into(),
+///     origin: Some("built in".into()),
+/// };
+/// let set = InlineSkills::merged([vec![InlineSkill { card, body: "Yesterday, today, blockers.".into() }]]);
+///
+/// assert_eq!(set.offered()[0].name, "standup");
+/// let loaded = set.load("standup", None).await?;
+/// assert_eq!(loaded, "Skill standup (built in): Write the daily standup\n\nYesterday, today, blockers.");
+/// assert!(set.load("nope", None).await.is_err());
+/// # Ok(())
+/// # }
+/// ```
 #[async_trait]
 pub trait SkillSet: Send + Sync {
     /// The skills the model may load now, in the order the list shows them
     /// (asked on every call: a set may change mid-conversation).
     fn offered(&self) -> Vec<SkillCard>;
     /// What the model reads when it loads `name`, one of [`Self::offered`];
-    /// `NotFound` for any other.
+    /// `args` is what the model passed along, if anything.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` for a name not offered; whatever reading the body fails with.
     async fn load(&self, name: &str, args: Option<&str>) -> io::Result<String>;
 }
 
@@ -53,6 +85,10 @@ pub(super) fn argument_line(args: Option<&str>) -> String {
 }
 
 /// SKILL.md files (haest's discovery): the model-invocable ones, read from `fs` when loaded.
+///
+/// Offers only the skills the model may pick; a skill with
+/// `disable-model-invocation` cannot be loaded through it either. A load
+/// is [`load_skill_body`].
 pub struct DiskSkills {
     list: Arc<dyn Fn() -> Vec<Skill> + Send + Sync>,
     fs: Arc<dyn Fs>,
@@ -95,11 +131,14 @@ impl SkillSet for DiskSkills {
 /// One skill a host holds in memory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InlineSkill {
+    /// How it is listed.
     pub card: SkillCard,
+    /// What the model reads when it loads it.
     pub body: String,
 }
 
-/// A host's skills held in memory, one per name.
+/// A host's skills held in memory, one per name, listed by name. Build it
+/// with [`InlineSkills::merged`]; [`Default`] is the empty set.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InlineSkills(Vec<InlineSkill>);
 
@@ -126,6 +165,7 @@ impl InlineSkills {
         Self(first_of_each_name(lists, |s| &s.card.name))
     }
 
+    /// The skills, sorted by name.
     pub fn skills(&self) -> &[InlineSkill] {
         &self.0
     }
@@ -156,11 +196,15 @@ impl SkillSet for InlineSkills {
     }
 }
 
-/// Haest's own intro to the list (`# Skills`).
+/// haest's own intro to the list (`# Skills`): what a skill is, and to load
+/// a matching one with the `Skill` tool BEFORE doing the task.
 pub const DEFAULT_SKILLS_INTRO: &str = "# Skills\nSkills are packaged instructions for specific tasks. When a task matches a skill below, call the `Skill` tool with its name BEFORE doing the task, then follow what it returns.\n";
 
 /// The system prompt's list: `intro`, then one line per skill, never a body.
 /// Empty when there are none.
+///
+/// A line is `- <name> (<origin>): <description> Use when: <when>`, the
+/// origin and the `Use when` part only when the card has them.
 pub fn skill_cards_block(intro: &str, cards: &[SkillCard]) -> String {
     if cards.is_empty() {
         return String::new();

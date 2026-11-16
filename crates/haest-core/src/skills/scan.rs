@@ -29,7 +29,9 @@ use crate::{
 /// A plugin whose `skills/` dir is scanned, its skills named `name:skill`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginRoot {
+    /// The plugin's name, without `@marketplace`.
     pub name: String,
+    /// Where it is installed; its skills are in `<path>/skills`.
     pub path: PathBuf,
 }
 
@@ -37,8 +39,11 @@ pub struct PluginRoot {
 /// from [`super::SkillOpts`]. Each field is one fact the scan reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillScanRoots {
+    /// The user-level config dir (`~/.claude`).
     pub config_dir: PathBuf,
+    /// The project dir the project levels are counted from.
     pub cwd: PathBuf,
+    /// The user's home dir.
     pub home: PathBuf,
     /// `.agents/skills`: `~/.agents/skills` and every project level's.
     pub agents: bool,
@@ -48,14 +53,21 @@ pub struct SkillScanRoots {
     pub plugins: Vec<PluginRoot>,
 }
 
-/// What a SKILL.md's frontmatter says, before it is placed (source, path, plugin).
+/// What a SKILL.md's frontmatter says, before it is placed (source, path,
+/// plugin). The fields mean what [`Skill`]'s do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillMeta {
+    /// `name`, else the fallback name (the skill's dir).
     pub name: String,
+    /// `description`, else `when_to_use`, else empty.
     pub description: String,
+    /// `user-invocable`, default true.
     pub user_invocable: bool,
+    /// Not `disable-model-invocation`, default true.
     pub model_invocable: bool,
+    /// `argument-hint`.
     pub argument_hint: Option<String>,
+    /// `allowed-tools`: a YAML list, or one comma-separated string.
     pub allowed_tools: Option<Vec<String>>,
 }
 
@@ -90,6 +102,27 @@ fn as_list(v: Option<&Meta>) -> Option<Vec<String>> {
 }
 
 /// Parse one SKILL.md; None for anything unusable (no frontmatter, no readable keys).
+///
+/// The frontmatter is read as strict YAML first; YAML that refuses (an
+/// unquoted `description: ... e.g: "x"`, which Claude Code loads anyway) is
+/// read line by line instead ([`crate::frontmatter`]). A frontmatter whose
+/// YAML aliases would grow it by more than about 64K nodes and bytes when
+/// expanded is refused whole, before anything is built: a project's skill
+/// must not be able to exhaust memory. Blank strings count as absent; `\r\n`
+/// line ends are fine.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::skills::parse_skill_file;
+///
+/// let text = "---\ndescription: Cut a release\nallowed-tools: Bash, Read\n---\nSteps...\n";
+/// let meta = parse_skill_file(text, "release").unwrap();
+/// assert_eq!(meta.name, "release"); // no `name:`, so the dir's name
+/// assert_eq!(meta.allowed_tools.unwrap(), ["Bash", "Read"]);
+/// assert!(meta.model_invocable);
+/// assert!(parse_skill_file("no frontmatter", "x").is_none());
+/// ```
 pub fn parse_skill_file(content: &str, fallback_name: &str) -> Option<SkillMeta> {
     let content = content.replace("\r\n", "\n");
     let (head, _) = split_frontmatter(&content)?;
@@ -184,8 +217,14 @@ async fn scan_dir(fs: &dyn Fs, step: &ScanStep) -> Vec<Skill> {
     out
 }
 
-/// Nearest definition wins: project over user, like Claude Code. Plugins are namespaced.
-/// Order: where each name was first seen.
+/// Every skill under `roots`, one per name. Nearest definition wins: project
+/// over user, the cwd's level over the levels above it, like Claude Code.
+/// Plugins are namespaced (`plugin:name`), so they never collide.
+/// Order: where each name was first seen; [`super::skills_in`] sorts by name.
+///
+/// Never fails: a missing dir, or a SKILL.md that cannot be read or parsed,
+/// is skipped. Every subdirectory of a skill dir that holds a `SKILL.md` is
+/// one skill.
 pub async fn scan_skills(fs: &dyn Fs, roots: &SkillScanRoots) -> Vec<Skill> {
     let mut by_name: Vec<Skill> = Vec::new();
     for step in scan_plan(roots) {
@@ -199,7 +238,8 @@ pub async fn scan_skills(fs: &dyn Fs, roots: &SkillScanRoots) -> Vec<Skill> {
     by_name
 }
 
-/// Every directory a skill scan may read, for a host that must grant access to them.
+/// Every directory a skill scan may read, for a host that must grant access
+/// to them (a sandbox's mounts). Lists them whether or not they exist.
 pub fn scan_roots(roots: &SkillScanRoots) -> Vec<PathBuf> {
     scan_plan(roots).into_iter().map(|s| s.dir).collect()
 }

@@ -2,8 +2,10 @@
 //! roots for the skill scan. Read from Claude Code's own files, so haest sees the
 //! same plugin skills Claude Code would:
 //!
-//!   <config dir>/plugins/installed_plugins.json  { version: 2, plugins: { "name@marketplace": [{ installPath }] } }
-//!   <config dir>/settings.json                   { enabledPlugins: { "name@marketplace": true|false } }
+//! ```text
+//! <config dir>/plugins/installed_plugins.json  { version: 2, plugins: { "name@marketplace": [{ installPath }] } }
+//! <config dir>/settings.json                   { enabledPlugins: { "name@marketplace": true|false } }
+//! ```
 //!
 //! A plugin absent from enabledPlugins counts as enabled (Claude Code's default).
 //! Any unreadable file yields no plugins, never an error.
@@ -19,6 +21,13 @@ async fn read_json(fs: &dyn Fs, path: &Path) -> Option<Value> {
     serde_json::from_slice(&fs.read(path).await.ok()?).ok()
 }
 
+/// The Claude Code plugins installed under `config_dir` and not disabled, as
+/// roots for the skill scan; empty when there are none or the files cannot be
+/// read.
+///
+/// Reads `plugins/installed_plugins.json` (a plugin's last install wins) and
+/// `settings.json`'s `enabledPlugins`: only an explicit `false` turns a
+/// plugin off. A plugin's name drops its `@marketplace`.
 pub async fn read_installed_plugins(fs: &dyn Fs, config_dir: &Path) -> Vec<PluginRoot> {
     let installed = read_json(fs, &config_dir.join("plugins/installed_plugins.json")).await;
     let settings = read_json(fs, &config_dir.join("settings.json")).await;

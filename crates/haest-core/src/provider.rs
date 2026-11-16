@@ -1,11 +1,20 @@
 //! The seam between the loop and a model API. An adapter turns a neutral
-//! request into its wire format and yields neutral stream events, ending with
-//! exactly one `Done` carrying the complete assistant message. Adapters never
-//! fail mid-stream: an API error ends with `Done` and `StopReason::Error`, so the
-//! loop has one code path for every failure.
+//! request ([`ProviderRequest`]) into its wire format and yields neutral stream
+//! events ([`ProviderEvent`]), ending with exactly one
+//! [`Done`](ProviderEvent::Done) carrying the complete assistant message.
+//! Adapters never fail mid-stream: an API error ends with `Done` and
+//! [`StopReason::Error`], so the loop has one code path for every failure.
 //!
 //! PLUG POINT: implement [`Provider`] for a new model API, or [`ModelResolver`]
-//! to decide which provider serves a `provider:model` spec.
+//! to decide which provider serves a `provider:model` spec. `haest-providers`
+//! has the adapters (Anthropic Messages, OpenAI Chat Completions for
+//! OpenRouter and any compatible server, OpenAI Responses) and a registry
+//! that resolves specs; `testing::ScriptedProvider` (the `testing` feature)
+//! answers from a script, for tests.
+//!
+//! Also here: the request's parts ([`ToolSpec`], [`Effort`],
+//! [`WebSearchConfig`]) and two helpers adapters share, [`parse_model_spec`]
+//! and [`mark_stream_failed`].
 
 use std::{fmt, sync::Arc};
 
@@ -17,22 +26,34 @@ use tokio_util::sync::CancellationToken;
 use crate::messages::{AssistantMessage, Message, StopReason};
 
 crate::word_enum! {
-    /// haest's reasoning levels. `Off` turns reasoning off where the model allows it.
+    /// haest's reasoning levels, cheapest first. `Off` turns reasoning off
+    /// where the model allows it.
+    ///
+    /// A request carries one as asked; [`crate::effort`] fits it to what the
+    /// model accepts, per request. Written as its word (`"high"`) everywhere.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
     pub enum Effort ("effort") {
+        /// No reasoning, where the model can stop.
         Off = "off",
+        /// The least reasoning.
         Low = "low",
+        /// More than `low`.
         Medium = "medium",
+        /// More than `medium`.
         High = "high",
+        /// More than `high`.
         Xhigh = "xhigh",
+        /// The most the model does.
         Max = "max",
     }
 }
 
-/// A tool as the model sees it.
+/// A tool as the model sees it: what a provider puts in the request's tool list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolSpec {
+    /// The name the model calls it by.
     pub name: String,
+    /// What it does and when to use it, for the model.
     pub description: String,
     /// JSON Schema of the input object.
     pub parameters: Value,
@@ -44,10 +65,15 @@ crate::word_enum! {
     pub enum WebSearchEngine ("web search engine") {
         /// The model's native search where it has one, else Exa.
         Auto = "auto",
+        /// The model vendor's own search.
         Native = "native",
+        /// Exa.
         Exa = "exa",
+        /// Parallel.
         Parallel = "parallel",
+        /// Firecrawl.
         Firecrawl = "firecrawl",
+        /// Perplexity.
         Perplexity = "perplexity",
     }
 }
@@ -63,9 +89,13 @@ impl WebSearchConfig {
     }
 }
 
+/// A provider-side web search for every model call ([`WebSearchConfig::new`]
+/// sets haest's caps). Only providers that run one (OpenRouter) send it;
+/// the rest ignore it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearchConfig {
+    /// Which search engine runs it.
     pub engine: WebSearchEngine,
     /// Results per search.
     pub max_results: u32,
@@ -73,49 +103,130 @@ pub struct WebSearchConfig {
     pub max_total_results: u32,
 }
 
-/// One model call.
+/// One model call, provider-neutral: everything an adapter turns into its wire
+/// request.
 #[derive(Debug, Clone)]
 pub struct ProviderRequest {
+    /// The provider's own model id (the spec without `provider:`).
     pub model: String,
+    /// The system prompt.
     pub system: String,
+    /// The history. The loop sends it fitted to what the model accepts
+    /// ([`crate::media::fit_for_model`]).
     pub messages: Vec<Message>,
+    /// The tools the model may call; empty = none.
     pub tools: Vec<ToolSpec>,
+    /// The turn's interrupt. When it fires, end the stream soon, with a
+    /// [`ProviderEvent::Done`] whose stop reason is [`StopReason::Aborted`].
     pub cancel: CancellationToken,
     /// None = send nothing and let the model use its own default.
     pub effort: Option<Effort>,
+    /// The output cap; None = the adapter's or the model's default.
     pub max_tokens: Option<u32>,
     /// Only providers that run one (OpenRouter) send it.
     pub web_search: Option<WebSearchConfig>,
 }
 
-/// What a provider streams back.
+/// One event of a model call's stream. The deltas are for showing progress;
+/// only [`ProviderEvent::Done`]'s message goes into history.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProviderEvent {
+    /// Answer text as it arrives.
     TextDelta(String),
+    /// Reasoning text as it arrives, where the provider shows any.
     ThinkingDelta(String),
     /// A tool call began in the stream: the text before it was narration.
     ToolCallStart {
+        /// The call's id, as in the final [`ToolCall`](crate::ToolCall).
         id: String,
+        /// The tool's name.
         name: String,
     },
-    /// Always last, exactly once.
+    /// Always last, exactly once: the whole assistant message, its usage and
+    /// its stop reason, also when the call failed.
     Done(AssistantMessage),
 }
 
+/// What [`Provider::stream`] returns: a boxed, `'static`, `Send` stream of
+/// [`ProviderEvent`]s.
 pub type ProviderStream = BoxStream<'static, ProviderEvent>;
 
-/// A model API.
+/// A model API: turns a [`ProviderRequest`] into a stream of
+/// [`ProviderEvent`]s.
+///
+/// The contract:
+/// - [`Provider::stream`] returns at once; the work runs as the stream is
+///   polled.
+/// - The stream ends with exactly one [`ProviderEvent::Done`], also on
+///   failure: an API or network error is a `Done` with
+///   [`StopReason::Error`] and the reason in `error_message`, never a panic or
+///   a stream that stops short ([`mark_stream_failed`] fills both in). A stream
+///   that ends without `Done` reaches history as an error message.
+/// - The loop reads the stream to its end and does not watch `req.cancel`
+///   itself: when it fires, the adapter ends the stream with a `Done` whose
+///   stop reason is [`StopReason::Aborted`].
+///
+/// # Examples
+///
+/// A provider that answers every request with the last user message:
+///
+/// ```
+/// use futures::{StreamExt, stream};
+/// use haest_core::{
+///     AssistantMessage, AssistantPart, Message, Provider, ProviderEvent, ProviderRequest,
+///     provider::ProviderStream,
+/// };
+/// use tokio_util::sync::CancellationToken;
+///
+/// struct Echo;
+///
+/// impl Provider for Echo {
+///     fn id(&self) -> &str {
+///         "echo"
+///     }
+///
+///     fn stream(&self, req: ProviderRequest) -> ProviderStream {
+///         let said = match req.messages.last() {
+///             Some(Message::User(u)) => u.content.clone(),
+///             _ => String::new(),
+///         };
+///         let mut msg = AssistantMessage::start(self.id(), &req.model);
+///         msg.content.push(AssistantPart::Text { text: said.clone() });
+///         Box::pin(stream::iter([ProviderEvent::TextDelta(said), ProviderEvent::Done(msg)]))
+///     }
+/// }
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// let req = ProviderRequest {
+///     model: "echo-1".into(),
+///     system: "Repeat the user.".into(),
+///     messages: vec![Message::user("hello")],
+///     tools: vec![],
+///     cancel: CancellationToken::new(),
+///     effort: None,
+///     max_tokens: None,
+///     web_search: None,
+/// };
+/// let events: Vec<ProviderEvent> = Echo.stream(req).collect().await;
+/// let Some(ProviderEvent::Done(answer)) = events.last() else { panic!("Done comes last") };
+/// assert_eq!(answer.text(), "hello");
+/// assert_eq!(answer.provider, "echo");
+/// # }
+/// ```
 pub trait Provider: Send + Sync {
     /// Stable id stored on every assistant message ("anthropic", "openrouter", ...).
     fn id(&self) -> &str;
-    /// Must end with exactly one [`ProviderEvent::Done`], also on failure.
+    /// Start the call. Must end with exactly one [`ProviderEvent::Done`], also on failure.
     fn stream(&self, req: ProviderRequest) -> ProviderStream;
 }
 
 /// A spec resolved to the provider that serves it and the provider's model id.
 #[derive(Clone)]
 pub struct ResolvedModel {
+    /// The provider that serves the spec.
     pub provider: Arc<dyn Provider>,
+    /// The id that provider knows the model by (what [`ProviderRequest::model`] gets).
     pub model: String,
 }
 
@@ -128,8 +239,43 @@ impl fmt::Debug for ResolvedModel {
     }
 }
 
-/// `provider:model` -> a live provider. The error is shown to the human as is.
+/// Turns a `provider:model` spec into a live provider. The loop asks it before
+/// every model call, so a model switch mid-conversation takes effect at once.
+///
+/// Any `Fn(&str) -> Result<ResolvedModel, String>` is one; `haest-providers`'
+/// registry is the full one.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::{ModelResolver, Provider, ResolvedModel, provider::parse_model_spec};
+/// # use haest_core::{ProviderRequest, provider::ProviderStream};
+/// # struct Echo;
+/// # impl Provider for Echo {
+/// #     fn id(&self) -> &str { "echo" }
+/// #     fn stream(&self, _: ProviderRequest) -> ProviderStream { unimplemented!() }
+/// # }
+///
+/// let echo: Arc<dyn Provider> = Arc::new(Echo);
+/// let resolver = move |spec: &str| -> Result<ResolvedModel, String> {
+///     match parse_model_spec(spec)? {
+///         ("echo", model) => Ok(ResolvedModel { provider: echo.clone(), model: model.into() }),
+///         (other, _) => Err(format!("no provider named {other}")),
+///     }
+/// };
+///
+/// assert_eq!(resolver.resolve("echo:echo-1").unwrap().model, "echo-1");
+/// assert!(resolver.resolve("acme:big").is_err());
+/// ```
 pub trait ModelResolver: Send + Sync {
+    /// The provider and model id for `spec`.
+    ///
+    /// # Errors
+    ///
+    /// Why `spec` cannot be served (a bad spec, an unknown provider, a missing
+    /// key), shown to the human as is.
     fn resolve(&self, spec: &str) -> Result<ResolvedModel, String>;
 }
 
@@ -142,7 +288,13 @@ where
     }
 }
 
-/// `openrouter:anthropic/claude-sonnet-5` -> ("openrouter", "anthropic/claude-sonnet-5").
+/// Splits a model spec into provider and model id at the FIRST colon:
+/// `openrouter:anthropic/claude-sonnet-5` -> ("openrouter", "anthropic/claude-sonnet-5"),
+/// `openrouter:x/y:free` -> ("openrouter", "x/y:free").
+///
+/// # Errors
+///
+/// A message for the human when there is no colon or nothing before it.
 pub fn parse_model_spec(spec: &str) -> Result<(&str, &str), String> {
     match spec.find(':') {
         Some(i) if i > 0 => Ok((&spec[..i], &spec[i + 1..])),
@@ -152,7 +304,28 @@ pub fn parse_model_spec(spec: &str) -> Result<(&str, &str), String> {
     }
 }
 
-/// A stream that failed: `Aborted` when the caller cancelled, else `Error` with the reason.
+/// Marks `msg` as a call that failed, for the `Done` an adapter sends at the
+/// end: [`StopReason::Aborted`] when `cancel` has fired (the error is then the
+/// interrupt's echo and is dropped), else [`StopReason::Error`] with `err` as
+/// its `error_message`.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::{AssistantMessage, StopReason, provider::mark_stream_failed};
+/// use tokio_util::sync::CancellationToken;
+///
+/// let cancel = CancellationToken::new();
+/// let mut msg = AssistantMessage::start("example", "model-1");
+/// mark_stream_failed(&mut msg, &cancel, "HTTP 529: overloaded");
+/// assert_eq!(msg.stop_reason, StopReason::Error);
+/// assert_eq!(msg.error_message.as_deref(), Some("HTTP 529: overloaded"));
+///
+/// cancel.cancel();
+/// let mut msg = AssistantMessage::start("example", "model-1");
+/// mark_stream_failed(&mut msg, &cancel, "request aborted");
+/// assert_eq!((msg.stop_reason, msg.error_message), (StopReason::Aborted, None));
+/// ```
 pub fn mark_stream_failed(
     msg: &mut AssistantMessage,
     cancel: &CancellationToken,
