@@ -37,17 +37,16 @@
 //!
 //! 1. [`build`] it. Whatever can fail does so before anything starts: a build
 //!    that fails has started no MCP server or mod and left no session file.
-//! 2. Run turns with [`Runtime::run`]: the human's text first through the
-//!    mods' `rewrite_prompt` and [`InboxQueue::human`].
-//!    While a turn runs, `run` steers what reaches the inbox into it; after
-//!    it, run what waits there, one turn at a time ([`InboxQueue::take`]
-//!    and [`InboxQueue::agent_turn`]).
+//! 2. Run the human's turn with [`Runtime::human_turn`] (the mods may rewrite
+//!    the text, and what the inbox's gate held rides in), then every turn the
+//!    inbox holds: [`Runtime::next_agent_turn`] until it is None, each run
+//!    with [`Runtime::run`]. While a turn runs, what reaches the inbox is
+//!    steered into it; every turn ends with the session file flushed.
 //! 3. Between turns, make the changes the human asks for:
 //!    [`Runtime::set_model_spec`], [`Runtime::set_effort`], [`Runtime::clear`],
 //!    [`Runtime::rescan_skills`].
-//! 4. Flush the session file after every turn ([`RuntimeHooks::flush`]). At the end,
-//!    stop the subagents, kill the background jobs ([`kill_jobs`]),
-//!    close the MCP servers and flush once more.
+//! 4. At the end, [`Runtime::shut_down`]: the subagents stopped, the
+//!    background jobs killed, the MCP servers closed, the session flushed.
 //!
 //! # Examples
 //!
@@ -123,37 +122,22 @@
 //!
 //! ```no_run
 //! use haest_core::LoopEvent;
-//! use haest_runtime::{Runtime, Ui, kill_jobs};
+//! use haest_runtime::{Runtime, Ui};
 //!
 //! /// A turn the human started, then every turn waiting in the inbox.
 //! async fn human<U: Ui>(rt: &mut Runtime<U>, text: &str) {
-//!     let text = rt.mods.rewrite_prompt(text).await;
-//!     let text = rt.inbox.human(&text);
-//!     turn(rt, &text).await;
-//!     while let Some(waiting) = rt.inbox.take(&rt.agent().control()) {
-//!         // None: the gate holds it until the human writes again.
-//!         if let Some(text) = rt.inbox.agent_turn(&waiting) {
-//!             turn(rt, &text).await;
-//!         }
-//!     }
-//! }
-//!
-//! /// One turn: its events shown, what reaches the inbox meanwhile steered in.
-//! async fn turn<U: Ui>(rt: &mut Runtime<U>, text: &str) {
 //!     let mut show = |event: LoopEvent| println!("{event:?}");
-//!     let end = rt.run(text, &mut show).await;
-//!     println!("turn ended: {:?}", end.stop_reason);
-//!     rt.hooks.flush().await;
+//!     rt.human_turn(text, &mut show).await;
+//!     // None: nothing waits, or the gate holds it until the human writes again.
+//!     while let Some(text) = rt.next_agent_turn() {
+//!         rt.run(&text, &mut show).await;
+//!     }
 //! }
 //!
 //! /// The host is done: nothing haest started outlives it, and the session is on disk.
-//! async fn shut_down<U: Ui>(rt: &Runtime<U>) {
-//!     rt.subagents.stop_all();
-//!     if let Some(jobs) = &rt.jobs {
-//!         kill_jobs(jobs).await;
-//!     }
-//!     rt.mcp.close().await;
-//!     rt.hooks.flush().await;
+//! async fn quit<U: Ui>(rt: &Runtime<U>) {
+//!     let stopped = rt.shut_down().await;
+//!     println!("stopped {} subagents and {} jobs", stopped.subagents, stopped.jobs);
 //! }
 //! ```
 
@@ -201,7 +185,7 @@ pub use inputs::{BuildOptions, Resume, RuntimeInputs};
 pub use mods::mods_for;
 pub use parent::RuntimeParent;
 pub use prompt::{AgentPrompt, RuntimePrompt, instruction_options, skill_options};
-pub use runtime::Runtime;
+pub use runtime::{Runtime, ShutDown};
 pub use sessions::{SessionInfo, list_sessions};
 pub use tools::{MainTools, NoImageKey, WrappedTools, image_options, own_tools};
 pub use ui::Ui;

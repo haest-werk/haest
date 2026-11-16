@@ -79,7 +79,16 @@ fn watch_interrupts(rt: &Runtime, mut done: oneshot::Receiver<()>) -> JoinHandle
     })
 }
 
-pub async fn turn(rt: &mut Runtime, input: &str) -> TurnOutcome {
+/// What a turn runs on.
+enum Input<'a> {
+    /// The human's text: through the mods, with what the gate held.
+    Human(&'a str),
+    /// A turn the inbox holds, already through the gate.
+    Agent(&'a str),
+}
+
+/// One turn, its events on the terminal, the cost line after; Ctrl+C stops it.
+async fn turn(rt: &mut Runtime, input: Input<'_>) -> TurnOutcome {
     let term = rt.ui.term.clone();
     let (done, watching) = oneshot::channel();
     let watcher = watch_interrupts(rt, watching);
@@ -90,7 +99,10 @@ pub async fn turn(rt: &mut Runtime, input: &str) -> TurnOutcome {
         }
         term.lock().unwrap().event(&ev);
     };
-    let end = rt.run(input, &mut sink).await;
+    let end = match input {
+        Input::Human(text) => rt.human_turn(text, &mut sink).await,
+        Input::Agent(text) => rt.run(text, &mut sink).await,
+    };
     // The watcher stops; one winding haest down for a second Ctrl+C exits instead.
     let _ = done.send(());
     let _ = watcher.await;
@@ -98,24 +110,19 @@ pub async fn turn(rt: &mut Runtime, input: &str) -> TurnOutcome {
         let total = session_usd(rt.agent());
         rt.ui.term.lock().unwrap().usage(&u, total);
     }
-    rt.hooks.flush().await;
     end
 }
 
 /// A turn the human started: the mods' `prompt.submit` may rewrite the text
 /// first, then anything the gate held rides in ahead of it.
 pub async fn human(rt: &mut Runtime, input: &str) -> TurnOutcome {
-    let text = rt.mods.rewrite_prompt(input).await;
-    let text = rt.inbox.human(&text);
-    turn(rt, &text).await
+    turn(rt, Input::Human(input)).await
 }
 
 /// Every turn the human did not start that waits, one at a time, each through the gate.
 pub async fn agent_turns(rt: &mut Runtime) {
-    while let Some(text) = rt.inbox.take(&rt.agent().control()) {
-        if let Some(text) = rt.inbox.agent_turn(&text) {
-            turn(rt, &text).await;
-        }
+    while let Some(text) = rt.next_agent_turn() {
+        turn(rt, Input::Agent(&text)).await;
     }
 }
 

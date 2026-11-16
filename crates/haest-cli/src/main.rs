@@ -35,7 +35,7 @@ use std::{
 use haest::{
     config::{Loaded, Loader, env_var},
     core::{error::report, session::sessions_dir},
-    runtime::{BuildError, SessionError, Ui, kill_jobs, list_sessions},
+    runtime::{BuildError, SessionError, Ui, list_sessions},
     settings::Settings,
     workspace::RealFs,
 };
@@ -112,21 +112,18 @@ fn count(n: usize, noun: &str) -> String {
     format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
 }
 
-/// haest is exiting: its subagents stopped and its background jobs killed
-/// (their process groups gone before the runtime shuts down), each said.
+/// haest is exiting: what it started stopped (the background jobs' process
+/// groups gone before the runtime shuts down) and the session on disk, each
+/// stop said.
 async fn shutdown(rt: &Runtime) {
-    let running = rt.subagents.running().len();
-    rt.subagents.stop_all();
-    if running > 0 {
-        rt.hooks
-            .info(&format!("Stopped {}.", count(running, "subagent")));
+    let stopped = rt.shut_down().await;
+    if stopped.subagents > 0 {
+        let line = format!("Stopped {}.", count(stopped.subagents, "subagent"));
+        rt.hooks.info(&line);
     }
-    if let Some(jobs) = &rt.jobs {
-        let killed = kill_jobs(jobs).await;
-        if killed > 0 {
-            rt.hooks
-                .info(&format!("Killed {}.", count(killed, "background job")));
-        }
+    if stopped.jobs > 0 {
+        let line = format!("Killed {}.", count(stopped.jobs, "background job"));
+        rt.hooks.info(&line);
     }
 }
 
@@ -212,8 +209,6 @@ async fn main() -> ExitCode {
         },
     };
     shutdown(&rt).await;
-    rt.mcp.close().await;
-    rt.hooks.flush().await;
     code
 }
 

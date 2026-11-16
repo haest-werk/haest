@@ -1,8 +1,9 @@
-//! A built conversation ([`Runtime`]), and what a host changes on it while it
-//! runs: the model, the effort, a fresh session (/clear), the skill list. Each
-//! change goes to the agent, the [`RuntimeHooks`](crate::RuntimeHooks) and the
-//! session file together; the hooks' own setters are crate-private, so these
-//! are the only way to make one all three see.
+//! A built conversation ([`Runtime`]): its turns, what a host changes on it
+//! while it runs (the model, the effort, a fresh session, the skill list) and
+//! its end. Each change goes to the agent, the
+//! [`RuntimeHooks`](crate::RuntimeHooks) and the session file together; the
+//! hooks' own setters are crate-private, so these are the only way to make
+//! one all three see.
 
 use std::sync::{Arc, Mutex};
 
@@ -24,15 +25,18 @@ use crate::{
     },
     inbox::InboxQueue,
     store::{new_session, record_start},
+    world::kill_jobs,
 };
 
 /// A built conversation: the agent, and everything it runs on.
 ///
-/// [`build`](crate::build) returns one. The host runs turns with
-/// [`run`](Self::run), which steers what reaches the [`inbox`](Self::inbox)
-/// into the running turn, and changes the model, the effort, the session or the skills through the
-/// methods here, which keep the agent, the hooks and the session file in step.
-/// The crate docs show a host's turn loop and its shutdown.
+/// [`build`](crate::build) returns one. The host runs the human's turns with
+/// [`human_turn`](Self::human_turn), then every turn the inbox holds
+/// ([`next_agent_turn`](Self::next_agent_turn), run with [`run`](Self::run));
+/// changes the model, the effort, the session or the skills through the
+/// methods here, which keep the agent, the hooks and the session file in step;
+/// and ends with [`shut_down`](Self::shut_down). The crate docs show a host's
+/// turn loop.
 ///
 /// `U` is the host's own [`Ui`](crate::Ui) type, so [`ui`](Self::ui) gives it
 /// back as the host made it.
@@ -81,19 +85,63 @@ impl<U: ?Sized> Runtime<U> {
         &self.agent
     }
 
-    /// One turn of main: `input` (the human's text after the mods and the
-    /// inbox, or a turn the inbox holds), every event to `sink`. What reaches
-    /// the [`inbox`](Self::inbox) while it runs is steered into it.
-    pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
+    /// A turn the human started: `text` through the mods' prompt rewrite
+    /// (`prompt.submit`), with what the inbox's gate held riding in ahead of
+    /// it ([`InboxQueue::human`]), then [`run`](Self::run).
+    pub async fn human_turn(&mut self, text: &str, sink: &mut dyn EventSink) -> TurnOutcome {
+        let text = self.mods.rewrite_prompt(text).await;
+        let text = self.inbox.human(&text);
+        self.run(&text, sink).await
+    }
+
+    /// The input of the next turn the human did not start (a background job
+    /// that exited, a subagent's message for main), through the gate. None
+    /// when nothing waits, or when the gate holds what does: it then rides in
+    /// with the human's next turn. Run each with [`run`](Self::run) until
+    /// this is None.
+    pub fn next_agent_turn(&mut self) -> Option<String> {
         let control = self.agent.control();
-        let run = self.agent.run(input, sink);
-        tokio::pin!(run);
         loop {
-            tokio::select! {
-                end = &mut run => return end,
-                Some(text) = self.inbox.arrival() => control.steer(text),
+            let waiting = self.inbox.take(&control)?;
+            if let Some(text) = self.inbox.agent_turn(&waiting) {
+                return Some(text);
             }
         }
+    }
+
+    /// One turn of main on `input` as it is, every event to `sink`: what
+    /// reaches the [`inbox`](Self::inbox) while it runs is steered into it,
+    /// and the session file is flushed when it ends.
+    pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
+        let control = self.agent.control();
+        let end = {
+            let run = self.agent.run(input, sink);
+            tokio::pin!(run);
+            loop {
+                tokio::select! {
+                    end = &mut run => break end,
+                    Some(text) = self.inbox.arrival() => control.steer(text),
+                }
+            }
+        };
+        self.hooks.flush().await;
+        end
+    }
+
+    /// The end of the conversation: the subagents stopped, the background
+    /// jobs killed (and waited for, at most 3 seconds, so none outlives the
+    /// host), the MCP servers closed and the session file flushed. Returns
+    /// what was still running, for the host to tell the human.
+    pub async fn shut_down(&self) -> ShutDown {
+        let subagents = self.subagents.running().len();
+        self.subagents.stop_all();
+        let jobs = match &self.jobs {
+            Some(jobs) => kill_jobs(jobs).await,
+            None => 0,
+        };
+        self.mcp.close().await;
+        self.hooks.flush().await;
+        ShutDown { subagents, jobs }
     }
 
     /// Compact main's conversation now (the human's /compact): see
@@ -173,4 +221,13 @@ impl<U: ?Sized> Runtime<U> {
         *self.skills.lock().unwrap() = found.clone();
         found
     }
+}
+
+/// What [`Runtime::shut_down`] stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShutDown {
+    /// Subagents that were still running.
+    pub subagents: usize,
+    /// Background jobs that were still running, now killed.
+    pub jobs: usize,
 }
