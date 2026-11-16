@@ -139,11 +139,18 @@ pub trait AutoJudge: Send + Sync {
     async fn judge(&self, command: &str, ctx: &ToolContext) -> BashVerdict;
 }
 
+/// The shell tools [`ApprovalMod`] judges, unless a host names others
+/// ([`ApprovalMod::with_shell_tools`],
+/// [`ModConfig::shell_tools`](crate::ModConfig::shell_tools)): haest's `Bash`.
+pub const SHELL_TOOLS: &[&str] = &["Bash"];
+
 /// THE APPROVAL MOD (built in): in the REAL workspace, a Bash command that can
 /// destroy work the human cannot get back waits for their Allow.
 ///
 /// The sandbox never asks -- its writes live in memory and vanish anyway --
-/// and no other tool is judged. Which commands ask is
+/// and only the shell tools are judged: [`SHELL_TOOLS`] unless the host
+/// names others with [`with_shell_tools`](Self::with_shell_tools), each
+/// taking its command as a `command` input. Which commands ask is
 /// [`irreversible_reason`]'s list, unless auto mode ([`AutoJudge`]) is on.
 /// The ask goes to the host's [`ModUi::ask`](crate::ModUi::ask) with the
 /// exact command as its key, so an ALWAYS covers that command only; a Deny
@@ -154,16 +161,35 @@ pub trait AutoJudge: Send + Sync {
 /// adds it unless [`ModConfig::approvals`](crate::ModConfig::approvals) is
 /// off. [`ApprovalGate`](crate::ApprovalGate#examples)'s example shows it
 /// with a whole host.
-#[derive(Default)]
 pub struct ApprovalMod {
     auto: Option<Arc<dyn AutoJudge>>,
+    shell_tools: Vec<String>,
+}
+
+impl Default for ApprovalMod {
+    /// [`ApprovalMod::new`] with no auto mode: the list decides.
+    fn default() -> Self {
+        Self::new(None)
+    }
 }
 
 impl ApprovalMod {
-    /// The approval mod. `auto`, when it is on, judges every command instead
-    /// of the list alone; None = the list ([`ApprovalMod::default`]).
+    /// The approval mod over the [`SHELL_TOOLS`]. `auto`, when it is on,
+    /// judges every command instead of the list alone; None = the list
+    /// ([`ApprovalMod::default`]).
     pub fn new(auto: Option<Arc<dyn AutoJudge>>) -> Self {
-        Self { auto }
+        Self {
+            auto,
+            shell_tools: SHELL_TOOLS.iter().map(|t| t.to_string()).collect(),
+        }
+    }
+
+    /// The approval mod judging these tools, by name, in place of
+    /// [`SHELL_TOOLS`]: a host whose shell tool has another name. Each takes
+    /// the command it runs as its `command` input.
+    pub fn with_shell_tools(mut self, names: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.shell_tools = names.into_iter().map(Into::into).collect();
+        self
     }
 
     /// Why this command must ask, or None to let it run.
@@ -209,7 +235,7 @@ impl Mod for ApprovalMod {
         ctx: &ToolContext,
         haest: &ModEnv,
     ) -> Result<Before, ModError> {
-        if haest.workspace != WorkspaceMode::Real || call.name != "Bash" {
+        if haest.workspace != WorkspaceMode::Real || !self.shell_tools.contains(&call.name) {
             return Ok(Before::Pass);
         }
         let command = command_of(call);
@@ -217,7 +243,7 @@ impl Mod for ApprovalMod {
             return Ok(Before::Pass);
         };
         let req = ApprovalRequest {
-            tool_name: "Bash".into(),
+            tool_name: call.name.clone(),
             description: format!("haest wants to run a command that {why}"),
             input_preview: command.chars().take(200).collect(),
             tool_use_id: None,

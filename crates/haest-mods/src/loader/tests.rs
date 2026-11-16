@@ -7,7 +7,7 @@ use haest_core::{fs::MemFs, workspace::WorkspaceMode};
 use serde_json::json;
 
 use super::*;
-use crate::testkit::*;
+use crate::{api::Decision, decorate::ModTools, testkit::*};
 
 const HOME_MODS: &str = "/home/cfg/mods";
 
@@ -101,4 +101,21 @@ async fn the_built_ins_load_first_and_approvals_can_be_turned_off() {
     let no_approvals = load_mods(quiet, &fs, TestUi::new()).await;
     assert_eq!(no_approvals.names(), ["plan"]);
     assert!(no_approvals.has_command(crate::plan::PLAN_COMMAND));
+}
+
+#[tokio::test]
+async fn the_hosts_tool_names_reach_the_built_ins() {
+    let ui = TestUi::answering([Decision::Deny]);
+    let mut named = cfg(WorkspaceMode::Real);
+    named.shell_tools = vec!["Shell".into()];
+    named.planning_tools = vec!["Notes".into()];
+    let mods = Arc::new(load_mods(named, &MemFs::new(), ui.clone()).await);
+    let (shell, notes) = (Probe::new("Shell"), Probe::new("Notes"));
+    let tools = ModTools::wrap(&mods, vec![shell.clone(), notes.clone()]);
+    let rm = input(json!({"command": "rm -rf x"}));
+    assert!(tools[0].execute(rm, &ctx()).await.is_err());
+    assert_eq!(ui.asks()[0].tool_name, "Shell");
+    mods.command("plan", "").await;
+    tools[1].execute(input(json!({})), &ctx()).await.unwrap();
+    assert_eq!(notes.ran().len(), 1);
 }

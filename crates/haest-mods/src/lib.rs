@@ -289,10 +289,10 @@ mod registry;
 mod testkit;
 
 pub use api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModError, ModToolCall, ModUi};
-pub use approval::{ApprovalMod, AutoJudge, BashVerdict, irreversible_reason};
+pub use approval::{ApprovalMod, AutoJudge, BashVerdict, SHELL_TOOLS, irreversible_reason};
 pub use decorate::{ModSystemPrompt, ModTools};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter};
 pub use js::{JsMod, ModLimits, ModLoadError};
 pub use loader::{ModConfig, load_mods, mod_files};
-pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PlanListener, PlanMod};
+pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PLANNING_TOOLS, PlanListener, PlanMod};
 pub use registry::{CommandOutcome, Mods};

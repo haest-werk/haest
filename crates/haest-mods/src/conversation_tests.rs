@@ -129,3 +129,15 @@ async fn plan_with_a_topic_sends_the_topic_to_the_model() {
     }
     assert!(plan.is_on());
 }
+
+#[tokio::test]
+async fn plan_mode_lets_the_hosts_planning_tools_through_and_no_others() {
+    let mut mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real));
+    mods.add(Arc::new(PlanMod::default().with_planning_tools(["Notes"])));
+    assert_eq!(mods.command("plan", "").await, CommandOutcome::Handled);
+    let (notes, tasks) = (Probe::new("Notes"), Probe::new("TaskCreate"));
+    let tools = wrapped(mods, vec![notes.clone(), tasks.clone()]);
+    tools[0].execute(input(json!({})), &ctx()).await.unwrap();
+    assert!(tools[1].execute(input(json!({})), &ctx()).await.is_err());
+    assert_eq!((notes.ran().len(), tasks.ran().len()), (1, 0));
+}

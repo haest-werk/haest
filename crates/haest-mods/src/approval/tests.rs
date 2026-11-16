@@ -203,3 +203,23 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
     assert!(refused.is_err());
     assert_eq!(ui.asks().len(), 1);
 }
+
+#[tokio::test]
+async fn a_host_names_its_own_shell_tools_and_only_those_are_judged() {
+    let ui = TestUi::answering([Decision::Deny]);
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
+    mods.add(Arc::new(ApprovalMod::default().with_shell_tools(["Shell"])));
+    let (shell, bash) = (Probe::new("Shell"), Probe::new("Bash"));
+    let tools = wrapped(mods, vec![shell.clone(), bash.clone()]);
+    let denied = tools[0].execute(bash_call("rm -rf build"), &ctx()).await;
+    assert!(matches!(denied, Err(ToolError::Input(_))));
+    tools[1]
+        .execute(bash_call("rm -rf build"), &ctx())
+        .await
+        .unwrap();
+    assert!(shell.ran().is_empty());
+    assert_eq!(bash.ran().len(), 1, "Bash is not a shell tool here");
+    let asks = ui.asks();
+    assert_eq!(asks.len(), 1);
+    assert_eq!(asks[0].tool_name, "Shell");
+}

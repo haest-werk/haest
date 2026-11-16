@@ -19,9 +19,9 @@ use haest_core::{fs::Fs, workspace::WorkspaceMode};
 
 use crate::{
     api::{ModEnv, ModUi},
-    approval::{ApprovalMod, AutoJudge},
+    approval::{ApprovalMod, AutoJudge, SHELL_TOOLS},
     js::{JsMod, ModLimits},
-    plan::{PlanListener, PlanMod},
+    plan::{PLANNING_TOOLS, PlanListener, PlanMod},
     registry::Mods,
 };
 
@@ -49,15 +49,22 @@ pub struct ModConfig {
     pub approvals: bool,
     /// Auto mode's judge for the approval mod; None = the irreversible list alone.
     pub auto: Option<Arc<dyn AutoJudge>>,
+    /// The shell tools the approval mod judges, by name. [`SHELL_TOOLS`]
+    /// (`Bash`) by default.
+    pub shell_tools: Vec<String>,
     /// Told whenever plan mode turns on or off.
     pub on_plan_change: Option<PlanListener>,
+    /// The tools plan mode lets run though they are not read-only, by name.
+    /// [`PLANNING_TOOLS`] by default.
+    pub planning_tools: Vec<String>,
     /// The bounds every mod file runs in. [`ModLimits::default`] by default.
     pub limits: ModLimits,
 }
 
 impl ModConfig {
-    /// The defaults for a conversation in `cwd`: approvals on, no mod files,
-    /// no auto mode, no plan listener, the default [`ModLimits`].
+    /// The defaults for a conversation in `cwd`: approvals on over
+    /// [`SHELL_TOOLS`], no mod files, no auto mode, no plan listener, the
+    /// [`PLANNING_TOOLS`], the default [`ModLimits`].
     pub fn new(
         cwd: impl Into<PathBuf>,
         workspace: WorkspaceMode,
@@ -71,7 +78,9 @@ impl ModConfig {
             project_mods: false,
             approvals: true,
             auto: None,
+            shell_tools: SHELL_TOOLS.iter().map(|t| t.to_string()).collect(),
             on_plan_change: None,
+            planning_tools: PLANNING_TOOLS.iter().map(|t| t.to_string()).collect(),
             limits: ModLimits::default(),
         }
     }
@@ -139,9 +148,12 @@ pub async fn load_mods(cfg: ModConfig, fs: &dyn Fs, ui: Arc<dyn ModUi>) -> Mods 
     let env = ModEnv::new(cfg.cwd.clone(), cfg.workspace, ui.clone());
     let mut mods = Mods::new(env.clone());
     if cfg.approvals {
-        mods.add(Arc::new(ApprovalMod::new(cfg.auto.clone())));
+        let approval = ApprovalMod::new(cfg.auto.clone()).with_shell_tools(cfg.shell_tools.clone());
+        mods.add(Arc::new(approval));
     }
-    mods.add(Arc::new(PlanMod::new(cfg.on_plan_change.clone())));
+    let plan =
+        PlanMod::new(cfg.on_plan_change.clone()).with_planning_tools(cfg.planning_tools.clone());
+    mods.add(Arc::new(plan));
     for dir in cfg.mod_dirs() {
         for path in mod_files(fs, &dir).await {
             let loaded = match fs.read_to_string(&path).await {

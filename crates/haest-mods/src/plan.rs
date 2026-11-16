@@ -3,8 +3,8 @@
 //! `/plan off`. Two halves, because instructions alone are only a request:
 //!   - the system prompt gains the planning brief (what a plan skill would say);
 //!   - every tool that is not read-only is refused, except the planning tools
-//!     themselves (the task list, subagents, ToolSearch). Subagents run through
-//!     the same mods, so they are read-only too.
+//!     themselves (by default the task list, subagents, ToolSearch). Subagents
+//!     run through the same mods, so they are read-only too.
 
 use std::sync::{
     Arc,
@@ -20,7 +20,11 @@ use crate::api::{Before, Mod, ModEnv, ModError, ModToolCall};
 /// turns it on, `/plan off` turns it off.
 pub const PLAN_COMMAND: &str = "plan";
 
-const PLANNING_TOOLS: &[&str] = &[
+/// The tools plan mode lets run though they are not read-only, unless a host
+/// names others ([`PlanMod::with_planning_tools`],
+/// [`ModConfig::planning_tools`](crate::ModConfig::planning_tools)): haest's
+/// task list, subagents and `ToolSearch`.
+pub const PLANNING_TOOLS: &[&str] = &[
     "TaskCreate",
     "TaskUpdate",
     "TaskList",
@@ -51,9 +55,9 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// Two halves, because instructions alone are only a request:
 /// - the system prompt gains the planning brief, [`PLAN_PROMPT`];
 /// - every tool that is not read-only is refused, except the planning tools
-///   themselves (`TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`, `Agent`,
-///   `SendMessage`, `StopAgent`, `ToolSearch`). Subagents run through the
-///   same mods, so they are read-only too.
+///   themselves ([`PLANNING_TOOLS`] unless the host names others with
+///   [`with_planning_tools`](Self::with_planning_tools)). Subagents run
+///   through the same mods, so they are read-only too.
 ///
 /// [`load_mods`](crate::load_mods) always adds it, off.
 ///
@@ -103,20 +107,39 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// assert!(write().await.is_ok());
 /// # }
 /// ```
-#[derive(Default)]
 pub struct PlanMod {
     on: AtomicBool,
     on_change: Option<PlanListener>,
+    planning_tools: Vec<String>,
+}
+
+impl Default for PlanMod {
+    /// [`PlanMod::new`] with no listener.
+    fn default() -> Self {
+        Self::new(None)
+    }
 }
 
 impl PlanMod {
-    /// Plan mode, off. `on_change` tells the host, so its plan toggle shows
-    /// haest's state however it was switched.
+    /// Plan mode, off, with the [`PLANNING_TOOLS`]. `on_change` tells the
+    /// host, so its plan toggle shows haest's state however it was switched.
     pub fn new(on_change: Option<PlanListener>) -> Self {
         Self {
             on: AtomicBool::new(false),
             on_change,
+            planning_tools: PLANNING_TOOLS.iter().map(|t| t.to_string()).collect(),
         }
+    }
+
+    /// Plan mode with these planning tools in place of [`PLANNING_TOOLS`]:
+    /// the tools, by name, that run while it is on though they are not
+    /// read-only (a host's own task list, say).
+    pub fn with_planning_tools(
+        mut self,
+        names: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.planning_tools = names.into_iter().map(Into::into).collect();
+        self
     }
 
     /// Whether plan mode is on right now.
@@ -165,7 +188,7 @@ impl Mod for PlanMod {
         _ctx: &ToolContext,
         _haest: &ModEnv,
     ) -> Result<Before, ModError> {
-        if self.is_on() && !call.read_only && !PLANNING_TOOLS.contains(&call.name.as_str()) {
+        if self.is_on() && !call.read_only && !self.planning_tools.contains(&call.name) {
             return Ok(Before::Deny(format!(
                 "plan mode is on: {} changes things. Finish the plan; the human turns plan mode off with /plan off.",
                 call.name
