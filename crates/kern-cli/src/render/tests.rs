@@ -72,7 +72,7 @@ fn json_mode_writes_one_parseable_line_per_event() {
 #[test]
 fn a_notice_is_a_json_line_in_json_mode_and_stderr_otherwise() {
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    Renderer::new(&mut out, &mut err, true, false).warn("budget at half");
+    Renderer::new(&mut out, &mut err, true, false).notice(Level::Warning, "budget at half");
     let line: Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(
         (line["type"].as_str(), line["level"].as_str()),
@@ -80,7 +80,7 @@ fn a_notice_is_a_json_line_in_json_mode_and_stderr_otherwise() {
     );
     assert!(err.is_empty());
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    Renderer::new(&mut out, &mut err, false, false).warn("budget at half");
+    Renderer::new(&mut out, &mut err, false, false).notice(Level::Warning, "budget at half");
     assert!(out.is_empty());
     assert_eq!(String::from_utf8(err).unwrap(), "budget at half\n");
 }
@@ -93,10 +93,10 @@ fn while_the_prompt_is_open_a_notice_goes_above_it_and_after_it_back_to_stderr()
         let mut r = Renderer::new(&mut out, &mut err, false, false);
         r.set_above(Some(tx));
         assert!(r.prompting());
-        r.info("job b1 exited");
+        r.notice(Level::Info, "job b1 exited");
         r.set_above(None);
         assert!(!r.prompting());
-        r.info("after");
+        r.notice(Level::Info, "after");
     }
     assert_eq!(rx.try_iter().collect::<Vec<_>>(), ["job b1 exited"]);
     assert_eq!(String::from_utf8(err).unwrap(), "after\n");
@@ -110,7 +110,7 @@ fn a_notice_falls_back_to_stderr_when_the_printer_is_gone() {
     drop(rx);
     let mut r = Renderer::new(&mut out, &mut err, false, false);
     r.set_above(Some(tx));
-    r.info("still heard");
+    r.notice(Level::Info, "still heard");
     drop(r);
     assert_eq!(String::from_utf8(err).unwrap(), "still heard\n");
 }

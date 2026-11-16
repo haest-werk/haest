@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use kern::{LoopEvent, tools::agents::SubagentEvent};
 
-use crate::render::{Level, call_summary};
+use crate::render::{Level, result_line};
 
 #[derive(Debug, Default)]
 pub struct AgentLog {
@@ -47,9 +47,8 @@ impl AgentLog {
                 duration_ms,
                 ..
             }) => {
-                let mark = if output.is_error { "x" } else { "-" };
-                let line = format!("[{name}] {mark} {} ({duration_ms} ms)", call_summary(call));
-                Some((Level::Info, line))
+                let line = result_line(call, output.is_error, *duration_ms);
+                Some((Level::Info, format!("[{name}] {line}")))
             }
             SubagentEvent::Loop(LoopEvent::Guard { text }) => {
                 Some((Level::Warning, format!("[{name}] ! {text}")))

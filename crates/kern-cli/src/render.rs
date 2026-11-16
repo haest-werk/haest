@@ -11,7 +11,7 @@ use std::{
 };
 
 use kern::{LoopEvent, StopReason, ToolCall, Usage};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// How events are written.
 pub struct Renderer<O: Write, E: Write> {
@@ -90,8 +90,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
     pub fn event(&mut self, ev: &LoopEvent) {
         if self.json {
             if let Ok(line) = serde_json::to_string(ev) {
-                let _ = writeln!(self.out, "{line}");
-                let _ = self.out.flush();
+                self.json_line(line);
             }
             return;
         }
@@ -107,10 +106,8 @@ impl<O: Write, E: Write> Renderer<O, E> {
                 duration_ms,
                 ..
             } => {
-                let mark = if output.is_error { "x" } else { "-" };
-                let line = format!("{mark} {} ({duration_ms} ms)", call_summary(call));
                 let color = if output.is_error { RED } else { DIM };
-                self.note(color, &line);
+                self.note(color, &result_line(call, output.is_error, *duration_ms));
             }
             LoopEvent::Guard { text } => self.note(YELLOW, &format!("! {text}")),
             LoopEvent::Assistant { message } => {
@@ -158,10 +155,8 @@ impl<O: Write, E: Write> Renderer<O, E> {
     /// A line for the human: stderr, or a `notice` line on stdout in json mode.
     pub fn notice(&mut self, level: Level, text: &str) {
         if self.json {
-            let line = serde_json::json!({"type": "notice", "level": level.as_str(), "text": text});
-            let _ = writeln!(self.out, "{line}");
-            let _ = self.out.flush();
-            return;
+            return self
+                .json_line(json!({"type": "notice", "level": level.as_str(), "text": text}));
         }
         let color = match level {
             Level::Info => DIM,
@@ -171,18 +166,11 @@ impl<O: Write, E: Write> Renderer<O, E> {
         self.note(color, text);
     }
 
-    pub fn info(&mut self, text: &str) {
-        self.notice(Level::Info, text);
-    }
-
     /// A question the human answers on the next line: stderr with no newline,
     /// or an `ask` line on stdout in json mode.
     pub fn ask(&mut self, question: &str) {
         if self.json {
-            let line = serde_json::json!({"type": "ask", "text": question});
-            let _ = writeln!(self.out, "{line}");
-            let _ = self.out.flush();
-            return;
+            return self.json_line(json!({"type": "ask", "text": question}));
         }
         self.end_line();
         let text = self.paint(YELLOW, question);
@@ -190,12 +178,10 @@ impl<O: Write, E: Write> Renderer<O, E> {
         let _ = self.err.flush();
     }
 
-    pub fn warn(&mut self, text: &str) {
-        self.notice(Level::Warning, text);
-    }
-
-    pub fn error(&mut self, text: &str) {
-        self.notice(Level::Error, text);
+    /// One line on stdout in json mode.
+    fn json_line(&mut self, line: impl std::fmt::Display) {
+        let _ = writeln!(self.out, "{line}");
+        let _ = self.out.flush();
     }
 }
 
@@ -216,8 +202,14 @@ impl Level {
     }
 }
 
+/// `- Read src/a.rs (3 ms)`: a tool call's result, `x` for one that failed.
+pub fn result_line(call: &ToolCall, is_error: bool, duration_ms: u64) -> String {
+    let mark = if is_error { "x" } else { "-" };
+    format!("{mark} {} ({duration_ms} ms)", call_summary(call))
+}
+
 /// `Read src/a.rs`, `Bash cargo test`: the tool and the one input that says what it did.
-pub fn call_summary(call: &ToolCall) -> String {
+fn call_summary(call: &ToolCall) -> String {
     const KEYS: [&str; 7] = [
         "path",
         "file_path",

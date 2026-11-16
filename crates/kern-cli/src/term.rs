@@ -47,15 +47,15 @@ impl TermUi {
 
 impl Ui for TermUi {
     fn info(&self, text: &str) {
-        self.term.lock().unwrap().info(text);
+        self.notice(Level::Info, text);
     }
 
     fn warn(&self, text: &str) {
-        self.term.lock().unwrap().warn(text);
+        self.notice(Level::Warning, text);
     }
 
     fn error(&self, text: &str) {
-        self.term.lock().unwrap().error(text);
+        self.notice(Level::Error, text);
     }
 
     /// The REPL prompt is open (a line printed now lands above it).
