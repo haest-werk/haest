@@ -183,6 +183,20 @@ pub mod __private {
     /// whatever serde it depends on.
     pub use serde;
 
+    /// The model haest's GenerateImage tool uses unless told otherwise (the
+    /// `image_model` setting's default), as an OpenRouter model id. Here
+    /// because haest-tools and haest-settings both default to it; haest-tools
+    /// re-exports it.
+    pub const DEFAULT_IMAGE_MODEL: &str = "google/gemini-nano-banana-2.1";
+    /// The models a GenerateImage call may pick from by default: the default,
+    /// one for exact text and transparency, one for edits from several
+    /// references.
+    pub const DEFAULT_IMAGE_MODELS: [&str; 3] = [
+        DEFAULT_IMAGE_MODEL,
+        "openai/gpt-image-2.6-sunburst",
+        "black-forest-labs/flux-3-image",
+    ];
+
     pub use crate::context::prompt::FILE_TOOLS;
     pub use crate::deferred_tools::split::{advertised_tools, callable_tools};
     pub use crate::effort::nearest_accepted_effort;

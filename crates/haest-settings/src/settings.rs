@@ -6,11 +6,11 @@
 use std::{path::PathBuf, time::Duration};
 
 use haest_core::{
+    __private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
     Effort, WorkspaceMode,
     caps::{SubagentCaps, TurnCaps},
     deferred_tools::DeferMode,
     ledger::ConversationCaps,
-    media::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
     provider::{WebSearchConfig, WebSearchEngine},
     skills::SkillSources,
 };
@@ -156,7 +156,7 @@ pub struct Settings {
     /// GenerateImage's default model, an OpenRouter model id.
     pub image_model: String,
     /// The other models a GenerateImage call may pick; None = haest's list
-    /// ([`DEFAULT_IMAGE_MODELS`]).
+    /// (haest-tools' `DEFAULT_IMAGE_MODELS`).
     pub image_models: Option<Vec<String>>,
     /// How MCP tools reach the model: behind ToolSearch, or all on every call.
     pub deferred_tools: DeferMode,

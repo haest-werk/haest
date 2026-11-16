@@ -31,7 +31,7 @@
 //! ));
 //! ```
 
-use std::collections::HashSet;
+use std::{collections::HashSet, path::Path};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
@@ -42,17 +42,6 @@ use crate::{
     deps::AgentHooks,
     messages::{MediaKind, MediaPart, Message, UserMessage},
 };
-
-/// The model the GenerateImage tool uses unless told otherwise (the
-/// `image_model` setting's default), as an OpenRouter model id.
-pub const DEFAULT_IMAGE_MODEL: &str = "google/gemini-nano-banana-2.1";
-/// The models a GenerateImage call may pick from by default: the default, one
-/// for exact text and transparency, one for edits from several references.
-pub const DEFAULT_IMAGE_MODELS: [&str; 3] = [
-    DEFAULT_IMAGE_MODEL,
-    "openai/gpt-image-2.6-sunburst",
-    "black-forest-labs/flux-3-image",
-];
 
 /// Every provider haest speaks accepts exactly these four image types.
 const IMAGE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -69,12 +58,12 @@ fn max_bytes(kind: MediaKind) -> usize {
 /// a model.
 ///
 /// An image must be PNG, JPEG, GIF or WebP (the four every provider takes);
-/// `application/pdf` is a [`MediaKind::File`]; any `audio/*` and `video/*`
-/// pass.
+/// `application/pdf` (exactly) is a [`MediaKind::File`]; any `audio/*` and
+/// `video/*` pass.
 pub(crate) fn media_kind_of(media_type: &str) -> Option<MediaKind> {
     let kind = if media_type.starts_with("image/") {
         MediaKind::Image
-    } else if media_type.starts_with("application/pdf") {
+    } else if media_type == "application/pdf" {
         MediaKind::File
     } else if media_type.starts_with("audio/") {
         MediaKind::Audio
@@ -91,9 +80,10 @@ pub(crate) fn media_kind_of(media_type: &str) -> Option<MediaKind> {
 
 /// The media type for a file name's extension (any case), or None when haest
 /// would not send such a file as media. Knows the image, PDF, audio and video
-/// extensions haest sends as media.
+/// extensions haest sends as media. `name` may be a path; a name with no
+/// extension (`png`) is None.
 pub fn media_type_from_name(name: &str) -> Option<&'static str> {
-    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    let ext = Path::new(name).extension()?.to_str()?.to_ascii_lowercase();
     Some(match ext.as_str() {
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",

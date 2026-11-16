@@ -30,8 +30,8 @@ mod tool;
 use std::{fmt, sync::Arc};
 
 pub use catalog::ImageCatalog;
+pub use haest_core::__private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
 use haest_core::handed::OPENROUTER_URL;
-pub use haest_core::media::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
 pub use request::{
     HttpReply, ImageHttp, ImageReply, ReqwestImageHttp, call_image_api, sniff_image_type,
 };

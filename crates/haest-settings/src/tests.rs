@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use haest_core::{
+    __private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
     WorkspaceMode,
-    media::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
     provider::WebSearchEngine,
 };
 

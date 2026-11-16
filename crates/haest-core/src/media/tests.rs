@@ -15,6 +15,19 @@ fn kinds_and_names_map_to_what_providers_take() {
 }
 
 #[test]
+fn a_name_without_a_dot_has_no_extension() {
+    assert_eq!(media_type_from_name("png"), None);
+    assert_eq!(media_type_from_name("dir.d/pdf"), None);
+    assert_eq!(media_type_from_name("dir/shot.PNG"), Some("image/png"));
+}
+
+#[test]
+fn only_application_pdf_itself_is_a_file() {
+    assert_eq!(media_kind_of("application/pdfx"), None);
+    assert_eq!(media_kind_of("application/pdf-signed"), None);
+}
+
+#[test]
 fn bytes_over_the_kind_limit_are_refused_with_a_reason() {
     let big = vec![0u8; 5 * 1024 * 1024 + 1];
     assert!(matches!(
