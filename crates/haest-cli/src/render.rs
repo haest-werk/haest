@@ -3,15 +3,22 @@
 //! stdout carries the ANSWER only (the model's text), so `haest -p ... > out.md`
 //! captures exactly that. Everything about the work -- tool calls, thinking,
 //! guard notices, errors, the cost line -- goes to stderr. `--json` replaces all
-//! of it with one JSON line per event on stdout.
+//! of it with one JSON line per event on stdout, each in haest-wire's envelope
+//! (`v`, `sid`, `seq`, `ts`, `path`, then the event's own fields).
 
 use std::{
     io::{IsTerminal, Write},
     sync::mpsc::Sender,
 };
 
-use haest::{LoopEvent, StopReason, ToolCall, Usage};
-use serde_json::{Value, json};
+use haest::{
+    LoopEvent, StopReason, ToolCall, Usage,
+    wire::{Framer, Outbound, Path, encode_line},
+};
+use serde::Serialize;
+use serde_json::Value;
+
+pub use haest::wire::Level;
 
 /// How events are written.
 pub struct Renderer<O: Write, E: Write> {
@@ -27,6 +34,8 @@ pub struct Renderer<O: Write, E: Write> {
     /// While the REPL prompt is open: where a line goes so it lands ABOVE the
     /// prompt, never inside what the human is typing.
     above: Option<Sender<String>>,
+    /// Numbers the json lines: one stream per run.
+    framer: Framer,
 }
 
 const DIM: &str = "\x1b[2m";
@@ -51,6 +60,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
             open_line: false,
             shown_error: None,
             above: None,
+            framer: Framer::new(uuid::Uuid::new_v4().to_string()),
         }
     }
 
@@ -93,10 +103,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
 
     pub fn event(&mut self, ev: &LoopEvent) {
         if self.json {
-            if let Ok(line) = serde_json::to_string(ev) {
-                self.json_line(line);
-            }
-            return;
+            return self.json_line(ev);
         }
         match ev {
             LoopEvent::TextDelta { text } => {
@@ -165,8 +172,8 @@ impl<O: Write, E: Write> Renderer<O, E> {
     /// A line for the human: stderr, or a `notice` line on stdout in json mode.
     pub fn notice(&mut self, level: Level, text: &str) {
         if self.json {
-            return self
-                .json_line(json!({"type": "notice", "level": level.as_str(), "text": text}));
+            let text = text.to_string();
+            return self.json_line(Outbound::Notice { level, text });
         }
         let color = match level {
             Level::Info => DIM,
@@ -180,7 +187,8 @@ impl<O: Write, E: Write> Renderer<O, E> {
     /// or an `ask` line on stdout in json mode.
     pub fn ask(&mut self, question: &str) {
         if self.json {
-            return self.json_line(json!({"type": "ask", "text": question}));
+            let text = question.to_string();
+            return self.json_line(Outbound::Ask { text });
         }
         self.end_line();
         let text = self.paint(YELLOW, question);
@@ -188,27 +196,11 @@ impl<O: Write, E: Write> Renderer<O, E> {
         let _ = self.err.flush();
     }
 
-    /// One line on stdout in json mode.
-    fn json_line(&mut self, line: impl std::fmt::Display) {
-        let _ = writeln!(self.out, "{line}");
+    /// One line on stdout in json mode: `body`, the stream's next frame.
+    fn json_line(&mut self, body: impl Serialize) {
+        let frame = self.framer.stamp(Path::main(), body);
+        let _ = self.out.write_all(encode_line(&frame).as_bytes());
         let _ = self.out.flush();
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Level {
-    Info,
-    Warning,
-    Error,
-}
-
-impl Level {
-    fn as_str(self) -> &'static str {
-        match self {
-            Level::Info => "info",
-            Level::Warning => "warning",
-            Level::Error => "error",
-        }
     }
 }
 

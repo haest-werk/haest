@@ -1,0 +1,20 @@
+[package]
+name = "haest-wire"
+description = "haest's wire format: the envelope around a conversation's events, the frames a peer sends in, a framer, a replay ring with gaps, an NDJSON line codec. serde only: no I/O, no async runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

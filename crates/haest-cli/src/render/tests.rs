@@ -96,6 +96,56 @@ fn json_mode_writes_one_parseable_line_per_event() {
     assert!(err.is_empty());
 }
 
+/// Every `--json` line is in the wire's envelope, one stream numbered from 1,
+/// and keeps every field it had before: a reader of the old lines still works.
+#[test]
+fn every_json_line_carries_the_envelope_and_keeps_its_old_fields() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    {
+        let mut r = Renderer::new(&mut out, &mut err, true, false);
+        r.event(&LoopEvent::TextDelta { text: "a".into() });
+        r.notice(Level::Warning, "budget at half");
+        r.ask("Allow Bash?");
+        r.event(&turn_end(StopReason::EndTurn, None));
+    }
+    let lines: Vec<Value> = String::from_utf8(out)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 4);
+    let sid = lines[0]["sid"].as_str().unwrap().to_string();
+    assert!(!sid.is_empty());
+    for (n, line) in lines.iter().enumerate() {
+        assert_eq!(line["v"], haest::wire::WIRE_V, "{line}");
+        assert_eq!(line["sid"], sid.as_str(), "{line}");
+        assert_eq!(line["seq"], n as u64 + 1, "{line}");
+        assert!(line["ts"].as_u64().is_some_and(|t| t > 0), "{line}");
+        assert_eq!(line["path"], json!(["main"]), "{line}");
+    }
+    assert_eq!(
+        (&lines[0]["type"], &lines[0]["text"]),
+        (&json!("text_delta"), &json!("a"))
+    );
+    assert_eq!(
+        (&lines[1]["type"], &lines[1]["level"], &lines[1]["text"]),
+        (
+            &json!("notice"),
+            &json!("warning"),
+            &json!("budget at half")
+        )
+    );
+    assert_eq!(
+        (&lines[2]["type"], &lines[2]["text"]),
+        (&json!("ask"), &json!("Allow Bash?"))
+    );
+    assert_eq!(lines[3]["stopReason"], "end_turn");
+    // A Rust reader gets the event back from its line.
+    let back: haest::wire::Envelope<LoopEvent> = serde_json::from_value(lines[3].clone()).unwrap();
+    assert!(matches!(back.body, LoopEvent::TurnEnd { .. }));
+    assert!(err.is_empty());
+}
+
 #[test]
 fn a_notice_is_a_json_line_in_json_mode_and_stderr_otherwise() {
     let (mut out, mut err) = (Vec::new(), Vec::new());

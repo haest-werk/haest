@@ -32,6 +32,9 @@ settings = ["dep:haest-settings"]
 config = ["dep:haest-config", "settings", "providers", "mcp"]
 # The whole conversation built from what a host hands in, behind its UI (the CLI's base).
 runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods"]
+# The wire format: the envelope around a conversation's events, requests, the
+# replay ring, the NDJSON line codec. serde only.
+wire = ["dep:haest-wire"]
 # Fakes for a host's tests: a scripted model that records every request.
 testing = ["haest-core/testing"]
 
@@ -48,6 +51,7 @@ haest-mods = { workspace = true, optional = true }
 haest-settings = { workspace = true, optional = true }
 haest-config = { workspace = true, optional = true }
 haest-runtime = { workspace = true, optional = true }
+haest-wire = { workspace = true, optional = true }
 
 # The notebook example runs under `cargo test` too, so a change that breaks a
 # plug point it uses fails the suite, not only a `cargo run` nobody did.
@@ -62,6 +66,12 @@ name = "durable_run"
 path = "examples/durable_run.rs"
 test = true
 
+# Both ends of the wire format: frames numbered, kept, read back, caught up.
+[[example]]
+name = "wire"
+required-features = ["wire"]
+test = true
+
 # The notebook example and tests/plug_in.rs: what a host implementing the plug points needs.
 [dev-dependencies]
 # The front page's runnable examples drive whole turns with the scripted model.
@@ -71,6 +81,7 @@ tokio-util = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

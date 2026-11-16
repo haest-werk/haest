@@ -190,6 +190,7 @@
 //! | `settings` | [`settings`]: every setting as a plain value a host writes out in Rust | yes |
 //! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags | no |
 //! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI | no |
+//! | `wire` | [`wire`]: the envelope around a conversation's events, the requests a peer sends, a replay ring with gaps, an NDJSON codec | no |
 //! | `testing` | [`core::testing`]: a scripted model and other fakes for tests | no |
 //!
 //! ```toml
@@ -275,6 +276,9 @@ pub use haest_settings as settings;
 #[cfg(feature = "tools")]
 #[doc(inline)]
 pub use haest_tools as tools;
+#[cfg(feature = "wire")]
+#[doc(inline)]
+pub use haest_wire as wire;
 #[cfg(feature = "workspace")]
 #[doc(inline)]
 pub use haest_workspace as workspace;

@@ -934,7 +934,9 @@ dependencies = [
  "haest-runtime",
  "haest-settings",
  "haest-tools",
+ "haest-wire",
  "haest-workspace",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-util",
@@ -950,9 +952,11 @@ dependencies = [
  "haest",
  "libc",
  "rustyline",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -1136,6 +1140,15 @@ dependencies = [
  "serde_json",
  "swc_common",
  "swc_ts_fast_strip",
+ "thiserror",
+]
+
+[[package]]
+name = "haest-wire"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

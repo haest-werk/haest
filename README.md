@@ -33,6 +33,7 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | `haest-settings` | the settings as plain typed values (`Settings::bare`), no files, no environment, no flags |
 | `haest-config` | the opt-in loader, a builder (`Loader`): TOML files, `HAEST_*` variables and flags in the order a host adds them, profiles, trust; plus what the runtime is handed beside the settings (keys, `providers.json`, `.mcp.json`, a child's environment) |
 | `haest-runtime` | a whole conversation built from what a host hands it, behind its `Ui`; what the CLI is made of |
+| `haest-wire` | the wire format another program reads and drives a conversation with: the envelope around its events (`v`, `sid`, `seq`, `ts`, `path`), the requests a peer sends, a replay ring with gaps, an NDJSON codec; serde only |
 | `haest` | the facade a host depends on: `use haest::...` |
 | `haest-cli` | the `haest` binary |
 | [`haest-issues`](https://github.com/haest-werk/haest/tree/main/crates/haest-issues/) | experimental, and an example of how to write tools: issue-tracker tools over one trait, for GitHub Issues and markdown board cards. Not in the `haest` facade: depend on it directly |
@@ -57,6 +58,7 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `config` | `haest::config` (the loader: files, variables, flags, profiles, trust) | no |
 | `runtime` | `haest::runtime` (the conversation built from what it is handed) and everything above but `config` | no |
 | `testing` | `haest::core::testing` (a scripted model that records every request, for a host's tests) | no |
+| `wire` | `haest::wire` (the envelope, requests, replay ring, NDJSON codec) | no |
 
 ```toml
 haest = "0.2"
