@@ -30,15 +30,57 @@ fn kind_of(t: std::fs::FileType) -> FileKind {
     }
 }
 
+/// Err unless `t` is a file or a directory (which fails on read, as it did).
+fn readable(path: &Path, t: std::fs::FileType) -> io::Result<()> {
+    if t.is_file() || t.is_dir() {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    let what = {
+        use std::os::unix::fs::FileTypeExt;
+        match () {
+            _ if t.is_fifo() => "a FIFO (named pipe)",
+            _ if t.is_socket() => "a socket",
+            _ if t.is_char_device() || t.is_block_device() => "a device",
+            _ => "not a regular file",
+        }
+    };
+    #[cfg(not(unix))]
+    let what = "not a regular file";
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("{} is {what}: only files are read", path.display()),
+    ))
+}
+
+/// `path` opened to read, if it is a file. A FIFO would block in open() until
+/// a writer came (out of reach of a tool's cancel), a device such as
+/// /dev/zero never ends: both are refused at once. The type is checked before
+/// the open, and again on the open file (opened non-blocking, so even a FIFO
+/// swapped in meanwhile cannot hold it).
+async fn open_file(path: &Path) -> io::Result<tokio::fs::File> {
+    readable(path, tokio::fs::metadata(path).await?.file_type())?;
+    let mut options = tokio::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NONBLOCK);
+    let file = options.open(path).await?;
+    readable(path, file.metadata().await?.file_type())?;
+    Ok(file)
+}
+
 #[async_trait]
 impl Fs for RealFs {
     async fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
-        tokio::fs::read(path).await
+        let mut file = open_file(path).await?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).await?;
+        Ok(buf)
     }
 
     async fn read_head(&self, path: &Path, max: usize) -> io::Result<Vec<u8>> {
         let mut buf = Vec::new();
-        let file = tokio::fs::File::open(path).await?;
+        let file = open_file(path).await?;
         file.take(max as u64).read_to_end(&mut buf).await?;
         Ok(buf)
     }
@@ -125,5 +167,58 @@ impl Fs for RealFs {
             let _ = (path, mode);
             Ok(())
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::{
+        ffi::CString, os::unix::ffi::OsStrExt, os::unix::fs::OpenOptionsExt, time::Duration,
+    };
+
+    use super::*;
+
+    fn mkfifo(path: &Path) {
+        let c = CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+    }
+
+    /// Lets a reader stuck in open() on `fifo` go (it then reads an empty pipe).
+    fn release(fifo: &Path) {
+        let _ = std::fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(fifo);
+    }
+
+    #[tokio::test]
+    async fn a_fifo_is_refused_at_once_never_waited_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("pipe");
+        mkfifo(&fifo);
+        let wait = Duration::from_secs(2);
+        let read = tokio::time::timeout(wait, RealFs.read(&fifo)).await;
+        release(&fifo);
+        let head = tokio::time::timeout(wait, RealFs.read_head(&fifo, 10)).await;
+        release(&fifo);
+        assert!(matches!(read, Ok(Err(_))), "read: {read:?}");
+        assert!(matches!(head, Ok(Err(_))), "read_head: {head:?}");
+    }
+
+    #[tokio::test]
+    async fn a_device_or_a_socket_is_refused_and_a_file_still_reads() {
+        // /dev/null ends at once either way; /dev/zero never would.
+        assert!(RealFs.read(Path::new("/dev/null")).await.is_err());
+        let dir = tempfile::tempdir().unwrap();
+        let sock = dir.path().join("sock");
+        let _listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+        assert!(RealFs.read(&sock).await.is_err());
+        let file = dir.path().join("a.txt");
+        std::fs::write(&file, "hello").unwrap();
+        assert_eq!(RealFs.read(&file).await.unwrap(), b"hello");
+        assert_eq!(RealFs.read_head(&file, 2).await.unwrap(), b"he");
+        // A link to a device is the device.
+        std::os::unix::fs::symlink("/dev/null", dir.path().join("null")).unwrap();
+        assert!(RealFs.read(&dir.path().join("null")).await.is_err());
     }
 }
