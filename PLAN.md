@@ -39,7 +39,8 @@ Behaviour comes from there, file by file, tests included.
 | Crate | What | Ported from |
 |---|---|---|
 | `haest-core` | messages, Provider/Tool/Fs/Workspace/AgentHooks contracts, the loop, guard, limits, ledger, media, effort, session log, compaction, system prompt, skills, task board, deferred tools | `core/*.ts` |
-| `haest-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible endpoint), OpenAI Responses, OpenRouter routing + web search, `providers.json`, the model catalog, a pluggable HTTP `Transport` | `providers/*.ts`, `shared/haest-models.ts` |
+| `haest-http` | the one HTTP seam: `HttpClient` (one `send`), `Request`, `Response`, `HttpError`; the default `ReqwestClient`; the one place a reqwest client is built and TLS set up | new (T2) |
+| `haest-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible endpoint), OpenAI Responses, OpenRouter routing + web search, `providers.json`, the model catalog, requests over any `HttpClient` | `providers/*.ts`, `shared/haest-models.ts` |
 | `haest-workspace` | real disk + real bash; bashkit sandbox over a copy-on-write overlay; `/changes` + `/apply`; net guard | `core/workspace-*.ts`, `overlay-changes.ts`, `shell-words.ts`, `fs-walk.ts`, `net-guard.ts` |
 | `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch, tasks, ToolSearch, Skill, Agent tools (`SubagentHub`, `AgentDirectory`, `AgentToolOptions`), GenerateImage | `tools/*.ts` |
 | `haest-mcp` | MCP client over `rmcp`: stdio + HTTP servers, their tools as haest tools | `core/mcp.ts` |
@@ -50,7 +51,7 @@ Behaviour comes from there, file by file, tests included.
 | `haest-config` | the opt-in loader: the registry (one row per setting), TOML/env/flag layers with provenance, profiles, trust, `env_passthrough`; reads the keys, `providers.json`, routing and a trusted `.mcp.json` for the runtime | new (D8, D15) |
 | `haest-runtime` | the conversation built from `RuntimeInputs`: providers, workspace, tools, MCP, mods, subagents, inbox, session file, behind a `Ui` | the CLI's composition, moved (D14, D16); `host/runtime.ts` |
 | `haest-cli` | the `haest` binary on `haest-config` + `haest-runtime`: flags generated from the registry, `haest settings`, print mode, `--json` NDJSON events, a REPL, sessions + resume | new (the TS haest has no CLI; its host is the broker) |
-| `haest` | the one dependency a host takes; features `providers`, `workspace`, `tools`, `mcp`, `code`, `mods`, `settings` (default), `config`, `runtime` | -- |
+| `haest` | the one dependency a host takes; features `http`, `providers`, `workspace`, `tools`, `mcp`, `code`, `mods`, `settings` (default), `config`, `runtime` | -- |
 | `haest-issues` | EXPERIMENTAL, an example of how to write tools: a `Tracker` trait, a GitHub Issues backend (REST, token handed in) and a board-card backend (markdown + frontmatter files, the board's own bytes), seven Issue* tools over either; not in the facade | new; the card format from remote-claude's `project-card-file.ts` |
 
 ## Brain's plug points (from its vendored patches, `brain/web/src/rooms/agent/haest/README.md`)
@@ -59,7 +60,7 @@ Behaviour comes from there, file by file, tests included.
 |---|---|
 | `tool_call_start` forwarded as a loop event | `ProviderEvent::ToolCallStart` -> `LoopEvent::ToolCallStart` (in the contract) |
 | `clock` in the deps (a paused run's pause doesn't count) | `AgentDeps::clock` (a `Clock`) |
-| openai-compat with no SDK client: the transport is the node's gateway on files.sock | `haest-providers` `Transport` trait (default: reqwest); brain's goes over its unix socket |
+| openai-compat with no SDK client: the transport is the node's gateway on files.sock | haest-http's `HttpClient` trait (default: reqwest), handed to the providers; brain's goes over its unix socket |
 | no OpenRouter provider routing (the gateway decides) | routing is an option on the compat provider, off by default for a custom transport |
 | workspace = BrainFs (just-bash over it, writes staged for the asker); dream runs with none | `Fs` trait + `haest-workspace` sandbox over any `Fs`; `ShutWorkspace` |
 | Read: `createReadTool(intercept)` (brain media caps, `attachment:<id>`) | Read tool takes an optional intercept |

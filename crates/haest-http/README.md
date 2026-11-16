@@ -15,7 +15,9 @@ with one method, one `Request`, one `Response` whose body streams, one
   your proxy, certificates or timeouts.
 - `build_reqwest` is the one place haest builds a reqwest client. It installs
   ring as the process's rustls provider when none is installed, so building a
-  client never panics for want of one; a provider you installed is kept.
+  client never panics for want of one; a provider you installed is kept. The
+  MCP client ([haest-mcp](https://crates.io/crates/haest-mcp)), whose SDK
+  runs only on reqwest, gets its client from here too.
 - Implement `HttpClient` to send everything somewhere else: a gateway, a
   recorder, a fake for tests.
 

@@ -43,6 +43,7 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 
 | Feature | Brings | Default |
 |---|---|---|
+| `http` | `haest::http` (the one HTTP seam: `HttpClient` and its reqwest default); on with `providers` and `tools` | yes |
 | `providers` | `haest::providers` | yes |
 | `workspace` | `haest::workspace` | yes |
 | `tools` | `haest::tools` | yes |
@@ -57,7 +58,7 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 haest = "0.2"
 # the whole conversation with haest's own files, variables and flags (the CLI's way)
 haest = { version = "0.2", features = ["runtime", "config"] }
-# a host with its own transport, files and tools (the brain example)
+# a host with its own HTTP client, files and tools (the brain example)
 haest = { version = "0.2", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
 
@@ -171,7 +172,7 @@ More providers go in `<config dir>/providers.json`
 
 A host builds `AgentDeps` (models, tools, system prompt, workspace, hooks),
 makes an `Agent` and calls `run(input, &mut sink)` once per human turn. Every
-place a host differs is a trait: `Transport` for how model calls travel, `Fs`
+place a host differs is a trait: `HttpClient` for how requests travel, `Fs`
 and `Workspace` for files and shell, `Tool` and `ReadIntercept` for tools,
 `AgentHooks` for the clock, persistence and caps, `EventSink` for events,
 `SessionSink` for session records, `AgentDirectory` for sub-agents.

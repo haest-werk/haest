@@ -30,7 +30,7 @@ use crate::{HttpError, request::find_header};
 /// let big = Body::from(vec![0u8; 2048]).bytes(1024).await;
 /// assert!(matches!(big, Err(HttpError::TooLarge(1024))));
 ///
-/// // A transport that streams hands over its chunks as they come.
+/// // A client that streams hands over its chunks as they come.
 /// let chunks = futures::stream::iter([Ok(Bytes::from("hel")), Ok(Bytes::from("lo"))]);
 /// assert_eq!(Body::from_stream(chunks).bytes(1024).await.unwrap(), Bytes::from("hello"));
 /// # }
@@ -43,7 +43,7 @@ impl Body {
         Self(futures::stream::empty().boxed())
     }
 
-    /// The body as a stream of chunks, as a transport reads them.
+    /// The body as a stream of chunks, as a client reads them.
     pub fn from_stream(
         chunks: impl Stream<Item = Result<Bytes, HttpError>> + Send + 'static,
     ) -> Self {

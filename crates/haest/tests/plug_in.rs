@@ -1,6 +1,6 @@
 //! A second host, from outside: haest through its public API only, the way any
 //! crate that depends on haest sees it. brain (examples/brain) brings its
-//! own transport and its own sub-agent runner; this host takes haest's own
+//! own HTTP client and its own sub-agent runner; this host takes haest's own
 //! pieces and plugs its own in beside them. The host is here; the tests, by
 //! plug point, are in `plug_in/`:
 //!

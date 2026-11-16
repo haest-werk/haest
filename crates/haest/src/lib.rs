@@ -234,7 +234,7 @@
 //! | `testing` | [`core::testing`]: a scripted model and other fakes for tests | no |
 //!
 //! ```toml
-//! # a host with its own provider transport, files and tools:
+//! # a host with its own HTTP client, files and tools:
 //! haest = { version = "0.2", default-features = false, features = [
 //!     "providers", "workspace", "tools", "settings",
 //! ] }

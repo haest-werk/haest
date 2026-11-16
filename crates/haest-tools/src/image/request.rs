@@ -104,7 +104,7 @@ fn refusal(model: &str, status: u16, answer: &Value) -> String {
 ///
 /// # Errors
 ///
-/// The reason, said to the model as is: the transport failed, the API refused
+/// The reason, said to the model as is: no answer came, the API refused
 /// (its status and its own words, the provider's too when it gave them), the
 /// answer has no image, or the image is not a PNG, JPEG, WebP or GIF (an SVG
 /// never is).

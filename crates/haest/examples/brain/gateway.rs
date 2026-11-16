@@ -9,7 +9,7 @@ use std::{collections::VecDeque, sync::Mutex};
 use haest::http::{Body, Bytes, HttpClient, HttpError, Request, Response, async_trait};
 use serde_json::{Value, json};
 
-/// Where the gateway listens, as the provider's base URL. The transport sends
+/// Where the gateway listens, as the provider's base URL. The client sends
 /// the path over the socket; the host part means nothing.
 pub const BASE_URL: &str = "http://files.sock/agent/llm/v1";
 
