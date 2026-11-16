@@ -1,12 +1,19 @@
-//! The agent loop. One `run()` = one human turn: model call, run the tools it
-//! asked for, feed results back, repeat until the model answers without tools.
+//! The agent loop. One [`Agent::run`] = one human turn: model call, run the
+//! tools it asked for, feed results back, repeat until the model answers
+//! without tools.
+//!
+//! Start from [`Agent::new`] with [`AgentDeps`] and [`AgentOptions`]. Steer or
+//! stop a running turn from elsewhere through [`AgentControl`].
 //!
 //! Invariants the loop keeps so every provider accepts the history:
 //!   - every tool call gets exactly one tool result, even on interrupt;
-//!   - input that arrives mid-turn (`AgentControl::steer`) is queued and
+//!   - input that arrives mid-turn ([`AgentControl::steer`]) is queued and
 //!     injected at the next step boundary (after the tool results), never dropped;
-//!   - the turn guard (guard.rs) is asked before every model call, and its
-//!     nudge rides in at the same step boundary.
+//!   - the turn guard ([`guard`](crate::guard)) is asked before every model
+//!     call, and its nudge rides in at the same step boundary.
+//!
+//! Within one model response, read-only tool calls run in parallel
+//! ([`tool_batch`](crate::tool_batch)); their results still land in call order.
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -33,6 +40,56 @@ use crate::{
 use turn::Turn;
 
 /// Steer or stop a running turn from another task. Cheap to clone.
+///
+/// Get one from [`Agent::control`]; every clone drives the same agent.
+///
+/// # Examples
+///
+/// Input that arrives while a turn runs joins that turn at its next step
+/// boundary; anything still queued when it ends is the caller's next turn.
+///
+/// ```
+/// # #[cfg(feature = "testing")]
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// # use std::sync::Arc;
+/// # use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tool};
+/// use haest_core::{LoopEvent, Message, testing::{ScriptedProvider, text_answer}};
+///
+/// let provider = ScriptedProvider::new([text_answer("one"), text_answer("two")]);
+/// # let tools: Vec<Arc<dyn Tool>> = Vec::new();
+/// # let deps = AgentDeps::new(
+/// #     Arc::new(provider.resolver()),
+/// #     Arc::new(tools),
+/// #     Arc::new(String::new()),
+/// #     "/",
+/// #     Arc::new(ShutWorkspace),
+/// # );
+/// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
+///
+/// // Another task would hold this; here the sink steers once, mid-turn.
+/// let control = agent.control();
+/// let mut steered = false;
+/// let mut sink = |ev: LoopEvent| {
+///     if matches!(ev, LoopEvent::ModelStart { .. }) && !steered {
+///         control.steer("also say two");
+///         steered = true;
+///     }
+/// };
+/// agent.run("say one", &mut sink).await;
+///
+/// // One turn, two model calls: the steering became a user message in between.
+/// assert_eq!(provider.requests().len(), 2);
+/// assert!(matches!(&agent.messages[2], Message::User(u) if u.content == "also say two"));
+///
+/// // What arrives after a turn's last step boundary waits for the caller.
+/// while let Some(next) = agent.control().take_queued() {
+///     agent.run(&next, &mut Vec::<LoopEvent>::new()).await;
+/// }
+/// # }
+/// # #[cfg(not(feature = "testing"))]
+/// # fn main() {}
+/// ```
 #[derive(Clone, Default)]
 pub struct AgentControl {
     inner: Arc<ControlInner>,
@@ -46,22 +103,36 @@ struct ControlInner {
 
 impl AgentControl {
     /// Queue input for the running turn; it lands at the next step boundary.
+    ///
+    /// The boundary comes after the tool results of the current model call,
+    /// or after an answer without tools, which then does not end the turn.
+    /// Input queued while no turn runs waits for [`take_queued`](Self::take_queued)
+    /// or the next turn's first boundary.
     pub fn steer(&self, text: impl Into<String>) {
         self.inner.queue.lock().unwrap().push(text.into());
     }
 
-    /// Cancel the running turn, if any.
+    /// Cancel the running turn, if any; does nothing between turns.
+    ///
+    /// The turn's cancel token fires. The model call in flight ends (a
+    /// provider ends its stream as aborted), a running tool sees it on
+    /// [`ToolContext::cancel`](crate::ToolContext::cancel), every call not yet
+    /// started is answered as interrupted, and the turn ends with
+    /// [`StopReason::Aborted`] instead of making another model call. Every
+    /// tool call keeps its result, so the history can be sent again.
     pub fn abort(&self) {
         if let Some(c) = self.inner.cancel.lock().unwrap().as_ref() {
             c.cancel();
         }
     }
 
+    /// Whether a turn is running right now.
     pub fn running(&self) -> bool {
         self.inner.cancel.lock().unwrap().is_some()
     }
 
-    /// Drain queued steering input, joined; the caller runs it as the next turn.
+    /// Drain queued steering input, joined by blank lines; the caller runs it
+    /// as the next turn. None when nothing is queued.
     pub fn take_queued(&self) -> Option<String> {
         let mut q = self.inner.queue.lock().unwrap();
         if q.is_empty() {
@@ -96,13 +167,21 @@ impl Drop for Running {
     }
 }
 
+/// How a new [`Agent`] starts: its model, its effort, and any history to resume.
 pub struct AgentOptions {
+    /// The model spec, `provider:model`, resolved by [`AgentDeps::models`]
+    /// before every model call. Becomes [`Agent::model_spec`].
     pub model: String,
+    /// The reasoning effort to ask for; None sends none and the model uses its
+    /// default. Becomes [`Agent::effort`].
     pub effort: Option<Effort>,
+    /// The history to resume from (a replayed session); empty for a new
+    /// conversation. Becomes [`Agent::messages`].
     pub history: Vec<Message>,
 }
 
 impl AgentOptions {
+    /// Options for `model` with no effort and no history.
     pub fn new(model: impl Into<String>) -> Self {
         Self {
             model: model.into(),
@@ -112,9 +191,64 @@ impl AgentOptions {
     }
 }
 
+/// One conversation with a model: its history, the model it talks to, and
+/// what it runs on. [`Agent::run`] runs one human turn.
+///
+/// An agent runs one turn at a time (`run` takes `&mut self`). Between turns
+/// a host may read and change the public fields: edit history, switch the
+/// model, change the effort.
+///
+/// # Examples
+///
+/// ```
+/// # #[cfg(feature = "testing")]
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// use std::sync::Arc;
+///
+/// use haest_core::{
+///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tool,
+///     testing::{ScriptedProvider, text_answer},
+/// };
+///
+/// // A fake model that answers "hello"; a host resolves real providers here.
+/// let provider = ScriptedProvider::new([text_answer("hello")]);
+/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
+/// let deps = AgentDeps::new(
+///     Arc::new(provider.resolver()),
+///     Arc::new(tools),
+///     Arc::new("You are terse.".to_string()),
+///     "/project",
+///     Arc::new(ShutWorkspace),
+/// );
+/// let mut agent = Agent::new(deps, AgentOptions::new("scripted:model-1"));
+///
+/// let mut said = String::new();
+/// let mut sink = |ev: LoopEvent| {
+///     if let LoopEvent::TextDelta { text } = ev {
+///         said.push_str(&text);
+///     }
+/// };
+/// let end = agent.run("say hello", &mut sink).await;
+///
+/// assert_eq!(end.stop_reason, StopReason::EndTurn);
+/// assert_eq!(said, "hello");
+/// assert_eq!(agent.messages.len(), 2); // the input, the answer
+/// assert_eq!(provider.requests()[0].system, "You are terse.");
+/// # }
+/// # #[cfg(not(feature = "testing"))]
+/// # fn main() {}
+/// ```
 pub struct Agent {
+    /// The conversation's history. During a turn the loop only appends to it
+    /// (and an [`AgentHooks::before_model_call`](crate::AgentHooks::before_model_call)
+    /// may replace it); between turns the host may edit it.
     pub messages: Vec<Message>,
+    /// The model spec (`provider:model`) resolved before every model call;
+    /// change it to switch models.
     pub model_spec: String,
+    /// The reasoning effort to ask for, fitted to what the model takes before
+    /// every call; None sends none.
     pub effort: Option<Effort>,
     pub(crate) deps: AgentDeps,
     pub(crate) control: AgentControl,
@@ -124,6 +258,7 @@ pub struct Agent {
 }
 
 impl Agent {
+    /// An idle agent with `deps` and `opts`. Nothing is sent until [`Agent::run`].
     pub fn new(deps: AgentDeps, opts: AgentOptions) -> Self {
         Self {
             messages: opts.history,
@@ -146,6 +281,8 @@ impl Agent {
         std::mem::take(&mut self.side_spend)
     }
 
+    /// What this agent was built with. Fixed for the agent's life; what sits
+    /// behind its `Arc`s may change.
     pub fn deps(&self) -> &AgentDeps {
         &self.deps
     }
@@ -155,7 +292,8 @@ impl Agent {
         self.control.clone()
     }
 
-    /// Replace history wholesale (compaction, /clear). Does not fire `on_message`.
+    /// Replace history wholesale (compaction, /clear). Does not fire
+    /// [`on_message`](crate::AgentHooks::on_message).
     pub fn replace_history(&mut self, messages: Vec<Message>) {
         self.messages = messages;
     }
@@ -165,6 +303,18 @@ impl Agent {
     /// Input that arrives meanwhile goes through [`AgentControl::steer`]; stop it
     /// with [`AgentControl::abort`] -- dropping this future mid-turn instead can
     /// leave a tool call in history without its result.
+    ///
+    /// `input` becomes a user message, with whatever
+    /// [`attach_media`](crate::AgentHooks::attach_media) finds in it. The turn
+    /// then makes model calls until one answers without tools, a cap or the
+    /// conversation budget stops it ([`StopReason::MaxTokens`]), a hook or the
+    /// provider fails ([`StopReason::Error`]), or it is aborted.
+    ///
+    /// A provider error, an unknown model spec and a tool that fails or
+    /// panics are values, not panics: the turn goes on, or ends with a
+    /// `TurnEnd` saying why. (A hook that panics is the host's own panic.)
+    /// Called while a turn of this agent is already running (from inside a
+    /// hook), it ends at once with [`StopReason::Error`] and touches nothing.
     pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnEnd {
         let started = Instant::now();
         let cancel = match self.control.begin() {
@@ -194,11 +344,18 @@ impl Agent {
     }
 
     /// Everything a model call sends ahead of the history; compaction reuses it.
+    ///
+    /// `model` is the provider's model id the spec resolved to
+    /// ([`ResolvedModel::model`](crate::ResolvedModel::model)). Builds the
+    /// system prompt and the tool list afresh.
     pub async fn request_prefix(&self, model: &str) -> RequestPrefix {
         build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await
     }
 
     /// History as the current model may receive it (media it cannot take is withheld, with a note).
+    ///
+    /// `model` is the provider's model id, named in the note. Reports what was
+    /// withheld to [`AgentHooks::on_media_withheld`](crate::AgentHooks::on_media_withheld).
     pub fn sendable(&self, messages: &[Message], model: &str) -> Vec<Message> {
         let hooks = self.deps.hooks.as_ref();
         let accepts = hooks.input_modalities(&self.model_spec);

@@ -1,6 +1,16 @@
 //! Running one tool call, and the synthetic assistant message for a model call
 //! that never happened. Both turn every failure into a value the loop can put
 //! in history -- nothing here fails.
+//!
+//! Three ways to run a call, each wrapping the next:
+//! - [`run_call`]: what the loop uses; a cancelled turn answers the call as
+//!   interrupted without running it.
+//! - [`execute_tool`]: runs it, then spills a result over [`MAX_TOOL_OUTPUT`]
+//!   characters to a file and gives the model a preview.
+//! - [`run_tool`]: runs it with every error and panic answered as a result,
+//!   no spill. For a caller whose results never reach the model as they are.
+//!
+//! Tools are looked up by name in a [`ToolIndex`].
 
 use std::sync::Arc;
 
@@ -14,7 +24,8 @@ use crate::{
     tool::{Tool, ToolContext, ToolError, ToolOutput, spelled},
 };
 
-/// A model call that never went out (no provider, a refused request).
+/// A model call that never went out (no provider, a refused request): an
+/// empty answer from provider `"none"` with [`StopReason::Error`] and `error`.
 pub fn error_assistant(model: &str, error: &str) -> AssistantMessage {
     let mut m = AssistantMessage::start("none", model);
     m.stop_reason = StopReason::Error;
@@ -26,10 +37,12 @@ pub fn error_assistant(model: &str, error: &str) -> AssistantMessage {
 pub struct ToolIndex(Vec<Arc<dyn Tool>>);
 
 impl ToolIndex {
+    /// An index over `tools`, in the order given.
     pub fn new(tools: Vec<Arc<dyn Tool>>) -> Self {
         Self(tools)
     }
 
+    /// The tool called `name`; the later one when two share it.
     pub fn get(&self, name: &str) -> Option<&Arc<dyn Tool>> {
         self.0.iter().rev().find(|t| t.name() == name)
     }
@@ -129,6 +142,9 @@ pub async fn run_call(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> 
 
 /// Fold a tool's own spend -- an image model's bill, a sub-agent's -- into the
 /// turn, so the turn total and the USD cap both see it.
+///
+/// Adds [`ToolOutput::cost_usd`] and [`ToolOutput::child_cost_usd`] to
+/// `usage.cost_usd`; leaves `usage` untouched when the tool spent nothing.
 pub fn fold_spend(usage: &mut Usage, out: &ToolOutput) {
     let spent = out.cost_usd.unwrap_or(0.0) + out.child_cost_usd.unwrap_or(0.0);
     if spent != 0.0 {
@@ -157,6 +173,29 @@ pub async fn execute_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext)
 /// One call with every error answered as a result, and NO spill: the output
 /// whole. For a caller whose results never enter the context -- the Code
 /// tool's program filters a big result itself, which is the reason it exists.
+///
+/// An unknown name is answered with an error listing the tools there are;
+/// arguments that were not JSON (`_unparsed`) with an error, without running
+/// the tool. A [`ToolError`] or a panic becomes an error result with a
+/// `{"kind": "error"}` envelope.
+///
+/// ```
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// use std::sync::Arc;
+///
+/// use haest_core::{
+///     ShutWorkspace, ToolContext,
+///     messages::ToolCall,
+///     tool_exec::{ToolIndex, run_tool},
+/// };
+///
+/// let call = ToolCall { id: "c1".into(), name: "Nope".into(), input: Default::default() };
+/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+/// let out = run_tool(&ToolIndex::new(Vec::new()), &call, &ctx).await;
+/// assert!(out.is_error); // an answer the model reads, not a failure of the loop
+/// # }
+/// ```
 pub async fn run_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> ToolOutput {
     let Some(tool) = tools.get(&call.name) else {
         return ToolOutput::error(format!(

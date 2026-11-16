@@ -9,23 +9,35 @@ use crate::{
 };
 
 /// Everything the system prompt says, gathered by the caller.
+///
+/// `Default` is empty: fill in what the host knows and leave the rest.
 #[derive(Debug, Clone, Default)]
 pub struct PromptInputs {
     /// Replaces haest's identity paragraph (a host's `system_prompt` setting).
     pub identity: Option<String>,
+    /// The working directory, as the model should read it.
     pub cwd: String,
+    /// The model, as the model should read it.
     pub model: String,
+    /// The platform, e.g. `linux` or `darwin`.
     pub platform: String,
+    /// Today's date, in whatever form the host likes.
     pub date: String,
+    /// The checked-out branch ([`current_git_branch`](crate::context::current_git_branch));
+    /// None says "Not a git repository".
     pub git_branch: Option<String>,
+    /// Instruction files, in reading order ([`find_instruction_files`](crate::context::find_instruction_files)).
     pub instructions: Vec<InstructionFile>,
+    /// The skills the model may load.
     pub skills: Vec<Skill>,
+    /// The names of the tools this call advertises; the tool advice covers only these.
     pub tool_names: Vec<String>,
     /// How to read and answer `<channel>` turns; None when there is no way to answer.
     pub channel_guide: Option<String>,
     /// What the workspace can and cannot do (the sandbox's limits); None for
     /// the real one. Said only to a call with Bash or a file tool.
     pub workspace_note: Option<String>,
+    /// Text the host adds at the very end.
     pub append_system_prompt: Option<String>,
 }
 
@@ -91,6 +103,10 @@ fn instructions(files: &[InstructionFile]) -> String {
         .join("\n\n")
 }
 
+/// The system prompt text, sections in this order: identity, tool advice,
+/// environment, workspace note, instruction files, skills, channel guide,
+/// the host's addition. Empty sections are left out; sections are separated
+/// by a blank line.
 pub fn build_system_prompt(p: &PromptInputs) -> String {
     let branch = match &p.git_branch {
         Some(b) => format!("- Git branch: {b}"),

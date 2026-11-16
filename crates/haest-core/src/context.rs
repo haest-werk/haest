@@ -8,6 +8,46 @@
 //!
 //! Nothing here reads the process: files come through a haest [`Fs`]; the home
 //! dir, platform and date are the caller's.
+//!
+//! A host gathers [`PromptInputs`] ([`find_instruction_files`],
+//! [`current_git_branch`], the skills it loaded, the tool names) and builds
+//! the text with [`build_system_prompt`], typically inside its
+//! [`SystemPrompt`](crate::SystemPrompt) so it is rebuilt before every call.
+//!
+//! ```
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() {
+//! use haest_core::{
+//!     MemFs,
+//!     context::{
+//!         ContextSources, InstructionOpts, PromptInputs, build_system_prompt,
+//!         find_instruction_files,
+//!     },
+//! };
+//!
+//! let fs = MemFs::with_files([("/home/me/work/AGENTS.md", "Run the tests before you commit.")]);
+//!
+//! let opts = InstructionOpts {
+//!     cwd: "/home/me/work".into(),
+//!     home: "/home/me".into(),
+//!     config_dir: None,
+//!     sources: ContextSources { agents: true, claude: false },
+//! };
+//! let instructions = find_instruction_files(&fs, &opts).await;
+//! assert_eq!(instructions.len(), 1);
+//!
+//! let prompt = build_system_prompt(&PromptInputs {
+//!     cwd: "/home/me/work".into(),
+//!     model: "anthropic:claude-x".into(),
+//!     platform: "linux".into(),
+//!     date: "2026-01-01".into(),
+//!     instructions,
+//!     tool_names: vec!["Read".into(), "Bash".into()],
+//!     ..PromptInputs::default()
+//! });
+//! assert!(prompt.contains("Run the tests before you commit."));
+//! # }
+//! ```
 
 mod git;
 mod prompt;
@@ -24,9 +64,12 @@ pub use prompt::{PromptInputs, build_system_prompt};
 
 use crate::fs::{Fs, normalize, read_lossy};
 
+/// One instruction file that was found and read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstructionFile {
+    /// Where it was read from; the prompt names it.
     pub path: PathBuf,
+    /// Its text, trimmed, cut at 60,000 characters (with a `[truncated]` mark).
     pub content: String,
 }
 
@@ -86,13 +129,17 @@ crate::word_set! {
     }
 }
 
-/// Where to look.
+/// Where [`find_instruction_files`] looks, and for which files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstructionOpts {
+    /// The working directory: the innermost project dir.
     pub cwd: PathBuf,
+    /// The user's home: its `.agents` / `.claude` dirs hold the user's files,
+    /// and the project chain stops below it ([`project_chain`]).
     pub home: PathBuf,
     /// Claude Code's user dir (`<home>/.claude` when None); read only with `claude`.
     pub config_dir: Option<PathBuf>,
+    /// Which kinds of instruction file to read; none unless the host says so.
     pub sources: ContextSources,
 }
 
@@ -123,6 +170,10 @@ fn candidates(opts: &InstructionOpts) -> Vec<PathBuf> {
     out
 }
 
+/// Every instruction file `opts` asks for that exists and is not empty, in
+/// reading order: the user's files first, then each project dir from the
+/// outermost down to `cwd`. Each path is read once; a file that cannot be
+/// read is skipped, so this never fails.
 pub async fn find_instruction_files(fs: &dyn Fs, opts: &InstructionOpts) -> Vec<InstructionFile> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();

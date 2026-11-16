@@ -1,6 +1,10 @@
 //! What a host hands haest instead of haest reaching for it: named keys
 //! ([`KeySource`]) and the environment of the processes the agent starts
 //! ([`ChildEnv`]). haest never reads the process environment itself.
+//!
+//! The provider registry (`haest-providers`) asks a [`KeySource`]; the
+//! workspaces (`haest-workspace`) and MCP servers (`haest-mcp`) start their
+//! processes with a [`ChildEnv`].
 
 use std::{collections::HashMap, fmt, sync::Arc};
 
@@ -8,7 +12,25 @@ use std::{collections::HashMap, fmt, sync::Arc};
 /// (`OPENROUTER_API_KEY`, `ANTHROPIC_BASE_URL`, a providers.json entry's
 /// `apiKeyEnv`). The host answers from its environment, a keychain, a vault, or
 /// not at all. An empty value counts as none.
+///
+/// A closure `Fn(&str) -> Option<String>` is one, and so is a
+/// `HashMap<String, String>`; both answer an empty value as None.
+///
+/// ```
+/// use std::collections::HashMap;
+///
+/// use haest_core::KeySource;
+///
+/// let keys = HashMap::from([("OPENROUTER_API_KEY".to_string(), "sk-test".to_string())]);
+/// assert_eq!(keys.key("OPENROUTER_API_KEY").as_deref(), Some("sk-test"));
+///
+/// // A host that reads its own environment says so itself; haest never does.
+/// let from_env = |name: &str| std::env::var(name).ok();
+/// assert_eq!(from_env.key("HAEST_DOC_EXAMPLE_UNSET"), None);
+/// ```
 pub trait KeySource: Send + Sync {
+    /// The value named `name`, or None. Implementations answer an empty
+    /// value as None.
     fn key(&self, name: &str) -> Option<String>;
 }
 
@@ -37,18 +59,32 @@ pub fn openrouter_base_url(keys: &dyn KeySource) -> String {
 /// background jobs, an MCP server. A child gets these variables and nothing
 /// else -- not the host's own environment, not its keys -- unless the host put
 /// them here. Debug output shows the names only.
+///
+/// Cheap to clone (shared). The default is empty: a child with no variables.
+///
+/// ```
+/// use haest_core::ChildEnv;
+///
+/// let base = ChildEnv::new([("PATH".to_string(), "/usr/bin:/bin".to_string())]);
+/// let job = base.with(&ChildEnv::new([("TOKEN".to_string(), "secret".to_string())]));
+/// assert_eq!(job.get("PATH"), Some("/usr/bin:/bin"));
+/// assert!(!format!("{job:?}").contains("secret"));
+/// ```
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct ChildEnv(Arc<Vec<(String, String)>>);
 
 impl ChildEnv {
+    /// These variables, in order.
     pub fn new(vars: impl IntoIterator<Item = (String, String)>) -> Self {
         Self(Arc::new(vars.into_iter().collect()))
     }
 
+    /// Every variable, in order, values included.
     pub fn vars(&self) -> &[(String, String)] {
         &self.0
     }
 
+    /// The value of `name`; the last one when it is listed twice.
     pub fn get(&self, name: &str) -> Option<&str> {
         self.0
             .iter()

@@ -39,6 +39,10 @@ fn branch_of(head: &str) -> Option<&str> {
 }
 
 /// The checked-out branch (or a short sha when detached), read from HEAD; None outside a repo.
+///
+/// Looks for `.git` from `cwd` up to the root; a worktree's `.git` file is
+/// followed to its git dir. A HEAD that is not a branch gives its first 12
+/// characters.
 pub async fn current_git_branch(fs: &dyn Fs, cwd: &Path) -> Option<String> {
     let git_dir = find_git_dir(fs, cwd).await?;
     let head = read_lossy(fs, &git_dir.join("HEAD")).await?;

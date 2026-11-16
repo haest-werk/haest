@@ -6,6 +6,11 @@
 //! The cut lands before a user or an assistant message, never between a tool
 //! call and its result, so the tail never starts with an orphaned tool result
 //! and every tool call in it keeps its result.
+//!
+//! The loop never compacts on its own. A host checks [`needs_compaction`] and
+//! calls [`compact`], usually from
+//! [`AgentHooks::before_model_call`](crate::AgentHooks::before_model_call);
+//! [`compact`]'s docs show the whole hook.
 
 use std::collections::HashMap;
 
@@ -24,8 +29,10 @@ const SUMMARY_PROMPT: &str = "Summarize the conversation so far so work can cont
 
 const COLD_SYSTEM: &str = "You write precise working summaries of coding sessions.";
 
+/// When to compact, and how much to keep.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompactionConfig {
+    /// The model's context window, in tokens.
     pub context_window: u64,
     /// Fraction of the window that triggers compaction.
     pub threshold: f64,
@@ -43,6 +50,10 @@ fn last_assistant(messages: &[Message]) -> Option<&AssistantMessage> {
 }
 
 /// The LAST successful request filled the trigger (not the sum of every request).
+///
+/// The trigger is `context_window * threshold`, or `ceiling` when that is
+/// lower; a request "filled" it when its [`Usage::context_tokens`] reached
+/// it. A failed request never triggers, and an empty history is never due.
 pub fn needs_compaction(messages: &[Message], cfg: &CompactionConfig) -> bool {
     let fraction = cfg.context_window as f64 * cfg.threshold;
     let trigger = cfg.ceiling.map_or(fraction, |c| fraction.min(c as f64));
@@ -50,7 +61,12 @@ pub fn needs_compaction(messages: &[Message], cfg: &CompactionConfig) -> bool {
 }
 
 /// Index of the first kept message: the latest at or before len-keep_recent
-/// where a tail may start (see [`tail_starts`]); 0 = nothing to cut.
+/// where a tail may start; 0 = nothing to cut.
+///
+/// A tail may start at a user or an assistant message, never at a tool
+/// result, and never where a result after the cut answers a call before it.
+/// At least the first message is always cut and the last always kept, so a
+/// history of one message has nothing to cut.
 pub fn cut_index(messages: &[Message], keep_recent: usize) -> usize {
     if messages.is_empty() {
         return 0;
@@ -96,13 +112,17 @@ fn warm_instruction(kept: usize) -> String {
     )
 }
 
-/// warm: the main loop's last request again (same system, tools, effort, history) plus the summary
+/// Which request wrote a compaction summary.
+///
+/// Warm: the main loop's last request again (same system, tools, effort, history) plus the summary
 /// instruction, so the provider's prompt cache serves everything but the new rows.
-/// cold: a standalone summary request; its prefix matches nothing, so the whole head is read at full price.
+/// Cold: a standalone summary request; its prefix matches nothing, so the whole head is read at full price.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SummaryPath {
+    /// The loop's last request plus the instruction: mostly a cache read.
     Warm,
+    /// A standalone request over the cut head, after the warm one gave no summary.
     Cold,
 }
 
@@ -210,11 +230,14 @@ async fn summarize(
     Ok((cold, SummaryPath::Cold))
 }
 
+/// What [`compact`] did.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompactionResult {
+    /// The summary text. History now opens with it, in a user message.
     pub summary: String,
     /// Messages kept verbatim after the summary.
     pub kept: usize,
+    /// Which request wrote the summary.
     pub path: SummaryPath,
     /// What every summary call cost, the warm one too when the cold one wrote
     /// it. Already counted toward the running turn's caps; the caller charges
@@ -222,6 +245,7 @@ pub struct CompactionResult {
     pub usage: Usage,
 }
 
+/// Why [`compact`] wrote no summary. History is untouched either way.
 #[derive(Debug, thiserror::Error)]
 pub enum CompactionError {
     /// The agent's model spec resolves to no provider (no call was made).
@@ -248,6 +272,98 @@ impl CompactionError {
 /// Compact in place. Returns the summary, how many messages were kept and how it
 /// was written, or None if there is nothing to cut. On error history is untouched.
 /// Every call it makes counts toward the running turn's caps, success or not.
+///
+/// The summary is asked of the agent's own model ([`Agent::model_spec`]),
+/// warm first, then cold if the warm reply is not a whole summary (it failed,
+/// called a tool, was cut off, or said nothing). The head of history is replaced by
+/// one user message carrying the summary; [`on_message`](crate::AgentHooks::on_message)
+/// is not called, so a host that persists history records the change itself.
+/// The cost is not charged to the ledger: the caller does that with
+/// [`CompactionResult::usage`] or [`CompactionError::usage`].
+///
+/// # Errors
+///
+/// [`CompactionError::Model`] when the model spec resolves to no provider (no
+/// call made); [`CompactionError::Failed`] when neither request produced a
+/// summary or `cancel` fired.
+///
+/// # Cancellation
+///
+/// `cancel` goes to every summary request. Cancelled during the warm one, it
+/// skips the cold one and returns [`CompactionError::Failed`].
+///
+/// # Examples
+///
+/// Compact from the hook that runs before every model call:
+///
+/// ```
+/// # #[cfg(feature = "testing")]
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// use std::sync::Arc;
+///
+/// use haest_core::{
+///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace, Tool,
+///     ToolHost,
+///     compaction::{CompactionConfig, compact, needs_compaction},
+///     testing::{ScriptedProvider, text_answer},
+/// };
+/// use tokio_util::sync::CancellationToken;
+///
+/// struct Compacting(CompactionConfig);
+///
+/// impl ToolHost for Compacting {}
+///
+/// #[async_trait::async_trait]
+/// impl AgentHooks for Compacting {
+///     async fn before_model_call(
+///         &self,
+///         agent: &mut Agent,
+///         cancel: &CancellationToken,
+///     ) -> Result<(), String> {
+///         if !needs_compaction(&agent.messages, &self.0) {
+///             return Ok(());
+///         }
+///         // A host also charges the usage to its ledger and saves the new history.
+///         match compact(agent, cancel, &self.0).await {
+///             Ok(_) => Ok(()),
+///             Err(e) => Err(e.to_string()), // ends the turn instead of retrying every call
+///         }
+///     }
+/// }
+///
+/// // The summary request is answered first, then the turn's own call.
+/// let provider = ScriptedProvider::new([text_answer("Earlier: a and b."), text_answer("done")]);
+/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
+/// let mut deps = AgentDeps::new(
+///     Arc::new(provider.resolver()),
+///     Arc::new(tools),
+///     Arc::new(String::new()),
+///     "/",
+///     Arc::new(ShutWorkspace),
+/// );
+/// let cfg = CompactionConfig { context_window: 1_000, threshold: 0.8, ceiling: None, keep_recent: 2 };
+/// deps.hooks = Arc::new(Compacting(cfg));
+///
+/// // Resume a conversation whose last request filled 90% of the window.
+/// let mut full = text_answer("b done");
+/// full.usage.input = 900;
+/// let history = vec![
+///     Message::user("a"),
+///     Message::Assistant(text_answer("a done")),
+///     Message::user("b"),
+///     Message::Assistant(full),
+/// ];
+/// let mut agent = Agent::new(deps, AgentOptions { history, ..AgentOptions::new("scripted:m") });
+/// agent.run("c", &mut Vec::<LoopEvent>::new()).await;
+///
+/// // [summary, "b done", "c", "done"]: the head became one message.
+/// assert_eq!(agent.messages.len(), 4);
+/// assert!(matches!(&agent.messages[0], Message::User(u) if u.content.contains("Earlier: a and b.")));
+/// # }
+/// # #[cfg(not(feature = "testing"))]
+/// # fn main() {}
+/// ```
 pub async fn compact(
     agent: &mut Agent,
     cancel: &CancellationToken,

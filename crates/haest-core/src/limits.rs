@@ -5,8 +5,11 @@
 //!
 //! Every cap here is per TURN (one human message): the human continues past a cap
 //! by posting again, which is a decision, not an accident. 0 disables a cap. The
-//! cap that SPANS turns is the conversation ledger (ledger.rs); the guard that
-//! reads all of them, and nudges at half, is guard.rs.
+//! cap that SPANS turns is the conversation ledger ([`ledger`](crate::ledger));
+//! the guard that reads all of them, and nudges at half, is [`guard`](crate::guard).
+//!
+//! A host serves [`TurnLimits`] per model spec from
+//! [`AgentHooks::limits`](crate::AgentHooks::limits).
 
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +19,13 @@ use crate::{
     provider::ToolSpec,
 };
 
+/// The hard caps on one turn. 0 turns a cap off; `Default` is every cap off.
+///
+/// A turn that reaches a cap stops before its next model call with
+/// [`StopReason::MaxTokens`](crate::StopReason::MaxTokens) and says which cap
+/// in its error; at half a cap the model is nudged first.
+/// `max_request_tokens` works per call instead: a call over it is never sent,
+/// and the turn ends with [`StopReason::Error`](crate::StopReason::Error).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnLimits {
@@ -36,6 +46,8 @@ pub struct TurnLimits {
 /// The caps on the subagent tree. `max_depth` and `max_concurrent` are NOT
 /// "0 = off": 0 means no subagents at all (no Agent tool). The three per-agent
 /// caps replace the conversation's turn caps for each subagent's one turn.
+///
+/// The loop never reads them; `haest-tools`' Agent tool enforces them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SubagentCaps {
     /// How deep agents may nest (main = 0); HAEST_MAX_AGENT_DEPTH.
@@ -62,7 +74,8 @@ impl Default for SubagentCaps {
     }
 }
 
-/// Every token the provider bills for, cached or not.
+/// Every token the provider bills for, cached or not
+/// ([`Usage::context_tokens`]).
 pub fn billed_tokens(u: &Usage) -> u64 {
     u.context_tokens()
 }
@@ -77,7 +90,8 @@ pub fn estimate_request_tokens(system: &str, messages: &[Message], tools: &[Tool
     (chars as u64).div_ceil(4) + media_tokens
 }
 
-/// Why this request must not be sent, or None.
+/// Why this request must not be sent, or None: `estimate` is over
+/// [`TurnLimits::max_request_tokens`] and that cap is on.
 pub fn request_too_big(estimate: u64, limits: &TurnLimits) -> Option<String> {
     if limits.max_request_tokens == 0 || estimate <= limits.max_request_tokens {
         return None;

@@ -1,19 +1,22 @@
 //! THE TURN GUARD: everything that can tell a turn it is going nowhere, read in
 //! one place. Each signal has two levels:
 //!
-//!   NUDGE at half the cap -- one message to the model, once per signal per turn,
-//!         injected after the tool results: what it is burning and the way out.
-//!   STOP  at the cap -- the turn ends before the next model call.
+//! - NUDGE at half the cap -- one message to the model, once per signal per turn,
+//!   injected after the tool results: what it is burning and the way out.
+//! - STOP at the cap -- the turn ends before the next model call.
 //!
 //! The nudge lets a stuck model find the exit on its own; the stop is what makes
 //! a stuck model cost a KNOWN amount. Signals: model calls, wall time (the
 //! host's clock, [`AgentHooks::now_ms`]), turn spend (USD and tokens), REPEATS --
 //! the same tool, same input, same result, a model learning nothing (an A,B,A,B
 //! cycle counts too) -- and the conversation ledger, which stops but never
-//! nudges (it is the human's number, see ledger.rs).
+//! nudges (it is the human's number, see [`ledger`](crate::ledger)).
 //!
 //! The limits are passed to every check, read fresh by the caller: the request
 //! cap follows the model's window, and the model may change mid-turn.
+//!
+//! The loop makes a fresh [`TurnGuard`] for every turn; a host sets the caps
+//! through [`AgentHooks::limits`] and never drives the guard itself.
 
 use std::{
     collections::{HashSet, hash_map::DefaultHasher},
@@ -31,6 +34,7 @@ use crate::{
     tool::ToolOutput,
 };
 
+/// The share of a cap at which the model is nudged: half.
 pub const NUDGE_SHARE: f64 = 0.5;
 
 const CONTINUE: &str = "Post a message to continue; the turn caps reset each turn.";
@@ -110,6 +114,9 @@ struct Repeat {
     count: u64,
 }
 
+/// One turn's guard: counts its model calls, its time and its repeated tool
+/// calls, charges the conversation ledger, and says when to nudge and when to
+/// stop.
 pub struct TurnGuard {
     clock: Arc<dyn AgentHooks>,
     ledger: Option<Arc<Mutex<Ledger>>>,
@@ -202,7 +209,8 @@ impl TurnGuard {
         Some(text)
     }
 
-    /// Records the request about to go out; why it must not, or None.
+    /// Records the request about to go out (its estimated input tokens); why
+    /// it must not, or None.
     pub fn too_big(&mut self, estimate: u64, limits: Option<&TurnLimits>) -> Option<String> {
         self.next_request_tokens = estimate;
         limits.and_then(|l| request_too_big(estimate, l))
