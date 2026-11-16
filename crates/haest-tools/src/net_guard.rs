@@ -32,14 +32,19 @@ const BLOCKED_V4: [(Ipv4Addr, u8); 11] = [
     (Ipv4Addr::new(240, 0, 0, 0), 4),   // reserved + broadcast
 ];
 
-const BLOCKED_V6: [(Ipv6Addr, u8); 7] = [
-    (Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), 96), // unspecified, loopback (::1), IPv4-compatible (::127.0.0.1)
-    (Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0, 0), 96), // NAT64: embeds an IPv4 address
-    (Ipv6Addr::new(0x64, 0xff9b, 1, 0, 0, 0, 0, 0), 48), // local-use NAT64 (RFC 8215): embeds one too
+/// IPv6 global unicast: the only IPv6 space the guard lets through. Outside
+/// it are loopback, the unspecified address, the IPv4-compatible, -mapped and
+/// -translated forms, NAT64, discard-only, unique local, link-local,
+/// site-local, multicast and every unassigned block.
+const GLOBAL_V6: (Ipv6Addr, u8) = (Ipv6Addr::new(0x2000, 0, 0, 0, 0, 0, 0, 0), 3);
+
+/// The parts of [`GLOBAL_V6`] the IANA IPv6 special-purpose address registry
+/// marks not globally reachable, and 6to4, which embeds an IPv4 address.
+const UNREACHABLE_GLOBAL_V6: [(Ipv6Addr, u8); 4] = [
+    (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23), // IETF protocol assignments: Teredo, benchmarking, ORCHID
+    (Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32), // documentation
     (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16), // 6to4: embeds an IPv4 address (2002:7f00:1:: is 127.0.0.1)
-    (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0), 7),  // unique local
-    (Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0), 10), // link-local
-    (Ipv6Addr::new(0xff00, 0, 0, 0, 0, 0, 0, 0), 8),  // multicast
+    (Ipv6Addr::new(0x3fff, 0, 0, 0, 0, 0, 0, 0), 20), // documentation (RFC 9637)
 ];
 
 fn in_net(ip: u128, net: u128, bits: u8, width: u8) -> bool {
@@ -47,17 +52,29 @@ fn in_net(ip: u128, net: u128, bits: u8, width: u8) -> bool {
     (ip >> shift) == (net >> shift)
 }
 
-/// Whether `ip` is private, local or reserved: loopback, the private ranges,
-/// link-local (cloud metadata), carrier-grade NAT, multicast, and the IPv6
-/// forms that embed an IPv4 address (NAT64, 6to4). An IPv4-mapped IPv6
-/// address (`::ffff:127.0.0.1`) is judged as the IPv4 address it carries.
+fn in_v6(ip: Ipv6Addr, (net, bits): (Ipv6Addr, u8)) -> bool {
+    in_net(u128::from(ip), u128::from(net), bits, 128)
+}
+
+/// Whether `ip` is private, local or reserved.
+///
+/// IPv4 is a blocklist: loopback, the private ranges, link-local (cloud
+/// metadata), carrier-grade NAT, multicast and the other reserved ranges.
+/// IPv6 is an allowlist: only global unicast (`2000::/3`) passes, less the
+/// blocks in it the IANA special-purpose registry marks not globally
+/// reachable (`2001::/23` with Teredo, documentation `2001:db8::/32` and
+/// `3fff::/20`) and 6to4 (`2002::/16`), which embeds an IPv4 address. An
+/// IPv4-mapped IPv6 address (`::ffff:127.0.0.1`) is judged as the IPv4 address
+/// it carries.
 ///
 /// ```
 /// use haest_tools::net_guard::is_blocked;
 ///
 /// assert!(is_blocked("169.254.169.254".parse().unwrap()));
 /// assert!(is_blocked("::ffff:10.0.0.1".parse().unwrap()));
+/// assert!(is_blocked("fec0::1".parse().unwrap()));
 /// assert!(!is_blocked("93.184.215.14".parse().unwrap()));
+/// assert!(!is_blocked("2606:4700:4700::1111".parse().unwrap()));
 /// ```
 pub fn is_blocked(ip: IpAddr) -> bool {
     match ip {
@@ -66,9 +83,9 @@ pub fn is_blocked(ip: IpAddr) -> bool {
             .any(|(net, bits)| in_net(u32::from(v4).into(), u32::from(*net).into(), *bits, 32)),
         IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
             Some(v4) => is_blocked(IpAddr::V4(v4)),
-            None => BLOCKED_V6
-                .iter()
-                .any(|(net, bits)| in_net(u128::from(v6), u128::from(*net), *bits, 128)),
+            None => {
+                !in_v6(v6, GLOBAL_V6) || UNREACHABLE_GLOBAL_V6.iter().any(|&net| in_v6(v6, net))
+            }
         },
     }
 }

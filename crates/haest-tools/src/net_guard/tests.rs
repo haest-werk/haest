@@ -52,6 +52,39 @@ fn private_loopback_link_local_cgnat_and_mapped_addresses_are_blocked_public_one
     }
 }
 
+#[test]
+fn ipv6_passes_only_in_global_unicast_outside_the_ranges_the_internet_does_not_reach() {
+    let blocked = |ip: &str| is_blocked(ip.parse().unwrap());
+    for ip in [
+        "fec0::1",          // site-local (deprecated, still routed inside sites)
+        "::ffff:0:a00:1",   // IPv4-translated 10.0.0.1
+        "100::1",           // discard-only
+        "5f00::1",          // segment routing SIDs
+        "4000::1",          // unassigned, outside 2000::/3
+        "2001::1",          // Teredo, in the IETF protocol assignments (2001::/23)
+        "2001:2::1",        // benchmarking, same block
+        "2001:1ff:ffff::1", // the last of that block
+        "2001:db8::1",      // documentation
+        "2002:a00:1::1",    // 6to4 of 10.0.0.1
+        "3fff::1",          // documentation (RFC 9637)
+        "3fff:fff:ffff::1", // the last of it
+        "64:ff9b::808:808", // NAT64, even of a public IPv4 address
+    ] {
+        assert!(blocked(ip), "{ip} must be blocked");
+    }
+    for ip in [
+        "2001:200::1",          // just past the IETF block
+        "2001:4860:4860::8888", // a public resolver
+        "2001:db9::1",          // just past documentation
+        "2003::1",              // just past 6to4
+        "3fff:1000::1",         // just past documentation (RFC 9637)
+        "2a00:1450:4001::1",
+        "2600::1",
+    ] {
+        assert!(!blocked(ip), "{ip} is public");
+    }
+}
+
 /// Answers every name with fixed addresses, counting the lookups.
 struct Fixed(Vec<&'static str>, AtomicUsize);
 
