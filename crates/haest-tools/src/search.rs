@@ -29,7 +29,9 @@ use crate::{
 
 const GLOB_LIMIT: usize = 200;
 const GREP_TIMEOUT: Duration = Duration::from_secs(60);
-const MAX_LINE_CHARS: usize = 500;
+/// A Grep match (or rg's error line) longer than this is cut: a minified file
+/// would otherwise fill the answer with one line.
+const GREP_MAX_LINE_CHARS: usize = 500;
 
 /// The Glob tool (`Glob`, kind `file.glob`, read-only): files by glob pattern,
 /// newest first.
@@ -263,7 +265,7 @@ impl Tool for GrepTool {
 /// One line on what rg could not read: its first complaint and how many more.
 fn unreadable_note(stderr: &str) -> String {
     let mut lines = stderr.lines().map(str::trim).filter(|l| !l.is_empty());
-    let first = lines.next().map(|l| clip_line(l, MAX_LINE_CHARS));
+    let first = lines.next().map(|l| clip_line(l, GREP_MAX_LINE_CHARS));
     let more = match lines.count() {
         0 => String::new(),
         n => format!(" (+{n} more)"),
@@ -279,7 +281,7 @@ fn format_matches(stdout: &str, head: Option<f64>) -> String {
     let all: Vec<_> = stdout
         .split('\n')
         .filter(|l| !l.is_empty())
-        .map(|l| clip_line(l, MAX_LINE_CHARS))
+        .map(|l| clip_line(l, GREP_MAX_LINE_CHARS))
         .collect();
     let keep = match head {
         Some(h) if h > 0.0 => (h.floor() as usize).min(all.len()),

@@ -7,7 +7,8 @@ use haest_core::tool::{JsonMap, ToolContext, ToolError, ToolOutput, opt_bool, op
 use serde_json::json;
 
 const DEFAULT_LINE_LIMIT: usize = 2000;
-const MAX_LINE_CHARS: usize = 2000;
+/// A line Read shows longer than this is cut, with a note.
+const READ_MAX_LINE_CHARS: usize = 2000;
 /// The most one Read returns without `allow_large`, in tokens (about four
 /// characters each): Claude Code's own Read limit.
 pub const READ_TOKEN_BUDGET: u64 = 25_000;
@@ -41,7 +42,7 @@ fn numbered_lines(lines: &[&str], start: usize, limit: usize, budget: u64) -> Ve
     let mut out = Vec::new();
     let mut used: u64 = 0;
     for (i, l) in lines.iter().enumerate().take(end).skip(start - 1) {
-        let line = format!("{:>width$}\t{}", i + 1, clip_line(l, MAX_LINE_CHARS));
+        let line = format!("{:>width$}\t{}", i + 1, clip_line(l, READ_MAX_LINE_CHARS));
         let len = line.chars().count() as u64;
         if !out.is_empty() && used + len + 1 > budget {
             break;
