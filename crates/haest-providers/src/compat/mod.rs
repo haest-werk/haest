@@ -41,7 +41,7 @@ pub(crate) use stream::{StreamState, apply_chunk, finish_message};
 
 use crate::{
     driver::{Step, StreamFold, drive, openai_error},
-    routing::RoutingEnv,
+    routing::RoutingScopes,
     send::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint, json_post},
     sse::SseEvent,
     web_search::web_search_tool,
@@ -90,7 +90,7 @@ pub struct CompatOptions {
     pub pricing: HashMap<String, ModelPricing>,
     /// OpenRouter only: provider routing, resolved per request against the request's model.
     /// None = off: send no `provider` object (a host gateway may decide routing itself).
-    pub routing: Option<RoutingEnv>,
+    pub routing: Option<RoutingScopes>,
 }
 
 impl CompatOptions {

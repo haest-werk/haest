@@ -18,8 +18,8 @@ use super::{
 use crate::{
     catalog::Catalog,
     registry::{
-        CustomProviderConfig, EntryProblem, ProviderConfigError, ProviderRegistry,
-        RegistryOptions, custom_compat_options, paper_instruments_options,
+        CustomProviderConfig, EntryProblem, ProviderConfigError, ProviderRegistry, RegistryOptions,
+        custom_compat_options, paper_instruments_options,
     },
     testing::{FakeHttp, chat_sse, request, request_with},
 };

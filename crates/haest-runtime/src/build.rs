@@ -25,7 +25,7 @@ use crate::{
         mcp::McpServerConfig,
         mods::{ModSystemPrompt, Prompter},
         now_ms,
-        providers::{CustomProviders, ProviderRegistry, RegistryOptions, RoutingEnv},
+        providers::{CustomProviders, ProviderRegistry, RegistryOptions, RoutingScopes},
         tools::ImageToolOptions,
         tools::tool_search::DeferredTools,
     },
@@ -66,7 +66,7 @@ pub struct RuntimeInputs {
     /// with a warning: they are real processes.
     pub mcp_servers: Vec<McpServerConfig>,
     /// OpenRouter's `provider` routing; None = none goes out.
-    pub routing: Option<RoutingEnv>,
+    pub routing: Option<RoutingScopes>,
     /// How the model calls and GenerateImage's requests are sent: the host's
     /// own client (a gateway, a recorder) or the shared [`ReqwestClient`].
     /// WebFetch keeps its own client, which checks every address it connects

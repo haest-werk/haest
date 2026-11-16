@@ -146,7 +146,7 @@ use std::collections::HashMap;
 
 use haest_core::ChildEnv;
 use haest_mcp::McpServerConfig;
-use haest_providers::{CustomProviders, RoutingEnv};
+use haest_providers::{CustomProviders, RoutingScopes};
 
 pub use fields::{CORE_VARS, Config, EnvPassthrough, get, set};
 pub use loader::Loader;
@@ -189,7 +189,7 @@ pub struct Loaded {
     pub keys: HashMap<String, String>,
     /// `provider_routing`, parsed. None: no routing goes out (it is unset, or
     /// malformed and a note says so).
-    pub routing: Option<RoutingEnv>,
+    pub routing: Option<RoutingScopes>,
     /// `<config dir>/providers.json`'s entries; empty when there is no file.
     pub providers: CustomProviders,
     /// A trusted project's `.mcp.json` servers, with `mcp` on; empty otherwise.

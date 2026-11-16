@@ -6,7 +6,7 @@
 use serde_json::Value;
 
 use super::{
-    ProjectRouting, ProviderRouting, RoutingEnv, RoutingOverride, RoutingPriority, RoutingRule,
+    ProjectRouting, ProviderRouting, RoutingOverride, RoutingPriority, RoutingRule, RoutingScopes,
     pattern_refusal, unique,
 };
 
@@ -63,17 +63,14 @@ pub fn normalize_routing(raw: &Value) -> ProviderRouting {
 }
 
 /// A project scope from untrusted JSON: [`normalize_routing`]'s shape plus
-/// `"priority"` (`"cost"`, `"speed"` or `"privacy"`; anything else is none).
+/// `"priority"` (a [`RoutingPriority`] word; anything else is none).
 pub fn normalize_project_routing(raw: &Value) -> ProjectRouting {
-    let priority = match raw.get("priority").and_then(Value::as_str) {
-        Some("cost") => Some(RoutingPriority::Cost),
-        Some("speed") => Some(RoutingPriority::Speed),
-        Some("privacy") => Some(RoutingPriority::Privacy),
-        _ => None,
-    };
     ProjectRouting {
         routing: normalize_routing(raw),
-        priority,
+        priority: raw
+            .get("priority")
+            .and_then(Value::as_str)
+            .and_then(|word| word.parse::<RoutingPriority>().ok()),
     }
 }
 
@@ -97,13 +94,12 @@ fn says_nothing(r: &ProviderRouting) -> bool {
 ///
 /// # Errors
 ///
-/// A message when `raw` is not blank and not valid JSON.
-pub fn parse_routing(raw: &str) -> Result<Option<RoutingEnv>, String> {
+/// The JSON parser's error when `raw` is not blank and not valid JSON.
+pub fn parse_routing(raw: &str) -> Result<Option<RoutingScopes>, serde_json::Error> {
     if raw.trim().is_empty() {
         return Ok(None);
     }
-    let parsed: Value =
-        serde_json::from_str(raw).map_err(|e| format!("not valid JSON, ignoring it: {e}"))?;
+    let parsed: Value = serde_json::from_str(raw)?;
     let fleet = normalize_routing(&parsed);
     let project = parsed
         .get("project")
@@ -113,5 +109,5 @@ pub fn parse_routing(raw: &str) -> Result<Option<RoutingEnv>, String> {
     if says_nothing(&fleet) && project.is_none() {
         return Ok(None);
     }
-    Ok(Some(RoutingEnv { fleet, project }))
+    Ok(Some(RoutingScopes { fleet, project }))
 }

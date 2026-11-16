@@ -266,10 +266,7 @@ async fn a_providers_json_that_is_not_an_object_is_refused() {
     let e = load_custom_providers(&fs, Path::new("/cfg"))
         .await
         .unwrap_err();
-    assert!(
-        matches!(&e, ProvidersFileError::NotAnObject { .. }),
-        "{e}"
-    );
+    assert!(matches!(&e, ProvidersFileError::NotAnObject { .. }), "{e}");
 }
 
 #[test]

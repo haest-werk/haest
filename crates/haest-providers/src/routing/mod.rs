@@ -27,7 +27,7 @@
 //! Provider ids are OpenRouter SLUGS (`deepinfra`), never display names.
 //!
 //! Start from [`parse_routing`]: a host's JSON (haest's `provider_routing`
-//! setting) in, a [`RoutingEnv`] out, which goes into
+//! setting) in, a [`RoutingScopes`] out, which goes into
 //! [`RegistryOptions::routing`](crate::RegistryOptions::routing) or
 //! [`CompatOptions::routing`](crate::CompatOptions::routing). The OpenRouter
 //! provider then calls [`provider_routing_field`] for each request's model.
@@ -91,16 +91,18 @@ pub struct ProviderRouting {
     pub overrides: Vec<RoutingOverride>,
 }
 
-/// What a project scope asks OpenRouter to favour.
+haest_core::word_enum! {
+/// What a project scope asks OpenRouter to favour: the `priority` word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RoutingPriority {
+pub enum RoutingPriority ("routing priority") {
     /// The cheapest provider first: `sort: "price"`.
-    Cost,
+    Cost = "cost",
     /// The fastest provider first: `sort: "throughput"`.
-    Speed,
+    Speed = "speed",
     /// Only providers that keep no data and do not collect it:
     /// `zdr: true`, `data_collection: "deny"`.
-    Privacy,
+    Privacy = "privacy",
+}
 }
 
 /// A project's scope: the same shape as the fleet's, plus a priority.
@@ -112,9 +114,10 @@ pub struct ProjectRouting {
     pub priority: Option<RoutingPriority>,
 }
 
-/// What haest routes by: the fleet scope, plus its project's scope when it has one.
+/// The routing scopes haest routes by: the fleet scope, plus its project's
+/// scope when it has one.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RoutingEnv {
+pub struct RoutingScopes {
     /// The fleet scope: every conversation.
     pub fleet: ProviderRouting,
     /// The project scope, which wins over the fleet's favorites; None = none.
@@ -185,13 +188,13 @@ struct Layer<'a> {
 /// One scope's matching layers, most specific first, its default last.
 fn layers_of<'a>(
     scope: LayerScope,
-    config: Option<&'a ProviderRouting>,
+    routing: Option<&'a ProviderRouting>,
     model: &str,
 ) -> Vec<Layer<'a>> {
-    let Some(config) = config else {
+    let Some(routing) = routing else {
         return Vec::new();
     };
-    let mut hits: Vec<&RoutingOverride> = config
+    let mut hits: Vec<&RoutingOverride> = routing
         .overrides
         .iter()
         .filter(|o| pattern_matches(&o.pattern, model))
@@ -209,7 +212,7 @@ fn layers_of<'a>(
             pattern: Some(&o.pattern),
         })
         .chain(std::iter::once(Layer {
-            rule: &config.global,
+            rule: &routing.global,
             scope,
             level: LayerLevel::Default,
             pattern: None,
@@ -227,7 +230,7 @@ pub(crate) fn unique(list: impl IntoIterator<Item = String>) -> Vec<String> {
     out
 }
 
-/// The routing for `model` from the fleet scope `config` and the project scope
+/// The routing for `model` from the fleet scope `fleet` and the project scope
 /// `project`, by the rules in the [module docs](self): bans from every
 /// matching layer, favorites from the most specific layer that has any, the
 /// priority from the project.
@@ -235,12 +238,12 @@ pub(crate) fn unique(list: impl IntoIterator<Item = String>) -> Vec<String> {
 /// `model` may be an OpenRouter id (`z-ai/glm-4.6`) or a haest spec
 /// (`openrouter:z-ai/glm-4.6:free`): the prefix and a `:variant` are ignored.
 pub fn resolve_provider_routing(
-    config: Option<&ProviderRouting>,
+    fleet: Option<&ProviderRouting>,
     model: &str,
     project: Option<&ProjectRouting>,
 ) -> ResolvedRouting {
     let mut layers = layers_of(LayerScope::Project, project.map(|p| &p.routing), model);
-    layers.extend(layers_of(LayerScope::Fleet, config, model));
+    layers.extend(layers_of(LayerScope::Fleet, fleet, model));
     let banned = unique(layers.iter().flat_map(|l| l.rule.banned.iter().cloned()));
     let source = layers.iter().find(|l| !l.rule.favorites.is_empty());
     let order: Vec<String> = unique(source.map(|l| l.rule.favorites.clone()).unwrap_or_default())
@@ -279,7 +282,10 @@ pub fn resolve_provider_routing(
 }
 
 /// `provider` for the OpenRouter request body of `model`, or None when no scope says anything for it.
-pub fn provider_routing_field(routing: Option<&RoutingEnv>, model: &str) -> Option<ProviderPrefs> {
+pub fn provider_routing_field(
+    routing: Option<&RoutingScopes>,
+    model: &str,
+) -> Option<ProviderPrefs> {
     let routing = routing?;
     resolve_provider_routing(Some(&routing.fleet), model, routing.project.as_ref()).provider
 }

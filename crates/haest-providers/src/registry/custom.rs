@@ -110,12 +110,11 @@ fn pricing(v: Option<&Value>) -> Result<HashMap<String, ModelPricing>, EntryProb
         .into_iter()
         .flatten()
         .map(|(model, price)| {
-            let row = serde_json::from_value(price.clone()).map_err(|source| {
-                EntryProblem::Pricing {
+            let row =
+                serde_json::from_value(price.clone()).map_err(|source| EntryProblem::Pricing {
                     model: model.clone(),
                     source,
-                }
-            })?;
+                })?;
             Ok((model.clone(), row))
         })
         .collect()

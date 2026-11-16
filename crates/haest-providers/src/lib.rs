@@ -234,7 +234,7 @@ pub use registry::{
     ProvidersFileError, RegistryOptions, load_custom_providers,
 };
 pub use responses::{ResponsesOptions, ResponsesProvider};
-pub use routing::RoutingEnv;
+pub use routing::RoutingScopes;
 pub use send::RetryPolicy;
 
 /// A tool result's text as every dialect sends it: never empty.

@@ -41,7 +41,7 @@ use crate::{
     anthropic::{AnthropicOptions, AnthropicProvider},
     compat::{CompatFlavor, CompatOptions, CompatProvider},
     responses::{ResponsesOptions, ResponsesProvider},
-    routing::RoutingEnv,
+    routing::RoutingScopes,
     send::RetryPolicy,
 };
 
@@ -64,7 +64,7 @@ pub struct RegistryOptions {
     /// OpenRouter provider routing to send ([`crate::routing::parse_routing`]
     /// reads the host's JSON: haest's `provider_routing` setting). None = none:
     /// a host whose gateway routes leaves it off.
-    pub routing: Option<RoutingEnv>,
+    pub routing: Option<RoutingScopes>,
     /// OpenRouter's app attribution: `X-Title` (None = not sent).
     pub app_title: Option<String>,
     /// OpenRouter's app attribution: `HTTP-Referer` (None = not sent).
@@ -138,7 +138,10 @@ impl ProviderRegistry {
     /// other providers.json entries in name order. An entry named like a
     /// built-in replaces it in its place.
     pub fn names(&self) -> Vec<String> {
-        let added = self.custom.keys().filter(|k| !BUILTIN.contains(&k.as_str()));
+        let added = self
+            .custom
+            .keys()
+            .filter(|k| !BUILTIN.contains(&k.as_str()));
         BUILTIN
             .iter()
             .map(|s| s.to_string())

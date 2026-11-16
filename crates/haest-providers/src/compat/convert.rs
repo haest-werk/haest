@@ -17,7 +17,7 @@ use super::CompatFlavor;
 use crate::{
     openai_media::{CHAT, with_tool_media},
     result_text,
-    routing::{RoutingEnv, provider_routing_field},
+    routing::{RoutingScopes, provider_routing_field},
 };
 
 /// OpenRouter passes `cache_control` through to providers that need explicit
@@ -185,7 +185,7 @@ pub fn flavor_extras(
     flavor: CompatFlavor,
     effort: Option<Effort>,
     model: &str,
-    routing: Option<&RoutingEnv>,
+    routing: Option<&RoutingScopes>,
 ) -> Map<String, Value> {
     let mut extras = Map::new();
     if flavor != CompatFlavor::OpenRouter {

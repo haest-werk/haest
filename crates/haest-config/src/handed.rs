@@ -13,7 +13,7 @@ use haest_core::{
     fs::Fs,
 };
 use haest_mcp::{McpServerConfig, load_project_mcp_config, project_mcp_path};
-use haest_providers::{RoutingEnv, routing::parse_routing};
+use haest_providers::{RoutingScopes, routing::parse_routing};
 
 use crate::{
     fields::{CORE_VARS, EnvPassthrough},
@@ -60,9 +60,11 @@ pub(crate) fn routing(
     raw: Option<&str>,
     from: &Source,
     notes: &mut Vec<String>,
-) -> Option<RoutingEnv> {
+) -> Option<RoutingScopes> {
     parse_routing(raw?).unwrap_or_else(|e| {
-        notes.push(format!("provider_routing ({from}) is {e}"));
+        notes.push(format!(
+            "provider_routing ({from}) is not valid JSON, ignoring it: {e}"
+        ));
         None
     })
 }
