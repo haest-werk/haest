@@ -44,7 +44,7 @@
 
 use std::{
     io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     time::SystemTime,
 };
 
@@ -271,123 +271,14 @@ pub trait Fs: Send + Sync {
     }
 }
 
-/// Make sure a directory is at `path`: [`Fs::mkdir`] with `recursive`, not
-/// called when the directory is already there (a file system that refuses
-/// writes still says yes to one it has).
-///
-/// # Errors
-///
-/// `NotADirectory` when something other than a directory is at `path`, and
-/// [`Fs::mkdir`]'s, such as a file where one of the parents should be.
-pub async fn ensure_dir(fs: &dyn Fs, path: &Path) -> io::Result<()> {
-    match fs.stat(path).await {
-        Ok(stat) if stat.kind == FileKind::Dir => Ok(()),
-        Ok(_) => Err(io::Error::new(
-            io::ErrorKind::NotADirectory,
-            format!("{} is there and is not a directory", path.display()),
-        )),
-        Err(_) => fs.mkdir(path, true).await,
-    }
-}
-
-/// A file a host may or may not have (a config file, `.mcp.json`): its text,
-/// None when there is no such file -- nothing at the path, or a file where one
-/// of its dirs should be. One read: no `exists` first. A file that is there
-/// but cannot be read is an error, never a silent default. Strict UTF-8, like
-/// [`Fs::read_to_string`].
-///
-/// # Errors
-///
-/// Any read error other than `NotFound` and `NotADirectory`, and
-/// `InvalidData` for text that is not UTF-8.
-pub async fn read_text_if_present(fs: &dyn Fs, path: &Path) -> io::Result<Option<String>> {
-    match fs.read_to_string(path).await {
-        Ok(text) => Ok(Some(text)),
-        Err(e)
-            if matches!(
-                e.kind(),
-                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-            ) =>
-        {
-            Ok(None)
-        }
-        Err(e) => Err(e),
-    }
-}
-
-/// Is `buf` binary? True when a NUL byte is in its first 8000 bytes, the way
-/// git and grep guess it.
-pub fn looks_binary(buf: &[u8]) -> bool {
-    buf.iter().take(8000).any(|&b| b == 0)
-}
-
-/// `/a/./b/../c` -> `/a/c`, without touching any file system.
-///
-/// The result is always absolute: a relative `path` is read from `/`, and a
-/// `..` at the root stays at the root (`/../x` -> `/x`). Links are not
-/// followed, so `..` after a link goes up from the link, not its target.
-///
-/// # Examples
-///
-/// ```
-/// use std::path::{Path, PathBuf};
-///
-/// use haest_core::fs::normalize;
-///
-/// assert_eq!(normalize(Path::new("/a/./b/../c")), PathBuf::from("/a/c"));
-/// assert_eq!(normalize(Path::new("/../x")), PathBuf::from("/x"));
-/// assert_eq!(normalize(Path::new("a/b")), PathBuf::from("/a/b"));
-/// ```
-pub fn normalize(path: &Path) -> PathBuf {
-    let mut out = PathBuf::from("/");
-    for c in path.components() {
-        match c {
-            Component::RootDir | Component::Prefix(_) | Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            Component::Normal(s) => out.push(s),
-        }
-    }
-    out
-}
-
-/// The absolute path a tool's `p` names: an absolute `p` as it is, a relative
-/// one taken from `cwd`. Dots are resolved lexically ([`normalize`]).
-///
-/// # Examples
-///
-/// ```
-/// use std::path::{Path, PathBuf};
-///
-/// use haest_core::fs::resolve_path;
-///
-/// let cwd = Path::new("/project");
-/// assert_eq!(resolve_path(cwd, "src/../README.md"), PathBuf::from("/project/README.md"));
-/// assert_eq!(resolve_path(cwd, "/etc/hosts"), PathBuf::from("/etc/hosts"));
-/// ```
-pub fn resolve_path(cwd: &Path, p: &str) -> PathBuf {
-    // `join` keeps an absolute `p` as it is.
-    normalize(&cwd.join(p))
-}
-
-/// A file's text with invalid UTF-8 replaced; None when it cannot be read.
-/// For files haest reads if they are there (instruction files, skills, git's HEAD).
-pub(crate) async fn read_lossy(fs: &dyn Fs, path: &Path) -> Option<String> {
-    let bytes = fs.read(path).await.ok()?;
-    Some(String::from_utf8_lossy(&bytes).into_owned())
-}
-
-pub(crate) fn not_found(path: &Path) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::NotFound,
-        format!("{}: no such file or directory", path.display()),
-    )
-}
-
 mod mem;
+mod ops;
+mod paths;
 mod shut;
 pub use mem::MemFs;
+pub use ops::{ensure_dir, looks_binary, read_text_if_present};
+pub(crate) use ops::{not_found, read_lossy};
+pub use paths::{normalize, resolve_path};
 pub use shut::ShutFs;
 
 #[cfg(test)]

@@ -15,18 +15,13 @@
 //! error or a panic included, into exactly one result in history. The
 //! `req_*` / `opt_*` helpers read arguments the way models actually send them.
 
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tokio_util::sync::CancellationToken;
 
-use crate::{
-    fs::resolve_path,
-    messages::{MediaPart, ToolCall},
-    workspace::Workspace,
-};
+use crate::messages::{MediaPart, ToolCall};
 
 /// A tool call's arguments: a JSON object.
 pub type JsonMap = Map<String, Value>;
@@ -167,53 +162,6 @@ pub trait ToolServices: Send + Sync {
 pub struct NoServices;
 impl ToolServices for NoServices {}
 
-/// What one tool call may use: where it runs, how it learns it was cancelled,
-/// the workspace and the host's services.
-///
-/// The loop builds one per call from [`AgentDeps`](crate::AgentDeps);
-/// [`ToolContext::new`] builds one to run a tool outside the loop.
-#[derive(Clone)]
-pub struct ToolContext {
-    /// The working directory; [`ToolContext::resolve`] takes relative paths from it.
-    pub cwd: PathBuf,
-    /// The turn's cancel token. It fires on abort; a tool that runs for long
-    /// should stop when it does.
-    pub cancel: CancellationToken,
-    /// The only way a tool touches files or runs a command.
-    pub workspace: Arc<dyn Workspace>,
-    /// The host's services: publishing bytes, reporting inner calls, logging.
-    pub services: Arc<dyn ToolServices>,
-    /// Tokens a result may still add before the next model call hits the request
-    /// cap; None when no cap is configured.
-    pub context_room_tokens: Option<u64>,
-    /// This call's id; None when a tool is run outside the loop.
-    pub tool_call_id: Option<String>,
-    /// Where results too big for the context are written.
-    pub spill_dir: Option<PathBuf>,
-}
-
-impl ToolContext {
-    /// A context for running a tool outside the loop (tests, a host command):
-    /// a fresh cancel token, [`NoServices`], no context cap, no call id, no spill directory.
-    pub fn new(cwd: impl Into<PathBuf>, workspace: Arc<dyn Workspace>) -> Self {
-        Self {
-            cwd: cwd.into(),
-            cancel: CancellationToken::new(),
-            workspace,
-            services: Arc::new(NoServices),
-            context_room_tokens: None,
-            tool_call_id: None,
-            spill_dir: None,
-        }
-    }
-
-    /// A path the model gave, made absolute: a relative one is taken from
-    /// `cwd`, and `.` / `..` are resolved without touching any file system.
-    pub fn resolve(&self, p: &str) -> PathBuf {
-        resolve_path(&self.cwd, p)
-    }
-}
-
 /// A tool the model can call.
 ///
 /// Implement it with `#[async_trait]` (from the `async-trait` crate) and hand
@@ -336,84 +284,6 @@ impl ToolSource for Vec<Arc<dyn Tool>> {
     }
 }
 
-/// A required, non-empty string argument.
-///
-/// # Errors
-///
-/// [`ToolError::Input`] when `key` is missing, empty or not a string.
-///
-/// ```
-/// use haest_core::tool::{opt_bool, opt_num, opt_str, req_str};
-///
-/// let input = serde_json::json!({"path": "a.txt", "limit": "20", "all": "true", "glob": ""});
-/// let input = input.as_object().unwrap();
-/// assert_eq!(req_str(input, "path").unwrap(), "a.txt");
-/// assert_eq!(opt_num(input, "limit").unwrap(), Some(20.0));
-/// assert!(opt_bool(input, "all"));
-/// assert_eq!(opt_str(input, "glob").unwrap(), None); // "" counts as left out
-/// assert!(req_str(input, "missing").is_err());
-/// ```
-pub fn req_str<'a>(input: &'a JsonMap, key: &str) -> Result<&'a str, ToolError> {
-    match input.get(key) {
-        Some(Value::String(s)) if !s.is_empty() => Ok(s),
-        _ => Err(ToolError::Input(format!(
-            "\"{key}\" is required and must be a string"
-        ))),
-    }
-}
-
-/// An optional string argument; missing, `null` and `""` are all None.
-///
-/// # Errors
-///
-/// [`ToolError::Input`] when `key` holds something other than a string.
-pub fn opt_str<'a>(input: &'a JsonMap, key: &str) -> Result<Option<&'a str>, ToolError> {
-    match input.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(s)) if s.is_empty() => Ok(None),
-        Some(Value::String(s)) => Ok(Some(s)),
-        Some(_) => Err(ToolError::Input(format!("\"{key}\" must be a string"))),
-    }
-}
-
-/// A number, also as a numeric string (models send both).
-/// Missing, `null`, `""` and whitespace are None.
-///
-/// # Errors
-///
-/// [`ToolError::Input`] when `key` holds anything else, or a number that is
-/// not finite.
-pub fn opt_num(input: &JsonMap, key: &str) -> Result<Option<f64>, ToolError> {
-    let n = match input.get(key) {
-        None | Some(Value::Null) => return Ok(None),
-        // Models send "" for a number they mean to leave out.
-        Some(Value::String(s)) if s.trim().is_empty() => return Ok(None),
-        Some(Value::Number(n)) => n.as_f64(),
-        Some(Value::String(s)) => s.trim().parse::<f64>().ok(),
-        Some(_) => None,
-    };
-    n.filter(|f| f.is_finite())
-        .map(Some)
-        .ok_or_else(|| ToolError::Input(format!("\"{key}\" must be a number")))
-}
-
-/// `true` or `"true"`; anything else is false.
-pub fn opt_bool(input: &JsonMap, key: &str) -> bool {
-    match input.get(key) {
-        Some(Value::Bool(b)) => *b,
-        Some(Value::String(s)) => s == "true",
-        _ => false,
-    }
-}
-
-/// A value as a reader spells it: a string as itself, anything else as JSON (`16:9`, `80`, `true`).
-pub fn spelled(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        other => other.to_string(),
-    }
-}
-
 /// Keep the head and tail of long output; the middle is where nothing useful
 /// lives. `max` counts characters, never splitting one.
 ///
@@ -454,6 +324,12 @@ pub const TRUNCATE_CHARS: usize = 30_000;
 /// tokens), in characters. A longer result goes to a file and the model gets
 /// a preview, unless the tool set [`ToolOutput::sized`].
 pub const MAX_TOOL_OUTPUT: usize = 20_000;
+
+mod args;
+mod context;
+
+pub use args::{opt_bool, opt_num, opt_str, req_str, spelled};
+pub use context::ToolContext;
 
 #[cfg(test)]
 mod tests;
