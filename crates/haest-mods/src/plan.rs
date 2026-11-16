@@ -74,7 +74,7 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// # #[async_trait::async_trait]
 /// # impl ModUi for Terminal {
 /// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
-/// #     fn notice(&self, text: &str) { println!("{text}") }
+/// #     fn info(&self, text: &str) { println!("{text}") }
 /// # }
 /// # struct Write;
 /// # #[async_trait::async_trait]
@@ -170,7 +170,7 @@ impl Mod for PlanMod {
         if let Some(f) = &self.on_change {
             f(on);
         }
-        haest.notice(if on {
+        haest.info(if on {
             "Plan mode ON: read-only until /plan off."
         } else {
             "Plan mode off: every tool runs again."

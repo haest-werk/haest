@@ -63,7 +63,7 @@ impl Js {
             }
             Out::Tool { tool } => self.meta.lock().unwrap().add_tool(tool),
             Out::Command { name } => self.meta.lock().unwrap().add_command(name),
-            Out::Notice { text } => self.ui.notice(&text),
+            Out::Notice { text } => self.ui.info(&text),
             Out::Ask { id, req, signal } => self.ask(id, req, signal),
         }
     }

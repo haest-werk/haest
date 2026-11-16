@@ -11,7 +11,7 @@
 - **One name per concept**, across every crate. "Host" means only the app that
   embeds haest (a CLI, a web app, a test). What a host implements is named for
   what it is, never "host": `AgentHooks` is its say in the loop,
-  `ToolServices` what it offers every tool (publish, inner calls, log),
+  `ToolServices` what it offers every tool (publish, inner calls, debug lines),
   `SubagentParent` what the subagent hub builds a subagent from, `ModUi` how
   mods reach the human, and haest-runtime's `Ui` how the runtime does.
   `RuntimeHooks` is haest-runtime's own implementation of the loop's hooks.

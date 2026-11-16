@@ -160,7 +160,7 @@ impl RuntimeHooks {
 }
 
 impl ToolServices for RuntimeHooks {
-    fn log(&self, message: &str) {
+    fn debug(&self, message: &str) {
         if self.settings.debug {
             self.ui.debug(message);
         }

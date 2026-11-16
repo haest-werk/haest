@@ -36,9 +36,9 @@ pub async fn load<P: Prompter + 'static>(
     cfg.project_mods = s.project_mods;
     let to = hooks.clone();
     let mod_ui = ApprovalGate::new(prompter).with_lines(move |line| match line {
-        ModLine::Notice(text) => to.info(text),
+        ModLine::Info(text) => to.info(text),
         ModLine::Error(text) => to.error(text),
-        ModLine::Log(message) => ToolServices::log(to.as_ref(), message),
+        ModLine::Debug(message) => ToolServices::debug(to.as_ref(), message),
     });
     Arc::new(load_mods(cfg, fs, Arc::new(mod_ui)).await)
 }

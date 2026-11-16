@@ -190,7 +190,7 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
         .await
         .unwrap();
     assert!(ui.asks().is_empty());
-    assert_eq!(ui.notices(), [note]);
+    assert_eq!(ui.infos(), [note]);
 
     let ui = TestUi::new();
     let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));

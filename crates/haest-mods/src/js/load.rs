@@ -119,7 +119,7 @@ impl JsMod {
     /// # #[async_trait::async_trait]
     /// # impl ModUi for Terminal {
     /// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
-    /// #     fn notice(&self, _: &str) {}
+    /// #     fn info(&self, _: &str) {}
     /// # }
     ///
     /// # #[tokio::main(flavor = "current_thread")]

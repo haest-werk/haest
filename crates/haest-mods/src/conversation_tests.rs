@@ -115,7 +115,7 @@ async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it()
     agent.run("now do it", &mut Vec::new()).await;
     assert!(!p.requests()[2].system.contains(PLAN_PROMPT));
     assert_eq!(writer.ran().len(), 1);
-    assert_eq!(ui.notices().len(), 2);
+    assert_eq!(ui.infos().len(), 2);
 }
 
 #[tokio::test]

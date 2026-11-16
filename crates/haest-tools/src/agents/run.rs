@@ -126,8 +126,8 @@ impl ToolServices for ChildHooks {
         self.parent
             .on_subagent(&self.id, SubagentEvent::InnerCall(ev));
     }
-    fn log(&self, message: &str) {
-        self.hooks.log(message);
+    fn debug(&self, message: &str) {
+        self.hooks.debug(message);
     }
 }
 

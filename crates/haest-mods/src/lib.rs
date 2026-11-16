@@ -12,8 +12,8 @@
 //! | `system.prompt` | before every model call | append text to the system prompt |
 //!
 //! -- add tools and slash commands, and reach the human through the host:
-//! `ask` puts an Allow / Deny prompt in front of them, `notice` writes a line
-//! they see. Two mods are built in: [`ApprovalMod`] (in the real workspace, a
+//! `ask` puts an Allow / Deny prompt in front of them, `notice` (a native
+//! mod's [`ModEnv::info`]) writes a line they see. Two mods are built in: [`ApprovalMod`] (in the real workspace, a
 //! Bash command that destroys work waits for the human's Allow) and
 //! [`PlanMod`] (`/plan`: read-only until `/plan off`).
 //!
@@ -64,7 +64,7 @@
 //! # #[async_trait::async_trait]
 //! # impl ModUi for Terminal {
 //! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
-//! #     fn notice(&self, text: &str) { println!("{text}") }
+//! #     fn info(&self, text: &str) { println!("{text}") }
 //! # }
 //! # struct Bash;
 //! # #[async_trait::async_trait]
@@ -141,7 +141,7 @@
 //! # #[async_trait]
 //! # impl ModUi for Terminal {
 //! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
-//! #     fn notice(&self, text: &str) { println!("{text}") }
+//! #     fn info(&self, text: &str) { println!("{text}") }
 //! # }
 //! # struct Bash;
 //! # #[async_trait]
@@ -213,7 +213,7 @@
 //! # #[async_trait::async_trait]
 //! # impl ModUi for Terminal {
 //! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
-//! #     fn notice(&self, text: &str) { println!("{text}") }
+//! #     fn info(&self, text: &str) { println!("{text}") }
 //! # }
 //!
 //! const STANDUP_TS: &str = r#"

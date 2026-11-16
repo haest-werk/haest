@@ -78,7 +78,7 @@ haest_core::word_enum! {
 /// PLUG POINT: how mods reach the human, implemented by the host (a CLI, a
 /// control panel, a chat app).
 ///
-/// `ask` and `notice` reach the human; how is the host's business. Most hosts
+/// `ask` and the lines reach the human; how is the host's business. Most hosts
 /// do not implement this: an [`ApprovalGate`](crate::ApprovalGate) over their
 /// own [`Prompter`](crate::Prompter) keeps the rules every ask must keep, and
 /// [`ApprovalGate::with_lines`](crate::ApprovalGate::with_lines) makes it a
@@ -89,15 +89,16 @@ pub trait ModUi: Send + Sync {
     /// The human's Allow / Deny. Deny when `cancel` fires (an interrupt) or the
     /// human never answers -- a tool call must never hang on someone who walked away.
     async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision;
-    /// A line the human sees.
-    fn notice(&self, text: &str);
-    /// A mod failed to load or in an event; the human must see it. Default: a notice.
+    /// A line the human sees: what a mod has to say (plan mode is on).
+    fn info(&self, text: &str);
+    /// A mod failed to load or in an event; the human must see it. Default:
+    /// an [`info`](Self::info) line.
     fn error(&self, text: &str) {
-        self.notice(text)
+        self.info(text)
     }
-    /// haest's diagnostic log, for lines the human need not see (each mod as
-    /// it loads). Default: dropped.
-    fn log(&self, _message: &str) {}
+    /// A line for haest's diagnostic log, which the human need not see (each
+    /// mod as it loads). Default: dropped.
+    fn debug(&self, _message: &str) {}
 }
 
 /// Where haest runs, and the human: what every mod event can reach.
@@ -110,7 +111,7 @@ pub struct ModEnv {
     pub cwd: PathBuf,
     /// The workspace the agent's tools run in: [`ApprovalMod`](crate::ApprovalMod) asks only in `Real`.
     pub workspace: WorkspaceMode,
-    /// The host's ask, notice, error and log.
+    /// The host's ask, and its info, error and debug lines.
     pub ui: Arc<dyn ModUi>,
 }
 
@@ -134,9 +135,9 @@ impl ModEnv {
         self.ui.ask(req, cancel).await
     }
 
-    /// A line the human sees, through the host.
-    pub fn notice(&self, text: &str) {
-        self.ui.notice(text)
+    /// A line the human sees, through the host ([`ModUi::info`]).
+    pub fn info(&self, text: &str) {
+        self.ui.info(text)
     }
 }
 

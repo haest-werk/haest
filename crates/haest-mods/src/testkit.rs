@@ -31,7 +31,7 @@ pub(crate) const CWD: &str = "/p";
 
 #[derive(Default)]
 pub(crate) struct TestUi {
-    notices: Mutex<Vec<String>>,
+    infos: Mutex<Vec<String>>,
     errors: Mutex<Vec<String>>,
     asks: Mutex<Vec<ApprovalRequest>>,
     answers: Mutex<VecDeque<Decision>>,
@@ -56,8 +56,8 @@ impl TestUi {
             ..Default::default()
         })
     }
-    pub fn notices(&self) -> Vec<String> {
-        self.notices.lock().unwrap().clone()
+    pub fn infos(&self) -> Vec<String> {
+        self.infos.lock().unwrap().clone()
     }
     pub fn errors(&self) -> Vec<String> {
         self.errors.lock().unwrap().clone()
@@ -78,8 +78,8 @@ impl ModUi for TestUi {
         let next = self.answers.lock().unwrap().pop_front();
         next.unwrap_or(Decision::Deny)
     }
-    fn notice(&self, text: &str) {
-        self.notices.lock().unwrap().push(text.to_string());
+    fn info(&self, text: &str) {
+        self.infos.lock().unwrap().push(text.to_string());
     }
     fn error(&self, text: &str) {
         self.errors.lock().unwrap().push(text.to_string());

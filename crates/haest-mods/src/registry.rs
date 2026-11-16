@@ -63,9 +63,9 @@ impl Mods {
         }
     }
 
-    /// Add a mod after every mod already here (logged through [`ModUi::log`](crate::ModUi::log)).
+    /// Add a mod after every mod already here (logged through [`ModUi::debug`](crate::ModUi::debug)).
     pub fn add(&mut self, m: Arc<dyn Mod>) {
-        self.env.ui.log(&format!("mod loaded: {}", m.name()));
+        self.env.ui.debug(&format!("mod loaded: {}", m.name()));
         self.list.push(m);
     }
 
@@ -214,7 +214,7 @@ impl Mods {
     /// # #[async_trait::async_trait]
     /// # impl ModUi for Terminal {
     /// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
-    /// #     fn notice(&self, _: &str) {}
+    /// #     fn info(&self, _: &str) {}
     /// # }
     ///
     /// # #[tokio::main(flavor = "current_thread")]

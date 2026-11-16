@@ -201,7 +201,7 @@ impl ApprovalMod {
             BashVerdict::Ask(why) => Some(why),
             BashVerdict::Run { note } => {
                 if let Some(note) = note {
-                    haest.notice(&note);
+                    haest.info(&note);
                 }
                 None
             }

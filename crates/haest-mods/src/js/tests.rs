@@ -91,14 +91,14 @@ async fn commands_system_prompt_and_notices_from_a_mod_take_effect() {
     }"#;
     let ui = TestUi::new();
     let mods = with_mod(ui.clone(), "house.js", source).await;
-    assert_eq!(ui.notices(), [format!("loaded in {CWD}")]);
+    assert_eq!(ui.infos(), [format!("loaded in {CWD}")]);
     assert_eq!(mods.commands(), ["hello", "quiet"]);
     assert_eq!(
         mods.command("/hello", "bob").await,
         CommandOutcome::Prompt("say hello to bob".into())
     );
     assert_eq!(mods.command("quiet", "").await, CommandOutcome::Handled);
-    assert_eq!(ui.notices().len(), 2);
+    assert_eq!(ui.infos().len(), 2);
     assert_eq!(mods.system_append().await, "House rule: sandbox");
 }
 

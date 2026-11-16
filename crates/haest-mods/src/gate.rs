@@ -114,8 +114,8 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// let prompts = Arc::new(Mutex::new(Vec::new()));
 /// // How the mods reach the human: asks through the gate, lines to the terminal.
 /// let ui = ApprovalGate::new(Human(prompts.clone())).with_lines(|line| match line {
-///     ModLine::Notice(text) | ModLine::Error(text) => println!("{text}"),
-///     ModLine::Log(_) => {}
+///     ModLine::Info(text) | ModLine::Error(text) => println!("{text}"),
+///     ModLine::Debug(_) => {}
 /// });
 /// let ui = Arc::new(ui);
 /// let mut mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, ui));
@@ -210,8 +210,8 @@ impl<P: Prompter> ApprovalGate<P> {
 
 impl<P: Prompter + 'static> ApprovalGate<P> {
     /// The host's whole [`ModUi`]: [`ask`](ModUi::ask) through this gate,
-    /// and every [`notice`](ModUi::notice), [`error`](ModUi::error) and
-    /// [`log`](ModUi::log) line to `lines`, as a [`ModLine`] that says which.
+    /// and every [`info`](ModUi::info), [`error`](ModUi::error) and
+    /// [`debug`](ModUi::debug) line to `lines`, as a [`ModLine`] that says which.
     /// The [class example](Self#examples) uses it.
     pub fn with_lines(self, lines: impl Fn(ModLine<'_>) + Send + Sync + 'static) -> impl ModUi {
         GateUi { gate: self, lines }
@@ -222,12 +222,12 @@ impl<P: Prompter + 'static> ApprovalGate<P> {
 /// to [`ApprovalGate::with_lines`]: one case per line method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModLine<'a> {
-    /// [`ModUi::notice`]: a line the human sees.
-    Notice(&'a str),
+    /// [`ModUi::info`]: a line the human sees.
+    Info(&'a str),
     /// [`ModUi::error`]: a mod failed to load or in an event; the human must see it.
     Error(&'a str),
-    /// [`ModUi::log`]: for the host's diagnostic log; the human need not see it.
-    Log(&'a str),
+    /// [`ModUi::debug`]: for the host's diagnostic log; the human need not see it.
+    Debug(&'a str),
 }
 
 /// An [`ApprovalGate`] and where the other lines go: the [`ModUi`] that
@@ -247,16 +247,16 @@ where
         self.gate.ask(req, cancel).await
     }
 
-    fn notice(&self, text: &str) {
-        (self.lines)(ModLine::Notice(text));
+    fn info(&self, text: &str) {
+        (self.lines)(ModLine::Info(text));
     }
 
     fn error(&self, text: &str) {
         (self.lines)(ModLine::Error(text));
     }
 
-    fn log(&self, message: &str) {
-        (self.lines)(ModLine::Log(message));
+    fn debug(&self, message: &str) {
+        (self.lines)(ModLine::Debug(message));
     }
 }
 

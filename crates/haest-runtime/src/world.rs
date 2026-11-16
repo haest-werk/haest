@@ -235,7 +235,7 @@ async fn start(hooks: &RuntimeHooks, hub: McpHub, servers: Vec<McpServerConfig>)
         return hub;
     }
     hub.connect(&servers, &|m: &str| {
-        crate::haest::core::tool::ToolServices::log(hooks, m)
+        crate::haest::core::tool::ToolServices::debug(hooks, m)
     })
     .await;
     for f in hub.failures() {

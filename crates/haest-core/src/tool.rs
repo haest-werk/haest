@@ -163,8 +163,9 @@ pub trait ToolServices: Send + Sync {
     }
     /// A tool that runs OTHER tools (Code) reports each one here, so the human sees it.
     fn on_inner_call(&self, _ev: InnerCallEvent) {}
-    /// haest's diagnostic log.
-    fn log(&self, _message: &str) {}
+    /// A line for haest's diagnostic log (what it does under the hood),
+    /// which the human need not see. Default: dropped.
+    fn debug(&self, _message: &str) {}
 }
 
 /// Services that offer nothing: publish returns no URL, the rest is dropped.

@@ -161,7 +161,7 @@ Callable: {}.",
 /// a `tool_call_id`) each inner call is reported to the host as a transcript
 /// row of its own ([`ToolServices::on_inner_call`](haest_core::ToolServices::on_inner_call)),
 /// with the id `<code call id>.<n>`; a run longer than a second also logs a
-/// heartbeat through [`ToolServices::log`](haest_core::ToolServices::log).
+/// heartbeat through [`ToolServices::debug`](haest_core::ToolServices::debug).
 ///
 /// The result is the fenced printout ([module docs](crate::code#what-the-model-reads-back)),
 /// an error result when the program threw or was stopped, the pictures from
@@ -247,10 +247,10 @@ impl Tool for CodeTool {
             timeout_ms,
             ..VmCaps::default()
         };
-        let beat = |b: VmBeat| ctx.services.log(&beat_line(ctx, b));
+        let beat = |b: VmBeat| ctx.services.debug(&beat_line(ctx, b));
         let run = run_in_vm(code, &bridge.spec(), caps, &ctx.cancel, Some(&beat)).await;
         if run.killed {
-            ctx.services.log(&format!(
+            ctx.services.debug(&format!(
                 "[code {}] did not stop when asked; its engine was abandoned",
                 ctx.tool_call_id.as_deref().unwrap_or("-")
             ));
