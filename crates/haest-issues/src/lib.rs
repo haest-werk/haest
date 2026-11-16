@@ -106,8 +106,8 @@ pub mod cards;
 pub mod github;
 #[cfg(test)]
 mod testkit;
-pub mod tools;
-pub mod tracker;
+mod tools;
+mod tracker;
 
 /// The HTTP seam the GitHub tracker sends through: implement
 /// [`http::HttpClient`] to give it a client of your own.
@@ -117,5 +117,5 @@ pub use haest_http as http;
 pub use tools::{DELETE_KIND, issue_tools, issue_tools_named};
 pub use tracker::{
     Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, Tracker, TrackerError,
-    TrackerInfo,
+    TrackerInfo, one_of,
 };
