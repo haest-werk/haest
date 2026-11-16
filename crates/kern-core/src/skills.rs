@@ -112,14 +112,10 @@ impl Skill {
 }
 
 /// Case-insensitive first, the way a locale sort reads names.
-fn by_name_str(a: &str, b: &str) -> Ordering {
+fn by_name(a: &str, b: &str) -> Ordering {
     a.to_lowercase()
         .cmp(&b.to_lowercase())
         .then_with(|| a.cmp(b))
-}
-
-fn by_name(a: &Skill, b: &Skill) -> Ordering {
-    by_name_str(&a.name, &b.name)
 }
 
 /// Every skill kern can offer, sorted by name.
@@ -130,7 +126,7 @@ pub async fn discover_skills(fs: &dyn Fs, opts: &SkillOpts) -> Vec<Skill> {
 /// Every skill under `roots`, sorted by name.
 pub async fn skills_in(fs: &dyn Fs, roots: &SkillScanRoots) -> Vec<Skill> {
     let mut skills = scan_skills(fs, roots).await;
-    skills.sort_by(by_name);
+    skills.sort_by(|a, b| by_name(&a.name, &b.name));
     skills
 }
 

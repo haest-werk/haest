@@ -80,11 +80,11 @@ enum Measure {
 pub struct Ledger {
     pub usd: f64,
     pub unpriced_tokens: u64,
-    pub(crate) set: CapOverrides,
-    pub(crate) warned_usd: bool,
-    pub(crate) warned_tokens: bool,
-    pub(crate) defaults: LedgerCaps,
-    pub(crate) hooks: Arc<dyn LedgerHooks>,
+    set: CapOverrides,
+    warned_usd: bool,
+    warned_tokens: bool,
+    defaults: LedgerCaps,
+    hooks: Arc<dyn LedgerHooks>,
 }
 
 impl Ledger {
@@ -176,16 +176,9 @@ impl Ledger {
             max_usd,
             max_unpriced_tokens,
         } = self.caps();
-        let usd_cap = if max_usd > 0.0 {
-            format!("${max_usd}")
-        } else {
-            "no cap".into()
-        };
-        let token_cap = if max_unpriced_tokens > 0 {
-            max_unpriced_tokens.to_string()
-        } else {
-            "no cap".into()
-        };
+        let cap = |on: bool, text: String| if on { text } else { "no cap".into() };
+        let usd_cap = cap(max_usd > 0.0, format!("${max_usd}"));
+        let token_cap = cap(max_unpriced_tokens > 0, max_unpriced_tokens.to_string());
         format!(
             "Conversation budget: ${:.2} of {usd_cap} spent; {} unpriced tokens of {token_cap}.",
             self.usd, self.unpriced_tokens

@@ -36,6 +36,14 @@ fn not_found(name: &str) -> io::Error {
     io::Error::new(io::ErrorKind::NotFound, format!("no skill named {name}"))
 }
 
+/// ` (<origin>)`, or nothing when the card names none.
+fn origin(c: &SkillCard) -> String {
+    c.origin
+        .as_ref()
+        .map(|o| format!(" ({o})"))
+        .unwrap_or_default()
+}
+
 /// `\n\nARGUMENTS: a` when the model passed any.
 pub(super) fn argument_line(args: Option<&str>) -> String {
     match args.map(str::trim).filter(|a| !a.is_empty()) {
@@ -108,7 +116,7 @@ pub fn first_of_each_name<T>(
             out.push(s);
         }
     }
-    out.sort_by(|a, b| super::by_name_str(name(a), name(b)));
+    out.sort_by(|a, b| super::by_name(name(a), name(b)));
     out
 }
 
@@ -137,14 +145,10 @@ impl SkillSet for InlineSkills {
             .find(|s| s.card.name == name)
             .ok_or_else(|| not_found(name))?;
         let c = &s.card;
-        let origin = c
-            .origin
-            .as_ref()
-            .map(|o| format!(" ({o})"))
-            .unwrap_or_default();
         Ok(format!(
-            "Skill {}{origin}: {}{}\n\n{}",
+            "Skill {}{}: {}{}\n\n{}",
             c.name,
+            origin(c),
             c.description,
             argument_line(args),
             s.body
@@ -164,17 +168,12 @@ pub fn skill_cards_block(intro: &str, cards: &[SkillCard]) -> String {
     let lines: Vec<String> = cards
         .iter()
         .map(|c| {
-            let origin = c
-                .origin
-                .as_ref()
-                .map(|o| format!(" ({o})"))
-                .unwrap_or_default();
             let when = if c.when.is_empty() {
                 String::new()
             } else {
                 format!(" Use when: {}", c.when)
             };
-            format!("- {}{origin}: {}{when}", c.name, c.description)
+            format!("- {}{}: {}{when}", c.name, origin(c), c.description)
         })
         .collect();
     format!("{intro}\n{}", lines.join("\n"))
