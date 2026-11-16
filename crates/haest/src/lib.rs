@@ -91,18 +91,25 @@
 //!
 //! # The plug points
 //!
-//! [`AgentDeps`] is everything the loop is handed. Each field is a trait with
-//! haest's own implementations beside it; a host keeps those or brings its own.
+//! [`AgentDeps`] and the [`SharedDeps`] inside it are everything the loop is
+//! handed. Each part is a trait with haest's own implementations beside it; a
+//! host keeps those or brings its own.
 //!
 //! | Trait | What it is | haest's own |
 //! |---|---|---|
 //! | [`ModelResolver`], [`Provider`] | turns a model spec (`openrouter:z-ai/glm-5.3`) into a model API | [`providers::ProviderRegistry`] |
+//! | [`http::HttpClient`] | how every model call and web request travels | [`http::ReqwestClient`] |
 //! | [`ToolSource`], [`Tool`] | the tools the model may call | [`tools::builtin_tools`], [`mcp`], [`mods`], [`code`] |
 //! | [`Workspace`], [`Fs`] | the files and the shell every tool goes through | [`workspace::RealWorkspace`], [`workspace::SandboxWorkspace`], [`ShutWorkspace`] |
 //! | [`SystemPrompt`] | the system prompt, rebuilt for each model call | [`String`] |
-//! | [`AgentHooks`] | the host's say in the loop: approvals, caps, compaction | [`NoHooks`], [`runtime`] |
+//! | [`AgentHooks`] | the host's say in the loop: each message to save, compaction before a model call, media | [`NoHooks`], [`runtime`] |
+//! | [`ModelFacts`] | what the host knows of each model: the inputs it takes, its efforts | [`NoFacts`], [`runtime`] |
+//! | [`TurnCapsSource`] | the caps on each turn, per model | [`TurnCaps`] (the same for every model), [`runtime`] |
+//! | [`Clock`] | the time a turn's time cap reads | [`WallClock`] |
 //! | [`EventSink`] | where the turn's events go | closures, `Vec<LoopEvent>`, a tokio channel |
 //! | [`KeySource`] | API keys and endpoints, asked for by name | closures, `HashMap<String, String>` |
+//!
+//! Approvals are a mod's ([`mods`]), not the loop's.
 //!
 //! # Write a tool
 //!

@@ -28,6 +28,9 @@
 //! | files | [`fs::Fs`] | `haest-workspace`, [`fs::MemFs`], or the host |
 //! | files + shell | [`workspace::Workspace`] | `haest-workspace`, [`workspace::ShutWorkspace`] |
 //! | the host's say in the loop | [`deps::AgentHooks`] | the host |
+//! | what the host knows of each model | [`catalog::ModelFacts`] | the host, [`catalog::NoFacts`] |
+//! | the caps on each turn | [`caps::TurnCapsSource`] | the host, [`caps::TurnCaps`] |
+//! | the time a turn's cap reads | [`deps::Clock`] | the host, [`deps::WallClock`] |
 //! | the host's way past a cap | [`remedy::Remedies`] | the host |
 //! | where events go | [`events::EventSink`] | the host / CLI |
 //!

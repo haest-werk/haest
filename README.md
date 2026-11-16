@@ -170,12 +170,16 @@ More providers go in `<config dir>/providers.json`
 
 ## Embed it
 
-A host builds `AgentDeps` (models, tools, system prompt, workspace, hooks),
-makes an `Agent` and calls `run(input, &mut sink)` once per human turn. Every
-place a host differs is a trait: `HttpClient` for how requests travel, `Fs`
-and `Workspace` for files and shell, `Tool` and `ReadIntercept` for tools,
-`AgentHooks` for the clock, persistence and caps, `EventSink` for events,
-`SessionSink` for session records, `AgentDirectory` for subagents.
+A host builds `AgentDeps` (the agent's tools and system prompt, and the
+`SharedDeps` every agent of the conversation shares: models, workspace, hooks
+and the rest), makes an `Agent` and calls `run(input, &mut sink)` once per
+human turn. Every place a host differs is a trait: `HttpClient` for how
+requests travel, `Fs` and `Workspace` for files and shell, `Tool` and
+`ReadIntercept` for tools, `AgentHooks` for saving each message and compacting
+before a model call, `ModelFacts` for what the host knows of each model,
+`TurnCapsSource` for each turn's caps, `Clock` for the time a turn's cap reads,
+`EventSink` for events, `SessionSink` for session records, `AgentDirectory` for
+subagents.
 
 Nothing in the library reads a file, a variable or a flag of its own accord.
 A host writes its settings out:
