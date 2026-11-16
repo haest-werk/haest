@@ -15,6 +15,21 @@
   `SubagentParent` what the subagent hub builds a subagent from, `ModUi` how
   mods reach the human, and haest-runtime's `Ui` how the runtime does.
   `RuntimeHooks` is haest-runtime's own implementation of the loop's hooks.
+  The words haest settled on:
+  - **cap**: a maximum that stops something (`TurnCaps`, `ConversationCaps`,
+    `VmCaps`, `ModCaps`, the settings' `CapSettings`). "Limit" is only
+    `remedy::Limit`, which also covers `SandboxEdits`, no cap.
+  - **`model_spec`**: the `provider:model` string, in every field, parameter
+    and setter; `model` is the provider's own id (`ResolvedModel::model`).
+  - **`*Options`** is what a host hands a constructor in Rust
+    (`GenerateImageOptions`, `ModOptions`); **`*Config`** names only an entry
+    read from a file (`McpServerConfig`, `CustomProviderConfig`).
+  - A tool struct is the name the model calls plus `Tool`
+    (`GenerateImageTool`); a builder method starts with `with_`.
+  - A line to the human is **info / warn / error / debug**, on `Ui`, `ModUi`,
+    `ModEnv` and `ToolServices` alike.
+  - **subagent**, one word. `AgentDeps` is one agent's own parts (tools,
+    system prompt); `SharedDeps` what every agent of a conversation shares.
 - **Errors are types.** No `Result<_, String>` and no `anyhow` in a library's
   public signatures: a `thiserror` enum with one variant per case a caller can
   act on, each carrying the values it names (`TaskError::UnknownId { id,
