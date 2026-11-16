@@ -38,6 +38,37 @@ Setting: `wind_down_at`, a share between 0 and 1. 0 = off, the default.
 Differs from the guard's nudge: the nudge says "you are burning X, find the exit" at
 50% of each turn cap. Wind-down changes behaviour: spawns stop.
 
+## W2. Thresholds: wind-down becomes one action (decided direction, 2026-11-17)
+
+haest already has five hard-coded thresholds of one shape, a meter crossing a mark fires
+an action:
+
+| Today | Meter | Mark | Action | Fires again |
+|---|---|---|---|---|
+| the guard's nudge | each turn cap: USD, tokens, steps, time, repeats | 50% (`NUDGE_SHARE`) | tell the model | next turn |
+| the agent-turn gate | a subagent's turns | 50% | tell the model | -- |
+| the ledger's warning | conversation USD, unpriced tokens | 80% (`WARN_SHARE`) | tell the human | never (saved) |
+| auto-compaction | context tokens | 80% of the window, or `compact_at` | compact | once compaction drops it |
+| wind-down (built, unmerged) | the conversation and turn caps | `wind_down_at` | refuse new subagents + tell the model | next turn |
+
+The cap itself is the same shape at 100%: stop.
+
+A threshold = a meter + a mark + an action + when it fires again.
+
+- **Meters:** context tokens, steps, turns, wall time, USD, tokens; turn scope or
+  conversation scope. A fixed list, no expression language.
+- **Mark:** a share of the meter's cap, or an absolute value.
+- **Actions:** remind the model, warn the human, wind down (refuse new subagents), compact, stop.
+- **Fires again:** never, next turn, or once the meter falls back under the mark.
+
+The five become default thresholds with today's numbers, so nothing changes until a host
+changes them; the existing tests pin that. `wind_down_at` stays as the named shortcut for
+the wind-down threshold. A threshold is a trait, so a host or a mod adds its own.
+
+Built after Wave C of the 0.2.0 review lands: the guard, the ledger's warning and the
+compaction threshold are what it is moving. `wt/wind-down` is not merged; it is rebuilt on
+this, and its tests stay as the wind-down threshold's acceptance.
+
 ## S. Subagent budgets (agent-core's `clampUsd` + spawn reservation)
 
 With the setting on, the Agent tool takes an optional `budget`:
