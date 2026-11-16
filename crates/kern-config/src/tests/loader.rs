@@ -9,10 +9,6 @@ fn bare() -> Loader {
     Loader::new(Settings::bare("/w", HOME))
 }
 
-fn vars(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-    owned(pairs).into_iter().collect()
-}
-
 #[tokio::test]
 async fn a_layer_added_later_wins_whatever_kind_it_is() {
     let fs = files(&[(NAMED, "model = \"a:file\"")]);

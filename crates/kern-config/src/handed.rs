@@ -28,7 +28,7 @@ pub(crate) fn child_env(policy: EnvPassthrough, env: &HashMap<String, String>) -
             .iter()
             .filter_map(|k| env.get(*k).map(|v| (k.to_string(), v.clone())))
             .collect(),
-        EnvPassthrough::All => env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        EnvPassthrough::All => env.clone().into_iter().collect(),
     };
     vars.sort();
     ChildEnv::new(vars)

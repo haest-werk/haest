@@ -124,8 +124,7 @@ impl Loader {
     /// keys and a child process's environment from: without `.env()` those
     /// are empty.
     pub fn env(mut self, env: &HashMap<String, String>) -> Self {
-        self.env
-            .extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.env.extend(env.clone());
         let given = DEFS.iter().filter_map(|def| {
             let var = def.env();
             let raw = env_var(env, &var)?;
@@ -157,9 +156,8 @@ impl Loader {
         } = self;
         let (mut config, resolved, mut notes) = resolve(defaults, stack, fs).await?;
         let cwd = config.settings.cwd.clone();
-        let s = &mut config.settings;
-        handed::gate_project_mods(fs, &cwd, &mut s.project_mods, resolved.trusted, &mut notes)
-            .await;
+        let project_mods = &mut config.settings.project_mods;
+        handed::gate_project_mods(fs, &cwd, project_mods, resolved.trusted, &mut notes).await;
         let mcp_servers =
             handed::mcp_servers(fs, &cwd, config.mcp, resolved.trusted, &env, &mut notes).await;
         let providers = load_custom_providers(fs, &config.settings.config_dir)

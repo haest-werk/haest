@@ -28,6 +28,10 @@ fn owned(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
+fn vars(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+    owned(pairs).into_iter().collect()
+}
+
 /// Everything the `kern` command loads in `cwd`, with these files, variables
 /// (`HOME` is /h) and flags.
 async fn run(
@@ -36,9 +40,7 @@ async fn run(
     env: &[(&str, &str)],
     flags: &[(&str, &str)],
 ) -> Result<Loaded, String> {
-    let env: HashMap<String, String> = owned(&[&[("HOME", HOME)], env].concat())
-        .into_iter()
-        .collect();
+    let env = vars(&[&[("HOME", HOME)], env].concat());
     Loader::standard(Settings::bare(cwd, HOME), &env, &owned(flags))
         .load(&files(fs))
         .await

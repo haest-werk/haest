@@ -1,5 +1,5 @@
 //! Every setting as a field. [`Config`] holds the runtime's [`Settings`] and
-//! the five only a loader reads; [`set`] and [`get`] go by the setting's name,
+//! the ones only a loader reads; [`set`] and [`get`] go by the setting's name,
 //! in the one spelling [`crate::value::check`] gives a value, so what a file
 //! says and what `kern settings` shows are the same text.
 
@@ -56,7 +56,7 @@ impl Config {
     }
 }
 
-/// These settings, and the loader's four bare.
+/// These settings, and the loader's own bare.
 impl From<Settings> for Config {
     fn from(settings: Settings) -> Self {
         Self {
