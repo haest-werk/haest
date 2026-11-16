@@ -12,7 +12,7 @@ use std::{
 use haest_core::{AgentControl, now_ms};
 use tokio_util::sync::CancellationToken;
 
-use super::{AgentRef, MAIN, SpawnInput, SubagentCaps};
+use super::{AgentError, AgentRef, MAIN, SpawnInput, SubagentCaps};
 
 /// Unique per hub, so the same agent name in a revived host is a different id.
 pub(super) fn run_id() -> String {
@@ -99,10 +99,10 @@ impl Members {
     }
 
     /// Who a message can reach right now, for a refusal.
-    pub fn reachable(&self) -> String {
+    pub fn reachable(&self) -> Vec<String> {
         let mut names = vec![MAIN.to_string()];
         names.extend(self.running().map(|m| m.me.name.clone()));
-        names.join(", ")
+        names
     }
 
     /// Check the caps and take a unique name for a new agent of `from`.
@@ -112,19 +112,18 @@ impl Members {
         input: &SpawnInput,
         caps: &SubagentCaps,
         run_id: &str,
-    ) -> Result<&Member, String> {
+    ) -> Result<&Member, AgentError> {
         if from.depth >= caps.max_depth {
-            return Err(format!(
-                "agents may nest {} deep (HAEST_MAX_AGENT_DEPTH)",
-                caps.max_depth
-            ));
+            return Err(AgentError::TooDeep {
+                max_depth: caps.max_depth,
+            });
         }
         let running = self.running().count();
         if running >= caps.max_concurrent {
-            return Err(format!(
-                "{running} subagents are already running (HAEST_MAX_SUBAGENTS is {}); wait for one, or StopAgent one",
-                caps.max_concurrent
-            ));
+            return Err(AgentError::TooMany {
+                running,
+                max: caps.max_concurrent,
+            });
         }
         self.seq += 1;
         let seq = self.seq;

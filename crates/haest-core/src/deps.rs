@@ -128,10 +128,11 @@ pub trait AgentHooks: ToolServices {
     fn on_message(&self, _msg: &Message) {}
 
     /// Runs before each model call; may replace history (compaction). `Err`
-    /// ends the turn there, as an error with that text, without the call: the
+    /// ends the turn there, as an error with its text, without the call: the
     /// host's way out when it cannot go on (a summary that failed would
-    /// otherwise be tried again before every call, each try paid). A turn
-    /// cancelled while it ran ends as aborted, whatever it returns.
+    /// otherwise be tried again before every call, each try paid). Any error
+    /// will do, a `String` too (`Err(why.into())`). A turn cancelled while it
+    /// ran ends as aborted, whatever it returns.
     ///
     /// `agent` is the running agent; `cancel` is its turn's token, to pass to
     /// any model call the hook makes. A model call made here through
@@ -140,7 +141,7 @@ pub trait AgentHooks: ToolServices {
         &self,
         _agent: &mut Agent,
         _cancel: &CancellationToken,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(())
     }
 

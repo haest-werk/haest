@@ -220,7 +220,10 @@ fn paperinstruments_resolves_with_its_key_and_names_the_env_var_without_one() {
         registry(pi_env()).resolve(spec).unwrap().provider.id(),
         "paperinstruments"
     );
-    let err = registry(HashMap::new()).resolve(spec).unwrap_err();
+    let err = registry(HashMap::new())
+        .resolve(spec)
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("PAPERINSTRUMENTS_API_KEY"), "{err}");
 }
 

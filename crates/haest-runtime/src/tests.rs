@@ -70,7 +70,8 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
         .models
         .resolve("anthropic:claude-opus-5-5")
         .err()
-        .unwrap();
+        .unwrap()
+        .to_string();
     assert!(
         err.contains("ANTHROPIC_API_KEY"),
         "no key unless handed: {err}"

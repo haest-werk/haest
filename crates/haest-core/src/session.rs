@@ -213,9 +213,12 @@ pub struct ReplayedSession {
 
 /// A session id that is not `[a-zA-Z0-9_-]+`, refused so its file cannot
 /// land outside the sessions dir.
-#[derive(Debug, thiserror::Error)]
-#[error("invalid session id \"{0}\"")]
-pub struct InvalidSessionId(pub String);
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("invalid session id \"{id}\"")]
+pub struct InvalidSessionId {
+    /// The id, as given.
+    pub id: String,
+}
 
 /// Where a data dir's sessions are: `<data_dir>/sessions`.
 pub fn sessions_dir(data_dir: &Path) -> PathBuf {
@@ -237,7 +240,7 @@ fn valid_id(id: &str) -> bool {
 /// [`InvalidSessionId`] unless `id` is `[a-zA-Z0-9_-]+`.
 pub fn session_file(dir: &Path, id: &str) -> Result<PathBuf, InvalidSessionId> {
     if !valid_id(id) {
-        return Err(InvalidSessionId(id.into()));
+        return Err(InvalidSessionId { id: id.into() });
     }
     Ok(dir.join(format!("{id}.jsonl")))
 }

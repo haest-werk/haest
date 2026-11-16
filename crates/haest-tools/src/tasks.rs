@@ -58,7 +58,7 @@ fn status(input: &JsonMap) -> Result<Option<PatchStatus>, ToolError> {
 
 /// A TaskError is the model's to fix (an unknown id): it goes back as a correctable input error.
 fn on_board(e: TaskError) -> ToolError {
-    ToolError::Input(e.0)
+    ToolError::Input(e.to_string())
 }
 
 fn id_param() -> Value {

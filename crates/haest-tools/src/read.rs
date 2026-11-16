@@ -139,7 +139,8 @@ pub async fn media_output(
     let name = Path::new(label)
         .file_name()
         .map_or_else(|| label.to_string(), |n| n.to_string_lossy().into_owned());
-    let part = media_from_bytes(&bytes, media_type, &name).map_err(ToolError::Input)?;
+    let part =
+        media_from_bytes(&bytes, media_type, &name).map_err(|e| ToolError::Input(e.to_string()))?;
     let len = bytes.len();
     let kind = part.kind.as_str();
     let mut result = json!({"kind": "file", "mediaType": media_type, "bytes": len});

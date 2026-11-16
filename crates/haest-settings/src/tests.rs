@@ -106,7 +106,7 @@ fn a_word_set_answers_by_word_in_one_order_and_refuses_a_word_it_does_not_know()
     assert!(t.read && t.bash && !t.write);
     assert_eq!(t.words(), ["read", "bash"]);
     assert_eq!(BuiltinTools::ALL.words(), BuiltinTools::WORDS);
-    assert_eq!(BuiltinTools::from_words(["bsh"]), Err("bsh".to_string()));
+    assert_eq!(BuiltinTools::from_words(["bsh"]).unwrap_err().word, "bsh");
     let s = SkillSources::from_words(["plugins"]).unwrap();
     assert!(s.has("plugins") && !s.has("agents"));
     assert_eq!(SkillSources::ALL.words(), SkillSources::WORDS);

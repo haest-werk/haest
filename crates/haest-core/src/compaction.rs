@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     agent::Agent,
     messages::{AssistantMessage, Message, StopReason, Usage},
-    provider::{Provider, ProviderEvent, ProviderRequest},
+    provider::{ModelError, Provider, ProviderEvent, ProviderRequest},
     session::compaction_summary_message,
 };
 
@@ -249,8 +249,8 @@ pub struct CompactionResult {
 #[derive(Debug, thiserror::Error)]
 pub enum CompactionError {
     /// The agent's model spec resolves to no provider (no call was made).
-    #[error("{0}")]
-    Model(String),
+    #[error(transparent)]
+    Model(#[from] ModelError),
     /// Neither path produced a summary, or the run was cancelled; history is
     /// untouched. Why, and what the calls made cost (see [`Self::usage`]).
     #[error("compaction summary failed: {0}")]
@@ -320,15 +320,14 @@ impl CompactionError {
 ///         &self,
 ///         agent: &mut Agent,
 ///         cancel: &CancellationToken,
-///     ) -> Result<(), String> {
+///     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 ///         if !needs_compaction(agent.history(), &self.0) {
 ///             return Ok(());
 ///         }
 ///         // A host also charges the usage to its ledger and saves the new history.
-///         match compact(agent, cancel, &self.0).await {
-///             Ok(_) => Ok(()),
-///             Err(e) => Err(e.to_string()), // ends the turn instead of retrying every call
-///         }
+///         // An error ends the turn instead of retrying before every call.
+///         compact(agent, cancel, &self.0).await?;
+///         Ok(())
 ///     }
 /// }
 ///

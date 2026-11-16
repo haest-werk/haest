@@ -49,7 +49,9 @@ use serde_json::{Map, Value};
 
 use crate::{
     messages::{AssistantMessage, AssistantPart, StopReason, ToolCall, Usage},
-    provider::{Provider, ProviderEvent, ProviderRequest, ProviderStream, ResolvedModel},
+    provider::{
+        ModelError, Provider, ProviderEvent, ProviderRequest, ProviderStream, ResolvedModel,
+    },
 };
 
 /// A provider that answers with scripted messages, in order, and records every request.
@@ -86,7 +88,7 @@ impl ScriptedProvider {
     /// A resolver that serves every spec with this provider (model = the spec's model part, or the spec).
     pub fn resolver(
         self: &Arc<Self>,
-    ) -> impl Fn(&str) -> Result<ResolvedModel, String> + Send + Sync + 'static {
+    ) -> impl Fn(&str) -> Result<ResolvedModel, ModelError> + Send + Sync + 'static {
         let p = self.clone();
         move |spec: &str| {
             let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();

@@ -124,7 +124,7 @@ impl AgentHooks for Budget {
         &self,
         _agent: &mut Agent,
         _cancel: &CancellationToken,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if self.calls.fetch_add(1, Ordering::SeqCst) < self.allowed {
             return Ok(());
         }

@@ -24,7 +24,7 @@ use std::{
 use haest_core::{
     KeySource,
     handed::openrouter_base_url,
-    provider::{ModelResolver, Provider, ResolvedModel, parse_model_spec},
+    provider::{ModelError, ModelResolver, Provider, ResolvedModel, parse_model_spec},
 };
 
 use custom::need;
@@ -163,7 +163,8 @@ impl ProviderRegistry {
     /// is missing from the [`KeySource`], or the entry has a malformed
     /// `reasoningEffort` or `pricing`.
     pub fn resolve_spec(&self, spec: &str) -> Result<ResolvedModel, ProviderConfigError> {
-        let (name, model) = parse_model_spec(spec).map_err(ProviderConfigError)?;
+        let (name, model) =
+            parse_model_spec(spec).map_err(|e| ProviderConfigError(e.to_string()))?;
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         let provider = match cache.get(name) {
             Some(p) => p.clone(),
@@ -250,7 +251,16 @@ impl ProviderRegistry {
 }
 
 impl ModelResolver for ProviderRegistry {
-    fn resolve(&self, spec: &str) -> Result<ResolvedModel, String> {
-        self.resolve_spec(spec).map_err(|e| e.0)
+    fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
+        let (name, _) = parse_model_spec(spec)?;
+        let known = self.names();
+        if !known.iter().any(|k| k == name) {
+            return Err(ModelError::UnknownProvider {
+                provider: name.into(),
+                known,
+            });
+        }
+        self.resolve_spec(spec)
+            .map_err(|e| ModelError::Unavailable(Box::new(e)))
     }
 }

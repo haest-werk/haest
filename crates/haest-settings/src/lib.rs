@@ -60,7 +60,7 @@
 //!
 //! let tools = BuiltinTools::from_words(["bash", "read"]).unwrap();
 //! assert_eq!(tools.words(), ["read", "bash"]);
-//! assert_eq!(BuiltinTools::from_words(["bsh"]), Err("bsh".to_string()));
+//! assert_eq!(BuiltinTools::from_words(["bsh"]).unwrap_err().word, "bsh");
 //! ```
 //!
 //! The caps for a model with a one-million-token window, when the token caps

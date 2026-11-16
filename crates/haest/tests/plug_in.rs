@@ -35,8 +35,8 @@ use std::{
 use async_trait::async_trait;
 use haest::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, Effort,
-    ExecResult, Fs, LoopEvent, MemFs, Message, Provider, ProviderEvent, ProviderRequest,
-    ResolvedModel, StopReason, ToolCall, TurnEnd, Usage, Workspace,
+    ExecResult, Fs, LoopEvent, MemFs, Message, ModelError, Provider, ProviderEvent,
+    ProviderRequest, ResolvedModel, StopReason, ToolCall, TurnEnd, Usage, Workspace,
     core::provider::ProviderStream,
     core::shell_command::{ShellCall, ShellCommand},
     core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
@@ -257,7 +257,7 @@ impl SubagentParent for App {
     fn deps(&self) -> AgentDeps {
         let provider = self.provider.clone();
         let models = move |spec: &str| {
-            Ok::<_, String>(ResolvedModel {
+            Ok::<_, ModelError>(ResolvedModel {
                 provider: provider.clone(),
                 model: spec.to_string(),
             })

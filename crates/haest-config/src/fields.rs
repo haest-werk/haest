@@ -5,7 +5,9 @@
 
 use std::{collections::BTreeMap, path::PathBuf};
 
-use haest_core::{Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine};
+use haest_core::{
+    Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine, words::UnknownWord,
+};
 use haest_settings::{BuiltinTools, ContextSources, Settings, SkillSources, WordSet};
 
 use crate::value::{number, parse_bool, split_list, var, var_parts};
@@ -102,7 +104,7 @@ macro_rules! word {
                 Some(self.as_str().into())
             }
             fn from_raw(raw: &str) -> Result<Self, String> {
-                raw.parse()
+                raw.parse().map_err(|e: UnknownWord| e.to_string())
             }
         }
     )+};
@@ -147,8 +149,7 @@ macro_rules! words {
             }
             fn from_raw(raw: &str) -> Result<Self, String> {
                 let words = split_list(raw);
-                <$t>::from_words(words.iter().map(String::as_str))
-                    .map_err(|w| format!("\"{w}\" is not one of {}", <$t>::WORDS.join(", ")))
+                <$t>::from_words(words.iter().map(String::as_str)).map_err(|e| e.to_string())
             }
         }
     )+};
@@ -219,7 +220,7 @@ const WEB_SEARCH: (&str, Get, Set) = (
     |c, raw| {
         c.settings.web_search = match raw {
             "off" => None,
-            engine => Some(engine.parse()?),
+            engine => Some(WebSearchEngine::from_raw(engine)?),
         };
         Ok(())
     },

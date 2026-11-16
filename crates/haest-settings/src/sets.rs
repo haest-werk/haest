@@ -22,7 +22,7 @@ haest_core::word_set! {
     /// assert!(tools.has("bash") && !tools.has("write"));
     /// assert_eq!(BuiltinTools::ALL.words(), BuiltinTools::WORDS);
     /// ```
-    pub BuiltinTools {
+    pub BuiltinTools ("tool") {
         /// Read: a file's contents.
         read,
         /// Write: create or replace a file.

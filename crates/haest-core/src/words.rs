@@ -12,11 +12,29 @@
 //! and `haest-settings` declare theirs with the same macros; a host may too.
 //! Both macros are exported at the crate root.
 
+/// A word a word type does not know: what a [`word_enum!`](crate::word_enum)'s
+/// `FromStr` and serde, and [`WordSet::from_words`], refuse.
+///
+/// Its text names the setting, the word and the words there are:
+/// `unknown effort "huge" (off, low, medium, high, xhigh, max)`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown {what} \"{word}\" ({})", expected.join(", "))]
+pub struct UnknownWord {
+    /// What the words name (`"effort"`, `"tool"`): the type's label.
+    pub what: &'static str,
+    /// The word, as written.
+    pub word: String,
+    /// Every word the type knows, in its order.
+    pub expected: &'static [&'static str],
+}
+
 /// A set of switches named by words, in one fixed order.
 ///
 /// [`word_set!`](crate::word_set) implements it; read a list setting with
 /// [`WordSet::from_words`] and write it back with [`WordSet::words`].
 pub trait WordSet: Sized + Default {
+    /// What one word names (`"tool"`), for [`UnknownWord`].
+    const WHAT: &'static str;
     /// Every word, in the order a list setting writes them.
     const WORDS: &'static [&'static str];
 
@@ -44,12 +62,16 @@ pub trait WordSet: Sized + Default {
     ///
     /// # Errors
     ///
-    /// The first word the set does not know, as written.
-    fn from_words<'a>(words: impl IntoIterator<Item = &'a str>) -> Result<Self, String> {
+    /// [`UnknownWord`] for the first word the set does not know.
+    fn from_words<'a>(words: impl IntoIterator<Item = &'a str>) -> Result<Self, UnknownWord> {
         let mut set = Self::default();
         for w in words {
             if !set.turn_on(w) {
-                return Err(w.to_string());
+                return Err(UnknownWord {
+                    what: Self::WHAT,
+                    word: w.to_string(),
+                    expected: Self::WORDS,
+                });
             }
         }
         Ok(set)
@@ -59,8 +81,10 @@ pub trait WordSet: Sized + Default {
 /// Declares a struct with one `pub bool` field per word, the constants `NONE`
 /// and `ALL`, and its [`WordSet`](crate::words::WordSet).
 ///
-/// The field name is the word. The struct derives `Debug`, `Clone`, `Copy`,
-/// `Default` (all off), `PartialEq` and `Eq` itself, so derive none of them.
+/// The field name is the word; `$what` (the literal in parentheses) is what
+/// one word names, for the [`UnknownWord`](crate::words::UnknownWord) error.
+/// The struct derives `Debug`, `Clone`, `Copy`, `Default` (all off),
+/// `PartialEq` and `Eq` itself, so derive none of them.
 /// Doc comments on the struct and on each field are kept.
 ///
 /// # Examples
@@ -70,7 +94,7 @@ pub trait WordSet: Sized + Default {
 ///
 /// word_set! {
 ///     /// Which rooms the lights are on in.
-///     pub Rooms {
+///     pub Rooms ("room") {
 ///         /// The kitchen.
 ///         kitchen,
 ///         /// The hall.
@@ -82,13 +106,14 @@ pub trait WordSet: Sized + Default {
 /// assert!(on.hall && !on.kitchen);
 /// assert_eq!(on.words(), ["hall"]);
 /// assert_eq!(Rooms::WORDS, ["kitchen", "hall"]);
-/// assert_eq!(Rooms::from_words(["attic"]), Err("attic".to_string()));
+/// let err = Rooms::from_words(["attic"]).unwrap_err();
+/// assert_eq!((err.word.as_str(), err.what), ("attic", "room"));
 /// assert!(Rooms::NONE.is_empty());
 /// assert_eq!(Rooms::ALL.words(), ["kitchen", "hall"]);
 /// ```
 #[macro_export]
 macro_rules! word_set {
-    ($(#[$doc:meta])* $vis:vis $name:ident { $($(#[$fdoc:meta])* $field:ident),+ $(,)? }) => {
+    ($(#[$doc:meta])* $vis:vis $name:ident ($what:literal) { $($(#[$fdoc:meta])* $field:ident),+ $(,)? }) => {
         $(#[$doc])*
         #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
         $vis struct $name {
@@ -103,6 +128,7 @@ macro_rules! word_set {
         }
 
         impl $crate::words::WordSet for $name {
+            const WHAT: &'static str = $what;
             const WORDS: &'static [&'static str] = &[$(stringify!($field)),+];
 
             fn has(&self, word: &str) -> bool {
@@ -128,8 +154,9 @@ macro_rules! word_set {
 /// and the session file write the same word.
 ///
 /// `$what` (the literal in parentheses) names the setting in `FromStr`'s
-/// error: `unknown effort "huge" (off, low, ...)`. Serde reads and writes the
-/// bare word, and a wrong word fails with that same message.
+/// error, an [`UnknownWord`](crate::words::UnknownWord):
+/// `unknown effort "huge" (off, low, ...)`. Serde reads and writes the bare
+/// word, and a wrong word fails with that same message.
 ///
 /// The enum must derive `Clone` and `Copy` (`as_str` takes it by value). Do
 /// not derive `Serialize` or `Deserialize`: the macro implements both, through
@@ -156,10 +183,8 @@ macro_rules! word_set {
 /// assert_eq!(Volume::Quiet.to_string(), "quiet");
 /// assert_eq!("loud".parse::<Volume>(), Ok(Volume::Loud));
 /// assert_eq!(Volume::WORDS, ["quiet", "loud"]);
-/// assert_eq!(
-///     "shouty".parse::<Volume>().unwrap_err(),
-///     "unknown volume \"shouty\" (quiet, loud)"
-/// );
+/// let err = "shouty".parse::<Volume>().unwrap_err();
+/// assert_eq!((err.word.as_str(), err.expected), ("shouty", Volume::WORDS));
 /// assert_eq!(serde_json::to_string(&Volume::Loud).unwrap(), "\"loud\"");
 /// ```
 #[macro_export]
@@ -196,10 +221,10 @@ macro_rules! word_enum {
         }
 
         impl ::std::str::FromStr for $name {
-            type Err = String;
+            type Err = $crate::words::UnknownWord;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 Self::ALL.iter().copied().find(|v| v.as_str() == s).ok_or_else(|| {
-                    format!("unknown {} \"{s}\" ({})", $what, Self::WORDS.join(", "))
+                    $crate::words::UnknownWord { what: $what, word: s.to_string(), expected: Self::WORDS }
                 })
             }
         }

@@ -137,7 +137,7 @@ impl AgentHooks for BrainHost {
         &self,
         _agent: &mut Agent,
         _cancel: &CancellationToken,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if self.calls.fetch_add(1, Ordering::SeqCst) + 1 == self.pause_before_call {
             self.clock.pause_for(PAUSE_MS);
         }

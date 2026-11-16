@@ -121,7 +121,7 @@ pub struct Skill {
 crate::word_set! {
     /// Which skill dirs haest reads (`skills`). None of them is read unless the
     /// host says so.
-    pub SkillSources {
+    pub SkillSources ("skill source") {
         /// `~/.agents/skills` and every project level's `.agents/skills`.
         agents,
         /// `<config dir>/skills` and every project level's `.claude/skills`.

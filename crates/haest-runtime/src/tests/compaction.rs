@@ -9,7 +9,8 @@ use crate::{
     RuntimeHooks,
     haest::{
         Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
-        Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason, Tool, TurnEnd,
+        ModelError, Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason, Tool,
+        TurnEnd,
         core::ledger::{ConversationCaps, Ledger},
         core::provider::ProviderStream,
         core::testing::{ScriptedProvider, text_answer},
@@ -24,7 +25,7 @@ fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<M
         ConversationCaps::default(),
         hooks.clone(),
     )));
-    let resolve = move |_: &str| -> Result<ResolvedModel, String> {
+    let resolve = move |_: &str| -> Result<ResolvedModel, ModelError> {
         Ok(ResolvedModel {
             provider: provider.clone(),
             model: "m".into(),

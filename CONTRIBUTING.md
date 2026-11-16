@@ -15,6 +15,14 @@
   `SubagentParent` what the subagent hub builds a subagent from, `ModUi` how
   mods reach the human, and haest-runtime's `Ui` how the runtime does.
   `RuntimeHooks` is haest-runtime's own implementation of the loop's hooks.
+- **Errors are types.** No `Result<_, String>` and no `anyhow` in a library's
+  public signatures: a `thiserror` enum with one variant per case a caller can
+  act on, each carrying the values it names (`TaskError::UnknownId { id,
+  existing }`), and the source error when there is one. Its `Display` is the
+  text the human or model reads. A trait a host implements may return
+  `Box<dyn Error + Send + Sync>` when only the text matters to haest
+  (`AgentHooks::before_model_call`). A private parser may keep `String`.
+  Binaries (haest-cli) use `anyhow`.
 - **Wire-compatible serde.** Anything that lands in a session file or an NDJSON
   event keeps the TS haest's JSON shape (camelCase keys, same tags).
 - **Tests defend behaviour.** A test fails only when behaviour changed: never

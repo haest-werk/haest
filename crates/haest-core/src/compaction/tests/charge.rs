@@ -24,14 +24,12 @@ impl AgentHooks for CompactsFirst {
         &self,
         agent: &mut Agent,
         cancel: &CancellationToken,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if self.esc {
             agent.control().abort();
         }
-        compact(agent, cancel, &CFG)
-            .await
-            .map(drop)
-            .map_err(|e| e.to_string())
+        compact(agent, cancel, &CFG).await?;
+        Ok(())
     }
     fn turn_caps(&self, _: &str) -> Option<TurnCaps> {
         self.caps.clone()

@@ -11,8 +11,8 @@ use haest_core::{Agent, AgentDeps, AgentOptions, tool::Tool};
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AgentDirectory, AgentRef, MAIN, SpawnInput, SpawnOutcome, SubagentCaps, SubagentEvent,
-    SubagentParent,
+    AgentDirectory, AgentError, AgentRef, MAIN, SpawnInput, SpawnOutcome, SubagentCaps,
+    SubagentEvent, SubagentParent,
     members::{Due, Members, Status, run_id},
     run::{ChildHooks, ChildPrompt, Run, drive, subagent_note},
     tools::agent_tools,
@@ -279,7 +279,7 @@ impl AgentDirectory for SubagentHub {
         from: &AgentRef,
         input: SpawnInput,
         cancel: CancellationToken,
-    ) -> Result<SpawnOutcome, String> {
+    ) -> Result<SpawnOutcome, AgentError> {
         let run = {
             let mut members = self.members.lock().unwrap();
             let m = members.reserve(from, &input, &self.caps, &self.run_id)?;
@@ -321,7 +321,7 @@ impl AgentDirectory for SubagentHub {
         })
     }
 
-    fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, String> {
+    fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError> {
         let body = format!("[Message from agent \"{from}\"]\n\n{text}");
         if to == MAIN {
             self.parent.submit(body);
@@ -334,11 +334,11 @@ impl AgentDirectory for SubagentHub {
                 "Delivered to \"{to}\"; it reads it at its next step."
             ));
         }
-        let live = members.reachable();
+        let (name, running) = (to.to_string(), members.reachable());
         Err(if members.known(to) {
-            format!("agent \"{to}\" has finished; running: {live}")
+            AgentError::Finished { name, running }
         } else {
-            format!("no agent \"{to}\"; running: {live}")
+            AgentError::UnknownAgent { name, running }
         })
     }
 

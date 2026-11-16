@@ -10,7 +10,7 @@ use haest::{
     core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
     tools::{
         ReadIntercept,
-        agents::{AgentDirectory, AgentRef, SpawnInput, SpawnOutcome},
+        agents::{AgentDirectory, AgentError, AgentRef, SpawnInput, SpawnOutcome},
         read::text_output,
     },
 };
@@ -148,15 +148,15 @@ impl AgentDirectory for NodeAgents {
         from: &AgentRef,
         input: SpawnInput,
         _cancel: CancellationToken,
-    ) -> Result<SpawnOutcome, String> {
+    ) -> Result<SpawnOutcome, AgentError> {
         self.spawns.lock().unwrap().push((from.clone(), input));
         Ok(SpawnOutcome {
             text: SUB_ANSWER.into(),
             cost_usd: SUB_COST_USD,
         })
     }
-    fn deliver(&self, _from: &str, to: &str, _text: &str) -> Result<String, String> {
-        Err(format!("\"{to}\" is not running"))
+    fn deliver(&self, _from: &str, to: &str, _text: &str) -> Result<String, AgentError> {
+        Err(AgentError::Refused(format!("\"{to}\" is not running")))
     }
     fn stop(&self, _name: &str) -> bool {
         false

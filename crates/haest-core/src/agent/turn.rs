@@ -125,7 +125,7 @@ impl Agent {
             return Some(TurnEnd::new(StopReason::Aborted));
         }
         if let Err(why) = ready {
-            return Some(TurnEnd::with_error(StopReason::Error, why));
+            return Some(TurnEnd::with_error(StopReason::Error, why.to_string()));
         }
         if side != Usage::default()
             && let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref())
@@ -156,7 +156,7 @@ impl Agent {
     async fn call_model(&mut self, t: &mut Turn<'_>) -> AssistantMessage {
         let resolved = match self.deps.models.resolve(&self.model_spec) {
             Ok(r) => r,
-            Err(e) => return refuse(&self.model_spec, &e, t),
+            Err(e) => return refuse(&self.model_spec, &e.to_string(), t),
         };
         t.sink.emit(LoopEvent::ModelStart {
             provider: resolved.provider.id().to_string(),

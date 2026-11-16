@@ -115,11 +115,33 @@ pub struct TaskPatch {
     pub add_blocks: Vec<String>,
 }
 
-/// A refusal the model can correct (an unknown id, a self-dependency). The
-/// text is for the model: an unknown id lists the ids that exist.
+/// A refusal the model can correct. The text is for the model: an unknown id
+/// lists the ids that exist.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
-pub struct TaskError(pub String);
+pub enum TaskError {
+    /// No task has this id.
+    #[error("no task \"{id}\"; existing ids: {}", existing_ids(existing))]
+    UnknownId {
+        /// The id, as given.
+        id: String,
+        /// The ids there are, in list order.
+        existing: Vec<String>,
+    },
+    /// A task named as blocking itself.
+    #[error("task {id} cannot block itself")]
+    BlocksItself {
+        /// The task's id.
+        id: String,
+    },
+}
+
+fn existing_ids(ids: &[String]) -> String {
+    if ids.is_empty() {
+        "none".into()
+    } else {
+        ids.join(", ")
+    }
+}
 
 /// What [`TaskBoard::create`] needs to make a task.
 #[derive(Debug, Clone, Default)]
@@ -143,15 +165,13 @@ struct State {
 
 impl State {
     fn find(&self, id: &str) -> Result<usize, TaskError> {
-        self.tasks.iter().position(|t| t.id == id).ok_or_else(|| {
-            let ids: Vec<&str> = self.tasks.iter().map(|t| t.id.as_str()).collect();
-            let existing = if ids.is_empty() {
-                "none".to_string()
-            } else {
-                ids.join(", ")
-            };
-            TaskError(format!("no task \"{id}\"; existing ids: {existing}"))
-        })
+        self.tasks
+            .iter()
+            .position(|t| t.id == id)
+            .ok_or_else(|| TaskError::UnknownId {
+                id: id.into(),
+                existing: self.tasks.iter().map(|t| t.id.clone()).collect(),
+            })
     }
 
     /// `blocker` must finish before `blocked`. Kept on both ends, like Claude Code.
@@ -277,7 +297,7 @@ impl TaskBoard {
             for other in patch.add_blocked_by.iter().chain(&patch.add_blocks) {
                 s.find(other)?;
                 if other == id {
-                    return Err(TaskError(format!("task {id} cannot block itself")));
+                    return Err(TaskError::BlocksItself { id: id.into() });
                 }
             }
             if patch.status == Some(PatchStatus::Deleted) {

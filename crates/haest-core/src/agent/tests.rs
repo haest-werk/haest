@@ -9,6 +9,7 @@ use crate::{
     deps::AgentHooks,
     events::LoopEvent,
     messages::Message,
+    provider::ModelError,
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::ToolServices,
     workspace::ShutWorkspace,
@@ -163,8 +164,11 @@ async fn input_steered_mid_turn_lands_after_the_tool_results_in_the_same_turn() 
 
 #[tokio::test]
 async fn an_unknown_provider_ends_the_turn_as_an_error_not_a_panic() {
-    let resolve = |_: &str| -> Result<crate::provider::ResolvedModel, String> {
-        Err("unknown provider \"zzz\"".into())
+    let resolve = |_: &str| -> Result<crate::provider::ResolvedModel, ModelError> {
+        Err(ModelError::UnknownProvider {
+            provider: "zzz".into(),
+            known: Vec::new(),
+        })
     };
     let deps = AgentDeps::new(
         Arc::new(resolve),
@@ -206,7 +210,7 @@ impl AgentHooks for Compacting {
         &self,
         agent: &mut Agent,
         _: &CancellationToken,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let last = agent.history().last().cloned();
         agent.replace_history(last.into_iter().collect());
         Ok(())
@@ -218,7 +222,11 @@ struct Refusing;
 impl ToolServices for Refusing {}
 #[async_trait]
 impl AgentHooks for Refusing {
-    async fn before_model_call(&self, _: &mut Agent, _: &CancellationToken) -> Result<(), String> {
+    async fn before_model_call(
+        &self,
+        _: &mut Agent,
+        _: &CancellationToken,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Err("couldn't summarise the earlier conversation".into())
     }
 }

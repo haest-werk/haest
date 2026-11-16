@@ -43,7 +43,8 @@
 //! use async_trait::async_trait;
 //! use haest_core::{tool::ToolContext, workspace::ShutWorkspace};
 //! use haest_tools::agents::{
-//!     AgentDirectory, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome, agent_tools_with,
+//!     AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
+//!     agent_tools_with,
 //! };
 //! use serde_json::json;
 //! use tokio_util::sync::CancellationToken;
@@ -57,13 +58,13 @@
 //!         from: &AgentRef,
 //!         input: SpawnInput,
 //!         _cancel: CancellationToken,
-//!     ) -> Result<SpawnOutcome, String> {
+//!     ) -> Result<SpawnOutcome, AgentError> {
 //!         // Here the host would run `input.prompt` somewhere.
 //!         let text = format!("{} asked: {}", from.name, input.description);
 //!         Ok(SpawnOutcome { text, cost_usd: 0.01 })
 //!     }
-//!     fn deliver(&self, _from: &str, to: &str, _text: &str) -> Result<String, String> {
-//!         Err(format!("\"{to}\" is not running"))
+//!     fn deliver(&self, _from: &str, to: &str, _text: &str) -> Result<String, AgentError> {
+//!         Err(AgentError::UnknownAgent { name: to.into(), running: vec!["main".into()] })
 //!     }
 //!     fn stop(&self, _name: &str) -> bool {
 //!         false
@@ -163,6 +164,47 @@ pub struct AgentToolOptions {
     pub models: Option<String>,
 }
 
+/// An agent tool's refusal, for the model to correct: it goes back as an
+/// input error.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AgentError {
+    /// The caller already runs as deep as agents may nest.
+    #[error("agents may nest {max_depth} deep (HAEST_MAX_AGENT_DEPTH)")]
+    TooDeep {
+        /// How deep agents may nest ([`SubagentCaps::max_depth`]).
+        max_depth: u32,
+    },
+    /// As many subagents run as may at once.
+    #[error(
+        "{running} subagents are already running (HAEST_MAX_SUBAGENTS is {max}); wait for one, or StopAgent one"
+    )]
+    TooMany {
+        /// How many run now.
+        running: usize,
+        /// How many may ([`SubagentCaps::max_concurrent`]).
+        max: usize,
+    },
+    /// No agent of this conversation goes by the name.
+    #[error("no agent \"{name}\"; running: {}", running.join(", "))]
+    UnknownAgent {
+        /// The name, as given.
+        name: String,
+        /// Who a message can reach now: main, then the running subagents.
+        running: Vec<String>,
+    },
+    /// The agent has finished: nothing reaches it any more.
+    #[error("agent \"{name}\" has finished; running: {}", running.join(", "))]
+    Finished {
+        /// Its name.
+        name: String,
+        /// Who a message can reach now: main, then the running subagents.
+        running: Vec<String>,
+    },
+    /// A host's own refusal, its text for the model.
+    #[error("{0}")]
+    Refused(String),
+}
+
 /// What a spawn hands back to the caller's turn.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpawnOutcome {
@@ -172,8 +214,8 @@ pub struct SpawnOutcome {
     pub cost_usd: f64,
 }
 
-/// What the agent tools need from a hub. An Err is a refusal (a cap, an
-/// unknown name) the model corrects: it goes back as an input error.
+/// What the agent tools need from a hub. An Err is an [`AgentError`] (a cap,
+/// an unknown name) the model corrects: it goes back as an input error.
 ///
 /// [`SubagentHub`] is the default; the module docs implement one of a host's
 /// own.
@@ -187,10 +229,10 @@ pub trait AgentDirectory: Send + Sync {
         from: &AgentRef,
         input: SpawnInput,
         cancel: CancellationToken,
-    ) -> Result<SpawnOutcome, String>;
+    ) -> Result<SpawnOutcome, AgentError>;
     /// SendMessage: hand `text` from agent `from` to agent `to`, and say what
     /// to tell the sender. The SendMessage tool refuses `to == from` itself.
-    fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, String>;
+    fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError>;
     /// StopAgent: stop the agent `name`; false when it is not running.
     fn stop(&self, name: &str) -> bool;
 }

@@ -81,7 +81,7 @@ impl Tool for AgentTool {
             .hub
             .spawn(&self.me, spawn, ctx.cancel.clone())
             .await
-            .map_err(ToolError::Input)?;
+            .map_err(|e| ToolError::Input(e.to_string()))?;
         Ok(ToolOutput {
             content: out.text,
             child_cost_usd: Some(out.cost_usd),
@@ -125,7 +125,7 @@ impl Tool for SendMessageTool {
         let said = self
             .hub
             .deliver(&self.me.name, to, message)
-            .map_err(ToolError::Input)?;
+            .map_err(|e| ToolError::Input(e.to_string()))?;
         Ok(ToolOutput::text(said))
     }
 }

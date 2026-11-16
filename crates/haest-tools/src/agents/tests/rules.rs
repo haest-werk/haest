@@ -15,7 +15,7 @@ use super::{
     caps,
     support::{CALL_USD, Rig, now, say, spawns},
 };
-use crate::agents::{AgentDirectory, AgentRef};
+use crate::agents::{AgentDirectory, AgentError, AgentRef};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_childs_spend_counts_in_the_parents_turn_and_is_charged_to_the_ledger_once() {
@@ -64,8 +64,8 @@ async fn stop_ends_a_running_agent_and_the_post_office_refuses_who_is_not_runnin
         "a message it never read comes back with its answer"
     );
     let refused = |to: &str| r.hub.deliver(&main.name, to, "x").unwrap_err();
-    assert!(refused("slow").contains("finished"));
-    assert!(refused("ghost").contains("no agent"));
+    assert!(matches!(refused("slow"), AgentError::Finished { running, .. } if running == ["main"]));
+    assert!(matches!(refused("ghost"), AgentError::UnknownAgent { name, .. } if name == "ghost"));
 }
 
 // A one-shot host waits for background work before it exits. `running()` is

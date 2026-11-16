@@ -17,8 +17,14 @@ fn kinds_and_names_map_to_what_providers_take() {
 #[test]
 fn bytes_over_the_kind_limit_are_refused_with_a_reason() {
     let big = vec![0u8; 5 * 1024 * 1024 + 1];
-    assert!(media_from_bytes(&big, "image/png", "big.png").is_err());
-    assert!(media_from_bytes(b"x", "text/plain", "a.txt").is_err());
+    assert!(matches!(
+        media_from_bytes(&big, "image/png", "big.png"),
+        Err(MediaError::TooBig { size, limit, .. }) if size > limit
+    ));
+    assert!(matches!(
+        media_from_bytes(b"x", "text/plain", "a.txt"),
+        Err(MediaError::NotMedia { .. })
+    ));
     assert_eq!(png().data, "AQID");
 }
 

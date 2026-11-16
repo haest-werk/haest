@@ -13,7 +13,9 @@ use haest_core::{
     Agent, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, LoopEvent, Message,
     StopReason, ToolCall, Usage,
     ledger::{ConversationCaps, Ledger, LedgerHooks, LedgerSnapshot},
-    provider::{Effort, Provider, ProviderEvent, ProviderRequest, ProviderStream, ResolvedModel},
+    provider::{
+        Effort, ModelError, Provider, ProviderEvent, ProviderRequest, ProviderStream, ResolvedModel,
+    },
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
 };
 use serde_json::Value;
@@ -151,7 +153,7 @@ impl SubagentParent for FakeParent {
         let p = self.provider.clone();
         let models = move |spec: &str| {
             let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();
-            Ok::<_, String>(ResolvedModel {
+            Ok::<_, ModelError>(ResolvedModel {
                 provider: p.clone(),
                 model,
             })

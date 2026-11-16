@@ -179,7 +179,7 @@ async fn references(paths: Option<&Value>, ctx: &ToolContext) -> Result<Vec<Medi
             )));
         };
         let part = media_from_bytes(&fs.read(&path).await?, media_type, &file_name(&path));
-        out.push(part.map_err(ToolError::Input)?);
+        out.push(part.map_err(|e| ToolError::Input(e.to_string()))?);
     }
     Ok(out)
 }

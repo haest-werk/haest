@@ -242,7 +242,7 @@ impl AgentHooks for RuntimeHooks {
         &self,
         agent: &mut Agent,
         cancel: &CancellationToken,
-    ) -> Result<(), String> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if needs_compaction(agent.history(), &self.compaction_for(agent.model_spec())) {
             self.compact_now(agent, cancel, true).await?;
         }

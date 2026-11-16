@@ -209,7 +209,7 @@ pub mod prelude {
         UserMessage,
     };
     pub use crate::provider::{
-        Effort, ModelResolver, Provider, ProviderEvent, ProviderRequest, ResolvedModel,
+        Effort, ModelError, ModelResolver, Provider, ProviderEvent, ProviderRequest, ResolvedModel,
     };
     pub use crate::tool::{
         JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices, ToolSource,

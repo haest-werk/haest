@@ -31,7 +31,7 @@ mod tools;
 use std::sync::Arc;
 
 use haest::{
-    AgentDeps, ModelResolver, ResolvedModel, Workspace,
+    AgentDeps, ModelError, ModelResolver, ResolvedModel, Workspace,
     core::provider::parse_model_spec,
     core::tool::Tool,
     providers::{CompatFlavor, CompatOptions, CompatProvider, RetryPolicy},
@@ -83,9 +83,11 @@ pub fn models(gateway: Arc<Gateway>) -> Arc<dyn ModelResolver> {
     Arc::new(move |spec: &str| {
         let (id, model) = parse_model_spec(spec)?;
         if id != "gateway" {
-            return Err(format!(
-                "brain runs every model through its gateway, not \"{id}\""
-            ));
+            // brain runs every model through its gateway.
+            return Err(ModelError::UnknownProvider {
+                provider: id.into(),
+                known: vec!["gateway".into()],
+            });
         }
         Ok(ResolvedModel {
             provider: provider.clone(),

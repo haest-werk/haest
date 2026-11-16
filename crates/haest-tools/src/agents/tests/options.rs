@@ -9,8 +9,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     agents::{
-        AgentDirectory, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome, SubagentTypes,
-        agent_tools, agent_tools_with,
+        AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
+        SubagentTypes, agent_tools, agent_tools_with,
     },
     testkit::{input, shut_ctx},
 };
@@ -26,14 +26,14 @@ impl AgentDirectory for Recording {
         _from: &AgentRef,
         input: SpawnInput,
         _cancel: CancellationToken,
-    ) -> Result<SpawnOutcome, String> {
+    ) -> Result<SpawnOutcome, AgentError> {
         self.0.lock().unwrap().push(input);
         Ok(SpawnOutcome {
             text: "done".into(),
             cost_usd: 0.0,
         })
     }
-    fn deliver(&self, _from: &str, _to: &str, _text: &str) -> Result<String, String> {
+    fn deliver(&self, _from: &str, _to: &str, _text: &str) -> Result<String, AgentError> {
         Ok(String::new())
     }
     fn stop(&self, _name: &str) -> bool {

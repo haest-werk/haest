@@ -1,6 +1,9 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use haest_core::{fs::MemFs, provider::ModelResolver};
+use haest_core::{
+    fs::MemFs,
+    provider::{ModelError, ModelResolver},
+};
 use serde_json::json;
 
 use super::*;
@@ -31,15 +34,23 @@ fn registry(keys: Arc<dyn KeySource>, custom: CustomProviders) -> ProviderRegist
 }
 
 fn err(reg: &ProviderRegistry, spec: &str) -> String {
-    reg.resolve(spec).expect_err(spec)
+    reg.resolve(spec).expect_err(spec).to_string()
 }
 
 #[test]
 fn built_ins_need_their_key_and_the_error_names_it() {
     let reg = registry(keys(&[]), CustomProviders::new());
-    assert!(err(&reg, "openrouter:x/y").contains("OPENROUTER_API_KEY"));
-    assert!(err(&reg, "nope:m").contains("nope"));
-    assert!(err(&reg, "no-colon").contains("<provider>:<model>"));
+    let missing = reg.resolve("openrouter:x/y").unwrap_err();
+    assert!(matches!(missing, ModelError::Unavailable(_)));
+    assert!(missing.to_string().contains("OPENROUTER_API_KEY"));
+    assert!(matches!(
+        reg.resolve("nope:m"),
+        Err(ModelError::UnknownProvider { provider, known }) if provider == "nope" && known.contains(&"openrouter".to_string())
+    ));
+    assert!(matches!(
+        reg.resolve("no-colon"),
+        Err(ModelError::BadSpec { .. })
+    ));
 }
 
 #[test]

@@ -238,10 +238,36 @@ impl fmt::Debug for ResolvedModel {
     }
 }
 
+/// Why a model spec cannot be served: what [`ModelResolver::resolve`] and
+/// [`parse_model_spec`] refuse. The loop shows its text to the human.
+#[derive(Debug, thiserror::Error)]
+pub enum ModelError {
+    /// The spec is not `<provider>:<model>`.
+    #[error(
+        "model \"{spec}\" must be \"<provider>:<model>\", e.g. openrouter:anthropic/claude-sonnet-5"
+    )]
+    BadSpec {
+        /// The spec, as written.
+        spec: String,
+    },
+    /// No provider goes by the spec's provider part.
+    #[error("unknown provider \"{provider}\". Known: {}", known.join(", "))]
+    UnknownProvider {
+        /// The provider part, as written.
+        provider: String,
+        /// The providers there are.
+        known: Vec<String>,
+    },
+    /// The provider is known but cannot be built: a key it needs is not set,
+    /// its configuration is bad. Its text is the resolver's own.
+    #[error(transparent)]
+    Unavailable(Box<dyn std::error::Error + Send + Sync>),
+}
+
 /// Turns a `provider:model` spec into a live provider. The loop asks it before
 /// every model call, so a model switch mid-conversation takes effect at once.
 ///
-/// Any `Fn(&str) -> Result<ResolvedModel, String>` is one; `haest-providers`'
+/// Any `Fn(&str) -> Result<ResolvedModel, ModelError>` is one; `haest-providers`'
 /// registry is the full one.
 ///
 /// # Examples
@@ -249,7 +275,7 @@ impl fmt::Debug for ResolvedModel {
 /// ```
 /// use std::sync::Arc;
 ///
-/// use haest_core::{ModelResolver, Provider, ResolvedModel, provider::parse_model_spec};
+/// use haest_core::{ModelError, ModelResolver, Provider, ResolvedModel, provider::parse_model_spec};
 /// # use haest_core::{ProviderRequest, provider::ProviderStream};
 /// # struct Echo;
 /// # impl Provider for Echo {
@@ -258,31 +284,35 @@ impl fmt::Debug for ResolvedModel {
 /// # }
 ///
 /// let echo: Arc<dyn Provider> = Arc::new(Echo);
-/// let resolver = move |spec: &str| -> Result<ResolvedModel, String> {
-///     match parse_model_spec(spec)? {
-///         ("echo", model) => Ok(ResolvedModel { provider: echo.clone(), model: model.into() }),
-///         (other, _) => Err(format!("no provider named {other}")),
-///     }
+/// let resolver = move |spec: &str| match parse_model_spec(spec)? {
+///     ("echo", model) => Ok(ResolvedModel { provider: echo.clone(), model: model.into() }),
+///     (other, _) => Err(ModelError::UnknownProvider {
+///         provider: other.into(),
+///         known: vec!["echo".into()],
+///     }),
 /// };
 ///
 /// assert_eq!(resolver.resolve("echo:echo-1").unwrap().model, "echo-1");
-/// assert!(resolver.resolve("acme:big").is_err());
+/// assert!(matches!(
+///     resolver.resolve("acme:big"),
+///     Err(ModelError::UnknownProvider { provider, .. }) if provider == "acme"
+/// ));
 /// ```
 pub trait ModelResolver: Send + Sync {
     /// The provider and model id for `spec`.
     ///
     /// # Errors
     ///
-    /// Why `spec` cannot be served (a bad spec, an unknown provider, a missing
-    /// key), shown to the human as is.
-    fn resolve(&self, spec: &str) -> Result<ResolvedModel, String>;
+    /// [`ModelError`]: a bad spec, an unknown provider, one that cannot be
+    /// built (a missing key).
+    fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError>;
 }
 
 impl<F> ModelResolver for F
 where
-    F: Fn(&str) -> Result<ResolvedModel, String> + Send + Sync,
+    F: Fn(&str) -> Result<ResolvedModel, ModelError> + Send + Sync,
 {
-    fn resolve(&self, spec: &str) -> Result<ResolvedModel, String> {
+    fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
         self(spec)
     }
 }
@@ -293,13 +323,11 @@ where
 ///
 /// # Errors
 ///
-/// A message for the human when there is no colon or nothing before it.
-pub fn parse_model_spec(spec: &str) -> Result<(&str, &str), String> {
+/// [`ModelError::BadSpec`] when there is no colon or nothing before it.
+pub fn parse_model_spec(spec: &str) -> Result<(&str, &str), ModelError> {
     match spec.find(':') {
         Some(i) if i > 0 => Ok((&spec[..i], &spec[i + 1..])),
-        _ => Err(format!(
-            "model \"{spec}\" must be \"<provider>:<model>\", e.g. openrouter:anthropic/claude-sonnet-5"
-        )),
+        _ => Err(ModelError::BadSpec { spec: spec.into() }),
     }
 }
 
@@ -315,7 +343,11 @@ mod tests {
             parse_model_spec("openrouter:x/y:free").unwrap(),
             ("openrouter", "x/y:free")
         );
-        assert!(parse_model_spec("no-provider").is_err());
-        assert!(parse_model_spec(":model").is_err());
+        for bad in ["no-provider", ":model"] {
+            assert!(matches!(
+                parse_model_spec(bad),
+                Err(ModelError::BadSpec { spec }) if spec == bad
+            ));
+        }
     }
 }

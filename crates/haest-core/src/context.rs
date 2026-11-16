@@ -120,7 +120,7 @@ pub fn project_chain(cwd: &Path, home: &Path) -> Vec<PathBuf> {
 
 crate::word_set! {
     /// Which instruction files haest reads (`context`). None unless the host says so.
-    pub ContextSources {
+    pub ContextSources ("instruction source") {
         /// `AGENTS.md`: `~/.agents/AGENTS.md`, then every dir down to cwd.
         agents,
         /// Claude Code's: `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`

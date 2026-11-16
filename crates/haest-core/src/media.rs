@@ -16,7 +16,7 @@
 //! # Examples
 //!
 //! ```
-//! use haest_core::media::{media_from_bytes, media_type_from_name};
+//! use haest_core::media::{MediaError, media_from_bytes, media_type_from_name};
 //!
 //! let png = [0x89, b'P', b'N', b'G'];
 //! let media_type = media_type_from_name("shot.png").unwrap();
@@ -25,7 +25,10 @@
 //!
 //! // Too big for its kind: refused with a reason, before anything is sent.
 //! let huge = vec![0u8; 6 * 1024 * 1024];
-//! assert!(media_from_bytes(&huge, "image/png", "huge.png").is_err());
+//! assert!(matches!(
+//!     media_from_bytes(&huge, "image/png", "huge.png"),
+//!     Err(MediaError::TooBig { .. })
+//! ));
 //! ```
 
 use std::collections::HashSet;
@@ -112,27 +115,57 @@ fn kb(bytes: usize) -> String {
     format!("{} KB", ((bytes as f64 / 1024.0).round() as usize).max(1))
 }
 
+/// Why bytes cannot be a media part: what [`media_from_bytes`] refuses. Its
+/// text is worded for the model, so a tool returns it as is.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MediaError {
+    /// The media type is not one haest sends to a model.
+    #[error("{name} ({media_type}) is not a media type haest can send to a model")]
+    NotMedia {
+        /// The part's name.
+        name: String,
+        /// Its media type, as given.
+        media_type: String,
+    },
+    /// Over the limit for its kind.
+    #[error("{name} is {}; the limit for {} input is {}", kb(*size), kind.as_str(), kb(*limit))]
+    TooBig {
+        /// The part's name.
+        name: String,
+        /// Its kind.
+        kind: MediaKind,
+        /// Its size in bytes.
+        size: usize,
+        /// The kind's limit in bytes.
+        limit: usize,
+    },
+}
+
 /// A media part holding `bytes` (base64-encoded), named `name`.
 ///
 /// # Errors
 ///
-/// The reason these bytes cannot be a part, worded for the model (a tool
-/// returns it as is): `media_type` is not one haest sends as media, or
-/// the bytes are over the kind's limit (5 MB for an image, Anthropic's cap;
-/// 20 MB for the rest).
-pub fn media_from_bytes(bytes: &[u8], media_type: &str, name: &str) -> Result<MediaPart, String> {
+/// [`MediaError::NotMedia`] when `media_type` is not one haest sends as
+/// media, [`MediaError::TooBig`] when the bytes are over the kind's limit
+/// (5 MB for an image, Anthropic's cap; 20 MB for the rest).
+pub fn media_from_bytes(
+    bytes: &[u8],
+    media_type: &str,
+    name: &str,
+) -> Result<MediaPart, MediaError> {
     let Some(kind) = media_kind_of(media_type) else {
-        return Err(format!(
-            "{name} ({media_type}) is not a media type haest can send to a model"
-        ));
+        return Err(MediaError::NotMedia {
+            name: name.into(),
+            media_type: media_type.into(),
+        });
     };
     if bytes.len() > max_bytes(kind) {
-        return Err(format!(
-            "{name} is {}; the limit for {} input is {}",
-            kb(bytes.len()),
-            kind.as_str(),
-            kb(max_bytes(kind))
-        ));
+        return Err(MediaError::TooBig {
+            name: name.into(),
+            kind,
+            size: bytes.len(),
+            limit: max_bytes(kind),
+        });
     }
     Ok(MediaPart {
         kind,
