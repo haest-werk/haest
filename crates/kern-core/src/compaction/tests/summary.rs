@@ -56,7 +56,7 @@ async fn a_cancelled_summary_is_never_committed() {
         });
         let res = compact(&mut agent, &CancellationToken::new(), &CFG).await;
         assert!(
-            matches!(res, Err(CompactionError::Failed(_))),
+            matches!(res, Err(CompactionError::Failed(..))),
             "{stop_reason:?}: {res:?}"
         );
         assert_eq!(agent.messages, history(), "{stop_reason:?}");
@@ -74,7 +74,7 @@ async fn a_summary_stream_that_died_mid_way_is_not_a_summary() {
     );
 
     let (res, agent) = compact_on(died("The user wa"), died("Summ")).await;
-    assert!(matches!(res, Err(CompactionError::Failed(_))), "{res:?}");
+    assert!(matches!(res, Err(CompactionError::Failed(..))), "{res:?}");
     assert_eq!(agent.messages, history());
 }
 
@@ -82,7 +82,7 @@ async fn a_summary_stream_that_died_mid_way_is_not_a_summary() {
 async fn a_summary_cut_off_at_its_token_limit_is_not_a_summary() {
     let cut = || ended("The user asked for", StopReason::MaxTokens);
     let (res, agent) = compact_on(cut(), cut()).await;
-    assert!(matches!(res, Err(CompactionError::Failed(_))), "{res:?}");
+    assert!(matches!(res, Err(CompactionError::Failed(..))), "{res:?}");
     assert_eq!(agent.messages, history());
 }
 
@@ -103,6 +103,6 @@ async fn a_warm_reply_that_calls_a_tool_is_not_a_summary() {
     );
 
     let (res, agent) = compact_on(warm.clone(), warm).await;
-    assert!(matches!(res, Err(CompactionError::Failed(_))), "{res:?}");
+    assert!(matches!(res, Err(CompactionError::Failed(..))), "{res:?}");
     assert_eq!(agent.messages, history());
 }

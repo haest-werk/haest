@@ -205,6 +205,8 @@ async fn summarize(
     if let (Err(cold_why), Err(warm_why)) = (&mut cold.text, &warm.text) {
         *cold_why = format!("{cold_why} (the warm request: {warm_why})");
     }
+    // The cold call came after the warm one: both were paid for.
+    cold.usage.add(&warm.usage);
     Ok((cold, SummaryPath::Cold))
 }
 
@@ -214,22 +216,38 @@ pub struct CompactionResult {
     /// Messages kept verbatim after the summary.
     pub kept: usize,
     pub path: SummaryPath,
-    /// What the summary call cost (the caller charges it).
+    /// What every summary call cost, the warm one too when the cold one wrote
+    /// it. Already counted toward the running turn's caps; the caller charges
+    /// it to the conversation's ledger.
     pub usage: Usage,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompactionError {
-    /// The agent's model spec resolves to no provider.
+    /// The agent's model spec resolves to no provider (no call was made).
     #[error("{0}")]
     Model(String),
-    /// Neither path produced a summary, or the run was cancelled; history is untouched.
+    /// Neither path produced a summary, or the run was cancelled; history is
+    /// untouched. Why, and what the calls made cost (see [`Self::usage`]).
     #[error("compaction summary failed: {0}")]
-    Failed(String),
+    Failed(String, Usage),
+}
+
+impl CompactionError {
+    /// What the summary calls cost before it failed: a failure is paid for too.
+    /// Already counted toward the running turn's caps; the caller charges it to
+    /// the conversation's ledger.
+    pub fn usage(&self) -> Usage {
+        match self {
+            CompactionError::Model(_) => Usage::default(),
+            CompactionError::Failed(_, usage) => usage.clone(),
+        }
+    }
 }
 
 /// Compact in place. Returns the summary, how many messages were kept and how it
 /// was written, or None if there is nothing to cut. On error history is untouched.
+/// Every call it makes counts toward the running turn's caps, success or not.
 pub async fn compact(
     agent: &mut Agent,
     cancel: &CancellationToken,
@@ -241,7 +259,11 @@ pub async fn compact(
     }
     let kept = agent.messages.len() - cut;
     let (res, path) = summarize(agent, &agent.messages[..cut], kept, cancel).await?;
-    let summary = res.text.map_err(CompactionError::Failed)?;
+    agent.spent_outside_the_loop(&res.usage);
+    let summary = match res.text {
+        Ok(summary) => summary,
+        Err(why) => return Err(CompactionError::Failed(why, res.usage)),
+    };
     agent
         .messages
         .splice(..cut, [compaction_summary_message(&summary)]);

@@ -25,7 +25,7 @@ use crate::{
     guard::TurnGuard,
     limits::TurnLimits,
     media::fit_for_model,
-    messages::{Message, StopReason},
+    messages::{Message, StopReason, Usage},
     provider::Effort,
     request_prefix::{RequestPrefix, build_request_prefix},
 };
@@ -118,6 +118,9 @@ pub struct Agent {
     pub effort: Option<Effort>,
     pub(crate) deps: AgentDeps,
     pub(crate) control: AgentControl,
+    /// Model calls made for this conversation outside the loop's own (the
+    /// compaction summary in a hook) since the running turn last looked.
+    side_spend: Usage,
 }
 
 impl Agent {
@@ -128,7 +131,19 @@ impl Agent {
             effort: opts.effort,
             deps,
             control: AgentControl::default(),
+            side_spend: Usage::default(),
         }
+    }
+
+    /// A model call made for this conversation outside the loop (compaction's
+    /// summary): it counts toward the running turn's caps before its next model call.
+    pub(crate) fn spent_outside_the_loop(&mut self, usage: &Usage) {
+        self.side_spend.add(usage);
+    }
+
+    /// What was spent outside the loop since the last look.
+    pub(crate) fn take_side_spend(&mut self) -> Usage {
+        std::mem::take(&mut self.side_spend)
     }
 
     pub fn deps(&self) -> &AgentDeps {
@@ -160,6 +175,8 @@ impl Agent {
             }
         };
         let _running = Running(self.control.clone());
+        // Spent between turns (a /compact) belongs to no turn.
+        self.take_side_spend();
         let mut turn = Turn::new(cancel, self.guard(), sink);
         self.add_user(input, &mut turn).await;
         let end = self.steps(&mut turn).await;

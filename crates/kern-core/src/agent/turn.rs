@@ -110,14 +110,22 @@ impl Agent {
     /// One model call and the tools it asked for. How the turn ends, or None to go on.
     async fn step(&mut self, t: &mut Turn<'_>) -> Option<TurnEnd> {
         let cancel = t.cancel.clone();
-        if let Err(why) = self
+        let ready = self
             .deps
             .hooks
             .clone()
             .before_model_call(self, &cancel)
-            .await
-        {
+            .await;
+        // A summary the hook paid for counts toward this turn, and may stop it.
+        let side = self.take_side_spend();
+        t.usage.add(&side);
+        if let Err(why) = ready {
             return Some(TurnEnd::with_error(StopReason::Error, why));
+        }
+        if side != Usage::default()
+            && let Some(over) = t.guard.stop(&t.usage, self.limits().as_ref())
+        {
+            return Some(TurnEnd::with_error(StopReason::MaxTokens, over));
         }
         let msg = self.call_model(t).await;
         t.usage.add(&msg.usage);

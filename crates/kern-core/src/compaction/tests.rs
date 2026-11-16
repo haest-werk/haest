@@ -12,6 +12,7 @@ use crate::{
     tool::JsonMap,
 };
 
+mod charge;
 mod summary;
 
 fn assistant(input: u64) -> Message {
@@ -223,7 +224,7 @@ async fn both_paths_empty_is_an_error_and_leaves_history_untouched() {
     let p = ScriptedProvider::new([empty_answer(), empty_answer()]);
     let mut agent = agent_with(&p);
     let err = compact(&mut agent, &CancellationToken::new(), &CFG).await;
-    assert!(matches!(err, Err(CompactionError::Failed(_))));
+    assert!(matches!(err, Err(CompactionError::Failed(..))));
     assert_eq!(agent.messages, history());
 }
 
