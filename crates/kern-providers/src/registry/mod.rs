@@ -121,44 +121,37 @@ impl ProviderRegistry {
     }
 
     fn build(&self, name: &str) -> Result<Arc<dyn Provider>, ProviderConfigError> {
+        let keys = self.keys.as_ref();
         if let Some(raw) = self.custom.get(name) {
             let cfg = CustomProviderConfig::from_json(name, raw)?;
-            return Ok(self.build_custom(name, &cfg));
+            return Ok(match cfg.dialect {
+                Dialect::Anthropic => self.anthropic(AnthropicOptions {
+                    api_key: cfg.api_key(keys),
+                    base_url: cfg.base_url.clone(),
+                    headers: cfg.headers.clone(),
+                }),
+                Dialect::OpenAi => self.compat(custom_compat_options(name, &cfg, keys)),
+            });
         }
-        let keys = self.keys.as_ref();
-        let t = self.opts.transport.clone();
-        let retry = self.opts.retry.clone();
         Ok(match name {
-            "anthropic" => Arc::new(
-                AnthropicProvider::new(
-                    AnthropicOptions {
-                        api_key: need(keys, "ANTHROPIC_API_KEY", name)?,
-                        base_url: keys.key("ANTHROPIC_BASE_URL"),
-                        headers: Vec::new(),
-                    },
-                    t,
-                )
-                .with_retry(retry),
-            ),
+            "anthropic" => self.anthropic(AnthropicOptions {
+                api_key: need(keys, "ANTHROPIC_API_KEY", name)?,
+                base_url: keys.key("ANTHROPIC_BASE_URL"),
+                headers: Vec::new(),
+            }),
             // Responses, not Chat Completions: OpenAI refuses function tools + reasoning effort there.
-            "openai" => Arc::new(
-                ResponsesProvider::new(
-                    ResponsesOptions {
-                        id: "openai".into(),
-                        api_key: need(keys, "OPENAI_API_KEY", name)?,
-                        base_url: keys.key("OPENAI_BASE_URL"),
-                        headers: Vec::new(),
-                    },
-                    t,
-                )
-                .with_retry(retry),
-            ),
-            "openrouter" => {
-                Arc::new(CompatProvider::new(self.openrouter_options()?, t).with_retry(retry))
+            "openai" => {
+                let opts = ResponsesOptions {
+                    id: "openai".into(),
+                    api_key: need(keys, "OPENAI_API_KEY", name)?,
+                    base_url: keys.key("OPENAI_BASE_URL"),
+                    headers: Vec::new(),
+                };
+                let (t, retry) = (self.opts.transport.clone(), self.opts.retry.clone());
+                Arc::new(ResponsesProvider::new(opts, t).with_retry(retry))
             }
-            "paperinstruments" => {
-                Arc::new(CompatProvider::new(paper_instruments_options(keys)?, t).with_retry(retry))
-            }
+            "openrouter" => self.compat(self.openrouter_options()?),
+            "paperinstruments" => self.compat(paper_instruments_options(keys)?),
             _ => {
                 return Err(ProviderConfigError(format!(
                     "unknown provider \"{name}\". Known: {}",
@@ -166,6 +159,16 @@ impl ProviderRegistry {
                 )));
             }
         })
+    }
+
+    fn anthropic(&self, opts: AnthropicOptions) -> Arc<dyn Provider> {
+        let (t, retry) = (self.opts.transport.clone(), self.opts.retry.clone());
+        Arc::new(AnthropicProvider::new(opts, t).with_retry(retry))
+    }
+
+    fn compat(&self, opts: CompatOptions) -> Arc<dyn Provider> {
+        let (t, retry) = (self.opts.transport.clone(), self.opts.retry.clone());
+        Arc::new(CompatProvider::new(opts, t).with_retry(retry))
     }
 
     fn openrouter_options(&self) -> Result<CompatOptions, ProviderConfigError> {
@@ -184,28 +187,6 @@ impl ProviderRegistry {
         }
         opts.routing = self.opts.routing.clone();
         Ok(opts)
-    }
-
-    fn build_custom(&self, name: &str, cfg: &CustomProviderConfig) -> Arc<dyn Provider> {
-        let t = self.opts.transport.clone();
-        let retry = self.opts.retry.clone();
-        match cfg.dialect {
-            Dialect::Anthropic => Arc::new(
-                AnthropicProvider::new(
-                    AnthropicOptions {
-                        api_key: cfg.api_key(self.keys.as_ref()),
-                        base_url: cfg.base_url.clone(),
-                        headers: cfg.headers.clone(),
-                    },
-                    t,
-                )
-                .with_retry(retry),
-            ),
-            Dialect::OpenAi => Arc::new(
-                CompatProvider::new(custom_compat_options(name, cfg, self.keys.as_ref()), t)
-                    .with_retry(retry),
-            ),
-        }
     }
 }
 

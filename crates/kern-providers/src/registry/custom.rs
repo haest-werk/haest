@@ -164,19 +164,19 @@ pub type CustomProviders = BTreeMap<String, Value>;
 pub async fn load_custom_providers(
     fs: &dyn Fs,
     config_dir: &Path,
-) -> Result<BTreeMap<String, Value>, ProviderConfigError> {
+) -> Result<CustomProviders, ProviderConfigError> {
     let file = config_dir.join("providers.json");
     let Some(text) = read_text_if_present(fs, &file)
         .await
         .map_err(|e| ProviderConfigError(format!("{}: {e}", file.display())))?
     else {
-        return Ok(BTreeMap::new());
+        return Ok(CustomProviders::new());
     };
     let parsed: Value = serde_json::from_str(&text)
         .map_err(|e| ProviderConfigError(format!("{} is not valid JSON: {e}", file.display())))?;
     Ok(match parsed {
         Value::Object(map) => map.into_iter().collect(),
-        _ => BTreeMap::new(),
+        _ => CustomProviders::new(),
     })
 }
 
