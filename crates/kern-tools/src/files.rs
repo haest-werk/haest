@@ -3,11 +3,11 @@
 //! frontier model has seen millions of those calls, and hosts' legacy renderers
 //! already understand them.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use async_trait::async_trait;
 use kern_core::{
-    fs::{Fs, ensure_dir},
+    fs::ensure_dir,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_bool, req_str},
 };
 use serde_json::{Value, json};
@@ -105,72 +105,59 @@ impl Tool for EditTool {
         )
     }
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        let path = ctx.resolve(req_str(&input, "file_path")?);
+        let old = req_str(&input, "old_string")?;
+        let new = any_str(&input, "new_string")?;
+        if old == new {
+            return Err(ToolError::Input(
+                "old_string and new_string are identical; nothing to do".into(),
+            ));
+        }
         let fs = ctx.workspace.fs();
-        let edit = read_edit_input(fs.as_ref(), &input, &ctx.cwd).await?;
-        let text = fs.read_to_string(&edit.path).await?;
-        let (replaced, count) = replace_checked(&text, &edit)?;
-        fs.write(&edit.path, replaced.as_bytes()).await?;
+        if !fs.exists(&path).await {
+            return Err(ToolError::Input(format!(
+                "File does not exist: {}. Use Write to create it.",
+                path.display()
+            )));
+        }
+        let text = fs.read_to_string(&path).await?;
+        let all = opt_bool(&input, "replace_all");
+        let (replaced, count) = replace_checked(&text, old, new, all, &path)?;
+        fs.write(&path, replaced.as_bytes()).await?;
         let s = if count == 1 { "" } else { "s" };
         Ok(ToolOutput::text(format!(
             "Edited {} ({count} replacement{s})",
-            edit.path.display()
+            path.display()
         )))
     }
 }
 
-struct EditInput<'a> {
-    path: PathBuf,
-    old: &'a str,
-    new: &'a str,
-    all: bool,
-}
-
-async fn read_edit_input<'a>(
-    fs: &dyn Fs,
-    input: &'a JsonMap,
-    cwd: &Path,
-) -> Result<EditInput<'a>, ToolError> {
-    let path = kern_core::fs::resolve_path(cwd, req_str(input, "file_path")?);
-    let old = req_str(input, "old_string")?;
-    let new = any_str(input, "new_string")?;
-    if old == new {
-        return Err(ToolError::Input(
-            "old_string and new_string are identical; nothing to do".into(),
-        ));
-    }
-    if !fs.exists(&path).await {
-        return Err(ToolError::Input(format!(
-            "File does not exist: {}. Use Write to create it.",
-            path.display()
-        )));
-    }
-    Ok(EditInput {
-        path,
-        old,
-        new,
-        all: opt_bool(input, "replace_all"),
-    })
-}
-
 /// Apply the edit, refusing a missing or ambiguous match with a message the model
 /// can act on. The replacement is literal: `$&` and friends mean nothing here.
-fn replace_checked(text: &str, e: &EditInput) -> Result<(String, usize), ToolError> {
-    let count = text.matches(e.old).count();
-    let shown = e.path.display();
+fn replace_checked(
+    text: &str,
+    old: &str,
+    new: &str,
+    all: bool,
+    path: &Path,
+) -> Result<(String, usize), ToolError> {
+    let count = text.matches(old).count();
+    let shown = path.display();
     if count == 0 {
         return Err(ToolError::Input(format!(
             "old_string not found in {shown}. It must match exactly, including whitespace. Read the file again and copy the text."
         )));
     }
-    if count > 1 && !e.all {
+    if count > 1 && !all {
         return Err(ToolError::Input(format!(
             "old_string occurs {count} times in {shown}. Add surrounding context to make it unique, or set replace_all."
         )));
     }
-    if e.all {
-        return Ok((text.replace(e.old, e.new), count));
-    }
-    Ok((text.replacen(e.old, e.new, 1), 1))
+    Ok(if all {
+        (text.replace(old, new), count)
+    } else {
+        (text.replacen(old, new, 1), 1)
+    })
 }
 
 #[cfg(test)]
