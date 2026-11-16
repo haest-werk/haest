@@ -133,7 +133,12 @@ impl Members {
             None => format!("{}-{seq}", slug(&input.description)),
         };
         if name == MAIN || self.known(&name) {
-            name = format!("{name}-{seq}");
+            // `{name}-{seq}` may be taken too (an agent asked to be "x-3"): count on.
+            let base = name;
+            name = (seq..)
+                .map(|n| format!("{base}-{n}"))
+                .find(|n| !self.known(n))
+                .expect("a u64 of suffixes outlasts the names ever used");
         }
         self.live.push(Member {
             id: format!("kern-{name}-{run_id}"),
@@ -168,5 +173,51 @@ impl Members {
             }
             self.finished.insert(m.me.name);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn named(name: &str) -> SpawnInput {
+        SpawnInput {
+            description: "work".into(),
+            prompt: String::new(),
+            name: Some(name.into()),
+            model: None,
+            background: true,
+            subagent_type: None,
+        }
+    }
+
+    fn reserve(members: &mut Members, name: &str) -> String {
+        let caps = SubagentCaps {
+            max_concurrent: 16,
+            ..SubagentCaps::default()
+        };
+        let m = members.reserve(&AgentRef::main(), &named(name), &caps, "r");
+        m.unwrap().me.name.clone()
+    }
+
+    #[test]
+    fn a_name_is_unique_even_when_the_suffix_it_would_get_was_asked_for() {
+        let mut members = Members::default();
+        // seq 1, 2, 3: the third "x" would become "x-3", which the first holds.
+        let names: Vec<_> = ["x-3", "x", "x", "x-4", "x"]
+            .map(|n| reserve(&mut members, n))
+            .into();
+        let unique: HashSet<_> = names.iter().collect();
+        assert_eq!(unique.len(), names.len(), "{names:?}");
+        // A finished agent's name stays taken too.
+        members.leave("x-3");
+        let again = reserve(&mut members, "x-3");
+        assert!(!names.contains(&again), "{again} reused");
+        // Each name reaches its own member: leaving one leaves exactly it.
+        let live = |m: &Members| m.live.iter().map(|m| m.me.name.clone()).collect::<Vec<_>>();
+        let before = live(&members);
+        members.leave(&names[1]);
+        assert_eq!(live(&members).len(), before.len() - 1);
+        assert!(!live(&members).contains(&names[1]));
     }
 }
