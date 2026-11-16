@@ -83,3 +83,12 @@ fn relative_paths_resolve_from_cwd() {
     );
     assert_eq!(resolve_path(Path::new("/p"), "/abs"), PathBuf::from("/abs"));
 }
+
+#[tokio::test]
+async fn ensure_dir_makes_the_dir_and_refuses_a_file_in_its_place() {
+    let fs = MemFs::with_files([("/p/file", "x")]);
+    ensure_dir(&fs, Path::new("/p/a/b")).await.unwrap();
+    ensure_dir(&fs, Path::new("/p/a/b")).await.unwrap();
+    assert_eq!(fs.stat(Path::new("/p/a/b")).await.unwrap().kind, FileKind::Dir);
+    assert!(ensure_dir(&fs, Path::new("/p/file")).await.is_err());
+}

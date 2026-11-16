@@ -271,20 +271,23 @@ pub trait Fs: Send + Sync {
     }
 }
 
-/// Make sure a directory is at `path`: [`Fs::mkdir`] with `recursive`, skipped
-/// when anything is already there.
-///
-/// A FILE at `path` counts as there too: the call returns `Ok` and no
-/// directory is made, so a later write under it fails instead.
+/// Make sure a directory is at `path`: [`Fs::mkdir`] with `recursive`, not
+/// called when the directory is already there (a file system that refuses
+/// writes still says yes to one it has).
 ///
 /// # Errors
 ///
+/// `NotADirectory` when something other than a directory is at `path`, and
 /// [`Fs::mkdir`]'s, such as a file where one of the parents should be.
 pub async fn ensure_dir(fs: &dyn Fs, path: &Path) -> io::Result<()> {
-    if fs.exists(path).await {
-        return Ok(());
+    match fs.stat(path).await {
+        Ok(stat) if stat.kind == FileKind::Dir => Ok(()),
+        Ok(_) => Err(io::Error::new(
+            io::ErrorKind::NotADirectory,
+            format!("{} is there and is not a directory", path.display()),
+        )),
+        Err(_) => fs.mkdir(path, true).await,
     }
-    fs.mkdir(path, true).await
 }
 
 /// A file a host may or may not have (a config file, `.mcp.json`): its text,
