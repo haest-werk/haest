@@ -79,9 +79,10 @@ fn tool_discipline(tools: &[String]) -> String {
     if FILE_TOOLS.iter().any(|n| has(n)) {
         lines.push("- Paths may be absolute or relative to the working directory.".into());
     }
-    match lines.is_empty() {
-        true => String::new(),
-        false => format!("Tool discipline:\n{}", lines.join("\n")),
+    if lines.is_empty() {
+        String::new()
+    } else {
+        format!("Tool discipline:\n{}", lines.join("\n"))
     }
 }
 
@@ -112,9 +113,10 @@ pub fn build_system_prompt(p: &PromptInputs) -> String {
         Some(b) => format!("- Git branch: {b}"),
         None => "- Not a git repository".into(),
     };
-    let tools = match p.tool_names.is_empty() {
-        true => "none".to_string(),
-        false => p.tool_names.join(", "),
+    let tools = if p.tool_names.is_empty() {
+        "none".to_string()
+    } else {
+        p.tool_names.join(", ")
     };
     let env = [
         "# Environment".to_string(),
@@ -133,9 +135,10 @@ pub fn build_system_prompt(p: &PromptInputs) -> String {
         .tool_names
         .iter()
         .any(|t| t == "Bash" || FILE_TOOLS.contains(&t.as_str()));
-    let workspace_note = match touches_workspace {
-        true => opt(&p.workspace_note),
-        false => String::new(),
+    let workspace_note = if touches_workspace {
+        opt(&p.workspace_note)
+    } else {
+        String::new()
     };
     [
         identity,

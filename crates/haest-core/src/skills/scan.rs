@@ -52,9 +52,10 @@ impl SkillScanRoots {
     /// Where `opts`' skills live: with the `plugins` source on, the installed
     /// and enabled plugins in Claude Code's list, read now.
     pub async fn find(fs: &dyn Fs, opts: &SkillOptions) -> Self {
-        let plugins = match opts.sources.plugins {
-            true => read_installed_plugins(fs, &opts.claude_dir).await,
-            false => Vec::new(),
+        let plugins = if opts.sources.plugins {
+            read_installed_plugins(fs, &opts.claude_dir).await
+        } else {
+            Vec::new()
         };
         Self {
             opts: opts.clone(),
