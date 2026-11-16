@@ -18,6 +18,7 @@ fn every_error_with_a_cause_says_it_once() {
         source: denied(),
     });
     assert_causes_said_once(&TransportError::NotAFrame(not_json()));
+    assert_causes_said_once(&TransportError::WebSocket(Box::new(denied())));
     assert_causes_said_once(&DecodeError::Json(not_json()));
     let shape = decode(r#"{"v": 1, "id": "x", "type": "nope"}"#).unwrap_err();
     assert!(

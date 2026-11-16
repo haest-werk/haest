@@ -15,6 +15,9 @@ categories.workspace = true
 stdio = ["tokio/io-std", "tokio/sync"]
 # Programs on this machine reach the conversation over a Unix socket (Unix only).
 unix = ["tokio/net", "dep:serde"]
+# The conversation dials out to a broker over a WebSocket (TLS on ring, the
+# platform's roots, as the model requests verify).
+broker = ["tokio/net", "dep:tokio-tungstenite", "dep:futures", "dep:rustls", "dep:rustls-platform-verifier"]
 
 [dependencies]
 haest-core = { workspace = true }
@@ -23,6 +26,10 @@ haest-session = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "rt"] }
 serde_json = { workspace = true }
 serde = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-native-roots"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
+rustls-platform-verifier = { version = "0.7", optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
@@ -30,7 +37,8 @@ haest-core = { workspace = true, features = ["testing"] }
 haest-session = { workspace = true, features = ["approvals"] }
 haest-mods = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["io-util", "rt", "macros", "test-util"] }
+tokio = { workspace = true, features = ["io-util", "rt", "macros", "test-util", "net"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }
 
 [package.metadata.docs.rs]
 all-features = true

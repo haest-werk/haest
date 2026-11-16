@@ -8,11 +8,63 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 
 ## Unreleased
 
+Other programs can watch and drive a conversation while it runs: a parent
+process over stdio, a program on the same machine over a Unix socket, a
+fleet view elsewhere through a broker. Three new crates carry it:
+haest-wire (the format), haest-session (one stream, one driver) and
+haest-transport (the connections). All of it is opt-in: each is a facade
+feature outside `default`, every new setting is off by default, and the
+`claude` profile leaves them off.
+
 ### Bug fixes
 
 - The caps settings are listed under "Caps" again, as 0.2.0 meant; the
   `Limits` -> `CapSettings` type rename had renamed the heading to
   "CapSettings" in `docs/settings.md` and `haest settings`.
+
+### Behaviour changes
+
+- Every `haest --json` line is in the wire's envelope:
+  `{"v":1,"sid":"<stream id>","seq":n,"ts":ms,"path":["main"],"type":...}`
+  followed by the fields it always had, so a reader of the old lines keeps
+  working. A `notice` and an `ask` line are numbered in the same stream as
+  the events. The stream also carries `status` frames (`idle`, `running`),
+  and a subagent's life comes as `subagent_started`, its loop events and
+  `subagent_stopped` under `["main", "<id>"]`, in place of `notice` lines
+  with its name.
+- The `haest` command runs its conversation as a session: the terminal is
+  one subscriber of the stream, and what the human sees is as before.
+
+### The haest command
+
+- `--stdio` (`HAEST_STDIO`, never a config file): driven by the parent
+  process, requests on stdin and frames on stdout, from the start of the
+  stream, with no terminal and no REPL. The parent has command access and
+  its turns are a person's. Approval asks are `approval_ask` frames it
+  answers (allow, always, deny), withdrawn on an interrupt. haest exits 0
+  when stdin closes (once what was asked has finished) or after a `close`,
+  and 1 when reading stdin fails. A prompt, `-p` or `--json` with it is a
+  usage error.
+- `control_socket = "watch" | "command"` opens a control socket in
+  `control_dir` (default `<data_dir>/control`), and haest says how to follow
+  it. Input over it is another program's: the turn gate counts it, and at an
+  open prompt it waits for Enter. A socket that cannot open is a warning.
+- New `haest ctl` (Unix): `list`, `inspect <id>`, `events <id> [--after N]
+  [--follow]` (shown as the terminal shows it, each input as `> ...`),
+  `send <id> <text>` (waits for the turn it joins) and `interrupt <id>`;
+  `--json` where it reads. An id may be a prefix only one session has.
+- `broker_url` links the conversation to a broker over a WebSocket, its
+  token the key `HAEST_BROKER_TOKEN` (never a setting; like a provider's key
+  it stays with haest). `broker_access` is `watch` by default. haest says it
+  linked; a broker that refuses the token is a warning and is not dialed
+  again; a closing run gives the link up to 2 seconds to hand over the last
+  frames.
+- `control_socket`, `control_dir`, `broker_url` and `broker_access` come from
+  your own file, a variable or a flag, never from a project's file or a
+  profile: a repository cannot open your conversation to anyone.
+- A watcher's terminal writes an answer whole when its streamed pieces were
+  not seen (replayed from the ring), and shows approval asks and their
+  withdrawal as lines.
 
 ### haest (the facade)
 
@@ -27,6 +79,14 @@ with the TypeScript haest unless an entry says otherwise: the session file,
   the panel hears `SubagentEvent::Message`, its answer reaches main through
   `Inbox::submit_answer`, the run waits on `SubagentHub::settled`, and every
   helper reads the notebook's own note.
+
+- New features, none in `default`: `wire` (`haest::wire`), `session`
+  (`haest::session`; with `runtime`, the runtime behind a session; with
+  `mods`, approval asks answered over the session), `transport`
+  (`haest::transport`), `transport-stdio`, `transport-unix` and
+  `transport-broker` (pulls a WebSocket client on rustls).
+- New examples, each run by `cargo test`: `wire`, `session`, `stdio`,
+  `control_socket` and `broker`.
 
 ### haest-core
 
@@ -77,10 +137,6 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
 - `ToolContext` gains `turn_time_left: Option<Duration>`: what is left of
   the turn's time cap on the host's clock, filled by the loop for every
   tool call; `None` with no time cap, and in `ToolContext::new`.
-
-### haest-mods
-
-- `ModTools` forwards the wrapped tool's `Tool::on_resume`.
 
 ### haest-tools
 
@@ -135,6 +191,10 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
 - The Code tool hands its caller's `turn_time_left` on to the calls it
   makes.
 
+### haest-mods
+
+- `ModTools` forwards the wrapped tool's `Tool::on_resume`.
+
 ### haest-settings
 
 - `SubagentCapSettings` gains `budgets` (the `subagent_budgets` setting,
@@ -144,6 +204,92 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
 
 - New setting `subagent_budgets`: `HAEST_SUBAGENT_BUDGETS`,
   `--subagent-budgets`, in docs/settings.md and docs/examples/config.toml.
+
+- New settings, each off or at its old behaviour by default: `event_ring`
+  (1000), `stdio`, `control_socket`, `control_dir`, `broker_url`,
+  `broker_access`. New `ControlSocket`, `BrokerAccess` and
+  `Config::control_dir()`; `Config` gains their fields (a struct literal
+  breaks).
+- docs/settings.md: a process-scoped setting's "Set in" reads "its variable
+  or its flag only, never a config file".
+
+### haest-runtime
+
+- Feature `session` (off; the facade's `session` turns it on with
+  `runtime`): `impl Driven for Runtime<U>`. The driver calls the runtime's
+  own `human_turn`, `next_agent_turn`, `run` and `shut_down`, so a session
+  runs the turn loop a host without one runs. New at the root: `HubUi` (a
+  `Ui` whose lines are `notice` frames) and `subagent_frame`.
+
+### haest-wire (new)
+
+The format, serde only (no I/O, no tokio): `Envelope<B>` (`v`, `sid`,
+`seq`, `ts`, `path`, the body flattened in), `Framer`, `Path`, `WIRE_V`,
+`now_ms`; the wire's own frames `Outbound` (`Notice`, `Ask`, `Status`,
+`ApprovalAsk`, `ApprovalWithdrawn`, `SubagentStarted`, `SubagentStopped`,
+`Hello`, `Gap`, `Reply`) with `Access`, `Origin`, `Level`, `State` and
+`Snapshot`; requests `Inbound { v, id, request }` with `Request` (`Turn`,
+`Control`, `ApprovalAnswer`, `Snapshot`, `History`, `Events`), `Verb` and
+`Answer`. `decode` and `decode_value` check `v` before the shape
+(`DecodeError`: `Json`, `Version`, `NoVersion`, `Shape`). `Ring` keeps
+`capacity` frames outside the running turn and the running turn whole,
+drops a model call's pieces once its answer is in, and reports a gap only
+for an eviction (`Classify`, `FrameKind`, `Replay`). `LineDecoder` and
+`encode_line` are NDJSON with a line cap (`LineTooLong`).
+
+### haest-session (new)
+
+- `Hub` (`HubOptions { ring, buffer }`): one numbered stream. `subscribe(after)`
+  gives a `Subscription`: the ring's catch-up, then live; one `gap` when it
+  falls behind, and the turn never waits on it. `Frame` is
+  `Envelope<Body>`, `Body` a loop event or a wire frame.
+- `start(driven, hub)` runs the driver and returns a `SessionHandle`: one
+  turn at a time; input that arrives mid-turn is steered into it; a person's
+  input steered in but never read runs next as a person's turn; model,
+  effort and clear wait for the running turn. `with`, `hold` (`Hold`),
+  `send_input` (`PendingTurn`), `idle`, `settled`.
+- `Backend` is the seam every transport serves: `meta`, `submit`, `turn`,
+  `control`, `answer`, `subscribe`, `snapshot`, `history`, `close`, with
+  `Input`, `Control` (`Interrupt`, `SetModelSpec`, `SetEffort`, `Clear`),
+  `Meta`, `History` and `SessionError` (`Closed`, `Held`, `NoSuchAsk`,
+  `Control`).
+- `Driven` is the plug point the driver runs: `run`, `human_turn`,
+  `next_agent_turn`, `take_unread`, `gate_agent`, `arrival`, `expecting`,
+  `history`, `status` (`DrivenStatus`), `set_model_spec`, `set_effort`,
+  `clear`, `close`. `impl Driven for Agent`. A change's error is a
+  `BoxError`.
+- Feature `approvals`: `SessionPrompter`, a `Prompter` whose asks are
+  `approval_ask` frames a peer answers, under the runtime's `ApprovalGate`.
+
+### haest-transport (new)
+
+- `serve(backend, grant, start, source, sink)`: one connection's rules,
+  the same on every transport. `hello` first; a `reply` per request with its
+  `id`, a turn's when it ends and after its last frame; stream frames only as
+  asked for with `events {after, follow}`; a request of another version or
+  one the access forbids is refused with its `id`; a slow peer gets a `gap`,
+  never a wait. `Grant` (`watch`, `command`), `Start`, `Ended`, the seams
+  `LineSource` and `LineSink`, `NdjsonSource` and `NdjsonSink`, the trait
+  `Transport` (`attach` returns an `Attached`: `ended`, `detach`; dropped is
+  detached), `Peer` (the asking side) and `TransportError`.
+- Feature `stdio`: `Stdio::new(read, write)` and `Stdio::process()` (stdin
+  read on a thread of its own, `ProcessStdin`, so a closed conversation
+  never waits on the parent at exit).
+- Feature `unix` (Unix only): `UnixSocket::new(dir)` serves
+  `<dir>/<stream id>.sock` with a discovery file beside it
+  (`SocketDiscovery`); the dir is 0700, the socket and the file 0600; a
+  crashed run's socket is replaced, a live one refused (`InUse`).
+  `running_sessions(dir)` lists the sessions that answer (`RunningSession`)
+  and removes a crashed run's files; `connect_session(dir, id)` reaches one
+  by id or unique prefix (`UnixPeer`).
+- Feature `broker`: `Broker::new(url).token(..).backoff(..)` dials out to a
+  `ws://` or `wss://` broker. The token rides in `hello`, never in the URL,
+  and nothing more goes until the broker's ack (`events` with the last seq
+  it holds); the stream resumes there, so a frame lost in a closing socket is
+  sent again, and a gap comes when the ring no longer holds what the broker
+  missed. A dropped link is dialed again after a full-jitter `Backoff`
+  (500 ms doubling to 30 s); close 4401 or 4408 (`AUTH_CLOSE`), or a 401 or
+  403 handshake, ends it with `TransportError::Auth`.
 
 ## 0.2.0 (2026-11-17)
 

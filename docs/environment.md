@@ -56,6 +56,12 @@ GenerateImage (`image = true`) also uses `OPENROUTER_API_KEY` and
 [examples/providers.json](examples/providers.json) for a local server and a
 gateway.
 
+### The broker link's token
+
+`HAEST_BROKER_TOKEN`: the token a link to a broker (`broker_url`) sends in
+its first frame. It is a key, not a setting: no file, flag or profile sets it,
+and like a provider's key it stays with haest.
+
 ### Variables a config file names
 
 `${NAME}` in an `[env]` value or in `.mcp.json` is read from haest's

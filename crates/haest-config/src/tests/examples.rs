@@ -43,6 +43,8 @@ async fn the_example_files_load_together_and_do_what_they_say() {
     assert!(r.notes.is_empty(), "{:?}", r.notes);
     assert!(r.resolved.trusted, "~/projects is trusted");
     assert_eq!(r.config.control_socket, crate::ControlSocket::Watch);
+    assert_eq!(r.config.broker_access, crate::BrokerAccess::Watch);
+    assert_eq!(r.config.broker_url, None, "commented out: no link");
     assert_eq!(
         r.config.control_dir(),
         std::path::Path::new("/h/.local/share/haest/control")

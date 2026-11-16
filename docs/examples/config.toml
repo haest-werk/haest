@@ -39,6 +39,11 @@ event_ring = 5000
 # (command: drives it too). Your own file only.
 control_socket = "watch"
 
+# A broker this conversation links to, and what it may do (your own file
+# only; the token is the key HAEST_BROKER_TOKEN, never a setting):
+# broker_url = "wss://broker.example/agents"
+broker_access = "watch"
+
 # OpenRouter's provider routing, as JSON (your own file only).
 provider_routing = '{"global": {"banned": ["novita"]}}'
 

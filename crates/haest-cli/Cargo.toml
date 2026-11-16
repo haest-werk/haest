@@ -18,7 +18,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-haest = { workspace = true, features = ["runtime", "config", "wire", "session", "transport-stdio", "transport-unix"] }
+haest = { workspace = true, features = ["runtime", "config", "wire", "session", "transport-stdio", "transport-unix", "transport-broker"] }
 tokio = { workspace = true, features = ["signal"] }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
@@ -35,3 +35,7 @@ rustyline = "19"
 [target.'cfg(unix)'.dependencies]
 # poll(2) on stdin, so an approval ask's read can be withdrawn (ask.rs).
 libc = "0.2"
+
+[dev-dependencies]
+# tests/broker.rs: a broker the run links to (tungstenite's blocking server).
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }

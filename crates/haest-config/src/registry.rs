@@ -6,7 +6,7 @@
 use haest_core::{Effort, deferred_tools::DeferMode, provider::WebSearchEngine};
 use haest_settings::{BuiltinTools, ContextSources, SkillSources, WordSet};
 
-use crate::fields::{ControlSocket, EnvPassthrough};
+use crate::fields::{BrokerAccess, ControlSocket, EnvPassthrough};
 
 /// `off`, then every engine.
 const WEB_SEARCH: [&str; WebSearchEngine::WORDS.len() + 1] = {
@@ -225,6 +225,10 @@ pub const DEFS: &[Def] = &[
         .scope(Scope::User)
         .detail("The socket goes in `control_dir`, named after the conversation's stream id and readable by you only (the dir 0700, the socket 0600), with a discovery file beside it that `haest ctl list` reads; both go when haest exits. What arrives over a command socket is another program's input: it counts against `max_agent_turns`, and at an open prompt it waits for Enter. Never from a project's file: a repository cannot open a socket into your conversation."),
     def("control_dir", SESSION, Path, "~/.haest/control", "Where control sockets and their discovery files go (unset: <data_dir>/control)").scope(Scope::User),
+    def("broker_url", SESSION, Text, "wss://broker.example/agents", "A broker the conversation links to over a WebSocket (ws:// or wss://), so a fleet view elsewhere watches it; its token is the key HAEST_BROKER_TOKEN")
+        .scope(Scope::User)
+        .detail("haest dials out: the first frame is `hello` with the token in it (never in the URL), the broker answers with the last seq it holds, and the stream resumes there; a link that drops is dialed again, after a random wait that doubles each try (at most 30 s). A broker that refuses the token (close 4401 or 4408, or a 401 or 403 handshake) is not dialed again, and haest says so. Never from a project's file: a repository cannot send your conversation somewhere."),
+    def("broker_access", SESSION, Choice(BrokerAccess::WORDS), "command", "What the broker may do: watch (the stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too)").scope(Scope::User),
     def("data_dir", PATHS, Path, "~/.haest/data", "Sessions, history and spill files (unset: $XDG_DATA_HOME/haest, else ~/.local/share/haest)"),
     def("config_dir", PATHS, Path, "~/dotfiles/haest", "config.toml, providers and mods (unset: $XDG_CONFIG_HOME/haest, else ~/.config/haest)").scope(Scope::Process),
     def("debug", PATHS, Bool, "true", "Log what haest does under the hood"),

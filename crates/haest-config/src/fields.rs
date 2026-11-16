@@ -49,6 +49,18 @@ haest_core::word_enum! {
     }
 }
 
+haest_core::word_enum! {
+    /// What a broker may do over the link: the `broker_access` setting.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub enum BrokerAccess ("broker_access") {
+        /// Read the conversation: its stream, a snapshot, the history.
+        #[default]
+        Watch = "watch",
+        /// Read it and drive it: turns, interrupts, changes, approval answers.
+        Command = "command",
+    }
+}
+
 /// The variables `env_passthrough = core` passes on, when haest has them:
 /// `PATH`, the shell, the temp dirs, `HOME`, the locale and the user. Codex's list.
 pub const CORE_VARS: &[&str] = &[
@@ -92,6 +104,11 @@ pub struct Config {
     /// Where control sockets and their discovery files go; None =
     /// `<data_dir>/control` ([`Config::control_dir`]).
     pub control_dir: Option<PathBuf>,
+    /// The broker the conversation links to, `ws://` or `wss://`; None = no
+    /// link. Its token is a key (`HAEST_BROKER_TOKEN`), never a setting.
+    pub broker_url: Option<String>,
+    /// What the broker may do over the link. Default watch.
+    pub broker_access: BrokerAccess,
 }
 
 impl Config {
@@ -99,7 +116,7 @@ impl Config {
     /// ([`Settings::bare`]), and the loader's own settings at their defaults:
     /// no profile, no trusted dirs, `env_passthrough = core`, no `env`, `mcp`
     /// off, no routing, a ring of 1000 frames, not driven over stdio, no
-    /// control socket.
+    /// control socket, no broker link.
     pub fn bare(cwd: impl Into<PathBuf>, home: impl Into<PathBuf>) -> Self {
         Settings::bare(cwd, home).into()
     }
@@ -179,6 +196,8 @@ impl From<Settings> for Config {
             stdio: false,
             control_socket: ControlSocket::Off,
             control_dir: None,
+            broker_url: None,
+            broker_access: BrokerAccess::Watch,
         }
     }
 }
@@ -294,6 +313,8 @@ fields! {
     "stdio" => stdio,
     "control_socket" => control_socket,
     "control_dir" => control_dir,
+    "broker_url" => broker_url,
+    "broker_access" => broker_access,
     "data_dir" => settings.data_dir,
     "config_dir" => settings.config_dir,
     "debug" => settings.debug;

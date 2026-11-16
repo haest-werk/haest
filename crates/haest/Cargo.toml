@@ -48,6 +48,8 @@ transport = ["dep:haest-transport", "session"]
 transport-stdio = ["transport", "haest-transport/stdio"]
 # Programs on this machine watch (or drive) the conversation over a Unix socket.
 transport-unix = ["transport", "haest-transport/unix"]
+# The conversation dials out to a broker over a WebSocket (pulls a WebSocket client on rustls).
+transport-broker = ["transport", "haest-transport/broker"]
 # Fakes for a host's tests: a scripted model that records every request.
 testing = ["haest-core/testing"]
 
@@ -105,6 +107,12 @@ name = "control_socket"
 required-features = ["transport-unix"]
 test = true
 
+# A conversation linked to a broker: hello with the token, the broker's ack, the stream.
+[[example]]
+name = "broker"
+required-features = ["transport-broker"]
+test = true
+
 # The notebook example and tests/plug_in.rs: what a host implementing the plug points needs.
 [dev-dependencies]
 # The front page's runnable examples drive whole turns with the scripted model.
@@ -115,6 +123,8 @@ futures = { workspace = true }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
+# The broker example's broker end.
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }
 
 [package.metadata.docs.rs]
 all-features = true

@@ -37,12 +37,12 @@ use std::{
 };
 
 use haest::{
-    config::{ControlSocket, Loaded, Loader, env_var},
+    config::{BrokerAccess, ControlSocket, Loaded, Loader, env_var},
     core::{error::report, session::sessions_dir},
     runtime::{BuildError, SessionError, Ui, list_sessions},
     session::{Backend, Hub, HubOptions, SessionPrompter, start},
     settings::Settings,
-    transport::{Attached, Ended, Grant, Stdio, Transport},
+    transport::{Attached, Broker, Ended, Grant, Stdio, Transport},
     wire::Origin,
     workspace::RealFs,
 };
@@ -191,6 +191,50 @@ fn control_socket(
     }
 }
 
+/// The broker link: `broker_url`, `broker_access`, and the token (the key
+/// `HAEST_BROKER_TOKEN`).
+type BrokerLink = (Option<String>, BrokerAccess, Option<String>);
+
+/// How long a closing run waits for the broker link to hand over the last
+/// frames.
+const BROKER_DRAIN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The broker link, when `broker_url` names one: a fleet view elsewhere
+/// watches the conversation through it (or drives it, with `broker_access =
+/// command`), its input another program's. A broker that refuses the token
+/// is said and not dialed again; a URL that is not one is said, and the run
+/// goes on without the link. It ends when the conversation does.
+fn broker_link(
+    session: &Session,
+    (url, access, token): BrokerLink,
+    ui: &Arc<TermUi>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    let url = url.filter(|u| !u.trim().is_empty())?;
+    let grant = match access {
+        BrokerAccess::Watch => Grant::watch(Origin::Agent),
+        BrokerAccess::Command => Grant::command(Origin::Agent),
+    };
+    // Said without its query: the URL is not where a secret goes, but one
+    // may be there.
+    let shown = url.split('?').next().unwrap_or_default().to_string();
+    let backend: Arc<dyn Backend> = Arc::new(session.clone());
+    match Broker::new(url).token(token).attach(backend, grant) {
+        Ok(attached) => {
+            ui.info(&format!("Broker link: {shown} ({})", access.as_str()));
+            let ui = ui.clone();
+            Some(tokio::spawn(async move {
+                if let Ended::Failed(e) = attached.ended().await {
+                    ui.warn(&format!("{}; haest no longer dials it.", report(&e)));
+                }
+            }))
+        }
+        Err(e) => {
+            ui.warn(&format!("No broker link: {}", report(&e)));
+            None
+        }
+    }
+}
+
 /// `1 background job`, `2 background jobs`.
 fn count(n: usize, noun: &str) -> String {
     format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
@@ -271,6 +315,15 @@ async fn main() -> ExitCode {
     }
     let stdio = loaded.config.stdio;
     let control = (loaded.config.control_socket, loaded.config.control_dir());
+    let broker: BrokerLink = (
+        loaded.config.broker_url.clone(),
+        loaded.config.broker_access,
+        loaded
+            .keys
+            .get("HAEST_BROKER_TOKEN")
+            .filter(|t| !t.is_empty())
+            .cloned(),
+    );
     if stdio && (args.print || args.json || args.prompt_text().is_some()) {
         return fail(
             2,
@@ -313,6 +366,7 @@ async fn main() -> ExitCode {
     let session = start(rt, hub.clone());
     let interrupts = run::watch_interrupts(brakes.clone(), hub.subscribe(hub.last_seq()));
     let _control = control_socket(&session, control, &ui);
+    let link = broker_link(&session, broker, &ui);
     let code = match input {
         _ if stdio => stdio_mode(&session).await,
         Some(input) => print_mode(&session, &brakes, &input).await,
@@ -328,6 +382,13 @@ async fn main() -> ExitCode {
         .with(|rt| Box::pin(async move { shutdown(rt).await }))
         .await;
     session.close().await;
+    // The link hands the broker the last frames, then ends; a broker that
+    // does not read them is not waited for long.
+    if let Some(mut link) = link
+        && tokio::time::timeout(BROKER_DRAIN, &mut link).await.is_err()
+    {
+        link.abort();
+    }
     if let Some(shown) = shown {
         let _ = shown.await;
     }

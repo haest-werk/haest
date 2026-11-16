@@ -32,7 +32,7 @@ whole config files.
 | Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
 | Caps | [`max_turn_usd`](#max_turn_usd), [`max_turn_tokens`](#max_turn_tokens), [`max_request_tokens`](#max_request_tokens), [`max_turn_steps`](#max_turn_steps), [`max_turn_minutes`](#max_turn_minutes), [`max_repeats`](#max_repeats), [`max_conversation_usd`](#max_conversation_usd), [`max_conversation_tokens`](#max_conversation_tokens), [`context_window`](#context_window), [`compact_at`](#compact_at) |
 | Subagents | [`max_agent_turns`](#max_agent_turns), [`max_agent_depth`](#max_agent_depth), [`max_subagents`](#max_subagents), [`subagent_usd`](#subagent_usd), [`subagent_steps`](#subagent_steps), [`subagent_minutes`](#subagent_minutes), [`subagent_budgets`](#subagent_budgets) |
-| Watching and driving | [`event_ring`](#event_ring), [`stdio`](#stdio), [`control_socket`](#control_socket), [`control_dir`](#control_dir) |
+| Watching and driving | [`event_ring`](#event_ring), [`stdio`](#stdio), [`control_socket`](#control_socket), [`control_dir`](#control_dir), [`broker_url`](#broker_url), [`broker_access`](#broker_access) |
 | Paths | [`data_dir`](#data_dir), [`config_dir`](#config_dir), [`debug`](#debug) |
 | [Profiles](#profiles) | the built-in ones, and your own |
 
@@ -713,6 +713,35 @@ Where control sockets and their discovery files go (unset: &lt;data_dir>/control
 config.toml   control_dir = "~/.haest/control"
 variable      HAEST_CONTROL_DIR='~/.haest/control'
 flag          --control-dir '~/.haest/control'
+```
+
+### `broker_url`
+
+A broker the conversation links to over a WebSocket (ws:// or wss://), so a fleet view elsewhere watches it; its token is the key HAEST_BROKER_TOKEN.
+haest dials out: the first frame is `hello` with the token in it (never in the URL), the broker answers with the last seq it holds, and the stream resumes there; a link that drops is dialed again, after a random wait that doubles each try (at most 30 s). A broker that refuses the token (close 4401 or 4408, or a 401 or 403 handshake) is not dialed again, and haest says so. Never from a project's file: a repository cannot send your conversation somewhere.
+
+- Takes: text
+- Default: unset
+- Set in: your own config file, its variable, its flag; never a project's file or a profile
+
+```text
+config.toml   broker_url = "wss://broker.example/agents"
+variable      HAEST_BROKER_URL=wss://broker.example/agents
+flag          --broker-url wss://broker.example/agents
+```
+
+### `broker_access`
+
+What the broker may do: watch (the stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too).
+
+- Takes: one of `watch`, `command`
+- Default: `watch`
+- Set in: your own config file, its variable, its flag; never a project's file or a profile
+
+```text
+config.toml   broker_access = "command"
+variable      HAEST_BROKER_ACCESS=command
+flag          --broker-access command
 ```
 
 ## Paths

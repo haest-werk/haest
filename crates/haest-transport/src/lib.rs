@@ -30,6 +30,7 @@
 //! | Feature | Transport |
 //! |---|---|
 //! | `stdio` | [`Stdio`]: a parent process drives this one over its stdin and stdout |
+//! | `broker` | [`Broker`]: the conversation dials out to a broker over a WebSocket, so a fleet view elsewhere watches (or drives) it |
 //! | `unix` | [`UnixSocket`]: programs on this machine reach it over a Unix socket (Unix only); [`running_sessions`] and [`connect_session`] find and reach one |
 //!
 //! [`Peer`] is the asking side of any connection: `hello` read, requests
@@ -91,6 +92,8 @@ use std::path::PathBuf;
 use haest_wire::{Access, LineTooLong, Origin};
 use tokio::task::JoinHandle;
 
+#[cfg(feature = "broker")]
+mod broker;
 mod link;
 mod ndjson;
 mod peer;
@@ -103,6 +106,9 @@ mod tests;
 #[cfg(all(unix, feature = "unix"))]
 mod unix;
 
+#[cfg(feature = "broker")]
+#[cfg_attr(docsrs, doc(cfg(feature = "broker")))]
+pub use broker::{AUTH_CLOSE, Backoff, Broker};
 pub use link::{Ended, LineSink, LineSource, Start, serve};
 pub use ndjson::{NdjsonSink, NdjsonSource};
 pub use peer::Peer;
@@ -245,4 +251,19 @@ pub enum TransportError {
     /// The other end refused the request; its reason.
     #[error("refused: {0}")]
     Refused(String),
+    /// Not a URL a broker link dials: it takes `ws://` or `wss://`.
+    #[error("{0} is not a ws:// or wss:// URL")]
+    Url(String),
+    /// The broker refused the token: it closed with 4401 or 4408, or
+    /// refused the handshake with 401 or 403. The link is not dialed again.
+    #[error("the broker refused the link ({code}): {reason}")]
+    Auth {
+        /// The close code, or the HTTP status.
+        code: u16,
+        /// What the broker said.
+        reason: String,
+    },
+    /// The WebSocket to the broker failed (dialing, TLS, a read or a write).
+    #[error("the broker link failed")]
+    WebSocket(#[source] haest_core::error::BoxError),
 }

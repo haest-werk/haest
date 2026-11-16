@@ -204,9 +204,15 @@ pub struct Parent {
 
 impl Parent {
     pub fn start(home: &Home, args: &[&str]) -> Self {
+        Self::start_with(home, args, &[])
+    }
+
+    /// [`Self::start`] with `vars` in its environment too.
+    pub fn start_with(home: &Home, args: &[&str], vars: &[(&str, &str)]) -> Self {
         let mut cmd = home.command(&[&["--stdio", "-m", "local:m"], args].concat());
         let mut child = cmd
             .env(LOCAL_KEY.0, LOCAL_KEY.1)
+            .envs(vars.iter().copied())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
