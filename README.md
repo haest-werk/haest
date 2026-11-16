@@ -9,7 +9,9 @@ which remote-claude's agent host still runs.
 Session files keep the TS haest's JSON shape, so either haest resumes the other's.
 Decisions and status live in
 [PLAN.md](https://github.com/haest-werk/haest/blob/main/PLAN.md), working rules in
-[CONTRIBUTING.md](https://github.com/haest-werk/haest/blob/main/CONTRIBUTING.md).
+[CONTRIBUTING.md](https://github.com/haest-werk/haest/blob/main/CONTRIBUTING.md),
+what each release changed in
+[CHANGELOG.md](https://github.com/haest-werk/haest/blob/main/CHANGELOG.md).
 
 On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 [docs.rs](https://docs.rs/haest/)), source at
