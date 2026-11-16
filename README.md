@@ -18,10 +18,10 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 
 | Crate | What |
 |---|---|
-| `haest-core` | the loop and the contracts: messages, `Provider`, `Tool`, `Fs`, `Workspace`, `AgentHooks`, events; turn guard, limits, ledger, session log, compaction, task board |
+| `haest-core` | the loop and the contracts: messages, `Provider`, `Tool`, `Fs`, `Workspace`, `AgentHooks`, events; turn guard, caps, ledger, session log, compaction, task board |
 | `haest-http` | the HTTP seam (`HttpClient`) the model calls, GenerateImage and the GitHub tracker send through, and its default over reqwest and rustls; the one place haest builds a reqwest client. WebFetch sends through a guarded client of its own, MCP servers through rmcp's |
 | `haest-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible server, OpenRouter), OpenAI Responses; `providers.json`; the model catalog; requests over any `HttpClient` |
-| `haest-workspace` | the real disk and bash, or a bashkit sandbox over a copy-on-write overlay (or over any `Fs`); `/changes` and `/apply` |
+| `haest-workspace` | the real disk and bash, or a bashkit sandbox over a copy-on-write overlay (or over any `Fs`) whose edits are a change set the human reviews and applies |
 | `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch, tasks, ToolSearch, Skill, Agent / SendMessage / StopAgent, GenerateImage |
 | `haest-mcp` | MCP client: stdio and streamable HTTP servers, their tools as haest tools |
 | `haest-code` | embedded QuickJS: the Code tool and the sandbox `js` command |
@@ -53,6 +53,7 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `settings` | `haest::settings` (the values, plain) | yes |
 | `config` | `haest::config` (the loader: files, variables, flags, profiles, trust) | no |
 | `runtime` | `haest::runtime` (the conversation built from what it is handed) and everything above but `config` | no |
+| `testing` | `haest::core::testing` (a scripted model that records every request, for a host's tests) | no |
 
 ```toml
 haest = "0.2"

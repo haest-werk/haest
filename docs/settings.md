@@ -6,7 +6,7 @@
 
 haest starts bare: no tools, no instruction files, no skills, no MCP, no mods,
 in the sandbox, with every brake on. Each setting below turns one thing on or
-changes one limit.
+sets one value: a model, a cap, a path.
 
 A setting has one name, written three ways: a key in a TOML config file, a
 `HAEST_*` variable, a flag. Each layer wins over the ones before it:

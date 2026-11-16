@@ -38,11 +38,11 @@ Behaviour comes from there, file by file, tests included.
 
 | Crate | What | Ported from |
 |---|---|---|
-| `haest-core` | messages, Provider/Tool/Fs/Workspace/AgentHooks contracts, the loop, guard, limits, ledger, media, effort, session log, compaction, system prompt, skills, task board, deferred tools | `core/*.ts` |
+| `haest-core` | messages, Provider/Tool/Fs/Workspace/AgentHooks contracts, the loop, guard, caps, ledger, media, effort, session log, compaction, system prompt, skills, task board, deferred tools | `core/*.ts` |
 | `haest-http` | the HTTP seam: `HttpClient` (one `send`), `Request`, `Response`, `HttpError`; the default `ReqwestClient`; the one place a reqwest client is built and TLS set up. WebFetch keeps a guarded client of its own and MCP servers rmcp's, whatever client the host hands in | new (T2) |
 | `haest-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible endpoint), OpenAI Responses, OpenRouter routing + web search, `providers.json`, the model catalog, requests over any `HttpClient` | `providers/*.ts`, `shared/haest-models.ts` |
-| `haest-workspace` | real disk + real bash; bashkit sandbox over a copy-on-write overlay; `/changes` + `/apply`; net guard | `core/workspace-*.ts`, `overlay-changes.ts`, `shell-words.ts`, `fs-walk.ts`, `net-guard.ts` |
-| `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch, tasks, ToolSearch, Skill, Agent tools (`SubagentHub`, `AgentDirectory`, `AgentToolOptions`), GenerateImage | `tools/*.ts` |
+| `haest-workspace` | real disk + real bash; bashkit sandbox over a copy-on-write overlay, its edits a change set to review and apply | `core/workspace-*.ts`, `overlay-changes.ts`, `shell-words.ts`, `fs-walk.ts` |
+| `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch (+ net guard), tasks, ToolSearch, Skill, Agent tools (`SubagentHub`, `AgentDirectory`, `AgentToolOptions`), GenerateImage | `tools/*.ts`, `net-guard.ts` |
 | `haest-mcp` | MCP client over `rmcp`: stdio + HTTP servers, their tools as haest tools | `core/mcp.ts` |
 | `haest-code` | the code VM (`rquickjs`), the Code tool over sibling tools, the sandbox `js` command | `core/code-vm*.ts`, `tools/code*.ts` |
 | `haest-mods` | mods in QuickJS: commands, prompt rewrite, tool wrapping, approvals, plan mode | `core/mods.ts` |
