@@ -32,7 +32,7 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | `haest-runtime` | a whole conversation built from what a host hands it, behind its `Ui`; what the CLI is made of |
 | `haest` | the facade a host depends on: `use haest::...` |
 | `haest-cli` | the `haest` binary |
-| [`haest-issues`](https://github.com/haest-werk/haest/tree/main/crates/haest-issues/) | experimental, and an example of how to write tools: issue-tracker tools over one trait, for GitHub Issues and markdown board cards. Not on crates.io |
+| [`haest-issues`](https://github.com/haest-werk/haest/tree/main/crates/haest-issues/) | experimental, and an example of how to write tools: issue-tracker tools over one trait, for GitHub Issues and markdown board cards. Not in the `haest` facade: depend on it directly |
 
 ## haest features
 
