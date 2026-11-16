@@ -48,7 +48,7 @@ fn above_prompt(editor: &mut DefaultEditor) -> Option<Sender<String>> {
     Some(tx)
 }
 
-/// What quitting now would lose, said once: the next quit goes through.
+/// What quitting now would lose ([`QuitGuard`] says when it is said).
 async fn before_quitting(rt: &Runtime) -> Option<String> {
     let mut lost = Vec::new();
     if let Some(changes) = changes::unapplied(rt).await {
@@ -63,6 +63,31 @@ async fn before_quitting(rt: &Runtime) -> Option<String> {
         ));
     }
     (!lost.is_empty()).then(|| lost.join("\n"))
+}
+
+/// Whether a quit goes through: one that would lose something is held back
+/// with the warning, and the next quit goes through -- unless what it would
+/// lose changed since (more sandbox edits, a message arrived) or the human
+/// went on meanwhile, which hold it back again.
+#[derive(Default)]
+struct QuitGuard {
+    /// The warning the human saw, while it still stands.
+    warned: Option<String>,
+}
+
+impl QuitGuard {
+    /// The human quits, and `lost` is what that would lose: Some(warning) =
+    /// stay, and say it; None = quit.
+    fn quit(&mut self, lost: Option<String>) -> Option<String> {
+        let lost = lost.filter(|l| self.warned.as_ref() != Some(l))?;
+        self.warned = Some(lost.clone());
+        Some(lost)
+    }
+
+    /// The human did something else: the warning no longer stands.
+    fn went_on(&mut self) {
+        self.warned = None;
+    }
 }
 
 pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()> {
@@ -88,17 +113,15 @@ pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()>
         Some(p) => handle(rt, &p).await,
         None => true,
     };
-    let mut warned = false;
+    let mut guard = QuitGuard::default();
     loop {
         if go_on {
+            guard.went_on();
             agent_turns(rt).await;
         } else {
-            match before_quitting(rt).await {
-                Some(lost) if !warned => {
-                    rt.host.warn(&lost);
-                    warned = true;
-                }
-                _ => break,
+            match guard.quit(before_quitting(rt).await) {
+                Some(lost) => rt.host.warn(&lost),
+                None => break,
             }
         }
         // The terminal is the prompt's: an approval ask waits for it to return.
@@ -130,4 +153,29 @@ pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()>
     }
     let _ = editor.save_history(&history);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_quit_that_would_lose_what_the_human_was_not_told_of_is_held_back() {
+        let one = || Some("1 change(s) only in the sandbox: ~ a.rs".to_string());
+        let two = || Some("2 change(s) only in the sandbox: ~ a.rs, + b.rs".to_string());
+        let mut q = QuitGuard::default();
+        assert_eq!(q.quit(None), None, "nothing to lose: it quits");
+        assert_eq!(q.quit(one()), one(), "held back, with the warning");
+        assert_eq!(
+            q.quit(two()),
+            two(),
+            "more would be lost since: held back again"
+        );
+        assert_eq!(q.quit(two()), None, "quit again: it goes");
+
+        let mut q = QuitGuard::default();
+        assert_eq!(q.quit(one()), one());
+        q.went_on();
+        assert_eq!(q.quit(one()), one(), "the human went on after the warning");
+    }
 }
