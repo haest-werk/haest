@@ -116,7 +116,7 @@ impl Usage {
 }
 
 /// Why a model call ended ([`AssistantMessage::stop_reason`]), or a whole
-/// turn ([`TurnOutcome::stop_reason`](crate::TurnEnd::stop_reason)).
+/// turn ([`TurnOutcome::stop_reason`](crate::TurnOutcome::stop_reason)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StopReason {
