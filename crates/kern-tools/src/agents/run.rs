@@ -11,6 +11,7 @@ use kern_core::{
     catalog::{InputModality, Reasoning},
     limits::TurnLimits,
     messages::MediaPart,
+    panics::panic_message,
     provider::Effort,
     tool::{InnerCallEvent, ToolHost, ToolSource},
 };
@@ -153,13 +154,6 @@ fn outcome(stop: StopReason, error: Option<&str>, cost: Option<f64>, text: &str)
     }
 }
 
-fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
-    p.downcast_ref::<&str>()
-        .map(|s| s.to_string())
-        .or_else(|| p.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "a panic".into())
-}
-
 async fn cancelled(t: Option<&CancellationToken>) {
     match t {
         Some(t) => t.cancelled().await,
@@ -219,7 +213,10 @@ pub(super) async fn drive(
     match result {
         Ok(_) => ended.unwrap_or_else(|| outcome(StopReason::Error, None, None, "")),
         Err(p) => RunOutcome {
-            text: format!("[the agent crashed: {}]", panic_text(p.as_ref())),
+            text: format!(
+                "[the agent crashed: {}]",
+                panic_message(p.as_ref()).unwrap_or("a panic")
+            ),
             cost_usd: 0.0,
             ok: false,
         },

@@ -10,6 +10,7 @@ use crate::{
     deps::now_ms,
     fs::ensure_dir,
     messages::{AssistantMessage, StopReason, ToolCall, ToolResultMessage, Usage},
+    panics::panic_message,
     tool::{Tool, ToolContext, ToolError, ToolOutput},
 };
 
@@ -179,7 +180,7 @@ pub async fn run_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> 
         Ok(done) => done,
         Err(panic) => Err(ToolError::Failed(format!(
             "panicked: {}",
-            panic_text(panic.as_ref())
+            panic_message(panic.as_ref()).unwrap_or("no message")
         ))),
     };
     match done {
@@ -194,15 +195,6 @@ pub async fn run_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> 
             ToolOutput::error(content).with_result(error_result(&message))
         }
     }
-}
-
-/// What a panic said: its `&str` or `String` payload, else that it said nothing.
-fn panic_text(panic: &(dyn std::any::Any + Send)) -> String {
-    panic
-        .downcast_ref::<&str>()
-        .map(|s| s.to_string())
-        .or_else(|| panic.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "no message".into())
 }
 
 fn error_result(message: &str) -> Value {

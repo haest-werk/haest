@@ -8,7 +8,6 @@
 //! inside every loop and every regex step.
 
 use std::{
-    any::Any,
     io,
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
@@ -20,6 +19,7 @@ use std::{
     time::Duration,
 };
 
+use kern_core::panics::panic_message;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::{
@@ -102,17 +102,12 @@ pub(crate) fn spawn_engine(job: VmJob) -> io::Result<Engine> {
         .stack_size(THREAD_STACK_BYTES)
         .spawn(move || {
             let run = catch_unwind(AssertUnwindSafe(|| run_engine(&job, &port))).unwrap_or_else(
-                |panic| VmRun::failed(format!("kern's JS engine crashed: {}", panic_text(&panic))),
+                |panic| {
+                    let said = panic_message(panic.as_ref()).unwrap_or("unknown panic");
+                    VmRun::failed(format!("kern's JS engine crashed: {said}"))
+                },
             );
             let _ = to_kern.send(FromVm::Done(run));
         })?;
     Ok(Engine { to_vm, from_vm })
-}
-
-fn panic_text(panic: &Box<dyn Any + Send>) -> String {
-    panic
-        .downcast_ref::<String>()
-        .cloned()
-        .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
-        .unwrap_or_else(|| "unknown panic".into())
 }

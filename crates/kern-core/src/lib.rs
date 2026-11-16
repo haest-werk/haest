@@ -25,6 +25,7 @@ pub mod ledger;
 pub mod limits;
 pub mod media;
 pub mod messages;
+pub mod panics;
 pub mod pricing;
 pub mod provider;
 pub mod request_prefix;
