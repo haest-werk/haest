@@ -34,6 +34,9 @@ fn private_loopback_link_local_cgnat_and_mapped_addresses_are_blocked_public_one
         "224.0.0.1",        // multicast
         "255.255.255.255",  // broadcast
         "198.18.0.1",       // benchmarking
+        "192.0.2.1",        // documentation (TEST-NET-1)
+        "198.51.100.7",     // documentation (TEST-NET-2)
+        "203.0.113.255",    // documentation (TEST-NET-3)
         "64:ff9b::a14:70c", // NAT64 of 10.20.7.12
         "64:ff9b:1::a00:1", // local-use NAT64 (RFC 8215) of 10.0.0.1
         "ff02::1",          // IPv6 multicast
@@ -47,6 +50,9 @@ fn private_loopback_link_local_cgnat_and_mapped_addresses_are_blocked_public_one
         "172.32.0.1",
         "100.128.0.1",
         "::ffff:1.1.1.1",
+        "192.0.3.1",
+        "198.51.101.1",
+        "203.0.114.1",
     ] {
         assert!(!blocked(ip), "{ip} is public");
     }

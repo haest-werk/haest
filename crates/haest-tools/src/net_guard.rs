@@ -18,7 +18,9 @@ use async_trait::async_trait;
 use haest_http::BoxError;
 use url::{Host, Url};
 
-const BLOCKED_V4: [(Ipv4Addr, u8); 11] = [
+/// Every range the IANA IPv4 special-purpose address registry marks not
+/// globally reachable, and multicast.
+const BLOCKED_V4: [(Ipv4Addr, u8); 14] = [
     (Ipv4Addr::new(0, 0, 0, 0), 8), // "this network"
     (Ipv4Addr::new(10, 0, 0, 0), 8),
     (Ipv4Addr::new(100, 64, 0, 0), 10), // carrier-grade NAT
@@ -26,10 +28,13 @@ const BLOCKED_V4: [(Ipv4Addr, u8); 11] = [
     (Ipv4Addr::new(169, 254, 0, 0), 16), // link-local, cloud metadata
     (Ipv4Addr::new(172, 16, 0, 0), 12),
     (Ipv4Addr::new(192, 0, 0, 0), 24),
+    (Ipv4Addr::new(192, 0, 2, 0), 24), // documentation (TEST-NET-1)
     (Ipv4Addr::new(192, 168, 0, 0), 16),
-    (Ipv4Addr::new(198, 18, 0, 0), 15), // benchmarking
-    (Ipv4Addr::new(224, 0, 0, 0), 4),   // multicast
-    (Ipv4Addr::new(240, 0, 0, 0), 4),   // reserved + broadcast
+    (Ipv4Addr::new(198, 18, 0, 0), 15),   // benchmarking
+    (Ipv4Addr::new(198, 51, 100, 0), 24), // documentation (TEST-NET-2)
+    (Ipv4Addr::new(203, 0, 113, 0), 24),  // documentation (TEST-NET-3)
+    (Ipv4Addr::new(224, 0, 0, 0), 4),     // multicast
+    (Ipv4Addr::new(240, 0, 0, 0), 4),     // reserved + broadcast
 ];
 
 /// IPv6 global unicast: the only IPv6 space the guard lets through. Outside

@@ -10,15 +10,19 @@
 use std::{
     io::{Read, Write},
     net::{IpAddr, TcpListener},
-    sync::{Arc, Mutex, OnceLock},
-    time::Duration,
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use async_trait::async_trait;
+use haest_core::{
+    tool::{Tool, ToolContext},
+    workspace::ShutWorkspace,
+};
 use haest_tools::{
-    ImageToolOptions, WebFetchNet,
-    http::{BoxError, Request},
-    image::call_image_api,
+    ImageToolOptions, WebFetchNet, WebFetchTool, http::BoxError, image::call_image_api,
     net_guard::Resolve,
 };
 use serde_json::json;
@@ -122,13 +126,17 @@ async fn the_image_api_and_its_key_go_straight_to_the_api_never_through_an_env_p
     assert!(direct[1].contains("authorization: bearer image-api-key"));
 }
 
-/// Every name is one address the guard lets through, which nothing answers.
-struct Documentation;
+/// The first lookup (the guard's check) answers a public address; every later
+/// one (the client's own, when it connects) fails, so nothing is dialled.
+struct PublicOnce(AtomicUsize);
 
 #[async_trait]
-impl Resolve for Documentation {
+impl Resolve for PublicOnce {
     async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, BoxError> {
-        Ok(vec!["192.0.2.1".parse().unwrap()])
+        match self.0.fetch_add(1, Ordering::SeqCst) {
+            0 => Ok(vec!["93.184.215.14".parse().unwrap()]),
+            _ => Err("no answer the second time".into()),
+        }
     }
 }
 
@@ -136,11 +144,19 @@ impl Resolve for Documentation {
 async fn webfetch_never_goes_through_an_env_proxy() {
     let proxy = proxy_in_env();
     let url = "http://site.test:8080/page";
-    let net = WebFetchNet::new(Arc::new(Documentation));
-    // Through the proxy this would be answered at once; direct, nothing answers.
-    let sent =
-        tokio::time::timeout(Duration::from_millis(500), net.http.send(Request::get(url))).await;
-    assert!(!matches!(sent, Ok(Ok(_))), "something answered");
+    let resolve = Arc::new(PublicOnce(AtomicUsize::new(0)));
+    let tool = WebFetchTool::new(WebFetchNet::new(resolve.clone()));
+    let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+    let input = json!({"url": url}).as_object().unwrap().clone();
+    // Through the proxy this would be answered at once, and the name never
+    // resolved here; direct, the client's own lookup fails.
+    let fetched = tool.execute(input, &ctx).await;
+    assert!(fetched.is_err(), "something answered");
+    assert_eq!(
+        resolve.0.load(Ordering::SeqCst),
+        2,
+        "the client resolved the name itself"
+    );
     assert!(
         !asked_for(&proxy, url),
         "the env proxy was sent WebFetch's request"
