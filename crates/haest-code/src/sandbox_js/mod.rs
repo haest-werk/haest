@@ -65,7 +65,7 @@ use tokio_util::sync::CancellationToken;
 pub use command::{JsShellCommand, NotHere, sandbox_commands};
 pub use guest::JS_MODULES;
 
-use crate::vm::{VM_MEMORY_BYTES, VmLimits, VmRun, VmStop, run_in_vm};
+use crate::vm::{VmLimits, VmRun, VmStop, run_in_vm};
 use guest::{JsScript, js_script_spec};
 
 /// The command's name in the sandbox shell.
@@ -243,7 +243,7 @@ pub async fn js_command(args: &[String], env: &JsEnv) -> ExecResult {
 /// in argv. Nothing is read from `path`; `code` must already be JavaScript.
 ///
 /// The run gets the script API in the [module docs](self#what-a-script-has),
-/// [`VM_MEMORY_BYTES`] of memory, and until
+/// [`VM_MEMORY_BYTES`](crate::vm::VM_MEMORY_BYTES) of memory, and until
 /// `env.ends_at` (at most [`JS_TIMEOUT`]). The result is a CLI's: what it
 /// printed, and the exit code it passed to `process.exit`, else 1 when it
 /// threw or was stopped, else 0. An uncaught error, a stop (`env.cancel` or
@@ -266,8 +266,8 @@ pub async fn run_js(path: &Path, code: &str, args: &[String], env: &JsEnv) -> Ex
     let timeout = left.min(JS_TIMEOUT);
     let limits = VmLimits {
         timeout_ms: timeout.as_millis() as u64,
-        memory_bytes: VM_MEMORY_BYTES,
         max_log_chars: JS_MAX_OUTPUT,
+        ..VmLimits::default()
     };
     let filename = path
         .file_name()

@@ -2,8 +2,7 @@
 //! anything runs ALONE, read-only calls share the gate up to a cap. The same rule
 //! haest-core's loop applies to a model's batch, held per call instead of per batch.
 //!
-//! [`CallGate`] is what the Code tool holds for each run; a host has no need
-//! of it unless it runs tool calls of its own the same way.
+//! [`CallGate`] is what the Code tool holds for each run.
 
 use std::{future::Future, pin::pin, sync::Mutex};
 
@@ -21,21 +20,7 @@ struct State {
 /// A write waits for every read in flight to finish, and while it runs
 /// nothing else starts. Waiters are not queued in order: when the gate frees,
 /// any of them may go first.
-///
-/// # Examples
-///
-/// ```
-/// use haest_code::call_gate::CallGate;
-///
-/// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
-/// let gate = CallGate::new(8);
-/// let read = gate.run(false, async { "read" });
-/// let write = gate.run(true, async { "wrote" });
-/// assert_eq!(futures::join!(read, write), ("read", "wrote"));
-/// # }
-/// ```
-pub struct CallGate {
+pub(crate) struct CallGate {
     max_reads: usize,
     state: Mutex<State>,
     changed: Notify,
@@ -63,7 +48,7 @@ impl Drop for Held<'_> {
 impl CallGate {
     /// A gate that lets at most `max_reads` shared calls run at once. With 0,
     /// no shared call ever starts.
-    pub fn new(max_reads: usize) -> Self {
+    pub(crate) fn new(max_reads: usize) -> Self {
         Self {
             max_reads,
             state: Mutex::default(),
@@ -77,7 +62,7 @@ impl CallGate {
     /// The place is given back however the call ends: finished, panicked, or
     /// the returned future dropped mid-way (a cancelled run). Dropping it
     /// while it still waits takes no place at all.
-    pub async fn run<T>(&self, exclusive: bool, call: impl Future<Output = T>) -> T {
+    pub(crate) async fn run<T>(&self, exclusive: bool, call: impl Future<Output = T>) -> T {
         let _held = self.enter(exclusive).await;
         call.await
     }

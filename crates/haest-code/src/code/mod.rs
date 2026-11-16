@@ -15,7 +15,7 @@
 //!     [`ToolSource`], read per run), so whatever wraps the model's tools -- plan
 //!     mode, approvals -- judges every inner call too
 //!   - writes run alone, reads share a gate ([`crate::call_gate`]); [`MAX_CALLS`]
-//!     calls, [`MAX_SEEN`] pictures, [`MEMORY_BYTES`] and a wall-clock deadline
+//!     calls, [`MAX_SEEN`] pictures, [`VM_MEMORY_BYTES`] and a wall-clock deadline
 //!     per run; a fresh engine every run
 //!
 //! Shaped after Claude Code's REPL tool: one async program body per call, the
@@ -68,12 +68,7 @@ use render::render_code_output;
 
 /// The Code tool's name, as the model calls it.
 pub const CODE_TOOL_NAME: &str = "Code";
-const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 const MAX_TIMEOUT_MS: u64 = 300_000;
-/// The memory one Code run's engine may use (64 MiB, the engine's
-/// [`VM_MEMORY_BYTES`]).
-pub const MEMORY_BYTES: usize = VM_MEMORY_BYTES;
-const MAX_LOG_CHARS: usize = 100_000;
 
 fn matches(name: &str, pattern: &str) -> bool {
     match pattern.strip_suffix('*') {
@@ -136,8 +131,8 @@ fn description(names: &[String]) -> String {
 - No fs, network, require or process -- the tools are the only way out. Limits: {MAX_CALLS} tool calls, {} MB, default {}s (timeout param, max {}s).
 
 Callable: {}.",
-        MEMORY_BYTES / 1024 / 1024,
-        DEFAULT_TIMEOUT_MS / 1000,
+        VM_MEMORY_BYTES / 1024 / 1024,
+        VmLimits::default().timeout_ms / 1000,
         MAX_TIMEOUT_MS / 1000,
         names.join(", ")
     )
@@ -235,7 +230,7 @@ impl Tool for CodeTool {
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let code = req_str(&input, "code")?;
         let timeout_ms = opt_num(&input, "timeout")?
-            .unwrap_or(DEFAULT_TIMEOUT_MS as f64)
+            .unwrap_or(VmLimits::default().timeout_ms as f64)
             .clamp(1000.0, MAX_TIMEOUT_MS as f64) as u64;
         let allowed: HashSet<&str> = self.names.iter().map(String::as_str).collect();
         let tools = self
@@ -250,8 +245,7 @@ impl Tool for CodeTool {
         let bridge = Bridge::new(tools, ctx, inner);
         let limits = VmLimits {
             timeout_ms,
-            memory_bytes: MEMORY_BYTES,
-            max_log_chars: MAX_LOG_CHARS,
+            ..VmLimits::default()
         };
         let beat = |b: VmBeat| ctx.services.log(&beat_line(ctx, b));
         let run = run_in_vm(code, &bridge.spec(), limits, &ctx.cancel, Some(&beat)).await;

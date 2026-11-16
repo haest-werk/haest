@@ -9,6 +9,16 @@ use std::{
 use serde_json::{Map, Value};
 
 /// The bounds of one engine run, for [`run_in_vm`](super::run_in_vm).
+///
+/// The default is the Code tool's when the model sets no timeout: a minute,
+/// [`VM_MEMORY_BYTES`](super::VM_MEMORY_BYTES), 100,000 characters of output.
+///
+/// ```
+/// use haest_code::VmLimits;
+///
+/// let quick = VmLimits { timeout_ms: 5_000, ..VmLimits::default() };
+/// assert_eq!(quick.memory_bytes, haest_code::vm::VM_MEMORY_BYTES);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VmLimits {
     /// Wall-clock deadline in milliseconds, from when the engine starts; past
@@ -19,6 +29,16 @@ pub struct VmLimits {
     /// Console output kept, in characters; the rest is dropped and
     /// [`VmRun::logs_truncated`] set.
     pub max_log_chars: usize,
+}
+
+impl Default for VmLimits {
+    fn default() -> Self {
+        Self {
+            timeout_ms: 60_000,
+            memory_bytes: super::VM_MEMORY_BYTES,
+            max_log_chars: 100_000,
+        }
+    }
 }
 
 /// Why a run was cut short.

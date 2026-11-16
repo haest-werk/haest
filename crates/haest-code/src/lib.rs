@@ -17,7 +17,7 @@
 //! | Piece | What | Ported from |
 //! |---|---|---|
 //! | [`vm`] | one engine run on a thread of its own: limits, stop, heartbeat | `core/code-vm*.ts` |
-//! | [`call_gate`] | writes alone, reads together, for one run's tool calls | `core/call-gate.ts` |
+//! | `call_gate` (inside [`code`]) | writes alone, reads together, for one run's tool calls | `core/call-gate.ts` |
 //! | [`code`] | the Code tool: a short program that calls haest's tools | `tools/code*.ts` |
 //! | [`sandbox_js`] | the sandbox shell's `js <file>` command over a haest [`Fs`](haest_core::Fs) | `core/sandbox-js*.ts` |
 //!
@@ -118,7 +118,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
-pub mod call_gate;
+mod call_gate;
 pub mod code;
 pub mod sandbox_js;
 #[cfg(test)]
@@ -127,4 +127,4 @@ pub mod vm;
 
 pub use code::{CodeTool, code_callable, code_tool_names};
 pub use sandbox_js::{JsEnv, js_command, not_here, run_js, sandbox_commands};
-pub use vm::{HostFn, VmBeat, VmLimits, VmRun, VmStop, run_in_vm};
+pub use vm::{HostFn, HostFuture, VmBeat, VmLimits, VmRun, VmSpec, VmStop, run_in_vm};
