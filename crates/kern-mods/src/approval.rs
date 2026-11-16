@@ -28,10 +28,11 @@ fn re(pattern: &str) -> Regex {
 
 static IRREVERSIBLE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     vec![
-        // Any flag position: `rm -v -rf`, `rm -R`, `rm --recursive`.
+        // A flag anywhere in the same command, as GNU rm takes it: `rm -v -rf`,
+        // `rm -R`, `rm --recursive`, `rm build -rf`.
         (
             re(
-                r"\brm\s+(?:-{1,2}[\w-]*\s+)*(?:-[a-zA-Z]*[rRf][a-zA-Z]*|--recursive|--force)(?:\s|$)",
+                r"\brm\s(?:[^;&|\n]*\s)?(?:-[a-zA-Z]*[rRf][a-zA-Z]*|--recursive|--force)(?:\s|$|[;&|])",
             ),
             "deletes files recursively or by force",
         ),
@@ -58,6 +59,12 @@ static IRREVERSIBLE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         (
             re(r"\bgit\s+checkout\s+--\s"),
             "discards file changes (git checkout --)",
+        ),
+        // The whole tree (`.`, `./`, `:/`), flags anywhere. Also asks for
+        // `git restore --staged .`, which only unstages: the safe side.
+        (
+            re(r"\bgit\s+(?:checkout|restore)\s(?:[^;&|\n]*\s)?(?:\./?|:/)(?:\s|$|[;&|])"),
+            "discards every uncommitted change (git checkout . / git restore .)",
         ),
         (
             re(r"\b(mkfs|shred)\b|\bdd\s+if="),

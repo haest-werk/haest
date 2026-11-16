@@ -50,6 +50,38 @@ fn recursive_deletes_history_rewrites_disk_wipes_and_sudo_need_approval_ordinary
     }
 }
 
+#[test]
+fn flags_after_the_operands_and_discarding_every_change_need_approval_too() {
+    for c in [
+        "rm build -rf",
+        "rm x -r",
+        "rm a b -f",
+        "rm build --recursive",
+        "rm build -v -R",
+        "ls; rm build -rf",
+        "git checkout .",
+        "git checkout -f .",
+        "git checkout . -f",
+        "git checkout HEAD ./",
+        "git restore .",
+        "git restore --source=HEAD .",
+        "git restore . --worktree",
+    ] {
+        assert!(irreversible_reason(c).is_some(), "{c} should ask");
+    }
+    for c in [
+        "rm file.txt -v",
+        "rm x && ls -R",
+        "rm file-rf.txt",
+        "git checkout main",
+        "git checkout -b fix/x.y",
+        "git checkout main && ls .",
+        "git restore --staged file.txt",
+    ] {
+        assert!(irreversible_reason(c).is_none(), "{c} should not ask");
+    }
+}
+
 fn bash_call(command: &str) -> serde_json::Map<String, serde_json::Value> {
     input(json!({ "command": command }))
 }
