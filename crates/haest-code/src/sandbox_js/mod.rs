@@ -129,9 +129,17 @@ pub fn not_here(name: &str) -> ExecResult {
     )
 }
 
+fn extension(path: &Path) -> &str {
+    path.extension().and_then(|e| e.to_str()).unwrap_or("")
+}
+
 fn is_typescript(path: &Path) -> bool {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    matches!(ext, "ts" | "mts" | "cts" | "tsx" | "mtsx" | "ctsx")
+    matches!(extension(path), "ts" | "mts" | "cts")
+}
+
+/// A JSX file: the engine runs no JSX, and the type stripper leaves it in.
+fn is_jsx(path: &Path) -> bool {
+    matches!(extension(path), "tsx" | "mtsx" | "ctsx" | "jsx")
 }
 
 #[cfg(feature = "typescript")]
@@ -160,8 +168,9 @@ fn runnable(source: String, path: &Path) -> Result<String, String> {
 /// is a CLI's: no file is a usage message and exit 2, `-h` / `--help` the
 /// usage on stdout and exit 0, a file that is missing, unreadable or not
 /// valid TypeScript exit 1 with the reason on stderr. A file is TypeScript by
-/// its extension: `.ts`, `.mts`, `.cts`, `.tsx`, `.mtsx`, `.ctsx`. Without
-/// the `typescript` feature such a file is refused.
+/// its extension: `.ts`, `.mts`, `.cts`; without the `typescript` feature
+/// such a file is refused. A JSX file (`.tsx`, `.mtsx`, `.ctsx`, `.jsx`) is
+/// refused, exit 1: the engine runs no JSX.
 ///
 /// `env.cancel` stops the script; so does the shell call's deadline,
 /// `env.ends_at`.
@@ -206,6 +215,10 @@ pub async fn js_command(args: &[String], env: &JsEnv) -> ExecResult {
         return output(usage(), "", 0);
     }
     let path = resolve_path(&env.cwd, file);
+    if is_jsx(&path) {
+        let why = "JSX does not run here (the engine has no JSX); write .ts or .js";
+        return output("", format!("js: {file}: {why}\n"), 1);
+    }
     if !env.fs.exists(&path).await {
         return output("", format!("js: {file}: no such file\n"), 1);
     }

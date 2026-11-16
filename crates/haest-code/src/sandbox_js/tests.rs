@@ -135,3 +135,15 @@ fn other_runtime_names_point_at_js_instead_of_pretending() {
         assert!(r.stdout.is_empty() && !r.stderr.is_empty());
     }
 }
+
+/// The engine runs no JSX, and the type stripper leaves JSX as it is: a JSX
+/// file is refused before anything in it runs.
+#[tokio::test]
+async fn a_jsx_file_is_refused_before_it_runs() {
+    for name in ["app.tsx", "app.mtsx", "app.ctsx", "app.jsx"] {
+        let fs = with_script(name, "console.log('ran')");
+        let r = js(&fs, name).await;
+        assert_eq!((r.stdout.as_str(), r.exit_code), ("", 1), "{name}");
+        assert!(r.stderr.contains(name), "{}", r.stderr);
+    }
+}
