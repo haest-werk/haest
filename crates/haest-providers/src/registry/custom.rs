@@ -174,7 +174,7 @@ impl CustomProviderConfig {
     /// The key itself, else the one the host has under `apiKeyEnv`, else
     /// `"none"` (a local server takes any). A custom provider never fails for
     /// want of a key.
-    pub fn api_key(&self, keys: &dyn KeySource) -> String {
+    pub fn resolved_key(&self, keys: &dyn KeySource) -> String {
         self.api_key
             .clone()
             .or_else(|| self.api_key_env.as_ref().and_then(|k| keys.key(k)))
@@ -182,20 +182,20 @@ impl CustomProviderConfig {
     }
 
     /// A `type: "anthropic"` entry as the options of the provider `name`: the
-    /// entry's URL, key ([`api_key`](Self::api_key)) and headers.
+    /// entry's URL, key ([`resolved_key`](Self::resolved_key)) and headers.
     pub(crate) fn anthropic_options(&self, name: &str, keys: &dyn KeySource) -> AnthropicOptions {
-        let mut opts = AnthropicOptions::new(name, self.api_key(keys));
+        let mut opts = AnthropicOptions::new(name, self.resolved_key(keys));
         opts.base_url = self.base_url.clone();
         opts.headers = self.headers.clone();
         opts
     }
 
     /// A `type: "openai"` entry as the options of the provider `name`, the
-    /// plain body: the entry's URL, key ([`api_key`](Self::api_key)), headers
-    /// and effort levels. Its prices are the built-in catalog's for `name:`
-    /// models, then the entry's own over them.
+    /// plain body: the entry's URL, key ([`resolved_key`](Self::resolved_key)),
+    /// headers and effort levels. Its prices are the built-in catalog's for
+    /// `name:` models, then the entry's own over them.
     pub(crate) fn compat_options(&self, name: &str, keys: &dyn KeySource) -> CompatOptions {
-        let mut opts = CompatOptions::new(name, self.api_key(keys));
+        let mut opts = CompatOptions::new(name, self.resolved_key(keys));
         opts.base_url = self.base_url.clone();
         opts.headers = self.headers.clone();
         opts.reasoning_effort = self.reasoning_effort.clone();
