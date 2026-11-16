@@ -1,7 +1,7 @@
 //! GenerateImage: image OUTPUT for any haest model, through an Image API
 //! (`POST /images`; OpenRouter's by default). The conversation's model stays
 //! whatever the human picked and calls a dedicated image model here; which ones
-//! it may pick is the host's list ([`ImageToolOptions::models`]). Every setting
+//! it may pick is the host's list ([`GenerateImageOptions::models`]). Every setting
 //! is checked against the chosen model's own list before anything is paid for
 //! ([`settings`]), and every refusal says what the model takes.
 //!
@@ -13,10 +13,10 @@
 //! and charges to the ledger, so the turn total and the caps both count it.
 //! Ported from the TS haest's `tools/image.ts`.
 //!
-//! PLUG POINT: [`ImageToolOptions::http`] (any [`HttpClient`]) and the API key
+//! PLUG POINT: [`GenerateImageOptions::http`] (any [`HttpClient`]) and the API key
 //! are the host's; haest never reads a key from the environment.
 //!
-//! Start from [`ImageToolOptions::new`] and [`ImageTool::new`]. GenerateImage
+//! Start from [`GenerateImageOptions::new`] and [`GenerateImageTool::new`]. GenerateImage
 //! is not one of the [`builtin_tools`](crate::builtin_tools): a host adds it
 //! when it has a key.
 
@@ -35,11 +35,11 @@ pub use haest_core::__private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
 use haest_core::handed::OPENROUTER_URL;
 use haest_http::{HttpClient, ReqwestClient};
 pub use request::{ImageError, ImageReply, call_image_api, sniff_image_type};
-pub use tool::ImageTool;
+pub use tool::GenerateImageTool;
 
 /// What GenerateImage runs on. Clones share the model list read so far.
 #[derive(Clone)]
-pub struct ImageToolOptions {
+pub struct GenerateImageOptions {
     /// The Image API's key, supplied by the host.
     pub api_key: String,
     /// Without a trailing slash: `/images` and `/images/models` are appended.
@@ -54,15 +54,15 @@ pub struct ImageToolOptions {
     pub catalog: Arc<ImageCatalog>,
 }
 
-impl ImageToolOptions {
+impl GenerateImageOptions {
     /// The defaults, with the host's key: OpenRouter's Image API,
     /// [`DEFAULT_IMAGE_MODEL`] among [`DEFAULT_IMAGE_MODELS`], the shared
     /// [`ReqwestClient::new`] (built on the first request, never here).
     ///
     /// ```
-    /// use haest_tools::ImageToolOptions;
+    /// use haest_tools::GenerateImageOptions;
     ///
-    /// let opts = ImageToolOptions::new("sk-...").with_models("vendor/fast", ["vendor/sharp"]);
+    /// let opts = GenerateImageOptions::new("sk-...").with_models("vendor/fast", ["vendor/sharp"]);
     /// assert_eq!(opts.models, ["vendor/fast", "vendor/sharp"]);
     /// // The key is never printed.
     /// assert!(!format!("{opts:?}").contains("sk-"));
@@ -92,9 +92,9 @@ impl ImageToolOptions {
     }
 }
 
-impl fmt::Debug for ImageToolOptions {
+impl fmt::Debug for GenerateImageOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ImageToolOptions")
+        f.debug_struct("GenerateImageOptions")
             .field("api_key", &"<redacted>")
             .field("base_url", &self.base_url)
             .field("model", &self.model)

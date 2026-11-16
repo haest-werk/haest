@@ -22,7 +22,7 @@ use haest_core::{
     workspace::ShutWorkspace,
 };
 use haest_tools::{
-    ImageToolOptions, WebFetchNet, WebFetchTool, http::BoxError, image::call_image_api,
+    GenerateImageOptions, WebFetchNet, WebFetchTool, http::BoxError, image::call_image_api,
     net_guard::Resolve,
 };
 use serde_json::json;
@@ -95,7 +95,7 @@ fn proxy_in_env() -> Seen {
 async fn the_image_api_and_its_key_go_straight_to_the_api_never_through_an_env_proxy() {
     let proxy = proxy_in_env();
     let (api, direct) = listener();
-    let opts = ImageToolOptions::new("image-api-key");
+    let opts = GenerateImageOptions::new("image-api-key");
     let cancel = CancellationToken::new();
     let listed = opts
         .catalog

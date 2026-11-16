@@ -26,7 +26,7 @@ const FRESH: Duration = Duration::from_secs(60 * 60);
 type Models = Arc<HashMap<String, ModelSettings>>;
 
 /// The Image API's model lists read so far, by base URL, each kept an hour.
-/// [`ImageToolOptions`](super::ImageToolOptions) holds one; `Default` is empty.
+/// [`GenerateImageOptions`](super::GenerateImageOptions) holds one; `Default` is empty.
 #[derive(Default)]
 pub struct ImageCatalog {
     kept: Mutex<HashMap<String, (Instant, Models)>>,

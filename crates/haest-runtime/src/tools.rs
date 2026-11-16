@@ -23,7 +23,8 @@ use crate::haest::{
     mcp::McpHub,
     mods::{ModTools, Mods},
     tools::{
-        BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub, SkillToolOptions,
+        BashOptions, BuiltinOptions, GenerateImageOptions, GenerateImageTool, JobHub,
+        SkillToolOptions,
         agents::{AgentRef, SubagentHub},
         builtin_tools_where,
     },
@@ -43,7 +44,7 @@ pub fn own_tools(
     skills: Arc<Mutex<Vec<Skill>>>,
     host_fs: Arc<dyn Fs>,
     jobs: Option<Arc<JobHub>>,
-    image: Option<ImageToolOptions>,
+    image: Option<GenerateImageOptions>,
 ) -> Vec<Arc<dyn Tool>> {
     let opts = BuiltinOptions {
         bash: BashOptions {
@@ -60,7 +61,7 @@ pub fn own_tools(
     let mut tools = builtin_tools_where(|w| picked.has(w), opts)
         .expect("every option a built-in needs is given");
     if let Some(opts) = image {
-        tools.push(Arc::new(ImageTool::new(opts)));
+        tools.push(Arc::new(GenerateImageTool::new(opts)));
     }
     tools
 }
@@ -85,14 +86,14 @@ pub struct NoImageKey;
 pub fn image_options(
     s: &Settings,
     keys: &dyn KeySource,
-) -> Result<Option<ImageToolOptions>, NoImageKey> {
+) -> Result<Option<GenerateImageOptions>, NoImageKey> {
     if !s.image {
         return Ok(None);
     }
     let key = keys.key("OPENROUTER_API_KEY").ok_or(NoImageKey)?;
-    let opts = ImageToolOptions {
+    let opts = GenerateImageOptions {
         base_url: openrouter_base_url(keys),
-        ..ImageToolOptions::new(key)
+        ..GenerateImageOptions::new(key)
     };
     Ok(Some(opts.with_models(
         s.image_model.clone(),

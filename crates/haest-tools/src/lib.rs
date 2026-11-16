@@ -48,7 +48,7 @@
 //! |---|---|---|---|---|
 //! | Agent, SendMessage, StopAgent | start, message and stop subagents | no | [`SubagentHub::tools_for`], [`agents::agent_tools`] | an [`AgentDirectory`]; the default [`SubagentHub`] needs a [`SubagentParent`] |
 //! | ToolSearch (and CallTool) | loads a deferred tool's schema (calls one, in proxy mode) | ToolSearch only | [`tool_search::DeferredTools`] | a [`ToolDeferral`](haest_core::deferred_tools::ToolDeferral) |
-//! | GenerateImage | makes an image with an image model, saves and shows it | no | [`ImageTool`] | an Image API key ([`ImageToolOptions`]) |
+//! | GenerateImage | makes an image with an image model, saves and shows it | no | [`GenerateImageTool`] | an Image API key ([`GenerateImageOptions`]) |
 //!
 //! WebFetch and GenerateImage make their requests through [`http::HttpClient`]
 //! (haest-http, re-exported as [`http`]), so a host or a test can hand either
@@ -139,7 +139,7 @@ pub use builtins::{
     BuiltinOptions, MissingOption, builtin_tools, builtin_tools_where, builtin_word,
 };
 pub use files::{EditTool, WriteTool};
-pub use image::{ImageTool, ImageToolOptions};
+pub use image::{GenerateImageOptions, GenerateImageTool};
 pub use inbox::Inbox;
 pub use jobs::{JobError, JobEvents, JobHub};
 pub use read::{ReadIntercept, ReadTool};

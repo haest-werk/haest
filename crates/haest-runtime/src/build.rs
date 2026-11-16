@@ -22,7 +22,7 @@ use crate::{
         mods::{ModSystemPrompt, Prompter},
         now_ms,
         providers::{ProviderRegistry, RegistryOptions},
-        tools::ImageToolOptions,
+        tools::GenerateImageOptions,
         tools::tool_search::DeferredTools,
     },
     inbox, mods,
@@ -177,7 +177,7 @@ where
     let (sender, inbox) = inbox::inbox(&hooks, s.max_agent_turns);
     let jobs = jobs_for(s, sender.clone());
     let image = match image_options(s, keys.as_ref()) {
-        Ok(opts) => opts.map(|o| ImageToolOptions { http, ..o }),
+        Ok(opts) => opts.map(|o| GenerateImageOptions { http, ..o }),
         Err(e) => {
             hooks.warn(&format!("{e}."));
             None

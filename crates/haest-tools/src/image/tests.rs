@@ -14,7 +14,7 @@ use haest_core::{
 use haest_http::{HttpClient, HttpError, Method, Request, Response};
 use serde_json::{Value, json};
 
-use super::{ImageTool, ImageToolOptions};
+use super::{GenerateImageOptions, GenerateImageTool};
 use crate::testkit::{self, CWD, TestWorkspace};
 
 const JPEG: [u8; 10] = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0];
@@ -98,14 +98,14 @@ impl Rig {
             gets: Mutex::default(),
             posted: Mutex::default(),
         });
-        let mut opts = ImageToolOptions::new("k").with_models("img-model", ["text-model"]);
+        let mut opts = GenerateImageOptions::new("k").with_models("img-model", ["text-model"]);
         opts.base_url = BASE.into();
         opts.http = api.clone();
         Self {
             api,
             ws: TestWorkspace::with_files([("/p/ref.png", [1u8, 2])]),
             published: Arc::default(),
-            tool: Arc::new(ImageTool::new(opts)),
+            tool: Arc::new(GenerateImageTool::new(opts)),
         }
     }
 

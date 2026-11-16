@@ -5,7 +5,7 @@
 //! it. Ported from the TS haest's `tools/image-request.ts`.
 //!
 //! The tool's two exchanges (`GET /images/models`, `POST /images`) go through
-//! the [`HttpClient`] in [`ImageToolOptions::http`](super::ImageToolOptions::http).
+//! the [`HttpClient`] in [`GenerateImageOptions::http`](super::GenerateImageOptions::http).
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use haest_core::tool::spelled;

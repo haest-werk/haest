@@ -9,7 +9,7 @@ use haest_core::{
 use serde_json::{Map, Value, json};
 
 use super::{
-    ImageToolOptions,
+    GenerateImageOptions,
     files::{output_path, references, save_and_show},
     request::call_image_api,
     settings::{check_image_settings, describe_model, max_references},
@@ -22,7 +22,7 @@ use crate::canonical::pick;
 /// Input: `prompt`, and optional `file_path` (default
 /// `generated/<slug>-<ms>.<ext>` under the context's `cwd`),
 /// `reference_images` (paths in the workspace), `model` (one of
-/// [`ImageToolOptions::models`]) and `settings` (the model's own: aspect
+/// [`GenerateImageOptions::models`]) and `settings` (the model's own: aspect
 /// ratio, resolution, ...).
 ///
 /// Before anything is paid for, the model and every setting are checked
@@ -49,7 +49,7 @@ use crate::canonical::pick;
 ///     tool::{Tool, ToolContext},
 /// };
 /// use haest_tools::{
-///     ImageTool, ImageToolOptions,
+///     GenerateImageTool, GenerateImageOptions,
 ///     http::{HttpClient, HttpError, Method, Request, Response},
 /// };
 /// use haest_workspace::SandboxWorkspace;
@@ -77,11 +77,11 @@ use crate::canonical::pick;
 ///
 /// # #[tokio::main]
 /// # async fn main() {
-/// let opts = ImageToolOptions {
+/// let opts = GenerateImageOptions {
 ///     http: Arc::new(FakeApi),
-///     ..ImageToolOptions::new("the host's key")
+///     ..GenerateImageOptions::new("the host's key")
 /// };
-/// let tool = ImageTool::new(opts.with_models("vendor/pic", ["vendor/other"]));
+/// let tool = GenerateImageTool::new(opts.with_models("vendor/pic", ["vendor/other"]));
 /// let files = Arc::new(MemFs::new());
 /// let ctx = ToolContext::new("/work", Arc::new(SandboxWorkspace::over(files.clone())));
 ///
@@ -99,13 +99,13 @@ use crate::canonical::pick;
 /// assert!(tool.execute(input.as_object().unwrap().clone(), &ctx).await.is_err());
 /// # }
 /// ```
-pub struct ImageTool {
-    opts: ImageToolOptions,
+pub struct GenerateImageTool {
+    opts: GenerateImageOptions,
 }
 
-impl ImageTool {
+impl GenerateImageTool {
     /// GenerateImage over `opts`.
-    pub fn new(opts: ImageToolOptions) -> Self {
+    pub fn new(opts: GenerateImageOptions) -> Self {
         Self { opts }
     }
 
@@ -134,7 +134,7 @@ fn settings_input(input: &JsonMap) -> Result<Map<String, Value>, ToolError> {
 }
 
 #[async_trait]
-impl Tool for ImageTool {
+impl Tool for GenerateImageTool {
     fn name(&self) -> &str {
         "GenerateImage"
     }
