@@ -20,7 +20,7 @@ use crate::{
         compaction::{CompactionConfig, compact, needs_compaction},
         ledger::{LedgerHooks, LedgerSnapshot},
         limits::TurnLimits,
-        messages::MediaPart,
+        messages::{MediaPart, Usage},
         now_ms,
         providers::Catalog,
         session::{JsonlSessionFile, SessionRecord, SessionSink},
@@ -132,9 +132,7 @@ impl Host {
             Ok(None) if !auto => self.info("Nothing to compact yet."),
             Ok(None) => {}
             Ok(Some(res)) => {
-                if let Some(ledger) = &agent.deps().ledger {
-                    ledger.lock().unwrap().charge(&res.usage);
-                }
+                charge(agent, &res.usage);
                 self.append(SessionRecord::Compaction {
                     t: now_ms(),
                     summary: res.summary,
@@ -146,12 +144,21 @@ impl Host {
                 ));
             }
             Err(e) => {
+                charge(agent, &e.usage());
                 let why = format!("Compaction failed: {e}");
                 self.error(&why);
                 return Err(why);
             }
         }
         Ok(())
+    }
+}
+
+/// What the summary calls cost goes on the conversation's bill, summary or
+/// not. The loop only counts it toward the turn's caps (`take_side_spend`).
+fn charge(agent: &Agent, usage: &Usage) {
+    if let Some(ledger) = &agent.deps().ledger {
+        ledger.lock().unwrap().charge(usage);
     }
 }
 

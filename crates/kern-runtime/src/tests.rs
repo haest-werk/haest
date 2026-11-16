@@ -110,4 +110,5 @@ async fn a_key_the_host_hands_in_is_the_key_kern_uses() {
     assert!(rt.agent.deps().models.resolve(&rt.agent.model_spec).is_ok());
 }
 
+mod compaction;
 mod lifecycle;
