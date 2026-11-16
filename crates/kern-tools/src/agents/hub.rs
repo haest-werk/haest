@@ -18,9 +18,6 @@ use super::{
     tools::agent_tools,
 };
 
-/// The tools a subagent does NOT get: the task list belongs to the conversation, not to a helper.
-const MAIN_ONLY: [&str; 4] = ["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"];
-
 pub struct SubagentHub {
     host: Arc<dyn SubagentHost>,
     caps: SubagentCaps,
@@ -84,13 +81,15 @@ impl SubagentHub {
         self.host.on_activity(&ids);
     }
 
-    /// The agent for `run`: the conversation's deps with its own tools, prompt and hooks.
+    /// The agent for `run`: the conversation's deps with its own tools, prompt
+    /// and hooks. No task tools: the task list belongs to the conversation, not
+    /// to a helper.
     fn build(&self, run: &Run, model: Option<String>) -> Agent {
         let mut tools: Vec<Arc<dyn Tool>> = self
             .host
             .base_tools()
             .into_iter()
-            .filter(|t| !MAIN_ONLY.contains(&t.name()))
+            .filter(|t| crate::builtin_word(t.name()) != Some("tasks"))
             .collect();
         tools.extend(self.tools_for(&run.me));
         let source = self.host.tool_source(tools);
