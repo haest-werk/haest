@@ -23,9 +23,17 @@ use tokio::{
 /// group still holds them) before the result is returned without them.
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
 
-/// Kill a detached child's whole process group (the child, and everything it spawned).
+/// The group a child of `pid` leads, if `pid` can be one: never 0 (kill(0)
+/// is the caller's own group) or 1 (kill(-1) is every process the caller may
+/// signal, and init leads no child's group).
+fn group_of(pid: u32) -> Option<libc::pid_t> {
+    libc::pid_t::try_from(pid).ok().filter(|p| *p > 1)
+}
+
+/// Kill a detached child's whole process group (the child, and everything it
+/// spawned). A pid of 0 or 1 is refused: nothing is signalled.
 pub fn kill_group(pid: u32) {
-    let Ok(pid) = libc::pid_t::try_from(pid) else {
+    let Some(pid) = group_of(pid) else {
         return;
     };
     // SAFETY: kill(2) takes plain integers and touches no memory of ours.
@@ -214,5 +222,19 @@ pub async fn spawn_collect(
         stderr: take(&err),
         exit_code: status.map_or(128 + libc::SIGKILL, exit_code),
         timed_out,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_group_is_the_callers_own_or_every_process() {
+        // Never signalled for real: kill(-1) reaches everything the user owns.
+        assert_eq!(group_of(0), None);
+        assert_eq!(group_of(1), None);
+        assert_eq!(group_of(u32::MAX), None);
+        assert_eq!(group_of(4242), Some(4242));
     }
 }
