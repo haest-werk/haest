@@ -60,8 +60,10 @@ the statuses, the priorities (left out when there are none) and the relations.
 its canonical `kind`. IssueDelete's kind is `issue.delete`
 (`haest_issues::DELETE_KIND`), and its description tells the model it cannot be
 undone and to change the status instead unless the human asked. A host that
-asks the human before irreversible calls should gate this tool by that kind;
-haest's built-in approval gate covers Bash only.
+asks the human before irreversible calls should gate this tool by that kind:
+haest's built-in approval mod judges shell commands only (`SHELL_TOOLS`, or
+the tools a host names with `ApprovalMod::with_shell_tools`, each by its
+`command` input), so it never sees IssueDelete.
 
 ## GitHub and cards, side by side
 
