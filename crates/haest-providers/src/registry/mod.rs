@@ -141,14 +141,15 @@ impl ProviderRegistry {
         }
     }
 
-    /// Every provider name a spec may use: the built-ins, then the
-    /// providers.json entries in name order. An entry named like a built-in
-    /// replaces it, and is listed twice.
+    /// Every provider name a spec may use, each once: the built-ins, then the
+    /// other providers.json entries in name order. An entry named like a
+    /// built-in replaces it in its place.
     pub fn names(&self) -> Vec<String> {
+        let added = self.custom.keys().filter(|k| !BUILTIN.contains(&k.as_str()));
         BUILTIN
             .iter()
             .map(|s| s.to_string())
-            .chain(self.custom.keys().cloned())
+            .chain(added.cloned())
             .collect()
     }
 

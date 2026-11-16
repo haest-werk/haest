@@ -204,6 +204,22 @@ async fn openrouter_routing_goes_out_only_when_handed_in_and_attribution_is_conf
 }
 
 #[test]
+fn an_entry_that_replaces_a_built_in_is_listed_once() {
+    let custom = CustomProviders::from([
+        (
+            "openrouter".to_string(),
+            json!({"type": "openai", "baseURL": "http://gateway/v1"}),
+        ),
+        ("local".to_string(), json!({"type": "openai"})),
+    ]);
+    let names = registry(keys(&[]), custom).names();
+    let listed = |name: &str| names.iter().filter(|n| *n == name).count();
+    assert_eq!(listed("openrouter"), 1, "{names:?}");
+    assert_eq!(listed("local"), 1, "{names:?}");
+    assert_eq!(listed("anthropic"), 1, "{names:?}");
+}
+
+#[test]
 fn one_bad_custom_entry_blocks_only_itself() {
     let custom = CustomProviders::from([
         (
