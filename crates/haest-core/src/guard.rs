@@ -16,7 +16,7 @@
 //! cap follows the model's window, and the model may change mid-turn.
 //!
 //! The loop makes a fresh [`TurnGuard`] for every turn; a host sets the caps
-//! through [`ModelFacts::turn_caps`](crate::ModelFacts::turn_caps) and never drives the guard itself.
+//! through a [`TurnCapsSource`](crate::caps::TurnCapsSource) and never drives the guard itself.
 
 mod signature;
 #[cfg(test)]

@@ -23,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::Agent,
+    caps::{TurnCaps, TurnCapsSource},
     catalog::{ModelFacts, NoFacts},
     ledger::Ledger,
     messages::{MediaPart, Message},
@@ -62,8 +63,8 @@ impl SystemPrompt for String {
 ///
 /// # Examples
 ///
-/// A host that saves every message and allows one model call per turn (a
-/// [`ModelFacts`] answer):
+/// A host that saves every message, with one model call per turn (a
+/// [`TurnCaps`] as its [`TurnCapsSource`]):
 ///
 /// ```
 /// # #[cfg(feature = "testing")]
@@ -73,7 +74,7 @@ impl SystemPrompt for String {
 ///
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace,
-///     StopReason, Tool, ToolServices, caps::TurnCaps, catalog::ModelFacts,
+///     StopReason, Tool, ToolServices, TurnCaps,
 ///     testing::{ScriptedProvider, tool_answer},
 /// };
 ///
@@ -91,12 +92,6 @@ impl SystemPrompt for String {
 ///     }
 /// }
 ///
-/// impl ModelFacts for Host {
-///     fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
-///         Some(TurnCaps { max_turn_steps: 1, ..TurnCaps::default() })
-///     }
-/// }
-///
 /// // The model calls a tool, which needs a second model call to see the result.
 /// let provider = ScriptedProvider::new([tool_answer(&[("c1", "Lookup", serde_json::json!({}))])]);
 /// let host = Arc::new(Host::default());
@@ -109,7 +104,7 @@ impl SystemPrompt for String {
 ///     Arc::new(ShutWorkspace),
 /// );
 /// deps.shared.hooks = host.clone();
-/// deps.shared.facts = host.clone();
+/// deps.shared.turn_caps = Arc::new(TurnCaps { max_turn_steps: 1, ..TurnCaps::default() });
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
 /// let end = agent.run("look it up", &mut Vec::<LoopEvent>::new()).await;
@@ -244,9 +239,11 @@ pub struct SharedDeps {
     pub spill_dir: Option<PathBuf>,
     /// The host's say in the loop; [`NoHooks`] unless set.
     pub hooks: Arc<dyn AgentHooks>,
-    /// What the host knows about each model: turn caps, inputs, reasoning;
+    /// What the host knows about each model: inputs, reasoning;
     /// [`NoFacts`] unless set.
     pub facts: Arc<dyn ModelFacts>,
+    /// The turn caps for each model; none unless set.
+    pub turn_caps: Arc<dyn TurnCapsSource>,
     /// The clock the turn's time cap reads; [`WallClock`] unless set.
     pub clock: Arc<dyn Clock>,
     /// What the conversation has spent across turns; every model call and tool spend is charged here.
@@ -261,8 +258,8 @@ pub struct SharedDeps {
 
 impl SharedDeps {
     /// The minimum: models, a working directory and a workspace. Everything
-    /// else off: no spill directory, [`NoHooks`], [`NoFacts`], the
-    /// [`WallClock`], no ledger, no web search, no remedies.
+    /// else off: no spill directory, [`NoHooks`], [`NoFacts`], no turn caps,
+    /// the [`WallClock`], no ledger, no web search, no remedies.
     pub fn new(
         models: Arc<dyn ModelResolver>,
         cwd: impl Into<PathBuf>,
@@ -275,6 +272,7 @@ impl SharedDeps {
             spill_dir: None,
             hooks: Arc::new(NoHooks),
             facts: Arc::new(NoFacts),
+            turn_caps: Arc::new(TurnCaps::default()),
             clock: Arc::new(WallClock),
             ledger: None,
             web_search: None,

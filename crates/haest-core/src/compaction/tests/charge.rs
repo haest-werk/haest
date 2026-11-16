@@ -6,8 +6,7 @@ use async_trait::async_trait;
 use super::*;
 use crate::{
     agent::test_support::{collect, end, turn_caps},
-    caps::TurnCaps,
-    catalog::ModelFacts,
+    caps::{TurnCaps, TurnCapsSource},
     deps::AgentHooks,
     tool::ToolServices,
 };
@@ -33,7 +32,7 @@ impl AgentHooks for CompactsFirst {
         Ok(())
     }
 }
-impl ModelFacts for CompactsFirst {
+impl TurnCapsSource for CompactsFirst {
     fn turn_caps(&self, _: &str) -> Option<TurnCaps> {
         self.caps.clone()
     }
@@ -50,7 +49,7 @@ fn compacting(p: &Arc<ScriptedProvider>, caps: Option<TurnCaps>) -> Agent {
     let mut agent = agent_with(p);
     let host = Arc::new(CompactsFirst { caps, esc: false });
     agent.deps_mut().shared.hooks = host.clone();
-    agent.deps_mut().shared.facts = host;
+    agent.deps_mut().shared.turn_caps = host;
     agent
 }
 

@@ -20,7 +20,7 @@ use crate::{
     Ui,
     haest::{
         Agent, AgentHooks, Effort,
-        core::caps::TurnCaps,
+        core::caps::{TurnCaps, TurnCapsSource},
         core::catalog::{InputModality, ModelFacts, Reasoning},
         core::compaction::needs_compaction,
         core::ledger::{LedgerHooks, LedgerSnapshot},
@@ -208,13 +208,15 @@ impl AgentHooks for RuntimeHooks {
     }
 }
 
-/// The caps follow the model's window; the inputs and reasoning are the
-/// catalog's rows.
-impl ModelFacts for RuntimeHooks {
+/// The token caps follow the model's window.
+impl TurnCapsSource for RuntimeHooks {
     fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
         Some(self.settings.turn_caps_for(self.window(spec)))
     }
+}
 
+/// The inputs and reasoning are the catalog's rows.
+impl ModelFacts for RuntimeHooks {
     fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
         self.catalog.input_modalities(spec)
     }

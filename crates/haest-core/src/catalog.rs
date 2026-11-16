@@ -33,8 +33,6 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::caps::TurnCaps;
-
 /// PLUG POINT: what the host knows about a model spec
 /// ([`Agent::model_spec`](crate::Agent::model_spec)), set on
 /// [`SharedDeps::facts`](crate::SharedDeps::facts). Asked again before every
@@ -42,14 +40,9 @@ use crate::caps::TurnCaps;
 /// "unknown"; [`NoFacts`] knows nothing.
 ///
 /// Facts only: what the host hears about (a message, withheld media, a
-/// fitted effort) goes to [`AgentHooks`](crate::AgentHooks).
+/// fitted effort) goes to [`AgentHooks`](crate::AgentHooks), and its caps
+/// per model are a [`TurnCapsSource`](crate::caps::TurnCapsSource).
 pub trait ModelFacts: Send + Sync {
-    /// Hard turn caps for the spec, checked before every model call. None =
-    /// uncapped.
-    fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
-        None
-    }
-
     /// What the spec takes as input; None = unknown, media sent untouched.
     /// Media a model does not take is replaced by a note before the call.
     fn input_modalities(&self, _spec: &str) -> Option<HashSet<InputModality>> {

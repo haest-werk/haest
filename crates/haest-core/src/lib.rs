@@ -230,7 +230,7 @@ pub use prelude::*;
 /// ([`req_str`], [`opt_str`], [`opt_num`], [`opt_bool`], [`truncate_middle`]).
 pub mod prelude {
     pub use crate::agent::{Agent, AgentControl, AgentOptions};
-    pub use crate::caps::TurnCaps;
+    pub use crate::caps::{TurnCaps, TurnCapsSource};
     pub use crate::catalog::{InputModality, ModelFacts, NoFacts, Reasoning};
     pub use crate::deps::{
         AgentDeps, AgentHooks, Clock, NoHooks, SharedDeps, SystemPrompt, WallClock, now_ms,

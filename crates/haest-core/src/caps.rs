@@ -12,8 +12,8 @@
 //! the loop checks all of them before every model call, and nudges the model
 //! at half a cap.
 //!
-//! A host serves [`TurnCaps`] per model spec from
-//! [`ModelFacts::turn_caps`](crate::ModelFacts::turn_caps).
+//! A host serves [`TurnCaps`] per model spec through a [`TurnCapsSource`]
+//! ([`SharedDeps::turn_caps`](crate::SharedDeps::turn_caps)).
 
 use std::time::Duration;
 
@@ -44,6 +44,29 @@ pub struct TurnCaps {
     pub max_turn_time: Duration,
     /// Stop the turn once one tool call (same input, same result) has repeated this often.
     pub max_repeats: u32,
+}
+
+/// PLUG POINT: the [`TurnCaps`] for a model spec, asked before every model
+/// call ([`SharedDeps::turn_caps`](crate::SharedDeps::turn_caps)). The host's
+/// policy, apart from what it knows about a model
+/// ([`ModelFacts`](crate::ModelFacts)): token caps may follow a model's
+/// window. A [`TurnCaps`] is one (the same caps for every model), and so is a
+/// closure `Fn(&str) -> Option<TurnCaps>`.
+pub trait TurnCapsSource: Send + Sync {
+    /// The caps for `spec`; None = uncapped.
+    fn turn_caps(&self, spec: &str) -> Option<TurnCaps>;
+}
+
+impl TurnCapsSource for TurnCaps {
+    fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
+        Some(self.clone())
+    }
+}
+
+impl<F: Fn(&str) -> Option<TurnCaps> + Send + Sync> TurnCapsSource for F {
+    fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
+        self(spec)
+    }
 }
 
 /// The caps on the subagent tree. `max_depth` and `max_concurrent` are NOT

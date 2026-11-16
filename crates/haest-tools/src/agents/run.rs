@@ -2,15 +2,14 @@
 //! hooks: the conversation's, with its own caps and nothing persisted), and
 //! what comes back (its last answer, or why there is none).
 
-use std::{collections::HashSet, panic::AssertUnwindSafe, sync::Arc, time::Duration};
+use std::{panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use futures::FutureExt;
 use haest_core::{
     __private::panic_message,
     Agent, AgentHooks, LoopEvent, StopReason, SystemPrompt,
-    caps::TurnCaps,
-    catalog::{InputModality, ModelFacts, Reasoning},
+    caps::{TurnCaps, TurnCapsSource},
     messages::MediaPart,
     provider::Effort,
     tool::{InnerCallEvent, ToolServices, ToolSource},
@@ -93,27 +92,21 @@ pub(super) struct ChildHooks {
     pub id: String,
 }
 
-/// The conversation's model facts with the subagent's own turn caps.
-pub(super) struct ChildFacts {
-    pub facts: Arc<dyn ModelFacts>,
-    pub caps: SubagentCaps,
+/// The conversation's turn caps, with a subagent's own spend, steps and time.
+pub(super) struct ChildCaps {
+    pub caps: Arc<dyn TurnCapsSource>,
+    pub subagent: SubagentCaps,
 }
 
-impl ModelFacts for ChildFacts {
+impl TurnCapsSource for ChildCaps {
     fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
-        let base = self.facts.turn_caps(spec).unwrap_or_default();
+        let base = self.caps.turn_caps(spec).unwrap_or_default();
         Some(TurnCaps {
-            max_turn_usd: self.caps.usd,
-            max_turn_steps: self.caps.steps,
-            max_turn_time: self.caps.time,
+            max_turn_usd: self.subagent.usd,
+            max_turn_steps: self.subagent.steps,
+            max_turn_time: self.subagent.time,
             ..base
         })
-    }
-    fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
-        self.facts.input_modalities(spec)
-    }
-    fn reasoning(&self, spec: &str) -> Option<Reasoning> {
-        self.facts.reasoning(spec)
     }
 }
 

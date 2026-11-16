@@ -15,8 +15,7 @@ use serde_json::Value;
 
 use crate::{
     agent::{Agent, AgentOptions},
-    caps::TurnCaps,
-    catalog::ModelFacts,
+    caps::{TurnCaps, TurnCapsSource},
     deps::{AgentDeps, AgentHooks, Clock},
     events::LoopEvent,
     fs::{Fs, MemFs},
@@ -55,7 +54,7 @@ impl AgentHooks for TestHooks {
     }
 }
 
-impl ModelFacts for TestHooks {
+impl TurnCapsSource for TestHooks {
     fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
         self.caps.clone()
     }
@@ -204,7 +203,7 @@ pub fn agent_with(p: &Arc<ScriptedProvider>, opts: Opts) -> (Agent, Arc<TestHook
         workspace,
     );
     deps.shared.hooks = hooks.clone();
-    deps.shared.facts = hooks.clone();
+    deps.shared.turn_caps = hooks.clone();
     deps.shared.clock = hooks.clone();
     deps.shared.ledger = opts.ledger;
     deps.shared.spill_dir = opts.spill_dir.map(|d| Path::new(d).to_path_buf());

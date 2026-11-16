@@ -2,7 +2,7 @@
 //! toward the turn's time cap, and its session records, which the NODE writes
 //! (haest writes no file).
 //!
-//! PLUG POINTS: `Clock`, `ModelFacts::turn_caps`, `AgentHooks::on_message`,
+//! PLUG POINTS: `Clock`, `TurnCapsSource`, `AgentHooks::on_message`,
 //! `SessionSink`.
 
 use std::sync::{
@@ -12,8 +12,7 @@ use std::sync::{
 
 use async_trait::async_trait;
 use haest::{
-    Agent, AgentHooks, Clock, Message, ModelFacts,
-    core::caps::TurnCaps,
+    Agent, AgentHooks, Clock, Message, TurnCaps, TurnCapsSource,
     core::session::{SessionRecord, SessionSink},
     core::tool::ToolServices,
 };
@@ -146,7 +145,7 @@ impl AgentHooks for BrainHost {
     }
 }
 
-impl ModelFacts for BrainHost {
+impl TurnCapsSource for BrainHost {
     fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
         Some(self.caps.clone())
     }

@@ -206,6 +206,7 @@ where
         spill_dir: Some(spill),
         hooks: hooks.clone(),
         facts: hooks.clone(),
+        turn_caps: hooks.clone(),
         ledger: Some(ledger.clone()),
         web_search: s.web_search_options(),
         remedies: hooks.remedies(),

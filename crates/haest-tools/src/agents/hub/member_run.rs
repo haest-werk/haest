@@ -10,7 +10,7 @@ use super::SubagentHub;
 use crate::agents::{
     SpawnInput, SpawnOutcome, SubagentEvent,
     members::Status,
-    run::{ChildFacts, ChildHooks, ChildPrompt, Run, drive, subagent_note},
+    run::{ChildCaps, ChildHooks, ChildPrompt, Run, drive, subagent_note},
 };
 
 impl SubagentHub {
@@ -52,9 +52,9 @@ impl SubagentHub {
                     parent: self.parent.clone(),
                     id: run.id.clone(),
                 }),
-                facts: Arc::new(ChildFacts {
-                    facts: base.facts.clone(),
-                    caps: self.caps,
+                turn_caps: Arc::new(ChildCaps {
+                    caps: base.turn_caps.clone(),
+                    subagent: self.caps,
                 }),
                 ..base
             },

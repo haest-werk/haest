@@ -259,7 +259,7 @@ impl Agent {
 
     /// The hard caps for the current model spec; read fresh at every check.
     fn turn_caps(&self) -> Option<TurnCaps> {
-        self.deps.shared.facts.turn_caps(&self.model_spec)
+        self.deps.shared.turn_caps.turn_caps(&self.model_spec)
     }
 
     /// Everything a model call sends ahead of the history; compaction reuses it.

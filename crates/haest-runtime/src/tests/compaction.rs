@@ -42,6 +42,7 @@ fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<M
     );
     deps.shared.hooks = hooks.clone();
     deps.shared.facts = hooks.clone();
+    deps.shared.turn_caps = hooks.clone();
     deps.shared.ledger = Some(ledger.clone());
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let mut filled = text_answer("earlier answer");
