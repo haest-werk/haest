@@ -34,49 +34,29 @@ pub struct Issue {
     pub extra: Vec<(String, String)>,
 }
 
-/// How one issue relates to another. Each relation has an inverse: `A parent B`
-/// is `B child A`, `A depends_on B` is `B blocks A`; `relates_to` is its own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Relation {
-    /// The target is this issue's parent (a GitHub parent issue, a card's epic).
-    Parent,
-    /// The target is a child of this issue.
-    Child,
-    /// The target must be done first (GitHub "blocked by", a card's `depends_on`).
-    DependsOn,
-    /// The target waits on this issue.
-    Blocks,
-    /// The target is worth reading alongside this one; no order, no hierarchy.
-    RelatesTo,
+haest_core::word_enum! {
+    /// How one issue relates to another, written as the word the tools use
+    /// (`parent`, `child`, `depends_on`, `blocks`, `relates_to`; parse one
+    /// with [`str::parse`]). [`Relation::ALL`] is the order the tools list them.
+    ///
+    /// Each relation has an inverse: `A parent B` is `B child A`,
+    /// `A depends_on B` is `B blocks A`; `relates_to` is its own.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum Relation ("relation") {
+        /// The target is this issue's parent (a GitHub parent issue, a card's epic).
+        Parent = "parent",
+        /// The target is a child of this issue.
+        Child = "child",
+        /// The target must be done first (GitHub "blocked by", a card's `depends_on`).
+        DependsOn = "depends_on",
+        /// The target waits on this issue.
+        Blocks = "blocks",
+        /// The target is worth reading alongside this one; no order, no hierarchy.
+        RelatesTo = "relates_to",
+    }
 }
 
 impl Relation {
-    /// Every relation, in the order the tools list them.
-    pub const ALL: [Relation; 5] = [
-        Relation::Parent,
-        Relation::Child,
-        Relation::DependsOn,
-        Relation::Blocks,
-        Relation::RelatesTo,
-    ];
-
-    /// The word the tools use for it: `parent`, `child`, `depends_on`,
-    /// `blocks`, `relates_to`.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Relation::Parent => "parent",
-            Relation::Child => "child",
-            Relation::DependsOn => "depends_on",
-            Relation::Blocks => "blocks",
-            Relation::RelatesTo => "relates_to",
-        }
-    }
-
-    /// The relation [`Relation::as_str`] spells `word`; None for any other word.
-    pub fn parse(word: &str) -> Option<Relation> {
-        Relation::ALL.into_iter().find(|r| r.as_str() == word)
-    }
-
     /// The same fact seen from the target.
     pub fn inverse(self) -> Relation {
         match self {
@@ -311,11 +291,11 @@ mod tests {
 
     #[test]
     fn every_relation_reads_back_and_inverts_twice_to_itself() {
-        for r in Relation::ALL {
-            assert_eq!(Relation::parse(r.as_str()), Some(r));
+        for &r in Relation::ALL {
+            assert_eq!(r.as_str().parse(), Ok(r));
             assert_eq!(r.inverse().inverse(), r);
         }
-        assert_eq!(Relation::parse("epic"), None);
+        assert!("epic".parse::<Relation>().is_err());
     }
 
     #[test]

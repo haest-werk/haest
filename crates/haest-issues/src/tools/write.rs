@@ -196,7 +196,7 @@ impl Tool for Link {
         let id = id_in(&input, "id")?;
         let target = id_in(&input, "target")?;
         let word = req_str(&input, "relation")?;
-        let relation = Relation::parse(word)
+        let relation = (word.parse::<Relation>().ok())
             .filter(|r| self.s.info.relations.contains(r))
             .ok_or_else(|| {
                 let known: Vec<&str> = self.s.info.relations.iter().map(|r| r.as_str()).collect();

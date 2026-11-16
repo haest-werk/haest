@@ -16,7 +16,13 @@ use haest_core::{
 };
 use serde_json::{Value, json};
 
-const STATUSES: [&str; 4] = ["pending", "in_progress", "completed", "deleted"];
+/// What TaskUpdate's `status` takes besides a [`TaskStatus`]: remove the task.
+const DELETED: &str = "deleted";
+
+/// Every word TaskUpdate's `status` takes: the statuses, then [`DELETED`].
+fn status_words() -> Vec<&'static str> {
+    TaskStatus::WORDS.iter().copied().chain([DELETED]).collect()
+}
 
 fn line(t: &Task) -> String {
     let blocked = if t.blocked_by.is_empty() {
@@ -42,18 +48,16 @@ fn status(input: &JsonMap) -> Result<Option<PatchStatus>, ToolError> {
     let Some(s) = opt_str(input, "status")? else {
         return Ok(None);
     };
-    Ok(Some(match s {
-        "pending" => PatchStatus::Set(TaskStatus::Pending),
-        "in_progress" => PatchStatus::Set(TaskStatus::InProgress),
-        "completed" => PatchStatus::Set(TaskStatus::Completed),
-        "deleted" => PatchStatus::Deleted,
-        _ => {
-            return Err(ToolError::Input(format!(
-                "\"status\" must be one of {}",
-                STATUSES.join(", ")
-            )));
-        }
-    }))
+    if s == DELETED {
+        return Ok(Some(PatchStatus::Deleted));
+    }
+    let status = s.parse::<TaskStatus>().map_err(|_| {
+        ToolError::Input(format!(
+            "\"status\" must be one of {}",
+            status_words().join(", ")
+        ))
+    })?;
+    Ok(Some(PatchStatus::Set(status)))
 }
 
 /// A TaskError is the model's to fix (an unknown id): it goes back as a correctable input error.
@@ -156,7 +160,7 @@ impl Tool for TaskUpdate {
             "type": "object",
             "properties": {
                 "taskId": id_param(),
-                "status": {"type": "string", "enum": STATUSES},
+                "status": {"type": "string", "enum": status_words()},
                 "subject": {"type": "string"},
                 "description": {"type": "string"},
                 "activeForm": {"type": "string"},

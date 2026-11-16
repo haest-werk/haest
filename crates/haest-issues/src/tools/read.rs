@@ -129,8 +129,8 @@ pub(super) fn full(i: &Issue) -> String {
 /// The links by relation, in the order relations are listed.
 fn grouped_links(i: &Issue) -> Vec<(&'static str, Vec<&str>)> {
     crate::tracker::Relation::ALL
-        .into_iter()
-        .filter_map(|r| {
+        .iter()
+        .filter_map(|&r| {
             let targets: Vec<&str> = (i.links.iter())
                 .filter(|l| l.relation == r)
                 .map(|l| l.target.as_str())
