@@ -19,8 +19,8 @@
 //! - [`McpHub`]: [`connect`](McpHub::connect) the servers, read its
 //!   [`failures`](McpHub::failures), hand it to the loop,
 //!   [`close`](McpHub::close) it at the end.
-//! - [`McpServerConfig`]: one server to connect, written out
-//!   ([`McpServerConfig::stdio`], [`McpServerConfig::http`]) or read from a
+//! - [`McpServerConfig`]: one server to connect, written out (a name over
+//!   [`McpTransport::stdio`] or [`McpTransport::http`]) or read from a
 //!   project's `.mcp.json` ([`load_project_mcp_config`]).
 //! - [`mcp_tool_name`] and [`mcp_kind`]: the names a server's tools get.
 //! - [`mcp_result_to_output`]: what the model reads of a tool's result.
@@ -159,14 +159,16 @@
 //! use std::{path::Path, sync::Arc};
 //!
 //! use haest_core::{ChildEnv, error::report, fs::Fs};
-//! use haest_mcp::{McpHub, McpServerConfig, ProjectMcp, load_project_mcp_config};
+//! use haest_mcp::{McpHub, McpServerConfig, McpTransport, ProjectMcp, load_project_mcp_config};
 //!
 //! # async fn host(fs: &dyn Fs) {
-//! let github = McpServerConfig::stdio("github", "github-mcp-server")
+//! let github = McpTransport::stdio("github-mcp-server")
 //!     .with_args(["stdio"])
 //!     .with_env("GITHUB_TOKEN", "ghp_example");
-//! let docs = McpServerConfig::http("docs", "https://docs.example.com/mcp")
+//! let github = McpServerConfig::new("github", github);
+//! let docs = McpTransport::http("https://docs.example.com/mcp")
 //!     .with_header("Authorization", "Bearer t0ken");
+//! let docs = McpServerConfig::new("docs", docs);
 //!
 //! // The project's own servers, `${NAME}`s filled in from the host's variables.
 //! // A file that cannot be used is reported, and the run goes on without it.
@@ -208,7 +210,7 @@ mod transport;
 #[cfg(test)]
 mod test_server;
 
-pub use config::{McpServerConfig, McpTransport};
+pub use config::{HttpTransport, McpServerConfig, McpTransport, StdioTransport};
 pub use hub::{CALL_TIMEOUT, CONNECT_TIMEOUT, McpFailure, McpHub, McpStartError};
 pub use project::{McpConfigError, ProjectMcp, load_project_mcp_config, project_mcp_path};
 pub use result::mcp_result_to_output;

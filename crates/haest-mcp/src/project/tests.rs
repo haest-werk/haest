@@ -30,19 +30,19 @@ async fn reads_stdio_and_http_servers_in_claude_code_format() {
     assert_eq!(names, ["local", "remote"]);
     assert_eq!(
         cfg[0].transport,
-        McpTransport::Stdio {
+        McpTransport::Stdio(StdioTransport {
             command: "node".into(),
             args: vec!["s.js".into()],
             env: BTreeMap::from([("A".into(), "1".into())]),
             cwd: Some(PathBuf::from(CWD)),
-        }
+        })
     );
     assert_eq!(
         cfg[1].transport,
-        McpTransport::Http {
+        McpTransport::Http(HttpTransport {
             url: "https://x/mcp".into(),
             headers: BTreeMap::from([("H".into(), "v".into())]),
-        }
+        })
     );
 }
 
@@ -74,7 +74,7 @@ async fn variables_are_filled_in_where_claude_code_fills_them() {
         .unwrap();
     assert_eq!(
         got.servers[0].transport,
-        McpTransport::Stdio {
+        McpTransport::Stdio(StdioTransport {
             command: "node".into(),
             args: vec!["--root".into(), "/srv".into()],
             env: BTreeMap::from([
@@ -82,14 +82,14 @@ async fn variables_are_filled_in_where_claude_code_fills_them() {
                 ("TOKEN".into(), "t0k".into()),
             ]),
             cwd: Some(PathBuf::from(CWD)),
-        }
+        })
     );
     assert_eq!(
         got.servers[1].transport,
-        McpTransport::Http {
+        McpTransport::Http(HttpTransport {
             url: "https://api.example.com/mcp".into(),
             headers: BTreeMap::from([("Authorization".into(), "Bearer t0k".into())]),
-        }
+        })
     );
     assert_eq!(got.notes.len(), 1, "{:?}", got.notes);
     assert!(got.notes[0].contains("local") && got.notes[0].contains("NOPE"));

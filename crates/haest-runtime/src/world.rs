@@ -217,7 +217,7 @@ pub async fn connect_mcp(
     let Some(child_env) = world.child_env(passed_env) else {
         let (stdio, http): (Vec<_>, Vec<_>) = servers
             .into_iter()
-            .partition(|s| matches!(s.transport, McpTransport::Stdio { .. }));
+            .partition(|s| matches!(s.transport, McpTransport::Stdio(_)));
         for s in &stdio {
             hooks.warn(&format!(
                 "MCP server {} not started: a stdio server is a real process, and this host hands haest its own files.",

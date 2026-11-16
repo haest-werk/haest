@@ -3,7 +3,7 @@
 //! effort, /clear) is in the session file; a /clear that cannot create its
 //! file changes nothing.
 
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use haest_settings::Settings;
 
@@ -27,13 +27,7 @@ const GIVEN: &str = "openrouter:z-ai/glm-5";
 
 /// An MCP server at a closed local port: starting it fails at once, with a warning.
 fn closed_server() -> McpServerConfig {
-    McpServerConfig {
-        name: "closed".into(),
-        transport: McpTransport::Http {
-            url: "http://127.0.0.1:9/mcp".into(),
-            headers: BTreeMap::new(),
-        },
-    }
+    McpServerConfig::new("closed", McpTransport::http("http://127.0.0.1:9/mcp"))
 }
 
 /// `settings` over `fs`, the closed server listed: the build's error, and

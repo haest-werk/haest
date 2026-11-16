@@ -87,15 +87,10 @@ pub(super) async fn start_config(
     handed: &ChildEnv,
 ) -> Result<Started, McpStartError> {
     match &cfg.transport {
-        McpTransport::Stdio {
-            command,
-            args,
-            env,
-            cwd,
-        } => {
-            let child = transport::stdio(command, args, handed, env, cwd.as_deref())?;
+        McpTransport::Stdio(s) => {
+            let child = transport::stdio(&s.command, &s.args, handed, &s.env, s.cwd.as_deref())?;
             start(child).await
         }
-        McpTransport::Http { url, headers } => start(transport::http(url, headers)?).await,
+        McpTransport::Http(h) => start(transport::http(&h.url, &h.headers)?).await,
     }
 }

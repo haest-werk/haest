@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Mutex, time::Duration};
+use std::{sync::Mutex, time::Duration};
 
 use haest_core::{
     messages::MediaKind,
@@ -44,7 +44,10 @@ async fn a_server_that_cannot_start_is_recorded_as_a_failure_not_thrown() {
     let logs = Mutex::new(Vec::<String>::new());
     let log = |m: &str| logs.lock().unwrap().push(m.to_string());
     hub.connect(
-        &[McpServerConfig::stdio("broken", "/nonexistent/binary")],
+        &[McpServerConfig::new(
+            "broken",
+            McpTransport::stdio("/nonexistent/binary"),
+        )],
         &log,
     )
     .await;
@@ -200,14 +203,9 @@ async fn dropping_the_hub_shuts_the_servers_down() {
 #[tokio::test]
 async fn a_header_http_cannot_carry_fails_that_server_before_any_request() {
     let hub = McpHub::new();
-    let cfg = McpServerConfig {
-        name: "remote".into(),
-        transport: McpTransport::Http {
-            // Never dialled: the header is refused first.
-            url: "http://127.0.0.1:9/mcp".into(),
-            headers: BTreeMap::from([("X-Bad".into(), "a\nb".into())]),
-        },
-    };
+    // Never dialled: the header is refused first.
+    let http = McpTransport::http("http://127.0.0.1:9/mcp").with_header("X-Bad", "a\nb");
+    let cfg = McpServerConfig::new("remote", http);
     hub.connect(&[cfg], &|_| {}).await;
     assert_eq!(hub.failures()[0].name, "remote");
 }

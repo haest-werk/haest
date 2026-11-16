@@ -31,18 +31,13 @@ impl Drop for TempDir {
 }
 
 fn sh(name: &str, script: &str, dir: &TempDir, env: &[(&str, &str)]) -> McpServerConfig {
-    McpServerConfig {
-        name: name.into(),
-        transport: McpTransport::Stdio {
-            command: "/bin/sh".into(),
-            args: vec!["-c".into(), script.into()],
-            env: env
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect(),
-            cwd: Some(dir.0.clone()),
-        },
-    }
+    let stdio = env.iter().fold(
+        McpTransport::stdio("/bin/sh")
+            .with_args(["-c", script])
+            .with_cwd(&dir.0),
+        |s, (k, v)| s.with_env(*k, *v),
+    );
+    McpServerConfig::new(name, stdio)
 }
 
 /// The smallest MCP server sh can be: one tool, `pid`, answering with the server's process id.
@@ -116,7 +111,12 @@ async fn a_stdio_server_process_ends_when_the_hub_is_dropped_though_its_tools_ar
 /// so, never as a bare "not found".
 #[tokio::test]
 async fn a_bare_command_with_no_path_handed_fails_naming_the_missing_path() {
-    let bare = || [McpServerConfig::stdio("bare", "haest-no-such-mcp-server")];
+    let bare = || {
+        [McpServerConfig::new(
+            "bare",
+            McpTransport::stdio("haest-no-such-mcp-server"),
+        )]
+    };
     let hub = McpHub::new();
     hub.connect(&bare(), &|_| {}).await;
     let error = &hub.failures()[0].error;

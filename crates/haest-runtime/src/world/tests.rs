@@ -1,6 +1,6 @@
 //! Which workspace, which processes, and what of the host's environment they get.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::time::Duration;
 
 use haest_core::workspace::ExecOptions;
 use tokio_util::sync::CancellationToken;
@@ -80,15 +80,7 @@ async fn real_bash_gets_the_passed_variables_over_child_env() {
 #[tokio::test]
 async fn a_world_of_the_hosts_files_starts_no_stdio_server_and_says_which() {
     let (hooks, ui) = hooks(settings());
-    let server = McpServerConfig {
-        name: "gh".into(),
-        transport: McpTransport::Stdio {
-            command: "gh-mcp".into(),
-            args: Vec::new(),
-            env: BTreeMap::new(),
-            cwd: None,
-        },
-    };
+    let server = McpServerConfig::new("gh", McpTransport::stdio("gh-mcp"));
     let world = World::Fs(Arc::new(MemFs::new()));
     let hub = connect_mcp(&hooks, &world, &ChildEnv::default(), vec![server]).await;
     assert!(hub.tools().is_empty());

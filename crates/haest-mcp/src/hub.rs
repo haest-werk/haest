@@ -99,12 +99,12 @@ impl McpHub {
     ///
     /// ```
     /// use haest_core::error::report;
-    /// use haest_mcp::{McpHub, McpServerConfig, McpStartError};
+    /// use haest_mcp::{McpHub, McpServerConfig, McpStartError, McpTransport};
     ///
     /// # #[tokio::main(flavor = "current_thread")]
     /// # async fn main() {
     /// let hub = McpHub::new();
-    /// let broken = McpServerConfig::stdio("broken", "/no/such/program");
+    /// let broken = McpServerConfig::new("broken", McpTransport::stdio("/no/such/program"));
     /// hub.connect(&[broken], &|line| println!("{line}")).await;
     ///
     /// assert!(hub.tools().is_empty());

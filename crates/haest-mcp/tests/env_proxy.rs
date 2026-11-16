@@ -63,10 +63,9 @@ async fn an_http_server_and_its_headers_are_never_sent_through_an_env_proxy() {
             std::env::set_var(var, &proxy);
         }
     }
-    let mut cfg = McpServerConfig::http("remote", format!("{server}/mcp"));
-    if let McpTransport::Http { headers, .. } = &mut cfg.transport {
-        headers.insert("Authorization".into(), "Bearer mcp-key".into());
-    }
+    let http =
+        McpTransport::http(format!("{server}/mcp")).with_header("Authorization", "Bearer mcp-key");
+    let cfg = McpServerConfig::new("remote", http);
     let hub = McpHub::new();
     hub.connect(&[cfg], &|_| {}).await;
 

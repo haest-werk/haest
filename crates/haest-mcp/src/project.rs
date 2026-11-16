@@ -12,7 +12,7 @@ use haest_core::{
 };
 use serde_json::Value;
 
-use crate::config::{McpServerConfig, McpTransport};
+use crate::config::{HttpTransport, McpServerConfig, McpTransport, StdioTransport};
 
 /// Where a project keeps its MCP servers: `<cwd>/.mcp.json`.
 ///
@@ -120,11 +120,11 @@ pub struct ProjectMcp {
 ///     .unwrap();
 ///
 /// let github = project.servers.iter().find(|s| s.name == "github").unwrap();
-/// let McpTransport::Stdio { env, cwd, .. } = &github.transport else {
+/// let McpTransport::Stdio(stdio) = &github.transport else {
 ///     panic!("a command is a stdio server")
 /// };
-/// assert_eq!(env["GITHUB_TOKEN"], "ghp_example");
-/// assert_eq!(cwd.as_deref(), Some(Path::new("/repo")));
+/// assert_eq!(stdio.env["GITHUB_TOKEN"], "ghp_example");
+/// assert_eq!(stdio.cwd.as_deref(), Some(Path::new("/repo")));
 ///
 /// // DOCS_TOKEN has no value: the header goes as written, and a note says so.
 /// assert_eq!(project.servers.len(), 2);
@@ -212,18 +212,18 @@ fn parse_server(
     fill: &mut Fill<'_>,
 ) -> Result<Option<McpTransport>, String> {
     if let Some(url) = raw.get("url").and_then(Value::as_str) {
-        return Ok(Some(McpTransport::Http {
+        return Ok(Some(McpTransport::Http(HttpTransport {
             url: fill.text(url),
             headers: fill.map(string_map(raw, "headers")?),
-        }));
+        })));
     }
     if let Some(command) = raw.get("command").and_then(Value::as_str) {
-        return Ok(Some(McpTransport::Stdio {
+        return Ok(Some(McpTransport::Stdio(StdioTransport {
             command: fill.text(command),
             args: fill.list(string_list(raw, "args")?),
             env: fill.map(string_map(raw, "env")?),
             cwd: Some(cwd.to_path_buf()),
-        }));
+        })));
     }
     Ok(None)
 }
