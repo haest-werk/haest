@@ -11,8 +11,8 @@ use haest_core::tool::Tool;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AgentDirectory, AgentError, AgentRef, MAIN_AGENT, MemberStart, SpawnInput, SpawnOutcome,
-    SubagentCaps, SubagentParent,
+    AgentDirectory, AgentError, AgentRef, AgentToolOptions, MAIN_AGENT, MemberStart, SpawnInput,
+    SpawnOutcome, SubagentCaps, SubagentParent, budget,
     members::{Due, Members, Status, run_id},
     run::Run,
     tools::agent_tools_with,
@@ -164,10 +164,14 @@ impl SubagentHub {
     /// The agent tools `me` gets: Agent only while it may still nest (and
     /// `max_concurrent` is not 0), SendMessage and StopAgent always. The Agent
     /// tool offers the parent's kinds of subagent
-    /// ([`SubagentParent::agent_tool_options`]).
+    /// ([`SubagentParent::agent_tool_options`]), and a `budget` when
+    /// [`SubagentCaps::budgets`] is on.
     pub fn tools_for(&self, me: &AgentRef) -> Vec<Arc<dyn Tool>> {
         let can_spawn = me.depth < self.caps.max_depth && self.caps.max_concurrent > 0;
-        let opts = self.parent.agent_tool_options();
+        let opts = AgentToolOptions {
+            budget_caps: self.caps.budgets.then(|| self.budget_caps()),
+            ..self.parent.agent_tool_options()
+        };
         agent_tools_with(self.arc(), me.clone(), can_spawn, opts)
     }
 
@@ -188,6 +192,13 @@ impl AgentDirectory for SubagentHub {
         input: SpawnInput,
         cancel: CancellationToken,
     ) -> Result<SpawnOutcome, AgentError> {
+        // A budget only tightens, whoever built the input; its USD is held
+        // first, released when the member ends (or never starts).
+        let budget = (input.budget).map(|b| budget::clamp(b, &self.budget_caps()));
+        let held = match &budget {
+            Some(b) => budget::hold(self.parent.deps().ledger.as_ref(), b)?,
+            None => None,
+        };
         let run = {
             let mut members = self.members.lock().unwrap();
             let m = members.reserve(from, &input, &self.caps, &self.run_id)?;
@@ -207,8 +218,8 @@ impl AgentDirectory for SubagentHub {
             parent: run.parent.clone(),
             depth: run.me.depth,
             model_spec: input.model_spec.clone().unwrap_or(main_spec),
-            caps: self.caps.into(),
-            input,
+            caps: self.member_caps(budget.as_ref()),
+            input: SpawnInput { budget, ..input },
         };
         let member = match self.parent.start_member(&start, &cancel).await {
             Ok(member) => member,
@@ -222,9 +233,9 @@ impl AgentDirectory for SubagentHub {
         self.members.lock().unwrap().attach(&name, agent.control());
         let prompt = start.input.prompt;
         if !start.input.background {
-            return Ok(self
-                .run_member(run, agent, member, prompt, Some(cancel))
-                .await);
+            let out = (self.run_member(run, agent, member, prompt, Some(cancel))).await;
+            drop(held);
+            return Ok(out);
         }
         let text = format!(
             "Started agent \"{name}\" ({}) in the background. Its answer will arrive as a message; SendMessage reaches it while it runs.",
@@ -237,6 +248,8 @@ impl AgentDirectory for SubagentHub {
             let _due = due;
             let parent = run.parent.clone();
             let out = hub.run_member(run, agent, member, prompt, None).await;
+            // Its USD is free again before its answer is read.
+            drop(held);
             hub.hand_back(
                 &parent,
                 format!("[Agent \"{name}\" finished]\n\n{}", out.text),

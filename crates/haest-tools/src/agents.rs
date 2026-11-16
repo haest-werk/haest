@@ -3,6 +3,7 @@
 //! `host/agent-run.ts`. The crate docs ("Subagents") say how they work;
 //! [`AgentDirectory`] is the plug point.
 
+mod budget;
 mod hub;
 mod member;
 mod members;
@@ -11,6 +12,8 @@ mod run;
 #[cfg(test)]
 mod tests;
 mod tools;
+
+use std::time::Duration;
 
 use async_trait::async_trait;
 use haest_core::caps::SubagentCaps;
@@ -63,6 +66,72 @@ pub struct SpawnInput {
     /// None when the host has none. The default [`SubagentHub`] builds the
     /// subagent from that kind's tools ([`SubagentParent::subagent_tools`]).
     pub subagent_type: Option<String>,
+    /// The call's `budget`, each value already clamped to the caps; None when
+    /// budgets are off ([`AgentToolOptions::budget_caps`]). The default hub
+    /// runs the subagent under it and holds its USD on the conversation's
+    /// ledger while it runs; a host's own directory applies it as it sees fit.
+    pub budget: Option<SubagentBudget>,
+}
+
+/// One subagent's budget: its spend and its wall clock. 0 (or a zero
+/// duration) is no cap. Minutes exist only in the Agent tool's parameter.
+///
+/// # Examples
+///
+/// A host's own directory gets the call's budget already within its caps
+/// ([`AgentToolOptions::budget_caps`]).
+///
+/// ```
+/// use std::{sync::{Arc, Mutex}, time::Duration};
+///
+/// use async_trait::async_trait;
+/// use haest_core::{tool::ToolContext, workspace::ShutWorkspace};
+/// use haest_tools::{
+///     AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
+///     SubagentBudget, agent_tools_with,
+/// };
+/// use serde_json::json;
+/// use tokio_util::sync::CancellationToken;
+///
+/// #[derive(Default)]
+/// struct Remote(Mutex<Option<SubagentBudget>>);
+///
+/// #[async_trait]
+/// impl AgentDirectory for Remote {
+///     async fn spawn(&self, _: &AgentRef, input: SpawnInput, _: CancellationToken) -> Result<SpawnOutcome, AgentError> {
+///         *self.0.lock().unwrap() = input.budget; // the host runs it under this
+///         Ok(SpawnOutcome { text: "done".into(), cost_usd: 0.0 })
+///     }
+///     fn deliver(&self, _: &str, to: &str, _: &str) -> Result<String, AgentError> {
+///         Err(AgentError::Refused(format!("{to} is not running")))
+///     }
+///     fn stop(&self, _: &str) -> bool {
+///         false
+///     }
+/// }
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let remote = Arc::new(Remote::default());
+/// let caps = SubagentBudget { usd: 0.5, time: Duration::from_secs(300) };
+/// let opts = AgentToolOptions { budget_caps: Some(caps), ..Default::default() };
+/// let agent = agent_tools_with(remote.clone(), AgentRef::main(), true, opts).remove(0);
+/// assert!(agent.parameters()["properties"].get("budget").is_some());
+///
+/// // The model asks for more money than the cap and less time: it gets the cap and its time.
+/// let call = json!({"description": "d", "prompt": "p", "budget": {"usd": 9, "minutes": 2}});
+/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+/// agent.execute(call.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// let got = remote.0.lock().unwrap().unwrap();
+/// assert_eq!(got, SubagentBudget { usd: 0.5, time: Duration::from_secs(120) });
+/// # }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SubagentBudget {
+    /// Its spend in USD.
+    pub usd: f64,
+    /// Its wall clock.
+    pub time: Duration,
 }
 
 /// A host's kinds of subagent, under the common `subagent_type` key: what
@@ -88,11 +157,17 @@ pub struct AgentToolOptions {
     /// The `model` parameter's description, e.g. the models this host offers;
     /// None = haest's own ("provider:model to run it on ...").
     pub model_description: Option<String>,
+    /// Some = the Agent tool takes a `budget {usd, minutes}`, each value
+    /// clamped to these caps (it only tightens; an absent one is the cap), and
+    /// the time must fit what is left of the caller's turn. None = no such
+    /// parameter (Claude Code's schema). [`SubagentHub::tools_for`] sets it
+    /// from its caps when [`SubagentCaps::budgets`] is on, and clears it when off.
+    pub budget_caps: Option<SubagentBudget>,
 }
 
 /// An agent tool's refusal, for the model to correct: it goes back as an
 /// input error.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum AgentError {
     /// The caller already runs as deep as agents may nest.
     #[error("agents may nest {max_depth} deep")]
@@ -129,6 +204,25 @@ pub enum AgentError {
     /// A host's own refusal, its text for the model.
     #[error("{0}")]
     Refused(String),
+    /// The subagent's spend does not fit what is left of the conversation's
+    /// budget, counting what running subagents hold ([`SubagentBudget`]).
+    #[error("{}", budget::over_budget(*asked, *available))]
+    OverBudget {
+        /// The USD it would hold; 0 = it has no spend cap.
+        asked: f64,
+        /// What is left: the cap, less what was spent and what is held.
+        available: f64,
+    },
+    /// The subagent's wall clock does not fit what is left of its caller's turn.
+    #[error("{}", budget::over_time(*asked, *left, setting))]
+    OverTime {
+        /// Its wall clock; zero = it has no time cap.
+        asked: Duration,
+        /// What is left of the caller's turn.
+        left: Duration,
+        /// The setting that caps the caller's turn.
+        setting: &'static str,
+    },
 }
 
 /// What a spawn hands back to the caller's turn.

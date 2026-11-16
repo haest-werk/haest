@@ -213,6 +213,8 @@ pub const DEFS: &[Def] = &[
     def("subagent_usd", AGENTS, Number, "0.5", "One subagent's spend"),
     def("subagent_steps", AGENTS, Number, "25", "One subagent's model calls"),
     def("subagent_minutes", AGENTS, Number, "5", "One subagent's wall clock"),
+    def("subagent_budgets", AGENTS, Bool, "true", "The Agent tool takes a budget {usd, minutes}: tighter caps for one subagent, its spend held on the conversation's budget while it runs, its time fitted to what is left of the turn")
+        .detail("Off, the Agent tool's parameters are Claude Code's. On, each value only tightens `subagent_usd` and `subagent_minutes` (an absent one is the cap); a spawn whose spend or time does not fit what is left is refused with what is left, so the model can ask for less. Subagents running at once hold their spend together, so they cannot overshoot `max_conversation_usd` together."),
     def("data_dir", PATHS, Path, "~/.haest/data", "Sessions, history and spill files (unset: $XDG_DATA_HOME/haest, else ~/.local/share/haest)"),
     def("config_dir", PATHS, Path, "~/dotfiles/haest", "config.toml, providers and mods (unset: $XDG_CONFIG_HOME/haest, else ~/.config/haest)").scope(Scope::Process),
     def("debug", PATHS, Bool, "true", "Log what haest does under the hood"),

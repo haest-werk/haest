@@ -1,17 +1,24 @@
-//! The Agent tool's host options: the host's kinds of subagent and its `model` text.
+//! The Agent tool's host options: the host's kinds of subagent, its `model`
+//! text, and budget caps (whose time must fit what is left of the turn).
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
-use haest_core::tool::{Tool, ToolError};
-use serde_json::json;
+use haest_core::{
+    tool::{Tool, ToolContext, ToolError},
+    workspace::ShutWorkspace,
+};
+use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{Rig, call, explore_or_general, now, say};
 use crate::{
     agents::{
         AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
-        SubagentCaps, SubagentTypes, agent_tools, agent_tools_with,
+        SubagentBudget, SubagentCaps, SubagentTypes, agent_tools, agent_tools_with,
     },
     testkit::{input, shut_ctx},
 };
@@ -57,6 +64,7 @@ fn kinds() -> AgentToolOptions {
             default: "explore".into(),
         }),
         model_description: Some("one of: a:x, b:y".into()),
+        budget_caps: None,
     }
 }
 
@@ -145,4 +153,54 @@ async fn with_no_kinds_there_is_no_subagent_type_at_all() {
     let v = input(json!({"description": "look", "prompt": "x", "subagent_type": "explore"}));
     tool.execute(v, &shut_ctx()).await.unwrap();
     assert_eq!(dir.0.lock().unwrap()[0].subagent_type, None);
+}
+
+fn agent_tool(dir: &Arc<Recording>, caps: SubagentBudget) -> Arc<dyn Tool> {
+    let opts = AgentToolOptions {
+        budget_caps: Some(caps),
+        ..Default::default()
+    };
+    agent_tools_with(dir.clone(), AgentRef::main(), true, opts).remove(0)
+}
+
+#[tokio::test]
+async fn a_childs_time_must_fit_what_is_left_of_its_callers_turn() {
+    let dir = Arc::new(Recording::default());
+    let quarter_hour = SubagentBudget {
+        usd: 1.0,
+        time: Duration::from_secs(15 * 60),
+    };
+    let tool = agent_tool(&dir, quarter_hour);
+    let mut ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+    ctx.turn_time_left = Some(Duration::from_secs(120));
+    let ask = |budget: Value| input(json!({"description": "d", "prompt": "p", "budget": budget}));
+    let too_long = AgentError::OverTime {
+        asked: Duration::from_secs(300),
+        left: Duration::from_secs(120),
+        setting: "max_turn_minutes",
+    };
+    let refused = tool.execute(ask(json!({"minutes": 5})), &ctx).await;
+    assert!(matches!(refused, Err(ToolError::Input(t)) if t == too_long.to_string()));
+    // No minutes is the cap: 15 minutes do not fit 2 either.
+    assert!(tool.execute(ask(json!({})), &ctx).await.is_err());
+    tool.execute(ask(json!({"minutes": 1})), &ctx)
+        .await
+        .unwrap();
+    // A turn with no time cap fits any child.
+    ctx.turn_time_left = None;
+    tool.execute(ask(json!({})), &ctx).await.unwrap();
+    let times: Vec<_> = (dir.0.lock().unwrap().iter())
+        .map(|s| s.budget.unwrap().time)
+        .collect();
+    assert_eq!(times, [Duration::from_secs(60), quarter_hour.time]);
+    // With no time cap of its own, a child fits only a turn with none.
+    let uncapped = agent_tool(
+        &dir,
+        SubagentBudget {
+            time: Duration::ZERO,
+            ..quarter_hour
+        },
+    );
+    ctx.turn_time_left = Some(Duration::from_secs(120));
+    assert!(uncapped.execute(ask(json!({})), &ctx).await.is_err());
 }

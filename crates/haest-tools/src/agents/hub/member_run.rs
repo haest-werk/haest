@@ -12,12 +12,33 @@ use tokio_util::sync::CancellationToken;
 
 use super::SubagentHub;
 use crate::agents::{
-    MemberEnd, MemberRun, MemberStart, SpawnOutcome, SubagentEvent,
+    MemberCaps, MemberEnd, MemberRun, MemberStart, SpawnOutcome, SubagentBudget, SubagentEvent,
     members::Status,
     run::{ChildCaps, ChildHooks, ChildPrompt, Run, drive, subagent_note},
 };
 
 impl SubagentHub {
+    /// What a subagent's budget is clamped to: the per-agent caps.
+    pub(super) fn budget_caps(&self) -> SubagentBudget {
+        SubagentBudget {
+            usd: self.caps.usd,
+            time: self.caps.time,
+        }
+    }
+
+    /// A member's caps: the per-agent caps, with a budget's spend and time.
+    pub(super) fn member_caps(&self, budget: Option<&SubagentBudget>) -> MemberCaps {
+        let caps = MemberCaps::from(self.caps);
+        match budget {
+            Some(b) => MemberCaps {
+                usd: b.usd,
+                time: b.time,
+                ..caps
+            },
+            None => caps,
+        }
+    }
+
     fn report_activity(&self) {
         let ids: Vec<String> = {
             let members = self.members.lock().unwrap();

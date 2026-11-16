@@ -134,6 +134,8 @@ pub fn agent_options() -> AgentToolOptions {
         model_description: Some(format!(
             "The model to run it on (optional; defaults to yours): {MODEL}"
         )),
+        // The hub offers a budget from its own caps (subagent_budgets); brain's are off.
+        budget_caps: None,
     }
 }
 

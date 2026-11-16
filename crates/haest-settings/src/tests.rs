@@ -58,6 +58,10 @@ fn agent_turns_and_subagent_caps_default_as_the_ts_haest() {
         (c.max_depth, c.max_concurrent, c.usd, c.steps, c.minutes),
         (2, 4, 1.0, 50, 15)
     );
+    assert!(
+        !c.budgets && !s.subagent_caps().budgets,
+        "budgets are opt-in"
+    );
 }
 
 #[test]

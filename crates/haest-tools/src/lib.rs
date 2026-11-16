@@ -170,8 +170,9 @@ pub use haest_http as http;
 
 pub use agents::{
     AgentDirectory, AgentError, AgentRef, AgentToolOptions, Ending, InProcessRun, MAIN_AGENT,
-    MemberCaps, MemberEnd, MemberRun, MemberStart, Spend, SpawnInput, SpawnOutcome, SubagentEvent,
-    SubagentHub, SubagentParent, SubagentTypes, agent_tools, agent_tools_with, subagent_note,
+    MemberCaps, MemberEnd, MemberRun, MemberStart, Spend, SpawnInput, SpawnOutcome, SubagentBudget,
+    SubagentEvent, SubagentHub, SubagentParent, SubagentTypes, agent_tools, agent_tools_with,
+    subagent_note,
 };
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;

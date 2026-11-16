@@ -17,10 +17,18 @@
 //! every model call and tool spend to it, and stops a turn before its next
 //! model call once [`Ledger::exhausted`] says so. A host's way to raise a cap
 //! ([`Ledger::with_remedies`]) ends the message that says so.
+//!
+//! A spender that runs alongside others and pays as it goes (a subagent)
+//! holds its cap first ([`Ledger::reserve`]), so those running together fit
+//! the budget together.
+
+mod hold;
 
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+
+pub use hold::{Hold, NotAvailable};
 
 use crate::{
     caps::{ConversationCap, ConversationCapOverrides, ConversationCaps},
@@ -114,6 +122,9 @@ pub struct Ledger {
     defaults: ConversationCaps,
     hooks: Arc<dyn LedgerHooks>,
     remedies: Remedies,
+    /// USD held for spenders running now ([`Ledger::reserve`]), and how many holds.
+    held: f64,
+    holds: usize,
 }
 
 impl Ledger {
@@ -129,6 +140,8 @@ impl Ledger {
             defaults,
             hooks,
             remedies: Remedies::default(),
+            held: 0.0,
+            holds: 0,
         }
     }
 
@@ -170,7 +183,8 @@ impl Ledger {
     }
 
     /// Take a snapshot's state (replaying a session log); persists nothing.
-    /// A spend already past 80% of a cap does not warn again.
+    /// A spend already past 80% of a cap does not warn again. Holds stay:
+    /// they are this process's spenders, never in a snapshot.
     pub fn restore(&mut self, s: &LedgerSnapshot) {
         self.usd = s.usd;
         self.unpriced_tokens = s.unpriced_tokens;

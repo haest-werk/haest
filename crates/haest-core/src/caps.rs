@@ -86,6 +86,11 @@ pub struct SubagentCaps {
     pub steps: u32,
     /// One subagent's wall clock.
     pub time: Duration,
+    /// The model may give a subagent tighter caps (the Agent tool's `budget`):
+    /// each one only tightens `usd` and `time`, the spend is held on the
+    /// conversation's ledger while it runs, the time must fit what is left of
+    /// the caller's turn. The `subagent_budgets` setting; off by default.
+    pub budgets: bool,
 }
 
 impl Default for SubagentCaps {
@@ -96,6 +101,7 @@ impl Default for SubagentCaps {
             usd: 1.0,
             steps: 50,
             time: Duration::from_secs(15 * 60),
+            budgets: false,
         }
     }
 }

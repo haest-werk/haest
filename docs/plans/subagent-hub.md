@@ -75,8 +75,11 @@ pub struct MemberCaps { usd: f64, steps: u32, time: Duration }
 A spawn, in order:
 
 1. the tool clamps the `budget` (G3, when on) and checks its time fits the caller's turn;
-2. the hub checks depth and breadth and takes the name (B2: it counts toward `max_concurrent` from here);
-3. the hub holds the member's USD on the conversation ledger (G3, when on);
+2. the hub clamps the budget again (any `AgentDirectory` caller) and holds its USD on the
+   conversation ledger (G3, when on); a hold that does not fit refuses the spawn before a
+   name is taken;
+3. the hub checks depth and breadth and takes the name (B2: it counts toward `max_concurrent` from here);
+   a refusal here drops the hold;
 4. `start_member`, awaited. An `Err` is the spawn's refusal, as is: the name is freed (never
    "finished": nothing ran), the hold released, `end` never called;
 5. the agent is built from the handle: its `deps()` (else the parent's), its `model()`
@@ -169,6 +172,6 @@ build on `MemberRun::deps` (a member's own sink) and `end` (its record closed).
 - The time must fit what is left of the caller's turn (`ToolContext::turn_time_left`, filled
   by the loop from its guard). Q6 (refuse or shrink) is decided in ONE function,
   `agents::budget::fit_time`: refuse, with what is left.
-- The hub holds the USD (step 3 above) and runs the member under the budget's caps. A child
+- The hub holds the USD (step 2 above) and runs the member under the budget's caps. A child
   with no cap (the cap is 0 and none asked) does not fit under a capped turn or ledger: the
   model is told what is left and names an amount.

@@ -26,6 +26,11 @@ env_passthrough = "core"
 max_turn_usd = 3
 max_conversation_usd = 25
 
+# A subagent may get tighter caps than subagent_usd and subagent_minutes (the
+# Agent tool's budget); its spend is held on the conversation's budget while
+# it runs, so subagents running at once cannot overshoot it together.
+subagent_budgets = true
+
 # OpenRouter's provider routing, as JSON (your own file only).
 provider_routing = '{"global": {"banned": ["novita"]}}'
 

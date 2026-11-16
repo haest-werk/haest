@@ -252,6 +252,7 @@ impl Agent {
     /// before the stop, answered one by one by their tool's `OnResume` before `calls`.
     pub(super) async fn run_tools(&mut self, redo: &[Redo], calls: &[ToolCall], t: &mut Turn<'_>) {
         let services: Arc<dyn ToolServices> = self.deps.shared.hooks.clone();
+        let caps = self.turn_caps();
         let ctx = ToolContext {
             cwd: self.deps.shared.cwd.clone(),
             cancel: t.cancel.clone(),
@@ -262,10 +263,11 @@ impl Agent {
             spill_dir: self.deps.shared.spill_dir.clone(),
             run_key: t.journal.as_ref().map(|j| j.key().clone()),
             resumed: false,
+            turn_time_left: t.guard.time_left(caps.as_ref()),
         };
         let tools = ToolIndex::new(self.deps.tools.callable());
         let mut delivery = Delivery {
-            caps: self.turn_caps(),
+            caps,
             guard: &mut t.guard,
             messages: &mut self.history,
             hooks: self.deps.shared.hooks.as_ref(),

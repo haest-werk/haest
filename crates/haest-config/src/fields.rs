@@ -243,6 +243,7 @@ fields! {
     "subagent_usd" => settings.subagents.usd,
     "subagent_steps" => settings.subagents.steps,
     "subagent_minutes" => settings.subagents.minutes,
+    "subagent_budgets" => settings.subagents.budgets,
     "data_dir" => settings.data_dir,
     "config_dir" => settings.config_dir,
     "debug" => settings.debug;

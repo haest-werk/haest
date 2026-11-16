@@ -193,6 +193,7 @@ mod tests {
             model_spec: None,
             background: true,
             subagent_type: None,
+            budget: None,
         }
     }
 

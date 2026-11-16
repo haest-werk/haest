@@ -44,6 +44,7 @@ async fn the_example_files_load_together_and_do_what_they_say() {
     assert!(r.resolved.trusted, "~/projects is trusted");
     let s = &r.config.settings;
     assert_eq!(s.tools, BuiltinTools::ALL);
+    assert!(s.subagent_caps().budgets, "the budget parameter is on");
     assert_eq!(
         s.workspace,
         WorkspaceMode::Real,

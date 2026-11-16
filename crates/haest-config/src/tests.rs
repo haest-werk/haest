@@ -136,6 +136,23 @@ async fn the_claude_profile_turns_on_what_haest_reads_of_claude_code() {
     assert_eq!(s.tools, haest_settings::BuiltinTools::ALL);
     assert_eq!(s.workspace, haest_core::WorkspaceMode::Real);
     assert_eq!(r.config.env_passthrough, EnvPassthrough::All);
+    // Claude Code's Agent tool has no budget: the profile leaves budgets off.
+    assert!(!s.subagents.budgets && !s.subagent_caps().budgets);
+}
+
+#[tokio::test]
+async fn subagent_budgets_are_off_bare_and_on_from_a_file_a_variable_or_a_flag() {
+    let bare = run("/w", &[], &[], &[]).await.unwrap();
+    assert!(!bare.config.settings.subagent_caps().budgets);
+    let file = [(USER_FILE, "subagent_budgets = true")];
+    let ways = [
+        run("/w", &file, &[], &[]).await,
+        run("/w", &[], &[("HAEST_SUBAGENT_BUDGETS", "true")], &[]).await,
+        run("/w", &[], &[], &[("subagent_budgets", "true")]).await,
+    ];
+    for r in ways {
+        assert!(r.unwrap().config.settings.subagent_caps().budgets);
+    }
 }
 
 #[tokio::test]

@@ -107,6 +107,7 @@ impl Bridge {
             // A program's inner calls have no stable ids: no effect keys for them.
             run_key: None,
             resumed: false,
+            turn_time_left: ctx.turn_time_left,
         };
         Arc::new(Self {
             tools,

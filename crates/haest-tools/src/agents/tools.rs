@@ -9,7 +9,7 @@ use haest_core::tool::{
 };
 use serde_json::{Value, json};
 
-use super::{AgentDirectory, AgentRef, AgentToolOptions, SpawnInput};
+use super::{AgentDirectory, AgentRef, AgentToolOptions, SpawnInput, SubagentBudget, budget};
 
 struct AgentTool {
     hub: Arc<dyn AgentDirectory>,
@@ -31,6 +31,28 @@ impl AgentTool {
             )));
         }
         Ok(Some(kind.to_string()))
+    }
+
+    /// The call's budget within the caps, when budgets are on; refused when
+    /// its time does not fit what is left of this agent's turn.
+    fn budget(
+        &self,
+        input: &JsonMap,
+        ctx: &ToolContext,
+    ) -> Result<Option<SubagentBudget>, ToolError> {
+        let Some(caps) = &self.opts.budget_caps else {
+            return Ok(None);
+        };
+        let asked = budget::requested(input, caps)?;
+        // Main's turn is capped by max_turn_minutes, a subagent's by its own time.
+        let setting = if self.me.depth == 0 {
+            "max_turn_minutes"
+        } else {
+            "subagent_minutes"
+        };
+        budget::fit_time(&asked, ctx.turn_time_left, setting)
+            .map_err(|e| ToolError::Input(e.to_string()))?;
+        Ok(Some(asked))
     }
 }
 
@@ -66,6 +88,9 @@ impl Tool for AgentTool {
             params["properties"]["subagent_type"] =
                 json!({"type": "string", "enum": types.names, "description": types.description});
         }
+        if let Some(caps) = &self.opts.budget_caps {
+            params["properties"]["budget"] = budget::schema(caps);
+        }
         params
     }
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
@@ -76,6 +101,7 @@ impl Tool for AgentTool {
             model_spec: opt_str(&input, "model")?.map(Into::into),
             background: opt_bool(&input, "run_in_background"),
             subagent_type: self.subagent_type(&input)?,
+            budget: self.budget(&input, ctx)?,
         };
         let out = self
             .hub

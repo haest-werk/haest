@@ -1,6 +1,6 @@
 //! [`ToolContext`]: what one tool call may use.
 
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use tokio_util::sync::CancellationToken;
 
@@ -39,12 +39,18 @@ pub struct ToolContext {
     /// This call may have run before: a resumed durable run runs it again
     /// ([`OnResume`](super::OnResume)). False for every first run.
     pub resumed: bool,
+    /// What was left of the turn's wall-clock cap
+    /// ([`TurnCaps::max_turn_time`](crate::caps::TurnCaps::max_turn_time))
+    /// when this step's tools started; None when the turn has no time cap or
+    /// the tool runs outside the loop. The Agent tool fits a subagent's time
+    /// into it.
+    pub turn_time_left: Option<Duration>,
 }
 
 impl ToolContext {
     /// A context for running a tool outside the loop (tests, a host command):
     /// a fresh cancel token, [`NoServices`], no context cap, no call id, no
-    /// spill directory, no durable run.
+    /// spill directory, no durable run, no turn time cap.
     pub fn new(cwd: impl Into<PathBuf>, workspace: Arc<dyn Workspace>) -> Self {
         Self {
             cwd: cwd.into(),
@@ -56,6 +62,7 @@ impl ToolContext {
             spill_dir: None,
             run_key: None,
             resumed: false,
+            turn_time_left: None,
         }
     }
 
@@ -73,3 +80,6 @@ impl ToolContext {
         Some(self.run_key.as_ref()?.effect_key(id))
     }
 }
+
+#[cfg(test)]
+mod tests;

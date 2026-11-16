@@ -44,8 +44,8 @@ pub struct CapSettings {
 }
 
 /// The subagent tree's caps as settings hold them: the `max_agent_depth`,
-/// `max_subagents`, `subagent_usd`, `subagent_steps` and `subagent_minutes`
-/// settings. [`Settings::subagent_caps`] turns them into haest-core's
+/// `max_subagents`, `subagent_usd`, `subagent_steps`, `subagent_minutes` and
+/// `subagent_budgets` settings. [`Settings::subagent_caps`] turns them into haest-core's
 /// [`SubagentCaps`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SubagentCapSettings {
@@ -59,6 +59,9 @@ pub struct SubagentCapSettings {
     pub steps: u32,
     /// One subagent's wall clock, in minutes.
     pub minutes: u64,
+    /// The model may give a subagent tighter caps (the Agent tool's
+    /// `budget`), held on the conversation's budget while it runs. Bare: off.
+    pub budgets: bool,
 }
 
 impl Default for SubagentCapSettings {
@@ -71,6 +74,7 @@ impl Default for SubagentCapSettings {
             usd: c.usd,
             steps: c.steps,
             minutes: c.time.as_secs() / 60,
+            budgets: c.budgets,
         }
     }
 }
@@ -136,6 +140,7 @@ impl Settings {
             usd: s.usd,
             steps: s.steps,
             time: Duration::from_secs(s.minutes.saturating_mul(60)),
+            budgets: s.budgets,
         }
     }
 }

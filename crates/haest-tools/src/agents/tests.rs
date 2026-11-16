@@ -1,6 +1,7 @@
 //! Ported from host/agent-hub.test.ts (subagents). The Rust hub's own rules
 //! (spend, StopAgent, refusals) are in `tests/rules.rs`.
 
+mod budgets;
 mod lifecycle;
 mod options;
 mod rules;

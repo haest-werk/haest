@@ -26,6 +26,7 @@ mod tests;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use signature::signature;
@@ -184,6 +185,13 @@ impl TurnGuard {
             self.remedies
                 .add_to(text, Limit::RequestTokens(caps.max_request_tokens)),
         )
+    }
+
+    /// What is left of the turn's wall-clock cap now; None when uncapped.
+    pub(crate) fn time_left(&self, caps: Option<&TurnCaps>) -> Option<Duration> {
+        let cap = caps?.max_turn_time;
+        let elapsed = self.clock.now_ms().saturating_sub(self.started);
+        (!cap.is_zero()).then(|| cap.saturating_sub(Duration::from_millis(elapsed)))
     }
 
     /// Tokens one more tool result may add before the next request is refused by
