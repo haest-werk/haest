@@ -38,8 +38,41 @@ impl Diagnostics {
     }
 }
 
-/// `source` as JavaScript; Err is why it could not be (a syntax error, first diagnostic first).
+/// The longest source stripped. swc recurses once per level of nesting with no
+/// limit of its own, and one byte can open a level (`(`), so the stack it runs
+/// on is sized by the source (below), never the caller's: a tokio worker's 2
+/// MiB held about 600 unclosed `(` in a release build, and an overflow aborts
+/// the whole process.
+pub const MAX_SOURCE_BYTES: usize = 128 * 1024;
+
+/// Stack per byte of source, over a measured worst of one unclosed `(` a byte:
+/// 3.4 KB in a release build, 20 KB in a debug one (swc_ecma_parser 47). Only
+/// what a parse touches is committed; the rest is address space.
+const STACK_PER_BYTE: usize = if cfg!(debug_assertions) { 24 } else { 4 } << 10;
+const STACK_BASE: usize = 8 << 20;
+
+/// `source` as JavaScript; Err is why it could not be (a syntax error, first
+/// diagnostic first, or a source too long to strip safely). swc runs on a
+/// thread of its own, with a stack for the deepest this source can nest.
 pub fn strip_types(source: &str, filename: &str) -> Result<String, String> {
+    if source.len() > MAX_SOURCE_BYTES {
+        return Err(format!(
+            "{} KB of TypeScript is past the {} KB kern strips; write it as JavaScript, or split it",
+            source.len() >> 10,
+            MAX_SOURCE_BYTES >> 10
+        ));
+    }
+    let (owned, name) = (source.to_string(), filename.to_string());
+    std::thread::Builder::new()
+        .name("kern-ts".into())
+        .stack_size(STACK_BASE + source.len() * STACK_PER_BYTE)
+        .spawn(move || strip_here(&owned, &name))
+        .map_err(|e| format!("the TypeScript stripper could not start: {e}"))?
+        .join()
+        .map_err(|_| "the TypeScript stripper failed on this source".to_string())?
+}
+
+fn strip_here(source: &str, filename: &str) -> Result<String, String> {
     match strip(source, filename, "strip-only") {
         Err((ErrorCode::UnsupportedSyntax, _)) => {
             strip(source, filename, "transform").map_err(|(_, why)| why)
@@ -83,6 +116,40 @@ mod tests {
     fn an_enum_becomes_code() {
         let js = strip_types("enum E { A, B }\nconsole.log(E.B)", "a.ts").unwrap();
         assert!(!js.contains("enum "));
+    }
+
+    /// `strip_types` on a fresh thread with a tokio worker's stack (2 MiB),
+    /// where the sandbox's `js` calls it. An overflow aborts the test binary.
+    fn on_a_worker_stack(source: String, filename: &'static str) -> Result<String, String> {
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || strip_types(&source, filename))
+            .unwrap()
+            .join()
+            .unwrap()
+    }
+
+    #[test]
+    fn deep_nesting_is_stripped_or_refused_never_a_crash() {
+        // A level per byte, each about 3 KB of swc's stack (20 KB in a debug build).
+        const K: usize = 5_000;
+        let deep = format!("let x: number = {}1{}", "(".repeat(K), ")".repeat(K));
+        let js = on_a_worker_stack(deep, "a.ts").unwrap();
+        assert!(!js.contains(": number"));
+        let with_enum = format!(
+            "enum E {{ A }}\nlet x = {}E.A{}",
+            "[".repeat(K),
+            "]".repeat(K)
+        );
+        assert!(
+            !on_a_worker_stack(with_enum, "a.ts")
+                .unwrap()
+                .contains("enum ")
+        );
+        assert!(on_a_worker_stack("(".repeat(K), "a.ts").is_err());
+        assert!(on_a_worker_stack("<a>".repeat(K), "a.tsx").is_err());
+        // Past what a stack is sized for: refused before swc sees it.
+        assert!(on_a_worker_stack("(".repeat(200_000), "a.ts").is_err());
     }
 
     #[test]
