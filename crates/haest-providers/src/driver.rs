@@ -11,13 +11,13 @@ use haest_core::{
     messages::AssistantMessage,
     provider::{ProviderEvent, ProviderStream},
 };
+use haest_http::{HttpClient, Request};
 use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    http::{self, RetryPolicy},
+    send::{self, RetryPolicy},
     sse::{SseEvent, SseParser},
-    transport::{HttpRequest, Transport},
 };
 
 /// Keep reading, or the stream said it is over (`[DONE]`).
@@ -36,18 +36,18 @@ pub(crate) trait StreamFold: Send + 'static {
     fn finish(self, failure: Option<&str>, cancel: &CancellationToken) -> AssistantMessage;
 }
 
-/// Send `request` over `transport` and fold its stream; `cancel` is the request's.
+/// Send `request` over `http` and fold its stream; `cancel` is the request's.
 pub(crate) fn drive<F: StreamFold>(
-    transport: &Arc<dyn Transport>,
+    http: &Arc<dyn HttpClient>,
     retry: &RetryPolicy,
-    request: HttpRequest,
+    request: Request,
     cancel: CancellationToken,
     mut fold: F,
 ) -> ProviderStream {
-    let (transport, retry) = (transport.clone(), retry.clone());
+    let (http, retry) = (http.clone(), retry.clone());
     Box::pin(async_stream::stream! {
         let mut failure: Option<String> = None;
-        match http::send(&*transport, &request, &cancel, &retry).await {
+        match send::send(&*http, &request, &cancel, &retry).await {
             Err(e) => failure = Some(e),
             Ok(resp) => {
                 let mut body = resp.body;
@@ -65,7 +65,7 @@ pub(crate) fn drive<F: StreamFold>(
                     let (events, ended) = match next {
                         Some(Ok(bytes)) => (parser.push(&bytes), false),
                         Some(Err(e)) => {
-                            failure = Some(e.message);
+                            failure = Some(e.report());
                             break 'read;
                         }
                         None => (parser.finish(), true),

@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     driver::{count, parse_args, str_field, text_of},
-    http::random_hex,
+    send::random_hex,
     web_search::SearchAcc,
 };
 

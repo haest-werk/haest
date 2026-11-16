@@ -97,7 +97,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         "the work run ends on its own"
     );
 
-    // Transport: every model call went through the gateway; routing is the gateway's.
+    // HttpClient: every model call went through the gateway; routing is the gateway's.
     let requests = gateway.take_requests();
     assert_eq!(requests.len(), 3);
     for r in &requests {
@@ -107,7 +107,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
             r.url
         );
         assert!(
-            r.body.get("provider").is_none(),
+            r.json().get("provider").is_none(),
             "no OpenRouter routing from the run"
         );
         assert_eq!(
@@ -118,7 +118,8 @@ pub async fn work(gateway: &Arc<Gateway>) {
     }
     // brain.toml picked these; bash came without jobs: no run_in_background
     // in its schema, no job tools. Grep, Glob and WebFetch stayed off.
-    let offered = tool_names(&requests[0].body);
+    let first = requests[0].json();
+    let offered = tool_names(&first);
     assert_eq!(
         offered,
         [
@@ -133,7 +134,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         ]
     );
     assert!(
-        tool_schema(&requests[0].body, "Bash")["properties"]
+        tool_schema(&first, "Bash")["properties"]
             .get("run_in_background")
             .is_none()
     );
@@ -171,7 +172,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         (&AgentRef::main(), "Notes about Q3")
     );
     // brain's kinds: offered to the model, and an Agent call naming none gets explore.
-    let agent_schema = tool_schema(&requests[0].body, "Agent");
+    let agent_schema = tool_schema(&first, "Agent");
     assert_eq!(
         agent_schema["properties"]["subagent_type"]["enum"],
         json!(["explore", "general"])
@@ -232,7 +233,7 @@ pub async fn dream(gateway: &Arc<Gateway>) {
     assert_eq!(requests.len(), 2);
     // The dream's settings took write, edit and the agents away.
     assert_eq!(
-        tool_names(&requests[0].body),
+        tool_names(&requests[0].json()),
         ["Read", "Bash", "dream_material"]
     );
     assert!(doc.output("d1").content.contains(DREAM_MEMORY));

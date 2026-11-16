@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::{
     routing::parse_routing,
-    testing::{FakeReply, FakeTransport, chat_sse, collect, request},
+    testing::{FakeHttp, FakeReply, chat_sse, collect, request},
 };
 
 fn routing_json() -> Value {
@@ -25,9 +25,9 @@ fn openrouter(routing: &str) -> CompatOptions {
     opts
 }
 
-/// Drive the real request path and capture the body handed to the transport.
+/// Drive the real request path and capture the body handed to the HTTP client.
 async fn wire_body(opts: CompatOptions, model: &str) -> Value {
-    let t = FakeTransport::new([FakeReply::sse(chat_sse(&[]))]);
+    let t = FakeHttp::new([FakeReply::sse(chat_sse(&[]))]);
     collect(CompatProvider::new(opts, t.clone()).stream(request(model))).await;
     t.last_body()
 }

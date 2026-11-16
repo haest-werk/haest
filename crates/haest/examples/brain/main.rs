@@ -9,7 +9,7 @@
 //! |---|---|
 //! | `settings::Settings` written out, one per kind of run (no loader) | config.rs |
 //! | `builtin_tools_where`: the built-ins the settings pick | `run_tools` |
-//! | `Transport` (the node's gateway); OpenRouter routing off | gateway.rs, `models` |
+//! | `http::HttpClient` (the node's gateway); OpenRouter routing off | gateway.rs, `models` |
 //! | `Fs` (BrainFs, writes staged) under `SandboxWorkspace::over` | brain_fs.rs, `runs::work` |
 //! | `ShutWorkspace` (the dream run) | `runs::dream` |
 //! | Read with a `ReadIntercept` (`attachment:<id>`) | tools.rs |

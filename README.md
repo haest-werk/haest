@@ -19,7 +19,8 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | Crate | What |
 |---|---|
 | `haest-core` | the loop and the contracts: messages, `Provider`, `Tool`, `Fs`, `Workspace`, `AgentHooks`, events; turn guard, limits, ledger, session log, compaction, task board |
-| `haest-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible server, OpenRouter), OpenAI Responses; `providers.json`; the model catalog; a pluggable HTTP `Transport` |
+| `haest-http` | the one HTTP seam every request goes through (`HttpClient`), and its default over reqwest and rustls; the one place haest builds a reqwest client |
+| `haest-providers` | Anthropic Messages, OpenAI Chat Completions (any compatible server, OpenRouter), OpenAI Responses; `providers.json`; the model catalog; requests over any `HttpClient` |
 | `haest-workspace` | the real disk and bash, or a bashkit sandbox over a copy-on-write overlay (or over any `Fs`); `/changes` and `/apply` |
 | `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch, tasks, ToolSearch, Skill, Agent / SendMessage / StopAgent, GenerateImage |
 | `haest-mcp` | MCP client: stdio and streamable HTTP servers, their tools as haest tools |

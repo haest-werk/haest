@@ -9,7 +9,7 @@ use serde_json::json;
 use super::*;
 use crate::{
     routing::parse_routing,
-    testing::{FakeReply, FakeTransport, collect, request},
+    testing::{FakeHttp, FakeReply, collect, request},
 };
 
 /// What the host answers for these names (nothing else).
@@ -21,16 +21,16 @@ fn keys(pairs: &[(&str, &str)]) -> Arc<dyn KeySource> {
     Arc::new(map)
 }
 
-fn opts(t: &Arc<FakeTransport>) -> RegistryOptions {
+fn opts(t: &Arc<FakeHttp>) -> RegistryOptions {
     RegistryOptions {
-        transport: t.clone(),
+        http: t.clone(),
         retry: RetryPolicy::none(),
         ..RegistryOptions::default()
     }
 }
 
 fn registry(keys: Arc<dyn KeySource>, custom: CustomProviders) -> ProviderRegistry {
-    ProviderRegistry::new(keys, custom, opts(&FakeTransport::new([])))
+    ProviderRegistry::new(keys, custom, opts(&FakeHttp::new([])))
 }
 
 fn err(reg: &ProviderRegistry, spec: &str) -> String {
@@ -94,7 +94,7 @@ async fn custom_providers_come_from_providers_json_by_dialect() {
 
 #[tokio::test]
 async fn a_custom_anthropic_provider_sends_its_configured_headers() {
-    let t = FakeTransport::new([FakeReply::status(
+    let t = FakeHttp::new([FakeReply::status(
         400,
         r#"{"error":{"message":"stop here"}}"#,
     )]);
@@ -114,7 +114,7 @@ async fn a_custom_anthropic_provider_sends_its_configured_headers() {
 /// a proxy that takes its key in `x-api-key` gets that one only.
 #[tokio::test]
 async fn a_configured_header_replaces_the_anthropic_default_of_that_name() {
-    let t = FakeTransport::new([FakeReply::status(400, "")]);
+    let t = FakeHttp::new([FakeReply::status(400, "")]);
     let custom = CustomProviders::from([(
         "proxy".to_string(),
         json!({"type": "anthropic", "baseURL": "http://proxy",
@@ -137,7 +137,7 @@ async fn a_configured_header_replaces_the_anthropic_default_of_that_name() {
 
 #[tokio::test]
 async fn openai_speaks_responses_while_openrouter_and_custom_servers_speak_chat_completions() {
-    let t = FakeTransport::new(
+    let t = FakeHttp::new(
         (0..3).map(|_| FakeReply::status(400, r#"{"error":{"message":"stop here"}}"#)),
     );
     let base = "http://localhost:1/v1";
@@ -187,7 +187,7 @@ async fn openrouter_routing_goes_out_only_when_handed_in_and_attribution_is_conf
     let routing = json!({"global": {"banned": ["novita"], "favorites": []}}).to_string();
     let routing = parse_routing(&routing).unwrap();
     for handed in [None, routing] {
-        let t = FakeTransport::new([FakeReply::status(400, "")]);
+        let t = FakeHttp::new([FakeReply::status(400, "")]);
         let mut o = opts(&t);
         let sends = handed.is_some();
         o.routing = handed;
@@ -197,7 +197,7 @@ async fn openrouter_routing_goes_out_only_when_handed_in_and_attribution_is_conf
         let r = reg.resolve("openrouter:z-ai/glm-5").unwrap();
         collect(r.provider.stream(request(&r.model))).await;
         let sent = &t.requests()[0];
-        assert_eq!(sent.body.get("provider").is_some(), sends);
+        assert_eq!(sent.json().get("provider").is_some(), sends);
         assert_eq!(sent.header("http-referer"), Some("https://example.test"));
         assert_eq!(sent.header("x-title"), Some("haest"));
     }

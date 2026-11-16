@@ -2,16 +2,12 @@
 //! on its unix socket and holds the keys; the run holds none. Here it answers a
 //! scripted conversation in OpenAI-compatible SSE and keeps every request.
 //!
-//! PLUG POINT: `haest::providers::Transport`.
+//! PLUG POINT: `haest::http::HttpClient`.
 
 use std::{collections::VecDeque, sync::Mutex};
 
-use async_trait::async_trait;
-use bytes::Bytes;
-use futures::{StreamExt, stream};
-use haest::providers::{HttpRequest, HttpResponse, Transport, TransportError};
+use haest::http::{Body, Bytes, HttpClient, HttpError, Request, Response, async_trait};
 use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
 
 /// Where the gateway listens, as the provider's base URL. The transport sends
 /// the path over the socket; the host part means nothing.
@@ -20,7 +16,7 @@ pub const BASE_URL: &str = "http://files.sock/agent/llm/v1";
 #[derive(Default)]
 pub struct Gateway {
     replies: Mutex<VecDeque<String>>,
-    requests: Mutex<Vec<HttpRequest>>,
+    requests: Mutex<Vec<Request>>,
 }
 
 impl Gateway {
@@ -30,33 +26,26 @@ impl Gateway {
     }
 
     /// Every request since the last call.
-    pub fn take_requests(&self) -> Vec<HttpRequest> {
+    pub fn take_requests(&self) -> Vec<Request> {
         std::mem::take(&mut *self.requests.lock().unwrap())
     }
 }
 
 #[async_trait]
-impl Transport for Gateway {
-    async fn post(
-        &self,
-        req: HttpRequest,
-        _cancel: CancellationToken,
-    ) -> Result<HttpResponse, TransportError> {
+impl HttpClient for Gateway {
+    async fn send(&self, req: Request) -> Result<Response, HttpError> {
         self.requests.lock().unwrap().push(req);
         let Some(body) = self.replies.lock().unwrap().pop_front() else {
-            return Err(TransportError::other("gateway: no scripted reply left"));
+            return Err(HttpError::Request("gateway: no scripted reply left".into()));
         };
         // The socket hands the body over in pieces; SSE events straddle them.
-        let chunks: Vec<Result<Bytes, TransportError>> = body
+        let chunks: Vec<Result<Bytes, HttpError>> = body
             .as_bytes()
             .chunks(16)
             .map(|c| Ok(Bytes::copy_from_slice(c)))
             .collect();
-        Ok(HttpResponse {
-            status: 200,
-            headers: vec![("content-type".into(), "text/event-stream".into())],
-            body: stream::iter(chunks).boxed(),
-        })
+        let body = Body::from_stream(futures::stream::iter(chunks));
+        Ok(Response::new(200, body).with_header("content-type", "text/event-stream"))
     }
 }
 

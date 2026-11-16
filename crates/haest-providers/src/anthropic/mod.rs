@@ -22,10 +22,11 @@ pub use convert::{
     thinking_params, to_anthropic_messages, to_anthropic_tools, uses_budget_thinking,
 };
 
+use haest_http::{HttpClient, Request};
+
 use crate::{
     driver::drive,
-    http::{RetryPolicy, endpoint, with_headers},
-    transport::{HttpRequest, Transport},
+    send::{RetryPolicy, endpoint, json_post, with_headers},
 };
 
 const DEFAULT_MAX_TOKENS: u32 = 32_000;
@@ -61,28 +62,28 @@ pub struct AnthropicOptions {
 /// use std::sync::Arc;
 ///
 /// use haest_core::Provider;
-/// use haest_providers::{AnthropicOptions, AnthropicProvider, ReqwestTransport, RetryPolicy};
+/// use haest_providers::{AnthropicOptions, AnthropicProvider, RetryPolicy, http::ReqwestClient};
 ///
 /// let provider = AnthropicProvider::new(
 ///     AnthropicOptions { api_key: "sk-ant-...".into(), ..AnthropicOptions::default() },
-///     Arc::new(ReqwestTransport::new()),
+///     Arc::new(ReqwestClient::new()),
 /// )
 /// .with_retry(RetryPolicy::none());
 /// assert_eq!(provider.id(), "anthropic");
 /// ```
 pub struct AnthropicProvider {
     opts: AnthropicOptions,
-    transport: Arc<dyn Transport>,
+    http: Arc<dyn HttpClient>,
     retry: RetryPolicy,
 }
 
 impl AnthropicProvider {
-    /// A provider over `transport` with the default [`RetryPolicy`]. Nothing
-    /// is sent until [`Provider::stream`].
-    pub fn new(opts: AnthropicOptions, transport: Arc<dyn Transport>) -> Self {
+    /// A provider sending over `http` with the default [`RetryPolicy`].
+    /// Nothing is sent until [`Provider::stream`].
+    pub fn new(opts: AnthropicOptions, http: Arc<dyn HttpClient>) -> Self {
         Self {
             opts,
-            transport,
+            http,
             retry: RetryPolicy::default(),
         }
     }
@@ -93,18 +94,18 @@ impl AnthropicProvider {
         self
     }
 
-    fn http_request(&self, req: &ProviderRequest) -> HttpRequest {
+    fn http_request(&self, req: &ProviderRequest) -> Request {
         let defaults = [
             ("x-api-key", self.opts.api_key.clone()),
             ("anthropic-version", API_VERSION.into()),
             ("content-type", "application/json".into()),
             ("accept", "application/json".into()),
         ];
-        HttpRequest {
-            url: endpoint(&self.opts.base_url, DEFAULT_BASE_URL, "v1/messages"),
-            headers: with_headers(defaults, &self.opts.headers),
-            body: build_anthropic_params(req),
-        }
+        json_post(
+            endpoint(&self.opts.base_url, DEFAULT_BASE_URL, "v1/messages"),
+            with_headers(defaults, &self.opts.headers),
+            &build_anthropic_params(req),
+        )
     }
 }
 
@@ -139,7 +140,7 @@ impl Provider for AnthropicProvider {
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
         let fold = stream::AnthropicFold::new(&req.model);
         drive(
-            &self.transport,
+            &self.http,
             &self.retry,
             self.http_request(&req),
             req.cancel,

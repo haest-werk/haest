@@ -923,11 +923,11 @@ name = "haest"
 version = "0.2.0"
 dependencies = [
  "async-trait",
- "bytes",
  "futures",
  "haest-code",
  "haest-config",
  "haest-core",
+ "haest-http",
  "haest-mcp",
  "haest-mods",
  "haest-providers",
@@ -1069,12 +1069,9 @@ name = "haest-providers"
 version = "0.2.0"
 dependencies = [
  "async-stream",
- "async-trait",
- "bytes",
  "futures",
  "haest-core",
- "reqwest",
- "rustls",
+ "haest-http",
  "serde",
  "serde_json",
  "thiserror",

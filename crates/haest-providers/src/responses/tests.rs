@@ -7,9 +7,9 @@ use haest_core::{
 use serde_json::{Value, json};
 
 use super::*;
-use crate::testing::{FakeEnd, FakeReply, FakeTransport, collect, kinds, request, typed_sse};
+use crate::testing::{FakeEnd, FakeHttp, FakeReply, collect, kinds, request, typed_sse};
 
-fn provider(t: &Arc<FakeTransport>) -> ResponsesProvider {
+fn provider(t: &Arc<FakeHttp>) -> ResponsesProvider {
     let opts = ResponsesOptions {
         id: "openai".into(),
         api_key: "k".into(),
@@ -19,7 +19,7 @@ fn provider(t: &Arc<FakeTransport>) -> ResponsesProvider {
 }
 
 async fn run(events: &[Value]) -> (Vec<ProviderEvent>, AssistantMessage) {
-    let t = FakeTransport::new([FakeReply::sse(typed_sse(events))]);
+    let t = FakeHttp::new([FakeReply::sse(typed_sse(events))]);
     collect(provider(&t).stream(request("gpt-5.5"))).await
 }
 
@@ -170,7 +170,7 @@ async fn response_failed_and_error_events_end_as_error_keep_text_drop_half_built
 #[tokio::test]
 async fn an_aborted_stream_ends_as_aborted_with_no_error_message() {
     // Cancelled before the call, and cancelled mid-stream while the body hangs.
-    let t = FakeTransport::new([]);
+    let t = FakeHttp::new([]);
     let req = request("gpt-5.5");
     req.cancel.cancel();
     let (_, msg) = collect(provider(&t).stream(req)).await;
@@ -178,7 +178,7 @@ async fn an_aborted_stream_ends_as_aborted_with_no_error_message() {
     assert_eq!(msg.error_message, None);
 
     let hanging = FakeReply::sse(typed_sse(&reasoning_turn()[4..7])).then(FakeEnd::Hang);
-    let t = FakeTransport::new([hanging]);
+    let t = FakeHttp::new([hanging]);
     let req = request("gpt-5.5");
     let cancel = req.cancel.clone();
     let mut stream = provider(&t).stream(req);
@@ -238,7 +238,7 @@ async fn a_refusal_item_ends_as_refusal() {
 
 #[test]
 fn the_wire_request_goes_to_responses() {
-    let t = FakeTransport::new([]);
+    let t = FakeHttp::new([]);
     let req = provider(&t).http_request(&request("gpt-5.5"));
     assert_eq!(req.url, "https://api.openai.com/v1/responses");
     assert_eq!(req.header("authorization"), Some("Bearer k"));

@@ -9,9 +9,9 @@ use haest_core::{
 use serde_json::{Value, json};
 
 use super::*;
-use crate::testing::{FakeEnd, FakeReply, FakeTransport, collect, kinds, request, typed_sse};
+use crate::testing::{FakeEnd, FakeHttp, FakeReply, collect, kinds, request, typed_sse};
 
-fn provider(t: &Arc<FakeTransport>) -> AnthropicProvider {
+fn provider(t: &Arc<FakeHttp>) -> AnthropicProvider {
     AnthropicProvider::new(
         AnthropicOptions {
             api_key: "k".into(),
@@ -68,7 +68,7 @@ async fn thinking_with_signature_text_and_a_streamed_tool_call_fold_into_one_mes
         json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 7}}),
         json!({"type": "message_stop"}),
     ]);
-    let t = FakeTransport::new([FakeReply::sse(body)]);
+    let t = FakeHttp::new([FakeReply::sse(body)]);
     let (events, msg) = collect(provider(&t).stream(request("claude-sonnet-5"))).await;
     assert_eq!(
         kinds(&events),
@@ -103,7 +103,7 @@ async fn thinking_with_signature_text_and_a_streamed_tool_call_fold_into_one_mes
     let req = &t.requests()[0];
     assert_eq!(req.url, "https://api.anthropic.com/v1/messages");
     assert_eq!(req.header("x-api-key"), Some("k"));
-    assert_eq!(req.body["stream"], json!(true));
+    assert_eq!(req.json()["stream"], json!(true));
 }
 
 #[tokio::test]
@@ -123,10 +123,10 @@ async fn a_stream_that_dies_keeps_text_but_not_the_half_built_tool_call() {
     })]);
     let erroring = FakeReply::sse(body + &error_event);
     for (reply, why) in [(broken, "connection reset"), (erroring, "Overloaded")] {
-        let t = FakeTransport::new([reply]);
+        let t = FakeHttp::new([reply]);
         let (_, msg) = collect(provider(&t).stream(request("claude-sonnet-5"))).await;
         assert_eq!(msg.stop_reason, StopReason::Error);
-        assert_eq!(msg.error_message.as_deref(), Some(why));
+        assert!(msg.error_message.as_ref().unwrap().contains(why));
         assert_eq!(
             msg.content,
             vec![AssistantPart::Text {
@@ -154,7 +154,7 @@ async fn data_haest_does_not_use_is_skipped_and_the_answer_keeps_its_tool_call()
     let body = format!(
         "{head}data: keep-alive\n\nevent: proxy_status\ndata: <ok>\n\n{tail}data: [DONE]\n\n"
     );
-    let t = FakeTransport::new([FakeReply::sse(body)]);
+    let t = FakeHttp::new([FakeReply::sse(body)]);
     let (_, msg) = collect(provider(&t).stream(request("claude-sonnet-5"))).await;
     assert_eq!(msg.error_message, None);
     assert_eq!(msg.stop_reason, StopReason::ToolUse);
@@ -172,7 +172,7 @@ async fn a_malformed_event_haest_uses_still_fails_the_stream() {
     let broken = format!("{head}event: content_block_delta\ndata: {{\"index\": 0,\n\n");
     let erroring = format!("{head}event: error\ndata: upstream overloaded\n\n");
     for (body, said) in [(broken, None), (erroring, Some("upstream overloaded"))] {
-        let t = FakeTransport::new([FakeReply::sse(body.clone())]);
+        let t = FakeHttp::new([FakeReply::sse(body.clone())]);
         let (_, msg) = collect(provider(&t).stream(request("claude-sonnet-5"))).await;
         assert_eq!(msg.stop_reason, StopReason::Error, "{body}");
         if let Some(said) = said {

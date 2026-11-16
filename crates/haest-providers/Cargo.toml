@@ -1,6 +1,6 @@
 [package]
 name = "haest-providers"
-description = "Model API adapters for haest: Anthropic Messages, OpenAI Chat Completions + Responses, OpenRouter, any OpenAI-compatible endpoint; pluggable HTTP transport"
+description = "Model API adapters for haest: Anthropic Messages, OpenAI Chat Completions + Responses, OpenRouter, any OpenAI-compatible endpoint; pluggable HTTP client"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,25 +11,20 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-# Fakes for tests in other crates: FakeTransport and SSE body builders.
+# Fakes for tests in other crates: FakeHttp and SSE body builders.
 testing = []
 
 [dependencies]
 haest-core = { workspace = true }
+# How every request travels; re-exported as `haest_providers::http`.
+haest-http = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
-async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 async-stream = "0.3"
-bytes = "1"
-# TLS on ring, the same provider haest-tools uses: one crypto stack in the
-# binary and no C toolchain (aws-lc-sys needs cmake) to build it. No
-# `system-proxy`: the default transport reads no proxy settings (D15).
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "stream"] }
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

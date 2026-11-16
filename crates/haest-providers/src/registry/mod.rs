@@ -33,14 +33,14 @@ pub use custom::{
     paper_instruments_options,
 };
 
+use haest_http::{HttpClient, ReqwestClient};
+
 use crate::{
     anthropic::{AnthropicOptions, AnthropicProvider},
     compat::{CompatFlavor, CompatOptions, CompatProvider},
-    http::RetryPolicy,
-    reqwest_transport::ReqwestTransport,
     responses::{ResponsesOptions, ResponsesProvider},
     routing::RoutingEnv,
-    transport::Transport,
+    send::RetryPolicy,
 };
 
 /// A provider that cannot be built, said to the human as is.
@@ -54,17 +54,18 @@ pub struct ProviderConfigError(pub String);
 
 const BUILTIN: [&str; 4] = ["anthropic", "openai", "openrouter", "paperinstruments"];
 
-/// What every provider a [`ProviderRegistry`] builds shares: the transport, the
-/// retry policy and OpenRouter's extras.
+/// What every provider a [`ProviderRegistry`] builds shares: the HTTP client,
+/// the retry policy and OpenRouter's extras.
 ///
-/// The default sends over a new [`ReqwestTransport`], retries as the SDKs do,
-/// sends no routing, and tells OpenRouter the app is `haest` (`X-Title`) with
-/// no URL. Change a field with struct update syntax:
-/// `RegistryOptions { transport, ..RegistryOptions::default() }` (the default
-/// still builds a reqwest client, which costs no connection).
+/// The default sends over the process's shared [`ReqwestClient`], retries as
+/// the SDKs do, sends no routing, and tells OpenRouter the app is `haest`
+/// (`X-Title`) with no URL. Change a field with struct update syntax:
+/// `RegistryOptions { http, ..RegistryOptions::default() }`. The default
+/// builds nothing: the shared client is built on the first request, so a host
+/// that brings its own never pays for it.
 pub struct RegistryOptions {
     /// How every provider's requests travel.
-    pub transport: Arc<dyn Transport>,
+    pub http: Arc<dyn HttpClient>,
     /// How every provider retries a refused or unanswered request.
     pub retry: RetryPolicy,
     /// OpenRouter provider routing to send ([`crate::routing::parse_routing`]
@@ -80,7 +81,7 @@ pub struct RegistryOptions {
 impl Default for RegistryOptions {
     fn default() -> Self {
         Self {
-            transport: Arc::new(ReqwestTransport::new()),
+            http: Arc::new(ReqwestClient::new()),
             retry: RetryPolicy::default(),
             routing: None,
             app_title: Some("haest".into()),
@@ -207,8 +208,8 @@ impl ProviderRegistry {
                     base_url: keys.key("OPENAI_BASE_URL"),
                     headers: Vec::new(),
                 };
-                let (t, retry) = (self.opts.transport.clone(), self.opts.retry.clone());
-                Arc::new(ResponsesProvider::new(opts, t).with_retry(retry))
+                let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
+                Arc::new(ResponsesProvider::new(opts, http).with_retry(retry))
             }
             "openrouter" => self.compat(self.openrouter_options()?),
             "paperinstruments" => self.compat(paper_instruments_options(keys)?),
@@ -222,13 +223,13 @@ impl ProviderRegistry {
     }
 
     fn anthropic(&self, opts: AnthropicOptions) -> Arc<dyn Provider> {
-        let (t, retry) = (self.opts.transport.clone(), self.opts.retry.clone());
-        Arc::new(AnthropicProvider::new(opts, t).with_retry(retry))
+        let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
+        Arc::new(AnthropicProvider::new(opts, http).with_retry(retry))
     }
 
     fn compat(&self, opts: CompatOptions) -> Arc<dyn Provider> {
-        let (t, retry) = (self.opts.transport.clone(), self.opts.retry.clone());
-        Arc::new(CompatProvider::new(opts, t).with_retry(retry))
+        let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
+        Arc::new(CompatProvider::new(opts, http).with_retry(retry))
     }
 
     fn openrouter_options(&self) -> Result<CompatOptions, ProviderConfigError> {

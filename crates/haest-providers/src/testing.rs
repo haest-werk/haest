@@ -1,27 +1,27 @@
 //! Fakes for tests, in this crate and every crate that builds on it
 //! (`haest-providers = { ..., features = ["testing"] }` in dev-dependencies):
-//! a [`FakeTransport`] that answers with recorded SSE bodies and records every
+//! a [`FakeHttp`] that answers with recorded SSE bodies and records every
 //! request, plus builders for those bodies in each dialect.
 //!
 //! ```
 //! use haest_core::Provider;
 //! use haest_providers::{
 //!     CompatFlavor, CompatOptions, CompatProvider,
-//!     testing::{FakeReply, FakeTransport, chat_sse, collect, request},
+//!     testing::{FakeHttp, FakeReply, chat_sse, collect, request},
 //! };
 //! use serde_json::json;
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() {
-//! let transport = FakeTransport::new([FakeReply::sse(chat_sse(&[
+//! let http = FakeHttp::new([FakeReply::sse(chat_sse(&[
 //!     json!({"choices": [{"index": 0, "delta": {"content": "hi"}}]}),
 //! ]))]);
 //! let opts = CompatOptions::new("test", CompatFlavor::Generic, "key");
-//! let provider = CompatProvider::new(opts, transport.clone());
+//! let provider = CompatProvider::new(opts, http.clone());
 //!
 //! let (_events, message) = collect(provider.stream(request("some-model"))).await;
 //! assert_eq!(message.text(), "hi");
-//! assert_eq!(transport.last_body()["model"], "some-model");
+//! assert_eq!(http.last_body()["model"], "some-model");
 //! # }
 //! ```
 
@@ -30,17 +30,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use async_trait::async_trait;
-use bytes::Bytes;
 use futures::{StreamExt, stream};
 use haest_core::{
     messages::{AssistantMessage, Message},
     provider::{ProviderEvent, ProviderRequest, ProviderStream},
 };
+use haest_http::{Body, Bytes, HttpClient, HttpError, Request, Response, async_trait};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
-
-use crate::transport::{HttpRequest, HttpResponse, Transport, TransportError};
 
 /// What happens after a reply's chunks.
 #[derive(Debug, Clone, PartialEq)]
@@ -54,7 +51,7 @@ pub enum FakeEnd {
 }
 
 /// One scripted answer.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum FakeReply {
     /// An answer: the status and headers, then the body in these chunks, then `end`.
     Response {
@@ -62,13 +59,13 @@ pub enum FakeReply {
         status: u16,
         /// The response headers.
         headers: Vec<(String, String)>,
-        /// The body, one chunk per item, as the transport hands it over.
+        /// The body, one chunk per item, as the client hands it over.
         chunks: Vec<Bytes>,
         /// How the body ends after the last chunk.
         end: FakeEnd,
     },
     /// No answer at all.
-    Error(TransportError),
+    Error(HttpError),
 }
 
 /// Bytes per chunk for SSE bodies: small and odd, so every test also crosses chunk boundaries.
@@ -118,16 +115,16 @@ impl FakeReply {
     }
 }
 
-/// A transport that answers from a script, in order, and records every request.
-/// Out of script = a non-retryable error, so an extra call fails loudly.
+/// An HTTP client that answers from a script, in order, and records every
+/// request. Out of script = a non-retryable error, so an extra call fails loudly.
 #[derive(Default)]
-pub struct FakeTransport {
+pub struct FakeHttp {
     replies: Mutex<VecDeque<FakeReply>>,
-    requests: Mutex<Vec<HttpRequest>>,
+    requests: Mutex<Vec<Request>>,
 }
 
-impl FakeTransport {
-    /// A transport that gives `replies`, one per request, in order. Shared
+impl FakeHttp {
+    /// A client that gives `replies`, one per request, in order. Shared
     /// (`Arc`), so a test keeps a handle to read the requests after handing
     /// a clone to a provider.
     pub fn new(replies: impl IntoIterator<Item = FakeReply>) -> Arc<Self> {
@@ -138,32 +135,28 @@ impl FakeTransport {
     }
 
     /// Every request so far.
-    pub fn requests(&self) -> Vec<HttpRequest> {
+    pub fn requests(&self) -> Vec<Request> {
         self.requests.lock().unwrap().clone()
     }
 
-    /// The last request's body.
+    /// The last request's JSON body (Null when there was none).
     pub fn last_body(&self) -> Value {
         self.requests
             .lock()
             .unwrap()
             .last()
-            .map(|r| r.body.clone())
+            .map(Request::json)
             .unwrap_or(Value::Null)
     }
 }
 
 #[async_trait]
-impl Transport for FakeTransport {
-    async fn post(
-        &self,
-        req: HttpRequest,
-        _cancel: CancellationToken,
-    ) -> Result<HttpResponse, TransportError> {
+impl HttpClient for FakeHttp {
+    async fn send(&self, req: Request) -> Result<Response, HttpError> {
         self.requests.lock().unwrap().push(req);
         let reply = self.replies.lock().unwrap().pop_front();
         let (status, headers, chunks, end) = match reply {
-            None => return Err(TransportError::other("fake transport: out of replies")),
+            None => return Err(HttpError::Request("fake HTTP: out of replies".into())),
             Some(FakeReply::Error(e)) => return Err(e),
             Some(FakeReply::Response {
                 status,
@@ -174,13 +167,13 @@ impl Transport for FakeTransport {
         };
         let head = stream::iter(chunks.into_iter().map(Ok));
         let body = match end {
-            FakeEnd::Close => head.boxed(),
-            FakeEnd::Fail(msg) => head
-                .chain(stream::once(async move { Err(TransportError::other(msg)) }))
-                .boxed(),
-            FakeEnd::Hang => head.chain(stream::pending()).boxed(),
+            FakeEnd::Close => Body::from_stream(head),
+            FakeEnd::Fail(msg) => Body::from_stream(head.chain(stream::once(async move {
+                Err(HttpError::Body(msg.into()))
+            }))),
+            FakeEnd::Hang => Body::from_stream(head.chain(stream::pending())),
         };
-        Ok(HttpResponse {
+        Ok(Response {
             status,
             headers,
             body,

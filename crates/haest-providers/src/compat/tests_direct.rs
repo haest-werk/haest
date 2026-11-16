@@ -21,7 +21,7 @@ use crate::{
         CustomProviderConfig, ProviderRegistry, RegistryOptions, custom_compat_options,
         paper_instruments_options,
     },
-    testing::{FakeTransport, chat_sse, request, request_with},
+    testing::{FakeHttp, chat_sse, request, request_with},
 };
 
 const MODEL: &str = "ultramarine-1-flash";
@@ -207,7 +207,7 @@ fn pi_env() -> HashMap<String, String> {
 
 fn registry(keys: HashMap<String, String>) -> ProviderRegistry {
     let opts = RegistryOptions {
-        transport: FakeTransport::new([]),
+        http: FakeHttp::new([]),
         ..RegistryOptions::default()
     };
     ProviderRegistry::new(Arc::new(keys), Default::default(), opts)

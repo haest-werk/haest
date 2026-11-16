@@ -31,6 +31,7 @@ use haest_core::{
     messages::AssistantMessage,
     provider::{ProviderEvent, ProviderRequest, ProviderStream},
 };
+use haest_http::{HttpClient, Request};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -40,10 +41,9 @@ pub(crate) use stream::{StreamState, apply_chunk, finish_message};
 
 use crate::{
     driver::{Step, StreamFold, drive, openai_error},
-    http::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint},
     routing::RoutingEnv,
+    send::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint, json_post},
     sse::SseEvent,
-    transport::{HttpRequest, Transport},
     web_search::web_search_tool,
 };
 
@@ -128,26 +128,26 @@ impl CompatOptions {
 /// use std::sync::Arc;
 ///
 /// use haest_core::Provider;
-/// use haest_providers::{CompatFlavor, CompatOptions, CompatProvider, ReqwestTransport};
+/// use haest_providers::{CompatFlavor, CompatOptions, CompatProvider, http::ReqwestClient};
 ///
 /// let mut opts = CompatOptions::new("local", CompatFlavor::Generic, "none");
 /// opts.base_url = Some("http://localhost:1234/v1".into());
-/// let provider = CompatProvider::new(opts, Arc::new(ReqwestTransport::new()));
+/// let provider = CompatProvider::new(opts, Arc::new(ReqwestClient::new()));
 /// assert_eq!(provider.id(), "local");
 /// ```
 pub struct CompatProvider {
     opts: CompatOptions,
-    transport: Arc<dyn Transport>,
+    http: Arc<dyn HttpClient>,
     retry: RetryPolicy,
 }
 
 impl CompatProvider {
-    /// A provider over `transport` with the default [`RetryPolicy`]. Nothing
-    /// is sent until [`Provider::stream`](haest_core::Provider::stream).
-    pub fn new(opts: CompatOptions, transport: Arc<dyn Transport>) -> Self {
+    /// A provider sending over `http` with the default [`RetryPolicy`].
+    /// Nothing is sent until [`Provider::stream`](haest_core::Provider::stream).
+    pub fn new(opts: CompatOptions, http: Arc<dyn HttpClient>) -> Self {
         Self {
             opts,
-            transport,
+            http,
             retry: RetryPolicy::default(),
         }
     }
@@ -163,12 +163,12 @@ impl CompatProvider {
         &self.opts
     }
 
-    fn http_request(&self, req: &ProviderRequest) -> HttpRequest {
-        HttpRequest {
-            url: endpoint(&self.opts.base_url, OPENAI_URL, "chat/completions"),
-            headers: bearer_headers(&self.opts.api_key, &self.opts.headers),
-            body: build_compat_body(&self.opts, req),
-        }
+    fn http_request(&self, req: &ProviderRequest) -> Request {
+        json_post(
+            endpoint(&self.opts.base_url, OPENAI_URL, "chat/completions"),
+            bearer_headers(&self.opts.api_key, &self.opts.headers),
+            &build_compat_body(&self.opts, req),
+        )
     }
 }
 
@@ -261,7 +261,7 @@ impl haest_core::provider::Provider for CompatProvider {
             price: self.opts.pricing.get(&req.model).cloned(),
         };
         drive(
-            &self.transport,
+            &self.http,
             &self.retry,
             self.http_request(&req),
             req.cancel,

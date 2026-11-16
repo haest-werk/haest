@@ -5,7 +5,7 @@ use haest_core::{
 use serde_json::{Value, json};
 
 use super::*;
-use crate::testing::{FakeReply, FakeTransport, chat_sse, collect, request, request_with};
+use crate::testing::{FakeHttp, FakeReply, chat_sse, collect, request, request_with};
 
 pub(super) fn chunk(delta: Value) -> Value {
     finished(delta, None)
@@ -37,7 +37,7 @@ pub(super) async fn run_body(
     req: ProviderRequest,
     body: String,
 ) -> (Vec<ProviderEvent>, AssistantMessage) {
-    let t = FakeTransport::new([FakeReply::sse(body)]);
+    let t = FakeHttp::new([FakeReply::sse(body)]);
     collect(CompatProvider::new(opts, t).stream(req)).await
 }
 
@@ -256,7 +256,7 @@ fn the_wire_request_goes_to_chat_completions_with_a_bearer_key_and_custom_header
         ("X-Title".into(), "haest".into()),
         ("Accept".into(), "text/event-stream".into()),
     ];
-    let t = FakeTransport::new([]);
+    let t = FakeHttp::new([]);
     let req = CompatProvider::new(opts, t).http_request(&or_request());
     assert_eq!(req.url, "https://example.test/api/v1/chat/completions");
     assert_eq!(req.header("authorization"), Some("Bearer k"));

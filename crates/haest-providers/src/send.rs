@@ -13,16 +13,16 @@ use std::{
 };
 
 use futures::StreamExt;
+use haest_http::{Bytes, HttpClient, HttpError, Method, Request, Response};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
-
-use crate::transport::{HttpRequest, HttpResponse, Transport};
 
 /// How a provider retries a request that got no answer or was refused, the way
 /// the official SDKs do.
 ///
-/// A try is repeated after a connection failure ([`TransportError::retryable`]),
-/// or a 408, 409, 429 or 5xx answer. The server has the last word: an
+/// A try is repeated after no answer (a connection failure, or no status and
+/// headers within `headers_timeout`: [`HttpError::is_retryable`]), or a 408,
+/// 409, 429 or 5xx answer. The server has the last word: an
 /// `x-should-retry: false` header stops the retries, `true` retries any
 /// status. The wait is the server's `retry-after-ms` or `retry-after` when it
 /// names one under a minute, else `initial_delay` doubled per retry up to
@@ -44,7 +44,7 @@ use crate::transport::{HttpRequest, HttpResponse, Transport};
 /// assert_eq!(RetryPolicy::none().max_retries, 0);
 /// ```
 ///
-/// [`TransportError::retryable`]: crate::TransportError::retryable
+/// [`HttpError::is_retryable`]: haest_http::HttpError::is_retryable
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryPolicy {
     /// Tries after the first one; 0 never retries.
@@ -53,15 +53,21 @@ pub struct RetryPolicy {
     pub initial_delay: Duration,
     /// The longest backoff. A server's own `retry-after` may ask for longer, up to a minute.
     pub max_delay: Duration,
+    /// How long one try waits for the status and headers before it counts as
+    /// unanswered; the body then takes as long as it takes. A long prompt can
+    /// sit in a queue before the first byte.
+    pub headers_timeout: Duration,
 }
 
 impl Default for RetryPolicy {
-    /// The SDKs' policy: 3 retries, 0.5 s doubling to at most 8 s.
+    /// The SDKs' policy: 3 retries, 0.5 s doubling to at most 8 s, and ten
+    /// minutes for each try's status, as long as the SDKs allow.
     fn default() -> Self {
         Self {
             max_retries: 3,
             initial_delay: Duration::from_millis(500),
             max_delay: Duration::from_secs(8),
+            headers_timeout: Duration::from_secs(600),
         }
     }
 }
@@ -139,7 +145,18 @@ pub(crate) fn with_headers<const N: usize>(
     headers
 }
 
-fn should_retry(resp: &HttpResponse) -> bool {
+/// A model call: `body` POSTed as JSON to `url` with `headers` (which carry
+/// the key and the content type).
+pub(crate) fn json_post(url: String, headers: Vec<(String, String)>, body: &Value) -> Request {
+    Request {
+        method: Method::Post,
+        url,
+        headers,
+        body: Bytes::from(body.to_string()),
+    }
+}
+
+fn should_retry(resp: &Response) -> bool {
     match resp.header("x-should-retry") {
         Some("true") => true,
         Some("false") => false,
@@ -148,7 +165,7 @@ fn should_retry(resp: &HttpResponse) -> bool {
 }
 
 /// The server's own wait, when it names one under a minute.
-fn retry_after(resp: &HttpResponse) -> Option<Duration> {
+fn retry_after(resp: &Response) -> Option<Duration> {
     let ms = resp
         .header("retry-after-ms")
         .and_then(|v| v.trim().parse::<f64>().ok())
@@ -170,14 +187,26 @@ async fn sleep(delay: Duration, cancel: &CancellationToken) -> Result<(), String
     }
 }
 
+/// One try: the answer's status and headers, or no answer within
+/// `retry.headers_timeout` (dropping the request, which cancels it).
+async fn try_once(
+    http: &dyn HttpClient,
+    req: &Request,
+    retry: &RetryPolicy,
+) -> Result<Response, HttpError> {
+    tokio::time::timeout(retry.headers_timeout, http.send(req.clone()))
+        .await
+        .unwrap_or(Err(HttpError::Timeout(retry.headers_timeout)))
+}
+
 /// POST until the server answers 2xx, a refusal is final, or the retries run out.
 /// The error is the message for `AssistantMessage::error_message`.
 pub(crate) async fn send(
-    transport: &dyn Transport,
-    req: &HttpRequest,
+    http: &dyn HttpClient,
+    req: &Request,
     cancel: &CancellationToken,
     retry: &RetryPolicy,
-) -> Result<HttpResponse, String> {
+) -> Result<Response, String> {
     let mut attempt = 0;
     loop {
         if cancel.is_cancelled() {
@@ -186,7 +215,7 @@ pub(crate) async fn send(
         let sent = tokio::select! {
             biased;
             _ = cancel.cancelled() => return Err("request aborted".into()),
-            sent = transport.post(req.clone(), cancel.clone()) => sent,
+            sent = try_once(http, req, retry) => sent,
         };
         let retries_left = attempt < retry.max_retries;
         match sent {
@@ -197,8 +226,10 @@ pub(crate) async fn send(
                 sleep(delay, cancel).await?;
             }
             Ok(resp) => return Err(refusal_message(resp, cancel).await),
-            Err(e) if retries_left && e.retryable => sleep(retry.backoff(attempt), cancel).await?,
-            Err(e) => return Err(e.message),
+            Err(e) if retries_left && e.is_retryable() => {
+                sleep(retry.backoff(attempt), cancel).await?
+            }
+            Err(e) => return Err(e.report()),
         }
         attempt += 1;
     }
@@ -208,7 +239,7 @@ pub(crate) async fn send(
 const ERROR_BODY_CAP: usize = 64 * 1024;
 
 /// `"<status> <the API's own message>"`, like the SDKs say it.
-async fn refusal_message(resp: HttpResponse, cancel: &CancellationToken) -> String {
+async fn refusal_message(resp: Response, cancel: &CancellationToken) -> String {
     let status = resp.status;
     let mut body = Vec::new();
     let mut stream = resp.body;

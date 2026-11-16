@@ -29,8 +29,8 @@
 //! - [`AnthropicProvider`], [`CompatProvider`], [`ResponsesProvider`]: build
 //!   one yourself to set every option.
 //! - [`Catalog`]: the models haest knows, and what each accepts.
-//! - [`Transport`]: how every request travels (PLUG POINT). The default is
-//!   [`ReqwestTransport`].
+//! - [`http::HttpClient`]: how every request travels (PLUG POINT). The
+//!   default is [`http::ReqwestClient`], the process's shared client.
 //! - [`routing`]: OpenRouter provider routing, resolved per request.
 //!
 //! # Picking a model
@@ -57,12 +57,13 @@
 //! a vault). A missing key is an error when its provider is first resolved,
 //! not before.
 //!
-//! # Plugging in your own transport
+//! # Plugging in your own HTTP client
 //!
 //! Every provider sends one POST with a JSON body and reads the answer as a
-//! byte stream of server-sent events. Implement [`Transport`] to send it
-//! somewhere else: a gateway over a unix socket, a recorder, a fake for tests.
-//! The provider keeps the rest: headers, retries, SSE parsing, error messages.
+//! byte stream of server-sent events. Implement [`http::HttpClient`] to send
+//! it somewhere else: a gateway over a unix socket, a recorder, a fake for
+//! tests. The provider keeps the rest: headers, retries, SSE parsing, error
+//! messages.
 //!
 //! This example answers every call with one canned Chat Completions stream,
 //! resolves an OpenRouter spec over it and reads the answer, offline:
@@ -70,27 +71,21 @@
 //! ```
 //! use std::{collections::HashMap, sync::Arc};
 //!
-//! use async_trait::async_trait;
-//! use bytes::Bytes;
 //! use futures::StreamExt;
 //! use haest_core::{Message, ProviderEvent, ProviderRequest, StopReason};
 //! use haest_providers::{
-//!     CustomProviders, HttpRequest, HttpResponse, ProviderRegistry, RegistryOptions, Transport,
-//!     TransportError,
+//!     CustomProviders, ProviderRegistry, RegistryOptions,
+//!     http::{HttpClient, HttpError, Request, Response, async_trait},
 //! };
 //! use tokio_util::sync::CancellationToken;
 //!
-//! /// Answers every request with the same stream. A real transport would send
+//! /// Answers every request with the same stream. A real client would send
 //! /// `req` over its own connection.
 //! struct Canned;
 //!
 //! #[async_trait]
-//! impl Transport for Canned {
-//!     async fn post(
-//!         &self,
-//!         req: HttpRequest,
-//!         _cancel: CancellationToken,
-//!     ) -> Result<HttpResponse, TransportError> {
+//! impl HttpClient for Canned {
+//!     async fn send(&self, req: Request) -> Result<Response, HttpError> {
 //!         assert_eq!(req.url, "https://openrouter.ai/api/v1/chat/completions");
 //!         assert_eq!(req.header("authorization"), Some("Bearer sk-test"));
 //!         let sse = concat!(
@@ -98,11 +93,7 @@
 //!             "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
 //!             "data: [DONE]\n\n",
 //!         );
-//!         Ok(HttpResponse {
-//!             status: 200,
-//!             headers: vec![("content-type".into(), "text/event-stream".into())],
-//!             body: futures::stream::iter([Ok(Bytes::from(sse))]).boxed(),
-//!         })
+//!         Ok(Response::new(200, sse).with_header("content-type", "text/event-stream"))
 //!     }
 //! }
 //!
@@ -113,7 +104,7 @@
 //!     let registry = ProviderRegistry::new(
 //!         Arc::new(keys),
 //!         CustomProviders::new(),
-//!         RegistryOptions { transport: Arc::new(Canned), ..RegistryOptions::default() },
+//!         RegistryOptions { http: Arc::new(Canned), ..RegistryOptions::default() },
 //!     );
 //!
 //!     let resolved = registry.resolve_spec("openrouter:anthropic/claude-sonnet-5.5").unwrap();
@@ -143,9 +134,9 @@
 //! }
 //! ```
 //!
-//! [`Transport`] is declared with the `async-trait` crate, so an
-//! implementation needs `async-trait` (and `bytes`, `futures`, `tokio-util` for
-//! the types in its signature) among its own dependencies.
+//! Everything an implementation names is in [`http`] (the haest-http crate,
+//! re-exported): the trait, its types, the `async_trait` macro it is declared
+//! with, and `Bytes`. A host needs no other crate for it.
 //!
 //! # providers.json
 //!
@@ -193,9 +184,9 @@
 //!
 //! # Features
 //!
-//! - `testing`: the `testing` module, fakes for tests in other crates: a
-//!   [`Transport`] that answers from a script and records every request, and
-//!   builders for SSE bodies in each dialect.
+//! - `testing`: the `testing` module, fakes for tests in other crates: an
+//!   [`http::HttpClient`] that answers from a script and records every
+//!   request, and builders for SSE bodies in each dialect.
 //!
 //! [`Provider`]: haest_core::provider::Provider
 //! [`ProviderRequest`]: haest_core::provider::ProviderRequest
@@ -215,17 +206,20 @@ pub mod anthropic;
 pub mod catalog;
 pub mod compat;
 mod driver;
-mod http;
 mod openai_media;
 pub mod registry;
-mod reqwest_transport;
 pub mod responses;
 pub mod routing;
+mod send;
 mod sse;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
-pub mod transport;
 mod web_search;
+
+/// How every model request travels: the haest-http crate, everything a host
+/// needs to bring its own [`HttpClient`](http::HttpClient).
+#[doc(inline)]
+pub use haest_http as http;
 
 #[cfg(test)]
 mod driver_tests;
@@ -235,15 +229,13 @@ mod media_tests;
 pub use anthropic::{AnthropicOptions, AnthropicProvider};
 pub use catalog::Catalog;
 pub use compat::{CompatFlavor, CompatOptions, CompatProvider};
-pub use http::RetryPolicy;
 pub use registry::{
     CustomProviderConfig, CustomProviders, ProviderConfigError, ProviderRegistry, RegistryOptions,
     load_custom_providers,
 };
-pub use reqwest_transport::ReqwestTransport;
 pub use responses::{ResponsesOptions, ResponsesProvider};
 pub use routing::RoutingEnv;
-pub use transport::{ByteStream, HttpRequest, HttpResponse, Transport, TransportError};
+pub use send::RetryPolicy;
 
 /// A tool result's text as every dialect sends it: never empty.
 pub(crate) fn result_text(msg: &haest_core::messages::ToolResultMessage) -> &str {

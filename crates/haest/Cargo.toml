@@ -15,7 +15,9 @@ name = "haest"
 
 [features]
 default = ["providers", "workspace", "tools", "mcp", "code", "mods", "settings"]
-providers = ["dep:haest-providers"]
+# The one HTTP seam: on with every part that sends requests.
+http = ["dep:haest-http"]
+providers = ["dep:haest-providers", "http"]
 workspace = ["dep:haest-workspace"]
 tools = ["dep:haest-tools"]
 mcp = ["dep:haest-mcp"]
@@ -36,6 +38,7 @@ testing = ["haest-core/testing"]
 [dependencies]
 haest-core = { workspace = true }
 async-trait = { workspace = true }
+haest-http = { workspace = true, optional = true }
 haest-providers = { workspace = true, optional = true }
 haest-workspace = { workspace = true, optional = true }
 haest-tools = { workspace = true, optional = true }
@@ -62,7 +65,6 @@ tokio-util = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
-bytes = "1"
 
 [package.metadata.docs.rs]
 all-features = true

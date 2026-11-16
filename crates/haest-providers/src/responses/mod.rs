@@ -20,10 +20,11 @@ use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
 
 pub use convert::{build_responses_body, reasoning_params, to_responses_input};
 
+use haest_http::{HttpClient, Request};
+
 use crate::{
     driver::drive,
-    http::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint},
-    transport::{HttpRequest, Transport},
+    send::{OPENAI_URL, RetryPolicy, bearer_headers, endpoint, json_post},
 };
 
 /// Where a [`ResponsesProvider`] sends its requests, and with which key.
@@ -54,25 +55,25 @@ pub struct ResponsesOptions {
 /// use std::sync::Arc;
 ///
 /// use haest_core::Provider;
-/// use haest_providers::{ReqwestTransport, ResponsesOptions, ResponsesProvider};
+/// use haest_providers::{ResponsesOptions, ResponsesProvider, http::ReqwestClient};
 ///
 /// let opts = ResponsesOptions { id: "openai".into(), api_key: "sk-...".into(), ..Default::default() };
-/// let provider = ResponsesProvider::new(opts, Arc::new(ReqwestTransport::new()));
+/// let provider = ResponsesProvider::new(opts, Arc::new(ReqwestClient::new()));
 /// assert_eq!(provider.id(), "openai");
 /// ```
 pub struct ResponsesProvider {
     opts: ResponsesOptions,
-    transport: Arc<dyn Transport>,
+    http: Arc<dyn HttpClient>,
     retry: RetryPolicy,
 }
 
 impl ResponsesProvider {
-    /// A provider over `transport` with the default [`RetryPolicy`]. Nothing
-    /// is sent until [`Provider::stream`].
-    pub fn new(opts: ResponsesOptions, transport: Arc<dyn Transport>) -> Self {
+    /// A provider sending over `http` with the default [`RetryPolicy`].
+    /// Nothing is sent until [`Provider::stream`].
+    pub fn new(opts: ResponsesOptions, http: Arc<dyn HttpClient>) -> Self {
         Self {
             opts,
-            transport,
+            http,
             retry: RetryPolicy::default(),
         }
     }
@@ -83,12 +84,12 @@ impl ResponsesProvider {
         self
     }
 
-    fn http_request(&self, req: &ProviderRequest) -> HttpRequest {
-        HttpRequest {
-            url: endpoint(&self.opts.base_url, OPENAI_URL, "responses"),
-            headers: bearer_headers(&self.opts.api_key, &self.opts.headers),
-            body: build_responses_body(&self.opts.id, req),
-        }
+    fn http_request(&self, req: &ProviderRequest) -> Request {
+        json_post(
+            endpoint(&self.opts.base_url, OPENAI_URL, "responses"),
+            bearer_headers(&self.opts.api_key, &self.opts.headers),
+            &build_responses_body(&self.opts.id, req),
+        )
     }
 }
 
@@ -100,7 +101,7 @@ impl Provider for ResponsesProvider {
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
         let fold = stream::ResponsesFold::new(&self.opts.id, &req.model);
         drive(
-            &self.transport,
+            &self.http,
             &self.retry,
             self.http_request(&req),
             req.cancel,
