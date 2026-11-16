@@ -24,7 +24,7 @@ code = ["dep:haest-code"]
 # Mods: JS/TS files that hook tools, prompts and commands; approvals and plan mode.
 mods = ["dep:haest-mods"]
 # Settings as plain values a host writes out: no files, no environment, no flags.
-settings = ["dep:haest-settings", "tools"]
+settings = ["dep:haest-settings"]
 # The loader: settings from TOML files, HAEST_* variables and flags, plus what
 # the runtime is handed beside them (keys, providers.json, .mcp.json, child env).
 config = ["dep:haest-config", "settings", "providers", "mcp"]
