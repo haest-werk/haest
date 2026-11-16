@@ -220,9 +220,10 @@ mod tests {
     #[test]
     fn a_session_that_is_not_there_points_at_haest_sessions() {
         let e = BuildError::Session(SessionError::NotFound { id: "abc".into() });
-        assert_eq!(
-            build_failed(e),
-            "no saved session \"abc\" (haest sessions lists them)"
+        let said = build_failed(e);
+        assert!(
+            said.contains("abc") && said.contains("haest sessions"),
+            "{said}"
         );
     }
 

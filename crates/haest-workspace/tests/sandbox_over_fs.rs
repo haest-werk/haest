@@ -69,7 +69,7 @@ async fn a_hosts_reason_for_refusing_a_write_reaches_the_shells_output() {
             opts(Path::new("/")),
         )
         .await;
-    assert!(r.stderr.contains("tell them instead"), "{r:?}");
+    assert!(r.stderr.contains(WHY), "the host's reason, whole: {r:?}");
     assert_eq!(r.stdout, "exit 1\n");
     // A plain refusal (no reason of the host's) still reads like a shell's.
     let r = ws

@@ -232,21 +232,26 @@ async fn it_reads_the_pipe_tabs_semicolons_and_headerless_files() {
 async fn the_command_line_is_checked_and_help_is_there() {
     assert!(ok(&["--help"]).await.contains("groupby"));
     assert!(ok(&["groupby", "--help"]).await.contains("Aggregations"));
-    let r = xan(&["pivot", "sales.csv"], None).await;
-    assert_eq!(r.exit_code, 2);
-    assert!(
-        r.stderr.contains("no verb `pivot`") && r.stderr.contains("frequency"),
-        "{}",
-        r.stderr
+    // A wrong command line exits 2, a missing file 1; each names what it
+    // was handed (and a wrong verb, the verbs there are).
+    let failed = |r: &ExecResult, code: i32, named: &[&str]| {
+        assert_eq!((r.exit_code, r.stdout.as_str()), (code, ""), "{}", r.stderr);
+        for n in named {
+            assert!(r.stderr.contains(n), "names {n}: {}", r.stderr);
+        }
+    };
+    failed(
+        &xan(&["pivot", "sales.csv"], None).await,
+        2,
+        &["pivot", "frequency"],
     );
-    let r = xan(&["filter", "sales.csv"], None).await;
-    assert!(r.stderr.contains("no input"), "{}", r.stderr);
-    let r = xan(&["filter", "amount", ">", "5", "sales.csv"], None).await;
-    assert!(r.stderr.contains("quote an expression"), "{}", r.stderr);
-    let r = xan(&["sort", "-x", "sales.csv"], None).await;
-    assert!(r.stderr.contains("no option -x"), "{}", r.stderr);
-    let r = xan(&["count", "nope.csv"], None).await;
-    assert!(r.stderr.contains("nope.csv: no such file"), "{}", r.stderr);
+    // filter's one argument is its expression: no file, and no stdin.
+    failed(&xan(&["filter", "sales.csv"], None).await, 2, &[]);
+    // An unquoted expression: what is left over after the input file.
+    let unquoted = xan(&["filter", "amount", ">", "5", "sales.csv"], None).await;
+    failed(&unquoted, 2, &["5 sales.csv"]);
+    failed(&xan(&["sort", "-x", "sales.csv"], None).await, 2, &["-x"]);
+    failed(&xan(&["count", "nope.csv"], None).await, 1, &["nope.csv"]);
 }
 
 #[tokio::test]
@@ -257,6 +262,7 @@ async fn it_stops_when_the_shell_calls_time_is_up() {
     let mut c = call(&["count"], Some(&big));
     c.ends_at = Instant::now();
     let r = Xan.run(c).await;
-    assert_eq!(r.exit_code, 1);
-    assert!(r.stderr.contains("ran out of time"), "{}", r.stderr);
+    // The same count with time left succeeds; out of time, it writes nothing.
+    assert_eq!((r.exit_code, r.stdout.as_str()), (1, ""), "{}", r.stderr);
+    assert_eq!(ok_stdin(&["count"], &big).await, "5000\n");
 }

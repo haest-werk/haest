@@ -201,21 +201,24 @@ mod tests {
     /// moment to answer its tool calls, and what the session writer holds lands.
     #[tokio::test]
     async fn the_second_ctrl_c_lands_the_turns_answers_before_haest_exits() {
+        // Two answers the test writes: one held before the second Ctrl+C, one
+        // the cancelled turn writes after it.
+        const QUEUED: &str = "answer 1";
+        const LATE: &str = "answer 2";
         let fs = Arc::new(MemFs::new());
         let hooks = hooks_over(&fs).await;
-        hooks.append(answer("queued before the second Ctrl+C"));
+        hooks.append(answer(QUEUED));
         let turn = hooks.clone();
         let ends = async move {
             tokio::time::sleep(Duration::from_millis(30)).await;
-            turn.append(answer("Interrupted by the user."));
+            turn.append(answer(LATE));
         };
         wind_down(ends, &hooks, None, Duration::from_secs(5)).await;
         let file = fs
             .read_to_string(Path::new("/data/sessions/s.jsonl"))
             .await
             .unwrap();
-        assert!(file.contains("queued before the second Ctrl+C"), "{file}");
-        assert!(file.contains("Interrupted by the user."), "{file}");
+        assert!(file.contains(QUEUED) && file.contains(LATE), "{file}");
 
         let started = Instant::now();
         wind_down(

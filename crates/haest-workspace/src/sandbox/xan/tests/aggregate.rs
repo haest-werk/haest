@@ -28,8 +28,10 @@ async fn groupby_aggregates_each_group_in_order_of_first_appearance() {
     ])
     .await;
     assert_eq!(ratio, "avg,big,cardinality(region)\n89.1,2,3\n");
+    // A bare column in a groupby list fails and names the way out: first(it).
     let r = xan(&["groupby", "region", "amount", "sales.csv"], None).await;
-    assert!(r.stderr.contains("outside an aggregation"), "{}", r.stderr);
+    assert_eq!(r.exit_code, 1, "{}", r.stderr);
+    assert!(r.stderr.contains("first(amount)"), "{}", r.stderr);
 }
 
 #[tokio::test]

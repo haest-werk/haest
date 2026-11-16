@@ -246,6 +246,7 @@ macro_rules! word_enum {
 
 #[cfg(test)]
 mod tests {
+    use super::UnknownWord;
     use crate::{
         catalog::{InputModality, OpenRouterEffort},
         compaction::SummaryPath,
@@ -284,8 +285,18 @@ mod tests {
         round_trips(ChangeKind::ALL, |v| v.as_str());
         round_trips(ApplyFailureCode::ALL, |v| v.as_str());
         round_trips(SkillSource::ALL, |v| v.as_str());
+        let unknown = "huge".parse::<Effort>().unwrap_err();
+        let want = UnknownWord {
+            what: "effort",
+            word: "huge".into(),
+            expected: Effort::WORDS,
+        };
+        assert_eq!(unknown, want);
         let err = serde_json::from_str::<Effort>("\"huge\"").unwrap_err();
-        assert!(err.to_string().contains("unknown effort"), "{err}");
+        assert!(
+            err.to_string().contains(&want.to_string()),
+            "serde says the same: {err}"
+        );
         assert!("eager".parse::<DeferMode>().is_err());
     }
 }
