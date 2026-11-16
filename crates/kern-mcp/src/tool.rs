@@ -1,7 +1,5 @@
 //! One MCP server tool as a kern [`Tool`].
 
-use std::time::Duration;
-
 use async_trait::async_trait;
 use kern_core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput};
 use rmcp::{
@@ -11,7 +9,7 @@ use rmcp::{
 };
 use serde_json::Value;
 
-use crate::result::mcp_result_to_output;
+use crate::{hub::CALL_TIMEOUT, result::mcp_result_to_output};
 
 /// The longest tool name every provider accepts.
 const MAX_NAME: usize = 64;
@@ -41,16 +39,10 @@ pub struct McpTool {
     description: String,
     parameters: Value,
     peer: Peer<RoleClient>,
-    call_timeout: Duration,
 }
 
 impl McpTool {
-    pub(crate) fn new(
-        server: &str,
-        t: rmcp::model::Tool,
-        peer: Peer<RoleClient>,
-        call_timeout: Duration,
-    ) -> Self {
+    pub(crate) fn new(server: &str, t: rmcp::model::Tool, peer: Peer<RoleClient>) -> Self {
         let description = t.description.as_deref().map_or_else(
             || format!("{} (MCP server {server})", t.name),
             str::to_string,
@@ -69,7 +61,6 @@ impl McpTool {
             parameters: Value::Object((*t.input_schema).clone()),
             tool: t.name.into_owned(),
             peer,
-            call_timeout,
         }
     }
 }
@@ -103,13 +94,13 @@ impl Tool for McpTool {
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let params = CallToolRequestParams::new(self.tool.clone()).with_arguments(input);
         // Dropping the call (cancel, timeout) tells the server with notifications/cancelled.
-        let call = tokio::time::timeout(self.call_timeout, self.peer.call_tool_once(params));
+        let call = tokio::time::timeout(CALL_TIMEOUT, self.peer.call_tool_once(params));
         let res = tokio::select! {
             r = call => r.map_err(|_| ToolError::Failed(format!(
                 "MCP {} {} timed out after {}ms",
                 self.server,
                 self.tool,
-                self.call_timeout.as_millis()
+                CALL_TIMEOUT.as_millis()
             )))?,
             () = ctx.cancel.cancelled() => {
                 return Err(ToolError::Failed("the call was cancelled".into()));

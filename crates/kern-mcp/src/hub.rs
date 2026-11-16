@@ -92,7 +92,7 @@ where
     let peer = client.peer().clone();
     let tools = listed
         .into_iter()
-        .map(|t| Arc::new(McpTool::new(name, t, peer.clone(), CALL_TIMEOUT)) as Arc<dyn Tool>)
+        .map(|t| Arc::new(McpTool::new(name, t, peer.clone())) as Arc<dyn Tool>)
         .collect();
     Ok(Server { client, tools })
 }
