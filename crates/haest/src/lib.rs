@@ -153,60 +153,13 @@
 //!
 //! # Test your host
 //!
-//! The `testing` feature brings [`core::testing::ScriptedProvider`], a model that
-//! answers from a script and records every request, so a test drives whole
-//! turns with no network and no keys:
+//! The `testing` feature brings [`core::testing`]: a model that answers from
+//! a script and records every request, so a test drives whole turns with no
+//! network and no keys. Its docs run a turn with a tool call.
 //!
 //! ```toml
 //! [dev-dependencies]
 //! haest = { version = "0.2", features = ["testing"] }
-//! ```
-//!
-//! ```
-//! # use std::sync::Arc;
-//! # use haest::prelude::*;
-//! # use serde_json::{Value, json};
-//! # struct Shout;
-//! # #[async_trait]
-//! # impl Tool for Shout {
-//! #     fn name(&self) -> &str { "Shout" }
-//! #     fn description(&self) -> String { "Returns the text in capitals.".into() }
-//! #     fn parameters(&self) -> Value { json!({"type": "object"}) }
-//! #     fn kind(&self) -> &str { "shout" }
-//! #     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-//! #         Ok(ToolOutput::text(req_str(&input, "text")?.to_uppercase()))
-//! #     }
-//! # }
-//! use haest::core::testing::{ScriptedProvider, text_answer, tool_answer};
-//! use haest::{Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason};
-//!
-//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
-//! let model = ScriptedProvider::new([
-//!     tool_answer(&[("call-1", "Shout", json!({"text": "hello"}))]),
-//!     text_answer("It says HELLO."),
-//! ]);
-//! let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Shout)];
-//! let deps = AgentDeps::new(
-//!     Arc::new(model.resolver()),
-//!     Arc::new(tools),
-//!     Arc::new("You shout.".to_string()),
-//!     "/",
-//!     Arc::new(ShutWorkspace),
-//! );
-//! let mut agent = Agent::new(deps, AgentOptions::new("scripted:any"));
-//!
-//! let mut events: Vec<LoopEvent> = Vec::new();
-//! let end = agent.run("Shout hello", &mut events).await;
-//!
-//! assert_eq!(end.stop_reason, StopReason::EndTurn);
-//! let result = events.iter().find_map(|e| match e {
-//!     LoopEvent::ToolResult { output, .. } => Some(output.content.clone()),
-//!     _ => None,
-//! });
-//! assert_eq!(result.as_deref(), Some("HELLO"));
-//! // The model was offered the tool by name.
-//! assert_eq!(model.requests()[0].tools[0].name, "Shout");
-//! # });
 //! ```
 //!
 //! # Features

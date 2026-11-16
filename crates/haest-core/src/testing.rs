@@ -8,34 +8,62 @@
 //!
 //! # Examples
 //!
+//! A turn with one tool call, offline: the script asks for the tool, then
+//! answers; the test checks what the tool returned and what the model was
+//! sent.
+//!
 //! ```
 //! use std::sync::Arc;
 //!
 //! use haest_core::{
 //!     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tool,
-//!     testing::{ScriptedProvider, text_answer},
+//!     testing::{ScriptedProvider, text_answer, tool_answer},
 //! };
+//! use serde_json::json;
+//! # use async_trait::async_trait;
+//! # use haest_core::tool::{JsonMap, ToolContext, ToolError, ToolOutput, req_str};
+//! # use serde_json::Value;
+//! # struct Shout;
+//! # #[async_trait]
+//! # impl Tool for Shout {
+//! #     fn name(&self) -> &str { "Shout" }
+//! #     fn description(&self) -> String { "Returns the text in capitals.".into() }
+//! #     fn parameters(&self) -> Value { json!({"type": "object"}) }
+//! #     fn kind(&self) -> &str { "shout" }
+//! #     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
+//! #         Ok(ToolOutput::text(req_str(&input, "text")?.to_uppercase()))
+//! #     }
+//! # }
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() {
-//! let provider = ScriptedProvider::new([text_answer("Hello!")]);
-//! let tools: Vec<Arc<dyn Tool>> = Vec::new();
+//! let model = ScriptedProvider::new([
+//!     tool_answer(&[("call-1", "Shout", json!({"text": "hello"}))]),
+//!     text_answer("It says HELLO."),
+//! ]);
+//! let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Shout)];
 //! let deps = AgentDeps::new(
-//!     Arc::new(provider.resolver()),
+//!     Arc::new(model.resolver()),
 //!     Arc::new(tools),
-//!     Arc::new(String::from("You are terse.")),
+//!     Arc::new("You shout.".to_string()),
 //!     "/",
 //!     Arc::new(ShutWorkspace),
 //! );
 //! let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 //!
 //! let mut events: Vec<LoopEvent> = Vec::new();
-//! let end = agent.run("hi", &mut events).await;
+//! let end = agent.run("Shout hello", &mut events).await;
 //! assert_eq!(end.stop_reason, StopReason::EndTurn);
-//! assert_eq!(agent.history().len(), 2, "the user turn and the answer");
+//! let result = events.iter().find_map(|e| match e {
+//!     LoopEvent::ToolResult { output, .. } => Some(output.content.clone()),
+//!     _ => None,
+//! });
+//! assert_eq!(result.as_deref(), Some("HELLO"));
 //!
-//! let sent = provider.requests();
-//! assert_eq!((sent[0].model.as_str(), sent[0].system.as_str()), ("m", "You are terse."));
+//! // What the loop sent: the model, the prompt and the tool, by name.
+//! let sent = model.requests();
+//! assert_eq!((sent[0].model.as_str(), sent[0].system.as_str()), ("m", "You shout."));
+//! assert_eq!(sent[0].tools[0].name, "Shout");
 //! # }
 //! ```
 

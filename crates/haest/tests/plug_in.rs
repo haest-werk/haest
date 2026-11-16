@@ -19,6 +19,8 @@
 
 // A crate root's modules sit beside it; these sit in plug_in/, where cargo
 // does not take each for a test target of its own.
+#[path = "plug_in/model.rs"]
+mod model;
 #[path = "plug_in/skills.rs"]
 mod skills;
 #[path = "plug_in/subagents.rs"]
@@ -54,93 +56,12 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
 };
 
+use model::{Scripted, call, say};
+
 const MODEL: &str = "own:assistant-1";
 const CWD: &str = "/work";
 const PLAN: &str = "ship the q3 review\n";
 const SUBAGENT_MARK: &str = "# You are a subagent";
-
-// ---------------------------------------------------------------------------
-// The host's model backend: a Provider of its own, no HTTP.
-
-/// One request as the model saw it.
-#[derive(Clone)]
-struct Seen {
-    sub: bool,
-    system: String,
-    tools: Vec<String>,
-    messages: Vec<Message>,
-}
-
-/// Main and sub-agents answer from separate scripts (a sub-agent is told apart
-/// by haest's sub-agent note in its system prompt). A sub-agent's call waits for
-/// a permit from `sub_gate`, so a test decides when a background one finishes.
-struct Scripted {
-    main: Mutex<VecDeque<Vec<AssistantPart>>>,
-    sub: Mutex<VecDeque<Vec<AssistantPart>>>,
-    sub_gate: Arc<Semaphore>,
-    seen: Mutex<Vec<Seen>>,
-}
-
-impl Scripted {
-    fn requests(&self, sub: bool) -> Vec<Seen> {
-        let seen = self.seen.lock().unwrap();
-        seen.iter().filter(|s| s.sub == sub).cloned().collect()
-    }
-}
-
-impl Provider for Scripted {
-    fn id(&self) -> &str {
-        "own"
-    }
-    fn stream(&self, req: ProviderRequest) -> ProviderStream {
-        let sub = req.system.contains(SUBAGENT_MARK);
-        self.seen.lock().unwrap().push(Seen {
-            sub,
-            system: req.system.clone(),
-            tools: req.tools.iter().map(|t| t.name.clone()).collect(),
-            messages: req.messages.clone(),
-        });
-        let script = if sub { &self.sub } else { &self.main };
-        let parts = script
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| say("(the script ran out)"));
-        let (gate, model) = (self.sub_gate.clone(), req.model.clone());
-        Box::pin(futures::stream::once(async move {
-            if sub {
-                gate.acquire().await.expect("the gate stays open").forget();
-            }
-            let mut m = AssistantMessage::start("own", &model);
-            let calls = parts
-                .iter()
-                .any(|p| matches!(p, AssistantPart::ToolCall(_)));
-            m.stop_reason = if calls {
-                StopReason::ToolUse
-            } else {
-                StopReason::EndTurn
-            };
-            m.content = parts;
-            m.usage = Usage {
-                cost_usd: Some(0.001),
-                ..Default::default()
-            };
-            ProviderEvent::Done(m)
-        }))
-    }
-}
-
-fn say(text: &str) -> Vec<AssistantPart> {
-    vec![AssistantPart::Text { text: text.into() }]
-}
-
-fn call(id: &str, name: &str, input: Value) -> AssistantPart {
-    AssistantPart::ToolCall(ToolCall {
-        id: id.into(),
-        name: name.into(),
-        input: input.as_object().cloned().unwrap_or_default(),
-    })
-}
 
 // ---------------------------------------------------------------------------
 // The host's shell command: `stamp <file>` writes its stdin, upper-cased, to
