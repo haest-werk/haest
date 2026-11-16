@@ -36,6 +36,16 @@ pub enum Dialect {
 ///     "pricing": { "my-model": { "input": 0.15, "cachedInput": 0.03, "output": 0.5 } } } }
 /// ```
 ///
+/// | Key | Field | Means |
+/// |---|---|---|
+/// | `type` | [`dialect`](Self::dialect) | `"anthropic"` for the Messages API; anything else, or none, is Chat Completions |
+/// | `baseURL` | [`base_url`](Self::base_url) | where the API is |
+/// | `apiKey` | [`api_key`](Self::api_key) | the key itself |
+/// | `apiKeyEnv` | [`api_key_env`](Self::api_key_env) | the name to ask the host for the key |
+/// | `headers` | [`headers`](Self::headers) | an object of headers sent on every request |
+/// | `reasoningEffort` | [`reasoning_effort`](Self::reasoning_effort) | `{ "efforts": [...], "mandatory": bool }` |
+/// | `pricing` | [`pricing`](Self::pricing) | `{ "<model id>": { "input", "cachedInput", "output", "cacheWrite"? } }` |
+///
 /// `reasoningEffort` and `pricing` apply to `type: "openai"` only.
 /// `reasoningEffort`: send a top-level `reasoning_effort`, fitted to the listed
 /// levels ([`CompatOptions::reasoning_effort`]). Absent = no effort is sent.
@@ -43,13 +53,21 @@ pub enum Dialect {
 /// catalog row's `pricing` fills in for a model not listed here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CustomProviderConfig {
+    /// `type`: the wire dialect.
     pub dialect: Dialect,
+    /// `baseURL`; None = the dialect's own API (OpenAI's or Anthropic's).
     pub base_url: Option<String>,
+    /// `apiKey`: the key itself, in the file.
     pub api_key: Option<String>,
-    /// The environment variable holding the key, when `api_key` is absent.
+    /// `apiKeyEnv`: the name the host's [`KeySource`] is asked for when
+    /// `api_key` is absent (the haest CLI answers from its environment).
     pub api_key_env: Option<String>,
+    /// `headers`; a value that is not a string is skipped. One named like a
+    /// default header, in any case, replaces it.
     pub headers: Vec<(String, String)>,
+    /// `reasoningEffort`: the effort levels the server takes; None sends no effort.
     pub reasoning_effort: Option<Reasoning>,
+    /// `pricing`: USD per 1M tokens, by model id (the spec without `name:`).
     pub pricing: HashMap<String, ModelPricing>,
 }
 
@@ -106,7 +124,31 @@ fn pricing(
 }
 
 impl CustomProviderConfig {
-    /// Read one providers.json entry; a malformed dialect or price is refused, never booked as garbage.
+    /// Read the providers.json entry `name`; a malformed effort list or price
+    /// is refused, never booked as garbage.
+    ///
+    /// An effort level haest has no name for is skipped. A `type` other than
+    /// `"anthropic"` reads as Chat Completions, a typo included.
+    ///
+    /// # Errors
+    ///
+    /// A [`ProviderConfigError`] naming the entry when `reasoningEffort` lacks
+    /// an `efforts` array or a `mandatory` boolean, or a `pricing` row lacks a
+    /// numeric `input`, `cachedInput` or `output`.
+    ///
+    /// ```
+    /// use haest_providers::{CustomProviderConfig, registry::Dialect};
+    /// use serde_json::json;
+    ///
+    /// let entry = json!({"type": "anthropic", "baseURL": "https://llm-gateway.example.com",
+    ///                    "apiKeyEnv": "GATEWAY_API_KEY", "headers": {"X-Team": "platform"}});
+    /// let cfg = CustomProviderConfig::from_json("gateway", &entry).unwrap();
+    /// assert_eq!(cfg.dialect, Dialect::Anthropic);
+    /// assert_eq!(cfg.headers, [("X-Team".to_string(), "platform".to_string())]);
+    ///
+    /// let bad = json!({"pricing": {"m": {"input": 1}}});
+    /// assert!(CustomProviderConfig::from_json("bad", &bad).is_err());
+    /// ```
     pub fn from_json(name: &str, v: &Value) -> Result<Self, ProviderConfigError> {
         let dialect = match v.get("type").and_then(Value::as_str) {
             Some("anthropic") => Dialect::Anthropic,
@@ -131,7 +173,8 @@ impl CustomProviderConfig {
     }
 
     /// The key itself, else the one the host has under `apiKeyEnv`, else
-    /// `"none"` (a local server takes any).
+    /// `"none"` (a local server takes any). A custom provider never fails for
+    /// want of a key.
     pub fn api_key(&self, keys: &dyn KeySource) -> String {
         self.api_key
             .clone()
@@ -141,6 +184,10 @@ impl CustomProviderConfig {
 }
 
 /// A `type: "openai"` entry as compat options; the entry's prices over the catalog's.
+///
+/// The provider is `name`, [`CompatFlavor::Generic`], with the entry's URL,
+/// key ([`CustomProviderConfig::api_key`]), headers and effort levels. Its
+/// prices are the built-in catalog's for `name:` models, then the entry's own.
 pub fn custom_compat_options(
     name: &str,
     cfg: &CustomProviderConfig,
@@ -157,10 +204,41 @@ pub fn custom_compat_options(
 
 /// providers.json's entries by name, as JSON: each is checked when its
 /// provider is first resolved, so one bad entry blocks only itself.
+/// `serde_json::from_str` reads a providers.json text straight into one.
 pub type CustomProviders = BTreeMap<String, Value>;
 
 /// The raw entries of `<config_dir>/providers.json`, read through `fs`; empty
 /// when there is none. A loader's helper: the registry is handed the result.
+///
+/// The entries are not checked here (see [`CustomProviders`]). A file whose
+/// top level is not a JSON object reads as no entries.
+///
+/// # Errors
+///
+/// A [`ProviderConfigError`] naming the file when it exists but cannot be read,
+/// or is not valid JSON.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+///
+/// use haest_core::fs::MemFs;
+/// use haest_providers::load_custom_providers;
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
+/// let fs = MemFs::with_files([(
+///     "/home/me/.config/haest/providers.json",
+///     r#"{"local": {"type": "openai", "baseURL": "http://localhost:1234/v1"}}"#,
+/// )]);
+/// let custom = load_custom_providers(&fs, Path::new("/home/me/.config/haest")).await.unwrap();
+/// assert!(custom.contains_key("local"));
+///
+/// let none = load_custom_providers(&fs, Path::new("/elsewhere")).await.unwrap();
+/// assert!(none.is_empty());
+/// # }
+/// ```
 pub async fn load_custom_providers(
     fs: &dyn Fs,
     config_dir: &Path,
@@ -193,8 +271,17 @@ pub(super) fn need(
     })
 }
 
+/// The built-in `paperinstruments` provider's options: Chat Completions at
+/// `PAPERINSTRUMENTS_BASE_URL` (else `https://api.paperinstruments.com/v1`),
+/// with the key `PAPERINSTRUMENTS_API_KEY`, its effort levels and the
+/// catalog's prices.
+///
 /// docs.paperinstruments.com/docs/ultramarine/chat-completions (2026-10-17): top-level
 /// `reasoning_effort` low/high/max only, reasoning cannot be disabled, no cost in the reply.
+///
+/// # Errors
+///
+/// A [`ProviderConfigError`] when `keys` has no `PAPERINSTRUMENTS_API_KEY`.
 pub fn paper_instruments_options(
     keys: &dyn KeySource,
 ) -> Result<CompatOptions, ProviderConfigError> {

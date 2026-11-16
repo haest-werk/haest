@@ -25,6 +25,32 @@ static BUILTIN: LazyLock<Catalog> = LazyLock::new(|| {
     Catalog::from_json(BUNDLED).expect("the bundled catalog/models.json is valid")
 });
 
+/// The models haest knows, grouped for a picker, and what each accepts: input
+/// modalities, context window, reasoning levels and price.
+///
+/// [`Catalog::builtin`] is haest's own; a host with its own models builds one
+/// with [`Catalog::new`] or [`Catalog::from_json`]. Every lookup is by spec
+/// (`openrouter:anthropic/claude-sonnet-5.5`) and answers None for a model the
+/// catalog does not know: unknown, never assumed text-only.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::catalog::InputModality;
+/// use haest_providers::Catalog;
+///
+/// let catalog = Catalog::from_json(r#"{"defaultModel": "local:m", "groups": [{"label": "Local",
+///     "models": [{"spec": "local:m", "label": "M", "input": ["text", "image"], "contextWindow": 128000}]}]}"#)
+/// .unwrap();
+/// let row = catalog.model(catalog.default_model()).unwrap();
+/// assert_eq!(row.context_window, 128_000);
+/// assert!(catalog.input_modalities("local:m").unwrap().contains(&InputModality::Image));
+/// assert_eq!(catalog.model("local:other"), None);
+///
+/// // haest's own catalog always knows its default model.
+/// let builtin = Catalog::builtin();
+/// assert!(builtin.model(builtin.default_model()).is_some());
+/// ```
 #[derive(Debug, Clone)]
 pub struct Catalog {
     default_model: String,
@@ -41,11 +67,13 @@ struct CatalogFile {
 }
 
 impl Catalog {
-    /// The catalog bundled with haest.
+    /// The catalog bundled with haest, parsed on first use.
     pub fn builtin() -> &'static Catalog {
         &BUILTIN
     }
 
+    /// A catalog of the host's own rows. `default_model` is not checked
+    /// against them; a spec listed twice answers with its last row.
     pub fn new(default_model: impl Into<String>, groups: Vec<ModelGroup>) -> Self {
         let by_spec = groups
             .iter()
@@ -66,6 +94,11 @@ impl Catalog {
     }
 
     /// `{"defaultModel": "...", "groups": [...]}`, the shape `catalog/models.json` has.
+    ///
+    /// # Errors
+    ///
+    /// The parse error when `json` is not that shape (rows as haest-core's
+    /// [`ModelInfo`], camelCase keys).
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         let file: CatalogFile = serde_json::from_str(json)?;
         Ok(Self::new(file.default_model, file.groups))
@@ -76,10 +109,12 @@ impl Catalog {
         &self.default_model
     }
 
+    /// The groups, in the order a picker shows them.
     pub fn groups(&self) -> &[ModelGroup] {
         &self.groups
     }
 
+    /// Every row, group by group.
     pub fn models(&self) -> impl Iterator<Item = &ModelInfo> {
         self.groups.iter().flat_map(|g| g.models.iter())
     }

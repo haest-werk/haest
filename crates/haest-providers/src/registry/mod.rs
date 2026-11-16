@@ -1,10 +1,11 @@
 //! Resolve a `provider:model` spec to a live provider.
 //!
-//! Built in: `anthropic`, `openai`, `openrouter`, `paperinstruments` (keys from
-//! the standard env vars). Any other name comes from `providers.json` in the haest
-//! config dir ([`CustomProviderConfig`]). `type` is the wire dialect ("openai" =
-//! Chat Completions, "anthropic" = Messages); the built-in `openai` provider
-//! alone speaks the Responses API.
+//! Built in: `anthropic`, `openai`, `openrouter`, `paperinstruments` (keys
+//! under the standard variable names, asked of the host's [`KeySource`]). Any
+//! other name comes from `providers.json` in the haest config dir
+//! ([`CustomProviderConfig`]). `type` is the wire dialect ("openai" = Chat
+//! Completions, "anthropic" = Messages); the built-in `openai` provider alone
+//! speaks the Responses API.
 //!
 //! Everything is handed in: keys come from the host's [`KeySource`],
 //! providers.json's entries arrive parsed ([`load_custom_providers`] is the
@@ -43,15 +44,28 @@ use crate::{
 };
 
 /// A provider that cannot be built, said to the human as is.
+///
+/// The message names what is wrong: the spec's shape, an unknown provider
+/// (with the known ones), the key a built-in needs, a providers.json entry's
+/// bad field, or a providers.json file that cannot be read.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct ProviderConfigError(pub String);
 
 const BUILTIN: [&str; 4] = ["anthropic", "openai", "openrouter", "paperinstruments"];
 
+/// What every provider a [`ProviderRegistry`] builds shares: the transport, the
+/// retry policy and OpenRouter's extras.
+///
+/// The default sends over a new [`ReqwestTransport`], retries as the SDKs do,
+/// sends no routing, and tells OpenRouter the app is `haest` (`X-Title`) with
+/// no URL. Change a field with struct update syntax:
+/// `RegistryOptions { transport, ..RegistryOptions::default() }` (the default
+/// still builds a reqwest client, which costs no connection).
 pub struct RegistryOptions {
     /// How every provider's requests travel.
     pub transport: Arc<dyn Transport>,
+    /// How every provider retries a refused or unanswered request.
     pub retry: RetryPolicy,
     /// OpenRouter provider routing to send ([`crate::routing::parse_routing`]
     /// reads the host's JSON: haest's `provider_routing` setting). None = none:
@@ -75,6 +89,37 @@ impl Default for RegistryOptions {
     }
 }
 
+/// Turns a `provider:model` spec into a live provider: the built-ins and the
+/// providers.json entries it was handed.
+///
+/// A provider is built on its name's first [`resolve_spec`](Self::resolve_spec)
+/// and kept: later specs with that name share it, and the key it read then
+/// stays its key. A name that fails is tried again on the next resolve. As
+/// haest-core's [`ModelResolver`] it is what the agent loop asks for a model;
+/// it is `Send + Sync` and may be shared.
+///
+/// # Examples
+///
+/// ```
+/// use std::{collections::HashMap, sync::Arc};
+///
+/// use haest_providers::{CustomProviders, ProviderRegistry, RegistryOptions};
+///
+/// let keys = HashMap::from([("ANTHROPIC_API_KEY".to_string(), "sk-ant-...".to_string())]);
+/// let custom: CustomProviders = serde_json::from_str(
+///     r#"{"local": {"type": "openai", "baseURL": "http://localhost:1234/v1"}}"#,
+/// )
+/// .unwrap();
+/// let registry = ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions::default());
+///
+/// let opus = registry.resolve_spec("anthropic:claude-opus-5-5").unwrap();
+/// assert_eq!((opus.provider.id(), opus.model.as_str()), ("anthropic", "claude-opus-5-5"));
+/// assert_eq!(registry.resolve_spec("local:qwen3-coder").unwrap().provider.id(), "local");
+///
+/// // No OPENROUTER_API_KEY: the error says so.
+/// let err = registry.resolve_spec("openrouter:z-ai/glm-5.3").unwrap_err();
+/// assert!(err.to_string().contains("OPENROUTER_API_KEY"));
+/// ```
 pub struct ProviderRegistry {
     keys: Arc<dyn KeySource>,
     custom: CustomProviders,
@@ -84,7 +129,8 @@ pub struct ProviderRegistry {
 
 impl ProviderRegistry {
     /// The built-ins and `custom` (providers.json's entries; empty = none),
-    /// their keys from `keys`.
+    /// their keys from `keys`. Nothing is built, and no key asked for, until
+    /// a spec is resolved.
     pub fn new(keys: Arc<dyn KeySource>, custom: CustomProviders, opts: RegistryOptions) -> Self {
         Self {
             keys,
@@ -94,6 +140,9 @@ impl ProviderRegistry {
         }
     }
 
+    /// Every provider name a spec may use: the built-ins, then the
+    /// providers.json entries in name order. An entry named like a built-in
+    /// replaces it, and is listed twice.
     pub fn names(&self) -> Vec<String> {
         BUILTIN
             .iter()
@@ -103,6 +152,16 @@ impl ProviderRegistry {
     }
 
     /// `openrouter:z-ai/glm-5` -> (the openrouter provider, `z-ai/glm-5`). Built once per name.
+    ///
+    /// The provider name is everything before the first `:`; the model id is
+    /// the rest, colons and slashes included. Resolving sends nothing.
+    ///
+    /// # Errors
+    ///
+    /// A [`ProviderConfigError`] when the spec has no `provider:` part, the
+    /// name is neither a built-in nor a providers.json entry, a built-in's key
+    /// is missing from the [`KeySource`], or the entry has a malformed
+    /// `reasoningEffort` or `pricing`.
     pub fn resolve_spec(&self, spec: &str) -> Result<ResolvedModel, ProviderConfigError> {
         let (name, model) = parse_model_spec(spec).map_err(ProviderConfigError)?;
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());

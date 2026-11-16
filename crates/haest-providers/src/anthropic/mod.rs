@@ -1,5 +1,12 @@
 //! Anthropic Messages API adapter (raw SSE event stream). Request shaping
 //! lives in `convert`; `stream` folds the events.
+//!
+//! [`AnthropicProvider`] is the provider; build it from [`AnthropicOptions`],
+//! or let [`ProviderRegistry`](crate::ProviderRegistry) build it for an
+//! `anthropic:` spec or a providers.json entry of `"type": "anthropic"`. The
+//! request-shaping functions ([`build_anthropic_params`] and the ones it
+//! calls) are pure and public, for a host that wants the exact body a request
+//! would send.
 
 mod convert;
 mod stream;
@@ -25,16 +32,44 @@ const DEFAULT_MAX_TOKENS: u32 = 32_000;
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 const API_VERSION: &str = "2023-06-01";
 
+/// Where an [`AnthropicProvider`] sends its requests, and with which key.
 #[derive(Debug, Clone, Default)]
 pub struct AnthropicOptions {
+    /// Sent as `x-api-key`.
     pub api_key: String,
-    /// None = `https://api.anthropic.com`.
+    /// None = `https://api.anthropic.com`; requests go to `<base_url>/v1/messages`.
     pub base_url: Option<String>,
     /// Sent on every request (a proxy that authenticates by header); one
     /// named like a default (`x-api-key`, in any case) replaces it.
     pub headers: Vec<(String, String)>,
 }
 
+/// Anthropic's Messages API as a [`Provider`].
+///
+/// Each request streams (`stream: true`) with a prompt-cache breakpoint on
+/// the system prompt, the last tool and the newest message block, so the next
+/// request reads everything before it from the cache. `max_tokens` defaults to
+/// 32,000. Effort becomes adaptive thinking, or a thinking budget for models
+/// from before it ([`thinking_params`]). Thinking is replayed, with its
+/// signature, only to this provider.
+///
+/// Its [`Provider::id`] is always `anthropic`, also for a providers.json entry
+/// of `"type": "anthropic"`: a conversation's thinking replays to any
+/// Messages API endpoint.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::Provider;
+/// use haest_providers::{AnthropicOptions, AnthropicProvider, ReqwestTransport, RetryPolicy};
+///
+/// let provider = AnthropicProvider::new(
+///     AnthropicOptions { api_key: "sk-ant-...".into(), ..AnthropicOptions::default() },
+///     Arc::new(ReqwestTransport::new()),
+/// )
+/// .with_retry(RetryPolicy::none());
+/// assert_eq!(provider.id(), "anthropic");
+/// ```
 pub struct AnthropicProvider {
     opts: AnthropicOptions,
     transport: Arc<dyn Transport>,
@@ -42,6 +77,8 @@ pub struct AnthropicProvider {
 }
 
 impl AnthropicProvider {
+    /// A provider over `transport` with the default [`RetryPolicy`]. Nothing
+    /// is sent until [`Provider::stream`].
     pub fn new(opts: AnthropicOptions, transport: Arc<dyn Transport>) -> Self {
         Self {
             opts,
@@ -50,6 +87,7 @@ impl AnthropicProvider {
         }
     }
 
+    /// The same provider with `retry` instead of the default policy.
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.retry = retry;
         self
@@ -70,7 +108,12 @@ impl AnthropicProvider {
     }
 }
 
-/// The streaming request body for `req`.
+/// The streaming request body for `req`, as [`AnthropicProvider`] sends it.
+///
+/// `model`, `max_tokens` (`req.max_tokens`, else 32,000), the system prompt
+/// as one cached text block, the messages ([`to_anthropic_messages`]), the
+/// tools when there are any ([`to_anthropic_tools`]) and the thinking fields
+/// for `req.effort` ([`thinking_params`]).
 pub fn build_anthropic_params(req: &ProviderRequest) -> Value {
     let mut body = json!({
         "model": req.model,

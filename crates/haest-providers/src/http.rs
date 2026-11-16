@@ -18,12 +18,40 @@ use tokio_util::sync::CancellationToken;
 
 use crate::transport::{HttpRequest, HttpResponse, Transport};
 
+/// How a provider retries a request that got no answer or was refused, the way
+/// the official SDKs do.
+///
+/// A try is repeated after a connection failure ([`TransportError::retryable`]),
+/// or a 408, 409, 429 or 5xx answer. The server has the last word: an
+/// `x-should-retry: false` header stops the retries, `true` retries any
+/// status. The wait is the server's `retry-after-ms` or `retry-after` when it
+/// names one under a minute, else `initial_delay` doubled per retry up to
+/// `max_delay`, minus up to 25% jitter. Cancelling the request ends the wait.
+///
+/// Only the request is retried. Once the answer streams, a failure ends the
+/// message: a retry would replay text the human has already seen.
+///
+/// Every provider takes one through `with_retry`, and
+/// [`RegistryOptions::retry`](crate::RegistryOptions::retry) sets it for all.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use haest_providers::RetryPolicy;
+///
+/// let patient = RetryPolicy { max_retries: 6, max_delay: Duration::from_secs(30), ..RetryPolicy::default() };
+/// assert_eq!(patient.initial_delay, Duration::from_millis(500));
+/// assert_eq!(RetryPolicy::none().max_retries, 0);
+/// ```
+///
+/// [`TransportError::retryable`]: crate::TransportError::retryable
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetryPolicy {
-    /// Tries after the first one.
+    /// Tries after the first one; 0 never retries.
     pub max_retries: u32,
     /// The first backoff; doubles per retry.
     pub initial_delay: Duration,
+    /// The longest backoff. A server's own `retry-after` may ask for longer, up to a minute.
     pub max_delay: Duration,
 }
 
@@ -39,7 +67,7 @@ impl Default for RetryPolicy {
 }
 
 impl RetryPolicy {
-    /// Never retry.
+    /// Never retry: the first refusal or connection failure is the answer.
     pub fn none() -> Self {
         Self {
             max_retries: 0,

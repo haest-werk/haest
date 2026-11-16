@@ -119,6 +119,13 @@ fn blocks_of(msg: &Message) -> (&'static str, Vec<Value>) {
     }
 }
 
+/// `messages` as the Messages API's `messages` array.
+///
+/// Consecutive messages of one role merge into one turn (tool results and a
+/// queued user message become one user turn). Thinking replays only from a
+/// message whose provider is `anthropic`, and only with its signature. Images
+/// and PDFs go as base64 blocks; audio and video, which the API does not take,
+/// become a text note. The newest block gets a prompt-cache breakpoint.
 pub fn to_anthropic_messages(messages: &[Message]) -> Vec<Value> {
     let mut out: Vec<(&'static str, Vec<Value>)> = Vec::new();
     for msg in messages {
@@ -144,6 +151,7 @@ pub fn to_anthropic_messages(messages: &[Message]) -> Vec<Value> {
         .collect()
 }
 
+/// `tools` as Messages API tool definitions, the last with a prompt-cache breakpoint.
 pub fn to_anthropic_tools(tools: &[ToolSpec]) -> Vec<Value> {
     tools
         .iter()
@@ -197,6 +205,24 @@ fn budget(effort: Effort) -> u32 {
 }
 
 /// `thinking` (+ `output_config`) for `effort`; empty for none or `off`.
+///
+/// A model that [`uses_budget_thinking`] gets a token budget (2,048 for low
+/// up to 31,999 for max); any newer one gets adaptive thinking with the effort
+/// level in `output_config`.
+///
+/// ```
+/// use haest_core::Effort;
+/// use haest_providers::anthropic::thinking_params;
+///
+/// let adaptive = thinking_params("claude-opus-5-5", Some(Effort::High));
+/// assert_eq!(adaptive["thinking"]["type"], "adaptive");
+/// assert_eq!(adaptive["output_config"]["effort"], "high");
+///
+/// let budget = thinking_params("claude-sonnet-4-5", Some(Effort::Medium));
+/// assert_eq!(budget["thinking"]["budget_tokens"], 8192);
+///
+/// assert!(thinking_params("claude-opus-5-5", Some(Effort::Off)).is_empty());
+/// ```
 pub fn thinking_params(model: &str, effort: Option<Effort>) -> Map<String, Value> {
     let mut out = Map::new();
     let Some(effort) = effort.filter(|e| *e != Effort::Off) else {

@@ -30,6 +30,12 @@ fn rule(v: Option<&Value>) -> RoutingRule {
     }
 }
 
+/// One scope from untrusted JSON:
+/// `{"global": {"banned": [...], "favorites": [...]}, "overrides": [{"match": "...", "banned": [...], "favorites": [...]}]}`.
+///
+/// Never fails. Slugs are trimmed, blank ones dropped, repeats removed. An
+/// override whose pattern [`pattern_refusal`] refuses, or whose pattern came
+/// before, is skipped. Anything that is not the right shape reads as empty.
 pub fn normalize_routing(raw: &Value) -> ProviderRouting {
     let Some(r) = raw.as_object() else {
         return ProviderRouting::default();
@@ -56,6 +62,8 @@ pub fn normalize_routing(raw: &Value) -> ProviderRouting {
     }
 }
 
+/// A project scope from untrusted JSON: [`normalize_routing`]'s shape plus
+/// `"priority"` (`"cost"`, `"speed"` or `"privacy"`; anything else is none).
 pub fn normalize_project_routing(raw: &Value) -> ProjectRouting {
     let priority = match raw.get("priority").and_then(Value::as_str) {
         Some("cost") => Some(RoutingPriority::Cost),
@@ -83,6 +91,13 @@ fn says_nothing(r: &ProviderRouting) -> bool {
 /// None when empty. Malformed JSON is an `Err` the caller reports, naming
 /// where the JSON came from, and then routes as if unset -- loudly, never
 /// fatally.
+///
+/// Valid JSON of the wrong shape is read tolerantly ([`normalize_routing`]):
+/// what does not fit is dropped.
+///
+/// # Errors
+///
+/// A message when `raw` is not blank and not valid JSON.
 pub fn parse_routing(raw: &str) -> Result<Option<RoutingEnv>, String> {
     if raw.trim().is_empty() {
         return Ok(None);

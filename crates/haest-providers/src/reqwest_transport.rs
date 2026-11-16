@@ -12,6 +12,24 @@ use crate::transport::{HttpRequest, HttpResponse, Transport, TransportError};
 /// a long prompt can sit in a queue before the first byte.
 const HEADERS_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// The default [`Transport`]: HTTP over reqwest and rustls, straight to the
+/// server, the body streamed as it arrives.
+///
+/// It reads no proxy settings and nothing else from the environment. It waits
+/// up to ten minutes for the status and headers (a long prompt can queue before
+/// the first byte; the official SDKs allow as long), then the body takes as
+/// long as it takes. A connection failure or that timeout is a retryable
+/// [`TransportError`](crate::TransportError); a cancelled request is not.
+/// Cloning is cheap: clones share one connection pool.
+///
+/// ```
+/// use std::{sync::Arc, time::Duration};
+///
+/// use haest_providers::{ReqwestTransport, Transport};
+///
+/// let transport: Arc<dyn Transport> =
+///     Arc::new(ReqwestTransport::new().headers_timeout(Duration::from_secs(120)));
+/// ```
 #[derive(Debug, Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
@@ -29,6 +47,14 @@ impl ReqwestTransport {
     /// or the OS's network settings say. The environment does not shape a run
     /// (and a key for an `http://` base URL would reach the proxy in clear); a
     /// host that wants a proxy hands in its client ([`Self::with_client`]).
+    ///
+    /// Installs ring as the process's rustls crypto provider when none is
+    /// installed yet; one the host installed first is kept.
+    ///
+    /// # Panics
+    ///
+    /// If reqwest cannot build its client. With a crypto provider installed
+    /// the line before, that does not happen.
     pub fn new() -> Self {
         // reqwest takes the process-wide TLS provider; this installs ring only
         // when the host has not installed one of its own.
@@ -41,6 +67,25 @@ impl ReqwestTransport {
     }
 
     /// Bring a configured client (proxy, root certificates, connection pool).
+    ///
+    /// The client is used as it is: a proxy or a timeout set on it applies.
+    /// This crate builds reqwest with rustls but no crypto provider of its own
+    /// (`rustls-no-provider`). Unless another dependency gives reqwest one,
+    /// building a client before a provider is installed panics: install one
+    /// first, or call [`Self::new`] once, which installs ring.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use haest_providers::ReqwestTransport;
+    ///
+    /// let _ = rustls::crypto::ring::default_provider().install_default();
+    /// let client = reqwest::Client::builder()
+    ///     .connect_timeout(Duration::from_secs(10))
+    ///     .build()?;
+    /// let transport = ReqwestTransport::with_client(client);
+    /// # Ok::<(), reqwest::Error>(())
+    /// ```
     pub fn with_client(client: reqwest::Client) -> Self {
         Self {
             client,

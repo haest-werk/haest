@@ -2,6 +2,11 @@
 //! (OpenAI itself goes through [`crate::responses`]).
 //! Request building lives in `convert`, stream folding in `stream`; this file
 //! only wires the transport between them.
+//!
+//! [`CompatProvider`] is the provider, configured by [`CompatOptions`]; its
+//! [`CompatFlavor`] picks OpenRouter's extras or the plain body. The
+//! request-shaping functions ([`build_compat_body`] and the ones it calls) are
+//! pure and public, for a host that wants the exact body a request would send.
 
 mod convert;
 mod stream;
@@ -40,24 +45,44 @@ use crate::{
     web_search::web_search_tool,
 };
 
-/// OpenAI itself is NOT a flavor here: it speaks Responses.
+/// Which kind of Chat Completions server a [`CompatProvider`] talks to; the
+/// extras it sends depend on it.
+///
+/// OpenAI itself is NOT a flavor here: it speaks Responses
+/// ([`ResponsesProvider`](crate::ResponsesProvider)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompatFlavor {
+    /// OpenRouter: asks for usage with its cost, sends effort as OpenRouter's
+    /// `reasoning` object, provider routing and the web search server tool,
+    /// and puts cache breakpoints in for Anthropic and Google models.
     OpenRouter,
+    /// Any other server: the plain body. Effort goes out only as a top-level
+    /// `reasoning_effort`, when [`CompatOptions::reasoning_effort`] lists the
+    /// levels the server takes.
     Generic,
 }
 
+/// How a [`CompatProvider`] reaches its server and what it sends.
+///
+/// [`CompatOptions::new`] sets the three required fields and leaves the rest
+/// empty; set the others on the value it returns.
 #[derive(Debug, Clone)]
 pub struct CompatOptions {
+    /// The provider's name: its [`Provider::id`](haest_core::Provider::id),
+    /// stored on every message it answers. Reasoning replays only to the
+    /// provider whose id a message carries.
     pub id: String,
+    /// OpenRouter's extras, or the plain body.
     pub flavor: CompatFlavor,
+    /// Sent as `Authorization: Bearer <api_key>`.
     pub api_key: String,
-    /// None = `https://api.openai.com/v1`.
+    /// None = `https://api.openai.com/v1`; requests go to `<base_url>/chat/completions`.
     pub base_url: Option<String>,
     /// Sent on every request, after (and over) the defaults.
     pub headers: Vec<(String, String)>,
     /// A provider that takes a top-level `reasoning_effort`: the levels it accepts
     /// (haest's effort is fitted to the nearest; off only when it lists `none`).
+    /// None = no `reasoning_effort` is sent.
     pub reasoning_effort: Option<Reasoning>,
     /// Price per model id, for a provider whose API returns no cost (haest-core `pricing`).
     pub pricing: HashMap<String, ModelPricing>,
@@ -82,6 +107,32 @@ impl CompatOptions {
     }
 }
 
+/// OpenAI Chat Completions as a [`Provider`](haest_core::Provider): OpenRouter
+/// and any OpenAI-compatible server (vLLM, LM Studio, Ollama, a gateway).
+///
+/// Each request streams with usage included. Reasoning is read from
+/// `reasoning` (OpenRouter) or `reasoning_content` (DeepSeek-style servers);
+/// what the server wants back (`reasoning_details`, `reasoning_content`) is
+/// kept on the message and replayed to the same provider. A tool call the
+/// server sends without an id gets one (`call_<hex>`). The message's cost is
+/// the server's when it reports one, else the price in
+/// [`CompatOptions::pricing`], else none.
+///
+/// # Examples
+///
+/// A local server, reached directly:
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use haest_core::Provider;
+/// use haest_providers::{CompatFlavor, CompatOptions, CompatProvider, ReqwestTransport};
+///
+/// let mut opts = CompatOptions::new("local", CompatFlavor::Generic, "none");
+/// opts.base_url = Some("http://localhost:1234/v1".into());
+/// let provider = CompatProvider::new(opts, Arc::new(ReqwestTransport::new()));
+/// assert_eq!(provider.id(), "local");
+/// ```
 pub struct CompatProvider {
     opts: CompatOptions,
     transport: Arc<dyn Transport>,
@@ -89,6 +140,8 @@ pub struct CompatProvider {
 }
 
 impl CompatProvider {
+    /// A provider over `transport` with the default [`RetryPolicy`]. Nothing
+    /// is sent until [`Provider::stream`](haest_core::Provider::stream).
     pub fn new(opts: CompatOptions, transport: Arc<dyn Transport>) -> Self {
         Self {
             opts,
@@ -97,11 +150,13 @@ impl CompatProvider {
         }
     }
 
+    /// The same provider with `retry` instead of the default policy.
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.retry = retry;
         self
     }
 
+    /// The options it was built with.
     pub fn options(&self) -> &CompatOptions {
         &self.opts
     }
@@ -115,7 +170,13 @@ impl CompatProvider {
     }
 }
 
-/// The streaming request body for `req` under `opts`.
+/// The streaming request body for `req` under `opts`, as [`CompatProvider`] sends it.
+///
+/// `model`, the messages ([`to_chat_messages`]), the tools when there are any
+/// ([`to_chat_tools`], then the web search server tool when `req.web_search`
+/// is set and the flavor is OpenRouter), `max_tokens` when above 0, the
+/// flavor's extras ([`flavor_extras`])
+/// and a `reasoning_effort` fitted to [`CompatOptions::reasoning_effort`].
 pub fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> Value {
     let mut tools = to_chat_tools(&req.tools);
     if opts.flavor == CompatFlavor::OpenRouter {

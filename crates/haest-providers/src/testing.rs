@@ -2,6 +2,28 @@
 //! (`haest-providers = { ..., features = ["testing"] }` in dev-dependencies):
 //! a [`FakeTransport`] that answers with recorded SSE bodies and records every
 //! request, plus builders for those bodies in each dialect.
+//!
+//! ```
+//! use haest_core::Provider;
+//! use haest_providers::{
+//!     CompatFlavor, CompatOptions, CompatProvider,
+//!     testing::{FakeReply, FakeTransport, chat_sse, collect, request},
+//! };
+//! use serde_json::json;
+//!
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() {
+//! let transport = FakeTransport::new([FakeReply::sse(chat_sse(&[
+//!     json!({"choices": [{"index": 0, "delta": {"content": "hi"}}]}),
+//! ]))]);
+//! let opts = CompatOptions::new("test", CompatFlavor::Generic, "key");
+//! let provider = CompatProvider::new(opts, transport.clone());
+//!
+//! let (_events, message) = collect(provider.stream(request("some-model"))).await;
+//! assert_eq!(message.text(), "hi");
+//! assert_eq!(transport.last_body()["model"], "some-model");
+//! # }
+//! ```
 
 use std::{
     collections::VecDeque,
@@ -34,10 +56,15 @@ pub enum FakeEnd {
 /// One scripted answer.
 #[derive(Debug, Clone)]
 pub enum FakeReply {
+    /// An answer: the status and headers, then the body in these chunks, then `end`.
     Response {
+        /// The HTTP status.
         status: u16,
+        /// The response headers.
         headers: Vec<(String, String)>,
+        /// The body, one chunk per item, as the transport hands it over.
         chunks: Vec<Bytes>,
+        /// How the body ends after the last chunk.
         end: FakeEnd,
     },
     /// No answer at all.
@@ -82,6 +109,7 @@ impl FakeReply {
         self
     }
 
+    /// Then add this response header (`retry-after`, `x-should-retry`, ...).
     pub fn header(mut self, name: &str, value: &str) -> Self {
         if let FakeReply::Response { headers, .. } = &mut self {
             headers.push((name.into(), value.into()));
@@ -99,6 +127,9 @@ pub struct FakeTransport {
 }
 
 impl FakeTransport {
+    /// A transport that gives `replies`, one per request, in order. Shared
+    /// (`Arc`), so a test keeps a handle to read the requests after handing
+    /// a clone to a provider.
     pub fn new(replies: impl IntoIterator<Item = FakeReply>) -> Arc<Self> {
         Arc::new(Self {
             replies: Mutex::new(replies.into_iter().collect()),
@@ -185,6 +216,8 @@ pub fn request(model: &str) -> ProviderRequest {
     request_with(model, vec![Message::user("hi")])
 }
 
+/// A request for `model` with these messages: system prompt `sys`, no tools,
+/// no effort, no token cap, no web search, a fresh cancellation token.
 pub fn request_with(model: &str, messages: Vec<Message>) -> ProviderRequest {
     ProviderRequest {
         model: model.into(),
@@ -199,6 +232,11 @@ pub fn request_with(model: &str, messages: Vec<Message>) -> ProviderRequest {
 }
 
 /// Drain a provider stream: every event, and the message `Done` carried.
+///
+/// # Panics
+///
+/// When the stream does not end with exactly one `Done`, the contract every
+/// provider keeps.
 pub async fn collect(stream: ProviderStream) -> (Vec<ProviderEvent>, AssistantMessage) {
     let events: Vec<ProviderEvent> = stream.collect().await;
     let Some(ProviderEvent::Done(msg)) = events.last().cloned() else {

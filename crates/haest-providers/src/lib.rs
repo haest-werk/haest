@@ -1,18 +1,215 @@
-//! Model API adapters for haest.
+//! Model API adapters for haest: the providers that turn one model call into
+//! an HTTP request and stream the answer back.
+//!
+//! Each adapter implements haest-core's [`Provider`]. It takes a neutral
+//! [`ProviderRequest`] (model, system prompt, messages, tools, effort, a
+//! cancellation token), POSTs it in its API's wire format, and streams
+//! [`ProviderEvent`]s as the server sends them: text and thinking deltas, the
+//! start of each tool call, and last, exactly once, `Done` with the whole
+//! [`AssistantMessage`].
 //!
 //! | Wire dialect | Provider | Used by |
 //! |---|---|---|
-//! | Anthropic Messages | [`AnthropicProvider`] | `anthropic`, a `type: "anthropic"` entry of providers.json |
-//! | OpenAI Chat Completions | [`CompatProvider`] | `openrouter`, `paperinstruments`, any OpenAI-compatible server |
+//! | Anthropic Messages | [`AnthropicProvider`] | `anthropic`, a `"type": "anthropic"` entry of providers.json |
+//! | OpenAI Chat Completions | [`CompatProvider`] | `openrouter`, `paperinstruments`, a `"type": "openai"` entry: any OpenAI-compatible server |
 //! | OpenAI Responses | [`ResponsesProvider`] | `openai` |
 //!
-//! Every adapter streams server-sent events over a [`Transport`] (PLUG POINT:
-//! the default is [`ReqwestTransport`]; a host may route every model call
-//! through its own gateway) and ends with exactly one `ProviderEvent::Done`,
-//! also on failure. [`ProviderRegistry`] turns a `provider:model` spec into a
-//! live provider; [`Catalog`] answers what a cataloged model accepts.
+//! # Where it fits
+//!
+//! Through the facade this crate is `haest::providers` (the `providers`
+//! feature, on by default); the request and event types are haest-core's
+//! (`haest::core`). Depend on `haest-providers` directly when you want the
+//! model calls without the rest of haest: your own loop, a one-shot
+//! completion, a model picker over the [`Catalog`].
+//!
+//! The entry points:
+//!
+//! - [`ProviderRegistry`]: a `provider:model` spec in, a live provider out. It
+//!   is haest-core's [`ModelResolver`], what the agent loop asks for a model.
+//! - [`AnthropicProvider`], [`CompatProvider`], [`ResponsesProvider`]: build
+//!   one yourself to set every option.
+//! - [`Catalog`]: the models haest knows, and what each accepts.
+//! - [`Transport`]: how every request travels (PLUG POINT). The default is
+//!   [`ReqwestTransport`].
+//! - [`routing`]: OpenRouter provider routing, resolved per request.
+//!
+//! # Picking a model
+//!
+//! A model is named by a spec, `provider:model`:
+//! `openrouter:anthropic/claude-sonnet-5.5`, `anthropic:claude-opus-5-5`,
+//! `openai:gpt-6.1-sol`, or `local:qwen3-coder` for a providers.json entry
+//! named `local`. Everything after the first `:` is the provider's own model
+//! id, sent as is. [`Catalog::builtin`] lists the models haest knows; a spec
+//! outside it works too, with nothing known about it.
+//!
+//! The built-in providers ask the host's [`KeySource`] for a key and an
+//! optional base URL, by these names:
+//!
+//! | Provider | Key | Base URL (optional) |
+//! |---|---|---|
+//! | `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
+//! | `openai` | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+//! | `openrouter` | `OPENROUTER_API_KEY` | `OPENROUTER_BASE_URL` |
+//! | `paperinstruments` | `PAPERINSTRUMENTS_API_KEY` | `PAPERINSTRUMENTS_BASE_URL` |
+//!
+//! This crate never reads the process environment: the host answers those
+//! names from wherever it keeps keys (a `HashMap<String, String>`, a closure,
+//! a vault). A missing key is an error when its provider is first resolved,
+//! not before.
+//!
+//! # Plugging in your own transport
+//!
+//! Every provider sends one POST with a JSON body and reads the answer as a
+//! byte stream of server-sent events. Implement [`Transport`] to send it
+//! somewhere else: a gateway over a unix socket, a recorder, a fake for tests.
+//! The provider keeps the rest: headers, retries, SSE parsing, error messages.
+//!
+//! This example answers every call with one canned Chat Completions stream,
+//! resolves an OpenRouter spec over it and reads the answer, offline:
+//!
+//! ```
+//! use std::{collections::HashMap, sync::Arc};
+//!
+//! use async_trait::async_trait;
+//! use bytes::Bytes;
+//! use futures::StreamExt;
+//! use haest_core::{Message, ProviderEvent, ProviderRequest, StopReason};
+//! use haest_providers::{
+//!     CustomProviders, HttpRequest, HttpResponse, ProviderRegistry, RegistryOptions, Transport,
+//!     TransportError,
+//! };
+//! use tokio_util::sync::CancellationToken;
+//!
+//! /// Answers every request with the same stream. A real transport would send
+//! /// `req` over its own connection.
+//! struct Canned;
+//!
+//! #[async_trait]
+//! impl Transport for Canned {
+//!     async fn post(
+//!         &self,
+//!         req: HttpRequest,
+//!         _cancel: CancellationToken,
+//!     ) -> Result<HttpResponse, TransportError> {
+//!         assert_eq!(req.url, "https://openrouter.ai/api/v1/chat/completions");
+//!         assert_eq!(req.header("authorization"), Some("Bearer sk-test"));
+//!         let sse = concat!(
+//!             "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello!\"}}]}\n\n",
+//!             "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+//!             "data: [DONE]\n\n",
+//!         );
+//!         Ok(HttpResponse {
+//!             status: 200,
+//!             headers: vec![("content-type".into(), "text/event-stream".into())],
+//!             body: futures::stream::iter([Ok(Bytes::from(sse))]).boxed(),
+//!         })
+//!     }
+//! }
+//!
+//! #[tokio::main(flavor = "current_thread")]
+//! async fn main() {
+//!     // The host answers key names; here from a map.
+//!     let keys = HashMap::from([("OPENROUTER_API_KEY".to_string(), "sk-test".to_string())]);
+//!     let registry = ProviderRegistry::new(
+//!         Arc::new(keys),
+//!         CustomProviders::new(),
+//!         RegistryOptions { transport: Arc::new(Canned), ..RegistryOptions::default() },
+//!     );
+//!
+//!     let resolved = registry.resolve_spec("openrouter:anthropic/claude-sonnet-5.5").unwrap();
+//!     assert_eq!(resolved.model, "anthropic/claude-sonnet-5.5");
+//!
+//!     let request = ProviderRequest {
+//!         model: resolved.model.clone(),
+//!         system: "You are terse.".into(),
+//!         messages: vec![Message::user("Say hello.")],
+//!         tools: Vec::new(),
+//!         cancel: CancellationToken::new(),
+//!         effort: None,
+//!         max_tokens: None,
+//!         web_search: None,
+//!     };
+//!     let mut stream = resolved.provider.stream(request);
+//!     while let Some(event) = stream.next().await {
+//!         match event {
+//!             ProviderEvent::TextDelta(text) => print!("{text}"),
+//!             ProviderEvent::Done(message) => {
+//!                 assert_eq!(message.text(), "Hello!");
+//!                 assert_eq!(message.stop_reason, StopReason::EndTurn);
+//!             }
+//!             _ => {}
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! [`Transport`] is declared with the `async-trait` crate, so an
+//! implementation needs `async-trait` (and `bytes`, `futures`, `tokio-util` for
+//! the types in its signature) among its own dependencies.
+//!
+//! # providers.json
+//!
+//! More providers come from a JSON object, one entry per provider name. The
+//! haest CLI reads it from `<config dir>/providers.json` with
+//! [`load_custom_providers`]; a host may build the [`CustomProviders`] map
+//! itself. [`CustomProviderConfig`] describes every key:
+//!
+//! ```json
+//! {
+//!   "local": {
+//!     "type": "openai",
+//!     "baseURL": "http://localhost:1234/v1",
+//!     "apiKeyEnv": "LOCAL_LLM_KEY",
+//!     "reasoningEffort": { "efforts": ["low", "medium", "high"], "mandatory": false },
+//!     "pricing": { "qwen3-coder": { "input": 0, "cachedInput": 0, "output": 0 } }
+//!   },
+//!   "gateway": {
+//!     "type": "anthropic",
+//!     "baseURL": "https://llm-gateway.example.com",
+//!     "apiKeyEnv": "GATEWAY_API_KEY",
+//!     "headers": { "X-Team": "platform" }
+//!   }
+//! }
+//! ```
+//!
+//! With that file, `local:qwen3-coder` and `gateway:claude-opus-5-5` resolve
+//! like the built-ins. An entry is checked when its provider is first
+//! resolved, so a bad entry fails only its own specs. An entry named like a
+//! built-in (`openrouter`) replaces it.
+//!
+//! # Failure, retries and cancellation
+//!
+//! A provider's stream never errors and always ends with exactly one
+//! [`ProviderEvent::Done`]. A request the server refused, a body that broke
+//! off or an error event in the stream ends it with a message whose
+//! `stop_reason` is [`StopReason::Error`] and whose `error_message` says why
+//! (for a refusal, `"<status> <the API's own message>"`). The text and
+//! thinking that arrived are kept; no tool call is, since one may be cut off.
+//!
+//! A request is retried the way the official SDKs do ([`RetryPolicy`]); once
+//! the answer has started streaming, nothing is retried. Cancelling the
+//! request's [`ProviderRequest::cancel`] token stops the wait, the retries and
+//! the stream, and `Done` arrives with [`StopReason::Aborted`].
+//!
+//! # Features
+//!
+//! - `testing`: the `testing` module, fakes for tests in other crates: a
+//!   [`Transport`] that answers from a script and records every request, and
+//!   builders for SSE bodies in each dialect.
+//!
+//! [`Provider`]: haest_core::provider::Provider
+//! [`ProviderRequest`]: haest_core::provider::ProviderRequest
+//! [`ProviderRequest::cancel`]: haest_core::provider::ProviderRequest::cancel
+//! [`ProviderEvent`]: haest_core::provider::ProviderEvent
+//! [`ProviderEvent::Done`]: haest_core::provider::ProviderEvent::Done
+//! [`ModelResolver`]: haest_core::provider::ModelResolver
+//! [`AssistantMessage`]: haest_core::messages::AssistantMessage
+//! [`StopReason::Error`]: haest_core::messages::StopReason::Error
+//! [`StopReason::Aborted`]: haest_core::messages::StopReason::Aborted
+//! [`KeySource`]: haest_core::KeySource
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(missing_docs)]
 
 pub mod anthropic;
 pub mod catalog;

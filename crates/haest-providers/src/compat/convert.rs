@@ -90,6 +90,15 @@ fn replayed_reasoning(data: Option<&Value>) -> Map<String, Value> {
     out
 }
 
+/// `system` and `messages` as the Chat Completions `messages` array, the
+/// system prompt first.
+///
+/// An assistant message from the provider named `provider_id` carries its
+/// reasoning back (`reasoning_details`, `reasoning_content`); one from any
+/// other provider goes as text and tool calls only. A tool result's media,
+/// which a `tool` message cannot hold, follows the run of tool results as a
+/// user message. On OpenRouter, an `anthropic/` or `google/` model gets cache
+/// breakpoints on the system prompt and the newest user or tool message.
 pub fn to_chat_messages(
     system: &str,
     messages: &[Message],
@@ -149,6 +158,7 @@ fn mark_last_user_cacheable(out: &mut [Value]) {
     }
 }
 
+/// `tools` as Chat Completions `function` tools.
 pub fn to_chat_tools(tools: &[ToolSpec]) -> Vec<Value> {
     tools
         .iter()
@@ -161,7 +171,13 @@ pub fn to_chat_tools(tools: &[ToolSpec]) -> Vec<Value> {
         .collect()
 }
 
-/// Extra body fields per flavor. `effort` None = let the model default.
+/// Extra body fields per flavor; empty for [`CompatFlavor::Generic`].
+///
+/// For OpenRouter: `usage: {include: true}` (the cost comes back), `reasoning`
+/// for `effort` (`{enabled: false}` for off, `{effort}` otherwise, nothing for
+/// None so the model uses its default) and `provider`, what `routing` resolves
+/// to for `model` ([`crate::routing`]).
+///
 /// Every haest level is an OpenRouter level by the same name, so it goes through
 /// as is; one a model does not list is accepted, not refused. `off` for a catalog
 /// model whose reasoning is mandatory is fitted before it gets here (haest-core `effort`).

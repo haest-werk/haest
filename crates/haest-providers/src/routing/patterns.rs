@@ -2,9 +2,12 @@
 //! (`z-ai/glm-4.6`), a glob family (`z-ai/glm-*`), or an author prefix (`z-ai/`).
 //! How a key matches a haest model, how specific it is, and why a key is refused.
 
+/// How many models an override pattern can match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchKind {
+    /// One model id, exactly.
     Model,
+    /// Several: a glob (`*`) or an author prefix (ending in `/`).
     Family,
 }
 
@@ -63,6 +66,20 @@ fn glob_matches(pattern: &str, text: &str) -> bool {
     tail.len() >= last.len() && tail.ends_with(last)
 }
 
+/// Whether override `pattern` covers `model`.
+///
+/// `model` may be an OpenRouter id or a haest spec: an `openrouter:` prefix and
+/// a `:variant` suffix are ignored. A glob's `*` matches any run of
+/// characters, anchored at both ends; a pattern ending in `/` matches by
+/// prefix; any other must equal the id.
+///
+/// ```
+/// use haest_providers::routing::pattern_matches;
+///
+/// assert!(pattern_matches("z-ai/glm-*", "openrouter:z-ai/glm-4.6:free"));
+/// assert!(pattern_matches("z-ai/", "z-ai/glm-4.6"));
+/// assert!(!pattern_matches("z-ai/glm-4", "z-ai/glm-4.6"));
+/// ```
 pub fn pattern_matches(pattern: &str, model: &str) -> bool {
     let id = routing_model_id(model);
     if pattern.contains('*') {
