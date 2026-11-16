@@ -2,7 +2,7 @@
 //! Every row of PLAN.md's "Brain's plug points" table is wired through a
 //! public plug point and ASSERTED, so `cargo run -p haest --example brain`
 //! exiting 0 is the proof; `cargo test` runs the same (`[[example]] test`).
-//! A host that takes haest's own sub-agent hub, shell commands and steering
+//! A host that takes haest's own subagent hub, shell commands and steering
 //! instead: `tests/plug_in.rs`.
 //!
 //! | Plug point | Where |
@@ -131,7 +131,7 @@ pub fn run_tools(
     tools
 }
 
-/// brain's kinds of sub-agent (`explore` only reads) and the models it offers.
+/// brain's kinds of subagent (`explore` only reads) and the models it offers.
 pub fn agent_options() -> AgentToolOptions {
     AgentToolOptions {
         types: Some(SubagentTypes {

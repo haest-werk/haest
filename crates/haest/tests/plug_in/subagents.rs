@@ -1,4 +1,4 @@
-//! haest's own sub-agent hub over the host: a sub-agent with the host's tool
+//! haest's own subagent hub over the host: a subagent with the host's tool
 //! and command, and a background one answering through the host's inbox.
 
 use std::time::Duration;
@@ -6,7 +6,7 @@ use std::time::Duration;
 use super::*;
 
 #[tokio::test]
-async fn haests_own_hub_runs_a_sub_agent_with_the_hosts_tool_and_command() {
+async fn haests_own_hub_runs_a_subagent_with_the_hosts_tool_and_command() {
     let mut r = rig(
         vec![
             vec![call(
@@ -46,7 +46,7 @@ async fn haests_own_hub_runs_a_sub_agent_with_the_hosts_tool_and_command() {
     let subs = r.app.provider.requests(true);
     assert_eq!(subs.len(), 2);
     let Some(Message::Tool(s2)) = subs[1].messages.last() else {
-        panic!("the sub-agent's second call ends on a tool result");
+        panic!("the subagent's second call ends on a tool result");
     };
     assert_eq!(s2.content, "up 12%");
 
@@ -71,7 +71,7 @@ async fn haests_own_hub_runs_a_sub_agent_with_the_hosts_tool_and_command() {
 }
 
 #[tokio::test]
-async fn a_background_sub_agent_answers_through_the_hosts_inbox() {
+async fn a_background_subagent_answers_through_the_hosts_inbox() {
     let mut r = rig(
         vec![
             vec![call(

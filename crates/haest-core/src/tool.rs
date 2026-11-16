@@ -62,7 +62,7 @@ pub struct ToolOutput {
     /// What the tool itself spent (an image model's bill): added to the turn's cost AND charged to the ledger.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
-    /// Spend an agent the tool ran already charged itself (a sub-agent's model
+    /// Spend an agent the tool ran already charged itself (a subagent's model
     /// calls): added to the turn's cost so the turn cap sees it, never charged twice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_cost_usd: Option<f64>,

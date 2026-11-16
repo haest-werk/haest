@@ -12,8 +12,8 @@ pub struct Seen {
     pub messages: Vec<Message>,
 }
 
-/// Main and sub-agents answer from separate scripts (a sub-agent is told apart
-/// by haest's sub-agent note in its system prompt). A sub-agent's call waits for
+/// Main and subagents answer from separate scripts (a subagent is told apart
+/// by haest's subagent note in its system prompt). A subagent's call waits for
 /// a permit from `sub_gate`, so a test decides when a background one finishes.
 pub struct Scripted {
     pub main: Mutex<VecDeque<Vec<AssistantPart>>>,

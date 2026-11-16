@@ -66,7 +66,7 @@ Behaviour comes from there, file by file, tests included.
 | Read: `createReadTool(intercept)` (brain media caps, `attachment:<id>`) | Read tool takes an optional intercept |
 | Bash without background jobs | jobs are an option of the Bash tool |
 | session-store: record types + replay only, the node writes the file | `SessionRecord` + `replay` are separate from the file writer (`SessionSink`) |
-| agent tools with brain's own hub (`subagent_type`, sub-agent runs on the node) | `AgentDirectory` (brain's hub) + `AgentToolOptions` (the `subagent_type` enum, the model text) |
+| agent tools with brain's own hub (`subagent_type`, subagent runs on the node) | `AgentDirectory` (brain's hub) + `AgentToolOptions` (the `subagent_type` enum, the model text) |
 | brain decides each run's tools and caps itself | `settings::Settings` written out in Rust, one per kind of run (no loader, nothing read) + `tools::builtin_tools_where` |
 
 Beyond brain's patches: `ShellCommand` (haest-core) + `SandboxWorkspace::with_command`
@@ -87,7 +87,7 @@ host that takes haest's own hub, shell commands and steering instead is
 | 0 | Repo, workspace, the haest-core contract (messages, provider, tool, fs, workspace, events, deps, agent shell) | done |
 | 1 | T3 loop core, T4 session/compaction/context, T5 providers, T6 workspaces, T7 tools -- in parallel, one worktree each | done |
 | 1b | T8 `haest` CLI on top of wave 1, verified against a real model | done |
-| 2 | MCP client (`rmcp`), code VM + Code tool (`rquickjs`), mods (QuickJS), background jobs, Agent tools (sub-agents), Image tool | done; in the CLI too (jobs, subagents, GenerateImage, inbox turns), each checked live |
+| 2 | MCP client (`rmcp`), code VM + Code tool (`rquickjs`), mods (QuickJS), background jobs, Agent tools (subagents), Image tool | done; in the CLI too (jobs, subagents, GenerateImage, inbox turns), each checked live |
 | 3 | Brain plug-in proof (custom Transport, Fs, tools, ShutWorkspace, clock, tool_call_start, in one example), parity run, README | done |
 | 4 | Settings + runtime (D8-D14): `haest-settings`, `haest-runtime`, the CLI rebuilt on them, the brain example on `settle`; checked live (bare vs `--profile claude` tokens, an untrusted project file skipped, a trusted one read) | done |
 | 5 | Nothing ambient (D15-D17): `haest-settings` plain values, the loader split out as `haest-config`, `RuntimeInputs` + `World` + `KeySource` + `ChildEnv`, `env_passthrough`, brain's settings written out; checked live (real bash under `none` / `core` / `all`: 5 / 14 / 109 variables, the API key only under `all`) | done |

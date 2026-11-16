@@ -175,7 +175,7 @@ makes an `Agent` and calls `run(input, &mut sink)` once per human turn. Every
 place a host differs is a trait: `HttpClient` for how requests travel, `Fs`
 and `Workspace` for files and shell, `Tool` and `ReadIntercept` for tools,
 `AgentHooks` for the clock, persistence and caps, `EventSink` for events,
-`SessionSink` for session records, `AgentDirectory` for sub-agents.
+`SessionSink` for session records, `AgentDirectory` for subagents.
 
 Nothing in the library reads a file, a variable or a flag of its own accord.
 A host writes its settings out:

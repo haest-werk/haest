@@ -4,7 +4,7 @@
 //! model, run the tools it asks for, send the results back, until the model
 //! answers without tools. Around that loop it brings the parts a real agent
 //! needs: providers for Anthropic, OpenAI and OpenRouter, the file, shell, search
-//! and web tools, a copy-on-write sandbox, MCP servers, sub-agents, mods,
+//! and web tools, a copy-on-write sandbox, MCP servers, subagents, mods,
 //! sessions, compaction and spending caps. Every part is a trait, so a host
 //! swaps any of them for its own.
 //!
@@ -176,7 +176,7 @@
 //! | `http` | [`http`]: the HTTP seam the model calls and GenerateImage send through, and its default over reqwest (WebFetch and MCP servers keep clients of their own); on with `providers` and `tools` | yes |
 //! | `providers` | [`providers`]: Anthropic Messages, OpenAI Chat Completions and Responses, OpenRouter, any OpenAI-compatible server | yes |
 //! | `workspace` | [`workspace`]: the real disk and bash, or a sandbox over a copy-on-write overlay | yes |
-//! | `tools` | [`tools`]: Read, Write, Edit, Glob, Grep, Bash, WebFetch, tasks, sub-agents and more | yes |
+//! | `tools` | [`tools`]: Read, Write, Edit, Glob, Grep, Bash, WebFetch, tasks, subagents and more | yes |
 //! | `mcp` | [`mcp`]: MCP servers (stdio, streamable HTTP) and their tools | yes |
 //! | `code` | [`code`]: the Code tool and the sandbox `js` command, in embedded QuickJS | yes |
 //! | `mods` | [`mods`]: change how haest behaves without forking it; approvals, plan mode | yes |
@@ -197,7 +197,7 @@
 //! # Going further
 //!
 //! - [`runtime`] builds what the `haest` CLI runs: settings in, a conversation
-//!   with sessions, sub-agents, MCP, mods and compaction out. Start there for a
+//!   with sessions, subagents, MCP, mods and compaction out. Start there for a
 //!   full agent behind your own UI.
 //! - [`settings`] lists every setting; the
 //!   [settings reference](https://github.com/haest-werk/haest/blob/main/docs/settings.md)

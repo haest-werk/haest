@@ -1,6 +1,6 @@
 //! A second host, from outside: haest through its public API only, the way any
 //! crate that depends on haest sees it. brain (examples/brain) brings its
-//! own HTTP client and its own sub-agent runner; this host takes haest's own
+//! own HTTP client and its own subagent runner; this host takes haest's own
 //! pieces and plugs its own in beside them. The host is here; the tests, by
 //! plug point, are in `plug_in/`:
 //!
@@ -11,8 +11,8 @@
 //! | `Tool` + `ToolOutput::with_title` | `turns::a_host_tool_titles_its_call_for_the_host_and_not_for_the_model` |
 //! | `AgentControl::steer` from the host, mid-turn | `turns::the_host_steers_a_running_turn_at_the_next_step` |
 //! | `AgentHooks::before_model_call` refusing | `turns::a_hook_may_refuse_a_model_call_and_end_the_turn` |
-//! | `SubagentHub` over the host's `SubagentParent` | `subagents::haests_own_hub_runs_a_sub_agent_with_the_hosts_tool_and_command` |
-//! | `Inbox`: a background sub-agent's answer | `subagents::a_background_sub_agent_answers_through_the_hosts_inbox` |
+//! | `SubagentHub` over the host's `SubagentParent` | `subagents::haests_own_hub_runs_a_subagent_with_the_hosts_tool_and_command` |
+//! | `Inbox`: a background subagent's answer | `subagents::a_background_subagent_answers_through_the_hosts_inbox` |
 //! | `SkillSet`: the host's own skills, haest's Skill tool and prompt list | `skills::the_hosts_own_skills_load_through_haests_skill_tool` |
 //! | `DeferredTools`: the host's own tools behind ToolSearch, grow | `skills::a_host_defers_its_own_tools_and_a_loaded_one_joins_the_list` |
 //! | the same, proxy (CallTool) | `skills::in_proxy_mode_the_list_never_changes_and_call_tool_runs_a_deferred_one` |
@@ -147,7 +147,7 @@ impl Tool for Lookup {
 }
 
 // ---------------------------------------------------------------------------
-// The host: haest's own sub-agent hub runs over it.
+// The host: haest's own subagent hub runs over it.
 
 struct App {
     provider: Arc<Scripted>,
@@ -155,7 +155,7 @@ struct App {
     workspace: Arc<SandboxWorkspace>,
     lookup: Arc<Lookup>,
     inbox: UnboundedSender<String>,
-    /// Every sub-agent event kind, in order.
+    /// Every subagent event kind, in order.
     sub_events: Mutex<Vec<&'static str>>,
 }
 
@@ -221,7 +221,7 @@ struct Rig {
     inbox: UnboundedReceiver<String>,
 }
 
-/// A conversation: main answers `main`, sub-agents `sub` (each after a permit
+/// A conversation: main answers `main`, subagents `sub` (each after a permit
 /// from the gate, `sub_permits` of them up front).
 fn rig(main: Vec<Vec<AssistantPart>>, sub: Vec<Vec<AssistantPart>>, sub_permits: usize) -> Rig {
     let provider = Arc::new(Scripted {

@@ -143,7 +143,7 @@ pub async fn run_call(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> 
     spill_if_huge(out, &call.name, ctx).await
 }
 
-/// Fold a tool's own spend -- an image model's bill, a sub-agent's -- into the
+/// Fold a tool's own spend -- an image model's bill, a subagent's -- into the
 /// turn, so the turn total and the USD cap both see it.
 ///
 /// Adds [`ToolOutput::cost_usd`] and [`ToolOutput::child_cost_usd`] to

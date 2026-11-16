@@ -1,7 +1,7 @@
 //! brain's side of the tool list, faked: what the node answers.
 //!
 //! PLUG POINTS: `ReadIntercept` (Read's `attachment:<id>`), `Tool` (brain's own
-//! tools), `AgentDirectory` (sub-agents run on the node, not in this process).
+//! tools), `AgentDirectory` (subagents run on the node, not in this process).
 
 use std::{collections::HashMap, sync::Mutex};
 
@@ -130,7 +130,7 @@ impl Tool for DreamMaterial {
     }
 }
 
-/// brain's agent hub: each sub-agent runs on its own node run. The fake answers
+/// brain's agent hub: each subagent runs on its own node run. The fake answers
 /// for the node and keeps every spawn, `subagent_type` included (see `agent_options`).
 #[derive(Default)]
 pub struct NodeAgents {
