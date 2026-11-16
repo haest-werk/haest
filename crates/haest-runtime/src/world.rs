@@ -145,9 +145,10 @@ async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> Result<(), WorkspaceErr
 }
 
 /// The `workspace` setting's workspace in this world. The disk's sandbox
-/// mounts the skill dirs (read-only; `SkillScanRoots::dirs` of the `skills` setting's
-/// roots) and the spill dir (read-write); a host's Fs is the sandbox's whole
-/// world. On the disk the spill dir is made first, private. `passed_env` (the
+/// mounts the skill dirs outside the project (read-only; `SkillScanRoots::dirs`
+/// of the `skills` setting's roots) and the spill dir (read-write); a skill
+/// dir inside the project is the overlay's like any project file. A host's Fs
+/// is the sandbox's whole world. On the disk the spill dir is made first, private. `passed_env` (the
 /// variables the host passes on purpose) reaches the shell either way: the
 /// sandbox's alone, real bash's over `child_env`. The sandbox tells the model
 /// how the human applies its edits with `remedies`. `workspace = shut` is a
@@ -179,7 +180,9 @@ pub async fn workspace_for(
             // The spill dir is mounted read-write, so the path in a spill notice is real.
             private_spill_dir(fs.as_ref(), spill).await?;
             let mut mounts = SandboxMounts::new(&s.cwd).writable(spill);
-            for dir in skill_dirs {
+            // A skill dir in the project is the project's: the overlay holds
+            // it, so the model can edit it and the edit is a change to review.
+            for dir in skill_dirs.iter().filter(|d| !d.starts_with(&s.cwd)) {
                 if fs.exists(dir).await {
                     mounts = mounts.readable(dir.clone());
                 }

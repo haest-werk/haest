@@ -192,6 +192,54 @@ async fn the_spill_dir_on_the_disk_is_private() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// A skill dir in the project is the project's: the sandbox edits it in its
+/// overlay, as any project file, and the edit is a change to review. A skill
+/// dir outside it is mounted to read, never written.
+#[tokio::test]
+async fn the_sandbox_edits_project_skills_and_only_reads_the_others() {
+    let root = scratch("skill-mounts");
+    let (cwd, home_skills) = (root.join("project"), root.join("home/skills"));
+    let project_skills = cwd.join(".claude/skills");
+    for dir in [project_skills.join("tidy"), home_skills.join("lint")] {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "---\nname: x\n---\n").unwrap();
+    }
+    let s = Settings {
+        cwd: cwd.clone(),
+        ..settings()
+    };
+    let world = World::Disk {
+        child_env: ChildEnv::default(),
+    };
+    let ws = workspace_for(
+        &s,
+        &world,
+        &ChildEnv::default(),
+        &[project_skills.clone(), home_skills.clone()],
+        &root.join("spill"),
+        Remedies::default(),
+    )
+    .await
+    .unwrap();
+    let fs = ws.fs();
+    let edited = fs
+        .write(&project_skills.join("tidy/SKILL.md"), b"edited")
+        .await;
+    let outside = fs
+        .write(&home_skills.join("lint/SKILL.md"), b"edited")
+        .await;
+    let changed = ws.changes().unwrap().list().await.len();
+    let on_disk = std::fs::read_to_string(project_skills.join("tidy/SKILL.md")).unwrap();
+    let _ = std::fs::remove_dir_all(&root);
+    assert!(
+        edited.is_ok(),
+        "the project skill was not writable: {edited:?}"
+    );
+    assert_eq!(changed, 1, "the edit is one change to review");
+    assert_eq!(on_disk, "---\nname: x\n---\n", "the disk is untouched");
+    assert!(outside.is_err(), "a skill outside the project was written");
+}
+
 #[tokio::test]
 async fn a_shut_workspace_is_shut_in_any_world() {
     let s = Settings {
