@@ -122,44 +122,26 @@ fn the_prompt_carries_environment_instructions_and_skills_and_omits_empty_sectio
 }
 
 #[test]
-fn the_prompt_teaches_only_the_tools_the_call_has_and_the_identity_can_be_replaced() {
-    let with = |tools: &[&str]| {
-        build_system_prompt(&PromptInputs {
-            tool_names: tools.iter().map(|t| t.to_string()).collect(),
-            ..Default::default()
-        })
-    };
-    let none = with(&[]);
-    assert!(!none.contains("Tool discipline") && none.contains("- Tools: none"));
-    let all = with(&["Read", "Write", "Edit", "Bash", "Grep", "Glob"]);
-    assert!(all.contains("- Use Read, Grep and Glob to look at code; use Bash for builds"));
-    assert!(all.contains("Write only for new files"));
-    let read = with(&["Read"]);
-    assert!(read.contains("- Use Read to look at code.\n- Paths may be"));
-    assert!(!read.contains("Edit") && !read.contains("Bash for"));
+fn the_tool_guide_and_workspace_note_are_said_as_given_and_the_identity_can_be_replaced() {
+    const GUIDE: &str = "HOW TO USE THE TOOLS";
+    const NOTE: &str = "SANDBOX LIMITS";
+    let given = build_system_prompt(&PromptInputs {
+        cwd: "/work/dir".into(),
+        tool_guide: Some(GUIDE.into()),
+        workspace_note: Some(NOTE.into()),
+        ..Default::default()
+    });
+    let guide = given.find(GUIDE).expect("the guide is in");
+    let env = given.find("/work/dir").expect("the environment is in");
+    assert!(guide < env, "the guide comes before the environment");
+    assert!(given.contains(NOTE));
+    let bare = build_system_prompt(&PromptInputs::default());
+    assert!(!bare.contains(GUIDE) && !bare.contains(NOTE));
     let own = build_system_prompt(&PromptInputs {
         identity: Some("You are brain's reader.".into()),
         ..Default::default()
     });
     assert!(own.starts_with("You are brain's reader.") && !own.contains("You are haest"));
-}
-
-#[test]
-fn the_workspace_note_goes_only_to_a_call_that_can_touch_the_workspace() {
-    const NOTE: &str = "SANDBOX LIMITS";
-    let with = |tools: &[&str]| {
-        build_system_prompt(&PromptInputs {
-            tool_names: tools.iter().map(|t| t.to_string()).collect(),
-            workspace_note: Some(NOTE.into()),
-            ..Default::default()
-        })
-    };
-    for touches in [&["Bash"][..], &["Glob"], &["WebFetch", "Edit"]] {
-        assert!(with(touches).contains(NOTE), "{touches:?}");
-    }
-    for not in [&[][..], &["WebFetch", "mcp__gh__search"]] {
-        assert!(!with(not).contains(NOTE), "{not:?}");
-    }
 }
 
 #[tokio::test]

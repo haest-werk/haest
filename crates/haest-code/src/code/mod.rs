@@ -9,9 +9,8 @@ mod tests;
 use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
-use haest_core::{
-    __private::FILE_TOOLS,
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, opt_num, req_str},
+use haest_core::tool::{
+    JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, opt_num, req_str,
 };
 use serde_json::{Value, json};
 
@@ -35,11 +34,12 @@ fn matches(name: &str, pattern: &str) -> bool {
 
 /// Whether a Code program may call the tool `t`.
 ///
-/// Yes for the file tools (`Read`, `Write`, `Edit`, `Grep`, `Glob`) and for
-/// an MCP tool (`mcp__...`) that declares itself read-only; yes for any name
-/// in `extra`, the host's own list of exact names or `prefix*` patterns
-/// (`mcp__github__*`); never for Code itself, whatever `extra` says. Anything
-/// else -- Bash, a writing MCP tool, the agent tools -- only through `extra`.
+/// Yes for an MCP tool (`mcp__...`) that declares itself read-only, and for
+/// any name in `allowed`: exact names or `prefix*` patterns
+/// (`mcp__github__*`). Never for Code itself, whatever `allowed` says. The
+/// host lists what a program may call: haest-runtime lists haest-tools'
+/// file tools (`FILE_TOOLS`) and its `code_tools` setting, so Bash, a
+/// writing MCP tool or the agent tools get in only through the setting.
 ///
 /// # Examples
 ///
@@ -48,31 +48,30 @@ fn matches(name: &str, pattern: &str) -> bool {
 ///
 /// use haest_code::code_callable;
 /// use haest_core::Tool;
-/// use haest_tools::{BashOptions, BashTool, ReadTool};
+/// use haest_tools::{BashOptions, BashTool, FILE_TOOLS, ReadTool};
 ///
+/// let files = FILE_TOOLS.map(String::from);
 /// let read: Arc<dyn Tool> = Arc::new(ReadTool::default());
 /// let bash: Arc<dyn Tool> = Arc::new(BashTool::new(BashOptions::default()));
-/// assert!(code_callable(read.as_ref(), &[]));
-/// assert!(!code_callable(bash.as_ref(), &[]));
+/// assert!(code_callable(read.as_ref(), &files));
+/// assert!(!code_callable(read.as_ref(), &[]));
+/// assert!(!code_callable(bash.as_ref(), &files));
 /// assert!(code_callable(bash.as_ref(), &["Bash".to_string()]));
 /// ```
-pub fn code_callable(t: &dyn Tool, extra: &[String]) -> bool {
+pub fn code_callable(t: &dyn Tool, allowed: &[String]) -> bool {
     let name = t.name();
     if name == CODE_TOOL_NAME {
         return false;
     }
-    if FILE_TOOLS.contains(&name) || (name.starts_with("mcp__") && t.read_only()) {
-        return true;
-    }
-    extra.iter().any(|p| matches(name, p))
+    (name.starts_with("mcp__") && t.read_only()) || allowed.iter().any(|p| matches(name, p))
 }
 
 /// The names of `tools` a Code program may call ([`code_callable`] with
-/// `extra`), in their order: what [`CodeTool::new`] takes.
-pub fn code_tool_names(tools: &[Arc<dyn Tool>], extra: &[String]) -> Vec<String> {
+/// `allowed`), in their order: what [`CodeTool::new`] takes.
+pub fn code_tool_names(tools: &[Arc<dyn Tool>], allowed: &[String]) -> Vec<String> {
     tools
         .iter()
-        .filter(|t| code_callable(t.as_ref(), extra))
+        .filter(|t| code_callable(t.as_ref(), allowed))
         .map(|t| t.name().to_string())
         .collect()
 }
@@ -105,9 +104,10 @@ Callable: {}.",
 ///
 /// CONSTRAINED BY DESIGN:
 ///   - embedded QuickJS ([`run_in_vm`](crate::run_in_vm)): no fs, network, process or modules of its own
-///   - callable ([`code_callable`]): Read, Write, Edit, Grep, Glob, MCP tools their
-///     server marks read-only, and names the host adds (a setting the human
-///     controls). Bash only when the host adds it; never Code itself
+///   - callable ([`code_callable`]): MCP tools their server marks read-only,
+///     and the names the host allows (haest-runtime: the file tools, plus a
+///     setting the human controls). Bash only when the host allows it; never
+///     Code itself
 ///   - each call goes through the SAME tool the model calls directly (the
 ///     [`ToolSource`], read per run), so whatever wraps the model's tools -- plan
 ///     mode, approvals -- judges every inner call too

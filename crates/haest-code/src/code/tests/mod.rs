@@ -10,7 +10,9 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput};
-use haest_tools::{BashOptions, BashTool, EditTool, GlobTool, GrepTool, ReadTool, WriteTool};
+use haest_tools::{
+    BashOptions, BashTool, EditTool, FILE_TOOLS, GlobTool, GrepTool, ReadTool, WriteTool,
+};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -28,10 +30,18 @@ fn builtins() -> Vec<Arc<dyn Tool>> {
     ]
 }
 
+/// What haest-runtime allows: the file tools, then the host's `extra` names.
+fn allowed(extra: &[&str]) -> Vec<String> {
+    FILE_TOOLS
+        .iter()
+        .chain(extra)
+        .map(|s| s.to_string())
+        .collect()
+}
+
 /// A Code tool over `tools`, the way a host builds it: names from the policy, calls into the list.
 fn code_over(tools: Vec<Arc<dyn Tool>>, extra: &[&str]) -> CodeTool {
-    let extra: Vec<String> = extra.iter().map(|s| s.to_string()).collect();
-    CodeTool::new(code_tool_names(&tools, &extra), Arc::new(tools))
+    CodeTool::new(code_tool_names(&tools, &allowed(extra)), Arc::new(tools))
 }
 
 async fn run_in(tool: &CodeTool, code: &str, extra: Value, ctx: &ToolContext) -> ToolOutput {
@@ -89,9 +99,17 @@ fn code_callable_follows_the_policy() {
         ("Bash on the allowlist", bash, &["Bash"], true),
     ];
     for (label, tool, extra, want) in cases {
-        let extra: Vec<String> = extra.iter().map(|s| s.to_string()).collect();
-        assert_eq!(code_callable(tool.as_ref(), &extra), want, "{label}");
+        assert_eq!(
+            code_callable(tool.as_ref(), &allowed(extra)),
+            want,
+            "{label}"
+        );
     }
+    let read = ReadTool::default();
+    assert!(
+        !code_callable(&read, &[]),
+        "a file tool the host leaves out"
+    );
 }
 
 #[test]

@@ -35,8 +35,8 @@
 //!
 //! # The Code tool
 //!
-//! Build it over the names [`code_tool_names`] allows and the same tool list
-//! the model gets. If the host wraps its tools (mods, approvals), hand Code the
+//! Build it over the names [`code_tool_names`] allows (the host says which:
+//! haest-tools' file tools, say) and the same tool list the model gets. If the host wraps its tools (mods, approvals), hand Code the
 //! wrapped list: every call a program makes then passes the same checks as a
 //! direct call.
 //!
@@ -45,7 +45,7 @@
 //!
 //! use haest_code::{CodeTool, code_tool_names};
 //! use haest_core::{MemFs, Tool, ToolContext};
-//! use haest_tools::{GlobTool, ReadTool};
+//! use haest_tools::{FILE_TOOLS, GlobTool, ReadTool};
 //! use haest_workspace::SandboxWorkspace;
 //! use serde_json::json;
 //!
@@ -60,7 +60,8 @@
 //!
 //! // The model's tools. Code may call the file tools among them.
 //! let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(ReadTool::default()), Arc::new(GlobTool)];
-//! let code = CodeTool::new(code_tool_names(&tools, &[]), Arc::new(tools));
+//! let allowed = FILE_TOOLS.map(String::from);
+//! let code = CodeTool::new(code_tool_names(&tools, &allowed), Arc::new(tools));
 //!
 //! let program = r#"
 //!   const files = (await tools.Glob({ pattern: 'notes/*.md' })).split('\n').filter(Boolean)

@@ -21,6 +21,7 @@ use crate::{
         core::skills::{Skill, SkillOptions},
         core::tool::ToolSource,
         now_ms,
+        tools::{tool_guide, touches_workspace},
     },
 };
 
@@ -109,12 +110,17 @@ impl RuntimePrompt {
     }
 
     /// The system prompt for an agent on `model` offered `tool_names`: the
-    /// fixed parts, the instruction files read again now, and the skill list
-    /// with `skill_catalog` on.
+    /// fixed parts, the guide to the built-ins among the tools, the
+    /// workspace's note when a tool can touch it, the instruction files read
+    /// again now, and the skill list with `skill_catalog` on.
     pub async fn build(&self, model: String, tool_names: Vec<String>) -> String {
         let s = &self.hooks.settings;
         let mut p = self.base.clone();
         p.model_spec = model;
+        p.tool_guide = tool_guide(&tool_names);
+        if !touches_workspace(&tool_names) {
+            p.workspace_note = None;
+        }
         p.tool_names = tool_names;
         p.instructions = find_instruction_files(self.fs.as_ref(), &instruction_options(s)).await;
         if s.skill_catalog {
@@ -162,5 +168,32 @@ fn platform() -> String {
     match std::env::consts::OS {
         "macos" => "darwin".into(),
         os => os.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{haest::core::fs::MemFs, testkit::hooks};
+
+    #[tokio::test]
+    async fn the_tool_guide_and_the_workspace_note_go_only_where_the_tools_reach() {
+        const NOTE: &str = "SANDBOX LIMITS";
+        let (hooks, _) = hooks(Settings::bare(PathBuf::from("/w"), PathBuf::from("/h")));
+        let prompt = RuntimePrompt {
+            fs: Arc::new(MemFs::new()),
+            hooks,
+            skills: Arc::default(),
+            base: PromptInputs {
+                workspace_note: Some(NOTE.into()),
+                ..Default::default()
+            },
+        };
+        let read = vec!["Read".to_string()];
+        let guide = tool_guide(&read).unwrap();
+        let with_files = prompt.build("m".into(), read).await;
+        assert!(with_files.contains(&guide) && with_files.contains(NOTE));
+        let web = prompt.build("m".into(), vec!["WebFetch".into()]).await;
+        assert!(!web.contains(&guide) && !web.contains(NOTE));
     }
 }

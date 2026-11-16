@@ -145,6 +145,7 @@ mod builtins;
 mod canonical;
 mod files;
 mod fs_walk;
+mod guide;
 mod image;
 mod inbox;
 mod jobs;
@@ -175,6 +176,7 @@ pub use builtins::{
     BuiltinOptions, MissingOption, builtin_tools, builtin_tools_where, builtin_word,
 };
 pub use files::{EditTool, WriteTool};
+pub use guide::{FILE_TOOLS, tool_guide, touches_workspace};
 pub use image::{
     DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS, GenerateImageOptions, GenerateImageTool,
     ImageCatalog, ImageError, ImageReply, ModelSettings, SettingSpec, call_image_api,

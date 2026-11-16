@@ -15,8 +15,8 @@ use crate::haest::{
     mcp::McpHub,
     mods::{ModTools, Mods},
     tools::{
-        AgentRef, BashOptions, BuiltinOptions, GenerateImageOptions, GenerateImageTool, JobHub,
-        SkillToolOptions, SubagentHub, builtin_tools_where,
+        AgentRef, BashOptions, BuiltinOptions, FILE_TOOLS, GenerateImageOptions, GenerateImageTool,
+        JobHub, SkillToolOptions, SubagentHub, builtin_tools_where,
     },
 };
 
@@ -128,7 +128,8 @@ impl ToolSource for BaseTools {
 pub struct WrappedTools {
     base: Arc<BaseTools>,
     mods: Arc<Mods>,
-    /// The extra names Code may call (`code_tools`); None = no Code tool.
+    /// The names Code may call: the file tools and `code_tools`; None = no
+    /// Code tool.
     code: Option<Vec<String>>,
 }
 
@@ -143,10 +144,11 @@ impl WrappedTools {
         mods: Arc<Mods>,
         code: Option<Vec<String>>,
     ) -> Self {
+        let files = FILE_TOOLS.map(String::from);
         Self {
             base: Arc::new(BaseTools { own, mcp }),
             mods,
-            code,
+            code: code.map(|extra| files.into_iter().chain(extra).collect()),
         }
     }
 }
@@ -155,8 +157,8 @@ impl ToolSource for WrappedTools {
     /// Code calls the WRAPPED siblings, read per run, so every call it makes passes the hooks too.
     fn tools(&self) -> Vec<Arc<dyn Tool>> {
         let mut tools = self.base.tools();
-        if let Some(extra) = &self.code {
-            let names = code_tool_names(&tools, extra);
+        if let Some(allowed) = &self.code {
+            let names = code_tool_names(&tools, allowed);
             let callable = Arc::new(ModTools::new(self.base.clone(), self.mods.clone()));
             tools.push(Arc::new(CodeTool::new(names, callable)));
         }

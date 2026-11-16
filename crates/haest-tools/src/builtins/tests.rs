@@ -38,12 +38,12 @@ fn the_builtin_list_has_every_tool_with_its_kind_and_web_fetch_is_optional() {
     assert!(!names(&offline).contains(&"WebFetch".to_string()));
 }
 
-/// haest-core's prompt and Code go by FILE_TOOLS: a renamed tool here
-/// would drop its path line silently.
+/// The tool guide and haest-runtime's Code policy go by FILE_TOOLS: a
+/// renamed tool here would drop out of both silently.
 #[test]
-fn every_file_tool_haest_core_names_is_a_builtin() {
+fn every_file_tool_is_a_builtin() {
     let all = names(&builtin_tools(BuiltinOptions::default()));
-    for name in haest_core::__private::FILE_TOOLS {
+    for name in crate::FILE_TOOLS {
         assert!(all.iter().any(|t| t == name), "{name} is not a built-in");
     }
 }

@@ -5,12 +5,6 @@
 use super::InstructionFile;
 use crate::skills::{Skill, skills_prompt_block};
 
-/// haest's built-in tools (haest-tools') that work on files by path: the
-/// prompt's path line and its workspace note go by them, and haest-code lets
-/// a Code run always call them. The prompt gives advice about haest's own
-/// tools by name; no other tool's name is known here.
-pub const FILE_TOOLS: [&str; 5] = ["Read", "Write", "Edit", "Grep", "Glob"];
-
 /// Everything the system prompt says, gathered by the caller.
 ///
 /// `Default` is empty: fill in what the host knows and leave the rest.
@@ -33,61 +27,23 @@ pub struct PromptInputs {
     pub instructions: Vec<InstructionFile>,
     /// The skills the model may load.
     pub skills: Vec<Skill>,
-    /// The names of the tools this call advertises; the tool advice covers only these.
+    /// The names of the tools this call advertises, listed in the environment.
     pub tool_names: Vec<String>,
+    /// How to use those tools, said right after the identity; None says
+    /// nothing. The tools' own crate writes it: haest-tools' `tool_guide`
+    /// for its built-ins.
+    pub tool_guide: Option<String>,
     /// How to read and answer `<channel>` turns; None when there is no way to answer.
     pub channel_guide: Option<String>,
     /// What the workspace can and cannot do (the sandbox's limits); None for
-    /// the real one. Said only to a call with Bash or a file tool.
+    /// the real one, and for a call with no tool that touches it (haest-tools'
+    /// `touches_workspace`).
     pub workspace_note: Option<String>,
     /// Text the host adds at the very end.
     pub append_system_prompt: Option<String>,
 }
 
 const IDENTITY: &str = "You are haest, a coding agent. You work inside the user's project through tools: read before you edit, verify what you change, and keep going until the task is done. Be direct and concise; lead with the answer. When you are unsure, investigate with tools instead of guessing.";
-
-/// `[A]` -> "A", `[A, B]` -> "A and B", `[A, B, C]` -> "A, B and C".
-fn and_list(names: &[&str]) -> String {
-    match names {
-        [] => String::new(),
-        [one] => one.to_string(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
-    }
-}
-
-/// One line per kind of tool this call has; nothing when it has none of them.
-fn tool_discipline(tools: &[String]) -> String {
-    let has = |n: &str| tools.iter().any(|t| t == n);
-    let look: Vec<&str> = ["Read", "Grep", "Glob"]
-        .into_iter()
-        .filter(|n| has(n))
-        .collect();
-    let bash = "Bash for builds, tests, git and anything else";
-    let mut lines = Vec::new();
-    match (look.is_empty(), has("Bash")) {
-        (false, true) => lines.push(format!(
-            "- Use {} to look at code; use {bash}.",
-            and_list(&look)
-        )),
-        (false, false) => lines.push(format!("- Use {} to look at code.", and_list(&look))),
-        (true, true) => lines.push(format!("- Use {bash}.")),
-        (true, false) => {}
-    }
-    match (has("Edit"), has("Write")) {
-        (true, true) => lines.push("- Use Edit for changes to existing files (exact old_string match); Write only for new files or full rewrites.".into()),
-        (true, false) => lines.push("- Use Edit for changes to existing files (exact old_string match).".into()),
-        (false, true) => lines.push("- Use Write for new files or full rewrites.".into()),
-        (false, false) => {}
-    }
-    if FILE_TOOLS.iter().any(|n| has(n)) {
-        lines.push("- Paths may be absolute or relative to the working directory.".into());
-    }
-    if lines.is_empty() {
-        String::new()
-    } else {
-        format!("Tool discipline:\n{}", lines.join("\n"))
-    }
-}
 
 fn instructions(files: &[InstructionFile]) -> String {
     if files.is_empty() {
@@ -107,7 +63,7 @@ fn instructions(files: &[InstructionFile]) -> String {
         .join("\n\n")
 }
 
-/// The system prompt text, sections in this order: identity, tool advice,
+/// The system prompt text, sections in this order: identity, tool guide,
 /// environment, workspace note, instruction files, skills, channel guide,
 /// the host's addition. Empty sections are left out; sections are separated
 /// by a blank line.
@@ -133,21 +89,11 @@ pub fn build_system_prompt(p: &PromptInputs) -> String {
     .join("\n");
     let opt = |s: &Option<String>| s.clone().unwrap_or_default();
     let identity = p.identity.clone().unwrap_or_else(|| IDENTITY.to_string());
-    // The workspace's limits only matter to a call that can touch it.
-    let touches_workspace = p
-        .tool_names
-        .iter()
-        .any(|t| t == "Bash" || FILE_TOOLS.contains(&t.as_str()));
-    let workspace_note = if touches_workspace {
-        opt(&p.workspace_note)
-    } else {
-        String::new()
-    };
     [
         identity,
-        tool_discipline(&p.tool_names),
+        opt(&p.tool_guide),
         env,
-        workspace_note,
+        opt(&p.workspace_note),
         instructions(&p.instructions),
         skills_prompt_block(&p.skills),
         opt(&p.channel_guide),

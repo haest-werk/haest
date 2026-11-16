@@ -195,7 +195,6 @@ pub mod __private {
             .unwrap_or_else(|| OPENROUTER_URL.into())
     }
 
-    pub use crate::context::prompt::FILE_TOOLS;
     pub use crate::deferred_tools::split::{advertised_tools, callable_tools};
     pub use crate::expand::{expand_vars, is_var_name, unset_note};
     pub use crate::guard::NUDGE_SHARE;
