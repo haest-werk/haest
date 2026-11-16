@@ -19,13 +19,15 @@ use crate::{
     compat::{CompatFlavor, CompatOptions},
 };
 
-/// The wire dialect of a custom provider.
+haest_core::word_enum! {
+/// The wire dialect of a custom provider: its providers.json `type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dialect {
-    /// Chat Completions (`"type": "openai"`, and anything that is not `"anthropic"`).
-    OpenAi,
-    /// The Messages API.
-    Anthropic,
+pub enum Dialect ("provider type") {
+    /// Chat Completions (`"type": "openai"`, or no `type`).
+    OpenAi = "openai",
+    /// The Messages API (`"type": "anthropic"`).
+    Anthropic = "anthropic",
+}
 }
 
 /// One entry of providers.json:
@@ -38,7 +40,7 @@ pub enum Dialect {
 ///
 /// | Key | Field | Means |
 /// |---|---|---|
-/// | `type` | [`dialect`](Self::dialect) | `"anthropic"` for the Messages API; anything else, or none, is Chat Completions |
+/// | `type` | [`dialect`](Self::dialect) | `"openai"` (or none) for Chat Completions, `"anthropic"` for the Messages API |
 /// | `baseURL` | [`base_url`](Self::base_url) | where the API is |
 /// | `apiKey` | [`api_key`](Self::api_key) | the key itself |
 /// | `apiKeyEnv` | [`api_key_env`](Self::api_key_env) | the name to ask the host for the key |
@@ -73,6 +75,16 @@ pub struct CustomProviderConfig {
 
 fn opt_string(v: &Value, key: &str) -> Option<String> {
     v.get(key).and_then(Value::as_str).map(str::to_string)
+}
+
+/// `type`: no value is Chat Completions; anything but a known word is refused.
+fn dialect(v: Option<&Value>) -> Result<Dialect, EntryProblem> {
+    let word = match v {
+        None | Some(Value::Null) => return Ok(Dialect::OpenAi),
+        Some(Value::String(word)) => word.clone(),
+        Some(other) => other.to_string(),
+    };
+    word.parse().map_err(EntryProblem::UnknownType)
 }
 
 fn reasoning(v: Option<&Value>) -> Result<Option<Reasoning>, EntryProblem> {
@@ -110,15 +122,16 @@ fn pricing(v: Option<&Value>) -> Result<HashMap<String, ModelPricing>, EntryProb
 }
 
 impl CustomProviderConfig {
-    /// Read the providers.json entry `name`; a malformed effort list or price
-    /// is refused, never booked as garbage.
+    /// Read the providers.json entry `name`; a mistyped dialect, a malformed
+    /// effort list or price is refused, never sent or booked as garbage.
     ///
-    /// An effort level haest has no name for is skipped. A `type` other than
-    /// `"anthropic"` reads as Chat Completions, a typo included.
+    /// No `type` is Chat Completions. An effort level haest has no name for is
+    /// skipped.
     ///
     /// # Errors
     ///
-    /// [`ProviderConfigError::BadEntry`] naming the entry when
+    /// [`ProviderConfigError::BadEntry`] naming the entry when it is not a
+    /// JSON object, its `type` is neither `"openai"` nor `"anthropic"`,
     /// `reasoningEffort` lacks an `efforts` array or a `mandatory` boolean, or
     /// a `pricing` row lacks a numeric `input`, `cachedInput` or `output`, or
     /// has a `cacheWrite` that is not a number.
@@ -137,10 +150,13 @@ impl CustomProviderConfig {
     /// assert!(CustomProviderConfig::from_json("bad", &bad).is_err());
     /// ```
     pub fn from_json(name: &str, v: &Value) -> Result<Self, ProviderConfigError> {
-        let dialect = match v.get("type").and_then(Value::as_str) {
-            Some("anthropic") => Dialect::Anthropic,
-            _ => Dialect::OpenAi,
+        let bad = |problem| ProviderConfigError::BadEntry {
+            provider: name.to_string(),
+            problem,
         };
+        if !v.is_object() {
+            return Err(bad(EntryProblem::NotAnObject));
+        }
         let headers = v
             .get("headers")
             .and_then(Value::as_object)
@@ -148,12 +164,8 @@ impl CustomProviderConfig {
             .flatten()
             .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
             .collect();
-        let bad = |problem| ProviderConfigError::BadEntry {
-            provider: name.to_string(),
-            problem,
-        };
         Ok(Self {
-            dialect,
+            dialect: dialect(v.get("type")).map_err(bad)?,
             base_url: opt_string(v, "baseURL"),
             api_key: opt_string(v, "apiKey"),
             api_key_env: opt_string(v, "apiKeyEnv"),
@@ -201,13 +213,12 @@ pub type CustomProviders = BTreeMap<String, Value>;
 /// The raw entries of `<config_dir>/providers.json`, read through `fs`; empty
 /// when there is none. A loader's helper: the registry is handed the result.
 ///
-/// The entries are not checked here (see [`CustomProviders`]). A file whose
-/// top level is not a JSON object reads as no entries.
+/// The entries are not checked here (see [`CustomProviders`]).
 ///
 /// # Errors
 ///
 /// A [`ProvidersFileError`] naming the file when it exists but cannot be read,
-/// or is not valid JSON.
+/// is not valid JSON, or its top level is not a JSON object.
 ///
 /// # Examples
 ///
@@ -244,10 +255,10 @@ pub async fn load_custom_providers(
         Ok(parsed) => parsed,
         Err(source) => return Err(ProvidersFileError::Parse { path, source }),
     };
-    Ok(match parsed {
-        Value::Object(map) => map.into_iter().collect(),
-        _ => CustomProviders::new(),
-    })
+    match parsed {
+        Value::Object(map) => Ok(map.into_iter().collect()),
+        _ => Err(ProvidersFileError::NotAnObject { path }),
+    }
 }
 
 /// The key `key`, or the error that names it.

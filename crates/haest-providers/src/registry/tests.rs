@@ -223,6 +223,56 @@ fn an_entry_that_replaces_a_built_in_is_listed_once() {
 }
 
 #[test]
+fn a_type_haest_does_not_speak_is_refused_and_no_type_is_chat_completions() {
+    let custom = CustomProviders::from([
+        ("typo".to_string(), json!({"type": "anthropc"})),
+        ("number".to_string(), json!({"type": 3})),
+        ("plain".to_string(), json!({"baseURL": "http://x/v1"})),
+    ]);
+    let reg = registry(keys(&[]), custom);
+    for name in ["typo", "number"] {
+        let e = reg.resolve_spec(&format!("{name}:m")).unwrap_err();
+        assert!(
+            matches!(&e, ProviderConfigError::BadEntry { provider, problem: EntryProblem::UnknownType(_) } if provider == name),
+            "{e}"
+        );
+    }
+    let plain = CustomProviderConfig::from_json("plain", &json!({})).unwrap();
+    assert_eq!(plain.dialect, Dialect::OpenAi);
+    assert!(reg.resolve_spec("plain:m").is_ok());
+}
+
+#[test]
+fn an_entry_that_is_not_an_object_is_refused() {
+    let custom = CustomProviders::from([("local".to_string(), json!("http://localhost:1234/v1"))]);
+    let e = registry(keys(&[]), custom)
+        .resolve_spec("local:m")
+        .unwrap_err();
+    assert!(
+        matches!(
+            &e,
+            ProviderConfigError::BadEntry {
+                problem: EntryProblem::NotAnObject,
+                ..
+            }
+        ),
+        "{e}"
+    );
+}
+
+#[tokio::test]
+async fn a_providers_json_that_is_not_an_object_is_refused() {
+    let fs = MemFs::with_files([("/cfg/providers.json", r#"[{"local": {}}]"#)]);
+    let e = load_custom_providers(&fs, Path::new("/cfg"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&e, ProvidersFileError::NotAnObject { .. }),
+        "{e}"
+    );
+}
+
+#[test]
 fn one_bad_custom_entry_blocks_only_itself() {
     let custom = CustomProviders::from([
         (

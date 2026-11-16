@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use haest_core::provider::ModelError;
+use haest_core::{provider::ModelError, words::UnknownWord};
 
 /// Why [`ProviderRegistry::resolve_spec`](super::ProviderRegistry::resolve_spec)
 /// cannot give a provider. Its text is said to the human as is.
@@ -40,6 +40,14 @@ pub enum ProviderConfigError {
 /// ([`CustomProviderConfig::from_json`](super::CustomProviderConfig::from_json)).
 #[derive(Debug, thiserror::Error)]
 pub enum EntryProblem {
+    /// The entry is not a JSON object.
+    #[error("the entry is not a JSON object")]
+    NotAnObject,
+    /// `type` names no wire dialect haest speaks: a typo is refused, never
+    /// sent as Chat Completions. A `type` that is not a string is its JSON
+    /// text here.
+    #[error("\"type\": {0}")]
+    UnknownType(UnknownWord),
     /// `reasoningEffort` lacks its `efforts` array or its `mandatory` boolean.
     #[error("reasoningEffort needs \"efforts\" (array) and \"mandatory\" (boolean)")]
     ReasoningEffort,
@@ -73,5 +81,11 @@ pub enum ProvidersFileError {
         path: PathBuf,
         /// Where the JSON broke.
         source: serde_json::Error,
+    },
+    /// The file is JSON but not an object of entries by provider name.
+    #[error("{}: the top level is not a JSON object of providers by name", path.display())]
+    NotAnObject {
+        /// The providers.json it is about.
+        path: PathBuf,
     },
 }
