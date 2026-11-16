@@ -67,7 +67,7 @@ async fn apply_never_writes_or_deletes_through_a_symlink_in_the_project() {
         assert!(list.iter().any(|c| c.path == p), "{p} in {list:?}");
     }
 
-    let report = set.apply().await.unwrap();
+    let report = set.apply().await;
     let applied: Vec<_> = report.applied.iter().map(|c| c.path.as_str()).collect();
     assert_eq!(applied, ["/ok.txt"], "{report:?}");
     assert!(report.skipped.is_empty(), "{report:?}");
@@ -124,7 +124,7 @@ async fn a_directory_that_became_a_file_and_a_file_that_became_a_directory_are_a
     )
     .await;
     run(&ws, &dir, "rm out && mkdir out && echo y > out/a").await;
-    let report = ws.changes().unwrap().apply().await.unwrap();
+    let report = ws.changes().unwrap().apply().await;
     assert!(
         report.skipped.is_empty() && report.failed.is_empty(),
         "{report:?}"
@@ -155,7 +155,6 @@ async fn a_change_that_cannot_be_applied_is_reported_and_the_others_still_are() 
     let set = ws.changes().unwrap();
     let report = set.apply().await;
     fs::set_permissions(dir.join("locked"), mode(0o755)).unwrap();
-    let report = report.expect("one failed change is not a failed apply");
     let failed: Vec<_> = report
         .failed
         .iter()

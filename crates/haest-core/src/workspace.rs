@@ -139,13 +139,10 @@ pub trait ChangeSet: Send + Sync {
     /// A unified diff of one change.
     async fn diff(&self, change: &Change) -> String;
     /// Put every change on the real disk, but conflicts (skipped) and
-    /// changes that cannot be applied safely (failed, each with why).
-    ///
-    /// # Errors
-    ///
-    /// Only when the whole apply could not run; a single change that fails
-    /// is reported in [`ApplyReport::failed`].
-    async fn apply(&self) -> std::io::Result<ApplyReport>;
+    /// changes that cannot be applied safely (failed, each with why). A
+    /// change that fails stops no other; the report says what happened to
+    /// each.
+    async fn apply(&self) -> ApplyReport;
 }
 
 /// The world the agent works in: a file system and a shell, one door for both.

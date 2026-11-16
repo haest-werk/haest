@@ -117,10 +117,7 @@ pub async fn apply(rt: &Runtime) {
     let Some(set) = rt.agent().deps().workspace.changes() else {
         return rt.hooks.info(REAL_FS);
     };
-    let report = match set.apply().await {
-        Ok(r) => r,
-        Err(e) => return rt.hooks.error(&format!("Apply failed: {e}")),
-    };
+    let report = set.apply().await;
     match apply_message(&report, &rt.hooks.settings.cwd) {
         (text, true) => rt.hooks.warn(&text),
         (text, false) => rt.hooks.info(&text),

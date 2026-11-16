@@ -75,7 +75,7 @@
 //! assert!(changes.diff(&list[0]).await.contains("+new"));
 //!
 //! // Applied: the change goes to disk, and is no longer listed.
-//! let report = changes.apply().await?;
+//! let report = changes.apply().await;
 //! assert_eq!(report.applied.len(), 1);
 //! assert_eq!(std::fs::read_to_string(project.join("notes.md"))?, "new\n");
 //! assert!(changes.list().await.is_empty());

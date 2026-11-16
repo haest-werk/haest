@@ -91,7 +91,7 @@ async fn apply_puts_every_change_on_disk_after_which_nothing_is_left() {
         applied,
         skipped,
         failed,
-    } = changes(&ws).apply().await.unwrap();
+    } = changes(&ws).apply().await;
     assert_eq!(applied.len(), 4);
     assert!(skipped.is_empty() && failed.is_empty());
     assert_eq!(read(&dir, "edit.txt"), "new line\n");
@@ -107,7 +107,7 @@ async fn a_file_the_human_edited_meanwhile_is_a_conflict_skipped_not_overwritten
     fs::write(dir.join("edit.txt"), "the human was here\n").unwrap();
     let ApplyReport {
         applied, skipped, ..
-    } = changes(&ws).apply().await.unwrap();
+    } = changes(&ws).apply().await;
     let skipped: Vec<_> = skipped.iter().map(|c| c.path.as_str()).collect();
     assert_eq!(skipped, ["/edit.txt"]);
     assert!(applied.iter().all(|c| c.path != "/edit.txt"));
@@ -137,7 +137,7 @@ async fn a_directory_moved_or_copied_whole_is_applied_with_its_files() {
             ("/d3/a.txt", ChangeKind::Added),
         ]
     );
-    changes(&ws).apply().await.unwrap();
+    changes(&ws).apply().await;
     assert!(!dir.join("d1").exists());
     assert_eq!(read(&dir, "d2/a.txt"), "A\n");
     assert_eq!(read(&dir, "d3/a.txt"), "A\n");
@@ -210,7 +210,7 @@ async fn a_symlink_the_sandbox_made_is_listed_and_reported_never_applied_as_a_co
         .unwrap();
     assert!(set.diff(&l).await.contains("keep.txt"));
 
-    let report = set.apply().await.expect("a link is not a failed apply");
+    let report = set.apply().await;
     let failed: Vec<_> = report
         .failed
         .iter()

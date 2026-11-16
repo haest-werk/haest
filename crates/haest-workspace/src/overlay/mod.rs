@@ -27,7 +27,6 @@ mod state;
 
 use std::{
     collections::BTreeMap,
-    io,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -225,7 +224,7 @@ impl ChangeSet for OverlayChanges {
     /// applied, what was skipped (a conflict), and what failed, each with why
     /// (a symlink, a disk error). One that fails stops nothing else, and stays
     /// listed like a conflict.
-    async fn apply(&self) -> io::Result<ApplyReport> {
+    async fn apply(&self) -> ApplyReport {
         let mut report = ApplyReport::default();
         for s in self.scan().await {
             let refused = if s.change.conflict {
@@ -253,6 +252,6 @@ impl ChangeSet for OverlayChanges {
                 None => report.skipped.push(s.change),
             }
         }
-        Ok(report)
+        report
     }
 }
