@@ -87,3 +87,29 @@ async fn a_busy_loop_stops_at_the_shell_calls_own_timeout() {
     assert!(started.elapsed() < Duration::from_secs(5));
     assert_ne!(r.exit_code, 0);
 }
+
+/// What is piped into `js` reaches the script, the ways a Node script reads
+/// it: `process.stdin` iterated, its `data` and `end` events, `/dev/stdin`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pipe_into_js_is_the_scripts_stdin() {
+    let (_t, dir) = tempdir();
+    let ws = sandbox(&dir).await;
+    let script = "import { readFile } from 'fs/promises'
+let it = ''
+for await (const chunk of process.stdin) it += chunk
+let ev = ''
+await new Promise(done => process.stdin.on('data', c => { ev += c }).on('end', done))
+const file = await readFile('/dev/stdin', 'utf8')
+console.log([it, ev, file].map(t => t.trim().split('\\n').length).join(' '))";
+    ws.fs()
+        .write(&dir.join("lines.js"), script.as_bytes())
+        .await
+        .unwrap();
+    let r = ws
+        .shell(
+            "printf 'a\\nb\\nc\\n' | js lines.js",
+            opts(&dir, Duration::from_secs(20)),
+        )
+        .await;
+    assert_eq!((r.stdout.trim(), r.exit_code), ("3 3 3", 0), "{}", r.stderr);
+}

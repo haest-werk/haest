@@ -21,6 +21,7 @@ fn env(fs: &Arc<MemFs>) -> JsEnv {
         fs: fs.clone(),
         cwd: "/p".into(),
         env: Default::default(),
+        stdin: None,
         cancel: CancellationToken::new(),
         ends_at: Some(Instant::now() + Duration::from_secs(20)),
     }

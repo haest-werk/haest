@@ -19,7 +19,7 @@
 //! |---|---|
 //! | `fs`, `fs/promises` | `readFile`, `writeFile`, `appendFile`, `readdir`, `mkdir` (`{ recursive }`), `stat`, `rm` (`{ recursive, force }`), `unlink`, `rename`, `copyFile`, `access`: async only, text only |
 //! | `path` | Node's `path.posix`: `join`, `resolve`, `dirname`, `basename`, `extname`, `relative`, `normalize`, `isAbsolute`, `sep`, `delimiter` |
-//! | `process` | `argv` (`['js', '/abs/script.js', ...args]`), `env` (the shell's exported variables), `cwd()`, `exit(code)`, `stdout.write`, `stderr.write` |
+//! | `process` | `argv` (`['js', '/abs/script.js', ...args]`), `env` (the shell's exported variables), `cwd()`, `exit(code)`, `stdin`, `stdout.write`, `stderr.write` |
 //! | `console` | `log`, `info` and `debug` to stdout; `warn` and `error` to stderr |
 //!
 //! The modules ([`JS_MODULES`]) are imported (`import { readFile } from
@@ -27,8 +27,10 @@
 //! anything else fails the run, and `require` of it throws. Every `*Sync`
 //! name exists and throws, naming the async call to use instead. Paths resolve against the shell's working directory, over
 //! the sandbox's files: in the default sandbox, writes land in its
-//! copy-on-write overlay, not on disk. Top-level `await` works. There is no
-//! stdin: a pipe into `js` is not passed to the script.
+//! copy-on-write overlay, not on disk. Top-level `await` works. What is
+//! piped into `js` is the script's stdin, all there when it starts:
+//! `for await (const chunk of process.stdin)`, `process.stdin.on('data')` /
+//! `on('end')`, or `readFile('/dev/stdin')`.
 //!
 //! # Wiring it into a sandbox shell
 //!
@@ -86,6 +88,9 @@ pub struct JsEnv {
     pub cwd: PathBuf,
     /// The shell's exported variables: the script's `process.env`.
     pub env: BTreeMap<String, String>,
+    /// What is piped into the command (`process.stdin`, `/dev/stdin`); None =
+    /// nothing.
+    pub stdin: Option<String>,
     /// The shell call's interrupt.
     pub cancel: CancellationToken,
     /// The running shell call's end; None = [`JS_TIMEOUT`] from now.
@@ -182,6 +187,7 @@ fn runnable(source: String, path: &Path) -> Result<String, String> {
 ///     fs: fs.clone(),
 ///     cwd: "/work".into(),
 ///     env: Default::default(),
+///     stdin: None,
 ///     cancel: CancellationToken::new(),
 ///     ends_at: Some(Instant::now() + Duration::from_secs(20)),
 /// };
@@ -232,6 +238,7 @@ pub async fn run_js(path: &Path, code: &str, args: &[String], env: &JsEnv) -> Ex
         cwd: env.cwd.clone(),
         argv,
         env: env.env.clone(),
+        stdin: env.stdin.clone(),
         exit_code: exit_code.clone(),
     };
     let left = env.ends_at.map_or(JS_TIMEOUT, |end| {

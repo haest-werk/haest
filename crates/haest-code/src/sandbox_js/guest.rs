@@ -78,8 +78,9 @@ const PRELUDE: &str = r#"{
   const noSync = n => () => { throw new Error('fs.' + n + ' is not available in the sandbox: its file system is async. Use await fs.promises.' + asyncName(n) + '(...) or import { ' + asyncName(n) + " } from 'fs/promises'."); };
   const stat = async p => { const s = await call('stat', p); return { ...s, mtime: new Date(s.mtime), isFile: () => s.isFile, isDirectory: () => s.isDirectory }; };
   const access = async p => { if (!(await call('exists', p))) throw Object.assign(new Error("ENOENT: no such file or directory, access '" + p + "'"), { code: 'ENOENT' }); };
+  const stdinText = __stdin === null ? '' : __stdin;
   const promises = {
-    readFile: p => call('readFile', p), writeFile: (p, d) => call('writeFile', p, String(d)), appendFile: (p, d) => call('appendFile', p, String(d)),
+    readFile: p => p === '/dev/stdin' ? Promise.resolve(stdinText) : call('readFile', p), writeFile: (p, d) => call('writeFile', p, String(d)), appendFile: (p, d) => call('appendFile', p, String(d)),
     readdir: p => call('readdir', p), mkdir: (p, o) => call('mkdir', p, !!(o && o.recursive)), stat,
     rm: (p, o) => call('rm', p, !!(o && o.recursive), !!(o && o.force)), unlink: p => call('rm', p, false, false),
     rename: (a, b) => call('mv', a, b), copyFile: (a, b) => call('cp', a, b), access,
@@ -95,10 +96,29 @@ const PRELUDE: &str = r#"{
     return m;
   };
   const write = level => ({ write: s => { __log(level, String(s).replace(/\n$/, '')); return true; } });
+  // What was piped in, all there at once: one chunk to iterate, or one 'data' then 'end'.
+  const listeners = { data: [], end: [] };
+  let emitted = false;
+  const stdin = {
+    isTTY: false,
+    setEncoding: () => stdin,
+    on: (event, f) => {
+      if (listeners[event]) listeners[event].push(f);
+      if (!emitted) {
+        emitted = true;
+        Promise.resolve().then(() => {
+          if (stdinText) listeners.data.forEach(g => g(stdinText));
+          listeners.end.forEach(g => g());
+        });
+      }
+      return stdin;
+    },
+    [Symbol.asyncIterator]: async function* () { if (stdinText) yield stdinText; },
+  };
   globalThis.process = {
     argv: __argv, env: __env, cwd: () => __cwd,
     exit: code => { __exit(String(code ?? 0)); throw new Error('process.exit(' + (code ?? 0) + ')'); },
-    stdout: write('log'), stderr: write('error'),
+    stdin, stdout: write('log'), stderr: write('error'),
   };
 }"#;
 
@@ -134,6 +154,8 @@ pub(crate) struct JsScript {
     pub cwd: PathBuf,
     pub argv: Vec<String>,
     pub env: BTreeMap<String, String>,
+    /// What was piped in; None = nothing.
+    pub stdin: Option<String>,
     /// What the script passed to process.exit(), once it did.
     pub exit_code: Arc<Mutex<Option<i32>>>,
 }
@@ -221,6 +243,7 @@ pub(crate) fn js_script_spec(script: JsScript, filename: &str) -> VmSpec {
     let mut values = serde_json::Map::new();
     values.insert("__argv".into(), json!(script.argv));
     values.insert("__env".into(), json!(script.env));
+    values.insert("__stdin".into(), json!(script.stdin));
     values.insert("__cwd".into(), json!(script.cwd.display().to_string()));
     let (fs, cwd) = (script.fs.clone(), script.cwd.clone());
     let fs_fn: HostFn = Arc::new(move |args| {

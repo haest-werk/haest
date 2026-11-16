@@ -45,10 +45,12 @@ impl ShellCommand for JsShellCommand {
     }
 
     async fn run(&self, call: ShellCall) -> ExecResult {
+        let stdin = call.stdin_text().map(|text| text.into_owned());
         let env = JsEnv {
             fs: call.fs,
             cwd: call.cwd,
             env: call.env,
+            stdin,
             cancel: call.cancel,
             ends_at: Some(call.ends_at),
         };
