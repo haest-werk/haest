@@ -76,11 +76,11 @@ async fn spill(content: &str, tool_name: &str, ctx: &ToolContext) -> String {
     let path = dir.join(format!("{ms}-{}{id}.txt", file_safe(tool_name)));
     // Through the workspace, so the Read / Grep the notice points at can see it.
     let fs = ctx.workspace.fs();
-    let written = match ensure_dir(fs.as_ref(), dir).await {
-        Ok(()) => fs.write(&path, content.as_bytes()).await,
-        Err(e) => Err(e),
+    let written = async {
+        ensure_dir(fs.as_ref(), dir).await?;
+        fs.write(&path, content.as_bytes()).await
     };
-    match written {
+    match written.await {
         Ok(()) => format!(
             "the full output is in {} -- read it in pieces with Read (offset/limit) or search it with Grep",
             path.display()

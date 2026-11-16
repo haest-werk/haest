@@ -129,11 +129,11 @@ impl ToolDeferral {
     /// Every tool `history` called counts as loaded: a resumed conversation
     /// keeps the tools it was using.
     pub fn load_called(&self, history: &[Message]) {
-        let called = history.iter().flat_map(|m| match m {
-            Message::Assistant(a) => a.tool_calls().map(|c| c.name.clone()).collect(),
-            _ => Vec::new(),
+        let answers = history.iter().filter_map(|m| match m {
+            Message::Assistant(a) => Some(a),
+            _ => None,
         });
-        self.load(called);
+        self.load(answers.flat_map(|a| a.tool_calls()).map(|c| c.name.clone()));
     }
 
     fn is_deferrable(&self, t: &dyn Tool) -> bool {

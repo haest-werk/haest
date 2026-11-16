@@ -209,15 +209,20 @@ async fn a_bad_input_goes_back_verbatim_and_a_failure_is_named() {
     }
 }
 
-#[tokio::test]
-async fn arguments_that_were_not_json_are_answered_without_running_the_tool() {
+/// Tool `T`, and whether it ran.
+fn probe() -> (ToolIndex, Arc<AtomicBool>) {
     let ran = Arc::new(AtomicBool::new(false));
     let seen = ran.clone();
     let tool = FnTool::arc("T", false, move |_, _| {
         seen.store(true, Ordering::SeqCst);
         async { Ok(ToolOutput::text("ran")) }
     });
-    let tools = ToolIndex::new(vec![tool]);
+    (ToolIndex::new(vec![tool]), ran)
+}
+
+#[tokio::test]
+async fn arguments_that_were_not_json_are_answered_without_running_the_tool() {
+    let (tools, ran) = probe();
     let ctx = ctx_on(Arc::new(MemWorkspace::default()), None);
     let out = execute_tool(&tools, &call("t1", "T", json!({"_unparsed": "{bad"})), &ctx).await;
     assert!(out.is_error && out.content.contains("{bad"));
@@ -226,13 +231,7 @@ async fn arguments_that_were_not_json_are_answered_without_running_the_tool() {
 
 #[tokio::test]
 async fn a_cancelled_turn_answers_a_call_as_interrupted_without_running_it() {
-    let ran = Arc::new(AtomicBool::new(false));
-    let seen = ran.clone();
-    let tool = FnTool::arc("T", false, move |_, _| {
-        seen.store(true, Ordering::SeqCst);
-        async { Ok(ToolOutput::text("ran")) }
-    });
-    let tools = ToolIndex::new(vec![tool]);
+    let (tools, ran) = probe();
     let ctx = ctx_on(Arc::new(MemWorkspace::default()), None);
     ctx.cancel.cancel();
     let out = run_call(&tools, &call("t1", "T", json!({})), &ctx).await;
@@ -286,14 +285,4 @@ async fn a_tool_that_panics_is_a_failed_result_and_the_loop_goes_on() {
         "{}",
         out.content
     );
-}
-
-#[tokio::test]
-async fn an_empty_string_for_a_number_is_no_number() {
-    let input = json!({"offset": "", "limit": "  ", "n": "3"});
-    let map = input.as_object().unwrap();
-    assert_eq!(opt_num(map, "offset").unwrap(), None);
-    assert_eq!(opt_num(map, "limit").unwrap(), None);
-    assert_eq!(opt_num(map, "n").unwrap(), Some(3.0));
-    assert!(opt_num(&json!({"x": "abc"}).as_object().unwrap().clone(), "x").is_err());
 }

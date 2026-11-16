@@ -225,31 +225,26 @@ pub fn opt_str<'a>(input: &'a JsonMap, key: &str) -> Result<Option<&'a str>, Too
 
 /// A number, also as a numeric string (models send both).
 pub fn opt_num(input: &JsonMap, key: &str) -> Result<Option<f64>, ToolError> {
-    let bad = || ToolError::Input(format!("\"{key}\" must be a number"));
-    match input.get(key) {
-        None | Some(Value::Null) => Ok(None),
+    let n = match input.get(key) {
+        None | Some(Value::Null) => return Ok(None),
         // Models send "" for a number they mean to leave out.
-        Some(Value::String(s)) if s.trim().is_empty() => Ok(None),
-        Some(Value::Number(n)) => n
-            .as_f64()
-            .filter(|f| f.is_finite())
-            .map(Some)
-            .ok_or_else(bad),
-        Some(Value::String(s)) => s
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|f| f.is_finite())
-            .map(Some)
-            .ok_or_else(bad),
-        Some(_) => Err(bad()),
-    }
+        Some(Value::String(s)) if s.trim().is_empty() => return Ok(None),
+        Some(Value::Number(n)) => n.as_f64(),
+        Some(Value::String(s)) => s.trim().parse::<f64>().ok(),
+        Some(_) => None,
+    };
+    n.filter(|f| f.is_finite())
+        .map(Some)
+        .ok_or_else(|| ToolError::Input(format!("\"{key}\" must be a number")))
 }
 
 /// `true` or `"true"`; anything else is false.
 pub fn opt_bool(input: &JsonMap, key: &str) -> bool {
-    matches!(input.get(key), Some(Value::Bool(true)))
-        || matches!(input.get(key), Some(Value::String(s)) if s == "true")
+    match input.get(key) {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::String(s)) => s == "true",
+        _ => false,
+    }
 }
 
 /// Keep the head and tail of long output; the middle is where nothing useful
@@ -285,11 +280,14 @@ mod tests {
 
     #[test]
     fn input_helpers_accept_what_models_send() {
-        let i = map(json!({"a": "x", "n": "42", "b": "true", "e": ""}));
+        let i = map(json!({"a": "x", "n": "42", "b": "true", "e": "", "blank": "  "}));
         assert_eq!(req_str(&i, "a").unwrap(), "x");
         assert!(req_str(&i, "e").is_err());
         assert_eq!(opt_str(&i, "e").unwrap(), None);
         assert_eq!(opt_num(&i, "n").unwrap(), Some(42.0));
+        // "" for a number is no number.
+        assert_eq!(opt_num(&i, "e").unwrap(), None);
+        assert_eq!(opt_num(&i, "blank").unwrap(), None);
         assert!(opt_bool(&i, "b"));
         assert!(opt_num(&map(json!({"n": "x"})), "n").is_err());
     }
