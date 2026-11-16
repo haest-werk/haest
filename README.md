@@ -6,8 +6,13 @@ the `haest` CLI, remote-claude's agent host and brain.
 
 It is a port of the TypeScript haest in remote-claude (`src/haest-agent-host`).
 Session files keep the TS haest's JSON shape, so either haest resumes the other's.
-Decisions and status live in [PLAN.md](PLAN.md), working rules in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Decisions and status live in
+[PLAN.md](https://github.com/haest-werk/haest/blob/main/PLAN.md), working rules in
+[CONTRIBUTING.md](https://github.com/haest-werk/haest/blob/main/CONTRIBUTING.md).
+
+On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
+[docs.rs](https://docs.rs/haest/)), source at
+[github.com/haest-werk/haest](https://github.com/haest-werk/haest/).
 
 ## Crates
 
@@ -45,30 +50,29 @@ there. The rest is opt-in:
 | `runtime` | `haest::runtime` (the conversation built from what it is handed) and everything above but `config` | no |
 
 ```toml
-haest = { git = "ssh://git@github.com/haest-werk/haest.git" }
+haest = "0.1"
 # the whole conversation with haest's own files, variables and flags (the CLI's way)
-haest = { git = "ssh://git@github.com/haest-werk/haest.git", features = ["runtime", "config"] }
+haest = { version = "0.1", features = ["runtime", "config"] }
 # a host with its own transport, files and tools (the brain example)
-haest = { git = "ssh://git@github.com/haest-werk/haest.git", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
+haest = { version = "0.1", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
-
-The repo is private: cargo fetches it over ssh with your GitHub key (the
-agent's, no `git-fetch-with-cli` needed). Add `rev = "<commit>"` to pin one.
 
 ## Run the CLI
 
 ```sh
+cargo install haest-cli               # puts `haest` on your PATH
 export OPENROUTER_API_KEY=...         # openrouter: models; anthropic: takes ANTHROPIC_API_KEY, openai: OPENAI_API_KEY
-cargo run -p haest-cli -- -p "say hi"  # bare: a model and nothing else
-cargo run -p haest-cli -- --tools read,grep,glob -p "what is this project?"
-cargo run -p haest-cli -- --profile claude   # a conversation with what haest reads of Claude Code
-cargo run -p haest-cli -- --resume     # continue the latest session in this directory
-cargo run -p haest-cli -- settings     # every setting, its value and where it came from
-cargo run -p haest-cli -- models       # the models haest knows
+haest -p "say hi"                     # bare: a model and nothing else
+haest --tools read,grep,glob -p "what is this project?"
+haest --profile claude                # a conversation with what haest reads of Claude Code
+haest --resume                        # continue the latest session in this directory
+haest settings                        # every setting, its value and where it came from
+haest models                          # the models haest knows
 ```
 
-Every provider's key and endpoint variable is in
-[docs/environment.md](docs/environment.md#provider-keys).
+From a checkout, `cargo run -p haest-cli --` takes the same arguments. Every
+provider's key and endpoint variable is in
+[docs/environment.md](https://github.com/haest-werk/haest/blob/main/docs/environment.md#provider-keys).
 
 ## Settings
 
@@ -117,9 +121,9 @@ The rest is in `docs/`:
 
 | Doc | What |
 |---|---|
-| [docs/settings.md](docs/settings.md) | every setting: what it does, what it takes, its default, where it may be set, and an example in all three spellings; the built-in profiles. Written from the registry, so it is always the code's |
-| [docs/environment.md](docs/environment.md) | the variables haest reads (`HAEST_*`, `HOME`, the XDG dirs, provider keys), what a process haest starts gets (`env_passthrough`), passing a variable on purpose (`-E`, `[env]`), `${NAME}` in config files, recipes |
-| [docs/examples/](docs/examples/) | a whole `config.toml`, a project's `.haest/config.toml`, `.mcp.json`, `providers.json` and `HAEST_*` exports, each loaded by a test |
+| [docs/settings.md](https://github.com/haest-werk/haest/blob/main/docs/settings.md) | every setting: what it does, what it takes, its default, where it may be set, and an example in all three spellings; the built-in profiles. Written from the registry, so it is always the code's |
+| [docs/environment.md](https://github.com/haest-werk/haest/blob/main/docs/environment.md) | the variables haest reads (`HAEST_*`, `HOME`, the XDG dirs, provider keys), what a process haest starts gets (`env_passthrough`), passing a variable on purpose (`-E`, `[env]`), `${NAME}` in config files, recipes |
+| [docs/examples/](https://github.com/haest-werk/haest/tree/main/docs/examples/) | a whole `config.toml`, a project's `.haest/config.toml`, `.mcp.json`, `providers.json` and `HAEST_*` exports, each loaded by a test |
 
 ### Trust
 
@@ -155,7 +159,7 @@ the prompt it is announced above the line you are typing and runs when you
 press Enter. `haest -p` waits for background subagents before it exits.
 
 More providers go in `<config dir>/providers.json`
-([an example](docs/examples/providers.json)), your mods in
+([an example](https://github.com/haest-werk/haest/blob/main/docs/examples/providers.json)), your mods in
 `<config dir>/mods`; sessions are saved under `~/.local/share/haest/sessions`
 (`data_dir`). In the REPL, `/help` lists the commands (`/plan` included).
 
@@ -213,7 +217,7 @@ each applied to the agent, the host and the session file together. A host that
 owns some parts takes the runtime's pieces, or only
 `haest::tools::builtin_tools_where(|w| settings.tools.has(w), ..)`.
 
-[`crates/haest/examples/brain`](crates/haest/examples/brain/) wires all of
+[`crates/haest/examples/brain`](https://github.com/haest-werk/haest/tree/main/crates/haest/examples/brain/) wires all of
 them the way brain does, against fakes (no network, no keys), and asserts each
 one. Its settings are written out in Rust, one per kind of run; no `HAEST_*`
 variable reaches it:
@@ -229,9 +233,9 @@ a tool that titles its calls, haest's `SubagentHub` over its `SubagentHost` and
 behind haest's Skill tool (`SkillSet`, `InlineSkills`), its own tools held back
 behind ToolSearch with a list that always loads (`DeferredTools`,
 `ToolDeferral::deferring_all_except`) -- is
-[`crates/haest/tests/plug_in.rs`](crates/haest/tests/plug_in.rs), from
+[`crates/haest/tests/plug_in.rs`](https://github.com/haest-werk/haest/blob/main/crates/haest/tests/plug_in.rs), from
 outside the crate, the public API only.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](https://github.com/haest-werk/haest/blob/main/LICENSE).
