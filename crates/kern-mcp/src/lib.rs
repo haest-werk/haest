@@ -1,6 +1,7 @@
 //! MCP client hub: connects to MCP servers and exposes their tools as kern
-//! tools named `mcp__<server>__<tool>` (the Claude Code convention, which every
-//! provider's function-name charset accepts), canonical kind `mcp.<server>.<tool>`.
+//! tools named `mcp__<server>__<tool>` (the Claude Code convention), rewritten to
+//! what every provider accepts and unique across the hub ([`mcp_tool_name`]),
+//! canonical kind `mcp.<server>.<tool>` (the original names).
 //!
 //! Sources: whatever the host adds (its own MCP endpoint, when it has one) plus the
 //! project's `.mcp.json` (Claude Code format, [`load_project_mcp_config`]). A server

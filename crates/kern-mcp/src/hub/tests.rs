@@ -217,5 +217,6 @@ fn a_host_can_spawn_connect_and_close() {
     spawnable(hub.close());
 }
 
+mod names;
 #[cfg(unix)]
 mod stdio;

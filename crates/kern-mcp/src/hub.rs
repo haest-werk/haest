@@ -2,6 +2,7 @@
 //! shuts every server down on [`McpHub::close`] -- or when it is dropped.
 
 use std::{
+    collections::HashSet,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -20,7 +21,7 @@ use rmcp::{
 
 use crate::{
     config::{McpServerConfig, McpTransport},
-    tool::McpTool,
+    tool::{McpTool, unique_tool_name},
     transport,
 };
 
@@ -45,6 +46,36 @@ struct Server {
     tools: Vec<Arc<dyn Tool>>,
 }
 
+/// A server that answered, its tools listed but not yet named.
+struct Started {
+    client: Client,
+    listed: Vec<rmcp::model::Tool>,
+}
+
+/// Keep `started` beside `servers`, each of its tools named apart from every
+/// tool already held: two servers or tools that differ only in characters a
+/// provider rejects, or past the 64th, never share a name.
+fn admit(servers: &mut Vec<Server>, name: &str, started: Started) {
+    let mut taken: HashSet<String> = servers
+        .iter()
+        .flat_map(|s| s.tools.iter().map(|t| t.name().to_string()))
+        .collect();
+    let peer = started.client.peer().clone();
+    let tools = started
+        .listed
+        .into_iter()
+        .map(|t| {
+            let unique = unique_tool_name(name, &t.name, &taken);
+            taken.insert(unique.clone());
+            Arc::new(McpTool::new(name, unique, t, peer.clone())) as Arc<dyn Tool>
+        })
+        .collect();
+    servers.push(Server {
+        client: started.client,
+        tools,
+    });
+}
+
 /// Connected MCP servers. Share it (`Arc<McpHub>`) as the loop's [`ToolSource`]:
 /// servers connected later show up on the next model call.
 #[derive(Default)]
@@ -64,7 +95,7 @@ async fn close_quietly(mut client: Client) {
 }
 
 /// Initialize, then list the tools; a failure closes what was opened.
-async fn start<T, E, A>(name: &str, transport: T) -> Result<Server, String>
+async fn start<T, E, A>(name: &str, transport: T) -> Result<Started, String>
 where
     T: IntoTransport<RoleClient, E, A>,
     E: std::error::Error + Send + Sync + 'static,
@@ -89,15 +120,10 @@ where
             return Err(timed_out(name, "listTools", CONNECT_TIMEOUT));
         }
     };
-    let peer = client.peer().clone();
-    let tools = listed
-        .into_iter()
-        .map(|t| Arc::new(McpTool::new(name, t, peer.clone())) as Arc<dyn Tool>)
-        .collect();
-    Ok(Server { client, tools })
+    Ok(Started { client, listed })
 }
 
-async fn start_config(cfg: &McpServerConfig, handed: &ChildEnv) -> Result<Server, String> {
+async fn start_config(cfg: &McpServerConfig, handed: &ChildEnv) -> Result<Started, String> {
     match &cfg.transport {
         McpTransport::Stdio {
             command,
@@ -130,14 +156,19 @@ impl McpHub {
 
     /// Connect every server at once. One that fails is logged and recorded in
     /// [`failures`](Self::failures), never returned as an error. Tools keep the
-    /// order of `configs`.
+    /// order of `configs`, and so does the naming (the first keeps a contested name).
     pub async fn connect(&self, configs: &[McpServerConfig], log: &(dyn Fn(&str) + Sync)) {
         let started = join_all(configs.iter().map(|cfg| async move {
             let res = start_config(cfg, &self.env).await;
             self.settle(&cfg.name, res, log)
         }))
         .await;
-        self.lock_servers().extend(started.into_iter().flatten());
+        let mut servers = self.lock_servers();
+        for (cfg, started) in configs.iter().zip(started) {
+            if let Some(started) = started {
+                admit(&mut servers, &cfg.name, started);
+            }
+        }
     }
 
     /// PLUG POINT: connect a server over any rmcp transport (an in-process
@@ -152,21 +183,21 @@ impl McpHub {
         E: std::error::Error + Send + Sync + 'static,
     {
         let res = start(name, transport).await;
-        if let Some(server) = self.settle(name, res, log) {
-            self.lock_servers().push(server);
+        if let Some(started) = self.settle(name, res, log) {
+            admit(&mut self.lock_servers(), name, started);
         }
     }
 
     fn settle(
         &self,
         name: &str,
-        res: Result<Server, String>,
+        res: Result<Started, String>,
         log: &(dyn Fn(&str) + Sync),
-    ) -> Option<Server> {
+    ) -> Option<Started> {
         match res {
-            Ok(server) => {
-                log(&format!("mcp {name}: {} tools", server.tools.len()));
-                Some(server)
+            Ok(started) => {
+                log(&format!("mcp {name}: {} tools", started.listed.len()));
+                Some(started)
             }
             Err(error) => {
                 log(&format!("mcp {name}: FAILED {error}"));

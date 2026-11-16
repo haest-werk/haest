@@ -1,7 +1,8 @@
 //! A real MCP server for tests, on the other end of an in-memory duplex: no
 //! process, no network. Tools: `echo` (text, read-only), `shot` (an image),
 //! `fail` (an error result), `reject` (a JSON-RPC error), `hang` (answers only by
-//! noticing it was cancelled).
+//! noticing it was cancelled), plus one tool per entry of `names`, answering
+//! `<label>:<its name>` (which server and which tool a call reached).
 
 use std::sync::Arc;
 
@@ -22,6 +23,21 @@ pub struct TestServer {
     pub hanging: Arc<Notify>,
     /// Signalled when a `hang` call is cancelled by the client.
     pub cancelled: Arc<Notify>,
+    /// Names the answers of the `names` tools.
+    pub label: String,
+    /// Extra tools, listed after the fixed ones under exactly these names.
+    pub names: Vec<String>,
+}
+
+impl TestServer {
+    /// A server labelled `label` with these extra tools.
+    pub fn named(label: &str, names: &[&str]) -> Self {
+        Self {
+            label: label.into(),
+            names: names.iter().map(|n| n.to_string()).collect(),
+            ..Self::default()
+        }
+    }
 }
 
 fn schema(v: Value) -> Arc<serde_json::Map<String, Value>> {
@@ -40,7 +56,7 @@ impl ServerHandler for TestServer {
     ) -> Result<ListToolsResult, ErrorData> {
         let text = json!({"type": "object", "properties": {"text": {"type": "string"}}});
         let empty = json!({"type": "object", "properties": {}});
-        Ok(ListToolsResult::with_all_items(vec![
+        let mut tools = vec![
             Tool::new("echo", "Echo text back", schema(text))
                 .with_annotations(ToolAnnotations::new().read_only(true)),
             Tool::new_with_raw("shot", None, schema(empty.clone())),
@@ -50,8 +66,14 @@ impl ServerHandler for TestServer {
                 "Answers with a JSON-RPC error",
                 schema(empty.clone()),
             ),
-            Tool::new("hang", "Never answers", schema(empty)),
-        ]))
+            Tool::new("hang", "Never answers", schema(empty.clone())),
+        ];
+        tools.extend(
+            self.names
+                .iter()
+                .map(|n| Tool::new(n.clone(), "Answers with its name", schema(empty.clone()))),
+        );
+        Ok(ListToolsResult::with_all_items(tools))
     }
 
     async fn call_tool(
@@ -75,6 +97,9 @@ impl ServerHandler for TestServer {
                 context.ct.cancelled().await;
                 self.cancelled.notify_one();
                 return Err(ErrorData::internal_error("cancelled", None));
+            }
+            named if self.names.iter().any(|n| n == named) => {
+                CallToolResult::success(vec![ContentBlock::text(format!("{}:{named}", self.label))])
             }
             other => {
                 return Err(ErrorData::invalid_params(format!("refused {other}"), None));

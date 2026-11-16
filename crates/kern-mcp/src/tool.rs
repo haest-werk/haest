@@ -1,5 +1,7 @@
 //! One MCP server tool as a kern [`Tool`].
 
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use kern_core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput};
 use rmcp::{
@@ -13,13 +15,48 @@ use crate::{hub::CALL_TIMEOUT, result::mcp_result_to_output};
 
 /// The longest tool name every provider accepts.
 const MAX_NAME: usize = 64;
+/// `_` and 8 hex digits: what a name that is too long or already taken ends in.
+const TAG_LEN: usize = 9;
 
-/// `mcp__<server>__<tool>`, cut to 64 characters.
+/// `mcp__<server>__<tool>` as every provider accepts it (`[A-Za-z0-9_-]`, at most
+/// 64): any other character becomes `_`, as Claude Code does, and a name over 64
+/// is cut and tagged with a hash of the two original names. The name a tool gets
+/// when no other tool has it ([`unique_tool_name`] settles that).
 pub fn mcp_tool_name(server: &str, tool: &str) -> String {
-    format!("mcp__{server}__{tool}")
+    unique_tool_name(server, tool, &HashSet::new())
+}
+
+/// [`mcp_tool_name`], unless `taken` has it: then the first tagged name `taken`
+/// does not have. The tool keeps its own name for calls; this one is the model's.
+pub(crate) fn unique_tool_name(server: &str, tool: &str, taken: &HashSet<String>) -> String {
+    let plain: String = format!("mcp__{server}__{tool}")
         .chars()
-        .take(MAX_NAME)
-        .collect()
+        .map(|c| match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '_' | '-' => c,
+            _ => '_',
+        })
+        .collect();
+    if plain.len() <= MAX_NAME && !taken.contains(&plain) {
+        return plain;
+    }
+    // ASCII by now, so a byte cut is a character cut.
+    let stem = &plain[..plain.len().min(MAX_NAME - TAG_LEN)];
+    (0u32..)
+        .map(|salt| format!("{stem}_{:08x}", fnv1a(&[server, "\0", tool], salt)))
+        .find(|name| !taken.contains(name))
+        .expect("a u32 of salts outlasts any server's tool list")
+}
+
+/// FNV-1a over the parts then the salt: stable across builds and platforms, so
+/// a tagged name is the same every run (a resumed session's calls still match).
+fn fnv1a(parts: &[&str], salt: u32) -> u32 {
+    let bytes = parts
+        .iter()
+        .flat_map(|p| p.bytes())
+        .chain(salt.to_le_bytes());
+    bytes.fold(0x811c_9dc5, |h, b| {
+        (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+    })
 }
 
 /// Canonical kind of an MCP tool: `mcp.<server>.<tool>`.
@@ -31,8 +68,9 @@ pub fn mcp_kind(server: &str, tool: &str) -> String {
 /// connected; after the hub closes, a call fails (the transport is gone).
 pub struct McpTool {
     server: String,
-    /// The tool's own name on its server.
+    /// The tool's own name on its server: what a call asks for.
     tool: String,
+    /// The name the model sees, unique in its hub ([`unique_tool_name`]).
     name: String,
     kind: String,
     read_only: bool,
@@ -42,14 +80,19 @@ pub struct McpTool {
 }
 
 impl McpTool {
-    pub(crate) fn new(server: &str, t: rmcp::model::Tool, peer: Peer<RoleClient>) -> Self {
+    pub(crate) fn new(
+        server: &str,
+        name: String,
+        t: rmcp::model::Tool,
+        peer: Peer<RoleClient>,
+    ) -> Self {
         let description = t.description.as_deref().map_or_else(
             || format!("{} (MCP server {server})", t.name),
             str::to_string,
         );
         Self {
             server: server.to_string(),
-            name: mcp_tool_name(server, &t.name),
+            name,
             kind: mcp_kind(server, &t.name),
             // Only the server's own word makes an MCP tool parallel-safe; unannotated runs alone.
             read_only: t
@@ -134,8 +177,26 @@ mod tests {
     fn names_follow_the_claude_code_convention_and_fit_every_provider() {
         assert_eq!(mcp_tool_name("srv", "echo"), "mcp__srv__echo");
         assert_eq!(mcp_kind("srv", "echo"), "mcp.srv.echo");
+        // What Claude Code calls them, so an allowlist written for it still matches.
+        assert_eq!(mcp_tool_name("docs.site", "a b/é"), "mcp__docs_site__a_b__");
         let long = mcp_tool_name("server", &"t".repeat(100));
-        assert_eq!(long.chars().count(), 64);
+        assert_eq!(long.len(), 64);
         assert!(long.starts_with("mcp__server__t"));
+        // The same tool gets the same name every run.
+        assert_eq!(long, mcp_tool_name("server", &"t".repeat(100)));
+    }
+
+    #[test]
+    fn a_taken_name_is_tagged_and_the_tag_differs_per_original() {
+        let plain = mcp_tool_name("s", "a.b");
+        let taken = HashSet::from([plain.clone()]);
+        let dot = unique_tool_name("s", "a.b", &taken);
+        let underscore = unique_tool_name("s", "a_b", &taken);
+        assert!(!taken.contains(&dot) && !taken.contains(&underscore));
+        assert_ne!(dot, underscore);
+        assert!(dot.len() <= 64 && underscore.len() <= 64);
+        // Even when the tagged name is taken too, there is a free one.
+        let both = HashSet::from([plain, dot]);
+        assert!(!both.contains(&unique_tool_name("s", "a.b", &both)));
     }
 }
