@@ -14,7 +14,7 @@
 //!   - each call goes through the SAME tool the model calls directly (the
 //!     [`ToolSource`], read per run), so whatever wraps the model's tools -- plan
 //!     mode, approvals -- judges every inner call too
-//!   - writes run alone, reads share a gate ([`crate::call_gate`]); [`MAX_CALLS`]
+//!   - writes run alone, reads share a gate (`call_gate.rs`); [`MAX_CALLS`]
 //!     calls, [`MAX_SEEN`] pictures, [`VM_MEMORY_BYTES`] and a wall-clock deadline
 //!     per run; a fresh engine every run
 //!
