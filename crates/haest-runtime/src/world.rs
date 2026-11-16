@@ -6,12 +6,12 @@
 //! calls them itself.
 
 use std::{
+    io,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, bail};
 use haest_settings::Settings;
 
 use crate::{
@@ -110,15 +110,38 @@ pub async fn kill_jobs(jobs: &JobHub) -> usize {
     ids.len()
 }
 
+/// Why [`workspace_for`] could not open the workspace the settings pick.
+#[derive(Debug, thiserror::Error)]
+pub enum WorkspaceError {
+    /// `workspace = real` in a [`World::Fs`]: the real workspace edits the
+    /// real disk, and this host hands haest its own files.
+    #[error("workspace = real needs the real disk; this host hands haest its own files")]
+    RealNeedsDisk,
+    /// The spill dir could not be made, or made private.
+    #[error("creating the spill dir {}", path.display())]
+    SpillDir {
+        /// The spill dir.
+        path: PathBuf,
+        /// What making it hit.
+        #[source]
+        source: io::Error,
+    },
+    /// The sandbox did not open over the cwd and its mounts.
+    #[error("opening the sandbox")]
+    Sandbox(#[source] io::Error),
+}
+
 /// The spill dir on the disk, made private (0700) as the session dir is:
 /// spilled output is file contents and command output.
-async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> anyhow::Result<()> {
+async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> Result<(), WorkspaceError> {
     let made = async {
         ensure_dir(fs, spill).await?;
         fs.chmod(spill, 0o700).await
     };
-    made.await
-        .with_context(|| format!("creating the spill dir {}", spill.display()))
+    made.await.map_err(|source| WorkspaceError::SpillDir {
+        path: spill.to_path_buf(),
+        source,
+    })
 }
 
 /// The `workspace` setting's workspace in this world. The disk's sandbox
@@ -132,9 +155,9 @@ async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> anyhow::Result<()> {
 ///
 /// # Errors
 ///
-/// When `workspace = real` in a [`World::Fs`] (the real workspace needs the
-/// real disk), when the spill dir cannot be made, or when the sandbox cannot
-/// open.
+/// A [`WorkspaceError`]: `workspace = real` in a [`World::Fs`] (the real
+/// workspace needs the real disk), a spill dir that cannot be made, a sandbox
+/// that cannot open.
 pub async fn workspace_for(
     s: &Settings,
     world: &World,
@@ -142,7 +165,7 @@ pub async fn workspace_for(
     skill_dirs: &[PathBuf],
     spill: &Path,
     remedies: Remedies,
-) -> anyhow::Result<Arc<dyn Workspace>> {
+) -> Result<Arc<dyn Workspace>, WorkspaceError> {
     let fs = world.fs();
     let ws = match (s.workspace, world.child_env(passed_env)) {
         (WorkspaceMode::Shut, _) => return Ok(Arc::new(ShutWorkspace)),
@@ -150,9 +173,7 @@ pub async fn workspace_for(
             private_spill_dir(fs.as_ref(), spill).await?;
             return Ok(Arc::new(RealWorkspace::new(env)));
         }
-        (WorkspaceMode::Real, None) => {
-            bail!("workspace = real needs the real disk; this host hands haest its own files")
-        }
+        (WorkspaceMode::Real, None) => return Err(WorkspaceError::RealNeedsDisk),
         (WorkspaceMode::Sandbox, None) => SandboxWorkspace::over(fs),
         (WorkspaceMode::Sandbox, Some(_)) => {
             // The spill dir is mounted read-write, so the path in a spill notice is real.
@@ -165,7 +186,7 @@ pub async fn workspace_for(
             }
             SandboxWorkspace::open(mounts)
                 .await
-                .context("opening the sandbox")?
+                .map_err(WorkspaceError::Sandbox)?
         }
     };
     let ws = sandbox_commands().into_iter().fold(

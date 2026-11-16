@@ -11,9 +11,9 @@ use std::{
 use haest_settings::Settings;
 
 use crate::{
-    Agents, Runtime, RuntimeHooks, Ui,
+    Agents, BuildError, Runtime, RuntimeHooks, Ui,
     haest::{
-        Agent, AgentDeps, AgentOptions, ChildEnv, KeySource, Workspace,
+        Agent, AgentDeps, AgentOptions, ChildEnv, KeySource, ModelResolver, Workspace,
         core::deferred_tools::ToolDeferral,
         core::fs::Fs,
         core::ledger::Ledger,
@@ -33,7 +33,7 @@ use crate::{
     prompt::{AgentPrompt, RuntimePrompt, skill_options},
     store::{create, open_session, record_given, record_start, restore, start_on},
     tools::{MainTools, WrappedTools, image_options, own_tools},
-    world::{World, connect_mcp, jobs_for, workspace_for},
+    world::{World, WorkspaceError, connect_mcp, jobs_for, workspace_for},
 };
 
 /// Everything a conversation is built from. haest reads no file, variable or
@@ -139,7 +139,7 @@ async fn find(
     passed_env: &ChildEnv,
     fs: &Arc<dyn Fs>,
     spill: &Path,
-) -> anyhow::Result<Found> {
+) -> Result<Found, WorkspaceError> {
     let skill_roots = SkillScanRoots::find(fs.as_ref(), &skill_options(&hooks.settings)).await;
     let skills = Arc::new(Mutex::new(skills_in(fs.as_ref(), &skill_roots).await));
     let skill_dirs = skill_roots.dirs();
@@ -190,15 +190,15 @@ fn task_board(hooks: &Arc<RuntimeHooks>) -> Arc<TaskBoard> {
 ///
 /// Whatever can fail does so before any MCP server or mod starts, and before
 /// a new session's file is written: a build that fails has started nothing
-/// and left no file for a resume to pick up. It fails when:
+/// and left no file for a resume to pick up. A [`BuildError`]:
 ///
-/// - the session to resume is not there, or cannot be read;
-/// - the model it would start on cannot be used: its provider is unknown, or
-///   the host hands in no key for it (a `ProviderConfigError` from
-///   haest-providers, which the error downcasts to);
-/// - the workspace cannot open: `workspace = real` in a [`World::Fs`], the
-///   spill dir cannot be made, the sandbox fails to open;
-/// - a new session's file cannot be created.
+/// - [`Session`](BuildError::Session): the session to resume is not there,
+///   or cannot be read; a new session's file cannot be created;
+/// - [`Model`](BuildError::Model): the model it would start on cannot be
+///   used: a malformed spec, an unknown provider, no key for it;
+/// - [`Workspace`](BuildError::Workspace): `workspace = real` in a
+///   [`World::Fs`], a spill dir that cannot be made, a sandbox that fails to
+///   open.
 ///
 /// # Examples
 ///
@@ -208,7 +208,7 @@ pub async fn build<U, P>(
     ui: Arc<U>,
     prompter: P,
     opts: BuildOptions,
-) -> anyhow::Result<Runtime<U>>
+) -> Result<Runtime<U>, BuildError>
 where
     U: Ui + 'static,
     P: Prompter + 'static,
@@ -235,7 +235,7 @@ where
         ..Default::default()
     };
     let registry = ProviderRegistry::new(keys.clone(), providers, reg_opts);
-    registry.resolve_spec(&model)?;
+    registry.resolve(&model)?;
     let spill = settings.spill_dir(session.store.session_id());
     let hooks = Arc::new(RuntimeHooks::new(
         settings,
@@ -262,8 +262,8 @@ where
     let jobs = jobs_for(s, sender.clone());
     let image = match image_options(s, keys.as_ref()) {
         Ok(opts) => opts.map(|o| ImageToolOptions { http, ..o }),
-        Err(why) => {
-            hooks.warn(&why);
+        Err(e) => {
+            hooks.warn(&format!("{e}."));
             None
         }
     };

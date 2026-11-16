@@ -35,8 +35,7 @@ use std::{
 use haest::{
     config::{Loaded, Loader, env_var},
     core::session::sessions_dir,
-    providers::ProviderConfigError,
-    runtime::{Ui, sessions, world},
+    runtime::{BuildError, SessionError, Ui, sessions, world},
     settings::Settings,
     workspace::RealFs,
 };
@@ -131,13 +130,22 @@ async fn shutdown(rt: &Runtime) {
     }
 }
 
-/// What a failed build tells the human; a model it cannot use says how to get one.
-fn build_failed(e: &anyhow::Error) -> String {
-    match e.downcast_ref::<ProviderConfigError>() {
-        Some(e) => {
+/// An error and every cause under it, joined by `": "`: the line the human reads.
+fn report(e: impl std::error::Error + Send + Sync + 'static) -> String {
+    format!("{:#}", anyhow::Error::new(e))
+}
+
+/// What a failed build tells the human; a model it cannot use, or a session
+/// that is not there, says where to find another.
+fn build_failed(e: BuildError) -> String {
+    match e {
+        BuildError::Model(e) => {
             format!("{e}. Set its key, or pick another model with -m (haest models lists them).")
         }
-        None => format!("{e:#}"),
+        BuildError::Session(e @ SessionError::NotFound { .. }) => {
+            format!("{e} (haest sessions lists them)")
+        }
+        e => report(e),
     }
 }
 
@@ -198,7 +206,7 @@ async fn main() -> ExitCode {
     let inputs = haest::runtime_inputs(loaded);
     let mut rt = match haest::runtime::build(inputs, ui, prompter, opts).await {
         Ok(rt) => rt,
-        Err(e) => return fail(2, build_failed(&e)),
+        Err(e) => return fail(2, build_failed(e)),
     };
     let code = match input {
         Some(input) => print_mode(&mut rt, &input).await,
@@ -211,4 +219,28 @@ async fn main() -> ExitCode {
     rt.mcp.close().await;
     rt.hooks.flush().await;
     code
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The runtime names no command; the CLI says where its sessions are listed.
+    #[test]
+    fn a_session_that_is_not_there_points_at_haest_sessions() {
+        let e = BuildError::Session(SessionError::NotFound { id: "abc".into() });
+        assert_eq!(
+            build_failed(e),
+            "no saved session \"abc\" (haest sessions lists them)"
+        );
+    }
+
+    /// A cause under the error is part of the line, as anyhow's `{:#}` printed it.
+    #[test]
+    fn a_failed_build_reports_every_cause() {
+        let source = std::io::Error::other("disk full");
+        let path = PathBuf::from("/d/sessions/x.jsonl");
+        let e = BuildError::Session(SessionError::Create { path, source });
+        assert!(build_failed(e).ends_with("x.jsonl: disk full"));
+    }
 }

@@ -7,11 +7,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::{Context, anyhow, bail};
 use haest_settings::Settings;
 
 use crate::{
-    BuildOptions, Resume, RuntimeHooks, Ui,
+    BuildOptions, Resume, RuntimeHooks, SessionError, Ui,
     haest::{
         Agent, AgentOptions, Effort,
         core::fs::Fs,
@@ -38,11 +37,11 @@ fn open_store(
     data_dir: &Path,
     id: &str,
     ui: Arc<dyn Ui>,
-) -> anyhow::Result<JsonlSessionFile> {
-    JsonlSessionFile::with_error_handler(fs.clone(), data_dir, id, move |e| {
+) -> Result<JsonlSessionFile, SessionError> {
+    let store = JsonlSessionFile::with_error_handler(fs.clone(), data_dir, id, move |e| {
         ui.error(&format!("session log write failed: {e}"))
-    })
-    .map_err(|e| anyhow!("{e}"))
+    })?;
+    Ok(store)
 }
 
 /// The session this run writes, as `resume` says.
@@ -51,7 +50,7 @@ pub(crate) async fn open_session(
     s: &Settings,
     resume: &Resume,
     ui: Arc<dyn Ui>,
-) -> anyhow::Result<OpenSession> {
+) -> Result<OpenSession, SessionError> {
     let id = match resume {
         Resume::New => {
             let store = Arc::new(open_store(fs, &s.data_dir, &new_session_id(), ui)?);
@@ -59,14 +58,17 @@ pub(crate) async fn open_session(
         }
         Resume::Latest => latest_in(fs.as_ref(), &sessions_dir(&s.data_dir), &s.cwd)
             .await
-            .ok_or_else(|| anyhow!("no saved session in {} to resume", s.cwd.display()))?,
+            .ok_or_else(|| SessionError::NoneToResume { cwd: s.cwd.clone() })?,
         Resume::Id(id) => id.clone(),
     };
     let store = open_store(fs, &s.data_dir, &id, ui)?;
     if !store.exists().await {
-        bail!("no saved session \"{id}\" (haest sessions lists them)");
+        return Err(SessionError::NotFound { id });
     }
-    let saved = store.load().await.context("reading the session")?;
+    let saved = store.load().await.map_err(|source| SessionError::Read {
+        path: store.path().to_path_buf(),
+        source,
+    })?;
     Ok(OpenSession {
         store: Arc::new(store),
         saved: Some(saved),
@@ -75,12 +77,15 @@ pub(crate) async fn open_session(
 
 /// A new session's file, on disk with its header. Until it is, nothing of the
 /// session has been written: a session that cannot be saved fails here.
-pub(crate) async fn create(store: &JsonlSessionFile, cwd: &Path) -> anyhow::Result<()> {
+pub(crate) async fn create(store: &JsonlSessionFile, cwd: &Path) -> Result<(), SessionError> {
     let id = store.session_id();
     store
         .create(id, &cwd.to_string_lossy(), now_ms())
         .await
-        .with_context(|| format!("creating the session file {}", store.path().display()))
+        .map_err(|source| SessionError::Create {
+            path: store.path().to_path_buf(),
+            source,
+        })
 }
 
 /// A new session with its file created: what /clear starts.
@@ -88,7 +93,7 @@ pub(crate) async fn new_session(
     fs: &Arc<dyn Fs>,
     s: &Settings,
     ui: Arc<dyn Ui>,
-) -> anyhow::Result<JsonlSessionFile> {
+) -> Result<JsonlSessionFile, SessionError> {
     let store = open_store(fs, &s.data_dir, &new_session_id(), ui)?;
     create(&store, &s.cwd).await?;
     Ok(store)

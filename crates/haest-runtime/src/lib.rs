@@ -90,7 +90,7 @@
 //! }
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() -> anyhow::Result<()> {
+//! # async fn main() -> Result<(), haest_runtime::BuildError> {
 //! let fs = Arc::new(MemFs::with_files([("/work/AGENTS.md", "Answer in one line.")]));
 //! let settings = Settings {
 //!     context: ContextSources { agents: true, ..ContextSources::NONE },
@@ -162,6 +162,7 @@
 
 mod agents;
 mod build;
+mod error;
 mod hooks;
 pub mod inbox;
 pub mod mods;
@@ -193,6 +194,7 @@ mod haest {
 
 pub use agents::Agents;
 pub use build::{BuildOptions, Resume, RuntimeInputs, build};
+pub use error::{BuildError, SessionError};
 pub use hooks::{RuntimeHooks, session_usd};
 pub use runtime::Runtime;
 pub use ui::Ui;

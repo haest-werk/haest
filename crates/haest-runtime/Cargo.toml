@@ -22,7 +22,7 @@ haest-settings = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
-anyhow = { workspace = true }
+thiserror = { workspace = true }
 serde_json = { workspace = true }
 # Listing sessions: stats and heads read a few at a time.
 futures = { workspace = true }

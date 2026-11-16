@@ -14,7 +14,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    BuildOptions, Resume, Runtime, RuntimeInputs, World, build,
+    BuildError, BuildOptions, Resume, Runtime, RuntimeInputs, World, build,
     haest::{
         KeySource, Message, ProviderEvent, ProviderRequest, ShutWorkspace, ToolContext,
         core::fs::{Fs, MemFs},
@@ -106,7 +106,7 @@ async fn try_keyed(
     fs: &Arc<MemFs>,
     settings: Settings,
     opts: BuildOptions,
-) -> anyhow::Result<Runtime<Recorded>> {
+) -> Result<Runtime<Recorded>, BuildError> {
     let mut inputs = RuntimeInputs::new(settings, World::Fs(fs.clone()));
     inputs.keys = openrouter_key();
     let ui = Arc::new(Recorded::default());

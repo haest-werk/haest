@@ -114,7 +114,7 @@ async fn the_real_workspace_needs_the_real_disk() {
     .await
     .err()
     .unwrap();
-    assert!(err.to_string().contains("real disk"), "{err}");
+    assert!(matches!(err, WorkspaceError::RealNeedsDisk), "{err}");
     let sandbox = workspace_for(
         &settings(),
         &world,
@@ -146,7 +146,10 @@ async fn a_spill_dir_that_cannot_be_made_is_named_in_the_error() {
     .await
     .err()
     .unwrap();
-    assert!(format!("{err:#}").contains("/dev/null/spill"), "{err:#}");
+    assert!(
+        matches!(&err, WorkspaceError::SpillDir { path, .. } if path == spill),
+        "{err:?}"
+    );
 }
 
 /// Spilled output is file contents and command output: on the disk its dir

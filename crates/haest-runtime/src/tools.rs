@@ -65,6 +65,12 @@ pub fn own_tools(
     tools
 }
 
+/// `image` is on, and the host answers no `OPENROUTER_API_KEY`:
+/// GenerateImage has no key to call OpenRouter with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("image is on, but the host has no OPENROUTER_API_KEY: no GenerateImage")]
+pub struct NoImageKey;
+
 /// GenerateImage's options: `image` on, over OpenRouter with the key the host
 /// answers for `OPENROUTER_API_KEY`. On without one: why there is none.
 ///
@@ -74,18 +80,16 @@ pub fn own_tools(
 ///
 /// # Errors
 ///
-/// With `image` on and no `OPENROUTER_API_KEY`: the text to warn the human
-/// with. [`build`](crate::build) warns and goes on without GenerateImage.
+/// [`NoImageKey`] with `image` on and no `OPENROUTER_API_KEY`.
+/// [`build`](crate::build) warns and goes on without GenerateImage.
 pub fn image_options(
     s: &Settings,
     keys: &dyn KeySource,
-) -> Result<Option<ImageToolOptions>, String> {
+) -> Result<Option<ImageToolOptions>, NoImageKey> {
     if !s.image {
         return Ok(None);
     }
-    let key = keys.key("OPENROUTER_API_KEY").ok_or(
-        "image is on, but the host has no OPENROUTER_API_KEY: no GenerateImage.".to_string(),
-    )?;
+    let key = keys.key("OPENROUTER_API_KEY").ok_or(NoImageKey)?;
     let opts = ImageToolOptions {
         base_url: openrouter_base_url(keys),
         ..ImageToolOptions::new(key)
@@ -244,8 +248,7 @@ mod tests {
         let with_key = keys(&[("OPENROUTER_API_KEY", "k")]);
         let off = crate::testkit::settings();
         assert!(image_options(&off, &with_key).unwrap().is_none());
-        let none = image_options(&on, &keys(&[])).unwrap_err();
-        assert!(none.contains("OPENROUTER_API_KEY"), "{none}");
+        assert_eq!(image_options(&on, &keys(&[])).unwrap_err(), NoImageKey);
         let opts = image_options(&on, &with_key).unwrap().unwrap();
         assert_eq!(
             (opts.api_key.as_str(), opts.base_url.as_str()),

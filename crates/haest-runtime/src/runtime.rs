@@ -6,13 +6,13 @@
 
 use std::sync::{Arc, Mutex};
 
-use anyhow::anyhow;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    RuntimeHooks,
+    RuntimeHooks, SessionError,
     haest::{
-        Agent, Effort, EventSink, TurnOutcome,
+        Agent, Effort, EventSink, ModelError, TurnOutcome,
+        core::compaction::CompactionError,
         core::fs::Fs,
         core::session::SessionRecord,
         core::skills::{Skill, SkillScanRoots, skills_in},
@@ -99,7 +99,7 @@ impl<U: ?Sized> Runtime<U> {
     /// # Errors
     ///
     /// When no summary came out; the history is as it was.
-    pub async fn compact(&mut self, cancel: &CancellationToken) -> Result<(), String> {
+    pub async fn compact(&mut self, cancel: &CancellationToken) -> Result<(), CompactionError> {
         self.hooks.compact_now(&mut self.agent, cancel, false).await
     }
 
@@ -116,12 +116,8 @@ impl<U: ?Sized> Runtime<U> {
     ///
     /// When `spec` does not resolve (an unknown provider, no key for it):
     /// then nothing changes.
-    pub fn set_model(&mut self, spec: &str) -> anyhow::Result<()> {
-        self.agent
-            .deps()
-            .models
-            .resolve(spec)
-            .map_err(|e| anyhow!(e))?;
+    pub fn set_model(&mut self, spec: &str) -> Result<(), ModelError> {
+        self.agent.deps().models.resolve(spec)?;
         self.agent.set_model_spec(spec);
         self.hooks.set_model(spec);
         self.hooks.append(SessionRecord::Config {
@@ -154,7 +150,7 @@ impl<U: ?Sized> Runtime<U> {
     ///
     /// When the new session's file cannot be created. It is created, header
     /// first, before anything switches to it, so then nothing changes.
-    pub async fn clear(&mut self) -> anyhow::Result<()> {
+    pub async fn clear(&mut self) -> Result<(), SessionError> {
         let store = new_session(&self.fs, &self.hooks.settings, self.hooks.ui.clone()).await?;
         self.hooks.swap_store(Arc::new(store));
         self.agent.replace_history(Vec::new());

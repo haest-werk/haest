@@ -19,7 +19,7 @@ use crate::{
         Agent, AgentHooks, Effort,
         core::caps::TurnCaps,
         core::catalog::{InputModality, ModelFacts, Reasoning},
-        core::compaction::{CompactionConfig, compact, needs_compaction},
+        core::compaction::{CompactionConfig, CompactionError, compact, needs_compaction},
         core::ledger::{LedgerHooks, LedgerSnapshot},
         core::messages::{MediaPart, Usage},
         core::remedy::Remedies,
@@ -189,7 +189,7 @@ impl RuntimeHooks {
         agent: &mut Agent,
         cancel: &CancellationToken,
         auto: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), CompactionError> {
         let cfg = self.compaction_for(agent.model_spec());
         match compact(agent, cancel, &cfg).await {
             Ok(None) if !auto => self.info("Nothing to compact yet."),
@@ -208,15 +208,19 @@ impl RuntimeHooks {
             }
             Err(e) => {
                 charge(agent, &e.usage());
-                let why = format!("Compaction failed: {e}");
                 if !cancel.is_cancelled() {
-                    self.error(&why);
+                    self.error(&compaction_failed(&e));
                 }
-                return Err(why);
+                return Err(e);
             }
         }
         Ok(())
     }
+}
+
+/// What the human and a failed turn are told when a summary did not come out.
+fn compaction_failed(e: &CompactionError) -> String {
+    format!("Compaction failed: {e}")
 }
 
 /// What the summary calls cost goes on the conversation's bill, summary or
@@ -252,7 +256,8 @@ impl AgentHooks for RuntimeHooks {
         cancel: &CancellationToken,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if needs_compaction(agent.history(), &self.compaction_for(agent.model_spec())) {
-            self.compact_now(agent, cancel, true).await?;
+            let done = self.compact_now(agent, cancel, true).await;
+            done.map_err(|e| compaction_failed(&e))?;
         }
         Ok(())
     }

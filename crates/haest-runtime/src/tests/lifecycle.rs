@@ -9,15 +9,16 @@ use haest_settings::Settings;
 
 use super::{hardcoded, keyed, keyed_with, openrouter_key, try_keyed};
 use crate::{
-    BuildOptions, Resume, RuntimeInputs, World, build,
+    BuildError, BuildOptions, Resume, RuntimeInputs, SessionError, World, build,
     haest::{
-        Effort, WorkspaceMode,
+        Effort, ModelError, WorkspaceMode,
         core::fs::{Fs, MemFs},
         core::task_board::NewTask,
         mcp::{McpServerConfig, McpTransport},
     },
     sessions::list_sessions,
     testkit::{Deny, Recorded},
+    world::WorkspaceError,
 };
 
 const SESSIONS: &str = "/data/sessions";
@@ -37,7 +38,7 @@ fn closed_server() -> McpServerConfig {
 
 /// `settings` over `fs`, the closed server listed: the build's error, and
 /// everything the Ui was told.
-async fn failed_build(settings: Settings, fs: Arc<MemFs>) -> (String, Vec<String>) {
+async fn failed_build(settings: Settings, fs: Arc<MemFs>) -> (BuildError, Vec<String>) {
     let mut inputs = RuntimeInputs::new(settings, World::Fs(fs));
     inputs.keys = openrouter_key();
     inputs.mcp_servers = vec![closed_server()];
@@ -46,7 +47,13 @@ async fn failed_build(settings: Settings, fs: Arc<MemFs>) -> (String, Vec<String
         .await
         .err()
         .expect("the build fails");
-    (format!("{err:#}"), ui.warnings())
+    (err, ui.warnings())
+}
+
+/// A model the build cannot use for want of `key`: the provider is known,
+/// the host handed in no such key.
+fn no_key(err: &BuildError, key: &str) -> bool {
+    matches!(err, BuildError::Model(ModelError::Unavailable(why)) if why.to_string().contains(key))
 }
 
 /// A file where the sessions dir goes: no session file can be created.
@@ -64,7 +71,8 @@ async fn a_workspace_that_cannot_open_fails_the_build_before_a_server_starts() {
         ..hardcoded()
     };
     let (err, heard) = failed_build(settings, fs.clone()).await;
-    assert!(err.contains("real disk"), "{err}");
+    let needs_disk = matches!(err, BuildError::Workspace(WorkspaceError::RealNeedsDisk));
+    assert!(needs_disk, "{err:?}");
     assert_eq!(heard, Vec::<String>::new(), "no server was started");
     let left = list_sessions(fs.as_ref(), Path::new(SESSIONS)).await;
     assert!(left.is_empty(), "no session file is left behind");
@@ -75,7 +83,8 @@ async fn a_session_that_cannot_be_saved_fails_the_build_before_a_server_starts()
     let fs = Arc::new(MemFs::new());
     block_sessions(&fs).await;
     let (err, heard) = failed_build(hardcoded(), fs).await;
-    assert!(err.contains("session file"), "{err}");
+    let cannot_create = matches!(err, BuildError::Session(SessionError::Create { .. }));
+    assert!(cannot_create, "{err:?}");
     assert_eq!(heard, Vec::<String>::new(), "no server was started");
 }
 
@@ -89,8 +98,8 @@ async fn a_model_the_build_cannot_use_fails_it_and_leaves_no_session_file() {
     let built = build(inputs, ui, Deny, BuildOptions::default()).await;
     let left = list_sessions(fs.as_ref(), Path::new(SESSIONS)).await;
     assert!(left.is_empty(), "no session file is left behind");
-    let err = format!("{:#}", built.err().expect("the build fails"));
-    assert!(err.contains("OPENROUTER_API_KEY"), "{err}");
+    let err = built.err().expect("the build fails");
+    assert!(no_key(&err, "OPENROUTER_API_KEY"), "{err:?}");
 }
 
 /// A resume onto a model it cannot use fails before it writes anything: the
@@ -119,8 +128,8 @@ async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
     }
     let now = fs.read_to_string(&file).await.unwrap();
     assert_eq!(now, saved, "the session is as it was");
-    let err = format!("{:#}", built.err().expect("the build fails"));
-    assert!(err.contains("ANTHROPIC_API_KEY"), "{err}");
+    let err = built.err().expect("the build fails");
+    assert!(no_key(&err, "ANTHROPIC_API_KEY"), "{err:?}");
 }
 
 #[tokio::test]
@@ -220,7 +229,7 @@ async fn a_clear_that_cannot_create_its_file_changes_nothing() {
     block_sessions(&fs).await;
 
     let err = rt.clear().await.expect_err("the clear fails");
-    assert!(format!("{err:#}").contains("session file"), "{err:#}");
+    assert!(matches!(err, SessionError::Create { .. }), "{err:?}");
     assert_eq!(rt.session_id(), id);
     assert_eq!(rt.board.list().len(), 1);
 }
