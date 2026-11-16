@@ -37,7 +37,7 @@ async fn a_childs_spend_counts_in_the_parents_turn_and_is_charged_to_the_ledger_
     let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
     // Main's two calls and the child's one, in the turn and in the ledger alike.
     assert!(close(turn.unwrap(), 3.0 * CALL_USD));
-    assert!(close(r.parent.ledger.lock().unwrap().usd, 3.0 * CALL_USD));
+    assert!(close(r.parent.ledger.lock().unwrap().usd(), 3.0 * CALL_USD));
 }
 
 #[tokio::test(flavor = "multi_thread")]

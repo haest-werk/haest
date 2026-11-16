@@ -142,11 +142,8 @@ enum Measure {
 /// assert!(ledger.exhausted().is_none());
 /// ```
 pub struct Ledger {
-    /// USD spent by calls that reported a price. [`Ledger::charge`] persists
-    /// and warns; writing the field directly does neither.
-    pub usd: f64,
-    /// Tokens billed by calls that reported no price; the same goes as for `usd`.
-    pub unpriced_tokens: u64,
+    usd: f64,
+    unpriced_tokens: u64,
     set: CapOverrides,
     warned_usd: bool,
     warned_tokens: bool,
@@ -176,6 +173,16 @@ impl Ledger {
     pub fn with_remedies(mut self, remedies: Remedies) -> Self {
         self.remedies = remedies;
         self
+    }
+
+    /// USD spent by calls that reported a price.
+    pub fn usd(&self) -> f64 {
+        self.usd
+    }
+
+    /// Tokens billed by calls that reported no price.
+    pub fn unpriced_tokens(&self) -> u64 {
+        self.unpriced_tokens
     }
 
     /// The caps in force: each one the human set, else the default.

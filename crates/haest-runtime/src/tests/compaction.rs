@@ -71,7 +71,7 @@ async fn a_failed_compaction_goes_on_the_conversations_bill_once() {
     let end = turn(&mut agent).await;
     assert_eq!(end.stop_reason, StopReason::Error, "{:?}", end.error);
     assert_eq!(replies.requests().len(), 2, "the warm and the cold summary");
-    assert_eq!(ledger.lock().unwrap().usd, 0.75);
+    assert_eq!(ledger.lock().unwrap().usd(), 0.75);
 }
 
 /// The human presses Esc as each request goes out, once `control` is set.
