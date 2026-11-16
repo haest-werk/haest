@@ -1,4 +1,4 @@
-//! The unified diff `/changes` shows for one path.
+//! The unified diff of one changed path, for the human's review.
 
 use std::path::Path;
 

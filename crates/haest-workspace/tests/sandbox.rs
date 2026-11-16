@@ -1,5 +1,5 @@
 //! The sandbox: a simulated bash and the tools share ONE file system, and the
-//! project on disk is never written before /apply.
+//! project on disk is never written before it is applied.
 
 mod common;
 
@@ -12,6 +12,7 @@ use std::{
 use common::{argv, opts, sandbox, tempdir};
 use haest_core::{
     fs::{Fs, MemFs},
+    remedy::{Limit, Remedies},
     workspace::{EXIT_NOT_FOUND, Workspace, WorkspaceMode},
 };
 use haest_workspace::{SandboxMounts, SandboxWorkspace};
@@ -219,4 +220,16 @@ async fn a_host_may_replace_the_prompt_note() {
     assert!(!ws.prompt_note().is_empty());
     let ws = ws.with_prompt_note("custom");
     assert_eq!(ws.prompt_note(), "custom");
+}
+
+#[tokio::test]
+async fn the_overlays_note_carries_the_hosts_way_to_apply_its_edits() {
+    let (_t, dir) = tempdir();
+    let remedies =
+        Remedies::new(|limit| (limit == Limit::SandboxEdits).then(|| "APPLY-HOW".into()));
+    let ws = sandbox(&dir).await.with_remedies(remedies.clone());
+    assert!(ws.prompt_note().contains(" APPLY-HOW"));
+    // No overlay, nothing to apply: no remedy.
+    let over = SandboxWorkspace::over(Arc::new(MemFs::new())).with_remedies(remedies);
+    assert!(!over.prompt_note().contains("APPLY-HOW"));
 }

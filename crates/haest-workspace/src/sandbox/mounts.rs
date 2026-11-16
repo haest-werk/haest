@@ -62,7 +62,7 @@ impl SandboxMounts {
         }
     }
     /// Add a real directory the sandbox writes through to, at once and for
-    /// good (it is not part of `/changes`).
+    /// good (it is not one of the changes to review).
     pub fn writable(mut self, dir: impl Into<PathBuf>) -> Self {
         self.writable.push(dir.into());
         self

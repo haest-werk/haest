@@ -169,14 +169,14 @@ pub struct AgentToolOptions {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AgentError {
     /// The caller already runs as deep as agents may nest.
-    #[error("agents may nest {max_depth} deep (HAEST_MAX_AGENT_DEPTH)")]
+    #[error("agents may nest {max_depth} deep")]
     TooDeep {
         /// How deep agents may nest ([`SubagentCaps::max_depth`]).
         max_depth: u32,
     },
     /// As many subagents run as may at once.
     #[error(
-        "{running} subagents are already running (HAEST_MAX_SUBAGENTS is {max}); wait for one, or StopAgent one"
+        "{running} subagents are already running, at most {max} at once; wait for one, or StopAgent one"
     )]
     TooMany {
         /// How many run now.

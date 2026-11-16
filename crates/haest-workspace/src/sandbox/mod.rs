@@ -1,7 +1,7 @@
 //! The sandbox workspace (the default): bashkit, a bash interpreter, over a
 //! mount table that keeps every path identical to the real one (see
 //! [`SandboxMounts`]): the project is a copy-on-write overlay -- reads from
-//! disk, writes in memory until `/apply`.
+//! disk, writes in memory until the human applies them.
 //!
 //! No host environment reaches the shell (no API keys) unless the host passes
 //! a variable on purpose ([`SandboxWorkspace::with_env`]); no network, no real
@@ -24,6 +24,7 @@ use async_trait::async_trait;
 use haest_core::{
     ChildEnv,
     fs::Fs,
+    remedy::{Limit, Remedies},
     shell_command::ShellCommand,
     workspace::{ChangeSet, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
@@ -46,7 +47,7 @@ fn own_commands() -> Vec<Arc<dyn ShellCommand>> {
 }
 
 /// Where edits go in the default sandbox, and how they reach the disk.
-const OVERLAY_NOTE: &str = "Reads come from the real project; every file you write or edit lives in memory until the human reviews it with /changes and puts it on disk with /apply -- otherwise it is discarded when this conversation ends. When you finish edits worth keeping, tell the human to run /changes and /apply. If the task needs real builds, tests or git, say so plainly -- the human can relaunch this conversation with the real file system.";
+const OVERLAY_NOTE: &str = "Reads come from the real project; every file you write or edit lives in memory until the human reviews it and puts it on disk -- otherwise it is discarded when this conversation ends. When you finish edits worth keeping, tell the human they are waiting for review. If the task needs real builds, tests or git, say so plainly.";
 
 /// bashkit, a simulated bash, over files the host chooses: the project as a
 /// copy-on-write overlay ([`open`](Self::open)), or the host's own [`Fs`]
@@ -77,7 +78,7 @@ const OVERLAY_NOTE: &str = "Reads come from the real project; every file you wri
 /// environment: only what [`with_env`](Self::with_env) passes, over the
 /// shell's own `HOME` and `USER` (`/home/user`, `user`).
 /// [`Workspace::prompt_note`] tells the model all of that, and, over the
-/// overlay, about `/changes` and `/apply`.
+/// overlay, that its edits wait for the human to apply them.
 ///
 /// # Examples
 ///
@@ -141,6 +142,8 @@ pub struct SandboxWorkspace {
     fs: Arc<dyn Fs>,
     /// A host's replacement for the built note.
     note: Option<String>,
+    /// The host's way to review and apply the overlay, for the note.
+    remedies: Remedies,
     commands: Vec<Arc<dyn ShellCommand>>,
     /// The variables the host passes the shell.
     env: ChildEnv,
@@ -152,7 +155,7 @@ impl SandboxWorkspace {
     /// writable and readable dirs at their own paths, a scratch disk elsewhere.
     ///
     /// Its [`Workspace::changes`] (and [`overlay_changes`](Self::overlay_changes))
-    /// is the overlay's [`OverlayChanges`]: `/changes` and `/apply`.
+    /// is the overlay's [`OverlayChanges`]: what the human reviews and applies.
     ///
     /// # Errors
     ///
@@ -166,8 +169,8 @@ impl SandboxWorkspace {
     }
 
     /// A sandboxed bash over a host's own file system: the shell's whole world
-    /// is `fs`, and the tools write to `fs` itself. No overlay and no
-    /// `/changes` -- the host decides what a write means.
+    /// is `fs`, and the tools write to `fs` itself. No overlay and no changes
+    /// to review -- the host decides what a write means.
     ///
     /// The shell sees `fs` through [`BashkitFsOverHaest`]: what a haest `Fs`
     /// cannot hold (symlinks, permission bits, set times) is listed there. An
@@ -186,6 +189,7 @@ impl SandboxWorkspace {
             shell_fs,
             fs,
             note: None,
+            remedies: Remedies::default(),
             commands: own_commands(),
             env: ChildEnv::default(),
             changes,
@@ -205,6 +209,13 @@ impl SandboxWorkspace {
     /// included.
     pub fn with_prompt_note(mut self, note: impl Into<String>) -> Self {
         self.note = Some(note.into());
+        self
+    }
+
+    /// The host's way to review the overlay's changes and put them on disk
+    /// ([`Limit::SandboxEdits`]), added to the prompt note's part about them.
+    pub fn with_remedies(mut self, remedies: Remedies) -> Self {
+        self.remedies = remedies;
         self
     }
 
@@ -273,7 +284,7 @@ impl Workspace for SandboxWorkspace {
         let mut parts = vec![SHELL_NOTE.to_string()];
         parts.extend(self.commands.iter().filter_map(|c| c.note()));
         if self.changes.is_some() {
-            parts.push(OVERLAY_NOTE.into());
+            parts.push(self.remedies.add_to(OVERLAY_NOTE, Limit::SandboxEdits));
         }
         format!("# Sandbox\nYou run in a SANDBOX. {}", parts.join(" "))
     }

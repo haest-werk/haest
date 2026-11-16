@@ -89,8 +89,10 @@ async fn its_note_joins_the_prompt_and_a_later_command_by_the_same_name_replaces
     let ws = sandbox(&dir).await.with_command(Arc::new(Shout::default()));
     let note = ws.prompt_note();
     assert!(note.contains("Use `shout` to shout."));
-    // The overlay's /apply note still closes it.
-    assert!(note.ends_with("with the real file system."));
+    // The overlay's part still closes it.
+    let plain = sandbox(&dir).await.prompt_note();
+    let (_, last) = plain.rsplit_once(". ").unwrap();
+    assert!(note.ends_with(last));
 
     let ws = ws.with_command(Arc::new(Quiet));
     assert!(!ws.prompt_note().contains("shout"));

@@ -1,4 +1,4 @@
-//! WHAT THE SANDBOX CHANGED, and putting it on the real disk (`/changes`, `/apply`).
+//! WHAT THE SANDBOX CHANGED, and putting it on the real disk.
 //!
 //! The sandbox's project overlay keeps every write in memory. [`OverlayChanges`]
 //! wraps it so every MUTATION (haest's tools and the simulated shell alike --
@@ -74,8 +74,8 @@ struct Scanned {
     original: Original,
 }
 
-/// What a sandbox changed in the project, and putting it on the real disk:
-/// `/changes` and `/apply` (haest-core's [`ChangeSet`]).
+/// What a sandbox changed in the project, and putting it on the real disk
+/// (haest-core's [`ChangeSet`]).
 ///
 /// [`SandboxWorkspace::open`](crate::SandboxWorkspace::open) builds one over
 /// its project overlay; a host reaches it through

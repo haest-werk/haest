@@ -8,19 +8,25 @@
 //! that did, billed TOKENS for every call that did not. Counting an unpriced
 //! call as $0 would be the "spent nothing" vs "measured nothing" lie.
 //!
-//! Only the human raises it (`/budget`). Snapshots are absolute -- the latest
-//! wins -- so replaying the session log restores it and `/clear` carries it forward.
+//! Only the human raises it ([`Ledger::set_cap`], through the host). Snapshots
+//! are absolute -- the latest wins -- so replaying the session log restores it,
+//! and a cleared conversation carries it forward.
 //!
 //! A host makes a [`Ledger`] and shares it as `Arc<Mutex<Ledger>>` on
 //! [`AgentDeps::ledger`](crate::AgentDeps::ledger). The turn guard charges
 //! every model call and tool spend to it, and stops a turn before its next
-//! model call once [`Ledger::exhausted`] says so.
+//! model call once [`Ledger::exhausted`] says so. A host's way to raise a cap
+//! ([`Ledger::with_remedies`]) ends the message that says so.
 
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{caps::billed_tokens, messages::Usage};
+use crate::{
+    caps::billed_tokens,
+    messages::Usage,
+    remedy::{Limit, Remedies},
+};
 
 /// A conversation's two caps: the defaults a host configures, or the caps in
 /// force ([`Ledger::caps`]).
@@ -61,7 +67,8 @@ pub struct LedgerSnapshot {
     pub usd: f64,
     /// Tokens billed by calls that reported no price.
     pub unpriced_tokens: u64,
-    /// Raised (or lowered) by `/budget`; absent = the configured default.
+    /// The caps the human set ([`Ledger::set_cap`]); absent = the configured
+    /// defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caps: Option<CapOverrides>,
 }
@@ -80,7 +87,7 @@ pub trait LedgerHooks: Send + Sync {
     fn warn(&self, text: &str);
 }
 
-/// One cap the human sets (`/budget`).
+/// One cap the human sets ([`Ledger::set_cap`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConversationCap {
     /// USD across the conversation; 0 = no cap.
@@ -91,7 +98,7 @@ pub enum ConversationCap {
 
 /// Share of a cap at which the human is warned.
 const WARN_SHARE: f64 = 0.8;
-const RAISE: &str = "Posting again will not reset it -- raise it with";
+const STAYS: &str = "Posting again will not reset it.";
 
 #[derive(Clone, Copy)]
 enum Measure {
@@ -146,6 +153,7 @@ pub struct Ledger {
     warned_tokens: bool,
     defaults: ConversationCaps,
     hooks: Arc<dyn LedgerHooks>,
+    remedies: Remedies,
 }
 
 impl Ledger {
@@ -160,7 +168,15 @@ impl Ledger {
             warned_tokens: false,
             defaults,
             hooks,
+            remedies: Remedies::default(),
         }
+    }
+
+    /// The host's way to raise a cap, added to the message that the cap is
+    /// reached ([`exhausted`](Self::exhausted)) or near (the warning).
+    pub fn with_remedies(mut self, remedies: Remedies) -> Self {
+        self.remedies = remedies;
+        self
     }
 
     /// The caps in force: each one the human set, else the default.
@@ -209,7 +225,7 @@ impl Ledger {
         self.maybe_warn();
     }
 
-    /// `/budget`: a new cap. The warning re-arms, so the next crossing is heard too.
+    /// A new cap, from the human. The warning re-arms, so the next crossing is heard too.
     pub fn set_cap(&mut self, cap: ConversationCap) {
         match cap {
             ConversationCap::Usd(v) => self.set.max_usd = Some(v),
@@ -220,26 +236,32 @@ impl Ledger {
     }
 
     /// Why no further model call may go out in this conversation, or None.
+    /// The text ends with the host's remedy, if it has one.
     pub fn exhausted(&self) -> Option<String> {
         let ConversationCaps {
             max_usd,
             max_unpriced_tokens,
         } = self.caps();
-        if self.over(Measure::Usd, 1.0) {
-            return Some(format!(
-                "This conversation has spent ${:.2}; its budget is ${max_usd} (HAEST_MAX_CONVERSATION_USD). {RAISE} /budget {}.",
-                self.usd,
-                max_usd * 2.0
-            ));
-        }
-        if self.over(Measure::Tokens, 1.0) {
-            return Some(format!(
-                "This conversation has billed {} tokens on models that report no price; the cap for those is {max_unpriced_tokens} (HAEST_MAX_CONVERSATION_TOKENS). {RAISE} /budget tokens {}.",
-                self.unpriced_tokens,
-                max_unpriced_tokens * 2
-            ));
-        }
-        None
+        let (m, text) = if self.over(Measure::Usd, 1.0) {
+            let spent = self.usd;
+            (
+                Measure::Usd,
+                format!(
+                    "This conversation has spent ${spent:.2}; its budget is ${max_usd}. {STAYS}"
+                ),
+            )
+        } else if self.over(Measure::Tokens, 1.0) {
+            let billed = self.unpriced_tokens;
+            (
+                Measure::Tokens,
+                format!(
+                    "This conversation has billed {billed} tokens on models that report no price; the cap for those is {max_unpriced_tokens}. {STAYS}"
+                ),
+            )
+        } else {
+            return None;
+        };
+        Some(self.remedies.add_to(text, self.limit(m)))
     }
 
     /// One line for the human: what was spent of each cap.
@@ -266,6 +288,15 @@ impl Ledger {
         cap > 0.0 && used >= cap * share
     }
 
+    /// The cap in force for `m`, as the host's remedy gets it.
+    fn limit(&self, m: Measure) -> Limit {
+        let caps = self.caps();
+        Limit::Conversation(match m {
+            Measure::Usd => ConversationCap::Usd(caps.max_usd),
+            Measure::Tokens => ConversationCap::UnpricedTokens(caps.max_unpriced_tokens),
+        })
+    }
+
     fn rearm(&mut self) {
         self.warned_usd = self.over(Measure::Usd, WARN_SHARE);
         self.warned_tokens = self.over(Measure::Tokens, WARN_SHARE);
@@ -284,10 +315,8 @@ impl Ledger {
                 continue;
             }
             *self.warned(m) = true;
-            self.hooks.warn(&format!(
-                "{} haest stops at the cap; /budget raises it.",
-                self.summary()
-            ));
+            let text = format!("{} haest stops at the cap.", self.summary());
+            self.hooks.warn(&self.remedies.add_to(text, self.limit(m)));
         }
     }
 }

@@ -28,6 +28,7 @@
 //! | files | [`fs::Fs`] | `haest-workspace`, [`fs::MemFs`], or the host |
 //! | files + shell | [`workspace::Workspace`] | `haest-workspace`, [`workspace::ShutWorkspace`] |
 //! | the host's say in the loop | [`deps::AgentHooks`] | the host |
+//! | the host's way past a cap | [`remedy::Remedies`] | the host |
 //! | where events go | [`events::EventSink`] | the host / CLI |
 //!
 //! # Where to start
@@ -39,7 +40,8 @@
 //! - [`messages`]: the history as data. Session files and events keep the
 //!   TypeScript haest's JSON shape: either haest resumes the other's sessions.
 //! - Spend: [`caps`] caps one turn, [`ledger`] one conversation, and the
-//!   loop checks both before every model call.
+//!   loop checks both before every model call. [`remedy`] adds the host's way
+//!   past a cap to haest's message about it.
 //! - Context: [`context`] builds the system prompt, [`compaction`] summarises
 //!   a full window, [`deferred_tools`] keeps large tool lists out of the request.
 //!
@@ -158,6 +160,7 @@ pub mod messages;
 mod panics;
 mod pricing;
 pub mod provider;
+pub mod remedy;
 mod request_prefix;
 pub mod session;
 pub mod shell_command;

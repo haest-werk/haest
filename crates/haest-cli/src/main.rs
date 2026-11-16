@@ -15,6 +15,7 @@ mod changes;
 mod commands;
 mod models;
 mod mods;
+mod remedy;
 mod render;
 mod repl;
 mod run;

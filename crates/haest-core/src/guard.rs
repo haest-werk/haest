@@ -31,6 +31,7 @@ use crate::{
     deps::AgentHooks,
     ledger::Ledger,
     messages::{ToolCall, Usage},
+    remedy::{Limit, Remedies},
     tool::ToolOutput,
 };
 
@@ -50,6 +51,8 @@ struct Gauge {
     nudge: String,
     /// For the human, at the stop.
     stop: String,
+    /// Which cap, for the host's remedy at the stop.
+    limit: Limit,
 }
 
 /// Key-order-independent JSON, so `{a,b}` and `{b,a}` are the same call.
@@ -120,6 +123,7 @@ struct Repeat {
 pub(crate) struct TurnGuard {
     clock: Arc<dyn AgentHooks>,
     ledger: Option<Arc<Mutex<Ledger>>>,
+    remedies: Remedies,
     started: u64,
     steps: u64,
     /// In first-seen order: the order the nudges list them in.
@@ -131,11 +135,17 @@ pub(crate) struct TurnGuard {
 
 impl TurnGuard {
     /// A fresh guard for one turn; its time cap counts from now on `clock`.
-    pub(crate) fn new(clock: Arc<dyn AgentHooks>, ledger: Option<Arc<Mutex<Ledger>>>) -> Self {
+    /// A stop's text ends with the host's remedy for its cap.
+    pub(crate) fn new(
+        clock: Arc<dyn AgentHooks>,
+        ledger: Option<Arc<Mutex<Ledger>>>,
+        remedies: Remedies,
+    ) -> Self {
         let started = clock.now_ms();
         Self {
             clock,
             ledger,
+            remedies,
             started,
             steps: 0,
             repeats: Vec::new(),
@@ -186,7 +196,10 @@ impl TurnGuard {
         self.gauges(usage, caps)
             .into_iter()
             .find(|g| g.cap > 0.0 && g.used >= g.cap)
-            .map(|g| format!("Turn stopped: {} {CONTINUE}", g.stop))
+            .map(|g| {
+                let text = format!("Turn stopped: {} {CONTINUE}", g.stop);
+                self.remedies.add_to(text, g.limit)
+            })
     }
 
     /// The nudge due now (each signal once per turn), or None.
@@ -213,7 +226,12 @@ impl TurnGuard {
     /// it must not, or None.
     pub(crate) fn too_big(&mut self, estimate: u64, caps: Option<&TurnCaps>) -> Option<String> {
         self.next_request_tokens = estimate;
-        caps.and_then(|l| request_too_big(estimate, l))
+        let caps = caps?;
+        let text = request_too_big(estimate, caps)?;
+        Some(
+            self.remedies
+                .add_to(text, Limit::RequestTokens(caps.max_request_tokens)),
+        )
     }
 
     /// Tokens one more tool result may add before the next request is refused by
@@ -241,9 +259,10 @@ impl TurnGuard {
                     l.max_turn_steps
                 ),
                 stop: format!(
-                    "it made {steps} model calls, the cap is {} (HAEST_MAX_TURN_STEPS).",
+                    "it made {steps} model calls, the cap is {}.",
                     l.max_turn_steps
                 ),
+                limit: Limit::TurnSteps(l.max_turn_steps),
             },
             Gauge {
                 key: "time".into(),
@@ -256,10 +275,11 @@ impl TurnGuard {
                     minutes(l.max_turn_ms as f64)
                 ),
                 stop: format!(
-                    "it ran for {}, the cap is {} (HAEST_MAX_TURN_MINUTES).",
+                    "it ran for {}, the cap is {}.",
                     minutes(elapsed),
                     minutes(l.max_turn_ms as f64)
                 ),
+                limit: Limit::TurnMs(l.max_turn_ms),
             },
             Gauge {
                 key: "usd".into(),
@@ -270,10 +290,8 @@ impl TurnGuard {
                     "This turn has spent ${usd:.2}; it stops at ${}.",
                     l.max_turn_usd
                 ),
-                stop: format!(
-                    "it spent ${usd:.2}, the cap is ${} (HAEST_MAX_TURN_USD).",
-                    l.max_turn_usd
-                ),
+                stop: format!("it spent ${usd:.2}, the cap is ${}.", l.max_turn_usd),
+                limit: Limit::TurnUsd(l.max_turn_usd),
             },
             Gauge {
                 key: "tokens".into(),
@@ -285,9 +303,10 @@ impl TurnGuard {
                     l.max_turn_tokens
                 ),
                 stop: format!(
-                    "it billed {tokens} tokens, the cap is {} (HAEST_MAX_TURN_TOKENS).",
+                    "it billed {tokens} tokens, the cap is {}.",
                     l.max_turn_tokens
                 ),
+                limit: Limit::TurnTokens(l.max_turn_tokens),
             },
         ]);
         out
@@ -303,7 +322,8 @@ impl TurnGuard {
                 cap: cap as f64,
                 nudge_at: Some(nudge_at),
                 nudge: format!("You have called {name} with identical input {count} times this turn and got the identical result every time -- you look stuck in a loop, and calling it again will not change the answer. At {cap} repeats the turn is stopped."),
-                stop: format!("{name} was called {count} times with identical input and returned the identical result each time -- haest was stuck in a loop (HAEST_MAX_REPEATS is {cap})."),
+                stop: format!("{name} was called {count} times with identical input and returned the identical result each time -- haest was stuck in a loop (the cap is {cap} repeats)."),
+                limit: Limit::Repeats(cap),
             })
             .collect()
     }

@@ -1,6 +1,6 @@
 //! Write and Edit: the tools that change a file ([`WriteTool`], [`EditTool`];
 //! Read lives in [`crate::read`]). Both go through the workspace's files, so in
-//! the default sandbox an edit stays in memory until `/apply`.
+//! the default sandbox an edit stays in memory until the human applies it.
 //!
 //! Names and parameter keys follow the Claude Code convention (`file_path`,
 //! `old_string`, ...) on purpose: every frontier model has seen millions of

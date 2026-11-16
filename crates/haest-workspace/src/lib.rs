@@ -6,7 +6,7 @@
 //!
 //! | Workspace | Files | Shell | A write lands |
 //! |---|---|---|---|
-//! | [`SandboxWorkspace::open`] (the default) | the project, copy-on-write over the real disk | bashkit, a simulated bash: no real programs, no network | in memory, until `/apply` |
+//! | [`SandboxWorkspace::open`] (the default) | the project, copy-on-write over the real disk | bashkit, a simulated bash: no real programs, no network | in memory, until the human applies it |
 //! | [`SandboxWorkspace::over`] | any haest [`Fs`] the host has | the same simulated bash | in that `Fs` |
 //! | [`RealWorkspace`] | the real disk ([`RealFs`]) | the real `bash`, in its own process group | on disk, at once |
 //!
@@ -34,13 +34,14 @@
 //! the CSV tool `xan`, but no real program and no network. The model is told so
 //! through [`Workspace::prompt_note`].
 //!
-//! # `/changes` and `/apply`
+//! # Reviewing and applying the sandbox's changes
 //!
 //! The overlay records every path a tool or the shell changes ([`OverlayChanges`],
-//! reached through [`Workspace::changes`]). `list` is `/changes`; `diff` shows
-//! one change; `apply` is `/apply`: it writes every change to the real disk,
-//! skips a path the human edited on disk meanwhile (a conflict), and refuses one
-//! that would write through a symlink.
+//! reached through [`Workspace::changes`]), for the human to review and apply
+//! through the host (the `haest` command's `/changes` and `/apply`). `list`
+//! names every change; `diff` shows one; `apply` writes every change to the
+//! real disk, skips a path the human edited on disk meanwhile (a conflict), and
+//! refuses one that would write through a symlink.
 //!
 //! ```
 //! use std::time::Duration;
@@ -66,14 +67,14 @@
 //! // The disk has not changed.
 //! assert_eq!(std::fs::read_to_string(project.join("notes.md"))?, "old\n");
 //!
-//! // /changes: each change by its path inside the project.
+//! // Each change by its path inside the project.
 //! let changes = ws.changes().expect("the default sandbox records its changes");
 //! let list = changes.list().await;
 //! assert_eq!(list[0].path, "/notes.md");
 //! assert_eq!(list[0].kind, ChangeKind::Modified);
 //! assert!(changes.diff(&list[0]).await.contains("+new"));
 //!
-//! // /apply: the change goes to disk, and is no longer listed.
+//! // Applied: the change goes to disk, and is no longer listed.
 //! let report = changes.apply().await?;
 //! assert_eq!(report.applied.len(), 1);
 //! assert_eq!(std::fs::read_to_string(project.join("notes.md"))?, "new\n");
@@ -88,8 +89,8 @@
 //! implements haest's [`Fs`] and hands it to [`SandboxWorkspace::over`]. The
 //! tools write to that `Fs`, and the shell runs over the same object through
 //! [`BashkitFsOverHaest`], so the file the agent writes with Write is the file
-//! `cat` shows. There is no overlay and no `/changes`: the host decides what a
-//! write means.
+//! `cat` shows. There is no overlay and no changes to review: the host decides
+//! what a write means.
 //!
 //! ```
 //! use std::{path::Path, sync::Arc, time::Duration};

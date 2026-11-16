@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use haest::{runtime::Ui, tools::agents::SubagentEvent};
+use haest::{core::remedy::Limit, runtime::Ui, tools::agents::SubagentEvent};
 
 use crate::{
     agents::AgentLog,
@@ -56,6 +56,10 @@ impl Ui for TermUi {
 
     fn error(&self, text: &str) {
         self.notice(Level::Error, text);
+    }
+
+    fn remedy(&self, limit: Limit) -> Option<String> {
+        crate::remedy::remedy(limit)
     }
 
     /// The REPL prompt is open (a line printed now lands above it).

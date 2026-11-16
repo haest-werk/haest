@@ -28,6 +28,7 @@ use crate::{
     ledger::Ledger,
     messages::{MediaPart, Message},
     provider::{Effort, ModelResolver, WebSearchConfig},
+    remedy::Remedies,
     tool::{ToolServices, ToolSource},
     workspace::Workspace,
 };
@@ -234,11 +235,14 @@ pub struct AgentDeps {
     pub ledger: Option<Arc<Mutex<Ledger>>>,
     /// Provider-side web search for every model call; None = off.
     pub web_search: Option<WebSearchConfig>,
+    /// The host's way past a turn cap or the request cap, added to the
+    /// turn's error when one stops it; none unless set.
+    pub remedies: Remedies,
 }
 
 impl AgentDeps {
     /// The minimum: models, tools, a system prompt and a workspace. Everything else off:
-    /// no spill directory, [`NoHooks`], no ledger, no web search.
+    /// no spill directory, [`NoHooks`], no ledger, no web search, no remedies.
     pub fn new(
         models: Arc<dyn ModelResolver>,
         tools: Arc<dyn ToolSource>,
@@ -256,6 +260,7 @@ impl AgentDeps {
             hooks: Arc::new(NoHooks),
             ledger: None,
             web_search: None,
+            remedies: Remedies::default(),
         }
     }
 }

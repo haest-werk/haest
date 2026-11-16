@@ -157,6 +157,22 @@ fn the_human_is_warned_once_on_crossing_80_percent_and_again_after_a_raise() {
 }
 
 #[test]
+fn the_warning_and_the_stop_end_with_the_hosts_remedy_for_the_cap_in_force() {
+    let (ledger, rec) = ledger_with(10.0, 0);
+    let mut ledger = ledger.with_remedies(Remedies::new(|limit| match limit {
+        Limit::Conversation(ConversationCap::Usd(cap)) => Some(format!("RAISE-FROM-{cap}")),
+        _ => None,
+    }));
+    ledger.set_cap(ConversationCap::Usd(5.0));
+    ledger.charge(&cost(4.5));
+    let warned = rec.warnings.lock().unwrap().clone();
+    assert!(warned[0].ends_with(" RAISE-FROM-5"), "{warned:?}");
+    ledger.charge(&cost(1.0));
+    let stop = ledger.exhausted().unwrap();
+    assert!(stop.ends_with(" RAISE-FROM-5"), "{stop}");
+}
+
+#[test]
 fn a_call_that_billed_nothing_is_not_persisted() {
     let (mut ledger, rec) = ledger_with(0.0, 0);
     ledger.charge(&Usage::default());

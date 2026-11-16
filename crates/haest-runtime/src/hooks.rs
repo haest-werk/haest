@@ -22,6 +22,7 @@ use crate::{
         core::compaction::{CompactionConfig, compact, needs_compaction},
         core::ledger::{LedgerHooks, LedgerSnapshot},
         core::messages::{MediaPart, Usage},
+        core::remedy::Remedies,
         core::session::{JsonlSessionFile, SessionRecord, SessionSink},
         core::tool::ToolServices,
         now_ms,
@@ -83,6 +84,13 @@ impl RuntimeHooks {
             effort: Mutex::new(effort),
             effort_notes: Mutex::default(),
         }
+    }
+
+    /// The UI's [`remedy`](Ui::remedy) for every limit, as the loop, the
+    /// ledger, the inbox's gate and the sandbox take it.
+    pub fn remedies(&self) -> Remedies {
+        let ui = self.ui.clone();
+        Remedies::new(move |limit| ui.remedy(limit))
     }
 
     /// The session file records go to now. [`Runtime::clear`](crate::Runtime::clear)

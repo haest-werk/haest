@@ -20,6 +20,7 @@ use crate::{
         ChildEnv, ShutWorkspace, Workspace, WorkspaceMode,
         code::sandbox_commands,
         core::fs::{Fs, ensure_dir},
+        core::remedy::Remedies,
         mcp::{McpHub, McpServerConfig, McpTransport},
         tools::{Inbox, JobHub},
         workspace::{RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace},
@@ -125,7 +126,8 @@ async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> anyhow::Result<()> {
 /// roots) and the spill dir (read-write); a host's Fs is the sandbox's whole
 /// world. On the disk the spill dir is made first, private. `passed` (the
 /// variables the host passes on purpose) reaches the shell either way: the
-/// sandbox's alone, real bash's over `child_env`. `workspace = shut` is a
+/// sandbox's alone, real bash's over `child_env`. The sandbox tells the model
+/// how the human applies its edits with `remedies`. `workspace = shut` is a
 /// workspace with no files and no shell, in any world.
 ///
 /// # Errors
@@ -139,6 +141,7 @@ pub async fn workspace_for(
     passed: &ChildEnv,
     skill_dirs: &[PathBuf],
     spill: &Path,
+    remedies: Remedies,
 ) -> anyhow::Result<Arc<dyn Workspace>> {
     let fs = world.fs();
     let ws = match (s.workspace, world.child_env(passed)) {
@@ -165,9 +168,10 @@ pub async fn workspace_for(
                 .context("opening the sandbox")?
         }
     };
-    let ws = sandbox_commands()
-        .into_iter()
-        .fold(ws.with_env(passed.clone()), SandboxWorkspace::with_command);
+    let ws = sandbox_commands().into_iter().fold(
+        ws.with_env(passed.clone()).with_remedies(remedies),
+        SandboxWorkspace::with_command,
+    );
     Ok(Arc::new(ws))
 }
 

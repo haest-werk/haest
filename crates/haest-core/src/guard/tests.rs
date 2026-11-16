@@ -117,7 +117,7 @@ async fn the_step_cap_stops_the_turn_with_one_nudge_on_the_way() {
 #[test]
 fn wall_time_on_the_hosts_clock_is_nudged_at_half_and_stopped_at_the_cap() {
     let clock = Arc::new(TestHooks::default());
-    let mut guard = TurnGuard::new(clock.clone(), None);
+    let mut guard = TurnGuard::new(clock.clone(), None, Remedies::default());
     let l = Some(turn_caps(|l| l.max_turn_ms = 1000));
     let u = Usage::default();
     assert_eq!(guard.nudge(&u, l.as_ref()), None);
@@ -139,8 +139,28 @@ async fn a_model_that_answers_without_tools_is_never_nudged() {
 }
 
 #[test]
+fn a_stop_ends_with_the_hosts_remedy_for_the_cap_that_stopped_it() {
+    let clock = Arc::new(TestHooks::default());
+    let remedies = Remedies::new(|limit| match limit {
+        Limit::TurnMs(1000) => Some("REMEDY-TIME".into()),
+        Limit::RequestTokens(10) => Some("REMEDY-REQUEST".into()),
+        _ => None,
+    });
+    let mut guard = TurnGuard::new(clock.clone(), None, remedies);
+    let l = Some(turn_caps(|l| {
+        l.max_turn_ms = 1000;
+        l.max_request_tokens = 10;
+    }));
+    clock.set_now(1000);
+    let stop = guard.stop(&Usage::default(), l.as_ref()).unwrap();
+    assert!(stop.ends_with(" REMEDY-TIME"), "{stop}");
+    let refused = guard.too_big(11, l.as_ref()).unwrap();
+    assert!(refused.ends_with(" REMEDY-REQUEST"), "{refused}");
+}
+
+#[test]
 fn room_is_what_the_request_cap_leaves_after_the_last_request_and_the_results_since() {
-    let mut guard = TurnGuard::new(Arc::new(TestHooks::default()), None);
+    let mut guard = TurnGuard::new(Arc::new(TestHooks::default()), None, Remedies::default());
     let l = Some(turn_caps(|l| l.max_request_tokens = 1000));
     assert_eq!(guard.room(None), None);
     assert_eq!(guard.too_big(400, l.as_ref()), None);

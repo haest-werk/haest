@@ -1,6 +1,7 @@
 //! What a host shows the human. The runtime decides WHAT happened; the [`Ui`]
 //! decides how it looks (a terminal, a web panel, a log).
 
+use haest_core::remedy::Limit;
 use haest_tools::agents::SubagentEvent;
 
 /// PLUG POINT: how the human hears from a conversation.
@@ -72,4 +73,11 @@ pub trait Ui: Send + Sync {
     /// `id` [`subagent`](Self::subagent) gets), despite the parameter's name.
     /// Ignored by default.
     fn subagents_running(&self, _names: &[String]) {}
+
+    /// How the human gets past `limit` in this host (its command, its
+    /// setting): added after haest's message about it, which names neither.
+    /// None by default.
+    fn remedy(&self, _limit: Limit) -> Option<String> {
+        None
+    }
 }

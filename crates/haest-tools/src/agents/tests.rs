@@ -8,7 +8,7 @@ mod support;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use super::SubagentCaps;
+use super::{AgentError, SubagentCaps};
 use support::{Rig, call, now, say, spawns};
 
 pub(super) fn caps() -> SubagentCaps {
@@ -137,7 +137,8 @@ async fn past_the_concurrency_cap_a_spawn_is_refused_with_the_cap_named() {
     let results = r.tool_results();
     assert!(!results[0].1);
     assert!(results[1].1);
-    assert!(results[1].0.contains("HAEST_MAX_SUBAGENTS"));
+    let refusal = AgentError::TooMany { running: 1, max: 1 };
+    assert_eq!(results[1].0, refusal.to_string());
     release.cancel();
     r.settle(|r| {
         r.hub.running().is_empty()

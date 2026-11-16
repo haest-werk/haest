@@ -40,9 +40,16 @@ async fn run(ws: &dyn Workspace, script: &str) -> String {
 async fn the_sandbox_shell_sees_the_passed_variables_and_none_of_the_hosts_own() {
     let world = World::Fs(Arc::new(MemFs::new()));
     let passed = vars(&[("GH_TOKEN", "t0k")]);
-    let ws = workspace_for(&settings(), &world, &passed, &[], Path::new("/d/spill"))
-        .await
-        .unwrap();
+    let ws = workspace_for(
+        &settings(),
+        &world,
+        &passed,
+        &[],
+        Path::new("/d/spill"),
+        Remedies::default(),
+    )
+    .await
+    .unwrap();
     let out = run(ws.as_ref(), "printf '%s|%s' \"$GH_TOKEN\" \"$CARGO_HOME\"").await;
     assert_eq!(out, "t0k|");
 }
@@ -59,7 +66,7 @@ async fn real_bash_gets_the_passed_variables_over_child_env() {
     };
     let passed = vars(&[("SHARED", "passed"), ("GH_TOKEN", "t0k")]);
     let spill = scratch("real-bash");
-    let ws = workspace_for(&s, &world, &passed, &[], &spill)
+    let ws = workspace_for(&s, &world, &passed, &[], &spill, Remedies::default())
         .await
         .unwrap();
     let out = run(ws.as_ref(), "printf '%s|%s' \"$SHARED\" \"$GH_TOKEN\"").await;
@@ -96,12 +103,27 @@ async fn the_real_workspace_needs_the_real_disk() {
     };
     let world = World::Fs(Arc::new(MemFs::new()));
     let none = ChildEnv::default();
-    let err = workspace_for(&s, &world, &none, &[], Path::new("/d/spill"))
-        .await
-        .err()
-        .unwrap();
+    let err = workspace_for(
+        &s,
+        &world,
+        &none,
+        &[],
+        Path::new("/d/spill"),
+        Remedies::default(),
+    )
+    .await
+    .err()
+    .unwrap();
     assert!(err.to_string().contains("real disk"), "{err}");
-    let sandbox = workspace_for(&settings(), &world, &none, &[], Path::new("/d/spill")).await;
+    let sandbox = workspace_for(
+        &settings(),
+        &world,
+        &none,
+        &[],
+        Path::new("/d/spill"),
+        Remedies::default(),
+    )
+    .await;
     assert!(sandbox.is_ok());
 }
 
@@ -113,10 +135,17 @@ async fn a_spill_dir_that_cannot_be_made_is_named_in_the_error() {
         child_env: ChildEnv::default(),
     };
     let spill = Path::new("/dev/null/spill");
-    let err = workspace_for(&settings(), &world, &ChildEnv::default(), &[], spill)
-        .await
-        .err()
-        .unwrap();
+    let err = workspace_for(
+        &settings(),
+        &world,
+        &ChildEnv::default(),
+        &[],
+        spill,
+        Remedies::default(),
+    )
+    .await
+    .err()
+    .unwrap();
     assert!(format!("{err:#}").contains("/dev/null/spill"), "{err:#}");
 }
 
@@ -143,9 +172,16 @@ async fn the_spill_dir_on_the_disk_is_private() {
             ..settings()
         };
         let spill = cwd.join("data/spill/session");
-        let ws = workspace_for(&s, &world, &ChildEnv::default(), &[], &spill)
-            .await
-            .unwrap();
+        let ws = workspace_for(
+            &s,
+            &world,
+            &ChildEnv::default(),
+            &[],
+            &spill,
+            Remedies::default(),
+        )
+        .await
+        .unwrap();
         ensure_dir(ws.fs().as_ref(), &spill).await.unwrap();
         let bits = std::fs::metadata(&spill).unwrap().permissions().mode() & 0o777;
         assert_eq!(bits, 0o700, "{name} workspace: {bits:o}");
@@ -166,9 +202,16 @@ async fn a_shut_workspace_is_shut_in_any_world() {
         },
     ];
     for world in worlds {
-        let ws = workspace_for(&s, &world, &ChildEnv::default(), &[], Path::new("/d/spill"))
-            .await
-            .unwrap();
+        let ws = workspace_for(
+            &s,
+            &world,
+            &ChildEnv::default(),
+            &[],
+            Path::new("/d/spill"),
+            Remedies::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(ws.mode(), WorkspaceMode::Shut);
     }
 }

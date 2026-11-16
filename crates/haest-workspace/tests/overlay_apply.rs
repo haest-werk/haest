@@ -1,4 +1,4 @@
-//! What /apply may not do to the real disk, whatever the sandbox wrote:
+//! What applying may not do to the real disk, whatever the sandbox wrote:
 //! reach through a symlink in the project, out of it or anywhere else.
 
 mod common;

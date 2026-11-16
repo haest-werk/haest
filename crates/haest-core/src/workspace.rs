@@ -67,7 +67,8 @@ pub const EXIT_NOT_FOUND: i32 = 127;
 /// stdout and stderr interleaved, whole UTF-8 characters only.
 pub type OutputChunks = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// One path the sandbox changed, for `/changes` and `/apply`.
+/// One path the sandbox changed: what a host lists for the human to review,
+/// and applies ([`ChangeSet`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Change {
     /// Overlay path, e.g. /src/a.ts.
@@ -99,14 +100,14 @@ pub enum ApplyFailureCode {
     /// A symlink on the real disk is on its way, so the write could land
     /// outside the project.
     OutsideProject,
-    /// The change is a symlink the sandbox made, or sits behind one: /apply
+    /// The change is a symlink the sandbox made, or sits behind one: applying
     /// never makes a link.
     Symlink,
     /// The disk refused it (permissions, a full disk).
     WriteFailed,
 }
 
-/// A change /apply could not put on disk. It stays in the sandbox, still listed.
+/// A change applying could not put on disk. It stays in the sandbox, still listed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FailedChange {
     /// The change (its keys inline on the wire, beside `code` and `reason`).
@@ -118,7 +119,7 @@ pub struct FailedChange {
     pub reason: String,
 }
 
-/// What /apply did with every change.
+/// What applying did with every change ([`ChangeSet::apply`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApplyReport {
     /// Now on the real disk, and gone from the sandbox's list.

@@ -2,10 +2,10 @@
 //! (the TS haest's `overlay-apply.ts`).
 //!
 //! Refused, each with its code, before anything is written:
-//! - a symlink the sandbox made, or a change behind one (`symlink`): /apply
+//! - a symlink the sandbox made, or a change behind one (`symlink`): applying
 //!   never makes a link, so the human makes it, from the target the reason names;
 //! - a symlink on the real disk on the way, the path's own included
-//!   (`outside-project`): /apply writes, creates and deletes only at
+//!   (`outside-project`): applying writes, creates and deletes only at
 //!   `root/path` itself, never through a link out of the project.
 //!
 //! A change the disk still refuses (permissions, a full disk) fails alone
@@ -51,7 +51,7 @@ impl OverlayChanges {
             return Err((
                 ApplyFailureCode::Symlink,
                 format!(
-                    "a symlink to {}: /apply does not make links, so make it yourself",
+                    "a symlink to {}: applying does not make links, so make it yourself",
                     target.display()
                 ),
             ));
@@ -61,7 +61,7 @@ impl OverlayChanges {
         if Links::new(disk, &self.book.root).through_a_link(path).await {
             return Err((
                 ApplyFailureCode::OutsideProject,
-                "a symlink on the real disk is on its way, and /apply never writes through one"
+                "a symlink on the real disk is on its way, and applying never writes through one"
                     .into(),
             ));
         }

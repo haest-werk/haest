@@ -10,7 +10,10 @@
 //! The host runs what reaches its [`crate::Inbox`] through [`AgentTurnGate::agent_turn`],
 //! and the human's own messages through [`AgentTurnGate::human`].
 
-use haest_core::__private::NUDGE_SHARE;
+use haest_core::{
+    __private::NUDGE_SHARE,
+    remedy::{Limit, Remedies},
+};
 
 /// The counter between the inbox and the agent: how many turns in a row ran
 /// with no human message, and what is held once that reaches the cap.
@@ -42,6 +45,7 @@ pub struct AgentTurnGate {
     cap: u32,
     /// The human must hear this (once per hold).
     notice: Box<dyn Fn(&str) + Send + Sync>,
+    remedies: Remedies,
     streak: u32,
     held: Vec<String>,
 }
@@ -54,9 +58,17 @@ impl AgentTurnGate {
         Self {
             cap,
             notice: Box::new(notice),
+            remedies: Remedies::default(),
             streak: 0,
             held: Vec::new(),
         }
+    }
+
+    /// The host's way past the cap ([`Limit::AgentTurns`]), added to the
+    /// notice that messages are being held.
+    pub fn with_remedies(mut self, remedies: Remedies) -> Self {
+        self.remedies = remedies;
+        self
     }
 
     /// The human posted `text`: the streak ends, and anything held rides in
@@ -78,10 +90,11 @@ impl AgentTurnGate {
     pub fn agent_turn(&mut self, text: &str) -> Option<String> {
         if self.cap > 0 && self.streak >= self.cap {
             if self.held.is_empty() {
-                (self.notice)(&format!(
-                    "haest is holding messages from other conversations and its own background jobs: {} turns in a row ran with no message from you (HAEST_MAX_AGENT_TURNS is {}). They are kept, not dropped -- post anything and they are delivered with it.",
+                let text = format!(
+                    "haest is holding messages from other conversations and its own background jobs: {} turns in a row ran with no message from you, the cap is {}. They are kept, not dropped -- post anything and they are delivered with it.",
                     self.streak, self.cap
-                ));
+                );
+                (self.notice)(&self.remedies.add_to(text, Limit::AgentTurns(self.cap)));
             }
             self.held.push(text.to_string());
             return None;
@@ -123,6 +136,17 @@ mod tests {
         assert_eq!(g.agent_turn("m5"), None);
         assert_eq!(g.agent_turn("m6"), None);
         assert_eq!(notices.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_hold_notice_ends_with_the_hosts_remedy_for_the_cap() {
+        let (g, notices) = gate(1);
+        let mut g = g.with_remedies(Remedies::new(|limit| {
+            (limit == Limit::AgentTurns(1)).then(|| "RAISE-IT".to_string())
+        }));
+        g.agent_turn("m1");
+        assert_eq!(g.agent_turn("m2"), None);
+        assert!(notices.lock().unwrap()[0].ends_with(" RAISE-IT"));
     }
 
     #[test]

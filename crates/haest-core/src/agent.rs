@@ -324,8 +324,8 @@ impl Agent {
         self.control.clone()
     }
 
-    /// Replace history wholesale (compaction, /clear, an edit between
-    /// turns). Does not fire [`on_message`](crate::AgentHooks::on_message).
+    /// Replace history wholesale (compaction, a cleared conversation, an
+    /// edit between turns). Does not fire [`on_message`](crate::AgentHooks::on_message).
     pub fn replace_history(&mut self, history: Vec<Message>) {
         self.history = history;
     }
@@ -368,7 +368,7 @@ impl Agent {
             }
         };
         let _running = Running(self.control.clone());
-        // Spent between turns (a /compact) belongs to no turn.
+        // Spent between turns (a compaction the human asked for) belongs to no turn.
         self.take_side_spend();
         let mut turn = Turn::new(cancel, self.guard(), sink);
         self.add_user(input, &mut turn).await;
@@ -378,7 +378,11 @@ impl Agent {
 
     /// A fresh guard per turn: its caps and clock start over.
     fn guard(&self) -> TurnGuard {
-        TurnGuard::new(self.deps.hooks.clone(), self.deps.ledger.clone())
+        TurnGuard::new(
+            self.deps.hooks.clone(),
+            self.deps.ledger.clone(),
+            self.deps.remedies.clone(),
+        )
     }
 
     /// The hard caps for the current model spec; read fresh at every check.

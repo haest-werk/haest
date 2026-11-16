@@ -52,15 +52,15 @@ pub struct TurnCaps {
 /// The loop never reads them; `haest-tools`' Agent tool enforces them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SubagentCaps {
-    /// How deep agents may nest (main = 0); HAEST_MAX_AGENT_DEPTH.
+    /// How deep agents may nest (main = 0).
     pub max_depth: u32,
-    /// Subagents running at once, across the tree; HAEST_MAX_SUBAGENTS.
+    /// Subagents running at once, across the tree.
     pub max_concurrent: usize,
-    /// One subagent's spend; HAEST_SUBAGENT_USD.
+    /// One subagent's spend.
     pub usd: f64,
-    /// One subagent's model calls; HAEST_SUBAGENT_STEPS.
+    /// One subagent's model calls.
     pub steps: u32,
-    /// One subagent's wall clock; HAEST_SUBAGENT_MINUTES.
+    /// One subagent's wall clock.
     pub minutes: u64,
 }
 
@@ -103,7 +103,7 @@ pub(crate) fn request_too_big(estimate: u64, caps: &TurnCaps) -> Option<String> 
         return None;
     }
     Some(format!(
-        "Model call refused: the request is ~{estimate} tokens, the cap is {} (HAEST_MAX_REQUEST_TOKENS). Run /compact or /clear, then continue.",
+        "Model call refused: the request is ~{estimate} tokens, the cap is {}. Compact or clear the conversation, then continue.",
         caps.max_request_tokens
     ))
 }

@@ -76,7 +76,8 @@ pub struct InboxQueue {
 pub fn inbox(hooks: &Arc<RuntimeHooks>, max_agent_turns: u32) -> (Arc<InboxSender>, InboxQueue) {
     let (tx, rx) = unbounded_channel();
     let notice = hooks.clone();
-    let gate = AgentTurnGate::new(max_agent_turns, move |text| notice.warn(text));
+    let gate = AgentTurnGate::new(max_agent_turns, move |text| notice.warn(text))
+        .with_remedies(hooks.remedies());
     let sender = InboxSender {
         tx,
         hooks: hooks.clone(),

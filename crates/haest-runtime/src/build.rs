@@ -119,7 +119,9 @@ async fn find(
     let skill_roots = skill_scan_roots(fs.as_ref(), &skill_options(&hooks.settings)).await;
     let skills = Arc::new(Mutex::new(skills_in(fs.as_ref(), &skill_roots).await));
     let skill_dirs = scan_roots(&skill_roots);
-    let workspace = workspace_for(&hooks.settings, world, env, &skill_dirs, spill).await?;
+    let remedies = hooks.remedies();
+    let workspace =
+        workspace_for(&hooks.settings, world, env, &skill_dirs, spill, remedies).await?;
     let prompt = Arc::new(RuntimePrompt::new(hooks, fs, &skills, workspace.as_ref()).await);
     Ok(Found {
         skill_roots,
@@ -250,10 +252,8 @@ where
         mods.clone(),
         s.code_tools(),
     ));
-    let ledger = Arc::new(Mutex::new(Ledger::new(
-        s.conversation_caps(),
-        hooks.clone(),
-    )));
+    let ledger = Ledger::new(s.conversation_caps(), hooks.clone()).with_remedies(hooks.remedies());
+    let ledger = Arc::new(Mutex::new(ledger));
 
     // The conversation's deps. Tools and prompt are each agent's own: the hub
     // gives every subagent its own, and main's tools hold the hub.
@@ -270,6 +270,7 @@ where
         hooks: hooks.clone(),
         ledger: Some(ledger.clone()),
         web_search: s.web_search_config(),
+        remedies: hooks.remedies(),
         ..empty
     };
     let agents = Agents {

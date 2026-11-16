@@ -1,4 +1,4 @@
-//! /changes and /apply over the sandbox's project overlay (port of the TS
+//! Listing and applying the changes over the sandbox's project overlay (port of the TS
 //! `overlay-changes.test.ts`, plus the untouched-disk check).
 
 mod common;
