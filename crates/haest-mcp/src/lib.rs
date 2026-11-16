@@ -40,7 +40,12 @@
 //! [`kind`](haest_core::tool::Tool::kind) is `mcp.<server>.<tool>`, with the
 //! original names, and a call reaches the server under the tool's own name.
 //! A tool is [`read_only`](haest_core::tool::Tool::read_only), and may run
-//! beside other tools, only when its server says so (`readOnlyHint`).
+//! beside other tools, only when its server says so (`readOnlyHint`). A tool
+//! the server did not describe says what it is and which server it is on.
+//! A result the server marks `isError` is an error output the model reads
+//! ([`mcp_result_to_output`]); a JSON-RPC error, or a server that asks for
+//! input or answers with a task, is a failed call, and so is any call after
+//! [`McpHub::close`].
 //!
 //! # Failures and time limits
 //!
@@ -210,7 +215,7 @@ pub use config::{
 };
 pub use hub::{CALL_TIMEOUT, CONNECT_TIMEOUT, McpFailure, McpHub};
 pub use result::mcp_result_to_output;
-pub use tool::{McpTool, mcp_kind, mcp_tool_name};
+pub use tool::{mcp_kind, mcp_tool_name};
 
 /// rmcp, re-exported for a host that connects its own transport
 /// ([`McpHub::connect_transport`]) and needs its types.

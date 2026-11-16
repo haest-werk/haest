@@ -111,7 +111,7 @@ pub fn mcp_kind(server: &str, tool: &str) -> String {
 /// or a server that asks for input or answers with a task, is a failed call.
 ///
 /// [`mcp_result_to_output`]: crate::mcp_result_to_output
-pub struct McpTool {
+pub(crate) struct McpTool {
     server: String,
     /// The tool's own name on its server: what a call asks for.
     tool: String,
