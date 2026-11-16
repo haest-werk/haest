@@ -55,8 +55,7 @@ pub(crate) async fn open_session(
 ) -> anyhow::Result<OpenSession> {
     let id = match resume {
         None => {
-            let store = open_store(fs, &s.data_dir, &new_session_id(), ui)?;
-            let store = Arc::new(store);
+            let store = Arc::new(open_store(fs, &s.data_dir, &new_session_id(), ui)?);
             return Ok(OpenSession { store, saved: None });
         }
         Some("") => latest_in(fs.as_ref(), &sessions_dir(&s.data_dir), &s.cwd)

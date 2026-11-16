@@ -14,15 +14,17 @@ use crate::{
     inbox::InboxSender,
     kern::{
         AgentDeps, Effort, SystemPrompt,
+        deferred_tools::ToolDeferral,
         mods::{ModSystemPrompt, Mods},
         tool::{Tool, ToolSource},
         tools::{
             Inbox,
             agents::{SubagentEvent, SubagentHost, SubagentHub},
+            tool_search::DeferredTools,
         },
     },
     prompt::{AgentPrompt, RuntimePrompt},
-    tools::{WrappedTools, deferred},
+    tools::WrappedTools,
 };
 
 pub struct Agents {
@@ -75,8 +77,10 @@ impl SubagentHost for Agents {
         (self.host.model(), self.host.effort())
     }
 
+    /// The agent's fixed list behind its own deferral (ToolSearch loads per agent).
     fn tool_source(&self, tools: Vec<Arc<dyn Tool>>) -> Arc<dyn ToolSource> {
-        Arc::new(deferred(tools, self.host.settings.deferred_tools))
+        let deferral = ToolDeferral::new(self.host.settings.deferred_tools);
+        Arc::new(DeferredTools::new(tools, deferral))
     }
 
     fn on_activity(&self, running: &[String]) {

@@ -27,7 +27,7 @@ use crate::kern::{
         BashOptions, BuiltinOptions, ImageTool, ImageToolOptions, JobHub, SkillToolOptions,
         agents::{AgentRef, SubagentHub},
         builtin_tools_where,
-        tool_search::{DeferredTools, deferral_tools},
+        tool_search::deferral_tools,
     },
 };
 
@@ -133,11 +133,6 @@ impl ToolSource for WrappedTools {
     }
 }
 
-/// A subagent's fixed list behind its own deferral (ToolSearch loads per agent).
-pub fn deferred(tools: Vec<Arc<dyn Tool>>, mode: DeferMode) -> DeferredTools {
-    DeferredTools::new(tools, ToolDeferral::new(mode))
-}
-
 /// Main's list (TS `tools()`): the wrapped tools and main's agent tools
 /// (none when `agents` is off), deferred.
 pub struct MainTools {
@@ -154,9 +149,7 @@ impl MainTools {
             deferral: Arc::new(ToolDeferral::new(mode)),
         }
     }
-}
 
-impl MainTools {
     fn all(&self) -> Vec<Arc<dyn Tool>> {
         let mut all = self.wrapped.tools();
         if let Some(hub) = &self.hub {
@@ -187,19 +180,20 @@ mod tests {
         tools.iter().map(|t| t.name().to_string()).collect()
     }
 
+    /// The own tools `picked` names, with no jobs and no image.
+    fn build(picked: &BuiltinTools) -> Vec<Arc<dyn Tool>> {
+        let fs: Arc<dyn Fs> = Arc::new(crate::kern::MemFs::new());
+        let skills = Arc::new(Mutex::new(Vec::new()));
+        own_tools(picked, Arc::default(), skills, fs, None, None)
+    }
+
     #[test]
     fn every_tools_word_picks_a_built_in_and_every_built_in_has_a_word() {
-        let skills = Arc::new(Mutex::new(Vec::new()));
-        let fs: Arc<dyn Fs> = Arc::new(crate::kern::MemFs::new());
-        let every = |picked: &BuiltinTools| {
-            let board = Arc::new(TaskBoard::default());
-            own_tools(picked, board, skills.clone(), fs.clone(), None, None)
-        };
         for word in BuiltinTools::WORDS {
             let one = BuiltinTools::from_words([*word]).unwrap();
-            assert!(!every(&one).is_empty(), "{word} picks nothing");
+            assert!(!build(&one).is_empty(), "{word} picks nothing");
         }
-        for tool in every(&BuiltinTools::ALL) {
+        for tool in build(&BuiltinTools::ALL) {
             let word = crate::kern::tools::builtin_word(tool.name());
             assert!(
                 word.is_some_and(|w| BuiltinTools::WORDS.contains(&w)),
@@ -211,21 +205,8 @@ mod tests {
 
     #[test]
     fn task_and_skill_tools_follow_their_switches() {
-        let board = Arc::new(TaskBoard::new(|_| {}));
-        let fs: Arc<dyn Fs> = Arc::new(crate::kern::MemFs::new());
-        let skills = Arc::new(Mutex::new(Vec::new()));
-        let build = |picked: BuiltinTools| {
-            own_tools(
-                &picked,
-                board.clone(),
-                skills.clone(),
-                fs.clone(),
-                None,
-                None,
-            )
-        };
-        assert!(build(BuiltinTools::NONE).is_empty());
-        let with = names(&build(BuiltinTools {
+        assert!(build(&BuiltinTools::NONE).is_empty());
+        let with = names(&build(&BuiltinTools {
             tasks: true,
             skill: true,
             ..BuiltinTools::NONE
