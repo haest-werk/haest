@@ -71,11 +71,11 @@ pub fn normalize_project_routing(raw: &Value) -> ProjectRouting {
 
 /// True when the scope would never change a request.
 pub fn is_empty_routing(config: &ProjectRouting) -> bool {
-    let r = &config.routing;
-    r.global.banned.is_empty()
-        && r.global.favorites.is_empty()
-        && r.overrides.is_empty()
-        && config.priority.is_none()
+    says_nothing(&config.routing) && config.priority.is_none()
+}
+
+fn says_nothing(r: &ProviderRouting) -> bool {
+    r.global.banned.is_empty() && r.global.favorites.is_empty() && r.overrides.is_empty()
 }
 
 /// The routing scopes in a host's JSON (kern's `provider_routing` setting):
@@ -95,11 +95,7 @@ pub fn parse_routing(raw: &str) -> Result<Option<RoutingEnv>, String> {
         .filter(|p| !p.is_null())
         .map(normalize_project_routing)
         .filter(|p| !is_empty_routing(p));
-    let fleet_empty = is_empty_routing(&ProjectRouting {
-        routing: fleet.clone(),
-        priority: None,
-    });
-    if fleet_empty && project.is_none() {
+    if says_nothing(&fleet) && project.is_none() {
         return Ok(None);
     }
     Ok(Some(RoutingEnv { fleet, project }))
