@@ -129,6 +129,14 @@ pub struct ShutWorkspace;
 
 const NO_SHELL: &str = "this workspace has no shell";
 
+fn no_shell() -> ExecResult {
+    ExecResult {
+        stderr: NO_SHELL.into(),
+        exit_code: EXIT_NOT_FOUND,
+        ..Default::default()
+    }
+}
+
 #[async_trait]
 impl Workspace for ShutWorkspace {
     fn mode(&self) -> WorkspaceMode {
@@ -138,18 +146,10 @@ impl Workspace for ShutWorkspace {
         Arc::new(ShutFs)
     }
     async fn shell(&self, _: &str, _: ExecOptions) -> ExecResult {
-        ExecResult {
-            stderr: NO_SHELL.into(),
-            exit_code: EXIT_NOT_FOUND,
-            ..Default::default()
-        }
+        no_shell()
     }
     async fn run(&self, _: &[String], _: ExecOptions) -> ExecResult {
-        ExecResult {
-            stderr: NO_SHELL.into(),
-            exit_code: EXIT_NOT_FOUND,
-            ..Default::default()
-        }
+        no_shell()
     }
     fn prompt_note(&self) -> String {
         "You have no file system and no shell here; work only with the tools you were given.".into()

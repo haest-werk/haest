@@ -2,7 +2,7 @@
 
 use std::{
     collections::BTreeMap,
-    io,
+    io::{self, ErrorKind},
     path::{Path, PathBuf},
     sync::Mutex,
     time::SystemTime,
@@ -16,6 +16,20 @@ use super::{DirEntry, FileKind, Fs, FsStat, normalize, not_found};
 enum Node {
     File { data: Vec<u8>, modified: SystemTime },
     Dir,
+}
+
+impl Node {
+    fn file(data: &[u8]) -> Self {
+        Node::File {
+            data: data.to_vec(),
+            modified: SystemTime::now(),
+        }
+    }
+}
+
+/// `kind`, naming `p`.
+fn err(kind: ErrorKind, p: &Path) -> io::Error {
+    io::Error::new(kind, p.display().to_string())
 }
 
 /// An in-memory [`Fs`]: tests, scratch space, a sandbox with no disk behind it.
@@ -48,18 +62,10 @@ impl MemFs {
             let mut nodes = fs.nodes.lock().unwrap();
             for (p, d) in files {
                 let p = normalize(p.as_ref());
-                let mut parent = p.parent().map(Path::to_path_buf);
-                while let Some(dir) = parent {
-                    nodes.entry(dir.clone()).or_insert(Node::Dir);
-                    parent = dir.parent().map(Path::to_path_buf);
+                for dir in p.ancestors().skip(1) {
+                    nodes.entry(dir.to_path_buf()).or_insert(Node::Dir);
                 }
-                nodes.insert(
-                    p,
-                    Node::File {
-                        data: d.as_ref().to_vec(),
-                        modified: SystemTime::now(),
-                    },
-                );
+                nodes.insert(p, Node::file(d.as_ref()));
             }
         }
         fs
@@ -70,10 +76,7 @@ impl MemFs {
             None => Ok(()),
             Some(parent) => match nodes.get(parent) {
                 Some(Node::Dir) => Ok(()),
-                Some(Node::File { .. }) => Err(io::Error::new(
-                    io::ErrorKind::NotADirectory,
-                    parent.display().to_string(),
-                )),
+                Some(Node::File { .. }) => Err(err(ErrorKind::NotADirectory, parent)),
                 None => Err(not_found(parent)),
             },
         }
@@ -94,10 +97,7 @@ impl MemFs {
         let p = normalize(path);
         match self.nodes.lock().unwrap().get(&p) {
             Some(Node::File { data, .. }) => Ok(data[..max.min(data.len())].to_vec()),
-            Some(Node::Dir) => Err(io::Error::new(
-                io::ErrorKind::IsADirectory,
-                p.display().to_string(),
-            )),
+            Some(Node::Dir) => Err(err(ErrorKind::IsADirectory, &p)),
             None => Err(not_found(&p)),
         }
     }
@@ -118,18 +118,9 @@ impl Fs for MemFs {
         let mut nodes = self.nodes.lock().unwrap();
         Self::parent_is_dir(&nodes, &p)?;
         if matches!(nodes.get(&p), Some(Node::Dir)) {
-            return Err(io::Error::new(
-                io::ErrorKind::IsADirectory,
-                p.display().to_string(),
-            ));
+            return Err(err(ErrorKind::IsADirectory, &p));
         }
-        nodes.insert(
-            p,
-            Node::File {
-                data: data.to_vec(),
-                modified: SystemTime::now(),
-            },
-        );
+        nodes.insert(p, Node::file(data));
         Ok(())
     }
 
@@ -142,20 +133,9 @@ impl Fs for MemFs {
                 d.extend_from_slice(data);
                 *modified = SystemTime::now();
             }
-            Some(Node::Dir) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::IsADirectory,
-                    p.display().to_string(),
-                ));
-            }
+            Some(Node::Dir) => return Err(err(ErrorKind::IsADirectory, &p)),
             None => {
-                nodes.insert(
-                    p,
-                    Node::File {
-                        data: data.to_vec(),
-                        modified: SystemTime::now(),
-                    },
-                );
+                nodes.insert(p, Node::file(data));
             }
         }
         Ok(())
@@ -183,12 +163,7 @@ impl Fs for MemFs {
         let nodes = self.nodes.lock().unwrap();
         match nodes.get(&p) {
             Some(Node::Dir) => {}
-            Some(Node::File { .. }) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotADirectory,
-                    p.display().to_string(),
-                ));
-            }
+            Some(Node::File { .. }) => return Err(err(ErrorKind::NotADirectory, &p)),
             None => return Err(not_found(&p)),
         }
         Ok(Self::children(&nodes, &p)
@@ -213,33 +188,23 @@ impl Fs for MemFs {
         let mut nodes = self.nodes.lock().unwrap();
         match nodes.get(&p) {
             Some(Node::Dir) if recursive => return Ok(()),
-            Some(_) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::AlreadyExists,
-                    p.display().to_string(),
-                ));
-            }
+            Some(_) => return Err(err(ErrorKind::AlreadyExists, &p)),
             None => {}
         }
-        if recursive {
-            for a in p.ancestors().collect::<Vec<_>>().into_iter().rev() {
-                match nodes.get(a) {
-                    Some(Node::File { .. }) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::NotADirectory,
-                            a.display().to_string(),
-                        ));
-                    }
-                    Some(Node::Dir) => {}
-                    None => {
-                        nodes.insert(a.to_path_buf(), Node::Dir);
-                    }
-                }
-            }
+        if !recursive {
+            Self::parent_is_dir(&nodes, &p)?;
+            nodes.insert(p, Node::Dir);
             return Ok(());
         }
-        Self::parent_is_dir(&nodes, &p)?;
-        nodes.insert(p, Node::Dir);
+        for a in p.ancestors().collect::<Vec<_>>().into_iter().rev() {
+            match nodes.get(a) {
+                Some(Node::File { .. }) => return Err(err(ErrorKind::NotADirectory, a)),
+                Some(Node::Dir) => {}
+                None => {
+                    nodes.insert(a.to_path_buf(), Node::Dir);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -252,10 +217,7 @@ impl Fs for MemFs {
                 let kids: Vec<PathBuf> =
                     Self::children(&nodes, &p).map(|(k, _)| k.clone()).collect();
                 if !kids.is_empty() && !recursive {
-                    return Err(io::Error::new(
-                        io::ErrorKind::DirectoryNotEmpty,
-                        p.display().to_string(),
-                    ));
+                    return Err(err(ErrorKind::DirectoryNotEmpty, &p));
                 }
                 for k in kids {
                     nodes.remove(&k);

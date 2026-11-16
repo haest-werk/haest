@@ -22,7 +22,7 @@ use std::{
 pub use git::current_git_branch;
 pub use prompt::{PromptInputs, build_system_prompt};
 
-use crate::fs::{Fs, normalize};
+use crate::fs::{Fs, normalize, read_lossy};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstructionFile {
@@ -42,8 +42,7 @@ const PROJECT_FILES: [&str; 4] = [
 const MAX_FILE_CHARS: usize = 60_000;
 
 async fn read_if_present(fs: &dyn Fs, path: &Path) -> Option<InstructionFile> {
-    let bytes = fs.read(path).await.ok()?;
-    let text = String::from_utf8_lossy(&bytes);
+    let text = read_lossy(fs, path).await?;
     let content = text.trim();
     if content.is_empty() {
         return None;

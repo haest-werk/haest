@@ -133,12 +133,15 @@ pub fn normalize(path: &Path) -> PathBuf {
 /// Absolute paths stay; relative ones are taken from `cwd`. Dots are resolved
 /// lexically ([`normalize`]).
 pub fn resolve_path(cwd: &Path, p: &str) -> PathBuf {
-    let path = Path::new(p);
-    if path.is_absolute() {
-        normalize(path)
-    } else {
-        normalize(&cwd.join(path))
-    }
+    // `join` keeps an absolute `p` as it is.
+    normalize(&cwd.join(p))
+}
+
+/// A file's text with invalid UTF-8 replaced; None when it cannot be read.
+/// For files kern reads if they are there (instruction files, skills, git's HEAD).
+pub(crate) async fn read_lossy(fs: &dyn Fs, path: &Path) -> Option<String> {
+    let bytes = fs.read(path).await.ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 pub(crate) fn not_found(path: &Path) -> io::Error {

@@ -20,7 +20,10 @@ use super::{
     Skill, SkillSource,
     frontmatter::{Meta, MetaMap, read_meta, split_frontmatter},
 };
-use crate::{context::project_chain, fs::Fs};
+use crate::{
+    context::project_chain,
+    fs::{Fs, read_lossy},
+};
 
 /// A plugin whose `skills/` dir is scanned, its skills named `name:skill`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -155,10 +158,10 @@ async fn scan_dir(fs: &dyn Fs, step: &ScanStep) -> Vec<Skill> {
     let mut out = Vec::new();
     for entry in entries {
         let path = step.dir.join(&entry.name).join("SKILL.md");
-        let Ok(bytes) = fs.read(&path).await else {
+        let Some(text) = read_lossy(fs, &path).await else {
             continue;
         };
-        let Some(meta) = parse_skill_file(&String::from_utf8_lossy(&bytes), &entry.name) else {
+        let Some(meta) = parse_skill_file(&text, &entry.name) else {
             continue;
         };
         let name = match &step.plugin {

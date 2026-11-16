@@ -2,12 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::fs::{Fs, normalize, resolve_path};
-
-async fn read_text(fs: &dyn Fs, path: &Path) -> Option<String> {
-    let bytes = fs.read(path).await.ok()?;
-    Some(String::from_utf8_lossy(&bytes).into_owned())
-}
+use crate::fs::{Fs, normalize, read_lossy, resolve_path};
 
 /// `gitdir: <path>` on any line of a worktree's `.git` file.
 fn gitdir_line(text: &str) -> Option<&str> {
@@ -27,7 +22,7 @@ async fn find_git_dir(fs: &dyn Fs, cwd: &Path) -> Option<PathBuf> {
                 return Some(dot_git);
             }
             if st.is_file() {
-                let text = read_text(fs, &dot_git).await?;
+                let text = read_lossy(fs, &dot_git).await?;
                 return gitdir_line(&text).map(|p| resolve_path(&dir, p));
             }
         }
@@ -46,7 +41,7 @@ fn branch_of(head: &str) -> Option<&str> {
 /// The checked-out branch (or a short sha when detached), read from HEAD; None outside a repo.
 pub async fn current_git_branch(fs: &dyn Fs, cwd: &Path) -> Option<String> {
     let git_dir = find_git_dir(fs, cwd).await?;
-    let head = read_text(fs, &git_dir.join("HEAD")).await?;
+    let head = read_lossy(fs, &git_dir.join("HEAD")).await?;
     let head = head.trim();
     match branch_of(head) {
         Some(b) => Some(b.to_string()),
