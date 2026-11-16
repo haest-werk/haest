@@ -11,7 +11,11 @@
 //!     call never hangs forever on a human who walked away;
 //!   - an ask under an already-interrupted call is a deny at once, never a prompt.
 
-use std::{collections::HashSet, sync::Mutex, time::Duration};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
@@ -64,10 +68,12 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 ///   Deny at once, never a prompt.
 ///
 /// The ALWAYS answers live as long as the gate: one gate per conversation
-/// keeps them for that conversation.
+/// keeps them for that conversation. A clone is the same gate (the same
+/// prompter, the same ALWAYS answers).
 ///
 /// [`with_lines`](Self::with_lines) makes the gate the host's whole
-/// [`ModUi`]: asks through the gate, every other line to one function.
+/// [`ModUi`]: asks through the gate, every other line to one function. The
+/// host keeps the gate itself to [`revoke`](Self::revoke) an ALWAYS.
 ///
 /// # Examples
 ///
@@ -131,9 +137,10 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// assert_eq!(*prompts.lock().unwrap(), ["rm -rf build", "rm -rf ~"]);
 /// # }
 /// ```
-pub struct ApprovalGate<P> {
-    prompter: P,
-    always: Mutex<HashSet<String>>,
+#[derive(Clone)]
+pub struct ApprovalGate {
+    prompter: Arc<dyn Prompter>,
+    always: Arc<Mutex<HashSet<String>>>,
     timeout: Duration,
 }
 
@@ -142,13 +149,13 @@ fn rule_key(req: &ApprovalRequest) -> String {
     format!("{}\n{key}", req.tool_name)
 }
 
-impl<P: Prompter> ApprovalGate<P> {
+impl ApprovalGate {
     /// A gate over `prompter`, with no ALWAYS answers yet and the default
     /// [`ASK_TIMEOUT`].
-    pub fn new(prompter: P) -> Self {
+    pub fn new(prompter: impl Prompter + 'static) -> Self {
         Self {
-            prompter,
-            always: Mutex::default(),
+            prompter: Arc::new(prompter),
+            always: Arc::default(),
             timeout: ASK_TIMEOUT,
         }
     }
@@ -158,11 +165,6 @@ impl<P: Prompter> ApprovalGate<P> {
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
-    }
-
-    /// The prompter the gate asks through.
-    pub fn prompter(&self) -> &P {
-        &self.prompter
     }
 
     /// The human's decision on `req`.
@@ -206,15 +208,20 @@ impl<P: Prompter> ApprovalGate<P> {
             .unwrap()
             .retain(|k| !k.starts_with(&prefix));
     }
-}
 
-impl<P: Prompter + 'static> ApprovalGate<P> {
     /// The host's whole [`ModUi`]: [`ask`](ModUi::ask) through this gate,
     /// and every [`info`](ModUi::info), [`error`](ModUi::error) and
     /// [`debug`](ModUi::debug) line to `lines`, as a [`ModLine`] that says which.
-    /// The [class example](Self#examples) uses it.
-    pub fn with_lines(self, lines: impl Fn(ModLine<'_>) + Send + Sync + 'static) -> impl ModUi {
-        GateUi { gate: self, lines }
+    /// The gate stays the host's: an ALWAYS it [`revoke`](Self::revoke)s is
+    /// gone for the `ModUi` too. The [class example](Self#examples) uses it.
+    pub fn with_lines<F>(&self, lines: F) -> impl ModUi + use<F>
+    where
+        F: Fn(ModLine<'_>) + Send + Sync + 'static,
+    {
+        GateUi {
+            gate: self.clone(),
+            lines,
+        }
     }
 }
 
@@ -232,15 +239,14 @@ pub enum ModLine<'a> {
 
 /// An [`ApprovalGate`] and where the other lines go: the [`ModUi`] that
 /// [`ApprovalGate::with_lines`] makes.
-struct GateUi<P, F> {
-    gate: ApprovalGate<P>,
+struct GateUi<F> {
+    gate: ApprovalGate,
     lines: F,
 }
 
 #[async_trait]
-impl<P, F> ModUi for GateUi<P, F>
+impl<F> ModUi for GateUi<F>
 where
-    P: Prompter + 'static,
     F: Fn(ModLine<'_>) + Send + Sync + 'static,
 {
     async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {

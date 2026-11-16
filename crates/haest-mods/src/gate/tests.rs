@@ -100,3 +100,20 @@ async fn a_gate_with_lines_asks_through_the_gate_and_sends_each_line_as_what_it_
     ui.debug("l");
     assert_eq!(*seen.lock().unwrap(), ["info n", "error e", "debug l"]);
 }
+
+#[tokio::test]
+async fn the_gate_stays_reachable_after_it_becomes_the_mod_ui_so_always_can_be_revoked() {
+    let human = Human::answering([ApprovalAnswer::AllowAlways, ApprovalAnswer::Deny]);
+    let gate = ApprovalGate::new(human.clone());
+    let ui = gate.with_lines(|_| {});
+    let none = CancellationToken::new();
+    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
+    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
+    gate.revoke("Bash");
+    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Deny);
+    assert_eq!(
+        human.prompts(),
+        2,
+        "the revoked ALWAYS asks the human again"
+    );
+}

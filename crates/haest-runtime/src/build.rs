@@ -19,7 +19,7 @@ use crate::{
         core::skills::{Skill, SkillScanRoots, skills_in},
         core::task_board::TaskBoard,
         core::tool::Tool,
-        mods::{ModSystemPrompt, Prompter},
+        mods::{ApprovalGate, ModSystemPrompt, Prompter},
         now_ms,
         providers::{ProviderRegistry, RegistryOptions},
         tools::GenerateImageOptions,
@@ -168,9 +168,10 @@ where
     if session.saved.is_none() {
         create(&session.store, &s.cwd).await?;
     }
+    let gate = ApprovalGate::new(prompter);
     let (mcp, mods) = tokio::join!(
         connect_mcp(&hooks, &world, &passed_env, mcp_servers),
-        mods::load(&hooks, fs.as_ref(), prompter),
+        mods::load(&hooks, fs.as_ref(), &gate),
     );
 
     let board = task_board(&hooks);
@@ -271,6 +272,7 @@ where
         skill_roots: found.skill_roots,
         mcp,
         mods,
+        gate,
         inbox,
         subagents,
         jobs,

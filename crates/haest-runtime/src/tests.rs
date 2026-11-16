@@ -191,6 +191,7 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
     assert!(sent[1].ends_with("/images/models") && sent[2].ends_with("/images"));
 }
 
+mod approvals;
 mod compaction;
 mod deferral;
 mod lifecycle;

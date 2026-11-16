@@ -18,7 +18,7 @@ use crate::{
         core::skills::{Skill, SkillScanRoots, skills_in},
         core::task_board::TaskBoard,
         mcp::McpHub,
-        mods::Mods,
+        mods::{ApprovalGate, Mods},
         now_ms,
         tools::{JobHub, agents::SubagentHub},
     },
@@ -60,6 +60,10 @@ pub struct Runtime<U: ?Sized> {
     /// The mods turned on: the approval mod, plan mode, the human's and the
     /// project's. A host passes the human's text through `rewrite_prompt`.
     pub mods: Arc<Mods>,
+    /// The human's Allow / Deny every mod's ask goes through, with the
+    /// ALWAYS answers given so far; [`revoke`](ApprovalGate::revoke) takes
+    /// a tool's back.
+    pub gate: ApprovalGate,
     /// Turns the human did not start, waiting for main.
     pub inbox: InboxQueue,
     /// Main's subagents (none run when `agents` is off); `stop_all` them at
