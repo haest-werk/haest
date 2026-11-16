@@ -194,8 +194,8 @@ pub async fn work(gateway: &Arc<Gateway>) {
     // Session: the node's file (with a record kind of its own) replays to the same history.
     let replayed = replay(&sessions.file_text());
     assert_eq!(replayed.corrupt_lines, 0);
-    assert_eq!(agent.messages.len(), 10);
-    assert_eq!(replayed.messages, agent.messages);
+    assert_eq!(agent.history().len(), 10);
+    assert_eq!(replayed.messages, agent.history());
 }
 
 /// A dream run (`config::dream`): no files, no shell, only what the node

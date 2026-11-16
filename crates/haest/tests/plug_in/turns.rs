@@ -160,7 +160,7 @@ async fn a_hook_may_refuse_a_model_call_and_end_the_turn() {
     // The history stays whole: the call it made has its result.
     let kinds: Vec<&str> = r
         .agent
-        .messages
+        .history()
         .iter()
         .map(|m| match m {
             Message::User(_) => "user",

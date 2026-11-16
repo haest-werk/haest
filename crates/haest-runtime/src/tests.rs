@@ -45,13 +45,13 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
         .await
         .unwrap();
 
-    let prompt = rt.agent.deps().system_prompt.system_prompt().await;
+    let prompt = rt.agent().deps().system_prompt.system_prompt().await;
     assert!(
         prompt.contains("Answer in haiku."),
         "AGENTS.md from the host's Fs"
     );
     let tools: Vec<String> = rt
-        .agent
+        .agent()
         .deps()
         .tools
         .tools()
@@ -65,7 +65,7 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
     assert!(fs.exists(&session).await, "the session is in the host's Fs");
 
     let err = rt
-        .agent
+        .agent()
         .deps()
         .models
         .resolve("anthropic:claude-opus-5-5")
@@ -107,7 +107,13 @@ async fn try_keyed(
 #[tokio::test]
 async fn a_key_the_host_hands_in_is_the_key_haest_uses() {
     let rt = keyed(&Arc::new(MemFs::new()), None).await;
-    assert!(rt.agent.deps().models.resolve(&rt.agent.model_spec).is_ok());
+    assert!(
+        rt.agent()
+            .deps()
+            .models
+            .resolve(rt.agent().model_spec())
+            .is_ok()
+    );
 }
 
 mod compaction;

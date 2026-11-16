@@ -53,8 +53,8 @@ fn history() -> Vec<Message> {
 /// The loop tests' agent (Echo, one model), at high effort, on [`history`].
 fn agent_with(provider: &Arc<ScriptedProvider>) -> Agent {
     let (mut agent, _) = test_support::agent_with(provider, Opts::default());
-    agent.effort = Some(Effort::High);
-    agent.messages = history();
+    agent.set_effort(Some(Effort::High));
+    agent.replace_history(history());
     agent
 }
 
@@ -145,12 +145,12 @@ async fn one_long_agentic_turn_can_be_compacted() {
     assert!(answered_within(&h[cut..]));
     let p = ScriptedProvider::new([text_answer("THE SUMMARY")]);
     let mut agent = agent_with(&p);
-    agent.messages = h.clone();
+    agent.replace_history(h.clone());
     let res = compact(&mut agent, &CancellationToken::new(), &CFG).await;
     let res = res.unwrap().expect("something to compact");
-    assert_eq!(agent.messages[1..], h[h.len() - res.kept..]);
-    assert!(matches!(&agent.messages[0], Message::User(u) if u.content.contains("THE SUMMARY")));
-    assert!(answered_within(&agent.messages));
+    assert_eq!(agent.history()[1..], h[h.len() - res.kept..]);
+    assert!(matches!(&agent.history()[0], Message::User(u) if u.content.contains("THE SUMMARY")));
+    assert!(answered_within(&agent.history()));
 }
 
 #[tokio::test]
@@ -163,11 +163,11 @@ async fn compact_replaces_the_head_with_a_summary_and_keeps_the_tail_verbatim() 
         .unwrap();
     let cut = cut_index(&history(), CFG.keep_recent);
     assert_eq!(res.kept, history().len() - cut);
-    let Message::User(first) = &agent.messages[0] else {
+    let Message::User(first) = &agent.history()[0] else {
         panic!("summary must be a user message")
     };
     assert!(first.content.contains("THE SUMMARY"));
-    assert_eq!(agent.messages[1..], history()[cut..]);
+    assert_eq!(agent.history()[1..], history()[cut..]);
 }
 
 #[tokio::test]
@@ -192,7 +192,7 @@ async fn the_warm_summary_request_extends_the_last_loop_request() {
         looped.messages[..]
     );
     assert!(matches!(summary.messages.last(), Some(Message::User(_))));
-    let Message::User(first) = &agent.messages[0] else {
+    let Message::User(first) = &agent.history()[0] else {
         panic!("summary must be a user message")
     };
     assert!(first.content.contains("THE SUMMARY"));
@@ -225,7 +225,7 @@ async fn both_paths_empty_is_an_error_and_leaves_history_untouched() {
     let mut agent = agent_with(&p);
     let err = compact(&mut agent, &CancellationToken::new(), &CFG).await;
     assert!(matches!(err, Err(CompactionError::Failed(..))));
-    assert_eq!(agent.messages, history());
+    assert_eq!(agent.history(), history());
 }
 
 #[tokio::test]

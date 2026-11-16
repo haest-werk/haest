@@ -122,8 +122,8 @@
 //!
 //! assert_eq!(end.stop_reason, StopReason::EndTurn);
 //! // The input, the call, its result, the answer.
-//! assert_eq!(agent.messages.len(), 4);
-//! assert!(matches!(&agent.messages[2], Message::Tool(r) if r.content == "HELLO"));
+//! assert_eq!(agent.history().len(), 4);
+//! assert!(matches!(&agent.history()[2], Message::Tool(r) if r.content == "HELLO"));
 //! # }
 //! # #[cfg(not(feature = "testing"))]
 //! # fn main() {}

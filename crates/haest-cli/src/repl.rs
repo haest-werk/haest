@@ -91,12 +91,12 @@ impl QuitGuard {
 }
 
 pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()> {
-    let restored = rt.agent.messages.len();
-    let workspace = rt.agent.deps().workspace.mode();
+    let restored = rt.agent().history().len();
+    let workspace = rt.agent().deps().workspace.mode();
     rt.hooks.info(&format!(
         "haest {} -- {} -- {workspace} workspace -- session {}{}\n/help for commands, Ctrl+D to quit.",
         env!("CARGO_PKG_VERSION"),
-        rt.agent.model_spec,
+        rt.agent().model_spec(),
         rt.session_id(),
         if restored > 0 {
             format!(" ({restored} messages restored)")

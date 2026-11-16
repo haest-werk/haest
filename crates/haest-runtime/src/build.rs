@@ -301,8 +301,8 @@ where
         restore(&hooks, saved, &ledger, &board, &mut agent_opts);
     }
     let agent = Agent::new(deps, agent_opts);
-    hooks.set_model(&agent.model_spec);
-    hooks.set_effort(agent.effort);
+    hooks.set_model(&agent.model_spec());
+    hooks.set_effort(agent.effort());
     if resumed {
         record_given(&hooks, &agent, &opts);
     } else {

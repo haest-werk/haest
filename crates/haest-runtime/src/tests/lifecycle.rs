@@ -127,10 +127,10 @@ async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
 async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothing() {
     let fs = Arc::new(MemFs::new());
     let mut rt = keyed(&fs, None).await;
-    let before = rt.agent.model_spec.clone();
+    let before = rt.agent().model_spec().to_string();
     assert!(rt.set_model("nowhere:x").is_err());
     assert_eq!(
-        (rt.agent.model_spec.as_str(), rt.hooks.model()),
+        (rt.agent().model_spec(), rt.hooks.model()),
         (before.as_str(), before.clone())
     );
 
@@ -143,8 +143,8 @@ async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothi
     rt.hooks.flush().await;
 
     let back = keyed(&fs, Some(rt.session_id())).await;
-    assert_eq!(back.agent.model_spec, OTHER);
-    assert_eq!(back.agent.effort, Some(Effort::High));
+    assert_eq!(back.agent().model_spec(), OTHER);
+    assert_eq!(back.agent().effort(), Some(Effort::High));
 }
 
 /// A resume goes on with the session's own model and effort, unless this run
@@ -157,7 +157,8 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
     rt.set_effort(Some(Effort::High));
     rt.hooks.flush().await;
     let id = rt.session_id();
-    let on = |rt: &crate::Runtime<Recorded>| (rt.agent.model_spec.clone(), rt.agent.effort);
+    let on =
+        |rt: &crate::Runtime<Recorded>| (rt.agent().model_spec().to_string(), rt.agent().effort());
 
     let plain = keyed(&fs, Some(id.clone())).await;
     assert_eq!(on(&plain), (OTHER.to_string(), Some(Effort::High)));
@@ -199,7 +200,7 @@ async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resu
     rt.hooks.flush().await;
 
     let fresh = keyed(&fs, Some(rt.session_id())).await;
-    assert_eq!(fresh.agent.model_spec, OTHER);
+    assert_eq!(fresh.agent().model_spec(), OTHER);
     assert!(fresh.board.list().is_empty());
     let resumed = keyed(&fs, Some(old)).await;
     let kept = resumed.board.list().len();

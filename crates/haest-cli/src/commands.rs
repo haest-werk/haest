@@ -33,11 +33,8 @@ pub async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
         "effort" => effort(rt, args),
         "budget" => budget(rt, args),
         "compact" => {
-            let h = rt.hooks.clone();
             // A failure was said to the UI; /compact has nothing more to do.
-            let _ = h
-                .compact_now(&mut rt.agent, &CancellationToken::new(), false)
-                .await;
+            let _ = rt.compact(&CancellationToken::new()).await;
         }
         "clear" => clear(rt).await,
         "skills" => skills(rt).await,
@@ -86,7 +83,9 @@ async fn skill_or_text(rt: &Runtime, name: &str, args: &str, line: &str) -> Outc
 
 fn model(rt: &mut Runtime, spec: &str) {
     if spec.is_empty() {
-        return rt.hooks.info(&format!("Model: {}", rt.agent.model_spec));
+        return rt
+            .hooks
+            .info(&format!("Model: {}", rt.agent().model_spec()));
     }
     match rt.set_model(spec) {
         Ok(()) => rt.hooks.info(&format!("Model set to {spec}")),
@@ -99,7 +98,7 @@ fn effort(rt: &mut Runtime, arg: &str) {
     if arg.is_empty() {
         return rt
             .hooks
-            .info(&format!("Effort: {}", label(rt.agent.effort)));
+            .info(&format!("Effort: {}", label(rt.agent().effort())));
     }
     let effort = match arg {
         "default" => None,
@@ -118,7 +117,7 @@ fn effort(rt: &mut Runtime, arg: &str) {
 
 /// `/budget` shows the ledger; `/budget 40` sets the USD cap; `/budget tokens 4e7` the unpriced-token cap.
 fn budget(rt: &mut Runtime, args: &str) {
-    let Some(ledger) = rt.agent.deps().ledger.clone() else {
+    let Some(ledger) = rt.agent().deps().ledger.clone() else {
         return rt.hooks.info("This conversation has no ledger.");
     };
     if args.is_empty() {

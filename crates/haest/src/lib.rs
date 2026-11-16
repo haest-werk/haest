@@ -84,7 +84,7 @@
 //!      a cap stops it, or the host aborts                   LoopEvent::TurnEnd
 //! ```
 //!
-//! [`Agent::run`] returns how the turn ended ([`TurnEnd`]); [`Agent::messages`]
+//! [`Agent::run`] returns how the turn ended ([`TurnEnd`]); [`Agent::history`]
 //! is the history, ready for the next turn. Input that arrives during a turn
 //! goes through [`AgentControl::steer`], and [`AgentControl::abort`] stops it
 //! cleanly.

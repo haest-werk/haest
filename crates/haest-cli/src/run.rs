@@ -54,7 +54,7 @@ async fn turn_ended(control: &AgentControl) {
 /// [`wind_down`]. Watches until `done` (the turn ended); a quit under way by
 /// then still runs to its exit.
 fn watch_interrupts(rt: &Runtime, mut done: oneshot::Receiver<()>) -> JoinHandle<()> {
-    let control = rt.agent.control();
+    let control = rt.agent().control();
     let hooks = rt.hooks.clone();
     let jobs = rt.jobs.clone();
     tokio::spawn(async move {
@@ -83,7 +83,6 @@ pub async fn turn(rt: &mut Runtime, input: &str) -> TurnEnd {
     let term = rt.ui.term.clone();
     let (done, watching) = oneshot::channel();
     let watcher = watch_interrupts(rt, watching);
-    let control = rt.agent.control();
     let mut usage = None;
     let mut sink = |ev: LoopEvent| {
         if let LoopEvent::TurnEnd { usage: u, .. } = &ev {
@@ -91,21 +90,12 @@ pub async fn turn(rt: &mut Runtime, input: &str) -> TurnEnd {
         }
         term.lock().unwrap().event(&ev);
     };
-    let end = {
-        let run = rt.agent.run(input, &mut sink);
-        tokio::pin!(run);
-        loop {
-            tokio::select! {
-                end = &mut run => break end,
-                Some(text) = rt.inbox.arrival() => control.steer(text),
-            }
-        }
-    };
+    let end = rt.run(input, &mut sink).await;
     // The watcher stops; one winding haest down for a second Ctrl+C exits instead.
     let _ = done.send(());
     let _ = watcher.await;
     if let Some(u) = usage {
-        let total = session_usd(&rt.agent);
+        let total = session_usd(rt.agent());
         rt.ui.term.lock().unwrap().usage(&u, total);
     }
     rt.hooks.flush().await;
@@ -122,7 +112,7 @@ pub async fn human(rt: &mut Runtime, input: &str) -> TurnEnd {
 
 /// Every turn the human did not start that waits, one at a time, each through the gate.
 pub async fn agent_turns(rt: &mut Runtime) {
-    while let Some(text) = rt.inbox.take(&rt.agent.control()) {
+    while let Some(text) = rt.inbox.take(&rt.agent().control()) {
         if let Some(text) = rt.inbox.agent_turn(&text) {
             turn(rt, &text).await;
         }

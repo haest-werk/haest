@@ -190,13 +190,13 @@ async fn summarize(
     cancel: &CancellationToken,
 ) -> Result<(Summary, SummaryPath), CompactionError> {
     let resolved = agent
-        .deps
+        .deps()
         .models
-        .resolve(&agent.model_spec)
+        .resolve(&agent.model_spec())
         .map_err(CompactionError::Model)?;
     let (provider, model) = (resolved.provider.as_ref(), resolved.model);
     let prefix = agent.request_prefix(&model).await;
-    let mut messages = agent.sendable(&agent.messages, &model);
+    let mut messages = agent.sendable(&agent.history(), &model);
     messages.push(Message::user(warm_instruction(kept)));
     let warm = ask(
         provider,
@@ -321,7 +321,7 @@ impl CompactionError {
 ///         agent: &mut Agent,
 ///         cancel: &CancellationToken,
 ///     ) -> Result<(), String> {
-///         if !needs_compaction(&agent.messages, &self.0) {
+///         if !needs_compaction(agent.history(), &self.0) {
 ///             return Ok(());
 ///         }
 ///         // A host also charges the usage to its ledger and saves the new history.
@@ -358,8 +358,8 @@ impl CompactionError {
 /// agent.run("c", &mut Vec::<LoopEvent>::new()).await;
 ///
 /// // [summary, "b done", "c", "done"]: the head became one message.
-/// assert_eq!(agent.messages.len(), 4);
-/// assert!(matches!(&agent.messages[0], Message::User(u) if u.content.contains("Earlier: a and b.")));
+/// assert_eq!(agent.history().len(), 4);
+/// assert!(matches!(&agent.history()[0], Message::User(u) if u.content.contains("Earlier: a and b.")));
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}
@@ -369,19 +369,19 @@ pub async fn compact(
     cancel: &CancellationToken,
     cfg: &CompactionConfig,
 ) -> Result<Option<CompactionResult>, CompactionError> {
-    let cut = cut_index(&agent.messages, cfg.keep_recent);
+    let cut = cut_index(&agent.history(), cfg.keep_recent);
     if cut == 0 {
         return Ok(None);
     }
-    let kept = agent.messages.len() - cut;
-    let (res, path) = summarize(agent, &agent.messages[..cut], kept, cancel).await?;
+    let kept = agent.history().len() - cut;
+    let (res, path) = summarize(agent, &agent.history()[..cut], kept, cancel).await?;
     agent.spent_outside_the_loop(&res.usage);
     let summary = match res.text {
         Ok(summary) => summary,
         Err(why) => return Err(CompactionError::Failed(why, res.usage)),
     };
     agent
-        .messages
+        .history_mut()
         .splice(..cut, [compaction_summary_message(&summary)]);
     Ok(Some(CompactionResult {
         summary,

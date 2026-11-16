@@ -46,7 +46,7 @@ async fn the_nudge_reaches_the_model_as_input_and_the_human_as_a_notice_never_as
     let events = collect(&mut agent, "go").await;
     assert_eq!(count(&events, |e| matches!(e, LoopEvent::User { .. })), 1);
     let users = agent
-        .messages
+        .history()
         .iter()
         .filter(|m| matches!(m, Message::User(_)))
         .count();

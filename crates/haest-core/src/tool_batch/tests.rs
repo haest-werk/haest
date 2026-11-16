@@ -109,7 +109,7 @@ async fn read_only_calls_overlap_and_results_land_in_call_order_even_when_a_late
         .collect();
     assert_eq!(order, ["a", "b"]);
     let history: Vec<&str> = agent
-        .messages
+        .history()
         .iter()
         .filter_map(|m| match m {
             Message::Tool(t) => Some(t.tool_call_id.as_str()),

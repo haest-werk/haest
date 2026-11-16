@@ -207,7 +207,7 @@ impl AgentHooks for Compacting {
         agent: &mut Agent,
         _: &CancellationToken,
     ) -> Result<(), String> {
-        let last = agent.messages.last().cloned();
+        let last = agent.history().last().cloned();
         agent.replace_history(last.into_iter().collect());
         Ok(())
     }
@@ -227,7 +227,7 @@ impl AgentHooks for Refusing {
 async fn the_hook_before_a_model_call_may_end_the_turn_as_an_error_without_the_call() {
     let p = ScriptedProvider::new([text_answer("never")]);
     let (mut agent, _) = agent_with(&p, Opts::default());
-    agent.deps.hooks = Arc::new(Refusing);
+    agent.deps_mut().hooks = Arc::new(Refusing);
     let events = collect(&mut agent, "go").await;
     let (reason, _, error) = end(&events);
     assert_eq!(reason, StopReason::Error);
@@ -242,8 +242,8 @@ async fn the_hook_before_a_model_call_may_end_the_turn_as_an_error_without_the_c
 async fn the_hook_before_each_model_call_may_replace_history() {
     let p = ScriptedProvider::new([text_answer("a")]);
     let (mut agent, _) = agent_with(&p, Opts::default());
-    agent.messages = vec![Message::user("old"), Message::user("older")];
-    agent.deps.hooks = Arc::new(Compacting);
+    agent.replace_history(vec![Message::user("old"), Message::user("older")]);
+    agent.deps_mut().hooks = Arc::new(Compacting);
     collect(&mut agent, "new").await;
     let sent = &p.requests()[0].messages;
     assert_eq!(sent.len(), 1);
@@ -282,11 +282,11 @@ async fn a_tool_the_source_keeps_back_runs_when_the_model_calls_it_by_name() {
     assert_eq!(sent, ["Echo"], "only the advertised tool is sent");
     assert!(
         agent
-            .messages
+            .history()
             .iter()
             .any(|m| matches!(m, Message::Tool(r) if r.content == "ran" && !r.is_error)),
         "the kept-back tool ran: {:?}",
-        agent.messages
+        agent.history()
     );
 }
 

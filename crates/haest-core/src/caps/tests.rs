@@ -51,7 +51,7 @@ async fn a_stopped_turn_leaves_every_tool_call_answered_so_the_next_turn_can_be_
     let (mut agent, _) = agent_with(&p, capped(|l| l.max_turn_tokens = 30));
     collect(&mut agent, "go").await;
     let calls: usize = agent
-        .messages
+        .history()
         .iter()
         .map(|m| match m {
             Message::Assistant(a) => a.tool_calls().count(),
@@ -59,7 +59,7 @@ async fn a_stopped_turn_leaves_every_tool_call_answered_so_the_next_turn_can_be_
         })
         .sum();
     let results = agent
-        .messages
+        .history()
         .iter()
         .filter(|m| matches!(m, Message::Tool(_)))
         .count();
@@ -99,8 +99,8 @@ async fn an_oversized_request_is_never_sent_and_nothing_is_added_to_history() {
     let (stop, _, _) = end(&collect(&mut agent, &"x".repeat(2000)).await);
     assert!(p.requests().is_empty());
     assert_eq!(stop, StopReason::Error);
-    assert_eq!(agent.messages.len(), 1);
-    assert!(matches!(agent.messages[0], Message::User(_)));
+    assert_eq!(agent.history().len(), 1);
+    assert!(matches!(&agent.history()[0], Message::User(_)));
 }
 
 #[tokio::test]

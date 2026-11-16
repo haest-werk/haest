@@ -32,7 +32,7 @@
 //! let mut events: Vec<LoopEvent> = Vec::new();
 //! let end = agent.run("hi", &mut events).await;
 //! assert_eq!(end.stop_reason, StopReason::EndTurn);
-//! assert_eq!(agent.messages.len(), 2, "the user turn and the answer");
+//! assert_eq!(agent.history().len(), 2, "the user turn and the answer");
 //!
 //! let sent = provider.requests();
 //! assert_eq!((sent[0].model.as_str(), sent[0].system.as_str()), ("m", "You are terse."));

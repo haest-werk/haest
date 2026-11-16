@@ -116,7 +116,7 @@
 //!
 //! // The model saw the mod's line, and its Bash call came back refused.
 //! assert!(model.requests()[0].system.contains("Ask before deleting anything."));
-//! let refusal = agent.messages.iter().find_map(|m| match m {
+//! let refusal = agent.history().iter().find_map(|m| match m {
 //!     Message::Tool(result) => Some(result),
 //!     _ => None,
 //! });

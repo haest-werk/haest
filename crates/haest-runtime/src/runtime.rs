@@ -7,11 +7,12 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::anyhow;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     RuntimeHooks,
     haest::{
-        Agent, Effort,
+        Agent, Effort, EventSink, TurnEnd,
         core::fs::Fs,
         core::session::SessionRecord,
         core::skills::{Skill, SkillScanRoots, skills_in},
@@ -28,19 +29,17 @@ use crate::{
 /// A built conversation: the agent, and everything it runs on.
 ///
 /// [`build`](crate::build) returns one. The host runs turns with
-/// [`agent`](Self::agent), feeds it what reaches the [`inbox`](Self::inbox),
-/// and changes the model, the effort, the session or the skills through the
+/// [`run`](Self::run), which steers what reaches the [`inbox`](Self::inbox)
+/// into the running turn, and changes the model, the effort, the session or the skills through the
 /// methods here, which keep the agent, the hooks and the session file in step.
 /// The crate docs show a host's turn loop and its shutdown.
 ///
 /// `U` is the host's own [`Ui`](crate::Ui) type, so [`ui`](Self::ui) gives it
 /// back as the host made it.
 pub struct Runtime<U: ?Sized> {
-    /// The main agent: [`Agent::run`] runs one turn, [`Agent::control`] steers
-    /// or stops the one running. Change its model and effort with
-    /// [`set_model`](Self::set_model) and [`set_effort`](Self::set_effort),
-    /// not its fields: only those tell the hooks and the session file.
-    pub agent: Agent,
+    /// The main agent. Only the methods here change it, so the hooks and the
+    /// session file always know its model and effort.
+    pub(crate) agent: Agent,
     /// What the agent reports to: the session file, the [`Ui`](crate::Ui),
     /// the current model and effort, compaction.
     pub hooks: Arc<RuntimeHooks>,
@@ -72,6 +71,38 @@ pub struct Runtime<U: ?Sized> {
 }
 
 impl<U: ?Sized> Runtime<U> {
+    /// The main agent, to read: its history, model, effort and deps, and
+    /// [`Agent::control`] to steer or stop the turn running.
+    pub fn agent(&self) -> &Agent {
+        &self.agent
+    }
+
+    /// One turn of main: `input` (the human's text after the mods and the
+    /// inbox, or a turn the inbox holds), every event to `sink`. What reaches
+    /// the [`inbox`](Self::inbox) while it runs is steered into it.
+    pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnEnd {
+        let control = self.agent.control();
+        let run = self.agent.run(input, sink);
+        tokio::pin!(run);
+        loop {
+            tokio::select! {
+                end = &mut run => return end,
+                Some(text) = self.inbox.arrival() => control.steer(text),
+            }
+        }
+    }
+
+    /// Compact main's conversation now (the human's /compact): see
+    /// [`RuntimeHooks::compact_now`](crate::RuntimeHooks::compact_now). A
+    /// conversation too short to cut says so to the [`Ui`](crate::Ui).
+    ///
+    /// # Errors
+    ///
+    /// When no summary came out; the history is as it was.
+    pub async fn compact(&mut self, cancel: &CancellationToken) -> Result<(), String> {
+        self.hooks.compact_now(&mut self.agent, cancel, false).await
+    }
+
     /// The id of the session file records go to now; [`clear`](Self::clear)
     /// changes it. A host shows it so the human can resume the session.
     pub fn session_id(&self) -> String {
@@ -91,7 +122,7 @@ impl<U: ?Sized> Runtime<U> {
             .models
             .resolve(spec)
             .map_err(|e| anyhow!(e))?;
-        self.agent.model_spec = spec.to_string();
+        self.agent.set_model_spec(spec);
         self.hooks.set_model(spec);
         self.hooks.append(SessionRecord::Config {
             t: now_ms(),
@@ -106,7 +137,7 @@ impl<U: ?Sized> Runtime<U> {
     /// the catalog says does not take this effort is sent the lowest one it
     /// takes, and the [`Ui`](crate::Ui) is told once.
     pub fn set_effort(&mut self, effort: Option<Effort>) {
-        self.agent.effort = effort;
+        self.agent.set_effort(effort);
         self.hooks.set_effort(effort);
         self.hooks.append(SessionRecord::Config {
             t: now_ms(),

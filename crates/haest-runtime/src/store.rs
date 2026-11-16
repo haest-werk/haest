@@ -99,8 +99,8 @@ pub(crate) async fn new_session(
 pub(crate) fn record_start(hooks: &RuntimeHooks, agent: &Agent) {
     hooks.append(SessionRecord::Config {
         t: now_ms(),
-        model: Some(agent.model_spec.clone()),
-        effort: Some(agent.effort),
+        model: Some(agent.model_spec().to_string()),
+        effort: Some(agent.effort()),
     });
     if let Some(ledger) = &agent.deps().ledger {
         let snapshot = ledger.lock().unwrap().snapshot();
@@ -135,8 +135,8 @@ pub(crate) fn record_given(hooks: &RuntimeHooks, agent: &Agent, opts: &BuildOpti
     if opts.model_given || opts.effort_given {
         hooks.append(SessionRecord::Config {
             t: now_ms(),
-            model: opts.model_given.then(|| agent.model_spec.clone()),
-            effort: opts.effort_given.then_some(agent.effort),
+            model: opts.model_given.then(|| agent.model_spec().to_string()),
+            effort: opts.effort_given.then_some(agent.effort()),
         });
     }
 }

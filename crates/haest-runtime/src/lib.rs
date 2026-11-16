@@ -37,11 +37,10 @@
 //!
 //! 1. [`build`] it. Whatever can fail does so before anything starts: a build
 //!    that fails has started no MCP server or mod and left no session file.
-//! 2. Run turns with the [`Runtime::agent`]: the human's text first through
-//!    the mods' `rewrite_prompt` and [`InboxQueue::human`](inbox::InboxQueue::human).
-//!    While a turn runs, steer what reaches the inbox into it
-//!    ([`InboxQueue::arrival`](inbox::InboxQueue::arrival)); after it, run what
-//!    waits there, one turn at a time ([`InboxQueue::take`](inbox::InboxQueue::take)
+//! 2. Run turns with [`Runtime::run`]: the human's text first through the
+//!    mods' `rewrite_prompt` and [`InboxQueue::human`](inbox::InboxQueue::human).
+//!    While a turn runs, `run` steers what reaches the inbox into it; after
+//!    it, run what waits there, one turn at a time ([`InboxQueue::take`](inbox::InboxQueue::take)
 //!    and [`InboxQueue::agent_turn`](inbox::InboxQueue::agent_turn)).
 //! 3. Between turns, make the changes the human asks for:
 //!    [`Runtime::set_model`], [`Runtime::set_effort`], [`Runtime::clear`],
@@ -107,7 +106,7 @@
 //!
 //! let rt = build(inputs, Arc::new(Lines), DenyAll, BuildOptions::default()).await?;
 //!
-//! let deps = rt.agent.deps();
+//! let deps = rt.agent().deps();
 //! let tools: Vec<String> = deps.tools.tools().iter().map(|t| t.name().to_string()).collect();
 //! assert_eq!(tools, ["Read", "Grep"]);
 //! assert!(deps.system_prompt.system_prompt().await.contains("Answer in one line."));
@@ -131,7 +130,7 @@
 //!     let text = rt.mods.rewrite_prompt(text).await;
 //!     let text = rt.inbox.human(&text);
 //!     turn(rt, &text).await;
-//!     while let Some(waiting) = rt.inbox.take(&rt.agent.control()) {
+//!     while let Some(waiting) = rt.inbox.take(&rt.agent().control()) {
 //!         // None: the gate holds it until the human writes again.
 //!         if let Some(text) = rt.inbox.agent_turn(&waiting) {
 //!             turn(rt, &text).await;
@@ -141,16 +140,8 @@
 //!
 //! /// One turn: its events shown, what reaches the inbox meanwhile steered in.
 //! async fn turn<U: Ui>(rt: &mut Runtime<U>, text: &str) {
-//!     let control = rt.agent.control();
 //!     let mut show = |event: LoopEvent| println!("{event:?}");
-//!     let run = rt.agent.run(text, &mut show);
-//!     tokio::pin!(run);
-//!     let end = loop {
-//!         tokio::select! {
-//!             end = &mut run => break end,
-//!             Some(arrived) = rt.inbox.arrival() => control.steer(arrived),
-//!         }
-//!     };
+//!     let end = rt.run(text, &mut show).await;
 //!     println!("turn ended: {:?}", end.stop_reason);
 //!     rt.hooks.flush().await;
 //! }

@@ -111,9 +111,9 @@ impl SystemPrompt for String {
 ///
 /// // The cap stopped the turn before the second call; the call still has its result.
 /// assert_eq!(end.stop_reason, StopReason::MaxTokens);
-/// assert!(matches!(agent.messages[2], Message::Tool(_)));
+/// assert!(matches!(&agent.history()[2], Message::Tool(_)));
 /// // Every message the loop appended reached the hook.
-/// assert_eq!(*host.saved.lock().unwrap(), agent.messages);
+/// assert_eq!(*host.saved.lock().unwrap(), agent.history());
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}

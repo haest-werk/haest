@@ -64,7 +64,7 @@ impl Agent {
     pub(super) async fn add_user(&mut self, text: &str, t: &mut Turn<'_>) {
         let user = user_message(text, self.deps.hooks.as_ref(), &t.cancel).await;
         append(
-            &mut self.messages,
+            &mut self.history,
             self.deps.hooks.as_ref(),
             Message::User(user.clone()),
         );
@@ -85,7 +85,7 @@ impl Agent {
     fn inject_nudge(&mut self, text: Option<String>, t: &mut Turn<'_>) {
         let Some(text) = text else { return };
         append(
-            &mut self.messages,
+            &mut self.history,
             self.deps.hooks.as_ref(),
             Message::user(text.clone()),
         );
@@ -163,7 +163,7 @@ impl Agent {
             model: resolved.model.clone(),
         });
         let prefix = self.request_prefix(&resolved.model).await;
-        let messages = self.sendable(&self.messages, &resolved.model);
+        let messages = self.sendable(&self.history, &resolved.model);
         let estimate = estimate_request_tokens(&prefix.system, &messages, &prefix.tools);
         if let Some(too_big) = t.guard.too_big(estimate, self.turn_caps().as_ref()) {
             return refuse(&resolved.model, &too_big, t);
@@ -187,7 +187,7 @@ impl Agent {
             error_assistant(&resolved.model, "provider ended without a response")
         });
         append(
-            &mut self.messages,
+            &mut self.history,
             self.deps.hooks.as_ref(),
             Message::Assistant(msg.clone()),
         );
@@ -215,7 +215,7 @@ impl Agent {
         let mut delivery = Delivery {
             caps: self.turn_caps(),
             guard: &mut t.guard,
-            messages: &mut self.messages,
+            messages: &mut self.history,
             hooks: self.deps.hooks.as_ref(),
             sink: &mut *t.sink,
         };

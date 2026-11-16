@@ -48,7 +48,7 @@ fn agent(p: &Arc<ScriptedProvider>, mods: &Arc<Mods>, tools: Vec<Arc<dyn Tool>>)
 
 fn tool_results(agent: &Agent) -> Vec<&ToolResultMessage> {
     agent
-        .messages
+        .history()
         .iter()
         .filter_map(|m| match m {
             Message::Tool(t) => Some(t),

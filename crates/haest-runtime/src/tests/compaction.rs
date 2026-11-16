@@ -46,7 +46,7 @@ fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<M
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let mut filled = text_answer("earlier answer");
     filled.usage.input = 1_000_000;
-    agent.messages = vec![Message::user("earlier"), Message::Assistant(filled)];
+    agent.replace_history(vec![Message::user("earlier"), Message::Assistant(filled)]);
     (agent, ledger)
 }
 

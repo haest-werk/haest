@@ -266,11 +266,11 @@ impl Rig {
 
     /// Main's user and tool-result texts, in order.
     pub fn texts(&self) -> Vec<String> {
-        texts(&self.main.messages)
+        texts(&self.main.history())
     }
 
     pub fn tool_results(&self) -> Vec<(String, bool)> {
-        let results = self.main.messages.iter().filter_map(|m| match m {
+        let results = self.main.history().iter().filter_map(|m| match m {
             Message::Tool(t) => Some((t.content.clone(), t.is_error)),
             _ => None,
         });

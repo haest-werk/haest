@@ -80,7 +80,7 @@ use turn::Turn;
 ///
 /// // One turn, two model calls: the steering became a user message in between.
 /// assert_eq!(provider.requests().len(), 2);
-/// assert!(matches!(&agent.messages[2], Message::User(u) if u.content == "also say two"));
+/// assert!(matches!(&agent.history()[2], Message::User(u) if u.content == "also say two"));
 ///
 /// // What arrives after a turn's last step boundary waits for the caller.
 /// while let Some(next) = agent.control().take_queued() {
@@ -171,20 +171,20 @@ impl Drop for Running {
 pub struct AgentOptions {
     /// The model spec, `provider:model`, resolved by [`AgentDeps::models`]
     /// before every model call. Becomes [`Agent::model_spec`].
-    pub model: String,
+    pub model_spec: String,
     /// The reasoning effort to ask for; None sends none and the model uses its
     /// default. Becomes [`Agent::effort`].
     pub effort: Option<Effort>,
     /// The history to resume from (a replayed session); empty for a new
-    /// conversation. Becomes [`Agent::messages`].
+    /// conversation. Becomes [`Agent::history`].
     pub history: Vec<Message>,
 }
 
 impl AgentOptions {
-    /// Options for `model` with no effort and no history.
-    pub fn new(model: impl Into<String>) -> Self {
+    /// Options for `model_spec` with no effort and no history.
+    pub fn new(model_spec: impl Into<String>) -> Self {
         Self {
-            model: model.into(),
+            model_spec: model_spec.into(),
             effort: None,
             history: Vec::new(),
         }
@@ -195,8 +195,12 @@ impl AgentOptions {
 /// what it runs on. [`Agent::run`] runs one human turn.
 ///
 /// An agent runs one turn at a time (`run` takes `&mut self`). Between turns
-/// a host may read and change the public fields: edit history, switch the
-/// model, change the effort.
+/// a host reads [`history`](Self::history), [`model_spec`](Self::model_spec)
+/// and [`effort`](Self::effort), and changes them through
+/// [`replace_history`](Self::replace_history),
+/// [`set_model_spec`](Self::set_model_spec) and [`set_effort`](Self::set_effort).
+/// A host that wraps the agent (haest-runtime's `Runtime`) keeps the agent to
+/// itself, so its own record of the model can never drift from the agent's.
 ///
 /// # Examples
 ///
@@ -233,7 +237,7 @@ impl AgentOptions {
 ///
 /// assert_eq!(end.stop_reason, StopReason::EndTurn);
 /// assert_eq!(said, "hello");
-/// assert_eq!(agent.messages.len(), 2); // the input, the answer
+/// assert_eq!(agent.history().len(), 2); // the input, the answer
 /// assert_eq!(provider.requests()[0].system, "You are terse.");
 /// # }
 /// # #[cfg(not(feature = "testing"))]
@@ -242,16 +246,15 @@ impl AgentOptions {
 pub struct Agent {
     /// The conversation's history. During a turn the loop only appends to it
     /// (and an [`AgentHooks::before_model_call`](crate::AgentHooks::before_model_call)
-    /// may replace it); between turns the host may edit it.
-    pub messages: Vec<Message>,
-    /// The model spec (`provider:model`) resolved before every model call;
-    /// change it to switch models.
-    pub model_spec: String,
+    /// may replace it).
+    history: Vec<Message>,
+    /// The model spec (`provider:model`) resolved before every model call.
+    model_spec: String,
     /// The reasoning effort to ask for, fitted to what the model takes before
     /// every call; None sends none.
-    pub effort: Option<Effort>,
-    pub(crate) deps: AgentDeps,
-    pub(crate) control: AgentControl,
+    effort: Option<Effort>,
+    deps: AgentDeps,
+    control: AgentControl,
     /// Model calls made for this conversation outside the loop's own (the
     /// compaction summary in a hook) since the running turn last looked.
     side_spend: Usage,
@@ -261,13 +264,41 @@ impl Agent {
     /// An idle agent with `deps` and `opts`. Nothing is sent until [`Agent::run`].
     pub fn new(deps: AgentDeps, opts: AgentOptions) -> Self {
         Self {
-            messages: opts.history,
-            model_spec: opts.model,
+            history: opts.history,
+            model_spec: opts.model_spec,
             effort: opts.effort,
             deps,
             control: AgentControl::default(),
             side_spend: Usage::default(),
         }
+    }
+
+    /// The conversation's history, oldest first: what the next model call
+    /// sends (after [`sendable`](Self::sendable)).
+    pub fn history(&self) -> &[Message] {
+        &self.history
+    }
+
+    /// The model spec (`provider:model`) the next model call resolves.
+    pub fn model_spec(&self) -> &str {
+        &self.model_spec
+    }
+
+    /// Switch models from the next model call on. Nothing is resolved here:
+    /// a spec that does not resolve ends the next turn with an error.
+    pub fn set_model_spec(&mut self, spec: impl Into<String>) {
+        self.model_spec = spec.into();
+    }
+
+    /// The reasoning effort the next model call asks for; None asks for none.
+    pub fn effort(&self) -> Option<Effort> {
+        self.effort
+    }
+
+    /// The effort from the next model call on; None sends none and the model
+    /// uses its default.
+    pub fn set_effort(&mut self, effort: Option<Effort>) {
+        self.effort = effort;
     }
 
     /// A model call made for this conversation outside the loop (compaction's
@@ -292,10 +323,21 @@ impl Agent {
         self.control.clone()
     }
 
-    /// Replace history wholesale (compaction, /clear). Does not fire
-    /// [`on_message`](crate::AgentHooks::on_message).
-    pub fn replace_history(&mut self, messages: Vec<Message>) {
-        self.messages = messages;
+    /// Replace history wholesale (compaction, /clear, an edit between
+    /// turns). Does not fire [`on_message`](crate::AgentHooks::on_message).
+    pub fn replace_history(&mut self, history: Vec<Message>) {
+        self.history = history;
+    }
+
+    /// History to edit in place: compaction swaps a prefix for its summary.
+    pub(crate) fn history_mut(&mut self) -> &mut Vec<Message> {
+        &mut self.history
+    }
+
+    /// The deps to change in a test (a hook or a model swapped in).
+    #[cfg(test)]
+    pub(crate) fn deps_mut(&mut self) -> &mut AgentDeps {
+        &mut self.deps
     }
 
     /// One human turn. Every event goes to `sink` in order, the last one is

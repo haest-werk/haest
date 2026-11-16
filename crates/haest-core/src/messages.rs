@@ -1,6 +1,6 @@
 //! The conversation as data: [`Message`] and everything inside it.
 //!
-//! This is what the loop keeps in memory ([`Agent::messages`]), what the
+//! This is what the loop keeps in memory ([`Agent::history`]), what the
 //! session JSONL stores, and what each [`Provider`] converts to its own wire
 //! format. Nothing here knows about a model vendor or a host.
 //!
@@ -25,7 +25,7 @@
 //! assert_eq!(line, r#"{"role":"user","content":"say hi"}"#);
 //! ```
 //!
-//! [`Agent::messages`]: crate::Agent::messages
+//! [`Agent::history`]: crate::Agent::history
 //! [`Provider`]: crate::Provider
 
 use serde::{Deserialize, Serialize};
