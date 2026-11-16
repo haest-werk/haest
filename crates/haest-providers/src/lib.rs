@@ -202,13 +202,13 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
-pub mod anthropic;
-pub mod catalog;
-pub mod compat;
+mod anthropic;
+mod catalog;
+mod compat;
 mod driver;
 mod openai_media;
-pub mod registry;
-pub mod responses;
+mod registry;
+mod responses;
 pub mod routing;
 mod send;
 mod sse;
@@ -230,8 +230,8 @@ pub use anthropic::{AnthropicOptions, AnthropicProvider};
 pub use catalog::Catalog;
 pub use compat::{CompatFlavor, CompatOptions, CompatProvider};
 pub use registry::{
-    CustomProviderConfig, CustomProviders, EntryProblem, ProviderConfigError, ProviderRegistry,
-    ProvidersFileError, RegistryOptions, load_custom_providers,
+    CustomProviderConfig, CustomProviders, Dialect, EntryProblem, ProviderConfigError,
+    ProviderRegistry, ProvidersFileError, RegistryOptions, load_custom_providers,
 };
 pub use responses::{ResponsesOptions, ResponsesProvider};
 pub use routing::RoutingScopes;

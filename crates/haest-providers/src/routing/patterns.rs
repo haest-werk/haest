@@ -4,7 +4,7 @@
 
 /// How many models an override pattern can match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MatchKind {
+pub(crate) enum MatchKind {
     /// One model id, exactly.
     Model,
     /// Several: a glob (`*`) or an author prefix (ending in `/`).
@@ -12,7 +12,7 @@ pub enum MatchKind {
 }
 
 /// A pattern is a FAMILY when it can match more than one model.
-pub fn match_kind(pattern: &str) -> MatchKind {
+pub(crate) fn match_kind(pattern: &str) -> MatchKind {
     if pattern.contains('*') || pattern.ends_with('/') {
         MatchKind::Family
     } else {
@@ -21,7 +21,7 @@ pub fn match_kind(pattern: &str) -> MatchKind {
 }
 
 /// Why a pattern cannot be an override key, or None when it can.
-pub fn pattern_refusal(pattern: &str) -> Option<&'static str> {
+pub(crate) fn pattern_refusal(pattern: &str) -> Option<&'static str> {
     let p = pattern.trim();
     if p.is_empty() {
         return Some("Enter a model id or a family pattern");
@@ -72,15 +72,7 @@ fn glob_matches(pattern: &str, text: &str) -> bool {
 /// a `:variant` suffix are ignored. A glob's `*` matches any run of
 /// characters, anchored at both ends; a pattern ending in `/` matches by
 /// prefix; any other must equal the id.
-///
-/// ```
-/// use haest_providers::routing::pattern_matches;
-///
-/// assert!(pattern_matches("z-ai/glm-*", "openrouter:z-ai/glm-4.6:free"));
-/// assert!(pattern_matches("z-ai/", "z-ai/glm-4.6"));
-/// assert!(!pattern_matches("z-ai/glm-4", "z-ai/glm-4.6"));
-/// ```
-pub fn pattern_matches(pattern: &str, model: &str) -> bool {
+pub(crate) fn pattern_matches(pattern: &str, model: &str) -> bool {
     let id = routing_model_id(model);
     if pattern.contains('*') {
         return glob_matches(pattern, id);
@@ -92,7 +84,7 @@ pub fn pattern_matches(pattern: &str, model: &str) -> bool {
 }
 
 /// Specificity rank: exact models first, then families by literal length (longer = narrower).
-pub fn specificity(pattern: &str) -> usize {
+pub(crate) fn specificity(pattern: &str) -> usize {
     let literal = pattern.chars().filter(|c| *c != '*').count();
     match match_kind(pattern) {
         MatchKind::Model => 1_000_000 + literal,

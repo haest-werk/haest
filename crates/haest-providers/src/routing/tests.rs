@@ -1,6 +1,10 @@
 use serde_json::json;
 
-use super::*;
+use super::{
+    normalize::{normalize_project_routing, normalize_routing},
+    patterns::{MatchKind, match_kind, pattern_matches, pattern_refusal},
+    *,
+};
 
 fn rule(banned: &[&str], favorites: &[&str]) -> RoutingRule {
     RoutingRule {
@@ -36,36 +40,39 @@ fn strings(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()
 }
 
-fn order(r: &ResolvedRouting) -> Option<Vec<String>> {
-    r.provider.as_ref().and_then(|p| p.order.clone())
+/// What the scopes send for `model`: the fleet scope (None = empty) and the project scope.
+fn resolve(
+    fleet: Option<&ProviderRouting>,
+    model: &str,
+    project: Option<&ProjectRouting>,
+) -> Option<ProviderPrefs> {
+    let scopes = RoutingScopes {
+        fleet: fleet.cloned().unwrap_or_default(),
+        project: project.cloned(),
+    };
+    scopes.provider_prefs(model)
+}
+
+fn order(r: &Option<ProviderPrefs>) -> Option<Vec<String>> {
+    r.as_ref().and_then(|p| p.order.clone())
 }
 
 // -- fleet scope
 
 #[test]
 fn no_provider_object_for_an_empty_or_absent_config() {
-    assert_eq!(
-        resolve_provider_routing(None, "z-ai/glm-4.6", None).provider,
-        None
-    );
+    assert_eq!(resolve(None, "z-ai/glm-4.6", None), None);
     let empty = ProviderRouting::default();
-    assert_eq!(
-        resolve_provider_routing(Some(&empty), "z-ai/glm-4.6", None).provider,
-        None
-    );
+    assert_eq!(resolve(Some(&empty), "z-ai/glm-4.6", None), None);
 }
 
 #[test]
 fn default_bans_map_to_ignore_and_default_favorites_to_order_with_fallbacks_on() {
     let c = cfg(rule(&["novita"], &["deepinfra", "fireworks"]), vec![]);
-    let r = resolve_provider_routing(Some(&c), "openrouter:z-ai/glm-4.6", None);
+    let r = resolve(Some(&c), "openrouter:z-ai/glm-4.6", None);
     assert_eq!(
-        serde_json::to_value(r.provider).unwrap(),
+        serde_json::to_value(r).unwrap(),
         json!({"ignore": ["novita"], "order": ["deepinfra", "fireworks"], "allow_fallbacks": true})
-    );
-    assert_eq!(
-        r.favorites_from,
-        Some((LayerScope::Fleet, LayerLevel::Default))
     );
 }
 
@@ -80,14 +87,13 @@ fn bans_union_across_the_default_and_every_matching_override() {
             ov("openai/", &["azure"], &[]),
         ],
     );
-    let r = resolve_provider_routing(Some(&c), "z-ai/glm-4.6", None);
-    let p = r.provider.unwrap();
+    let r = resolve(Some(&c), "z-ai/glm-4.6", None);
+    let p = r.unwrap();
     assert_eq!(
         sorted(p.ignore.unwrap()),
         strings(&["baseten", "chutes", "novita"])
     );
     assert_eq!(p.order, None);
-    assert_eq!(r.favorites_from, None);
 }
 
 #[test]
@@ -100,19 +106,11 @@ fn favorites_come_from_the_exact_model_over_a_family_over_the_default() {
             ov("z-ai/glm-4.6", &[], &["model"]),
         ],
     );
-    let at = |m: &str| resolve_provider_routing(Some(&base), m, None);
+    let at = |m: &str| resolve(Some(&base), m, None);
     assert_eq!(order(&at("z-ai/glm-4.6")), Some(strings(&["model"])));
-    assert_eq!(
-        at("z-ai/glm-4.6").favorites_from.unwrap().1,
-        LayerLevel::Model
-    );
     assert_eq!(order(&at("z-ai/glm-5")), Some(strings(&["family"])));
     assert_eq!(order(&at("z-ai/other")), Some(strings(&["author"])));
     assert_eq!(order(&at("openai/gpt-5")), Some(strings(&["g"])));
-    assert_eq!(
-        at("openai/gpt-5").favorites_from.unwrap().1,
-        LayerLevel::Default
-    );
 }
 
 #[test]
@@ -124,20 +122,19 @@ fn an_override_with_no_favorites_inherits_the_next_layer_up() {
             ov("z-ai/glm-4.6", &["x"], &[]),
         ],
     );
-    let r = resolve_provider_routing(Some(&c), "z-ai/glm-4.6", None);
+    let r = resolve(Some(&c), "z-ai/glm-4.6", None);
     assert_eq!(
-        serde_json::to_value(&r.provider).unwrap(),
+        serde_json::to_value(&r).unwrap(),
         json!({"ignore": ["x"], "order": ["family"], "allow_fallbacks": true})
     );
-    assert_eq!(r.matched, strings(&["z-ai/glm-4.6", "z-ai/glm-*"]));
 }
 
 #[test]
 fn a_favorite_a_matching_override_bans_is_dropped() {
     let c = cfg(rule(&[], &["a", "b"]), vec![ov("z-ai/", &["a"], &[])]);
-    let r = resolve_provider_routing(Some(&c), "z-ai/glm-4.6", None);
+    let r = resolve(Some(&c), "z-ai/glm-4.6", None);
     assert_eq!(
-        serde_json::to_value(&r.provider).unwrap(),
+        serde_json::to_value(&r).unwrap(),
         json!({"ignore": ["a"], "order": ["b"], "allow_fallbacks": true})
     );
 }
@@ -148,8 +145,8 @@ fn matching_uses_the_bare_model_id() {
         RoutingRule::default(),
         vec![ov("z-ai/glm-4.6", &["x"], &[])],
     );
-    let r = resolve_provider_routing(Some(&c), "openrouter:z-ai/glm-4.6:nitro", None);
-    assert_eq!(r.provider.unwrap().ignore, Some(strings(&["x"])));
+    let r = resolve(Some(&c), "openrouter:z-ai/glm-4.6:nitro", None);
+    assert_eq!(r.unwrap().ignore, Some(strings(&["x"])));
 }
 
 // -- project scope over fleet
@@ -164,12 +161,8 @@ fn fleet() -> ProviderRouting {
 #[test]
 fn a_project_default_favorite_beats_even_a_fleet_exact_model_favorite() {
     let p = proj(rule(&[], &["p-default"]), vec![]);
-    let r = resolve_provider_routing(Some(&fleet()), "z-ai/glm-4.6", Some(&p));
+    let r = resolve(Some(&fleet()), "z-ai/glm-4.6", Some(&p));
     assert_eq!(order(&r), Some(strings(&["p-default"])));
-    assert_eq!(
-        r.favorites_from,
-        Some((LayerScope::Project, LayerLevel::Default))
-    );
 }
 
 #[test]
@@ -182,12 +175,9 @@ fn within_the_project_model_beats_family_beats_default() {
         ],
     );
     let f = fleet();
-    let at = |m: &str| resolve_provider_routing(Some(&f), m, Some(&p));
+    let at = |m: &str| resolve(Some(&f), m, Some(&p));
     assert_eq!(order(&at("z-ai/glm-4.6")), Some(strings(&["p-model"])));
-    assert_eq!(
-        at("z-ai/glm-5").favorites_from,
-        Some((LayerScope::Project, LayerLevel::Family))
-    );
+    assert_eq!(order(&at("z-ai/glm-5")), Some(strings(&["p-family"])));
     assert_eq!(order(&at("qwen/x")), Some(strings(&["p-default"])));
 }
 
@@ -196,16 +186,12 @@ fn a_project_with_no_favorites_falls_through_to_the_fleet_layers() {
     let p = proj(rule(&["p-ban"], &[]), vec![]);
     let f = fleet();
     assert_eq!(
-        order(&resolve_provider_routing(
-            Some(&f),
-            "z-ai/glm-4.6",
-            Some(&p)
-        )),
+        order(&resolve(Some(&f), "z-ai/glm-4.6", Some(&p))),
         Some(strings(&["f-model"]))
     );
     assert_eq!(
-        resolve_provider_routing(Some(&f), "qwen/x", Some(&p)).favorites_from,
-        Some((LayerScope::Fleet, LayerLevel::Default))
+        order(&resolve(Some(&f), "qwen/x", Some(&p))),
+        Some(strings(&["f-default"]))
     );
 }
 
@@ -215,8 +201,8 @@ fn bans_union_across_both_scopes_and_a_fleet_ban_removes_a_project_favorite() {
         rule(&["p-ban"], &["f-ban", "ok"]),
         vec![ov("z-ai/", &["p-family-ban"], &[])],
     );
-    let r = resolve_provider_routing(Some(&fleet()), "z-ai/glm-4.6", Some(&p));
-    let prefs = r.provider.unwrap();
+    let r = resolve(Some(&fleet()), "z-ai/glm-4.6", Some(&p));
+    let prefs = r.unwrap();
     assert_eq!(
         sorted(prefs.ignore.unwrap()),
         strings(&["f-ban", "f-model-ban", "p-ban", "p-family-ban"])
@@ -230,10 +216,8 @@ fn each_priority_maps_to_its_openrouter_fields() {
         routing: ProviderRouting::default(),
         priority: Some(priority),
     };
-    let wire = |priority| {
-        serde_json::to_value(resolve_provider_routing(None, "a/b", Some(&with(priority))).provider)
-            .unwrap()
-    };
+    let wire =
+        |priority| serde_json::to_value(resolve(None, "a/b", Some(&with(priority)))).unwrap();
     assert_eq!(wire(RoutingPriority::Cost), json!({"sort": "price"}));
     assert_eq!(wire(RoutingPriority::Speed), json!({"sort": "throughput"}));
     assert_eq!(

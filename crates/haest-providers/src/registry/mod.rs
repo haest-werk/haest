@@ -29,10 +29,8 @@ use haest_core::{
 };
 
 use custom::need;
-pub use custom::{
-    CustomProviderConfig, CustomProviders, Dialect, custom_compat_options, load_custom_providers,
-    paper_instruments_options,
-};
+pub use custom::{CustomProviderConfig, CustomProviders, Dialect, load_custom_providers};
+pub(crate) use custom::{custom_compat_options, paper_instruments_options};
 pub use error::{EntryProblem, ProviderConfigError, ProvidersFileError};
 
 use haest_http::{HttpClient, ReqwestClient};

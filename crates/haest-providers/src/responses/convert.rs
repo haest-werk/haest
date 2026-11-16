@@ -31,7 +31,7 @@ fn effort_name(effort: Effort) -> &'static str {
 /// The `reasoning` field for `effort`: OpenAI's level (`off` is `none`,
 /// `xhigh` and `max` are both `xhigh`) with an automatic summary.
 /// None effort sends no `reasoning` at all: non-reasoning models reject the key.
-pub fn reasoning_params(effort: Option<Effort>) -> Option<Value> {
+pub(crate) fn reasoning_params(effort: Option<Effort>) -> Option<Value> {
     effort.map(|e| json!({"effort": effort_name(e), "summary": "auto"}))
 }
 
@@ -92,7 +92,7 @@ fn assistant_items(msg: &AssistantMessage, provider_id: &str, out: &mut Vec<Valu
 /// Reasoning replays, as its encrypted content, only from a message whose
 /// provider is `provider_id`. A tool's media rides a user item after the run of
 /// function_call_outputs (same rule as Chat Completions).
-pub fn to_responses_input(messages: &[Message], provider_id: &str) -> Vec<Value> {
+pub(crate) fn to_responses_input(messages: &[Message], provider_id: &str) -> Vec<Value> {
     let mut out = Vec::new();
     with_tool_media(messages, &RESPONSES, &mut out, |m, out| {
         match m {
@@ -116,7 +116,7 @@ pub fn to_responses_input(messages: &[Message], provider_id: &str) -> Vec<Value>
 /// `max_output_tokens` when `req.max_tokens` is above 0, `reasoning` for the
 /// effort ([`reasoning_params`]), and `store: false` with the encrypted
 /// reasoning included, so the next request can replay it.
-pub fn build_responses_body(provider_id: &str, req: &ProviderRequest) -> Value {
+pub(crate) fn build_responses_body(provider_id: &str, req: &ProviderRequest) -> Value {
     let mut body = Map::new();
     body.insert("model".into(), json!(req.model));
     body.insert("instructions".into(), json!(req.system));

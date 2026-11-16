@@ -4,7 +4,10 @@ use haest_core::{
 };
 use serde_json::{Value, json};
 
-use super::*;
+use super::{
+    convert::{reasoning_params, to_responses_input},
+    *,
+};
 use crate::testing::request;
 
 fn assistant(provider: &str) -> AssistantMessage {

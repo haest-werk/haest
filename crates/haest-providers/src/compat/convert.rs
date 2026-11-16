@@ -17,7 +17,7 @@ use super::CompatFlavor;
 use crate::{
     openai_media::{CHAT, with_tool_media},
     result_text,
-    routing::{RoutingScopes, provider_routing_field},
+    routing::RoutingScopes,
 };
 
 /// OpenRouter passes `cache_control` through to providers that need explicit
@@ -99,7 +99,7 @@ fn replayed_reasoning(data: Option<&Value>) -> Map<String, Value> {
 /// which a `tool` message cannot hold, follows the run of tool results as a
 /// user message. On OpenRouter, an `anthropic/` or `google/` model gets cache
 /// breakpoints on the system prompt and the newest user or tool message.
-pub fn to_chat_messages(
+pub(crate) fn to_chat_messages(
     system: &str,
     messages: &[Message],
     flavor: CompatFlavor,
@@ -159,7 +159,7 @@ fn mark_last_user_cacheable(out: &mut [Value]) {
 }
 
 /// `tools` as Chat Completions `function` tools.
-pub fn to_chat_tools(tools: &[ToolSpec]) -> Vec<Value> {
+pub(crate) fn to_chat_tools(tools: &[ToolSpec]) -> Vec<Value> {
     tools
         .iter()
         .map(|t| {
@@ -181,7 +181,7 @@ pub fn to_chat_tools(tools: &[ToolSpec]) -> Vec<Value> {
 /// Every haest level is an OpenRouter level by the same name, so it goes through
 /// as is; one a model does not list is accepted, not refused. `off` for a catalog
 /// model whose reasoning is mandatory is fitted before it gets here (haest-core `effort`).
-pub fn flavor_extras(
+pub(crate) fn flavor_extras(
     flavor: CompatFlavor,
     effort: Option<Effort>,
     model: &str,
@@ -202,7 +202,7 @@ pub fn flavor_extras(
         None => {}
     }
     // Banned -> `ignore`, favorites -> `order` (crate::routing).
-    if let Some(provider) = provider_routing_field(routing, model) {
+    if let Some(provider) = routing.and_then(|r| r.provider_prefs(model)) {
         extras.insert("provider".into(), json!(provider));
     }
     extras

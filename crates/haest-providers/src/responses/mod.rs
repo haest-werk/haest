@@ -3,11 +3,10 @@
 //!
 //! [`ResponsesProvider`] is the provider, configured by [`ResponsesOptions`];
 //! [`ProviderRegistry`](crate::ProviderRegistry) builds it for an `openai:`
-//! spec. The request-shaping functions ([`build_responses_body`] and the ones
-//! it calls) are pure and public, for a host that wants the exact body a
-//! request would send.
+//! spec. The request body comes from [`build_responses_body`] and the pure
+//! functions it calls.
 
-mod convert;
+pub(crate) mod convert;
 mod stream;
 #[cfg(test)]
 mod tests;
@@ -18,7 +17,7 @@ use std::sync::Arc;
 
 use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
 
-pub use convert::{build_responses_body, reasoning_params, to_responses_input};
+use convert::build_responses_body;
 
 use haest_http::{HttpClient, Request};
 
@@ -46,8 +45,9 @@ pub struct ResponsesOptions {
 /// It runs stateless (`store: false`): each request carries the whole
 /// history, and the model's reasoning survives between turns only as its
 /// encrypted content, kept in the thinking part's `signature` and replayed to
-/// the same provider. haest's effort maps onto OpenAI's levels
-/// ([`reasoning_params`]). A refusal or a `content_filter` stop ends the message
+/// the same provider. haest's effort maps onto OpenAI's levels (`off` is
+/// `none`, `max` is `xhigh`), with an automatic reasoning summary; no effort
+/// sends no `reasoning` field. A refusal or a `content_filter` stop ends the message
 /// with [`StopReason::Refusal`](haest_core::StopReason::Refusal), running out of
 /// output tokens with `MaxTokens`.
 ///

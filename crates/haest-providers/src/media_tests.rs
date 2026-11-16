@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use crate::{
     anthropic::to_anthropic_messages,
     compat::{CompatFlavor, to_chat_messages},
-    responses::to_responses_input,
+    responses::convert::to_responses_input,
 };
 
 fn part(kind: MediaKind, media_type: &str, data: &str, name: &str) -> MediaPart {

@@ -8,7 +8,7 @@ use haest_core::{
 };
 use serde_json::{Value, json};
 
-use super::*;
+use super::{convert::uses_budget_thinking, *};
 use crate::testing::{FakeEnd, FakeHttp, FakeReply, collect, kinds, request, typed_sse};
 
 fn provider(t: &Arc<FakeHttp>) -> AnthropicProvider {

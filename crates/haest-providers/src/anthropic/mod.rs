@@ -4,9 +4,8 @@
 //! [`AnthropicProvider`] is the provider; build it from [`AnthropicOptions`],
 //! or let [`ProviderRegistry`](crate::ProviderRegistry) build it for an
 //! `anthropic:` spec or a providers.json entry of `"type": "anthropic"`. The
-//! request-shaping functions ([`build_anthropic_params`] and the ones it
-//! calls) are pure and public, for a host that wants the exact body a request
-//! would send.
+//! request body comes from [`build_anthropic_params`] and the pure functions
+//! it calls.
 
 mod convert;
 mod stream;
@@ -18,9 +17,7 @@ use std::sync::Arc;
 use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
 use serde_json::{Value, json};
 
-pub use convert::{
-    thinking_params, to_anthropic_messages, to_anthropic_tools, uses_budget_thinking,
-};
+pub(crate) use convert::{thinking_params, to_anthropic_messages, to_anthropic_tools};
 
 use haest_http::{HttpClient, Request};
 
@@ -50,8 +47,9 @@ pub struct AnthropicOptions {
 /// Each request streams (`stream: true`) with a prompt-cache breakpoint on
 /// the system prompt, the last tool and the newest message block, so the next
 /// request reads everything before it from the cache. `max_tokens` defaults to
-/// 32,000. Effort becomes adaptive thinking, or a thinking budget for models
-/// from before it ([`thinking_params`]). Thinking is replayed, with its
+/// 32,000. Effort becomes adaptive thinking with the effort level, or for
+/// models from before it (Claude 4.5 and older) a thinking budget of 2,048
+/// tokens for low up to 31,999 for max. Thinking is replayed, with its
 /// signature, only to this provider.
 ///
 /// Its [`Provider::id`] is always `anthropic`, also for a providers.json entry
@@ -115,7 +113,7 @@ impl AnthropicProvider {
 /// as one cached text block, the messages ([`to_anthropic_messages`]), the
 /// tools when there are any ([`to_anthropic_tools`]) and the thinking fields
 /// for `req.effort` ([`thinking_params`]).
-pub fn build_anthropic_params(req: &ProviderRequest) -> Value {
+pub(crate) fn build_anthropic_params(req: &ProviderRequest) -> Value {
     let mut body = json!({
         "model": req.model,
         "max_tokens": req.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),

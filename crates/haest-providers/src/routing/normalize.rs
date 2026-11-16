@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::{
     ProjectRouting, ProviderRouting, RoutingOverride, RoutingPriority, RoutingRule, RoutingScopes,
-    pattern_refusal, unique,
+    patterns::pattern_refusal, unique,
 };
 
 fn slug_list(v: Option<&Value>) -> Vec<String> {
@@ -36,7 +36,7 @@ fn rule(v: Option<&Value>) -> RoutingRule {
 /// Never fails. Slugs are trimmed, blank ones dropped, repeats removed. An
 /// override whose pattern [`pattern_refusal`] refuses, or whose pattern came
 /// before, is skipped. Anything that is not the right shape reads as empty.
-pub fn normalize_routing(raw: &Value) -> ProviderRouting {
+pub(crate) fn normalize_routing(raw: &Value) -> ProviderRouting {
     let Some(r) = raw.as_object() else {
         return ProviderRouting::default();
     };
@@ -64,7 +64,7 @@ pub fn normalize_routing(raw: &Value) -> ProviderRouting {
 
 /// A project scope from untrusted JSON: [`normalize_routing`]'s shape plus
 /// `"priority"` (a [`RoutingPriority`] word; anything else is none).
-pub fn normalize_project_routing(raw: &Value) -> ProjectRouting {
+pub(crate) fn normalize_project_routing(raw: &Value) -> ProjectRouting {
     ProjectRouting {
         routing: normalize_routing(raw),
         priority: raw
@@ -74,9 +74,9 @@ pub fn normalize_project_routing(raw: &Value) -> ProjectRouting {
     }
 }
 
-/// True when the scope would never change a request.
-pub fn is_empty_routing(config: &ProjectRouting) -> bool {
-    says_nothing(&config.routing) && config.priority.is_none()
+/// True when the project scope would never change a request.
+fn is_empty_project(project: &ProjectRouting) -> bool {
+    says_nothing(&project.routing) && project.priority.is_none()
 }
 
 fn says_nothing(r: &ProviderRouting) -> bool {
@@ -89,8 +89,9 @@ fn says_nothing(r: &ProviderRouting) -> bool {
 /// where the JSON came from, and then routes as if unset -- loudly, never
 /// fatally.
 ///
-/// Valid JSON of the wrong shape is read tolerantly ([`normalize_routing`]):
-/// what does not fit is dropped.
+/// Valid JSON of the wrong shape is read tolerantly: a slug that is not a
+/// string, an override with no usable `match` or a repeated one, an unknown
+/// `priority`, is dropped; what does not fit reads as empty.
 ///
 /// # Errors
 ///
@@ -105,7 +106,7 @@ pub fn parse_routing(raw: &str) -> Result<Option<RoutingScopes>, serde_json::Err
         .get("project")
         .filter(|p| !p.is_null())
         .map(normalize_project_routing)
-        .filter(|p| !is_empty_routing(p));
+        .filter(|p| !is_empty_project(p));
     if says_nothing(&fleet) && project.is_none() {
         return Ok(None);
     }

@@ -5,9 +5,7 @@
 //! the fold that runs each SSE event through `stream` into the answer.
 //!
 //! [`CompatProvider`] is the provider, configured by [`CompatOptions`]; its
-//! [`CompatFlavor`] picks OpenRouter's extras or the plain body. The
-//! request-shaping functions ([`build_compat_body`] and the ones it calls) are
-//! pure and public, for a host that wants the exact body a request would send.
+//! [`CompatFlavor`] picks OpenRouter's extras or the plain body.
 
 mod convert;
 mod stream;
@@ -36,7 +34,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use convert::reasoning_effort_extras;
-pub use convert::{flavor_extras, to_chat_messages, to_chat_tools};
+pub(crate) use convert::{flavor_extras, to_chat_messages, to_chat_tools};
 pub(crate) use stream::{StreamState, apply_chunk, finish_message};
 
 use crate::{
@@ -158,11 +156,6 @@ impl CompatProvider {
         self
     }
 
-    /// The options it was built with.
-    pub fn options(&self) -> &CompatOptions {
-        &self.opts
-    }
-
     fn http_request(&self, req: &ProviderRequest) -> Request {
         json_post(
             endpoint(&self.opts.base_url, OPENAI_URL, "chat/completions"),
@@ -179,7 +172,7 @@ impl CompatProvider {
 /// is set and the flavor is OpenRouter), `max_tokens` when above 0, the
 /// flavor's extras ([`flavor_extras`])
 /// and a `reasoning_effort` fitted to [`CompatOptions::reasoning_effort`].
-pub fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> Value {
+pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> Value {
     let mut tools = to_chat_tools(&req.tools);
     if opts.flavor == CompatFlavor::OpenRouter {
         tools.extend(req.web_search.as_ref().map(web_search_tool));

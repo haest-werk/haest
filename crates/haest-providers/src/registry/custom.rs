@@ -136,7 +136,7 @@ impl CustomProviderConfig {
     /// has a `cacheWrite` that is not a number.
     ///
     /// ```
-    /// use haest_providers::{CustomProviderConfig, registry::Dialect};
+    /// use haest_providers::{CustomProviderConfig, Dialect};
     /// use serde_json::json;
     ///
     /// let entry = json!({"type": "anthropic", "baseURL": "https://llm-gateway.example.com",
@@ -190,7 +190,7 @@ impl CustomProviderConfig {
 /// The provider is `name`, [`CompatFlavor::Generic`], with the entry's URL,
 /// key ([`CustomProviderConfig::api_key`]), headers and effort levels. Its
 /// prices are the built-in catalog's for `name:` models, then the entry's own.
-pub fn custom_compat_options(
+pub(crate) fn custom_compat_options(
     name: &str,
     cfg: &CustomProviderConfig,
     keys: &dyn KeySource,
@@ -284,7 +284,7 @@ pub(super) fn need(
 /// # Errors
 ///
 /// A [`ProviderConfigError`] when `keys` has no `PAPERINSTRUMENTS_API_KEY`.
-pub fn paper_instruments_options(
+pub(crate) fn paper_instruments_options(
     keys: &dyn KeySource,
 ) -> Result<CompatOptions, ProviderConfigError> {
     let key = need(keys, "PAPERINSTRUMENTS_API_KEY", "paperinstruments")?;
