@@ -10,10 +10,7 @@ use super::{hardcoded, keyed_with};
 use crate::{
     BuildOptions, Resume, Runtime,
     haest::{
-        Message,
-        core::deferred_tools::DeferMode,
-        core::fs::MemFs,
-        core::session::SessionRecord,
+        Message, core::deferred_tools::DeferMode, core::fs::MemFs, core::session::SessionRecord,
         core::testing::tool_answer,
     },
     testkit::Recorded,

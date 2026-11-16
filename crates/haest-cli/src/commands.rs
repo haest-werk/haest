@@ -157,7 +157,9 @@ async fn clear(rt: &mut Runtime) {
         Ok(()) => rt
             .hooks
             .info(&format!("Started a fresh session ({}).", rt.session_id())),
-        Err(e) => rt.hooks.error(&format!("Not cleared: {}", crate::report(e))),
+        Err(e) => rt
+            .hooks
+            .error(&format!("Not cleared: {}", crate::report(e))),
     }
 }
 

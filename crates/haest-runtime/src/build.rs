@@ -33,7 +33,7 @@ use crate::{
     prompt::{AgentPrompt, RuntimePrompt, skill_options},
     store::{create, open_session, record_given, record_start, restore, start_on},
     tools::{MainTools, WrappedTools, image_options, own_tools},
-    world::{World, WorkspaceError, connect_mcp, jobs_for, workspace_for},
+    world::{WorkspaceError, World, connect_mcp, jobs_for, workspace_for},
 };
 
 /// Everything a conversation is built from. haest reads no file, variable or
@@ -144,8 +144,15 @@ async fn find(
     let skills = Arc::new(Mutex::new(skills_in(fs.as_ref(), &skill_roots).await));
     let skill_dirs = skill_roots.dirs();
     let remedies = hooks.remedies();
-    let workspace =
-        workspace_for(&hooks.settings, world, passed_env, &skill_dirs, spill, remedies).await?;
+    let workspace = workspace_for(
+        &hooks.settings,
+        world,
+        passed_env,
+        &skill_dirs,
+        spill,
+        remedies,
+    )
+    .await?;
     let prompt = Arc::new(RuntimePrompt::new(hooks, fs, &skills, workspace.as_ref()).await);
     Ok(Found {
         skill_roots,

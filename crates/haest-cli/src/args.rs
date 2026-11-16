@@ -79,7 +79,9 @@ impl Cli {
         // `-r ""` is `-r`, as it always was.
         let resume = match self.args.resume.clone() {
             None => Resume::New,
-            Some(id) => id.filter(|id| !id.is_empty()).map_or(Resume::Latest, Resume::Id),
+            Some(id) => id
+                .filter(|id| !id.is_empty())
+                .map_or(Resume::Latest, Resume::Id),
         };
         BuildOptions {
             resume,

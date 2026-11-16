@@ -153,7 +153,10 @@ async fn env_as_a_whole_came_from_the_last_layer_that_passed_a_variable() {
     let r = from_flag.unwrap();
     assert_eq!(r.resolved.source("env"), Source::Flag("env".into()));
     let from_var = run("/w", &[], &[("HAEST_ENV", "A=1")], &[]).await.unwrap();
-    assert_eq!(from_var.resolved.source("env"), Source::Env("HAEST_ENV".into()));
+    assert_eq!(
+        from_var.resolved.source("env"),
+        Source::Env("HAEST_ENV".into())
+    );
     let none = run("/w", &[], &[], &[]).await.unwrap();
     assert_eq!(none.resolved.source("env"), Source::Default);
 }

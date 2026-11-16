@@ -49,7 +49,12 @@ async fn the_example_files_load_together_and_do_what_they_say() {
         WorkspaceMode::Real,
         "the project's file is read"
     );
-    let passed: Vec<&str> = r.passed_env.vars().iter().map(|(k, _)| k.as_str()).collect();
+    let passed: Vec<&str> = r
+        .passed_env
+        .vars()
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .collect();
     assert_eq!(
         passed,
         ["DATABASE_URL", "GH_TOKEN", "NODE_ENV", "PAGER", "RUST_LOG"]
