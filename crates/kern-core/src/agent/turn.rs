@@ -14,7 +14,7 @@ use crate::{
     limits::{TurnLimits, estimate_request_tokens},
     media::user_message,
     messages::{AssistantMessage, Message, StopReason, ToolCall, Usage},
-    provider::{ProviderEvent, ProviderRequest},
+    provider::ProviderEvent,
     tool::{ToolContext, ToolHost},
     tool_batch::{Answer, Answers, run_tool_batches},
     tool_exec::{ToolIndex, error_assistant, tool_result_message},
@@ -56,10 +56,8 @@ impl<'s> Turn<'s> {
 
 /// History grows here only: every message also goes to the persistence hook.
 fn append(messages: &mut Vec<Message>, hooks: &dyn AgentHooks, msg: Message) {
+    hooks.on_message(&msg);
     messages.push(msg);
-    if let Some(msg) = messages.last() {
-        hooks.on_message(msg);
-    }
 }
 
 impl Agent {
@@ -157,16 +155,8 @@ impl Agent {
         if let Some(too_big) = t.guard.too_big(estimate, self.limits().as_ref()) {
             return refuse(&resolved.model, &too_big, t);
         }
-        let mut stream = resolved.provider.stream(ProviderRequest {
-            model: resolved.model.clone(),
-            system: prefix.system,
-            messages,
-            tools: prefix.tools,
-            cancel: t.cancel.clone(),
-            effort: prefix.effort,
-            max_tokens: None,
-            web_search: prefix.web_search,
-        });
+        let req = prefix.request(resolved.model.clone(), messages, t.cancel.clone());
+        let mut stream = resolved.provider.stream(req);
         let mut done = None;
         while let Some(ev) = stream.next().await {
             match ev {

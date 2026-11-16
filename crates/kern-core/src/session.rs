@@ -153,10 +153,10 @@ fn valid_id(id: &str) -> bool {
 
 /// Session `id`'s file in a [`sessions_dir`]: `<dir>/<id>.jsonl`.
 pub fn session_file(dir: &Path, id: &str) -> Result<PathBuf, InvalidSessionId> {
-    match valid_id(id) {
-        true => Ok(dir.join(format!("{id}.jsonl"))),
-        false => Err(InvalidSessionId(id.into())),
+    if !valid_id(id) {
+        return Err(InvalidSessionId(id.into()));
     }
+    Ok(dir.join(format!("{id}.jsonl")))
 }
 
 /// The session id a file name in a [`sessions_dir`] stands for; None for a
@@ -206,11 +206,9 @@ fn apply(s: &mut ReplayedSession, r: SessionRecord) {
         SessionRecord::Header { .. } => {}
         SessionRecord::Message { message, .. } => s.messages.push(message),
         SessionRecord::Compaction { summary, kept, .. } => {
-            let from = s.messages.len() - kept.min(s.messages.len());
-            let tail = s.messages.split_off(from);
-            s.messages = std::iter::once(compaction_summary_message(&summary))
-                .chain(tail)
-                .collect();
+            let from = s.messages.len().saturating_sub(kept);
+            s.messages
+                .splice(..from, [compaction_summary_message(&summary)]);
         }
         SessionRecord::Config { model, effort, .. } => {
             if let Some(m) = model.filter(|m| !m.is_empty()) {

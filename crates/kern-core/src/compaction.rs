@@ -116,16 +116,7 @@ async fn summarize(
     messages.push(Message::user(warm_instruction(kept)));
     let warm = ask(
         provider,
-        ProviderRequest {
-            model: model.clone(),
-            system: prefix.system,
-            messages,
-            tools: prefix.tools,
-            cancel: cancel.clone(),
-            effort: prefix.effort,
-            max_tokens: None,
-            web_search: prefix.web_search,
-        },
+        prefix.request(model.clone(), messages, cancel.clone()),
     )
     .await;
     if !warm.text.is_empty() || cancel.is_cancelled() {
@@ -188,11 +179,9 @@ pub async fn compact(
         let why = res.error.unwrap_or_else(|| "empty response".into());
         return Err(CompactionError::Failed(why));
     }
-    let tail = agent.messages.split_off(cut);
-    let history = std::iter::once(compaction_summary_message(&res.text))
-        .chain(tail)
-        .collect();
-    agent.replace_history(history);
+    agent
+        .messages
+        .splice(..cut, [compaction_summary_message(&res.text)]);
     Ok(Some(CompactionResult {
         summary: res.text,
         kept,
