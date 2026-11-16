@@ -115,5 +115,6 @@ of haest tools over one shared backend: a name, a description and a JSON Schema
 built from what the backend accepts, a canonical `kind`, `read_only` for the
 readers, a correctable mistake returned as `ToolError::Input` and anything else
 as `ToolError::Failed`, and every call given up when the turn is cancelled.
-`src/github/http.rs` is a plug point in haest's style: a narrow trait the
-backend sends through, a reqwest default, a fake in the tests.
+`GithubTracker::with_http` is a plug point in haest's style: the backend sends
+through haest-http's one-method `HttpClient` (re-exported as
+`haest_issues::http`), with a reqwest default and a fake in the tests.

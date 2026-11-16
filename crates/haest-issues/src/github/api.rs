@@ -1,16 +1,20 @@
 //! Talking to GitHub: issue references, URLs, headers, and what a refusal means.
 
+use std::time::Duration;
+
+use haest_http::{Bytes, HttpError, Method, Request};
 use serde_json::Value;
 
-use super::{
-    GithubTracker,
-    http::{HttpCall, Method},
-};
+use super::GithubTracker;
 use crate::tracker::TrackerError;
 
 /// GitHub's REST API version this backend was written against.
 const API_VERSION: &str = "2022-11-28";
 const USER_AGENT: &str = "haest-issues";
+/// The most of an answer that is read; a list of 100 issues is well under it.
+const MAX_BODY: usize = 16 * 1024 * 1024;
+/// The longest one request may take, answer included.
+const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// One issue: in the tracker's own repository, or another (`owner/repo#5`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,22 +86,30 @@ impl GithubTracker {
         )
     }
 
-    fn headers(&self, json_body: bool) -> Vec<(String, String)> {
-        let mut h = vec![
-            (
-                "accept".to_string(),
-                "application/vnd.github+json".to_string(),
-            ),
-            ("x-github-api-version".into(), API_VERSION.into()),
-            ("user-agent".into(), USER_AGENT.into()),
-        ];
+    /// `url`, with GitHub's headers (the token, when there is one) and `body` as JSON.
+    fn request(&self, method: Method, url: String, body: Option<&Value>) -> Request {
+        let mut req = Request::new(method, url)
+            .with_header("accept", "application/vnd.github+json")
+            .with_header("x-github-api-version", API_VERSION)
+            .with_header("user-agent", USER_AGENT);
         if let Some(token) = &self.token {
-            h.push(("authorization".into(), format!("Bearer {token}")));
+            req = req.with_header("authorization", format!("Bearer {token}"));
         }
-        if json_body {
-            h.push(("content-type".into(), "application/json".into()));
+        match body {
+            Some(body) => req.with_json(body),
+            None => req,
         }
-        h
+    }
+
+    /// Send `req` and read the whole answer, within [`TIMEOUT`] and [`MAX_BODY`].
+    async fn exchange(&self, req: Request) -> Result<(u16, Bytes), HttpError> {
+        let exchange = async {
+            let res = self.http.send(req).await?;
+            Ok((res.status, res.body.bytes(MAX_BODY).await?))
+        };
+        tokio::time::timeout(TIMEOUT, exchange)
+            .await
+            .unwrap_or(Err(HttpError::Timeout(TIMEOUT)))
     }
 
     /// One request; the answer's JSON (Null for an empty body). A 404 or 410
@@ -109,27 +121,20 @@ impl GithubTracker {
         body: Option<Value>,
         missing: &str,
     ) -> Result<Value, TrackerError> {
-        let call = HttpCall {
-            method,
-            headers: self.headers(body.is_some()),
-            url,
-            body,
-        };
-        let reply = self
-            .http
-            .send(call)
+        let (status, answer) = self
+            .exchange(self.request(method, url, body.as_ref()))
             .await
-            .map_err(|e| TrackerError::Failed(format!("GitHub did not answer: {e}")))?;
-        let json: Value = if reply.body.is_empty() {
+            .map_err(|e| TrackerError::Failed(format!("GitHub did not answer: {}", e.report())))?;
+        let json: Value = if answer.is_empty() {
             Value::Null
         } else {
-            serde_json::from_slice(&reply.body).unwrap_or(Value::Null)
+            serde_json::from_slice(&answer).unwrap_or(Value::Null)
         };
-        if reply.ok() {
+        if (200..300).contains(&status) {
             return Ok(json);
         }
         let why = refusal(&json);
-        Err(match reply.status {
+        Err(match status {
             404 | 410 => TrackerError::NotFound(missing.to_string()),
             422 => TrackerError::Invalid(format!("GitHub refused the change: {why}")),
             401 if self.token.is_none() => TrackerError::Failed(format!(

@@ -1,6 +1,7 @@
 //! The GitHub backend against a scripted GitHub: what it asks for, and what
 //! it makes of the answers. No network (the one live check is `#[ignore]`d).
 
+use haest_http::Response;
 use serde_json::json;
 
 use super::*;
@@ -37,7 +38,7 @@ async fn a_list_asks_for_open_issues_with_the_token_and_skips_pull_requests() {
     assert_eq!(call.header("accept"), Some("application/vnd.github+json"));
     assert!(call.header("x-github-api-version").is_some());
     assert!(call.header("user-agent").is_some());
-    assert_eq!(call.body, None);
+    assert!(call.body.is_empty());
 }
 
 #[tokio::test]
@@ -198,9 +199,7 @@ async fn a_pull_request_is_not_an_issue_and_a_bad_id_asks_nothing() {
 
 #[tokio::test]
 async fn refusals_carry_githubs_own_words() {
-    let said = |status, message: &str| {
-        crate::github::http::HttpReply::json(status, &json!({"message": message}))
-    };
+    let said = |status, message: &str| Response::json(status, &json!({"message": message}));
     let http = FakeHttp::new([
         said(404, "Not Found"),
         said(422, "Validation Failed"),

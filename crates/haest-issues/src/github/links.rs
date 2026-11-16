@@ -4,9 +4,10 @@
 //! Both APIs take the OTHER issue by its database `id`, not its number, so a
 //! change first reads that issue.
 
+use haest_http::Method;
 use serde_json::{Value, json};
 
-use super::{GithubTracker, api::IssueRef, http::Method};
+use super::{GithubTracker, api::IssueRef};
 use crate::tracker::{Link, LinkChange, Relation, TrackerError};
 
 /// Children and dependencies past this many are not listed on a get.

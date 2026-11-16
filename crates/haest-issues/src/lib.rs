@@ -92,8 +92,9 @@
 //! - the one tool that cannot be undone says so in its `kind`
 //!   ([`DELETE_KIND`]), for a host that asks the human first.
 //!
-//! [`github::http`] is a plug point in haest's style: a narrow trait the
-//! backend sends through, a reqwest default, a fake in the tests.
+//! [`http::HttpClient`] is a plug point in haest's style: one narrow trait
+//! every haest crate sends through, a reqwest default, a fake in the tests
+//! ([`GithubTracker::with_http`](github::GithubTracker::with_http)).
 //!
 //! [`ToolError::Input`]: haest_core::tool::ToolError::Input
 //! [`ToolError::Failed`]: haest_core::tool::ToolError::Failed
@@ -107,6 +108,11 @@ pub mod github;
 mod testkit;
 pub mod tools;
 pub mod tracker;
+
+/// The HTTP seam the GitHub tracker sends through: implement
+/// [`http::HttpClient`] to give it a client of your own.
+#[doc(inline)]
+pub use haest_http as http;
 
 pub use tools::{DELETE_KIND, issue_tools, issue_tools_named};
 pub use tracker::{

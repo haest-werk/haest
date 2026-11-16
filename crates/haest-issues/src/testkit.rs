@@ -11,24 +11,22 @@ use haest_core::{
     tool::{JsonMap, ToolContext},
     workspace::ShutWorkspace,
 };
+use haest_http::{HttpClient, HttpError, Request, Response};
 use serde_json::{Value, json};
 
-use crate::github::{
-    GithubTracker,
-    http::{Http, HttpCall, HttpReply},
-};
+use crate::github::GithubTracker;
 
 /// Answers each request with the next scripted reply and records it. Out of
 /// script = an error, so an unexpected request fails loudly.
 #[derive(Default)]
 pub(crate) struct FakeHttp {
-    replies: Mutex<VecDeque<Result<HttpReply, String>>>,
-    calls: Mutex<Vec<HttpCall>>,
+    replies: Mutex<VecDeque<Result<Response, HttpError>>>,
+    calls: Mutex<Vec<Request>>,
     hang: bool,
 }
 
 impl FakeHttp {
-    pub fn new(replies: impl IntoIterator<Item = HttpReply>) -> Arc<Self> {
+    pub fn new(replies: impl IntoIterator<Item = Response>) -> Arc<Self> {
         Arc::new(Self {
             replies: Mutex::new(replies.into_iter().map(Ok).collect()),
             ..Default::default()
@@ -37,8 +35,9 @@ impl FakeHttp {
 
     /// A network that never connects.
     pub fn down(why: &str) -> Arc<Self> {
+        let refused = HttpError::Connect(why.into());
         Arc::new(Self {
-            replies: Mutex::new([Err(why.to_string())].into()),
+            replies: Mutex::new([Err(refused)].into()),
             ..Default::default()
         })
     }
@@ -51,7 +50,7 @@ impl FakeHttp {
         })
     }
 
-    pub fn calls(&self) -> Vec<HttpCall> {
+    pub fn calls(&self) -> Vec<Request> {
         self.calls.lock().unwrap().clone()
     }
 
@@ -64,14 +63,14 @@ impl FakeHttp {
 }
 
 #[async_trait]
-impl Http for FakeHttp {
-    async fn send(&self, call: HttpCall) -> Result<HttpReply, String> {
-        self.calls.lock().unwrap().push(call);
+impl HttpClient for FakeHttp {
+    async fn send(&self, req: Request) -> Result<Response, HttpError> {
+        self.calls.lock().unwrap().push(req);
         if self.hang {
             return std::future::pending().await;
         }
         let next = self.replies.lock().unwrap().pop_front();
-        next.unwrap_or_else(|| Err("fake GitHub: out of replies".into()))
+        next.unwrap_or_else(|| Err(HttpError::Request("fake GitHub: out of replies".into())))
     }
 }
 
@@ -84,8 +83,8 @@ pub(crate) fn github(http: Arc<FakeHttp>) -> GithubTracker {
         .with_http(http)
 }
 
-pub(crate) fn ok(body: Value) -> HttpReply {
-    HttpReply::json(200, &body)
+pub(crate) fn ok(body: Value) -> Response {
+    Response::json(200, &body)
 }
 
 /// GitHub's JSON for issue `number` of o/r: open, no labels, no relations.

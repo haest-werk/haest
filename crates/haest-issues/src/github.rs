@@ -15,12 +15,13 @@
 //! read from the environment. Without one, public repositories can be read.
 //! Deleting an issue needs a token with admin rights on the repository.
 //!
-//! PLUG POINT: [`http::Http`], how the requests travel ([`http::ReqwestHttp`]
-//! by default).
+//! PLUG POINT: [`GithubTracker::with_http`], how the requests travel (any
+//! [`HttpClient`]; the shared [`ReqwestClient`] by default).
 
 use std::{fmt, sync::Arc};
 
 use async_trait::async_trait;
+use haest_http::{HttpClient, Method, ReqwestClient};
 use serde_json::{Map, Value, json};
 
 use crate::tracker::{
@@ -29,12 +30,10 @@ use crate::tracker::{
 };
 
 mod api;
-pub mod http;
 mod links;
 mod wire;
 
 use api::encode;
-use http::{Http, Method, ReqwestHttp};
 use wire::{STATUSES, is_pull_request, label_names, state_fields, status_of};
 
 const API: &str = "https://api.github.com";
@@ -53,31 +52,33 @@ const MAX_PER_PAGE: usize = 100;
 ///
 /// GitHub's answers map to [`TrackerError`]: 404 and 410 are `NotFound`, 422
 /// is `Invalid` with GitHub's reasons, anything else (a 401 without a token,
-/// a 403, no answer) is `Failed`. A list reads at most 10 pages.
+/// a 403, no answer within 60 s, an answer past 16 MiB) is `Failed`. A list
+/// reads at most 10 pages.
 ///
 /// # Examples
 ///
-/// A fake [`Http`] answers in place of GitHub, so this runs offline; a host
-/// leaves the default and hands in a token.
+/// A fake [`HttpClient`] answers in place of GitHub, so this runs offline; a
+/// host leaves the default and hands in a token.
 ///
 /// ```
 /// use std::sync::Arc;
 ///
 /// use haest_issues::{
 ///     IssueFilter, Tracker,
-///     github::{GithubTracker, http::{Http, HttpCall, HttpReply}},
+///     github::GithubTracker,
+///     http::{HttpClient, HttpError, Request, Response, async_trait},
 /// };
 /// use serde_json::json;
 ///
 /// /// GitHub with one open issue.
 /// struct OneIssue;
 ///
-/// #[async_trait::async_trait]
-/// impl Http for OneIssue {
-///     async fn send(&self, call: HttpCall) -> Result<HttpReply, String> {
-///         assert!(call.url.starts_with("https://api.github.com/repos/owner/repo/issues?state=open"));
-///         assert_eq!(call.header("authorization"), Some("Bearer a token"));
-///         Ok(HttpReply::json(200, &json!([{
+/// #[async_trait]
+/// impl HttpClient for OneIssue {
+///     async fn send(&self, req: Request) -> Result<Response, HttpError> {
+///         assert!(req.url.starts_with("https://api.github.com/repos/owner/repo/issues?state=open"));
+///         assert_eq!(req.header("authorization"), Some("Bearer a token"));
+///         Ok(Response::json(200, &json!([{
 ///             "number": 7, "title": "Docs for haest-issues", "state": "open",
 ///             "repository_url": "https://api.github.com/repos/owner/repo",
 ///         }])))
@@ -99,7 +100,7 @@ pub struct GithubTracker {
     token: Option<String>,
     api: String,
     graphql: String,
-    http: Arc<dyn Http>,
+    http: Arc<dyn HttpClient>,
 }
 
 impl fmt::Debug for GithubTracker {
@@ -114,12 +115,8 @@ impl fmt::Debug for GithubTracker {
 }
 
 impl GithubTracker {
-    /// The issues of `owner/repo` on github.com, with no token, over
-    /// [`ReqwestHttp`]. Nothing is sent until the first call.
-    ///
-    /// # Panics
-    ///
-    /// When reqwest cannot build its HTTP client ([`ReqwestHttp::new`]).
+    /// The issues of `owner/repo` on github.com, with no token, over the
+    /// shared [`ReqwestClient`]. Nothing is built or sent until the first call.
     pub fn new(owner: impl Into<String>, repo: impl Into<String>) -> Self {
         Self {
             owner: owner.into(),
@@ -127,7 +124,7 @@ impl GithubTracker {
             token: None,
             api: API.into(),
             graphql: format!("{API}/graphql"),
-            http: Arc::new(ReqwestHttp::new()),
+            http: Arc::new(ReqwestClient::new()),
         }
     }
 
@@ -139,8 +136,9 @@ impl GithubTracker {
     }
 
     /// The tracker sending its requests through `http`: a host's own client,
-    /// a recorder, a test's fake.
-    pub fn with_http(mut self, http: Arc<dyn Http>) -> Self {
+    /// a recorder, a test's fake. The 60 s limit and the 16 MiB cap on an
+    /// answer still hold.
+    pub fn with_http(mut self, http: Arc<dyn HttpClient>) -> Self {
         self.http = http;
         self
     }

@@ -26,13 +26,13 @@ async fn a_closed_create_is_a_post_then_a_close() {
     );
     let calls = http.calls();
     assert_eq!(
-        calls[0].body,
-        Some(json!({"title": "t", "body": "b", "labels": ["bug"]}))
+        calls[0].json(),
+        json!({"title": "t", "body": "b", "labels": ["bug"]})
     );
     assert_eq!(calls[0].header("content-type"), Some("application/json"));
     assert_eq!(
-        calls[1].body,
-        Some(json!({"state": "closed", "state_reason": "completed"}))
+        calls[1].json(),
+        json!({"state": "closed", "state_reason": "completed"})
     );
 }
 
@@ -60,13 +60,13 @@ async fn adding_and_removing_labels_starts_from_the_ones_it_has() {
         ]
     );
     assert_eq!(
-        http.calls()[1].body,
-        Some(json!({
+        http.calls()[1].json(),
+        json!({
             "state": "closed",
             "state_reason": "not_planned",
             "labels": ["a", "c"],
             "title": "new"
-        }))
+        })
     );
 }
 
@@ -94,7 +94,7 @@ async fn a_delete_is_graphqls_delete_issue_on_the_node_id() {
             format!("POST {API}/graphql"),
         ]
     );
-    let body = http.calls()[1].body.clone().unwrap();
+    let body = http.calls()[1].json();
     assert_eq!(body["variables"], json!({"id": "I_node4"}));
     assert!(body["query"].as_str().unwrap().contains("deleteIssue"));
     assert_eq!(
@@ -139,8 +139,8 @@ async fn each_relation_is_stored_where_github_keeps_it() {
             ]
         );
         assert_eq!(
-            h.calls()[1].body,
-            Some(json!({"sub_issue_id": 1005, "replace_parent": true}))
+            h.calls()[1].json(),
+            json!({"sub_issue_id": 1005, "replace_parent": true})
         );
     }
     // blocks: the target is blocked by this issue.
@@ -153,7 +153,7 @@ async fn each_relation_is_stored_where_github_keeps_it() {
         http.sent()[1],
         format!("POST {API}/repos/o/r/issues/5/dependencies/blocked_by")
     );
-    assert_eq!(http.calls()[1].body, Some(json!({"issue_id": 1009})));
+    assert_eq!(http.calls()[1].json(), json!({"issue_id": 1009}));
 }
 
 #[tokio::test]
@@ -188,7 +188,7 @@ async fn unlinking_names_the_other_issue_by_its_id_in_its_own_repository() {
         http.sent()[1],
         format!("DELETE {API}/repos/o/r/issues/1/sub_issue")
     );
-    assert_eq!(http.calls()[1].body, Some(json!({"sub_issue_id": 1005})));
+    assert_eq!(http.calls()[1].json(), json!({"sub_issue_id": 1005}));
 }
 
 #[tokio::test]
