@@ -32,7 +32,7 @@ impl HttpClient for Refusing {
         let body = String::from_utf8_lossy(&req.body).into_owned();
         self.0.lock().unwrap().push(body);
         let refused = json!({"error": {"message": "refused"}});
-        Ok(Response::json(400, &refused))
+        Ok(Response::new(400, "").with_json(&refused))
     }
 }
 

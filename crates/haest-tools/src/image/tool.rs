@@ -66,12 +66,12 @@ use crate::canonical::pick;
 ///             let models = json!({"data": [
 ///                 {"id": "vendor/pic", "supported_parameters": {"aspect_ratio": aspect}}
 ///             ]});
-///             return Ok(Response::json(200, &models));
+///             return Ok(Response::new(200, "").with_json(&models));
 ///         }
-///         assert_eq!(req.json()["aspect_ratio"], "16:9");
+///         assert_eq!(req.json_body()["aspect_ratio"], "16:9");
 ///         // A PNG signature is enough to count as a PNG.
 ///         let image = json!({"data": [{"b64_json": "iVBORw0KGgo="}], "usage": {"cost": 0.04}});
-///         Ok(Response::json(200, &image))
+///         Ok(Response::new(200, "").with_json(&image))
 ///     }
 /// }
 ///

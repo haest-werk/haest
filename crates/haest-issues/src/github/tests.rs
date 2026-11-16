@@ -202,7 +202,8 @@ async fn a_pull_request_is_not_an_issue_and_a_bad_id_asks_nothing() {
 
 #[tokio::test]
 async fn refusals_carry_githubs_own_words() {
-    let said = |status, message: &str| Response::json(status, &json!({"message": message}));
+    let said =
+        |status, message: &str| Response::new(status, "").with_json(&json!({"message": message}));
     let http = FakeHttp::new([
         said(404, "Not Found"),
         said(422, "Validation Failed"),

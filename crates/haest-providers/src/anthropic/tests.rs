@@ -96,7 +96,7 @@ async fn thinking_with_signature_text_and_a_streamed_tool_call_fold_into_one_mes
     let req = &t.requests()[0];
     assert_eq!(req.url, "https://api.anthropic.com/v1/messages");
     assert_eq!(req.header("x-api-key"), Some("k"));
-    assert_eq!(req.json()["stream"], json!(true));
+    assert_eq!(req.json_body()["stream"], json!(true));
 }
 
 #[tokio::test]

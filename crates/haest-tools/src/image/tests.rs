@@ -64,7 +64,7 @@ impl HttpClient for FakeApi {
         } else {
             let auth = req.header("authorization").unwrap_or_default();
             let key = auth.strip_prefix("Bearer ").unwrap_or_default().to_string();
-            let sent = (req.url.clone(), key, req.json());
+            let sent = (req.url.clone(), key, req.json_body());
             self.posted.lock().unwrap().push(sent);
             self.answer.lock().unwrap().clone()
         };

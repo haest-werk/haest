@@ -139,7 +139,7 @@ async fn openrouter_routing_goes_out_only_when_handed_in_and_attribution_is_conf
         let r = reg.resolve("openrouter:z-ai/glm-5").unwrap();
         collect(r.provider.stream(request(&r.model))).await;
         let sent = &t.requests()[0];
-        assert_eq!(sent.json().get("provider").is_some(), sends);
+        assert_eq!(sent.json_body().get("provider").is_some(), sends);
         assert_eq!(sent.header("http-referer"), Some("https://example.test"));
         assert_eq!(sent.header("x-title"), Some("haest"));
     }

@@ -43,7 +43,7 @@
 //! impl HttpClient for Fake {
 //!     async fn send(&self, req: Request) -> Result<Response, HttpError> {
 //!         assert_eq!(req.header("authorization"), Some("Bearer t0k3n"));
-//!         Ok(Response::json(200, &json!({"answer": 42})))
+//!         Ok(Response::new(200, "").with_json(&json!({"answer": 42})))
 //!     }
 //! }
 //!

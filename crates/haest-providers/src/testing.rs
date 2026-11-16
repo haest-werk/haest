@@ -145,7 +145,7 @@ impl FakeHttp {
             .lock()
             .unwrap()
             .last()
-            .map(Request::json)
+            .map(Request::json_body)
             .unwrap_or(Value::Null)
     }
 }

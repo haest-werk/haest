@@ -64,7 +64,7 @@ async fn a_custom_anthropic_entry_is_its_own_provider_and_its_thinking_replays_o
         collect(r.provider.stream(request_with(&r.model, history.clone()))).await;
     }
     let replays_thinking = |i: usize| {
-        let body = t.requests()[i].json();
+        let body = t.requests()[i].json_body();
         body["messages"][1]["content"]
             .as_array()
             .unwrap()

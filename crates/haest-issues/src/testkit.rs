@@ -84,7 +84,7 @@ pub(crate) fn github(http: Arc<FakeHttp>) -> GithubTracker {
 }
 
 pub(crate) fn ok(body: Value) -> Response {
-    Response::json(200, &body)
+    Response::new(200, "").with_json(&body)
 }
 
 /// GitHub's JSON for issue `number` of o/r: open, no labels, no relations.

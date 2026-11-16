@@ -133,10 +133,7 @@ struct Gateway(Mutex<Vec<String>>);
 impl HttpClient for Gateway {
     async fn send(&self, req: Request) -> Result<Response, HttpError> {
         self.0.lock().unwrap().push(req.url);
-        Ok(Response::json(
-            400,
-            &json!({"error": {"message": "refused"}}),
-        ))
+        Ok(Response::new(400, "").with_json(&json!({"error": {"message": "refused"}})))
     }
 }
 

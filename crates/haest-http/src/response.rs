@@ -10,7 +10,10 @@ use bytes::Bytes;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use serde_json::Value;
 
-use crate::{HttpError, request::find_header};
+use crate::{
+    HttpError,
+    request::{find_header, set_header},
+};
 
 /// A response body, chunk by chunk as it arrives. Chunks may split a line, an
 /// event or a UTF-8 character anywhere; an `Err` chunk ends the body.
@@ -116,7 +119,9 @@ impl fmt::Debug for Body {
 /// use haest_http::Response;
 /// use serde_json::json;
 ///
-/// let res = Response::json(404, &json!({"message": "Not Found"})).with_header("x-request-id", "7");
+/// let res = Response::new(404, "")
+///     .with_json(&json!({"message": "Not Found"}))
+///     .with_header("x-request-id", "7");
 /// assert!(!res.is_success());
 /// assert_eq!(res.header("X-Request-Id"), Some("7"));
 /// ```
@@ -140,14 +145,17 @@ impl Response {
         }
     }
 
-    /// `status` with `body` as its JSON text and `content-type: application/json`.
-    pub fn json(status: u16, body: &Value) -> Self {
-        Self::new(status, body.to_string()).with_header("content-type", "application/json")
+    /// This response with `body` as its JSON text, and
+    /// `content-type: application/json`.
+    pub fn with_json(mut self, body: &Value) -> Self {
+        self.body = body.to_string().into();
+        self.with_header("content-type", "application/json")
     }
 
-    /// This response with one more header.
+    /// This response with `name: value`. A header of the same name, in any
+    /// case, is replaced, as on a [`Request`](crate::Request).
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        self.headers.push((name.into(), value.into()));
+        set_header(&mut self.headers, name.into(), value.into());
         self
     }
 

@@ -40,7 +40,7 @@ impl Method {
 ///     .with_json(&json!({"name": "first"}));
 /// assert_eq!(req.method, Method::Post);
 /// assert_eq!(req.header("content-type"), Some("application/json"));
-/// assert_eq!(req.json()["name"], "first");
+/// assert_eq!(req.json_body()["name"], "first");
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Request {
@@ -79,9 +79,7 @@ impl Request {
     /// case, is replaced: a header sent twice reaches the server as two
     /// values, and one that reads the first never sees the second.
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        let name = name.into();
-        self.headers.retain(|(k, _)| !k.eq_ignore_ascii_case(&name));
-        self.headers.push((name, value.into()));
+        set_header(&mut self.headers, name.into(), value.into());
         self
     }
 
@@ -98,9 +96,16 @@ impl Request {
 
     /// The body as JSON; Null when it is empty or not JSON (what a fake
     /// reads to check what was sent).
-    pub fn json(&self) -> Value {
+    pub fn json_body(&self) -> Value {
         serde_json::from_slice(&self.body).unwrap_or(Value::Null)
     }
+}
+
+/// `name: value` in `headers`, replacing a header of the same name in any
+/// case: what `with_header` means on a request and on a response.
+pub(crate) fn set_header(headers: &mut Vec<(String, String)>, name: String, value: String) {
+    headers.retain(|(k, _)| !k.eq_ignore_ascii_case(&name));
+    headers.push((name, value));
 }
 
 /// `name`'s value in `headers`, matched case-insensitively.
@@ -125,7 +130,16 @@ mod tests {
     }
 
     #[test]
+    fn with_header_replaces_on_a_response_too() {
+        let res = crate::Response::new(200, "")
+            .with_header("Content-Type", "text/html")
+            .with_json(&serde_json::json!({}));
+        assert_eq!(res.headers.len(), 1);
+        assert_eq!(res.header("content-type"), Some("application/json"));
+    }
+
+    #[test]
     fn a_body_that_is_not_json_reads_as_null() {
-        assert_eq!(Request::get("https://a.test/").json(), Value::Null);
+        assert_eq!(Request::get("https://a.test/").json_body(), Value::Null);
     }
 }

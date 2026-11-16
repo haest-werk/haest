@@ -72,7 +72,7 @@ const API: &str = "https://api.github.com";
 ///     async fn send(&self, req: Request) -> Result<Response, HttpError> {
 ///         assert!(req.url.starts_with("https://api.github.com/repos/owner/repo/issues?state=open"));
 ///         assert_eq!(req.header("authorization"), Some("Bearer a token"));
-///         Ok(Response::json(200, &json!([{
+///         Ok(Response::new(200, "").with_json(&json!([{
 ///             "number": 7, "title": "Docs for haest-issues", "state": "open",
 ///             "repository_url": "https://api.github.com/repos/owner/repo",
 ///         }])))

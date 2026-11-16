@@ -107,7 +107,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
             r.url
         );
         assert!(
-            r.json().get("provider").is_none(),
+            r.json_body().get("provider").is_none(),
             "no OpenRouter routing from the run"
         );
         assert_eq!(
@@ -118,7 +118,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
     }
     // brain.toml picked these; bash came without jobs: no run_in_background
     // in its schema, no job tools. Grep, Glob and WebFetch stayed off.
-    let first = requests[0].json();
+    let first = requests[0].json_body();
     let offered = tool_names(&first);
     assert_eq!(
         offered,
@@ -233,7 +233,7 @@ pub async fn dream(gateway: &Arc<Gateway>) {
     assert_eq!(requests.len(), 2);
     // The dream's settings took write, edit and the agents away.
     assert_eq!(
-        tool_names(&requests[0].json()),
+        tool_names(&requests[0].json_body()),
         ["Read", "Bash", "dream_material"]
     );
     assert!(doc.output("d1").content.contains(DREAM_MEMORY));
