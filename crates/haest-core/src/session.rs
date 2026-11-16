@@ -49,27 +49,20 @@
 //! ```
 
 mod file;
+mod replay;
 #[cfg(test)]
 mod tests;
 mod time;
 
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value;
 
 pub use file::{JsonlSessionFile, SessionSink};
+pub use replay::{ReplayedSession, replay};
 pub use time::iso_utc;
 
-use crate::{
-    ledger::LedgerSnapshot,
-    messages::{Message, ToolCall, ToolResultMessage},
-    provider::Effort,
-    task_board::Task,
-};
+use crate::{ledger::LedgerSnapshot, messages::Message, provider::Effort, task_board::Task};
 
 /// One line of a session file. Serialized with a `type` tag (`header`,
 /// `message`, ...) and camelCase fields, the TypeScript haest's shape.
@@ -186,32 +179,6 @@ fn present<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Option<Effort>>, D:
     Option::<Effort>::deserialize(d).map(Some)
 }
 
-/// A session rebuilt from its file ([`replay`]): what a resumed conversation
-/// starts from.
-///
-/// A host restores each part where it lives: the messages as the new agent's
-/// history ([`AgentOptions`](crate::AgentOptions)), `ledger` into its
-/// [`Ledger`](crate::ledger::Ledger), `tasks` into its
-/// [`TaskBoard`](crate::task_board::TaskBoard) (`restore` on both), and the
-/// model and effort as the conversation's settings.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct ReplayedSession {
-    /// The history, compactions applied, every unanswered tool call answered
-    /// as interrupted.
-    pub messages: Vec<Message>,
-    /// The last model spec a config record named.
-    pub model: Option<String>,
-    /// None = no config record set it; `Some(None)` = set back to the model's default.
-    pub effort: Option<Option<Effort>>,
-    /// The last ledger record; None when there was none.
-    pub ledger: Option<LedgerSnapshot>,
-    /// The last task list; None when there was none.
-    pub tasks: Option<Vec<Task>>,
-    /// Lines that are not a record (a torn final line from a crash mid-write),
-    /// and records of a kind haest knows that do not parse.
-    pub corrupt_lines: usize,
-}
-
 /// A session id that is not `[a-zA-Z0-9_-]+`, refused so its file cannot
 /// land outside the sessions dir.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -260,122 +227,4 @@ pub fn compaction_summary_message(summary: &str) -> Message {
     Message::user(format!(
         "[Earlier conversation was compacted. Summary of what happened so far:]\n\n{summary}"
     ))
-}
-
-/// One line: a record, a line that is someone else's (skipped), or garbage (counted).
-enum Line {
-    Record(Box<SessionRecord>),
-    Foreign,
-    Corrupt,
-}
-
-fn parse_line(line: &str) -> Line {
-    let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(line) else {
-        return Line::Corrupt;
-    };
-    let known = obj
-        .get("type")
-        .and_then(Value::as_str)
-        .is_some_and(|t| KINDS.contains(&t));
-    if !known {
-        return Line::Foreign;
-    }
-    match serde_json::from_value(Value::Object(obj)) {
-        Ok(r) => Line::Record(Box::new(r)),
-        Err(_) => Line::Corrupt,
-    }
-}
-
-const INTERRUPTED: &str =
-    "Interrupted: haest stopped before this tool call returned, so it may or may not have run.";
-
-/// A log that ends mid-tool (the process was killed) holds calls with no
-/// result, and every provider refuses that history. Each such call is answered
-/// after its siblings' results with an error saying so. Never written: the
-/// file keeps what happened and every replay makes the same repair, so a
-/// resumed conversation's history -- what a later compaction counted its tail
-/// on -- is rebuilt exactly.
-fn answer_interrupted(messages: Vec<Message>) -> Vec<Message> {
-    let mut out = Vec::with_capacity(messages.len());
-    let mut rest = messages.into_iter().peekable();
-    while let Some(m) = rest.next() {
-        let Message::Assistant(a) = &m else {
-            out.push(m);
-            continue;
-        };
-        let calls: Vec<ToolCall> = a.tool_calls().cloned().collect();
-        out.push(m);
-        let mut answered = HashSet::new();
-        while let Some(Message::Tool(r)) = rest.peek() {
-            answered.insert(r.tool_call_id.clone());
-            out.extend(rest.next());
-        }
-        out.extend(
-            calls
-                .into_iter()
-                .filter(|c| !answered.contains(&c.id))
-                .map(|c| {
-                    Message::Tool(ToolResultMessage {
-                        tool_call_id: c.id,
-                        tool_name: c.name,
-                        content: INTERRUPTED.into(),
-                        is_error: true,
-                        media: Vec::new(),
-                    })
-                }),
-        );
-    }
-    out
-}
-
-fn apply(s: &mut ReplayedSession, r: SessionRecord) {
-    match r {
-        SessionRecord::Header { .. } => {}
-        SessionRecord::Message { message, .. } => s.messages.push(message),
-        SessionRecord::Compaction { summary, kept, .. } => {
-            s.messages = answer_interrupted(std::mem::take(&mut s.messages));
-            let from = s.messages.len().saturating_sub(kept);
-            s.messages
-                .splice(..from, [compaction_summary_message(&summary)]);
-        }
-        SessionRecord::Config { model, effort, .. } => {
-            if let Some(m) = model.filter(|m| !m.is_empty()) {
-                s.model = Some(m);
-            }
-            if effort.is_some() {
-                s.effort = effort;
-            }
-        }
-        SessionRecord::Ledger { ledger, .. } => s.ledger = Some(ledger),
-        SessionRecord::Tasks { tasks, .. } => s.tasks = Some(tasks),
-    }
-}
-
-/// Rebuild a session from a file's text. Split on '\n' only: U+2028/2029 are
-/// legal inside JSON strings and must not end a line. Never fails.
-///
-/// Blank lines and records of a kind haest does not know are skipped; a line
-/// that is not JSON, or a known record that does not parse, is counted in
-/// [`ReplayedSession::corrupt_lines`]. A compaction keeps its `kept` latest
-/// messages behind the summary. Config, ledger and tasks: the last one wins.
-///
-/// A tool call left without a result (the process was killed mid-tool) comes
-/// back answered with an error saying it was interrupted and may or may not
-/// have run: every provider refuses a call with no result. The repair is
-/// never written, so every replay of the same file gives the same history.
-pub fn replay(text: &str) -> ReplayedSession {
-    let mut s = ReplayedSession::default();
-    for line in text.split('\n') {
-        if line.trim().is_empty() {
-            continue;
-        }
-        match parse_line(line) {
-            Line::Record(r) => apply(&mut s, *r),
-            Line::Foreign => {}
-            // A torn final line from a crash mid-write is expected; count it, keep going.
-            Line::Corrupt => s.corrupt_lines += 1,
-        }
-    }
-    s.messages = answer_interrupted(s.messages);
-    s
 }
