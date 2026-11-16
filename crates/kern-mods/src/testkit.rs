@@ -1,10 +1,13 @@
 //! Fakes for this crate's tests: a host that records what reached the human,
-//! and a tool that records what it ran.
+//! a human at the gate's prompt, and a tool that records what it ran.
 
 use std::{
     collections::VecDeque,
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -19,6 +22,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     api::{ApprovalRequest, Decision, ModEnv, ModHost},
     decorate::ModTools,
+    gate::{Answer, Prompter},
     js::{JsMod, Limits},
     registry::Mods,
 };
@@ -82,6 +86,45 @@ impl ModHost for TestHost {
     }
 }
 
+/// A human at the gate's prompt: answers in order (out of answers = never
+/// answers), counting the prompts and the asks an earlier ALWAYS answered.
+#[derive(Default)]
+pub(crate) struct Human {
+    answers: Mutex<VecDeque<Answer>>,
+    prompts: AtomicUsize,
+    receipts: AtomicUsize,
+}
+
+impl Human {
+    pub fn answering(answers: impl IntoIterator<Item = Answer>) -> Arc<Self> {
+        Arc::new(Self {
+            answers: Mutex::new(answers.into_iter().collect()),
+            ..Default::default()
+        })
+    }
+    pub fn prompts(&self) -> usize {
+        self.prompts.load(Ordering::SeqCst)
+    }
+    pub fn receipts(&self) -> usize {
+        self.receipts.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl Prompter for Arc<Human> {
+    async fn prompt(&self, _req: &ApprovalRequest) -> Answer {
+        self.prompts.fetch_add(1, Ordering::SeqCst);
+        let next = self.answers.lock().unwrap().pop_front();
+        match next {
+            Some(a) => a,
+            None => std::future::pending().await,
+        }
+    }
+    fn auto_approved(&self, _req: &ApprovalRequest) {
+        self.receipts.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 pub(crate) fn env(host: Arc<TestHost>, workspace: WorkspaceMode) -> ModEnv {
     ModEnv::new(CWD, workspace, host)
 }
@@ -102,19 +145,18 @@ pub(crate) struct Probe {
 }
 
 impl Probe {
-    pub fn new(name: &str) -> Arc<Self> {
+    fn with(name: &str, read_only: bool) -> Arc<Self> {
         Arc::new(Self {
             name: name.into(),
-            read_only: false,
+            read_only,
             ran: Mutex::default(),
         })
     }
+    pub fn new(name: &str) -> Arc<Self> {
+        Self::with(name, false)
+    }
     pub fn read_only(name: &str) -> Arc<Self> {
-        Arc::new(Self {
-            name: name.into(),
-            read_only: true,
-            ran: Mutex::default(),
-        })
+        Self::with(name, true)
     }
     pub fn ran(&self) -> Vec<JsonMap> {
         self.ran.lock().unwrap().clone()

@@ -1,7 +1,10 @@
 //! Mods in a conversation: the decorators around a real agent loop, the way a
 //! host composes them.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use kern_core::{
@@ -16,27 +19,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     Answer, ApprovalGate, ApprovalMod, ApprovalRequest, CommandOutcome, Decision, ModEnv, ModHost,
-    ModSystemPrompt, ModTools, Mods, PLAN_PROMPT, PlanMod, Prompter, testkit::*,
+    ModSystemPrompt, ModTools, Mods, PLAN_PROMPT, PlanMod, testkit::*,
 };
-
-/// A human at a prompt: answers in order, and keeps the receipts of asks ALWAYS answered.
-#[derive(Default)]
-struct Human {
-    answers: Mutex<Vec<Answer>>,
-    prompted: Mutex<Vec<ApprovalRequest>>,
-    auto_approved: Mutex<usize>,
-}
-
-#[async_trait]
-impl Prompter for Arc<Human> {
-    async fn prompt(&self, req: &ApprovalRequest) -> Answer {
-        self.prompted.lock().unwrap().push(req.clone());
-        self.answers.lock().unwrap().remove(0)
-    }
-    fn auto_approved(&self, _req: &ApprovalRequest) {
-        *self.auto_approved.lock().unwrap() += 1;
-    }
-}
 
 /// A host whose asks go through the gate.
 struct GateHost(ApprovalGate<Arc<Human>>);
@@ -76,11 +60,10 @@ fn tool_results(agent: &Agent) -> Vec<&ToolResultMessage> {
 #[tokio::test]
 async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_lets_the_next_through()
 {
-    let human = Arc::new(Human {
-        answers: Mutex::new(vec![Answer::Deny, Answer::AllowAlways]),
-        ..Default::default()
-    });
-    let host = Arc::new(GateHost(ApprovalGate::new(human.clone())));
+    let human = Human::answering([Answer::Deny, Answer::AllowAlways]);
+    // A prompt past those two answers is a deny soon, not a hang.
+    let gate = ApprovalGate::new(human.clone()).with_timeout(Duration::from_secs(5));
+    let host = Arc::new(GateHost(gate));
     let mut mods = Mods::new(ModEnv::new(CWD, WorkspaceMode::Real, host));
     mods.add(Arc::new(ApprovalMod::default()));
     let mods = Arc::new(mods);
@@ -102,12 +85,8 @@ async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_let
 
     agent.run("and once more", &mut Vec::new()).await;
     assert_eq!(bash.ran().len(), 2);
-    assert_eq!(
-        human.prompted.lock().unwrap().len(),
-        2,
-        "ALWAYS answered the third"
-    );
-    assert_eq!(*human.auto_approved.lock().unwrap(), 1);
+    assert_eq!(human.prompts(), 2, "ALWAYS answered the third");
+    assert_eq!(human.receipts(), 1);
 }
 
 #[tokio::test]
