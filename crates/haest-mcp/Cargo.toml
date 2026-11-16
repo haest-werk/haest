@@ -19,17 +19,15 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["process"] }
 base64 = "0.22"
 # The official MCP SDK, client side: stdio servers as child processes, remote ones
-# over streamable HTTP (reqwest; TLS through rustls with the ring provider, as WebFetch).
+# over streamable HTTP. rmcp's HTTP transport runs only on a reqwest client, so it
+# is handed one configured and built by haest-http (no env proxy, TLS set up once).
 rmcp = { version = "3.9", default-features = false, features = [
     "client",
     "transport-child-process",
     "transport-streamable-http-client-reqwest",
     "reqwest-tls-no-provider",
 ] }
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
-# The client rmcp's HTTP transport runs on, built here (no env proxy), and its header types.
-reqwest = { version = "0.13", default-features = false }
-http = "1"
+haest-http = { workspace = true }
 
 [dev-dependencies]
 # server: the tests run a real MCP server over an in-memory duplex, never the network.

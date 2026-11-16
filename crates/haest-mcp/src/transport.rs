@@ -2,10 +2,18 @@
 //! streamable HTTP. Building one can fail (no such program, a header HTTP cannot
 //! carry); that failure is the server's, never the hub's.
 
-use std::{collections::BTreeMap, path::Path, process::Stdio};
+use std::{collections::BTreeMap, path::Path, process::Stdio, sync::OnceLock};
 
 use haest_core::ChildEnv;
-use http::{HeaderName, HeaderValue};
+use haest_http::{
+    build_reqwest,
+    reqwest::{
+        self, StatusCode,
+        header::{HeaderName, HeaderValue},
+        redirect,
+    },
+    reqwest_builder,
+};
 use rmcp::transport::{
     StreamableHttpClientTransport, TokioChildProcess,
     streamable_http_client::StreamableHttpClientTransportConfig,
@@ -75,15 +83,17 @@ const MAX_REDIRECTS: usize = 10;
 /// rmcp's, it keeps no idle connections (a reused one can stall ~40 ms) and
 /// follows only a same-origin 307 or 308: a 301-303 turns the POST into a GET
 /// without the message, and another origin would be sent the session id and
-/// the headers.
+/// the headers. Built once (by haest-http, which sets up TLS) and shared by
+/// every HTTP server.
 fn http_client() -> Result<reqwest::Client, String> {
-    // reqwest takes the process-wide TLS provider when one is installed; this
-    // installs ring only when nobody has installed one yet.
-    let _ = rustls::crypto::ring::default_provider().install_default();
-    let redirects = reqwest::redirect::Policy::custom(|attempt| {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let redirects = redirect::Policy::custom(|attempt| {
         let keeps_body = matches!(
             attempt.status(),
-            reqwest::StatusCode::TEMPORARY_REDIRECT | reqwest::StatusCode::PERMANENT_REDIRECT
+            StatusCode::TEMPORARY_REDIRECT | StatusCode::PERMANENT_REDIRECT
         );
         let same_origin = attempt
             .previous()
@@ -97,12 +107,11 @@ fn http_client() -> Result<reqwest::Client, String> {
             attempt.follow()
         }
     });
-    reqwest::Client::builder()
-        .no_proxy()
+    let builder = reqwest_builder()
         .pool_max_idle_per_host(0)
-        .redirect(redirects)
-        .build()
-        .map_err(|e| e.to_string())
+        .redirect(redirects);
+    let built = build_reqwest(builder).map_err(|e| e.report())?;
+    Ok(CLIENT.get_or_init(|| built).clone())
 }
 
 #[cfg(test)]
