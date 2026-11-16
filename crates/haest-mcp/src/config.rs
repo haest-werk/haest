@@ -7,7 +7,7 @@ use std::{
 };
 
 use haest_core::{
-    expand::{expand_vars, unset_note},
+    __private::{expand_vars, unset_note},
     fs::{Fs, read_text_if_present},
 };
 use serde_json::Value;

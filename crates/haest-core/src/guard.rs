@@ -117,7 +117,7 @@ struct Repeat {
 /// One turn's guard: counts its model calls, its time and its repeated tool
 /// calls, charges the conversation ledger, and says when to nudge and when to
 /// stop.
-pub struct TurnGuard {
+pub(crate) struct TurnGuard {
     clock: Arc<dyn AgentHooks>,
     ledger: Option<Arc<Mutex<Ledger>>>,
     started: u64,
@@ -131,7 +131,7 @@ pub struct TurnGuard {
 
 impl TurnGuard {
     /// A fresh guard for one turn; its time cap counts from now on `clock`.
-    pub fn new(clock: Arc<dyn AgentHooks>, ledger: Option<Arc<Mutex<Ledger>>>) -> Self {
+    pub(crate) fn new(clock: Arc<dyn AgentHooks>, ledger: Option<Arc<Mutex<Ledger>>>) -> Self {
         let started = clock.now_ms();
         Self {
             clock,
@@ -151,14 +151,14 @@ impl TurnGuard {
     }
 
     /// A model call came back; its bill counts toward the conversation too.
-    pub fn called(&mut self, u: &Usage) {
+    pub(crate) fn called(&mut self, u: &Usage) {
         self.steps += 1;
         self.charge(u);
         self.next_request_tokens += u.output;
     }
 
     /// A tool answered: its own spend is charged, and an identical call+result is counted.
-    pub fn answered(&mut self, call: &ToolCall, out: &ToolOutput) {
+    pub(crate) fn answered(&mut self, call: &ToolCall, out: &ToolOutput) {
         if let Some(c) = out.cost_usd.filter(|c| *c != 0.0) {
             self.charge(&Usage {
                 cost_usd: Some(c),
@@ -178,7 +178,7 @@ impl TurnGuard {
     }
 
     /// Why the turn must stop before the next model call, or None.
-    pub fn stop(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
+    pub(crate) fn stop(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
         let ledger = self.ledger.as_ref();
         if let Some(why) = ledger.and_then(|l| l.lock().unwrap().exhausted()) {
             return Some(format!("Turn stopped: {why}"));
@@ -190,7 +190,7 @@ impl TurnGuard {
     }
 
     /// The nudge due now (each signal once per turn), or None.
-    pub fn nudge(&mut self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
+    pub(crate) fn nudge(&mut self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
         let due: Vec<Gauge> = self
             .gauges(usage, caps)
             .into_iter()
@@ -211,14 +211,14 @@ impl TurnGuard {
 
     /// Records the request about to go out (its estimated input tokens); why
     /// it must not, or None.
-    pub fn too_big(&mut self, estimate: u64, caps: Option<&TurnCaps>) -> Option<String> {
+    pub(crate) fn too_big(&mut self, estimate: u64, caps: Option<&TurnCaps>) -> Option<String> {
         self.next_request_tokens = estimate;
         caps.and_then(|l| request_too_big(estimate, l))
     }
 
     /// Tokens one more tool result may add before the next request is refused by
     /// `too_big`; None when uncapped.
-    pub fn room(&self, caps: Option<&TurnCaps>) -> Option<u64> {
+    pub(crate) fn room(&self, caps: Option<&TurnCaps>) -> Option<u64> {
         let cap = caps?.max_request_tokens;
         (cap > 0).then(|| cap.saturating_sub(self.next_request_tokens))
     }

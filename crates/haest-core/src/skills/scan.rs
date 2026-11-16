@@ -105,7 +105,7 @@ fn as_list(v: Option<&Meta>) -> Option<Vec<String>> {
 ///
 /// The frontmatter is read as strict YAML first; YAML that refuses (an
 /// unquoted `description: ... e.g: "x"`, which Claude Code loads anyway) is
-/// read line by line instead ([`crate::frontmatter`]). A frontmatter whose
+/// read line by line instead. A frontmatter whose
 /// YAML aliases would grow it by more than about 64K nodes and bytes when
 /// expanded is refused whole, before anything is built: a project's skill
 /// must not be able to exhaust memory. Blank strings count as absent; `\r\n`

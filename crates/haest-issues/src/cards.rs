@@ -23,10 +23,10 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::{
+    __private::slug,
     fs::{FileKind, Fs, ensure_dir},
     now_ms,
     session::iso_utc,
-    slug::slug,
 };
 use tokio::sync::Mutex;
 

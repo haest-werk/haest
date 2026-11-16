@@ -3,7 +3,7 @@
 //! events ([`ProviderEvent`]), ending with exactly one
 //! [`Done`](ProviderEvent::Done) carrying the complete assistant message.
 //! Adapters never fail mid-stream: an API error ends with `Done` and
-//! [`StopReason::Error`], so the loop has one code path for every failure.
+//! [`StopReason::Error`](crate::StopReason::Error), so the loop has one code path for every failure.
 //!
 //! PLUG POINT: implement [`Provider`] for a new model API, or [`ModelResolver`]
 //! to decide which provider serves a `provider:model` spec. `haest-providers`
@@ -13,8 +13,7 @@
 //! answers from a script, for tests.
 //!
 //! Also here: the request's parts ([`ToolSpec`], [`Effort`],
-//! [`WebSearchConfig`]) and two helpers adapters share, [`parse_model_spec`]
-//! and [`mark_stream_failed`].
+//! [`WebSearchConfig`]) and [`parse_model_spec`], which adapters share.
 
 use std::{fmt, sync::Arc};
 
@@ -23,14 +22,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::messages::{AssistantMessage, Message, StopReason};
+use crate::messages::{AssistantMessage, Message};
 
 crate::word_enum! {
     /// haest's reasoning levels, cheapest first. `Off` turns reasoning off
     /// where the model allows it.
     ///
-    /// A request carries one as asked; [`crate::effort`] fits it to what the
-    /// model accepts, per request. Written as its word (`"high"`) everywhere.
+    /// A request carries one as asked; the loop fits it to what the model
+    /// accepts, per request. Written as its word (`"high"`) everywhere.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
     pub enum Effort ("effort") {
         /// No reasoning, where the model can stop.
@@ -112,12 +111,12 @@ pub struct ProviderRequest {
     /// The system prompt.
     pub system: String,
     /// The history. The loop sends it fitted to what the model accepts
-    /// ([`crate::media::fit_for_model`]).
+    /// (media it cannot take is withheld, with a note).
     pub messages: Vec<Message>,
     /// The tools the model may call; empty = none.
     pub tools: Vec<ToolSpec>,
     /// The turn's interrupt. When it fires, end the stream soon, with a
-    /// [`ProviderEvent::Done`] whose stop reason is [`StopReason::Aborted`].
+    /// [`ProviderEvent::Done`] whose stop reason is [`StopReason::Aborted`](crate::StopReason::Aborted).
     pub cancel: CancellationToken,
     /// None = send nothing and let the model use its own default.
     pub effort: Option<Effort>,
@@ -159,12 +158,12 @@ pub type ProviderStream = BoxStream<'static, ProviderEvent>;
 ///   polled.
 /// - The stream ends with exactly one [`ProviderEvent::Done`], also on
 ///   failure: an API or network error is a `Done` with
-///   [`StopReason::Error`] and the reason in `error_message`, never a panic or
-///   a stream that stops short ([`mark_stream_failed`] fills both in). A stream
+///   [`StopReason::Error`](crate::StopReason::Error) and the reason in
+///   `error_message`, never a panic or a stream that stops short. A stream
 ///   that ends without `Done` reaches history as an error message.
 /// - The loop reads the stream to its end and does not watch `req.cancel`
 ///   itself: when it fires, the adapter ends the stream with a `Done` whose
-///   stop reason is [`StopReason::Aborted`].
+///   stop reason is [`StopReason::Aborted`](crate::StopReason::Aborted).
 ///
 /// # Examples
 ///
@@ -304,40 +303,7 @@ pub fn parse_model_spec(spec: &str) -> Result<(&str, &str), String> {
     }
 }
 
-/// Marks `msg` as a call that failed, for the `Done` an adapter sends at the
-/// end: [`StopReason::Aborted`] when `cancel` has fired (the error is then the
-/// interrupt's echo and is dropped), else [`StopReason::Error`] with `err` as
-/// its `error_message`.
-///
-/// # Examples
-///
-/// ```
-/// use haest_core::{AssistantMessage, StopReason, provider::mark_stream_failed};
-/// use tokio_util::sync::CancellationToken;
-///
-/// let cancel = CancellationToken::new();
-/// let mut msg = AssistantMessage::start("example", "model-1");
-/// mark_stream_failed(&mut msg, &cancel, "HTTP 529: overloaded");
-/// assert_eq!(msg.stop_reason, StopReason::Error);
-/// assert_eq!(msg.error_message.as_deref(), Some("HTTP 529: overloaded"));
-///
-/// cancel.cancel();
-/// let mut msg = AssistantMessage::start("example", "model-1");
-/// mark_stream_failed(&mut msg, &cancel, "request aborted");
-/// assert_eq!((msg.stop_reason, msg.error_message), (StopReason::Aborted, None));
-/// ```
-pub fn mark_stream_failed(
-    msg: &mut AssistantMessage,
-    cancel: &CancellationToken,
-    err: impl fmt::Display,
-) {
-    if cancel.is_cancelled() {
-        msg.stop_reason = StopReason::Aborted;
-    } else {
-        msg.stop_reason = StopReason::Error;
-        msg.error_message = Some(err.to_string());
-    }
-}
+pub(crate) mod adapter;
 
 #[cfg(test)]
 mod tests {

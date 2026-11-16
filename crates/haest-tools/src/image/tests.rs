@@ -1,15 +1,15 @@
 //! Ported from tools/image.test.ts. The Image API is a fake transport; the
-//! workspace is in memory. Runs through `execute_tool`, as the loop does, so a
+//! workspace is in memory. Runs through `run_call`, as the loop does, so a
 //! refusal is an error result.
 
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use haest_core::{
+    __private::{ToolIndex, run_call},
     fs::Fs,
     messages::{MediaKind, ToolCall},
     tool::{Tool, ToolContext, ToolOutput, ToolServices},
-    tool_exec::{ToolIndex, execute_tool},
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -114,7 +114,7 @@ impl Rig {
             name: "GenerateImage".into(),
             input: testkit::input(input),
         };
-        execute_tool(&ToolIndex::new(vec![self.tool.clone()]), &call, &ctx).await
+        run_call(&ToolIndex::new(vec![self.tool.clone()]), &call, &ctx).await
     }
 
     fn posted(&self) -> Vec<(String, String, Value)> {

@@ -14,7 +14,7 @@ use std::any::Any;
 /// # Examples
 ///
 /// ```
-/// use haest_core::panics::panic_message;
+/// use haest_core::__private::panic_message;
 ///
 /// fn tool() {
 ///     panic!("disk on fire");

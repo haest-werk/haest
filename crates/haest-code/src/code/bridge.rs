@@ -11,9 +11,9 @@ use std::sync::{Arc, Mutex};
 
 use futures::FutureExt;
 use haest_core::{
+    __private::{ToolIndex, run_unspilled},
     messages::{MediaPart, ToolCall},
     tool::{JsonMap, NoServices, Tool, ToolContext, ToolOutput, ToolServices},
-    tool_exec::{ToolIndex, run_tool},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -160,7 +160,7 @@ impl Bridge {
         ctx.tool_call_id = Some(call.id.clone());
         let out = self
             .gate
-            .run(!tool.read_only(), run_tool(&self.tools, &call, &ctx))
+            .run(!tool.read_only(), run_unspilled(&self.tools, &call, &ctx))
             .await;
         if let Some(row) = row {
             row.end(&out);

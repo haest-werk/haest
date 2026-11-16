@@ -27,7 +27,7 @@ use crate::{
 /// A run of calls to read-only tools ([`Tool::read_only`](crate::Tool::read_only))
 /// is one batch; every other call, and every call to a name `tools` does
 /// not know, is a batch of its own.
-pub fn tool_batches<'c>(calls: &'c [ToolCall], tools: &ToolIndex) -> Vec<Vec<&'c ToolCall>> {
+pub(crate) fn tool_batches<'c>(calls: &'c [ToolCall], tools: &ToolIndex) -> Vec<Vec<&'c ToolCall>> {
     let mut out: Vec<Vec<&ToolCall>> = Vec::new();
     let mut open = false;
     for call in calls {
@@ -55,17 +55,17 @@ fn room_share(room: Option<u64>, batch_size: usize) -> Option<u64> {
 
 /// One finished tool call, as [`run_tool_batches`] delivers it.
 #[derive(Debug, Clone)]
-pub struct Answer {
+pub(crate) struct Answer {
     /// The call.
-    pub call: ToolCall,
+    pub(crate) call: ToolCall,
     /// What it produced, already spilled to a file if it was too big.
-    pub output: ToolOutput,
+    pub(crate) output: ToolOutput,
     /// From the start of the call's batch to its answer.
-    pub duration_ms: u64,
+    pub(crate) duration_ms: u64,
 }
 
 /// Where the answers of [`run_tool_batches`] go.
-pub trait Answers: Send {
+pub(crate) trait Answers: Send {
     /// Tokens the next batch may add to the context; read once per batch, after
     /// every answer before it was delivered. None = uncapped.
     fn room(&self) -> Option<u64>;
@@ -82,7 +82,7 @@ pub trait Answers: Send {
 /// [`Answers::room`]. Every call is answered, failures and panics included; a
 /// call that starts after `ctx.cancel` fired is answered as interrupted
 /// without running.
-pub async fn run_tool_batches(
+pub(crate) async fn run_tool_batches(
     calls: &[ToolCall],
     tools: &ToolIndex,
     ctx: &ToolContext,

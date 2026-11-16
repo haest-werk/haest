@@ -11,10 +11,9 @@
 //! [`AgentDeps::tools`](crate::AgentDeps::tools).
 //!
 //! The loop gives every call a [`ToolContext`] (working directory, cancel
-//! token, workspace, the host's services) and turns whatever comes back, an error or a panic
-//! included, into exactly one result in history
-//! ([`tool_exec`](crate::tool_exec)). The `req_*` / `opt_*` helpers read
-//! arguments the way models actually send them.
+//! token, workspace, the host's services) and turns whatever comes back, an
+//! error or a panic included, into exactly one result in history. The
+//! `req_*` / `opt_*` helpers read arguments the way models actually send them.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -64,7 +63,7 @@ pub struct ToolOutput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_cost_usd: Option<f64>,
     /// The tool already fit `content` to its own budget: the generic spill must not touch it.
-    /// Otherwise `content` over [`MAX_TOOL_OUTPUT`](crate::tool_exec::MAX_TOOL_OUTPUT)
+    /// Otherwise `content` over [`MAX_TOOL_OUTPUT`]
     /// characters goes to a file and the model gets a preview.
     #[serde(default)]
     pub sized: bool,
@@ -293,7 +292,7 @@ pub trait Tool: Send + Sync {
     /// Touches nothing another call could see (no writes, no side effects): may run in parallel.
     ///
     /// Consecutive read-only calls of one model response run at the same
-    /// time ([`tool_batch`](crate::tool_batch)); any other call runs alone.
+    /// time; any other call runs alone.
     fn read_only(&self) -> bool {
         false
     }
@@ -304,7 +303,7 @@ pub trait Tool: Send + Sync {
     /// Run one call with the model's arguments.
     ///
     /// The model reads the returned [`ToolOutput`]. A result longer than
-    /// [`MAX_TOOL_OUTPUT`](crate::tool_exec::MAX_TOOL_OUTPUT) characters goes
+    /// [`MAX_TOOL_OUTPUT`] characters goes
     /// to a file and the model gets a preview, unless [`ToolOutput::sized`] is set.
     ///
     /// # Errors
@@ -454,6 +453,11 @@ pub fn truncate_middle(text: &str, max: usize) -> (String, bool) {
 
 /// The default `truncate_middle` budget, in characters.
 pub const TRUNCATE_CHARS: usize = 30_000;
+
+/// The most any one tool result may put into the model's context (~5k
+/// tokens), in characters. A longer result goes to a file and the model gets
+/// a preview, unless the tool set [`ToolOutput::sized`].
+pub const MAX_TOOL_OUTPUT: usize = 20_000;
 
 #[cfg(test)]
 mod tests;

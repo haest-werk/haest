@@ -74,7 +74,7 @@ impl Member {
 
 /// An agent's address from free text: at most 24 characters.
 fn slug(text: &str) -> String {
-    haest_core::slug::slug(text, 24, "agent")
+    haest_core::__private::slug(text, 24, "agent")
 }
 
 #[derive(Default)]

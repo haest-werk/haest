@@ -7,7 +7,8 @@
 //! Every cap here is per TURN (one human message): the human continues past a cap
 //! by posting again, which is a decision, not an accident. 0 disables a cap. The
 //! cap that SPANS turns is the conversation ledger ([`ledger`](crate::ledger));
-//! the guard that reads all of them, and nudges at half, is [`guard`](crate::guard).
+//! the loop checks all of them before every model call, and nudges the model
+//! at half a cap.
 //!
 //! A host serves [`TurnCaps`] per model spec from
 //! [`AgentHooks::turn_caps`](crate::AgentHooks::turn_caps).
@@ -84,7 +85,11 @@ pub fn billed_tokens(u: &Usage) -> u64 {
 /// Rough input size of one request: ~4 characters per token over the text sent,
 /// plus each media part's own cost -- base64 counted as text would read a 1 MB
 /// screenshot as ~350K tokens and refuse the call.
-pub fn estimate_request_tokens(system: &str, messages: &[Message], tools: &[ToolSpec]) -> u64 {
+pub(crate) fn estimate_request_tokens(
+    system: &str,
+    messages: &[Message],
+    tools: &[ToolSpec],
+) -> u64 {
     let (json, media_tokens) = messages_for_estimate(messages);
     let tools = serde_json::to_string(tools).unwrap_or_default();
     let chars = system.chars().count() + json.chars().count() + tools.chars().count();
@@ -93,7 +98,7 @@ pub fn estimate_request_tokens(system: &str, messages: &[Message], tools: &[Tool
 
 /// Why this request must not be sent, or None: `estimate` is over
 /// [`TurnCaps::max_request_tokens`] and that cap is on.
-pub fn request_too_big(estimate: u64, caps: &TurnCaps) -> Option<String> {
+pub(crate) fn request_too_big(estimate: u64, caps: &TurnCaps) -> Option<String> {
     if caps.max_request_tokens == 0 || estimate <= caps.max_request_tokens {
         return None;
     }

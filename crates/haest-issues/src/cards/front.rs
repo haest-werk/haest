@@ -1,5 +1,5 @@
 //! A card file: its frontmatter keys IN ORDER, and its body. Read with haest's
-//! flat frontmatter reader ([`haest_core::frontmatter`]); written the way the
+//! flat frontmatter reader (haest-core's, shared through `__private`); written the way the
 //! board's own card store writes (ported from remote-claude's
 //! `project-card-file.ts` + `frontmatter.ts`), so a card both write is the same
 //! bytes either way.
@@ -11,7 +11,7 @@
 //! back inline, and the alias keys `blocked_by` / `see_also` are folded into
 //! `depends_on` / `relates_to` (one spelling of each fact).
 
-use haest_core::frontmatter::{block_end, inline_list, split_frontmatter, unquote};
+use haest_core::__private::{block_end, inline_list, split_frontmatter, unquote};
 
 /// The keys the store writes first, in this order; every other key follows in
 /// the order the card had it, then the verbatim blocks.

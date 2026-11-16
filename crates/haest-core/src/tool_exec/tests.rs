@@ -78,7 +78,7 @@ async fn run(content: String) -> Run {
     let fs = ws.fs.clone();
     let tools = ToolIndex::new(vec![returning(content), read_tool()]);
     let ctx = ctx_on(ws, Some(SPILL));
-    let out = execute_tool(&tools, &call("t1", "mcp__srv__list", json!({})), &ctx).await;
+    let out = run_call(&tools, &call("t1", "mcp__srv__list", json!({})), &ctx).await;
     Run {
         out,
         fs,
@@ -112,7 +112,7 @@ async fn the_spilled_file_is_in_the_workspace_and_readable_by_the_read_tool() {
     let file = spilled(&r.fs).await.remove(0);
     assert!(r.out.content.contains(&file.display().to_string()));
     let read = call("t2", "Read", json!({"file_path": file, "limit": 1}));
-    let got = execute_tool(&r.tools, &read, &r.ctx).await;
+    let got = run_call(&r.tools, &read, &r.ctx).await;
     assert!(got.content.contains("first-line"));
 }
 
@@ -120,7 +120,7 @@ async fn the_spilled_file_is_in_the_workspace_and_readable_by_the_read_tool() {
 async fn without_a_spill_dir_a_huge_output_is_cut_to_a_preview() {
     let tools = ToolIndex::new(vec![returning("z".repeat(MAX_TOOL_OUTPUT + 1))]);
     let ctx = ctx_on(Arc::new(MemWorkspace::default()), None);
-    let out = execute_tool(&tools, &call("t1", "mcp__srv__list", json!({})), &ctx).await;
+    let out = run_call(&tools, &call("t1", "mcp__srv__list", json!({})), &ctx).await;
     assert!(out.content.len() < MAX_TOOL_OUTPUT && !out.is_error);
 }
 
@@ -138,7 +138,7 @@ async fn a_tool_that_sizes_its_own_output_is_never_spilled() {
     });
     let ws = Arc::new(MemWorkspace::default());
     let fs = ws.fs.clone();
-    let out = execute_tool(
+    let out = run_call(
         &ToolIndex::new(vec![sized]),
         &call("t1", "Read", json!({})),
         &ctx_on(ws, Some(SPILL)),
@@ -154,7 +154,7 @@ async fn a_tool_that_sizes_its_own_output_is_never_spilled() {
 async fn a_spill_that_cannot_be_written_still_answers_with_the_preview() {
     let tools = ToolIndex::new(vec![returning("q".repeat(MAX_TOOL_OUTPUT + 1))]);
     let ctx = ctx_on(Arc::new(ShutWorkspace), Some(SPILL));
-    let out = execute_tool(&tools, &call("t1", "mcp__srv__list", json!({})), &ctx).await;
+    let out = run_call(&tools, &call("t1", "mcp__srv__list", json!({})), &ctx).await;
     assert!(!out.is_error);
     assert!(out.content.contains("qqqq"));
     assert!(out.content.len() < MAX_TOOL_OUTPUT);
@@ -175,7 +175,7 @@ async fn two_calls_spilling_at_once_keep_a_file_each() {
         call("a", "mcp__srv__list", json!({})),
         call("b", "mcp__srv__list", json!({})),
     );
-    futures::join!(execute_tool(&tools, &ca, &a), execute_tool(&tools, &cb, &b));
+    futures::join!(run_call(&tools, &ca, &a), run_call(&tools, &cb, &b));
     assert_eq!(spilled(&fs).await.len(), 2);
 }
 
@@ -183,7 +183,7 @@ async fn two_calls_spilling_at_once_keep_a_file_each() {
 async fn an_unknown_tool_is_an_error_naming_the_tools_there_are() {
     let tools = ToolIndex::new(vec![returning("x".into()), read_tool()]);
     let ctx = ctx_on(Arc::new(MemWorkspace::default()), None);
-    let out = execute_tool(&tools, &call("t1", "Nope", json!({})), &ctx).await;
+    let out = run_call(&tools, &call("t1", "Nope", json!({})), &ctx).await;
     assert!(out.is_error);
     assert!(out.content.contains("Nope") && out.content.contains("Read"));
 }
@@ -198,10 +198,10 @@ async fn a_bad_input_goes_back_verbatim_and_a_failure_is_named() {
     });
     let tools = ToolIndex::new(vec![picky]);
     let ctx = ctx_on(Arc::new(MemWorkspace::default()), None);
-    let bad = execute_tool(&tools, &call("t1", "Picky", json!({"mode": "input"})), &ctx).await;
+    let bad = run_call(&tools, &call("t1", "Picky", json!({"mode": "input"})), &ctx).await;
     assert!(bad.is_error);
     assert_eq!(bad.content, "say \"path\"");
-    let failed = execute_tool(&tools, &call("t2", "Picky", json!({})), &ctx).await;
+    let failed = run_call(&tools, &call("t2", "Picky", json!({})), &ctx).await;
     assert!(failed.is_error);
     assert!(failed.content.starts_with("Picky") && failed.content.ends_with("disk on fire"));
     for out in [bad, failed] {
@@ -224,7 +224,7 @@ fn probe() -> (ToolIndex, Arc<AtomicBool>) {
 async fn arguments_that_were_not_json_are_answered_without_running_the_tool() {
     let (tools, ran) = probe();
     let ctx = ctx_on(Arc::new(MemWorkspace::default()), None);
-    let out = execute_tool(&tools, &call("t1", "T", json!({"_unparsed": "{bad"})), &ctx).await;
+    let out = run_call(&tools, &call("t1", "T", json!({"_unparsed": "{bad"})), &ctx).await;
     assert!(out.is_error && out.content.contains("{bad"));
     assert!(!ran.load(Ordering::SeqCst));
 }
@@ -277,7 +277,7 @@ async fn a_tool_that_panics_is_a_failed_result_and_the_loop_goes_on() {
     });
     let ws = Arc::new(MemWorkspace::default());
     let tools = ToolIndex::new(vec![boom]);
-    let out = execute_tool(&tools, &call("t1", "Boom", json!({})), &ctx_on(ws, None)).await;
+    let out = run_call(&tools, &call("t1", "Boom", json!({})), &ctx_on(ws, None)).await;
     assert!(out.is_error);
     assert!(out.content.starts_with("Boom failed: "), "{}", out.content);
     assert!(

@@ -15,7 +15,7 @@
 /// # Examples
 ///
 /// ```
-/// use haest_core::slug::slug;
+/// use haest_core::__private::slug;
 ///
 /// assert_eq!(slug("  Find the BUG!  in x.ts", 24, "agent"), "find-the-bug-in-x-ts");
 /// assert_eq!(slug("!!!", 24, "agent"), "agent");

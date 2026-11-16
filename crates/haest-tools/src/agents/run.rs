@@ -7,11 +7,11 @@ use std::{collections::HashSet, panic::AssertUnwindSafe, sync::Arc};
 use async_trait::async_trait;
 use futures::FutureExt;
 use haest_core::{
+    __private::panic_message,
     Agent, AgentHooks, LoopEvent, StopReason, SystemPrompt,
     caps::TurnCaps,
     catalog::{InputModality, Reasoning},
     messages::MediaPart,
-    panics::panic_message,
     provider::Effort,
     tool::{InnerCallEvent, ToolServices, ToolSource},
 };

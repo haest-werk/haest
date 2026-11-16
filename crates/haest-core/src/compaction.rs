@@ -67,7 +67,7 @@ pub fn needs_compaction(messages: &[Message], cfg: &CompactionConfig) -> bool {
 /// result, and never where a result after the cut answers a call before it.
 /// At least the first message is always cut and the last always kept, so a
 /// history of one message has nothing to cut.
-pub fn cut_index(messages: &[Message], keep_recent: usize) -> usize {
+pub(crate) fn cut_index(messages: &[Message], keep_recent: usize) -> usize {
     if messages.is_empty() {
         return 0;
     }

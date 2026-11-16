@@ -38,8 +38,8 @@
 //! - [`Tool`] to add a tool, [`AgentHooks`] to change how the loop behaves.
 //! - [`messages`]: the history as data. Session files and events keep the
 //!   TypeScript haest's JSON shape: either haest resumes the other's sessions.
-//! - Spend: [`caps`] caps one turn, [`ledger`] one conversation, and
-//!   [`guard`] enforces both before every model call.
+//! - Spend: [`caps`] caps one turn, [`ledger`] one conversation, and the
+//!   loop checks both before every model call.
 //! - Context: [`context`] builds the system prompt, [`compaction`] summarises
 //!   a full window, [`deferred_tools`] keeps large tool lists out of the request.
 //!
@@ -145,36 +145,52 @@ pub mod compaction;
 pub mod context;
 pub mod deferred_tools;
 pub mod deps;
-pub mod effort;
+mod effort;
 pub mod events;
-pub mod expand;
-pub mod frontmatter;
+mod expand;
+mod frontmatter;
 pub mod fs;
-pub mod guard;
+mod guard;
 pub mod handed;
 pub mod ledger;
 pub mod media;
 pub mod messages;
-pub mod panics;
-pub mod pricing;
+mod panics;
+mod pricing;
 pub mod provider;
-pub mod request_prefix;
+mod request_prefix;
 pub mod session;
 pub mod shell_command;
 pub mod skills;
-pub mod slug;
+mod slug;
 pub mod task_board;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod tool;
-pub mod tool_batch;
-pub mod tool_exec;
+mod tool_batch;
+mod tool_exec;
 pub mod words;
 pub mod workspace;
 
-/// For [`word_enum!`]'s serde impls in any crate, whatever serde it depends on.
+/// What the other haest crates share, and nothing a host needs: not part of
+/// the API, and not covered by semver. It changes in any release.
 #[doc(hidden)]
-pub use serde as __serde;
+pub mod __private {
+    /// For [`word_enum!`](crate::word_enum)'s serde impls in any crate,
+    /// whatever serde it depends on.
+    pub use serde;
+
+    pub use crate::effort::nearest_accepted_effort;
+    pub use crate::expand::{expand_vars, is_var_name, unset_note};
+    pub use crate::frontmatter::{block_end, inline_list, split_frontmatter, unquote};
+    pub use crate::guard::NUDGE_SHARE;
+    pub use crate::media::wire::{data_url, dropped_note};
+    pub use crate::panics::panic_message;
+    pub use crate::pricing::book_priced_cost;
+    pub use crate::provider::adapter::mark_stream_failed;
+    pub use crate::slug::slug;
+    pub use crate::tool_exec::{ToolIndex, run_call, run_unspilled};
+}
 
 #[doc(inline)]
 pub use prelude::*;

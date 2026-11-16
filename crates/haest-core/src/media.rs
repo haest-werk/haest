@@ -1,7 +1,6 @@
 //! Media parts ([`MediaPart`]: an image, a PDF, audio, video riding a user
 //! turn or a tool result): building one from bytes, and fitting a history to
-//! what the current model accepts. Pure, but for [`user_message`], which asks
-//! the host.
+//! what the current model accepts.
 //!
 //! Fitting happens per REQUEST, never on the stored history: a screenshot sent
 //! while a text-only model is active is still there, and still seen, after a
@@ -9,37 +8,24 @@
 //! catalog through [`AgentHooks::input_modalities`]; an unknown model gets
 //! the history untouched and its provider decides.
 //!
-//! Who uses what: the loop calls [`user_message`], [`fit_for_model`] and
-//! [`messages_for_estimate`]; tools and MCP build parts with
-//! [`media_from_bytes`]; provider adapters use [`data_url`] and
-//! [`dropped_note`]. A host builds parts with [`media_from_bytes`] in its
-//! [`AgentHooks::attach_media`].
+//! Who uses what: tools, MCP and a host's
+//! [`AgentHooks::attach_media`] build parts with [`media_from_bytes`]; the
+//! loop fits them to each model call; provider adapters write what their
+//! wire format cannot carry as a note or a `data:` URL.
 //!
 //! # Examples
 //!
 //! ```
-//! use std::collections::HashSet;
-//!
-//! use haest_core::{
-//!     Message, UserMessage,
-//!     catalog::InputModality,
-//!     media::{fit_media, media_from_bytes, media_type_from_name},
-//! };
+//! use haest_core::media::{media_from_bytes, media_type_from_name};
 //!
 //! let png = [0x89, b'P', b'N', b'G'];
 //! let media_type = media_type_from_name("shot.png").unwrap();
 //! let part = media_from_bytes(&png, media_type, "shot.png").unwrap();
-//! let history = vec![Message::User(UserMessage { content: "What is this?".into(), media: vec![part] })];
+//! assert_eq!(part.media_type, "image/png");
 //!
-//! // A text-only model: the image is replaced by a note the model reads.
-//! let text_only: HashSet<_> = [InputModality::Text].into();
-//! let fitted = fit_media(&history, Some(&text_only), "example/text-model");
-//! let Message::User(user) = &fitted[0] else { unreachable!() };
-//! assert!(user.media.is_empty());
-//! assert!(user.content.starts_with("What is this?\n\n[image \"shot.png\""));
-//!
-//! // The stored history is untouched, and an unknown model gets it as is.
-//! assert_eq!(fit_media(&history, None, "example/unknown"), history);
+//! // Too big for its kind: refused with a reason, before anything is sent.
+//! let huge = vec![0u8; 6 * 1024 * 1024];
+//! assert!(media_from_bytes(&huge, "image/png", "huge.png").is_err());
 //! ```
 
 use std::collections::HashSet;
@@ -82,7 +68,7 @@ fn max_bytes(kind: MediaKind) -> usize {
 /// An image must be PNG, JPEG, GIF or WebP (the four every provider takes);
 /// `application/pdf` is a [`MediaKind::File`]; any `audio/*` and `video/*`
 /// pass.
-pub fn media_kind_of(media_type: &str) -> Option<MediaKind> {
+pub(crate) fn media_kind_of(media_type: &str) -> Option<MediaKind> {
     let kind = if media_type.starts_with("image/") {
         MediaKind::Image
     } else if media_type.starts_with("application/pdf") {
@@ -102,7 +88,7 @@ pub fn media_kind_of(media_type: &str) -> Option<MediaKind> {
 
 /// The media type for a file name's extension (any case), or None when haest
 /// would not send such a file as media. Knows the image, PDF, audio and video
-/// extensions [`media_kind_of`] accepts.
+/// extensions haest sends as media.
 pub fn media_type_from_name(name: &str) -> Option<&'static str> {
     let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     Some(match ext.as_str() {
@@ -131,7 +117,7 @@ fn kb(bytes: usize) -> String {
 /// # Errors
 ///
 /// The reason these bytes cannot be a part, worded for the model (a tool
-/// returns it as is): `media_type` is not one [`media_kind_of`] accepts, or
+/// returns it as is): `media_type` is not one haest sends as media, or
 /// the bytes are over the kind's limit (5 MB for an image, Anthropic's cap;
 /// 20 MB for the rest).
 pub fn media_from_bytes(bytes: &[u8], media_type: &str, name: &str) -> Result<MediaPart, String> {
@@ -169,19 +155,6 @@ fn modality(kind: MediaKind) -> InputModality {
     }
 }
 
-/// What the model reads in place of a part it cannot receive: the part's
-/// kind, name, type and size, that `model` does not accept the kind, and to
-/// switch models to see it.
-pub fn dropped_note(p: &MediaPart, model: &str) -> String {
-    let kind = p.kind.as_str();
-    format!(
-        "[{kind} \"{}\" ({}, {}) not shown: {model} does not accept {kind} input. Switch to a model that does to see it.]",
-        p.name,
-        p.media_type,
-        kb(raw_bytes(p))
-    )
-}
-
 fn fit_one(
     content: &str,
     media: &[MediaPart],
@@ -213,7 +186,7 @@ fn fit_one(
 /// `accepts` None = the catalog does not know the model, so nothing is
 /// touched and the provider decides. The loop calls [`fit_for_model`], which
 /// also tells the host.
-pub fn fit_media(
+pub(crate) fn fit_media(
     messages: &[Message],
     accepts: Option<&HashSet<InputModality>>,
     model: &str,
@@ -249,7 +222,7 @@ pub fn fit_media(
 /// The hook is called once per call with every withheld part, and only when
 /// there is one. It runs on every model call, so the same part is reported
 /// again each time: the host dedupes.
-pub fn fit_for_model(
+pub(crate) fn fit_for_model(
     messages: &[Message],
     accepts: Option<&HashSet<InputModality>>,
     model: &str,
@@ -293,7 +266,7 @@ fn media_of(m: &Message) -> &[MediaPart] {
 /// Base64 counted as text would read a 1 MB screenshot as ~350K tokens. An
 /// image counts a fixed 1600 tokens (about what every provider charges); any
 /// other part one token per 64 bytes.
-pub fn messages_for_estimate(messages: &[Message]) -> (String, u64) {
+pub(crate) fn messages_for_estimate(messages: &[Message]) -> (String, u64) {
     let mut value = serde_json::to_value(messages).unwrap_or(Value::Null);
     if let Value::Array(items) = &mut value {
         for item in items {
@@ -313,7 +286,7 @@ pub fn messages_for_estimate(messages: &[Message]) -> (String, u64) {
 /// [`AgentHooks::attach_media`] (none by default); each note is added after
 /// the text, a blank line apart. `cancel` is handed to the hook, which may
 /// fetch.
-pub async fn user_message(
+pub(crate) async fn user_message(
     text: &str,
     hooks: &dyn AgentHooks,
     cancel: &CancellationToken,
@@ -326,11 +299,9 @@ pub async fn user_message(
     UserMessage { content, media }
 }
 
-/// The part as a `data:<type>;base64,<data>` URL, for wire formats that take
-/// one (Chat Completions, Responses).
-pub fn data_url(p: &MediaPart) -> String {
-    format!("data:{};base64,{}", p.media_type, p.data)
-}
+pub(crate) mod wire;
+
+pub(crate) use wire::dropped_note;
 
 #[cfg(test)]
 mod tests;

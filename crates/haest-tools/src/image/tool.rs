@@ -4,11 +4,12 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use haest_core::{
+    __private::data_url,
+    __private::slug,
     fs::ensure_dir,
-    media::{data_url, media_from_bytes, media_type_from_name},
+    media::{media_from_bytes, media_type_from_name},
     messages::MediaPart,
     now_ms,
-    slug::slug,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str, spelled},
 };
 use serde_json::{Map, Value, json};

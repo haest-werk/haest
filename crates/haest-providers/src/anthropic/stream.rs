@@ -3,8 +3,9 @@
 use std::collections::BTreeMap;
 
 use haest_core::{
+    __private::mark_stream_failed,
     messages::{AssistantMessage, AssistantPart, StopReason, ToolCall},
-    provider::{ProviderEvent, mark_stream_failed},
+    provider::ProviderEvent,
 };
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;

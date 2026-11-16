@@ -204,16 +204,16 @@ macro_rules! word_enum {
             }
         }
 
-        impl $crate::__serde::Serialize for $name {
-            fn serialize<S: $crate::__serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        impl $crate::__private::serde::Serialize for $name {
+            fn serialize<S: $crate::__private::serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
                 s.serialize_str(self.as_str())
             }
         }
 
-        impl<'de> $crate::__serde::Deserialize<'de> for $name {
-            fn deserialize<D: $crate::__serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                let word = <String as $crate::__serde::Deserialize>::deserialize(d)?;
-                word.parse().map_err(<D::Error as $crate::__serde::de::Error>::custom)
+        impl<'de> $crate::__private::serde::Deserialize<'de> for $name {
+            fn deserialize<D: $crate::__private::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                let word = <String as $crate::__private::serde::Deserialize>::deserialize(d)?;
+                word.parse().map_err(<D::Error as $crate::__private::serde::de::Error>::custom)
             }
         }
     };

@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-use haest_core::panics::panic_message;
+use haest_core::__private::panic_message;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::{

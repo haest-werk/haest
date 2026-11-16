@@ -10,7 +10,7 @@
 //! The host runs what reaches its [`crate::Inbox`] through [`AgentTurnGate::agent_turn`],
 //! and the human's own messages through [`AgentTurnGate::human`].
 
-use haest_core::guard::NUDGE_SHARE;
+use haest_core::__private::NUDGE_SHARE;
 
 /// The counter between the inbox and the agent: how many turns in a row ran
 /// with no human message, and what is held once that reaches the cap.

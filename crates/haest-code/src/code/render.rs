@@ -19,7 +19,7 @@
 //! because haest runs cheap models with small windows, and sizes itself so the
 //! generic spill never cuts through the fence.
 
-use haest_core::{tool::truncate_middle, tool_exec::MAX_TOOL_OUTPUT};
+use haest_core::tool::{MAX_TOOL_OUTPUT, truncate_middle};
 
 use crate::vm::{VmRun, VmStop};
 

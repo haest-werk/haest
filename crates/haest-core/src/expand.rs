@@ -17,7 +17,7 @@
 /// # Examples
 ///
 /// ```
-/// use haest_core::expand::{expand_vars, unset_note};
+/// use haest_core::__private::{expand_vars, unset_note};
 ///
 /// let env = |name: &str| (name == "TOKEN").then(|| "t0k".to_string());
 /// let (text, unset) = expand_vars("${BASE:-https://api.example.com}/mcp?k=${TOKEN}&u=${USER_ID}", &env);

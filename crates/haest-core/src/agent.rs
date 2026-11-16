@@ -9,11 +9,12 @@
 //!   - every tool call gets exactly one tool result, even on interrupt;
 //!   - input that arrives mid-turn ([`AgentControl::steer`]) is queued and
 //!     injected at the next step boundary (after the tool results), never dropped;
-//!   - the turn guard ([`guard`](crate::guard)) is asked before every model
+//!   - the turn guard (every cap, and the ledger) is asked before every model
 //!     call, and its nudge rides in at the same step boundary.
 //!
 //! Within one model response, read-only tool calls run in parallel
-//! ([`tool_batch`](crate::tool_batch)); their results still land in call order.
+//! (one batch per run of consecutive read-only calls); their results still
+//! land in call order.
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -274,7 +275,7 @@ impl Agent {
     }
 
     /// The conversation's history, oldest first: what the next model call
-    /// sends (after [`sendable`](Self::sendable)).
+    /// sends, less any media the model cannot take.
     pub fn history(&self) -> &[Message] {
         &self.history
     }
@@ -390,7 +391,7 @@ impl Agent {
     /// `model` is the provider's model id the spec resolved to
     /// ([`ResolvedModel::model`](crate::ResolvedModel::model)). Builds the
     /// system prompt and the tool list afresh.
-    pub async fn request_prefix(&self, model: &str) -> RequestPrefix {
+    pub(crate) async fn request_prefix(&self, model: &str) -> RequestPrefix {
         build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await
     }
 
@@ -398,7 +399,7 @@ impl Agent {
     ///
     /// `model` is the provider's model id, named in the note. Reports what was
     /// withheld to [`AgentHooks::on_media_withheld`](crate::AgentHooks::on_media_withheld).
-    pub fn sendable(&self, messages: &[Message], model: &str) -> Vec<Message> {
+    pub(crate) fn sendable(&self, messages: &[Message], model: &str) -> Vec<Message> {
         let hooks = self.deps.hooks.as_ref();
         let accepts = hooks.input_modalities(&self.model_spec);
         fit_for_model(messages, accepts.as_ref(), model, hooks)

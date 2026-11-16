@@ -24,10 +24,11 @@ mod tests_stream;
 use std::{collections::HashMap, sync::Arc};
 
 use haest_core::{
+    __private::book_priced_cost,
+    __private::mark_stream_failed,
     catalog::{ModelPricing, Reasoning},
     messages::AssistantMessage,
-    pricing::book_priced_cost,
-    provider::{ProviderEvent, ProviderRequest, ProviderStream, mark_stream_failed},
+    provider::{ProviderEvent, ProviderRequest, ProviderStream},
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;

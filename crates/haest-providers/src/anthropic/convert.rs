@@ -7,7 +7,7 @@
 //!   - thinking blocks replay only with their signature, and only to Anthropic.
 
 use haest_core::{
-    media::dropped_note,
+    __private::dropped_note,
     messages::{AssistantMessage, AssistantPart, MediaKind, MediaPart, Message, ToolResultMessage},
     provider::{Effort, ToolSpec},
 };

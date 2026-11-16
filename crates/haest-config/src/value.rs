@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use haest_core::{expand::is_var_name, fs::resolve_path};
+use haest_core::{__private::is_var_name, fs::resolve_path};
 
 use crate::{
     fields::whole_up_to,

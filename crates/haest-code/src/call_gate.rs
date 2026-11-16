@@ -1,6 +1,6 @@
 //! Concurrency for the tool calls one Code run makes: a call that changes
 //! anything runs ALONE, read-only calls share the gate up to a cap. The same rule
-//! [`haest_core::tool_batch`] applies to a model's batch, held per call instead of per batch.
+//! haest-core's loop applies to a model's batch, held per call instead of per batch.
 //!
 //! [`CallGate`] is what the Code tool holds for each run; a host has no need
 //! of it unless it runs tool calls of its own the same way.

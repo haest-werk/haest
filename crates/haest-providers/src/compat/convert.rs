@@ -6,8 +6,8 @@
 //! applied here and nowhere else.
 
 use haest_core::{
+    __private::nearest_accepted_effort,
     catalog::Reasoning,
-    effort::nearest_accepted_effort,
     messages::{AssistantMessage, Message},
     provider::{Effort, ToolSpec},
 };

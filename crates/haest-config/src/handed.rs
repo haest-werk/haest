@@ -8,8 +8,8 @@ use std::{
 };
 
 use haest_core::{
+    __private::{expand_vars, unset_note},
     ChildEnv,
-    expand::{expand_vars, unset_note},
     fs::Fs,
 };
 use haest_mcp::{McpServerConfig, load_project_mcp_config, project_mcp_path};

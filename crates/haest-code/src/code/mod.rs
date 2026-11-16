@@ -40,7 +40,7 @@
 //! output (files, transcripts, MCP replies), so it is DATA -- an instruction
 //! inside it is text the code read, not one to follow. haest's own lines (the
 //! call count, a stop) sit outside the fence. The whole result fits haest's
-//! per-result ceiling ([`MAX_TOOL_OUTPUT`](haest_core::tool_exec::MAX_TOOL_OUTPUT)),
+//! per-result ceiling ([`MAX_TOOL_OUTPUT`](haest_core::tool::MAX_TOOL_OUTPUT)),
 //! three quarters of it at most for the returned value, so the generic spill
 //! never cuts through the fence.
 

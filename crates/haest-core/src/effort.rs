@@ -29,16 +29,7 @@ const LEVELS: [Effort; 5] = [
 /// The OpenRouter level with the same name as haest's `e`; None for
 /// [`Effort::Off`], which maps to [`OpenRouterEffort::None`] only where a
 /// model lists it ([`nearest_accepted_effort`] decides that).
-///
-/// # Examples
-///
-/// ```
-/// use haest_core::{Effort, catalog::OpenRouterEffort, effort::as_openrouter};
-///
-/// assert_eq!(as_openrouter(Effort::High), Some(OpenRouterEffort::High));
-/// assert_eq!(as_openrouter(Effort::Off), None);
-/// ```
-pub fn as_openrouter(e: Effort) -> Option<OpenRouterEffort> {
+pub(crate) fn as_openrouter(e: Effort) -> Option<OpenRouterEffort> {
     Some(match e {
         Effort::Off => return None,
         Effort::Low => OpenRouterEffort::Low,
@@ -68,7 +59,7 @@ fn cheapest_level(r: &Reasoning) -> Effort {
 /// `model` (the provider's model id, for the human). The row comes from
 /// [`AgentHooks::reasoning`]; a host that returns None there gets `effort`
 /// back unchanged. None stays None: the model's own default.
-pub fn fit_effort(
+pub(crate) fn fit_effort(
     effort: Option<Effort>,
     spec: &str,
     model: &str,
@@ -101,8 +92,8 @@ pub fn fit_effort(
 /// ```
 /// use haest_core::{
 ///     Effort,
+///     __private::nearest_accepted_effort,
 ///     catalog::{OpenRouterEffort as O, Reasoning},
-///     effort::nearest_accepted_effort,
 /// };
 ///
 /// let row = Reasoning { mandatory: false, efforts: vec![O::Low, O::High] };
@@ -146,6 +137,12 @@ mod tests {
 
     use super::*;
     use crate::tool::ToolServices;
+
+    #[test]
+    fn off_has_no_openrouter_name_and_the_rest_keep_theirs() {
+        assert_eq!(as_openrouter(Effort::High), Some(OpenRouterEffort::High));
+        assert_eq!(as_openrouter(Effort::Off), None);
+    }
 
     fn r(mandatory: bool, efforts: &[OpenRouterEffort]) -> Reasoning {
         Reasoning {

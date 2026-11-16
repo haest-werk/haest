@@ -5,9 +5,9 @@
 //!
 //! The loop never reads a catalog directly. It asks the host through
 //! [`AgentHooks`](crate::AgentHooks) (`input_modalities`, `reasoning`), and the
-//! answers come from these rows: [`crate::media`] drops input a model cannot
-//! take, [`crate::effort`] fits the reasoning level, [`crate::pricing`] books a
-//! cost from [`ModelPricing`].
+//! answers come from these rows: the loop drops input a model cannot take
+//! ([`crate::media`]) and fits the reasoning level, and a provider adapter books
+//! a cost from [`ModelPricing`].
 //!
 //! # Examples
 //!
@@ -50,7 +50,7 @@ pub enum InputModality {
 /// A reasoning level in OpenRouter's vocabulary (`reasoning.supported_efforts`).
 ///
 /// Wider than haest's own [`Effort`](crate::Effort): `none` and `minimal` have
-/// no haest name. [`crate::effort::as_openrouter`] maps haest's levels onto it.
+/// no haest name; each of haest's levels but `off` has one of the same name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OpenRouterEffort {

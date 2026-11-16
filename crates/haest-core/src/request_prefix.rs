@@ -15,20 +15,20 @@ use crate::{
 /// The part of a [`ProviderRequest`] that comes before the history.
 /// [`Agent::request_prefix`](crate::Agent::request_prefix) builds it.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RequestPrefix {
+pub(crate) struct RequestPrefix {
     /// The system prompt.
-    pub system: String,
+    pub(crate) system: String,
     /// The advertised tools, as the model sees them.
-    pub tools: Vec<ToolSpec>,
+    pub(crate) tools: Vec<ToolSpec>,
     /// The effort fitted to the model; None sends none.
-    pub effort: Option<Effort>,
+    pub(crate) effort: Option<Effort>,
     /// Provider-side web search; None = off.
-    pub web_search: Option<WebSearchConfig>,
+    pub(crate) web_search: Option<WebSearchConfig>,
 }
 
 impl RequestPrefix {
     /// The model call: this prefix, then `messages`, with no `max_tokens`.
-    pub fn request(
+    pub(crate) fn request(
         self,
         model: String,
         messages: Vec<Message>,
@@ -51,7 +51,7 @@ impl RequestPrefix {
 /// system prompt built now, the tools [`ToolSource::tools`](crate::ToolSource::tools)
 /// advertises now, `effort` fitted to what the model takes, and the deps'
 /// web search.
-pub async fn build_request_prefix(
+pub(crate) async fn build_request_prefix(
     deps: &AgentDeps,
     spec: &str,
     model: &str,

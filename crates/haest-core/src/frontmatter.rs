@@ -11,7 +11,7 @@
 //! # Examples
 //!
 //! ```
-//! use haest_core::frontmatter::{inline_list, split_frontmatter, unquote};
+//! use haest_core::__private::{inline_list, split_frontmatter, unquote};
 //!
 //! let card = "---\ntitle: \"Fix the \\\"login\\\" bug\"\nlabels: [auth, 'p1']\n---\nSteps to reproduce.\n";
 //! let (head, body) = split_frontmatter(card).unwrap();

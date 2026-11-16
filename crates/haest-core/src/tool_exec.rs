@@ -2,15 +2,17 @@
 //! that never happened. Both turn every failure into a value the loop can put
 //! in history -- nothing here fails.
 //!
-//! Three ways to run a call, each wrapping the next:
-//! - [`run_call`]: what the loop uses; a cancelled turn answers the call as
-//!   interrupted without running it.
-//! - [`execute_tool`]: runs it, then spills a result over [`MAX_TOOL_OUTPUT`]
-//!   characters to a file and gives the model a preview.
-//! - [`run_tool`]: runs it with every error and panic answered as a result,
-//!   no spill. For a caller whose results never reach the model as they are.
+//! Two ways to run a call:
+//! - [`run_call`]: what the loop uses. A cancelled turn answers the call as
+//!   interrupted without running it; a result over
+//!   [`MAX_TOOL_OUTPUT`](crate::tool::MAX_TOOL_OUTPUT) characters is spilled
+//!   to a file and the model gets a preview.
+//! - [`run_unspilled`]: runs it with every error and panic answered as a
+//!   result, and no spill. For a caller whose results never reach the model
+//!   as they are (the Code tool).
 //!
-//! Tools are looked up by name in a [`ToolIndex`].
+//! Tools are looked up by name in a [`ToolIndex`]. Other haest crates reach
+//! these through [`__private`](crate::__private); a host never needs them.
 
 use std::sync::Arc;
 
@@ -21,12 +23,12 @@ use crate::{
     fs::ensure_dir,
     messages::{AssistantMessage, StopReason, ToolCall, ToolResultMessage, Usage},
     panics::panic_message,
-    tool::{Tool, ToolContext, ToolError, ToolOutput, spelled},
+    tool::{MAX_TOOL_OUTPUT, Tool, ToolContext, ToolError, ToolOutput, spelled},
 };
 
 /// A model call that never went out (no provider, a refused request): an
 /// empty answer from provider `"none"` with [`StopReason::Error`] and `error`.
-pub fn error_assistant(model: &str, error: &str) -> AssistantMessage {
+pub(crate) fn error_assistant(model: &str, error: &str) -> AssistantMessage {
     let mut m = AssistantMessage::start("none", model);
     m.stop_reason = StopReason::Error;
     m.error_message = Some(error.to_string());
@@ -59,8 +61,6 @@ impl ToolIndex {
     }
 }
 
-/// The most any one tool result may put into the model's context (~5k tokens), in characters.
-pub const MAX_TOOL_OUTPUT: usize = 20_000;
 const PREVIEW_CHARS: usize = 2_000;
 
 fn file_safe(s: &str) -> String {
@@ -132,12 +132,15 @@ async fn spill_if_huge(out: ToolOutput, tool_name: &str, ctx: &ToolContext) -> T
     }
 }
 
-/// One call of a turn: run it, or answer it as interrupted, so every call keeps its result.
+/// One call of a turn, as the loop runs it: answered as interrupted when the
+/// turn was cancelled, else [`run_unspilled`], then a result too big for the
+/// context is spilled to a file. Every call keeps its result.
 pub async fn run_call(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> ToolOutput {
     if ctx.cancel.is_cancelled() {
         return ToolOutput::error("Interrupted by the user before this tool ran.");
     }
-    execute_tool(tools, call, ctx).await
+    let out = run_unspilled(tools, call, ctx).await;
+    spill_if_huge(out, &call.name, ctx).await
 }
 
 /// Fold a tool's own spend -- an image model's bill, a sub-agent's -- into the
@@ -145,7 +148,7 @@ pub async fn run_call(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> 
 ///
 /// Adds [`ToolOutput::cost_usd`] and [`ToolOutput::child_cost_usd`] to
 /// `usage.cost_usd`; leaves `usage` untouched when the tool spent nothing.
-pub fn fold_spend(usage: &mut Usage, out: &ToolOutput) {
+pub(crate) fn fold_spend(usage: &mut Usage, out: &ToolOutput) {
     let spent = out.cost_usd.unwrap_or(0.0) + out.child_cost_usd.unwrap_or(0.0);
     if spent != 0.0 {
         usage.cost_usd = Some(usage.cost_usd.unwrap_or(0.0) + spent);
@@ -153,7 +156,7 @@ pub fn fold_spend(usage: &mut Usage, out: &ToolOutput) {
 }
 
 /// The history entry for one finished call. Media rides along only when there is some.
-pub fn tool_result_message(call: &ToolCall, out: &ToolOutput) -> ToolResultMessage {
+pub(crate) fn tool_result_message(call: &ToolCall, out: &ToolOutput) -> ToolResultMessage {
     ToolResultMessage {
         tool_call_id: call.id.clone(),
         tool_name: call.name.clone(),
@@ -161,13 +164,6 @@ pub fn tool_result_message(call: &ToolCall, out: &ToolOutput) -> ToolResultMessa
         is_error: out.is_error,
         media: out.media.clone(),
     }
-}
-
-/// One call as the loop runs it: [`run_tool`], then a result too big for the
-/// context is spilled to a file.
-pub async fn execute_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> ToolOutput {
-    let out = run_tool(tools, call, ctx).await;
-    spill_if_huge(out, &call.name, ctx).await
 }
 
 /// One call with every error answered as a result, and NO spill: the output
@@ -185,18 +181,17 @@ pub async fn execute_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext)
 /// use std::sync::Arc;
 ///
 /// use haest_core::{
-///     ShutWorkspace, ToolContext,
-///     messages::ToolCall,
-///     tool_exec::{ToolIndex, run_tool},
+///     ShutWorkspace, ToolCall, ToolContext,
+///     __private::{ToolIndex, run_unspilled},
 /// };
 ///
 /// let call = ToolCall { id: "c1".into(), name: "Nope".into(), input: Default::default() };
 /// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-/// let out = run_tool(&ToolIndex::new(Vec::new()), &call, &ctx).await;
+/// let out = run_unspilled(&ToolIndex::new(Vec::new()), &call, &ctx).await;
 /// assert!(out.is_error); // an answer the model reads, not a failure of the loop
 /// # }
 /// ```
-pub async fn run_tool(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> ToolOutput {
+pub async fn run_unspilled(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> ToolOutput {
     let Some(tool) = tools.get(&call.name) else {
         return ToolOutput::error(format!(
             "Unknown tool \"{}\". Available: {}",
