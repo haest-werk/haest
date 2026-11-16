@@ -107,6 +107,10 @@ Titles first, bodies next.
 - A write goes to a hidden temp file in the directory, then is renamed over the
   card. A link must name a card that exists, and a link that would make a loop
   (`depends_on`, `epic`) is refused.
+- One `CardTracker` writes one card at a time, but two trackers over the same
+  directory (or another program) do not wait for each other: two writes at the
+  same moment can lose a change, or make two same-titled cards one. Make one
+  tracker per directory and share it.
 
 ## Writing your own tools
 

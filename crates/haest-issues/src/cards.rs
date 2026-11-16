@@ -61,8 +61,11 @@ use front::{Front, Val};
 ///   id, title, tags and body hold every word, case ignored.
 /// - **Writes** go to a hidden file beside the card, renamed over it, so a
 ///   reader never sees half a card; and one tracker writes one card at a
-///   time. Two trackers over the same directory (or another program) do not
-///   wait for each other.
+///   time. The lock is the tracker's, not the directory's: two trackers over
+///   the same directory (or another program) do not wait for each other, so
+///   two writes at the same moment can lose one's change, and two cards made
+///   with the same title can end up as one. Make one tracker per directory
+///   and share it (`Arc<CardTracker>`) among everything that writes there.
 /// - **Links** live on one card and read from both (`blocks` is the other
 ///   card's `depends_on`). A card cannot link to itself, and a parent or
 ///   dependency that would make a loop is refused.
@@ -100,7 +103,8 @@ pub struct CardTracker {
     fs: Arc<dyn Fs>,
     dir: PathBuf,
     clock: Box<dyn Clock>,
-    /// One write at a time: a read-change-write must not lose another's change.
+    /// One write at a time: a read-change-write must not lose another's
+    /// change. This tracker's writes only; see the type's docs.
     writes: Mutex<()>,
 }
 
