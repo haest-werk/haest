@@ -176,11 +176,9 @@ tools = ["read", "grep"]"#;
     let ConfigError::UnknownProfile { name, known } = err else {
         panic!("{err}");
     };
-    let named = |n: &str| known.iter().any(|k| k == n);
-    assert!(
-        name == "nope" && named("claude") && named("review"),
-        "{known:?}"
-    );
+    // Each profile once: the file's [profiles.claude] adds to the built-in one.
+    let known: Vec<&str> = known.iter().map(String::as_str).collect();
+    assert_eq!((name.as_str(), known), ("nope", vec!["claude", "review"]));
 }
 
 type Pairs = &'static [(&'static str, &'static str)];

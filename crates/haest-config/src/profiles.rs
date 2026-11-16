@@ -34,11 +34,16 @@ pub(crate) fn layer(name: &str, stack: &Stack) -> Result<Layer, ConfigError> {
     let builtin = builtin(name);
     let tables = stack.profile_tables(name);
     if builtin.is_none() && tables.is_empty() {
-        let builtins = BUILTIN.iter().map(|(n, _)| *n);
-        let known = builtins.chain(stack.profile_names()).map(String::from);
+        // Each once: a file's table may add to a built-in one, or to another file's.
+        let mut known: Vec<String> = Vec::new();
+        for n in BUILTIN.iter().map(|(n, _)| *n).chain(stack.profile_names()) {
+            if !known.iter().any(|k| k == n) {
+                known.push(n.into());
+            }
+        }
         return Err(ConfigError::UnknownProfile {
             name: name.into(),
-            known: known.collect(),
+            known,
         });
     }
     let source = Source::Profile(name.to_string());
