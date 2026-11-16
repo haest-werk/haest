@@ -44,11 +44,9 @@ fn listed(r: &Reasoning, e: Effort) -> bool {
     as_openrouter(e).is_some_and(|o| r.efforts.contains(&o))
 }
 
-fn cheapest_level(r: &Reasoning) -> Effort {
-    LEVELS
-        .into_iter()
-        .find(|l| listed(r, *l))
-        .unwrap_or(Effort::Low)
+/// The cheapest of haest's levels `r` lists, if it lists any.
+fn cheapest_listed(r: &Reasoning) -> Option<Effort> {
+    LEVELS.into_iter().find(|l| listed(r, *l))
 }
 
 /// The effort the model behind `spec` may receive: `effort` as asked unless it
@@ -71,7 +69,7 @@ pub(crate) fn fit_effort(
     let Some(reasoning) = hooks.reasoning(spec).filter(|r| r.mandatory) else {
         return effort;
     };
-    let used = cheapest_level(&reasoning);
+    let used = cheapest_listed(&reasoning).unwrap_or(Effort::Low);
     hooks.on_effort_fitted(model, used);
     Some(used)
 }
@@ -85,7 +83,7 @@ pub(crate) fn fit_effort(
 /// lists none of them gives None.
 ///
 /// [`Effort::Off`] is `none` where listed; else, when reasoning is mandatory,
-/// the cheapest listed level (`low` when none is listed); else None.
+/// the cheapest of haest's levels the row lists; else None.
 ///
 /// # Examples
 ///
@@ -109,7 +107,7 @@ pub fn nearest_accepted_effort(effort: Effort, accepted: &Reasoning) -> Option<O
             return Some(OpenRouterEffort::None);
         }
         return if accepted.mandatory {
-            as_openrouter(cheapest_level(accepted))
+            cheapest_listed(accepted).and_then(as_openrouter)
         } else {
             None
         };
@@ -202,5 +200,15 @@ mod tests {
             nearest_accepted_effort(Effort::Low, &r(false, &[O::Minimal])),
             None
         );
+    }
+
+    #[test]
+    fn off_on_a_mandatory_row_with_none_of_haests_levels_sends_no_level() {
+        use OpenRouterEffort as O;
+        assert_eq!(
+            nearest_accepted_effort(Effort::Off, &r(true, &[O::Minimal])),
+            None
+        );
+        assert_eq!(nearest_accepted_effort(Effort::Off, &r(true, &[])), None);
     }
 }
