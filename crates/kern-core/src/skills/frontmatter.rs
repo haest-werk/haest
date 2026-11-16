@@ -1,9 +1,12 @@
 //! The two frontmatter readers a SKILL.md needs: strict YAML, and the flat
 //! `key: value` line reader that takes over when YAML refuses.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
-use yaml_rust2::{Yaml, YamlLoader};
+use yaml_rust2::{
+    Event, Yaml, YamlLoader,
+    parser::{EventReceiver, Parser},
+};
 
 /// One frontmatter value, as the skill reader asks about it.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,12 +30,62 @@ pub(super) fn split_frontmatter(content: &str) -> Option<(Vec<&str>, &str)> {
     Some((rest[..end].split('\n').collect(), body))
 }
 
+/// What expanding its aliases may add to a frontmatter, in [`ExpandedSize`]
+/// units. yaml-rust2 expands an alias by copying its anchor, so nine levels of
+/// `&a [*a, *a, ...]` (a few hundred bytes) would build ~9^9 nodes.
+const ALIAS_ROOM: u64 = 64 * 1024;
+
+/// The document's size with every alias expanded, counted from the parser's
+/// events alone (nothing is built): a node is 1, a scalar also its bytes, an
+/// alias the size of its anchor.
+#[derive(Default)]
+struct ExpandedSize {
+    /// The collections still open: their anchor id (0 = none) and size so far.
+    open: Vec<(usize, u64)>,
+    anchors: HashMap<usize, u64>,
+    total: u64,
+}
+
+impl EventReceiver for ExpandedSize {
+    fn on_event(&mut self, ev: Event) {
+        let (anchor, size) = match ev {
+            Event::SequenceStart(anchor, _) | Event::MappingStart(anchor, _) => {
+                self.open.push((anchor, 1));
+                return;
+            }
+            Event::SequenceEnd | Event::MappingEnd => match self.open.pop() {
+                Some(done) => done,
+                None => return,
+            },
+            Event::Scalar(text, _, anchor, _) => (anchor, 1 + text.len() as u64),
+            Event::Alias(id) => (0, self.anchors.get(&id).copied().unwrap_or(1)),
+            _ => return,
+        };
+        if anchor > 0 {
+            self.anchors.insert(anchor, size);
+        }
+        let into = match self.open.last_mut() {
+            Some((_, parent)) => parent,
+            None => &mut self.total,
+        };
+        *into = into.saturating_add(size);
+    }
+}
+
 /// Strict YAML first (block scalars, lists); the flat line reader when that
 /// refuses. Hand-written skills routinely carry an unquoted `description: ... e.g:
 /// "x"` -- invalid YAML that Claude Code loads anyway, so refusing it would hide
-/// a skill the model can see.
+/// a skill the model can see. A frontmatter whose aliases would expand past
+/// [`ALIAS_ROOM`] is refused whole (None: that skill is skipped), before
+/// anything is built: a project's skill must not be able to exhaust memory.
 pub(super) fn read_meta(head: &[&str]) -> Option<MetaMap> {
-    match YamlLoader::load_from_str(&head.join("\n")) {
+    let text = head.join("\n");
+    let mut size = ExpandedSize::default();
+    let parsed = Parser::new(text.chars()).load(&mut size, true);
+    if parsed.is_ok() && size.total > text.len() as u64 + ALIAS_ROOM {
+        return None;
+    }
+    match parsed.and_then(|()| YamlLoader::load_from_str(&text)) {
         Ok(docs) => match docs.into_iter().next() {
             Some(Yaml::Hash(h)) => Some(
                 h.into_iter()
@@ -185,38 +238,4 @@ fn unescape(inner: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_head_ends_at_the_first_fence() {
-        let (head, body) = split_frontmatter("---\na: 1\nb: 2\n---\n\nbody\n---\nmore").unwrap();
-        assert_eq!(head, ["a: 1", "b: 2"]);
-        assert_eq!(body, "\nbody\n---\nmore");
-        assert!(split_frontmatter("# no block").is_none());
-        assert!(split_frontmatter("---\nunclosed").is_none());
-    }
-
-    #[test]
-    fn the_flat_reader_skips_blocks_and_unquotes() {
-        let meta = flat_meta(&[
-            "name: \"x: y\\n\\x41\"",
-            "nested:",
-            "  child: 1",
-            "list: [a, 'b', ]",
-            "empty:",
-        ]);
-        assert_eq!(meta["name"], Meta::Str("x: y\nA".into()));
-        assert!(!meta.contains_key("nested") && !meta.contains_key("child"));
-        assert_eq!(meta["list"], Meta::List(vec!["a".into(), "b".into()]));
-        assert_eq!(meta["empty"], Meta::Str(String::new()));
-    }
-
-    #[test]
-    fn unquote_needs_a_matched_pair() {
-        assert_eq!(unquote("'it''"), "it'");
-        assert_eq!(unquote("\"unbalanced"), "\"unbalanced");
-        assert_eq!(unquote("he said \"hi\""), "he said \"hi\"");
-        assert_eq!(unquote("'a\\nb'"), "a\\nb");
-    }
-}
+mod tests;
