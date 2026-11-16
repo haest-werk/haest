@@ -52,6 +52,9 @@ impl HttpClient for Gateway {
 /// A tool call the scripted model makes: id, tool name, input.
 pub struct Call(pub &'static str, pub &'static str, pub Value);
 
+/// What every scripted model call costs, as OpenRouter reports it in the usage.
+pub const CALL_USD: f64 = 0.001;
+
 /// One model reply in Chat Completions SSE: `text` streamed, then each call
 /// (id and name first, the arguments in a later fragment, the way servers
 /// stream them), the finish reason, and a usage chunk with OpenRouter's cost.
@@ -76,7 +79,7 @@ pub fn reply(text: &str, calls: &[Call]) -> String {
     chunks.push(json!({"choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}));
     chunks.push(json!({
         "choices": [],
-        "usage": {"prompt_tokens": 900, "completion_tokens": 60, "cost": 0.001}
+        "usage": {"prompt_tokens": 900, "completion_tokens": 60, "cost": CALL_USD}
     }));
     let mut body: String = chunks.iter().map(|c| format!("data: {c}\n\n")).collect();
     body.push_str("data: [DONE]\n\n");

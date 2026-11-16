@@ -4,6 +4,7 @@
 //! [`AgentDirectory`] is the plug point.
 
 mod hub;
+mod member;
 mod members;
 mod parent;
 mod run;
@@ -16,6 +17,7 @@ use haest_core::caps::SubagentCaps;
 use tokio_util::sync::CancellationToken;
 
 pub use hub::SubagentHub;
+pub use member::{Ending, InProcessRun, MemberCaps, MemberEnd, MemberRun, MemberStart, Spend};
 pub use parent::{SubagentEvent, SubagentParent};
 pub use run::subagent_note;
 pub use tools::{agent_tools, agent_tools_with};

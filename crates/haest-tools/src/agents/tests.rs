@@ -1,9 +1,11 @@
 //! Ported from host/agent-hub.test.ts (subagents). The Rust hub's own rules
 //! (spend, StopAgent, refusals) are in `tests/rules.rs`.
 
+mod lifecycle;
 mod options;
 mod rules;
 mod script;
+mod seam;
 mod support;
 
 use serde_json::json;

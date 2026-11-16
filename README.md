@@ -182,8 +182,9 @@ requests travel, `Fs` and `Workspace` for files and shell, `Tool` and
 `ReadIntercept` for tools, `AgentHooks` for saving each message and compacting
 before a model call, `ModelFacts` for what the host knows of each model,
 `TurnCapsSource` for each turn's caps, `Clock` for the time a turn's cap reads,
-`EventSink` for events, `SessionSink` for session records, `AgentDirectory` for
-subagents.
+`EventSink` for events, `SessionSink` for session records, `SubagentParent` for
+subagents on haest's hub (`start_member` runs one on a run of the host's own,
+or refuses it), `AgentDirectory` for a hub of the host's own.
 
 Nothing in the library reads a file, a variable or a flag of its own accord.
 A host writes its settings out:
@@ -245,8 +246,8 @@ cargo run -p haest --example notebook
 
 `cargo test` runs it as well. A host that takes haest's own pieces where the
 notebook brings its own -- its own `Provider`, a `ShellCommand` in the sandbox shell,
-a tool that titles its calls, haest's `SubagentHub` over its `SubagentParent` and
-`Inbox`, steering a running turn, a hook that ends the turn, its own skills
+a tool that titles its calls, haest's `SubagentHub` running its members in
+process (no member hooks), steering a running turn, a hook that ends the turn, its own skills
 behind haest's Skill tool (`SkillSet`, `InlineSkills`), its own tools held back
 behind ToolSearch with a list that always loads (`DeferredTools`,
 `ToolDeferral::deferring_all_except`) -- is

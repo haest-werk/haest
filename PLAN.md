@@ -66,7 +66,7 @@ Behaviour comes from there, file by file, tests included.
 | Read: `createReadTool(intercept)` (brain media caps, `attachment:<id>`) | Read tool takes an optional intercept |
 | Bash without background jobs | jobs are an option of the Bash tool |
 | session-store: record types + replay only, the node writes the file | `SessionRecord` + `replay` are separate from the file writer (`SessionSink`) |
-| agent tools with brain's own hub (`subagent_type`, subagent runs on the node) | `AgentDirectory` (brain's hub) + `AgentToolOptions` (the `subagent_type` enum, the model text) |
+| agent tools with brain's own hub (`subagent_type`, subagent runs on the node) | haest's `SubagentHub` over brain's `SubagentParent`: `start_member` starts each helper's node run (or refuses) and hands back its `MemberRun` (model spec, caps, deps), whose `end` closes it; `AgentToolOptions` (the `subagent_type` enum, the model text). `AgentDirectory` stays for a host with no use for haest's hub. Plan and the brain-to-haest table: `docs/plans/subagent-hub.md` |
 | brain decides each run's tools and caps itself | `settings::Settings` written out in Rust, one per kind of run (no loader, nothing read) + `tools::builtin_tools_where` |
 
 Beyond brain's patches: `ShellCommand` (haest-core) + `SandboxWorkspace::with_command`
@@ -77,8 +77,8 @@ stats, frequency) with the part of moonblade's expressions they need; bashkit ha
 only a line-based `csv`.
 Every row is exercised by `crates/haest/examples/notebook/` against fakes
 (`cargo run -p haest --example notebook`, and under `cargo test`). A second
-host that takes haest's own hub, shell commands and steering instead is
-`crates/haest/tests/plug_in.rs`.
+host that takes haest's own hub with no member hooks, shell commands and
+steering instead is `crates/haest/tests/plug_in.rs`.
 
 ## Waves
 

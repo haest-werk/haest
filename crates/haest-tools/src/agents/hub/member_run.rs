@@ -1,14 +1,18 @@
-//! One subagent's run inside the hub: build its agent, drive its turn, hand a
-//! background answer back.
+//! One subagent's run inside the hub: build its agent, drive its turn, close
+//! its run, hand a background answer back.
 
-use std::sync::Arc;
+use std::{panic::AssertUnwindSafe, sync::Arc};
 
-use haest_core::{Agent, AgentDeps, AgentOptions, SharedDeps, tool::Tool};
+use futures::FutureExt;
+use haest_core::{
+    __private::panic_message, Agent, AgentDeps, AgentOptions, SharedDeps, provider::Effort,
+    tool::Tool,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::SubagentHub;
 use crate::agents::{
-    SpawnInput, SpawnOutcome, SubagentEvent,
+    MemberEnd, MemberRun, MemberStart, SpawnOutcome, SubagentEvent,
     members::Status,
     run::{ChildCaps, ChildHooks, ChildPrompt, Run, drive, subagent_note},
 };
@@ -22,54 +26,71 @@ impl SubagentHub {
         self.parent.on_activity(&ids);
     }
 
-    /// The agent for `run`: the conversation's deps with its own tools (its
-    /// kind's, [`SubagentParent::subagent_tools`](crate::SubagentParent::subagent_tools)),
-    /// prompt and hooks. No task tools: the task list belongs to the
-    /// conversation, not to a helper.
-    pub(super) fn build(&self, run: &Run, input: &SpawnInput) -> Agent {
+    /// The agent for `run`: its run's deps (else the conversation's) with its
+    /// own tools (its kind's,
+    /// [`SubagentParent::subagent_tools`](crate::SubagentParent::subagent_tools)),
+    /// prompt and caps, on its run's model (else the start's). No task tools:
+    /// the task list belongs to the conversation, not to a helper.
+    pub(super) fn build(
+        &self,
+        run: &Run,
+        start: &MemberStart,
+        effort: Option<Effort>,
+        member: &dyn MemberRun,
+    ) -> Agent {
         let mut tools: Vec<Arc<dyn Tool>> = self
             .parent
-            .subagent_tools(input.subagent_type.as_deref())
+            .subagent_tools(start.input.subagent_type.as_deref())
             .into_iter()
             .filter(|t| crate::builtin_word(t.name()) != Some("tasks"))
             .collect();
         tools.extend(self.tools_for(&run.me));
         let source = self.parent.tool_source(tools);
-        let (main_model, effort) = self.parent.default_model();
-        let model = input.model_spec.clone().unwrap_or(main_model);
-        let base = self.parent.deps();
-        let deps = AgentDeps {
-            tools: source.clone(),
-            system_prompt: Arc::new(ChildPrompt {
-                parent: self.parent.clone(),
-                model_spec: model.clone(),
-                tools: source,
-                note: subagent_note(&run.me.name, &run.parent, &run.description, &self.caps),
-            }),
-            shared: SharedDeps {
+        let model_spec = member
+            .model_spec()
+            .unwrap_or_else(|| start.model_spec.clone());
+        let caps = member.caps().unwrap_or(start.caps);
+        // Its own deps keep their hooks; the conversation's are lent, persisting nothing.
+        let base = member.deps().unwrap_or_else(|| {
+            let base = self.parent.deps();
+            SharedDeps {
                 hooks: Arc::new(ChildHooks {
                     hooks: base.hooks.clone(),
                     parent: self.parent.clone(),
                     id: run.id.clone(),
                 }),
+                ..base
+            }
+        });
+        let deps = AgentDeps {
+            tools: source.clone(),
+            system_prompt: Arc::new(ChildPrompt {
+                parent: self.parent.clone(),
+                model_spec: model_spec.clone(),
+                tools: source,
+                note: subagent_note(&run.me.name, &run.parent, &run.description, &caps),
+            }),
+            shared: SharedDeps {
                 turn_caps: Arc::new(ChildCaps {
                     caps: base.turn_caps.clone(),
-                    subagent: self.caps,
+                    subagent: caps,
                 }),
                 ..base
             },
         };
-        let mut opts = AgentOptions::new(model);
+        let mut opts = AgentOptions::new(model_spec);
         opts.effort = effort;
         Agent::new(deps, opts)
     }
 
-    /// Run `agent`'s one turn on `prompt`, reporting it to the parent; the
-    /// answer, with any message that arrived after it finished appended unread.
+    /// Run `agent`'s one turn on `prompt`, reporting it to the parent, then
+    /// close its run (`member`); the answer, with any message that arrived
+    /// after it finished appended unread.
     pub(super) async fn run_member(
         &self,
         run: Run,
         mut agent: Agent,
+        member: Box<dyn MemberRun>,
         prompt: String,
         caller: Option<CancellationToken>,
     ) -> SpawnOutcome {
@@ -91,7 +112,7 @@ impl SubagentHub {
         )
         .await;
         self.parent
-            .on_subagent(&run.id, SubagentEvent::Stopped { ok: out.ok });
+            .on_subagent(&run.id, SubagentEvent::Stopped { ok: out.ok() });
         // Leave first: from here a message for it is refused, not lost.
         self.members.lock().unwrap().leave(&run.me.name);
         let late = agent.control().take_queued();
@@ -102,10 +123,20 @@ impl SubagentHub {
                 run.me.name
             )
         });
-        SpawnOutcome {
-            text: format!("{}{unread}", out.text),
-            cost_usd: out.cost_usd,
+        let text = format!("{}{unread}", out.text);
+        let cost_usd = out.spend.usd();
+        let end = MemberEnd {
+            ending: out.ending,
+            answer: text.clone(),
+            spend: out.spend,
+        };
+        // A host's end that panics must not lose the answer (a background one is handed back next).
+        if let Err(p) = AssertUnwindSafe(member.end(end)).catch_unwind().await {
+            let why = panic_message(p.as_ref()).unwrap_or("a panic");
+            let log = format!("subagent {}: its run's end panicked: {why}", run.id);
+            self.parent.deps().hooks.debug(&log);
         }
+        SpawnOutcome { text, cost_usd }
     }
 
     /// A background agent's answer goes to whoever started it -- or to main when

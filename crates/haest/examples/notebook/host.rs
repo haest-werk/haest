@@ -121,6 +121,13 @@ impl NotebookHost {
     }
 }
 
+impl NotebookHost {
+    /// The run's caps, as its settings set them.
+    pub fn caps(&self) -> TurnCaps {
+        self.caps.clone()
+    }
+}
+
 impl ToolServices for NotebookHost {}
 
 #[async_trait]

@@ -16,7 +16,7 @@ use haest_core::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{AgentRef, SubagentCaps, SubagentEvent, SubagentParent};
+use super::{AgentRef, Ending, MemberCaps, Spend, SubagentEvent, SubagentParent};
 
 /// One agent's run, as its driver needs it.
 pub(super) struct Run {
@@ -32,16 +32,23 @@ pub(super) struct Run {
 pub(super) struct RunOutcome {
     /// The final answer, or the reason there is none.
     pub text: String,
+    /// How it ended.
+    pub ending: Ending,
     /// What the turn spent, already charged to the ledger.
-    pub cost_usd: f64,
+    pub spend: Spend,
+}
+
+impl RunOutcome {
     /// It ended its turn with an answer (no stop, no cap, no error).
-    pub ok: bool,
+    pub fn ok(&self) -> bool {
+        self.ending == Ending::Answered
+    }
 }
 
 /// The text appended to a subagent's system prompt: who it is (`name`), who
 /// started it and reads its answer (`parent`), what for (`description`), its
 /// caps, and how to talk to other agents.
-pub fn subagent_note(name: &str, parent: &str, description: &str, caps: &SubagentCaps) -> String {
+pub fn subagent_note(name: &str, parent: &str, description: &str, caps: &MemberCaps) -> String {
     format!(
         "# You are a subagent
 
@@ -56,8 +63,8 @@ Your caps: ${}, {} model calls, {}. Messages from other agents arrive as user me
     )
 }
 
-/// A subagent's time cap as its note says it: whole minutes, else seconds.
-fn wall_clock(time: Duration) -> String {
+/// A wall clock as the model reads it: whole minutes, else seconds.
+pub(super) fn wall_clock(time: Duration) -> String {
     match time.as_secs() {
         s if s % 60 == 0 => format!("{} minutes", s / 60),
         s => format!("{s} seconds"),
@@ -95,7 +102,7 @@ pub(super) struct ChildHooks {
 /// The conversation's turn caps, with a subagent's own spend, steps and time.
 pub(super) struct ChildCaps {
     pub caps: Arc<dyn TurnCapsSource>,
-    pub subagent: SubagentCaps,
+    pub subagent: MemberCaps,
 }
 
 impl TurnCapsSource for ChildCaps {
@@ -141,20 +148,38 @@ impl AgentHooks for ChildHooks {
     }
 }
 
-fn outcome(stop: StopReason, error: Option<&str>, cost: Option<f64>, text: &str) -> RunOutcome {
-    let ok = stop == StopReason::EndTurn && error.is_none();
-    let why = if ok {
-        String::new()
-    } else {
-        let why = error.unwrap_or(stop.as_str());
-        format!("\n\n[the agent stopped early: {why}]")
+/// How the turn ended, from its `TurnEnd` (None: it sent none) and what
+/// aborted it from outside (`aborted`).
+fn ending(end: Option<&(StopReason, Option<String>)>, aborted: Option<Ending>) -> Ending {
+    let Some((stop, error)) = end else {
+        return aborted.unwrap_or_else(|| Ending::Failed(StopReason::Error.as_str().into()));
     };
-    let text = if text.is_empty() { "(no answer)" } else { text };
-    RunOutcome {
-        text: format!("{text}{why}"),
-        cost_usd: cost.unwrap_or(0.0),
-        ok,
+    if *stop == StopReason::EndTurn && error.is_none() {
+        return Ending::Answered;
     }
+    if let Some(aborted) = aborted {
+        return aborted;
+    }
+    let why = error.clone().unwrap_or_else(|| stop.as_str().into());
+    match stop {
+        StopReason::MaxTokens => Ending::Capped(why),
+        _ => Ending::Failed(why),
+    }
+}
+
+/// The answer as the caller reads it: the last text, and why the turn
+/// stopped early when it did.
+fn answer(text: &str, end: Option<&(StopReason, Option<String>)>, ok: bool) -> String {
+    let text = if text.is_empty() { "(no answer)" } else { text };
+    if ok {
+        return text.to_string();
+    }
+    let why = match end {
+        Some((_, Some(error))) => error.as_str(),
+        Some((stop, None)) => stop.as_str(),
+        None => StopReason::Error.as_str(),
+    };
+    format!("{text}\n\n[the agent stopped early: {why}]")
 }
 
 async fn cancelled(t: Option<&CancellationToken>) {
@@ -164,9 +189,21 @@ async fn cancelled(t: Option<&CancellationToken>) {
     }
 }
 
+/// What stopped a member from outside, if anything did.
+fn aborted(stop: &CancellationToken, caller: Option<&CancellationToken>) -> Option<Ending> {
+    if stop.is_cancelled() {
+        Some(Ending::Stopped)
+    } else if caller.is_some_and(CancellationToken::is_cancelled) {
+        Some(Ending::CallerCancelled)
+    } else {
+        None
+    }
+}
+
 /// Run the turn to its end, every event to the parent; never fails -- a crash
 /// comes back as the agent's answer. `stop` (StopAgent) and `caller` (the
-/// spawning turn, for a foreground agent) both abort it.
+/// spawning turn, for a foreground agent) both abort it; stopped before it
+/// began (while its run started), it never runs.
 pub(super) async fn drive(
     agent: &mut Agent,
     prompt: &str,
@@ -175,12 +212,22 @@ pub(super) async fn drive(
     parent: &dyn SubagentParent,
     id: &str,
 ) -> RunOutcome {
+    if let Some(ending) = aborted(stop, caller) {
+        let never = (StopReason::Aborted, None);
+        return RunOutcome {
+            text: answer("", Some(&never), false),
+            ending,
+            spend: Spend::default(),
+        };
+    }
     let control = agent.control();
     let mut text = String::new();
-    let mut ended = None;
+    let mut end = None;
+    let mut spend = Spend::default();
     let result = {
         let mut sink = |ev: LoopEvent| {
             match &ev {
+                LoopEvent::ModelStart { .. } => spend.model_calls += 1,
                 LoopEvent::Assistant { message } => {
                     let said = message.text().trim().to_string();
                     if !said.is_empty() {
@@ -193,12 +240,8 @@ pub(super) async fn drive(
                     error,
                     ..
                 } => {
-                    ended = Some(outcome(
-                        *stop_reason,
-                        error.as_deref(),
-                        usage.cost_usd,
-                        &text,
-                    ))
+                    end = Some((*stop_reason, error.clone()));
+                    spend.usage = usage.clone();
                 }
                 _ => {}
             }
@@ -213,15 +256,21 @@ pub(super) async fn drive(
             _ = cancelled(caller) => { control.abort(); run.await }
         }
     };
-    match result {
-        Ok(_) => ended.unwrap_or_else(|| outcome(StopReason::Error, None, None, "")),
-        Err(p) => RunOutcome {
-            text: format!(
-                "[the agent crashed: {}]",
-                panic_message(p.as_ref()).unwrap_or("a panic")
-            ),
-            cost_usd: 0.0,
-            ok: false,
-        },
+    // StopAgent aborts the loop directly too, so the run may end before
+    // either token is seen above: ask the tokens, not the branch.
+    let aborted = aborted(stop, caller);
+    if let Err(p) = result {
+        let why = panic_message(p.as_ref()).unwrap_or("a panic").to_string();
+        return RunOutcome {
+            text: format!("[the agent crashed: {why}]"),
+            ending: Ending::Crashed(why),
+            spend,
+        };
+    }
+    let ending = ending(end.as_ref(), aborted);
+    RunOutcome {
+        text: answer(&text, end.as_ref(), ending == Ending::Answered),
+        ending,
+        spend,
     }
 }

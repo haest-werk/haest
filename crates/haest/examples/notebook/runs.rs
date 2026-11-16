@@ -3,10 +3,10 @@
 use std::{path::PathBuf, sync::Arc};
 
 use haest::{
-    Agent, AgentOptions, ShutWorkspace, StopReason, TurnOutcome,
+    Agent, AgentOptions, ShutWorkspace, StopReason, TurnOutcome, Workspace,
     core::session::{SessionRecord, SessionSink, replay},
     core::tool::Tool,
-    tools::AgentRef,
+    tools::{AgentRef, Ending, SubagentHub},
     workspace::SandboxWorkspace,
 };
 use serde_json::json;
@@ -14,19 +14,21 @@ use serde_json::json;
 use crate::{
     CWD, MODEL, T0, config, deps,
     doc::DocSink,
-    gateway::{Call, Gateway, reply, tool_names, tool_schema},
+    gateway::{CALL_USD, Call, Gateway, reply, tool_names, tool_schema},
+    helpers::{Closed, HELPER_MODEL, Node, NodeHelpers, tree_caps},
     host::{NodeSessions, NotebookHost, PAUSE_MS, RunClock},
     notebook_fs::NotebookFs,
     notebook_search, run_tools,
-    tools::{Attachments, DREAM_MEMORY, DreamMaterial, NodeAgents, SUB_ANSWER, SUB_COST_USD},
+    tools::{Attachments, DREAM_MEMORY, DreamMaterial},
 };
 
 const NARRATION: &str = "Let me read the attachment first.";
 const ANSWER: &str = "Today's note is staged for your review.";
 const NOTE: &str = "# Today\nQ3 revenue up 12%.\n";
+const SUB_ANSWER: &str = "Two related notes: /notebook/notes/plan.md, /notebook/notes/q2.md";
 
-/// A work run: the sandboxed bash over NotebookFs, every notebook tool, a pause
-/// mid-turn, records to the node.
+/// A work run: the sandboxed bash over NotebookFs, every notebook tool, a
+/// helper on a node run of its own, a pause mid-turn, records to the node.
 pub async fn work(gateway: &Arc<Gateway>) {
     let notebook = Arc::new(NotebookFs::new(&[(
         "/notebook/notes/plan.md",
@@ -36,7 +38,6 @@ pub async fn work(gateway: &Arc<Gateway>) {
         "a1",
         "# Q3 report\nRevenue up 12%.\n",
     )]));
-    let agents = Arc::new(NodeAgents::default());
     let sessions = Arc::new(NodeSessions::default());
     let s = config::work();
     // The owner pauses before the second model call; the notebook's clock leaves it out.
@@ -48,10 +49,24 @@ pub async fn work(gateway: &Arc<Gateway>) {
         config::turn_caps(&s),
     ));
     let own: Vec<Arc<dyn Tool>> = vec![Arc::new(notebook_search())];
-    let tools = run_tools(&s, own, attachments.clone(), agents.clone());
-    let workspace = Arc::new(SandboxWorkspace::over(notebook.clone()));
+    let base = run_tools(&s, own, attachments.clone());
+    let workspace: Arc<dyn Workspace> = Arc::new(SandboxWorkspace::over(notebook.clone()));
+    // haest's hub over the run: each helper on a node run of its own.
+    let node = Arc::new(Node::default());
+    let helpers = Arc::new(NodeHelpers {
+        gateway: gateway.clone(),
+        base: base.clone(),
+        workspace: workspace.clone(),
+        host: host.clone(),
+        node: node.clone(),
+    });
+    let hub = SubagentHub::new(helpers, tree_caps());
+    let mut tools = base;
+    if s.agents {
+        tools.extend(hub.tools_for(&AgentRef::main()));
+    }
     let mut agent = Agent::new(
-        deps(gateway, tools, workspace, host.clone()),
+        deps(gateway, "", tools, workspace, host.clone()),
         AgentOptions::new(MODEL),
     );
     sessions.append(&SessionRecord::header("s-1", "c-1", CWD, T0));
@@ -84,10 +99,12 @@ pub async fn work(gateway: &Arc<Gateway>) {
                 Call(
                     "c6",
                     "Agent",
-                    json!({"description": "Find related notes", "prompt": "Notes about Q3"}),
+                    json!({"description": "Find related notes", "prompt": "Notes about Q3", "model": "haiku"}),
                 ),
             ],
         ),
+        // The helper's one model call, inside c6.
+        reply(SUB_ANSWER, &[]),
         reply(ANSWER, &[]),
     ]);
     let mut doc = DocSink::default();
@@ -102,8 +119,8 @@ pub async fn work(gateway: &Arc<Gateway>) {
 
     // HttpClient: every model call went through the gateway; routing is the gateway's.
     let requests = gateway.take_requests();
-    assert_eq!(requests.len(), 3);
-    for r in &requests {
+    assert_eq!(requests.len(), 4, "main's three and the helper's one");
+    for (i, r) in requests.iter().enumerate() {
         assert!(
             r.url.ends_with("/agent/llm/v1/chat/completions"),
             "{}",
@@ -113,11 +130,13 @@ pub async fn work(gateway: &Arc<Gateway>) {
             r.json_body().get("provider").is_none(),
             "no OpenRouter routing from the run"
         );
-        assert_eq!(
-            r.header("authorization"),
-            Some("Bearer "),
-            "the run holds no key"
-        );
+        // No provider key anywhere; the helper's calls carry its node run's token.
+        let token = if i == 2 {
+            "Bearer helper-run-1"
+        } else {
+            "Bearer "
+        };
+        assert_eq!(r.header("authorization"), Some(token));
     }
     // notebook.toml picked these; bash came without jobs: no run_in_background
     // in its schema, no job tools. Grep, Glob and WebFetch stayed off.
@@ -162,19 +181,41 @@ pub async fn work(gateway: &Arc<Gateway>) {
         [(PathBuf::from("/notebook/notes/today.md"), NOTE.to_string())]
     );
 
-    // RuntimeHooks tool and agent tools: answered by the node.
+    // A host tool, answered by the node.
     assert!(doc.output("c5").content.contains("/notebook/notes/q2.md"));
+    // The helper: the node started its run before its model call, on the model
+    // the node resolved, with the notebook's explore tools only, and closed it after.
+    let started = node.started.lock().unwrap().clone();
+    assert_eq!(started.len(), 1);
+    assert!(started[0].name.starts_with("find-related-notes"));
+    assert_eq!(started[0].asked_model.as_deref(), Some("haiku"));
+    // The notebook's kinds: an Agent call naming none gets explore.
+    assert_eq!(started[0].kind.as_deref(), Some("explore"));
+    let helper = requests[2].json_body();
+    assert_eq!(helper["model"], HELPER_MODEL.split_once(':').unwrap().1);
+    assert_eq!(
+        tool_names(&helper),
+        ["Read", "notebook_search", "SendMessage", "StopAgent"]
+    );
     let c6 = doc.output("c6");
     assert_eq!(
         (c6.content.as_str(), c6.child_cost_usd),
-        (SUB_ANSWER, Some(SUB_COST_USD))
+        (SUB_ANSWER, Some(CALL_USD))
     );
-    let spawns = agents.spawns.lock().unwrap();
+    let closed = node.closed.lock().unwrap().clone();
     assert_eq!(
-        (&spawns[0].0, spawns[0].1.prompt.as_str()),
-        (&AgentRef::main(), "Notes about Q3")
+        closed,
+        [Closed {
+            token: started[0].token.clone(),
+            ending: Ending::Answered,
+            answer: SUB_ANSWER.into(),
+            usd: CALL_USD,
+            model_calls: 1,
+            records: 2,
+        }],
+        "closed after its turn, its two messages kept as its run's records"
     );
-    // The notebook's kinds: offered to the model, and an Agent call naming none gets explore.
+    // The notebook's kinds and model text, offered to the model.
     let agent_schema = tool_schema(&first, "Agent");
     assert_eq!(
         agent_schema["properties"]["subagent_type"]["enum"],
@@ -185,7 +226,6 @@ pub async fn work(gateway: &Arc<Gateway>) {
             .as_str()
             .is_some_and(|d| d.contains(MODEL))
     );
-    assert_eq!(spawns[0].1.subagent_type.as_deref(), Some("explore"));
 
     // Clock: ten paused minutes under a one-minute cap, and the guard never stirred.
     assert!(!doc.guarded());
@@ -213,10 +253,9 @@ pub async fn dream(gateway: &Arc<Gateway>) {
         0,
         config::turn_caps(&s),
     ));
-    let agents = Arc::new(NodeAgents::default());
     let own: Vec<Arc<dyn Tool>> = vec![Arc::new(DreamMaterial)];
-    let tools = run_tools(&s, own, Arc::new(Attachments::new(&[])), agents);
-    let deps = deps(gateway, tools, Arc::new(ShutWorkspace), host);
+    let tools = run_tools(&s, own, Arc::new(Attachments::new(&[])));
+    let deps = deps(gateway, "", tools, Arc::new(ShutWorkspace), host);
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));
     gateway.script([
         reply(
@@ -268,7 +307,7 @@ pub async fn clock(gateway: &Arc<Gateway>) {
         caps,
     ));
     let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(notebook_search())];
-    let deps = deps(gateway, tools, Arc::new(ShutWorkspace), host.clone());
+    let deps = deps(gateway, "", tools, Arc::new(ShutWorkspace), host.clone());
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));
     gateway.script([
         reply(

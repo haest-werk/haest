@@ -1,20 +1,16 @@
 //! The notebook's side of the tool list, faked: what the node answers.
 //!
-//! PLUG POINTS: `ReadIntercept` (Read's `attachment:<id>`), `Tool` (the notebook's own
-//! tools), `AgentDirectory` (subagents run on the node, not in this process).
+//! PLUG POINTS: `ReadIntercept` (Read's `attachment:<id>`), `Tool` (the
+//! notebook's own tools).
 
 use std::{collections::HashMap, sync::Mutex};
 
 use async_trait::async_trait;
 use haest::{
     core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
-    tools::{
-        AgentDirectory, AgentError, AgentRef, ReadIntercept, SpawnInput, SpawnOutcome,
-        read_text_output,
-    },
+    tools::{ReadIntercept, read_text_output},
 };
 use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
 
 /// `attachment:<id>` is no path: the node converts the attachment to Markdown
 /// and Read pages it like a file. Every other path falls through to the fs.
@@ -127,37 +123,5 @@ impl Tool for DreamMaterial {
         Ok(ToolOutput::text(format!(
             "# Conversations since yesterday\n\nAsked for a Q3 summary.\n\n# Your memories now\n\n{DREAM_MEMORY}"
         )))
-    }
-}
-
-/// The notebook's agent hub: each subagent runs on its own node run. The fake answers
-/// for the node and keeps every spawn, `subagent_type` included (see `agent_options`).
-#[derive(Default)]
-pub struct NodeAgents {
-    pub spawns: Mutex<Vec<(AgentRef, SpawnInput)>>,
-}
-
-pub const SUB_ANSWER: &str = "Two related notes: /notebook/notes/plan.md, /notebook/notes/q2.md";
-pub const SUB_COST_USD: f64 = 0.002;
-
-#[async_trait]
-impl AgentDirectory for NodeAgents {
-    async fn spawn(
-        &self,
-        from: &AgentRef,
-        input: SpawnInput,
-        _cancel: CancellationToken,
-    ) -> Result<SpawnOutcome, AgentError> {
-        self.spawns.lock().unwrap().push((from.clone(), input));
-        Ok(SpawnOutcome {
-            text: SUB_ANSWER.into(),
-            cost_usd: SUB_COST_USD,
-        })
-    }
-    fn deliver(&self, _from: &str, to: &str, _text: &str) -> Result<String, AgentError> {
-        Err(AgentError::Refused(format!("\"{to}\" is not running")))
-    }
-    fn stop(&self, _name: &str) -> bool {
-        false
     }
 }

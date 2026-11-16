@@ -10,8 +10,9 @@ use haest_core::{
     provider::Effort,
     tool::{InnerCallEvent, Tool, ToolSource},
 };
+use tokio_util::sync::CancellationToken;
 
-use super::AgentToolOptions;
+use super::{AgentError, AgentToolOptions, InProcessRun, MemberRun, MemberStart};
 use crate::inbox::Inbox;
 
 /// A subagent's life, for the host's transcript (its own card, never the parent's).
@@ -92,4 +93,112 @@ pub trait SubagentParent: Inbox {
     fn on_activity(&self, _ids: &[String]) {}
     /// One subagent's activity, keyed by its id.
     fn on_subagent(&self, _id: &str, _event: SubagentEvent) {}
+    /// A member is about to start, before its loop exists: run it in this
+    /// process as the hub would (the default, [`InProcessRun`]), run it on a
+    /// run of the host's own ([`MemberRun`]: its model, caps, deps, and its
+    /// end), or refuse.
+    ///
+    /// An `Err` is the spawn's refusal, as the model reads it
+    /// ([`AgentError::Refused`] for a reason of the host's own): the member
+    /// never ran, its name is free again and no end follows. Its name already
+    /// counts toward `max_concurrent` while this runs. `cancel` is the caller's
+    /// turn: when it fires, stop whatever the start began and refuse. The hub
+    /// never drops a start half done.
+    ///
+    /// # Examples
+    ///
+    /// A parent that refuses deploys and hears every end.
+    ///
+    /// ```
+    /// use std::sync::{Arc, Mutex};
+    ///
+    /// use async_trait::async_trait;
+    /// use haest_core::{
+    ///     SharedDeps,
+    ///     caps::SubagentCaps,
+    ///     provider::Effort,
+    ///     testing::{ScriptedProvider, text_answer},
+    ///     tool::Tool,
+    ///     workspace::ShutWorkspace,
+    /// };
+    /// use haest_tools::{
+    ///     AgentDirectory, AgentError, AgentRef, Ending, Inbox, MemberEnd, MemberRun, MemberStart,
+    ///     SpawnInput, SubagentHub, SubagentParent,
+    /// };
+    /// use tokio_util::sync::CancellationToken;
+    ///
+    /// struct Parent {
+    ///     provider: Arc<ScriptedProvider>,
+    ///     ended: Arc<Mutex<Vec<(String, Ending)>>>,
+    /// }
+    ///
+    /// struct Logged {
+    ///     name: String,
+    ///     ended: Arc<Mutex<Vec<(String, Ending)>>>,
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl MemberRun for Logged {
+    ///     async fn end(self: Box<Self>, end: MemberEnd) {
+    ///         self.ended.lock().unwrap().push((self.name.clone(), end.ending));
+    ///     }
+    /// }
+    ///
+    /// impl Inbox for Parent {
+    ///     fn submit(&self, _text: String) {}
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl SubagentParent for Parent {
+    ///     fn deps(&self) -> SharedDeps {
+    ///         SharedDeps::new(Arc::new(self.provider.resolver()), "/", Arc::new(ShutWorkspace))
+    ///     }
+    ///     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
+    ///         Vec::new()
+    ///     }
+    ///     async fn system_prompt(&self, _model: &str, _tools: &[Arc<dyn Tool>]) -> String {
+    ///         "You are a helper.".into()
+    ///     }
+    ///     fn default_model(&self) -> (String, Option<Effort>) {
+    ///         ("scripted:m".into(), None)
+    ///     }
+    ///     async fn start_member(
+    ///         &self,
+    ///         start: &MemberStart,
+    ///         _cancel: &CancellationToken,
+    ///     ) -> Result<Box<dyn MemberRun>, AgentError> {
+    ///         if start.input.description.contains("deploy") {
+    ///             return Err(AgentError::Refused("helpers do not deploy".into()));
+    ///         }
+    ///         Ok(Box::new(Logged { name: start.name.clone(), ended: self.ended.clone() }))
+    ///     }
+    /// }
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let ended = Arc::new(Mutex::new(Vec::new()));
+    /// let parent = Parent { provider: ScriptedProvider::new([text_answer("3 files")]), ended: ended.clone() };
+    /// let hub = SubagentHub::new(Arc::new(parent), SubagentCaps::default());
+    /// let ask = |description: &str| SpawnInput {
+    ///     description: description.into(),
+    ///     prompt: "Go.".into(),
+    ///     ..Default::default()
+    /// };
+    ///
+    /// let refused = hub.spawn(&AgentRef::main(), ask("deploy it"), CancellationToken::new()).await;
+    /// assert!(matches!(refused, Err(AgentError::Refused(_))));
+    ///
+    /// let out = hub.spawn(&AgentRef::main(), ask("count files"), CancellationToken::new()).await;
+    /// assert_eq!(out.unwrap().text, "3 files");
+    /// assert_eq!(*ended.lock().unwrap(), [("count-files-2".to_string(), Ending::Answered)]);
+    /// # }
+    /// ```
+    async fn start_member(
+        &self,
+        start: &MemberStart,
+        cancel: &CancellationToken,
+    ) -> Result<Box<dyn MemberRun>, AgentError> {
+        let _ = (start, cancel);
+        Ok(Box::new(InProcessRun))
+    }
 }

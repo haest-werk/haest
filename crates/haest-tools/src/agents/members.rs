@@ -163,6 +163,12 @@ impl Members {
         }
     }
 
+    /// Its start was refused: it never ran, so it leaves the table AND its
+    /// name is free again. Messages that waited for it go with it.
+    pub fn forget(&mut self, name: &str) {
+        self.live.retain(|m| m.me.name != name);
+    }
+
     /// Its turn ended: it leaves the table, its name stays taken.
     pub fn leave(&mut self, name: &str) {
         if let Some(i) = self.live.iter().position(|m| m.me.name == name) {

@@ -11,8 +11,8 @@ use haest_core::tool::Tool;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AgentDirectory, AgentError, AgentRef, MAIN_AGENT, SpawnInput, SpawnOutcome, SubagentCaps,
-    SubagentParent,
+    AgentDirectory, AgentError, AgentRef, MAIN_AGENT, MemberStart, SpawnInput, SpawnOutcome,
+    SubagentCaps, SubagentParent,
     members::{Due, Members, Status, run_id},
     run::Run,
     tools::agent_tools_with,
@@ -31,6 +31,12 @@ mod member_run;
 /// [`subagent_note`](super::subagent_note)) and its own turn caps. It runs one
 /// turn; its final answer is the result.
 ///
+/// - Before its loop exists, the parent's
+///   [`start_member`](SubagentParent::start_member) runs it here (the
+///   default) or on a run of the host's own, or refuses the spawn. That run
+///   ([`MemberRun`](super::MemberRun)) may name the member's model spec, caps and
+///   deps, and its [`end`](super::MemberRun::end) hears how the member ended,
+///   its answer and its spend before the answer goes back.
 /// - A foreground agent stops with the caller's turn; a background one runs
 ///   on, and its answer is steered into the subagent that started it, or
 ///   submitted to the parent's inbox when main started it or its starter has
@@ -194,16 +200,35 @@ impl AgentDirectory for SubagentHub {
             }
         };
         // The parent is asked with the table unlocked: it may call the hub back.
-        let agent = self.build(&run, &input);
+        let (main_spec, effort) = self.parent.default_model();
+        let start = MemberStart {
+            name: run.me.name.clone(),
+            id: run.id.clone(),
+            parent: run.parent.clone(),
+            depth: run.me.depth,
+            model_spec: input.model_spec.clone().unwrap_or(main_spec),
+            caps: self.caps.into(),
+            input,
+        };
+        let member = match self.parent.start_member(&start, &cancel).await {
+            Ok(member) => member,
+            Err(refused) => {
+                self.members.lock().unwrap().forget(&run.me.name);
+                return Err(refused);
+            }
+        };
+        let agent = self.build(&run, &start, effort, member.as_ref());
         let name = run.me.name.clone();
         self.members.lock().unwrap().attach(&name, agent.control());
-        if !input.background {
+        let prompt = start.input.prompt;
+        if !start.input.background {
             return Ok(self
-                .run_member(run, agent, input.prompt, Some(cancel))
+                .run_member(run, agent, member, prompt, Some(cancel))
                 .await);
         }
         let text = format!(
-            "Started agent \"{name}\" in the background. Its answer will arrive as a message; SendMessage reaches it while it runs."
+            "Started agent \"{name}\" ({}) in the background. Its answer will arrive as a message; SendMessage reaches it while it runs.",
+            agent.model_spec()
         );
         let hub = self.arc();
         let due = Due::owe(&self.due);
@@ -211,7 +236,7 @@ impl AgentDirectory for SubagentHub {
             // Dropped last: the answer is handed back before it stops being due.
             let _due = due;
             let parent = run.parent.clone();
-            let out = hub.run_member(run, agent, input.prompt, None).await;
+            let out = hub.run_member(run, agent, member, prompt, None).await;
             hub.hand_back(
                 &parent,
                 format!("[Agent \"{name}\" finished]\n\n{}", out.text),

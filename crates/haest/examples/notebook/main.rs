@@ -20,11 +20,12 @@
 //! | `Clock` (a pause does not count), `TurnCapsSource` | host.rs, `runs::work` + `runs::clock` |
 //! | `LoopEvent::ToolCallStart` (narration taken out of the doc) | doc.rs |
 //! | `SessionSink` + `replay`, no JSONL writer of haest's | host.rs, `runs::work` |
-//! | Agent tools over the host's own `AgentDirectory` | tools.rs |
+//! | haest's `SubagentHub`, each helper on a node run of its own (`SubagentParent::start_member`, `MemberRun`); the notebook's kinds and model text (`AgentToolOptions`) | helpers.rs, `runs::work` |
 
 mod config;
 mod doc;
 mod gateway;
+mod helpers;
 mod host;
 mod notebook_fs;
 mod runs;
@@ -33,21 +34,18 @@ mod tools;
 use std::sync::Arc;
 
 use haest::{
-    AgentDeps, ModelError, ModelResolver, ResolvedModel, Workspace,
+    AgentDeps, ModelError, ModelResolver, ResolvedModel, SharedDeps, Workspace,
     core::provider::parse_model_spec,
     core::tool::Tool,
     providers::{CompatFlavor, CompatOptions, CompatProvider, RetryPolicy},
     settings::{Settings, WordSet},
-    tools::{
-        AgentRef, AgentToolOptions, BashOptions, BuiltinOptions, SubagentTypes, agent_tools_with,
-        builtin_tools_where,
-    },
+    tools::{AgentToolOptions, BashOptions, BuiltinOptions, SubagentTypes, builtin_tools_where},
 };
 
 use crate::{
     gateway::{BASE_URL, Gateway},
     host::NotebookHost,
-    tools::{Attachments, NodeAgents, NotebookSearch},
+    tools::{Attachments, NotebookSearch},
 };
 
 pub const MODEL: &str = "gateway:anthropic/claude-sonnet-5";
@@ -75,10 +73,11 @@ async fn every_plug_point_the_notebook_uses_holds() {
 
 /// `gateway:<model>` -> the OpenAI-compatible adapter over the node's gateway.
 /// The gateway speaks OpenRouter's dialect, but decides routing itself: no
-/// `provider` object goes out (`routing: None`, the default).
-pub fn models(gateway: Arc<Gateway>) -> Arc<dyn ModelResolver> {
-    // The run holds no keys: the gateway adds them.
-    let mut opts = CompatOptions::new("gateway", "");
+/// `provider` object goes out (`routing: None`, the default). `token` is the
+/// node run's own (a helper's), or empty.
+pub fn models(gateway: Arc<Gateway>, token: &str) -> Arc<dyn ModelResolver> {
+    // The run holds no provider keys: the gateway adds them.
+    let mut opts = CompatOptions::new("gateway", token);
     opts.flavor = CompatFlavor::OpenRouter;
     opts.base_url = Some(BASE_URL.into());
     let provider = Arc::new(CompatProvider::new(opts, gateway).with_retry(RetryPolicy::none()));
@@ -100,13 +99,12 @@ pub fn models(gateway: Arc<Gateway>) -> Arc<dyn ModelResolver> {
 
 /// A run's tools as its settings pick them: haest's built-ins (`tools`; Read
 /// with the attachment intercept, Bash with no background jobs, no WebFetch:
-/// the node fetches), the notebook's own (`own`), and the agent tools over the node's
-/// hub (`agents`).
+/// the node fetches) and the notebook's own (`own`). The agent tools come from
+/// the hub, over these (`runs::work`).
 pub fn run_tools(
     s: &Settings,
     own: Vec<Arc<dyn Tool>>,
     attachments: Arc<Attachments>,
-    agents: Arc<NodeAgents>,
 ) -> Vec<Arc<dyn Tool>> {
     let opts = BuiltinOptions {
         read_intercept: Some(attachments),
@@ -122,14 +120,6 @@ pub fn run_tools(
     let mut tools = builtin_tools_where(|w| s.tools.has(w), opts)
         .expect("the notebook's runs pick only built-ins it gives the options for");
     tools.extend(own);
-    if s.agents {
-        tools.extend(agent_tools_with(
-            agents,
-            AgentRef::main(),
-            true,
-            agent_options(),
-        ));
-    }
     tools
 }
 
@@ -156,24 +146,35 @@ pub fn notebook_search() -> NotebookSearch {
     }
 }
 
-/// The deps every run shares; the workspace, tools and host differ per run.
+/// What a run shares with its helpers; the node run's token, the workspace
+/// and host differ per run.
+pub fn shared(
+    gateway: &Arc<Gateway>,
+    token: &str,
+    workspace: Arc<dyn Workspace>,
+    host: Arc<NotebookHost>,
+) -> SharedDeps {
+    let mut shared = SharedDeps::new(models(gateway.clone(), token), CWD, workspace);
+    shared.hooks = host.clone();
+    shared.turn_caps = host.clone();
+    shared.clock = host;
+    shared
+}
+
+/// A run's deps: what it shares ([`shared`]), its tools and the notebook's
+/// system prompt.
 pub fn deps(
     gateway: &Arc<Gateway>,
+    token: &str,
     tools: Vec<Arc<dyn Tool>>,
     workspace: Arc<dyn Workspace>,
     host: Arc<NotebookHost>,
 ) -> AgentDeps {
     let system =
         Arc::new("You work inside a person's notebook, a shared knowledge base.".to_string());
-    let mut deps = AgentDeps::new(
-        models(gateway.clone()),
-        Arc::new(tools),
-        system,
-        CWD,
-        workspace,
-    );
-    deps.shared.hooks = host.clone();
-    deps.shared.turn_caps = host.clone();
-    deps.shared.clock = host;
-    deps
+    AgentDeps {
+        tools: Arc::new(tools),
+        system_prompt: system,
+        shared: shared(gateway, token, workspace, host),
+    }
 }

@@ -21,9 +21,10 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub use super::script::{CALL_USD, Script, call, now, say, spawns};
 use super::{
     super::{
-        AgentRef, AgentToolOptions, SubagentCaps, SubagentEvent, SubagentHub, SubagentParent,
-        SubagentTypes,
+        AgentError, AgentRef, AgentToolOptions, InProcessRun, MemberRun, MemberStart, SubagentCaps,
+        SubagentEvent, SubagentHub, SubagentParent, SubagentTypes,
     },
+    lifecycle::Lifecycle,
     script::Roles,
 };
 use crate::{GlobTool, inbox::Inbox, testkit::TestWorkspace};
@@ -50,7 +51,7 @@ impl Tool for TaskCreate {
     }
 }
 
-struct Quiet;
+pub struct Quiet;
 impl LedgerHooks for Quiet {
     fn persist(&self, _: &LedgerSnapshot) {}
     fn warn(&self, _: &str) {}
@@ -67,6 +68,8 @@ pub struct FakeParent {
     /// The host's kinds of subagent: `explore` (no tools of its own, the
     /// default) and `general` (the base tools); None = no kinds.
     kinds: Option<SubagentTypes>,
+    /// What it does at a member's start; None = haest's default.
+    lifecycle: Option<Arc<Lifecycle>>,
 }
 
 /// The kinds a host with kinds has: `explore` (the default) and `general`.
@@ -128,6 +131,16 @@ impl SubagentParent for FakeParent {
     fn on_activity(&self, running: &[String]) {
         self.activity.lock().unwrap().push(running.len());
     }
+    async fn start_member(
+        &self,
+        start: &MemberStart,
+        _cancel: &tokio_util::sync::CancellationToken,
+    ) -> Result<Box<dyn MemberRun>, AgentError> {
+        match &self.lifecycle {
+            Some(l) => l.start(start, &self.provider, self).await,
+            None => Ok(Box::new(InProcessRun)),
+        }
+    }
     fn on_subagent(&self, id: &str, event: SubagentEvent) {
         let kind = match event {
             SubagentEvent::Started { .. } => "started",
@@ -159,6 +172,26 @@ impl Rig {
         caps: SubagentCaps,
         kinds: Option<SubagentTypes>,
     ) -> Self {
+        Self::build(main, sub, caps, kinds, None)
+    }
+
+    /// A conversation whose host implements the member hooks (`lifecycle`).
+    pub fn with_lifecycle(
+        main: Script,
+        sub: Script,
+        caps: SubagentCaps,
+        lifecycle: Arc<Lifecycle>,
+    ) -> Self {
+        Self::build(main, sub, caps, None, Some(lifecycle))
+    }
+
+    fn build(
+        main: Script,
+        sub: Script,
+        caps: SubagentCaps,
+        kinds: Option<SubagentTypes>,
+        lifecycle: Option<Arc<Lifecycle>>,
+    ) -> Self {
         let provider = Arc::new(Roles {
             main,
             sub,
@@ -178,6 +211,7 @@ impl Rig {
             activity: Mutex::default(),
             events: Mutex::default(),
             kinds,
+            lifecycle,
         });
         let hub = SubagentHub::new(parent.clone(), caps);
         let mut tools = parent.base_tools();

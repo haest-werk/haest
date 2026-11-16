@@ -80,7 +80,10 @@
 //!
 //! The agent tools speak to an [`AgentDirectory`], never to the hub, so a
 //! host with its own idea of a subagent implements that trait and keeps the
-//! tools. [`SubagentHub`] is the default, over a [`SubagentParent`].
+//! tools. [`SubagentHub`] is the default, over a [`SubagentParent`]; a parent
+//! whose members run on runs of its own (its own models, caps, records, and
+//! an end it must close) keeps the hub and implements
+//! [`SubagentParent::start_member`], which hands back a [`MemberRun`].
 //! [`AgentToolOptions`] gives the Agent tool the host's kinds of subagent
 //! (`subagent_type`) and its own `model` text: to [`agent_tools_with`]
 //! directly, or to the hub through [`SubagentParent::agent_tool_options`],
@@ -166,9 +169,9 @@ mod web_fetch;
 pub use haest_http as http;
 
 pub use agents::{
-    AgentDirectory, AgentError, AgentRef, AgentToolOptions, MAIN_AGENT, SpawnInput, SpawnOutcome,
-    SubagentEvent, SubagentHub, SubagentParent, SubagentTypes, agent_tools, agent_tools_with,
-    subagent_note,
+    AgentDirectory, AgentError, AgentRef, AgentToolOptions, Ending, InProcessRun, MAIN_AGENT,
+    MemberCaps, MemberEnd, MemberRun, MemberStart, Spend, SpawnInput, SpawnOutcome, SubagentEvent,
+    SubagentHub, SubagentParent, SubagentTypes, agent_tools, agent_tools_with, subagent_note,
 };
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;
