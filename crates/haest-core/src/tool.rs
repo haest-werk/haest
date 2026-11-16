@@ -31,10 +31,6 @@ use crate::{
 /// A tool call's arguments: a JSON object.
 pub type JsonMap = Map<String, Value>;
 
-/// The built-in tools that work on files by path (haest-tools'). The prompt's
-/// path line and its workspace note go by them; a Code run may always call them.
-pub const FILE_TOOLS: [&str; 5] = ["Read", "Write", "Edit", "Grep", "Glob"];
-
 /// What a tool's run produced.
 ///
 /// The model reads `content` (and sees `media`); everything else is for the

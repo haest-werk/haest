@@ -50,7 +50,7 @@
 //! ```
 
 mod git;
-mod prompt;
+pub(crate) mod prompt;
 #[cfg(test)]
 mod tests;
 

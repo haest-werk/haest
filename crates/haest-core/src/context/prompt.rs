@@ -3,10 +3,13 @@
 //! host appends. An empty section is left out.
 
 use super::InstructionFile;
-use crate::{
-    skills::{Skill, skills_prompt_block},
-    tool::FILE_TOOLS,
-};
+use crate::skills::{Skill, skills_prompt_block};
+
+/// haest's built-in tools (haest-tools') that work on files by path: the
+/// prompt's path line and its workspace note go by them, and haest-code lets
+/// a Code run always call them. The prompt gives advice about haest's own
+/// tools by name; no other tool's name is known here.
+pub const FILE_TOOLS: [&str; 5] = ["Read", "Write", "Edit", "Grep", "Glob"];
 
 /// Everything the system prompt says, gathered by the caller.
 ///

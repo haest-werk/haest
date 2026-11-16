@@ -53,8 +53,9 @@ mod tests;
 use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
-use haest_core::tool::{
-    FILE_TOOLS, JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, opt_num, req_str,
+use haest_core::{
+    __private::FILE_TOOLS,
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, opt_num, req_str},
 };
 use serde_json::{Value, json};
 
