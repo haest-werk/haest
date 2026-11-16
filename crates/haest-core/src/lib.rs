@@ -136,6 +136,7 @@
 //!   in `dev-dependencies` only.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(missing_docs)]
 
 pub mod agent;
 pub mod catalog;

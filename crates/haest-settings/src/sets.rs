@@ -6,10 +6,6 @@
 //! ([`ContextSources`](haest_core::context::ContextSources),
 //! [`SkillSources`](haest_core::skills::SkillSources)).
 
-// haest-core's `word_set!` writes `NONE` and `ALL` without docs; every other
-// item here is documented by hand. Drop this once the macro documents them.
-#![allow(missing_docs)]
-
 haest_core::word_set! {
     /// Which of haest's built-in tools the model gets, one switch per tool.
     ///
