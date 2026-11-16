@@ -25,11 +25,19 @@ impl Default for ReqwestTransport {
 }
 
 impl ReqwestTransport {
+    /// Straight to the server: no proxy, whatever `HTTP(S)_PROXY`, `ALL_PROXY`
+    /// or the OS's network settings say. The environment does not shape a run
+    /// (and a key for an `http://` base URL would reach the proxy in clear); a
+    /// host that wants a proxy hands in its client ([`Self::with_client`]).
     pub fn new() -> Self {
         // reqwest takes the process-wide TLS provider; this installs ring only
         // when the host has not installed one of its own.
         let _ = rustls::crypto::ring::default_provider().install_default();
-        Self::with_client(reqwest::Client::new())
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("an HTTP client with the ring TLS provider builds");
+        Self::with_client(client)
     }
 
     /// Bring a configured client (proxy, root certificates, connection pool).

@@ -61,6 +61,16 @@ gateway.
 `${NAME}` in an `[env]` value or in `.mcp.json` is read from kern's
 environment: see [`${NAME}` in config files](#name-in-config-files).
 
+### Proxy variables: not read for model requests
+
+A model request goes straight to the provider's endpoint, and so does
+WebFetch. For them `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` (in
+either case) and the operating system's proxy settings are not read, so your
+shell never sends a provider key through a proxy. To reach a provider
+through a gateway, point its endpoint override (`ANTHROPIC_BASE_URL`, a
+`providers.json` entry's `baseURL`) at it. A program that embeds kern and
+wants a proxy hands in an HTTP client configured with one.
+
 ## What a process kern starts gets
 
 kern starts a process for real bash (`workspace = real`), each background job
