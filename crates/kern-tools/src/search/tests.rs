@@ -232,6 +232,42 @@ async fn exit_one_alone_is_no_match_but_a_complaint_or_a_missing_rg_is_an_error(
 }
 
 #[tokio::test]
+async fn matches_survive_files_rg_could_not_read_and_the_model_is_told_which() {
+    let partial = ExecResult {
+        stdout: "src/a.ts\n".into(),
+        stderr: "rg: src/locked.ts: Permission denied (os error 13)\n".into(),
+        exit_code: 2,
+        ..Default::default()
+    };
+    let r = grep_with(partial).await.unwrap();
+    assert!(!r.is_error);
+    assert_eq!(r.content.lines().next(), Some("src/a.ts"));
+    assert!(r.content.contains("src/locked.ts"));
+}
+
+#[tokio::test]
+async fn the_real_rg_reports_what_it_found_beside_an_unreadable_file() {
+    use std::os::unix::fs::PermissionsExt;
+    if !has_rg() {
+        eprintln!("rg is not installed: skipping the real-rg grep test");
+        return;
+    }
+    let fx = fixture();
+    let locked = fx.path().join("src/locked.ts");
+    std::fs::write(&locked, "needle\n").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&locked).is_ok() {
+        eprintln!("running as a user who reads mode-000 files: skipping");
+        return;
+    }
+    let r = grep_real(fx.path(), json!({"pattern": "needle", "path": "src"})).await;
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let r = r.unwrap();
+    assert!(r.content.contains("src/a.ts"));
+    assert!(r.content.contains("locked.ts"));
+}
+
+#[tokio::test]
 async fn head_limit_keeps_the_first_lines_and_long_lines_are_clipped() {
     let long = "y".repeat(2000);
     let ws = rg_answering(stdout(&format!("a:1:x\nb:2:x\n\nc:3:{long}\n")));

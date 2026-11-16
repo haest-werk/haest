@@ -216,7 +216,9 @@ impl Tool for GrepTool {
         if r.exit_code == 1 && stderr.is_empty() {
             return Ok(ToolOutput::text("No matches found"));
         }
-        if r.exit_code != 0 {
+        // Exit 2 with output: rg searched what it could and says why the rest failed.
+        let partial = r.exit_code == 2 && !r.stdout.trim().is_empty();
+        if r.exit_code != 0 && !partial {
             let why = if stderr.is_empty() {
                 format!("exit {}", r.exit_code)
             } else {
@@ -224,8 +226,26 @@ impl Tool for GrepTool {
             };
             return Err(ToolError::Input(format!("ripgrep failed: {why}")));
         }
-        Ok(ToolOutput::text(format_matches(&r.stdout, head)))
+        let mut text = format_matches(&r.stdout, head);
+        if partial {
+            text.push_str(&unreadable_note(stderr));
+        }
+        Ok(ToolOutput::text(text))
     }
+}
+
+/// One line on what rg could not read: its first complaint and how many more.
+fn unreadable_note(stderr: &str) -> String {
+    let mut lines = stderr.lines().map(str::trim).filter(|l| !l.is_empty());
+    let first = lines.next().map(|l| clip_line(l, MAX_LINE_CHARS));
+    let more = match lines.count() {
+        0 => String::new(),
+        n => format!(" (+{n} more)"),
+    };
+    format!(
+        "\n[some files could not be read: {}{more}]",
+        first.unwrap_or_default()
+    )
 }
 
 /// Long lines clipped, `head_limit` applied, the whole thing bounded.
