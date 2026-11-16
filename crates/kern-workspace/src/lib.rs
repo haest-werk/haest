@@ -25,3 +25,14 @@ pub use sandbox::{SandboxMounts, SandboxWorkspace};
 /// The bashkit this crate is built on, for a host that implements its own
 /// `bashkit::FileSystem` or reads [`SandboxWorkspace::shell_fs`].
 pub use bashkit;
+
+use kern_core::workspace::{EXIT_NOT_FOUND, ExecResult};
+
+/// What `run` answers for an empty argv, in either workspace.
+fn no_command() -> ExecResult {
+    ExecResult {
+        stderr: "no command given".into(),
+        exit_code: EXIT_NOT_FOUND,
+        ..Default::default()
+    }
+}

@@ -25,7 +25,7 @@ use kern_core::{
     ChildEnv,
     fs::Fs,
     shell_command::ShellCommand,
-    workspace::{ChangeSet, EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
+    workspace::{ChangeSet, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
 
 pub use mounts::SandboxMounts;
@@ -153,11 +153,7 @@ impl Workspace for SandboxWorkspace {
 
     async fn run(&self, argv: &[String], opts: ExecOptions) -> ExecResult {
         if argv.first().is_none_or(String::is_empty) {
-            return ExecResult {
-                stderr: "no command given".into(),
-                exit_code: EXIT_NOT_FOUND,
-                ..Default::default()
-            };
+            return crate::no_command();
         }
         exec::exec(self.shell_world(), RUN_ARGV, argv, opts).await
     }

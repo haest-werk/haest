@@ -84,13 +84,6 @@ fn not_started(program: &str, e: &io::Error) -> ExecResult {
 
 type Sink = Arc<Mutex<Vec<u8>>>;
 
-/// Where a pipe's bytes go: kept for the result, or handed on as text as they arrive.
-#[derive(Clone)]
-pub enum Output {
-    Collect,
-    Stream(OutputChunks),
-}
-
 /// How many bytes at the end of `b` begin a character the next chunk completes.
 fn cut_char(b: &[u8]) -> usize {
     for back in 1..=b.len().min(3) {
@@ -153,13 +146,13 @@ fn take(s: &Sink) -> String {
 }
 
 /// Spawn `program args...` in its own process group, with `env` and nothing
-/// else, and collect its output (or stream it: then the result carries none).
-/// The deadline and the cancel token both kill the group.
+/// else, and collect its output (or hand it to `stream` as it arrives: then the
+/// result carries none). The deadline and the cancel token both kill the group.
 pub async fn spawn_collect(
     program: &Path,
     args: &[String],
     opts: ExecOptions,
-    output: Output,
+    stream: Option<OutputChunks>,
     env: &ChildEnv,
 ) -> ExecResult {
     let shown = program.display().to_string();
@@ -181,10 +174,6 @@ pub async fn spawn_collect(
     };
     let pid = child.id().unwrap_or(0);
     let (out, err): (Sink, Sink) = Default::default();
-    let stream = match output {
-        Output::Collect => None,
-        Output::Stream(on_output) => Some(on_output),
-    };
     let readers = [
         tokio::spawn(drain(
             child.stdout.take().expect("piped"),

@@ -19,7 +19,6 @@ use kern_core::{
 };
 
 pub use exec::kill_group;
-use exec::{Output, which};
 pub use fs::RealFs;
 
 pub struct RealWorkspace {
@@ -38,20 +37,32 @@ impl RealWorkspace {
         Self { fs, env }
     }
 
-    fn not_found(program: &str) -> ExecResult {
-        ExecResult {
-            stderr: format!("{program}: command not found"),
-            exit_code: EXIT_NOT_FOUND,
-            ..Default::default()
+    /// `program args...`, found on the handed env's `PATH`.
+    async fn spawn(
+        &self,
+        program: &str,
+        args: &[String],
+        opts: ExecOptions,
+        stream: Option<OutputChunks>,
+    ) -> ExecResult {
+        match exec::which(program, &opts.cwd, &self.env) {
+            Some(bin) => exec::spawn_collect(&bin, args, opts, stream, &self.env).await,
+            None => ExecResult {
+                stderr: format!("{program}: command not found"),
+                exit_code: EXIT_NOT_FOUND,
+                ..Default::default()
+            },
         }
     }
 
-    async fn bash(&self, command: &str, opts: ExecOptions, output: Output) -> ExecResult {
-        let Some(bash) = which("bash", &opts.cwd, &self.env) else {
-            return Self::not_found("bash");
-        };
+    async fn bash(
+        &self,
+        command: &str,
+        opts: ExecOptions,
+        stream: Option<OutputChunks>,
+    ) -> ExecResult {
         let args = ["-c".to_string(), command.to_string()];
-        exec::spawn_collect(&bash, &args, opts, output, &self.env).await
+        self.spawn("bash", &args, opts, stream).await
     }
 }
 
@@ -66,7 +77,7 @@ impl Workspace for RealWorkspace {
     }
 
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
-        self.bash(command, opts, Output::Collect).await
+        self.bash(command, opts, None).await
     }
 
     /// The output streams straight from the pipes, nothing is kept: a
@@ -77,20 +88,13 @@ impl Workspace for RealWorkspace {
         opts: ExecOptions,
         on_output: OutputChunks,
     ) -> ExecResult {
-        self.bash(command, opts, Output::Stream(on_output)).await
+        self.bash(command, opts, Some(on_output)).await
     }
 
     async fn run(&self, argv: &[String], opts: ExecOptions) -> ExecResult {
-        let Some((program, args)) = argv.split_first() else {
-            return ExecResult {
-                stderr: "no command given".into(),
-                exit_code: EXIT_NOT_FOUND,
-                ..Default::default()
-            };
-        };
-        match which(program, &opts.cwd, &self.env) {
-            Some(bin) => exec::spawn_collect(&bin, args, opts, Output::Collect, &self.env).await,
-            None => Self::not_found(program),
+        match argv.split_first() {
+            Some((program, args)) => self.spawn(program, args, opts, None).await,
+            None => crate::no_command(),
         }
     }
 
