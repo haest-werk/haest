@@ -18,6 +18,8 @@ mod value;
 use regex::Regex;
 
 pub use agg::AggFn;
+#[cfg(test)]
+pub(super) use parse::{MAX_DEPTH, MAX_NESTING};
 pub use parse::{compile, compile_aggs};
 pub use value::{Value, parse_num};
 

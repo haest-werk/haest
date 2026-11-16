@@ -16,6 +16,27 @@ pub struct AggSlot {
     pub arg: Option<Expr>,
 }
 
+// Parsing, [`Expr::eval`] and dropping an expression all recurse on the
+// caller's stack (a tokio worker's, 2 MiB, in a host), so an expression past
+// these is refused, never a stack overflow that aborts the process. Two caps,
+// as the two recursions cost: a level of the parser takes 5-8 KB of stack in a
+// debug build, a level of the tree about 1 KB.
+
+/// How deep the parser may recurse: each `(`, `!`, `-`, `not`, call and
+/// operand of `**` nests one level.
+pub const MAX_NESTING: usize = 128;
+
+/// How deep the tree may be: those, and one level per operator of a chain
+/// (`a or b or c` is two deep, with no recursion in the parser). A list of 500
+/// `or`s fits.
+pub const MAX_DEPTH: usize = 512;
+
+fn too_deep(cap: usize) -> String {
+    format!(
+        "the expression nests more than {cap} deep; split it up, or match a long list of values with x =~ \"^(a|b|c)$\""
+    )
+}
+
 struct Parser<'a> {
     toks: Vec<(Tok, usize)>,
     pos: usize,
@@ -23,12 +44,25 @@ struct Parser<'a> {
     /// Some: a groupby's list, where the aggregations live.
     aggs: Option<Vec<AggSlot>>,
     in_agg: bool,
+    /// How many `expr` calls are open: the parser's own recursion.
+    nesting: usize,
+}
+
+/// An expression and how deep its tree is (a leaf is 1).
+type Parsed = Result<(Expr, usize), String>;
+
+/// The depth of a node over children `below` deep, if it is not too deep.
+fn deeper(below: usize) -> Result<usize, String> {
+    if below >= MAX_DEPTH {
+        return Err(too_deep(MAX_DEPTH));
+    }
+    Ok(below + 1)
 }
 
 /// A filter's expression, columns bound to `headers`.
 pub fn compile(src: &str, headers: &[String]) -> Result<Expr, String> {
     let mut p = Parser::new(src, headers, false)?;
-    let e = p.expr(0)?;
+    let (e, _) = p.expr(0)?;
     p.expect_end()?;
     Ok(e)
 }
@@ -45,7 +79,7 @@ pub fn compile_aggs(src: &str, headers: &[String]) -> Result<Aggs, String> {
     loop {
         let start = p.at();
         let before = p.aggs.as_ref().map_or(0, Vec::len);
-        let e = p.expr(0)?;
+        let (e, _) = p.expr(0)?;
         let end = p.at();
         if p.aggs.as_ref().map_or(0, Vec::len) == before {
             return Err(format!(
@@ -88,6 +122,7 @@ impl<'a> Parser<'a> {
             headers,
             aggs: aggs.then(Vec::new),
             in_agg: false,
+            nesting: 0,
         })
     }
 
@@ -118,8 +153,19 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expr(&mut self, min: u8) -> Result<Expr, String> {
-        let mut left = self.prefix()?;
+    fn expr(&mut self, min: u8) -> Parsed {
+        // Checked on the way in: `((((` never returns until the innermost does.
+        if self.nesting >= MAX_NESTING {
+            return Err(too_deep(MAX_NESTING));
+        }
+        self.nesting += 1;
+        let e = self.climb(min);
+        self.nesting -= 1;
+        e
+    }
+
+    fn climb(&mut self, min: u8) -> Parsed {
+        let (mut left, mut depth) = self.prefix()?;
         loop {
             // `x =~ "re"` / `x !~ "re"`: the pattern is compiled once.
             if let Tok::Op(op @ ("=~" | "!~")) = self.peek() {
@@ -129,6 +175,7 @@ impl<'a> Parser<'a> {
                 let negate = *op == "!~";
                 self.pos += 1;
                 let re = self.pattern()?;
+                depth = deeper(depth)?;
                 left = Expr::Match(Box::new(left), re, negate);
                 continue;
             }
@@ -140,10 +187,19 @@ impl<'a> Parser<'a> {
             }
             self.pos += 1;
             // `**` binds to the right; everything else to the left.
-            let right = self.expr(if op == Bin::Pow { bp } else { bp + 1 })?;
+            let (right, below) = self.expr(if op == Bin::Pow { bp } else { bp + 1 })?;
+            // A chain (`a or b or c`) builds a deeper tree with no recursion here.
+            depth = deeper(depth.max(below))?;
             left = Expr::Bin(op, Box::new(left), Box::new(right));
         }
-        Ok(left)
+        Ok((left, depth))
+    }
+
+    /// `wrap` over the operand of a prefix operator.
+    fn unary(&mut self, wrap: fn(Box<Expr>) -> Expr) -> Parsed {
+        let (e, below) = self.expr(UNARY)?;
+        let depth = deeper(below)?;
+        Ok((wrap(Box::new(e)), depth))
     }
 
     fn pattern(&mut self) -> Result<Regex, String> {
@@ -156,12 +212,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn prefix(&mut self) -> Result<Expr, String> {
+    fn prefix(&mut self) -> Parsed {
+        let leaf = |e| Ok((e, 1));
         match self.next() {
-            Tok::Num(n) => Ok(Expr::Lit(Value::Num(n))),
-            Tok::Str(s) => Ok(Expr::Lit(Value::Str(s))),
-            Tok::Op("-") => Ok(Expr::Neg(Box::new(self.expr(UNARY)?))),
-            Tok::Op("!") => Ok(Expr::Not(Box::new(self.expr(UNARY)?))),
+            Tok::Num(n) => leaf(Expr::Lit(Value::Num(n))),
+            Tok::Str(s) => leaf(Expr::Lit(Value::Str(s))),
+            Tok::Op("-") => self.unary(Expr::Neg),
+            Tok::Op("!") => self.unary(Expr::Not),
             Tok::LParen => {
                 let e = self.expr(0)?;
                 match self.next() {
@@ -174,11 +231,11 @@ impl<'a> Parser<'a> {
                 self.call(&w)
             }
             Tok::Ident(w) => match w.as_str() {
-                "true" => Ok(Expr::Lit(Value::Bool(true))),
-                "false" => Ok(Expr::Lit(Value::Bool(false))),
-                "null" => Ok(Expr::Lit(Value::Null)),
-                "not" => Ok(Expr::Not(Box::new(self.expr(UNARY)?))),
-                _ => self.column(&w),
+                "true" => leaf(Expr::Lit(Value::Bool(true))),
+                "false" => leaf(Expr::Lit(Value::Bool(false))),
+                "null" => leaf(Expr::Lit(Value::Null)),
+                "not" => self.unary(Expr::Not),
+                _ => leaf(self.column(&w)?),
             },
             t => Err(format!("expected a value, got {}", describe(&t))),
         }
@@ -200,18 +257,21 @@ impl<'a> Parser<'a> {
             })
     }
 
-    /// The arguments up to `)`.
-    fn args(&mut self) -> Result<Vec<Expr>, String> {
+    /// The arguments up to `)`, and the depth of the deepest (0: none).
+    fn args(&mut self) -> Result<(Vec<Expr>, usize), String> {
         let mut args = Vec::new();
+        let mut depth = 0;
         if self.peek() == &Tok::RParen {
             self.pos += 1;
-            return Ok(args);
+            return Ok((args, depth));
         }
         loop {
-            args.push(self.expr(0)?);
+            let (arg, below) = self.expr(0)?;
+            args.push(arg);
+            depth = depth.max(below);
             match self.next() {
                 Tok::Comma => continue,
-                Tok::RParen => return Ok(args),
+                Tok::RParen => return Ok((args, depth)),
                 t => {
                     return Err(format!(
                         "expected `,` or `)` in a call, got {}",
@@ -222,9 +282,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn call(&mut self, name: &str) -> Result<Expr, String> {
+    fn call(&mut self, name: &str) -> Parsed {
         if name == "col" {
-            let arg = self.args()?;
+            let (arg, _) = self.args()?;
             let i = match arg.as_slice() {
                 [Expr::Lit(Value::Str(n))] => resolve_name(self.headers, n),
                 [Expr::Lit(Value::Num(n))] if n.fract() == 0.0 && *n >= 0.0 => {
@@ -235,7 +295,7 @@ impl<'a> Parser<'a> {
             if self.aggs.is_some() && !self.in_agg {
                 return Err("a column is outside an aggregation: group by it, or aggregate it (first(col(...)))".into());
             }
-            return i.map(Expr::Col).ok_or_else(|| {
+            return i.map(|i| (Expr::Col(i), 1)).ok_or_else(|| {
                 format!(
                     "no such column in col(); the columns are {}",
                     column_list(self.headers)
@@ -243,7 +303,7 @@ impl<'a> Parser<'a> {
             });
         }
         if name == "match" {
-            let subject = self.expr(0)?;
+            let (subject, below) = self.expr(0)?;
             if self.next() != Tok::Comma {
                 return Err("match(x, \"pattern\") takes two arguments".into());
             }
@@ -251,7 +311,8 @@ impl<'a> Parser<'a> {
             if self.next() != Tok::RParen {
                 return Err("match(x, \"pattern\") takes two arguments".into());
             }
-            return Ok(Expr::Match(Box::new(subject), re, false));
+            let depth = deeper(below)?;
+            return Ok((Expr::Match(Box::new(subject), re, false), depth));
         }
         if self.aggs.is_some()
             && let Some(func) = AggFn::named(name)
@@ -262,7 +323,8 @@ impl<'a> Parser<'a> {
             self.in_agg = true;
             let args = self.args();
             self.in_agg = false;
-            let mut args = args?;
+            // Its argument is a tree of its own, in the slot; here it is a leaf.
+            let (mut args, _) = args?;
             let arg = match (func, args.len()) {
                 (AggFn::Count, 0) => None,
                 (_, 1) => args.pop(),
@@ -275,7 +337,7 @@ impl<'a> Parser<'a> {
             };
             let slots = self.aggs.as_mut().expect("in a groupby");
             slots.push(AggSlot { func, arg });
-            return Ok(Expr::Agg(slots.len() - 1));
+            return Ok((Expr::Agg(slots.len() - 1), 1));
         }
         let Some(func) = Func::named(name) else {
             let hint = if AggFn::named(name).is_some() {
@@ -285,12 +347,13 @@ impl<'a> Parser<'a> {
             };
             return Err(format!("unknown function {name}(){hint}"));
         };
-        let args = self.args()?;
+        let (args, below) = self.args()?;
         let (least, most) = func.arity();
         if args.len() < least || args.len() > most {
             return Err(format!("{name}() takes {}", arity_text(least, most)));
         }
-        Ok(Expr::Call(func, args))
+        let depth = deeper(below)?;
+        Ok((Expr::Call(func, args), depth))
     }
 }
 

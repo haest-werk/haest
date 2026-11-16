@@ -13,6 +13,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::Xan;
 
+mod limits;
+
 const SALES: &str = "\
 region,product,amount,status,note
 north,apple,120,paid,
