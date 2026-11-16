@@ -4,19 +4,18 @@
 mod common;
 
 use std::{
-    path::Path,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use async_trait::async_trait;
-use common::{opts, tempdir};
+use common::{opts, sandbox, tempdir};
 use kern_core::{
     ChildEnv,
     shell_command::{ShellCall, ShellCommand},
     workspace::{ExecResult, Workspace},
 };
-use kern_workspace::{SandboxMounts, SandboxWorkspace};
+use kern_workspace::SandboxWorkspace;
 
 /// Writes its args and stdin to `seen.txt` through kern's fs, prints the stdin
 /// upper-cased, and exits with the code in `$EXIT_WITH`.
@@ -60,12 +59,6 @@ impl ShellCommand for Quiet {
     async fn run(&self, _call: ShellCall) -> ExecResult {
         ExecResult::default()
     }
-}
-
-async fn sandbox(dir: &Path) -> SandboxWorkspace {
-    SandboxWorkspace::open(SandboxMounts::new(dir))
-        .await
-        .unwrap()
 }
 
 #[tokio::test]

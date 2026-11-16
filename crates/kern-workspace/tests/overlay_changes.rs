@@ -5,7 +5,7 @@ mod common;
 
 use std::{fs, path::Path, sync::Arc};
 
-use common::{opts, tempdir};
+use common::{opts, sandbox, tempdir};
 use kern_core::workspace::{ApplyReport, Change, ChangeKind, ChangeSet, Workspace};
 use kern_workspace::{SandboxMounts, SandboxWorkspace};
 
@@ -15,12 +15,6 @@ fn project() -> (tempfile::TempDir, std::path::PathBuf) {
     fs::write(dir.join("edit.txt"), "old line\n").unwrap();
     fs::write(dir.join("gone.txt"), "bye\n").unwrap();
     (t, dir)
-}
-
-async fn sandbox(dir: &Path) -> SandboxWorkspace {
-    SandboxWorkspace::open(SandboxMounts::new(dir))
-        .await
-        .unwrap()
 }
 
 fn changes(ws: &SandboxWorkspace) -> Arc<dyn ChangeSet> {

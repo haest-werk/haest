@@ -9,18 +9,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::{argv, opts, tempdir};
+use common::{argv, opts, sandbox, tempdir};
 use kern_core::{
     fs::{Fs, MemFs},
     workspace::{EXIT_NOT_FOUND, Workspace, WorkspaceMode},
 };
 use kern_workspace::{SandboxMounts, SandboxWorkspace};
-
-async fn sandbox(dir: &Path) -> SandboxWorkspace {
-    SandboxWorkspace::open(SandboxMounts::new(dir))
-        .await
-        .unwrap()
-}
 
 #[tokio::test]
 async fn a_file_the_tools_write_is_what_cat_prints_and_the_other_way_round() {

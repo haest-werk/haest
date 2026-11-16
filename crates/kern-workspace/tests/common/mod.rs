@@ -37,3 +37,11 @@ pub fn host_env() -> kern_core::ChildEnv {
 pub fn real() -> kern_workspace::RealWorkspace {
     kern_workspace::RealWorkspace::new(host_env())
 }
+
+/// The default sandbox over `dir`.
+pub async fn sandbox(dir: &Path) -> kern_workspace::SandboxWorkspace {
+    let mounts = kern_workspace::SandboxMounts::new(dir);
+    kern_workspace::SandboxWorkspace::open(mounts)
+        .await
+        .unwrap()
+}
