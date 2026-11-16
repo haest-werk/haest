@@ -51,11 +51,11 @@ there. The rest is opt-in:
 | `runtime` | `haest::runtime` (the conversation built from what it is handed) and everything above but `config` | no |
 
 ```toml
-haest = "0.1"
+haest = "0.2"
 # the whole conversation with haest's own files, variables and flags (the CLI's way)
-haest = { version = "0.1", features = ["runtime", "config"] }
+haest = { version = "0.2", features = ["runtime", "config"] }
 # a host with its own transport, files and tools (the brain example)
-haest = { version = "0.1", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
+haest = { version = "0.2", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
 
 ## Run the CLI

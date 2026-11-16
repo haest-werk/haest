@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "haest"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -942,7 +942,7 @@ dependencies = [
 
 [[package]]
 name = "haest-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -957,7 +957,7 @@ dependencies = [
 
 [[package]]
 name = "haest-code"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -976,7 +976,7 @@ dependencies = [
 
 [[package]]
 name = "haest-config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "haest-core",
  "haest-mcp",
@@ -988,7 +988,7 @@ dependencies = [
 
 [[package]]
 name = "haest-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1003,7 +1003,7 @@ dependencies = [
 
 [[package]]
 name = "haest-issues"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "haest-core",
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "haest-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "haest-mods"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "haest-core",
@@ -1052,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "haest-providers"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1070,7 +1070,7 @@ dependencies = [
 
 [[package]]
 name = "haest-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1091,14 +1091,14 @@ dependencies = [
 
 [[package]]
 name = "haest-settings"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "haest-core",
 ]
 
 [[package]]
 name = "haest-tools"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1121,7 +1121,7 @@ dependencies = [
 
 [[package]]
 name = "haest-ts"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "swc_common",
@@ -1130,7 +1130,7 @@ dependencies = [
 
 [[package]]
 name = "haest-workspace"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "bashkit",
