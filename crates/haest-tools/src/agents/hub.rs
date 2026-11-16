@@ -11,7 +11,7 @@ use haest_core::tool::Tool;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AgentDirectory, AgentError, AgentRef, AgentToolOptions, MAIN_AGENT, MemberStart, SpawnInput,
+    AgentDirectory, AgentError, AgentRef, AgentToolOptions, MemberStart, Sender, SpawnInput,
     SpawnOutcome, SubagentCaps, SubagentParent, budget,
     members::{Due, Members, Status, run_id},
     run::Run,
@@ -19,6 +19,10 @@ use super::{
 };
 
 mod member_run;
+mod post;
+mod settle;
+
+use settle::{Open, Work};
 
 /// Every subagent of one conversation, run in this process: the default
 /// [`AgentDirectory`].
@@ -39,11 +43,14 @@ mod member_run;
 ///   its answer and its spend before the answer goes back.
 /// - A foreground agent stops with the caller's turn; a background one runs
 ///   on, and its answer is steered into the subagent that started it, or
-///   submitted to the parent's inbox when main started it or its starter has
-///   finished. [`answers_due`](Self::answers_due) counts the ones on their way.
-/// - A message ([`deliver`](AgentDirectory::deliver)) lands at the receiver's
-///   next step; one for "main" goes to the parent's inbox. Messages that reach an
-///   agent after it finished are appended to its answer, unread.
+///   handed to the parent's [`submit_answer`](crate::Inbox::submit_answer)
+///   when main started it or its starter has finished.
+///   [`answers_due`](Self::answers_due) counts the ones on their way;
+///   [`settled`](Self::settled) waits until nothing is in flight.
+/// - A message ([`deliver`](AgentDirectory::deliver), or the person's through
+///   [`deliver_as`](Self::deliver_as)) lands at the receiver's next step; one
+///   for "main" goes to the parent's inbox. Messages that reach an agent after
+///   it finished are appended to its answer, unread.
 /// - A finished agent's name stays taken, so a message for it is refused, never
 ///   delivered to a newcomer.
 /// - A crash inside a subagent comes back as its answer, never as a panic.
@@ -125,6 +132,8 @@ pub struct SubagentHub {
     members: Mutex<Members>,
     /// Background agents whose answer has not been handed back yet.
     due: Arc<AtomicUsize>,
+    /// Spawns in flight, for [`Self::idle`] and [`Self::settled`].
+    work: Arc<Work>,
     this: Weak<SubagentHub>,
 }
 
@@ -137,14 +146,16 @@ impl SubagentHub {
             run_id: run_id(),
             members: Mutex::default(),
             due: Arc::default(),
+            work: Arc::default(),
             this: this.clone(),
         })
     }
 
     /// Background agents whose answer has not reached its reader yet: running,
     /// or finishing. A host that waits for background work (a one-shot run
-    /// before it exits) waits on this, never on [`Self::running`]: an agent
-    /// leaves the running set BEFORE its answer is handed back.
+    /// before it exits) waits on this or [`Self::settled`], never on
+    /// [`Self::running`]: an agent leaves the running set BEFORE its answer is
+    /// handed back.
     pub fn answers_due(&self) -> usize {
         self.due.load(Ordering::SeqCst)
     }
@@ -192,6 +203,8 @@ impl AgentDirectory for SubagentHub {
         input: SpawnInput,
         cancel: CancellationToken,
     ) -> Result<SpawnOutcome, AgentError> {
+        // In flight until its answer is back, however it ends (refused too).
+        let open = Open::begin(&self.work);
         // A budget only tightens, whoever built the input; its USD is held
         // first, released when the member ends (or never starts).
         let budget = (input.budget).map(|b| budget::clamp(b, &self.budget_caps()));
@@ -244,7 +257,9 @@ impl AgentDirectory for SubagentHub {
         let hub = self.arc();
         let due = Due::owe(&self.due);
         tokio::spawn(async move {
-            // Dropped last: the answer is handed back before it stops being due.
+            // Dropped last: the answer is handed back before it stops being
+            // due, and the hub is idle only after that.
+            let _open = open;
             let _due = due;
             let parent = run.parent.clone();
             let out = hub.run_member(run, agent, member, prompt, None).await;
@@ -262,24 +277,7 @@ impl AgentDirectory for SubagentHub {
     }
 
     fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError> {
-        let body = format!("[Message from agent \"{from}\"]\n\n{text}");
-        if to == MAIN_AGENT {
-            self.parent.submit(body);
-            return Ok("Delivered to main.".into());
-        }
-        let mut members = self.members.lock().unwrap();
-        if let Some(m) = members.get_mut(to).filter(|m| m.status == Status::Running) {
-            m.steer(body);
-            return Ok(format!(
-                "Delivered to \"{to}\"; it reads it at its next step."
-            ));
-        }
-        let (name, running) = (to.to_string(), members.reachable());
-        Err(if members.known(to) {
-            AgentError::Finished { name, running }
-        } else {
-            AgentError::UnknownAgent { name, running }
-        })
+        self.deliver_as(Sender::Agent(from.to_string()), to, text)
     }
 
     fn stop(&self, name: &str) -> bool {

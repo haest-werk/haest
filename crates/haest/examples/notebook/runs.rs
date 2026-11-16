@@ -59,6 +59,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         workspace: workspace.clone(),
         host: host.clone(),
         node: node.clone(),
+        panel: Arc::default(),
     });
     let hub = SubagentHub::new(helpers, tree_caps());
     let mut tools = base;

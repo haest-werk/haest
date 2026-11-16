@@ -1,9 +1,12 @@
 //! The notebook's helpers on haest's own hub: each one runs on a node run of
 //! its own (its token, the model the node resolved, the node's caps), keeps
 //! its messages as that run's records, and the node closes the run when it
-//! ends.
+//! ends. The panel hears every message, main hears a message at once and an
+//! answer when every helper is done, and every helper reads the notebook's
+//! own note.
 //!
-//! PLUG POINTS: `SubagentParent` (with `start_member`), `MemberRun`, and the
+//! PLUG POINTS: `SubagentParent` (with `start_member`, `subagent_note`,
+//! `on_subagent`), `Inbox` (`submit`, `submit_answer`), `MemberRun`, and the
 //! `SubagentHub` over them; `AgentToolOptions` (the notebook's kinds, its
 //! model text).
 
@@ -17,8 +20,8 @@ use haest::{
     Effort, SharedDeps, Workspace,
     core::{caps::SubagentCaps, tool::Tool},
     tools::{
-        AgentError, AgentToolOptions, Ending, Inbox, MemberCaps, MemberEnd, MemberRun,
-        MemberStart, SubagentParent,
+        AgentError, AgentToolOptions, Ending, Inbox, MemberCaps, MemberEnd, MemberRun, MemberStart,
+        Sender, SubagentEvent, SubagentParent,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -80,6 +83,32 @@ pub struct Node {
     pub closed: Mutex<Vec<Closed>>,
 }
 
+/// A message to a helper or main, for the panel.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AgentMessage {
+    pub from: String,
+    pub to: String,
+    pub text: String,
+    /// The person wrote it, not an agent.
+    pub person: bool,
+}
+
+/// What reaches main, and how.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForMain {
+    /// Main hears it at once.
+    Message(String),
+    /// A helper's answer, held until every helper is done.
+    Answer(String),
+}
+
+/// What the panel sees of the run's helpers.
+#[derive(Default)]
+pub struct Panel {
+    pub messages: Mutex<Vec<AgentMessage>>,
+    pub main: Mutex<Vec<ForMain>>,
+}
+
 /// The run's side of haest's hub.
 pub struct NodeHelpers {
     pub gateway: Arc<Gateway>,
@@ -89,12 +118,38 @@ pub struct NodeHelpers {
     /// The run's own host: its clock, records and caps.
     pub host: Arc<NotebookHost>,
     pub node: Arc<Node>,
+    pub panel: Arc<Panel>,
 }
 
 impl Inbox for NodeHelpers {
-    /// What reaches main after its turn: the notebook steers main, or holds it
-    /// for main's next turn. Not reached here: the helper runs in the foreground.
-    fn submit(&self, _text: String) {}
+    /// A message for main (SendMessage, the person): main hears it now.
+    fn submit(&self, text: String) {
+        self.panel.main.lock().unwrap().push(ForMain::Message(text));
+    }
+    /// A background helper's answer: held for main's next turn.
+    fn submit_answer(&self, text: String) {
+        self.panel.main.lock().unwrap().push(ForMain::Answer(text));
+    }
+}
+
+/// The notebook's own note: it names the person, and tells an explore helper
+/// it only reads.
+fn notebook_note(m: &MemberStart) -> String {
+    let reads = if m.input.subagent_type.as_deref() == Some("explore") {
+        "\n\nYou only read and search: you have no tools that change files. Report what you found, with paths, so the agent that started you can act on it."
+    } else {
+        ""
+    };
+    format!(
+        "# You are a sub-agent\n\nYou are agent \"{}\", started by \"{}\" for: {}\n\nDo the task, then end your turn with your COMPLETE answer: your final message is returned to \"{}\" verbatim, and nobody else reads your transcript. Nobody will answer questions: if something is ambiguous, take the sensible reading and say which one you took.\n\nYour caps: ${}, {} model calls, {} seconds. Messages from other agents (or from the person) arrive as user messages starting with [Message from ...]; reach a running agent (or \"main\", the agent that talks with the person) with SendMessage.{reads}",
+        m.name,
+        m.parent,
+        m.input.description,
+        m.parent,
+        m.caps.usd,
+        m.caps.steps,
+        m.caps.time.as_secs()
+    )
 }
 
 #[async_trait]
@@ -129,6 +184,27 @@ impl SubagentParent for NodeHelpers {
             .iter()
             .filter(|t| all || EXPLORE.contains(&t.name()));
         tools.cloned().collect()
+    }
+    fn subagent_note(&self, member: &MemberStart) -> String {
+        notebook_note(member)
+    }
+    /// The run's events: here only the panel's messages.
+    fn on_subagent(&self, _id: &str, event: SubagentEvent) {
+        let SubagentEvent::Message { from, to, text } = event else {
+            return;
+        };
+        let (from, person) = match from {
+            Sender::Agent(name) => (name, false),
+            Sender::Person(name) => (name, true),
+            _ => return,
+        };
+        let message = AgentMessage {
+            from,
+            to,
+            text,
+            person,
+        };
+        self.panel.messages.lock().unwrap().push(message);
     }
 
     /// The node starts the helper's run, or says why not.

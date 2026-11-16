@@ -21,6 +21,7 @@
 //! | `LoopEvent::ToolCallStart` (narration taken out of the doc) | doc.rs |
 //! | `SessionSink` + `replay`, no JSONL writer of haest's | host.rs, `runs::work` |
 //! | haest's `SubagentHub`, each helper on a node run of its own (`SubagentParent::start_member`, `MemberRun`); the notebook's kinds and model text (`AgentToolOptions`) | helpers.rs, `runs::work` |
+//! | the person writing to a running helper (`SubagentHub::deliver_as`, `Sender::Person`), the panel's messages (`SubagentEvent::Message`), answers held for main (`Inbox::submit_answer`), waiting for the helpers (`SubagentHub::settled`), the notebook's own note (`SubagentParent::subagent_note`) | helpers.rs, panel.rs |
 
 mod config;
 mod doc;
@@ -28,6 +29,7 @@ mod gateway;
 mod helpers;
 mod host;
 mod notebook_fs;
+mod panel;
 mod runs;
 mod tools;
 
@@ -64,6 +66,7 @@ async fn every_run() {
     runs::work(&gateway).await;
     runs::dream(&gateway).await;
     runs::clock(&gateway).await;
+    panel::panel(&gateway).await;
 }
 
 #[tokio::test]
@@ -134,7 +137,7 @@ pub fn agent_options() -> AgentToolOptions {
         model_description: Some(format!(
             "The model to run it on (optional; defaults to yours): {MODEL}"
         )),
-        // The hub offers a budget from its own caps (subagent_budgets); brain's are off.
+        // The hub offers a budget from its own caps (subagent_budgets); the notebook's are off.
         budget_caps: None,
     }
 }

@@ -8,15 +8,26 @@ use std::{collections::VecDeque, sync::Mutex};
 
 use haest::http::{Body, Bytes, HttpClient, HttpError, Request, Response, async_trait};
 use serde_json::{Value, json};
+use tokio_util::sync::CancellationToken;
 
 /// Where the gateway listens, as the provider's base URL. The client sends
 /// the path over the socket; the host part means nothing.
 pub const BASE_URL: &str = "http://files.sock/agent/llm/v1";
 
+/// A slow model call: `arrived` fires when it reaches the gateway, which
+/// answers it once `release` fires.
+#[derive(Clone, Default)]
+pub struct Held {
+    pub arrived: CancellationToken,
+    pub release: CancellationToken,
+}
+
 #[derive(Default)]
 pub struct Gateway {
     replies: Mutex<VecDeque<String>>,
     requests: Mutex<Vec<Request>>,
+    /// The next request with this authorization waits (`Gateway::hold`).
+    held: Mutex<Option<(String, Held)>>,
 }
 
 impl Gateway {
@@ -29,12 +40,30 @@ impl Gateway {
     pub fn take_requests(&self) -> Vec<Request> {
         std::mem::take(&mut *self.requests.lock().unwrap())
     }
+
+    /// The next call that carries `authorization` waits for its release.
+    pub fn hold(&self, authorization: &str) -> Held {
+        let held = Held::default();
+        *self.held.lock().unwrap() = Some((authorization.into(), held.clone()));
+        held
+    }
 }
 
 #[async_trait]
 impl HttpClient for Gateway {
     async fn send(&self, req: Request) -> Result<Response, HttpError> {
+        let held = {
+            let mut held = self.held.lock().unwrap();
+            let mine = held
+                .as_ref()
+                .is_some_and(|(auth, _)| req.header("authorization") == Some(auth.as_str()));
+            if mine { held.take() } else { None }
+        };
         self.requests.lock().unwrap().push(req);
+        if let Some((_, held)) = held {
+            held.arrived.cancel();
+            held.release.cancelled().await;
+        }
         let Some(body) = self.replies.lock().unwrap().pop_front() else {
             return Err(HttpError::Request("gateway: no scripted reply left".into()));
         };

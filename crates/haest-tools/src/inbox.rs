@@ -13,13 +13,22 @@ use tokio::sync::mpsc::UnboundedSender;
 /// Where the tools leave a turn the human did not start, for the host to run.
 ///
 /// Used by [`JobHub`](crate::JobHub) (a job that exited on its own) and the
-/// default [`SubagentHub`](crate::SubagentHub) (a message for main, a late
-/// background answer). An `UnboundedSender<String>` is one: the host drains
-/// the receiver.
+/// default [`SubagentHub`](crate::SubagentHub) (a message for main, a
+/// background answer for main). An `UnboundedSender<String>` is one: the host
+/// drains the receiver.
 pub trait Inbox: Send + Sync {
-    /// Leave `text`, the whole user message of a turn to run. It should return
-    /// at once: it is called from inside a tool call or a job's task.
+    /// Leave `text`, the whole user message of a turn to run: a message for
+    /// main (SendMessage, the person), a job that exited. It should return at
+    /// once: it is called from inside a tool call or a job's task.
     fn submit(&self, text: String);
+    /// Leave a background subagent's answer for main: main started it, or its
+    /// starter finished first. A host that holds answers until every subagent
+    /// is done (one turn for all of them, not one per answer) while a message
+    /// goes through at once tells the two apart here. Default:
+    /// [`submit`](Self::submit).
+    fn submit_answer(&self, text: String) {
+        self.submit(text);
+    }
 }
 
 /// The queue form: the host drains the receiving end. A closed receiver drops
@@ -36,4 +45,20 @@ pub struct NoInbox;
 
 impl Inbox for NoInbox {
     fn submit(&self, _text: String) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc::unbounded_channel;
+
+    use super::Inbox;
+
+    #[test]
+    fn an_inbox_that_only_submits_gets_answers_through_submit() {
+        let (tx, mut rx) = unbounded_channel();
+        tx.submit("a message".into());
+        tx.submit_answer("an answer".into());
+        assert_eq!(rx.try_recv().as_deref(), Ok("a message"));
+        assert_eq!(rx.try_recv().as_deref(), Ok("an answer"));
+    }
 }

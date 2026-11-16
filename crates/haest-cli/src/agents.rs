@@ -61,7 +61,8 @@ impl AgentLog {
                     (Level::Warning, format!("[{name}] stopped early"))
                 })
             }
-            SubagentEvent::Loop(_) | SubagentEvent::InnerCall(_) => None,
+            // The rest of its turn, its inner calls and messages stay off the log.
+            _ => None,
         }
     }
 }

@@ -74,7 +74,9 @@
 //!
 //! The conversation's own loop is [`MAIN_AGENT`]; every subagent has a
 //! unique name. A message lands at the receiver's next step boundary
-//! ([`AgentControl::steer`]); one for main goes to the host's [`Inbox`].
+//! ([`AgentControl::steer`]); one for main goes to the host's [`Inbox`]. The
+//! person writes to a running subagent through the hub
+//! ([`SubagentHub::deliver_as`]).
 //! Main is depth 0, an agent at the depth cap gets no Agent tool, and at
 //! most `max_concurrent` run at once across the whole tree.
 //!
@@ -170,9 +172,9 @@ pub use haest_http as http;
 
 pub use agents::{
     AgentDirectory, AgentError, AgentRef, AgentToolOptions, Ending, InProcessRun, MAIN_AGENT,
-    MemberCaps, MemberEnd, MemberRun, MemberStart, Spend, SpawnInput, SpawnOutcome, SubagentBudget,
-    SubagentEvent, SubagentHub, SubagentParent, SubagentTypes, agent_tools, agent_tools_with,
-    subagent_note,
+    MemberCaps, MemberEnd, MemberRun, MemberStart, Sender, SpawnInput, SpawnOutcome, Spend,
+    SubagentBudget, SubagentEvent, SubagentHub, SubagentParent, SubagentTypes, agent_tools,
+    agent_tools_with, subagent_note,
 };
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;

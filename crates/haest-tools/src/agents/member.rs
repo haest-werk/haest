@@ -57,6 +57,7 @@ pub struct MemberStart {
 
 /// How a member's turn ended.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Ending {
     /// It ended its turn with an answer.
     Answered,

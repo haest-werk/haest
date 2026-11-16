@@ -209,6 +209,8 @@ impl SubagentParent for App {
             SubagentEvent::Loop(_) => "loop",
             SubagentEvent::InnerCall(_) => "inner",
             SubagentEvent::Stopped { .. } => "stopped",
+            // Non-exhaustive: a host matches what it shows.
+            _ => "other",
         };
         self.sub_events.lock().unwrap().push(kind);
     }

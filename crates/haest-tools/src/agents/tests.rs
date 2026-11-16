@@ -2,8 +2,10 @@
 //! (spend, StopAgent, refusals) are in `tests/rules.rs`.
 
 mod budgets;
+mod fake;
 mod lifecycle;
 mod options;
+mod post;
 mod rules;
 mod script;
 mod seam;

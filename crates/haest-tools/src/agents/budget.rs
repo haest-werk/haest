@@ -15,7 +15,68 @@ use haest_core::{
 };
 use serde_json::{Value, json};
 
-use super::{AgentError, SubagentBudget, run::wall_clock};
+use super::{AgentError, run::wall_clock};
+
+/// One subagent's budget: its spend and its wall clock. 0 (or a zero
+/// duration) is no cap. Minutes exist only in the Agent tool's parameter.
+///
+/// # Examples
+///
+/// A host's own directory gets the call's budget already within its caps
+/// ([`AgentToolOptions::budget_caps`](super::AgentToolOptions::budget_caps)).
+///
+/// ```
+/// use std::{sync::{Arc, Mutex}, time::Duration};
+///
+/// use async_trait::async_trait;
+/// use haest_core::{tool::ToolContext, workspace::ShutWorkspace};
+/// use haest_tools::{
+///     AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
+///     SubagentBudget, agent_tools_with,
+/// };
+/// use serde_json::json;
+/// use tokio_util::sync::CancellationToken;
+///
+/// #[derive(Default)]
+/// struct Remote(Mutex<Option<SubagentBudget>>);
+///
+/// #[async_trait]
+/// impl AgentDirectory for Remote {
+///     async fn spawn(&self, _: &AgentRef, input: SpawnInput, _: CancellationToken) -> Result<SpawnOutcome, AgentError> {
+///         *self.0.lock().unwrap() = input.budget; // the host runs it under this
+///         Ok(SpawnOutcome { text: "done".into(), cost_usd: 0.0 })
+///     }
+///     fn deliver(&self, _: &str, to: &str, _: &str) -> Result<String, AgentError> {
+///         Err(AgentError::Refused(format!("{to} is not running")))
+///     }
+///     fn stop(&self, _: &str) -> bool {
+///         false
+///     }
+/// }
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// let remote = Arc::new(Remote::default());
+/// let caps = SubagentBudget { usd: 0.5, time: Duration::from_secs(300) };
+/// let opts = AgentToolOptions { budget_caps: Some(caps), ..Default::default() };
+/// let agent = agent_tools_with(remote.clone(), AgentRef::main(), true, opts).remove(0);
+/// assert!(agent.parameters()["properties"].get("budget").is_some());
+///
+/// // The model asks for more money than the cap and less time: it gets the cap and its time.
+/// let call = json!({"description": "d", "prompt": "p", "budget": {"usd": 9, "minutes": 2}});
+/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+/// agent.execute(call.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// let got = remote.0.lock().unwrap().unwrap();
+/// assert_eq!(got, SubagentBudget { usd: 0.5, time: Duration::from_secs(120) });
+/// # }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SubagentBudget {
+    /// Its spend in USD.
+    pub usd: f64,
+    /// Its wall clock.
+    pub time: Duration,
+}
 
 /// The `budget` parameter, as the model reads it.
 pub(super) fn schema(caps: &SubagentBudget) -> Value {

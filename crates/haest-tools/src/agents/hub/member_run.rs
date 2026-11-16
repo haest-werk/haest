@@ -1,5 +1,5 @@
 //! One subagent's run inside the hub: build its agent, drive its turn, close
-//! its run, hand a background answer back.
+//! its run.
 
 use std::{panic::AssertUnwindSafe, sync::Arc};
 
@@ -13,8 +13,7 @@ use tokio_util::sync::CancellationToken;
 use super::SubagentHub;
 use crate::agents::{
     MemberCaps, MemberEnd, MemberRun, MemberStart, SpawnOutcome, SubagentBudget, SubagentEvent,
-    members::Status,
-    run::{ChildCaps, ChildHooks, ChildPrompt, Run, drive, subagent_note},
+    run::{ChildCaps, ChildHooks, ChildPrompt, Run, drive},
 };
 
 impl SubagentHub {
@@ -71,6 +70,13 @@ impl SubagentHub {
             .model_spec()
             .unwrap_or_else(|| start.model_spec.clone());
         let caps = member.caps().unwrap_or(start.caps);
+        // The note tells the member what it runs on: its run's model spec and caps.
+        let runs = MemberStart {
+            model_spec: model_spec.clone(),
+            caps,
+            ..start.clone()
+        };
+        let note = self.parent.subagent_note(&runs);
         // Its own deps keep their hooks; the conversation's are lent, persisting nothing.
         let base = member.deps().unwrap_or_else(|| {
             let base = self.parent.deps();
@@ -89,7 +95,7 @@ impl SubagentHub {
                 parent: self.parent.clone(),
                 model_spec: model_spec.clone(),
                 tools: source,
-                note: subagent_note(&run.me.name, &run.parent, &run.description, &caps),
+                note,
             }),
             shared: SharedDeps {
                 turn_caps: Arc::new(ChildCaps {
@@ -158,18 +164,5 @@ impl SubagentHub {
             self.parent.deps().hooks.debug(&log);
         }
         SpawnOutcome { text, cost_usd }
-    }
-
-    /// A background agent's answer goes to whoever started it -- or to main when
-    /// that one has finished meanwhile. Never fails: an answer must not be lost to a race.
-    pub(super) fn hand_back(&self, parent: &str, text: String) {
-        let mut members = self.members.lock().unwrap();
-        match members.get_mut(parent) {
-            Some(p) if p.status == Status::Running => p.steer(text),
-            _ => {
-                drop(members);
-                self.parent.submit(text);
-            }
-        }
     }
 }

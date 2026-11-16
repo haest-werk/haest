@@ -6,51 +6,24 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::{
-    LoopEvent, SharedDeps,
+    SharedDeps,
     provider::Effort,
-    tool::{InnerCallEvent, Tool, ToolSource},
+    tool::{Tool, ToolSource},
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{AgentError, AgentToolOptions, InProcessRun, MemberRun, MemberStart};
+use super::{
+    AgentError, AgentToolOptions, InProcessRun, MemberRun, MemberStart, SubagentEvent,
+    subagent_note,
+};
 use crate::inbox::Inbox;
-
-/// A subagent's life, for the host's transcript (its own card, never the parent's).
-#[derive(Debug, Clone)]
-pub enum SubagentEvent {
-    /// Its turn is about to run.
-    Started {
-        /// Its address.
-        name: String,
-        /// The agent that started it.
-        parent: String,
-        /// The Agent call's `description`.
-        description: String,
-    },
-    /// One event of its turn.
-    Loop(
-        /// The event, as the subagent's own loop emitted it.
-        LoopEvent,
-    ),
-    /// A tool it ran made a call of its own (Code).
-    InnerCall(
-        /// The inner call, as the subagent's tool reported it (its
-        /// `parent_id` is the id of that tool's call).
-        InnerCallEvent,
-    ),
-    /// Its turn ended.
-    Stopped {
-        /// It ended its turn with an answer: not stopped, not out of budget,
-        /// no error.
-        ok: bool,
-    },
-}
 
 /// The parent conversation's side of the default hub
 /// ([`SubagentHub`](super::SubagentHub)): what a subagent is built from, and
 /// where its activity goes.
-/// [`Inbox::submit`] takes what is for main: a message to "main", and a
-/// background answer whose starter has finished.
+/// [`Inbox::submit`] takes a message for main (SendMessage, the person), and
+/// [`Inbox::submit_answer`] a background answer for main (main started it, or
+/// its starter has finished).
 ///
 /// [`SubagentHub`](super::SubagentHub)'s docs implement one.
 #[async_trait]
@@ -200,5 +173,77 @@ pub trait SubagentParent: Inbox {
     ) -> Result<Box<dyn MemberRun>, AgentError> {
         let _ = (start, cancel);
         Ok(Box::new(InProcessRun))
+    }
+    /// The note the hub appends to a member's system prompt: who it is, who
+    /// reads its answer, its caps, how to talk to other agents. `member` is the
+    /// member as it runs: its run's model spec and caps where the run names
+    /// them ([`MemberRun::model_spec`], [`MemberRun::caps`]), its kind in
+    /// `input.subagent_type`. Default: haest's ([`subagent_note`]).
+    ///
+    /// # Examples
+    ///
+    /// A parent whose members hear about the person they work for.
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    ///
+    /// use async_trait::async_trait;
+    /// use haest_core::{
+    ///     SharedDeps,
+    ///     caps::SubagentCaps,
+    ///     provider::Effort,
+    ///     testing::{ScriptedProvider, text_answer},
+    ///     tool::Tool,
+    ///     workspace::ShutWorkspace,
+    /// };
+    /// use haest_tools::{
+    ///     AgentDirectory, AgentRef, Inbox, MemberStart, SpawnInput, SubagentHub, SubagentParent,
+    /// };
+    /// use tokio_util::sync::CancellationToken;
+    ///
+    /// struct Parent(Arc<ScriptedProvider>);
+    ///
+    /// impl Inbox for Parent {
+    ///     fn submit(&self, _text: String) {}
+    /// }
+    ///
+    /// #[async_trait]
+    /// impl SubagentParent for Parent {
+    ///     fn deps(&self) -> SharedDeps {
+    ///         SharedDeps::new(Arc::new(self.0.resolver()), "/", Arc::new(ShutWorkspace))
+    ///     }
+    ///     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
+    ///         Vec::new()
+    ///     }
+    ///     async fn system_prompt(&self, _model: &str, _tools: &[Arc<dyn Tool>]) -> String {
+    ///         "You help a person.".into()
+    ///     }
+    ///     fn default_model(&self) -> (String, Option<Effort>) {
+    ///         ("scripted:m".into(), None)
+    ///     }
+    ///     fn subagent_note(&self, member: &MemberStart) -> String {
+    ///         let usd = member.caps.usd;
+    ///         format!("You are {}, for {}. The person may write to you. Spend at most ${usd}.", member.name, member.parent)
+    ///     }
+    /// }
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let provider = ScriptedProvider::new([text_answer("done")]);
+    /// let caps = SubagentCaps { usd: 0.5, ..SubagentCaps::default() };
+    /// let hub = SubagentHub::new(Arc::new(Parent(provider.clone())), caps);
+    /// let input = SpawnInput { description: "tidy".into(), prompt: "Tidy up.".into(), ..Default::default() };
+    /// hub.spawn(&AgentRef::main(), input, CancellationToken::new()).await.unwrap();
+    /// let system = &provider.requests()[0].system;
+    /// assert_eq!(system, "You help a person.\n\nYou are tidy-1, for main. The person may write to you. Spend at most $0.5.");
+    /// # }
+    /// ```
+    fn subagent_note(&self, member: &MemberStart) -> String {
+        subagent_note(
+            &member.name,
+            &member.parent,
+            &member.input.description,
+            &member.caps,
+        )
     }
 }

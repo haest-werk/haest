@@ -1,6 +1,7 @@
 # One subagent hub (plan + seam, opt-in)
 
-Status: plan and seam, 2026-11-16. Decided by the owner: the subagent hub lives in haest, and
+Status: built on this branch, 2026-11-17: the seam, budgets (G3) and the five follow-ups
+(G-H1 to G-H5), so brain can drop its own `Hub`. Decided by the owner: the subagent hub lives in haest, and
 a host's own hub (brain's `Hub` in `node/src/web/agent/run/agents.rs`) shrinks to an
 implementation of a seam on haest's side. Names follow `main` at `1c7372a` (0.2.0) plus this
 branch. Brain's copy still compiles against an older haest (`AgentDirectory` returning
@@ -54,7 +55,24 @@ pub trait SubagentParent: Inbox {
     ) -> Result<Box<dyn MemberRun>, AgentError> {
         Ok(Box::new(InProcessRun))
     }
+    /// The note under the member's system prompt; `member` has its run's model and caps.
+    fn subagent_note(&self, member: &MemberStart) -> String { haest's }   // B14, G-H5
 }
+
+pub trait Inbox {
+    fn submit(&self, text: String);                                       // a message for main
+    fn submit_answer(&self, text: String) { self.submit(text) }           // B12, G-H3
+}
+
+impl SubagentHub {
+    pub fn deliver_as(&self, sender: Sender, to: &str, text: &str)        // B11, G-H1
+        -> Result<String, AgentError>;
+    pub fn idle(&self) -> bool;                                           // B13, G-H4
+    pub async fn settled(&self, timeout: Duration) -> bool;
+}
+
+#[non_exhaustive] pub enum Sender { Agent(String), Person(String) }
+#[non_exhaustive] pub enum SubagentEvent { .., Message { from: Sender, to: String, text: String } }  // B10, G-H2
 
 /// A started member's run: what the host decided about it, and its end.
 #[async_trait]
@@ -67,6 +85,7 @@ pub trait MemberRun: Send + Sync {
 
 pub struct MemberStart { name, id, parent, depth, input: SpawnInput, model, caps: MemberCaps }
 pub struct MemberEnd { ending: Ending, answer: String, spend: Spend }
+#[non_exhaustive]
 pub enum Ending { Answered, Stopped, CallerCancelled, Capped(String), Failed(String), Crashed(String) }
 pub struct Spend { usage: Usage, model_calls: u32 }   // .usd()
 pub struct MemberCaps { usd: f64, steps: u32, time: Duration }
@@ -88,7 +107,10 @@ A spawn, in order:
 7. it leaves the table (a message for it is refused from here), late messages are taken;
 8. `end`, awaited, with how it ended, the answer as the caller gets it, and the spend;
 9. the hold is released; the answer goes back (foreground) or is handed back (background,
-   still counted in `answers_due` until then).
+   still counted in `answers_due` until then): steered into a running starter, else
+   `Inbox::submit_answer`;
+10. the spawn closes: from the call until here (a refused one until its refusal) the hub is
+   not `idle()`, and `settled` wakes as each one closes.
 
 ### Why this shape
 
@@ -131,31 +153,32 @@ A spawn, in order:
 | `HubHost::base_tools`, `subagent_tools(base, kind)`, `MAIN_ONLY`, `EXPLORE_TOOLS` | `SubagentParent::subagent_tools(kind)` | haest drops the task tools itself |
 | `subagent_types()`, `model_choice` | `SubagentParent::agent_tool_options()` | |
 | `HubHost::system_prompt(run, read_only)` | `SubagentParent::system_prompt(model_spec, tools)` | read-only = no `Edit` in `tools`; the model's inputs from `ModelFacts::input_modalities(model_spec)` |
-| `HubHost::to_main(text, _)` | `Inbox::submit(text)` | steering main when it runs stays the host's (as `ChatHost::to_main` does) |
+| `HubHost::to_main(text, true)` (a message) | `Inbox::submit(text)` | steering main when it runs stays the host's (as `ChatHost::to_main` does) |
+| `HubHost::to_main(text, false)` (a helper's answer), `MainInbox::push` | `Inbox::submit_answer(text)` (G-H3) | `MainInbox` itself stays brain's (it is chat.rs's continuation policy); its `next` waits on `SubagentHub::settled` instead of `hub.pulse` |
 | `HubHost::tell` + `Watchers` + `drive` (a helper's tagged events) | `SubagentParent::on_subagent(id, Loop(ev))` | |
 | `Table`, `Member`, `Status`, `slug`, `reserved` | `Members` (hub-private) | |
 | `Hub::spawn` / `deliver` / `stop` / `stop_all` / `running` | `SubagentHub`'s | |
 | `Hub::run_member` (own task, crash = answer) | hub-private `run_member` + `drive` (`catch_unwind`) | |
 | `Hub::hand_back` | hub-private `hand_back` | |
 | `Hub.caps.depth` offset | `SubagentCaps::max_depth = max_depth - depth` | B15 |
-| `Hub::from_person`, `Event::AgentMessage` | NOT YET: G-H1, G-H2 | |
-| `to_main(text, message)`, `MainInbox` | NOT YET: G-H3 | `MainInbox` itself stays brain's (it is chat.rs's continuation policy) |
-| `Hub::idle`, `Hub::settled`, `pulse` | NOT YET: G-H4 | `answers_due() == 0 && running().is_empty()` polled until then |
-| `subagent_note(.., kind)` | `subagent_note` (haest's text) | G-H5: the explore line moves into `system_prompt` |
-| `HUBS`, `register`, `message_agent` | stays brain's (its registry by run id) | needs G-H1 |
+| `Hub::from_person(asked_by, to, text)` | `SubagentHub::deliver_as(Sender::Person(asked_by), to, text)` (G-H1) | the receiver reads `[Message from <asked_by>, the person you work for]`, as brain's |
+| `Event::AgentMessage { from, to, text, person }` | `SubagentParent::on_subagent(id, SubagentEvent::Message { from: Sender, to, text })` (G-H2) | `person` = `Sender::Person`; fired for every delivery, nothing for a refused one |
+| `Hub::idle`, `Hub::settled(ms)`, `pulse` | `SubagentHub::idle()`, `SubagentHub::settled(Duration) -> bool` (G-H4) | true = idle, false = timed out; `Duration::MAX` waits as long as it takes |
+| `subagent_note(.., caps, kind)` | `SubagentParent::subagent_note(&MemberStart) -> String` (G-H5) | brain's own text, explore line included: `member.caps` are the run's, `member.input.subagent_type` the kind |
+| `HUBS`, `register`, `message_agent` | stays brain's (its registry by run id) | `message_agent` calls `deliver_as` |
 
-## Not in this seam (follow-ups)
+## The follow-ups, as built
 
-| Code | Gap | Proposed shape |
-|---|---|---|
-| G-H1 | the person writing to a member (B11) | `SubagentHub::deliver_as(sender: Sender, to, text)` with `Sender::{Agent(name), Person(label)}`; `deliver` = `Agent` |
-| G-H2 | a delivery event (B10) | `SubagentEvent::Message { from, to, text, person }` through `on_subagent` (`SubagentEvent` is not `#[non_exhaustive]`: breaking, 0.3.0) |
-| G-H3 | message vs answer for main (B12) | `Inbox::submit_answer(text)`, default `submit` |
-| G-H4 | idle signal (B13) | `SubagentHub::idle()` + `settled(timeout)` on a `watch` the hub bumps when a member ends or an answer is handed back |
-| G-H5 | the host's own note (B14) | `SubagentParent::subagent_note(&MemberStart) -> Option<String>`, default haest's |
+| Code | Gap | Built | Differs from the proposal |
+|---|---|---|---|
+| G-H1 | the person writing to a member (B11) | `SubagentHub::deliver_as(sender: Sender, to, text)`, `#[non_exhaustive] Sender::{Agent(name), Person(name)}`; `AgentDirectory::deliver` = `Agent` | no |
+| G-H2 | a delivery event (B10) | `SubagentEvent::Message { from: Sender, to, text }` through `on_subagent`, keyed by the receiving member's id; one for main by the sending member's, the person's to main by `"main"`. `SubagentEvent` and `Ending` are now `#[non_exhaustive]` | `from: Sender` instead of `from: String` + `person: bool`: the sender's kind is the variant, and a third kind of sender would not need a second flag |
+| G-H3 | message vs answer for main (B12) | `Inbox::submit_answer(text)`, default `submit` | no |
+| G-H4 | idle signal (B13) | `SubagentHub::idle()`, `settled(timeout) -> bool` on a `watch` bumped as each spawn closes | the hub counts every spawn from the call until its answer is back (starting, running, its `end`, the hand-back), not members plus `answers_due`: one counter, and a member's `end` is inside it. `settled` says whether it settled |
+| G-H5 | the host's own note (B14) | `SubagentParent::subagent_note(&MemberStart) -> String`, default haest's `subagent_note` | returns `String`, not `Option<String>`: the default IS haest's text, and a parent that only adds a line calls `agents::subagent_note` itself. `member` carries the run's own model and caps (`MemberRun::model`, `caps`), so the note says what the member really runs under |
 
-Each is small and independent; none blocks the seam. Durable subagents (`durable-runs.md` R6)
-build on `MemberRun::deps` (a member's own sink) and `end` (its record closed).
+Durable subagents (`durable-runs.md` R6) build on `MemberRun::deps` (a member's own sink)
+and `end` (its record closed).
 
 ## Budgets (G3) on the hub
 

@@ -1,156 +1,25 @@
 //! A conversation for the hub tests: main and subagents answer from separate
-//! scripts ([`super::script`]), a host that records what the hub tells it, and
-//! a main loop that runs what reaches its inbox.
+//! scripts ([`super::script`]), a host that records what the hub tells it
+//! ([`super::fake`]), and a main loop that runs what reaches its inbox.
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
-use async_trait::async_trait;
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, LoopEvent, Message, SharedDeps,
-    caps::ConversationCaps,
-    ledger::{Ledger, LedgerHooks, LedgerSnapshot},
-    provider::{Effort, ModelError, ResolvedModel},
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
+    Agent, AgentDeps, AgentOptions, LoopEvent, Message, caps::ConversationCaps, ledger::Ledger,
 };
-use serde_json::Value;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
+pub use super::fake::{FakeParent, ForMain, Heard, Host, Quiet, explore_or_general};
 pub use super::script::{CALL_USD, Script, call, now, say, spawns};
 use super::{
-    super::{
-        AgentError, AgentRef, AgentToolOptions, InProcessRun, MemberRun, MemberStart, SubagentCaps,
-        SubagentEvent, SubagentHub, SubagentParent, SubagentTypes,
-    },
+    super::{AgentRef, SubagentCaps, SubagentHub, SubagentParent, SubagentTypes},
     lifecycle::Lifecycle,
     script::Roles,
 };
-use crate::{GlobTool, inbox::Inbox, testkit::TestWorkspace};
-
-/// A tool only main may have.
-struct TaskCreate;
-
-#[async_trait]
-impl Tool for TaskCreate {
-    fn name(&self) -> &str {
-        "TaskCreate"
-    }
-    fn description(&self) -> String {
-        "x".into()
-    }
-    fn parameters(&self) -> Value {
-        serde_json::json!({"type": "object"})
-    }
-    fn kind(&self) -> &str {
-        "task.create"
-    }
-    async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-        Ok(ToolOutput::text("ok"))
-    }
-}
-
-pub struct Quiet;
-impl LedgerHooks for Quiet {
-    fn persist(&self, _: &LedgerSnapshot) {}
-    fn warn(&self, _: &str) {}
-}
-
-pub struct FakeParent {
-    pub provider: Arc<Roles>,
-    ws: Arc<TestWorkspace>,
-    pub ledger: Arc<Mutex<Ledger>>,
-    tx: UnboundedSender<String>,
-    pub activity: Mutex<Vec<usize>>,
-    /// (agent id, event kind) in order.
-    pub events: Mutex<Vec<(String, &'static str)>>,
-    /// The host's kinds of subagent: `explore` (no tools of its own, the
-    /// default) and `general` (the base tools); None = no kinds.
-    kinds: Option<SubagentTypes>,
-    /// What it does at a member's start; None = haest's default.
-    lifecycle: Option<Arc<Lifecycle>>,
-}
-
-/// The kinds a host with kinds has: `explore` (the default) and `general`.
-pub fn explore_or_general() -> SubagentTypes {
-    SubagentTypes {
-        names: vec!["explore".into(), "general".into()],
-        description: "explore only looks".into(),
-        default: "explore".into(),
-    }
-}
-
-impl Inbox for FakeParent {
-    fn submit(&self, text: String) {
-        let _ = self.tx.send(text);
-    }
-}
-
-#[async_trait]
-impl SubagentParent for FakeParent {
-    fn deps(&self) -> SharedDeps {
-        let p = self.provider.clone();
-        let models = move |spec: &str| {
-            let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();
-            Ok::<_, ModelError>(ResolvedModel {
-                provider: p.clone(),
-                model,
-            })
-        };
-        SharedDeps {
-            ledger: Some(self.ledger.clone()),
-            ..SharedDeps::new(Arc::new(models), "/p", self.ws.clone())
-        }
-    }
-    fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
-        vec![Arc::new(GlobTool), Arc::new(TaskCreate)]
-    }
-    async fn system_prompt(&self, model_spec: &str, tools: &[Arc<dyn Tool>]) -> String {
-        let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
-        format!(
-            "You are haest.\n- Model: {model_spec}\n- Tools: {}",
-            names.join(", ")
-        )
-    }
-    fn default_model(&self) -> (String, Option<Effort>) {
-        ("fake:main-model".into(), None)
-    }
-    fn agent_tool_options(&self) -> AgentToolOptions {
-        AgentToolOptions {
-            types: self.kinds.clone(),
-            ..Default::default()
-        }
-    }
-    fn subagent_tools(&self, subagent_type: Option<&str>) -> Vec<Arc<dyn Tool>> {
-        match subagent_type {
-            Some("explore") => Vec::new(),
-            _ => self.base_tools(),
-        }
-    }
-    fn on_activity(&self, running: &[String]) {
-        self.activity.lock().unwrap().push(running.len());
-    }
-    async fn start_member(
-        &self,
-        start: &MemberStart,
-        _cancel: &tokio_util::sync::CancellationToken,
-    ) -> Result<Box<dyn MemberRun>, AgentError> {
-        match &self.lifecycle {
-            Some(l) => l.start(start, &self.provider, self).await,
-            None => Ok(Box::new(InProcessRun)),
-        }
-    }
-    fn on_subagent(&self, id: &str, event: SubagentEvent) {
-        let kind = match event {
-            SubagentEvent::Started { .. } => "started",
-            SubagentEvent::Loop(_) => "loop",
-            SubagentEvent::InnerCall(_) => "inner",
-            SubagentEvent::Stopped { .. } => "stopped",
-        };
-        self.events.lock().unwrap().push((id.to_string(), kind));
-    }
-}
+use crate::testkit::TestWorkspace;
 
 pub struct Rig {
     pub hub: Arc<SubagentHub>,
@@ -162,7 +31,7 @@ pub struct Rig {
 
 impl Rig {
     pub fn new(main: Script, sub: Script, caps: SubagentCaps) -> Self {
-        Self::with_kinds(main, sub, caps, None)
+        Self::with_host(main, sub, caps, Host::default())
     }
 
     /// A conversation whose host has `kinds` of subagent.
@@ -172,7 +41,11 @@ impl Rig {
         caps: SubagentCaps,
         kinds: Option<SubagentTypes>,
     ) -> Self {
-        Self::build(main, sub, caps, kinds, None)
+        let host = Host {
+            kinds,
+            ..Host::default()
+        };
+        Self::with_host(main, sub, caps, host)
     }
 
     /// A conversation whose host implements the member hooks (`lifecycle`).
@@ -182,16 +55,15 @@ impl Rig {
         caps: SubagentCaps,
         lifecycle: Arc<Lifecycle>,
     ) -> Self {
-        Self::build(main, sub, caps, None, Some(lifecycle))
+        let host = Host {
+            lifecycle: Some(lifecycle),
+            ..Host::default()
+        };
+        Self::with_host(main, sub, caps, host)
     }
 
-    fn build(
-        main: Script,
-        sub: Script,
-        caps: SubagentCaps,
-        kinds: Option<SubagentTypes>,
-        lifecycle: Option<Arc<Lifecycle>>,
-    ) -> Self {
+    /// A conversation whose host does what `host` says.
+    pub fn with_host(main: Script, sub: Script, caps: SubagentCaps, host: Host) -> Self {
         let provider = Arc::new(Roles {
             main,
             sub,
@@ -210,10 +82,14 @@ impl Rig {
             tx,
             activity: Mutex::default(),
             events: Mutex::default(),
-            kinds,
-            lifecycle,
+            heard: Mutex::default(),
+            for_main: Mutex::default(),
+            hub: OnceLock::new(),
+            idle_at_answer: Mutex::default(),
+            host,
         });
         let hub = SubagentHub::new(parent.clone(), caps);
+        let _ = parent.hub.set(Arc::downgrade(&hub));
         let mut tools = parent.base_tools();
         tools.extend(hub.tools_for(&AgentRef::main()));
         let deps = AgentDeps {
@@ -281,6 +157,16 @@ impl Rig {
             .filter(|(_, k)| *k == kind)
             .map(|(id, _)| id.clone())
             .collect()
+    }
+
+    /// Every message the parent heard of.
+    pub fn heard(&self) -> Vec<Heard> {
+        self.parent.heard.lock().unwrap().clone()
+    }
+
+    /// What reached main's inbox, and how.
+    pub fn for_main(&self) -> Vec<ForMain> {
+        self.parent.for_main.lock().unwrap().clone()
     }
 }
 
