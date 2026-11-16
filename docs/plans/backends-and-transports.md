@@ -21,6 +21,10 @@ socket (`web/live.rs:88`, `219-220`) and runs helpers through its own `AgentDire
 (`run/agents.rs:342`). The consumers are the `haest` CLI (peek and steer, run as a child) and
 remote-claude (a haest child behind its broker). See Q8.
 
+Decided 2026-11-16: build it (P1-P5), even though brain does not consume it; brain is the
+first consumer for the rest of the agent-core port (Q8). Q7 and Q9-Q11 go with this plan's
+recommendations unless overruled.
+
 ## 1. What exists
 
 ### protokol, read and checked
