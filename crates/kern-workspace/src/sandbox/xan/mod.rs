@@ -88,17 +88,26 @@ fn usage(verb: Option<&str>, msg: impl Into<String>) -> Fail {
     }
 }
 
-/// The shell call's deadline and interrupt, checked every 1024 rows.
+/// The shell call's deadline and interrupt, checked every 1024 units of work
+/// (a row parsed, filtered or written; a column's rows; a group's values).
+/// Every loop over the input counts here, so none runs on past the deadline.
 struct Clock {
     ends_at: Instant,
     cancel: CancellationToken,
-    n: u32,
+    n: u64,
 }
 
 impl Clock {
     fn tick(&mut self) -> R<()> {
-        self.n = self.n.wrapping_add(1);
-        if self.n % 1024 == 0 && (self.cancel.is_cancelled() || Instant::now() >= self.ends_at) {
+        self.tick_by(1)
+    }
+
+    /// `units` of work done at once; checked when the count passes a 1024.
+    fn tick_by(&mut self, units: usize) -> R<()> {
+        let before = self.n / 1024;
+        self.n += units as u64;
+        if self.n / 1024 != before && (self.cancel.is_cancelled() || Instant::now() >= self.ends_at)
+        {
             return Err(fail("stopped: the shell call ran out of time"));
         }
         Ok(())
@@ -167,7 +176,7 @@ async fn run(call: &ShellCall) -> R<String> {
         "count" => Ok(format!("{}\n", t.rows.len())),
         "head" => {
             let n = p.count("limit", verb)?.unwrap_or(10);
-            write_csv(header, t.rows.into_iter().take(n))
+            write_csv(header, t.rows.into_iter().take(n), &mut clock)
         }
         "select" => {
             let cols = select(&p.pos[0], &t.headers).map_err(fail)?;
@@ -177,7 +186,7 @@ async fn run(call: &ShellCall) -> R<String> {
                     .collect::<Vec<_>>()
             };
             let h = header.map(pick);
-            write_csv(h.as_deref(), t.rows.iter().map(|r| pick(r)))
+            write_csv(h.as_deref(), t.rows.iter().map(|r| pick(r)), &mut clock)
         }
         "filter" => {
             let e = compile(&p.pos[0], &t.headers).map_err(fail)?;
@@ -196,12 +205,14 @@ async fn run(call: &ShellCall) -> R<String> {
                     }
                 }
             }
-            write_csv(header, kept)
+            write_csv(header, kept, &mut clock)
         }
         "sort" => {
             let cols = columns("select")?;
             let numeric = p.has("numeric");
             let mut rows = t.rows;
+            // The sort itself cannot stop halfway; whether to start it can.
+            clock.tick_by(rows.len())?;
             let order = |a: &Vec<String>, b: &Vec<String>| {
                 cols.iter()
                     .map(|&i| compare(cell(a, i), cell(b, i), numeric))
@@ -213,14 +224,14 @@ async fn run(call: &ShellCall) -> R<String> {
             } else {
                 rows.sort_by(order);
             }
-            write_csv(header, rows)
+            write_csv(header, rows, &mut clock)
         }
         "groupby" => {
             let keys = select(&p.pos[0], &t.headers).map_err(fail)?;
             aggregate(&t, &keys, &p.pos[1], &mut clock)
         }
         "agg" => aggregate(&t, &[], &p.pos[0], &mut clock),
-        "stats" => stats(&t, &columns("select")?),
+        "stats" => stats(&t, &columns("select")?, &mut clock),
         "frequency" => {
             let limit = if p.has("all") {
                 usize::MAX
@@ -231,6 +242,7 @@ async fn run(call: &ShellCall) -> R<String> {
                 &t,
                 &columns("select")?,
                 if limit == 0 { usize::MAX } else { limit },
+                &mut clock,
             )
         }
         _ => unreachable!("every verb in VERBS has an arm"),

@@ -92,6 +92,7 @@ pub(super) fn read_table(text: &str, delim: u8, has_headers: bool, clock: &mut C
 pub(super) fn write_csv(
     header: Option<&[String]>,
     rows: impl IntoIterator<Item = Vec<String>>,
+    clock: &mut Clock,
 ) -> R<String> {
     let mut w = csv::WriterBuilder::new()
         .flexible(true)
@@ -103,6 +104,7 @@ pub(super) fn write_csv(
         w.write_record(h).map_err(broke)?;
     }
     for r in rows {
+        clock.tick()?;
         w.write_record(&r).map_err(broke)?;
     }
     let bytes = w.into_inner().map_err(broke)?;

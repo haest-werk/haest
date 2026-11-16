@@ -1,5 +1,7 @@
 //! The aggregations a groupby (or agg, or stats) computes over a group.
 
+use std::collections::HashMap;
+
 use super::Value;
 
 /// What a groupby can compute over a group.
@@ -108,18 +110,15 @@ impl AggFn {
             }
             AggFn::Cardinality => Value::Num(distinct(vals).len() as f64),
             AggFn::Mode => {
-                let mut counts: Vec<(String, usize)> = Vec::new();
-                for t in present().map(Value::text) {
-                    match counts.iter_mut().find(|(v, _)| *v == t) {
-                        Some((_, c)) => *c += 1,
-                        None => counts.push((t, 1)),
-                    }
+                // Each value: (how often, when first seen).
+                let mut counts: HashMap<String, (usize, usize)> = HashMap::new();
+                for (i, t) in present().map(Value::text).enumerate() {
+                    counts.entry(t).or_insert((0, i)).0 += 1;
                 }
                 // The most frequent; on a tie, the first seen.
-                let top = counts.iter().map(|(_, c)| *c).max();
                 counts
                     .into_iter()
-                    .find(|(_, c)| Some(*c) == top)
+                    .max_by(|(_, (n, first)), (_, (m, other))| n.cmp(m).then(other.cmp(first)))
                     .map_or(Value::Null, |(v, _)| Value::Str(v))
             }
             AggFn::Var | AggFn::Stddev => {

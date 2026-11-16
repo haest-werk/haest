@@ -1,9 +1,11 @@
 //! What a hostile or runaway command line cannot do to the process xan runs
-//! in: overflow its stack.
+//! in: overflow its stack, or hold a worker past the shell call's deadline.
+
+use std::time::{Duration, Instant};
 
 use kern_core::{shell_command::ShellCommand, workspace::ExecResult};
 
-use super::{Xan, call, ok};
+use super::{Xan, call, ok, ok_in};
 use crate::sandbox::xan::expr::{MAX_DEPTH, MAX_NESTING};
 
 /// `xan args` over sales.csv on a fresh thread with a tokio worker's stack
@@ -91,4 +93,60 @@ async fn real_expressions_nest_as_deep_as_they_need() {
     let any: Vec<String> = (0..300).map(|i| format!("amount == {i}")).collect();
     let r = ok(&["filter", &any.join(" or "), "sales.csv"]).await;
     assert_eq!(r.lines().count(), 4, "{r}");
+}
+
+/// `xan args` over `stdin`, its deadline already past or 10s away.
+async fn timed(args: &[&str], stdin: &str, time_is_up: bool) -> ExecResult {
+    let mut c = call(args, Some(stdin));
+    if time_is_up {
+        c.ends_at = Instant::now();
+    }
+    Xan.run(c).await
+}
+
+fn column(n: usize) -> String {
+    std::iter::once("n\n".to_string())
+        .chain((0..n).map(|i| format!("{i}\n")))
+        .collect()
+}
+
+#[tokio::test]
+async fn every_long_step_stops_when_the_shell_calls_time_is_up() {
+    // Under 1024 rows the parse never looks at the clock: the step after it must.
+    let rows = column(1000);
+    let few = column(400);
+    for (args, input) in [
+        (&["stats"][..], &rows),
+        (&["frequency", "-A"], &rows),
+        (&["sort", "-N"], &rows),
+        (&["select", "n"], &rows),
+        (&["head", "-l", "1000"], &rows),
+        (&["agg", "mode(n), mode(n)"], &few),
+    ] {
+        let late = timed(args, input, true).await;
+        assert_eq!((late.exit_code, late.stdout.as_str()), (1, ""), "{args:?}");
+        assert_eq!(timed(args, input, false).await.exit_code, 0, "{args:?}");
+    }
+}
+
+#[tokio::test]
+async fn mode_counts_each_value_once_not_against_every_other() {
+    // 50k distinct values: comparing each with all those seen took minutes.
+    let mut input = column(50_000);
+    input.push_str("7\n7\n");
+    let start = Instant::now();
+    let r = timed(&["agg", "mode(n), cardinality(n)"], &input, false).await;
+    assert_eq!(
+        r.stdout, "mode(n),cardinality(n)\n7,50000\n",
+        "{}",
+        r.stderr
+    );
+    assert!(
+        start.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        start.elapsed()
+    );
+    // A tie goes to the value seen first.
+    let tie = ok_in(&["agg", "mode(x)"], Some("x\nb\na\na\nb\n")).await;
+    assert_eq!(tie, "mode(x)\nb\n");
 }

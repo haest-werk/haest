@@ -67,18 +67,21 @@ pub(super) fn aggregate(t: &Table, keys: &[usize], spec: &str, clock: &mut Clock
         .map(|&i| t.headers[i].clone())
         .chain(items.iter().map(|(n, _)| n.clone()))
         .collect();
-    let rows = groups.into_iter().map(|g| {
-        let done: Vec<Value> = slots
-            .iter()
-            .zip(&g.vals)
-            .map(|(s, v)| s.func.finish(v, g.rows, s.arg.is_none()))
-            .collect();
-        g.key
-            .into_iter()
-            .chain(items.iter().map(|(_, e)| e.eval(&[], &done).text()))
-            .collect::<Vec<_>>()
-    });
-    write_csv(Some(&header), rows)
+    let mut rows = Vec::with_capacity(groups.len());
+    for g in groups {
+        let mut done: Vec<Value> = Vec::with_capacity(slots.len());
+        for (s, v) in slots.iter().zip(&g.vals) {
+            clock.tick_by(v.len().max(1))?;
+            done.push(s.func.finish(v, g.rows, s.arg.is_none()));
+        }
+        rows.push(
+            g.key
+                .into_iter()
+                .chain(items.iter().map(|(_, e)| e.eval(&[], &done).text()))
+                .collect::<Vec<_>>(),
+        );
+    }
+    write_csv(Some(&header), rows, clock)
 }
 
 const STATS: &[&str] = &[
@@ -98,9 +101,11 @@ const STATS: &[&str] = &[
     "max_length",
 ];
 
-pub(super) fn stats(t: &Table, cols: &[usize]) -> R<String> {
+pub(super) fn stats(t: &Table, cols: &[usize], clock: &mut Clock) -> R<String> {
     let header: Vec<String> = STATS.iter().map(|s| s.to_string()).collect();
-    let rows = cols.iter().map(|&c| {
+    let mut rows = Vec::with_capacity(cols.len());
+    for &c in cols {
+        clock.tick_by(t.rows.len().max(1))?;
         let vals: Vec<Value> = t
             .rows
             .iter()
@@ -141,7 +146,7 @@ pub(super) fn stats(t: &Table, cols: &[usize]) -> R<String> {
             }
         };
         let lengths = present.iter().map(|s| s.chars().count());
-        vec![
+        rows.push(vec![
             t.headers[c].clone(),
             present.len().to_string(),
             (vals.len() - present.len()).to_string(),
@@ -159,15 +164,16 @@ pub(super) fn stats(t: &Table, cols: &[usize]) -> R<String> {
                 .min()
                 .map_or(String::new(), |n| n.to_string()),
             lengths.max().map_or(String::new(), |n| n.to_string()),
-        ]
-    });
-    write_csv(Some(&header), rows)
+        ]);
+    }
+    write_csv(Some(&header), rows, clock)
 }
 
-pub(super) fn frequency(t: &Table, cols: &[usize], limit: usize) -> R<String> {
+pub(super) fn frequency(t: &Table, cols: &[usize], limit: usize, clock: &mut Clock) -> R<String> {
     let header: Vec<String> = ["field", "value", "count"].map(String::from).to_vec();
     let mut out = Vec::new();
     for &c in cols {
+        clock.tick_by(t.rows.len().max(1))?;
         let mut counts: HashMap<&str, usize> = HashMap::new();
         for r in &t.rows {
             *counts.entry(cell(r, c)).or_default() += 1;
@@ -183,5 +189,5 @@ pub(super) fn frequency(t: &Table, cols: &[usize], limit: usize) -> R<String> {
             ]);
         }
     }
-    write_csv(Some(&header), out)
+    write_csv(Some(&header), out, clock)
 }
