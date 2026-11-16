@@ -2,7 +2,7 @@
 //!
 //! bashkit's in-memory layers never follow a symlink themselves (the shell's
 //! outermost layer does). This view follows one in the LAST path component for
-//! the operations that open a file -- `read`, `write`, `append`, `stat` -- the
+//! the operations that open a file -- `read`, `write`, `append`, `stat`, `chmod` -- the
 //! way the shell's `cat` does, and lists a link as [`FileKind::Symlink`]
 //! without following it. A link's target is a path in the same namespace (the
 //! sandbox mounts every directory at its real path, so an absolute target
@@ -30,7 +30,8 @@ const MAX_HOPS: usize = 40;
 /// follows one in the LAST path component for `read`, `write`, `append`,
 /// `stat` and `read_dir` (up to 40 links, then an error), the way the shell's
 /// `cat` does, and lists a link as [`FileKind::Symlink`] without following
-/// it. [`chmod`](Fs::chmod) does nothing here.
+/// it. [`chmod`](Fs::chmod) follows a link too, and sets the bits wherever the
+/// path lives: on the real disk through a writable mount, in memory elsewhere.
 pub struct HaestFsOverBashkit {
     inner: Arc<dyn FileSystem>,
 }
@@ -165,5 +166,10 @@ impl Fs for HaestFsOverBashkit {
             .rename(&normalize(from), &normalize(to))
             .await
             .map_err(io_from_bashkit)
+    }
+
+    async fn chmod(&self, path: &Path, mode: u32) -> io::Result<()> {
+        let p = self.follow(path).await?;
+        self.inner.chmod(&p, mode).await.map_err(io_from_bashkit)
     }
 }
