@@ -217,4 +217,7 @@ pub use tool::mcp_tool_name;
 
 /// rmcp, re-exported for a host that connects its own transport
 /// ([`McpHub::connect_transport`]) and needs its types.
+///
+/// Its types are part of haest-mcp's API: a breaking rmcp release (4.0 after
+/// 3.x) is a breaking release of haest-mcp and of haest.
 pub use rmcp;

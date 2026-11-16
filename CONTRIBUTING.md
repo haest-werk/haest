@@ -29,6 +29,12 @@
   only shows the error (`Mod`'s events, `AgentHooks::before_model_call`).
   A private parser may keep `String`.
   Binaries (haest-cli) use `anyhow`.
+- **One path per item.** A library's modules are private and everything a host
+  uses is re-exported at its root, once (haest-core, whose modules are the
+  contract, is the exception). `pub` only for what a host or a plug-in author
+  uses; what only the haest crates share goes in haest-core's `__private`. A
+  re-exported crate (`reqwest` in haest-http, `rmcp` in haest-mcp) is part of
+  the API: its breaking release is a breaking release of haest.
 - **Wire-compatible serde.** Anything that lands in a session file or an NDJSON
   event keeps the TS haest's JSON shape (camelCase keys, same tags).
 - **Tests defend behaviour.** A test fails only when behaviour changed: never

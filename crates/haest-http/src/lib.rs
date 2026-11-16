@@ -88,6 +88,9 @@ pub use async_trait::async_trait;
 pub use bytes::Bytes;
 /// The reqwest haest builds on, for [`ReqwestClient::configured`] and
 /// [`build_reqwest`]: name its types from here and the versions always match.
+///
+/// Its types are part of haest-http's API: a breaking reqwest release (0.14
+/// after 0.13) is a breaking release of haest-http and of haest.
 pub use reqwest;
 
 pub use error::{BoxError, HttpError};
