@@ -59,7 +59,10 @@
 //!
 //! A stdio server's process gets the hub's environment ([`McpHub::with_env`];
 //! none for [`McpHub::new`]) with the server's own `env` laid over it, and
-//! nothing else of the host's environment. Its stderr is discarded, and it is
+//! nothing else of the host's environment: not even `PATH`, unless the host
+//! hands it in. A server named by a bare command is looked up on that `PATH`,
+//! or with none only in the system's default directories, and a failure to
+//! find it says the `PATH` is missing. Its stderr is discarded, and it is
 //! killed when its connection drops. An HTTP server's requests carry its
 //! `headers`, never go through a proxy named by `HTTP_PROXY`, `HTTPS_PROXY` or
 //! `ALL_PROXY`, and follow only a same-origin 307 or 308 redirect, so the
@@ -153,22 +156,17 @@
 //! compiled here.
 //!
 //! ```no_run
-//! use std::{collections::BTreeMap, path::Path, sync::Arc};
+//! use std::{path::Path, sync::Arc};
 //!
 //! use haest_core::{ChildEnv, fs::Fs};
-//! use haest_mcp::{McpHub, McpServerConfig, McpTransport, ProjectMcp, load_project_mcp_config};
+//! use haest_mcp::{McpHub, McpServerConfig, ProjectMcp, load_project_mcp_config};
 //!
 //! # async fn host(fs: &dyn Fs) {
-//! let github = McpServerConfig {
-//!     name: "github".into(),
-//!     transport: McpTransport::Stdio {
-//!         command: "github-mcp-server".into(),
-//!         args: vec!["stdio".into()],
-//!         env: BTreeMap::from([("GITHUB_TOKEN".into(), "ghp_example".into())]),
-//!         cwd: None,
-//!     },
-//! };
-//! let docs = McpServerConfig::http("docs", "https://docs.example.com/mcp");
+//! let github = McpServerConfig::stdio("github", "github-mcp-server")
+//!     .with_args(["stdio"])
+//!     .with_env("GITHUB_TOKEN", "ghp_example");
+//! let docs = McpServerConfig::http("docs", "https://docs.example.com/mcp")
+//!     .with_header("Authorization", "Bearer t0ken");
 //!
 //! // The project's own servers, `${NAME}`s filled in from the host's variables.
 //! // A file that cannot be used is reported, and the run goes on without it.

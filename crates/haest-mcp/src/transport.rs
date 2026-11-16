@@ -21,8 +21,9 @@ use rmcp::transport::{
 
 /// `command args...` with the host's handed env plus the server's own `env`
 /// over it -- not this process's environment -- in `cwd`. A bare command is
-/// found on that env's PATH. Its stderr is ignored; it is killed when the
-/// connection drops.
+/// found on that env's PATH, or with none in the system's default directories;
+/// a bare command not found there with no PATH given fails saying so. Its
+/// stderr is ignored; it is killed when the connection drops.
 pub(crate) fn stdio(
     command: &str,
     args: &[String],
@@ -39,10 +40,20 @@ pub(crate) fn stdio(
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
+    let no_path = handed.get("PATH").is_none() && !env.contains_key("PATH");
     let (child, _stderr) = TokioChildProcess::builder(cmd)
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("spawn {command}: {e}"))?;
+        .map_err(|e| {
+            let unsearched = no_path && !command.contains('/');
+            let hint = match e.kind() {
+                std::io::ErrorKind::NotFound if unsearched => {
+                    " (the server was given no PATH, so a bare command is looked up only in the system's default directories: hand PATH in with McpHub::with_env or the server's env, or name the program by its path)"
+                }
+                _ => "",
+            };
+            format!("spawn {command}: {e}{hint}")
+        })?;
     Ok(child)
 }
 

@@ -157,7 +157,14 @@ async fn start_config(cfg: &McpServerConfig, handed: &ChildEnv) -> Result<Starte
 
 impl McpHub {
     /// A hub with no servers, whose stdio servers get their own `env` and
-    /// nothing else, not even `PATH`.
+    /// nothing else, not even `PATH` (haest reads nothing from the process
+    /// environment it was not handed).
+    ///
+    /// So a server started by a bare name (`npx`, `uvx`) is looked up only in
+    /// the system's default directories (`/usr/bin`, `/bin`), and runs with no
+    /// `PATH` of its own; one not found there fails saying the PATH is
+    /// missing. A host that starts servers by name hands `PATH` in with
+    /// [`with_env`](Self::with_env) (or in a server's own `env`).
     pub fn new() -> Self {
         Self::default()
     }

@@ -28,23 +28,30 @@ pub fn project_mcp_path(cwd: &Path) -> PathBuf {
 /// One MCP server to connect: its name and how to reach it.
 ///
 /// [`McpHub::connect`](crate::McpHub::connect) takes a list of them. Build one
-/// with [`McpServerConfig::stdio`] or [`McpServerConfig::http`], write the
-/// struct out to give a stdio server arguments or an HTTP server headers, or
-/// read a project's with [`load_project_mcp_config`].
+/// with [`McpServerConfig::stdio`] or [`McpServerConfig::http`] and the
+/// `with_*` methods (arguments, variables and a dir for a program, headers
+/// for HTTP), or read a project's with [`load_project_mcp_config`].
 ///
 /// ```
 /// use std::collections::BTreeMap;
 ///
 /// use haest_mcp::{McpServerConfig, McpTransport};
 ///
-/// let docs = McpServerConfig {
-///     name: "docs".into(),
-///     transport: McpTransport::Http {
-///         url: "https://docs.example.com/mcp".into(),
-///         headers: BTreeMap::from([("Authorization".into(), "Bearer t0ken".into())]),
-///     },
+/// let github = McpServerConfig::stdio("github", "github-mcp-server")
+///     .with_args(["stdio"])
+///     .with_env("GITHUB_TOKEN", "ghp_example");
+/// let McpTransport::Stdio { args, env, .. } = &github.transport else {
+///     unreachable!("stdio() makes a stdio server")
 /// };
-/// assert_eq!(McpServerConfig::http("docs", "https://docs.example.com/mcp").name, docs.name);
+/// assert_eq!(args, &["stdio"]);
+/// assert_eq!(env["GITHUB_TOKEN"], "ghp_example");
+///
+/// let docs = McpServerConfig::http("docs", "https://docs.example.com/mcp")
+///     .with_header("Authorization", "Bearer t0ken");
+/// let McpTransport::Http { headers, .. } = &docs.transport else {
+///     unreachable!("http() makes an HTTP server")
+/// };
+/// assert_eq!(headers, &BTreeMap::from([("Authorization".into(), "Bearer t0ken".into())]));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpServerConfig {
@@ -76,7 +83,8 @@ pub enum McpTransport {
     /// stderr is discarded, and it is killed when its connection drops.
     Stdio {
         /// The program to run: a path, or a name looked up on the `PATH` the
-        /// process is given.
+        /// process is given (with none, only in the system's default
+        /// directories: see [`McpHub::new`](crate::McpHub::new)).
         command: String,
         /// Its arguments.
         args: Vec<String>,
@@ -100,7 +108,8 @@ impl McpServerConfig {
     }
 
     /// A server that is the program `command`, with no arguments, no
-    /// variables of its own, run in this process's working dir.
+    /// variables of its own, run in this process's working dir; the `with_*`
+    /// methods add them.
     pub fn stdio(name: impl Into<String>, command: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -111,6 +120,59 @@ impl McpServerConfig {
                 cwd: None,
             },
         }
+    }
+
+    /// `args` after the ones a stdio server already has.
+    ///
+    /// # Panics
+    ///
+    /// On an HTTP server: only a program takes arguments.
+    pub fn with_args<S: Into<String>>(mut self, args: impl IntoIterator<Item = S>) -> Self {
+        let McpTransport::Stdio { args: have, .. } = &mut self.transport else {
+            panic!("with_args on HTTP MCP server \"{}\"", self.name);
+        };
+        have.extend(args.into_iter().map(Into::into));
+        self
+    }
+
+    /// The variable `name` set to `value` for this stdio server alone, over
+    /// the hub's environment.
+    ///
+    /// # Panics
+    ///
+    /// On an HTTP server: only a program has an environment.
+    pub fn with_env(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        let McpTransport::Stdio { env, .. } = &mut self.transport else {
+            panic!("with_env on HTTP MCP server \"{}\"", self.name);
+        };
+        env.insert(name.into(), value.into());
+        self
+    }
+
+    /// The dir this stdio server runs in.
+    ///
+    /// # Panics
+    ///
+    /// On an HTTP server: only a program runs in a dir.
+    pub fn with_cwd(mut self, dir: impl Into<PathBuf>) -> Self {
+        let McpTransport::Stdio { cwd, .. } = &mut self.transport else {
+            panic!("with_cwd on HTTP MCP server \"{}\"", self.name);
+        };
+        *cwd = Some(dir.into());
+        self
+    }
+
+    /// The header `name` with `value` on every request to this HTTP server.
+    ///
+    /// # Panics
+    ///
+    /// On a stdio server: only HTTP has headers.
+    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        let McpTransport::Http { headers, .. } = &mut self.transport else {
+            panic!("with_header on stdio MCP server \"{}\"", self.name);
+        };
+        headers.insert(name.into(), value.into());
+        self
     }
 }
 

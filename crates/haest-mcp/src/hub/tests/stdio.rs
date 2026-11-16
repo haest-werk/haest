@@ -111,6 +111,27 @@ async fn a_stdio_server_process_ends_when_the_hub_is_dropped_though_its_tools_ar
     assert!(tools[0].execute(JsonMap::new(), &ctx()).await.is_err());
 }
 
+/// `McpHub::new` hands a stdio server no PATH: a server named by a bare
+/// command that is not in the system's default directories must fail saying
+/// so, never as a bare "not found".
+#[tokio::test]
+async fn a_bare_command_with_no_path_handed_fails_naming_the_missing_path() {
+    let bare = || [McpServerConfig::stdio("bare", "haest-no-such-mcp-server")];
+    let hub = McpHub::new();
+    hub.connect(&bare(), &|_| {}).await;
+    let error = &hub.failures()[0].error;
+    assert!(
+        error.contains("PATH"),
+        "the missing PATH goes unnamed: {error}"
+    );
+    // With a PATH handed in, a missing program is only missing.
+    let path = ChildEnv::new([("PATH".into(), "/usr/bin:/bin".into())]);
+    let hub = McpHub::with_env(path);
+    hub.connect(&bare(), &|_| {}).await;
+    let error = &hub.failures()[0].error;
+    assert!(!error.contains("PATH"), "{error}");
+}
+
 #[tokio::test]
 async fn a_stdio_server_runs_in_its_cwd_with_the_handed_env_and_its_own_and_nothing_else() {
     let dir = TempDir::new();
