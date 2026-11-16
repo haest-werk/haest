@@ -74,29 +74,61 @@ pub enum SummaryPath {
     Cold,
 }
 
+/// One summary call: what it cost, and its text if the reply is a summary, else why not.
 struct Summary {
-    text: String,
+    text: Result<String, String>,
     usage: Usage,
-    error: Option<String>,
+}
+
+/// The reply's text, if it is a whole summary: the call ended on its own,
+/// called no tool, said something, and the run was not cancelled meanwhile.
+/// Anything else (a stream that died, a reply cut off or cancelled part way,
+/// "let me check X first" and a tool call) is a fragment, and committing it
+/// would replace the head of history with it.
+fn summary_text(msg: &AssistantMessage, cancel: &CancellationToken) -> Result<String, String> {
+    let called_a_tool = msg.tool_calls().next().is_some();
+    let why = match msg.stop_reason {
+        _ if cancel.is_cancelled() => Some("cancelled"),
+        StopReason::EndTurn if !called_a_tool => None,
+        StopReason::EndTurn | StopReason::ToolUse => Some("the reply called a tool"),
+        StopReason::MaxTokens => Some("the reply was cut off at its token limit"),
+        StopReason::Refusal => Some("the model refused"),
+        StopReason::Aborted => Some("cancelled"),
+        StopReason::Error => Some(
+            msg.error_message
+                .as_deref()
+                .unwrap_or("the provider failed"),
+        ),
+    };
+    if let Some(why) = why {
+        return Err(why.to_string());
+    }
+    let text = msg.text().trim().to_string();
+    if text.is_empty() {
+        return Err("empty response".into());
+    }
+    Ok(text)
 }
 
 async fn ask(provider: &dyn Provider, req: ProviderRequest) -> Summary {
-    let mut out = Summary {
-        text: String::new(),
-        usage: Usage::default(),
-        error: Some("provider ended without a response".into()),
-    };
+    let cancel = req.cancel.clone();
+    let mut done = None;
     let mut stream = provider.stream(req);
     while let Some(ev) = stream.next().await {
         if let ProviderEvent::Done(msg) = ev {
-            out = Summary {
-                text: msg.text().trim().to_string(),
-                usage: msg.usage,
-                error: msg.error_message,
-            };
+            done = Some(msg);
         }
     }
-    out
+    match done {
+        Some(msg) => Summary {
+            text: summary_text(&msg, &cancel),
+            usage: msg.usage,
+        },
+        None => Summary {
+            text: Err("provider ended without a response".into()),
+            usage: Usage::default(),
+        },
+    }
 }
 
 async fn summarize(
@@ -119,7 +151,7 @@ async fn summarize(
         prefix.request(model.clone(), messages, cancel.clone()),
     )
     .await;
-    if !warm.text.is_empty() || cancel.is_cancelled() {
+    if warm.text.is_ok() || cancel.is_cancelled() {
         return Ok((warm, SummaryPath::Warm));
     }
     let mut messages = agent.sendable(head, &model);
@@ -138,7 +170,9 @@ async fn summarize(
         },
     )
     .await;
-    cold.error = cold.error.or(warm.error);
+    if let (Err(cold_why), Err(warm_why)) = (&mut cold.text, &warm.text) {
+        *cold_why = format!("{cold_why} (the warm request: {warm_why})");
+    }
     Ok((cold, SummaryPath::Cold))
 }
 
@@ -157,7 +191,7 @@ pub enum CompactionError {
     /// The agent's model spec resolves to no provider.
     #[error("{0}")]
     Model(String),
-    /// Neither path produced a summary; history is untouched.
+    /// Neither path produced a summary, or the run was cancelled; history is untouched.
     #[error("compaction summary failed: {0}")]
     Failed(String),
 }
@@ -175,15 +209,12 @@ pub async fn compact(
     }
     let kept = agent.messages.len() - cut;
     let (res, path) = summarize(agent, &agent.messages[..cut], kept, cancel).await?;
-    if res.text.is_empty() {
-        let why = res.error.unwrap_or_else(|| "empty response".into());
-        return Err(CompactionError::Failed(why));
-    }
+    let summary = res.text.map_err(CompactionError::Failed)?;
     agent
         .messages
-        .splice(..cut, [compaction_summary_message(&res.text)]);
+        .splice(..cut, [compaction_summary_message(&summary)]);
     Ok(Some(CompactionResult {
-        summary: res.text,
+        summary,
         kept,
         path,
         usage: res.usage,

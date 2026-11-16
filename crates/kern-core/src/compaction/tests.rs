@@ -12,6 +12,8 @@ use crate::{
     tool::JsonMap,
 };
 
+mod summary;
+
 fn assistant(input: u64) -> Message {
     let mut m = AssistantMessage::start("fake", "m");
     m.content.push(AssistantPart::ToolCall(ToolCall {
