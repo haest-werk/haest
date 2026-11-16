@@ -1002,6 +1002,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "haest-issues"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "haest-core",
+ "haest-workspace",
+ "reqwest",
+ "rustls",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "haest-mcp"
 version = "0.1.0"
 dependencies = [

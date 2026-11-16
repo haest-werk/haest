@@ -51,6 +51,7 @@ Behaviour comes from there, file by file, tests included.
 | `haest-runtime` | the conversation built from `RuntimeInputs`: providers, workspace, tools, MCP, mods, subagents, inbox, session file, behind a `Ui` | the CLI's composition, moved (D14, D16); `host/runtime.ts` |
 | `haest-cli` | the `haest` binary on `haest-config` + `haest-runtime`: flags generated from the registry, `haest settings`, print mode, `--json` NDJSON events, a REPL, sessions + resume | new (the TS haest has no CLI; its host is the broker) |
 | `haest` | the one dependency a host takes; features `providers`, `workspace`, `tools`, `mcp`, `code`, `mods`, `settings` (default), `config`, `runtime` | -- |
+| `haest-issues` | EXPERIMENTAL, an example of how to write tools: a `Tracker` trait, a GitHub Issues backend (REST, token handed in) and a board-card backend (markdown + frontmatter files, the board's own bytes), seven Issue* tools over either; not in the facade | new; the card format from remote-claude's `project-card-file.ts` |
 
 ## Brain's plug points (from its vendored patches, `brain/web/src/rooms/agent/haest/README.md`)
 

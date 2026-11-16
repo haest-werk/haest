@@ -1,0 +1,127 @@
+//! The issue tools on a haest agent: a host hands the agent a tracker's tools
+//! beside its others, and the model plans work on a board of card files.
+//!
+//! The model here is scripted (no network, no keys), so the run is the same
+//! every time and `cargo test` runs it too; swap the resolver for a real
+//! provider and the same tools serve a real model.
+//!
+//! ```text
+//! cargo run -p haest-issues --example issues                  # a board in a temp dir
+//! cargo run -p haest-issues --example issues -- --github o/r  # also lists o/r's open issues (read only, no token)
+//! ```
+
+use std::{path::Path, sync::Arc};
+
+use haest_core::{
+    Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason,
+    testing::{ScriptedProvider, text_answer, tool_answer},
+    tool::{Tool, ToolContext},
+};
+use haest_issues::{Tracker, cards::CardTracker, github::GithubTracker, issue_tools};
+use haest_workspace::RealFs;
+use serde_json::json;
+
+#[tokio::main]
+async fn main() {
+    let tmp = tempfile::tempdir().expect("a temp dir");
+    plan_on_a_board(tmp.path()).await;
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(repo) = args
+        .iter()
+        .position(|a| a == "--github")
+        .and_then(|i| args.get(i + 1))
+    {
+        list_github(repo).await;
+    }
+}
+
+#[tokio::test]
+async fn the_agent_plans_on_the_board() {
+    let tmp = tempfile::tempdir().unwrap();
+    plan_on_a_board(tmp.path()).await;
+}
+
+/// One turn: the model files an epic and a card under it, starts the card, and
+/// lists the board; every change lands in a card file.
+async fn plan_on_a_board(root: &Path) {
+    let dir = root.join("cards");
+    // The host picks the directory and the file system; the tracker reads nothing else.
+    let tracker = Arc::new(CardTracker::new(Arc::new(RealFs), &dir));
+    let tools: Vec<Arc<dyn Tool>> = issue_tools(tracker.clone());
+
+    let model = ScriptedProvider::new([
+        tool_answer(&[
+            (
+                "c1",
+                "IssueCreate",
+                json!({"title": "Search v2", "labels": ["epic"]}),
+            ),
+            (
+                "c2",
+                "IssueCreate",
+                json!({"title": "Index the titles", "priority": "high", "body": "Titles first, bodies next."}),
+            ),
+        ]),
+        tool_answer(&[
+            (
+                "c3",
+                "IssueLink",
+                json!({"id": "index-the-titles", "relation": "parent", "target": "search-v2"}),
+            ),
+            (
+                "c4",
+                "IssueUpdate",
+                json!({"id": "index-the-titles", "status": "in-progress"}),
+            ),
+        ]),
+        tool_answer(&[("c5", "IssueList", json!({}))]),
+        text_answer("Filed the epic and its first card, and started it."),
+    ]);
+    let deps = AgentDeps::new(
+        Arc::new(model.resolver()),
+        Arc::new(tools),
+        Arc::new("You plan work on the team's board.".to_string()),
+        root,
+        Arc::new(ShutWorkspace),
+    );
+    let mut agent = Agent::new(deps, AgentOptions::new("scripted:planner"));
+    let mut events: Vec<LoopEvent> = Vec::new();
+    let end = agent
+        .run("Plan search v2 and start on it.", &mut events)
+        .await;
+    assert_eq!(end.stop_reason, StopReason::EndTurn, "{end:?}");
+
+    for e in &events {
+        if let LoopEvent::ToolResult { call, output, .. } = e {
+            assert!(!output.is_error, "{}: {}", call.name, output.content);
+            println!("{} -> {}", call.name, output.content);
+        }
+    }
+    // The model was offered all seven tools.
+    let offered: Vec<String> = model.requests()[0]
+        .tools
+        .iter()
+        .map(|t| t.name.clone())
+        .collect();
+    assert_eq!(offered.len(), 7, "{offered:?}");
+
+    let card = tracker.get("index-the-titles").await.expect("the card");
+    assert_eq!(card.status, "in-progress");
+    let text = std::fs::read_to_string(dir.join("index-the-titles.md")).expect("its file");
+    assert!(text.contains("epic: search-v2"), "{text}");
+    println!("\n{}:\n{text}", dir.join("index-the-titles.md").display());
+}
+
+/// The same tools over GitHub, called directly by a host: read only, no token
+/// (a public repository), so nothing on GitHub changes.
+async fn list_github(repo: &str) {
+    let (owner, name) = repo.split_once('/').expect("--github takes owner/repo");
+    let tools = issue_tools(Arc::new(GithubTracker::new(owner, name)));
+    let list = tools.iter().find(|t| t.name() == "IssueList").unwrap();
+    let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+    let input = json!({"limit": 10}).as_object().cloned().unwrap();
+    match list.execute(input, &ctx).await {
+        Ok(out) => println!("\n{repo}, open issues:\n{}", out.content),
+        Err(e) => println!("\n{repo}: {e}"),
+    }
+}
