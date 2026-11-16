@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::{
-    AgentDeps, LoopEvent,
+    LoopEvent, SharedDeps,
     provider::Effort,
     tool::{InnerCallEvent, Tool, ToolSource},
 };
@@ -54,10 +54,11 @@ pub enum SubagentEvent {
 /// [`SubagentHub`](super::SubagentHub)'s docs implement one.
 #[async_trait]
 pub trait SubagentParent: Inbox {
-    /// The conversation's own deps. A subagent shares its models, cwd, workspace,
-    /// spill dir, ledger, web search and hooks; its tools, prompt and turn caps
-    /// are its own, and it neither persists its messages nor compacts.
-    fn deps(&self) -> AgentDeps;
+    /// What every agent of the conversation runs on: a subagent shares its
+    /// models, cwd, workspace, spill dir, ledger, web search and hooks. Its
+    /// tools, prompt and turn caps are its own, and it neither persists its
+    /// messages nor compacts.
+    fn deps(&self) -> SharedDeps;
     /// The tools every agent starts from (no agent tools): the hub drops the
     /// conversation-only ones (the task list) and adds the agent's own agent tools.
     fn base_tools(&self) -> Vec<Arc<dyn Tool>>;

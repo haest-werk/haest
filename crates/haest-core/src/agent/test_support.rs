@@ -203,11 +203,11 @@ pub fn agent_with(p: &Arc<ScriptedProvider>, opts: Opts) -> (Agent, Arc<TestHook
         "/tmp",
         workspace,
     );
-    deps.hooks = hooks.clone();
-    deps.facts = hooks.clone();
-    deps.clock = hooks.clone();
-    deps.ledger = opts.ledger;
-    deps.spill_dir = opts.spill_dir.map(|d| Path::new(d).to_path_buf());
+    deps.shared.hooks = hooks.clone();
+    deps.shared.facts = hooks.clone();
+    deps.shared.clock = hooks.clone();
+    deps.shared.ledger = opts.ledger;
+    deps.shared.spill_dir = opts.spill_dir.map(|d| Path::new(d).to_path_buf());
     (Agent::new(deps, AgentOptions::new("fake:m1")), hooks)
 }
 

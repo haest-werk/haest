@@ -59,7 +59,7 @@ Behaviour comes from there, file by file, tests included.
 | Brain patch | Rust plug point |
 |---|---|
 | `tool_call_start` forwarded as a loop event | `ProviderEvent::ToolCallStart` -> `LoopEvent::ToolCallStart` (in the contract) |
-| `clock` in the deps (a paused run's pause doesn't count) | `AgentDeps::clock` (a `Clock`) |
+| `clock` in the deps (a paused run's pause doesn't count) | `SharedDeps::clock` (a `Clock`) |
 | openai-compat with no SDK client: the transport is the node's gateway on files.sock | haest-http's `HttpClient` trait (default: reqwest), handed to the providers; brain's goes over its unix socket |
 | no OpenRouter provider routing (the gateway decides) | routing is an option on the compat provider, off by default for a custom transport |
 | workspace = BrainFs (just-bash over it, writes staged for the asker); dream runs with none | `Fs` trait + `haest-workspace` sandbox over any `Fs`; `ShutWorkspace` |

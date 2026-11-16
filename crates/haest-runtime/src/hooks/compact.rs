@@ -86,7 +86,7 @@ pub(super) fn compaction_failed(e: &CompactionError) -> String {
 /// What the summary calls cost goes on the conversation's bill, summary or
 /// not. The loop only counts it toward the turn's caps (`take_side_spend`).
 fn charge(agent: &Agent, usage: &Usage) {
-    if let Some(ledger) = &agent.deps().ledger {
+    if let Some(ledger) = &agent.deps().shared.ledger {
         ledger.lock().unwrap().charge(usage);
     }
 }

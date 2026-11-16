@@ -62,10 +62,10 @@ fn append(messages: &mut Vec<Message>, hooks: &dyn AgentHooks, msg: Message) {
 
 impl Agent {
     pub(super) async fn add_user(&mut self, text: &str, t: &mut Turn<'_>) {
-        let user = user_message(text, self.deps.hooks.as_ref(), &t.cancel).await;
+        let user = user_message(text, self.deps.shared.hooks.as_ref(), &t.cancel).await;
         append(
             &mut self.history,
-            self.deps.hooks.as_ref(),
+            self.deps.shared.hooks.as_ref(),
             Message::User(user.clone()),
         );
         t.sink.emit(LoopEvent::User { message: user });
@@ -86,7 +86,7 @@ impl Agent {
         let Some(text) = text else { return };
         append(
             &mut self.history,
-            self.deps.hooks.as_ref(),
+            self.deps.shared.hooks.as_ref(),
             Message::user(text.clone()),
         );
         t.sink.emit(LoopEvent::Guard { text });
@@ -112,6 +112,7 @@ impl Agent {
         let cancel = t.cancel.clone();
         let ready = self
             .deps
+            .shared
             .hooks
             .clone()
             .before_model_call(self, &cancel)
@@ -154,7 +155,7 @@ impl Agent {
     }
 
     async fn call_model(&mut self, t: &mut Turn<'_>) -> AssistantMessage {
-        let resolved = match self.deps.models.resolve(&self.model_spec) {
+        let resolved = match self.deps.shared.models.resolve(&self.model_spec) {
             Ok(r) => r,
             Err(e) => return refuse(&self.model_spec, &report(&e), t),
         };
@@ -188,7 +189,7 @@ impl Agent {
         }
         append(
             &mut self.history,
-            self.deps.hooks.as_ref(),
+            self.deps.shared.hooks.as_ref(),
             Message::Assistant(msg.clone()),
         );
         t.sink.emit(LoopEvent::Assistant {
@@ -201,22 +202,22 @@ impl Agent {
     /// in CALL order -- history, the guard's repeat count and the transcript all
     /// read them that way -- each one as soon as every call before it has answered.
     async fn run_tools(&mut self, calls: &[ToolCall], t: &mut Turn<'_>) {
-        let services: Arc<dyn ToolServices> = self.deps.hooks.clone();
+        let services: Arc<dyn ToolServices> = self.deps.shared.hooks.clone();
         let ctx = ToolContext {
-            cwd: self.deps.cwd.clone(),
+            cwd: self.deps.shared.cwd.clone(),
             cancel: t.cancel.clone(),
-            workspace: self.deps.workspace.clone(),
+            workspace: self.deps.shared.workspace.clone(),
             services,
             context_room_tokens: None,
             tool_call_id: None,
-            spill_dir: self.deps.spill_dir.clone(),
+            spill_dir: self.deps.shared.spill_dir.clone(),
         };
         let tools = ToolIndex::new(self.deps.tools.callable());
         let mut delivery = Delivery {
             caps: self.turn_caps(),
             guard: &mut t.guard,
             messages: &mut self.history,
-            hooks: self.deps.hooks.as_ref(),
+            hooks: self.deps.shared.hooks.as_ref(),
             sink: &mut *t.sink,
         };
         run_tool_batches(calls, &tools, &ctx, &mut t.usage, &mut delivery).await;

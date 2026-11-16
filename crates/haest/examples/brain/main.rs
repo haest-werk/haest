@@ -169,8 +169,8 @@ pub fn deps(
         CWD,
         workspace,
     );
-    deps.hooks = host.clone();
-    deps.facts = host.clone();
-    deps.clock = host;
+    deps.shared.hooks = host.clone();
+    deps.shared.facts = host.clone();
+    deps.shared.clock = host;
     deps
 }

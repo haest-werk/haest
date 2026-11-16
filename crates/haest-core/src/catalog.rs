@@ -4,7 +4,7 @@
 //! a host may bring its own rows in the same shape.
 //!
 //! The loop never reads a catalog directly. It asks the host's [`ModelFacts`]
-//! ([`AgentDeps::facts`](crate::AgentDeps::facts)), and the answers come from
+//! ([`SharedDeps::facts`](crate::SharedDeps::facts)), and the answers come from
 //! these rows: the loop drops input a model cannot take ([`crate::media`]),
 //! fits the reasoning level and caps the turn, and a provider adapter books a
 //! cost from [`ModelPricing`].
@@ -37,7 +37,7 @@ use crate::caps::TurnCaps;
 
 /// PLUG POINT: what the host knows about a model spec
 /// ([`Agent::model_spec`](crate::Agent::model_spec)), set on
-/// [`AgentDeps::facts`](crate::AgentDeps::facts). Asked again before every
+/// [`SharedDeps::facts`](crate::SharedDeps::facts). Asked again before every
 /// model call, so the answers may follow the model. Every method defaults to
 /// "unknown"; [`NoFacts`] knows nothing.
 ///

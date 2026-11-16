@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use haest_core::{Agent, AgentDeps, AgentOptions, tool::Tool};
+use haest_core::{Agent, AgentDeps, AgentOptions, SharedDeps, tool::Tool};
 use tokio_util::sync::CancellationToken;
 
 use super::SubagentHub;
@@ -46,16 +46,18 @@ impl SubagentHub {
                 tools: source,
                 note: subagent_note(&run.me.name, &run.parent, &run.description, &self.caps),
             }),
-            hooks: Arc::new(ChildHooks {
-                hooks: base.hooks.clone(),
-                parent: self.parent.clone(),
-                id: run.id.clone(),
-            }),
-            facts: Arc::new(ChildFacts {
-                facts: base.facts.clone(),
-                caps: self.caps,
-            }),
-            ..base
+            shared: SharedDeps {
+                hooks: Arc::new(ChildHooks {
+                    hooks: base.hooks.clone(),
+                    parent: self.parent.clone(),
+                    id: run.id.clone(),
+                }),
+                facts: Arc::new(ChildFacts {
+                    facts: base.facts.clone(),
+                    caps: self.caps,
+                }),
+                ..base
+            },
         };
         let mut opts = AgentOptions::new(model);
         opts.effort = effort;

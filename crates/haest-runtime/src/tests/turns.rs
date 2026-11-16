@@ -95,7 +95,7 @@ async fn shut_down_leaves_no_job_running_and_the_session_on_disk() {
         .jobs
         .clone()
         .expect("Bash in the real workspace leaves jobs");
-    let workspace = rt.agent().deps().workspace.clone();
+    let workspace = rt.agent().deps().shared.workspace.clone();
     jobs.start(workspace, "sleep 30", "waits", dir.clone())
         .unwrap();
 

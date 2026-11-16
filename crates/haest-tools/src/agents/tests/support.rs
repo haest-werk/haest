@@ -9,7 +9,7 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, LoopEvent, Message,
+    Agent, AgentDeps, AgentOptions, LoopEvent, Message, SharedDeps,
     ledger::{ConversationCaps, Ledger, LedgerHooks, LedgerSnapshot},
     provider::{Effort, ModelError, ResolvedModel},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
@@ -85,7 +85,7 @@ impl Inbox for FakeParent {
 
 #[async_trait]
 impl SubagentParent for FakeParent {
-    fn deps(&self) -> AgentDeps {
+    fn deps(&self) -> SharedDeps {
         let p = self.provider.clone();
         let models = move |spec: &str| {
             let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();
@@ -94,15 +94,10 @@ impl SubagentParent for FakeParent {
                 model,
             })
         };
-        let mut d = AgentDeps::new(
-            Arc::new(models),
-            Arc::new(self.base_tools()),
-            Arc::new("main".to_string()),
-            "/p",
-            self.ws.clone(),
-        );
-        d.ledger = Some(self.ledger.clone());
-        d
+        SharedDeps {
+            ledger: Some(self.ledger.clone()),
+            ..SharedDeps::new(Arc::new(models), "/p", self.ws.clone())
+        }
     }
     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
         vec![Arc::new(GlobTool), Arc::new(TaskCreate)]
@@ -188,7 +183,8 @@ impl Rig {
         tools.extend(hub.tools_for(&AgentRef::main()));
         let deps = AgentDeps {
             tools: Arc::new(tools),
-            ..parent.deps()
+            system_prompt: Arc::new("main".to_string()),
+            shared: parent.deps(),
         };
         let main = Agent::new(deps, AgentOptions::new("fake:main-model"));
         Self {

@@ -74,9 +74,9 @@ pub(crate) async fn build_request_prefix(
             effort,
             spec,
             model,
-            deps.facts.as_ref(),
-            deps.hooks.as_ref(),
+            deps.shared.facts.as_ref(),
+            deps.shared.hooks.as_ref(),
         ),
-        web_search: deps.web_search.clone(),
+        web_search: deps.shared.web_search.clone(),
     }
 }

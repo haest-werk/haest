@@ -169,7 +169,7 @@ impl<U: ?Sized> Runtime<U> {
     /// When `spec` does not resolve (an unknown provider, no key for it):
     /// then nothing changes.
     pub fn set_model_spec(&mut self, spec: &str) -> Result<(), ModelError> {
-        self.agent.deps().models.resolve(spec)?;
+        self.agent.deps().shared.models.resolve(spec)?;
         self.agent.set_model_spec(spec);
         self.hooks.set_model_spec(spec);
         self.hooks.append(SessionRecord::Config {

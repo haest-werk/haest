@@ -232,7 +232,9 @@ pub mod prelude {
     pub use crate::agent::{Agent, AgentControl, AgentOptions};
     pub use crate::caps::TurnCaps;
     pub use crate::catalog::{InputModality, ModelFacts, NoFacts, Reasoning};
-    pub use crate::deps::{AgentDeps, AgentHooks, Clock, NoHooks, SystemPrompt, WallClock, now_ms};
+    pub use crate::deps::{
+        AgentDeps, AgentHooks, Clock, NoHooks, SharedDeps, SystemPrompt, WallClock, now_ms,
+    };
     pub use crate::events::{EventSink, LoopEvent, TurnOutcome};
     pub use crate::fs::{DirEntry, FileKind, Fs, FsStat, MemFs};
     pub use crate::handed::{ChildEnv, KeySource};

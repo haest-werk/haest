@@ -32,19 +32,16 @@ fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<M
         })
     };
     let none: Vec<Arc<dyn Tool>> = Vec::new();
-    let bare = AgentDeps::new(
+    let mut deps = AgentDeps::new(
         Arc::new(resolve),
         Arc::new(none),
         Arc::new(String::new()),
         "/w",
         Arc::new(ShutWorkspace),
     );
-    let deps = AgentDeps {
-        hooks: hooks.clone(),
-        facts: hooks.clone(),
-        ledger: Some(ledger.clone()),
-        ..bare
-    };
+    deps.shared.hooks = hooks.clone();
+    deps.shared.facts = hooks.clone();
+    deps.shared.ledger = Some(ledger.clone());
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let mut filled = text_answer("earlier answer");
     filled.usage.input = 1_000_000;

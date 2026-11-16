@@ -13,7 +13,7 @@
 //! and a cleared conversation carries it forward.
 //!
 //! A host makes a [`Ledger`] and shares it as `Arc<Mutex<Ledger>>` on
-//! [`AgentDeps::ledger`](crate::AgentDeps::ledger). The turn guard charges
+//! [`SharedDeps::ledger`](crate::SharedDeps::ledger). The turn guard charges
 //! every model call and tool spend to it, and stops a turn before its next
 //! model call once [`Ledger::exhausted`] says so. A host's way to raise a cap
 //! ([`Ledger::with_remedies`]) ends the message that says so.

@@ -75,6 +75,7 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
     let err = rt
         .agent()
         .deps()
+        .shared
         .models
         .resolve("anthropic:claude-opus-5-5")
         .err()
@@ -119,6 +120,7 @@ async fn a_key_the_host_hands_in_is_the_key_haest_uses() {
     assert!(
         rt.agent()
             .deps()
+            .shared
             .models
             .resolve(rt.agent().model_spec())
             .is_ok()
@@ -159,6 +161,7 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
     let model = rt
         .agent()
         .deps()
+        .shared
         .models
         .resolve(rt.agent().model_spec())
         .unwrap();

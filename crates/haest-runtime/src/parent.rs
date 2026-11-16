@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use crate::{
     RuntimeHooks,
     haest::{
-        AgentDeps, Effort, SystemPrompt,
+        Effort, SharedDeps, SystemPrompt,
         core::deferred_tools::ToolDeferral,
         core::tool::{Tool, ToolSource},
         mods::{ModSystemPrompt, Mods},
@@ -34,9 +34,9 @@ pub struct RuntimeParent {
     /// The runtime's hooks: the settings' caps, the current model and
     /// effort, the [`Ui`](crate::Ui) a subagent's life goes to.
     pub hooks: Arc<RuntimeHooks>,
-    /// The conversation's deps. Their tools and prompt are left out (empty):
-    /// the hub replaces both for every agent, and main's tools hold the hub.
-    pub deps: AgentDeps,
+    /// What every agent of the conversation runs on (models, workspace,
+    /// hooks, ledger, ...); each agent's tools and prompt are its own.
+    pub deps: SharedDeps,
     /// The tools a subagent starts from: every tool but the agent tools,
     /// inside the mods' hooks.
     pub tools: Arc<WrappedTools>,
@@ -67,7 +67,7 @@ impl Inbox for RuntimeParent {
 
 #[async_trait]
 impl SubagentParent for RuntimeParent {
-    fn deps(&self) -> AgentDeps {
+    fn deps(&self) -> SharedDeps {
         self.deps.clone()
     }
 

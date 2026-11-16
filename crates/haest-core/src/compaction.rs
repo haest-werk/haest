@@ -227,7 +227,7 @@ impl CompactionError {
 ///     Arc::new(ShutWorkspace),
 /// );
 /// let cfg = CompactionOptions { context_window: 1_000, threshold: 0.8, ceiling: None, keep_recent: 2 };
-/// deps.hooks = Arc::new(Compacting(cfg));
+/// deps.shared.hooks = Arc::new(Compacting(cfg));
 ///
 /// // Resume a conversation whose last request filled 90% of the window.
 /// let mut full = text_answer("b done");

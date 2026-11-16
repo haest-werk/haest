@@ -11,14 +11,13 @@ use std::{
 use crate::{
     BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, RuntimeParent, Ui,
     haest::{
-        Agent, AgentDeps, AgentOptions, ChildEnv, ModelResolver, Workspace,
+        Agent, AgentDeps, AgentOptions, ChildEnv, ModelResolver, SharedDeps, Workspace,
         core::deferred_tools::ToolDeferral,
         core::fs::Fs,
         core::ledger::Ledger,
         core::session::SessionRecord,
         core::skills::{Skill, SkillScanRoots, skills_in},
         core::task_board::TaskBoard,
-        core::tool::Tool,
         mods::{ApprovalGate, ModSystemPrompt, Prompter},
         now_ms,
         providers::{ProviderRegistry, RegistryOptions},
@@ -201,24 +200,16 @@ where
     let ledger = Ledger::new(s.conversation_caps(), hooks.clone()).with_remedies(hooks.remedies());
     let ledger = Arc::new(Mutex::new(ledger));
 
-    // The conversation's deps. Tools and prompt are each agent's own: the hub
-    // gives every subagent its own, and main's tools hold the hub.
-    let none: Vec<Arc<dyn Tool>> = Vec::new();
-    let empty = AgentDeps::new(
-        Arc::new(registry),
-        Arc::new(none),
-        Arc::new(String::new()),
-        s.cwd.clone(),
-        found.workspace,
-    );
-    let shared = AgentDeps {
+    // What every agent of the conversation runs on; tools and prompt are each
+    // agent's own (the hub gives every subagent its own, main's hold the hub).
+    let shared = SharedDeps {
         spill_dir: Some(spill),
         hooks: hooks.clone(),
         facts: hooks.clone(),
         ledger: Some(ledger.clone()),
         web_search: s.web_search_options(),
         remedies: hooks.remedies(),
-        ..empty
+        ..SharedDeps::new(Arc::new(registry), s.cwd.clone(), found.workspace)
     };
     let subagents = RuntimeParent {
         hooks: hooks.clone(),
@@ -243,7 +234,7 @@ where
     let deps = AgentDeps {
         tools,
         system_prompt: Arc::new(ModSystemPrompt::new(Arc::new(main_prompt), mods.clone())),
-        ..shared
+        shared,
     };
 
     let mut agent_opts = AgentOptions::new(model);

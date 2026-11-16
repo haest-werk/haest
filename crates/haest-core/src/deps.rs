@@ -3,8 +3,9 @@
 //!
 //! [`AgentDeps::new`] takes the four things every agent needs (a
 //! [`ModelResolver`], a [`ToolSource`], a [`SystemPrompt`] and a
-//! [`Workspace`]); everything else is a public field, off until the host sets
-//! it. [`Agent::new`] takes the result.
+//! [`Workspace`]); everything else is a public field of its [`SharedDeps`],
+//! off until the host sets it (`deps.shared.hooks = ...`). [`Agent::new`]
+//! takes the result.
 //!
 //! PLUG POINT: [`AgentHooks`] is where a host changes the loop's behaviour
 //! without forking it. Every method has a default that does nothing, so a host
@@ -55,7 +56,7 @@ impl SystemPrompt for String {
 /// A host's say in the loop. Extends [`ToolServices`]: what tools publish, report
 /// and log goes to the same object.
 ///
-/// Set it on [`AgentDeps::hooks`]. Every method has a default that changes
+/// Set it on [`SharedDeps::hooks`]. Every method has a default that changes
 /// nothing; the loop calls them from the task running [`Agent::run`], so a
 /// slow hook slows the turn.
 ///
@@ -107,8 +108,8 @@ impl SystemPrompt for String {
 ///     "/",
 ///     Arc::new(ShutWorkspace),
 /// );
-/// deps.hooks = host.clone();
-/// deps.facts = host.clone();
+/// deps.shared.hooks = host.clone();
+/// deps.shared.facts = host.clone();
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
 /// let end = agent.run("look it up", &mut Vec::<LoopEvent>::new()).await;
@@ -181,7 +182,7 @@ pub fn now_ms() -> u64 {
 }
 
 /// PLUG POINT: the clock the turn guard's time cap reads, in milliseconds
-/// since the epoch ([`AgentDeps::clock`]). A host that pauses runs gives one
+/// since the epoch ([`SharedDeps::clock`]). A host that pauses runs gives one
 /// that stands still while paused. A closure `Fn() -> u64` is a clock.
 pub trait Clock: Send + Sync {
     /// Now, in milliseconds since the epoch.
@@ -210,19 +211,30 @@ pub struct NoHooks;
 impl ToolServices for NoHooks {}
 impl AgentHooks for NoHooks {}
 
-/// Everything the loop needs: what [`Agent::new`] takes.
+/// Everything the loop needs: what [`Agent::new`] takes. An agent's own
+/// tools and system prompt, and what it runs on besides ([`SharedDeps`]),
+/// which the agents of one conversation share.
 ///
 /// Cheap to clone (every field is an `Arc` or small). The loop reads the
 /// models, tools, prompt and hooks again before every model call, so a
 /// source that changes behind its `Arc` is seen at the next call.
 #[derive(Clone)]
 pub struct AgentDeps {
-    /// Resolves [`Agent::model_spec`] to a provider, before every model call.
-    pub models: Arc<dyn ModelResolver>,
     /// The tools: which to advertise, and which a call may run.
     pub tools: Arc<dyn ToolSource>,
     /// The system prompt, built again before every model call.
     pub system_prompt: Arc<dyn SystemPrompt>,
+    /// The models, the workspace, the host's hooks and the rest.
+    pub shared: SharedDeps,
+}
+
+/// What an agent runs on besides its tools and system prompt. Main and its
+/// subagents share one (a subagent hub gets it from its parent), so the
+/// whole tree runs on the same models, files, hooks and ledger.
+#[derive(Clone)]
+pub struct SharedDeps {
+    /// Resolves [`Agent::model_spec`] to a provider, before every model call.
+    pub models: Arc<dyn ModelResolver>,
     /// The working directory: tools resolve relative paths against it.
     pub cwd: PathBuf,
     /// Every file and shell operation a tool performs goes through this.
@@ -247,21 +259,17 @@ pub struct AgentDeps {
     pub remedies: Remedies,
 }
 
-impl AgentDeps {
-    /// The minimum: models, tools, a system prompt and a workspace. Everything else off:
-    /// no spill directory, [`NoHooks`], [`NoFacts`], the [`WallClock`], no
-    /// ledger, no web search, no remedies.
+impl SharedDeps {
+    /// The minimum: models, a working directory and a workspace. Everything
+    /// else off: no spill directory, [`NoHooks`], [`NoFacts`], the
+    /// [`WallClock`], no ledger, no web search, no remedies.
     pub fn new(
         models: Arc<dyn ModelResolver>,
-        tools: Arc<dyn ToolSource>,
-        system_prompt: Arc<dyn SystemPrompt>,
         cwd: impl Into<PathBuf>,
         workspace: Arc<dyn Workspace>,
     ) -> Self {
         Self {
             models,
-            tools,
-            system_prompt,
             cwd: cwd.into(),
             workspace,
             spill_dir: None,
@@ -271,6 +279,24 @@ impl AgentDeps {
             ledger: None,
             web_search: None,
             remedies: Remedies::default(),
+        }
+    }
+}
+
+impl AgentDeps {
+    /// The minimum: models, tools, a system prompt and a workspace; the rest
+    /// as [`SharedDeps::new`] leaves it.
+    pub fn new(
+        models: Arc<dyn ModelResolver>,
+        tools: Arc<dyn ToolSource>,
+        system_prompt: Arc<dyn SystemPrompt>,
+        cwd: impl Into<PathBuf>,
+        workspace: Arc<dyn Workspace>,
+    ) -> Self {
+        Self {
+            tools,
+            system_prompt,
+            shared: SharedDeps::new(models, cwd, workspace),
         }
     }
 }

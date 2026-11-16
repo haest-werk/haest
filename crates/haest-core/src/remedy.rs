@@ -5,7 +5,7 @@
 //! and reads no `HAEST_*` variable. A host that has a way past a limit hands
 //! haest [`Remedies`], and each message about that [`Limit`] gets the host's
 //! remedy after it. One value serves every place that writes such a message:
-//! [`AgentDeps::remedies`](crate::AgentDeps::remedies) (the turn caps and the
+//! [`SharedDeps::remedies`](crate::SharedDeps::remedies) (the turn caps and the
 //! request cap), [`Ledger::with_remedies`](crate::ledger::Ledger::with_remedies)
 //! (the conversation budget), haest-tools' `AgentTurnGate::with_remedies` and
 //! haest-workspace's `SandboxWorkspace::with_remedies`.

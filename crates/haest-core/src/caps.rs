@@ -36,7 +36,7 @@ pub struct TurnCaps {
     /// Stop the turn after this many model calls.
     pub max_turn_steps: u32,
     /// Stop the turn once it has run this long (wall clock, on the host's
-    /// [`AgentDeps::clock`](crate::AgentDeps::clock)).
+    /// [`SharedDeps::clock`](crate::SharedDeps::clock)).
     pub max_turn_time: Duration,
     /// Stop the turn once one tool call (same input, same result) has repeated this often.
     pub max_repeats: u32,

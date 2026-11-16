@@ -42,7 +42,7 @@ use turn::Turn;
 
 /// How a new [`Agent`] starts: its model, its effort, and any history to resume.
 pub struct AgentOptions {
-    /// The model spec, `provider:model`, resolved by [`AgentDeps::models`]
+    /// The model spec, `provider:model`, resolved by [`SharedDeps::models`](crate::SharedDeps::models)
     /// before every model call. Becomes [`Agent::model_spec`].
     pub model_spec: String,
     /// The reasoning effort to ask for; None sends none and the model uses its
@@ -251,15 +251,15 @@ impl Agent {
     /// A fresh guard per turn: its caps and clock start over.
     fn guard(&self) -> TurnGuard {
         TurnGuard::new(
-            self.deps.clock.clone(),
-            self.deps.ledger.clone(),
-            self.deps.remedies.clone(),
+            self.deps.shared.clock.clone(),
+            self.deps.shared.ledger.clone(),
+            self.deps.shared.remedies.clone(),
         )
     }
 
     /// The hard caps for the current model spec; read fresh at every check.
     fn turn_caps(&self) -> Option<TurnCaps> {
-        self.deps.facts.turn_caps(&self.model_spec)
+        self.deps.shared.facts.turn_caps(&self.model_spec)
     }
 
     /// Everything a model call sends ahead of the history; compaction reuses it.
@@ -276,8 +276,13 @@ impl Agent {
     /// `model` is the provider's model id, named in the note. Reports what was
     /// withheld to [`AgentHooks::on_media_withheld`](crate::AgentHooks::on_media_withheld).
     pub(crate) fn sendable(&self, messages: &[Message], model: &str) -> Vec<Message> {
-        let accepts = self.deps.facts.input_modalities(&self.model_spec);
-        fit_for_model(messages, accepts.as_ref(), model, self.deps.hooks.as_ref())
+        let accepts = self.deps.shared.facts.input_modalities(&self.model_spec);
+        fit_for_model(
+            messages,
+            accepts.as_ref(),
+            model,
+            self.deps.shared.hooks.as_ref(),
+        )
     }
 }
 

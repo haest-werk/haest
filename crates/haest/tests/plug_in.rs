@@ -36,7 +36,8 @@ use async_trait::async_trait;
 use haest::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, Effort,
     ExecResult, Fs, LoopEvent, MemFs, Message, ModelError, Provider, ProviderEvent,
-    ProviderRequest, ResolvedModel, StopReason, ToolCall, TurnOutcome, Usage, Workspace,
+    ProviderRequest, ResolvedModel, SharedDeps, StopReason, ToolCall, TurnOutcome, Usage,
+    Workspace,
     core::caps::SubagentCaps,
     core::provider::ProviderStream,
     core::shell_command::{ShellCall, ShellCommand},
@@ -254,7 +255,7 @@ impl Inbox for App {
 
 #[async_trait]
 impl SubagentParent for App {
-    fn deps(&self) -> AgentDeps {
+    fn deps(&self) -> SharedDeps {
         let provider = self.provider.clone();
         let models = move |spec: &str| {
             Ok::<_, ModelError>(ResolvedModel {
@@ -262,13 +263,7 @@ impl SubagentParent for App {
                 model: spec.to_string(),
             })
         };
-        AgentDeps::new(
-            Arc::new(models),
-            Arc::new(self.base_tools()),
-            Arc::new(self.prompt()),
-            CWD,
-            self.workspace.clone(),
-        )
+        SharedDeps::new(Arc::new(models), CWD, self.workspace.clone())
     }
     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
         let on = |w: &str| matches!(w, "read" | "write" | "bash");
@@ -331,7 +326,8 @@ fn rig(main: Vec<Vec<AssistantPart>>, sub: Vec<Vec<AssistantPart>>, sub_permits:
     tools.extend(hub.tools_for(&AgentRef::main()));
     let deps = AgentDeps {
         tools: Arc::new(tools),
-        ..app.deps()
+        system_prompt: Arc::new(app.prompt()),
+        shared: app.deps(),
     };
     Rig {
         agent: Agent::new(deps, AgentOptions::new(MODEL)),
@@ -356,9 +352,14 @@ impl Rig {
         assert_eq!(self.turn(text).await, TurnOutcome::new(StopReason::EndTurn));
     }
 
-    /// The agent again, over the host's deps as `edit` changes them.
+    /// The agent again, over the host's deps as `edit` changes them: the
+    /// base tools, the host's prompt, what every agent shares.
     fn reseat(&mut self, edit: impl FnOnce(&mut AgentDeps)) {
-        let mut deps = self.app.deps();
+        let mut deps = AgentDeps {
+            tools: Arc::new(self.app.base_tools()),
+            system_prompt: Arc::new(self.app.prompt()),
+            shared: self.app.deps(),
+        };
         edit(&mut deps);
         self.agent = Agent::new(deps, AgentOptions::new(MODEL));
     }

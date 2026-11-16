@@ -54,7 +54,7 @@ mod member_run;
 ///
 /// use async_trait::async_trait;
 /// use haest_core::{
-///     AgentDeps,
+///     SharedDeps,
 ///     caps::SubagentCaps,
 ///     provider::Effort,
 ///     // haest-core's `testing` feature: a provider that answers from a script.
@@ -75,10 +75,8 @@ mod member_run;
 ///
 /// #[async_trait]
 /// impl SubagentParent for Parent {
-///     fn deps(&self) -> AgentDeps {
-///         let models = Arc::new(self.0.resolver());
-///         let prompt = Arc::new("You are a helper.".to_string());
-///         AgentDeps::new(models, Arc::new(self.base_tools()), prompt, "/", Arc::new(ShutWorkspace))
+///     fn deps(&self) -> SharedDeps {
+///         SharedDeps::new(Arc::new(self.0.resolver()), "/", Arc::new(ShutWorkspace))
 ///     }
 ///     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
 ///         Vec::new()

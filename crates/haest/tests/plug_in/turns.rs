@@ -141,7 +141,7 @@ async fn a_hook_may_refuse_a_model_call_and_end_the_turn() {
     let tools = r.agent.deps().tools.clone();
     r.reseat(|deps| {
         deps.tools = tools;
-        deps.hooks = Arc::new(Budget {
+        deps.shared.hooks = Arc::new(Budget {
             calls: AtomicUsize::new(0),
             allowed: 1,
         });
