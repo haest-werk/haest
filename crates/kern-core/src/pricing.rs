@@ -4,16 +4,14 @@
 //! Only from a configured price: a model with none stays unpriced, because an
 //! invented number in the ledger is worse than a missing one.
 
-use crate::{catalog::ModelPricing, messages::Usage};
+use crate::{catalog::ModelPricing, limits::billed_tokens, messages::Usage};
 
 const PER: f64 = 1_000_000.0;
 
 /// Sets `usage.cost_usd` from `pricing` when the provider gave no cost and tokens were billed.
 pub fn book_priced_cost(usage: &mut Usage, pricing: Option<&ModelPricing>) {
     let Some(p) = pricing else { return };
-    if usage.cost_usd.is_some()
-        || usage.input + usage.cache_read + usage.cache_write + usage.output == 0
-    {
+    if usage.cost_usd.is_some() || billed_tokens(usage) == 0 {
         return;
     }
     let cost = usage.input as f64 * p.input

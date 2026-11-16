@@ -64,7 +64,7 @@ impl Default for SubagentCaps {
 
 /// Every token the provider bills for, cached or not.
 pub fn billed_tokens(u: &Usage) -> u64 {
-    u.input + u.cache_read + u.cache_write + u.output
+    u.context_tokens()
 }
 
 /// Rough input size of one request: ~4 characters per token over the text sent,

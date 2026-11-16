@@ -21,7 +21,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{
     deps::AgentHooks,
@@ -61,29 +61,31 @@ fn canonical(v: &Value, out: &mut String) {
             }
             out.push(']');
         }
-        Value::Object(o) => {
-            let mut keys: Vec<&String> = o.keys().collect();
-            keys.sort();
-            out.push('{');
-            for (i, k) in keys.into_iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                out.push_str(&Value::String(k.clone()).to_string());
-                out.push(':');
-                canonical(&o[k], out);
-            }
-            out.push('}');
-        }
+        Value::Object(o) => canonical_object(o, out),
         other => out.push_str(&other.to_string()),
     }
+}
+
+fn canonical_object(o: &Map<String, Value>, out: &mut String) {
+    let mut keys: Vec<&String> = o.keys().collect();
+    keys.sort();
+    out.push('{');
+    for (i, k) in keys.into_iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&serde_json::to_string(k).unwrap_or_default());
+        out.push(':');
+        canonical(&o[k], out);
+    }
+    out.push('}');
 }
 
 /// One call + its result, as a key. A 64-bit hash: it only has to tell apart the
 /// handful of distinct calls one turn makes, and it keeps no result text alive.
 fn signature(call: &ToolCall, out: &ToolOutput) -> u64 {
     let mut input = String::new();
-    canonical(&Value::Object(call.input.clone()), &mut input);
+    canonical_object(&call.input, &mut input);
     let mut h = DefaultHasher::new();
     (
         &call.name,

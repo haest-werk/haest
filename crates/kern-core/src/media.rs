@@ -200,11 +200,7 @@ pub fn fit_for_model(
     if let Some(accepts) = accepts {
         let withheld: Vec<MediaPart> = messages
             .iter()
-            .flat_map(|m| match m {
-                Message::User(u) => u.media.as_slice(),
-                Message::Tool(t) => t.media.as_slice(),
-                Message::Assistant(_) => &[],
-            })
+            .flat_map(media_of)
             .filter(|p| !accepts.contains(&modality(p.kind)))
             .cloned()
             .collect();
@@ -223,9 +219,17 @@ fn media_tokens(p: &MediaPart) -> u64 {
     }
 }
 
+/// The media a message carries: a user turn's or a tool result's.
+fn media_of(m: &Message) -> &[MediaPart] {
+    match m {
+        Message::User(u) => &u.media,
+        Message::Tool(t) => &t.media,
+        Message::Assistant(_) => &[],
+    }
+}
+
 /// JSON of the history with media bytes replaced by their token cost, for the request-size estimate.
 pub fn messages_for_estimate(messages: &[Message]) -> (String, u64) {
-    let mut tokens = 0;
     let mut value = serde_json::to_value(messages).unwrap_or(Value::Null);
     if let Value::Array(items) = &mut value {
         for item in items {
@@ -234,14 +238,7 @@ pub fn messages_for_estimate(messages: &[Message]) -> (String, u64) {
             }
         }
     }
-    for m in messages {
-        let media = match m {
-            Message::User(u) => u.media.as_slice(),
-            Message::Tool(t) => t.media.as_slice(),
-            Message::Assistant(_) => &[],
-        };
-        tokens += media.iter().map(media_tokens).sum::<u64>();
-    }
+    let tokens = messages.iter().flat_map(media_of).map(media_tokens).sum();
     (value.to_string(), tokens)
 }
 
