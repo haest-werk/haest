@@ -21,6 +21,8 @@
 //! never built. Trust is the loader's: it lists a project's MCP servers and
 //! turns its mods on only in a trusted dir.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod agents;
 mod build;
 mod host;

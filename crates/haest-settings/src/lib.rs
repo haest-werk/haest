@@ -20,6 +20,8 @@
 //! files, no skills, no mods) and every brake on (approvals, the spend and turn
 //! caps, the sandbox).
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod sets;
 mod settings;
 #[cfg(test)]

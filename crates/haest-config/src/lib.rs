@@ -18,6 +18,8 @@
 //!
 //! [`DEFS`] is the one list: a host builds its flags from it.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod fields;
 mod file;
 mod handed;

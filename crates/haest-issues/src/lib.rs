@@ -28,6 +28,8 @@
 //! when the turn is cancelled; and nothing is read that the host did not hand
 //! in (no environment variable, no path of its own).
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod cards;
 pub mod github;
 #[cfg(test)]

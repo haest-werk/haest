@@ -20,6 +20,8 @@
 //! hub.close().await; // or drop it: every server shuts down either way
 //! ```
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod config;
 mod hub;
 mod result;

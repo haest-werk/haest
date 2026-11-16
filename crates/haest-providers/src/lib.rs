@@ -12,6 +12,8 @@
 //! also on failure. [`ProviderRegistry`] turns a `provider:model` spec into a
 //! live provider; [`Catalog`] answers what a cataloged model accepts.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod anthropic;
 pub mod catalog;
 pub mod compat;

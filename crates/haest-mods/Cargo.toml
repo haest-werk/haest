@@ -27,3 +27,7 @@ haest-ts = { workspace = true }
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

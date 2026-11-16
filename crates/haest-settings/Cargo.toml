@@ -13,3 +13,7 @@ categories.workspace = true
 [dependencies]
 # haest-core only: a host that writes its settings out pulls in no tools, no HTTP.
 haest-core = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

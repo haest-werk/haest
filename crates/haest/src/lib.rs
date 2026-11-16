@@ -23,6 +23,8 @@
 //! host that owns some parts itself takes the runtime's pieces, or only
 //! `settings` and `tools::builtin_tools_where`.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub use haest_core as core;
 pub use haest_core::*;
 

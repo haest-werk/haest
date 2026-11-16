@@ -35,3 +35,7 @@ tempfile = "3"
 name = "issues"
 path = "examples/issues.rs"
 test = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

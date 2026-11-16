@@ -20,6 +20,8 @@
 //! main) reaches the model through the host's [`inbox::Inbox`], counted by an
 //! [`turn_gate::AgentTurnGate`].
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 use std::sync::Arc;
 
 use haest_core::{task_board::TaskBoard, tool::Tool};

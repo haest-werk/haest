@@ -22,6 +22,8 @@
 //! | [`Mods::rewrite_prompt`], [`Mods::command`] | `prompt.submit` and slash commands, for the host's input path |
 //! | [`ModHost`] | PLUG POINT: the host's ask / notice; [`ApprovalGate`] keeps ALWAYS and timeouts for it |
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod api;
 mod approval;
 #[cfg(test)]

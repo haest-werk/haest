@@ -13,6 +13,9 @@ categories.workspace = true
 [[bin]]
 name = "haest"
 path = "src/main.rs"
+# The binary and the `haest` library share a name; documenting both makes
+# `cargo doc --workspace` write two haest/index.html over each other.
+doc = false
 
 [dependencies]
 haest = { workspace = true, features = ["runtime", "config"] }

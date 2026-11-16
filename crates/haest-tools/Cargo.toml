@@ -39,3 +39,7 @@ haest-core = { workspace = true, features = ["testing"] }
 haest-workspace = { workspace = true }
 tempfile = "3"
 libc = "0.2"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

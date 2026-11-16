@@ -34,3 +34,7 @@ haest-tools = { workspace = true }
 haest-workspace = { workspace = true }
 tempfile = "3"
 base64 = "0.22"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

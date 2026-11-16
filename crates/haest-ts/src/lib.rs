@@ -5,6 +5,8 @@
 //! line numbers -- the `(line N)` of an error -- stay the script's own; syntax
 //! that has to become code (an `enum`, a `namespace`) is transformed instead.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 use std::{
     io::{self, Write},
     sync::{Arc, Mutex},

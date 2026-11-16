@@ -12,6 +12,8 @@
 //! Ported from the TS haest's `core/workspace-real.ts`, `workspace-sandbox.ts`
 //! and `overlay-changes.ts`.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod bridge;
 mod overlay;
 mod real;

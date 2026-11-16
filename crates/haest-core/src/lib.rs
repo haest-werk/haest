@@ -9,6 +9,8 @@
 //! | the host's say in the loop | [`deps::AgentHooks`] | the host |
 //! | where events go | [`events::EventSink`] | the host / CLI |
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod agent;
 pub mod catalog;
 pub mod compaction;

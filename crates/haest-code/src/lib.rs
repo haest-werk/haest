@@ -14,6 +14,8 @@
 //! names [`code_tool_names`] allows and the same tool list the model gets; give a
 //! sandbox shell the [`sandbox_commands`] (see [`sandbox_js`]).
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod call_gate;
 pub mod code;
 pub mod sandbox_js;
