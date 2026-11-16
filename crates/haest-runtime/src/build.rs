@@ -271,6 +271,7 @@ where
     let shared = AgentDeps {
         spill_dir: Some(spill),
         hooks: hooks.clone(),
+        facts: hooks.clone(),
         ledger: Some(ledger.clone()),
         web_search: s.web_search_config(),
         remedies: hooks.remedies(),

@@ -7,7 +7,7 @@
 //!
 //! The nudge lets a stuck model find the exit on its own; the stop is what makes
 //! a stuck model cost a KNOWN amount. Signals: model calls, wall time (the
-//! host's clock, [`AgentHooks::now_ms`]), turn spend (USD and tokens), REPEATS --
+//! host's clock, [`Clock`](crate::Clock)), turn spend (USD and tokens), REPEATS --
 //! the same tool, same input, same result, a model learning nothing (an A,B,A,B
 //! cycle counts too) -- and the conversation ledger, which stops but never
 //! nudges (it is the human's number, see [`ledger`](crate::ledger)).
@@ -16,7 +16,7 @@
 //! cap follows the model's window, and the model may change mid-turn.
 //!
 //! The loop makes a fresh [`TurnGuard`] for every turn; a host sets the caps
-//! through [`AgentHooks::turn_caps`] and never drives the guard itself.
+//! through [`ModelFacts::turn_caps`](crate::ModelFacts::turn_caps) and never drives the guard itself.
 
 use std::{
     collections::{HashSet, hash_map::DefaultHasher},
@@ -28,7 +28,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     caps::{TurnCaps, request_too_big},
-    deps::AgentHooks,
+    deps::Clock,
     ledger::Ledger,
     messages::{ToolCall, Usage},
     remedy::{Limit, Remedies},
@@ -121,7 +121,7 @@ struct Repeat {
 /// calls, charges the conversation ledger, and says when to nudge and when to
 /// stop.
 pub(crate) struct TurnGuard {
-    clock: Arc<dyn AgentHooks>,
+    clock: Arc<dyn Clock>,
     ledger: Option<Arc<Mutex<Ledger>>>,
     remedies: Remedies,
     started: u64,
@@ -137,7 +137,7 @@ impl TurnGuard {
     /// A fresh guard for one turn; its time cap counts from now on `clock`.
     /// A stop's text ends with the host's remedy for its cap.
     pub(crate) fn new(
-        clock: Arc<dyn AgentHooks>,
+        clock: Arc<dyn Clock>,
         ledger: Option<Arc<Mutex<Ledger>>>,
         remedies: Remedies,
     ) -> Self {

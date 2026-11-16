@@ -15,7 +15,7 @@
 //! | Read with a `ReadIntercept` (`attachment:<id>`) | tools.rs |
 //! | Bash without background jobs | `run_tools` |
 //! | a host tool (`brain_search`, `dream_material`) | tools.rs |
-//! | `AgentHooks::now_ms` (a pause does not count) | host.rs, `runs::work` + `runs::clock` |
+//! | `Clock` (a pause does not count), `ModelFacts::turn_caps` | host.rs, `runs::work` + `runs::clock` |
 //! | `LoopEvent::ToolCallStart` (narration taken out of the doc) | doc.rs |
 //! | `SessionSink` + `replay`, no JSONL writer of haest's | host.rs, `runs::work` |
 //! | Agent tools over the host's own `AgentDirectory` | tools.rs |
@@ -167,6 +167,8 @@ pub fn deps(
         CWD,
         workspace,
     );
-    deps.hooks = host;
+    deps.hooks = host.clone();
+    deps.facts = host.clone();
+    deps.clock = host;
     deps
 }

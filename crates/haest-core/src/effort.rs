@@ -12,7 +12,7 @@
 //! whose API refuses any level it does not list.
 
 use crate::{
-    catalog::{OpenRouterEffort, Reasoning},
+    catalog::{ModelFacts, OpenRouterEffort, Reasoning},
     deps::AgentHooks,
     provider::Effort,
 };
@@ -55,18 +55,19 @@ fn cheapest_listed(r: &Reasoning) -> Option<Effort> {
 /// Then the answer is the cheapest haest level the row lists (`low` when it
 /// lists none), and [`AgentHooks::on_effort_fitted`] hears about it with
 /// `model` (the provider's model id, for the human). The row comes from
-/// [`AgentHooks::reasoning`]; a host that returns None there gets `effort`
+/// [`ModelFacts::reasoning`]; a host that returns None there gets `effort`
 /// back unchanged. None stays None: the model's own default.
 pub(crate) fn fit_effort(
     effort: Option<Effort>,
     spec: &str,
     model: &str,
+    facts: &dyn ModelFacts,
     hooks: &dyn AgentHooks,
 ) -> Option<Effort> {
     if effort != Some(Effort::Off) {
         return effort;
     }
-    let Some(reasoning) = hooks.reasoning(spec).filter(|r| r.mandatory) else {
+    let Some(reasoning) = facts.reasoning(spec).filter(|r| r.mandatory) else {
         return effort;
     };
     let used = cheapest_listed(&reasoning).unwrap_or(Effort::Low);
@@ -151,10 +152,12 @@ mod tests {
 
     struct Mandatory(Mutex<Vec<Effort>>);
     impl ToolServices for Mandatory {}
-    impl AgentHooks for Mandatory {
+    impl ModelFacts for Mandatory {
         fn reasoning(&self, _: &str) -> Option<Reasoning> {
             Some(r(true, &[OpenRouterEffort::Medium, OpenRouterEffort::High]))
         }
+    }
+    impl AgentHooks for Mandatory {
         fn on_effort_fitted(&self, _: &str, used: Effort) {
             self.0.lock().unwrap().push(used);
         }
@@ -164,15 +167,15 @@ mod tests {
     fn off_on_a_mandatory_model_becomes_its_cheapest_level_and_says_so() {
         let hooks = Mandatory(Mutex::default());
         assert_eq!(
-            fit_effort(Some(Effort::Off), "s", "m", &hooks),
+            fit_effort(Some(Effort::Off), "s", "m", &hooks, &hooks),
             Some(Effort::Medium)
         );
         assert_eq!(*hooks.0.lock().unwrap(), [Effort::Medium]);
         assert_eq!(
-            fit_effort(Some(Effort::High), "s", "m", &hooks),
+            fit_effort(Some(Effort::High), "s", "m", &hooks, &hooks),
             Some(Effort::High)
         );
-        assert_eq!(fit_effort(None, "s", "m", &hooks), None);
+        assert_eq!(fit_effort(None, "s", "m", &hooks, &hooks), None);
     }
 
     #[test]

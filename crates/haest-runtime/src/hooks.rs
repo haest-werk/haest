@@ -18,7 +18,7 @@ use crate::{
     haest::{
         Agent, AgentHooks, Effort,
         core::caps::TurnCaps,
-        core::catalog::{InputModality, Reasoning},
+        core::catalog::{InputModality, ModelFacts, Reasoning},
         core::compaction::{CompactionConfig, compact, needs_compaction},
         core::ledger::{LedgerHooks, LedgerSnapshot},
         core::messages::{MediaPart, Usage},
@@ -257,23 +257,11 @@ impl AgentHooks for RuntimeHooks {
         Ok(())
     }
 
-    fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
-        Some(self.settings.turn_caps_for(self.window(spec)))
-    }
-
-    fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
-        self.catalog.input_modalities(spec)
-    }
-
     fn on_media_withheld(&self, parts: &[MediaPart], model: &str) {
         self.warn(&format!(
             "{} attachment(s) withheld: {model} cannot read them.",
             parts.len()
         ));
-    }
-
-    fn reasoning(&self, spec: &str) -> Option<Reasoning> {
-        self.catalog.reasoning(spec).cloned()
     }
 
     fn on_effort_fitted(&self, model: &str, used: Effort) {
@@ -284,6 +272,22 @@ impl AgentHooks for RuntimeHooks {
                 used.as_str()
             ));
         }
+    }
+}
+
+/// The caps follow the model's window; the inputs and reasoning are the
+/// catalog's rows.
+impl ModelFacts for RuntimeHooks {
+    fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
+        Some(self.settings.turn_caps_for(self.window(spec)))
+    }
+
+    fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
+        self.catalog.input_modalities(spec)
+    }
+
+    fn reasoning(&self, spec: &str) -> Option<Reasoning> {
+        self.catalog.reasoning(spec).cloned()
     }
 }
 

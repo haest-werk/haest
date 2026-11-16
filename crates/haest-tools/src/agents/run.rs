@@ -10,7 +10,7 @@ use haest_core::{
     __private::panic_message,
     Agent, AgentHooks, LoopEvent, StopReason, SystemPrompt,
     caps::TurnCaps,
-    catalog::{InputModality, Reasoning},
+    catalog::{InputModality, ModelFacts, Reasoning},
     messages::MediaPart,
     provider::Effort,
     tool::{InnerCallEvent, ToolServices, ToolSource},
@@ -84,14 +84,37 @@ impl SystemPrompt for ChildPrompt {
     }
 }
 
-/// The conversation's hooks with the subagent's own turn caps. Its messages are
-/// not the conversation's (nothing persisted, no compaction), and the calls its
-/// tools make go to its own card.
+/// The conversation's hooks for a subagent. Its messages are not the
+/// conversation's (nothing persisted, no compaction), and the calls its tools
+/// make go to its own card.
 pub(super) struct ChildHooks {
     pub hooks: Arc<dyn AgentHooks>,
-    pub caps: SubagentCaps,
     pub parent: Arc<dyn SubagentParent>,
     pub id: String,
+}
+
+/// The conversation's model facts with the subagent's own turn caps.
+pub(super) struct ChildFacts {
+    pub facts: Arc<dyn ModelFacts>,
+    pub caps: SubagentCaps,
+}
+
+impl ModelFacts for ChildFacts {
+    fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
+        let base = self.facts.turn_caps(spec).unwrap_or_default();
+        Some(TurnCaps {
+            max_turn_usd: self.caps.usd,
+            max_turn_steps: self.caps.steps,
+            max_turn_time: self.caps.time,
+            ..base
+        })
+    }
+    fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
+        self.facts.input_modalities(spec)
+    }
+    fn reasoning(&self, spec: &str) -> Option<Reasoning> {
+        self.facts.reasoning(spec)
+    }
 }
 
 #[async_trait]
@@ -110,18 +133,6 @@ impl ToolServices for ChildHooks {
 
 #[async_trait]
 impl AgentHooks for ChildHooks {
-    fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
-        let base = self.hooks.turn_caps(spec).unwrap_or_default();
-        Some(TurnCaps {
-            max_turn_usd: self.caps.usd,
-            max_turn_steps: self.caps.steps,
-            max_turn_time: self.caps.time,
-            ..base
-        })
-    }
-    fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
-        self.hooks.input_modalities(spec)
-    }
     async fn attach_media(
         &self,
         text: &str,
@@ -132,14 +143,8 @@ impl AgentHooks for ChildHooks {
     fn on_media_withheld(&self, parts: &[MediaPart], model: &str) {
         self.hooks.on_media_withheld(parts, model);
     }
-    fn reasoning(&self, spec: &str) -> Option<Reasoning> {
-        self.hooks.reasoning(spec)
-    }
     fn on_effort_fitted(&self, model: &str, used: Effort) {
         self.hooks.on_effort_fitted(model, used);
-    }
-    fn now_ms(&self) -> u64 {
-        self.hooks.now_ms()
     }
 }
 

@@ -219,7 +219,8 @@ pub use prelude::*;
 /// [`now_ms`] only, never a module, so a glob import shadows nothing.
 pub mod prelude {
     pub use crate::agent::{Agent, AgentControl, AgentOptions};
-    pub use crate::deps::{AgentDeps, AgentHooks, NoHooks, SystemPrompt, now_ms};
+    pub use crate::catalog::{ModelFacts, NoFacts};
+    pub use crate::deps::{AgentDeps, AgentHooks, Clock, NoHooks, SystemPrompt, WallClock, now_ms};
     pub use crate::events::{EventSink, LoopEvent, TurnOutcome};
     pub use crate::fs::{Fs, MemFs};
     pub use crate::handed::{ChildEnv, KeySource};

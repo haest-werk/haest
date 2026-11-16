@@ -7,6 +7,7 @@ use super::*;
 use crate::{
     agent::test_support::{collect, end, turn_caps},
     caps::TurnCaps,
+    catalog::ModelFacts,
     deps::AgentHooks,
     tool::ToolServices,
 };
@@ -31,6 +32,8 @@ impl AgentHooks for CompactsFirst {
         compact(agent, cancel, &CFG).await?;
         Ok(())
     }
+}
+impl ModelFacts for CompactsFirst {
     fn turn_caps(&self, _: &str) -> Option<TurnCaps> {
         self.caps.clone()
     }
@@ -45,7 +48,9 @@ fn costly_empty(input: u64) -> AssistantMessage {
 
 fn compacting(p: &Arc<ScriptedProvider>, caps: Option<TurnCaps>) -> Agent {
     let mut agent = agent_with(p);
-    agent.deps_mut().hooks = Arc::new(CompactsFirst { caps, esc: false });
+    let host = Arc::new(CompactsFirst { caps, esc: false });
+    agent.deps_mut().hooks = host.clone();
+    agent.deps_mut().facts = host;
     agent
 }
 

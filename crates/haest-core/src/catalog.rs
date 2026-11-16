@@ -3,11 +3,11 @@
 //! with the providers (`haest-providers`' `Catalog`, bundled from a JSON file);
 //! a host may bring its own rows in the same shape.
 //!
-//! The loop never reads a catalog directly. It asks the host through
-//! [`AgentHooks`](crate::AgentHooks) (`input_modalities`, `reasoning`), and the
-//! answers come from these rows: the loop drops input a model cannot take
-//! ([`crate::media`]) and fits the reasoning level, and a provider adapter books
-//! a cost from [`ModelPricing`].
+//! The loop never reads a catalog directly. It asks the host's [`ModelFacts`]
+//! ([`AgentDeps::facts`](crate::AgentDeps::facts)), and the answers come from
+//! these rows: the loop drops input a model cannot take ([`crate::media`]),
+//! fits the reasoning level and caps the turn, and a provider adapter books a
+//! cost from [`ModelPricing`].
 //!
 //! # Examples
 //!
@@ -29,7 +29,45 @@
 //! assert_eq!(row.pricing.unwrap().cache_write, None);
 //! ```
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
+
+use crate::caps::TurnCaps;
+
+/// PLUG POINT: what the host knows about a model spec
+/// ([`Agent::model_spec`](crate::Agent::model_spec)), set on
+/// [`AgentDeps::facts`](crate::AgentDeps::facts). Asked again before every
+/// model call, so the answers may follow the model. Every method defaults to
+/// "unknown"; [`NoFacts`] knows nothing.
+///
+/// Facts only: what the host hears about (a message, withheld media, a
+/// fitted effort) goes to [`AgentHooks`](crate::AgentHooks).
+pub trait ModelFacts: Send + Sync {
+    /// Hard turn caps for the spec, checked before every model call. None =
+    /// uncapped.
+    fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
+        None
+    }
+
+    /// What the spec takes as input; None = unknown, media sent untouched.
+    /// Media a model does not take is replaced by a note before the call.
+    fn input_modalities(&self, _spec: &str) -> Option<HashSet<InputModality>> {
+        None
+    }
+
+    /// The spec's reasoning row (which efforts it takes); None = unknown,
+    /// effort sent as asked.
+    fn reasoning(&self, _spec: &str) -> Option<Reasoning> {
+        None
+    }
+}
+
+/// Facts about no model: every answer "unknown". [`AgentDeps::new`](crate::AgentDeps::new)'s default.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoFacts;
+
+impl ModelFacts for NoFacts {}
 
 crate::word_enum! {
     /// A kind of input a model accepts, in OpenRouter's names (`file` is a PDF).

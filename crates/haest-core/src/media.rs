@@ -5,7 +5,7 @@
 //! Fitting happens per REQUEST, never on the stored history: a screenshot sent
 //! while a text-only model is active is still there, and still seen, after a
 //! switch to a vision model. What a model accepts comes from the host's
-//! catalog through [`AgentHooks::input_modalities`]; an unknown model gets
+//! catalog through [`ModelFacts::input_modalities`](crate::ModelFacts::input_modalities); an unknown model gets
 //! the history untouched and its provider decides.
 //!
 //! Who uses what: tools, MCP and a host's

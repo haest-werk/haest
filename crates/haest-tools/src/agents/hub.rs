@@ -14,7 +14,7 @@ use super::{
     AgentDirectory, AgentError, AgentRef, MAIN, SpawnInput, SpawnOutcome, SubagentCaps,
     SubagentEvent, SubagentParent,
     members::{Due, Members, Status, run_id},
-    run::{ChildHooks, ChildPrompt, Run, drive, subagent_note},
+    run::{ChildFacts, ChildHooks, ChildPrompt, Run, drive, subagent_note},
     tools::agent_tools,
 };
 
@@ -205,9 +205,12 @@ impl SubagentHub {
             }),
             hooks: Arc::new(ChildHooks {
                 hooks: base.hooks.clone(),
-                caps: self.caps,
                 parent: self.parent.clone(),
                 id: run.id.clone(),
+            }),
+            facts: Arc::new(ChildFacts {
+                facts: base.facts.clone(),
+                caps: self.caps,
             }),
             ..base
         };

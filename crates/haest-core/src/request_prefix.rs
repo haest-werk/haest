@@ -70,7 +70,13 @@ pub(crate) async fn build_request_prefix(
     RequestPrefix {
         system: deps.system_prompt.system_prompt().await,
         tools,
-        effort: fit_effort(effort, spec, model, deps.hooks.as_ref()),
+        effort: fit_effort(
+            effort,
+            spec,
+            model,
+            deps.facts.as_ref(),
+            deps.hooks.as_ref(),
+        ),
         web_search: deps.web_search.clone(),
     }
 }

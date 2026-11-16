@@ -11,7 +11,7 @@
 //! at half a cap.
 //!
 //! A host serves [`TurnCaps`] per model spec from
-//! [`AgentHooks::turn_caps`](crate::AgentHooks::turn_caps).
+//! [`ModelFacts::turn_caps`](crate::ModelFacts::turn_caps).
 
 use std::time::Duration;
 
@@ -36,7 +36,7 @@ pub struct TurnCaps {
     /// Stop the turn after this many model calls.
     pub max_turn_steps: u32,
     /// Stop the turn once it has run this long (wall clock, on the host's
-    /// [`AgentHooks::now_ms`](crate::AgentHooks::now_ms)).
+    /// [`AgentDeps::clock`](crate::AgentDeps::clock)).
     pub max_turn_time: Duration,
     /// Stop the turn once one tool call (same input, same result) has repeated this often.
     pub max_repeats: u32,

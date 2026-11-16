@@ -16,7 +16,8 @@ use serde_json::Value;
 use crate::{
     agent::{Agent, AgentOptions},
     caps::TurnCaps,
-    deps::{AgentDeps, AgentHooks},
+    catalog::ModelFacts,
+    deps::{AgentDeps, AgentHooks, Clock},
     events::LoopEvent,
     fs::{Fs, MemFs},
     ledger::Ledger,
@@ -52,9 +53,15 @@ impl AgentHooks for TestHooks {
     fn on_message(&self, msg: &Message) {
         self.persisted.lock().unwrap().push(msg.clone());
     }
+}
+
+impl ModelFacts for TestHooks {
     fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
         self.caps.clone()
     }
+}
+
+impl Clock for TestHooks {
     fn now_ms(&self) -> u64 {
         self.now.load(Ordering::SeqCst)
     }
@@ -197,6 +204,8 @@ pub fn agent_with(p: &Arc<ScriptedProvider>, opts: Opts) -> (Agent, Arc<TestHook
         workspace,
     );
     deps.hooks = hooks.clone();
+    deps.facts = hooks.clone();
+    deps.clock = hooks.clone();
     deps.ledger = opts.ledger;
     deps.spill_dir = opts.spill_dir.map(|d| Path::new(d).to_path_buf());
     (Agent::new(deps, AgentOptions::new("fake:m1")), hooks)

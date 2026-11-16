@@ -1,5 +1,5 @@
-//! What the loop needs ([`AgentDeps`]) and the host's optional say in it
-//! ([`AgentHooks`]).
+//! What the loop needs ([`AgentDeps`]), the host's optional say in it
+//! ([`AgentHooks`]), and the clock its time cap reads ([`Clock`]).
 //!
 //! [`AgentDeps::new`] takes the four things every agent needs (a
 //! [`ModelResolver`], a [`ToolSource`], a [`SystemPrompt`] and a
@@ -12,7 +12,6 @@
 //! nothing.
 
 use std::{
-    collections::HashSet,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
@@ -23,8 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::Agent,
-    caps::TurnCaps,
-    catalog::{InputModality, Reasoning},
+    catalog::{ModelFacts, NoFacts},
     ledger::Ledger,
     messages::{MediaPart, Message},
     provider::{Effort, ModelResolver, WebSearchConfig},
@@ -63,7 +61,8 @@ impl SystemPrompt for String {
 ///
 /// # Examples
 ///
-/// A host that saves every message and allows one model call per turn:
+/// A host that saves every message and allows one model call per turn (a
+/// [`ModelFacts`] answer):
 ///
 /// ```
 /// # #[cfg(feature = "testing")]
@@ -73,7 +72,7 @@ impl SystemPrompt for String {
 ///
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace,
-///     StopReason, Tool, ToolServices, caps::TurnCaps,
+///     StopReason, Tool, ToolServices, caps::TurnCaps, catalog::ModelFacts,
 ///     testing::{ScriptedProvider, tool_answer},
 /// };
 ///
@@ -89,6 +88,9 @@ impl SystemPrompt for String {
 ///     fn on_message(&self, msg: &Message) {
 ///         self.saved.lock().unwrap().push(msg.clone());
 ///     }
+/// }
+///
+/// impl ModelFacts for Host {
 ///     fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
 ///         Some(TurnCaps { max_turn_steps: 1, ..TurnCaps::default() })
 ///     }
@@ -106,6 +108,7 @@ impl SystemPrompt for String {
 ///     Arc::new(ShutWorkspace),
 /// );
 /// deps.hooks = host.clone();
+/// deps.facts = host.clone();
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
 /// let end = agent.run("look it up", &mut Vec::<LoopEvent>::new()).await;
@@ -146,19 +149,6 @@ pub trait AgentHooks: ToolServices {
         Ok(())
     }
 
-    /// Hard turn caps for a model spec ([`Agent::model_spec`]), checked before
-    /// every model call. Asked again at every check, so caps may follow the
-    /// model. None = uncapped.
-    fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
-        None
-    }
-
-    /// What a model spec takes as input; None = unknown, media sent untouched.
-    /// Media a model does not take is replaced by a note before the call.
-    fn input_modalities(&self, _spec: &str) -> Option<HashSet<InputModality>> {
-        None
-    }
-
     /// The media a user turn's text points at (attachment links), plus a note per link that failed.
     ///
     /// Called for every user message the loop adds (the turn's input and
@@ -178,28 +168,40 @@ pub trait AgentHooks: ToolServices {
     /// it each time.
     fn on_media_withheld(&self, _parts: &[MediaPart], _model: &str) {}
 
-    /// A model spec's reasoning row (which efforts it takes); None = unknown,
-    /// effort sent as asked.
-    fn reasoning(&self, _spec: &str) -> Option<Reasoning> {
-        None
-    }
-
     /// A model call's effort was fitted: `used` went out instead of what was asked.
     fn on_effort_fitted(&self, _model: &str, _used: Effort) {}
-
-    /// Milliseconds since the epoch, the clock the turn guard's time cap reads.
-    /// A host that pauses runs returns a clock that stands still while paused.
-    fn now_ms(&self) -> u64 {
-        now_ms()
-    }
 }
 
 /// Milliseconds since the Unix epoch, by the wall clock; 0 if the clock is
-/// set before 1970. [`AgentHooks::now_ms`]'s default.
+/// set before 1970. What [`WallClock`] reads.
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as u64)
+}
+
+/// PLUG POINT: the clock the turn guard's time cap reads, in milliseconds
+/// since the epoch ([`AgentDeps::clock`]). A host that pauses runs gives one
+/// that stands still while paused. A closure `Fn() -> u64` is a clock.
+pub trait Clock: Send + Sync {
+    /// Now, in milliseconds since the epoch.
+    fn now_ms(&self) -> u64;
+}
+
+impl<F: Fn() -> u64 + Send + Sync> Clock for F {
+    fn now_ms(&self) -> u64 {
+        self()
+    }
+}
+
+/// The wall clock ([`now_ms`]): [`AgentDeps::new`]'s default.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct WallClock;
+
+impl Clock for WallClock {
+    fn now_ms(&self) -> u64 {
+        now_ms()
+    }
 }
 
 /// Hooks that change nothing: [`AgentDeps::new`]'s default.
@@ -230,6 +232,11 @@ pub struct AgentDeps {
     pub spill_dir: Option<PathBuf>,
     /// The host's say in the loop; [`NoHooks`] unless set.
     pub hooks: Arc<dyn AgentHooks>,
+    /// What the host knows about each model: turn caps, inputs, reasoning;
+    /// [`NoFacts`] unless set.
+    pub facts: Arc<dyn ModelFacts>,
+    /// The clock the turn's time cap reads; [`WallClock`] unless set.
+    pub clock: Arc<dyn Clock>,
     /// What the conversation has spent across turns; every model call and tool spend is charged here.
     /// None = no conversation budget, only the turn caps.
     pub ledger: Option<Arc<Mutex<Ledger>>>,
@@ -242,7 +249,8 @@ pub struct AgentDeps {
 
 impl AgentDeps {
     /// The minimum: models, tools, a system prompt and a workspace. Everything else off:
-    /// no spill directory, [`NoHooks`], no ledger, no web search, no remedies.
+    /// no spill directory, [`NoHooks`], [`NoFacts`], the [`WallClock`], no
+    /// ledger, no web search, no remedies.
     pub fn new(
         models: Arc<dyn ModelResolver>,
         tools: Arc<dyn ToolSource>,
@@ -258,6 +266,8 @@ impl AgentDeps {
             workspace,
             spill_dir: None,
             hooks: Arc::new(NoHooks),
+            facts: Arc::new(NoFacts),
+            clock: Arc::new(WallClock),
             ledger: None,
             web_search: None,
             remedies: Remedies::default(),

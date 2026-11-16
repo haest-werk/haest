@@ -41,6 +41,7 @@ fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<M
     );
     let deps = AgentDeps {
         hooks: hooks.clone(),
+        facts: hooks.clone(),
         ledger: Some(ledger.clone()),
         ..bare
     };

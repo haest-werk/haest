@@ -2,7 +2,8 @@
 //! toward the turn's time cap, and its session records, which the NODE writes
 //! (haest writes no file).
 //!
-//! PLUG POINTS: `AgentHooks::now_ms`, `AgentHooks::on_message`, `SessionSink`.
+//! PLUG POINTS: `Clock`, `ModelFacts::turn_caps`, `AgentHooks::on_message`,
+//! `SessionSink`.
 
 use std::sync::{
     Arc, Mutex,
@@ -11,7 +12,7 @@ use std::sync::{
 
 use async_trait::async_trait;
 use haest::{
-    Agent, AgentHooks, Message,
+    Agent, AgentHooks, Clock, Message, ModelFacts,
     core::caps::TurnCaps,
     core::session::{SessionRecord, SessionSink},
     core::tool::ToolServices,
@@ -127,7 +128,7 @@ impl ToolServices for BrainHost {}
 impl AgentHooks for BrainHost {
     fn on_message(&self, msg: &Message) {
         self.sessions.append(&SessionRecord::Message {
-            t: self.now_ms(),
+            t: self.clock.now(),
             message: msg.clone(),
         });
     }
@@ -143,11 +144,16 @@ impl AgentHooks for BrainHost {
         }
         Ok(())
     }
+}
 
+impl ModelFacts for BrainHost {
     fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
         Some(self.limits.clone())
     }
+}
 
+/// The turn's time cap reads the run clock: a pause does not count.
+impl Clock for BrainHost {
     fn now_ms(&self) -> u64 {
         self.clock.now()
     }
