@@ -230,8 +230,8 @@ pub use anthropic::{AnthropicOptions, AnthropicProvider};
 pub use catalog::Catalog;
 pub use compat::{CompatFlavor, CompatOptions, CompatProvider};
 pub use registry::{
-    CustomProviderConfig, CustomProviders, ProviderConfigError, ProviderRegistry, RegistryOptions,
-    load_custom_providers,
+    CustomProviderConfig, CustomProviders, EntryProblem, ProviderConfigError, ProviderRegistry,
+    ProvidersFileError, RegistryOptions, load_custom_providers,
 };
 pub use responses::{ResponsesOptions, ResponsesProvider};
 pub use routing::RoutingEnv;

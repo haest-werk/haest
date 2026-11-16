@@ -179,7 +179,10 @@ async fn a_broken_providers_json_is_a_clear_error_and_a_missing_one_is_empty() {
     let e = load_custom_providers(&fs, Path::new("/cfg"))
         .await
         .unwrap_err();
-    assert!(e.0.contains("providers.json"), "{e}");
+    assert!(
+        matches!(&e, ProvidersFileError::Parse { path, .. } if path == Path::new("/cfg/providers.json")),
+        "{e}"
+    );
 }
 
 #[tokio::test]

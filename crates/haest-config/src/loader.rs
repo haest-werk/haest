@@ -234,7 +234,7 @@ impl Loader {
             handed::mcp_servers(fs, &cwd, config.mcp, resolved.trusted, &env, &mut notes).await;
         let providers = load_custom_providers(fs, &config.settings.config_dir)
             .await
-            .map_err(|e| e.0)?;
+            .map_err(|e| e.to_string())?;
         let routing = config.provider_routing.as_deref();
         Ok(Loaded {
             child_env: handed::child_env(config.env_passthrough, &env),

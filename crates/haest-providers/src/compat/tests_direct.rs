@@ -18,8 +18,8 @@ use super::{
 use crate::{
     catalog::Catalog,
     registry::{
-        CustomProviderConfig, ProviderRegistry, RegistryOptions, custom_compat_options,
-        paper_instruments_options,
+        CustomProviderConfig, EntryProblem, ProviderConfigError, ProviderRegistry,
+        RegistryOptions, custom_compat_options, paper_instruments_options,
     },
     testing::{FakeHttp, chat_sse, request, request_with},
 };
@@ -292,7 +292,21 @@ fn effort_is_fitted_on_the_wire_and_cost_booked_from_the_entry() {
 
 #[test]
 fn a_malformed_price_is_refused_at_load_not_booked_as_nan() {
-    let mut bad = cfg();
-    bad["pricing"] = json!({"m1": {"input": 1}});
-    assert!(CustomProviderConfig::from_json("mine", &bad).is_err());
+    let rows = [
+        json!({"input": 1}),
+        json!({"input": 1, "cachedInput": 0.5, "output": 2, "cacheWrite": "free"}),
+    ];
+    for row in rows {
+        let mut bad = cfg();
+        bad["pricing"] = json!({ "m1": row });
+        let err = CustomProviderConfig::from_json("mine", &bad).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                ProviderConfigError::BadEntry { provider, problem: EntryProblem::Pricing { model, .. } }
+                    if provider == "mine" && model == "m1"
+            ),
+            "{err}"
+        );
+    }
 }

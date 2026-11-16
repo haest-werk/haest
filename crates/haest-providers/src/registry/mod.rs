@@ -13,6 +13,7 @@
 //! and no file.
 
 mod custom;
+mod error;
 #[cfg(test)]
 mod tests;
 
@@ -32,6 +33,7 @@ pub use custom::{
     CustomProviderConfig, CustomProviders, Dialect, custom_compat_options, load_custom_providers,
     paper_instruments_options,
 };
+pub use error::{EntryProblem, ProviderConfigError, ProvidersFileError};
 
 use haest_http::{HttpClient, ReqwestClient};
 
@@ -42,15 +44,6 @@ use crate::{
     routing::RoutingEnv,
     send::RetryPolicy,
 };
-
-/// A provider that cannot be built, said to the human as is.
-///
-/// The message names what is wrong: the spec's shape, an unknown provider
-/// (with the known ones), the key a built-in needs, a providers.json entry's
-/// bad field, or a providers.json file that cannot be read.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
-pub struct ProviderConfigError(pub String);
 
 const BUILTIN: [&str; 4] = ["anthropic", "openai", "openrouter", "paperinstruments"];
 
@@ -160,13 +153,14 @@ impl ProviderRegistry {
     ///
     /// # Errors
     ///
-    /// A [`ProviderConfigError`] when the spec has no `provider:` part, the
-    /// name is neither a built-in nor a providers.json entry, a built-in's key
-    /// is missing from the [`KeySource`], or the entry has a malformed
-    /// `reasoningEffort` or `pricing`.
+    /// [`ProviderConfigError::Spec`] when the spec has no `provider:` part or
+    /// the name is neither a built-in nor a providers.json entry,
+    /// [`MissingKey`](ProviderConfigError::MissingKey) when a built-in's key
+    /// is missing from the [`KeySource`], and
+    /// [`BadEntry`](ProviderConfigError::BadEntry) when the providers.json
+    /// entry cannot be used.
     pub fn resolve_spec(&self, spec: &str) -> Result<ResolvedModel, ProviderConfigError> {
-        let (name, model) =
-            parse_model_spec(spec).map_err(|e| ProviderConfigError(e.to_string()))?;
+        let (name, model) = parse_model_spec(spec)?;
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         let provider = match cache.get(name) {
             Some(p) => p.clone(),
@@ -215,10 +209,11 @@ impl ProviderRegistry {
             "openrouter" => self.compat(self.openrouter_options()?),
             "paperinstruments" => self.compat(paper_instruments_options(keys)?),
             _ => {
-                return Err(ProviderConfigError(format!(
-                    "unknown provider \"{name}\". Known: {}",
-                    self.names().join(", ")
-                )));
+                return Err(ModelError::UnknownProvider {
+                    provider: name.into(),
+                    known: self.names(),
+                }
+                .into());
             }
         })
     }
@@ -252,17 +247,14 @@ impl ProviderRegistry {
     }
 }
 
+/// [`resolve_spec`](ProviderRegistry::resolve_spec): a bad spec or an unknown
+/// provider is that [`ModelError`]; a provider it cannot build is
+/// [`ModelError::Unavailable`] holding the [`ProviderConfigError`].
 impl ModelResolver for ProviderRegistry {
     fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
-        let (name, _) = parse_model_spec(spec)?;
-        let known = self.names();
-        if !known.iter().any(|k| k == name) {
-            return Err(ModelError::UnknownProvider {
-                provider: name.into(),
-                known,
-            });
-        }
-        self.resolve_spec(spec)
-            .map_err(|e| ModelError::Unavailable(Box::new(e)))
+        self.resolve_spec(spec).map_err(|e| match e {
+            ProviderConfigError::Spec(e) => e,
+            e => ModelError::Unavailable(Box::new(e)),
+        })
     }
 }
