@@ -91,7 +91,7 @@ use turn::Turn;
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}
 /// ```
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct AgentControl {
     inner: Arc<ControlInner>,
 }
@@ -269,7 +269,9 @@ impl Agent {
             model_spec: opts.model_spec,
             effort: opts.effort,
             deps,
-            control: AgentControl::default(),
+            control: AgentControl {
+                inner: Arc::default(),
+            },
             side_spend: Usage::default(),
         }
     }

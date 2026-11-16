@@ -3,6 +3,23 @@
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::*;
+use crate::haest::{
+    Agent, AgentDeps, AgentOptions, ShutWorkspace, Tool, core::testing::ScriptedProvider,
+};
+
+/// The control of an agent that never runs: what a test steers into it is
+/// what the last turn left unread.
+fn control() -> AgentControl {
+    let none: Vec<Arc<dyn Tool>> = Vec::new();
+    let deps = AgentDeps::new(
+        Arc::new(ScriptedProvider::new([]).resolver()),
+        Arc::new(none),
+        Arc::new(String::new()),
+        "/w",
+        Arc::new(ShutWorkspace),
+    );
+    Agent::new(deps, AgentOptions::new("scripted:m")).control()
+}
 
 fn queue(cap: u32) -> (UnboundedSender<String>, InboxQueue) {
     let (tx, rx) = unbounded_channel();
@@ -12,14 +29,14 @@ fn queue(cap: u32) -> (UnboundedSender<String>, InboxQueue) {
 #[test]
 fn nothing_waiting_is_no_turn() {
     let (_tx, mut q) = queue(0);
-    assert_eq!(q.take(&AgentControl::default()), None);
+    assert_eq!(q.take(&control()), None);
     assert_eq!(q.waiting(), 0);
 }
 
 #[test]
 fn one_turn_takes_what_the_last_turn_left_unread_then_the_arrivals_oldest_first() {
     let (tx, mut q) = queue(0);
-    let control = AgentControl::default();
+    let control = control();
     control.steer("unread");
     tx.send("first".into()).unwrap();
     tx.send("second".into()).unwrap();
@@ -37,10 +54,7 @@ async fn an_arrival_waited_for_is_kept_for_the_next_turn() {
     tx.send("job exited".into()).unwrap();
     q.wait().await;
     assert_eq!(q.waiting(), 1);
-    assert_eq!(
-        q.take(&AgentControl::default()).as_deref(),
-        Some("job exited")
-    );
+    assert_eq!(q.take(&control()).as_deref(), Some("job exited"));
 }
 
 #[test]
