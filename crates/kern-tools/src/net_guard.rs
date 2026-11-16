@@ -29,9 +29,10 @@ const BLOCKED_V4: [(Ipv4Addr, u8); 11] = [
     (Ipv4Addr::new(240, 0, 0, 0), 4),   // reserved + broadcast
 ];
 
-const BLOCKED_V6: [(Ipv6Addr, u8); 6] = [
+const BLOCKED_V6: [(Ipv6Addr, u8); 7] = [
     (Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), 96), // unspecified, loopback (::1), IPv4-compatible (::127.0.0.1)
     (Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0, 0), 96), // NAT64: embeds an IPv4 address
+    (Ipv6Addr::new(0x64, 0xff9b, 1, 0, 0, 0, 0, 0), 48), // local-use NAT64 (RFC 8215): embeds one too
     (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16), // 6to4: embeds an IPv4 address (2002:7f00:1:: is 127.0.0.1)
     (Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0), 7),  // unique local
     (Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0), 10), // link-local
