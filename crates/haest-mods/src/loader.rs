@@ -27,9 +27,9 @@ use crate::{
 
 /// Which mods [`load_mods`] loads for one conversation, and where from.
 ///
-/// [`ModConfig::new`] is the bare default: the approval mod and plan mode, no
+/// [`ModOptions::new`] is the bare default: the approval mod and plan mode, no
 /// mod files. Set the fields to change it.
-pub struct ModConfig {
+pub struct ModOptions {
     /// The conversation's working directory: the project's mods are in
     /// `<cwd>/.haest/mods`, and every mod sees it as [`ModEnv::cwd`].
     pub cwd: PathBuf,
@@ -61,7 +61,7 @@ pub struct ModConfig {
     pub caps: ModCaps,
 }
 
-impl ModConfig {
+impl ModOptions {
     /// The defaults for a conversation in `cwd`: approvals on over
     /// [`SHELL_TOOLS`], no mod files, no auto mode, no plan listener, the
     /// [`PLANNING_TOOLS`], the default [`ModCaps`].
@@ -123,14 +123,14 @@ pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 
 /// Every mod for one conversation, in the order their events run.
 ///
-/// 1. Built in: the approval mod (with [`ModConfig::approvals`], and auto
-///    mode's judge when [`ModConfig::auto`] has one), then plan mode, always.
-/// 2. The human's own mod files, `<config_dir>/mods/*`, with [`ModConfig::user_mods`].
-/// 3. The project's, `<cwd>/.haest/mods/*`, with [`ModConfig::project_mods`] only.
+/// 1. Built in: the approval mod (with [`ModOptions::approvals`], and auto
+///    mode's judge when [`ModOptions::auto`] has one), then plan mode, always.
+/// 2. The human's own mod files, `<config_dir>/mods/*`, with [`ModOptions::user_mods`].
+/// 3. The project's, `<cwd>/.haest/mods/*`, with [`ModOptions::project_mods`] only.
 ///
 /// Each directory's files load in name order ([`mod_files`]); each one runs
 /// its default export now ([`JsMod::load_with`], within
-/// [`ModConfig::caps`]). A mod that fails to load is
+/// [`ModOptions::caps`]). A mod that fails to load is
 /// reported through [`ModUi::error`] and skipped; the rest still load, so
 /// this never fails. A host's own native mods go in afterwards with
 /// [`Mods::add`].
@@ -144,7 +144,7 @@ pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 ///
 /// The [crate docs](crate#putting-mods-in-the-loop) load a mod file from a
 /// [`MemFs`](haest_core::MemFs) and put it around an agent.
-pub async fn load_mods(cfg: ModConfig, fs: &dyn Fs, ui: Arc<dyn ModUi>) -> Mods {
+pub async fn load_mods(cfg: ModOptions, fs: &dyn Fs, ui: Arc<dyn ModUi>) -> Mods {
     let env = ModEnv::new(cfg.cwd.clone(), cfg.workspace, ui.clone());
     let mut mods = Mods::new(env.clone());
     if cfg.approvals {

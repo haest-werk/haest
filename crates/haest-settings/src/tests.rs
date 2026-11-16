@@ -20,7 +20,7 @@ fn bare_turns_every_capability_off_and_every_brake_on() {
     let s = bare();
     assert!(s.tools.is_empty() && s.context.is_empty() && s.skills.is_empty());
     assert!(!s.skill_catalog && !s.agents && !s.code && !s.image && !s.mods && !s.project_mods);
-    assert_eq!(s.web_search_config(), None);
+    assert_eq!(s.web_search_options(), None);
     assert!(s.approvals);
     assert_eq!(s.workspace, WorkspaceMode::Sandbox);
     assert_eq!(s.caps.max_turn_usd, 2.0);
@@ -70,7 +70,7 @@ fn web_search_is_off_until_switched_on() {
         web_search: Some(WebSearchEngine::Exa),
         ..bare()
     };
-    let w = s.web_search_config().unwrap();
+    let w = s.web_search_options().unwrap();
     assert_eq!(
         (w.engine, w.max_results, w.max_total_results),
         (WebSearchEngine::Exa, 5, 15)

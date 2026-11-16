@@ -9,7 +9,7 @@ use crate::{
     deps::AgentDeps,
     effort::fit_effort,
     messages::Message,
-    provider::{Effort, ProviderRequest, ToolSpec, WebSearchConfig},
+    provider::{Effort, ProviderRequest, ToolSpec, WebSearchOptions},
 };
 
 /// The part of a [`ProviderRequest`] that comes before the history.
@@ -23,7 +23,7 @@ pub(crate) struct RequestPrefix {
     /// The effort fitted to the model; None sends none.
     pub(crate) effort: Option<Effort>,
     /// Provider-side web search; None = off.
-    pub(crate) web_search: Option<WebSearchConfig>,
+    pub(crate) web_search: Option<WebSearchOptions>,
 }
 
 impl RequestPrefix {

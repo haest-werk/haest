@@ -63,7 +63,7 @@ fn empty_answer() -> AssistantMessage {
 }
 
 /// Compact whenever asked.
-const CFG: CompactionConfig = CompactionConfig {
+const CFG: CompactionOptions = CompactionOptions {
     context_window: 1,
     threshold: 0.0,
     ceiling: None,
@@ -71,7 +71,7 @@ const CFG: CompactionConfig = CompactionConfig {
 };
 
 /// Compact at 800 tokens.
-const AT_800: CompactionConfig = CompactionConfig {
+const AT_800: CompactionOptions = CompactionOptions {
     context_window: 1000,
     threshold: 0.8,
     ceiling: None,
@@ -82,7 +82,7 @@ const AT_800: CompactionConfig = CompactionConfig {
 fn triggers_on_the_last_successful_request_not_the_sum() {
     assert!(needs_compaction(&history(), &AT_800));
     assert!(!needs_compaction(&history()[..6], &AT_800));
-    let low_ceiling = CompactionConfig {
+    let low_ceiling = CompactionOptions {
         ceiling: Some(2),
         ..AT_800
     };

@@ -22,7 +22,7 @@ pub const PLAN_COMMAND: &str = "plan";
 
 /// The tools plan mode lets run though they are not read-only, unless a host
 /// names others ([`PlanMod::with_planning_tools`],
-/// [`ModConfig::planning_tools`](crate::ModConfig::planning_tools)): haest's
+/// [`ModOptions::planning_tools`](crate::ModOptions::planning_tools)): haest's
 /// task list, subagents and `ToolSearch`.
 pub const PLANNING_TOOLS: &[&str] = &[
     "TaskCreate",
@@ -67,7 +67,7 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// use std::sync::Arc;
 ///
 /// use haest_core::{MemFs, ShutWorkspace, ToolContext, workspace::WorkspaceMode};
-/// use haest_mods::{CommandOutcome, ModConfig, ModTools, PLAN_PROMPT, load_mods};
+/// use haest_mods::{CommandOutcome, ModOptions, ModTools, PLAN_PROMPT, load_mods};
 /// use serde_json::json;
 /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
 /// # struct Terminal;
@@ -91,7 +91,7 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
-/// let config = ModConfig::new("/project", WorkspaceMode::Sandbox, "/home/me/.config/haest");
+/// let config = ModOptions::new("/project", WorkspaceMode::Sandbox, "/home/me/.config/haest");
 /// let mods = Arc::new(load_mods(config, &MemFs::new(), Arc::new(Terminal)).await);
 /// let tools = ModTools::wrap(&mods, vec![Arc::new(Write)]);
 /// let ctx = ToolContext::new("/project", Arc::new(ShutWorkspace));

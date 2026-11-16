@@ -11,7 +11,7 @@ use crate::{
     haest::{
         core::fs::Fs,
         core::tool::ToolServices,
-        mods::{ApprovalGate, ModConfig, ModLine, Mods, Prompter, load_mods},
+        mods::{ApprovalGate, ModLine, ModOptions, Mods, Prompter, load_mods},
     },
 };
 
@@ -30,7 +30,7 @@ pub async fn load<P: Prompter + 'static>(
     prompter: P,
 ) -> Arc<Mods> {
     let s = &hooks.settings;
-    let mut cfg = ModConfig::new(&s.cwd, s.workspace, &s.config_dir);
+    let mut cfg = ModOptions::new(&s.cwd, s.workspace, &s.config_dir);
     cfg.approvals = s.approvals;
     cfg.user_mods = s.mods;
     cfg.project_mods = s.project_mods;

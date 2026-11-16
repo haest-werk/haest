@@ -25,7 +25,7 @@ use crate::{
 
 /// When to compact, and how much to keep.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompactionConfig {
+pub struct CompactionOptions {
     /// The model's context window, in tokens.
     pub context_window: u64,
     /// Fraction of the window that triggers compaction.
@@ -48,7 +48,7 @@ fn last_assistant(messages: &[Message]) -> Option<&AssistantMessage> {
 /// The trigger is `context_window * threshold`, or `ceiling` when that is
 /// lower; a request "filled" it when its [`Usage::context_tokens`] reached
 /// it. A failed request never triggers, and an empty history is never due.
-pub fn needs_compaction(messages: &[Message], cfg: &CompactionConfig) -> bool {
+pub fn needs_compaction(messages: &[Message], cfg: &CompactionOptions) -> bool {
     let fraction = cfg.context_window as f64 * cfg.threshold;
     let trigger = cfg.ceiling.map_or(fraction, |c| fraction.min(c as f64));
     last_assistant(messages).is_some_and(|a| a.usage.context_tokens() as f64 >= trigger)
@@ -190,12 +190,12 @@ impl CompactionError {
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace, Tool,
 ///     ToolServices,
-///     compaction::{CompactionConfig, compact, needs_compaction},
+///     compaction::{CompactionOptions, compact, needs_compaction},
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 /// use tokio_util::sync::CancellationToken;
 ///
-/// struct Compacting(CompactionConfig);
+/// struct Compacting(CompactionOptions);
 ///
 /// impl ToolServices for Compacting {}
 ///
@@ -226,7 +226,7 @@ impl CompactionError {
 ///     "/",
 ///     Arc::new(ShutWorkspace),
 /// );
-/// let cfg = CompactionConfig { context_window: 1_000, threshold: 0.8, ceiling: None, keep_recent: 2 };
+/// let cfg = CompactionOptions { context_window: 1_000, threshold: 0.8, ceiling: None, keep_recent: 2 };
 /// deps.hooks = Arc::new(Compacting(cfg));
 ///
 /// // Resume a conversation whose last request filled 90% of the window.
@@ -251,7 +251,7 @@ impl CompactionError {
 pub async fn compact(
     agent: &mut Agent,
     cancel: &CancellationToken,
-    cfg: &CompactionConfig,
+    cfg: &CompactionOptions,
 ) -> Result<Option<CompactionResult>, CompactionError> {
     let cut = cut_index(agent.history(), cfg.keep_recent);
     if cut == 0 {

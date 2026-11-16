@@ -20,7 +20,7 @@
 //! A mod runs with the HOST's full trust, sandbox or not: a native mod is the
 //! host's own code, and a mod file can do whatever its `haest` API reaches.
 //! Load a project's mod files only from a directory the human trusts
-//! ([`ModConfig::project_mods`]).
+//! ([`ModOptions::project_mods`]).
 //!
 //! # When to use this crate directly
 //!
@@ -57,7 +57,7 @@
 //!     tool::{Tool, ToolSource},
 //!     workspace::WorkspaceMode,
 //! };
-//! use haest_mods::{ModConfig, ModSystemPrompt, ModTools, load_mods};
+//! use haest_mods::{ModOptions, ModSystemPrompt, ModTools, load_mods};
 //! use serde_json::json;
 //! # use haest_mods::{ApprovalRequest, Decision, ModUi};
 //! # struct Terminal;
@@ -91,7 +91,7 @@
 //!          haest.on('system.prompt', () => 'Ask before deleting anything.')
 //!        }"#,
 //! )]);
-//! let mut config = ModConfig::new("/project", WorkspaceMode::Real, "/home/me/.config/haest");
+//! let mut config = ModOptions::new("/project", WorkspaceMode::Real, "/home/me/.config/haest");
 //! config.user_mods = true;
 //! let mods = Arc::new(load_mods(config, &files, Arc::new(Terminal)).await);
 //! assert_eq!(mods.names(), ["approval", "plan", "/home/me/.config/haest/mods/guard.js"]);
@@ -293,6 +293,6 @@ pub use approval::{ApprovalMod, AutoJudge, BashVerdict, SHELL_TOOLS, irreversibl
 pub use decorate::{ModSystemPrompt, ModTools};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter};
 pub use js::{JsMod, ModCaps, ModLoadError};
-pub use loader::{ModConfig, load_mods, mod_files};
+pub use loader::{ModOptions, load_mods, mod_files};
 pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PLANNING_TOOLS, PlanListener, PlanMod};
 pub use registry::{CommandOutcome, Mods};

@@ -13,7 +13,7 @@
 //! answers from a script, for tests.
 //!
 //! Also here: the request's parts ([`ToolSpec`], [`Effort`],
-//! [`WebSearchConfig`]) and [`parse_model_spec`], which adapters share.
+//! [`WebSearchOptions`]) and [`parse_model_spec`], which adapters share.
 
 use futures::{StreamExt, stream::BoxStream};
 use serde::{Deserialize, Serialize};
@@ -77,7 +77,7 @@ crate::word_enum! {
     }
 }
 
-impl WebSearchConfig {
+impl WebSearchOptions {
     /// `engine` with haest's result caps: 5 a search, 15 across one model call.
     pub fn new(engine: WebSearchEngine) -> Self {
         Self {
@@ -88,12 +88,12 @@ impl WebSearchConfig {
     }
 }
 
-/// A provider-side web search for every model call ([`WebSearchConfig::new`]
+/// A provider-side web search for every model call ([`WebSearchOptions::new`]
 /// sets haest's caps). Only providers that run one (OpenRouter) send it;
 /// the rest ignore it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WebSearchConfig {
+pub struct WebSearchOptions {
     /// Which search engine runs it.
     pub engine: WebSearchEngine,
     /// Results per search.
@@ -123,7 +123,7 @@ pub struct ProviderRequest {
     /// The output cap; None = the adapter's or the model's default.
     pub max_tokens: Option<u32>,
     /// Only providers that run one (OpenRouter) send it.
-    pub web_search: Option<WebSearchConfig>,
+    pub web_search: Option<WebSearchOptions>,
 }
 
 /// One event of a model call's stream. The deltas are for showing progress;

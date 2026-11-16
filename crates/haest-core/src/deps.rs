@@ -25,7 +25,7 @@ use crate::{
     catalog::{ModelFacts, NoFacts},
     ledger::Ledger,
     messages::{MediaPart, Message},
-    provider::{Effort, ModelResolver, WebSearchConfig},
+    provider::{Effort, ModelResolver, WebSearchOptions},
     remedy::Remedies,
     tool::{ToolServices, ToolSource},
     workspace::Workspace,
@@ -241,7 +241,7 @@ pub struct AgentDeps {
     /// None = no conversation budget, only the turn caps.
     pub ledger: Option<Arc<Mutex<Ledger>>>,
     /// Provider-side web search for every model call; None = off.
-    pub web_search: Option<WebSearchConfig>,
+    pub web_search: Option<WebSearchOptions>,
     /// The host's way past a turn cap or the request cap, added to the
     /// turn's error when one stops it; none unless set.
     pub remedies: Remedies,

@@ -215,7 +215,7 @@ where
         hooks: hooks.clone(),
         facts: hooks.clone(),
         ledger: Some(ledger.clone()),
-        web_search: s.web_search_config(),
+        web_search: s.web_search_options(),
         remedies: hooks.remedies(),
         ..empty
     };

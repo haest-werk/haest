@@ -11,8 +11,8 @@ use crate::{api::Decision, decorate::ModTools, testkit::*};
 
 const HOME_MODS: &str = "/home/cfg/mods";
 
-fn cfg(workspace: WorkspaceMode) -> ModConfig {
-    let mut cfg = ModConfig::new(CWD, workspace, "/home/cfg");
+fn cfg(workspace: WorkspaceMode) -> ModOptions {
+    let mut cfg = ModOptions::new(CWD, workspace, "/home/cfg");
     cfg.user_mods = true;
     cfg.caps = test_caps();
     cfg
@@ -20,7 +20,7 @@ fn cfg(workspace: WorkspaceMode) -> ModConfig {
 
 #[test]
 fn no_mod_dir_is_read_unless_asked_for() {
-    let bare = ModConfig::new(CWD, WorkspaceMode::Sandbox, "/home/cfg");
+    let bare = ModOptions::new(CWD, WorkspaceMode::Sandbox, "/home/cfg");
     assert!(bare.mod_dirs().is_empty());
     assert_eq!(
         cfg(WorkspaceMode::Sandbox).mod_dirs(),

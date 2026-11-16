@@ -104,7 +104,7 @@ fn scan_fixture() -> MemFs {
 
 fn roots(plugins: bool, agents_dirs: bool) -> SkillScanRoots {
     SkillScanRoots {
-        opts: SkillOptions {
+        options: SkillOptions {
             cwd: CWD.into(),
             home: HOME.into(),
             claude_dir: CLAUDE_DIR.into(),
@@ -144,7 +144,7 @@ fn the_dirs_are_every_directory_the_scan_reads_plugin_roots_included() {
 #[test]
 fn outside_home_every_level_up_to_the_root_is_a_project_level() {
     let mut outside = roots(false, false);
-    outside.opts.cwd = "/srv/app".into();
+    outside.options.cwd = "/srv/app".into();
     let project: Vec<_> = outside
         .dirs()
         .into_iter()

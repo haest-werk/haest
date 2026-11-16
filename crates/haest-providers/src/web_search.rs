@@ -5,7 +5,7 @@
 
 use haest_core::{
     messages::{WebSearchUse, WebSource},
-    provider::WebSearchConfig,
+    provider::WebSearchOptions,
 };
 use serde_json::{Value, json};
 
@@ -66,7 +66,7 @@ impl SearchAcc {
 /// the model decides when to search, OpenRouter runs it inside the same call and
 /// bills it into `usage.cost`. Last in the list, after the function tools, so a
 /// config change never shifts the cached prefix of the ones before it.
-pub fn web_search_tool(cfg: &WebSearchConfig) -> Value {
+pub fn web_search_tool(cfg: &WebSearchOptions) -> Value {
     json!({
         "type": "openrouter:web_search",
         "parameters": {

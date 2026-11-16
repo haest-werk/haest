@@ -43,7 +43,7 @@ pub struct PluginRoot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillScanRoots {
     /// The dirs to start from and the sources that are on.
-    pub opts: SkillOptions,
+    pub options: SkillOptions,
     /// The plugins whose `skills/` dirs are read; empty = none.
     pub plugins: Vec<PluginRoot>,
 }
@@ -58,7 +58,7 @@ impl SkillScanRoots {
             Vec::new()
         };
         Self {
-            opts: opts.clone(),
+            options: opts.clone(),
             plugins,
         }
     }
@@ -180,7 +180,7 @@ fn scan_plan(roots: &SkillScanRoots) -> Vec<ScanStep> {
         source,
         plugin: None,
     };
-    let opts = &roots.opts;
+    let opts = &roots.options;
     let (agents, claude) = (opts.sources.agents, opts.sources.claude);
     let mut plan = Vec::new();
     if agents {

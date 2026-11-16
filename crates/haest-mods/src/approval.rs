@@ -1,7 +1,7 @@
 //! THE APPROVAL MOD (built in): in the REAL workspace, a Bash command that can
 //! destroy work the human cannot get back waits for their Allow. The sandbox
 //! never asks -- its writes live in memory and vanish anyway. A host turns it
-//! off with [`ModConfig::approvals`](crate::ModConfig::approvals).
+//! off with [`ModOptions::approvals`](crate::ModOptions::approvals).
 //!
 //! The list is about irreversibility, not about danger in general: deleting
 //! recursively, rewriting git history or the remote, wiping a disk, killing
@@ -128,7 +128,7 @@ pub enum BashVerdict {
 /// or let a delete through that git can bring back.
 ///
 /// haest ships no judge (the TypeScript haest's is not ported); a host that
-/// has one hands it in through [`ModConfig::auto`](crate::ModConfig::auto).
+/// has one hands it in through [`ModOptions::auto`](crate::ModOptions::auto).
 #[async_trait]
 pub trait AutoJudge: Send + Sync {
     /// Whether auto mode is on right now. Asked before every command, so a
@@ -141,7 +141,7 @@ pub trait AutoJudge: Send + Sync {
 
 /// The shell tools [`ApprovalMod`] judges, unless a host names others
 /// ([`ApprovalMod::with_shell_tools`],
-/// [`ModConfig::shell_tools`](crate::ModConfig::shell_tools)): haest's `Bash`.
+/// [`ModOptions::shell_tools`](crate::ModOptions::shell_tools)): haest's `Bash`.
 pub const SHELL_TOOLS: &[&str] = &["Bash"];
 
 /// THE APPROVAL MOD (built in): in the REAL workspace, a Bash command that can
@@ -158,7 +158,7 @@ pub const SHELL_TOOLS: &[&str] = &["Bash"];
 ///
 /// It is a gate ([`Mod::is_gate`]): it judges the command as it will run,
 /// after every other mod has rewritten it. [`load_mods`](crate::load_mods)
-/// adds it unless [`ModConfig::approvals`](crate::ModConfig::approvals) is
+/// adds it unless [`ModOptions::approvals`](crate::ModOptions::approvals) is
 /// off. [`ApprovalGate`](crate::ApprovalGate#examples)'s example shows it
 /// with a whole host.
 pub struct ApprovalMod {

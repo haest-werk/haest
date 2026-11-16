@@ -96,7 +96,7 @@ fn ctx_json(ctx: &ToolContext) -> Value {
 /// (every call into the mod in flight then fails, and the next call runs as
 /// usual), and the default export must return within 30 s. A host sets other
 /// caps with [`JsMod::load_with`] or
-/// [`ModConfig::caps`](crate::ModConfig::caps).
+/// [`ModOptions::caps`](crate::ModOptions::caps).
 ///
 /// The thread stops when the `JsMod` and every tool it added are dropped.
 pub struct JsMod {

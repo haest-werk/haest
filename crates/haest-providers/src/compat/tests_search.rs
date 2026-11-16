@@ -2,7 +2,7 @@
 
 use haest_core::{
     messages::{WebSearchUse, WebSource},
-    provider::{ProviderRequest, ToolSpec, WebSearchConfig, WebSearchEngine},
+    provider::{ProviderRequest, ToolSpec, WebSearchEngine, WebSearchOptions},
 };
 use serde_json::{Value, json};
 
@@ -11,8 +11,8 @@ use super::{
     *,
 };
 
-fn search() -> WebSearchConfig {
-    WebSearchConfig {
+fn search() -> WebSearchOptions {
+    WebSearchOptions {
         engine: WebSearchEngine::Exa,
         max_results: 5,
         max_total_results: 15,
@@ -30,7 +30,7 @@ fn tool_types(body: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn fn_tool_request(web_search: Option<WebSearchConfig>) -> ProviderRequest {
+fn fn_tool_request(web_search: Option<WebSearchOptions>) -> ProviderRequest {
     let mut req = or_request();
     req.tools = vec![ToolSpec {
         name: "Read".into(),

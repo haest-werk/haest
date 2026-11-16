@@ -9,7 +9,7 @@ use haest_core::{
     __private::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
     Effort, WorkspaceMode,
     deferred_tools::DeferMode,
-    provider::{WebSearchConfig, WebSearchEngine},
+    provider::{WebSearchEngine, WebSearchOptions},
     skills::SkillSources,
 };
 
@@ -30,7 +30,7 @@ pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 ///
 /// The helper methods turn fields into what the loop and the tools take:
 /// [`turn_caps_for`](Self::turn_caps_for), [`conversation_caps`](Self::conversation_caps),
-/// [`subagent_caps`](Self::subagent_caps), [`web_search_config`](Self::web_search_config),
+/// [`subagent_caps`](Self::subagent_caps), [`web_search_options`](Self::web_search_options),
 /// [`image_model_choices`](Self::image_model_choices) and [`spill_dir`](Self::spill_dir).
 ///
 /// # Examples
@@ -185,10 +185,10 @@ impl Settings {
     }
 
     /// The web search a model call carries, or None when `web_search` is off.
-    /// The result caps are haest's ([`WebSearchConfig::new`]: 5 a search, 15 a
+    /// The result caps are haest's ([`WebSearchOptions::new`]: 5 a search, 15 a
     /// model call).
-    pub fn web_search_config(&self) -> Option<WebSearchConfig> {
-        self.web_search.map(WebSearchConfig::new)
+    pub fn web_search_options(&self) -> Option<WebSearchOptions> {
+        self.web_search.map(WebSearchOptions::new)
     }
 
     /// Every model GenerateImage may pick: `image_model` first, then
