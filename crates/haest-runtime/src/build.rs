@@ -11,7 +11,7 @@ use std::{
 use haest_settings::Settings;
 
 use crate::{
-    Agents, Host, Runtime, Ui,
+    Agents, Runtime, RuntimeHooks, Ui,
     haest::{
         Agent, AgentDeps, AgentOptions, ChildEnv, KeySource, Workspace,
         core::fs::Fs,
@@ -110,17 +110,17 @@ struct Found {
 }
 
 async fn find(
-    host: &Arc<Host>,
+    hooks: &Arc<RuntimeHooks>,
     world: &World,
     env: &ChildEnv,
     fs: &Arc<dyn Fs>,
     spill: &Path,
 ) -> anyhow::Result<Found> {
-    let skill_roots = skill_scan_roots(fs.as_ref(), &skill_opts(&host.settings)).await;
+    let skill_roots = skill_scan_roots(fs.as_ref(), &skill_opts(&hooks.settings)).await;
     let skills = Arc::new(Mutex::new(skills_in(fs.as_ref(), &skill_roots).await));
     let skill_dirs = scan_roots(&skill_roots);
-    let workspace = workspace_for(&host.settings, world, env, &skill_dirs, spill).await?;
-    let prompt = Arc::new(RuntimePrompt::new(host, fs, &skills, workspace.as_ref()).await);
+    let workspace = workspace_for(&hooks.settings, world, env, &skill_dirs, spill).await?;
+    let prompt = Arc::new(RuntimePrompt::new(hooks, fs, &skills, workspace.as_ref()).await);
     Ok(Found {
         skill_roots,
         skills,
@@ -130,10 +130,10 @@ async fn find(
 }
 
 /// The task list, saved to the session file on every change.
-fn task_board(host: &Arc<Host>) -> Arc<TaskBoard> {
-    let host = host.clone();
+fn task_board(hooks: &Arc<RuntimeHooks>) -> Arc<TaskBoard> {
+    let hooks = hooks.clone();
     Arc::new(TaskBoard::new(move |tasks| {
-        host.append(SessionRecord::Tasks {
+        hooks.append(SessionRecord::Tasks {
             t: now_ms(),
             tasks: tasks.to_vec(),
         })
@@ -209,27 +209,31 @@ where
     let registry = ProviderRegistry::new(keys.clone(), providers, reg_opts);
     registry.resolve_spec(&model)?;
     let spill = settings.spill_dir(session.store.session_id());
-    let host = Arc::new(Host::new(settings, ui.clone(), session.store.clone()));
-    let s = &host.settings;
+    let hooks = Arc::new(RuntimeHooks::new(
+        settings,
+        ui.clone(),
+        session.store.clone(),
+    ));
+    let s = &hooks.settings;
 
     // Whatever can fail runs before anything starts, so a failed build has
     // started nothing and left no file: the model is checked (above), the
     // files are found, then a new session's file is created. Then the MCP servers and the mods start,
     // together; from there on nothing fails.
-    let found = find(&host, &world, &env, &fs, &spill).await?;
+    let found = find(&hooks, &world, &env, &fs, &spill).await?;
     if session.saved.is_none() {
         create(&session.store, &s.cwd).await?;
     }
     let (mcp, mods) = tokio::join!(
-        connect_mcp(&host, &world, &env, mcp_servers),
-        mods::load(&host, fs.as_ref(), prompter),
+        connect_mcp(&hooks, &world, &env, mcp_servers),
+        mods::load(&hooks, fs.as_ref(), prompter),
     );
 
-    let board = task_board(&host);
-    let (sender, inbox) = inbox::inbox(&host, s.max_agent_turns);
+    let board = task_board(&hooks);
+    let (sender, inbox) = inbox::inbox(&hooks, s.max_agent_turns);
     let jobs = jobs_for(s, sender.clone());
     let image = image_options(s, keys.as_ref()).unwrap_or_else(|why| {
-        host.warn(&why);
+        hooks.warn(&why);
         None
     });
     let own = own_tools(
@@ -246,7 +250,7 @@ where
         mods.clone(),
         s.code_tools(),
     ));
-    let ledger = Arc::new(Mutex::new(Ledger::new(s.ledger(), host.clone())));
+    let ledger = Arc::new(Mutex::new(Ledger::new(s.ledger(), hooks.clone())));
 
     // The conversation's deps. Tools and prompt are each agent's own: the hub
     // gives every subagent its own, and main's tools hold the hub.
@@ -260,13 +264,13 @@ where
     );
     let shared = AgentDeps {
         spill_dir: Some(spill),
-        hooks: host.clone(),
+        hooks: hooks.clone(),
         ledger: Some(ledger.clone()),
         web_search: s.web_search_config(),
         ..empty
     };
     let agents = Agents {
-        host: host.clone(),
+        hooks: hooks.clone(),
         deps: shared.clone(),
         tools: wrapped.clone(),
         prompt: found.prompt.clone(),
@@ -291,19 +295,19 @@ where
     agent_opts.effort = effort;
     let resumed = session.saved.is_some();
     if let Some(saved) = session.saved {
-        restore(&host, saved, &ledger, &board, &mut agent_opts);
+        restore(&hooks, saved, &ledger, &board, &mut agent_opts);
     }
     let agent = Agent::new(deps, agent_opts);
-    host.set_model(&agent.model_spec);
-    host.set_effort(agent.effort);
+    hooks.set_model(&agent.model_spec);
+    hooks.set_effort(agent.effort);
     if resumed {
-        record_given(&host, &agent, &opts);
+        record_given(&hooks, &agent, &opts);
     } else {
-        record_start(&host, &agent);
+        record_start(&hooks, &agent);
     }
     Ok(Runtime {
         agent,
-        host,
+        hooks,
         ui,
         fs,
         board,

@@ -11,7 +11,7 @@ use anyhow::{Context, anyhow, bail};
 use haest_settings::Settings;
 
 use crate::{
-    BuildOptions, Host, Ui,
+    BuildOptions, RuntimeHooks, Ui,
     haest::{
         Agent, AgentOptions, Effort,
         core::fs::Fs,
@@ -96,15 +96,15 @@ pub(crate) async fn new_session(
 }
 
 /// What a new session starts on: the model, the effort, the ledger so far.
-pub(crate) fn record_start(host: &Host, agent: &Agent) {
-    host.append(SessionRecord::Config {
+pub(crate) fn record_start(hooks: &RuntimeHooks, agent: &Agent) {
+    hooks.append(SessionRecord::Config {
         t: now_ms(),
         model: Some(agent.model_spec.clone()),
         effort: Some(agent.effort),
     });
     if let Some(ledger) = &agent.deps().ledger {
         let snapshot = ledger.lock().unwrap().snapshot();
-        host.append(SessionRecord::Ledger {
+        hooks.append(SessionRecord::Ledger {
             t: now_ms(),
             ledger: snapshot,
         });
@@ -131,9 +131,9 @@ pub(crate) fn start_on(
 
 /// A resume on a model or effort this run asked for: recorded like a switch,
 /// so the next resume goes on with it.
-pub(crate) fn record_given(host: &Host, agent: &Agent, opts: &BuildOptions) {
+pub(crate) fn record_given(hooks: &RuntimeHooks, agent: &Agent, opts: &BuildOptions) {
     if opts.model_given || opts.effort_given {
-        host.append(SessionRecord::Config {
+        hooks.append(SessionRecord::Config {
             t: now_ms(),
             model: opts.model_given.then(|| agent.model_spec.clone()),
             effort: opts.effort_given.then_some(agent.effort),
@@ -144,14 +144,14 @@ pub(crate) fn record_given(host: &Host, agent: &Agent, opts: &BuildOptions) {
 /// A saved session back in place: its ledger, task list and history (the
 /// model and effort are [`start_on`]'s).
 pub(crate) fn restore(
-    host: &Host,
+    hooks: &RuntimeHooks,
     saved: ReplayedSession,
     ledger: &Mutex<Ledger>,
     board: &TaskBoard,
     opts: &mut AgentOptions,
 ) {
     if saved.corrupt_lines > 0 {
-        host.warn(&format!(
+        hooks.warn(&format!(
             "Skipped {} torn line(s) in the session file.",
             saved.corrupt_lines
         ));

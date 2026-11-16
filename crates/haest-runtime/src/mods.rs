@@ -10,37 +10,37 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    Host,
+    RuntimeHooks,
     haest::{
         core::fs::Fs,
-        core::tool::ToolHost,
+        core::tool::ToolServices,
         mods::{
-            ApprovalGate, ApprovalRequest, Decision, ModConfig, ModHost, Mods, Prompter, load_mods,
+            ApprovalGate, ApprovalRequest, Decision, ModConfig, ModUi, Mods, Prompter, load_mods,
         },
     },
 };
 
-struct RuntimeModHost<P> {
-    host: Arc<Host>,
+struct RuntimeModUi<P> {
+    hooks: Arc<RuntimeHooks>,
     gate: ApprovalGate<P>,
 }
 
 #[async_trait]
-impl<P: Prompter + 'static> ModHost for RuntimeModHost<P> {
+impl<P: Prompter + 'static> ModUi for RuntimeModUi<P> {
     async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
         self.gate.ask(req, cancel).await
     }
 
     fn notice(&self, text: &str) {
-        self.host.info(text);
+        self.hooks.info(text);
     }
 
     fn error(&self, text: &str) {
-        self.host.error(text);
+        self.hooks.error(text);
     }
 
     fn log(&self, message: &str) {
-        ToolHost::log(self.host.as_ref(), message);
+        ToolServices::log(self.hooks.as_ref(), message);
     }
 }
 
@@ -53,15 +53,19 @@ impl<P: Prompter + 'static> ModHost for RuntimeModHost<P> {
 /// load, go to the host's [`Ui`](crate::Ui); an approval ask goes to
 /// `prompter`, and an ask nobody answers is a deny after 10 minutes. Never
 /// fails: the mods that loaded are the ones returned.
-pub async fn load<P: Prompter + 'static>(host: &Arc<Host>, fs: &dyn Fs, prompter: P) -> Arc<Mods> {
-    let s = &host.settings;
+pub async fn load<P: Prompter + 'static>(
+    hooks: &Arc<RuntimeHooks>,
+    fs: &dyn Fs,
+    prompter: P,
+) -> Arc<Mods> {
+    let s = &hooks.settings;
     let mut cfg = ModConfig::new(&s.cwd, s.workspace, &s.config_dir);
     cfg.approvals = s.approvals;
     cfg.user_mods = s.mods;
     cfg.project_mods = s.project_mods;
-    let mod_host = Arc::new(RuntimeModHost {
-        host: host.clone(),
+    let mod_ui = Arc::new(RuntimeModUi {
+        hooks: hooks.clone(),
         gate: ApprovalGate::new(prompter),
     });
-    Arc::new(load_mods(cfg, fs, mod_host).await)
+    Arc::new(load_mods(cfg, fs, mod_ui).await)
 }

@@ -37,7 +37,7 @@
 //! | [`Mods`] | every loaded mod, in order; [`Mods::add`] puts a host's own native mod in |
 //! | [`ModTools`], [`ModSystemPrompt`] | the wrappers a host puts around its tool source and its system prompt |
 //! | [`Mods::rewrite_prompt`], [`Mods::command`] | `prompt.submit` and slash commands, for the host's input path |
-//! | [`ModHost`] | PLUG POINT: how the host asks the human and shows them a line |
+//! | [`ModUi`] | PLUG POINT: how the host asks the human and shows them a line |
 //! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts |
 //!
 //! # Putting mods in the loop
@@ -59,10 +59,10 @@
 //! };
 //! use haest_mods::{ModConfig, ModSystemPrompt, ModTools, load_mods};
 //! use serde_json::json;
-//! # use haest_mods::{ApprovalRequest, Decision, ModHost};
+//! # use haest_mods::{ApprovalRequest, Decision, ModUi};
 //! # struct Terminal;
 //! # #[async_trait::async_trait]
-//! # impl ModHost for Terminal {
+//! # impl ModUi for Terminal {
 //! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
 //! #     fn notice(&self, text: &str) { println!("{text}") }
 //! # }
@@ -136,10 +136,10 @@
 //! use haest_core::{ShutWorkspace, ToolContext, workspace::WorkspaceMode};
 //! use haest_mods::{Before, Mod, ModEnv, ModError, ModToolCall, ModTools, Mods};
 //! use serde_json::json;
-//! # use haest_mods::{ApprovalRequest, Decision, ModHost};
+//! # use haest_mods::{ApprovalRequest, Decision, ModUi};
 //! # struct Terminal;
 //! # #[async_trait]
-//! # impl ModHost for Terminal {
+//! # impl ModUi for Terminal {
 //! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
 //! #     fn notice(&self, text: &str) { println!("{text}") }
 //! # }
@@ -208,10 +208,10 @@
 //! use haest_core::{ShutWorkspace, ToolContext, workspace::WorkspaceMode};
 //! use haest_mods::{CommandOutcome, JsMod, ModEnv, ModTools, Mods};
 //! use serde_json::json;
-//! # use haest_mods::{ApprovalRequest, Decision, ModHost};
+//! # use haest_mods::{ApprovalRequest, Decision, ModUi};
 //! # struct Terminal;
 //! # #[async_trait::async_trait]
-//! # impl ModHost for Terminal {
+//! # impl ModUi for Terminal {
 //! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
 //! #     fn notice(&self, text: &str) { println!("{text}") }
 //! # }
@@ -254,7 +254,7 @@
 //!
 //! [`ApprovalMod`] asks before a Bash command in the real workspace that can
 //! destroy work ([`irreversible_reason`]). The ask goes to the host's
-//! [`ModHost::ask`]; most hosts answer it through an [`ApprovalGate`] over
+//! [`ModUi::ask`]; most hosts answer it through an [`ApprovalGate`] over
 //! their own [`Prompter`] (a terminal question, a dialog). An ALWAYS answer
 //! covers the same command only, never the whole tool. [`ApprovalGate`'s
 //! example](ApprovalGate#examples) builds such a host.
@@ -288,7 +288,7 @@ mod registry;
 #[cfg(test)]
 mod testkit;
 
-pub use api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModError, ModHost, ModToolCall};
+pub use api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModError, ModToolCall, ModUi};
 pub use approval::{ApprovalMod, AutoJudge, BashVerdict, irreversible_reason};
 pub use decorate::{ModSystemPrompt, ModTools};
 pub use gate::{ASK_TIMEOUT, Answer, ApprovalGate, Prompter};

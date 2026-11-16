@@ -22,7 +22,7 @@ use crate::{
     limits::TurnLimits,
     messages::{AssistantMessage, Message, StopReason, Usage},
     testing::{ScriptedProvider, tool_answer},
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput, spelled},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices, spelled},
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
 
@@ -45,7 +45,7 @@ impl TestHooks {
     }
 }
 
-impl ToolHost for TestHooks {}
+impl ToolServices for TestHooks {}
 
 #[async_trait]
 impl AgentHooks for TestHooks {

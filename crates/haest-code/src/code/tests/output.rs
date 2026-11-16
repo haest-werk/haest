@@ -106,13 +106,13 @@ async fn each_inner_call_reports_start_then_end_tied_to_the_code_call_a_failure_
     let mut bad = Probe::new("mcp__s__bad", true, 0);
     bad.answer = ToolOutput::error("nope");
     let tools: Vec<Arc<dyn Tool>> = vec![arc(&ok), Arc::new(bad)];
-    let host = Arc::new(Recorder::default());
+    let services = Arc::new(Recorder::default());
     let mut c = ctx(MemWorkspace::with_files::<&str, &str>([]));
     c.tool_call_id = Some("call-1".into());
-    c.host = host.clone();
+    c.services = services.clone();
     let code = "await tools.mcp__s__ok({}); try { await tools.mcp__s__bad({}) } catch (e) {}";
     run_in(&code_over(tools, &[]), code, json!({}), &c).await;
-    let seen: Vec<(&str, String, String, Option<bool>)> = host
+    let seen: Vec<(&str, String, String, Option<bool>)> = services
         .events
         .lock()
         .unwrap()
@@ -149,9 +149,9 @@ async fn each_inner_call_reports_start_then_end_tied_to_the_code_call_a_failure_
 #[tokio::test]
 async fn outside_the_loop_no_inner_call_is_reported() {
     let ok = probe("mcp__s__ok", true, 0);
-    let host = Arc::new(Recorder::default());
+    let services = Arc::new(Recorder::default());
     let mut c = ctx(MemWorkspace::with_files::<&str, &str>([]));
-    c.host = host.clone();
+    c.services = services.clone();
     run_in(
         &code_over(vec![arc(&ok)], &[]),
         "await tools.mcp__s__ok({})",
@@ -159,7 +159,7 @@ async fn outside_the_loop_no_inner_call_is_reported() {
         &c,
     )
     .await;
-    assert!(host.events.lock().unwrap().is_empty());
+    assert!(services.events.lock().unwrap().is_empty());
 }
 
 const PNG: [u8; 8] = [0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0];

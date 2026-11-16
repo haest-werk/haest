@@ -231,7 +231,7 @@ cargo run -p haest --example brain
 
 `cargo test` runs it as well. A host that takes haest's own pieces where brain
 brings its own -- its own `Provider`, a `ShellCommand` in the sandbox shell,
-a tool that titles its calls, haest's `SubagentHub` over its `SubagentHost` and
+a tool that titles its calls, haest's `SubagentHub` over its `SubagentParent` and
 `Inbox`, steering a running turn, a hook that ends the turn, its own skills
 behind haest's Skill tool (`SkillSet`, `InlineSkills`), its own tools held back
 behind ToolSearch with a list that always loads (`DeferredTools`,

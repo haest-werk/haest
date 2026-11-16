@@ -19,7 +19,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
-    Host,
+    RuntimeHooks,
     haest::{
         AgentControl,
         tools::{AgentTurnGate, Inbox},
@@ -34,7 +34,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 /// [`inbox`].
 pub struct InboxSender {
     tx: UnboundedSender<String>,
-    host: Arc<Host>,
+    hooks: Arc<RuntimeHooks>,
 }
 
 /// What the human sees of an arrival: its first line, cut short.
@@ -49,7 +49,7 @@ fn headline(text: &str) -> String {
 
 impl Inbox for InboxSender {
     fn submit(&self, text: String) {
-        self.host.ui.arrival(&headline(&text));
+        self.hooks.ui.arrival(&headline(&text));
         let _ = self.tx.send(text);
     }
 }
@@ -73,13 +73,13 @@ pub struct InboxQueue {
 /// `max_agent_turns` is the gate's cap: turns in a row with no message from
 /// the human before the rest are held (0 = no cap). The human hears through
 /// `host` when the gate starts holding.
-pub fn inbox(host: &Arc<Host>, max_agent_turns: u32) -> (Arc<InboxSender>, InboxQueue) {
+pub fn inbox(hooks: &Arc<RuntimeHooks>, max_agent_turns: u32) -> (Arc<InboxSender>, InboxQueue) {
     let (tx, rx) = unbounded_channel();
-    let notice = host.clone();
+    let notice = hooks.clone();
     let gate = AgentTurnGate::new(max_agent_turns, move |text| notice.warn(text));
     let sender = InboxSender {
         tx,
-        host: host.clone(),
+        hooks: hooks.clone(),
     };
     (Arc::new(sender), InboxQueue::new(rx, gate))
 }

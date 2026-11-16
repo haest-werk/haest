@@ -33,7 +33,7 @@ async fn a_foreground_agent_runs_its_answer_becomes_the_tool_result_and_the_host
     assert!(started[0].starts_with("haest-find-the-bug-1-"));
     assert_eq!(r.ids("stopped"), started);
     assert!(r.ids("loop").contains(&started[0]));
-    assert_eq!(*r.host.activity.lock().unwrap(), [1, 0]);
+    assert_eq!(*r.parent.activity.lock().unwrap(), [1, 0]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -77,7 +77,7 @@ async fn a_subagents_system_prompt_names_its_own_tools_and_model_not_mains() {
         caps(),
     );
     r.turn("go").await;
-    let system = r.host.provider.sub_systems.lock().unwrap()[0].clone();
+    let system = r.parent.provider.sub_systems.lock().unwrap()[0].clone();
     let tools = system.lines().find(|l| l.starts_with("- Tools:")).unwrap();
     assert!(tools.contains("SendMessage"));
     assert!(!tools.contains("TaskCreate"));
@@ -95,7 +95,7 @@ async fn the_deepest_agent_gets_no_agent_tool_and_no_subagent_gets_the_task_list
         },
     );
     r.turn("go").await;
-    let tools = r.host.provider.sub_tools.lock().unwrap()[0].clone();
+    let tools = r.parent.provider.sub_tools.lock().unwrap()[0].clone();
     assert!(tools.contains(&"SendMessage".to_string()));
     assert!(!tools.contains(&"Agent".to_string()));
     assert!(!tools.contains(&"TaskCreate".to_string()));

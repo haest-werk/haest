@@ -93,7 +93,7 @@ impl QuitGuard {
 pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()> {
     let restored = rt.agent.messages.len();
     let workspace = rt.agent.deps().workspace.mode();
-    rt.host.info(&format!(
+    rt.hooks.info(&format!(
         "haest {} -- {} -- {workspace} workspace -- session {}{}\n/help for commands, Ctrl+D to quit.",
         env!("CARGO_PKG_VERSION"),
         rt.agent.model_spec,
@@ -104,7 +104,7 @@ pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()>
             String::new()
         },
     ));
-    let history = rt.host.settings.data_dir.join("history");
+    let history = rt.hooks.settings.data_dir.join("history");
     let mut editor = DefaultEditor::new()?;
     let _ = editor.load_history(&history);
     let above = above_prompt(&mut editor);
@@ -120,7 +120,7 @@ pub async fn repl(rt: &mut Runtime, first: Option<String>) -> anyhow::Result<()>
             agent_turns(rt).await;
         } else {
             match guard.quit(before_quitting(rt).await) {
-                Some(lost) => rt.host.warn(&lost),
+                Some(lost) => rt.hooks.warn(&lost),
                 None => break,
             }
         }

@@ -13,7 +13,7 @@ use std::{
 use async_trait::async_trait;
 use haest_core::{
     fs::{FileKind, Fs, MemFs, resolve_path},
-    tool::{InnerCallEvent, JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput},
+    tool::{InnerCallEvent, JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices},
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
 use serde_json::{Value, json};
@@ -117,13 +117,13 @@ pub fn input(v: Value) -> JsonMap {
     v.as_object().cloned().expect("a JSON object")
 }
 
-/// Records what tools report to their host.
+/// Records what tools report to their [`ToolServices`].
 #[derive(Default)]
 pub struct Recorder {
     pub events: Mutex<Vec<InnerCallEvent>>,
 }
 
-impl ToolHost for Recorder {
+impl ToolServices for Recorder {
     fn on_inner_call(&self, ev: InnerCallEvent) {
         self.events.lock().unwrap().push(ev);
     }

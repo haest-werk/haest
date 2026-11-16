@@ -100,7 +100,7 @@ async fn print_mode(rt: &mut Runtime, input: &str) -> ExitCode {
         Outcome::Done | Outcome::Exit => ExitCode::SUCCESS,
     };
     if let Some(lost) = changes::unapplied(rt).await {
-        rt.host.warn(&format!(
+        rt.hooks.warn(&format!(
             "{lost}\nRun with -w real to edit the project directly, or interactively and /apply."
         ));
     }
@@ -118,13 +118,13 @@ async fn shutdown(rt: &Runtime) {
     let running = rt.agents.running().len();
     rt.agents.stop_all();
     if running > 0 {
-        rt.host
+        rt.hooks
             .info(&format!("Stopped {}.", count(running, "subagent")));
     }
     if let Some(jobs) = &rt.jobs {
         let killed = world::kill_jobs(jobs).await;
         if killed > 0 {
-            rt.host
+            rt.hooks
                 .info(&format!("Killed {}.", count(killed, "background job")));
         }
     }
@@ -218,6 +218,6 @@ async fn main() -> ExitCode {
     };
     shutdown(&rt).await;
     rt.mcp.close().await;
-    rt.host.flush().await;
+    rt.hooks.flush().await;
     code
 }

@@ -10,7 +10,7 @@ use crate::{
     events::LoopEvent,
     messages::Message,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::ToolHost,
+    tool::ToolServices,
     workspace::ShutWorkspace,
 };
 
@@ -199,7 +199,7 @@ async fn a_second_turn_while_one_is_active_is_refused() {
 }
 
 struct Compacting;
-impl ToolHost for Compacting {}
+impl ToolServices for Compacting {}
 #[async_trait]
 impl AgentHooks for Compacting {
     async fn before_model_call(
@@ -215,7 +215,7 @@ impl AgentHooks for Compacting {
 
 /// A host that cannot go on (its summary failed): the turn ends there.
 struct Refusing;
-impl ToolHost for Refusing {}
+impl ToolServices for Refusing {}
 #[async_trait]
 impl AgentHooks for Refusing {
     async fn before_model_call(&self, _: &mut Agent, _: &CancellationToken) -> Result<(), String> {

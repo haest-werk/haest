@@ -7,7 +7,7 @@ use std::{process::ExitCode, time::Duration};
 
 use haest::{
     AgentControl, LoopEvent, StopReason, TurnEnd,
-    runtime::{Host, session_usd, world::kill_jobs},
+    runtime::{RuntimeHooks, session_usd, world::kill_jobs},
     tools::JobHub,
 };
 use tokio::{sync::oneshot, task::JoinHandle};
@@ -31,7 +31,7 @@ const QUIT_POLL: Duration = Duration::from_millis(20);
 /// in time is left (replay repairs a call left unanswered): haest exits promptly.
 async fn wind_down(
     ended: impl Future<Output = ()>,
-    host: &Host,
+    hooks: &RuntimeHooks,
     jobs: Option<&JobHub>,
     grace: Duration,
 ) {
@@ -39,7 +39,7 @@ async fn wind_down(
     if let Some(jobs) = jobs {
         kill_jobs(jobs).await;
     }
-    let _ = tokio::time::timeout(grace, host.flush()).await;
+    let _ = tokio::time::timeout(grace, hooks.flush()).await;
 }
 
 /// Resolves once the turn `control` steers has ended.
@@ -55,7 +55,7 @@ async fn turn_ended(control: &AgentControl) {
 /// then still runs to its exit.
 fn watch_interrupts(rt: &Runtime, mut done: oneshot::Receiver<()>) -> JoinHandle<()> {
     let control = rt.agent.control();
-    let host = rt.host.clone();
+    let hooks = rt.hooks.clone();
     let jobs = rt.jobs.clone();
     tokio::spawn(async move {
         let mut asked = false;
@@ -68,11 +68,11 @@ fn watch_interrupts(rt: &Runtime, mut done: oneshot::Receiver<()>) -> JoinHandle
                     }
                     control.abort();
                     if asked {
-                        wind_down(turn_ended(&control), &host, jobs.as_deref(), QUIT_GRACE).await;
+                        wind_down(turn_ended(&control), &hooks, jobs.as_deref(), QUIT_GRACE).await;
                         std::process::exit(130);
                     }
                     asked = true;
-                    host.warn("Stopping the turn... (Ctrl+C again to quit)");
+                    hooks.warn("Stopping the turn... (Ctrl+C again to quit)");
                 }
             }
         }
@@ -108,7 +108,7 @@ pub async fn turn(rt: &mut Runtime, input: &str) -> TurnEnd {
         let total = session_usd(&rt.agent);
         rt.ui.term.lock().unwrap().usage(&u, total);
     }
-    rt.host.flush().await;
+    rt.hooks.flush().await;
     end
 }
 
@@ -142,7 +142,7 @@ pub async fn settle(rt: &mut Runtime) {
             _ = rt.inbox.wait() => {}
             _ = tokio::time::sleep(SETTLE_POLL) => {}
             _ = tokio::signal::ctrl_c() => {
-                rt.host.warn("Stopping the subagents.");
+                rt.hooks.warn("Stopping the subagents.");
                 rt.agents.stop_all();
                 return;
             }
@@ -174,11 +174,15 @@ mod tests {
     use crate::term::TermUi;
 
     /// A host whose session file `/data/sessions/s.jsonl` is in `fs`.
-    async fn host_over(fs: &Arc<MemFs>) -> Arc<Host> {
+    async fn hooks_over(fs: &Arc<MemFs>) -> Arc<RuntimeHooks> {
         let store = JsonlSessionFile::new(fs.clone(), Path::new("/data"), "s").unwrap();
         store.create("s", "/w", 0).await.unwrap();
         let ui = Arc::new(TermUi::new(false));
-        Arc::new(Host::new(Settings::bare("/w", "/h"), ui, Arc::new(store)))
+        Arc::new(RuntimeHooks::new(
+            Settings::bare("/w", "/h"),
+            ui,
+            Arc::new(store),
+        ))
     }
 
     /// A tool call's answer, as the session file records it.
@@ -201,14 +205,14 @@ mod tests {
     #[tokio::test]
     async fn the_second_ctrl_c_lands_the_turns_answers_before_haest_exits() {
         let fs = Arc::new(MemFs::new());
-        let host = host_over(&fs).await;
-        host.append(answer("queued before the second Ctrl+C"));
-        let turn = host.clone();
+        let hooks = hooks_over(&fs).await;
+        hooks.append(answer("queued before the second Ctrl+C"));
+        let turn = hooks.clone();
         let ends = async move {
             tokio::time::sleep(Duration::from_millis(30)).await;
             turn.append(answer("Interrupted by the user."));
         };
-        wind_down(ends, &host, None, Duration::from_secs(5)).await;
+        wind_down(ends, &hooks, None, Duration::from_secs(5)).await;
         let file = fs
             .read_to_string(Path::new("/data/sessions/s.jsonl"))
             .await
@@ -219,7 +223,7 @@ mod tests {
         let started = Instant::now();
         wind_down(
             std::future::pending(),
-            &host,
+            &hooks,
             None,
             Duration::from_millis(50),
         )

@@ -5,13 +5,13 @@
 //! result envelope a host renders (`result`). Each tool states its canonical
 //! `kind` itself ("file.read", "shell.exec", ...), so no host has to guess.
 //!
-//! PLUG POINT: implement [`Tool`] to add a tool; implement [`ToolHost`] to receive
+//! PLUG POINT: implement [`Tool`] to add a tool; implement [`ToolServices`] to receive
 //! what tools publish, report and log. A [`ToolSource`] (a plain
 //! `Vec<Arc<dyn Tool>>` is one) hands an agent its tools through
 //! [`AgentDeps::tools`](crate::AgentDeps::tools).
 //!
 //! The loop gives every call a [`ToolContext`] (working directory, cancel
-//! token, workspace, host) and turns whatever comes back, an error or a panic
+//! token, workspace, the host's services) and turns whatever comes back, an error or a panic
 //! included, into exactly one result in history
 //! ([`tool_exec`](crate::tool_exec)). The `req_*` / `opt_*` helpers read
 //! arguments the way models actually send them.
@@ -127,7 +127,7 @@ impl From<std::io::Error> for ToolError {
 
 /// A tool call made by another tool (call `parent_id`): a transcript row of its own, not a model turn.
 ///
-/// Reported through [`ToolHost::on_inner_call`]: a `Start`, then an `End`
+/// Reported through [`ToolServices::on_inner_call`]: a `Start`, then an `End`
 /// with the same call.
 #[derive(Debug, Clone)]
 pub enum InnerCallEvent {
@@ -154,9 +154,9 @@ pub enum InnerCallEvent {
 /// What the host offers every tool. All optional: the defaults do nothing.
 ///
 /// Every [`AgentHooks`](crate::AgentHooks) is one; a tool reaches it through
-/// [`ToolContext::host`]. [`NoHost`] offers nothing.
+/// [`ToolContext::services`]. [`NoServices`] offers nothing.
 #[async_trait]
-pub trait ToolHost: Send + Sync {
+pub trait ToolServices: Send + Sync {
     /// Put bytes where the host's transcript can show them; the URL, or None.
     async fn publish(&self, _data: Vec<u8>, _media_type: &str) -> Option<String> {
         None
@@ -167,13 +167,13 @@ pub trait ToolHost: Send + Sync {
     fn log(&self, _message: &str) {}
 }
 
-/// A host that offers nothing.
+/// Services that offer nothing: publish returns no URL, the rest is dropped.
 #[derive(Debug, Default)]
-pub struct NoHost;
-impl ToolHost for NoHost {}
+pub struct NoServices;
+impl ToolServices for NoServices {}
 
 /// What one tool call may use: where it runs, how it learns it was cancelled,
-/// the workspace and the host.
+/// the workspace and the host's services.
 ///
 /// The loop builds one per call from [`AgentDeps`](crate::AgentDeps);
 /// [`ToolContext::new`] builds one to run a tool outside the loop.
@@ -186,8 +186,8 @@ pub struct ToolContext {
     pub cancel: CancellationToken,
     /// The only way a tool touches files or runs a command.
     pub workspace: Arc<dyn Workspace>,
-    /// The host, for publishing bytes, reporting inner calls and logging.
-    pub host: Arc<dyn ToolHost>,
+    /// The host's services: publishing bytes, reporting inner calls, logging.
+    pub services: Arc<dyn ToolServices>,
     /// Tokens a result may still add before the next model call hits the request
     /// cap; None when no cap is configured.
     pub context_room_tokens: Option<u64>,
@@ -199,13 +199,13 @@ pub struct ToolContext {
 
 impl ToolContext {
     /// A context for running a tool outside the loop (tests, a host command):
-    /// a fresh cancel token, [`NoHost`], no context cap, no call id, no spill directory.
+    /// a fresh cancel token, [`NoServices`], no context cap, no call id, no spill directory.
     pub fn new(cwd: impl Into<PathBuf>, workspace: Arc<dyn Workspace>) -> Self {
         Self {
             cwd: cwd.into(),
             cancel: CancellationToken::new(),
             workspace,
-            host: Arc::new(NoHost),
+            services: Arc::new(NoServices),
             context_room_tokens: None,
             tool_call_id: None,
             spill_dir: None,

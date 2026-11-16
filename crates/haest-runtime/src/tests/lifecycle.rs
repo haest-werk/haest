@@ -99,7 +99,7 @@ async fn a_model_the_build_cannot_use_fails_it_and_leaves_no_session_file() {
 async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
     let fs = Arc::new(MemFs::new());
     let rt = keyed(&fs, None).await;
-    rt.host.flush().await;
+    rt.hooks.flush().await;
     let id = rt.session_id();
     let file = Path::new(SESSIONS).join(format!("{id}.jsonl"));
     let saved = fs.read_to_string(&file).await.unwrap();
@@ -115,7 +115,7 @@ async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
     };
     let built = try_keyed(&fs, keyless, opts).await;
     if let Ok(rt) = &built {
-        rt.host.flush().await;
+        rt.hooks.flush().await;
     }
     let now = fs.read_to_string(&file).await.unwrap();
     assert_eq!(now, saved, "the session is as it was");
@@ -130,17 +130,17 @@ async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothi
     let before = rt.agent.model_spec.clone();
     assert!(rt.set_model("nowhere:x").is_err());
     assert_eq!(
-        (rt.agent.model_spec.as_str(), rt.host.model()),
+        (rt.agent.model_spec.as_str(), rt.hooks.model()),
         (before.as_str(), before.clone())
     );
 
     rt.set_model(OTHER).unwrap();
     rt.set_effort(Some(Effort::High));
     assert_eq!(
-        (rt.host.model(), rt.host.effort()),
+        (rt.hooks.model(), rt.hooks.effort()),
         (OTHER.to_string(), Some(Effort::High))
     );
-    rt.host.flush().await;
+    rt.hooks.flush().await;
 
     let back = keyed(&fs, Some(rt.session_id())).await;
     assert_eq!(back.agent.model_spec, OTHER);
@@ -155,7 +155,7 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
     let mut rt = keyed(&fs, None).await;
     rt.set_model(OTHER).unwrap();
     rt.set_effort(Some(Effort::High));
-    rt.host.flush().await;
+    rt.hooks.flush().await;
     let id = rt.session_id();
     let on = |rt: &crate::Runtime<Recorded>| (rt.agent.model_spec.clone(), rt.agent.effort);
 
@@ -176,7 +176,7 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
     assert_eq!(on(&model_only), (GIVEN.to_string(), Some(Effort::High)));
     let both = keyed_with(&fs, given, opts(true, true)).await;
     assert_eq!(on(&both), (GIVEN.to_string(), Some(Effort::Low)));
-    both.host.flush().await;
+    both.hooks.flush().await;
 
     let next = keyed(&fs, Some(id)).await;
     assert_eq!(on(&next), (GIVEN.to_string(), Some(Effort::Low)));
@@ -196,7 +196,7 @@ async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resu
     rt.clear().await.unwrap();
     assert_ne!(rt.session_id(), old);
     assert!(rt.board.list().is_empty());
-    rt.host.flush().await;
+    rt.hooks.flush().await;
 
     let fresh = keyed(&fs, Some(rt.session_id())).await;
     assert_eq!(fresh.agent.model_spec, OTHER);
@@ -215,7 +215,7 @@ async fn a_clear_that_cannot_create_its_file_changes_nothing() {
         ..Default::default()
     });
     let id = rt.session_id();
-    rt.host.flush().await;
+    rt.hooks.flush().await;
     block_sessions(&fs).await;
 
     let err = rt.clear().await.expect_err("the clear fails");

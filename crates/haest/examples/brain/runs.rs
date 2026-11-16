@@ -158,7 +158,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         [(PathBuf::from("/brain/notes/today.md"), NOTE.to_string())]
     );
 
-    // Host tool and agent tools: answered by the node.
+    // RuntimeHooks tool and agent tools: answered by the node.
     assert!(doc.output("c5").content.contains("/brain/notes/q2.md"));
     let c6 = doc.output("c6");
     assert_eq!(

@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use haest_settings::Settings;
 
 use crate::{
-    Host,
+    RuntimeHooks,
     haest::{
         SystemPrompt, Workspace,
         core::context::{
@@ -59,7 +59,7 @@ pub struct RuntimePrompt {
     pub fs: Arc<dyn Fs>,
     /// Its settings say which instruction files to read (`context`) and
     /// whether the skill list goes in (`skill_catalog`).
-    pub host: Arc<Host>,
+    pub hooks: Arc<RuntimeHooks>,
     /// The skills found; listed in the prompt with `skill_catalog` on.
     pub skills: Arc<Mutex<Vec<Skill>>>,
     /// Everything but the instructions, skills, tools and model, fixed for the process.
@@ -73,12 +73,12 @@ impl RuntimePrompt {
     /// dir, the platform, today's date, the git branch, the workspace's own
     /// note, `append_system_prompt`.
     pub async fn new(
-        host: &Arc<Host>,
+        hooks: &Arc<RuntimeHooks>,
         fs: &Arc<dyn Fs>,
         skills: &Arc<Mutex<Vec<Skill>>>,
         workspace: &dyn Workspace,
     ) -> Self {
-        let s = &host.settings;
+        let s = &hooks.settings;
         let note = workspace.prompt_note();
         let base = PromptInputs {
             identity: s.system_prompt.clone(),
@@ -92,7 +92,7 @@ impl RuntimePrompt {
         };
         Self {
             fs: fs.clone(),
-            host: host.clone(),
+            hooks: hooks.clone(),
             skills: skills.clone(),
             base,
         }
@@ -102,7 +102,7 @@ impl RuntimePrompt {
     /// fixed parts, the instruction files read again now, and the skill list
     /// with `skill_catalog` on.
     pub async fn build(&self, model: String, tool_names: Vec<String>) -> String {
-        let s = &self.host.settings;
+        let s = &self.hooks.settings;
         let mut p = self.base.clone();
         p.model = model;
         p.tool_names = tool_names;
@@ -122,7 +122,7 @@ pub struct AgentPrompt {
     /// The parts every agent shares.
     pub prompt: Arc<RuntimePrompt>,
     /// The model the prompt names; None = the conversation's current one
-    /// ([`Host::model`]), as for main.
+    /// ([`RuntimeHooks::model`]), as for main.
     pub model: Option<String>,
     /// The agent's tools: the prompt names the ones its next call offers.
     pub tools: Arc<dyn ToolSource>,
@@ -134,7 +134,7 @@ impl SystemPrompt for AgentPrompt {
         let model = self
             .model
             .clone()
-            .unwrap_or_else(|| self.prompt.host.model());
+            .unwrap_or_else(|| self.prompt.hooks.model());
         let names = self
             .tools
             .tools()

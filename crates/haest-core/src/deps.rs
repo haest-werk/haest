@@ -28,7 +28,7 @@ use crate::{
     limits::TurnLimits,
     messages::{MediaPart, Message},
     provider::{Effort, ModelResolver, WebSearchConfig},
-    tool::{ToolHost, ToolSource},
+    tool::{ToolServices, ToolSource},
     workspace::Workspace,
 };
 
@@ -53,7 +53,7 @@ impl SystemPrompt for String {
     }
 }
 
-/// A host's say in the loop. Extends [`ToolHost`]: what tools publish, report
+/// A host's say in the loop. Extends [`ToolServices`]: what tools publish, report
 /// and log goes to the same object.
 ///
 /// Set it on [`AgentDeps::hooks`]. Every method has a default that changes
@@ -72,7 +72,7 @@ impl SystemPrompt for String {
 ///
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace,
-///     StopReason, Tool, ToolHost, limits::TurnLimits,
+///     StopReason, Tool, ToolServices, limits::TurnLimits,
 ///     testing::{ScriptedProvider, tool_answer},
 /// };
 ///
@@ -81,7 +81,7 @@ impl SystemPrompt for String {
 ///     saved: Mutex<Vec<Message>>,
 /// }
 ///
-/// impl ToolHost for Host {}
+/// impl ToolServices for Host {}
 ///
 /// #[async_trait::async_trait]
 /// impl AgentHooks for Host {
@@ -119,7 +119,7 @@ impl SystemPrompt for String {
 /// # fn main() {}
 /// ```
 #[async_trait]
-pub trait AgentHooks: ToolHost {
+pub trait AgentHooks: ToolServices {
     /// Every message appended to history, in order: the persistence hook.
     ///
     /// Not called for [`Agent::replace_history`], nor for the summary
@@ -203,7 +203,7 @@ pub fn now_ms() -> u64 {
 /// Hooks that change nothing: [`AgentDeps::new`]'s default.
 #[derive(Debug, Default)]
 pub struct NoHooks;
-impl ToolHost for NoHooks {}
+impl ToolServices for NoHooks {}
 impl AgentHooks for NoHooks {}
 
 /// Everything the loop needs: what [`Agent::new`] takes.

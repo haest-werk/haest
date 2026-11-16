@@ -1,5 +1,5 @@
 //! What a mod is ([`Mod`]), what it can reach ([`ModEnv`]), and the host's half
-//! ([`ModHost`]): the human's Allow / Deny and the lines they see.
+//! ([`ModUi`]): the human's Allow / Deny and the lines they see.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -39,7 +39,7 @@ pub enum Before {
     Input(JsonMap),
 }
 
-/// An Allow / Deny prompt for the human, raised by a mod through [`ModHost::ask`].
+/// An Allow / Deny prompt for the human, raised by a mod through [`ModUi::ask`].
 ///
 /// A mod file builds one as the `req` of `haest.ask(req, signal)`, in
 /// camelCase: `{ toolName, description, inputPreview, toolUseId?, key? }`.
@@ -61,7 +61,7 @@ pub struct ApprovalRequest {
     pub key: Option<String>,
 }
 
-/// The human's answer to one ask: what [`ModHost::ask`] returns.
+/// The human's answer to one ask: what [`ModUi::ask`] returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Decision {
@@ -106,7 +106,7 @@ impl ModError {
 /// [`Prompter`](crate::Prompter), which keeps the rules every host must keep.
 /// [`ApprovalGate`](crate::ApprovalGate#examples)'s example is a whole host.
 #[async_trait]
-pub trait ModHost: Send + Sync {
+pub trait ModUi: Send + Sync {
     /// The human's Allow / Deny. Deny when `cancel` fires (an interrupt) or the
     /// human never answers -- a tool call must never hang on someone who walked away.
     async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision;
@@ -132,16 +132,16 @@ pub struct ModEnv {
     /// The workspace the agent's tools run in: [`ApprovalMod`](crate::ApprovalMod) asks only in `Real`.
     pub workspace: WorkspaceMode,
     /// The host's ask, notice, error and log.
-    pub host: Arc<dyn ModHost>,
+    pub ui: Arc<dyn ModUi>,
 }
 
 impl ModEnv {
     /// The environment for one conversation's mods.
-    pub fn new(cwd: impl Into<PathBuf>, workspace: WorkspaceMode, host: Arc<dyn ModHost>) -> Self {
+    pub fn new(cwd: impl Into<PathBuf>, workspace: WorkspaceMode, ui: Arc<dyn ModUi>) -> Self {
         Self {
             cwd: cwd.into(),
             workspace,
-            host,
+            ui,
         }
     }
 
@@ -152,12 +152,12 @@ impl ModEnv {
         if cancel.is_cancelled() {
             return Decision::Deny;
         }
-        self.host.ask(req, cancel).await
+        self.ui.ask(req, cancel).await
     }
 
     /// A line the human sees, through the host.
     pub fn notice(&self, text: &str) {
-        self.host.notice(text)
+        self.ui.notice(text)
     }
 }
 
@@ -169,7 +169,7 @@ impl ModEnv {
 ///
 /// A mod is put in a conversation with [`Mods::add`](crate::Mods::add); every
 /// event runs across the mods in the order they were added. An `Err` from an
-/// event is reported to the human through [`ModHost::error`], and never takes
+/// event is reported to the human through [`ModUi::error`], and never takes
 /// the conversation down.
 ///
 /// A mod runs with the HOST's full trust, sandbox or not.

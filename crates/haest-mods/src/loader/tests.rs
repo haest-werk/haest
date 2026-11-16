@@ -33,19 +33,13 @@ async fn a_mod_in_the_user_mods_dir_loads_and_a_broken_one_is_reported_and_skipp
         ),
         (format!("{HOME_MODS}/b-broken.ts"), "export default 42"),
     ]);
-    let host = TestHost::new();
-    let mods = load_mods_with(
-        cfg(WorkspaceMode::Sandbox),
-        &fs,
-        host.clone(),
-        test_limits(),
-    )
-    .await;
+    let ui = TestUi::new();
+    let mods = load_mods_with(cfg(WorkspaceMode::Sandbox), &fs, ui.clone(), test_limits()).await;
     let tools = wrapped(mods, Vec::new());
     let hello = find(&tools, "Hello");
     let out = hello.execute(input(json!({})), &ctx()).await.unwrap();
     assert_eq!(out.content, "hello");
-    let errors = host.errors();
+    let errors = ui.errors();
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("b-broken.ts"));
 }
@@ -72,31 +66,25 @@ async fn project_mods_load_only_when_the_host_turns_them_on() {
     let off = load_mods_with(
         cfg(WorkspaceMode::Sandbox),
         &fs,
-        TestHost::new(),
+        TestUi::new(),
         test_limits(),
     )
     .await;
     assert_eq!(off.system_append().await, "");
     let mut on_cfg = cfg(WorkspaceMode::Sandbox);
     on_cfg.project_mods = true;
-    let on = load_mods_with(on_cfg, &fs, TestHost::new(), test_limits()).await;
+    let on = load_mods_with(on_cfg, &fs, TestUi::new(), test_limits()).await;
     assert_eq!(on.system_append().await, "from the repo");
 }
 
 #[tokio::test]
 async fn the_built_ins_load_first_and_approvals_can_be_turned_off() {
     let fs = MemFs::new();
-    let all = load_mods_with(
-        cfg(WorkspaceMode::Real),
-        &fs,
-        TestHost::new(),
-        test_limits(),
-    )
-    .await;
+    let all = load_mods_with(cfg(WorkspaceMode::Real), &fs, TestUi::new(), test_limits()).await;
     assert_eq!(all.names(), ["approval", "plan"]);
     let mut quiet = cfg(WorkspaceMode::Real);
     quiet.approvals = false;
-    let no_approvals = load_mods_with(quiet, &fs, TestHost::new(), test_limits()).await;
+    let no_approvals = load_mods_with(quiet, &fs, TestUi::new(), test_limits()).await;
     assert_eq!(no_approvals.names(), ["plan"]);
     assert!(no_approvals.has_command(crate::plan::PLAN_COMMAND));
 }

@@ -61,16 +61,16 @@ async fn diffs_of(set: &dyn ChangeSet, list: &[Change]) -> String {
 
 pub async fn show(rt: &Runtime) {
     let Some(set) = rt.agent.deps().workspace.changes() else {
-        return rt.host.info(REAL_FS);
+        return rt.hooks.info(REAL_FS);
     };
     let list = set.list().await;
     if list.is_empty() {
         return rt
-            .host
+            .hooks
             .info("The sandbox has changed nothing in the project.");
     }
     let diffs = diffs_of(set.as_ref(), &list).await;
-    rt.host.info(&format!(
+    rt.hooks.info(&format!(
         "{} change(s) in the sandbox, not on disk yet:\n{}\n\n{diffs}\nRun /apply to write them to the project.",
         list.len(),
         lines_of(&list)
@@ -115,15 +115,15 @@ fn apply_message(report: &ApplyReport, cwd: &Path) -> (String, bool) {
 
 pub async fn apply(rt: &Runtime) {
     let Some(set) = rt.agent.deps().workspace.changes() else {
-        return rt.host.info(REAL_FS);
+        return rt.hooks.info(REAL_FS);
     };
     let report = match set.apply().await {
         Ok(r) => r,
-        Err(e) => return rt.host.error(&format!("Apply failed: {e}")),
+        Err(e) => return rt.hooks.error(&format!("Apply failed: {e}")),
     };
-    match apply_message(&report, &rt.host.settings.cwd) {
-        (text, true) => rt.host.warn(&text),
-        (text, false) => rt.host.info(&text),
+    match apply_message(&report, &rt.hooks.settings.cwd) {
+        (text, true) => rt.hooks.warn(&text),
+        (text, false) => rt.hooks.info(&text),
     }
 }
 

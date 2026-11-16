@@ -8,7 +8,7 @@ use crate::{
     agent::test_support::{collect, end, limits},
     deps::AgentHooks,
     limits::TurnLimits,
-    tool::ToolHost,
+    tool::ToolServices,
 };
 
 /// A host that compacts before every model call, as the runtime's does.
@@ -17,7 +17,7 @@ struct CompactsFirst {
     caps: Option<TurnLimits>,
     esc: bool,
 }
-impl ToolHost for CompactsFirst {}
+impl ToolServices for CompactsFirst {}
 #[async_trait]
 impl AgentHooks for CompactsFirst {
     async fn before_model_call(

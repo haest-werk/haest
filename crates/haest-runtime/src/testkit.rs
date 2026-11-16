@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use haest_settings::Settings;
 
 use crate::{
-    Host, Ui,
+    RuntimeHooks, Ui,
     haest::{
         core::fs::MemFs,
         core::session::JsonlSessionFile,
@@ -42,11 +42,11 @@ impl Ui for Recorded {
 }
 
 /// A host on these settings; its session file is in memory. Needs a tokio runtime.
-pub fn host(settings: Settings) -> (Arc<Host>, Arc<Recorded>) {
+pub fn hooks(settings: Settings) -> (Arc<RuntimeHooks>, Arc<Recorded>) {
     let ui = Arc::new(Recorded::default());
     let store = JsonlSessionFile::new(Arc::new(MemFs::new()), Path::new("/d"), "t").unwrap();
-    let host = Host::new(settings, ui.clone(), Arc::new(store));
-    (Arc::new(host), ui)
+    let hooks = RuntimeHooks::new(settings, ui.clone(), Arc::new(store));
+    (Arc::new(hooks), ui)
 }
 
 /// Says no to every ask.

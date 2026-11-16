@@ -13,11 +13,11 @@ use haest_core::{
     messages::MediaPart,
     panics::panic_message,
     provider::Effort,
-    tool::{InnerCallEvent, ToolHost, ToolSource},
+    tool::{InnerCallEvent, ToolServices, ToolSource},
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{AgentRef, SubagentCaps, SubagentEvent, SubagentHost};
+use super::{AgentRef, SubagentCaps, SubagentEvent, SubagentParent};
 
 const MINUTE_MS: u64 = 60_000;
 
@@ -57,9 +57,9 @@ Your caps: ${}, {} model calls, {} minutes. Messages from other agents arrive as
     )
 }
 
-/// The host's system prompt for this agent's model and tools, then its note.
+/// The parent's system prompt for this agent's model and tools, then its note.
 pub(super) struct ChildPrompt {
-    pub host: Arc<dyn SubagentHost>,
+    pub parent: Arc<dyn SubagentParent>,
     pub model: String,
     pub tools: Arc<dyn ToolSource>,
     pub note: String,
@@ -69,7 +69,7 @@ pub(super) struct ChildPrompt {
 impl SystemPrompt for ChildPrompt {
     async fn system_prompt(&self) -> String {
         let base = self
-            .host
+            .parent
             .system_prompt(&self.model, &self.tools.tools())
             .await;
         format!("{base}\n\n{}", self.note)
@@ -80,30 +80,30 @@ impl SystemPrompt for ChildPrompt {
 /// not the conversation's (nothing persisted, no compaction), and the calls its
 /// tools make go to its own card.
 pub(super) struct ChildHooks {
-    pub parent: Arc<dyn AgentHooks>,
+    pub hooks: Arc<dyn AgentHooks>,
     pub caps: SubagentCaps,
-    pub host: Arc<dyn SubagentHost>,
+    pub parent: Arc<dyn SubagentParent>,
     pub id: String,
 }
 
 #[async_trait]
-impl ToolHost for ChildHooks {
+impl ToolServices for ChildHooks {
     async fn publish(&self, data: Vec<u8>, media_type: &str) -> Option<String> {
-        self.parent.publish(data, media_type).await
+        self.hooks.publish(data, media_type).await
     }
     fn on_inner_call(&self, ev: InnerCallEvent) {
-        self.host
+        self.parent
             .on_subagent(&self.id, SubagentEvent::InnerCall(ev));
     }
     fn log(&self, message: &str) {
-        self.parent.log(message);
+        self.hooks.log(message);
     }
 }
 
 #[async_trait]
 impl AgentHooks for ChildHooks {
     fn limits(&self, spec: &str) -> Option<TurnLimits> {
-        let base = self.parent.limits(spec).unwrap_or_default();
+        let base = self.hooks.limits(spec).unwrap_or_default();
         Some(TurnLimits {
             max_turn_usd: self.caps.usd,
             max_turn_steps: self.caps.steps,
@@ -112,26 +112,26 @@ impl AgentHooks for ChildHooks {
         })
     }
     fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
-        self.parent.input_modalities(spec)
+        self.hooks.input_modalities(spec)
     }
     async fn attach_media(
         &self,
         text: &str,
         cancel: &CancellationToken,
     ) -> (Vec<MediaPart>, Vec<String>) {
-        self.parent.attach_media(text, cancel).await
+        self.hooks.attach_media(text, cancel).await
     }
     fn on_media_withheld(&self, parts: &[MediaPart], model: &str) {
-        self.parent.on_media_withheld(parts, model);
+        self.hooks.on_media_withheld(parts, model);
     }
     fn reasoning(&self, spec: &str) -> Option<Reasoning> {
-        self.parent.reasoning(spec)
+        self.hooks.reasoning(spec)
     }
     fn on_effort_fitted(&self, model: &str, used: Effort) {
-        self.parent.on_effort_fitted(model, used);
+        self.hooks.on_effort_fitted(model, used);
     }
     fn now_ms(&self) -> u64 {
-        self.parent.now_ms()
+        self.hooks.now_ms()
     }
 }
 
@@ -165,7 +165,7 @@ async fn cancelled(t: Option<&CancellationToken>) {
     }
 }
 
-/// Run the turn to its end, every event to the host; never fails -- a crash
+/// Run the turn to its end, every event to the parent; never fails -- a crash
 /// comes back as the agent's answer. `stop` (StopAgent) and `caller` (the
 /// spawning turn, for a foreground agent) both abort it.
 pub(super) async fn drive(
@@ -173,7 +173,7 @@ pub(super) async fn drive(
     prompt: &str,
     stop: &CancellationToken,
     caller: Option<&CancellationToken>,
-    host: &dyn SubagentHost,
+    parent: &dyn SubagentParent,
     id: &str,
 ) -> RunOutcome {
     let control = agent.control();
@@ -203,7 +203,7 @@ pub(super) async fn drive(
                 }
                 _ => {}
             }
-            host.on_subagent(id, SubagentEvent::Loop(ev));
+            parent.on_subagent(id, SubagentEvent::Loop(ev));
         };
         let run = AssertUnwindSafe(agent.run(prompt, &mut sink)).catch_unwind();
         tokio::pin!(run);

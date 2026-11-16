@@ -19,7 +19,7 @@
 //! PLUG POINT: the tools speak to an [`AgentDirectory`], never to the hub, so a
 //! host with its own idea of a subagent (one that runs elsewhere, with its own
 //! types) implements that trait and keeps these tools. [`SubagentHub`] is the
-//! default, over a [`SubagentHost`]. [`AgentToolOptions`] gives the Agent tool
+//! default, over a [`SubagentParent`]. [`AgentToolOptions`] gives the Agent tool
 //! the host's kinds of subagent (`subagent_type`) and its own `model` text.
 //!
 //! | Tool | Kind | What it does |
@@ -82,9 +82,9 @@
 //! # }
 //! ```
 
-mod host;
 mod hub;
 mod members;
+mod parent;
 mod run;
 #[cfg(test)]
 mod tests;
@@ -93,8 +93,8 @@ mod tools;
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
-pub use host::{SubagentCaps, SubagentEvent, SubagentHost};
 pub use hub::SubagentHub;
+pub use parent::{SubagentCaps, SubagentEvent, SubagentParent};
 pub use run::{RunOutcome, subagent_note};
 pub use tools::{agent_tools, agent_tools_with};
 

@@ -145,7 +145,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::tool::ToolHost;
+    use crate::tool::ToolServices;
 
     fn r(mandatory: bool, efforts: &[OpenRouterEffort]) -> Reasoning {
         Reasoning {
@@ -155,7 +155,7 @@ mod tests {
     }
 
     struct Mandatory(Mutex<Vec<Effort>>);
-    impl ToolHost for Mandatory {}
+    impl ToolServices for Mandatory {}
     impl AgentHooks for Mandatory {
         fn reasoning(&self, _: &str) -> Option<Reasoning> {
             Some(r(true, &[OpenRouterEffort::Medium, OpenRouterEffort::High]))

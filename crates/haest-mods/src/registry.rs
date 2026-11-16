@@ -31,7 +31,7 @@ pub enum CommandOutcome {
 /// except a gate's ([`Mod::is_gate`], the approval mod), which judges after
 /// every other mod has had its say, on the call as it will run. A mod that
 /// fails in an event is reported through the host's
-/// [`ModHost::error`](crate::ModHost::error) (unless the human interrupted
+/// [`ModUi::error`](crate::ModUi::error) (unless the human interrupted
 /// that tool call) and never takes the conversation down; what else happens
 /// depends on the event:
 ///
@@ -60,9 +60,9 @@ impl Mods {
         }
     }
 
-    /// Add a mod after every mod already here (logged through [`ModHost::log`](crate::ModHost::log)).
+    /// Add a mod after every mod already here (logged through [`ModUi::log`](crate::ModUi::log)).
     pub fn add(&mut self, m: Arc<dyn Mod>) {
-        self.env.host.log(&format!("mod loaded: {}", m.name()));
+        self.env.ui.log(&format!("mod loaded: {}", m.name()));
         self.list.push(m);
     }
 
@@ -83,7 +83,7 @@ impl Mods {
 
     fn report(&self, m: &dyn Mod, event: &str, e: &ModError) {
         self.env
-            .host
+            .ui
             .error(&format!("Mod {} failed in {event}: {e}", m.name()));
     }
 
@@ -204,11 +204,11 @@ impl Mods {
     /// ```
     /// # use std::sync::Arc;
     /// # use haest_core::workspace::WorkspaceMode;
-    /// # use haest_mods::{ApprovalRequest, Decision, ModHost};
+    /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
     /// use haest_mods::{CommandOutcome, ModEnv, Mods, PlanMod};
     /// # struct Terminal;
     /// # #[async_trait::async_trait]
-    /// # impl ModHost for Terminal {
+    /// # impl ModUi for Terminal {
     /// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
     /// #     fn notice(&self, _: &str) {}
     /// # }

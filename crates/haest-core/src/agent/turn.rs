@@ -15,7 +15,7 @@ use crate::{
     media::user_message,
     messages::{AssistantMessage, Message, StopReason, ToolCall, Usage},
     provider::ProviderEvent,
-    tool::{ToolContext, ToolHost},
+    tool::{ToolContext, ToolServices},
     tool_batch::{Answer, Answers, run_tool_batches},
     tool_exec::{ToolIndex, error_assistant, tool_result_message},
 };
@@ -201,12 +201,12 @@ impl Agent {
     /// in CALL order -- history, the guard's repeat count and the transcript all
     /// read them that way -- each one as soon as every call before it has answered.
     async fn run_tools(&mut self, calls: &[ToolCall], t: &mut Turn<'_>) {
-        let host: Arc<dyn ToolHost> = self.deps.hooks.clone();
+        let services: Arc<dyn ToolServices> = self.deps.hooks.clone();
         let ctx = ToolContext {
             cwd: self.deps.cwd.clone(),
             cancel: t.cancel.clone(),
             workspace: self.deps.workspace.clone(),
-            host,
+            services,
             context_room_tokens: None,
             tool_call_id: None,
             spill_dir: self.deps.spill_dir.clone(),

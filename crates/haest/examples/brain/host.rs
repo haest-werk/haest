@@ -14,7 +14,7 @@ use haest::{
     Agent, AgentHooks, Message,
     core::limits::TurnLimits,
     core::session::{SessionRecord, SessionSink},
-    core::tool::ToolHost,
+    core::tool::ToolServices,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -121,7 +121,7 @@ impl BrainHost {
     }
 }
 
-impl ToolHost for BrainHost {}
+impl ToolServices for BrainHost {}
 
 #[async_trait]
 impl AgentHooks for BrainHost {

@@ -134,11 +134,11 @@ impl JsMod {
     /// ```
     /// # use std::{path::Path, sync::Arc};
     /// # use haest_core::workspace::WorkspaceMode;
-    /// # use haest_mods::{ApprovalRequest, Decision, ModHost};
+    /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
     /// use haest_mods::{JsMod, Mod, ModEnv};
     /// # struct Terminal;
     /// # #[async_trait::async_trait]
-    /// # impl ModHost for Terminal {
+    /// # impl ModUi for Terminal {
     /// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
     /// #     fn notice(&self, _: &str) {}
     /// # }
@@ -170,7 +170,7 @@ impl JsMod {
         let setup = Setup {
             path: path.to_path_buf(),
             source,
-            host: haest.host.clone(),
+            ui: haest.ui.clone(),
             meta: meta.clone(),
             limits,
             runtime,

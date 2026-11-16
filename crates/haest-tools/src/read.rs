@@ -120,7 +120,7 @@ pub trait ReadIntercept: Send + Sync {
 
 /// A tool result that hands `bytes` to the model as media (an image, PDF,
 /// audio or video), and to the transcript as a URL when the host can publish
-/// it ([`ToolHost::publish`](haest_core::tool::ToolHost::publish)).
+/// it ([`ToolServices::publish`](haest_core::tool::ToolServices::publish)).
 ///
 /// Read uses it for a media file, WebFetch for a media URL. `label` names it
 /// in the text the model reads (`label: image (image/png, 120 bytes),
@@ -143,7 +143,7 @@ pub async fn media_output(
     let len = bytes.len();
     let kind = part.kind.as_str();
     let mut result = json!({"kind": "file", "mediaType": media_type, "bytes": len});
-    if let Some(url) = ctx.host.publish(bytes, media_type).await {
+    if let Some(url) = ctx.services.publish(bytes, media_type).await {
         result["url"] = Value::String(url);
     }
     Ok(ToolOutput {

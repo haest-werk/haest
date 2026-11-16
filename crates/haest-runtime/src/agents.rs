@@ -10,7 +10,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::{
-    Host,
+    RuntimeHooks,
     haest::{
         AgentDeps, Effort, SystemPrompt,
         core::deferred_tools::ToolDeferral,
@@ -18,7 +18,7 @@ use crate::{
         mods::{ModSystemPrompt, Mods},
         tools::{
             Inbox,
-            agents::{SubagentEvent, SubagentHost, SubagentHub},
+            agents::{SubagentEvent, SubagentHub, SubagentParent},
             tool_search::DeferredTools,
         },
     },
@@ -28,15 +28,15 @@ use crate::{
 };
 
 /// What a conversation's subagents are made from: the
-/// [`SubagentHost`] behind its [`SubagentHub`].
+/// [`SubagentParent`] behind its [`SubagentHub`].
 ///
 /// [`build`](crate::build) fills one in and turns it into the hub
 /// ([`Agents::hub`]), shared as [`Runtime::agents`](crate::Runtime::agents). A
 /// host that takes the pieces fills one in itself.
 pub struct Agents {
-    /// The conversation's host: the settings' caps, the current model and
+    /// The runtime's hooks: the settings' caps, the current model and
     /// effort, the [`Ui`](crate::Ui) a subagent's life goes to.
-    pub host: Arc<Host>,
+    pub hooks: Arc<RuntimeHooks>,
     /// The conversation's deps. Their tools and prompt are left out (empty):
     /// the hub replaces both for every agent, and main's tools hold the hub.
     pub deps: AgentDeps,
@@ -57,7 +57,7 @@ impl Agents {
     /// The hub, capped by the settings' `subagents` (how deep they nest, how
     /// many run at once, each one's spend, steps and time).
     pub fn hub(self) -> Arc<SubagentHub> {
-        let caps = self.host.settings.subagents;
+        let caps = self.hooks.settings.subagents;
         SubagentHub::new(Arc::new(self), caps)
     }
 }
@@ -69,7 +69,7 @@ impl Inbox for Agents {
 }
 
 #[async_trait]
-impl SubagentHost for Agents {
+impl SubagentParent for Agents {
     fn deps(&self) -> AgentDeps {
         self.deps.clone()
     }
@@ -90,20 +90,20 @@ impl SubagentHost for Agents {
     }
 
     fn default_model(&self) -> (String, Option<Effort>) {
-        (self.host.model(), self.host.effort())
+        (self.hooks.model(), self.hooks.effort())
     }
 
     /// The agent's fixed list behind its own deferral (ToolSearch loads per agent).
     fn tool_source(&self, tools: Vec<Arc<dyn Tool>>) -> Arc<dyn ToolSource> {
-        let deferral = ToolDeferral::new(self.host.settings.deferred_tools);
+        let deferral = ToolDeferral::new(self.hooks.settings.deferred_tools);
         Arc::new(DeferredTools::new(tools, deferral))
     }
 
     fn on_activity(&self, running: &[String]) {
-        self.host.ui.subagents_running(running);
+        self.hooks.ui.subagents_running(running);
     }
 
     fn on_subagent(&self, id: &str, event: SubagentEvent) {
-        self.host.ui.subagent(id, &event);
+        self.hooks.ui.subagent(id, &event);
     }
 }

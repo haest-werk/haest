@@ -1,7 +1,8 @@
-//! A conversation's host: the one object the loop, the ledger and the task
-//! board report to. It persists every record to the session file, tells the
-//! human through the [`Ui`], answers the per-model questions from the catalog,
-//! and compacts the conversation before a model call that would overflow.
+//! The runtime's hooks ([`RuntimeHooks`]): the one object the loop, the
+//! ledger and the task board report to. It persists every record to the
+//! session file, tells the human through the [`Ui`], answers the per-model
+//! questions from the catalog, and compacts the conversation before a model
+//! call that would overflow.
 
 use std::{
     collections::HashSet,
@@ -22,7 +23,7 @@ use crate::{
         core::limits::TurnLimits,
         core::messages::{MediaPart, Usage},
         core::session::{JsonlSessionFile, SessionRecord, SessionSink},
-        core::tool::ToolHost,
+        core::tool::ToolServices,
         now_ms,
         providers::Catalog,
     },
@@ -32,20 +33,20 @@ use crate::{
 const KEEP_RECENT: usize = 12;
 const COMPACT_SHARE: f64 = 0.8;
 
-/// The conversation's host: what the agent loop, the ledger, the task list and
+/// The runtime's hooks: what the agent loop, the ledger, the task list and
 /// the tools report to.
 ///
 /// It is the loop's [`AgentHooks`]: every message goes to the session file,
 /// and a model call that would overflow the window is compacted first. It is
 /// the ledger's [`LedgerHooks`] (the spend goes to the session file) and the
-/// tools' [`ToolHost`] (their log lines reach [`Ui::debug`] with `debug` on).
+/// tools' [`ToolServices`] (their log lines reach [`Ui::debug`] with `debug` on).
 /// It answers the per-model questions (window, limits, input kinds, effort
 /// levels) from the settings and the built-in catalog, and keeps the model and
 /// effort the conversation is on now, which a subagent starts on.
 ///
-/// [`build`](crate::build) makes one, shared as [`Runtime::host`](crate::Runtime::host).
-/// A host that takes the pieces makes its own with [`Host::new`].
-pub struct Host {
+/// [`build`](crate::build) makes one, shared as [`Runtime::hooks`](crate::Runtime::hooks).
+/// A host that takes the pieces makes its own with [`RuntimeHooks::new`].
+pub struct RuntimeHooks {
     /// The run's settings, as handed in. Their `model` and `effort` are what
     /// the run started from: the ones in use now are [`model`](Self::model)
     /// and [`effort`](Self::effort).
@@ -63,8 +64,8 @@ pub struct Host {
     effort_notes: Mutex<HashSet<String>>,
 }
 
-impl Host {
-    /// A host on `settings` that tells the human through `ui` and writes to the
+impl RuntimeHooks {
+    /// Hooks on `settings` that tell the human through `ui` and write to the
     /// session file `store`, starting on the settings' model and effort.
     ///
     /// Create `store`'s file first ([`JsonlSessionFile::create`] writes its
@@ -128,17 +129,17 @@ impl Host {
         *self.effort.lock().unwrap() = effort;
     }
 
-    /// [`Ui::info`], through the host.
+    /// [`Ui::info`] on [`ui`](Self::ui).
     pub fn info(&self, text: &str) {
         self.ui.info(text);
     }
 
-    /// [`Ui::warn`], through the host.
+    /// [`Ui::warn`] on [`ui`](Self::ui).
     pub fn warn(&self, text: &str) {
         self.ui.warn(text);
     }
 
-    /// [`Ui::error`], through the host.
+    /// [`Ui::error`] on [`ui`](Self::ui).
     pub fn error(&self, text: &str) {
         self.ui.error(text);
     }
@@ -218,7 +219,7 @@ fn charge(agent: &Agent, usage: &Usage) {
     }
 }
 
-impl ToolHost for Host {
+impl ToolServices for RuntimeHooks {
     fn log(&self, message: &str) {
         if self.settings.debug {
             self.ui.debug(message);
@@ -227,7 +228,7 @@ impl ToolHost for Host {
 }
 
 #[async_trait]
-impl AgentHooks for Host {
+impl AgentHooks for RuntimeHooks {
     fn on_message(&self, msg: &crate::haest::Message) {
         self.append(SessionRecord::Message {
             t: now_ms(),
@@ -278,7 +279,7 @@ impl AgentHooks for Host {
     }
 }
 
-impl LedgerHooks for Host {
+impl LedgerHooks for RuntimeHooks {
     fn persist(&self, snapshot: &LedgerSnapshot) {
         self.append(SessionRecord::Ledger {
             t: now_ms(),
@@ -287,7 +288,7 @@ impl LedgerHooks for Host {
     }
 
     fn warn(&self, text: &str) {
-        Host::warn(self, text);
+        RuntimeHooks::warn(self, text);
     }
 }
 

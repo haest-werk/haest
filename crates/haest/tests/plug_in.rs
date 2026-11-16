@@ -11,7 +11,7 @@
 //! | `Tool` + `ToolOutput::with_title` | `turns::a_host_tool_titles_its_call_for_the_host_and_not_for_the_model` |
 //! | `AgentControl::steer` from the host, mid-turn | `turns::the_host_steers_a_running_turn_at_the_next_step` |
 //! | `AgentHooks::before_model_call` refusing | `turns::a_hook_may_refuse_a_model_call_and_end_the_turn` |
-//! | `SubagentHub` over the host's `SubagentHost` | `subagents::haests_own_hub_runs_a_sub_agent_with_the_hosts_tool_and_command` |
+//! | `SubagentHub` over the host's `SubagentParent` | `subagents::haests_own_hub_runs_a_sub_agent_with_the_hosts_tool_and_command` |
 //! | `Inbox`: a background sub-agent's answer | `subagents::a_background_sub_agent_answers_through_the_hosts_inbox` |
 //! | `SkillSet`: the host's own skills, haest's Skill tool and prompt list | `skills::the_hosts_own_skills_load_through_haests_skill_tool` |
 //! | `DeferredTools`: the host's own tools behind ToolSearch, grow | `skills::a_host_defers_its_own_tools_and_a_loaded_one_joins_the_list` |
@@ -42,7 +42,7 @@ use haest::{
     core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
     tools::{
         BuiltinOptions, Inbox,
-        agents::{AgentRef, SubagentCaps, SubagentEvent, SubagentHost, SubagentHub},
+        agents::{AgentRef, SubagentCaps, SubagentEvent, SubagentHub, SubagentParent},
         builtin_tools_where,
     },
     workspace::SandboxWorkspace,
@@ -253,7 +253,7 @@ impl Inbox for App {
 }
 
 #[async_trait]
-impl SubagentHost for App {
+impl SubagentParent for App {
     fn deps(&self) -> AgentDeps {
         let provider = self.provider.clone();
         let models = move |spec: &str| {

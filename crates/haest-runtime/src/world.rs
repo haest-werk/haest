@@ -15,7 +15,7 @@ use anyhow::{Context, bail};
 use haest_settings::Settings;
 
 use crate::{
-    Host,
+    RuntimeHooks,
     haest::{
         ChildEnv, ShutWorkspace, Workspace, WorkspaceMode,
         code::sandbox_commands,
@@ -174,13 +174,13 @@ pub async fn workspace_for(
 /// The MCP servers the host listed, started. A stdio server is a real
 /// process: in a world without them it is skipped, and the host is told.
 ///
-/// Every server starts at once; one that fails is a [`warn`](Host::warn), and
+/// Every server starts at once; one that fails is a [`warn`](RuntimeHooks::warn), and
 /// the hub holds the rest. A stdio server's process gets the world's
 /// `child_env` with `passed` over it, then its own `env`. With `debug` on,
 /// each server's line (how many tools, or why it failed) goes to the
 /// [`Ui::debug`](crate::Ui::debug).
 pub async fn connect_mcp(
-    host: &Host,
+    hooks: &RuntimeHooks,
     world: &World,
     passed: &ChildEnv,
     servers: Vec<McpServerConfig>,
@@ -190,27 +190,27 @@ pub async fn connect_mcp(
             .into_iter()
             .partition(|s| matches!(s.transport, McpTransport::Stdio { .. }));
         for s in &stdio {
-            host.warn(&format!(
+            hooks.warn(&format!(
                 "MCP server {} not started: a stdio server is a real process, and this host hands haest its own files.",
                 s.name
             ));
         }
-        return start(host, McpHub::new(), http).await;
+        return start(hooks, McpHub::new(), http).await;
     };
-    start(host, McpHub::with_env(child_env), servers).await
+    start(hooks, McpHub::with_env(child_env), servers).await
 }
 
-async fn start(host: &Host, hub: McpHub, servers: Vec<McpServerConfig>) -> Arc<McpHub> {
+async fn start(hooks: &RuntimeHooks, hub: McpHub, servers: Vec<McpServerConfig>) -> Arc<McpHub> {
     let hub = Arc::new(hub);
     if servers.is_empty() {
         return hub;
     }
     hub.connect(&servers, &|m: &str| {
-        crate::haest::core::tool::ToolHost::log(host, m)
+        crate::haest::core::tool::ToolServices::log(hooks, m)
     })
     .await;
     for f in hub.failures() {
-        host.warn(&format!("MCP server {} did not start: {}", f.name, f.error));
+        hooks.warn(&format!("MCP server {} did not start: {}", f.name, f.error));
     }
     hub
 }

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use haest_core::{
     fs::Fs,
     messages::{MediaKind, ToolCall},
-    tool::{Tool, ToolContext, ToolHost, ToolOutput},
+    tool::{Tool, ToolContext, ToolOutput, ToolServices},
     tool_exec::{ToolIndex, execute_tool},
 };
 use serde_json::{Value, json};
@@ -73,7 +73,7 @@ impl ImageHttp for FakeApi {
 struct Published(Mutex<Vec<(usize, String)>>);
 
 #[async_trait]
-impl ToolHost for Published {
+impl ToolServices for Published {
     async fn publish(&self, data: Vec<u8>, media_type: &str) -> Option<String> {
         self.0.lock().unwrap().push((data.len(), media_type.into()));
         Some("/file/abc.jpg".into())
@@ -108,7 +108,7 @@ impl Rig {
 
     async fn run(&self, input: Value) -> ToolOutput {
         let mut ctx = ToolContext::new(CWD, self.ws.clone());
-        ctx.host = self.published.clone();
+        ctx.services = self.published.clone();
         let call = ToolCall {
             id: "g".into(),
             name: "GenerateImage".into(),

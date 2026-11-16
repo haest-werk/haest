@@ -1,15 +1,15 @@
 //! A built conversation ([`Runtime`]), and what a host changes on it while it
 //! runs: the model, the effort, a fresh session (/clear), the skill list. Each
-//! change goes to the agent, the host and the session file together; the
-//! host's own setters are crate-private, so these are the only way to make one
-//! all three see.
+//! change goes to the agent, the [`RuntimeHooks`](crate::RuntimeHooks) and the
+//! session file together; the hooks' own setters are crate-private, so these
+//! are the only way to make one all three see.
 
 use std::sync::{Arc, Mutex};
 
 use anyhow::anyhow;
 
 use crate::{
-    Host,
+    RuntimeHooks,
     haest::{
         Agent, Effort,
         core::fs::Fs,
@@ -30,7 +30,7 @@ use crate::{
 /// [`build`](crate::build) returns one. The host runs turns with
 /// [`agent`](Self::agent), feeds it what reaches the [`inbox`](Self::inbox),
 /// and changes the model, the effort, the session or the skills through the
-/// methods here, which keep the agent, the host and the session file in step.
+/// methods here, which keep the agent, the hooks and the session file in step.
 /// The crate docs show a host's turn loop and its shutdown.
 ///
 /// `U` is the host's own [`Ui`](crate::Ui) type, so [`ui`](Self::ui) gives it
@@ -39,11 +39,11 @@ pub struct Runtime<U: ?Sized> {
     /// The main agent: [`Agent::run`] runs one turn, [`Agent::control`] steers
     /// or stops the one running. Change its model and effort with
     /// [`set_model`](Self::set_model) and [`set_effort`](Self::set_effort),
-    /// not its fields: only those tell the host and the session file.
+    /// not its fields: only those tell the hooks and the session file.
     pub agent: Agent,
     /// What the agent reports to: the session file, the [`Ui`](crate::Ui),
     /// the current model and effort, compaction.
-    pub host: Arc<Host>,
+    pub hooks: Arc<RuntimeHooks>,
     /// The host's own UI, as it handed it in.
     pub ui: Arc<U>,
     /// Where the conversation reads and writes: the world's
@@ -75,7 +75,7 @@ impl<U: ?Sized> Runtime<U> {
     /// The id of the session file records go to now; [`clear`](Self::clear)
     /// changes it. A host shows it so the human can resume the session.
     pub fn session_id(&self) -> String {
-        self.host.store().session_id().to_string()
+        self.hooks.store().session_id().to_string()
     }
 
     /// Main's model from the next model call on, and what a subagent starts
@@ -92,8 +92,8 @@ impl<U: ?Sized> Runtime<U> {
             .resolve(spec)
             .map_err(|e| anyhow!(e))?;
         self.agent.model_spec = spec.to_string();
-        self.host.set_model(spec);
-        self.host.append(SessionRecord::Config {
+        self.hooks.set_model(spec);
+        self.hooks.append(SessionRecord::Config {
             t: now_ms(),
             model: Some(spec.to_string()),
             effort: None,
@@ -107,8 +107,8 @@ impl<U: ?Sized> Runtime<U> {
     /// takes, and the [`Ui`](crate::Ui) is told once.
     pub fn set_effort(&mut self, effort: Option<Effort>) {
         self.agent.effort = effort;
-        self.host.set_effort(effort);
-        self.host.append(SessionRecord::Config {
+        self.hooks.set_effort(effort);
+        self.hooks.append(SessionRecord::Config {
             t: now_ms(),
             model: None,
             effort: Some(effort),
@@ -124,11 +124,11 @@ impl<U: ?Sized> Runtime<U> {
     /// When the new session's file cannot be created. It is created, header
     /// first, before anything switches to it, so then nothing changes.
     pub async fn clear(&mut self) -> anyhow::Result<()> {
-        let store = new_session(&self.fs, &self.host.settings, self.host.ui.clone()).await?;
-        self.host.swap_store(Arc::new(store));
+        let store = new_session(&self.fs, &self.hooks.settings, self.hooks.ui.clone()).await?;
+        self.hooks.swap_store(Arc::new(store));
         self.agent.replace_history(Vec::new());
         self.board.restore(Vec::new());
-        record_start(&self.host, &self.agent);
+        record_start(&self.hooks, &self.agent);
         Ok(())
     }
 

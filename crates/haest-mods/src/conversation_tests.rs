@@ -18,15 +18,15 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    Answer, ApprovalGate, ApprovalMod, ApprovalRequest, CommandOutcome, Decision, ModEnv, ModHost,
-    ModSystemPrompt, ModTools, Mods, PLAN_PROMPT, PlanMod, testkit::*,
+    Answer, ApprovalGate, ApprovalMod, ApprovalRequest, CommandOutcome, Decision, ModEnv,
+    ModSystemPrompt, ModTools, ModUi, Mods, PLAN_PROMPT, PlanMod, testkit::*,
 };
 
 /// A host whose asks go through the gate.
-struct GateHost(ApprovalGate<Arc<Human>>);
+struct GateUi(ApprovalGate<Arc<Human>>);
 
 #[async_trait]
-impl ModHost for GateHost {
+impl ModUi for GateUi {
     async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
         self.0.ask(req, cancel).await
     }
@@ -63,8 +63,8 @@ async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_let
     let human = Human::answering([Answer::Deny, Answer::AllowAlways]);
     // A prompt past those two answers is a deny soon, not a hang.
     let gate = ApprovalGate::new(human.clone()).with_timeout(Duration::from_secs(5));
-    let host = Arc::new(GateHost(gate));
-    let mut mods = Mods::new(ModEnv::new(CWD, WorkspaceMode::Real, host));
+    let ui = Arc::new(GateUi(gate));
+    let mut mods = Mods::new(ModEnv::new(CWD, WorkspaceMode::Real, ui));
     mods.add(Arc::new(ApprovalMod::default()));
     let mods = Arc::new(mods);
     let rm = json!({"command": "rm -rf /p/doomed"});
@@ -93,8 +93,8 @@ async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_let
 async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it() {
     let states = Arc::new(Mutex::new(Vec::new()));
     let seen = states.clone();
-    let host = TestHost::new();
-    let mut mods = Mods::new(env(host.clone(), WorkspaceMode::Real));
+    let ui = TestUi::new();
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(PlanMod::new(Some(Arc::new(move |on| {
         seen.lock().unwrap().push(on)
     })))));
@@ -128,12 +128,12 @@ async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it()
     agent.run("now do it", &mut Vec::new()).await;
     assert!(!p.requests()[2].system.contains(PLAN_PROMPT));
     assert_eq!(writer.ran().len(), 1);
-    assert_eq!(host.notices().len(), 2);
+    assert_eq!(ui.notices().len(), 2);
 }
 
 #[tokio::test]
 async fn plan_with_a_topic_sends_the_topic_to_the_model() {
-    let mut mods = Mods::new(env(TestHost::new(), WorkspaceMode::Sandbox));
+    let mut mods = Mods::new(env(TestUi::new(), WorkspaceMode::Sandbox));
     let plan = Arc::new(PlanMod::default());
     mods.add(plan.clone());
     match mods.command("plan", "  the migration ").await {

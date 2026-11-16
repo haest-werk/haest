@@ -304,7 +304,7 @@ impl CompactionError {
 ///
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace, Tool,
-///     ToolHost,
+///     ToolServices,
 ///     compaction::{CompactionConfig, compact, needs_compaction},
 ///     testing::{ScriptedProvider, text_answer},
 /// };
@@ -312,7 +312,7 @@ impl CompactionError {
 ///
 /// struct Compacting(CompactionConfig);
 ///
-/// impl ToolHost for Compacting {}
+/// impl ToolServices for Compacting {}
 ///
 /// #[async_trait::async_trait]
 /// impl AgentHooks for Compacting {

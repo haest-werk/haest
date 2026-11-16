@@ -60,7 +60,7 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
         .collect();
     assert_eq!(tools, ["Read"]);
 
-    rt.host.flush().await;
+    rt.hooks.flush().await;
     let session = Path::new("/data/sessions").join(format!("{}.jsonl", rt.session_id()));
     assert!(fs.exists(&session).await, "the session is in the host's Fs");
 

@@ -65,10 +65,10 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// use haest_core::{MemFs, ShutWorkspace, ToolContext, workspace::WorkspaceMode};
 /// use haest_mods::{CommandOutcome, ModConfig, ModTools, PLAN_PROMPT, load_mods};
 /// use serde_json::json;
-/// # use haest_mods::{ApprovalRequest, Decision, ModHost};
+/// # use haest_mods::{ApprovalRequest, Decision, ModUi};
 /// # struct Terminal;
 /// # #[async_trait::async_trait]
-/// # impl ModHost for Terminal {
+/// # impl ModUi for Terminal {
 /// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
 /// #     fn notice(&self, text: &str) { println!("{text}") }
 /// # }

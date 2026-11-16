@@ -46,7 +46,7 @@
 //! 3. Between turns, make the changes the human asks for:
 //!    [`Runtime::set_model`], [`Runtime::set_effort`], [`Runtime::clear`],
 //!    [`Runtime::rescan_skills`].
-//! 4. Flush the session file after every turn ([`Host::flush`]). At the end,
+//! 4. Flush the session file after every turn ([`RuntimeHooks::flush`]). At the end,
 //!    stop the subagents, kill the background jobs ([`world::kill_jobs`]),
 //!    close the MCP servers and flush once more.
 //!
@@ -112,7 +112,7 @@
 //! assert_eq!(tools, ["Read", "Grep"]);
 //! assert!(deps.system_prompt.system_prompt().await.contains("Answer in one line."));
 //!
-//! rt.host.flush().await;
+//! rt.hooks.flush().await;
 //! let session = Path::new("/data/sessions").join(format!("{}.jsonl", rt.session_id()));
 //! assert!(fs.exists(&session).await);
 //! # Ok(())
@@ -152,7 +152,7 @@
 //!         }
 //!     };
 //!     println!("turn ended: {:?}", end.stop_reason);
-//!     rt.host.flush().await;
+//!     rt.hooks.flush().await;
 //! }
 //!
 //! /// The host is done: nothing haest started outlives it, and the session is on disk.
@@ -162,7 +162,7 @@
 //!         kill_jobs(jobs).await;
 //!     }
 //!     rt.mcp.close().await;
-//!     rt.host.flush().await;
+//!     rt.hooks.flush().await;
 //! }
 //! ```
 
@@ -171,7 +171,7 @@
 
 mod agents;
 mod build;
-mod host;
+mod hooks;
 pub mod inbox;
 pub mod mods;
 pub mod prompt;
@@ -201,7 +201,7 @@ mod haest {
 
 pub use agents::Agents;
 pub use build::{BuildOptions, RuntimeInputs, build};
-pub use host::{Host, session_usd};
+pub use hooks::{RuntimeHooks, session_usd};
 pub use runtime::Runtime;
 pub use ui::Ui;
 pub use world::World;

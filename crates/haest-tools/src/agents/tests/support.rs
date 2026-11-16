@@ -19,7 +19,7 @@ use haest_core::{
 use serde_json::Value;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use super::super::{AgentRef, SubagentCaps, SubagentEvent, SubagentHost, SubagentHub};
+use super::super::{AgentRef, SubagentCaps, SubagentEvent, SubagentHub, SubagentParent};
 use crate::{GlobTool, inbox::Inbox, testkit::TestWorkspace};
 
 pub type Script =
@@ -129,7 +129,7 @@ impl LedgerHooks for Quiet {
     fn warn(&self, _: &str) {}
 }
 
-pub struct FakeHost {
+pub struct FakeParent {
     pub provider: Arc<Roles>,
     ws: Arc<TestWorkspace>,
     pub ledger: Arc<Mutex<Ledger>>,
@@ -139,14 +139,14 @@ pub struct FakeHost {
     pub events: Mutex<Vec<(String, &'static str)>>,
 }
 
-impl Inbox for FakeHost {
+impl Inbox for FakeParent {
     fn submit(&self, text: String) {
         let _ = self.tx.send(text);
     }
 }
 
 #[async_trait]
-impl SubagentHost for FakeHost {
+impl SubagentParent for FakeParent {
     fn deps(&self) -> AgentDeps {
         let p = self.provider.clone();
         let models = move |spec: &str| {
@@ -195,7 +195,7 @@ impl SubagentHost for FakeHost {
 
 pub struct Rig {
     pub hub: Arc<SubagentHub>,
-    pub host: Arc<FakeHost>,
+    pub parent: Arc<FakeParent>,
     pub main: Agent,
     pub events: Vec<LoopEvent>,
     pub inbox: UnboundedReceiver<String>,
@@ -211,7 +211,7 @@ impl Rig {
             sub_systems: Mutex::default(),
         });
         let (tx, inbox) = unbounded_channel();
-        let host = Arc::new(FakeHost {
+        let parent = Arc::new(FakeParent {
             provider,
             ws: TestWorkspace::with_files([("/p/a.txt", "a")]),
             ledger: Arc::new(Mutex::new(Ledger::new(
@@ -222,17 +222,17 @@ impl Rig {
             activity: Mutex::default(),
             events: Mutex::default(),
         });
-        let hub = SubagentHub::new(host.clone(), caps);
-        let mut tools = host.base_tools();
+        let hub = SubagentHub::new(parent.clone(), caps);
+        let mut tools = parent.base_tools();
         tools.extend(hub.tools_for(&AgentRef::main()));
         let deps = AgentDeps {
             tools: Arc::new(tools),
-            ..host.deps()
+            ..parent.deps()
         };
         let main = Agent::new(deps, AgentOptions::new("fake:main-model"));
         Self {
             hub,
-            host,
+            parent,
             main,
             events: Vec::new(),
             inbox,
@@ -278,7 +278,7 @@ impl Rig {
     }
 
     pub fn ids(&self, kind: &str) -> Vec<String> {
-        let events = self.host.events.lock().unwrap();
+        let events = self.parent.events.lock().unwrap();
         events
             .iter()
             .filter(|(_, k)| *k == kind)

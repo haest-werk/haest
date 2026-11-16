@@ -1,5 +1,6 @@
-//! What the default hub needs from the host: the conversation's deps, tools and
-//! system prompt to build a subagent from, and where its activity goes.
+//! What the default hub needs from the conversation it serves (the subagents'
+//! parent): its deps, tools and system prompt to build a subagent from, and
+//! where the subagents' activity goes.
 
 use std::sync::Arc;
 
@@ -37,14 +38,15 @@ pub enum SubagentEvent {
     },
 }
 
-/// The host's side of the default hub ([`SubagentHub`](super::SubagentHub)):
-/// what a subagent is built from, and where its activity goes.
+/// The parent conversation's side of the default hub
+/// ([`SubagentHub`](super::SubagentHub)): what a subagent is built from, and
+/// where its activity goes.
 /// [`Inbox::submit`] takes what is for main: a message to "main", and a
 /// background answer whose starter has finished.
 ///
 /// [`SubagentHub`](super::SubagentHub)'s docs implement one.
 #[async_trait]
-pub trait SubagentHost: Inbox {
+pub trait SubagentParent: Inbox {
     /// The conversation's own deps. A subagent shares its models, cwd, workspace,
     /// spill dir, ledger, web search and hooks; its tools, prompt and turn caps
     /// are its own, and it neither persists its messages nor compacts.

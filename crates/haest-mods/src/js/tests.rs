@@ -20,8 +20,8 @@ export default function (haest: { on(event: string, fn: (call: Call) => Verdict)
 "#;
 
 /// `mods` with one file mod loaded from `source`.
-async fn with_mod(host: Arc<TestHost>, file: &str, source: &str) -> Mods {
-    let haest = env(host, WorkspaceMode::Sandbox);
+async fn with_mod(ui: Arc<TestUi>, file: &str, source: &str) -> Mods {
+    let haest = env(ui, WorkspaceMode::Sandbox);
     let m = js(file, source, &haest).await.expect("the mod loads");
     let mut mods = Mods::new(haest);
     mods.add(Arc::new(m));
@@ -30,7 +30,7 @@ async fn with_mod(host: Arc<TestHost>, file: &str, source: &str) -> Mods {
 
 #[tokio::test]
 async fn a_ts_mod_denies_rm_rf_root_in_bash_and_lets_everything_else_run() {
-    let mods = with_mod(TestHost::new(), "guard.ts", GUARD_TS).await;
+    let mods = with_mod(TestUi::new(), "guard.ts", GUARD_TS).await;
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, vec![bash.clone()]);
     match tools[0]
@@ -54,7 +54,7 @@ async fn a_mod_adds_a_tool_that_runs_in_its_runtime() {
         parameters: { type: 'object', properties: { v: { type: 'string' } } },
         execute: async (input, ctx) => ({ content: String(input.v).toUpperCase() + '@' + ctx.cwd }) })
     }"#;
-    let mods = with_mod(TestHost::new(), "shout.js", source).await;
+    let mods = with_mod(TestUi::new(), "shout.js", source).await;
     let tools = wrapped(mods, Vec::new());
     let shout = find(&tools, "Shout");
     assert!(shout.read_only());
@@ -73,7 +73,7 @@ async fn prompt_submit_rewrites_the_humans_message_and_input_rewrites_reach_the_
       haest.on('tool.before', call => ({ input: { ...call.input, v: call.input.v + '!' } }))
       haest.on('tool.after', (call, out) => ({ ...out, content: out.content.toUpperCase() }))
     }"#;
-    let mods = with_mod(TestHost::new(), "rewrite.js", source).await;
+    let mods = with_mod(TestUi::new(), "rewrite.js", source).await;
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
     let tools = wrapped(mods, vec![Probe::new("Echo")]);
     let out = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
@@ -88,16 +88,16 @@ async fn commands_system_prompt_and_notices_from_a_mod_take_effect() {
       haest.on('system.prompt', () => 'House rule: ' + haest.workspace)
       haest.notice('loaded in ' + haest.cwd)
     }"#;
-    let host = TestHost::new();
-    let mods = with_mod(host.clone(), "house.js", source).await;
-    assert_eq!(host.notices(), [format!("loaded in {CWD}")]);
+    let ui = TestUi::new();
+    let mods = with_mod(ui.clone(), "house.js", source).await;
+    assert_eq!(ui.notices(), [format!("loaded in {CWD}")]);
     assert_eq!(mods.commands(), ["hello", "quiet"]);
     assert_eq!(
         mods.command("/hello", "bob").await,
         CommandOutcome::Prompt("say hello to bob".into())
     );
     assert_eq!(mods.command("quiet", "").await, CommandOutcome::Handled);
-    assert_eq!(host.notices().len(), 2);
+    assert_eq!(ui.notices().len(), 2);
     assert_eq!(mods.system_append().await, "House rule: sandbox");
 }
 
@@ -107,8 +107,8 @@ async fn a_throwing_mod_is_reported_and_the_host_carries_on() {
       haest.on('tool.before', () => { throw new Error('boom') })
       haest.on('prompt.submit', () => { throw new Error('bad') })
     }"#;
-    let host = TestHost::new();
-    let mods = with_mod(host.clone(), "thrower.js", source).await;
+    let ui = TestUi::new();
+    let mods = with_mod(ui.clone(), "thrower.js", source).await;
     assert_eq!(mods.rewrite_prompt("as is").await, "as is");
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, vec![bash.clone()]);
@@ -117,14 +117,14 @@ async fn a_throwing_mod_is_reported_and_the_host_carries_on() {
         .await;
     assert!(refused.is_err(), "a guard that broke lets nothing through");
     assert!(bash.ran().is_empty());
-    let errors = host.errors();
+    let errors = ui.errors();
     assert_eq!(errors.len(), 2);
     assert!(errors.iter().all(|e| e.contains("thrower.js")));
 }
 
 #[tokio::test]
 async fn a_mod_that_fails_to_load_says_why() {
-    let haest = env(TestHost::new(), WorkspaceMode::Sandbox);
+    let haest = env(TestUi::new(), WorkspaceMode::Sandbox);
     for (file, source) in [
         (
             "throws.js",
@@ -154,15 +154,15 @@ async fn a_mod_asks_the_human_and_their_answer_decides() {
         return verdict === 'allow' ? undefined : { deny: 'the human said no' }
       })
     }"#;
-    let host = TestHost::answering([Decision::Deny, Decision::Allow]);
-    let mods = with_mod(host.clone(), "asker.js", source).await;
+    let ui = TestUi::answering([Decision::Deny, Decision::Allow]);
+    let mods = with_mod(ui.clone(), "asker.js", source).await;
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, vec![bash.clone()]);
     let call = || input(json!({"command": "make"}));
     assert!(tools[0].execute(call(), &ctx()).await.is_err());
     tools[0].execute(call(), &ctx()).await.unwrap();
     assert_eq!(bash.ran().len(), 1);
-    let asks = host.asks();
+    let asks = ui.asks();
     assert_eq!(asks.len(), 2);
     assert_eq!(
         (asks[0].tool_name.as_str(), asks[0].input_preview.as_str()),
@@ -177,24 +177,21 @@ async fn an_ask_under_ctx_signal_ends_when_the_call_is_interrupted() {
         (await haest.ask({ toolName: 'Bash', description: 'd', inputPreview: 'p' }, ctx.signal)) === 'allow'
           ? undefined : { deny: 'no' })
     }"#;
-    let host = TestHost::holding();
-    let mods = with_mod(host.clone(), "held.js", source).await;
+    let ui = TestUi::holding();
+    let mods = with_mod(ui.clone(), "held.js", source).await;
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, vec![bash.clone()]);
     let c = ctx();
     let cancel = c.cancel.clone();
     let (out, ()) = tokio::join!(tools[0].execute(input(json!({})), &c), async {
-        while host.asks().is_empty() {
+        while ui.asks().is_empty() {
             tokio::task::yield_now().await;
         }
         cancel.cancel();
     });
     assert!(out.is_err());
     assert!(bash.ran().is_empty());
-    assert!(
-        host.errors().is_empty(),
-        "an interrupt is not a mod failure"
-    );
+    assert!(ui.errors().is_empty(), "an interrupt is not a mod failure");
 }
 
 #[tokio::test]
@@ -202,8 +199,8 @@ async fn a_runaway_mod_is_stopped_and_its_next_call_still_works() {
     let source = r#"export default function (haest) {
       haest.on('tool.before', call => { if (call.input.v === 'loop') for (;;) {} })
     }"#;
-    let host = TestHost::new();
-    let mods = with_mod(host.clone(), "spin.js", source).await;
+    let ui = TestUi::new();
+    let mods = with_mod(ui.clone(), "spin.js", source).await;
     let echo = Probe::new("Echo");
     let tools = wrapped(mods, vec![echo.clone()]);
     assert!(
@@ -214,5 +211,5 @@ async fn a_runaway_mod_is_stopped_and_its_next_call_still_works() {
     );
     let out = tools[0].execute(input(json!({"v": "ok"})), &ctx()).await;
     assert_eq!(out.unwrap().content, "echo:ok");
-    assert_eq!(host.errors().len(), 1);
+    assert_eq!(ui.errors().len(), 1);
 }

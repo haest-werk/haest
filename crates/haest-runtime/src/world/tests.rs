@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     haest::{core::fs::MemFs, tools::inbox::NoInbox},
-    testkit::{host, settings},
+    testkit::{hooks, settings},
 };
 
 use super::*;
@@ -72,7 +72,7 @@ async fn real_bash_gets_the_passed_variables_over_child_env() {
 
 #[tokio::test]
 async fn a_world_of_the_hosts_files_starts_no_stdio_server_and_says_which() {
-    let (host, ui) = host(settings());
+    let (hooks, ui) = hooks(settings());
     let server = McpServerConfig {
         name: "gh".into(),
         transport: McpTransport::Stdio {
@@ -83,7 +83,7 @@ async fn a_world_of_the_hosts_files_starts_no_stdio_server_and_says_which() {
         },
     };
     let world = World::Fs(Arc::new(MemFs::new()));
-    let hub = connect_mcp(&host, &world, &ChildEnv::default(), vec![server]).await;
+    let hub = connect_mcp(&hooks, &world, &ChildEnv::default(), vec![server]).await;
     assert!(hub.tools().is_empty());
     assert_eq!(ui.warnings().len(), 1, "{:?}", ui.warnings());
 }

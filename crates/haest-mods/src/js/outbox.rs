@@ -63,7 +63,7 @@ impl Js {
             }
             Out::Tool { tool } => self.meta.lock().unwrap().add_tool(tool),
             Out::Command { name } => self.meta.lock().unwrap().add_command(name),
-            Out::Notice { text } => self.host.notice(&text),
+            Out::Notice { text } => self.ui.notice(&text),
             Out::Ask { id, req, signal } => self.ask(id, req, signal),
         }
     }
@@ -82,12 +82,12 @@ impl Js {
         let cancel = signal
             .and_then(|s| self.signals.get(&s).cloned())
             .unwrap_or_default();
-        let (host, own) = (self.host.clone(), self.own.clone());
+        let (ui, own) = (self.ui.clone(), self.own.clone());
         self.runtime.spawn(async move {
             let decision = if cancel.is_cancelled() {
                 Decision::Deny
             } else {
-                host.ask(req, &cancel).await
+                ui.ask(req, &cancel).await
             };
             let result = Ok(decision.as_str());
             let _ = own.send(ToJs::Answer { id, result });

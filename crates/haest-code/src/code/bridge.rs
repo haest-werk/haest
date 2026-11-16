@@ -3,7 +3,7 @@
 //! against the cap, runs through haest-core's tool execution (error results and
 //! canonical envelopes exactly as in the loop, but NO spill: the program gets a
 //! big result whole and filters it, which is why Code exists), has its spend folded in, and
-//! is REPORTED as a start / end pair ([`ToolHost::on_inner_call`]) so the
+//! is REPORTED as a start / end pair ([`ToolServices::on_inner_call`]) so the
 //! transcript shows it as a row of its own -- the "transparent wrapper" Claude
 //! Code's REPL tool used, adapted: the Code row stays, its calls appear beneath it.
 
@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use futures::FutureExt;
 use haest_core::{
     messages::{MediaPart, ToolCall},
-    tool::{JsonMap, NoHost, Tool, ToolContext, ToolHost, ToolOutput},
+    tool::{JsonMap, NoServices, Tool, ToolContext, ToolOutput, ToolServices},
     tool_exec::{ToolIndex, run_tool},
 };
 use serde::Deserialize;
@@ -66,7 +66,7 @@ pub(crate) struct Bridge {
     inner: ToolContext,
     parent_id: String,
     /// Inner calls are reported only inside the loop, where there is a call to hang them under.
-    report: Option<Arc<dyn ToolHost>>,
+    report: Option<Arc<dyn ToolServices>>,
     gate: CallGate,
     pub tally: Mutex<Tally>,
 }
@@ -100,7 +100,7 @@ impl Bridge {
             cwd: ctx.cwd.clone(),
             cancel,
             workspace: ctx.workspace.clone(),
-            host: Arc::new(NoHost),
+            services: Arc::new(NoServices),
             context_room_tokens: None,
             tool_call_id: None,
             spill_dir: ctx.spill_dir.clone(),
@@ -111,7 +111,7 @@ impl Bridge {
             schemas,
             inner,
             parent_id: ctx.tool_call_id.clone().unwrap_or_else(|| "code".into()),
-            report: ctx.tool_call_id.is_some().then(|| ctx.host.clone()),
+            report: ctx.tool_call_id.is_some().then(|| ctx.services.clone()),
             gate: CallGate::new(READ_CONCURRENCY),
             tally: Mutex::default(),
         })
@@ -155,7 +155,7 @@ impl Bridge {
         let row = self
             .report
             .as_ref()
-            .map(|host| InnerRow::start(host.clone(), &self.parent_id, &call));
+            .map(|services| InnerRow::start(services.clone(), &self.parent_id, &call));
         let mut ctx = self.inner.clone();
         ctx.tool_call_id = Some(call.id.clone());
         let out = self

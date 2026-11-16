@@ -16,7 +16,7 @@ use tokio::{runtime::Handle, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 
 use super::channel::{JsMeta, Limits, Reply, ToJs};
-use crate::api::ModHost;
+use crate::api::ModUi;
 
 const BOOTSTRAP: &str = include_str!("bootstrap.js");
 const STACK_BYTES: usize = 4 << 20;
@@ -24,7 +24,7 @@ const STACK_BYTES: usize = 4 << 20;
 pub(crate) struct Setup {
     pub path: PathBuf,
     pub source: String,
-    pub host: Arc<dyn ModHost>,
+    pub ui: Arc<dyn ModUi>,
     pub meta: Arc<Mutex<JsMeta>>,
     pub limits: Limits,
     pub runtime: Handle,
@@ -136,7 +136,7 @@ pub(super) struct Js {
     ctx: Context,
     rt: Runtime,
     slice: Arc<Slice>,
-    pub(super) host: Arc<dyn ModHost>,
+    pub(super) ui: Arc<dyn ModUi>,
     pub(super) meta: Arc<Mutex<JsMeta>>,
     pub(super) runtime: Handle,
     pub(super) own: mpsc::Sender<ToJs>,
@@ -168,7 +168,7 @@ impl Js {
             ctx,
             rt,
             slice,
-            host: setup.host,
+            ui: setup.ui,
             meta: setup.meta,
             runtime: setup.runtime,
             own,

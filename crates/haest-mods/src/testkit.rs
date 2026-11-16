@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    api::{ApprovalRequest, Decision, ModEnv, ModHost},
+    api::{ApprovalRequest, Decision, ModEnv, ModUi},
     decorate::ModTools,
     gate::{Answer, Prompter},
     js::{JsMod, Limits},
@@ -30,7 +30,7 @@ use crate::{
 pub(crate) const CWD: &str = "/p";
 
 #[derive(Default)]
-pub(crate) struct TestHost {
+pub(crate) struct TestUi {
     notices: Mutex<Vec<String>>,
     errors: Mutex<Vec<String>>,
     asks: Mutex<Vec<ApprovalRequest>>,
@@ -39,7 +39,7 @@ pub(crate) struct TestHost {
     hold: bool,
 }
 
-impl TestHost {
+impl TestUi {
     pub fn new() -> Arc<Self> {
         Arc::default()
     }
@@ -68,7 +68,7 @@ impl TestHost {
 }
 
 #[async_trait]
-impl ModHost for TestHost {
+impl ModUi for TestUi {
     async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
         self.asks.lock().unwrap().push(req);
         if self.hold {
@@ -125,8 +125,8 @@ impl Prompter for Arc<Human> {
     }
 }
 
-pub(crate) fn env(host: Arc<TestHost>, workspace: WorkspaceMode) -> ModEnv {
-    ModEnv::new(CWD, workspace, host)
+pub(crate) fn env(ui: Arc<TestUi>, workspace: WorkspaceMode) -> ModEnv {
+    ModEnv::new(CWD, workspace, ui)
 }
 
 pub(crate) fn ctx() -> ToolContext {

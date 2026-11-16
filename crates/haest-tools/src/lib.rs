@@ -46,7 +46,7 @@
 //!
 //! | Tool | What it does | Read-only | Built by | Needs from the host |
 //! |---|---|---|---|---|
-//! | Agent, SendMessage, StopAgent | start, message and stop subagents | no | [`SubagentHub::tools_for`], [`agents::agent_tools`] | an [`AgentDirectory`]; the default [`SubagentHub`] needs a [`SubagentHost`] |
+//! | Agent, SendMessage, StopAgent | start, message and stop subagents | no | [`SubagentHub::tools_for`], [`agents::agent_tools`] | an [`AgentDirectory`]; the default [`SubagentHub`] needs a [`SubagentParent`] |
 //! | ToolSearch (and CallTool) | loads a deferred tool's schema (calls one, in proxy mode) | ToolSearch only | [`tool_search::DeferredTools`] | a [`ToolDeferral`](haest_core::deferred_tools::ToolDeferral) |
 //! | GenerateImage | makes an image with an image model, saves and shows it | no | [`ImageTool`] | an Image API key ([`ImageToolOptions`]) |
 //!
@@ -126,7 +126,7 @@ pub mod tool_search;
 pub mod turn_gate;
 pub mod web_fetch;
 
-pub use agents::{AgentDirectory, SubagentHost, SubagentHub};
+pub use agents::{AgentDirectory, SubagentHub, SubagentParent};
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;
 pub use files::{EditTool, WriteTool};

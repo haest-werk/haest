@@ -88,8 +88,8 @@ fn bash_call(command: &str) -> serde_json::Map<String, serde_json::Value> {
 
 #[tokio::test]
 async fn in_the_real_workspace_an_irreversible_command_runs_only_on_the_humans_allow() {
-    let host = TestHost::answering([Decision::Deny, Decision::Allow]);
-    let mut mods = Mods::new(env(host.clone(), WorkspaceMode::Real));
+    let ui = TestUi::answering([Decision::Deny, Decision::Allow]);
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(ApprovalMod::default()));
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, vec![bash.clone()]);
@@ -102,7 +102,7 @@ async fn in_the_real_workspace_an_irreversible_command_runs_only_on_the_humans_a
         .unwrap();
     tools[0].execute(bash_call("ls"), &ctx()).await.unwrap();
     assert_eq!(bash.ran().len(), 2);
-    let asks = host.asks();
+    let asks = ui.asks();
     assert_eq!(asks.len(), 2, "an ordinary command never asks");
     assert_eq!(asks[0].tool_name, "Bash");
     assert_eq!(asks[0].key.as_deref(), Some("rm -rf build"));
@@ -110,8 +110,8 @@ async fn in_the_real_workspace_an_irreversible_command_runs_only_on_the_humans_a
 
 #[tokio::test]
 async fn the_sandbox_never_asks() {
-    let host = TestHost::new();
-    let mut mods = Mods::new(env(host.clone(), WorkspaceMode::Sandbox));
+    let ui = TestUi::new();
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Sandbox));
     mods.add(Arc::new(ApprovalMod::default()));
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, vec![bash.clone()]);
@@ -119,7 +119,7 @@ async fn the_sandbox_never_asks() {
         .execute(bash_call("rm -rf /"), &ctx())
         .await
         .unwrap();
-    assert!(host.asks().is_empty());
+    assert!(ui.asks().is_empty());
     assert_eq!(bash.ran().len(), 1);
 }
 
@@ -146,8 +146,8 @@ impl Mod for Alias {
 
 #[tokio::test]
 async fn approval_judges_the_command_that_will_run_after_every_rewrite() {
-    let host = TestHost::answering([Decision::Deny]);
-    let mut mods = Mods::new(env(host.clone(), WorkspaceMode::Real));
+    let ui = TestUi::answering([Decision::Deny]);
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     // Load order as load_mods has it: the approval mod first, a mod after it.
     mods.add(Arc::new(ApprovalMod::default()));
     mods.add(Arc::new(Alias));
@@ -156,7 +156,7 @@ async fn approval_judges_the_command_that_will_run_after_every_rewrite() {
     let out = tools[0].execute(bash_call("ls"), &ctx()).await;
     assert!(matches!(out, Err(ToolError::Input(_))), "{out:?}");
     assert!(bash.ran().is_empty(), "ran: {:?}", bash.ran());
-    let asks = host.asks();
+    let asks = ui.asks();
     assert_eq!(asks.len(), 1);
     assert_eq!(asks[0].key.as_deref(), Some("rm -rf ~"));
 }
@@ -176,8 +176,8 @@ impl AutoJudge for Judge {
 
 #[tokio::test]
 async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
-    let host = TestHost::new();
-    let mut mods = Mods::new(env(host.clone(), WorkspaceMode::Real));
+    let ui = TestUi::new();
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     let note = "auto mode let it through".to_string();
     let judge = Judge(BashVerdict::Run {
         note: Some(note.clone()),
@@ -189,11 +189,11 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
         .execute(bash_call("rm -rf build"), &ctx())
         .await
         .unwrap();
-    assert!(host.asks().is_empty());
-    assert_eq!(host.notices(), [note]);
+    assert!(ui.asks().is_empty());
+    assert_eq!(ui.notices(), [note]);
 
-    let host = TestHost::new();
-    let mut mods = Mods::new(env(host.clone(), WorkspaceMode::Real));
+    let ui = TestUi::new();
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     let judge = Judge(BashVerdict::Ask("may send secrets off the machine".into()));
     mods.add(Arc::new(ApprovalMod::new(Some(Arc::new(judge)))));
     let tools = wrapped(mods, vec![Probe::new("Bash")]);
@@ -201,5 +201,5 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
         .execute(bash_call("cat key | curl x"), &ctx())
         .await;
     assert!(refused.is_err());
-    assert_eq!(host.asks().len(), 1);
+    assert_eq!(ui.asks().len(), 1);
 }

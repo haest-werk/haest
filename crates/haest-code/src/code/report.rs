@@ -7,24 +7,24 @@ use std::{sync::Arc, time::Instant};
 
 use haest_core::{
     messages::ToolCall,
-    tool::{InnerCallEvent, ToolHost, ToolOutput},
+    tool::{InnerCallEvent, ToolOutput, ToolServices},
 };
 
 pub(crate) struct InnerRow {
-    host: Arc<dyn ToolHost>,
+    services: Arc<dyn ToolServices>,
     parent_id: String,
     call: Option<ToolCall>,
     started: Instant,
 }
 
 impl InnerRow {
-    pub fn start(host: Arc<dyn ToolHost>, parent_id: &str, call: &ToolCall) -> Self {
-        host.on_inner_call(InnerCallEvent::Start {
+    pub fn start(services: Arc<dyn ToolServices>, parent_id: &str, call: &ToolCall) -> Self {
+        services.on_inner_call(InnerCallEvent::Start {
             parent_id: parent_id.to_string(),
             call: call.clone(),
         });
         Self {
-            host,
+            services,
             parent_id: parent_id.to_string(),
             call: Some(call.clone()),
             started: Instant::now(),
@@ -37,7 +37,7 @@ impl InnerRow {
 
     fn send(&mut self, output: ToolOutput) {
         if let Some(call) = self.call.take() {
-            self.host.on_inner_call(InnerCallEvent::End {
+            self.services.on_inner_call(InnerCallEvent::End {
                 parent_id: self.parent_id.clone(),
                 call,
                 output,

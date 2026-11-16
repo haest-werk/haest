@@ -1,5 +1,5 @@
 //! The human's Allow / Deny with a memory: the generic half of a host's
-//! [`crate::ModHost::ask`]. The host supplies the prompt itself ([`Prompter`]: a
+//! [`crate::ModUi::ask`]. The host supplies the prompt itself ([`Prompter`]: a
 //! terminal question, a control panel dialog); the gate keeps the rules every
 //! host must keep:
 //!   - ALWAYS is scoped to the ask it was pressed on -- the same tool with the
@@ -50,7 +50,7 @@ pub trait Prompter: Send + Sync {
 pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// The human's Allow / Deny with a memory: the rules every host's
-/// [`ModHost::ask`](crate::ModHost::ask) must keep, over the host's own
+/// [`ModUi::ask`](crate::ModUi::ask) must keep, over the host's own
 /// [`Prompter`].
 ///
 /// - ALWAYS is scoped to the ask it was pressed on: the same
@@ -77,7 +77,7 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// use async_trait::async_trait;
 /// use haest_core::{ShutWorkspace, ToolContext, workspace::WorkspaceMode};
 /// use haest_mods::{
-///     Answer, ApprovalGate, ApprovalMod, ApprovalRequest, Decision, ModEnv, ModHost, ModTools,
+///     Answer, ApprovalGate, ApprovalMod, ApprovalRequest, Decision, ModEnv, ModUi, ModTools,
 ///     Mods, Prompter,
 /// };
 /// use serde_json::json;
@@ -107,11 +107,12 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 ///     }
 /// }
 ///
-/// /// The host: asks go through the gate, notices to the terminal.
-/// struct Host(ApprovalGate<Human>);
+/// /// How the mods reach the human: asks go through the gate, notices to the
+/// /// terminal.
+/// struct Terminal(ApprovalGate<Human>);
 ///
 /// #[async_trait]
-/// impl ModHost for Host {
+/// impl ModUi for Terminal {
 ///     async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
 ///         self.0.ask(req, cancel).await
 ///     }
@@ -123,8 +124,8 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let prompts = Arc::new(Mutex::new(Vec::new()));
-/// let host = Arc::new(Host(ApprovalGate::new(Human(prompts.clone()))));
-/// let mut mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, host));
+/// let ui = Arc::new(Terminal(ApprovalGate::new(Human(prompts.clone()))));
+/// let mut mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, ui));
 /// mods.add(Arc::new(ApprovalMod::default()));
 /// let tools = ModTools::wrap(&Arc::new(mods), vec![Arc::new(Bash)]);
 ///

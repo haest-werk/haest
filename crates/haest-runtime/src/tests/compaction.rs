@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{
-    Host,
+    RuntimeHooks,
     haest::{
         Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
         Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason, Tool, TurnEnd,
@@ -14,13 +14,16 @@ use crate::{
         core::provider::ProviderStream,
         core::testing::{ScriptedProvider, text_answer},
     },
-    testkit::{host, settings},
+    testkit::{hooks, settings},
 };
 
 /// A conversation on `host` whose last request filled the window, so the
 /// next model call compacts first; its ledger has no cap.
-fn full(host: &Arc<Host>, provider: Arc<dyn Provider>) -> (Agent, Arc<Mutex<Ledger>>) {
-    let ledger = Arc::new(Mutex::new(Ledger::new(LedgerCaps::default(), host.clone())));
+fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<Mutex<Ledger>>) {
+    let ledger = Arc::new(Mutex::new(Ledger::new(
+        LedgerCaps::default(),
+        hooks.clone(),
+    )));
     let resolve = move |_: &str| -> Result<ResolvedModel, String> {
         Ok(ResolvedModel {
             provider: provider.clone(),
@@ -36,7 +39,7 @@ fn full(host: &Arc<Host>, provider: Arc<dyn Provider>) -> (Agent, Arc<Mutex<Ledg
         Arc::new(ShutWorkspace),
     );
     let deps = AgentDeps {
-        hooks: host.clone(),
+        hooks: hooks.clone(),
         ledger: Some(ledger.clone()),
         ..bare
     };
@@ -62,8 +65,8 @@ fn priced_nothing(usd: f64) -> AssistantMessage {
 #[tokio::test]
 async fn a_failed_compaction_goes_on_the_conversations_bill_once() {
     let replies = ScriptedProvider::new([priced_nothing(0.25), priced_nothing(0.5)]);
-    let (host, _) = host(settings());
-    let (mut agent, ledger) = full(&host, replies.clone());
+    let (hooks, _) = hooks(settings());
+    let (mut agent, ledger) = full(&hooks, replies.clone());
     let end = turn(&mut agent).await;
     assert_eq!(end.stop_reason, StopReason::Error, "{:?}", end.error);
     assert_eq!(replies.requests().len(), 2, "the warm and the cold summary");
@@ -96,8 +99,8 @@ async fn an_esc_while_the_summary_is_written_ends_the_turn_cancelled_with_no_fai
         replies: replies.clone(),
         control: OnceLock::new(),
     });
-    let (host, ui) = host(settings());
-    let (mut agent, _) = full(&host, esc.clone());
+    let (hooks, ui) = hooks(settings());
+    let (mut agent, _) = full(&hooks, esc.clone());
     let _ = esc.control.set(agent.control());
     let end = turn(&mut agent).await;
     assert_eq!(end, TurnEnd::new(StopReason::Aborted));

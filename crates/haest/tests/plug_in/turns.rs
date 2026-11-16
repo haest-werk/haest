@@ -3,7 +3,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use haest::{AgentHooks, core::tool::ToolHost};
+use haest::{AgentHooks, core::tool::ToolServices};
 use tokio_util::sync::CancellationToken;
 
 use super::*;
@@ -116,7 +116,7 @@ struct Budget {
     allowed: usize,
 }
 
-impl ToolHost for Budget {}
+impl ToolServices for Budget {}
 
 #[async_trait]
 impl AgentHooks for Budget {

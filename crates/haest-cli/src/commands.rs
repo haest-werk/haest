@@ -31,7 +31,7 @@ pub async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
         "effort" => effort(rt, args),
         "budget" => budget(rt, args),
         "compact" => {
-            let h = rt.host.clone();
+            let h = rt.hooks.clone();
             // A failure was said to the UI; /compact has nothing more to do.
             let _ = h
                 .compact_now(&mut rt.agent, &CancellationToken::new(), false)
@@ -55,9 +55,9 @@ pub async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
 fn help(rt: &Runtime) {
     let mods: Vec<String> = rt.mods.commands().iter().map(|c| format!("/{c}")).collect();
     if mods.is_empty() {
-        return rt.host.info(HELP);
+        return rt.hooks.info(HELP);
     }
-    rt.host
+    rt.hooks
         .info(&format!("{HELP}\nFrom mods: {}", mods.join(", ")));
 }
 
@@ -75,7 +75,7 @@ async fn skill_or_text(rt: &Runtime, name: &str, args: &str, line: &str) -> Outc
     match load_skill_body(rt.fs.as_ref(), &skill, Some(args)).await {
         Ok(body) => Outcome::Send(body),
         Err(e) => {
-            rt.host
+            rt.hooks
                 .error(&format!("Skill {name} could not be read: {e}"));
             Outcome::Done
         }
@@ -84,41 +84,43 @@ async fn skill_or_text(rt: &Runtime, name: &str, args: &str, line: &str) -> Outc
 
 fn model(rt: &mut Runtime, spec: &str) {
     if spec.is_empty() {
-        return rt.host.info(&format!("Model: {}", rt.agent.model_spec));
+        return rt.hooks.info(&format!("Model: {}", rt.agent.model_spec));
     }
     match rt.set_model(spec) {
-        Ok(()) => rt.host.info(&format!("Model set to {spec}")),
-        Err(e) => rt.host.error(&format!("Model not changed: {e}")),
+        Ok(()) => rt.hooks.info(&format!("Model set to {spec}")),
+        Err(e) => rt.hooks.error(&format!("Model not changed: {e}")),
     }
 }
 
 fn effort(rt: &mut Runtime, arg: &str) {
     let label = |e: Option<Effort>| e.map_or("model default", Effort::as_str).to_string();
     if arg.is_empty() {
-        return rt.host.info(&format!("Effort: {}", label(rt.agent.effort)));
+        return rt
+            .hooks
+            .info(&format!("Effort: {}", label(rt.agent.effort)));
     }
     let effort = match arg {
         "default" => None,
         _ => match arg.parse::<Effort>() {
             Ok(e) => Some(e),
             Err(_) => {
-                return rt.host.error(&format!(
+                return rt.hooks.error(&format!(
                     "Unknown effort \"{arg}\". Use off, low, medium, high, xhigh, max or default."
                 ));
             }
         },
     };
     rt.set_effort(effort);
-    rt.host.info(&format!("Effort set to {}", label(effort)));
+    rt.hooks.info(&format!("Effort set to {}", label(effort)));
 }
 
 /// `/budget` shows the ledger; `/budget 40` sets the USD cap; `/budget tokens 4e7` the unpriced-token cap.
 fn budget(rt: &mut Runtime, args: &str) {
     let Some(ledger) = rt.agent.deps().ledger.clone() else {
-        return rt.host.info("This conversation has no ledger.");
+        return rt.hooks.info("This conversation has no ledger.");
     };
     if args.is_empty() {
-        return rt.host.info(&ledger.lock().unwrap().summary());
+        return rt.hooks.info(&ledger.lock().unwrap().summary());
     }
     let (tokens, raw) = match args.split_once(char::is_whitespace) {
         Some((k, v)) if k.eq_ignore_ascii_case("tokens") => (true, v.trim()),
@@ -130,7 +132,7 @@ fn budget(rt: &mut Runtime, args: &str) {
         .ok()
         .filter(|v| v.is_finite() && *v >= 0.0);
     let Some(value) = value else {
-        return rt.host.error(&format!(
+        return rt.hooks.error(&format!(
             "\"{args}\" is not a budget. Usage: /budget (show), /budget <usd>, /budget tokens <n>. 0 removes the cap."
         ));
     };
@@ -146,15 +148,15 @@ fn budget(rt: &mut Runtime, args: &str) {
         .unwrap_or_else(|| "haest can continue.".into());
     let text = format!("{} {state}", l.summary());
     drop(l);
-    rt.host.info(&text);
+    rt.hooks.info(&text);
 }
 
 async fn clear(rt: &mut Runtime) {
     match rt.clear().await {
         Ok(()) => rt
-            .host
+            .hooks
             .info(&format!("Started a fresh session ({}).", rt.session_id())),
-        Err(e) => rt.host.error(&format!("Not cleared: {e:#}")),
+        Err(e) => rt.hooks.error(&format!("Not cleared: {e:#}")),
     }
 }
 
@@ -172,8 +174,8 @@ async fn skills(rt: &mut Runtime) {
         })
         .collect();
     if lines.is_empty() {
-        rt.host.info("No skills found.");
+        rt.hooks.info("No skills found.");
     } else {
-        rt.host.info(&format!("Skills:\n{}", lines.join("\n")));
+        rt.hooks.info(&format!("Skills:\n{}", lines.join("\n")));
     }
 }

@@ -52,7 +52,7 @@ impl Mod for Rewriter {
 
 #[tokio::test]
 async fn tool_before_can_refuse_or_rewrite_a_call_and_tool_after_can_rewrite_its_output() {
-    let mut mods = Mods::new(env(TestHost::new(), WorkspaceMode::Real));
+    let mut mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real));
     mods.add(Arc::new(Rewriter));
     let echo = Probe::new("Echo");
     let tools = wrapped(mods, vec![echo.clone()]);
@@ -92,7 +92,7 @@ impl Mod for HouseRules {
 
 #[tokio::test]
 async fn prompt_system_prompt_tools_and_commands_from_a_mod_all_take_effect() {
-    let mut mods = Mods::new(env(TestHost::new(), WorkspaceMode::Sandbox));
+    let mut mods = Mods::new(env(TestUi::new(), WorkspaceMode::Sandbox));
     mods.add(Arc::new(HouseRules(Probe::new("Shout"))));
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
     assert_eq!(mods.system_append().await, "House rule: British spelling.");
@@ -150,8 +150,8 @@ impl Mod for Broken {
 
 #[tokio::test]
 async fn a_failing_mod_is_reported_and_never_lets_a_guarded_call_through() {
-    let host = TestHost::new();
-    let mut mods = Mods::new(env(host.clone(), WorkspaceMode::Real));
+    let ui = TestUi::new();
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(Broken));
     let echo = Probe::new("Echo");
     let tools = wrapped(mods, vec![echo.clone()]);
@@ -164,29 +164,29 @@ async fn a_failing_mod_is_reported_and_never_lets_a_guarded_call_through() {
     let ran = tools[0].execute(input(json!({"v": "x"})), &ctx()).await;
     assert_eq!(ran.unwrap().content, "echo:x");
     assert_eq!(echo.ran().len(), 1);
-    assert_eq!(host.errors().len(), 2);
-    assert!(host.errors().iter().all(|e| e.contains("broken")));
+    assert_eq!(ui.errors().len(), 2);
+    assert!(ui.errors().iter().all(|e| e.contains("broken")));
 }
 
 #[tokio::test]
 async fn a_failing_prompt_hook_leaves_the_text_as_it_was() {
-    let host = TestHost::new();
-    let mut mods = Mods::new(env(host.clone(), WorkspaceMode::Real));
+    let ui = TestUi::new();
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(Broken));
     mods.add(Arc::new(HouseRules(Probe::new("Shout"))));
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
-    assert_eq!(host.errors().len(), 1);
+    assert_eq!(ui.errors().len(), 1);
 }
 
 #[tokio::test]
 async fn an_interrupt_while_a_mod_decides_is_not_reported_as_a_mod_failure() {
-    let host = TestHost::new();
-    let mut mods = Mods::new(env(host.clone(), WorkspaceMode::Real));
+    let ui = TestUi::new();
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(Broken));
     let tools = wrapped(mods, vec![Probe::new("Echo")]);
     let c = ctx();
     c.cancel.cancel();
     let out = tools[0].execute(input(json!({"guarded": true})), &c).await;
     assert!(matches!(out, Err(ToolError::Input(_))));
-    assert!(host.errors().is_empty());
+    assert!(ui.errors().is_empty());
 }

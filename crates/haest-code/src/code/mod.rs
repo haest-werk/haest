@@ -163,9 +163,9 @@ Callable: {}.",
 /// spilled to a file: the program gets it whole and filters it. Calls that
 /// write run alone, reads up to 8 at once. Inside the agent loop (a call with
 /// a `tool_call_id`) each inner call is reported to the host as a transcript
-/// row of its own ([`ToolHost::on_inner_call`](haest_core::ToolHost::on_inner_call)),
+/// row of its own ([`ToolServices::on_inner_call`](haest_core::ToolServices::on_inner_call)),
 /// with the id `<code call id>.<n>`; a run longer than a second also logs a
-/// heartbeat through [`ToolHost::log`](haest_core::ToolHost::log).
+/// heartbeat through [`ToolServices::log`](haest_core::ToolServices::log).
 ///
 /// The result is the fenced printout ([module docs](crate::code#what-the-model-reads-back)),
 /// an error result when the program threw or was stopped, the pictures from
@@ -252,10 +252,10 @@ impl Tool for CodeTool {
             memory_bytes: MEMORY_BYTES,
             max_log_chars: MAX_LOG_CHARS,
         };
-        let beat = |b: VmBeat| ctx.host.log(&beat_line(ctx, b));
+        let beat = |b: VmBeat| ctx.services.log(&beat_line(ctx, b));
         let run = run_in_vm(code, &bridge.spec(), limits, &ctx.cancel, Some(&beat)).await;
         if run.killed {
-            ctx.host.log(&format!(
+            ctx.services.log(&format!(
                 "[code {}] did not stop when asked; its engine was abandoned",
                 ctx.tool_call_id.as_deref().unwrap_or("-")
             ));

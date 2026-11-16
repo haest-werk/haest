@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use haest_core::{
     messages::{MediaKind, MediaPart},
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices},
 };
 use serde_json::{Value, json};
 
@@ -90,7 +90,7 @@ async fn an_image_comes_back_as_media_the_model_sees_not_as_a_binary_refusal() {
 
 struct Publishing;
 #[async_trait]
-impl ToolHost for Publishing {
+impl ToolServices for Publishing {
     async fn publish(&self, data: Vec<u8>, media_type: &str) -> Option<String> {
         Some(format!("blob://{media_type}/{}", data.len()))
     }
@@ -100,7 +100,7 @@ impl ToolHost for Publishing {
 async fn a_published_image_carries_its_url_to_the_transcript() {
     let ws = TestWorkspace::with_files([("/p/a.gif", &[1u8, 2, 3][..])]);
     let mut c = ctx(ws);
-    c.host = Arc::new(Publishing);
+    c.services = Arc::new(Publishing);
     let r = ReadTool::default()
         .execute(input(json!({"file_path": "a.gif"})), &c)
         .await

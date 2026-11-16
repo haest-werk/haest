@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     AgentDirectory, AgentRef, MAIN, SpawnInput, SpawnOutcome, SubagentCaps, SubagentEvent,
-    SubagentHost,
+    SubagentParent,
     members::{Due, Members, Status, run_id},
     run::{ChildHooks, ChildPrompt, Run, drive, subagent_note},
     tools::agent_tools,
@@ -22,19 +22,19 @@ use super::{
 /// [`AgentDirectory`].
 ///
 /// A spawn checks the caps (depth, and how many run at once across the tree),
-/// takes a unique name, and builds an [`Agent`] from the host's
-/// [`deps`](SubagentHost::deps) with its own tools (the host's
-/// [`base_tools`](SubagentHost::base_tools) minus the task tools, plus its own
-/// agent tools), its own system prompt (the host's, then
+/// takes a unique name, and builds an [`Agent`] from the parent's
+/// [`deps`](SubagentParent::deps) with its own tools (the parent's
+/// [`base_tools`](SubagentParent::base_tools) minus the task tools, plus its own
+/// agent tools), its own system prompt (the parent's, then
 /// [`subagent_note`](super::subagent_note)) and its own turn caps. It runs one
 /// turn; its final answer is the result.
 ///
 /// - A foreground agent stops with the caller's turn; a background one runs
 ///   on, and its answer is steered into the subagent that started it, or
-///   submitted to the host's inbox when main started it or its starter has
+///   submitted to the parent's inbox when main started it or its starter has
 ///   finished. [`answers_due`](Self::answers_due) counts the ones on their way.
 /// - A message ([`deliver`](AgentDirectory::deliver)) lands at the receiver's
-///   next step; one for "main" goes to the host's inbox. Messages that reach an
+///   next step; one for "main" goes to the parent's inbox. Messages that reach an
 ///   agent after it finished are appended to its answer, unread.
 /// - A finished agent's name stays taken, so a message for it is refused, never
 ///   delivered to a newcomer.
@@ -60,21 +60,21 @@ use super::{
 ///     workspace::ShutWorkspace,
 /// };
 /// use haest_tools::{
-///     Inbox, SubagentHost, SubagentHub,
+///     Inbox, SubagentParent, SubagentHub,
 ///     agents::{AgentDirectory, AgentRef, SpawnInput, SubagentCaps},
 /// };
 /// use tokio_util::sync::CancellationToken;
 ///
-/// struct Host(Arc<ScriptedProvider>);
+/// struct Parent(Arc<ScriptedProvider>);
 ///
-/// impl Inbox for Host {
+/// impl Inbox for Parent {
 ///     fn submit(&self, text: String) {
 ///         println!("for main: {text}");
 ///     }
 /// }
 ///
 /// #[async_trait]
-/// impl SubagentHost for Host {
+/// impl SubagentParent for Parent {
 ///     fn deps(&self) -> AgentDeps {
 ///         let models = Arc::new(self.0.resolver());
 ///         let prompt = Arc::new("You are a helper.".to_string());
@@ -94,7 +94,7 @@ use super::{
 /// # #[tokio::main]
 /// # async fn main() {
 /// let provider = ScriptedProvider::new([text_answer("42 files")]);
-/// let hub = SubagentHub::new(Arc::new(Host(provider)), SubagentCaps::default());
+/// let hub = SubagentHub::new(Arc::new(Parent(provider)), SubagentCaps::default());
 ///
 /// // Main's agent tools; a host adds them to main's tool list.
 /// let tools = hub.tools_for(&AgentRef::main());
@@ -115,7 +115,7 @@ use super::{
 ///
 /// [`Agent`]: haest_core::Agent
 pub struct SubagentHub {
-    host: Arc<dyn SubagentHost>,
+    parent: Arc<dyn SubagentParent>,
     caps: SubagentCaps,
     run_id: String,
     members: Mutex<Members>,
@@ -125,10 +125,10 @@ pub struct SubagentHub {
 }
 
 impl SubagentHub {
-    /// A hub with no subagents yet, over `host`, under `caps`.
-    pub fn new(host: Arc<dyn SubagentHost>, caps: SubagentCaps) -> Arc<Self> {
+    /// A hub with no subagents yet, over `parent`, under `caps`.
+    pub fn new(parent: Arc<dyn SubagentParent>, caps: SubagentCaps) -> Arc<Self> {
         Arc::new_cyclic(|this| Self {
-            host,
+            parent,
             caps,
             run_id: run_id(),
             members: Mutex::default(),
@@ -177,7 +177,7 @@ impl SubagentHub {
             let members = self.members.lock().unwrap();
             members.running().map(|m| m.id.clone()).collect()
         };
-        self.host.on_activity(&ids);
+        self.parent.on_activity(&ids);
     }
 
     /// The agent for `run`: the conversation's deps with its own tools, prompt
@@ -185,28 +185,28 @@ impl SubagentHub {
     /// to a helper.
     fn build(&self, run: &Run, model: Option<String>) -> Agent {
         let mut tools: Vec<Arc<dyn Tool>> = self
-            .host
+            .parent
             .base_tools()
             .into_iter()
             .filter(|t| crate::builtin_word(t.name()) != Some("tasks"))
             .collect();
         tools.extend(self.tools_for(&run.me));
-        let source = self.host.tool_source(tools);
-        let (main_model, effort) = self.host.default_model();
+        let source = self.parent.tool_source(tools);
+        let (main_model, effort) = self.parent.default_model();
         let model = model.unwrap_or(main_model);
-        let base = self.host.deps();
+        let base = self.parent.deps();
         let deps = AgentDeps {
             tools: source.clone(),
             system_prompt: Arc::new(ChildPrompt {
-                host: self.host.clone(),
+                parent: self.parent.clone(),
                 model: model.clone(),
                 tools: source,
                 note: subagent_note(&run.me.name, &run.parent, &run.description, &self.caps),
             }),
             hooks: Arc::new(ChildHooks {
-                parent: base.hooks.clone(),
+                hooks: base.hooks.clone(),
                 caps: self.caps,
-                host: self.host.clone(),
+                parent: self.parent.clone(),
                 id: run.id.clone(),
             }),
             ..base
@@ -229,18 +229,18 @@ impl SubagentHub {
             parent: run.parent.clone(),
             description: run.description.clone(),
         };
-        self.host.on_subagent(&run.id, started);
-        let host = self.host.as_ref();
+        self.parent.on_subagent(&run.id, started);
+        let parent = self.parent.as_ref();
         let out = drive(
             &mut agent,
             &prompt,
             &run.stop,
             caller.as_ref(),
-            host,
+            parent,
             &run.id,
         )
         .await;
-        self.host
+        self.parent
             .on_subagent(&run.id, SubagentEvent::Stopped { ok: out.ok });
         // Leave first: from here a message for it is refused, not lost.
         self.members.lock().unwrap().leave(&run.me.name);
@@ -266,7 +266,7 @@ impl SubagentHub {
             Some(p) if p.status == Status::Running => p.steer(text),
             _ => {
                 drop(members);
-                self.host.submit(text);
+                self.parent.submit(text);
             }
         }
     }
@@ -291,7 +291,7 @@ impl AgentDirectory for SubagentHub {
                 stop: m.stop.clone(),
             }
         };
-        // The host is asked with the table unlocked: it may call the hub back.
+        // The parent is asked with the table unlocked: it may call the hub back.
         let agent = self.build(&run, input.model.clone());
         let name = run.me.name.clone();
         self.members.lock().unwrap().attach(&name, agent.control());
@@ -324,7 +324,7 @@ impl AgentDirectory for SubagentHub {
     fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, String> {
         let body = format!("[Message from agent \"{from}\"]\n\n{text}");
         if to == MAIN {
-            self.host.submit(body);
+            self.parent.submit(body);
             return Ok("Delivered to main.".into());
         }
         let mut members = self.members.lock().unwrap();

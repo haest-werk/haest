@@ -196,7 +196,7 @@ pub mod prelude {
         Effort, ModelResolver, Provider, ProviderEvent, ProviderRequest, ResolvedModel,
     };
     pub use crate::tool::{
-        JsonMap, Tool, ToolContext, ToolError, ToolHost, ToolOutput, ToolSource,
+        JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices, ToolSource,
     };
     pub use crate::workspace::{ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode};
 }

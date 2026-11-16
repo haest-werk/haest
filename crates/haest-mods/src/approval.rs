@@ -145,7 +145,7 @@ pub trait AutoJudge: Send + Sync {
 /// The sandbox never asks -- its writes live in memory and vanish anyway --
 /// and no other tool is judged. Which commands ask is
 /// [`irreversible_reason`]'s list, unless auto mode ([`AutoJudge`]) is on.
-/// The ask goes to the host's [`ModHost::ask`](crate::ModHost::ask) with the
+/// The ask goes to the host's [`ModUi::ask`](crate::ModUi::ask) with the
 /// exact command as its key, so an ALWAYS covers that command only; a Deny
 /// (or no answer) refuses the call and the model reads why.
 ///

@@ -18,7 +18,7 @@ use std::{
 use haest_core::{fs::Fs, workspace::WorkspaceMode};
 
 use crate::{
-    api::{ModEnv, ModHost},
+    api::{ModEnv, ModUi},
     approval::{ApprovalMod, AutoJudge},
     js::{JsMod, Limits},
     plan::{PlanListener, PlanMod},
@@ -118,7 +118,7 @@ pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 ///
 /// Each directory's files load in name order ([`mod_files`]); each one runs
 /// its default export now ([`JsMod::load`]). A mod that fails to load is
-/// reported through [`ModHost::error`] and skipped; the rest still load, so
+/// reported through [`ModUi::error`] and skipped; the rest still load, so
 /// this never fails. A host's own native mods go in afterwards with
 /// [`Mods::add`].
 ///
@@ -131,17 +131,17 @@ pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 ///
 /// The [crate docs](crate#putting-mods-in-the-loop) load a mod file from a
 /// [`MemFs`](haest_core::MemFs) and put it around an agent.
-pub async fn load_mods(cfg: ModConfig, fs: &dyn Fs, host: Arc<dyn ModHost>) -> Mods {
-    load_mods_with(cfg, fs, host, Limits::default()).await
+pub async fn load_mods(cfg: ModConfig, fs: &dyn Fs, ui: Arc<dyn ModUi>) -> Mods {
+    load_mods_with(cfg, fs, ui, Limits::default()).await
 }
 
 pub(crate) async fn load_mods_with(
     cfg: ModConfig,
     fs: &dyn Fs,
-    host: Arc<dyn ModHost>,
+    ui: Arc<dyn ModUi>,
     limits: Limits,
 ) -> Mods {
-    let env = ModEnv::new(cfg.cwd.clone(), cfg.workspace, host.clone());
+    let env = ModEnv::new(cfg.cwd.clone(), cfg.workspace, ui.clone());
     let mut mods = Mods::new(env.clone());
     if cfg.approvals {
         mods.add(Arc::new(ApprovalMod::new(cfg.auto.clone())));
@@ -155,7 +155,7 @@ pub(crate) async fn load_mods_with(
             };
             match loaded {
                 Ok(m) => mods.add(Arc::new(m)),
-                Err(e) => host.error(&format!(
+                Err(e) => ui.error(&format!(
                     "Mod {} failed to load and was skipped: {e}",
                     path.display()
                 )),
