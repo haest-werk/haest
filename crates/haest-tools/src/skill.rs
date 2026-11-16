@@ -181,7 +181,7 @@ mod tests {
         let opts = SkillOptions {
             cwd: "/w".into(),
             home: "/h".into(),
-            config_dir: "/h/.claude".into(),
+            claude_dir: "/h/.claude".into(),
             sources: SkillSources::ALL,
         };
         let skills = discover_skills(fs.as_ref(), &opts).await;

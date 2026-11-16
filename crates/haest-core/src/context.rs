@@ -30,7 +30,7 @@
 //! let opts = InstructionOptions {
 //!     cwd: "/home/me/work".into(),
 //!     home: "/home/me".into(),
-//!     config_dir: None,
+//!     claude_dir: "/home/me/.claude".into(),
 //!     sources: ContextSources { agents: true, claude: false },
 //! };
 //! let instructions = find_instruction_files(&fs, &opts).await;
@@ -138,8 +138,9 @@ pub struct InstructionOptions {
     /// The user's home: its `.agents` / `.claude` dirs hold the user's files,
     /// and the project chain stops below it ([`project_chain`]).
     pub home: PathBuf,
-    /// Claude Code's user dir (`<home>/.claude` when None); read only with `claude`.
-    pub config_dir: Option<PathBuf>,
+    /// Claude Code's user dir (`<home>/.claude` unless the host says
+    /// otherwise); read only with `claude`.
+    pub claude_dir: PathBuf,
     /// Which kinds of instruction file to read; none unless the host says so.
     pub sources: ContextSources,
 }
@@ -150,8 +151,7 @@ fn candidates(opts: &InstructionOptions) -> Vec<PathBuf> {
     let wanted = |f: &str| if f == AGENTS_FILE { agents } else { claude };
     let mut user_dirs = Vec::new();
     if claude {
-        let dir = opts.config_dir.clone();
-        user_dirs.push(dir.unwrap_or_else(|| opts.home.join(".claude")));
+        user_dirs.push(opts.claude_dir.clone());
     }
     let agents_dir = opts.home.join(".agents");
     if agents && !user_dirs.contains(&agents_dir) {

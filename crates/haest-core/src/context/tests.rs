@@ -20,7 +20,7 @@ async fn each_kind_of_instruction_file_is_read_only_when_asked_for() {
     let mut opts = InstructionOptions {
         cwd: "/r/home/repo".into(),
         home: "/r/home".into(),
-        config_dir: None,
+        claude_dir: "/r/home/.claude".into(),
         sources: ContextSources::NONE,
     };
     assert!(find_instruction_files(&fs, &opts).await.is_empty());
@@ -62,7 +62,7 @@ async fn user_files_first_then_outermost_project_dir_down_to_cwd_empty_files_ski
     let opts = InstructionOptions {
         cwd: "/r/home/repo/pkg".into(),
         home: "/r/home".into(),
-        config_dir: Some("/r/home/.claude".into()),
+        claude_dir: "/r/home/.claude".into(),
         sources: ContextSources::ALL,
     };
     let files = find_instruction_files(&fs, &opts).await;
@@ -80,7 +80,7 @@ async fn outside_home_the_chain_runs_from_the_root_and_long_files_are_cut() {
     let opts = InstructionOptions {
         cwd: "/w".into(),
         home: "/home/u".into(),
-        config_dir: None,
+        claude_dir: "/home/u/.claude".into(),
         sources: ContextSources {
             agents: true,
             claude: false,

@@ -59,7 +59,7 @@ fn lists_and_fallbacks() {
 }
 
 const HOME: &str = "/r/home";
-const CONFIG: &str = "/r/home/.claude";
+const CLAUDE_DIR: &str = "/r/home/.claude";
 const REPO: &str = "/r/home/code/repo";
 const CWD: &str = "/r/home/code/repo/packages/app";
 const PLUGIN: &str = "/r/plugins/toolkit";
@@ -68,11 +68,11 @@ fn scan_fixture() -> MemFs {
     let f = |fm: &str| format!("---\n{fm}\n---\n\n# body\n");
     MemFs::with_files([
         (
-            format!("{CONFIG}/skills/shared/SKILL.md"),
+            format!("{CLAUDE_DIR}/skills/shared/SKILL.md"),
             f("name: shared\ndescription: user copy"),
         ),
         (
-            format!("{CONFIG}/skills/only-user/SKILL.md"),
+            format!("{CLAUDE_DIR}/skills/only-user/SKILL.md"),
             f("name: only-user\ndescription: u"),
         ),
         (
@@ -104,7 +104,7 @@ fn scan_fixture() -> MemFs {
 
 fn roots(plugins: bool, agents_dirs: bool) -> SkillScanRoots {
     SkillScanRoots {
-        config_dir: CONFIG.into(),
+        claude_dir: CLAUDE_DIR.into(),
         cwd: CWD.into(),
         home: HOME.into(),
         agents: agents_dirs,
@@ -131,7 +131,7 @@ async fn scanned(plugins: bool, agents_dirs: bool) -> HashMap<String, Skill> {
 #[test]
 fn scan_roots_name_every_directory_the_scan_reads_plugin_roots_included() {
     let dirs = scan_roots(&roots(true, false));
-    assert!(dirs.contains(&Path::new(CONFIG).join("skills")));
+    assert!(dirs.contains(&Path::new(CLAUDE_DIR).join("skills")));
     assert!(dirs.contains(&Path::new(REPO).join(".claude/skills")));
     assert!(dirs.contains(&Path::new(PLUGIN).join("skills")));
 }
@@ -144,7 +144,7 @@ fn outside_home_every_level_up_to_the_root_is_a_project_level() {
     };
     let project: Vec<_> = scan_roots(&outside)
         .into_iter()
-        .filter(|d| !d.starts_with(CONFIG))
+        .filter(|d| !d.starts_with(CLAUDE_DIR))
         .collect();
     let want = [
         "/.claude/skills",

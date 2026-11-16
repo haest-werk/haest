@@ -1,10 +1,10 @@
-//! The Claude Code plugins installed and enabled in a config dir, as plugin
+//! The Claude Code plugins installed and enabled in Claude Code's dir, as plugin
 //! roots for the skill scan. Read from Claude Code's own files, so haest sees the
 //! same plugin skills Claude Code would:
 //!
 //! ```text
-//! <config dir>/plugins/installed_plugins.json  { version: 2, plugins: { "name@marketplace": [{ installPath }] } }
-//! <config dir>/settings.json                   { enabledPlugins: { "name@marketplace": true|false } }
+//! <claude dir>/plugins/installed_plugins.json  { version: 2, plugins: { "name@marketplace": [{ installPath }] } }
+//! <claude dir>/settings.json                   { enabledPlugins: { "name@marketplace": true|false } }
 //! ```
 //!
 //! A plugin absent from enabledPlugins counts as enabled (Claude Code's default).
@@ -21,16 +21,16 @@ async fn read_json(fs: &dyn Fs, path: &Path) -> Option<Value> {
     serde_json::from_slice(&fs.read(path).await.ok()?).ok()
 }
 
-/// The Claude Code plugins installed under `config_dir` and not disabled, as
+/// The Claude Code plugins installed under `claude_dir` and not disabled, as
 /// roots for the skill scan; empty when there are none or the files cannot be
 /// read.
 ///
 /// Reads `plugins/installed_plugins.json` (a plugin's last install wins) and
 /// `settings.json`'s `enabledPlugins`: only an explicit `false` turns a
 /// plugin off. A plugin's name drops its `@marketplace`.
-pub async fn read_installed_plugins(fs: &dyn Fs, config_dir: &Path) -> Vec<PluginRoot> {
-    let installed = read_json(fs, &config_dir.join("plugins/installed_plugins.json")).await;
-    let settings = read_json(fs, &config_dir.join("settings.json")).await;
+pub async fn read_installed_plugins(fs: &dyn Fs, claude_dir: &Path) -> Vec<PluginRoot> {
+    let installed = read_json(fs, &claude_dir.join("plugins/installed_plugins.json")).await;
+    let settings = read_json(fs, &claude_dir.join("settings.json")).await;
     let enabled = settings.as_ref().and_then(|s| s.get("enabledPlugins"));
     let Some(Value::Object(plugins)) = installed.as_ref().and_then(|i| i.get("plugins")) else {
         return Vec::new();
@@ -89,7 +89,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_config_dir_without_plugins_is_empty_not_an_error() {
+    async fn a_claude_dir_without_plugins_is_empty_not_an_error() {
         let fs = MemFs::new();
         assert!(
             read_installed_plugins(&fs, Path::new("/missing"))

@@ -5,7 +5,10 @@
 //! subagent build it the same way, each naming its OWN model and tools (TS
 //! `runtime.ts systemPrompt`).
 
-use std::sync::{Arc, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use async_trait::async_trait;
 use haest_settings::Settings;
@@ -33,7 +36,7 @@ pub fn instruction_options(s: &Settings) -> InstructionOptions {
     InstructionOptions {
         cwd: s.cwd.clone(),
         home: s.home.clone(),
-        config_dir: None,
+        claude_dir: claude_dir(s),
         sources: s.context,
     }
 }
@@ -45,9 +48,14 @@ pub fn skill_options(s: &Settings) -> SkillOptions {
     SkillOptions {
         cwd: s.cwd.clone(),
         home: s.home.clone(),
-        config_dir: s.home.join(".claude"),
+        claude_dir: claude_dir(s),
         sources: s.skills,
     }
+}
+
+/// Claude Code's user dir: `~/.claude`.
+fn claude_dir(s: &Settings) -> PathBuf {
+    s.home.join(".claude")
 }
 
 /// The system prompt's parts that every agent of the conversation shares, and

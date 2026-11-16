@@ -2,7 +2,7 @@
 //! allowed to pick on its own.
 //!
 //! Roots, in the order Claude Code resolves them:
-//! - user: `<config dir>/skills/<name>/SKILL.md`
+//! - user: `<claude dir>/skills/<name>/SKILL.md`
 //! - project: `<dir>/.claude/skills/<name>/SKILL.md` for the cwd and every
 //!   ancestor below the home directory (or up to the root, outside it)
 //! - plugin: `<plugin path>/skills/<name>/SKILL.md`, named `plugin:name`
@@ -12,7 +12,7 @@
 //!
 //! The `agents` source reads the cross-agent `.agents/skills` convention
 //! (`~/.agents/skills` + each project level); `claude` reads Claude Code's
-//! (`<config dir>/skills` + each project level's `.claude/skills`).
+//! (`<claude dir>/skills` + each project level's `.claude/skills`).
 
 use std::path::{Path, PathBuf};
 
@@ -39,15 +39,15 @@ pub struct PluginRoot {
 /// from [`super::SkillOptions`]. Each field is one fact the scan reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillScanRoots {
-    /// The user-level config dir (`~/.claude`).
-    pub config_dir: PathBuf,
+    /// Claude Code's user dir (`<home>/.claude` unless the host says otherwise).
+    pub claude_dir: PathBuf,
     /// The project dir the project levels are counted from.
     pub cwd: PathBuf,
     /// The user's home dir.
     pub home: PathBuf,
     /// `.agents/skills`: `~/.agents/skills` and every project level's.
     pub agents: bool,
-    /// Claude Code's: `<config dir>/skills` and every project level's `.claude/skills`.
+    /// Claude Code's: `<claude dir>/skills` and every project level's `.claude/skills`.
     pub claude: bool,
     /// The plugins whose `skills/` dirs are read; empty = none.
     pub plugins: Vec<PluginRoot>,
@@ -168,7 +168,7 @@ fn scan_plan(roots: &SkillScanRoots) -> Vec<ScanStep> {
         plan.push(step(roots.home.join(".agents/skills"), SkillSource::User));
     }
     if claude {
-        plan.push(step(roots.config_dir.join("skills"), SkillSource::User));
+        plan.push(step(roots.claude_dir.join("skills"), SkillSource::User));
     }
     // At one level `.claude` is read last, so it wins a tie.
     let dot_dirs: Vec<&str> = [(agents, ".agents"), (claude, ".claude")]

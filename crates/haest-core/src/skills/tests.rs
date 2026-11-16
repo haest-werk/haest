@@ -21,7 +21,7 @@ fn opts() -> SkillOptions {
     SkillOptions {
         cwd: "/r/proj".into(),
         home: "/r/home".into(),
-        config_dir: "/r/home/.claude".into(),
+        claude_dir: "/r/home/.claude".into(),
         sources: SkillSources::ALL,
     }
 }

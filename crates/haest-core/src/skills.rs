@@ -6,7 +6,7 @@
 //! A host's skills plug in as a [`SkillSet`]: SKILL.md files on disk
 //! ([`DiskSkills`]) or skills it holds itself ([`InlineSkills`]).
 //!
-//! Every read goes through a haest [`Fs`]; home and config dirs are passed in.
+//! Every read goes through a haest [`Fs`]; home and Claude Code's dir are passed in.
 //! Nothing is read unless the host turns a source on ([`SkillSources`]).
 //!
 //! The pieces, in the order a host meets them:
@@ -37,7 +37,7 @@
 //! let opts = SkillOptions {
 //!     cwd: "/home/me/project".into(),
 //!     home: "/home/me".into(),
-//!     config_dir: "/home/me/.claude".into(),
+//!     claude_dir: "/home/me/.claude".into(),
 //!     sources: SkillSources { claude: true, ..SkillSources::NONE },
 //! };
 //!
@@ -79,7 +79,7 @@ use crate::fs::Fs;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SkillSource {
-    /// The user's own: `<config dir>/skills` or `~/.agents/skills`.
+    /// The user's own: `<claude dir>/skills` or `~/.agents/skills`.
     User,
     /// A project's: `.claude/skills` or `.agents/skills` in the cwd or a dir above it.
     Project,
@@ -124,7 +124,7 @@ crate::word_set! {
     pub SkillSources ("skill source") {
         /// `~/.agents/skills` and every project level's `.agents/skills`.
         agents,
-        /// `<config dir>/skills` and every project level's `.claude/skills`.
+        /// `<claude dir>/skills` and every project level's `.claude/skills`.
         claude,
         /// Claude Code's installed, enabled plugins.
         plugins,
@@ -141,8 +141,9 @@ pub struct SkillOptions {
     /// The user's home dir (for `~/.agents/skills`, and where the project
     /// levels stop).
     pub home: PathBuf,
-    /// The user-level config dir (`~/.claude` unless the host says otherwise).
-    pub config_dir: PathBuf,
+    /// Claude Code's user dir (`<home>/.claude` unless the host says
+    /// otherwise): its `skills` and its plugin list.
+    pub claude_dir: PathBuf,
     /// Which skill dirs are read; [`SkillSources::NONE`] reads nothing.
     pub sources: SkillSources,
 }
@@ -151,11 +152,11 @@ pub struct SkillOptions {
 /// list): [`skills_in`] scans them, [`scan_roots`] lists the dirs a sandbox mounts.
 pub async fn skill_scan_roots(fs: &dyn Fs, opts: &SkillOptions) -> SkillScanRoots {
     let plugins = match opts.sources.plugins {
-        true => read_installed_plugins(fs, &opts.config_dir).await,
+        true => read_installed_plugins(fs, &opts.claude_dir).await,
         false => Vec::new(),
     };
     SkillScanRoots {
-        config_dir: opts.config_dir.clone(),
+        claude_dir: opts.claude_dir.clone(),
         cwd: opts.cwd.clone(),
         home: opts.home.clone(),
         agents: opts.sources.agents,
