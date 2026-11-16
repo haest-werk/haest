@@ -77,10 +77,7 @@ impl HttpClient for FakeWeb {
 }
 
 async fn fetch(web: &Arc<FakeWeb>, url: &str) -> Result<ToolOutput, ToolError> {
-    let net = WebFetchNet {
-        resolve: web.clone(),
-        http: web.clone(),
-    };
+    let net = WebFetchNet::unguarded(web.clone(), web.clone());
     let ws = TestWorkspace::with_files([("/p/.keep", "")]);
     WebFetchTool::new(net)
         .execute(input(json!({"url": url})), &ctx(ws))
@@ -224,10 +221,7 @@ impl HttpClient for Hang {
 
 #[tokio::test]
 async fn an_interrupted_fetch_returns_at_once() {
-    let net = WebFetchNet {
-        resolve: Arc::new(FakeWeb::default()),
-        http: Arc::new(Hang),
-    };
+    let net = WebFetchNet::unguarded(Arc::new(FakeWeb::default()), Arc::new(Hang));
     let c = ctx(TestWorkspace::with_files([("/p/.keep", "")]));
     c.cancel.cancel();
     let r = WebFetchTool::new(net)

@@ -6,11 +6,17 @@
 //! not reach any of them. So a URL passes only when it is http(s) and EVERY
 //! address its host resolves to is public; the caller re-checks each redirect hop.
 //!
-//! [`assert_public_url`] checks a URL before it is fetched, and WebFetch's
-//! default HTTP client checks again when it connects: it resolves names
-//! through the same [`Resolve`] and refuses any name with a blocked address, so
-//! a name that answers public-then-private (rebinding) cannot slip between the
-//! check and the connect.
+//! Two checks, one per kind of host. [`assert_public_url`] runs before every
+//! request and every redirect hop: it judges an IP-literal URL
+//! (`http://127.0.0.1/`) by its address, the only check a literal gets (no
+//! resolver is asked for one), and a name by what [`Resolve`] answers.
+//! WebFetch's own client ([`WebFetchNet::new`](crate::WebFetchNet::new))
+//! checks a name again when it connects: it resolves through the same
+//! [`Resolve`] and refuses a name with any blocked address, so a name that
+//! answers public, then private (DNS rebinding) cannot slip between the check
+//! and the connect. A host's own client
+//! ([`WebFetchNet::unguarded`](crate::WebFetchNet::unguarded)) gets only the
+//! first check.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -97,7 +103,7 @@ pub fn is_blocked(ip: IpAddr) -> bool {
 
 /// PLUG POINT: name -> addresses. The default asks the system resolver
 /// ([`SystemResolve`]); a test (or a host with its own DNS) injects another
-/// through [`WebFetchNet::resolve`](crate::WebFetchNet::resolve).
+/// through [`WebFetchNet::new`](crate::WebFetchNet::new).
 #[async_trait]
 pub trait Resolve: Send + Sync {
     /// Every address `host` (a DNS name, never an IP literal) resolves to, or
@@ -175,12 +181,14 @@ pub(crate) fn host_port(url: &Url) -> String {
     }
 }
 
-/// The addresses a fetch of `url` may connect to: every address its host
-/// resolves to, all of them public. A client that resolves the name again
-/// must check again when it connects (WebFetch's default does).
+/// Whether `url` may be fetched: http(s), no credentials, and every address
+/// its host is (an IP literal) or resolves to (a name) public.
 ///
-/// Check every redirect hop again: a public page may redirect to a private
-/// one.
+/// For an IP literal this is the only check there is: no resolver is asked
+/// for one, so a client's connect-time check never sees it. For a name, a
+/// client resolves it again when it connects and must check again there
+/// (WebFetch's own does); the answer may have changed. Check every redirect
+/// hop again: a public page may redirect to a private one.
 ///
 /// # Errors
 ///
@@ -213,7 +221,7 @@ pub(crate) fn host_port(url: &Url) -> String {
 /// # #[tokio::main]
 /// # async fn main() {
 /// let public = Url::parse("https://93.184.215.14/page").unwrap();
-/// assert_eq!(assert_public_url(&public, &Rebinding).await.unwrap().len(), 1);
+/// assert!(assert_public_url(&public, &Rebinding).await.is_ok());
 /// let sneaky = Url::parse("https://example.test/").unwrap();
 /// let refused = assert_public_url(&sneaky, &Rebinding).await.unwrap_err();
 /// assert!(matches!(refused, UrlRefused::Blocked { .. }));
@@ -221,10 +229,7 @@ pub(crate) fn host_port(url: &Url) -> String {
 /// assert!(assert_public_url(&file, &Rebinding).await.is_err());
 /// # }
 /// ```
-pub async fn assert_public_url(
-    url: &Url,
-    resolve: &dyn Resolve,
-) -> Result<Vec<IpAddr>, UrlRefused> {
+pub async fn assert_public_url(url: &Url, resolve: &dyn Resolve) -> Result<(), UrlRefused> {
     if !matches!(url.scheme(), "http" | "https") {
         let scheme = url.scheme().to_string();
         return Err(UrlRefused::NotHttp { scheme });
@@ -232,17 +237,17 @@ pub async fn assert_public_url(
     if !url.username().is_empty() || url.password().is_some() {
         return Err(UrlRefused::Credentials);
     }
-    let addresses = match url.host() {
-        Some(Host::Ipv4(ip)) => vec![IpAddr::V4(ip)],
-        Some(Host::Ipv6(ip)) => vec![IpAddr::V6(ip)],
-        Some(Host::Domain(name)) => return resolve_public(name, resolve).await,
+    let literal = match url.host() {
+        Some(Host::Ipv4(ip)) => IpAddr::V4(ip),
+        Some(Host::Ipv6(ip)) => IpAddr::V6(ip),
+        Some(Host::Domain(name)) => return resolve_public(name, resolve).await.map(drop),
         None => {
             return Err(UrlRefused::NoHost {
                 url: url.to_string(),
             });
         }
     };
-    all_public(&host_port(url), addresses)
+    all_public(&host_port(url), vec![literal]).map(drop)
 }
 
 /// Every address `name` resolves to, all of them public: what WebFetch's

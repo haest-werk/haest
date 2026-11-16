@@ -9,9 +9,12 @@ use std::{
 };
 
 use async_trait::async_trait;
-use haest_http::{BoxError, HttpClient, Request};
+use haest_http::{
+    BoxError, HttpClient, Request, ReqwestClient,
+    reqwest::dns::{self, Name, Resolving},
+};
 
-use super::{client, guarded_client};
+use super::{client_over, guarded_client, socket_addrs};
 use crate::net_guard::Resolve;
 
 /// Every name resolves to the IPv4 loopback.
@@ -22,6 +25,21 @@ impl Resolve for Loopback {
     async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, BoxError> {
         Ok(vec![Ipv4Addr::LOCALHOST.into()])
     }
+}
+
+/// reqwest's resolver over [`Loopback`] with no guard: what lets these tests
+/// reach their local server through WebFetch's client settings.
+struct Unguarded;
+
+impl dns::Resolve for Unguarded {
+    fn resolve(&self, name: Name) -> Resolving {
+        Box::pin(async move { Ok(socket_addrs(Loopback.resolve(name.as_str()).await?)) })
+    }
+}
+
+/// WebFetch's client settings, reaching the local server.
+fn local_client() -> ReqwestClient {
+    client_over(Arc::new(Unguarded))
 }
 
 /// A server answering every request with `answer`: its port and the request
@@ -50,10 +68,7 @@ async fn it_connects_where_the_resolver_says_never_through_the_system_dns() {
     let (port, seen) = server(OK);
     // No DNS answers for .invalid: only the resolver's address reaches the server.
     let url = format!("http://pinned.invalid:{port}/");
-    let res = client(Arc::new(Loopback), false)
-        .send(Request::get(url))
-        .await
-        .unwrap();
+    let res = local_client().send(Request::get(url)).await.unwrap();
     assert_eq!(res.status, 200);
     assert!(seen.lock().unwrap()[0].contains("host: pinned.invalid:"));
 }
@@ -75,10 +90,7 @@ async fn a_redirect_comes_back_as_the_answer_never_followed() {
         b"HTTP/1.1 302 Found\r\nlocation: http://127.0.0.1:1/next\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
     );
     let url = format!("http://site.test:{port}/go");
-    let res = client(Arc::new(Loopback), false)
-        .send(Request::get(url))
-        .await
-        .unwrap();
+    let res = local_client().send(Request::get(url)).await.unwrap();
     assert_eq!(res.status, 302);
     assert_eq!(res.header("location"), Some("http://127.0.0.1:1/next"));
     assert_eq!(seen.lock().unwrap().len(), 1);

@@ -124,13 +124,10 @@ async fn a_host_is_refused_when_any_address_it_resolves_to_is_private() {
     };
     assert_eq!(ip, "10.0.0.5".parse::<IpAddr>().unwrap());
     let fine = Fixed::new(&[PUBLIC]);
-    let ok = assert_public_url(&url("https://fine.test/"), &fine)
-        .await
-        .unwrap();
-    assert_eq!(
-        ok,
-        [PUBLIC.parse::<IpAddr>().unwrap()],
-        "the checked addresses"
+    assert!(
+        assert_public_url(&url("https://fine.test/"), &fine)
+            .await
+            .is_ok()
     );
 }
 

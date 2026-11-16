@@ -9,8 +9,9 @@
 //! Read in pieces.
 //!
 //! PLUG POINT: [`WebFetchNet`] -- the resolver and the HTTP client, real DNS and
-//! a guarded reqwest client unless a host (or a test) injects its own. Start
-//! from [`WebFetchTool`].
+//! a guarded reqwest client unless a host (or a test) injects its own
+//! ([`WebFetchNet::unguarded`] says what that gives up). Start from
+//! [`WebFetchTool`].
 
 use std::{sync::Arc, time::Duration};
 
@@ -68,29 +69,49 @@ pub fn markdown_of(html: &str) -> String {
 
 /// WebFetch's two network seams: how names resolve and how a GET is made.
 ///
+/// Before every request and every redirect hop the net guard checks the URL
+/// ([`assert_public_url`](crate::net_guard::assert_public_url)): an IP-literal
+/// URL by its address, a name by what the resolver answers.
 /// [`new`](Self::new) (and `Default`, over the system resolver,
-/// [`SystemResolve`]) pairs the resolver with WebFetch's own reqwest client,
-/// which follows no redirect and, when it connects, resolves through the same
-/// resolver and refuses any blocked address. A host with its own DNS starts
-/// from `new(its_resolver)`; a host with its own HTTP stack, or a test with a
-/// fake web, replaces `http`. That client is sent one GET per hop and must not
-/// follow redirects; it should connect only to public addresses.
+/// [`SystemResolve`]) adds WebFetch's own client, which follows no redirect
+/// and checks a name again when it connects, so a name that answers public
+/// to the guard and private to the client (DNS rebinding) is never reached.
+/// A host with its own DNS starts from `new(its_resolver)`.
+/// [`unguarded`](Self::unguarded) takes a client of the host's own (its HTTP
+/// stack, a test's fake web) and gives that second check up.
 #[derive(Clone)]
 pub struct WebFetchNet {
     /// Name -> addresses, for the net guard.
-    pub resolve: Arc<dyn Resolve>,
+    resolve: Arc<dyn Resolve>,
     /// One GET per hop, redirects handed back, never followed.
-    pub http: Arc<dyn HttpClient>,
+    http: Arc<dyn HttpClient>,
 }
 
 impl WebFetchNet {
-    /// The guard over `resolve`, and WebFetch's own client resolving through
-    /// it. Nothing is built until the first fetch.
+    /// The guard over `resolve`, and WebFetch's own client, which resolves
+    /// through it when it connects and refuses a name with any blocked
+    /// address. Nothing is built until the first fetch.
     pub fn new(resolve: Arc<dyn Resolve>) -> Self {
         Self {
             http: Arc::new(http::guarded_client(resolve.clone())),
             resolve,
         }
+    }
+
+    /// WebFetch through a client of the host's own, without the check when it
+    /// connects: a name that resolves to a public address for the guard and
+    /// to a private one when `http` connects (DNS rebinding) is reached.
+    ///
+    /// The guard still checks every URL and every redirect hop through
+    /// `resolve` before `http` is sent it. `http` is sent one GET per hop and
+    /// must hand a redirect back instead of following it: a client that
+    /// follows one itself fetches a public page's redirect to
+    /// `169.254.169.254` unchecked. To keep the rebinding defence, it resolves
+    /// names through `resolve` and refuses a blocked address when it connects,
+    /// as [`new`](Self::new)'s does. A fake web in a test, which answers from
+    /// memory, is the usual reason to use this.
+    pub fn unguarded(resolve: Arc<dyn Resolve>, http: Arc<dyn HttpClient>) -> Self {
+        Self { resolve, http }
     }
 }
 
@@ -183,7 +204,7 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
 /// # #[tokio::main]
 /// # async fn main() {
 /// let web = Arc::new(FakeWeb);
-/// let tool = WebFetchTool::new(WebFetchNet { resolve: web.clone(), http: web });
+/// let tool = WebFetchTool::new(WebFetchNet::unguarded(web.clone(), web));
 /// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
 /// let input = json!({"url": "https://example.test/"});
 /// let out = tool.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
