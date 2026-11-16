@@ -17,7 +17,10 @@ use super::{
     request::{ImageReply, call_image_api},
     settings::{check_image_settings, describe_model, max_references},
 };
-use crate::{canonical::pick, slug::slug};
+use crate::{
+    canonical::{pick, spelled},
+    slug::slug,
+};
 
 pub struct ImageTool {
     opts: ImageToolOptions,
@@ -71,7 +74,7 @@ async fn references(paths: Option<&Value>, ctx: &ToolContext) -> Result<Vec<Medi
     let fs = ctx.workspace.fs();
     let mut out = Vec::new();
     for p in paths {
-        let path = ctx.resolve(&p.as_str().map_or_else(|| p.to_string(), String::from));
+        let path = ctx.resolve(&spelled(p));
         let shown = path.display();
         if !fs.exists(&path).await {
             return Err(ToolError::Input(format!(

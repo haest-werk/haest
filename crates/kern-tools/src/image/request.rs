@@ -12,6 +12,8 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use crate::canonical::spelled;
+
 /// A response: its status and whole body.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HttpReply {
@@ -133,8 +135,7 @@ fn refusal(model: &str, status: u16, answer: &Value) -> String {
     let why = error["message"].as_str().unwrap_or("no reason given");
     let raw = match &error["metadata"]["raw"] {
         Value::Null => String::new(),
-        Value::String(s) => s.clone(),
-        other => other.to_string(),
+        other => spelled(other),
     };
     let provider = if !raw.is_empty() && raw != why {
         let raw: String = raw.chars().take(600).collect();

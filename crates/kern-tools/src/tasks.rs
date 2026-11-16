@@ -11,6 +11,8 @@ use kern_core::{
 };
 use serde_json::{Value, json};
 
+use crate::canonical::spelled;
+
 const STATUSES: [&str; 4] = ["pending", "in_progress", "completed", "deleted"];
 
 fn line(t: &KernTask) -> String {
@@ -26,13 +28,7 @@ fn line(t: &KernTask) -> String {
 fn ids(input: &JsonMap, key: &str) -> Result<Vec<String>, ToolError> {
     match input.get(key) {
         None | Some(Value::Null) => Ok(Vec::new()),
-        Some(Value::Array(a)) => Ok(a
-            .iter()
-            .map(|v| match v {
-                Value::String(s) => s.clone(),
-                other => other.to_string(),
-            })
-            .collect()),
+        Some(Value::Array(a)) => Ok(a.iter().map(spelled).collect()),
         Some(_) => Err(ToolError::Input(format!(
             "\"{key}\" must be an array of task ids"
         ))),

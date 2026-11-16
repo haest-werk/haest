@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
+use crate::canonical::spelled;
+
 /// What a model publishes for one setting.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct SettingSpec {
@@ -59,14 +61,6 @@ pub struct ImageSettingsError {
 
 fn refuse<T>(code: ImageSettingsCode, message: String) -> Result<T, ImageSettingsError> {
     Err(ImageSettingsError { code, message })
-}
-
-/// A value as a reader (and an enum) spells it: `16:9`, `80`, `true`.
-fn spelled(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        other => other.to_string(),
-    }
 }
 
 fn values_of(spec: &SettingSpec) -> Vec<String> {
@@ -123,18 +117,12 @@ fn whole(v: &Value) -> Option<f64> {
     v.as_f64().filter(|f| f.is_finite() && f.fract() == 0.0)
 }
 
-fn json(v: &Value) -> String {
-    v.to_string()
-}
-
 /// A `{type: 'boolean'}` (or unknown) setting's value, as the API expects it.
+/// A refusal shows the value as JSON (`Value`'s Display).
 fn free_value(model: &str, name: &str, value: &Value) -> Result<Value, ImageSettingsError> {
     use ImageSettingsCode::BadValue;
     if name == "seed" && !whole(value).is_some_and(|n| n >= 0.0) {
-        let why = format!(
-            "{model}'s seed is a whole number 0 or above (not {}).",
-            json(value)
-        );
+        let why = format!("{model}'s seed is a whole number 0 or above (not {value}).");
         return refuse(BadValue, why);
     }
     let is_size = |s: &str| {
@@ -145,10 +133,8 @@ fn free_value(model: &str, name: &str, value: &Value) -> Result<Value, ImageSett
         })
     };
     if name == "size" && !value.as_str().is_some_and(is_size) {
-        let why = format!(
-            "{model}'s size is WIDTHxHEIGHT in pixels, e.g. \"1024x1536\" (not {}).",
-            json(value)
-        );
+        let why =
+            format!("{model}'s size is WIDTHxHEIGHT in pixels, e.g. \"1024x1536\" (not {value}).");
         return refuse(BadValue, why);
     }
     Ok(value.clone())
@@ -170,9 +156,8 @@ fn check_one(
             let v = spelled(value);
             if !allowed.contains(&v) {
                 let why = format!(
-                    "{model}'s {name} is one of: {} (not {}).",
-                    allowed.join(", "),
-                    json(value)
+                    "{model}'s {name} is one of: {} (not {value}).",
+                    allowed.join(", ")
                 );
                 return refuse(BadValue, why);
             }
@@ -182,8 +167,7 @@ fn check_one(
             let (min, max) = (spec.min.unwrap_or(-SAFE), spec.max.unwrap_or(SAFE));
             if !whole(value).is_some_and(|n| n >= min && n <= max) {
                 let why = format!(
-                    "{model}'s {name} is a whole number from {min} to {max} (not {}).",
-                    json(value)
+                    "{model}'s {name} is a whole number from {min} to {max} (not {value})."
                 );
                 return refuse(BadValue, why);
             }
