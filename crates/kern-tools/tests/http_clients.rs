@@ -1,6 +1,7 @@
 //! Where kern-tools' own HTTP clients connect: only where they were told, never
 //! through a proxy the process environment names (PLAN D15: the library reads
-//! nothing it was not handed).
+//! nothing it was not handed), and WebFetch only to the addresses the net guard
+//! approved (the DNS-rebinding defence).
 //!
 //! Its own test binary: every test here runs with HTTP_PROXY, HTTPS_PROXY and
 //! ALL_PROXY pointing at a listener that must see nothing, which no other
@@ -8,13 +9,17 @@
 
 use std::{
     io::{Read, Write},
-    net::TcpListener,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener},
     sync::{Arc, Mutex, OnceLock},
 };
 
-use kern_tools::image::{ImageHttp, ReqwestImageHttp};
+use kern_tools::{
+    image::{ImageHttp, ReqwestImageHttp},
+    web_fetch::{HttpGet, ReqwestGet},
+};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
+use url::Url;
 
 /// The request heads one listener was sent, lowercased.
 type Seen = Arc<Mutex<Vec<String>>>;
@@ -23,6 +28,11 @@ type Seen = Arc<Mutex<Vec<String>>>;
 fn listener() -> (String, Seen) {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", l.local_addr().unwrap());
+    (url, serve(l))
+}
+
+/// Answer every request `l` accepts `200 {}`; what it was sent.
+fn serve(l: TcpListener) -> Seen {
     let seen = Seen::default();
     let keep = seen.clone();
     std::thread::spawn(move || {
@@ -33,7 +43,7 @@ fn listener() -> (String, Seen) {
             );
         }
     });
-    (url, seen)
+    seen
 }
 
 /// The head of one request (its body read and dropped, so closing never resets).
@@ -104,4 +114,55 @@ async fn the_image_api_and_its_key_go_straight_to_the_api_never_through_an_env_p
     let direct = direct.lock().unwrap();
     assert_eq!(direct.len(), 2);
     assert!(direct[0].contains("authorization: bearer image-api-key"));
+}
+
+/// One WebFetch GET of `url`, connecting to `pinned`: its status, or why it failed.
+async fn fetch(url: &str, pinned: &[IpAddr]) -> Result<u16, String> {
+    let url = Url::parse(url).unwrap();
+    ReqwestGet
+        .get(&url, pinned, "kern-test")
+        .await
+        .map(|res| res.status)
+}
+
+#[tokio::test]
+async fn webfetch_connects_to_the_pinned_address_and_never_resolves_the_name_again() {
+    let proxy = proxy_in_env();
+    let (base, seen) = listener();
+    // A name no DNS answers for: only the pinned address can reach the listener.
+    let url = base.replace("127.0.0.1", "pinned.invalid");
+    assert_eq!(fetch(&url, &[Ipv4Addr::LOCALHOST.into()]).await, Ok(200));
+    assert!(seen.lock().unwrap()[0].contains("host: pinned.invalid:"));
+    assert!(
+        !asked_for(&proxy, &url),
+        "the env proxy was sent WebFetch's request"
+    );
+}
+
+#[tokio::test]
+async fn webfetch_reaches_only_the_pinned_address_when_dns_names_another() {
+    let proxy = proxy_in_env();
+    // localhost resolves to both loopbacks; one listener on each, same port:
+    // a client that looked the name up again could land on either.
+    let v4 = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = v4.local_addr().unwrap().port();
+    let v6 = TcpListener::bind((Ipv6Addr::LOCALHOST, port))
+        .expect("this test needs the IPv6 loopback, and the port free on it");
+    let (on_v4, on_v6) = (serve(v4), serve(v6));
+    let url = format!("http://localhost:{port}/");
+
+    assert_eq!(fetch(&url, &[Ipv6Addr::LOCALHOST.into()]).await, Ok(200));
+    assert_eq!(
+        (on_v4.lock().unwrap().len(), on_v6.lock().unwrap().len()),
+        (0, 1)
+    );
+    assert_eq!(fetch(&url, &[Ipv4Addr::LOCALHOST.into()]).await, Ok(200));
+    assert_eq!(
+        (on_v4.lock().unwrap().len(), on_v6.lock().unwrap().len()),
+        (1, 1)
+    );
+    assert!(
+        !asked_for(&proxy, &url),
+        "the env proxy was sent WebFetch's request"
+    );
 }
