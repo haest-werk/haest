@@ -2,7 +2,7 @@
 //! a turn that ended on its own, with text, no tool call, and no cancel.
 
 use super::*;
-use crate::provider::{ProviderStream, ResolvedModel};
+use crate::provider::{Provider, ProviderRequest, ProviderStream, ResolvedModel};
 
 /// Cancels the run's token while the reply streams (Esc), then answers with what it had.
 struct EscMidStream(Arc<ScriptedProvider>);
