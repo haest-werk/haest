@@ -1,7 +1,7 @@
 //! The async side of a mod's thread: the requests it takes, the handle that
 //! sends them, and what the mod has registered so far.
 
-use std::{collections::HashSet, sync::mpsc, time::Duration};
+use std::{collections::HashSet, sync::mpsc};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -26,22 +26,6 @@ pub(crate) enum ToJs {
         result: Result<&'static str, String>,
     },
     Stop,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Limits {
-    /// The longest a mod's code may run without pausing (awaiting does not count).
-    pub slice: Duration,
-    pub memory_bytes: usize,
-}
-
-impl Default for Limits {
-    fn default() -> Self {
-        Self {
-            slice: Duration::from_secs(10),
-            memory_bytes: 128 << 20,
-        }
-    }
 }
 
 /// A tool a file mod registered, as haest advertises it.

@@ -32,7 +32,7 @@
 //! | Piece | What |
 //! |---|---|
 //! | [`Mod`] | a native mod: implement only the events it hooks |
-//! | [`JsMod`] | a `.js` / `.ts` mod file, and the `haest` API its default export gets |
+//! | [`JsMod`] | a `.js` / `.ts` mod file, and the `haest` API its default export gets; [`ModLimits`] bounds it, [`ModLoadError`] says why one did not load |
 //! | [`load_mods`] | the built-ins plus one conversation's mod files, as [`Mods`] |
 //! | [`Mods`] | every loaded mod, in order; [`Mods::add`] puts a host's own native mod in |
 //! | [`ModTools`], [`ModSystemPrompt`] | the wrappers a host puts around its tool source and its system prompt |
@@ -292,7 +292,7 @@ pub use api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModError, ModToolC
 pub use approval::{ApprovalMod, AutoJudge, BashVerdict, irreversible_reason};
 pub use decorate::{ModSystemPrompt, ModTools};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, Prompter};
-pub use js::JsMod;
+pub use js::{JsMod, ModLimits, ModLoadError};
 pub use loader::{ModConfig, load_mods, mod_files};
 pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PlanListener, PlanMod};
 pub use registry::{CommandOutcome, Mods};

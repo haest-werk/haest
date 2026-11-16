@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use haest_core::{fs::MemFs, workspace::WorkspaceMode};
 use serde_json::json;
@@ -11,6 +14,7 @@ const HOME_MODS: &str = "/home/cfg/mods";
 fn cfg(workspace: WorkspaceMode) -> ModConfig {
     let mut cfg = ModConfig::new(CWD, workspace, "/home/cfg");
     cfg.user_mods = true;
+    cfg.limits = test_limits();
     cfg
 }
 
@@ -34,7 +38,7 @@ async fn a_mod_in_the_user_mods_dir_loads_and_a_broken_one_is_reported_and_skipp
         (format!("{HOME_MODS}/b-broken.ts"), "export default 42"),
     ]);
     let ui = TestUi::new();
-    let mods = load_mods_with(cfg(WorkspaceMode::Sandbox), &fs, ui.clone(), test_limits()).await;
+    let mods = load_mods(cfg(WorkspaceMode::Sandbox), &fs, ui.clone()).await;
     let tools = wrapped(mods, Vec::new());
     let hello = find(&tools, "Hello");
     let out = hello.execute(input(json!({})), &ctx()).await.unwrap();
@@ -42,6 +46,22 @@ async fn a_mod_in_the_user_mods_dir_loads_and_a_broken_one_is_reported_and_skipp
     let errors = ui.errors();
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("b-broken.ts"));
+}
+
+#[tokio::test]
+async fn the_hosts_limits_bound_every_mod_file_it_loads() {
+    let fs = MemFs::with_files([(
+        format!("{HOME_MODS}/hangs.js"),
+        "export default () => new Promise(() => {})",
+    )]);
+    let ui = TestUi::new();
+    let mut quick = cfg(WorkspaceMode::Sandbox);
+    quick.limits.load_timeout = Duration::from_millis(200);
+    let started = Instant::now();
+    let mods = load_mods(quick, &fs, ui.clone()).await;
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(mods.names(), ["approval", "plan"]);
+    assert!(ui.errors()[0].contains("hangs.js"), "{:?}", ui.errors());
 }
 
 #[tokio::test]
@@ -63,28 +83,22 @@ async fn project_mods_load_only_when_the_host_turns_them_on() {
     let source =
         "export default function (haest) { haest.on('system.prompt', () => 'from the repo') }";
     let fs = MemFs::with_files([(format!("{CWD}/.haest/mods/repo.js"), source)]);
-    let off = load_mods_with(
-        cfg(WorkspaceMode::Sandbox),
-        &fs,
-        TestUi::new(),
-        test_limits(),
-    )
-    .await;
+    let off = load_mods(cfg(WorkspaceMode::Sandbox), &fs, TestUi::new()).await;
     assert_eq!(off.system_append().await, "");
     let mut on_cfg = cfg(WorkspaceMode::Sandbox);
     on_cfg.project_mods = true;
-    let on = load_mods_with(on_cfg, &fs, TestUi::new(), test_limits()).await;
+    let on = load_mods(on_cfg, &fs, TestUi::new()).await;
     assert_eq!(on.system_append().await, "from the repo");
 }
 
 #[tokio::test]
 async fn the_built_ins_load_first_and_approvals_can_be_turned_off() {
     let fs = MemFs::new();
-    let all = load_mods_with(cfg(WorkspaceMode::Real), &fs, TestUi::new(), test_limits()).await;
+    let all = load_mods(cfg(WorkspaceMode::Real), &fs, TestUi::new()).await;
     assert_eq!(all.names(), ["approval", "plan"]);
     let mut quiet = cfg(WorkspaceMode::Real);
     quiet.approvals = false;
-    let no_approvals = load_mods_with(quiet, &fs, TestUi::new(), test_limits()).await;
+    let no_approvals = load_mods(quiet, &fs, TestUi::new()).await;
     assert_eq!(no_approvals.names(), ["plan"]);
     assert!(no_approvals.has_command(crate::plan::PLAN_COMMAND));
 }

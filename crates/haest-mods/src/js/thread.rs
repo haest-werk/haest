@@ -15,7 +15,10 @@ use rquickjs::{Context, Ctx, Function, Module, Object, Runtime, Value};
 use tokio::{runtime::Handle, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 
-use super::channel::{JsMeta, Limits, Reply, ToJs};
+use super::{
+    channel::{JsMeta, Reply, ToJs},
+    load::{ModLimits, ModLoadError},
+};
 use crate::api::ModUi;
 
 const BOOTSTRAP: &str = include_str!("bootstrap.js");
@@ -26,12 +29,12 @@ pub(crate) struct Setup {
     pub source: String,
     pub ui: Arc<dyn ModUi>,
     pub meta: Arc<Mutex<JsMeta>>,
-    pub limits: Limits,
+    pub limits: ModLimits,
     pub runtime: Handle,
 }
 
 /// Start the thread: Ok once the module ran and its default export is a function.
-pub(crate) async fn start(setup: Setup) -> Result<mpsc::Sender<ToJs>, String> {
+pub(crate) async fn start(setup: Setup) -> Result<mpsc::Sender<ToJs>, ModLoadError> {
     let (tx, rx) = mpsc::channel();
     let (ready_tx, ready_rx) = oneshot::channel();
     let own = tx.clone();
@@ -39,11 +42,11 @@ pub(crate) async fn start(setup: Setup) -> Result<mpsc::Sender<ToJs>, String> {
         .name("haest-mod".into())
         .stack_size(STACK_BYTES)
         .spawn(move || serve(setup, rx, own, ready_tx))
-        .map_err(|e| format!("its thread could not start: {e}"))?;
+        .map_err(ModLoadError::Thread)?;
     match ready_rx.await {
         Ok(Ok(())) => Ok(tx),
         Ok(Err(e)) => Err(e),
-        Err(_) => Err("its thread stopped while loading".into()),
+        Err(_) => Err(ModLoadError::Stopped),
     }
 }
 
@@ -51,7 +54,7 @@ fn serve(
     setup: Setup,
     rx: mpsc::Receiver<ToJs>,
     own: mpsc::Sender<ToJs>,
-    ready: oneshot::Sender<Result<(), String>>,
+    ready: oneshot::Sender<Result<(), ModLoadError>>,
 ) {
     let mut js = match Js::init(setup, own) {
         Ok(js) => js,
@@ -120,15 +123,14 @@ fn haest<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
 
 /// A `.ts` mod as JavaScript, through haest's one type stripper (haest-ts), so its
 /// error lines are the file's own.
-fn runnable(path: &Path, source: String) -> Result<String, String> {
+fn runnable(path: &Path, source: String) -> Result<String, ModLoadError> {
     if path.extension().is_none_or(|e| e != "ts") {
         return Ok(source);
     }
     let name = path
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-    haest_ts::strip_types(&source, &name)
-        .map_err(|why| format!("it is not valid TypeScript: {why}"))
+    haest_ts::strip_types(&source, &name).map_err(ModLoadError::TypeScript)
 }
 
 pub(super) struct Js {
@@ -153,9 +155,10 @@ enum Loaded {
 }
 
 impl Js {
-    fn init(setup: Setup, own: mpsc::Sender<ToJs>) -> Result<Js, String> {
+    fn init(setup: Setup, own: mpsc::Sender<ToJs>) -> Result<Js, ModLoadError> {
+        let engine = |e: rquickjs::Error| ModLoadError::Evaluate(e.to_string());
         let code = runnable(&setup.path, setup.source)?;
-        let rt = Runtime::new().map_err(|e| e.to_string())?;
+        let rt = Runtime::new().map_err(engine)?;
         rt.set_memory_limit(setup.limits.memory_bytes);
         let slice = Arc::new(Slice {
             limit: setup.limits.slice,
@@ -163,7 +166,7 @@ impl Js {
         });
         let watch = slice.clone();
         rt.set_interrupt_handler(Some(Box::new(move || watch.over())));
-        let ctx = Context::full(&rt).map_err(|e| e.to_string())?;
+        let ctx = Context::full(&rt).map_err(engine)?;
         let js = Js {
             ctx,
             rt,
@@ -190,11 +193,11 @@ impl Js {
             }
             ctx.globals().set("__haestMod", main)?;
             Ok(Loaded::Ready)
-        })?;
-        match loaded {
+        });
+        match loaded.map_err(ModLoadError::Evaluate)? {
             Loaded::Ready => Ok(js),
-            Loaded::NotAFunction => Err("its default export is not a function".into()),
-            Loaded::NeverFinished => Err("its top-level await never finished".into()),
+            Loaded::NotAFunction => Err(ModLoadError::NotAFunction),
+            Loaded::NeverFinished => Err(ModLoadError::NeverFinished),
         }
     }
 

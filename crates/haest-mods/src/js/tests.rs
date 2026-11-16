@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc, time::Duration};
 
 use haest_core::{tool::ToolError, workspace::WorkspaceMode};
 use serde_json::json;
 
+use super::{JsMod, ModLimits, ModLoadError};
 use crate::{
     api::Decision,
     registry::{CommandOutcome, Mods},
@@ -124,26 +125,54 @@ async fn a_throwing_mod_is_reported_and_the_host_carries_on() {
 
 #[tokio::test]
 async fn a_mod_that_fails_to_load_says_why() {
+    use ModLoadError as E;
+    type Is = fn(&E) -> bool;
     let haest = env(TestUi::new(), WorkspaceMode::Sandbox);
-    for (file, source) in [
+    let cases: [(&str, &str, Is); 6] = [
         (
             "throws.js",
             "export default function () { throw new Error('nope') }",
+            |e| matches!(e, E::Export(_)),
         ),
-        ("syntax.ts", "export default function (haest: { {"),
-        ("value.js", "export default 42"),
+        ("syntax.ts", "export default function (haest: { {", |e| {
+            matches!(e, E::TypeScript(_))
+        }),
+        ("syntax.js", "export default function (", |e| {
+            matches!(e, E::Evaluate(_))
+        }),
+        ("value.js", "export default 42", |e| {
+            matches!(e, E::NotAFunction)
+        }),
         (
             "imports.js",
             "import x from './other.js'\nexport default function () {}",
+            |e| matches!(e, E::Evaluate(_)),
         ),
         (
             "unknown.js",
             "export default function (haest) { haest.on('tool.during', () => {}) }",
+            |e| matches!(e, E::Export(_)),
         ),
-    ] {
-        let err = js(file, source, &haest).await.err();
-        assert!(err.is_some_and(|e| !e.is_empty()), "{file} must not load");
+    ];
+    for (file, source, why) in cases {
+        match js(file, source, &haest).await {
+            Ok(_) => panic!("{file} must not load"),
+            Err(e) => assert!(why(&e) && !e.to_string().is_empty(), "{file}: {e:?}"),
+        }
     }
+}
+
+#[tokio::test]
+async fn a_default_export_that_never_returns_is_stopped_at_the_hosts_load_timeout() {
+    let haest = env(TestUi::new(), WorkspaceMode::Sandbox);
+    let wait = Duration::from_millis(200);
+    let limits = ModLimits {
+        load_timeout: wait,
+        ..test_limits()
+    };
+    let hangs = "export default () => new Promise(() => {})";
+    let loaded = JsMod::load_with(Path::new("hangs.js"), hangs.into(), &haest, limits).await;
+    assert!(matches!(loaded, Err(ModLoadError::Timeout(t)) if t == wait));
 }
 
 #[tokio::test]

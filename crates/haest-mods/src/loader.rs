@@ -20,7 +20,7 @@ use haest_core::{fs::Fs, workspace::WorkspaceMode};
 use crate::{
     api::{ModEnv, ModUi},
     approval::{ApprovalMod, AutoJudge},
-    js::{JsMod, Limits},
+    js::{JsMod, ModLimits},
     plan::{PlanListener, PlanMod},
     registry::Mods,
 };
@@ -51,11 +51,13 @@ pub struct ModConfig {
     pub auto: Option<Arc<dyn AutoJudge>>,
     /// Told whenever plan mode turns on or off.
     pub on_plan_change: Option<PlanListener>,
+    /// The bounds every mod file runs in. [`ModLimits::default`] by default.
+    pub limits: ModLimits,
 }
 
 impl ModConfig {
     /// The defaults for a conversation in `cwd`: approvals on, no mod files,
-    /// no auto mode, no plan listener.
+    /// no auto mode, no plan listener, the default [`ModLimits`].
     pub fn new(
         cwd: impl Into<PathBuf>,
         workspace: WorkspaceMode,
@@ -70,6 +72,7 @@ impl ModConfig {
             approvals: true,
             auto: None,
             on_plan_change: None,
+            limits: ModLimits::default(),
         }
     }
 
@@ -117,7 +120,8 @@ pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 /// 3. The project's, `<cwd>/.haest/mods/*`, with [`ModConfig::project_mods`] only.
 ///
 /// Each directory's files load in name order ([`mod_files`]); each one runs
-/// its default export now ([`JsMod::load`]). A mod that fails to load is
+/// its default export now ([`JsMod::load_with`], within
+/// [`ModConfig::limits`]). A mod that fails to load is
 /// reported through [`ModUi::error`] and skipped; the rest still load, so
 /// this never fails. A host's own native mods go in afterwards with
 /// [`Mods::add`].
@@ -132,15 +136,6 @@ pub async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 /// The [crate docs](crate#putting-mods-in-the-loop) load a mod file from a
 /// [`MemFs`](haest_core::MemFs) and put it around an agent.
 pub async fn load_mods(cfg: ModConfig, fs: &dyn Fs, ui: Arc<dyn ModUi>) -> Mods {
-    load_mods_with(cfg, fs, ui, Limits::default()).await
-}
-
-pub(crate) async fn load_mods_with(
-    cfg: ModConfig,
-    fs: &dyn Fs,
-    ui: Arc<dyn ModUi>,
-    limits: Limits,
-) -> Mods {
     let env = ModEnv::new(cfg.cwd.clone(), cfg.workspace, ui.clone());
     let mut mods = Mods::new(env.clone());
     if cfg.approvals {
@@ -150,19 +145,32 @@ pub(crate) async fn load_mods_with(
     for dir in cfg.mod_dirs() {
         for path in mod_files(fs, &dir).await {
             let loaded = match fs.read_to_string(&path).await {
-                Ok(source) => JsMod::load_with(&path, source, &env, limits).await,
+                Ok(source) => JsMod::load_with(&path, source, &env, cfg.limits)
+                    .await
+                    .map_err(|e| chain(&e)),
                 Err(e) => Err(e.to_string()),
             };
             match loaded {
                 Ok(m) => mods.add(Arc::new(m)),
-                Err(e) => ui.error(&format!(
-                    "Mod {} failed to load and was skipped: {e}",
+                Err(why) => ui.error(&format!(
+                    "Mod {} failed to load and was skipped: {why}",
                     path.display()
                 )),
             }
         }
     }
     mods
+}
+
+/// The error and every cause under it, for the human's one line.
+fn chain(e: &dyn std::error::Error) -> String {
+    let mut line = e.to_string();
+    let mut cause = e.source();
+    while let Some(c) = cause {
+        line = format!("{line}: {c}");
+        cause = c.source();
+    }
+    line
 }
 
 #[cfg(test)]

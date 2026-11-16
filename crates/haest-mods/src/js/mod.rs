@@ -19,17 +19,14 @@
 //! `haest` API alone.
 
 mod channel;
+mod load;
 mod outbox;
 #[cfg(test)]
 mod tests;
 mod thread;
 mod tool;
 
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use haest_core::tool::{Tool, ToolContext, ToolOutput};
@@ -37,13 +34,9 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::api::{Before, Mod, ModEnv, ModError, ModToolCall};
-pub(crate) use channel::Limits;
 use channel::{JsMeta, JsThread};
-use thread::Setup;
+pub use load::{ModLimits, ModLoadError};
 use tool::JsTool;
-
-/// A mod whose default function does not return within this is skipped.
-const LOAD_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// What a handler of a tool event sees as `ctx` (`signal` is added in the runtime).
 fn ctx_json(ctx: &ToolContext) -> Value {
@@ -94,11 +87,13 @@ fn ctx_json(ctx: &ToolContext) -> Value {
 ///
 /// There is no `node:` API, no `import`, no timer, no network and no file
 /// access: a mod reaches the world through the `haest` API alone. Each file
-/// has its own QuickJS runtime on its own thread, so mods share nothing. The
-/// runtime has 128 MiB of memory. Code that runs 10 s without a pause
-/// (awaiting does not count) is stopped: every call into the mod in flight
-/// then fails, and the next call runs as usual. The default export must
-/// return within 30 s. A host cannot change these limits.
+/// has its own QuickJS runtime on its own thread, so mods share nothing.
+/// [`ModLimits`] bounds it: by default the runtime has 128 MiB of memory,
+/// code that runs 10 s without a pause (awaiting does not count) is stopped
+/// (every call into the mod in flight then fails, and the next call runs as
+/// usual), and the default export must return within 30 s. A host sets other
+/// limits with [`JsMod::load_with`] or
+/// [`ModConfig::limits`](crate::ModConfig::limits).
 ///
 /// The thread stops when the `JsMod` and every tool it added are dropped.
 pub struct JsMod {
@@ -108,89 +103,6 @@ pub struct JsMod {
 }
 
 impl JsMod {
-    /// Runs one mod file: strips its types (a `.ts` path, through
-    /// `haest-ts`), evaluates `source` as an ES module in a fresh QuickJS
-    /// runtime on its own thread, and calls its default export with the
-    /// `haest` API. `path` names the mod ([`Mod::name`]) and its errors; the
-    /// file is not read, `source` is the code.
-    ///
-    /// What the default export registers (events, tools, commands) is in
-    /// place when this returns.
-    ///
-    /// [`load_mods`](crate::load_mods) calls this for every file in the mod
-    /// directories; a host calls it to load one file of its own, then
-    /// [`Mods::add`](crate::Mods::add)s it.
-    ///
-    /// # Errors
-    ///
-    /// The `Err` says why the mod did not load, for the human: no tokio
-    /// runtime is running, the TypeScript or JavaScript does not parse, the
-    /// module threw, its default export is not a function, its top-level
-    /// `await` never finished, or the default export threw or did not return
-    /// within 30 s.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use std::{path::Path, sync::Arc};
-    /// # use haest_core::workspace::WorkspaceMode;
-    /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
-    /// use haest_mods::{JsMod, Mod, ModEnv};
-    /// # struct Terminal;
-    /// # #[async_trait::async_trait]
-    /// # impl ModUi for Terminal {
-    /// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
-    /// #     fn notice(&self, _: &str) {}
-    /// # }
-    ///
-    /// # #[tokio::main(flavor = "current_thread")]
-    /// # async fn main() {
-    /// let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Arc::new(Terminal));
-    /// let source = "export default (haest: any) => haest.on('prompt.submit', (t: string) => t.trim())";
-    /// let m = JsMod::load(Path::new("/mods/trim.ts"), source.into(), &env).await.unwrap();
-    /// assert_eq!(m.prompt_submit("  hello  ", &env).await.unwrap().as_deref(), Some("hello"));
-    ///
-    /// let broken = JsMod::load(Path::new("/mods/broken.js"), "export default 42".into(), &env).await;
-    /// assert!(broken.is_err());
-    /// # }
-    /// ```
-    pub async fn load(path: &Path, source: String, haest: &ModEnv) -> Result<Self, String> {
-        Self::load_with(path, source, haest, Limits::default()).await
-    }
-
-    pub(crate) async fn load_with(
-        path: &Path,
-        source: String,
-        haest: &ModEnv,
-        limits: Limits,
-    ) -> Result<Self, String> {
-        let runtime = tokio::runtime::Handle::try_current()
-            .map_err(|_| "file mods load inside a tokio runtime".to_string())?;
-        let meta = Arc::new(Mutex::new(JsMeta::default()));
-        let setup = Setup {
-            path: path.to_path_buf(),
-            source,
-            ui: haest.ui.clone(),
-            meta: meta.clone(),
-            limits,
-            runtime,
-        };
-        let thread = Arc::new(JsThread::new(thread::start(setup).await?));
-        let env = json!({ "env": { "cwd": haest.cwd, "workspace": haest.workspace.as_str() } });
-        match tokio::time::timeout(LOAD_TIMEOUT, thread.call("load", env, None)).await {
-            Err(_) => Err(format!(
-                "its default export did not return within {}s",
-                LOAD_TIMEOUT.as_secs()
-            )),
-            Ok(Err(e)) => Err(ModError::from(e).0),
-            Ok(Ok(_)) => Ok(Self {
-                name: path.display().to_string(),
-                thread,
-                meta,
-            }),
-        }
-    }
-
     fn hooks(&self, event: &str) -> bool {
         self.meta.lock().unwrap().events.contains(event)
     }
