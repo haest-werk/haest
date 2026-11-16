@@ -53,6 +53,56 @@ pub enum Command {
     },
     /// Show every setting: its value and where it came from.
     Settings,
+    /// Watch or drive a haest running here with its control socket on (the control_socket setting).
+    #[command(subcommand)]
+    Ctl(Ctl),
+}
+
+/// `haest ctl`: another haest on this machine, by its control socket. An id
+/// may be shortened to a prefix only it has.
+#[derive(Debug, Subcommand)]
+pub enum Ctl {
+    /// List the haests running here with a control socket, oldest first.
+    List {
+        /// One JSON array.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show one conversation now: its model, state, messages and cost.
+    Inspect {
+        /// Its id, as `haest ctl list` shows it.
+        id: String,
+        /// The snapshot as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show its stream: what it still holds, then with --follow every new frame.
+    Events {
+        /// Its id, as `haest ctl list` shows it.
+        id: String,
+        /// Only frames after this seq.
+        #[arg(long, default_value_t = 0)]
+        after: u64,
+        /// Keep showing new frames until the conversation ends (or Ctrl+C).
+        #[arg(short, long)]
+        follow: bool,
+        /// One JSON line per frame.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Send it input, as another program's (a command socket only); waits for the turn it joins to end.
+    Send {
+        /// Its id, as `haest ctl list` shows it.
+        id: String,
+        /// The text.
+        #[arg(required = true)]
+        text: Vec<String>,
+    },
+    /// Stop its running turn (a command socket only).
+    Interrupt {
+        /// Its id, as `haest ctl list` shows it.
+        id: String,
+    },
 }
 
 impl Args {

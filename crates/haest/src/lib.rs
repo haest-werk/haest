@@ -194,6 +194,7 @@
 //! | `session` | [`session`]: a conversation another program watches and drives while it runs (input mid-turn, catch-up, approvals over it); with `runtime`, the whole conversation is one | no |
 //! | `transport` | [`transport`]: the session served to another program, one connection's rules over any line source and sink | no |
 //! | `transport-stdio` | `transport::Stdio`: a parent process drives the conversation over this one's stdin and stdout | no |
+//! | `transport-unix` | `transport::UnixSocket`: programs on this machine watch (or drive) the conversation over a Unix socket; `transport::running_sessions` and `transport::connect_session` find and reach one | no |
 //! | `testing` | [`core::testing`]: a scripted model and other fakes for tests | no |
 //!
 //! ```toml

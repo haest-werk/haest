@@ -34,6 +34,21 @@ haest_core::word_enum! {
     }
 }
 
+haest_core::word_enum! {
+    /// What a control socket lets a program on this machine do: the
+    /// `control_socket` setting. Off, it is not opened at all.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub enum ControlSocket ("control_socket") {
+        /// No socket.
+        #[default]
+        Off = "off",
+        /// Read the conversation: its stream, a snapshot, the history.
+        Watch = "watch",
+        /// Read it and drive it: turns, interrupts, changes, approval answers.
+        Command = "command",
+    }
+}
+
 /// The variables `env_passthrough = core` passes on, when haest has them:
 /// `PATH`, the shell, the temp dirs, `HOME`, the locale and the user. Codex's list.
 pub const CORE_VARS: &[&str] = &[
@@ -71,13 +86,20 @@ pub struct Config {
     /// Be driven by a parent process over stdin and stdout, with no
     /// terminal (haest-transport's `Stdio`). The environment and flags only.
     pub stdio: bool,
+    /// The control socket another program on this machine watches (or
+    /// drives) the conversation through. Default off.
+    pub control_socket: ControlSocket,
+    /// Where control sockets and their discovery files go; None =
+    /// `<data_dir>/control` ([`Config::control_dir`]).
+    pub control_dir: Option<PathBuf>,
 }
 
 impl Config {
     /// Bare haest working in `cwd` with `home` as the home dir
     /// ([`Settings::bare`]), and the loader's own settings at their defaults:
     /// no profile, no trusted dirs, `env_passthrough = core`, no `env`, `mcp`
-    /// off, no routing, a ring of 1000 frames, not driven over stdio.
+    /// off, no routing, a ring of 1000 frames, not driven over stdio, no
+    /// control socket.
     pub fn bare(cwd: impl Into<PathBuf>, home: impl Into<PathBuf>) -> Self {
         Settings::bare(cwd, home).into()
     }
@@ -126,6 +148,20 @@ impl Config {
     pub fn get(&self, key: &str) -> Option<String> {
         field(key).and_then(|(get, _)| get(self))
     }
+
+    /// Where control sockets go: `control_dir`, else `<data_dir>/control`.
+    ///
+    /// ```
+    /// use haest_config::Config;
+    ///
+    /// let c = Config::bare("/w", "/home/me");
+    /// assert_eq!(c.control_dir(), std::path::Path::new("/home/me/.local/share/haest/control"));
+    /// ```
+    pub fn control_dir(&self) -> PathBuf {
+        self.control_dir
+            .clone()
+            .unwrap_or_else(|| self.settings.data_dir.join("control"))
+    }
 }
 
 /// These settings, and the loader's own at their defaults (as [`Config::bare`]).
@@ -141,6 +177,8 @@ impl From<Settings> for Config {
             provider_routing: None,
             event_ring: 1000,
             stdio: false,
+            control_socket: ControlSocket::Off,
+            control_dir: None,
         }
     }
 }
@@ -254,6 +292,8 @@ fields! {
     "subagent_budgets" => settings.subagents.budgets,
     "event_ring" => event_ring,
     "stdio" => stdio,
+    "control_socket" => control_socket,
+    "control_dir" => control_dir,
     "data_dir" => settings.data_dir,
     "config_dir" => settings.config_dir,
     "debug" => settings.debug;

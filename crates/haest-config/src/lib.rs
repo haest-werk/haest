@@ -150,7 +150,7 @@ use haest_mcp::McpServerConfig;
 use haest_providers::{CustomProviders, RoutingScopes};
 
 pub use error::{ConfigError, SetError};
-pub use fields::{CORE_VARS, Config, EnvPassthrough};
+pub use fields::{CORE_VARS, Config, ControlSocket, EnvPassthrough};
 pub use loader::Loader;
 pub use registry::{DEFS, Def, Kind, Scope};
 pub use source::{ProjectFile, Resolved, Source};

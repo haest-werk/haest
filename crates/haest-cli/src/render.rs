@@ -44,6 +44,13 @@ pub struct Renderer<O: Write, E: Write> {
     agents: AgentLog,
     /// The last turn's usage, for the cost line once the turn is over.
     usage: Option<Usage>,
+    /// Inputs waiting for a turn, as the last status said.
+    queued: usize,
+    /// The answer's text was written as it streamed (its pieces seen).
+    streamed: bool,
+    /// Write each input that enters the conversation (a watcher's view; at
+    /// the terminal the human typed it).
+    inputs: bool,
 }
 
 const DIM: &str = "\x1b[2m";
@@ -71,7 +78,17 @@ impl<O: Write, E: Write> Renderer<O, E> {
             framer: Framer::new(uuid::Uuid::new_v4().to_string()),
             agents: AgentLog::default(),
             usage: None,
+            queued: 0,
+            streamed: false,
+            inputs: false,
         }
+    }
+
+    /// Also write each input that enters the conversation: `haest ctl
+    /// events` watches a conversation someone else drives.
+    pub fn showing_input(mut self) -> Self {
+        self.inputs = true;
+        self
     }
 
     /// One frame of the session's stream: in json mode its line as it is;
@@ -106,10 +123,37 @@ impl<O: Write, E: Write> Renderer<O, E> {
         match (frame, subagent) {
             (Outbound::Notice { level, text }, _) => self.notice(*level, text),
             (Outbound::Ask { text }, _) => self.ask(text),
-            (Outbound::Status(now), None) if now.state == State::Idle => {
-                if let Some(usage) = self.usage.take() {
+            (Outbound::Status(now), None) => {
+                // Only another program queues input while the prompt is
+                // open (the human's own line waits for it to close).
+                if now.queued > self.queued && self.prompting() {
+                    self.notice(
+                        Level::Info,
+                        "Input from another program waits: haest runs it when you press Enter.",
+                    );
+                }
+                self.queued = now.queued;
+                if now.state == State::Idle
+                    && let Some(usage) = self.usage.take()
+                {
                     self.usage(&usage, now.usd);
                 }
+            }
+            // A watcher's view of an ask another peer answers.
+            (
+                Outbound::ApprovalAsk {
+                    ask,
+                    tool_name,
+                    description,
+                    ..
+                },
+                _,
+            ) => self.notice(
+                Level::Warning,
+                &format!("{tool_name} asks for approval: {description} (ask {ask})"),
+            ),
+            (Outbound::ApprovalWithdrawn { ask }, _) => {
+                self.note(DIM, &format!("(approval ask {ask} withdrawn)"));
             }
             (
                 Outbound::SubagentStarted {
@@ -174,15 +218,24 @@ impl<O: Write, E: Write> Renderer<O, E> {
         }
     }
 
+    /// Answer text, to stdout as it comes.
+    fn answer(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let _ = write!(self.out, "{text}");
+        let _ = self.out.flush();
+        self.open_line = !text.ends_with('\n');
+    }
+
     pub fn event(&mut self, ev: &LoopEvent) {
         if self.json {
             return self.json_line(ev);
         }
         match ev {
             LoopEvent::TextDelta { text } => {
-                let _ = write!(self.out, "{text}");
-                let _ = self.out.flush();
-                self.open_line = !text.ends_with('\n');
+                self.streamed = true;
+                self.answer(text);
             }
             LoopEvent::ToolResult {
                 call,
@@ -195,10 +248,18 @@ impl<O: Write, E: Write> Renderer<O, E> {
             }
             LoopEvent::Guard { text } => self.note(YELLOW, &format!("! {text}")),
             LoopEvent::Assistant { message } => {
+                // Its pieces were not seen (a replay from the ring folds
+                // them into the answer): the answer whole.
+                if !std::mem::take(&mut self.streamed) {
+                    self.answer(&message.text());
+                }
                 if let Some(err) = &message.error_message {
                     self.note(RED, &format!("model call failed: {err}"));
                 }
                 self.shown_error = message.error_message.clone();
+            }
+            LoopEvent::User { message } if self.inputs => {
+                self.note(DIM, &format!("> {}", message.content));
             }
             LoopEvent::TurnEnd {
                 stop_reason, error, ..

@@ -42,6 +42,11 @@ async fn the_example_files_load_together_and_do_what_they_say() {
     let r = run(PROJECT, &files, ENV, &[]).await.unwrap();
     assert!(r.notes.is_empty(), "{:?}", r.notes);
     assert!(r.resolved.trusted, "~/projects is trusted");
+    assert_eq!(r.config.control_socket, crate::ControlSocket::Watch);
+    assert_eq!(
+        r.config.control_dir(),
+        std::path::Path::new("/h/.local/share/haest/control")
+    );
     let s = &r.config.settings;
     assert_eq!(s.tools, BuiltinTools::ALL);
     assert!(s.subagent_caps().budgets, "the budget parameter is on");

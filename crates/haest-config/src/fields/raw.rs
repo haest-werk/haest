@@ -8,7 +8,7 @@ use haest_core::{
 };
 use haest_settings::{BuiltinTools, ContextSources, SkillSources, WordSet};
 
-use super::EnvPassthrough;
+use super::{ControlSocket, EnvPassthrough};
 use crate::value::{number, parse_bool, split_list};
 
 /// A value in the checked spelling, and back. None = unset.
@@ -38,6 +38,7 @@ word!(
     WorkspaceMode,
     DeferMode,
     EnvPassthrough,
+    ControlSocket,
     WebSearchEngine
 );
 

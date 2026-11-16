@@ -35,6 +35,10 @@ subagent_budgets = true
 # (a control socket, a broker link), besides the running turn.
 event_ring = 5000
 
+# A control socket: `haest ctl` from another terminal watches the conversation
+# (command: drives it too). Your own file only.
+control_socket = "watch"
+
 # OpenRouter's provider routing, as JSON (your own file only).
 provider_routing = '{"global": {"banned": ["novita"]}}'
 

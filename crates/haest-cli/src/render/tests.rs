@@ -203,3 +203,115 @@ fn a_summary_picks_the_input_that_says_what_happened() {
     );
     assert_eq!(call_summary(&call("Thing", json!({"n": 1}))), "Thing");
 }
+
+fn wire_frame(seq: u64, body: Outbound) -> Frame {
+    haest::wire::Envelope {
+        v: 1,
+        sid: "s".into(),
+        seq,
+        ts: 0,
+        path: Path::main(),
+        body: Body::Wire(body),
+    }
+}
+
+fn idle(queued: usize) -> Outbound {
+    Outbound::Status(haest::wire::Snapshot {
+        state: State::Idle,
+        session: "x".into(),
+        model_spec: "m".into(),
+        effort: None,
+        usd: None,
+        queued,
+        messages: 0,
+        last_seq: 0,
+    })
+}
+
+#[test]
+fn input_from_another_program_queued_while_the_prompt_is_open_is_announced_above_it() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let (tx, rx) = std::sync::mpsc::channel();
+    {
+        let mut r = Renderer::new(&mut out, &mut err, false, false);
+        r.frame(&wire_frame(1, idle(0)));
+        r.set_above(Some(tx));
+        r.frame(&wire_frame(2, idle(1)));
+        // Already said: the same count again says nothing.
+        r.frame(&wire_frame(3, idle(1)));
+        r.set_above(None);
+        // Not prompting: the turn about to run shows itself.
+        r.frame(&wire_frame(4, idle(2)));
+    }
+    let above: Vec<String> = rx.try_iter().collect();
+    assert_eq!(above.len(), 1, "{above:?}");
+    assert!(above[0].contains("press Enter"), "{above:?}");
+    assert!(err.is_empty() && out.is_empty());
+}
+
+#[test]
+fn an_approval_ask_and_its_withdrawal_are_lines_for_a_watcher() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    {
+        let mut r = Renderer::new(&mut out, &mut err, false, false);
+        let ask = Outbound::ApprovalAsk {
+            ask: 3,
+            tool_name: "Bash".into(),
+            description: "delete the build dir".into(),
+            preview: "rm -rf build".into(),
+            key: None,
+        };
+        r.frame(&wire_frame(1, ask));
+        r.frame(&wire_frame(2, Outbound::ApprovalWithdrawn { ask: 3 }));
+    }
+    let err = String::from_utf8(err).unwrap();
+    assert!(
+        err.contains("Bash asks for approval: delete the build dir"),
+        "{err}"
+    );
+    assert!(err.contains("withdrawn"), "{err}");
+}
+
+fn answer(text: &str) -> LoopEvent {
+    let mut message = AssistantMessage::start("p", "m");
+    message
+        .content
+        .push(haest::AssistantPart::Text { text: text.into() });
+    LoopEvent::Assistant { message }
+}
+
+#[test]
+fn an_answer_whose_pieces_were_not_seen_is_written_whole_and_a_streamed_one_once() {
+    // Replayed from the ring: the pieces were folded into the answer.
+    let (out, _) = render(
+        false,
+        &[answer("from the ring"), turn_end(StopReason::EndTurn, None)],
+    );
+    assert_eq!(out, "from the ring\n");
+    // Streamed: the pieces were the answer; it is not written again.
+    let piece = LoopEvent::TextDelta {
+        text: "live".into(),
+    };
+    let (out, _) = render(
+        false,
+        &[piece, answer("live"), turn_end(StopReason::EndTurn, None)],
+    );
+    assert_eq!(out, "live\n");
+}
+
+#[test]
+fn a_watcher_sees_the_input_a_terminal_does_not_echo() {
+    let user = LoopEvent::User {
+        message: haest::UserMessage {
+            content: "fix the test".into(),
+            media: vec![],
+        },
+    };
+    let (_, err) = render(false, std::slice::from_ref(&user));
+    assert!(err.is_empty(), "the human typed it: {err}");
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    Renderer::new(&mut out, &mut err, false, false)
+        .showing_input()
+        .event(&user);
+    assert_eq!(String::from_utf8(err).unwrap(), "> fix the test\n");
+}

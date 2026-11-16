@@ -32,7 +32,7 @@ whole config files.
 | Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
 | Caps | [`max_turn_usd`](#max_turn_usd), [`max_turn_tokens`](#max_turn_tokens), [`max_request_tokens`](#max_request_tokens), [`max_turn_steps`](#max_turn_steps), [`max_turn_minutes`](#max_turn_minutes), [`max_repeats`](#max_repeats), [`max_conversation_usd`](#max_conversation_usd), [`max_conversation_tokens`](#max_conversation_tokens), [`context_window`](#context_window), [`compact_at`](#compact_at) |
 | Subagents | [`max_agent_turns`](#max_agent_turns), [`max_agent_depth`](#max_agent_depth), [`max_subagents`](#max_subagents), [`subagent_usd`](#subagent_usd), [`subagent_steps`](#subagent_steps), [`subagent_minutes`](#subagent_minutes), [`subagent_budgets`](#subagent_budgets) |
-| Watching and driving | [`event_ring`](#event_ring), [`stdio`](#stdio) |
+| Watching and driving | [`event_ring`](#event_ring), [`stdio`](#stdio), [`control_socket`](#control_socket), [`control_dir`](#control_dir) |
 | Paths | [`data_dir`](#data_dir), [`config_dir`](#config_dir), [`debug`](#debug) |
 | [Profiles](#profiles) | the built-in ones, and your own |
 
@@ -684,6 +684,35 @@ One JSON object per line both ways, in haest-wire's format: `hello` first, then 
 config.toml   (not in a file)
 variable      HAEST_STDIO=true
 flag          --stdio
+```
+
+### `control_socket`
+
+A Unix socket another program on this machine reaches the conversation through (haest ctl): off, watch (its stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too).
+The socket goes in `control_dir`, named after the conversation's stream id and readable by you only (the dir 0700, the socket 0600), with a discovery file beside it that `haest ctl list` reads; both go when haest exits. What arrives over a command socket is another program's input: it counts against `max_agent_turns`, and at an open prompt it waits for Enter. Never from a project's file: a repository cannot open a socket into your conversation.
+
+- Takes: one of `off`, `watch`, `command`
+- Default: `off`
+- Set in: your own config file, its variable, its flag; never a project's file or a profile
+
+```text
+config.toml   control_socket = "watch"
+variable      HAEST_CONTROL_SOCKET=watch
+flag          --control-socket watch
+```
+
+### `control_dir`
+
+Where control sockets and their discovery files go (unset: &lt;data_dir>/control).
+
+- Takes: a directory: `~/x` is under your home dir, `x` under the working dir
+- Default: unset
+- Set in: your own config file, its variable, its flag; never a project's file or a profile
+
+```text
+config.toml   control_dir = "~/.haest/control"
+variable      HAEST_CONTROL_DIR='~/.haest/control'
+flag          --control-dir '~/.haest/control'
 ```
 
 ## Paths

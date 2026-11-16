@@ -3,19 +3,13 @@
 
 use std::{sync::Arc, time::Duration};
 
-use async_trait::async_trait;
-use haest_core::{
-    Agent, AgentDeps, AgentOptions, JsonMap, ShutWorkspace, Tool, ToolContext, ToolError,
-    ToolOutput,
-    testing::{ScriptedProvider, text_answer, tool_answer},
-};
+use haest_core::testing::{ScriptedProvider, text_answer, tool_answer};
 use haest_mods::{ApprovalAnswer, ApprovalRequest, Prompter};
-use haest_session::{Backend, Hub, HubOptions, SessionHandle, SessionPrompter, start};
+use haest_session::{Backend, Hub, HubOptions, SessionPrompter};
 use haest_wire::{Level, Origin};
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncWriteExt, DuplexStream, WriteHalf},
-    sync::Notify,
     task::JoinHandle,
 };
 
@@ -23,55 +17,8 @@ use super::{Ended, Start, serve};
 use crate::{
     Grant, LineSource,
     ndjson::{NdjsonSink, NdjsonSource},
+    testing::{answers, hub, session},
 };
-
-/// A tool that answers once it is let go (or its call is stopped).
-struct Wait(Arc<Notify>);
-
-#[async_trait]
-impl Tool for Wait {
-    fn name(&self) -> &str {
-        "Wait"
-    }
-    fn description(&self) -> String {
-        "Waits until it is let go.".into()
-    }
-    fn parameters(&self) -> Value {
-        json!({"type": "object"})
-    }
-    fn kind(&self) -> &str {
-        "wait"
-    }
-    async fn execute(&self, _: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        tokio::select! {
-            _ = self.0.notified() => Ok(ToolOutput::text("waited")),
-            _ = ctx.cancel.cancelled() => Ok(ToolOutput::text("stopped")),
-        }
-    }
-}
-
-/// A session over a scripted model, with the Wait tool.
-fn session(model: &Arc<ScriptedProvider>, hub: Hub) -> (SessionHandle<Agent>, Arc<Notify>) {
-    let go = Arc::new(Notify::new());
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Wait(go.clone()))];
-    let deps = AgentDeps::new(
-        Arc::new(model.resolver()),
-        Arc::new(tools),
-        Arc::new(String::new()),
-        "/",
-        Arc::new(ShutWorkspace),
-    );
-    let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
-    (start(agent, hub), go)
-}
-
-fn hub() -> Hub {
-    Hub::new("s1", HubOptions::default())
-}
-
-fn answers(texts: &[&str]) -> Arc<ScriptedProvider> {
-    ScriptedProvider::new(texts.iter().map(|t| text_answer(t)))
-}
 
 /// The other end of a connection.
 struct Peer {
@@ -599,4 +546,23 @@ async fn an_approval_ask_is_answered_by_a_command_peer() {
         late["error"].as_str().unwrap().contains("no approval ask"),
         "{late}"
     );
+}
+
+#[tokio::test]
+async fn a_connection_that_follows_nothing_ends_when_the_conversation_does() {
+    let (s, _) = session(&answers(&[]), hub());
+    let backend: Arc<dyn Backend> = Arc::new(s);
+    let mut peer = Peer::attach(
+        backend.clone(),
+        Grant::watch(Origin::Agent),
+        Start::default(),
+    );
+    peer.next().await.unwrap();
+
+    backend.close().await;
+    let (rest, ended) = tokio::time::timeout(Duration::from_secs(2), peer.rest())
+        .await
+        .expect("it ended at once");
+    assert!(rest.is_empty(), "{rest:#?}");
+    assert!(matches!(ended, Ended::Closed), "{ended:?}");
 }

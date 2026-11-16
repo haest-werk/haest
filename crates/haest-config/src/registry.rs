@@ -6,7 +6,7 @@
 use haest_core::{Effort, deferred_tools::DeferMode, provider::WebSearchEngine};
 use haest_settings::{BuiltinTools, ContextSources, SkillSources, WordSet};
 
-use crate::fields::EnvPassthrough;
+use crate::fields::{ControlSocket, EnvPassthrough};
 
 /// `off`, then every engine.
 const WEB_SEARCH: [&str; WebSearchEngine::WORDS.len() + 1] = {
@@ -221,6 +221,10 @@ pub const DEFS: &[Def] = &[
     def("stdio", SESSION, Bool, "true", "Be driven by the parent process: requests in on stdin, frames out on stdout, no terminal")
         .scope(Scope::Process)
         .detail("One JSON object per line both ways, in haest-wire's format: `hello` first, then every frame of the conversation from the start, and a `reply` to each request (a turn's at its end). The parent may do everything a terminal may: turns (a person's input), `interrupt`, model and effort changes, `clear`, `close`, and the answers to approval asks. haest runs until stdin closes, once what it was asked has finished, or until a `close`. Never from a file: a config file cannot turn a terminal into a pipe."),
+    def("control_socket", SESSION, Choice(ControlSocket::WORDS), "watch", "A Unix socket another program on this machine reaches the conversation through (haest ctl): off, watch (its stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too)")
+        .scope(Scope::User)
+        .detail("The socket goes in `control_dir`, named after the conversation's stream id and readable by you only (the dir 0700, the socket 0600), with a discovery file beside it that `haest ctl list` reads; both go when haest exits. What arrives over a command socket is another program's input: it counts against `max_agent_turns`, and at an open prompt it waits for Enter. Never from a project's file: a repository cannot open a socket into your conversation."),
+    def("control_dir", SESSION, Path, "~/.haest/control", "Where control sockets and their discovery files go (unset: <data_dir>/control)").scope(Scope::User),
     def("data_dir", PATHS, Path, "~/.haest/data", "Sessions, history and spill files (unset: $XDG_DATA_HOME/haest, else ~/.local/share/haest)"),
     def("config_dir", PATHS, Path, "~/dotfiles/haest", "config.toml, providers and mods (unset: $XDG_CONFIG_HOME/haest, else ~/.config/haest)").scope(Scope::Process),
     def("debug", PATHS, Bool, "true", "Log what haest does under the hood"),

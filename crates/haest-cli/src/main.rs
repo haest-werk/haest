@@ -8,12 +8,15 @@
 //!   haest -r [id]             continue a session (the latest here without an id)
 //!   haest models | sessions   what haest knows / what it has saved
 //!   haest settings            every setting, its value and where it came from
+//!   haest ctl list | events <id> --follow | send <id> "..."   another haest here, by its control socket
 
 mod agents;
 mod args;
 mod ask;
 mod changes;
 mod commands;
+#[cfg(unix)]
+mod ctl;
 mod models;
 mod mods;
 mod remedy;
@@ -34,15 +37,18 @@ use std::{
 };
 
 use haest::{
-    config::{Loaded, Loader, env_var},
+    config::{ControlSocket, Loaded, Loader, env_var},
     core::{error::report, session::sessions_dir},
     runtime::{BuildError, SessionError, Ui, list_sessions},
     session::{Backend, Hub, HubOptions, SessionPrompter, start},
     settings::Settings,
-    transport::{Ended, Grant, Stdio, Transport},
+    transport::{Attached, Ended, Grant, Stdio, Transport},
     wire::Origin,
     workspace::RealFs,
 };
+
+#[cfg(unix)]
+use haest::transport::UnixSocket;
 
 use crate::{
     args::{Args, Command},
@@ -78,6 +84,10 @@ async fn subcommand(cmd: &Command, loaded: &Loaded) -> ExitCode {
         Command::Settings => show::settings_report(loaded)
             .iter()
             .for_each(|l| println!("{l}")),
+        #[cfg(unix)]
+        Command::Ctl(cmd) => return ctl::run(cmd, &loaded.config.control_dir()).await,
+        #[cfg(not(unix))]
+        Command::Ctl(_) => return fail(2, "haest ctl needs Unix sockets"),
     }
     ExitCode::SUCCESS
 }
@@ -137,6 +147,47 @@ async fn stdio_mode(session: &Session) -> ExitCode {
     match attached.ended().await {
         Ended::PeerLeft | Ended::Closed => ExitCode::SUCCESS,
         Ended::Failed(e) => fail(1, format!("reading stdin: {}", report(&e))),
+    }
+}
+
+/// The control socket, when the setting opens one: another program here
+/// reaches the conversation through it (`haest ctl`), its input another
+/// program's. Detached when the returned value drops. One that cannot open
+/// is said, and the run goes on without it.
+fn control_socket(
+    session: &Session,
+    (open, dir): (ControlSocket, PathBuf),
+    ui: &TermUi,
+) -> Option<Attached> {
+    let grant = match open {
+        ControlSocket::Off => return None,
+        ControlSocket::Watch => Grant::watch(Origin::Agent),
+        ControlSocket::Command => Grant::command(Origin::Agent),
+    };
+    #[cfg(unix)]
+    {
+        let backend: Arc<dyn Backend> = Arc::new(session.clone());
+        let sid = backend.meta().sid;
+        match UnixSocket::new(&dir).attach(backend, grant) {
+            Ok(attached) => {
+                let id = &sid[..8.min(sid.len())];
+                ui.info(&format!(
+                    "Control socket open ({}): haest ctl events {id} --follow",
+                    open.as_str()
+                ));
+                Some(attached)
+            }
+            Err(e) => {
+                ui.warn(&format!("No control socket: {}", report(&e)));
+                None
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (session, dir, grant);
+        ui.warn("No control socket: it needs Unix sockets.");
+        None
     }
 }
 
@@ -219,6 +270,7 @@ async fn main() -> ExitCode {
         return subcommand(cmd, &loaded).await;
     }
     let stdio = loaded.config.stdio;
+    let control = (loaded.config.control_socket, loaded.config.control_dir());
     if stdio && (args.print || args.json || args.prompt_text().is_some()) {
         return fail(
             2,
@@ -260,6 +312,7 @@ async fn main() -> ExitCode {
     let brakes = Arc::new(Brakes::of(&rt));
     let session = start(rt, hub.clone());
     let interrupts = run::watch_interrupts(brakes.clone(), hub.subscribe(hub.last_seq()));
+    let _control = control_socket(&session, control, &ui);
     let code = match input {
         _ if stdio => stdio_mode(&session).await,
         Some(input) => print_mode(&session, &brakes, &input).await,

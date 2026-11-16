@@ -18,7 +18,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-haest = { workspace = true, features = ["runtime", "config", "wire", "session", "transport-stdio"] }
+haest = { workspace = true, features = ["runtime", "config", "wire", "session", "transport-stdio", "transport-unix"] }
 tokio = { workspace = true, features = ["signal"] }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }

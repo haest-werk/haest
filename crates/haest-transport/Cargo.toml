@@ -13,6 +13,8 @@ categories.workspace = true
 [features]
 # The parent process drives the conversation over the child's stdin and stdout.
 stdio = ["tokio/io-std", "tokio/sync"]
+# Programs on this machine reach the conversation over a Unix socket (Unix only).
+unix = ["tokio/net", "dep:serde"]
 
 [dependencies]
 haest-core = { workspace = true }
@@ -20,6 +22,7 @@ haest-wire = { workspace = true }
 haest-session = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "rt"] }
 serde_json = { workspace = true }
+serde = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

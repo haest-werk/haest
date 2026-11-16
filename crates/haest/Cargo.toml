@@ -46,6 +46,8 @@ session = ["dep:haest-session", "wire", "haest-runtime?/session"]
 transport = ["dep:haest-transport", "session"]
 # A parent process drives the conversation over this one's stdin and stdout.
 transport-stdio = ["transport", "haest-transport/stdio"]
+# Programs on this machine watch (or drive) the conversation over a Unix socket.
+transport-unix = ["transport", "haest-transport/unix"]
 # Fakes for a host's tests: a scripted model that records every request.
 testing = ["haest-core/testing"]
 
@@ -95,6 +97,12 @@ test = true
 [[example]]
 name = "stdio"
 required-features = ["transport-stdio"]
+test = true
+
+# A conversation on a control socket: found, followed and driven from another task.
+[[example]]
+name = "control_socket"
+required-features = ["transport-unix"]
 test = true
 
 # The notebook example and tests/plug_in.rs: what a host implementing the plug points needs.

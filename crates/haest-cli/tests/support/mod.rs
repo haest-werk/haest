@@ -8,8 +8,9 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
-    process::{Command, Output, Stdio},
-    sync::{Arc, Mutex},
+    process::{Child, ChildStdin, Command, Output, Stdio},
+    sync::{Arc, Mutex, mpsc},
+    time::Duration,
 };
 
 use serde_json::{Value, json};
@@ -192,4 +193,104 @@ fn sse(reply: Option<Reply>) -> String {
         .collect();
     body.push_str("data: [DONE]\n\n");
     body
+}
+
+/// A running `haest --stdio`, from the parent's side.
+pub struct Parent {
+    pub child: Child,
+    stdin: Option<ChildStdin>,
+    frames: mpsc::Receiver<Value>,
+}
+
+impl Parent {
+    pub fn start(home: &Home, args: &[&str]) -> Self {
+        let mut cmd = home.command(&[&["--stdio", "-m", "local:m"], args].concat());
+        let mut child = cmd
+            .env(LOCAL_KEY.0, LOCAL_KEY.1)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (tx, frames) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let line = line.unwrap();
+                let frame = serde_json::from_str(&line).unwrap_or_else(|e| panic!("{e}: {line}"));
+                if tx.send(frame).is_err() {
+                    return;
+                }
+            }
+        });
+        Self {
+            stdin: child.stdin.take(),
+            child,
+            frames,
+        }
+    }
+
+    pub fn send(&mut self, request: Value) {
+        let stdin = self.stdin.as_mut().expect("stdin is open");
+        writeln!(stdin, "{request}").unwrap();
+        stdin.flush().unwrap();
+    }
+
+    pub fn turn(&mut self, id: &str, text: &str) {
+        self.send(json!({"v": 1, "id": id, "type": "turn", "text": text}));
+    }
+
+    pub fn control(&mut self, id: &str, verb: &str) {
+        self.send(json!({"v": 1, "id": id, "type": "control", "verb": verb}));
+    }
+
+    pub fn answer(&mut self, id: &str, ask: &Value, answer: &str) {
+        self.send(
+            json!({"v": 1, "id": id, "type": "approval_answer", "ask": ask, "answer": answer}),
+        );
+    }
+
+    /// Frames up to and including the first `stop` matches.
+    pub fn until(&self, stop: impl Fn(&Value) -> bool) -> Vec<Value> {
+        let mut seen = Vec::new();
+        loop {
+            let frame = match self.frames.recv_timeout(Duration::from_secs(20)) {
+                Ok(frame) => frame,
+                Err(e) => panic!("{e} waiting; seen: {seen:#?}"),
+            };
+            let done = stop(&frame);
+            seen.push(frame);
+            if done {
+                return seen;
+            }
+        }
+    }
+
+    /// Frames up to the reply to `id`, which is the last.
+    pub fn reply(&self, id: &str) -> Vec<Value> {
+        self.until(|f| ty(f) == "reply" && f["id"] == id)
+    }
+
+    /// The next approval ask.
+    pub fn ask(&self) -> Value {
+        self.until(|f| ty(f) == "approval_ask").pop().unwrap()
+    }
+
+    /// Close stdin and wait for the exit: its code and stderr.
+    pub fn finish(mut self) -> (Option<i32>, String) {
+        drop(self.stdin.take());
+        let out = self.child.wait_with_output().unwrap();
+        (out.status.code(), stderr(&out))
+    }
+}
+
+pub fn ty(frame: &Value) -> &str {
+    frame["type"].as_str().unwrap_or_default()
+}
+
+pub fn bash(command: &str) -> Reply {
+    Reply::Tool(
+        "Bash".into(),
+        json!({"command": command, "description": command}),
+    )
 }

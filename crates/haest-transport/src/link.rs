@@ -10,7 +10,7 @@ use haest_session::{Backend, Body, Control, Frame, Input, SessionError, Subscrip
 use haest_wire::{Access, Envelope, Outbound, Request, Verb, decode};
 use serde_json::{Value, json};
 use tokio::{
-    sync::{Notify, mpsc, watch},
+    sync::{mpsc, watch},
     task::{JoinHandle, JoinSet},
 };
 
@@ -83,7 +83,9 @@ pub async fn serve<S: LineSource, K: LineSink>(
 ) -> Ended {
     let (tx, rx) = mpsc::channel(OUT_BUFFER);
     let mut writer = tokio::spawn(write(sink, rx, backend.meta().sid));
-    let closed = Arc::new(Notify::new());
+    // The conversation's end, whatever the peer asked for.
+    let closed = until_closed(backend.subscribe(u64::MAX));
+    tokio::pin!(closed);
     let mut link = Link {
         backend,
         grant,
@@ -92,7 +94,6 @@ pub async fn serve<S: LineSource, K: LineSink>(
         follows: 0,
         written: watch::Sender::new(Written::NOTHING),
         tasks: JoinSet::new(),
-        closed: closed.clone(),
     };
     let ended = match link.hello(start.token).await {
         Err(()) => Ended::Closed,
@@ -120,7 +121,7 @@ pub async fn serve<S: LineSource, K: LineSink>(
                         Some(Ok(line)) => link.request(&line).await,
                     },
                     _ = link.tasks.join_next(), if !link.tasks.is_empty() => {}
-                    _ = closed.notified(), if open => {
+                    () = &mut closed, if open => {
                         reading = false;
                         why = Some(Ended::Closed);
                     }
@@ -129,7 +130,7 @@ pub async fn serve<S: LineSource, K: LineSink>(
             }
         }
     };
-    link.finish().await;
+    link.finish(matches!(ended, Ended::Closed)).await;
     if !writer.is_finished() {
         let _ = tokio::time::timeout(FLUSH_GRACE, &mut writer).await;
     }
@@ -150,8 +151,6 @@ struct Link {
     written: watch::Sender<Written>,
     /// Requests whose reply waits (a turn's end, a change between turns).
     tasks: JoinSet<()>,
-    /// Raised when the conversation ended.
-    closed: Arc<Notify>,
 }
 
 impl Link {
@@ -208,12 +207,10 @@ impl Link {
                 verb: Verb::Close, ..
             } => {
                 // The reply goes out before the connection ends with the conversation.
-                let (backend, tx, closed) =
-                    (self.backend.clone(), self.tx.clone(), self.closed.clone());
+                let (backend, tx) = (self.backend.clone(), self.tx.clone());
                 self.tasks.spawn(async move {
                     backend.close().await;
                     let _ = tx.send(Out::Conn(Outbound::done(id, None))).await;
-                    closed.notify_one();
                 });
             }
             Request::Control {
@@ -269,14 +266,18 @@ impl Link {
         self.follows += 1;
         let sub = self.backend.subscribe(after);
         let mark = Mark::new(self.written.clone(), self.follows, sub.last_seq());
-        let task = pump(sub, self.tx.clone(), id, follow, mark, self.closed.clone());
+        let task = pump(sub, self.tx.clone(), id, follow, mark);
         self.pump = Some(tokio::spawn(task));
     }
 
     /// The connection is over: what is queued still goes out, nothing more
     /// does (requests still waiting are dropped; their input stays queued).
-    async fn finish(mut self) {
-        if let Some(pump) = self.pump.take() {
+    /// When the conversation ended, the stream the peer follows is written to
+    /// its last frame first.
+    async fn finish(mut self, closed: bool) {
+        if let Some(mut pump) = self.pump.take()
+            && (!closed || tokio::time::timeout(FLUSH_GRACE, &mut pump).await.is_err())
+        {
             pump.abort();
         }
         self.tasks.shutdown().await;
@@ -339,7 +340,6 @@ async fn pump(
     id: Option<String>,
     follow: bool,
     mark: Mark,
-    closed: Arc<Notify>,
 ) {
     while !sub.caught_up() {
         let Some(frame) = sub.recv().await else { break };
@@ -360,8 +360,11 @@ async fn pump(
         }
         mark.set(sub.last_seq());
     }
-    drop(mark);
-    closed.notify_one();
+}
+
+/// Resolves when the stream closes: the conversation ended.
+pub(crate) async fn until_closed(mut sub: Subscription) {
+    while sub.recv().await.is_some() {}
 }
 
 /// Every line to the peer, in order; a connection frame carries the seq of

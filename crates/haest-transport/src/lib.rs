@@ -30,6 +30,10 @@
 //! | Feature | Transport |
 //! |---|---|
 //! | `stdio` | [`Stdio`]: a parent process drives this one over its stdin and stdout |
+//! | `unix` | [`UnixSocket`]: programs on this machine reach it over a Unix socket (Unix only); [`running_sessions`] and [`connect_session`] find and reach one |
+//!
+//! [`Peer`] is the asking side of any connection: `hello` read, requests
+//! sent, frames and replies read back.
 //!
 //! Through the facade this crate is `haest::transport`.
 //!
@@ -82,19 +86,34 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+use std::path::PathBuf;
+
 use haest_wire::{Access, LineTooLong, Origin};
 use tokio::task::JoinHandle;
 
 mod link;
 mod ndjson;
+mod peer;
 #[cfg(feature = "stdio")]
 mod stdio;
+#[cfg(test)]
+mod testing;
+#[cfg(test)]
+mod tests;
+#[cfg(all(unix, feature = "unix"))]
+mod unix;
 
 pub use link::{Ended, LineSink, LineSource, Start, serve};
 pub use ndjson::{NdjsonSink, NdjsonSource};
+pub use peer::Peer;
 #[cfg(feature = "stdio")]
 #[cfg_attr(docsrs, doc(cfg(feature = "stdio")))]
 pub use stdio::{ProcessStdin, Stdio};
+#[cfg(all(unix, feature = "unix"))]
+#[cfg_attr(docsrs, doc(cfg(all(unix, feature = "unix"))))]
+pub use unix::{
+    RunningSession, SocketDiscovery, UnixPeer, UnixSocket, connect_session, running_sessions,
+};
 
 /// Who a connection speaks for, as the host decides it: what it may do and
 /// whose input it sends. Nothing the peer sends changes it.
@@ -196,4 +215,34 @@ pub enum TransportError {
     /// The peer sent a line past the limit without its newline.
     #[error(transparent)]
     LineTooLong(#[from] LineTooLong),
+    /// A file or a socket at this path could not be made, read or reached.
+    #[error("{}", path.display())]
+    Path {
+        /// The path.
+        path: PathBuf,
+        /// What failed.
+        #[source]
+        source: std::io::Error,
+    },
+    /// A running session already serves a socket at this path.
+    #[error("{} is served by a running session", .0.display())]
+    InUse(PathBuf),
+    /// No served session has this id, or an id that starts with it.
+    #[error("no session served here has the id {0}")]
+    NoSession(String),
+    /// More than one served session has an id that starts with this.
+    #[error("more than one session served here has an id that starts with {0}")]
+    Ambiguous(String),
+    /// A line that is not a frame this version reads.
+    #[error("a line that is not a frame")]
+    NotAFrame(#[source] serde_json::Error),
+    /// The first frame was not `hello`.
+    #[error("the connection did not start with hello")]
+    NotHello,
+    /// The connection ended before the reply.
+    #[error("the connection ended before its reply")]
+    Ended,
+    /// The other end refused the request; its reason.
+    #[error("refused: {0}")]
+    Refused(String),
 }
