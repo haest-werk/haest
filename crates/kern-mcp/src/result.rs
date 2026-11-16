@@ -44,12 +44,10 @@ fn decode_base64(data: &str) -> Option<Vec<u8>> {
 /// An MCP image/audio part becomes media (collected into `media`); the model reads one line in its place.
 fn mcp_media(p: &Value, index: usize, media: &mut Vec<MediaPart>) -> String {
     let kind = part_type(p);
-    let (Some(data), Some(mime)) = (field(p, "data"), field(p, "mimeType")) else {
+    let given = |key| field(p, key).filter(|s| !s.is_empty());
+    let (Some(data), Some(mime)) = (given("data"), given("mimeType")) else {
         return format!("[{kind} omitted: no data]");
     };
-    if data.is_empty() || mime.is_empty() {
-        return format!("[{kind} omitted: no data]");
-    }
     let ext = mime.split('/').nth(1).unwrap_or("bin");
     let name = format!("{kind}-{}.{ext}", index + 1);
     let Some(bytes) = decode_base64(data) else {

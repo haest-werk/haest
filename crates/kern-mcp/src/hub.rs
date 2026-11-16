@@ -105,7 +105,7 @@ async fn start_config(cfg: &McpServerConfig, handed: &ChildEnv) -> Result<Server
             env,
             cwd,
         } => {
-            let child = transport::stdio(command, args, handed, env, cwd.as_ref())?;
+            let child = transport::stdio(command, args, handed, env, cwd.as_deref())?;
             start(&cfg.name, child).await
         }
         McpTransport::Http { url, headers } => {

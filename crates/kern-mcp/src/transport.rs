@@ -2,7 +2,7 @@
 //! streamable HTTP. Building one can fail (no such program, a header HTTP cannot
 //! carry); that failure is the server's, never the hub's.
 
-use std::{collections::BTreeMap, path::PathBuf, process::Stdio};
+use std::{collections::BTreeMap, path::Path, process::Stdio};
 
 use http::{HeaderName, HeaderValue};
 use kern_core::ChildEnv;
@@ -20,7 +20,7 @@ pub(crate) fn stdio(
     args: &[String],
     handed: &ChildEnv,
     env: &BTreeMap<String, String>,
-    cwd: Option<&PathBuf>,
+    cwd: Option<&Path>,
 ) -> Result<TokioChildProcess, String> {
     let mut cmd = tokio::process::Command::new(command);
     cmd.args(args)
