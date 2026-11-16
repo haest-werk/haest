@@ -5,7 +5,10 @@ use haest_http::Response;
 use serde_json::json;
 
 use super::*;
-use crate::testkit::{API, FakeHttp, github, issue, ok, with};
+use crate::{
+    Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, Tracker,
+    testkit::{API, FakeHttp, github, issue, ok, with},
+};
 
 mod writes;
 
