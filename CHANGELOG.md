@@ -6,6 +6,14 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 `--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
 `HAEST_*` variables.
 
+## Unreleased
+
+### Bug fixes
+
+- The caps settings are listed under "Caps" again, as 0.2.0 meant; the
+  `Limits` -> `CapSettings` type rename had renamed the heading to
+  "CapSettings" in `docs/settings.md` and `haest settings`.
+
 ## 0.2.0 (2026-11-17)
 
 A breaking release that settles haest's names and seams before anyone else

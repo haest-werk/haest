@@ -155,7 +155,7 @@ const MODEL: &str = "Model and prompt";
 const CONTEXT: &str = "Context";
 const TOOLS: &str = "Tools";
 const WORK: &str = "Workspace, mods and trust";
-const CAPS: &str = "CapSettings";
+const CAPS: &str = "Caps";
 const AGENTS: &str = "Subagents";
 const PATHS: &str = "Paths";
 
