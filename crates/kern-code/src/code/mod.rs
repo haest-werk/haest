@@ -21,7 +21,7 @@
 //! engine has no host reach at all.
 
 mod bridge;
-pub mod render;
+mod render;
 mod report;
 #[cfg(test)]
 mod tests;

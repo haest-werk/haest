@@ -8,10 +8,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use kern_core::fs::{Fs, MemFs};
+use kern_core::{
+    fs::{Fs, MemFs},
+    workspace::ExecResult,
+};
 use tokio_util::sync::CancellationToken;
 
-use super::{JsEnv, JsOutput, NOT_HERE, js_command, not_here};
+use super::{JsEnv, NOT_HERE, js_command, not_here};
 
 fn env(fs: &Arc<MemFs>) -> JsEnv {
     JsEnv {
@@ -28,7 +31,7 @@ fn with_script(name: &str, body: &str) -> Arc<MemFs> {
     Arc::new(MemFs::with_files([(format!("/p/{name}"), body)]))
 }
 
-async fn js(fs: &Arc<MemFs>, line: &str) -> JsOutput {
+async fn js(fs: &Arc<MemFs>, line: &str) -> ExecResult {
     let args: Vec<String> = line.split_whitespace().map(String::from).collect();
     js_command(&args, &env(fs)).await
 }

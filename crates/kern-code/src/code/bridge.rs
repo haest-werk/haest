@@ -72,15 +72,12 @@ impl Bridge {
         ctx: &ToolContext,
         cancel: CancellationToken,
     ) -> Arc<Self> {
-        let names = ToolIndex::new(callable.clone())
-            .names()
-            .into_iter()
-            .map(String::from)
-            .collect();
         let schemas = callable
             .iter()
             .map(|t| (t.name().to_string(), t.parameters()))
             .collect();
+        let tools = ToolIndex::new(callable);
+        let names = tools.names().into_iter().map(String::from).collect();
         let inner = ToolContext {
             cwd: ctx.cwd.clone(),
             cancel,
@@ -91,7 +88,7 @@ impl Bridge {
             spill_dir: ctx.spill_dir.clone(),
         };
         Arc::new(Self {
-            tools: ToolIndex::new(callable),
+            tools,
             names,
             schemas,
             inner,

@@ -22,5 +22,5 @@ mod testkit;
 pub mod vm;
 
 pub use code::{CodeTool, code_callable, code_tool_names};
-pub use sandbox_js::{JsEnv, JsOutput, js_command, not_here, run_js, sandbox_commands};
+pub use sandbox_js::{JsEnv, js_command, not_here, run_js, sandbox_commands};
 pub use vm::{HostFn, VmBeat, VmLimits, VmRun, VmSpec, VmStop, run_in_vm};

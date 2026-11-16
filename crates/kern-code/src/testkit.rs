@@ -129,20 +129,15 @@ impl ToolHost for Recorder {
     }
 }
 
-#[derive(Default)]
-pub struct Stats {
-    pub calls: AtomicUsize,
-    live: AtomicUsize,
-    pub peak: AtomicUsize,
-}
-
 /// A fake tool that counts calls and peak concurrency, answering `answer` after `ms`.
 pub struct Probe {
     pub name: String,
     pub read_only: bool,
     pub ms: u64,
     pub answer: ToolOutput,
-    pub stats: Arc<Stats>,
+    calls: AtomicUsize,
+    live: AtomicUsize,
+    peak: AtomicUsize,
 }
 
 impl Probe {
@@ -152,16 +147,18 @@ impl Probe {
             read_only,
             ms,
             answer: ToolOutput::text("ok"),
-            stats: Arc::default(),
+            calls: AtomicUsize::new(0),
+            live: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
         }
     }
 
     pub fn calls(&self) -> usize {
-        self.stats.calls.load(Ordering::SeqCst)
+        self.calls.load(Ordering::SeqCst)
     }
 
     pub fn peak(&self) -> usize {
-        self.stats.peak.load(Ordering::SeqCst)
+        self.peak.load(Ordering::SeqCst)
     }
 }
 
@@ -183,12 +180,11 @@ impl Tool for Probe {
         self.read_only
     }
     async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let s = &self.stats;
-        s.calls.fetch_add(1, Ordering::SeqCst);
-        s.peak
-            .fetch_max(s.live.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let live = self.live.fetch_add(1, Ordering::SeqCst) + 1;
+        self.peak.fetch_max(live, Ordering::SeqCst);
         tokio::time::sleep(Duration::from_millis(self.ms)).await;
-        s.live.fetch_sub(1, Ordering::SeqCst);
+        self.live.fetch_sub(1, Ordering::SeqCst);
         Ok(self.answer.clone())
     }
 }

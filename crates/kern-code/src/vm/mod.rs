@@ -18,9 +18,9 @@
 //! [`VmSpec`] -- JSON values, a prelude, async functions answered here, module sources.
 
 mod engine;
-pub(crate) mod host;
-pub(crate) mod parts;
-pub(crate) mod path;
+mod host;
+mod parts;
+mod path;
 mod setup;
 mod supervise;
 #[cfg(test)]

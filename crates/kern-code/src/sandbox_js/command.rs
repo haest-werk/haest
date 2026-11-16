@@ -9,7 +9,7 @@ use kern_core::{
     workspace::ExecResult,
 };
 
-use super::{JS_COMMAND, JsEnv, JsOutput, NOT_HERE, js_command, not_here};
+use super::{JS_COMMAND, JsEnv, NOT_HERE, js_command, not_here};
 
 /// What the model is told the sandbox can run, beside the shell itself.
 #[cfg(feature = "typescript")]
@@ -26,15 +26,6 @@ pub fn sandbox_commands() -> Vec<Arc<dyn ShellCommand>> {
             .map(|name| Arc::new(NotHere(name)) as Arc<dyn ShellCommand>),
     );
     out
-}
-
-fn exec_result(out: JsOutput) -> ExecResult {
-    ExecResult {
-        stdout: out.stdout,
-        stderr: out.stderr,
-        exit_code: out.exit_code,
-        timed_out: false,
-    }
 }
 
 /// `js <file> [args]`.
@@ -58,7 +49,7 @@ impl ShellCommand for JsShellCommand {
             cancel: call.cancel,
             ends_at: Some(call.ends_at),
         };
-        exec_result(js_command(&call.args, &env).await)
+        js_command(&call.args, &env).await
     }
 }
 
@@ -72,6 +63,6 @@ impl ShellCommand for NotHere {
     }
 
     async fn run(&self, _call: ShellCall) -> ExecResult {
-        exec_result(not_here(self.0))
+        not_here(self.0)
     }
 }

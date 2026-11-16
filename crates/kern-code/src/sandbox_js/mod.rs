@@ -35,7 +35,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use kern_core::fs::{Fs, resolve_path};
+use kern_core::{
+    fs::{Fs, resolve_path},
+    workspace::ExecResult,
+};
 use tokio_util::sync::CancellationToken;
 
 pub use command::{JsShellCommand, NotHere, sandbox_commands};
@@ -65,19 +68,12 @@ pub struct JsEnv {
     pub ends_at: Option<Instant>,
 }
 
-/// What a shell gets back from a command.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JsOutput {
-    pub stdout: String,
-    pub stderr: String,
-    pub exit_code: i32,
-}
-
-fn output(stdout: impl Into<String>, stderr: impl Into<String>, exit_code: i32) -> JsOutput {
-    JsOutput {
+fn output(stdout: impl Into<String>, stderr: impl Into<String>, exit_code: i32) -> ExecResult {
+    ExecResult {
         stdout: stdout.into(),
         stderr: stderr.into(),
         exit_code,
+        timed_out: false,
     }
 }
 
@@ -93,7 +89,7 @@ No npm packages, no network. To call kern's tools from code, use the Code tool.
 }
 
 /// What `bun`, `node`, ... answer in the sandbox: a pointer to `js`, exit 127.
-pub fn not_here(name: &str) -> JsOutput {
+pub fn not_here(name: &str) -> ExecResult {
     output(
         "",
         format!(
@@ -128,7 +124,7 @@ fn runnable(source: String, path: &Path) -> Result<String, String> {
 }
 
 /// `js <file> [args]` -- `args` are the command's arguments, not including `js` itself.
-pub async fn js_command(args: &[String], env: &JsEnv) -> JsOutput {
+pub async fn js_command(args: &[String], env: &JsEnv) -> ExecResult {
     let Some(file) = args.first() else {
         return output("", usage(), 2);
     };
@@ -151,7 +147,7 @@ pub async fn js_command(args: &[String], env: &JsEnv) -> JsOutput {
 
 /// Run JavaScript already in hand, as the module at `path` (absolute: `process.argv[1]`,
 /// and its file name in error lines), with `args` after it in argv.
-pub async fn run_js(path: &Path, code: &str, args: &[String], env: &JsEnv) -> JsOutput {
+pub async fn run_js(path: &Path, code: &str, args: &[String], env: &JsEnv) -> ExecResult {
     let exit_code = Arc::new(Mutex::new(None));
     let mut argv = vec![JS_COMMAND.to_string(), path.display().to_string()];
     argv.extend(args.iter().cloned());
@@ -181,7 +177,7 @@ pub async fn run_js(path: &Path, code: &str, args: &[String], env: &JsEnv) -> Js
 }
 
 /// A run as a CLI result: the script's own exit code wins, then failure = 1.
-fn cli_result(run: VmRun, exit_code: Option<i32>, timeout: Duration) -> JsOutput {
+fn cli_result(run: VmRun, exit_code: Option<i32>, timeout: Duration) -> ExecResult {
     let uncaught = match (&run.error, exit_code) {
         (Some(e), None) => format!("✗ Uncaught {e}\n"),
         _ => String::new(),
