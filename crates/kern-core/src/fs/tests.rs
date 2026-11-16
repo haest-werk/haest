@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 use super::*;
 
@@ -34,6 +37,20 @@ async fn memfs_rename_moves_a_whole_tree_and_remove_needs_recursive() {
     assert!(fs.remove(Path::new("/d"), false).await.is_err());
     fs.remove(Path::new("/d"), true).await.unwrap();
     assert!(!fs.exists(Path::new("/d/y/1")).await);
+}
+
+/// What a real fs refuses: a dir moved into itself (EINVAL), the root removed.
+#[tokio::test]
+async fn memfs_refuses_a_dir_into_itself_and_removing_the_root() {
+    let fs = MemFs::with_files([("/a/x", "1")]);
+    let err = fs.rename(Path::new("/a"), Path::new("/a/b")).await;
+    assert_eq!(err.map_err(|e| e.kind()), Err(io::ErrorKind::InvalidInput));
+    assert!(fs.exists(Path::new("/a/x")).await, "nothing moved");
+    for recursive in [false, true] {
+        assert!(fs.remove(Path::new("/"), recursive).await.is_err());
+    }
+    fs.write(Path::new("/new"), b"n").await.unwrap();
+    assert!(fs.exists(Path::new("/a/x")).await);
 }
 
 #[test]

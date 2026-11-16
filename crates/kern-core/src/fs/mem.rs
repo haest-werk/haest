@@ -210,6 +210,10 @@ impl Fs for MemFs {
 
     async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()> {
         let p = normalize(path);
+        // EBUSY, as rmdir(2) on `/`: without the root every later write is NotFound.
+        if p.parent().is_none() {
+            return Err(err(ErrorKind::ResourceBusy, &p));
+        }
         let mut nodes = self.nodes.lock().unwrap();
         match nodes.get(&p) {
             None => return Err(not_found(&p)),
@@ -234,6 +238,10 @@ impl Fs for MemFs {
         let mut nodes = self.nodes.lock().unwrap();
         if !nodes.contains_key(&from) {
             return Err(not_found(&from));
+        }
+        // EINVAL, as rename(2): moved into itself it would be cut off from the tree.
+        if to != from && to.starts_with(&from) {
+            return Err(err(ErrorKind::InvalidInput, &to));
         }
         Self::parent_is_dir(&nodes, &to)?;
         let moved: Vec<PathBuf> = std::iter::once(from.clone())
