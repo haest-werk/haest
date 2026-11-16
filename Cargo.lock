@@ -935,6 +935,7 @@ dependencies = [
  "haest-session",
  "haest-settings",
  "haest-tools",
+ "haest-transport",
  "haest-wire",
  "haest-workspace",
  "serde",
@@ -1150,6 +1151,20 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "haest-transport"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "haest-core",
+ "haest-mods",
+ "haest-session",
+ "haest-wire",
+ "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

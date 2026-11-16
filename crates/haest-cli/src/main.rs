@@ -4,6 +4,7 @@
 //!   haest "fix the test"      the same, starting with that
 //!   haest -p "..." / cmd | haest -p   answer once, print the answer, exit
 //!   haest --json -p "..."     every loop event as one JSON line
+//!   haest --stdio             driven by the parent process: requests on stdin, frames on stdout
 //!   haest -r [id]             continue a session (the latest here without an id)
 //!   haest models | sessions   what haest knows / what it has saved
 //!   haest settings            every setting, its value and where it came from
@@ -36,15 +37,17 @@ use haest::{
     config::{Loaded, Loader, env_var},
     core::{error::report, session::sessions_dir},
     runtime::{BuildError, SessionError, Ui, list_sessions},
-    session::{Backend, Hub, HubOptions, start},
+    session::{Backend, Hub, HubOptions, SessionPrompter, start},
     settings::Settings,
+    transport::{Ended, Grant, Stdio, Transport},
+    wire::Origin,
     workspace::RealFs,
 };
 
 use crate::{
     args::{Args, Command},
     commands::Outcome,
-    mods::TermPrompter,
+    mods::{CliPrompter, TermPrompter},
     run::{Brakes, Session},
     term::{Runtime, TermUi},
 };
@@ -120,6 +123,21 @@ async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode
         })
         .await;
     code
+}
+
+/// Driven by the parent process over stdin and stdout, as a person at a
+/// terminal would drive it, until stdin closes (once what it asked has
+/// finished) or it sends `close`.
+async fn stdio_mode(session: &Session) -> ExitCode {
+    let backend: Arc<dyn Backend> = Arc::new(session.clone());
+    let attached = match Stdio::process().attach(backend, Grant::command(Origin::Human)) {
+        Ok(attached) => attached,
+        Err(e) => return fail(1, report(&e)),
+    };
+    match attached.ended().await {
+        Ended::PeerLeft | Ended::Closed => ExitCode::SUCCESS,
+        Ended::Failed(e) => fail(1, format!("reading stdin: {}", report(&e))),
+    }
 }
 
 /// `1 background job`, `2 background jobs`.
@@ -200,15 +218,24 @@ async fn main() -> ExitCode {
     if let Some(cmd) = &args.command {
         return subcommand(cmd, &loaded).await;
     }
-    let print = args.print || args.json || !std::io::stdin().is_terminal();
-    // The stream first: what the build says is in it, and the terminal shows it.
+    let stdio = loaded.config.stdio;
+    if stdio && (args.print || args.json || args.prompt_text().is_some()) {
+        return fail(
+            2,
+            "--stdio takes its requests on stdin: no prompt, -p or --json with it",
+        );
+    }
+    let print = !stdio && (args.print || args.json || !std::io::stdin().is_terminal());
+    // The stream first: what the build says is in it, and the terminal shows
+    // it (over stdio, the parent reads it from the start).
     let ring = HubOptions {
         ring: loaded.config.event_ring,
         ..HubOptions::default()
     };
     let hub = Hub::new(uuid::Uuid::new_v4().to_string(), ring);
-    let ui = Arc::new(TermUi::with_hub(args.json, hub.clone()));
-    let shown = term::show(ui.term.clone(), hub.subscribe(0));
+    let ui = TermUi::with_hub(args.json, hub.clone());
+    let ui = Arc::new(if stdio { ui.over_stdio() } else { ui });
+    let shown = (!stdio).then(|| term::show(ui.term.clone(), hub.subscribe(0)));
     loaded.notes.iter().for_each(|n| ui.warn(n));
     // What print mode asks, read before the build: with nothing to ask, the
     // run fails having created no session.
@@ -219,7 +246,11 @@ async fn main() -> ExitCode {
         }
         asked => asked.flatten(),
     };
-    let prompter = TermPrompter::new(ui.clone(), ask::interactive());
+    let prompter = if stdio {
+        CliPrompter::Session(SessionPrompter::new(hub.clone()))
+    } else {
+        CliPrompter::Term(TermPrompter::new(ui.clone(), ask::interactive()))
+    };
     let opts = cli.build_options();
     let inputs = haest::runtime_inputs(loaded);
     let rt = match haest::runtime::build(inputs, ui.clone(), prompter, opts).await {
@@ -230,6 +261,7 @@ async fn main() -> ExitCode {
     let session = start(rt, hub.clone());
     let interrupts = run::watch_interrupts(brakes.clone(), hub.subscribe(hub.last_seq()));
     let code = match input {
+        _ if stdio => stdio_mode(&session).await,
         Some(input) => print_mode(&session, &brakes, &input).await,
         None => match repl::repl(&session, &ui, args.prompt_text()).await {
             Ok(()) => ExitCode::SUCCESS,
@@ -243,7 +275,9 @@ async fn main() -> ExitCode {
         .with(|rt| Box::pin(async move { shutdown(rt).await }))
         .await;
     session.close().await;
-    let _ = shown.await;
+    if let Some(shown) = shown {
+        let _ = shown.await;
+    }
     interrupts.abort();
     code
 }
@@ -252,12 +286,14 @@ async fn main() -> ExitCode {
 /// terminal shows what it holds, then [`fail`] says why.
 async fn ended(
     hub: Hub,
-    shown: tokio::task::JoinHandle<()>,
+    shown: Option<tokio::task::JoinHandle<()>>,
     code: u8,
     why: impl std::fmt::Display,
 ) -> ExitCode {
     hub.close();
-    let _ = shown.await;
+    if let Some(shown) = shown {
+        let _ = shown.await;
+    }
     fail(code, why)
 }
 

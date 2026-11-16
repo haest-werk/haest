@@ -1,0 +1,34 @@
+[package]
+name = "haest-transport"
+description = "Transports for a haest session: the same wire frames over stdio, a Unix control socket or a broker link, each a dumb pipe in front of the session's Backend, with an access check per connection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+# The parent process drives the conversation over the child's stdin and stdout.
+stdio = ["tokio/io-std", "tokio/sync"]
+
+[dependencies]
+haest-core = { workspace = true }
+haest-wire = { workspace = true }
+haest-session = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "rt"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+haest-core = { workspace = true, features = ["testing"] }
+haest-session = { workspace = true, features = ["approvals"] }
+haest-mods = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "rt", "macros", "test-util"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

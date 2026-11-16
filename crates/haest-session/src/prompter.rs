@@ -91,4 +91,11 @@ impl Prompter for SessionPrompter {
             Ok(Answer::Deny) | Err(_) => ApprovalAnswer::Deny,
         }
     }
+
+    /// An ask an earlier ALWAYS answered: a notice, so a peer's record of
+    /// what ran stays complete.
+    fn auto_approved(&self, req: &ApprovalRequest) {
+        let text = format!("Allowed {} (always): {}", req.tool_name, req.description);
+        self.hub.notice(haest_wire::Level::Info, text);
+    }
 }

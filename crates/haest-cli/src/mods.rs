@@ -1,7 +1,8 @@
 //! Approval asks on the terminal. With no terminal to ask on, an ask is a deny
 //! that says why. The terminal has one reader at a time: asks from main and
 //! from subagents take turns, and one raised while the REPL prompt is open
-//! waits for it (announced above the prompt).
+//! waits for it (announced above the prompt). Driven over stdio, the parent
+//! answers them instead ([`CliPrompter::Session`]).
 
 use std::sync::Arc;
 
@@ -9,6 +10,7 @@ use async_trait::async_trait;
 use haest::{
     mods::{ApprovalAnswer, ApprovalRequest, Prompter},
     runtime::Ui,
+    session::SessionPrompter,
 };
 
 use crate::{ask, term::TermUi};
@@ -76,6 +78,30 @@ impl Prompter for TermPrompter {
             "Allowed {} (always): {}",
             req.tool_name, req.description
         ));
+    }
+}
+
+/// Who answers approval asks: the human at the terminal, or the parent that
+/// drives haest over stdio (each ask an `approval_ask` frame).
+pub enum CliPrompter {
+    Term(TermPrompter),
+    Session(SessionPrompter),
+}
+
+#[async_trait]
+impl Prompter for CliPrompter {
+    async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer {
+        match self {
+            Self::Term(p) => p.prompt(req).await,
+            Self::Session(p) => p.prompt(req).await,
+        }
+    }
+
+    fn auto_approved(&self, req: &ApprovalRequest) {
+        match self {
+            Self::Term(p) => p.auto_approved(req),
+            Self::Session(p) => p.auto_approved(req),
+        }
     }
 }
 

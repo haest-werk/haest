@@ -101,10 +101,12 @@ impl<D: Driven> Driver<D> {
         if left.human || !left.waiters.is_empty() {
             self.leftover = Some(left);
         }
+        self.status = self.driven.status();
+        // Every frame of the turn is in the stream before anyone hears it
+        // ended, so a peer's reply can follow them.
+        self.publish_status(State::Idle);
         for waiter in waiters {
             let _ = waiter.send(Ok(outcome.clone()));
         }
-        self.status = self.driven.status();
-        self.publish_status(State::Idle);
     }
 }

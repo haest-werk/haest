@@ -68,13 +68,16 @@ pub struct Config {
     /// Frames a host's session keeps for a peer that catches up, besides the
     /// running turn (haest-session's `HubOptions::ring`). Default 1000.
     pub event_ring: usize,
+    /// Be driven by a parent process over stdin and stdout, with no
+    /// terminal (haest-transport's `Stdio`). The environment and flags only.
+    pub stdio: bool,
 }
 
 impl Config {
     /// Bare haest working in `cwd` with `home` as the home dir
     /// ([`Settings::bare`]), and the loader's own settings at their defaults:
     /// no profile, no trusted dirs, `env_passthrough = core`, no `env`, `mcp`
-    /// off, no routing, a ring of 1000 frames.
+    /// off, no routing, a ring of 1000 frames, not driven over stdio.
     pub fn bare(cwd: impl Into<PathBuf>, home: impl Into<PathBuf>) -> Self {
         Settings::bare(cwd, home).into()
     }
@@ -137,6 +140,7 @@ impl From<Settings> for Config {
             mcp: false,
             provider_routing: None,
             event_ring: 1000,
+            stdio: false,
         }
     }
 }
@@ -249,6 +253,7 @@ fields! {
     "subagent_minutes" => settings.subagents.minutes,
     "subagent_budgets" => settings.subagents.budgets,
     "event_ring" => event_ring,
+    "stdio" => stdio,
     "data_dir" => settings.data_dir,
     "config_dir" => settings.config_dir,
     "debug" => settings.debug;

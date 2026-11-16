@@ -32,7 +32,7 @@ whole config files.
 | Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
 | Caps | [`max_turn_usd`](#max_turn_usd), [`max_turn_tokens`](#max_turn_tokens), [`max_request_tokens`](#max_request_tokens), [`max_turn_steps`](#max_turn_steps), [`max_turn_minutes`](#max_turn_minutes), [`max_repeats`](#max_repeats), [`max_conversation_usd`](#max_conversation_usd), [`max_conversation_tokens`](#max_conversation_tokens), [`context_window`](#context_window), [`compact_at`](#compact_at) |
 | Subagents | [`max_agent_turns`](#max_agent_turns), [`max_agent_depth`](#max_agent_depth), [`max_subagents`](#max_subagents), [`subagent_usd`](#subagent_usd), [`subagent_steps`](#subagent_steps), [`subagent_minutes`](#subagent_minutes), [`subagent_budgets`](#subagent_budgets) |
-| Watching and driving | [`event_ring`](#event_ring) |
+| Watching and driving | [`event_ring`](#event_ring), [`stdio`](#stdio) |
 | Paths | [`data_dir`](#data_dir), [`config_dir`](#config_dir), [`debug`](#debug) |
 | [Profiles](#profiles) | the built-in ones, and your own |
 
@@ -671,6 +671,21 @@ variable      HAEST_EVENT_RING=5000
 flag          --event-ring 5000
 ```
 
+### `stdio`
+
+Be driven by the parent process: requests in on stdin, frames out on stdout, no terminal.
+One JSON object per line both ways, in haest-wire's format: `hello` first, then every frame of the conversation from the start, and a `reply` to each request (a turn's at its end). The parent may do everything a terminal may: turns (a person's input), `interrupt`, model and effort changes, `clear`, `close`, and the answers to approval asks. haest runs until stdin closes, once what it was asked has finished, or until a `close`. Never from a file: a config file cannot turn a terminal into a pipe.
+
+- Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
+- Default: `false`
+- Set in: its variable or its flag only, never a config file
+
+```text
+config.toml   (not in a file)
+variable      HAEST_STDIO=true
+flag          --stdio
+```
+
 ## Paths
 
 ### `data_dir`
@@ -693,7 +708,7 @@ config.toml, providers and mods (unset: $XDG_CONFIG_HOME/haest, else ~/.config/h
 
 - Takes: a directory: `~/x` is under your home dir, `x` under the working dir
 - Default: `~/.config/haest`
-- Set in: its variable or its flag only: it says where the config file is
+- Set in: its variable or its flag only, never a config file
 
 ```text
 config.toml   (not in a file)

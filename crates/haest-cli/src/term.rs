@@ -35,6 +35,9 @@ pub struct TermUi {
     /// The stream every line goes into, and the terminal shows.
     hub: Hub,
     log: Mutex<AgentLog>,
+    /// The human types slash commands here (not when a parent drives haest
+    /// over stdio): a remedy may name one.
+    slash: bool,
 }
 
 impl TermUi {
@@ -52,7 +55,15 @@ impl TermUi {
             stdin: tokio::sync::Mutex::new(()),
             hub,
             log: Mutex::default(),
+            slash: true,
         }
+    }
+
+    /// No terminal: a parent process drives haest over stdio, and reads
+    /// every line as a frame.
+    pub fn over_stdio(mut self) -> Self {
+        self.slash = false;
+        self
     }
 
     /// A question answered on the next line (see `ask.rs`).
@@ -95,7 +106,7 @@ impl Ui for TermUi {
     }
 
     fn remedy(&self, limit: Limit) -> Option<String> {
-        crate::remedy::remedy(limit)
+        crate::remedy::remedy(limit, self.slash)
     }
 
     fn arrival(&self, headline: &str) {

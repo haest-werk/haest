@@ -10,3 +10,7 @@ export HAEST_ENV_PASSTHROUGH=core
 export HAEST_ENV='GH_TOKEN=${GITHUB_TOKEN}'
 export HAEST_MAX_TURN_USD=3
 export HAEST_TRUSTED_DIRS='~/projects'
+
+# A parent process that drives haest over its stdin and stdout sets this in
+# the child's environment only, never in a shell you type in (it is --stdio):
+#   HAEST_STDIO=true haest

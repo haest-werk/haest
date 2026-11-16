@@ -40,6 +40,12 @@ wire = ["dep:haest-wire"]
 # driver, its handle and stream. With `runtime`, the runtime is one; with
 # `mods`, approval asks go over it.
 session = ["dep:haest-session", "wire", "haest-runtime?/session"]
+# The session served to other programs: one connection's rules (`serve`), over
+# any line source and sink. Each transport below is its own feature, and does
+# nothing until a host attaches it.
+transport = ["dep:haest-transport", "session"]
+# A parent process drives the conversation over this one's stdin and stdout.
+transport-stdio = ["transport", "haest-transport/stdio"]
 # Fakes for a host's tests: a scripted model that records every request.
 testing = ["haest-core/testing"]
 
@@ -58,6 +64,7 @@ haest-config = { workspace = true, optional = true }
 haest-runtime = { workspace = true, optional = true }
 haest-wire = { workspace = true, optional = true }
 haest-session = { workspace = true, optional = true }
+haest-transport = { workspace = true, optional = true }
 
 # The notebook example runs under `cargo test` too, so a change that breaks a
 # plug point it uses fails the suite, not only a `cargo run` nobody did.
@@ -82,6 +89,12 @@ test = true
 [[example]]
 name = "session"
 required-features = ["session"]
+test = true
+
+# A parent process driving a conversation over a pipe pair: turns, replies, a stop.
+[[example]]
+name = "stdio"
+required-features = ["transport-stdio"]
 test = true
 
 # The notebook example and tests/plug_in.rs: what a host implementing the plug points needs.

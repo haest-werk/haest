@@ -81,7 +81,7 @@ fn set_in(def: &Def) -> &'static str {
         (Scope::User, _) => {
             "your own config file, its variable, its flag; never a project's file or a profile"
         }
-        (Scope::Process, _) => "its variable or its flag only: it says where the config file is",
+        (Scope::Process, _) => "its variable or its flag only, never a config file",
     }
 }
 

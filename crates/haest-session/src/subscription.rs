@@ -52,6 +52,12 @@ impl Subscription {
         self.last
     }
 
+    /// Everything the ring held for it was given (the gap first, if any):
+    /// what comes next is live.
+    pub fn caught_up(&self) -> bool {
+        self.backlog.is_empty()
+    }
+
     /// The next frame; None once the stream is closed and every frame it
     /// held was given. Cancel-safe: in a `select!`, a frame is never lost.
     pub async fn recv(&mut self) -> Option<Arc<Frame>> {

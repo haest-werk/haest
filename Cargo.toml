@@ -30,6 +30,7 @@ haest-runtime = { version = "0.2.0", path = "crates/haest-runtime" }
 haest = { version = "0.2.0", path = "crates/haest" }
 haest-wire = { version = "0.2.0", path = "crates/haest-wire" }
 haest-session = { version = "0.2.0", path = "crates/haest-session" }
+haest-transport = { version = "0.2.0", path = "crates/haest-transport" }
 
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-util = "0.7"

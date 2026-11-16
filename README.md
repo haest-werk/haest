@@ -35,6 +35,7 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | `haest-runtime` | a whole conversation built from what a host hands it, behind its `Ui`; what the CLI is made of |
 | `haest-wire` | the wire format another program reads and drives a conversation with: the envelope around its events (`v`, `sid`, `seq`, `ts`, `path`), the requests a peer sends, a replay ring with gaps, an NDJSON codec; serde only |
 | `haest-session` | a conversation another program watches and drives while it runs: the session driver (one turn at a time, input mid-turn steered in, the rest queued through the turn gate), its handle (`Backend`), a numbered stream every subscriber reads with catch-up and one `gap` when it falls behind, approval asks answered over it |
+| `haest-transport` | the session served to another program: one connection's rules (`hello`, a reply per request, the stream as asked for, the access check) over any line source and sink; `Stdio` for a parent process (feature `stdio`) |
 | `haest` | the facade a host depends on: `use haest::...` |
 | `haest-cli` | the `haest` binary |
 | [`haest-issues`](https://github.com/haest-werk/haest/tree/main/crates/haest-issues/) | experimental, and an example of how to write tools: issue-tracker tools over one trait, for GitHub Issues and markdown board cards. Not in the `haest` facade: depend on it directly |
@@ -61,6 +62,8 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `testing` | `haest::core::testing` (a scripted model that records every request, for a host's tests) | no |
 | `wire` | `haest::wire` (the envelope, requests, replay ring, NDJSON codec) | no |
 | `session` | `haest::session` (the session driver, its handle and stream); with `runtime`, the whole conversation as one | no |
+| `transport` | `haest::transport` (the session served to another program, over any line source and sink) | no |
+| `transport-stdio` | `haest::transport::Stdio` (a parent process drives the conversation over stdin and stdout) | no |
 
 ```toml
 haest = "0.2"
@@ -79,6 +82,7 @@ haest -p "say hi"                     # bare: a model and nothing else
 haest --tools read,grep,glob -p "what is this project?"
 haest --profile claude                # a conversation with what haest reads of Claude Code
 haest --resume                        # continue the latest session in this directory
+haest --stdio                         # driven by a parent process: wire requests on stdin, frames on stdout
 haest settings                        # every setting, its value and where it came from
 haest models                          # the models haest knows
 ```

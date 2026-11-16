@@ -192,6 +192,8 @@
 //! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI | no |
 //! | `wire` | [`wire`]: the envelope around a conversation's events, the requests a peer sends, a replay ring with gaps, an NDJSON codec | no |
 //! | `session` | [`session`]: a conversation another program watches and drives while it runs (input mid-turn, catch-up, approvals over it); with `runtime`, the whole conversation is one | no |
+//! | `transport` | [`transport`]: the session served to another program, one connection's rules over any line source and sink | no |
+//! | `transport-stdio` | `transport::Stdio`: a parent process drives the conversation over this one's stdin and stdout | no |
 //! | `testing` | [`core::testing`]: a scripted model and other fakes for tests | no |
 //!
 //! ```toml
@@ -280,6 +282,9 @@ pub use haest_settings as settings;
 #[cfg(feature = "tools")]
 #[doc(inline)]
 pub use haest_tools as tools;
+#[cfg(feature = "transport")]
+#[doc(inline)]
+pub use haest_transport as transport;
 #[cfg(feature = "wire")]
 #[doc(inline)]
 pub use haest_wire as wire;

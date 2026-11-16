@@ -57,7 +57,8 @@ pub enum Scope {
     Any,
     /// The human's own: never from a project's file (a repo must not trust itself).
     User,
-    /// The environment and flags only: it says where the files are.
+    /// The environment and flags only: it says where the files are, or how
+    /// this one process runs.
     Process,
 }
 
@@ -217,6 +218,9 @@ pub const DEFS: &[Def] = &[
     def("subagent_budgets", AGENTS, Bool, "true", "The Agent tool takes a budget {usd, minutes}: tighter caps for one subagent, its spend held on the conversation's budget while it runs, its time fitted to what is left of the turn")
         .detail("Off, the Agent tool's parameters are Claude Code's. On, each value only tightens `subagent_usd` and `subagent_minutes` (an absent one is the cap); a spawn whose spend or time does not fit what is left is refused with what is left, so the model can ask for less. Subagents running at once hold their spend together, so they cannot overshoot `max_conversation_usd` together."),
     def("event_ring", SESSION, Number, "5000", "Frames kept for a peer that catches up on the conversation's stream, besides the running turn"),
+    def("stdio", SESSION, Bool, "true", "Be driven by the parent process: requests in on stdin, frames out on stdout, no terminal")
+        .scope(Scope::Process)
+        .detail("One JSON object per line both ways, in haest-wire's format: `hello` first, then every frame of the conversation from the start, and a `reply` to each request (a turn's at its end). The parent may do everything a terminal may: turns (a person's input), `interrupt`, model and effort changes, `clear`, `close`, and the answers to approval asks. haest runs until stdin closes, once what it was asked has finished, or until a `close`. Never from a file: a config file cannot turn a terminal into a pipe."),
     def("data_dir", PATHS, Path, "~/.haest/data", "Sessions, history and spill files (unset: $XDG_DATA_HOME/haest, else ~/.local/share/haest)"),
     def("config_dir", PATHS, Path, "~/dotfiles/haest", "config.toml, providers and mods (unset: $XDG_CONFIG_HOME/haest, else ~/.config/haest)").scope(Scope::Process),
     def("debug", PATHS, Bool, "true", "Log what haest does under the hood"),

@@ -1,5 +1,6 @@
 //! The `haest` command's way past each limit: the setting that sets the cap,
-//! or the slash command that gets past it. haest's own message says what
+//! or the slash command that gets past it (only where a human types them: a
+//! parent driving haest over stdio has none). haest's own message says what
 //! happened; this is added after it.
 
 use haest::{
@@ -7,9 +8,24 @@ use haest::{
     core::{caps::ConversationCap, remedy::Limit},
 };
 
-/// What the human can do about `limit` here; None for a limit with no way past it.
-pub fn remedy(limit: Limit) -> Option<String> {
+/// What the human can do about `limit` here; None for a limit with no way
+/// past it. With `slash` false, no slash command is named.
+pub fn remedy(limit: Limit, slash: bool) -> Option<String> {
     Some(match limit {
+        Limit::RequestTokens(_) if !slash => format!(
+            "A `clear` control starts the conversation over. {}",
+            sets_the_cap("max_request_tokens")
+        ),
+        Limit::Conversation(ConversationCap::Usd(_)) if !slash => {
+            sets_the_cap("max_conversation_usd")
+        }
+        Limit::Conversation(ConversationCap::UnpricedTokens(_)) if !slash => {
+            sets_the_cap("max_conversation_tokens")
+        }
+        Limit::SandboxEdits if !slash => format!(
+            "They stay in the sandbox; haest started with --{} real edits the real file system.",
+            setting("workspace").flag()
+        ),
         Limit::TurnSteps(_) => sets_the_cap("max_turn_steps"),
         Limit::TurnTime(_) => sets_the_cap("max_turn_minutes"),
         Limit::TurnUsd(_) => sets_the_cap("max_turn_usd"),
@@ -64,13 +80,18 @@ mod tests {
             Limit::SandboxEdits,
         ];
         for limit in limits {
-            assert!(remedy(limit).is_some(), "{limit:?}");
+            assert!(remedy(limit, true).is_some(), "{limit:?}");
+            let driven = remedy(limit, false).unwrap_or_else(|| panic!("{limit:?}"));
+            assert!(
+                !driven.contains('/'),
+                "no slash command over stdio: {driven}"
+            );
         }
     }
 
     #[test]
     fn the_budget_remedy_raises_the_cap_in_force() {
-        let text = remedy(Limit::Conversation(ConversationCap::Usd(5.0))).unwrap();
+        let text = remedy(Limit::Conversation(ConversationCap::Usd(5.0)), true).unwrap();
         assert!(text.contains("/budget 10"), "{text}");
     }
 }

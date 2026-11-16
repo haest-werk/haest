@@ -182,8 +182,9 @@ impl<D: Driven> Driver<D> {
             }
             Command::Control { control, reply } => {
                 let done = self.change(control).await;
-                let _ = reply.send(done);
+                // The status frame saying what changed goes out first.
                 self.refresh();
+                let _ = reply.send(done);
             }
             Command::Snapshot(tx) => {
                 self.status = self.driven.status();
