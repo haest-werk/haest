@@ -1,4 +1,4 @@
-use kern::{ToolOutput, ToolResultMessage};
+use kern::{AssistantMessage, ToolOutput, ToolResultMessage};
 use serde_json::json;
 
 use super::*;
@@ -49,6 +49,33 @@ fn the_answer_goes_to_stdout_and_the_work_to_stderr() {
     let (out, err) = render(false, &[hello, read_result(false)]);
     assert_eq!(out, "Hello\n");
     assert!(err.contains("Read src/a.rs"));
+}
+
+fn turn_end(stop_reason: StopReason, error: Option<&str>) -> LoopEvent {
+    LoopEvent::TurnEnd {
+        stop_reason,
+        usage: Usage::default(),
+        duration_ms: 1,
+        error: error.map(Into::into),
+    }
+}
+
+/// A failed turn says why, once: a failed model call through its message,
+/// anything else (a hook's refusal, a turn that could not start) at its end.
+#[test]
+fn a_failed_turn_shows_its_error_once() {
+    let (_, err) = render(false, &[turn_end(StopReason::Error, Some("over budget"))]);
+    assert!(err.contains("over budget"), "{err}");
+
+    let mut failed = AssistantMessage::start("p", "m");
+    failed.stop_reason = StopReason::Error;
+    failed.error_message = Some("503 from the provider".into());
+    let evs = [
+        LoopEvent::Assistant { message: failed },
+        turn_end(StopReason::Error, Some("503 from the provider")),
+    ];
+    let (_, err) = render(false, &evs);
+    assert_eq!(err.matches("503 from the provider").count(), 1, "{err}");
 }
 
 #[test]

@@ -21,6 +21,9 @@ pub struct Renderer<O: Write, E: Write> {
     color: bool,
     /// The last thing written to stdout did not end a line.
     open_line: bool,
+    /// The failed model call this turn already showed: its turn end does not
+    /// say it again.
+    shown_error: Option<String>,
     /// While the REPL prompt is open: where a line goes so it lands ABOVE the
     /// prompt, never inside what the human is typing.
     above: Option<Sender<String>>,
@@ -46,6 +49,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
             json,
             color,
             open_line: false,
+            shown_error: None,
             above: None,
         }
     }
@@ -114,13 +118,19 @@ impl<O: Write, E: Write> Renderer<O, E> {
                 if let Some(err) = &message.error_message {
                     self.note(RED, &format!("model call failed: {err}"));
                 }
+                self.shown_error = message.error_message.clone();
             }
             LoopEvent::TurnEnd {
                 stop_reason, error, ..
             } => {
                 self.end_line();
-                if let (Some(e), false) = (error, *stop_reason == StopReason::Error) {
-                    self.note(YELLOW, &format!("turn stopped: {e}"));
+                let shown = self.shown_error.take();
+                match (error, *stop_reason == StopReason::Error) {
+                    (Some(e), true) if shown.as_ref() != Some(e) => {
+                        self.note(RED, &format!("turn failed: {e}"));
+                    }
+                    (Some(e), false) => self.note(YELLOW, &format!("turn stopped: {e}")),
+                    _ => {}
                 }
                 if *stop_reason == StopReason::Aborted {
                     self.note(YELLOW, "interrupted");
