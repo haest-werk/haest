@@ -41,14 +41,14 @@ fn an_update_only_touches_the_fields_it_names() {
         active_form: None,
     });
     let patch = TaskPatch {
-        status: Some(PatchStatus::Set(HaestTaskStatus::InProgress)),
+        status: Some(PatchStatus::Set(TaskStatus::InProgress)),
         ..Default::default()
     };
     b.update("1", patch).unwrap();
     let t = b.get("1").unwrap();
     assert_eq!(t.subject, "keep me");
     assert_eq!(t.description.as_deref(), Some("details"));
-    assert_eq!(t.status, HaestTaskStatus::InProgress);
+    assert_eq!(t.status, TaskStatus::InProgress);
 }
 
 #[test]
@@ -70,24 +70,24 @@ fn a_task_blocking_itself_is_refused_before_anything_changes() {
     let b = TaskBoard::new(move |_| *seen.lock().unwrap() += 1);
     b.create(new("a"));
     let patch = TaskPatch {
-        status: Some(PatchStatus::Set(HaestTaskStatus::Completed)),
+        status: Some(PatchStatus::Set(TaskStatus::Completed)),
         add_blocked_by: vec!["1".into()],
         ..Default::default()
     };
     assert!(b.update("1", patch).is_err());
-    assert_eq!(b.get("1").unwrap().status, HaestTaskStatus::Pending);
+    assert_eq!(b.get("1").unwrap().status, TaskStatus::Pending);
     assert_eq!(*snapshots.lock().unwrap(), 1);
 }
 
 #[test]
 fn a_restored_list_continues_the_id_count() {
     let b = TaskBoard::default();
-    b.restore(vec![HaestTask {
+    b.restore(vec![Task {
         id: "7".into(),
         subject: "x".into(),
         description: None,
         active_form: None,
-        status: HaestTaskStatus::Pending,
+        status: TaskStatus::Pending,
         blocked_by: vec![],
         blocks: vec![],
         owner: None,
@@ -102,7 +102,7 @@ fn completing_stamps_completed_at_from_the_board_clock() {
     let b = TaskBoard::with_clock(|_| {}, || 42);
     b.create(new("a"));
     let patch = TaskPatch {
-        status: Some(PatchStatus::Set(HaestTaskStatus::Completed)),
+        status: Some(PatchStatus::Set(TaskStatus::Completed)),
         ..Default::default()
     };
     let t = b.update("1", patch).unwrap().unwrap();

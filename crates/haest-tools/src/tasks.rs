@@ -11,16 +11,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::{
-    task_board::{
-        HaestTask, HaestTaskStatus, NewTask, PatchStatus, TaskBoard, TaskError, TaskPatch,
-    },
+    task_board::{NewTask, PatchStatus, Task, TaskBoard, TaskError, TaskPatch, TaskStatus},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str, spelled},
 };
 use serde_json::{Value, json};
 
 const STATUSES: [&str; 4] = ["pending", "in_progress", "completed", "deleted"];
 
-fn line(t: &HaestTask) -> String {
+fn line(t: &Task) -> String {
     let blocked = if t.blocked_by.is_empty() {
         String::new()
     } else {
@@ -45,9 +43,9 @@ fn status(input: &JsonMap) -> Result<Option<PatchStatus>, ToolError> {
         return Ok(None);
     };
     Ok(Some(match s {
-        "pending" => PatchStatus::Set(HaestTaskStatus::Pending),
-        "in_progress" => PatchStatus::Set(HaestTaskStatus::InProgress),
-        "completed" => PatchStatus::Set(HaestTaskStatus::Completed),
+        "pending" => PatchStatus::Set(TaskStatus::Pending),
+        "in_progress" => PatchStatus::Set(TaskStatus::InProgress),
+        "completed" => PatchStatus::Set(TaskStatus::Completed),
         "deleted" => PatchStatus::Deleted,
         _ => {
             return Err(ToolError::Input(format!(

@@ -67,7 +67,7 @@ use crate::{
     ledger::LedgerSnapshot,
     messages::{Message, ToolCall, ToolResultMessage},
     provider::Effort,
-    task_board::HaestTask,
+    task_board::Task,
 };
 
 /// One line of a session file. Serialized with a `type` tag (`header`,
@@ -144,7 +144,7 @@ pub enum SessionRecord {
         #[serde(deserialize_with = "millis")]
         t: u64,
         /// Every task, in list order.
-        tasks: Vec<HaestTask>,
+        tasks: Vec<Task>,
     },
 }
 
@@ -205,7 +205,7 @@ pub struct ReplayedSession {
     /// The last ledger record; None when there was none.
     pub ledger: Option<LedgerSnapshot>,
     /// The last task list; None when there was none.
-    pub tasks: Option<Vec<HaestTask>>,
+    pub tasks: Option<Vec<Task>>,
     /// Lines that are not a record (a torn final line from a crash mid-write),
     /// and records of a kind haest knows that do not parse.
     pub corrupt_lines: usize,

@@ -44,12 +44,8 @@ async fn planning_with_the_task_tools_is_persisted_and_survives_a_revive() {
     assert_eq!(
         now,
         [
-            (
-                "1".into(),
-                "write schema".into(),
-                HaestTaskStatus::Completed
-            ),
-            ("2".into(), "write api".into(), HaestTaskStatus::Pending),
+            ("1".into(), "write schema".into(), TaskStatus::Completed),
+            ("2".into(), "write api".into(), TaskStatus::Pending),
         ]
     );
 
@@ -65,8 +61,8 @@ async fn planning_with_the_task_tools_is_persisted_and_survives_a_revive() {
     assert_eq!(
         back,
         [
-            ("1".into(), HaestTaskStatus::Completed),
-            ("2".into(), HaestTaskStatus::Pending)
+            ("1".into(), TaskStatus::Completed),
+            ("2".into(), TaskStatus::Pending)
         ]
     );
 }

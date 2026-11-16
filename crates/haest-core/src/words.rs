@@ -225,7 +225,7 @@ mod tests {
         deferred_tools::DeferMode,
         messages::MediaKind,
         provider::{Effort, WebSearchEngine},
-        task_board::HaestTaskStatus,
+        task_board::TaskStatus,
         workspace::WorkspaceMode,
     };
 
@@ -247,7 +247,7 @@ mod tests {
         round_trips(WebSearchEngine::ALL, |v| v.as_str());
         round_trips(WorkspaceMode::ALL, |v| v.as_str());
         round_trips(DeferMode::ALL, |v| v.as_str());
-        round_trips(HaestTaskStatus::ALL, |v| v.as_str());
+        round_trips(TaskStatus::ALL, |v| v.as_str());
         round_trips(MediaKind::ALL, |v| v.as_str());
         let err = serde_json::from_str::<Effort>("\"huge\"").unwrap_err();
         assert!(err.to_string().contains("unknown effort"), "{err}");

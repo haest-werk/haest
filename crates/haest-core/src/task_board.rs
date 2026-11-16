@@ -16,7 +16,7 @@
 //! ```
 //! use std::sync::{Arc, Mutex};
 //!
-//! use haest_core::task_board::{HaestTaskStatus, NewTask, PatchStatus, TaskBoard, TaskPatch};
+//! use haest_core::task_board::{NewTask, PatchStatus, TaskBoard, TaskPatch, TaskStatus};
 //!
 //! let published = Arc::new(Mutex::new(0));
 //! let seen = published.clone();
@@ -25,11 +25,11 @@
 //! let schema = board.create(NewTask { subject: "Write the schema".into(), ..Default::default() });
 //! let api = board.create(NewTask { subject: "Write the API".into(), ..Default::default() });
 //! board.update(&api.id, TaskPatch { add_blocked_by: vec![schema.id.clone()], ..Default::default() })?;
-//! let done = TaskPatch { status: Some(PatchStatus::Set(HaestTaskStatus::Completed)), ..Default::default() };
+//! let done = TaskPatch { status: Some(PatchStatus::Set(TaskStatus::Completed)), ..Default::default() };
 //! board.update(&schema.id, done)?;
 //!
 //! assert_eq!(board.get("2")?.blocked_by, ["1"]);
-//! assert_eq!(board.get("1")?.status, HaestTaskStatus::Completed);
+//! assert_eq!(board.get("1")?.status, TaskStatus::Completed);
 //! assert_eq!(*published.lock().unwrap(), 4, "one snapshot per change");
 //! # Ok::<(), haest_core::task_board::TaskError>(())
 //! ```
@@ -43,7 +43,7 @@ use crate::deps::now_ms;
 crate::word_enum! {
     /// Where a task stands. `as_str` is the wire name (`in_progress`).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum HaestTaskStatus ("task status") {
+    pub enum TaskStatus ("task status") {
         /// Not started; every new task begins here.
         Pending = "pending",
         /// Being worked on now.
@@ -56,7 +56,7 @@ crate::word_enum! {
 /// One task on the list, in Claude Code's shape (camelCase on the wire).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HaestTask {
+pub struct Task {
     /// The board's counter as text ("1", "2", ...).
     pub id: String,
     /// What to do, in a line.
@@ -68,7 +68,7 @@ pub struct HaestTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_form: Option<String>,
     /// Where it stands.
-    pub status: HaestTaskStatus,
+    pub status: TaskStatus,
     /// The ids that must finish before this one.
     #[serde(default)]
     pub blocked_by: Vec<String>,
@@ -89,7 +89,7 @@ pub struct HaestTask {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatchStatus {
     /// Move the task to this status.
-    Set(HaestTaskStatus),
+    Set(TaskStatus),
     /// Remove the task, and every link to it from the others.
     Deleted,
 }
@@ -132,12 +132,12 @@ pub struct NewTask {
     pub active_form: Option<String>,
 }
 
-type OnChange = Box<dyn Fn(&[HaestTask]) + Send + Sync>;
+type OnChange = Box<dyn Fn(&[Task]) + Send + Sync>;
 type Clock = Box<dyn Fn() -> u64 + Send + Sync>;
 
 struct State {
     /// Insertion order is list order.
-    tasks: Vec<HaestTask>,
+    tasks: Vec<Task>,
     next: u64,
 }
 
@@ -197,13 +197,13 @@ impl Default for TaskBoard {
 impl TaskBoard {
     /// An empty board that hands every new snapshot to `on_change`; the clock
     /// is the system's ([`now_ms`]).
-    pub fn new(on_change: impl Fn(&[HaestTask]) + Send + Sync + 'static) -> Self {
+    pub fn new(on_change: impl Fn(&[Task]) + Send + Sync + 'static) -> Self {
         Self::with_clock(on_change, now_ms)
     }
 
     /// Same, with the clock `updated_at` reads (a host's paused clock, a test's fixed one).
     pub fn with_clock(
-        on_change: impl Fn(&[HaestTask]) + Send + Sync + 'static,
+        on_change: impl Fn(&[Task]) + Send + Sync + 'static,
         now: impl Fn() -> u64 + Send + Sync + 'static,
     ) -> Self {
         Self {
@@ -217,7 +217,7 @@ impl TaskBoard {
     }
 
     /// Every task, in the order they were created.
-    pub fn list(&self) -> Vec<HaestTask> {
+    pub fn list(&self) -> Vec<Task> {
         self.state.lock().unwrap().tasks.clone()
     }
 
@@ -226,22 +226,22 @@ impl TaskBoard {
     /// # Errors
     ///
     /// A [`TaskError`] naming the ids that exist, when none matches.
-    pub fn get(&self, id: &str) -> Result<HaestTask, TaskError> {
+    pub fn get(&self, id: &str) -> Result<Task, TaskError> {
         let s = self.state.lock().unwrap();
         s.find(id).map(|i| s.tasks[i].clone())
     }
 
     /// Add a task at the end of the list, `pending`, with the next id; fires
     /// `on_change`. Returns the new task.
-    pub fn create(&self, input: NewTask) -> HaestTask {
+    pub fn create(&self, input: NewTask) -> Task {
         let task = {
             let mut s = self.state.lock().unwrap();
-            let task = HaestTask {
+            let task = Task {
                 id: s.next.to_string(),
                 subject: input.subject,
                 description: input.description,
                 active_form: input.active_form,
-                status: HaestTaskStatus::Pending,
+                status: TaskStatus::Pending,
                 blocked_by: Vec::new(),
                 blocks: Vec::new(),
                 owner: None,
@@ -268,7 +268,7 @@ impl TaskBoard {
     /// does not exist, or when the task would block itself. Every check runs
     /// before the first change: a refused patch changes nothing and fires
     /// nothing.
-    pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Option<HaestTask>, TaskError> {
+    pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Option<Task>, TaskError> {
         let out = {
             let mut s = self.state.lock().unwrap();
             let at = s.find(id)?;
@@ -302,7 +302,7 @@ impl TaskBoard {
     /// Replace the whole list (session replay); does not fire `on_change`.
     /// The next id is one past the highest numeric id in `tasks` (an id that
     /// is not a number counts as 0); an empty list starts again at "1".
-    pub fn restore(&self, tasks: Vec<HaestTask>) {
+    pub fn restore(&self, tasks: Vec<Task>) {
         let mut s = self.state.lock().unwrap();
         let max = tasks
             .iter()
@@ -320,7 +320,7 @@ impl TaskBoard {
     }
 }
 
-fn set_fields(task: &mut HaestTask, patch: &TaskPatch, now: u64) {
+fn set_fields(task: &mut Task, patch: &TaskPatch, now: u64) {
     let set = |field: &mut Option<String>, v: &Option<String>| {
         if let Some(v) = v {
             *field = Some(v.clone());
@@ -336,7 +336,7 @@ fn set_fields(task: &mut HaestTask, patch: &TaskPatch, now: u64) {
         task.status = status;
     }
     task.updated_at = now;
-    if patch.status == Some(PatchStatus::Set(HaestTaskStatus::Completed)) {
+    if patch.status == Some(PatchStatus::Set(TaskStatus::Completed)) {
         task.completed_at = Some(now);
     }
 }
