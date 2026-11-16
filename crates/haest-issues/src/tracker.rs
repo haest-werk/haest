@@ -117,11 +117,9 @@ pub enum LinkChange {
     Remove,
 }
 
-/// Which issues [`Tracker::list`] returns.
-///
-/// Set [`limit`](Self::limit): the default is 0, and a list of at most 0
-/// issues is empty.
-#[derive(Debug, Clone, Default, PartialEq)]
+/// Which issues [`Tracker::list`] returns. The default is the open issues,
+/// at most [`DEFAULT_LIMIT`](Self::DEFAULT_LIMIT) of them.
+#[derive(Debug, Clone, PartialEq)]
 pub struct IssueFilter {
     /// Only these statuses; None = the tracker's [`TrackerInfo::open_statuses`].
     pub statuses: Option<Vec<String>>,
@@ -131,6 +129,23 @@ pub struct IssueFilter {
     pub priority: Option<String>,
     /// At most this many issues.
     pub limit: usize,
+}
+
+impl IssueFilter {
+    /// How many issues a list returns when nobody says: 30, what the issue
+    /// tools ask for when the model names no `limit`.
+    pub const DEFAULT_LIMIT: usize = 30;
+}
+
+impl Default for IssueFilter {
+    fn default() -> Self {
+        Self {
+            statuses: None,
+            labels: Vec::new(),
+            priority: None,
+            limit: Self::DEFAULT_LIMIT,
+        }
+    }
 }
 
 /// A new issue for [`Tracker::create`].
@@ -320,6 +335,21 @@ mod tests {
         assert_eq!(replace.labels_from(&current), ["x", "y"]);
         assert!(!IssuePatch::default().changes_labels());
         assert!(IssuePatch::default().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_default_filter_lists_the_open_issues() {
+        let board = crate::cards::CardTracker::new(
+            std::sync::Arc::new(haest_core::fs::MemFs::new()),
+            "/cards",
+        );
+        let new = NewIssue {
+            title: "Fix the login".into(),
+            ..Default::default()
+        };
+        board.create(new).await.unwrap();
+        let listed = board.list(&IssueFilter::default()).await.unwrap();
+        assert_eq!(listed.len(), 1);
     }
 
     #[test]

@@ -29,7 +29,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 use haest_core::tool::{JsonMap, Tool, ToolContext, ToolError, opt_num, spelled};
 use serde_json::{Value, json};
 
-use crate::tracker::{Issue, Tracker, TrackerError, TrackerInfo};
+use crate::tracker::{Issue, IssueFilter, Tracker, TrackerError, TrackerInfo};
 
 /// A tool's struct: its name and the tracker it shares with the others.
 macro_rules! issue_tool {
@@ -57,7 +57,6 @@ pub const DELETE_KIND: &str = "issue.delete";
 
 /// How long one tool call may take, every request of it together.
 const TIMEOUT: Duration = Duration::from_secs(120);
-const DEFAULT_LIMIT: usize = 30;
 const MAX_LIMIT: usize = 100;
 
 /// What every issue tool shares: the tracker and what it accepts.
@@ -154,7 +153,7 @@ fn words_in(input: &JsonMap, key: &str) -> Result<Vec<String>, ToolError> {
 
 /// `limit`, 1 to 100; 30 when not given.
 fn limit_in(input: &JsonMap) -> Result<usize, ToolError> {
-    let n = opt_num(input, "limit")?.map_or(DEFAULT_LIMIT, |n| n.max(1.0) as usize);
+    let n = opt_num(input, "limit")?.map_or(IssueFilter::DEFAULT_LIMIT, |n| n.max(1.0) as usize);
     Ok(n.min(MAX_LIMIT))
 }
 
