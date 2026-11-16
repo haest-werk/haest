@@ -286,7 +286,7 @@ fn media_of(m: &Message) -> &[MediaPart] {
     }
 }
 
-/// The history for the request-size estimate ([`crate::limits`]): its JSON
+/// The history for the request-size estimate ([`crate::caps`]): its JSON
 /// with every message's media taken out, and the media's own rough token
 /// cost.
 ///

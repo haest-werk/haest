@@ -150,7 +150,7 @@ async fn one_long_agentic_turn_can_be_compacted() {
     let res = res.unwrap().expect("something to compact");
     assert_eq!(agent.history()[1..], h[h.len() - res.kept..]);
     assert!(matches!(&agent.history()[0], Message::User(u) if u.content.contains("THE SUMMARY")));
-    assert!(answered_within(&agent.history()));
+    assert!(answered_within(agent.history()));
 }
 
 #[tokio::test]

@@ -266,7 +266,7 @@ impl Rig {
 
     /// Main's user and tool-result texts, in order.
     pub fn texts(&self) -> Vec<String> {
-        texts(&self.main.history())
+        texts(self.main.history())
     }
 
     pub fn tool_results(&self) -> Vec<(String, bool)> {

@@ -192,11 +192,11 @@ async fn summarize(
     let resolved = agent
         .deps()
         .models
-        .resolve(&agent.model_spec())
+        .resolve(agent.model_spec())
         .map_err(CompactionError::Model)?;
     let (provider, model) = (resolved.provider.as_ref(), resolved.model);
     let prefix = agent.request_prefix(&model).await;
-    let mut messages = agent.sendable(&agent.history(), &model);
+    let mut messages = agent.sendable(agent.history(), &model);
     messages.push(Message::user(warm_instruction(kept)));
     let warm = ask(
         provider,
@@ -369,7 +369,7 @@ pub async fn compact(
     cancel: &CancellationToken,
     cfg: &CompactionConfig,
 ) -> Result<Option<CompactionResult>, CompactionError> {
-    let cut = cut_index(&agent.history(), cfg.keep_recent);
+    let cut = cut_index(agent.history(), cfg.keep_recent);
     if cut == 0 {
         return Ok(None);
     }

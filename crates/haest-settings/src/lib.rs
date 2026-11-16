@@ -28,7 +28,7 @@
 //!
 //! [haest-runtime](https://docs.rs/haest-runtime/) builds a whole conversation
 //! from a `Settings`. A host that builds its own takes the parts it needs:
-//! [`Settings::turn_caps_for`] and [`Settings::ledger`] for the loop's caps,
+//! [`Settings::turn_caps_for`] and [`Settings::conversation_caps`] for the loop's caps,
 //! [`WordSet::has`] on [`Settings::tools`] for haest-tools'
 //! `builtin_tools_where`.
 //!

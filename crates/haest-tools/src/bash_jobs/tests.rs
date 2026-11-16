@@ -141,7 +141,7 @@ async fn a_background_job_shows_in_the_running_set_and_its_exit_wakes_the_model_
     let chunks = r.events.chunks.lock().unwrap().clone();
     let printed: String = chunks.iter().map(|(_, c, _)| c.as_str()).collect();
     assert!(printed.contains("built"));
-    assert!(user_texts(&agent.history()).last().unwrap().contains("b1"));
+    assert!(user_texts(agent.history()).last().unwrap().contains("b1"));
     assert!(matches!(
         agent.history().last(),
         Some(Message::Assistant(_))

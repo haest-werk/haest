@@ -24,7 +24,7 @@ pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 ///
 /// 0 means no cap, for every field. A token cap left `None` follows the
 /// model's context window instead; [`Settings::turn_caps_for`] turns these into
-/// the loop's per-turn [`TurnCaps`] and [`Settings::ledger`] into the
+/// the loop's per-turn [`TurnCaps`] and [`Settings::conversation_caps`] into the
 /// conversation's [`ConversationCaps`]. The loop checks them before each model call;
 /// the human goes past a turn cap by sending another message.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,7 +62,7 @@ pub struct Limits {
 /// caps are grouped in [`Limits`] and [`SubagentCaps`].
 ///
 /// The helper methods turn fields into what the loop and the tools take:
-/// [`turn_caps_for`](Self::turn_caps_for), [`ledger`](Self::ledger),
+/// [`turn_caps_for`](Self::turn_caps_for), [`conversation_caps`](Self::conversation_caps),
 /// [`code_tools`](Self::code_tools()), [`web_search_config`](Self::web_search_config),
 /// [`image_models`](Self::image_models()) and [`spill_dir`](Self::spill_dir).
 ///

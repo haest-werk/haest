@@ -182,7 +182,7 @@ impl RuntimeHooks {
         cancel: &CancellationToken,
         auto: bool,
     ) -> Result<(), String> {
-        let cfg = self.compaction_for(&agent.model_spec());
+        let cfg = self.compaction_for(agent.model_spec());
         match compact(agent, cancel, &cfg).await {
             Ok(None) if !auto => self.info("Nothing to compact yet."),
             Ok(None) => {}
@@ -243,7 +243,7 @@ impl AgentHooks for RuntimeHooks {
         agent: &mut Agent,
         cancel: &CancellationToken,
     ) -> Result<(), String> {
-        if needs_compaction(&agent.history(), &self.compaction_for(&agent.model_spec())) {
+        if needs_compaction(agent.history(), &self.compaction_for(agent.model_spec())) {
             self.compact_now(agent, cancel, true).await?;
         }
         Ok(())

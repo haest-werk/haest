@@ -267,7 +267,7 @@ pub use async_trait::async_trait;
 #[doc(inline)]
 pub use haest_core as core;
 
-/// The key types and [`async_trait`], for a glob import:
+/// The key types and [`async_trait`](macro@async_trait), for a glob import:
 /// `use haest::prelude::*;`.
 ///
 /// Glob-import this rather than the facade's root: the root also holds
