@@ -1,6 +1,7 @@
 //! The hub: connects servers, holds the connections, hands out their tools, and
 //! shuts every server down on [`McpHub::close`] -- or when it is dropped.
 
+mod failure;
 mod start;
 
 use std::{
@@ -11,11 +12,13 @@ use std::{
 use futures::future::join_all;
 use haest_core::{
     ChildEnv,
+    error::report,
     tool::{Tool, ToolSource},
 };
 use rmcp::{RoleClient, model::ClientConfig, service::RunningService, transport::IntoTransport};
 
 use crate::config::McpServerConfig;
+pub use failure::{McpFailure, McpStartError};
 use start::{Started, admit, close_quietly, start, start_config};
 
 /// How long a server may take to start and answer MCP's `initialize`, and
@@ -26,17 +29,6 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// How long closing may wait for one server; a server that hangs is left to die alone.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// A server that did not connect, and why: what [`McpHub::failures`] lists.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct McpFailure {
-    /// The server's name, as configured.
-    pub name: String,
-    /// Why it failed: the program did not start, the connection or the tool
-    /// list timed out, the server answered with an error, a header could not
-    /// be sent.
-    pub error: String,
-}
 
 type Client = RunningService<RoleClient, ClientConfig>;
 
@@ -106,7 +98,8 @@ impl McpHub {
     /// A server that cannot start is a failure to report, not an error:
     ///
     /// ```
-    /// use haest_mcp::{McpHub, McpServerConfig};
+    /// use haest_core::error::report;
+    /// use haest_mcp::{McpHub, McpServerConfig, McpStartError};
     ///
     /// # #[tokio::main(flavor = "current_thread")]
     /// # async fn main() {
@@ -115,9 +108,10 @@ impl McpHub {
     /// hub.connect(&[broken], &|line| println!("{line}")).await;
     ///
     /// assert!(hub.tools().is_empty());
-    /// let failed = hub.failures();
-    /// assert_eq!(failed[0].name, "broken");
-    /// println!("MCP server {} did not start: {}", failed[0].name, failed[0].error);
+    /// let failed = &hub.failures()[0];
+    /// assert_eq!(failed.name, "broken");
+    /// assert!(matches!(*failed.error, McpStartError::Spawn { .. }));
+    /// println!("MCP server {} did not start: {}", failed.name, report(&*failed.error));
     /// # }
     /// ```
     pub async fn connect(&self, configs: &[McpServerConfig], log: &(dyn Fn(&str) + Sync)) {
@@ -153,7 +147,7 @@ impl McpHub {
         T: IntoTransport<RoleClient, E, A>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let res = start(name, transport).await;
+        let res = start(transport).await;
         if let Some(started) = self.settle(name, res, log) {
             admit(&mut self.lock_servers(), name, started);
         }
@@ -162,7 +156,7 @@ impl McpHub {
     fn settle(
         &self,
         name: &str,
-        res: Result<Started, String>,
+        res: Result<Started, McpStartError>,
         log: &(dyn Fn(&str) + Sync),
     ) -> Option<Started> {
         match res {
@@ -171,10 +165,10 @@ impl McpHub {
                 Some(started)
             }
             Err(error) => {
-                log(&format!("mcp {name}: FAILED {error}"));
+                log(&format!("mcp {name}: FAILED {}", report(&error)));
                 let failure = McpFailure {
                     name: name.to_string(),
-                    error,
+                    error: Arc::new(error),
                 };
                 self.failures.lock().unwrap().push(failure);
                 None

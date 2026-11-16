@@ -21,7 +21,7 @@ async fn connected(server: TestServer) -> (McpHub, JoinHandle<()>) {
     let (io, handle) = spawn(server);
     let hub = McpHub::new();
     hub.connect_transport("srv", io, &|_| {}).await;
-    assert_eq!(hub.failures(), []);
+    assert!(hub.failures().is_empty(), "{:?}", hub.failures());
     (hub, handle)
 }
 

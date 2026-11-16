@@ -19,6 +19,7 @@ use crate::{
     haest::{
         ChildEnv, ShutWorkspace, Workspace, WorkspaceMode,
         code::sandbox_commands,
+        core::error::report,
         core::fs::{Fs, ensure_dir},
         core::remedy::Remedies,
         mcp::{McpHub, McpServerConfig, McpTransport},
@@ -238,7 +239,8 @@ async fn start(hooks: &RuntimeHooks, hub: McpHub, servers: Vec<McpServerConfig>)
     })
     .await;
     for f in hub.failures() {
-        hooks.warn(&format!("MCP server {} did not start: {}", f.name, f.error));
+        let why = report(&*f.error);
+        hooks.warn(&format!("MCP server {} did not start: {why}", f.name));
     }
     hub
 }

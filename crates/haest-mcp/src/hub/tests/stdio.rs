@@ -72,7 +72,7 @@ async fn a_stdio_server_answers_calls_and_its_process_ends_on_close() {
     let hub = McpHub::with_env(std::env::vars().collect());
     hub.connect(&[sh("local", SH_SERVER, &dir, &[])], &|_| {})
         .await;
-    assert_eq!(hub.failures(), []);
+    assert!(hub.failures().is_empty(), "{:?}", hub.failures());
     let tools = hub.tools();
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name(), "mcp__local__pid");
@@ -121,15 +121,15 @@ async fn a_bare_command_with_no_path_handed_fails_naming_the_missing_path() {
     hub.connect(&bare(), &|_| {}).await;
     let error = &hub.failures()[0].error;
     assert!(
-        error.contains("PATH"),
-        "the missing PATH goes unnamed: {error}"
+        matches!(**error, McpStartError::NotOnPath { .. }),
+        "the missing PATH goes unnamed: {error:?}"
     );
     // With a PATH handed in, a missing program is only missing.
     let path = ChildEnv::new([("PATH".into(), "/usr/bin:/bin".into())]);
     let hub = McpHub::with_env(path);
     hub.connect(&bare(), &|_| {}).await;
     let error = &hub.failures()[0].error;
-    assert!(!error.contains("PATH"), "{error}");
+    assert!(matches!(**error, McpStartError::Spawn { .. }), "{error:?}");
 }
 
 #[tokio::test]

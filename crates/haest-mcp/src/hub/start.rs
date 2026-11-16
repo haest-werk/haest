@@ -1,7 +1,7 @@
 //! Starting one server: reach it (stdio, HTTP, or a host's own transport),
 //! `initialize`, list its tools, and name them apart from the tools already held.
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc};
 
 use haest_core::{ChildEnv, tool::Tool};
 use rmcp::{
@@ -10,7 +10,7 @@ use rmcp::{
     transport::IntoTransport,
 };
 
-use super::{CLOSE_TIMEOUT, CONNECT_TIMEOUT, Client, Server};
+use super::{CLOSE_TIMEOUT, CONNECT_TIMEOUT, Client, McpStartError, Server};
 use crate::{
     config::{McpServerConfig, McpTransport},
     tool::{McpTool, unique_tool_name},
@@ -47,16 +47,12 @@ pub(super) fn admit(servers: &mut Vec<Server>, name: &str, started: Started) {
     });
 }
 
-fn timed_out(name: &str, what: &str, after: Duration) -> String {
-    format!("MCP {name} {what} timed out after {}ms", after.as_millis())
-}
-
 pub(super) async fn close_quietly(mut client: Client) {
     let _ = client.close_with_timeout(CLOSE_TIMEOUT).await;
 }
 
 /// Initialize, then list the tools; a failure closes what was opened.
-pub(super) async fn start<T, E, A>(name: &str, transport: T) -> Result<Started, String>
+pub(super) async fn start<T, E, A>(transport: T) -> Result<Started, McpStartError>
 where
     T: IntoTransport<RoleClient, E, A>,
     E: std::error::Error + Send + Sync + 'static,
@@ -67,18 +63,18 @@ where
     );
     let client = tokio::time::timeout(CONNECT_TIMEOUT, info.serve(transport))
         .await
-        .map_err(|_| timed_out(name, "connect", CONNECT_TIMEOUT))?
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| McpStartError::InitializeTimedOut(CONNECT_TIMEOUT))?
+        .map_err(|e| McpStartError::Initialize(e.into()))?;
     let listed = tokio::time::timeout(CONNECT_TIMEOUT, client.peer().list_all_tools()).await;
     let listed = match listed {
         Ok(Ok(tools)) => tools,
         Ok(Err(e)) => {
             close_quietly(client).await;
-            return Err(e.to_string());
+            return Err(McpStartError::ListTools(e.into()));
         }
         Err(_) => {
             close_quietly(client).await;
-            return Err(timed_out(name, "listTools", CONNECT_TIMEOUT));
+            return Err(McpStartError::ListToolsTimedOut(CONNECT_TIMEOUT));
         }
     };
     Ok(Started { client, listed })
@@ -89,7 +85,7 @@ where
 pub(super) async fn start_config(
     cfg: &McpServerConfig,
     handed: &ChildEnv,
-) -> Result<Started, String> {
+) -> Result<Started, McpStartError> {
     match &cfg.transport {
         McpTransport::Stdio {
             command,
@@ -98,10 +94,8 @@ pub(super) async fn start_config(
             cwd,
         } => {
             let child = transport::stdio(command, args, handed, env, cwd.as_deref())?;
-            start(&cfg.name, child).await
+            start(child).await
         }
-        McpTransport::Http { url, headers } => {
-            start(&cfg.name, transport::http(url, headers)?).await
-        }
+        McpTransport::Http { url, headers } => start(transport::http(url, headers)?).await,
     }
 }

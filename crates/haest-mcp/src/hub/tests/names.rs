@@ -23,7 +23,7 @@ async fn every_name_is_one_providers_accept_unique_across_servers_and_reaches_it
     // Spelled like the first once `.` is rewritten: its tools must not shadow the first's.
     let (io, _two) = spawn(TestServer::named("two", &["a.b"]));
     hub.connect_transport("docs_site", io, &|_| {}).await;
-    assert_eq!(hub.failures(), []);
+    assert!(hub.failures().is_empty(), "{:?}", hub.failures());
 
     let tools = hub.tools();
     let names: BTreeSet<&str> = tools.iter().map(|t| t.name()).collect();

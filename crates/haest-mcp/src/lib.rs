@@ -187,7 +187,7 @@
 //! servers.extend(project.servers);
 //! hub.connect(&servers, &|line| eprintln!("{line}")).await;
 //! for failed in hub.failures() {
-//!     eprintln!("MCP server {} did not start: {}", failed.name, failed.error);
+//!     eprintln!("MCP server {} did not start: {}", failed.name, report(&*failed.error));
 //! }
 //!
 //! // `hub` is a ToolSource: hand it to the loop. At the end, shut the servers down.
@@ -209,7 +209,7 @@ mod transport;
 mod test_server;
 
 pub use config::{McpServerConfig, McpTransport};
-pub use hub::{CALL_TIMEOUT, CONNECT_TIMEOUT, McpFailure, McpHub};
+pub use hub::{CALL_TIMEOUT, CONNECT_TIMEOUT, McpFailure, McpHub, McpStartError};
 pub use project::{McpConfigError, ProjectMcp, load_project_mcp_config, project_mcp_path};
 pub use result::mcp_result_to_output;
 pub use tool::{mcp_kind, mcp_tool_name};

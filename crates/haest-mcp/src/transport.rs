@@ -2,9 +2,9 @@
 //! streamable HTTP. Building one can fail (no such program, a header HTTP cannot
 //! carry); that failure is the server's, never the hub's.
 
-use std::{collections::BTreeMap, path::Path, process::Stdio, sync::OnceLock};
+use std::{collections::BTreeMap, io, path::Path, process::Stdio, sync::OnceLock};
 
-use haest_core::{ChildEnv, error::report};
+use haest_core::ChildEnv;
 use haest_http::{
     build_reqwest,
     reqwest::{
@@ -18,6 +18,8 @@ use rmcp::transport::{
     streamable_http_client::StreamableHttpClientTransportConfig,
 };
 
+use crate::McpStartError;
+
 /// `command args...` with the host's handed env plus the server's own `env`
 /// over it -- not this process's environment -- in `cwd`. A bare command is
 /// found on that env's PATH, or with none in the system's default directories;
@@ -29,7 +31,7 @@ pub(crate) fn stdio(
     handed: &ChildEnv,
     env: &BTreeMap<String, String>,
     cwd: Option<&Path>,
-) -> Result<TokioChildProcess, String> {
+) -> Result<TokioChildProcess, McpStartError> {
     let mut cmd = tokio::process::Command::new(command);
     cmd.args(args)
         .env_clear()
@@ -43,15 +45,15 @@ pub(crate) fn stdio(
     let (child, _stderr) = TokioChildProcess::builder(cmd)
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| {
+        .map_err(|source| {
+            let command = command.to_string();
             let unsearched = no_path && !command.contains('/');
-            let hint = match e.kind() {
-                std::io::ErrorKind::NotFound if unsearched => {
-                    " (the server was given no PATH, so a bare command is looked up only in the system's default directories: hand PATH in with McpHub::with_env or the server's env, or name the program by its path)"
+            match source.kind() {
+                io::ErrorKind::NotFound if unsearched => {
+                    McpStartError::NotOnPath { command, source }
                 }
-                _ => "",
-            };
-            format!("spawn {command}: {e}{hint}")
+                _ => McpStartError::Spawn { command, source },
+            }
         })?;
     Ok(child)
 }
@@ -59,14 +61,19 @@ pub(crate) fn stdio(
 /// Header names and values as HTTP takes them, or the one that cannot be sent.
 pub(crate) fn header_map(
     headers: &BTreeMap<String, String>,
-) -> Result<std::collections::HashMap<HeaderName, HeaderValue>, String> {
+) -> Result<std::collections::HashMap<HeaderName, HeaderValue>, McpStartError> {
     headers
         .iter()
         .map(|(k, v)| {
-            let name = HeaderName::try_from(k.as_str())
-                .map_err(|e| format!("header \"{k}\" is not a valid name: {e}"))?;
-            let value = HeaderValue::try_from(v.as_str())
-                .map_err(|e| format!("header \"{k}\" has a value HTTP cannot carry: {e}"))?;
+            let name = HeaderName::try_from(k.as_str()).map_err(|e| McpStartError::HeaderName {
+                name: k.clone(),
+                source: e.into(),
+            })?;
+            let value =
+                HeaderValue::try_from(v.as_str()).map_err(|e| McpStartError::HeaderValue {
+                    name: k.clone(),
+                    source: e.into(),
+                })?;
             Ok((name, value))
         })
         .collect()
@@ -76,7 +83,7 @@ pub(crate) fn header_map(
 pub(crate) fn http(
     url: &str,
     headers: &BTreeMap<String, String>,
-) -> Result<StreamableHttpClientTransport<reqwest::Client>, String> {
+) -> Result<StreamableHttpClientTransport<reqwest::Client>, McpStartError> {
     let headers = header_map(headers)?;
     let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(headers);
     Ok(StreamableHttpClientTransport::with_client(
@@ -92,13 +99,13 @@ pub(crate) fn http(
 /// the message). Like rmcp's own, it keeps no idle connections (a reused one
 /// can stall ~40 ms). Built once (by haest-http, which sets up TLS) and shared
 /// by every HTTP server.
-fn http_client() -> Result<reqwest::Client, String> {
+fn http_client() -> Result<reqwest::Client, McpStartError> {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     if let Some(client) = CLIENT.get() {
         return Ok(client.clone());
     }
     let builder = reqwest_builder().pool_max_idle_per_host(0);
-    let built = build_reqwest(builder).map_err(|e| report(&e))?;
+    let built = build_reqwest(builder).map_err(McpStartError::Client)?;
     Ok(CLIENT.get_or_init(|| built).clone())
 }
 
@@ -112,7 +119,11 @@ mod tests {
         let map = header_map(&ok).unwrap();
         assert_eq!(map[&HeaderName::from_static("authorization")], "Bearer t");
         let bad = BTreeMap::from([("X-Bad".to_string(), "line\nbreak".to_string())]);
-        assert!(header_map(&bad).unwrap_err().contains("X-Bad"));
+        let e = header_map(&bad).unwrap_err();
+        assert!(matches!(e, McpStartError::HeaderValue { name, .. } if name == "X-Bad"));
+        let bad = BTreeMap::from([("X Bad".to_string(), "v".to_string())]);
+        let e = header_map(&bad).unwrap_err();
+        assert!(matches!(e, McpStartError::HeaderName { name, .. } if name == "X Bad"));
     }
 
     #[tokio::test]
