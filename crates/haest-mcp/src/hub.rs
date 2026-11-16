@@ -1,8 +1,9 @@
 //! The hub: connects servers, holds the connections, hands out their tools, and
 //! shuts every server down on [`McpHub::close`] -- or when it is dropped.
 
+mod start;
+
 use std::{
-    collections::HashSet,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -12,18 +13,10 @@ use haest_core::{
     ChildEnv,
     tool::{Tool, ToolSource},
 };
-use rmcp::{
-    RoleClient, ServiceExt,
-    model::{ClientCapabilities, ClientConfig, Implementation},
-    service::RunningService,
-    transport::IntoTransport,
-};
+use rmcp::{RoleClient, model::ClientConfig, service::RunningService, transport::IntoTransport};
 
-use crate::{
-    config::{McpServerConfig, McpTransport},
-    tool::{McpTool, unique_tool_name},
-    transport,
-};
+use crate::config::McpServerConfig;
+use start::{Started, admit, close_quietly, start, start_config};
 
 /// How long a server may take to start and answer MCP's `initialize`, and
 /// again to list its tools: 15 seconds each. Past it, the server is a failure.
@@ -52,36 +45,6 @@ struct Server {
     tools: Vec<Arc<dyn Tool>>,
 }
 
-/// A server that answered, its tools listed but not yet named.
-struct Started {
-    client: Client,
-    listed: Vec<rmcp::model::Tool>,
-}
-
-/// Keep `started` beside `servers`, each of its tools named apart from every
-/// tool already held: two servers or tools that differ only in characters a
-/// provider rejects, or past the 64th, never share a name.
-fn admit(servers: &mut Vec<Server>, name: &str, started: Started) {
-    let mut taken: HashSet<String> = servers
-        .iter()
-        .flat_map(|s| s.tools.iter().map(|t| t.name().to_string()))
-        .collect();
-    let peer = started.client.peer().clone();
-    let tools = started
-        .listed
-        .into_iter()
-        .map(|t| {
-            let unique = unique_tool_name(name, &t.name, &taken);
-            taken.insert(unique.clone());
-            Arc::new(McpTool::new(name, unique, t, peer.clone())) as Arc<dyn Tool>
-        })
-        .collect();
-    servers.push(Server {
-        client: started.client,
-        tools,
-    });
-}
-
 /// The MCP servers a conversation is connected to, and their tools.
 ///
 /// Make one ([`McpHub::new`], or [`McpHub::with_env`] to give stdio servers an
@@ -99,60 +62,6 @@ pub struct McpHub {
     failures: Mutex<Vec<McpFailure>>,
     /// What a stdio server's process gets, under its own `env`; nothing else.
     env: ChildEnv,
-}
-
-fn timed_out(name: &str, what: &str, after: Duration) -> String {
-    format!("MCP {name} {what} timed out after {}ms", after.as_millis())
-}
-
-async fn close_quietly(mut client: Client) {
-    let _ = client.close_with_timeout(CLOSE_TIMEOUT).await;
-}
-
-/// Initialize, then list the tools; a failure closes what was opened.
-async fn start<T, E, A>(name: &str, transport: T) -> Result<Started, String>
-where
-    T: IntoTransport<RoleClient, E, A>,
-    E: std::error::Error + Send + Sync + 'static,
-{
-    let info = ClientConfig::new(
-        ClientCapabilities::default(),
-        Implementation::new("haest", "1"),
-    );
-    let client = tokio::time::timeout(CONNECT_TIMEOUT, info.serve(transport))
-        .await
-        .map_err(|_| timed_out(name, "connect", CONNECT_TIMEOUT))?
-        .map_err(|e| e.to_string())?;
-    let listed = tokio::time::timeout(CONNECT_TIMEOUT, client.peer().list_all_tools()).await;
-    let listed = match listed {
-        Ok(Ok(tools)) => tools,
-        Ok(Err(e)) => {
-            close_quietly(client).await;
-            return Err(e.to_string());
-        }
-        Err(_) => {
-            close_quietly(client).await;
-            return Err(timed_out(name, "listTools", CONNECT_TIMEOUT));
-        }
-    };
-    Ok(Started { client, listed })
-}
-
-async fn start_config(cfg: &McpServerConfig, handed: &ChildEnv) -> Result<Started, String> {
-    match &cfg.transport {
-        McpTransport::Stdio {
-            command,
-            args,
-            env,
-            cwd,
-        } => {
-            let child = transport::stdio(command, args, handed, env, cwd.as_deref())?;
-            start(&cfg.name, child).await
-        }
-        McpTransport::Http { url, headers } => {
-            start(&cfg.name, transport::http(url, headers)?).await
-        }
-    }
 }
 
 impl McpHub {

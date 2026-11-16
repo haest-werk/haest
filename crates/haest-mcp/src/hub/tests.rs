@@ -9,7 +9,10 @@ use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 
 use super::*;
-use crate::test_server::{TestServer, spawn};
+use crate::{
+    McpTransport,
+    test_server::{TestServer, spawn},
+};
 
 /// A real wait that a paused clock skips at once.
 const SETTLE: Duration = Duration::from_secs(5);
