@@ -5,6 +5,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use haest_core::{
+    error::BoxError,
     tool::{JsonMap, Tool, ToolContext, ToolOutput},
     workspace::WorkspaceMode,
 };
@@ -71,23 +72,6 @@ haest_core::word_enum! {
         Allow = "allow",
         /// The human refused it, did not answer in time, or the call was interrupted.
         Deny = "deny",
-    }
-}
-
-/// A mod failed in one of its events. The host reports it to the human; it never
-/// takes the host down.
-///
-/// What a failure means depends on the event; [`Mods`](crate::Mods) has the
-/// rules (a failed `tool.before` refuses the call, a failed `tool.after`
-/// leaves the output as it was).
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
-#[error("{0}")]
-pub struct ModError(pub String);
-
-impl ModError {
-    /// A failure with this message.
-    pub fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
     }
 }
 
@@ -164,8 +148,11 @@ impl ModEnv {
 ///
 /// A mod is put in a conversation with [`Mods::add`](crate::Mods::add); every
 /// event runs across the mods in the order they were added. An `Err` from an
-/// event is reported to the human through [`ModUi::error`], and never takes
-/// the conversation down.
+/// event (any error, or a line of text: `Err("why".into())`) is reported to
+/// the human through [`ModUi::error`] with its causes, and never takes the
+/// conversation down. What else a failure means depends on the event;
+/// [`Mods`](crate::Mods) has the rules (a failed `tool.before` refuses the
+/// call, a failed `tool.after` leaves the output as it was).
 ///
 /// A mod runs with the HOST's full trust, sandbox or not.
 #[async_trait]
@@ -191,7 +178,7 @@ pub trait Mod: Send + Sync {
         _call: &ModToolCall,
         _ctx: &ToolContext,
         _haest: &ModEnv,
-    ) -> Result<Before, ModError> {
+    ) -> Result<Before, BoxError> {
         Ok(Before::Pass)
     }
 
@@ -205,7 +192,7 @@ pub trait Mod: Send + Sync {
         _output: &ToolOutput,
         _ctx: &ToolContext,
         _haest: &ModEnv,
-    ) -> Result<Option<ToolOutput>, ModError> {
+    ) -> Result<Option<ToolOutput>, BoxError> {
         Ok(None)
     }
 
@@ -215,14 +202,14 @@ pub trait Mod: Send + Sync {
         &self,
         _text: &str,
         _haest: &ModEnv,
-    ) -> Result<Option<String>, ModError> {
+    ) -> Result<Option<String>, BoxError> {
         Ok(None)
     }
 
     /// `system.prompt`: text appended to the system prompt, asked before every
     /// model call (through [`ModSystemPrompt`](crate::ModSystemPrompt)). None
     /// or empty adds nothing.
-    async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, ModError> {
+    async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
         Ok(None)
     }
 
@@ -246,7 +233,7 @@ pub trait Mod: Send + Sync {
         _name: &str,
         _args: &str,
         _haest: &ModEnv,
-    ) -> Result<Option<String>, ModError> {
+    ) -> Result<Option<String>, BoxError> {
         Ok(None)
     }
 }

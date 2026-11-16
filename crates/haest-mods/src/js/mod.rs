@@ -29,11 +29,14 @@ mod tool;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use haest_core::tool::{Tool, ToolContext, ToolOutput};
+use haest_core::{
+    error::BoxError,
+    tool::{Tool, ToolContext, ToolOutput},
+};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use crate::api::{Before, Mod, ModEnv, ModError, ModToolCall};
+use crate::api::{Before, Mod, ModEnv, ModToolCall};
 use channel::{JsMeta, JsThread};
 pub use load::{ModLimits, ModLoadError};
 use tool::JsTool;
@@ -113,7 +116,7 @@ impl JsMod {
         event: &'static str,
         payload: Value,
         cancel: Option<&CancellationToken>,
-    ) -> Result<Value, ModError> {
+    ) -> Result<Value, BoxError> {
         if !self.hooks(event) {
             return Ok(Value::Null);
         }
@@ -121,11 +124,24 @@ impl JsMod {
     }
 }
 
-fn text_of(v: Value, event: &str) -> Result<Option<String>, ModError> {
+/// A handler returned what its event does not take.
+#[derive(Debug, thiserror::Error)]
+enum BadReturn {
+    #[error("{event} returned {got}, not text")]
+    NotText { event: &'static str, got: Value },
+    #[error("tool.before returned an input that is not an object")]
+    InputNotObject,
+    #[error("tool.before returned {0}")]
+    Before(Value),
+    #[error("tool.after returned no tool output")]
+    NotOutput(#[source] serde_json::Error),
+}
+
+fn text_of(v: Value, event: &'static str) -> Result<Option<String>, BoxError> {
     match v {
         Value::Null => Ok(None),
         Value::String(s) => Ok(Some(s)),
-        other => Err(ModError(format!("{event} returned {other}, not text"))),
+        got => Err(BadReturn::NotText { event, got }.into()),
     }
 }
 
@@ -140,7 +156,7 @@ impl Mod for JsMod {
         call: &ModToolCall,
         ctx: &ToolContext,
         _haest: &ModEnv,
-    ) -> Result<Before, ModError> {
+    ) -> Result<Before, BoxError> {
         let payload = json!({ "call": call, "ctx": ctx_json(ctx) });
         match self
             .event("tool.before", payload, Some(&ctx.cancel))
@@ -150,11 +166,9 @@ impl Mod for JsMod {
             Value::Object(mut v) => match (v.remove("deny"), v.remove("input")) {
                 (Some(Value::String(reason)), _) => Ok(Before::Deny(reason)),
                 (_, Some(Value::Object(input))) => Ok(Before::Input(input)),
-                _ => Err(ModError::new(
-                    "tool.before returned an input that is not an object",
-                )),
+                _ => Err(BadReturn::InputNotObject.into()),
             },
-            other => Err(ModError(format!("tool.before returned {other}"))),
+            other => Err(BadReturn::Before(other).into()),
         }
     }
 
@@ -164,24 +178,24 @@ impl Mod for JsMod {
         output: &ToolOutput,
         ctx: &ToolContext,
         _haest: &ModEnv,
-    ) -> Result<Option<ToolOutput>, ModError> {
+    ) -> Result<Option<ToolOutput>, BoxError> {
         let payload = json!({ "call": call, "output": output, "ctx": ctx_json(ctx) });
         match self.event("tool.after", payload, Some(&ctx.cancel)).await? {
             Value::Null => Ok(None),
             v => serde_json::from_value(v)
                 .map(Some)
-                .map_err(|e| ModError(format!("tool.after returned no tool output: {e}"))),
+                .map_err(|e| BadReturn::NotOutput(e).into()),
         }
     }
 
-    async fn prompt_submit(&self, text: &str, _haest: &ModEnv) -> Result<Option<String>, ModError> {
+    async fn prompt_submit(&self, text: &str, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
         let v = self
             .event("prompt.submit", json!({ "text": text }), None)
             .await?;
         text_of(v, "prompt.submit")
     }
 
-    async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, ModError> {
+    async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
         let v = self.event("system.prompt", json!({}), None).await?;
         text_of(v, "system.prompt")
     }
@@ -203,7 +217,7 @@ impl Mod for JsMod {
         name: &str,
         args: &str,
         _haest: &ModEnv,
-    ) -> Result<Option<String>, ModError> {
+    ) -> Result<Option<String>, BoxError> {
         let payload = json!({ "name": name, "args": args });
         let v = self.thread.call("command", payload, None).await?;
         text_of(v, "command")

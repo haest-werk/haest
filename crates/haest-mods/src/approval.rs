@@ -12,11 +12,11 @@
 use std::sync::{Arc, LazyLock};
 
 use async_trait::async_trait;
-use haest_core::{tool::ToolContext, workspace::WorkspaceMode};
+use haest_core::{error::BoxError, tool::ToolContext, workspace::WorkspaceMode};
 use regex::bytes::{Regex, RegexBuilder};
 use serde_json::Value;
 
-use crate::api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModError, ModToolCall};
+use crate::api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModToolCall};
 
 /// ASCII classes, the way the JavaScript patterns these came from match.
 fn re(pattern: &str) -> Regex {
@@ -234,7 +234,7 @@ impl Mod for ApprovalMod {
         call: &ModToolCall,
         ctx: &ToolContext,
         haest: &ModEnv,
-    ) -> Result<Before, ModError> {
+    ) -> Result<Before, BoxError> {
         if haest.workspace != WorkspaceMode::Real || !self.shell_tools.contains(&call.name) {
             return Ok(Before::Pass);
         }

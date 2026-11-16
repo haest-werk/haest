@@ -12,9 +12,9 @@ use std::sync::{
 };
 
 use async_trait::async_trait;
-use haest_core::tool::ToolContext;
+use haest_core::{error::BoxError, tool::ToolContext};
 
-use crate::api::{Before, Mod, ModEnv, ModError, ModToolCall};
+use crate::api::{Before, Mod, ModEnv, ModToolCall};
 
 /// The slash command that drives plan mode, without its `/`: `/plan [topic]`
 /// turns it on, `/plan off` turns it off.
@@ -163,7 +163,7 @@ impl Mod for PlanMod {
         _name: &str,
         args: &str,
         haest: &ModEnv,
-    ) -> Result<Option<String>, ModError> {
+    ) -> Result<Option<String>, BoxError> {
         let args = args.trim();
         let on = args != "off";
         self.on.store(on, Ordering::SeqCst);
@@ -178,7 +178,7 @@ impl Mod for PlanMod {
         Ok((on && !args.is_empty()).then(|| format!("Plan this (plan mode is on): {args}")))
     }
 
-    async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, ModError> {
+    async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
         Ok(self.is_on().then(|| PLAN_PROMPT.to_string()))
     }
 
@@ -187,7 +187,7 @@ impl Mod for PlanMod {
         call: &ModToolCall,
         _ctx: &ToolContext,
         _haest: &ModEnv,
-    ) -> Result<Before, ModError> {
+    ) -> Result<Before, BoxError> {
         if self.is_on() && !call.read_only && !self.planning_tools.contains(&call.name) {
             return Ok(Before::Deny(format!(
                 "plan mode is on: {} changes things. Finish the plan; the human turns plan mode off with /plan off.",

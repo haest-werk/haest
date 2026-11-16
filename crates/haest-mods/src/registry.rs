@@ -5,9 +5,12 @@
 
 use std::sync::Arc;
 
-use haest_core::tool::{Tool, ToolContext, ToolError, ToolOutput};
+use haest_core::{
+    error::{BoxError, report},
+    tool::{Tool, ToolContext, ToolError, ToolOutput},
+};
 
-use crate::api::{Before, Mod, ModEnv, ModError, ModToolCall};
+use crate::api::{Before, Mod, ModEnv, ModToolCall};
 
 /// What the model reads for a call the human interrupted while a mod was deciding.
 const INTERRUPTED: &str = "Interrupted by the user before this tool ran.";
@@ -81,10 +84,11 @@ impl Mods {
         self.list.iter().flat_map(|m| m.tools()).collect()
     }
 
-    fn report(&self, m: &dyn Mod, event: &str, e: &ModError) {
+    fn report(&self, m: &dyn Mod, event: &str, e: &BoxError) {
+        let why = report(&**e);
         self.env
             .ui
-            .error(&format!("Mod {} failed in {event}: {e}", m.name()));
+            .error(&format!("Mod {} failed in {event}: {why}", m.name()));
     }
 
     /// `tool.before` across every mod: the call to run, or why it must not run.

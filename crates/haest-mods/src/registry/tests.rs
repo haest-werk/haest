@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use haest_core::{
     deps::SystemPrompt,
+    error::BoxError,
     tool::{Tool, ToolContext, ToolError, ToolOutput},
     workspace::WorkspaceMode,
 };
@@ -10,7 +11,7 @@ use serde_json::{Value, json};
 
 use super::*;
 use crate::{
-    api::{Before, Mod, ModEnv, ModError, ModToolCall},
+    api::{Before, Mod, ModEnv, ModToolCall},
     decorate::ModSystemPrompt,
     testkit::*,
 };
@@ -28,7 +29,7 @@ impl Mod for Rewriter {
         call: &ModToolCall,
         _ctx: &ToolContext,
         _haest: &ModEnv,
-    ) -> Result<Before, ModError> {
+    ) -> Result<Before, BoxError> {
         let v = call.input.get("v").and_then(Value::as_str).unwrap_or("");
         Ok(if v == "bad" {
             Before::Deny("no bad".into())
@@ -42,7 +43,7 @@ impl Mod for Rewriter {
         output: &ToolOutput,
         _ctx: &ToolContext,
         _haest: &ModEnv,
-    ) -> Result<Option<ToolOutput>, ModError> {
+    ) -> Result<Option<ToolOutput>, BoxError> {
         Ok(Some(ToolOutput {
             content: output.content.to_uppercase(),
             ..output.clone()
@@ -73,10 +74,10 @@ impl Mod for HouseRules {
     fn name(&self) -> &str {
         "house"
     }
-    async fn prompt_submit(&self, text: &str, _k: &ModEnv) -> Result<Option<String>, ModError> {
+    async fn prompt_submit(&self, text: &str, _k: &ModEnv) -> Result<Option<String>, BoxError> {
         Ok(Some(format!("{text} (be brief)")))
     }
-    async fn system_prompt(&self, _k: &ModEnv) -> Result<Option<String>, ModError> {
+    async fn system_prompt(&self, _k: &ModEnv) -> Result<Option<String>, BoxError> {
         Ok(Some("House rule: British spelling.".into()))
     }
     fn tools(&self) -> Vec<Arc<dyn Tool>> {
@@ -85,7 +86,7 @@ impl Mod for HouseRules {
     fn commands(&self) -> Vec<String> {
         vec!["/hello".into()]
     }
-    async fn command(&self, _n: &str, args: &str, _k: &ModEnv) -> Result<Option<String>, ModError> {
+    async fn command(&self, _n: &str, args: &str, _k: &ModEnv) -> Result<Option<String>, BoxError> {
         Ok(Some(format!("say hello to {args}")))
     }
 }
@@ -128,9 +129,9 @@ impl Mod for Broken {
         call: &ModToolCall,
         _c: &ToolContext,
         _k: &ModEnv,
-    ) -> Result<Before, ModError> {
+    ) -> Result<Before, BoxError> {
         if call.input.contains_key("guarded") {
-            return Err(ModError::new("boom"));
+            return Err("boom".into());
         }
         Ok(Before::Pass)
     }
@@ -140,11 +141,11 @@ impl Mod for Broken {
         _o: &ToolOutput,
         _x: &ToolContext,
         _k: &ModEnv,
-    ) -> Result<Option<ToolOutput>, ModError> {
-        Err(ModError::new("boom"))
+    ) -> Result<Option<ToolOutput>, BoxError> {
+        Err("boom".into())
     }
-    async fn prompt_submit(&self, _t: &str, _k: &ModEnv) -> Result<Option<String>, ModError> {
-        Err(ModError::new("boom"))
+    async fn prompt_submit(&self, _t: &str, _k: &ModEnv) -> Result<Option<String>, BoxError> {
+        Err("boom".into())
     }
 }
 
@@ -176,6 +177,34 @@ async fn a_failing_prompt_hook_leaves_the_text_as_it_was() {
     mods.add(Arc::new(HouseRules(Probe::new("Shout"))));
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
     assert_eq!(ui.errors().len(), 1);
+}
+
+/// Fails `system.prompt` with an error whose cause says what broke.
+struct Unread;
+
+#[derive(Debug, thiserror::Error)]
+#[error("the house rules cannot be read")]
+struct RulesUnread(#[source] std::io::Error);
+
+#[async_trait]
+impl Mod for Unread {
+    fn name(&self) -> &str {
+        "unread"
+    }
+    async fn system_prompt(&self, _k: &ModEnv) -> Result<Option<String>, BoxError> {
+        Err(RulesUnread(std::io::Error::other("disk gone")).into())
+    }
+}
+
+#[tokio::test]
+async fn a_mod_failure_reaches_the_human_with_its_cause() {
+    let ui = TestUi::new();
+    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
+    mods.add(Arc::new(Unread));
+    assert_eq!(mods.system_append().await, "");
+    let errors = ui.errors();
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("disk gone"), "{errors:?}");
 }
 
 #[tokio::test]

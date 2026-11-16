@@ -8,8 +8,6 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::ModError;
-
 pub(crate) type Reply = oneshot::Sender<Result<String, String>>;
 
 pub(crate) enum ToJs {
@@ -61,20 +59,15 @@ impl JsMeta {
 }
 
 /// Why a call into a mod's runtime came back empty.
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum CallError {
+    /// The mod's code threw, or answered what is not JSON: its words.
+    #[error("{0}")]
     Failed(String),
+    #[error("interrupted")]
     Interrupted,
+    #[error("the mod is no longer running")]
     Stopped,
-}
-
-impl From<CallError> for ModError {
-    fn from(e: CallError) -> Self {
-        ModError(match e {
-            CallError::Failed(m) => m,
-            CallError::Interrupted => "interrupted".into(),
-            CallError::Stopped => "the mod is no longer running".into(),
-        })
-    }
 }
 
 /// The way into one mod's thread. Dropping the last handle stops the thread.

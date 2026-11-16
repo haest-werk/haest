@@ -133,8 +133,8 @@
 //! use std::sync::Arc;
 //!
 //! use async_trait::async_trait;
-//! use haest_core::{ShutWorkspace, ToolContext, workspace::WorkspaceMode};
-//! use haest_mods::{Before, Mod, ModEnv, ModError, ModToolCall, ModTools, Mods};
+//! use haest_core::{ShutWorkspace, ToolContext, error::BoxError, workspace::WorkspaceMode};
+//! use haest_mods::{Before, Mod, ModEnv, ModToolCall, ModTools, Mods};
 //! use serde_json::json;
 //! # use haest_mods::{ApprovalRequest, Decision, ModUi};
 //! # struct Terminal;
@@ -165,7 +165,7 @@
 //!         "no-dotenv"
 //!     }
 //!
-//!     async fn tool_before(&self, call: &ModToolCall, _: &ToolContext, _: &ModEnv) -> Result<Before, ModError> {
+//!     async fn tool_before(&self, call: &ModToolCall, _: &ToolContext, _: &ModEnv) -> Result<Before, BoxError> {
 //!         let command = call.input.get("command").and_then(|c| c.as_str()).unwrap_or("");
 //!         Ok(if call.name == "Bash" && command.contains(".env") {
 //!             Before::Deny("this project keeps its secrets out of the transcript".into())
@@ -174,7 +174,7 @@
 //!         })
 //!     }
 //!
-//!     async fn system_prompt(&self, _: &ModEnv) -> Result<Option<String>, ModError> {
+//!     async fn system_prompt(&self, _: &ModEnv) -> Result<Option<String>, BoxError> {
 //!         Ok(Some("Never print a .env file.".into()))
 //!     }
 //! }
@@ -288,7 +288,7 @@ mod registry;
 #[cfg(test)]
 mod testkit;
 
-pub use api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModError, ModToolCall, ModUi};
+pub use api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModToolCall, ModUi};
 pub use approval::{ApprovalMod, AutoJudge, BashVerdict, SHELL_TOOLS, irreversible_reason};
 pub use decorate::{ModSystemPrompt, ModTools};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter};

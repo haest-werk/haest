@@ -12,10 +12,10 @@ use serde_json::json;
 
 use super::{
     JsMod,
-    channel::{JsMeta, JsThread},
+    channel::{CallError, JsMeta, JsThread},
     thread::{self, Setup},
 };
-use crate::api::{ModEnv, ModError};
+use crate::api::ModEnv;
 
 /// The bounds a file mod runs in. The default: 10 s of code without a pause,
 /// 128 MiB of memory, 30 s for its default export to return.
@@ -61,7 +61,7 @@ pub enum ModLoadError {
     /// Its thread could not start.
     #[error("its thread could not start")]
     Thread(#[source] io::Error),
-    /// Its thread stopped (panicked) before the module had run.
+    /// Its thread stopped (panicked) while loading.
     #[error("its thread stopped while loading")]
     Stopped,
     /// A `.ts` file that does not strip to JavaScript.
@@ -78,8 +78,9 @@ pub enum ModLoadError {
     #[error("its top-level await never finished")]
     NeverFinished,
     /// Its default export threw, or registered what the `haest` API refuses.
-    #[error(transparent)]
-    Export(ModError),
+    /// The engine's own words.
+    #[error("{0}")]
+    Export(String),
     /// Its default export did not return within [`ModLimits::load_timeout`].
     #[error("its default export did not return within {}s", .0.as_secs_f64())]
     Timeout(Duration),
@@ -163,7 +164,8 @@ impl JsMod {
         let wait = limits.load_timeout;
         match tokio::time::timeout(wait, thread.call("load", env, None)).await {
             Err(_) => Err(ModLoadError::Timeout(wait)),
-            Ok(Err(e)) => Err(ModLoadError::Export(e.into())),
+            Ok(Err(CallError::Failed(words))) => Err(ModLoadError::Export(words)),
+            Ok(Err(CallError::Stopped | CallError::Interrupted)) => Err(ModLoadError::Stopped),
             Ok(Ok(_)) => Ok(Self {
                 name: path.display().to_string(),
                 thread,

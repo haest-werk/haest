@@ -8,6 +8,11 @@
 
 use std::error::Error;
 
+/// The error a trait a host implements returns where haest only shows it (a
+/// mod's events): any error (`e.into()`, `?`) or a line of text
+/// (`"why".into()`). Show it with [`report`] (`report(&*e)`).
+pub type BoxError = Box<dyn Error + Send + Sync>;
+
 /// `e` and every cause under it, joined by `": "`: the line a human or a
 /// model reads (an error's own text is often generic, its cause says what
 /// broke).

@@ -25,8 +25,9 @@
   `"{path}"`, not `"{path}: {source}"`). Show any error to the human or the
   model with `haest_core::error::report`, which walks the chain; `{e}` alone
   drops the cause. A trait a host implements may return
-  `Box<dyn Error + Send + Sync>` when only the text matters to haest
-  (`AgentHooks::before_model_call`). A private parser may keep `String`.
+  `haest_core::error::BoxError` (`Box<dyn Error + Send + Sync>`) when haest
+  only shows the error (`Mod`'s events, `AgentHooks::before_model_call`).
+  A private parser may keep `String`.
   Binaries (haest-cli) use `anyhow`.
 - **Wire-compatible serde.** Anything that lands in a session file or an NDJSON
   event keeps the TS haest's JSON shape (camelCase keys, same tags).
