@@ -78,3 +78,25 @@ async fn revoking_always_for_a_tool_makes_its_asks_prompt_again() {
     assert_eq!(gate.ask(bash("rm -rf a"), &none).await, Decision::Deny);
     assert_eq!(human.prompts(), 2);
 }
+
+#[tokio::test]
+async fn a_gate_with_lines_asks_through_the_gate_and_sends_each_line_as_what_it_is() {
+    let human = Human::answering([ApprovalAnswer::AllowAlways]);
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let to = seen.clone();
+    let ui = ApprovalGate::new(human.clone()).with_lines(move |line| {
+        to.lock().unwrap().push(match line {
+            ModLine::Notice(t) => format!("notice {t}"),
+            ModLine::Error(t) => format!("error {t}"),
+            ModLine::Log(t) => format!("log {t}"),
+        })
+    });
+    let none = CancellationToken::new();
+    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
+    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
+    assert_eq!(human.prompts(), 1, "the gate's ALWAYS held");
+    ui.notice("n");
+    ui.error("e");
+    ui.log("l");
+    assert_eq!(*seen.lock().unwrap(), ["notice n", "error e", "log l"]);
+}

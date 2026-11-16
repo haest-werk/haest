@@ -38,7 +38,7 @@
 //! | [`ModTools`], [`ModSystemPrompt`] | the wrappers a host puts around its tool source and its system prompt |
 //! | [`Mods::rewrite_prompt`], [`Mods::command`] | `prompt.submit` and slash commands, for the host's input path |
 //! | [`ModUi`] | PLUG POINT: how the host asks the human and shows them a line |
-//! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts |
+//! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts; [`ApprovalGate::with_lines`] makes it the host's whole [`ModUi`] |
 //!
 //! # Putting mods in the loop
 //!
@@ -291,7 +291,7 @@ mod testkit;
 pub use api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModError, ModToolCall, ModUi};
 pub use approval::{ApprovalMod, AutoJudge, BashVerdict, irreversible_reason};
 pub use decorate::{ModSystemPrompt, ModTools};
-pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, Prompter};
+pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter};
 pub use js::{JsMod, ModLimits, ModLoadError};
 pub use loader::{ModConfig, load_mods, mod_files};
 pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PlanListener, PlanMod};

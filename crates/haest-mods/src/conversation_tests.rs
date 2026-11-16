@@ -6,7 +6,6 @@ use std::{
     time::Duration,
 };
 
-use async_trait::async_trait;
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Message, ToolResultMessage,
     deps::SystemPrompt,
@@ -15,23 +14,11 @@ use haest_core::{
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use serde_json::json;
-use tokio_util::sync::CancellationToken;
 
 use crate::{
-    ApprovalAnswer, ApprovalGate, ApprovalMod, ApprovalRequest, CommandOutcome, Decision, ModEnv,
-    ModSystemPrompt, ModTools, ModUi, Mods, PLAN_PROMPT, PlanMod, testkit::*,
+    ApprovalAnswer, ApprovalGate, ApprovalMod, CommandOutcome, ModEnv, ModSystemPrompt, ModTools,
+    Mods, PLAN_PROMPT, PlanMod, testkit::*,
 };
-
-/// A host whose asks go through the gate.
-struct GateUi(ApprovalGate<Arc<Human>>);
-
-#[async_trait]
-impl ModUi for GateUi {
-    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
-        self.0.ask(req, cancel).await
-    }
-    fn notice(&self, _text: &str) {}
-}
 
 fn agent(p: &Arc<ScriptedProvider>, mods: &Arc<Mods>, tools: Vec<Arc<dyn Tool>>) -> Agent {
     let source: Arc<dyn ToolSource> = Arc::new(tools);
@@ -63,7 +50,7 @@ async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_let
     let human = Human::answering([ApprovalAnswer::Deny, ApprovalAnswer::AllowAlways]);
     // A prompt past those two answers is a deny soon, not a hang.
     let gate = ApprovalGate::new(human.clone()).with_timeout(Duration::from_secs(5));
-    let ui = Arc::new(GateUi(gate));
+    let ui = Arc::new(gate.with_lines(|_| {}));
     let mut mods = Mods::new(ModEnv::new(CWD, WorkspaceMode::Real, ui));
     mods.add(Arc::new(ApprovalMod::default()));
     let mods = Arc::new(mods);

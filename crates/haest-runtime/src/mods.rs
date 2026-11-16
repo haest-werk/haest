@@ -6,43 +6,14 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use tokio_util::sync::CancellationToken;
-
 use crate::{
     RuntimeHooks,
     haest::{
         core::fs::Fs,
         core::tool::ToolServices,
-        mods::{
-            ApprovalGate, ApprovalRequest, Decision, ModConfig, ModUi, Mods, Prompter, load_mods,
-        },
+        mods::{ApprovalGate, ModConfig, ModLine, Mods, Prompter, load_mods},
     },
 };
-
-struct RuntimeModUi<P> {
-    hooks: Arc<RuntimeHooks>,
-    gate: ApprovalGate<P>,
-}
-
-#[async_trait]
-impl<P: Prompter + 'static> ModUi for RuntimeModUi<P> {
-    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
-        self.gate.ask(req, cancel).await
-    }
-
-    fn notice(&self, text: &str) {
-        self.hooks.info(text);
-    }
-
-    fn error(&self, text: &str) {
-        self.hooks.error(text);
-    }
-
-    fn log(&self, message: &str) {
-        ToolServices::log(self.hooks.as_ref(), message);
-    }
-}
 
 /// Every mod the settings turn on, read through `fs`, the human's answers
 /// through `prompter`.
@@ -63,9 +34,11 @@ pub async fn load<P: Prompter + 'static>(
     cfg.approvals = s.approvals;
     cfg.user_mods = s.mods;
     cfg.project_mods = s.project_mods;
-    let mod_ui = Arc::new(RuntimeModUi {
-        hooks: hooks.clone(),
-        gate: ApprovalGate::new(prompter),
+    let to = hooks.clone();
+    let mod_ui = ApprovalGate::new(prompter).with_lines(move |line| match line {
+        ModLine::Notice(text) => to.info(text),
+        ModLine::Error(text) => to.error(text),
+        ModLine::Log(message) => ToolServices::log(to.as_ref(), message),
     });
-    Arc::new(load_mods(cfg, fs, mod_ui).await)
+    Arc::new(load_mods(cfg, fs, Arc::new(mod_ui)).await)
 }

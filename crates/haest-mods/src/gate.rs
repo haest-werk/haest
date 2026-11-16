@@ -16,7 +16,7 @@ use std::{collections::HashSet, sync::Mutex, time::Duration};
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::{ApprovalRequest, Decision};
+use crate::api::{ApprovalRequest, Decision, ModUi};
 
 /// How the human answered one prompt: what a [`Prompter`] returns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +66,9 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// The ALWAYS answers live as long as the gate: one gate per conversation
 /// keeps them for that conversation.
 ///
+/// [`with_lines`](Self::with_lines) makes the gate the host's whole
+/// [`ModUi`]: asks through the gate, every other line to one function.
+///
 /// # Examples
 ///
 /// A host built on the gate, with [`ApprovalMod`](crate::ApprovalMod) asking
@@ -77,11 +80,10 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// use async_trait::async_trait;
 /// use haest_core::{ShutWorkspace, ToolContext, workspace::WorkspaceMode};
 /// use haest_mods::{
-///     ApprovalAnswer, ApprovalGate, ApprovalMod, ApprovalRequest, Decision, ModEnv, ModUi, ModTools,
-///     Mods, Prompter,
+///     ApprovalAnswer, ApprovalGate, ApprovalMod, ApprovalRequest, ModEnv, ModLine, ModTools, Mods,
+///     Prompter,
 /// };
 /// use serde_json::json;
-/// use tokio_util::sync::CancellationToken;
 /// # struct Bash;
 /// # #[async_trait]
 /// # impl haest_core::Tool for Bash {
@@ -107,24 +109,15 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 ///     }
 /// }
 ///
-/// /// How the mods reach the human: asks go through the gate, notices to the
-/// /// terminal.
-/// struct Terminal(ApprovalGate<Human>);
-///
-/// #[async_trait]
-/// impl ModUi for Terminal {
-///     async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
-///         self.0.ask(req, cancel).await
-///     }
-///     fn notice(&self, text: &str) {
-///         println!("{text}")
-///     }
-/// }
-///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let prompts = Arc::new(Mutex::new(Vec::new()));
-/// let ui = Arc::new(Terminal(ApprovalGate::new(Human(prompts.clone()))));
+/// // How the mods reach the human: asks through the gate, lines to the terminal.
+/// let ui = ApprovalGate::new(Human(prompts.clone())).with_lines(|line| match line {
+///     ModLine::Notice(text) | ModLine::Error(text) => println!("{text}"),
+///     ModLine::Log(_) => {}
+/// });
+/// let ui = Arc::new(ui);
 /// let mut mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, ui));
 /// mods.add(Arc::new(ApprovalMod::default()));
 /// let tools = ModTools::wrap(&Arc::new(mods), vec![Arc::new(Bash)]);
@@ -212,6 +205,58 @@ impl<P: Prompter> ApprovalGate<P> {
             .lock()
             .unwrap()
             .retain(|k| !k.starts_with(&prefix));
+    }
+}
+
+impl<P: Prompter + 'static> ApprovalGate<P> {
+    /// The host's whole [`ModUi`]: [`ask`](ModUi::ask) through this gate,
+    /// and every [`notice`](ModUi::notice), [`error`](ModUi::error) and
+    /// [`log`](ModUi::log) line to `lines`, as a [`ModLine`] that says which.
+    /// The [class example](Self#examples) uses it.
+    pub fn with_lines(self, lines: impl Fn(ModLine<'_>) + Send + Sync + 'static) -> impl ModUi {
+        GateUi { gate: self, lines }
+    }
+}
+
+/// A line a mod sends through the host's [`ModUi`], for the function given
+/// to [`ApprovalGate::with_lines`]: one case per line method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModLine<'a> {
+    /// [`ModUi::notice`]: a line the human sees.
+    Notice(&'a str),
+    /// [`ModUi::error`]: a mod failed to load or in an event; the human must see it.
+    Error(&'a str),
+    /// [`ModUi::log`]: for the host's diagnostic log; the human need not see it.
+    Log(&'a str),
+}
+
+/// An [`ApprovalGate`] and where the other lines go: the [`ModUi`] that
+/// [`ApprovalGate::with_lines`] makes.
+struct GateUi<P, F> {
+    gate: ApprovalGate<P>,
+    lines: F,
+}
+
+#[async_trait]
+impl<P, F> ModUi for GateUi<P, F>
+where
+    P: Prompter + 'static,
+    F: Fn(ModLine<'_>) + Send + Sync + 'static,
+{
+    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
+        self.gate.ask(req, cancel).await
+    }
+
+    fn notice(&self, text: &str) {
+        (self.lines)(ModLine::Notice(text));
+    }
+
+    fn error(&self, text: &str) {
+        (self.lines)(ModLine::Error(text));
+    }
+
+    fn log(&self, message: &str) {
+        (self.lines)(ModLine::Log(message));
     }
 }
 

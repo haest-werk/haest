@@ -95,8 +95,10 @@ impl ModError {
 /// control panel, a chat app).
 ///
 /// `ask` and `notice` reach the human; how is the host's business. Most hosts
-/// answer `ask` with an [`ApprovalGate`](crate::ApprovalGate) over their own
-/// [`Prompter`](crate::Prompter), which keeps the rules every host must keep.
+/// do not implement this: an [`ApprovalGate`](crate::ApprovalGate) over their
+/// own [`Prompter`](crate::Prompter) keeps the rules every ask must keep, and
+/// [`ApprovalGate::with_lines`](crate::ApprovalGate::with_lines) makes it a
+/// `ModUi` that sends every other line where the host says.
 /// [`ApprovalGate`](crate::ApprovalGate#examples)'s example is a whole host.
 #[async_trait]
 pub trait ModUi: Send + Sync {
