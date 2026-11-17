@@ -257,7 +257,7 @@ impl ProviderRegistry {
     }
 
     /// OpenRouter provider routing to send, or none
-    /// ([`crate::routing::parse_routing`] reads the host's JSON: haest's
+    /// ([`parse_routing`](crate::parse_routing) reads the host's JSON: haest's
     /// `provider_routing` setting). Takes the scopes or an `Option` of them;
     /// a host whose gateway routes leaves it off.
     #[must_use]

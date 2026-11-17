@@ -16,7 +16,7 @@ use haest_core::{
 };
 #[cfg(feature = "mcp")]
 use haest_mcp::{McpServerConfig, load_project_mcp_config, project_mcp_path};
-use haest_providers::{RoutingScopes, routing::parse_routing};
+use haest_providers::{RoutingScopes, parse_routing};
 
 use crate::{
     fields::{CORE_VARS, EnvPassthrough},

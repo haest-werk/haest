@@ -32,7 +32,8 @@
 //! - [`http::HttpClient`]: how every request travels (PLUG POINT). The
 //!   default is [`http::HttpClientRef::default`]: the process's shared
 //!   `ReqwestClient` (the `reqwest` feature).
-//! - [`routing`]: OpenRouter provider routing, resolved per request.
+//! - [`RoutingScopes`]: OpenRouter provider routing, resolved per request
+//!   ([`parse_routing`] reads it from a host's JSON).
 //!
 //! # Picking a model
 //!
@@ -206,7 +207,7 @@ mod openai_media;
 mod registry;
 mod responses;
 mod retry;
-pub mod routing;
+mod routing;
 mod send;
 mod sse;
 #[cfg(any(test, feature = "testing"))]
@@ -232,7 +233,10 @@ pub use registry::{
 };
 pub use responses::{ResponsesOptions, ResponsesProvider};
 pub use retry::RetryPolicy;
-pub use routing::RoutingScopes;
+pub use routing::{
+    ProjectRouting, ProviderRouting, RoutingOverride, RoutingPriority, RoutingRule, RoutingScopes,
+    parse_routing,
+};
 
 /// A tool result's text as every dialect sends it: never empty.
 pub(crate) fn result_text(msg: &haest_core::messages::ToolResultMessage) -> &str {

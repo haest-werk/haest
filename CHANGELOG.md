@@ -893,6 +893,11 @@ Hosts write less (round two of the review, and what porting brain onto
 - `#[non_exhaustive]` on `CompatFlavor`, `Dialect`, `RoutingPriority`,
   `EntryProblem` and `ProvidersFileError` (breaking): a `match` adds a `_`
   arm.
+- The `routing` module is private and its items are at the crate root, once
+  (breaking): `haest_providers::routing::parse_routing` ->
+  `haest_providers::parse_routing`, and likewise `RoutingRule`,
+  `RoutingOverride`, `ProviderRouting`, `ProjectRouting` and
+  `RoutingPriority`. The resolution rules are documented on `RoutingScopes`.
 - `ProvidersFileError::Read` says what failed: `cannot read
   /x/providers.json` (was the bare path).
 - A host adds its own provider: `ProviderRegistry::with_provider(name,

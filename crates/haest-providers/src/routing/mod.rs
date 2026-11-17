@@ -1,57 +1,6 @@
-//! OPENROUTER PROVIDER ROUTING -- the config shapes, read from a host's JSON.
-//!
-//! Two SCOPES, each a default rule (banned + favorite providers) plus OVERRIDES
-//! keyed by a model or family:
-//!   - the FLEET scope, every haest conversation;
-//!   - a PROJECT scope, which may also set a PRIORITY: cost, speed or privacy.
-//!
-//! At request time the OpenRouter provider turns the scopes plus the CURRENT
-//! model into OpenRouter's request `provider` object (a conversation can switch
-//! models, so it is resolved per request, never once at boot).
-//!
-//! Resolution:
-//!   - BANS are a UNION of every matching layer in both scopes. A provider banned
-//!     anywhere that applies stays banned.
-//!   - FAVORITES come from the MOST SPECIFIC layer that names any: project model >
-//!     project family (longest literal first) > project default > fleet model >
-//!     fleet family > fleet default. A layer with no favorites inherits -- one that
-//!     only bans must not silently wipe the favorites above it.
-//!   - A favorite that is also banned is dropped: `ignore` wins.
-//!   - PRIORITY is the project's alone.
-//!
-//! Wire mapping (<https://openrouter.ai/docs/features/provider-routing>):
-//!   banned -> `ignore`; favorites -> `order` + `allow_fallbacks: true` (a
-//!   preference, never a whitelist); cost -> `sort: "price"`; speed ->
-//!   `sort: "throughput"`; privacy -> `zdr: true` + `data_collection: "deny"`.
-//!
-//! Provider ids are OpenRouter SLUGS (`deepinfra`), never display names.
-//!
-//! Start from [`parse_routing`]: a host's JSON (haest's `provider_routing`
-//! setting) in, a [`RoutingScopes`] out, which goes into
-//! [`ProviderRegistry::with_routing`](crate::ProviderRegistry::with_routing) or
-//! [`CompatOptions::routing`](crate::CompatOptions::routing). A host may also
-//! build the scopes in code; every field is public.
-//!
-//! ```
-//! use haest_providers::routing::{RoutingPriority, parse_routing};
-//!
-//! # fn main() -> Result<(), haest_core::error::BoxError> {
-//! let routing = parse_routing(r#"{
-//!     "global": {"banned": ["novita"], "favorites": ["deepinfra"]},
-//!     "overrides": [{"match": "z-ai/glm-*", "favorites": ["fireworks"]}],
-//!     "project": {"priority": "privacy"}
-//! }"#)?
-//! .ok_or("blank routing")?;
-//!
-//! // For z-ai/glm-5.3 the override's favorites win (the most specific layer),
-//! // novita stays banned and only zero-data-retention providers answer.
-//! assert_eq!(routing.fleet.global.banned, ["novita"]);
-//! assert_eq!(routing.fleet.overrides[0].pattern, "z-ai/glm-*");
-//! let priority = routing.project.and_then(|p| p.priority);
-//! assert_eq!(priority, Some(RoutingPriority::Privacy));
-//! # Ok(())
-//! # }
-//! ```
+//! OpenRouter provider routing: the scopes ([`RoutingScopes`], whose docs
+//! say how they resolve), read from a host's JSON ([`parse_routing`]), and
+//! the request's `provider` object they resolve to.
 
 mod normalize;
 mod patterns;
@@ -120,8 +69,60 @@ pub struct ProjectRouting {
     pub priority: Option<RoutingPriority>,
 }
 
-/// The routing scopes haest routes by: the fleet scope, plus its project's
-/// scope when it has one.
+/// OpenRouter provider routing: the scopes haest routes by, the fleet scope
+/// plus its project's scope when it has one.
+///
+/// Each scope is a default rule (banned and favorite providers) plus
+/// overrides keyed by a model or a family:
+///
+/// - the fleet scope, every haest conversation;
+/// - a project scope, which may also set a priority: cost, speed or privacy.
+///
+/// At request time the OpenRouter provider turns the scopes and the current
+/// model into OpenRouter's request `provider` object (a conversation can
+/// switch models, so it is resolved per request, never once at boot):
+///
+/// - Bans are the union of every matching layer in both scopes: a provider
+///   banned anywhere that applies stays banned.
+/// - Favorites come from the most specific layer that names any: project
+///   model > project family (longest literal first) > project default >
+///   fleet model > fleet family > fleet default. A layer with no favorites
+///   inherits: one that only bans does not wipe the favorites above it.
+/// - A favorite that is also banned is dropped: `ignore` wins.
+/// - The priority is the project's alone.
+///
+/// On the wire (<https://openrouter.ai/docs/features/provider-routing>):
+/// banned -> `ignore`; favorites -> `order` + `allow_fallbacks: true` (a
+/// preference, never a whitelist); cost -> `sort: "price"`; speed ->
+/// `sort: "throughput"`; privacy -> `zdr: true` + `data_collection: "deny"`.
+/// Provider ids are OpenRouter slugs (`deepinfra`), never display names.
+///
+/// Start from [`parse_routing`]: a host's JSON (haest's `provider_routing`
+/// setting) in, the scopes out, which go into
+/// [`ProviderRegistry::with_routing`](crate::ProviderRegistry::with_routing) or
+/// [`CompatOptions::with_routing`](crate::CompatOptions::with_routing). A host
+/// may also build the scopes in code; every field is public.
+///
+/// ```
+/// use haest_providers::{RoutingPriority, parse_routing};
+///
+/// # fn main() -> Result<(), haest_core::error::BoxError> {
+/// let routing = parse_routing(r#"{
+///     "global": {"banned": ["novita"], "favorites": ["deepinfra"]},
+///     "overrides": [{"match": "z-ai/glm-*", "favorites": ["fireworks"]}],
+///     "project": {"priority": "privacy"}
+/// }"#)?
+/// .ok_or("blank routing")?;
+///
+/// // For z-ai/glm-5.3 the override's favorites win (the most specific layer),
+/// // novita stays banned and only zero-data-retention providers answer.
+/// assert_eq!(routing.fleet.global.banned, ["novita"]);
+/// assert_eq!(routing.fleet.overrides[0].pattern, "z-ai/glm-*");
+/// let priority = routing.project.and_then(|p| p.priority);
+/// assert_eq!(priority, Some(RoutingPriority::Privacy));
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoutingScopes {
     /// The fleet scope: every conversation.
@@ -178,8 +179,8 @@ pub(crate) fn unique(list: impl IntoIterator<Item = String>) -> Vec<String> {
 }
 
 impl RoutingScopes {
-    /// The `provider` object for `model`'s request by the rules in the
-    /// [module docs](self): bans from every matching layer, favorites from the
+    /// The `provider` object for `model`'s request by the rules on
+    /// [`RoutingScopes`]: bans from every matching layer, favorites from the
     /// most specific layer that has any, the priority from the project. None
     /// when no scope says anything for it.
     ///
