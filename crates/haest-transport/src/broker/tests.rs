@@ -523,6 +523,39 @@ async fn the_link_ends_with_the_conversation_and_only_a_ws_url_is_dialed() {
     assert!(matches!(wrong, Err(TransportError::Url(_))), "{wrong:?}");
 }
 
+/// The conversation's end reaches the broker as a Close frame (1000, RFC
+/// 6455 7.1.2), so it can tell an agent that finished from a path that died
+/// and will be dialed again.
+#[tokio::test]
+async fn the_conversations_end_closes_the_link_with_a_close_frame() {
+    let mut broker = TestBroker::start(None).await;
+    let (s, _) = session(&answers(&[]), hub());
+    let attached = Broker::new(&broker.url)
+        .with_backoff(FAST)
+        .attach(s.clone(), Grant::watch(Origin::Agent))
+        .unwrap();
+    let mut side = broker.link().await;
+    side.next().await.unwrap();
+    side.ack(0).await;
+    side.until(|f| ty(f) == "reply").await;
+    s.close().await;
+    let frame = loop {
+        let read = tokio::time::timeout(Duration::from_secs(5), side.0.next())
+            .await
+            .expect("the link ends within 5 s");
+        match read {
+            Some(Ok(Message::Close(frame))) => break frame,
+            Some(Ok(_)) => {}
+            other => panic!("the link ended without a Close frame: {other:?}"),
+        }
+    };
+    assert_eq!(frame.map(|f| f.code), Some(CloseCode::Normal));
+    let ended = tokio::time::timeout(Duration::from_secs(5), attached.ended())
+        .await
+        .unwrap();
+    assert!(matches!(ended, Ended::Closed), "{ended:?}");
+}
+
 #[test]
 fn the_wait_is_full_jitter_up_to_a_doubling_cap() {
     let b = Backoff::default();

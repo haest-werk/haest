@@ -22,7 +22,8 @@
 //! within the silence limit ([`Broker::with_silence_limit`], 60 s by
 //! default). A broker that closes with 4401 (the token is wrong) or 4408 (it
 //! waited for one in vain), or refuses the handshake with 401 or 403, is not
-//! dialed again.
+//! dialed again. When the conversation ends, haest closes the link with a
+//! Close frame, code 1000, so the broker knows it will not be dialed again.
 
 use std::{
     fmt,
@@ -41,7 +42,10 @@ use haest_wire::Token;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     Connector, MaybeTlsStream, WebSocketStream, connect_async_tls_with_config,
-    tungstenite::{self, Message},
+    tungstenite::{
+        self, Message,
+        protocol::{CloseFrame, frame::coding::CloseCode},
+    },
 };
 
 use crate::{
@@ -58,6 +62,9 @@ const DIAL_WAIT: Duration = Duration::from_secs(10);
 /// A connection that lasted this long was a good one: the next drop starts
 /// the backoff over.
 const STABLE: Duration = Duration::from_secs(5);
+
+/// How long the Close frame at the conversation's end may take.
+const CLOSE_WAIT: Duration = Duration::from_secs(1);
 
 type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -290,14 +297,18 @@ async fn link(broker: Broker, backend: BackendRef, grant: Grant) -> Ended {
                     heard: heard.clone(),
                     limit,
                 };
-                let sink = WsSink {
-                    sink,
+                let sink = Arc::new(tokio::sync::Mutex::new(sink));
+                let ws_sink = WsSink {
+                    sink: sink.clone(),
                     heard,
                     limit,
                     pinged: tokio::time::Instant::now(),
                 };
-                match serve(backend.clone(), grant, start, source, sink).await {
-                    Ended::Closed => return Ended::Closed,
+                match serve(backend.clone(), grant, start, source, ws_sink).await {
+                    Ended::Closed => {
+                        say_ended(&sink).await;
+                        return Ended::Closed;
+                    }
                     Ended::Failed(e @ TransportError::Auth { .. }) => return Ended::Failed(e),
                     Ended::PeerLeft | Ended::Failed(_) => {}
                 }
@@ -315,6 +326,19 @@ async fn link(broker: Broker, backend: BackendRef, grant: Grant) -> Ended {
             () = &mut closed => return Ended::Closed,
         }
     }
+}
+
+/// The conversation ended: a Close frame (1000) says so, so the broker can
+/// tell an agent that finished from a path that died and will be dialed
+/// again (RFC 6455 7.1.2). A broker that stopped reading gets a second, no
+/// more.
+async fn say_ended(sink: &tokio::sync::Mutex<SplitSink<Ws, Message>>) {
+    let frame = CloseFrame {
+        code: CloseCode::Normal,
+        reason: "the conversation ended".into(),
+    };
+    let close = async { sink.lock().await.send(Message::Close(Some(frame))).await };
+    let _ = tokio::time::timeout(CLOSE_WAIT, close).await;
 }
 
 /// One WebSocket to the broker; a handshake refused with 401 or 403 is the
@@ -445,19 +469,24 @@ impl LineSource for WsSource {
 /// Frames to the broker: one per text message. With a silence limit, a
 /// ping once the broker has been quiet for a third of it.
 struct WsSink {
-    sink: SplitSink<Ws, Message>,
+    /// Shared with the link, which closes it once the conversation ended.
+    sink: Arc<tokio::sync::Mutex<SplitSink<Ws, Message>>>,
     heard: Heard,
     limit: Option<Duration>,
     /// The last ping sent: the next waits a third of the limit after it.
     pinged: tokio::time::Instant,
 }
 
+impl WsSink {
+    async fn send(&self, message: Message) -> Result<(), TransportError> {
+        (self.sink.lock().await.send(message).await)
+            .map_err(|e| TransportError::WebSocket(Box::new(e)))
+    }
+}
+
 impl LineSink for WsSink {
     async fn send_line(&mut self, line: String) -> Result<(), TransportError> {
-        self.sink
-            .send(Message::Text(line.into()))
-            .await
-            .map_err(|e| TransportError::WebSocket(Box::new(e)))
+        self.send(Message::Text(line.into())).await
     }
 
     async fn keepalive(&mut self) -> Result<(), TransportError> {
@@ -477,10 +506,7 @@ impl LineSink for WsSink {
             tokio::time::sleep_until(due).await;
         }
         self.pinged = tokio::time::Instant::now();
-        self.sink
-            .send(Message::Ping(tungstenite::Bytes::new()))
-            .await
-            .map_err(|e| TransportError::WebSocket(Box::new(e)))
+        self.send(Message::Ping(tungstenite::Bytes::new())).await
     }
 }
 

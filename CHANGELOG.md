@@ -2060,6 +2060,10 @@ against it; the wire JSON is unchanged):
   keepalive that is ready at once had the writer do nothing else, so the
   peer never even got its `hello` and the writer held a runtime thread;
   after one that never waited, the writer now sends only lines for 100 ms.
+- The broker link ends with a WebSocket Close frame (1000, "the
+  conversation ended") when the conversation ends. It dropped the socket,
+  which the broker read as a connection reset, the same as a path that
+  died and will be dialed again.
 
 ### haest-issues
 
