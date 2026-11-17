@@ -374,6 +374,73 @@ fn a_hook_that_panics_once_leaves_the_ledger_working() {
     assert_eq!(*hooks.saved.lock().unwrap(), [ledger.snapshot()]);
 }
 
+/// A host's ledger threshold (half the USD cap, warn) whose `mark` panics
+/// on its `nth` call only.
+struct MarkPanicsAt {
+    nth: usize,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl crate::threshold::Threshold for MarkPanicsAt {
+    fn meter(&self) -> Meter {
+        USD
+    }
+    fn mark(&self) -> Mark {
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        assert!(call != self.nth, "the host's threshold has a bug, once");
+        Mark::share(0.5)
+    }
+    fn action(&self) -> Action {
+        Action::Warn
+    }
+    fn rearm(&self) -> crate::threshold::Rearm {
+        crate::threshold::Rearm::BelowMark
+    }
+    fn text(&self, _: &Reading) -> String {
+        "half spent".into()
+    }
+}
+
+/// The ledger asked a threshold's `mark` with its lock held (taking the
+/// list, and at every charge), so a host threshold that panicked once
+/// poisoned it: every later charge, read and `exhausted` (asked before every
+/// model call) panicked with "ledger lock poisoned".
+#[test]
+fn a_ledger_threshold_that_panics_once_leaves_the_ledger_working() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    use crate::threshold::ThresholdRef;
+
+    // Before the fix, the first call was where the ledger took the list and
+    // the second a charge; the panic is the host's wherever it lands.
+    for nth in [1, 2] {
+        let (ledger, rec) = ledger_with(1.0, 0);
+        let threshold = Arc::new(MarkPanicsAt {
+            nth,
+            calls: Default::default(),
+        });
+        let set_and_charge = || {
+            catch_unwind(AssertUnwindSafe(|| {
+                let list = Thresholds::<LedgerSite>::new([ThresholdRef::from(threshold.clone())]);
+                ledger.set_thresholds(list.expect("the ledger checks a USD warning"));
+                ledger.charge(&cost(0.1));
+            }))
+        };
+        // Again after the host's panic: the ledger still takes it.
+        let took = (0..3).any(|_| set_and_charge().is_ok());
+        assert!(took, "call {nth}: the ledger is poisoned");
+        let after = catch_unwind(AssertUnwindSafe(|| {
+            ledger.charge(&cost(0.6));
+            (ledger.usd(), ledger.exhausted())
+        }));
+        let (usd, exhausted) =
+            after.unwrap_or_else(|_| panic!("call {nth}: the ledger is poisoned"));
+        assert!((usd - 0.7).abs() < 1e-9, "call {nth}: {usd}");
+        assert!(exhausted.is_none());
+        assert_eq!(*rec.warnings.lock().unwrap(), ["half spent"], "call {nth}");
+    }
+}
+
 /// Clones are one ledger: what one charges, every other reads and stops on.
 #[test]
 fn every_clone_is_the_same_ledger() {

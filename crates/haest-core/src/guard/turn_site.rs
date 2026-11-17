@@ -14,7 +14,7 @@ use crate::{
     ledger::Ledger,
     messages::Usage,
     remedy::Limit,
-    threshold::{Action, Crossing, Meter, Reading, Scope, Threshold, Thresholds, TurnSite, Watch},
+    threshold::{Action, Crossing, Meter, Parts, Reading, Scope, Thresholds, TurnSite, Watch},
     tool::ToolOutput,
     wind_down::{WindDownWatch, WindingDown},
 };
@@ -80,8 +80,8 @@ pub(super) struct TurnThresholds {
 
 /// A fired threshold as a durable run's record names it: its place in the
 /// list, what it does and what it reads ("threshold 0: remind on steps").
-fn record_key(index: usize, t: &dyn Threshold) -> String {
-    format!("threshold {index}: {} on {}", t.action(), t.meter())
+fn record_key(index: usize, t: &Parts) -> String {
+    format!("threshold {index}: {} on {}", t.action, t.meter)
 }
 
 impl TurnThresholds {
@@ -89,7 +89,7 @@ impl TurnThresholds {
     pub(super) fn fired_keys(&self) -> Vec<String> {
         let watch = self.watch.get();
         let fired = watch.fired().enumerate().filter(|(_, (_, fired))| *fired);
-        fired.map(|(i, (t, _))| record_key(i, t.as_ref())).collect()
+        fired.map(|(i, (t, _))| record_key(i, t)).collect()
     }
 
     /// Takes the thresholds `keys` name as fired, a resumed turn's: none
@@ -101,8 +101,8 @@ impl TurnThresholds {
             let named: Vec<(usize, Action)> = watch
                 .fired()
                 .enumerate()
-                .filter(|(i, (t, _))| keys.contains(&record_key(*i, t.as_ref())))
-                .map(|(i, (t, _))| (i, t.action()))
+                .filter(|(i, (t, _))| keys.contains(&record_key(*i, t)))
+                .map(|(i, (t, _))| (i, t.action))
                 .collect();
             let mut winding = false;
             for (i, action) in named {
@@ -272,7 +272,10 @@ impl TurnGuard {
     /// threshold past its mark now, whether or not it fired.
     pub(crate) fn wind_down_watch(&self, usage: &Usage, caps: Option<TurnCaps>) -> WindDownWatch {
         let thresholds = self.turn.watch.thresholds();
-        if !thresholds.iter().any(|t| t.action() == Action::WindDown) {
+        if !thresholds
+            .entries()
+            .any(|(_, p)| p.action == Action::WindDown)
+        {
             return WindDownWatch::default();
         }
         *self.turn.spent.lock().unwrap() = usage.clone();

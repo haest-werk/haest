@@ -3,7 +3,7 @@
 
 use std::{fmt, marker::PhantomData};
 
-use super::{Action, Crossing, Meter, Reading, Rearm, ThresholdRef};
+use super::{Action, Crossing, Mark, Meter, Reading, Rearm, ThresholdRef};
 
 /// PLUG POINT: where thresholds are checked, and so what they may read and
 /// do. haest-core has [`TurnSite`](super::TurnSite) and
@@ -31,18 +31,52 @@ pub struct NotServed {
     pub action: Action,
 }
 
+/// What a threshold is, read once when a list takes it: its meter, mark,
+/// action and rearm. Host code, so it is never read under a site's lock.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Parts {
+    pub(crate) meter: Meter,
+    pub(crate) mark: Mark,
+    pub(crate) action: Action,
+    pub(crate) rearm: Rearm,
+}
+
+impl Parts {
+    fn of(threshold: &ThresholdRef) -> Self {
+        Self {
+            meter: threshold.meter(),
+            mark: threshold.mark(),
+            action: threshold.action(),
+            rearm: threshold.rearm(),
+        }
+    }
+}
+
 /// The thresholds one site checks, in order: the order a site says what is
 /// due. `Default` is the site's defaults; cheap to clone.
+///
+/// A list reads each threshold's meter, mark, action and rearm once, when it
+/// takes it, and the site checks what it read: a host's threshold runs no
+/// code under a site's lock ([`Threshold`](super::Threshold)).
 pub struct Thresholds<S: Site> {
     list: Vec<ThresholdRef>,
+    /// Each threshold's parts, beside it.
+    parts: Vec<Parts>,
     site: PhantomData<fn() -> S>,
 }
 
 impl<S: Site> Thresholds<S> {
     /// None at all: the site checks nothing.
     pub fn none() -> Self {
+        Self::of(Vec::new())
+    }
+
+    /// Exactly `list`, its parts read now.
+    fn of(list: Vec<ThresholdRef>) -> Self {
+        let parts = list.iter().map(Parts::of).collect();
         Self {
-            list: Vec::new(),
+            list,
+            parts,
             site: PhantomData,
         }
     }
@@ -63,24 +97,33 @@ impl<S: Site> Thresholds<S> {
     /// [`NotServed`] when this site cannot check it.
     pub fn try_with(mut self, threshold: impl Into<ThresholdRef>) -> Result<Self, NotServed> {
         let threshold = threshold.into();
-        let (meter, action) = (threshold.meter(), threshold.action());
-        if !S::serves(meter, action) {
+        let parts = Parts::of(&threshold);
+        if !S::serves(parts.meter, parts.action) {
             return Err(NotServed {
                 site: S::NAME,
-                meter,
-                action,
+                meter: parts.meter,
+                action: parts.action,
             });
         }
         self.list.push(threshold);
+        self.parts.push(parts);
         Ok(self)
     }
 
     /// These, and `more` after them, which the caller knows this site checks.
     pub(crate) fn served(mut self, more: impl IntoIterator<Item = ThresholdRef>) -> Self {
-        let more: Vec<_> = more.into_iter().collect();
-        debug_assert!(more.iter().all(|t| S::serves(t.meter(), t.action())));
-        self.list.extend(more);
+        for threshold in more {
+            let parts = Parts::of(&threshold);
+            debug_assert!(S::serves(parts.meter, parts.action));
+            self.list.push(threshold);
+            self.parts.push(parts);
+        }
         self
+    }
+
+    /// Every threshold with its parts, in order.
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (&ThresholdRef, &Parts)> {
+        self.list.iter().zip(&self.parts)
     }
 
     /// Every threshold, in order.
@@ -106,12 +149,11 @@ impl<S: Site> Thresholds<S> {
         read: impl Fn(Meter) -> Option<Reading>,
         action: Action,
     ) -> Option<Crossing> {
-        self.list
-            .iter()
-            .filter(|t| t.action() == action)
-            .find_map(|t| {
-                let reading = read(t.meter())?;
-                t.mark().reached(&reading).then(|| Crossing {
+        self.entries()
+            .filter(|(_, p)| p.action == action)
+            .find_map(|(t, p)| {
+                let reading = read(p.meter)?;
+                p.mark.reached(&reading).then(|| Crossing {
                     threshold: t.clone(),
                     reading,
                 })
@@ -130,10 +172,7 @@ impl<'a, S: Site> IntoIterator for &'a Thresholds<S> {
 
 impl<S: Site> Default for Thresholds<S> {
     fn default() -> Self {
-        Self {
-            list: S::defaults(),
-            site: PhantomData,
-        }
+        Self::of(S::defaults())
     }
 }
 
@@ -141,6 +180,7 @@ impl<S: Site> Clone for Thresholds<S> {
     fn clone(&self) -> Self {
         Self {
             list: self.list.clone(),
+            parts: self.parts.clone(),
             site: PhantomData,
         }
     }
@@ -199,8 +239,8 @@ impl<S: Site> Watch<S> {
 
     /// A new turn starts: every [`Rearm::NextTurn`] threshold re-arms.
     pub fn next_turn(&mut self) {
-        for (t, fired) in self.thresholds.list.iter().zip(&mut self.fired) {
-            if t.rearm() == Rearm::NextTurn {
+        for (p, fired) in self.thresholds.parts.iter().zip(&mut self.fired) {
+            if p.rearm == Rearm::NextTurn {
                 *fired = false;
             }
         }
@@ -215,15 +255,16 @@ impl<S: Site> Watch<S> {
         action: Action,
     ) -> Vec<Crossing> {
         let mut due = Vec::new();
-        for (t, fired) in self.thresholds.list.iter().zip(&mut self.fired) {
-            if t.action() != action {
+        let entries = self.thresholds.list.iter().zip(&self.thresholds.parts);
+        for ((t, p), fired) in entries.zip(&mut self.fired) {
+            if p.action != action {
                 continue;
             }
-            let Some(reading) = read(t.meter()) else {
+            let Some(reading) = read(p.meter) else {
                 continue;
             };
-            let past = t.mark().reached(&reading);
-            let fire = match t.rearm() {
+            let past = p.mark.reached(&reading);
+            let fire = match p.rearm {
                 Rearm::EveryCheck => past,
                 Rearm::BelowMark if !past => {
                     *fired = false;
@@ -245,9 +286,9 @@ impl<S: Site> Watch<S> {
         due
     }
 
-    /// Each threshold, and whether it has fired (and not re-armed since).
-    pub(crate) fn fired(&self) -> impl Iterator<Item = (&ThresholdRef, bool)> {
-        self.thresholds.list.iter().zip(self.fired.iter().copied())
+    /// Each threshold's parts, and whether it has fired (and not re-armed since).
+    pub(crate) fn fired(&self) -> impl Iterator<Item = (&Parts, bool)> {
+        self.thresholds.parts.iter().zip(self.fired.iter().copied())
     }
 
     /// The `index`th threshold has fired: what a restored site already said.
@@ -261,12 +302,12 @@ impl<S: Site> Watch<S> {
     /// or past its mark counts as fired, and a [`Rearm::BelowMark`] one under
     /// it re-arms. For a site restored from a log, or a cap the human changed.
     pub fn settle(&mut self, read: impl Fn(Meter) -> Option<Reading>) {
-        for (t, fired) in self.thresholds.list.iter().zip(&mut self.fired) {
-            let Some(reading) = read(t.meter()) else {
+        for (p, fired) in self.thresholds.parts.iter().zip(&mut self.fired) {
+            let Some(reading) = read(p.meter) else {
                 continue;
             };
-            let past = t.mark().reached(&reading);
-            match t.rearm() {
+            let past = p.mark.reached(&reading);
+            match p.rearm {
                 Rearm::BelowMark => *fired = past,
                 Rearm::Never | Rearm::NextTurn => *fired |= past,
                 Rearm::EveryCheck => {}

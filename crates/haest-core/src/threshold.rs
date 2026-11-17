@@ -91,6 +91,7 @@ use std::fmt;
 
 pub use sites::{LedgerSite, NUDGE_SHARE, TurnSite, WARN_SHARE};
 pub(crate) use sites::{WAY_OUT, minutes};
+pub(crate) use watch::Parts;
 pub use watch::{NotServed, Site, Thresholds, Watch};
 
 use crate::remedy::{Limit, Remedies};
@@ -287,6 +288,13 @@ impl Reading {
 
 /// PLUG POINT: one threshold. haest's defaults implement it, and so does a
 /// host's or a mod's own; a site checks it ([`Thresholds`]).
+///
+/// Its [`meter`](Self::meter), [`mark`](Self::mark), [`action`](Self::action)
+/// and [`rearm`](Self::rearm) are what it is: a [`Thresholds`] list reads
+/// them once, when it takes it, and the site checks those. A threshold whose
+/// mark should move goes to its site again, in a new list. Its
+/// [`text`](Self::text) and [`closing`](Self::closing) run when it fires,
+/// under no lock of haest's.
 pub trait Threshold: Send + Sync {
     /// What it reads.
     fn meter(&self) -> Meter;

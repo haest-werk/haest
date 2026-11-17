@@ -215,9 +215,9 @@ impl Ledger {
         }
     }
 
-    /// The ledger's sums. The lock is held only while haest's own sums run
-    /// (and a ledger threshold's accessors), never a hook or a remedy, so a
-    /// hook or a remedy that panics cannot poison it.
+    /// The ledger's sums. The lock is held only while haest's own sums run,
+    /// never a hook, a remedy or a threshold's code, so none of them that
+    /// panics can poison it.
     fn state(&self) -> MutexGuard<'_, State> {
         self.state.lock().expect("ledger lock poisoned")
     }
@@ -246,9 +246,10 @@ impl Ledger {
     /// warnings ([`LedgerSite`]), for every clone of it. What is spent
     /// already counts as heard.
     ///
-    /// A threshold's `meter`, `mark`, `action` and `rearm` run under the
-    /// ledger's lock: they must not read the ledger. Its `text` runs once
-    /// the ledger is unlocked, and may.
+    /// A threshold's `meter`, `mark`, `action` and `rearm` are read once,
+    /// when `thresholds` took it, and its `text` once the ledger is
+    /// unlocked: none runs under the ledger's lock, so each may read the
+    /// ledger, and one that panics leaves it working.
     ///
     /// ```
     /// use haest_core::{

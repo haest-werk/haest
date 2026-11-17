@@ -858,9 +858,7 @@ Hosts write less (round two of the review, and what porting brain onto
   threshold's text with its lock held, so a remedy that read the ledger it
   is set on (one naming the spend so far) hung the first charge that
   warned, for good. Both now run once the ledger is unlocked, for the
-  warning and for `Ledger::exhausted`. A ledger threshold's `meter`,
-  `mark`, `action` and `rearm` still run under the lock, and
-  `Ledger::set_thresholds` says they must not read the ledger.
+  warning and for `Ledger::exhausted`.
 - Fixed: two changes to a `TaskBoard` at once (main and a background
   subagent share one) could hand `on_change` the newer list first and the
   older one last, so the session's last `tasks` record, which a resume
@@ -874,11 +872,15 @@ Hosts write less (round two of the review, and what porting brain onto
   every later charge added its spend and then panicked with "ledger lock
   poisoned". A turn threshold whose `rearm` (or `meter`, `mark`, `action`)
   panicked once poisoned its agent's thresholds, so every later turn of
-  that agent panicked before its first model call. Neither runs under a
-  lock now: the ledger persists through the same in-order hand-over as
-  the task board (one `persist` at a time, never an older snapshot after
-  a newer one), and the agent checks its thresholds on a copy it puts
-  back. The host's panic still reaches the call that ran its code.
+  that agent panicked before its first model call, and a ledger threshold's
+  poisoned the ledger the same way. None runs under a lock now: the ledger
+  persists through the same in-order hand-over as the task board (one
+  `persist` at a time, never an older snapshot after a newer one), and a
+  `Thresholds` list reads each threshold's `meter`, `mark`, `action` and
+  `rearm` once, when it takes it, so a site checks what it read and runs
+  only a threshold's `text` and `closing`, unlocked. A threshold whose mark
+  should move goes to its site again in a new list. The host's panic
+  still reaches the call that ran its code.
 - `threshold::Watch` is `Clone`.
 - Fixed: a request over `max_request_tokens` emitted `LoopEvent::ModelStart`
   before it was refused, though it never went out; a spec with no provider

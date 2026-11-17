@@ -498,7 +498,8 @@ async fn a_once_a_turn_reminder_fires_once_when_a_hook_calls_run_mid_turn() {
     assert_eq!(guard_texts(&events), ["[haest guard] EACH at 1"]);
 }
 
-/// A host's threshold whose `rearm` panics the first time it is asked.
+/// A host's reminder at the first step whose `text` panics the first time
+/// it fires.
 #[derive(Default)]
 struct PanicsOnce(std::sync::atomic::AtomicBool);
 
@@ -507,30 +508,32 @@ impl Threshold for PanicsOnce {
         Meter::Steps
     }
     fn mark(&self) -> Mark {
-        Mark::at(1000.0)
+        Mark::at(1.0)
     }
     fn action(&self) -> Action {
         Action::Remind
     }
     fn rearm(&self) -> Rearm {
-        if !self.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            panic!("the host's threshold has a bug, once");
-        }
         Rearm::NextTurn
     }
     fn text(&self, _: &Reading) -> String {
-        "never reached".into()
+        if !self.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            panic!("the host's threshold has a bug, once");
+        }
+        "STEPPED".into()
     }
 }
 
-/// The agent asked its thresholds' `rearm` with their lock held, so a host
-/// threshold that panicked once poisoned it: every later turn of that agent
-/// panicked with a `PoisonError` before its first model call.
+/// The agent once asked its thresholds' `rearm` with their lock held, so a
+/// host threshold that panicked once poisoned it: every later turn of that
+/// agent panicked with a `PoisonError` before its first model call. A list
+/// now reads the parts when it takes a threshold; a turn runs only its
+/// `text`, with no lock held.
 #[tokio::test]
 async fn a_host_threshold_that_panics_once_leaves_the_agent_working() {
     use futures::FutureExt as _;
 
-    let p = ScriptedProvider::new([text_answer("after the panic")]);
+    let p = ScriptedProvider::new(echoes(2));
     let (mut agent, _) = agent(
         &p,
         Opts::default(),
@@ -541,9 +544,68 @@ async fn a_host_threshold_that_panics_once_leaves_the_agent_working() {
         .catch_unwind()
         .await;
     assert!(first.is_err(), "the host's panic is the host's");
+    let mut events = Vec::new();
     let second = std::panic::AssertUnwindSafe(agent.run("again", &mut events))
         .catch_unwind()
         .await;
     let end = second.expect("the next turn panicked: the thresholds' lock is poisoned");
     assert_eq!(end.stop_reason, StopReason::EndTurn);
+    assert_eq!(guard_texts(&events), ["[haest guard] STEPPED"]);
+}
+
+/// A threshold's parts are read once, when a list takes it: a site checks
+/// what it read, and runs none of them again under its lock.
+#[test]
+fn a_list_reads_a_thresholds_parts_once_when_it_takes_it() {
+    use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+
+    /// Counts every call of its parts.
+    #[derive(Default)]
+    struct Counted(AtomicUsize);
+    impl Threshold for Counted {
+        fn meter(&self) -> Meter {
+            self.0.fetch_add(1, SeqCst);
+            Meter::Usd(Scope::Conversation)
+        }
+        fn mark(&self) -> Mark {
+            self.0.fetch_add(1, SeqCst);
+            Mark::at(1.0)
+        }
+        fn action(&self) -> Action {
+            self.0.fetch_add(1, SeqCst);
+            Action::Warn
+        }
+        fn rearm(&self) -> Rearm {
+            self.0.fetch_add(1, SeqCst);
+            Rearm::BelowMark
+        }
+        fn text(&self, _: &Reading) -> String {
+            String::new()
+        }
+    }
+
+    let counted = Arc::new(Counted::default());
+    let list = Thresholds::<LedgerSite>::new([ThresholdRef::from(counted.clone())]).unwrap();
+    assert_eq!(counted.0.load(SeqCst), 4);
+    let mut watch = Watch::new(list.clone());
+    let read = |value| {
+        move |meter| {
+            Some(Reading {
+                meter,
+                value,
+                cap: None,
+                limit: None,
+            })
+        }
+    };
+    watch.settle(read(0.5));
+    assert_eq!(watch.check(read(2.0), Action::Warn).len(), 1);
+    watch.next_turn();
+    watch.follow(&list);
+    assert!(list.past(read(2.0), Action::Warn).is_some());
+    assert_eq!(
+        counted.0.load(SeqCst),
+        4,
+        "read again after the list took it"
+    );
 }
