@@ -14,6 +14,7 @@
 
 use std::{
     borrow::Cow,
+    collections::VecDeque,
     io::{IsTerminal, Write},
     sync::mpsc::Sender,
 };
@@ -58,13 +59,42 @@ pub(crate) struct Renderer<O: Write, E: Write> {
     queued: usize,
     /// The answer's text was written as it streamed (its pieces seen).
     streamed: bool,
-    /// Write each input that enters the conversation (a watcher's view; at
-    /// the terminal the human typed it).
-    inputs: bool,
+    /// A watcher's view (`haest ctl events`): each input that enters the
+    /// conversation is written (at the terminal the human typed it), and
+    /// another peer answers the questions.
+    watching: bool,
     /// The answer is shown [`inert`] too: stdout is not a regular file, so it
     /// may end on this terminal (a pipe into `tee`). Into a file it goes byte
     /// for byte.
     inert_answer: bool,
+    /// The terminal's own question is about to be asked or waits for its
+    /// answer (the prompter brackets the read).
+    answering: bool,
+    /// What came after the question while it waited, in order, shown once it
+    /// is answered: the question stays the last thing on the screen.
+    held: Option<VecDeque<Held>>,
+    /// Held lines let go of because too many waited.
+    held_dropped: usize,
+}
+
+/// A piece of output that waits for the question's answer.
+enum Held {
+    /// Answer text for stdout (consecutive pieces in one).
+    Out(String),
+    /// A line for stderr.
+    Line(String),
+}
+
+/// At most this many pieces wait for a question's answer; past it the oldest
+/// is let go of, and counted.
+const MAX_HELD: usize = 2000;
+
+fn hold(held: &mut VecDeque<Held>, dropped: &mut usize, piece: Held) {
+    if held.len() == MAX_HELD {
+        held.pop_front();
+        *dropped += 1;
+    }
+    held.push_back(piece);
 }
 
 const DIM: &str = "\x1b[2m";
@@ -121,8 +151,11 @@ impl<O: Write, E: Write> Renderer<O, E> {
             usage: None,
             queued: 0,
             streamed: false,
-            inputs: false,
+            watching: false,
             inert_answer: false,
+            answering: false,
+            held: None,
+            held_dropped: 0,
         }
     }
 
@@ -133,10 +166,11 @@ impl<O: Write, E: Write> Renderer<O, E> {
         self
     }
 
-    /// Also write each input that enters the conversation: `haest ctl
-    /// events` watches a conversation someone else drives.
-    pub(crate) fn showing_input(mut self) -> Self {
-        self.inputs = true;
+    /// A watcher's view: `haest ctl events` watches a conversation someone
+    /// else drives, so each input that enters it is written, and its
+    /// questions are answered elsewhere.
+    pub(crate) fn watching(mut self) -> Self {
+        self.watching = true;
         self
     }
 
@@ -250,21 +284,42 @@ impl<O: Write, E: Write> Renderer<O, E> {
 
     fn end_line(&mut self) {
         if self.open_line {
-            let _ = writeln!(self.out);
-            let _ = self.out.flush();
+            self.put_out("\n");
             self.open_line = false;
         }
     }
 
-    fn note(&mut self, color: &str, text: &str) {
-        self.end_line();
-        let line = self.paint(color, &inert(text));
+    /// `text` to stdout, or held while the question waits.
+    fn put_out(&mut self, text: &str) {
+        if let Some(held) = &mut self.held {
+            match held.back_mut() {
+                Some(Held::Out(run)) => run.push_str(text),
+                _ => hold(held, &mut self.held_dropped, Held::Out(text.to_owned())),
+            }
+            return;
+        }
+        let _ = write!(self.out, "{text}");
+        let _ = self.out.flush();
+    }
+
+    /// One line to stderr (above the REPL prompt while it is open), or held
+    /// while the question waits.
+    fn put_line(&mut self, line: String) {
+        if let Some(held) = &mut self.held {
+            return hold(held, &mut self.held_dropped, Held::Line(line));
+        }
         match &self.above {
             Some(above) if above.send(line.clone()).is_ok() => {}
             _ => {
                 let _ = writeln!(self.err, "{line}");
             }
         }
+    }
+
+    fn note(&mut self, color: &str, text: &str) {
+        self.end_line();
+        let line = self.paint(color, &inert(text));
+        self.put_line(line);
     }
 
     /// Answer text, to stdout as it comes.
@@ -277,9 +332,38 @@ impl<O: Write, E: Write> Renderer<O, E> {
         } else {
             Cow::Borrowed(text)
         };
-        let _ = write!(self.out, "{text}");
-        let _ = self.out.flush();
+        self.put_out(&text);
         self.open_line = !text.ends_with('\n');
+    }
+
+    /// The terminal's own question is about to be asked: from when it is
+    /// drawn until [`answered`](Self::answered), every other line waits, so
+    /// the question stays the last thing on the screen.
+    pub(crate) fn answering(&mut self) {
+        self.answering = true;
+    }
+
+    /// The question was answered (`enter`: the human ended its line) or given
+    /// up: what waited is shown, in order.
+    pub(crate) fn answered(&mut self, enter: bool) {
+        self.answering = false;
+        let Some(held) = self.held.take() else {
+            return;
+        };
+        if !enter {
+            let _ = writeln!(self.err);
+        }
+        for h in held {
+            match h {
+                Held::Out(text) => self.put_out(&text),
+                Held::Line(line) => self.put_line(line),
+            }
+        }
+        let dropped = std::mem::take(&mut self.held_dropped);
+        if dropped > 0 {
+            let lines = format!("({dropped} lines not shown while haest asked)");
+            self.note(DIM, &lines);
+        }
     }
 
     pub(crate) fn event(&mut self, ev: &LoopEvent) {
@@ -312,7 +396,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
                 }
                 self.shown_error = message.error_message.clone();
             }
-            LoopEvent::User { message } if self.inputs => {
+            LoopEvent::User { message } if self.watching => {
                 self.note(DIM, &format!("> {}", message.content));
             }
             LoopEvent::TurnEnd {
@@ -375,7 +459,8 @@ impl<O: Write, E: Write> Renderer<O, E> {
     }
 
     /// A question the human answers on the next line: stderr with no newline,
-    /// or an `ask` line on stdout in json mode.
+    /// or an `ask` line on stdout in json mode. A watcher, which another peer
+    /// answers for, ends its line.
     pub(crate) fn ask(&mut self, question: &str) {
         if self.json {
             let text = question.to_string();
@@ -383,8 +468,15 @@ impl<O: Write, E: Write> Renderer<O, E> {
         }
         self.end_line();
         let text = self.paint(YELLOW, &inert(question));
-        let _ = write!(self.err, "{text}");
+        if self.watching {
+            let _ = writeln!(self.err, "{text}");
+        } else {
+            let _ = write!(self.err, "{text}");
+        }
         let _ = self.err.flush();
+        if self.answering && !self.watching {
+            self.held.get_or_insert_with(VecDeque::new);
+        }
     }
 
     /// One line on stdout in json mode: `body`, the stream's next frame.

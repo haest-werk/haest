@@ -78,6 +78,40 @@ impl TermUi {
     pub(crate) fn prompting(&self) -> bool {
         self.term.lock().unwrap().prompting()
     }
+
+    /// This terminal's own question is about to be asked: once it is drawn,
+    /// everything else the stream carries waits until the guard says it was
+    /// answered (or drops, an ask given up), so the question stays the last
+    /// thing on the screen while the human reads it.
+    pub(crate) fn answering(&self) -> Answering<'_> {
+        self.term.lock().unwrap().answering();
+        Answering {
+            ui: self,
+            enter: false,
+        }
+    }
+}
+
+/// Brackets the read of a question's answer ([`TermUi::answering`]).
+pub(crate) struct Answering<'a> {
+    ui: &'a TermUi,
+    /// The human ended the question's line.
+    enter: bool,
+}
+
+impl Answering<'_> {
+    /// The read is over: `line` is what the human typed (None: stdin closed).
+    pub(crate) fn answered(mut self, line: Option<&str>) {
+        self.enter = line.is_some();
+    }
+}
+
+impl Drop for Answering<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut term) = self.ui.term.lock() {
+            term.answered(self.enter);
+        }
+    }
 }
 
 /// The terminal shows `sub`, frame by frame, until the stream closes.

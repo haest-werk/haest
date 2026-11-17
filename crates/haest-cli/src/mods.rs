@@ -172,8 +172,13 @@ impl Prompter for TermPrompter {
                 self.ui.stdin.lock().await
             }
         };
+        // Nothing else reaches the screen until it is answered, or given up
+        // (the read dropped: the guard lets go then too).
+        let answering = self.ui.answering();
         self.ui.ask(&question(req));
-        answer(ask::read_line().await.as_deref())
+        let line = ask::read_line().await;
+        answering.answered(line.as_deref());
+        answer(line.as_deref())
     }
 
     fn auto_approved(&self, req: &ApprovalRequest) {

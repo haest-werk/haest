@@ -119,7 +119,7 @@ async fn inspect(dir: &Path, id: &str, json: bool) -> Result<(), String> {
 /// or one JSON line per frame.
 async fn events(dir: &Path, id: &str, after: u64, follow: bool, json: bool) -> Result<(), String> {
     let mut peer = connect(dir, id).await?;
-    let mut term = Renderer::terminal(json).showing_input();
+    let mut term = Renderer::terminal(json).watching();
     let ask = Request::Events { after, follow };
     peer.call(ask, |frame| show(&mut term, frame))
         .await
