@@ -69,8 +69,8 @@ impl GithubTracker {
         link: &Link,
         change: LinkChange,
     ) -> Result<(), TrackerError> {
-        let this = self.issue_ref(id)?;
-        let other = self.issue_ref(&link.target)?;
+        let this = self.own_ref(id)?;
+        let other = self.any_ref(&link.target)?;
         if this == other {
             return Err(TrackerError::Invalid(
                 "an issue cannot be linked to itself".into(),

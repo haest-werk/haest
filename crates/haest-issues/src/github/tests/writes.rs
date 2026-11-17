@@ -191,6 +191,41 @@ async fn unlinking_names_the_other_issue_by_its_id_in_its_own_repository() {
     assert_eq!(http.calls()[1].json_body(), json!({"sub_issue_id": 1005}));
 }
 
+/// The tracker is one repository's: a model that names another repository's
+/// issue (with the host's token) gets it refused, and nothing is sent.
+#[tokio::test]
+async fn an_issue_of_another_repository_is_never_read_changed_or_deleted() {
+    let http = FakeHttp::new([]);
+    let gh = github(http.clone());
+    let other = "victim/secret#1";
+    let patch = IssuePatch {
+        title: Some("pwned".into()),
+        ..Default::default()
+    };
+    let child = Link::new(Relation::Child, "2");
+    let refused = [
+        ("get", gh.get(other).await.map(drop)),
+        ("update", gh.update(other, patch).await.map(drop)),
+        ("delete", gh.delete(other).await),
+        ("link", gh.link(other, &child, LinkChange::Add).await),
+    ];
+    for (call, result) in refused {
+        let named = matches!(&result, Err(TrackerError::Invalid(m)) if m.contains(other) && m.contains("o/r"));
+        assert!(named, "{call}: {result:?}");
+    }
+    assert!(http.calls().is_empty(), "{:?}", http.sent());
+}
+
+/// Its own repository named in full, in any case, is its own: the request
+/// goes to the repository as the tracker names it.
+#[tokio::test]
+async fn its_own_repository_named_in_full_is_its_own() {
+    let http = FakeHttp::new([ok(issue(5, "five"))]);
+    let got = github(http.clone()).get("O/R#5").await.unwrap();
+    assert_eq!(got.id, "5");
+    assert_eq!(http.sent(), [format!("GET {API}/repos/o/r/issues/5")]);
+}
+
 #[tokio::test]
 async fn relates_to_and_a_link_to_itself_are_refused_unsent() {
     let http = FakeHttp::new([]);

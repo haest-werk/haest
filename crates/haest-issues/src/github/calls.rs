@@ -148,7 +148,7 @@ impl Tracker for GithubTracker {
             one_of(status, &Self::statuses(), "status")?;
             state_fields(status, &mut fields);
         }
-        let r = self.issue_ref(id)?;
+        let r = self.own_ref(id)?;
         if patch.changes_labels() {
             // Adding or removing works on the labels it has now.
             let current = match patch.labels {

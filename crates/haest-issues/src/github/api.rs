@@ -26,8 +26,31 @@ pub(super) struct IssueRef {
 }
 
 impl GithubTracker {
-    /// `42`, `#42` or `owner/repo#42`.
-    pub(super) fn issue_ref(&self, id: &str) -> Result<IssueRef, TrackerError> {
+    /// An issue of this tracker's repository, the one a call reads, changes
+    /// or deletes: `42`, `#42`, or `owner/repo#42` naming this repository
+    /// (in any case). Another repository's issue is refused: the tracker is
+    /// one repository's, whatever else the token may reach.
+    pub(super) fn own_ref(&self, id: &str) -> Result<IssueRef, TrackerError> {
+        let r = self.any_ref(id)?;
+        if !self.is_home(&r) {
+            let (owner, repo) = (&self.owner, &self.repo);
+            return Err(TrackerError::Invalid(format!(
+                "{} is not in {owner}/{repo}: this tracker works on {owner}/{repo}'s issues only",
+                id.trim(),
+            )));
+        }
+        Ok(r)
+    }
+
+    /// Whether `r` is in this tracker's repository (GitHub's names ignore case).
+    fn is_home(&self, r: &IssueRef) -> bool {
+        r.owner.eq_ignore_ascii_case(&self.owner) && r.repo.eq_ignore_ascii_case(&self.repo)
+    }
+
+    /// Any repository's issue: `42`, `#42` or `owner/repo#42`. Only a link's
+    /// other end may be another repository's ([`own_ref`](Self::own_ref)
+    /// for the issue a call acts on).
+    pub(super) fn any_ref(&self, id: &str) -> Result<IssueRef, TrackerError> {
         let id = id.trim();
         let (repo, number) = match id.rsplit_once('#') {
             Some((repo, n)) if !repo.is_empty() => (Some(repo), n),
@@ -40,14 +63,20 @@ impl GithubTracker {
             ))
         };
         let number: u64 = number.parse().map_err(|_not_a_number| bad())?;
+        let home = || (self.owner.clone(), self.repo.clone());
         let (owner, repo) = match repo {
-            None => (self.owner.clone(), self.repo.clone()),
+            None => home(),
             Some(full) => {
                 let (o, r) = full.split_once('/').ok_or_else(bad)?;
                 if o.is_empty() || r.is_empty() || r.contains('/') {
                     return Err(bad());
                 }
-                (o.to_string(), r.to_string())
+                // This repository, in any case, is named as the tracker names it.
+                if o.eq_ignore_ascii_case(&self.owner) && r.eq_ignore_ascii_case(&self.repo) {
+                    home()
+                } else {
+                    (o.to_string(), r.to_string())
+                }
             }
         };
         Ok(IssueRef {
@@ -59,7 +88,7 @@ impl GithubTracker {
 
     /// How the tools name `r`: its number at home, `owner/repo#n` elsewhere.
     pub(super) fn label(&self, r: &IssueRef) -> String {
-        if r.owner.eq_ignore_ascii_case(&self.owner) && r.repo.eq_ignore_ascii_case(&self.repo) {
+        if self.is_home(r) {
             r.number.to_string()
         } else {
             format!("{}/{}#{}", r.owner, r.repo, r.number)

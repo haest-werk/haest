@@ -42,7 +42,10 @@ const API: &str = "https://api.github.com";
 /// Statuses are `open`, `closed` and `not_planned`; there are no priorities;
 /// the relations are parent / child (sub-issues) and depends_on / blocks
 /// (issue dependencies). An id is the issue number (`42` or `#42`), or
-/// `owner/repo#42` for another repository's issue in a link. Pull requests
+/// `owner/repo#42` for another repository's issue in a link. The issue a
+/// call reads, changes, deletes or links is always this repository's: one
+/// in another repository is refused as `Invalid`, unsent, whatever else the
+/// token may reach. Only a link's other end may be elsewhere. Pull requests
 /// are skipped everywhere: the issues API lists them too, but they are not
 /// issues here.
 ///
@@ -164,7 +167,7 @@ impl GithubTracker {
 
     /// GitHub's issue `id` in full, or NotFound (a pull request is not an issue).
     async fn fetch(&self, id: &str) -> Result<(api::IssueRef, Value), TrackerError> {
-        let r = self.issue_ref(id)?;
+        let r = self.own_ref(id)?;
         let missing = format!("there is no issue {} in {}/{}", r.number, r.owner, r.repo);
         let v = self
             .call(Method::Get, self.issue_url(&r, ""), None, &missing)

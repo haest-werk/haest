@@ -148,6 +148,11 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   value and a `broker_url`'s `user:password@`. A host that logged one with
   `{:?}` logged the keys. Debug now names the variables, keys and entries
   and shows no value, and the broker URL as `<redacted>@host`.
+- haest-issues' `GithubTracker` read, changed, deleted and linked issues in
+  any repository the model named (`{"id": "victim/secret#1"}`), with the
+  host's token, though it is one repository's tracker. The issue a call
+  acts on must now be in its own repository, else the call is refused as
+  `Invalid` and nothing is sent; only a link's other end may be elsewhere.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a
