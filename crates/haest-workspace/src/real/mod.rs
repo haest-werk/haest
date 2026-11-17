@@ -35,7 +35,10 @@ pub use fs::RealFs;
 ///   sets [`ExecResult::timed_out`]; a killed child reports exit `128 + 9`.
 /// - A call ends when the child has exited AND its output pipes have closed:
 ///   a command that leaves a process behind holding them (`server &`) runs
-///   until that process closes them or the timeout kills the group.
+///   until that process closes them or the timeout kills the group. When the
+///   call ends without them (a timeout, a cancel, a drop), haest stops
+///   reading the pipes; a process that left the group and writes to them
+///   again gets SIGPIPE.
 /// - Output is decoded as UTF-8, invalid bytes replaced. The result keeps
 ///   each stream's first 64 MiB, as the sandbox does, and drops the rest;
 ///   the child is still read to its end. Streamed output

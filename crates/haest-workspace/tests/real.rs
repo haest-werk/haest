@@ -185,6 +185,29 @@ async fn an_exited_bash_keeps_its_pid_until_the_call_ends() {
     assert!(call.await.unwrap().timed_out);
 }
 
+/// A process that left bash's group may hold the output for good: the call's
+/// pipe readers ran on after it returned, so what it printed later reached
+/// `on_output` (after a job's `Done`) and was read and kept for a call that
+/// had ended. Once the call has returned, nothing it prints arrives.
+#[tokio::test(flavor = "multi_thread")]
+async fn no_output_reaches_on_output_after_the_call_returns() {
+    let (_t, dir) = tempdir();
+    let mut o = opts(&dir);
+    o.timeout = Duration::from_secs(1);
+    let seen = Arc::new(Mutex::new(String::new()));
+    let into = seen.clone();
+    let on_output = OutputChunks::from(move |s: &str| into.lock().unwrap().push_str(s));
+    let late = "perl -e 'use POSIX qw(setsid); setsid(); $|=1; sleep 4; print \"late\\n\"'";
+    let r = real()
+        .shell_streaming(&format!("{late} & echo early"), o, on_output)
+        .await;
+    assert!(r.timed_out);
+    assert_eq!(*seen.lock().unwrap(), "early\n");
+    // The escaped process prints at 4 s; the call returned at about 3 s.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert_eq!(*seen.lock().unwrap(), "early\n");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[expect(
     unsafe_code,

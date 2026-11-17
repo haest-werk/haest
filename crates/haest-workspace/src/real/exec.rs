@@ -219,45 +219,51 @@ pub(super) async fn spawn_collect(
     let pid = child.id().unwrap_or(0);
     let mut on_drop = KillGroupOnDrop(Some(pid));
     let (out, err): (Sink, Sink) = Default::default();
-    let readers = [
-        tokio::spawn(drain(
-            child.stdout.take().expect("piped"),
-            out.clone(),
-            stream.clone(),
-        )),
-        tokio::spawn(drain(
-            child.stderr.take().expect("piped"),
-            err.clone(),
-            stream,
-        )),
-    ];
-    // Done = both pipes closed (a background job may hold them) AND the child
-    // exited. Waited on LAST: an exited child stays a zombie until then, so its
-    // pid and its group id stay ours for the kills below (a reaped pid may
-    // already be another process's).
-    let finished = async {
-        for r in readers {
-            let _ = r.await;
-        }
-        child.wait().await
-    };
-    tokio::pin!(finished);
+    // Held in a set, never detached: a dropped call drops the set, which
+    // aborts them.
+    let mut readers = tokio::task::JoinSet::new();
+    readers.spawn(drain(
+        child.stdout.take().expect("piped"),
+        out.clone(),
+        stream.clone(),
+    ));
+    readers.spawn(drain(
+        child.stderr.take().expect("piped"),
+        err.clone(),
+        stream,
+    ));
 
     let mut timed_out = false;
-    let status = tokio::select! {
-        s = &mut finished => s.ok(),
-        _ = tokio::time::sleep(opts.timeout) => {
-            timed_out = true;
-            kill_group(pid);
-            tokio::time::timeout(DRAIN_GRACE, &mut finished).await.ok().and_then(Result::ok)
-        }
-        _ = opts.cancel.cancelled() => {
-            kill_group(pid);
-            tokio::time::timeout(DRAIN_GRACE, &mut finished).await.ok().and_then(Result::ok)
+    let status = {
+        // Done = both pipes closed (a background job may hold them) AND the
+        // child exited. Waited on LAST: an exited child stays a zombie until
+        // then, so its pid and its group id stay ours for the kills below (a
+        // reaped pid may already be another process's).
+        let finished = async {
+            while readers.join_next().await.is_some() {}
+            child.wait().await
+        };
+        tokio::pin!(finished);
+        tokio::select! {
+            s = &mut finished => s.ok(),
+            _ = tokio::time::sleep(opts.timeout) => {
+                timed_out = true;
+                kill_group(pid);
+                tokio::time::timeout(DRAIN_GRACE, &mut finished).await.ok().and_then(Result::ok)
+            }
+            _ = opts.cancel.cancelled() => {
+                kill_group(pid);
+                tokio::time::timeout(DRAIN_GRACE, &mut finished).await.ok().and_then(Result::ok)
+            }
         }
     };
-    // It ended, or was killed above: the run was not dropped.
+    // It ended, or was killed above: the run was not dropped. Before the
+    // await below: a reaped child's pid is no longer ours to kill.
     on_drop.0 = None;
+    // The pipes are this call's no longer. A process that left the group may
+    // hold them for good: stop reading, so nothing reaches `stream` after the
+    // return and nothing more is kept. It gets SIGPIPE if it writes again.
+    readers.shutdown().await;
     ExecResult {
         stdout: take(&out),
         stderr: take(&err),
