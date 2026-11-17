@@ -21,6 +21,7 @@
 //! refuses the handshake with 401 or 403, is not dialed again.
 
 use std::{
+    fmt,
     hash::{BuildHasher, Hasher},
     sync::{Arc, OnceLock},
     time::{Duration, Instant},
@@ -39,7 +40,8 @@ use tokio_tungstenite::{
 
 use crate::{
     Attached, Ended, Grant, LineSink, LineSource, Start, Transport, TransportError,
-    link::until_closed, serve,
+    link::{REDACTED, until_closed},
+    serve,
 };
 
 /// Close codes that mean the broker refused the token: no point dialing again.
@@ -54,7 +56,8 @@ const STABLE: Duration = Duration::from_secs(5);
 
 type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-/// The session linked to a broker at a `ws://` or `wss://` URL.
+/// The session linked to a broker at a `ws://` or `wss://` URL. Its Debug
+/// output never shows the token.
 ///
 /// ```no_run
 /// # async fn link(backend: std::sync::Arc<dyn haest_session::Backend>) {
@@ -69,11 +72,21 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// let why = attached.ended().await;
 /// # }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Broker {
     url: String,
     token: Option<String>,
     backoff: Backoff,
+}
+
+impl fmt::Debug for Broker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Broker")
+            .field("url", &self.url)
+            .field("token", &self.token.as_ref().map(|_| REDACTED))
+            .field("backoff", &self.backoff)
+            .finish()
+    }
 }
 
 impl Broker {

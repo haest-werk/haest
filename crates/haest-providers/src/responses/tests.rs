@@ -238,3 +238,15 @@ fn the_wire_request_goes_to_responses() {
     assert_eq!(req.url, "https://api.openai.com/v1/responses");
     assert_eq!(req.header("authorization"), Some("Bearer k"));
 }
+
+#[test]
+fn the_key_and_header_values_never_show_in_debug_output() {
+    let mut o = ResponsesOptions::new("openai", "sk-SECRET");
+    o.headers = vec![("x-proxy-key".into(), "HEADER-SECRET".into())];
+    let shown = format!("{o:?}");
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(
+        shown.contains("openai") && shown.contains("x-proxy-key"),
+        "{shown}"
+    );
+}

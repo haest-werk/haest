@@ -566,3 +566,14 @@ async fn a_connection_that_follows_nothing_ends_when_the_conversation_does() {
     assert!(rest.is_empty(), "{rest:#?}");
     assert!(matches!(ended, Ended::Closed), "{ended:?}");
 }
+
+#[test]
+fn the_token_never_shows_in_debug_output() {
+    let start = Start {
+        follow_from: Some(7),
+        token: Some("TOKEN-SECRET".into()),
+    };
+    let shown = format!("{start:?}");
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(shown.contains('7'), "{shown}");
+}

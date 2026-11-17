@@ -423,3 +423,11 @@ fn the_wait_is_full_jitter_up_to_a_doubling_cap() {
         (0..20).map(|_| (super::jitter() * 1e9) as u64).collect();
     assert!(draws.len() > 15, "the waits differ: {draws:?}");
 }
+
+#[test]
+fn the_token_never_shows_in_debug_output() {
+    let link = Broker::new("wss://broker.example/agents").token(Some("TOKEN-SECRET".into()));
+    let shown = format!("{link:?}");
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(shown.contains("broker.example"), "{shown}");
+}

@@ -12,7 +12,7 @@ mod stream;
 #[cfg(test)]
 mod tests;
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
 use serde_json::{Value, json};
@@ -24,7 +24,7 @@ use haest_http::{HttpClient, Request};
 use crate::{
     driver::drive,
     retry::RetryPolicy,
-    send::{Sender, configured, endpoint},
+    send::{HeaderNames, REDACTED, Sender, configured, endpoint},
 };
 
 const DEFAULT_MAX_TOKENS: u32 = 32_000;
@@ -34,8 +34,9 @@ const API_VERSION: &str = "2023-06-01";
 /// Where an [`AnthropicProvider`] sends its requests, and with which key.
 ///
 /// [`AnthropicOptions::new`] takes the two fields every provider needs; set
-/// the others on the value it returns.
-#[derive(Debug, Clone)]
+/// the others on the value it returns. Its Debug output shows neither the
+/// key nor a header's value.
+#[derive(Clone)]
 pub struct AnthropicOptions {
     /// The provider's name: its [`Provider::id`], stored on every message it
     /// answers. Thinking replays, with its signature, only to the provider
@@ -60,6 +61,17 @@ impl AnthropicOptions {
             base_url: None,
             headers: Vec::new(),
         }
+    }
+}
+
+impl fmt::Debug for AnthropicOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AnthropicOptions")
+            .field("id", &self.id)
+            .field("api_key", &REDACTED)
+            .field("base_url", &self.base_url)
+            .field("headers", &HeaderNames(&self.headers))
+            .finish()
     }
 }
 

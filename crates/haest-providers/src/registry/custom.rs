@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
+    fmt,
     path::Path,
 };
 
@@ -13,7 +14,12 @@ use haest_core::{
 use serde_json::Value;
 
 use super::{EntryProblem, ProvidersFileError};
-use crate::{anthropic::AnthropicOptions, catalog::Catalog, compat::CompatOptions};
+use crate::{
+    anthropic::AnthropicOptions,
+    catalog::Catalog,
+    compat::CompatOptions,
+    send::{HeaderNames, REDACTED},
+};
 
 haest_core::word_enum! {
 /// The wire dialect of a custom provider: its providers.json `type`.
@@ -49,7 +55,9 @@ pub enum Dialect ("provider type") {
 /// levels ([`CompatOptions::reasoning_effort`]). Absent = no effort is sent.
 /// `pricing`: USD per 1M tokens per model id, for an API that returns no cost; a
 /// catalog row's `pricing` fills in for a model not listed here.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Its Debug output shows neither `apiKey` nor a header's value.
+#[derive(Clone, PartialEq)]
 pub struct CustomProviderConfig {
     /// `type`: the wire dialect.
     pub dialect: Dialect,
@@ -67,6 +75,20 @@ pub struct CustomProviderConfig {
     pub reasoning_effort: Option<Reasoning>,
     /// `pricing`: USD per 1M tokens, by model id (the spec without `name:`).
     pub pricing: HashMap<String, ModelPricing>,
+}
+
+impl fmt::Debug for CustomProviderConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CustomProviderConfig")
+            .field("dialect", &self.dialect)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.as_ref().map(|_| REDACTED))
+            .field("api_key_env", &self.api_key_env)
+            .field("headers", &HeaderNames(&self.headers))
+            .field("reasoning_effort", &self.reasoning_effort)
+            .field("pricing", &self.pricing)
+            .finish()
+    }
 }
 
 fn opt_string(v: &Value, key: &str) -> Option<String> {

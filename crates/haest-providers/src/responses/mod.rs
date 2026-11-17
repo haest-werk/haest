@@ -13,7 +13,7 @@ mod tests;
 #[cfg(test)]
 mod tests_convert;
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
 
@@ -24,14 +24,15 @@ use haest_http::{HttpClient, Request};
 use crate::{
     driver::drive,
     retry::RetryPolicy,
-    send::{OPENAI_URL, Sender, bearer_post, endpoint},
+    send::{HeaderNames, OPENAI_URL, REDACTED, Sender, bearer_post, endpoint},
 };
 
 /// Where a [`ResponsesProvider`] sends its requests, and with which key.
 ///
 /// [`ResponsesOptions::new`] takes the two fields every provider needs; set
-/// the others on the value it returns.
-#[derive(Debug, Clone)]
+/// the others on the value it returns. Its Debug output shows neither the
+/// key nor a header's value.
+#[derive(Clone)]
 pub struct ResponsesOptions {
     /// The provider's name: its [`Provider::id`], stored on every message it
     /// answers. Reasoning replays only to the provider whose id a message carries.
@@ -54,6 +55,17 @@ impl ResponsesOptions {
             base_url: None,
             headers: Vec::new(),
         }
+    }
+}
+
+impl fmt::Debug for ResponsesOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResponsesOptions")
+            .field("id", &self.id)
+            .field("api_key", &REDACTED)
+            .field("base_url", &self.base_url)
+            .field("headers", &HeaderNames(&self.headers))
+            .finish()
     }
 }
 

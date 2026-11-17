@@ -22,7 +22,7 @@ mod tests_search;
 #[cfg(test)]
 mod tests_stream;
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, fmt, sync::Arc, time::Duration};
 
 use haest_core::{
     catalog::{ModelPricing, Reasoning},
@@ -43,7 +43,7 @@ use crate::{
     driver::{Step, StreamFold, drive, openai_error},
     retry::RetryPolicy,
     routing::RoutingScopes,
-    send::{OPENAI_URL, Sender, bearer_post, endpoint},
+    send::{HeaderNames, OPENAI_URL, REDACTED, Sender, bearer_post, endpoint},
     sse::SseEvent,
     web_search::web_search_tool,
 };
@@ -69,8 +69,9 @@ pub enum CompatFlavor {
 ///
 /// [`CompatOptions::new`] takes the two fields every provider needs and
 /// leaves the rest plain ([`CompatFlavor::Generic`], no extras); set the
-/// others on the value it returns.
-#[derive(Debug, Clone)]
+/// others on the value it returns. Its Debug output shows neither the key
+/// nor a header's value.
+#[derive(Clone)]
 pub struct CompatOptions {
     /// The provider's name: its [`Provider::id`](haest_core::Provider::id),
     /// stored on every message it answers. Reasoning replays only to the
@@ -109,6 +110,21 @@ impl CompatOptions {
             pricing: HashMap::new(),
             routing: None,
         }
+    }
+}
+
+impl fmt::Debug for CompatOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CompatOptions")
+            .field("id", &self.id)
+            .field("flavor", &self.flavor)
+            .field("api_key", &REDACTED)
+            .field("base_url", &self.base_url)
+            .field("headers", &HeaderNames(&self.headers))
+            .field("reasoning_effort", &self.reasoning_effort)
+            .field("pricing", &self.pricing)
+            .field("routing", &self.routing)
+            .finish()
     }
 }
 

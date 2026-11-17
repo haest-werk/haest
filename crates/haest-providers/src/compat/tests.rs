@@ -273,3 +273,15 @@ fn the_wire_request_goes_to_chat_completions_with_a_bearer_key_and_custom_header
         1
     );
 }
+
+#[test]
+fn the_key_and_header_values_never_show_in_debug_output() {
+    let mut o = CompatOptions::new("local", "sk-SECRET");
+    o.headers = vec![("x-proxy-key".into(), "HEADER-SECRET".into())];
+    let shown = format!("{o:?}");
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(
+        shown.contains("local") && shown.contains("x-proxy-key"),
+        "{shown}"
+    );
+}

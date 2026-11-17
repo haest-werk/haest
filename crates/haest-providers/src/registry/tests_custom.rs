@@ -208,3 +208,20 @@ fn one_bad_custom_entry_blocks_only_itself() {
     ));
     assert!(reg.resolve("good:m").is_ok());
 }
+
+#[test]
+fn the_key_and_header_values_never_show_in_debug_output() {
+    let entry = json!({
+        "baseURL": "http://localhost:1234/v1",
+        "apiKey": "sk-SECRET",
+        "apiKeyEnv": "LOCAL_KEY",
+        "headers": {"x-proxy-key": "HEADER-SECRET"}
+    });
+    let cfg = CustomProviderConfig::from_json(&entry).unwrap();
+    let shown = format!("{cfg:?}");
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(
+        shown.contains("LOCAL_KEY") && shown.contains("x-proxy-key"),
+        "{shown}"
+    );
+}

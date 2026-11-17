@@ -3,7 +3,7 @@
 //! asked for them, and a `reply` for every request. Every transport runs its
 //! connections through here, so the rules are the same on each.
 
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{fmt, future::Future, sync::Arc, time::Duration};
 
 use haest_core::{Effort, TurnOutcome, error::report};
 use haest_session::{Backend, Body, Control, Frame, Input, SessionError, Subscription};
@@ -38,8 +38,8 @@ pub trait LineSink: Send + 'static {
     ) -> impl Future<Output = Result<(), TransportError>> + Send;
 }
 
-/// How a connection starts.
-#[derive(Debug, Clone, Default)]
+/// How a connection starts. Its Debug output never shows the token.
+#[derive(Clone, Default)]
 pub struct Start {
     /// Follow the stream from after this seq at once, as if the peer had
     /// sent `events {after, follow: true}` (a parent on stdio follows from
@@ -47,6 +47,18 @@ pub struct Start {
     pub follow_from: Option<u64>,
     /// A credential for the `hello` (a broker reads it there, never in a URL).
     pub token: Option<String>,
+}
+
+/// What a token shows as in Debug output.
+pub(crate) const REDACTED: &str = "<redacted>";
+
+impl fmt::Debug for Start {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Start")
+            .field("follow_from", &self.follow_from)
+            .field("token", &self.token.as_ref().map(|_| REDACTED))
+            .finish()
+    }
 }
 
 /// Why a connection ended.

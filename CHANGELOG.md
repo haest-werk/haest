@@ -49,6 +49,12 @@ compiles as before.
   chunk, so a peer that sent a long line in small pieces, or never sent a
   newline, cost quadratic time: 16 MiB took about 3 seconds and the 64 MiB
   limit about 50. Each byte is now searched once.
+- `AnthropicOptions`, `CompatOptions`, `ResponsesOptions` and
+  `CustomProviderConfig` printed the API key and every header's value in
+  their Debug output, and `Broker` and `Start` the broker token, so a host
+  that logged one with `{:?}` logged the secret. Debug now shows
+  `<redacted>` for the key and the token, and a header's name without its
+  value.
 
 ### Behaviour changes
 

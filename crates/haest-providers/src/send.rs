@@ -8,6 +8,7 @@
 
 use std::{
     collections::hash_map::RandomState,
+    fmt,
     hash::{BuildHasher, Hasher},
     sync::Arc,
     time::Duration,
@@ -189,6 +190,20 @@ pub(crate) fn configured(req: Request, extra: &[(String, String)]) -> Request {
     extra
         .iter()
         .fold(req, |req, (name, value)| req.with_header(name, value))
+}
+
+/// What a key shows as in an options type's Debug output.
+pub(crate) const REDACTED: &str = "<redacted>";
+
+/// Configured headers as Debug output shows them: each name, never its value
+/// (a proxy's key rides in one).
+pub(crate) struct HeaderNames<'a>(pub(crate) &'a [(String, String)]);
+
+impl fmt::Debug for HeaderNames<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let names = self.0.iter().map(|(name, _)| (name, REDACTED));
+        f.debug_list().entries(names).finish()
+    }
 }
 
 #[cfg(test)]

@@ -283,3 +283,15 @@ fn the_last_tool_carries_the_cache_breakpoint() {
     assert_eq!(tools[1]["cache_control"], json!({"type": "ephemeral"}));
     assert_eq!(tools[1]["input_schema"], json!({"type": "object"}));
 }
+
+#[test]
+fn the_key_and_header_values_never_show_in_debug_output() {
+    let mut o = AnthropicOptions::new("anthropic", "sk-ant-SECRET");
+    o.headers = vec![("x-proxy-key".into(), "HEADER-SECRET".into())];
+    let shown = format!("{o:?}");
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(
+        shown.contains("anthropic") && shown.contains("x-proxy-key"),
+        "{shown}"
+    );
+}
