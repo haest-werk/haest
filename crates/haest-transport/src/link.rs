@@ -3,7 +3,7 @@
 //! asked for them, and a `reply` for every request. Every transport runs its
 //! connections through here, so the rules are the same on each.
 
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{fmt, future::Future, sync::Arc, time::Duration};
 
 use haest_core::{Effort, TurnOutcome, error::report};
 use haest_session::{BackendRef, Body, Control, Frame, Input, SessionError, Subscription};
@@ -66,6 +66,18 @@ pub enum Ended {
     Closed,
     /// Reading from the peer failed.
     Failed(TransportError),
+}
+
+/// For a person: `the peer left`, `the conversation ended`, or `reading from
+/// the peer failed: ` and the error with its causes.
+impl fmt::Display for Ended {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Ended::PeerLeft => f.write_str("the peer left"),
+            Ended::Closed => f.write_str("the conversation ended"),
+            Ended::Failed(e) => write!(f, "reading from the peer failed: {}", report(e)),
+        }
+    }
 }
 
 /// A line out: a stream frame as it is, or a frame of this connection's own

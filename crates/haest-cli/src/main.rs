@@ -148,7 +148,7 @@ async fn stdio_mode(session: &Session) -> ExitCode {
     match attached.ended().await {
         Ended::PeerLeft | Ended::Closed => ExitCode::SUCCESS,
         Ended::Failed(e) => fail(1, format!("reading stdin: {}", report(&e))),
-        other => fail(1, format!("the connection ended: {other:?}")),
+        other => fail(1, format!("the connection ended: {other}")),
     }
 }
 

@@ -1596,6 +1596,10 @@ against it; the wire JSON is unchanged):
   cannot fail and returns the `Attached` itself (breaking):
   `let attached = Stdio::process().attach(s, g)?;` ->
   `let attached = Stdio::process().attach(s, g);`.
+- `Ended` implements `Display` (`the peer left`, `the conversation ended`,
+  `reading from the peer failed: ` and the error with its causes), so a
+  host shows why a connection ended without Debug text; the `haest`
+  command's "the connection ended" line uses it.
 
 ### haest-issues
 

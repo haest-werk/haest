@@ -138,7 +138,7 @@ async fn main() -> Result<(), BoxError> {
         .send(json!({"v": 1, "id": "x", "type": "control", "verb": "close"}))
         .await?;
     parent.reply("x").await?;
-    eprintln!("ended: {:?}", attached.ended().await);
+    eprintln!("ended: {}", attached.ended().await);
     Ok(())
 }
 

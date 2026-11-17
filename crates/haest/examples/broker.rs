@@ -156,7 +156,7 @@ async fn main() -> Result<(), BoxError> {
     // The conversation ends, and with it the link.
     session.close().await;
     while side.next().await?.is_some() {}
-    eprintln!("ended: {:?}", attached.ended().await);
+    eprintln!("ended: {}", attached.ended().await);
     Ok(())
 }
 
