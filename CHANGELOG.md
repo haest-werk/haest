@@ -109,8 +109,9 @@ value itself, and holds it in a handle named after its trait. Read
   `https://<redacted>@host/...`, and a request's body as its length.
 - The Debug output of `AnthropicOptions`, `CompatOptions`,
   `ResponsesOptions` and `CustomProviderConfig` still printed a base URL's
-  `user:password@` (a gateway that takes its credentials in the URL). It
-  shows `<redacted>@` in their place.
+  `user:password@` (a gateway that takes its credentials in the URL), and
+  haest-issues' `GithubTracker` its API root's. They show `<redacted>@` in
+  their place.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a
@@ -771,6 +772,23 @@ for an eviction (`Classify`, `FrameKind`, `Replay`). `LineDecoder` and
 
 - `issue_tools` and `issue_tools_named` return `haest_core::Tools` (was
   `Vec<Arc<dyn Tool>>`).
+- `issue_tools` and `issue_tools_named` take the tracker itself, as
+  `impl Into<TrackerRef>` (new: the handle the tools hold a tracker in), and
+  `issue_tools_named` takes the noun first (breaking):
+  `issue_tools(Arc::new(github))` -> `issue_tools(github)`,
+  `issue_tools_named(Arc::new(board), "Card")` ->
+  `issue_tools_named("Card", board)`. An `Arc` of a tracker still goes in.
+- `CardTracker::new` takes the directory first and the file system as
+  `impl Into<FsRef>` (breaking), the dependency last like every constructor
+  in haest-providers: `CardTracker::new(Arc::new(fs), dir)` ->
+  `CardTracker::new(dir, fs)`. `CardTracker` is `Clone`, the clones sharing
+  one write lock, so `Arc<CardTracker>` -> `CardTracker` and `.clone()`; it
+  is `Debug`, and `with_clock` takes `impl Into<ClockRef>`. New getter
+  `dir()`.
+- `GithubTracker::with_http` takes `impl Into<HttpClientRef>` (breaking):
+  `.with_http(Arc::new(client))` -> `.with_http(client)`. `GithubTracker` is
+  `Clone`.
+- `TrackerError` is `#[non_exhaustive]` (breaking): a `match` adds a `_` arm.
 
 ## 0.2.0 (2026-11-17)
 

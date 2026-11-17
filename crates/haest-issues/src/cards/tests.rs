@@ -13,7 +13,7 @@ mod links;
 const T: u64 = 1_794_830_400_000;
 
 pub(super) fn board(dir: &Path) -> CardTracker {
-    CardTracker::new(Arc::new(RealFs), dir).with_clock(|| T)
+    CardTracker::new(dir, RealFs).with_clock(|| T)
 }
 
 pub(super) fn write_card(dir: &Path, id: &str, text: &str) {

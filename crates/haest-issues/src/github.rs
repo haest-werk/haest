@@ -1,8 +1,8 @@
 //! [`GithubTracker`]: GitHub Issues as a [`Tracker`](crate::Tracker).
 
-use std::{fmt, sync::Arc};
+use std::fmt;
 
-use haest_http::{HttpClient, Method, ReqwestClient};
+use haest_http::{__private::UrlDebug, HttpClientRef, Method, ReqwestClient};
 use serde_json::Value;
 
 use crate::tracker::TrackerError;
@@ -36,7 +36,8 @@ const API: &str = "https://api.github.com";
 /// Deleting an issue needs a token with admin rights on the repository.
 ///
 /// PLUG POINT: [`GithubTracker::with_http`], how the requests travel (any
-/// [`HttpClient`]; the shared [`ReqwestClient`] by default).
+/// [`HttpClient`](haest_http::HttpClient); the shared [`ReqwestClient`] by
+/// default).
 ///
 /// Statuses are `open`, `closed` and `not_planned`; there are no priorities;
 /// the relations are parent / child (sub-issues) and depends_on / blocks
@@ -52,14 +53,12 @@ const API: &str = "https://api.github.com";
 ///
 /// # Examples
 ///
-/// A fake [`HttpClient`] answers in place of GitHub, so this runs offline; a
-/// host leaves the default and hands in a token.
+/// A fake [`HttpClient`](haest_http::HttpClient) answers in place of GitHub,
+/// so this runs offline; a host leaves the default and hands in a token.
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_issues::{
-///     GithubTracker, IssueFilter, Tracker,
+///     GithubTracker, IssueFilter, Tracker, TrackerError,
 ///     http::{HttpClient, HttpError, Request, Response, async_trait},
 /// };
 /// use serde_json::json;
@@ -80,30 +79,36 @@ const API: &str = "https://api.github.com";
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), TrackerError> {
 /// let github = GithubTracker::new("owner", "repo")
 ///     .with_token("a token")
-///     .with_http(Arc::new(OneIssue));
-/// let open = github.list(&IssueFilter { limit: 10, ..Default::default() }).await.unwrap();
+///     .with_http(OneIssue);
+/// let open = github.list(&IssueFilter { limit: 10, ..Default::default() }).await?;
 /// assert_eq!((open[0].id.as_str(), open[0].status.as_str()), ("7", "open"));
+/// # Ok(())
 /// # }
 /// ```
+///
+/// Cloning is cheap enough to hand one to the tools and keep one: a clone
+/// shares the client.
+#[derive(Clone)]
 pub struct GithubTracker {
     owner: String,
     repo: String,
     token: Option<String>,
     api: String,
     graphql: String,
-    http: Arc<dyn HttpClient>,
+    http: HttpClientRef,
 }
 
+/// Never the token; the API root without a `user:password@`.
 impl fmt::Debug for GithubTracker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GithubTracker")
             .field("owner", &self.owner)
             .field("repo", &self.repo)
             .field("token", &self.token.as_ref().map(|_| "<handed in>"))
-            .field("api", &self.api)
+            .field("api", &UrlDebug(&self.api))
             .finish_non_exhaustive()
     }
 }
@@ -118,7 +123,7 @@ impl GithubTracker {
             token: None,
             api: API.into(),
             graphql: format!("{API}/graphql"),
-            http: Arc::new(ReqwestClient::new()),
+            http: ReqwestClient::new().into(),
         }
     }
 
@@ -130,10 +135,10 @@ impl GithubTracker {
     }
 
     /// The tracker sending its requests through `http`: a host's own client,
-    /// a recorder, a test's fake. The 60 s limit and the 16 MiB cap on an
-    /// answer still hold.
-    pub fn with_http(mut self, http: Arc<dyn HttpClient>) -> Self {
-        self.http = http;
+    /// a recorder, a test's fake (the client itself, or an `Arc` of one). The
+    /// 60 s limit and the 16 MiB cap on an answer still hold.
+    pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
+        self.http = http.into();
         self
     }
 

@@ -30,8 +30,7 @@ fn a_label_patch_replaces_then_adds_then_removes() {
 
 #[tokio::test]
 async fn the_default_filter_lists_the_open_issues() {
-    let board =
-        crate::cards::CardTracker::new(std::sync::Arc::new(haest_core::fs::MemFs::new()), "/cards");
+    let board = crate::cards::CardTracker::new("/cards", haest_core::fs::MemFs::new());
     let new = NewIssue {
         title: "Fix the login".into(),
         ..Default::default()

@@ -29,7 +29,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 use haest_core::tool::{JsonMap, ToolContext, ToolError, opt_num, spelled};
 use serde_json::{Value, json};
 
-use crate::tracker::{Issue, IssueFilter, Tracker, TrackerError, TrackerInfo};
+use crate::tracker::{Issue, IssueFilter, TrackerError, TrackerInfo, TrackerRef};
 use haest_core::{ToolRef, Tools};
 
 /// A tool's struct: its name and the tracker it shares with the others.
@@ -62,7 +62,7 @@ const MAX_LIMIT: usize = 100;
 
 /// What every issue tool shares: the tracker and what it accepts.
 pub(crate) struct Shared {
-    tracker: Arc<dyn Tracker>,
+    tracker: TrackerRef,
     info: TrackerInfo,
 }
 
@@ -70,10 +70,12 @@ pub(crate) struct Shared {
 /// IssueSearch, IssueGet, IssueCreate, IssueUpdate, IssueDelete, IssueLink,
 /// in that order.
 ///
-/// Put them in the agent's tool list beside its others. The [crate
+/// `tracker` is the tracker itself, or an `Arc` of one; a host that keeps
+/// using a [`CardTracker`](crate::CardTracker) hands in a clone. Put the
+/// tools in the agent's tool list beside its others. The [crate
 /// docs](crate#examples) call them on a board of cards.
-pub fn issue_tools(tracker: Arc<dyn Tracker>) -> Tools {
-    issue_tools_named(tracker, "Issue")
+pub fn issue_tools(tracker: impl Into<TrackerRef>) -> Tools {
+    issue_tools_named("Issue", tracker)
 }
 
 /// The seven tools named `<noun>List`, `<noun>Get`, ...: two trackers on one
@@ -81,7 +83,8 @@ pub fn issue_tools(tracker: Arc<dyn Tracker>) -> Tools {
 ///
 /// [`TrackerInfo`] is read once, here: the tools' descriptions and schemas
 /// do not follow a tracker that changes what it accepts later.
-pub fn issue_tools_named(tracker: Arc<dyn Tracker>, noun: &str) -> Tools {
+pub fn issue_tools_named(noun: &str, tracker: impl Into<TrackerRef>) -> Tools {
+    let tracker = tracker.into();
     let shared = Arc::new(Shared {
         info: tracker.info(),
         tracker,

@@ -20,17 +20,17 @@ two backends.
 ## Use
 
 ```rust
-use std::sync::Arc;
 use haest_issues::{CardTracker, GithubTracker, issue_tools, issue_tools_named};
 use haest_workspace::RealFs;
 
 // GitHub: the token is yours to hand in; nothing is read from the environment.
 let github = GithubTracker::new("owner", "repo").with_token(token);
-let mut tools = issue_tools(Arc::new(github));
+let mut tools = issue_tools(github);
 
-// Cards: you name the directory and the file system.
-let board = CardTracker::new(Arc::new(RealFs), "/path/to/project/cards");
-tools.extend(issue_tools_named(Arc::new(board), "Card")); // CardList, CardGet, ...
+// Cards: you name the directory and the file system. Keep the board too:
+// a clone is cheap and shares its write lock.
+let board = CardTracker::new("/path/to/project/cards", RealFs);
+tools.extend(issue_tools_named("Card", board.clone())); // CardList, CardGet, ...
 
 // Hand `tools` to the agent with its others (AgentDeps::new(models, tools, ...)).
 ```
@@ -109,10 +109,10 @@ Titles first, bodies next.
 - A write goes to a hidden temp file in the directory, then is renamed over the
   card. A link must name a card that exists, and a link that would make a loop
   (`depends_on`, `epic`) is refused.
-- One `CardTracker` writes one card at a time, but two trackers over the same
-  directory (or another program) do not wait for each other: two writes at the
-  same moment can lose a change, or make two same-titled cards one. Make one
-  tracker per directory and share it.
+- One `CardTracker` (and its clones) writes one card at a time, but two
+  trackers made apart over the same directory (or another program) do not
+  wait for each other: two writes at the same moment can lose a change, or
+  make two same-titled cards one. Make one tracker per directory and clone it.
 
 ## Writing your own tools
 

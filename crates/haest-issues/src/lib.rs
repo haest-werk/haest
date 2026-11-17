@@ -24,37 +24,40 @@
 //! them; here they are called directly.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
-//! use haest_core::{MemFs, ShutWorkspace, ToolContext};
+//! use haest_core::{MemFs, ShutWorkspace, ToolContext, error::BoxError, tool::ToolError};
 //! use haest_issues::{CardTracker, Tracker, issue_tools};
 //! use serde_json::json;
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() {
-//! // The host names the file system and the directory; the tracker reads nothing else.
-//! let board = Arc::new(CardTracker::new(Arc::new(MemFs::new()), "/project/cards"));
+//! # async fn main() -> Result<(), BoxError> {
+//! // The host names the directory and the file system; the tracker reads nothing else.
+//! let board = CardTracker::new("/project/cards", MemFs::new());
+//! // The tools get a clone; the host keeps the board (the clones share it).
 //! let tools = issue_tools(board.clone());
 //! let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
 //! assert_eq!(names, ["IssueList", "IssueSearch", "IssueGet", "IssueCreate", "IssueUpdate", "IssueDelete", "IssueLink"]);
 //!
-//! let ctx = ToolContext::new("/project", Arc::new(ShutWorkspace));
+//! let ctx = ToolContext::new("/project", ShutWorkspace);
 //! let call = |name: &str, input: serde_json::Value| {
-//!     let tool = tools.iter().find(|t| t.name() == name).unwrap().clone();
-//!     let (input, ctx) = (input.as_object().cloned().unwrap(), ctx.clone());
-//!     async move { tool.execute(input, &ctx).await }
+//!     let tool = tools.iter().find(|t| t.name() == name).cloned();
+//!     let (input, ctx) = (input.as_object().cloned().unwrap_or_default(), ctx.clone());
+//!     async move {
+//!         let tool = tool.ok_or_else(|| ToolError::Input("no such tool".into()))?;
+//!         tool.execute(input, &ctx).await
+//!     }
 //! };
 //!
-//! call("IssueCreate", json!({"title": "Fix the login", "priority": "high"})).await.unwrap();
+//! call("IssueCreate", json!({"title": "Fix the login", "priority": "high"})).await?;
 //! // The card's id comes from its title; a new card starts in the inbox.
-//! let card = board.get("fix-the-login").await.unwrap();
+//! let card = board.get("fix-the-login").await?;
 //! assert_eq!((card.status.as_str(), card.priority.as_deref()), ("inbox", Some("high")));
 //!
-//! let listed = call("IssueList", json!({})).await.unwrap();
+//! let listed = call("IssueList", json!({})).await?;
 //! assert!(listed.content.contains("fix-the-login"));
 //!
 //! // A mistake the model can fix comes back as an input error it reads.
 //! assert!(call("IssueGet", json!({"id": "no-such-card"})).await.is_err());
+//! # Ok(())
 //! # }
 //! ```
 //!
@@ -62,12 +65,10 @@
 //! the first tool call does.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_issues::{GithubTracker, issue_tools_named};
 //!
 //! let github = GithubTracker::new("owner", "repo").with_token("a token the host holds");
-//! let tools = issue_tools_named(Arc::new(github), "Github");
+//! let tools = issue_tools_named("Github", github);
 //! assert_eq!(tools[0].name(), "GithubList");
 //! ```
 //!
@@ -119,5 +120,5 @@ pub use github::GithubTracker;
 pub use tools::{DELETE_KIND, issue_tools, issue_tools_named};
 pub use tracker::{
     Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, Tracker, TrackerError,
-    TrackerInfo, one_of,
+    TrackerInfo, TrackerRef, one_of,
 };

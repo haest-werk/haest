@@ -1,14 +1,15 @@
 //! [`CardTracker`]: board cards as a [`Tracker`](crate::Tracker).
 
 use std::{
+    fmt,
     io::ErrorKind,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use haest_core::{
-    Clock, WallClock,
-    fs::{FileKind, Fs, ensure_dir},
+    ClockRef, WallClock,
+    fs::{FileKind, FsRef, ensure_dir},
     tool::slug,
 };
 use tokio::sync::Mutex;
@@ -55,11 +56,12 @@ use front::Front;
 ///   id, title, tags and body hold every word, case ignored.
 /// - **Writes** go to a hidden file beside the card, renamed over it, so a
 ///   reader never sees half a card; and one tracker writes one card at a
-///   time. The lock is the tracker's, not the directory's: two trackers over
-///   the same directory (or another program) do not wait for each other, so
-///   two writes at the same moment can lose one's change, and two cards made
-///   with the same title can end up as one. Make one tracker per directory
-///   and share it (`Arc<CardTracker>`) among everything that writes there.
+///   time. The lock is the tracker's (its clones share it), not the
+///   directory's: two trackers made apart over the same directory (or
+///   another program) do not wait for each other, so two writes at the same
+///   moment can lose one's change, and two cards made with the same title can
+///   end up as one. Make one tracker per directory and hand clones of it to
+///   everything that writes there; cloning is cheap.
 /// - **Links** live on one card and read from both (`blocks` is the other
 ///   card's `depends_on`). A card cannot link to itself, and a parent or
 ///   dependency that would make a loop is refused.
@@ -67,60 +69,68 @@ use front::Front;
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
-/// use haest_core::{Fs, MemFs};
-/// use haest_issues::{CardTracker, Link, LinkChange, NewIssue, Relation, Tracker};
+/// use haest_core::{FsRef, MemFs};
+/// use haest_issues::{CardTracker, Link, LinkChange, NewIssue, Relation, Tracker, TrackerError};
 ///
 /// # #[tokio::main]
-/// # async fn main() {
-/// let fs = Arc::new(MemFs::default());
-/// let board = CardTracker::new(fs.clone(), "/project/cards");
+/// # async fn main() -> Result<(), TrackerError> {
+/// // The host keeps a handle to the file system the board writes through.
+/// let fs = FsRef::new(MemFs::default());
+/// let board = CardTracker::new("/project/cards", fs.clone());
 ///
 /// let new = |title: &str| NewIssue { title: title.into(), ..NewIssue::default() };
-/// let login = board.create(new("Fix the login")).await.unwrap();
-/// let tests = board.create(new("Add login tests")).await.unwrap();
+/// let login = board.create(new("Fix the login")).await?;
+/// let tests = board.create(new("Add login tests")).await?;
 /// assert!(fs.exists("/project/cards/fix-the-login.md".as_ref()).await);
 ///
 /// // The tests wait on the fix; the fix then reads as blocking them.
 /// let waits = Link::new(Relation::DependsOn, &login.id);
-/// board.link(&tests.id, &waits, LinkChange::Add).await.unwrap();
-/// let fix = board.get(&login.id).await.unwrap();
+/// board.link(&tests.id, &waits, LinkChange::Add).await?;
+/// let fix = board.get(&login.id).await?;
 /// assert!(fix.links.contains(&Link::new(Relation::Blocks, &tests.id)));
 ///
 /// // The other way round would be a loop.
 /// let back = Link::new(Relation::DependsOn, &tests.id);
 /// assert!(board.link(&login.id, &back, LinkChange::Add).await.is_err());
+/// # Ok(())
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct CardTracker {
-    fs: Arc<dyn Fs>,
-    dir: PathBuf,
-    clock: Box<dyn Clock>,
+    fs: FsRef,
+    dir: Arc<Path>,
+    clock: ClockRef,
     /// One write at a time: a read-change-write must not lose another's
-    /// change. This tracker's writes only; see the type's docs.
-    writes: Mutex<()>,
+    /// change. This tracker's writes (and its clones') only; see the type's
+    /// docs.
+    writes: Arc<Mutex<()>>,
 }
 
 impl CardTracker {
     /// The cards in `dir`, read and written through `fs` (the host's: a
-    /// sandbox's, the real disk). The directory is made on the first write;
-    /// until then the board is empty. Nothing is read here.
-    pub fn new(fs: Arc<dyn Fs>, dir: impl Into<PathBuf>) -> Self {
+    /// sandbox's, the real disk; the file system itself or an `Arc` of one).
+    /// The directory is made on the first write; until then the board is
+    /// empty. Nothing is read here.
+    pub fn new(dir: impl Into<PathBuf>, fs: impl Into<FsRef>) -> Self {
         Self {
-            fs,
-            dir: dir.into(),
-            clock: Box::new(WallClock),
-            writes: Mutex::new(()),
+            fs: fs.into(),
+            dir: dir.into().into(),
+            clock: ClockRef::new(WallClock),
+            writes: Arc::default(),
         }
     }
 
     /// The clock a new card's `created:` (and a fallback id) comes from; the
     /// [`WallClock`] by default. A test passes its own to fix the dates (any
-    /// `Fn() -> u64` is a [`Clock`]).
-    pub fn with_clock(mut self, clock: impl Clock + 'static) -> Self {
-        self.clock = Box::new(clock);
+    /// `Fn() -> u64` is a [`Clock`](haest_core::Clock)).
+    pub fn with_clock(mut self, clock: impl Into<ClockRef>) -> Self {
+        self.clock = clock.into();
         self
+    }
+
+    /// The directory the cards are in.
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     fn path(&self, id: &str) -> PathBuf {
@@ -204,6 +214,15 @@ impl CardTracker {
             }
         }
         format!("{base}-{now}")
+    }
+}
+
+impl fmt::Debug for CardTracker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CardTracker")
+            .field("dir", &self.dir)
+            .field("fs", &self.fs)
+            .finish_non_exhaustive()
     }
 }
 

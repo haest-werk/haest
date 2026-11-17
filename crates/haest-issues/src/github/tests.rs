@@ -239,6 +239,12 @@ fn the_token_never_shows_in_debug_output() {
     let shown = format!("{:?}", github(FakeHttp::new([])));
     assert!(!shown.contains("t0k3n"), "{shown}");
     assert!(shown.contains("o") && shown.contains("handed in"));
+
+    let enterprise =
+        github(FakeHttp::new([])).with_api_url("https://ci:URL-SECRET@ghe.example.com/api/v3");
+    let shown = format!("{enterprise:?}");
+    assert!(!shown.contains("URL-SECRET"), "{shown}");
+    assert!(shown.contains("ghe.example.com/api/v3"), "{shown}");
 }
 
 /// The one live check: reads haest's own public repository with no token.

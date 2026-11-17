@@ -220,8 +220,10 @@ pub struct TrackerInfo {
 }
 
 /// Why a [`Tracker`] call failed. The tools hand `NotFound` and `Invalid` to
-/// the model as a mistake it can fix, `Failed` as a failure.
+/// the model as a mistake it can fix, `Failed` as a failure. More variants
+/// may come in a minor release.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum TrackerError {
     /// No issue by that id: the caller can correct it.
     #[error("{0}")]
@@ -257,8 +259,8 @@ pub fn one_of(value: &str, allowed: &[String], what: &str) -> Result<(), Tracker
 
 /// An issue tracker: what the issue tools ([`crate::issue_tools`]) call.
 ///
-/// Implementations are shared between tool calls (`Arc`), so a write may run
-/// while another call reads. Every method's errors follow [`TrackerError`]: a
+/// Implementations are shared between tool calls (in a [`TrackerRef`]), so a
+/// write may run while another call reads. Every method's errors follow [`TrackerError`]: a
 /// wrong id is `NotFound`, a value the tracker does not accept is `Invalid`,
 /// anything else (the network, the disk) is `Failed`. A method takes no
 /// cancel token: the tools give up on a call by dropping its future, so a
@@ -283,6 +285,15 @@ pub trait Tracker: Send + Sync {
     /// Add or remove `link` on issue `id`. An issue has at most one parent:
     /// adding another replaces it.
     async fn link(&self, id: &str, link: &Link, change: LinkChange) -> Result<(), TrackerError>;
+}
+
+haest_core::plug_ref! {
+    /// A [`Tracker`], shared: what the issue tools hold. Built from the
+    /// tracker itself (a [`CardTracker`](crate::CardTracker), a
+    /// [`GithubTracker`](crate::GithubTracker), a host's own), or from an
+    /// `Arc` of one, so [`issue_tools`](crate::issue_tools) takes either.
+    pub struct TrackerRef(dyn Tracker);
+    debug(tracker, f) { f.debug_tuple("TrackerRef").field(&tracker.info().name).finish() }
 }
 
 #[cfg(test)]

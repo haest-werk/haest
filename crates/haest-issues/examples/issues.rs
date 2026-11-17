@@ -10,7 +10,7 @@
 //! cargo run -p haest-issues --example issues -- --github o/r  # also lists o/r's open issues (read only, no token)
 //! ```
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use haest_core::{
     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tools,
@@ -46,7 +46,7 @@ async fn the_agent_plans_on_the_board() {
 async fn plan_on_a_board(root: &Path) {
     let dir = root.join("cards");
     // The host picks the directory and the file system; the tracker reads nothing else.
-    let tracker = Arc::new(CardTracker::new(Arc::new(RealFs), &dir));
+    let tracker = CardTracker::new(&dir, RealFs);
     let tools: Tools = issue_tools(tracker.clone());
 
     let model = ScriptedProvider::new([
@@ -78,11 +78,11 @@ async fn plan_on_a_board(root: &Path) {
         text_answer("Filed the epic and its first card, and started it."),
     ]);
     let deps = AgentDeps::new(
-        Arc::new(model.resolver()),
-        Arc::new(tools),
-        Arc::new("You plan work on the team's board.".to_string()),
+        model.resolver(),
+        tools,
+        "You plan work on the team's board.",
         root,
-        Arc::new(ShutWorkspace),
+        ShutWorkspace,
     );
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:planner"));
     let mut events: Vec<LoopEvent> = Vec::new();
@@ -116,9 +116,9 @@ async fn plan_on_a_board(root: &Path) {
 /// (a public repository), so nothing on GitHub changes.
 async fn list_github(repo: &str) {
     let (owner, name) = repo.split_once('/').expect("--github takes owner/repo");
-    let tools = issue_tools(Arc::new(GithubTracker::new(owner, name)));
+    let tools = issue_tools(GithubTracker::new(owner, name));
     let list = tools.iter().find(|t| t.name() == "IssueList").unwrap();
-    let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+    let ctx = ToolContext::new("/", ShutWorkspace);
     let input = json!({"limit": 10}).as_object().cloned().unwrap();
     match list.execute(input, &ctx).await {
         Ok(out) => println!("\n{repo}, open issues:\n{}", out.content),
