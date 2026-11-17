@@ -49,7 +49,10 @@ use std::{
 
 pub use task::{NewTask, PatchStatus, Task, TaskError, TaskPatch, TaskStatus};
 
-use crate::deps::{ClockRef, WallClock};
+use crate::{
+    deps::{ClockRef, WallClock},
+    newest::Newest,
+};
 
 type OnChange = Box<dyn Fn(&[Task]) + Send + Sync>;
 
@@ -57,6 +60,9 @@ type OnChange = Box<dyn Fn(&[Task]) + Send + Sync>;
 struct Shared {
     state: Mutex<State>,
     on_change: OnChange,
+    /// The list after the latest change, put under the state's lock and
+    /// handed to `on_change` with it released, in change order.
+    changes: Newest<Vec<Task>>,
     /// Read with the state unlocked, and the handle cloned out first: a
     /// host's clock may take its time.
     clock: Mutex<ClockRef>,
@@ -108,8 +114,13 @@ impl State {
 /// so the host keeps one and hands the Task tools another.
 ///
 /// Every change hands the whole new list to `on_change`, with the board's lock
-/// released, so `on_change` may read the board. [`Default`] is a board whose
-/// `on_change` does nothing.
+/// released, so `on_change` may read the board and change it. The lists go
+/// out in the order of the changes, one call at a time: a change made while
+/// `on_change` runs (on another thread, or by `on_change` itself) is handed
+/// over once that call returns, and several made meanwhile as one call with
+/// the newest list. So `on_change` never hears an older list after a newer
+/// one, and the last list it hears is the board's. [`Default`] is a board
+/// whose `on_change` does nothing.
 #[derive(Clone)]
 pub struct TaskBoard(Arc<Shared>);
 
@@ -142,6 +153,7 @@ impl TaskBoard {
                 next: Some(1),
             }),
             on_change: Box::new(on_change),
+            changes: Newest::default(),
             clock: Mutex::new(ClockRef::new(WallClock)),
         }))
     }
@@ -216,6 +228,7 @@ impl TaskBoard {
             };
             s.next = id.checked_add(1);
             s.tasks.push(task.clone());
+            self.0.changes.put(s.tasks.clone());
             task
         };
         self.changed();
@@ -247,7 +260,7 @@ impl TaskBoard {
                     return Err(TaskError::BlocksItself { id: id.into() });
                 }
             }
-            if patch.status == Some(PatchStatus::Deleted) {
+            let out = if patch.status == Some(PatchStatus::Deleted) {
                 s.remove(id);
                 None
             } else {
@@ -259,7 +272,9 @@ impl TaskBoard {
                     s.link(id, b)?;
                 }
                 Some(s.tasks[at].clone())
-            }
+            };
+            self.0.changes.put(s.tasks.clone());
+            out
         };
         self.changed();
         Ok(out)
@@ -281,10 +296,11 @@ impl TaskBoard {
         s.tasks = tasks;
     }
 
-    /// The snapshot goes out with the lock released, so `on_change` may read the board.
+    /// The list the change put goes out with the lock released, so
+    /// `on_change` may read the board; one taken after the lock dropped
+    /// could be another change's, heard in the wrong order.
     fn changed(&self) {
-        let snapshot = self.list();
-        (self.0.on_change)(&snapshot);
+        self.0.changes.deliver(|tasks| (self.0.on_change)(tasks));
     }
 }
 

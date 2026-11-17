@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Barrier, Mutex, OnceLock};
 
 use super::*;
 
@@ -154,4 +154,61 @@ fn ids_stay_unique_when_the_count_runs_out() {
     full.restore(vec![saved(&u64::MAX.to_string())]);
     assert_eq!(full.create(new("y")), Err(TaskError::IdsExhausted));
     assert_eq!(full.list().len(), 1);
+}
+
+/// Two changes at once (main and a background subagent share one board):
+/// the first one's `on_change` is slow (a host writing to disk), and the
+/// second change lands while it runs. `on_change` used to hear the newer
+/// list first and the older one last, so the last `tasks` record of the
+/// session, which replay restores, lost the second task.
+#[test]
+fn the_last_list_on_change_hears_is_the_board_whatever_the_threads_did() {
+    let first_in_hook = Arc::new(Barrier::new(2));
+    let second_done = Arc::new(Barrier::new(2));
+    let last_heard = Arc::new(Mutex::new(None::<usize>));
+    let (in_hook, done, heard) = (
+        first_in_hook.clone(),
+        second_done.clone(),
+        last_heard.clone(),
+    );
+    let board = TaskBoard::new(move |tasks| {
+        if tasks.len() == 1 {
+            // The first change's hook: the second change happens meanwhile.
+            in_hook.wait();
+            done.wait();
+        }
+        *heard.lock().unwrap() = Some(tasks.len());
+    });
+    let main = board.clone();
+    let first = std::thread::spawn(move || main.create(new("from main")).map(|_| ()));
+    first_in_hook.wait();
+    board.create(new("from a subagent")).unwrap();
+    second_done.wait();
+    first.join().expect("the first change panicked").unwrap();
+    assert_eq!(board.list().len(), 2);
+    assert_eq!(
+        *last_heard.lock().unwrap(),
+        Some(2),
+        "on_change heard an older list last"
+    );
+}
+
+/// `on_change` may change the board it hears from: that change is heard
+/// once the call that made it returns, in order.
+#[test]
+fn on_change_may_change_the_board() {
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let itself = Arc::new(OnceLock::<TaskBoard>::new());
+    let (log, me) = (heard.clone(), itself.clone());
+    let board = TaskBoard::new(move |tasks| {
+        log.lock().unwrap().push(tasks.len());
+        if tasks.len() == 1 {
+            let b = me.get().expect("set before the first change");
+            b.create(new("follow-up")).unwrap();
+        }
+    });
+    let _ = itself.set(board.clone());
+    board.create(new("first")).unwrap();
+    assert_eq!(*heard.lock().unwrap(), [1, 2]);
+    assert_eq!(board.list().len(), 2);
 }

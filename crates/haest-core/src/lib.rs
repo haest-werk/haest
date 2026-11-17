@@ -166,6 +166,7 @@ pub mod handed;
 pub mod ledger;
 pub mod media;
 pub mod messages;
+mod newest;
 mod panics;
 mod plug_ref;
 mod pricing;

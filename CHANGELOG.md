@@ -837,6 +837,14 @@ Hosts write less (round two of the review, and what porting brain onto
   warning and for `Ledger::exhausted`. A ledger threshold's `meter`,
   `mark`, `action` and `rearm` still run under the lock, and
   `Ledger::set_thresholds` says they must not read the ledger.
+- Fixed: two changes to a `TaskBoard` at once (main and a background
+  subagent share one) could hand `on_change` the newer list first and the
+  older one last, so the session's last `tasks` record, which a resume
+  restores, lost a task or set a status back. The lists now go out in
+  change order, one `on_change` call at a time and never under the
+  board's lock: a change made while `on_change` runs is handed over once
+  that call returns, and several made meanwhile as one call with the
+  newest list. `on_change` may now change the board it hears from too.
 
 ### haest-http
 
