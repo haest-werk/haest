@@ -39,11 +39,12 @@ use crate::{
 /// # fn main() -> Result<(), std::env::VarError> {
 /// // The real disk; what haest starts gets PATH and nothing else.
 /// let disk = World::disk(ChildEnv::new([("PATH", std::env::var("PATH")?)]));
-/// assert!(disk.child_env(&ChildEnv::default()).is_some());
+/// assert!(disk.starts_processes());
+/// assert!(disk.child_env().is_some_and(|env| env.get("PATH").is_some()));
 ///
 /// // The host's own files; haest starts no process at all.
 /// let own = World::files(MemFs::new());
-/// assert!(own.child_env(&ChildEnv::default()).is_none());
+/// assert!(!own.starts_processes());
 /// # Ok(())
 /// # }
 /// ```
@@ -86,12 +87,23 @@ impl World {
         &self.fs
     }
 
-    /// The environment of a process haest starts: the disk's `child_env`
-    /// with the variables the host passes on purpose on top. None = it
-    /// starts none (the host's own files).
-    pub fn child_env(&self, passed_env: &ChildEnv) -> Option<ChildEnv> {
-        let child_env = self.child_env.as_ref()?;
-        Some(child_env.overlaid(passed_env))
+    /// The environment the disk was made with ([`World::disk`]); None for
+    /// the host's own files. A process haest starts gets it with the
+    /// variables the host passes on purpose on top.
+    pub fn child_env(&self) -> Option<&ChildEnv> {
+        self.child_env.as_ref()
+    }
+
+    /// Whether haest may start real processes here (real bash, background
+    /// jobs, a stdio MCP server): on the disk only.
+    pub fn starts_processes(&self) -> bool {
+        self.child_env.is_some()
+    }
+
+    /// The environment of a process haest starts: [`child_env`](Self::child_env)
+    /// with `passed_env` on top. None = it starts none.
+    pub(crate) fn child_env_with(&self, passed_env: &ChildEnv) -> Option<ChildEnv> {
+        Some(self.child_env.as_ref()?.overlaid(passed_env))
     }
 }
 
@@ -186,7 +198,7 @@ pub(crate) async fn workspace_for(
     remedies: Remedies,
 ) -> Result<WorkspaceRef, WorkspaceError> {
     let fs = world.fs();
-    let ws = match (s.workspace, world.child_env(passed_env)) {
+    let ws = match (s.workspace, world.child_env_with(passed_env)) {
         (WorkspaceMode::Shut, _) => return Ok(ShutWorkspace.into()),
         (WorkspaceMode::Real, Some(env)) => {
             private_spill_dir(fs.as_ref(), spill).await?;
@@ -233,7 +245,7 @@ pub(crate) async fn connect_mcp(
     passed_env: &ChildEnv,
     servers: Vec<McpServerConfig>,
 ) -> McpHub {
-    let Some(child_env) = world.child_env(passed_env) else {
+    let Some(child_env) = world.child_env_with(passed_env) else {
         let (stdio, http): (Vec<_>, Vec<_>) = servers
             .into_iter()
             .partition(|s| matches!(s.transport, McpTransport::Stdio(_)));

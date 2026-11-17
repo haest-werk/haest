@@ -65,9 +65,15 @@ async fn real_bash_gets_the_passed_variables_over_child_env() {
     let out = run(ws.as_ref(), "printf '%s|%s' \"$SHARED\" \"$GH_TOKEN\"").await;
     let _ = std::fs::remove_dir_all(&spill);
     assert_eq!(out, "passed|t0k");
-    let processes = world.child_env(&passed).unwrap();
+    let processes = world.child_env_with(&passed).unwrap();
     assert_eq!(processes.get("PATH"), Some(path.as_str()));
-    assert_eq!(World::files(MemFs::new()).child_env(&passed), None);
+    assert_eq!(processes.get("SHARED"), Some("passed"));
+    assert_eq!(
+        world.child_env().and_then(|env| env.get("SHARED")),
+        Some("host"),
+        "the world's own is as it was made"
+    );
+    assert_eq!(World::files(MemFs::new()).child_env_with(&passed), None);
 }
 
 #[tokio::test]

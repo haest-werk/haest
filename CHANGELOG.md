@@ -1369,6 +1369,11 @@ Hosts write less (round two of the review, and what porting brain onto
   `BuildError::Session(SessionError::NotFound { .. })` ->
   `BuildError::SessionFile(SessionFileError::NotFound { .. })`.
   `Runtime::clear` returns it.
+- `World::child_env` is a getter, the environment the disk was made with
+  (breaking), and `World::starts_processes` says whether haest may start
+  processes at all: `world.child_env(&ChildEnv::default()).is_some()` ->
+  `world.starts_processes()`, and `world.child_env(&passed)` ->
+  `world.child_env().map(|env| env.overlaid(&passed))`.
 
 ### haest-ts
 
