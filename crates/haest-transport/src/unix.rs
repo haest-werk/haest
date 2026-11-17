@@ -153,7 +153,14 @@ impl UnixSocket {
     }
 }
 
+/// How long the accept loop waits after a failed accept, so an error that
+/// lasts cannot spin it.
+const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
+
 /// Serve every connection until the conversation ends; then the files go.
+/// A failed accept ends nothing: the listener is still good (the process
+/// out of descriptors for a moment, a client gone before it was accepted),
+/// so the loop pauses and accepts again.
 async fn accept(
     listener: UnixListener,
     files: Files,
@@ -173,7 +180,7 @@ async fn accept(
                     let (source, sink) = (NdjsonSource::new(read), NdjsonSink::new(write));
                     conns.spawn(serve(backend.clone(), grant, Start::default(), source, sink));
                 }
-                Err(e) => break Ended::Failed(e.into()),
+                Err(_) => tokio::time::sleep(ACCEPT_PAUSE).await,
             },
             _ = conns.join_next(), if !conns.is_empty() => {}
             () = &mut ended => break Ended::Closed,

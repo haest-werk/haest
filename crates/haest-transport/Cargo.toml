@@ -45,6 +45,10 @@ async-trait = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "rt", "test-util", "net"] }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }
 
+# The Unix socket's accept test lowers its own process's descriptor limit.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

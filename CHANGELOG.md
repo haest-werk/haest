@@ -1624,6 +1624,11 @@ against it; the wire JSON is unchanged):
   default; `limit()` reads it), and the source keeps one read buffer
   where it allocated 16 KiB on every `next_line`, even with a line
   already waiting.
+- One failed `accept` no longer ends a `UnixSocket` transport. A process
+  out of file descriptors for a moment (EMFILE) dropped the listener and
+  removed the socket and its discovery file, so nobody could attach to
+  that conversation again after the pressure passed. The loop now pauses
+  100 ms and accepts again; only the conversation's end stops it.
 
 ### haest-issues
 

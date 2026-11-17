@@ -1169,6 +1169,7 @@ dependencies = [
  "haest-mods",
  "haest-session",
  "haest-wire",
+ "libc",
  "rustls",
  "rustls-platform-verifier",
  "serde",
