@@ -9,6 +9,7 @@ use haest_settings::Settings;
 use crate::{
     haest::{
         ChildEnv, KeySourceRef,
+        core::ModelResolverRef,
         http::HttpClientRef,
         mcp::McpServerConfig,
         mods::ModRef,
@@ -50,13 +51,15 @@ pub struct RuntimeInputs {
     pub(crate) routing: Option<RoutingScopes>,
     pub(crate) http: HttpClientRef,
     pub(crate) host_mods: Vec<ModRef>,
+    pub(crate) models: Option<ModelResolverRef>,
 }
 
 impl RuntimeInputs {
     /// The settings in this world, and nothing else: no variables passed, no
     /// keys, no custom providers, no MCP servers, no routing, the default
     /// client ([`HttpClientRef::default`]: the shared `ReqwestClient`, built
-    /// on the first request), no mods of the host's own.
+    /// on the first request), no mods of the host's own, the built-in
+    /// providers for the models.
     ///
     /// With no keys, [`build`](crate::build) fails unless the model's provider needs none:
     /// hand in the [`keys`](Self::with_keys) the settings' providers use.
@@ -72,6 +75,7 @@ impl RuntimeInputs {
             routing: None,
             http: HttpClientRef::default(),
             host_mods: Vec::new(),
+            models: None,
         }
     }
 
@@ -155,6 +159,31 @@ impl RuntimeInputs {
         self
     }
 
+    /// What every model spec resolves to (the main model, a `/model`
+    /// switch, a subagent's), in place of the built-in providers over the
+    /// [`keys`](Self::with_keys), [`providers`](Self::with_providers),
+    /// [`routing`](Self::with_routing) and [`http`](Self::with_http): a
+    /// host's own [`ModelResolver`](haest_core::ModelResolver) (a closure
+    /// `Fn(&str) -> Result<ResolvedModel, ModelError>` is one), or a test's
+    /// scripted model. GenerateImage still uses the keys and the client.
+    ///
+    /// ```
+    /// use haest_core::{fs::MemFs, testing::{ScriptedProvider, text_answer}};
+    /// use haest_runtime::{RuntimeInputs, World};
+    /// use haest_settings::Settings;
+    ///
+    /// // A conversation that never leaves the process: every model is this script.
+    /// let model = ScriptedProvider::new([text_answer("hello")]);
+    /// let inputs = RuntimeInputs::new(Settings::bare("/work", "/home/me"), World::files(MemFs::new()))
+    ///     .with_models(model.resolver());
+    /// assert!(inputs.models().is_some());
+    /// ```
+    #[must_use]
+    pub fn with_models(mut self, models: impl Into<ModelResolverRef>) -> Self {
+        self.models = Some(models.into());
+        self
+    }
+
     /// The settings ([`with_settings`](Self::with_settings)).
     pub fn settings(&self) -> &Settings {
         &self.settings
@@ -199,6 +228,12 @@ impl RuntimeInputs {
     pub fn host_mods(&self) -> &[ModRef] {
         &self.host_mods
     }
+
+    /// The host's own model resolver ([`with_models`](Self::with_models));
+    /// None = the built-in providers.
+    pub fn models(&self) -> Option<&ModelResolverRef> {
+        self.models.as_ref()
+    }
 }
 
 /// The custom providers by name only (their own Debug): an entry may hold a key.
@@ -214,6 +249,7 @@ impl fmt::Debug for RuntimeInputs {
             .field("routing", &self.routing)
             .field("http", &self.http)
             .field("host_mods", &self.host_mods)
+            .field("models", &self.models)
             .finish()
     }
 }

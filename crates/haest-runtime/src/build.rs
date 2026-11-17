@@ -137,6 +137,7 @@ where
         routing,
         http,
         host_mods,
+        models,
     } = inputs;
     let fs = world.fs().clone();
     let session = open_session(&fs, &settings, &opts.resume, ui.clone()).await?;
@@ -144,11 +145,14 @@ where
     // known, its key there), or the build fails with nothing written: a run
     // that cannot start leaves no session for a resume to pick up.
     let (model, effort) = start_on(&settings, session.saved.as_ref(), &opts);
-    let registry = ProviderRegistry::new(keys.clone())
-        .with_custom(providers)
-        .with_http(http.clone())
-        .with_routing(routing);
-    registry.resolve(&model)?;
+    let models = models.unwrap_or_else(|| {
+        let registry = ProviderRegistry::new(keys.clone())
+            .with_custom(providers)
+            .with_http(http.clone())
+            .with_routing(routing);
+        registry.into()
+    });
+    models.resolve(&model)?;
     let spill = settings.spill_dir(session.store.session_id());
     let hooks = RuntimeHooks::new(settings, ui.clone(), session.store);
     let s = hooks.settings();
@@ -195,7 +199,7 @@ where
 
     // What every agent of the conversation runs on; tools and prompt are each
     // agent's own (the hub gives every subagent its own, main's hold the hub).
-    let shared = SharedDeps::new(registry, s.cwd.clone(), found.workspace)
+    let shared = SharedDeps::new(models, s.cwd.clone(), found.workspace)
         .with_spill_dir(spill)
         .with_hooks(hooks.clone())
         .with_services(hooks.clone())

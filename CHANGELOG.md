@@ -351,6 +351,8 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   thresholds: remind the model at 60% of the window, warn the human at the
   third model call) and `wind_down` (`wind_down_at` with a host's
   subagents).
+- Feature `testing` also turns on the providers' fakes when `providers` is
+  on: `haest::providers::testing::{FakeHttp, chat_sse, typed_sse}`.
 
 ### haest-core
 
@@ -1404,6 +1406,11 @@ Hosts write less (round two of the review, and what porting brain onto
   settings say; `host_mods()` reads them back. A host had no way to: the
   `Mods` the runtime hands out was already shared, and a mod added to a
   clone of it reached nothing.
+- `RuntimeInputs::with_models` takes the host's own `ModelResolver` (a
+  closure, a test's `ScriptedProvider::resolver()`) in place of the
+  built-in providers: every model spec resolves through it, so a test or
+  an offline host runs a whole conversation without a key or a faked
+  provider wire format. `models()` reads it back.
 
 ### haest-ts
 

@@ -64,8 +64,9 @@ transport-stdio = ["transport", "haest-transport/stdio"]
 transport-unix = ["transport", "haest-transport/unix"]
 # The conversation dials out to a broker over a WebSocket (pulls a WebSocket client on rustls).
 transport-broker = ["transport", "haest-transport/broker"]
-# Fakes for a host's tests: a scripted model that records every request.
-testing = ["haest-core/testing"]
+# Fakes for a host's tests: a scripted model that records every request, and
+# (with the providers) a fake HTTP client and the providers' SSE bodies.
+testing = ["haest-core/testing", "haest-providers?/testing"]
 
 [dependencies]
 haest-core = { workspace = true }

@@ -190,6 +190,35 @@ async fn a_hosts_own_mod_runs_in_the_conversation_after_the_built_ins() {
     assert_eq!(rt.mods().rewrite_prompt("hi").await, "hi (house style)");
 }
 
+/// A host's own models: a turn runs on them with no key and no HTTP, and a
+/// `/model` switch resolves through them too.
+#[tokio::test]
+async fn a_conversation_on_the_hosts_own_models_needs_no_key_and_no_network() {
+    use haest_core::{
+        LoopEvent,
+        testing::{ScriptedProvider, text_answer},
+    };
+
+    let model = ScriptedProvider::new([text_answer("offline")]);
+    let settings = Settings {
+        model_spec: "anthropic:claude-opus-5-5".into(),
+        ..hardcoded()
+    };
+    let inputs =
+        RuntimeInputs::new(settings, World::files(MemFs::new())).with_models(model.resolver());
+    let mut rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
+        .await
+        .expect("no key is needed: the host's models serve the spec");
+    let mut sink = |_: LoopEvent| {};
+    let outcome = rt.human_turn("hi", &mut sink).await;
+    assert_eq!(outcome.error, None, "{outcome:?}");
+    let asked = model.requests();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].model, "claude-opus-5-5");
+    rt.set_model_spec("openai:gpt-5.5")
+        .expect("the host's models serve it");
+}
+
 /// A host's gateway: the URL of every request it is sent, each refused.
 #[derive(Default)]
 struct Gateway(Mutex<Vec<String>>);
