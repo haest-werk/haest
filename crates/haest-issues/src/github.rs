@@ -154,10 +154,12 @@ impl GithubTracker {
     /// GitHub answers 301 for an issue moved to another repository. Give it
     /// a client that does not follow a 301, as the default does not: one that
     /// does repeats a change (`PATCH`, `DELETE`) at the issue's new
-    /// repository. The tracker checks every issue GitHub hands back, so it
-    /// never deletes, links or shows another repository's issue, and a
-    /// change answered from elsewhere is `Failed`; but a change it sent
-    /// without reading the issue first has by then been made there.
+    /// repository. The tracker checks that an issue it reads before acting
+    /// (a get, a delete, a label change, a link) is the one it asked for, and
+    /// drops search results from elsewhere, so it never deletes or links
+    /// another repository's issue, and a change answered from elsewhere is
+    /// `Failed`; but a change it sent without reading the issue first has by
+    /// then been made there.
     #[must_use]
     pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
         self.http = http.into();

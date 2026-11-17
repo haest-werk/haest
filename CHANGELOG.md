@@ -248,9 +248,10 @@ write instead.
 - haest-issues' `GithubTracker` took GitHub's answer to be the issue it
   asked for. GitHub answers 301 for an issue moved to another repository,
   and with a host's client that follows it, `delete` deleted the issue in
-  its new repository, and a link or a label change acted on it. Every issue
-  GitHub hands back is now checked to be the one asked for, else the call
-  is `NotFound` and nothing more is sent; a change answered with another
+  its new repository, and a link or a label change acted on it. An issue
+  the tracker reads (a get, and the read before a delete, a label change
+  or a link) is now checked to be the one it asked for, else the call is
+  `NotFound` and nothing more is sent; a change answered with another
   issue is `Failed`. And a search took the model's text as GitHub's search
   syntax, where a `repo:`, an `org:` or an `OR` could widen it past the
   repository: the text is searched as plain words now, and a result from
