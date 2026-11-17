@@ -164,7 +164,7 @@ async fn a_timeout_stops_the_call_and_says_so() {
 
 #[tokio::test]
 async fn a_sandbox_over_a_hosts_own_fs_shares_its_files_with_the_shell() {
-    let mem: Arc<dyn Fs> = Arc::new(MemFs::with_files([("/w/seed.txt", "seed\n")]));
+    let mem: Arc<dyn Fs> = Arc::new(MemFs::from_files([("/w/seed.txt", "seed\n")]));
     let ws = SandboxWorkspace::over(mem.clone());
     assert!(ws.changes().is_none());
     let o = opts(Path::new("/w"));

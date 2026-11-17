@@ -63,7 +63,7 @@
 //! }
 //!
 //! // The guard's nudges, and this one.
-//! let thresholds = Thresholds::<TurnSite>::default().with(SaveNotes)?;
+//! let thresholds = Thresholds::<TurnSite>::default().try_with(SaveNotes)?;
 //! assert_eq!(thresholds.len(), 5);
 //!
 //! // A turn cannot compact: compaction is the host's, before a model call.
@@ -75,7 +75,7 @@
 //!     fn rearm(&self) -> Rearm { Rearm::EveryCheck }
 //!     fn text(&self, _: &Reading) -> String { String::new() }
 //! }
-//! assert!(Thresholds::<TurnSite>::none().with(Squeeze).is_err());
+//! assert!(Thresholds::<TurnSite>::none().try_with(Squeeze).is_err());
 //! # Ok(())
 //! # }
 //! ```

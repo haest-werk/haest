@@ -160,7 +160,7 @@ mod tests {
     use crate::testkit::{input, shut_ctx};
 
     async fn tool() -> SkillTool {
-        let fs = MemFs::with_files([
+        let fs = MemFs::from_files([
             (
                 "/h/.claude/skills/deploy/SKILL.md",
                 "---\nname: deploy\ndescription: ships it\n---\n\nDEPLOY BODY\n",

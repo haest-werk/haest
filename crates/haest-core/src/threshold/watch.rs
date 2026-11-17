@@ -53,7 +53,7 @@ impl<S: Site> Thresholds<S> {
     ///
     /// [`NotServed`] for the first threshold this site cannot check.
     pub fn new(list: impl IntoIterator<Item = impl Into<ThresholdRef>>) -> Result<Self, NotServed> {
-        list.into_iter().try_fold(Self::none(), Self::with)
+        list.into_iter().try_fold(Self::none(), Self::try_with)
     }
 
     /// These, and `threshold` after them.
@@ -61,7 +61,7 @@ impl<S: Site> Thresholds<S> {
     /// # Errors
     ///
     /// [`NotServed`] when this site cannot check it.
-    pub fn with(mut self, threshold: impl Into<ThresholdRef>) -> Result<Self, NotServed> {
+    pub fn try_with(mut self, threshold: impl Into<ThresholdRef>) -> Result<Self, NotServed> {
         let threshold = threshold.into();
         let (meter, action) = (threshold.meter(), threshold.action());
         if !S::serves(meter, action) {

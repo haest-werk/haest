@@ -331,7 +331,7 @@ Plug points without `Arc` (breaking):
   `ShellCall::fs` is an `FsRef`.
 - `OutputChunks` is a struct built from a closure:
   `Arc::new(move |text: &str| ..)` -> `OutputChunks::from(move |text: &str| ..)`.
-- `JsonlSessionFile::new` and `JsonlSessionFile::with_error_handler` take
+- `JsonlSessionFile::new` and `JsonlSessionFile::new_with_error_handler` take
   `fs: impl Into<FsRef>`. `DiskSkills::new(skills, fs)` ->
   `DiskSkills::new(fs, skills)`, the closure last, `fs` as
   `impl Into<FsRef>`.
@@ -490,9 +490,9 @@ Thresholds; wind-down, opt-in:
   fired in a `Watch<S>`; a threshold a site cannot check is refused
   (`NotServed`). Sites: `TurnSite` and `LedgerSite` here, haest-tools'
   `AgentTurnSite`; compaction's threshold is `CompactionOptions`.
-- A threshold goes in as itself: `Thresholds::with(impl Into<ThresholdRef>)`
+- A threshold goes in as itself: `Thresholds::try_with(impl Into<ThresholdRef>)`
   and `Thresholds::new(impl IntoIterator<Item = impl Into<ThresholdRef>>)`
-  (`.with(SaveNotes)?`); `Site::defaults`, `WindDown::thresholds` and
+  (`.try_with(SaveNotes)?`); `Site::defaults`, `WindDown::thresholds` and
   `Thresholds::iter` hand out `ThresholdRef`s. `Crossing`'s fields are
   private: `crossing.threshold()`, `crossing.reading()`.
 - New `SharedDeps::with_thresholds(Thresholds<TurnSite>)`: what a turn
@@ -551,7 +551,7 @@ Good citizens:
   of any `S: Into<String>`, as `load` does:
   `.deferring_all_except(["Read".to_string()])` ->
   `.deferring_all_except(["Read"])`.
-- `JsonlSessionFile::new` and `with_error_handler` take `data_dir: impl
+- `JsonlSessionFile::new` and `new_with_error_handler` take `data_dir: impl
   AsRef<Path>`: `JsonlSessionFile::new(fs, Path::new("/data"), id)` ->
   `JsonlSessionFile::new(fs, "/data", id)`.
 - New `answer_stream` (`provider::answer_stream`, in the prelude) and
@@ -663,6 +663,14 @@ Hosts write less (round two of the review, and what porting brain onto
 - `skills::InlineSkills` is `FromIterator<InlineSkill>` and
   `From<Vec<InlineSkill>>`, one list merged as `merged` merges it:
   `InlineSkills::merged([list])` -> `InlineSkills::from(list)`.
+- `with_*` is a consuming setter that cannot fail, and nothing else
+  (breaking): a constructor, a merge and a fallible add are named for what
+  they do. `TurnOutcome::with_error(reason, why)` ->
+  `TurnOutcome::error(reason, why)`, `MemFs::with_files(files)` ->
+  `MemFs::from_files(files)`, `JsonlSessionFile::with_error_handler(..)` ->
+  `JsonlSessionFile::new_with_error_handler(..)`, `base.with(&over)` (a
+  `ChildEnv` merge) -> `base.overlaid(&over)`, and
+  `Thresholds::default().with(t)?` -> `Thresholds::default().try_with(t)?`.
 
 ### haest-http
 

@@ -105,7 +105,7 @@ impl Rig {
             .with_http(api.clone());
         Self {
             api,
-            ws: TestWorkspace::with_files([("/p/ref.png", [1u8, 2])]),
+            ws: TestWorkspace::from_files([("/p/ref.png", [1u8, 2])]),
             published: Arc::default(),
             tool: ToolRef::new(GenerateImageTool::new(opts)),
         }

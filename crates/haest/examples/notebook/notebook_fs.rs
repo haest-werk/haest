@@ -27,7 +27,7 @@ impl NotebookFs {
     /// The notebook as the asker may see it.
     pub(crate) fn new(files: &[(&str, &str)]) -> Self {
         Self {
-            view: MemFs::with_files(files.iter().copied()),
+            view: MemFs::from_files(files.iter().copied()),
             staged: Mutex::default(),
         }
     }

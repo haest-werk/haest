@@ -70,7 +70,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_plain_path_is_not_through_a_link_present_or_not() {
-        let fs = MemFs::with_files([("/p/src/a.rs", "x")]);
+        let fs = MemFs::from_files([("/p/src/a.rs", "x")]);
         let mut links = Links::new(&fs, Path::new("/p"));
         assert!(!links.through_a_link(Path::new("/src/a.rs")).await);
         assert!(!links.through_a_link(Path::new("/src/new/b.rs")).await);

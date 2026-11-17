@@ -7,7 +7,7 @@ use super::*;
 
 #[tokio::test]
 async fn memfs_reads_what_it_wrote_and_lists_direct_children_only() {
-    let fs = MemFs::with_files([("/p/a.txt", "A"), ("/p/sub/b.txt", "B")]);
+    let fs = MemFs::from_files([("/p/a.txt", "A"), ("/p/sub/b.txt", "B")]);
     assert_eq!(fs.read_to_string(Path::new("/p/a.txt")).await.unwrap(), "A");
     let head = |max| fs.read_head(Path::new("/p/a.txt"), max);
     assert_eq!(
@@ -28,7 +28,7 @@ async fn memfs_reads_what_it_wrote_and_lists_direct_children_only() {
 
 #[tokio::test]
 async fn memfs_rename_moves_a_whole_tree_and_remove_needs_recursive() {
-    let fs = MemFs::with_files([("/d/x/1", "1")]);
+    let fs = MemFs::from_files([("/d/x/1", "1")]);
     fs.rename(Path::new("/d/x"), Path::new("/d/y"))
         .await
         .unwrap();
@@ -42,7 +42,7 @@ async fn memfs_rename_moves_a_whole_tree_and_remove_needs_recursive() {
 /// What a real fs refuses: a dir moved into itself (EINVAL), the root removed.
 #[tokio::test]
 async fn memfs_refuses_a_dir_into_itself_and_removing_the_root() {
-    let fs = MemFs::with_files([("/a/x", "1")]);
+    let fs = MemFs::from_files([("/a/x", "1")]);
     let err = fs.rename(Path::new("/a"), Path::new("/a/b")).await;
     assert_eq!(err.map_err(|e| e.kind()), Err(io::ErrorKind::InvalidInput));
     assert!(fs.exists(Path::new("/a/x")).await, "nothing moved");
@@ -57,7 +57,7 @@ async fn memfs_refuses_a_dir_into_itself_and_removing_the_root() {
 #[tokio::test]
 async fn a_file_system_without_links_says_no_path_is_one() {
     use io::ErrorKind::{InvalidInput, NotFound};
-    let fs = MemFs::with_files([("/d/a", "1")]);
+    let fs = MemFs::from_files([("/d/a", "1")]);
     for (p, want) in [
         ("/d/a", InvalidInput),
         ("/d", InvalidInput),
@@ -85,7 +85,7 @@ fn relative_paths_resolve_from_cwd() {
 
 #[tokio::test]
 async fn ensure_dir_makes_the_dir_and_refuses_a_file_in_its_place() {
-    let fs = MemFs::with_files([("/p/file", "x")]);
+    let fs = MemFs::from_files([("/p/file", "x")]);
     ensure_dir(&fs, Path::new("/p/a/b")).await.unwrap();
     ensure_dir(&fs, Path::new("/p/a/b")).await.unwrap();
     assert_eq!(
@@ -133,7 +133,7 @@ impl Fs for Minimal {
 
 #[tokio::test]
 async fn the_default_create_dir_all_makes_every_parent_and_takes_one_already_there() {
-    let fs = Minimal(MemFs::with_files([("/p/file", "x")]));
+    let fs = Minimal(MemFs::from_files([("/p/file", "x")]));
     fs.create_dir_all(Path::new("/p/a/b/c")).await.unwrap();
     assert!(fs.stat(Path::new("/p/a/b/c")).await.unwrap().is_dir());
     fs.create_dir_all(Path::new("/p/a/b")).await.unwrap();
@@ -146,7 +146,7 @@ async fn the_default_create_dir_all_makes_every_parent_and_takes_one_already_the
 
 #[tokio::test]
 async fn remove_tree_deletes_a_whole_tree_and_remove_does_not() {
-    let fs = Minimal(MemFs::with_files([
+    let fs = Minimal(MemFs::from_files([
         ("/p/a/b/x", "1"),
         ("/p/a/y", "2"),
         ("/p/z", "3"),

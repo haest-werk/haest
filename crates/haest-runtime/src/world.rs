@@ -91,7 +91,7 @@ impl World {
     /// starts none (the host's own files).
     pub fn child_env(&self, passed_env: &ChildEnv) -> Option<ChildEnv> {
         let child_env = self.child_env.as_ref()?;
-        Some(child_env.with(passed_env))
+        Some(child_env.overlaid(passed_env))
     }
 }
 

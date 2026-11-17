@@ -145,7 +145,7 @@ async fn a_hook_may_refuse_a_model_call_and_end_the_turn() {
     let end = r.turn("How was Q3?").await;
     assert_eq!(
         end,
-        TurnOutcome::with_error(StopReason::Error, "The month's budget is spent.")
+        TurnOutcome::error(StopReason::Error, "The month's budget is spent.")
     );
     assert_eq!(
         r.app.provider.requests(false).len(),

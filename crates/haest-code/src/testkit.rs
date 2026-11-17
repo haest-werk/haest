@@ -31,7 +31,7 @@ impl MemWorkspace {
         files: impl IntoIterator<Item = (P, D)>,
     ) -> Arc<Self> {
         Arc::new(Self {
-            mem: Arc::new(MemFs::with_files(files)),
+            mem: Arc::new(MemFs::from_files(files)),
         })
     }
 

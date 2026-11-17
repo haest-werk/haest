@@ -9,7 +9,7 @@ fn contents(files: &[InstructionFile]) -> Vec<&str> {
 
 #[tokio::test]
 async fn each_kind_of_instruction_file_is_read_only_when_asked_for() {
-    let fs = MemFs::with_files([
+    let fs = MemFs::from_files([
         ("/r/home/.claude/CLAUDE.md", "claude user"),
         ("/r/home/.agents/AGENTS.md", "agents user"),
         ("/r/home/repo/AGENTS.md", "repo agents"),
@@ -56,7 +56,7 @@ async fn each_kind_of_instruction_file_is_read_only_when_asked_for() {
 
 #[tokio::test]
 async fn user_files_first_then_outermost_project_dir_down_to_cwd_empty_files_skipped() {
-    let fs = MemFs::with_files([
+    let fs = MemFs::from_files([
         ("/r/home/.claude/CLAUDE.md", "user rules"),
         ("/r/home/repo/AGENTS.md", "repo agents"),
         ("/r/home/repo/pkg/.claude/CLAUDE.md", "pkg rules"),
@@ -76,7 +76,7 @@ async fn user_files_first_then_outermost_project_dir_down_to_cwd_empty_files_ski
 #[tokio::test]
 async fn outside_home_the_chain_runs_from_the_root_and_long_files_are_cut() {
     let long = "x".repeat(MAX_FILE_CHARS + 10);
-    let fs = MemFs::with_files([
+    let fs = MemFs::from_files([
         ("/AGENTS.md", "root rules"),
         ("/w/AGENTS.md", long.as_str()),
     ]);
@@ -146,7 +146,7 @@ fn the_tool_guide_and_workspace_note_are_said_as_given_and_the_identity_can_be_r
 
 #[tokio::test]
 async fn a_repo_on_a_branch_from_a_subdirectory() {
-    let fs = MemFs::with_files([
+    let fs = MemFs::from_files([
         ("/r/repo/.git/HEAD", "ref: refs/heads/feat/x\n"),
         ("/r/repo/src/a.rs", ""),
     ]);
@@ -156,7 +156,7 @@ async fn a_repo_on_a_branch_from_a_subdirectory() {
 
 #[tokio::test]
 async fn a_worktree_whose_git_is_a_file_pointing_at_its_git_dir() {
-    let fs = MemFs::with_files([
+    let fs = MemFs::from_files([
         ("/r/gitdirs/wt/HEAD", "ref: refs/heads/wt-branch\n"),
         ("/r/wt/.git", "gitdir: /r/gitdirs/wt\n"),
         ("/r/rel/.git", "gitdir: ../gitdirs/wt\n"),
@@ -169,7 +169,7 @@ async fn a_worktree_whose_git_is_a_file_pointing_at_its_git_dir() {
 
 #[tokio::test]
 async fn detached_head_gives_a_short_sha_and_no_repo_gives_none() {
-    let fs = MemFs::with_files([
+    let fs = MemFs::from_files([
         ("/r/d/.git/HEAD", "a1b2c3d4e5f6a7b8c9d0\n"),
         ("/r/plain/a.txt", ""),
     ]);

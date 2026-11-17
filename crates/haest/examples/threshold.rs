@@ -148,7 +148,9 @@ async fn run() -> Result<(), BoxError> {
     ]);
     let host = Arc::new(Host::default());
     // haest's own (the guard's nudges), then the host's.
-    let thresholds = Thresholds::default().with(SaveNotes)?.with(LongTurn)?;
+    let thresholds = Thresholds::default()
+        .try_with(SaveNotes)?
+        .try_with(LongTurn)?;
     let shared = SharedDeps::new(provider.resolver(), "/work", ShutWorkspace);
     let deps = AgentDeps::new(shared, Tools::new().with(Lookup), "You research.")
         .with_hooks(host.clone())

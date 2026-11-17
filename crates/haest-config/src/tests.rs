@@ -19,7 +19,7 @@ const HOME: &str = "/h";
 const USER_FILE: &str = "/h/.config/haest/config.toml";
 
 fn files(files: &[(&str, &str)]) -> MemFs {
-    MemFs::with_files(files.iter().map(|(p, t)| (*p, t.as_bytes())))
+    MemFs::from_files(files.iter().map(|(p, t)| (*p, t.as_bytes())))
 }
 
 fn owned(pairs: &[(&str, &str)]) -> Vec<(String, String)> {

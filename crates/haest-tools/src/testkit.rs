@@ -42,7 +42,7 @@ pub(crate) struct TestWorkspace {
 
 impl TestWorkspace {
     /// Files only; every command exits 127 (no such program).
-    pub(crate) fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
+    pub(crate) fn from_files<P: AsRef<Path>, D: AsRef<[u8]>>(
         files: impl IntoIterator<Item = (P, D)>,
     ) -> Arc<Self> {
         Self::answering(files, |_| ExecResult::failed("", EXIT_NOT_FOUND))
@@ -53,7 +53,7 @@ impl TestWorkspace {
         answer: impl Fn(&Call) -> ExecResult + Send + Sync + 'static,
     ) -> Arc<Self> {
         Arc::new(Self {
-            mem: Arc::new(MemFs::with_files(files)),
+            mem: Arc::new(MemFs::from_files(files)),
             answer: Box::new(answer),
             calls: Mutex::default(),
         })
@@ -127,7 +127,7 @@ impl ClaimedSizeFs {
         size: u64,
     ) -> Arc<Self> {
         Arc::new(Self {
-            mem: MemFs::with_files(files),
+            mem: MemFs::from_files(files),
             size,
             whole_reads: AtomicUsize::new(0),
         })

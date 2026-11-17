@@ -82,7 +82,7 @@
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), haest_config::ConfigError> {
-//! let fs = MemFs::with_files([
+//! let fs = MemFs::from_files([
 //!     (
 //!         "/home/me/.config/haest/config.toml",
 //!         "tools = [\"read\", \"grep\"]\nmax_turn_usd = 1\ntrusted_dirs = [\"~/projects\"]",

@@ -14,7 +14,7 @@ use super::super::GrepTool;
 use crate::testkit::{CWD, input};
 
 fn sandbox<P: AsRef<Path>>(files: impl IntoIterator<Item = (P, &'static str)>) -> ToolContext {
-    let fs = Arc::new(MemFs::with_files(files));
+    let fs = Arc::new(MemFs::from_files(files));
     ToolContext::new(CWD, Arc::new(SandboxWorkspace::over(fs)))
 }
 

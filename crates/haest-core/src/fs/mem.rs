@@ -48,7 +48,7 @@ fn err(kind: ErrorKind, p: &Path) -> io::Error {
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> std::io::Result<()> {
-/// let fs = MemFs::with_files([("/p/a.txt", "A"), ("/p/sub/b.txt", "B")]);
+/// let fs = MemFs::from_files([("/p/a.txt", "A"), ("/p/sub/b.txt", "B")]);
 /// fs.rename(Path::new("/p/sub"), Path::new("/p/moved")).await?;
 /// assert_eq!(fs.read_to_string(Path::new("/p/moved/b.txt")).await?, "B");
 /// assert!(fs.remove(Path::new("/p")).await.is_err(), "not empty");
@@ -86,7 +86,7 @@ impl MemFs {
 
     /// A file system holding these `(path, contents)` files, every parent
     /// directory created. A path given twice keeps the last contents.
-    pub fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
+    pub fn from_files<P: AsRef<Path>, D: AsRef<[u8]>>(
         files: impl IntoIterator<Item = (P, D)>,
     ) -> Self {
         let files: Vec<(PathBuf, Node)> = files

@@ -301,7 +301,7 @@ impl Agent {
             Err(e) => {
                 // The running turn's thresholds are its own: this guard has none.
                 let mut turn = Turn::new(CancellationToken::new(), self.bare_guard(), sink);
-                return turn.finish(TurnOutcome::with_error(StopReason::Error, e), started);
+                return turn.finish(TurnOutcome::error(StopReason::Error, e), started);
             }
         };
         let _running = Running(self.control.clone());

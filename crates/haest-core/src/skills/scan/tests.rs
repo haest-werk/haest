@@ -66,7 +66,7 @@ const PLUGIN: &str = "/r/plugins/toolkit";
 
 fn scan_fixture() -> MemFs {
     let f = |fm: &str| format!("---\n{fm}\n---\n\n# body\n");
-    MemFs::with_files([
+    MemFs::from_files([
         (
             format!("{CLAUDE_DIR}/skills/shared/SKILL.md"),
             f("name: shared\ndescription: user copy"),

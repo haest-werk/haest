@@ -5,7 +5,7 @@ use serde_json::json;
 const CWD: &str = "/p";
 
 fn fs_with(config: Value) -> MemFs {
-    MemFs::with_files([("/p/.mcp.json", config.to_string())])
+    MemFs::from_files([("/p/.mcp.json", config.to_string())])
 }
 
 fn no_vars(_: &str) -> Option<String> {
@@ -104,7 +104,7 @@ async fn no_file_or_a_file_without_servers_means_no_servers() {
 
 #[tokio::test]
 async fn broken_json_is_an_error_the_host_can_report() {
-    let fs = MemFs::with_files([("/p/.mcp.json", "{not json")]);
+    let fs = MemFs::from_files([("/p/.mcp.json", "{not json")]);
     let Err(err) = load(&fs).await else {
         panic!("broken JSON was read");
     };

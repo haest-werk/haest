@@ -19,7 +19,7 @@ async fn run(tool: &dyn Tool, ws: &Arc<TestWorkspace>, v: Value) -> Result<ToolO
 }
 
 fn empty() -> Arc<TestWorkspace> {
-    TestWorkspace::with_files([("/p/.keep", "")])
+    TestWorkspace::from_files([("/p/.keep", "")])
 }
 
 #[tokio::test]
@@ -56,7 +56,7 @@ async fn write_takes_empty_content_but_not_a_missing_one() {
 
 #[tokio::test]
 async fn edit_requires_a_unique_match_unless_replace_all() {
-    let ws = TestWorkspace::with_files([("/p/e.txt", "x y x")]);
+    let ws = TestWorkspace::from_files([("/p/e.txt", "x y x")]);
     let ambiguous = run(
         &EditTool,
         &ws,
@@ -84,7 +84,7 @@ async fn edit_requires_a_unique_match_unless_replace_all() {
 
 #[tokio::test]
 async fn edit_replaces_only_the_one_match_it_was_given() {
-    let ws = TestWorkspace::with_files([("/p/e.txt", "one two")]);
+    let ws = TestWorkspace::from_files([("/p/e.txt", "one two")]);
     run(
         &EditTool,
         &ws,
@@ -97,7 +97,7 @@ async fn edit_replaces_only_the_one_match_it_was_given() {
 
 #[tokio::test]
 async fn edit_treats_dollar_in_the_replacement_literally() {
-    let ws = TestWorkspace::with_files([("/p/d.txt", "price")]);
+    let ws = TestWorkspace::from_files([("/p/d.txt", "price")]);
     run(
         &EditTool,
         &ws,
@@ -110,7 +110,7 @@ async fn edit_treats_dollar_in_the_replacement_literally() {
 
 #[tokio::test]
 async fn edit_refuses_a_missing_file_and_a_no_op() {
-    let ws = TestWorkspace::with_files([("/p/a.txt", "a")]);
+    let ws = TestWorkspace::from_files([("/p/a.txt", "a")]);
     let missing = run(
         &EditTool,
         &ws,

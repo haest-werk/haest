@@ -80,7 +80,7 @@
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() {
 //! // The human's own mod file, in the host's config directory.
-//! let files = MemFs::with_files([(
+//! let files = MemFs::from_files([(
 //!     "/home/me/.config/haest/mods/guard.js",
 //!     r#"export default function (haest) {
 //!          haest.on('tool.before', call =>

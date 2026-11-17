@@ -111,7 +111,7 @@ impl JsonlSessionFile {
         data_dir: impl AsRef<Path>,
         session_id: &str,
     ) -> Result<Self, InvalidSessionId> {
-        Self::with_error_handler(fs, data_dir, session_id, |_| {})
+        Self::new_with_error_handler(fs, data_dir, session_id, |_| {})
     }
 
     /// Same, handing every failed queued write to `on_error` (on the writer
@@ -124,7 +124,7 @@ impl JsonlSessionFile {
     /// # Panics
     ///
     /// Outside a tokio runtime.
-    pub fn with_error_handler(
+    pub fn new_with_error_handler(
         fs: impl Into<FsRef>,
         data_dir: impl AsRef<Path>,
         session_id: &str,

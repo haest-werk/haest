@@ -49,7 +49,7 @@
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), haest_core::error::BoxError> {
-//! let files = MemFs::with_files([
+//! let files = MemFs::from_files([
 //!     ("/project/notes/a.md", "TODO: write the intro\n"),
 //!     ("/project/notes/b.md", "done\n"),
 //!     ("/project/notes/c.md", "TODO: check the numbers\nTODO: ask a colleague\n"),
@@ -91,7 +91,7 @@
 //!
 //! # #[tokio::main]
 //! # async fn main() {
-//! let files = MemFs::with_files([(
+//! let files = MemFs::from_files([(
 //!     "/project/hi.ts",
 //!     "const who: string = process.argv[2]\nconsole.log(`hi ${who}`)",
 //! )]);

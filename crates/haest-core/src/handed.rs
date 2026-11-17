@@ -63,7 +63,7 @@ crate::plug_ref! {
 /// use haest_core::ChildEnv;
 ///
 /// let base = ChildEnv::new([("PATH", "/usr/bin:/bin")]);
-/// let job = base.with(&ChildEnv::new([("TOKEN", "secret")]));
+/// let job = base.overlaid(&ChildEnv::new([("TOKEN", "secret")]));
 /// assert_eq!(job.get("PATH"), Some("/usr/bin:/bin"));
 /// assert!(!format!("{job:?}").contains("secret"));
 /// ```
@@ -101,7 +101,7 @@ impl ChildEnv {
 
     /// These variables with `over`'s on top: a name in both has `over`'s value.
     #[must_use]
-    pub fn with(&self, over: &ChildEnv) -> ChildEnv {
+    pub fn overlaid(&self, over: &ChildEnv) -> ChildEnv {
         if over.0.is_empty() {
             return self.clone();
         }
@@ -141,12 +141,12 @@ mod tests {
     fn a_child_env_with_another_on_top_takes_its_values_and_keeps_one_of_each_name() {
         let pairs = |p: &[(&str, &str)]| -> ChildEnv { p.iter().copied().collect() };
         let base = pairs(&[("PATH", "/bin"), ("HOME", "/h")]);
-        let both = base.with(&pairs(&[("HOME", "/other"), ("GH_TOKEN", "t")]));
+        let both = base.overlaid(&pairs(&[("HOME", "/other"), ("GH_TOKEN", "t")]));
         assert_eq!(
             both.vars(),
             pairs(&[("PATH", "/bin"), ("HOME", "/other"), ("GH_TOKEN", "t")]).vars()
         );
-        assert_eq!(base.with(&ChildEnv::default()), base);
+        assert_eq!(base.overlaid(&ChildEnv::default()), base);
     }
 
     #[test]

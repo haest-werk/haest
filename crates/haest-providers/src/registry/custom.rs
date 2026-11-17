@@ -254,7 +254,7 @@ pub type CustomProviders = BTreeMap<String, Value>;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_providers::ProvidersFileError> {
-/// let fs = MemFs::with_files([(
+/// let fs = MemFs::from_files([(
 ///     "/home/me/.config/haest/providers.json",
 ///     r#"{"local": {"type": "openai", "baseURL": "http://localhost:1234/v1"}}"#,
 /// )]);

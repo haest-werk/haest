@@ -44,7 +44,7 @@ fn openrouter_key() -> KeySourceRef {
 
 #[tokio::test]
 async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
-    let fs = Arc::new(MemFs::with_files([("/w/AGENTS.md", "Answer in haiku.")]));
+    let fs = Arc::new(MemFs::from_files([("/w/AGENTS.md", "Answer in haiku.")]));
     let inputs =
         RuntimeInputs::new(hardcoded(), World::files(fs.clone())).with_keys(openrouter_key());
     let rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())

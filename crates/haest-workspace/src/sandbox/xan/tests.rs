@@ -22,7 +22,7 @@ south,apple,200,paid,
 
 /// `xan args` in `/data` (sales.csv, t.tsv), 10s from its deadline.
 fn call(args: &[&str], stdin: Option<&str>) -> ShellCall {
-    let fs = MemFs::with_files([("/data/sales.csv", SALES), ("/data/t.tsv", "a\tb\n1\t2\n")]);
+    let fs = MemFs::from_files([("/data/sales.csv", SALES), ("/data/t.tsv", "a\tb\n1\t2\n")]);
     let call = ShellCall::new(
         args.iter().copied(),
         "/data",

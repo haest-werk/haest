@@ -107,7 +107,7 @@ pub struct ProjectMcp {
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
-/// let fs = MemFs::with_files([(
+/// let fs = MemFs::from_files([(
 ///     "/repo/.mcp.json",
 ///     r#"{"mcpServers": {
 ///         "github": {"command": "github-mcp-server", "args": ["stdio"],

@@ -7,7 +7,7 @@ fn skill_file(name: &str, extra: &str, body: &str) -> String {
 
 /// `(dir, name, extra frontmatter, body)` -> a MemFs with `<dir>/<name>/SKILL.md`.
 fn fs_with(skills: &[(&str, &str, &str, &str)]) -> MemFs {
-    MemFs::with_files(skills.iter().map(|(dir, name, extra, body)| {
+    MemFs::from_files(skills.iter().map(|(dir, name, extra, body)| {
         (
             format!("{dir}/{name}/SKILL.md"),
             skill_file(name, extra, body),

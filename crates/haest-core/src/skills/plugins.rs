@@ -75,7 +75,7 @@ mod tests {
             }
         });
         let settings = json!({"enabledPlugins": {"b@mk": false}});
-        let fs = MemFs::with_files([
+        let fs = MemFs::from_files([
             ("/cfg/plugins/installed_plugins.json", installed.to_string()),
             ("/cfg/settings.json", settings.to_string()),
         ]);

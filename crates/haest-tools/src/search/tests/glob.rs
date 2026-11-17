@@ -13,7 +13,7 @@ use crate::{
 
 #[tokio::test]
 async fn glob_skips_node_modules_and_finds_files_write_created() {
-    let ws = TestWorkspace::with_files([
+    let ws = TestWorkspace::from_files([
         ("/p/src/a.ts", "const needle = 1\n"),
         ("/p/src/b.md", "no match here\n"),
         ("/p/node_modules/x/c.ts", "needle\n"),
@@ -37,7 +37,7 @@ async fn glob_skips_node_modules_and_finds_files_write_created() {
 
 #[tokio::test]
 async fn glob_lists_the_newest_first_and_caps_the_list() {
-    let ws = TestWorkspace::with_files([("/p/old.txt", "")]);
+    let ws = TestWorkspace::from_files([("/p/old.txt", "")]);
     let c = ctx(ws);
     tokio::time::sleep(Duration::from_millis(5)).await;
     WriteTool
@@ -52,7 +52,7 @@ async fn glob_lists_the_newest_first_and_caps_the_list() {
         r.content.lines().collect::<Vec<_>>(),
         ["/p/new.txt", "/p/old.txt"]
     );
-    let many = TestWorkspace::with_files((0..250).map(|i| (format!("/q/f{i}.ts"), "")));
+    let many = TestWorkspace::from_files((0..250).map(|i| (format!("/q/f{i}.ts"), "")));
     let r = GlobTool
         .execute(input(json!({"pattern": "*.ts", "path": "/q"})), &ctx(many))
         .await

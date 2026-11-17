@@ -79,7 +79,7 @@ impl Rig {
         let (tx, inbox) = unbounded_channel();
         let parent = Arc::new(FakeParent {
             provider,
-            ws: TestWorkspace::with_files([("/p/a.txt", "a")]),
+            ws: TestWorkspace::from_files([("/p/a.txt", "a")]),
             ledger: Ledger::new(ConversationCaps::default(), NoLedgerHooks),
             tx,
             activity: Mutex::default(),

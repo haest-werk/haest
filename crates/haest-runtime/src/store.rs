@@ -35,7 +35,7 @@ fn open_store(
     id: &str,
     ui: Arc<dyn Ui>,
 ) -> Result<JsonlSessionFile, SessionError> {
-    let store = JsonlSessionFile::with_error_handler(fs.clone(), data_dir, id, move |e| {
+    let store = JsonlSessionFile::new_with_error_handler(fs.clone(), data_dir, id, move |e| {
         ui.error(&format!("session log write failed: {e}"));
     })?;
     Ok(store)

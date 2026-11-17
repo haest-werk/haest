@@ -27,7 +27,7 @@
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> std::io::Result<()> {
-//! let fs = MemFs::with_files([("/project/README.md", "# Hello")]);
+//! let fs = MemFs::from_files([("/project/README.md", "# Hello")]);
 //! assert_eq!(fs.read_to_string(Path::new("/project/README.md")).await?, "# Hello");
 //!
 //! ensure_dir(&fs, Path::new("/project/notes")).await?;
@@ -161,7 +161,7 @@ pub struct DirEntry {
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> io::Result<()> {
-/// let fs = ReadOnly(MemFs::with_files([("/docs/a.md", "A")]));
+/// let fs = ReadOnly(MemFs::from_files([("/docs/a.md", "A")]));
 /// assert_eq!(fs.read_to_string(Path::new("/docs/a.md")).await?, "A");
 /// assert!(fs.exists(Path::new("/docs")).await);
 /// let refused = fs.write(Path::new("/docs/b.md"), b"B").await;

@@ -25,7 +25,7 @@ fn env(fs: &Arc<MemFs>) -> JsEnv {
 
 /// A script INTO the workspace, the way the model would write it with Write.
 fn with_script(name: &str, body: &str) -> Arc<MemFs> {
-    Arc::new(MemFs::with_files([(format!("/p/{name}"), body)]))
+    Arc::new(MemFs::from_files([(format!("/p/{name}"), body)]))
 }
 
 async fn js(fs: &Arc<MemFs>, line: &str) -> ExecResult {

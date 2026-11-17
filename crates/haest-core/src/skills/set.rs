@@ -172,7 +172,7 @@ impl SkillSet for DiskSkills {
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> std::io::Result<()> {
-/// let fs = MemFs::with_files([(
+/// let fs = MemFs::from_files([(
 ///     "/home/me/.claude/skills/release/SKILL.md",
 ///     "---\nname: release\ndescription: Cut a release\n---\nTag and push.\n",
 /// )]);

@@ -146,7 +146,7 @@ impl TurnOutcome {
         }
     }
     /// An ending that says why.
-    pub fn with_error(stop_reason: StopReason, error: impl Into<String>) -> Self {
+    pub fn error(stop_reason: StopReason, error: impl Into<String>) -> Self {
         Self {
             stop_reason,
             error: Some(error.into()),

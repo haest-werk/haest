@@ -221,7 +221,7 @@ async fn a_warning_fired_in_a_subagents_turn_reaches_the_conversations_hooks() {
     let warned = Arc::new(Warned::default());
     let hooks = warned.clone();
     r.adjust(move |d| {
-        let thresholds = Thresholds::default().with(SecondCall).unwrap();
+        let thresholds = Thresholds::default().try_with(SecondCall).unwrap();
         d.with_hooks(hooks.clone()).with_thresholds(thresholds)
     });
     r.turn("go").await;

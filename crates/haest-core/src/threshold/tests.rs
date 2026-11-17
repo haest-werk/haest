@@ -62,7 +62,7 @@ fn named(
 /// Reminds at half of 10 steps, rearming as `rearm` says.
 fn half_the_steps(rearm: Rearm) -> Watch<TurnSite> {
     let t = host(Meter::Steps, Mark::share(0.5), Action::Remind, rearm);
-    Watch::new(Thresholds::none().with(t).unwrap())
+    Watch::new(Thresholds::none().try_with(t).unwrap())
 }
 
 /// The steps meter at `steps` of 10.
@@ -200,7 +200,7 @@ fn follow_keeps_what_fired_and_arms_what_is_new() {
 #[test]
 fn a_site_refuses_what_it_cannot_check_and_says_why() {
     let turns = host(Meter::Turns, Mark::at(3.0), Action::Remind, Rearm::Never);
-    let err = Thresholds::<TurnSite>::none().with(turns).unwrap_err();
+    let err = Thresholds::<TurnSite>::none().try_with(turns).unwrap_err();
     assert_eq!(
         err,
         NotServed {
@@ -219,7 +219,7 @@ fn a_site_refuses_what_it_cannot_check_and_says_why() {
         Action::Compact,
         Rearm::EveryCheck,
     );
-    assert!(Thresholds::<TurnSite>::none().with(compact).is_err());
+    assert!(Thresholds::<TurnSite>::none().try_with(compact).is_err());
     // The ledger only warns, and only on the conversation's meters.
     let remind = host(
         Meter::Usd(Scope::Conversation),
@@ -288,7 +288,7 @@ fn agent(
     let (mut agent, hooks) = agent_with(p, opts);
     let mut thresholds = Thresholds::default();
     for t in more {
-        thresholds = thresholds.with(t).unwrap();
+        thresholds = thresholds.try_with(t).unwrap();
     }
     agent.map_deps(|d| d.with_thresholds(thresholds));
     (agent, hooks)

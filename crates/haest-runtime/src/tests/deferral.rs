@@ -28,7 +28,7 @@ fn advertised(rt: &Runtime<Recorded>) -> Vec<String> {
 
 #[tokio::test]
 async fn a_resumed_conversation_keeps_the_deferred_tools_its_history_called() {
-    let fs = Arc::new(MemFs::with_files([(
+    let fs = Arc::new(MemFs::from_files([(
         "/h/.config/haest/mods/weather.js",
         WEATHER_MOD,
     )]));

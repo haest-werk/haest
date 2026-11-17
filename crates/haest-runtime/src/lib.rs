@@ -96,7 +96,7 @@
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), haest_runtime::BuildError> {
-//! let files = MemFs::with_files([("/work/AGENTS.md", "Answer in one line.")]);
+//! let files = MemFs::from_files([("/work/AGENTS.md", "Answer in one line.")]);
 //! let settings = Settings {
 //!     context: ContextSources { agents: true, ..ContextSources::NONE },
 //!     tools: BuiltinTools { read: true, grep: true, ..BuiltinTools::NONE },

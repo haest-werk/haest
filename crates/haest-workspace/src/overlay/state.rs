@@ -65,7 +65,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_path_is_a_file_hash_a_directory_or_absent() {
-        let fs = MemFs::with_files([("/d/a.txt", "A"), ("/d/b.txt", "A"), ("/d/c.txt", "C")]);
+        let fs = MemFs::from_files([("/d/a.txt", "A"), ("/d/b.txt", "A"), ("/d/c.txt", "C")]);
         let a = state_of(&fs, Path::new("/d/a.txt")).await;
         assert_eq!(a, state_of(&fs, Path::new("/d/b.txt")).await);
         assert_ne!(a, state_of(&fs, Path::new("/d/c.txt")).await);
@@ -75,7 +75,7 @@ mod tests {
 
     #[tokio::test]
     async fn walk_lists_every_path_below_a_directory() {
-        let fs = MemFs::with_files([("/d/a", "1"), ("/d/s/b", "2")]);
+        let fs = MemFs::from_files([("/d/a", "1"), ("/d/s/b", "2")]);
         let mut all = walk(&fs, Path::new("/d")).await;
         all.sort();
         assert_eq!(all, ["/d/a", "/d/s", "/d/s/b"].map(PathBuf::from).to_vec());

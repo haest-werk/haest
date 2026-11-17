@@ -62,7 +62,7 @@ use crate::{
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_config::ConfigError> {
-/// let fs = MemFs::with_files([("/etc/myhost/haest.toml", "tools = [\"read\"]\nmodel = \"a:file\"")]);
+/// let fs = MemFs::from_files([("/etc/myhost/haest.toml", "tools = [\"read\"]\nmodel = \"a:file\"")]);
 /// let loaded = Loader::new(Settings::bare("/srv/app", "/root"))
 ///     .file("/etc/myhost/haest.toml")
 ///     .flags([("model", "a:flag")])

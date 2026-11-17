@@ -220,7 +220,7 @@ fn rig(main: Vec<Vec<AssistantPart>>, sub: Vec<Vec<AssistantPart>>, sub_permits:
         sub_gate: Arc::new(Semaphore::new(sub_permits)),
         seen: Mutex::default(),
     });
-    let fs = Arc::new(MemFs::with_files([("/work/notes/plan.md", PLAN)]));
+    let fs = Arc::new(MemFs::from_files([("/work/notes/plan.md", PLAN)]));
     let workspace = Arc::new(SandboxWorkspace::over(fs.clone()).with_command(Arc::new(Stamp)));
     let (tx, inbox) = unbounded_channel();
     let app = Arc::new(App {

@@ -230,7 +230,7 @@ pub(crate) fn not_here(name: &str) -> ExecResult {
 ///
 /// # #[tokio::main]
 /// # async fn main() -> std::io::Result<()> {
-/// let fs = FsRef::new(MemFs::with_files([(
+/// let fs = FsRef::new(MemFs::from_files([(
 ///    "/work/sum.js",
 ///    "import { readFile, writeFile } from 'fs/promises'
 ///     const nums = (await readFile('nums.txt', 'utf8')).trim().split('\\n').map(Number)

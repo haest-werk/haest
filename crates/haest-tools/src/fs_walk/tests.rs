@@ -54,7 +54,7 @@ fn sorted(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
 
 #[tokio::test]
 async fn the_walk_skips_node_modules_and_git_and_returns_absolute_paths() {
-    let fs = MemFs::with_files([
+    let fs = MemFs::from_files([
         ("/p/src/a.ts", "x"),
         ("/p/src/deep/b.ts", "x"),
         ("/p/src/c.md", "x"),
@@ -84,7 +84,7 @@ async fn the_walk_skips_node_modules_and_git_and_returns_absolute_paths() {
 
 #[tokio::test]
 async fn an_absolute_pattern_starts_at_its_own_root() {
-    let fs = MemFs::with_files([("/p/src/a.ts", "x"), ("/q/b.ts", "x")]);
+    let fs = MemFs::from_files([("/p/src/a.ts", "x"), ("/q/b.ts", "x")]);
     let cancel = CancellationToken::new();
     let r = glob_fs(&fs, Path::new("/p"), "/q/*.ts", &cancel)
         .await
@@ -107,7 +107,7 @@ async fn a_missing_start_directory_finds_nothing_and_does_not_fail() {
 #[tokio::test]
 async fn a_walk_past_the_entry_limit_stops_and_says_so() {
     let files = (0..=WALK_LIMIT).map(|i| (format!("/p/f{i}"), ""));
-    let fs = MemFs::with_files(files);
+    let fs = MemFs::from_files(files);
     let r = glob_fs(&fs, Path::new("/p"), "nomatch", &CancellationToken::new())
         .await
         .unwrap();
@@ -116,7 +116,7 @@ async fn a_walk_past_the_entry_limit_stops_and_says_so() {
 
 #[tokio::test]
 async fn a_cancelled_walk_stops() {
-    let fs = MemFs::with_files([("/p/a.ts", "x")]);
+    let fs = MemFs::from_files([("/p/a.ts", "x")]);
     let cancel = CancellationToken::new();
     cancel.cancel();
     let r = glob_fs(&fs, Path::new("/p"), "*.ts", &cancel)

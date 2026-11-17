@@ -25,7 +25,7 @@ fn is_input_error(r: &Result<ToolOutput, ToolError>) -> bool {
 /// 3,000 lines of ~100 chars: ~75K tokens, three times Read's default budget.
 fn big_file() -> Arc<TestWorkspace> {
     let text: Vec<String> = (0..3000).map(|i| format!("{i:.<96}")).collect();
-    TestWorkspace::with_files([("/p/big.txt", text.join("\n"))])
+    TestWorkspace::from_files([("/p/big.txt", text.join("\n"))])
 }
 
 fn shown_lines(content: &str) -> usize {
@@ -41,7 +41,7 @@ fn shown_lines(content: &str) -> usize {
 
 #[tokio::test]
 async fn numbers_lines_and_pages_with_offset_and_limit() {
-    let ws = TestWorkspace::with_files([("/p/f.txt", "a\nb\nc\nd")]);
+    let ws = TestWorkspace::from_files([("/p/f.txt", "a\nb\nc\nd")]);
     let r = read(&ws, json!({"file_path": "f.txt", "offset": 2, "limit": 2}))
         .await
         .unwrap();
@@ -56,7 +56,7 @@ async fn numbers_lines_and_pages_with_offset_and_limit() {
 
 #[tokio::test]
 async fn refuses_binaries_and_missing_files_as_correctable_errors() {
-    let ws = TestWorkspace::with_files([("/p/b.bin", &[1u8, 0, 2][..])]);
+    let ws = TestWorkspace::from_files([("/p/b.bin", &[1u8, 0, 2][..])]);
     assert!(is_input_error(
         &read(&ws, json!({"file_path": "b.bin"})).await
     ));
@@ -69,7 +69,7 @@ async fn refuses_binaries_and_missing_files_as_correctable_errors() {
 #[tokio::test]
 async fn an_image_comes_back_as_media_the_model_sees_not_as_a_binary_refusal() {
     let png = [0x89u8, 0x50, 0x4e, 0x47, 0, 0, 0, 0];
-    let ws = TestWorkspace::with_files([("/p/shot.png", &png[..])]);
+    let ws = TestWorkspace::from_files([("/p/shot.png", &png[..])]);
     let r = read(&ws, json!({"file_path": "shot.png"})).await.unwrap();
     assert!(!r.is_error);
     assert_eq!(
@@ -98,7 +98,7 @@ impl ToolServices for Publishing {
 
 #[tokio::test]
 async fn a_published_image_carries_its_url_to_the_transcript() {
-    let ws = TestWorkspace::with_files([("/p/a.gif", &[1u8, 2, 3][..])]);
+    let ws = TestWorkspace::from_files([("/p/a.gif", &[1u8, 2, 3][..])]);
     let c = ctx(ws).with_services(Publishing);
     let r = ReadTool::default()
         .execute(input(json!({"file_path": "a.gif"})), &c)
@@ -148,7 +148,7 @@ async fn allow_large_never_returns_more_than_the_context_has_room_for() {
 
 #[tokio::test]
 async fn an_image_type_no_provider_accepts_is_still_a_refusal() {
-    let ws = TestWorkspace::with_files([("/p/pic.tiff", &[1u8, 0, 2][..])]);
+    let ws = TestWorkspace::from_files([("/p/pic.tiff", &[1u8, 0, 2][..])]);
     assert!(is_input_error(
         &read(&ws, json!({"file_path": "pic.tiff"})).await
     ));
@@ -156,7 +156,7 @@ async fn an_image_type_no_provider_accepts_is_still_a_refusal() {
 
 #[tokio::test]
 async fn an_offset_past_the_end_is_an_empty_read_not_an_error() {
-    let ws = TestWorkspace::with_files([("/p/f.txt", "a\nb")]);
+    let ws = TestWorkspace::from_files([("/p/f.txt", "a\nb")]);
     let r = read(&ws, json!({"file_path": "f.txt", "offset": 1e300}))
         .await
         .unwrap();
@@ -170,12 +170,12 @@ async fn an_offset_past_the_end_is_an_empty_read_not_an_error() {
 #[tokio::test]
 async fn a_closing_newline_ends_the_last_line_and_adds_no_line_of_its_own() {
     // Ten lines, as `wc -l` counts them: the model must see ten, not eleven.
-    let ws = TestWorkspace::with_files([("/p/ten.txt", "x\n".repeat(10))]);
+    let ws = TestWorkspace::from_files([("/p/ten.txt", "x\n".repeat(10))]);
     let r = read(&ws, json!({"file_path": "ten.txt"})).await.unwrap();
     assert_eq!(shown_lines(&r.content), 10);
     assert_eq!(r.content.lines().last(), Some("10\tx"));
     // A blank line the file really has is still shown.
-    let ws = TestWorkspace::with_files([("/p/gap.txt", "a\n\n")]);
+    let ws = TestWorkspace::from_files([("/p/gap.txt", "a\n\n")]);
     let r = read(&ws, json!({"file_path": "gap.txt"})).await.unwrap();
     assert_eq!(shown_lines(&r.content), 2);
 }
@@ -203,7 +203,7 @@ impl ReadIntercept for Attachments {
 
 #[tokio::test]
 async fn an_intercept_answers_its_own_paths_and_leaves_the_rest_to_the_fs() {
-    let ws = TestWorkspace::with_files([("/p/f.txt", "from disk")]);
+    let ws = TestWorkspace::from_files([("/p/f.txt", "from disk")]);
     let tool = ReadTool::new().with_intercept(Attachments);
     let c = ctx(ws);
     let att = tool

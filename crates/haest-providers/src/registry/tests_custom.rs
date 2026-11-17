@@ -18,7 +18,7 @@ async fn custom_providers_come_from_providers_json_by_dialect() {
         "local": {"type": "openai", "baseURL": "http://localhost:1234/v1", "apiKeyEnv": "LOCAL_KEY"},
         "proxy": {"type": "anthropic", "baseURL": "http://proxy", "apiKey": "x"},
     });
-    let fs = MemFs::with_files([("/cfg/providers.json", file.to_string())]);
+    let fs = MemFs::from_files([("/cfg/providers.json", file.to_string())]);
     let custom = load_custom_providers(&fs, Path::new("/cfg")).await.unwrap();
     let reg = registry(keys(&[]), custom);
     assert_eq!(reg.resolve("local:qwen").unwrap().provider().id(), "local");
@@ -131,7 +131,7 @@ async fn a_configured_header_replaces_the_anthropic_default_of_that_name() {
 
 #[tokio::test]
 async fn a_broken_providers_json_is_a_clear_error_and_a_missing_one_is_empty() {
-    let fs = MemFs::with_files([("/cfg/providers.json", "{nope")]);
+    let fs = MemFs::from_files([("/cfg/providers.json", "{nope")]);
     assert!(
         load_custom_providers(&fs, Path::new("/none"))
             .await
@@ -178,7 +178,7 @@ fn an_entry_that_is_not_an_object_is_refused() {
 /// each cause once.
 #[tokio::test]
 async fn a_broken_providers_json_says_each_cause_once() {
-    let fs = MemFs::with_files([("/cfg/providers.json", "{not json")]);
+    let fs = MemFs::from_files([("/cfg/providers.json", "{not json")]);
     let e = load_custom_providers(&fs, Path::new("/cfg"))
         .await
         .unwrap_err();
@@ -193,7 +193,7 @@ async fn a_broken_providers_json_says_each_cause_once() {
 
 #[tokio::test]
 async fn a_providers_json_that_is_not_an_object_is_refused() {
-    let fs = MemFs::with_files([("/cfg/providers.json", r#"[{"local": {}}]"#)]);
+    let fs = MemFs::from_files([("/cfg/providers.json", r#"[{"local": {}}]"#)]);
     let e = load_custom_providers(&fs, Path::new("/cfg"))
         .await
         .unwrap_err();

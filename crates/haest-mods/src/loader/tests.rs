@@ -29,7 +29,7 @@ fn no_mod_dir_is_read_unless_asked_for() {
 
 #[tokio::test]
 async fn a_mod_in_the_user_mods_dir_loads_and_a_broken_one_is_reported_and_skipped() {
-    let fs = MemFs::with_files([
+    let fs = MemFs::from_files([
         (
             format!("{HOME_MODS}/a-good.ts"),
             "export default function (haest) { haest.tool({ name: 'Hello', kind: 'agent.unknown', description: 'hi', parameters: {}, execute: async () => ({ content: 'hello' }) }) }",
@@ -49,7 +49,7 @@ async fn a_mod_in_the_user_mods_dir_loads_and_a_broken_one_is_reported_and_skipp
 
 #[tokio::test]
 async fn the_hosts_limits_bound_every_mod_file_it_loads() {
-    let fs = MemFs::with_files([(
+    let fs = MemFs::from_files([(
         format!("{HOME_MODS}/hangs.js"),
         "export default () => new Promise(() => {})",
     )]);
@@ -69,7 +69,7 @@ async fn the_hosts_limits_bound_every_mod_file_it_loads() {
 
 #[tokio::test]
 async fn mod_files_are_code_files_in_name_order_and_declarations_are_not_mods() {
-    let fs = MemFs::with_files([
+    let fs = MemFs::from_files([
         ("/m/b.js", "x"),
         ("/m/a.ts", "x"),
         ("/m/c.mjs", "x"),
@@ -85,7 +85,7 @@ async fn mod_files_are_code_files_in_name_order_and_declarations_are_not_mods() 
 async fn project_mods_load_only_when_the_host_turns_them_on() {
     let source =
         "export default function (haest) { haest.on('system.prompt', () => 'from the repo') }";
-    let fs = MemFs::with_files([(format!("{CWD}/.haest/mods/repo.js"), source)]);
+    let fs = MemFs::from_files([(format!("{CWD}/.haest/mods/repo.js"), source)]);
     let off = load_mods(cfg(WorkspaceMode::Sandbox), &fs, TestUi::new()).await;
     assert_eq!(off.system_append().await, "");
     let on_cfg = cfg(WorkspaceMode::Sandbox).with_project_mods();

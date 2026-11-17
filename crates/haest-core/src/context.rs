@@ -25,7 +25,7 @@
 //!     },
 //! };
 //!
-//! let fs = MemFs::with_files([("/home/me/work/AGENTS.md", "Run the tests before you commit.")]);
+//! let fs = MemFs::from_files([("/home/me/work/AGENTS.md", "Run the tests before you commit.")]);
 //!
 //! let opts = InstructionOptions {
 //!     cwd: "/home/me/work".into(),
