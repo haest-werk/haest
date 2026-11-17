@@ -116,9 +116,9 @@ impl TurnGuard {
 
     /// A model call came back; its bill counts toward the conversation too.
     pub(crate) fn called(&mut self, u: &Usage) {
-        self.steps += 1;
+        self.steps = self.steps.saturating_add(1);
         self.charge(u);
-        self.next_request_tokens += u.output;
+        self.next_request_tokens = self.next_request_tokens.saturating_add(u.output);
         self.turn.context = u.context_tokens();
     }
 
@@ -133,14 +133,15 @@ impl TurnGuard {
         self.turn.answered(out);
         let key = signature(call, out);
         match self.repeats.iter_mut().find(|r| r.key == key) {
-            Some(r) => r.count += 1,
+            Some(r) => r.count = r.count.saturating_add(1),
             None => self.repeats.push(Repeat {
                 key,
                 name: call.name.clone(),
                 count: 1,
             }),
         }
-        self.next_request_tokens += (out.content.chars().count() as u64).div_ceil(4);
+        let result_tokens = (out.content.chars().count() as u64).div_ceil(4);
+        self.next_request_tokens = self.next_request_tokens.saturating_add(result_tokens);
     }
 
     /// Why the turn must stop before the next model call, or None: the

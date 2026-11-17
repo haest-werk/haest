@@ -224,3 +224,20 @@ fn a_snapshot_names_only_the_caps_the_human_set_and_keeps_the_ts_shape() {
     );
     assert_eq!(ledger.caps().max_usd, 5.0);
 }
+
+/// A snapshot at u64::MAX unpriced tokens takes another unpriced call
+/// without overflowing.
+#[test]
+fn unpriced_tokens_saturate_at_u64_max() {
+    let (mut l, _) = ledger_with(0.0, 0);
+    l.restore(&LedgerSnapshot {
+        usd: 0.0,
+        unpriced_tokens: u64::MAX,
+        caps: None,
+    });
+    l.charge(&Usage {
+        input: 5,
+        ..Default::default()
+    });
+    assert_eq!(l.unpriced_tokens(), u64::MAX);
+}

@@ -228,7 +228,7 @@ impl Ledger {
     pub fn charge(&mut self, u: &Usage) {
         match u.cost_usd {
             Some(c) => self.usd += c,
-            None => self.unpriced_tokens += u.context_tokens(),
+            None => self.unpriced_tokens = self.unpriced_tokens.saturating_add(u.context_tokens()),
         }
         if u.cost_usd.is_none() && u.context_tokens() == 0 {
             return;

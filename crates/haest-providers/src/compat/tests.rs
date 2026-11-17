@@ -285,3 +285,20 @@ fn the_key_and_header_values_never_show_in_debug_output() {
         "{shown}"
     );
 }
+
+/// The usage counts are the server's: cache counts that add up past
+/// u64::MAX leave no full-rate input instead of overflowing.
+#[tokio::test]
+async fn cache_counts_past_u64_max_do_not_overflow_the_input_count() {
+    let (_, msg) = run(&[
+        chunk(json!({"content": "hi"})),
+        finished(json!({}), Some("stop")),
+        usage_chunk(json!({
+            "prompt_tokens": 100, "completion_tokens": 1,
+            "prompt_tokens_details": {"cached_tokens": u64::MAX, "cache_write_tokens": 1},
+        })),
+    ])
+    .await;
+    let u = &msg.usage;
+    assert_eq!((u.input, u.cache_read, u.cache_write), (0, u64::MAX, 1));
+}

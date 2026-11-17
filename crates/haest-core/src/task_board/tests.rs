@@ -108,3 +108,25 @@ fn completing_stamps_completed_at_from_the_board_clock() {
     let t = b.update("1", patch).unwrap().unwrap();
     assert_eq!((t.updated_at, t.completed_at), (42, Some(42)));
 }
+
+/// A saved id at u64::MAX (a hand-edited session file) restores without
+/// overflowing the count, and the board goes on making tasks.
+#[test]
+fn a_restored_id_at_u64_max_does_not_overflow_the_count() {
+    let b = TaskBoard::default();
+    b.restore(vec![Task {
+        id: u64::MAX.to_string(),
+        subject: "x".into(),
+        description: None,
+        active_form: None,
+        status: TaskStatus::Pending,
+        blocked_by: vec![],
+        blocks: vec![],
+        owner: None,
+        updated_at: 0,
+        completed_at: None,
+    }]);
+    b.create(new("y"));
+    b.create(new("z"));
+    assert_eq!(b.list().len(), 3);
+}

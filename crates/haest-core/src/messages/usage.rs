@@ -25,21 +25,26 @@ pub struct Usage {
 }
 
 impl Usage {
-    /// Add `u` to this sum. A cost is added when `u` has one, so the sum's
-    /// `cost_usd` stays `None` until some call reported a price.
+    /// Add `u` to this sum; a count stops at `u64::MAX`. A cost is added
+    /// when `u` has one, so the sum's `cost_usd` stays `None` until some call
+    /// reported a price.
     pub fn add(&mut self, u: &Usage) {
-        self.input += u.input;
-        self.output += u.output;
-        self.cache_read += u.cache_read;
-        self.cache_write += u.cache_write;
-        self.reasoning += u.reasoning;
+        self.input = self.input.saturating_add(u.input);
+        self.output = self.output.saturating_add(u.output);
+        self.cache_read = self.cache_read.saturating_add(u.cache_read);
+        self.cache_write = self.cache_write.saturating_add(u.cache_write);
+        self.reasoning = self.reasoning.saturating_add(u.reasoning);
         if let Some(c) = u.cost_usd {
             self.cost_usd = Some(self.cost_usd.unwrap_or(0.0) + c);
         }
     }
 
-    /// Tokens the last request actually put in the context window.
+    /// Tokens the last request actually put in the context window; at most
+    /// `u64::MAX`.
     pub fn context_tokens(&self) -> u64 {
-        self.input + self.cache_read + self.cache_write + self.output
+        (self.input)
+            .saturating_add(self.cache_read)
+            .saturating_add(self.cache_write)
+            .saturating_add(self.output)
     }
 }

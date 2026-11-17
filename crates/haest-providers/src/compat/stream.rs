@@ -144,7 +144,7 @@ fn apply_usage(u: &Value, msg: &mut AssistantMessage, st: &mut StreamState) {
     let cached = count(u.pointer("/prompt_tokens_details/cached_tokens"));
     let written = count(u.pointer("/prompt_tokens_details/cache_write_tokens"));
     let prompt = count(u.get("prompt_tokens"));
-    msg.usage.input = prompt.saturating_sub(cached + written);
+    msg.usage.input = prompt.saturating_sub(cached.saturating_add(written));
     msg.usage.cache_read = cached;
     msg.usage.cache_write = written;
     msg.usage.output = count(u.get("completion_tokens"));

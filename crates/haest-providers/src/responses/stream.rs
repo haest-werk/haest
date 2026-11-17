@@ -52,7 +52,7 @@ impl ResponsesFold {
         let cached = count(u.pointer("/input_tokens_details/cached_tokens"));
         let written = count(u.pointer("/input_tokens_details/cache_write_tokens"));
         let usage = &mut self.msg.usage;
-        usage.input = count(u.get("input_tokens")).saturating_sub(cached + written);
+        usage.input = count(u.get("input_tokens")).saturating_sub(cached.saturating_add(written));
         usage.cache_read = cached;
         usage.cache_write = written;
         usage.output = count(u.get("output_tokens"));

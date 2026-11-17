@@ -158,7 +158,7 @@ impl TaskBoard {
                 updated_at: self.clock.now_ms(),
                 completed_at: None,
             };
-            s.next += 1;
+            s.next = s.next.saturating_add(1);
             s.tasks.push(task.clone());
             task
         };
@@ -219,7 +219,7 @@ impl TaskBoard {
             .map(|t| t.id.parse::<u64>().unwrap_or(0))
             .max()
             .unwrap_or(0);
-        s.next = max + 1;
+        s.next = max.saturating_add(1);
         s.tasks = tasks;
     }
 

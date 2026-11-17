@@ -55,6 +55,13 @@ compiles as before.
   that logged one with `{:?}` logged the secret. Debug now shows
   `<redacted>` for the key and the token, and a header's name without its
   value.
+- Token counts and ids that come from outside were added without a check:
+  a session file's task id of 18446744073709551615 panicked the task board
+  on restore, and token counts near `u64::MAX` (a provider's usage, a
+  ledger snapshot, a durable run's `turn` record) panicked `Usage::add`,
+  `Usage::context_tokens`, the ledger, the turn guard and the Chat
+  Completions and Responses usage readers. Each count now stops at
+  `u64::MAX`.
 
 ### Behaviour changes
 

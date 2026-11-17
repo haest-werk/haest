@@ -221,3 +221,36 @@ fn canonical_json_ignores_key_order_at_every_depth() {
     canonical(&b, &mut cb);
     assert_eq!(ca, cb);
 }
+
+/// A durable run's `turn` record at u64::MAX (a hand-edited run store)
+/// resumes without overflowing a count: each stops at u64::MAX.
+#[test]
+fn counts_restored_at_u64_max_saturate() {
+    let mut guard = TurnGuard::new(Arc::new(TestHooks::default()), None, Remedies::default());
+    let call = crate::messages::ToolCall {
+        id: "a".into(),
+        name: "Echo".into(),
+        input: Default::default(),
+    };
+    let out = ToolOutput::text("x");
+    guard.restore(&crate::run::TurnState {
+        steps: u64::MAX,
+        repeats: vec![crate::run::RepeatCount {
+            key: format!("{:016x}", super::signature::signature(&call, &out)),
+            tool: "Echo".into(),
+            count: u64::MAX,
+        }],
+        request_tokens: u64::MAX,
+        ..Default::default()
+    });
+    guard.called(&Usage {
+        output: 1,
+        ..Default::default()
+    });
+    guard.answered(&call, &out);
+    let state = guard.state(&Usage::default());
+    assert_eq!(
+        (state.steps, state.request_tokens, state.repeats[0].count),
+        (u64::MAX, u64::MAX, u64::MAX)
+    );
+}

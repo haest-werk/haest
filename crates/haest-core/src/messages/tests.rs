@@ -60,3 +60,21 @@ fn usage_adds_cost_only_when_reported() {
     assert_eq!(u.cost_usd, Some(0.25));
     assert_eq!(u.context_tokens(), 5);
 }
+
+/// Token counts come from outside (a provider's usage, a session file): a
+/// sum or a total past u64::MAX stops there instead of overflowing.
+#[test]
+fn usage_sums_and_totals_saturate_at_u64_max() {
+    let max = Usage {
+        input: u64::MAX,
+        output: u64::MAX,
+        cache_read: u64::MAX,
+        cache_write: u64::MAX,
+        reasoning: u64::MAX,
+        cost_usd: None,
+    };
+    let mut sum = max.clone();
+    sum.add(&max);
+    assert_eq!(sum, max);
+    assert_eq!(max.context_tokens(), u64::MAX);
+}
