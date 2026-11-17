@@ -11,8 +11,6 @@
 //!
 //! The model is scripted, so nothing here calls a provider.
 
-use std::sync::Arc;
-
 use haest::{
     Agent, AgentDeps, AgentOptions, BoxError, JsonMap, ShutWorkspace, Tool, ToolContext, ToolError,
     ToolOutput, Tools, async_trait,
@@ -97,8 +95,8 @@ async fn main() -> Result<(), BoxError> {
     // (a person's, for the turn gate).
     let (to_child, child_stdin) = tokio::io::duplex(1 << 16);
     let (child_stdout, from_child) = tokio::io::duplex(1 << 16);
-    let attached = Stdio::new(child_stdin, child_stdout)
-        .attach(Arc::new(session), Grant::command(Origin::Human))?;
+    let attached =
+        Stdio::new(child_stdin, child_stdout).attach(session, Grant::command(Origin::Human))?;
 
     let mut parent = Parent {
         to_child,

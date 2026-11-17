@@ -13,12 +13,10 @@ use haest::BoxError;
 #[cfg(unix)]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), BoxError> {
-    use std::sync::Arc;
-
     use haest::{
         Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tools,
         core::testing::{ScriptedProvider, text_answer},
-        session::{Backend, Body, Hub, start},
+        session::{Body, Hub, start},
         transport::{Grant, Transport, UnixSocket, connect_session, running_sessions},
         wire::{Origin, Request},
     };
@@ -30,8 +28,7 @@ async fn main() -> Result<(), BoxError> {
 
     // The host: its session on a socket, input from it another program's.
     let dir = std::env::temp_dir().join(format!("haest-ex-{}", std::process::id()));
-    let backend: Arc<dyn Backend> = Arc::new(session);
-    let attached = UnixSocket::new(&dir).attach(backend.clone(), Grant::command(Origin::Agent))?;
+    let attached = UnixSocket::new(&dir).attach(session.clone(), Grant::command(Origin::Agent))?;
 
     // Another program: what runs here?
     for found in running_sessions(&dir).await {
@@ -69,7 +66,7 @@ async fn main() -> Result<(), BoxError> {
     }
 
     // The conversation ends: the transport ends, its files go.
-    backend.close().await;
+    session.close().await;
     attached.ended().await;
     assert!(running_sessions(&dir).await.is_empty());
     let _ = std::fs::remove_dir_all(&dir);

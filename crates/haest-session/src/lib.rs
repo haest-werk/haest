@@ -116,7 +116,7 @@ mod subscription;
 #[cfg(test)]
 mod tests;
 
-pub use backend::{Backend, Control, History, Input, Meta, SessionError};
+pub use backend::{Backend, BackendRef, Control, History, Input, Meta, SessionError};
 pub use body::{Body, Frame};
 pub use driven::{Driven, DrivenStatus};
 pub use handle::{Hold, PendingTurn, SessionHandle, start};

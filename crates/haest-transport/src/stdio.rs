@@ -4,11 +4,10 @@
 use std::{
     io::Read,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll, ready},
 };
 
-use haest_session::Backend;
+use haest_session::BackendRef;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     sync::mpsc,
@@ -29,8 +28,6 @@ use crate::{
 /// pair works the same (a test's in-memory pipes).
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::{ScriptedProvider, text_answer}};
 /// use haest_session::{Hub, start};
 /// use haest_transport::{Grant, Stdio, Transport};
@@ -38,7 +35,7 @@ use crate::{
 /// use tokio::io::{AsyncReadExt, AsyncWriteExt};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// let model = ScriptedProvider::new([text_answer("hi")]);
 /// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
 /// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
@@ -46,17 +43,18 @@ use crate::{
 /// // The parent's ends of the two pipes.
 /// let (mut to_child, child_in) = tokio::io::duplex(1 << 16);
 /// let (child_out, mut from_child) = tokio::io::duplex(1 << 16);
-/// let mut attached = Stdio::new(child_in, child_out).attach(Arc::new(session), Grant::command(Origin::Human)).unwrap();
+/// let attached = Stdio::new(child_in, child_out).attach(session, Grant::command(Origin::Human))?;
 ///
-/// to_child.write_all(b"{\"v\":1,\"id\":\"r1\",\"type\":\"turn\",\"text\":\"say hi\"}\n").await.unwrap();
+/// to_child.write_all(b"{\"v\":1,\"id\":\"r1\",\"type\":\"turn\",\"text\":\"say hi\"}\n").await?;
 /// drop(to_child); // the input ends; the turn it asked for still finishes
 /// attached.ended().await;
 ///
 /// let mut out = Vec::new();
-/// from_child.read_to_end(&mut out).await.unwrap();
-/// let lines = LineDecoder::new().push(&out).unwrap();
+/// from_child.read_to_end(&mut out).await?;
+/// let lines = LineDecoder::new().push(&out)?;
 /// assert!(lines[0].contains(r#""type":"hello""#));
-/// assert!(lines.last().unwrap().contains(r#""type":"reply","id":"r1","ok":true"#));
+/// assert!(lines[lines.len() - 1].contains(r#""type":"reply","id":"r1","ok":true"#));
+/// # Ok(())
 /// # }
 /// ```
 pub struct Stdio<R, W> {
@@ -171,9 +169,14 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    fn attach(self, backend: Arc<dyn Backend>, grant: Grant) -> Result<Attached, TransportError> {
+    fn attach(
+        self,
+        backend: impl Into<BackendRef>,
+        grant: Grant,
+    ) -> Result<Attached, TransportError> {
         let source = NdjsonSource::new(self.read);
         let sink = NdjsonSink::new(self.write);
+        let backend: BackendRef = backend.into();
         let task = tokio::spawn(serve(backend, grant, self.start, source, sink));
         Ok(Attached::new(task))
     }

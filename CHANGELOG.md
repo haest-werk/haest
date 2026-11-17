@@ -1098,6 +1098,9 @@ against it; the wire JSON is unchanged):
   matches a `Control` refuses one it does not know with a `_` arm.
 - `SessionHandle` and `Hold` implement `Debug` (the handle shows its `Meta`
   and whether the session still runs).
+- New `BackendRef`, the shared handle to a `Backend` (`plug_ref!`, as every
+  other plug point): built from the backend itself, an `Arc` of one, or an
+  `Arc<dyn Backend>`. Its `Debug` shows the stream's id.
 
 ### haest-transport (new)
 
@@ -1128,6 +1131,17 @@ against it; the wire JSON is unchanged):
   missed. A dropped link is dialed again after a full-jitter `Backoff`
   (500 ms doubling to 30 s); close 4401 or 4408 (`AUTH_CLOSE`), or a 401 or
   403 handshake, ends it with `TransportError::Auth`.
+
+Changed since the first cut on `main` (breaking for Rust code written
+against it; the wire JSON is unchanged):
+
+- `Transport::attach` and `serve` take `impl Into<BackendRef>`, so a host
+  hands over its session as it is:
+  `let backend: Arc<dyn Backend> = Arc::new(session.clone());
+  UnixSocket::new(dir).attach(backend, grant)` ->
+  `UnixSocket::new(dir).attach(session.clone(), grant)`. An `Arc` of any
+  backend, or an `Arc<dyn Backend>`, still goes in as it is. A transport
+  keeps one `BackendRef` and clones it per connection.
 
 ### haest-issues
 

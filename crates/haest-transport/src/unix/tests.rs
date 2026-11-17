@@ -5,12 +5,11 @@
 use std::{
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    sync::Arc,
     time::Duration,
 };
 
 use haest_core::testing::{text_answer, tool_answer};
-use haest_session::{Backend, Body, Hub, HubOptions, Input};
+use haest_session::{Body, Hub, HubOptions, Input};
 use haest_wire::{Access, Control, Level, Origin, Outbound, Request};
 use serde_json::json;
 
@@ -56,7 +55,7 @@ async fn the_dir_is_0700_the_socket_0600_and_the_discovery_file_says_where() {
     let dir = Dir::new("perms");
     let (s, _) = session(&answers(&[]), hub());
     let attached = UnixSocket::new(&dir.0)
-        .attach(Arc::new(s), Grant::watch(Origin::Agent))
+        .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
 
     let socket = dir.0.join("s1.sock");
@@ -85,7 +84,7 @@ async fn a_dir_that_was_open_is_made_private() {
     std::fs::set_permissions(&dir.0, std::fs::Permissions::from_mode(0o755)).unwrap();
     let (s, _) = session(&answers(&[]), hub());
     let _attached = UnixSocket::new(&dir.0)
-        .attach(Arc::new(s), Grant::watch(Origin::Agent))
+        .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
     assert_eq!(mode(&dir.0), 0o700);
 }
@@ -100,7 +99,7 @@ async fn a_stale_socket_from_a_crashed_run_is_replaced() {
 
     let (s, _) = session(&answers(&[]), hub());
     let _attached = UnixSocket::new(&dir.0)
-        .attach(Arc::new(s), Grant::watch(Origin::Agent))
+        .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
     let mut peer = connect_session(&dir.0, "s1").await.unwrap();
     let now = peer.call(Request::Snapshot, |_| {}).await.unwrap().unwrap();
@@ -110,8 +109,7 @@ async fn a_stale_socket_from_a_crashed_run_is_replaced() {
 #[tokio::test]
 async fn a_socket_a_running_session_serves_is_not_taken() {
     let dir = Dir::new("taken");
-    let (s, _) = session(&answers(&[]), hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&answers(&[]), hub());
     let _first = UnixSocket::new(&dir.0)
         .attach(backend.clone(), Grant::watch(Origin::Agent))
         .unwrap();
@@ -131,7 +129,7 @@ async fn running_lists_the_live_sessions_and_clears_what_a_crashed_run_left() {
     let dir = Dir::new("list");
     let (s, _) = session(&answers(&[]), Hub::new("live-1"));
     let _attached = UnixSocket::new(&dir.0)
-        .attach(Arc::new(s), Grant::command(Origin::Agent))
+        .attach(s, Grant::command(Origin::Agent))
         .unwrap();
     // A crashed run: its discovery file, a socket nobody answers on.
     let dead = dir.0.join("dead-1.sock");
@@ -223,7 +221,7 @@ async fn a_session_is_reached_by_its_id_or_a_prefix_only_it_has() {
         let (s, _) = session(&answers(&[]), Hub::new(sid));
         kept.push(
             UnixSocket::new(&dir.0)
-                .attach(Arc::new(s), Grant::watch(Origin::Agent))
+                .attach(s, Grant::watch(Origin::Agent))
                 .unwrap(),
         );
     }
@@ -247,8 +245,7 @@ async fn a_session_is_reached_by_its_id_or_a_prefix_only_it_has() {
 async fn a_watch_socket_shows_the_stream_and_refuses_to_drive() {
     let dir = Dir::new("watch");
     let model = answers(&["first", "second"]);
-    let (s, _) = session(&model, hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&model, hub());
     let _attached = UnixSocket::new(&dir.0)
         .attach(backend.clone(), Grant::watch(Origin::Agent))
         .unwrap();
@@ -277,7 +274,7 @@ async fn a_watch_socket_shows_the_stream_and_refuses_to_drive() {
     let last = seen.last().unwrap().seq;
     assert!(seen.iter().any(|f| matches!(&f.body, Body::Loop(haest_core::LoopEvent::Assistant { message }) if message.text() == "first")));
 
-    backend.submit(Input::human("two")).await.unwrap();
+    backend.submit(Input::human("two")).unwrap();
     let mut live = Vec::new();
     while let Some(frame) = peer.recv().await {
         let frame = frame.unwrap();
@@ -306,8 +303,7 @@ async fn a_command_socket_drives_the_conversation() {
         tool_answer(&[("c1", "Wait", json!({}))]),
         text_answer("never"),
     ]);
-    let (s, _) = session(&model, hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&model, hub());
     let _attached = UnixSocket::new(&dir.0)
         .attach(backend.clone(), Grant::command(Origin::Agent))
         .unwrap();
@@ -360,7 +356,7 @@ async fn a_late_watcher_whose_frames_the_ring_lost_gets_a_gap() {
     }
     let (s, _) = session(&answers(&[]), hub);
     let _attached = UnixSocket::new(&dir.0)
-        .attach(Arc::new(s), Grant::watch(Origin::Agent))
+        .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
 
     let mut peer = connect_session(&dir.0, "s1").await.unwrap();
@@ -380,8 +376,7 @@ async fn a_late_watcher_whose_frames_the_ring_lost_gets_a_gap() {
 #[tokio::test]
 async fn closing_the_conversation_ends_the_transport_and_removes_its_files() {
     let dir = Dir::new("close");
-    let (s, _) = session(&answers(&[]), hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&answers(&[]), hub());
     let attached = UnixSocket::new(&dir.0)
         .attach(backend.clone(), Grant::watch(Origin::Agent))
         .unwrap();

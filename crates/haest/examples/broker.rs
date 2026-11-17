@@ -14,14 +14,14 @@
 //!
 //! The model is scripted, so nothing here calls a provider.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use haest::{
     Agent, AgentDeps, AgentOptions, BoxError, ShutWorkspace, Tools,
     core::testing::{ScriptedProvider, text_answer},
     serde_json::{self, Value, json},
-    session::{Backend, Hub, Input, start},
+    session::{Hub, Input, start},
     transport::{Backoff, Broker, Grant, Transport},
     wire::Origin,
 };
@@ -88,7 +88,6 @@ async fn main() -> Result<(), BoxError> {
     let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let session = start(agent, Hub::new("example-link"));
-    let backend: Arc<dyn Backend> = Arc::new(session);
 
     // The broker: a WebSocket listener.
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -102,7 +101,7 @@ async fn main() -> Result<(), BoxError> {
     let attached = Broker::new(&url)
         .token(Some("example-token".into()))
         .backoff(quick)
-        .attach(backend.clone(), Grant::command(Origin::Agent))?;
+        .attach(session.clone(), Grant::command(Origin::Agent))?;
 
     // The first link: hello, the ack from the start, a turn.
     let mut side = accept(&listener).await?;
@@ -121,7 +120,7 @@ async fn main() -> Result<(), BoxError> {
     // its own; haest dials again, and the ack says what the broker holds,
     // so what came after is sent and nothing twice.
     drop(side);
-    backend.turn(Input::human("and the deploy?")).await?;
+    session.turn(Input::human("and the deploy?")).await?;
     let mut side = accept(&listener).await?;
     assert_eq!(side.frame().await?["type"], "hello");
     side.send(json!({"v": 1, "id": "ack", "type": "events", "after": held, "follow": true}))
@@ -147,7 +146,7 @@ async fn main() -> Result<(), BoxError> {
     );
 
     // The conversation ends, and with it the link.
-    backend.close().await;
+    session.close().await;
     while side.next().await?.is_some() {}
     eprintln!("ended: {:?}", attached.ended().await);
     Ok(())

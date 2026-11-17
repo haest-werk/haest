@@ -44,8 +44,6 @@
 //! in-memory ones, a watch-only peer that asks for a turn.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::ScriptedProvider};
 //! use haest_session::{Hub, start};
 //! use haest_transport::{Grant, LineSink, LineSource, Start, TransportError, serve};
@@ -69,18 +67,21 @@
 //! }
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() {
+//! # async fn main() -> Result<(), haest_core::BoxError> {
 //! let model = ScriptedProvider::new([]);
 //! let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
 //! let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 //!
 //! let asks = Lines(vec![r#"{"v":1,"id":"r1","type":"turn","text":"hi"}"#.into()]);
 //! let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-//! serve(Arc::new(session), Grant::watch(Origin::Agent), Start::default(), asks, Out(tx)).await;
+//! serve(session.clone(), Grant::watch(Origin::Agent), Start::default(), asks, Out(tx)).await;
 //!
-//! assert!(rx.recv().await.unwrap().contains(r#""type":"hello""#));
-//! let reply = rx.recv().await.unwrap();
+//! let hello = rx.recv().await.ok_or("no hello")?;
+//! assert!(hello.contains(r#""type":"hello""#));
+//! let reply = rx.recv().await.ok_or("no reply")?;
 //! assert!(reply.contains(r#""id":"r1","ok":false"#), "{reply}");
+//! session.close().await;
+//! # Ok(())
 //! # }
 //! ```
 
@@ -88,6 +89,7 @@
 
 use std::path::PathBuf;
 
+use haest_session::BackendRef;
 use haest_wire::{Access, LineTooLong, Origin};
 use tokio::task::JoinHandle;
 
@@ -156,12 +158,16 @@ pub trait Transport {
     /// Serve `backend` under `grant` until the transport ends, on a task of
     /// its own (in the current tokio runtime).
     ///
+    /// `backend` is any [`Backend`](haest_session::Backend), handed over as
+    /// it is (`session.clone()`), an `Arc` of one, or a [`BackendRef`]: a
+    /// transport keeps one handle and clones it per connection.
+    ///
     /// # Errors
     ///
     /// [`TransportError`] when it could not start (a socket it cannot bind).
     fn attach(
         self,
-        backend: std::sync::Arc<dyn haest_session::Backend>,
+        backend: impl Into<BackendRef>,
         grant: Grant,
     ) -> Result<Attached, TransportError>;
 }

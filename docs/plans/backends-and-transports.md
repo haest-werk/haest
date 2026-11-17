@@ -129,8 +129,9 @@ its own (`attachTransports`' rule). The terminal renderer becomes one more subsc
 - `Backend` (the `AgentBackend` seam): `meta`, `submit(input)`, `control(verb)`,
   `subscribe(after_seq)` (a stream of envelopes, with gap frames), `snapshot`, `history`,
   `close`; `turn(input)` = submit and wait for that turn's `turn_end`. `SessionHandle` is the
-  local implementation. Transports take `Arc<dyn Backend>`, so a transport can also expose a
-  backend that is itself remote (the agent-host relay) with no new code.
+  local implementation. Transports take any `impl Into<BackendRef>` (the handle itself, or
+  any other backend), so a transport can also expose a backend that is itself remote (the
+  agent-host relay) with no new code.
 - `Driven`: what the driver needs from the thing it drives. The driver owns the `Agent` on its
   own task, runs one turn at a time, steers input that arrives mid-turn (`AgentControl::steer`),
   queues the rest as the next turn through the gate, and applies model/effort/clear between

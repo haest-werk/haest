@@ -1,11 +1,11 @@
 //! One connection, end to end over in-memory pipes: a peer writes request
 //! lines and reads frame lines, as a parent process or a socket client does.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use haest_core::testing::{ScriptedProvider, text_answer, tool_answer};
 use haest_mods::{ApprovalAnswer, ApprovalRequest, Prompter};
-use haest_session::{Backend, Hub, HubOptions, SessionPrompter};
+use haest_session::{BackendRef, Hub, HubOptions, SessionPrompter};
 use haest_wire::{Level, Origin};
 use serde_json::{Value, json};
 use tokio::{
@@ -28,7 +28,8 @@ struct Peer {
 }
 
 impl Peer {
-    fn attach(backend: Arc<dyn Backend>, grant: Grant, start: Start) -> Self {
+    fn attach(backend: impl Into<BackendRef>, grant: Grant, start: Start) -> Self {
+        let backend: BackendRef = backend.into();
         let (ours, theirs) = tokio::io::duplex(1 << 20);
         let (read, write) = tokio::io::split(theirs);
         let (out, from) = tokio::io::duplex(1 << 20);
@@ -49,7 +50,7 @@ impl Peer {
     }
 
     /// A command peer that follows the stream from the start, as a parent on stdio does.
-    fn parent(backend: Arc<dyn Backend>) -> Self {
+    fn parent(backend: impl Into<BackendRef>) -> Self {
         let start = Start {
             follow_from: Some(0),
             token: None,
@@ -134,8 +135,7 @@ fn position(frames: &[Value], pred: impl Fn(&Value) -> bool) -> usize {
 
 #[tokio::test]
 async fn hello_comes_first_and_says_what_the_connection_may_do() {
-    let (s, _) = session(&answers(&[]), hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&answers(&[]), hub());
 
     let mut watcher = Peer::attach(
         backend.clone(),
@@ -159,7 +159,7 @@ async fn hello_comes_first_and_says_what_the_connection_may_do() {
 async fn two_turns_reply_at_their_end_after_every_frame_of_the_turn() {
     let model = answers(&["one", "two"]);
     let (s, _) = session(&model, hub());
-    let mut peer = Peer::parent(Arc::new(s));
+    let mut peer = Peer::parent(s);
 
     for (id, answer) in [("t1", "one"), ("t2", "two")] {
         peer.send(turn(id, "go")).await;
@@ -197,7 +197,7 @@ async fn a_turns_reply_never_overtakes_its_frames_on_many_threads() {
     let texts: Vec<String> = (0..60).map(|n| format!("answer {n}")).collect();
     let model = ScriptedProvider::new(texts.iter().map(|t| text_answer(t)));
     let (s, _) = session(&model, hub());
-    let mut peer = Peer::parent(Arc::new(s));
+    let mut peer = Peer::parent(s);
 
     for n in 0..texts.len() {
         let id = format!("t{n}");
@@ -214,7 +214,7 @@ async fn an_interrupt_stops_the_running_tool_and_its_turn() {
         text_answer("never"),
     ]);
     let (s, _) = session(&model, hub());
-    let mut peer = Peer::parent(Arc::new(s));
+    let mut peer = Peer::parent(s);
 
     peer.send(turn("t1", "wait")).await;
     peer.until(|f| ty(f) == "assistant").await;
@@ -234,7 +234,7 @@ async fn an_interrupt_stops_the_running_tool_and_its_turn() {
 #[tokio::test]
 async fn a_request_with_another_version_is_refused_with_its_id() {
     let (s, _) = session(&answers(&["unused"]), hub());
-    let mut peer = Peer::parent(Arc::new(s));
+    let mut peer = Peer::parent(s);
 
     peer.send(json!({"v": 2, "id": "r9", "type": "turn", "text": "hi", "shape": "new"}))
         .await;
@@ -260,7 +260,7 @@ async fn a_request_with_another_version_is_refused_with_its_id() {
 async fn a_watch_connection_may_read_but_not_drive() {
     let model = answers(&["unused"]);
     let (s, _) = session(&model, hub());
-    let mut peer = Peer::attach(Arc::new(s), Grant::watch(Origin::Agent), Start::default());
+    let mut peer = Peer::attach(s, Grant::watch(Origin::Agent), Start::default());
     peer.next().await.unwrap();
 
     let drives = [
@@ -289,8 +289,7 @@ async fn a_watch_connection_may_read_but_not_drive() {
 #[tokio::test]
 async fn events_replays_then_replies_then_follows() {
     let model = answers(&["before", "after"]);
-    let (s, _) = session(&model, hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&model, hub());
     backend
         .turn(haest_session::Input::human("first"))
         .await
@@ -323,7 +322,6 @@ async fn events_replays_then_replies_then_follows() {
     // Then live.
     backend
         .submit(haest_session::Input::human("second"))
-        .await
         .unwrap();
     let live = peer.until(|f| ty(f) == "turn_end").await;
     assert!(
@@ -354,7 +352,7 @@ async fn a_peer_later_than_the_ring_gets_a_gap_first() {
         hub.notice(Level::Info, format!("line {n}"));
     }
     let (s, _) = session(&answers(&[]), hub);
-    let mut peer = Peer::attach(Arc::new(s), Grant::watch(Origin::Agent), Start::default());
+    let mut peer = Peer::attach(s, Grant::watch(Origin::Agent), Start::default());
     peer.next().await.unwrap();
 
     peer.send(json!({"v": 1, "id": "e1", "type": "events", "after": 2}))
@@ -381,7 +379,7 @@ async fn a_peer_that_does_not_read_falls_behind_and_the_conversation_does_not_wa
         token: None,
     };
     let served = tokio::spawn(serve(
-        Arc::new(s),
+        s,
         Grant::watch(Origin::Agent),
         start,
         NdjsonSource::new(read),
@@ -419,7 +417,7 @@ async fn a_peer_that_does_not_read_falls_behind_and_the_conversation_does_not_wa
 #[tokio::test]
 async fn snapshot_and_history_say_where_the_conversation_is() {
     let (s, _) = session(&answers(&["hi there"]), hub());
-    let mut peer = Peer::parent(Arc::new(s));
+    let mut peer = Peer::parent(s);
     peer.send(turn("t1", "hello")).await;
     peer.reply("t1").await;
 
@@ -441,7 +439,7 @@ async fn snapshot_and_history_say_where_the_conversation_is() {
 #[tokio::test]
 async fn a_change_replies_after_the_status_that_shows_it() {
     let (s, _) = session(&answers(&[]), hub());
-    let mut peer = Peer::parent(Arc::new(s));
+    let mut peer = Peer::parent(s);
 
     peer.send(
         json!({"v": 1, "id": "m", "type": "control", "verb": "set_effort", "effort": "high"}),
@@ -476,8 +474,7 @@ async fn a_change_replies_after_the_status_that_shows_it() {
 
 #[tokio::test]
 async fn close_replies_then_ends_the_connection_and_the_conversation() {
-    let (s, _) = session(&answers(&[]), hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&answers(&[]), hub());
     let mut peer = Peer::parent(backend.clone());
 
     peer.send(control("x", "close")).await;
@@ -496,7 +493,7 @@ async fn when_the_input_ends_a_running_turn_still_finishes_and_replies() {
         text_answer("done"),
     ]);
     let (s, go) = session(&model, hub());
-    let mut peer = Peer::parent(Arc::new(s));
+    let mut peer = Peer::parent(s);
 
     peer.send(turn("t1", "wait")).await;
     peer.until(|f| ty(f) == "assistant").await;
@@ -516,7 +513,7 @@ async fn an_approval_ask_is_answered_by_a_command_peer() {
     let hub = hub();
     let prompter = SessionPrompter::new(hub.clone());
     let (s, _) = session(&answers(&[]), hub);
-    let mut peer = Peer::parent(Arc::new(s));
+    let mut peer = Peer::parent(s);
 
     let req = ApprovalRequest {
         tool_name: "Bash".into(),
@@ -549,8 +546,7 @@ async fn an_approval_ask_is_answered_by_a_command_peer() {
 
 #[tokio::test]
 async fn a_connection_that_follows_nothing_ends_when_the_conversation_does() {
-    let (s, _) = session(&answers(&[]), hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&answers(&[]), hub());
     let mut peer = Peer::attach(
         backend.clone(),
         Grant::watch(Origin::Agent),

@@ -6,7 +6,7 @@
 use std::{fmt, future::Future, sync::Arc, time::Duration};
 
 use haest_core::{Effort, TurnOutcome, error::report};
-use haest_session::{Backend, Body, Control, Frame, Input, SessionError, Subscription};
+use haest_session::{BackendRef, Body, Control, Frame, Input, SessionError, Subscription};
 use haest_wire::{self as wire, Access, Envelope, Outbound, Request, decode};
 use serde_json::{Value, json};
 use tokio::{
@@ -86,13 +86,17 @@ enum Out {
 ///
 /// The conversation never waits on the peer: a peer that does not read falls
 /// behind and gets a `gap` frame, as any subscriber does.
-pub async fn serve<S: LineSource, K: LineSink>(
-    backend: Arc<dyn Backend>,
+///
+/// `backend` is any [`Backend`](haest_session::Backend) (a `session.clone()`),
+/// an `Arc` of one, or a [`BackendRef`].
+pub async fn serve(
+    backend: impl Into<BackendRef>,
     grant: Grant,
     start: Start,
-    mut source: S,
-    sink: K,
+    mut source: impl LineSource,
+    sink: impl LineSink,
 ) -> Ended {
+    let backend: BackendRef = backend.into();
     let (tx, rx) = mpsc::channel(OUT_BUFFER);
     let mut writer = tokio::spawn(write(sink, rx, backend.meta().sid));
     // The conversation's end, whatever the peer asked for.
@@ -152,7 +156,7 @@ pub async fn serve<S: LineSource, K: LineSink>(
 
 /// One connection's state while it is served.
 struct Link {
-    backend: Arc<dyn Backend>,
+    backend: BackendRef,
     grant: Grant,
     tx: mpsc::Sender<Out>,
     /// The frames it asked for (`events`): one subscription at a time.
@@ -265,7 +269,7 @@ impl Link {
     /// after the turn's last frame.
     fn spawn<F, Fut>(&mut self, id: String, after_frames: bool, run: F)
     where
-        F: FnOnce(Arc<dyn Backend>) -> Fut,
+        F: FnOnce(BackendRef) -> Fut,
         Fut: Future<Output = Result<Option<Value>, SessionError>> + Send + 'static,
     {
         let tx = self.tx.clone();

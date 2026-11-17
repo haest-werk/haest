@@ -11,7 +11,7 @@ use std::{
 
 use futures::{SinkExt, StreamExt};
 use haest_core::testing::{text_answer, tool_answer};
-use haest_session::{Backend, Hub, HubOptions, Input};
+use haest_session::{Hub, HubOptions, Input};
 use haest_wire::{Classify, FrameKind, Level, Origin};
 use serde_json::{Value, json};
 use tokio::{net::TcpListener, sync::mpsc};
@@ -174,8 +174,7 @@ fn stream(frames: &[Value]) -> Vec<&Value> {
 #[tokio::test]
 async fn the_hello_carries_the_token_and_nothing_else_goes_before_the_ack() {
     let mut broker = TestBroker::start(None).await;
-    let (s, _) = session(&answers(&["before"]), hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&answers(&["before"]), hub());
     backend.turn(Input::human("first")).await.unwrap();
     let link = Broker::new(&broker.url)
         .token(Some("t0k".into()))
@@ -218,8 +217,7 @@ async fn a_cut_link_resumes_from_the_brokers_ack_and_loses_nothing() {
     let hub = hub();
     // Every frame, as published: what the broker must end up with.
     let mut everything = hub.subscribe(0);
-    let (s, go) = session(&model, hub);
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, go) = session(&model, hub);
     let _attached = Broker::new(&broker.url)
         .backoff(FAST)
         .attach(backend.clone(), Grant::watch(Origin::Agent))
@@ -296,7 +294,7 @@ async fn a_gap_when_the_ring_no_longer_holds_what_the_broker_missed() {
     let (s, _) = session(&answers(&[]), hub);
     let _attached = Broker::new(&broker.url)
         .backoff(FAST)
-        .attach(Arc::new(s), Grant::watch(Origin::Agent))
+        .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
 
     let mut side = broker.link().await;
@@ -315,7 +313,7 @@ async fn a_refused_token_stops_the_dialing() {
     let attached = Broker::new(&broker.url)
         .token(Some("wrong".into()))
         .backoff(FAST)
-        .attach(Arc::new(s), Grant::watch(Origin::Agent))
+        .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
     let mut side = broker.link().await;
     side.next().await.unwrap();
@@ -335,7 +333,7 @@ async fn a_refused_token_stops_the_dialing() {
     let (s, _) = session(&answers(&[]), hub());
     let attached = Broker::new(&broker.url)
         .backoff(FAST)
-        .attach(Arc::new(s), Grant::watch(Origin::Agent))
+        .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
     let ended = tokio::time::timeout(Duration::from_secs(5), attached.ended())
         .await
@@ -353,7 +351,7 @@ async fn a_link_the_broker_closes_is_dialed_again() {
     let (s, _) = session(&answers(&[]), hub());
     let _attached = Broker::new(&broker.url)
         .backoff(FAST)
-        .attach(Arc::new(s), Grant::watch(Origin::Agent))
+        .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
     let mut side = broker.link().await;
     side.next().await.unwrap();
@@ -374,7 +372,7 @@ async fn the_brokers_commands_obey_the_access_the_host_gave() {
         let (s, _) = session(&model, hub());
         let _attached = Broker::new(&broker.url)
             .backoff(FAST)
-            .attach(Arc::new(s), grant)
+            .attach(s, grant)
             .unwrap();
         let mut side = broker.link().await;
         side.next().await.unwrap();
@@ -389,8 +387,7 @@ async fn the_brokers_commands_obey_the_access_the_host_gave() {
 #[tokio::test]
 async fn the_link_ends_with_the_conversation_and_only_a_ws_url_is_dialed() {
     let mut broker = TestBroker::start(None).await;
-    let (s, _) = session(&answers(&[]), hub());
-    let backend: Arc<dyn Backend> = Arc::new(s);
+    let (backend, _) = session(&answers(&[]), hub());
     let attached = Broker::new(&broker.url)
         .backoff(FAST)
         .attach(backend.clone(), Grant::watch(Origin::Agent))
@@ -403,8 +400,7 @@ async fn the_link_ends_with_the_conversation_and_only_a_ws_url_is_dialed() {
     assert!(matches!(ended, Ended::Closed), "{ended:?}");
 
     let (s, _) = session(&answers(&[]), hub());
-    let wrong = Broker::new("https://broker.example/agents")
-        .attach(Arc::new(s), Grant::watch(Origin::Agent));
+    let wrong = Broker::new("https://broker.example/agents").attach(s, Grant::watch(Origin::Agent));
     assert!(matches!(wrong, Err(TransportError::Url(_))), "{wrong:?}");
 }
 

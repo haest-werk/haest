@@ -13,11 +13,10 @@ use std::{
     io::Write,
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
-    sync::Arc,
     time::Duration,
 };
 
-use haest_session::{Backend, Body, Frame, Subscription};
+use haest_session::{BackendRef, Body, Frame, Subscription};
 use haest_wire::{Access, Outbound};
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -46,33 +45,30 @@ pub type UnixPeer = Peer<NdjsonSource<OwnedReadHalf>, NdjsonSink<OwnedWriteHalf>
 /// served under the same [`Grant`]; none is followed until it asks (`events`).
 ///
 /// ```
-/// # #[cfg(unix)] {
-/// use std::sync::Arc;
-///
 /// use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::ScriptedProvider};
 /// use haest_session::{Hub, start};
 /// use haest_transport::{Grant, Transport, UnixSocket, connect_session, running_sessions};
 /// use haest_wire::{Origin, Request};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// # let dir = std::env::temp_dir().join(format!("hx-doc-{}", std::process::id()));
 /// let model = ScriptedProvider::new([]);
 /// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
 /// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 ///
-/// let attached = UnixSocket::new(&dir).attach(Arc::new(session), Grant::watch(Origin::Agent)).unwrap();
+/// let attached = UnixSocket::new(&dir).attach(session, Grant::watch(Origin::Agent))?;
 ///
 /// // Another program finds it and asks.
 /// let found = running_sessions(&dir).await;
 /// assert_eq!(found[0].discovery.sid, "s1");
-/// let mut peer = connect_session(&dir, "s1").await.unwrap();
-/// let now = peer.call(Request::Snapshot, |_| {}).await.unwrap().unwrap();
+/// let mut peer = connect_session(&dir, "s1").await?;
+/// let now = peer.call(Request::Snapshot, |_| {}).await?.ok_or("a snapshot has a result")?;
 /// assert_eq!(now["model"], "scripted:m");
 ///
 /// attached.detach();
 /// # let _ = std::fs::remove_dir_all(&dir);
-/// # }
+/// # Ok(())
 /// # }
 /// ```
 #[derive(Debug, Clone)]
@@ -105,7 +101,12 @@ pub struct SocketDiscovery {
 }
 
 impl Transport for UnixSocket {
-    fn attach(self, backend: Arc<dyn Backend>, grant: Grant) -> Result<Attached, TransportError> {
+    fn attach(
+        self,
+        backend: impl Into<BackendRef>,
+        grant: Grant,
+    ) -> Result<Attached, TransportError> {
+        let backend: BackendRef = backend.into();
         let meta = backend.meta();
         private_dir(&self.dir)?;
         let socket = self.dir.join(format!("{}.sock", meta.sid));
@@ -136,7 +137,7 @@ impl Transport for UnixSocket {
 async fn accept(
     listener: UnixListener,
     files: Files,
-    backend: Arc<dyn Backend>,
+    backend: BackendRef,
     grant: Grant,
     closed: Subscription,
 ) -> Ended {

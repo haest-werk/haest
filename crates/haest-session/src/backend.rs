@@ -101,9 +101,9 @@ pub enum SessionError {
 }
 
 /// One handle to a live conversation: watch it, send it turns, change it,
-/// stop it. Transports take an `Arc<dyn Backend>`, so they serve a local
-/// session ([`SessionHandle`](crate::SessionHandle)) and any other backend
-/// alike.
+/// stop it. Transports take any `impl Into<`[`BackendRef`]`>`, so they serve
+/// a local session ([`SessionHandle`](crate::SessionHandle), handed over as
+/// `session.clone()`) and any other backend alike.
 ///
 /// [`SessionHandle`](crate::SessionHandle)'s docs drive one.
 #[async_trait]
@@ -165,4 +165,13 @@ pub trait Backend: Send + Sync {
     /// End the conversation: the running turn is stopped, then everything it
     /// started is stopped and its session saved. Returns once that is done.
     async fn close(&self);
+}
+
+haest_core::plug_ref! {
+    /// A [`Backend`], shared: what a transport holds while it serves one,
+    /// a clone per connection. Built from the backend itself (a
+    /// [`SessionHandle`](crate::SessionHandle) clone), or from an `Arc` of
+    /// one the host keeps too. Its `Debug` shows the stream's id.
+    pub struct BackendRef(dyn Backend);
+    debug(backend, f) { f.debug_tuple("BackendRef").field(&backend.meta().sid).finish() }
 }

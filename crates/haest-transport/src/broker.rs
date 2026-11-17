@@ -31,7 +31,7 @@ use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
-use haest_session::Backend;
+use haest_session::BackendRef;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     Connector, MaybeTlsStream, WebSocketStream, connect_async_tls_with_config,
@@ -60,16 +60,17 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// output never shows the token.
 ///
 /// ```no_run
-/// # async fn link(backend: std::sync::Arc<dyn haest_session::Backend>) {
+/// # async fn link(session: impl haest_session::Backend + 'static) -> Result<(), haest_transport::TransportError> {
 /// use haest_transport::{Broker, Grant, Transport};
 /// use haest_wire::Origin;
 ///
 /// // The token comes from the host's keys; it rides in the hello.
 /// let token = std::env::var("BROKER_TOKEN").ok();
 /// let link = Broker::new("wss://broker.example/agents").token(token);
-/// let attached = link.attach(backend, Grant::watch(Origin::Agent)).unwrap();
+/// let attached = link.attach(session, Grant::watch(Origin::Agent))?;
 /// // Ends when the conversation does, or when the broker refuses the token.
 /// let why = attached.ended().await;
+/// # Ok(())
 /// # }
 /// ```
 #[derive(Clone)]
@@ -163,17 +164,25 @@ fn jitter() -> f64 {
 }
 
 impl Transport for Broker {
-    fn attach(self, backend: Arc<dyn Backend>, grant: Grant) -> Result<Attached, TransportError> {
+    fn attach(
+        self,
+        backend: impl Into<BackendRef>,
+        grant: Grant,
+    ) -> Result<Attached, TransportError> {
         if !(self.url.starts_with("ws://") || self.url.starts_with("wss://")) {
             return Err(TransportError::Url(self.url));
         }
-        Ok(Attached::new(tokio::spawn(link(self, backend, grant))))
+        Ok(Attached::new(tokio::spawn(link(
+            self,
+            backend.into(),
+            grant,
+        ))))
     }
 }
 
 /// Dial, serve, dial again, until the conversation ends or the broker
 /// refuses the token.
-async fn link(broker: Broker, backend: Arc<dyn Backend>, grant: Grant) -> Ended {
+async fn link(broker: Broker, backend: BackendRef, grant: Grant) -> Ended {
     let closed = until_closed(backend.subscribe(u64::MAX));
     tokio::pin!(closed);
     let mut attempt = 0u32;

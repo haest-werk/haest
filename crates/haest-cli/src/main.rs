@@ -40,7 +40,7 @@ use haest::{
     config::{BrokerAccess, ControlSocket, Loaded, Loader, env_var},
     core::{error::report, session::sessions_dir},
     runtime::{BuildError, SessionError, Ui, list_sessions},
-    session::{Backend, Hub, HubOptions, SessionPrompter, start},
+    session::{Hub, HubOptions, SessionPrompter, start},
     settings::Settings,
     transport::{Attached, Broker, Ended, Grant, Stdio, Transport},
     wire::Origin,
@@ -138,8 +138,7 @@ async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode
 /// terminal would drive it, until stdin closes (once what it asked has
 /// finished) or it sends `close`.
 async fn stdio_mode(session: &Session) -> ExitCode {
-    let backend: Arc<dyn Backend> = Arc::new(session.clone());
-    let attached = match Stdio::process().attach(backend, Grant::command(Origin::Human)) {
+    let attached = match Stdio::process().attach(session.clone(), Grant::command(Origin::Human)) {
         Ok(attached) => attached,
         Err(e) => return fail(1, report(&e)),
     };
@@ -165,9 +164,8 @@ fn control_socket(
     };
     #[cfg(unix)]
     {
-        let backend: Arc<dyn Backend> = Arc::new(session.clone());
-        let sid = backend.meta().sid;
-        match UnixSocket::new(&dir).attach(backend, grant) {
+        let sid = &session.meta().sid;
+        match UnixSocket::new(&dir).attach(session.clone(), grant) {
             Ok(attached) => {
                 let id = &sid[..8.min(sid.len())];
                 ui.info(&format!(
@@ -216,8 +214,7 @@ fn broker_link(
     // Said without its query: the URL is not where a secret goes, but one
     // may be there.
     let shown = url.split('?').next().unwrap_or_default().to_string();
-    let backend: Arc<dyn Backend> = Arc::new(session.clone());
-    match Broker::new(url).token(token).attach(backend, grant) {
+    match Broker::new(url).token(token).attach(session.clone(), grant) {
         Ok(attached) => {
             ui.info(&format!("Broker link: {shown} ({})", access.as_str()));
             let ui = ui.clone();
