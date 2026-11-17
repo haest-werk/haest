@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use async_trait::async_trait;
 use haest_core::{
     LoopEvent, SharedDeps, ToolRef, Tools,
-    ledger::{Ledger, LedgerHooks, LedgerSnapshot},
+    ledger::Ledger,
     provider::{Effort, ProviderRef},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
 };
@@ -45,12 +45,6 @@ impl Tool for TaskCreate {
     async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
         Ok(ToolOutput::text("ok"))
     }
-}
-
-pub(super) struct Quiet;
-impl LedgerHooks for Quiet {
-    fn persist(&self, _: &LedgerSnapshot) {}
-    fn warn(&self, _: &str) {}
 }
 
 /// What reached main, and through which door of its inbox.
@@ -110,7 +104,9 @@ type Adjust = dyn Fn(SharedDeps) -> SharedDeps + Send + Sync;
 
 /// The kinds a host with kinds has: `explore` (the default) and `general`.
 pub(super) fn explore_or_general() -> SubagentTypes {
-    SubagentTypes::new(["explore", "general"], "explore", "explore only looks").unwrap()
+    SubagentTypes::new("explore")
+        .with_kinds(["explore", "general"])
+        .with_description("explore only looks")
 }
 
 impl Inbox for FakeParent {

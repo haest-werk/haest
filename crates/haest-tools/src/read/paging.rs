@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 
-use haest_core::tool::{JsonMap, ToolContext, ToolError, ToolOutput, opt_bool, opt_num};
+use haest_core::tool::{JsonMap, ToolContext, ToolError, ToolOutput, opt_bool, opt_count};
 use serde_json::json;
 
 const DEFAULT_LINE_LIMIT: usize = 2000;
@@ -77,11 +77,9 @@ fn continuation(remaining: i128, next: usize, cut_by_budget: bool, allow_large: 
 
 /// A whole-number input of at least 1 (`offset`, `limit`), or `default`.
 fn at_least_one(input: &JsonMap, key: &str, default: usize) -> Result<usize, ToolError> {
-    Ok(match opt_num(input, key)? {
-        // `as` saturates: a huge offset is past the end, a negative one is 1.
-        Some(n) => (n.floor() as usize).max(1),
-        None => default.max(1),
-    })
+    // A huge offset is past the end.
+    let n = opt_count(input, key)?.map_or(default, |n| usize::try_from(n).unwrap_or(usize::MAX));
+    Ok(n.max(1))
 }
 
 /// `text` as Read returns a text file: numbered lines, paged by the call's

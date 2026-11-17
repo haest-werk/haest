@@ -31,6 +31,21 @@ fn input_helpers_accept_what_models_send() {
 }
 
 #[test]
+fn a_count_is_whole_held_at_the_top_and_never_negative() {
+    let i = map(json!({"n": "20.9", "huge": 1e30, "zero": 0, "neg": -1, "e": ""}));
+    assert_eq!(opt_count(&i, "n").unwrap(), Some(20));
+    assert_eq!(opt_count(&i, "huge").unwrap(), Some(u64::MAX));
+    assert_eq!(opt_count(&i, "zero").unwrap(), Some(0));
+    assert_eq!(opt_count(&i, "e").unwrap(), None);
+    assert_eq!(opt_count(&i, "missing").unwrap(), None);
+    assert!(matches!(opt_count(&i, "neg"), Err(ToolError::Input(_))));
+    assert_eq!(req_num(&i, "n").unwrap(), 20.9);
+    for absent in ["e", "missing"] {
+        assert!(matches!(req_num(&i, absent), Err(ToolError::Input(_))));
+    }
+}
+
+#[test]
 fn a_string_is_spelled_as_itself_and_anything_else_as_its_json() {
     assert_eq!(spelled(&json!("a b.png")), "a b.png");
     for v in [

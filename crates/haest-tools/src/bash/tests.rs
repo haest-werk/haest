@@ -104,10 +104,7 @@ async fn the_timeout_is_clamped_and_the_default_is_the_hosts() {
 
 #[tokio::test]
 async fn long_output_keeps_both_ends_and_says_it_was_cut() {
-    let ws = answering(|_| ExecResult {
-        stdout: format!("HEAD{}TAIL", "x".repeat(100_000)),
-        ..Default::default()
-    });
+    let ws = answering(|_| ExecResult::ok(format!("HEAD{}TAIL", "x".repeat(100_000))));
     let r = bash(&ws, json!({"command": "big"})).await.unwrap();
     assert!(r.content.starts_with("HEAD") && r.content.ends_with("TAIL"));
     assert!(r.content.len() < 40_000);
@@ -124,10 +121,7 @@ fn without_a_job_hub_there_is_no_background_switch() {
 
 #[tokio::test]
 async fn without_a_job_hub_run_in_background_runs_the_command_now() {
-    let ws = answering(|_| ExecResult {
-        stdout: "now\n".into(),
-        ..Default::default()
-    });
+    let ws = answering(|_| ExecResult::ok("now\n"));
     let r = bash(&ws, json!({"command": "x", "run_in_background": true}))
         .await
         .unwrap();

@@ -8,14 +8,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_core::tool::ToolContext;
+use haest_core::{tool::ToolContext, workspace::ExecResult};
 use haest_workspace::RealWorkspace;
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
 use super::{
     Job, JobError, JobEvents, JobHub, JobOutput, JobStatus, MAX_FINISHED, MAX_JOBS, NewJob,
 };
-use crate::testkit::{TestWorkspace, stdout};
+use crate::testkit::TestWorkspace;
 
 #[derive(Default)]
 pub(crate) struct Recorder {
@@ -194,7 +194,7 @@ async fn at_most_max_jobs_run_at_once() {
 async fn a_workspace_that_cannot_stream_still_runs_a_job_and_hands_its_output_over_at_the_end() {
     let (tx, mut notices) = unbounded_channel();
     let hub = JobHub::new(tx);
-    let ws = TestWorkspace::answering([("/p/.keep", "")], |_| stdout("built\n"));
+    let ws = TestWorkspace::answering([("/p/.keep", "")], |_| ExecResult::ok("built\n"));
     let job = hub
         .start(
             NewJob::new("make").with_description("build"),

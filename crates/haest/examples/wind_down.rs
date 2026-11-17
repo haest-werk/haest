@@ -18,7 +18,7 @@ use haest::{
     ShutWorkspace, Usage,
     core::{
         caps::{ConversationCap, ConversationCaps},
-        ledger::{Ledger, LedgerHooks, LedgerSnapshot},
+        ledger::{Ledger, LedgerHooks},
         remedy::{Limit, Remedies},
         testing::{ScriptedProvider, text_answer, tool_answer},
         threshold::Thresholds,
@@ -60,9 +60,9 @@ impl AgentDirectory for Helpers {
     }
 }
 
-struct Quiet;
-impl LedgerHooks for Quiet {
-    fn persist(&self, _: &LedgerSnapshot) {}
+/// The ledger's warnings, on the console; its snapshots are not kept.
+struct Told;
+impl LedgerHooks for Told {
     fn warn(&self, text: &str) {
         println!("(for the human) {text}");
     }
@@ -119,7 +119,7 @@ async fn run() -> Result<(), BoxError> {
         max_usd: 1.0,
         max_unpriced_tokens: 0,
     };
-    let ledger = Ledger::new(budget, Quiet).with_remedies(remedies.clone());
+    let ledger = Ledger::new(budget, Told).with_remedies(remedies.clone());
     let shared = SharedDeps::new(provider.resolver(), "/work", ShutWorkspace);
     let deps = AgentDeps::new(shared, tools, "You lead a small team.")
         .with_ledger(ledger)

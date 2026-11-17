@@ -151,6 +151,9 @@ pub struct DirEntry {
 ///     async fn remove(&self, _: &Path) -> io::Result<()> {
 ///         Err(refused())
 ///     }
+///     async fn remove_all(&self, _: &Path) -> io::Result<()> {
+///         Err(refused())
+///     }
 ///     async fn rename(&self, _: &Path, _: &Path) -> io::Result<()> {
 ///         Err(refused())
 ///     }
@@ -291,25 +294,19 @@ pub trait Fs: Send + Sync {
     /// anything in it ([`Fs::remove_all`] deletes those).
     async fn remove(&self, path: &Path) -> io::Result<()>;
     /// Delete `path` and, for a directory, everything in it. A link is
-    /// deleted, never followed. The default walks the tree with
-    /// [`Fs::read_link`], [`Fs::read_dir`] and [`Fs::remove`]; a store that
-    /// can do it in one step should.
+    /// deleted, never followed.
+    ///
+    /// Required: deleting a whole tree is where a store's own rules belong
+    /// (a cap on how much one call removes, one step instead of many). A
+    /// store with nothing of its own to say calls [`remove_tree`], which
+    /// walks the tree with [`Fs::read_link`], [`Fs::read_dir`] and
+    /// [`Fs::remove`].
     ///
     /// # Errors
     ///
-    /// `NotFound` when nothing is there, and the first [`Fs::remove`] that
-    /// fails.
-    async fn remove_all(&self, path: &Path) -> io::Result<()> {
-        // A link goes as it is: walking into it would empty what it names.
-        if self.read_link(path).await.is_err()
-            && let Ok(entries) = self.read_dir(path).await
-        {
-            for entry in entries {
-                self.remove_all(&path.join(&entry.name)).await?;
-            }
-        }
-        self.remove(path).await
-    }
+    /// `NotFound` when nothing is there, and an error when any part of the
+    /// tree could not be removed.
+    async fn remove_all(&self, path: &Path) -> io::Result<()>;
     /// Move a file or a whole directory tree from `from` to `to`, replacing a
     /// file at `to`. The parent of `to` must exist.
     ///
@@ -339,7 +336,7 @@ mod ops;
 mod paths;
 mod shut;
 pub use mem::MemFs;
-pub use ops::{ensure_dir, looks_binary, read_text_if_present};
+pub use ops::{ensure_dir, looks_binary, read_text_if_present, remove_tree};
 pub(crate) use ops::{not_found, read_lossy};
 pub use paths::{normalize, resolve_path};
 pub use shut::ShutFs;

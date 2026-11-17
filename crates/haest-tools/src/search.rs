@@ -16,7 +16,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use haest_core::{
     tool::{
-        JsonMap, TRUNCATE_CHARS, Tool, ToolContext, ToolError, ToolOutput, opt_bool, opt_num,
+        JsonMap, TRUNCATE_CHARS, Tool, ToolContext, ToolError, ToolOutput, opt_bool, opt_count,
         opt_str, req_str, truncate_middle,
     },
     workspace::{EXIT_NOT_FOUND, ExecOptions},
@@ -64,11 +64,11 @@ fn rg_args(input: &JsonMap) -> Result<Vec<String>, ToolError> {
             args.extend([flag.to_string(), v.to_string()]);
         }
     }
-    if let Some(context) = opt_num(input, "context")?
+    if let Some(context) = opt_count(input, "context")?
         && mode == "content"
-        && context != 0.0
+        && context != 0
     {
-        args.extend(["-C".to_string(), (context.floor() as i64).to_string()]);
+        args.extend(["-C".to_string(), context.to_string()]);
     }
     Ok(args)
 }
@@ -161,7 +161,7 @@ impl Tool for GrepTool {
         // Passed as given: rg resolves a relative target against cwd and then prints
         // cwd-relative paths, which is what the model should see.
         let target = opt_str(&input, "path")?.unwrap_or(".");
-        let head = opt_num(&input, "head_limit")?;
+        let head = opt_count(&input, "head_limit")?;
         let mut argv = vec!["rg".to_string()];
         argv.extend(rg_args(&input)?);
         argv.extend(["-e".into(), pattern.into(), target_arg(target)]);
@@ -210,14 +210,15 @@ fn unreadable_note(stderr: &str) -> String {
 }
 
 /// Long lines clipped, `head_limit` applied, the whole thing bounded.
-fn format_matches(stdout: &str, head: Option<f64>) -> String {
+fn format_matches(stdout: &str, head: Option<u64>) -> String {
     let all: Vec<_> = stdout
         .split('\n')
         .filter(|l| !l.is_empty())
         .map(|l| clip_line(l, GREP_MAX_LINE_CHARS))
         .collect();
-    let keep = match head {
-        Some(h) if h > 0.0 => (h.floor() as usize).min(all.len()),
+    // No limit, or 0, is every line.
+    let keep = match head.and_then(|h| usize::try_from(h).ok()) {
+        Some(h) if h > 0 => h.min(all.len()),
         _ => all.len(),
     };
     let more = if keep < all.len() {

@@ -31,7 +31,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub use args::{input, opt_bool, opt_num, opt_str, req_str, spelled};
+pub use args::{input, opt_bool, opt_count, opt_num, opt_str, req_num, req_str, spelled};
 pub use context::ToolContext;
 pub use error::ToolError;
 pub use list::Tools;
@@ -185,7 +185,7 @@ impl ToolServices for NoServices {}
 ///
 /// ```
 /// use async_trait::async_trait;
-/// use haest_core::{JsonMap, ShutWorkspace, Tool, ToolContext, ToolError, ToolOutput, opt_num, tool};
+/// use haest_core::{JsonMap, ShutWorkspace, Tool, ToolContext, ToolError, ToolOutput, req_num, tool};
 /// use serde_json::{Value, json};
 ///
 /// /// Adds two numbers.
@@ -213,9 +213,7 @@ impl ToolServices for NoServices {}
 ///         true // it changes nothing, so calls may run in parallel
 ///     }
 ///     async fn execute(&self, input: JsonMap, _ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-///         let missing = |key: &str| ToolError::Input(format!("\"{key}\" is required"));
-///         let a = opt_num(&input, "a")?.ok_or_else(|| missing("a"))?;
-///         let b = opt_num(&input, "b")?.ok_or_else(|| missing("b"))?;
+///         let (a, b) = (req_num(&input, "a")?, req_num(&input, "b")?);
 ///         Ok(ToolOutput::text((a + b).to_string()))
 ///     }
 /// }

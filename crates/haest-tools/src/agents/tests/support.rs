@@ -8,12 +8,13 @@ use std::{
 };
 
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, LoopEvent, Message, SharedDeps, caps::ConversationCaps,
-    ledger::Ledger,
+    Agent, AgentDeps, AgentOptions, LoopEvent, Message, SharedDeps,
+    caps::ConversationCaps,
+    ledger::{Ledger, NoLedgerHooks},
 };
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
-pub(super) use super::fake::{FakeParent, ForMain, Heard, Host, Quiet, explore_or_general};
+pub(super) use super::fake::{FakeParent, ForMain, Heard, Host, explore_or_general};
 pub(super) use super::script::{CALL_USD, Script, call, now, say, spawns};
 use super::{
     super::{
@@ -79,7 +80,7 @@ impl Rig {
         let parent = Arc::new(FakeParent {
             provider,
             ws: TestWorkspace::with_files([("/p/a.txt", "a")]),
-            ledger: Ledger::new(ConversationCaps::default(), Quiet),
+            ledger: Ledger::new(ConversationCaps::default(), NoLedgerHooks),
             tx,
             activity: Mutex::default(),
             events: Mutex::default(),

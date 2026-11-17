@@ -51,18 +51,12 @@ pub use watch::WindDownWatch;
 ///     Agent, AgentDeps, AgentOptions, JsonMap, LoopEvent, SharedDeps, ShutWorkspace, Tool,
 ///     ToolContext, ToolError, ToolOutput, Tools, Usage,
 ///     caps::ConversationCaps,
-///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
+///     ledger::{Ledger, NoLedgerHooks},
 ///     testing::{ScriptedProvider, text_answer, tool_answer},
 ///     threshold::Thresholds,
 ///     wind_down::WindDown,
 /// };
 /// use serde_json::{Value, json};
-///
-/// struct Quiet;
-/// impl LedgerHooks for Quiet {
-///     fn persist(&self, _: &LedgerSnapshot) {}
-///     fn warn(&self, _: &str) {}
-/// }
 ///
 /// /// Starts new work, unless the run is winding down.
 /// struct Fan;
@@ -85,7 +79,7 @@ pub use watch::WindDownWatch;
 /// asks.usage = Usage { cost_usd: Some(0.85), ..Usage::default() };
 /// let provider = ScriptedProvider::new([asks, text_answer("Here is what I have.")]);
 /// let budget = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
-/// let ledger = Ledger::new(budget, Quiet);
+/// let ledger = Ledger::new(budget, NoLedgerHooks);
 /// let shared = SharedDeps::new(provider.resolver(), "/", ShutWorkspace);
 /// let deps = AgentDeps::new(shared, Tools::new().with(Fan), "")
 ///     .with_ledger(ledger.clone())

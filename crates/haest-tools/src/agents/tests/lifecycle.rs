@@ -5,9 +5,13 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use haest_core::{AgentHooks, Message, SharedDeps, caps::ConversationCaps, ledger::Ledger};
+use haest_core::{
+    AgentHooks, Message, SharedDeps,
+    caps::ConversationCaps,
+    ledger::{Ledger, NoLedgerHooks},
+};
 
-use super::{script::Roles, support::Quiet};
+use super::script::Roles;
 use crate::agents::{
     AgentError, Member, MemberCaps, MemberEnd, MemberRun, MemberStart, SubagentParent,
 };
@@ -90,7 +94,7 @@ impl Lifecycle {
             return Err(AgentError::Refused(format!("no {word} here")));
         }
         let deps = self.own_deps.then(|| {
-            let ledger = Ledger::new(ConversationCaps::default(), Quiet);
+            let ledger = Ledger::new(ConversationCaps::default(), NoLedgerHooks);
             *self.kept.ledger.lock().unwrap() = Some(ledger.clone());
             parent
                 .deps()

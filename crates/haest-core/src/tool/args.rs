@@ -106,6 +106,45 @@ pub fn opt_num(input: &JsonMap, key: &str) -> Result<Option<f64>, ToolError> {
         .ok_or_else(|| ToolError::Input(format!("\"{key}\" must be a number")))
 }
 
+/// A required number, also as a numeric string ([`opt_num`]).
+///
+/// # Errors
+///
+/// [`ToolError::Input`] when `key` is missing, empty or not a number.
+///
+/// ```
+/// use haest_core::{opt_count, req_num, tool};
+///
+/// # fn main() -> Result<(), haest_core::BoxError> {
+/// let input = tool::input(serde_json::json!({"a": "2.5", "limit": 20.9}))?;
+/// assert_eq!(req_num(&input, "a")?, 2.5);
+/// assert!(req_num(&input, "b").is_err());
+/// assert_eq!(opt_count(&input, "limit")?, Some(20)); // a count is whole
+/// assert_eq!(opt_count(&input, "offset")?.unwrap_or(1), 1);
+/// # Ok(())
+/// # }
+/// ```
+pub fn req_num(input: &JsonMap, key: &str) -> Result<f64, ToolError> {
+    opt_num(input, key)?
+        .ok_or_else(|| ToolError::Input(format!("\"{key}\" is required and must be a number")))
+}
+
+/// An optional count (a limit, an offset, a timeout in ms): a number as
+/// [`opt_num`] reads it, rounded down to a whole one, and a huge one held at
+/// `u64::MAX`. Missing, `null` and `""` are None.
+///
+/// # Errors
+///
+/// [`ToolError::Input`] when `key` holds something other than a number, or
+/// a negative one: the model is told, instead of the count being read as 0.
+pub fn opt_count(input: &JsonMap, key: &str) -> Result<Option<u64>, ToolError> {
+    match opt_num(input, key)? {
+        Some(n) if n < 0.0 => Err(ToolError::Input(format!("\"{key}\" must be 0 or more"))),
+        // `as` saturates: a count past u64::MAX is u64::MAX.
+        n => Ok(n.map(|n| n.floor() as u64)),
+    }
+}
+
 /// A flag: `true` and `false`, also as strings in any case (`"True"`).
 /// Missing, `null` and `""` are false.
 ///

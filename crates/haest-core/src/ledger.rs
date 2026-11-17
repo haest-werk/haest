@@ -62,6 +62,8 @@ pub struct LedgerSnapshot {
 }
 
 /// Where a [`Ledger`] reports: snapshots to persist, warnings for the human.
+/// Both default to doing nothing; [`NoLedgerHooks`] is a ledger that
+/// reports nowhere.
 ///
 /// Called after the ledger has done its sums and let go of them: a hook may
 /// read the ledger it hears from (its [`summary`](Ledger::summary), say).
@@ -70,14 +72,21 @@ pub trait LedgerHooks: Send + Sync {
     /// that billed something and after every cap change, one call at a time
     /// and never an older snapshot after a newer one, so the last one saved
     /// is the ledger's state. It may read the ledger, but must not charge it
-    /// or set its cap.
-    fn persist(&self, snapshot: &LedgerSnapshot);
-    /// The human must hear this (once per crossing).
+    /// or set its cap. Default: not saved.
+    fn persist(&self, _snapshot: &LedgerSnapshot) {}
+    /// The human must hear this (once per crossing). Default: dropped.
     ///
     /// A crossing is the spend reaching a warning threshold, 80% of a cap by
     /// default; setting a new cap re-arms it.
-    fn warn(&self, text: &str);
+    fn warn(&self, _text: &str) {}
 }
+
+/// Ledger hooks that save nothing and tell no one: a ledger a host only
+/// reads (`Ledger::new(caps, NoLedgerHooks)`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct NoLedgerHooks;
+
+impl LedgerHooks for NoLedgerHooks {}
 
 crate::plug_ref! {
     /// [`LedgerHooks`], shared: what a [`Ledger`] reports to. Built from the
@@ -237,19 +246,13 @@ impl Ledger {
     /// ```
     /// use haest_core::{
     ///     caps::ConversationCaps,
-    ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
+    ///     ledger::{Ledger, NoLedgerHooks},
     ///     threshold::{LedgerSite, Thresholds},
     /// };
     ///
-    /// struct Quiet;
-    /// impl LedgerHooks for Quiet {
-    ///     fn persist(&self, _: &LedgerSnapshot) {}
-    ///     fn warn(&self, _: &str) {}
-    /// }
-    ///
     /// // A ledger that never warns, only stops at its cap.
     /// let caps = ConversationCaps { max_usd: 10.0, max_unpriced_tokens: 0 };
-    /// let ledger = Ledger::new(caps, Quiet).with_thresholds(Thresholds::<LedgerSite>::none());
+    /// let ledger = Ledger::new(caps, NoLedgerHooks).with_thresholds(Thresholds::<LedgerSite>::none());
     /// ```
     #[must_use]
     pub fn with_thresholds(self, thresholds: Thresholds<LedgerSite>) -> Self {

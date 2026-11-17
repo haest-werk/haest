@@ -17,7 +17,7 @@ use haest_core::{
 use serde_json::{Value, json};
 
 use super::GrepTool;
-use crate::testkit::{TestWorkspace, ctx, input, stdout};
+use crate::testkit::{TestWorkspace, ctx, input};
 
 mod glob;
 mod sandbox;
@@ -143,7 +143,7 @@ fn rg_answering(answer: ExecResult) -> Arc<TestWorkspace> {
 
 #[tokio::test]
 async fn grep_builds_one_argv_with_the_pattern_behind_e() {
-    let ws = rg_answering(stdout("a.ts\n"));
+    let ws = rg_answering(ExecResult::ok("a.ts\n"));
     let call = json!({"pattern": "x", "path": "src", "output_mode": "content", "case_insensitive": true,
         "glob": "*.ts", "context": 2.7, "multiline": "true"});
     GrepTool
@@ -270,7 +270,7 @@ async fn the_real_rg_reports_what_it_found_beside_an_unreadable_file() {
 #[tokio::test]
 async fn head_limit_keeps_the_first_lines_and_long_lines_are_clipped() {
     let long = "y".repeat(2000);
-    let ws = rg_answering(stdout(&format!("a:1:x\nb:2:x\n\nc:3:{long}\n")));
+    let ws = rg_answering(ExecResult::ok(format!("a:1:x\nb:2:x\n\nc:3:{long}\n")));
     let r = GrepTool
         .execute(
             input(json!({"pattern": "x", "head_limit": 2})),

@@ -77,25 +77,18 @@ impl ShellCommand for Stamp {
     }
     async fn run(&self, call: ShellCall) -> ExecResult {
         let Some(out) = call.args.first() else {
-            return ExecResult {
-                stderr: "usage: stamp <file>\n".into(),
-                exit_code: 2,
-                ..Default::default()
-            };
+            return ExecResult::failed("usage: stamp <file>\n", 2);
         };
         let text = call.stdin_text().unwrap_or_default().to_uppercase();
         let path = call.cwd.join(out);
         if let Err(e) = call.fs.write(&path, text.as_bytes()).await {
-            return ExecResult {
-                stderr: format!("stamp: {e}\n"),
-                exit_code: 1,
-                ..Default::default()
-            };
+            return ExecResult::failed(format!("stamp: {e}\n"), 1);
         }
-        ExecResult {
-            stdout: format!("stamped {} bytes to {}\n", text.len(), path.display()),
-            ..Default::default()
-        }
+        ExecResult::ok(format!(
+            "stamped {} bytes to {}\n",
+            text.len(),
+            path.display()
+        ))
     }
 }
 

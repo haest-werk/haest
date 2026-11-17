@@ -60,21 +60,29 @@ fn agent(dir: &Arc<Recording>, opts: AgentToolOptions) -> ToolRef {
 fn kinds() -> AgentToolOptions {
     AgentToolOptions {
         types: Some(
-            SubagentTypes::new(["explore", "general"], "explore", "explore only reads").unwrap(),
+            SubagentTypes::new("explore")
+                .with_kinds(["explore", "general"])
+                .with_description("explore only reads"),
         ),
         model_description: Some("one of: a:x, b:y".into()),
         ..Default::default()
     }
 }
 
+/// An Agent call that names no kind gets the default, so the default is
+/// always a kind the model may name: never refused in front of the model.
 #[test]
-fn kinds_whose_default_is_not_one_of_them_are_refused_naming_both() {
-    let err = SubagentTypes::new(["explore"], "general", "x").unwrap_err();
-    let said = "the default subagent type \"general\" is not one of: explore";
-    assert_eq!(err.to_string(), said);
-    let none = SubagentTypes::new(Vec::<String>::new(), "explore", "x").unwrap_err();
-    let said = "the default subagent type \"explore\" is not one of: (none)";
-    assert_eq!(none.to_string(), said);
+fn the_default_kind_is_always_one_of_the_kinds() {
+    let left_out = SubagentTypes::new("general").with_kinds(["explore"]);
+    assert_eq!(left_out.names(), ["general", "explore"]);
+    let none = SubagentTypes::new("explore").with_kinds(Vec::<String>::new());
+    assert_eq!(none.names(), ["explore"]);
+    let listed = SubagentTypes::new("general").with_kinds(["explore", "general", "explore"]);
+    assert_eq!(
+        listed.names(),
+        ["explore", "general"],
+        "in order, once each"
+    );
 }
 
 #[tokio::test]

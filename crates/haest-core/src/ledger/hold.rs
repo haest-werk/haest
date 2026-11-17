@@ -66,18 +66,12 @@ impl Ledger {
     /// use haest_core::{
     ///     Usage,
     ///     caps::ConversationCaps,
-    ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot, NotAvailable},
+    ///     ledger::{Ledger, NoLedgerHooks, NotAvailable},
     /// };
-    ///
-    /// struct Quiet;
-    /// impl LedgerHooks for Quiet {
-    ///     fn persist(&self, _: &LedgerSnapshot) {}
-    ///     fn warn(&self, _: &str) {}
-    /// }
     ///
     /// # fn main() -> Result<(), haest_core::ledger::NotAvailable> {
     /// let caps = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
-    /// let ledger = Ledger::new(caps, Quiet);
+    /// let ledger = Ledger::new(caps, NoLedgerHooks);
     /// let a = ledger.reserve(0.6)?;
     /// // A second $0.60 does not fit: $0.40 is left.
     /// assert!(matches!(
@@ -131,24 +125,14 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        caps::ConversationCaps,
-        ledger::{LedgerHooks, LedgerSnapshot},
-        messages::Usage,
-    };
-
-    struct Quiet;
-    impl LedgerHooks for Quiet {
-        fn persist(&self, _: &LedgerSnapshot) {}
-        fn warn(&self, _: &str) {}
-    }
+    use crate::{caps::ConversationCaps, ledger::NoLedgerHooks, messages::Usage};
 
     fn ledger(max_usd: f64) -> Ledger {
         let caps = ConversationCaps {
             max_usd,
             max_unpriced_tokens: 0,
         };
-        Ledger::new(caps, Quiet)
+        Ledger::new(caps, NoLedgerHooks)
     }
 
     fn spend(l: &Ledger, usd: f64) {

@@ -225,7 +225,8 @@ pub use prelude::*;
 /// implementing one ([`Fs`], [`Provider`], [`ModelFacts`], [`AgentHooks`],
 /// [`Workspace`]) needs no other haest import: a provider builds its stream
 /// with [`answer_stream`], and a tool gets its argument helpers ([`req_str`],
-/// [`opt_str`], [`opt_num`], [`opt_bool`], [`truncate_middle`]). What it
+/// [`opt_str`], [`req_num`], [`opt_num`], [`opt_count`], [`opt_bool`],
+/// [`truncate_middle`]). What it
 /// names of other crates (serde_json's `Value`, tokio-util's
 /// `CancellationToken`) comes from those crates; the `haest` facade's
 /// prelude has both.
@@ -252,7 +253,7 @@ pub mod prelude {
     pub use crate::tool::{
         InnerCallEvent, JsonMap, NoServices, OnResume, Tool, ToolContext, ToolError, ToolOutput,
         ToolOverride, ToolRef, ToolServices, ToolServicesRef, ToolSource, ToolSourceRef, Tools,
-        opt_bool, opt_num, opt_str, req_str, truncate_middle,
+        opt_bool, opt_count, opt_num, opt_str, req_num, req_str, truncate_middle,
     };
     pub use crate::workspace::{
         ChangeSet, ChangeSetRef, ExecOptions, ExecResult, OutputChunks, ShutWorkspace, Workspace,

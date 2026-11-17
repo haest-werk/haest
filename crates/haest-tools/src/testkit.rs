@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use haest_core::{
     fs::{DirEntry, Fs, FsRef, FsStat, MemFs},
     tool::{JsonMap, ToolContext},
-    workspace::{ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode},
+    workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode},
 };
 use serde_json::Value;
 
@@ -45,10 +45,7 @@ impl TestWorkspace {
     pub(crate) fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
         files: impl IntoIterator<Item = (P, D)>,
     ) -> Arc<Self> {
-        Self::answering(files, |_| ExecResult {
-            exit_code: 127,
-            ..Default::default()
-        })
+        Self::answering(files, |_| ExecResult::failed("", EXIT_NOT_FOUND))
     }
 
     pub(crate) fn answering<P: AsRef<Path>, D: AsRef<[u8]>>(
@@ -114,14 +111,6 @@ pub(crate) fn shut_ctx() -> ToolContext {
 
 pub(crate) fn input(v: Value) -> JsonMap {
     v.as_object().cloned().expect("a JSON object")
-}
-
-/// An exit-0 result with this stdout.
-pub(crate) fn stdout(text: &str) -> ExecResult {
-    ExecResult {
-        stdout: text.to_string(),
-        ..Default::default()
-    }
 }
 
 /// Files whose stat claims `size` bytes, with whole reads counted: what a tool

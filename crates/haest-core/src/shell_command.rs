@@ -141,7 +141,7 @@ impl ShellCall {
 ///             Some(stdin) => stdin.into_owned(),
 ///             None => call.args.join(" "),
 ///         };
-///         ExecResult { stdout: text.to_uppercase(), ..Default::default() }
+///         ExecResult::ok(text.to_uppercase())
 ///     }
 /// }
 ///

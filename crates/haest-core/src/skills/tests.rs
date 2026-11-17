@@ -155,6 +155,22 @@ async fn inline_skills_keep_the_first_of_a_name_and_load_their_body() {
     assert_eq!(missing.kind(), io::ErrorKind::NotFound);
 }
 
+/// A list already merged is one list: collected or converted, it is the
+/// set `merged` makes of it.
+#[test]
+fn one_list_of_inline_skills_is_the_merged_set_of_it() {
+    let list = || {
+        vec![
+            inline("standup", "personal", "MINE"),
+            inline("board", "built in", "BOARD"),
+            inline("standup", "built in", "THEIRS"),
+        ]
+    };
+    let merged = InlineSkills::merged([list()]);
+    assert_eq!(InlineSkills::from(list()), merged);
+    assert_eq!(list().into_iter().collect::<InlineSkills>(), merged);
+}
+
 #[tokio::test]
 async fn disk_skills_offer_what_the_model_may_invoke_and_load_like_before() {
     let fs = fs_with(&[

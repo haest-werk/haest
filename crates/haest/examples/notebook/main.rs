@@ -128,12 +128,11 @@ pub(crate) fn run_tools(
 pub(crate) fn agent_options() -> AgentToolOptions {
     AgentToolOptions {
         types: Some(
-            SubagentTypes::new(
-                ["explore", "general"],
-                "explore",
-                "explore: only reads and searches (the cheap, safe choice for finding things). general: your tools, file changes included (staged like yours). Default explore.",
-            )
-            .expect("explore is one of the kinds"),
+            SubagentTypes::new("explore")
+                .with_kinds(["explore", "general"])
+                .with_description(
+                    "explore: only reads and searches (the cheap, safe choice for finding things). general: your tools, file changes included (staged like yours). Default explore.",
+                ),
         ),
         model_description: Some(format!(
             "The model to run it on (optional; defaults to yours): {MODEL}"

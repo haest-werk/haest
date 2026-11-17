@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use haest_core::{
     tool::{
-        JsonMap, TRUNCATE_CHARS, Tool, ToolContext, ToolError, ToolOutput, opt_bool, opt_num,
+        JsonMap, TRUNCATE_CHARS, Tool, ToolContext, ToolError, ToolOutput, opt_bool, opt_count,
         opt_str, req_str, truncate_middle,
     },
     workspace::ExecOptions,
@@ -137,11 +137,8 @@ impl BashTool {
 
     /// The call's timeout: its own (in ms) or the default, always within 1s..600s.
     fn timeout(&self, input: &JsonMap) -> Result<Duration, ToolError> {
-        let asked = match opt_num(input, "timeout")? {
-            // `as` saturates: a negative or huge number lands on a bound below.
-            Some(ms) => Duration::from_millis(ms.floor() as u64),
-            None => self.default_timeout,
-        };
+        let asked =
+            opt_count(input, "timeout")?.map_or(self.default_timeout, Duration::from_millis);
         Ok(asked.clamp(MIN_TIMEOUT, MAX_TIMEOUT))
     }
 }

@@ -96,7 +96,8 @@ async fn ensure_dir_makes_the_dir_and_refuses_a_file_in_its_place() {
 }
 
 /// Only the required methods, over a [`MemFs`]: what a host's own store
-/// gets from the defaults of `create_dir_all` and `remove_all`.
+/// gets from the default `create_dir_all`, and from [`remove_tree`] as its
+/// `remove_all`.
 struct Minimal(MemFs);
 
 #[async_trait::async_trait]
@@ -122,6 +123,9 @@ impl Fs for Minimal {
     async fn remove(&self, p: &Path) -> io::Result<()> {
         self.0.remove(p).await
     }
+    async fn remove_all(&self, p: &Path) -> io::Result<()> {
+        remove_tree(self, p).await
+    }
     async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
         self.0.rename(a, b).await
     }
@@ -141,7 +145,7 @@ async fn the_default_create_dir_all_makes_every_parent_and_takes_one_already_the
 }
 
 #[tokio::test]
-async fn the_default_remove_all_deletes_a_whole_tree_and_remove_does_not() {
+async fn remove_tree_deletes_a_whole_tree_and_remove_does_not() {
     let fs = Minimal(MemFs::with_files([
         ("/p/a/b/x", "1"),
         ("/p/a/y", "2"),

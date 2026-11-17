@@ -83,16 +83,10 @@ impl Workspace for MemWorkspace {
         self.fs.clone().into()
     }
     async fn shell(&self, _: &str, _: ExecOptions) -> ExecResult {
-        ExecResult {
-            exit_code: EXIT_NOT_FOUND,
-            ..Default::default()
-        }
+        ExecResult::failed("", EXIT_NOT_FOUND)
     }
     async fn run(&self, _: &[String], _: ExecOptions) -> ExecResult {
-        ExecResult {
-            exit_code: EXIT_NOT_FOUND,
-            ..Default::default()
-        }
+        ExecResult::failed("", EXIT_NOT_FOUND)
     }
     fn prompt_note(&self) -> String {
         String::new()

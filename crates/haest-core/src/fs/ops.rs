@@ -1,5 +1,5 @@
-//! What a tool or a host does over any [`Fs`]: make a directory, read a file
-//! that may not be there, tell binary from text.
+//! What a tool or a host does over any [`Fs`]: make a directory, delete a
+//! tree, read a file that may not be there, tell binary from text.
 
 use std::{io, path::Path};
 
@@ -22,6 +22,25 @@ pub async fn ensure_dir(fs: &dyn Fs, path: &Path) -> io::Result<()> {
         )),
         Err(_) => fs.create_dir_all(path).await,
     }
+}
+
+/// Delete `path` and everything under it one entry at a time: what an
+/// [`Fs::remove_all`] with no rules of its own does. A link is removed as
+/// it is, never walked into (that would empty what it names).
+///
+/// # Errors
+///
+/// `NotFound` when nothing is there, and the first [`Fs::remove`] that
+/// fails.
+pub async fn remove_tree(fs: &dyn Fs, path: &Path) -> io::Result<()> {
+    if fs.read_link(path).await.is_err()
+        && let Ok(entries) = fs.read_dir(path).await
+    {
+        for entry in entries {
+            Box::pin(remove_tree(fs, &path.join(&entry.name))).await?;
+        }
+    }
+    fs.remove(path).await
 }
 
 /// A file a host may or may not have (a config file, `.mcp.json`): its text,

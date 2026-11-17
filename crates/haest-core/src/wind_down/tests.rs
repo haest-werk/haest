@@ -17,7 +17,7 @@ use crate::{
     caps::{ConversationCaps, TurnCaps},
     events::LoopEvent,
     guard::TurnGuard,
-    ledger::{Ledger, LedgerHooks, LedgerSnapshot},
+    ledger::{Ledger, NoLedgerHooks},
     messages::{AssistantMessage, Message, Usage},
     remedy::{Limit, Remedies},
     testing::{ScriptedProvider, text_answer},
@@ -25,19 +25,13 @@ use crate::{
     tool::{ToolError, ToolOutput, ToolRef},
 };
 
-struct Quiet;
-impl LedgerHooks for Quiet {
-    fn persist(&self, _: &LedgerSnapshot) {}
-    fn warn(&self, _: &str) {}
-}
-
 /// A conversation budget of `usd`.
 fn ledger(usd: f64) -> Ledger {
     let caps = ConversationCaps {
         max_usd: usd,
         max_unpriced_tokens: 0,
     };
-    Ledger::new(caps, Quiet)
+    Ledger::new(caps, NoLedgerHooks)
 }
 
 /// "Spawn": starts new work unless the turn is winding down, then refuses

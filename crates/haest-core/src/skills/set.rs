@@ -302,6 +302,20 @@ impl InlineSkills {
     }
 }
 
+/// One list: one per name, the first of a name wins, listed by name.
+impl FromIterator<InlineSkill> for InlineSkills {
+    fn from_iter<I: IntoIterator<Item = InlineSkill>>(skills: I) -> Self {
+        Self::merged([skills.into_iter().collect()])
+    }
+}
+
+/// One list, as [`FromIterator`] reads it.
+impl From<Vec<InlineSkill>> for InlineSkills {
+    fn from(skills: Vec<InlineSkill>) -> Self {
+        Self::merged([skills])
+    }
+}
+
 #[async_trait]
 impl SkillSet for InlineSkills {
     fn offered(&self) -> Vec<SkillCard> {

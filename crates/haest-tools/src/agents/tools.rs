@@ -26,7 +26,7 @@ impl AgentTool {
         let Some(types) = &self.opts.types else {
             return Ok(None);
         };
-        let kind = opt_str(input, "subagent_type")?.unwrap_or(types.default());
+        let kind = opt_str(input, "subagent_type")?.unwrap_or(types.default_kind());
         if !types.names().iter().any(|n| n == kind) {
             return Err(ToolError::Input(format!(
                 "subagent_type \"{kind}\" is not one of: {}",

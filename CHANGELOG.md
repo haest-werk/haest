@@ -65,6 +65,8 @@ set anything) now gets a warning. `env_var` and the `HashMap`
    `fn fs(&self) -> FsRef` (`self.fs.clone().into()`). `Fs::mkdir` and
    `Fs::remove` lose their `recursive` flag: `fs.mkdir(dir, true)` ->
    `fs.create_dir_all(dir)`, `fs.remove(path, true)` -> `fs.remove_all(path)`.
+   An `Fs` implements `remove_all` itself (`fs::remove_tree(self, path)`
+   walks the tree).
 7. A `Ledger` is shared by cloning it: `Arc<Mutex<Ledger>>` -> `Ledger`,
    `ledger.lock().unwrap().usd()` -> `ledger.usd()`,
    `.with_ledger(Arc::new(Mutex::new(ledger)))` -> `.with_ledger(ledger.clone())`.
@@ -365,8 +367,11 @@ Plug points without `Arc` (breaking):
 - `Fs::mkdir(path, recursive)` -> `Fs::create_dir(path)` and
   `Fs::create_dir_all(path)`; `Fs::remove(path, recursive)` ->
   `Fs::remove(path)` and `Fs::remove_all(path)`. An `Fs` implements
-  `create_dir` and `remove`; `create_dir_all` and `remove_all` have defaults
-  built on them, and `remove_all` removes a link without walking into it.
+  `create_dir`, `remove` and `remove_all`; `create_dir_all` has a default
+  built on `create_dir`. `remove_all` has none, so a store's own rules for
+  deleting a tree are never skipped by a default it did not know it got: a
+  store with none writes `fs::remove_tree(self, path).await`, which walks
+  the tree with `remove` and removes a link without walking into it.
   `MemFs`, `ShutFs` and every `Fs` in the workspace implement all four.
 
 Room to grow (breaking):
@@ -640,6 +645,24 @@ Hosts write less (round two of the review, and what porting brain onto
   -> `resolved.complete(req).await`. It never fails: a stream that ends
   without its answer is an error answer, as the loop has always made one
   (whose provider is now the provider's id, was `none`).
+- `LedgerHooks::persist` and `warn` have default bodies (nothing saved,
+  nothing said), and new `ledger::NoLedgerHooks` is a ledger that reports
+  nowhere: `struct Quiet; impl LedgerHooks for Quiet { fn persist(..) {}
+  fn warn(..) {} }` -> `Ledger::new(caps, NoLedgerHooks)`.
+- New `req_num(input, key)` (a required number) and
+  `opt_count(input, key) -> Option<u64>` (a limit, an offset, a timeout:
+  rounded down, held at `u64::MAX`, refused when negative), in the
+  prelude: `opt_num(&input, "a")?.ok_or_else(|| missing("a"))?` ->
+  `req_num(&input, "a")?`, and `(n.floor() as usize).max(1)` ->
+  `opt_count(&input, "limit")?`. Read's `offset` and `limit`, Bash's
+  `timeout` and Grep's `head_limit` and `context` read with it: a negative
+  one is an input error the model reads (was: Read from line 1, Bash the
+  shortest timeout, Grep a broken `-C`).
+- New `ExecResult::ok(stdout)` and `ExecResult::failed(stderr, exit_code)`:
+  `ExecResult { stdout, ..Default::default() }` -> `ExecResult::ok(stdout)`.
+- `skills::InlineSkills` is `FromIterator<InlineSkill>` and
+  `From<Vec<InlineSkill>>`, one list merged as `merged` merges it:
+  `InlineSkills::merged([list])` -> `InlineSkills::from(list)`.
 
 ### haest-http
 
@@ -811,11 +834,12 @@ Hosts write less (round two of the review, and what porting brain onto
   (was `Box<dyn MemberRun>`): `Ok(Box::new(run))` -> `Ok(Member::new(run))`.
   `SubagentParent::tool_source` returns a `ToolSourceRef`:
   `Arc::new(source)` -> `source.into()`.
-- `SubagentTypes`' fields are private and `SubagentTypes::new(names,
-  default, description)` refuses a default that is not one of the names
-  (`SubagentTypesError`): `SubagentTypes { names, description, default }`
-  -> `SubagentTypes::new(names, default, description)?`; read with
-  `names()`, `default()` and `description()`.
+- `SubagentTypes`' fields are private, and it is built from its default
+  kind, which is always one of the kinds, so building it cannot fail:
+  `SubagentTypes { names, description, default }` ->
+  `SubagentTypes::new(default).with_kinds(names).with_description(description)`
+  (the default goes first when `names` leaves it out). Read with `names()`,
+  `default_kind()` and `description()`.
 - `AgentError` is `#[non_exhaustive]`; the agent tools implement `Debug`.
 - `BuiltinOptions`' fields are private; it is built with setters:
   `BuiltinOptions { tasks: Some(Arc::new(board)), web_fetch: None,

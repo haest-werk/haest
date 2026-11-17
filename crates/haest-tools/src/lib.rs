@@ -177,7 +177,7 @@ pub use agents::{
     AgentDirectory, AgentDirectoryRef, AgentError, AgentMessage, AgentRef, AgentToolOptions,
     Ending, MAIN_AGENT, Member, MemberCaps, MemberEnd, MemberRun, MemberStart, Sender, SpawnInput,
     SpawnOutcome, Spend, SubagentBudget, SubagentEvent, SubagentHub, SubagentParent,
-    SubagentParentRef, SubagentTypes, SubagentTypesError, agent_tools, subagent_note,
+    SubagentParentRef, SubagentTypes, agent_tools, subagent_note,
 };
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;

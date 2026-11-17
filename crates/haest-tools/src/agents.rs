@@ -149,14 +149,18 @@ impl SpawnInput {
 /// ones its parent gives ([`SubagentParent::agent_tool_options`]); none unless
 /// it gives some.
 ///
+/// The default kind is always one of the kinds, so building them cannot fail.
+///
 /// ```
 /// use haest_tools::SubagentTypes;
 ///
-/// let kinds = SubagentTypes::new(["explore", "general"], "explore", "explore only reads")?;
-/// assert_eq!(kinds.default(), "explore");
-/// // A default that is not one of the kinds is refused here, not in front of the model.
-/// assert!(SubagentTypes::new(["explore"], "general", "").is_err());
-/// # Ok::<(), haest_tools::SubagentTypesError>(())
+/// let kinds = SubagentTypes::new("explore")
+///     .with_kinds(["explore", "general"])
+///     .with_description("explore only reads");
+/// assert_eq!(kinds.default_kind(), "explore");
+/// assert_eq!(kinds.names(), ["explore", "general"]);
+/// // A default left out of the kinds is one of them, first.
+/// assert_eq!(SubagentTypes::new("general").with_kinds(["explore"]).names(), ["general", "explore"]);
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubagentTypes {
@@ -166,29 +170,39 @@ pub struct SubagentTypes {
 }
 
 impl SubagentTypes {
-    /// The kinds the model may name (the parameter's `enum`), the one an
-    /// Agent call that names none gets (`default`), and the parameter's
-    /// `description`: what each kind may do.
-    ///
-    /// # Errors
-    ///
-    /// [`SubagentTypesError`] when `default` is not one of `names` (`names`
-    /// empty included): every Agent call that names no kind would be refused.
-    pub fn new(
-        names: impl IntoIterator<Item = impl Into<String>>,
-        default: impl Into<String>,
-        description: impl Into<String>,
-    ) -> Result<Self, SubagentTypesError> {
-        let names: Vec<String> = names.into_iter().map(Into::into).collect();
+    /// One kind, `default`: what an Agent call that names none gets. Add the
+    /// others with [`with_kinds`](Self::with_kinds).
+    pub fn new(default: impl Into<String>) -> Self {
         let default = default.into();
-        if !names.contains(&default) {
-            return Err(SubagentTypesError { default, names });
-        }
-        Ok(Self {
-            names,
+        Self {
+            names: vec![default.clone()],
             default,
-            description: description.into(),
-        })
+            description: String::new(),
+        }
+    }
+
+    /// The same, the model offered `kinds` (the parameter's `enum`), in this
+    /// order; the default kind first when it is not among them.
+    #[must_use]
+    pub fn with_kinds(mut self, kinds: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        let mut names: Vec<String> = Vec::new();
+        for kind in kinds.into_iter().map(Into::into) {
+            if !names.contains(&kind) {
+                names.push(kind);
+            }
+        }
+        if !names.contains(&self.default) {
+            names.insert(0, self.default.clone());
+        }
+        self.names = names;
+        self
+    }
+
+    /// The same, with the parameter's description: what each kind may do.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
     }
 
     /// The kinds the model may name. An Agent call that names another is an
@@ -198,7 +212,7 @@ impl SubagentTypes {
     }
 
     /// What an Agent call that names no kind gets; one of [`names`](Self::names).
-    pub fn default(&self) -> &str {
+    pub fn default_kind(&self) -> &str {
         &self.default
     }
 
@@ -206,16 +220,6 @@ impl SubagentTypes {
     pub fn description(&self) -> &str {
         &self.description
     }
-}
-
-/// Why [`SubagentTypes::new`] refused: its default is not one of its kinds.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("the default subagent type \"{default}\" is not one of: {}", if names.is_empty() { "(none)".to_string() } else { names.join(", ") })]
-pub struct SubagentTypesError {
-    /// The default, as given.
-    pub default: String,
-    /// The kinds, as given.
-    pub names: Vec<String>,
 }
 
 /// PLUG POINT: what a host changes about the agent tools ([`agent_tools`]).

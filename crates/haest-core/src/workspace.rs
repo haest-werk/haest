@@ -83,6 +83,33 @@ pub struct ExecResult {
     pub timed_out: bool,
 }
 
+impl ExecResult {
+    /// A command that succeeded (exit code 0) and printed `stdout`.
+    pub fn ok(stdout: impl Into<String>) -> Self {
+        Self {
+            stdout: stdout.into(),
+            ..Self::default()
+        }
+    }
+
+    /// A command that ended with `exit_code`, saying why on `stderr`.
+    ///
+    /// ```
+    /// use haest_core::workspace::{EXIT_NOT_FOUND, ExecResult};
+    ///
+    /// let missing = ExecResult::failed("upper: command not found\n", EXIT_NOT_FOUND);
+    /// assert_eq!((missing.stdout.as_str(), missing.exit_code), ("", EXIT_NOT_FOUND));
+    /// assert_eq!(ExecResult::ok("hi\n").exit_code, 0);
+    /// ```
+    pub fn failed(stderr: impl Into<String>, exit_code: i32) -> Self {
+        Self {
+            stderr: stderr.into(),
+            exit_code,
+            ..Self::default()
+        }
+    }
+}
+
 /// Exit code for "no such program", the shell convention every mode reports.
 pub const EXIT_NOT_FOUND: i32 = 127;
 
@@ -249,15 +276,8 @@ crate::plug_ref! {
 ///     }
 ///     async fn run(&self, argv: &[String], opts: ExecOptions) -> ExecResult {
 ///         match argv.first().map(String::as_str) {
-///             Some("pwd") => ExecResult {
-///                 stdout: format!("{}\n", opts.cwd.display()),
-///                 ..Default::default()
-///             },
-///             _ => ExecResult {
-///                 stderr: "command not found\n".into(),
-///                 exit_code: EXIT_NOT_FOUND,
-///                 ..Default::default()
-///             },
+///             Some("pwd") => ExecResult::ok(format!("{}\n", opts.cwd.display())),
+///             _ => ExecResult::failed("command not found\n", EXIT_NOT_FOUND),
 ///         }
 ///     }
 ///     fn prompt_note(&self) -> String {
@@ -331,11 +351,7 @@ pub struct ShutWorkspace;
 const NO_SHELL: &str = "this workspace has no shell";
 
 fn no_shell() -> ExecResult {
-    ExecResult {
-        stderr: NO_SHELL.into(),
-        exit_code: EXIT_NOT_FOUND,
-        ..Default::default()
-    }
+    ExecResult::failed(NO_SHELL, EXIT_NOT_FOUND)
 }
 
 #[async_trait]
