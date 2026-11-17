@@ -35,7 +35,7 @@ pub fn project_mcp_path(cwd: &Path) -> PathBuf {
 #[non_exhaustive]
 pub enum McpConfigError {
     /// The file is there but could not be read.
-    #[error("{}", path.display())]
+    #[error("{}: cannot read it", path.display())]
     Read {
         /// The `.mcp.json` it is about.
         path: PathBuf,
