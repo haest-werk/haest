@@ -88,11 +88,7 @@ enum FileKind {
 }
 
 fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<Layer, ConfigError> {
-    let source = Source::File(path.to_path_buf());
-    let at = |why: String| ConfigError::Invalid {
-        at: source.clone(),
-        why,
-    };
+    let at = Source::File(path.to_path_buf());
     let table: Table = text.parse().map_err(|source| ConfigError::Toml {
         path: path.to_path_buf(),
         source,
@@ -100,24 +96,36 @@ fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<Layer, ConfigEr
     let mut layer = Layer::default();
     for (key, value) in &table {
         if key != "profiles" {
-            let entries = entries(key, value, kind, false).map_err(at)?;
+            let entries = Entry {
+                at: &at,
+                kind,
+                profile: None,
+            }
+            .read(key, value)?;
             layer
                 .values
-                .extend(entries.into_iter().map(|(def, v)| (def, v, source.clone())));
+                .extend(entries.into_iter().map(|(def, v)| (def, v, at.clone())));
             continue;
         }
         let Value::Table(profiles) = value else {
-            return Err(at("profiles must be a table of [profiles.<name>]".into()));
+            return Err(invalid(
+                &at,
+                "profiles",
+                "must be a table of [profiles.<name>]",
+            ));
         };
         for (name, body) in profiles {
             let Value::Table(body) = body else {
-                return Err(at(format!("profiles.{name} must be a table")));
+                return Err(invalid(&at, &format!("profiles.{name}"), "must be a table"));
             };
             let mut table = Entries::new();
+            let entry = Entry {
+                at: &at,
+                kind,
+                profile: Some(name),
+            };
             for (key, value) in body {
-                let entries = entries(key, value, kind, true)
-                    .map_err(|e| at(format!("profiles.{name}: {e}")))?;
-                table.extend(entries);
+                table.extend(entry.read(key, value)?);
             }
             layer.profiles.insert(name.clone(), table);
         }
@@ -125,51 +133,81 @@ fn parse_file(path: &Path, text: &str, kind: FileKind) -> Result<Layer, ConfigEr
     Ok(layer)
 }
 
-/// One `key = value` of a file, checked: a known setting, one this file (and
-/// a profile in it) may set, a value of its kind. A table of variables
-/// (`[env]`) is one value per variable.
-fn entries(key: &str, value: &Value, kind: FileKind, in_profile: bool) -> Result<Entries, String> {
-    let def = find(key)
-        .ok_or_else(|| format!("unknown setting \"{key}\" (haest settings lists them)"))?;
-    match def.scope {
-        Scope::Process => {
-            return Err(format!(
-                "{key} is set by {} or --{} only: it says where this file is",
-                def.env(),
-                def.flag()
-            ));
-        }
-        Scope::User if kind == FileKind::Project => {
-            return Err(format!(
-                "{key} can't be set in a project's file: a project does not trust itself"
-            ));
-        }
-        _ => {}
+/// The setting at TOML path `key` in the file `at` is wrong: `why`.
+fn invalid(at: &Source, key: &str, why: impl Into<String>) -> ConfigError {
+    ConfigError::Invalid {
+        at: at.clone(),
+        key: key.to_string(),
+        why: why.into(),
     }
-    if in_profile && !def.profile_may_set() {
-        return Err(format!("{key} can't be set in a profile"));
-    }
-    let checked = |raw: &str| check(def, raw).map_err(|e| format!("{key}: {e}"));
-    if def.kind == Kind::Vars {
-        let Value::Table(vars) = value else {
-            return Err(format!("{key} must be a table: [{key}] NAME = \"value\""));
+}
+
+/// Where in a file an entry is: the file, which kind, and the
+/// `[profiles.<name>]` table it is in, if any.
+#[derive(Clone, Copy)]
+struct Entry<'a> {
+    at: &'a Source,
+    kind: FileKind,
+    profile: Option<&'a str>,
+}
+
+impl Entry<'_> {
+    /// One `key = value`, checked: a known setting, one this file (and a
+    /// profile in it) may set, a value of its kind. A table of variables
+    /// (`[env]`) is one value per variable. An error names the entry by its
+    /// TOML path.
+    fn read(self, key: &str, value: &Value) -> Result<Entries, ConfigError> {
+        let path = match self.profile {
+            Some(name) => format!("profiles.{name}.{key}"),
+            None => key.to_string(),
         };
-        return vars
-            .iter()
-            .map(|(name, value)| {
-                let text = raw(value)
-                    .filter(|_| !value.is_array())
-                    .ok_or_else(|| format!("{key}.{name}: a string, number or true/false"))?;
-                Ok((
-                    def,
-                    named_var(name, &text).map_err(|e| format!("{key}: {e}"))?,
-                ))
-            })
-            .collect();
+        let Some(def) = find(key) else {
+            return Err(ConfigError::UnknownSetting {
+                at: self.at.clone(),
+                key: path,
+            });
+        };
+        let refused = |why: &str| invalid(self.at, &path, why);
+        match def.scope {
+            Scope::Process => {
+                let (var, flag) = (def.env(), def.flag());
+                let only = format!("set by {var} or --{flag} only: it says where this file is");
+                return Err(refused(&only));
+            }
+            Scope::User if self.kind == FileKind::Project => {
+                return Err(refused(
+                    "can't be set in a project's file: a project does not trust itself",
+                ));
+            }
+            _ => {}
+        }
+        if self.profile.is_some() && !def.profile_may_set() {
+            return Err(refused("can't be set in a profile"));
+        }
+        if def.kind == Kind::Vars {
+            let Value::Table(vars) = value else {
+                return Err(refused(&format!(
+                    "must be a table: [{key}] NAME = \"value\""
+                )));
+            };
+            return vars
+                .iter()
+                .map(|(name, value)| {
+                    let var = format!("{path}.{name}");
+                    let text = raw(value).filter(|_| !value.is_array()).ok_or_else(|| {
+                        invalid(self.at, &var, "must be a string, number or true/false")
+                    })?;
+                    let checked =
+                        named_var(name, &text).map_err(|why| invalid(self.at, &var, why))?;
+                    Ok((def, checked))
+                })
+                .collect();
+        }
+        let raw = raw(value)
+            .ok_or_else(|| refused("must be a string, number, true/false or a list of strings"))?;
+        let checked = check(def, &raw).map_err(|why| refused(&why))?;
+        Ok(vec![(def, checked)])
     }
-    let raw = raw(value)
-        .ok_or_else(|| format!("{key}: a string, number, true/false or a list of strings"))?;
-    Ok(vec![(def, checked(&raw)?)])
 }
 
 /// A TOML value as the text a variable would hold; an empty list is `none`.

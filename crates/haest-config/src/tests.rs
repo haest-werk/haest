@@ -5,6 +5,7 @@ mod examples;
 mod handed;
 mod loader;
 mod reference;
+mod refused;
 mod typed;
 mod wind_down;
 
@@ -120,10 +121,9 @@ async fn a_project_can_not_trust_itself_or_say_where_the_config_lives() {
         let project = ("/w/.haest/config.toml", body);
         let err = run("/w", &[project, trust], &[], &[]).await.unwrap_err();
         let in_project = Source::File(project.0.into());
-        assert!(
-            matches!(&err, ConfigError::Invalid { at, .. } if *at == in_project),
-            "{err}"
-        );
+        let key = body.split(' ').next().unwrap();
+        assert!(matches!(&err, ConfigError::Invalid { .. }), "{err:?}");
+        assert_eq!(refused(&err), Some((&in_project, key)), "{err}");
     }
 }
 
@@ -190,63 +190,19 @@ tools = ["read", "grep"]"#;
 
 type Pairs = &'static [(&'static str, &'static str)];
 
-#[tokio::test]
-async fn garbage_is_refused_and_names_where_it_was() {
-    // (files, variables, flags, what the error must name)
-    let cases: [(Pairs, Pairs, Pairs, &str); 7] = [
-        (&[(USER_FILE, "tool = [\"read\"]")], &[], &[], USER_FILE),
-        (&[(USER_FILE, "tools = [\"bsh\"]")], &[], &[], "bsh"),
-        (
-            &[(USER_FILE, "[profiles.x]\nprofile = \"y\"")],
-            &[],
-            &[],
-            "profiles.x",
-        ),
-        (&[], &[("HAEST_MCP", "maybe")], &[], "HAEST_MCP"),
-        (
-            &[],
-            &[("HAEST_MAX_TURN_USD", "lots")],
-            &[],
-            "HAEST_MAX_TURN_USD",
-        ),
-        (&[], &[], &[("workspace", "shut")], "--workspace"),
-        (
-            &[],
-            &[],
-            &[("env_passthrough", "some")],
-            "--env-passthrough",
-        ),
-    ];
-    for (files, env, flags, names) in cases {
-        let err = report(&run("/w", files, env, flags).await.unwrap_err());
-        assert!(err.contains(names), "{names}: {err}");
+/// Where a refused setting was given and which it was, from an unknown or
+/// an invalid setting's error; None for any other.
+fn refused(err: &ConfigError) -> Option<(&Source, &str)> {
+    match err {
+        ConfigError::UnknownSetting { at, key } | ConfigError::Invalid { at, key, .. } => {
+            Some((at, key))
+        }
+        _ => None,
     }
 }
 
-/// A count (steps, tokens) given a fraction must not quietly become a
-/// smaller one: `max_turn_steps = 0.5` read as 0 would turn the cap off. A
-/// time (`subagent_minutes`) takes the fraction as it is.
-#[tokio::test]
-async fn a_number_setting_reads_what_it_was_given_or_refuses_it_by_name() {
-    for def in DEFS.iter().filter(|d| d.kind == Kind::Number) {
-        match run("/w", &[], &[], &[(def.key, "0.5")]).await {
-            Ok(r) => assert_eq!(r.config.get(def.key).as_deref(), Some("0.5"), "{}", def.key),
-            Err(e) => assert!(report(&e).contains(&format!("--{}", def.flag())), "{e}"),
-        }
-    }
-    let file = [(USER_FILE, "max_turn_steps = 0.5")];
-    let err = report(&run("/w", &file, &[], &[]).await.unwrap_err());
-    assert!(
-        err.contains(USER_FILE) && err.contains("max_turn_steps"),
-        "{err}"
-    );
-    let err = run("/w", &[], &[("HAEST_MAX_TURN_STEPS", "2.5")], &[])
-        .await
-        .unwrap_err();
-    assert!(report(&err).contains("HAEST_MAX_TURN_STEPS"), "{err}");
-    let whole = [(USER_FILE, "subagent_steps = 30.0\nsubagent_usd = 0.5")];
-    let s = run("/w", &whole, &[], &[]).await.unwrap().config.settings;
-    assert_eq!((s.subagents.steps, s.subagents.usd), (30, 0.5));
+fn file(path: &str) -> Source {
+    Source::File(path.into())
 }
 
 #[tokio::test]

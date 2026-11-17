@@ -40,15 +40,29 @@ pub enum ConfigError {
         #[source]
         source: toml::de::Error,
     },
-    /// A setting is wrong where it is given: no setting has its name, its
-    /// value is not one it takes, or it is set where it may not be (a
-    /// project's file or a profile setting what only you may, a file setting
-    /// `config_dir`). `why` says which.
-    #[error("{at}: {why}")]
+    /// No setting has this name: a typo, or a setting this haest does not
+    /// have (`haest settings` lists them).
+    #[error("{at}: {key}: no such setting (haest settings lists them)")]
+    UnknownSetting {
+        /// The layer it is in: a file, a variable, a flag, a profile.
+        at: Source,
+        /// The name as the layer gives it; in a file, its TOML path
+        /// (`tool`, `profiles.review.tool`).
+        key: String,
+    },
+    /// A setting is wrong where it is given: its value is not one it takes,
+    /// or it is set where it may not be (a project's file or a profile
+    /// setting what only you may, a file setting `config_dir`). `why` says
+    /// which.
+    #[error("{at}: {key}: {why}")]
     Invalid {
         /// The layer it is in: a file, a variable, a flag, a profile.
         at: Source,
-        /// What is wrong with it, naming the setting.
+        /// The setting as the layer gives it; in a file, its TOML path
+        /// (`max_turn_steps`, `profiles.review.tools`, `env.GH_TOKEN`).
+        key: String,
+        /// What is wrong with it. Never the value of a variable in `env`:
+        /// it may be a key.
         why: String,
     },
     /// `profile` names a profile there is none of.
@@ -62,6 +76,16 @@ pub enum ConfigError {
     /// `<config dir>/providers.json` is there but malformed.
     #[error(transparent)]
     Providers(#[from] ProvidersFileError),
+}
+
+impl ConfigError {
+    /// A value [`Config::set`](crate::Config::set) refused, given `at`.
+    pub(crate) fn not_set(at: Source, e: SetError) -> Self {
+        match e {
+            SetError::Unknown { key } => Self::UnknownSetting { at, key },
+            SetError::Value { key, why } => Self::Invalid { at, key, why },
+        }
+    }
 }
 
 /// Why [`Config::set`](crate::Config::set) set nothing. More variants may

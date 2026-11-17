@@ -32,8 +32,11 @@ async fn a_share_above_one_is_refused_naming_where_it_came_from() {
     let err = run("/w", &[], &[("HAEST_WIND_DOWN_AT", "1.5")], &[])
         .await
         .unwrap_err();
-    let text = report(&err);
-    assert!(text.contains("HAEST_WIND_DOWN_AT"), "{text}");
+    let var = Source::Env("HAEST_WIND_DOWN_AT".into());
+    assert!(
+        matches!(&err, ConfigError::Invalid { at, key, .. } if *at == var && key == "wind_down_at"),
+        "{err:?}"
+    );
     let mut c = Config::bare("/w", HOME);
     assert!(c.set("wind_down_at", "1.5").is_err());
     assert_eq!(c.settings.wind_down_at, WindDown::OFF, "nothing changed");

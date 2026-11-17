@@ -1358,6 +1358,13 @@ Hosts write less (round two of the review, and what porting brain onto
 - `subagent_minutes` takes a fraction, as `max_turn_minutes` does
   (`2.5` is two and a half minutes; it was refused as not a whole number).
   A time too long for a `Duration` is the longest there is.
+- A refused setting's error names the setting as a field, not only in its
+  text (breaking): `ConfigError::Invalid { at, why }` ->
+  `Invalid { at, key, why }`, and an unknown setting is its own variant,
+  `UnknownSetting { at, key }`. `key` is the setting as the layer gives
+  it, in a file its TOML path (`max_turn_steps`, `profiles.review.tools`,
+  `env.GH_TOKEN`), so an editor or a settings screen can point at it
+  without parsing the text.
 - `ControlSocket` and `BrokerAccess` are `#[non_exhaustive]` (breaking): a
   `match` adds a `_` arm (the `haest` command's gives the least access,
   watch), and haest adds a level in a minor release as the transport's

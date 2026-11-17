@@ -266,11 +266,12 @@ impl Loader {
     /// # Errors
     ///
     /// A [`ConfigError`] naming where the problem is, when: a setting is
-    /// unknown, or its value is not one it takes; a project's file sets what
-    /// only you may (`trusted_dirs`, `provider_routing`) or a profile sets
-    /// `profile`, `trusted_dirs` or `provider_routing`; a file sets
-    /// `config_dir` (only a variable or a flag may) (all
-    /// [`Invalid`](ConfigError::Invalid)); a file the host named with
+    /// unknown ([`UnknownSetting`](ConfigError::UnknownSetting)); its value
+    /// is not one it takes, a project's file sets what only you may
+    /// (`trusted_dirs`, `provider_routing`), a profile sets `profile`,
+    /// `trusted_dirs` or `provider_routing`, or a file sets `config_dir`
+    /// (only a variable or a flag may) (all [`Invalid`](ConfigError::Invalid),
+    /// each naming the setting in `key`); a file the host named with
     /// [`file`](Self::file) is not there; a config file cannot be read or is
     /// not TOML; `profile` names a profile there is none of; `providers.json`
     /// is malformed.

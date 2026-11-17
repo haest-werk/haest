@@ -83,13 +83,19 @@ impl Layer {
         let values = given
             .into_iter()
             .map(|g| {
-                let checked = match find(&g.key) {
-                    None => Err(format!("unknown setting \"{}\"", g.key)),
-                    Some(def) => check(def, &g.raw).map(|value| (def, value)),
+                let Some(def) = find(&g.key) else {
+                    return Err(ConfigError::UnknownSetting {
+                        at: g.source,
+                        key: g.key,
+                    });
                 };
-                match checked {
-                    Ok((def, value)) => Ok((def, value, g.source)),
-                    Err(why) => Err(ConfigError::Invalid { at: g.source, why }),
+                match check(def, &g.raw) {
+                    Ok(value) => Ok((def, value, g.source)),
+                    Err(why) => Err(ConfigError::Invalid {
+                        at: g.source,
+                        key: g.key,
+                        why,
+                    }),
                 }
             })
             .collect::<Result<_, _>>()?;
@@ -191,8 +197,7 @@ impl Stack {
                 _ => (value, def.key.to_string()),
             };
             if let Err(e) = config.set(def.key, &value) {
-                let why = e.to_string();
-                return Err(ConfigError::Invalid { at: source, why });
+                return Err(ConfigError::not_set(source, e));
             }
             sources.insert(key, source);
         }

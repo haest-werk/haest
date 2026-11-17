@@ -181,20 +181,38 @@ async fn env_as_a_whole_came_from_the_last_layer_that_passed_a_variable() {
 
 #[tokio::test]
 async fn a_bad_variable_is_refused_by_its_name_and_never_shows_its_value() {
-    let cases: [(Pairs, Pairs, &str); 4] = [
-        (&[(USER_FILE, "env = \"A=secret\"")], &[], "[env]"),
+    let cases: [(Pairs, Pairs, Source, &str); 4] = [
+        (
+            &[(USER_FILE, "env = \"A=secret\"")],
+            &[],
+            file(USER_FILE),
+            "env",
+        ),
         (
             &[(USER_FILE, "[env]\n\"bad-name\" = \"secret\"")],
             &[],
-            "bad-name",
+            file(USER_FILE),
+            "env.bad-name",
         ),
-        (&[(USER_FILE, "[env]\n\"A=B\" = \"secret\"")], &[], "A=B"),
-        (&[], &[("env", "1X=secret")], "--env"),
+        (
+            &[(USER_FILE, "[env]\n\"A=B\" = \"secret\"")],
+            &[],
+            file(USER_FILE),
+            "env.A=B",
+        ),
+        (
+            &[],
+            &[("env", "1X=secret")],
+            Source::Flag("env".into()),
+            "env",
+        ),
     ];
-    for (files, flags, names) in cases {
-        let err = report(&run("/w", files, &[], flags).await.unwrap_err());
-        assert!(err.contains(names), "{names}: {err}");
-        assert!(!err.contains("secret"), "{err}");
+    for (files, flags, at, key) in cases {
+        let err = run("/w", files, &[], flags).await.unwrap_err();
+        assert_eq!(refused(&err), Some((&at, key)), "{err}");
+        for shown in [report(&err), format!("{err:?}")] {
+            assert!(!shown.contains("secret"), "{shown}");
+        }
     }
 }
 
