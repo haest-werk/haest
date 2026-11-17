@@ -103,7 +103,9 @@ impl<T> Newest<T> {
     /// Hand `hook` every value put and not handed over yet, newest last,
     /// unless another caller is doing so: then that one hands this caller's
     /// value over too, with its own hook. So every caller passes the same
-    /// hook (the owner's). Call it with the owner's lock released.
+    /// hook (the owner's). A hook the owner can replace is looked up inside
+    /// `hook`: a delivery running for another caller then hands the value to
+    /// the hook in place now. Call it with the owner's lock released.
     ///
     /// # Panics
     ///

@@ -302,6 +302,67 @@ async fn the_last_running_set_the_host_hears_is_the_hubs() {
     );
 }
 
+/// Hears the running sets; one with a gate holds the first empty set until
+/// the test lets go (a host that renders, or takes a lock of its own).
+#[derive(Default)]
+struct Gated {
+    gate: Mutex<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
+    sets: Mutex<Vec<Vec<String>>>,
+}
+
+impl JobEvents for Gated {
+    fn on_change(&self, running: &[Job]) {
+        if running.is_empty() {
+            let gate = self.gate.lock().unwrap().take();
+            if let Some((entered, go)) = gate {
+                entered.send(()).unwrap();
+                let _ = go.recv_timeout(Duration::from_secs(5));
+            }
+        }
+        let ids = running.iter().map(|j| j.id.clone()).collect();
+        self.sets.lock().unwrap().push(ids);
+    }
+}
+
+/// The old listener was still being called when the host set a new one: the
+/// running delivery handed every later set to the old listener, so the new
+/// one heard nothing of a job started after the swap.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_listener_set_while_the_old_one_is_called_hears_every_set_from_then_on() {
+    let r = Rig::real();
+    let (entered, in_hook) = std::sync::mpsc::channel();
+    let (go, held) = std::sync::mpsc::channel();
+    let old = Arc::new(Gated {
+        gate: Mutex::new(Some((entered, held))),
+        ..Gated::default()
+    });
+    let new = Arc::new(Gated::default());
+    r.hub.set_events(old.clone());
+    r.start("true");
+    // The job's end hands the old listener the empty set; it is slow with it.
+    tokio::task::spawn_blocking(move || in_hook.recv_timeout(Duration::from_secs(5)))
+        .await
+        .unwrap()
+        .expect("the old listener heard the job end");
+    r.hub.set_events(new.clone());
+    let after = r.start("sleep 30");
+    go.send(()).unwrap();
+    let hubs = vec![after.id.clone()];
+    until(3000, || new.sets.lock().unwrap().last() == Some(&hubs)).await;
+
+    assert_eq!(
+        new.sets.lock().unwrap().last(),
+        Some(&hubs),
+        "the new listener missed the start"
+    );
+    let old_sets = old.sets.lock().unwrap().clone();
+    assert!(
+        !old_sets.iter().any(|s| s.contains(&after.id)),
+        "the replaced listener heard a start after the swap: {old_sets:?}"
+    );
+    r.hub.kill_all();
+}
+
 #[test]
 fn a_job_state_reads_as_the_model_is_told() {
     let job = |status, exit_code| Job {

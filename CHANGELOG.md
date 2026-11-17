@@ -1349,7 +1349,11 @@ Hosts write less (round two of the review, and what porting brain onto
   job or subagent on its roster that had ended. Both now hand their sets
   over as the ledger and the task board do (haest-core's `Newest`): one
   call at a time, never an older set after a newer one, and the sets that
-  change while one call runs are handed over next as one, the newest.
+  change while one call runs are handed over next as one, the newest. Each
+  set goes to the listener in place when it is handed over, so one set with
+  `JobHub::set_events` while the old one is being called hears every set
+  from then on. A job or subagent that starts and ends while one call runs
+  can be in no set: its `on_exit` (or `on_subagent`) still names it.
 - Fixed: GenerateImage passed on an Image API `usage.cost` below 0 as the
   call's cost, so the model read that the picture cost `$-1.500` and the
   call carried a refund. Such a cost is now no price, as the loop counts it.

@@ -62,7 +62,9 @@ pub trait SubagentParent: Inbox {
     /// the host's roster. An id (`haest-<name>-<hub>`) is unique across hubs;
     /// a name only within one. One call at a time, and never an older set
     /// after a newer one: the changes made while one call runs are handed
-    /// over next as one, the newest. So the last set it hears is the hub's.
+    /// over next as one, the newest. So the last set it hears is the hub's,
+    /// and a subagent that started and stopped while one call ran may be in
+    /// no set ([`on_subagent`](Self::on_subagent) still names it).
     fn on_activity(&self, _ids: &[String]) {}
     /// One subagent's activity, keyed by its id.
     fn on_subagent(&self, _id: &str, _event: SubagentEvent) {}

@@ -102,10 +102,13 @@ impl Shared {
         self.events().on_output(&job, JobOutput::Chunk(chunk));
     }
 
-    /// Hand `on_change` the running set put last, unless another caller is
-    /// handing it over: then that one hands this one's over too.
-    pub(super) fn report_running(&self, events: &JobEventsRef) {
-        self.running.deliver(|running| events.on_change(running));
+    /// Hand the listener in place the running set put last, unless another
+    /// caller is handing it over: then that one hands this one's over too.
+    /// The listener is looked up for each set, so a delivery that began before
+    /// [`set_events`](Self::set_events) hands the later sets to the new one.
+    pub(super) fn report_running(&self) {
+        self.running
+            .deliver(|running| self.events().on_change(running));
     }
 
     fn finish(&self, id: &str, code: i32) {
@@ -121,10 +124,10 @@ impl Shared {
             self.running.put(jobs.running());
             job
         };
-        let events = self.events();
-        events.on_output(&job, JobOutput::Done);
-        self.report_running(&events);
-        events.on_exit(&job);
+        // Each event goes to the listener in place when it is made.
+        self.events().on_output(&job, JobOutput::Done);
+        self.report_running();
+        self.events().on_exit(&job);
         if job.status == JobStatus::Exited {
             self.inbox.submit(exit_notice(&job));
         }

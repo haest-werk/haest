@@ -140,7 +140,9 @@ pub trait JobEvents: Send + Sync {
     fn on_change(&self, _running: &[Job]) {}
     /// Output as it arrives, then [`JobOutput::Done`] once when the job ended.
     fn on_output(&self, _job: &Job, _output: JobOutput<'_>) {}
-    /// The job ended: exited on its own, or killed.
+    /// The job ended: exited on its own, or killed. A job that started and
+    /// ended while one [`on_change`](Self::on_change) call ran may be in no
+    /// set it hears: its sets were folded into the newest.
     fn on_exit(&self, _job: &Job) {}
 }
 
@@ -299,8 +301,11 @@ impl JobHub {
             shared.running.put(jobs.running());
             job
         };
-        // Before the job runs, so a job that ends at once is never reported before it started.
-        shared.report_running(&shared.events());
+        // Before the job runs, so its set is put before its end's. While
+        // another caller is handing a set over, that one hands this one over
+        // too, and a job that ends meanwhile is folded into the newer set
+        // (`JobEvents::on_exit` says so).
+        shared.report_running();
         rt.spawn(run(
             shared.clone(),
             ctx.workspace().clone(),
