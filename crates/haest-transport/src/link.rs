@@ -146,7 +146,8 @@ enum Out {
 /// once the session holds 32 of its requests (a turn's end, a history asked
 /// during a turn), one more that would wait is refused with its id (send it
 /// again once one is answered), while one answered at once is still served:
-/// an `interrupt`, a `close`, an approval answer, a `snapshot`. A burst
+/// an `interrupt`, a `close`, an approval answer, a `snapshot`, an `events`
+/// (the stream's ring answers it). A burst
 /// written in one go meets the cap as requests sent one at a time do: each
 /// line is read once the request before it has reached the session. With
 /// 64 in flight, the connection reads no more lines until one is answered.
@@ -742,14 +743,16 @@ async fn write(mut sink: impl LineSink, mut rx: mpsc::Receiver<Out>, sid: String
     }
 }
 
-/// A request the session answers at once, while a turn runs too: served at
-/// the cap ([`MAX_IN_FLIGHT`]), so a peer's stop button and its approval
-/// answers never wait behind its own requests.
+/// A request answered at once, while a turn runs too (an `events` from the
+/// stream's ring, the rest by the session): served at the cap
+/// ([`MAX_IN_FLIGHT`]), so a peer's stop button, its approval answers and
+/// its catch-up never wait behind its own requests.
 fn answered_at_once(req: &Request) -> bool {
     matches!(
         req,
         Request::ApprovalAnswer { .. }
             | Request::Snapshot
+            | Request::Events { .. }
             | Request::Control(wire::Control::Interrupt | wire::Control::Close)
     )
 }

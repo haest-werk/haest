@@ -86,20 +86,8 @@ async fn one_connection_has_at_most_its_cap_of_requests_in_flight() {
 }
 
 /// A turn that runs, and history asked during it until the cap is reached
-/// (a dashboard that polls once a second, half a minute into a long turn):
-/// an approval answer is still read, an `interrupt` still stops the turn,
-/// and one more request that would wait is refused at once, with its id.
-#[tokio::test]
-async fn at_the_cap_an_interrupt_and_an_approval_answer_are_still_served() {
-    let model = ScriptedProvider::new([
-        tool_answer(&[("c1", "Wait", json!({}))]),
-        text_answer("never"),
-    ]);
-    let hub = hub();
-    let prompter = SessionPrompter::new(hub.clone());
-    let (inner, _) = session(&model, hub);
-    let waiting = Arc::new(AtomicUsize::new(0));
-    let mut peer = Peer::parent(counted(inner, &waiting, &Arc::default()));
+/// (a dashboard that polls once a second, half a minute into a long turn).
+async fn fill_the_cap(peer: &mut Peer, waiting: &AtomicUsize) {
     peer.send(turn("t1", "wait")).await;
     peer.until(|f| ty(f) == "assistant").await;
     // History asked during a turn waits for its end: with the turn, the cap.
@@ -112,6 +100,23 @@ async fn at_the_cap_an_interrupt_and_an_approval_answer_are_still_served() {
         }
     };
     within("the history requests wait for the turn", full).await;
+}
+
+/// At the cap, an approval answer is still read, an `interrupt` still stops
+/// the turn, and one more request that would wait is refused at once, with
+/// its id.
+#[tokio::test]
+async fn at_the_cap_an_interrupt_and_an_approval_answer_are_still_served() {
+    let model = ScriptedProvider::new([
+        tool_answer(&[("c1", "Wait", json!({}))]),
+        text_answer("never"),
+    ]);
+    let hub = hub();
+    let prompter = SessionPrompter::new(hub.clone());
+    let (inner, _) = session(&model, hub);
+    let waiting = Arc::new(AtomicUsize::new(0));
+    let mut peer = Peer::parent(counted(inner, &waiting, &Arc::default()));
+    fill_the_cap(&mut peer, &waiting).await;
 
     peer.send(history("over")).await;
     let over = within("the request past the cap refused", peer.reply("over")).await;
@@ -136,6 +141,27 @@ async fn at_the_cap_an_interrupt_and_an_approval_answer_are_still_served() {
     let frames = within("the turn stopped", peer.reply("t1")).await;
     let reply = frames.last().unwrap();
     assert_eq!(reply["result"]["stopReason"], "aborted", "{frames:#?}");
+}
+
+/// At the cap, an `events` request (a dashboard that catches up again) is
+/// still served: the stream's ring answers it, never the session.
+#[tokio::test]
+async fn at_the_cap_an_events_request_is_still_served() {
+    let model = ScriptedProvider::new([
+        tool_answer(&[("c1", "Wait", json!({}))]),
+        text_answer("never"),
+    ]);
+    let (inner, _) = session(&model, hub());
+    let waiting = Arc::new(AtomicUsize::new(0));
+    let mut peer = Peer::parent(counted(inner.clone(), &waiting, &Arc::default()));
+    fill_the_cap(&mut peer, &waiting).await;
+
+    let events = json!({"v": 1, "id": "e", "type": "events", "after": 0, "follow": true});
+    peer.send(events).await;
+    let frames = within("the events reply", peer.reply("e")).await;
+    let reply = frames.last().unwrap();
+    assert_eq!(reply["ok"], true, "{reply}");
+    inner.close().await;
 }
 
 /// `left` copies of one line, each counted as it is read; then a peer that
