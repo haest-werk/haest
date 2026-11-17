@@ -189,7 +189,11 @@ impl FileSystem for BashkitFsOverHaest {
     async fn rename(&self, from: &Path, to: &Path) -> Result<()> {
         let (from, to) = (normalize(from), normalize(to));
         self.fs.rename(&from, &to).await.map_err(bashkit_from_io)?;
-        self.forget_modes(&from, Some(&to));
+        if from != to {
+            // What `to` was is gone: it is `from` now, mode and all.
+            self.forget_modes(&to, None);
+            self.forget_modes(&from, Some(&to));
+        }
         Ok(())
     }
 

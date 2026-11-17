@@ -65,6 +65,24 @@ impl Fs for Locked {
     }
 }
 
+/// `mv a b` replaces `b` with `a`, mode and all, as POSIX rename does. Over a
+/// host's `Fs`, `b` kept its own remembered mode, so a plain file moved over
+/// a script read as executable.
+#[tokio::test]
+async fn a_moved_file_takes_its_own_mode_over_the_one_it_replaced() {
+    let ws = SandboxWorkspace::over(MemFs::new());
+    let r = ws
+        .shell(
+            "printf 'plain\\n' > a; printf 'echo hi\\n' > b; chmod +x b; mv a b; \
+             test -x b && echo b-runs; \
+             printf 'echo hi\\n' > c; chmod +x c; printf 'plain\\n' > d; mv c d; \
+             test -x d && echo d-runs",
+            opts(Path::new("/")),
+        )
+        .await;
+    assert_eq!(r.stdout, "d-runs\n", "{r:?}");
+}
+
 #[tokio::test]
 async fn a_hosts_reason_for_refusing_a_write_reaches_the_shells_output() {
     let mem = MemFs::default();
