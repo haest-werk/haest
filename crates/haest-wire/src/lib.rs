@@ -142,6 +142,6 @@ mod ring;
 
 pub use envelope::{Envelope, Framer, Path, WIRE_V, now_ms};
 pub use frames::{Access, Level, Origin, Outbound, Snapshot, State};
-pub use inbound::{Answer, DecodeError, Inbound, Request, Verb, decode, decode_value};
+pub use inbound::{Answer, Control, DecodeError, Inbound, Request, decode, decode_value};
 pub use lines::{LineDecoder, LineTooLong, encode_line};
 pub use ring::{Classify, FrameKind, Replay, Ring};

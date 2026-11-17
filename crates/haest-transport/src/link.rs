@@ -7,7 +7,7 @@ use std::{fmt, future::Future, sync::Arc, time::Duration};
 
 use haest_core::{Effort, TurnOutcome, error::report};
 use haest_session::{Backend, Body, Control, Frame, Input, SessionError, Subscription};
-use haest_wire::{Access, Envelope, Outbound, Request, Verb, decode};
+use haest_wire::{self as wire, Access, Envelope, Outbound, Request, decode};
 use serde_json::{Value, json};
 use tokio::{
     sync::{mpsc, watch},
@@ -188,7 +188,7 @@ impl Link {
         };
         let id = inbound.id;
         let req = inbound.request;
-        if req.commands() && self.grant.access == Access::Watch {
+        if req.needs_command() && self.grant.access == Access::Watch {
             let why = "this connection may only watch: turns, controls and approval answers need command access";
             return self.reply(Outbound::refused(id, why)).await;
         }
@@ -215,28 +215,38 @@ impl Link {
                 b.answer(ask, answer).await?;
                 Ok(None)
             }),
-            Request::Control {
-                verb: Verb::Close, ..
-            } => {
-                // The reply goes out before the connection ends with the conversation.
-                let (backend, tx) = (self.backend.clone(), self.tx.clone());
-                self.tasks.spawn(async move {
-                    backend.close().await;
-                    let _ = tx.send(Out::Conn(Outbound::done(id, None))).await;
-                });
+            Request::Control(asked) => {
+                let change = match asked {
+                    wire::Control::Close => return self.close(id),
+                    wire::Control::Interrupt => Ok(Control::Interrupt),
+                    wire::Control::Clear => Ok(Control::Clear),
+                    wire::Control::SetModel { model } if model.trim().is_empty() => {
+                        Err("set_model needs a model, provider:model".to_string())
+                    }
+                    wire::Control::SetModel { model } => Ok(Control::SetModelSpec(model)),
+                    wire::Control::SetEffort { effort } => {
+                        effort_of(effort.as_deref()).map(Control::SetEffort)
+                    }
+                };
+                match change {
+                    Ok(change) => self.spawn(id, true, |b| async move {
+                        b.control(change).await?;
+                        Ok(None)
+                    }),
+                    Err(why) => self.reply(Outbound::refused(id, why)).await,
+                }
             }
-            Request::Control {
-                verb,
-                model_spec,
-                effort,
-            } => match control(verb, model_spec, effort) {
-                Ok(change) => self.spawn(id, true, |b| async move {
-                    b.control(change).await?;
-                    Ok(None)
-                }),
-                Err(why) => self.reply(Outbound::refused(id, why)).await,
-            },
         }
+    }
+
+    /// `close`: the conversation ends, and the reply goes out before the
+    /// connection ends with it.
+    fn close(&mut self, id: String) {
+        let (backend, tx) = (self.backend.clone(), self.tx.clone());
+        self.tasks.spawn(async move {
+            backend.close().await;
+            let _ = tx.send(Out::Conn(Outbound::done(id, None))).await;
+        });
     }
 
     async fn reply(&self, reply: Outbound) {
@@ -408,29 +418,13 @@ fn outcome(end: &TurnOutcome) -> Value {
     json!({"stopReason": end.stop_reason.as_str(), "error": end.error})
 }
 
-/// A control request as the session's change; Err says what is wrong with it.
-fn control(
-    verb: Verb,
-    model_spec: Option<String>,
-    effort: Option<String>,
-) -> Result<Control, String> {
-    Ok(match verb {
-        Verb::Interrupt => Control::Interrupt,
-        Verb::Clear => Control::Clear,
-        Verb::SetModelSpec => match model_spec {
-            Some(spec) if !spec.trim().is_empty() => Control::SetModelSpec(spec),
-            _ => return Err("set_model needs a model, provider:model".into()),
-        },
-        Verb::SetEffort => match effort.as_deref() {
-            None | Some("" | "default") => Control::SetEffort(None),
-            Some(word) => match word.parse::<Effort>() {
-                Ok(effort) => Control::SetEffort(Some(effort)),
-                Err(e) => return Err(e.to_string()),
-            },
-        },
-        // Served before it gets here.
-        Verb::Close => return Err("close is served on its own".into()),
-    })
+/// A `set_effort` word as the effort: none (or `default`) is the model's
+/// own; Err names the words there are.
+fn effort_of(word: Option<&str>) -> Result<Option<Effort>, String> {
+    match word {
+        None | Some("" | "default") => Ok(None),
+        Some(word) => word.parse::<Effort>().map(Some).map_err(|e| e.to_string()),
+    }
 }
 
 /// The `id` of a line that is not a request this version reads, so its

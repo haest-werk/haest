@@ -11,7 +11,7 @@ use std::{
 
 use haest_core::testing::{text_answer, tool_answer};
 use haest_session::{Backend, Body, Hub, HubOptions, Input};
-use haest_wire::{Access, Level, Origin, Outbound, Request, Verb};
+use haest_wire::{Access, Control, Level, Origin, Outbound, Request};
 use serde_json::json;
 
 use super::{SocketDiscovery, UnixPeer, UnixSocket, connect_session, running_sessions};
@@ -261,11 +261,7 @@ async fn a_watch_socket_shows_the_stream_and_refuses_to_drive() {
         matches!(&turn, Err(TransportError::Refused(why)) if why.contains("may only watch")),
         "{turn:?}"
     );
-    let stop = Request::Control {
-        verb: Verb::Interrupt,
-        model_spec: None,
-        effort: None,
-    };
+    let stop = Request::Control(Control::Interrupt);
     assert!(matches!(
         peer.call(stop, |_| {}).await,
         Err(TransportError::Refused(_))
@@ -340,12 +336,10 @@ async fn a_command_socket_drives_the_conversation() {
     eventually("the tool runs", || model.requests().len() == 2).await;
     tokio::time::sleep(Duration::from_millis(20)).await;
     let mut other = connect_session(&dir.0, "s1").await.unwrap();
-    let stop = Request::Control {
-        verb: Verb::Interrupt,
-        model_spec: None,
-        effort: None,
-    };
-    other.call(stop, |_| {}).await.unwrap();
+    other
+        .call(Request::Control(Control::Interrupt), |_| {})
+        .await
+        .unwrap();
     let end = tokio::time::timeout(Duration::from_secs(5), turn)
         .await
         .unwrap()

@@ -9,7 +9,7 @@ use haest::{
     core::{error::report, session::iso_utc},
     session::{Body, Frame},
     transport::{TransportError, UnixPeer, connect_session, running_sessions},
-    wire::{Outbound, Request, Verb},
+    wire::{Control, Outbound, Request},
 };
 use serde_json::{Value, json};
 
@@ -157,11 +157,7 @@ async fn send(dir: &Path, id: &str, text: &str) -> Result<(), String> {
 /// Stop its running turn, if one runs.
 async fn interrupt(dir: &Path, id: &str) -> Result<(), String> {
     let mut peer = connect(dir, id).await?;
-    let stop = Request::Control {
-        verb: Verb::Interrupt,
-        model_spec: None,
-        effort: None,
-    };
+    let stop = Request::Control(Control::Interrupt);
     answered(tokio::time::timeout(ANSWER_WAIT, peer.call(stop, |_| {})).await)?;
     eprintln!("Interrupted.");
     Ok(())

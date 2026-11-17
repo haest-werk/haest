@@ -465,14 +465,16 @@ async fn a_change_replies_after_the_status_that_shows_it() {
     .await;
     let reply = peer.reply("b").await.pop().unwrap();
     assert_eq!(reply["ok"], false);
-    peer.send(json!({"v": 1, "id": "n", "type": "control", "verb": "set_model"}))
+    // A blank model is refused here; no model at all is not a request.
+    let blank = json!({"v": 1, "id": "n", "type": "control", "verb": "set_model", "model": " "});
+    peer.send(blank).await;
+    let error = |reply: &Value| reply["error"].as_str().unwrap_or_default().to_string();
+    let reply = peer.reply("n").await.pop().unwrap();
+    assert!(error(&reply).contains("needs a model"), "{reply}");
+    peer.send(json!({"v": 1, "id": "o", "type": "control", "verb": "set_model"}))
         .await;
-    assert!(
-        peer.reply("n").await.pop().unwrap()["error"]
-            .as_str()
-            .unwrap()
-            .contains("needs a model")
-    );
+    let reply = peer.reply("o").await.pop().unwrap();
+    assert!(error(&reply).contains("missing field `model`"), "{reply}");
 }
 
 #[tokio::test]

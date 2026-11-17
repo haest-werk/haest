@@ -10,11 +10,12 @@ use crate::WIRE_V;
 /// what it asks ([`Request`], flattened in).
 ///
 /// ```
-/// use haest_wire::{Inbound, Request, Verb};
+/// use haest_wire::{Control, Inbound, Request};
 ///
-/// let stop = Inbound::new("r2", Request::Control { verb: Verb::Interrupt, model_spec: None, effort: None });
-/// let line = serde_json::to_string(&stop).unwrap();
+/// let stop = Inbound::new("r2", Request::Control(Control::Interrupt));
+/// let line = serde_json::to_string(&stop)?;
 /// assert_eq!(line, r#"{"v":1,"id":"r2","type":"control","verb":"interrupt"}"#);
+/// # Ok::<(), serde_json::Error>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Inbound {
@@ -55,17 +56,8 @@ pub enum Request {
         /// The text.
         text: String,
     },
-    /// Change or stop the conversation.
-    Control {
-        /// What to do.
-        verb: Verb,
-        /// The model for `set_model`, `provider:model` (the key `model`).
-        #[serde(default, rename = "model", skip_serializing_if = "Option::is_none")]
-        model_spec: Option<String>,
-        /// The effort's word for `set_effort`; None = the model's own default.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        effort: Option<String>,
-    },
+    /// Change or stop the conversation: `verb`, and that verb's own field.
+    Control(Control),
     /// The answer to an [`approval_ask`](crate::Outbound::ApprovalAsk).
     ApprovalAnswer {
         /// The ask's number.
@@ -91,27 +83,45 @@ pub enum Request {
 }
 
 impl Request {
-    /// Whether it needs `command` access.
-    pub fn commands(&self) -> bool {
+    /// Whether it needs `command` access: `turn`, `control` and
+    /// `approval_answer` do.
+    pub fn needs_command(&self) -> bool {
         matches!(
             self,
-            Request::Turn { .. } | Request::Control { .. } | Request::ApprovalAnswer { .. }
+            Request::Turn { .. } | Request::Control(_) | Request::ApprovalAnswer { .. }
         )
     }
 }
 
-/// A [`Request::Control`] verb.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Verb {
+/// What a [`Request::Control`] asks: tagged by `verb` (snake_case), with
+/// the verb's own field beside it. A verb carries only the field it uses, so
+/// `set_model` without a model is not a request (a [`DecodeError::Shape`]).
+///
+/// ```
+/// use haest_wire::{Control, Request, decode};
+///
+/// let line = r#"{"v":1,"id":"r1","type":"control","verb":"set_model","model":"anthropic:claude-opus-5-5"}"#;
+/// let asked = decode(line)?.request;
+/// let model = "anthropic:claude-opus-5-5".to_string();
+/// assert_eq!(asked, Request::Control(Control::SetModel { model }));
+/// # Ok::<(), haest_wire::DecodeError>(())
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "verb", rename_all = "snake_case")]
+pub enum Control {
     /// Stop the running turn; does nothing between turns.
     Interrupt,
-    /// The model from the next model call on (`model`); the word is
-    /// `set_model`.
-    #[serde(rename = "set_model")]
-    SetModelSpec,
-    /// The effort from the next model call on (`effort`).
-    SetEffort,
+    /// The model from the next model call on.
+    SetModel {
+        /// `provider:model`.
+        model: String,
+    },
+    /// The effort from the next model call on.
+    SetEffort {
+        /// The effort's word; None (or `default`) = the model's own default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effort: Option<String>,
+    },
     /// A fresh session: new id, empty history.
     Clear,
     /// End the conversation.
@@ -196,31 +206,16 @@ mod tests {
     fn every_request_type_reads_back_from_its_line() {
         let requests = [
             Request::Turn { text: "hi".into() },
-            Request::Control {
-                verb: Verb::Interrupt,
-                model_spec: None,
-                effort: None,
-            },
-            Request::Control {
-                verb: Verb::SetModelSpec,
-                model_spec: Some("a:b".into()),
-                effort: None,
-            },
-            Request::Control {
-                verb: Verb::SetEffort,
-                model_spec: None,
+            Request::Control(Control::Interrupt),
+            Request::Control(Control::SetModel {
+                model: "a:b".into(),
+            }),
+            Request::Control(Control::SetEffort {
                 effort: Some("high".into()),
-            },
-            Request::Control {
-                verb: Verb::Clear,
-                model_spec: None,
-                effort: None,
-            },
-            Request::Control {
-                verb: Verb::Close,
-                model_spec: None,
-                effort: None,
-            },
+            }),
+            Request::Control(Control::SetEffort { effort: None }),
+            Request::Control(Control::Clear),
+            Request::Control(Control::Close),
             Request::ApprovalAnswer {
                 ask: 1,
                 answer: Answer::Always,
@@ -305,26 +300,50 @@ mod tests {
 
     #[test]
     fn only_turns_controls_and_answers_need_command_access() {
-        assert!(
-            Request::Turn {
-                text: String::new()
-            }
-            .commands()
+        let turn = Request::Turn {
+            text: String::new(),
+        };
+        let answer = Request::ApprovalAnswer {
+            ask: 1,
+            answer: Answer::Deny,
+        };
+        let control = Request::Control(Control::Clear);
+        assert!(turn.needs_command() && answer.needs_command() && control.needs_command());
+        let events = Request::Events {
+            after: 0,
+            follow: true,
+        };
+        assert!(!Request::Snapshot.needs_command() && !events.needs_command());
+    }
+
+    /// A verb reads only its own field: one it does not use is ignored, as
+    /// before; one it needs is required.
+    #[test]
+    fn a_control_reads_only_its_verbs_field() {
+        let control = |line: &str| decode(line).map(|i| i.request);
+        let interrupt =
+            r#"{"v":1,"id":"x","type":"control","verb":"interrupt","model":"a:b","effort":"high"}"#;
+        assert_eq!(
+            control(interrupt).unwrap(),
+            Request::Control(Control::Interrupt)
         );
-        assert!(
-            Request::ApprovalAnswer {
-                ask: 1,
-                answer: Answer::Deny
-            }
-            .commands()
+        let set_model =
+            r#"{"v":1,"id":"x","type":"control","verb":"set_model","model":"a:b","effort":"low"}"#;
+        assert_eq!(
+            control(set_model).unwrap(),
+            Request::Control(Control::SetModel {
+                model: "a:b".into()
+            })
         );
-        assert!(!Request::Snapshot.commands());
-        assert!(
-            !Request::Events {
-                after: 0,
-                follow: true
-            }
-            .commands()
-        );
+        for refused in [
+            r#"{"v":1,"id":"x","type":"control","verb":"set_model"}"#,
+            r#"{"v":1,"id":"x","type":"control","verb":"nope"}"#,
+            r#"{"v":1,"id":"x","type":"control"}"#,
+        ] {
+            assert!(
+                matches!(control(refused), Err(DecodeError::Shape(_))),
+                "{refused}"
+            );
+        }
     }
 }

@@ -1006,13 +1006,28 @@ The format, serde only (no I/O, no tokio): `Envelope<B>` (`v`, `sid`,
 `ApprovalAsk`, `ApprovalWithdrawn`, `SubagentStarted`, `SubagentStopped`,
 `Hello`, `Gap`, `Reply`) with `Access`, `Origin`, `Level`, `State` and
 `Snapshot`; requests `Inbound { v, id, request }` with `Request` (`Turn`,
-`Control`, `ApprovalAnswer`, `Snapshot`, `History`, `Events`), `Verb` and
-`Answer`. `decode` and `decode_value` check `v` before the shape
+`Control`, `ApprovalAnswer`, `Snapshot`, `History`, `Events`), `Control`
+and `Answer`. `decode` and `decode_value` check `v` before the shape
 (`DecodeError`: `Json`, `Version`, `NoVersion`, `Shape`). `Ring` keeps
 `capacity` frames outside the running turn and the running turn whole,
 drops a model call's pieces once its answer is in, and reports a gap only
 for an eviction (`Classify`, `FrameKind`, `Replay`). `LineDecoder` and
 `encode_line` are NDJSON with a line cap (`LineTooLong`).
+
+Changed since the first cut of these crates on `main` (breaking for Rust
+code written against it). The JSON on the wire is unchanged, byte for byte:
+`tests/wire_bytes.rs` pins every request, frame and word as the first cut
+wrote them.
+
+- `Request::Control` holds a `Control`, one variant per verb carrying only
+  that verb's field, so `set_model` without a model or `interrupt` with an
+  effort cannot be built: `Request::Control { verb: Verb::SetModelSpec,
+  model_spec: Some(m), effort: None }` ->
+  `Request::Control(Control::SetModel { model: m })`. `Verb` is gone. A
+  `set_model` line without a `model` is refused as not a request
+  (``missing field `model` ``) instead of by the transport (`set_model
+  needs a model`); a field a verb does not use is still ignored.
+- `Request::commands()` -> `Request::needs_command()`.
 
 ### haest-session (new)
 
