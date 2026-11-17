@@ -217,9 +217,9 @@ fn broker_link(
         BrokerAccess::Watch => Grant::watch(Origin::Agent),
         BrokerAccess::Command => Grant::command(Origin::Agent),
     };
-    // Said without its query: the URL is not where a secret goes, but one
-    // may be there.
-    let shown = url.split('?').next().unwrap_or_default().to_string();
+    // Said without its credentials: the URL is not where a secret goes,
+    // but one may be there.
+    let shown = haest::http::__private::redacted_url(&url).into_owned();
     let mut link = Broker::new(url);
     if let Some(token) = token {
         link = link.with_token(token);

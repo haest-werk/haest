@@ -424,3 +424,28 @@ fn the_token_never_shows_in_debug_output() {
     assert!(!shown.contains("SECRET"), "{shown}");
     assert!(shown.contains("broker.example"), "{shown}");
 }
+
+/// A credential in the URL (userinfo, a query's value) shows nowhere: not
+/// in the link's Debug, not in the error for a URL it does not dial.
+#[tokio::test]
+async fn a_credential_in_the_url_never_shows() {
+    let link = Broker::new("wss://agent:s3cret@broker.example/agents?key=k3y");
+    let shown = format!("{link:?}");
+    assert!(
+        !shown.contains("s3cret") && !shown.contains("k3y"),
+        "{shown}"
+    );
+    assert!(shown.contains("broker.example/agents?key="), "{shown}");
+
+    let (s, _) = session(&answers(&[]), hub());
+    let refused = Broker::new("https://agent:s3cret@broker.example/?key=k3y")
+        .attach(s.clone(), Grant::watch(Origin::Agent))
+        .expect_err("not a ws:// URL");
+    for shown in [refused.to_string(), format!("{refused:?}")] {
+        assert!(
+            !shown.contains("s3cret") && !shown.contains("k3y"),
+            "{shown}"
+        );
+    }
+    s.close().await;
+}

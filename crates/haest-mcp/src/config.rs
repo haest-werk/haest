@@ -2,8 +2,7 @@
 
 use std::{collections::BTreeMap, fmt, path::PathBuf};
 
-/// What a header's or a variable's value shows as in Debug output.
-const REDACTED: &str = "<redacted>";
+use haest_http::__private::{REDACTED, UrlDebug};
 
 /// Headers or variables as Debug output shows them: each name, never its
 /// value (a token rides in one).
@@ -107,7 +106,8 @@ impl McpTransport {
 /// A streamable-HTTP MCP server; `headers` ride on every request (an
 /// `Authorization` included). Start from [`McpTransport::http`].
 ///
-/// Its Debug output names the headers and never shows their values.
+/// Its Debug output names the headers and never shows their values, and
+/// shows the URL without its userinfo, query values or fragment.
 #[derive(Clone, PartialEq, Eq)]
 pub struct HttpTransport {
     /// The server's endpoint, e.g. `https://example.com/mcp`.
@@ -129,7 +129,7 @@ impl HttpTransport {
 impl fmt::Debug for HttpTransport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HttpTransport")
-            .field("url", &self.url)
+            .field("url", &UrlDebug(&self.url))
             .field("headers", &Names(&self.headers))
             .finish()
     }

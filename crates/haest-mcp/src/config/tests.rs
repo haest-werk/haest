@@ -40,3 +40,14 @@ fn debug_names_headers_and_variables_but_never_their_values() {
     assert!(format!("{http:?}").contains("\"Authorization\""));
     assert!(format!("{stdio:?}").contains("\"GITHUB_TOKEN\""));
 }
+
+#[test]
+fn debug_shows_a_url_without_its_credentials() {
+    let http = McpTransport::http("https://user:s3cret@docs.example.com/mcp?api_key=k3y");
+    let config = McpServerConfig::new("docs", http.clone());
+    for shown in [format!("{http:?}"), format!("{config:?}")] {
+        assert!(!shown.contains("s3cret"), "the password in {shown}");
+        assert!(!shown.contains("k3y"), "the query's key in {shown}");
+        assert!(shown.contains("docs.example.com/mcp?api_key="), "{shown}");
+    }
+}

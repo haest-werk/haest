@@ -20,10 +20,12 @@ stdio = ["tokio/io-std", "tokio/sync"]
 unix = ["tokio/net", "dep:serde"]
 # The conversation dials out to a broker over a WebSocket (TLS on ring, the
 # platform's roots, as the model requests verify).
-broker = ["tokio/net", "dep:tokio-tungstenite", "dep:futures", "dep:rustls", "dep:rustls-platform-verifier"]
+broker = ["tokio/net", "dep:tokio-tungstenite", "dep:futures", "dep:rustls", "dep:rustls-platform-verifier", "dep:haest-http"]
 
 [dependencies]
 haest-core = { workspace = true }
+# broker: a URL in Debug output and errors without its credentials.
+haest-http = { workspace = true, optional = true }
 haest-wire = { workspace = true }
 haest-session = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "rt"] }

@@ -1165,6 +1165,7 @@ dependencies = [
  "async-trait",
  "futures",
  "haest-core",
+ "haest-http",
  "haest-mods",
  "haest-session",
  "haest-wire",

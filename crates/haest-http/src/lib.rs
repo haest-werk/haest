@@ -130,7 +130,7 @@ mod response;
 /// option and tracker types use.
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::redact::{HeaderNames, REDACTED, UrlDebug, without_userinfo};
+    pub use crate::redact::{HeaderNames, REDACTED, UrlDebug, redacted_url, without_userinfo};
 }
 
 /// Marks an `impl HttpClient` so its `async fn` compiles; the macro the trait

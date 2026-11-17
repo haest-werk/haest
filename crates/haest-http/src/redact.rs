@@ -20,13 +20,55 @@ pub fn without_userinfo(url: &str) -> Cow<'_, str> {
     }
 }
 
-/// A URL as Debug output shows it: quoted, its userinfo
-/// [redacted](without_userinfo).
+/// `url` with nothing a credential may ride in: its userinfo
+/// [redacted](without_userinfo), each query parameter's value (a key, a
+/// token: `?api_key=<redacted>`) and a parameter with no name, and the
+/// fragment. The scheme, host, path and the query's names as they are.
+pub fn redacted_url(url: &str) -> Cow<'_, str> {
+    let url = without_userinfo(url);
+    let Some(cut) = url.find(['?', '#']) else {
+        return url;
+    };
+    let (base, rest) = url.split_at(cut);
+    let (query, fragment) = match rest.strip_prefix('?') {
+        Some(after) => match after.split_once('#') {
+            Some((query, _)) => (Some(query), true),
+            None => (Some(after), false),
+        },
+        None => (None, true),
+    };
+    let mut shown = base.to_string();
+    if let Some(query) = query {
+        shown.push('?');
+        for (n, pair) in query.split('&').enumerate() {
+            if n > 0 {
+                shown.push('&');
+            }
+            match pair.split_once('=') {
+                Some((name, _)) => {
+                    shown.push_str(name);
+                    shown.push('=');
+                    shown.push_str(REDACTED);
+                }
+                None if pair.is_empty() => {}
+                None => shown.push_str(REDACTED),
+            }
+        }
+    }
+    if fragment {
+        shown.push('#');
+        shown.push_str(REDACTED);
+    }
+    Cow::Owned(shown)
+}
+
+/// A URL as Debug output shows it: quoted, with nothing a credential may
+/// ride in ([`redacted_url`]).
 pub struct UrlDebug<'a>(pub &'a str);
 
 impl fmt::Debug for UrlDebug<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&*without_userinfo(self.0), f)
+        fmt::Debug::fmt(&*redacted_url(self.0), f)
     }
 }
 
@@ -62,6 +104,30 @@ mod tests {
         ];
         for (url, shown) in cases {
             assert_eq!(without_userinfo(url), shown, "{url}");
+        }
+    }
+
+    #[test]
+    fn query_values_and_the_fragment_are_redacted_and_the_names_kept() {
+        let cases = [
+            (
+                "https://u:p@h/mcp?api_key=k3y&v=2",
+                "https://<redacted>@h/mcp?api_key=<redacted>&v=<redacted>",
+            ),
+            ("wss://h/a?s3cret", "wss://h/a?<redacted>"),
+            (
+                "https://h/a?x=1#t0ken",
+                "https://h/a?x=<redacted>#<redacted>",
+            ),
+            ("https://h/a#access_token=t", "https://h/a#<redacted>"),
+            (
+                "https://h/a?a=1&&b=",
+                "https://h/a?a=<redacted>&&b=<redacted>",
+            ),
+            ("https://h/a", "https://h/a"),
+        ];
+        for (url, shown) in cases {
+            assert_eq!(redacted_url(url), shown, "{url}");
         }
     }
 

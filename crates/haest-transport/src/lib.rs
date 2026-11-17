@@ -262,7 +262,8 @@ pub enum TransportError {
     /// The other end refused the request; its reason.
     #[error("refused: {0}")]
     Refused(String),
-    /// Not a URL a broker link dials: it takes `ws://` or `wss://`.
+    /// Not a URL a broker link dials: it takes `ws://` or `wss://`. The URL
+    /// as given, without its credentials (its userinfo, a query's values).
     #[error("{0} is not a ws:// or wss:// URL")]
     Url(String),
     /// The broker refused the token: it closed with 4401 or 4408, or

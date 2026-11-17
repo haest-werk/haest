@@ -21,6 +21,7 @@
 //! refuses the handshake with 401 or 403, is not dialed again.
 
 use std::{
+    fmt,
     hash::{BuildHasher, Hasher},
     sync::{Arc, OnceLock},
     time::{Duration, Instant},
@@ -30,6 +31,7 @@ use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
+use haest_http::__private::{UrlDebug, redacted_url};
 use haest_session::BackendRef;
 use haest_wire::Token;
 use tokio::net::TcpStream;
@@ -56,7 +58,8 @@ const STABLE: Duration = Duration::from_secs(5);
 type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 /// The session linked to a broker at a `ws://` or `wss://` URL. Its Debug
-/// output never shows the token.
+/// output never shows the token, nor a credential in the URL (its userinfo,
+/// a query's values).
 ///
 /// ```no_run
 /// # async fn link(session: impl haest_session::Backend + 'static, token: String) -> Result<(), haest_transport::TransportError> {
@@ -71,11 +74,21 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Broker {
     url: String,
     token: Option<Token>,
     backoff: Backoff,
+}
+
+impl fmt::Debug for Broker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Broker")
+            .field("url", &UrlDebug(&self.url))
+            .field("token", &self.token)
+            .field("backoff", &self.backoff)
+            .finish()
+    }
 }
 
 impl Broker {
@@ -176,7 +189,7 @@ impl Transport for Broker {
         grant: Grant,
     ) -> Result<Attached, TransportError> {
         if !(self.url.starts_with("ws://") || self.url.starts_with("wss://")) {
-            return Err(TransportError::Url(self.url));
+            return Err(TransportError::Url(redacted_url(&self.url).into_owned()));
         }
         Ok(Attached::new(tokio::spawn(link(
             self,

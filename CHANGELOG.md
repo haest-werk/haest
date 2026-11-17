@@ -219,6 +219,17 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   at most 32 requests waiting for their replies; at the cap it reads no
   more lines until one is answered, so the rest wait in the peer's pipe.
   The wire JSON is unchanged.
+- haest-mcp's `HttpTransport` (and the `McpTransport`, `McpServerConfig`
+  and `RuntimeInputs` holding one) printed its URL in Debug as it was, so
+  `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
+  password and the key; `Broker` did the same with its URL, and
+  `TransportError::Url` displayed it. A URL in haest's Debug output now
+  shows no userinfo, no query value and no fragment
+  (`https://<redacted>@docs.example.com/mcp?api_key=<redacted>`): this
+  covers haest-http's `Request`, the providers' options and
+  `GithubTracker` too, and `TransportError::Url` holds the URL shown that
+  way. The `haest` command's "Broker link:" line kept the userinfo; it
+  shows the URL the same way.
 
 ### Behaviour changes
 
