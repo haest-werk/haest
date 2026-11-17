@@ -199,10 +199,11 @@ impl RunningSession {
 /// A discovery file whose socket nothing answers on (its run crashed) is
 /// removed, with its socket; one that does not say hello in time is skipped.
 ///
-/// Only files the transport makes are removed: the socket must be the one
-/// beside its discovery file (`<stream id>.sock`), and the connection refused
-/// or the socket gone. Any other failure (too many open files, a crafted
-/// discovery file naming some other path) skips the entry and keeps its files.
+/// Only files the transport makes are dialed or removed: the socket must be
+/// the one beside its discovery file (`<stream id>.sock`), and the
+/// connection refused or the socket gone. Any other failure (too many open
+/// files) skips the entry and keeps its files, and a discovery file naming
+/// some other path is skipped and kept.
 pub async fn running_sessions(dir: &Path) -> Vec<RunningSession> {
     let mut found = Vec::new();
     for (file, discovery) in discoveries(dir) {
@@ -212,7 +213,7 @@ pub async fn running_sessions(dir: &Path) -> Vec<RunningSession> {
                     e.kind(),
                     std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
                 );
-                if dead && discovery.socket == file.with_extension("sock") {
+                if dead {
                     let _ = fs::remove_file(&discovery.socket);
                     let _ = fs::remove_file(&file);
                 }
@@ -232,7 +233,9 @@ pub async fn running_sessions(dir: &Path) -> Vec<RunningSession> {
 }
 
 /// Connect to the session in `dir` whose stream id is `id`, or starts with it
-/// when only one does.
+/// when only one does. Its socket is the one beside its discovery file
+/// (`<stream id>.sock`); a discovery file that names another is not a
+/// session served here.
 ///
 /// # Errors
 ///
@@ -242,11 +245,11 @@ pub async fn connect_session(dir: &Path, id: &str) -> Result<UnixPeer, Transport
     let all = discoveries(dir);
     let exact = all.iter().find(|(_, d)| d.sid == id);
     let socket = match exact {
-        Some((_, d)) => d.socket.clone(),
+        Some((file, _)) => file.with_extension("sock"),
         None => {
             let mut matches = all.iter().filter(|(_, d)| d.sid.starts_with(id));
             match (matches.next(), matches.next()) {
-                (Some((_, d)), None) => d.socket.clone(),
+                (Some((file, _)), None) => file.with_extension("sock"),
                 (None, _) => return Err(TransportError::NoSession(id.into())),
                 (Some(_), Some(_)) => return Err(TransportError::Ambiguous(id.into())),
             }
@@ -259,7 +262,9 @@ pub async fn connect_session(dir: &Path, id: &str) -> Result<UnixPeer, Transport
     Peer::start(NdjsonSource::new(read), NdjsonSink::new(write)).await
 }
 
-/// Every discovery file in `dir` that reads, with its path.
+/// Every discovery file in `dir` that reads and is the transport's own, with
+/// its path: its socket is the one beside it, so what a file says is never
+/// a path to dial or remove somewhere else.
 fn discoveries(dir: &Path) -> Vec<(PathBuf, SocketDiscovery)> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
@@ -268,8 +273,8 @@ fn discoveries(dir: &Path) -> Vec<(PathBuf, SocketDiscovery)> {
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|x| x == "json"))
         .filter_map(|p| {
-            let discovery = serde_json::from_slice(&fs::read(&p).ok()?).ok()?;
-            Some((p, discovery))
+            let discovery: SocketDiscovery = serde_json::from_slice(&fs::read(&p).ok()?).ok()?;
+            (discovery.socket == p.with_extension("sock")).then_some((p, discovery))
         })
         .collect()
 }

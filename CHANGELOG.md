@@ -230,6 +230,11 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   `GithubTracker` too, and `TransportError::Url` holds the URL shown that
   way. The `haest` command's "Broker link:" line kept the userinfo; it
   shows the URL the same way.
+- `connect_session` (and so `haest ctl`) dialed whatever socket any
+  discovery file in the dir named, so a crafted `<id>.json` sent the
+  client to another program's socket. It now dials only the
+  `<stream id>.sock` beside the discovery file, and `running_sessions`
+  neither dials nor lists a file that names another path.
 
 ### Behaviour changes
 

@@ -213,6 +213,32 @@ async fn running_clears_only_a_dead_socket_beside_its_own_discovery_file() {
     assert!(!gone.exists(), "a run whose socket is gone is cleared");
 }
 
+/// A discovery file that names a socket other than the one beside it is not
+/// dialed, nor listed: what is reached is always `<dir>/<stream id>.sock`.
+#[tokio::test]
+async fn a_discovery_file_naming_another_socket_is_not_followed() {
+    let dir = Dir::new("lure");
+    let elsewhere = Dir::new("lure-other");
+    let (s, _) = session(&answers(&[]), Hub::new("real"));
+    let _attached = UnixSocket::new(&elsewhere.0)
+        .attach(s, Grant::watch(Origin::Agent))
+        .unwrap();
+    std::fs::create_dir_all(&dir.0).unwrap();
+    discovery_file(&dir.0, "lure", &elsewhere.0.join("real.sock"));
+
+    let reached = connect_session(&dir.0, "lure").await;
+    assert!(
+        reached.is_err(),
+        "dialed {:?}",
+        reached.map(|p| p.hello().sid.clone())
+    );
+    assert!(running_sessions(&dir.0).await.is_empty());
+    assert!(
+        dir.0.join("lure.json").exists(),
+        "a file it did not make is kept"
+    );
+}
+
 #[tokio::test]
 async fn a_session_is_reached_by_its_id_or_a_prefix_only_it_has() {
     let dir = Dir::new("prefix");
