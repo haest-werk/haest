@@ -162,6 +162,23 @@ async fn a_timeout_stops_the_call_and_says_so() {
     assert!(started.elapsed() < Duration::from_secs(3));
 }
 
+/// A call dropped in flight (a Code run that times out drops its calls) left
+/// the task that stops the shell at the deadline asleep until then, up to
+/// ten minutes.
+#[tokio::test]
+async fn a_dropped_call_leaves_no_task_behind() {
+    let ws = SandboxWorkspace::over(MemFs::new());
+    let tasks = tokio::runtime::Handle::current().metrics();
+    let call = ws.shell("sleep 100", ExecOptions::new("/", Duration::from_secs(120)));
+    let dropped = tokio::time::timeout(Duration::from_millis(50), call).await;
+    assert!(dropped.is_err(), "the call ended on its own: {dropped:?}");
+    let end = Instant::now() + Duration::from_secs(2);
+    while tasks.num_alive_tasks() > 0 && Instant::now() < end {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(tasks.num_alive_tasks(), 0, "tasks still alive");
+}
+
 /// `Duration::MAX` is how a Rust host writes "no deadline". The sandbox added
 /// it to an `Instant`, which panicked: running a command never fails.
 #[tokio::test]

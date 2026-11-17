@@ -96,9 +96,11 @@ pub(crate) async fn exec(
     let mut bash = shell(&world, &opts, started + timeout);
     // A CPU-bound script never yields to the select below, so the deadline and
     // the cancel ALSO raise the shell's own flag from another task: it stops at
-    // the next command.
+    // the next command. Held in a set, never detached: a dropped call drops
+    // the set, which aborts it.
     let flag = bash.cancellation_token();
-    let watcher = tokio::spawn({
+    let mut watcher = tokio::task::JoinSet::new();
+    watcher.spawn({
         let cancel = opts.cancel.clone();
         async move {
             tokio::select! {
@@ -127,7 +129,7 @@ pub(crate) async fn exec(
         _ = opts.cancel.cancelled() => Err(Stopped::Cancelled),
         _ = tokio::time::sleep(timeout) => Err(Stopped::TimedOut),
     };
-    watcher.abort();
+    watcher.abort_all();
     let timed_out = started.elapsed() >= timeout;
     let (out, err) = std::mem::take(&mut *streamed(&sink));
     let partial = |extra: &str, exit_code: i32| ExecResult {
