@@ -1206,6 +1206,8 @@ Hosts write less (round two of the review, and what porting brain onto
   `mcp` turns on the loader's. `features = ["config"]` with
   `default-features = false` -> `features = ["config", "mcp"]` to keep
   reading `.mcp.json` (148 crates become 50 without it).
+- The crate docs show loading real files: `.load(&RealFs)` with
+  haest-workspace's disk, which every example before read from memory.
 
 ### haest-runtime
 

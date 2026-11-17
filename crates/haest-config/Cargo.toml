@@ -36,6 +36,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 # The image tool's own models, for docs/settings.md's "Default" of an unset key.
 haest-tools = { workspace = true }
+# The real disk, for the crate docs' example of loading real files.
+haest-workspace = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

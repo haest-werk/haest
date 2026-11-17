@@ -991,6 +991,7 @@ dependencies = [
  "haest-providers",
  "haest-settings",
  "haest-tools",
+ "haest-workspace",
  "thiserror",
  "tokio",
  "toml",

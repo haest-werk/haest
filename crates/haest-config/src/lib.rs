@@ -126,6 +126,33 @@
 //! # }
 //! ```
 //!
+//! # Real files
+//!
+//! [`Loader::load`] reads through the [`Fs`](haest_core::fs::Fs) it is
+//! handed, and nothing else. On the real disk that is haest-workspace's
+//! `RealFs` (`haest::workspace::RealFs` through the facade), what the
+//! `haest` command hands it; the loader only reads through it.
+//!
+//! ```no_run
+//! use haest_config::Loader;
+//! use haest_settings::Settings;
+//! use haest_workspace::RealFs;
+//!
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let cwd = std::env::current_dir()?;
+//! let home = std::env::home_dir().ok_or("no home directory")?;
+//! let flags = [("model", "anthropic:claude-opus-5-5")];
+//! let loaded = Loader::standard(Settings::bare(cwd, home), std::env::vars(), flags)
+//!     .load(&RealFs)
+//!     .await?;
+//! for note in &loaded.notes {
+//!     eprintln!("{note}");
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! # Features
 //!
 //! - `mcp` (on by default): a trusted project's `.mcp.json`, read into
