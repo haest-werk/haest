@@ -29,7 +29,7 @@ use super::{Tool, ToolContext};
 ///     }
 ///     async fn execute(&self, _input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
 ///         let key = ctx.effect_key().map(|k| k.to_string()).unwrap_or_default();
-///         if ctx.resumed {
+///         if ctx.resumed() {
 ///             // Ask the payment API what happened under `key`.
 ///             return Ok(ToolOutput::text(format!("looked up {key}")));
 ///         }

@@ -55,8 +55,8 @@ impl Tool for GlobTool {
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let pattern = req_str(&input, "pattern")?;
         let base = ctx.resolve(opt_str(&input, "path")?.unwrap_or("."));
-        let fs = ctx.workspace.fs();
-        let mut found = glob_fs(fs.as_ref(), &base, pattern, &ctx.cancel)
+        let fs = ctx.workspace().fs();
+        let mut found = glob_fs(fs.as_ref(), &base, pattern, ctx.cancel())
             .await
             .map_err(ToolError::Input)?;
         // Newest first; stable, so equal times keep walk order.

@@ -103,7 +103,8 @@ pub struct DirEntry {
 ///
 /// Eight methods are required. The rest have defaults built on them; override
 /// one when the store can do it better ([`Fs::read_head`] that stops early,
-/// [`Fs::read_link`] and [`Fs::chmod`] on a store that has links and modes).
+/// [`Fs::create_dir_all`] and [`Fs::remove_all`] in one step, [`Fs::read_link`]
+/// and [`Fs::chmod`] on a store that has links and modes).
 ///
 /// Implementations here: [`MemFs`] and [`ShutFs`]; `haest-workspace` has the
 /// real disk (`RealFs`) and a copy-on-write sandbox over any `Fs`.
@@ -141,10 +142,10 @@ pub struct DirEntry {
 ///     async fn append(&self, _: &Path, _: &[u8]) -> io::Result<()> {
 ///         Err(refused())
 ///     }
-///     async fn mkdir(&self, _: &Path, _: bool) -> io::Result<()> {
+///     async fn create_dir(&self, _: &Path) -> io::Result<()> {
 ///         Err(refused())
 ///     }
-///     async fn remove(&self, _: &Path, _: bool) -> io::Result<()> {
+///     async fn remove(&self, _: &Path) -> io::Result<()> {
 ///         Err(refused())
 ///     }
 ///     async fn rename(&self, _: &Path, _: &Path) -> io::Result<()> {
@@ -153,12 +154,13 @@ pub struct DirEntry {
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> io::Result<()> {
 /// let fs = ReadOnly(MemFs::with_files([("/docs/a.md", "A")]));
-/// assert_eq!(fs.read_to_string(Path::new("/docs/a.md")).await.unwrap(), "A");
+/// assert_eq!(fs.read_to_string(Path::new("/docs/a.md")).await?, "A");
 /// assert!(fs.exists(Path::new("/docs")).await);
-/// let err = fs.write(Path::new("/docs/b.md"), b"B").await.unwrap_err();
-/// assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+/// let refused = fs.write(Path::new("/docs/b.md"), b"B").await;
+/// assert!(refused.is_err_and(|e| e.kind() == io::ErrorKind::PermissionDenied));
+/// # Ok(())
 /// # }
 /// ```
 #[async_trait]
@@ -238,23 +240,73 @@ pub trait Fs: Send + Sync {
     ///
     /// `NotFound` when nothing is there, `NotADirectory` for a file.
     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>>;
-    /// Create a directory. `recursive` creates every missing parent too and
-    /// accepts a directory that is already there, like `mkdir -p`.
+    /// Create the directory `path`; its parent must exist.
     ///
     /// # Errors
     ///
-    /// Without `recursive`: `AlreadyExists` when something is at `path`, and
-    /// `NotFound` when the parent is missing. Either way, an error when a file
-    /// sits where a directory should be.
-    async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()>;
-    /// Delete a file, a link (not what it names) or a directory. A directory
-    /// with anything in it needs `recursive`, which deletes it all.
+    /// `AlreadyExists` when something is at `path`, `NotFound` when the
+    /// parent is missing, and an error when a file sits where the parent
+    /// should be.
+    async fn create_dir(&self, path: &Path) -> io::Result<()>;
+    /// Create the directory `path` and every missing parent, like `mkdir -p`;
+    /// a directory already there is fine. The default walks down from the
+    /// root with [`Fs::stat`] and [`Fs::create_dir`]; a store that can do it
+    /// in one step should.
     ///
     /// # Errors
     ///
-    /// `NotFound` when nothing is there, and an error for a non-empty
-    /// directory without `recursive`.
-    async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()>;
+    /// `NotADirectory` when a file sits where a directory should be, and
+    /// [`Fs::create_dir`]'s.
+    async fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        let dirs: Vec<&Path> = path.ancestors().collect();
+        for dir in dirs.into_iter().rev() {
+            match self.stat(dir).await {
+                Ok(stat) if stat.is_dir() => {}
+                Ok(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotADirectory,
+                        format!("{}: not a directory", dir.display()),
+                    ));
+                }
+                Err(_) => match self.create_dir(dir).await {
+                    Ok(()) => {}
+                    // Another writer made it first: fine, if it is a directory.
+                    Err(e)
+                        if e.kind() == io::ErrorKind::AlreadyExists
+                            && self.stat(dir).await.is_ok_and(|s| s.is_dir()) => {}
+                    Err(e) => return Err(e),
+                },
+            }
+        }
+        Ok(())
+    }
+    /// Delete a file, a link (not what it names) or an empty directory.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when nothing is there, and an error for a directory with
+    /// anything in it ([`Fs::remove_all`] deletes those).
+    async fn remove(&self, path: &Path) -> io::Result<()>;
+    /// Delete `path` and, for a directory, everything in it. A link is
+    /// deleted, never followed. The default walks the tree with
+    /// [`Fs::read_link`], [`Fs::read_dir`] and [`Fs::remove`]; a store that
+    /// can do it in one step should.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` when nothing is there, and the first [`Fs::remove`] that
+    /// fails.
+    async fn remove_all(&self, path: &Path) -> io::Result<()> {
+        // A link goes as it is: walking into it would empty what it names.
+        if self.read_link(path).await.is_err()
+            && let Ok(entries) = self.read_dir(path).await
+        {
+            for entry in entries {
+                self.remove_all(&path.join(&entry.name)).await?;
+            }
+        }
+        self.remove(path).await
+    }
     /// Move a file or a whole directory tree from `from` to `to`, replacing a
     /// file at `to`. The parent of `to` must exist.
     ///
@@ -269,6 +321,14 @@ pub trait Fs: Send + Sync {
     async fn chmod(&self, _path: &Path, _mode: u32) -> io::Result<()> {
         Ok(())
     }
+}
+
+crate::plug_ref! {
+    /// An [`Fs`], shared: what [`Workspace::fs`](crate::Workspace::fs) hands
+    /// out, and what a session file or a skill set reads through. Built from
+    /// the file system itself (`MemFs::new()`, a host's own), or from an
+    /// `Arc` of one.
+    pub struct FsRef(dyn Fs);
 }
 
 mod mem;

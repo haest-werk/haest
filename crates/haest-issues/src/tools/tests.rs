@@ -204,7 +204,7 @@ async fn a_tracker_that_cannot_answer_is_a_failure_and_a_number_is_an_id() {
 async fn a_cancelled_turn_stops_a_call_that_hangs() {
     let gh = issue_tools(Arc::new(github(FakeHttp::hanging())));
     let ctx = ctx();
-    ctx.cancel.cancel();
+    ctx.cancel().cancel();
     let stopped = tokio::time::timeout(
         Duration::from_secs(5),
         tool(&gh, "IssueList").execute(JsonMap::new(), &ctx),

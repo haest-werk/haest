@@ -44,7 +44,7 @@ use tool::JsTool;
 
 /// What a handler of a tool event sees as `ctx` (`signal` is added in the runtime).
 fn ctx_json(ctx: &ToolContext) -> Value {
-    json!({ "cwd": ctx.cwd, "toolCallId": ctx.tool_call_id })
+    json!({ "cwd": ctx.cwd(), "toolCallId": ctx.tool_call_id() })
 }
 
 /// One loaded mod file: a `.js` or `.ts` ES module run in embedded QuickJS,
@@ -160,7 +160,7 @@ impl Mod for JsMod {
     ) -> Result<Before, BoxError> {
         let payload = json!({ "call": call, "ctx": ctx_json(ctx) });
         match self
-            .event("tool.before", payload, Some(&ctx.cancel))
+            .event("tool.before", payload, Some(ctx.cancel()))
             .await?
         {
             Value::Null => Ok(Before::Pass),
@@ -181,7 +181,10 @@ impl Mod for JsMod {
         _haest: &ModEnv,
     ) -> Result<Option<ToolOutput>, BoxError> {
         let payload = json!({ "call": call, "output": output, "ctx": ctx_json(ctx) });
-        match self.event("tool.after", payload, Some(&ctx.cancel)).await? {
+        match self
+            .event("tool.after", payload, Some(ctx.cancel()))
+            .await?
+        {
             Value::Null => Ok(None),
             v => serde_json::from_value(v)
                 .map(Some)

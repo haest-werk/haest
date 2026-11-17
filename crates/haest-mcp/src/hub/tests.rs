@@ -140,7 +140,7 @@ async fn a_cancelled_call_returns_at_once_and_tells_the_server() {
     let (hub, _server) = connected(server.clone()).await;
     let hang = tool(&hub, "hang");
     let ctx = ctx();
-    let cancel = ctx.cancel.clone();
+    let cancel = ctx.cancel().clone();
     let call = tokio::spawn(async move { hang.execute(JsonMap::new(), &ctx).await });
     tokio::time::timeout(SETTLE, server.hanging.notified())
         .await

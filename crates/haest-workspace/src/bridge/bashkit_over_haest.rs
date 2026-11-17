@@ -127,15 +127,22 @@ impl FileSystem for BashkitFsOverHaest {
                 Err(err(ErrorKind::AlreadyExists, "already exists"))
             };
         }
-        self.fs.mkdir(&p, recursive).await.map_err(bashkit_from_io)
+        let made = if recursive {
+            self.fs.create_dir_all(&p).await
+        } else {
+            self.fs.create_dir(&p).await
+        };
+        made.map_err(bashkit_from_io)
     }
 
     async fn remove(&self, path: &Path, recursive: bool) -> Result<()> {
         let p = normalize(path);
-        self.fs
-            .remove(&p, recursive)
-            .await
-            .map_err(bashkit_from_io)?;
+        let removed = if recursive {
+            self.fs.remove_all(&p).await
+        } else {
+            self.fs.remove(&p).await
+        };
+        removed.map_err(bashkit_from_io)?;
         self.forget_modes(&p, None);
         Ok(())
     }

@@ -62,7 +62,7 @@ impl Tool for WriteTool {
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let path = ctx.resolve(req_str(&input, "file_path")?);
         let content = any_str(&input, "content")?;
-        let fs = ctx.workspace.fs();
+        let fs = ctx.workspace().fs();
         let existed = fs.exists(&path).await;
         if let Some(parent) = path.parent() {
             ensure_dir(fs.as_ref(), parent).await?;
@@ -132,7 +132,7 @@ impl Tool for EditTool {
                 "old_string and new_string are identical; nothing to do".into(),
             ));
         }
-        let fs = ctx.workspace.fs();
+        let fs = ctx.workspace().fs();
         let Ok(stat) = fs.stat(&path).await else {
             return Err(ToolError::Input(format!(
                 "File does not exist: {}. Use Write to create it.",

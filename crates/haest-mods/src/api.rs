@@ -172,7 +172,7 @@ pub trait Mod: Send + Sync {
     /// `tool.before`: before every tool call. [`Before::Deny`] refuses it (the
     /// model reads the reason), [`Before::Input`] replaces its input.
     ///
-    /// `ctx.cancel` fires when the human interrupts the call; an ask made here
+    /// `ctx.cancel()` fires when the human interrupts the call; an ask made here
     /// should pass it on. An `Err` refuses the call: a guard that broke must
     /// not wave anything through.
     async fn tool_before(

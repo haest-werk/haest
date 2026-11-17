@@ -83,7 +83,7 @@ impl OverlayChanges {
         let disk = self.book.disk.as_ref();
         let real = self.book.real(path);
         if deleted {
-            return match disk.remove(&real, true).await {
+            return match disk.remove_all(&real).await {
                 // Gone already, or under a directory that became a file.
                 Err(e)
                     if !matches!(
@@ -100,13 +100,13 @@ impl OverlayChanges {
         // A directory that became a file, or a file that became a directory
         // (`rm -rf build && echo x > build`): the old one goes first.
         if disk.stat(&real).await.is_ok_and(|s| s.is_dir() != dir) {
-            disk.remove(&real, true).await?;
+            disk.remove_all(&real).await?;
         }
         if dir {
-            return disk.mkdir(&real, true).await;
+            return disk.create_dir_all(&real).await;
         }
         if let Some(parent) = real.parent() {
-            disk.mkdir(parent, true).await?;
+            disk.create_dir_all(parent).await?;
         }
         disk.write(&real, &self.overlay.read(path).await?).await
     }

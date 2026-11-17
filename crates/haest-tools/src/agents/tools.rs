@@ -53,7 +53,7 @@ impl AgentTool {
         } else {
             "subagent_minutes"
         };
-        budget::fit_time(&asked, ctx.turn_time_left, setting)
+        budget::fit_time(&asked, ctx.turn_time_left(), setting)
             .map_err(|e| ToolError::Input(e.to_string()))?;
         Ok(Some(asked))
     }
@@ -109,7 +109,7 @@ impl Tool for AgentTool {
         };
         let out = self
             .hub
-            .spawn(&self.me, spawn, ctx.cancel.clone())
+            .spawn(&self.me, spawn, ctx.cancel().clone())
             .await
             .map_err(|e| ToolError::Input(e.to_string()))?;
         Ok(ToolOutput {
@@ -123,7 +123,7 @@ impl Tool for AgentTool {
 /// No new subagent while the caller's turn winds down
 /// ([`ToolContext::wind_down`]): the refusal says why.
 fn refuse_while_winding_down(ctx: &ToolContext) -> Result<(), ToolError> {
-    match ctx.wind_down.check() {
+    match ctx.wind_down().check() {
         Some(w) => Err(ToolError::Input(AgentError::WindingDown(w).to_string())),
         None => Ok(()),
     }

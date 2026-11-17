@@ -112,7 +112,7 @@ async fn run<T>(
     call: impl Future<Output = Result<T, TrackerError>>,
 ) -> Result<T, ToolError> {
     tokio::select! {
-        _ = ctx.cancel.cancelled() => Err(ToolError::Input("the call was interrupted".into())),
+        _ = ctx.cancel().cancelled() => Err(ToolError::Input("the call was interrupted".into())),
         done = tokio::time::timeout(TIMEOUT, call) => match done {
             Ok(result) => result.map_err(tool_error),
             Err(_) => Err(ToolError::Failed(format!(

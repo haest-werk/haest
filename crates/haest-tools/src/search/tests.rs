@@ -10,7 +10,7 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::{
-    fs::{Fs, MemFs},
+    fs::{FsRef, MemFs},
     tool::{Tool, ToolContext, ToolError, ToolOutput},
     workspace::{ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
@@ -30,8 +30,8 @@ impl Workspace for HostRun {
     fn mode(&self) -> WorkspaceMode {
         WorkspaceMode::Real
     }
-    fn fs(&self) -> Arc<dyn Fs> {
-        Arc::new(MemFs::new())
+    fn fs(&self) -> FsRef {
+        MemFs::new().into()
     }
     async fn shell(&self, _: &str, _: ExecOptions) -> ExecResult {
         unreachable!("Grep never runs a shell")

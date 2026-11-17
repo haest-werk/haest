@@ -234,7 +234,7 @@ pub mod prelude {
         SystemPromptRef, WallClock, now_ms,
     };
     pub use crate::events::{EventSink, LoopEvent, TurnOutcome};
-    pub use crate::fs::{DirEntry, FileKind, Fs, FsStat, MemFs};
+    pub use crate::fs::{DirEntry, FileKind, Fs, FsRef, FsStat, MemFs};
     pub use crate::handed::{ChildEnv, KeySource};
     pub use crate::messages::{
         AssistantMessage, AssistantPart, MediaPart, Message, StopReason, ToolCall,
@@ -250,7 +250,7 @@ pub mod prelude {
         opt_str, req_str, truncate_middle,
     };
     pub use crate::workspace::{
-        ChangeSet, ExecOptions, ExecResult, OutputChunks, ShutWorkspace, Workspace, WorkspaceMode,
-        WorkspaceRef,
+        ChangeSet, ChangeSetRef, ExecOptions, ExecResult, OutputChunks, ShutWorkspace, Workspace,
+        WorkspaceMode, WorkspaceRef,
     };
 }

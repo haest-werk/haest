@@ -3,11 +3,11 @@
 
 mod common;
 
-use std::{fs, path::Path, sync::Arc};
+use std::{fs, path::Path};
 
 use common::{opts, sandbox, tempdir};
 use haest_core::workspace::{
-    ApplyFailureCode, ApplyReport, Change, ChangeKind, ChangeSet, Workspace,
+    ApplyFailureCode, ApplyReport, Change, ChangeKind, ChangeSetRef, Workspace,
 };
 use haest_workspace::{SandboxMounts, SandboxWorkspace};
 
@@ -19,7 +19,7 @@ fn project() -> (tempfile::TempDir, std::path::PathBuf) {
     (t, dir)
 }
 
-fn changes(ws: &SandboxWorkspace) -> Arc<dyn ChangeSet> {
+fn changes(ws: &SandboxWorkspace) -> ChangeSetRef {
     ws.changes().expect("the sandbox records its changes")
 }
 

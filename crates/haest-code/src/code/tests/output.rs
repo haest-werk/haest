@@ -108,9 +108,9 @@ async fn each_inner_call_reports_start_then_end_tied_to_the_code_call_a_failure_
     bad.answer = ToolOutput::error("nope");
     let tools = vec![arc(&ok), ToolRef::new(bad)];
     let services = Arc::new(Recorder::default());
-    let mut c = ctx(MemWorkspace::with_files::<&str, &str>([]));
-    c.tool_call_id = Some("call-1".into());
-    c.services = services.clone().into();
+    let c = ctx(MemWorkspace::with_files::<&str, &str>([]))
+        .with_tool_call_id("call-1")
+        .with_services(services.clone());
     let code = "await tools.mcp__s__ok({}); try { await tools.mcp__s__bad({}) } catch (e) {}";
     run_in(&code_over(tools, &[]), code, json!({}), &c).await;
     let seen: Vec<(&str, String, String, Option<bool>)> = services
@@ -151,8 +151,7 @@ async fn each_inner_call_reports_start_then_end_tied_to_the_code_call_a_failure_
 async fn outside_the_loop_no_inner_call_is_reported() {
     let ok = probe("mcp__s__ok", true, 0);
     let services = Arc::new(Recorder::default());
-    let mut c = ctx(MemWorkspace::with_files::<&str, &str>([]));
-    c.services = services.clone().into();
+    let c = ctx(MemWorkspace::with_files::<&str, &str>([])).with_services(services.clone());
     run_in(
         &code_over(vec![arc(&ok)], &[]),
         "await tools.mcp__s__ok({})",

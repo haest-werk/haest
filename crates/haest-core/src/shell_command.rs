@@ -7,12 +7,12 @@
 //! (`haest_workspace::SandboxWorkspace::with_command`). Each run gets a
 //! [`ShellCall`] and answers with an [`ExecResult`], as a program would.
 
-use std::{borrow::Cow, collections::BTreeMap, path::PathBuf, sync::Arc, time::Instant};
+use std::{borrow::Cow, collections::BTreeMap, path::PathBuf, time::Instant};
 
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
-use crate::{fs::Fs, workspace::ExecResult};
+use crate::{fs::FsRef, workspace::ExecResult};
 
 /// One run of a [`ShellCommand`]: its arguments and everything of the shell
 /// call it is part of.
@@ -28,7 +28,7 @@ pub struct ShellCall {
     /// converter is binary); None when nothing does. [`ShellCall::stdin_text`] for text.
     pub stdin: Option<Vec<u8>>,
     /// The shell's files, as haest's tools see them.
-    pub fs: Arc<dyn Fs>,
+    pub fs: FsRef,
     /// The shell call's interrupt.
     pub cancel: CancellationToken,
     /// The shell call's deadline. A CPU-bound command never yields to a timer,
@@ -57,7 +57,7 @@ impl ShellCall {
 /// # Examples
 ///
 /// ```
-/// use std::{path::PathBuf, sync::Arc, time::{Duration, Instant}};
+/// use std::{path::PathBuf, time::{Duration, Instant}};
 ///
 /// use async_trait::async_trait;
 /// use haest_core::{
@@ -93,7 +93,7 @@ impl ShellCall {
 ///     cwd: PathBuf::from("/project"),
 ///     env: Default::default(),
 ///     stdin: Some(b"hello\n".to_vec()),
-///     fs: Arc::new(MemFs::new()),
+///     fs: MemFs::new().into(),
 ///     cancel: CancellationToken::new(),
 ///     ends_at: Instant::now() + Duration::from_secs(10),
 /// };
@@ -116,4 +116,10 @@ pub trait ShellCommand: Send + Sync {
     ///
     /// Never fails: a failure is a nonzero exit code and a reason on stderr.
     async fn run(&self, call: ShellCall) -> ExecResult;
+}
+
+crate::plug_ref! {
+    /// A [`ShellCommand`], shared: what a sandbox holds for each command it
+    /// was given.
+    pub struct ShellCommandRef(dyn ShellCommand);
 }

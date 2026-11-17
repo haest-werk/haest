@@ -59,7 +59,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-pub use file::{JsonlSessionFile, SessionSink};
+pub use file::{JsonlSessionFile, SessionSink, SessionSinkRef};
 pub(crate) use replay::{INTERRUPTED, Line, answer_interrupted, compact, parse_line};
 pub use replay::{ReplayedSession, replay};
 pub use time::iso_utc;

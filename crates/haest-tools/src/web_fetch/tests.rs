@@ -223,7 +223,7 @@ impl HttpClient for Hang {
 async fn an_interrupted_fetch_returns_at_once() {
     let net = WebFetchNet::unguarded(Arc::new(FakeWeb::default()), Arc::new(Hang));
     let c = ctx(TestWorkspace::with_files([("/p/.keep", "")]));
-    c.cancel.cancel();
+    c.cancel().cancel();
     let r = WebFetchTool::new(net)
         .execute(input(json!({"url": "https://slow.test/"})), &c)
         .await;

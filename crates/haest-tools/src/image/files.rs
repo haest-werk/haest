@@ -33,7 +33,7 @@ pub(super) async fn references(
             return Err(ToolError::Input(why.into()));
         }
     };
-    let fs = ctx.workspace.fs();
+    let fs = ctx.workspace().fs();
     let mut out = Vec::new();
     for p in paths {
         let path = ctx.resolve(&spelled(p));
@@ -98,7 +98,7 @@ pub(super) async fn save_and_show(
     path: &Path,
     takes: &str,
 ) -> Result<ToolOutput, ToolError> {
-    let fs = ctx.workspace.fs();
+    let fs = ctx.workspace().fs();
     if let Some(dir) = path.parent() {
         ensure_dir(fs.as_ref(), dir).await?;
     }
@@ -109,7 +109,7 @@ pub(super) async fn save_and_show(
         reply.model.as_str(),
     );
     let part = media_from_bytes(&reply.bytes, mt, &file_name(path)).ok();
-    let url = ctx.services.publish(reply.bytes, mt).await;
+    let url = ctx.services().publish(reply.bytes, mt).await;
     let cost = reply
         .cost_usd
         .map_or_else(String::new, |c| format!(", ${c:.3}"));

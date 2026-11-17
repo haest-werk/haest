@@ -211,7 +211,7 @@ async fn an_ask_under_ctx_signal_ends_when_the_call_is_interrupted() {
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let c = ctx();
-    let cancel = c.cancel.clone();
+    let cancel = c.cancel().clone();
     let (out, ()) = tokio::join!(tools[0].execute(input(json!({})), &c), async {
         while ui.asks().is_empty() {
             tokio::task::yield_now().await;

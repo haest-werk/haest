@@ -38,10 +38,16 @@ impl Fs for ShutFs {
     async fn read_dir(&self, _: &Path) -> io::Result<Vec<DirEntry>> {
         Err(shut())
     }
-    async fn mkdir(&self, _: &Path, _: bool) -> io::Result<()> {
+    async fn create_dir(&self, _: &Path) -> io::Result<()> {
         Err(shut())
     }
-    async fn remove(&self, _: &Path, _: bool) -> io::Result<()> {
+    async fn create_dir_all(&self, _: &Path) -> io::Result<()> {
+        Err(shut())
+    }
+    async fn remove(&self, _: &Path) -> io::Result<()> {
+        Err(shut())
+    }
+    async fn remove_all(&self, _: &Path) -> io::Result<()> {
         Err(shut())
     }
     async fn rename(&self, _: &Path, _: &Path) -> io::Result<()> {

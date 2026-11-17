@@ -172,8 +172,9 @@ async fn a_childs_time_must_fit_what_is_left_of_its_callers_turn() {
         time: Duration::from_secs(15 * 60),
     };
     let tool = agent_tool(&dir, quarter_hour);
-    let mut ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-    ctx.turn_time_left = Some(Duration::from_secs(120));
+    let two_minutes_left =
+        ToolContext::new("/", ShutWorkspace).with_turn_time_left(Duration::from_secs(120));
+    let ctx = two_minutes_left.clone();
     let ask = |budget: Value| input(json!({"description": "d", "prompt": "p", "budget": budget}));
     let too_long = AgentError::OverTime {
         asked: Duration::from_secs(300),
@@ -188,8 +189,8 @@ async fn a_childs_time_must_fit_what_is_left_of_its_callers_turn() {
         .await
         .unwrap();
     // A turn with no time cap fits any child.
-    ctx.turn_time_left = None;
-    tool.execute(ask(json!({})), &ctx).await.unwrap();
+    let no_cap = ToolContext::new("/", ShutWorkspace);
+    tool.execute(ask(json!({})), &no_cap).await.unwrap();
     let times: Vec<_> = (dir.0.lock().unwrap().iter())
         .map(|s| s.budget.unwrap().time)
         .collect();
@@ -202,6 +203,10 @@ async fn a_childs_time_must_fit_what_is_left_of_its_callers_turn() {
             ..quarter_hour
         },
     );
-    ctx.turn_time_left = Some(Duration::from_secs(120));
-    assert!(uncapped.execute(ask(json!({})), &ctx).await.is_err());
+    assert!(
+        uncapped
+            .execute(ask(json!({})), &two_minutes_left)
+            .await
+            .is_err()
+    );
 }

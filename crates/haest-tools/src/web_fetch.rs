@@ -264,7 +264,7 @@ impl Tool for WebFetchTool {
             to_output(&at, res, ctx).await
         };
         tokio::select! {
-            _ = ctx.cancel.cancelled() => Err(ToolError::Input("the fetch was interrupted".into())),
+            _ = ctx.cancel().cancelled() => Err(ToolError::Input("the fetch was interrupted".into())),
             done = tokio::time::timeout(TIMEOUT, fetch) => done.unwrap_or_else(|_| {
                 Err(ToolError::Input(format!("the fetch timed out after {}s", TIMEOUT.as_secs())))
             }),

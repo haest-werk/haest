@@ -144,7 +144,7 @@ pub async fn media_output(
     let len = bytes.len();
     let kind = part.kind.as_str();
     let mut result = json!({"kind": "file", "mediaType": media_type, "bytes": len});
-    if let Some(url) = ctx.services.publish(bytes, media_type).await {
+    if let Some(url) = ctx.services().publish(bytes, media_type).await {
         result["url"] = Value::String(url);
     }
     Ok(ToolOutput {
@@ -178,7 +178,7 @@ impl ReadTool {
 
     /// Read from the workspace fs: the tool without its intercept.
     async fn read_fs(&self, input: &JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let fs = ctx.workspace.fs();
+        let fs = ctx.workspace().fs();
         let path = ctx.resolve(req_str(input, "file_path")?);
         let shown = path.display().to_string();
         let Ok(stat) = fs.stat(&path).await else {

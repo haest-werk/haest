@@ -15,7 +15,7 @@ async fn a_workspace_that_cannot_stream_hands_the_output_over_when_it_ends() {
         .shell_streaming(
             "true",
             opts,
-            Arc::new(move |s: &str| into.lock().unwrap().push(s.into())),
+            OutputChunks::from(move |s: &str| into.lock().unwrap().push(s.into())),
         )
         .await;
     assert_eq!(*seen.lock().unwrap(), [NO_SHELL]);

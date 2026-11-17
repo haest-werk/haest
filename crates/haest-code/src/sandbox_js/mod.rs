@@ -14,7 +14,7 @@ use std::{
 };
 
 use haest_core::{
-    fs::{Fs, resolve_path},
+    fs::{FsRef, resolve_path},
     workspace::ExecResult,
 };
 use tokio_util::sync::CancellationToken;
@@ -41,7 +41,7 @@ pub const JS_MAX_OUTPUT: usize = 1_000_000;
 #[derive(Clone)]
 pub struct JsEnv {
     /// The files the script's `fs` reads and writes: the sandbox's own.
-    pub fs: Arc<dyn Fs>,
+    pub fs: FsRef,
     /// The shell's working directory: relative paths, `process.cwd()` and the script's own path resolve against it.
     pub cwd: PathBuf,
     /// The shell's exported variables: the script's `process.env`.
@@ -127,7 +127,7 @@ pub(crate) fn not_here(name: &str) -> ExecResult {
 /// sandbox takes each one (`SandboxWorkspace::with_command`), and `js`'s note
 /// tells the model it is there. The [crate docs](crate#the-sandbox-js-command)
 /// wire one up. Without a shell, [`js_command`] runs the same command over
-/// any [`Fs`].
+/// any [`Fs`](haest_core::fs::Fs).
 ///
 /// The shell call's deadline matters: a CPU-bound script never yields, so the
 /// engine checks that wall-clock deadline itself -- the only bound such a script cannot outrun.
@@ -151,15 +151,15 @@ pub(crate) fn not_here(name: &str) -> ExecResult {
 /// # Examples
 ///
 /// ```
-/// use std::{path::Path, sync::Arc, time::{Duration, Instant}};
+/// use std::{path::Path, time::{Duration, Instant}};
 ///
 /// use haest_code::{JsEnv, js_command};
-/// use haest_core::{Fs, MemFs};
+/// use haest_core::{FsRef, MemFs};
 /// use tokio_util::sync::CancellationToken;
 ///
 /// # #[tokio::main]
-/// # async fn main() {
-/// let fs = Arc::new(MemFs::with_files([(
+/// # async fn main() -> std::io::Result<()> {
+/// let fs = FsRef::new(MemFs::with_files([(
 ///    "/work/sum.js",
 ///    "import { readFile, writeFile } from 'fs/promises'
 ///     const nums = (await readFile('nums.txt', 'utf8')).trim().split('\\n').map(Number)
@@ -175,9 +175,10 @@ pub(crate) fn not_here(name: &str) -> ExecResult {
 /// };
 /// let run = js_command(&["sum.js".to_string()], &env).await;
 /// assert_eq!(run.exit_code, 0, "{}", run.stderr);
-/// assert_eq!(fs.read_to_string(Path::new("/work/total.txt")).await.unwrap(), "6");
+/// assert_eq!(fs.read_to_string(Path::new("/work/total.txt")).await?, "6");
 ///
 /// assert_eq!(js_command(&["missing.js".to_string()], &env).await.exit_code, 1);
+/// # Ok(())
 /// # }
 /// ```
 pub async fn js_command(args: &[String], env: &JsEnv) -> ExecResult {

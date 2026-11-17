@@ -107,7 +107,7 @@ struct Unreadable;
 
 #[async_trait]
 impl crate::run::RunStore for Unreadable {
-    fn sink(&self, key: &RunKey) -> Arc<dyn crate::session::SessionSink> {
+    fn sink(&self, key: &RunKey) -> crate::session::SessionSinkRef {
         crate::run::RunStore::sink(&MemoryRunStore::new(), key)
     }
     async fn load(&self, _key: &RunKey) -> std::io::Result<Option<crate::run::ReplayedRun>> {

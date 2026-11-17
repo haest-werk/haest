@@ -77,7 +77,7 @@ pub(super) async fn run(
     stop: CancellationToken,
 ) {
     let (to, id) = (shared.clone(), job.id.clone());
-    let on_output: OutputChunks = Arc::new(move |chunk: &str| to.output(&id, chunk));
+    let on_output = OutputChunks::from(move |chunk: &str| to.output(&id, chunk));
     let opts = ExecOptions {
         cwd,
         cancel: stop,

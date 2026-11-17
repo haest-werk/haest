@@ -186,7 +186,7 @@ impl Tool for McpTool {
                 self.tool,
                 CALL_TIMEOUT.as_millis()
             )))?,
-            () = ctx.cancel.cancelled() => {
+            () = ctx.cancel().cancelled() => {
                 return Err(ToolError::Failed("the call was cancelled".into()));
             }
         };

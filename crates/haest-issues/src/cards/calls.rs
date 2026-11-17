@@ -144,7 +144,7 @@ impl Tracker for CardTracker {
         if !self.fs.exists(&path).await {
             return Err(TrackerError::NotFound(format!("there is no card \"{id}\"")));
         }
-        (self.fs.remove(&path, false).await).map_err(|e| self.failed("delete", &path, e))
+        (self.fs.remove(&path).await).map_err(|e| self.failed("delete", &path, e))
     }
 
     async fn link(&self, id: &str, link: &Link, change: LinkChange) -> Result<(), TrackerError> {

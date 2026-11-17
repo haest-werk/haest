@@ -81,7 +81,7 @@ async fn streamed_output_arrives_while_the_command_runs_and_stays_out_of_the_res
     let (_t, dir) = tempdir();
     let seen = Arc::new(Mutex::new(String::new()));
     let into = seen.clone();
-    let on_output: OutputChunks = Arc::new(move |s: &str| into.lock().unwrap().push_str(s));
+    let on_output = OutputChunks::from(move |s: &str| into.lock().unwrap().push_str(s));
     let ws = real();
     // A multi-byte character split across two writes arrives whole.
     let run = ws.shell_streaming(
@@ -186,7 +186,7 @@ async fn real_fs_reads_writes_and_lists_the_disk() {
     let (_t, dir) = tempdir();
     let fs = RealFs;
     let p = |rel: &str| dir.join(rel);
-    fs.mkdir(&p("sub/deep"), true).await.unwrap();
+    fs.create_dir_all(&p("sub/deep")).await.unwrap();
     fs.write(&p("sub/b.txt"), b"one").await.unwrap();
     fs.append(&p("sub/b.txt"), b" two").await.unwrap();
     assert_eq!(fs.read_to_string(&p("sub/b.txt")).await.unwrap(), "one two");
@@ -221,8 +221,8 @@ async fn real_fs_reads_writes_and_lists_the_disk() {
 
     fs.rename(&p("sub"), &p("moved")).await.unwrap();
     assert!(fs.exists(&p("moved/b.txt")).await);
-    assert!(fs.remove(&p("moved"), false).await.is_err());
-    fs.remove(&p("moved"), true).await.unwrap();
+    assert!(fs.remove(&p("moved")).await.is_err());
+    fs.remove_all(&p("moved")).await.unwrap();
     assert!(!Path::new(&p("moved")).exists());
 }
 

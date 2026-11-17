@@ -15,7 +15,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use haest_core::{
     ChildEnv,
-    fs::Fs,
+    fs::{Fs, FsRef},
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks, Workspace, WorkspaceMode},
 };
 
@@ -131,8 +131,8 @@ impl Workspace for RealWorkspace {
         WorkspaceMode::Real
     }
 
-    fn fs(&self) -> Arc<dyn Fs> {
-        self.fs.clone()
+    fn fs(&self) -> FsRef {
+        self.fs.clone().into()
     }
 
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {

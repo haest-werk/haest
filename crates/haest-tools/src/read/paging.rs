@@ -119,7 +119,7 @@ pub fn read_text_output(
         DEFAULT_LINE_LIMIT
     };
     let limit = at_least_one(input, "limit", default_limit)?;
-    let budget = budget_chars(allow_large, ctx.context_room_tokens);
+    let budget = budget_chars(allow_large, ctx.context_room_tokens());
     let shown = numbered_lines(&lines, start, limit, budget);
     // i128: an offset past the end (even usize::MAX) stays exact.
     let available = lines.len() as i128 - (start as i128 - 1);

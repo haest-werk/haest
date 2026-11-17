@@ -242,9 +242,8 @@ async fn a_cpu_loop_is_stopped_at_the_deadline() {
 #[tokio::test]
 async fn the_caller_aborting_stops_a_run_parked_on_a_slow_tool() {
     let slow = probe("mcp__s__slow", true, 10_000);
-    let mut c = ctx(MemWorkspace::with_files::<&str, &str>([]));
-    c.cancel = CancellationToken::new();
-    let cancel = c.cancel.clone();
+    let cancel = CancellationToken::new();
+    let c = ctx(MemWorkspace::with_files::<&str, &str>([])).with_cancel(cancel.clone());
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(100)).await;
         cancel.cancel();

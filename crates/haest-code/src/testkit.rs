@@ -12,7 +12,7 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::{
-    fs::{FileKind, Fs, MemFs, resolve_path},
+    fs::{FileKind, Fs, FsRef, MemFs, resolve_path},
     tool::{InnerCallEvent, JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices},
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
@@ -86,8 +86,8 @@ impl Workspace for MemWorkspace {
     fn mode(&self) -> WorkspaceMode {
         WorkspaceMode::Sandbox
     }
-    fn fs(&self) -> Arc<dyn Fs> {
-        self.mem.clone()
+    fn fs(&self) -> FsRef {
+        self.mem.clone().into()
     }
     async fn shell(&self, _: &str, _: ExecOptions) -> ExecResult {
         ExecResult {

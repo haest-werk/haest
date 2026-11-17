@@ -85,7 +85,7 @@
 //! - a call the model can fix comes back as [`ToolError::Input`] (an unknown
 //!   id, a status the tracker does not have), anything else as
 //!   [`ToolError::Failed`] (the network, the disk);
-//! - a call gives up when the turn is cancelled (`ctx.cancel`), or after two
+//! - a call gives up when the turn is cancelled (`ctx.cancel()`), or after two
 //!   minutes;
 //! - nothing is read that the host did not hand in: no environment variable,
 //!   no path of its own;

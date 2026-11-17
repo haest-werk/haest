@@ -89,7 +89,7 @@ fn has_effects(tools: &ToolIndex, call: &ToolCall) -> bool {
 ///
 /// Each call gets a clone of `ctx` with its own call id and its share of
 /// [`Answers::room`]. Every call is answered, failures and panics included; a
-/// call that starts after `ctx.cancel` fired is answered as interrupted
+/// call that starts after `ctx.cancel()` fired is answered as interrupted
 /// without running. Before a batch that holds a call with side effects,
 /// [`Answers::before_effects`] is awaited.
 pub(crate) async fn run_tool_batches(

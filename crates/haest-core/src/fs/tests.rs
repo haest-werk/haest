@@ -34,8 +34,8 @@ async fn memfs_rename_moves_a_whole_tree_and_remove_needs_recursive() {
         .unwrap();
     assert!(fs.exists(Path::new("/d/y/1")).await);
     assert!(!fs.exists(Path::new("/d/x")).await);
-    assert!(fs.remove(Path::new("/d"), false).await.is_err());
-    fs.remove(Path::new("/d"), true).await.unwrap();
+    assert!(fs.remove(Path::new("/d")).await.is_err());
+    fs.remove_all(Path::new("/d")).await.unwrap();
     assert!(!fs.exists(Path::new("/d/y/1")).await);
 }
 
@@ -46,9 +46,8 @@ async fn memfs_refuses_a_dir_into_itself_and_removing_the_root() {
     let err = fs.rename(Path::new("/a"), Path::new("/a/b")).await;
     assert_eq!(err.map_err(|e| e.kind()), Err(io::ErrorKind::InvalidInput));
     assert!(fs.exists(Path::new("/a/x")).await, "nothing moved");
-    for recursive in [false, true] {
-        assert!(fs.remove(Path::new("/"), recursive).await.is_err());
-    }
+    assert!(fs.remove(Path::new("/")).await.is_err());
+    assert!(fs.remove_all(Path::new("/")).await.is_err());
     fs.write(Path::new("/new"), b"n").await.unwrap();
     assert!(fs.exists(Path::new("/a/x")).await);
 }
@@ -94,4 +93,65 @@ async fn ensure_dir_makes_the_dir_and_refuses_a_file_in_its_place() {
         FileKind::Dir
     );
     assert!(ensure_dir(&fs, Path::new("/p/file")).await.is_err());
+}
+
+/// Only the required methods, over a [`MemFs`]: what a host's own store
+/// gets from the defaults of `create_dir_all` and `remove_all`.
+struct Minimal(MemFs);
+
+#[async_trait::async_trait]
+impl Fs for Minimal {
+    async fn read(&self, p: &Path) -> io::Result<Vec<u8>> {
+        self.0.read(p).await
+    }
+    async fn write(&self, p: &Path, d: &[u8]) -> io::Result<()> {
+        self.0.write(p, d).await
+    }
+    async fn append(&self, p: &Path, d: &[u8]) -> io::Result<()> {
+        self.0.append(p, d).await
+    }
+    async fn stat(&self, p: &Path) -> io::Result<FsStat> {
+        self.0.stat(p).await
+    }
+    async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
+        self.0.read_dir(p).await
+    }
+    async fn create_dir(&self, p: &Path) -> io::Result<()> {
+        self.0.create_dir(p).await
+    }
+    async fn remove(&self, p: &Path) -> io::Result<()> {
+        self.0.remove(p).await
+    }
+    async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
+        self.0.rename(a, b).await
+    }
+}
+
+#[tokio::test]
+async fn the_default_create_dir_all_makes_every_parent_and_takes_one_already_there() {
+    let fs = Minimal(MemFs::with_files([("/p/file", "x")]));
+    fs.create_dir_all(Path::new("/p/a/b/c")).await.unwrap();
+    assert!(fs.stat(Path::new("/p/a/b/c")).await.unwrap().is_dir());
+    fs.create_dir_all(Path::new("/p/a/b")).await.unwrap();
+    let under_a_file = fs.create_dir_all(Path::new("/p/file/d")).await;
+    assert_eq!(
+        under_a_file.map_err(|e| e.kind()),
+        Err(io::ErrorKind::NotADirectory)
+    );
+}
+
+#[tokio::test]
+async fn the_default_remove_all_deletes_a_whole_tree_and_remove_does_not() {
+    let fs = Minimal(MemFs::with_files([
+        ("/p/a/b/x", "1"),
+        ("/p/a/y", "2"),
+        ("/p/z", "3"),
+    ]));
+    assert!(fs.remove(Path::new("/p/a")).await.is_err(), "not empty");
+    fs.remove_all(Path::new("/p/a")).await.unwrap();
+    assert!(!fs.exists(Path::new("/p/a")).await);
+    assert!(fs.exists(Path::new("/p/z")).await, "its sibling stays");
+    fs.remove_all(Path::new("/p/z")).await.unwrap();
+    let gone = fs.remove_all(Path::new("/p/z")).await;
+    assert_eq!(gone.map_err(|e| e.kind()), Err(io::ErrorKind::NotFound));
 }

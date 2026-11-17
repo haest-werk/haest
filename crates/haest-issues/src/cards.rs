@@ -180,7 +180,7 @@ impl CardTracker {
             Err(e) => Err(e),
         };
         if let Err(e) = renamed {
-            let _ = self.fs.remove(&temp, false).await;
+            let _ = self.fs.remove(&temp).await;
             return Err(self.failed("write", &path, e));
         }
         Ok(())

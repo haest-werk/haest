@@ -149,7 +149,7 @@ Callable: {}.",
 /// program threw or was stopped, the pictures from
 /// `see()` as media, and what the inner calls spent. `execute` returns `Err`
 /// only for a bad input (no `code`, or a `timeout` that is not a number). The
-/// human's interrupt (`ctx.cancel`) stops the program and every inner call
+/// human's interrupt (`ctx.cancel()`) stops the program and every inner call
 /// still running.
 ///
 /// # What the model reads back
@@ -192,7 +192,7 @@ impl CodeTool {
 fn beat_line(ctx: &ToolContext, b: VmBeat) -> String {
     format!(
         "[code {}] running {}s: {} call(s), {} in flight, {} KB",
-        ctx.tool_call_id.as_deref().unwrap_or("-"),
+        ctx.tool_call_id().unwrap_or("-"),
         (b.elapsed_ms as f64 / 1000.0).round(),
         b.calls,
         b.inflight,
@@ -241,19 +241,19 @@ impl Tool for CodeTool {
             .filter(|t| allowed.contains(t.name()))
             .collect();
         // The inner calls stop with the run, whichever way it ends.
-        let inner = ctx.cancel.child_token();
+        let inner = ctx.cancel().child_token();
         let _stop_inner = inner.clone().drop_guard();
         let bridge = Bridge::new(tools, ctx, inner);
         let caps = VmCaps {
             timeout_ms,
             ..VmCaps::default()
         };
-        let beat = |b: VmBeat| ctx.services.debug(&beat_line(ctx, b));
-        let run = run_in_vm(code, &bridge.spec(), caps, &ctx.cancel, Some(&beat)).await;
+        let beat = |b: VmBeat| ctx.services().debug(&beat_line(ctx, b));
+        let run = run_in_vm(code, &bridge.spec(), caps, ctx.cancel(), Some(&beat)).await;
         if run.killed {
-            ctx.services.debug(&format!(
+            ctx.services().debug(&format!(
                 "[code {}] did not stop when asked; its engine was abandoned",
-                ctx.tool_call_id.as_deref().unwrap_or("-")
+                ctx.tool_call_id().unwrap_or("-")
             ));
         }
         let tally = std::mem::take(&mut *bridge.tally.lock().unwrap());

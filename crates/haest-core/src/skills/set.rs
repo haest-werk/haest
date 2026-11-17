@@ -3,12 +3,15 @@
 //! elsewhere (a database, a folder of its own, built into the binary) hands
 //! them over as [`InlineSkills`] or implements [`SkillSet`] itself.
 
-use std::{io, sync::Arc};
+use std::{
+    fmt, io,
+    sync::{Arc, RwLock},
+};
 
 use async_trait::async_trait;
 
 use super::{Skill, load_skill_body};
-use crate::fs::Fs;
+use crate::fs::FsRef;
 
 /// One skill as the model is offered it: a line of the prompt's list.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +67,11 @@ pub trait SkillSet: Send + Sync {
     async fn load(&self, name: &str, args: Option<&str>) -> io::Result<String>;
 }
 
+crate::plug_ref! {
+    /// A [`SkillSet`], shared: what the Skill tool reads from.
+    pub struct SkillSetRef(dyn SkillSet);
+}
+
 fn not_found(name: &str) -> io::Error {
     io::Error::new(io::ErrorKind::NotFound, format!("no skill named {name}"))
 }
@@ -88,43 +96,157 @@ pub(super) fn argument_line(args: Option<&str>) -> String {
 ///
 /// Offers only the skills the model may pick; a skill with
 /// `disable-model-invocation` cannot be loaded through it either. A load
-/// is [`load_skill_body`].
+/// is [`load_skill_body`]. [`Skills`] is the same over a list the host
+/// replaces.
 pub struct DiskSkills {
-    list: Arc<dyn Fn() -> Vec<Skill> + Send + Sync>,
-    fs: Arc<dyn Fs>,
+    fs: FsRef,
+    list: Box<dyn Fn() -> Vec<Skill> + Send + Sync>,
 }
 
 impl DiskSkills {
-    /// `list` is asked on every call (a rescan shows at once); `fs` reads the
-    /// bodies (the host's own: a user skill lives outside any sandbox mount).
-    pub fn new(list: impl Fn() -> Vec<Skill> + Send + Sync + 'static, fs: Arc<dyn Fs>) -> Self {
+    /// `fs` reads the bodies (the host's own: a user skill lives outside any
+    /// sandbox mount); `list` is asked on every call (a rescan shows at once).
+    pub fn new(
+        fs: impl Into<FsRef>,
+        list: impl Fn() -> Vec<Skill> + Send + Sync + 'static,
+    ) -> Self {
         Self {
-            list: Arc::new(list),
-            fs,
+            fs: fs.into(),
+            list: Box::new(list),
         }
     }
+}
 
-    fn offered_skills(&self) -> Vec<Skill> {
-        (self.list)()
-            .into_iter()
-            .filter(|s| s.model_invocable)
-            .collect()
+impl fmt::Debug for DiskSkills {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DiskSkills").finish_non_exhaustive()
     }
+}
+
+/// The model-invocable skills of `skills`, as the model is offered them.
+fn offered_cards(skills: &[Skill]) -> Vec<SkillCard> {
+    skills
+        .iter()
+        .filter(|s| s.model_invocable)
+        .map(Skill::card)
+        .collect()
+}
+
+/// `name`'s body, read from `fs`, when `skills` offers it to the model.
+async fn load_offered(
+    fs: &FsRef,
+    skills: &[Skill],
+    name: &str,
+    args: Option<&str>,
+) -> io::Result<String> {
+    let skill = skills
+        .iter()
+        .find(|s| s.model_invocable && s.name == name)
+        .ok_or_else(|| not_found(name))?;
+    load_skill_body(&**fs, skill, args).await
 }
 
 #[async_trait]
 impl SkillSet for DiskSkills {
     fn offered(&self) -> Vec<SkillCard> {
-        self.offered_skills().iter().map(Skill::card).collect()
+        offered_cards(&(self.list)())
     }
 
     async fn load(&self, name: &str, args: Option<&str>) -> io::Result<String> {
-        let skills = self.offered_skills();
-        let skill = skills
-            .iter()
-            .find(|s| s.name == name)
-            .ok_or_else(|| not_found(name))?;
-        load_skill_body(self.fs.as_ref(), skill, args).await
+        load_offered(&self.fs, &(self.list)(), name, args).await
+    }
+}
+
+/// A host's SKILL.md skills, held where every clone sees them: the host
+/// replaces the list after a rescan ([`Skills::replace`]), and the Skill tool
+/// and the prompt read it on their next call. A [`SkillSet`] over `fs`, like
+/// [`DiskSkills`]; cheap to clone.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::{
+///     MemFs,
+///     skills::{SkillOptions, SkillSet, SkillSources, Skills, discover_skills},
+/// };
+///
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() -> std::io::Result<()> {
+/// let fs = MemFs::with_files([(
+///     "/home/me/.claude/skills/release/SKILL.md",
+///     "---\nname: release\ndescription: Cut a release\n---\nTag and push.\n",
+/// )]);
+/// let opts = SkillOptions {
+///     cwd: "/home/me/project".into(),
+///     home: "/home/me".into(),
+///     claude_dir: "/home/me/.claude".into(),
+///     sources: SkillSources { claude: true, ..SkillSources::NONE },
+/// };
+/// let found = discover_skills(&fs, &opts).await;
+///
+/// let skills = Skills::new(fs);
+/// let for_the_tool = skills.clone();
+/// assert!(for_the_tool.offered().is_empty());
+///
+/// // A rescan: every clone (the Skill tool's included) sees the new list.
+/// skills.replace(found);
+/// assert_eq!(for_the_tool.offered()[0].name, "release");
+/// assert!(for_the_tool.load("release", None).await?.ends_with("Tag and push."));
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Clone)]
+pub struct Skills {
+    fs: FsRef,
+    list: Arc<RwLock<Vec<Skill>>>,
+}
+
+impl Skills {
+    /// No skills yet, their bodies read from `fs` once there are.
+    pub fn new(fs: impl Into<FsRef>) -> Self {
+        Self {
+            fs: fs.into(),
+            list: Arc::default(),
+        }
+    }
+
+    /// These skills, with `skills` in place of what they held.
+    pub fn with_skills(self, skills: Vec<Skill>) -> Self {
+        self.replace(skills);
+        self
+    }
+
+    /// Every skill held, the ones the model may not pick included.
+    pub fn list(&self) -> Vec<Skill> {
+        self.list
+            .read()
+            .expect("the skill list is never poisoned")
+            .clone()
+    }
+
+    /// Hold `skills` in place of the list: every clone sees them at once.
+    pub fn replace(&self, skills: Vec<Skill>) {
+        *self.list.write().expect("the skill list is never poisoned") = skills;
+    }
+}
+
+impl fmt::Debug for Skills {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let names: Vec<String> = self.list().into_iter().map(|s| s.name).collect();
+        f.debug_struct("Skills")
+            .field("names", &names)
+            .finish_non_exhaustive()
+    }
+}
+
+#[async_trait]
+impl SkillSet for Skills {
+    fn offered(&self) -> Vec<SkillCard> {
+        offered_cards(&self.list())
+    }
+
+    async fn load(&self, name: &str, args: Option<&str>) -> io::Result<String> {
+        load_offered(&self.fs, &self.list(), name, args).await
     }
 }
 

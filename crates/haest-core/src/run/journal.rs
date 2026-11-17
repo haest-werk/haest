@@ -1,12 +1,10 @@
 //! Where a durable turn writes its records: [`Journal`], one run's sink.
 
-use std::sync::Arc;
-
 use super::{RunEnd, RunKey, TurnState};
 use crate::{
     deps::now_ms,
     messages::Message,
-    session::{SessionRecord, SessionSink},
+    session::{SessionRecord, SessionSinkRef},
 };
 
 /// One durable run's records, in the order the turn makes them. Cheap to
@@ -14,11 +12,11 @@ use crate::{
 #[derive(Clone)]
 pub(crate) struct Journal {
     key: RunKey,
-    sink: Arc<dyn SessionSink>,
+    sink: SessionSinkRef,
 }
 
 impl Journal {
-    pub(crate) fn new(key: RunKey, sink: Arc<dyn SessionSink>) -> Self {
+    pub(crate) fn new(key: RunKey, sink: SessionSinkRef) -> Self {
         Self { key, sink }
     }
 

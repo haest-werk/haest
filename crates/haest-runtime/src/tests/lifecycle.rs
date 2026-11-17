@@ -52,8 +52,8 @@ fn no_key(err: &BuildError, key: &str) -> bool {
 
 /// A file where the sessions dir goes: no session file can be created.
 async fn block_sessions(fs: &MemFs) {
-    let _ = fs.remove(Path::new(SESSIONS), true).await;
-    fs.mkdir(Path::new("/data"), true).await.unwrap();
+    let _ = fs.remove_all(Path::new(SESSIONS)).await;
+    fs.create_dir_all(Path::new("/data")).await.unwrap();
     fs.write(Path::new(SESSIONS), b"not a dir").await.unwrap();
 }
 

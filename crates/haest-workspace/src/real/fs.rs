@@ -153,23 +153,29 @@ impl Fs for RealFs {
         Ok(out)
     }
 
-    async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()> {
-        if recursive {
-            tokio::fs::create_dir_all(path).await
+    async fn create_dir(&self, path: &Path) -> io::Result<()> {
+        tokio::fs::create_dir(path).await
+    }
+
+    async fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        tokio::fs::create_dir_all(path).await
+    }
+
+    async fn remove(&self, path: &Path) -> io::Result<()> {
+        let m = tokio::fs::symlink_metadata(path).await?;
+        if m.is_dir() {
+            tokio::fs::remove_dir(path).await
         } else {
-            tokio::fs::create_dir(path).await
+            tokio::fs::remove_file(path).await
         }
     }
 
-    async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()> {
+    async fn remove_all(&self, path: &Path) -> io::Result<()> {
         let m = tokio::fs::symlink_metadata(path).await?;
-        if !m.is_dir() {
-            return tokio::fs::remove_file(path).await;
-        }
-        if recursive {
+        if m.is_dir() {
             tokio::fs::remove_dir_all(path).await
         } else {
-            tokio::fs::remove_dir(path).await
+            tokio::fs::remove_file(path).await
         }
     }
 

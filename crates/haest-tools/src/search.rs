@@ -157,11 +157,11 @@ impl Tool for GrepTool {
         argv.extend(rg_args(&input)?);
         argv.extend(["-e".into(), pattern.into(), target_arg(target)]);
         let opts = ExecOptions {
-            cwd: ctx.cwd.clone(),
-            cancel: ctx.cancel.clone(),
+            cwd: ctx.cwd().to_path_buf(),
+            cancel: ctx.cancel().clone(),
             timeout: GREP_TIMEOUT,
         };
-        let r = ctx.workspace.run(&argv, opts).await;
+        let r = ctx.workspace().run(&argv, opts).await;
         if r.exit_code == EXIT_NOT_FOUND {
             return Err(ToolError::Input(
                 "ripgrep (rg) is not installed on this host; use Bash with grep instead".into(),

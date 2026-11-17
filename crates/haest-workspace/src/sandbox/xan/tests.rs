@@ -1,6 +1,5 @@
 use std::{
     path::PathBuf,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -33,7 +32,7 @@ fn call(args: &[&str], stdin: Option<&str>) -> ShellCall {
         cwd: PathBuf::from("/data"),
         env: Default::default(),
         stdin: stdin.map(|s| s.as_bytes().to_vec()),
-        fs: Arc::new(fs),
+        fs: fs.into(),
         cancel: CancellationToken::new(),
         ends_at: Instant::now() + Duration::from_secs(10),
     }

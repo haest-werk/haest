@@ -4,14 +4,13 @@
 use std::{
     io,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use async_trait::async_trait;
 use tokio::sync::{mpsc, oneshot};
 
 use super::{InvalidSessionId, ReplayedSession, SessionRecord, replay, session_file, sessions_dir};
-use crate::fs::{Fs, ensure_dir};
+use crate::fs::{Fs, FsRef, ensure_dir};
 
 /// Where a conversation's records go. `append` is synchronous so the loop's
 /// `on_message` hook can call it; records land in call order.
@@ -27,6 +26,12 @@ pub trait SessionSink: Send + Sync {
     fn append(&self, record: &SessionRecord);
     /// Resolves once every record appended so far has landed. Default: nothing queued.
     async fn flush(&self) {}
+}
+
+crate::plug_ref! {
+    /// A [`SessionSink`], shared: what [`RunStore::sink`](crate::run::RunStore::sink)
+    /// hands out.
+    pub struct SessionSinkRef(dyn SessionSink);
 }
 
 enum Job {
@@ -47,23 +52,24 @@ enum Job {
 /// # Examples
 ///
 /// ```
-/// use std::{path::Path, sync::Arc};
+/// use std::path::Path;
 ///
 /// use haest_core::{
 ///     MemFs, Message,
+///     fs::FsRef,
 ///     session::{JsonlSessionFile, SessionRecord, SessionSink},
 /// };
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> std::io::Result<()> {
-/// let fs = Arc::new(MemFs::new());
-/// let file = JsonlSessionFile::new(fs.clone(), Path::new("/data"), "s1").unwrap();
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// let fs = FsRef::new(MemFs::new());
+/// let file = JsonlSessionFile::new(fs.clone(), Path::new("/data"), "s1")?;
 /// file.create("conversation-1", "/project", 0).await?;
 /// file.append(&SessionRecord::Message { t: 1, message: Message::user("hi") });
 /// file.flush().await;
 ///
 /// // Later, or in another process: the same file, replayed.
-/// let again = JsonlSessionFile::new(fs, Path::new("/data"), "s1").unwrap();
+/// let again = JsonlSessionFile::new(fs, Path::new("/data"), "s1")?;
 /// assert_eq!(again.path(), Path::new("/data/sessions/s1.jsonl"));
 /// assert_eq!(again.load().await?.messages, [Message::user("hi")]);
 /// # Ok(())
@@ -72,7 +78,7 @@ enum Job {
 pub struct JsonlSessionFile {
     path: PathBuf,
     session_id: String,
-    fs: Arc<dyn Fs>,
+    fs: FsRef,
     tx: mpsc::UnboundedSender<Job>,
 }
 
@@ -89,7 +95,7 @@ impl JsonlSessionFile {
     ///
     /// Outside a tokio runtime.
     pub fn new(
-        fs: Arc<dyn Fs>,
+        fs: impl Into<FsRef>,
         data_dir: &Path,
         session_id: &str,
     ) -> Result<Self, InvalidSessionId> {
@@ -107,11 +113,12 @@ impl JsonlSessionFile {
     ///
     /// Outside a tokio runtime.
     pub fn with_error_handler(
-        fs: Arc<dyn Fs>,
+        fs: impl Into<FsRef>,
         data_dir: &Path,
         session_id: &str,
         on_error: impl Fn(io::Error) + Send + 'static,
     ) -> Result<Self, InvalidSessionId> {
+        let fs = fs.into();
         let path = session_file(&sessions_dir(data_dir), session_id)?;
         let (tx, rx) = mpsc::unbounded_channel();
         tokio::spawn(write_queue(fs.clone(), path.clone(), rx, on_error));
@@ -195,7 +202,7 @@ fn line_of(record: &SessionRecord) -> String {
 }
 
 async fn write_queue(
-    fs: Arc<dyn Fs>,
+    fs: FsRef,
     path: PathBuf,
     mut rx: mpsc::UnboundedReceiver<Job>,
     on_error: impl Fn(io::Error),
@@ -203,7 +210,7 @@ async fn write_queue(
     while let Some(job) = rx.recv().await {
         let res = match job {
             Job::Create(header, done) => {
-                let _ = done.send(create(fs.as_ref(), &path, &header).await);
+                let _ = done.send(create(&*fs, &path, &header).await);
                 Ok(())
             }
             Job::Line(line) => fs.append(&path, line.as_bytes()).await,

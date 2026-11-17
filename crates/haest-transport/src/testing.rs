@@ -33,7 +33,7 @@ impl Tool for Wait {
     async fn execute(&self, _: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         tokio::select! {
             _ = self.0.notified() => Ok(ToolOutput::text("waited")),
-            _ = ctx.cancel.cancelled() => Ok(ToolOutput::text("stopped")),
+            _ = ctx.cancel().cancelled() => Ok(ToolOutput::text("stopped")),
         }
     }
 }

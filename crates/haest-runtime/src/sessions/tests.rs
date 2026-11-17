@@ -32,7 +32,7 @@ struct Spy {
 impl Spy {
     async fn with_sessions(sessions: &[(&str, &str, &str)]) -> Self {
         let spy = Self::default();
-        spy.inner.mkdir(Path::new(DIR), true).await.unwrap();
+        spy.inner.create_dir_all(Path::new(DIR)).await.unwrap();
         for (id, cwd, text) in sessions {
             let path = session_file(Path::new(DIR), id).unwrap();
             let text = session_text(id, cwd, text);
@@ -78,11 +78,17 @@ impl Fs for Spy {
     async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
         self.inner.read_dir(p).await
     }
-    async fn mkdir(&self, p: &Path, r: bool) -> io::Result<()> {
-        self.inner.mkdir(p, r).await
+    async fn create_dir(&self, p: &Path) -> io::Result<()> {
+        self.inner.create_dir(p).await
     }
-    async fn remove(&self, p: &Path, r: bool) -> io::Result<()> {
-        self.inner.remove(p, r).await
+    async fn create_dir_all(&self, p: &Path) -> io::Result<()> {
+        self.inner.create_dir_all(p).await
+    }
+    async fn remove(&self, p: &Path) -> io::Result<()> {
+        self.inner.remove(p).await
+    }
+    async fn remove_all(&self, p: &Path) -> io::Result<()> {
+        self.inner.remove_all(p).await
     }
     async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
         self.inner.rename(a, b).await

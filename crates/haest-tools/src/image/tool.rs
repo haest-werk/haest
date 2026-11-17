@@ -202,7 +202,7 @@ impl Tool for GenerateImageTool {
         let chosen = self.pick_model(&input)?;
         let given = settings_input(&input)?;
         let refs = references(input.get("reference_images"), ctx).await?;
-        let (http, cancel) = (o.http.as_ref(), ctx.cancel.clone());
+        let (http, cancel) = (o.http.as_ref(), ctx.cancel().clone());
         let params = o
             .catalog
             .model_params(&o.base_url, &chosen, http, cancel.clone())

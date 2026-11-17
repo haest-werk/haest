@@ -14,7 +14,7 @@ use super::{JsEnv, NOT_HERE, js_command, not_here};
 
 fn env(fs: &Arc<MemFs>) -> JsEnv {
     JsEnv {
-        fs: fs.clone(),
+        fs: fs.clone().into(),
         cwd: "/p".into(),
         env: Default::default(),
         stdin: None,

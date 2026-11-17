@@ -14,7 +14,7 @@
 //!
 //! # Where the tools work
 //!
-//! Every tool here touches files and commands ONLY through `ctx.workspace`
+//! Every tool here touches files and commands ONLY through `ctx.workspace()`
 //! ([`Workspace::fs`], [`Workspace::shell`], [`Workspace::run`]), so the
 //! sandbox's in-memory files, a host's own store and the real disk all look
 //! the same to them. haest-workspace has the workspaces that ship with haest;

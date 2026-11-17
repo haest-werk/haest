@@ -63,7 +63,7 @@ impl Tool for SendReport {
         let key = ctx
             .effect_key()
             .expect("a durable run hands every call an effect key");
-        if ctx.resumed {
+        if ctx.resumed() {
             let sent = self.outbox.0.lock().unwrap().get(key.as_str()).cloned();
             return Ok(ToolOutput::text(match sent {
                 Some(id) => format!("already sent as {id}"),

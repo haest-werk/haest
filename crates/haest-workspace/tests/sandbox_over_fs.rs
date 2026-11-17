@@ -44,12 +44,19 @@ impl Fs for Locked {
     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
         self.0.read_dir(path).await
     }
-    async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()> {
-        self.0.mkdir(path, recursive).await
+    async fn create_dir(&self, path: &Path) -> io::Result<()> {
+        self.0.create_dir(path).await
     }
-    async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()> {
+    async fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        self.0.create_dir_all(path).await
+    }
+    async fn remove(&self, path: &Path) -> io::Result<()> {
         deny(path)?;
-        self.0.remove(path, recursive).await
+        self.0.remove(path).await
+    }
+    async fn remove_all(&self, path: &Path) -> io::Result<()> {
+        deny(path)?;
+        self.0.remove_all(path).await
     }
     async fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
         deny(from)?;
@@ -61,7 +68,7 @@ impl Fs for Locked {
 #[tokio::test]
 async fn a_hosts_reason_for_refusing_a_write_reaches_the_shells_output() {
     let mem = MemFs::default();
-    mem.mkdir(Path::new("/locked"), true).await.unwrap();
+    mem.create_dir_all(Path::new("/locked")).await.unwrap();
     let ws = SandboxWorkspace::over(Arc::new(Locked(mem)));
     let r = ws
         .shell(

@@ -9,7 +9,7 @@ use super::*;
 use crate::{
     deps::AgentHooks,
     run::{ReplayedRun, RunStore},
-    session::SessionSink,
+    session::{SessionSink, SessionSinkRef},
     testing::{text_answer, tool_answer},
 };
 
@@ -40,8 +40,8 @@ impl SessionSink for Watching {
 
 #[async_trait]
 impl RunStore for Watching {
-    fn sink(&self, _key: &RunKey) -> Arc<dyn SessionSink> {
-        Arc::new(Watching(self.0.clone()))
+    fn sink(&self, _key: &RunKey) -> SessionSinkRef {
+        Watching(self.0.clone()).into()
     }
     async fn load(&self, _key: &RunKey) -> io::Result<Option<ReplayedRun>> {
         Ok(None)

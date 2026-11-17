@@ -14,7 +14,7 @@ use haest_core::{
     __private::{ToolIndex, run_unspilled},
     ToolRef, Tools,
     messages::{MediaPart, ToolCall},
-    tool::{JsonMap, NoServices, ToolContext, ToolOutput, ToolServicesRef},
+    tool::{JsonMap, ToolContext, ToolOutput, ToolServicesRef},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -93,28 +93,27 @@ impl Bridge {
             .collect();
         let tools = ToolIndex::new(callable);
         let names = tools.names().into_iter().map(String::from).collect();
-        let inner = ToolContext {
-            cwd: ctx.cwd.clone(),
-            cancel,
-            workspace: ctx.workspace.clone(),
-            services: NoServices.into(),
-            context_room_tokens: None,
-            tool_call_id: None,
-            spill_dir: ctx.spill_dir.clone(),
-            // A program's inner calls have no stable ids: no effect keys for them.
-            run_key: None,
-            resumed: false,
-            turn_time_left: ctx.turn_time_left,
-            // A tool Code calls winds down with the turn that called Code.
-            wind_down: ctx.wind_down.clone(),
-        };
+        // A program's inner calls have no stable ids: no effect keys for them
+        // (no run key). A tool Code calls winds down with the turn that called Code.
+        let mut inner = ToolContext::new(ctx.cwd(), ctx.workspace().clone())
+            .with_cancel(cancel)
+            .with_wind_down(ctx.wind_down().clone());
+        if let Some(dir) = ctx.spill_dir() {
+            inner = inner.with_spill_dir(dir);
+        }
+        if let Some(left) = ctx.turn_time_left() {
+            inner = inner.with_turn_time_left(left);
+        }
         Arc::new(Self {
             tools,
             names,
             schemas,
             inner,
-            parent_id: ctx.tool_call_id.clone().unwrap_or_else(|| "code".into()),
-            report: ctx.tool_call_id.is_some().then(|| ctx.services.clone()),
+            parent_id: ctx
+                .tool_call_id()
+                .map(String::from)
+                .unwrap_or_else(|| "code".into()),
+            report: ctx.tool_call_id().is_some().then(|| ctx.services().clone()),
             gate: CallGate::new(READ_CONCURRENCY),
             tally: Mutex::default(),
         })
@@ -159,8 +158,7 @@ impl Bridge {
             .report
             .as_ref()
             .map(|services| InnerRow::start(services.clone(), &self.parent_id, &call));
-        let mut ctx = self.inner.clone();
-        ctx.tool_call_id = Some(call.id.clone());
+        let ctx = self.inner.clone().with_tool_call_id(call.id.clone());
         let out = self
             .gate
             .run(!tool.read_only(), run_unspilled(&self.tools, &call, &ctx))

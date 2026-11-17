@@ -16,25 +16,24 @@
 //!   [`SkillScanRoots::dirs`].)
 //! - [`skills_prompt_block`]: the system prompt's list of the skills the model
 //!   may pick ([`skill_cards_block`] for a host's own intro and cards).
-//! - [`DiskSkills`] / [`InlineSkills`]: the [`SkillSet`] the `Skill` tool
-//!   (`haest-tools`) loads bodies from ([`load_skill_body`] for a disk skill).
+//! - [`Skills`] / [`DiskSkills`] / [`InlineSkills`]: the [`SkillSet`] the
+//!   `Skill` tool (`haest-tools`) loads bodies from ([`load_skill_body`] for
+//!   a disk skill).
 //!
 //! # Examples
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_core::{
-//!     Fs, MemFs,
+//!     MemFs,
 //!     skills::{DiskSkills, SkillOptions, SkillSet, SkillSources, discover_skills, skills_prompt_block},
 //! };
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> std::io::Result<()> {
-//! let fs: Arc<dyn Fs> = Arc::new(MemFs::with_files([(
+//! let fs = MemFs::with_files([(
 //!     "/home/me/.claude/skills/release/SKILL.md",
 //!     "---\nname: release\ndescription: Cut a release\n---\nBump the version, tag, push.\n",
-//! )]));
+//! )]);
 //! let opts = SkillOptions {
 //!     cwd: "/home/me/project".into(),
 //!     home: "/home/me".into(),
@@ -42,10 +41,10 @@
 //!     sources: SkillSources { claude: true, ..SkillSources::NONE },
 //! };
 //!
-//! let skills = discover_skills(fs.as_ref(), &opts).await;
+//! let skills = discover_skills(&fs, &opts).await;
 //! assert!(skills_prompt_block(&skills).ends_with("\n- release: Cut a release"));
 //!
-//! let set = DiskSkills::new(move || skills.clone(), fs);
+//! let set = DiskSkills::new(fs, move || skills.clone());
 //! let body = set.load("release", Some("v2.0")).await?;
 //! assert!(body.ends_with("ARGUMENTS: v2.0\n\nBump the version, tag, push."));
 //! # Ok(())
@@ -70,8 +69,8 @@ use serde::{Deserialize, Serialize};
 pub use plugins::read_installed_plugins;
 pub use scan::{PluginRoot, SkillMeta, SkillScanRoots, parse_skill_file, scan_skills};
 pub use set::{
-    DEFAULT_SKILLS_INTRO, DiskSkills, InlineSkill, InlineSkills, SkillCard, SkillSet,
-    first_of_each_name, skill_cards_block,
+    DEFAULT_SKILLS_INTRO, DiskSkills, InlineSkill, InlineSkills, SkillCard, SkillSet, SkillSetRef,
+    Skills, first_of_each_name, skill_cards_block,
 };
 
 use crate::fs::Fs;

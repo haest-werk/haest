@@ -134,7 +134,7 @@ pub trait AutoJudge: Send + Sync {
     /// Whether auto mode is on right now. Asked before every command, so a
     /// host can switch it mid-conversation; off = the irreversible list decides.
     fn on(&self) -> bool;
-    /// The verdict on `command`, about to run in `ctx`. `ctx.cancel` fires
+    /// The verdict on `command`, about to run in `ctx`. `ctx.cancel()` fires
     /// when the human interrupts the call.
     async fn judge(&self, command: &str, ctx: &ToolContext) -> BashVerdict;
 }
@@ -249,7 +249,7 @@ impl Mod for ApprovalMod {
             tool_use_id: None,
             key: Some(command),
         };
-        Ok(match haest.ask(req, &ctx.cancel).await {
+        Ok(match haest.ask(req, ctx.cancel()).await {
             Decision::Allow => Before::Pass,
             Decision::Deny => Before::Deny(format!(
                 "the human did not approve this command (it {why}). Ask them, or find another way."

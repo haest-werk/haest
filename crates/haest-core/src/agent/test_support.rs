@@ -17,7 +17,7 @@ use crate::{
     caps::{TurnCaps, TurnCapsSource},
     deps::{AgentDeps, AgentHooks, Clock},
     events::LoopEvent,
-    fs::{Fs, MemFs},
+    fs::{FsRef, MemFs},
     ledger::Ledger,
     messages::{AssistantMessage, Message, StopReason, Usage},
     testing::{ScriptedProvider, tool_answer},
@@ -79,8 +79,8 @@ impl Workspace for MemWorkspace {
     fn mode(&self) -> WorkspaceMode {
         WorkspaceMode::Sandbox
     }
-    fn fs(&self) -> Arc<dyn Fs> {
-        self.fs.clone()
+    fn fs(&self) -> FsRef {
+        self.fs.clone().into()
     }
     async fn shell(&self, _: &str, _: ExecOptions) -> ExecResult {
         ExecResult {

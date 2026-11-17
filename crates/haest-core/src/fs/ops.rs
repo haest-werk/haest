@@ -5,14 +5,14 @@ use std::{io, path::Path};
 
 use super::{FileKind, Fs};
 
-/// Make sure a directory is at `path`: [`Fs::mkdir`] with `recursive`, not
-/// called when the directory is already there (a file system that refuses
-/// writes still says yes to one it has).
+/// Make sure a directory is at `path`: [`Fs::create_dir_all`], not called
+/// when the directory is already there (a file system that refuses writes
+/// still says yes to one it has).
 ///
 /// # Errors
 ///
 /// `NotADirectory` when something other than a directory is at `path`, and
-/// [`Fs::mkdir`]'s, such as a file where one of the parents should be.
+/// [`Fs::create_dir_all`]'s, such as a file where one of the parents should be.
 pub async fn ensure_dir(fs: &dyn Fs, path: &Path) -> io::Result<()> {
     match fs.stat(path).await {
         Ok(stat) if stat.kind == FileKind::Dir => Ok(()),
@@ -20,7 +20,7 @@ pub async fn ensure_dir(fs: &dyn Fs, path: &Path) -> io::Result<()> {
             io::ErrorKind::NotADirectory,
             format!("{} is there and is not a directory", path.display()),
         )),
-        Err(_) => fs.mkdir(path, true).await,
+        Err(_) => fs.create_dir_all(path).await,
     }
 }
 

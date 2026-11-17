@@ -80,9 +80,8 @@ async fn the_agent_tool_starts_nothing_while_its_turn_winds_down_and_names_the_c
         limit: Some(Limit::Conversation(ConversationCap::Usd(10.0))),
         remedy: Some("REMEDY".into()),
     };
-    let mut ctx = shut_ctx();
     let fact = past.clone();
-    ctx.wind_down = WindDownWatch::new(move || Some(fact.clone()));
+    let ctx = shut_ctx().with_wind_down(WindDownWatch::new(move || Some(fact.clone())));
     let refused = tool.execute(brief(), &ctx).await;
     assert_eq!(*dir.0.lock().unwrap(), 1, "nothing started");
     let Err(ToolError::Input(text)) = refused else {

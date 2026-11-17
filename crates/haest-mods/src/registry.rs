@@ -108,7 +108,7 @@ impl Mods {
                 Ok(Before::Deny(reason)) => {
                     return Err(ToolError::Input(format!("Refused: {reason}")));
                 }
-                Err(_) if ctx.cancel.is_cancelled() => {
+                Err(_) if ctx.cancel().is_cancelled() => {
                     return Err(ToolError::Input(INTERRUPTED.into()));
                 }
                 Err(e) => {
@@ -135,7 +135,7 @@ impl Mods {
             match m.tool_after(call, &output, ctx, &self.env).await {
                 Ok(Some(replaced)) => output = replaced,
                 Ok(None) => {}
-                Err(_) if ctx.cancel.is_cancelled() => {}
+                Err(_) if ctx.cancel().is_cancelled() => {}
                 Err(e) => self.report(m.as_ref(), "tool.after", &e),
             }
         }

@@ -23,10 +23,10 @@ use std::{io, sync::Arc};
 use async_trait::async_trait;
 use haest_core::{
     ChildEnv,
-    fs::Fs,
+    fs::{Fs, FsRef},
     remedy::{Limit, Remedies},
     shell_command::ShellCommand,
-    workspace::{ChangeSet, ExecOptions, ExecResult, Workspace, WorkspaceMode},
+    workspace::{ChangeSetRef, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
 
 pub use mounts::SandboxMounts;
@@ -263,8 +263,8 @@ impl Workspace for SandboxWorkspace {
         WorkspaceMode::Sandbox
     }
 
-    fn fs(&self) -> Arc<dyn Fs> {
-        self.fs.clone()
+    fn fs(&self) -> FsRef {
+        self.fs.clone().into()
     }
 
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
@@ -290,7 +290,7 @@ impl Workspace for SandboxWorkspace {
         format!("# Sandbox\nYou run in a SANDBOX. {}", parts.join(" "))
     }
 
-    fn changes(&self) -> Option<Arc<dyn ChangeSet>> {
-        self.changes.clone().map(|c| c as Arc<dyn ChangeSet>)
+    fn changes(&self) -> Option<ChangeSetRef> {
+        self.changes.clone().map(ChangeSetRef::from)
     }
 }

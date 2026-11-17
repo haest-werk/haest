@@ -42,7 +42,7 @@ impl Tool for Forever {
         "wait"
     }
     async fn execute(&self, _: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        ctx.cancel.cancelled().await;
+        ctx.cancel().cancelled().await;
         Ok(ToolOutput::text("stopped"))
     }
 }

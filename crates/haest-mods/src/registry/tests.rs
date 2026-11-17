@@ -215,7 +215,7 @@ async fn an_interrupt_while_a_mod_decides_is_not_reported_as_a_mod_failure() {
     mods.add(Arc::new(Broken));
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
     let c = ctx();
-    c.cancel.cancel();
+    c.cancel().cancel();
     let out = tools[0].execute(input(json!({"guarded": true})), &c).await;
     assert!(matches!(out, Err(ToolError::Input(_))));
     assert!(ui.errors().is_empty());

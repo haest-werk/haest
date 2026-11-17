@@ -70,11 +70,19 @@ impl Fs for NotebookFs {
     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
         self.view.read_dir(path).await
     }
-    async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()> {
-        self.view.mkdir(path, recursive).await
+    async fn create_dir(&self, path: &Path) -> io::Result<()> {
+        self.view.create_dir(path).await
     }
-    async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()> {
-        self.view.remove(path, recursive).await?;
+    async fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        self.view.create_dir_all(path).await
+    }
+    async fn remove(&self, path: &Path) -> io::Result<()> {
+        self.view.remove(path).await?;
+        self.stage(path);
+        Ok(())
+    }
+    async fn remove_all(&self, path: &Path) -> io::Result<()> {
+        self.view.remove_all(path).await?;
         self.stage(path);
         Ok(())
     }

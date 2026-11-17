@@ -9,10 +9,10 @@ use std::{
 use async_trait::async_trait;
 
 use super::{ReplayedRun, RunKey, replay_run};
-use crate::session::{SessionRecord, SessionSink};
+use crate::session::{SessionRecord, SessionSink, SessionSinkRef};
 
 /// PLUG POINT: where durable runs keep their records, one log per
-/// [`RunKey`]. Set it on [`SharedDeps::run_store`](crate::SharedDeps::run_store);
+/// [`RunKey`]. Set it with [`SharedDeps::with_run_store`](crate::SharedDeps::with_run_store);
 /// with none, nothing is durable.
 ///
 /// [`MemoryRunStore`] keeps the logs in memory. A host that keeps its own
@@ -30,7 +30,7 @@ use crate::session::{SessionRecord, SessionSink};
 /// use async_trait::async_trait;
 /// use haest_core::{
 ///     run::{ReplayedRun, RunKey, RunStore, replay_run},
-///     session::{SessionRecord, SessionSink},
+///     session::{SessionRecord, SessionSink, SessionSinkRef},
 /// };
 ///
 /// #[derive(Default)]
@@ -40,8 +40,8 @@ use crate::session::{SessionRecord, SessionSink};
 ///
 /// impl SessionSink for Log {
 ///     fn append(&self, record: &SessionRecord) {
-///         let line = serde_json::to_string(record).unwrap();
-///         let mut logs = self.0.lock().unwrap();
+///         let line = serde_json::to_string(record).expect("a record always serializes");
+///         let mut logs = self.0.lock().expect("not poisoned");
 ///         let log = logs.entry(self.1.clone()).or_default();
 ///         log.push_str(&line);
 ///         log.push('\n');
@@ -50,11 +50,12 @@ use crate::session::{SessionRecord, SessionSink};
 ///
 /// #[async_trait]
 /// impl RunStore for Logs {
-///     fn sink(&self, key: &RunKey) -> Arc<dyn SessionSink> {
-///         Arc::new(Log(self.0.clone(), key.clone()))
+///     fn sink(&self, key: &RunKey) -> SessionSinkRef {
+///         Log(self.0.clone(), key.clone()).into()
 ///     }
 ///     async fn load(&self, key: &RunKey) -> io::Result<Option<ReplayedRun>> {
-///         Ok(self.0.lock().unwrap().get(key).and_then(|text| replay_run(text)))
+///         let logs = self.0.lock().expect("not poisoned");
+///         Ok(logs.get(key).and_then(|text| replay_run(text)))
 ///     }
 /// }
 /// ```
@@ -62,7 +63,7 @@ use crate::session::{SessionRecord, SessionSink};
 pub trait RunStore: Send + Sync {
     /// Where the run `key`'s records go. Records land in the order appended;
     /// [`SessionSink::flush`] resolves once they all have.
-    fn sink(&self, key: &RunKey) -> Arc<dyn SessionSink>;
+    fn sink(&self, key: &RunKey) -> SessionSinkRef;
 
     /// The run `key`'s records so far, rebuilt; None for a key never started.
     ///
@@ -142,11 +143,12 @@ impl MemoryRunStore {
 
 #[async_trait]
 impl RunStore for MemoryRunStore {
-    fn sink(&self, key: &RunKey) -> Arc<dyn SessionSink> {
-        Arc::new(MemorySink {
+    fn sink(&self, key: &RunKey) -> SessionSinkRef {
+        MemorySink {
             logs: self.logs.clone(),
             key: key.clone(),
-        })
+        }
+        .into()
     }
 
     async fn load(&self, key: &RunKey) -> io::Result<Option<ReplayedRun>> {

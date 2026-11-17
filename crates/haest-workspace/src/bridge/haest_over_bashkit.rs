@@ -147,16 +147,30 @@ impl Fs for HaestFsOverBashkit {
         Ok(out)
     }
 
-    async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()> {
+    async fn create_dir(&self, path: &Path) -> io::Result<()> {
         self.inner
-            .mkdir(&normalize(path), recursive)
+            .mkdir(&normalize(path), false)
             .await
             .map_err(io_from_bashkit)
     }
 
-    async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()> {
+    async fn create_dir_all(&self, path: &Path) -> io::Result<()> {
         self.inner
-            .remove(&normalize(path), recursive)
+            .mkdir(&normalize(path), true)
+            .await
+            .map_err(io_from_bashkit)
+    }
+
+    async fn remove(&self, path: &Path) -> io::Result<()> {
+        self.inner
+            .remove(&normalize(path), false)
+            .await
+            .map_err(io_from_bashkit)
+    }
+
+    async fn remove_all(&self, path: &Path) -> io::Result<()> {
+        self.inner
+            .remove(&normalize(path), true)
             .await
             .map_err(io_from_bashkit)
     }

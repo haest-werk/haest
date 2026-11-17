@@ -79,7 +79,7 @@ pub use watch::WindDownWatch;
 ///     fn parameters(&self) -> Value { json!({"type": "object"}) }
 ///     fn kind(&self) -> &str { "task.spawn" }
 ///     async fn execute(&self, _: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-///         match ctx.wind_down.check() {
+///         match ctx.wind_down().check() {
 ///             Some(w) => Err(ToolError::Input(w.refusal("no new work"))),
 ///             None => Ok(ToolOutput::text("started")),
 ///         }

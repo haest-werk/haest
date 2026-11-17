@@ -36,7 +36,10 @@ impl Tool for Sees {
         true
     }
     async fn execute(&self, _: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        self.0.lock().unwrap().push(ctx.wind_down.check().is_some());
+        self.0
+            .lock()
+            .unwrap()
+            .push(ctx.wind_down().check().is_some());
         Ok(ToolOutput::text("ok"))
     }
 }
@@ -46,15 +49,15 @@ async fn a_tool_called_from_code_sees_the_callers_wind_down() {
     let sees = Arc::new(Sees::default());
     let tool = code_over(vec![ToolRef::from(sees.clone())], &["Sees"]);
     let code = "await tools.Sees({}); return 1";
-    let mut c = ctx(MemWorkspace::with_files::<&str, &str>([]));
+    let c = ctx(MemWorkspace::with_files::<&str, &str>([]));
     run_in(&tool, code, json!({}), &c).await;
-    c.wind_down = WindDownWatch::new(|| {
+    let c = c.with_wind_down(WindDownWatch::new(|| {
         Some(WindingDown {
             fact: "the budget is nearly spent: $0.90 of $1 (`max_turn_usd`)".into(),
             limit: Some(Limit::TurnUsd(1.0)),
             remedy: None,
         })
-    });
+    }));
     run_in(&tool, code, json!({}), &c).await;
     assert_eq!(*sees.0.lock().unwrap(), [false, true]);
 }

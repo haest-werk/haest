@@ -123,11 +123,11 @@ async fn run_now(
 ) -> Result<ToolOutput, ToolError> {
     let started = Instant::now();
     let opts = ExecOptions {
-        cwd: ctx.cwd.clone(),
-        cancel: ctx.cancel.clone(),
+        cwd: ctx.cwd().to_path_buf(),
+        cancel: ctx.cancel().clone(),
         timeout,
     };
-    let r = ctx.workspace.shell(command, opts).await;
+    let r = ctx.workspace().shell(command, opts).await;
     let sep = if !r.stdout.is_empty() && !r.stderr.is_empty() {
         "\n"
     } else {
@@ -137,7 +137,7 @@ async fn run_now(
         truncate_middle(&format!("{}{sep}{}", r.stdout, r.stderr), TRUNCATE_CHARS);
     let note = if r.timed_out {
         format!("\n[killed after {}ms timeout]", timeout.as_millis())
-    } else if ctx.cancel.is_cancelled() {
+    } else if ctx.cancel().is_cancelled() {
         "\n[interrupted]".to_string()
     } else {
         String::new()
@@ -177,7 +177,12 @@ fn run_in_background(
 ) -> Result<ToolOutput, ToolError> {
     let description = opt_str(input, "description")?.unwrap_or(command);
     let job = jobs
-        .start(ctx.workspace.clone(), command, description, ctx.cwd.clone())
+        .start(
+            ctx.workspace().clone(),
+            command,
+            description,
+            ctx.cwd().to_path_buf(),
+        )
         .map_err(|e: JobError| ToolError::Failed(e.to_string()))?;
     Ok(ToolOutput::text(format!(
         "Started background job {id}. Read its output with BashOutput (bash_id \"{id}\"), stop it with KillShell. You will be told when it exits -- do not poll in a loop.",

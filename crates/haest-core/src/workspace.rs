@@ -12,13 +12,13 @@
 //! `workspace`). A sandbox also reports what it changed ([`ChangeSet`]) so a
 //! human can review and apply it.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{fmt, ops::Deref, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use crate::fs::{Fs, ShutFs};
+use crate::fs::{FsRef, ShutFs};
 
 crate::word_enum! {
     /// What kind of world a [`Workspace`] is (the `workspace` setting's words).
@@ -65,7 +65,38 @@ pub const EXIT_NOT_FOUND: i32 = 127;
 
 /// Where a streamed command's output goes, chunk by chunk as it arrives:
 /// stdout and stderr interleaved, whole UTF-8 characters only.
-pub type OutputChunks = Arc<dyn Fn(&str) + Send + Sync>;
+///
+/// Built from a closure (`OutputChunks::from(|text: &str| ..)`) and called
+/// like one (`on_output(text)`); cheap to clone.
+#[derive(Clone)]
+pub struct OutputChunks(Arc<dyn Fn(&str) + Send + Sync>);
+
+impl OutputChunks {
+    /// Output that goes to `f`.
+    pub fn new(f: impl Fn(&str) + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+}
+
+impl<F: Fn(&str) + Send + Sync + 'static> From<F> for OutputChunks {
+    fn from(f: F) -> Self {
+        Self::new(f)
+    }
+}
+
+impl Deref for OutputChunks {
+    type Target = dyn Fn(&str) + Send + Sync;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl fmt::Debug for OutputChunks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("OutputChunks").finish_non_exhaustive()
+    }
+}
 
 /// One path the sandbox changed: what a host lists for the human to review,
 /// and applies ([`ChangeSet`]).
@@ -147,6 +178,11 @@ pub trait ChangeSet: Send + Sync {
     async fn apply(&self) -> ApplyReport;
 }
 
+crate::plug_ref! {
+    /// A [`ChangeSet`], shared: what [`Workspace::changes`] hands out.
+    pub struct ChangeSetRef(dyn ChangeSet);
+}
+
 /// The world the agent works in: a file system and a shell, one door for both.
 ///
 /// Every tool reaches files through [`Workspace::fs`] and runs commands through
@@ -165,17 +201,18 @@ pub trait ChangeSet: Send + Sync {
 /// `pwd`:
 ///
 /// ```
-/// use std::{sync::Arc, time::Duration};
+/// use std::time::Duration;
 ///
 /// use async_trait::async_trait;
 /// use haest_core::{
-///     ExecOptions, ExecResult, Fs, MemFs, Workspace, WorkspaceMode,
+///     ExecOptions, ExecResult, MemFs, Workspace, WorkspaceMode,
+///     fs::FsRef,
 ///     workspace::EXIT_NOT_FOUND,
 /// };
 /// use tokio_util::sync::CancellationToken;
 ///
 /// struct Tiny {
-///     fs: Arc<MemFs>,
+///     fs: FsRef,
 /// }
 ///
 /// #[async_trait]
@@ -183,7 +220,7 @@ pub trait ChangeSet: Send + Sync {
 ///     fn mode(&self) -> WorkspaceMode {
 ///         WorkspaceMode::Sandbox
 ///     }
-///     fn fs(&self) -> Arc<dyn Fs> {
+///     fn fs(&self) -> FsRef {
 ///         self.fs.clone()
 ///     }
 ///     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
@@ -209,7 +246,7 @@ pub trait ChangeSet: Send + Sync {
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
-/// let ws = Tiny { fs: Arc::new(MemFs::new()) };
+/// let ws = Tiny { fs: MemFs::new().into() };
 /// let opts = ExecOptions {
 ///     cwd: "/project".into(),
 ///     cancel: CancellationToken::new(),
@@ -224,7 +261,7 @@ pub trait Workspace: Send + Sync {
     /// What kind of world this is.
     fn mode(&self) -> WorkspaceMode;
     /// The files the agent sees, the same files the shell sees.
-    fn fs(&self) -> Arc<dyn Fs>;
+    fn fs(&self) -> FsRef;
     /// A command line, interpreted by bash (real or simulated).
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult;
     /// Like [`Workspace::shell`], but the output goes to `on_output` as it
@@ -256,7 +293,7 @@ pub trait Workspace: Send + Sync {
     /// empty when there is nothing to say.
     fn prompt_note(&self) -> String;
     /// The sandbox's in-memory edits to the project; None for every other mode.
-    fn changes(&self) -> Option<Arc<dyn ChangeSet>> {
+    fn changes(&self) -> Option<ChangeSetRef> {
         None
     }
 }
@@ -288,8 +325,8 @@ impl Workspace for ShutWorkspace {
     fn mode(&self) -> WorkspaceMode {
         WorkspaceMode::Shut
     }
-    fn fs(&self) -> Arc<dyn Fs> {
-        Arc::new(ShutFs)
+    fn fs(&self) -> FsRef {
+        ShutFs.into()
     }
     async fn shell(&self, _: &str, _: ExecOptions) -> ExecResult {
         no_shell()

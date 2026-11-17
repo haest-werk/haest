@@ -20,9 +20,8 @@ Thresholds: a meter crossing a mark fires an action. The guard's nudge, the
 agent-turn gate's nudge, the ledger's warning and compaction are now
 default thresholds with the same numbers and behaviour, a host adds its own
 beside them, and wind-down (new, opt-in, off by default) is one of them.
-Breaking for a host that writes `TurnCaps`, `ToolContext` or `Settings`
-out in full; everything built with `::new`, `Default` or `..` compiles as
-before.
+Breaking for a host that writes `TurnCaps` or `Settings` out in full;
+everything built with `::new`, `Default` or `..` compiles as before.
 
 No `Arc`, `Box` or `dyn` in haest-core's API: every plug point takes the
 value itself, and holds it in a handle named after its trait. Read
@@ -45,6 +44,14 @@ value itself, and holds it in a handle named after its trait. Read
    `AgentHooks`: delete `impl ToolServices for MyHooks {}`; hooks that do
    publish, report or log go in both slots,
    `.with_hooks(host.clone()).with_services(host)`.
+5. `ToolContext` keeps its fields private: read a part with the getter of
+   its name (`ctx.cwd` -> `ctx.cwd()`), build one with `ToolContext::new`
+   and a `with_*` setter per part (`ToolContext { cwd, cancel, .. }` ->
+   `ToolContext::new(cwd, workspace).with_cancel(cancel)`).
+6. A `Workspace` hands out handles: `fn fs(&self) -> Arc<dyn Fs>` ->
+   `fn fs(&self) -> FsRef` (`self.fs.clone().into()`). `Fs::mkdir` and
+   `Fs::remove` lose their `recursive` flag: `fs.mkdir(dir, true)` ->
+   `fs.create_dir_all(dir)`, `fs.remove(path, true)` -> `fs.remove_all(path)`.
 
 ### Bug fixes
 
@@ -175,7 +182,9 @@ Plug points without `Arc` (breaking):
 - New handles, one per plug point, named after the trait: `ToolRef`,
   `ToolSourceRef`, `SystemPromptRef`, `ModelResolverRef`, `WorkspaceRef`,
   `AgentHooksRef`, `ToolServicesRef`, `ModelFactsRef`, `TurnCapsSourceRef`,
-  `ClockRef` and `RunStoreRef`. Each is a cheap `Clone`, derefs to the trait
+  `ClockRef`, `FsRef`, `ChangeSetRef`, `run::RunStoreRef`,
+  `session::SessionSinkRef`, `shell_command::ShellCommandRef` and
+  `skills::SkillSetRef`. Each is a cheap `Clone`, derefs to the trait
   object, and is built `From` the value, an `Arc` of it or an
   `Arc<dyn Trait>`, so one host object can fill several slots;
   `XRef::new(value)` and `XRef::ptr_eq` besides.
@@ -208,9 +217,34 @@ Plug points without `Arc` (breaking):
   takes `&Tools`). `impl ToolSource for Vec<Arc<dyn Tool>>` -> `Tools`.
 - `SystemPrompt` is implemented for `&'static str` and for closures
   `Fn() -> String`, beside `String`.
-- `ToolContext::new(cwd, impl Into<WorkspaceRef>)`;
-  `ToolContext::workspace: WorkspaceRef`, `ToolContext::services:
-  ToolServicesRef`.
+- `ToolContext`'s fields are private, read by a getter of the same name
+  (`ctx.cancel` -> `ctx.cancel()`, `ctx.tool_call_id` ->
+  `ctx.tool_call_id()`, an `Option<&str>`) and set by a consuming `with_*`
+  (`ctx.services = Arc::new(s)` -> `ctx.with_services(s)`).
+  `ToolContext::new(cwd, impl Into<WorkspaceRef>)`; `workspace()` returns a
+  `WorkspaceRef` and `services()` a `ToolServicesRef`.
+- `Workspace::fs` returns `FsRef` (was `Arc<dyn Fs>`), `Workspace::changes`
+  `Option<ChangeSetRef>` (was `Option<Arc<dyn ChangeSet>>`),
+  `RunStore::sink` `SessionSinkRef` (was `Arc<dyn SessionSink>`);
+  `ShellCall::fs` is an `FsRef`.
+- `OutputChunks` is a struct built from a closure:
+  `Arc::new(move |text: &str| ..)` -> `OutputChunks::from(move |text: &str| ..)`.
+- `JsonlSessionFile::new` and `JsonlSessionFile::with_error_handler` take
+  `fs: impl Into<FsRef>`. `DiskSkills::new(skills, fs)` ->
+  `DiskSkills::new(fs, skills)`, the closure last, `fs` as
+  `impl Into<FsRef>`.
+- New `skills::Skills`: a host's SKILL.md skills held where every clone sees
+  them; `replace` after a rescan and the Skill tool and the prompt read the
+  new list on their next call. A `SkillSet` over an `Fs`, like `DiskSkills`.
+
+`Fs` splits its flags (breaking):
+
+- `Fs::mkdir(path, recursive)` -> `Fs::create_dir(path)` and
+  `Fs::create_dir_all(path)`; `Fs::remove(path, recursive)` ->
+  `Fs::remove(path)` and `Fs::remove_all(path)`. An `Fs` implements
+  `create_dir` and `remove`; `create_dir_all` and `remove_all` have defaults
+  built on them, and `remove_all` removes a link without walking into it.
+  `MemFs`, `ShutFs` and every `Fs` in the workspace implement all four.
 
 Durable runs, opt-in: a host that hands no run store gets the haest it had.
 
@@ -232,9 +266,9 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   and `run_end` in the file. An exhaustive `match` adds them.
   `session::replay` skips them, and so does any reader that does not know
   them (the TypeScript haest included), so the conversation reads the same.
-- `ToolContext` gains `run_key: Option<RunKey>`, `resumed: bool` and
-  `effect_key()`. A struct literal adds `run_key: None, resumed: false`;
-  `ToolContext::new` sets both.
+- `ToolContext` gains `run_key()`, `resumed()` (set by the loop;
+  `with_run_key`, `with_resumed`) and `effect_key()`. `ToolContext::new`
+  has no run key and is not resumed.
 - New `Tool::on_resume() -> tool::OnResume` (`Rerun`, `Report`, `Lookup`;
   default `Rerun` for a read-only tool, else `Report`): what a call that
   may have run before the stop does on resume. A tool wrapper forwards it,
@@ -255,9 +289,10 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   ones in flight.
 - `caps::SubagentCaps` gains `budgets: bool` (default false); a literal
   written out in full adds it.
-- `ToolContext` gains `turn_time_left: Option<Duration>`: what is left of
-  the turn's time cap on the host's clock, filled by the loop for every
-  tool call; `None` with no time cap, and in `ToolContext::new`.
+- `ToolContext` gains `turn_time_left() -> Option<Duration>`: what is left
+  of the turn's time cap on the host's clock, filled by the loop for every
+  tool call (`with_turn_time_left`); `None` with no time cap, and in
+  `ToolContext::new`.
 
 Thresholds; wind-down, opt-in:
 
@@ -295,8 +330,9 @@ Thresholds; wind-down, opt-in:
   that starts new work refuses, and the model is told once a turn to
   conclude. `WindingDown` is what a refusal states, `WindDownWatch` what a
   tool asks.
-- `ToolContext` gains `wind_down: WindDownWatch` (never winding down by
-  default). A tool that starts new work asks `ctx.wind_down.check()`.
+- `ToolContext` gains `wind_down() -> &WindDownWatch` (never winding down
+  by default; `with_wind_down`). A tool that starts new work asks
+  `ctx.wind_down().check()`.
 - `remedy::Limit` gains `SubagentSteps`, `SubagentTime` and `SubagentUsd`,
   and `Limit::setting()`, the plain name of the setting behind each limit.
 
@@ -364,9 +400,18 @@ Thresholds; wind-down, opt-in:
   cap, then the host's remedy.
 - The hub runs its subagents on caps marked `subagent`.
 
+### haest-workspace
+
+- `RealWorkspace::fs` and `SandboxWorkspace::fs` return `FsRef`, and
+  `SandboxWorkspace::changes` an `Option<ChangeSetRef>`, as `Workspace`
+  now has them. `RealFs` and the sandbox's file system implement
+  `create_dir`, `create_dir_all`, `remove` and `remove_all`.
+
 ### haest-code
 
 - `code_tool_names` takes `&[ToolRef]` (was `&[Arc<dyn Tool>]`).
+- `JsEnv::fs` is an `FsRef` (was `Arc<dyn Fs>`): `fs: Arc::new(mem)` ->
+  `fs: FsRef::new(mem)` or `fs: mem.into()`.
 - The Code tool hands its caller's `turn_time_left` on to the calls it
   makes.
 - A tool the Code tool calls sees the caller's wind-down.

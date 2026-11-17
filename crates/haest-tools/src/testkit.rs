@@ -14,7 +14,7 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::{
-    fs::{DirEntry, Fs, FsStat, MemFs},
+    fs::{DirEntry, Fs, FsRef, FsStat, MemFs},
     tool::{JsonMap, ToolContext},
     workspace::{ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode},
 };
@@ -89,8 +89,8 @@ impl Workspace for TestWorkspace {
     fn mode(&self) -> WorkspaceMode {
         WorkspaceMode::Sandbox
     }
-    fn fs(&self) -> Arc<dyn Fs> {
-        self.mem.clone()
+    fn fs(&self) -> FsRef {
+        self.mem.clone().into()
     }
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
         self.record(true, vec![command.to_string()], opts)
@@ -177,11 +177,17 @@ impl Fs for ClaimedSizeFs {
     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
         self.mem.read_dir(path).await
     }
-    async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()> {
-        self.mem.mkdir(path, recursive).await
+    async fn create_dir(&self, path: &Path) -> io::Result<()> {
+        self.mem.create_dir(path).await
     }
-    async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()> {
-        self.mem.remove(path, recursive).await
+    async fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        self.mem.create_dir_all(path).await
+    }
+    async fn remove(&self, path: &Path) -> io::Result<()> {
+        self.mem.remove(path).await
+    }
+    async fn remove_all(&self, path: &Path) -> io::Result<()> {
+        self.mem.remove_all(path).await
     }
     async fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
         self.mem.rename(from, to).await

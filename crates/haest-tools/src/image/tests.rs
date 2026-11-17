@@ -111,8 +111,7 @@ impl Rig {
     }
 
     async fn run(&self, input: Value) -> ToolOutput {
-        let mut ctx = ToolContext::new(CWD, self.ws.clone());
-        ctx.services = self.published.clone().into();
+        let ctx = ToolContext::new(CWD, self.ws.clone()).with_services(self.published.clone());
         let call = ToolCall {
             id: "g".into(),
             name: "GenerateImage".into(),

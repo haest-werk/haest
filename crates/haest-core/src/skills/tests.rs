@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::*;
 use crate::fs::MemFs;
 
@@ -159,7 +157,7 @@ async fn inline_skills_keep_the_first_of_a_name_and_load_their_body() {
 
 #[tokio::test]
 async fn disk_skills_offer_what_the_model_may_invoke_and_load_like_before() {
-    let fs: Arc<dyn Fs> = Arc::new(fs_with(&[
+    let fs = fs_with(&[
         ("/r/home/.claude/skills", "visible", "", "THE BODY"),
         (
             "/r/home/.claude/skills",
@@ -167,9 +165,9 @@ async fn disk_skills_offer_what_the_model_may_invoke_and_load_like_before() {
             "disable-model-invocation: true\n",
             "NOPE",
         ),
-    ]));
-    let skills = discover_skills(fs.as_ref(), &opts()).await;
-    let set = DiskSkills::new(move || skills.clone(), fs);
+    ]);
+    let skills = discover_skills(&fs, &opts()).await;
+    let set = DiskSkills::new(fs, move || skills.clone());
     let offered: Vec<String> = set.offered().into_iter().map(|c| c.name).collect();
     assert_eq!(offered, ["visible"]);
     let body = set.load("visible", Some("a b")).await.unwrap();
@@ -178,6 +176,36 @@ async fn disk_skills_offer_what_the_model_may_invoke_and_load_like_before() {
         "{body}"
     );
     assert!(set.load("hidden", None).await.is_err());
+}
+
+#[tokio::test]
+async fn every_clone_of_skills_sees_a_replaced_list_and_offers_only_what_the_model_may_pick() {
+    let fs = fs_with(&[
+        ("/r/home/.claude/skills", "visible", "", "THE BODY"),
+        (
+            "/r/home/.claude/skills",
+            "hidden",
+            "disable-model-invocation: true\n",
+            "NOPE",
+        ),
+    ]);
+    let found = discover_skills(&fs, &opts()).await;
+    let skills = Skills::new(fs);
+    let tool_side = skills.clone();
+    assert!(tool_side.offered().is_empty());
+    skills.replace(found);
+    let offered: Vec<String> = tool_side.offered().into_iter().map(|c| c.name).collect();
+    assert_eq!(offered, ["visible"]);
+    assert_eq!(tool_side.list().len(), 2, "the list keeps every skill");
+    assert!(
+        tool_side
+            .load("visible", None)
+            .await
+            .unwrap()
+            .contains("THE BODY")
+    );
+    let hidden = tool_side.load("hidden", None).await;
+    assert_eq!(hidden.map_err(|e| e.kind()), Err(io::ErrorKind::NotFound));
 }
 
 #[tokio::test]

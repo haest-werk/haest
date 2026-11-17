@@ -51,8 +51,8 @@ fn err(kind: ErrorKind, p: &Path) -> io::Error {
 /// let fs = MemFs::with_files([("/p/a.txt", "A"), ("/p/sub/b.txt", "B")]);
 /// fs.rename(Path::new("/p/sub"), Path::new("/p/moved")).await?;
 /// assert_eq!(fs.read_to_string(Path::new("/p/moved/b.txt")).await?, "B");
-/// assert!(fs.remove(Path::new("/p"), false).await.is_err(), "not empty");
-/// fs.remove(Path::new("/p"), true).await?;
+/// assert!(fs.remove(Path::new("/p")).await.is_err(), "not empty");
+/// fs.remove_all(Path::new("/p")).await?;
 /// assert!(!fs.exists(Path::new("/p/a.txt")).await);
 /// # Ok(())
 /// # }
@@ -126,6 +126,65 @@ impl MemFs {
             Some(Node::Dir) => Err(err(ErrorKind::IsADirectory, &p)),
             None => Err(not_found(&p)),
         }
+    }
+}
+
+/// Whether a directory call takes its parents or its contents along.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Recursive {
+    No,
+    Yes,
+}
+
+impl MemFs {
+    fn make_dir(&self, path: &Path, recursive: Recursive) -> io::Result<()> {
+        let p = normalize(path);
+        let mut nodes = self.nodes.lock().unwrap();
+        match nodes.get(&p) {
+            Some(Node::Dir) if recursive == Recursive::Yes => return Ok(()),
+            Some(_) => return Err(err(ErrorKind::AlreadyExists, &p)),
+            None => {}
+        }
+        if recursive == Recursive::No {
+            Self::parent_is_dir(&nodes, &p)?;
+            nodes.insert(p, Node::Dir);
+            return Ok(());
+        }
+        for a in p.ancestors().collect::<Vec<_>>().into_iter().rev() {
+            match nodes.get(a) {
+                Some(Node::File { .. }) => return Err(err(ErrorKind::NotADirectory, a)),
+                Some(Node::Dir) => {}
+                None => {
+                    nodes.insert(a.to_path_buf(), Node::Dir);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn delete(&self, path: &Path, recursive: Recursive) -> io::Result<()> {
+        let p = normalize(path);
+        // EBUSY, as rmdir(2) on `/`: without the root every later write is NotFound.
+        if p.parent().is_none() {
+            return Err(err(ErrorKind::ResourceBusy, &p));
+        }
+        let mut nodes = self.nodes.lock().unwrap();
+        match nodes.get(&p) {
+            None => return Err(not_found(&p)),
+            Some(Node::Dir) => {
+                let kids: Vec<PathBuf> =
+                    Self::children(&nodes, &p).map(|(k, _)| k.clone()).collect();
+                if !kids.is_empty() && recursive == Recursive::No {
+                    return Err(err(ErrorKind::DirectoryNotEmpty, &p));
+                }
+                for k in kids {
+                    nodes.remove(&k);
+                }
+            }
+            Some(Node::File { .. }) => {}
+        }
+        nodes.remove(&p);
+        Ok(())
     }
 }
 
@@ -209,54 +268,20 @@ impl Fs for MemFs {
             .collect())
     }
 
-    async fn mkdir(&self, path: &Path, recursive: bool) -> io::Result<()> {
-        let p = normalize(path);
-        let mut nodes = self.nodes.lock().unwrap();
-        match nodes.get(&p) {
-            Some(Node::Dir) if recursive => return Ok(()),
-            Some(_) => return Err(err(ErrorKind::AlreadyExists, &p)),
-            None => {}
-        }
-        if !recursive {
-            Self::parent_is_dir(&nodes, &p)?;
-            nodes.insert(p, Node::Dir);
-            return Ok(());
-        }
-        for a in p.ancestors().collect::<Vec<_>>().into_iter().rev() {
-            match nodes.get(a) {
-                Some(Node::File { .. }) => return Err(err(ErrorKind::NotADirectory, a)),
-                Some(Node::Dir) => {}
-                None => {
-                    nodes.insert(a.to_path_buf(), Node::Dir);
-                }
-            }
-        }
-        Ok(())
+    async fn create_dir(&self, path: &Path) -> io::Result<()> {
+        self.make_dir(path, Recursive::No)
     }
 
-    async fn remove(&self, path: &Path, recursive: bool) -> io::Result<()> {
-        let p = normalize(path);
-        // EBUSY, as rmdir(2) on `/`: without the root every later write is NotFound.
-        if p.parent().is_none() {
-            return Err(err(ErrorKind::ResourceBusy, &p));
-        }
-        let mut nodes = self.nodes.lock().unwrap();
-        match nodes.get(&p) {
-            None => return Err(not_found(&p)),
-            Some(Node::Dir) => {
-                let kids: Vec<PathBuf> =
-                    Self::children(&nodes, &p).map(|(k, _)| k.clone()).collect();
-                if !kids.is_empty() && !recursive {
-                    return Err(err(ErrorKind::DirectoryNotEmpty, &p));
-                }
-                for k in kids {
-                    nodes.remove(&k);
-                }
-            }
-            Some(Node::File { .. }) => {}
-        }
-        nodes.remove(&p);
-        Ok(())
+    async fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        self.make_dir(path, Recursive::Yes)
+    }
+
+    async fn remove(&self, path: &Path) -> io::Result<()> {
+        self.delete(path, Recursive::No)
+    }
+
+    async fn remove_all(&self, path: &Path) -> io::Result<()> {
+        self.delete(path, Recursive::Yes)
     }
 
     async fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {

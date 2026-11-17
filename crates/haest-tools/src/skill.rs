@@ -35,7 +35,7 @@ impl SkillToolOptions {
         skills: impl Fn() -> Vec<Skill> + Send + Sync + 'static,
         host_fs: Arc<dyn Fs>,
     ) -> Self {
-        Self::over(Arc::new(DiskSkills::new(skills, host_fs)))
+        Self::over(Arc::new(DiskSkills::new(host_fs, skills)))
     }
 
     /// A host's own skills, from any [`SkillSet`] (skills kept in a database,

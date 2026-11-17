@@ -99,8 +99,7 @@ impl ToolServices for Publishing {
 #[tokio::test]
 async fn a_published_image_carries_its_url_to_the_transcript() {
     let ws = TestWorkspace::with_files([("/p/a.gif", &[1u8, 2, 3][..])]);
-    let mut c = ctx(ws);
-    c.services = (Publishing).into();
+    let c = ctx(ws).with_services(Publishing);
     let r = ReadTool::default()
         .execute(input(json!({"file_path": "a.gif"})), &c)
         .await
@@ -134,8 +133,7 @@ async fn allow_large_reads_the_whole_file_in_one_call_when_the_context_has_room(
 #[tokio::test]
 async fn allow_large_never_returns_more_than_the_context_has_room_for() {
     let ws = big_file();
-    let mut c = ctx(ws);
-    c.context_room_tokens = Some(5000);
+    let c = ctx(ws).with_context_room_tokens(5000);
     let r = ReadTool::default()
         .execute(
             input(json!({"file_path": "big.txt", "allow_large": "true"})),

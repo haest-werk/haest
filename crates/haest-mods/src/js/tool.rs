@@ -45,7 +45,7 @@ impl Tool for JsTool {
         let payload = json!({ "name": self.meta.name, "input": input, "ctx": ctx_json(ctx) });
         match self
             .thread
-            .call("execute", payload, Some(&ctx.cancel))
+            .call("execute", payload, Some(ctx.cancel()))
             .await
         {
             Ok(v) => serde_json::from_value(v)

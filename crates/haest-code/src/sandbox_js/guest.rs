@@ -16,7 +16,7 @@ use std::{
 };
 
 use futures::FutureExt;
-use haest_core::fs::{Fs, ensure_dir, resolve_path};
+use haest_core::fs::{Fs, FsRef, ensure_dir, resolve_path};
 use serde_json::{Value, json};
 
 use crate::vm::{NativeFn, VmSpec};
@@ -150,7 +150,7 @@ fn module_sources() -> HashMap<String, String> {
 
 /// One script's world: its files, directory, argv and environment.
 pub(crate) struct JsScript {
-    pub fs: Arc<dyn Fs>,
+    pub fs: FsRef,
     pub cwd: PathBuf,
     pub argv: Vec<String>,
     pub env: BTreeMap<String, String>,
@@ -206,7 +206,7 @@ async fn fs_op(fs: &dyn Fs, cwd: &Path, op: &str, args: &[Value]) -> Result<Valu
             Value::Null
         }
         "mkdir" => {
-            fs.mkdir(&abs(0), false).await.map_err(io)?;
+            fs.create_dir(&abs(0)).await.map_err(io)?;
             Value::Null
         }
         "stat" => {
@@ -220,7 +220,12 @@ async fn fs_op(fs: &dyn Fs, cwd: &Path, op: &str, args: &[Value]) -> Result<Valu
         "rm" => {
             let p = abs(0);
             if !(flag(args.get(2)) && !fs.exists(&p).await) {
-                fs.remove(&p, flag(args.get(1))).await.map_err(io)?;
+                let removed = if flag(args.get(1)) {
+                    fs.remove_all(&p).await
+                } else {
+                    fs.remove(&p).await
+                };
+                removed.map_err(io)?;
             }
             Value::Null
         }
