@@ -896,6 +896,18 @@ Good citizens:
 
 ### haest-runtime
 
+- How the conversation is assembled is the runtime's own (breaking):
+  `RuntimeParent`, `WrappedTools`, `MainTools`, `RuntimePrompt`,
+  `AgentPrompt`, `InboxSender`, `NoImageKey`, `own_tools`,
+  `image_options`, `instruction_options`, `skill_options`,
+  `workspace_for`, `jobs_for`, `connect_mcp`, `mods_for`, `inbox` and
+  `session_usd` are crate-private. None worked without haest's session
+  file, so "the pieces" never served a host that owns some parts. `build`
+  is the way in, and the parts are read on the `Runtime`:
+  `mods_for(&hooks, &*fs, &gate).await` -> `build(inputs, ui, prompter,
+  opts).await?` then `rt.mods`. A host that owns some parts builds its
+  own `AgentDeps`, with `builtin_tools_where(|w| settings.tools.has(w),
+  ..)` for haest's tools.
 - The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
   as `with_hooks`; what tools publish, report and log reaches it as before.
   `WrappedTools::new` takes `Tools`.

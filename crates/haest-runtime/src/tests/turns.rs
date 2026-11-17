@@ -18,7 +18,8 @@ use crate::{
         tools::Inbox,
         workspace::RealFs,
     },
-    inbox, list_sessions,
+    inbox::inbox,
+    list_sessions,
     testkit::{Deny, Recorded},
 };
 

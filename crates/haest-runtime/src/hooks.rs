@@ -46,7 +46,6 @@ use crate::{
 /// effort the conversation is on now, which a subagent starts on.
 ///
 /// [`build`](crate::build) makes one, shared as [`Runtime::hooks`](crate::Runtime::hooks).
-/// A host that takes the pieces makes its own with [`RuntimeHooks::new`].
 pub struct RuntimeHooks {
     /// The run's settings, as handed in. Their `model_spec` and `effort` are
     /// what the run started from: the ones in use now are [`model_spec`](Self::model_spec)
@@ -248,7 +247,7 @@ impl LedgerHooks for RuntimeHooks {
 /// The conversation's spend so far, in US dollars, from `agent`'s ledger.
 /// None when the agent has no ledger (one [`build`](crate::build) made always
 /// has). A resumed session's spend includes what it cost before.
-pub fn session_usd(agent: &Agent) -> Option<f64> {
+pub(crate) fn session_usd(agent: &Agent) -> Option<f64> {
     let ledger = agent.deps().shared().ledger()?;
     Some(ledger.usd())
 }

@@ -25,12 +25,10 @@ use crate::{
 
 /// Where the agent's files are and whether it may start real processes.
 ///
-/// The runtime builds what the agent works in from it: the workspace
-/// (the sandbox by default, with `js` in its shell; [`workspace_for`]),
-/// background jobs (Bash in the real workspace only; [`jobs_for`],
-/// [`kill_jobs`]) and the MCP servers the host listed ([`connect_mcp`]).
-/// [`build`](crate::build) uses each of these; a host that takes the pieces
-/// calls them itself.
+/// [`build`](crate::build) makes what the agent works in from it: the
+/// workspace (the sandbox by default, with `js` in its shell), background
+/// jobs (Bash in the real workspace only; [`kill_jobs`] ends them) and the
+/// MCP servers the host listed.
 ///
 /// ```
 /// use std::sync::Arc;
@@ -91,7 +89,7 @@ const KILL_WAIT: Duration = Duration::from_secs(3);
 /// `bash` tool on, in the real workspace (the sandbox has no real processes to
 /// leave running). As the TS haest's `host/jobs.ts`. A job that exits on its
 /// own tells main through `inbox`.
-pub fn jobs_for(s: &Settings, inbox: Arc<dyn Inbox>) -> Option<Arc<JobHub>> {
+pub(crate) fn jobs_for(s: &Settings, inbox: Arc<dyn Inbox>) -> Option<Arc<JobHub>> {
     let real_bash = s.workspace == WorkspaceMode::Real && s.tools.bash;
     real_bash.then(|| Arc::new(JobHub::new(inbox)))
 }
@@ -113,7 +111,8 @@ pub async fn kill_jobs(jobs: &JobHub) -> usize {
     ids.len()
 }
 
-/// Why [`workspace_for`] could not open the workspace the settings pick.
+/// Why the workspace the settings pick could not open
+/// ([`BuildError::Workspace`](crate::BuildError::Workspace)).
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
     /// `workspace = real` in a [`World::Fs`]: the real workspace edits the
@@ -162,7 +161,7 @@ async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> Result<(), WorkspaceErr
 /// A [`WorkspaceError`]: `workspace = real` in a [`World::Fs`] (the real
 /// workspace needs the real disk), a spill dir that cannot be made, a sandbox
 /// that cannot open.
-pub async fn workspace_for(
+pub(crate) async fn workspace_for(
     s: &Settings,
     world: &World,
     passed_env: &ChildEnv,
@@ -210,7 +209,7 @@ pub async fn workspace_for(
 /// `child_env` with `passed_env` over it, then its own `env`. With `debug` on,
 /// each server's line (how many tools, or why it failed) goes to the
 /// [`Ui::debug`](crate::Ui::debug).
-pub async fn connect_mcp(
+pub(crate) async fn connect_mcp(
     hooks: &RuntimeHooks,
     world: &World,
     passed_env: &ChildEnv,

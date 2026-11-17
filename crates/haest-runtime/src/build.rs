@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, RuntimeParent, Ui,
+    BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui,
     haest::{
         Agent, AgentDeps, AgentOptions, ChildEnv, SharedDeps, Workspace,
         core::deferred_tools::ToolDeferral,
@@ -25,6 +25,7 @@ use crate::{
         tools::DeferredTools,
     },
     inbox, mods,
+    parent::RuntimeParent,
     prompt::{AgentPrompt, RuntimePrompt, skill_options},
     store::{create, open_session, record_given, record_start, restore, start_on},
     tools::{MainTools, WrappedTools, image_options, own_tools},

@@ -37,9 +37,9 @@ use haest_core::Tools;
 /// `picked` is the `tools` setting: only the built-ins it names are made.
 /// The task tools work on `board`, Skill offers what `skills` holds when it is
 /// called, Bash leaves background jobs to `jobs` when there is a hub
-/// ([`jobs_for`](crate::jobs_for)), and GenerateImage is there when
+/// ([`jobs_for`](crate::world::jobs_for)), and GenerateImage is there when
 /// `image` is ([`image_options`]).
-pub fn own_tools(
+pub(crate) fn own_tools(
     picked: &BuiltinTools,
     board: Arc<TaskBoard>,
     skills: Arc<Mutex<Vec<Skill>>>,
@@ -68,7 +68,7 @@ pub fn own_tools(
 /// GenerateImage has no key to call OpenRouter with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("image is on, but the host has no OPENROUTER_API_KEY: no GenerateImage")]
-pub struct NoImageKey;
+pub(crate) struct NoImageKey;
 
 /// GenerateImage's options: `image` on, over OpenRouter with the key the host
 /// answers for `OPENROUTER_API_KEY`. On without one: why there is none.
@@ -81,7 +81,7 @@ pub struct NoImageKey;
 ///
 /// [`NoImageKey`] with `image` on and no `OPENROUTER_API_KEY`.
 /// [`build`](crate::build) warns and goes on without GenerateImage.
-pub fn image_options(
+pub(crate) fn image_options(
     s: &Settings,
     keys: &dyn KeySource,
 ) -> Result<Option<GenerateImageOptions>, NoImageKey> {
@@ -123,7 +123,7 @@ impl ToolSource for BaseTools {
 /// server's tools as they are at each call, then the Code tool when `code` is
 /// on, all wrapped in the mods' `tool.before` / `tool.after` hooks. Every
 /// subagent starts from this list.
-pub struct WrappedTools {
+pub(crate) struct WrappedTools {
     base: Arc<BaseTools>,
     mods: Mods,
     /// The names Code may call: the file tools and `code_tools`; None = no
@@ -136,7 +136,7 @@ impl WrappedTools {
     /// tool; Some(extra) = a Code tool that may call the file tools, the
     /// read-only MCP tools, and the tools `extra` names (the `code_tools`
     /// setting: exact names, or `prefix*`).
-    pub fn new(own: Tools, mcp: Arc<McpHub>, mods: Mods, code: Option<Vec<String>>) -> Self {
+    pub(crate) fn new(own: Tools, mcp: Arc<McpHub>, mods: Mods, code: Option<Vec<String>>) -> Self {
         let files = FILE_TOOLS.map(String::from);
         Self {
             base: Arc::new(BaseTools { own, mcp }),
@@ -162,7 +162,7 @@ impl ToolSource for WrappedTools {
 /// Main's list (TS `tools()`): the wrapped tools and main's agent tools
 /// (none when `agents` is off). The build puts it behind haest-tools'
 /// `DeferredTools`, which defers as the `deferred_tools` setting says.
-pub struct MainTools {
+pub(crate) struct MainTools {
     wrapped: Arc<WrappedTools>,
     hub: Option<Arc<SubagentHub>>,
 }
@@ -170,7 +170,7 @@ pub struct MainTools {
 impl MainTools {
     /// Main's list over `wrapped`, with `hub`'s agent tools for main (None =
     /// no agent tools).
-    pub fn new(wrapped: Arc<WrappedTools>, hub: Option<Arc<SubagentHub>>) -> Self {
+    pub(crate) fn new(wrapped: Arc<WrappedTools>, hub: Option<Arc<SubagentHub>>) -> Self {
         Self { wrapped, hub }
     }
 }

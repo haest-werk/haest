@@ -18,7 +18,7 @@ use crate::{
         AgentControl, Effort, EventSink, Message, TurnOutcome, core::error::BoxError,
         tools::SubagentEvent,
     },
-    session_usd,
+    hooks::session_usd,
 };
 
 /// The whole conversation as a session drives it. Each turn step is one of

@@ -34,7 +34,7 @@ use crate::{
         tools::{AgentRef, Inbox, JobHub, NoInbox, SpawnInput},
         workspace::RealWorkspace,
     },
-    inbox,
+    inbox::inbox,
     testkit::Deny,
 };
 

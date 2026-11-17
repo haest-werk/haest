@@ -1,4 +1,5 @@
-//! The inbox: [`inbox`], [`InboxSender`], [`InboxQueue`].
+//! The inbox: [`inbox`] makes its two ends, the [`InboxSender`] the jobs and
+//! the subagents submit to and the [`InboxQueue`] the turns take from.
 
 use std::{collections::VecDeque, sync::Arc};
 
@@ -16,7 +17,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 /// Its [`Inbox::submit`] queues the text for main and shows the human its
 /// first line, cut short ([`Ui::arrival`](crate::Ui::arrival)). Made by
 /// [`inbox`].
-pub struct InboxSender {
+pub(crate) struct InboxSender {
     tx: UnboundedSender<String>,
     hooks: Arc<RuntimeHooks>,
 }
@@ -38,21 +39,8 @@ impl Inbox for InboxSender {
     }
 }
 
-/// The receiving end, with the gate every turn the human did not start passes.
-///
-/// A host reads it two ways: while a turn runs, [`arrival`](Self::arrival)
-/// gives each item as it comes, to steer into the turn; between turns,
-/// [`take`](Self::take) gives everything waiting as one input, to run through
-/// [`agent_turn`](Self::agent_turn). The human's own text goes through
-/// [`human`](Self::human), which ends the gate's count.
-pub struct InboxQueue {
-    rx: UnboundedReceiver<String>,
-    /// Received while no turn ran, not yet taken (print mode's wait).
-    ready: VecDeque<String>,
-    gate: AgentTurnGate,
-}
-
-/// The conversation's inbox: the end jobs and agents submit to, the end its turns take from.
+/// The conversation's inbox, the end its turns take from, with the gate every
+/// turn the human did not start passes ([`Runtime::inbox`](crate::Runtime::inbox)).
 ///
 /// It holds the turns the human did not start: a background job that exited,
 /// a subagent's message for main, a background subagent's answer. As the TS
@@ -67,15 +55,29 @@ pub struct InboxQueue {
 /// A host with an input line never runs one under an open prompt: the
 /// [`Ui`](crate::Ui) announces it and the host runs it when the prompt returns.
 ///
-/// The two ends: the [`InboxSender`] the jobs and the subagents submit to,
-/// and the [`InboxQueue`] the host takes turns from
-/// ([`Runtime::inbox`](crate::Runtime::inbox)). The crate docs show a host's
-/// turn loop over it.
+/// [`Runtime`](crate::Runtime)'s turn methods read it for the host. A host
+/// that runs its own loop reads it two ways: while a turn runs,
+/// [`arrival`](Self::arrival) gives each item as it comes, to steer into the
+/// turn; between turns, [`take`](Self::take) gives everything waiting as one
+/// input, to run through [`agent_turn`](Self::agent_turn). The human's own
+/// text goes through [`human`](Self::human), which ends the gate's count.
+pub struct InboxQueue {
+    rx: UnboundedReceiver<String>,
+    /// Received while no turn ran, not yet taken (print mode's wait).
+    ready: VecDeque<String>,
+    gate: AgentTurnGate,
+}
+
+/// The conversation's inbox: the [`InboxSender`] the jobs and the subagents
+/// submit to, and the [`InboxQueue`] the turns take from.
 ///
 /// `max_agent_turns` is the gate's cap: turns in a row with no message from
 /// the human before the rest are held (0 = no cap). The human hears through
 /// `hooks` when the gate starts holding.
-pub fn inbox(hooks: &Arc<RuntimeHooks>, max_agent_turns: u32) -> (Arc<InboxSender>, InboxQueue) {
+pub(crate) fn inbox(
+    hooks: &Arc<RuntimeHooks>,
+    max_agent_turns: u32,
+) -> (Arc<InboxSender>, InboxQueue) {
     let (tx, rx) = unbounded_channel();
     let notice = hooks.clone();
     let gate = AgentTurnGate::new(max_agent_turns, move |text| notice.warn(text))

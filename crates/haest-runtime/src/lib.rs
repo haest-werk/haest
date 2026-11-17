@@ -17,17 +17,17 @@
 //! Depend on haest-runtime directly to take the conversation without the
 //! facade.
 //!
-//! # Two ways in
+//! # The way in
 //!
-//! - [`build`]: the whole conversation behind one [`Ui`] and the host's
-//!   approval [`Prompter`](haest_mods::Prompter), returned as a [`Runtime`].
-//! - The pieces, one by one, for a host that owns some parts itself (its own
-//!   models, files or tools): [`own_tools`], [`image_options`],
-//!   [`instruction_options`], [`skill_options`], [`workspace_for`],
-//!   [`jobs_for`], [`connect_mcp`], [`mods_for`], [`inbox`]. A host
-//!   that wants only the built-in tools picks them with
-//!   `haest_tools::builtin_tools_where(|w| settings.tools.has(w), ..)` and
-//!   needs no runtime at all.
+//! [`build`] is the whole conversation behind one [`Ui`] and the host's
+//! approval [`Prompter`](haest_mods::Prompter), returned as a [`Runtime`].
+//! How it is assembled is the runtime's own: a host reads the parts on the
+//! [`Runtime`] and changes them through its methods, but does not put them
+//! together. A host that owns some parts itself (its own models, files or
+//! tools) builds its agent from haest's crates instead, an
+//! `AgentDeps` over its own parts, and picks the built-in tools the settings
+//! name with `haest_tools::builtin_tools_where(|w| settings.tools.has(w), ..)`:
+//! it needs no runtime at all.
 //!
 //! Every switch in the settings is honoured here, once: a capability they
 //! leave off is never built. Trust is the loader's: it lists a project's MCP
@@ -187,17 +187,13 @@ mod haest {
 
 pub use build::build;
 pub use error::{BuildError, SessionError};
-pub use hooks::{RuntimeHooks, session_usd};
-pub use inbox::{InboxQueue, InboxSender, inbox};
+pub use hooks::RuntimeHooks;
+pub use inbox::InboxQueue;
 pub use inputs::{BuildOptions, Resume, RuntimeInputs};
-pub use mods::mods_for;
-pub use parent::RuntimeParent;
-pub use prompt::{AgentPrompt, RuntimePrompt, instruction_options, skill_options};
 pub use runtime::{Runtime, ShutDown};
 #[cfg(feature = "session")]
 #[cfg_attr(docsrs, doc(cfg(feature = "session")))]
 pub use session::{HubUi, subagent_frame};
 pub use sessions::{SessionInfo, list_sessions};
-pub use tools::{MainTools, NoImageKey, WrappedTools, image_options, own_tools};
 pub use ui::Ui;
-pub use world::{WorkspaceError, World, connect_mcp, jobs_for, kill_jobs, workspace_for};
+pub use world::{WorkspaceError, World, kill_jobs};

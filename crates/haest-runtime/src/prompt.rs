@@ -28,7 +28,7 @@ use crate::{
 /// Which instruction files the `context` setting asks for (AGENTS.md,
 /// CLAUDE.md and their kin), looked for from `cwd` and `home`: what
 /// `find_instruction_files` takes.
-pub fn instruction_options(s: &Settings) -> InstructionOptions {
+pub(crate) fn instruction_options(s: &Settings) -> InstructionOptions {
     InstructionOptions {
         cwd: s.cwd.clone(),
         home: s.home.clone(),
@@ -40,7 +40,7 @@ pub fn instruction_options(s: &Settings) -> InstructionOptions {
 /// Which skill dirs the `skills` setting asks for, under `cwd` and `home`,
 /// with `~/.claude` as Claude Code's user dir (its skills and its plugin
 /// list): what `SkillScanRoots::find` takes.
-pub fn skill_options(s: &Settings) -> SkillOptions {
+pub(crate) fn skill_options(s: &Settings) -> SkillOptions {
     SkillOptions {
         cwd: s.cwd.clone(),
         home: s.home.clone(),
@@ -65,16 +65,16 @@ fn claude_dir(s: &Settings) -> PathBuf {
 /// `runtime.ts systemPrompt`).
 ///
 /// Wrap it in an [`AgentPrompt`] to give an agent its prompt.
-pub struct RuntimePrompt {
+pub(crate) struct RuntimePrompt {
     /// Where the instruction files are read from.
-    pub fs: Arc<dyn Fs>,
+    fs: Arc<dyn Fs>,
     /// Its settings say which instruction files to read (`context`) and
     /// whether the skill list goes in (`skill_catalog`).
-    pub hooks: Arc<RuntimeHooks>,
+    hooks: Arc<RuntimeHooks>,
     /// The skills found; listed in the prompt with `skill_catalog` on.
-    pub skills: Arc<Mutex<Vec<Skill>>>,
+    skills: Arc<Mutex<Vec<Skill>>>,
     /// Everything but the instructions, skills, tools and model, fixed for the process.
-    pub base: PromptInputs,
+    base: PromptInputs,
 }
 
 impl RuntimePrompt {
@@ -83,7 +83,7 @@ impl RuntimePrompt {
     /// Reads them once, now: the identity text (`system_prompt`), the working
     /// dir, the platform, today's date, the git branch, the workspace's own
     /// note, `append_system_prompt`.
-    pub async fn new(
+    pub(crate) async fn new(
         hooks: &Arc<RuntimeHooks>,
         fs: &Arc<dyn Fs>,
         skills: &Arc<Mutex<Vec<Skill>>>,
@@ -113,7 +113,7 @@ impl RuntimePrompt {
     /// fixed parts, the guide to the built-ins among the tools, the
     /// workspace's note when a tool can touch it, the instruction files read
     /// again now, and the skill list with `skill_catalog` on.
-    pub async fn build(&self, model: String, tool_names: Vec<String>) -> String {
+    pub(crate) async fn build(&self, model: String, tool_names: Vec<String>) -> String {
         let s = &self.hooks.settings;
         let mut p = self.base.clone();
         p.model_spec = model;
@@ -134,14 +134,14 @@ impl RuntimePrompt {
 /// the tools its next call advertises. Wrap it in the mods' `ModSystemPrompt`.
 ///
 /// It is a [`SystemPrompt`]: the loop asks it before every model call.
-pub struct AgentPrompt {
+pub(crate) struct AgentPrompt {
     /// The parts every agent shares.
-    pub prompt: Arc<RuntimePrompt>,
+    pub(crate) prompt: Arc<RuntimePrompt>,
     /// The model the prompt names; None = the conversation's current one
     /// ([`RuntimeHooks::model_spec`]), as for main.
-    pub model_spec: Option<String>,
+    pub(crate) model_spec: Option<String>,
     /// The agent's tools: the prompt names the ones its next call offers.
-    pub tools: Arc<dyn ToolSource>,
+    pub(crate) tools: Arc<dyn ToolSource>,
 }
 
 #[async_trait]

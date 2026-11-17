@@ -29,32 +29,31 @@ use haest_core::{ToolRef, ToolSourceRef, Tools};
 ///
 /// [`build`](crate::build) fills one in and [`hub`](Self::hub) turns it into
 /// the hub, which is [`Runtime::subagents`](crate::Runtime::subagents) (the
-/// parent itself is then the hub's). A host that takes the pieces fills one
-/// in itself.
-pub struct RuntimeParent {
+/// parent itself is then the hub's).
+pub(crate) struct RuntimeParent {
     /// The runtime's hooks: the settings' caps, the current model and
     /// effort, the [`Ui`](crate::Ui) a subagent's life goes to.
-    pub hooks: Arc<RuntimeHooks>,
+    pub(crate) hooks: Arc<RuntimeHooks>,
     /// What every agent of the conversation runs on (models, workspace,
     /// hooks, ledger, ...); each agent's tools and prompt are its own.
-    pub deps: SharedDeps,
+    pub(crate) deps: SharedDeps,
     /// The tools a subagent starts from: every tool but the agent tools,
     /// inside the mods' hooks.
-    pub tools: Arc<WrappedTools>,
+    pub(crate) tools: Arc<WrappedTools>,
     /// The system prompt's fixed parts; each subagent's names its own model
     /// and tools.
-    pub prompt: Arc<RuntimePrompt>,
+    pub(crate) prompt: Arc<RuntimePrompt>,
     /// The mods: their hooks wrap a subagent's tools and add to its prompt.
-    pub mods: Mods,
+    pub(crate) mods: Mods,
     /// Where a subagent's message for main, or a background subagent's
     /// answer, goes.
-    pub inbox: Arc<InboxSender>,
+    pub(crate) inbox: Arc<InboxSender>,
 }
 
 impl RuntimeParent {
     /// The hub, capped by the settings' `subagents` (how deep they nest, how
     /// many run at once, each one's spend, steps and time).
-    pub fn hub(self) -> Arc<SubagentHub> {
+    pub(crate) fn hub(self) -> Arc<SubagentHub> {
         let caps = self.hooks.settings.subagent_caps();
         Arc::new(SubagentHub::new(self, caps))
     }
