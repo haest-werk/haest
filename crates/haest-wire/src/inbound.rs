@@ -115,18 +115,21 @@ impl Request {
 pub enum Control {
     /// Stop the running turn; does nothing between turns.
     Interrupt,
-    /// The model from the next model call on.
+    /// The model from the next turn on: a running turn ends on the model it
+    /// started with, and the reply comes once the change is made.
     SetModel {
         /// `provider:model`.
         model: String,
     },
-    /// The effort from the next model call on.
+    /// The effort from the next turn on: a running turn ends on the effort
+    /// it started with, and the reply comes once the change is made.
     SetEffort {
         /// The effort's word; None (or `default`) = the model's own default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         effort: Option<String>,
     },
-    /// A fresh session: new id, empty history.
+    /// A fresh session: new id, empty history. Made once the running turn
+    /// ends; the reply comes once it is.
     Clear,
     /// End the conversation.
     Close,

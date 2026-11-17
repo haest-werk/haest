@@ -1716,6 +1716,9 @@ wrote them.
 - After `LineTooLong`, `LineDecoder` drops the rest of the refused line up
   to its newline. It handed that rest out as a line of its own, so a host
   that read on after the error got a fragment of the long line as a frame.
+- `Control::SetModel` and `Control::SetEffort` say what haest-session does
+  with them: the change holds from the next turn on, and the running turn
+  ends on what it started with. They said "from the next model call on".
 
 ### haest-session (new)
 
