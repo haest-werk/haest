@@ -14,7 +14,7 @@ use crate::{
     haest::{
         Effort, SharedDeps, SystemPrompt,
         core::deferred_tools::ToolDeferral,
-        core::tool::{Tool, ToolSource},
+        core::tool::ToolSource,
         mods::{ModSystemPrompt, Mods},
         tools::{DeferredTools, Inbox, SubagentEvent, SubagentHub, SubagentParent},
     },
@@ -22,6 +22,7 @@ use crate::{
     prompt::{AgentPrompt, RuntimePrompt},
     tools::WrappedTools,
 };
+use haest_core::{ToolRef, Tools};
 
 /// The runtime's [`SubagentParent`]: what a conversation's subagents are
 /// made from, behind its [`SubagentHub`].
@@ -71,15 +72,15 @@ impl SubagentParent for RuntimeParent {
         self.deps.clone()
     }
 
-    fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn base_tools(&self) -> Tools {
         self.tools.tools()
     }
 
-    async fn system_prompt(&self, model_spec: &str, tools: &[Arc<dyn Tool>]) -> String {
+    async fn system_prompt(&self, model_spec: &str, tools: &[ToolRef]) -> String {
         let prompt = AgentPrompt {
             prompt: self.prompt.clone(),
             model_spec: Some(model_spec.to_string()),
-            tools: Arc::new(tools.to_vec()),
+            tools: Arc::new(Tools::from(tools.to_vec())),
         };
         ModSystemPrompt::new(Arc::new(prompt), self.mods.clone())
             .system_prompt()
@@ -91,7 +92,7 @@ impl SubagentParent for RuntimeParent {
     }
 
     /// The agent's fixed list behind its own deferral (ToolSearch loads per agent).
-    fn tool_source(&self, tools: Vec<Arc<dyn Tool>>) -> Arc<dyn ToolSource> {
+    fn tool_source(&self, tools: Tools) -> Arc<dyn ToolSource> {
         let deferral = ToolDeferral::new(self.hooks.settings.deferred_tools);
         Arc::new(DeferredTools::new(tools, deferral))
     }

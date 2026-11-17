@@ -1,6 +1,6 @@
 //! The tools over a board in memory (and a scripted GitHub where GitHub differs).
 
-use haest_core::fs::MemFs;
+use haest_core::{ToolRef, Tools, fs::MemFs};
 use serde_json::json;
 
 use super::*;
@@ -9,16 +9,16 @@ use crate::{
     testkit::{FakeHttp, ctx, github, input, issue, ok},
 };
 
-fn board() -> (Arc<CardTracker>, Vec<Arc<dyn Tool>>) {
+fn board() -> (Arc<CardTracker>, Tools) {
     let tracker = Arc::new(CardTracker::new(Arc::new(MemFs::new()), "/board").with_clock(|| 0));
     (tracker.clone(), issue_tools(tracker))
 }
 
-fn tool(tools: &[Arc<dyn Tool>], name: &str) -> Arc<dyn Tool> {
+fn tool(tools: &[ToolRef], name: &str) -> ToolRef {
     tools.iter().find(|t| t.name() == name).cloned().unwrap()
 }
 
-async fn call(tools: &[Arc<dyn Tool>], name: &str, args: Value) -> Result<String, ToolError> {
+async fn call(tools: &[ToolRef], name: &str, args: Value) -> Result<String, ToolError> {
     let out = tool(tools, name).execute(input(args), &ctx()).await?;
     assert!(!out.is_error);
     Ok(out.content)

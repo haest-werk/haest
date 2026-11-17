@@ -11,7 +11,7 @@ use crate::haest::{
     core::fs::Fs,
     core::skills::Skill,
     core::task_board::TaskBoard,
-    core::tool::{Tool, ToolSource},
+    core::tool::ToolSource,
     mcp::McpHub,
     mods::{ModTools, Mods},
     tools::{
@@ -19,6 +19,7 @@ use crate::haest::{
         JobHub, SkillToolOptions, SubagentHub, builtin_tools_where,
     },
 };
+use haest_core::Tools;
 
 /// Everything but MCP: the built-ins, task tools, Skill (over the host's Fs:
 /// a user skill lives outside any sandbox mount) and GenerateImage.
@@ -45,7 +46,7 @@ pub fn own_tools(
     host_fs: Arc<dyn Fs>,
     jobs: Option<Arc<JobHub>>,
     image: Option<GenerateImageOptions>,
-) -> Vec<Arc<dyn Tool>> {
+) -> Tools {
     let opts = BuiltinOptions {
         bash: BashOptions {
             jobs,
@@ -61,7 +62,7 @@ pub fn own_tools(
     let mut tools = builtin_tools_where(|w| picked.has(w), opts)
         .expect("every option a built-in needs is given");
     if let Some(opts) = image {
-        tools.push(Arc::new(GenerateImageTool::new(opts)));
+        tools.push(GenerateImageTool::new(opts));
     }
     tools
 }
@@ -107,12 +108,12 @@ pub fn image_options(
 /// The conversation's own tools and the MCP servers' as they are now (a server
 /// that reconnects is picked up on the next call).
 struct BaseTools {
-    own: Vec<Arc<dyn Tool>>,
+    own: Tools,
     mcp: Arc<McpHub>,
 }
 
 impl ToolSource for BaseTools {
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn tools(&self) -> Tools {
         let mut all = self.own.clone();
         all.extend(self.mcp.tools());
         all
@@ -138,12 +139,7 @@ impl WrappedTools {
     /// tool; Some(extra) = a Code tool that may call the file tools, the
     /// read-only MCP tools, and the tools `extra` names (the `code_tools`
     /// setting: exact names, or `prefix*`).
-    pub fn new(
-        own: Vec<Arc<dyn Tool>>,
-        mcp: Arc<McpHub>,
-        mods: Arc<Mods>,
-        code: Option<Vec<String>>,
-    ) -> Self {
+    pub fn new(own: Tools, mcp: Arc<McpHub>, mods: Arc<Mods>, code: Option<Vec<String>>) -> Self {
         let files = FILE_TOOLS.map(String::from);
         Self {
             base: Arc::new(BaseTools { own, mcp }),
@@ -155,12 +151,12 @@ impl WrappedTools {
 
 impl ToolSource for WrappedTools {
     /// Code calls the WRAPPED siblings, read per run, so every call it makes passes the hooks too.
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn tools(&self) -> Tools {
         let mut tools = self.base.tools();
         if let Some(allowed) = &self.code {
             let names = code_tool_names(&tools, allowed);
             let callable = Arc::new(ModTools::new(self.base.clone(), self.mods.clone()));
-            tools.push(Arc::new(CodeTool::new(names, callable)));
+            tools.push(CodeTool::new(names, callable));
         }
         ModTools::wrap(&self.mods, tools)
     }
@@ -183,7 +179,7 @@ impl MainTools {
 }
 
 impl ToolSource for MainTools {
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn tools(&self) -> Tools {
         let mut all = self.wrapped.tools();
         if let Some(hub) = &self.hub {
             all.extend(hub.tools_for(&AgentRef::main()));
@@ -197,14 +193,17 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::haest::tools::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
+    use crate::haest::{
+        ToolRef,
+        tools::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
+    };
 
-    fn names(tools: &[Arc<dyn Tool>]) -> Vec<String> {
+    fn names(tools: &[ToolRef]) -> Vec<String> {
         tools.iter().map(|t| t.name().to_string()).collect()
     }
 
     /// The own tools `picked` names, with no jobs and no image.
-    fn build(picked: &BuiltinTools) -> Vec<Arc<dyn Tool>> {
+    fn build(picked: &BuiltinTools) -> Tools {
         let fs: Arc<dyn Fs> = Arc::new(crate::haest::MemFs::new());
         let skills = Arc::new(Mutex::new(Vec::new()));
         own_tools(picked, Arc::default(), skills, fs, None, None)

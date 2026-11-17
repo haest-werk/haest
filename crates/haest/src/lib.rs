@@ -27,13 +27,14 @@
 //! ```no_run
 //! use std::sync::Arc;
 //!
+//! use haest::core::error::BoxError;
 //! use haest::providers::{ProviderRegistry, RegistryOptions};
 //! use haest::tools::{BuiltinOptions, builtin_tools};
 //! use haest::workspace::RealWorkspace;
 //! use haest::{Agent, AgentDeps, AgentOptions, ChildEnv, LoopEvent};
 //!
 //! #[tokio::main]
-//! async fn main() {
+//! async fn main() -> Result<(), BoxError> {
 //!     // The host decides where keys come from; here, this process's environment.
 //!     let keys = |name: &str| std::env::var(name).ok();
 //!     let models = ProviderRegistry::new(
@@ -47,11 +48,11 @@
 //!     let env = ChildEnv::new([pass("PATH"), pass("HOME")]);
 //!
 //!     let deps = AgentDeps::new(
-//!         Arc::new(models),
-//!         Arc::new(builtin_tools(BuiltinOptions::default())),
-//!         Arc::new("You are a careful engineer.".to_string()),
-//!         std::env::current_dir().unwrap(),
-//!         Arc::new(RealWorkspace::new(env)),
+//!         models,
+//!         builtin_tools(BuiltinOptions::default()),
+//!         "You are a careful engineer.",
+//!         std::env::current_dir()?,
+//!         RealWorkspace::new(env),
 //!     );
 //!     let model = AgentOptions::new("openrouter:anthropic/claude-sonnet-5.5");
 //!     let mut agent = Agent::new(deps, model);
@@ -65,6 +66,7 @@
 //!     };
 //!     let end = agent.run("What does this project do?", &mut sink).await;
 //!     println!("\n{:?}", end.stop_reason);
+//!     Ok(())
 //! }
 //! ```
 //!
@@ -93,16 +95,21 @@
 //!
 //! [`AgentDeps`] and the [`SharedDeps`] inside it are everything the loop is
 //! handed. Each part is a trait with haest's own implementations beside it; a
-//! host keeps those or brings its own.
+//! host keeps those or brings its own. [`AgentDeps::new`] and every `with_*`
+//! setter take the part itself (a closure, a `String`, a host's own type), or
+//! an `Arc` of one the host already shares, so one object can fill several
+//! slots. Each slot holds it in a cheap handle named after its trait
+//! ([`ToolSourceRef`], [`AgentHooksRef`], ...).
 //!
 //! | Trait | What it is | haest's own |
 //! |---|---|---|
 //! | [`ModelResolver`], [`Provider`] | turns a model spec (`openrouter:z-ai/glm-5.3`) into a model API | [`providers::ProviderRegistry`] |
 //! | [`http::HttpClient`] | how every model call and web request travels | [`http::ReqwestClient`] |
-//! | [`ToolSource`], [`Tool`] | the tools the model may call | [`tools::builtin_tools`], [`mcp`], [`mods`], [`code`] |
+//! | [`ToolSource`], [`Tool`] | the tools the model may call | [`Tools`], [`tools::builtin_tools`], [`mcp`], [`mods`], [`code`] |
 //! | [`Workspace`], [`Fs`] | the files and the shell every tool goes through | [`workspace::RealWorkspace`], [`workspace::SandboxWorkspace`], [`ShutWorkspace`] |
-//! | [`SystemPrompt`] | the system prompt, rebuilt for each model call | [`String`] |
+//! | [`SystemPrompt`] | the system prompt, rebuilt for each model call | [`String`], `&'static str`, closures |
 //! | [`AgentHooks`] | the host's say in the loop: each message to save, compaction before a model call, media | [`NoHooks`], [`runtime`] |
+//! | [`ToolServices`] | what tools hand the host while they run: inner-call rows, debug lines | [`NoServices`], [`runtime`] |
 //! | [`ModelFacts`] | what the host knows of each model: the inputs it takes, its efforts | [`NoFacts`], [`runtime`] |
 //! | [`TurnCapsSource`] | the caps on each turn, per model | [`TurnCaps`] (the same for every model), [`runtime`] |
 //! | [`Clock`] | the time a turn's time cap reads | [`WallClock`] |
@@ -156,7 +163,7 @@
 //! ```
 //!
 //! Hand it to the agent with the others:
-//! `let mut tools = builtin_tools(opts); tools.push(Arc::new(Shout));`.
+//! `let tools = builtin_tools(opts).with(Shout);`.
 //!
 //! # Test your host
 //!

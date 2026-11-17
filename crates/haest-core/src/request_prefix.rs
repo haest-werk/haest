@@ -58,7 +58,7 @@ pub(crate) async fn build_request_prefix(
     effort: Option<Effort>,
 ) -> RequestPrefix {
     let tools = deps
-        .tools
+        .tools()
         .tools()
         .iter()
         .map(|t| ToolSpec {
@@ -68,15 +68,15 @@ pub(crate) async fn build_request_prefix(
         })
         .collect();
     RequestPrefix {
-        system: deps.system_prompt.system_prompt().await,
+        system: deps.system_prompt().system_prompt().await,
         tools,
         effort: fit_effort(
             effort,
             spec,
             model,
-            deps.shared.facts.as_ref(),
-            deps.shared.hooks.as_ref(),
+            deps.shared().facts().as_ref(),
+            deps.shared().hooks().as_ref(),
         ),
-        web_search: deps.shared.web_search.clone(),
+        web_search: deps.shared().web_search().cloned(),
     }
 }

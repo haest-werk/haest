@@ -31,7 +31,7 @@ use crate::{
 /// ```
 /// use std::sync::Arc;
 ///
-/// use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tool, testing::{ScriptedProvider, text_answer}};
+/// use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::{ScriptedProvider, text_answer}};
 /// use haest_session::{Hub, HubOptions, start};
 /// use haest_transport::{Grant, Stdio, Transport};
 /// use haest_wire::{LineDecoder, Origin};
@@ -40,8 +40,7 @@ use crate::{
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let model = ScriptedProvider::new([text_answer("hi")]);
-/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
-/// let deps = AgentDeps::new(Arc::new(model.resolver()), Arc::new(tools), Arc::new(String::new()), "/", Arc::new(ShutWorkspace));
+/// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
 /// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1", HubOptions::default()));
 ///
 /// // The parent's ends of the two pipes.

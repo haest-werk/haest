@@ -248,6 +248,6 @@ impl LedgerHooks for RuntimeHooks {
 /// None when the agent has no ledger (one [`build`](crate::build) made always
 /// has). A resumed session's spend includes what it cost before.
 pub fn session_usd(agent: &Agent) -> Option<f64> {
-    let ledger = agent.deps().shared.ledger.as_ref()?;
+    let ledger = agent.deps().shared().ledger()?;
     Some(ledger.lock().unwrap().snapshot().usd)
 }

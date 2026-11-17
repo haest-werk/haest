@@ -72,7 +72,7 @@ pub(crate) use journal::Journal;
 pub(crate) use outcome::finished;
 pub use outcome::{RunEnd, RunError, RunOutcome, Served};
 pub use replay::{ReplayedRun, replay_run};
-pub use store::{MemoryRunStore, RunStore};
+pub use store::{MemoryRunStore, RunStore, RunStoreRef};
 
 use crate::{messages::Usage, stable_hash::hex128};
 

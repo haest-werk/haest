@@ -91,7 +91,7 @@ pub(crate) fn mcp_kind(server: &str, tool: &str) -> String {
 
 /// A tool of a connected MCP server, as a haest [`Tool`].
 ///
-/// [`McpHub::tools`](crate::McpHub::tools) hands them out, as `Arc<dyn Tool>`;
+/// [`McpHub::tools`](crate::McpHub::tools) hands them out, as `ToolRef`;
 /// there is no other way to get one. Its name is the hub's
 /// ([`mcp_tool_name`]), its kind [`mcp_kind`], its description and input
 /// schema the server's (a tool the server did not describe says what it is

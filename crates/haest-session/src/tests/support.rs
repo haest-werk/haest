@@ -15,7 +15,7 @@ use futures::stream;
 use haest_core::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, Effort, EventSink, JsonMap,
     LoopEvent, Message, ModelError, Provider, ProviderEvent, ProviderRequest, ResolvedModel,
-    ShutWorkspace, StopReason, Tool, ToolContext, ToolError, ToolOutput, TurnOutcome,
+    ShutWorkspace, StopReason, Tool, ToolContext, ToolError, ToolOutput, Tools, TurnOutcome,
     error::BoxError,
     provider::ProviderStream,
     testing::{ScriptedProvider, text_answer},
@@ -87,7 +87,7 @@ impl Provider for Stall {
     }
 }
 
-fn deps(models: Arc<dyn haest_core::ModelResolver>, tools: Vec<Arc<dyn Tool>>) -> AgentDeps {
+fn deps(models: Arc<dyn haest_core::ModelResolver>, tools: Tools) -> AgentDeps {
     AgentDeps::new(
         models,
         Arc::new(tools),
@@ -98,7 +98,7 @@ fn deps(models: Arc<dyn haest_core::ModelResolver>, tools: Vec<Arc<dyn Tool>>) -
 }
 
 /// An agent over `model`, with `tools`.
-pub fn agent(model: &Arc<ScriptedProvider>, tools: Vec<Arc<dyn Tool>>) -> Agent {
+pub fn agent(model: &Arc<ScriptedProvider>, tools: Tools) -> Agent {
     Agent::new(
         deps(Arc::new(model.resolver()), tools),
         AgentOptions::new("scripted:m"),
@@ -116,7 +116,7 @@ pub fn stalling_agent(stall: &Arc<Stall>) -> Agent {
         })
     };
     Agent::new(
-        deps(Arc::new(resolve), Vec::new()),
+        deps(Arc::new(resolve), Tools::new()),
         AgentOptions::new("stall:m"),
     )
 }

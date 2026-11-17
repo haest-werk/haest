@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use haest::{
     Agent, AgentDeps, AgentHooks, AgentOptions, JsonMap, LoopEvent, ShutWorkspace, Tool,
-    ToolContext, ToolError, ToolOutput, ToolServices, TurnCaps, Usage,
+    ToolContext, ToolError, ToolOutput, Tools, TurnCaps, Usage,
     core::{
         testing::{ScriptedProvider, text_answer, tool_answer},
         threshold::{Action, Mark, Meter, Reading, Rearm, Threshold, Thresholds},
@@ -80,8 +80,6 @@ struct Host {
     warnings: Mutex<Vec<String>>,
 }
 
-impl ToolServices for Host {}
-
 impl AgentHooks for Host {
     fn on_warning(&self, text: &str) {
         println!("(for the human) {text}");
@@ -143,26 +141,25 @@ async fn run() {
         text_answer("Tides follow the moon; NOTES.md has the rest."),
     ]);
     let host = Arc::new(Host::default());
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Lookup)];
-    let mut deps = AgentDeps::new(
-        Arc::new(provider.resolver()),
-        Arc::new(tools),
-        Arc::new("You research.".to_string()),
-        "/work",
-        Arc::new(ShutWorkspace),
-    );
-    deps.shared.hooks = host.clone();
-    // The window is the cap a share of the context is taken of.
-    deps.shared.turn_caps = Arc::new(TurnCaps {
-        context_window: WINDOW,
-        ..TurnCaps::default()
-    });
     // haest's own (the guard's nudges), then the host's.
     let thresholds = Thresholds::default()
         .with(Arc::new(SaveNotes))
         .and_then(|t| t.with(Arc::new(LongTurn)))
         .expect("a turn reads both meters and can remind and warn");
-    deps.shared.thresholds = thresholds;
+    let deps = AgentDeps::new(
+        provider.resolver(),
+        Tools::new().with(Lookup),
+        "You research.",
+        "/work",
+        ShutWorkspace,
+    )
+    .with_hooks(host.clone())
+    // The window is the cap a share of the context is taken of.
+    .with_turn_caps(TurnCaps {
+        context_window: WINDOW,
+        ..TurnCaps::default()
+    })
+    .with_thresholds(thresholds);
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:researcher"));
 
     let mut reminders = Vec::new();

@@ -3,7 +3,7 @@
 //! `core/background-jobs.ts`, plus the host-neutral half of `host/jobs.ts`.
 //!
 //! A job runs through the conversation's workspace
-//! ([`Workspace::shell_streaming`]), so it works over ANY haest workspace: the
+//! ([`Workspace::shell_streaming`](haest_core::Workspace::shell_streaming)), so it works over ANY haest workspace: the
 //! real one streams a detached process group's output as it comes, and killing
 //! the job (KillShell, or the hub being dropped) takes down everything it
 //! spawned; a workspace that cannot stream hands the output over when the job
@@ -34,7 +34,7 @@ use std::{
     time::Instant,
 };
 
-use haest_core::workspace::Workspace;
+use haest_core::workspace::WorkspaceRef;
 use tokio_util::sync::CancellationToken;
 
 use crate::inbox::Inbox;
@@ -217,7 +217,7 @@ impl JobHub {
     }
 
     /// Start `command` in `cwd` through `workspace`
-    /// ([`Workspace::shell_streaming`]); it runs until it exits or is killed,
+    /// ([`Workspace::shell_streaming`](haest_core::Workspace::shell_streaming)); it runs until it exits or is killed,
     /// with no timeout.
     ///
     /// # Errors
@@ -226,7 +226,7 @@ impl JobHub {
     /// [`JobError::NoRuntime`] when there is no tokio runtime to run the job on.
     pub fn start(
         &self,
-        workspace: Arc<dyn Workspace>,
+        workspace: impl Into<WorkspaceRef>,
         command: &str,
         description: &str,
         cwd: PathBuf,
@@ -243,7 +243,13 @@ impl JobHub {
         };
         // Before the job runs, so a job that ends at once is never reported before it started.
         self.shared.events.on_change(&running);
-        rt.spawn(run(self.shared.clone(), workspace, job.clone(), cwd, stop));
+        rt.spawn(run(
+            self.shared.clone(),
+            workspace.into(),
+            job.clone(),
+            cwd,
+            stop,
+        ));
         Ok(job)
     }
 

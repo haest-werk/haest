@@ -45,7 +45,7 @@ pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
 /// use std::sync::Arc;
 ///
 /// use haest_core::{
-///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tool,
+///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tools,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 /// use haest_session::{Backend, Body, Hub, HubOptions, Input, start};
@@ -53,14 +53,7 @@ pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let model = ScriptedProvider::new([text_answer("hello")]);
-/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
-/// let deps = AgentDeps::new(
-///     Arc::new(model.resolver()),
-///     Arc::new(tools),
-///     Arc::new(String::new()),
-///     "/",
-///     Arc::new(ShutWorkspace),
-/// );
+/// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
 /// let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
 /// let hub = Hub::new("s1", HubOptions::default());

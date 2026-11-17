@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::{
+    ToolRef, Tools,
     deps::SystemPrompt,
     error::BoxError,
-    tool::{Tool, ToolContext, ToolError, ToolOutput},
+    tool::{ToolContext, ToolError, ToolOutput},
     workspace::WorkspaceMode,
 };
 use serde_json::{Value, json};
@@ -56,7 +57,7 @@ async fn tool_before_can_refuse_or_rewrite_a_call_and_tool_after_can_rewrite_its
     let mut mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real));
     mods.add(Arc::new(Rewriter));
     let echo = Probe::new("Echo");
-    let tools = wrapped(mods, vec![echo.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
     let ok = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
     assert_eq!(ok.unwrap().content, "ECHO:HI!");
     match tools[0].execute(input(json!({"v": "bad"})), &ctx()).await {
@@ -67,7 +68,7 @@ async fn tool_before_can_refuse_or_rewrite_a_call_and_tool_after_can_rewrite_its
 }
 
 /// The TS test's second mod: a prompt rule, a house rule, a tool and a command.
-struct HouseRules(Arc<dyn Tool>);
+struct HouseRules(ToolRef);
 
 #[async_trait]
 impl Mod for HouseRules {
@@ -80,8 +81,8 @@ impl Mod for HouseRules {
     async fn system_prompt(&self, _k: &ModEnv) -> Result<Option<String>, BoxError> {
         Ok(Some("House rule: British spelling.".into()))
     }
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
-        vec![self.0.clone()]
+    fn tools(&self) -> Tools {
+        Tools::new().with(self.0.clone())
     }
     fn commands(&self) -> Vec<String> {
         vec!["/hello".into()]
@@ -94,7 +95,7 @@ impl Mod for HouseRules {
 #[tokio::test]
 async fn prompt_system_prompt_tools_and_commands_from_a_mod_all_take_effect() {
     let mut mods = Mods::new(env(TestUi::new(), WorkspaceMode::Sandbox));
-    mods.add(Arc::new(HouseRules(Probe::new("Shout"))));
+    mods.add(Arc::new(HouseRules(Probe::new("Shout").into())));
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
     assert_eq!(mods.system_append().await, "House rule: British spelling.");
     assert_eq!(mods.commands(), ["hello"]);
@@ -109,7 +110,7 @@ async fn prompt_system_prompt_tools_and_commands_from_a_mod_all_take_effect() {
         .system_prompt()
         .await;
     assert!(prompt.starts_with("base") && prompt.ends_with("House rule: British spelling."));
-    let names: Vec<String> = crate::ModTools::wrap(&mods, vec![Probe::new("Echo")])
+    let names: Vec<String> = crate::ModTools::wrap(&mods, Tools::from_iter([Probe::new("Echo")]))
         .iter()
         .map(|t| t.name().to_string())
         .collect();
@@ -155,7 +156,7 @@ async fn a_failing_mod_is_reported_and_never_lets_a_guarded_call_through() {
     let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(Broken));
     let echo = Probe::new("Echo");
-    let tools = wrapped(mods, vec![echo.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
     let refused = tools[0]
         .execute(input(json!({"guarded": true})), &ctx())
         .await;
@@ -174,7 +175,7 @@ async fn a_failing_prompt_hook_leaves_the_text_as_it_was() {
     let ui = TestUi::new();
     let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(Broken));
-    mods.add(Arc::new(HouseRules(Probe::new("Shout"))));
+    mods.add(Arc::new(HouseRules(Probe::new("Shout").into())));
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
     assert_eq!(ui.errors().len(), 1);
 }
@@ -212,7 +213,7 @@ async fn an_interrupt_while_a_mod_decides_is_not_reported_as_a_mod_failure() {
     let ui = TestUi::new();
     let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(Broken));
-    let tools = wrapped(mods, vec![Probe::new("Echo")]);
+    let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
     let c = ctx();
     c.cancel.cancel();
     let out = tools[0].execute(input(json!({"guarded": true})), &c).await;

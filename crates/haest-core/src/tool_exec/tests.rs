@@ -17,12 +17,12 @@ use crate::{
     agent::test_support::{FnTool, MemWorkspace},
     fs::{Fs, MemFs},
     tool::{opt_num, req_str},
-    workspace::{ShutWorkspace, Workspace},
+    workspace::{ShutWorkspace, WorkspaceRef},
 };
 
 const SPILL: &str = "/spill";
 
-fn returning(content: String) -> Arc<dyn Tool> {
+fn returning(content: String) -> ToolRef {
     FnTool::arc("mcp__srv__list", false, move |_, _| {
         let content = content.clone();
         async move { Ok(ToolOutput::text(content)) }
@@ -30,7 +30,7 @@ fn returning(content: String) -> Arc<dyn Tool> {
 }
 
 /// Reads a file through the workspace, the way the Read tool does.
-fn read_tool() -> Arc<dyn Tool> {
+fn read_tool() -> ToolRef {
     FnTool::arc("Read", true, |input, ctx| async move {
         let path = ctx.resolve(req_str(&input, "file_path")?);
         let text = ctx.workspace.fs().read_to_string(&path).await?;
@@ -49,7 +49,7 @@ fn call(id: &str, name: &str, input: serde_json::Value) -> ToolCall {
     }
 }
 
-fn ctx_on(workspace: Arc<dyn Workspace>, spill: Option<&str>) -> ToolContext {
+fn ctx_on(workspace: impl Into<WorkspaceRef>, spill: Option<&str>) -> ToolContext {
     let mut ctx = ToolContext::new("/work", workspace);
     ctx.spill_dir = spill.map(PathBuf::from);
     ctx.tool_call_id = Some("t1".into());
@@ -76,7 +76,7 @@ struct Run {
 async fn run(content: String) -> Run {
     let ws = Arc::new(MemWorkspace::default());
     let fs = ws.fs.clone();
-    let tools = ToolIndex::new(vec![returning(content), read_tool()]);
+    let tools = ToolIndex::new(Tools::from(vec![returning(content), read_tool()]));
     let ctx = ctx_on(ws, Some(SPILL));
     let out = run_call(&tools, &call("t1", "mcp__srv__list", json!({})), &ctx).await;
     Run {
@@ -118,7 +118,9 @@ async fn the_spilled_file_is_in_the_workspace_and_readable_by_the_read_tool() {
 
 #[tokio::test]
 async fn without_a_spill_dir_a_huge_output_is_cut_to_a_preview() {
-    let tools = ToolIndex::new(vec![returning("z".repeat(MAX_TOOL_OUTPUT + 1))]);
+    let tools = ToolIndex::new(Tools::from(vec![returning(
+        "z".repeat(MAX_TOOL_OUTPUT + 1),
+    )]));
     let ctx = ctx_on(Arc::new(MemWorkspace::default()), None);
     let out = run_call(&tools, &call("t1", "mcp__srv__list", json!({})), &ctx).await;
     assert!(out.content.len() < MAX_TOOL_OUTPUT && !out.is_error);
@@ -139,7 +141,7 @@ async fn a_tool_that_sizes_its_own_output_is_never_spilled() {
     let ws = Arc::new(MemWorkspace::default());
     let fs = ws.fs.clone();
     let out = run_call(
-        &ToolIndex::new(vec![sized]),
+        &ToolIndex::new(Tools::from(vec![sized])),
         &call("t1", "Read", json!({})),
         &ctx_on(ws, Some(SPILL)),
     )
@@ -152,8 +154,10 @@ async fn a_tool_that_sizes_its_own_output_is_never_spilled() {
 // a failure ("X failed: ..."), and the model may run a side effect again.
 #[tokio::test]
 async fn a_spill_that_cannot_be_written_still_answers_with_the_preview() {
-    let tools = ToolIndex::new(vec![returning("q".repeat(MAX_TOOL_OUTPUT + 1))]);
-    let ctx = ctx_on(Arc::new(ShutWorkspace), Some(SPILL));
+    let tools = ToolIndex::new(Tools::from(vec![returning(
+        "q".repeat(MAX_TOOL_OUTPUT + 1),
+    )]));
+    let ctx = ctx_on(ShutWorkspace, Some(SPILL));
     let out = run_call(&tools, &call("t1", "mcp__srv__list", json!({})), &ctx).await;
     assert!(!out.is_error);
     assert!(out.content.contains("qqqq"));
@@ -166,7 +170,9 @@ async fn a_spill_that_cannot_be_written_still_answers_with_the_preview() {
 async fn two_calls_spilling_at_once_keep_a_file_each() {
     let ws = Arc::new(MemWorkspace::default());
     let fs = ws.fs.clone();
-    let tools = ToolIndex::new(vec![returning("w".repeat(MAX_TOOL_OUTPUT + 1))]);
+    let tools = ToolIndex::new(Tools::from(vec![returning(
+        "w".repeat(MAX_TOOL_OUTPUT + 1),
+    )]));
     let ctx = ctx_on(ws, Some(SPILL));
     let (mut a, mut b) = (ctx.clone(), ctx);
     a.tool_call_id = Some("a".into());
@@ -181,7 +187,7 @@ async fn two_calls_spilling_at_once_keep_a_file_each() {
 
 #[tokio::test]
 async fn an_unknown_tool_is_an_error_naming_the_tools_there_are() {
-    let tools = ToolIndex::new(vec![returning("x".into()), read_tool()]);
+    let tools = ToolIndex::new(Tools::from(vec![returning("x".into()), read_tool()]));
     let ctx = ctx_on(Arc::new(MemWorkspace::default()), None);
     let out = run_call(&tools, &call("t1", "Nope", json!({})), &ctx).await;
     assert!(out.is_error);
@@ -196,7 +202,7 @@ async fn a_bad_input_goes_back_verbatim_and_a_failure_is_named() {
             _ => Err(ToolError::Failed("disk on fire".into())),
         }
     });
-    let tools = ToolIndex::new(vec![picky]);
+    let tools = ToolIndex::new(Tools::from(vec![picky]));
     let ctx = ctx_on(Arc::new(MemWorkspace::default()), None);
     let bad = run_call(&tools, &call("t1", "Picky", json!({"mode": "input"})), &ctx).await;
     assert!(bad.is_error);
@@ -217,7 +223,7 @@ fn probe() -> (ToolIndex, Arc<AtomicBool>) {
         seen.store(true, Ordering::SeqCst);
         async { Ok(ToolOutput::text("ran")) }
     });
-    (ToolIndex::new(vec![tool]), ran)
+    (ToolIndex::new(Tools::from(vec![tool])), ran)
 }
 
 #[tokio::test]
@@ -276,7 +282,7 @@ async fn a_tool_that_panics_is_a_failed_result_and_the_loop_goes_on() {
         Ok(ToolOutput::text("never"))
     });
     let ws = Arc::new(MemWorkspace::default());
-    let tools = ToolIndex::new(vec![boom]);
+    let tools = ToolIndex::new(Tools::from(vec![boom]));
     let out = run_call(&tools, &call("t1", "Boom", json!({})), &ctx_on(ws, None)).await;
     assert!(out.is_error);
     assert!(out.content.starts_with("Boom failed: "), "{}", out.content);

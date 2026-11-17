@@ -46,7 +46,7 @@
 //! ```
 //! use std::sync::Arc;
 //!
-//! use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tool, testing::ScriptedProvider};
+//! use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::ScriptedProvider};
 //! use haest_session::{Hub, HubOptions, start};
 //! use haest_transport::{Grant, LineSink, LineSource, Start, TransportError, serve};
 //! use haest_wire::Origin;
@@ -71,8 +71,7 @@
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() {
 //! let model = ScriptedProvider::new([]);
-//! let tools: Vec<Arc<dyn Tool>> = Vec::new();
-//! let deps = AgentDeps::new(Arc::new(model.resolver()), Arc::new(tools), Arc::new(String::new()), "/", Arc::new(ShutWorkspace));
+//! let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
 //! let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1", HubOptions::default()));
 //!
 //! let asks = Lines(vec![r#"{"v":1,"id":"r1","type":"turn","text":"hi"}"#.into()]);

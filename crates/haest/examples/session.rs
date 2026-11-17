@@ -14,7 +14,7 @@ use std::{sync::Arc, time::Duration};
 
 use haest::{
     Agent, AgentDeps, AgentOptions, JsonMap, LoopEvent, Message, ShutWorkspace, Tool, ToolContext,
-    ToolError, ToolOutput, async_trait,
+    ToolError, ToolOutput, Tools, async_trait,
     core::testing::{ScriptedProvider, text_answer, tool_answer},
     session::{Backend, Body, Hub, HubOptions, Input, start},
     wire::{Outbound, encode_line},
@@ -51,14 +51,8 @@ async fn main() {
         tool_answer(&[("c1", "Wait", serde_json::json!({}))]),
         text_answer("Done, and I saw your note."),
     ]);
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Wait(go.clone()))];
-    let deps = AgentDeps::new(
-        Arc::new(model.resolver()),
-        Arc::new(tools),
-        Arc::new(String::new()),
-        "/",
-        Arc::new(ShutWorkspace),
-    );
+    let tools = Tools::new().with(Wait(go.clone()));
+    let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 
     // The hub first: one stream, numbered, kept for catch-up.

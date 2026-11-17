@@ -2,7 +2,6 @@
 
 use std::{
     future::Future,
-    path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -22,8 +21,8 @@ use crate::{
     ledger::Ledger,
     messages::{AssistantMessage, Message, StopReason, Usage},
     testing::{ScriptedProvider, tool_answer},
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices, spelled},
-    workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolRef, Tools, spelled},
+    workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode, WorkspaceRef},
 };
 
 /// Every cap off; a test turns on the one it is about.
@@ -46,8 +45,6 @@ impl TestHooks {
         self.now.store(ms, Ordering::SeqCst);
     }
 }
-
-impl ToolServices for TestHooks {}
 
 #[async_trait]
 impl AgentHooks for TestHooks {
@@ -113,12 +110,12 @@ pub struct FnTool {
 }
 
 impl FnTool {
-    pub fn arc<F, Fut>(name: &str, read_only: bool, f: F) -> Arc<dyn Tool>
+    pub fn arc<F, Fut>(name: &str, read_only: bool, f: F) -> ToolRef
     where
         F: Fn(JsonMap, ToolContext) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<ToolOutput, ToolError>> + Send + 'static,
     {
-        Arc::new(Self {
+        ToolRef::new(Self {
             name: name.into(),
             read_only,
             run: Box::new(move |i, c| f(i, c).boxed()),
@@ -149,7 +146,7 @@ impl Tool for FnTool {
 }
 
 /// `echo:<v>`, a write (not read-only), like the default tool of every loop test.
-pub fn echo_tool() -> Arc<dyn Tool> {
+pub fn echo_tool() -> ToolRef {
     FnTool::arc("Echo", false, |input, _| async move {
         let v = input.get("v").map_or("undefined".into(), spelled);
         Ok(ToolOutput::text(format!("echo:{v}")))
@@ -168,10 +165,10 @@ pub fn with_usage(mut msg: AssistantMessage, usage: &Usage) -> AssistantMessage 
 
 #[derive(Default)]
 pub struct Opts {
-    pub tools: Option<Vec<Arc<dyn Tool>>>,
+    pub tools: Option<Vec<ToolRef>>,
     pub caps: Option<TurnCaps>,
     pub ledger: Option<Arc<Mutex<Ledger>>>,
-    pub workspace: Option<Arc<dyn Workspace>>,
+    pub workspace: Option<WorkspaceRef>,
     pub spill_dir: Option<&'static str>,
 }
 
@@ -196,22 +193,22 @@ pub fn agent_with(p: &Arc<ScriptedProvider>, opts: Opts) -> (Agent, Arc<TestHook
         caps: opts.caps,
         ..Default::default()
     });
-    let tools: Vec<Arc<dyn Tool>> = opts.tools.unwrap_or_else(|| vec![echo_tool()]);
+    let tools = opts
+        .tools
+        .map_or_else(|| Tools::new().with(echo_tool()), Tools::from);
     let workspace = opts
         .workspace
-        .unwrap_or_else(|| Arc::new(MemWorkspace::default()));
-    let mut deps = AgentDeps::new(
-        Arc::new(p.resolver()),
-        Arc::new(tools),
-        Arc::new("sys".to_string()),
-        "/tmp",
-        workspace,
-    );
-    deps.shared.hooks = hooks.clone();
-    deps.shared.turn_caps = hooks.clone();
-    deps.shared.clock = hooks.clone();
-    deps.shared.ledger = opts.ledger;
-    deps.shared.spill_dir = opts.spill_dir.map(|d| Path::new(d).to_path_buf());
+        .unwrap_or_else(|| MemWorkspace::default().into());
+    let mut deps = AgentDeps::new(p.resolver(), tools, "sys", "/tmp", workspace)
+        .with_hooks(hooks.clone())
+        .with_turn_caps(hooks.clone())
+        .with_clock(hooks.clone());
+    if let Some(ledger) = opts.ledger {
+        deps = deps.with_ledger(ledger);
+    }
+    if let Some(dir) = opts.spill_dir {
+        deps = deps.with_spill_dir(dir);
+    }
     (Agent::new(deps, AgentOptions::new("fake:m1")), hooks)
 }
 

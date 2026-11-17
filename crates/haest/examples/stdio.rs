@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use haest::{
     Agent, AgentDeps, AgentOptions, JsonMap, ShutWorkspace, Tool, ToolContext, ToolError,
-    ToolOutput, async_trait,
+    ToolOutput, Tools, async_trait,
     core::testing::{ScriptedProvider, text_answer, tool_answer},
     session::{Hub, HubOptions, start},
     transport::{Grant, LineSource, NdjsonSource, Stdio, Transport},
@@ -82,14 +82,8 @@ async fn main() {
         text_answer("Hello from the child."),
         tool_answer(&[("c1", "Forever", json!({}))]),
     ]);
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Forever)];
-    let deps = AgentDeps::new(
-        Arc::new(model.resolver()),
-        Arc::new(tools),
-        Arc::new(String::new()),
-        "/",
-        Arc::new(ShutWorkspace),
-    );
+    let tools = Tools::new().with(Forever);
+    let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let session = start(agent, Hub::new("example-stream", HubOptions::default()));
 

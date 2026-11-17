@@ -107,7 +107,7 @@ impl QuitGuard {
 /// The first line on the terminal, and where the line history is kept.
 fn welcome(rt: &Runtime) -> std::path::PathBuf {
     let restored = rt.agent().history().len();
-    let workspace = rt.agent().deps().shared.workspace.mode();
+    let workspace = rt.agent().deps().shared().workspace().mode();
     rt.hooks.info(&format!(
         "haest {} -- {} -- {workspace} workspace -- session {}{}\n/help for commands, Ctrl+D to quit.",
         env!("CARGO_PKG_VERSION"),

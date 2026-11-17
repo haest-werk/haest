@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use async_trait::async_trait;
 use haest_core::{
-    LoopEvent, SharedDeps,
+    LoopEvent, SharedDeps, ToolRef, Tools,
     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
     provider::{Effort, ModelError, ResolvedModel},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
@@ -106,7 +106,7 @@ pub struct FakeParent {
     pub adjust: Mutex<Option<Box<Adjust>>>,
 }
 
-type Adjust = dyn Fn(&mut SharedDeps) + Send + Sync;
+type Adjust = dyn Fn(SharedDeps) -> SharedDeps + Send + Sync;
 
 /// The kinds a host with kinds has: `explore` (the default) and `general`.
 pub fn explore_or_general() -> SubagentTypes {
@@ -148,19 +148,16 @@ impl SubagentParent for FakeParent {
                 model,
             })
         };
-        let mut d = SharedDeps {
-            ledger: Some(self.ledger.clone()),
-            ..SharedDeps::new(Arc::new(models), "/p", self.ws.clone())
-        };
-        if let Some(adjust) = &*self.adjust.lock().unwrap() {
-            adjust(&mut d);
+        let d = SharedDeps::new(models, "/p", self.ws.clone()).with_ledger(self.ledger.clone());
+        match &*self.adjust.lock().unwrap() {
+            Some(adjust) => adjust(d),
+            None => d,
         }
-        d
     }
-    fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
-        vec![Arc::new(GlobTool), Arc::new(TaskCreate)]
+    fn base_tools(&self) -> Tools {
+        Tools::from_iter([ToolRef::new(GlobTool), ToolRef::new(TaskCreate)])
     }
-    async fn system_prompt(&self, model_spec: &str, tools: &[Arc<dyn Tool>]) -> String {
+    async fn system_prompt(&self, model_spec: &str, tools: &[ToolRef]) -> String {
         let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
         format!(
             "You are haest.\n- Model: {model_spec}\n- Tools: {}",
@@ -176,9 +173,9 @@ impl SubagentParent for FakeParent {
             ..Default::default()
         }
     }
-    fn subagent_tools(&self, subagent_type: Option<&str>) -> Vec<Arc<dyn Tool>> {
+    fn subagent_tools(&self, subagent_type: Option<&str>) -> Tools {
         match subagent_type {
-            Some("explore") => Vec::new(),
+            Some("explore") => Tools::new(),
             _ => self.base_tools(),
         }
     }

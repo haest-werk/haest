@@ -8,7 +8,6 @@ use crate::{
     agent::test_support::{collect, end, turn_caps},
     caps::{TurnCaps, TurnCapsSource},
     deps::AgentHooks,
-    tool::ToolServices,
 };
 
 /// A host that compacts before every model call, as the runtime's does.
@@ -17,7 +16,6 @@ struct CompactsFirst {
     caps: Option<TurnCaps>,
     esc: bool,
 }
-impl ToolServices for CompactsFirst {}
 #[async_trait]
 impl AgentHooks for CompactsFirst {
     async fn before_model_call(
@@ -48,8 +46,8 @@ fn costly_empty(input: u64) -> AssistantMessage {
 fn compacting(p: &Arc<ScriptedProvider>, caps: Option<TurnCaps>) -> Agent {
     let mut agent = agent_with(p);
     let host = Arc::new(CompactsFirst { caps, esc: false });
-    agent.deps_mut().shared.hooks = host.clone();
-    agent.deps_mut().shared.turn_caps = host;
+    agent.map_deps(|d| d.with_hooks(host.clone()));
+    agent.map_deps(|d| d.with_turn_caps(host));
     agent
 }
 
@@ -87,9 +85,11 @@ async fn a_failed_compaction_still_counts_toward_the_turn() {
 async fn a_summary_cancelled_part_way_ends_the_turn_aborted_and_still_counts_toward_it() {
     let p = ScriptedProvider::new([text_answer("SUM"), text_answer("never")]);
     let mut agent = agent_with(&p);
-    agent.deps_mut().shared.hooks = Arc::new(CompactsFirst {
-        caps: None,
-        esc: true,
+    agent.map_deps(|d| {
+        d.with_hooks(Arc::new(CompactsFirst {
+            caps: None,
+            esc: true,
+        }))
     });
     let events = collect(&mut agent, "go").await;
     let (reason, usage, error) = end(&events);

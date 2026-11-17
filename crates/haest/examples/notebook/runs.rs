@@ -3,9 +3,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use haest::{
-    Agent, AgentOptions, ShutWorkspace, StopReason, TurnOutcome, Workspace,
+    Agent, AgentOptions, ShutWorkspace, StopReason, Tools, TurnOutcome, WorkspaceRef,
     core::session::{SessionRecord, SessionSink, replay},
-    core::tool::Tool,
     tools::{AgentRef, Ending, SubagentHub},
     workspace::SandboxWorkspace,
 };
@@ -48,9 +47,9 @@ pub async fn work(gateway: &Arc<Gateway>) {
         2,
         config::turn_caps(&s),
     ));
-    let own: Vec<Arc<dyn Tool>> = vec![Arc::new(notebook_search())];
+    let own = Tools::new().with(notebook_search());
     let base = run_tools(&s, own, attachments.clone());
-    let workspace: Arc<dyn Workspace> = Arc::new(SandboxWorkspace::over(notebook.clone()));
+    let workspace = WorkspaceRef::new(SandboxWorkspace::over(notebook.clone()));
     // haest's hub over the run: each helper on a node run of its own.
     let node = Arc::new(Node::default());
     let helpers = Arc::new(NodeHelpers {
@@ -254,9 +253,9 @@ pub async fn dream(gateway: &Arc<Gateway>) {
         0,
         config::turn_caps(&s),
     ));
-    let own: Vec<Arc<dyn Tool>> = vec![Arc::new(DreamMaterial)];
+    let own = Tools::new().with(DreamMaterial);
     let tools = run_tools(&s, own, Arc::new(Attachments::new(&[])));
-    let deps = deps(gateway, "", tools, Arc::new(ShutWorkspace), host);
+    let deps = deps(gateway, "", tools, ShutWorkspace, host);
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));
     gateway.script([
         reply(
@@ -307,8 +306,8 @@ pub async fn clock(gateway: &Arc<Gateway>) {
         2,
         caps,
     ));
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(notebook_search())];
-    let deps = deps(gateway, "", tools, Arc::new(ShutWorkspace), host.clone());
+    let tools = Tools::new().with(notebook_search());
+    let deps = deps(gateway, "", tools, ShutWorkspace, host.clone());
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));
     gateway.script([
         reply(

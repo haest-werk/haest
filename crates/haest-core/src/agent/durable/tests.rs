@@ -28,7 +28,7 @@ use crate::{
     run::{MemoryRunStore, RunKey},
     session::SessionRecord,
     testing::ScriptedProvider,
-    tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput},
+    tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput, ToolRef, Tools},
 };
 
 /// One run of a [`Probe`]: which tool, which call, and what it was told.
@@ -76,8 +76,8 @@ impl Probe {
         self
     }
 
-    fn arc(self) -> Arc<dyn Tool> {
-        Arc::new(self)
+    fn arc(self) -> ToolRef {
+        ToolRef::new(self)
     }
 }
 
@@ -126,7 +126,7 @@ impl Tool for Probe {
 fn durable(
     p: &Arc<ScriptedProvider>,
     store: &MemoryRunStore,
-    tools: &[Arc<dyn Tool>],
+    tools: &[ToolRef],
     caps: Option<TurnCaps>,
 ) -> (Agent, Arc<TestHooks>) {
     let opts = Opts {
@@ -135,7 +135,7 @@ fn durable(
         ..Default::default()
     };
     let (mut agent, hooks) = agent_with(p, opts);
-    agent.deps_mut().shared.run_store = Some(Arc::new(store.clone()));
+    agent.map_deps(|d| d.with_run_store(store.clone()));
     (agent, hooks)
 }
 

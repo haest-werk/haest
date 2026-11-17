@@ -30,8 +30,9 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use haest_core::{
+    ToolRef, Tools,
     error::BoxError,
-    tool::{Tool, ToolContext, ToolOutput},
+    tool::{ToolContext, ToolOutput},
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -200,11 +201,11 @@ impl Mod for JsMod {
         text_of(v, "system.prompt")
     }
 
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn tools(&self) -> Tools {
         let meta = self.meta.lock().unwrap();
         meta.tools
             .iter()
-            .map(|m| Arc::new(JsTool::new(m.clone(), self.thread.clone())) as Arc<dyn Tool>)
+            .map(|m| ToolRef::new(JsTool::new(m.clone(), self.thread.clone())))
             .collect()
     }
 

@@ -106,7 +106,7 @@ pub(crate) fn record_start(hooks: &RuntimeHooks, agent: &Agent) {
         model_spec: Some(agent.model_spec().to_string()),
         effort: Some(agent.effort()),
     });
-    if let Some(ledger) = &agent.deps().shared.ledger {
+    if let Some(ledger) = agent.deps().shared().ledger() {
         let snapshot = ledger.lock().unwrap().snapshot();
         hooks.append(SessionRecord::Ledger {
             t: now_ms(),

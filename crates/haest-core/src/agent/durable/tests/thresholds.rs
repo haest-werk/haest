@@ -32,10 +32,10 @@ impl Threshold for FirstCall {
 }
 
 /// [`durable`], with the guard's nudges and [`FirstCall`].
-fn reminded(p: &Arc<ScriptedProvider>, store: &MemoryRunStore, tools: &[Arc<dyn Tool>]) -> Agent {
+fn reminded(p: &Arc<ScriptedProvider>, store: &MemoryRunStore, tools: &[ToolRef]) -> Agent {
     let (mut agent, _) = durable(p, store, tools, None);
     let thresholds = Thresholds::default().with(Arc::new(FirstCall)).unwrap();
-    agent.deps_mut().shared.thresholds = thresholds;
+    agent.map_deps(|d| d.with_thresholds(thresholds));
     agent
 }
 

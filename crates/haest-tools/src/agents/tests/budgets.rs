@@ -258,7 +258,7 @@ async fn off_the_agent_tool_keeps_todays_schema_and_a_budget_changes_nothing() {
         l.clone(),
     );
     cap_conversation(&r, 1.0);
-    let agent = r.hub.tools_for(&AgentRef::main()).remove(0);
+    let agent = r.hub.tools_for(&AgentRef::main())[0].clone();
     let params = agent.parameters();
     let mut keys: Vec<&String> = params["properties"].as_object().unwrap().keys().collect();
     keys.sort();

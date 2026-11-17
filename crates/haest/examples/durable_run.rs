@@ -20,7 +20,7 @@ use std::{
 
 use haest::{
     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tool, ToolContext, ToolError,
-    ToolOutput, async_trait,
+    ToolOutput, Tools, async_trait,
     core::run::{MemoryRunStore, RunKey, Served},
     core::testing::{ScriptedProvider, text_answer, tool_answer},
     core::tool::{JsonMap, OnResume},
@@ -113,19 +113,15 @@ impl Tool for Fetch {
 
 /// An agent on `provider` with `tools`, keeping its runs in `store`: the one
 /// line that makes runs durable is `run_store`.
-fn agent(
-    provider: &Arc<ScriptedProvider>,
-    store: &MemoryRunStore,
-    tools: Vec<Arc<dyn Tool>>,
-) -> Agent {
-    let mut deps = AgentDeps::new(
-        Arc::new(provider.resolver()),
-        Arc::new(tools),
-        Arc::new("You send the daily report.".to_string()),
+fn agent(provider: &Arc<ScriptedProvider>, store: &MemoryRunStore, tools: Tools) -> Agent {
+    let deps = AgentDeps::new(
+        provider.resolver(),
+        tools,
+        "You send the daily report.",
         "/",
-        Arc::new(ShutWorkspace),
-    );
-    deps.shared.run_store = Some(Arc::new(store.clone()));
+        ShutWorkspace,
+    )
+    .with_run_store(store.clone());
     Agent::new(deps, AgentOptions::new("scripted:model-1"))
 }
 
@@ -134,7 +130,7 @@ const JOB: &str = "send today's report";
 async fn the_shortcut(store: &MemoryRunStore) {
     let key = RunKey::new("report-2026-11-16");
     let provider = ScriptedProvider::new([text_answer("Report sent.")]);
-    let mut agent = agent(&provider, store, Vec::new());
+    let mut agent = agent(&provider, store, Tools::new());
     let mut events = Vec::<LoopEvent>::new();
 
     let first = agent.run_durable(&key, JOB, &mut events).await.unwrap();
@@ -157,12 +153,12 @@ async fn a_kill_and_a_resume(store: &MemoryRunStore) {
     let key = RunKey::new("report-2026-11-17");
     let outbox = Arc::new(Outbox::default());
     let crash = Arc::new(Notify::new());
-    let send = Arc::new(SendReport {
+    let send = SendReport {
         outbox: outbox.clone(),
         crash_once: Some(crash.clone()),
         crashed: AtomicBool::new(false),
-    });
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Fetch), send];
+    };
+    let tools = Tools::new().with(Fetch).with(send);
 
     // Process one: the model asks for both tools; the process dies in SendReport.
     let calls = tool_answer(&[("c1", "Fetch", json!({})), ("c2", "SendReport", json!({}))]);

@@ -22,7 +22,7 @@ const WEATHER_MOD: &str =
 const WEATHER: &str = "mcp__x__weather";
 
 fn advertised(rt: &Runtime<Recorded>) -> Vec<String> {
-    let tools = rt.agent().deps().tools.tools();
+    let tools = rt.agent().deps().tools().tools();
     tools.iter().map(|t| t.name().to_string()).collect()
 }
 

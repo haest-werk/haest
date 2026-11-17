@@ -18,7 +18,7 @@ use std::{sync::Arc, time::Duration};
 
 use futures::{SinkExt, StreamExt};
 use haest::{
-    Agent, AgentDeps, AgentOptions, ShutWorkspace, Tool,
+    Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools,
     core::testing::{ScriptedProvider, text_answer},
     session::{Backend, Hub, HubOptions, Input, start},
     transport::{Backoff, Broker, Grant, Transport},
@@ -78,14 +78,7 @@ async fn main() {
         text_answer("The build is green."),
         text_answer("The deploy is done."),
     ]);
-    let tools: Vec<Arc<dyn Tool>> = Vec::new();
-    let deps = AgentDeps::new(
-        Arc::new(model.resolver()),
-        Arc::new(tools),
-        Arc::new(String::new()),
-        "/",
-        Arc::new(ShutWorkspace),
-    );
+    let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let session = start(agent, Hub::new("example-link", HubOptions::default()));
     let backend: Arc<dyn Backend> = Arc::new(session);

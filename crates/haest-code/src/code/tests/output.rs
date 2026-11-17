@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use haest_core::{
+    ToolRef, Tools,
     messages::{MediaKind, MediaPart},
-    tool::{InnerCallEvent, Tool, ToolOutput},
+    tool::{InnerCallEvent, ToolOutput},
 };
 use serde_json::json;
 
@@ -37,7 +38,7 @@ async fn an_inner_result_reaches_the_program_whole_however_big() {
     let mut big = Probe::new("mcp__s__big", true, 0);
     big.answer = ToolOutput::text("x".repeat(50_000));
     let out = run(
-        &code_over(vec![Arc::new(big)], &[]),
+        &code_over(Tools::from_iter([ToolRef::new(big)]), &[]),
         "const r = await tools.mcp__s__big({}); return r.length",
     )
     .await;
@@ -79,7 +80,7 @@ async fn everything_printed_sits_between_the_markers_and_the_call_count_after_th
 #[tokio::test]
 async fn an_uncaught_error_names_the_line_in_the_model_code() {
     let out = run(
-        &code_over(vec![], &[]),
+        &code_over(Tools::new(), &[]),
         "const a = 1\nconst b = 2\nnull.boom()",
     )
     .await;
@@ -94,7 +95,7 @@ async fn an_uncaught_error_names_the_line_in_the_model_code() {
 
 #[tokio::test]
 async fn a_huge_return_value_is_cut_to_fit_one_result_and_never_spilled() {
-    let out = run(&code_over(vec![], &[]), "return 'x'.repeat(500000)").await;
+    let out = run(&code_over(Tools::new(), &[]), "return 'x'.repeat(500000)").await;
     assert!(out.sized);
     assert!(out.content.chars().count() < 25_000);
     assert!(out.content.split('\n').any(|l| l == OUTPUT_END));
@@ -105,11 +106,11 @@ async fn each_inner_call_reports_start_then_end_tied_to_the_code_call_a_failure_
     let ok = probe("mcp__s__ok", true, 0);
     let mut bad = Probe::new("mcp__s__bad", true, 0);
     bad.answer = ToolOutput::error("nope");
-    let tools: Vec<Arc<dyn Tool>> = vec![arc(&ok), Arc::new(bad)];
+    let tools = vec![arc(&ok), ToolRef::new(bad)];
     let services = Arc::new(Recorder::default());
     let mut c = ctx(MemWorkspace::with_files::<&str, &str>([]));
     c.tool_call_id = Some("call-1".into());
-    c.services = services.clone();
+    c.services = services.clone().into();
     let code = "await tools.mcp__s__ok({}); try { await tools.mcp__s__bad({}) } catch (e) {}";
     run_in(&code_over(tools, &[]), code, json!({}), &c).await;
     let seen: Vec<(&str, String, String, Option<bool>)> = services
@@ -151,7 +152,7 @@ async fn outside_the_loop_no_inner_call_is_reported() {
     let ok = probe("mcp__s__ok", true, 0);
     let services = Arc::new(Recorder::default());
     let mut c = ctx(MemWorkspace::with_files::<&str, &str>([]));
-    c.services = services.clone();
+    c.services = services.clone().into();
     run_in(
         &code_over(vec![arc(&ok)], &[]),
         "await tools.mcp__s__ok({})",
@@ -224,7 +225,11 @@ async fn see_holds_its_cap_when_calls_run_at_once() {
         batch(0),
         batch(MAX_SEEN)
     );
-    let out = run(&code_over(vec![Arc::new(read)], &[]), &code).await;
+    let out = run(
+        &code_over(Tools::from_iter([ToolRef::new(read)]), &[]),
+        &code,
+    )
+    .await;
     assert_eq!(out.media.len(), MAX_SEEN, "{}", out.content);
     assert_eq!(returned(&out), Some(json!(["fulfilled", "rejected"])));
 }

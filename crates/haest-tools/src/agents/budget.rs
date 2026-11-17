@@ -59,12 +59,12 @@ use super::{AgentError, run::wall_clock};
 /// let remote = Arc::new(Remote::default());
 /// let caps = SubagentBudget { usd: 0.5, time: Duration::from_secs(300) };
 /// let opts = AgentToolOptions { budget_caps: Some(caps), ..Default::default() };
-/// let agent = agent_tools_with(remote.clone(), AgentRef::main(), true, opts).remove(0);
+/// let agent = agent_tools_with(remote.clone(), AgentRef::main(), true, opts)[0].clone();
 /// assert!(agent.parameters()["properties"].get("budget").is_some());
 ///
 /// // The model asks for more money than the cap and less time: it gets the cap and its time.
 /// let call = json!({"description": "d", "prompt": "p", "budget": {"usd": 9, "minutes": 2}});
-/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+/// let ctx = ToolContext::new("/", ShutWorkspace);
 /// agent.execute(call.as_object().unwrap().clone(), &ctx).await.unwrap();
 /// let got = remote.0.lock().unwrap().unwrap();
 /// assert_eq!(got, SubagentBudget { usd: 0.5, time: Duration::from_secs(120) });

@@ -1,5 +1,6 @@
 use super::*;
 use crate::testkit::{input, shut_ctx as ctx};
+use haest_core::{ToolRef, Tools};
 
 /// A tool that answers with its name and the input it ran with.
 struct Fake(&'static str, &'static str);
@@ -24,15 +25,15 @@ impl Tool for Fake {
     }
 }
 
-fn all() -> Vec<Arc<dyn Tool>> {
-    vec![
-        Arc::new(Fake("Read", "Read")),
-        Arc::new(Fake("mcp__x__weather", "current weather for a city")),
-        Arc::new(Fake("mcp__x__stocks", "stock quotes")),
-    ]
+fn all() -> Tools {
+    Tools::from_iter([
+        ToolRef::new(Fake("Read", "Read")),
+        ToolRef::new(Fake("mcp__x__weather", "current weather for a city")),
+        ToolRef::new(Fake("mcp__x__stocks", "stock quotes")),
+    ])
 }
 
-fn advertise(d: &Arc<ToolDeferral>, all: &[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>> {
+fn advertise(d: &Arc<ToolDeferral>, all: &Tools) -> Tools {
     advertised_tools(d, all, deferral_tools(d.clone()))
 }
 
@@ -43,7 +44,7 @@ fn names(d: &Arc<ToolDeferral>) -> Vec<String> {
         .collect()
 }
 
-fn find(tools: &[Arc<dyn Tool>], name: &str) -> Arc<dyn Tool> {
+fn find(tools: &[ToolRef], name: &str) -> ToolRef {
     tools.iter().find(|t| t.name() == name).cloned().unwrap()
 }
 
@@ -98,8 +99,8 @@ fn a_hosts_messaging_tools_stay_loaded_so_a_channel_guide_can_name_them() {
     let suffixes = ["__send_message", "__list_conversations"].map(String::from);
     let d = Arc::new(ToolDeferral::new(DeferMode::Proxy).with_always_loaded(suffixes));
     let mut with_host = all();
-    with_host.push(Arc::new(Fake("mcp__host__send_message", "send")));
-    with_host.push(Arc::new(Fake("mcp__host__list_conversations", "list")));
+    with_host.push(Fake("mcp__host__send_message", "send"));
+    with_host.push(Fake("mcp__host__list_conversations", "list"));
     let shown: Vec<String> = advertise(&d, &with_host)
         .iter()
         .map(|t| t.name().to_string())
@@ -115,15 +116,12 @@ fn a_hosts_messaging_tools_stay_loaded_so_a_channel_guide_can_name_them() {
 fn tool_search_says_what_each_deferred_tool_is_for_in_one_short_line() {
     let long = "x".repeat(300);
     let mut tools = all();
-    tools.push(Arc::new(Fake(
+    tools.push(Fake(
         "mcp__x__open_page",
         "Take the person's tab to a page. Use it when they ask to go somewhere.\nMore.",
-    )));
-    tools.push(Arc::new(Fake(
-        "mcp__x__long",
-        Box::leak(long.into_boxed_str()),
-    )));
-    tools.push(Arc::new(Fake("mcp__x__bare", "")));
+    ));
+    tools.push(Fake("mcp__x__long", Box::leak(long.into_boxed_str())));
+    tools.push(Fake("mcp__x__bare", ""));
     let d = deferral(DeferMode::Grow);
     let text = find(&advertise(&d, &tools), "ToolSearch").description();
     let lines: Vec<&str> = text.lines().skip_while(|l| !l.starts_with("- ")).collect();
@@ -158,17 +156,19 @@ async fn keyword_search_ranks_name_hits_over_description_hits() {
 }
 
 /// A source whose tools change between calls, as an MCP server's do.
-struct Changing(Arc<std::sync::Mutex<Vec<Arc<dyn Tool>>>>);
+struct Changing(Arc<std::sync::Mutex<Tools>>);
 
 impl ToolSource for Changing {
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn tools(&self) -> Tools {
         self.0.lock().unwrap().clone()
     }
 }
 
 #[test]
 fn deferred_tools_ask_their_source_again_before_every_call() {
-    let list = Arc::new(std::sync::Mutex::new(all()[..1].to_vec()));
+    let list = Arc::new(std::sync::Mutex::new(
+        all()[..1].iter().cloned().collect::<Tools>(),
+    ));
     let source = DeferredTools::new(Changing(list.clone()), ToolDeferral::new(DeferMode::Grow));
     let shown = |s: &DeferredTools| -> Vec<String> {
         s.tools().iter().map(|t| t.name().to_string()).collect()

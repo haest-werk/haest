@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::{
+    ToolRef, Tools,
     task_board::{NewTask, PatchStatus, Task, TaskBoard, TaskError, TaskPatch, TaskStatus},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str, spelled},
 };
@@ -100,13 +101,13 @@ struct TaskGetTool(Arc<TaskBoard>);
 /// assert_eq!(board.list()[0].subject, "Write the docs");
 /// # }
 /// ```
-pub fn task_tools(board: Arc<TaskBoard>) -> Vec<Arc<dyn Tool>> {
-    vec![
-        Arc::new(TaskCreateTool(board.clone())),
-        Arc::new(TaskUpdateTool(board.clone())),
-        Arc::new(TaskListTool(board.clone())),
-        Arc::new(TaskGetTool(board)),
-    ]
+pub fn task_tools(board: Arc<TaskBoard>) -> Tools {
+    Tools::from_iter([
+        ToolRef::new(TaskCreateTool(board.clone())),
+        ToolRef::new(TaskUpdateTool(board.clone())),
+        ToolRef::new(TaskListTool(board.clone())),
+        ToolRef::new(TaskGetTool(board)),
+    ])
 }
 
 #[async_trait]

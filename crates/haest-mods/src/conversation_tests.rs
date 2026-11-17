@@ -7,7 +7,7 @@ use std::{
 };
 
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, Message, ToolResultMessage,
+    Agent, AgentDeps, AgentOptions, Message, ToolResultMessage, Tools,
     deps::SystemPrompt,
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::{OnResume, Tool, ToolSource},
@@ -20,7 +20,7 @@ use crate::{
     Mods, PLAN_PROMPT, PlanMod, testkit::*,
 };
 
-fn agent(p: &Arc<ScriptedProvider>, mods: &Arc<Mods>, tools: Vec<Arc<dyn Tool>>) -> Agent {
+fn agent(p: &Arc<ScriptedProvider>, mods: &Arc<Mods>, tools: Tools) -> Agent {
     let source: Arc<dyn ToolSource> = Arc::new(tools);
     let base: Arc<dyn SystemPrompt> = Arc::new("You are haest.".to_string());
     let deps = AgentDeps::new(
@@ -61,7 +61,7 @@ async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_let
         p.push(text_answer("ok"));
     }
     let bash = Probe::new("Bash");
-    let mut agent = agent(&p, &mods, vec![bash.clone()]);
+    let mut agent = agent(&p, &mods, Tools::from_iter([bash.clone()]));
 
     agent.run("delete it", &mut Vec::new()).await;
     assert!(bash.ran().is_empty());
@@ -99,7 +99,11 @@ async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it()
         text_answer("done"),
     ]);
     let (reader, writer) = (Probe::read_only("Read"), Probe::new("Write"));
-    let mut agent = agent(&p, &mods, vec![reader.clone(), writer.clone()]);
+    let mut agent = agent(
+        &p,
+        &mods,
+        Tools::from_iter([reader.clone(), writer.clone()]),
+    );
 
     // A host's plan toggle runs the same command as `/plan`.
     assert_eq!(mods.command("plan", "").await, CommandOutcome::Handled);
@@ -136,7 +140,7 @@ async fn plan_mode_lets_the_hosts_planning_tools_through_and_no_others() {
     mods.add(Arc::new(PlanMod::default().with_planning_tools(["Notes"])));
     assert_eq!(mods.command("plan", "").await, CommandOutcome::Handled);
     let (notes, tasks) = (Probe::new("Notes"), Probe::new("TaskCreate"));
-    let tools = wrapped(mods, vec![notes.clone(), tasks.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([notes.clone(), tasks.clone()]));
     tools[0].execute(input(json!({})), &ctx()).await.unwrap();
     assert!(tools[1].execute(input(json!({})), &ctx()).await.is_err());
     assert_eq!((notes.ran().len(), tasks.ran().len()), (1, 0));
@@ -176,7 +180,10 @@ fn a_wrapped_tool_keeps_what_it_does_on_resume() {
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real));
     let tools = wrapped(
         mods,
-        vec![Arc::new(Pay), Probe::new("Write"), Probe::read_only("Read")],
+        Tools::new()
+            .with(Pay)
+            .with(Probe::new("Write"))
+            .with(Probe::read_only("Read")),
     );
     assert_eq!(find(&tools, "Pay").on_resume(), OnResume::Lookup);
     assert_eq!(find(&tools, "Write").on_resume(), OnResume::Report);

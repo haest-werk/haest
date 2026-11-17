@@ -10,11 +10,7 @@ use std::{
 };
 
 use futures::future::join_all;
-use haest_core::{
-    ChildEnv,
-    error::report,
-    tool::{Tool, ToolSource},
-};
+use haest_core::{ChildEnv, Tools, error::report, tool::ToolSource};
 use rmcp::{RoleClient, model::ClientConfig, service::RunningService, transport::IntoTransport};
 
 use crate::config::McpServerConfig;
@@ -34,7 +30,7 @@ type Client = RunningService<RoleClient, ClientConfig>;
 
 struct Server {
     client: Client,
-    tools: Vec<Arc<dyn Tool>>,
+    tools: Tools,
 }
 
 /// The MCP servers a conversation is connected to, and their tools.
@@ -183,7 +179,7 @@ impl McpHub {
     /// Every connected server's tools: the servers in the order they were
     /// added, each one's tools in the order it listed them. Empty after
     /// [`close`](Self::close).
-    pub fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    pub fn tools(&self) -> Tools {
         self.lock_servers()
             .iter()
             .flat_map(|s| s.tools.iter().cloned())
@@ -210,7 +206,7 @@ impl McpHub {
 }
 
 impl ToolSource for McpHub {
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn tools(&self) -> Tools {
         McpHub::tools(self)
     }
 }

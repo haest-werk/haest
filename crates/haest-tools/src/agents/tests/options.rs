@@ -8,7 +8,8 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::{
-    tool::{Tool, ToolContext, ToolError},
+    ToolRef,
+    tool::{ToolContext, ToolError},
     workspace::ShutWorkspace,
 };
 use serde_json::{Value, json};
@@ -49,7 +50,7 @@ impl AgentDirectory for Recording {
     }
 }
 
-fn agent(dir: &Arc<Recording>, opts: AgentToolOptions) -> Arc<dyn Tool> {
+fn agent(dir: &Arc<Recording>, opts: AgentToolOptions) -> ToolRef {
     agent_tools_with(dir.clone(), AgentRef::main(), true, opts)
         .into_iter()
         .find(|t| t.name() == "Agent")
@@ -122,7 +123,7 @@ async fn the_hubs_agent_tool_offers_the_parents_kinds_and_each_kind_gets_its_own
         SubagentCaps::default(),
         Some(explore_or_general()),
     );
-    let agent = r.hub.tools_for(&AgentRef::main()).remove(0);
+    let agent = r.hub.tools_for(&AgentRef::main())[0].clone();
     assert_eq!(
         agent.parameters()["properties"]["subagent_type"]["enum"],
         json!(["explore", "general"])
@@ -155,12 +156,12 @@ async fn with_no_kinds_there_is_no_subagent_type_at_all() {
     assert_eq!(dir.0.lock().unwrap()[0].subagent_type, None);
 }
 
-fn agent_tool(dir: &Arc<Recording>, caps: SubagentBudget) -> Arc<dyn Tool> {
+fn agent_tool(dir: &Arc<Recording>, caps: SubagentBudget) -> ToolRef {
     let opts = AgentToolOptions {
         budget_caps: Some(caps),
         ..Default::default()
     };
-    agent_tools_with(dir.clone(), AgentRef::main(), true, opts).remove(0)
+    agent_tools_with(dir.clone(), AgentRef::main(), true, opts)[0].clone()
 }
 
 #[tokio::test]

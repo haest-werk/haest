@@ -34,7 +34,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 pub use adapter::mark_stream_failed;
-pub use resolve::{ModelError, ModelResolver, ResolvedModel, parse_model_spec};
+pub use resolve::{ModelError, ModelResolver, ModelResolverRef, ResolvedModel, parse_model_spec};
 
 pub use crate::{effort::nearest_accepted_effort, pricing::book_priced_cost};
 

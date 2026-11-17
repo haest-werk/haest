@@ -40,7 +40,7 @@ pub struct DrivenStatus {
 ///
 /// use haest_core::{
 ///     Agent, AgentControl, AgentDeps, AgentOptions, Effort, EventSink, Message, ShutWorkspace,
-///     Tool, TurnOutcome,
+///     Tools, TurnOutcome,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 /// use haest_core::error::BoxError;
@@ -80,14 +80,7 @@ pub struct DrivenStatus {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let model = ScriptedProvider::new([text_answer("noted")]);
-/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
-/// let deps = AgentDeps::new(
-///     Arc::new(model.resolver()),
-///     Arc::new(tools),
-///     Arc::new(String::new()),
-///     "/",
-///     Arc::new(ShutWorkspace),
-/// );
+/// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
 /// let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 /// let session = start(Noted(agent), Hub::new("s1", HubOptions::default()));
 ///
@@ -191,7 +184,11 @@ impl Driven for Agent {
     }
 
     fn status(&self) -> DrivenStatus {
-        let usd = (self.deps().shared.ledger.as_ref()).map(|l| l.lock().unwrap().usd());
+        let usd = self
+            .deps()
+            .shared()
+            .ledger()
+            .map(|l| l.lock().unwrap().usd());
         DrivenStatus {
             session: String::new(),
             model_spec: self.model_spec().to_string(),
@@ -202,7 +199,7 @@ impl Driven for Agent {
     }
 
     fn set_model_spec(&mut self, spec: &str) -> Result<(), BoxError> {
-        self.deps().shared.models.resolve(spec)?;
+        self.deps().shared().models().resolve(spec)?;
         self.set_model_spec(spec);
         Ok(())
     }

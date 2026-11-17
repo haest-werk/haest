@@ -1,8 +1,6 @@
 //! A durable run's records: their wire shape, what replay makes of them, and
 //! that a reader that does not know them still reads the conversation.
 
-use std::sync::Arc;
-
 use serde_json::{Value, json};
 
 use super::*;
@@ -36,7 +34,7 @@ async fn finished_run_lines() -> Vec<String> {
         text_answer("done"),
     ]);
     let (mut agent, _) = agent_with(&p, Opts::default());
-    agent.deps_mut().shared.run_store = Some(Arc::new(store.clone()));
+    agent.map_deps(|d| d.with_run_store(store.clone()));
     let key = RunKey::new("job");
     agent
         .run_durable(&key, "go", &mut Vec::new())

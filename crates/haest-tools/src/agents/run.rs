@@ -8,11 +8,11 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use haest_core::{
     __private::panic_message,
-    Agent, AgentHooks, LoopEvent, StopReason, SystemPrompt,
-    caps::{TurnCaps, TurnCapsSource},
+    Agent, AgentHooks, AgentHooksRef, LoopEvent, StopReason, SystemPrompt,
+    caps::{TurnCaps, TurnCapsSource, TurnCapsSourceRef},
     messages::MediaPart,
     provider::Effort,
-    tool::{InnerCallEvent, ToolServices, ToolSource},
+    tool::{InnerCallEvent, ToolServices, ToolServicesRef, ToolSourceRef},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -75,7 +75,7 @@ pub(super) fn wall_clock(time: Duration) -> String {
 pub(super) struct ChildPrompt {
     pub parent: Arc<dyn SubagentParent>,
     pub model_spec: String,
-    pub tools: Arc<dyn ToolSource>,
+    pub tools: ToolSourceRef,
     pub note: String,
 }
 
@@ -91,17 +91,22 @@ impl SystemPrompt for ChildPrompt {
 }
 
 /// The conversation's hooks for a subagent. Its messages are not the
-/// conversation's (nothing persisted, no compaction), and the calls its tools
-/// make go to its own card.
+/// conversation's (nothing persisted, no compaction).
 pub(super) struct ChildHooks {
-    pub hooks: Arc<dyn AgentHooks>,
+    pub hooks: AgentHooksRef,
+}
+
+/// The conversation's services for a subagent's tools: the calls they make
+/// go to its own card.
+pub(super) struct ChildServices {
+    pub services: ToolServicesRef,
     pub parent: Arc<dyn SubagentParent>,
     pub id: String,
 }
 
 /// The conversation's turn caps, with a subagent's own spend, steps and time.
 pub(super) struct ChildCaps {
-    pub caps: Arc<dyn TurnCapsSource>,
+    pub caps: TurnCapsSourceRef,
     pub subagent: MemberCaps,
 }
 
@@ -119,16 +124,16 @@ impl TurnCapsSource for ChildCaps {
 }
 
 #[async_trait]
-impl ToolServices for ChildHooks {
+impl ToolServices for ChildServices {
     async fn publish(&self, data: Vec<u8>, media_type: &str) -> Option<String> {
-        self.hooks.publish(data, media_type).await
+        self.services.publish(data, media_type).await
     }
     fn on_inner_call(&self, ev: InnerCallEvent) {
         self.parent
             .on_subagent(&self.id, SubagentEvent::InnerCall(ev));
     }
     fn debug(&self, message: &str) {
-        self.hooks.debug(message);
+        self.services.debug(message);
     }
 }
 

@@ -7,7 +7,7 @@ use std::sync::{
 };
 
 use async_trait::async_trait;
-use haest_core::tool::Tool;
+use haest_core::Tools;
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -67,12 +67,11 @@ use settle::{Open, Work};
 ///
 /// use async_trait::async_trait;
 /// use haest_core::{
-///     SharedDeps,
+///     SharedDeps, ToolRef, Tools,
 ///     caps::SubagentCaps,
 ///     provider::Effort,
 ///     // haest-core's `testing` feature: a provider that answers from a script.
 ///     testing::{ScriptedProvider, text_answer},
-///     tool::Tool,
 ///     workspace::ShutWorkspace,
 /// };
 /// use haest_tools::{AgentDirectory, AgentRef, Inbox, SpawnInput, SubagentHub, SubagentParent};
@@ -89,12 +88,12 @@ use settle::{Open, Work};
 /// #[async_trait]
 /// impl SubagentParent for Parent {
 ///     fn deps(&self) -> SharedDeps {
-///         SharedDeps::new(Arc::new(self.0.resolver()), "/", Arc::new(ShutWorkspace))
+///         SharedDeps::new(self.0.resolver(), "/", ShutWorkspace)
 ///     }
-///     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
-///         Vec::new()
+///     fn base_tools(&self) -> Tools {
+///         Tools::new()
 ///     }
-///     async fn system_prompt(&self, _model: &str, _tools: &[Arc<dyn Tool>]) -> String {
+///     async fn system_prompt(&self, _model: &str, _tools: &[ToolRef]) -> String {
 ///         "You are a helper.".into()
 ///     }
 ///     fn default_model(&self) -> (String, Option<Effort>) {
@@ -177,7 +176,7 @@ impl SubagentHub {
     /// tool offers the parent's kinds of subagent
     /// ([`SubagentParent::agent_tool_options`]), and a `budget` when
     /// [`SubagentCaps::budgets`] is on.
-    pub fn tools_for(&self, me: &AgentRef) -> Vec<Arc<dyn Tool>> {
+    pub fn tools_for(&self, me: &AgentRef) -> Tools {
         let can_spawn = me.depth < self.caps.max_depth && self.caps.max_concurrent > 0;
         let opts = AgentToolOptions {
             budget_caps: self.caps.budgets.then(|| self.budget_caps()),
@@ -209,7 +208,7 @@ impl AgentDirectory for SubagentHub {
         // first, released when the member ends (or never starts).
         let budget = (input.budget).map(|b| budget::clamp(b, &self.budget_caps()));
         let held = match &budget {
-            Some(b) => budget::hold(self.parent.deps().ledger.as_ref(), b)?,
+            Some(b) => budget::hold(self.parent.deps().ledger(), b)?,
             None => None,
         };
         let run = {

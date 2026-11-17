@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
@@ -28,21 +30,21 @@ impl Tool for Named {
     }
 }
 
-fn all() -> Vec<Arc<dyn Tool>> {
-    vec![
-        Arc::new(Named("Read", "Read")),
-        Arc::new(Named("mcp__x__weather", "current weather for a city")),
-        Arc::new(Named("mcp__x__stocks", "stock quotes")),
-    ]
+fn all() -> Tools {
+    Tools::from_iter([
+        ToolRef::new(Named("Read", "Read")),
+        ToolRef::new(Named("mcp__x__weather", "current weather for a city")),
+        ToolRef::new(Named("mcp__x__stocks", "stock quotes")),
+    ])
 }
 
-fn names(tools: &[Arc<dyn Tool>]) -> Vec<&str> {
+fn names(tools: &[ToolRef]) -> Vec<&str> {
     tools.iter().map(|t| t.name()).collect()
 }
 
 /// Stands in for haest-tools' ToolSearch: one marker tool per advertise.
-fn marker(_: &[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>> {
-    vec![Arc::new(Named("ToolSearch", "load deferred tools"))]
+fn marker(_: &[ToolRef]) -> Tools {
+    Tools::from_iter([ToolRef::new(Named("ToolSearch", "load deferred tools"))])
 }
 
 #[test]
@@ -111,7 +113,7 @@ impl Tool for LooksUp {
 #[test]
 fn a_deferred_tool_keeps_what_it_does_on_resume() {
     let d = Arc::new(ToolDeferral::new(DeferMode::Proxy));
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(LooksUp)];
+    let tools: Tools = Tools::from_iter([ToolRef::new(LooksUp)]);
     let callable = callable_tools(&d, &tools, marker);
     let pay = callable.iter().find(|t| t.name() == "mcp__x__pay").unwrap();
     assert_eq!(pay.on_resume(), crate::tool::OnResume::Lookup);
@@ -120,14 +122,14 @@ fn a_deferred_tool_keeps_what_it_does_on_resume() {
 #[test]
 fn nothing_deferrable_adds_no_search_tool() {
     let d = ToolDeferral::new(DeferMode::Proxy);
-    let builtins = &all()[..1];
-    assert_eq!(names(&advertised_tools(&d, builtins, marker)), ["Read"]);
+    let builtins: Tools = all()[..1].iter().cloned().collect();
+    assert_eq!(names(&advertised_tools(&d, &builtins, marker)), ["Read"]);
 }
 
 #[test]
 fn no_mcp_tool_is_kept_loaded_unless_a_host_names_it() {
     let d = ToolDeferral::new(DeferMode::Proxy);
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Named("mcp__host__send_message", "send"))];
+    let tools: Tools = Tools::from_iter([ToolRef::new(Named("mcp__host__send_message", "send"))]);
     assert_eq!(names(&advertised_tools(&d, &tools, marker)), ["ToolSearch"]);
 }
 
@@ -140,13 +142,13 @@ fn a_host_names_its_own_always_loaded_tools() {
     );
 }
 
-fn host_tools() -> Vec<Arc<dyn Tool>> {
-    vec![
-        Arc::new(Named("Read", "Read")),
-        Arc::new(Named("send_notification", "notify the person")),
-        Arc::new(Named("search_transcripts", "earlier conversations")),
-        Arc::new(Named("mcp__x__weather", "current weather for a city")),
-    ]
+fn host_tools() -> Tools {
+    Tools::from_iter([
+        ToolRef::new(Named("Read", "Read")),
+        ToolRef::new(Named("send_notification", "notify the person")),
+        ToolRef::new(Named("search_transcripts", "earlier conversations")),
+        ToolRef::new(Named("mcp__x__weather", "current weather for a city")),
+    ])
 }
 
 #[test]
@@ -192,7 +194,7 @@ fn every_tool_is_callable_and_calling_a_deferred_one_loads_it() {
         .iter()
         .find(|t| t.name() == "send_notification")
         .unwrap();
-    let ctx = ToolContext::new("/", Arc::new(crate::workspace::ShutWorkspace));
+    let ctx = ToolContext::new("/", crate::workspace::ShutWorkspace);
     let out = futures::executor::block_on(notify.execute(JsonMap::new(), &ctx)).unwrap();
     assert_eq!(out.content, "send_notification");
     assert_eq!(

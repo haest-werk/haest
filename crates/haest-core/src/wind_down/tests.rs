@@ -22,7 +22,7 @@ use crate::{
     remedy::{Limit, Remedies},
     testing::{ScriptedProvider, text_answer},
     threshold::Watch,
-    tool::{Tool, ToolError, ToolOutput},
+    tool::{ToolError, ToolOutput, ToolRef},
 };
 
 struct Quiet;
@@ -42,7 +42,7 @@ fn ledger(usd: f64) -> Arc<Mutex<Ledger>> {
 
 /// "Spawn": starts new work unless the turn is winding down, then refuses
 /// with the fact. Every start is counted.
-fn spawn_tool(started: Arc<Mutex<u32>>) -> Arc<dyn Tool> {
+fn spawn_tool(started: Arc<Mutex<u32>>) -> ToolRef {
     FnTool::arc("Spawn", false, move |_, ctx| {
         let started = started.clone();
         async move {
@@ -90,7 +90,9 @@ fn agent(p: &Arc<ScriptedProvider>, opts: Opts, at: f64) -> (crate::Agent, Arc<M
 }
 
 fn winding_down_at(agent: &mut crate::Agent, at: f64) {
-    agent.deps_mut().shared.thresholds = Thresholds::default().wind_down(WindDown::at(at).unwrap());
+    agent.map_deps(|d| {
+        d.with_thresholds(Thresholds::default().wind_down(WindDown::at(at).unwrap()))
+    });
 }
 
 /// What a tool asks of a turn that winds down at `at`, `elapsed` into it on

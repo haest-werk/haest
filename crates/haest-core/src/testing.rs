@@ -13,10 +13,8 @@
 //! sent.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_core::{
-//!     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tool,
+//!     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tool, Tools,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //! };
 //! use serde_json::json;
@@ -41,14 +39,7 @@
 //!     tool_answer(&[("call-1", "Shout", json!({"text": "hello"}))]),
 //!     text_answer("It says HELLO."),
 //! ]);
-//! let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Shout)];
-//! let deps = AgentDeps::new(
-//!     Arc::new(model.resolver()),
-//!     Arc::new(tools),
-//!     Arc::new("You shout.".to_string()),
-//!     "/",
-//!     Arc::new(ShutWorkspace),
-//! );
+//! let deps = AgentDeps::new(model.resolver(), Tools::new().with(Shout), "You shout.", "/", ShutWorkspace);
 //! let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 //!
 //! let mut events: Vec<LoopEvent> = Vec::new();

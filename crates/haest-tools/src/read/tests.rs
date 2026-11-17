@@ -100,7 +100,7 @@ impl ToolServices for Publishing {
 async fn a_published_image_carries_its_url_to_the_transcript() {
     let ws = TestWorkspace::with_files([("/p/a.gif", &[1u8, 2, 3][..])]);
     let mut c = ctx(ws);
-    c.services = Arc::new(Publishing);
+    c.services = (Publishing).into();
     let r = ReadTool::default()
         .execute(input(json!({"file_path": "a.gif"})), &c)
         .await

@@ -1,0 +1,141 @@
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
+
+use async_trait::async_trait;
+use serde_json::json;
+
+use super::*;
+use crate::{
+    agent::AgentOptions,
+    events::LoopEvent,
+    testing::{ScriptedProvider, text_answer, tool_answer},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices, Tools},
+    workspace::ShutWorkspace,
+};
+
+fn deps(prompt: impl Into<SystemPromptRef>) -> AgentDeps {
+    let provider = ScriptedProvider::new([]);
+    AgentDeps::new(
+        provider.resolver(),
+        Tools::new(),
+        prompt,
+        "/",
+        ShutWorkspace,
+    )
+}
+
+#[tokio::test]
+async fn a_str_a_string_and_a_closure_are_system_prompts() {
+    assert_eq!(deps("fixed").system_prompt().system_prompt().await, "fixed");
+    let owned = String::from("owned");
+    assert_eq!(deps(owned).system_prompt().system_prompt().await, "owned");
+
+    let calls = Arc::new(AtomicU64::new(0));
+    let counted = calls.clone();
+    let built = deps(move || format!("call {}", counted.fetch_add(1, Ordering::SeqCst)));
+    assert_eq!(built.system_prompt().system_prompt().await, "call 0");
+    assert_eq!(built.system_prompt().system_prompt().await, "call 1");
+}
+
+/// One object behind several slots: the hooks, the clock and the caps.
+#[derive(Default)]
+struct Host {
+    now: AtomicU64,
+    warned: Mutex<Vec<String>>,
+}
+
+impl AgentHooks for Host {
+    fn on_warning(&self, text: &str) {
+        self.warned.lock().unwrap().push(text.into());
+    }
+}
+
+impl Clock for Host {
+    fn now_ms(&self) -> u64 {
+        self.now.load(Ordering::SeqCst)
+    }
+}
+
+#[test]
+fn one_shared_object_fills_several_slots() {
+    let host = Arc::new(Host::default());
+    let deps = deps("p").with_hooks(host.clone()).with_clock(host.clone());
+    host.now.store(42, Ordering::SeqCst);
+    assert_eq!(deps.shared().clock().now_ms(), 42);
+    deps.shared().hooks().on_warning("careful");
+    assert_eq!(*host.warned.lock().unwrap(), ["careful"]);
+    // A clone of the deps shares the same objects.
+    let again = deps.clone();
+    assert!(AgentHooksRef::ptr_eq(
+        deps.shared().hooks(),
+        again.shared().hooks()
+    ));
+}
+
+/// Publishes what it is called with.
+struct Publish;
+
+#[async_trait]
+impl Tool for Publish {
+    fn name(&self) -> &str {
+        "Publish"
+    }
+    fn description(&self) -> String {
+        "Publish bytes.".into()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        json!({"type": "object"})
+    }
+    fn kind(&self) -> &str {
+        "test.publish"
+    }
+    async fn execute(&self, _: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        let url = ctx.services.publish(b"bytes".to_vec(), "text/plain").await;
+        Ok(ToolOutput::text(url.unwrap_or_else(|| "none".into())))
+    }
+}
+
+/// Answers every publish with a URL, and counts them.
+#[derive(Default)]
+struct Blobs(AtomicU64);
+
+#[async_trait]
+impl ToolServices for Blobs {
+    async fn publish(&self, _: Vec<u8>, _: &str) -> Option<String> {
+        Some(format!("blob://{}", self.0.fetch_add(1, Ordering::SeqCst)))
+    }
+}
+
+async fn published(deps: AgentDeps) -> String {
+    let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
+    let mut events: Vec<LoopEvent> = Vec::new();
+    agent.run("publish", &mut events).await;
+    let result = events.iter().find_map(|e| match e {
+        LoopEvent::ToolResult { output, .. } => Some(output.content.clone()),
+        _ => None,
+    });
+    result.expect("the tool ran")
+}
+
+#[tokio::test]
+async fn tools_reach_the_services_slot_not_the_hooks() {
+    let script = || {
+        [
+            tool_answer(&[("c1", "Publish", json!({}))]),
+            text_answer("done"),
+        ]
+    };
+    let provider = ScriptedProvider::new(script());
+    let tools = Tools::new().with(Publish);
+    let plain = AgentDeps::new(provider.resolver(), tools.clone(), "", "/", ShutWorkspace);
+    assert_eq!(published(plain).await, "none");
+
+    let provider = ScriptedProvider::new(script());
+    let blobs = Arc::new(Blobs::default());
+    let served = AgentDeps::new(provider.resolver(), tools, "", "/", ShutWorkspace)
+        .with_services(blobs.clone());
+    assert_eq!(published(served).await, "blob://0");
+    assert_eq!(blobs.0.load(Ordering::SeqCst), 1);
+}

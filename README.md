@@ -191,8 +191,17 @@ More providers go in `<config dir>/providers.json`
 A host builds `AgentDeps` (the agent's tools and system prompt, and the
 `SharedDeps` every agent of the conversation shares: models, workspace, hooks
 and the rest), makes an `Agent` and calls `run(input, &mut sink)` once per
-human turn. Every place a host differs is a trait: `HttpClient` for how
-requests travel, `Fs` and `Workspace` for files and shell, `Tool` and
+human turn. Each part goes in as the value itself (a closure, a string, a
+host's own type), never wrapped in an `Arc`:
+
+```rust
+let tools = builtin_tools(BuiltinOptions::default());
+let deps = AgentDeps::new(models, tools, "You are terse.", cwd, RealWorkspace::new(env))
+    .with_hooks(host);
+```
+
+Every place a host differs is a trait: `HttpClient` for how requests
+travel, `Fs` and `Workspace` for files and shell, `Tool` and
 `ReadIntercept` for tools, `AgentHooks` for saving each message and compacting
 before a model call, `ModelFacts` for what the host knows of each model,
 `TurnCapsSource` for each turn's caps, `Clock` for the time a turn's cap reads,

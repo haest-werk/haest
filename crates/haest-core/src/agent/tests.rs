@@ -3,8 +3,6 @@
 
 mod plug_points;
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -16,7 +14,6 @@ use crate::{
     messages::Message,
     provider::ModelError,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::ToolServices,
     workspace::ShutWorkspace,
 };
 
@@ -200,11 +197,11 @@ async fn an_unknown_provider_ends_the_turn_as_an_error_not_a_panic() {
         })
     };
     let deps = AgentDeps::new(
-        Arc::new(resolve),
-        Arc::new(Vec::<Arc<dyn crate::tool::Tool>>::new()),
-        Arc::new(String::new()),
+        resolve,
+        crate::tool::Tools::new(),
+        "",
         "/tmp",
-        Arc::new(ShutWorkspace),
+        ShutWorkspace,
     );
     let mut agent = Agent::new(deps, AgentOptions::new("zzz:m"));
     let events = collect(&mut agent, "hi").await;

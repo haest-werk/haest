@@ -40,7 +40,7 @@ use signature::signature;
 
 use crate::{
     caps::{TurnCaps, request_too_big},
-    deps::Clock,
+    deps::ClockRef,
     ledger::Ledger,
     messages::{ToolCall, Usage},
     remedy::{Limit, Remedies},
@@ -70,7 +70,7 @@ struct Repeat {
 /// calls, charges the conversation ledger, and says when to nudge and when to
 /// stop.
 pub(crate) struct TurnGuard {
-    clock: Arc<dyn Clock>,
+    clock: ClockRef,
     ledger: Option<Arc<Mutex<Ledger>>>,
     remedies: Remedies,
     started: u64,
@@ -90,10 +90,11 @@ impl TurnGuard {
     /// A fresh guard for one turn; its time cap counts from now on `clock`.
     /// A stop's text ends with the host's remedy for its cap.
     pub(crate) fn new(
-        clock: Arc<dyn Clock>,
+        clock: impl Into<ClockRef>,
         ledger: Option<Arc<Mutex<Ledger>>>,
         remedies: Remedies,
     ) -> Self {
+        let clock = clock.into();
         let started = clock.now_ms();
         Self {
             clock,

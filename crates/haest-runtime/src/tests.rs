@@ -53,7 +53,7 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
         .await
         .unwrap();
 
-    let prompt = rt.agent().deps().system_prompt.system_prompt().await;
+    let prompt = rt.agent().deps().system_prompt().system_prompt().await;
     assert!(
         prompt.contains("Answer in haiku."),
         "AGENTS.md from the host's Fs"
@@ -61,7 +61,7 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
     let tools: Vec<String> = rt
         .agent()
         .deps()
-        .tools
+        .tools()
         .tools()
         .iter()
         .map(|t| t.name().to_string())
@@ -75,8 +75,8 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
     let err = rt
         .agent()
         .deps()
-        .shared
-        .models
+        .shared()
+        .models()
         .resolve("anthropic:claude-opus-5-5")
         .err()
         .unwrap()
@@ -123,7 +123,7 @@ async fn the_wind_down_setting_reaches_the_conversation_and_is_off_unless_set() 
 
     // The marks of the conversation's wind-down thresholds.
     let marks = |rt: &Runtime<Recorded>| -> Vec<Mark> {
-        let thresholds = &rt.agent().deps().shared.thresholds;
+        let thresholds = &rt.agent().deps().shared().thresholds();
         let winding = thresholds.iter().filter(|t| t.action() == Action::WindDown);
         winding.map(|t| t.mark()).collect()
     };
@@ -144,8 +144,8 @@ async fn a_key_the_host_hands_in_is_the_key_haest_uses() {
     assert!(
         rt.agent()
             .deps()
-            .shared
-            .models
+            .shared()
+            .models()
             .resolve(rt.agent().model_spec())
             .is_ok()
     );
@@ -185,8 +185,8 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
     let model = rt
         .agent()
         .deps()
-        .shared
-        .models
+        .shared()
+        .models()
         .resolve(rt.agent().model_spec())
         .unwrap();
     let req = ProviderRequest {
@@ -203,7 +203,7 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
     assert!(matches!(events.last(), Some(ProviderEvent::Done(_))));
     assert_eq!(gateway.0.lock().unwrap().len(), 1, "the model call");
 
-    let tools = rt.agent().deps().tools.tools();
+    let tools = rt.agent().deps().tools().tools();
     let image = tools.iter().find(|t| t.name() == "GenerateImage").unwrap();
     let ctx = ToolContext::new("/w", Arc::new(ShutWorkspace));
     let input = json!({"prompt": "a lighthouse"});

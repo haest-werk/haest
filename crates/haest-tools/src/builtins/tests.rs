@@ -1,7 +1,8 @@
 use super::*;
 use crate::{JobHub, inbox};
+use haest_core::ToolRef;
 
-fn names(tools: &[Arc<dyn Tool>]) -> Vec<String> {
+fn names(tools: &[ToolRef]) -> Vec<String> {
     tools.iter().map(|t| t.name().to_string()).collect()
 }
 

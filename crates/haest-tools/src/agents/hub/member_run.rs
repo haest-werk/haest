@@ -1,19 +1,19 @@
 //! One subagent's run inside the hub: build its agent, drive its turn, close
 //! its run.
 
-use std::{panic::AssertUnwindSafe, sync::Arc};
+use std::panic::AssertUnwindSafe;
 
 use futures::FutureExt;
 use haest_core::{
-    __private::panic_message, Agent, AgentDeps, AgentOptions, SharedDeps, provider::Effort,
-    tool::Tool,
+    __private::panic_message, Agent, AgentDeps, AgentOptions, ToolSourceRef, Tools,
+    provider::Effort,
 };
 use tokio_util::sync::CancellationToken;
 
 use super::SubagentHub;
 use crate::agents::{
     MemberCaps, MemberEnd, MemberRun, MemberStart, SpawnOutcome, SubagentBudget, SubagentEvent,
-    run::{ChildCaps, ChildHooks, ChildPrompt, Run, drive},
+    run::{ChildCaps, ChildHooks, ChildPrompt, ChildServices, Run, drive},
 };
 
 impl SubagentHub {
@@ -58,14 +58,14 @@ impl SubagentHub {
         effort: Option<Effort>,
         member: &dyn MemberRun,
     ) -> Agent {
-        let mut tools: Vec<Arc<dyn Tool>> = self
+        let mut tools: Tools = self
             .parent
             .subagent_tools(start.input.subagent_type.as_deref())
             .into_iter()
             .filter(|t| crate::builtin_word(t.name()) != Some("tasks"))
             .collect();
         tools.extend(self.tools_for(&run.me));
-        let source = self.parent.tool_source(tools);
+        let source: ToolSourceRef = self.parent.tool_source(tools).into();
         let model_spec = member
             .model_spec()
             .unwrap_or_else(|| start.model_spec.clone());
@@ -80,31 +80,27 @@ impl SubagentHub {
         // Its own deps keep their hooks; the conversation's are lent, persisting nothing.
         let base = member.deps().unwrap_or_else(|| {
             let base = self.parent.deps();
-            SharedDeps {
-                hooks: Arc::new(ChildHooks {
-                    hooks: base.hooks.clone(),
-                    parent: self.parent.clone(),
-                    id: run.id.clone(),
-                }),
-                ..base
-            }
-        });
-        let deps = AgentDeps {
-            tools: source.clone(),
-            system_prompt: Arc::new(ChildPrompt {
+            let hooks = ChildHooks {
+                hooks: base.hooks().clone(),
+            };
+            let services = ChildServices {
+                services: base.services().clone(),
                 parent: self.parent.clone(),
-                model_spec: model_spec.clone(),
-                tools: source,
-                note,
-            }),
-            shared: SharedDeps {
-                turn_caps: Arc::new(ChildCaps {
-                    caps: base.turn_caps.clone(),
-                    subagent: caps,
-                }),
-                ..base
-            },
+                id: run.id.clone(),
+            };
+            base.with_hooks(hooks).with_services(services)
+        });
+        let child_caps = ChildCaps {
+            caps: base.turn_caps().clone(),
+            subagent: caps,
         };
+        let prompt = ChildPrompt {
+            parent: self.parent.clone(),
+            model_spec: model_spec.clone(),
+            tools: source.clone(),
+            note,
+        };
+        let deps = AgentDeps::from_shared(base.with_turn_caps(child_caps), source, prompt);
         let mut opts = AgentOptions::new(model_spec);
         opts.effort = effort;
         Agent::new(deps, opts)
@@ -161,7 +157,7 @@ impl SubagentHub {
         if let Err(p) = AssertUnwindSafe(member.end(end)).catch_unwind().await {
             let why = panic_message(p.as_ref()).unwrap_or("a panic");
             let log = format!("subagent {}: its run's end panicked: {why}", run.id);
-            self.parent.deps().hooks.debug(&log);
+            self.parent.deps().services().debug(&log);
         }
         SpawnOutcome { text, cost_usd }
     }

@@ -32,7 +32,7 @@ let mut tools = issue_tools(Arc::new(github));
 let board = CardTracker::new(Arc::new(RealFs), "/path/to/project/cards");
 tools.extend(issue_tools_named(Arc::new(board), "Card")); // CardList, CardGet, ...
 
-// Hand `tools` to the agent with its others (AgentDeps::new(models, Arc::new(tools), ...)).
+// Hand `tools` to the agent with its others (AgentDeps::new(models, tools, ...)).
 ```
 
 `cargo run -p haest-issues --example issues` runs a scripted agent that plans

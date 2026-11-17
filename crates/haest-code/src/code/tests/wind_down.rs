@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 
 use super::{code_over, run_in};
 use crate::testkit::{MemWorkspace, ctx};
+use haest_core::ToolRef;
 
 /// Records whether its call saw the turn winding down.
 #[derive(Default)]
@@ -43,7 +44,7 @@ impl Tool for Sees {
 #[tokio::test]
 async fn a_tool_called_from_code_sees_the_callers_wind_down() {
     let sees = Arc::new(Sees::default());
-    let tool = code_over(vec![sees.clone()], &["Sees"]);
+    let tool = code_over(vec![ToolRef::from(sees.clone())], &["Sees"]);
     let code = "await tools.Sees({}); return 1";
     let mut c = ctx(MemWorkspace::with_files::<&str, &str>([]));
     run_in(&tool, code, json!({}), &c).await;

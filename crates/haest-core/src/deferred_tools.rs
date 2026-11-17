@@ -27,9 +27,12 @@
 //!
 //! The ToolSearch / CallTool tools themselves live in `haest-tools` (`tool_search`).
 
-use std::{collections::HashSet, sync::Arc, sync::Mutex};
+use std::{collections::HashSet, sync::Mutex};
 
-use crate::{messages::Message, tool::Tool};
+use crate::{
+    messages::Message,
+    tool::{Tool, ToolRef, Tools},
+};
 
 crate::word_enum! {
     /// How deferred tools reach the model; see the [module docs](self).
@@ -46,15 +49,13 @@ crate::word_enum! {
 
 const MAX_MATCHES: usize = 5;
 
-type Tools = Vec<Arc<dyn Tool>>;
-
 /// Exact `select:a,b`, else keyword match over name + description, best first (at most 5).
 ///
 /// `select:` returns the named tools in `pool` order, unknown names skipped.
 /// A keyword query scores each tool per word: 3 for a hit in the name, 1 for
 /// a hit anywhere in name or description, case-insensitive; ties keep `pool`
 /// order and tools that score nothing are left out.
-pub fn search_tools(pool: &[Arc<dyn Tool>], query: &str) -> Vec<Arc<dyn Tool>> {
+pub fn search_tools(pool: &[ToolRef], query: &str) -> Tools {
     let q = query.trim();
     if let Some(list) = q.strip_prefix("select:") {
         let wanted: HashSet<&str> = list.split(',').map(str::trim).collect();
@@ -66,7 +67,7 @@ pub fn search_tools(pool: &[Arc<dyn Tool>], query: &str) -> Vec<Arc<dyn Tool>> {
     }
     let q = q.to_lowercase();
     let words: Vec<&str> = q.split_whitespace().collect();
-    let mut scored: Vec<(usize, &Arc<dyn Tool>)> = pool
+    let mut scored: Vec<(usize, &ToolRef)> = pool
         .iter()
         .map(|t| {
             let name = t.name().to_lowercase();
@@ -183,14 +184,12 @@ impl ToolDeferral {
 
     /// `all` split into the deferred tools and the rest, in `all` order;
     /// None when nothing defers (`off`, or no tool matches).
-    fn split(&self, all: &[Arc<dyn Tool>]) -> Option<(Tools, Tools)> {
+    fn split(&self, all: &[ToolRef]) -> Option<(Vec<ToolRef>, Vec<ToolRef>)> {
         if self.mode == DeferMode::Off {
             return None;
         }
-        let (deferred, eager): (Vec<_>, Vec<_>) = all
-            .iter()
-            .cloned()
-            .partition(|t| self.is_deferrable(t.as_ref()));
+        let (deferred, eager): (Vec<_>, Vec<_>) =
+            all.iter().cloned().partition(|t| self.is_deferrable(&**t));
         (!deferred.is_empty()).then_some((deferred, eager))
     }
 }

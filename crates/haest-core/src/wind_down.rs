@@ -48,12 +48,12 @@ pub use watch::WindDownWatch;
 /// ```
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use std::sync::{Arc, Mutex};
 ///
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tool, ToolContext, ToolError,
-///     ToolOutput, Usage,
+///     ToolOutput, Tools, Usage,
 ///     caps::ConversationCaps,
 ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
 ///     testing::{ScriptedProvider, text_answer, tool_answer},
@@ -89,17 +89,11 @@ pub use watch::WindDownWatch;
 /// let mut asks = tool_answer(&[("c1", "Fan", json!({}))]);
 /// asks.usage = Usage { cost_usd: Some(0.85), ..Usage::default() };
 /// let provider = ScriptedProvider::new([asks, text_answer("Here is what I have.")]);
-/// let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Fan)];
 /// let budget = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
-/// let mut deps = AgentDeps::new(
-///     Arc::new(provider.resolver()),
-///     Arc::new(tools),
-///     Arc::new(String::new()),
-///     "/",
-///     Arc::new(ShutWorkspace),
-/// );
-/// deps.shared.ledger = Some(Arc::new(Mutex::new(Ledger::new(budget, Arc::new(Quiet)))));
-/// deps.shared.thresholds = Thresholds::default().wind_down(WindDown::at(0.8).unwrap());
+/// let ledger = Arc::new(Mutex::new(Ledger::new(budget, Arc::new(Quiet))));
+/// let deps = AgentDeps::new(provider.resolver(), Tools::new().with(Fan), "", "/", ShutWorkspace)
+///     .with_ledger(ledger)
+///     .with_thresholds(Thresholds::default().wind_down(WindDown::at(0.8)?));
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
 /// let mut events = Vec::new();
@@ -109,6 +103,7 @@ pub use watch::WindDownWatch;
 /// let notices = events.iter().filter(|e| matches!(e, LoopEvent::Guard { .. })).count();
 /// assert!(refused);
 /// assert_eq!(notices, 1);
+/// # Ok(())
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}

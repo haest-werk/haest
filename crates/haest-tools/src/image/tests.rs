@@ -7,9 +7,10 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use haest_core::{
     __private::{ToolIndex, run_call},
+    ToolRef, Tools,
     fs::Fs,
     messages::{MediaKind, ToolCall},
-    tool::{Tool, ToolContext, ToolOutput, ToolServices},
+    tool::{ToolContext, ToolOutput, ToolServices},
 };
 use haest_http::{HttpClient, HttpError, Method, Request, Response};
 use serde_json::{Value, json};
@@ -87,7 +88,7 @@ struct Rig {
     api: Arc<FakeApi>,
     ws: Arc<TestWorkspace>,
     published: Arc<Published>,
-    tool: Arc<dyn Tool>,
+    tool: ToolRef,
 }
 
 impl Rig {
@@ -105,19 +106,24 @@ impl Rig {
             api,
             ws: TestWorkspace::with_files([("/p/ref.png", [1u8, 2])]),
             published: Arc::default(),
-            tool: Arc::new(GenerateImageTool::new(opts)),
+            tool: ToolRef::new(GenerateImageTool::new(opts)),
         }
     }
 
     async fn run(&self, input: Value) -> ToolOutput {
         let mut ctx = ToolContext::new(CWD, self.ws.clone());
-        ctx.services = self.published.clone();
+        ctx.services = self.published.clone().into();
         let call = ToolCall {
             id: "g".into(),
             name: "GenerateImage".into(),
             input: testkit::input(input),
         };
-        run_call(&ToolIndex::new(vec![self.tool.clone()]), &call, &ctx).await
+        run_call(
+            &ToolIndex::new(Tools::from(vec![self.tool.clone()])),
+            &call,
+            &ctx,
+        )
+        .await
     }
 
     fn posted(&self) -> Vec<(String, String, Value)> {

@@ -12,8 +12,9 @@ use std::sync::{Arc, Mutex};
 use futures::FutureExt;
 use haest_core::{
     __private::{ToolIndex, run_unspilled},
+    ToolRef, Tools,
     messages::{MediaPart, ToolCall},
-    tool::{JsonMap, NoServices, Tool, ToolContext, ToolOutput, ToolServices},
+    tool::{JsonMap, NoServices, ToolContext, ToolOutput, ToolServicesRef},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -66,7 +67,7 @@ pub(crate) struct Bridge {
     inner: ToolContext,
     parent_id: String,
     /// Inner calls are reported only inside the loop, where there is a call to hang them under.
-    report: Option<Arc<dyn ToolServices>>,
+    report: Option<ToolServicesRef>,
     gate: CallGate,
     pub tally: Mutex<Tally>,
 }
@@ -85,11 +86,7 @@ struct SeeImage {
 }
 
 impl Bridge {
-    pub fn new(
-        callable: Vec<Arc<dyn Tool>>,
-        ctx: &ToolContext,
-        cancel: CancellationToken,
-    ) -> Arc<Self> {
+    pub fn new(callable: Tools, ctx: &ToolContext, cancel: CancellationToken) -> Arc<Self> {
         let schemas = callable
             .iter()
             .map(|t| (t.name().to_string(), t.parameters()))
@@ -100,7 +97,7 @@ impl Bridge {
             cwd: ctx.cwd.clone(),
             cancel,
             workspace: ctx.workspace.clone(),
-            services: Arc::new(NoServices),
+            services: NoServices.into(),
             context_room_tokens: None,
             tool_call_id: None,
             spill_dir: ctx.spill_dir.clone(),
@@ -131,7 +128,7 @@ impl Bridge {
     }
 
     /// The tool and this call's number, or why it may not run (a name outside the policy, the cap).
-    fn admit(&self, name: &str) -> Result<(Arc<dyn Tool>, usize), String> {
+    fn admit(&self, name: &str) -> Result<(ToolRef, usize), String> {
         let tool = self
             .tools
             .get(name)

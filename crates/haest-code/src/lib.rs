@@ -44,7 +44,7 @@
 //! use std::sync::Arc;
 //!
 //! use haest_code::{CodeTool, code_tool_names};
-//! use haest_core::{MemFs, Tool, ToolContext};
+//! use haest_core::{MemFs, Tool, ToolContext, Tools};
 //! use haest_tools::{FILE_TOOLS, GlobTool, ReadTool};
 //! use haest_workspace::SandboxWorkspace;
 //! use serde_json::json;
@@ -56,10 +56,10 @@
 //!     ("/project/notes/b.md", "done\n"),
 //!     ("/project/notes/c.md", "TODO: check the numbers\nTODO: ask Sam\n"),
 //! ]);
-//! let workspace = Arc::new(SandboxWorkspace::over(Arc::new(files)));
+//! let workspace = SandboxWorkspace::over(Arc::new(files));
 //!
 //! // The model's tools. Code may call the file tools among them.
-//! let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(ReadTool::default()), Arc::new(GlobTool)];
+//! let tools = Tools::new().with(ReadTool::default()).with(GlobTool);
 //! let allowed = FILE_TOOLS.map(String::from);
 //! let code = CodeTool::new(code_tool_names(&tools, &allowed), Arc::new(tools));
 //!

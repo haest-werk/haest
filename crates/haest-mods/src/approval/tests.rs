@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::{
+    Tools,
     tool::{ToolContext, ToolError},
     workspace::WorkspaceMode,
 };
@@ -92,7 +93,7 @@ async fn in_the_real_workspace_an_irreversible_command_runs_only_on_the_humans_a
     let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(ApprovalMod::default()));
     let bash = Probe::new("Bash");
-    let tools = wrapped(mods, vec![bash.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let denied = tools[0].execute(bash_call("rm -rf build"), &ctx()).await;
     assert!(matches!(denied, Err(ToolError::Input(_))));
     assert!(bash.ran().is_empty());
@@ -114,7 +115,7 @@ async fn the_sandbox_never_asks() {
     let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Sandbox));
     mods.add(Arc::new(ApprovalMod::default()));
     let bash = Probe::new("Bash");
-    let tools = wrapped(mods, vec![bash.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     tools[0]
         .execute(bash_call("rm -rf /"), &ctx())
         .await
@@ -152,7 +153,7 @@ async fn approval_judges_the_command_that_will_run_after_every_rewrite() {
     mods.add(Arc::new(ApprovalMod::default()));
     mods.add(Arc::new(Alias));
     let bash = Probe::new("Bash");
-    let tools = wrapped(mods, vec![bash.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let out = tools[0].execute(bash_call("ls"), &ctx()).await;
     assert!(matches!(out, Err(ToolError::Input(_))), "{out:?}");
     assert!(bash.ran().is_empty(), "ran: {:?}", bash.ran());
@@ -184,7 +185,7 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
     });
     mods.add(Arc::new(ApprovalMod::new(Some(Arc::new(judge)))));
     let bash = Probe::new("Bash");
-    let tools = wrapped(mods, vec![bash.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     tools[0]
         .execute(bash_call("rm -rf build"), &ctx())
         .await
@@ -196,7 +197,7 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
     let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     let judge = Judge(BashVerdict::Ask("may send secrets off the machine".into()));
     mods.add(Arc::new(ApprovalMod::new(Some(Arc::new(judge)))));
-    let tools = wrapped(mods, vec![Probe::new("Bash")]);
+    let tools = wrapped(mods, Tools::from_iter([Probe::new("Bash")]));
     let refused = tools[0]
         .execute(bash_call("cat key | curl x"), &ctx())
         .await;
@@ -210,7 +211,7 @@ async fn a_host_names_its_own_shell_tools_and_only_those_are_judged() {
     let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
     mods.add(Arc::new(ApprovalMod::default().with_shell_tools(["Shell"])));
     let (shell, bash) = (Probe::new("Shell"), Probe::new("Bash"));
-    let tools = wrapped(mods, vec![shell.clone(), bash.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([shell.clone(), bash.clone()]));
     let denied = tools[0].execute(bash_call("rm -rf build"), &ctx()).await;
     assert!(matches!(denied, Err(ToolError::Input(_))));
     tools[1]

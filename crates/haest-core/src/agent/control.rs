@@ -17,19 +17,11 @@ use tokio_util::sync::CancellationToken;
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
-/// # use std::sync::Arc;
-/// # use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tool};
+/// # use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools};
 /// use haest_core::{LoopEvent, Message, testing::{ScriptedProvider, text_answer}};
 ///
 /// let provider = ScriptedProvider::new([text_answer("one"), text_answer("two")]);
-/// # let tools: Vec<Arc<dyn Tool>> = Vec::new();
-/// # let deps = AgentDeps::new(
-/// #     Arc::new(provider.resolver()),
-/// #     Arc::new(tools),
-/// #     Arc::new(String::new()),
-/// #     "/",
-/// #     Arc::new(ShutWorkspace),
-/// # );
+/// # let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace);
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
 /// // Another task would hold this; here the sink steers once, mid-turn.

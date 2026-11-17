@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Effort, LoopEvent, Message, ModelError, ShutWorkspace,
-    StopReason, Tool,
+    StopReason, ToolRef, Tools,
     testing::{ScriptedProvider, text_answer, tool_answer},
 };
 use haest_wire::{Level, Outbound, Path, State};
@@ -28,7 +28,10 @@ fn waits_then(then: &[&str]) -> Arc<ScriptedProvider> {
 async fn input_mid_turn_lands_at_the_next_step() {
     let go = Arc::new(Notify::new());
     let model = waits_then(&["done, and noted"]);
-    let session = start(agent(&model, vec![Arc::new(Wait(go.clone()))]), hub());
+    let session = start(
+        agent(&model, Tools::from_iter([ToolRef::new(Wait(go.clone()))])),
+        hub(),
+    );
 
     let first = tokio::spawn({
         let s = session.clone();
@@ -69,7 +72,7 @@ async fn input_mid_turn_lands_at_the_next_step() {
 #[tokio::test]
 async fn input_while_held_runs_next_as_its_own_turn_through_the_gate() {
     let model = answers(&["for the peer", "for the person"]);
-    let recorded = Recorded::new(agent(&model, Vec::new()), 1);
+    let recorded = Recorded::new(agent(&model, Tools::new()), 1);
     let log = recorded.log.clone();
     let session = start(recorded, hub());
 
@@ -112,7 +115,7 @@ async fn input_while_held_runs_next_as_its_own_turn_through_the_gate() {
 #[tokio::test]
 async fn input_the_gate_holds_is_refused_and_a_persons_still_runs() {
     let model = answers(&["for the person"]);
-    let session = start(Recorded::new(agent(&model, Vec::new()), 0), hub());
+    let session = start(Recorded::new(agent(&model, Tools::new()), 0), hub());
 
     let hold = session.hold().await.unwrap();
     let peer = tokio::spawn({
@@ -180,7 +183,10 @@ async fn an_unread_human_steer_runs_next_as_a_human_turn() {
 async fn an_interrupt_stops_the_running_tool_and_the_turn() {
     let go = Arc::new(Notify::new());
     let model = waits_then(&["never sent"]);
-    let session = start(agent(&model, vec![Arc::new(Wait(go))]), hub());
+    let session = start(
+        agent(&model, Tools::from_iter([ToolRef::new(Wait(go))])),
+        hub(),
+    );
 
     let turn = tokio::spawn({
         let s = session.clone();
@@ -205,7 +211,7 @@ async fn a_lagging_subscriber_gets_one_gap_and_the_turn_never_waits() {
         ring: 1000,
         buffer: 2,
     };
-    let session = start(agent(&model, Vec::new()), Hub::new("s1", opts));
+    let session = start(agent(&model, Tools::new()), Hub::new("s1", opts));
     let mut slow = session.subscribe(0);
 
     // Three turns while it reads nothing: none waits for it.
@@ -247,7 +253,7 @@ async fn a_lagging_subscriber_gets_one_gap_and_the_turn_never_waits() {
 #[tokio::test]
 async fn two_subscribers_see_the_same_frames_in_the_same_order() {
     let model = answers(&["shared"]);
-    let session = start(agent(&model, Vec::new()), hub());
+    let session = start(agent(&model, Tools::new()), hub());
     let mut a = session.subscribe(0);
     let mut b = session.subscribe(0);
 
@@ -275,7 +281,7 @@ async fn a_late_subscriber_catches_up_on_the_running_turn() {
         buffer: 64,
     };
     let session = start(
-        agent(&model, vec![Arc::new(Wait(go.clone()))]),
+        agent(&model, Tools::from_iter([ToolRef::new(Wait(go.clone()))])),
         Hub::new("s1", opts),
     );
     session.hub().notice(Level::Info, "before the turn");
@@ -313,7 +319,10 @@ async fn a_late_subscriber_catches_up_on_the_running_turn() {
 async fn a_change_waits_for_the_running_turn() {
     let go = Arc::new(Notify::new());
     let model = waits_then(&["done"]);
-    let session = start(agent(&model, vec![Arc::new(Wait(go.clone()))]), hub());
+    let session = start(
+        agent(&model, Tools::from_iter([ToolRef::new(Wait(go.clone()))])),
+        hub(),
+    );
 
     let turn = tokio::spawn({
         let s = session.clone();
@@ -354,7 +363,10 @@ async fn a_change_waits_for_the_running_turn() {
 async fn with_runs_between_turns_and_hands_back_what_it_gives() {
     let go = Arc::new(Notify::new());
     let model = waits_then(&["done"]);
-    let session = start(agent(&model, vec![Arc::new(Wait(go.clone()))]), hub());
+    let session = start(
+        agent(&model, Tools::from_iter([ToolRef::new(Wait(go.clone()))])),
+        hub(),
+    );
 
     let turn = tokio::spawn({
         let s = session.clone();
@@ -376,7 +388,7 @@ async fn with_runs_between_turns_and_hands_back_what_it_gives() {
 #[tokio::test]
 async fn input_sent_under_a_hold_waits_and_runs_as_a_turn_of_its_own() {
     let model = answers(&["one", "two"]);
-    let session = start(agent(&model, Vec::new()), hub());
+    let session = start(agent(&model, Tools::new()), hub());
 
     let hold = session.hold().await.unwrap();
     let first = session.send_input(Input::human("first")).unwrap();
@@ -398,7 +410,7 @@ async fn input_sent_under_a_hold_waits_and_runs_as_a_turn_of_its_own() {
 #[tokio::test]
 async fn close_closes_the_conversation_and_ends_every_stream() {
     let model = answers(&["bye"]);
-    let recorded = Recorded::new(agent(&model, Vec::new()), 0);
+    let recorded = Recorded::new(agent(&model, Tools::new()), 0);
     let log = recorded.log.clone();
     let session = start(recorded, hub());
     let mut sub = session.subscribe(0);
@@ -419,7 +431,7 @@ async fn close_closes_the_conversation_and_ends_every_stream() {
 #[tokio::test]
 async fn dropping_every_handle_closes_the_conversation() {
     let model = answers(&[]);
-    let recorded = Recorded::new(agent(&model, Vec::new()), 0);
+    let recorded = Recorded::new(agent(&model, Tools::new()), 0);
     let log = recorded.log.clone();
     let session = start(recorded, hub());
     drop(session);
@@ -435,7 +447,7 @@ async fn a_failed_change_changes_nothing_and_says_why() {
         Some(("scripted", _)) => known(spec),
         _ => Err(ModelError::BadSpec { spec: spec.into() }),
     };
-    let tools: Vec<Arc<dyn Tool>> = Vec::new();
+    let tools = Tools::new();
     let deps = AgentDeps::new(
         Arc::new(resolve),
         Arc::new(tools),
@@ -465,7 +477,7 @@ async fn a_failed_change_changes_nothing_and_says_why() {
 #[tokio::test]
 async fn status_frames_say_when_a_turn_runs_and_what_changed() {
     let model = answers(&["ok"]);
-    let session = start(agent(&model, Vec::new()), hub());
+    let session = start(agent(&model, Tools::new()), hub());
     let mut sub = session.subscribe(0);
     session.turn(Input::human("go")).await.unwrap();
     session

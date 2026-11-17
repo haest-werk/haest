@@ -17,7 +17,6 @@ use haest::{
         remedy::{Limit, Remedies},
         testing::{ScriptedProvider, text_answer, tool_answer},
         threshold::Thresholds,
-        tool::Tool,
         wind_down::WindDown,
     },
     settings::Settings,
@@ -96,7 +95,7 @@ async fn run() {
         text_answer("From the logs: nothing unusual. I stopped there: the budget is nearly spent."),
     ]);
     let helpers = Arc::new(Helpers::default());
-    let tools: Vec<Arc<dyn Tool>> = agent_tools(helpers.clone(), AgentRef::main(), true);
+    let tools = agent_tools(helpers.clone(), AgentRef::main(), true);
     // The host's way past the budget, added to haest's refusal.
     let remedies = Remedies::new(|limit| match limit {
         Limit::Conversation(ConversationCap::Usd(cap)) => {
@@ -109,17 +108,17 @@ async fn run() {
         max_unpriced_tokens: 0,
     };
     let ledger = Ledger::new(budget, Arc::new(Quiet)).with_remedies(remedies.clone());
-    let mut deps = AgentDeps::new(
-        Arc::new(provider.resolver()),
-        Arc::new(tools),
-        Arc::new("You lead a small team.".to_string()),
+    let deps = AgentDeps::new(
+        provider.resolver(),
+        tools,
+        "You lead a small team.",
         "/work",
-        Arc::new(ShutWorkspace),
-    );
-    deps.shared.ledger = Some(Arc::new(Mutex::new(ledger)));
-    deps.shared.remedies = remedies;
+        ShutWorkspace,
+    )
+    .with_ledger(Arc::new(Mutex::new(ledger)))
+    .with_remedies(remedies)
     // Wind-down is a set of thresholds, beside the guard's nudges.
-    deps.shared.thresholds = Thresholds::default().wind_down(settings.wind_down_at);
+    .with_thresholds(Thresholds::default().wind_down(settings.wind_down_at));
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:lead"));
 
     let (mut refused, mut notices) = (0, 0);

@@ -261,6 +261,12 @@ pub trait Workspace: Send + Sync {
     }
 }
 
+crate::plug_ref! {
+    /// A [`Workspace`], shared: what [`SharedDeps::workspace`](crate::SharedDeps::workspace)
+    /// and every [`ToolContext`](crate::ToolContext) hold.
+    pub struct WorkspaceRef(dyn Workspace);
+}
+
 /// No files, no shell: every file call fails ([`ShutFs`]) and every command
 /// ends with [`EXIT_NOT_FOUND`]. The prompt note tells the model to work with
 /// the tools it was given.

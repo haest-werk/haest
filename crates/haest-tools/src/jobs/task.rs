@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use haest_core::workspace::{ExecOptions, OutputChunks, Workspace};
+use haest_core::workspace::{ExecOptions, OutputChunks, WorkspaceRef};
 use tokio_util::sync::CancellationToken;
 
 use super::{Job, JobEvents, JobStatus, entry::Jobs};
@@ -71,7 +71,7 @@ impl Shared {
 /// Run `job` until it exits or `stop` fires (the workspace kills it then).
 pub(super) async fn run(
     shared: Arc<Shared>,
-    workspace: Arc<dyn Workspace>,
+    workspace: WorkspaceRef,
     job: Job,
     cwd: PathBuf,
     stop: CancellationToken,

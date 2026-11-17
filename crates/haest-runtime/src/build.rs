@@ -203,17 +203,16 @@ where
 
     // What every agent of the conversation runs on; tools and prompt are each
     // agent's own (the hub gives every subagent its own, main's hold the hub).
-    let shared = SharedDeps {
-        spill_dir: Some(spill),
-        hooks: hooks.clone(),
-        facts: hooks.clone(),
-        turn_caps: hooks.clone(),
-        ledger: Some(ledger.clone()),
-        web_search: s.web_search_options(),
-        remedies: hooks.remedies(),
-        thresholds: Thresholds::default().wind_down(s.wind_down_at),
-        ..SharedDeps::new(Arc::new(registry), s.cwd.clone(), found.workspace)
-    };
+    let shared = SharedDeps::new(registry, s.cwd.clone(), found.workspace)
+        .with_spill_dir(spill)
+        .with_hooks(hooks.clone())
+        .with_services(hooks.clone())
+        .with_facts(hooks.clone())
+        .with_turn_caps(hooks.clone())
+        .with_ledger(ledger.clone())
+        .with_web_search(s.web_search_options())
+        .with_remedies(hooks.remedies())
+        .with_thresholds(Thresholds::default().wind_down(s.wind_down_at));
     let subagents = RuntimeParent {
         hooks: hooks.clone(),
         deps: shared.clone(),
@@ -234,11 +233,8 @@ where
         model_spec: None,
         tools: tools.clone(),
     };
-    let deps = AgentDeps {
-        tools,
-        system_prompt: Arc::new(ModSystemPrompt::new(Arc::new(main_prompt), mods.clone())),
-        shared,
-    };
+    let system_prompt = ModSystemPrompt::new(Arc::new(main_prompt), mods.clone());
+    let deps = AgentDeps::from_shared(shared, tools, system_prompt);
 
     let mut agent_opts = AgentOptions::new(model);
     agent_opts.effort = effort;

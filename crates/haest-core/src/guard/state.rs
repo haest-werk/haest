@@ -69,7 +69,7 @@ mod tests {
     fn guard_at(now: &Arc<AtomicU64>) -> TurnGuard {
         let now = now.clone();
         TurnGuard::new(
-            Arc::new(move || now.load(Ordering::SeqCst)),
+            move || now.load(Ordering::SeqCst),
             None,
             Remedies::default(),
         )

@@ -19,16 +19,17 @@ use tokio_util::sync::CancellationToken;
 
 use super::{CodeTool, MAX_CALLS, OUTPUT_END, code_callable, code_tool_names};
 use crate::testkit::{MemWorkspace, Probe, ctx, input};
+use haest_core::{ToolRef, Tools};
 
-fn builtins() -> Vec<Arc<dyn Tool>> {
-    vec![
-        Arc::new(ReadTool::default()),
-        Arc::new(WriteTool),
-        Arc::new(EditTool),
-        Arc::new(GrepTool),
-        Arc::new(GlobTool),
-        Arc::new(BashTool::new(BashOptions::default())),
-    ]
+fn builtins() -> Tools {
+    Tools::from_iter([
+        ToolRef::new(ReadTool::default()),
+        ToolRef::new(WriteTool),
+        ToolRef::new(EditTool),
+        ToolRef::new(GrepTool),
+        ToolRef::new(GlobTool),
+        ToolRef::new(BashTool::new(BashOptions::default())),
+    ])
 }
 
 /// What haest-runtime allows: the file tools, then the host's `extra` names.
@@ -41,7 +42,8 @@ fn allowed(extra: &[&str]) -> Vec<String> {
 }
 
 /// A Code tool over `tools`, the way a host builds it: names from the policy, calls into the list.
-fn code_over(tools: Vec<Arc<dyn Tool>>, extra: &[&str]) -> CodeTool {
+fn code_over(tools: impl Into<Tools>, extra: &[&str]) -> CodeTool {
+    let tools: Tools = tools.into();
     CodeTool::new(code_tool_names(&tools, &allowed(extra)), Arc::new(tools))
 }
 
@@ -73,27 +75,37 @@ fn probe(name: &str, read_only: bool, ms: u64) -> Arc<Probe> {
     Arc::new(Probe::new(name, read_only, ms))
 }
 
-fn arc(p: &Arc<Probe>) -> Arc<dyn Tool> {
-    p.clone()
+fn arc(p: &Arc<Probe>) -> ToolRef {
+    p.clone().into()
 }
 
 /// label, tool, the host's extra names, callable?
-type Case = (&'static str, Arc<dyn Tool>, &'static [&'static str], bool);
+type Case = (&'static str, ToolRef, &'static [&'static str], bool);
 
 #[test]
 fn code_callable_follows_the_policy() {
-    let read: Arc<dyn Tool> = Arc::new(ReadTool::default());
-    let bash: Arc<dyn Tool> = Arc::new(BashTool::new(BashOptions::default()));
+    let read = ToolRef::new(ReadTool::default());
+    let bash = ToolRef::new(BashTool::new(BashOptions::default()));
     let cases: [Case; 8] = [
         ("Read", read, &[], true),
-        ("Grep", Arc::new(GrepTool), &[], true),
-        ("Write", Arc::new(WriteTool), &[], true),
+        ("Grep", ToolRef::new(GrepTool), &[], true),
+        ("Write", ToolRef::new(WriteTool), &[], true),
         ("Bash", bash.clone(), &[], false),
-        ("read-only MCP", probe("mcp__s__list", true, 0), &[], true),
-        ("writing MCP", probe("mcp__s__send", false, 0), &[], false),
+        (
+            "read-only MCP",
+            probe("mcp__s__list", true, 0).into(),
+            &[],
+            true,
+        ),
+        (
+            "writing MCP",
+            probe("mcp__s__send", false, 0).into(),
+            &[],
+            false,
+        ),
         (
             "writing MCP on the allowlist by prefix",
-            probe("mcp__s__send", false, 0),
+            probe("mcp__s__send", false, 0).into(),
             &["mcp__s__*"],
             true,
         ),
@@ -115,7 +127,10 @@ fn code_callable_follows_the_policy() {
 
 #[test]
 fn code_never_calls_itself_even_when_allowlisted() {
-    assert!(!code_callable(&code_over(vec![], &[]), &["*".to_string()]));
+    assert!(!code_callable(
+        &code_over(Tools::new(), &[]),
+        &["*".to_string()]
+    ));
 }
 
 #[tokio::test]
@@ -153,7 +168,7 @@ async fn a_write_lands_through_the_workspace() {
 #[tokio::test]
 async fn a_tool_outside_the_policy_is_refused_into_the_guest_and_never_runs() {
     let bash = probe("Bash", false, 0);
-    let tool = code_over(vec![Arc::new(ReadTool::default()), arc(&bash)], &[]);
+    let tool = code_over(vec![ToolRef::new(ReadTool::default()), arc(&bash)], &[]);
     let code =
         "try { await tools.Bash({ command: 'ls' }); return 'ran' } catch (e) { return 'refused' }";
     assert_eq!(returned(&run(&tool, code).await), Some(json!("refused")));
@@ -161,7 +176,7 @@ async fn a_tool_outside_the_policy_is_refused_into_the_guest_and_never_runs() {
 }
 
 /// What wraps the model's tools (plan mode, approvals): here, a Write that is always denied.
-struct Denied(Arc<dyn Tool>);
+struct Denied(ToolRef);
 
 #[async_trait]
 impl Tool for Denied {
@@ -185,10 +200,10 @@ impl Tool for Denied {
 #[tokio::test]
 async fn every_inner_call_goes_through_the_tools_the_model_is_given() {
     let ws = MemWorkspace::with_files([("/p/keep.txt", "")]);
-    let wrapped: Vec<Arc<dyn Tool>> = vec![
-        Arc::new(ReadTool::default()),
-        Arc::new(Denied(Arc::new(WriteTool))),
-    ];
+    let wrapped: Tools = Tools::from_iter([
+        ToolRef::new(ReadTool::default()),
+        ToolRef::new(Denied(ToolRef::new(WriteTool))),
+    ]);
     let tool = CodeTool::new(vec!["Read".into(), "Write".into()], Arc::new(wrapped));
     let code = "try { await tools.Write({ file_path: 'x.txt', content: 'no' }); return 'wrote' } catch (e) { return 'denied' }";
     let out = run_in(&tool, code, json!({}), &ctx(ws.clone())).await;
@@ -199,7 +214,7 @@ async fn every_inner_call_goes_through_the_tools_the_model_is_given() {
 #[tokio::test]
 async fn the_guest_has_no_host_reach_of_its_own() {
     let out = run(
-        &code_over(vec![], &[]),
+        &code_over(Tools::new(), &[]),
         "return [typeof require, typeof process, typeof fetch, typeof Bun]",
     )
     .await;
@@ -214,7 +229,7 @@ async fn a_cpu_loop_is_stopped_at_the_deadline() {
     let started = Instant::now();
     let c = ctx(MemWorkspace::with_files::<&str, &str>([]));
     let out = run_in(
-        &code_over(vec![], &[]),
+        &code_over(Tools::new(), &[]),
         "while (true) {}",
         json!({"timeout": 1000}),
         &c,
@@ -279,7 +294,7 @@ async fn an_inner_tools_spend_is_folded_into_the_code_call() {
     let mut paid = Probe::new("mcp__s__paid", true, 0);
     paid.answer.cost_usd = Some(0.25);
     let out = run(
-        &code_over(vec![Arc::new(paid)], &[]),
+        &code_over(Tools::from_iter([ToolRef::new(paid)]), &[]),
         "await tools.mcp__s__paid({}); await tools.mcp__s__paid({})",
     )
     .await;
@@ -289,7 +304,7 @@ async fn an_inner_tools_spend_is_folded_into_the_code_call() {
 #[tokio::test]
 async fn describe_returns_the_input_schema_of_a_callable_tool() {
     let out = run(
-        &code_over(vec![Arc::new(ReadTool::default())], &[]),
+        &code_over(Tools::from_iter([ToolRef::new(ReadTool::default())]), &[]),
         "return describe('Read').required",
     )
     .await;
@@ -298,6 +313,6 @@ async fn describe_returns_the_input_schema_of_a_callable_tool() {
 
 #[tokio::test]
 async fn a_syntax_error_is_a_correctable_error_not_a_crash() {
-    let out = run(&code_over(vec![], &[]), "return (").await;
+    let out = run(&code_over(Tools::new(), &[]), "return (").await;
     assert!(out.is_error);
 }

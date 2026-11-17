@@ -66,7 +66,7 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// ```
 /// use std::sync::Arc;
 ///
-/// use haest_core::{MemFs, ShutWorkspace, ToolContext, workspace::WorkspaceMode};
+/// use haest_core::{MemFs, ShutWorkspace, ToolContext, Tools, workspace::WorkspaceMode};
 /// use haest_mods::{CommandOutcome, ModOptions, ModTools, PLAN_PROMPT, load_mods};
 /// use serde_json::json;
 /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
@@ -93,8 +93,8 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// # async fn main() {
 /// let config = ModOptions::new("/project", WorkspaceMode::Sandbox, "/home/me/.config/haest");
 /// let mods = Arc::new(load_mods(config, &MemFs::new(), Arc::new(Terminal)).await);
-/// let tools = ModTools::wrap(&mods, vec![Arc::new(Write)]);
-/// let ctx = ToolContext::new("/project", Arc::new(ShutWorkspace));
+/// let tools = ModTools::wrap(&mods, Tools::new().with(Write));
+/// let ctx = ToolContext::new("/project", ShutWorkspace);
 /// let write = || tools[0].execute(json!({ "file_path": "notes.md" }).as_object().cloned().unwrap(), &ctx);
 ///
 /// // `/plan the migration`: plan mode on, and the topic goes to the model.

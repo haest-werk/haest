@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use haest_core::{
+    ToolRef,
     fs::MemFs,
     session::{JsonlSessionFile, SessionRecord, SessionSink},
 };
@@ -8,7 +9,7 @@ use haest_core::{
 use super::*;
 use crate::testkit::{input, shut_ctx as ctx};
 
-fn tool(tools: &[Arc<dyn Tool>], name: &str) -> Arc<dyn Tool> {
+fn tool(tools: &[ToolRef], name: &str) -> ToolRef {
     tools.iter().find(|t| t.name() == name).cloned().unwrap()
 }
 

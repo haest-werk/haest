@@ -6,8 +6,9 @@
 use std::sync::Arc;
 
 use haest_core::{
+    Tools,
     error::{BoxError, report},
-    tool::{Tool, ToolContext, ToolError, ToolOutput},
+    tool::{ToolContext, ToolError, ToolOutput},
 };
 
 use crate::api::{Before, Mod, ModEnv, ModToolCall};
@@ -80,7 +81,7 @@ impl Mods {
     }
 
     /// Every tool the mods add, unwrapped ([`crate::ModTools`] wraps them).
-    pub fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    pub fn tools(&self) -> Tools {
         self.list.iter().flat_map(|m| m.tools()).collect()
     }
 

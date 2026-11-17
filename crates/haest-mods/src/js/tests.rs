@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
-use haest_core::{tool::ToolError, workspace::WorkspaceMode};
+use haest_core::{Tools, tool::ToolError, workspace::WorkspaceMode};
 use serde_json::json;
 
 use super::{JsMod, ModCaps, ModLoadError};
@@ -33,7 +33,7 @@ async fn with_mod(ui: Arc<TestUi>, file: &str, source: &str) -> Mods {
 async fn a_ts_mod_denies_rm_rf_root_in_bash_and_lets_everything_else_run() {
     let mods = with_mod(TestUi::new(), "guard.ts", GUARD_TS).await;
     let bash = Probe::new("Bash");
-    let tools = wrapped(mods, vec![bash.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     match tools[0]
         .execute(input(json!({"command": "rm -rf /"})), &ctx())
         .await
@@ -56,7 +56,7 @@ async fn a_mod_adds_a_tool_that_runs_in_its_runtime() {
         execute: async (input, ctx) => ({ content: String(input.v).toUpperCase() + '@' + ctx.cwd }) })
     }"#;
     let mods = with_mod(TestUi::new(), "shout.js", source).await;
-    let tools = wrapped(mods, Vec::new());
+    let tools = wrapped(mods, Tools::new());
     let shout = find(&tools, "Shout");
     assert!(shout.read_only());
     assert_eq!(shout.parameters()["properties"]["v"]["type"], "string");
@@ -76,7 +76,7 @@ async fn prompt_submit_rewrites_the_humans_message_and_input_rewrites_reach_the_
     }"#;
     let mods = with_mod(TestUi::new(), "rewrite.js", source).await;
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
-    let tools = wrapped(mods, vec![Probe::new("Echo")]);
+    let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
     let out = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
     assert_eq!(out.unwrap().content, "ECHO:HI!");
 }
@@ -112,7 +112,7 @@ async fn a_throwing_mod_is_reported_and_the_host_carries_on() {
     let mods = with_mod(ui.clone(), "thrower.js", source).await;
     assert_eq!(mods.rewrite_prompt("as is").await, "as is");
     let bash = Probe::new("Bash");
-    let tools = wrapped(mods, vec![bash.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let refused = tools[0]
         .execute(input(json!({"command": "ls"})), &ctx())
         .await;
@@ -186,7 +186,7 @@ async fn a_mod_asks_the_human_and_their_answer_decides() {
     let ui = TestUi::answering([Decision::Deny, Decision::Allow]);
     let mods = with_mod(ui.clone(), "asker.js", source).await;
     let bash = Probe::new("Bash");
-    let tools = wrapped(mods, vec![bash.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let call = || input(json!({"command": "make"}));
     assert!(tools[0].execute(call(), &ctx()).await.is_err());
     tools[0].execute(call(), &ctx()).await.unwrap();
@@ -209,7 +209,7 @@ async fn an_ask_under_ctx_signal_ends_when_the_call_is_interrupted() {
     let ui = TestUi::holding();
     let mods = with_mod(ui.clone(), "held.js", source).await;
     let bash = Probe::new("Bash");
-    let tools = wrapped(mods, vec![bash.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let c = ctx();
     let cancel = c.cancel.clone();
     let (out, ()) = tokio::join!(tools[0].execute(input(json!({})), &c), async {
@@ -231,7 +231,7 @@ async fn a_runaway_mod_is_stopped_and_its_next_call_still_works() {
     let ui = TestUi::new();
     let mods = with_mod(ui.clone(), "spin.js", source).await;
     let echo = Probe::new("Echo");
-    let tools = wrapped(mods, vec![echo.clone()]);
+    let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
     assert!(
         tools[0]
             .execute(input(json!({"v": "loop"})), &ctx())

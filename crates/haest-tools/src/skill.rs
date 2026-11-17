@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::{
+    ToolRef,
     fs::Fs,
     skills::{DiskSkills, Skill, SkillSet},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str},
@@ -96,8 +97,8 @@ struct SkillTool(SkillToolOptions);
 /// assert!(out.content.contains("Tag, build, publish."));
 /// # }
 /// ```
-pub fn skill_tool(opts: SkillToolOptions) -> Arc<dyn Tool> {
-    Arc::new(SkillTool(opts))
+pub fn skill_tool(opts: SkillToolOptions) -> ToolRef {
+    ToolRef::new(SkillTool(opts))
 }
 
 #[async_trait]
@@ -167,7 +168,7 @@ mod tests {
     use super::*;
     use crate::testkit::{input, shut_ctx};
 
-    async fn tool() -> Arc<dyn Tool> {
+    async fn tool() -> ToolRef {
         let fs: Arc<dyn Fs> = Arc::new(MemFs::with_files([
             (
                 "/h/.claude/skills/deploy/SKILL.md",

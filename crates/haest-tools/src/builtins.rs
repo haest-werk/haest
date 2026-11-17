@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use haest_core::{task_board::TaskBoard, tool::Tool};
+use haest_core::{ToolRef, Tools, task_board::TaskBoard};
 
 use crate::{
     BashOptions, BashTool, EditTool, GlobTool, GrepTool, ReadIntercept, ReadTool, SkillToolOptions,
@@ -51,18 +51,18 @@ impl Default for BuiltinOptions {
 /// Skill when their option is given.
 ///
 /// The crate docs have an example; [`builtin_tools_where`] picks some.
-pub fn builtin_tools(opts: BuiltinOptions) -> Vec<Arc<dyn Tool>> {
+pub fn builtin_tools(opts: BuiltinOptions) -> Tools {
     let jobs = opts.bash.jobs.clone().map(job_tools).unwrap_or_default();
-    let mut tools: Vec<Arc<dyn Tool>> = vec![
-        Arc::new(ReadTool::new(opts.read_intercept)),
-        Arc::new(WriteTool),
-        Arc::new(EditTool),
-        Arc::new(BashTool::new(opts.bash)),
-    ];
+    let mut tools: Tools = Tools::from_iter([
+        ToolRef::new(ReadTool::new(opts.read_intercept)),
+        ToolRef::new(WriteTool),
+        ToolRef::new(EditTool),
+        ToolRef::new(BashTool::new(opts.bash)),
+    ]);
     tools.extend(jobs);
-    tools.extend([Arc::new(GrepTool) as Arc<dyn Tool>, Arc::new(GlobTool)]);
+    tools.extend([ToolRef::new(GrepTool), ToolRef::new(GlobTool)]);
     if let Some(net) = opts.web_fetch {
-        tools.push(Arc::new(WebFetchTool::new(net)));
+        tools.push(WebFetchTool::new(net));
     }
     tools.extend(opts.tasks.map(task_tools).unwrap_or_default());
     tools.extend(opts.skill.map(skill_tool));
@@ -122,7 +122,7 @@ pub struct MissingOption {
 /// use haest_core::task_board::TaskBoard;
 /// use haest_tools::{BuiltinOptions, builtin_tools_where};
 ///
-/// let names = |tools: Vec<Arc<dyn haest_core::tool::Tool>>| {
+/// let names = |tools: haest_core::tool::Tools| {
 ///     tools.iter().map(|t| t.name().to_string()).collect::<Vec<_>>()
 /// };
 /// let read_only = |w: &str| matches!(w, "read" | "grep" | "glob");
@@ -143,7 +143,7 @@ pub struct MissingOption {
 pub fn builtin_tools_where(
     on: impl Fn(&str) -> bool,
     opts: BuiltinOptions,
-) -> Result<Vec<Arc<dyn Tool>>, MissingOption> {
+) -> Result<Tools, MissingOption> {
     let needs = [
         ("web_fetch", opts.web_fetch.is_some()),
         ("tasks", opts.tasks.is_some()),

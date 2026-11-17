@@ -5,8 +5,9 @@ use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use haest_core::{
+    Tools,
     error::BoxError,
-    tool::{JsonMap, Tool, ToolContext, ToolOutput},
+    tool::{JsonMap, ToolContext, ToolOutput},
     workspace::WorkspaceMode,
 };
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,7 @@ pub struct ModToolCall {
     pub name: String,
     /// The input the tool will run with: the model's, or an earlier mod's replacement.
     pub input: JsonMap,
-    /// The tool declares it changes nothing ([`Tool::read_only`]).
+    /// The tool declares it changes nothing ([`Tool::read_only`](haest_core::Tool::read_only)).
     pub read_only: bool,
 }
 
@@ -217,8 +218,8 @@ pub trait Mod: Send + Sync {
     /// Tools this mod adds (asked again before every model call).
     /// [`ModTools`](crate::ModTools) runs them inside every mod's hooks, the
     /// same as the host's own.
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
-        Vec::new()
+    fn tools(&self) -> Tools {
+        Tools::new()
     }
 
     /// The slash commands this mod answers, without the `/`.

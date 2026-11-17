@@ -1,15 +1,15 @@
 //! [`ToolContext`]: what one tool call may use.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 use tokio_util::sync::CancellationToken;
 
-use super::{NoServices, ToolServices};
+use super::{NoServices, ToolServicesRef};
 use crate::{
     fs::resolve_path,
     run::{EffectKey, RunKey},
     wind_down::WindDownWatch,
-    workspace::Workspace,
+    workspace::WorkspaceRef,
 };
 
 /// What one tool call may use: where it runs, how it learns it was cancelled,
@@ -25,9 +25,9 @@ pub struct ToolContext {
     /// should stop when it does.
     pub cancel: CancellationToken,
     /// The only way a tool touches files or runs a command.
-    pub workspace: Arc<dyn Workspace>,
+    pub workspace: WorkspaceRef,
     /// The host's services: publishing bytes, reporting inner calls, logging.
-    pub services: Arc<dyn ToolServices>,
+    pub services: ToolServicesRef,
     /// Tokens a result may still add before the next model call hits the request
     /// cap; None when no cap is configured.
     pub context_room_tokens: Option<u64>,
@@ -56,12 +56,12 @@ impl ToolContext {
     /// A context for running a tool outside the loop (tests, a host command):
     /// a fresh cancel token, [`NoServices`], no context cap, no call id, no
     /// spill directory, no durable run, no turn time cap, never winding down.
-    pub fn new(cwd: impl Into<PathBuf>, workspace: Arc<dyn Workspace>) -> Self {
+    pub fn new(cwd: impl Into<PathBuf>, workspace: impl Into<WorkspaceRef>) -> Self {
         Self {
             cwd: cwd.into(),
             cancel: CancellationToken::new(),
-            workspace,
-            services: Arc::new(NoServices),
+            workspace: workspace.into(),
+            services: NoServices.into(),
             context_room_tokens: None,
             tool_call_id: None,
             spill_dir: None,

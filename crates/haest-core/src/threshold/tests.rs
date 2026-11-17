@@ -290,7 +290,7 @@ fn agent(
     for t in more {
         thresholds = thresholds.with(t).unwrap();
     }
-    agent.deps_mut().shared.thresholds = thresholds;
+    agent.map_deps(|d| d.with_thresholds(thresholds));
     (agent, hooks)
 }
 
@@ -373,8 +373,11 @@ async fn a_hosts_stop_ends_the_turn_before_the_next_model_call_with_the_hosts_re
     let p = ScriptedProvider::new(echoes(5));
     let mine = host(Meter::Steps, Mark::at(2.0), Action::Stop, Rearm::Never);
     let (mut agent, _) = agent(&p, capped(|c| c.max_turn_steps = 10), vec![mine]);
-    agent.deps_mut().shared.remedies =
-        Remedies::new(|limit| matches!(limit, Limit::TurnSteps(10)).then(|| "RAISE IT".into()));
+    agent.map_deps(|d| {
+        d.with_remedies(Remedies::new(|limit| {
+            matches!(limit, Limit::TurnSteps(10)).then(|| "RAISE IT".into())
+        }))
+    });
     let events = collect(&mut agent, "go").await;
     assert_eq!(p.requests().len(), 2);
     let (stop, _, error) = end(&events);
@@ -489,7 +492,7 @@ async fn a_once_a_turn_reminder_fires_once_when_a_hook_calls_run_mid_turn() {
         "EACH",
     );
     let (mut agent, _) = agent(&p, Opts::default(), vec![each]);
-    agent.deps_mut().shared.hooks = Arc::new(ReEnters);
+    agent.map_deps(|d| d.with_hooks(ReEnters));
     let events = collect(&mut agent, "go").await;
     assert_eq!(p.requests().len(), 4);
     assert_eq!(guard_texts(&events), ["[haest guard] EACH at 1"]);

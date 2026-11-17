@@ -120,7 +120,7 @@ fn effort(rt: &mut Runtime, arg: &str) {
 
 /// `/budget` shows the ledger; `/budget 40` sets the USD cap; `/budget tokens 4e7` the unpriced-token cap.
 fn budget(rt: &mut Runtime, args: &str) {
-    let Some(ledger) = rt.agent().deps().shared.ledger.clone() else {
+    let Some(ledger) = rt.agent().deps().shared().ledger().cloned() else {
         return rt.hooks.info("This conversation has no ledger.");
     };
     if args.is_empty() {

@@ -1,7 +1,7 @@
 //! The inside of one turn: steps, model calls, tools, and the step boundary
 //! where steering input and the guard's nudge ride in.
 
-use std::{sync::Arc, time::Instant};
+use std::{path::Path, time::Instant};
 
 use futures::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
@@ -17,7 +17,7 @@ use crate::{
     messages::{AssistantMessage, AssistantPart, Message, StopReason, ToolCall, Usage},
     provider::{NO_RESPONSE, ProviderEvent, final_message},
     run::Journal,
-    tool::{ToolContext, ToolServices},
+    tool::ToolContext,
     tool_batch::{Answer, Answers, Redo, redo_calls, run_tool_batches},
     tool_exec::{ToolIndex, error_assistant, tool_result_message},
 };
@@ -96,10 +96,10 @@ fn append(
 
 impl Agent {
     pub(super) async fn add_user(&mut self, text: &str, t: &mut Turn<'_>) {
-        let user = user_message(text, self.deps.shared.hooks.as_ref(), &t.cancel).await;
+        let user = user_message(text, self.deps.shared().hooks().as_ref(), &t.cancel).await;
         append(
             &mut self.history,
-            self.deps.shared.hooks.as_ref(),
+            self.deps.shared().hooks().as_ref(),
             t.journal.as_ref(),
             Message::User(user.clone()),
         );
@@ -121,7 +121,7 @@ impl Agent {
         let Some(text) = text else { return };
         append(
             &mut self.history,
-            self.deps.shared.hooks.as_ref(),
+            self.deps.shared().hooks().as_ref(),
             t.journal.as_ref(),
             Message::user(text.clone()),
         );
@@ -137,7 +137,7 @@ impl Agent {
         let nudge = t.guard.nudge(&t.usage, caps.as_ref());
         self.inject_nudge(nudge, t);
         for text in t.guard.warnings(&t.usage, caps.as_ref()) {
-            self.deps.shared.hooks.on_warning(&text);
+            self.deps.shared().hooks().on_warning(&text);
         }
         let notice = t.guard.wind_down_notice(&t.usage, caps.as_ref());
         self.inject_nudge(notice, t);
@@ -163,8 +163,8 @@ impl Agent {
         let cancel = t.cancel.clone();
         let ready = self
             .deps
-            .shared
-            .hooks
+            .shared()
+            .hooks()
             .clone()
             .before_model_call(self, &cancel)
             .await;
@@ -214,7 +214,7 @@ impl Agent {
     }
 
     async fn call_model(&mut self, t: &mut Turn<'_>) -> AssistantMessage {
-        let resolved = match self.deps.shared.models.resolve(&self.model_spec) {
+        let resolved = match self.deps.shared().models().resolve(&self.model_spec) {
             Ok(r) => r,
             Err(e) => return refuse(&self.model_spec, &report(&e), t),
         };
@@ -248,7 +248,7 @@ impl Agent {
         }
         append(
             &mut self.history,
-            self.deps.shared.hooks.as_ref(),
+            self.deps.shared().hooks().as_ref(),
             t.journal.as_ref(),
             Message::Assistant(msg.clone()),
         );
@@ -265,27 +265,26 @@ impl Agent {
     /// `redo` is a resumed durable run's (durable.rs): calls that may have run
     /// before the stop, answered one by one by their tool's `OnResume` before `calls`.
     pub(super) async fn run_tools(&mut self, redo: &[Redo], calls: &[ToolCall], t: &mut Turn<'_>) {
-        let services: Arc<dyn ToolServices> = self.deps.shared.hooks.clone();
         let caps = self.turn_caps();
         let ctx = ToolContext {
-            cwd: self.deps.shared.cwd.clone(),
+            cwd: self.deps.shared().cwd().to_path_buf(),
             cancel: t.cancel.clone(),
-            workspace: self.deps.shared.workspace.clone(),
-            services,
+            workspace: self.deps.shared().workspace().clone(),
+            services: self.deps.shared().services().clone(),
             context_room_tokens: None,
             tool_call_id: None,
-            spill_dir: self.deps.shared.spill_dir.clone(),
+            spill_dir: self.deps.shared().spill_dir().map(Path::to_path_buf),
             run_key: t.journal.as_ref().map(|j| j.key().clone()),
             resumed: false,
             turn_time_left: t.guard.time_left(caps.as_ref()),
             wind_down: t.guard.wind_down_watch(&t.usage, caps.clone()),
         };
-        let tools = ToolIndex::new(self.deps.tools.callable());
+        let tools = ToolIndex::new(self.deps.tools().callable());
         let mut delivery = Delivery {
             caps,
             guard: &mut t.guard,
             messages: &mut self.history,
-            hooks: self.deps.shared.hooks.as_ref(),
+            hooks: self.deps.shared().hooks().as_ref(),
             journal: t.journal.as_ref(),
             sink: &mut *t.sink,
         };

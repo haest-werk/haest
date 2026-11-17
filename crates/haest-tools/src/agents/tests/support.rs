@@ -94,11 +94,7 @@ impl Rig {
         let _ = parent.hub.set(Arc::downgrade(&hub));
         let mut tools = parent.base_tools();
         tools.extend(hub.tools_for(&AgentRef::main()));
-        let deps = AgentDeps {
-            tools: Arc::new(tools),
-            system_prompt: Arc::new("main".to_string()),
-            shared: parent.deps(),
-        };
+        let deps = AgentDeps::from_shared(parent.deps(), tools, "main");
         let main = Agent::new(deps, AgentOptions::new("fake:main-model"));
         Self {
             hub,
@@ -111,13 +107,10 @@ impl Rig {
 
     /// Change the conversation's deps: main's from now on, and every
     /// subagent's when it starts.
-    pub fn adjust(&mut self, f: impl Fn(&mut SharedDeps) + Send + Sync + 'static) {
+    pub fn adjust(&mut self, f: impl Fn(SharedDeps) -> SharedDeps + Send + Sync + 'static) {
         *self.parent.adjust.lock().unwrap() = Some(Box::new(f));
-        let deps = AgentDeps {
-            tools: self.main.deps().tools.clone(),
-            system_prompt: Arc::new("main".to_string()),
-            shared: self.parent.deps(),
-        };
+        let tools = self.main.deps().tools().clone();
+        let deps = AgentDeps::from_shared(self.parent.deps(), tools, "main");
         self.main = Agent::new(deps, AgentOptions::new("fake:main-model"));
     }
 
@@ -129,7 +122,7 @@ impl Rig {
     pub fn main_tools(&self) -> Vec<String> {
         self.main
             .deps()
-            .tools
+            .tools()
             .tools()
             .iter()
             .map(|t| t.name().to_string())

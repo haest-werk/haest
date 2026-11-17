@@ -51,10 +51,7 @@ async fn the_hosts_own_skills_load_through_haests_skill_tool() {
         r.app.prompt(),
         skill_cards_block(intro, &set.offered())
     );
-    r.reseat(|deps| {
-        deps.tools = Arc::new(tools);
-        deps.system_prompt = Arc::new(prompt);
-    });
+    r.reseat(|deps| deps.with_tools(tools).with_system_prompt(prompt));
 
     r.answered("Standup time.").await;
     let first = &r.app.provider.requests(false)[0];
@@ -79,7 +76,7 @@ async fn the_hosts_own_skills_load_through_haests_skill_tool() {
 fn defer_all_but_bash(r: &mut Rig, mode: DeferMode) {
     let deferral = ToolDeferral::new(mode).deferring_all_except(["Bash".to_string()]);
     let source = DeferredTools::new(r.app.base_tools(), deferral);
-    r.reseat(|deps| deps.tools = Arc::new(source));
+    r.reseat(|deps| deps.with_tools(source));
 }
 
 #[tokio::test]

@@ -87,23 +87,14 @@ impl AgentOptions {
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
-/// use std::sync::Arc;
-///
 /// use haest_core::{
-///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tool,
+///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tools,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 ///
 /// // A fake model that answers "hello"; a host resolves real providers here.
 /// let provider = ScriptedProvider::new([text_answer("hello")]);
-/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
-/// let deps = AgentDeps::new(
-///     Arc::new(provider.resolver()),
-///     Arc::new(tools),
-///     Arc::new("You are terse.".to_string()),
-///     "/project",
-///     Arc::new(ShutWorkspace),
-/// );
+/// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "You are terse.", "/project", ShutWorkspace);
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:model-1"));
 ///
 /// let mut said = String::new();
@@ -145,7 +136,7 @@ pub struct Agent {
 impl Agent {
     /// An idle agent with `deps` and `opts`. Nothing is sent until [`Agent::run`].
     pub fn new(deps: AgentDeps, opts: AgentOptions) -> Self {
-        let thresholds = Watch::new(deps.shared.thresholds.clone());
+        let thresholds = Watch::new(deps.shared().thresholds().clone());
         Self {
             history: opts.history,
             model_spec: opts.model_spec,
@@ -218,10 +209,10 @@ impl Agent {
         &mut self.history
     }
 
-    /// The deps to change in a test (a hook or a model swapped in).
+    /// The deps changed by `f`, in a test (a hook or a model swapped in).
     #[cfg(test)]
-    pub(crate) fn deps_mut(&mut self) -> &mut AgentDeps {
-        &mut self.deps
+    pub(crate) fn map_deps(&mut self, f: impl FnOnce(AgentDeps) -> AgentDeps) {
+        self.deps = f(self.deps.clone());
     }
 
     /// One human turn. Every event goes to `sink` in order, the last one is
@@ -265,7 +256,7 @@ impl Agent {
     fn guard(&self) -> TurnGuard {
         {
             let mut watch = self.thresholds.lock().unwrap();
-            watch.follow(&self.deps.shared.thresholds);
+            watch.follow(self.deps.shared().thresholds());
             watch.next_turn();
         }
         self.bare_guard()
@@ -276,15 +267,15 @@ impl Agent {
     /// which must not re-arm the running turn's.
     fn bare_guard(&self) -> TurnGuard {
         TurnGuard::new(
-            self.deps.shared.clock.clone(),
-            self.deps.shared.ledger.clone(),
-            self.deps.shared.remedies.clone(),
+            self.deps.shared().clock().clone(),
+            self.deps.shared().ledger().cloned(),
+            self.deps.shared().remedies().clone(),
         )
     }
 
     /// The hard caps for the current model spec; read fresh at every check.
     fn turn_caps(&self) -> Option<TurnCaps> {
-        self.deps.shared.turn_caps.turn_caps(&self.model_spec)
+        self.deps.shared().turn_caps().turn_caps(&self.model_spec)
     }
 
     /// Everything a model call sends ahead of the history; compaction reuses it.
@@ -301,12 +292,16 @@ impl Agent {
     /// `model` is the provider's model id, named in the note. Reports what was
     /// withheld to [`AgentHooks::on_media_withheld`](crate::AgentHooks::on_media_withheld).
     pub(crate) fn sendable(&self, messages: &[Message], model: &str) -> Vec<Message> {
-        let accepts = self.deps.shared.facts.input_modalities(&self.model_spec);
+        let accepts = self
+            .deps
+            .shared()
+            .facts()
+            .input_modalities(&self.model_spec);
         fit_for_model(
             messages,
             accepts.as_ref(),
             model,
-            self.deps.shared.hooks.as_ref(),
+            self.deps.shared().hooks().as_ref(),
         )
     }
 }

@@ -3,22 +3,22 @@
 //! stopped drops its in-flight calls, and their rows still close, as interrupted
 //! calls, so no transcript shows a call that never ends.
 
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use haest_core::{
     messages::ToolCall,
-    tool::{InnerCallEvent, ToolOutput, ToolServices},
+    tool::{InnerCallEvent, ToolOutput, ToolServicesRef},
 };
 
 pub(crate) struct InnerRow {
-    services: Arc<dyn ToolServices>,
+    services: ToolServicesRef,
     parent_id: String,
     call: Option<ToolCall>,
     started: Instant,
 }
 
 impl InnerRow {
-    pub fn start(services: Arc<dyn ToolServices>, parent_id: &str, call: &ToolCall) -> Self {
+    pub fn start(services: ToolServicesRef, parent_id: &str, call: &ToolCall) -> Self {
         services.on_inner_call(InnerCallEvent::Start {
             parent_id: parent_id.to_string(),
             call: call.clone(),

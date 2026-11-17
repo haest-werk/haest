@@ -49,7 +49,7 @@ pub type UnixPeer = Peer<NdjsonSource<OwnedReadHalf>, NdjsonSink<OwnedWriteHalf>
 /// # #[cfg(unix)] {
 /// use std::sync::Arc;
 ///
-/// use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tool, testing::ScriptedProvider};
+/// use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::ScriptedProvider};
 /// use haest_session::{Hub, HubOptions, start};
 /// use haest_transport::{Grant, Transport, UnixSocket, connect_session, running_sessions};
 /// use haest_wire::{Origin, Request};
@@ -58,8 +58,7 @@ pub type UnixPeer = Peer<NdjsonSource<OwnedReadHalf>, NdjsonSink<OwnedWriteHalf>
 /// # async fn main() {
 /// # let dir = std::env::temp_dir().join(format!("hx-doc-{}", std::process::id()));
 /// let model = ScriptedProvider::new([]);
-/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
-/// let deps = AgentDeps::new(Arc::new(model.resolver()), Arc::new(tools), Arc::new(String::new()), "/", Arc::new(ShutWorkspace));
+/// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
 /// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1", HubOptions::default()));
 ///
 /// let attached = UnixSocket::new(&dir).attach(Arc::new(session), Grant::watch(Origin::Agent)).unwrap();

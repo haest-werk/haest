@@ -14,8 +14,6 @@
 //! Tools are looked up by name in a [`ToolIndex`]. Other haest crates reach
 //! these through [`__private`](crate::__private); a host never needs them.
 
-use std::sync::Arc;
-
 use serde_json::{Value, json};
 
 use crate::{
@@ -23,7 +21,7 @@ use crate::{
     fs::ensure_dir,
     messages::{AssistantMessage, StopReason, ToolCall, ToolResultMessage, Usage},
     panics::panic_message,
-    tool::{MAX_TOOL_OUTPUT, Tool, ToolContext, ToolError, ToolOutput, spelled},
+    tool::{MAX_TOOL_OUTPUT, ToolContext, ToolError, ToolOutput, ToolRef, Tools, spelled},
 };
 
 /// A model call that never went out (no provider, a refused request): an
@@ -36,16 +34,16 @@ pub(crate) fn error_assistant(model: &str, error: &str) -> AssistantMessage {
 }
 
 /// The tools of one model call, looked up by name. A name listed twice: the later one wins.
-pub struct ToolIndex(Vec<Arc<dyn Tool>>);
+pub struct ToolIndex(Tools);
 
 impl ToolIndex {
     /// An index over `tools`, in the order given.
-    pub fn new(tools: Vec<Arc<dyn Tool>>) -> Self {
+    pub fn new(tools: Tools) -> Self {
         Self(tools)
     }
 
     /// The tool called `name`; the later one when two share it.
-    pub fn get(&self, name: &str) -> Option<&Arc<dyn Tool>> {
+    pub fn get(&self, name: &str) -> Option<&ToolRef> {
         self.0.iter().rev().find(|t| t.name() == name)
     }
 
@@ -178,16 +176,14 @@ pub(crate) fn tool_result_message(call: &ToolCall, out: &ToolOutput) -> ToolResu
 /// ```
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
-/// use std::sync::Arc;
-///
 /// use haest_core::{
-///     ShutWorkspace, ToolCall, ToolContext,
+///     ShutWorkspace, ToolCall, ToolContext, Tools,
 ///     __private::{ToolIndex, run_unspilled},
 /// };
 ///
 /// let call = ToolCall { id: "c1".into(), name: "Nope".into(), input: Default::default() };
-/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-/// let out = run_unspilled(&ToolIndex::new(Vec::new()), &call, &ctx).await;
+/// let ctx = ToolContext::new("/", ShutWorkspace);
+/// let out = run_unspilled(&ToolIndex::new(Tools::new()), &call, &ctx).await;
 /// assert!(out.is_error); // an answer the model reads, not a failure of the loop
 /// # }
 /// ```

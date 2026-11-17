@@ -231,19 +231,15 @@ impl CompactionError {
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
-/// use std::sync::Arc;
-///
 /// use haest_core::{
-///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace, Tool,
-///     ToolServices,
+///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace, Tools,
 ///     compaction::{CompactionOptions, compact, needs_compaction},
+///     error::BoxError,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 /// use tokio_util::sync::CancellationToken;
 ///
 /// struct Compacting(CompactionOptions);
-///
-/// impl ToolServices for Compacting {}
 ///
 /// #[async_trait::async_trait]
 /// impl AgentHooks for Compacting {
@@ -251,7 +247,7 @@ impl CompactionError {
 ///         &self,
 ///         agent: &mut Agent,
 ///         cancel: &CancellationToken,
-///     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+///     ) -> Result<(), BoxError> {
 ///         if !needs_compaction(agent.history(), &self.0) {
 ///             return Ok(());
 ///         }
@@ -264,16 +260,9 @@ impl CompactionError {
 ///
 /// // The summary request is answered first, then the turn's own call.
 /// let provider = ScriptedProvider::new([text_answer("Earlier: a and b."), text_answer("done")]);
-/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
-/// let mut deps = AgentDeps::new(
-///     Arc::new(provider.resolver()),
-///     Arc::new(tools),
-///     Arc::new(String::new()),
-///     "/",
-///     Arc::new(ShutWorkspace),
-/// );
 /// let cfg = CompactionOptions { context_window: 1_000, threshold: 0.8, ceiling: None, keep_recent: 2 };
-/// deps.shared.hooks = Arc::new(Compacting(cfg));
+/// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace)
+///     .with_hooks(Compacting(cfg));
 ///
 /// // Resume a conversation whose last request filled 90% of the window.
 /// let mut full = text_answer("b done");

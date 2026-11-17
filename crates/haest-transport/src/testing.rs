@@ -6,7 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use haest_core::{
     Agent, AgentDeps, AgentOptions, JsonMap, ShutWorkspace, Tool, ToolContext, ToolError,
-    ToolOutput,
+    ToolOutput, ToolRef, Tools,
     testing::{ScriptedProvider, text_answer},
 };
 use haest_session::{Hub, HubOptions, SessionHandle, start};
@@ -41,7 +41,7 @@ impl Tool for Wait {
 /// A session over a scripted model, with the Wait tool.
 pub fn session(model: &Arc<ScriptedProvider>, hub: Hub) -> (SessionHandle<Agent>, Arc<Notify>) {
     let go = Arc::new(Notify::new());
-    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Wait(go.clone()))];
+    let tools: Tools = Tools::from_iter([ToolRef::new(Wait(go.clone()))]);
     let deps = AgentDeps::new(
         Arc::new(model.resolver()),
         Arc::new(tools),

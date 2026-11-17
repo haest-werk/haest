@@ -5,11 +5,11 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use haest_core::{
-    LoopEvent, SharedDeps,
+    LoopEvent, SharedDeps, ToolRef,
     caps::{ConversationCap, SubagentCaps},
     remedy::{Limit, Remedies},
     threshold::Thresholds,
-    tool::{Tool, ToolError},
+    tool::ToolError,
     wind_down::{WindDown, WindDownWatch, WindingDown},
 };
 use serde_json::json;
@@ -53,13 +53,13 @@ impl AgentDirectory for Counting {
 /// A cap one call ($0.01) takes past 80% of, and not to the cap.
 const PAST_80_IN_ONE_CALL: f64 = CALL_USD * 1.2;
 
-fn agent_tool(dir: &Arc<Counting>) -> Arc<dyn Tool> {
-    agent_tools(dir.clone(), AgentRef::main(), true).remove(0)
+fn agent_tool(dir: &Arc<Counting>) -> ToolRef {
+    agent_tools(dir.clone(), AgentRef::main(), true)[0].clone()
 }
 
 /// The conversation winds down at `share`.
-fn wind_down_at(share: f64) -> impl Fn(&mut SharedDeps) + Send + Sync + 'static {
-    move |d| d.thresholds = Thresholds::default().wind_down(WindDown::at(share).unwrap())
+fn wind_down_at(share: f64) -> impl Fn(SharedDeps) -> SharedDeps + Send + Sync + 'static {
+    move |d| d.with_thresholds(Thresholds::default().wind_down(WindDown::at(share).unwrap()))
 }
 
 fn guards(events: &[LoopEvent]) -> usize {
@@ -188,11 +188,11 @@ async fn a_subagent_stopped_at_its_own_cap_carries_the_hosts_remedy_for_that_cap
         SubagentCaps { steps: 3, ..caps() },
     );
     r.adjust(|d| {
-        d.remedies = Remedies::new(|limit| match limit {
+        d.with_remedies(Remedies::new(|limit| match limit {
             Limit::SubagentSteps(3) => Some("REMEDY-SUBAGENT".into()),
             Limit::TurnSteps(_) => Some("REMEDY-TURN".into()),
             _ => None,
-        })
+        }))
     });
     r.turn("go").await;
     let answer = &r.tool_results()[0].0;

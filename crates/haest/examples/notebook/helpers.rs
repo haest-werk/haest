@@ -17,8 +17,8 @@ use std::{
 
 use async_trait::async_trait;
 use haest::{
-    Effort, SharedDeps, Workspace,
-    core::{caps::SubagentCaps, tool::Tool},
+    Effort, SharedDeps, ToolRef, Tools, WorkspaceRef,
+    core::caps::SubagentCaps,
     tools::{
         AgentError, AgentToolOptions, Ending, Inbox, MemberCaps, MemberEnd, MemberRun, MemberStart,
         Sender, SubagentEvent, SubagentParent,
@@ -113,8 +113,8 @@ pub struct Panel {
 pub struct NodeHelpers {
     pub gateway: Arc<Gateway>,
     /// The run's tools, without the agent tools.
-    pub base: Vec<Arc<dyn Tool>>,
-    pub workspace: Arc<dyn Workspace>,
+    pub base: Tools,
+    pub workspace: WorkspaceRef,
     /// The run's own host: its clock, records and caps.
     pub host: Arc<NotebookHost>,
     pub node: Arc<Node>,
@@ -157,10 +157,10 @@ impl SubagentParent for NodeHelpers {
     fn deps(&self) -> SharedDeps {
         shared(&self.gateway, "", self.workspace.clone(), self.host.clone())
     }
-    fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn base_tools(&self) -> Tools {
         self.base.clone()
     }
-    async fn system_prompt(&self, _model: &str, tools: &[Arc<dyn Tool>]) -> String {
+    async fn system_prompt(&self, _model: &str, tools: &[ToolRef]) -> String {
         let reads_only = !tools
             .iter()
             .any(|t| t.name() == "Write" || t.name() == "Edit");
@@ -177,7 +177,7 @@ impl SubagentParent for NodeHelpers {
     fn agent_tool_options(&self) -> AgentToolOptions {
         agent_options()
     }
-    fn subagent_tools(&self, kind: Option<&str>) -> Vec<Arc<dyn Tool>> {
+    fn subagent_tools(&self, kind: Option<&str>) -> Tools {
         let all = kind == Some("general");
         let tools = self
             .base

@@ -26,10 +26,11 @@
 
 use std::{future::Future, sync::Arc, time::Duration};
 
-use haest_core::tool::{JsonMap, Tool, ToolContext, ToolError, opt_num, spelled};
+use haest_core::tool::{JsonMap, ToolContext, ToolError, opt_num, spelled};
 use serde_json::{Value, json};
 
 use crate::tracker::{Issue, IssueFilter, Tracker, TrackerError, TrackerInfo};
+use haest_core::{ToolRef, Tools};
 
 /// A tool's struct: its name and the tracker it shares with the others.
 macro_rules! issue_tool {
@@ -71,7 +72,7 @@ pub(crate) struct Shared {
 ///
 /// Put them in the agent's tool list beside its others. The [crate
 /// docs](crate#examples) call them on a board of cards.
-pub fn issue_tools(tracker: Arc<dyn Tracker>) -> Vec<Arc<dyn Tool>> {
+pub fn issue_tools(tracker: Arc<dyn Tracker>) -> Tools {
     issue_tools_named(tracker, "Issue")
 }
 
@@ -80,21 +81,21 @@ pub fn issue_tools(tracker: Arc<dyn Tracker>) -> Vec<Arc<dyn Tool>> {
 ///
 /// [`TrackerInfo`] is read once, here: the tools' descriptions and schemas
 /// do not follow a tracker that changes what it accepts later.
-pub fn issue_tools_named(tracker: Arc<dyn Tracker>, noun: &str) -> Vec<Arc<dyn Tool>> {
+pub fn issue_tools_named(tracker: Arc<dyn Tracker>, noun: &str) -> Tools {
     let shared = Arc::new(Shared {
         info: tracker.info(),
         tracker,
     });
     let named = |verb: &str| format!("{noun}{verb}");
-    vec![
-        Arc::new(read::IssueListTool::new(named("List"), shared.clone())),
-        Arc::new(read::IssueSearchTool::new(named("Search"), shared.clone())),
-        Arc::new(read::IssueGetTool::new(named("Get"), shared.clone())),
-        Arc::new(write::IssueCreateTool::new(named("Create"), shared.clone())),
-        Arc::new(write::IssueUpdateTool::new(named("Update"), shared.clone())),
-        Arc::new(write::IssueDeleteTool::new(named("Delete"), shared.clone())),
-        Arc::new(write::IssueLinkTool::new(named("Link"), shared)),
-    ]
+    Tools::from_iter([
+        ToolRef::new(read::IssueListTool::new(named("List"), shared.clone())),
+        ToolRef::new(read::IssueSearchTool::new(named("Search"), shared.clone())),
+        ToolRef::new(read::IssueGetTool::new(named("Get"), shared.clone())),
+        ToolRef::new(write::IssueCreateTool::new(named("Create"), shared.clone())),
+        ToolRef::new(write::IssueUpdateTool::new(named("Update"), shared.clone())),
+        ToolRef::new(write::IssueDeleteTool::new(named("Delete"), shared.clone())),
+        ToolRef::new(write::IssueLinkTool::new(named("Link"), shared)),
+    ])
 }
 
 /// What the model can fix goes back as an input error; the rest as a failure.

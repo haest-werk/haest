@@ -1,6 +1,7 @@
 use std::{sync::Mutex, time::Duration};
 
 use haest_core::{
+    ToolRef,
     messages::MediaKind,
     tool::{JsonMap, ToolContext, ToolError},
     workspace::ShutWorkspace,
@@ -25,7 +26,7 @@ async fn connected(server: TestServer) -> (McpHub, JoinHandle<()>) {
     (hub, handle)
 }
 
-fn tool(hub: &McpHub, name: &str) -> Arc<dyn Tool> {
+fn tool(hub: &McpHub, name: &str) -> ToolRef {
     let full = format!("mcp__srv__{name}");
     hub.tools().into_iter().find(|t| t.name() == full).unwrap()
 }

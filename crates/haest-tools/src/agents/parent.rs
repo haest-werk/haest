@@ -5,11 +5,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use haest_core::{
-    SharedDeps,
-    provider::Effort,
-    tool::{Tool, ToolSource},
-};
+use haest_core::{SharedDeps, ToolRef, Tools, provider::Effort, tool::ToolSource};
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -35,10 +31,10 @@ pub trait SubagentParent: Inbox {
     fn deps(&self) -> SharedDeps;
     /// The tools every agent starts from (no agent tools): the hub drops the
     /// conversation-only ones (the task list) and adds the agent's own agent tools.
-    fn base_tools(&self) -> Vec<Arc<dyn Tool>>;
+    fn base_tools(&self) -> Tools;
     /// The system prompt for an agent on `model_spec` with `tools`; the hub
     /// appends the subagent note. Built again before every model call.
-    async fn system_prompt(&self, model_spec: &str, tools: &[Arc<dyn Tool>]) -> String;
+    async fn system_prompt(&self, model_spec: &str, tools: &[ToolRef]) -> String;
     /// What a subagent runs on when the call names no model: the conversation's own.
     fn default_model(&self) -> (String, Option<Effort>);
     /// What the Agent tool of every agent here offers the model: the host's
@@ -52,12 +48,12 @@ pub trait SubagentParent: Inbox {
     /// default kind), None when the host has none. The hub drops the
     /// conversation-only ones and adds the agent's own agent tools, as for
     /// [`base_tools`](Self::base_tools). Default: `base_tools`, whatever the kind.
-    fn subagent_tools(&self, subagent_type: Option<&str>) -> Vec<Arc<dyn Tool>> {
+    fn subagent_tools(&self, subagent_type: Option<&str>) -> Tools {
         let _ = subagent_type;
         self.base_tools()
     }
     /// Where an agent's tool list goes through (deferral); default: as it is.
-    fn tool_source(&self, tools: Vec<Arc<dyn Tool>>) -> Arc<dyn ToolSource> {
+    fn tool_source(&self, tools: Tools) -> Arc<dyn ToolSource> {
         Arc::new(tools)
     }
     /// The running set changed: the ids of every subagent running now, for
@@ -87,11 +83,10 @@ pub trait SubagentParent: Inbox {
     ///
     /// use async_trait::async_trait;
     /// use haest_core::{
-    ///     SharedDeps,
+    ///     SharedDeps, ToolRef, Tools,
     ///     caps::SubagentCaps,
     ///     provider::Effort,
     ///     testing::{ScriptedProvider, text_answer},
-    ///     tool::Tool,
     ///     workspace::ShutWorkspace,
     /// };
     /// use haest_tools::{
@@ -124,12 +119,12 @@ pub trait SubagentParent: Inbox {
     /// #[async_trait]
     /// impl SubagentParent for Parent {
     ///     fn deps(&self) -> SharedDeps {
-    ///         SharedDeps::new(Arc::new(self.provider.resolver()), "/", Arc::new(ShutWorkspace))
+    ///         SharedDeps::new(self.provider.resolver(), "/", ShutWorkspace)
     ///     }
-    ///     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
-    ///         Vec::new()
+    ///     fn base_tools(&self) -> Tools {
+    ///         Tools::new()
     ///     }
-    ///     async fn system_prompt(&self, _model: &str, _tools: &[Arc<dyn Tool>]) -> String {
+    ///     async fn system_prompt(&self, _model: &str, _tools: &[ToolRef]) -> String {
     ///         "You are a helper.".into()
     ///     }
     ///     fn default_model(&self) -> (String, Option<Effort>) {
@@ -189,11 +184,10 @@ pub trait SubagentParent: Inbox {
     ///
     /// use async_trait::async_trait;
     /// use haest_core::{
-    ///     SharedDeps,
+    ///     SharedDeps, ToolRef, Tools,
     ///     caps::SubagentCaps,
     ///     provider::Effort,
     ///     testing::{ScriptedProvider, text_answer},
-    ///     tool::Tool,
     ///     workspace::ShutWorkspace,
     /// };
     /// use haest_tools::{
@@ -210,12 +204,12 @@ pub trait SubagentParent: Inbox {
     /// #[async_trait]
     /// impl SubagentParent for Parent {
     ///     fn deps(&self) -> SharedDeps {
-    ///         SharedDeps::new(Arc::new(self.0.resolver()), "/", Arc::new(ShutWorkspace))
+    ///         SharedDeps::new(self.0.resolver(), "/", ShutWorkspace)
     ///     }
-    ///     fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
-    ///         Vec::new()
+    ///     fn base_tools(&self) -> Tools {
+    ///         Tools::new()
     ///     }
-    ///     async fn system_prompt(&self, _model: &str, _tools: &[Arc<dyn Tool>]) -> String {
+    ///     async fn system_prompt(&self, _model: &str, _tools: &[ToolRef]) -> String {
     ///         "You help a person.".into()
     ///     }
     ///     fn default_model(&self) -> (String, Option<Effort>) {

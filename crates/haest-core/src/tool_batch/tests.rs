@@ -11,7 +11,7 @@ use crate::{
     events::LoopEvent,
     messages::Message,
     testing::{ScriptedProvider, tool_answer},
-    tool::{Tool, ToolOutput, opt_num},
+    tool::{ToolOutput, ToolRef, Tools, opt_num},
 };
 
 /// How many calls of a tool run at once, the most there ever were, and the room each saw.
@@ -23,7 +23,7 @@ struct Gauge {
 }
 
 /// A tool that records the gauge and finishes after `ms` (its input).
-fn timed_tool(name: &str, read_only: bool, gauge: Arc<Mutex<Gauge>>) -> Arc<dyn Tool> {
+fn timed_tool(name: &str, read_only: bool, gauge: Arc<Mutex<Gauge>>) -> ToolRef {
     let label = name.to_string();
     FnTool::arc(name, read_only, move |input, ctx| {
         let (gauge, label) = (gauge.clone(), label.clone());
@@ -63,10 +63,10 @@ fn gauge() -> Arc<Mutex<Gauge>> {
 #[test]
 fn consecutive_read_only_calls_share_a_batch_and_a_write_or_an_unknown_tool_runs_alone() {
     let g = gauge();
-    let tools = ToolIndex::new(vec![
+    let tools = ToolIndex::new(Tools::from(vec![
         timed_tool("R", true, g.clone()),
         timed_tool("W", false, g),
-    ]);
+    ]));
     let msg = answer(&[
         call("1", "R", 0),
         call("2", "R", 0),

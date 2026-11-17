@@ -14,7 +14,6 @@ use async_trait::async_trait;
 use haest::{
     Agent, AgentHooks, Clock, Message, TurnCaps, TurnCapsSource,
     core::session::{SessionRecord, SessionSink},
-    core::tool::ToolServices,
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -127,8 +126,6 @@ impl NotebookHost {
         self.caps.clone()
     }
 }
-
-impl ToolServices for NotebookHost {}
 
 #[async_trait]
 impl AgentHooks for NotebookHost {

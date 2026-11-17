@@ -123,6 +123,13 @@ where
     }
 }
 
+crate::plug_ref! {
+    /// A [`ModelResolver`], shared: what [`SharedDeps::models`](crate::SharedDeps::models)
+    /// holds. Built from the resolver itself (a closure, `haest-providers`'
+    /// registry), or from an `Arc` of one.
+    pub struct ModelResolverRef(dyn ModelResolver);
+}
+
 /// Splits a model spec into provider and model id at the FIRST colon:
 /// `openrouter:anthropic/claude-sonnet-5` -> ("openrouter", "anthropic/claude-sonnet-5"),
 /// `openrouter:x/y:free` -> ("openrouter", "x/y:free").

@@ -14,7 +14,7 @@ async fn main() {
     use std::sync::Arc;
 
     use haest::{
-        Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tool,
+        Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tools,
         core::testing::{ScriptedProvider, text_answer},
         session::{Backend, Body, Hub, HubOptions, start},
         transport::{Grant, Transport, UnixSocket, connect_session, running_sessions},
@@ -22,14 +22,7 @@ async fn main() {
     };
 
     let model = ScriptedProvider::new([text_answer("Noted.")]);
-    let tools: Vec<Arc<dyn Tool>> = Vec::new();
-    let deps = AgentDeps::new(
-        Arc::new(model.resolver()),
-        Arc::new(tools),
-        Arc::new(String::new()),
-        "/",
-        Arc::new(ShutWorkspace),
-    );
+    let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let session = start(agent, Hub::new("example-1", HubOptions::default()));
 

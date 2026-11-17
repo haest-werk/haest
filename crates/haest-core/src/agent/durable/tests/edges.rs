@@ -18,7 +18,7 @@ fn prior() -> Vec<Message> {
 }
 
 /// A run on `prior()` killed in its first tool; the store and the tools.
-async fn killed_on_prior_history() -> (MemoryRunStore, RunKey, Vec<Arc<dyn Tool>>, Vec<Message>) {
+async fn killed_on_prior_history() -> (MemoryRunStore, RunKey, Tools, Vec<Message>) {
     let (store, key, log) = (MemoryRunStore::new(), RunKey::new("job"), Log::default());
     let hung = Arc::new(Notify::new());
     let tools = vec![Probe::new("Slow", false, &log).hangs(&hung).arc()];
@@ -28,7 +28,7 @@ async fn killed_on_prior_history() -> (MemoryRunStore, RunKey, Vec<Arc<dyn Tool>
     kill_when(&hung, agent.run_durable(&key, "go", &mut no_events())).await;
     // What the host's own session file got: every message the loop appended.
     let hosts_file = hooks.persisted.lock().unwrap().clone();
-    (store, key, tools, hosts_file)
+    (store, key, tools.into(), hosts_file)
 }
 
 #[tokio::test]
@@ -119,7 +119,7 @@ impl crate::run::RunStore for Unreadable {
 async fn a_store_that_cannot_load_the_run_refuses_it_and_says_why_once() {
     let p = ScriptedProvider::new([text_answer("ok")]);
     let (mut agent, _) = durable(&p, &MemoryRunStore::new(), &[], None);
-    agent.deps_mut().shared.run_store = Some(Arc::new(Unreadable));
+    agent.map_deps(|d| d.with_run_store(Unreadable));
 
     let refused = agent
         .run_durable(&RunKey::new("job"), "go", &mut no_events())

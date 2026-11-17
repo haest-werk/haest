@@ -11,7 +11,6 @@ use crate::{
     run::{ReplayedRun, RunStore},
     session::SessionSink,
     testing::{text_answer, tool_answer},
-    tool::ToolServices,
 };
 
 /// What happened, in order: a record appended (its kind), a flush, a tool's effect.
@@ -50,7 +49,7 @@ impl RunStore for Watching {
 }
 
 /// A tool that writes its effect into the event list.
-fn effect(name: &str, read_only: bool, events: &Events) -> Arc<dyn Tool> {
+fn effect(name: &str, read_only: bool, events: &Events) -> ToolRef {
     let (label, events) = (name.to_string(), events.clone());
     FnTool::arc(name, read_only, move |_, _| {
         let (label, events) = (label.clone(), events.clone());
@@ -91,7 +90,7 @@ async fn the_call_lands_before_a_tool_with_side_effects_runs_and_reads_do_not_wa
         ..Default::default()
     };
     let (mut agent, _) = agent_with(&p, opts);
-    agent.deps_mut().shared.run_store = Some(Arc::new(Watching(events.clone())));
+    agent.map_deps(|d| d.with_run_store(Watching(events.clone())));
     agent
         .run_durable(&RunKey::new("job"), "go", &mut no_events())
         .await
@@ -105,8 +104,6 @@ async fn the_call_lands_before_a_tool_with_side_effects_runs_and_reads_do_not_wa
 /// Counts the host's own flushes.
 #[derive(Default)]
 struct Flushing(Mutex<u32>);
-
-impl ToolServices for Flushing {}
 
 #[async_trait]
 impl AgentHooks for Flushing {
@@ -134,7 +131,7 @@ async fn a_plain_turn_awaits_the_hosts_flush_before_side_effects_only() {
     };
     let (mut agent, _) = agent_with(&p, opts);
     let host = Arc::new(Flushing::default());
-    agent.deps_mut().shared.hooks = host.clone();
+    agent.map_deps(|d| d.with_hooks(host.clone()));
     agent.run("go", &mut no_events()).await;
 
     // One batch with side effects; the reads and the unknown tool ran none.

@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::{
+    ToolRef, Tools,
     deps::SystemPrompt,
     tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput, ToolSource},
 };
@@ -49,29 +50,29 @@ impl ModTools {
     ///
     /// The mods' tools come after `tools`, in load order. A wrapped tool keeps
     /// its name, description, schema, kind and `read_only`.
-    pub fn wrap(mods: &Arc<Mods>, tools: Vec<Arc<dyn Tool>>) -> Vec<Arc<dyn Tool>> {
+    pub fn wrap(mods: &Arc<Mods>, tools: Tools) -> Tools {
         tools
             .into_iter()
             .chain(mods.tools())
             .map(|tool| {
-                Arc::new(ModTool {
+                ToolRef::new(ModTool {
                     tool,
                     mods: mods.clone(),
-                }) as Arc<dyn Tool>
+                })
             })
             .collect()
     }
 }
 
 impl ToolSource for ModTools {
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn tools(&self) -> Tools {
         Self::wrap(&self.mods, self.inner.tools())
     }
 }
 
 /// One tool inside the hooks.
 struct ModTool {
-    tool: Arc<dyn Tool>,
+    tool: ToolRef,
     mods: Arc<Mods>,
 }
 

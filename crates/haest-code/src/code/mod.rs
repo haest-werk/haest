@@ -9,8 +9,9 @@ mod tests;
 use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
-use haest_core::tool::{
-    JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, opt_num, req_str,
+use haest_core::{
+    ToolRef,
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, opt_num, req_str},
 };
 use serde_json::{Value, json};
 
@@ -44,15 +45,13 @@ fn matches(name: &str, pattern: &str) -> bool {
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_code::code_callable;
-/// use haest_core::Tool;
+/// use haest_core::ToolRef;
 /// use haest_tools::{BashOptions, BashTool, FILE_TOOLS, ReadTool};
 ///
 /// let files = FILE_TOOLS.map(String::from);
-/// let read: Arc<dyn Tool> = Arc::new(ReadTool::default());
-/// let bash: Arc<dyn Tool> = Arc::new(BashTool::new(BashOptions::default()));
+/// let read = ToolRef::new(ReadTool::default());
+/// let bash = ToolRef::new(BashTool::new(BashOptions::default()));
 /// assert!(code_callable(read.as_ref(), &files));
 /// assert!(!code_callable(read.as_ref(), &[]));
 /// assert!(!code_callable(bash.as_ref(), &files));
@@ -68,7 +67,7 @@ pub fn code_callable(t: &dyn Tool, allowed: &[String]) -> bool {
 
 /// The names of `tools` a Code program may call ([`code_callable`] with
 /// `allowed`), in their order: what [`CodeTool::new`] takes.
-pub fn code_tool_names(tools: &[Arc<dyn Tool>], allowed: &[String]) -> Vec<String> {
+pub fn code_tool_names(tools: &[ToolRef], allowed: &[String]) -> Vec<String> {
     tools
         .iter()
         .filter(|t| code_callable(t.as_ref(), allowed))

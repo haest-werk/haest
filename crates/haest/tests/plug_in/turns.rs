@@ -3,7 +3,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use haest::{AgentHooks, core::tool::ToolServices};
+use haest::AgentHooks;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
@@ -116,8 +116,6 @@ struct Budget {
     allowed: usize,
 }
 
-impl ToolServices for Budget {}
-
 #[async_trait]
 impl AgentHooks for Budget {
     async fn before_model_call(
@@ -138,14 +136,12 @@ async fn a_hook_may_refuse_a_model_call_and_end_the_turn() {
         vec![call("c1", "lookup", json!({"key": "q3"}))],
         say("never sent"),
     ]);
-    let tools = r.agent.deps().tools.clone();
-    r.reseat(|deps| {
-        deps.tools = tools;
-        deps.shared.hooks = Arc::new(Budget {
-            calls: AtomicUsize::new(0),
-            allowed: 1,
-        });
-    });
+    let tools = r.agent.deps().tools().clone();
+    let budget = Budget {
+        calls: AtomicUsize::new(0),
+        allowed: 1,
+    };
+    r.reseat(|deps| deps.with_tools(tools).with_hooks(budget));
 
     let end = r.turn("How was Q3?").await;
     assert_eq!(

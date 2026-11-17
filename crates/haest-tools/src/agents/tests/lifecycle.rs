@@ -5,9 +5,7 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use haest_core::{
-    AgentHooks, Message, SharedDeps, caps::ConversationCaps, ledger::Ledger, tool::ToolServices,
-};
+use haest_core::{AgentHooks, Message, SharedDeps, caps::ConversationCaps, ledger::Ledger};
 
 use super::{script::Roles, support::Quiet};
 use crate::agents::{AgentError, MemberCaps, MemberEnd, MemberRun, MemberStart, SubagentParent};
@@ -49,8 +47,6 @@ pub struct Kept {
     pub messages: Mutex<Vec<Message>>,
     pub ledger: Mutex<Option<Arc<Mutex<Ledger>>>>,
 }
-
-impl ToolServices for Kept {}
 
 impl AgentHooks for Kept {
     fn on_message(&self, msg: &Message) {
@@ -97,11 +93,10 @@ impl Lifecycle {
                 Arc::new(Quiet),
             )));
             *self.kept.ledger.lock().unwrap() = Some(ledger.clone());
-            SharedDeps {
-                hooks: self.kept.clone(),
-                ledger: Some(ledger),
-                ..parent.deps()
-            }
+            parent
+                .deps()
+                .with_hooks(self.kept.clone())
+                .with_ledger(ledger)
         });
         Ok(Box::new(Watched {
             name: start.name.clone(),

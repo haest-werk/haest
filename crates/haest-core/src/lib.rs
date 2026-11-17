@@ -78,12 +78,10 @@
 //! # #[cfg(feature = "testing")]
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() {
-//! use std::sync::Arc;
-//!
 //! use async_trait::async_trait;
 //! use haest_core::{
 //!     Agent, AgentDeps, AgentOptions, LoopEvent, Message, ShutWorkspace, StopReason, Tool,
-//!     ToolContext, ToolError, ToolOutput,
+//!     ToolContext, ToolError, ToolOutput, Tools,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //!     tool::{JsonMap, req_str},
 //! };
@@ -116,13 +114,12 @@
 //!     tool_answer(&[("call-1", "Shout", json!({"text": "hello"}))]),
 //!     text_answer("It says HELLO."),
 //! ]);
-//! let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Shout)];
 //! let deps = AgentDeps::new(
-//!     Arc::new(provider.resolver()), // which provider serves a `provider:model` spec
-//!     Arc::new(tools),               // what the model may call
-//!     Arc::new("Use your tools.".to_string()), // the system prompt
-//!     "/work",                       // the working directory
-//!     Arc::new(ShutWorkspace),       // no files, no shell
+//!     provider.resolver(),     // which provider serves a `provider:model` spec
+//!     Tools::new().with(Shout), // what the model may call
+//!     "Use your tools.",       // the system prompt
+//!     "/work",                 // the working directory
+//!     ShutWorkspace,           // no files, no shell
 //! );
 //! let mut agent = Agent::new(deps, AgentOptions::new("scripted:model-1"));
 //!
@@ -170,6 +167,7 @@ pub mod ledger;
 pub mod media;
 pub mod messages;
 mod panics;
+mod plug_ref;
 mod pricing;
 pub mod provider;
 pub mod remedy;
@@ -229,10 +227,11 @@ pub use prelude::*;
 /// ([`req_str`], [`opt_str`], [`opt_num`], [`opt_bool`], [`truncate_middle`]).
 pub mod prelude {
     pub use crate::agent::{Agent, AgentControl, AgentOptions};
-    pub use crate::caps::{TurnCaps, TurnCapsSource};
-    pub use crate::catalog::{InputModality, ModelFacts, NoFacts, Reasoning};
+    pub use crate::caps::{TurnCaps, TurnCapsSource, TurnCapsSourceRef};
+    pub use crate::catalog::{InputModality, ModelFacts, ModelFactsRef, NoFacts, Reasoning};
     pub use crate::deps::{
-        AgentDeps, AgentHooks, Clock, NoHooks, SharedDeps, SystemPrompt, WallClock, now_ms,
+        AgentDeps, AgentHooks, AgentHooksRef, Clock, ClockRef, NoHooks, SharedDeps, SystemPrompt,
+        SystemPromptRef, WallClock, now_ms,
     };
     pub use crate::events::{EventSink, LoopEvent, TurnOutcome};
     pub use crate::fs::{DirEntry, FileKind, Fs, FsStat, MemFs};
@@ -242,14 +241,16 @@ pub mod prelude {
         ToolResultMessage, Usage, UserMessage,
     };
     pub use crate::provider::{
-        Effort, ModelError, ModelResolver, Provider, ProviderEvent, ProviderRequest,
-        ProviderStream, ResolvedModel,
+        Effort, ModelError, ModelResolver, ModelResolverRef, Provider, ProviderEvent,
+        ProviderRequest, ProviderStream, ResolvedModel,
     };
     pub use crate::tool::{
-        InnerCallEvent, JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices,
-        ToolSource, opt_bool, opt_num, opt_str, req_str, truncate_middle,
+        InnerCallEvent, JsonMap, NoServices, Tool, ToolContext, ToolError, ToolOutput, ToolRef,
+        ToolServices, ToolServicesRef, ToolSource, ToolSourceRef, Tools, opt_bool, opt_num,
+        opt_str, req_str, truncate_middle,
     };
     pub use crate::workspace::{
         ChangeSet, ExecOptions, ExecResult, OutputChunks, ShutWorkspace, Workspace, WorkspaceMode,
+        WorkspaceRef,
     };
 }

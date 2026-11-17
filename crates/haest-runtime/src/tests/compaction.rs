@@ -9,7 +9,7 @@ use crate::{
     RuntimeHooks,
     haest::{
         Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
-        ModelError, Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason, Tool,
+        ModelError, Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason,
         TurnOutcome,
         core::caps::ConversationCaps,
         core::ledger::Ledger,
@@ -18,6 +18,7 @@ use crate::{
     },
     testkit::{hooks, settings},
 };
+use haest_core::Tools;
 
 /// A conversation on `host` whose last request filled the window, so the
 /// next model call compacts first; its ledger has no cap.
@@ -32,18 +33,12 @@ fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<M
             model: "m".into(),
         })
     };
-    let none: Vec<Arc<dyn Tool>> = Vec::new();
-    let mut deps = AgentDeps::new(
-        Arc::new(resolve),
-        Arc::new(none),
-        Arc::new(String::new()),
-        "/w",
-        Arc::new(ShutWorkspace),
-    );
-    deps.shared.hooks = hooks.clone();
-    deps.shared.facts = hooks.clone();
-    deps.shared.turn_caps = hooks.clone();
-    deps.shared.ledger = Some(ledger.clone());
+    let deps = AgentDeps::new(resolve, Tools::new(), "", "/w", ShutWorkspace)
+        .with_hooks(hooks.clone())
+        .with_services(hooks.clone())
+        .with_facts(hooks.clone())
+        .with_turn_caps(hooks.clone())
+        .with_ledger(ledger.clone());
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let mut filled = text_answer("earlier answer");
     filled.usage.input = 1_000_000;

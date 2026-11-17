@@ -106,6 +106,12 @@ impl<F: Fn(&str) -> Option<TurnCaps> + Send + Sync> TurnCapsSource for F {
     }
 }
 
+crate::plug_ref! {
+    /// A [`TurnCapsSource`], shared: what
+    /// [`SharedDeps::turn_caps`](crate::SharedDeps::turn_caps) holds.
+    pub struct TurnCapsSourceRef(dyn TurnCapsSource);
+}
+
 /// The caps on the subagent tree. `max_depth` and `max_concurrent` are NOT
 /// "0 = off": 0 means no subagents at all (no Agent tool). The three per-agent
 /// caps replace the conversation's turn caps for each subagent's one turn.

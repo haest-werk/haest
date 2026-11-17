@@ -56,6 +56,11 @@ pub trait ModelFacts: Send + Sync {
     }
 }
 
+crate::plug_ref! {
+    /// A [`ModelFacts`], shared: what [`SharedDeps::facts`](crate::SharedDeps::facts) holds.
+    pub struct ModelFactsRef(dyn ModelFacts);
+}
+
 /// Facts about no model: every answer "unknown". [`AgentDeps::new`](crate::AgentDeps::new)'s default.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NoFacts;

@@ -20,9 +20,31 @@ Thresholds: a meter crossing a mark fires an action. The guard's nudge, the
 agent-turn gate's nudge, the ledger's warning and compaction are now
 default thresholds with the same numbers and behaviour, a host adds its own
 beside them, and wind-down (new, opt-in, off by default) is one of them.
-Breaking for a host that writes `SharedDeps`, `TurnCaps`, `ToolContext` or
-`Settings` out in full; everything built with `::new`, `Default` or `..`
-compiles as before.
+Breaking for a host that writes `TurnCaps`, `ToolContext` or `Settings`
+out in full; everything built with `::new`, `Default` or `..` compiles as
+before.
+
+No `Arc`, `Box` or `dyn` in haest-core's API: every plug point takes the
+value itself, and holds it in a handle named after its trait. Read
+"Upgrading" first.
+
+### Upgrading
+
+1. Plug points take the value itself, or an `Arc` of one the host already
+   shares: `AgentDeps::new(Arc::new(models), Arc::new(tools),
+   Arc::new("You are terse.".to_string()), cwd, Arc::new(workspace))` ->
+   `AgentDeps::new(models, tools, "You are terse.", cwd, workspace)`.
+2. `AgentDeps` and `SharedDeps` keep their fields private: set a part with
+   its `with_*` setter (`deps.shared.hooks = Arc::new(host)` ->
+   `deps.with_hooks(host)`), read it with the getter of its name
+   (`deps.shared.cwd` -> `deps.shared().cwd()`).
+3. A tool list is `Tools`: `vec![Arc::new(Read) as Arc<dyn Tool>]` ->
+   `Tools::new().with(Read)`, and `Vec<Arc<dyn Tool>>` -> `Tools` in every
+   signature that took or returned one.
+4. `ToolServices` is a slot of its own, no longer a supertrait of
+   `AgentHooks`: delete `impl ToolServices for MyHooks {}`; hooks that do
+   publish, report or log go in both slots,
+   `.with_hooks(host.clone()).with_services(host)`.
 
 ### Bug fixes
 
@@ -116,6 +138,12 @@ compiles as before.
 
 ### haest (the facade)
 
+- The front page and every example build their deps the new way:
+  `AgentDeps::new(models, builtin_tools(BuiltinOptions::default()), "You
+  are a careful engineer.", std::env::current_dir()?, RealWorkspace::new(env))`,
+  in a `main` that returns a `Result`. The plug-point table lists `Tools`,
+  `&'static str` and closures as prompts, and `ToolServices`.
+
 - New example `durable_run` (`cargo run -p haest --example durable_run`,
   also under `cargo test`): the finished-run shortcut, and a kill and a
   resume on the memory store.
@@ -142,6 +170,48 @@ compiles as before.
 
 ### haest-core
 
+Plug points without `Arc` (breaking):
+
+- New handles, one per plug point, named after the trait: `ToolRef`,
+  `ToolSourceRef`, `SystemPromptRef`, `ModelResolverRef`, `WorkspaceRef`,
+  `AgentHooksRef`, `ToolServicesRef`, `ModelFactsRef`, `TurnCapsSourceRef`,
+  `ClockRef` and `RunStoreRef`. Each is a cheap `Clone`, derefs to the trait
+  object, and is built `From` the value, an `Arc` of it or an
+  `Arc<dyn Trait>`, so one host object can fill several slots;
+  `XRef::new(value)` and `XRef::ptr_eq` besides.
+- `AgentDeps::new(models, tools, system_prompt, cwd, workspace)` takes each
+  part as `impl Into<..Ref>` (`cwd` as `impl Into<PathBuf>`), and so does
+  `SharedDeps::new(models, cwd, workspace)`:
+  `AgentDeps::new(Arc::new(m), Arc::new(t), Arc::new(p), cwd, Arc::new(w))`
+  -> `AgentDeps::new(m, t, p, cwd, w)`.
+- `AgentDeps`'s fields are private: `deps.tools` -> `deps.tools()` and
+  `with_tools(..)`, `deps.system_prompt` -> `system_prompt()` and
+  `with_system_prompt(..)`, `deps.shared` -> `shared()` and
+  `with_shared(..)`. New `AgentDeps::from_shared(shared, tools, prompt)`: a
+  subagent's deps from its parent's. Every `SharedDeps::with_*` is on
+  `AgentDeps` too.
+- `SharedDeps`'s fields are private, read by a getter of the same name and
+  set by a consuming `with_*`: `shared.hooks = Arc::new(h)` ->
+  `shared.with_hooks(h)`. The setters: `with_models`, `with_cwd`,
+  `with_workspace`, `with_spill_dir`, `with_hooks`, `with_services`,
+  `with_facts`, `with_turn_caps`, `with_clock`, `with_ledger`,
+  `with_web_search`, `with_remedies`, `with_run_store`, `with_thresholds`.
+- `AgentHooks: ToolServices` -> `AgentHooks: Send + Sync`. What tools hand
+  the host is the new slot `SharedDeps::services` (`with_services`, default
+  `NoServices`): `impl ToolServices for Hooks {}` -> nothing.
+- New `Tools`: an agent's tool list. A cheap `Clone` (copy on write),
+  `Tools::new().with(tool)`, `push`, `FromIterator`, `Extend`,
+  `IntoIterator`; it derefs to `[ToolRef]` and is a `ToolSource`.
+  `Vec<Arc<dyn Tool>>` -> `Tools` and `&[Arc<dyn Tool>]` -> `&[ToolRef]`
+  everywhere: `ToolSource::tools`, `ToolSource::callable`,
+  `deferred_tools::search_tools`, `deferred_tools::advertised_tools` (which
+  takes `&Tools`). `impl ToolSource for Vec<Arc<dyn Tool>>` -> `Tools`.
+- `SystemPrompt` is implemented for `&'static str` and for closures
+  `Fn() -> String`, beside `String`.
+- `ToolContext::new(cwd, impl Into<WorkspaceRef>)`;
+  `ToolContext::workspace: WorkspaceRef`, `ToolContext::services:
+  ToolServicesRef`.
+
 Durable runs, opt-in: a host that hands no run store gets the haest it had.
 
 - New module `run`: `RunKey` (`new`, `as_str`, `child`, `effect_key`),
@@ -150,9 +220,8 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   (`NoStore`, `InputMismatch`, `HistoryMismatch`, `TurnRunning`, `Store`),
   `ReplayedRun`, `replay_run`.
 - New plug point `run::RunStore` (`sink(key)`, `load(key)`) and
-  `run::MemoryRunStore` (`new`, `lines`, `keys`), on the new field
-  `SharedDeps::run_store: Option<Arc<dyn RunStore>>` (default `None`, set
-  by `SharedDeps::new`; a struct literal adds it). A subagent shares its
+  `run::MemoryRunStore` (`new`, `lines`, `keys`), set with
+  `SharedDeps::with_run_store` (none by default). A subagent shares its
   parent's store. haest deletes no run.
 - New `Agent::run_durable(&key, input, sink) -> Result<RunOutcome,
   RunError>`: a finished run under the key returns its stored result (no
@@ -201,8 +270,8 @@ Thresholds; wind-down, opt-in:
   fired in a `Watch<S>`; a threshold a site cannot check is refused
   (`NotServed`). Sites: `TurnSite` and `LedgerSite` here, haest-tools'
   `AgentTurnSite`; compaction's threshold is `CompactionOptions`.
-- New `SharedDeps::thresholds: Thresholds<TurnSite>`: what a turn checks,
-  the guard's nudges unless set. Remind, warn and wind down at every step
+- New `SharedDeps::with_thresholds(Thresholds<TurnSite>)`: what a turn
+  checks, the guard's nudges unless set. Remind, warn and wind down at every step
   boundary (a resumed durable run's too); stop before every model call.
   Each agent keeps which fired for as long as it lives, and a durable run
   records the turn's in `TurnState::nudged`, so a resumed turn does not
@@ -233,6 +302,15 @@ Thresholds; wind-down, opt-in:
 
 ### haest-tools
 
+- Tool lists are `haest_core::Tools` and single tools `ToolRef`:
+  `builtin_tools`, `builtin_tools_where`, `agent_tools`, `agent_tools_with`,
+  `job_tools`, `task_tools`, `SubagentHub::tools_for` and
+  `SubagentParent::{base_tools, subagent_tools, tool_source}` take or return
+  `Tools` (was `Vec<Arc<dyn Tool>>`), `SubagentParent::system_prompt` takes
+  `&[ToolRef]`, `skill_tool` returns `ToolRef`. `JobHub::start` takes
+  `impl Into<WorkspaceRef>`.
+- A subagent's lent services are their own wrapper (`ChildServices`), beside
+  its lent hooks, now that `ToolServices` is a slot of its own.
 - New `SubagentParent::start_member(&MemberStart, &CancellationToken)`,
   default `InProcessRun` (the member haest has always run). It runs before
   a member's loop exists: an `Err` refuses the spawn (the name is freed,
@@ -288,12 +366,19 @@ Thresholds; wind-down, opt-in:
 
 ### haest-code
 
+- `code_tool_names` takes `&[ToolRef]` (was `&[Arc<dyn Tool>]`).
 - The Code tool hands its caller's `turn_time_left` on to the calls it
   makes.
 - A tool the Code tool calls sees the caller's wind-down.
 
+### haest-mcp
+
+- `McpHub::tools` returns `haest_core::Tools` (was `Vec<Arc<dyn Tool>>`).
+
 ### haest-mods
 
+- `Mod::tools`, `Mods::tools` and `ModTools::wrap` take and return
+  `haest_core::Tools` (was `Vec<Arc<dyn Tool>>`).
 - `ModTools` forwards the wrapped tool's `Tool::on_resume`.
 
 ### haest-settings
@@ -321,6 +406,9 @@ Thresholds; wind-down, opt-in:
 
 ### haest-runtime
 
+- The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
+  as `with_hooks`; what tools publish, report and log reaches it as before.
+  `WrappedTools::new` takes `Tools`.
 - Feature `session` (off; the facade's `session` turns it on with
   `runtime`): `impl Driven for Runtime<U>`. The driver calls the runtime's
   own `human_turn`, `next_agent_turn`, `run` and `shut_down`, so a session
@@ -399,6 +487,11 @@ for an eviction (`Classify`, `FrameKind`, `Replay`). `LineDecoder` and
   missed. A dropped link is dialed again after a full-jitter `Backoff`
   (500 ms doubling to 30 s); close 4401 or 4408 (`AUTH_CLOSE`), or a 401 or
   403 handshake, ends it with `TransportError::Auth`.
+
+### haest-issues
+
+- `issue_tools` and `issue_tools_named` return `haest_core::Tools` (was
+  `Vec<Arc<dyn Tool>>`).
 
 ## 0.2.0 (2026-11-17)
 

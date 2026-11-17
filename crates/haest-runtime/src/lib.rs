@@ -112,9 +112,9 @@
 //! let rt = build(inputs, Arc::new(Lines), DenyAll, BuildOptions::default()).await?;
 //!
 //! let deps = rt.agent().deps();
-//! let tools: Vec<String> = deps.tools.tools().iter().map(|t| t.name().to_string()).collect();
+//! let tools: Vec<String> = deps.tools().tools().iter().map(|t| t.name().to_string()).collect();
 //! assert_eq!(tools, ["Read", "Grep"]);
-//! assert!(deps.system_prompt.system_prompt().await.contains("Answer in one line."));
+//! assert!(deps.system_prompt().system_prompt().await.contains("Answer in one line."));
 //!
 //! rt.hooks.flush().await;
 //! let session = Path::new("/data/sessions").join(format!("{}.jsonl", rt.session_id()));

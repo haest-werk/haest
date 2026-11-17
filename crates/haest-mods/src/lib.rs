@@ -51,7 +51,7 @@
 //! use std::sync::Arc;
 //!
 //! use haest_core::{
-//!     Agent, AgentDeps, AgentOptions, MemFs, Message, ShutWorkspace,
+//!     Agent, AgentDeps, AgentOptions, MemFs, Message, ShutWorkspace, Tools,
 //!     deps::SystemPrompt,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //!     tool::{Tool, ToolSource},
@@ -97,18 +97,18 @@
 //! assert_eq!(mods.names(), ["approval", "plan", "/home/me/.config/haest/mods/guard.js"]);
 //!
 //! // The agent's tools and system prompt, inside the mods.
-//! let tools: Arc<dyn ToolSource> = Arc::new(vec![Arc::new(Bash) as Arc<dyn Tool>]);
+//! let tools: Arc<dyn ToolSource> = Arc::new(Tools::new().with(Bash));
 //! let prompt: Arc<dyn SystemPrompt> = Arc::new("You keep this machine tidy.".to_string());
 //! let model = ScriptedProvider::new([
 //!     tool_answer(&[("t1", "Bash", json!({"command": "rm -rf /"}))]),
 //!     text_answer("Understood, I will not."),
 //! ]);
 //! let deps = AgentDeps::new(
-//!     Arc::new(model.resolver()),
-//!     Arc::new(ModTools::new(tools, mods.clone())),
-//!     Arc::new(ModSystemPrompt::new(prompt, mods.clone())),
+//!     model.resolver(),
+//!     ModTools::new(tools, mods.clone()),
+//!     ModSystemPrompt::new(prompt, mods.clone()),
 //!     "/project",
-//!     Arc::new(ShutWorkspace),
+//!     ShutWorkspace,
 //! );
 //! let mut agent = Agent::new(deps, AgentOptions::new("scripted:model"));
 //! let text = mods.rewrite_prompt("free up some disk").await;
@@ -133,7 +133,7 @@
 //! use std::sync::Arc;
 //!
 //! use async_trait::async_trait;
-//! use haest_core::{ShutWorkspace, ToolContext, error::BoxError, workspace::WorkspaceMode};
+//! use haest_core::{ShutWorkspace, ToolContext, Tools, error::BoxError, workspace::WorkspaceMode};
 //! use haest_mods::{Before, Mod, ModEnv, ModToolCall, ModTools, Mods};
 //! use serde_json::json;
 //! # use haest_mods::{ApprovalRequest, Decision, ModUi};
@@ -186,8 +186,8 @@
 //! let mods = Arc::new(mods);
 //! assert_eq!(mods.system_append().await, "Never print a .env file.");
 //!
-//! let tools = ModTools::wrap(&mods, vec![Arc::new(Bash)]);
-//! let ctx = ToolContext::new("/project", Arc::new(ShutWorkspace));
+//! let tools = ModTools::wrap(&mods, Tools::new().with(Bash));
+//! let ctx = ToolContext::new("/project", ShutWorkspace);
 //! let call = |command: &str| json!({ "command": command }).as_object().cloned().unwrap();
 //! let refused = tools[0].execute(call("cat .env"), &ctx).await.unwrap_err();
 //! assert!(refused.to_string().contains("secrets"));
@@ -205,7 +205,7 @@
 //! ```
 //! use std::{path::Path, sync::Arc};
 //!
-//! use haest_core::{ShutWorkspace, ToolContext, workspace::WorkspaceMode};
+//! use haest_core::{ShutWorkspace, ToolContext, Tools, workspace::WorkspaceMode};
 //! use haest_mods::{CommandOutcome, JsMod, ModEnv, ModTools, Mods};
 //! use serde_json::json;
 //! # use haest_mods::{ApprovalRequest, Decision, ModUi};
@@ -242,8 +242,8 @@
 //! assert_eq!(sent, CommandOutcome::Prompt("Write my standup from: yesterday's commits".into()));
 //!
 //! // The mod's tool sits beside the host's, inside the same hooks.
-//! let tools = ModTools::wrap(&mods, Vec::new());
-//! let ctx = ToolContext::new("/project", Arc::new(ShutWorkspace));
+//! let tools = ModTools::wrap(&mods, Tools::new());
+//! let ctx = ToolContext::new("/project", ShutWorkspace);
 //! let input = json!({ "text": "one two three" }).as_object().cloned().unwrap();
 //! assert_eq!(tools[0].execute(input, &ctx).await?.content, "3");
 //! # Ok(())

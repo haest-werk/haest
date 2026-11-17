@@ -13,6 +13,7 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::{
+    ToolRef, Tools,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
     workspace::{ShutWorkspace, WorkspaceMode},
 };
@@ -208,11 +209,11 @@ pub(crate) async fn js(file: &str, source: &str, haest: &ModEnv) -> Result<JsMod
 }
 
 /// `tools` wrapped in `mods`' hooks, plus the mods' own tools.
-pub(crate) fn wrapped(mods: Mods, tools: Vec<Arc<dyn Tool>>) -> Vec<Arc<dyn Tool>> {
-    ModTools::wrap(&Arc::new(mods), tools)
+pub(crate) fn wrapped<T: Into<ToolRef>>(mods: Mods, tools: impl IntoIterator<Item = T>) -> Tools {
+    ModTools::wrap(&Arc::new(mods), tools.into_iter().collect())
 }
 
-pub(crate) fn find(tools: &[Arc<dyn Tool>], name: &str) -> Arc<dyn Tool> {
+pub(crate) fn find(tools: &[ToolRef], name: &str) -> ToolRef {
     tools
         .iter()
         .rev()

@@ -13,9 +13,9 @@
 use std::{path::Path, sync::Arc};
 
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason,
+    Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tools,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::{Tool, ToolContext},
+    tool::ToolContext,
 };
 use haest_issues::{CardTracker, GithubTracker, Tracker, issue_tools};
 use haest_workspace::RealFs;
@@ -47,7 +47,7 @@ async fn plan_on_a_board(root: &Path) {
     let dir = root.join("cards");
     // The host picks the directory and the file system; the tracker reads nothing else.
     let tracker = Arc::new(CardTracker::new(Arc::new(RealFs), &dir));
-    let tools: Vec<Arc<dyn Tool>> = issue_tools(tracker.clone());
+    let tools: Tools = issue_tools(tracker.clone());
 
     let model = ScriptedProvider::new([
         tool_answer(&[

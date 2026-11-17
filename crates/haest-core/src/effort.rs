@@ -135,7 +135,6 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::tool::ToolServices;
 
     #[test]
     fn off_has_no_openrouter_name_and_the_rest_keep_theirs() {
@@ -151,7 +150,6 @@ mod tests {
     }
 
     struct Mandatory(Mutex<Vec<Effort>>);
-    impl ToolServices for Mandatory {}
     impl ModelFacts for Mandatory {
         fn reasoning(&self, _: &str) -> Option<Reasoning> {
             Some(r(true, &[OpenRouterEffort::Medium, OpenRouterEffort::High]))

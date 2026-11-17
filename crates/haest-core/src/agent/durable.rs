@@ -55,40 +55,32 @@ impl Agent {
     /// ```
     /// # #[cfg(feature = "testing")]
     /// # #[tokio::main(flavor = "current_thread")]
-    /// # async fn main() {
-    /// use std::sync::Arc;
-    ///
+    /// # async fn main() -> Result<(), haest_core::run::RunError> {
     /// use haest_core::{
-    ///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tool,
+    ///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tools,
     ///     run::{MemoryRunStore, RunError, RunKey, Served},
     ///     testing::{ScriptedProvider, text_answer},
     /// };
     ///
     /// let provider = ScriptedProvider::new([text_answer("Report sent.")]);
-    /// let tools: Vec<Arc<dyn Tool>> = Vec::new();
-    /// let mut deps = AgentDeps::new(
-    ///     Arc::new(provider.resolver()),
-    ///     Arc::new(tools),
-    ///     Arc::new(String::new()),
-    ///     "/",
-    ///     Arc::new(ShutWorkspace),
-    /// );
-    /// deps.shared.run_store = Some(Arc::new(MemoryRunStore::new()));
+    /// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace)
+    ///     .with_run_store(MemoryRunStore::new());
     /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     /// let key = RunKey::new("report-2026-11-16");
     /// let mut events = Vec::<LoopEvent>::new();
     ///
-    /// let first = agent.run_durable(&key, "send the report", &mut events).await.unwrap();
+    /// let first = agent.run_durable(&key, "send the report", &mut events).await?;
     /// assert_eq!(first.served, Served::Fresh);
     ///
     /// // The same job again: the stored result, and the model is not asked.
-    /// let again = agent.run_durable(&key, "send the report", &mut events).await.unwrap();
+    /// let again = agent.run_durable(&key, "send the report", &mut events).await?;
     /// assert_eq!((again.served, again.text.as_str()), (Served::Stored, "Report sent."));
     /// assert_eq!(provider.requests().len(), 1);
     ///
     /// // The same key for another job is refused.
     /// let other = agent.run_durable(&key, "delete the report", &mut events).await;
     /// assert!(matches!(other, Err(RunError::InputMismatch { .. })));
+    /// # Ok(())
     /// # }
     /// # #[cfg(not(feature = "testing"))]
     /// # fn main() {}
@@ -101,9 +93,9 @@ impl Agent {
     ) -> Result<RunOutcome, RunError> {
         let store = self
             .deps
-            .shared
-            .run_store
-            .clone()
+            .shared()
+            .run_store()
+            .cloned()
             .ok_or(RunError::NoStore)?;
         let started = Instant::now();
         let cancel = self.control.begin().map_err(|_| RunError::TurnRunning)?;
@@ -210,7 +202,7 @@ impl Agent {
     /// [`OnResume`]); a later batch with side effects cannot have started, and
     /// a later read-only one is safe to run again: they run as usual.
     fn redo_plan(&self, pending: &[ToolCall]) -> (Vec<Redo>, Vec<ToolCall>) {
-        let tools = ToolIndex::new(self.deps.tools.callable());
+        let tools = ToolIndex::new(self.deps.tools().callable());
         let first = tool_batches(pending, &tools).first().map_or(0, Vec::len);
         let redo = pending[..first]
             .iter()

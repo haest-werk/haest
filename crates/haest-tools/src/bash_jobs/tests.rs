@@ -4,7 +4,7 @@
 use std::{sync::Arc, time::Duration};
 
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, LoopEvent, Message,
+    Agent, AgentDeps, AgentOptions, LoopEvent, Message, ToolRef, Tools,
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::{Tool, ToolContext, ToolError, ToolOutput},
 };
@@ -35,7 +35,7 @@ async fn call(tool: &dyn Tool, r: &Rig, v: Value) -> Result<ToolOutput, ToolErro
 #[tokio::test(flavor = "multi_thread")]
 async fn a_background_command_returns_at_once_and_the_job_tools_read_and_stop_it() {
     let r = Rig::real();
-    let [output, kill] = <[Arc<dyn Tool>; 2]>::try_from(job_tools(r.hub.clone()))
+    let [output, kill] = <[ToolRef; 2]>::try_from(Vec::from_iter(job_tools(r.hub.clone())))
         .ok()
         .unwrap();
     let started = call(
@@ -115,7 +115,7 @@ async fn a_background_job_shows_in_the_running_set_and_its_exit_wakes_the_model_
         text_answer("started"),
         text_answer("noted the exit"),
     ]);
-    let mut tools: Vec<Arc<dyn Tool>> = vec![Arc::new(bash(&r))];
+    let mut tools: Tools = Tools::from_iter([ToolRef::new(bash(&r))]);
     tools.extend(job_tools(r.hub.clone()));
     let deps = AgentDeps::new(
         Arc::new(provider.resolver()),

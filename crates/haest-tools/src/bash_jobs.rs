@@ -15,6 +15,7 @@ use haest_core::tool::{
 use serde_json::{Value, json};
 
 use crate::jobs::{JobHub, MAX_BUFFER};
+use haest_core::{ToolRef, Tools};
 
 /// No job `id`: the error names the ones running.
 fn unknown(jobs: &JobHub, id: &str) -> ToolError {
@@ -121,11 +122,11 @@ impl Tool for KillShellTool {
 ///   ([`JobHub::kill`]). A job that already ended is reported as such.
 ///
 /// An unknown id is an input error that lists the running jobs.
-pub fn job_tools(jobs: Arc<JobHub>) -> Vec<Arc<dyn Tool>> {
-    vec![
-        Arc::new(BashOutputTool { jobs: jobs.clone() }),
-        Arc::new(KillShellTool { jobs }),
-    ]
+pub fn job_tools(jobs: Arc<JobHub>) -> Tools {
+    Tools::from_iter([
+        ToolRef::new(BashOutputTool { jobs: jobs.clone() }),
+        ToolRef::new(KillShellTool { jobs }),
+    ])
 }
 
 #[cfg(test)]

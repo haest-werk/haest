@@ -6,9 +6,10 @@
 //! `kind` itself ("file.read", "shell.exec", ...), so no host has to guess.
 //!
 //! PLUG POINT: implement [`Tool`] to add a tool; implement [`ToolServices`] to receive
-//! what tools publish, report and log. A [`ToolSource`] (a plain
-//! `Vec<Arc<dyn Tool>>` is one) hands an agent its tools through
-//! [`AgentDeps::tools`](crate::AgentDeps::tools).
+//! what tools publish, report and log. A [`ToolSource`] (a [`Tools`] list is
+//! one) hands an agent its tools through
+//! [`AgentDeps::tools`](crate::AgentDeps::tools). The loop holds each tool
+//! by a [`ToolRef`].
 //!
 //! The loop gives every call a [`ToolContext`] (working directory, cancel
 //! token, workspace, the host's services) and turns whatever comes back, an
@@ -18,12 +19,11 @@
 
 mod args;
 mod context;
+mod list;
 mod resume;
 #[cfg(test)]
 mod tests;
 mod truncate;
-
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,7 @@ use serde_json::{Map, Value};
 
 pub use args::{opt_bool, opt_num, opt_str, req_str, spelled};
 pub use context::ToolContext;
+pub use list::Tools;
 pub use resume::OnResume;
 pub use truncate::{TRUNCATE_CHARS, truncate_middle};
 
@@ -158,8 +159,9 @@ pub enum InnerCallEvent {
 
 /// What the host offers every tool. All optional: the defaults do nothing.
 ///
-/// Every [`AgentHooks`](crate::AgentHooks) is one; a tool reaches it through
-/// [`ToolContext::services`]. [`NoServices`] offers nothing.
+/// Set it with [`SharedDeps::with_services`](crate::SharedDeps::with_services);
+/// a tool reaches it through [`ToolContext::services`]. [`NoServices`]
+/// offers nothing.
 #[async_trait]
 pub trait ToolServices: Send + Sync {
     /// Put bytes where the host's transcript can show them; the URL, or None.
@@ -173,9 +175,16 @@ pub trait ToolServices: Send + Sync {
     fn debug(&self, _message: &str) {}
 }
 
+crate::plug_ref! {
+    /// A [`ToolServices`], shared: what [`SharedDeps::services`](crate::SharedDeps::services)
+    /// and every [`ToolContext`] hold.
+    pub struct ToolServicesRef(dyn ToolServices);
+}
+
 /// Services that offer nothing: publish returns no URL, the rest is dropped.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct NoServices;
+
 impl ToolServices for NoServices {}
 
 /// A tool the model can call.
@@ -188,8 +197,6 @@ impl ToolServices for NoServices {}
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use async_trait::async_trait;
 /// use haest_core::{
 ///     ShutWorkspace, Tool, ToolContext, ToolError, ToolOutput,
@@ -230,12 +237,13 @@ impl ToolServices for NoServices {}
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Outside the loop: a context of its own. The loop builds one per call.
-/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-/// let input = json!({"a": 2, "b": "3"}); // models send numbers as strings too
-/// let out = Add.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// let ctx = ToolContext::new("/", ShutWorkspace);
+/// let input: JsonMap = serde_json::from_value(json!({"a": 2, "b": "3"}))?; // models send numbers as strings too
+/// let out = Add.execute(input, &ctx).await?;
 /// assert_eq!(out.content, "5");
+/// # Ok(())
 /// # }
 /// ```
 #[async_trait]
@@ -294,24 +302,32 @@ pub trait Tool: Send + Sync {
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError>;
 }
 
+crate::plug_ref! {
+    /// A [`Tool`], shared: how a [`Tools`] list and the loop hold one.
+    /// Built from the tool itself, or from an `Arc` of one.
+    pub struct ToolRef(dyn Tool);
+    debug(tool, f) {
+        f.debug_tuple("ToolRef").field(&tool.name()).finish()
+    }
+}
+
 /// Where the loop gets its tools, asked again before every model call (deferred
 /// tools and MCP servers change the list mid-conversation).
 ///
-/// A `Vec<Arc<dyn Tool>>` is a fixed list, every tool advertised.
+/// A [`Tools`] list is a fixed one, every tool advertised.
 pub trait ToolSource: Send + Sync {
     /// The tools the next model call advertises.
-    fn tools(&self) -> Vec<Arc<dyn Tool>>;
+    fn tools(&self) -> Tools;
     /// The tools a call may run: the advertised ones, plus any the source keeps
     /// back (a deferred tool the model calls by name runs instead of failing).
-    fn callable(&self) -> Vec<Arc<dyn Tool>> {
+    fn callable(&self) -> Tools {
         self.tools()
     }
 }
 
-impl ToolSource for Vec<Arc<dyn Tool>> {
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
-        self.clone()
-    }
+crate::plug_ref! {
+    /// A [`ToolSource`], shared: what [`AgentDeps::tools`](crate::AgentDeps::tools) holds.
+    pub struct ToolSourceRef(dyn ToolSource);
 }
 
 /// The most any one tool result may put into the model's context (~5k

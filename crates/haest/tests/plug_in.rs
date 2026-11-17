@@ -38,8 +38,8 @@ use async_trait::async_trait;
 use haest::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, Effort,
     ExecResult, Fs, LoopEvent, MemFs, Message, ModelError, Provider, ProviderEvent,
-    ProviderRequest, ResolvedModel, SharedDeps, StopReason, ToolCall, TurnOutcome, Usage,
-    Workspace,
+    ProviderRequest, ResolvedModel, SharedDeps, StopReason, ToolCall, ToolRef, Tools, TurnOutcome,
+    Usage, Workspace,
     core::caps::SubagentCaps,
     core::provider::ProviderStream,
     core::shell_command::{ShellCall, ShellCommand},
@@ -184,9 +184,9 @@ impl SubagentParent for App {
                 model: spec.to_string(),
             })
         };
-        SharedDeps::new(Arc::new(models), CWD, self.workspace.clone())
+        SharedDeps::new(models, CWD, self.workspace.clone())
     }
-    fn base_tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn base_tools(&self) -> Tools {
         let on = |w: &str| matches!(w, "read" | "write" | "bash");
         let opts = BuiltinOptions {
             web_fetch: None,
@@ -197,7 +197,7 @@ impl SubagentParent for App {
         tools.push(self.lookup.clone());
         tools
     }
-    async fn system_prompt(&self, _model_spec: &str, _tools: &[Arc<dyn Tool>]) -> String {
+    async fn system_prompt(&self, _model_spec: &str, _tools: &[ToolRef]) -> String {
         self.prompt()
     }
     fn default_model(&self) -> (String, Option<Effort>) {
@@ -247,11 +247,7 @@ fn rig(main: Vec<Vec<AssistantPart>>, sub: Vec<Vec<AssistantPart>>, sub_permits:
     let hub = SubagentHub::new(app.clone(), SubagentCaps::default());
     let mut tools = app.base_tools();
     tools.extend(hub.tools_for(&AgentRef::main()));
-    let deps = AgentDeps {
-        tools: Arc::new(tools),
-        system_prompt: Arc::new(app.prompt()),
-        shared: app.deps(),
-    };
+    let deps = AgentDeps::from_shared(app.deps(), tools, app.prompt());
     Rig {
         agent: Agent::new(deps, AgentOptions::new(MODEL)),
         app,
@@ -277,14 +273,10 @@ impl Rig {
 
     /// The agent again, over the host's deps as `edit` changes them: the
     /// base tools, the host's prompt, what every agent shares.
-    fn reseat(&mut self, edit: impl FnOnce(&mut AgentDeps)) {
-        let mut deps = AgentDeps {
-            tools: Arc::new(self.app.base_tools()),
-            system_prompt: Arc::new(self.app.prompt()),
-            shared: self.app.deps(),
-        };
-        edit(&mut deps);
-        self.agent = Agent::new(deps, AgentOptions::new(MODEL));
+    fn reseat(&mut self, edit: impl FnOnce(AgentDeps) -> AgentDeps) {
+        let deps =
+            AgentDeps::from_shared(self.app.deps(), self.app.base_tools(), self.app.prompt());
+        self.agent = Agent::new(edit(deps), AgentOptions::new(MODEL));
     }
 
     fn output(&self, id: &str) -> &ToolOutput {

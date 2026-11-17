@@ -72,6 +72,11 @@ pub trait RunStore: Send + Sync {
     async fn load(&self, key: &RunKey) -> io::Result<Option<ReplayedRun>>;
 }
 
+crate::plug_ref! {
+    /// A [`RunStore`], shared: what [`SharedDeps::run_store`](crate::SharedDeps::run_store) holds.
+    pub struct RunStoreRef(dyn RunStore);
+}
+
 type Logs = Arc<Mutex<HashMap<RunKey, Vec<String>>>>;
 
 /// Durable runs kept in memory, as JSON lines: they survive an aborted or
@@ -85,33 +90,25 @@ type Logs = Arc<Mutex<HashMap<RunKey, Vec<String>>>>;
 /// ```
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
-/// use std::sync::Arc;
-///
+/// # async fn main() -> Result<(), haest_core::run::RunError> {
 /// use haest_core::{
-///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tool,
+///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tools,
 ///     run::{MemoryRunStore, RunKey, Served},
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 ///
 /// let store = MemoryRunStore::new();
 /// let provider = ScriptedProvider::new([text_answer("done")]);
-/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
-/// let mut deps = AgentDeps::new(
-///     Arc::new(provider.resolver()),
-///     Arc::new(tools),
-///     Arc::new(String::new()),
-///     "/",
-///     Arc::new(ShutWorkspace),
-/// );
-/// deps.shared.run_store = Some(Arc::new(store.clone()));
+/// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace)
+///     .with_run_store(store.clone());
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 /// let key = RunKey::new("job-1");
 ///
-/// let first = agent.run_durable(&key, "do it", &mut Vec::<LoopEvent>::new()).await.unwrap();
+/// let first = agent.run_durable(&key, "do it", &mut Vec::<LoopEvent>::new()).await?;
 /// assert_eq!((first.served, first.text.as_str()), (Served::Fresh, "done"));
 /// // The run's records: run, the input, the answer, the turn state, run_end.
 /// assert!(store.lines(&key).len() >= 4);
+/// # Ok(())
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}

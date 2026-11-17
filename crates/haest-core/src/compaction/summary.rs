@@ -78,8 +78,8 @@ pub(super) async fn summarize(
 ) -> Result<(Summary, SummaryPath), CompactionError> {
     let resolved = agent
         .deps()
-        .shared
-        .models
+        .shared()
+        .models()
         .resolve(agent.model_spec())
         .map_err(CompactionError::Model)?;
     let (provider, model) = (resolved.provider.as_ref(), resolved.model);

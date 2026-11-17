@@ -84,7 +84,7 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// use std::sync::{Arc, Mutex};
 ///
 /// use async_trait::async_trait;
-/// use haest_core::{ShutWorkspace, ToolContext, workspace::WorkspaceMode};
+/// use haest_core::{ShutWorkspace, ToolContext, Tools, workspace::WorkspaceMode};
 /// use haest_mods::{
 ///     ApprovalAnswer, ApprovalGate, ApprovalMod, ApprovalRequest, ModEnv, ModLine, ModTools, Mods,
 ///     Prompter,
@@ -126,9 +126,9 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// let ui = Arc::new(ui);
 /// let mut mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, ui));
 /// mods.add(Arc::new(ApprovalMod::default()));
-/// let tools = ModTools::wrap(&Arc::new(mods), vec![Arc::new(Bash)]);
+/// let tools = ModTools::wrap(&Arc::new(mods), Tools::new().with(Bash));
 ///
-/// let ctx = ToolContext::new("/project", Arc::new(ShutWorkspace));
+/// let ctx = ToolContext::new("/project", ShutWorkspace);
 /// let bash = |command: &str| tools[0].execute(json!({ "command": command }).as_object().cloned().unwrap(), &ctx);
 /// assert!(bash("ls").await.is_ok()); // nothing to ask
 /// assert!(bash("rm -rf build").await.is_ok()); // asked: ALWAYS

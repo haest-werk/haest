@@ -1,9 +1,9 @@
 //! Starting one server: reach it (stdio, HTTP, or a host's own transport),
 //! `initialize`, list its tools, and name them apart from the tools already held.
 
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
-use haest_core::{ChildEnv, tool::Tool};
+use haest_core::{ChildEnv, ToolRef};
 use rmcp::{
     RoleClient, ServiceExt,
     model::{ClientCapabilities, ClientConfig, Implementation},
@@ -38,7 +38,7 @@ pub(super) fn admit(servers: &mut Vec<Server>, name: &str, started: Started) {
         .map(|t| {
             let unique = unique_tool_name(name, &t.name, &taken);
             taken.insert(unique.clone());
-            Arc::new(McpTool::new(name, unique, t, peer.clone())) as Arc<dyn Tool>
+            ToolRef::new(McpTool::new(name, unique, t, peer.clone()))
         })
         .collect();
     servers.push(Server {

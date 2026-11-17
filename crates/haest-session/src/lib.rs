@@ -46,7 +46,7 @@
 //!
 //! use haest_core::{
 //!     Agent, AgentDeps, AgentOptions, JsonMap, Message, ShutWorkspace, Tool, ToolContext,
-//!     ToolError, ToolOutput,
+//!     ToolError, ToolOutput, Tools,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //! };
 //! use haest_session::{Backend, Hub, HubOptions, Input, start};
@@ -74,14 +74,8 @@
 //!     tool_answer(&[("c1", "Wait", serde_json::json!({}))]),
 //!     text_answer("done, and noted"),
 //! ]);
-//! let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Wait(go.clone()))];
-//! let deps = AgentDeps::new(
-//!     Arc::new(model.resolver()),
-//!     Arc::new(tools),
-//!     Arc::new(String::new()),
-//!     "/",
-//!     Arc::new(ShutWorkspace),
-//! );
+//! let tools = Tools::new().with(Wait(go.clone()));
+//! let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
 //! let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1", HubOptions::default()));
 //!
 //! let first = tokio::spawn({

@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use super::{
     AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SubagentBudget, budget,
 };
+use haest_core::Tools;
 
 struct AgentTool {
     hub: Arc<dyn AgentDirectory>,
@@ -207,11 +208,7 @@ impl Tool for StopAgentTool {
 ///
 /// [`SubagentHub::tools_for`](super::SubagentHub::tools_for) works out
 /// `can_spawn` from the hub's caps.
-pub fn agent_tools(
-    hub: Arc<dyn AgentDirectory>,
-    me: AgentRef,
-    can_spawn: bool,
-) -> Vec<Arc<dyn Tool>> {
+pub fn agent_tools(hub: Arc<dyn AgentDirectory>, me: AgentRef, can_spawn: bool) -> Tools {
     agent_tools_with(hub, me, can_spawn, AgentToolOptions::default())
 }
 
@@ -222,19 +219,19 @@ pub fn agent_tools_with(
     me: AgentRef,
     can_spawn: bool,
     opts: AgentToolOptions,
-) -> Vec<Arc<dyn Tool>> {
-    let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
+) -> Tools {
+    let mut tools = Tools::new();
     if can_spawn {
-        tools.push(Arc::new(AgentTool {
+        tools.push(AgentTool {
             hub: hub.clone(),
             me: me.clone(),
             opts,
-        }));
+        });
     }
-    tools.push(Arc::new(SendMessageTool {
+    tools.push(SendMessageTool {
         hub: hub.clone(),
         me,
-    }));
-    tools.push(Arc::new(StopAgentTool { hub }));
+    });
+    tools.push(StopAgentTool { hub });
     tools
 }

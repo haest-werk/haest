@@ -1,45 +1,48 @@
 //! What the loop needs ([`AgentDeps`]), the host's optional say in it
 //! ([`AgentHooks`]), and the clock its time cap reads ([`Clock`]).
 //!
-//! [`AgentDeps::new`] takes the four things every agent needs (a
-//! [`ModelResolver`], a [`ToolSource`], a [`SystemPrompt`] and a
-//! [`Workspace`]); everything else is a public field of its [`SharedDeps`],
-//! off until the host sets it (`deps.shared.hooks = ...`). [`Agent::new`]
-//! takes the result.
+//! [`AgentDeps::new`] takes the five things every agent needs: a
+//! [`ModelResolver`](crate::ModelResolver), a [`ToolSource`](crate::ToolSource),
+//! a [`SystemPrompt`], a working directory and a
+//! [`Workspace`](crate::Workspace), each as a plain value. Everything else is
+//! off until the host sets it with a `with_*` setter
+//! ([`AgentDeps::with_hooks`], [`SharedDeps::with_ledger`], ...).
+//! [`Agent::new`](crate::Agent::new) takes the result.
+//!
+//! Every plug point is held by a handle named after its trait
+//! ([`AgentHooksRef`], [`SystemPromptRef`], ...): cheap to clone, and built
+//! from the value itself, or from an `Arc` the host already shares, so one
+//! object can fill several slots.
 //!
 //! PLUG POINT: [`AgentHooks`] is where a host changes the loop's behaviour
 //! without forking it. Every method has a default that does nothing, so a host
 //! implements only what it cares about. [`NoHooks`] is the one that changes
 //! nothing.
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
-};
+mod agent_deps;
+mod shared;
+
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
+pub use agent_deps::AgentDeps;
+pub use shared::SharedDeps;
+
 use crate::{
     agent::Agent,
-    caps::{TurnCaps, TurnCapsSource},
-    catalog::{ModelFacts, NoFacts},
-    ledger::Ledger,
+    error::BoxError,
     messages::{MediaPart, Message},
-    provider::{Effort, ModelResolver, WebSearchOptions},
-    remedy::Remedies,
-    run::RunStore,
-    threshold::{Thresholds, TurnSite},
-    tool::{ToolServices, ToolSource},
-    workspace::Workspace,
+    provider::Effort,
 };
 
 /// The system prompt, built again before every model call (instruction files
 /// and skills can change mid-conversation).
 ///
-/// A `String` is a fixed prompt. A host that assembles one from files and
-/// skills implements this, typically with
+/// A `String` or a `&'static str` is a fixed prompt, and a closure
+/// `Fn() -> String` builds one each call. A host that assembles one from
+/// files and skills implements this, typically with
 /// [`build_system_prompt`](crate::context::build_system_prompt).
 #[async_trait]
 pub trait SystemPrompt: Send + Sync {
@@ -56,17 +59,40 @@ impl SystemPrompt for String {
     }
 }
 
-/// A host's say in the loop. Extends [`ToolServices`]: what tools publish, report
-/// and log goes to the same object.
+/// A fixed prompt: the string itself, every call.
+#[async_trait]
+impl SystemPrompt for &'static str {
+    async fn system_prompt(&self) -> String {
+        (*self).to_owned()
+    }
+}
+
+/// A prompt the closure builds, every call.
+#[async_trait]
+impl<F: Fn() -> String + Send + Sync> SystemPrompt for F {
+    async fn system_prompt(&self) -> String {
+        self()
+    }
+}
+
+crate::plug_ref! {
+    /// A [`SystemPrompt`], shared: what [`AgentDeps`] holds. Built from the
+    /// prompt itself (`"You are terse."`, a `String`, a closure, a host's
+    /// own type), or from an `Arc` of one.
+    pub struct SystemPromptRef(dyn SystemPrompt);
+}
+
+/// A host's say in the loop.
 ///
-/// Set it on [`SharedDeps::hooks`]. Every method has a default that changes
-/// nothing; the loop calls them from the task running [`Agent::run`], so a
-/// slow hook slows the turn.
+/// Set it with [`AgentDeps::with_hooks`]. Every method has a default that
+/// changes nothing; the loop calls them from the task running
+/// [`Agent::run`], so a slow hook slows the turn. What tools publish, report
+/// and log goes to [`SharedDeps::services`] instead.
 ///
 /// # Examples
 ///
 /// A host that saves every message, with one model call per turn (a
-/// [`TurnCaps`] as its [`TurnCapsSource`]):
+/// [`TurnCaps`](crate::TurnCaps) as its [`TurnCapsSource`](crate::TurnCapsSource)):
 ///
 /// ```
 /// # #[cfg(feature = "testing")]
@@ -76,37 +102,29 @@ impl SystemPrompt for String {
 ///
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace,
-///     StopReason, Tool, ToolServices, TurnCaps,
+///     StopReason, Tools, TurnCaps,
 ///     testing::{ScriptedProvider, tool_answer},
 /// };
 ///
-/// #[derive(Default)]
+/// /// Clones share what it saved.
+/// #[derive(Clone, Default)]
 /// struct Host {
-///     saved: Mutex<Vec<Message>>,
+///     saved: Arc<Mutex<Vec<Message>>>,
 /// }
-///
-/// impl ToolServices for Host {}
 ///
 /// #[async_trait::async_trait]
 /// impl AgentHooks for Host {
 ///     fn on_message(&self, msg: &Message) {
-///         self.saved.lock().unwrap().push(msg.clone());
+///         self.saved.lock().expect("not poisoned").push(msg.clone());
 ///     }
 /// }
 ///
 /// // The model calls a tool, which needs a second model call to see the result.
 /// let provider = ScriptedProvider::new([tool_answer(&[("c1", "Lookup", serde_json::json!({}))])]);
-/// let host = Arc::new(Host::default());
-/// let tools: Vec<Arc<dyn Tool>> = Vec::new();
-/// let mut deps = AgentDeps::new(
-///     Arc::new(provider.resolver()),
-///     Arc::new(tools),
-///     Arc::new(String::new()),
-///     "/",
-///     Arc::new(ShutWorkspace),
-/// );
-/// deps.shared.hooks = host.clone();
-/// deps.shared.turn_caps = Arc::new(TurnCaps { max_turn_steps: 1, ..TurnCaps::default() });
+/// let host = Host::default();
+/// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace)
+///     .with_hooks(host.clone())
+///     .with_turn_caps(TurnCaps { max_turn_steps: 1, ..TurnCaps::default() });
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
 /// let end = agent.run("look it up", &mut Vec::<LoopEvent>::new()).await;
@@ -115,13 +133,13 @@ impl SystemPrompt for String {
 /// assert_eq!(end.stop_reason, StopReason::MaxTokens);
 /// assert!(matches!(&agent.history()[2], Message::Tool(_)));
 /// // Every message the loop appended reached the hook.
-/// assert_eq!(*host.saved.lock().unwrap(), agent.history());
+/// assert_eq!(*host.saved.lock().expect("not poisoned"), agent.history());
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}
 /// ```
 #[async_trait]
-pub trait AgentHooks: ToolServices {
+pub trait AgentHooks: Send + Sync {
     /// Every message appended to history, in order: the persistence hook.
     ///
     /// Not called for [`Agent::replace_history`], nor for the summary
@@ -143,7 +161,7 @@ pub trait AgentHooks: ToolServices {
         &self,
         _agent: &mut Agent,
         _cancel: &CancellationToken,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), BoxError> {
         Ok(())
     }
 
@@ -188,6 +206,11 @@ pub trait AgentHooks: ToolServices {
     fn on_warning(&self, _text: &str) {}
 }
 
+crate::plug_ref! {
+    /// An [`AgentHooks`], shared: what [`SharedDeps::hooks`] holds.
+    pub struct AgentHooksRef(dyn AgentHooks);
+}
+
 /// Milliseconds since the Unix epoch, by the wall clock; 0 if the clock is
 /// set before 1970. What [`WallClock`] reads.
 pub fn now_ms() -> u64 {
@@ -197,8 +220,9 @@ pub fn now_ms() -> u64 {
 }
 
 /// PLUG POINT: the clock the turn guard's time cap reads, in milliseconds
-/// since the epoch ([`SharedDeps::clock`]). A host that pauses runs gives one
-/// that stands still while paused. A closure `Fn() -> u64` is a clock.
+/// since the epoch ([`SharedDeps::with_clock`]). A host that pauses runs
+/// gives one that stands still while paused. A closure `Fn() -> u64` is a
+/// clock.
 pub trait Clock: Send + Sync {
     /// Now, in milliseconds since the epoch.
     fn now_ms(&self) -> u64;
@@ -208,6 +232,11 @@ impl<F: Fn() -> u64 + Send + Sync> Clock for F {
     fn now_ms(&self) -> u64 {
         self()
     }
+}
+
+crate::plug_ref! {
+    /// A [`Clock`], shared: what [`SharedDeps::clock`] holds.
+    pub struct ClockRef(dyn Clock);
 }
 
 /// The wall clock ([`now_ms`]): [`AgentDeps::new`]'s default.
@@ -221,111 +250,10 @@ impl Clock for WallClock {
 }
 
 /// Hooks that change nothing: [`AgentDeps::new`]'s default.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct NoHooks;
-impl ToolServices for NoHooks {}
+
 impl AgentHooks for NoHooks {}
 
-/// Everything the loop needs: what [`Agent::new`] takes. An agent's own
-/// tools and system prompt, and what it runs on besides ([`SharedDeps`]),
-/// which the agents of one conversation share.
-///
-/// Cheap to clone (every field is an `Arc` or small). The loop reads the
-/// models, tools, prompt and hooks again before every model call, so a
-/// source that changes behind its `Arc` is seen at the next call.
-#[derive(Clone)]
-pub struct AgentDeps {
-    /// The tools: which to advertise, and which a call may run.
-    pub tools: Arc<dyn ToolSource>,
-    /// The system prompt, built again before every model call.
-    pub system_prompt: Arc<dyn SystemPrompt>,
-    /// The models, the workspace, the host's hooks and the rest.
-    pub shared: SharedDeps,
-}
-
-/// What an agent runs on besides its tools and system prompt. Main and its
-/// subagents share one (a subagent hub gets it from its parent), so the
-/// whole tree runs on the same models, files, hooks and ledger.
-#[derive(Clone)]
-pub struct SharedDeps {
-    /// Resolves [`Agent::model_spec`] to a provider, before every model call.
-    pub models: Arc<dyn ModelResolver>,
-    /// The working directory: tools resolve relative paths against it.
-    pub cwd: PathBuf,
-    /// Every file and shell operation a tool performs goes through this.
-    pub workspace: Arc<dyn Workspace>,
-    /// Where tool results too big for the context are written (through the
-    /// workspace); None = the model gets a preview and is told the rest was not saved.
-    pub spill_dir: Option<PathBuf>,
-    /// The host's say in the loop; [`NoHooks`] unless set.
-    pub hooks: Arc<dyn AgentHooks>,
-    /// What the host knows about each model: inputs, reasoning;
-    /// [`NoFacts`] unless set.
-    pub facts: Arc<dyn ModelFacts>,
-    /// The turn caps for each model; none unless set.
-    pub turn_caps: Arc<dyn TurnCapsSource>,
-    /// The clock the turn's time cap reads; [`WallClock`] unless set.
-    pub clock: Arc<dyn Clock>,
-    /// What the conversation has spent across turns; every model call and tool spend is charged here.
-    /// None = no conversation budget, only the turn caps.
-    pub ledger: Option<Arc<Mutex<Ledger>>>,
-    /// Provider-side web search for every model call; None = off.
-    pub web_search: Option<WebSearchOptions>,
-    /// The host's way past a turn cap or the request cap, added to the
-    /// turn's error when one stops it; none unless set.
-    pub remedies: Remedies,
-    /// Where durable runs keep their records ([`Agent::run_durable`]).
-    /// None = no run is durable: [`Agent::run`] never touches a store either way.
-    pub run_store: Option<Arc<dyn RunStore>>,
-    /// What a turn checks as it runs ([`threshold`](crate::threshold)): the
-    /// guard's nudges unless set. Wind-down is a set of them
-    /// ([`Thresholds::wind_down`]). Every agent keeps its own record of which
-    /// have fired.
-    pub thresholds: Thresholds<TurnSite>,
-}
-
-impl SharedDeps {
-    /// The minimum: models, a working directory and a workspace. Everything
-    /// else off: no spill directory, [`NoHooks`], [`NoFacts`], no turn caps,
-    /// the [`WallClock`], no ledger, no web search, no remedies, no run
-    /// store; the guard's nudges are the only thresholds.
-    pub fn new(
-        models: Arc<dyn ModelResolver>,
-        cwd: impl Into<PathBuf>,
-        workspace: Arc<dyn Workspace>,
-    ) -> Self {
-        Self {
-            models,
-            cwd: cwd.into(),
-            workspace,
-            spill_dir: None,
-            hooks: Arc::new(NoHooks),
-            facts: Arc::new(NoFacts),
-            turn_caps: Arc::new(TurnCaps::default()),
-            clock: Arc::new(WallClock),
-            ledger: None,
-            web_search: None,
-            remedies: Remedies::default(),
-            run_store: None,
-            thresholds: Thresholds::default(),
-        }
-    }
-}
-
-impl AgentDeps {
-    /// The minimum: models, tools, a system prompt and a workspace; the rest
-    /// as [`SharedDeps::new`] leaves it.
-    pub fn new(
-        models: Arc<dyn ModelResolver>,
-        tools: Arc<dyn ToolSource>,
-        system_prompt: Arc<dyn SystemPrompt>,
-        cwd: impl Into<PathBuf>,
-        workspace: Arc<dyn Workspace>,
-    ) -> Self {
-        Self {
-            tools,
-            system_prompt,
-            shared: SharedDeps::new(models, cwd, workspace),
-        }
-    }
-}
+#[cfg(test)]
+mod tests;

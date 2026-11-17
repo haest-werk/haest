@@ -12,6 +12,7 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use haest_core::{
     __private::{advertised_tools, callable_tools},
+    ToolRef, Tools,
     deferred_tools::{DeferMode, ToolDeferral, search_tools},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, req_str},
 };
@@ -45,7 +46,7 @@ const HINT_CHARS: usize = 120;
 
 struct ToolSearchTool {
     deferral: Arc<ToolDeferral>,
-    deferred: Vec<Arc<dyn Tool>>,
+    deferred: Tools,
 }
 
 #[async_trait]
@@ -104,7 +105,7 @@ impl Tool for ToolSearchTool {
 }
 
 struct CallToolTool {
-    by_name: HashMap<String, Arc<dyn Tool>>,
+    by_name: HashMap<String, ToolRef>,
 }
 
 #[async_trait]
@@ -193,14 +194,14 @@ impl DeferredTools {
 }
 
 impl ToolSource for DeferredTools {
-    fn tools(&self) -> Vec<Arc<dyn Tool>> {
+    fn tools(&self) -> Tools {
         advertised_tools(
             &self.deferral,
             &self.source.tools(),
             deferral_tools(self.deferral.clone()),
         )
     }
-    fn callable(&self) -> Vec<Arc<dyn Tool>> {
+    fn callable(&self) -> Tools {
         callable_tools(
             &self.deferral,
             &self.source.callable(),
@@ -215,20 +216,20 @@ impl ToolSource for DeferredTools {
 /// tools over them: ToolSearch (read-only, kind `agent.unknown`) loads the
 /// schemas a `query` names (`select:a,b`, or keywords) into the deferral;
 /// CallTool runs a deferred tool by `name` with its `input`.
-fn deferral_tools(deferral: Arc<ToolDeferral>) -> impl Fn(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>> {
-    move |deferred: &[Arc<dyn Tool>]| {
-        let search: Arc<dyn Tool> = Arc::new(ToolSearchTool {
+fn deferral_tools(deferral: Arc<ToolDeferral>) -> impl Fn(&[ToolRef]) -> Tools {
+    move |deferred: &[ToolRef]| {
+        let search = ToolRef::new(ToolSearchTool {
             deferral: deferral.clone(),
-            deferred: deferred.to_vec(),
+            deferred: deferred.iter().cloned().collect(),
         });
         if deferral.mode() != DeferMode::Proxy {
-            return vec![search];
+            return Tools::new().with(search);
         }
         let by_name = deferred
             .iter()
             .map(|t| (t.name().to_string(), t.clone()))
             .collect();
-        vec![search, Arc::new(CallToolTool { by_name })]
+        Tools::new().with(search).with(CallToolTool { by_name })
     }
 }
 

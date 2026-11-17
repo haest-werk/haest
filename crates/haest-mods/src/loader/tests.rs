@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_core::{fs::MemFs, workspace::WorkspaceMode};
+use haest_core::{Tools, fs::MemFs, workspace::WorkspaceMode};
 use serde_json::json;
 
 use super::*;
@@ -39,7 +39,7 @@ async fn a_mod_in_the_user_mods_dir_loads_and_a_broken_one_is_reported_and_skipp
     ]);
     let ui = TestUi::new();
     let mods = load_mods(cfg(WorkspaceMode::Sandbox), &fs, ui.clone()).await;
-    let tools = wrapped(mods, Vec::new());
+    let tools = wrapped(mods, Tools::new());
     let hello = find(&tools, "Hello");
     let out = hello.execute(input(json!({})), &ctx()).await.unwrap();
     assert_eq!(out.content, "hello");
@@ -111,7 +111,7 @@ async fn the_hosts_tool_names_reach_the_built_ins() {
     named.planning_tools = vec!["Notes".into()];
     let mods = Arc::new(load_mods(named, &MemFs::new(), ui.clone()).await);
     let (shell, notes) = (Probe::new("Shell"), Probe::new("Notes"));
-    let tools = ModTools::wrap(&mods, vec![shell.clone(), notes.clone()]);
+    let tools = ModTools::wrap(&mods, Tools::from_iter([shell.clone(), notes.clone()]));
     let rm = input(json!({"command": "rm -rf x"}));
     assert!(tools[0].execute(rm, &ctx()).await.is_err());
     assert_eq!(ui.asks()[0].tool_name, "Shell");

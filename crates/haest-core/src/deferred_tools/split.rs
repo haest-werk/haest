@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use super::{DeferMode, ToolDeferral};
-use crate::tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput};
+use crate::tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput, ToolRef, Tools};
 
 /// The tools this call advertises, given every tool the agent has.
 ///
@@ -18,13 +18,13 @@ use crate::tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput};
 /// and `deferral_tools` is not called.
 pub fn advertised_tools(
     deferral: &ToolDeferral,
-    all: &[Arc<dyn Tool>],
-    deferral_tools: impl FnOnce(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>>,
-) -> Vec<Arc<dyn Tool>> {
+    all: &Tools,
+    deferral_tools: impl FnOnce(&[ToolRef]) -> Tools,
+) -> Tools {
     let Some((deferred, eager)) = deferral.split(all) else {
-        return all.to_vec();
+        return all.clone();
     };
-    let grown: Vec<Arc<dyn Tool>> = if deferral.mode == DeferMode::Grow {
+    let grown: Vec<ToolRef> = if deferral.mode == DeferMode::Grow {
         let loaded = deferral.loaded.lock().unwrap();
         deferred
             .iter()
@@ -34,7 +34,7 @@ pub fn advertised_tools(
     } else {
         Vec::new()
     };
-    let mut out = eager;
+    let mut out = Tools::from(eager);
     out.extend(deferral_tools(&deferred));
     out.extend(grown);
     out
@@ -45,25 +45,24 @@ pub fn advertised_tools(
 /// deferring this is `all`, and `deferral_tools` is not called.
 pub fn callable_tools(
     deferral: &Arc<ToolDeferral>,
-    all: &[Arc<dyn Tool>],
-    deferral_tools: impl FnOnce(&[Arc<dyn Tool>]) -> Vec<Arc<dyn Tool>>,
-) -> Vec<Arc<dyn Tool>> {
-    let Some((deferred, mut out)) = deferral.split(all) else {
-        return all.to_vec();
+    all: &Tools,
+    deferral_tools: impl FnOnce(&[ToolRef]) -> Tools,
+) -> Tools {
+    let Some((deferred, eager)) = deferral.split(all) else {
+        return all.clone();
     };
+    let mut out = Tools::from(eager);
     out.extend(deferral_tools(&deferred));
-    out.extend(deferred.into_iter().map(|tool| {
-        Arc::new(Loading {
-            tool,
-            deferral: deferral.clone(),
-        }) as Arc<dyn Tool>
+    out.extend(deferred.into_iter().map(|tool| Loading {
+        tool,
+        deferral: deferral.clone(),
     }));
     out
 }
 
 /// A deferred tool as a call runs it: called by name, it counts as loaded.
 struct Loading {
-    tool: Arc<dyn Tool>,
+    tool: ToolRef,
     deferral: Arc<ToolDeferral>,
 }
 

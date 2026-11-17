@@ -10,8 +10,8 @@
 use std::{sync::Arc, time::Duration};
 
 use haest::{
-    ShutWorkspace,
-    core::tool::{Tool, ToolContext},
+    ShutWorkspace, Tools,
+    core::tool::ToolContext,
     tools::{AgentRef, Ending, Sender, SubagentHub},
 };
 use serde_json::json;
@@ -37,13 +37,13 @@ pub async fn panel(gateway: &Arc<Gateway>) {
         0,
         config::turn_caps(&s),
     ));
-    let own: Vec<Arc<dyn Tool>> = vec![Arc::new(notebook_search())];
+    let own = Tools::new().with(notebook_search());
     let base = run_tools(&s, own, Arc::new(Attachments::new(&[])));
     let (node, panel) = (Arc::new(Node::default()), Arc::new(Panel::default()));
     let helpers = Arc::new(NodeHelpers {
         gateway: gateway.clone(),
         base,
-        workspace: Arc::new(ShutWorkspace),
+        workspace: ShutWorkspace.into(),
         host,
         node: node.clone(),
         panel: panel.clone(),
@@ -54,9 +54,9 @@ pub async fn panel(gateway: &Arc<Gateway>) {
     let held = gateway.hold("Bearer helper-run-1");
     gateway.script([reply("Looking.", &[]), reply(FOUND, &[])]);
     // Main's Agent call, in the background.
-    let agent = hub.tools_for(&AgentRef::main()).remove(0);
+    let agent = hub.tools_for(&AgentRef::main())[0].clone();
     let call = json!({"description": "Find the Q3 notes", "prompt": "Every note about Q3.", "run_in_background": true});
-    let ctx = ToolContext::new(CWD, Arc::new(ShutWorkspace));
+    let ctx = ToolContext::new(CWD, ShutWorkspace);
     let started = agent.execute(call.as_object().unwrap().clone(), &ctx).await;
     let started = started.unwrap().content;
     assert!(started.starts_with("Started agent"), "{started}");
