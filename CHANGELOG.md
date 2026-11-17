@@ -639,6 +639,28 @@ Good citizens:
   `AgentError::WindingDown(WindingDown)`, which says what was spent of which
   cap, then the host's remedy.
 - The hub runs its subagents on caps marked `subagent`.
+- `JobHub` is a cheap handle: clones share the jobs, and only dropping
+  the LAST clone kills the jobs still running (dropping one clone used to
+  kill them all). Hold it, not an `Arc<JobHub>`; `job_tools` takes it by
+  value.
+- `JobHub::new` takes the inbox itself (`impl Into<InboxRef>`), and
+  `with_events` is a setter:
+  `JobHub::with_events(Arc::new(tx), Arc::new(events))` ->
+  `JobHub::new(tx).with_events(events)`. New `InboxRef` and
+  `JobEventsRef`.
+- `JobHub::start` takes the command, its description and the
+  `&ToolContext` it runs in:
+  `jobs.start(ctx.workspace().clone(), cmd, desc, ctx.cwd().into())` ->
+  `jobs.start(cmd, desc, &ctx)`.
+- `JobEvents::on_output(job, chunk, done: bool)` ->
+  `on_output(job, JobOutput::Chunk(chunk) | JobOutput::Done)`.
+- `Job::state()` returns a `JobState` that implements `Display` (was
+  `String`): `format!("{}", job.state())` reads as before.
+- `BashOptions`' fields are private: `BashOptions { jobs: Some(hub), .. }`
+  -> `BashOptions::default().with_jobs(hub)`, and `with_default_timeout`;
+  read with `jobs()` and `default_timeout()`.
+- `Job`, `Taken` and `JobError` are `#[non_exhaustive]`; `BashTool`
+  implements `Debug` and `Clone`.
 
 ### haest-workspace
 

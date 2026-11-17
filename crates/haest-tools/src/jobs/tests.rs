@@ -8,17 +8,18 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_core::workspace::Workspace;
+use haest_core::tool::ToolContext;
 use haest_workspace::RealWorkspace;
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
-use super::{Job, JobError, JobEvents, JobHub, JobStatus, MAX_FINISHED, MAX_JOBS};
+use super::{Job, JobError, JobEvents, JobHub, JobOutput, JobStatus, MAX_FINISHED, MAX_JOBS};
 use crate::testkit::{TestWorkspace, stdout};
 
 #[derive(Default)]
 pub(crate) struct Recorder {
     pub exits: Mutex<Vec<Job>>,
     pub snapshots: Mutex<Vec<Vec<String>>>,
+    /// (job, chunk, done): a Done is an empty chunk with `true`.
     pub chunks: Mutex<Vec<(String, String, bool)>>,
 }
 
@@ -27,8 +28,11 @@ impl JobEvents for Recorder {
         let ids = running.iter().map(|j| j.id.clone()).collect();
         self.snapshots.lock().unwrap().push(ids);
     }
-    fn on_output(&self, job: &Job, chunk: &str, done: bool) {
-        let row = (job.id.clone(), chunk.to_string(), done);
+    fn on_output(&self, job: &Job, output: JobOutput<'_>) {
+        let row = match output {
+            JobOutput::Chunk(chunk) => (job.id.clone(), chunk.to_string(), false),
+            _ => (job.id.clone(), String::new(), true),
+        };
         self.chunks.lock().unwrap().push(row);
     }
     fn on_exit(&self, job: &Job) {
@@ -43,10 +47,11 @@ impl Recorder {
 }
 
 pub(crate) struct Rig {
-    pub hub: Arc<JobHub>,
+    pub hub: JobHub,
     pub events: Arc<Recorder>,
     pub notices: UnboundedReceiver<String>,
-    pub ws: Arc<dyn Workspace>,
+    /// The real workspace, in `dir`.
+    pub ctx: ToolContext,
     pub dir: PathBuf,
     _tmp: tempfile::TempDir,
 }
@@ -57,20 +62,19 @@ impl Rig {
         let dir = std::fs::canonicalize(tmp.path()).unwrap();
         let (tx, notices) = unbounded_channel();
         let events = Arc::new(Recorder::default());
+        let ws = RealWorkspace::new(std::env::vars().collect());
         Self {
-            hub: Arc::new(JobHub::with_events(Arc::new(tx), events.clone())),
+            hub: JobHub::new(tx).with_events(events.clone()),
             events,
             notices,
-            ws: Arc::new(RealWorkspace::new(std::env::vars().collect())),
+            ctx: ToolContext::new(&dir, ws),
             dir,
             _tmp: tmp,
         }
     }
 
     pub fn start(&self, command: &str) -> Job {
-        self.hub
-            .start(self.ws.clone(), command, command, self.dir.clone())
-            .unwrap()
+        self.hub.start(command, command, &self.ctx).unwrap()
     }
 }
 
@@ -172,9 +176,7 @@ async fn at_most_max_jobs_run_at_once() {
     for _ in 0..MAX_JOBS {
         r.start("sleep 30");
     }
-    let refused = r
-        .hub
-        .start(r.ws.clone(), "sleep 30", "one too many", r.dir.clone());
+    let refused = r.hub.start("sleep 30", "one too many", &r.ctx);
     assert!(matches!(refused, Err(JobError::TooMany { max: MAX_JOBS })));
     r.hub.kill_all();
     until(5000, || r.events.exit_count() == MAX_JOBS).await;
@@ -184,9 +186,11 @@ async fn at_most_max_jobs_run_at_once() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_workspace_that_cannot_stream_still_runs_a_job_and_hands_its_output_over_at_the_end() {
     let (tx, mut notices) = unbounded_channel();
-    let hub = JobHub::new(Arc::new(tx));
+    let hub = JobHub::new(tx);
     let ws = TestWorkspace::answering([("/p/.keep", "")], |_| stdout("built\n"));
-    let job = hub.start(ws.clone(), "make", "build", "/p".into()).unwrap();
+    let job = hub
+        .start("make", "build", &ToolContext::new("/p", ws.clone()))
+        .unwrap();
     let notice = tokio::time::timeout(Duration::from_secs(3), notices.recv())
         .await
         .unwrap()
@@ -204,4 +208,48 @@ async fn dropping_the_hub_kills_every_job_still_running() {
     let pid = child_pid(&r.dir).await;
     drop(r);
     assert!(gone(pid).await, "a job outlived its hub");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dropping_one_clone_of_the_hub_kills_nothing_the_last_one_kills_all() {
+    let r = Rig::real();
+    let job = r.start("sleep 30 & echo $! > child.pid; sleep 30; wait");
+    let pid = child_pid(&r.dir).await;
+    let kept = r.hub.clone();
+    drop(r);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(alive(pid), "dropping one clone killed the job");
+    assert_eq!(
+        kept.get(&job.id).map(|j| j.status),
+        Some(JobStatus::Running)
+    );
+    drop(kept);
+    assert!(gone(pid).await, "a job outlived the hub's last clone");
+}
+
+#[test]
+fn a_job_state_reads_as_the_model_is_told() {
+    let job = |status, exit_code| Job {
+        id: "b1".into(),
+        command: "make".into(),
+        description: "make".into(),
+        status,
+        exit_code,
+        started: Instant::now(),
+    };
+    assert_eq!(job(JobStatus::Killed, None).state().to_string(), "killed");
+    assert_eq!(
+        job(JobStatus::Exited, Some(3)).state().to_string(),
+        "exited with code 3"
+    );
+    assert_eq!(
+        job(JobStatus::Exited, None).state().to_string(),
+        "exited with code ?"
+    );
+    assert!(
+        job(JobStatus::Running, None)
+            .state()
+            .to_string()
+            .starts_with("running for ")
+    );
 }

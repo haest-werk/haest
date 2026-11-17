@@ -1,14 +1,11 @@
 //! Bash: run one shell command in the session working directory, through the
 //! workspace -- the real bash, or the sandbox's simulated one ([`BashTool`]).
 //!
-//! With a job hub ([`BashOptions::jobs`]) it also takes `run_in_background`:
+//! With a job hub ([`BashOptions::with_jobs`]) it also takes `run_in_background`:
 //! the command keeps running and the call returns at once ([`crate::jobs`]);
 //! BashOutput and KillShell ([`crate::bash_jobs`]) read and stop it.
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use haest_core::{
@@ -31,12 +28,24 @@ const MAX_TIMEOUT: Duration = Duration::from_secs(600);
 /// What a host sets on the Bash tool.
 ///
 /// The default: a 120 s timeout, no background jobs.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use haest_tools::{BashOptions, BashTool, JobHub, NoInbox};
+///
+/// let jobs = JobHub::new(NoInbox);
+/// let bash = BashTool::new(
+///     BashOptions::default()
+///         .with_default_timeout(Duration::from_secs(30))
+///         .with_jobs(jobs.clone()),
+/// );
+/// # let _ = bash;
+/// ```
 #[derive(Debug, Clone)]
 pub struct BashOptions {
-    /// The timeout when a call names none (clamped to 1s..600s).
-    pub default_timeout: Duration,
-    /// Background jobs; None = no `run_in_background` and no job tools.
-    pub jobs: Option<Arc<JobHub>>,
+    default_timeout: Duration,
+    jobs: Option<JobHub>,
 }
 
 impl Default for BashOptions {
@@ -45,6 +54,32 @@ impl Default for BashOptions {
             default_timeout: Duration::from_secs(120),
             jobs: None,
         }
+    }
+}
+
+impl BashOptions {
+    /// The timeout when a call names none (clamped to 1 s..600 s).
+    pub fn with_default_timeout(mut self, timeout: Duration) -> Self {
+        self.default_timeout = timeout;
+        self
+    }
+
+    /// Background jobs on `jobs`: Bash takes `run_in_background`, and
+    /// [`builtin_tools`](crate::builtin_tools) adds BashOutput and KillShell.
+    /// Without one, neither.
+    pub fn with_jobs(mut self, jobs: JobHub) -> Self {
+        self.jobs = Some(jobs);
+        self
+    }
+
+    /// The timeout when a call names none, as set.
+    pub fn default_timeout(&self) -> Duration {
+        self.default_timeout
+    }
+
+    /// The job hub, if any.
+    pub fn jobs(&self) -> Option<&JobHub> {
+        self.jobs.as_ref()
     }
 }
 
@@ -67,26 +102,26 @@ impl Default for BashOptions {
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
-/// use haest_core::{fs::MemFs, tool::{Tool, ToolContext}};
-/// use haest_tools::{BashOptions, BashTool};
+/// use haest_core::{fs::MemFs, tool::{JsonMap, Tool, ToolContext}};
+/// use haest_tools::BashTool;
 /// use haest_workspace::SandboxWorkspace;
 /// use serde_json::json;
 ///
 /// # #[tokio::main]
-/// # async fn main() {
-/// let ctx = ToolContext::new("/", Arc::new(SandboxWorkspace::over(Arc::new(MemFs::new()))));
-/// let bash = BashTool::new(BashOptions::default());
-/// let input = json!({"command": "echo hi; exit 3"});
-/// let out = bash.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// let ctx = ToolContext::new("/", SandboxWorkspace::over(MemFs::new()));
+/// let bash = BashTool::default();
+/// let input: JsonMap = serde_json::from_value(json!({"command": "echo hi; exit 3"}))?;
+/// let out = bash.execute(input, &ctx).await?;
 /// assert!(out.is_error);
 /// assert_eq!(out.content, "hi\n\n[exit code 3]");
+/// # Ok(())
 /// # }
 /// ```
+#[derive(Debug, Clone)]
 pub struct BashTool {
     default_timeout: Duration,
-    jobs: Option<Arc<JobHub>>,
+    jobs: Option<JobHub>,
 }
 
 impl BashTool {
@@ -173,12 +208,7 @@ fn run_in_background(
 ) -> Result<ToolOutput, ToolError> {
     let description = opt_str(input, "description")?.unwrap_or(command);
     let job = jobs
-        .start(
-            ctx.workspace().clone(),
-            command,
-            description,
-            ctx.cwd().to_path_buf(),
-        )
+        .start(command, description, ctx)
         .map_err(|e: JobError| ToolError::Failed(e.to_string()))?;
     Ok(ToolOutput::text(format!(
         "Started background job {id}. Read its output with BashOutput (bash_id \"{id}\"), stop it with KillShell. You will be told when it exits -- do not poll in a loop.",

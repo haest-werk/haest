@@ -28,6 +28,7 @@ use crate::{
         LoopEvent,
         core::fs::{Fs, MemFs},
         core::session::SessionRecord,
+        core::tool::ToolContext,
         http::{HttpClient, HttpError, Request, Response},
         mods::{ApprovalRequest, Decision, ModUi},
         tools::{AgentDirectory, AgentRef, Inbox, JobHub, NoInbox, SpawnInput},
@@ -143,9 +144,9 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
         .unwrap();
     assert_eq!(rt.subagents.running().len(), 1);
     // A background job.
-    let jobs = Arc::new(JobHub::new(Arc::new(NoInbox)));
-    let ws = Arc::new(RealWorkspace::new(std::env::vars().collect()));
-    jobs.start(ws, "sleep 30", "s", std::env::temp_dir())
+    let jobs = Arc::new(JobHub::new(NoInbox));
+    let ws = RealWorkspace::new(std::env::vars().collect());
+    jobs.start("sleep 30", "s", &ToolContext::new(std::env::temp_dir(), ws))
         .unwrap();
     rt.jobs = Some(jobs.clone());
     // An MCP server.

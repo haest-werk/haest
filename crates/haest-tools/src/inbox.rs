@@ -31,6 +31,13 @@ pub trait Inbox: Send + Sync {
     }
 }
 
+haest_core::plug_ref! {
+    /// An [`Inbox`], shared: what a [`JobHub`](crate::JobHub) and a
+    /// [`SubagentHub`](crate::SubagentHub) hold. Built from the inbox itself,
+    /// or from an `Arc` of one when the host keeps it too.
+    pub struct InboxRef(dyn Inbox);
+}
+
 /// The queue form: the host drains the receiving end. A closed receiver drops
 /// the text.
 impl Inbox for UnboundedSender<String> {

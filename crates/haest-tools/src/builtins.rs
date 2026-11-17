@@ -47,12 +47,12 @@ impl Default for BuiltinOptions {
 
 /// Every built-in tool `opts` makes possible, in the order the model sees
 /// them: Read, Write, Edit, Bash, then BashOutput and KillShell with a job hub
-/// ([`BashOptions::jobs`]), Grep, Glob, then WebFetch, the four task tools and
+/// ([`BashOptions::with_jobs`]), Grep, Glob, then WebFetch, the four task tools and
 /// Skill when their option is given.
 ///
 /// The crate docs have an example; [`builtin_tools_where`] picks some.
 pub fn builtin_tools(opts: BuiltinOptions) -> Tools {
-    let jobs = opts.bash.jobs.clone().map(job_tools).unwrap_or_default();
+    let jobs = opts.bash.jobs().cloned().map(job_tools).unwrap_or_default();
     let mut tools: Tools = Tools::from_iter([
         ToolRef::new(ReadTool::new(opts.read_intercept)),
         ToolRef::new(WriteTool),

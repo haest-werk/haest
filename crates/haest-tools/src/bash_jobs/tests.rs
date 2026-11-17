@@ -6,7 +6,7 @@ use std::{sync::Arc, time::Duration};
 use haest_core::{
     Agent, AgentDeps, AgentOptions, LoopEvent, Message, ToolRef, Tools,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::{Tool, ToolContext, ToolError, ToolOutput},
+    tool::{Tool, ToolError, ToolOutput},
 };
 use serde_json::{Value, json};
 
@@ -21,15 +21,11 @@ use crate::{
 };
 
 fn bash(r: &Rig) -> BashTool {
-    BashTool::new(BashOptions {
-        jobs: Some(r.hub.clone()),
-        ..Default::default()
-    })
+    BashTool::new(BashOptions::default().with_jobs(r.hub.clone()))
 }
 
 async fn call(tool: &dyn Tool, r: &Rig, v: Value) -> Result<ToolOutput, ToolError> {
-    tool.execute(input(v), &ToolContext::new(r.dir.clone(), r.ws.clone()))
-        .await
+    tool.execute(input(v), &r.ctx).await
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -122,7 +118,7 @@ async fn a_background_job_shows_in_the_running_set_and_its_exit_wakes_the_model_
         Arc::new(tools),
         Arc::new("system".to_string()),
         r.dir.clone(),
-        r.ws.clone(),
+        r.ctx.workspace().clone(),
     );
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let mut events: Vec<LoopEvent> = Vec::new();

@@ -271,13 +271,11 @@ fn background_jobs_exist_only_for_bash_in_the_real_workspace() {
 
 #[tokio::test]
 async fn killing_at_exit_counts_the_jobs_and_waits_until_they_are_gone() {
-    let jobs = JobHub::new(Arc::new(NoInbox));
+    let jobs = JobHub::new(NoInbox);
     let env: ChildEnv = std::env::vars().collect();
-    let ws: Arc<dyn Workspace> = Arc::new(RealWorkspace::new(env));
-    let cwd = std::env::temp_dir();
+    let ctx = haest_core::tool::ToolContext::new(std::env::temp_dir(), RealWorkspace::new(env));
     for _ in 0..2 {
-        jobs.start(ws.clone(), "sleep 30", "s", cwd.clone())
-            .unwrap();
+        jobs.start("sleep 30", "s", &ctx).unwrap();
     }
     assert_eq!(kill_jobs(&jobs).await, 2);
     assert!(jobs.running().is_empty());

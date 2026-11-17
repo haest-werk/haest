@@ -41,7 +41,7 @@ use haest::{
     core::provider::parse_model_spec,
     providers::{CompatFlavor, CompatOptions, CompatProvider, RetryPolicy},
     settings::{Settings, WordSet},
-    tools::{AgentToolOptions, BashOptions, BuiltinOptions, SubagentTypes, builtin_tools_where},
+    tools::{AgentToolOptions, BuiltinOptions, SubagentTypes, builtin_tools_where},
 };
 
 use crate::{
@@ -110,10 +110,6 @@ pub fn run_tools(
 ) -> Result<Tools, BoxError> {
     let opts = BuiltinOptions {
         read_intercept: Some(attachments),
-        bash: BashOptions {
-            jobs: None,
-            ..Default::default()
-        },
         web_fetch: None,
         ..Default::default()
     };

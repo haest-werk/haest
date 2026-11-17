@@ -47,11 +47,12 @@ pub fn own_tools(
     jobs: Option<Arc<JobHub>>,
     image: Option<GenerateImageOptions>,
 ) -> Tools {
+    let bash = jobs
+        .map(|jobs| (*jobs).clone())
+        .into_iter()
+        .fold(BashOptions::default(), BashOptions::with_jobs);
     let opts = BuiltinOptions {
-        bash: BashOptions {
-            jobs,
-            ..Default::default()
-        },
+        bash,
         tasks: Some(board),
         skill: Some(SkillToolOptions::new(
             move || skills.lock().unwrap().clone(),

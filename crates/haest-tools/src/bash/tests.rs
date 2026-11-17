@@ -86,10 +86,7 @@ async fn the_timeout_is_clamped_and_the_default_is_the_hosts() {
         .await
         .unwrap();
     bash(&ws, json!({"command": "c"})).await.unwrap();
-    let tool = BashTool::new(BashOptions {
-        default_timeout: Duration::from_secs(30),
-        ..Default::default()
-    });
+    let tool = BashTool::new(BashOptions::default().with_default_timeout(Duration::from_secs(30)));
     tool.execute(input(json!({"command": "d"})), &ctx(ws.clone()))
         .await
         .unwrap();

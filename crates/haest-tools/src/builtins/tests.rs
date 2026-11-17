@@ -51,12 +51,9 @@ fn every_file_tool_is_a_builtin() {
 
 #[tokio::test]
 async fn a_job_hub_adds_the_job_tools_after_bash() {
-    let hub = Arc::new(JobHub::new(Arc::new(inbox::NoInbox)));
+    let hub = JobHub::new(inbox::NoInbox);
     let tools = builtin_tools(BuiltinOptions {
-        bash: BashOptions {
-            jobs: Some(hub),
-            ..Default::default()
-        },
+        bash: BashOptions::default().with_jobs(hub),
         web_fetch: None,
         ..Default::default()
     });
@@ -79,19 +76,19 @@ async fn a_job_hub_adds_the_job_tools_after_bash() {
 
 #[tokio::test]
 async fn a_host_picks_built_ins_by_word_and_bash_brings_its_job_tools() {
-    let pick = |words: &'static [&str], jobs| {
+    let pick = |words: &'static [&str], jobs: Option<JobHub>| {
+        let bash = jobs
+            .into_iter()
+            .fold(BashOptions::default(), BashOptions::with_jobs);
         let opts = BuiltinOptions {
-            bash: BashOptions {
-                jobs,
-                ..Default::default()
-            },
+            bash,
             ..Default::default()
         };
         names(&builtin_tools_where(|w| words.contains(&w), opts).unwrap())
     };
     assert!(pick(&[], None).is_empty());
     assert_eq!(pick(&["web_fetch", "read"], None), ["Read", "WebFetch"]);
-    let hub = Arc::new(JobHub::new(Arc::new(inbox::NoInbox)));
+    let hub = JobHub::new(inbox::NoInbox);
     assert_eq!(
         pick(&["bash"], Some(hub)),
         ["Bash", "BashOutput", "KillShell"]

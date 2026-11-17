@@ -1,12 +1,10 @@
 //! BashOutput / KillShell: reading and stopping background jobs
 //! ([`crate::jobs`]). [`job_tools`] makes both over one [`JobHub`];
 //! [`builtin_tools`](crate::builtin_tools) adds them after Bash when
-//! [`BashOptions::jobs`](crate::BashOptions::jobs) is set.
+//! [`BashOptions::with_jobs`](crate::BashOptions::with_jobs) set a hub.
 //!
 //! Keys follow the common agent-tool convention (`bash_id`, `shell_id`), so
 //! models already know the calls.
-
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::tool::{
@@ -38,8 +36,9 @@ fn id_schema(key: &str) -> Value {
 
 /// BashOutput: a background job's output since the model last looked, and how
 /// the job stands.
+#[derive(Debug)]
 struct BashOutputTool {
-    jobs: Arc<JobHub>,
+    jobs: JobHub,
 }
 
 #[async_trait]
@@ -82,8 +81,9 @@ impl Tool for BashOutputTool {
 }
 
 /// KillShell: stops a background job and everything it started.
+#[derive(Debug)]
 struct KillShellTool {
-    jobs: Arc<JobHub>,
+    jobs: JobHub,
 }
 
 #[async_trait]
@@ -122,7 +122,7 @@ impl Tool for KillShellTool {
 ///   ([`JobHub::kill`]). A job that already ended is reported as such.
 ///
 /// An unknown id is an input error that lists the running jobs.
-pub fn job_tools(jobs: Arc<JobHub>) -> Tools {
+pub fn job_tools(jobs: JobHub) -> Tools {
     Tools::from_iter([
         ToolRef::new(BashOutputTool { jobs: jobs.clone() }),
         ToolRef::new(KillShellTool { jobs }),
