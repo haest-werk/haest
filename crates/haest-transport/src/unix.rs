@@ -198,13 +198,24 @@ impl RunningSession {
 /// The sessions served in `dir`, oldest first: each one whose socket answers.
 /// A discovery file whose socket nothing answers on (its run crashed) is
 /// removed, with its socket; one that does not say hello in time is skipped.
+///
+/// Only files the transport makes are removed: the socket must be the one
+/// beside its discovery file (`<stream id>.sock`), and the connection refused
+/// or the socket gone. Any other failure (too many open files, a crafted
+/// discovery file naming some other path) skips the entry and keeps its files.
 pub async fn running_sessions(dir: &Path) -> Vec<RunningSession> {
     let mut found = Vec::new();
     for (file, discovery) in discoveries(dir) {
         match UnixStream::connect(&discovery.socket).await {
-            Err(_) => {
-                let _ = fs::remove_file(&discovery.socket);
-                let _ = fs::remove_file(&file);
+            Err(e) => {
+                let dead = matches!(
+                    e.kind(),
+                    std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
+                );
+                if dead && discovery.socket == file.with_extension("sock") {
+                    let _ = fs::remove_file(&discovery.socket);
+                    let _ = fs::remove_file(&file);
+                }
             }
             Ok(stream) => {
                 let (read, write) = stream.into_split();

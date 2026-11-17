@@ -38,6 +38,13 @@ compiles as before.
   overflowed the default turn caps that follow it: a debug build panicked,
   a release build wrapped to a tiny cap. `max_turn_tokens` now stops at
   `u64::MAX`, and `max_request_tokens` is still exactly 90% of the window.
+- `running_sessions` (and so `haest ctl list`) removed whatever path a
+  discovery file's `socket` named whenever connecting to it failed for any
+  reason: a crafted discovery file deleted an arbitrary file, and a passing
+  error (too many open files) unlinked a live session's socket. It now
+  removes a session's files only when the connection was refused or the
+  socket is gone, and only when the socket is the `<stream id>.sock` beside
+  its own discovery file; anything else is skipped and kept.
 
 ### Behaviour changes
 

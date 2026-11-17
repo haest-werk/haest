@@ -167,6 +167,54 @@ async fn running_lists_the_live_sessions_and_clears_what_a_crashed_run_left() {
     );
 }
 
+/// A discovery file for `sid` in `dir` that names `socket`.
+fn discovery_file(dir: &Path, sid: &str, socket: &Path) -> PathBuf {
+    let file = dir.join(format!("{sid}.json"));
+    let d = SocketDiscovery {
+        sid: sid.into(),
+        pid: u32::MAX,
+        started_ms: 1,
+        access: Access::Watch,
+        socket: socket.into(),
+    };
+    std::fs::write(&file, serde_json::to_vec(&d).unwrap()).unwrap();
+    file
+}
+
+/// Only a socket nothing answers on, at the path the transport gives it
+/// beside its own discovery file, is cleared: never a path a discovery file
+/// merely names, never one that failed for another reason.
+#[tokio::test]
+async fn running_clears_only_a_dead_socket_beside_its_own_discovery_file() {
+    let dir = Dir::new("clear");
+    std::fs::create_dir_all(dir.0.join("elsewhere")).unwrap();
+    // A crafted discovery file naming a file that is not its socket.
+    let victim = dir.0.join("elsewhere/victim.txt");
+    std::fs::write(&victim, "keep me").unwrap();
+    let crafted = discovery_file(&dir.0, "crafted", &victim);
+    // A socket at the right path that fails for another reason than "nobody
+    // answers" (here: a path too long for a socket address).
+    let long = "l".repeat(120);
+    let busy = dir.0.join(format!("{long}.sock"));
+    std::fs::write(&busy, "").unwrap();
+    let kind = std::os::unix::net::UnixStream::connect(&busy)
+        .unwrap_err()
+        .kind();
+    assert_eq!(kind, std::io::ErrorKind::InvalidInput);
+    let busy_file = discovery_file(&dir.0, &long, &busy);
+    // A crashed run whose socket is already gone: its discovery file goes.
+    let gone = discovery_file(&dir.0, "gone", &dir.0.join("gone.sock"));
+
+    assert!(running_sessions(&dir.0).await.is_empty());
+    assert!(victim.exists(), "a file a discovery file names is kept");
+    assert!(crafted.exists(), "and so is the discovery file");
+    assert!(
+        busy.exists() && busy_file.exists(),
+        "a transient failure keeps both"
+    );
+    assert!(!gone.exists(), "a run whose socket is gone is cleared");
+}
+
 #[tokio::test]
 async fn a_session_is_reached_by_its_id_or_a_prefix_only_it_has() {
     let dir = Dir::new("prefix");
