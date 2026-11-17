@@ -581,10 +581,9 @@ Good citizens:
 - Tool lists are `haest_core::Tools` and single tools `ToolRef`:
   `builtin_tools`, `builtin_tools_where`, `agent_tools`, `job_tools`,
   `task_tools`, `SubagentHub::tools_for` and
-  `SubagentParent::{base_tools, subagent_tools, tool_source}` take or return
-  `Tools` (was `Vec<Arc<dyn Tool>>`), `SubagentParent::system_prompt` takes
-  `&[ToolRef]`, `skill_tool` returns `ToolRef`. `JobHub::start` takes
-  `impl Into<WorkspaceRef>`.
+  `SubagentParent::{base_tools, subagent_tools}` return `Tools` (was
+  `Vec<Arc<dyn Tool>>`), `SubagentParent::tool_source` takes them, and
+  `SubagentParent::system_prompt` takes `&[ToolRef]`.
 - A subagent's lent services are their own wrapper (`ChildServices`), beside
   its lent hooks, now that `ToolServices` is a slot of its own.
 - New `SubagentParent::start_member(&MemberStart, &CancellationToken)`,
@@ -684,6 +683,42 @@ Good citizens:
   -> `SubagentTypes::new(names, default, description)?`; read with
   `names()`, `default()` and `description()`.
 - `AgentError` is `#[non_exhaustive]`; the agent tools implement `Debug`.
+- `BuiltinOptions`' fields are private; it is built with setters:
+  `BuiltinOptions { tasks: Some(Arc::new(board)), web_fetch: None,
+  ..Default::default() }` ->
+  `BuiltinOptions::new().with_tasks(board).without_web_fetch()`, and
+  `with_read_intercept`, `with_bash`, `with_web_fetch`, `with_skill`.
+- New `BuiltinTool` (`#[non_exhaustive]`), a built-in by its word: it
+  reads and parses as the word (`Display`, `FromStr` with
+  `ParseBuiltinToolError`), `BuiltinTool::ALL` lists them, and
+  `BuiltinTool::of(tool_name)` replaces `builtin_word`:
+  `builtin_word(name) == Some("tasks")` ->
+  `BuiltinTool::of(name) == Some(BuiltinTool::Tasks)`.
+  `builtin_tools_where` picks by it: `|w| set.has(w)` ->
+  `|t| set.has(t.as_str())`. `MissingOption` names the tool (`tool:
+  BuiltinTool`, was `word: &'static str`) and is `#[non_exhaustive]`.
+- `ReadTool::new()` takes nothing and the intercept is a setter:
+  `ReadTool::new(Some(Arc::new(i)))` -> `ReadTool::new().with_intercept(i)`.
+  New `ReadInterceptRef`.
+- `WriteTool`, `EditTool`, `GrepTool` and `GlobTool` are
+  `#[non_exhaustive]` with `new()`, `Default`, `Debug` and `Clone`:
+  `ToolRef::new(WriteTool)` -> `ToolRef::new(WriteTool::new())`.
+- `SkillTool` is public and `skill_tool` is gone: `skill_tool(opts)` ->
+  `SkillTool::new(opts)`. `SkillToolOptions::new` takes any `SkillSet`
+  and `over` is gone: `SkillToolOptions::new(move || list(), Arc::new(fs))`
+  -> `SkillToolOptions::new(DiskSkills::new(fs, move || list()))` (or
+  core's `Skills`), `SkillToolOptions::over(Arc::new(set))` ->
+  `SkillToolOptions::new(set)`.
+- `task_tools` takes the board itself, a handle:
+  `task_tools(Arc::new(board))` -> `task_tools(board)`.
+- `DeferredTools::new` takes `impl Into<ToolSourceRef>`, `deferral()`
+  returns `&ToolDeferral` (was `&Arc<ToolDeferral>`), and it is `Clone`
+  (clones share the deferral) and `Debug`.
+- `tool_guide` and `touches_workspace` take `&[impl AsRef<str>]`:
+  `tool_guide(&["Read", "Bash"])` needs no `String`s.
+- `UrlRefused` is `#[non_exhaustive]`; `AgentTurnGate`, `WebFetchNet`,
+  `WebFetchTool`, `SkillToolOptions` and `BuiltinOptions` implement
+  `Debug`.
 
 ### haest-workspace
 

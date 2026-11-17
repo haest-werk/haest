@@ -81,11 +81,12 @@ fn in_v6(ip: Ipv6Addr, (net, bits): (Ipv6Addr, u8)) -> bool {
 /// ```
 /// use haest_tools::is_blocked;
 ///
-/// assert!(is_blocked("169.254.169.254".parse().unwrap()));
-/// assert!(is_blocked("::ffff:10.0.0.1".parse().unwrap()));
-/// assert!(is_blocked("fec0::1".parse().unwrap()));
-/// assert!(!is_blocked("93.184.215.14".parse().unwrap()));
-/// assert!(!is_blocked("2606:4700:4700::1111".parse().unwrap()));
+/// assert!(is_blocked("169.254.169.254".parse()?));
+/// assert!(is_blocked("::ffff:10.0.0.1".parse()?));
+/// assert!(is_blocked("fec0::1".parse()?));
+/// assert!(!is_blocked("93.184.215.14".parse()?));
+/// assert!(!is_blocked("2606:4700:4700::1111".parse()?));
+/// # Ok::<(), std::net::AddrParseError>(())
 /// ```
 pub fn is_blocked(ip: IpAddr) -> bool {
     match ip {
@@ -128,6 +129,7 @@ impl Resolve for SystemResolve {
 /// written for the model; [`Unresolved`](Self::Unresolved) carries the
 /// resolver's own error as its source.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum UrlRefused {
     /// Not http or https (`file:`, `ftp:`, ...).
     #[error("only http and https URLs can be fetched, not {scheme}:")]
@@ -211,19 +213,20 @@ pub(crate) fn host_port(url: &Url) -> String {
 /// #[async_trait]
 /// impl Resolve for Rebinding {
 ///     async fn resolve(&self, _: &str) -> Result<Vec<IpAddr>, BoxError> {
-///         Ok(vec!["93.184.215.14".parse().unwrap(), "10.0.0.5".parse().unwrap()])
+///         Ok(vec!["93.184.215.14".parse()?, "10.0.0.5".parse()?])
 ///     }
 /// }
 ///
 /// # #[tokio::main]
-/// # async fn main() {
-/// let public = Url::parse("https://93.184.215.14/page").unwrap();
-/// assert!(assert_public_url(&public, &Rebinding).await.is_ok());
-/// let sneaky = Url::parse("https://example.test/").unwrap();
-/// let refused = assert_public_url(&sneaky, &Rebinding).await.unwrap_err();
-/// assert!(matches!(refused, UrlRefused::Blocked { .. }));
-/// let file = Url::parse("file:///etc/passwd").unwrap();
+/// # async fn main() -> Result<(), BoxError> {
+/// let public = Url::parse("https://93.184.215.14/page")?;
+/// assert_public_url(&public, &Rebinding).await?;
+/// let sneaky = Url::parse("https://example.test/")?;
+/// let refused = assert_public_url(&sneaky, &Rebinding).await.err();
+/// assert!(matches!(refused, Some(UrlRefused::Blocked { .. })));
+/// let file = Url::parse("file:///etc/passwd")?;
 /// assert!(assert_public_url(&file, &Rebinding).await.is_err());
+/// # Ok(())
 /// # }
 /// ```
 pub async fn assert_public_url(url: &Url, resolve: &dyn Resolve) -> Result<(), UrlRefused> {

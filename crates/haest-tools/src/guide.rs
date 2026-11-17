@@ -13,13 +13,13 @@ pub const FILE_TOOLS: [&str; 5] = ["Read", "Write", "Edit", "Grep", "Glob"];
 /// ```
 /// use haest_tools::tool_guide;
 ///
-/// let names = ["Read".to_string(), "WebFetch".to_string()];
-/// let guide = tool_guide(&names).unwrap();
+/// let guide = tool_guide(&["Read", "WebFetch"]).ok_or("no guide")?;
 /// assert!(guide.contains("Read") && !guide.contains("Edit"));
-/// assert_eq!(tool_guide(&["mcp__gh__search".to_string()]), None);
+/// assert_eq!(tool_guide(&["mcp__gh__search"]), None);
+/// # Ok::<(), &str>(())
 /// ```
-pub fn tool_guide(tool_names: &[String]) -> Option<String> {
-    let has = |n: &str| tool_names.iter().any(|t| t == n);
+pub fn tool_guide(tool_names: &[impl AsRef<str>]) -> Option<String> {
+    let has = |n: &str| tool_names.iter().any(|t| t.as_ref() == n);
     let look: Vec<&str> = ["Read", "Grep", "Glob"]
         .into_iter()
         .filter(|n| has(n))
@@ -55,13 +55,14 @@ pub fn tool_guide(tool_names: &[String]) -> Option<String> {
 /// ```
 /// use haest_tools::touches_workspace;
 ///
-/// assert!(touches_workspace(&["WebFetch".into(), "Edit".into()]));
-/// assert!(!touches_workspace(&["WebFetch".into()]));
+/// assert!(touches_workspace(&["WebFetch", "Edit"]));
+/// assert!(!touches_workspace(&["WebFetch"]));
 /// ```
-pub fn touches_workspace(tool_names: &[String]) -> bool {
+pub fn touches_workspace(tool_names: &[impl AsRef<str>]) -> bool {
     tool_names
         .iter()
-        .any(|t| t == "Bash" || FILE_TOOLS.contains(&t.as_str()))
+        .map(AsRef::as_ref)
+        .any(|t| t == "Bash" || FILE_TOOLS.contains(&t))
 }
 
 /// `[A]` -> "A", `[A, B]` -> "A and B", `[A, B, C]` -> "A, B and C".
@@ -77,20 +78,17 @@ fn and_list(names: &[&str]) -> String {
 mod tests {
     use super::*;
 
-    fn names(tools: &[&str]) -> Vec<String> {
-        tools.iter().map(|t| t.to_string()).collect()
-    }
-
     #[test]
     fn the_guide_covers_only_the_tools_the_call_has() {
-        assert_eq!(tool_guide(&[]), None);
-        assert_eq!(tool_guide(&names(&["WebFetch", "Skill"])), None);
+        assert_eq!(tool_guide(&[] as &[&str]), None);
+        assert_eq!(tool_guide(&["WebFetch", "Skill"]), None);
         let all = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"];
-        let guide = tool_guide(&names(&all)).unwrap();
+        let guide = tool_guide(&all).unwrap();
         for tool in all {
             assert!(guide.contains(tool), "{tool} is in the guide");
         }
-        let read = tool_guide(&names(&["Read"])).unwrap();
+        // Owned names work as well as borrowed ones.
+        let read = tool_guide(&[String::from("Read")]).unwrap();
         for absent in ["Edit", "Write", "Bash", "Grep", "Glob"] {
             assert!(!read.contains(absent), "{absent} is not offered");
         }
@@ -99,10 +97,10 @@ mod tests {
     #[test]
     fn bash_and_the_file_tools_touch_the_workspace_and_nothing_else_does() {
         for touches in [&["Bash"][..], &["Glob"], &["WebFetch", "Edit"]] {
-            assert!(touches_workspace(&names(touches)), "{touches:?}");
+            assert!(touches_workspace(touches), "{touches:?}");
         }
         for not in [&[][..], &["WebFetch", "mcp__gh__search"]] {
-            assert!(!touches_workspace(&names(not)), "{not:?}");
+            assert!(!touches_workspace(not), "{not:?}");
         }
     }
 }

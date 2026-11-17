@@ -7,8 +7,6 @@
 //! with the session. The task list belongs to the conversation, so the default
 //! subagent hub gives no subagent these tools.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use haest_core::{
     ToolRef, Tools,
@@ -70,10 +68,14 @@ fn id_param() -> Value {
     json!({"type": "string", "description": "The task id, e.g. \"3\""})
 }
 
-struct TaskCreateTool(Arc<TaskBoard>);
-struct TaskUpdateTool(Arc<TaskBoard>);
-struct TaskListTool(Arc<TaskBoard>);
-struct TaskGetTool(Arc<TaskBoard>);
+#[derive(Debug)]
+struct TaskCreateTool(TaskBoard);
+#[derive(Debug)]
+struct TaskUpdateTool(TaskBoard);
+#[derive(Debug)]
+struct TaskListTool(TaskBoard);
+#[derive(Debug)]
+struct TaskGetTool(TaskBoard);
 
 /// The four task tools over one board: TaskCreate, TaskUpdate (both kind
 /// `todo.write`), TaskList and TaskGet (read-only).
@@ -84,24 +86,26 @@ struct TaskGetTool(Arc<TaskBoard>);
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
-/// use haest_core::{task_board::TaskBoard, tool::ToolContext, workspace::ShutWorkspace};
+/// use haest_core::{
+///     task_board::TaskBoard,
+///     tool::{ToolContext, input},
+///     workspace::ShutWorkspace,
+/// };
 /// use haest_tools::task_tools;
 /// use serde_json::json;
 ///
 /// # #[tokio::main]
-/// # async fn main() {
-/// let board = Arc::new(TaskBoard::default());
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// let board = TaskBoard::default();
 /// let tools = task_tools(board.clone());
-/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-/// let input = json!({"subject": "Write the docs"});
-/// tools[0].execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
-/// // The host sees the model's list on its own board.
+/// let ctx = ToolContext::new("/", ShutWorkspace);
+/// tools[0].execute(input(json!({"subject": "Write the docs"}))?, &ctx).await?;
+/// // The host sees the model's list on its own board: a clone is the same board.
 /// assert_eq!(board.list()[0].subject, "Write the docs");
+/// # Ok(())
 /// # }
 /// ```
-pub fn task_tools(board: Arc<TaskBoard>) -> Tools {
+pub fn task_tools(board: TaskBoard) -> Tools {
     Tools::from_iter([
         ToolRef::new(TaskCreateTool(board.clone())),
         ToolRef::new(TaskUpdateTool(board.clone())),

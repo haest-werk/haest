@@ -108,14 +108,12 @@ pub fn run_tools(
     own: Tools,
     attachments: Arc<Attachments>,
 ) -> Result<Tools, BoxError> {
-    let opts = BuiltinOptions {
-        read_intercept: Some(attachments),
-        web_fetch: None,
-        ..Default::default()
-    };
-    // A word on whose option is None here (web_fetch, tasks, skill) is an
+    let opts = BuiltinOptions::new()
+        .with_read_intercept(attachments)
+        .without_web_fetch();
+    // A word on whose option is not given here (web_fetch, tasks, skill) is an
     // error, never a tool quietly missing; the notebook's runs turn on none of them.
-    let mut tools = builtin_tools_where(|w| s.tools.has(w), opts)?;
+    let mut tools = builtin_tools_where(|t| s.tools.has(t.as_str()), opts)?;
     tools.extend(own);
     Ok(tools)
 }

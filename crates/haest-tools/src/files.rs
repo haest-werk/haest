@@ -33,7 +33,16 @@ fn any_str<'a>(input: &'a JsonMap, key: &str) -> Result<&'a str, ToolError> {
 /// Input: `file_path` (absolute, or relative to the context's `cwd`) and
 /// `content` (may be empty). The model is told whether it created or
 /// overwrote the file, and how many bytes it wrote.
+#[derive(Debug, Default, Clone)]
+#[non_exhaustive]
 pub struct WriteTool;
+
+impl WriteTool {
+    /// The Write tool.
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[async_trait]
 impl Tool for WriteTool {
@@ -87,7 +96,16 @@ impl Tool for WriteTool {
 /// Refused with a [`ToolError::Input`] that says what to do: no such file
 /// (use Write), `old_string` not found, found more than once without
 /// `replace_all`, identical strings, or a file over 32 MB.
+#[derive(Debug, Default, Clone)]
+#[non_exhaustive]
 pub struct EditTool;
+
+impl EditTool {
+    /// The Edit tool.
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[async_trait]
 impl Tool for EditTool {

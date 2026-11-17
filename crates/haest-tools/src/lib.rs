@@ -29,9 +29,10 @@
 //!
 //! # The built-in tools
 //!
-//! [`builtin_tools`] makes these, in this order; [`builtin_tools_where`] picks
-//! some by their word (the `tools` setting). Read-only tools may run in
-//! parallel within one model step.
+//! [`builtin_tools`] makes these, in this order, from [`BuiltinOptions`];
+//! [`builtin_tools_where`] picks some by their word (the `tools` setting, a
+//! [`BuiltinTool`]). Read-only tools may run in parallel within one model
+//! step.
 //!
 //! | Tool | What it does | Read-only | Word | Needs from the host |
 //! |---|---|---|---|---|
@@ -101,32 +102,32 @@
 //! there, `cat` and Read see.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
-//! use haest_core::{fs::MemFs, tool::ToolContext};
+//! use haest_core::{
+//!     fs::MemFs,
+//!     tool::{ToolContext, ToolError, ToolOutput, input},
+//! };
 //! use haest_tools::{BuiltinOptions, builtin_tools};
 //! use haest_workspace::SandboxWorkspace;
-//! use serde_json::json;
+//! use serde_json::{Value, json};
 //!
 //! # #[tokio::main]
-//! # async fn main() {
-//! let ws = SandboxWorkspace::over(Arc::new(MemFs::new()));
-//! let ctx = ToolContext::new("/project", Arc::new(ws));
+//! # async fn main() -> Result<(), haest_core::error::BoxError> {
+//! let ctx = ToolContext::new("/project", SandboxWorkspace::over(MemFs::new()));
 //! // No WebFetch: this example stays offline.
-//! let tools = builtin_tools(BuiltinOptions { web_fetch: None, ..Default::default() });
+//! let tools = builtin_tools(BuiltinOptions::new().without_web_fetch());
 //! let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
 //! assert_eq!(names, ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]);
 //!
-//! let call = |name: &str, input: serde_json::Value| {
-//!     let tool = tools.iter().find(|t| t.name() == name).unwrap().clone();
-//!     let ctx = ctx.clone();
-//!     async move { tool.execute(input.as_object().unwrap().clone(), &ctx).await }
+//! let call = async |name: &str, call: Value| -> Result<ToolOutput, ToolError> {
+//!     let tool = tools.iter().find(|t| t.name() == name).ok_or(ToolError::Input(name.into()))?;
+//!     tool.execute(input(call)?, &ctx).await
 //! };
-//! call("Write", json!({"file_path": "notes.md", "content": "hello\n"})).await.unwrap();
-//! let out = call("Bash", json!({"command": "cat /project/notes.md"})).await.unwrap();
+//! call("Write", json!({"file_path": "notes.md", "content": "hello\n"})).await?;
+//! let out = call("Bash", json!({"command": "cat /project/notes.md"})).await?;
 //! assert_eq!(out.content, "hello\n");
-//! let out = call("Read", json!({"file_path": "notes.md"})).await.unwrap();
+//! let out = call("Read", json!({"file_path": "notes.md"})).await?;
 //! assert_eq!(out.content, "1\thello");
+//! # Ok(())
 //! # }
 //! ```
 //!
@@ -182,7 +183,8 @@ pub use agents::{
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;
 pub use builtins::{
-    BuiltinOptions, MissingOption, builtin_tools, builtin_tools_where, builtin_word,
+    BuiltinOptions, BuiltinTool, MissingOption, ParseBuiltinToolError, builtin_tools,
+    builtin_tools_where,
 };
 pub use files::{EditTool, WriteTool};
 pub use guide::{FILE_TOOLS, tool_guide, touches_workspace};
@@ -197,9 +199,11 @@ pub use jobs::{
     MAX_JOBS, NoJobEvents, Taken,
 };
 pub use net_guard::{Resolve, SystemResolve, UrlRefused, assert_public_url, is_blocked};
-pub use read::{READ_TOKEN_BUDGET, ReadIntercept, ReadTool, media_output, read_text_output};
+pub use read::{
+    READ_TOKEN_BUDGET, ReadIntercept, ReadInterceptRef, ReadTool, media_output, read_text_output,
+};
 pub use search::{GlobTool, GrepTool};
-pub use skill::{SkillToolOptions, skill_tool};
+pub use skill::{SkillTool, SkillToolOptions};
 pub use tasks::task_tools;
 pub use tool_search::DeferredTools;
 pub use turn_gate::{AgentTurnGate, AgentTurnSite};

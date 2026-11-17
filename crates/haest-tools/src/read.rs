@@ -22,7 +22,7 @@
 //! PLUG POINT: [`ReadIntercept`] -- a host answers some paths itself before the
 //! workspace fs is asked.
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use async_trait::async_trait;
 use haest_core::{
@@ -67,11 +67,9 @@ pub(crate) fn within_cap(stat: &FsStat, shown: &str, instead: &str) -> Result<()
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use async_trait::async_trait;
 /// use haest_core::{
-///     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
+///     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, input},
 ///     workspace::ShutWorkspace,
 /// };
 /// use haest_tools::{ReadIntercept, ReadTool, read_text_output};
@@ -96,13 +94,14 @@ pub(crate) fn within_cap(stat: &FsStat, shown: &str, instead: &str) -> Result<()
 /// }
 ///
 /// # #[tokio::main]
-/// # async fn main() {
-/// let read = ReadTool::new(Some(Arc::new(Attachments)));
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// let read = ReadTool::new().with_intercept(Attachments);
 /// // No files at all: only the intercept can answer.
-/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-/// let input = json!({"file_path": "attachment:7", "offset": 2});
-/// let out = read.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// let ctx = ToolContext::new("/", ShutWorkspace);
+/// let call = input(json!({"file_path": "attachment:7", "offset": 2}))?;
+/// let out = read.execute(call, &ctx).await?;
 /// assert_eq!(out.content, "2\tfirst line");
+/// # Ok(())
 /// # }
 /// ```
 #[async_trait]
@@ -116,6 +115,13 @@ pub trait ReadIntercept: Send + Sync {
         input: &JsonMap,
         ctx: &ToolContext,
     ) -> Option<Result<ToolOutput, ToolError>>;
+}
+
+haest_core::plug_ref! {
+    /// A shared [`ReadIntercept`]: what [`ReadTool::with_intercept`] and
+    /// [`BuiltinOptions::with_read_intercept`](crate::BuiltinOptions::with_read_intercept)
+    /// keep. Either takes the intercept itself.
+    pub struct ReadInterceptRef(dyn ReadIntercept);
 }
 
 /// A tool result that hands `bytes` to the model as media (an image, PDF,
@@ -165,14 +171,27 @@ pub async fn media_output(
 /// A missing file, a directory, a binary file that is not media, a file over
 /// 32 MB: each is a [`ToolError::Input`] that tells the model what to do
 /// instead. A byte-order mark is dropped.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ReadTool {
-    intercept: Option<Arc<dyn ReadIntercept>>,
+    intercept: Option<ReadInterceptRef>,
 }
 
 impl ReadTool {
-    /// Read, with `intercept` asked first on every call when there is one.
-    pub fn new(intercept: Option<Arc<dyn ReadIntercept>>) -> Self {
+    /// Read from the workspace fs, with no intercept.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Ask `intercept` first on every call: the [`ReadIntercept`] example
+    /// has one.
+    pub fn with_intercept(mut self, intercept: impl Into<ReadInterceptRef>) -> Self {
+        self.intercept = Some(intercept.into());
+        self
+    }
+
+    /// Read with `intercept` when there is one: what
+    /// [`builtin_tools`](crate::builtin_tools) builds.
+    pub(crate) fn intercepted_by(intercept: Option<ReadInterceptRef>) -> Self {
         Self { intercept }
     }
 

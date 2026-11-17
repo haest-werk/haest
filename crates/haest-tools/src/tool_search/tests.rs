@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::*;
 use crate::testkit::{input, shut_ctx as ctx};
 use haest_core::{ToolRef, Tools};
@@ -33,11 +35,11 @@ fn all() -> Tools {
     ])
 }
 
-fn advertise(d: &Arc<ToolDeferral>, all: &Tools) -> Tools {
+fn advertise(d: &ToolDeferral, all: &Tools) -> Tools {
     advertised_tools(d, all, deferral_tools(d.clone()))
 }
 
-fn names(d: &Arc<ToolDeferral>) -> Vec<String> {
+fn names(d: &ToolDeferral) -> Vec<String> {
     advertise(d, &all())
         .iter()
         .map(|t| t.name().to_string())
@@ -48,8 +50,8 @@ fn find(tools: &[ToolRef], name: &str) -> ToolRef {
     tools.iter().find(|t| t.name() == name).cloned().unwrap()
 }
 
-fn deferral(mode: DeferMode) -> Arc<ToolDeferral> {
-    Arc::new(ToolDeferral::new(mode))
+fn deferral(mode: DeferMode) -> ToolDeferral {
+    ToolDeferral::new(mode)
 }
 
 #[test]
@@ -96,8 +98,8 @@ async fn call_tool_runs_the_named_deferred_tool_with_its_input() {
 
 #[test]
 fn a_hosts_messaging_tools_stay_loaded_so_a_channel_guide_can_name_them() {
-    let suffixes = ["__send_message", "__list_conversations"].map(String::from);
-    let d = Arc::new(ToolDeferral::new(DeferMode::Proxy).with_always_loaded(suffixes));
+    let suffixes = ["__send_message", "__list_conversations"];
+    let d = ToolDeferral::new(DeferMode::Proxy).with_always_loaded(suffixes);
     let mut with_host = all();
     with_host.push(Fake("mcp__host__send_message", "send"));
     with_host.push(Fake("mcp__host__list_conversations", "list"));

@@ -24,10 +24,10 @@ use haest_core::{ToolRef, Tools};
 fn builtins() -> Tools {
     Tools::from_iter([
         ToolRef::new(ReadTool::default()),
-        ToolRef::new(WriteTool),
-        ToolRef::new(EditTool),
-        ToolRef::new(GrepTool),
-        ToolRef::new(GlobTool),
+        ToolRef::new(WriteTool::new()),
+        ToolRef::new(EditTool::new()),
+        ToolRef::new(GrepTool::new()),
+        ToolRef::new(GlobTool::new()),
         ToolRef::new(BashTool::new(BashOptions::default())),
     ])
 }
@@ -88,8 +88,8 @@ fn code_callable_follows_the_policy() {
     let bash = ToolRef::new(BashTool::new(BashOptions::default()));
     let cases: [Case; 8] = [
         ("Read", read, &[], true),
-        ("Grep", ToolRef::new(GrepTool), &[], true),
-        ("Write", ToolRef::new(WriteTool), &[], true),
+        ("Grep", ToolRef::new(GrepTool::new()), &[], true),
+        ("Write", ToolRef::new(WriteTool::new()), &[], true),
         ("Bash", bash.clone(), &[], false),
         (
             "read-only MCP",
@@ -202,7 +202,7 @@ async fn every_inner_call_goes_through_the_tools_the_model_is_given() {
     let ws = MemWorkspace::with_files([("/p/keep.txt", "")]);
     let wrapped: Tools = Tools::from_iter([
         ToolRef::new(ReadTool::default()),
-        ToolRef::new(Denied(ToolRef::new(WriteTool))),
+        ToolRef::new(Denied(ToolRef::new(WriteTool::new()))),
     ]);
     let tool = CodeTool::new(["Read", "Write"], wrapped);
     let code = "try { await tools.Write({ file_path: 'x.txt', content: 'no' }); return 'wrote' } catch (e) { return 'denied' }";

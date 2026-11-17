@@ -13,6 +13,8 @@
 //! The gate is a threshold site ([`AgentTurnSite`]): the nudge is its default
 //! threshold, and [`AgentTurnGate::with_thresholds`] changes it.
 
+use std::fmt;
+
 use haest_core::{
     remedy::{Limit, Remedies},
     threshold::{
@@ -83,7 +85,7 @@ impl Threshold for StreakNudge {
 /// assert_eq!(gate.agent_turn("m1").as_deref(), Some("m1"));
 /// // From half the cap a turn runs with a nudge in front of its text.
 /// for m in ["m2", "m3", "m4"] {
-///     let text = gate.agent_turn(m).unwrap();
+///     let text = gate.agent_turn(m).ok_or("held too soon")?;
 ///     assert!(text != m && text.ends_with(m));
 /// }
 /// // At the cap it is held (and the human hears why, once).
@@ -92,6 +94,7 @@ impl Threshold for StreakNudge {
 /// let text = gate.human("what happened?");
 /// assert!(text.contains("m5") && text.ends_with("what happened?"));
 /// assert_eq!(gate.agent_turn("m6").as_deref(), Some("m6"));
+/// # Ok::<(), &str>(())
 /// ```
 pub struct AgentTurnGate {
     /// Turns in a row with no human message; 0 = no cap.
@@ -102,6 +105,16 @@ pub struct AgentTurnGate {
     streak: u32,
     held: Vec<String>,
     thresholds: Watch<AgentTurnSite>,
+}
+
+impl fmt::Debug for AgentTurnGate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AgentTurnGate")
+            .field("cap", &self.cap)
+            .field("streak", &self.streak)
+            .field("held", &self.held.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl AgentTurnGate {

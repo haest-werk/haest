@@ -7,12 +7,12 @@
 //! handed to the loop as its own source. Which tools are deferred, and when one
 //! counts as loaded, is the deferral's (haest-core).
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use haest_core::{
     __private::{advertised_tools, callable_tools},
-    ToolRef, Tools,
+    ToolRef, ToolSourceRef, Tools,
     deferred_tools::{DeferMode, ToolDeferral, search_tools},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, req_str},
 };
@@ -44,8 +44,9 @@ fn hint(description: &str) -> String {
 
 const HINT_CHARS: usize = 120;
 
+#[derive(Debug)]
 struct ToolSearchTool {
-    deferral: Arc<ToolDeferral>,
+    deferral: ToolDeferral,
     deferred: Tools,
 }
 
@@ -104,6 +105,7 @@ impl Tool for ToolSearchTool {
     }
 }
 
+#[derive(Debug)]
 struct CallToolTool {
     by_name: HashMap<String, ToolRef>,
 }
@@ -164,31 +166,36 @@ impl Tool for CallToolTool {
 /// };
 /// use haest_tools::{BuiltinOptions, DeferredTools, builtin_tools};
 ///
-/// let tools = builtin_tools(BuiltinOptions { web_fetch: None, ..Default::default() });
+/// let tools = builtin_tools(BuiltinOptions::new().without_web_fetch());
 /// // Proxy mode, every tool deferred but Read.
-/// let deferral = ToolDeferral::new(DeferMode::Proxy).deferring_all_except(["Read".to_string()]);
+/// let deferral = ToolDeferral::new(DeferMode::Proxy).deferring_all_except(["Read"]);
 /// let source = DeferredTools::new(tools, deferral);
 /// let advertised: Vec<String> = source.tools().iter().map(|t| t.name().to_string()).collect();
 /// assert_eq!(advertised, ["Read", "ToolSearch", "CallTool"]);
 /// // Called by name anyway, a deferred tool still runs.
 /// assert!(source.callable().iter().any(|t| t.name() == "Bash"));
 /// ```
+///
+/// Clones share the source and the deferral: a schema one loads, every
+/// clone advertises.
+#[derive(Debug, Clone)]
 pub struct DeferredTools {
-    source: Box<dyn ToolSource>,
-    deferral: Arc<ToolDeferral>,
+    source: ToolSourceRef,
+    deferral: ToolDeferral,
 }
 
 impl DeferredTools {
     /// The tools `source` has, deferred as `deferral` says.
-    pub fn new(source: impl ToolSource + 'static, deferral: ToolDeferral) -> Self {
+    pub fn new(source: impl Into<ToolSourceRef>, deferral: ToolDeferral) -> Self {
         Self {
-            source: Box::new(source),
-            deferral: Arc::new(deferral),
+            source: source.into(),
+            deferral,
         }
     }
 
     /// Its deferral, e.g. to [`ToolDeferral::load_called`] a resumed history.
-    pub fn deferral(&self) -> &Arc<ToolDeferral> {
+    /// A clone is the same deferral.
+    pub fn deferral(&self) -> &ToolDeferral {
         &self.deferral
     }
 }
@@ -216,7 +223,7 @@ impl ToolSource for DeferredTools {
 /// tools over them: ToolSearch (read-only, kind `agent.unknown`) loads the
 /// schemas a `query` names (`select:a,b`, or keywords) into the deferral;
 /// CallTool runs a deferred tool by `name` with its `input`.
-fn deferral_tools(deferral: Arc<ToolDeferral>) -> impl Fn(&[ToolRef]) -> Tools {
+fn deferral_tools(deferral: ToolDeferral) -> impl Fn(&[ToolRef]) -> Tools {
     move |deferred: &[ToolRef]| {
         let search = ToolRef::new(ToolSearchTool {
             deferral: deferral.clone(),

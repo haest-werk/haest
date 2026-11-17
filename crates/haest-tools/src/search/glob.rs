@@ -23,7 +23,16 @@ const GLOB_LIMIT: usize = 200;
 /// The pattern language is the TS haest's (Bun's glob): `*` stops at `/`,
 /// `**` crosses directories, `?`, `[...]`, `{a,b}`, dot files match, case
 /// matters, and a leading `!` negates the whole pattern.
+#[derive(Debug, Default, Clone)]
+#[non_exhaustive]
 pub struct GlobTool;
+
+impl GlobTool {
+    /// The Glob tool.
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[async_trait]
 impl Tool for GlobTool {

@@ -42,7 +42,7 @@
 //!
 //! ```
 //! use haest_code::{CodeTool, code_tool_names};
-//! use haest_core::{JsonMap, MemFs, Tool, ToolContext, Tools};
+//! use haest_core::{MemFs, Tool, ToolContext, Tools, tool::input};
 //! use haest_tools::{FILE_TOOLS, GlobTool, ReadTool};
 //! use haest_workspace::SandboxWorkspace;
 //! use serde_json::json;
@@ -57,7 +57,7 @@
 //! let workspace = SandboxWorkspace::over(files);
 //!
 //! // The model's tools. Code may call the file tools among them.
-//! let tools = Tools::new().with(ReadTool::default()).with(GlobTool);
+//! let tools = Tools::new().with(ReadTool::new()).with(GlobTool::new());
 //! let code = CodeTool::new(code_tool_names(&tools, &FILE_TOOLS), tools.clone());
 //!
 //! let program = r#"
@@ -66,8 +66,8 @@
 //!   for (const f of files) todos += (await tools.Read({ file_path: f })).split('TODO').length - 1
 //!   return { files: files.length, todos }
 //! "#;
-//! let input: JsonMap = serde_json::from_value(json!({ "code": program }))?;
-//! let out = code.execute(input, &ToolContext::new("/project", workspace)).await?;
+//! let call = input(json!({ "code": program }))?;
+//! let out = code.execute(call, &ToolContext::new("/project", workspace)).await?;
 //! assert!(!out.is_error, "{}", out.content);
 //! // The model reads the returned value (and a count of the calls it took),
 //! // not the four tool results.

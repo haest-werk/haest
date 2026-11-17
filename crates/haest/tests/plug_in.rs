@@ -44,7 +44,7 @@ use haest::{
     req_str,
     serde_json::{Value, json},
     tools::{
-        AgentRef, BuiltinOptions, Inbox, SubagentEvent, SubagentHub, SubagentParent,
+        AgentRef, BuiltinOptions, BuiltinTool, Inbox, SubagentEvent, SubagentHub, SubagentParent,
         builtin_tools_where,
     },
     workspace::SandboxWorkspace,
@@ -181,11 +181,13 @@ impl SubagentParent for App {
         SharedDeps::new(models, CWD, self.workspace.clone())
     }
     fn base_tools(&self) -> Tools {
-        let on = |w: &str| matches!(w, "read" | "write" | "bash");
-        let opts = BuiltinOptions {
-            web_fetch: None,
-            ..Default::default()
+        let on = |t| {
+            matches!(
+                t,
+                BuiltinTool::Read | BuiltinTool::Write | BuiltinTool::Bash
+            )
         };
+        let opts = BuiltinOptions::new().without_web_fetch();
         let mut tools =
             builtin_tools_where(on, opts).expect("read, write and bash need no options");
         tools.push(self.lookup.clone());

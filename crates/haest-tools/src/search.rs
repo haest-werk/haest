@@ -100,7 +100,16 @@ fn target_arg(target: &str) -> String {
 /// are cut, and the whole answer is kept to haest-core's [`TRUNCATE_CHARS`].
 /// Files rg could not
 /// read are named in a closing note; a search with no match says so.
+#[derive(Debug, Default, Clone)]
+#[non_exhaustive]
 pub struct GrepTool;
+
+impl GrepTool {
+    /// The Grep tool.
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 #[async_trait]
 impl Tool for GrepTool {

@@ -9,7 +9,7 @@ use crate::haest::{
     code::{CodeTool, code_tool_names},
     core::__private::openrouter_base_url,
     core::fs::Fs,
-    core::skills::Skill,
+    core::skills::{DiskSkills, Skill},
     core::task_board::TaskBoard,
     core::tool::ToolSource,
     mcp::McpHub,
@@ -51,16 +51,12 @@ pub fn own_tools(
         .map(|jobs| (*jobs).clone())
         .into_iter()
         .fold(BashOptions::default(), BashOptions::with_jobs);
-    let opts = BuiltinOptions {
-        bash,
-        tasks: Some(board),
-        skill: Some(SkillToolOptions::new(
-            move || skills.lock().unwrap().clone(),
-            host_fs,
-        )),
-        ..Default::default()
-    };
-    let mut tools = builtin_tools_where(|w| picked.has(w), opts)
+    let skills = DiskSkills::new(host_fs, move || skills.lock().unwrap().clone());
+    let opts = BuiltinOptions::new()
+        .with_bash(bash)
+        .with_tasks(TaskBoard::clone(&board))
+        .with_skill(SkillToolOptions::new(skills));
+    let mut tools = builtin_tools_where(|t| picked.has(t.as_str()), opts)
         .expect("every option a built-in needs is given");
     if let Some(opts) = image {
         tools.push(GenerateImageTool::new(opts));
@@ -217,9 +213,9 @@ mod tests {
             assert!(!build(&one).is_empty(), "{word} picks nothing");
         }
         for tool in build(&BuiltinTools::ALL) {
-            let word = crate::haest::tools::builtin_word(tool.name());
+            let builtin = crate::haest::tools::BuiltinTool::of(tool.name());
             assert!(
-                word.is_some_and(|w| BuiltinTools::WORDS.contains(&w)),
+                builtin.is_some_and(|b| BuiltinTools::WORDS.contains(&b.as_str())),
                 "{}",
                 tool.name()
             );

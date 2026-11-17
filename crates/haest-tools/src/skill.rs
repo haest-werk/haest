@@ -2,47 +2,36 @@
 //! prompt lists name + description; calling this returns the full SKILL.md
 //! body with its base directory so relative references resolve.
 //!
-//! Start from [`SkillToolOptions`], then [`skill_tool`] (or set
-//! [`BuiltinOptions::skill`](crate::BuiltinOptions::skill)). Finding the skills
-//! is haest-core's ([`haest_core::skills`]).
-
-use std::sync::Arc;
+//! Start from [`SkillToolOptions`], then [`SkillTool::new`] (or
+//! [`BuiltinOptions::with_skill`](crate::BuiltinOptions::with_skill)).
+//! Finding the skills is haest-core's ([`haest_core::skills`]).
 
 use async_trait::async_trait;
 use haest_core::{
-    ToolRef,
-    fs::Fs,
-    skills::{DiskSkills, Skill, SkillSet},
+    skills::SkillSetRef,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str},
 };
 use serde_json::{Value, json};
 
 /// What the Skill tool reads: the skills it offers and where their bodies
 /// come from.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SkillToolOptions {
     /// The skills, asked on every call.
-    set: Arc<dyn SkillSet>,
+    set: SkillSetRef,
     /// The parameter lists the offered names (`enum`): a weak model can't misspell one.
     name_enum: bool,
 }
 
 impl SkillToolOptions {
-    /// SKILL.md files: `skills` is the current list (asked on every call, so
-    /// a host may change it), the bodies are read from `host_fs` (a user skill
-    /// lives outside any sandbox mount).
-    pub fn new(
-        skills: impl Fn() -> Vec<Skill> + Send + Sync + 'static,
-        host_fs: Arc<dyn Fs>,
-    ) -> Self {
-        Self::over(Arc::new(DiskSkills::new(host_fs, skills)))
-    }
-
-    /// A host's own skills, from any [`SkillSet`] (skills kept in a database,
-    /// written inline).
-    pub fn over(set: Arc<dyn SkillSet>) -> Self {
+    /// The skills of `set`, asked on every call: SKILL.md files the host
+    /// rescans ([`Skills`](haest_core::skills::Skills) or
+    /// [`DiskSkills`](haest_core::skills::DiskSkills), reading the bodies
+    /// from the host's own fs: a user skill lives outside any sandbox mount),
+    /// or a host's own (kept in a database, written inline).
+    pub fn new(set: impl Into<SkillSetRef>) -> Self {
         Self {
-            set,
+            set: set.into(),
             name_enum: false,
         }
     }
@@ -55,9 +44,7 @@ impl SkillToolOptions {
     }
 }
 
-struct SkillTool(SkillToolOptions);
-
-/// The Skill tool (`Skill`, kind `skill.invoke`, read-only) over `opts`.
+/// The Skill tool (`Skill`, kind `skill.invoke`, read-only).
 ///
 /// Input: `skill` (a name; a leading `/` is dropped, and a name that differs
 /// from exactly one offered skill only in case is that skill) and optional
@@ -68,18 +55,16 @@ struct SkillTool(SkillToolOptions);
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_core::{
 ///     skills::{InlineSkill, InlineSkills, SkillCard},
-///     tool::ToolContext,
+///     tool::{Tool, ToolContext, input},
 ///     workspace::ShutWorkspace,
 /// };
-/// use haest_tools::{SkillToolOptions, skill_tool};
+/// use haest_tools::{SkillTool, SkillToolOptions};
 /// use serde_json::json;
 ///
 /// # #[tokio::main]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// let release = InlineSkill {
 ///     card: SkillCard {
 ///         name: "release".into(),
@@ -89,16 +74,21 @@ struct SkillTool(SkillToolOptions);
 ///     },
 ///     body: "Tag, build, publish.".into(),
 /// };
-/// let set = Arc::new(InlineSkills::merged([vec![release]]));
-/// let skill = skill_tool(SkillToolOptions::over(set));
-/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-/// let input = json!({"skill": "/release"});
-/// let out = skill.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// let skill = SkillTool::new(SkillToolOptions::new(InlineSkills::merged([vec![release]])));
+/// let ctx = ToolContext::new("/", ShutWorkspace);
+/// let out = skill.execute(input(json!({"skill": "/release"}))?, &ctx).await?;
 /// assert!(out.content.contains("Tag, build, publish."));
+/// # Ok(())
 /// # }
 /// ```
-pub fn skill_tool(opts: SkillToolOptions) -> ToolRef {
-    ToolRef::new(SkillTool(opts))
+#[derive(Debug, Clone)]
+pub struct SkillTool(SkillToolOptions);
+
+impl SkillTool {
+    /// The Skill tool over `opts`.
+    pub fn new(opts: SkillToolOptions) -> Self {
+        Self(opts)
+    }
 }
 
 #[async_trait]
@@ -162,14 +152,14 @@ impl Tool for SkillTool {
 mod tests {
     use haest_core::{
         fs::MemFs,
-        skills::{SkillOptions, SkillSources, discover_skills},
+        skills::{DiskSkills, SkillOptions, SkillSources, discover_skills},
     };
 
     use super::*;
     use crate::testkit::{input, shut_ctx};
 
-    async fn tool() -> ToolRef {
-        let fs: Arc<dyn Fs> = Arc::new(MemFs::with_files([
+    async fn tool() -> SkillTool {
+        let fs = MemFs::with_files([
             (
                 "/h/.claude/skills/deploy/SKILL.md",
                 "---\nname: deploy\ndescription: ships it\n---\n\nDEPLOY BODY\n",
@@ -178,15 +168,17 @@ mod tests {
                 "/h/.claude/skills/secret/SKILL.md",
                 "---\nname: secret\ndescription: x\ndisable-model-invocation: true\n---\n\nHIDDEN\n",
             ),
-        ]));
+        ]);
         let opts = SkillOptions {
             cwd: "/w".into(),
             home: "/h".into(),
             claude_dir: "/h/.claude".into(),
             sources: SkillSources::ALL,
         };
-        let skills = discover_skills(fs.as_ref(), &opts).await;
-        skill_tool(SkillToolOptions::new(move || skills.clone(), fs))
+        let skills = discover_skills(&fs, &opts).await;
+        SkillTool::new(SkillToolOptions::new(DiskSkills::new(fs, move || {
+            skills.clone()
+        })))
     }
 
     #[tokio::test]
@@ -228,13 +220,13 @@ mod tests {
             },
             body: "My way.".into(),
         };
-        let set = Arc::new(InlineSkills::merged([vec![notes]]));
-        let t = skill_tool(SkillToolOptions::over(set.clone()).with_name_enum());
+        let set = InlineSkills::merged([vec![notes]]);
+        let t = SkillTool::new(SkillToolOptions::new(set.clone()).with_name_enum());
         assert_eq!(
             t.parameters()["properties"]["skill"]["enum"],
             json!(["notes"])
         );
-        let plain = skill_tool(SkillToolOptions::over(set));
+        let plain = SkillTool::new(SkillToolOptions::new(set));
         assert!(
             plain.parameters()["properties"]["skill"]
                 .get("enum")

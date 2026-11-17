@@ -62,7 +62,7 @@ impl SubagentHub {
             .parent
             .subagent_tools(start.input.subagent_type.as_deref())
             .into_iter()
-            .filter(|t| crate::builtin_word(t.name()) != Some("tasks"))
+            .filter(|t| crate::BuiltinTool::of(t.name()) != Some(crate::BuiltinTool::Tasks))
             .collect();
         tools.extend(self.tools_for(&run.me));
         let source = self.0.parent.tool_source(tools);

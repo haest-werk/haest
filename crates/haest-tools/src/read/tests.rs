@@ -204,7 +204,7 @@ impl ReadIntercept for Attachments {
 #[tokio::test]
 async fn an_intercept_answers_its_own_paths_and_leaves_the_rest_to_the_fs() {
     let ws = TestWorkspace::with_files([("/p/f.txt", "from disk")]);
-    let tool = ReadTool::new(Some(Arc::new(Attachments)));
+    let tool = ReadTool::new().with_intercept(Attachments);
     let c = ctx(ws);
     let att = tool
         .execute(

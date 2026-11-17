@@ -13,7 +13,7 @@
 //! ([`WebFetchNet::unguarded`] says what that gives up). Start from
 //! [`WebFetchTool`].
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use haest_core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str};
@@ -121,6 +121,12 @@ impl Default for WebFetchNet {
     }
 }
 
+impl fmt::Debug for WebFetchNet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WebFetchNet").finish_non_exhaustive()
+    }
+}
+
 async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
     let media_type = res
         .header("content-type")
@@ -214,6 +220,7 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
 /// assert!(tool.execute(input.as_object().unwrap().clone(), &ctx).await.is_err());
 /// # }
 /// ```
+#[derive(Debug, Clone)]
 pub struct WebFetchTool {
     net: WebFetchNet,
 }
