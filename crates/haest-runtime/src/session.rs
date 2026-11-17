@@ -124,8 +124,6 @@ impl<U: Ui + 'static> Driven for Runtime<U> {
 /// approvals put to whoever drives it. Nothing here calls a model.
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_core::fs::MemFs;
 /// use haest_runtime::{BuildOptions, HubUi, RuntimeInputs, World, build};
 /// use haest_session::{Backend, Body, Hub, HubOptions, SessionPrompter, start};
@@ -142,8 +140,8 @@ impl<U: Ui + 'static> Driven for Runtime<U> {
 ///     data_dir: "/data".into(),
 ///     ..Settings::bare("/work", "/home/me")
 /// };
-/// let mut inputs = RuntimeInputs::new(settings, World::files(MemFs::new()));
-/// inputs.keys = Arc::new(|name: &str| (name == "OPENROUTER_API_KEY").then(|| "sk-or-example".to_string()));
+/// let inputs = RuntimeInputs::new(settings, World::files(MemFs::new()))
+///     .with_keys(|name: &str| (name == "OPENROUTER_API_KEY").then(|| "sk-or-example".to_string()));
 /// let ui = HubUi::new(hub.clone());
 /// let rt = build(inputs, ui, SessionPrompter::new(hub.clone()), BuildOptions::default()).await?;
 /// let id = rt.session_id();

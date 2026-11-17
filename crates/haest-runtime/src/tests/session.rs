@@ -29,7 +29,7 @@ use crate::{
         core::fs::{Fs, MemFs},
         core::session::SessionRecord,
         core::tool::ToolContext,
-        http::{HttpClient, HttpError, Request, Response},
+        http::{HttpClient, HttpClientRef, HttpError, Request, Response},
         mods::{ApprovalRequest, Decision, ModUiRef},
         tools::{AgentRef, Inbox, JobHub, NoInbox, SpawnInput},
         workspace::RealWorkspace,
@@ -53,12 +53,12 @@ impl HttpClient for Hang {
 async fn built(
     fs: &Arc<MemFs>,
     settings: Settings,
-    http: Arc<dyn HttpClient>,
+    http: impl Into<HttpClientRef>,
     hub: &Hub,
 ) -> Runtime<HubUi> {
-    let mut inputs = RuntimeInputs::new(settings, World::files(fs.clone()));
-    inputs.keys = openrouter_key();
-    inputs.http = http;
+    let inputs = RuntimeInputs::new(settings, World::files(fs.clone()))
+        .with_keys(openrouter_key())
+        .with_http(http);
     build(
         inputs,
         HubUi::new(hub.clone()),
@@ -133,7 +133,7 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
         agents: true,
         ..hardcoded()
     };
-    let mut rt = built(&fs, settings, Arc::new(Hang), &hub).await;
+    let mut rt = built(&fs, settings, Hang, &hub).await;
 
     // A background subagent waiting on its model call.
     let spawn = SpawnInput {
@@ -192,7 +192,7 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
 async fn an_arrival_runs_through_the_gate_and_what_it_holds_rides_in_with_the_person() {
     let fs = Arc::new(MemFs::new());
     let hub = Hub::new("s1", HubOptions::default());
-    let mut rt = built(&fs, hardcoded(), Arc::new(Gateway::default()), &hub).await;
+    let mut rt = built(&fs, hardcoded(), Gateway::default(), &hub).await;
     // An inbox the test can send to, its gate letting one turn through.
     let (sender, queue) = inbox(rt.hooks(), 1);
     *rt.inbox_mut() = queue;
@@ -238,7 +238,7 @@ async fn an_arrival_runs_through_the_gate_and_what_it_holds_rides_in_with_the_pe
 async fn the_status_names_the_session_file_and_follows_a_model_change() {
     let fs = Arc::new(MemFs::new());
     let hub = Hub::new("s1", HubOptions::default());
-    let rt = built(&fs, hardcoded(), Arc::new(Gateway::default()), &hub).await;
+    let rt = built(&fs, hardcoded(), Gateway::default(), &hub).await;
     let id = rt.session_id();
     let session = start(rt, hub);
 
@@ -316,8 +316,8 @@ async fn next_ask(sub: &mut Subscription) -> u64 {
 #[tokio::test]
 async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
     let hub = Hub::new("s1", HubOptions::default());
-    let mut inputs = RuntimeInputs::new(hardcoded(), World::files(MemFs::new()));
-    inputs.keys = openrouter_key();
+    let inputs =
+        RuntimeInputs::new(hardcoded(), World::files(MemFs::new())).with_keys(openrouter_key());
     let ui = HubUi::new(hub.clone());
     let prompter = SessionPrompter::new(hub.clone());
     let rt = build(inputs, ui, prompter, BuildOptions::default())

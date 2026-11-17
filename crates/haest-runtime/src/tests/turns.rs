@@ -41,9 +41,9 @@ impl HttpClient for Refusing {
 async fn what_the_gate_holds_rides_in_with_the_humans_next_turn() {
     let api = Arc::new(Refusing::default());
     let fs = Arc::new(MemFs::new());
-    let mut inputs = RuntimeInputs::new(hardcoded(), World::files(fs.clone()));
-    inputs.keys = openrouter_key();
-    inputs.http = api.clone();
+    let inputs = RuntimeInputs::new(hardcoded(), World::files(fs.clone()))
+        .with_keys(openrouter_key())
+        .with_http(api.clone());
     let mut rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
         .await
         .unwrap();
@@ -85,8 +85,7 @@ async fn shut_down_leaves_no_job_running_and_the_session_on_disk() {
     };
     let path = std::env::var("PATH").unwrap_or_default();
     let child_env = ChildEnv::new([("PATH", path)]);
-    let mut inputs = RuntimeInputs::new(settings, World::disk(child_env));
-    inputs.keys = openrouter_key();
+    let inputs = RuntimeInputs::new(settings, World::disk(child_env)).with_keys(openrouter_key());
     let rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
         .await
         .unwrap();

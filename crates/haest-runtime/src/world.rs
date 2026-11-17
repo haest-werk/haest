@@ -61,7 +61,7 @@ impl World {
     /// Every process haest starts (real bash, a background job, a stdio MCP
     /// server) gets `child_env` and nothing else of the host's environment,
     /// with the variables the host passes on purpose on top
-    /// ([`RuntimeInputs::passed_env`](crate::RuntimeInputs::passed_env)).
+    /// ([`RuntimeInputs::with_passed_env`](crate::RuntimeInputs::with_passed_env)).
     pub fn disk(child_env: ChildEnv) -> Self {
         Self {
             fs: FsRef::new(RealFs),

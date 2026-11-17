@@ -61,7 +61,7 @@
 //! has no key it was not handed. Nothing here calls a model.
 //!
 //! ```
-//! use std::{path::Path, sync::Arc};
+//! use std::path::Path;
 //!
 //! use async_trait::async_trait;
 //! use haest_core::fs::{Fs, MemFs};
@@ -103,9 +103,8 @@
 //!     data_dir: "/data".into(),
 //!     ..Settings::bare("/work", "/home/me")
 //! };
-//! let mut inputs = RuntimeInputs::new(settings, World::files(files));
 //! // The default model is OpenRouter's: hand in its key, and no other.
-//! inputs.keys = Arc::new(|name: &str| {
+//! let inputs = RuntimeInputs::new(settings, World::files(files)).with_keys(|name: &str| {
 //!     (name == "OPENROUTER_API_KEY").then(|| "sk-or-example".to_string())
 //! });
 //!

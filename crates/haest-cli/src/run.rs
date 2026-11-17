@@ -182,8 +182,8 @@ mod tests {
             data_dir: "/data".into(),
             ..Settings::bare("/w", "/h")
         };
-        let mut inputs = RuntimeInputs::new(settings, World::files(fs.clone()));
-        inputs.keys = Arc::new(|k: &str| (k == "OPENROUTER_API_KEY").then(|| "k".to_string()));
+        let inputs = RuntimeInputs::new(settings, World::files(fs.clone()))
+            .with_keys(|k: &str| (k == "OPENROUTER_API_KEY").then(|| "k".to_string()));
         let ui = TermUi::new(false);
         let asks = SessionPrompter::new(Hub::new("t", HubOptions::default()));
         let rt = build(inputs, ui, asks, BuildOptions::default())

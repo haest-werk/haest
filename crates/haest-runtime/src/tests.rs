@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::{
     BuildError, BuildOptions, Resume, Runtime, RuntimeInputs, World, build,
     haest::{
-        KeySource, Message, ProviderEvent, ProviderRequest, ShutWorkspace, ToolContext,
+        KeySourceRef, Message, ProviderEvent, ProviderRequest, ShutWorkspace, ToolContext,
         core::fs::{Fs, MemFs},
         http::{HttpClient, HttpError, Request, Response},
     },
@@ -38,15 +38,15 @@ fn hardcoded() -> Settings {
 }
 
 /// The host's keys: an OpenRouter key (the default model's), nothing else.
-fn openrouter_key() -> Arc<dyn KeySource> {
-    Arc::new(|name: &str| (name == "OPENROUTER_API_KEY").then(|| "k".to_string()))
+fn openrouter_key() -> KeySourceRef {
+    KeySourceRef::new(|name: &str| (name == "OPENROUTER_API_KEY").then(|| "k".to_string()))
 }
 
 #[tokio::test]
 async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
     let fs = Arc::new(MemFs::with_files([("/w/AGENTS.md", "Answer in haiku.")]));
-    let mut inputs = RuntimeInputs::new(hardcoded(), World::files(fs.clone()));
-    inputs.keys = openrouter_key();
+    let inputs =
+        RuntimeInputs::new(hardcoded(), World::files(fs.clone())).with_keys(openrouter_key());
     let rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
         .await
         .unwrap();
@@ -106,8 +106,7 @@ async fn try_keyed(
     settings: Settings,
     opts: BuildOptions,
 ) -> Result<Runtime<Recorded>, BuildError> {
-    let mut inputs = RuntimeInputs::new(settings, World::files(fs.clone()));
-    inputs.keys = openrouter_key();
+    let inputs = RuntimeInputs::new(settings, World::files(fs.clone())).with_keys(openrouter_key());
     build(inputs, Recorded::default(), Deny, opts).await
 }
 
@@ -167,9 +166,9 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
         image: true,
         ..hardcoded()
     };
-    let mut inputs = RuntimeInputs::new(settings, World::files(MemFs::new()));
-    inputs.keys = openrouter_key();
-    inputs.http = gateway.clone();
+    let inputs = RuntimeInputs::new(settings, World::files(MemFs::new()))
+        .with_keys(openrouter_key())
+        .with_http(gateway.clone());
     let rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
         .await
         .unwrap();

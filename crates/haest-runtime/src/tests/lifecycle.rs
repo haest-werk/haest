@@ -33,9 +33,9 @@ fn closed_server() -> McpServerConfig {
 /// `settings` over `fs`, the closed server listed: the build's error, and
 /// everything the Ui was told.
 async fn failed_build(settings: Settings, fs: Arc<MemFs>) -> (BuildError, Vec<String>) {
-    let mut inputs = RuntimeInputs::new(settings, World::files(fs));
-    inputs.keys = openrouter_key();
-    inputs.mcp_servers = vec![closed_server()];
+    let inputs = RuntimeInputs::new(settings, World::files(fs))
+        .with_keys(openrouter_key())
+        .with_mcp_servers([closed_server()]);
     // The test keeps the UI too, to read what it was told after a failed build.
     let ui = Arc::new(Recorded::default());
     let err = build(inputs, ui.clone(), Deny, BuildOptions::default())

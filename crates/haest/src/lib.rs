@@ -318,20 +318,17 @@ pub use haest_workspace as workspace;
 /// reqwest client.
 ///
 /// Show [`Loaded::notes`](config::Loaded::notes) to the human first: they are
-/// not part of the inputs. A host in another world sets
-/// [`world`](runtime::RuntimeInputs::world) on the result; one with its own
-/// HTTP client sets [`http`](runtime::RuntimeInputs::http).
+/// not part of the inputs. A host in another world sets its own
+/// [`with_world`](runtime::RuntimeInputs::with_world) on the result; one with
+/// its own HTTP client, [`with_http`](runtime::RuntimeInputs::with_http).
 #[cfg(all(feature = "config", feature = "runtime"))]
 #[cfg_attr(docsrs, doc(cfg(all(feature = "config", feature = "runtime"))))]
 pub fn runtime_inputs(loaded: config::Loaded) -> runtime::RuntimeInputs {
-    runtime::RuntimeInputs {
-        settings: loaded.config.settings,
-        world: runtime::World::disk(loaded.child_env),
-        passed_env: loaded.passed_env,
-        keys: std::sync::Arc::new(loaded.keys),
-        providers: loaded.providers,
-        mcp_servers: loaded.mcp_servers,
-        routing: loaded.routing,
-        http: std::sync::Arc::new(http::ReqwestClient::new()),
-    }
+    let world = runtime::World::disk(loaded.child_env);
+    runtime::RuntimeInputs::new(loaded.config.settings, world)
+        .with_passed_env(loaded.passed_env)
+        .with_keys(loaded.keys)
+        .with_providers(loaded.providers)
+        .with_mcp_servers(loaded.mcp_servers)
+        .with_routing(loaded.routing)
 }

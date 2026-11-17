@@ -67,6 +67,12 @@ value itself, and holds it in a handle named after its trait. Read
    `board.create(task)?`, `ChildEnv::new([("K".into(), v)])` ->
    `ChildEnv::new([("K", v)])`, and `Arc<TaskBoard>` / `Arc<ToolDeferral>`
    -> `TaskBoard` / `ToolDeferral`.
+10. A haest-runtime host hands in values and reads parts with getters:
+    `build(inputs, Arc::new(ui), prompter, opts)` ->
+    `build(inputs, ui, prompter, opts)`, `World::Fs(Arc::new(fs))` ->
+    `World::files(fs)`, `inputs.keys = Arc::new(keys)` ->
+    `RuntimeInputs::new(settings, world).with_keys(keys)`, and
+    `rt.hooks.flush()` -> `rt.hooks().flush()`.
 
 ### Bug fixes
 
@@ -229,6 +235,9 @@ value itself, and holds it in a handle named after its trait. Read
   `transport-broker` (pulls a WebSocket client on rustls).
 - New examples, each run by `cargo test`: `wire`, `session`, `stdio`,
   `control_socket` and `broker`.
+- `runtime_inputs` builds the inputs with `RuntimeInputs`' setters; a host
+  in another world changes it on the result:
+  `inputs.world = World::Fs(fs)` -> `inputs.with_world(World::files(fs))`.
 - New examples, both run by `cargo test`: `threshold` (a host's own
   thresholds: remind the model at 60% of the window, warn the human at the
   third model call) and `wind_down` (`wind_down_at` with a host's
@@ -925,6 +934,15 @@ Good citizens:
   `World::Fs(Arc::new(MemFs::new()))` -> `World::files(MemFs::new())`.
   `World::fs` returns `&FsRef`; it made a new `Arc` of the real disk on
   every call. `World` implements `Debug`.
+- `RuntimeInputs` keeps its fields private and holds handles (breaking):
+  a part is set with its `with_*` setter and read with the getter of its
+  name. `inputs.keys = Arc::new(|name: &str| ..)` ->
+  `.with_keys(|name: &str| ..)`, `inputs.http = Arc::new(gateway)` ->
+  `.with_http(gateway)`, `inputs.mcp_servers = vec![server]` ->
+  `.with_mcp_servers([server])`; `keys()` is a `KeySourceRef` and
+  `http()` an `HttpClientRef` (were `Arc<dyn KeySource>` and
+  `Arc<dyn HttpClient>`). `RuntimeInputs` implements `Debug`, the custom
+  providers by name only (an entry may hold a key).
 - A runtime's services are handles, held by cloning them (breaking).
   `RuntimeHooks` is a cheap `Clone` (it was shared as an
   `Arc<RuntimeHooks>`), and the runtime holds `McpHub`, `SubagentHub`,

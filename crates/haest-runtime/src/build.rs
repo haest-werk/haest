@@ -170,7 +170,7 @@ where
     let board = task_board(&hooks);
     let (sender, inbox) = inbox::inbox(&hooks, s.max_agent_turns);
     let jobs = jobs_for(s, sender.clone());
-    let image = match image_options(s, keys.as_ref()) {
+    let image = match image_options(s, &*keys) {
         Ok(opts) => opts.map(|o| o.with_http(http)),
         Err(e) => {
             hooks.warn(&format!("{e}."));

@@ -47,8 +47,8 @@ fn rm(command: &str) -> ApprovalRequest {
 async fn a_host_takes_an_always_back_in_a_built_conversation() {
     let answers = Answers::default();
     answers.0.lock().unwrap().0 = vec![ApprovalAnswer::AllowAlways, ApprovalAnswer::Deny];
-    let mut inputs = RuntimeInputs::new(hardcoded(), World::files(MemFs::new()));
-    inputs.keys = openrouter_key();
+    let inputs =
+        RuntimeInputs::new(hardcoded(), World::files(MemFs::new())).with_keys(openrouter_key());
     let rt = build(
         inputs,
         Recorded::default(),

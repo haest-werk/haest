@@ -159,18 +159,17 @@ pub use value::env_var;
 /// what the runtime is handed with them.
 ///
 /// Each field goes into haest-runtime's `RuntimeInputs` as it is; this is
-/// what the `haest` command does:
+/// what the `haest` command does (the facade's `haest::runtime_inputs`):
 ///
 /// | `RuntimeInputs` | from `Loaded` |
 /// |---|---|
-/// | `settings` | `config.settings` |
-/// | `world` | `World::disk(child_env)` |
-/// | `passed_env` | `passed_env` |
-/// | `keys` | `keys` (a `HashMap` is a `KeySource`) |
-/// | `providers` | `providers` |
-/// | `mcp_servers` | `mcp_servers` |
-/// | `routing` | `routing` |
-/// | `http` | not loaded: the host's own client, or `ReqwestClient::new()` |
+/// | `RuntimeInputs::new(settings, world)` | `config.settings`, `World::disk(child_env)` |
+/// | `.with_passed_env(..)` | `passed_env` |
+/// | `.with_keys(..)` | `keys` (a `HashMap` is a `KeySource`) |
+/// | `.with_providers(..)` | `providers` |
+/// | `.with_mcp_servers(..)` | `mcp_servers` |
+/// | `.with_routing(..)` | `routing` |
+/// | `.with_http(..)` | not loaded: the host's own client; by default the shared `ReqwestClient` |
 ///
 /// Show the human every [`notes`](Self::notes) line before the run starts.
 #[derive(Debug, Clone)]

@@ -2,14 +2,14 @@
 //! inputs ([`RuntimeInputs`]) and what it decides per run ([`BuildOptions`],
 //! [`Resume`]).
 
-use std::sync::Arc;
+use std::fmt;
 
 use haest_settings::Settings;
 
 use crate::{
     haest::{
-        ChildEnv, KeySource,
-        http::{HttpClient, ReqwestClient},
+        ChildEnv, KeySourceRef,
+        http::{HttpClientRef, ReqwestClient},
         mcp::McpServerConfig,
         providers::{CustomProviders, RoutingScopes},
     },
@@ -20,38 +20,34 @@ use crate::{
 /// flag of its own: what is not in here does not exist for it.
 ///
 /// Start from [`RuntimeInputs::new`] (the settings and the world, nothing
-/// else) and set the fields the host has. A host that loads haest's own
+/// else) and set what the host has with the `with_*` setters; each part is
+/// read back with the getter of its name. A host that loads haest's own
 /// files with haest-config gets all of them from its `Loaded` with the
 /// facade's `haest::runtime_inputs`.
+///
+/// ```
+/// use std::collections::HashMap;
+///
+/// use haest_core::fs::MemFs;
+/// use haest_runtime::{RuntimeInputs, World};
+/// use haest_settings::Settings;
+///
+/// // A fixed map of keys; a closure or a vault is a `KeySource` too.
+/// let keys = HashMap::from([("OPENROUTER_API_KEY".to_string(), "sk-or-example".to_string())]);
+/// let inputs = RuntimeInputs::new(Settings::bare("/work", "/home/me"), World::files(MemFs::new()))
+///     .with_keys(keys);
+/// assert_eq!(inputs.keys().key("OPENROUTER_API_KEY").as_deref(), Some("sk-or-example"));
+/// assert!(inputs.mcp_servers().is_empty());
+/// ```
 pub struct RuntimeInputs {
-    /// Every setting of the run: which capabilities are on, the limits, the
-    /// model, where the sessions go.
-    pub settings: Settings,
-    /// Where the agent's files are, and whether it may start real processes.
-    pub world: World,
-    /// Variables the host passes on purpose (haest-config's `env` setting):
-    /// every process haest starts gets them over the world's `child_env`, the
-    /// sandbox's shell included (it gets nothing else of the host's
-    /// environment).
-    pub passed_env: ChildEnv,
-    /// What the host answers for a provider variable (`OPENROUTER_API_KEY`,
-    /// `ANTHROPIC_BASE_URL`, ...): its environment, a vault, a fixed map. A
-    /// closure `Fn(&str) -> Option<String>` and a `HashMap<String, String>`
-    /// are both a [`KeySource`]. GenerateImage asks it for
-    /// `OPENROUTER_API_KEY` too.
-    pub keys: Arc<dyn KeySource>,
-    /// providers.json's entries, by name: providers beside the built-in ones.
-    pub providers: CustomProviders,
-    /// The MCP servers to start. In a [`World::files`] the stdio ones are skipped
-    /// with a warning: they are real processes.
-    pub mcp_servers: Vec<McpServerConfig>,
-    /// OpenRouter's `provider` routing; None = none goes out.
-    pub routing: Option<RoutingScopes>,
-    /// How the model calls and GenerateImage's requests are sent: the host's
-    /// own client (a gateway, a recorder) or the shared [`ReqwestClient`].
-    /// WebFetch keeps its own client, which checks every address it connects
-    /// to; MCP servers keep rmcp's.
-    pub http: Arc<dyn HttpClient>,
+    pub(crate) settings: Settings,
+    pub(crate) world: World,
+    pub(crate) passed_env: ChildEnv,
+    pub(crate) keys: KeySourceRef,
+    pub(crate) providers: CustomProviders,
+    pub(crate) mcp_servers: Vec<McpServerConfig>,
+    pub(crate) routing: Option<RoutingScopes>,
+    pub(crate) http: HttpClientRef,
 }
 
 impl RuntimeInputs {
@@ -60,19 +56,136 @@ impl RuntimeInputs {
     /// [`ReqwestClient`] (built on the first request).
     ///
     /// With no keys, [`build`](crate::build) fails unless the model's provider needs none:
-    /// set [`keys`](Self::keys) for the providers the settings use.
+    /// hand in the [`keys`](Self::with_keys) the settings' providers use.
     pub fn new(settings: Settings, world: World) -> Self {
         let no_keys = |_: &str| None;
         Self {
             settings,
             world,
             passed_env: ChildEnv::default(),
-            keys: Arc::new(no_keys),
+            keys: KeySourceRef::new(no_keys),
             providers: CustomProviders::new(),
             mcp_servers: Vec::new(),
             routing: None,
-            http: Arc::new(ReqwestClient::new()),
+            http: ReqwestClient::new().into(),
         }
+    }
+
+    /// Every setting of the run: which capabilities are on, the limits, the
+    /// model, where the sessions go.
+    pub fn with_settings(mut self, settings: Settings) -> Self {
+        self.settings = settings;
+        self
+    }
+
+    /// Where the agent's files are, and whether it may start real processes.
+    pub fn with_world(mut self, world: World) -> Self {
+        self.world = world;
+        self
+    }
+
+    /// Variables the host passes on purpose (haest-config's `env` setting):
+    /// every process haest starts gets them over the world's `child_env`, the
+    /// sandbox's shell included (it gets nothing else of the host's
+    /// environment).
+    pub fn with_passed_env(mut self, passed_env: ChildEnv) -> Self {
+        self.passed_env = passed_env;
+        self
+    }
+
+    /// What the host answers for a provider variable (`OPENROUTER_API_KEY`,
+    /// `ANTHROPIC_BASE_URL`, ...): its environment, a vault, a fixed map. A
+    /// closure `Fn(&str) -> Option<String>` and a `HashMap<String, String>`
+    /// are both a [`KeySource`](haest_core::KeySource); an `Arc` of one the host shares goes in as
+    /// well. GenerateImage asks it for `OPENROUTER_API_KEY` too.
+    pub fn with_keys(mut self, keys: impl Into<KeySourceRef>) -> Self {
+        self.keys = keys.into();
+        self
+    }
+
+    /// providers.json's entries, by name: providers beside the built-in ones.
+    pub fn with_providers(mut self, providers: CustomProviders) -> Self {
+        self.providers = providers;
+        self
+    }
+
+    /// The MCP servers to start. In a [`World::files`] the stdio ones are
+    /// skipped with a warning: they are real processes.
+    pub fn with_mcp_servers(mut self, servers: impl IntoIterator<Item = McpServerConfig>) -> Self {
+        self.mcp_servers = servers.into_iter().collect();
+        self
+    }
+
+    /// OpenRouter's `provider` routing; None = none goes out.
+    pub fn with_routing(mut self, routing: impl Into<Option<RoutingScopes>>) -> Self {
+        self.routing = routing.into();
+        self
+    }
+
+    /// How the model calls and GenerateImage's requests are sent: the host's
+    /// own client (a gateway, a recorder; or an `Arc` of one it shares)
+    /// instead of the shared [`ReqwestClient`]. WebFetch keeps its own
+    /// client, which checks every address it connects to; MCP servers keep
+    /// rmcp's.
+    pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
+        self.http = http.into();
+        self
+    }
+
+    /// The settings ([`with_settings`](Self::with_settings)).
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// The world ([`with_world`](Self::with_world)).
+    pub fn world(&self) -> &World {
+        &self.world
+    }
+
+    /// The variables passed on purpose ([`with_passed_env`](Self::with_passed_env)).
+    pub fn passed_env(&self) -> &ChildEnv {
+        &self.passed_env
+    }
+
+    /// The provider keys ([`with_keys`](Self::with_keys)).
+    pub fn keys(&self) -> &KeySourceRef {
+        &self.keys
+    }
+
+    /// The custom providers ([`with_providers`](Self::with_providers)).
+    pub fn providers(&self) -> &CustomProviders {
+        &self.providers
+    }
+
+    /// The MCP servers to start ([`with_mcp_servers`](Self::with_mcp_servers)).
+    pub fn mcp_servers(&self) -> &[McpServerConfig] {
+        &self.mcp_servers
+    }
+
+    /// OpenRouter's routing ([`with_routing`](Self::with_routing)).
+    pub fn routing(&self) -> Option<&RoutingScopes> {
+        self.routing.as_ref()
+    }
+
+    /// The HTTP client the model calls go through ([`with_http`](Self::with_http)).
+    pub fn http(&self) -> &HttpClientRef {
+        &self.http
+    }
+}
+
+/// The custom providers by name only: an entry may hold a key.
+impl fmt::Debug for RuntimeInputs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RuntimeInputs")
+            .field("settings", &self.settings)
+            .field("world", &self.world)
+            .field("passed_env", &self.passed_env)
+            .field("keys", &self.keys)
+            .field("providers", &self.providers.keys().collect::<Vec<_>>())
+            .field("mcp_servers", &self.mcp_servers)
+            .field("routing", &self.routing)
+            .field("http", &self.http)
+            .finish()
     }
 }
 
