@@ -21,7 +21,8 @@ pub type BoxError = Box<dyn Error + Send + Sync>;
 /// let refused = HttpError::Connect("connection refused".into());
 /// assert!(refused.is_retryable());
 /// // The cause is the source, not part of the variant's own words.
-/// assert_eq!(refused.source().unwrap().to_string(), "connection refused");
+/// let cause = refused.source().map(|e| e.to_string());
+/// assert_eq!(cause.as_deref(), Some("connection refused"));
 ///
 /// assert!(!HttpError::TooLarge(1024).is_retryable());
 /// ```

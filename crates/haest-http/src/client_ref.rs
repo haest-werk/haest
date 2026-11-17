@@ -18,14 +18,15 @@ use crate::HttpClient;
 ///
 /// use haest_http::{HttpClientRef, ReqwestClient};
 ///
-/// // The client itself.
+/// // The client itself; a clone of the handle shares it.
 /// let http: HttpClientRef = ReqwestClient::new().into();
-/// // One client the host shares with other slots goes in as it is.
-/// let shared = Arc::new(ReqwestClient::new());
-/// let a = HttpClientRef::from(shared.clone());
-/// let b = HttpClientRef::from(shared);
-/// assert!(HttpClientRef::ptr_eq(&a, &b));
-/// assert!(!HttpClientRef::ptr_eq(&http, &a));
+/// let again = http.clone();
+/// assert!(HttpClientRef::ptr_eq(&http, &again));
+///
+/// // A host that already holds its client in an `Arc` hands that over as it is.
+/// fn handle(shared: Arc<ReqwestClient>) -> HttpClientRef {
+///     shared.into()
+/// }
 /// ```
 #[derive(Clone)]
 pub struct HttpClientRef(Arc<dyn HttpClient>);
