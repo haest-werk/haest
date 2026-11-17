@@ -162,9 +162,9 @@ pub async fn serve(
         written: watch::Sender::new(Written::NOTHING),
         tasks: JoinSet::new(),
     };
-    // No hello: the conversation has already ended.
-    let ended = if link.hello(start.token).await.is_err() {
-        Ended::Closed
+    // No hello: the conversation, or the peer, is already gone.
+    let ended = if let Err(why) = link.hello(start.token).await {
+        why
     } else {
         if let Some(after) = start.follow_from {
             link.events(None, after, true);
@@ -248,10 +248,13 @@ struct Link {
 }
 
 impl Link {
-    /// The first frame: who this is, and what the peer may do. Err when the
-    /// conversation has already ended.
-    async fn hello(&mut self, token: Option<Token>) -> Result<(), ()> {
-        let now = self.backend.snapshot().await.map_err(|_ended| ())?;
+    /// The first frame: who this is, and what the peer may do. Err says why
+    /// there is none: the conversation has already ended
+    /// ([`Ended::Closed`]), or the writer has, so the peer is gone
+    /// ([`Ended::PeerLeft`]).
+    async fn hello(&mut self, token: Option<Token>) -> Result<(), Ended> {
+        let now = self.backend.snapshot().await;
+        let now = now.map_err(|_ended| Ended::Closed)?;
         let hello = Outbound::Hello {
             session: now.session,
             model_spec: now.model_spec,
@@ -259,7 +262,8 @@ impl Link {
             access: self.grant.access,
             token,
         };
-        self.tx.send(Out::Conn(hello)).await.map_err(|_closed| ())
+        let sent = self.tx.send(Out::Conn(hello)).await;
+        sent.map_err(|_writer_gone| Ended::PeerLeft)
     }
 
     /// One line from the peer. Never waits: what it answers goes out from a

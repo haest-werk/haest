@@ -749,6 +749,39 @@ async fn a_stalled_peer_refused_again_and_again_lets_go_when_the_conversation_en
     a_stalled_peer_lets_go_when_the_conversation_ends(asks, false).await;
 }
 
+/// A sink that fails from the start: its peer went away right after it
+/// connected.
+struct Gone;
+
+impl LineSink for Gone {
+    async fn send_line(&mut self, _line: String) -> Result<(), crate::TransportError> {
+        Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe).into())
+    }
+
+    async fn keepalive(&mut self) -> Result<(), crate::TransportError> {
+        Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe).into())
+    }
+}
+
+/// A peer gone before its `hello` went out has left: the conversation goes
+/// on, so a transport that dials again after a peer left (the broker link)
+/// dials again, where one that read "the conversation ended" stopped.
+#[tokio::test]
+async fn a_peer_gone_before_its_hello_has_left_and_the_conversation_goes_on() {
+    let (s, _) = session(&answers(&[]), hub());
+    for n in 0..20 {
+        let asks = Asks(Vec::new().into_iter());
+        let grant = Grant::watch(Origin::Agent);
+        let ended = serve(s.clone(), grant, Start::default(), asks, Gone).await;
+        assert!(
+            matches!(ended, Ended::PeerLeft),
+            "connection {n}: {ended:?}"
+        );
+    }
+    assert!(s.snapshot().await.is_ok(), "the conversation still runs");
+    s.close().await;
+}
+
 mod keepalive;
 
 #[test]

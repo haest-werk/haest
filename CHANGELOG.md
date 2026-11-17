@@ -2133,6 +2133,11 @@ against it; the wire JSON is unchanged):
   transport serving with nothing left to stop it, and the session handle
   the transport holds kept the conversation running after the host
   dropped its own: `Driven::close` never ran.
+- A peer gone before its `hello` went out (its sink failed at once) ends
+  the connection with `Ended::PeerLeft`. `serve` said `Closed`, the
+  conversation ended, while it went on, and a transport that dials again
+  only after a peer left stopped for good: the broker link sent Close
+  1000 and never dialed again.
 
 ### haest-issues
 
