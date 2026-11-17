@@ -1729,6 +1729,9 @@ wrote them.
   it goes and a blank line is skipped, for a line ended by its newline as
   for the last one `flush` gives. A pushed line kept its spaces, and a line
   of spaces came out as a line, which then failed to parse as a frame.
+- After `LineTooLong`, `LineDecoder` drops the rest of the refused line up
+  to its newline. It handed that rest out as a line of its own, so a host
+  that read on after the error got a fragment of the long line as a frame.
 
 ### haest-session (new)
 

@@ -34,6 +34,9 @@ pub struct LineDecoder {
     /// How much of `buf` has been searched for a newline (none found): the
     /// next push searches from here, so each byte is looked at once.
     scanned: usize,
+    /// A line was refused: its bytes up to its newline are dropped as they
+    /// come, so the next line starts where the stream's does.
+    skipping: bool,
     /// Bytes the newline search has looked at, ever: a test pins it linear.
     #[cfg(test)]
     examined: usize,
@@ -64,6 +67,7 @@ impl LineDecoder {
             buf: Vec::new(),
             limit: Self::DEFAULT_LIMIT,
             scanned: 0,
+            skipping: false,
             #[cfg(test)]
             examined: 0,
         }
@@ -87,8 +91,24 @@ impl LineDecoder {
     /// # Errors
     ///
     /// [`LineTooLong`] when the unfinished line kept after this chunk passes
-    /// the limit; what was buffered is dropped.
+    /// the limit. That line is dropped: what was buffered of it now, the rest
+    /// as later pushes bring it, up to and with its newline. The lines this
+    /// chunk completed before it go with it.
     pub fn push(&mut self, chunk: &[u8]) -> Result<Vec<String>, LineTooLong> {
+        let chunk = if self.skipping {
+            let newline = chunk.iter().position(|b| *b == b'\n');
+            #[cfg(test)]
+            {
+                self.examined += newline.map_or(chunk.len(), |at| at + 1);
+            }
+            let Some(at) = newline else {
+                return Ok(Vec::new());
+            };
+            self.skipping = false;
+            &chunk[at + 1..]
+        } else {
+            chunk
+        };
         self.buf.extend_from_slice(chunk);
         let mut lines = Vec::new();
         let mut start = 0;
@@ -115,17 +135,20 @@ impl LineDecoder {
         if self.buf.len() > self.limit {
             self.buf.clear();
             self.scanned = 0;
+            self.skipping = true;
             return Err(LineTooLong { limit: self.limit });
         }
         Ok(lines)
     }
 
     /// The last line, when the stream ended without its newline; None once
-    /// it was given, or when the stream ended cleanly.
+    /// it was given, when the stream ended cleanly, or when the last line
+    /// was refused. The decoder then starts a new stream.
     pub fn flush(&mut self) -> Option<String> {
         let tail = line_of(&self.buf);
         self.buf.clear();
         self.scanned = 0;
+        self.skipping = false;
         tail
     }
 }
@@ -213,12 +236,28 @@ mod tests {
         assert_eq!(d.flush(), None);
     }
 
-    /// A peer that never sends a newline is refused, and the decoder works on.
+    /// A peer that never sends a newline is refused, and the decoder works on
+    /// from the next line.
     #[test]
     fn a_line_past_the_limit_is_refused_and_dropped() {
         let mut d = LineDecoder::new().with_limit(8);
         assert_eq!(d.push(b"0123456789"), Err(LineTooLong { limit: 8 }));
-        assert_eq!(d.push(b"ok\n").unwrap(), ["ok"]);
+        assert_eq!(d.push(b"\nok\n").unwrap(), ["ok"]);
+    }
+
+    /// The rest of a refused line, pushed after the refusal, was handed out
+    /// as a line of its own: the decoder lost its place in the stream.
+    #[test]
+    fn the_rest_of_a_refused_line_is_dropped_up_to_its_newline() {
+        let mut d = LineDecoder::new().with_limit(8);
+        assert_eq!(d.push(b"0123456789"), Err(LineTooLong { limit: 8 }));
+        assert!(d.push(b"MORE-OF-IT").unwrap().is_empty());
+        assert_eq!(d.push(b"TAIL-OF-LONG\nok\n").unwrap(), ["ok"]);
+        // Its rest at the end of the stream is no last line either.
+        assert_eq!(d.push(b"0123456789"), Err(LineTooLong { limit: 8 }));
+        assert!(d.push(b"rest").unwrap().is_empty());
+        assert_eq!(d.flush(), None);
+        assert_eq!(d.push(b"next\n").unwrap(), ["next"]);
     }
 
     /// The limit bounds the tail kept between pushes, as the docs say: a
@@ -257,7 +296,7 @@ mod tests {
         let mut d = LineDecoder::new().with_limit(8);
         assert!(d.push(b"01234").unwrap().is_empty());
         assert_eq!(d.push(b"56789"), Err(LineTooLong { limit: 8 }));
-        assert_eq!(d.push(b"ok\n").unwrap(), ["ok"]);
+        assert_eq!(d.push(b"\nok\n").unwrap(), ["ok"]);
     }
 
     #[test]
