@@ -86,6 +86,8 @@ pub struct CustomProviderConfig {
     /// `type`: the wire dialect.
     pub dialect: Dialect,
     /// `baseURL`; None = the dialect's own API (OpenAI's or Anthropic's).
+    /// Its path shows in Debug output and errors: a key goes in `apiKey`,
+    /// `apiKeyEnv` or `headers`, never in the path.
     pub base_url: Option<String>,
     /// `apiKey`: the key itself, in the file.
     pub api_key: Option<String>,

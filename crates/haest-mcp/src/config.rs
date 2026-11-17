@@ -109,10 +109,13 @@ impl McpTransport {
 /// `Authorization` included). Start from [`McpTransport::http`].
 ///
 /// Its Debug output names the headers and never shows their values, and
-/// shows the URL without its userinfo, query values or fragment.
+/// shows the URL without its userinfo, query values or fragment. A key goes
+/// in a header or the query, never the URL's path: a path segment cannot be
+/// told from a name, so the path shows in Debug output, logs and errors.
 #[derive(Clone, PartialEq, Eq)]
 pub struct HttpTransport {
-    /// The server's endpoint, e.g. `https://example.com/mcp`.
+    /// The server's endpoint, e.g. `https://example.com/mcp`. Its path is
+    /// shown wherever the URL is, so it holds no key.
     pub url: String,
     /// Header names and values sent with every request. One that HTTP
     /// cannot carry fails this server before any request goes out.

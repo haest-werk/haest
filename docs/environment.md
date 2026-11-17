@@ -154,7 +154,10 @@ syntax:
   value and no default is not passed, and haest says which.
 - `.mcp.json`: a server's `command`, `args`, `env`, `url` and `headers`
   values. One with no value and no default stays as written, as in Claude
-  Code, and haest says which server names it.
+  Code, and haest says which server names it. A key goes in `headers`
+  (`"Authorization": "Bearer ${TOKEN}"`) or the URL's query, never its
+  path: haest keeps a header's value and the query out of its logs and
+  errors, and shows the path as it is.
 
 A variable set to an empty value counts as set: `${EMPTY:-x}` is empty.
 

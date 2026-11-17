@@ -87,7 +87,9 @@ impl AnthropicOptions {
     }
 
     /// These options sending to `url` (`<url>/v1/messages`) instead of
-    /// Anthropic's own API.
+    /// Anthropic's own API. Its path shows in Debug output and errors: a
+    /// gateway's key goes in a header ([`with_header`](Self::with_header))
+    /// or the query, never the path.
     #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = Some(url.into());
