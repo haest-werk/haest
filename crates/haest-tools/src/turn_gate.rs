@@ -133,10 +133,11 @@ impl AgentTurnGate {
     }
 
     /// The host's way past the cap ([`Limit::AgentTurns`]), added to the
-    /// notice that messages are being held.
+    /// notice that messages are being held: [`Remedies`], or the closure
+    /// that writes them.
     #[must_use]
-    pub fn with_remedies(mut self, remedies: Remedies) -> Self {
-        self.remedies = remedies;
+    pub fn with_remedies(mut self, remedies: impl Into<Remedies>) -> Self {
+        self.remedies = remedies.into();
         self
     }
 
@@ -226,9 +227,10 @@ mod tests {
     #[test]
     fn the_hold_notice_ends_with_the_hosts_remedy_for_the_cap() {
         let (g, notices) = gate(1);
-        let mut g = g.with_remedies(Remedies::new(|limit| {
+        // The closure itself, as every `with_*` setter takes the part.
+        let mut g = g.with_remedies(|limit: Limit| {
             (limit == Limit::AgentTurns(1)).then(|| "RAISE-IT".to_string())
-        }));
+        });
         g.agent_turn("m1");
         assert_eq!(g.agent_turn("m2"), None);
         assert!(notices.lock().unwrap()[0].ends_with(" RAISE-IT"));

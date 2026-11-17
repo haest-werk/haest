@@ -238,8 +238,9 @@ impl Ledger {
     ///
     /// They run with the ledger unlocked, so a remedy may read it (the spend
     /// so far, [`usd`](Self::usd)), but must not charge it or set its cap.
-    pub fn set_remedies(&self, remedies: Remedies) {
-        self.state().remedies = remedies;
+    /// [`Remedies`], or the closure that writes them.
+    pub fn set_remedies(&self, remedies: impl Into<Remedies>) {
+        self.state().remedies = remedies.into();
     }
 
     /// What the ledger checks at every charge, in place of its default

@@ -221,10 +221,11 @@ impl SandboxWorkspace {
     }
 
     /// The host's way to review the overlay's changes and put them on disk
-    /// ([`Limit::SandboxEdits`]), added to the prompt note's part about them.
+    /// ([`Limit::SandboxEdits`]), added to the prompt note's part about them:
+    /// [`Remedies`], or the closure that writes them.
     #[must_use]
-    pub fn with_remedies(mut self, remedies: Remedies) -> Self {
-        self.remedies = remedies;
+    pub fn with_remedies(mut self, remedies: impl Into<Remedies>) -> Self {
+        self.remedies = remedies.into();
         self
     }
 

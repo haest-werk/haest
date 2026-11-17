@@ -134,6 +134,15 @@ impl Remedies {
     }
 }
 
+/// Remedies a closure writes ([`Remedies::new`]), so a setter that takes
+/// `impl Into<Remedies>` takes the closure itself. Name its argument's type
+/// (`|limit: Limit| ..`): `Into` cannot infer it.
+impl<F: Fn(Limit) -> Option<String> + Send + Sync + 'static> From<F> for Remedies {
+    fn from(remedy: F) -> Self {
+        Self::new(remedy)
+    }
+}
+
 impl fmt::Debug for Remedies {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(if self.0.is_some() {

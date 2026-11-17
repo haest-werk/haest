@@ -930,6 +930,12 @@ Hosts write less (round two of the review, and what porting brain onto
   whose skills are not SKILL.md files): a field the card gains later, such
   as a skill's argument hint, breaks no host. Their fields still read as
   before.
+- `Remedies` is `From` the closure that writes them, and
+  `SharedDeps`/`AgentDeps::with_remedies` and `Ledger::set_remedies` take
+  `impl Into<Remedies>`, so they take the closure itself, as every other
+  `with_*` setter takes its part: `.with_remedies(Remedies::new(|l| ..))`
+  -> `.with_remedies(|l: Limit| ..)` (the argument's type is named; `Into`
+  cannot infer it). Passing a `Remedies` works as before.
 - A `word_set!` struct (`SkillSources`, `ContextSources`, haest-settings'
   `BuiltinTools`, a host's own) has `WORDS`, `has`, `turn_on`, `words`,
   `is_empty` and `from_words` of its own, so calling them needs no
@@ -1265,6 +1271,8 @@ Hosts write less (round two of the review, and what porting brain onto
   of its own, and dropping its spawn stops it as a cancelled caller does:
   its `MemberRun::end` hears `Ending::CallerCancelled` with its spend. A
   foreground spawn now needs a tokio runtime, as a background one did.
+- `AgentTurnGate::with_remedies` takes `impl Into<Remedies>`: the closure
+  itself too (`|l: Limit| ..`), as haest-core's setters do.
 
 ### haest-workspace
 
@@ -1299,6 +1307,8 @@ Hosts write less (round two of the review, and what porting brain onto
   Each stream now keeps its first 64 MiB, the sandbox's cap, and drops the
   rest; the child is still read to its end, so it never blocks on a full
   pipe. Streamed output is handed over whole, as before.
+- `SandboxWorkspace::with_remedies` takes `impl Into<Remedies>`: the
+  closure itself too (`|l: Limit| ..`), as haest-core's setters do.
 
 ### haest-code
 

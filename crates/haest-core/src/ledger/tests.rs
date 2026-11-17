@@ -190,10 +190,10 @@ fn the_warning_and_the_stop_end_with_the_hosts_remedy_for_the_cap_in_force() {
     let (ledger, rec) = ledger_with(10.0, 0);
     // Set on the host's clone; the guard's, made earlier, says it too.
     let host = ledger.clone();
-    host.set_remedies(Remedies::new(|limit| match limit {
+    host.set_remedies(|limit: Limit| match limit {
         Limit::Conversation(ConversationCap::Usd(cap)) => Some(format!("RAISE-FROM-{cap}")),
         _ => None,
-    }));
+    });
     ledger.set_cap(ConversationCap::Usd(5.0));
     ledger.charge(&cost(4.5));
     let warned = rec.warnings.lock().unwrap().clone();

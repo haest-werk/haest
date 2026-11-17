@@ -292,8 +292,9 @@ setters! {
     /// Without it none is asked for.
     with_web_search(web_search: WebSearchOptions) { web_search = Some(web_search) }
 
-    /// These deps adding `remedies` to the error of a turn a cap stopped.
-    with_remedies(remedies: Remedies) { remedies = remedies }
+    /// These deps adding `remedies` to the error of a turn a cap stopped:
+    /// [`Remedies`], or the closure that writes them.
+    with_remedies(remedies: impl Into<Remedies>) { remedies = remedies.into() }
 
     /// These deps keeping durable runs in `store`.
     with_run_store(store: impl Into<RunStoreRef>) { run_store = Some(store.into()) }
