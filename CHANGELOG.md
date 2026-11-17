@@ -212,6 +212,13 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   mods) once, steered in or not; a steer left unread runs next without a
   second rewrite. Another program's input is never rewritten, as before.
   The wire JSON is unchanged.
+- One connection could make unbounded work: every request ran on a task of
+  its own and the connection never stopped reading, so a peer with only
+  watch access that sent `history` 100,000 times without reading made
+  100,000 tasks, each holding a copy of the history. A connection now has
+  at most 32 requests waiting for their replies; at the cap it reads no
+  more lines until one is answered, so the rest wait in the peer's pipe.
+  The wire JSON is unchanged.
 
 ### Behaviour changes
 

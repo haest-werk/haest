@@ -23,6 +23,12 @@ const OUT_BUFFER: usize = 1024;
 /// How long a connection that ends gets to write what it still holds.
 const FLUSH_GRACE: Duration = Duration::from_secs(1);
 
+/// Requests one connection may have waiting for their replies (a turn's
+/// end, a history asked mid-turn). At the cap the connection reads no more
+/// lines until one is answered, so a peer that only sends makes no more
+/// work than this, and the rest wait in its pipe.
+const MAX_IN_FLIGHT: usize = 32;
+
 /// Lines a peer sends: one request each.
 pub trait LineSource: Send {
     /// The next line; None when the peer is gone.
@@ -75,7 +81,9 @@ enum Out {
 /// `close` request was served.
 ///
 /// The conversation never waits on the peer: a peer that does not read falls
-/// behind and gets a `gap` frame, as any subscriber does.
+/// behind and gets a `gap` frame, as any subscriber does. Nor can one peer
+/// make unbounded work: once 32 of its requests wait for their replies, the
+/// connection reads no more lines until one is answered.
 ///
 /// `backend` is any [`Backend`](haest_session::Backend) (a `session.clone()`),
 /// an `Arc` of one, or a [`BackendRef`].
@@ -117,8 +125,10 @@ pub async fn serve(
                     break why;
                 }
                 let open = !matches!(why, Some(Ended::Closed));
+                // At the cap, the next line waits until a reply goes out.
+                let room = link.tasks.len() < MAX_IN_FLIGHT;
                 tokio::select! {
-                    line = source.next_line(), if reading => match line {
+                    line = source.next_line(), if reading && room => match line {
                         None => {
                             reading = false;
                             why.get_or_insert(Ended::PeerLeft);
