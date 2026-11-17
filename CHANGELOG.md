@@ -977,6 +977,10 @@ Good citizens:
 - Every doc example that can fail returns a `Result` and uses `?`; none
   writes an `Arc::new` or an `unwrap`. `list_sessions`' example lists a
   session it created, and `RuntimeInputs` has one of its own.
+- `RuntimeHooks::append` takes the record by reference, as
+  `SessionSink::append` does (breaking): `hooks.append(record)` ->
+  `hooks.append(&record)`. `RuntimeInputs`' `with_*` setters are
+  `#[must_use]`: a setter whose result is dropped set nothing.
 - The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
   as `with_hooks`; what tools publish, report and log reaches it as before.
 - Feature `session` (off; the facade's `session` turns it on with

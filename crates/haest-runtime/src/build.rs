@@ -67,10 +67,10 @@ async fn find(
 fn task_board(hooks: &RuntimeHooks) -> TaskBoard {
     let hooks = hooks.clone();
     TaskBoard::new(move |tasks| {
-        hooks.append(SessionRecord::Tasks {
+        hooks.append(&SessionRecord::Tasks {
             t: now_ms(),
             tasks: tasks.to_vec(),
-        })
+        });
     })
 }
 

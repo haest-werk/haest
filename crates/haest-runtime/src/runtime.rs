@@ -253,7 +253,7 @@ impl<U> Runtime<U> {
         self.agent.deps().shared().models().resolve(spec)?;
         self.agent.set_model_spec(spec);
         self.hooks.set_model_spec(spec);
-        self.hooks.append(SessionRecord::Config {
+        self.hooks.append(&SessionRecord::Config {
             t: now_ms(),
             model_spec: Some(spec.to_string()),
             effort: None,
@@ -268,7 +268,7 @@ impl<U> Runtime<U> {
     pub fn set_effort(&mut self, effort: Option<Effort>) {
         self.agent.set_effort(effort);
         self.hooks.set_effort(effort);
-        self.hooks.append(SessionRecord::Config {
+        self.hooks.append(&SessionRecord::Config {
             t: now_ms(),
             model_spec: None,
             effort: Some(effort),

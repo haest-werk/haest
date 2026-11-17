@@ -36,7 +36,7 @@ fn open_store(
     ui: Arc<dyn Ui>,
 ) -> Result<JsonlSessionFile, SessionError> {
     let store = JsonlSessionFile::with_error_handler(fs.clone(), data_dir, id, move |e| {
-        ui.error(&format!("session log write failed: {e}"))
+        ui.error(&format!("session log write failed: {e}"));
     })?;
     Ok(store)
 }
@@ -98,14 +98,14 @@ pub(crate) async fn new_session(
 
 /// What a new session starts on: the model, the effort, the ledger so far.
 pub(crate) fn record_start(hooks: &RuntimeHooks, agent: &Agent) {
-    hooks.append(SessionRecord::Config {
+    hooks.append(&SessionRecord::Config {
         t: now_ms(),
         model_spec: Some(agent.model_spec().to_string()),
         effort: Some(agent.effort()),
     });
     if let Some(ledger) = agent.deps().shared().ledger() {
         let snapshot = ledger.snapshot();
-        hooks.append(SessionRecord::Ledger {
+        hooks.append(&SessionRecord::Ledger {
             t: now_ms(),
             ledger: snapshot,
         });
@@ -134,7 +134,7 @@ pub(crate) fn start_on(
 /// so the next resume goes on with it.
 pub(crate) fn record_given(hooks: &RuntimeHooks, agent: &Agent, opts: &BuildOptions) {
     if opts.model_spec_given || opts.effort_given {
-        hooks.append(SessionRecord::Config {
+        hooks.append(&SessionRecord::Config {
             t: now_ms(),
             model_spec: opts
                 .model_spec_given

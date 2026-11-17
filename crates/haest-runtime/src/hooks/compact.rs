@@ -60,7 +60,7 @@ impl RuntimeHooks {
             Ok(None) => {}
             Ok(Some(res)) => {
                 charge(agent, &res.usage);
-                self.append(SessionRecord::Compaction {
+                self.append(&SessionRecord::Compaction {
                     t: now_ms(),
                     summary: res.summary,
                     kept: res.kept,

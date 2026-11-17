@@ -73,12 +73,14 @@ impl RuntimeInputs {
 
     /// Every setting of the run: which capabilities are on, the limits, the
     /// model, where the sessions go.
+    #[must_use]
     pub fn with_settings(mut self, settings: Settings) -> Self {
         self.settings = settings;
         self
     }
 
     /// Where the agent's files are, and whether it may start real processes.
+    #[must_use]
     pub fn with_world(mut self, world: World) -> Self {
         self.world = world;
         self
@@ -88,6 +90,7 @@ impl RuntimeInputs {
     /// every process haest starts gets them over the world's `child_env`, the
     /// sandbox's shell included (it gets nothing else of the host's
     /// environment).
+    #[must_use]
     pub fn with_passed_env(mut self, passed_env: ChildEnv) -> Self {
         self.passed_env = passed_env;
         self
@@ -96,14 +99,17 @@ impl RuntimeInputs {
     /// What the host answers for a provider variable (`OPENROUTER_API_KEY`,
     /// `ANTHROPIC_BASE_URL`, ...): its environment, a vault, a fixed map. A
     /// closure `Fn(&str) -> Option<String>` and a `HashMap<String, String>`
-    /// are both a [`KeySource`](haest_core::KeySource); an `Arc` of one the host shares goes in as
-    /// well. GenerateImage asks it for `OPENROUTER_API_KEY` too.
+    /// are both a [`KeySource`](haest_core::KeySource); an `Arc` of one the
+    /// host shares goes in as well. GenerateImage asks it for
+    /// `OPENROUTER_API_KEY` too.
+    #[must_use]
     pub fn with_keys(mut self, keys: impl Into<KeySourceRef>) -> Self {
         self.keys = keys.into();
         self
     }
 
     /// providers.json's entries, by name: providers beside the built-in ones.
+    #[must_use]
     pub fn with_providers(mut self, providers: CustomProviders) -> Self {
         self.providers = providers;
         self
@@ -111,12 +117,14 @@ impl RuntimeInputs {
 
     /// The MCP servers to start. In a [`World::files`] the stdio ones are
     /// skipped with a warning: they are real processes.
+    #[must_use]
     pub fn with_mcp_servers(mut self, servers: impl IntoIterator<Item = McpServerConfig>) -> Self {
         self.mcp_servers = servers.into_iter().collect();
         self
     }
 
     /// OpenRouter's `provider` routing; None = none goes out.
+    #[must_use]
     pub fn with_routing(mut self, routing: impl Into<Option<RoutingScopes>>) -> Self {
         self.routing = routing.into();
         self
@@ -127,6 +135,7 @@ impl RuntimeInputs {
     /// instead of the shared [`ReqwestClient`]. WebFetch keeps its own
     /// client, which checks every address it connects to; MCP servers keep
     /// rmcp's.
+    #[must_use]
     pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
         self.http = http.into();
         self

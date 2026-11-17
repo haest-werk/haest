@@ -115,7 +115,7 @@ async fn entry(fs: &dyn Fs, dir: &Path, id: &str) -> Option<Entry> {
     Some(Entry {
         id: id.to_string(),
         path,
-        modified_ms: modified.as_millis() as u64,
+        modified_ms: u64::try_from(modified.as_millis()).ok()?,
         size: stat.size,
     })
 }

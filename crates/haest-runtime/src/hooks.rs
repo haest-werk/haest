@@ -130,8 +130,8 @@ impl RuntimeHooks {
     /// Queue `record` for the session file. It returns at once: the write runs
     /// in order on the file's own task, and a failed one goes to
     /// [`Ui::error`].
-    pub fn append(&self, record: SessionRecord) {
-        self.store().append(&record);
+    pub fn append(&self, record: &SessionRecord) {
+        self.store().append(record);
     }
 
     /// Wait until every record queued so far is written. A host awaits it
@@ -205,7 +205,7 @@ impl ToolServices for RuntimeHooks {
 #[async_trait]
 impl AgentHooks for RuntimeHooks {
     fn on_message(&self, msg: &crate::haest::Message) {
-        self.append(SessionRecord::Message {
+        self.append(&SessionRecord::Message {
             t: now_ms(),
             message: msg.clone(),
         });
@@ -268,7 +268,7 @@ impl ModelFacts for RuntimeHooks {
 
 impl LedgerHooks for RuntimeHooks {
     fn persist(&self, snapshot: &LedgerSnapshot) {
-        self.append(SessionRecord::Ledger {
+        self.append(&SessionRecord::Ledger {
             t: now_ms(),
             ledger: snapshot.clone(),
         });

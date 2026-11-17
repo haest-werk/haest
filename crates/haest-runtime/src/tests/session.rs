@@ -163,7 +163,7 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
     rt.mcp().connect_transport("echo", client).await;
     assert_eq!(rt.mcp().tools().len(), 1);
     // A record the session file has not written yet.
-    rt.hooks().append(SessionRecord::Config {
+    rt.hooks().append(&SessionRecord::Config {
         t: 1,
         model_spec: Some("openrouter:held/back".into()),
         effort: None,

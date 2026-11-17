@@ -44,7 +44,7 @@ async fn a_resumed_conversation_keeps_the_deferred_tools_its_history_called() {
         "a new conversation finds it through ToolSearch: {before:?}"
     );
     let called = tool_answer(&[("c1", WEATHER, json!({}))]);
-    rt.hooks().append(SessionRecord::Message {
+    rt.hooks().append(&SessionRecord::Message {
         t: 1,
         message: Message::Assistant(called),
     });
