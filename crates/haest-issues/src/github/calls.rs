@@ -230,14 +230,17 @@ impl GithubTracker {
             .map(|_| ())
     }
 
-    /// Adds or removes `link` on issue `id` of this repository; the other end
-    /// may be in any repository ([`Tracker::link`](crate::Tracker::link)).
+    /// Adds or removes `link` on issue `id` of this repository
+    /// ([`Tracker::link`](crate::Tracker::link)). The other end of a `child`
+    /// or `depends_on` link may be in any repository; that of a `parent` or
+    /// `blocks` link must be in this one, since GitHub keeps those on the
+    /// other end.
     ///
     /// # Errors
     ///
-    /// `Invalid` for an id of another repository or a relation GitHub has
-    /// no place for, `NotFound` for no such issue, `Failed` when GitHub
-    /// refuses.
+    /// `Invalid` for an id of another repository, a `parent` or `blocks`
+    /// link to one, a name GitHub cannot have, or a relation GitHub has no
+    /// place for; `NotFound` for no such issue; `Failed` when GitHub refuses.
     pub async fn link(
         &self,
         id: &str,

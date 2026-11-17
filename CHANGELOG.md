@@ -217,7 +217,14 @@ write instead.
   any repository the model named (`{"id": "victim/secret#1"}`), with the
   host's token, though it is one repository's tracker. The issue a call
   acts on must now be in its own repository, else the call is refused as
-  `Invalid` and nothing is sent; only a link's other end may be elsewhere.
+  `Invalid` and nothing is sent. Only a link's other end may be elsewhere,
+  and only for a `child` or `depends_on` link: GitHub keeps a `parent` link
+  on the parent and a `blocks` link on the issue that waits, so one whose
+  other end is in another repository would change that repository's issue,
+  and is refused the same way. A name GitHub cannot give an owner or a
+  repository is refused too: `../..#9` sent the token to
+  `{api}/repos/../../issues/9`, which leaves `/repos/` (and a GitHub
+  Enterprise root's `/api/v3`).
 - The model providers' stream parser searched a line from its start again
   on every chunk, so a server that sent one long line in small pieces cost
   quadratic time on an executor thread (8 MiB in 1 KiB chunks: 16 s), and

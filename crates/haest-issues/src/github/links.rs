@@ -88,6 +88,17 @@ impl GithubTracker {
                 ));
             }
         };
+        // The write goes to the holder: for a parent or a blocked issue in
+        // another repository, that repository's issue. Refused, as every
+        // other change to another repository's issue is.
+        if !self.is_home(&holder) {
+            let (owner, repo) = (&self.owner, &self.repo);
+            return Err(TrackerError::Invalid(format!(
+                "{} is not in {owner}/{repo}, and GitHub keeps this link on that issue: this \
+                 tracker changes {owner}/{repo}'s issues only",
+                self.label(&holder),
+            )));
+        }
         let held_id = self.database_id(&held).await?;
         let missing = match change {
             LinkChange::Add => format!("there is no issue {}", self.label(&holder)),

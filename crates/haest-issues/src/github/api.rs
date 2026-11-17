@@ -43,13 +43,14 @@ impl GithubTracker {
     }
 
     /// Whether `r` is in this tracker's repository (GitHub's names ignore case).
-    fn is_home(&self, r: &IssueRef) -> bool {
+    pub(super) fn is_home(&self, r: &IssueRef) -> bool {
         r.owner.eq_ignore_ascii_case(&self.owner) && r.repo.eq_ignore_ascii_case(&self.repo)
     }
 
-    /// Any repository's issue: `42`, `#42` or `owner/repo#42`. Only a link's
-    /// other end may be another repository's ([`own_ref`](Self::own_ref)
-    /// for the issue a call acts on).
+    /// Any repository's issue: `42`, `#42` or `owner/repo#42`, where `owner`
+    /// and `repo` are names GitHub can have (so never `.` or `..`, which would
+    /// climb out of `/repos/`). Only a link's other end may be another
+    /// repository's ([`own_ref`](Self::own_ref) for the issue a call acts on).
     pub(super) fn any_ref(&self, id: &str) -> Result<IssueRef, TrackerError> {
         let id = id.trim();
         let (repo, number) = match id.rsplit_once('#') {
@@ -68,14 +69,13 @@ impl GithubTracker {
             None => home(),
             Some(full) => {
                 let (o, r) = full.split_once('/').ok_or_else(bad)?;
-                if o.is_empty() || r.is_empty() || r.contains('/') {
-                    return Err(bad());
-                }
                 // This repository, in any case, is named as the tracker names it.
                 if o.eq_ignore_ascii_case(&self.owner) && r.eq_ignore_ascii_case(&self.repo) {
                     home()
-                } else {
+                } else if is_owner_name(o) && is_repo_name(r) {
                     (o.to_string(), r.to_string())
+                } else {
+                    return Err(bad());
                 }
             }
         };
@@ -239,6 +239,24 @@ fn refusal(json: &Value) -> String {
     } else {
         parts.join("; ")
     }
+}
+
+/// A name GitHub gives an account: ASCII letters, digits and `-`, plus the
+/// `_` before a managed user's enterprise shortcode; at most 39.
+fn is_owner_name(s: &str) -> bool {
+    (1..=39).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+}
+
+/// A name GitHub gives a repository: ASCII letters, digits, `.`, `-` and
+/// `_`, at most 100, and never `.` or `..`.
+fn is_repo_name(s: &str) -> bool {
+    (1..=100).contains(&s.len())
+        && s != "."
+        && s != ".."
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
 }
 
 /// Percent-encoding for a path segment or a query value: RFC 3986's unreserved

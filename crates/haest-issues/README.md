@@ -69,7 +69,7 @@ the tools a host names with `ApprovalMod::with_shell_tools`, each by its
 
 | | GitHub | Cards |
 |---|---|---|
-| id | the issue number (`42`; `owner/repo#42` names another repository's issue in a link) | the file name without `.md`, made from the title at create and never changed |
+| id | the issue number (`42`; `owner/repo#42` names another repository's issue in a `child` or `depends_on` link) | the file name without `.md`, made from the title at create and never changed |
 | statuses | `open`, `closed`, `not_planned` (`state` + `state_reason`) | `inbox`, `open`, `in-progress`, `in-review`, `done`, `archived` (`status:`; the file never moves) |
 | priority | **none**: GitHub issues have no priority field | `low`, `medium`, `high` |
 | labels | labels | `tags:` |

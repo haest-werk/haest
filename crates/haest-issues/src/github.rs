@@ -23,7 +23,7 @@ const API: &str = "https://api.github.com";
 ///
 /// | Tracker | GitHub |
 /// |---|---|
-/// | id | the issue number (`42`; `owner/repo#42` for another repository's issue in a link) |
+/// | id | the issue number (`42`; `owner/repo#42` for another repository's issue in a `child` or `depends_on` link) |
 /// | status `open` / `closed` / `not_planned` | `state` + `state_reason` (`completed`, `not_planned`) |
 /// | labels | labels (created on the fly by GitHub when new) |
 /// | priority | none: GitHub issues have no priority field |
@@ -46,7 +46,12 @@ const API: &str = "https://api.github.com";
 /// `owner/repo#42` for another repository's issue in a link. The issue a
 /// call reads, changes, deletes or links is always this repository's: one
 /// in another repository is refused as `Invalid`, unsent, whatever else the
-/// token may reach. Only a link's other end may be elsewhere. Pull requests
+/// token may reach. Only a link's other end may be elsewhere, and only for
+/// a link GitHub keeps on this repository's issue (`child`, `depends_on`):
+/// GitHub keeps a `parent` link on the parent and a `blocks` link on the
+/// issue that waits, so one whose other end is elsewhere would change that
+/// issue, and is refused the same way. So is a name GitHub cannot give an
+/// owner or a repository (`..` among them). Pull requests
 /// are skipped everywhere: the issues API lists them too, but they are not
 /// issues here.
 ///

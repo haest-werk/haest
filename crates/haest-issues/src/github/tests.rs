@@ -191,7 +191,7 @@ async fn a_pull_request_is_not_an_issue_and_a_bad_id_asks_nothing() {
     let http = FakeHttp::new([ok(pr)]);
     let gh = github(http.clone());
     assert!(matches!(gh.get("2").await, Err(TrackerError::NotFound(_))));
-    for bad in ["two", "o/#3", "a/b/c#3", "#"] {
+    for bad in ["two", "o/#3", "a/b/c#3", "#", "../..#3", "o/..#3"] {
         assert!(
             matches!(gh.get(bad).await, Err(TrackerError::Invalid(_))),
             "{bad}"

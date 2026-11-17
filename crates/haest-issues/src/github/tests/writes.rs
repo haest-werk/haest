@@ -216,6 +216,71 @@ async fn an_issue_of_another_repository_is_never_read_changed_or_deleted() {
     assert!(http.calls().is_empty(), "{:?}", http.sent());
 }
 
+/// GitHub keeps a parent link on the parent and a "blocks" link on the issue
+/// that waits: with the other end in another repository, that is the issue
+/// the write would go to. Refused, adding and removing alike, before anything
+/// is sent (not even the GET of this repository's issue).
+#[tokio::test]
+async fn a_link_github_keeps_on_another_repositorys_issue_is_refused_unsent() {
+    let other = "victim/secret#9";
+    for relation in [Relation::Parent, Relation::Blocks] {
+        for change in [LinkChange::Add, LinkChange::Remove] {
+            // A GitHub that would take the write, so only the tracker can stop it.
+            let http = FakeHttp::new([ok(issue(1, "one")), ok(json!({}))]);
+            let link = Link::new(relation, other);
+            let result = github(http.clone()).link("1", &link, change).await;
+            let refused = matches!(&result, Err(TrackerError::Invalid(m)) if m.contains(other) && m.contains("o/r"));
+            assert!(refused, "{relation:?} {change:?}: {result:?}");
+            assert!(http.calls().is_empty(), "{:?}", http.sent());
+        }
+    }
+}
+
+/// A name that is not a GitHub owner or repository (`.` and `..` above all,
+/// which would climb out of `/repos/` and out of an Enterprise root) is
+/// refused as a link's other end, unsent; real names, a managed user's
+/// `_shortcode` and a dotted repository among them, are taken.
+#[tokio::test]
+async fn a_link_to_a_name_github_cannot_have_is_refused_unsent() {
+    let http = FakeHttp::new([]);
+    let gh = github(http.clone()).with_api_url("https://ghe.example/api/v3");
+    let long_owner = format!("{}/r#9", "o".repeat(40));
+    let long_repo = format!("o/{}#9", "r".repeat(101));
+    for target in [
+        "../..#9",
+        "./r#9",
+        "o/.#9",
+        "o/..#9",
+        "a.b/r#9",
+        "o/r r#9",
+        "o%2F../r#9",
+        "o/r%2e%2e#9",
+        "ö/r#9",
+        long_owner.as_str(),
+        long_repo.as_str(),
+    ] {
+        let link = Link::new(Relation::DependsOn, target);
+        let refused = gh.link("1", &link, LinkChange::Add).await;
+        assert!(
+            matches!(&refused, Err(TrackerError::Invalid(m)) if m.contains(target)),
+            "{target}: {refused:?}"
+        );
+    }
+    assert!(http.calls().is_empty(), "{:?}", http.sent());
+
+    for (target, repo) in [
+        ("octo_acme/r#9", "octo_acme/r"),
+        ("o/.github#9", "o/.github"),
+        ("O-1/My.repo_x-2#9", "O-1/My.repo_x-2"),
+    ] {
+        let http = FakeHttp::new([ok(issue(9, "nine")), ok(json!({}))]);
+        let link = Link::new(Relation::DependsOn, target);
+        let got = github(http.clone()).link("1", &link, LinkChange::Add).await;
+        assert!(got.is_ok(), "{target}: {got:?}");
+        assert_eq!(http.sent()[0], format!("GET {API}/repos/{repo}/issues/9"));
+    }
+}
+
 /// Its own repository named in full, in any case, is its own: the request
 /// goes to the repository as the tracker names it.
 #[tokio::test]
