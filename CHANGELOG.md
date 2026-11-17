@@ -191,6 +191,19 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 Every other breaking change is in its crate's section below, with what to
 write instead.
 
+### Security
+
+- The approval prompt shows the human the command that runs, all of it.
+  The approval mod cut the command to 200 characters without saying so,
+  and the haest command printed that preview raw. A command padded past
+  the cut with spaces, or one with a carriage return and an erase-line
+  in it, showed as `rm -rf ./build` while a hidden `; touch ...` ran on
+  "y" (in the terminal and over `--stdio`). The ask now carries the whole
+  command, and the haest command prints control characters, bidi controls
+  and zero-width characters as escapes, so nothing in a command can draw
+  over it. A host's own prompter should do the same with
+  `ApprovalRequest::input_preview`.
+
 ### Bug fixes
 
 - A ledger hook that read the ledger it hears from (a warning shown with

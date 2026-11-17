@@ -27,12 +27,37 @@ impl TermPrompter {
 }
 
 fn question(req: &ApprovalRequest) -> String {
-    let mut q = format!("Allow {}? {}", req.tool_name, req.description);
+    let mut q = format!(
+        "Allow {}? {}",
+        shown(&req.tool_name),
+        shown(&req.description)
+    );
     let preview = req.input_preview.trim();
     if !preview.is_empty() && preview != req.description.trim() {
-        q.push_str(&format!("\n  {preview}"));
+        q.push_str(&format!("\n  {}", shown(preview)));
     }
     q + "\n[y]es / [a]lways / [N]o: "
+}
+
+/// `text` as the terminal shows it: every control character but a newline,
+/// and every character that reorders or hides text (bidi controls, zero-width
+/// ones), as its escape, so nothing in a command can draw over it; each
+/// further line indented under the first.
+fn shown(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        let hides = matches!(c,
+            '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{feff}');
+        if hides {
+            out.extend(c.escape_unicode());
+        } else if c.is_control() && c != '\n' {
+            out.extend(c.escape_default());
+        } else {
+            out.push(c);
+        }
+    }
+    out.replace('\n', "\n  ")
 }
 
 /// y / yes, a / always; anything else (an empty line included) is no.
@@ -118,5 +143,37 @@ mod tests {
         assert_eq!(answer(Some("\n")), ApprovalAnswer::Deny);
         assert_eq!(answer(Some("sure")), ApprovalAnswer::Deny);
         assert_eq!(answer(None), ApprovalAnswer::Deny);
+    }
+
+    fn ask(preview: &str) -> ApprovalRequest {
+        ApprovalRequest {
+            tool_name: "Bash".into(),
+            description: "haest wants to run a command that deletes files".into(),
+            input_preview: preview.into(),
+            tool_use_id: None,
+            key: Some(preview.into()),
+        }
+    }
+
+    /// Nothing in a command can draw over it on the terminal: no carriage
+    /// return, escape sequence or bidi override reaches it raw, and the end
+    /// of a long command shows.
+    #[test]
+    fn the_question_shows_the_command_as_it_is() {
+        let drawn_over = question(&ask(
+            "rm -rf ./build; touch PWNED #\r\u{1b}[2K  rm -rf ./build",
+        ));
+        let reordered = question(&ask("ls \u{202e}dlihc\u{202c} \u{200b}x"));
+        let padded = question(&ask(&format!(
+            "rm -rf ./build{}; touch PWNED",
+            " ".repeat(186)
+        )));
+
+        for q in [&drawn_over, &reordered] {
+            let raw: Vec<char> = q.chars().filter(|c| *c != '\n' && (c.is_control() || matches!(c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'))).collect();
+            assert!(raw.is_empty(), "{raw:?} in {q:?}");
+        }
+        assert!(drawn_over.contains("touch PWNED"), "{drawn_over}");
+        assert!(padded.contains("; touch PWNED"), "{padded}");
     }
 }

@@ -263,7 +263,8 @@ impl Mod for ApprovalMod {
         let req = ApprovalRequest {
             tool_name: call.name.clone(),
             description: format!("haest wants to run a command that {why}"),
-            input_preview: command.chars().take(200).collect(),
+            // The human approves what runs, all of it: a cut could hide a tail.
+            input_preview: command.clone(),
             tool_use_id: None,
             key: Some(command),
         };

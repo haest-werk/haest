@@ -108,6 +108,22 @@ async fn in_the_real_workspace_an_irreversible_command_runs_only_on_the_humans_a
     assert_eq!(asks[0].key.as_deref(), Some("rm -rf build"));
 }
 
+/// The human approves what runs, all of it: a command padded past any cut
+/// cannot hide its tail from the ask.
+#[tokio::test]
+async fn the_ask_shows_the_whole_command_however_long() {
+    let ui = TestUi::answering([Decision::Deny]);
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
+        .with(ApprovalMod::new())
+        .build();
+    let tools = wrapped(mods, Tools::from_iter([Probe::new("Bash")]));
+    let command = format!("rm -rf ./build{}; touch PWNED", " ".repeat(186));
+
+    let _ = tools[0].execute(bash_call(&command), &ctx()).await;
+
+    assert_eq!(ui.asks()[0].input_preview, command);
+}
+
 #[tokio::test]
 async fn the_sandbox_never_asks() {
     let ui = TestUi::new();

@@ -183,7 +183,7 @@ pub enum Outbound {
         tool_name: String,
         /// What the call would do.
         description: String,
-        /// Its input, shortened for display.
+        /// Its input for display: a shell command whole (it is what runs).
         preview: String,
         /// What an `always` answer covers: the same tool with this key (a
         /// shell command's exact text). None: the description.

@@ -52,7 +52,9 @@ pub struct ApprovalRequest {
     pub tool_name: String,
     /// The question, in one sentence: "haest wants to run a command that deletes files recursively".
     pub description: String,
-    /// What the human reads to decide: the command, the start of the input.
+    /// What the human reads to decide: a shell command whole (it is what
+    /// runs; a cut could hide its tail), else the start of the input. A
+    /// prompter shows it as text: control characters escaped, never drawn.
     pub input_preview: String,
     /// The tool call this ask holds up, when the mod knows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
