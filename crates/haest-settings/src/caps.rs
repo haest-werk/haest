@@ -106,16 +106,19 @@ impl Settings {
     /// The loop's per-turn caps for a model with this `window` (from
     /// [`Settings::window`]).
     ///
-    /// An unset token cap follows the window: `max_turn_tokens` is 10x it,
-    /// `max_request_tokens` 90% of it. One set to `Some(0)` stays 0, no cap.
-    /// A negative or non-finite `max_turn_minutes` is no cap. The window
-    /// itself goes along, for a threshold on the context's size.
+    /// An unset token cap follows the window: `max_turn_tokens` is 10x it
+    /// (at most `u64::MAX`), `max_request_tokens` 90% of it. One set to
+    /// `Some(0)` stays 0, no cap. A negative or non-finite `max_turn_minutes`
+    /// is no cap. The window itself goes along, for a threshold on the
+    /// context's size.
     pub fn turn_caps_for(&self, window: u64) -> TurnCaps {
         let l = &self.caps;
+        // 90% is never more than the window, so it fits back in a u64.
+        let ninety_percent = (u128::from(window) * 9 / 10) as u64;
         TurnCaps {
             max_turn_usd: l.max_turn_usd,
-            max_turn_tokens: l.max_turn_tokens.unwrap_or(window * 10),
-            max_request_tokens: l.max_request_tokens.unwrap_or(window * 9 / 10),
+            max_turn_tokens: l.max_turn_tokens.unwrap_or(window.saturating_mul(10)),
+            max_request_tokens: l.max_request_tokens.unwrap_or(ninety_percent),
             max_turn_steps: l.max_turn_steps,
             max_turn_time: minutes(l.max_turn_minutes),
             max_repeats: l.max_repeats,

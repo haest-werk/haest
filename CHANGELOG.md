@@ -34,6 +34,10 @@ compiles as before.
   raise `max_turn_usd`, `max_turn_steps` or `max_turn_minutes` for a cap
   that `subagent_usd`, `subagent_steps` or `subagent_minutes` sets. The
   guard now takes the limit from the caps (`TurnCaps::subagent`).
+- A huge `context_window` (any number up to `u64::MAX` is accepted)
+  overflowed the default turn caps that follow it: a debug build panicked,
+  a release build wrapped to a tiny cap. `max_turn_tokens` now stops at
+  `u64::MAX`, and `max_request_tokens` is still exactly 90% of the window.
 
 ### Behaviour changes
 
