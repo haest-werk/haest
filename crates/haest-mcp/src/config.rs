@@ -32,7 +32,7 @@ impl fmt::Debug for Names<'_> {
 ///     "github",
 ///     McpTransport::stdio("github-mcp-server")
 ///         .with_args(["stdio"])
-///         .with_env("GITHUB_TOKEN", "ghp_example"),
+///         .with_env_var("GITHUB_TOKEN", "ghp_example"),
 /// );
 /// let McpTransport::Stdio(stdio) = &github.transport else {
 ///     unreachable!("stdio() makes a stdio server")
@@ -72,8 +72,8 @@ impl McpServerConfig {
 /// How to reach an MCP server: streamable HTTP, or a child process on stdio.
 ///
 /// A host that reaches a server some other way (a server in the same process,
-/// a socket it opened) connects it with
-/// [`McpHub::connect_transport`](crate::McpHub::connect_transport) instead.
+/// a socket it opened) connects it with `McpHub::connect_transport` (feature
+/// `rmcp`) instead.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpTransport {
     /// Streamable HTTP.
@@ -170,8 +170,8 @@ impl StdioTransport {
     }
 
     /// The variable `name` set to `value` for this server alone, over the
-    /// hub's environment.
-    pub fn with_env(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+    /// hub's environment (one already set is replaced).
+    pub fn with_env_var(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.env.insert(name.into(), value.into());
         self
     }

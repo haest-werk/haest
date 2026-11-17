@@ -155,7 +155,7 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
             let _ = running.waiting().await;
         }
     });
-    rt.mcp.connect_transport("echo", client, &|_| {}).await;
+    rt.mcp.connect_transport("echo", client).await;
     assert_eq!(rt.mcp.tools().len(), 1);
     // A record the session file has not written yet.
     rt.hooks.append(SessionRecord::Config {

@@ -67,7 +67,7 @@ async fn an_http_server_and_its_headers_are_never_sent_through_an_env_proxy() {
         McpTransport::http(format!("{server}/mcp")).with_header("Authorization", "Bearer mcp-key");
     let cfg = McpServerConfig::new("remote", http);
     let hub = McpHub::new();
-    hub.connect(&[cfg], &|_| {}).await;
+    hub.connect(&[cfg]).await;
 
     assert!(
         via_proxy.lock().unwrap().is_empty(),

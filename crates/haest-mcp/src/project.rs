@@ -32,6 +32,7 @@ pub fn project_mcp_path(cwd: &Path) -> PathBuf {
 /// Every variant's message starts with the file's path; the io or JSON error
 /// is the source, so show it with its causes (`haest_core::error::report`).
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum McpConfigError {
     /// The file is there but could not be read.
     #[error("{}", path.display())]
@@ -65,6 +66,7 @@ pub enum McpConfigError {
 /// What a project's `.mcp.json` gave: its servers, and what the host should
 /// tell the human about them.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct ProjectMcp {
     /// The servers it lists that haest can reach (one with a `url` or a `command`).
     pub servers: Vec<McpServerConfig>,
@@ -104,7 +106,7 @@ pub struct ProjectMcp {
 /// use haest_mcp::{McpTransport, load_project_mcp_config};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// let fs = MemFs::with_files([(
 ///     "/repo/.mcp.json",
 ///     r#"{"mcpServers": {
@@ -115,13 +117,11 @@ pub struct ProjectMcp {
 ///     }}"#,
 /// )]);
 /// let vars = |name: &str| (name == "GH_TOKEN").then(|| "ghp_example".to_string());
-/// let project = load_project_mcp_config(&fs, Path::new("/repo"), &vars)
-///     .await
-///     .unwrap();
+/// let project = load_project_mcp_config(&fs, Path::new("/repo"), vars).await?;
 ///
-/// let github = project.servers.iter().find(|s| s.name == "github").unwrap();
+/// let github = project.servers.iter().find(|s| s.name == "github").ok_or("no github")?;
 /// let McpTransport::Stdio(stdio) = &github.transport else {
-///     panic!("a command is a stdio server")
+///     return Err("a command is a stdio server".into());
 /// };
 /// assert_eq!(stdio.env["GITHUB_TOKEN"], "ghp_example");
 /// assert_eq!(stdio.cwd.as_deref(), Some(Path::new("/repo")));
@@ -129,12 +129,13 @@ pub struct ProjectMcp {
 /// // DOCS_TOKEN has no value: the header goes as written, and a note says so.
 /// assert_eq!(project.servers.len(), 2);
 /// assert_eq!(project.notes.len(), 1);
+/// # Ok(())
 /// # }
 /// ```
 pub async fn load_project_mcp_config(
     fs: &dyn Fs,
     cwd: &Path,
-    vars: &dyn Fn(&str) -> Option<String>,
+    vars: impl Fn(&str) -> Option<String>,
 ) -> Result<ProjectMcp, McpConfigError> {
     let path = project_mcp_path(cwd);
     let read = read_text_if_present(fs, &path).await;
@@ -160,7 +161,7 @@ pub async fn load_project_mcp_config(
             problem,
         };
         let mut fill = Fill {
-            vars,
+            vars: &vars,
             unset: Vec::new(),
         };
         if let Some(transport) = parse_server(raw, cwd, &mut fill).map_err(invalid)? {

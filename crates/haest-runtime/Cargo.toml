@@ -38,6 +38,8 @@ session = ["dep:haest-session", "dep:haest-wire"]
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }
+# rmcp: the session tests connect that server with McpHub::connect_transport.
+haest-mcp = { workspace = true, features = ["rmcp"] }
 # server: the session tests close a real MCP server over an in-memory duplex.
 rmcp = { version = "3.9", default-features = false, features = ["client", "server"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }

@@ -1,4 +1,4 @@
-use std::{sync::Mutex, time::Duration};
+use std::time::Duration;
 
 use haest_core::{
     ToolRef,
@@ -21,9 +21,21 @@ const SETTLE: Duration = Duration::from_secs(5);
 async fn connected(server: TestServer) -> (McpHub, JoinHandle<()>) {
     let (io, handle) = spawn(server);
     let hub = McpHub::new();
-    hub.connect_transport("srv", io, &|_| {}).await;
+    hub.connect_transport("srv", io).await;
     assert!(hub.failures().is_empty(), "{:?}", hub.failures());
     (hub, handle)
+}
+
+/// A log that keeps its lines, and the lines it kept.
+fn kept_log() -> (
+    Arc<Mutex<Vec<String>>>,
+    impl Fn(&str) + Send + Sync + 'static,
+) {
+    let logs = Arc::new(Mutex::new(Vec::new()));
+    let sink = logs.clone();
+    (logs, move |m: &str| {
+        sink.lock().unwrap().push(m.to_string())
+    })
 }
 
 fn tool(hub: &McpHub, name: &str) -> ToolRef {
@@ -41,19 +53,19 @@ fn input(v: Value) -> JsonMap {
 
 #[tokio::test]
 async fn a_server_that_cannot_start_is_recorded_as_a_failure_not_thrown() {
-    let hub = McpHub::new();
-    let logs = Mutex::new(Vec::<String>::new());
-    let log = |m: &str| logs.lock().unwrap().push(m.to_string());
-    hub.connect(
-        &[McpServerConfig::new(
-            "broken",
-            McpTransport::stdio("/nonexistent/binary"),
-        )],
-        &log,
-    )
+    let (logs, log) = kept_log();
+    let hub = McpHub::new().with_log(log);
+    hub.connect(&[McpServerConfig::new(
+        "broken",
+        McpTransport::stdio("/nonexistent/binary"),
+    )])
     .await;
     assert!(hub.tools().is_empty());
-    let names: Vec<_> = hub.failures().into_iter().map(|f| f.name).collect();
+    let names: Vec<_> = hub
+        .failures()
+        .iter()
+        .map(|f| f.name().to_string())
+        .collect();
     assert_eq!(names, ["broken"]);
     assert_eq!(logs.lock().unwrap().len(), 1);
     hub.close().await;
@@ -61,11 +73,10 @@ async fn a_server_that_cannot_start_is_recorded_as_a_failure_not_thrown() {
 
 #[tokio::test]
 async fn a_connected_server_offers_its_tools_with_canonical_names_kinds_and_hints() {
-    let logs = Mutex::new(Vec::<String>::new());
+    let (logs, log) = kept_log();
     let (io, _server) = spawn(TestServer::default());
-    let hub = McpHub::new();
-    hub.connect_transport("srv", io, &|m| logs.lock().unwrap().push(m.to_string()))
-        .await;
+    let hub = McpHub::new().with_log(log);
+    hub.connect_transport("srv", io).await;
     let tools = hub.tools();
     let names: Vec<_> = tools.iter().map(|t| t.name()).collect();
     let all = ["echo", "shot", "fail", "reject", "hang"];
@@ -171,9 +182,9 @@ async fn a_server_that_never_answers_is_a_failure_after_the_connect_timeout() {
     let (io, _silent) = tokio::io::duplex(64 * 1024);
     let hub = McpHub::new();
     let started = tokio::time::Instant::now();
-    hub.connect_transport("mute", io, &|_| {}).await;
+    hub.connect_transport("mute", io).await;
     assert!(started.elapsed() >= CONNECT_TIMEOUT);
-    assert_eq!(hub.failures()[0].name, "mute");
+    assert_eq!(hub.failures()[0].name(), "mute");
     assert!(hub.tools().is_empty());
 }
 
@@ -202,20 +213,59 @@ async fn dropping_the_hub_shuts_the_servers_down() {
 }
 
 #[tokio::test]
+async fn dropping_one_clone_keeps_the_servers_for_the_others() {
+    let (hub, mut server) = connected(TestServer::default()).await;
+    let kept = hub.clone();
+    drop(hub);
+    // Still connected: the server task has not ended, and a call still answers.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), &mut server)
+            .await
+            .is_err(),
+        "the server was shut down while a clone still held it"
+    );
+    let out = tool(&kept, "echo")
+        .execute(input(json!({"text": "still here"})), &ctx())
+        .await
+        .unwrap();
+    assert_eq!(out.content, "still here");
+    drop(kept);
+    tokio::time::timeout(SETTLE, server)
+        .await
+        .expect("the server is still connected after the last clone was dropped")
+        .unwrap();
+}
+
+#[tokio::test]
 async fn a_header_http_cannot_carry_fails_that_server_before_any_request() {
     let hub = McpHub::new();
     // Never dialled: the header is refused first.
     let http = McpTransport::http("http://127.0.0.1:9/mcp").with_header("X-Bad", "a\nb");
     let cfg = McpServerConfig::new("remote", http);
-    hub.connect(&[cfg], &|_| {}).await;
-    assert_eq!(hub.failures()[0].name, "remote");
+    hub.connect(&[cfg]).await;
+    assert_eq!(hub.failures()[0].name(), "remote");
+}
+
+#[tokio::test]
+async fn debug_names_the_servers_and_the_failures() {
+    let (hub, _server) = connected(TestServer::default()).await;
+    hub.connect(&[McpServerConfig::new(
+        "broken",
+        McpTransport::stdio("/nonexistent/binary"),
+    )])
+    .await;
+    let shown = format!("{hub:?}");
+    assert!(
+        shown.contains("\"srv\"") && shown.contains("\"broken\""),
+        "{shown}"
+    );
 }
 
 #[test]
 fn a_host_can_spawn_connect_and_close() {
     fn spawnable<F: std::future::Future + Send>(_: F) {}
     let hub = McpHub::new();
-    spawnable(hub.connect(&[], &|_| {}));
+    spawnable(hub.connect(&[]));
     spawnable(hub.close());
 }
 

@@ -7,20 +7,39 @@ use haest_core::error::BoxError;
 use haest_http::HttpError;
 
 /// A server that did not connect, and why: what [`McpHub::failures`](super::McpHub::failures) lists.
+///
+/// Cheap to clone: the error is shared.
 #[derive(Debug, Clone)]
 pub struct McpFailure {
+    name: String,
+    error: Arc<McpStartError>,
+}
+
+impl McpFailure {
+    pub(crate) fn new(name: &str, error: McpStartError) -> Self {
+        Self {
+            name: name.to_string(),
+            error: Arc::new(error),
+        }
+    }
+
     /// The server's name, as configured.
-    pub name: String,
-    /// Why it failed. Show it with
-    /// [`report`](haest_core::error::report) (`report(&*failure.error)`): its
-    /// cause says what broke.
-    pub error: Arc<McpStartError>,
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Why it failed. Show it with [`report`](haest_core::error::report)
+    /// (`report(failure.error())`): its cause says what broke.
+    pub fn error(&self) -> &McpStartError {
+        &self.error
+    }
 }
 
 /// Why one server did not start. The text of each is its own; the reason
 /// under it (the OS's, rmcp's, the HTTP library's) is its
 /// [`source`](std::error::Error::source).
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum McpStartError {
     /// The stdio server's program did not start.
     #[error("spawn {command}")]

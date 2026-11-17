@@ -690,6 +690,29 @@ Good citizens:
 ### haest-mcp
 
 - `McpHub::tools` returns `haest_core::Tools` (was `Vec<Arc<dyn Tool>>`).
+- `McpHub` is a cheap handle: clones share the servers and failures, and
+  the servers shut down when the last clone is dropped. Hold it, not an
+  `Arc<McpHub>`.
+- `McpHub::with_env` is a setter, and the log is set once with `with_log`
+  instead of on every connect:
+  `McpHub::with_env(env).connect(&servers, &|line| ..)` ->
+  `McpHub::new().with_env(env).with_log(|line| ..).connect(&servers)`.
+  Without a log the lines go nowhere; `failures()` has them either way.
+- `McpHub::connect_transport` and the `rmcp` re-export are behind the new
+  `rmcp` feature (off), so rmcp is not in haest-mcp's API unless a host
+  asks: `haest-mcp = { .., features = ["rmcp"] }`.
+  `hub.connect_transport(name, io, &|_| {})` -> `hub.connect_transport(name, io)`.
+- `StdioTransport::with_env` is `with_env_var`: it adds one variable, and
+  `with_env` means replacing a whole environment everywhere else.
+- `McpFailure`'s fields are private: `failure.name` -> `failure.name()`,
+  `report(&*failure.error)` -> `report(failure.error())`.
+- `load_project_mcp_config` takes the variables as any closure (was
+  `&dyn Fn`): `load_project_mcp_config(fs, cwd, &vars)` ->
+  `load_project_mcp_config(fs, cwd, vars)`, with the closure's argument
+  typed (`|name: &str| ..`).
+- `McpStartError`, `McpConfigError` and `ProjectMcp` are
+  `#[non_exhaustive]`; `McpHub` implements `Debug` (servers and failures
+  by name, the environment's names but never its values).
 
 ### haest-mods
 

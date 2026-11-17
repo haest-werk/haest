@@ -228,23 +228,25 @@ pub async fn connect_mcp(
         }
         return start(hooks, McpHub::new(), http).await;
     };
-    start(hooks, McpHub::with_env(child_env), servers).await
+    start(hooks, McpHub::new().with_env(child_env), servers).await
 }
 
 async fn start(hooks: &RuntimeHooks, hub: McpHub, servers: Vec<McpServerConfig>) -> Arc<McpHub> {
-    let hub = Arc::new(hub);
     if servers.is_empty() {
-        return hub;
+        return Arc::new(hub);
     }
-    hub.connect(&servers, &|m: &str| {
-        crate::haest::core::tool::ToolServices::debug(hooks, m)
-    })
-    .await;
+    let hub = if hooks.settings.debug {
+        let ui = hooks.ui.clone();
+        hub.with_log(move |m| ui.debug(m))
+    } else {
+        hub
+    };
+    hub.connect(&servers).await;
     for f in hub.failures() {
-        let why = report(&*f.error);
-        hooks.warn(&format!("MCP server {} did not start: {why}", f.name));
+        let why = report(f.error());
+        hooks.warn(&format!("MCP server {} did not start: {why}", f.name()));
     }
-    hub
+    Arc::new(hub)
 }
 
 #[cfg(test)]

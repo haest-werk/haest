@@ -35,7 +35,7 @@ fn sh(name: &str, script: &str, dir: &TempDir, env: &[(&str, &str)]) -> McpServe
         McpTransport::stdio("/bin/sh")
             .with_args(["-c", script])
             .with_cwd(&dir.0),
-        |s, (k, v)| s.with_env(*k, *v),
+        |s, (k, v)| s.with_env_var(*k, *v),
     );
     McpServerConfig::new(name, stdio)
 }
@@ -64,9 +64,8 @@ fn alive(pid: &str) -> bool {
 async fn a_stdio_server_answers_calls_and_its_process_ends_on_close() {
     let dir = TempDir::new();
     // The server script runs sed: it needs a PATH, handed in like a host would.
-    let hub = McpHub::with_env(std::env::vars().collect());
-    hub.connect(&[sh("local", SH_SERVER, &dir, &[])], &|_| {})
-        .await;
+    let hub = McpHub::new().with_env(std::env::vars().collect());
+    hub.connect(&[sh("local", SH_SERVER, &dir, &[])]).await;
     assert!(hub.failures().is_empty(), "{:?}", hub.failures());
     let tools = hub.tools();
     assert_eq!(tools.len(), 1);
@@ -81,9 +80,8 @@ async fn a_stdio_server_answers_calls_and_its_process_ends_on_close() {
 #[tokio::test]
 async fn a_stdio_server_process_ends_when_the_hub_is_dropped_though_its_tools_are_held() {
     let dir = TempDir::new();
-    let hub = McpHub::with_env(std::env::vars().collect());
-    hub.connect(&[sh("local", SH_SERVER, &dir, &[])], &|_| {})
-        .await;
+    let hub = McpHub::new().with_env(std::env::vars().collect());
+    hub.connect(&[sh("local", SH_SERVER, &dir, &[])]).await;
     // A loop still holds the tools it was handed when the host drops the hub.
     let tools = hub.tools();
     let pid = tools[0]
@@ -118,18 +116,20 @@ async fn a_bare_command_with_no_path_handed_fails_naming_the_missing_path() {
         )]
     };
     let hub = McpHub::new();
-    hub.connect(&bare(), &|_| {}).await;
-    let error = &hub.failures()[0].error;
+    hub.connect(&bare()).await;
+    let failures = hub.failures();
+    let error = failures[0].error();
     assert!(
-        matches!(**error, McpStartError::NotOnPath { .. }),
+        matches!(error, McpStartError::NotOnPath { .. }),
         "the missing PATH goes unnamed: {error:?}"
     );
     // With a PATH handed in, a missing program is only missing.
     let path = ChildEnv::new([("PATH", "/usr/bin:/bin")]);
-    let hub = McpHub::with_env(path);
-    hub.connect(&bare(), &|_| {}).await;
-    let error = &hub.failures()[0].error;
-    assert!(matches!(**error, McpStartError::Spawn { .. }), "{error:?}");
+    let hub = McpHub::new().with_env(path);
+    hub.connect(&bare()).await;
+    let failures = hub.failures();
+    let error = failures[0].error();
+    assert!(matches!(error, McpStartError::Spawn { .. }), "{error:?}");
 }
 
 #[tokio::test]
@@ -138,13 +138,10 @@ async fn a_stdio_server_runs_in_its_cwd_with_the_handed_env_and_its_own_and_noth
     // Not an MCP server: it records what it was given and exits, so connecting fails.
     let script =
         r#"printf '%s|%s|%s|%s' "$HAEST_MCP_TEST" "$(pwd -P)" "$HANDED" "${HOME-unset}" > seen"#;
-    let hub = McpHub::with_env(ChildEnv::new([("HANDED", "h")]));
-    hub.connect(
-        &[sh("probe", script, &dir, &[("HAEST_MCP_TEST", "v")])],
-        &|_| {},
-    )
-    .await;
-    assert_eq!(hub.failures()[0].name, "probe");
+    let hub = McpHub::new().with_env(ChildEnv::new([("HANDED", "h")]));
+    hub.connect(&[sh("probe", script, &dir, &[("HAEST_MCP_TEST", "v")])])
+        .await;
+    assert_eq!(hub.failures()[0].name(), "probe");
     let seen = std::fs::read_to_string(dir.0.join("seen")).unwrap();
     assert_eq!(seen, format!("v|{}|h|unset", dir.0.display()));
 }

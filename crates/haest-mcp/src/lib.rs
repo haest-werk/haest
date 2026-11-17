@@ -4,15 +4,23 @@
 //!
 //! A server is reached one of three ways: a child process speaking MCP on its
 //! stdin and stdout ([`McpTransport::Stdio`]), streamable HTTP
-//! ([`McpTransport::Http`]), or any transport [`rmcp`] takes that the host
-//! opened itself ([`McpHub::connect_transport`]: a server in the same process,
-//! a socket). [`McpHub`] holds the connections and is a
+//! ([`McpTransport::Http`]), or, with the `rmcp` feature, any transport rmcp
+//! takes that the host opened itself (`McpHub::connect_transport`: a server
+//! in the same process, a socket). [`McpHub`] holds the connections and is a
 //! [`ToolSource`](haest_core::tool::ToolSource): the agent loop asks it for the
 //! tools before every model call, so a server connected later is offered from
 //! the next call on.
 //!
-//! Built on the official Rust SDK, [`rmcp`]. Ported from the TypeScript
-//! haest's `core/mcp.ts`.
+//! Built on the official Rust SDK, [rmcp](https://docs.rs/rmcp). Ported from
+//! the TypeScript haest's `core/mcp.ts`.
+//!
+//! # Features
+//!
+//! - `rmcp` (off): rmcp in this crate's API, for a host that connects a
+//!   transport of its own: `McpHub::connect_transport` and the `rmcp`
+//!   re-export (the version haest-mcp is built on). Without it, rmcp is an
+//!   implementation detail, and an rmcp release that breaks its API is not
+//!   a breaking release of haest-mcp.
 //!
 //! # Where to start
 //!
@@ -70,16 +78,14 @@
 //!
 //! # Examples
 //!
-//! A server running in the same process, over an in-memory pipe: its tool is
-//! offered under its haest name, and a call reaches it. The server side is
-//! written with rmcp's `server` feature, which haest-mcp itself does not turn
-//! on.
+//! A server running in the same process, over an in-memory pipe (feature
+//! `rmcp`): its tool is offered under its haest name, and a call reaches it.
+//! The server side is written with rmcp's `server` feature, which haest-mcp
+//! itself does not turn on.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_core::{
-//!     tool::{Tool as _, ToolContext},
+//!     tool::{JsonMap, Tool as _, ToolContext},
 //!     workspace::ShutWorkspace,
 //! };
 //! use haest_mcp::McpHub;
@@ -107,7 +113,7 @@
 //!         _: RequestContext<RoleServer>,
 //!     ) -> Result<ListToolsResult, ErrorData> {
 //!         let schema = json!({"type": "object", "properties": {"text": {"type": "string"}}});
-//!         let schema = Arc::new(schema.as_object().unwrap().clone());
+//!         let schema = schema.as_object().cloned().unwrap_or_default();
 //!         let shout = Tool::new("shout", "The text, in capitals", schema);
 //!         Ok(ListToolsResult::with_all_items(vec![shout]))
 //!     }
@@ -123,8 +129,9 @@
 //!     }
 //! }
 //!
+//! # #[cfg(feature = "rmcp")]
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() {
+//! # async fn main() -> Result<(), haest_core::error::BoxError> {
 //! // The server serves one end of the pipe; the hub connects the other.
 //! let (client_end, server_end) = tokio::io::duplex(64 * 1024);
 //! tokio::spawn(async move {
@@ -132,9 +139,8 @@
 //!         let _ = running.waiting().await;
 //!     }
 //! });
-//! let hub = McpHub::new();
-//! hub.connect_transport("loud", client_end, &|line| println!("{line}"))
-//!     .await;
+//! let hub = McpHub::new().with_log(|line| println!("{line}"));
+//! hub.connect_transport("loud", client_end).await;
 //! assert!(hub.failures().is_empty());
 //!
 //! let tools = hub.tools();
@@ -142,13 +148,16 @@
 //! assert_eq!(tools[0].kind(), "mcp.loud.shout");
 //!
 //! // The agent loop calls it like any other tool.
-//! let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-//! let input = json!({"text": "hello"}).as_object().unwrap().clone();
-//! let out = tools[0].execute(input, &ctx).await.unwrap();
+//! let ctx = ToolContext::new("/", ShutWorkspace);
+//! let input: JsonMap = serde_json::from_value(json!({"text": "hello"}))?;
+//! let out = tools[0].execute(input, &ctx).await?;
 //! assert_eq!(out.content, "HELLO");
 //!
 //! hub.close().await;
+//! # Ok(())
 //! # }
+//! # #[cfg(not(feature = "rmcp"))]
+//! # fn main() {}
 //! ```
 //!
 //! A host's real servers: a program it starts and a remote endpoint, then the
@@ -156,7 +165,7 @@
 //! compiled here.
 //!
 //! ```no_run
-//! use std::{path::Path, sync::Arc};
+//! use std::path::Path;
 //!
 //! use haest_core::{ChildEnv, error::report, fs::Fs};
 //! use haest_mcp::{McpHub, McpServerConfig, McpTransport, ProjectMcp, load_project_mcp_config};
@@ -164,7 +173,7 @@
 //! # async fn host(fs: &dyn Fs) {
 //! let github = McpTransport::stdio("github-mcp-server")
 //!     .with_args(["stdio"])
-//!     .with_env("GITHUB_TOKEN", "ghp_example");
+//!     .with_env_var("GITHUB_TOKEN", "ghp_example");
 //! let github = McpServerConfig::new("github", github);
 //! let docs = McpTransport::http("https://docs.example.com/mcp")
 //!     .with_header("Authorization", "Bearer t0ken");
@@ -173,7 +182,7 @@
 //! // The project's own servers, `${NAME}`s filled in from the host's variables.
 //! // A file that cannot be used is reported, and the run goes on without it.
 //! let vars = |name: &str| std::env::var(name).ok();
-//! let project = match load_project_mcp_config(fs, Path::new("/repo"), &vars).await {
+//! let project = match load_project_mcp_config(fs, Path::new("/repo"), vars).await {
 //!     Ok(project) => project,
 //!     Err(e) => {
 //!         eprintln!(".mcp.json not loaded: {}", report(&e));
@@ -184,15 +193,17 @@
 //!
 //! // What a stdio server's process gets of this one's environment: PATH only.
 //! let path = std::env::var("PATH").unwrap_or_default();
-//! let hub = Arc::new(McpHub::with_env(ChildEnv::new([("PATH", path)])));
+//! let hub = McpHub::new()
+//!     .with_env(ChildEnv::new([("PATH", path)]))
+//!     .with_log(|line| eprintln!("{line}"));
 //! let mut servers = vec![github, docs];
 //! servers.extend(project.servers);
-//! hub.connect(&servers, &|line| eprintln!("{line}")).await;
+//! hub.connect(&servers).await;
 //! for failed in hub.failures() {
-//!     eprintln!("MCP server {} did not start: {}", failed.name, report(&*failed.error));
+//!     eprintln!("MCP server {} did not start: {}", failed.name(), report(failed.error()));
 //! }
 //!
-//! // `hub` is a ToolSource: hand it to the loop. At the end, shut the servers down.
+//! // `hub` is a ToolSource: hand the loop a clone. At the end, shut the servers down.
 //! hub.close().await;
 //! # }
 //! ```
@@ -216,8 +227,9 @@ pub use project::{McpConfigError, ProjectMcp, load_project_mcp_config, project_m
 pub use tool::mcp_tool_name;
 
 /// rmcp, re-exported for a host that connects its own transport
-/// ([`McpHub::connect_transport`]) and needs its types.
+/// ([`McpHub::connect_transport`]) and needs its types (feature `rmcp`).
 ///
-/// Its types are part of haest-mcp's API: a breaking rmcp release (4.0 after
-/// 3.x) is a breaking release of haest-mcp and of haest.
+/// With the feature on, its types are part of haest-mcp's API: a breaking
+/// rmcp release (4.0 after 3.x) breaks a host that uses them.
+#[cfg(feature = "rmcp")]
 pub use rmcp;

@@ -103,7 +103,7 @@ pub(crate) async fn mcp_servers(
         note_untrusted(fs, &project_mcp_path(cwd), cwd, notes).await;
         return Vec::new();
     }
-    match load_project_mcp_config(fs, cwd, &|name| env.get(name).cloned()).await {
+    match load_project_mcp_config(fs, cwd, |name: &str| env.get(name).cloned()).await {
         Ok(project) => {
             notes.extend(project.notes);
             project.servers

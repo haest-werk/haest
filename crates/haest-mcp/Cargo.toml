@@ -10,6 +10,12 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+# rmcp in haest-mcp's API: `haest_mcp::rmcp` and `McpHub::connect_transport`
+# (a server over a transport the host opened). Off by default, so an rmcp
+# release that breaks its API breaks only hosts that turn this on.
+rmcp = []
+
 [dependencies]
 haest-core = { workspace = true }
 async-trait = { workspace = true }

@@ -42,6 +42,7 @@ pub(super) fn admit(servers: &mut Vec<Server>, name: &str, started: Started) {
         })
         .collect();
     servers.push(Server {
+        name: name.to_string(),
         client: started.client,
         tools,
     });

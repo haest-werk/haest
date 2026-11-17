@@ -19,10 +19,10 @@ async fn every_name_is_one_providers_accept_unique_across_servers_and_reaches_it
     let first = ["a.b", "a_b", "a/b c", "naïve", &long_1, &long_2];
     let hub = McpHub::new();
     let (io, _one) = spawn(TestServer::named("one", &first));
-    hub.connect_transport("docs.site", io, &|_| {}).await;
+    hub.connect_transport("docs.site", io).await;
     // Spelled like the first once `.` is rewritten: its tools must not shadow the first's.
     let (io, _two) = spawn(TestServer::named("two", &["a.b"]));
-    hub.connect_transport("docs_site", io, &|_| {}).await;
+    hub.connect_transport("docs_site", io).await;
     assert!(hub.failures().is_empty(), "{:?}", hub.failures());
 
     let tools = hub.tools();

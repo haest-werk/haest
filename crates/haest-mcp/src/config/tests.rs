@@ -7,7 +7,7 @@ fn the_builders_set_what_the_struct_would() {
         McpTransport::stdio("srv")
             .with_args(["a"])
             .with_args(["b"])
-            .with_env("K", "v")
+            .with_env_var("K", "v")
             .with_cwd("/p"),
     );
     let written = McpServerConfig {
@@ -28,7 +28,7 @@ fn the_builders_set_what_the_struct_would() {
 fn debug_names_headers_and_variables_but_never_their_values() {
     let http =
         McpTransport::http("https://h.test/mcp").with_header("Authorization", "Bearer s3cret");
-    let stdio = McpTransport::stdio("srv").with_env("GITHUB_TOKEN", "ghp_s3cret");
+    let stdio = McpTransport::stdio("srv").with_env_var("GITHUB_TOKEN", "ghp_s3cret");
     let config = McpServerConfig::new("s", http.clone());
     for shown in [
         format!("{http:?}"),
