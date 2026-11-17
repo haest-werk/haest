@@ -802,6 +802,27 @@ Hosts write less (round two of the review, and what porting brain onto
   arm.
 - `ProvidersFileError::Read` says what failed: `cannot read
   /x/providers.json` (was the bare path).
+- A host adds its own provider: `ProviderRegistry::with_provider(name,
+  provider)` takes any `impl Provider` (or a `ProviderRef`) and resolves
+  `name:<model>` to it, over a providers.json entry or a built-in of that
+  name; `providers()` lists them. Before, it wrapped the registry in a
+  `ModelResolver` of its own.
+- A providers.json entry is written in Rust: `CustomProviderConfig` has
+  `Default`, `openai(url)`, `anthropic(url)` and serde `Deserialize` (as
+  `from_json` reads it), and `ProviderRegistry::with_custom_provider(name,
+  config)` adds one. Before, the registry took only JSON.
+- `CustomProviders` is a type of its own, not a `BTreeMap<String,
+  serde_json::Value>` (breaking). `serde_json::from_str` still reads a
+  providers.json text into one, each entry still checked when first
+  resolved. `CustomProviders::from([(name, json)])` ->
+  `serde_json::from_value(json!({name: json}))?` or
+  `CustomProviders::new().with_entry(name, config)`; `custom.contains_key(n)`
+  -> `custom.contains(n)`; `custom.keys()` -> `custom.names()`;
+  `CustomProviderConfig::from_json(&custom[n])` -> `custom.get(n)` (the
+  entry, checked). Its Debug output names the entries only.
+- `CustomProviderConfig::resolved_key(&keys) -> String` ->
+  `CustomProviderConfig::key(&keys) -> Option<String>` (breaking): None
+  where it returned `"none"`, the placeholder the provider still sends.
 
 ### haest-tools
 

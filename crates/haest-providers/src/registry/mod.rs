@@ -3,7 +3,8 @@
 //! Built in: `anthropic`, `openai`, `openrouter`, `paperinstruments` (keys
 //! under the standard variable names, asked of the host's [`KeySource`]). Any
 //! other name comes from `providers.json` in the haest config dir
-//! ([`CustomProviderConfig`]). `type` is the wire dialect ("openai" = Chat
+//! ([`CustomProviderConfig`]), or is a provider the host built itself
+//! ([`ProviderRegistry::with_provider`]). `type` is the wire dialect ("openai" = Chat
 //! Completions, "anthropic" = Messages); the built-in `openai` provider alone
 //! speaks the Responses API.
 //!
@@ -23,7 +24,7 @@ mod tests;
 mod tests_custom;
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt,
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
@@ -135,6 +136,8 @@ pub struct ProviderRegistry {
 struct Setup {
     keys: KeySourceRef,
     custom: CustomProviders,
+    /// The host's own providers, built already, by name.
+    providers: BTreeMap<String, ProviderRef>,
     shared: Shared,
 }
 
@@ -171,6 +174,7 @@ impl ProviderRegistry {
             setup: Arc::new(Setup {
                 keys: keys.into(),
                 custom: CustomProviders::new(),
+                providers: BTreeMap::new(),
                 shared: Shared::default(),
             }),
             cache: Arc::default(),
@@ -178,10 +182,51 @@ impl ProviderRegistry {
     }
 
     /// This registry with providers.json's entries beside the built-ins (an
-    /// entry named like a built-in replaces it).
+    /// entry named like a built-in replaces it), in place of the entries it
+    /// had.
     #[must_use]
     pub fn with_custom(mut self, custom: CustomProviders) -> Self {
         self.setup_mut().custom = custom;
+        self
+    }
+
+    /// This registry with `config` as the custom provider `name`, beside the
+    /// entries it has (in place of one of that name): a providers.json entry
+    /// written in Rust.
+    #[must_use]
+    pub fn with_custom_provider(
+        mut self,
+        name: impl Into<String>,
+        config: CustomProviderConfig,
+    ) -> Self {
+        self.setup_mut().custom.insert(name, config);
+        self
+    }
+
+    /// This registry resolving `name:<model>` to `provider`, the host's own
+    /// [`Provider`](haest_core::Provider) (or a handle to one): it wins over
+    /// a providers.json entry and a built-in of that name. The registry
+    /// builds nothing for it, so its client, retries and keys are its own.
+    ///
+    /// ```
+    /// use haest_core::testing::ScriptedProvider;
+    /// use haest_providers::ProviderRegistry;
+    ///
+    /// let registry = ProviderRegistry::new(|_: &str| None)
+    ///     .with_provider("bedrock", ScriptedProvider::new([]));
+    /// let resolved = registry.resolve("bedrock:claude-opus-5-5").unwrap();
+    /// assert_eq!(resolved.model(), "claude-opus-5-5");
+    /// assert!(registry.names().contains(&"bedrock".to_string()));
+    /// ```
+    #[must_use]
+    pub fn with_provider(
+        mut self,
+        name: impl Into<String>,
+        provider: impl Into<ProviderRef>,
+    ) -> Self {
+        self.setup_mut()
+            .providers
+            .insert(name.into(), provider.into());
         self
     }
 
@@ -258,9 +303,19 @@ impl ProviderRegistry {
         &self.setup.keys
     }
 
-    /// providers.json's entries.
+    /// providers.json's entries ([`with_custom`](Self::with_custom),
+    /// [`with_custom_provider`](Self::with_custom_provider)).
     pub fn custom(&self) -> &CustomProviders {
         &self.setup.custom
+    }
+
+    /// The host's own providers by name, in name order
+    /// ([`with_provider`](Self::with_provider)).
+    pub fn providers(&self) -> impl Iterator<Item = (&str, &ProviderRef)> {
+        self.setup
+            .providers
+            .iter()
+            .map(|(name, provider)| (name.as_str(), provider))
     }
 
     /// How every provider's requests travel ([`with_http`](Self::with_http)).
@@ -308,6 +363,9 @@ impl ProviderRegistry {
     /// used.
     pub fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
         let (name, model) = parse_model_spec(spec)?;
+        if let Some(p) = self.setup.providers.get(name) {
+            return Ok(ResolvedModel::new(p.clone(), model));
+        }
         if let Some(p) = self.built().get(name) {
             return Ok(ResolvedModel::new(p.clone(), model));
         }
@@ -324,18 +382,22 @@ impl ProviderRegistry {
     }
 
     /// Every provider name a spec may use, each once: the built-ins, then the
-    /// other providers.json entries in name order. An entry named like a
-    /// built-in replaces it in its place.
+    /// other providers.json entries in name order, then the host's other
+    /// providers in name order. A name that replaces another keeps its place.
     pub fn names(&self) -> Vec<String> {
-        let added = self
-            .setup
-            .custom
+        let Setup {
+            custom, providers, ..
+        } = &*self.setup;
+        let custom = custom.names().filter(|k| !BUILTIN.contains(k));
+        let own = providers
             .keys()
-            .filter(|k| !BUILTIN.contains(&k.as_str()));
+            .map(String::as_str)
+            .filter(|k| !BUILTIN.contains(k) && !self.setup.custom.contains(k));
         BUILTIN
-            .iter()
-            .map(|s| s.to_string())
-            .chain(added.cloned())
+            .into_iter()
+            .chain(custom)
+            .chain(own)
+            .map(str::to_string)
             .collect()
     }
 
@@ -373,14 +435,13 @@ impl ProviderRegistry {
             keys,
             custom,
             shared,
+            ..
         } = &*self.setup;
         let keys = keys.as_ref();
-        if let Some(raw) = custom.get(name) {
-            let cfg = CustomProviderConfig::from_json(raw).map_err(|problem| {
-                ModelError::Unavailable {
-                    provider: name.to_string(),
-                    source: Box::new(problem),
-                }
+        if let Some(entry) = custom.get(name) {
+            let cfg = entry.map_err(|problem| ModelError::Unavailable {
+                provider: name.to_string(),
+                source: Box::new(problem),
             })?;
             return Ok(match cfg.dialect {
                 Dialect::Anthropic => Options::Anthropic(cfg.anthropic_options(name, keys)),

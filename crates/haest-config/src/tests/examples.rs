@@ -3,7 +3,6 @@
 //! fails here.
 
 use haest_core::WorkspaceMode;
-use haest_providers::CustomProviderConfig;
 use haest_settings::BuiltinTools;
 
 use super::*;
@@ -77,12 +76,11 @@ async fn the_example_files_load_together_and_do_what_they_say() {
         servers.sort();
         assert_eq!(servers, ["docs", "github"]);
     }
-    assert_eq!(
-        r.providers.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["gateway", "local"]
-    );
-    for (name, entry) in &r.providers {
-        CustomProviderConfig::from_json(entry).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let names: Vec<&str> = r.providers.names().collect();
+    assert_eq!(names, ["gateway", "local"]);
+    for name in names {
+        let entry = r.providers.get(name).expect("listed");
+        entry.unwrap_or_else(|e| panic!("{name}: {e}"));
     }
 }
 

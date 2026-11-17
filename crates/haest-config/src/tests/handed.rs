@@ -58,7 +58,7 @@ async fn providers_json_comes_from_the_config_dir_and_a_broken_one_stops_the_loa
     let file = r#"{"local": {"type": "openai", "baseURL": "http://localhost:1/v1"}}"#;
     let path = "/h/.config/haest/providers.json";
     let r = run("/w", &[(path, file)], &[], &[]).await.unwrap();
-    assert!(r.providers.contains_key("local"));
+    assert!(r.providers.contains("local"));
     let err = run("/w", &[(path, "{nope")], &[], &[]).await.unwrap_err();
     assert!(matches!(err, ConfigError::Providers(_)), "{err}");
     assert!(

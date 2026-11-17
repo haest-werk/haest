@@ -7,7 +7,7 @@ use haest_core::{fs::MemFs, messages::Message, testing::assert_causes_said_once}
 use serde_json::json;
 
 use super::{
-    tests::{bad_entry, keys, over, registry},
+    tests::{bad_entry, entries, keys, over, registry},
     *,
 };
 use crate::testing::{FakeHttp, FakeReply, collect, request, request_with, typed_sse};
@@ -45,10 +45,7 @@ async fn a_custom_anthropic_entry_is_its_own_provider_and_its_thinking_replays_o
         FakeReply::status(400, ""),
         FakeReply::status(400, ""),
     ]);
-    let custom = CustomProviders::from([(
-        "gateway".to_string(),
-        json!({"type": "anthropic", "baseURL": "http://gateway"}),
-    )]);
+    let custom = entries(json!({"gateway": {"type": "anthropic", "baseURL": "http://gateway"}}));
     let reg = over(
         ProviderRegistry::new(keys(&[("ANTHROPIC_API_KEY", "k")])).with_custom(custom),
         &t,
@@ -89,11 +86,10 @@ async fn a_custom_anthropic_provider_sends_its_configured_headers() {
         400,
         r#"{"error":{"message":"stop here"}}"#,
     )]);
-    let custom = CustomProviders::from([(
-        "proxy".to_string(),
-        json!({"type": "anthropic", "baseURL": "http://proxy", "apiKey": "x",
-               "headers": {"x-proxy-auth": "tok"}}),
-    )]);
+    let custom = entries(
+        json!({"proxy": {"type": "anthropic", "baseURL": "http://proxy",
+        "apiKey": "x", "headers": {"x-proxy-auth": "tok"}}}),
+    );
     let reg = over(ProviderRegistry::new(keys(&[])).with_custom(custom), &t);
     let r = reg.resolve("proxy:claude").unwrap();
     collect(r.provider().stream(request(r.model()))).await;
@@ -106,11 +102,10 @@ async fn a_custom_anthropic_provider_sends_its_configured_headers() {
 #[tokio::test]
 async fn a_configured_header_replaces_the_anthropic_default_of_that_name() {
     let t = FakeHttp::new([FakeReply::status(400, "")]);
-    let custom = CustomProviders::from([(
-        "proxy".to_string(),
-        json!({"type": "anthropic", "baseURL": "http://proxy",
-               "headers": {"X-Api-Key": "tok", "Accept": "text/event-stream"}}),
-    )]);
+    let custom = entries(
+        json!({"proxy": {"type": "anthropic", "baseURL": "http://proxy",
+        "headers": {"X-Api-Key": "tok", "Accept": "text/event-stream"}}}),
+    );
     let reg = over(ProviderRegistry::new(keys(&[])).with_custom(custom), &t);
     let r = reg.resolve("proxy:claude").unwrap();
     collect(r.provider().stream(request(r.model()))).await;
@@ -146,11 +141,11 @@ async fn a_broken_providers_json_is_a_clear_error_and_a_missing_one_is_empty() {
 
 #[test]
 fn a_type_haest_does_not_speak_is_refused_and_no_type_is_chat_completions() {
-    let custom = CustomProviders::from([
-        ("typo".to_string(), json!({"type": "anthropc"})),
-        ("number".to_string(), json!({"type": 3})),
-        ("plain".to_string(), json!({"baseURL": "http://x/v1"})),
-    ]);
+    let custom = entries(json!({
+        "typo": {"type": "anthropc"},
+        "number": {"type": 3},
+        "plain": {"baseURL": "http://x/v1"},
+    }));
     let reg = registry(keys(&[]), custom);
     for name in ["typo", "number"] {
         let e = bad_entry(&reg, &format!("{name}:m"));
@@ -166,7 +161,7 @@ fn a_type_haest_does_not_speak_is_refused_and_no_type_is_chat_completions() {
 
 #[test]
 fn an_entry_that_is_not_an_object_is_refused() {
-    let custom = CustomProviders::from([("local".to_string(), json!("http://localhost:1234/v1"))]);
+    let custom = entries(json!({"local": "http://localhost:1234/v1"}));
     let e = bad_entry(&registry(keys(&[]), custom), "local:m");
     assert!(matches!(&e, Some((_, EntryProblem::NotAnObject))), "{e:?}");
 }
@@ -180,10 +175,7 @@ async fn a_broken_providers_json_says_each_cause_once() {
         .await
         .unwrap_err();
     assert_causes_said_once(&e);
-    let custom = CustomProviders::from([(
-        "p".to_string(),
-        json!({"pricing": {"m": {"input": "free"}}}),
-    )]);
+    let custom = entries(json!({"p": {"pricing": {"m": {"input": "free"}}}}));
     let e = registry(keys(&[]), custom).resolve("p:m").unwrap_err();
     assert_causes_said_once(&e);
 }
@@ -199,16 +191,11 @@ async fn a_providers_json_that_is_not_an_object_is_refused() {
 
 #[test]
 fn one_bad_custom_entry_blocks_only_itself() {
-    let custom = CustomProviders::from([
-        (
-            "bad".to_string(),
-            json!({"type": "openai", "reasoningEffort": {"efforts": "low"}}),
-        ),
-        (
-            "good".to_string(),
-            json!({"type": "openai", "baseURL": "http://x/v1"}),
-        ),
-    ]);
+    let custom = entries(json!({
+        "bad": {"type": "openai", "reasoningEffort": {"efforts": "low"}},
+        "good": {"type": "openai", "baseURL": "http://x/v1"},
+    }));
+    assert_eq!(custom.len(), 2, "both are kept: checked when resolved");
     let reg = registry(keys(&[]), custom);
     assert!(matches!(
         bad_entry(&reg, "bad:m"),
@@ -232,4 +219,59 @@ fn the_key_and_header_values_never_show_in_debug_output() {
         shown.contains("LOCAL_KEY") && shown.contains("x-proxy-key"),
         "{shown}"
     );
+    let entries = entries(json!({"local": entry}));
+    assert_eq!(format!("{entries:?}"), r#"CustomProviders(["local"])"#);
+}
+
+/// The key an entry sends: its own, else the host's under `apiKeyEnv`, else
+/// none, and then the provider sends a placeholder a local server takes.
+#[tokio::test]
+async fn an_entry_without_a_key_has_none_and_its_provider_sends_a_placeholder() {
+    let host = keys(&[("LOCAL_KEY", "from-host")]);
+    let own = CustomProviderConfig {
+        api_key: Some("own".into()),
+        api_key_env: Some("LOCAL_KEY".into()),
+        ..CustomProviderConfig::default()
+    };
+    assert_eq!(own.key(host.as_ref()).as_deref(), Some("own"));
+    let named = CustomProviderConfig {
+        api_key_env: Some("LOCAL_KEY".into()),
+        ..CustomProviderConfig::default()
+    };
+    assert_eq!(named.key(host.as_ref()).as_deref(), Some("from-host"));
+    let bare = CustomProviderConfig::openai("http://localhost:1/v1");
+    assert_eq!(bare.key(host.as_ref()), None);
+
+    let t = FakeHttp::new([FakeReply::status(400, "")]);
+    let reg = over(
+        ProviderRegistry::new(host).with_custom_provider("local", bare),
+        &t,
+    );
+    let r = reg.resolve("local:m").unwrap();
+    collect(r.provider().stream(request(r.model()))).await;
+    let sent = &t.requests()[0].headers;
+    assert!(
+        sent.contains(&("authorization".to_string(), "Bearer none".to_string())),
+        "{sent:?}"
+    );
+}
+
+/// An entry deserializes as `from_json` reads it, and a host's typed entry
+/// is the same entry as the file's.
+#[test]
+fn an_entry_deserializes_as_from_json_reads_it() {
+    let raw = json!({"type": "anthropic", "baseURL": "https://gw", "apiKeyEnv": "GW"});
+    let read: CustomProviderConfig = serde_json::from_value(raw.clone()).unwrap();
+    assert_eq!(read, CustomProviderConfig::from_json(&raw).unwrap());
+    assert_eq!(
+        read,
+        CustomProviderConfig {
+            api_key_env: Some("GW".into()),
+            ..CustomProviderConfig::anthropic("https://gw")
+        }
+    );
+    let typo = serde_json::from_value::<CustomProviderConfig>(json!({"type": "anthropc"}));
+    assert!(typo.unwrap_err().to_string().contains("anthropc"));
+    let file = entries(json!({"gw": raw}));
+    assert_eq!(file.get("gw").unwrap().unwrap(), read);
 }

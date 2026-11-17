@@ -11,6 +11,7 @@ use haest_core::{
     catalog::{ModelPricing, OpenRouterEffort, Reasoning},
     fs::{Fs, read_text_if_present},
 };
+use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::Value;
 
 use super::{EntryProblem, ProvidersFileError};
@@ -58,7 +59,28 @@ pub enum Dialect ("provider type") {
 /// `pricing`: USD per 1M tokens per model id, for an API that returns no cost; a
 /// catalog row's `pricing` fills in for a model not listed here.
 ///
+/// A host builds one in Rust as well ([`openai`](Self::openai),
+/// [`anthropic`](Self::anthropic), or the fields over `Default`, which is an
+/// entry with no keys: Chat Completions at OpenAI's own API) and hands it to
+/// [`ProviderRegistry::with_custom_provider`](super::ProviderRegistry::with_custom_provider).
+/// It deserializes from an entry's JSON as [`from_json`](Self::from_json)
+/// reads it.
+///
 /// Its Debug output shows neither `apiKey` nor a header's value.
+///
+/// ```
+/// use haest_providers::{CustomProviderConfig, ProviderRegistry};
+///
+/// let gateway = CustomProviderConfig {
+///     api_key_env: Some("GATEWAY_API_KEY".into()),
+///     ..CustomProviderConfig::anthropic("https://llm-gateway.example.com")
+/// };
+/// let keys = |name: &str| (name == "GATEWAY_API_KEY").then(|| "gw-key".to_string());
+/// assert_eq!(gateway.key(&keys).as_deref(), Some("gw-key"));
+///
+/// let registry = ProviderRegistry::new(keys).with_custom_provider("gateway", gateway);
+/// assert!(registry.resolve("gateway:claude-opus-5-5").is_ok());
+/// ```
 #[derive(Clone, PartialEq)]
 pub struct CustomProviderConfig {
     /// `type`: the wire dialect.
@@ -92,6 +114,33 @@ impl fmt::Debug for CustomProviderConfig {
             .finish()
     }
 }
+
+/// An entry with no keys: Chat Completions at OpenAI's own API, no key of
+/// its own, no headers, no effort, no prices.
+impl Default for CustomProviderConfig {
+    fn default() -> Self {
+        Self {
+            dialect: Dialect::OpenAi,
+            base_url: None,
+            api_key: None,
+            api_key_env: None,
+            headers: Vec::new(),
+            reasoning_effort: None,
+            pricing: HashMap::new(),
+        }
+    }
+}
+
+/// An entry's JSON, read and checked as [`CustomProviderConfig::from_json`]
+/// does.
+impl<'de> Deserialize<'de> for CustomProviderConfig {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        Self::from_json(&Value::deserialize(de)?).map_err(D::Error::custom)
+    }
+}
+
+/// What a custom provider sends when it has no key: a local server takes any.
+const NO_KEY: &str = "none";
 
 fn opt_string(v: &Value, key: &str) -> Option<String> {
     v.get(key).and_then(Value::as_str).map(str::to_string)
@@ -141,6 +190,22 @@ fn pricing(v: Option<&Value>) -> Result<HashMap<String, ModelPricing>, EntryProb
 }
 
 impl CustomProviderConfig {
+    /// A Chat Completions server at `base_url` (`"type": "openai"`).
+    pub fn openai(base_url: impl Into<String>) -> Self {
+        Self {
+            base_url: Some(base_url.into()),
+            ..Self::default()
+        }
+    }
+
+    /// A Messages API server at `base_url` (`"type": "anthropic"`).
+    pub fn anthropic(base_url: impl Into<String>) -> Self {
+        Self {
+            dialect: Dialect::Anthropic,
+            ..Self::openai(base_url)
+        }
+    }
+
     /// Read the providers.json entry `name`; a mistyped dialect, a malformed
     /// effort list or price is refused, never sent or booked as garbage.
     ///
@@ -193,46 +258,183 @@ impl CustomProviderConfig {
         })
     }
 
-    /// The key itself, else the one the host has under `apiKeyEnv`, else
-    /// `"none"` (a local server takes any). A custom provider never fails for
-    /// want of a key.
-    pub fn resolved_key(&self, keys: &dyn KeySource) -> String {
+    /// The key this entry sends: `apiKey` itself, else the one the host's
+    /// `keys` has under `apiKeyEnv`; None when neither is there (the provider
+    /// then sends a placeholder, as a local server takes any key: a custom
+    /// provider never fails for want of one).
+    pub fn key(&self, keys: &(impl KeySource + ?Sized)) -> Option<String> {
         self.api_key
             .clone()
             .or_else(|| self.api_key_env.as_ref().and_then(|k| keys.key(k)))
-            .unwrap_or_else(|| "none".into())
+    }
+
+    /// [`key`](Self::key), or the placeholder.
+    fn sent_key(&self, keys: &dyn KeySource) -> String {
+        self.key(keys).unwrap_or_else(|| NO_KEY.into())
     }
 
     /// A `type: "anthropic"` entry as the options of the provider `name`: the
-    /// entry's URL, key ([`resolved_key`](Self::resolved_key)) and headers.
+    /// entry's URL, key ([`key`](Self::key)) and headers.
     pub(crate) fn anthropic_options(&self, name: &str, keys: &dyn KeySource) -> AnthropicOptions {
         AnthropicOptions {
             base_url: self.base_url.clone(),
             headers: self.headers.clone(),
-            ..AnthropicOptions::new(name, self.resolved_key(keys))
+            ..AnthropicOptions::new(name, self.sent_key(keys))
         }
     }
 
     /// A `type: "openai"` entry as the options of the provider `name`, the
-    /// plain body: the entry's URL, key ([`resolved_key`](Self::resolved_key)),
-    /// headers and effort levels. Its prices are the built-in catalog's for
-    /// `name:` models, then the entry's own over them.
+    /// plain body: the entry's URL, key ([`key`](Self::key)), headers and
+    /// effort levels. Its prices are the built-in catalog's for `name:`
+    /// models, then the entry's own over them.
     pub(crate) fn compat_options(&self, name: &str, keys: &dyn KeySource) -> CompatOptions {
         let opts = CompatOptions {
             base_url: self.base_url.clone(),
             headers: self.headers.clone(),
             reasoning_effort: self.reasoning_effort.clone(),
             pricing: Catalog::builtin().provider_pricing(name),
-            ..CompatOptions::new(name, self.resolved_key(keys))
+            ..CompatOptions::new(name, self.sent_key(keys))
         };
         opts.with_pricing(self.pricing.clone())
     }
 }
 
-/// providers.json's entries by name, as JSON: each is checked when its
-/// provider is first resolved, so one bad entry blocks only itself.
-/// `serde_json::from_str` reads a providers.json text straight into one.
-pub type CustomProviders = BTreeMap<String, Value>;
+/// providers.json's entries by name.
+///
+/// An entry read from JSON (`serde_json::from_str` reads a providers.json
+/// text straight into one; [`load_custom_providers`] reads the file) is
+/// checked when its provider is first resolved, so one bad entry blocks only
+/// itself. An entry a host builds in Rust ([`with_entry`](Self::with_entry),
+/// [`insert`](Self::insert), `collect`) is a [`CustomProviderConfig`]
+/// already.
+///
+/// Its Debug output names the entries and shows none of them: an entry may
+/// hold its `apiKey`.
+///
+/// ```
+/// use haest_providers::{CustomProviderConfig, CustomProviders, EntryProblem};
+///
+/// # fn main() -> Result<(), serde_json::Error> {
+/// let file: CustomProviders = serde_json::from_str(
+///     r#"{"local": {"baseURL": "http://localhost:1234/v1"}, "bad": {"type": "anthropc"}}"#,
+/// )?;
+/// let custom = file.with_entry("gateway", CustomProviderConfig::anthropic("https://gw"));
+/// assert_eq!(custom.names().collect::<Vec<_>>(), ["bad", "gateway", "local"]);
+/// assert!(matches!(custom.get("bad"), Some(Err(EntryProblem::UnknownType(_)))));
+/// assert!(matches!(custom.get("local"), Some(Ok(_))));
+/// assert!(custom.get("nope").is_none());
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Clone, Default, PartialEq)]
+pub struct CustomProviders {
+    entries: BTreeMap<String, Entry>,
+}
+
+/// One entry, as it was handed in.
+#[derive(Clone, PartialEq)]
+enum Entry {
+    /// Read from JSON: checked on its first resolve.
+    Json(Value),
+    /// Built in Rust.
+    Config(CustomProviderConfig),
+}
+
+impl CustomProviders {
+    /// No entries.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// These entries and `config` as the entry `name` (in place of one of
+    /// that name).
+    #[must_use]
+    pub fn with_entry(mut self, name: impl Into<String>, config: CustomProviderConfig) -> Self {
+        self.insert(name, config);
+        self
+    }
+
+    /// `config` as the entry `name`, in place of one of that name.
+    pub fn insert(&mut self, name: impl Into<String>, config: CustomProviderConfig) {
+        self.entries.insert(name.into(), Entry::Config(config));
+    }
+
+    /// The entry `name`, checked; None when there is none.
+    ///
+    /// # Errors
+    ///
+    /// Inside the `Some`: the [`EntryProblem`] of an entry read from JSON
+    /// that cannot be used ([`CustomProviderConfig::from_json`]).
+    pub fn get(&self, name: &str) -> Option<Result<CustomProviderConfig, EntryProblem>> {
+        Some(match self.entries.get(name)? {
+            Entry::Json(raw) => CustomProviderConfig::from_json(raw),
+            Entry::Config(config) => Ok(config.clone()),
+        })
+    }
+
+    /// Whether there is an entry `name`.
+    pub fn contains(&self, name: &str) -> bool {
+        self.entries.contains_key(name)
+    }
+
+    /// The entries' names, in order.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.entries.keys().map(String::as_str)
+    }
+
+    /// How many entries there are.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether there are none.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Entries read from JSON, checked when each is first resolved.
+    fn from_json_entries(entries: impl IntoIterator<Item = (String, Value)>) -> Self {
+        let entries = entries
+            .into_iter()
+            .map(|(name, raw)| (name, Entry::Json(raw)))
+            .collect();
+        Self { entries }
+    }
+}
+
+/// The names only: an entry may hold its `apiKey`.
+impl fmt::Debug for CustomProviders {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("CustomProviders")
+            .field(&self.names().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
+/// A providers.json text: an object of entries by name, each checked when its
+/// provider is first resolved.
+impl<'de> Deserialize<'de> for CustomProviders {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let entries = BTreeMap::<String, Value>::deserialize(de)?;
+        Ok(Self::from_json_entries(entries))
+    }
+}
+
+impl<K: Into<String>> FromIterator<(K, CustomProviderConfig)> for CustomProviders {
+    fn from_iter<I: IntoIterator<Item = (K, CustomProviderConfig)>>(entries: I) -> Self {
+        let mut out = Self::new();
+        out.extend(entries);
+        out
+    }
+}
+
+impl<K: Into<String>> Extend<(K, CustomProviderConfig)> for CustomProviders {
+    fn extend<I: IntoIterator<Item = (K, CustomProviderConfig)>>(&mut self, entries: I) {
+        for (name, config) in entries {
+            self.insert(name, config);
+        }
+    }
+}
 
 /// The raw entries of `<config_dir>/providers.json`, read through `fs`; empty
 /// when there is none. A loader's helper: the registry is handed the result.
@@ -259,7 +461,7 @@ pub type CustomProviders = BTreeMap<String, Value>;
 ///     r#"{"local": {"type": "openai", "baseURL": "http://localhost:1234/v1"}}"#,
 /// )]);
 /// let custom = load_custom_providers(&fs, Path::new("/home/me/.config/haest")).await?;
-/// assert!(custom.contains_key("local"));
+/// assert!(custom.contains("local"));
 ///
 /// let none = load_custom_providers(&fs, Path::new("/elsewhere")).await?;
 /// assert!(none.is_empty());
@@ -281,7 +483,7 @@ pub async fn load_custom_providers(
         Err(source) => return Err(ProvidersFileError::Parse { path, source }),
     };
     match parsed {
-        Value::Object(map) => Ok(map.into_iter().collect()),
+        Value::Object(map) => Ok(CustomProviders::from_json_entries(map)),
         _ => Err(ProvidersFileError::NotAnObject { path }),
     }
 }

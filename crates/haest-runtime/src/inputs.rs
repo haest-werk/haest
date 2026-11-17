@@ -183,7 +183,7 @@ impl RuntimeInputs {
     }
 }
 
-/// The custom providers by name only: an entry may hold a key.
+/// The custom providers by name only (their own Debug): an entry may hold a key.
 impl fmt::Debug for RuntimeInputs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RuntimeInputs")
@@ -191,7 +191,7 @@ impl fmt::Debug for RuntimeInputs {
             .field("world", &self.world)
             .field("passed_env", &self.passed_env)
             .field("keys", &self.keys)
-            .field("providers", &self.providers.keys().collect::<Vec<_>>())
+            .field("providers", &self.providers)
             .field("mcp_servers", &self.mcp_servers)
             .field("routing", &self.routing)
             .field("http", &self.http)

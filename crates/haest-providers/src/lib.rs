@@ -131,8 +131,11 @@
 //!
 //! More providers come from a JSON object, one entry per provider name. The
 //! haest CLI reads it from `<config dir>/providers.json` with
-//! [`load_custom_providers`]; a host may build the [`CustomProviders`] map
-//! itself. [`CustomProviderConfig`] describes every key:
+//! [`load_custom_providers`]; a host may build [`CustomProviders`] itself, or
+//! hand the registry one entry written in Rust
+//! ([`ProviderRegistry::with_custom_provider`]) or a provider of its own
+//! ([`ProviderRegistry::with_provider`]). [`CustomProviderConfig`] describes
+//! every key:
 //!
 //! ```json
 //! {

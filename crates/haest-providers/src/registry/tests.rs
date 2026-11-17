@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use haest_core::provider::ModelError;
+use haest_core::{provider::ModelError, testing::ScriptedProvider};
 use serde_json::json;
 
 use super::*;
@@ -17,6 +17,11 @@ pub(super) fn keys(pairs: &[(&str, &str)]) -> KeySourceRef {
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
     map.into()
+}
+
+/// providers.json's entries, as read from its JSON.
+pub(super) fn entries(file: serde_json::Value) -> CustomProviders {
+    serde_json::from_value(file).expect("an object of entries")
 }
 
 /// `reg` sending through `t`, never retrying.
@@ -98,10 +103,7 @@ async fn openai_speaks_responses_while_openrouter_and_custom_servers_speak_chat_
         (0..3).map(|_| FakeReply::status(400, r#"{"error":{"message":"stop here"}}"#)),
     );
     let base = "http://localhost:1/v1";
-    let custom = CustomProviders::from([(
-        "local".to_string(),
-        json!({"type": "openai", "baseURL": base}),
-    )]);
+    let custom = entries(json!({"local": {"type": "openai", "baseURL": base}}));
     let k = keys(&[
         ("OPENAI_API_KEY", "k"),
         ("OPENAI_BASE_URL", base),
@@ -206,13 +208,10 @@ async fn without_reqwest_a_registry_with_no_client_says_to_hand_one_in() {
 
 #[test]
 fn an_entry_that_replaces_a_built_in_is_listed_once() {
-    let custom = CustomProviders::from([
-        (
-            "openrouter".to_string(),
-            json!({"type": "openai", "baseURL": "http://gateway/v1"}),
-        ),
-        ("local".to_string(), json!({"type": "openai"})),
-    ]);
+    let custom = entries(json!({
+        "openrouter": {"type": "openai", "baseURL": "http://gateway/v1"},
+        "local": {"type": "openai"},
+    }));
     let names = registry(keys(&[]), custom).names();
     let listed = |name: &str| names.iter().filter(|n| *n == name).count();
     assert_eq!(listed("openrouter"), 1, "{names:?}");
@@ -302,18 +301,67 @@ fn a_slow_key_lookup_holds_up_no_other_resolve() {
 
 #[test]
 fn debug_names_the_providers_but_never_an_entry_key() {
-    let custom = CustomProviders::from([(
-        "local".to_string(),
-        json!({"type": "openai", "apiKey": "sk-SECRET", "baseURL": "http://u:URL-SECRET@h/v1"}),
-    )]);
-    let reg = registry(keys(&[("OPENROUTER_API_KEY", "KEY-SECRET")]), custom);
+    let custom = entries(json!({
+        "local": {"type": "openai", "apiKey": "sk-SECRET", "baseURL": "http://u:URL-SECRET@h/v1"},
+    }))
+    .with_entry(
+        "typed",
+        CustomProviderConfig {
+            api_key: Some("sk-TYPED-SECRET".into()),
+            ..CustomProviderConfig::openai("http://u:TYPED-SECRET@h/v1")
+        },
+    );
+    let reg = registry(keys(&[("OPENROUTER_API_KEY", "KEY-SECRET")]), custom)
+        .with_provider("own", ScriptedProvider::new([]));
+    reg.resolve("typed:m").unwrap();
     reg.resolve("local:m").unwrap();
     reg.resolve("openrouter:m").unwrap();
     let shown = format!("{reg:?}");
     assert!(!shown.contains("SECRET"), "{shown}");
-    assert!(
-        shown.contains("local") && shown.contains("built"),
-        "{shown}"
+    for name in ["local", "typed", "own", "built"] {
+        assert!(shown.contains(name), "{name}: {shown}");
+    }
+}
+
+/// A host's own provider wins over a providers.json entry and a built-in of
+/// its name, needs no key, and is listed once; a typed entry resolves like
+/// one read from the file.
+#[test]
+fn a_host_hands_in_its_own_provider_and_typed_entries() {
+    let own = ProviderRef::new(ScriptedProvider::new([]));
+    let reg = registry(
+        keys(&[]),
+        entries(json!({"gateway": {"type": "anthropic"}})),
+    )
+    .with_custom_provider(
+        "local",
+        CustomProviderConfig::openai("http://localhost:1/v1"),
+    )
+    .with_provider("openrouter", own.clone())
+    .with_provider("gateway", own.clone())
+    .with_provider("bedrock", own.clone());
+    for spec in ["openrouter:x/y", "gateway:claude", "bedrock:claude"] {
+        let resolved = reg.resolve(spec).unwrap();
+        assert!(ProviderRef::ptr_eq(resolved.provider(), &own), "{spec}");
+    }
+    assert_eq!(reg.resolve("local:m").unwrap().provider().id(), "local");
+    assert_eq!(
+        reg.names(),
+        [
+            "anthropic",
+            "openai",
+            "openrouter",
+            "paperinstruments",
+            "gateway",
+            "local",
+            "bedrock"
+        ]
+    );
+    let own_names: Vec<&str> = reg.providers().map(|(name, _)| name).collect();
+    assert_eq!(own_names, ["bedrock", "gateway", "openrouter"]);
+    assert_eq!(
+        reg.custom().names().collect::<Vec<_>>(),
+        ["gateway", "local"]
     );
 }
 

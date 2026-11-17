@@ -149,8 +149,6 @@ mod stack;
 mod tests;
 mod value;
 
-use std::fmt;
-
 use haest_core::ChildEnv;
 #[cfg(feature = "mcp")]
 use haest_mcp::McpServerConfig;
@@ -183,12 +181,12 @@ pub use value::env_var;
 /// Show the human every [`notes`](Self::notes) line before the run starts.
 ///
 /// Its Debug output names the keys, the variables and the providers.json
-/// entries, and shows none of their values.
+/// entries, and shows none of their values: each field's own Debug does.
 ///
 /// A host reads it and never builds it: it is `#[non_exhaustive]`, so haest
 /// may hand the runtime something more in a minor release (destructure it
 /// with `..`).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Loaded {
     /// Every setting's value: the runtime's settings, and the ones only the
@@ -218,33 +216,4 @@ pub struct Loaded {
     /// variable `env` names that has no value, a malformed `provider_routing`,
     /// a profile named but not read).
     pub notes: Vec<String>,
-}
-
-/// The providers.json entries by name: an entry may hold its `apiKey`.
-impl fmt::Debug for Loaded {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Loaded {
-            config,
-            resolved,
-            child_env,
-            passed_env,
-            keys,
-            routing,
-            providers,
-            #[cfg(feature = "mcp")]
-            mcp_servers,
-            notes,
-        } = self;
-        let mut out = f.debug_struct("Loaded");
-        out.field("config", config)
-            .field("resolved", resolved)
-            .field("child_env", child_env)
-            .field("passed_env", passed_env)
-            .field("keys", keys)
-            .field("routing", routing)
-            .field("providers", &providers.keys().collect::<Vec<_>>());
-        #[cfg(feature = "mcp")]
-        out.field("mcp_servers", mcp_servers);
-        out.field("notes", notes).finish()
-    }
 }
