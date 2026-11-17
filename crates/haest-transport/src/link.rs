@@ -4,8 +4,10 @@
 //! connections through here, so the rules are the same on each.
 
 use std::{
+    any::Any,
     fmt,
     future::Future,
+    panic::{self, AssertUnwindSafe},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -147,8 +149,11 @@ enum Out {
 ///
 /// # Panics
 ///
-/// When `sink` or `source` panics, after the connection has stopped: a
-/// host's own bug reaches the host, never reads as the peer leaving.
+/// When `sink`, `source` or `backend` panics, after the connection has
+/// stopped: a host's own bug reaches the host, never reads as the peer
+/// leaving. A request whose backend call panicked is refused with its id
+/// first, so its peer is not left waiting for the reply, and the
+/// connection stops with it.
 ///
 /// `backend` is any [`Backend`](haest_session::Backend) (a `session.clone()`),
 /// an `Arc` of one, or a [`BackendRef`].
@@ -177,9 +182,10 @@ pub async fn serve(
         tasks: JoinSet::new(),
         started: None,
     };
-    // No hello: the conversation, or the peer, is already gone.
-    let ended = if let Err(why) = link.hello(start.token).await {
-        why
+    // Why the connection stopped, or the request whose backend call
+    // panicked. No hello: the conversation, or the peer, is already gone.
+    let stopped: Result<Ended, Panicked> = if let Err(why) = link.hello(start.token).await {
+        Ok(why)
     } else {
         if let Some(after) = start.follow_from {
             link.events(None, after, true);
@@ -197,7 +203,7 @@ pub async fn serve(
         tokio::pin!(grace);
         loop {
             if let Some(why) = why.take_if(|_| link.tasks.is_empty()) {
-                break why;
+                break Ok(why);
             }
             let open = !matches!(why, Some(Ended::Closed));
             // At twice the cap, the next line waits until a reply goes out.
@@ -208,34 +214,57 @@ pub async fn serve(
                         reading = false;
                         why.get_or_insert(Ended::PeerLeft);
                     }
-                    Some(Err(e)) => break Ended::Failed(e),
+                    Some(Err(e)) => break Ok(Ended::Failed(e)),
                     Some(Ok(line)) => link.request(&line),
                 },
-                _ = link.tasks.join_next(), if !link.tasks.is_empty() => {}
+                joined = link.tasks.join_next(), if !link.tasks.is_empty() => {
+                    if let Some(Ok(Some(panicked))) = joined {
+                        break Err(panicked);
+                    }
+                }
                 () = &mut closed, if open => {
                     reading = false;
                     why = Some(Ended::Closed);
                     grace.as_mut().reset(tokio::time::Instant::now() + FLUSH_GRACE);
                 }
-                () = &mut grace, if !open => break Ended::Closed,
+                () = &mut grace, if !open => break Ok(Ended::Closed),
                 done = &mut writer => {
                     *writer_done = Some(done);
-                    break Ended::PeerLeft;
+                    break Ok(Ended::PeerLeft);
                 }
             }
         }
     };
-    link.finish(matches!(ended, Ended::Closed)).await;
+    // Its request is still answered, as far as the peer takes it.
+    if let Some(id) = stopped.as_ref().err().map(|p| p.id.clone()) {
+        let refused = Out::Conn(Outbound::refused(id, BACKEND_PANICKED));
+        let _ = tokio::time::timeout(FLUSH_GRACE, link.tx.send(refused)).await;
+    }
+    let dropped = link.finish(matches!(stopped, Ok(Ended::Closed))).await;
     if writer_done.is_none() {
         writer_done = tokio::time::timeout(FLUSH_GRACE, &mut writer).await.ok();
     }
-    // The host's sink panicked: its bug, never the peer leaving.
+    // The host's backend or sink panicked: its bug, never the peer leaving.
+    let ended = match (stopped, dropped) {
+        (Err(panicked), _) | (Ok(_), Some(panicked)) => panic::resume_unwind(panicked.panic),
+        (Ok(ended), None) => ended,
+    };
     if let Some(Err(e)) = writer_done
         && e.is_panic()
     {
-        std::panic::resume_unwind(e.into_panic());
+        panic::resume_unwind(e.into_panic());
     }
     ended
+}
+
+/// The refusal a request gets when the backend panicked serving it.
+const BACKEND_PANICKED: &str = "the backend failed while it served this request";
+
+/// A request whose backend call panicked: its id, still owed a reply, and
+/// the panic, which goes on to the host once the connection has stopped.
+struct Panicked {
+    id: String,
+    panic: Box<dyn Any + Send>,
 }
 
 /// A task a connection started, aborted when this drops: however `serve`
@@ -268,8 +297,9 @@ struct Link {
     follows: u64,
     /// How far the current subscription has been written.
     written: watch::Sender<Written>,
-    /// Requests whose reply waits (a turn's end, a change between turns).
-    tasks: JoinSet<()>,
+    /// Requests whose reply waits (a turn's end, a change between turns);
+    /// one ends with what it owes when its backend call panicked.
+    tasks: JoinSet<Option<Panicked>>,
     /// Resolves once the backend call last spawned has started: the next one
     /// waits for it, so the calls reach the backend in the order they were
     /// read.
@@ -383,6 +413,7 @@ impl Link {
         let tx = self.tx.clone();
         self.tasks.spawn(async move {
             let _ = tx.send(Out::Conn(reply)).await;
+            None
         });
     }
 
@@ -396,6 +427,10 @@ impl Link {
     /// (a session takes a call's place in the conversation on its first
     /// poll), so a `clear` sent before a `turn` never clears that turn, and
     /// an `interrupt` sent after one stops it.
+    ///
+    /// The backend is the host's code: a panic in it ends the task with the
+    /// request's id and the panic, for `serve` to refuse the one and raise
+    /// the other.
     fn spawn<F, Fut>(&mut self, id: String, after_frames: bool, run: F)
     where
         F: FnOnce(BackendRef) -> Fut + Send + 'static,
@@ -406,20 +441,30 @@ impl Link {
         let mut written = self.written.subscribe();
         let (start, started) = oneshot::channel();
         let before = self.started.replace(started);
+        let owed = id.clone();
         self.tasks.spawn(async move {
-            // Ok, or Err when the one before was dropped unstarted: either
-            // way it is not ahead of this one.
-            if let Some(before) = before {
-                let _ = before.await;
+            let reply = caught(async move {
+                // Ok, or Err when the one before was dropped unstarted:
+                // either way it is not ahead of this one.
+                if let Some(before) = before {
+                    let _ = before.await;
+                }
+                let reply = match first_polled(run(backend.clone()), start).await {
+                    Ok(result) => Outbound::done(id, result),
+                    Err(e) => Outbound::refused(id, report(&e)),
+                };
+                if after_frames && let Ok(now) = backend.snapshot().await {
+                    let _ = written.wait_for(|w| w.seq >= now.last_seq).await;
+                }
+                reply
+            });
+            match reply.await {
+                Ok(reply) => {
+                    let _ = tx.send(Out::Conn(reply)).await;
+                    None
+                }
+                Err(panic) => Some(Panicked { id: owed, panic }),
             }
-            let reply = match first_polled(run(backend.clone()), start).await {
-                Ok(result) => Outbound::done(id, result),
-                Err(e) => Outbound::refused(id, report(&e)),
-            };
-            if after_frames && let Ok(now) = backend.snapshot().await {
-                let _ = written.wait_for(|w| w.seq >= now.last_seq).await;
-            }
-            let _ = tx.send(Out::Conn(reply)).await;
         });
     }
 
@@ -443,6 +488,7 @@ impl Link {
                     let why = "its catch-up was not written: a later events request replaced it";
                     let _ = tx.send(Out::Conn(Outbound::refused(owed, why))).await;
                 }
+                None
             });
             (id, sent)
         });
@@ -453,15 +499,23 @@ impl Link {
     /// The connection is over: what is queued still goes out, nothing more
     /// does (requests still waiting are dropped; their input stays queued).
     /// When the conversation ended, the stream the peer follows is written to
-    /// its last frame first.
-    async fn finish(mut self, closed: bool) {
+    /// its last frame first. A request whose backend call had panicked by
+    /// then is returned, so its panic is not lost with the rest.
+    async fn finish(mut self, closed: bool) -> Option<Panicked> {
         // The subscription stops as it drops, after its last frame or not.
         if let Some(mut pump) = self.pump.take()
             && closed
         {
             let _ = tokio::time::timeout(FLUSH_GRACE, &mut pump).await;
         }
-        self.tasks.shutdown().await;
+        self.tasks.abort_all();
+        let mut panicked = None;
+        while let Some(joined) = self.tasks.join_next().await {
+            if let Ok(Some(late)) = joined {
+                panicked.get_or_insert(late);
+            }
+        }
+        panicked
     }
 }
 
@@ -546,6 +600,20 @@ async fn pump(
         }
         mark.set(sub.last_seq());
     }
+}
+
+/// What `fut` gives, or the panic that unwound out of it. It is never polled
+/// again after a panic (it is dropped), so nothing sees what the panic left
+/// half done; the caller ends the connection and raises the panic again.
+async fn caught<F: Future>(fut: F) -> Result<F::Output, Box<dyn Any + Send>> {
+    let mut fut = std::pin::pin!(fut);
+    std::future::poll_fn(|cx| {
+        match panic::catch_unwind(AssertUnwindSafe(|| fut.as_mut().poll(cx))) {
+            Ok(polled) => polled.map(Ok),
+            Err(panic) => Poll::Ready(Err(panic)),
+        }
+    })
+    .await
 }
 
 /// `call`, telling `started` once it has been polled the first time: a

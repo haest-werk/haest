@@ -9,17 +9,13 @@ use std::{
     time::Duration,
 };
 
-use async_trait::async_trait;
 use haest_core::{
-    Agent, TurnOutcome,
+    Agent,
     testing::{ScriptedProvider, text_answer, tool_answer},
 };
 use haest_mods::{ApprovalAnswer, ApprovalRequest, Prompter};
-use haest_session::{
-    Backend, BackendRef, Control, History, Hub, HubOptions, Input, Meta, SessionError,
-    SessionHandle, SessionPrompter, Subscription,
-};
-use haest_wire::{Answer, Level, Origin, Snapshot};
+use haest_session::{BackendRef, Hub, HubOptions, SessionHandle, SessionPrompter};
+use haest_wire::{Level, Origin};
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncWriteExt, DuplexStream, WriteHalf},
@@ -760,6 +756,7 @@ async fn a_panic_in_the_hosts_sink_reaches_the_host() {
 mod cap;
 mod keepalive;
 mod order;
+mod panics;
 
 #[test]
 fn the_token_never_shows_in_debug_output() {

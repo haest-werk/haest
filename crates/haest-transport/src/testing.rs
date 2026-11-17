@@ -1,15 +1,20 @@
 //! What the crate's tests serve: a session over a scripted model, with a
-//! tool that runs until it is let go or stopped.
+//! tool that runs until it is let go or stopped; and a host's own backend
+//! over one.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::{
     Agent, AgentDeps, AgentOptions, JsonMap, ShutWorkspace, Tool, ToolContext, ToolError,
-    ToolOutput, ToolRef, Tools,
+    ToolOutput, ToolRef, Tools, TurnOutcome,
     testing::{ScriptedProvider, text_answer},
 };
-use haest_session::{Hub, SessionHandle, start};
+use haest_session::{
+    Backend, BoxFuture, Control, History, Hub, Input, Meta, SessionError, SessionHandle,
+    Subscription, start,
+};
+use haest_wire::{Answer, Snapshot};
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 
@@ -54,4 +59,69 @@ pub(crate) fn hub() -> Hub {
 
 pub(crate) fn answers(texts: &[&str]) -> ScriptedProvider {
     ScriptedProvider::new(texts.iter().map(|t| text_answer(t)))
+}
+
+/// What a [`Hooked`] backend's `history` does, given the session.
+type HistoryHook =
+    dyn Fn(SessionHandle<Agent>) -> BoxFuture<'static, Result<History, SessionError>> + Send + Sync;
+
+/// A host's own backend over a session: every call goes to the session but
+/// `history`, which the test writes (to count the calls that wait, or to
+/// break it).
+pub(crate) struct Hooked {
+    inner: SessionHandle<Agent>,
+    history: Box<HistoryHook>,
+}
+
+impl Hooked {
+    pub(crate) fn new(
+        inner: SessionHandle<Agent>,
+        history: impl Fn(SessionHandle<Agent>) -> BoxFuture<'static, Result<History, SessionError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self {
+            inner,
+            history: Box::new(history),
+        }
+    }
+
+    /// A backend whose `history` panics: a host's own bug.
+    pub(crate) fn panicking(inner: SessionHandle<Agent>) -> Self {
+        Self::new(inner, |_| {
+            Box::pin(async { panic!("the host's backend has a bug") })
+        })
+    }
+}
+
+#[async_trait]
+impl Backend for Hooked {
+    fn meta(&self) -> Meta {
+        self.inner.meta().clone()
+    }
+    async fn submit(&self, input: Input) -> Result<(), SessionError> {
+        self.inner.submit(input)
+    }
+    async fn turn(&self, input: Input) -> Result<TurnOutcome, SessionError> {
+        self.inner.turn(input).await
+    }
+    async fn control(&self, control: Control) -> Result<(), SessionError> {
+        self.inner.control(control).await
+    }
+    async fn answer(&self, ask: u64, answer: Answer) -> Result<(), SessionError> {
+        self.inner.answer(ask, answer)
+    }
+    fn subscribe(&self, after: u64) -> Subscription {
+        self.inner.subscribe(after)
+    }
+    async fn snapshot(&self) -> Result<Snapshot, SessionError> {
+        self.inner.snapshot().await
+    }
+    async fn history(&self) -> Result<History, SessionError> {
+        (self.history)(self.inner.clone()).await
+    }
+    async fn close(&self) {
+        self.inner.close().await;
+    }
 }

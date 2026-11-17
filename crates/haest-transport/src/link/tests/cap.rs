@@ -3,7 +3,10 @@
 //! would wait too is refused, and one answered at once is still served.
 
 use super::*;
-use crate::link::{MAX_IN_FLIGHT, OUT_BUFFER};
+use crate::{
+    link::{MAX_IN_FLIGHT, OUT_BUFFER},
+    testing::Hooked,
+};
 
 fn history(id: &str) -> Value {
     json!({"v": 1, "id": id, "type": "history"})
@@ -15,46 +18,24 @@ async fn within<T>(what: &str, fut: impl Future<Output = T>) -> T {
     waited.unwrap_or_else(|_| panic!("not within 2 s: {what}"))
 }
 
-/// A session whose `history` calls are counted while they wait.
-struct Counted {
+/// A session whose `history` calls are counted while they wait (`waiting`),
+/// and the most that ever waited at once (`most`).
+fn counted(
     inner: SessionHandle<Agent>,
-    waiting: Arc<AtomicUsize>,
-    most: Arc<AtomicUsize>,
-}
-
-#[async_trait]
-impl Backend for Counted {
-    fn meta(&self) -> Meta {
-        self.inner.meta().clone()
-    }
-    async fn submit(&self, input: Input) -> Result<(), SessionError> {
-        self.inner.submit(input)
-    }
-    async fn turn(&self, input: Input) -> Result<TurnOutcome, SessionError> {
-        self.inner.turn(input).await
-    }
-    async fn control(&self, control: Control) -> Result<(), SessionError> {
-        self.inner.control(control).await
-    }
-    async fn answer(&self, ask: u64, answer: Answer) -> Result<(), SessionError> {
-        self.inner.answer(ask, answer)
-    }
-    fn subscribe(&self, after: u64) -> Subscription {
-        self.inner.subscribe(after)
-    }
-    async fn snapshot(&self) -> Result<Snapshot, SessionError> {
-        self.inner.snapshot().await
-    }
-    async fn history(&self) -> Result<History, SessionError> {
-        let now = self.waiting.fetch_add(1, Ordering::SeqCst) + 1;
-        self.most.fetch_max(now, Ordering::SeqCst);
-        let history = self.inner.history().await;
-        self.waiting.fetch_sub(1, Ordering::SeqCst);
-        history
-    }
-    async fn close(&self) {
-        self.inner.close().await;
-    }
+    waiting: &Arc<AtomicUsize>,
+    most: &Arc<AtomicUsize>,
+) -> Hooked {
+    let (waiting, most) = (waiting.clone(), most.clone());
+    Hooked::new(inner, move |inner| {
+        let (waiting, most) = (waiting.clone(), most.clone());
+        Box::pin(async move {
+            let now = waiting.fetch_add(1, Ordering::SeqCst) + 1;
+            most.fetch_max(now, Ordering::SeqCst);
+            let history = inner.history().await;
+            waiting.fetch_sub(1, Ordering::SeqCst);
+            history
+        })
+    })
 }
 
 /// A peer that sends far more requests than it waits for replies to makes
@@ -68,12 +49,7 @@ async fn one_connection_has_at_most_its_cap_of_requests_in_flight() {
     ]);
     let (inner, go) = session(&model, hub());
     let (waiting, most) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
-    let counted = Counted {
-        inner,
-        waiting: waiting.clone(),
-        most: most.clone(),
-    };
-    let mut peer = Peer::parent(counted);
+    let mut peer = Peer::parent(counted(inner, &waiting, &most));
     peer.send(turn("t1", "wait")).await;
     peer.until(|f| ty(f) == "assistant").await;
 
@@ -121,12 +97,7 @@ async fn at_the_cap_an_interrupt_and_an_approval_answer_are_still_served() {
     let prompter = SessionPrompter::new(hub.clone());
     let (inner, _) = session(&model, hub);
     let waiting = Arc::new(AtomicUsize::new(0));
-    let counted = Counted {
-        inner,
-        waiting: waiting.clone(),
-        most: Arc::default(),
-    };
-    let mut peer = Peer::parent(counted);
+    let mut peer = Peer::parent(counted(inner, &waiting, &Arc::default()));
     peer.send(turn("t1", "wait")).await;
     peer.until(|f| ty(f) == "assistant").await;
     // History asked during a turn waits for its end: with the turn, the cap.

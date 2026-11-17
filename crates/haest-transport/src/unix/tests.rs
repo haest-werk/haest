@@ -16,7 +16,7 @@ use serde_json::json;
 use super::{SocketDiscovery, UnixPeer, UnixSocket, connect_session, running_sessions};
 use crate::{
     Grant, TransportError,
-    testing::{answers, hub, session},
+    testing::{Hooked, answers, hub, session},
 };
 
 /// A dir of its own, short enough for a socket path; gone at the end.
@@ -450,4 +450,34 @@ async fn closing_the_conversation_ends_the_transport_and_removes_its_files() {
         }
     });
     rest.await.unwrap();
+}
+
+/// A panic in the host's backend while it serves a connection: the request
+/// is refused, and the panic reaches the host from `ended`, never lost in
+/// the transport's task; the transport stops, and its files go.
+#[tokio::test]
+async fn a_panic_in_the_hosts_backend_reaches_the_host() {
+    let dir = Dir::new("panic");
+    let (s, _) = session(&answers(&[]), hub());
+    let attached = UnixSocket::new(&dir.0)
+        .attach(Hooked::panicking(s.clone()), Grant::watch(Origin::Agent))
+        .unwrap();
+    let mut peer = connect_session(&dir.0, "s1").await.unwrap();
+
+    let asked = peer.call(Request::History, |_| {});
+    let asked = tokio::time::timeout(Duration::from_secs(2), asked).await;
+    let asked = asked.expect("the request was answered");
+    assert!(
+        matches!(asked, Err(TransportError::Refused(_))),
+        "{asked:?}"
+    );
+
+    let ended = tokio::spawn(attached.ended());
+    let ended = tokio::time::timeout(Duration::from_secs(5), ended).await;
+    let panic = ended
+        .expect("the transport stopped")
+        .expect_err("ended returned instead of panicking");
+    assert!(panic.is_panic(), "{panic:?}");
+    assert!(!dir.0.join("s1.sock").exists() && !dir.0.join("s1.json").exists());
+    s.close().await;
 }
