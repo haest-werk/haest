@@ -70,6 +70,11 @@ impl Brakes {
             subagents: rt.subagents().clone(),
         }
     }
+
+    /// `text` on the terminal, as a warning.
+    pub(crate) fn warn(&self, text: &str) {
+        self.hooks.warn(text);
+    }
 }
 
 /// Whether `frame` says a turn of the conversation's own has started.
@@ -81,7 +86,8 @@ fn turn_started(frame: &Frame) -> bool {
 /// Ctrl+C stops the running turn; a second Ctrl+C in the same turn quits
 /// (a tool that ignores the stop must not hold the terminal hostage), after
 /// [`wind_down`]. Between turns it does nothing here: the prompt reads its
-/// own Ctrl+C, and print mode's wait has its own ([`settle`]). `stream`
+/// own Ctrl+C, a slash command has its own ([`unless_interrupted`]), and
+/// print mode's wait has its own ([`settle`]). `stream`
 /// says when a new turn starts; the watch ends with it.
 #[expect(
     clippy::exit,
@@ -115,6 +121,24 @@ pub(crate) fn watch_interrupts(brakes: Arc<Brakes>, mut stream: Subscription) ->
             }
         }
     })
+}
+
+/// `work`, unless Ctrl+C comes first: then None, and `work` is dropped where
+/// it waits (a session job it waits for is withdrawn, so the session goes
+/// on). How the human gives up on a slash command whose mod never answers:
+/// between turns nothing else acts on Ctrl+C ([`watch_interrupts`] leaves
+/// it to the prompt).
+pub(crate) async fn unless_interrupted<T>(work: impl Future<Output = T>) -> Option<T> {
+    tokio::pin!(work);
+    tokio::select! {
+        biased;
+        out = &mut work => Some(out),
+        signal = tokio::signal::ctrl_c() => match signal {
+            Ok(()) => None,
+            // No Ctrl+C to be had: the work's end is the only way on.
+            Err(_) => Some(work.await),
+        },
+    }
 }
 
 /// A turn the human started: the mods' `prompt.submit` may rewrite the text

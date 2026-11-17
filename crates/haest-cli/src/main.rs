@@ -109,11 +109,16 @@ fn print_input(args: &Args) -> Option<String> {
 /// `input` asked once ([`print_input`], read before the build).
 async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode {
     let input = input.to_string();
-    let outcome = session
-        .with(move |rt| Box::pin(async move { commands::resolve(rt, &input).await }))
-        .await;
+    let outcome = run::unless_interrupted(
+        session.with(move |rt| Box::pin(async move { commands::resolve(rt, &input).await })),
+    )
+    .await;
     let code = match outcome {
-        Ok(Outcome::Send(text)) => match run::human(session, text).await {
+        None => {
+            brakes.warn("Stopped the command.");
+            ExitCode::from(130)
+        }
+        Some(Ok(Outcome::Send(text))) => match run::human(session, text).await {
             Some(end) => {
                 // Interrupted: the human wants out, not the background work's answers.
                 if end.stop_reason != haest::StopReason::Aborted {
@@ -123,8 +128,8 @@ async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode
             }
             None => ExitCode::FAILURE,
         },
-        Ok(Outcome::Done | Outcome::Exit) => ExitCode::SUCCESS,
-        Err(_) => ExitCode::FAILURE,
+        Some(Ok(Outcome::Done | Outcome::Exit)) => ExitCode::SUCCESS,
+        Some(Err(_)) => ExitCode::FAILURE,
     };
     let _ = session
         .with(|rt| {

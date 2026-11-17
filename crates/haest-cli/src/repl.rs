@@ -18,20 +18,24 @@ use rustyline::{DefaultEditor, ExternalPrinter, error::ReadlineError};
 use crate::{
     changes,
     commands::{Outcome, resolve},
-    run::Session,
+    run::{self, Session},
     term::{Runtime, TermUi},
 };
 
 /// One line the human typed: a slash command runs on the conversation; text
 /// goes as the human's turn, after the turns that waited. False = quit.
-async fn handle(session: &Session, line: &str) -> anyhow::Result<bool> {
+/// Ctrl+C gives up a command that does not end (a mod's that never answers).
+async fn handle(session: &Session, ui: &TermUi, line: &str) -> anyhow::Result<bool> {
     // Held, so the line is queued before a turn could start that it would
     // be steered into.
     let hold = session.hold().await?;
     let line = line.to_string();
-    let outcome = session
-        .with(move |rt| Box::pin(async move { resolve(rt, &line).await }))
-        .await?;
+    let resolved = session.with(move |rt| Box::pin(async move { resolve(rt, &line).await }));
+    let Some(outcome) = run::unless_interrupted(resolved).await else {
+        ui.warn("Stopped the command.");
+        return Ok(true);
+    };
+    let outcome = outcome?;
     match outcome {
         Outcome::Send(text) => {
             let turn = session.send_input(haest::session::Input::human(text))?;
@@ -135,7 +139,7 @@ pub(crate) async fn repl(
     let above = above_prompt(&mut editor);
 
     let mut go_on = match first {
-        Some(p) => handle(session, &p).await?,
+        Some(p) => handle(session, ui, &p).await?,
         None => true,
     };
     let mut guard = QuitGuard::default();
@@ -173,7 +177,7 @@ pub(crate) async fn repl(
                 let _ = editor.add_history_entry(line.as_str());
                 // What arrived while the prompt was open came first.
                 session.idle().await;
-                handle(session, &line).await?
+                handle(session, ui, &line).await?
             }
             Err(ReadlineError::Interrupted) => true,
             Err(ReadlineError::Eof) => false,
