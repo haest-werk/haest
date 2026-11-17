@@ -23,13 +23,26 @@ pub struct Peer<S, K> {
     next_id: u64,
 }
 
+/// The `hello` it was greeted with (its token, if any, redacted) and the
+/// last request id; never the source or the sink.
+impl<S, K> std::fmt::Debug for Peer<S, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Peer")
+            .field("hello", &self.hello)
+            .field("next_id", &self.next_id)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<S: LineSource, K: LineSink> Peer<S, K> {
     /// The connection over `source` and `sink`, once its `hello` is read.
     ///
     /// # Errors
     ///
-    /// [`TransportError::Ended`] when it ends first, [`TransportError::NotAFrame`]
-    /// when the first line is not a `hello`, or a read error.
+    /// [`TransportError::Ended`] when it ends first,
+    /// [`TransportError::NotAFrame`] when the first line is not a frame,
+    /// [`TransportError::NotHello`] when it is another frame, or a read
+    /// error.
     pub async fn start(mut source: S, sink: K) -> Result<Self, TransportError> {
         let line = source.next_line().await.ok_or(TransportError::Ended)??;
         let hello = frame(&line)?;
@@ -62,12 +75,12 @@ impl<S: LineSource, K: LineSink> Peer<S, K> {
     ///
     /// # Errors
     ///
-    /// The write failed.
+    /// The write failed, or [`TransportError::Encode`].
     pub async fn send(&mut self, request: Request) -> Result<String, TransportError> {
         self.next_id += 1;
         let id = self.next_id.to_string();
         let line = serde_json::to_string(&Inbound::new(id.clone(), request))
-            .map_err(TransportError::NotAFrame)?;
+            .map_err(TransportError::Encode)?;
         self.sink.send_line(line).await?;
         Ok(id)
     }

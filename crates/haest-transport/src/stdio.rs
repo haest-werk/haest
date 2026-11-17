@@ -158,9 +158,23 @@ impl<R, W> Stdio<R, W> {
     }
 
     /// Start otherwise: follow from another seq, or not until asked.
-    pub fn starting(mut self, start: Start) -> Self {
+    pub fn with_start(mut self, start: Start) -> Self {
         self.start = start;
         self
+    }
+
+    /// How the connection starts.
+    pub fn start(&self) -> &Start {
+        &self.start
+    }
+}
+
+/// How it starts; never the pipes.
+impl<R, W> std::fmt::Debug for Stdio<R, W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Stdio")
+            .field("start", &self.start)
+            .finish_non_exhaustive()
     }
 }
 

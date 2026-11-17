@@ -21,7 +21,6 @@
 //! refuses the handshake with 401 or 403, is not dialed again.
 
 use std::{
-    fmt,
     hash::{BuildHasher, Hasher},
     sync::{Arc, OnceLock},
     time::{Duration, Instant},
@@ -32,6 +31,7 @@ use futures::{
     stream::{SplitSink, SplitStream},
 };
 use haest_session::BackendRef;
+use haest_wire::Token;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     Connector, MaybeTlsStream, WebSocketStream, connect_async_tls_with_config,
@@ -40,8 +40,7 @@ use tokio_tungstenite::{
 
 use crate::{
     Attached, Ended, Grant, LineSink, LineSource, Start, Transport, TransportError,
-    link::{REDACTED, until_closed},
-    serve,
+    link::until_closed, serve,
 };
 
 /// Close codes that mean the broker refused the token: no point dialing again.
@@ -60,38 +59,28 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// output never shows the token.
 ///
 /// ```no_run
-/// # async fn link(session: impl haest_session::Backend + 'static) -> Result<(), haest_transport::TransportError> {
+/// # async fn link(session: impl haest_session::Backend + 'static, token: String) -> Result<(), haest_transport::TransportError> {
 /// use haest_transport::{Broker, Grant, Transport};
 /// use haest_wire::Origin;
 ///
 /// // The token comes from the host's keys; it rides in the hello.
-/// let token = std::env::var("BROKER_TOKEN").ok();
-/// let link = Broker::new("wss://broker.example/agents").token(token);
+/// let link = Broker::new("wss://broker.example/agents").with_token(token);
 /// let attached = link.attach(session, Grant::watch(Origin::Agent))?;
 /// // Ends when the conversation does, or when the broker refuses the token.
 /// let why = attached.ended().await;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Broker {
     url: String,
-    token: Option<String>,
+    token: Option<Token>,
     backoff: Backoff,
 }
 
-impl fmt::Debug for Broker {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Broker")
-            .field("url", &self.url)
-            .field("token", &self.token.as_ref().map(|_| REDACTED))
-            .field("backoff", &self.backoff)
-            .finish()
-    }
-}
-
 impl Broker {
-    /// A link to the broker at `url` (`ws://` or `wss://`), with no token.
+    /// A link to the broker at `url` (`ws://` or `wss://`), with no token
+    /// and the default [`Backoff`].
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -101,15 +90,30 @@ impl Broker {
     }
 
     /// The token the `hello` carries.
-    pub fn token(mut self, token: Option<String>) -> Self {
-        self.token = token;
+    pub fn with_token(mut self, token: impl Into<Token>) -> Self {
+        self.token = Some(token.into());
         self
     }
 
     /// How long to wait between dials.
-    pub fn backoff(mut self, backoff: Backoff) -> Self {
+    pub fn with_backoff(mut self, backoff: Backoff) -> Self {
         self.backoff = backoff;
         self
+    }
+
+    /// The broker's URL.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// The token the `hello` carries, if any.
+    pub fn token(&self) -> Option<&Token> {
+        self.token.as_ref()
+    }
+
+    /// The wait between dials.
+    pub fn backoff(&self) -> Backoff {
+        self.backoff
     }
 }
 

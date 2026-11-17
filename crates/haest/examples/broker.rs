@@ -99,8 +99,8 @@ async fn main() -> Result<(), BoxError> {
         cap: Duration::from_secs(1),
     };
     let attached = Broker::new(&url)
-        .token(Some("example-token".into()))
-        .backoff(quick)
+        .with_token("example-token")
+        .with_backoff(quick)
         .attach(session.clone(), Grant::command(Origin::Agent))?;
 
     // The first link: hello, the ack from the start, a turn.

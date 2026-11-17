@@ -177,8 +177,8 @@ async fn the_hello_carries_the_token_and_nothing_else_goes_before_the_ack() {
     let (backend, _) = session(&answers(&["before"]), hub());
     backend.turn(Input::human("first")).await.unwrap();
     let link = Broker::new(&broker.url)
-        .token(Some("t0k".into()))
-        .backoff(FAST);
+        .with_token("t0k")
+        .with_backoff(FAST);
     let _attached = link.attach(backend, Grant::watch(Origin::Agent)).unwrap();
 
     let mut side = broker.link().await;
@@ -219,7 +219,7 @@ async fn a_cut_link_resumes_from_the_brokers_ack_and_loses_nothing() {
     let mut everything = hub.subscribe(0);
     let (backend, go) = session(&model, hub);
     let _attached = Broker::new(&broker.url)
-        .backoff(FAST)
+        .with_backoff(FAST)
         .attach(backend.clone(), Grant::watch(Origin::Agent))
         .unwrap();
 
@@ -293,7 +293,7 @@ async fn a_gap_when_the_ring_no_longer_holds_what_the_broker_missed() {
     }
     let (s, _) = session(&answers(&[]), hub);
     let _attached = Broker::new(&broker.url)
-        .backoff(FAST)
+        .with_backoff(FAST)
         .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
 
@@ -311,8 +311,8 @@ async fn a_refused_token_stops_the_dialing() {
     let mut broker = TestBroker::start(None).await;
     let (s, _) = session(&answers(&[]), hub());
     let attached = Broker::new(&broker.url)
-        .token(Some("wrong".into()))
-        .backoff(FAST)
+        .with_token("wrong")
+        .with_backoff(FAST)
         .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
     let mut side = broker.link().await;
@@ -332,7 +332,7 @@ async fn a_refused_token_stops_the_dialing() {
     let broker = TestBroker::start(Some(401)).await;
     let (s, _) = session(&answers(&[]), hub());
     let attached = Broker::new(&broker.url)
-        .backoff(FAST)
+        .with_backoff(FAST)
         .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
     let ended = tokio::time::timeout(Duration::from_secs(5), attached.ended())
@@ -350,7 +350,7 @@ async fn a_link_the_broker_closes_is_dialed_again() {
     let mut broker = TestBroker::start(None).await;
     let (s, _) = session(&answers(&[]), hub());
     let _attached = Broker::new(&broker.url)
-        .backoff(FAST)
+        .with_backoff(FAST)
         .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
     let mut side = broker.link().await;
@@ -371,7 +371,7 @@ async fn the_brokers_commands_obey_the_access_the_host_gave() {
         let model = answers(&["from the broker"]);
         let (s, _) = session(&model, hub());
         let _attached = Broker::new(&broker.url)
-            .backoff(FAST)
+            .with_backoff(FAST)
             .attach(s, grant)
             .unwrap();
         let mut side = broker.link().await;
@@ -389,7 +389,7 @@ async fn the_link_ends_with_the_conversation_and_only_a_ws_url_is_dialed() {
     let mut broker = TestBroker::start(None).await;
     let (backend, _) = session(&answers(&[]), hub());
     let attached = Broker::new(&broker.url)
-        .backoff(FAST)
+        .with_backoff(FAST)
         .attach(backend.clone(), Grant::watch(Origin::Agent))
         .unwrap();
     broker.link().await.next().await.unwrap();
@@ -419,7 +419,7 @@ fn the_wait_is_full_jitter_up_to_a_doubling_cap() {
 
 #[test]
 fn the_token_never_shows_in_debug_output() {
-    let link = Broker::new("wss://broker.example/agents").token(Some("TOKEN-SECRET".into()));
+    let link = Broker::new("wss://broker.example/agents").with_token("TOKEN-SECRET");
     let shown = format!("{link:?}");
     assert!(!shown.contains("SECRET"), "{shown}");
     assert!(shown.contains("broker.example"), "{shown}");

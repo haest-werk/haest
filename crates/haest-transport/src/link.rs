@@ -3,7 +3,7 @@
 //! asked for them, and a `reply` for every request. Every transport runs its
 //! connections through here, so the rules are the same on each.
 
-use std::{fmt, future::Future, sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use haest_core::{Effort, TurnOutcome, error::report};
 use haest_session::{BackendRef, Body, Control, Frame, Input, SessionError, Subscription};
@@ -38,31 +38,21 @@ pub trait LineSink: Send + 'static {
     ) -> impl Future<Output = Result<(), TransportError>> + Send;
 }
 
-/// How a connection starts. Its Debug output never shows the token.
-#[derive(Clone, Default)]
+/// How a connection starts.
+#[derive(Debug, Clone, Default)]
 pub struct Start {
     /// Follow the stream from after this seq at once, as if the peer had
     /// sent `events {after, follow: true}` (a parent on stdio follows from
     /// 0). None: the peer asks for what it wants.
     pub follow_from: Option<u64>,
-    /// A credential for the `hello` (a broker reads it there, never in a URL).
-    pub token: Option<String>,
+    /// A credential for the `hello` (a broker reads it there, never in a
+    /// URL). `Debug` never shows it.
+    pub token: Option<Token>,
 }
 
-/// What a token shows as in Debug output.
-pub(crate) const REDACTED: &str = "<redacted>";
-
-impl fmt::Debug for Start {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Start")
-            .field("follow_from", &self.follow_from)
-            .field("token", &self.token.as_ref().map(|_| REDACTED))
-            .finish()
-    }
-}
-
-/// Why a connection ended.
+/// Why a connection ended. More reasons may come: a `match` has a `_` arm.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Ended {
     /// The peer is gone: its input ended, or it stopped taking frames.
     PeerLeft,
@@ -172,14 +162,14 @@ struct Link {
 impl Link {
     /// The first frame: who this is, and what the peer may do. Err when the
     /// conversation has already ended.
-    async fn hello(&mut self, token: Option<String>) -> Result<(), ()> {
+    async fn hello(&mut self, token: Option<Token>) -> Result<(), ()> {
         let now = self.backend.snapshot().await.map_err(|_| ())?;
         let hello = Outbound::Hello {
             session: now.session,
             model_spec: now.model_spec,
             pid: self.backend.meta().pid,
             access: self.grant.access,
-            token: token.map(Token::from),
+            token,
         };
         self.tx.send(Out::Conn(hello)).await.map_err(|_| ())
     }

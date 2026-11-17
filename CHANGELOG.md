@@ -1147,6 +1147,25 @@ against it; the wire JSON is unchanged):
   `UnixSocket::new(dir).attach(session.clone(), grant)`. An `Arc` of any
   backend, or an `Arc<dyn Backend>`, still goes in as it is. A transport
   keeps one `BackendRef` and clones it per connection.
+- Setters are `with_*`, as everywhere else in haest:
+  `Broker::new(url).token(Some(t)).backoff(b)` ->
+  `Broker::new(url).with_token(t).with_backoff(b)` (`with_token` takes a
+  `String`, a `&str` or a `Token`); `Stdio::starting(start)` ->
+  `Stdio::with_start(start)`. `Broker` has the getters `url`, `token` and
+  `backoff`, `Stdio` has `start`.
+- `Start::token` is an `Option<Token>` (haest-wire's), so `Start`,
+  `Broker` and the hello all keep it out of `Debug` the same way:
+  `token: Some("t".to_string())` -> `token: Some("t".into())`.
+- `#[non_exhaustive]` on `Ended`: a `match` adds a `_` arm.
+- `NdjsonSource`, `NdjsonSink`, `Peer` and `Stdio` implement `Debug`
+  (counts and the start, never the pipes or a line's text).
+- `TransportError::Path` says what failed on the path: it has a `what`
+  verb, and displays `could not bind /run/haest/s1.sock` where it said the
+  bare path. A request or discovery file that cannot be written as JSON is
+  the new `TransportError::Encode`, no longer `NotAFrame`.
+- `Peer::start`'s docs say `NotHello` for a first frame that is not a
+  `hello` (`NotAFrame` only when the line is not a frame at all).
+- `#![warn(missing_docs)]`, as the other crates have.
 
 ### haest-issues
 

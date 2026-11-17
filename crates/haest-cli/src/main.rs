@@ -145,6 +145,7 @@ async fn stdio_mode(session: &Session) -> ExitCode {
     match attached.ended().await {
         Ended::PeerLeft | Ended::Closed => ExitCode::SUCCESS,
         Ended::Failed(e) => fail(1, format!("reading stdin: {}", report(&e))),
+        other => fail(1, format!("the connection ended: {other:?}")),
     }
 }
 
@@ -214,7 +215,11 @@ fn broker_link(
     // Said without its query: the URL is not where a secret goes, but one
     // may be there.
     let shown = url.split('?').next().unwrap_or_default().to_string();
-    match Broker::new(url).token(token).attach(session.clone(), grant) {
+    let mut link = Broker::new(url);
+    if let Some(token) = token {
+        link = link.with_token(token);
+    }
+    match link.attach(session.clone(), grant) {
         Ok(attached) => {
             ui.info(&format!("Broker link: {shown} ({})", access.as_str()));
             let ui = ui.clone();

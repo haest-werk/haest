@@ -112,11 +112,11 @@ impl Transport for UnixSocket {
         let socket = self.dir.join(format!("{}.sock", meta.sid));
         let file = self.dir.join(format!("{}.json", meta.sid));
         clear_stale(&socket)?;
-        let listener = UnixListener::bind(&socket).map_err(|e| at(&socket, e))?;
+        let listener = UnixListener::bind(&socket).map_err(|e| at("bind", &socket, e))?;
         // From here on, a failure removes what was made.
         let mut files = Files(vec![socket.clone()]);
         fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))
-            .map_err(|e| at(&socket, e))?;
+            .map_err(|e| at("make private", &socket, e))?;
         let discovery = SocketDiscovery {
             sid: meta.sid,
             pid: meta.pid,
@@ -254,7 +254,7 @@ pub async fn connect_session(dir: &Path, id: &str) -> Result<UnixPeer, Transport
     };
     let stream = UnixStream::connect(&socket)
         .await
-        .map_err(|e| at(&socket, e))?;
+        .map_err(|e| at("connect to", &socket, e))?;
     let (read, write) = stream.into_split();
     Peer::start(NdjsonSource::new(read), NdjsonSink::new(write)).await
 }
@@ -276,8 +276,9 @@ fn discoveries(dir: &Path) -> Vec<(PathBuf, SocketDiscovery)> {
 
 /// `dir`, there and the user's own (0700).
 fn private_dir(dir: &Path) -> Result<(), TransportError> {
-    fs::create_dir_all(dir).map_err(|e| at(dir, e))?;
-    fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(|e| at(dir, e))
+    fs::create_dir_all(dir).map_err(|e| at("create", dir, e))?;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+        .map_err(|e| at("make private", dir, e))
 }
 
 /// A socket left at `socket`: refused when a running session still answers
@@ -289,13 +290,13 @@ fn clear_stale(socket: &Path) -> Result<(), TransportError> {
     if std::os::unix::net::UnixStream::connect(socket).is_ok() {
         return Err(TransportError::InUse(socket.into()));
     }
-    fs::remove_file(socket).map_err(|e| at(socket, e))
+    fs::remove_file(socket).map_err(|e| at("remove", socket, e))
 }
 
 /// `value` as JSON at `path`, 0600, whole or not at all.
 fn write_private(path: &Path, value: &SocketDiscovery) -> Result<(), TransportError> {
     let tmp = path.with_extension("json.tmp");
-    let body = serde_json::to_vec_pretty(value).map_err(TransportError::NotAFrame)?;
+    let body = serde_json::to_vec_pretty(value).map_err(TransportError::Encode)?;
     let write = || -> std::io::Result<()> {
         let mut f = fs::OpenOptions::new()
             .write(true)
@@ -306,11 +307,13 @@ fn write_private(path: &Path, value: &SocketDiscovery) -> Result<(), TransportEr
         f.write_all(&body)?;
         fs::rename(&tmp, path)
     };
-    write().map_err(|e| at(path, e))
+    write().map_err(|e| at("write", path, e))
 }
 
-fn at(path: &Path, source: std::io::Error) -> TransportError {
+/// `what` (a verb) failed on `path`.
+fn at(what: &'static str, path: &Path, source: std::io::Error) -> TransportError {
     TransportError::Path {
+        what,
         path: path.into(),
         source,
     }

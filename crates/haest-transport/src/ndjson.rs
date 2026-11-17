@@ -31,6 +31,16 @@ impl<R> NdjsonSource<R> {
     }
 }
 
+/// How many lines wait and whether the stream ended; never their text.
+impl<R> std::fmt::Debug for NdjsonSource<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NdjsonSource")
+            .field("ready", &self.ready.len())
+            .field("ended", &self.ended)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<R: AsyncRead + Unpin + Send> LineSource for NdjsonSource<R> {
     /// Cancel-safe: a line read but not yet taken stays for the next call.
     async fn next_line(&mut self) -> Option<Result<String, TransportError>> {
@@ -68,6 +78,13 @@ impl<W> NdjsonSink<W> {
     /// Lines to `write`.
     pub fn new(write: W) -> Self {
         Self { write }
+    }
+}
+
+/// Holds nothing to show but its writer.
+impl<W> std::fmt::Debug for NdjsonSink<W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NdjsonSink").finish_non_exhaustive()
     }
 }
 

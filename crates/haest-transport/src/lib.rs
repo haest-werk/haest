@@ -86,6 +86,7 @@
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(missing_docs)]
 
 use std::path::PathBuf;
 
@@ -226,9 +227,12 @@ pub enum TransportError {
     /// The peer sent a line past the limit without its newline.
     #[error(transparent)]
     LineTooLong(#[from] LineTooLong),
-    /// A file or a socket at this path could not be made, read or reached.
-    #[error("{}", path.display())]
+    /// A file or a socket at this path could not be made, read or reached:
+    /// `could not bind /run/haest/s1.sock`.
+    #[error("could not {what} {}", path.display())]
     Path {
+        /// What was tried, a verb: `bind`, `connect to`, `write`.
+        what: &'static str,
         /// The path.
         path: PathBuf,
         /// What failed.
@@ -247,6 +251,9 @@ pub enum TransportError {
     /// A line that is not a frame this version reads.
     #[error("a line that is not a frame")]
     NotAFrame(#[source] serde_json::Error),
+    /// A request or a discovery file could not be written as JSON.
+    #[error("could not write it as JSON")]
+    Encode(#[source] serde_json::Error),
     /// The first frame was not `hello`.
     #[error("the connection did not start with hello")]
     NotHello,
