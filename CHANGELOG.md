@@ -1852,9 +1852,10 @@ against it; the wire JSON is unchanged):
   `let attached = Stdio::process().attach(s, g)?;` ->
   `let attached = Stdio::process().attach(s, g);`.
 - `Ended` implements `Display` (`the peer left`, `the conversation ended`,
-  `reading from the peer failed: ` and the error with its causes), so a
-  host shows why a connection ended without Debug text; the `haest`
-  command's "the connection ended" line uses it.
+  `reading from the peer failed: ` and the error with its causes, or a
+  broker's refusal of the token as it is: `the broker refused the link
+  (401): ...`), so a host shows why a connection ended without Debug text;
+  the `haest` command's "the connection ended" line uses it.
 - `NdjsonSource::with_limit` sets the longest line it takes (64 MiB by
   default; `limit()` reads it), and the source keeps one read buffer
   where it allocated 16 KiB on every `next_line`, even with a line

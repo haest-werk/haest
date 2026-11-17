@@ -64,17 +64,20 @@ pub enum Ended {
     PeerLeft,
     /// The conversation ended (a `close` request, or the host closed it).
     Closed,
-    /// Reading from the peer failed.
+    /// Reading from the peer failed, or a broker refused the token
+    /// ([`TransportError::Auth`]).
     Failed(TransportError),
 }
 
-/// For a person: `the peer left`, `the conversation ended`, or `reading from
-/// the peer failed: ` and the error with its causes.
+/// For a person: `the peer left`, `the conversation ended`, `reading from
+/// the peer failed: ` and the error with its causes, or, for a refused
+/// token, the broker's refusal as it is.
 impl fmt::Display for Ended {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Ended::PeerLeft => f.write_str("the peer left"),
             Ended::Closed => f.write_str("the conversation ended"),
+            Ended::Failed(e @ TransportError::Auth { .. }) => f.write_str(&report(e)),
             Ended::Failed(e) => write!(f, "reading from the peer failed: {}", report(e)),
         }
     }

@@ -72,6 +72,15 @@ fn an_ended_connection_says_why_in_words() {
         failed.to_string(),
         "reading from the peer failed: could not read /run/x.sock: reset by peer"
     );
+    // A broker that refused the token at dial time: nothing was read.
+    let refused = Ended::Failed(TransportError::Auth {
+        code: 401,
+        reason: "unknown token".into(),
+    });
+    assert_eq!(
+        refused.to_string(),
+        "the broker refused the link (401): unknown token"
+    );
 }
 
 /// A path error says what was tried on the path, not the path alone.
