@@ -144,6 +144,8 @@ pub struct SandboxWorkspace {
 impl SandboxWorkspace {
     /// The default sandbox: a copy-on-write overlay of `mounts.cwd`, the real
     /// writable and readable dirs at their own paths, a scratch disk elsewhere.
+    /// A relative directory is taken from this process's current directory,
+    /// now.
     ///
     /// Its [`Workspace::changes`] is the overlay's
     /// [`OverlayChanges`](crate::OverlayChanges): what
@@ -152,8 +154,10 @@ impl SandboxWorkspace {
     /// # Errors
     ///
     /// When the project or a mounted directory does not exist or cannot be
-    /// opened: the [`OpenSandboxError`] names it.
+    /// opened, is an empty path, or is relative and the current directory
+    /// cannot be read: the [`OpenSandboxError`] names it.
     pub async fn open(mounts: SandboxMounts) -> Result<Self, OpenSandboxError> {
+        let mounts = mounts.absolute()?;
         let changes = mounts::project_overlay(&mounts.cwd).await?;
         let shell_fs = mounts::sandbox_fs(&mounts, &changes).await?;
         let fs = FsRef::new(HaestFsOverBashkit::new(shell_fs.clone()));

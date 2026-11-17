@@ -22,7 +22,8 @@ const MEMORY_BYTES: u64 = 256 * 1024 * 1024;
 /// ([`SandboxWorkspace::open`](crate::SandboxWorkspace::open)) shows, and how.
 ///
 /// Every directory is mounted at its own path, so a path means the same inside
-/// the sandbox and out.
+/// the sandbox and out. A relative one is taken from this process's current
+/// directory when the sandbox opens, as the real disk reads it.
 ///
 /// ```text
 ///   cwd         copy-on-write overlay of the project: reads from disk, writes in memory
@@ -48,11 +49,16 @@ const MEMORY_BYTES: u64 = 256 * 1024 * 1024;
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct SandboxMounts {
-    /// The project: overlaid, never written.
+    /// The project: overlaid, never written. A relative path is taken from
+    /// the process's current directory when the sandbox opens.
     pub cwd: PathBuf,
     /// Real directories the sandbox may write through to. Must already exist.
+    /// A relative path is taken from the process's current directory when the
+    /// sandbox opens.
     pub writable: Vec<PathBuf>,
-    /// Real directories the sandbox may read. Must already exist.
+    /// Real directories the sandbox may read. Must already exist. A relative
+    /// path is taken from the process's current directory when the sandbox
+    /// opens.
     pub readable: Vec<PathBuf>,
 }
 
@@ -77,6 +83,31 @@ impl SandboxMounts {
         self.readable.push(dir.into());
         self
     }
+
+    /// Every directory as one absolute path, which the sandbox opens, mounts
+    /// and applies to: a relative one from this process's current directory,
+    /// as the real disk reads it, dots resolved lexically. An empty path is
+    /// refused.
+    pub(crate) fn absolute(self) -> Result<Self, OpenSandboxError> {
+        let abs = |dir: PathBuf| {
+            std::path::absolute(&dir)
+                .map(|a| normalize(&a))
+                .map_err(|e| OpenSandboxError::new(&dir, e))
+        };
+        Ok(Self {
+            cwd: abs(self.cwd)?,
+            writable: self
+                .writable
+                .into_iter()
+                .map(abs)
+                .collect::<Result<_, _>>()?,
+            readable: self
+                .readable
+                .into_iter()
+                .map(abs)
+                .collect::<Result<_, _>>()?,
+        })
+    }
 }
 
 /// What a mounted directory is in the sandbox.
@@ -90,18 +121,18 @@ enum Role {
     Readable,
 }
 
-/// Every directory to mount, once each: the same directory listed twice keeps
-/// its first role (`cwd`, then writable, then readable). Nesting is the mount
-/// table's to resolve (the deepest mount holding a path wins).
+/// Every directory to mount, once each, from mounts made
+/// [`absolute`](SandboxMounts::absolute): the same directory listed twice
+/// keeps its first role (`cwd`, then writable, then readable). Nesting is the
+/// mount table's to resolve (the deepest mount holding a path wins).
 fn roles(m: &SandboxMounts) -> Vec<(PathBuf, Role)> {
     let claims = std::iter::once((&m.cwd, Role::Project))
         .chain(m.writable.iter().map(|d| (d, Role::Writable)))
         .chain(m.readable.iter().map(|d| (d, Role::Readable)));
     let mut out: Vec<(PathBuf, Role)> = Vec::new();
     for (dir, role) in claims {
-        let dir = normalize(dir);
-        if !out.iter().any(|(taken, _)| *taken == dir) {
-            out.push((dir, role));
+        if !out.iter().any(|(taken, _)| taken == dir) {
+            out.push((dir.clone(), role));
         }
     }
     out
@@ -187,8 +218,9 @@ pub(crate) async fn project_overlay(cwd: &Path) -> Result<OverlayChanges, OpenSa
     Ok(OverlayChanges::new(Arc::new(overlay), Arc::new(Disk), cwd))
 }
 
-/// The whole sandbox file system: `changes`' recorder at `cwd`, the real
-/// writable and readable dirs, and a scratch disk under everything else.
+/// The whole sandbox file system, over mounts made
+/// [`absolute`](SandboxMounts::absolute): `changes`' recorder at `cwd`, the
+/// real writable and readable dirs, and a scratch disk under everything else.
 pub(crate) async fn sandbox_fs(
     m: &SandboxMounts,
     changes: &OverlayChanges,
@@ -220,10 +252,11 @@ mod tests {
         let m = SandboxMounts::new("/proj")
             .with_writable("/proj/spill")
             .with_writable("/proj/")
+            .with_writable("/proj/./x/..")
             .with_readable("/home")
             .with_readable("/proj/spill");
         assert_eq!(
-            roles(&m),
+            roles(&m.absolute().unwrap()),
             [
                 (p("/proj"), Role::Project),
                 (p("/proj/spill"), Role::Writable),

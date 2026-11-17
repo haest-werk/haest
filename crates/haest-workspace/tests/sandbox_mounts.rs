@@ -13,6 +13,55 @@ fn mode(path: &std::path::Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
+/// A temp dir inside this process's current directory (the crate's root), so
+/// a test can name it by a relative path without changing the process-wide
+/// current directory.
+fn tempdir_here() -> (tempfile::TempDir, std::path::PathBuf) {
+    let here = std::env::current_dir().unwrap();
+    let t = tempfile::tempdir_in(&here).unwrap();
+    let rel = t.path().strip_prefix(&here).unwrap().to_path_buf();
+    (t, rel)
+}
+
+/// A relative project was mounted at `/` + its path, and the overlay applied
+/// to the path as it was: "." put the project over the sandbox's root, the
+/// tools found nothing at the project's real path, and scratch writes became
+/// changes to apply.
+#[tokio::test]
+async fn a_relative_project_is_mounted_at_its_real_path() {
+    let (t, rel) = tempdir_here();
+    std::fs::write(t.path().join("a.txt"), "hello\n").unwrap();
+    let ws = SandboxWorkspace::open(SandboxMounts::new(&rel))
+        .await
+        .unwrap();
+
+    let real = t.path().join("a.txt");
+    assert_eq!(ws.fs().read_to_string(&real).await.unwrap(), "hello\n");
+    let r = ws
+        .shell(
+            "cat a.txt && mkdir -p /tmp && echo x > /tmp/n.txt",
+            opts(t.path()),
+        )
+        .await;
+    assert_eq!(r.stdout, "hello\n", "{r:?}");
+    assert!(ws.changes().unwrap().list().await.is_empty());
+}
+
+/// A relative writable dir was mounted at `/` + its path, so a write to its
+/// real path went to the scratch disk and never reached the disk.
+#[tokio::test]
+async fn a_relative_writable_dir_writes_through_at_its_real_path() {
+    let (_t, dir) = tempdir();
+    let (o, rel) = tempdir_here();
+    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).with_writable(&rel))
+        .await
+        .unwrap();
+
+    let kept = o.path().join("kept.txt");
+    ws.fs().write(&kept, b"kept").await.unwrap();
+    assert_eq!(std::fs::read_to_string(&kept).unwrap(), "kept");
+}
+
 #[tokio::test]
 async fn a_writable_mount_goes_through_to_the_disk_and_a_readable_one_is_read_only() {
     let (_t, dir) = tempdir();
