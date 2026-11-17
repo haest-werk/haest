@@ -69,11 +69,16 @@ pub(super) fn ref_from_url(url: &str) -> Option<IssueRef> {
 }
 
 /// The repository GitHub's issue JSON `v` says it is in, as
-/// `(owner, repo)`, from its `repository_url`.
+/// `(owner, repo)`: the two segments after `/repos` that end its
+/// `repository_url` (an owner may itself be named `repos`).
 fn repo_of(v: &Value) -> Option<(&str, &str)> {
-    (v.get("repository_url").and_then(Value::as_str))
-        .and_then(|u| u.rsplit_once("/repos/"))
-        .and_then(|(_, owner_repo)| owner_repo.split_once('/'))
+    let url = v.get("repository_url")?.as_str()?;
+    let mut segments = url.rsplitn(3, '/');
+    let (repo, owner) = (segments.next()?, segments.next()?);
+    segments
+        .next()?
+        .ends_with("/repos")
+        .then_some((owner, repo))
 }
 
 /// Whether GitHub's issue JSON `v` is issue `r` (GitHub's names ignore

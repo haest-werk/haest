@@ -264,7 +264,10 @@ write instead.
   issue is `Failed`. And a search took the model's text as GitHub's search
   syntax, where a `repo:`, an `org:` or an `OR` could widen it past the
   repository: the text is searched as plain words now, and a result from
-  another repository is dropped.
+  another repository is dropped. An owner named `repos` is read as an
+  owner: it read as no repository, so those checks refused its own issues,
+  and its issues elsewhere were named by a bare number, which names one of
+  this repository's.
 - The model providers' stream parser searched a line from its start again
   on every chunk, so a server that sent one long line in small pieces cost
   quadratic time on an executor thread (8 MiB in 1 KiB chunks: 16 s), and
@@ -1164,9 +1167,7 @@ Hosts write less (round two of the review, and what porting brain onto
   haest_core::Provider`. Each gains the getters `retry()`,
   `headers_timeout()` and `http()` beside its setters.
 - `RetryPolicy` is `Copy`, `Eq` and `Hash`, and
-  `ProviderRegistry::retry()` returns it by value (breaking for a caller
-  that read it through a reference): `registry.retry().clone()` ->
-  `registry.retry()`.
+  `ProviderRegistry::retry()` returns it by value.
 - `testing::FakeReply::header(&str, &str)` ->
   `FakeReply::with_header(name, value)`, taking `impl Into<String>` as
   `Response::with_header` does (breaking for tests).

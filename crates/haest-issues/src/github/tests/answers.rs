@@ -55,6 +55,33 @@ async fn an_answer_that_is_another_issue_is_never_acted_on() {
     }
 }
 
+/// An owner may be named `repos`: its own issues are its own, and another
+/// repository's issue under that owner is named in full, never by a bare
+/// number that names one of this repository's.
+#[tokio::test]
+async fn an_owner_named_repos_is_an_owner() {
+    let own = with(
+        issue(5, "five"),
+        "repository_url",
+        json!(format!("{API}/repos/repos/r")),
+    );
+    let http = FakeHttp::new([ok(own)]);
+    let gh = GithubTracker::new("repos", "r").with_http(http.clone());
+    assert_eq!(gh.get("5").await.unwrap().id, "5");
+
+    let child = with(
+        issue(9, "nine"),
+        "repository_url",
+        json!(format!("{API}/repos/repos/x")),
+    );
+    let mut v = issue(7, "seven");
+    v["sub_issues_summary"]["total"] = json!(1);
+    let http = FakeHttp::new([ok(v), ok(json!([child]))]);
+    let got = github(http).get("7").await.unwrap();
+    let links: Vec<&str> = got.links.iter().map(|l| l.target.as_str()).collect();
+    assert_eq!(links, ["repos/x#9"]);
+}
+
 /// A change GitHub answers with another issue went where the client was
 /// sent: the call says it failed, never that it changed this issue.
 #[tokio::test]
