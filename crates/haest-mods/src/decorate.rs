@@ -68,6 +68,7 @@ impl ModTools {
     }
 }
 
+#[warn(clippy::missing_trait_methods)]
 impl ToolSource for ModTools {
     fn tools(&self) -> Tools {
         Self::wrap(&self.mods, self.inner.tools())
@@ -85,6 +86,7 @@ struct ModTool {
 }
 
 #[async_trait]
+#[warn(clippy::missing_trait_methods)]
 impl Tool for ModTool {
     fn name(&self) -> &str {
         self.tool.name()
@@ -144,6 +146,7 @@ impl ModSystemPrompt {
 }
 
 #[async_trait]
+#[warn(clippy::missing_trait_methods)]
 impl SystemPrompt for ModSystemPrompt {
     async fn system_prompt(&self) -> String {
         let base = self.inner.system_prompt().await;

@@ -200,6 +200,7 @@ impl DeferredTools {
     }
 }
 
+#[warn(clippy::missing_trait_methods)]
 impl ToolSource for DeferredTools {
     fn tools(&self) -> Tools {
         advertised_tools(

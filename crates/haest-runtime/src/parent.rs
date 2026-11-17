@@ -59,9 +59,13 @@ impl RuntimeParent {
     }
 }
 
+#[warn(clippy::missing_trait_methods)]
 impl Inbox for RuntimeParent {
     fn submit(&self, text: String) {
         self.inbox.submit(text);
+    }
+    fn submit_answer(&self, text: String) {
+        self.inbox.submit_answer(text);
     }
 }
 

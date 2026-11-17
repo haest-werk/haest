@@ -105,10 +105,16 @@ struct BaseTools {
     mcp: McpHub,
 }
 
+#[warn(clippy::missing_trait_methods)]
 impl ToolSource for BaseTools {
     fn tools(&self) -> Tools {
-        let mut all = self.own.clone();
+        let mut all = self.own.tools();
         all.extend(self.mcp.tools());
+        all
+    }
+    fn callable(&self) -> Tools {
+        let mut all = self.own.callable();
+        all.extend(self.mcp.callable());
         all
     }
 }
@@ -140,18 +146,27 @@ impl WrappedTools {
             code: code.map(|extra| files.into_iter().chain(extra).collect()),
         }
     }
-}
 
-impl ToolSource for WrappedTools {
-    /// Code calls the WRAPPED siblings, read per run, so every call it makes passes the hooks too.
-    fn tools(&self) -> Tools {
-        let mut tools = self.base.tools();
+    /// `tools` (the base's), then the Code tool when it is on, all inside
+    /// the mods' hooks. Code calls the WRAPPED siblings, read per run, so
+    /// every call it makes passes the hooks too.
+    fn wrap(&self, mut tools: Tools) -> Tools {
         if let Some(allowed) = &self.code {
             let names = code_tool_names(&tools, allowed);
             let callable = ModTools::new(self.base.clone(), self.mods.clone());
             tools.push(CodeTool::new(names, callable));
         }
         ModTools::wrap(&self.mods, tools)
+    }
+}
+
+#[warn(clippy::missing_trait_methods)]
+impl ToolSource for WrappedTools {
+    fn tools(&self) -> Tools {
+        self.wrap(self.base.tools())
+    }
+    fn callable(&self) -> Tools {
+        self.wrap(self.base.callable())
     }
 }
 
@@ -169,15 +184,23 @@ impl MainTools {
     pub(crate) fn new(wrapped: Arc<WrappedTools>, hub: Option<SubagentHub>) -> Self {
         Self { wrapped, hub }
     }
+
+    /// `wrapped`, then main's agent tools.
+    fn with_agents(&self, mut wrapped: Tools) -> Tools {
+        if let Some(hub) = &self.hub {
+            wrapped.extend(hub.tools_for(&AgentRef::main()));
+        }
+        wrapped
+    }
 }
 
+#[warn(clippy::missing_trait_methods)]
 impl ToolSource for MainTools {
     fn tools(&self) -> Tools {
-        let mut all = self.wrapped.tools();
-        if let Some(hub) = &self.hub {
-            all.extend(hub.tools_for(&AgentRef::main()));
-        }
-        all
+        self.with_agents(self.wrapped.tools())
+    }
+    fn callable(&self) -> Tools {
+        self.with_agents(self.wrapped.callable())
     }
 }
 

@@ -73,6 +73,12 @@
   every test binary includes: each uses a different part, so it takes an
   inner `#![allow(dead_code, reason = "...")]`. Unsafe code is denied: a
   site that needs it claims it with an `#[expect(unsafe_code, reason = "...")]`.
+- **A wrapper names every method.** A type that implements a trait over an
+  inner value of the same trait (`ModTools` over a `ToolSource`, a subagent's
+  hooks over the conversation's) puts `#[warn(clippy::missing_trait_methods)]`
+  on that impl. Each method then forwards, or says why it does not: a method
+  the trait gains later fails the gates there instead of quietly running the
+  default in place of the inner value's.
 - **Docs are part of the API.** The lint table warns on a public item without
   docs: it gets a doc that says what it is for in plain words, and the types
   a host constructs or implements get a runnable example. Links between items

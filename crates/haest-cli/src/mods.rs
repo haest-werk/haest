@@ -89,6 +89,7 @@ pub(crate) enum CliPrompter {
 }
 
 #[async_trait]
+#[warn(clippy::missing_trait_methods)]
 impl Prompter for CliPrompter {
     async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer {
         match self {

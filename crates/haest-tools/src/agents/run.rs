@@ -8,9 +8,9 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use haest_core::{
     __private::panic_message,
-    Agent, AgentHooks, AgentHooksRef, LoopEvent, StopReason, SystemPrompt,
+    Agent, AgentHooks, AgentHooksRef, BoxError, LoopEvent, StopReason, SystemPrompt,
     caps::{TurnCaps, TurnCapsSource, TurnCapsSourceRef},
-    messages::MediaPart,
+    messages::{MediaPart, Message},
     provider::Effort,
     tool::{InnerCallEvent, ToolServices, ToolServicesRef, ToolSourceRef},
 };
@@ -113,6 +113,7 @@ pub(super) struct ChildCaps {
     pub subagent: MemberCaps,
 }
 
+#[warn(clippy::missing_trait_methods)]
 impl TurnCapsSource for ChildCaps {
     fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
         let base = self.caps.turn_caps(spec).unwrap_or_default();
@@ -127,6 +128,7 @@ impl TurnCapsSource for ChildCaps {
 }
 
 #[async_trait]
+#[warn(clippy::missing_trait_methods)]
 impl ToolServices for ChildServices {
     async fn publish(&self, data: Vec<u8>, media_type: &str) -> Option<String> {
         self.services.publish(data, media_type).await
@@ -141,7 +143,21 @@ impl ToolServices for ChildServices {
 }
 
 #[async_trait]
+#[warn(clippy::missing_trait_methods)]
 impl AgentHooks for ChildHooks {
+    /// Not the conversation's message: nothing is persisted.
+    fn on_message(&self, _msg: &Message) {}
+    /// Not the conversation's history: the conversation's hook (compaction)
+    /// is not run on it.
+    async fn before_model_call(
+        &self,
+        _agent: &mut Agent,
+        _cancel: &CancellationToken,
+    ) -> Result<(), BoxError> {
+        Ok(())
+    }
+    /// Nothing persisted, so nothing to flush before its tools' effects.
+    async fn before_effects(&self) {}
     async fn attach_media(
         &self,
         text: &str,

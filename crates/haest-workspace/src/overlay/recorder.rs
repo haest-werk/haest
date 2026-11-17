@@ -23,6 +23,7 @@ pub(crate) struct Recorder {
 }
 
 #[async_trait]
+#[warn(clippy::missing_trait_methods)]
 impl FileSystemExt for Recorder {
     fn usage(&self) -> FsUsage {
         self.inner.usage()
@@ -46,6 +47,7 @@ impl FileSystemExt for Recorder {
 }
 
 #[async_trait]
+#[warn(clippy::missing_trait_methods)]
 impl FileSystem for Recorder {
     async fn read_file(&self, path: &Path) -> Result<Vec<u8>> {
         self.inner.read_file(path).await

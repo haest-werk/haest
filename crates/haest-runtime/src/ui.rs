@@ -77,6 +77,7 @@ pub trait Ui: Send + Sync {
 /// A UI the host shares is one: a host that keeps its UI for itself as well
 /// hands [`build`](crate::build) an `Arc` of it. Every call goes to the UI
 /// inside, its own defaults included.
+#[warn(clippy::missing_trait_methods)]
 impl<T: Ui + ?Sized> Ui for Arc<T> {
     fn info(&self, text: &str) {
         (**self).info(text);

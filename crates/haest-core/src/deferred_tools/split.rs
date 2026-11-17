@@ -65,6 +65,7 @@ struct Loading {
 }
 
 #[async_trait]
+#[warn(clippy::missing_trait_methods)]
 impl Tool for Loading {
     fn name(&self) -> &str {
         self.tool.name()
