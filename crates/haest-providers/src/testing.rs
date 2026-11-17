@@ -209,11 +209,7 @@ impl HttpClient for FakeHttp {
             }))),
             FakeEnd::Hang => Body::from_stream(head.chain(stream::pending())),
         };
-        Ok(Response {
-            status,
-            headers,
-            body,
-        })
+        Ok(Response::new(status, body).with_headers(headers))
     }
 }
 

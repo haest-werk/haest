@@ -124,8 +124,12 @@ impl fmt::Debug for Body {
 ///
 /// An error status is a response like any other: the caller reads the status.
 ///
+/// A client builds one with [`new`](Self::new) and the `with_*` setters; its
+/// fields are there to read, and more may come in a minor release (the URL
+/// after redirects, the HTTP version), so it is never built by literal.
+///
 /// ```
-/// use haest_http::Response;
+/// use haest_http::{Body, Response};
 /// use serde_json::json;
 ///
 /// let res = Response::new(404, "")
@@ -133,10 +137,16 @@ impl fmt::Debug for Body {
 ///     .with_header("x-request-id", "7");
 /// assert!(!res.is_success());
 /// assert_eq!(res.header("X-Request-Id"), Some("7"));
+///
+/// // A client hands over the status, the headers as received and the body as it streams.
+/// let received = vec![("set-cookie".to_string(), "a=1".to_string()), ("set-cookie".to_string(), "b=2".to_string())];
+/// let res = Response::new(200, Body::empty()).with_headers(received);
+/// assert_eq!(res.headers.len(), 2);
 /// ```
 ///
 /// Its Debug output shows each header's name without its value (a
 /// `set-cookie` is a credential).
+#[non_exhaustive]
 pub struct Response {
     /// The status code, whatever it is.
     pub status: u16,
@@ -179,6 +189,15 @@ impl Response {
     #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         set_header(&mut self.headers, name.into(), value.into());
+        self
+    }
+
+    /// This response with `headers` after any it has, in order and as
+    /// given: a name given twice stays twice, as a server sends
+    /// `set-cookie`. What a client hands over as it received them.
+    #[must_use]
+    pub fn with_headers(mut self, headers: impl IntoIterator<Item = (String, String)>) -> Self {
+        self.headers.extend(headers);
         self
     }
 

@@ -148,6 +148,10 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `SkillCard::new(name, description).with_when(when).with_origin(o)`
     (no `with_when` or `with_origin` for one not said), and
     `InlineSkill { card, body }` -> `InlineSkill::new(card, body)`.
+20. An `HttpClient` builds its `Response` with `new`:
+    `Ok(Response { status, headers, body: Body::from_stream(s) })` ->
+    `Ok(Response::new(status, Body::from_stream(s)).with_headers(headers))`,
+    and `let Request { method, url, headers, body } = req;` ends in `..`.
 
 Every other breaking change is marked (breaking) in its crate's section
 below.
@@ -978,6 +982,13 @@ Hosts write less (round two of the review, and what porting brain onto
   The 25 lines a gateway host wrote for it become `req.try_into()?` and
   `Response::from(res)`. With `reqwest` on it adds no crate to the tree.
 - `Body` implements `Default` (empty) and `Request` implements `Eq`.
+- `Request` and `Response` are `#[non_exhaustive]` (breaking), so a field
+  (a response's URL after redirects, its HTTP version) is not a breaking
+  change: a client builds its answer with `new` and the new `with_headers`
+  (the headers as received, a name given twice kept twice), and a pattern
+  on either ends in `..`. Reading and moving a field is unchanged.
+  `Response { status, headers, body }` ->
+  `Response::new(status, body).with_headers(headers)`.
 - `HttpError::Timeout` says the wait as given (`no answer within 500ms`):
   it said whole seconds, so a sub-second headers timeout read `0 s`.
 

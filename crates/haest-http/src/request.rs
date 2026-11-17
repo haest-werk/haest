@@ -85,6 +85,11 @@ impl ParseMethodError {
 /// One request, ready to send: everything an [`HttpClient`](crate::HttpClient)
 /// is handed.
 ///
+/// Built with [`new`](Self::new), [`get`](Self::get) or [`post`](Self::post)
+/// and the `with_*` setters. Its fields are there to read (a client takes
+/// them apart by name, `let Request { method, url, .. } = req;`), and more
+/// may come in a minor release, so it is never built by literal.
+///
 /// ```
 /// use haest_http::{Method, Request};
 /// use serde_json::json;
@@ -95,12 +100,18 @@ impl ParseMethodError {
 /// assert_eq!(req.method, Method::Post);
 /// assert_eq!(req.header("content-type"), Some("application/json"));
 /// assert_eq!(req.json_body()["name"], "first");
+///
+/// // A client takes it apart by name.
+/// let Request { url, headers, body, .. } = req;
+/// assert_eq!(url, "https://api.example.com/v1/items");
+/// assert_eq!((headers.len(), body.is_empty()), (2, false));
 /// ```
 ///
 /// Its Debug output shows no credential: the URL without its userinfo
-/// (`user:password@`), each header's name without its value, and the body's
-/// length.
+/// (`user:password@`), query values or fragment, each header's name without
+/// its value, and the body's length.
 #[derive(Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Request {
     /// The method.
     pub method: Method,
