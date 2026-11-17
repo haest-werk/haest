@@ -263,9 +263,9 @@ setters! {
     /// These deps on `workspace`.
     with_workspace(workspace: impl Into<WorkspaceRef>) { workspace = workspace.into() }
 
-    /// These deps spilling big tool results into `dir` (None: no spill
-    /// directory).
-    with_spill_dir(dir: impl Into<Option<PathBuf>>) { spill_dir = dir.into() }
+    /// These deps spilling big tool results into `dir`. Without it there is
+    /// no spill directory.
+    with_spill_dir(dir: impl Into<PathBuf>) { spill_dir = Some(dir.into()) }
 
     /// These deps with `hooks` as the host's say in the loop.
     with_hooks(hooks: impl Into<AgentHooksRef>) { hooks = hooks.into() }
@@ -284,13 +284,13 @@ setters! {
     with_clock(clock: impl Into<ClockRef>) { clock = clock.into() }
 
     /// These deps charging `ledger` for every model call and tool spend:
-    /// a clone of the host's, which it keeps to read and raise (None: no
-    /// conversation budget).
-    with_ledger(ledger: impl Into<Option<Ledger>>) { ledger = ledger.into() }
+    /// a clone of the host's, which it keeps to read and raise. Without it
+    /// there is no conversation budget.
+    with_ledger(ledger: Ledger) { ledger = Some(ledger) }
 
-    /// These deps asking for provider-side web search on every model call
-    /// (None turns it off).
-    with_web_search(web_search: impl Into<Option<WebSearchOptions>>) { web_search = web_search.into() }
+    /// These deps asking for provider-side web search on every model call.
+    /// Without it none is asked for.
+    with_web_search(web_search: WebSearchOptions) { web_search = Some(web_search) }
 
     /// These deps adding `remedies` to the error of a turn a cap stopped.
     with_remedies(remedies: Remedies) { remedies = remedies }

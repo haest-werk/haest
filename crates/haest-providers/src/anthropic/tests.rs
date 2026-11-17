@@ -275,7 +275,10 @@ fn effort_maps_to_adaptive_thinking_on_current_models_and_a_budget_on_legacy_one
 #[test]
 fn a_thinking_budget_fits_under_the_requests_token_cap() {
     let sent = |model: &str, effort: Effort, max: Option<u32>| {
-        let req = request(model).with_effort(effort).with_max_tokens(max);
+        let mut req = request(model).with_effort(effort);
+        if let Some(max) = max {
+            req = req.with_max_tokens(max);
+        }
         build_anthropic_params("anthropic", &req)
     };
     for (effort, max) in [

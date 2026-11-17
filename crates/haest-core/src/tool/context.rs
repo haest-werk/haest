@@ -183,17 +183,19 @@ impl ToolContext {
         self
     }
 
-    /// This context, spilling big results into `dir` (None: nowhere).
+    /// This context, spilling big results into `dir`. Without it they are
+    /// spilled nowhere.
     #[must_use]
-    pub fn with_spill_dir(mut self, dir: impl Into<Option<PathBuf>>) -> Self {
-        self.spill_dir = dir.into();
+    pub fn with_spill_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.spill_dir = Some(dir.into());
         self
     }
 
-    /// This context inside the durable run `key` (None: no durable run).
+    /// This context inside the durable run `key`. Without it the call
+    /// belongs to no durable run.
     #[must_use]
-    pub fn with_run_key(mut self, key: impl Into<Option<RunKey>>) -> Self {
-        self.run_key = key.into();
+    pub fn with_run_key(mut self, key: RunKey) -> Self {
+        self.run_key = Some(key);
         self
     }
 
@@ -204,10 +206,11 @@ impl ToolContext {
         self
     }
 
-    /// This context with `left` of the turn's time cap (None: no time cap).
+    /// This context with `left` of the turn's time cap. Without it the turn
+    /// has no time cap.
     #[must_use]
-    pub fn with_turn_time_left(mut self, left: impl Into<Option<Duration>>) -> Self {
-        self.turn_time_left = left.into();
+    pub fn with_turn_time_left(mut self, left: Duration) -> Self {
+        self.turn_time_left = Some(left);
         self
     }
 

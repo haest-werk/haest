@@ -38,8 +38,9 @@ pub(crate) use turn_site::SharedWatch;
 use crate::{
     caps::{TurnCaps, request_too_big},
     deps::ClockRef,
+    events::TurnOutcome,
     ledger::Ledger,
-    messages::{ToolCall, Usage},
+    messages::{StopReason, ToolCall, Usage},
     remedy::{Limit, Remedies},
     threshold::{NUDGE_SHARE, WAY_OUT, minutes},
     tool::ToolOutput,
@@ -69,6 +70,18 @@ struct Repeat {
 pub(crate) struct Stop {
     pub text: String,
     pub limit: Option<Limit>,
+}
+
+/// How a turn a cap stopped ends: [`StopReason::MaxTokens`], the cap in
+/// words and the cap.
+impl From<Stop> for TurnOutcome {
+    fn from(over: Stop) -> Self {
+        TurnOutcome {
+            stop_reason: StopReason::MaxTokens,
+            error: Some(over.text),
+            limit: over.limit,
+        }
+    }
 }
 
 /// One turn's guard: counts its model calls, its time and its repeated tool

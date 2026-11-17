@@ -208,24 +208,25 @@ impl ProviderRequest {
         self
     }
 
-    /// At reasoning `effort`; None sends nothing (the model's default).
+    /// At reasoning `effort`. Without it nothing is sent: the model's default.
     #[must_use]
-    pub fn with_effort(mut self, effort: impl Into<Option<Effort>>) -> Self {
-        self.effort = effort.into();
+    pub fn with_effort(mut self, effort: Effort) -> Self {
+        self.effort = Some(effort);
         self
     }
 
-    /// With at most `max_tokens` of output; None is the default cap.
+    /// With at most `max_tokens` of output. Without it, the adapter's or the
+    /// model's default cap.
     #[must_use]
-    pub fn with_max_tokens(mut self, max_tokens: impl Into<Option<u32>>) -> Self {
-        self.max_tokens = max_tokens.into();
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = Some(max_tokens);
         self
     }
 
-    /// With a provider-side web search; None sends none.
+    /// With a provider-side web search. Without it, none is sent.
     #[must_use]
-    pub fn with_web_search(mut self, web_search: impl Into<Option<WebSearchOptions>>) -> Self {
-        self.web_search = web_search.into();
+    pub fn with_web_search(mut self, web_search: WebSearchOptions) -> Self {
+        self.web_search = Some(web_search);
         self
     }
 }

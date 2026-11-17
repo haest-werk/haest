@@ -78,10 +78,11 @@ impl AgentOptions {
         self
     }
 
-    /// The same, asking for `effort` (None: send none, the model uses its default).
+    /// The same, asking for `effort`. Without it none is sent, and the model
+    /// uses its default.
     #[must_use]
-    pub fn with_effort(mut self, effort: impl Into<Option<Effort>>) -> Self {
-        self.effort = effort.into();
+    pub fn with_effort(mut self, effort: Effort) -> Self {
+        self.effort = Some(effort);
         self
     }
 

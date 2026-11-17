@@ -94,7 +94,13 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `rt.hooks.flush()` -> `rt.hooks().flush()`.
 11. A flag setter takes a `bool`, and an optional field's setter takes the
     value itself: `SkillToolOptions::new(set).with_name_enum()` ->
-    `.with_name_enum(true)`.
+    `.with_name_enum(true)`. In haest-core that is `SharedDeps`/`AgentDeps`
+    `with_spill_dir`, `with_ledger` and `with_web_search`,
+    `AgentOptions::with_effort`, and the `ProviderRequest`, `ToolContext`
+    and `TurnOutcome` setters: `opts.effort = effort` ->
+    `if let Some(e) = effort { opts = opts.with_effort(e) }`, and
+    `deps.shared.web_search = on.then_some(search)` ->
+    `if on { deps = deps.with_web_search(search) }`.
 12. A `match` on a `ModLine` (the lines of `ApprovalGate::mod_ui`) adds
     `ModLine::Warn` and an arm for kinds to come:
     `ModLine::Info(t) => show(t)` -> `other => show(other.text())`. A
@@ -127,12 +133,12 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `Source` among them:
     `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b }`
     -> `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b, _ => c }`.
-12. An `Fs` builds its answers with constructors:
+17. An `Fs` builds its answers with constructors:
     `FsStat { kind, size, modified: Some(at) }` ->
     `FsStat::new(kind, size).with_modified(at)` (no `with_modified` when
     there is no time), and `DirEntry { name, kind }` ->
     `DirEntry::new(name, kind)`.
-13. A session's effort change is an `EffortChange`:
+18. A session's effort change is an `EffortChange`:
     `SessionRecord::Config { effort: Some(Some(e)), .. }` ->
     `effort: EffortChange::To(e)`, `Some(None)` -> `EffortChange::ModelDefault`,
     `None` -> `EffortChange::Unchanged`, and
@@ -541,11 +547,11 @@ Room to grow (breaking):
   build one with `TurnOutcome::new` and `with_limit`; its fields stay
   readable.
 - `AgentOptions` keeps its fields private: set them with `with_effort`
-  (an `Effort` or an `Option` of one), `with_history` and
-  `with_model_spec`, read them with the getter of the name:
-  `let mut opts = AgentOptions::new(spec); opts.effort = effort;
+  (an `Effort`), `with_history` and `with_model_spec`, read them with the
+  getter of the name:
+  `let mut opts = AgentOptions::new(spec); opts.effort = Some(Effort::High);
   opts.history = saved.messages;` ->
-  `AgentOptions::new(spec).with_effort(effort).with_history(saved.messages)`.
+  `AgentOptions::new(spec).with_effort(Effort::High).with_history(saved.messages)`.
 - `ProviderRequest`, `ExecOptions` and `ShellCall` are `#[non_exhaustive]`
   and built with `new` and a `with_*` per optional part; their fields stay
   readable. `ProviderRequest { model, system, messages, tools: vec![],
@@ -776,18 +782,18 @@ Hosts write less (round two of the review, and what porting brain onto
   slots a host has nothing to say in are an empty `impl`.
 - The `SharedDeps` setters and their `AgentDeps` twins are made from one
   list, and every setter is `#[must_use]`. New `without_run_store()`.
-- A setter of a slot that may be empty takes an `Option` of its value, so
-  a host passes what it has without an `if let` (breaking where a `&str`
-  went in): `SharedDeps::with_spill_dir` and `ToolContext::with_spill_dir`
-  take `impl Into<Option<PathBuf>>`, `SharedDeps::with_ledger`
-  `impl Into<Option<Ledger>>`, `ToolContext::with_run_key`
-  `impl Into<Option<RunKey>>` and `ToolContext::with_turn_time_left`
-  `impl Into<Option<Duration>>`. `.with_spill_dir("/data/spill")` ->
-  `.with_spill_dir(PathBuf::from("/data/spill"))`, and
-  `if let Some(d) = ctx.spill_dir() { inner = inner.with_spill_dir(d) }` ->
-  `inner.with_spill_dir(ctx.spill_dir().map(Path::to_path_buf))`. The run
-  store keeps taking the store itself (an `Option` of a handle would take
-  only a `RunStoreRef`), and `without_run_store()` empties it.
+- A setter of a slot that may be empty takes the value and fills the slot;
+  the slot starts empty, so a host with an `Option` in hand sets it in an
+  `if let`. One rule for every such setter: `SharedDeps` and `AgentDeps`
+  `with_spill_dir(impl Into<PathBuf>)`, `with_ledger(Ledger)` and
+  `with_web_search(WebSearchOptions)`; `ToolContext` `with_spill_dir`,
+  `with_run_key(RunKey)` and `with_turn_time_left(Duration)`;
+  `ProviderRequest` `with_effort(Effort)`, `with_max_tokens(u32)` and
+  `with_web_search(WebSearchOptions)`; `AgentOptions::with_effort(Effort)`;
+  `TurnOutcome::with_limit(Limit)`. The run store's setter takes the store
+  itself too, and `without_run_store()` empties it.
+  `Agent::set_effort(Option<Effort>)` keeps its `Option`: `None` puts a
+  running agent back on the model's default.
 - A `ProviderRef` is a `ModelResolver` (one provider serves every spec,
   the model being the part after the first colon), and so is a
   `ResolvedModel` (always that model):

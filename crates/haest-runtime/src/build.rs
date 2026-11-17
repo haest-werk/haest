@@ -201,16 +201,18 @@ where
 
     // What every agent of the conversation runs on; tools and prompt are each
     // agent's own (the hub gives every subagent its own, main's hold the hub).
-    let shared = SharedDeps::new(models, s.cwd.clone(), found.workspace)
+    let mut shared = SharedDeps::new(models, s.cwd.clone(), found.workspace)
         .with_spill_dir(spill)
         .with_hooks(hooks.clone())
         .with_services(hooks.clone())
         .with_facts(hooks.clone())
         .with_turn_caps(hooks.clone())
         .with_ledger(ledger.clone())
-        .with_web_search(s.web_search_options())
         .with_remedies(hooks.remedies())
         .with_thresholds(Thresholds::default().wind_down(s.wind_down_at));
+    if let Some(search) = s.web_search_options() {
+        shared = shared.with_web_search(search);
+    }
     let subagents = RuntimeParent {
         hooks: hooks.clone(),
         deps: shared.clone(),
@@ -235,7 +237,10 @@ where
     let system_prompt = ModSystemPrompt::new(main_prompt, mods.clone());
     let deps = AgentDeps::new(shared, tools, system_prompt);
 
-    let mut agent_opts = AgentOptions::new(model).with_effort(effort);
+    let mut agent_opts = AgentOptions::new(model);
+    if let Some(effort) = effort {
+        agent_opts = agent_opts.with_effort(effort);
+    }
     let resumed = session.saved.is_some();
     if let Some(saved) = session.saved {
         agent_opts = restore(&hooks, saved, &ledger, &board, agent_opts);

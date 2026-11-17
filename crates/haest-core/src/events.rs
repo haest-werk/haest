@@ -157,9 +157,9 @@ impl TurnOutcome {
             limit: None,
         }
     }
-    /// The same ending, stopped by `limit` (None: no cap stopped it).
-    pub fn with_limit(mut self, limit: impl Into<Option<Limit>>) -> Self {
-        self.limit = limit.into();
+    /// The same ending, stopped by `limit`.
+    pub fn with_limit(mut self, limit: Limit) -> Self {
+        self.limit = Some(limit);
         self
     }
 }

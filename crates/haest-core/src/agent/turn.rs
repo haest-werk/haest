@@ -155,7 +155,7 @@ impl Agent {
                 return TurnOutcome::new(StopReason::Aborted);
             }
             if let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref()) {
-                return TurnOutcome::error(StopReason::MaxTokens, over.text).with_limit(over.limit);
+                return over.into();
             }
             if let Some(end) = self.step(t).await {
                 return end;
@@ -187,9 +187,7 @@ impl Agent {
         if side != Usage::default()
             && let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref())
         {
-            return Some(
-                TurnOutcome::error(StopReason::MaxTokens, over.text).with_limit(over.limit),
-            );
+            return Some(over.into());
         }
         let msg = self.call_model(t).await;
         t.usage += &msg.usage;
