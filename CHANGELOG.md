@@ -1780,6 +1780,9 @@ against it; the wire JSON is unchanged):
   resolved (raced against Ctrl-C or a timeout; it waits for a running turn
   to end) still held the session, with no `Hold` left to release it: input
   queued and no turn ran again. It now holds nothing.
+- `Hub::publish` turns the body into a `Body` before it takes the hub's
+  lock. A host's own `From<_> for Body` ran under it, and one that panicked
+  poisoned it: every frame after it panicked too, the driver's own included.
 
 ### haest-transport (new)
 

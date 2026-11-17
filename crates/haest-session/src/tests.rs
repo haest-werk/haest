@@ -36,6 +36,28 @@ async fn a_hubs_options_hold_for_every_clone() {
     assert_eq!(late.recv().await.map(|f| f.seq), Some(3));
 }
 
+/// A host's own frame, whose conversion into a [`Body`] panics.
+struct Unwritable;
+
+impl From<Unwritable> for Body {
+    fn from(_: Unwritable) -> Self {
+        panic!("the host's frame cannot be written")
+    }
+}
+
+/// `publish` ran the host's `From<_> for Body` under the hub's lock: one
+/// that panicked poisoned it, and every publish after it panicked too,
+/// haest's own included.
+#[test]
+fn a_host_conversion_that_panics_leaves_the_hub_working() {
+    let hub = hub();
+    let publish = std::panic::catch_unwind(|| hub.publish(Path::main(), Unwritable));
+    assert!(publish.is_err(), "the host's conversion panicked");
+    let after = std::panic::catch_unwind(|| hub.notice(Level::Info, "after"));
+    assert_eq!(after.ok(), Some(1), "the next frame is the first");
+    assert_eq!(hub.last_seq(), 1);
+}
+
 /// A model that calls `Wait` once, then answers each of `then`.
 fn waits_then(then: &[&str]) -> ScriptedProvider {
     let first = tool_answer(&[("c1", "Wait", json!({}))]);

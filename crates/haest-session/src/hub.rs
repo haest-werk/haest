@@ -156,8 +156,10 @@ impl Hub {
     /// sent to every subscriber. Returns its seq. After [`close`](Self::close)
     /// it is still numbered and kept, but nobody gets it.
     pub fn publish(&self, path: Path, body: impl Into<Body>) -> u64 {
+        // A host's own `From<_> for Body` runs here, never under the lock.
+        let body = body.into();
         let mut state = self.lock();
-        let frame = Arc::new(state.framer.stamp(path, body.into()));
+        let frame = Arc::new(state.framer.stamp(path, body));
         let seq = frame.seq;
         state.ring.push(Arc::clone(&frame));
         if let Some(tx) = &state.tx {
