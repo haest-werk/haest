@@ -62,6 +62,14 @@ struct Repeat {
     count: u64,
 }
 
+/// Why a turn may not go on: what the human and the model read, and the cap
+/// behind it when one is.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Stop {
+    pub text: String,
+    pub limit: Option<Limit>,
+}
+
 /// One turn's guard: counts its model calls, its time and its repeated tool
 /// calls, charges the conversation ledger, and says when to nudge and when to
 /// stop.
@@ -143,10 +151,13 @@ impl TurnGuard {
 
     /// Why the turn must stop before the next model call, or None: the
     /// ledger, a cap, then a threshold that stops it.
-    pub(crate) fn stop(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
+    pub(crate) fn stop(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<Stop> {
         let ledger = self.ledger.as_ref();
-        if let Some(why) = ledger.and_then(Ledger::exhausted) {
-            return Some(format!("Turn stopped: {why}"));
+        if let Some((why, limit)) = ledger.and_then(Ledger::exhausted_at) {
+            return Some(Stop {
+                text: format!("Turn stopped: {why}"),
+                limit,
+            });
         }
         let at_cap = self
             .gauges(usage, caps)
@@ -154,7 +165,10 @@ impl TurnGuard {
             .find(|g| g.cap > 0.0 && g.used >= g.cap)
             .map(|g| {
                 let text = format!("Turn stopped: {} {CONTINUE}", g.stop);
-                self.remedies.add_to(text, g.limit)
+                Stop {
+                    text: self.remedies.add_to(text, g.limit),
+                    limit: Some(g.limit),
+                }
             });
         at_cap.or_else(|| self.threshold_stop(usage, caps))
     }
@@ -176,14 +190,15 @@ impl TurnGuard {
 
     /// Records the request about to go out (its estimated input tokens); why
     /// it must not, or None.
-    pub(crate) fn too_big(&mut self, estimate: u64, caps: Option<&TurnCaps>) -> Option<String> {
+    pub(crate) fn too_big(&mut self, estimate: u64, caps: Option<&TurnCaps>) -> Option<Stop> {
         self.next_request_tokens = estimate;
         let caps = caps?;
         let text = request_too_big(estimate, caps)?;
-        Some(
-            self.remedies
-                .add_to(text, Limit::RequestTokens(caps.max_request_tokens)),
-        )
+        let limit = Limit::RequestTokens(caps.max_request_tokens);
+        Some(Stop {
+            text: self.remedies.add_to(text, limit),
+            limit: Some(limit),
+        })
     }
 
     /// What is left of the turn's wall-clock cap now; None when uncapped.

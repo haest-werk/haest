@@ -3,7 +3,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use haest::AgentHooks;
+use haest::{AgentHooks, core::error::BoxError};
 use tokio_util::sync::CancellationToken;
 
 use super::*;
@@ -122,7 +122,7 @@ impl AgentHooks for Budget {
         &self,
         _agent: &mut Agent,
         _cancel: &CancellationToken,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), BoxError> {
         if self.calls.fetch_add(1, Ordering::SeqCst) < self.allowed {
             return Ok(());
         }

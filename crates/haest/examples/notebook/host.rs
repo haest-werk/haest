@@ -13,6 +13,7 @@ use std::sync::{
 use async_trait::async_trait;
 use haest::{
     Agent, AgentHooks, Clock, Message, TurnCaps, TurnCapsSource,
+    core::error::BoxError,
     core::session::{SessionRecord, SessionSink},
 };
 use serde_json::json;
@@ -141,7 +142,7 @@ impl AgentHooks for NotebookHost {
         &self,
         _agent: &mut Agent,
         _cancel: &CancellationToken,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), BoxError> {
         if self.calls.fetch_add(1, Ordering::SeqCst) + 1 == self.pause_before_call {
             self.clock.pause_for(PAUSE_MS);
         }

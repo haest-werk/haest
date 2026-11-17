@@ -239,7 +239,7 @@ impl ToolServices for NoServices {}
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// // Outside the loop: a context of its own. The loop builds one per call.
 /// let ctx = ToolContext::new("/", ShutWorkspace);
 /// let input: JsonMap = serde_json::from_value(json!({"a": 2, "b": "3"}))?; // models send numbers as strings too

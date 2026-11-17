@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use super::TurnGuard;
+use super::{Stop, TurnGuard};
 use crate::{
     caps::TurnCaps,
     deps::Clock,
@@ -207,11 +207,14 @@ impl TurnGuard {
     }
 
     /// Why a threshold stops the turn now, with the host's remedy; None to go on.
-    pub(super) fn threshold_stop(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
+    pub(super) fn threshold_stop(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<Stop> {
         let due = self.crossed(usage, caps, Action::Stop);
         let first = due.first()?;
         let text = format!("Turn stopped: {}", first.text());
-        Some(first.reading().remedied(text, &self.remedies))
+        Some(Stop {
+            text: first.reading().remedied(text, &self.remedies),
+            limit: first.reading().limit,
+        })
     }
 
     /// The wind-down notice due now: the first time this turn a wind-down

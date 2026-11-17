@@ -8,6 +8,7 @@ use crate::{
     agent::test_support::{collect, end, turn_caps},
     caps::{TurnCaps, TurnCapsSource},
     deps::AgentHooks,
+    error::BoxError,
 };
 
 /// A host that compacts before every model call, as the runtime's does.
@@ -22,7 +23,7 @@ impl AgentHooks for CompactsFirst {
         &self,
         agent: &mut Agent,
         cancel: &CancellationToken,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), BoxError> {
         if self.esc {
             agent.control().abort();
         }

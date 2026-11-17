@@ -156,9 +156,11 @@ fn a_stop_ends_with_the_hosts_remedy_for_the_cap_that_stopped_it() {
     }));
     clock.set_now(1000);
     let stop = guard.stop(&Usage::default(), l.as_ref()).unwrap();
-    assert!(stop.ends_with(" REMEDY-TIME"), "{stop}");
+    assert!(stop.text.ends_with(" REMEDY-TIME"), "{stop:?}");
+    assert_eq!(stop.limit, Some(Limit::TurnTime(Duration::from_secs(1))));
     let refused = guard.too_big(11, l.as_ref()).unwrap();
-    assert!(refused.ends_with(" REMEDY-REQUEST"), "{refused}");
+    assert!(refused.text.ends_with(" REMEDY-REQUEST"), "{refused:?}");
+    assert_eq!(refused.limit, Some(Limit::RequestTokens(10)));
 }
 
 /// Regression: a subagent's stop handed the host the TURN cap's limit, so its
@@ -182,16 +184,18 @@ fn a_subagents_stop_hands_the_host_the_subagent_cap_that_stopped_it() {
         ..Default::default()
     };
     let usd = g.stop(&spent, Some(&subagent(|l| l.max_turn_usd = 0.5)));
-    assert!(usd.unwrap().ends_with(" REMEDY-USD"));
+    let usd = usd.unwrap();
+    assert!(usd.text.ends_with(" REMEDY-USD"));
+    assert_eq!(usd.limit, Some(Limit::SubagentUsd(0.5)));
     g.called(&Usage::default());
     let steps = g.stop(&spent, Some(&subagent(|l| l.max_turn_steps = 1)));
-    assert!(steps.unwrap().ends_with(" REMEDY-STEPS"));
+    assert!(steps.unwrap().text.ends_with(" REMEDY-STEPS"));
     clock.set_now(2000);
     let time = g.stop(
         &spent,
         Some(&subagent(|l| l.max_turn_time = Duration::from_secs(1))),
     );
-    assert!(time.unwrap().ends_with(" REMEDY-TIME"));
+    assert!(time.unwrap().text.ends_with(" REMEDY-TIME"));
 }
 
 #[test]

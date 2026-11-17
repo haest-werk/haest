@@ -2,6 +2,7 @@
 //! the turn or replaces the history, and a tool source that keeps tools back.
 
 use super::*;
+use crate::error::BoxError;
 
 struct Compacting;
 #[async_trait]
@@ -10,7 +11,7 @@ impl AgentHooks for Compacting {
         &self,
         agent: &mut Agent,
         _: &CancellationToken,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), BoxError> {
         let last = agent.history().last().cloned();
         agent.replace_history(last.into_iter().collect());
         Ok(())
@@ -25,7 +26,7 @@ impl AgentHooks for Refusing {
         &self,
         _: &mut Agent,
         _: &CancellationToken,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), BoxError> {
         Err("couldn't summarise the earlier conversation".into())
     }
 }

@@ -9,6 +9,7 @@ use crate::{
     messages::{
         AssistantMessage, AssistantPart, MediaKind, MediaPart, StopReason, Usage, UserMessage,
     },
+    remedy::Limit,
     testing::{ScriptedProvider, text_answer},
     tool::ToolOutput,
 };
@@ -103,6 +104,27 @@ async fn an_oversized_request_is_never_sent_and_nothing_is_added_to_history() {
     assert_eq!(stop, StopReason::Error);
     assert_eq!(agent.history().len(), 1);
     assert!(matches!(&agent.history()[0], Message::User(_)));
+}
+
+/// The turn's ending names the cap, so a host need not read the text.
+#[tokio::test]
+async fn a_turn_stopped_by_a_cap_names_the_limit() {
+    let p = ScriptedProvider::new([text_answer("never")]);
+    let (mut agent, _) = agent_with(&p, capped(|l| l.max_request_tokens = 100));
+    let mut events = Vec::new();
+    let too_big = agent.run(&"x".repeat(2000), &mut events).await;
+    assert_eq!(too_big.limit, Some(Limit::RequestTokens(100)));
+
+    let paid = usage(1, 1, Some(1.0));
+    let p = looping(paid);
+    let (mut agent, _) = agent_with(&p, capped(|l| l.max_turn_usd = 1.5));
+    let over = agent.run("go", &mut events).await;
+    assert_eq!(over.stop_reason, StopReason::MaxTokens);
+    assert_eq!(over.limit, Some(Limit::TurnUsd(1.5)));
+
+    let p = ScriptedProvider::new([text_answer("fine")]);
+    let (mut agent, _) = agent_with(&p, Opts::default());
+    assert_eq!(agent.run("hi", &mut events).await.limit, None);
 }
 
 #[tokio::test]

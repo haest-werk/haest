@@ -72,9 +72,12 @@ async fn spend_across_turns_stops_the_conversation_and_posting_again_does_not_re
     for msg in ["a", "b", "c"] {
         collect(&mut agent, msg).await;
     }
-    let refused = collect(&mut agent, "d").await;
+    let mut refused = Vec::new();
+    let outcome = agent.run("d", &mut refused).await;
     assert_eq!(p.requests().len(), 3);
     assert_eq!(end(&refused).0, StopReason::MaxTokens);
+    let spent = Limit::Conversation(ConversationCap::Usd(2.5));
+    assert_eq!(outcome.limit, Some(spent));
 }
 
 #[tokio::test]

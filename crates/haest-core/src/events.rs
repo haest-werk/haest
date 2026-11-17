@@ -37,6 +37,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     messages::{AssistantMessage, StopReason, ToolCall, ToolResultMessage, Usage, UserMessage},
+    remedy::Limit,
     tool::ToolOutput,
 };
 
@@ -126,6 +127,10 @@ pub struct TurnOutcome {
     pub stop_reason: StopReason,
     /// What went wrong, or which cap was hit; None for a turn that ended normally.
     pub error: Option<String>,
+    /// The cap that stopped it, when one did: a turn cap, the conversation's
+    /// budget, a request too big to send, a threshold that stops. A host
+    /// matches it (`Some(Limit::Conversation(_))`) instead of reading `error`.
+    pub limit: Option<Limit>,
 }
 
 impl TurnOutcome {
@@ -134,6 +139,7 @@ impl TurnOutcome {
         Self {
             stop_reason,
             error: None,
+            limit: None,
         }
     }
     /// An ending that says why.
@@ -141,7 +147,14 @@ impl TurnOutcome {
         Self {
             stop_reason,
             error: Some(error.into()),
+            limit: None,
         }
+    }
+    /// The same ending, stopped by `limit` (None: no cap stopped it).
+    #[must_use]
+    pub fn with_limit(mut self, limit: impl Into<Option<Limit>>) -> Self {
+        self.limit = limit.into();
+        self
     }
 }
 

@@ -16,6 +16,7 @@ use crate::{
     media::user_message,
     messages::{AssistantMessage, AssistantPart, Message, StopReason, ToolCall, Usage},
     provider::{NO_RESPONSE, ProviderEvent, final_message},
+    remedy::Limit,
     run::Journal,
     tool::ToolContext,
     tool_batch::{Answer, Answers, Redo, redo_calls, run_tool_batches},
@@ -30,6 +31,9 @@ pub(super) struct Turn<'s> {
     sink: &'s mut dyn EventSink,
     /// A durable run's records (durable.rs); None for a plain turn.
     journal: Option<Journal>,
+    /// The cap that refused the model call this step made, if one did: the
+    /// turn's ending names it.
+    refused_by: Option<Limit>,
 }
 
 impl<'s> Turn<'s> {
@@ -44,6 +48,7 @@ impl<'s> Turn<'s> {
             guard,
             sink,
             journal: None,
+            refused_by: None,
         }
     }
 
@@ -150,7 +155,8 @@ impl Agent {
                 return TurnOutcome::new(StopReason::Aborted);
             }
             if let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref()) {
-                return TurnOutcome::with_error(StopReason::MaxTokens, over);
+                return TurnOutcome::with_error(StopReason::MaxTokens, over.text)
+                    .with_limit(over.limit);
             }
             if let Some(end) = self.step(t).await {
                 return end;
@@ -182,7 +188,9 @@ impl Agent {
         if side != Usage::default()
             && let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref())
         {
-            return Some(TurnOutcome::with_error(StopReason::MaxTokens, over));
+            return Some(
+                TurnOutcome::with_error(StopReason::MaxTokens, over.text).with_limit(over.limit),
+            );
         }
         let msg = self.call_model(t).await;
         t.usage.add(&msg.usage);
@@ -192,6 +200,7 @@ impl Agent {
             return Some(TurnOutcome {
                 stop_reason: msg.stop_reason,
                 error: msg.error_message,
+                limit: t.refused_by.take(),
             });
         }
         let calls: Vec<ToolCall> = msg.tool_calls().cloned().collect();
@@ -226,7 +235,8 @@ impl Agent {
         let messages = self.sendable(&self.history, resolved.model());
         let estimate = estimate_request_tokens(&prefix.system, &messages, &prefix.tools);
         if let Some(too_big) = t.guard.too_big(estimate, self.turn_caps().as_ref()) {
-            return refuse(resolved.model(), &too_big, t);
+            t.refused_by = too_big.limit;
+            return refuse(resolved.model(), &too_big.text, t);
         }
         let req = prefix.request(resolved.model().to_string(), messages, t.cancel.clone());
         let done = final_message(resolved.provider().stream(req), |ev| match ev {

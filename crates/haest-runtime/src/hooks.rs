@@ -23,6 +23,7 @@ use crate::{
         core::caps::{TurnCaps, TurnCapsSource},
         core::catalog::{InputModality, ModelFacts, Reasoning},
         core::compaction::needs_compaction,
+        core::error::BoxError,
         core::ledger::{LedgerHooks, LedgerSnapshot},
         core::messages::MediaPart,
         core::remedy::Remedies,
@@ -182,7 +183,7 @@ impl AgentHooks for RuntimeHooks {
         &self,
         agent: &mut Agent,
         cancel: &CancellationToken,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), BoxError> {
         if needs_compaction(agent.history(), &self.compaction_for(agent.model_spec())) {
             let done = self.compact_now(agent, cancel, true).await;
             done.map_err(|e| compaction_failed(&e))?;

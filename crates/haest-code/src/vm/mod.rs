@@ -55,8 +55,7 @@ use types::VmJob;
 /// What a native function answers: `Ok` resolves the guest's promise with the
 /// text, `Err` rejects it with an `Error` whose message is the error's text
 /// (its `Display`; a `String` turns into one with `.into()`).
-pub type NativeFuture =
-    BoxFuture<'static, Result<String, Box<dyn std::error::Error + Send + Sync>>>;
+pub type NativeFuture = BoxFuture<'static, Result<String, haest_core::error::BoxError>>;
 /// A guest function haest answers later: a promise in the guest, its args as
 /// strings (each one `String(arg)`; pass objects as JSON text).
 pub type NativeFn = Arc<dyn Fn(Vec<String>) -> NativeFuture + Send + Sync>;

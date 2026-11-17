@@ -3,6 +3,7 @@
 use std::fmt;
 
 use super::ProviderRef;
+use crate::error::BoxError;
 
 /// A spec resolved to the provider that serves it and the provider's model id.
 #[derive(Clone)]
@@ -101,7 +102,7 @@ pub enum ModelError {
         provider: String,
         /// What is wrong with it: the resolver's own reason.
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: BoxError,
     },
 }
 

@@ -80,6 +80,7 @@ fn durable_records_keep_the_typescript_shape() {
             error: None,
             text: "hi".into(),
             usage: Usage::default(),
+            limit: None,
         },
     };
     let v = serde_json::to_value(&end).unwrap();

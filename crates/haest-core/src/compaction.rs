@@ -185,8 +185,13 @@ pub enum CompactionError {
     Model(#[from] ModelError),
     /// Neither path produced a summary, or the run was cancelled; history is
     /// untouched. Why, and what the calls made cost (see [`Self::usage`]).
-    #[error("compaction summary failed: {0}")]
-    Failed(String, Usage),
+    #[error("compaction summary failed: {reason}")]
+    Failed {
+        /// Why no summary came out.
+        reason: String,
+        /// What the summary calls cost ([`CompactionError::usage`]).
+        usage: Usage,
+    },
 }
 
 impl CompactionError {
@@ -196,7 +201,7 @@ impl CompactionError {
     pub fn usage(&self) -> Usage {
         match self {
             CompactionError::Model(_) => Usage::default(),
-            CompactionError::Failed(_, usage) => usage.clone(),
+            CompactionError::Failed { usage, .. } => usage.clone(),
         }
     }
 }
@@ -298,7 +303,12 @@ pub async fn compact(
     agent.spent_outside_the_loop(&res.usage);
     let summary = match res.text {
         Ok(summary) => summary,
-        Err(why) => return Err(CompactionError::Failed(why, res.usage)),
+        Err(reason) => {
+            return Err(CompactionError::Failed {
+                reason,
+                usage: res.usage,
+            });
+        }
     };
     agent
         .history_mut()

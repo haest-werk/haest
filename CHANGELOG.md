@@ -294,6 +294,17 @@ Room to grow (breaking):
   env, stdin, fs, cancel, ends_at }` -> `ShellCall::new(args, cwd, fs,
   ends_at)` (`with_env`, `with_stdin`, `with_cancel`).
 
+- `TurnOutcome`, `run::RunEnd` and `run::RunOutcome` gain `limit:
+  Option<Limit>`, the cap that stopped the turn (a turn cap, the
+  conversation's budget, a request too big to send, a threshold that
+  stops): `if let Some(Limit::Conversation(_)) = end.limit` instead of
+  reading `error`. New `TurnOutcome::with_limit`. The `run_end` record does
+  not keep it, so a stored result has None. A literal adds `limit: None`.
+- `CompactionError::Failed(reason, usage)` ->
+  `CompactionError::Failed { reason, usage }`.
+- `error::BoxError` wherever the box was spelled out:
+  `ModelError::Unavailable`'s `source`, and the examples' hooks.
+
 Durable runs, opt-in: a host that hands no run store gets the haest it had.
 
 - New module `run`: `RunKey` (`new`, `as_str`, `child`, `effect_key`),

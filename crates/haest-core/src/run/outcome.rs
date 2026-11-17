@@ -6,7 +6,10 @@ use std::io;
 use serde::{Deserialize, Serialize};
 
 use super::RunKey;
-use crate::messages::{StopReason, Usage};
+use crate::{
+    messages::{StopReason, Usage},
+    remedy::Limit,
+};
 
 /// How a durable run ended, as its `run_end` record keeps it: what a second
 /// start under the same key returns.
@@ -24,6 +27,10 @@ pub struct RunEnd {
     /// What the whole run cost, a resumed run's spend before the stop included.
     #[serde(default)]
     pub usage: Usage,
+    /// The cap that stopped it ([`TurnOutcome::limit`](crate::TurnOutcome::limit)).
+    /// Not kept in the `run_end` record: a stored result has None.
+    #[serde(skip)]
+    pub limit: Option<Limit>,
 }
 
 /// Where a durable run's result came from.
@@ -51,6 +58,9 @@ pub struct RunOutcome {
     /// What the whole run cost, a resumed run's spend before the stop included.
     /// A stored result's usage is what the run cost then: nothing was spent now.
     pub usage: Usage,
+    /// The cap that stopped it, for a turn that ran now; None for a stored
+    /// result ([`RunEnd::limit`]).
+    pub limit: Option<Limit>,
     /// Whether the turn ran, went on, or came from the store.
     pub served: Served,
 }
@@ -62,6 +72,7 @@ impl RunOutcome {
             error: end.error,
             text: end.text,
             usage: end.usage,
+            limit: end.limit,
             served,
         }
     }

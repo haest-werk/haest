@@ -147,6 +147,7 @@ impl Agent {
             error: end.error,
             text: self.run_text(base),
             usage: turn.usage().clone(),
+            limit: end.limit,
         };
         if finished(end.stop_reason) {
             journal.ended(end.clone());

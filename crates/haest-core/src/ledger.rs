@@ -317,6 +317,11 @@ impl Ledger {
     /// Why no further model call may go out in this conversation, or None.
     /// The text ends with the host's remedy, if it has one.
     pub fn exhausted(&self) -> Option<String> {
+        self.exhausted_at().map(|(text, _)| text)
+    }
+
+    /// [`exhausted`](Self::exhausted), and the cap that is spent.
+    pub(crate) fn exhausted_at(&self) -> Option<(String, Option<Limit>)> {
         let state = self.state();
         let [usd, tokens] = state.readings();
         let at_cap = |r: &Reading| Mark::share(1.0).reached(r);
@@ -334,7 +339,7 @@ impl Ledger {
         } else {
             return None;
         };
-        Some(r.remedied(text, &state.remedies))
+        Some((r.remedied(text, &state.remedies), r.limit))
     }
 
     /// One line for the human: what was spent of each cap, "(no cap)" for
