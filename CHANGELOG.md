@@ -651,7 +651,9 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   ledger that made it and no other, however its spender ends (cancelled on
   the way too); it is `#[must_use]`. Holds live in memory: a snapshot does
   not save them, a restore keeps the ones in flight. A refusal says both
-  amounts in cents ("$0.30 does not fit: $0.20 is left ...").
+  amounts in cents ("$0.30 does not fit: $0.20 is left ..."). A hold
+  past `f64::MAX` holds `f64::MAX`, what is held stops there, and dropping
+  one hold gives back only its own amount, however large the others are.
 - `caps::SubagentCaps` gains `budgets: bool` (default false); a literal
   written out in full adds it.
 - `ToolContext` gains `turn_time_left() -> Option<Duration>`: what is left
@@ -963,8 +965,10 @@ Hosts write less (round two of the review, and what porting brain onto
   finite number is now no price wherever haest adds one up: `Usage`'s
   `+=` and `Sum`, a tool's spend, `Ledger::charge` (which counts such a
   call by its tokens, as one with no price) and `book_priced_cost`, which
-  books the configured price in its place. The ledger's USD stops at
-  `f64::MAX`.
+  books the configured price in its place. Every such sum stops at
+  `f64::MAX` (two huge real costs made `inf`, which the next sum counted
+  as no price), and a `Usage` whose own cost is no real amount counts it
+  as $0 when a cost is added to it.
 - New `newest::Newest<T>`: the newest value of something that changes,
   handed to a hook in the order of the changes, one call at a time, with
   no lock held. The owner `put`s each value under its own lock and

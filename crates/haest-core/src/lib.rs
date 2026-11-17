@@ -212,8 +212,8 @@ pub mod __private {
     pub use crate::deferred_tools::split::{advertised_tools, callable_tools};
     pub use crate::expand::{expand_vars, is_var_name, unset_note};
     /// The one rule for what a cost is: a tool that sums its inner calls'
-    /// costs (haest-code's Code) adds only these.
-    pub use crate::messages::usage::real_cost;
+    /// costs (haest-code's Code) adds only these, with `add_cost`.
+    pub use crate::messages::usage::{add_cost, real_cost};
     pub use crate::panics::panic_message;
     pub use crate::tool_exec::{ToolIndex, run_call, run_unspilled};
 }

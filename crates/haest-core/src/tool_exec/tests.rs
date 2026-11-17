@@ -278,6 +278,24 @@ fn a_tools_spend_that_is_negative_or_not_finite_is_no_spend() {
     assert_eq!(usage.cost_usd, Some(1.5));
 }
 
+/// Two real amounts summed past the largest float made `inf`, which the next
+/// sum then counted as no price: the biggest bill was lost.
+#[test]
+fn a_tools_spend_stops_at_f64_max() {
+    let out = ToolOutput {
+        cost_usd: Some(f64::MAX),
+        child_cost_usd: Some(f64::MAX),
+        ..ToolOutput::text("billed")
+    };
+    assert_eq!(tool_spend(&out), f64::MAX);
+    let mut usage = Usage {
+        cost_usd: Some(f64::MAX),
+        ..Default::default()
+    };
+    fold_spend(&mut usage, &out);
+    assert_eq!(usage.cost_usd, Some(f64::MAX));
+}
+
 #[test]
 fn a_result_message_carries_the_call_and_the_output() {
     let c = call("t9", "Echo", json!({}));

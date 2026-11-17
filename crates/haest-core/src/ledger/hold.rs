@@ -8,6 +8,7 @@
 //! saved: they belong to spenders of this process.
 
 use std::{
+    collections::BTreeMap,
     fmt,
     sync::{Arc, Mutex, Weak},
 };
@@ -16,6 +17,36 @@ use super::{Ledger, State};
 
 /// Slack for float sums: $0.40 must fit in a cap of $1 with $0.60 spent.
 const SLACK: f64 = 1e-9;
+
+/// The holds running now, each by its id. What is held is their sum, taken
+/// afresh: a running total would leave float dust behind, and once it
+/// reached `inf` it could never come back down.
+#[derive(Debug, Default)]
+pub(super) struct Holds {
+    live: BTreeMap<u64, f64>,
+    next: u64,
+}
+
+impl Holds {
+    /// `usd` held from now on; the id that gives it back.
+    fn add(&mut self, usd: f64) -> u64 {
+        let id = self.next;
+        self.next = self.next.wrapping_add(1);
+        self.live.insert(id, usd);
+        id
+    }
+
+    /// The hold `id` given back.
+    fn remove(&mut self, id: u64) {
+        self.live.remove(&id);
+    }
+
+    /// The USD held, at most `f64::MAX`.
+    pub(super) fn total(&self) -> f64 {
+        // A fold from +0.0: an empty float `sum` is -0.0, which prints so.
+        self.live.values().fold(0.0, |a, b| a + b).min(f64::MAX)
+    }
+}
 
 /// USD held on a [`Ledger`] ([`Ledger::reserve`]) until this is dropped.
 ///
@@ -27,6 +58,8 @@ const SLACK: f64 = 1e-9;
 #[must_use = "a hold is given back when it is dropped"]
 pub struct Hold {
     usd: f64,
+    /// Which of the ledger's holds it is.
+    id: u64,
     /// The sums of the ledger that made it; gone with that ledger.
     ledger: Weak<Mutex<State>>,
 }
@@ -47,7 +80,7 @@ impl Drop for Hold {
         // code, so it does not poison; were it poisoned, a destructor must
         // not panic, and the ledger's next call says so.
         if let Ok(mut state) = ledger.lock() {
-            state.release(self.usd);
+            state.holds.remove(self.id);
         }
     }
 }
@@ -74,9 +107,9 @@ pub struct NotAvailable {
 }
 
 impl Ledger {
-    /// USD held now, for every spender still running.
+    /// USD held now, for every spender still running; at most `f64::MAX`.
     pub fn held(&self) -> f64 {
-        self.state().held
+        self.state().holds.total()
     }
 
     /// What a new hold may take: the USD cap in force, less what was spent and
@@ -85,9 +118,10 @@ impl Ledger {
         self.state().available()
     }
 
-    /// Hold `usd` (a negative or NaN amount is 0) for a spender about to run,
-    /// until the [`Hold`] is dropped; refused with what is left when it does
-    /// not fit. With no USD cap every hold fits.
+    /// Hold `usd` (a negative or NaN amount is 0, one past `f64::MAX` is
+    /// `f64::MAX`) for a spender about to run, until the [`Hold`] is dropped;
+    /// refused with what is left when it does not fit. With no USD cap every
+    /// hold fits.
     ///
     /// # Errors
     ///
@@ -121,7 +155,8 @@ impl Ledger {
     /// # }
     /// ```
     pub fn reserve(&self, usd: f64) -> Result<Hold, NotAvailable> {
-        let usd = usd.max(0.0);
+        // Not `clamp`: it keeps a NaN.
+        let usd = if usd > 0.0 { usd.min(f64::MAX) } else { 0.0 };
         let mut state = self.state();
         if let Some(available) = state.available()
             && usd > available + SLACK
@@ -131,10 +166,9 @@ impl Ledger {
                 available,
             });
         }
-        state.held += usd;
-        state.holds += 1;
         Ok(Hold {
             usd,
+            id: state.holds.add(usd),
             ledger: Arc::downgrade(&self.state),
         })
     }
@@ -143,18 +177,7 @@ impl Ledger {
 impl State {
     fn available(&self) -> Option<f64> {
         let cap = self.caps().max_usd;
-        (cap > 0.0).then(|| (cap - self.usd - self.held).max(0.0))
-    }
-
-    /// A hold of `usd` is given back. Its spender's real spend stays charged.
-    fn release(&mut self, usd: f64) {
-        self.holds = self.holds.saturating_sub(1);
-        self.held = if self.holds == 0 {
-            // No float dust left behind once nothing is held.
-            0.0
-        } else {
-            (self.held - usd).max(0.0)
-        };
+        (cap > 0.0).then(|| (cap - self.usd - self.holds.total()).max(0.0))
     }
 }
 
@@ -284,6 +307,44 @@ mod tests {
         drop(l);
         assert!(close(h.usd(), 0.5));
         drop(h);
+    }
+
+    /// Taken while there was no USD cap, an infinite hold gave back `inf -
+    /// inf` (NaN, floored to 0) and erased the holds still running, and two
+    /// holds of `f64::MAX` summed to `inf`, which never came back down.
+    #[test]
+    fn a_huge_hold_gives_back_only_itself() {
+        for big in [f64::INFINITY, f64::MAX] {
+            let l = ledger(0.0);
+            let a = l.reserve(big).unwrap();
+            let b = l.reserve(big).unwrap();
+            let small = l.reserve(0.5).unwrap();
+            l.set_cap(crate::caps::ConversationCap::Usd(1.0));
+            assert_eq!(l.available(), Some(0.0), "{big:e}");
+            drop(a);
+            assert_eq!(l.available(), Some(0.0), "{big:e}: the other big hold runs");
+            drop(b);
+            assert!(close(l.held(), 0.5), "{big:e}: held {}", l.held());
+            assert!(close(l.available().unwrap(), 0.5), "{big:e}");
+            assert!(
+                l.reserve(0.9).is_err(),
+                "{big:e}: the $0.50 hold still runs"
+            );
+            drop(small);
+            assert_eq!(l.held(), 0.0);
+        }
+    }
+
+    /// What is held stops at `f64::MAX`, as the ledger's spend does, and so
+    /// does a hold of more.
+    #[test]
+    fn what_is_held_stops_at_f64_max() {
+        let l = ledger(0.0);
+        let a = l.reserve(f64::INFINITY).unwrap();
+        assert_eq!(a.usd(), f64::MAX);
+        let b = l.reserve(f64::MAX).unwrap();
+        assert_eq!(l.held(), f64::MAX);
+        drop([a, b]);
     }
 
     #[test]

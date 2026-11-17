@@ -12,7 +12,7 @@ use crate::{
     caps::TurnCaps,
     deps::Clock,
     ledger::Ledger,
-    messages::Usage,
+    messages::{Usage, add_cost},
     remedy::Limit,
     threshold::{Action, Crossing, Meter, Parts, Reading, Scope, Thresholds, TurnSite, Watch},
     tool::ToolOutput,
@@ -120,7 +120,7 @@ impl TurnThresholds {
         let paid = tool_spend(out);
         if paid != 0.0 {
             let mut spent = spend(&self.spent);
-            spent.cost_usd = Some(spent.cost_usd.unwrap_or(0.0) + paid);
+            spent.cost_usd = Some(add_cost(spent.cost_usd.unwrap_or(0.0), Some(paid)));
         }
     }
 }

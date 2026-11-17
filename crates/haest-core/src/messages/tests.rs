@@ -87,6 +87,23 @@ fn usage_adds_no_cost_that_is_negative_or_not_finite() {
     assert_eq!(unpriced.cost_usd, None);
 }
 
+/// Two real costs summed past the largest float made the sum `inf`, and a
+/// usage whose own cost was a NaN stayed one whatever was added to it.
+#[test]
+fn a_cost_sum_stops_at_f64_max_and_a_bad_cost_on_the_left_is_no_price() {
+    let cost = |c: f64| Usage {
+        cost_usd: Some(c),
+        ..Default::default()
+    };
+    let total: Usage = [cost(f64::MAX), cost(f64::MAX)].iter().sum();
+    assert_eq!(total.cost_usd, Some(f64::MAX));
+    for bad in [f64::NAN, -1.0, f64::INFINITY] {
+        let mut left = cost(bad);
+        left += &cost(1.0);
+        assert_eq!(left.cost_usd, Some(1.0), "{bad} on the left");
+    }
+}
+
 /// Token counts come from outside (a provider's usage, a session file): a
 /// sum or a total past u64::MAX stops there instead of overflowing.
 #[test]

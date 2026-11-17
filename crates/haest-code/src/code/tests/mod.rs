@@ -326,6 +326,24 @@ async fn an_inner_spend_that_is_no_real_amount_leaves_the_others_counted() {
     }
 }
 
+/// Two inner bills summed past the largest float made the Code call's spend
+/// `inf`, which the loop counts as no price: the calls cost nothing.
+#[tokio::test]
+async fn an_inner_spend_sum_stops_at_f64_max() {
+    let mut paid = Probe::new("mcp__s__paid", true, 0);
+    paid.answer.cost_usd = Some(f64::MAX);
+    paid.answer.child_cost_usd = Some(f64::MAX);
+    let out = run(
+        &code_over(Tools::from_iter([ToolRef::new(paid)]), &[]),
+        "await tools.mcp__s__paid({}); await tools.mcp__s__paid({})",
+    )
+    .await;
+    assert_eq!(
+        (out.cost_usd, out.child_cost_usd),
+        (Some(f64::MAX), Some(f64::MAX))
+    );
+}
+
 #[tokio::test]
 async fn describe_returns_the_input_schema_of_a_callable_tool() {
     let out = run(

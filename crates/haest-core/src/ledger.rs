@@ -40,7 +40,7 @@ pub use hold::{Hold, NotAvailable};
 
 use crate::{
     caps::{ConversationCap, ConversationCapOverrides, ConversationCaps},
-    messages::{Usage, real_cost},
+    messages::{Usage, add_cost, real_cost},
     newest::Newest,
     remedy::{Limit, Remedies},
     threshold::{Action, Crossing, LedgerSite, Mark, Meter, Reading, Scope, Thresholds, Watch},
@@ -163,9 +163,8 @@ struct State {
     warnings: Watch<LedgerSite>,
     defaults: ConversationCaps,
     remedies: Remedies,
-    /// USD held for spenders running now ([`Ledger::reserve`]), and how many holds.
-    held: f64,
-    holds: usize,
+    /// USD held for spenders running now ([`Ledger::reserve`]).
+    holds: hold::Holds,
 }
 
 /// What it has spent and its caps, as [`Ledger::snapshot`] and
@@ -177,7 +176,7 @@ impl fmt::Debug for Ledger {
             Ok(state) => out
                 .field("usd", &state.usd)
                 .field("unpriced_tokens", &state.unpriced_tokens)
-                .field("held", &state.held)
+                .field("held", &state.holds.total())
                 .field("caps", &state.caps()),
             Err(_) => out.field("state", &format_args!("<locked>")),
         };
@@ -205,8 +204,7 @@ impl Ledger {
             warnings: Watch::default(),
             defaults,
             remedies: Remedies::default(),
-            held: 0.0,
-            holds: 0,
+            holds: hold::Holds::default(),
         };
         Self {
             state: Arc::new(Mutex::new(state)),
@@ -314,7 +312,7 @@ impl Ledger {
         let report = {
             let mut state = self.state();
             match priced {
-                Some(c) => state.usd = (state.usd + c).min(f64::MAX),
+                Some(c) => state.usd = add_cost(state.usd, Some(c)),
                 None => {
                     state.unpriced_tokens = state.unpriced_tokens.saturating_add(u.context_tokens())
                 }

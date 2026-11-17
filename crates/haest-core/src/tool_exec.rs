@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use crate::{
     deps::now_ms,
     fs::ensure_dir,
-    messages::{AssistantMessage, StopReason, ToolCall, ToolResultMessage, Usage, real_cost},
+    messages::{AssistantMessage, StopReason, ToolCall, ToolResultMessage, Usage, add_cost},
     panics::panic_message,
     tool::{MAX_TOOL_OUTPUT, ToolContext, ToolError, ToolOutput, ToolRef, Tools, spelled},
 };
@@ -144,14 +144,15 @@ pub async fn run_call(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> 
 pub(crate) fn fold_spend(usage: &mut Usage, out: &ToolOutput) {
     let spent = tool_spend(out);
     if spent != 0.0 {
-        usage.cost_usd = Some(usage.cost_usd.unwrap_or(0.0) + spent);
+        usage.cost_usd = Some(add_cost(usage.cost_usd.unwrap_or(0.0), Some(spent)));
     }
 }
 
 /// What a tool and the agents it ran spent, in USD: each cost that is a
-/// real amount ([`real_cost`]), the rest none.
+/// real amount ([`real_cost`](crate::messages::real_cost)), the rest none
+/// ([`add_cost`]).
 pub(crate) fn tool_spend(out: &ToolOutput) -> f64 {
-    real_cost(out.cost_usd).unwrap_or(0.0) + real_cost(out.child_cost_usd).unwrap_or(0.0)
+    add_cost(add_cost(0.0, out.cost_usd), out.child_cost_usd)
 }
 
 /// The history entry for one finished call. Media rides along only when there is some.

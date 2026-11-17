@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 /// Usages add up with `+=` and [`Sum`]; a count stops at `u64::MAX`. A cost
 /// is added when the usage added has one, so a sum's `cost_usd` stays `None`
 /// until some call reported a price. A cost that is negative or not a finite
-/// number is no price: it is never added.
+/// number is no price, on either side of a `+=`: it is never added, and a
+/// sum's cost stops at `f64::MAX`.
 ///
 /// ```
 /// use haest_core::Usage;
@@ -53,8 +54,8 @@ impl AddAssign<&Usage> for Usage {
         self.cache_read = self.cache_read.saturating_add(u.cache_read);
         self.cache_write = self.cache_write.saturating_add(u.cache_write);
         self.reasoning = self.reasoning.saturating_add(u.reasoning);
-        if let Some(c) = real_cost(u.cost_usd) {
-            self.cost_usd = Some(self.cost_usd.unwrap_or(0.0) + c);
+        if real_cost(u.cost_usd).is_some() {
+            self.cost_usd = Some(add_cost(self.cost_usd.unwrap_or(0.0), u.cost_usd));
         }
     }
 }
@@ -63,9 +64,17 @@ impl AddAssign<&Usage> for Usage {
 /// other (a provider's or a tool's bad bill: a NaN, a refund) is no price,
 /// so it can neither lower a spend nor switch a USD cap off (`NaN >= cap` is
 /// false). Every sum of a cost (a `Usage`'s, a tool's, the ledger's) goes
-/// through here.
+/// through here, by [`add_cost`].
 pub fn real_cost(cost: Option<f64>) -> Option<f64> {
     cost.filter(|c| c.is_finite() && *c >= 0.0)
+}
+
+/// `total` plus `cost`, each counted only when it is a real amount
+/// ([`real_cost`]), the sum stopping at `f64::MAX`: a sum of real amounts
+/// is one too, never an `inf` the next sum would count as no price.
+pub fn add_cost(total: f64, cost: Option<f64>) -> f64 {
+    let real = |c: Option<f64>| real_cost(c).unwrap_or(0.0);
+    (real(Some(total)) + real(cost)).min(f64::MAX)
 }
 
 impl AddAssign for Usage {
