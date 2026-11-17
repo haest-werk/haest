@@ -73,7 +73,7 @@ the tools a host names with `ApprovalMod::with_shell_tools`, each by its
 | statuses | `open`, `closed`, `not_planned` (`state` + `state_reason`) | `inbox`, `open`, `in-progress`, `in-review`, `done`, `archived` (`status:`; the file never moves) |
 | priority | **none**: GitHub issues have no priority field | `low`, `medium`, `high` |
 | labels | labels | `tags:` |
-| parent / child | sub-issues (a new parent replaces the old one) | `epic:` on the child |
+| parent / child | sub-issues (a new parent replaces the old one, when the old one is in this repository) | `epic:` on the child |
 | depends_on / blocks | issue dependencies ("blocked by" / "blocking") | `depends_on:` on the card that waits |
 | relates_to | **none**: GitHub has no such link; the tool is not offered it | `relates_to:` (read from both cards) |
 | delete | GraphQL `deleteIssue` (needs a token with admin rights on the repository) | the file is removed |

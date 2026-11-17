@@ -7,7 +7,7 @@
 use haest_http::Method;
 use serde_json::{Value, json};
 
-use super::{GithubTracker, api::IssueRef};
+use super::{GithubTracker, api::IssueRef, wire::ref_from_url};
 use crate::tracker::{Link, LinkChange, Relation, TrackerError};
 
 /// Children and dependencies past this many are not listed on a get.
@@ -52,15 +52,17 @@ impl GithubTracker {
         Ok(links)
     }
 
-    /// The database id GitHub's relation APIs take.
-    async fn database_id(&self, r: &IssueRef) -> Result<u64, TrackerError> {
+    /// The database id GitHub's relation APIs take, and the issue's parent,
+    /// if it has one.
+    async fn held_issue(&self, r: &IssueRef) -> Result<(u64, Option<IssueRef>), TrackerError> {
         let missing = format!("there is no issue {}", self.label(r));
         let v = self
             .call(Method::Get, self.issue_url(r, ""), None, &missing)
             .await?;
-        v.get("id")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| TrackerError::Failed("GitHub sent an issue with no id".into()))
+        let id = (v.get("id").and_then(Value::as_u64))
+            .ok_or_else(|| TrackerError::Failed("GitHub sent an issue with no id".into()))?;
+        let parent = (v.get("parent_issue_url").and_then(Value::as_str)).and_then(ref_from_url);
+        Ok((id, parent))
     }
 
     pub(super) async fn change_link(
@@ -99,7 +101,21 @@ impl GithubTracker {
                 self.label(&holder),
             )));
         }
-        let held_id = self.database_id(&held).await?;
+        let (held_id, old_parent) = self.held_issue(&held).await?;
+        // A new parent takes the child off its old one, a link GitHub keeps
+        // on that old parent: refused when it is another repository's issue.
+        let replace = match (sub_issue, change, &old_parent) {
+            (true, LinkChange::Add, Some(old)) if !self.is_home(old) => {
+                let (owner, repo) = (&self.owner, &self.repo);
+                return Err(TrackerError::Invalid(format!(
+                    "{}'s parent is {}: a new parent takes it off that issue, and this tracker \
+                     changes {owner}/{repo}'s issues only; take it off there first",
+                    self.label(&held),
+                    self.label(old),
+                )));
+            }
+            (_, _, old) => old.is_some(),
+        };
         let missing = match change {
             LinkChange::Add => format!("there is no issue {}", self.label(&holder)),
             LinkChange::Remove => format!(
@@ -110,10 +126,16 @@ impl GithubTracker {
         };
         let (method, url, body) = match (sub_issue, change) {
             // An issue has one parent: a new one replaces it, as on a card.
+            // Asked only when it has one (in this repository, as above), so a
+            // parent set elsewhere since the read is GitHub's to refuse.
             (true, LinkChange::Add) => (
                 Method::Post,
                 self.issue_url(&holder, "/sub_issues"),
-                Some(json!({"sub_issue_id": held_id, "replace_parent": true})),
+                Some(if replace {
+                    json!({"sub_issue_id": held_id, "replace_parent": true})
+                } else {
+                    json!({"sub_issue_id": held_id})
+                }),
             ),
             (true, LinkChange::Remove) => (
                 Method::Delete,

@@ -239,7 +239,8 @@ impl GithubTracker {
     /// # Errors
     ///
     /// `Invalid` for an id of another repository, a `parent` or `blocks`
-    /// link to one, a name GitHub cannot have, or a relation GitHub has no
+    /// link to one, a new parent for an issue whose parent is another
+    /// repository's, a name GitHub cannot have, or a relation GitHub has no
     /// place for; `NotFound` for no such issue; `Failed` when GitHub refuses.
     pub async fn link(
         &self,

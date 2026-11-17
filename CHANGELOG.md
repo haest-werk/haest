@@ -237,7 +237,13 @@ write instead.
   and is refused the same way. A name GitHub cannot give an owner or a
   repository is refused too: `../..#9` sent the token to
   `{api}/repos/../../issues/9`, which leaves `/repos/` (and a GitHub
-  Enterprise root's `/api/v3`).
+  Enterprise root's `/api/v3`). And every new parent was sent with
+  `replace_parent`, which takes the child off its old parent, an issue that
+  could be another repository's (a `child` link to `owner/other#9`, or a
+  `parent` link from this repository's issue whose parent is elsewhere). A
+  new parent now replaces an old one only when the old one is this
+  repository's, else the link is refused as `Invalid` before anything is
+  written; an issue with no parent is sent without `replace_parent`.
 - The model providers' stream parser searched a line from its start again
   on every chunk, so a server that sent one long line in small pieces cost
   quadratic time on an executor thread (8 MiB in 1 KiB chunks: 16 s), and

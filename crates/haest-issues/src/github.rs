@@ -51,9 +51,11 @@ const API: &str = "https://api.github.com";
 /// GitHub keeps a `parent` link on the parent and a `blocks` link on the
 /// issue that waits, so one whose other end is elsewhere would change that
 /// issue, and is refused the same way. So is a name GitHub cannot give an
-/// owner or a repository (`..` among them). Pull requests
-/// are skipped everywhere: the issues API lists them too, but they are not
-/// issues here.
+/// owner or a repository (`..` among them). A new parent replaces an issue's
+/// old one only when the old one is this repository's: replacing it takes
+/// the link off the old parent, so an issue whose parent is elsewhere is
+/// refused a new one. Pull requests are skipped everywhere: the issues API
+/// lists them too, but they are not issues here.
 ///
 /// GitHub's answers map to [`TrackerError`]: 404 and 410 are `NotFound`, 422
 /// is `Invalid` with GitHub's reasons, anything else (a 401 without a token,

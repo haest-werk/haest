@@ -1,6 +1,6 @@
 //! Creating, changing, deleting and linking issues: the requests GitHub gets.
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::*;
 
@@ -138,10 +138,7 @@ async fn each_relation_is_stored_where_github_keeps_it() {
                 format!("POST {API}/repos/o/r/issues/1/sub_issues"),
             ]
         );
-        assert_eq!(
-            h.calls()[1].json_body(),
-            json!({"sub_issue_id": 1005, "replace_parent": true})
-        );
+        assert_eq!(h.calls()[1].json_body(), json!({"sub_issue_id": 1005}));
     }
     // blocks: the target is blocked by this issue.
     let http = FakeHttp::new([ok(issue(9, "nine")), added()]);
@@ -233,6 +230,57 @@ async fn a_link_github_keeps_on_another_repositorys_issue_is_refused_unsent() {
             assert!(refused, "{relation:?} {change:?}: {result:?}");
             assert!(http.calls().is_empty(), "{:?}", http.sent());
         }
+    }
+}
+
+/// A new parent takes the child off its old one, a link GitHub keeps on that
+/// old parent. With the old parent in another repository, the add is refused
+/// once the child is read, before any write: as a `child` of this
+/// repository's issue (the child elsewhere) and as a `parent` (the child
+/// here). An old parent in this repository is replaced; with none, nothing
+/// is asked to be replaced.
+#[tokio::test]
+async fn a_new_parent_never_takes_a_child_off_another_repositorys_issue() {
+    let old_parent = json!(format!("{API}/repos/o/third/issues/3"));
+    let other9 = with(
+        with(
+            issue(9, "nine"),
+            "repository_url",
+            json!(format!("{API}/repos/o/other")),
+        ),
+        "parent_issue_url",
+        old_parent.clone(),
+    );
+    let home5 = with(issue(5, "five"), "parent_issue_url", old_parent);
+    for (id, link, child) in [
+        ("1", Link::new(Relation::Child, "o/other#9"), other9),
+        ("5", Link::new(Relation::Parent, "7"), home5),
+    ] {
+        // A GitHub that would take the write, so only the tracker can stop it.
+        let http = FakeHttp::new([ok(child), ok(json!({}))]);
+        let result = github(http.clone()).link(id, &link, LinkChange::Add).await;
+        let refused = matches!(&result, Err(TrackerError::Invalid(m)) if m.contains("o/third#3"));
+        assert!(refused, "{link:?}: {result:?}");
+        assert_eq!(http.calls().len(), 1, "only the read: {:?}", http.sent());
+    }
+
+    let parent_here = json!(format!("{API}/repos/o/r/issues/2"));
+    for (old, replace) in [(parent_here, Some(true)), (Value::Null, None)] {
+        let http = FakeHttp::new([
+            ok(with(issue(5, "five"), "parent_issue_url", old)),
+            ok(json!({})),
+        ]);
+        github(http.clone())
+            .link("5", &Link::new(Relation::Parent, "7"), LinkChange::Add)
+            .await
+            .unwrap();
+        let body = http.calls()[1].json_body();
+        assert_eq!(body["sub_issue_id"], 1005);
+        assert_eq!(
+            body.get("replace_parent").and_then(Value::as_bool),
+            replace,
+            "{body}"
+        );
     }
 }
 
