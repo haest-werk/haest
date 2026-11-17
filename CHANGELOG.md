@@ -1778,6 +1778,10 @@ against it; the wire JSON is unchanged):
 - An approval ask after the hub closed is denied at once. It waited for
   the gate's timeout (10 minutes by default) or an interrupt, with no frame
   out for anyone to answer.
+- `SessionHandle::hold` is cancel-safe. A `hold()` dropped before it
+  resolved (raced against Ctrl-C or a timeout; it waits for a running turn
+  to end) still held the session, with no `Hold` left to release it: input
+  queued and no turn ran again. It now holds nothing.
 
 ### haest-transport (new)
 

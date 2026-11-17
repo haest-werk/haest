@@ -255,15 +255,23 @@ impl<D: Driven> SessionHandle<D> {
     /// the [`Hold`] is dropped; what arrives meanwhile waits, in order. How a
     /// terminal keeps its prompt free of a turn's output.
     ///
+    /// Cancel-safe: dropped before it resolves (it waits for a running turn
+    /// to end), it holds nothing.
+    ///
     /// # Errors
     ///
     /// [`SessionError::Closed`].
     pub async fn hold(&self) -> Result<Hold, SessionError> {
-        self.ask(Command::Hold).await?;
         let tx = self.tx.clone();
-        Ok(Hold {
+        // Made before the hold is asked for, so a drop at the await below
+        // releases it. The driver reads its requests in the order they were
+        // sent, a hold it puts off until a turn ends included, so the
+        // release always comes after the hold.
+        let hold = Hold {
             release: Some(Box::new(move || drop(tx.send(Command::Release)))),
-        })
+        };
+        self.ask(Command::Hold).await?;
+        Ok(hold)
     }
 
     /// Send `input` now; await the [`PendingTurn`] for the end of the turn that

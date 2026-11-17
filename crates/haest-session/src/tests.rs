@@ -506,6 +506,58 @@ async fn input_sent_under_a_hold_waits_and_runs_as_a_turn_of_its_own() {
     session.close().await;
 }
 
+/// A host that gives up on `hold()` before it resolves: a `select!` with
+/// Ctrl-C, a timeout, an aborted task.
+fn give_up_on_a_hold(session: &crate::SessionHandle<impl crate::Driven>) {
+    use futures::FutureExt as _;
+    assert!(
+        session.hold().now_or_never().is_none(),
+        "the hold was not granted on its first poll"
+    );
+}
+
+/// `hold()` built its `Hold`, whose drop releases it, only once the hold was
+/// granted, but the driver counted the hold whether or not anyone still
+/// waited for it: a `hold()` dropped in between held the session for good,
+/// and no turn ran again.
+#[tokio::test]
+async fn a_hold_dropped_before_it_was_granted_holds_nothing() {
+    let model = answers(&["one"]);
+    let session = start(agent(&model, Tools::new()), hub());
+    give_up_on_a_hold(&session);
+    let turn = tokio::time::timeout(Duration::from_secs(5), session.turn(Input::human("a"))).await;
+    assert!(matches!(turn, Ok(Ok(_))), "the next turn runs: {turn:?}");
+    session.close().await;
+}
+
+/// The same while a turn runs: the driver puts the hold off until that
+/// turn ends, and the release it gets from the dropped `hold()` after it.
+#[tokio::test]
+async fn a_hold_dropped_while_a_turn_runs_holds_nothing_after_it() {
+    let go = Arc::new(Notify::new());
+    let model = waits_then(&["first", "second"]);
+    let session = start(
+        agent(&model, Tools::from_iter([ToolRef::new(Wait(go.clone()))])),
+        hub(),
+    );
+    let first = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::human("wait, then answer")).await }
+    });
+    eventually(|| model.requests().len() == 1).await;
+    give_up_on_a_hold(&session);
+    // The hold reaches the driver while the turn runs, and waits for its end.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    go.notify_one();
+    assert!(first.await.unwrap().is_ok());
+
+    let next = session.turn(Input::human("again"));
+    let next = tokio::time::timeout(Duration::from_secs(5), next).await;
+    assert!(matches!(next, Ok(Ok(_))), "the next turn runs: {next:?}");
+    assert_eq!(model.requests().len(), 3);
+    session.close().await;
+}
+
 #[tokio::test]
 async fn close_closes_the_conversation_and_ends_every_stream() {
     let model = answers(&["bye"]);
