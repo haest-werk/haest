@@ -27,6 +27,11 @@ an `HttpClient`).
 - Implement `HttpClient` to send everything somewhere else: a gateway, a
   recorder, a fake for tests. A part that sends takes
   `impl Into<HttpClientRef>`, so it is handed the client itself.
+- The `reqwest` feature (on by default) is `ReqwestClient` and
+  `build_reqwest`. With `default-features = false` this crate is the trait
+  and its types only: no reqwest, rustls or ring is built, and the default
+  client (`HttpClientRef::default()`) refuses every request until you hand
+  one in.
 
 ```rust
 use haest_http::{HttpClient, HttpError, Request, Response, async_trait};

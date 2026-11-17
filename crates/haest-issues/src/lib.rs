@@ -97,6 +97,12 @@
 //! the model calls and the tools send through, a reqwest default, a fake in the tests
 //! ([`GithubTracker::with_http`]).
 //!
+//! # Features
+//!
+//! - `reqwest` (default): the GitHub tracker's default client, haest-http's
+//!   shared `ReqwestClient`. Off, no reqwest, rustls or ring is built, and a
+//!   tracker the host hands no client (`with_http`) fails every call.
+//!
 //! [`ToolError::Input`]: haest_core::tool::ToolError::Input
 //! [`ToolError::Failed`]: haest_core::tool::ToolError::Failed
 

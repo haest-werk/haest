@@ -3,6 +3,8 @@
 //! straight to its server, so a key never travels through a proxy haest was
 //! not handed. A test binary of its own: it sets the process's variables.
 
+#![cfg(feature = "reqwest")]
+
 use std::{
     io::{Read, Write},
     net::TcpListener,

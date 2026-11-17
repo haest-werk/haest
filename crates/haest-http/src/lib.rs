@@ -64,18 +64,29 @@
 //! `impl Into<HttpClientRef>`: the client itself, or an `Arc` of one the host
 //! shares.
 //!
-//! The default sends for real; nothing is built until the first request:
+//! The default ([`HttpClientRef::default`], the shared [`ReqwestClient`])
+//! sends for real; nothing is built until the first request:
 //!
 //! ```no_run
-//! use haest_http::{HttpClient, Request, ReqwestClient};
+//! use haest_http::{HttpClientRef, Request};
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), haest_http::HttpError> {
-//! let res = ReqwestClient::new().send(Request::get("https://example.com/")).await?;
+//! let res = HttpClientRef::default().send(Request::get("https://example.com/")).await?;
 //! println!("{} ({} headers)", res.status, res.headers.len());
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! # Features
+//!
+//! - `reqwest` (default): [`ReqwestClient`], [`build_reqwest`] and the
+//!   [`reqwest`](mod@reqwest) re-export. Off, this crate is the trait and its
+//!   types only, it builds no reqwest, rustls or ring, and the default client
+//!   refuses every request ([`HttpError::Request`]) until a host hands in its
+//!   own: what a host with its own HTTP stack (a gateway, a recorder) wants.
+//!   haest-providers and haest-issues forward it as their own `reqwest`
+//!   feature, and the facade as `haest/reqwest`.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -83,6 +94,7 @@ mod client_ref;
 mod error;
 mod redact;
 mod request;
+#[cfg(feature = "reqwest")]
 mod reqwest_client;
 mod response;
 
@@ -103,11 +115,15 @@ pub use bytes::Bytes;
 ///
 /// Its types are part of haest-http's API: a breaking reqwest release (0.14
 /// after 0.13) is a breaking release of haest-http and of haest.
+#[cfg(feature = "reqwest")]
+#[cfg_attr(docsrs, doc(cfg(feature = "reqwest")))]
 pub use reqwest;
 
 pub use client_ref::HttpClientRef;
 pub use error::{BoxError, HttpError};
 pub use request::{Method, ParseMethodError, Request};
+#[cfg(feature = "reqwest")]
+#[cfg_attr(docsrs, doc(cfg(feature = "reqwest")))]
 pub use reqwest_client::{ReqwestClient, build_reqwest, reqwest_builder};
 pub use response::{Body, Response};
 

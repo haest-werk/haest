@@ -30,7 +30,8 @@
 //!   one yourself to set every option.
 //! - [`Catalog`]: the models haest knows, and what each accepts.
 //! - [`http::HttpClient`]: how every request travels (PLUG POINT). The
-//!   default is [`http::ReqwestClient`], the process's shared client.
+//!   default is [`http::HttpClientRef::default`]: the process's shared
+//!   `ReqwestClient` (the `reqwest` feature).
 //! - [`routing`]: OpenRouter provider routing, resolved per request.
 //!
 //! # Picking a model
@@ -172,6 +173,11 @@
 //!
 //! # Features
 //!
+//! - `reqwest` (default): the default client, haest-http's shared
+//!   `ReqwestClient`. Off, no reqwest, rustls or ring is built, and a
+//!   provider or registry not handed a client refuses to send, saying so in
+//!   the message's `error_message`: what a host that sends through its own
+//!   HTTP stack wants.
 //! - `testing`: the `testing` module, fakes for tests in other crates: an
 //!   [`http::HttpClient`] that answers from a script and records every
 //!   request, and builders for SSE bodies in each dialect.

@@ -17,9 +17,14 @@ workspace = true
 name = "haest"
 
 [features]
-default = ["providers", "workspace", "tools", "mcp", "code", "mods", "settings"]
+default = ["providers", "workspace", "tools", "mcp", "code", "mods", "settings", "reqwest"]
 # The HTTP seam: on with every part that sends requests through it.
 http = ["dep:haest-http"]
+# The default client over reqwest and rustls (`http::ReqwestClient`). Off, with
+# `providers` only, no reqwest is built and the model calls go through the
+# client the host hands in (the default refuses to send). `tools` and `mcp`
+# turn it on whatever this says: WebFetch and rmcp run on reqwest.
+reqwest = ["haest-http?/reqwest", "haest-providers?/reqwest"]
 providers = ["dep:haest-providers", "http"]
 workspace = ["dep:haest-workspace"]
 tools = ["dep:haest-tools", "http"]

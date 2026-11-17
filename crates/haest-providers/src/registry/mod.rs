@@ -39,7 +39,7 @@ use builtin::{anthropic_options, openai_options, openrouter_options};
 pub use custom::{CustomProviderConfig, CustomProviders, Dialect, load_custom_providers};
 pub use error::{EntryProblem, ProvidersFileError};
 
-use haest_http::{HttpClientRef, ReqwestClient};
+use haest_http::HttpClientRef;
 
 use crate::{
     anthropic::{AnthropicOptions, AnthropicProvider},
@@ -68,7 +68,7 @@ pub(crate) struct Shared {
 impl Default for Shared {
     fn default() -> Self {
         Self {
-            http: ReqwestClient::new().into(),
+            http: HttpClientRef::default(),
             retry: RetryPolicy::default(),
             headers_timeout: HEADERS_TIMEOUT,
             routing: None,
@@ -141,10 +141,12 @@ impl ProviderRegistry {
     /// The built-ins, their keys asked of `keys` (a closure, a `HashMap`, a
     /// host's own [`KeySource`](haest_core::KeySource), or an `Arc` of one),
     /// and no providers.json entries. Every provider it builds sends over the
-    /// process's shared [`ReqwestClient`], retries as the SDKs do, waits ten
-    /// minutes for each try's status, sends no routing, and tells OpenRouter
-    /// the app is `haest` (`X-Title`) with no URL; change a part with its
-    /// `with_*` setter, read it with the getter of its name.
+    /// default client ([`HttpClientRef::default`]: the process's shared
+    /// `ReqwestClient`, or without the `reqwest` feature none), retries as the
+    /// SDKs do, waits ten minutes for each try's status, sends no routing,
+    /// and tells OpenRouter the app is `haest` (`X-Title`) with no URL;
+    /// change a part with its `with_*` setter, read it with the getter of its
+    /// name.
     ///
     /// Nothing is built, no key asked for and no client built until a spec is
     /// resolved: a host that brings its own client never pays for the shared one.
@@ -152,11 +154,11 @@ impl ProviderRegistry {
     /// ```
     /// use std::time::Duration;
     ///
-    /// use haest_providers::{ProviderRegistry, RetryPolicy, http::ReqwestClient};
+    /// use haest_providers::{ProviderRegistry, RetryPolicy, http::HttpClientRef};
     ///
     /// let keys = |name: &str| (name == "OPENROUTER_API_KEY").then(|| "sk-or-...".to_string());
     /// let registry = ProviderRegistry::new(keys)
-    ///     .with_http(ReqwestClient::new())
+    ///     .with_http(HttpClientRef::default())
     ///     .with_retry(RetryPolicy::none())
     ///     .with_headers_timeout(Duration::from_secs(60))
     ///     .without_app_title();
@@ -184,7 +186,7 @@ impl ProviderRegistry {
 
     /// This registry sending every provider's requests through `http` (the
     /// client itself, or an `Arc` of one the host shares) instead of the
-    /// shared [`ReqwestClient`].
+    /// default client.
     #[must_use]
     pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
         self.shared_mut().http = http.into();

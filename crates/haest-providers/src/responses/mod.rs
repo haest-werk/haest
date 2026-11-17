@@ -99,10 +99,10 @@ impl fmt::Debug for ResponsesOptions {
 ///
 /// ```
 /// use haest_core::Provider;
-/// use haest_providers::{ResponsesOptions, ResponsesProvider, http::ReqwestClient};
+/// use haest_providers::{ResponsesOptions, ResponsesProvider, http::HttpClientRef};
 ///
 /// let opts = ResponsesOptions::new("openai", "sk-...");
-/// let provider = ResponsesProvider::new(opts, ReqwestClient::new());
+/// let provider = ResponsesProvider::new(opts, HttpClientRef::default());
 /// assert_eq!(provider.id(), "openai");
 /// ```
 ///

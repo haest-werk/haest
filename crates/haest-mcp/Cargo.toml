@@ -36,7 +36,7 @@ rmcp = { version = "3.9", default-features = false, features = [
     "transport-streamable-http-client-reqwest",
     "reqwest-tls-no-provider",
 ] }
-haest-http = { workspace = true }
+haest-http = { workspace = true, features = ["reqwest"] }
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }

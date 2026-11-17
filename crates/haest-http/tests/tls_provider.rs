@@ -5,6 +5,8 @@
 //! A test binary of its own: it needs a process in which nothing has
 //! installed a provider yet.
 
+#![cfg(feature = "reqwest")]
+
 use std::{
     io::{Read, Write},
     net::TcpListener,

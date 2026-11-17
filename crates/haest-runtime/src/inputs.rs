@@ -9,7 +9,7 @@ use haest_settings::Settings;
 use crate::{
     haest::{
         ChildEnv, KeySourceRef,
-        http::{HttpClientRef, ReqwestClient},
+        http::HttpClientRef,
         mcp::McpServerConfig,
         providers::{CustomProviders, RoutingScopes},
     },
@@ -52,8 +52,9 @@ pub struct RuntimeInputs {
 
 impl RuntimeInputs {
     /// The settings in this world, and nothing else: no variables passed, no
-    /// keys, no custom providers, no MCP servers, no routing, the shared
-    /// [`ReqwestClient`] (built on the first request).
+    /// keys, no custom providers, no MCP servers, no routing, the default
+    /// client ([`HttpClientRef::default`]: the shared `ReqwestClient`, built
+    /// on the first request).
     ///
     /// With no keys, [`build`](crate::build) fails unless the model's provider needs none:
     /// hand in the [`keys`](Self::with_keys) the settings' providers use.
@@ -67,7 +68,7 @@ impl RuntimeInputs {
             providers: CustomProviders::new(),
             mcp_servers: Vec::new(),
             routing: None,
-            http: ReqwestClient::new().into(),
+            http: HttpClientRef::default(),
         }
     }
 
@@ -132,7 +133,7 @@ impl RuntimeInputs {
 
     /// How the model calls and GenerateImage's requests are sent: the host's
     /// own client (a gateway, a recorder; or an `Arc` of one it shares)
-    /// instead of the shared [`ReqwestClient`]. WebFetch keeps its own
+    /// instead of the default client. WebFetch keeps its own
     /// client, which checks every address it connects to; MCP servers keep
     /// rmcp's.
     #[must_use]

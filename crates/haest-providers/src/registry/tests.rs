@@ -191,6 +191,19 @@ async fn the_client_handed_in_survives_every_later_setter() {
     assert_eq!(t.requests()[0].header("x-title"), Some("host"));
 }
 
+/// Without reqwest there is no client to fall back on: a model call the host
+/// handed no client ends as an error that says to hand one in, never a hang.
+#[cfg(not(feature = "reqwest"))]
+#[tokio::test]
+async fn without_reqwest_a_registry_with_no_client_says_to_hand_one_in() {
+    let reg = ProviderRegistry::new(keys(&[("OPENROUTER_API_KEY", "k")]));
+    let r = reg.resolve("openrouter:m").unwrap();
+    let (_, msg) = collect(r.provider().stream(request(r.model()))).await;
+    assert_eq!(msg.stop_reason, haest_core::messages::StopReason::Error);
+    let said = msg.error_message.unwrap_or_default();
+    assert!(said.contains("hand one in"), "{said}");
+}
+
 #[test]
 fn an_entry_that_replaces_a_built_in_is_listed_once() {
     let custom = CustomProviders::from([

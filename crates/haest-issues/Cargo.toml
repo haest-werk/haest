@@ -14,6 +14,13 @@ categories.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["reqwest"]
+# The GitHub tracker's default client: haest-http's shared `ReqwestClient`.
+# Off, no reqwest, rustls or ring is built, and a tracker not handed a client
+# of the host's (`with_http`) fails every call, saying so.
+reqwest = ["haest-http/reqwest"]
+
 [dependencies]
 haest-core = { workspace = true }
 async-trait = { workspace = true }

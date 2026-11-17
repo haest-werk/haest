@@ -16,8 +16,10 @@ categories = ["development-tools"]
 # crate's own Cargo.toml, so parallel work on two crates never edits this table.
 [workspace.dependencies]
 haest-core = { version = "0.2.0", path = "crates/haest-core" }
-haest-http = { version = "0.2.0", path = "crates/haest-http" }
-haest-providers = { version = "0.2.0", path = "crates/haest-providers" }
+# No default features: reqwest (the default client) is each crate's to ask for
+# (`features = ["reqwest"]`), so a crate that only names the types builds none.
+haest-http = { version = "0.2.0", path = "crates/haest-http", default-features = false }
+haest-providers = { version = "0.2.0", path = "crates/haest-providers", default-features = false }
 haest-workspace = { version = "0.2.0", path = "crates/haest-workspace" }
 haest-tools = { version = "0.2.0", path = "crates/haest-tools" }
 haest-mcp = { version = "0.2.0", path = "crates/haest-mcp" }

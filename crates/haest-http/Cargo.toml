@@ -13,6 +13,14 @@ categories.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["reqwest"]
+# The default client, `ReqwestClient`: reqwest over rustls (ring), and
+# `build_reqwest`. Off, this crate is the trait and its types only, and the
+# default client (`HttpClientRef::default()`) refuses every request until a
+# host hands in its own: a host with its own HTTP stack builds no reqwest.
+reqwest = ["dep:reqwest", "dep:rustls"]
+
 [dependencies]
 async-trait = { workspace = true }
 futures = { workspace = true }
@@ -22,8 +30,8 @@ bytes = "1"
 # TLS on ring: one crypto stack in the binary and no C toolchain (aws-lc-sys
 # needs cmake) to build it. No `system-proxy`: the default client reads no
 # proxy settings (D15). `stream`: a model's answer is read as it arrives.
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "stream"] }
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
+reqwest = { version = "0.13", optional = true, default-features = false, features = ["rustls-no-provider", "http2", "stream"] }
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }

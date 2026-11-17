@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use haest_http::{__private::UrlDebug, HttpClientRef, Method, ReqwestClient};
+use haest_http::{__private::UrlDebug, HttpClientRef, Method};
 use serde_json::Value;
 
 use crate::tracker::TrackerError;
@@ -36,8 +36,9 @@ const API: &str = "https://api.github.com";
 /// Deleting an issue needs a token with admin rights on the repository.
 ///
 /// PLUG POINT: [`GithubTracker::with_http`], how the requests travel (any
-/// [`HttpClient`](haest_http::HttpClient); the shared [`ReqwestClient`] by
-/// default).
+/// [`HttpClient`](haest_http::HttpClient); by default
+/// [`HttpClientRef::default`], the shared `ReqwestClient` with the `reqwest`
+/// feature).
 ///
 /// Statuses are `open`, `closed` and `not_planned`; there are no priorities;
 /// the relations are parent / child (sub-issues) and depends_on / blocks
@@ -118,7 +119,8 @@ impl fmt::Debug for GithubTracker {
 
 impl GithubTracker {
     /// The issues of `owner/repo` on github.com, with no token, over the
-    /// shared [`ReqwestClient`]. Nothing is built or sent until the first call.
+    /// default client ([`HttpClientRef::default`]). Nothing is built or sent
+    /// until the first call.
     pub fn new(owner: impl Into<String>, repo: impl Into<String>) -> Self {
         Self {
             owner: owner.into(),
@@ -126,7 +128,7 @@ impl GithubTracker {
             token: None,
             api: API.into(),
             graphql: format!("{API}/graphql"),
-            http: ReqwestClient::new().into(),
+            http: HttpClientRef::default(),
         }
     }
 

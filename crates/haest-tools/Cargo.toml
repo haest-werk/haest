@@ -16,7 +16,8 @@ workspace = true
 [dependencies]
 haest-core = { workspace = true }
 # WebFetch's and GenerateImage's requests; re-exported as `haest_tools::http`.
-haest-http = { workspace = true }
+# reqwest: WebFetch's guarded client is a configured `ReqwestClient`.
+haest-http = { workspace = true, features = ["reqwest"] }
 async-trait = { workspace = true }
 futures = { workspace = true }
 serde_json = { workspace = true }

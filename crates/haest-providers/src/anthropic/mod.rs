@@ -119,11 +119,11 @@ impl fmt::Debug for AnthropicOptions {
 ///
 /// ```
 /// use haest_core::Provider;
-/// use haest_providers::{AnthropicOptions, AnthropicProvider, RetryPolicy, http::ReqwestClient};
+/// use haest_providers::{AnthropicOptions, AnthropicProvider, RetryPolicy, http::HttpClientRef};
 ///
 /// let provider = AnthropicProvider::new(
 ///     AnthropicOptions::new("anthropic", "sk-ant-..."),
-///     ReqwestClient::new(),
+///     HttpClientRef::default(),
 /// )
 /// .with_retry(RetryPolicy::none());
 /// assert_eq!(provider.id(), "anthropic");

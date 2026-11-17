@@ -208,10 +208,10 @@ impl fmt::Debug for CompatOptions {
 ///
 /// ```
 /// use haest_core::Provider;
-/// use haest_providers::{CompatOptions, CompatProvider, http::ReqwestClient};
+/// use haest_providers::{CompatOptions, CompatProvider, http::HttpClientRef};
 ///
 /// let opts = CompatOptions::new("local", "none").with_base_url("http://localhost:1234/v1");
-/// let provider = CompatProvider::new(opts, ReqwestClient::new());
+/// let provider = CompatProvider::new(opts, HttpClientRef::default());
 /// assert_eq!(provider.id(), "local");
 /// ```
 ///

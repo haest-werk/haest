@@ -245,6 +245,12 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 
 ### haest (the facade)
 
+- New `reqwest` feature, in `default`: the default client over reqwest and
+  rustls. A host that sends the model calls through its own client takes
+  `default-features = false, features = ["providers"]` and builds no
+  reqwest, rustls or ring (119 crates in the tree become 42); `tools` and
+  `mcp` still turn it on (WebFetch and rmcp run on reqwest).
+
 - `haest::CancellationToken` (tokio-util's, as `before_model_call`,
   `ToolContext::cancel` and `ProviderRequest::cancel` hand it out) and
   `haest::serde_json` are re-exported, and `haest::prelude` adds
@@ -736,9 +742,25 @@ Hosts write less (round two of the review, and what porting brain onto
 - `Method` implements `Display` and `FromStr` (the word on the wire,
   case-sensitive; a word it does not name is a `ParseMethodError`), and
   `Hash`.
+- New `reqwest` feature, on by default: `ReqwestClient`, `build_reqwest`,
+  `reqwest_builder` and the `reqwest` re-export (breaking for
+  `default-features = false`, which now builds no reqwest, rustls or ring:
+  105 crates in the tree become 25). `HttpClientRef` implements `Default`,
+  the client every part uses unless handed one: the shared `ReqwestClient`,
+  or without the feature a client that refuses every request
+  (`HttpError::Request`, "no HTTP client: ... hand one in").
+  haest-providers and haest-issues forward the feature as their own
+  `reqwest`, the facade as `haest/reqwest`. In the workspace's
+  `[workspace.dependencies]`, haest-http and haest-providers have default
+  features off; haest-tools and haest-mcp ask for `reqwest` themselves.
 
 ### haest-providers
 
+- New `reqwest` feature, on by default: the default client (haest-http's
+  `HttpClientRef::default`). With `default-features = false` no reqwest,
+  rustls or ring is built (118 crates in the tree become 41), and a
+  provider or registry not handed a client ends each message as an error
+  saying to hand one in.
 - `ProviderRegistry::new` takes only the keys, as `impl Into<KeySourceRef>`
   (an `Arc<dyn KeySource>` the host already shares still goes in as it is);
   providers.json's entries and every option come by setter on the registry,
@@ -1407,6 +1429,10 @@ against it; the wire JSON is unchanged):
   `.with_http(Arc::new(client))` -> `.with_http(client)`. `GithubTracker` is
   `Clone`.
 - `TrackerError` is `#[non_exhaustive]` (breaking): a `match` adds a `_` arm.
+- New `reqwest` feature, on by default: the GitHub tracker's default client.
+  With `default-features = false` no reqwest, rustls or ring is built (115
+  crates in the tree become 38), and a tracker the host hands no client
+  (`with_http`) fails every call, saying so.
 
 ## 0.2.0 (2026-11-17)
 

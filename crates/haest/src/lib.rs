@@ -178,7 +178,8 @@
 //!
 //! | Feature | Brings | Default |
 //! |---|---|---|
-//! | `http` | [`http`]: the HTTP seam the model calls and GenerateImage send through, and its default over reqwest (WebFetch and MCP servers keep clients of their own); on with `providers` and `tools` | yes |
+//! | `http` | [`http`]: the HTTP seam the model calls and GenerateImage send through (WebFetch and MCP servers keep clients of their own); on with `providers` and `tools` | yes |
+//! | `reqwest` | `http::ReqwestClient`, the default client over reqwest and rustls; off with `providers` alone, the model calls send only through the client a host hands in (`tools` and `mcp` turn it on: WebFetch and rmcp run on reqwest) | yes |
 //! | `providers` | [`providers`]: Anthropic Messages, OpenAI Chat Completions and Responses, OpenRouter, any OpenAI-compatible server | yes |
 //! | `workspace` | [`workspace`]: the real disk and bash, or a sandbox over a copy-on-write overlay | yes |
 //! | `tools` | [`tools`]: Read, Write, Edit, Glob, Grep, Bash, WebFetch, tasks, subagents and more | yes |
