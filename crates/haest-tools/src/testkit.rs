@@ -35,7 +35,7 @@ pub(crate) struct Call {
 type Answer = Box<dyn Fn(&Call) -> ExecResult + Send + Sync>;
 
 pub(crate) struct TestWorkspace {
-    pub mem: Arc<MemFs>,
+    pub mem: MemFs,
     answer: Answer,
     calls: Mutex<Vec<Call>>,
 }
@@ -53,7 +53,7 @@ impl TestWorkspace {
         answer: impl Fn(&Call) -> ExecResult + Send + Sync + 'static,
     ) -> Arc<Self> {
         Arc::new(Self {
-            mem: Arc::new(MemFs::from_files(files)),
+            mem: MemFs::from_files(files),
             answer: Box::new(answer),
             calls: Mutex::default(),
         })

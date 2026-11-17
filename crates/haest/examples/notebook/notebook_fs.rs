@@ -11,16 +11,19 @@ use std::{
     collections::BTreeSet,
     io,
     path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use haest::{DirEntry, Fs, FsStat, MemFs, async_trait};
 
+/// A cheap `Clone` whose clones are the one notebook: the workspace gets
+/// one, the run reads the staged changes from another.
+#[derive(Clone)]
 pub(crate) struct NotebookFs {
     /// What the run sees: the notebook, plus what the run changed.
     view: MemFs,
     /// Every path the run changed: the review the asker gets.
-    staged: Mutex<BTreeSet<PathBuf>>,
+    staged: Arc<Mutex<BTreeSet<PathBuf>>>,
 }
 
 impl NotebookFs {
@@ -28,7 +31,7 @@ impl NotebookFs {
     pub(crate) fn new(files: &[(&str, &str)]) -> Self {
         Self {
             view: MemFs::from_files(files.iter().copied()),
-            staged: Mutex::default(),
+            staged: Arc::default(),
         }
     }
 

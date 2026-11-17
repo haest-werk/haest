@@ -3,7 +3,10 @@
 //! PLUG POINTS: `ReadIntercept` (Read's `attachment:<id>`), `Tool` (the
 //! notebook's own tools).
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use haest::{
     JsonMap, Tool, ToolContext, ToolError, ToolOutput, async_trait, req_str,
@@ -13,20 +16,21 @@ use haest::{
 
 /// `attachment:<id>` is no path: the node converts the attachment to Markdown
 /// and Read pages it like a file. Every other path falls through to the fs.
+/// A cheap `Clone` whose clones are the one intercept: Read gets one, the
+/// run asks another what it answered.
+#[derive(Clone)]
 pub(crate) struct Attachments {
-    docs: HashMap<String, String>,
+    docs: Arc<HashMap<String, String>>,
     /// Every path this intercept answered, as the model sent it.
-    answered: Mutex<Vec<String>>,
+    answered: Arc<Mutex<Vec<String>>>,
 }
 
 impl Attachments {
     pub(crate) fn new(docs: &[(&str, &str)]) -> Self {
+        let docs = docs.iter().map(|(id, md)| (id.to_string(), md.to_string()));
         Self {
-            docs: docs
-                .iter()
-                .map(|(id, md)| (id.to_string(), md.to_string()))
-                .collect(),
-            answered: Mutex::default(),
+            docs: Arc::new(docs.collect()),
+            answered: Arc::default(),
         }
     }
 
@@ -36,7 +40,7 @@ impl Attachments {
     }
 
     /// Only this file's code runs under the lock, so a poisoned one is a bug here.
-    fn answered_paths(&self) -> std::sync::MutexGuard<'_, Vec<String>> {
+    fn answered_paths(&self) -> MutexGuard<'_, Vec<String>> {
         self.answered
             .lock()
             .expect("the attachments' lock poisoned")

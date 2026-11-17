@@ -677,6 +677,13 @@ Hosts write less (round two of the review, and what porting brain onto
   `JsonlSessionFile::new_with_error_handler(..)`, `base.with(&over)` (a
   `ChildEnv` merge) -> `base.overlaid(&over)`, and
   `Thresholds::default().with(t)?` -> `Thresholds::default().try_with(t)?`.
+- `MemFs` is a cheap `Clone` whose clones are the one file system, so a
+  host keeps one and hands a workspace another:
+  `let fs = Arc::new(MemFs::new()); SandboxWorkspace::over(fs.clone())` ->
+  `let fs = MemFs::new(); SandboxWorkspace::over(fs.clone())`. The notebook
+  example and the plug-in test hold their own parts the same way (no
+  `Arc::new` left in either host), and the notebook's host fills its slots
+  with `with_host`.
 
 ### haest-http
 

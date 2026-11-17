@@ -6,13 +6,13 @@
 //! `SessionSink`.
 
 use std::sync::{
-    Mutex, MutexGuard,
+    Arc, Mutex, MutexGuard,
     atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 
 use haest::{
-    Agent, AgentHooks, BoxError, CancellationToken, Clock, Message, TurnCaps, TurnCapsSource,
-    async_trait,
+    Agent, AgentHooks, BoxError, CancellationToken, Clock, Message, ModelFacts, ToolServices,
+    TurnCaps, TurnCapsSource, async_trait,
     core::session::{SessionRecord, SessionSink, SessionSinkRef},
     serde_json::{self, json},
 };
@@ -51,10 +51,11 @@ impl RunClock {
 }
 
 /// The node's session store: haest hands it records in history order, the node
-/// writes the file (with record kinds of its own).
-#[derive(Default)]
+/// writes the file (with record kinds of its own). A cheap `Clone` whose
+/// clones are the one store.
+#[derive(Clone, Default)]
 pub(crate) struct NodeSessions {
-    records: Mutex<Vec<SessionRecord>>,
+    records: Arc<Mutex<Vec<SessionRecord>>>,
 }
 
 impl SessionSink for NodeSessions {
@@ -98,12 +99,15 @@ impl NodeSessions {
     }
 }
 
+/// The run's host: one value in haest's hooks, turn caps and clock slots
+/// (`SharedDeps::with_host`). A cheap `Clone` whose clones are the one host.
+#[derive(Clone)]
 pub(crate) struct NotebookHost {
-    pub clock: RunClock,
+    pub clock: Arc<RunClock>,
     sessions: SessionSinkRef,
     /// The owner pauses the run before this model call (1-based); 0 = never.
     pause_before_call: usize,
-    calls: AtomicUsize,
+    calls: Arc<AtomicUsize>,
     /// The run's caps, from its settings.
     caps: TurnCaps,
 }
@@ -116,10 +120,10 @@ impl NotebookHost {
         caps: TurnCaps,
     ) -> Self {
         Self {
-            clock,
+            clock: Arc::new(clock),
             sessions: sessions.into(),
             pause_before_call,
-            calls: AtomicUsize::new(0),
+            calls: Arc::default(),
             caps,
         }
     }
@@ -166,3 +170,8 @@ impl Clock for NotebookHost {
         self.clock.now()
     }
 }
+
+/// The notebook hands its tools nothing and knows no more of its models than
+/// haest does.
+impl ToolServices for NotebookHost {}
+impl ModelFacts for NotebookHost {}

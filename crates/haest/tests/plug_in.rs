@@ -38,7 +38,7 @@ use haest::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, Effort,
     ExecResult, Fs, JsonMap, LoopEvent, MemFs, Message, Provider, ProviderRef, ProviderRequest,
     ProviderStream, SharedDeps, StopReason, Tool, ToolCall, ToolContext, ToolError, ToolOutput,
-    ToolRef, Tools, TurnOutcome, Usage, Workspace, answer_stream, async_trait,
+    ToolRef, Tools, TurnOutcome, Usage, WorkspaceRef, answer_stream, async_trait,
     core::caps::SubagentCaps,
     core::shell_command::{ShellCall, ShellCommand},
     req_str,
@@ -97,9 +97,11 @@ impl ShellCommand for Stamp {
 // call for the host's display. While it runs, the host may steer the turn
 // (the person typed something).
 
-#[derive(Default)]
+/// A cheap `Clone` whose clones are the one tool: the tool list gets one, the
+/// host arms the steer on another.
+#[derive(Clone, Default)]
 struct Lookup {
-    steer: Mutex<Option<(AgentControl, String)>>,
+    steer: Arc<Mutex<Option<(AgentControl, String)>>>,
 }
 
 #[async_trait]
@@ -140,14 +142,17 @@ impl Tool for Lookup {
 // ---------------------------------------------------------------------------
 // The host: haest's own subagent hub runs over it.
 
+/// A cheap `Clone` whose clones are the one host: the hub gets one, the test
+/// keeps another.
+#[derive(Clone)]
 struct App {
-    provider: Arc<Scripted>,
-    fs: Arc<MemFs>,
-    workspace: Arc<SandboxWorkspace>,
-    lookup: Arc<Lookup>,
+    provider: Scripted,
+    fs: MemFs,
+    workspace: WorkspaceRef,
+    lookup: Lookup,
     inbox: UnboundedSender<String>,
     /// Every subagent event kind, in order.
-    sub_events: Mutex<Vec<&'static str>>,
+    sub_events: Arc<Mutex<Vec<&'static str>>>,
 }
 
 impl App {
@@ -205,7 +210,7 @@ impl SubagentParent for App {
 }
 
 struct Rig {
-    app: Arc<App>,
+    app: App,
     agent: Agent,
     events: Vec<LoopEvent>,
     inbox: UnboundedReceiver<String>,
@@ -214,23 +219,17 @@ struct Rig {
 /// A conversation: main answers `main`, subagents `sub` (each after a permit
 /// from the gate, `sub_permits` of them up front).
 fn rig(main: Vec<Vec<AssistantPart>>, sub: Vec<Vec<AssistantPart>>, sub_permits: usize) -> Rig {
-    let provider = Arc::new(Scripted {
-        main: Mutex::new(main.into()),
-        sub: Mutex::new(sub.into()),
-        sub_gate: Arc::new(Semaphore::new(sub_permits)),
-        seen: Mutex::default(),
-    });
-    let fs = Arc::new(MemFs::from_files([("/work/notes/plan.md", PLAN)]));
-    let workspace = Arc::new(SandboxWorkspace::over(fs.clone()).with_command(Arc::new(Stamp)));
+    let fs = MemFs::from_files([("/work/notes/plan.md", PLAN)]);
+    let workspace = SandboxWorkspace::over(fs.clone()).with_command(Stamp);
     let (tx, inbox) = unbounded_channel();
-    let app = Arc::new(App {
-        provider,
+    let app = App {
+        provider: Scripted::new(main, sub, sub_permits),
         fs,
-        workspace,
-        lookup: Arc::default(),
+        workspace: WorkspaceRef::new(workspace),
+        lookup: Lookup::default(),
         inbox: tx,
-        sub_events: Mutex::default(),
-    });
+        sub_events: Arc::default(),
+    };
     // Main's agent tools hold the hub: it lives as long as the conversation.
     let hub = SubagentHub::new(app.clone(), SubagentCaps::default());
     let mut tools = app.base_tools();

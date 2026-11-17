@@ -75,10 +75,11 @@ pub(crate) struct Closed {
 }
 
 /// The node's helper-run endpoint, faked: it starts and closes helper runs.
-#[derive(Default)]
+/// A cheap `Clone` whose clones are the one node.
+#[derive(Clone, Default)]
 pub(crate) struct Node {
-    started: Mutex<Vec<Started>>,
-    closed: Mutex<Vec<Closed>>,
+    started: Arc<Mutex<Vec<Started>>>,
+    closed: Arc<Mutex<Vec<Closed>>>,
 }
 
 impl Node {
@@ -102,11 +103,12 @@ pub(crate) enum ForMain {
     Answer(String),
 }
 
-/// What the panel sees of the run's helpers.
-#[derive(Default)]
+/// What the panel sees of the run's helpers. A cheap `Clone` whose clones
+/// are the one panel.
+#[derive(Clone, Default)]
 pub(crate) struct Panel {
-    messages: Mutex<Vec<AgentMessage>>,
-    main: Mutex<Vec<ForMain>>,
+    messages: Arc<Mutex<Vec<AgentMessage>>>,
+    main: Arc<Mutex<Vec<ForMain>>>,
 }
 
 impl Panel {
@@ -129,14 +131,14 @@ fn locked<T>(list: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// The run's side of haest's hub.
 pub(crate) struct NodeHelpers {
-    pub gateway: Arc<Gateway>,
+    pub gateway: Gateway,
     /// The run's tools, without the agent tools.
     pub base: Tools,
     pub workspace: WorkspaceRef,
     /// The run's own host: its clock, records and caps.
-    pub host: Arc<NotebookHost>,
-    pub node: Arc<Node>,
-    pub panel: Arc<Panel>,
+    pub host: NotebookHost,
+    pub node: Node,
+    pub panel: Panel,
 }
 
 impl Inbox for NodeHelpers {
@@ -236,13 +238,13 @@ impl SubagentParent for NodeHelpers {
             Some(other) => return Err(AgentError::Refused(format!("no model \"{other}\""))),
         };
         // Its records are its own run's, on its own clock; its calls carry its token.
-        let records = Arc::new(NodeSessions::default());
-        let host = Arc::new(NotebookHost::new(
+        let records = NodeSessions::default();
+        let host = NotebookHost::new(
             RunClock::new(T0, true),
             records.clone(),
             0,
             self.host.caps(),
-        ));
+        );
         let deps = shared(&self.gateway, &token, self.workspace.clone(), host);
         Ok(Member::new(HelperRun {
             token,
@@ -259,8 +261,8 @@ struct HelperRun {
     token: String,
     model_spec: String,
     deps: SharedDeps,
-    records: Arc<NodeSessions>,
-    node: Arc<Node>,
+    records: NodeSessions,
+    node: Node,
 }
 
 #[async_trait]

@@ -71,7 +71,7 @@ impl Clock for TestHooks {
 /// Files in memory, no shell.
 #[derive(Default)]
 pub(crate) struct MemWorkspace {
-    pub fs: Arc<MemFs>,
+    pub fs: MemFs,
 }
 
 #[async_trait]

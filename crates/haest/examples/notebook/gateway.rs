@@ -6,7 +6,7 @@
 
 use std::{
     collections::VecDeque,
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use haest::{
@@ -27,8 +27,13 @@ pub(crate) struct Held {
     pub release: CancellationToken,
 }
 
+/// The gateway. A cheap `Clone` whose clones are the one gateway: the
+/// provider gets one, the runs script and read another.
+#[derive(Clone, Default)]
+pub(crate) struct Gateway(Arc<Lines>);
+
 #[derive(Default)]
-pub(crate) struct Gateway {
+struct Lines {
     replies: Mutex<VecDeque<String>>,
     requests: Mutex<Vec<Request>>,
     /// The next request with this authorization waits (`Gateway::hold`).
@@ -38,18 +43,18 @@ pub(crate) struct Gateway {
 impl Gateway {
     /// The model's next replies, in order. Out of script = a failed call.
     pub(crate) fn script(&self, replies: impl IntoIterator<Item = String>) {
-        *locked(&self.replies) = replies.into_iter().collect();
+        *locked(&self.0.replies) = replies.into_iter().collect();
     }
 
     /// Every request since the last call.
     pub(crate) fn take_requests(&self) -> Vec<Request> {
-        std::mem::take(&mut *locked(&self.requests))
+        std::mem::take(&mut *locked(&self.0.requests))
     }
 
     /// The next call that carries `authorization` waits for its release.
     pub(crate) fn hold(&self, authorization: &str) -> Held {
         let held = Held::default();
-        *locked(&self.held) = Some((authorization.into(), held.clone()));
+        *locked(&self.0.held) = Some((authorization.into(), held.clone()));
         held
     }
 }
@@ -64,18 +69,18 @@ fn locked<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 impl HttpClient for Gateway {
     async fn send(&self, req: Request) -> Result<Response, HttpError> {
         let held = {
-            let mut held = locked(&self.held);
+            let mut held = locked(&self.0.held);
             let mine = held
                 .as_ref()
                 .is_some_and(|(auth, _)| req.header("authorization") == Some(auth.as_str()));
             if mine { held.take() } else { None }
         };
-        locked(&self.requests).push(req);
+        locked(&self.0.requests).push(req);
         if let Some((_, held)) = held {
             held.arrived.cancel();
             held.release.cancelled().await;
         }
-        let Some(body) = locked(&self.replies).pop_front() else {
+        let Some(body) = locked(&self.0.replies).pop_front() else {
             return Err(HttpError::Request("gateway: no scripted reply left".into()));
         };
         // The socket hands the body over in pieces; SSE events straddle them.

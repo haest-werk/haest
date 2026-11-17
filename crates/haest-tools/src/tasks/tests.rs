@@ -15,7 +15,7 @@ fn tool(tools: &[ToolRef], name: &str) -> ToolRef {
 
 #[tokio::test]
 async fn planning_with_the_task_tools_is_persisted_and_survives_a_revive() {
-    let fs = Arc::new(MemFs::new());
+    let fs = MemFs::new();
     let file = Arc::new(JsonlSessionFile::new(fs.clone(), Path::new("/data"), "s1").unwrap());
     file.create("c1", Path::new("/w"), 0).await.unwrap();
     let sink = file.clone();

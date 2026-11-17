@@ -68,7 +68,7 @@ async fn spilled(fs: &MemFs) -> Vec<PathBuf> {
 
 struct Run {
     out: ToolOutput,
-    fs: Arc<MemFs>,
+    fs: MemFs,
     tools: ToolIndex,
     ctx: ToolContext,
 }

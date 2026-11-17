@@ -15,14 +15,32 @@ pub(crate) struct Seen {
 /// Main and subagents answer from separate scripts (a subagent is told apart
 /// by haest's subagent note in its system prompt). A subagent's call waits for
 /// a permit from `sub_gate`, so a test decides when a background one finishes.
+/// A cheap `Clone` whose clones are the one backend: haest gets one, the test
+/// reads what it was asked from another.
+#[derive(Clone)]
 pub(crate) struct Scripted {
-    pub main: Mutex<VecDeque<Vec<AssistantPart>>>,
-    pub sub: Mutex<VecDeque<Vec<AssistantPart>>>,
+    pub main: Arc<Mutex<VecDeque<Vec<AssistantPart>>>>,
+    sub: Arc<Mutex<VecDeque<Vec<AssistantPart>>>>,
     pub sub_gate: Arc<Semaphore>,
-    pub seen: Mutex<Vec<Seen>>,
+    seen: Arc<Mutex<Vec<Seen>>>,
 }
 
 impl Scripted {
+    /// Main answers `main`, subagents `sub`, each after a permit from the
+    /// gate, `sub_permits` of them up front.
+    pub(crate) fn new(
+        main: Vec<Vec<AssistantPart>>,
+        sub: Vec<Vec<AssistantPart>>,
+        sub_permits: usize,
+    ) -> Self {
+        Self {
+            main: Arc::new(Mutex::new(main.into())),
+            sub: Arc::new(Mutex::new(sub.into())),
+            sub_gate: Arc::new(Semaphore::new(sub_permits)),
+            seen: Arc::default(),
+        }
+    }
+
     pub(crate) fn requests(&self, sub: bool) -> Vec<Seen> {
         let seen = self.seen.lock().unwrap();
         seen.iter().filter(|s| s.sub == sub).cloned().collect()

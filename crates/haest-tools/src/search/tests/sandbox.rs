@@ -1,7 +1,7 @@
 //! Grep through the sandbox's rg (bashkit): the argv the tool builds is one it
 //! takes, and a target that looks like a flag is still a path there.
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use haest_core::{
     fs::MemFs,
@@ -14,8 +14,7 @@ use super::super::GrepTool;
 use crate::testkit::{CWD, input};
 
 fn sandbox<P: AsRef<Path>>(files: impl IntoIterator<Item = (P, &'static str)>) -> ToolContext {
-    let fs = Arc::new(MemFs::from_files(files));
-    ToolContext::new(CWD, Arc::new(SandboxWorkspace::over(fs)))
+    ToolContext::new(CWD, SandboxWorkspace::over(MemFs::from_files(files)))
 }
 
 #[tokio::test]

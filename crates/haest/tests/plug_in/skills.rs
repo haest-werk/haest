@@ -28,7 +28,7 @@ async fn the_hosts_own_skills_load_through_haests_skill_tool() {
         say("Did it your way."),
     ]);
     // The person's own standup wins over the built-in one of that name.
-    let set = Arc::new(InlineSkills::merged([
+    let set = InlineSkills::merged([
         vec![skill(
             "standup",
             "yours",
@@ -40,7 +40,7 @@ async fn the_hosts_own_skills_load_through_haests_skill_tool() {
             skill("standup", "built in", "A standup", "", "THE DEFAULT"),
             skill("board", "built in", "Keep a board", "", "Columns."),
         ],
-    ]));
+    ]);
     let intro = "Skills: load one with Skill before you start.";
     let mut tools = r.app.base_tools();
     tools.push(SkillTool::new(

@@ -7,7 +7,7 @@
 //! `SubagentEvent::Message`, `Inbox::submit_answer`, `SubagentHub::settled`,
 //! `SubagentParent::subagent_note`.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use haest::{
     BoxError, ShutWorkspace, ToolContext, Tools,
@@ -29,25 +29,21 @@ use crate::{
 const ASKED: &str = "Only Q3, skip Q2.";
 const FOUND: &str = "Q3 only: /notebook/notes/plan.md";
 
-pub(crate) async fn panel(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
+pub(crate) async fn panel(gateway: &Gateway) -> Result<(), BoxError> {
     let s = config::work();
-    let host = Arc::new(NotebookHost::new(
-        RunClock::new(T0, true),
-        Arc::new(NodeSessions::default()),
-        0,
-        config::turn_caps(&s),
-    ));
+    let sessions = NodeSessions::default();
+    let host = NotebookHost::new(RunClock::new(T0, true), sessions, 0, config::turn_caps(&s));
     let own = Tools::new().with(notebook_search());
-    let base = run_tools(&s, own, Arc::new(Attachments::new(&[])))?;
-    let (node, panel) = (Arc::new(Node::default()), Arc::new(Panel::default()));
-    let helpers = Arc::new(NodeHelpers {
+    let base = run_tools(&s, own, Attachments::new(&[]))?;
+    let (node, panel) = (Node::default(), Panel::default());
+    let helpers = NodeHelpers {
         gateway: gateway.clone(),
         base,
         workspace: ShutWorkspace.into(),
         host,
         node: node.clone(),
         panel: panel.clone(),
-    });
+    };
     let hub = SubagentHub::new(helpers, tree_caps());
 
     // The helper's first model call is slow: the person writes meanwhile.

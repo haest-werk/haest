@@ -1,6 +1,6 @@
 //! The three runs and what each proves.
 
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use haest::{
     Agent, AgentOptions, BoxError, ShutWorkspace, StopReason, Tools, TurnOutcome, WorkspaceRef,
@@ -14,7 +14,7 @@ use crate::{
     CWD, MODEL, T0, config, deps,
     doc::DocSink,
     gateway::{CALL_USD, Call, Gateway, reply, tool_names, tool_schema},
-    helpers::{Closed, HELPER_MODEL, Node, NodeHelpers, tree_caps},
+    helpers::{Closed, HELPER_MODEL, Node, NodeHelpers, Panel, tree_caps},
     host::{NodeSessions, NotebookHost, PAUSE_MS, RunClock},
     notebook_fs::NotebookFs,
     notebook_search, run_tools,
@@ -28,38 +28,27 @@ const SUB_ANSWER: &str = "Two related notes: /notebook/notes/plan.md, /notebook/
 
 /// A work run: the sandboxed bash over NotebookFs, every notebook tool, a
 /// helper on a node run of its own, a pause mid-turn, records to the node.
-pub(crate) async fn work(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
-    let notebook = Arc::new(NotebookFs::new(&[(
-        "/notebook/notes/plan.md",
-        "Ship the Q3 review.\n",
-    )]));
-    let attachments = Arc::new(Attachments::new(&[(
-        "a1",
-        "# Q3 report\nRevenue up 12%.\n",
-    )]));
-    let sessions = Arc::new(NodeSessions::default());
+pub(crate) async fn work(gateway: &Gateway) -> Result<(), BoxError> {
+    let notebook = NotebookFs::new(&[("/notebook/notes/plan.md", "Ship the Q3 review.\n")]);
+    let attachments = Attachments::new(&[("a1", "# Q3 report\nRevenue up 12%.\n")]);
+    let sessions = NodeSessions::default();
     let s = config::work();
     // The owner pauses before the second model call; the notebook's clock leaves it out.
     let clock = RunClock::new(T0, true);
-    let host = Arc::new(NotebookHost::new(
-        clock,
-        sessions.clone(),
-        2,
-        config::turn_caps(&s),
-    ));
+    let host = NotebookHost::new(clock, sessions.clone(), 2, config::turn_caps(&s));
     let own = Tools::new().with(notebook_search());
     let base = run_tools(&s, own, attachments.clone())?;
     let workspace = WorkspaceRef::new(SandboxWorkspace::over(notebook.clone()));
     // haest's hub over the run: each helper on a node run of its own.
-    let node = Arc::new(Node::default());
-    let helpers = Arc::new(NodeHelpers {
+    let node = Node::default();
+    let helpers = NodeHelpers {
         gateway: gateway.clone(),
         base: base.clone(),
         workspace: workspace.clone(),
         host: host.clone(),
         node: node.clone(),
-        panel: Arc::default(),
-    });
+        panel: Panel::default(),
+    };
     let hub = SubagentHub::new(helpers, tree_caps());
     let mut tools = base;
     if s.agents {
@@ -250,17 +239,12 @@ pub(crate) async fn work(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
 
 /// A dream run (`config::dream`): no files, no shell, only what the node
 /// hands it.
-pub(crate) async fn dream(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
+pub(crate) async fn dream(gateway: &Gateway) -> Result<(), BoxError> {
     let s = config::dream();
-    let sessions = Arc::new(NodeSessions::default());
-    let host = Arc::new(NotebookHost::new(
-        RunClock::new(T0, true),
-        sessions,
-        0,
-        config::turn_caps(&s),
-    ));
+    let sessions = NodeSessions::default();
+    let host = NotebookHost::new(RunClock::new(T0, true), sessions, 0, config::turn_caps(&s));
     let own = Tools::new().with(DreamMaterial);
-    let tools = run_tools(&s, own, Arc::new(Attachments::new(&[])))?;
+    let tools = run_tools(&s, own, Attachments::new(&[]))?;
     let deps = deps(gateway, "", tools, ShutWorkspace, host);
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));
     gateway.script([
@@ -300,19 +284,14 @@ pub(crate) async fn dream(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
 
 /// The counter-proof for the clock: the same pause on a clock that counts it
 /// stops the turn at its cap, before the third model call.
-pub(crate) async fn clock(gateway: &Arc<Gateway>) {
+pub(crate) async fn clock(gateway: &Gateway) {
     let caps = config::turn_caps(&config::work());
     assert_eq!(
         caps.max_turn_time,
         std::time::Duration::from_secs(60),
         "a work run's one-minute cap"
     );
-    let host = Arc::new(NotebookHost::new(
-        RunClock::new(T0, false),
-        Arc::new(NodeSessions::default()),
-        2,
-        caps,
-    ));
+    let host = NotebookHost::new(RunClock::new(T0, false), NodeSessions::default(), 2, caps);
     let tools = Tools::new().with(notebook_search());
     let deps = deps(gateway, "", tools, ShutWorkspace, host.clone());
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));

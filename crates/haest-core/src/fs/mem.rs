@@ -4,7 +4,7 @@ use std::{
     collections::BTreeMap,
     io::{self, ErrorKind},
     path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
     time::SystemTime,
 };
 
@@ -37,7 +37,9 @@ fn err(kind: ErrorKind, p: &Path) -> io::Error {
 /// Files and directories only: no links ([`Fs::read_link`] says no path is
 /// one) and no permissions ([`Fs::chmod`] does nothing). Paths are
 /// [`normalize`]d on the way in. It starts with `/` alone, and `/` cannot be
-/// removed. Safe to share between tasks; every call takes one short lock.
+/// removed. A cheap `Clone` whose clones are the one file system: a host
+/// keeps one and hands a workspace another. Safe to share between tasks;
+/// every call takes one short lock.
 ///
 /// # Examples
 ///
@@ -49,17 +51,18 @@ fn err(kind: ErrorKind, p: &Path) -> io::Error {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> std::io::Result<()> {
 /// let fs = MemFs::from_files([("/p/a.txt", "A"), ("/p/sub/b.txt", "B")]);
+/// let kept = fs.clone(); // the same files
 /// fs.rename(Path::new("/p/sub"), Path::new("/p/moved")).await?;
-/// assert_eq!(fs.read_to_string(Path::new("/p/moved/b.txt")).await?, "B");
+/// assert_eq!(kept.read_to_string(Path::new("/p/moved/b.txt")).await?, "B");
 /// assert!(fs.remove(Path::new("/p")).await.is_err(), "not empty");
 /// fs.remove_all(Path::new("/p")).await?;
 /// assert!(!fs.exists(Path::new("/p/a.txt")).await);
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MemFs {
-    nodes: Mutex<BTreeMap<PathBuf, Node>>,
+    nodes: Arc<Mutex<BTreeMap<PathBuf, Node>>>,
 }
 
 impl Default for MemFs {
@@ -67,7 +70,7 @@ impl Default for MemFs {
         let mut nodes = BTreeMap::new();
         nodes.insert(PathBuf::from("/"), Node::Dir);
         Self {
-            nodes: Mutex::new(nodes),
+            nodes: Arc::new(Mutex::new(nodes)),
         }
     }
 }
