@@ -279,12 +279,13 @@ pub enum AgentError {
         /// How deep agents may nest ([`SubagentCaps::max_depth`]).
         max_depth: u32,
     },
-    /// As many subagents run as may at once.
+    /// As many subagents run as may at once. One StopAgent stopped counts
+    /// until its turn ends, so the text names both.
     #[error(
-        "{running} subagents are already running, at most {max} at once; wait for one, or StopAgent one"
+        "{running} subagents are running or stopping, at most {max} at once; wait for one to end, or StopAgent one still running"
     )]
     TooMany {
-        /// How many run now.
+        /// How many run now, those stopping included.
         running: usize,
         /// How many may ([`SubagentCaps::max_concurrent`]).
         max: usize,

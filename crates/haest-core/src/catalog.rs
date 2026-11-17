@@ -181,7 +181,7 @@ pub struct ModelPricing {
 impl ModelPricing {
     /// `input`, `cached_input` and `output` USD per 1M tokens, in that
     /// order; a cache write is billed as input.
-    pub fn new(input: f64, cached_input: f64, output: f64) -> Self {
+    pub const fn new(input: f64, cached_input: f64, output: f64) -> Self {
         Self {
             input,
             cached_input,
@@ -192,7 +192,7 @@ impl ModelPricing {
 
     /// Cache writes at `usd` per 1M tokens, not as input.
     #[must_use]
-    pub fn with_cache_write(mut self, usd: f64) -> Self {
+    pub const fn with_cache_write(mut self, usd: f64) -> Self {
         self.cache_write = Some(usd);
         self
     }

@@ -94,13 +94,15 @@ impl fmt::Debug for Hold {
     }
 }
 
-/// An amount asked of the budget, as a refusal says it: in cents, and one
-/// under a cent as it is (`$0.004`), never `$0.00`.
+/// An amount asked of the budget, as a refusal says it: rounded UP to the
+/// cent, as [`budget_left`] rounds down, so the two never read the same; one
+/// under a cent as it is (`$0.004`), never `$0.00`. Float dust under a
+/// millionth of a cent is no cent more.
 pub fn usd_asked(asked: f64) -> String {
     if asked > 0.0 && asked < 0.01 {
         format!("${asked}")
     } else {
-        format!("${asked:.2}")
+        format!("${:.2}", (asked * 100.0 - 1e-6).ceil() / 100.0)
     }
 }
 
@@ -272,6 +274,20 @@ mod tests {
         assert_eq!(
             text(0.5, 0.7 - 0.3),
             format!("$0.50 does not fit: $0.40 {left}")
+        );
+        // An ask just over the cap rounds up, never to the cap.
+        assert_eq!(
+            text(0.105, 0.1),
+            format!("$0.11 does not fit: $0.10 {left}")
+        );
+        assert_eq!(
+            text(1.004, 1.0),
+            format!("$1.01 does not fit: $1.00 {left}")
+        );
+        // Dust above a whole cent is no cent more: 0.1 + 0.2 is 0.30000000000000004.
+        assert_eq!(
+            text(0.1 + 0.2, 0.2),
+            format!("$0.30 does not fit: $0.20 {left}")
         );
     }
 
