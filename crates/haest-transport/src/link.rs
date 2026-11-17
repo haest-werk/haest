@@ -42,11 +42,13 @@ const KEEPALIVE_REST: Duration = Duration::from_millis(100);
 
 /// Requests of one connection the session may hold (a turn's end, a history
 /// asked mid-turn): a request counts from its first poll to its answer, so
-/// one not started yet, or answered at once, never does. At the cap, a
-/// request that would wait too is refused, and one answered at once
+/// one answered at once never does. The next line is read only once the
+/// request before it has been polled, so every request read before it
+/// counts when a line is checked, in a burst written in one go too. At the
+/// cap, a request that would wait too is refused, and one answered at once
 /// ([`answered_at_once`]) is still served, so a busy peer keeps its stop
-/// button. At twice the cap in flight, of any kind (a burst not started
-/// yet, replies a peer does not read), the connection reads no more lines
+/// button. At twice the cap in flight, of any kind (those served at the
+/// cap, replies a peer does not read), the connection reads no more lines
 /// until one is answered, so a peer that only sends makes no more work than
 /// that, and the rest wait in its pipe.
 const MAX_IN_FLIGHT: usize = 32;
@@ -144,8 +146,10 @@ enum Out {
 /// once the session holds 32 of its requests (a turn's end, a history asked
 /// during a turn), one more that would wait is refused with its id (send it
 /// again once one is answered), while one answered at once is still served:
-/// an `interrupt`, a `close`, an approval answer, a `snapshot`. With 64 in
-/// flight, the connection reads no more lines until one is answered.
+/// an `interrupt`, a `close`, an approval answer, a `snapshot`. A burst
+/// written in one go meets the cap as requests sent one at a time do: each
+/// line is read once the request before it has reached the session. With
+/// 64 in flight, the connection reads no more lines until one is answered.
 ///
 /// Dropped before it returns (a transport detached, a host's own `select!`),
 /// the connection stops: nothing more is written to `sink`, which is dropped
@@ -185,7 +189,7 @@ pub async fn serve(
         follows: 0,
         written: watch::Sender::new(Written::NOTHING),
         tasks: JoinSet::new(),
-        started: None,
+        placing: None,
         held: Arc::default(),
     };
     // Why the connection stopped, or the request whose backend call
@@ -214,8 +218,12 @@ pub async fn serve(
             let open = !matches!(why, Some(Ended::Closed));
             // At twice the cap, the next line waits until a reply goes out.
             let room = link.tasks.len() < 2 * MAX_IN_FLIGHT;
+            // The call read last takes its place first: the next line is
+            // read once it has, so the cap sees every request before it.
+            let placing = link.placing.is_some();
             tokio::select! {
-                line = source.next_line(), if reading && room => match line {
+                () = placed_first(&mut link.placing), if placing => link.placing = None,
+                line = source.next_line(), if reading && room && !placing => match line {
                     None => {
                         reading = false;
                         why.get_or_insert(Ended::PeerLeft);
@@ -306,10 +314,10 @@ struct Link {
     /// Requests whose reply waits (a turn's end, a change between turns);
     /// one ends with what it owes when its backend call panicked.
     tasks: JoinSet<Option<Panicked>>,
-    /// Resolves once the backend call last spawned has started: the next one
-    /// waits for it, so the calls reach the backend in the order they were
-    /// read.
-    started: Option<oneshot::Receiver<()>>,
+    /// The backend call read last, until it has been polled the first time:
+    /// no line is read meanwhile, so the calls reach the backend in the
+    /// order they were read, and `held` counts every one read before.
+    placing: Option<oneshot::Receiver<()>>,
     /// Backend calls started and not answered yet: what the session holds
     /// for this peer, against [`MAX_IN_FLIGHT`].
     held: Arc<AtomicUsize>,
@@ -432,10 +440,11 @@ impl Link {
     /// after the turn's last frame.
     ///
     /// The calls reach the backend in the order they were read, whichever
-    /// task the runtime runs first: each starts once the one before it has
-    /// (a session takes a call's place in the conversation on its first
-    /// poll), so a `clear` sent before a `turn` never clears that turn, and
-    /// an `interrupt` sent after one stops it.
+    /// task the runtime runs first: the next line is read once this call
+    /// has started (a session takes a call's place in the conversation on
+    /// its first poll), so a `clear` sent before a `turn` never clears that
+    /// turn, an `interrupt` sent after one stops it, and the cap counts
+    /// every request read before the next.
     ///
     /// The backend is the host's code: a panic in it ends the task with the
     /// request's id and the panic, for `serve` to refuse the one and raise
@@ -449,16 +458,11 @@ impl Link {
         let backend = self.backend.clone();
         let mut written = self.written.subscribe();
         let (start, started) = oneshot::channel();
-        let before = self.started.replace(started);
+        self.placing = Some(started);
         let held = self.held.clone();
         let owed = id.clone();
         self.tasks.spawn(async move {
             let reply = caught(async move {
-                // Ok, or Err when the one before was dropped unstarted:
-                // either way it is not ahead of this one.
-                if let Some(before) = before {
-                    let _ = before.await;
-                }
                 let reply = match placed(run(backend.clone()), start, &held).await {
                     Ok(result) => Outbound::done(id, result),
                     Err(e) => Outbound::refused(id, report(&e)),
@@ -628,16 +632,20 @@ async fn caught<F: Future>(fut: F) -> Result<F::Output, Box<dyn Any + Send>> {
 
 /// A backend call in its place: `started` is told once it has been polled
 /// the first time (a [`Backend`](haest_session::Backend) call takes its
-/// place in the conversation then), and from then until it is answered it
-/// counts in `held`.
+/// place in the conversation then). One that did not answer then counts in
+/// `held` until it is answered, from just before `started` is told, so
+/// whoever waits on `started` sees it counted.
 async fn placed<F: Future>(call: F, started: oneshot::Sender<()>, held: &AtomicUsize) -> F::Output {
     let mut call = std::pin::pin!(call);
     let first = std::future::poll_fn(|cx| Poll::Ready(call.as_mut().poll(cx))).await;
-    let _ = started.send(());
     match first {
-        Poll::Ready(answer) => answer,
+        Poll::Ready(answer) => {
+            let _ = started.send(());
+            answer
+        }
         Poll::Pending => {
             let _held = Held::new(held);
+            let _ = started.send(());
             call.await
         }
     }
@@ -657,6 +665,17 @@ impl<'a> Held<'a> {
 impl Drop for Held<'_> {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// Resolves once the call read last was first polled (or dropped unpolled,
+/// its task gone); never while there is none.
+async fn placed_first(placing: &mut Option<oneshot::Receiver<()>>) {
+    match placing {
+        Some(started) => {
+            let _ = started.await;
+        }
+        None => std::future::pending().await,
     }
 }
 

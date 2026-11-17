@@ -39,9 +39,9 @@ fn counted(
 }
 
 /// A peer that sends far more requests than it waits for replies to makes
-/// bounded work: the session holds fewer than twice the cap of them, the
-/// ones past the cap that would wait are refused, and every request gets
-/// its reply in the end.
+/// bounded work: the session holds no more than the cap of them, the ones
+/// past the cap that would wait are refused, and every request gets its
+/// reply in the end.
 #[tokio::test]
 async fn one_connection_has_at_most_its_cap_of_requests_in_flight() {
     let model = ScriptedProvider::new([
@@ -62,8 +62,8 @@ async fn one_connection_has_at_most_its_cap_of_requests_in_flight() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     let busy = waiting.load(Ordering::SeqCst);
     assert!(
-        busy < 2 * MAX_IN_FLIGHT,
-        "{busy} history calls wait at once, the turn among twice the cap's {MAX_IN_FLIGHT}"
+        busy < MAX_IN_FLIGHT,
+        "{busy} history calls wait at once, the turn among the cap's {MAX_IN_FLIGHT}"
     );
 
     go.notify_one();
@@ -82,7 +82,7 @@ async fn one_connection_has_at_most_its_cap_of_requests_in_flight() {
     // were held.
     assert!(served >= MAX_IN_FLIGHT, "{served} served");
     assert!(refused > 0, "none past the cap was refused");
-    assert!(most.load(Ordering::SeqCst) < 2 * MAX_IN_FLIGHT);
+    assert!(most.load(Ordering::SeqCst) < MAX_IN_FLIGHT);
 }
 
 /// A turn that runs, and history asked during it until the cap is reached
@@ -214,4 +214,53 @@ async fn a_burst_the_session_answers_at_once_is_never_refused() {
     assert!(refused.is_empty(), "{refused:#?}");
     assert_eq!(replies.len(), lines.len());
     s.close().await;
+}
+
+/// A burst of requests that wait, written in one go while a turn runs (a
+/// parent that queues its work), meets the cap as requests sent one at a
+/// time do: the session holds no more than the cap of them, the rest are
+/// refused, and an `interrupt` written after them still stops the turn.
+async fn a_burst_during_a_turn(runs: usize) {
+    for run in 0..runs {
+        let model = ScriptedProvider::new([
+            tool_answer(&[("c1", "Wait", json!({}))]),
+            text_answer("never"),
+        ]);
+        let (inner, _) = session(&model, hub());
+        let (waiting, most) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+        let mut peer = Peer::parent(counted(inner.clone(), &waiting, &most));
+        peer.send(turn("t1", "wait")).await;
+        peer.until(|f| ty(f) == "assistant").await;
+
+        let mut lines: Vec<String> = (0..2 * MAX_IN_FLIGHT)
+            .map(|n| history(&format!("h{n}")).to_string())
+            .collect();
+        lines.push(control("stop", "interrupt").to_string());
+        peer.send_raw(&lines.join("\n")).await;
+
+        let frames = within("the turn stopped", peer.reply("t1")).await;
+        let reply = frames.last().unwrap();
+        assert_eq!(
+            reply["result"]["stopReason"], "aborted",
+            "run {run}: {reply}"
+        );
+        // The turn is the cap's last place.
+        let most = most.load(Ordering::SeqCst);
+        assert!(
+            most < MAX_IN_FLIGHT,
+            "run {run}: {most} history calls held at once"
+        );
+        inner.close().await;
+    }
+}
+
+#[tokio::test]
+async fn a_burst_during_a_turn_meets_the_cap_and_keeps_the_stop_button() {
+    a_burst_during_a_turn(1).await;
+}
+
+/// Where the newest task often runs first, as in the `haest` command.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_burst_during_a_turn_meets_the_cap_and_keeps_the_stop_button_on_many_threads() {
+    a_burst_during_a_turn(10).await;
 }
