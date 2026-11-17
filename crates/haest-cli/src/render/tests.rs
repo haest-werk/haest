@@ -331,7 +331,7 @@ fn a_watcher_sees_the_input_a_terminal_does_not_echo() {
 fn nothing_from_the_model_or_a_tool_reaches_a_terminal_raw() {
     let (mut out, mut err) = (Vec::new(), Vec::new());
     {
-        let mut r = Renderer::new(&mut out, &mut err, false, false).answering_a_terminal();
+        let mut r = Renderer::new(&mut out, &mut err, false, false).inert_answer();
         r.event(&LoopEvent::TextDelta {
             text: "I'll clean the build.\x1b[2J\x1b[H\x1b[2;3r\x1b[2H\n".into(),
         });
@@ -363,4 +363,15 @@ fn an_answer_into_a_file_keeps_its_bytes() {
     let text = "a\tb\x1b[1mc\u{202e}d\r\n";
     let (out, _) = render(false, &[LoopEvent::TextDelta { text: text.into() }]);
     assert_eq!(out, text);
+}
+
+/// The answer keeps its bytes only into a regular file: a pipe (`| tee
+/// out.md`, `| cat`) can end on the terminal where a question is asked.
+#[cfg(unix)]
+#[test]
+fn only_a_regular_file_takes_the_answer_byte_for_byte() {
+    let file = std::fs::File::open(std::env::current_exe().unwrap()).unwrap();
+    assert!(is_a_file(&file));
+    let (_reader, writer) = std::io::pipe().unwrap();
+    assert!(!is_a_file(&writer), "a pipe can end on the terminal");
 }

@@ -61,9 +61,10 @@ pub(crate) struct Renderer<O: Write, E: Write> {
     /// Write each input that enters the conversation (a watcher's view; at
     /// the terminal the human typed it).
     inputs: bool,
-    /// stdout is a terminal: the answer is shown [`inert`] too. Into a file
-    /// it goes byte for byte.
-    out_terminal: bool,
+    /// The answer is shown [`inert`] too: stdout is not a regular file, so it
+    /// may end on this terminal (a pipe into `tee`). Into a file it goes byte
+    /// for byte.
+    inert_answer: bool,
 }
 
 const DIM: &str = "\x1b[2m";
@@ -75,12 +76,34 @@ impl Renderer<std::io::Stdout, std::io::Stderr> {
     pub(crate) fn terminal(json: bool) -> Self {
         let color = std::io::stderr().is_terminal();
         let r = Renderer::new(std::io::stdout(), std::io::stderr(), json, color);
-        if std::io::stdout().is_terminal() {
-            r.answering_a_terminal()
-        } else {
+        // Byte for byte only into a file: a pipe can end on this terminal
+        // (`| tee out.md`), right where a question is asked.
+        if is_a_file(&std::io::stdout()) {
             r
+        } else {
+            r.inert_answer()
         }
     }
+}
+
+/// `out` is a regular file (`> out.md`), not a terminal, a pipe or a socket.
+#[cfg(unix)]
+pub(crate) fn is_a_file(out: &impl std::os::fd::AsFd) -> bool {
+    out.as_fd()
+        .try_clone_to_owned()
+        .map(std::fs::File::from)
+        .and_then(|f| f.metadata())
+        .is_ok_and(|m| m.is_file())
+}
+
+/// `out` is a regular file (`> out.md`), not a console, a pipe or a socket.
+#[cfg(windows)]
+pub(crate) fn is_a_file(out: &impl std::os::windows::io::AsHandle) -> bool {
+    out.as_handle()
+        .try_clone_to_owned()
+        .map(std::fs::File::from)
+        .and_then(|f| f.metadata())
+        .is_ok_and(|m| m.is_file())
 }
 
 impl<O: Write, E: Write> Renderer<O, E> {
@@ -99,13 +122,14 @@ impl<O: Write, E: Write> Renderer<O, E> {
             queued: 0,
             streamed: false,
             inputs: false,
-            out_terminal: false,
+            inert_answer: false,
         }
     }
 
-    /// stdout is a terminal: the answer is shown [`inert`], as stderr is.
-    pub(crate) fn answering_a_terminal(mut self) -> Self {
-        self.out_terminal = true;
+    /// stdout may end on a terminal: the answer is shown [`inert`], as stderr
+    /// is.
+    pub(crate) fn inert_answer(mut self) -> Self {
+        self.inert_answer = true;
         self
     }
 
@@ -248,7 +272,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
         if text.is_empty() {
             return;
         }
-        let text = if self.out_terminal {
+        let text = if self.inert_answer {
             inert(text)
         } else {
             Cow::Borrowed(text)
