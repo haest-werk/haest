@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use haest_core::{
     catalog::{InputModality, ModelPricing},
-    provider::{Effort, ModelError, ModelResolver},
+    provider::{Effort, ModelError},
 };
 use serde_json::{Value, json};
 
@@ -14,10 +14,7 @@ use super::tests::{finished as chunk, usage_chunk};
 use super::tests_direct::{body_of, close, final_message};
 use crate::{
     catalog::Catalog,
-    registry::{
-        CustomProviderConfig, EntryProblem, ProviderRegistry, RegistryOptions,
-        paper_instruments_options,
-    },
+    registry::{CustomProviderConfig, EntryProblem, ProviderRegistry, paper_instruments_options},
     testing::FakeHttp,
 };
 
@@ -28,11 +25,7 @@ fn pi_env() -> HashMap<String, String> {
 }
 
 fn registry(keys: HashMap<String, String>) -> ProviderRegistry {
-    let opts = RegistryOptions {
-        http: FakeHttp::new([]),
-        ..RegistryOptions::default()
-    };
-    ProviderRegistry::new(keys, Default::default(), opts)
+    ProviderRegistry::new(keys).with_http(FakeHttp::new([]))
 }
 
 #[test]

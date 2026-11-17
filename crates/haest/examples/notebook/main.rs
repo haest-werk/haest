@@ -81,9 +81,9 @@ async fn every_plug_point_the_notebook_uses_holds() -> Result<(), BoxError> {
 /// node run's own (a helper's), or empty.
 pub fn models(gateway: Arc<Gateway>, token: &str) -> ModelResolverRef {
     // The run holds no provider keys: the gateway adds them.
-    let mut opts = CompatOptions::new("gateway", token);
-    opts.flavor = CompatFlavor::OpenRouter;
-    opts.base_url = Some(BASE_URL.into());
+    let opts = CompatOptions::new("gateway", token)
+        .with_flavor(CompatFlavor::OpenRouter)
+        .with_base_url(BASE_URL);
     let provider =
         ProviderRef::new(CompatProvider::new(opts, gateway).with_retry(RetryPolicy::none()));
     ModelResolverRef::new(move |spec: &str| {

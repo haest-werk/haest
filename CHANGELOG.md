@@ -107,6 +107,10 @@ value itself, and holds it in a handle named after its trait. Read
   `user:password@` in its Debug output, and `Response` its `set-cookie`.
   Debug now shows each header's name without its value, the URL as
   `https://<redacted>@host/...`, and a request's body as its length.
+- The Debug output of `AnthropicOptions`, `CompatOptions`,
+  `ResponsesOptions` and `CustomProviderConfig` still printed a base URL's
+  `user:password@` (a gateway that takes its credentials in the URL). It
+  shows `<redacted>@` in their place.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a
@@ -527,10 +531,44 @@ Good citizens:
 
 ### haest-providers
 
-- `ProviderRegistry::new` takes `keys: impl Into<KeySourceRef>`:
+- `ProviderRegistry::new` takes only the keys, as `impl Into<KeySourceRef>`
+  (an `Arc<dyn KeySource>` the host already shares still goes in as it is);
+  providers.json's entries and the options come by setter (breaking):
   `ProviderRegistry::new(Arc::new(keys), custom, opts)` ->
-  `ProviderRegistry::new(keys, custom, opts)`. An `Arc<dyn KeySource>` the
-  host already shares still goes in as it is.
+  `ProviderRegistry::new(keys).with_custom(custom).with_options(opts)`, and
+  `.with_http(client)` for the common case.
+- `ProviderRegistry::resolve` is inherent: `registry.resolve(spec)` needs no
+  `use haest_core::ModelResolver`. The registry is still a `ModelResolver`.
+  It is `Clone` and `Debug`: clones share what was built, so
+  `Arc::new(registry)` -> `registry.clone()`; a `with_*` setter starts a
+  cache of its own. Getters `keys()`, `custom()`, `options()`.
+- `RegistryOptions` keeps its fields private (breaking): set a part with its
+  `with_*` setter, read it with the getter of its name.
+  `RegistryOptions { http: Arc::new(client), routing, ..Default::default() }`
+  -> `RegistryOptions::default().with_http(client).with_routing(routing)`
+  (also `with_retry`, `with_headers_timeout`, `with_app_title`,
+  `without_app_title`, `with_app_url`). `with_routing` takes the scopes or
+  an `Option` of them.
+- `AnthropicProvider::new`, `CompatProvider::new` and
+  `ResponsesProvider::new` take `http: impl Into<HttpClientRef>` (breaking):
+  `CompatProvider::new(opts, Arc::new(ReqwestClient::new()))` ->
+  `CompatProvider::new(opts, ReqwestClient::new())`; an `Arc` of the host's
+  client still goes in as it is. The providers are `Clone` (a clone shares
+  the client) and `Debug`, with an `options()` getter.
+- `AnthropicOptions`, `CompatOptions` and `ResponsesOptions` gain `with_*`
+  setters beside their public fields: `with_base_url`, `with_header`, and on
+  `CompatOptions` `with_flavor`, `with_reasoning_effort`, `with_pricing`,
+  `with_routing`. `let mut opts = CompatOptions::new(id, key); opts.flavor =
+  CompatFlavor::OpenRouter; opts.base_url = Some(url.into());` ->
+  `CompatOptions::new(id, key).with_flavor(CompatFlavor::OpenRouter).with_base_url(url)`.
+- `testing::FakeHttp::new` returns a `FakeHttp`, not an `Arc<FakeHttp>`
+  (breaking): it is `Clone`, the clones sharing the script and the record, so
+  a test hands `http.clone()` to a provider and reads `http.requests()`.
+- `#[non_exhaustive]` on `CompatFlavor`, `Dialect`, `RoutingPriority`,
+  `EntryProblem` and `ProvidersFileError` (breaking): a `match` adds a `_`
+  arm.
+- `ProvidersFileError::Read` says what failed: `cannot read
+  /x/providers.json` (was the bare path).
 
 ### haest-tools
 

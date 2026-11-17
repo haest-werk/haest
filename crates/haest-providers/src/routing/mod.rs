@@ -28,26 +28,29 @@
 //!
 //! Start from [`parse_routing`]: a host's JSON (haest's `provider_routing`
 //! setting) in, a [`RoutingScopes`] out, which goes into
-//! [`RegistryOptions::routing`](crate::RegistryOptions::routing) or
+//! [`RegistryOptions::with_routing`](crate::RegistryOptions::with_routing) or
 //! [`CompatOptions::routing`](crate::CompatOptions::routing). A host may also
 //! build the scopes in code; every field is public.
 //!
 //! ```
 //! use haest_providers::routing::{RoutingPriority, parse_routing};
 //!
+//! # fn main() -> Result<(), haest_core::error::BoxError> {
 //! let routing = parse_routing(r#"{
 //!     "global": {"banned": ["novita"], "favorites": ["deepinfra"]},
 //!     "overrides": [{"match": "z-ai/glm-*", "favorites": ["fireworks"]}],
 //!     "project": {"priority": "privacy"}
-//! }"#)
-//! .unwrap()
-//! .unwrap();
+//! }"#)?
+//! .ok_or("blank routing")?;
 //!
 //! // For z-ai/glm-5.3 the override's favorites win (the most specific layer),
 //! // novita stays banned and only zero-data-retention providers answer.
 //! assert_eq!(routing.fleet.global.banned, ["novita"]);
 //! assert_eq!(routing.fleet.overrides[0].pattern, "z-ai/glm-*");
-//! assert_eq!(routing.project.unwrap().priority, Some(RoutingPriority::Privacy));
+//! let priority = routing.project.and_then(|p| p.priority);
+//! assert_eq!(priority, Some(RoutingPriority::Privacy));
+//! # Ok(())
+//! # }
 //! ```
 
 mod normalize;
@@ -94,7 +97,9 @@ pub struct ProviderRouting {
 
 haest_core::word_enum! {
 /// What a project scope asks OpenRouter to favour: the `priority` word.
+/// More may come in a minor release, as OpenRouter adds ways to sort.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RoutingPriority ("routing priority") {
     /// The cheapest provider first: `sort: "price"`.
     Cost = "cost",

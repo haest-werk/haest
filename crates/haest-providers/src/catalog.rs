@@ -36,20 +36,23 @@ static BUILTIN: LazyLock<Catalog> = LazyLock::new(|| {
 /// # Examples
 ///
 /// ```
-/// use haest_core::catalog::InputModality;
+/// use haest_core::{catalog::InputModality, error::BoxError};
 /// use haest_providers::Catalog;
 ///
+/// # fn main() -> Result<(), BoxError> {
 /// let catalog = Catalog::from_json(r#"{"defaultModel": "local:m", "groups": [{"label": "Local",
-///     "models": [{"spec": "local:m", "label": "M", "input": ["text", "image"], "contextWindow": 128000}]}]}"#)
-/// .unwrap();
-/// let row = catalog.model(catalog.default_model()).unwrap();
+///     "models": [{"spec": "local:m", "label": "M", "input": ["text", "image"], "contextWindow": 128000}]}]}"#)?;
+/// let row = catalog.model(catalog.default_model()).ok_or("no row for the default")?;
 /// assert_eq!(row.context_window, 128_000);
-/// assert!(catalog.input_modalities("local:m").unwrap().contains(&InputModality::Image));
+/// let takes_images = catalog.input_modalities("local:m").map(|m| m.contains(&InputModality::Image));
+/// assert_eq!(takes_images, Some(true));
 /// assert_eq!(catalog.model("local:other"), None);
 ///
 /// // haest's own catalog always knows its default model.
 /// let builtin = Catalog::builtin();
 /// assert!(builtin.model(builtin.default_model()).is_some());
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone)]
 pub struct Catalog {

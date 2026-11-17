@@ -13,25 +13,26 @@ mod tests;
 #[cfg(test)]
 mod tests_convert;
 
-use std::{fmt, sync::Arc, time::Duration};
+use std::{fmt, time::Duration};
 
 use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
 
 use convert::build_responses_body;
 
-use haest_http::{HttpClient, Request};
+use haest_http::{HttpClientRef, Request};
 
 use crate::{
     driver::drive,
     retry::RetryPolicy,
-    send::{HeaderNames, OPENAI_URL, REDACTED, Sender, bearer_post, endpoint},
+    send::{HeaderNames, OPENAI_URL, REDACTED, Sender, UrlDebug, bearer_post, endpoint},
 };
 
 /// Where a [`ResponsesProvider`] sends its requests, and with which key.
 ///
 /// [`ResponsesOptions::new`] takes the two fields every provider needs; set
-/// the others on the value it returns. Its Debug output shows neither the
-/// key nor a header's value.
+/// the others with the `with_*` setters (or on the fields). Its Debug output
+/// shows neither the key, nor a header's value, nor a `user:password@` in
+/// the base URL.
 #[derive(Clone)]
 pub struct ResponsesOptions {
     /// The provider's name: its [`Provider::id`], stored on every message it
@@ -56,6 +57,20 @@ impl ResponsesOptions {
             headers: Vec::new(),
         }
     }
+
+    /// These options sending to `url` (`<url>/responses`) instead of
+    /// OpenAI's own API.
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = Some(url.into());
+        self
+    }
+
+    /// These options sending `name: value` on every request, after the ones
+    /// before it.
+    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.headers.push((name.into(), value.into()));
+        self
+    }
 }
 
 impl fmt::Debug for ResponsesOptions {
@@ -63,7 +78,7 @@ impl fmt::Debug for ResponsesOptions {
         f.debug_struct("ResponsesOptions")
             .field("id", &self.id)
             .field("api_key", &REDACTED)
-            .field("base_url", &self.base_url)
+            .field("base_url", &self.base_url.as_deref().map(UrlDebug))
             .field("headers", &HeaderNames(&self.headers))
             .finish()
     }
@@ -81,28 +96,35 @@ impl fmt::Debug for ResponsesOptions {
 /// output tokens with `MaxTokens`.
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_core::Provider;
 /// use haest_providers::{ResponsesOptions, ResponsesProvider, http::ReqwestClient};
 ///
 /// let opts = ResponsesOptions::new("openai", "sk-...");
-/// let provider = ResponsesProvider::new(opts, Arc::new(ReqwestClient::new()));
+/// let provider = ResponsesProvider::new(opts, ReqwestClient::new());
 /// assert_eq!(provider.id(), "openai");
 /// ```
+///
+/// Cloning is cheap: a clone shares the client.
+#[derive(Debug, Clone)]
 pub struct ResponsesProvider {
     opts: ResponsesOptions,
     sender: Sender,
 }
 
 impl ResponsesProvider {
-    /// A provider sending over `http` with the default [`RetryPolicy`].
-    /// Nothing is sent until [`Provider::stream`].
-    pub fn new(opts: ResponsesOptions, http: Arc<dyn HttpClient>) -> Self {
+    /// A provider sending over `http` (the client itself, or an `Arc` of one
+    /// the host shares) with the default [`RetryPolicy`]. Nothing is sent
+    /// until [`Provider::stream`].
+    pub fn new(opts: ResponsesOptions, http: impl Into<HttpClientRef>) -> Self {
         Self {
             opts,
-            sender: Sender::new(http),
+            sender: Sender::new(http.into()),
         }
+    }
+
+    /// The options it was built from.
+    pub fn options(&self) -> &ResponsesOptions {
+        &self.opts
     }
 
     /// The same provider with `retry` instead of the default policy.

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use haest_core::provider::{ModelError, ModelResolver};
+use haest_core::provider::ModelError;
 use serde_json::json;
 
 use super::*;
@@ -19,16 +19,16 @@ pub(super) fn keys(pairs: &[(&str, &str)]) -> KeySourceRef {
     map.into()
 }
 
-pub(super) fn opts(t: &Arc<FakeHttp>) -> RegistryOptions {
-    RegistryOptions {
-        http: t.clone(),
-        retry: RetryPolicy::none(),
-        ..RegistryOptions::default()
-    }
+pub(super) fn opts(t: &FakeHttp) -> RegistryOptions {
+    RegistryOptions::default()
+        .with_http(t.clone())
+        .with_retry(RetryPolicy::none())
 }
 
 pub(super) fn registry(keys: impl Into<KeySourceRef>, custom: CustomProviders) -> ProviderRegistry {
-    ProviderRegistry::new(keys, custom, opts(&FakeHttp::new([])))
+    ProviderRegistry::new(keys)
+        .with_custom(custom)
+        .with_options(opts(&FakeHttp::new([])))
 }
 
 fn missing_key(reg: &ProviderRegistry, spec: &str) -> Option<String> {
@@ -108,7 +108,9 @@ async fn openai_speaks_responses_while_openrouter_and_custom_servers_speak_chat_
         ("OPENROUTER_API_KEY", "k"),
         ("OPENROUTER_BASE_URL", base),
     ]);
-    let reg = ProviderRegistry::new(k, custom, opts(&t));
+    let reg = ProviderRegistry::new(k)
+        .with_custom(custom)
+        .with_options(opts(&t));
     for spec in ["openai:gpt-5.5", "openrouter:openai/gpt-5.5", "local:qwen"] {
         let r = reg.resolve(spec).unwrap();
         collect(r.provider().stream(request(r.model()))).await;
@@ -130,12 +132,11 @@ async fn openrouter_routing_goes_out_only_when_handed_in_and_attribution_is_conf
     let routing = parse_routing(&routing).unwrap();
     for handed in [None, routing] {
         let t = FakeHttp::new([FakeReply::status(400, "")]);
-        let mut o = opts(&t);
         let sends = handed.is_some();
-        o.routing = handed;
-        o.app_url = Some("https://example.test".into());
-        let reg =
-            ProviderRegistry::new(keys(&[("OPENROUTER_API_KEY", "k")]), Default::default(), o);
+        let o = opts(&t)
+            .with_routing(handed)
+            .with_app_url("https://example.test");
+        let reg = ProviderRegistry::new(keys(&[("OPENROUTER_API_KEY", "k")])).with_options(o);
         let r = reg.resolve("openrouter:z-ai/glm-5").unwrap();
         collect(r.provider().stream(request(r.model()))).await;
         let sent = &t.requests()[0];
@@ -148,18 +149,16 @@ async fn openrouter_routing_goes_out_only_when_handed_in_and_attribution_is_conf
 #[tokio::test]
 async fn every_dialect_the_registry_builds_waits_only_the_headers_timeout_it_was_handed() {
     let silent = Arc::new(Silent::default());
-    let o = RegistryOptions {
-        http: silent.clone(),
-        retry: RetryPolicy::none(),
-        headers_timeout: std::time::Duration::from_millis(20),
-        ..RegistryOptions::default()
-    };
+    let o = RegistryOptions::default()
+        .with_http(silent.clone())
+        .with_retry(RetryPolicy::none())
+        .with_headers_timeout(std::time::Duration::from_millis(20));
     let keys = keys(&[
         ("ANTHROPIC_API_KEY", "k"),
         ("OPENAI_API_KEY", "k"),
         ("OPENROUTER_API_KEY", "k"),
     ]);
-    let reg = ProviderRegistry::new(keys, Default::default(), o);
+    let reg = ProviderRegistry::new(keys).with_options(o);
     for spec in ["anthropic:m", "openai:m", "openrouter:m"] {
         let r = reg.resolve(spec).unwrap();
         let ended = std::time::Duration::from_secs(5);
@@ -189,4 +188,52 @@ fn an_entry_that_replaces_a_built_in_is_listed_once() {
     assert_eq!(listed("openrouter"), 1, "{names:?}");
     assert_eq!(listed("local"), 1, "{names:?}");
     assert_eq!(listed("anthropic"), 1, "{names:?}");
+}
+
+#[test]
+fn a_clone_shares_what_was_built_and_a_with_setter_starts_its_own() {
+    let reg = registry(keys(&[("OPENROUTER_API_KEY", "k")]), CustomProviders::new());
+    let first = reg.resolve("openrouter:a").unwrap();
+    let clone = reg.clone();
+    assert!(ProviderRef::ptr_eq(
+        clone.resolve("openrouter:b").unwrap().provider(),
+        first.provider()
+    ));
+    // Other options are another registry: nothing built with the old ones is reused.
+    let other = clone.with_options(opts(&FakeHttp::new([])));
+    assert!(!ProviderRef::ptr_eq(
+        other.resolve("openrouter:c").unwrap().provider(),
+        first.provider()
+    ));
+    assert!(ProviderRef::ptr_eq(
+        reg.resolve("openrouter:d").unwrap().provider(),
+        first.provider()
+    ));
+}
+
+#[test]
+fn debug_names_the_providers_but_never_an_entry_key() {
+    let custom = CustomProviders::from([(
+        "local".to_string(),
+        json!({"type": "openai", "apiKey": "sk-SECRET", "baseURL": "http://u:URL-SECRET@h/v1"}),
+    )]);
+    let reg = registry(keys(&[("OPENROUTER_API_KEY", "KEY-SECRET")]), custom);
+    reg.resolve("local:m").unwrap();
+    reg.resolve("openrouter:m").unwrap();
+    let shown = format!("{reg:?}");
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(
+        shown.contains("local") && shown.contains("built"),
+        "{shown}"
+    );
+}
+
+#[test]
+fn routing_is_set_from_the_scopes_or_an_option_of_them() {
+    let scopes = parse_routing(r#"{"global": {"banned": ["novita"]}}"#)
+        .unwrap()
+        .unwrap();
+    let set = RegistryOptions::default().with_routing(scopes.clone());
+    assert_eq!(set.routing(), Some(&scopes));
+    assert_eq!(set.with_routing(None).routing(), None);
 }

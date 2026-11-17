@@ -11,7 +11,7 @@ use std::{
 use crate::{
     BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, RuntimeParent, Ui,
     haest::{
-        Agent, AgentDeps, AgentOptions, ChildEnv, ModelResolver, SharedDeps, Workspace,
+        Agent, AgentDeps, AgentOptions, ChildEnv, SharedDeps, Workspace,
         core::deferred_tools::ToolDeferral,
         core::fs::Fs,
         core::ledger::Ledger,
@@ -145,12 +145,12 @@ where
     // known, its key there), or the build fails with nothing written: a run
     // that cannot start leaves no session for a resume to pick up.
     let (model, effort) = start_on(&settings, session.saved.as_ref(), &opts);
-    let reg_opts = RegistryOptions {
-        http: http.clone(),
-        routing,
-        ..Default::default()
-    };
-    let registry = ProviderRegistry::new(keys.clone(), providers, reg_opts);
+    let reg_opts = RegistryOptions::default()
+        .with_http(http.clone())
+        .with_routing(routing);
+    let registry = ProviderRegistry::new(keys.clone())
+        .with_custom(providers)
+        .with_options(reg_opts);
     registry.resolve(&model)?;
     let spill = settings.spill_dir(session.store.session_id());
     let hooks = Arc::new(RuntimeHooks::new(

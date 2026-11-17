@@ -37,7 +37,7 @@ fn quick() -> RetryPolicy {
     }
 }
 
-fn provider(t: &Arc<FakeHttp>) -> CompatProvider {
+fn provider(t: &FakeHttp) -> CompatProvider {
     CompatProvider::new(CompatOptions::new("local", "k"), t.clone()).with_retry(quick())
 }
 

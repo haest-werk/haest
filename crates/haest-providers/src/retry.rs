@@ -24,7 +24,7 @@ use haest_http::Response;
 /// message: a retry would replay text the human has already seen.
 ///
 /// Every provider takes one through `with_retry`, and
-/// [`RegistryOptions::retry`](crate::RegistryOptions::retry) sets it for all.
+/// [`RegistryOptions::with_retry`](crate::RegistryOptions::with_retry) sets it for all.
 ///
 /// ```
 /// use std::time::Duration;

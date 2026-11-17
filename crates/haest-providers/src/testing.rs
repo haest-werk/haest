@@ -27,6 +27,7 @@
 
 use std::{
     collections::VecDeque,
+    fmt,
     sync::{Arc, Mutex},
 };
 
@@ -116,44 +117,61 @@ impl FakeReply {
 
 /// An HTTP client that answers from a script, in order, and records every
 /// request. Out of script = a non-retryable error, so an extra call fails loudly.
+///
+/// Cloning is cheap and the clones share the script and the record: a test
+/// hands a clone to a provider and reads the requests on its own.
+#[derive(Clone, Default)]
+pub struct FakeHttp(Arc<Script>);
+
 #[derive(Default)]
-pub struct FakeHttp {
+struct Script {
     replies: Mutex<VecDeque<FakeReply>>,
     requests: Mutex<Vec<Request>>,
 }
 
 impl FakeHttp {
-    /// A client that gives `replies`, one per request, in order. Shared
-    /// (`Arc`), so a test keeps a handle to read the requests after handing
-    /// a clone to a provider.
-    pub fn new(replies: impl IntoIterator<Item = FakeReply>) -> Arc<Self> {
-        Arc::new(Self {
+    /// A client that gives `replies`, one per request, in order.
+    pub fn new(replies: impl IntoIterator<Item = FakeReply>) -> Self {
+        Self(Arc::new(Script {
             replies: Mutex::new(replies.into_iter().collect()),
             requests: Mutex::default(),
-        })
+        }))
     }
 
     /// Every request so far.
     pub fn requests(&self) -> Vec<Request> {
-        self.requests.lock().unwrap().clone()
+        self.0.requests.lock().expect("lock poisoned").clone()
     }
 
     /// The last request's JSON body (Null when there was none).
     pub fn last_body(&self) -> Value {
-        self.requests
+        self.0
+            .requests
             .lock()
-            .unwrap()
+            .expect("lock poisoned")
             .last()
             .map(Request::json_body)
             .unwrap_or(Value::Null)
     }
 }
 
+/// How many replies are left and how many requests came; not their content.
+impl fmt::Debug for FakeHttp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let left = self.0.replies.lock().expect("lock poisoned").len();
+        let sent = self.0.requests.lock().expect("lock poisoned").len();
+        f.debug_struct("FakeHttp")
+            .field("replies_left", &left)
+            .field("requests", &sent)
+            .finish()
+    }
+}
+
 #[async_trait]
 impl HttpClient for FakeHttp {
     async fn send(&self, req: Request) -> Result<Response, HttpError> {
-        self.requests.lock().unwrap().push(req);
-        let reply = self.replies.lock().unwrap().pop_front();
+        self.0.requests.lock().expect("lock poisoned").push(req);
+        let reply = self.0.replies.lock().expect("lock poisoned").pop_front();
         let (status, headers, chunks, end) = match reply {
             None => return Err(HttpError::Request("fake HTTP: out of replies".into())),
             Some(FakeReply::Error(e)) => return Err(e),

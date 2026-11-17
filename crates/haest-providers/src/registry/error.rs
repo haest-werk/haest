@@ -9,7 +9,10 @@ use haest_core::words::UnknownWord;
 /// Resolving a spec of that provider fails with
 /// [`ModelError::Unavailable`](haest_core::ModelError::Unavailable), this as
 /// its source; every other entry still resolves.
+///
+/// More problems may come in a minor release.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum EntryProblem {
     /// The entry is not a JSON object.
     #[error("the entry is not a JSON object")]
@@ -34,11 +37,13 @@ pub enum EntryProblem {
 
 /// Why `<config dir>/providers.json` could not be read
 /// ([`load_custom_providers`](super::load_custom_providers)). Every variant's
-/// message starts with the file's path; the io or JSON error is the source.
+/// message names the file; the io or JSON error is the source. More variants
+/// may come in a minor release.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ProvidersFileError {
     /// The file is there but could not be read.
-    #[error("{}", path.display())]
+    #[error("cannot read {}", path.display())]
     Read {
         /// The providers.json it is about.
         path: PathBuf,

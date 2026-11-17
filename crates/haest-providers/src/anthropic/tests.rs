@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use haest_core::{
     messages::{
         AssistantMessage, AssistantPart, Message, StopReason, ToolCall, ToolResultMessage, Usage,
@@ -11,7 +9,7 @@ use serde_json::{Value, json};
 use super::{convert::uses_budget_thinking, *};
 use crate::testing::{FakeEnd, FakeHttp, FakeReply, collect, kinds, request, typed_sse};
 
-fn provider(t: &Arc<FakeHttp>) -> AnthropicProvider {
+fn provider(t: &FakeHttp) -> AnthropicProvider {
     AnthropicProvider::new(AnthropicOptions::new("anthropic", "k"), t.clone())
 }
 
@@ -288,8 +286,10 @@ fn the_last_tool_carries_the_cache_breakpoint() {
 fn the_key_and_header_values_never_show_in_debug_output() {
     let mut o = AnthropicOptions::new("anthropic", "sk-ant-SECRET");
     o.headers = vec![("x-proxy-key".into(), "HEADER-SECRET".into())];
+    o.base_url = Some("https://user:URL-SECRET@gw.test/v1".into());
     let shown = format!("{o:?}");
     assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(shown.contains("gw.test/v1"), "{shown}");
     assert!(
         shown.contains("anthropic") && shown.contains("x-proxy-key"),
         "{shown}"

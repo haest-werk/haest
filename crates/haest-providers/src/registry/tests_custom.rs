@@ -3,9 +3,7 @@
 
 use std::path::Path;
 
-use haest_core::{
-    fs::MemFs, messages::Message, provider::ModelResolver, testing::assert_causes_said_once,
-};
+use haest_core::{fs::MemFs, messages::Message, testing::assert_causes_said_once};
 use serde_json::json;
 
 use super::{
@@ -51,7 +49,9 @@ async fn a_custom_anthropic_entry_is_its_own_provider_and_its_thinking_replays_o
         "gateway".to_string(),
         json!({"type": "anthropic", "baseURL": "http://gateway"}),
     )]);
-    let reg = ProviderRegistry::new(keys(&[("ANTHROPIC_API_KEY", "k")]), custom, opts(&t));
+    let reg = ProviderRegistry::new(keys(&[("ANTHROPIC_API_KEY", "k")]))
+        .with_custom(custom)
+        .with_options(opts(&t));
     let gateway = reg.resolve("gateway:claude").unwrap();
     assert_eq!(gateway.provider().id(), "gateway");
     let (_, answer) = collect(gateway.provider().stream(request(gateway.model()))).await;
@@ -93,7 +93,9 @@ async fn a_custom_anthropic_provider_sends_its_configured_headers() {
         json!({"type": "anthropic", "baseURL": "http://proxy", "apiKey": "x",
                "headers": {"x-proxy-auth": "tok"}}),
     )]);
-    let reg = ProviderRegistry::new(keys(&[]), custom, opts(&t));
+    let reg = ProviderRegistry::new(keys(&[]))
+        .with_custom(custom)
+        .with_options(opts(&t));
     let r = reg.resolve("proxy:claude").unwrap();
     collect(r.provider().stream(request(r.model()))).await;
     let sent = &t.requests()[0].headers;
@@ -110,7 +112,9 @@ async fn a_configured_header_replaces_the_anthropic_default_of_that_name() {
         json!({"type": "anthropic", "baseURL": "http://proxy",
                "headers": {"X-Api-Key": "tok", "Accept": "text/event-stream"}}),
     )]);
-    let reg = ProviderRegistry::new(keys(&[]), custom, opts(&t));
+    let reg = ProviderRegistry::new(keys(&[]))
+        .with_custom(custom)
+        .with_options(opts(&t));
     let r = reg.resolve("proxy:claude").unwrap();
     collect(r.provider().stream(request(r.model()))).await;
     let sent = &t.requests()[0].headers;
@@ -219,7 +223,7 @@ fn one_bad_custom_entry_blocks_only_itself() {
 #[test]
 fn the_key_and_header_values_never_show_in_debug_output() {
     let entry = json!({
-        "baseURL": "http://localhost:1234/v1",
+        "baseURL": "http://user:URL-SECRET@localhost:1234/v1",
         "apiKey": "sk-SECRET",
         "apiKeyEnv": "LOCAL_KEY",
         "headers": {"x-proxy-key": "HEADER-SECRET"}

@@ -8,15 +8,13 @@
 
 use std::{
     collections::hash_map::RandomState,
-    fmt,
     hash::{BuildHasher, Hasher},
-    sync::Arc,
     time::Duration,
 };
 
 use futures::StreamExt;
 use haest_core::error::report;
-use haest_http::{HttpClient, HttpError, Request, Response};
+use haest_http::{HttpClientRef, HttpError, Request, Response};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -30,16 +28,16 @@ pub(crate) const HEADERS_TIMEOUT: Duration = Duration::from_secs(600);
 /// How a provider sends its requests: the HTTP client, the retry policy, and
 /// how long one try waits for its status and headers. Every provider holds
 /// one; `with_retry` and `with_headers_timeout` set it.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct Sender {
-    pub(crate) http: Arc<dyn HttpClient>,
+    pub(crate) http: HttpClientRef,
     pub(crate) retry: RetryPolicy,
     pub(crate) headers_timeout: Duration,
 }
 
 impl Sender {
     /// Over `http`, with the default [`RetryPolicy`] and [`HEADERS_TIMEOUT`].
-    pub(crate) fn new(http: Arc<dyn HttpClient>) -> Self {
+    pub(crate) fn new(http: HttpClientRef) -> Self {
         Self {
             http,
             retry: RetryPolicy::default(),
@@ -192,19 +190,10 @@ pub(crate) fn configured(req: Request, extra: &[(String, String)]) -> Request {
         .fold(req, |req, (name, value)| req.with_header(name, value))
 }
 
-/// What a key shows as in an options type's Debug output.
-pub(crate) const REDACTED: &str = "<redacted>";
-
-/// Configured headers as Debug output shows them: each name, never its value
-/// (a proxy's key rides in one).
-pub(crate) struct HeaderNames<'a>(pub(crate) &'a [(String, String)]);
-
-impl fmt::Debug for HeaderNames<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let names = self.0.iter().map(|(name, _)| (name, REDACTED));
-        f.debug_list().entries(names).finish()
-    }
-}
+/// What an options type's Debug output shows: a key as `<redacted>`, the
+/// configured headers by name only (a proxy's key rides in one), a base URL
+/// without its `user:password@`.
+pub(crate) use haest_http::__private::{HeaderNames, REDACTED, UrlDebug};
 
 #[cfg(test)]
 mod tests {

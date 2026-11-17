@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use haest_core::{
     messages::{AssistantMessage, AssistantPart, StopReason, ToolCall, Usage},
     provider::{Provider, ProviderEvent},
@@ -9,7 +7,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::testing::{FakeEnd, FakeHttp, FakeReply, collect, kinds, request, typed_sse};
 
-fn provider(t: &Arc<FakeHttp>) -> ResponsesProvider {
+fn provider(t: &FakeHttp) -> ResponsesProvider {
     ResponsesProvider::new(ResponsesOptions::new("openai", "k"), t.clone())
 }
 
@@ -243,8 +241,10 @@ fn the_wire_request_goes_to_responses() {
 fn the_key_and_header_values_never_show_in_debug_output() {
     let mut o = ResponsesOptions::new("openai", "sk-SECRET");
     o.headers = vec![("x-proxy-key".into(), "HEADER-SECRET".into())];
+    o.base_url = Some("https://user:URL-SECRET@gw.test/v1".into());
     let shown = format!("{o:?}");
     assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(shown.contains("gw.test/v1"), "{shown}");
     assert!(
         shown.contains("openai") && shown.contains("x-proxy-key"),
         "{shown}"

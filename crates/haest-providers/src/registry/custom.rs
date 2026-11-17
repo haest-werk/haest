@@ -18,12 +18,14 @@ use crate::{
     anthropic::AnthropicOptions,
     catalog::Catalog,
     compat::CompatOptions,
-    send::{HeaderNames, REDACTED},
+    send::{HeaderNames, REDACTED, UrlDebug},
 };
 
 haest_core::word_enum! {
-/// The wire dialect of a custom provider: its providers.json `type`.
+/// The wire dialect of a custom provider: its providers.json `type`. More
+/// may come in a minor release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Dialect ("provider type") {
     /// Chat Completions (`"type": "openai"`, or no `type`).
     OpenAi = "openai",
@@ -81,7 +83,7 @@ impl fmt::Debug for CustomProviderConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CustomProviderConfig")
             .field("dialect", &self.dialect)
-            .field("base_url", &self.base_url)
+            .field("base_url", &self.base_url.as_deref().map(UrlDebug))
             .field("api_key", &self.api_key.as_ref().map(|_| REDACTED))
             .field("api_key_env", &self.api_key_env)
             .field("headers", &HeaderNames(&self.headers))
@@ -154,17 +156,20 @@ impl CustomProviderConfig {
     /// has a `cacheWrite` that is not a number.
     ///
     /// ```
-    /// use haest_providers::{CustomProviderConfig, Dialect};
+    /// use haest_providers::{CustomProviderConfig, Dialect, EntryProblem};
     /// use serde_json::json;
     ///
+    /// # fn main() -> Result<(), EntryProblem> {
     /// let entry = json!({"type": "anthropic", "baseURL": "https://llm-gateway.example.com",
     ///                    "apiKeyEnv": "GATEWAY_API_KEY", "headers": {"X-Team": "platform"}});
-    /// let cfg = CustomProviderConfig::from_json(&entry).unwrap();
+    /// let cfg = CustomProviderConfig::from_json(&entry)?;
     /// assert_eq!(cfg.dialect, Dialect::Anthropic);
     /// assert_eq!(cfg.headers, [("X-Team".to_string(), "platform".to_string())]);
     ///
     /// let bad = json!({"pricing": {"m": {"input": 1}}});
     /// assert!(CustomProviderConfig::from_json(&bad).is_err());
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn from_json(v: &Value) -> Result<Self, EntryProblem> {
         if !v.is_object() {
@@ -201,10 +206,11 @@ impl CustomProviderConfig {
     /// A `type: "anthropic"` entry as the options of the provider `name`: the
     /// entry's URL, key ([`resolved_key`](Self::resolved_key)) and headers.
     pub(crate) fn anthropic_options(&self, name: &str, keys: &dyn KeySource) -> AnthropicOptions {
-        let mut opts = AnthropicOptions::new(name, self.resolved_key(keys));
-        opts.base_url = self.base_url.clone();
-        opts.headers = self.headers.clone();
-        opts
+        AnthropicOptions {
+            base_url: self.base_url.clone(),
+            headers: self.headers.clone(),
+            ..AnthropicOptions::new(name, self.resolved_key(keys))
+        }
     }
 
     /// A `type: "openai"` entry as the options of the provider `name`, the
@@ -212,13 +218,14 @@ impl CustomProviderConfig {
     /// headers and effort levels. Its prices are the built-in catalog's for
     /// `name:` models, then the entry's own over them.
     pub(crate) fn compat_options(&self, name: &str, keys: &dyn KeySource) -> CompatOptions {
-        let mut opts = CompatOptions::new(name, self.resolved_key(keys));
-        opts.base_url = self.base_url.clone();
-        opts.headers = self.headers.clone();
-        opts.reasoning_effort = self.reasoning_effort.clone();
-        opts.pricing = Catalog::builtin().provider_pricing(name);
-        opts.pricing.extend(self.pricing.clone());
-        opts
+        let opts = CompatOptions {
+            base_url: self.base_url.clone(),
+            headers: self.headers.clone(),
+            reasoning_effort: self.reasoning_effort.clone(),
+            pricing: Catalog::builtin().provider_pricing(name),
+            ..CompatOptions::new(name, self.resolved_key(keys))
+        };
+        opts.with_pricing(self.pricing.clone())
     }
 }
 
@@ -246,16 +253,17 @@ pub type CustomProviders = BTreeMap<String, Value>;
 /// use haest_providers::load_custom_providers;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_providers::ProvidersFileError> {
 /// let fs = MemFs::with_files([(
 ///     "/home/me/.config/haest/providers.json",
 ///     r#"{"local": {"type": "openai", "baseURL": "http://localhost:1234/v1"}}"#,
 /// )]);
-/// let custom = load_custom_providers(&fs, Path::new("/home/me/.config/haest")).await.unwrap();
+/// let custom = load_custom_providers(&fs, Path::new("/home/me/.config/haest")).await?;
 /// assert!(custom.contains_key("local"));
 ///
-/// let none = load_custom_providers(&fs, Path::new("/elsewhere")).await.unwrap();
+/// let none = load_custom_providers(&fs, Path::new("/elsewhere")).await?;
 /// assert!(none.is_empty());
+/// # Ok(())
 /// # }
 /// ```
 pub async fn load_custom_providers(

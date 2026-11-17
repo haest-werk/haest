@@ -25,7 +25,7 @@
 //! directory:
 //!
 //! ```no_run
-//! use haest::providers::{ProviderRegistry, RegistryOptions};
+//! use haest::providers::ProviderRegistry;
 //! use haest::tools::{BuiltinOptions, builtin_tools};
 //! use haest::workspace::RealWorkspace;
 //! use haest::{Agent, AgentDeps, AgentOptions, BoxError, ChildEnv, LoopEvent};
@@ -34,11 +34,8 @@
 //! async fn main() -> Result<(), BoxError> {
 //!     // The host decides where keys come from; here, this process's environment.
 //!     let keys = |name: &str| std::env::var(name).ok();
-//!     let models = ProviderRegistry::new(
-//!         keys,
-//!         Default::default(), // no providers.json entries
-//!         RegistryOptions::default(),
-//!     );
+//!     // The built-in providers; `.with_custom(..)` adds providers.json's.
+//!     let models = ProviderRegistry::new(keys);
 //!
 //!     // Bash runs with only the variables you pass on.
 //!     let pass = |k: &'static str| (k, std::env::var(k).unwrap_or_default());

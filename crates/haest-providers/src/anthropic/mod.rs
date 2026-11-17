@@ -12,19 +12,19 @@ mod stream;
 #[cfg(test)]
 mod tests;
 
-use std::{fmt, sync::Arc, time::Duration};
+use std::{fmt, time::Duration};
 
 use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
 use serde_json::{Value, json};
 
 pub(crate) use convert::{thinking_params, to_anthropic_messages, to_anthropic_tools};
 
-use haest_http::{HttpClient, Request};
+use haest_http::{HttpClientRef, Request};
 
 use crate::{
     driver::drive,
     retry::RetryPolicy,
-    send::{HeaderNames, REDACTED, Sender, configured, endpoint},
+    send::{HeaderNames, REDACTED, Sender, UrlDebug, configured, endpoint},
 };
 
 const DEFAULT_MAX_TOKENS: u32 = 32_000;
@@ -34,8 +34,19 @@ const API_VERSION: &str = "2023-06-01";
 /// Where an [`AnthropicProvider`] sends its requests, and with which key.
 ///
 /// [`AnthropicOptions::new`] takes the two fields every provider needs; set
-/// the others on the value it returns. Its Debug output shows neither the
-/// key nor a header's value.
+/// the others with the `with_*` setters (or on the fields). Its Debug output
+/// shows neither the key, nor a header's value, nor a `user:password@` in
+/// the base URL.
+///
+/// ```
+/// use haest_providers::AnthropicOptions;
+///
+/// let opts = AnthropicOptions::new("gateway", "sk-ant-...")
+///     .with_base_url("https://llm-gateway.example.com")
+///     .with_header("X-Team", "platform");
+/// assert_eq!(opts.base_url.as_deref(), Some("https://llm-gateway.example.com"));
+/// assert!(!format!("{opts:?}").contains("sk-ant"));
+/// ```
 #[derive(Clone)]
 pub struct AnthropicOptions {
     /// The provider's name: its [`Provider::id`], stored on every message it
@@ -62,6 +73,20 @@ impl AnthropicOptions {
             headers: Vec::new(),
         }
     }
+
+    /// These options sending to `url` (`<url>/v1/messages`) instead of
+    /// Anthropic's own API.
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = Some(url.into());
+        self
+    }
+
+    /// These options sending `name: value` on every request, after the ones
+    /// before it.
+    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.headers.push((name.into(), value.into()));
+        self
+    }
 }
 
 impl fmt::Debug for AnthropicOptions {
@@ -69,7 +94,7 @@ impl fmt::Debug for AnthropicOptions {
         f.debug_struct("AnthropicOptions")
             .field("id", &self.id)
             .field("api_key", &REDACTED)
-            .field("base_url", &self.base_url)
+            .field("base_url", &self.base_url.as_deref().map(UrlDebug))
             .field("headers", &HeaderNames(&self.headers))
             .finish()
     }
@@ -91,31 +116,38 @@ impl fmt::Debug for AnthropicOptions {
 /// thinking never replays to Anthropic itself, nor the other way round.
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_core::Provider;
 /// use haest_providers::{AnthropicOptions, AnthropicProvider, RetryPolicy, http::ReqwestClient};
 ///
 /// let provider = AnthropicProvider::new(
 ///     AnthropicOptions::new("anthropic", "sk-ant-..."),
-///     Arc::new(ReqwestClient::new()),
+///     ReqwestClient::new(),
 /// )
 /// .with_retry(RetryPolicy::none());
 /// assert_eq!(provider.id(), "anthropic");
 /// ```
+///
+/// Cloning is cheap: a clone shares the client.
+#[derive(Debug, Clone)]
 pub struct AnthropicProvider {
     opts: AnthropicOptions,
     sender: Sender,
 }
 
 impl AnthropicProvider {
-    /// A provider sending over `http` with the default [`RetryPolicy`].
-    /// Nothing is sent until [`Provider::stream`].
-    pub fn new(opts: AnthropicOptions, http: Arc<dyn HttpClient>) -> Self {
+    /// A provider sending over `http` (the client itself, or an `Arc` of one
+    /// the host shares) with the default [`RetryPolicy`]. Nothing is sent
+    /// until [`Provider::stream`].
+    pub fn new(opts: AnthropicOptions, http: impl Into<HttpClientRef>) -> Self {
         Self {
             opts,
-            sender: Sender::new(http),
+            sender: Sender::new(http.into()),
         }
+    }
+
+    /// The options it was built from.
+    pub fn options(&self) -> &AnthropicOptions {
+        &self.opts
     }
 
     /// The same provider with `retry` instead of the default policy.

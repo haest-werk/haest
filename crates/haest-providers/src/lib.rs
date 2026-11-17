@@ -69,12 +69,12 @@
 //! resolves an OpenRouter spec over it and reads the answer, offline:
 //!
 //! ```
-//! use std::{collections::HashMap, sync::Arc};
+//! use std::collections::HashMap;
 //!
 //! use futures::StreamExt;
-//! use haest_core::{Message, ModelError, ModelResolver, ProviderEvent, ProviderRequest, StopReason};
+//! use haest_core::{Message, ModelError, ProviderEvent, ProviderRequest, StopReason};
 //! use haest_providers::{
-//!     CustomProviders, ProviderRegistry, RegistryOptions,
+//!     ProviderRegistry,
 //!     http::{HttpClient, HttpError, Request, Response, async_trait},
 //! };
 //!
@@ -100,11 +100,7 @@
 //! async fn main() -> Result<(), ModelError> {
 //!     // The host answers key names; here from a map.
 //!     let keys = HashMap::from([("OPENROUTER_API_KEY".to_string(), "sk-test".to_string())]);
-//!     let registry = ProviderRegistry::new(
-//!         keys,
-//!         CustomProviders::new(),
-//!         RegistryOptions { http: Arc::new(Canned), ..RegistryOptions::default() },
-//!     );
+//!     let registry = ProviderRegistry::new(keys).with_http(Canned);
 //!
 //!     let resolved = registry.resolve("openrouter:anthropic/claude-sonnet-5.5")?;
 //!     assert_eq!(resolved.model(), "anthropic/claude-sonnet-5.5");

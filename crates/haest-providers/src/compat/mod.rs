@@ -22,7 +22,7 @@ mod tests_search;
 #[cfg(test)]
 mod tests_stream;
 
-use std::{collections::HashMap, fmt, sync::Arc, time::Duration};
+use std::{collections::HashMap, fmt, time::Duration};
 
 use haest_core::{
     catalog::{ModelPricing, Reasoning},
@@ -31,7 +31,7 @@ use haest_core::{
         ProviderEvent, ProviderRequest, ProviderStream, book_priced_cost, mark_stream_failed,
     },
 };
-use haest_http::{HttpClient, Request};
+use haest_http::{HttpClientRef, Request};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -43,7 +43,7 @@ use crate::{
     driver::{Step, StreamFold, drive, openai_error},
     retry::RetryPolicy,
     routing::RoutingScopes,
-    send::{HeaderNames, OPENAI_URL, REDACTED, Sender, bearer_post, endpoint},
+    send::{HeaderNames, OPENAI_URL, REDACTED, Sender, UrlDebug, bearer_post, endpoint},
     sse::SseEvent,
     web_search::web_search_tool,
 };
@@ -52,8 +52,10 @@ use crate::{
 /// extras it sends depend on it.
 ///
 /// OpenAI itself is NOT a flavor here: it speaks Responses
-/// ([`ResponsesProvider`](crate::ResponsesProvider)).
+/// ([`ResponsesProvider`](crate::ResponsesProvider)). More flavors may come
+/// in a minor release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CompatFlavor {
     /// OpenRouter: asks for usage with its cost, sends effort as OpenRouter's
     /// `reasoning` object, provider routing and the web search server tool,
@@ -69,8 +71,19 @@ pub enum CompatFlavor {
 ///
 /// [`CompatOptions::new`] takes the two fields every provider needs and
 /// leaves the rest plain ([`CompatFlavor::Generic`], no extras); set the
-/// others on the value it returns. Its Debug output shows neither the key
-/// nor a header's value.
+/// others with the `with_*` setters (or on the fields). Its Debug output
+/// shows neither the key, nor a header's value, nor a `user:password@` in
+/// the base URL.
+///
+/// ```
+/// use haest_providers::{CompatFlavor, CompatOptions};
+///
+/// let opts = CompatOptions::new("openrouter", "sk-or-...")
+///     .with_flavor(CompatFlavor::OpenRouter)
+///     .with_base_url("https://gateway.example.com/v1");
+/// assert_eq!(opts.flavor, CompatFlavor::OpenRouter);
+/// assert!(!format!("{opts:?}").contains("sk-or"));
+/// ```
 #[derive(Clone)]
 pub struct CompatOptions {
     /// The provider's name: its [`Provider::id`](haest_core::Provider::id),
@@ -111,6 +124,50 @@ impl CompatOptions {
             routing: None,
         }
     }
+
+    /// These options with OpenRouter's extras, or the plain body.
+    pub fn with_flavor(mut self, flavor: CompatFlavor) -> Self {
+        self.flavor = flavor;
+        self
+    }
+
+    /// These options sending to `url` (`<url>/chat/completions`) instead of
+    /// OpenAI's own.
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = Some(url.into());
+        self
+    }
+
+    /// These options sending `name: value` on every request, after the ones
+    /// before it.
+    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.headers.push((name.into(), value.into()));
+        self
+    }
+
+    /// These options sending a top-level `reasoning_effort`, fitted to the
+    /// levels `reasoning` lists.
+    pub fn with_reasoning_effort(mut self, reasoning: Reasoning) -> Self {
+        self.reasoning_effort = Some(reasoning);
+        self
+    }
+
+    /// These options with `pricing` added, by model id, over the prices
+    /// already set.
+    pub fn with_pricing(
+        mut self,
+        pricing: impl IntoIterator<Item = (impl Into<String>, ModelPricing)>,
+    ) -> Self {
+        let rows = pricing.into_iter().map(|(model, row)| (model.into(), row));
+        self.pricing.extend(rows);
+        self
+    }
+
+    /// These options sending OpenRouter provider routing (OpenRouter only).
+    pub fn with_routing(mut self, routing: RoutingScopes) -> Self {
+        self.routing = Some(routing);
+        self
+    }
 }
 
 impl fmt::Debug for CompatOptions {
@@ -119,7 +176,7 @@ impl fmt::Debug for CompatOptions {
             .field("id", &self.id)
             .field("flavor", &self.flavor)
             .field("api_key", &REDACTED)
-            .field("base_url", &self.base_url)
+            .field("base_url", &self.base_url.as_deref().map(UrlDebug))
             .field("headers", &HeaderNames(&self.headers))
             .field("reasoning_effort", &self.reasoning_effort)
             .field("pricing", &self.pricing)
@@ -144,29 +201,35 @@ impl fmt::Debug for CompatOptions {
 /// A local server, reached directly:
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_core::Provider;
 /// use haest_providers::{CompatOptions, CompatProvider, http::ReqwestClient};
 ///
-/// let mut opts = CompatOptions::new("local", "none");
-/// opts.base_url = Some("http://localhost:1234/v1".into());
-/// let provider = CompatProvider::new(opts, Arc::new(ReqwestClient::new()));
+/// let opts = CompatOptions::new("local", "none").with_base_url("http://localhost:1234/v1");
+/// let provider = CompatProvider::new(opts, ReqwestClient::new());
 /// assert_eq!(provider.id(), "local");
 /// ```
+///
+/// Cloning is cheap: a clone shares the client.
+#[derive(Debug, Clone)]
 pub struct CompatProvider {
     opts: CompatOptions,
     sender: Sender,
 }
 
 impl CompatProvider {
-    /// A provider sending over `http` with the default [`RetryPolicy`].
-    /// Nothing is sent until [`Provider::stream`](haest_core::Provider::stream).
-    pub fn new(opts: CompatOptions, http: Arc<dyn HttpClient>) -> Self {
+    /// A provider sending over `http` (the client itself, or an `Arc` of one
+    /// the host shares) with the default [`RetryPolicy`]. Nothing is sent
+    /// until [`Provider::stream`](haest_core::Provider::stream).
+    pub fn new(opts: CompatOptions, http: impl Into<HttpClientRef>) -> Self {
         Self {
             opts,
-            sender: Sender::new(http),
+            sender: Sender::new(http.into()),
         }
+    }
+
+    /// The options it was built from.
+    pub fn options(&self) -> &CompatOptions {
+        &self.opts
     }
 
     /// The same provider with `retry` instead of the default policy.
