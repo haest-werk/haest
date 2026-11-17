@@ -36,9 +36,9 @@ use std::{
 
 use haest::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, Effort,
-    ExecResult, Fs, JsonMap, LoopEvent, MemFs, Message, ModelError, Provider, ProviderRequest,
-    ProviderStream, ResolvedModel, SharedDeps, StopReason, Tool, ToolCall, ToolContext, ToolError,
-    ToolOutput, ToolRef, Tools, TurnOutcome, Usage, Workspace, answer_stream, async_trait,
+    ExecResult, Fs, JsonMap, LoopEvent, MemFs, Message, Provider, ProviderRef, ProviderRequest,
+    ProviderStream, SharedDeps, StopReason, Tool, ToolCall, ToolContext, ToolError, ToolOutput,
+    ToolRef, Tools, TurnOutcome, Usage, Workspace, answer_stream, async_trait,
     core::caps::SubagentCaps,
     core::shell_command::{ShellCall, ShellCommand},
     req_str,
@@ -175,9 +175,8 @@ impl Inbox for App {
 #[async_trait]
 impl SubagentParent for App {
     fn deps(&self) -> SharedDeps {
-        let provider = self.provider.clone();
-        let models =
-            move |spec: &str| Ok::<_, ModelError>(ResolvedModel::new(provider.clone(), spec));
+        // One provider serves every model spec.
+        let models = ProviderRef::from(self.provider.clone());
         SharedDeps::new(models, CWD, self.workspace.clone())
     }
     fn base_tools(&self) -> Tools {

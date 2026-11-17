@@ -2,8 +2,11 @@
 
 use std::fmt;
 
-use super::ProviderRef;
-use crate::error::BoxError;
+use super::{NO_RESPONSE, ProviderEvent, ProviderRef, ProviderRequest, final_message};
+use crate::{
+    error::BoxError,
+    messages::{AssistantMessage, StopReason},
+};
 
 /// A spec resolved to the provider that serves it and the provider's model id.
 #[derive(Clone)]
@@ -45,6 +48,84 @@ impl ResolvedModel {
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self
+    }
+
+    /// This model's whole answer to `req`, for a call outside the loop (a
+    /// title, a one-shot question). The request goes to this model: its
+    /// `model` is set to [`model`](Self::model).
+    ///
+    /// It never fails: an API or network error is an answer with
+    /// [`StopReason::Error`](crate::StopReason::Error) and the reason in
+    /// `error_message`, as a provider sends it; so is a stream that ends
+    /// without its answer.
+    ///
+    /// ```
+    /// use haest_core::{
+    ///     AssistantMessage, AssistantPart, Message, Provider, ProviderRequest, ProviderStream,
+    ///     ResolvedModel, answer_stream,
+    /// };
+    ///
+    /// /// Names everything "Tides".
+    /// struct Titler;
+    ///
+    /// impl Provider for Titler {
+    ///     fn id(&self) -> &str {
+    ///         "titler"
+    ///     }
+    ///     fn stream(&self, req: ProviderRequest) -> ProviderStream {
+    ///         let mut answer = AssistantMessage::start(self.id(), &req.model);
+    ///         answer_stream(|_deltas| async move {
+    ///             answer.content.push(AssistantPart::Text { text: "Tides".into() });
+    ///             answer
+    ///         })
+    ///     }
+    /// }
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let titles = ResolvedModel::new(Titler, "titles-1");
+    /// let req = ProviderRequest::new(titles.model(), vec![Message::user("A title for this?")]);
+    /// let answer = titles.complete(req).await;
+    /// assert_eq!((answer.text().as_str(), answer.model.as_str()), ("Tides", "titles-1"));
+    /// # }
+    /// ```
+    pub async fn complete(&self, req: ProviderRequest) -> AssistantMessage {
+        self.complete_streaming(req, |_| {}).await
+    }
+
+    /// The same, handing each event before the answer (text, thinking, a
+    /// tool call starting) to `on_delta` as it arrives.
+    pub async fn complete_streaming(
+        &self,
+        mut req: ProviderRequest,
+        on_delta: impl FnMut(ProviderEvent),
+    ) -> AssistantMessage {
+        req.model.clone_from(&self.model);
+        let answer = final_message(self.provider.stream(req), on_delta).await;
+        answer.unwrap_or_else(|| {
+            let mut m = AssistantMessage::start(self.provider.id(), &self.model);
+            m.stop_reason = StopReason::Error;
+            m.error_message = Some(NO_RESPONSE.into());
+            m
+        })
+    }
+}
+
+/// Always this model, whatever the spec: a host with one model resolves
+/// every spec to it (`SharedDeps::new(ResolvedModel::new(provider, "m"), ..)`).
+impl ModelResolver for ResolvedModel {
+    fn resolve(&self, _spec: &str) -> Result<ResolvedModel, ModelError> {
+        Ok(self.clone())
+    }
+}
+
+/// One provider serves every spec: the model is the part after the first
+/// colon ([`parse_model_spec`]), and the provider part is not checked
+/// (`SharedDeps::new(ProviderRef::new(provider), ..)`).
+impl ModelResolver for ProviderRef {
+    fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
+        let (_, model) = parse_model_spec(spec)?;
+        Ok(ResolvedModel::new(self.clone(), model))
     }
 }
 

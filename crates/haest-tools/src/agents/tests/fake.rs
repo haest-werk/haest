@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use haest_core::{
     LoopEvent, SharedDeps, ToolRef, Tools,
     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
-    provider::{Effort, ModelError, ResolvedModel},
+    provider::{Effort, ProviderRef},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
 };
 use serde_json::Value;
@@ -136,11 +136,7 @@ impl Inbox for FakeParent {
 #[async_trait]
 impl SubagentParent for FakeParent {
     fn deps(&self) -> SharedDeps {
-        let p = self.provider.clone();
-        let models = move |spec: &str| {
-            let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();
-            Ok::<_, ModelError>(ResolvedModel::new(p.clone(), model))
-        };
+        let models = ProviderRef::from(self.provider.clone());
         let d = SharedDeps::new(models, "/p", self.ws.clone()).with_ledger(self.ledger.clone());
         match &*self.adjust.lock().unwrap() {
             Some(adjust) => adjust(d),

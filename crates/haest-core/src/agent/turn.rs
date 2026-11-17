@@ -15,7 +15,7 @@ use crate::{
     guard::TurnGuard,
     media::user_message,
     messages::{AssistantMessage, AssistantPart, Message, StopReason, ToolCall, Usage},
-    provider::{NO_RESPONSE, ProviderEvent, final_message},
+    provider::ProviderEvent,
     remedy::Limit,
     run::Journal,
     tool::{Attempt, ToolContext},
@@ -239,17 +239,19 @@ impl Agent {
             return refuse(resolved.model(), &too_big.text, t);
         }
         let req = prefix.request(resolved.model().to_string(), messages, t.cancel.clone());
-        let done = final_message(resolved.provider().stream(req), |ev| match ev {
-            ProviderEvent::TextDelta(text) => t.sink.emit(LoopEvent::TextDelta { text }),
-            ProviderEvent::ThinkingDelta(text) => t.sink.emit(LoopEvent::ThinkingDelta { text }),
-            ProviderEvent::ToolCallStart { id, name } => {
-                t.sink.emit(LoopEvent::ToolCallStart { id, name })
-            }
-            // final_message keeps it.
-            ProviderEvent::Done(_) => {}
-        })
-        .await;
-        let mut msg = done.unwrap_or_else(|| error_assistant(resolved.model(), NO_RESPONSE));
+        let mut msg = resolved
+            .complete_streaming(req, |ev| match ev {
+                ProviderEvent::TextDelta(text) => t.sink.emit(LoopEvent::TextDelta { text }),
+                ProviderEvent::ThinkingDelta(text) => {
+                    t.sink.emit(LoopEvent::ThinkingDelta { text })
+                }
+                ProviderEvent::ToolCallStart { id, name } => {
+                    t.sink.emit(LoopEvent::ToolCallStart { id, name })
+                }
+                // The answer itself; complete_streaming keeps it.
+                ProviderEvent::Done(_) => {}
+            })
+            .await;
         if matches!(msg.stop_reason, StopReason::Error | StopReason::Aborted) {
             // A failed answer runs no tool, so a call in it would stay in
             // history with no result, and the next request would be refused.

@@ -48,11 +48,7 @@ async fn a_cancelled_summary_is_never_committed() {
         let p = ScriptedProvider::new([ended("The user asked", stop_reason), text_answer("COLD")]);
         let mut agent = agent_with(&p);
         let esc = Arc::new(EscMidStream(p.clone()));
-        agent.map_deps(|d| {
-            d.with_models(Arc::new(move |_: &str| {
-                Ok(ResolvedModel::new(esc.clone(), "m"))
-            }))
-        });
+        agent.map_deps(|d| d.with_models(ResolvedModel::new(esc, "m")));
         let res = compact(&mut agent, &CancellationToken::new(), &CFG).await;
         assert!(
             matches!(res, Err(CompactionError::Failed { .. })),

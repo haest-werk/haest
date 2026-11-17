@@ -629,6 +629,17 @@ Hosts write less (round two of the review, and what porting brain onto
   `inner.with_spill_dir(ctx.spill_dir().map(Path::to_path_buf))`. The run
   store keeps taking the store itself (an `Option` of a handle would take
   only a `RunStoreRef`), and `without_run_store()` empties it.
+- A `ProviderRef` is a `ModelResolver` (one provider serves every spec,
+  the model being the part after the first colon), and so is a
+  `ResolvedModel` (always that model):
+  `move |_: &str| Ok::<_, ModelError>(ResolvedModel::new(p.clone(), m.clone()))`
+  -> `ResolvedModel::new(p, m)`, as the models of `SharedDeps::new`.
+- New `ResolvedModel::complete(req)` and `complete_streaming(req, on_delta)`:
+  a model's whole answer outside the loop, the request sent to that
+  model. `while let Some(ev) = stream.next().await { .. Done(m) => .. }`
+  -> `resolved.complete(req).await`. It never fails: a stream that ends
+  without its answer is an error answer, as the loop has always made one
+  (whose provider is now the provider's id, was `none`).
 
 ### haest-http
 
