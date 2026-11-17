@@ -297,6 +297,53 @@ async fn a_turn_dropped_mid_tool_leaves_the_next_request_no_call_without_a_resul
 }
 
 #[tokio::test]
+async fn a_compaction_after_a_dropped_turn_answers_its_call_first() {
+    let started = Arc::new(Notify::new());
+    let p = ScriptedProvider::new([
+        tool_answer(&[("c1", "Echo", json!({"v": "1"})), ("c2", "Slow", json!({}))]),
+        text_answer("Earlier: a, then a build."),
+    ]);
+    let logged = vec![
+        Message::user("a"),
+        Message::Assistant(text_answer("a done")),
+    ];
+    let opts = Opts {
+        tools: Some(vec![echo_tool(), hanging(&started)]),
+        history: logged.clone(),
+        ..Default::default()
+    };
+    let (mut agent, hooks) = agent_with(&p, opts);
+    let mut events = Vec::new();
+    tokio::select! {
+        _ = agent.run("build it", &mut events) => panic!("the turn was to be dropped mid-tool"),
+        () = started.notified() => {}
+    }
+    // The host's /compact, between the dropped turn and the next one.
+    let cfg = crate::compaction::CompactionOptions {
+        keep_recent: 2,
+        ..crate::compaction::CompactionOptions::new(1)
+    };
+    let cancel = tokio_util::sync::CancellationToken::new();
+
+    let res = crate::compaction::compact(&mut agent, &cancel, &cfg)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // The warm request extends history: it can carry no call without a result.
+    assert_eq!(unanswered(&p.requests()[1].messages), Vec::<String>::new());
+    // The answer reached the host's file before the compaction, and `kept`
+    // counts the history that file replays to.
+    let persisted = hooks.persisted.lock().unwrap().clone();
+    assert!(
+        interrupted(persisted.last().unwrap(), "c2"),
+        "{persisted:?}"
+    );
+    let file = [logged, persisted].concat();
+    assert_eq!(agent.history()[1..], file[file.len() - res.kept..]);
+}
+
+#[tokio::test]
 async fn a_history_handed_in_that_ends_mid_tool_is_answered_before_the_first_request() {
     let p = ScriptedProvider::new([text_answer("ok")]);
     let call = tool_answer(&[("c1", "Echo", json!({"v": "1"})), ("c2", "Echo", json!({}))]);

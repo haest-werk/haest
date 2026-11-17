@@ -1023,7 +1023,11 @@ Hosts write less (round two of the review, and what porting brain onto
   one, only in a history a host hands in (`AgentOptions::with_history`,
   `Agent::replace_history`), is answered in place. A fresh
   `Agent::run_durable` does the same; a resumed one still answers its own
-  calls by their tool's `OnResume`.
+  calls by their tool's `OnResume`. `compaction::compact` answers them
+  first too: a /compact between the dropped turn and the next one sent the
+  call with no result in its warm request, and counted what it kept on a
+  history the session file did not replay to (the call came back with two
+  results).
 
 ### haest-http
 

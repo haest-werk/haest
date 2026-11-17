@@ -106,7 +106,7 @@ impl Agent {
     /// ends there, left calls every provider refuses. The last answer's are
     /// appended like any message (the persistence hook records them); an
     /// earlier one, only in a history a host handed in, is answered in place.
-    pub(super) fn answer_dropped_calls(&mut self) {
+    pub(crate) fn answer_dropped_calls(&mut self) {
         let (history, dropped) = split_pending(std::mem::take(&mut self.history));
         self.history = history;
         for call in dropped {

@@ -235,13 +235,20 @@ impl CompactionError {
 }
 
 /// Compact in place. Returns the summary, how many messages were kept and how it
-/// was written, or None if there is nothing to cut. On error history is untouched.
+/// was written, or None if there is nothing to cut. On error history is
+/// untouched, but for the repair below.
+///
+/// A turn dropped mid-tool leaves a call with no result. It is answered first,
+/// as the next [`Agent::run`] would answer it (appended through
+/// [`on_message`](crate::AgentHooks::on_message)), so the warm request carries
+/// no unanswered call and the count kept is of the history a replay rebuilds.
+/// Inside a turn there is none to answer.
 ///
 /// The summary is asked of the agent's own model ([`Agent::model_spec`]),
 /// warm first, then cold if the warm reply is not a whole summary (it failed,
 /// called a tool, was cut off, or said nothing). The head of history is replaced by
-/// one user message carrying the summary; [`on_message`](crate::AgentHooks::on_message)
-/// is not called, so a host that persists history records the change itself.
+/// one user message carrying the summary; `on_message` is not called for that,
+/// so a host that persists history records the change itself.
 ///
 /// Each call's cost is booked as it comes back, success or not: on the
 /// agent's ledger ([`SharedDeps::ledger`](crate::SharedDeps::ledger)) and
@@ -330,6 +337,7 @@ pub async fn compact(
     cancel: &CancellationToken,
     cfg: &CompactionOptions,
 ) -> Result<Option<CompactionResult>, CompactionError> {
+    agent.answer_dropped_calls();
     let cut = cut_index(agent.history(), cfg.keep_recent);
     if cut == 0 {
         return Ok(None);

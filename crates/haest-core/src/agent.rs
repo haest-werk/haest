@@ -211,7 +211,8 @@ impl Agent {
     }
 
     /// The conversation's history, oldest first: what the next model call
-    /// sends, less any media the model cannot take.
+    /// sends, less any media the model cannot take. A call a dropped turn left
+    /// with no result is answered when the next turn or compaction starts.
     pub fn history(&self) -> &[Message] {
         &self.history
     }
