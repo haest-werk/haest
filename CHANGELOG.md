@@ -852,6 +852,7 @@ Good citizens:
   `ApprovalMod`, `ApprovalGate`, `PlanMod` and `JsMod` implement `Debug`
   (`Mods` lists its mods by name; a closure shows only whether it is set);
   `ApprovalMod`, `ModOptions`, `ModTools` and `ModSystemPrompt` are `Clone`.
+- `ModLoadError` is `#[non_exhaustive]`: a `match` on it adds a `_` arm.
 
 ### haest-settings
 

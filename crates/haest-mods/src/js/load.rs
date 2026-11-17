@@ -54,6 +54,7 @@ impl Default for ModCaps {
 /// own doing except [`NoRuntime`](Self::NoRuntime),
 /// [`Thread`](Self::Thread) and [`Stopped`](Self::Stopped).
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ModLoadError {
     /// It was loaded outside a tokio runtime.
     #[error("file mods load inside a tokio runtime")]
