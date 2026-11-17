@@ -718,8 +718,9 @@ async fn a_hold_dropped_while_a_turn_runs_holds_nothing_after_it() {
     });
     eventually(|| model.requests().len() == 1).await;
     give_up_on_a_hold(&session);
-    // The hold reaches the driver while the turn runs, and waits for its end.
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    // Asked after the hold and its release, and answered while the turn
+    // runs: both reached the driver during the turn and wait for its end.
+    assert_eq!(session.snapshot().await.unwrap().state, State::Running);
     go.notify_one();
     assert!(first.await.unwrap().is_ok());
 
