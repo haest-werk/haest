@@ -35,6 +35,8 @@ pub(super) enum Step {
 pub(super) struct Lifecycle {
     /// Refuse a start whose description contains this.
     pub refuse: Option<&'static str>,
+    /// Panic in a start whose description contains this (a host bug).
+    pub panic: Option<&'static str>,
     /// The model spec its run names.
     pub model_spec: Option<String>,
     /// The caps its run names.
@@ -92,6 +94,11 @@ impl Lifecycle {
             && start.input.description.contains(word)
         {
             return Err(AgentError::Refused(format!("no {word} here")));
+        }
+        if let Some(word) = self.panic
+            && start.input.description.contains(word)
+        {
+            panic!("a host bug while opening the {word} run");
         }
         let deps = self.own_deps.then(|| {
             let ledger = Ledger::new(ConversationCaps::default(), NoLedgerHooks);

@@ -1069,6 +1069,15 @@ Hosts write less (round two of the review, and what porting brain onto
   `media_output(label, bytes, media_type, ctx)` ->
   `media_output(bytes, media_type, label, ctx)`. Both text arguments are
   `&str`, so an old call still compiles: swap them by hand.
+- `SubagentHub::spawn` gives a member's `max_concurrent` place back however
+  it stops. A host that dropped the spawn (a timeout, a `select!`) while its
+  `start_member` ran, a `start_member` that panicked, or a foreground spawn
+  dropped while its member ran left the member Running for good: every later
+  spawn in that conversation was refused with `TooMany`, and `running()`
+  listed an agent that did not exist. A foreground member now runs on a task
+  of its own, and dropping its spawn stops it as a cancelled caller does:
+  its `MemberRun::end` hears `Ending::CallerCancelled` with its spend. A
+  foreground spawn now needs a tokio runtime, as a background one did.
 
 ### haest-workspace
 

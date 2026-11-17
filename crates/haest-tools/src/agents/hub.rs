@@ -25,6 +25,7 @@ mod member_run;
 mod post;
 mod settle;
 
+use member_run::Seat;
 use settle::{Open, Work};
 
 /// Every subagent of one conversation, run in this process: the default
@@ -63,8 +64,7 @@ use settle::{Open, Work};
 ///
 /// # Panics
 ///
-/// A background spawn outside a tokio runtime: the agent runs on a task of
-/// its own.
+/// A spawn outside a tokio runtime: every subagent runs on a task of its own.
 ///
 /// # Examples
 ///
@@ -201,6 +201,12 @@ impl SubagentHub {
     /// foreground agent stops with it. What [`AgentDirectory::spawn`] does
     /// for the agent tools.
     ///
+    /// Cancel safe: dropping the future (a host's timeout or `select!`)
+    /// while the parent's start runs forgets the member, its name free
+    /// again; dropping it while a foreground member runs stops the member
+    /// as `cancel` does, and its run still ends. A panic in the parent's
+    /// start forgets it too. Either way its `max_concurrent` place comes back.
+    ///
     /// # Errors
     ///
     /// An [`AgentError`] the model corrects: a cap ([`AgentError::TooDeep`],
@@ -232,6 +238,8 @@ impl SubagentHub {
                 stop: m.stop.clone(),
             }
         };
+        // Given back however this spawn or the member's run stops.
+        let seat = Seat::reserved(self, &run.me.name);
         // The parent is asked with the table unlocked: it may call the hub back.
         let (main_spec, effort) = self.0.parent.default_model();
         let start = MemberStart {
@@ -243,28 +251,43 @@ impl SubagentHub {
             caps: self.member_caps(budget.as_ref()),
             input: SpawnInput { budget, ..input },
         };
-        let member = match self.0.parent.start_member(&start, cancel).await {
-            Ok(member) => member,
-            Err(refused) => {
-                self.lock_members().forget(&run.me.name);
-                return Err(refused);
-            }
-        };
+        // A refusal, a panic in the host's start or this future dropped while
+        // it runs: the seat is forgotten, the name free again.
+        let member = self.0.parent.start_member(&start, cancel).await?;
         let agent = self.build(&run, &start, effort, &member);
         let name = run.me.name.clone();
         self.lock_members().attach(&name, agent.control());
+        let seat = seat.started();
         let prompt = start.input.prompt;
+        let hub = self.clone();
         if !start.input.background {
-            let caller = Some(cancel.clone());
-            let out = (self.run_member(run, agent, member, prompt, caller)).await;
-            drop(held);
-            return Ok(out);
+            // On a task of its own, so a caller that drops this future (a
+            // timeout, a select!) stops the member as a cancelled caller
+            // does: its run still ends, its end heard and its seat given back.
+            let caller = cancel.child_token();
+            let _stop_when_dropped = caller.clone().drop_guard();
+            let task = tokio::spawn(async move {
+                let _open = open;
+                let out = (hub.run_member(seat, run, agent, member, prompt, Some(caller))).await;
+                drop(held);
+                out
+            });
+            return match task.await {
+                Ok(out) => Ok(out),
+                // A host callback panicked under it: the caller's panic, as
+                // when the member ran on the caller's task.
+                Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
+                // The runtime is shutting down.
+                Err(_) => Ok(SpawnOutcome {
+                    text: "(no answer)\n\n[the agent stopped early: its runtime shut down]".into(),
+                    cost_usd: 0.0,
+                }),
+            };
         }
         let text = format!(
             "Started agent \"{name}\" ({}) in the background. Its answer will arrive as a message; SendMessage reaches it while it runs.",
             agent.model_spec()
         );
-        let hub = self.clone();
         let due = Due::owe(&self.0.due);
         tokio::spawn(async move {
             // Dropped last: the answer is handed back before it stops being
@@ -272,7 +295,7 @@ impl SubagentHub {
             let _open = open;
             let _due = due;
             let parent = run.parent.clone();
-            let out = hub.run_member(run, agent, member, prompt, None).await;
+            let out = hub.run_member(seat, run, agent, member, prompt, None).await;
             // Its USD is free again before its answer is read.
             drop(held);
             hub.hand_back(

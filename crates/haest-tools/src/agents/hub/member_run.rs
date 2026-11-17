@@ -1,7 +1,7 @@
 //! One subagent's run inside the hub: build its agent, drive its turn, close
 //! its run.
 
-use std::panic::AssertUnwindSafe;
+use std::{panic::AssertUnwindSafe, sync::PoisonError};
 
 use futures::FutureExt;
 use haest_core::{
@@ -14,6 +14,61 @@ use crate::agents::{
     Member, MemberCaps, MemberEnd, MemberStart, SpawnOutcome, SubagentBudget, SubagentEvent,
     run::{ChildCaps, ChildHooks, ChildPrompt, ChildServices, Run, drive},
 };
+
+/// A member's place in the hub's table, given back however its spawn or its
+/// run stops: at its end, or when its future is dropped (a host's timeout, a
+/// runtime shutting down) or a panic unwinds through it (the host's
+/// `start_member`, or one of its callbacks). Without it the member stays
+/// Running for good, and `max_concurrent` refuses every later spawn.
+pub(super) struct Seat {
+    hub: SubagentHub,
+    /// None once given back.
+    name: Option<String>,
+    /// Its run started: it leaves (its name stays taken). Before that it is
+    /// forgotten (its name is free again).
+    started: bool,
+}
+
+impl Seat {
+    /// The seat `name` just reserved; forgotten unless its run starts.
+    pub(super) fn reserved(hub: &SubagentHub, name: &str) -> Self {
+        Self {
+            hub: hub.clone(),
+            name: Some(name.to_string()),
+            started: false,
+        }
+    }
+
+    /// Its run starts: from here on it leaves, never forgotten.
+    pub(super) fn started(mut self) -> Self {
+        self.started = true;
+        self
+    }
+
+    /// Its turn ended: it leaves now.
+    fn leave(mut self) {
+        if let Some(name) = self.name.take() {
+            self.hub.lock_members().leave(&name);
+        }
+    }
+}
+
+impl Drop for Seat {
+    fn drop(&mut self) {
+        let Some(name) = self.name.take() else {
+            return;
+        };
+        // This runs while a panic unwinds too: a poisoned table is still the
+        // table, and a second panic here would abort the process.
+        let members = &self.hub.0.members;
+        let mut members = members.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.started {
+            members.leave(&name);
+        } else {
+            members.forget(&name);
+        }
+    }
+}
 
 impl SubagentHub {
     /// What a subagent's budget is clamped to: the per-agent caps.
@@ -106,10 +161,11 @@ impl SubagentHub {
     }
 
     /// Run `agent`'s one turn on `prompt`, reporting it to the parent, then
-    /// close its run (`member`); the answer, with any message that arrived
-    /// after it finished appended unread.
+    /// give back its `seat` and close its run (`member`); the answer, with any
+    /// message that arrived after it finished appended unread.
     pub(super) async fn run_member(
         &self,
+        seat: Seat,
         run: Run,
         mut agent: Agent,
         member: Member,
@@ -137,7 +193,7 @@ impl SubagentHub {
             .parent
             .on_subagent(&run.id, SubagentEvent::Stopped { ok: out.ok() });
         // Leave first: from here a message for it is refused, not lost.
-        self.lock_members().leave(&run.me.name);
+        seat.leave();
         let late = agent.control().take_queued();
         self.report_activity();
         let unread = late.map_or_else(String::new, |late| {
