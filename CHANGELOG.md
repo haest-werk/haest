@@ -830,6 +830,13 @@ Hosts write less (round two of the review, and what porting brain onto
 - The do-nothing parts are all `Clone`, `Copy`, `PartialEq` and `Eq`:
   `ShutWorkspace` and `ShutFs` gain all four, `NoHooks`, `NoServices`,
   `NoFacts` and `WallClock` the last two.
+- Fixed: the ledger ran the host's remedy (`Ledger::set_remedies`) and a
+  threshold's text with its lock held, so a remedy that read the ledger it
+  is set on (one naming the spend so far) hung the first charge that
+  warned, for good. Both now run once the ledger is unlocked, for the
+  warning and for `Ledger::exhausted`. A ledger threshold's `meter`,
+  `mark`, `action` and `rearm` still run under the lock, and
+  `Ledger::set_thresholds` says they must not read the ledger.
 
 ### haest-http
 

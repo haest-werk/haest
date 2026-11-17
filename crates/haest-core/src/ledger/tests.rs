@@ -303,6 +303,33 @@ fn a_hook_may_read_the_ledger_it_hears_from() {
     assert!(saved.iter().all(|(given, read)| given == read));
 }
 
+/// The host's remedy ran with the ledger locked, so a remedy that names the
+/// spend so far (it reads the ledger it is set on) hung the first charge that
+/// warned, and the stop that named it.
+#[test]
+fn a_remedy_may_read_the_ledger_it_is_set_on() {
+    let (ledger, rec) = ledger_with(1.0, 0);
+    let reader = ledger.clone();
+    ledger.set_remedies(Remedies::new(move |_| {
+        Some(format!("(spent ${:.2})", reader.usd()))
+    }));
+    let (done, finished) = mpsc::channel();
+    let charging = ledger.clone();
+    std::thread::spawn(move || {
+        charging.charge(&cost(0.85)); // past 80%: a warning, remedied
+        charging.charge(&cost(0.25)); // past the cap: the stop, remedied
+        let _ = done.send(charging.exhausted());
+    });
+    let stop = finished
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the remedy ran with the ledger locked: deadlock");
+    let warned = rec.warnings.lock().unwrap().clone();
+    assert_eq!(warned.len(), 1, "{warned:?}");
+    assert!(warned[0].ends_with(" (spent $0.85)"), "{warned:?}");
+    let stop = stop.expect("past the cap");
+    assert!(stop.ends_with(" (spent $1.10)"), "{stop}");
+}
+
 /// Clones are one ledger: what one charges, every other reads and stops on.
 #[test]
 fn every_clone_is_the_same_ledger() {

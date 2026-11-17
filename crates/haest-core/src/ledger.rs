@@ -42,7 +42,7 @@ use crate::{
     caps::{ConversationCap, ConversationCapOverrides, ConversationCaps},
     messages::Usage,
     remedy::{Limit, Remedies},
-    threshold::{Action, LedgerSite, Mark, Meter, Reading, Scope, Thresholds, Watch},
+    threshold::{Action, Crossing, LedgerSite, Mark, Meter, Reading, Scope, Thresholds, Watch},
 };
 
 /// A ledger's whole state, as the session log keeps it.
@@ -185,11 +185,13 @@ impl fmt::Debug for Ledger {
 }
 
 /// What a change hands the hooks once the ledger is unlocked: the snapshot
-/// to persist (with its version) and the warnings due.
+/// to persist (with its version), the warnings due, and the host's remedies
+/// to end them with. The remedies run unlocked too: one may read the ledger.
 #[must_use]
 struct Report {
     snapshot: Option<(u64, LedgerSnapshot)>,
-    warnings: Vec<String>,
+    warnings: Vec<Crossing>,
+    remedies: Remedies,
 }
 
 impl Ledger {
@@ -227,14 +229,17 @@ impl Ledger {
                 self.hooks.persist(&snapshot);
             }
         }
-        for text in report.warnings {
-            self.hooks.warn(&text);
+        for crossing in report.warnings {
+            self.hooks.warn(&crossing.remedied_text(&report.remedies));
         }
     }
 
     /// The host's way to raise a cap, added to the message that the cap is
     /// reached ([`exhausted`](Self::exhausted)) or near (the warning). Every
     /// clone of this ledger says it from now on.
+    ///
+    /// They run with the ledger unlocked, so a remedy may read it (the spend
+    /// so far, [`usd`](Self::usd)), but must not charge it or set its cap.
     pub fn set_remedies(&self, remedies: Remedies) {
         self.state().remedies = remedies;
     }
@@ -242,6 +247,10 @@ impl Ledger {
     /// What the ledger checks at every charge, in place of its default
     /// warnings ([`LedgerSite`]), for every clone of it. What is spent
     /// already counts as heard.
+    ///
+    /// A threshold's `meter`, `mark`, `action` and `rearm` run under the
+    /// ledger's lock: they must not read the ledger. Its `text` runs once
+    /// the ledger is unlocked, and may.
     ///
     /// ```
     /// use haest_core::{
@@ -312,6 +321,7 @@ impl Ledger {
             Report {
                 snapshot: Some(state.versioned_snapshot()),
                 warnings: state.due_warnings(),
+                remedies: state.remedies.clone(),
             }
         };
         self.report(report);
@@ -329,6 +339,7 @@ impl Ledger {
             Report {
                 snapshot: Some(state.versioned_snapshot()),
                 warnings: Vec::new(),
+                remedies: Remedies::default(),
             }
         };
         self.report(report);
@@ -342,8 +353,11 @@ impl Ledger {
 
     /// [`exhausted`](Self::exhausted), and the cap that is spent.
     pub(crate) fn exhausted_at(&self) -> Option<(String, Option<Limit>)> {
-        let state = self.state();
-        let [usd, tokens] = state.readings();
+        // The remedies run once the ledger is unlocked: one may read it.
+        let ([usd, tokens], remedies) = {
+            let state = self.state();
+            (state.readings(), state.remedies.clone())
+        };
         let at_cap = |r: &Reading| Mark::share(1.0).reached(r);
         let (r, text) = if at_cap(&usd) {
             let (spent, cap) = (usd.value, usd.cap.unwrap_or_default());
@@ -359,7 +373,7 @@ impl Ledger {
         } else {
             return None;
         };
-        Some((r.remedied(text, &state.remedies), r.limit))
+        Some((r.remedied(text, &remedies), r.limit))
     }
 
     /// One line for the human: what was spent of each cap, "(no cap)" for
@@ -432,16 +446,14 @@ impl State {
             .settle(|m| readings.into_iter().find(|r| r.meter == m));
     }
 
-    /// The warnings a charge crossed, each ending with the host's remedy.
-    fn due_warnings(&mut self) -> Vec<String> {
+    /// The warnings a charge crossed. Their text (the threshold's and the
+    /// host's remedy) is written once the ledger is unlocked.
+    fn due_warnings(&mut self) -> Vec<Crossing> {
         let readings = self.readings();
-        let due = self.warnings.check(
+        self.warnings.check(
             |m| readings.into_iter().find(|r| r.meter == m),
             Action::Warn,
-        );
-        due.into_iter()
-            .map(|crossing| crossing.remedied_text(&self.remedies))
-            .collect()
+        )
     }
 }
 
