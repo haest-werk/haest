@@ -21,7 +21,7 @@
 //!
 //! A spender that runs alongside others and pays as it goes (a subagent)
 //! holds its cap first ([`Ledger::reserve`]), so those running together fit
-//! the budget together.
+//! the budget together; the [`Hold`] gives it back when dropped.
 //!
 //! The ledger is a threshold site ([`LedgerSite`]): at every charge it checks
 //! its thresholds, by default the warning at 80% of each cap

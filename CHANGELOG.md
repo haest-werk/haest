@@ -480,8 +480,8 @@ Plug points without `Arc` (breaking):
   `DiskSkills::new(fs, skills)`, the closure last, `fs` as
   `impl Into<FsRef>`.
 - `Ledger` is a cheap `Clone` whose clones are the one ledger, and every
-  method takes `&self` (`charge`, `set_cap`, `restore`, `reserve`,
-  `release`): `Arc<Mutex<Ledger>>` -> `Ledger`. `SharedDeps::with_ledger`
+  method takes `&self` (`charge`, `set_cap`, `restore`, `reserve`):
+  `Arc<Mutex<Ledger>>` -> `Ledger`. `SharedDeps::with_ledger`
   takes a `Ledger` and `SharedDeps::ledger` returns `Option<&Ledger>`.
   `Ledger::new(caps, impl Into<LedgerHooksRef>)`:
   `Ledger::new(caps, Arc::new(hooks))` -> `Ledger::new(caps, hooks)`.
@@ -614,13 +614,14 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   releases: a run resumed by a binary built with another toolchain still
   counts its repeats. Repeat detection within a turn is unchanged.
 
-- New `Ledger::{reserve, release, available, held}` and
+- New `Ledger::{reserve, available, held}` and
   `ledger::{Hold, NotAvailable}`: USD held on the conversation's budget.
   Available is the cap less what is spent and held, floored at 0, `None`
-  with no USD cap. `Hold` is `#[must_use]`; `release` takes it by value.
-  Holds live in memory: a snapshot does not save them, a restore keeps the
-  ones in flight. A refusal says both amounts in cents ("$0.30 does not
-  fit: $0.20 is left ...").
+  with no USD cap. A `Hold` gives its USD back when it is dropped, to the
+  ledger that made it and no other, however its spender ends (cancelled on
+  the way too); it is `#[must_use]`. Holds live in memory: a snapshot does
+  not save them, a restore keeps the ones in flight. A refusal says both
+  amounts in cents ("$0.30 does not fit: $0.20 is left ...").
 - `caps::SubagentCaps` gains `budgets: bool` (default false); a literal
   written out in full adds it.
 - `ToolContext` gains `turn_time_left() -> Option<Duration>`: what is left

@@ -2,28 +2,62 @@
 //! subagent). Each one checks the ledger only before its own model calls, so
 //! four started at once can each pass and overshoot together; a hold taken
 //! up front for each one's cap makes the four fit the budget together.
-//! Available = cap - spent - held, floored at 0. A hold stays until released,
+//! Available = cap - spent - held, floored at 0. A hold stays until dropped,
 //! however much the spender has already paid against it, so the ledger may
 //! refuse what would still have fit, never admit what does not. Holds are not
 //! saved: they belong to spenders of this process.
+
+use std::{
+    fmt,
+    sync::{Arc, Mutex, Weak},
+};
 
 use super::{Ledger, State};
 
 /// Slack for float sums: $0.40 must fit in a cap of $1 with $0.60 spent.
 const SLACK: f64 = 1e-9;
 
-/// USD held on a [`Ledger`] ([`Ledger::reserve`]) until it is given back with
-/// [`Ledger::release`].
-#[derive(Debug)]
-#[must_use = "a hold is held until Ledger::release takes it back"]
+/// USD held on a [`Ledger`] ([`Ledger::reserve`]) until this is dropped.
+///
+/// Dropping it gives the USD back to the ledger that made it, and to no
+/// other, however its spender ends: at its end, or cancelled on the way (a
+/// timeout, a `select!` branch that lost, an aborted task, a `?`). What the
+/// spender paid meanwhile stays charged. A hold that outlives its ledger
+/// gives back to nothing.
+#[must_use = "a hold is given back when it is dropped"]
 pub struct Hold {
     usd: f64,
+    /// The sums of the ledger that made it; gone with that ledger.
+    ledger: Weak<Mutex<State>>,
 }
 
 impl Hold {
     /// The USD it holds.
     pub fn usd(&self) -> f64 {
         self.usd
+    }
+}
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        let Some(ledger) = self.ledger.upgrade() else {
+            return;
+        };
+        // The ledger's lock is held only for its own sums, never a host's
+        // code, so it does not poison; were it poisoned, a destructor must
+        // not panic, and the ledger's next call says so.
+        if let Ok(mut state) = ledger.lock() {
+            state.release(self.usd);
+        }
+    }
+}
+
+/// The USD it holds.
+impl fmt::Debug for Hold {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Hold")
+            .field("usd", &self.usd)
+            .finish_non_exhaustive()
     }
 }
 
@@ -51,9 +85,9 @@ impl Ledger {
         self.state().available()
     }
 
-    /// Hold `usd` (a negative or NaN amount is 0) for a spender about to run;
-    /// refused with what is left when it does not fit. With no USD cap every
-    /// hold fits.
+    /// Hold `usd` (a negative or NaN amount is 0) for a spender about to run,
+    /// until the [`Hold`] is dropped; refused with what is left when it does
+    /// not fit. With no USD cap every hold fits.
     ///
     /// # Errors
     ///
@@ -81,7 +115,7 @@ impl Ledger {
     ///
     /// // The spender paid $0.10 as it ran; at its end the hold goes, the spend stays.
     /// ledger.charge(&Usage { cost_usd: Some(0.1), ..Usage::default() });
-    /// ledger.release(a);
+    /// drop(a);
     /// assert_eq!(ledger.available().map(|left| (left * 100.0).round()), Some(90.0));
     /// # Ok(())
     /// # }
@@ -99,19 +133,10 @@ impl Ledger {
         }
         state.held += usd;
         state.holds += 1;
-        Ok(Hold { usd })
-    }
-
-    /// Give a hold back. Its spender's real spend stays charged.
-    pub fn release(&self, hold: Hold) {
-        let mut state = self.state();
-        state.holds = state.holds.saturating_sub(1);
-        state.held = if state.holds == 0 {
-            // No float dust left behind once nothing is held.
-            0.0
-        } else {
-            (state.held - hold.usd).max(0.0)
-        };
+        Ok(Hold {
+            usd,
+            ledger: Arc::downgrade(&self.state),
+        })
     }
 }
 
@@ -120,10 +145,23 @@ impl State {
         let cap = self.caps().max_usd;
         (cap > 0.0).then(|| (cap - self.usd - self.held).max(0.0))
     }
+
+    /// A hold of `usd` is given back. Its spender's real spend stays charged.
+    fn release(&mut self, usd: f64) {
+        self.holds = self.holds.saturating_sub(1);
+        self.held = if self.holds == 0 {
+            // No float dust left behind once nothing is held.
+            0.0
+        } else {
+            (self.held - usd).max(0.0)
+        };
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::{caps::ConversationCaps, ledger::NoLedgerHooks, messages::Usage};
 
@@ -158,9 +196,7 @@ mod tests {
         // What is left exactly still fits.
         let c = l.reserve(0.2).unwrap();
         assert!(close(l.available().unwrap(), 0.0));
-        for h in [a, b, c] {
-            l.release(h);
-        }
+        drop([a, b, c]);
         assert_eq!(l.held(), 0.0);
     }
 
@@ -179,13 +215,13 @@ mod tests {
     }
 
     #[test]
-    fn a_release_gives_the_hold_back_and_the_real_spend_stays() {
+    fn a_dropped_hold_is_given_back_and_the_real_spend_stays() {
         let l = ledger(1.0);
         let h = l.reserve(0.5).unwrap();
         spend(&l, 0.1);
         // Held and spent both count while it runs: refuse rather than overshoot.
         assert!(close(l.available().unwrap(), 0.4));
-        l.release(h);
+        drop(h);
         assert!(close(l.usd(), 0.1));
         assert!(close(l.available().unwrap(), 0.9));
         assert!(l.exhausted().is_none());
@@ -199,10 +235,55 @@ mod tests {
         let nan = l.reserve(f64::NAN).unwrap();
         let negative = l.reserve(-5.0).unwrap();
         assert_eq!((nan.usd(), negative.usd()), (0.0, 0.0));
-        for h in [big, nan, negative] {
-            l.release(h);
-        }
+        drop([big, nan, negative]);
         assert_eq!(l.held(), 0.0);
+    }
+
+    /// A spender cancelled between its hold and its end (a timeout, a
+    /// `select!` that lost, an aborted task) never got to give the hold
+    /// back: it stayed on the ledger for the life of the conversation.
+    #[tokio::test(start_paused = true)]
+    async fn a_hold_whose_spender_is_cancelled_gives_itself_back() {
+        let l = ledger(1.0);
+        let spender = {
+            let l = l.clone();
+            async move {
+                let _hold = l.reserve(0.6).unwrap();
+                std::future::pending::<()>().await;
+            }
+        };
+        let cancelled = tokio::time::timeout(Duration::from_millis(50), spender).await;
+        assert!(cancelled.is_err());
+        assert_eq!(l.held(), 0.0);
+        assert!(close(l.available().unwrap(), 1.0));
+        assert!(l.reserve(0.5).is_ok(), "the next spender fits");
+    }
+
+    /// A hold gives back to the ledger that made it and no other: one from
+    /// conversation `a` reset `b`'s count, and `b` then admitted spend that
+    /// did not fit.
+    #[test]
+    fn a_hold_gives_back_only_to_the_ledger_that_made_it() {
+        let (a, b) = (ledger(1.0), ledger(1.0));
+        let from_a = a.reserve(0.1).unwrap();
+        let on_b = b.reserve(0.9).unwrap();
+        drop(from_a);
+        assert_eq!(a.held(), 0.0);
+        assert!(close(b.held(), 0.9));
+        assert!(b.reserve(0.9).is_err(), "b still holds its own");
+        drop(on_b);
+        assert_eq!(b.held(), 0.0);
+    }
+
+    /// A hold that outlives its ledger gives back to nothing, and says so
+    /// nowhere: the ledger and its sums are gone.
+    #[test]
+    fn a_hold_that_outlives_its_ledger_drops_quietly() {
+        let l = ledger(1.0);
+        let h = l.reserve(0.5).unwrap();
+        drop(l);
+        assert!(close(h.usd(), 0.5));
+        drop(h);
     }
 
     #[test]
@@ -213,6 +294,6 @@ mod tests {
         l.restore(&snapshot);
         assert!(close(l.held(), 0.5), "a running spender keeps its hold");
         assert_eq!(ledger(1.0).held(), 0.0);
-        l.release(h);
+        drop(h);
     }
 }

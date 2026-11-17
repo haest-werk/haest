@@ -168,27 +168,14 @@ pub(super) fn fit_time(
     }
 }
 
-/// A subagent's USD, held on the conversation's ledger until dropped.
-pub(super) struct HeldBudget {
-    ledger: Ledger,
-    hold: Option<Hold>,
-}
-
-impl Drop for HeldBudget {
-    fn drop(&mut self) {
-        if let Some(hold) = self.hold.take() {
-            self.ledger.release(hold);
-        }
-    }
-}
-
-/// Hold `budget.usd` on `ledger` for as long as the subagent runs; refused
-/// with what is left when it does not fit. No ledger, nothing to hold. One
-/// with no spend cap fits only a ledger with no USD cap.
+/// Hold `budget.usd` on `ledger` for as long as the subagent runs (the
+/// [`Hold`] gives it back when dropped); refused with what is left when it
+/// does not fit. No ledger, nothing to hold. One with no spend cap fits only
+/// a ledger with no USD cap.
 pub(super) fn hold(
     ledger: Option<&Ledger>,
     budget: &SubagentBudget,
-) -> Result<Option<HeldBudget>, AgentError> {
+) -> Result<Option<Hold>, AgentError> {
     let Some(ledger) = ledger else {
         return Ok(None);
     };
@@ -200,16 +187,13 @@ pub(super) fn hold(
             available,
         });
     }
-    let hold = ledger
+    ledger
         .reserve(budget.usd)
+        .map(Some)
         .map_err(|e| AgentError::OverBudget {
             asked: e.asked,
             available: e.available,
-        })?;
-    Ok(Some(HeldBudget {
-        ledger: ledger.clone(),
-        hold: Some(hold),
-    }))
+        })
 }
 
 /// [`AgentError::OverBudget`]'s text.
