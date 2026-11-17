@@ -68,14 +68,35 @@ pub(super) fn ref_from_url(url: &str) -> Option<IssueRef> {
     })
 }
 
+/// The repository GitHub's issue JSON `v` says it is in, as
+/// `(owner, repo)`, from its `repository_url`.
+fn repo_of(v: &Value) -> Option<(&str, &str)> {
+    (v.get("repository_url").and_then(Value::as_str))
+        .and_then(|u| u.rsplit_once("/repos/"))
+        .and_then(|(_, owner_repo)| owner_repo.split_once('/'))
+}
+
+/// Whether GitHub's issue JSON `v` is issue `r` (GitHub's names ignore
+/// case). Not when a client that follows GitHub's 301 for an issue moved to
+/// another repository handed back that repository's issue.
+pub(super) fn is_issue(v: &Value, r: &IssueRef) -> bool {
+    let number = v.get("number").and_then(Value::as_u64);
+    number == Some(r.number)
+        && repo_of(v).is_some_and(|(owner, repo)| {
+            owner.eq_ignore_ascii_case(&r.owner) && repo.eq_ignore_ascii_case(&r.repo)
+        })
+}
+
 impl GithubTracker {
+    /// Whether GitHub's issue JSON `v` is this repository's.
+    pub(super) fn is_home_issue(&self, v: &Value) -> bool {
+        repo_of(v).is_some_and(|(owner, repo)| self.is_home_repo(owner, repo))
+    }
+
     /// How the tools name the issue `v`, wherever it lives.
     pub(super) fn name_of(&self, v: &Value) -> String {
         let number = v.get("number").and_then(Value::as_u64).unwrap_or(0);
-        let home = (v.get("repository_url").and_then(Value::as_str))
-            .and_then(|u| u.rsplit_once("/repos/"))
-            .and_then(|(_, owner_repo)| owner_repo.split_once('/'));
-        match home {
+        match repo_of(v) {
             Some((owner, repo)) => self.label(&IssueRef {
                 owner: owner.into(),
                 repo: repo.into(),

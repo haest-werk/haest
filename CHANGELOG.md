@@ -244,6 +244,16 @@ write instead.
   new parent now replaces an old one only when the old one is this
   repository's, else the link is refused as `Invalid` before anything is
   written; an issue with no parent is sent without `replace_parent`.
+- haest-issues' `GithubTracker` took GitHub's answer to be the issue it
+  asked for. GitHub answers 301 for an issue moved to another repository,
+  and with a host's client that follows it, `delete` deleted the issue in
+  its new repository, and a link or a label change acted on it. Every issue
+  GitHub hands back is now checked to be the one asked for, else the call
+  is `NotFound` and nothing more is sent; a change answered with another
+  issue is `Failed`. And a search took the model's text as GitHub's search
+  syntax, where a `repo:`, an `org:` or an `OR` could widen it past the
+  repository: the text is searched as plain words now, and a result from
+  another repository is dropped.
 - The model providers' stream parser searched a line from its start again
   on every chunk, so a server that sent one long line in small pieces cost
   quadratic time on an executor thread (8 MiB in 1 KiB chunks: 16 s), and

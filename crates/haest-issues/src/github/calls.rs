@@ -7,7 +7,7 @@ use serde_json::{Map, Value, json};
 use super::{
     GithubTracker,
     api::encode,
-    wire::{is_pull_request, label_names, state_fields, status_of},
+    wire::{is_issue, is_pull_request, label_names, state_fields, status_of},
 };
 use crate::tracker::{
     Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, TrackerError,
@@ -27,6 +27,25 @@ fn state_for(wanted: &[String]) -> &'static str {
         (false, true) => "closed",
         _ => "all",
     }
+}
+
+/// The model's search text as plain words, so that GitHub reads none of it
+/// as search syntax: `:` (a qualifier, `repo:` and `org:` among them), `"`
+/// (a phrase) and parentheses (a group) split words, a leading `-` (NOT)
+/// goes, and the operators AND, OR and NOT, in any case, are dropped. Words
+/// GitHub ANDs with the tracker's own `repo:` only narrow the search.
+fn search_words(query: &str) -> String {
+    let syntax = |c: char| c.is_whitespace() || matches!(c, ':' | '"' | '(' | ')');
+    let operator = |w: &str| {
+        ["AND", "OR", "NOT"]
+            .iter()
+            .any(|op| w.eq_ignore_ascii_case(op))
+    };
+    let words: Vec<&str> = (query.split(syntax))
+        .map(|w| w.trim_start_matches('-'))
+        .filter(|w| !w.is_empty() && !operator(w))
+        .collect();
+    words.join(" ")
 }
 
 forward_tracker!(GithubTracker);
@@ -94,14 +113,23 @@ impl GithubTracker {
         Ok(out)
     }
 
-    /// GitHub's search for `query` in this repository's issues, best first
-    /// ([`Tracker::search`](crate::Tracker::search)).
+    /// GitHub's search for the words in `query` in this repository's issues,
+    /// best first ([`Tracker::search`](crate::Tracker::search)). The words
+    /// are only words: what GitHub would read as its search syntax (a
+    /// qualifier's `:`, a phrase's `"`, a group's parentheses, a leading `-`,
+    /// the operators AND, OR and NOT) is taken out, so nothing in them
+    /// widens the search past this repository.
     ///
     /// # Errors
     ///
     /// `Failed` when GitHub refuses or does not answer.
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<Issue>, TrackerError> {
-        let q = format!("repo:{}/{} is:issue {query}", self.owner, self.repo);
+        let q = format!(
+            "repo:{}/{} is:issue {}",
+            self.owner,
+            self.repo,
+            search_words(query)
+        );
         let per_page = limit.clamp(1, MAX_PER_PAGE);
         let url = format!(
             "{}/search/issues?q={}&per_page={per_page}",
@@ -115,7 +143,7 @@ impl GithubTracker {
         Ok(items
             .into_iter()
             .flatten()
-            .filter(|v| !is_pull_request(v))
+            .filter(|v| !is_pull_request(v) && self.is_home_issue(v))
             .take(limit)
             .map(|v| self.issue_of(v))
             .collect())
@@ -207,6 +235,14 @@ impl GithubTracker {
         let updated = self
             .call(Method::Patch, url, Some(Value::Object(fields)), &missing)
             .await?;
+        // A client that follows GitHub's 301 sent the change where the issue went.
+        if !is_issue(&updated, &r) {
+            return Err(TrackerError::Failed(format!(
+                "GitHub answered the change to issue {} with another issue: the client \
+                 followed a redirect, and the change may have gone there",
+                r.number
+            )));
+        }
         Ok(self.issue_of(&updated))
     }
 

@@ -42,9 +42,15 @@ impl GithubTracker {
         Ok(r)
     }
 
-    /// Whether `r` is in this tracker's repository (GitHub's names ignore case).
+    /// Whether `r` is in this tracker's repository.
     pub(super) fn is_home(&self, r: &IssueRef) -> bool {
-        r.owner.eq_ignore_ascii_case(&self.owner) && r.repo.eq_ignore_ascii_case(&self.repo)
+        self.is_home_repo(&r.owner, &r.repo)
+    }
+
+    /// Whether `owner/repo` is this tracker's repository (GitHub's names
+    /// ignore case).
+    pub(super) fn is_home_repo(&self, owner: &str, repo: &str) -> bool {
+        owner.eq_ignore_ascii_case(&self.owner) && repo.eq_ignore_ascii_case(&self.repo)
     }
 
     /// Any repository's issue: `42`, `#42` or `owner/repo#42`, where `owner`
@@ -70,7 +76,7 @@ impl GithubTracker {
             Some(full) => {
                 let (o, r) = full.split_once('/').ok_or_else(bad)?;
                 // This repository, in any case, is named as the tracker names it.
-                if o.eq_ignore_ascii_case(&self.owner) && r.eq_ignore_ascii_case(&self.repo) {
+                if self.is_home_repo(o, r) {
                     home()
                 } else if is_owner_name(o) && is_repo_name(r) {
                     (o.to_string(), r.to_string())

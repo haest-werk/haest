@@ -10,6 +10,7 @@ use crate::{
     testkit::{API, FakeHttp, github, issue, ok, with},
 };
 
+mod answers;
 mod writes;
 
 fn filter(limit: usize) -> IssueFilter {

@@ -55,10 +55,7 @@ impl GithubTracker {
     /// The database id GitHub's relation APIs take, and the issue's parent,
     /// if it has one.
     async fn held_issue(&self, r: &IssueRef) -> Result<(u64, Option<IssueRef>), TrackerError> {
-        let missing = format!("there is no issue {}", self.label(r));
-        let v = self
-            .call(Method::Get, self.issue_url(r, ""), None, &missing)
-            .await?;
+        let v = self.read(r).await?;
         let id = (v.get("id").and_then(Value::as_u64))
             .ok_or_else(|| TrackerError::Failed("GitHub sent an issue with no id".into()))?;
         let parent = (v.get("parent_issue_url").and_then(Value::as_str)).and_then(ref_from_url);

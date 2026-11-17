@@ -12,7 +12,7 @@ mod calls;
 mod links;
 mod wire;
 
-use wire::{STATUSES, is_pull_request};
+use wire::{STATUSES, is_issue, is_pull_request};
 
 const API: &str = "https://api.github.com";
 
@@ -150,6 +150,14 @@ impl GithubTracker {
     /// The tracker sending its requests through `http`: a host's own client,
     /// a recorder, a test's fake (the client itself, or an `Arc` of one). The
     /// 60 s limit and the 16 MiB cap on an answer still hold.
+    ///
+    /// GitHub answers 301 for an issue moved to another repository. Give it
+    /// a client that does not follow a 301, as the default does not: one that
+    /// does repeats a change (`PATCH`, `DELETE`) at the issue's new
+    /// repository. The tracker checks every issue GitHub hands back, so it
+    /// never deletes, links or shows another repository's issue, and a
+    /// change answered from elsewhere is `Failed`; but a change it sent
+    /// without reading the issue first has by then been made there.
     #[must_use]
     pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
         self.http = http.into();
@@ -202,13 +210,27 @@ impl GithubTracker {
         STATUSES.iter().map(|s| s.to_string()).collect()
     }
 
+    /// Issue `r` as GitHub has it, checked to be `r`: an answer that is
+    /// another issue is NotFound, so nothing acts on it. A client that
+    /// follows GitHub's 301 for an issue moved to another repository hands
+    /// back that repository's issue.
+    async fn read(&self, r: &api::IssueRef) -> Result<Value, TrackerError> {
+        let missing = format!("there is no issue {} in {}/{}", r.number, r.owner, r.repo);
+        let v = self
+            .call(Method::Get, self.issue_url(r, ""), None, &missing)
+            .await?;
+        if !is_issue(&v, r) {
+            return Err(TrackerError::NotFound(format!(
+                "{missing}: GitHub answered with another issue (one moved elsewhere)"
+            )));
+        }
+        Ok(v)
+    }
+
     /// GitHub's issue `id` in full, or NotFound (a pull request is not an issue).
     async fn fetch(&self, id: &str) -> Result<(api::IssueRef, Value), TrackerError> {
         let r = self.own_ref(id)?;
-        let missing = format!("there is no issue {} in {}/{}", r.number, r.owner, r.repo);
-        let v = self
-            .call(Method::Get, self.issue_url(&r, ""), None, &missing)
-            .await?;
+        let v = self.read(&r).await?;
         if is_pull_request(&v) {
             return Err(TrackerError::NotFound(format!(
                 "{} is a pull request, not an issue",

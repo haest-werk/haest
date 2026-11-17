@@ -321,7 +321,12 @@ async fn a_link_to_a_name_github_cannot_have_is_refused_unsent() {
         ("o/.github#9", "o/.github"),
         ("O-1/My.repo_x-2#9", "O-1/My.repo_x-2"),
     ] {
-        let http = FakeHttp::new([ok(issue(9, "nine")), ok(json!({}))]);
+        let nine = with(
+            issue(9, "nine"),
+            "repository_url",
+            json!(format!("{API}/repos/{repo}")),
+        );
+        let http = FakeHttp::new([ok(nine), ok(json!({}))]);
         let link = Link::new(Relation::DependsOn, target);
         let got = github(http.clone()).link("1", &link, LinkChange::Add).await;
         assert!(got.is_ok(), "{target}: {got:?}");
