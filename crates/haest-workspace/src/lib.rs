@@ -55,7 +55,7 @@
 //! use haest_workspace::{SandboxMounts, SandboxWorkspace};
 //!
 //! # #[tokio::main]
-//! # async fn main() -> std::io::Result<()> {
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let tmp = tempfile::tempdir()?;
 //! let project = tmp.path().to_path_buf();
 //! std::fs::write(project.join("notes.md"), "old\n")?;
@@ -68,7 +68,7 @@
 //! assert_eq!(std::fs::read_to_string(project.join("notes.md"))?, "old\n");
 //!
 //! // Each change by its path inside the project.
-//! let changes = ws.changes().expect("the default sandbox records its changes");
+//! let changes = ws.changes().ok_or("the default sandbox records its changes")?;
 //! let list = changes.list().await;
 //! assert_eq!(list[0].path, "/notes.md");
 //! assert_eq!(list[0].kind, ChangeKind::Modified);
