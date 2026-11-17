@@ -243,8 +243,10 @@ impl<D: Driven> Driver<D> {
     }
 
     /// A host's job. What is asked meanwhile waits for its end, in order,
-    /// but a close stops it: its future is dropped where it waits, and its
-    /// caller reads Closed. (A job whose caller gave up stops itself:
+    /// but a snapshot is answered at once, as during a turn (a peer's
+    /// `hello` never waits on host code), and a close stops the job: its
+    /// future is dropped where it waits, and its caller reads Closed. (A job
+    /// whose caller gave up stops itself:
     /// [`SessionHandle::with`](crate::SessionHandle::with).)
     async fn job(&mut self, job: Job<D>) {
         let mut run = job(&mut self.driven);
@@ -253,6 +255,13 @@ impl<D: Driven> Driver<D> {
                 biased;
                 () = &mut run => return,
                 cmd = self.rx.recv(), if !self.orphaned => match cmd {
+                    // What the stream last said: what the job changes is
+                    // published once it ends.
+                    Some(Command::Snapshot(tx)) => {
+                        let queued = queued(&self.queue, &self.deferred);
+                        let now = snapshot(&self.status, State::Idle, queued, self.hub.last_seq());
+                        let _ = tx.send(now);
+                    }
                     Some(cmd) => {
                         let close = matches!(cmd, Command::Close(_));
                         self.deferred.push_back(cmd);
@@ -296,7 +305,8 @@ impl<D: Driven> Driver<D> {
     }
 
     fn snapshot(&self, state: State) -> Snapshot {
-        snapshot(&self.status, state, self.queue.len(), self.hub.last_seq())
+        let queued = queued(&self.queue, &self.deferred);
+        snapshot(&self.status, state, queued, self.hub.last_seq())
     }
 
     fn publish_status(&mut self, state: State) {
@@ -347,6 +357,15 @@ fn snapshot(status: &DrivenStatus, state: State, queued: usize, last_seq: u64) -
         messages: status.messages,
         last_seq,
     }
+}
+
+/// Inputs that wait for a turn of their own: those queued, and those sent
+/// while a job ran, which wait for its end.
+fn queued<D>(queue: &VecDeque<(Input, Vec<Waiter>)>, deferred: &VecDeque<Command<D>>) -> usize {
+    let sent = deferred
+        .iter()
+        .filter(|cmd| matches!(cmd, Command::Submit { .. }));
+    queue.len() + sent.count()
 }
 
 /// Everyone waiting here is told.

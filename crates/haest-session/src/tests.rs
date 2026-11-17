@@ -657,6 +657,49 @@ async fn input_sent_while_a_job_runs_waits_for_it() {
     session.close().await;
 }
 
+/// A snapshot waited for a running job like every other request, so a
+/// peer's `hello` during a long slash command (a /compact) went unanswered
+/// until it ended: a broker that waits for a hello in vain refuses the link
+/// for good. It is answered at once, as during a turn; what was asked before
+/// it still waits for the job, in order.
+#[tokio::test]
+async fn a_snapshot_is_answered_while_a_job_runs() {
+    let model = answers(&["after the job"]);
+    let session = start(agent(&model, Tools::new()), hub());
+    let (started, running) = oneshot::channel();
+    let (release, gate) = oneshot::channel::<()>();
+    let job = tokio::spawn({
+        let s = session.clone();
+        async move {
+            s.with(move |_| {
+                Box::pin(async move {
+                    let _ = started.send(());
+                    let _ = gate.await;
+                })
+            })
+            .await
+        }
+    });
+    running.await.unwrap();
+    let turn = session.send_input(Input::human("a")).unwrap();
+    let mut change = Box::pin(session.control(Control::SetEffort(Some(Effort::High))));
+    assert!((&mut change).now_or_never().is_none(), "sent");
+
+    let now = within(session.snapshot()).await.unwrap();
+    assert_eq!(now.state, State::Idle);
+    assert_eq!(now.queued, 1, "the input waits for a turn of its own");
+    assert_eq!(now.effort, None, "the change waits for the job");
+    assert!((&mut change).now_or_never().is_none());
+
+    let _ = release.send(());
+    job.await.unwrap().unwrap();
+    change.await.unwrap();
+    assert_eq!(turn.await.unwrap().stop_reason, StopReason::EndTurn);
+    let now = session.snapshot().await.unwrap();
+    assert_eq!((now.queued, now.effort.as_deref()), (0, Some("high")));
+    session.close().await;
+}
+
 #[tokio::test]
 async fn input_sent_under_a_hold_waits_and_runs_as_a_turn_of_its_own() {
     let model = answers(&["one", "two"]);

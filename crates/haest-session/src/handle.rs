@@ -190,7 +190,10 @@ impl<D: Driven> SessionHandle<D> {
         self.hub.subscribe(after)
     }
 
-    /// The conversation now.
+    /// The conversation now, as the stream last said it. Answered at once,
+    /// while a turn or a [`with`](Self::with) job runs too, so a peer's
+    /// `hello` never waits for either; a change still waiting for them shows
+    /// once it is made.
     ///
     /// # Errors
     ///
@@ -244,9 +247,10 @@ impl<D: Driven> SessionHandle<D> {
     /// (`AsyncFnOnce`) cannot promise that on stable Rust. A panic in it ends
     /// the session ([`start`] says how).
     ///
-    /// No turn starts and no other request is served while `f` runs, so a
-    /// host bounds a job that may wait for good (a mod's slash command) by
-    /// giving up on it. Cancel-safe: dropped before it resolves (raced
+    /// No turn starts while `f` runs, and every other request but a
+    /// [`snapshot`](Self::snapshot) waits for its end, in order, so a host
+    /// bounds a job that may wait for good (a mod's slash command) by giving
+    /// up on it. Cancel-safe: dropped before it resolves (raced
     /// against Ctrl-C or a timeout), the job is withdrawn. One that has not
     /// started never runs; one that runs is stopped where it waits (its
     /// future is dropped), and the session goes on. [`close`](Self::close)

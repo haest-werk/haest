@@ -147,7 +147,9 @@ pub trait Backend: Send + Sync {
     /// The stream's frames after `after`, then every new one (see [`Subscription`]).
     fn subscribe(&self, after: u64) -> Subscription;
 
-    /// The conversation now.
+    /// The conversation now. A transport asks it first for every peer's
+    /// `hello`, and a peer may give up on one that is slow: answer at once,
+    /// while a turn or other work runs too.
     ///
     /// # Errors
     ///

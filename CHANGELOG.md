@@ -1882,6 +1882,12 @@ against it; the wire JSON is unchanged):
   whose promise never settles) held the session for good: no turn ran
   again and `close` never returned. `close` now stops a job that has not
   ended the same way, and the job's caller reads `Closed`.
+- A snapshot is answered while a `with` job runs, as during a turn. It
+  waited for the job like every other request, so a peer's `hello` during a
+  long slash command (a /compact) went unanswered until it ended, and a
+  broker that waits for a hello in vain refused the link for good. A
+  snapshot's `queued` now also counts input sent during a job, which waits
+  for its end.
 
 ### haest-transport (new)
 

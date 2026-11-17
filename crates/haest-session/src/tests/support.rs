@@ -249,6 +249,18 @@ pub(super) fn turn_end(frame: &Frame) -> bool {
     frame.path.is_main() && matches!(frame.body, Body::Loop(LoopEvent::TurnEnd { .. }))
 }
 
+/// What `fut` gives; panics, naming the caller's line, when it has not
+/// answered within 5 s.
+#[track_caller]
+pub(super) fn within<F: IntoFuture>(fut: F) -> impl Future<Output = F::Output> {
+    let at = std::panic::Location::caller();
+    async move {
+        tokio::time::timeout(Duration::from_secs(5), fut)
+            .await
+            .unwrap_or_else(|_| panic!("no answer within 5 s at {at}"))
+    }
+}
+
 /// Polls until `cond` holds; panics after 5 s.
 pub(super) async fn eventually(cond: impl Fn() -> bool) {
     let wait = async {
