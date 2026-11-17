@@ -16,11 +16,18 @@ use haest_wire::{Level, Outbound, Path};
 use crate::{
     Runtime, Ui,
     haest::{
-        AgentControl, Effort, EventSink, Message, TurnOutcome, core::error::BoxError, mods::Mods,
-        tools::SubagentEvent,
+        Agent, AgentControl, Effort, EventSink, Message, TurnOutcome, core::error::BoxError,
+        mods::Mods, tools::SubagentEvent,
     },
-    hooks::session_usd,
 };
+
+/// The conversation's spend so far, in US dollars, from `agent`'s ledger.
+/// None when the agent has no ledger (one [`build`](crate::build) made always
+/// has). A resumed session's spend includes what it cost before.
+fn session_usd(agent: &Agent) -> Option<f64> {
+    let ledger = agent.deps().shared().ledger()?;
+    Some(ledger.usd())
+}
 
 /// The mods' `prompt.submit`, as the session driver's rewriter.
 struct ModsPrompt(Mods);

@@ -278,11 +278,3 @@ impl LedgerHooks for RuntimeHooks {
         RuntimeHooks::warn(self, text);
     }
 }
-
-/// The conversation's spend so far, in US dollars, from `agent`'s ledger.
-/// None when the agent has no ledger (one [`build`](crate::build) made always
-/// has). A resumed session's spend includes what it cost before.
-pub(crate) fn session_usd(agent: &Agent) -> Option<f64> {
-    let ledger = agent.deps().shared().ledger()?;
-    Some(ledger.usd())
-}
