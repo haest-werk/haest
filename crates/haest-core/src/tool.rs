@@ -249,8 +249,8 @@ impl ToolServices for NoServices {}
 /// ```
 #[async_trait]
 pub trait Tool: Send + Sync {
-    /// The name the model calls it by. If two of an agent's tools share a
-    /// name, the one listed later runs.
+    /// The name the model calls it by. A [`Tools`] list holds one tool per
+    /// name: a tool added under a name already listed replaces that one.
     fn name(&self) -> &str;
     /// What the tool does and when to use it, for the model.
     fn description(&self) -> String;

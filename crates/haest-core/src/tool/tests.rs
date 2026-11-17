@@ -1,4 +1,5 @@
 use super::*;
+use async_trait::async_trait;
 use serde_json::json;
 
 fn map(v: Value) -> JsonMap {
@@ -60,4 +61,82 @@ fn a_title_is_the_hosts_and_absent_unless_set() {
         "Notified you: done"
     );
     assert_eq!(titled.content, "sent");
+}
+
+/// A tool called `name`, described as `description`.
+struct Named(&'static str, &'static str);
+
+#[async_trait]
+impl Tool for Named {
+    fn name(&self) -> &str {
+        self.0
+    }
+    fn description(&self) -> String {
+        self.1.into()
+    }
+    fn parameters(&self) -> Value {
+        json!({"type": "object"})
+    }
+    fn kind(&self) -> &str {
+        "test.named"
+    }
+    async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
+        Ok(ToolOutput::text(self.1))
+    }
+}
+
+fn listed(tools: &Tools) -> Vec<(&str, String)> {
+    tools.iter().map(|t| (t.name(), t.description())).collect()
+}
+
+/// A host overrides a built-in by adding its own under the same name: the
+/// list holds one tool per name, the later one, in the first one's place, so
+/// the model is never sent the name twice.
+#[test]
+fn a_tool_added_under_a_name_already_listed_replaces_it_in_its_place() {
+    let want = [("Read", "host's".to_string()), ("Write", "built-in".into())];
+    let pushed = Tools::new()
+        .with(Named("Read", "built-in"))
+        .with(Named("Write", "built-in"))
+        .with(Named("Read", "host's"));
+    assert_eq!(listed(&pushed), want);
+
+    let mut extended = Tools::new().with(Named("Read", "built-in"));
+    extended.extend([Named("Write", "built-in"), Named("Read", "host's")]);
+    assert_eq!(listed(&extended), want);
+
+    let collected: Tools = [
+        Named("Read", "built-in"),
+        Named("Write", "built-in"),
+        Named("Read", "host's"),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(listed(&collected), want);
+
+    let from_vec = Tools::from(vec![
+        ToolRef::new(Named("Read", "built-in")),
+        ToolRef::new(Named("Write", "built-in")),
+        ToolRef::new(Named("Read", "host's")),
+    ]);
+    assert_eq!(listed(&from_vec), want);
+}
+
+#[test]
+fn a_tool_is_found_and_removed_by_name() {
+    let mut tools = Tools::new()
+        .with(Named("Read", "r"))
+        .with_all([Named("Write", "w"), Named("Edit", "e")]);
+    assert!(tools.contains("Write"));
+    assert_eq!(tools.get("Edit").map(|t| t.description()), Some("e".into()));
+    assert!(tools.get("Bash").is_none());
+
+    let kept = tools.clone();
+    let removed = tools.remove("Write").map(|t| t.description());
+    assert_eq!(removed, Some("w".into()));
+    assert!(!tools.contains("Write"));
+    assert_eq!(listed(&tools), [("Read", "r".into()), ("Edit", "e".into())]);
+    assert!(tools.remove("Write").is_none());
+    // A clone made before is its own list.
+    assert!(kept.contains("Write"));
 }

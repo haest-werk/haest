@@ -155,6 +155,12 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   `DeferredTools`) let the model call only the advertised ones: a deferred
   tool called by name was "Unknown tool". `ModTools::callable` now offers
   every tool the source can run, each inside the mods' hooks.
+- A host that overrode a built-in tool the way the docs said, by adding its
+  own under the same name (`builtin_tools(opts).with(MyRead)`), sent the
+  model both: the request listed `Read` twice, which a provider may refuse.
+  A `Tools` list now holds one tool per name: `with`, `push`, `extend`,
+  `collect` and `From<Vec<ToolRef>>` put a tool in the place of the one of
+  its name, so the list the model is sent and the tool that runs agree.
 
 ### Behaviour changes
 
@@ -552,6 +558,17 @@ Good citizens:
   the prelude holds by its root path (`haest_core::Agent`), everything else
   by its module path (`haest_core::run::RunKey`). `Ledger::reserve`
   documents its errors.
+
+Hosts write less (round two of the review, and what porting brain onto
+0.3 found):
+
+- New `Tools::get(name)`, `contains(name)` and `remove(name)`, and
+  `with_all(tools)` to chain a whole list on:
+  `tools.iter().find(|t| t.name() == "Read")` -> `tools.get("Read")`,
+  `let mut t = Tools::new().with(a); t.extend(more); t` ->
+  `Tools::new().with(a).with_all(more)`. They take the place of the
+  slice's `get` and `contains` (breaking): `tools.get(0)` -> `tools.first()`
+  or `tools[0]`.
 
 ### haest-http
 

@@ -4,13 +4,15 @@ use std::{ops::Deref, slice, sync::Arc, vec};
 
 use super::{ToolRef, ToolSource};
 
-/// A list of tools, in order: what a [`ToolSource`] hands the loop, and the
-/// simplest source there is (every tool advertised, every call).
+/// A list of tools, in order, one per name: what a [`ToolSource`] hands the
+/// loop, and the simplest source there is (every tool advertised, every call).
 ///
 /// Cheap to clone (the clones share one list until one of them changes).
 /// Built from tools themselves, from [`ToolRef`]s, or from `Arc`s of tools;
-/// it derefs to `[ToolRef]` for reading. [`Tools::new`] is the empty list:
-/// an agent that only talks.
+/// it derefs to `[ToolRef]` for reading, and [`get`](Self::get) finds one by
+/// name. A tool added under a name the list already holds takes that tool's
+/// place, so `builtin_tools(..).with(MyRead)` overrides the built-in Read.
+/// [`Tools::new`] is the empty list: an agent that only talks.
 ///
 /// # Examples
 ///
@@ -42,7 +44,7 @@ use super::{ToolRef, ToolSource};
 ///
 /// let tools = Tools::new().with(Ping);
 /// assert_eq!(tools.len(), 1);
-/// assert_eq!(tools.tools()[0].name(), "Ping");
+/// assert!(tools.tools().contains("Ping"));
 /// ```
 #[derive(Clone, Default, Debug)]
 pub struct Tools(Arc<Vec<ToolRef>>);
@@ -53,17 +55,48 @@ impl Tools {
         Self::default()
     }
 
-    /// This list with `tool` added at the end. If two tools share a name,
-    /// the one listed later runs.
+    /// This list with `tool` added, as [`push`](Self::push) adds it.
     #[must_use]
     pub fn with(mut self, tool: impl Into<ToolRef>) -> Self {
         self.push(tool);
         self
     }
 
-    /// Add `tool` at the end.
+    /// Add `tool` at the end, or in place of the tool of the same name: a
+    /// list holds one tool per name, so a host overrides a built-in by adding
+    /// its own.
     pub fn push(&mut self, tool: impl Into<ToolRef>) {
-        Arc::make_mut(&mut self.0).push(tool.into());
+        let tool = tool.into();
+        let list = Arc::make_mut(&mut self.0);
+        match list.iter_mut().find(|t| t.name() == tool.name()) {
+            Some(listed) => *listed = tool,
+            None => list.push(tool),
+        }
+    }
+
+    /// This list with every tool of `tools` added, in order, as
+    /// [`with`](Self::with) adds one.
+    #[must_use]
+    pub fn with_all<T: Into<ToolRef>>(mut self, tools: impl IntoIterator<Item = T>) -> Self {
+        self.extend(tools);
+        self
+    }
+
+    /// The tool called `name`.
+    pub fn get(&self, name: &str) -> Option<&ToolRef> {
+        self.0.iter().find(|t| t.name() == name)
+    }
+
+    /// Whether a tool is called `name`.
+    pub fn contains(&self, name: &str) -> bool {
+        self.get(name).is_some()
+    }
+
+    /// Take the tool called `name` out of the list; the others keep their
+    /// order. None when no tool is called that.
+    pub fn remove(&mut self, name: &str) -> Option<ToolRef> {
+        let at = self.0.iter().position(|t| t.name() == name)?;
+        Some(Arc::make_mut(&mut self.0).remove(at))
     }
 }
 
@@ -75,21 +108,28 @@ impl Deref for Tools {
     }
 }
 
+/// One tool per name, as [`Tools::push`] adds them.
 impl From<Vec<ToolRef>> for Tools {
     fn from(tools: Vec<ToolRef>) -> Self {
-        Self(Arc::new(tools))
+        tools.into_iter().collect()
     }
 }
 
+/// One tool per name, as [`Tools::push`] adds them.
 impl<T: Into<ToolRef>> FromIterator<T> for Tools {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        Self(Arc::new(iter.into_iter().map(Into::into).collect()))
+        let mut tools = Self::new();
+        tools.extend(iter);
+        tools
     }
 }
 
+/// Each tool as [`Tools::push`] adds it.
 impl<T: Into<ToolRef>> Extend<T> for Tools {
     fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-        Arc::make_mut(&mut self.0).extend(iter.into_iter().map(Into::into));
+        for tool in iter {
+            self.push(tool);
+        }
     }
 }
 

@@ -33,7 +33,7 @@ pub(crate) fn error_assistant(model: &str, error: &str) -> AssistantMessage {
     m
 }
 
-/// The tools of one model call, looked up by name. A name listed twice: the later one wins.
+/// The tools of one model call, looked up by name.
 #[derive(Debug)]
 pub struct ToolIndex(Tools);
 
@@ -43,20 +43,14 @@ impl ToolIndex {
         Self(tools)
     }
 
-    /// The tool called `name`; the later one when two share it.
+    /// The tool called `name`.
     pub fn get(&self, name: &str) -> Option<&ToolRef> {
-        self.0.iter().rev().find(|t| t.name() == name)
+        self.0.get(name)
     }
 
-    /// Every name, first-listed order, once each.
+    /// Every name, in list order (a [`Tools`] list holds each once).
     pub fn names(&self) -> Vec<&str> {
-        let mut out: Vec<&str> = Vec::new();
-        for t in &self.0 {
-            if !out.contains(&t.name()) {
-                out.push(t.name());
-            }
-        }
-        out
+        self.0.iter().map(|t| t.name()).collect()
     }
 }
 
