@@ -137,6 +137,16 @@ impl RewritePrompt for Marks {
     }
 }
 
+/// A rewriter with a bug: it panics.
+pub(super) struct Panics;
+
+#[async_trait]
+impl RewritePrompt for Panics {
+    async fn rewrite_prompt(&self, _text: &str) -> String {
+        panic!("the rewriter has a bug")
+    }
+}
+
 /// An agent that records what the driver asks of it, with a gate that lets
 /// `gate_passes` turns nobody asked for through and holds the rest.
 pub(super) struct Recorded {
@@ -144,6 +154,8 @@ pub(super) struct Recorded {
     pub log: Arc<Mutex<Vec<Asked>>>,
     pub gate_passes: usize,
     pub rewriter: Option<RewritePromptRef>,
+    /// Its `close` panics, after it is recorded.
+    pub close_panics: bool,
 }
 
 impl Recorded {
@@ -153,6 +165,7 @@ impl Recorded {
             log: Arc::default(),
             gate_passes,
             rewriter: None,
+            close_panics: false,
         }
     }
 
@@ -206,6 +219,7 @@ impl Driven for Recorded {
     }
     async fn close(&mut self) {
         self.note(Asked::Close);
+        assert!(!self.close_panics, "close has a bug");
     }
 }
 

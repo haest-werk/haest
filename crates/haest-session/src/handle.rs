@@ -22,6 +22,12 @@ use crate::{
 /// [`close`](SessionHandle::close) is called or every handle is dropped;
 /// either way the conversation is closed ([`Driven::close`]) and the hub
 /// with it.
+///
+/// Code that panics on the driver's task (a [`with`](SessionHandle::with)
+/// job, a [`Driven`] method, the rewriter) ends the session the same way:
+/// what waits reads [`SessionError::Closed`], `Driven::close` still runs,
+/// the hub closes, and the panic then ends the task. The hub closes however
+/// the task ends, a panic in `Driven::close` itself included.
 pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
     let (tx, rx) = mpsc::unbounded_channel();
     let meta = Meta {
@@ -231,7 +237,8 @@ impl<D: Driven> SessionHandle<D> {
     /// `f` returns its future boxed, `|rt| Box::pin(async move { .. })`
     /// ([`BoxFuture`]): the future borrows the conversation and runs on the
     /// driver's task, so it must be `Send`, and an async closure
-    /// (`AsyncFnOnce`) cannot promise that on stable Rust.
+    /// (`AsyncFnOnce`) cannot promise that on stable Rust. A panic in it ends
+    /// the session ([`start`] says how).
     ///
     /// # Errors
     ///

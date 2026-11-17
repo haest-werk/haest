@@ -1783,6 +1783,14 @@ against it; the wire JSON is unchanged):
 - `Hub::publish` turns the body into a `Body` before it takes the hub's
   lock. A host's own `From<_> for Body` ran under it, and one that panicked
   poisoned it: every frame after it panicked too, the driver's own included.
+- Code that panics on the session's task (a `with` job, a `Driven` method,
+  the rewriter) ends the session as a close does: what waits reads
+  `Closed`, `Driven::close` still runs (it stops what the conversation
+  started and saves), and the stream ends. The driver died with nothing
+  cleaned up: every subscriber, transport and peer waited on a dead session,
+  and the conversation was not saved. The stream now ends however the
+  driver ends, a panic in `Driven::close` itself included, and
+  `Hub::close` never panics.
 
 ### haest-transport (new)
 

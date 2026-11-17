@@ -201,6 +201,11 @@ pub trait Driven: Send + 'static {
 
     /// The conversation ends: stop what it started, save what it holds.
     /// Default: nothing.
+    ///
+    /// Also called after code on the driver's task panicked (a host's job,
+    /// one of these methods): the conversation may then be cut off mid-change,
+    /// a turn included, so it stops what it started and saves what it can
+    /// without assuming the last turn ended.
     async fn close(&mut self) {}
 }
 

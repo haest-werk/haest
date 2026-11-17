@@ -611,6 +611,73 @@ async fn dropping_every_handle_closes_the_conversation() {
     eventually(|| log.lock().unwrap().last() == Some(&Asked::Close)).await;
 }
 
+/// The stream `sub` reads ends within 5 s.
+async fn stream_ends(sub: &mut crate::Subscription) {
+    let ended = async { while sub.recv().await.is_some() {} };
+    tokio::time::timeout(Duration::from_secs(5), ended)
+        .await
+        .expect("the stream ends");
+}
+
+/// A host's job that panics on the driver's task (a slash command with a
+/// bug) killed the driver with nothing cleaned up: the stream never ended,
+/// so every subscriber and transport waited on a dead session, and the
+/// conversation was never closed (nothing it started stopped, nothing saved).
+#[tokio::test]
+async fn a_job_that_panics_ends_the_stream_and_closes_the_conversation() {
+    let model = answers(&["one"]);
+    let recorded = Recorded::new(agent(&model, Tools::new()), 0);
+    let log = recorded.log.clone();
+    let session = start(recorded, hub());
+    let mut sub = session.subscribe(0);
+    let _ = session.turn(Input::human("a")).await.unwrap();
+
+    let job = session.with(|_| Box::pin(async { panic!("a slash command with a bug") }));
+    let job = tokio::time::timeout(Duration::from_secs(5), job).await;
+    assert!(matches!(job, Ok(Err(SessionError::Closed))), "{job:?}");
+    stream_ends(&mut sub).await;
+    assert_eq!(log.lock().unwrap().last(), Some(&Asked::Close));
+    assert!(matches!(
+        session.turn(Input::human("b")).await,
+        Err(SessionError::Closed)
+    ));
+}
+
+/// The same for code that panics inside a turn (the rewriter here; the
+/// conversation's own `run` alike): the turn's caller reads Closed, the
+/// stream ends, the conversation is closed.
+#[tokio::test]
+async fn a_turn_that_panics_ends_the_stream_and_closes_the_conversation() {
+    let model = answers(&["never sent"]);
+    let mut recorded = Recorded::new(agent(&model, Tools::new()), 0);
+    recorded.rewriter = Some(Panics.into());
+    let log = recorded.log.clone();
+    let session = start(recorded, hub());
+    let mut sub = session.subscribe(0);
+
+    let turn = tokio::time::timeout(Duration::from_secs(5), session.turn(Input::human("a"))).await;
+    assert!(matches!(turn, Ok(Err(SessionError::Closed))), "{turn:?}");
+    stream_ends(&mut sub).await;
+    assert_eq!(log.lock().unwrap().last(), Some(&Asked::Close));
+    assert!(model.requests().is_empty());
+}
+
+/// `Driven::close` itself panics: `close()` returns and the stream ends all
+/// the same.
+#[tokio::test]
+async fn a_close_that_panics_still_ends_the_stream() {
+    let model = answers(&[]);
+    let mut recorded = Recorded::new(agent(&model, Tools::new()), 0);
+    recorded.close_panics = true;
+    let session = start(recorded, hub());
+    let mut sub = session.subscribe(0);
+
+    tokio::time::timeout(Duration::from_secs(5), session.close())
+        .await
+        .expect("close returns");
+    stream_ends(&mut sub).await;
+}
+
 #[tokio::test]
 async fn a_failed_change_changes_nothing_and_says_why() {
     // A resolver that knows one provider only.

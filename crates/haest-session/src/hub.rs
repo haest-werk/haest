@@ -3,7 +3,7 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, PoisonError},
 };
 
 use haest_core::LoopEvent;
@@ -194,8 +194,11 @@ impl Hub {
 
     /// No more frames go out: every subscription ends once it has what it
     /// holds. Waiting approval asks go unanswered (their prompts deny).
+    /// Never panics, so it may run while a panic unwinds.
     pub fn close(&self) {
-        let mut state = self.lock();
+        // A poisoned lock still holds what there is to close.
+        let state = self.inner.state.lock();
+        let mut state = state.unwrap_or_else(PoisonError::into_inner);
         state.tx = None;
         state.asks.waiting.clear();
     }

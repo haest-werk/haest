@@ -3,8 +3,9 @@
 
 mod turn;
 
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, panic::AssertUnwindSafe, time::Duration};
 
+use futures::FutureExt as _;
 use haest_core::{TurnOutcome, error::BoxError};
 use haest_wire::{Origin, Outbound, Path, Snapshot, State};
 use tokio::sync::{mpsc, oneshot};
@@ -104,18 +105,36 @@ impl<D: Driven> Driver<D> {
         }
     }
 
-    /// The driver's life: requests between turns, turns when there is one
-    /// to run, and a wait for the next request or arrival.
+    /// The driver's life, then its end. Code on this task that panics (a
+    /// host's `with` job, a [`Driven`] method, the rewriter) ends it as a
+    /// close does: what waits is refused, [`Driven::close`] gets its chance
+    /// to stop what the conversation started and save, the stream ends; then
+    /// the panic goes on. The stream ends however the task ends, a panic in
+    /// `Driven::close` itself included.
     pub(crate) async fn run(mut self) {
+        let _ends = EndsTheStream(self.hub.clone());
+        match AssertUnwindSafe(self.serve()).catch_unwind().await {
+            Ok(reply) => self.finish(reply).await,
+            Err(panic) => {
+                self.finish(None).await;
+                std::panic::resume_unwind(panic);
+            }
+        }
+    }
+
+    /// Requests between turns, turns when there is one to run, and a wait
+    /// for the next request or arrival, until a close (whose reply it
+    /// returns) or every handle is gone.
+    async fn serve(&mut self) -> Option<oneshot::Sender<()>> {
         self.publish_status(State::Idle);
         loop {
             while let Some(cmd) = self.deferred.pop_front() {
                 if let Flow::Stop(reply) = self.between(cmd).await {
-                    return self.finish(reply).await;
+                    return reply;
                 }
             }
             if self.orphaned {
-                return self.finish(None).await;
+                return None;
             }
             if self.holds == 0
                 && let Some((input, waiters)) = self.next_turn()
@@ -254,7 +273,7 @@ impl<D: Driven> Driver<D> {
 
     /// The end: what waits is refused, the conversation closes what it
     /// started and saves, the stream closes.
-    async fn finish(mut self, reply: Option<oneshot::Sender<()>>) {
+    async fn finish(&mut self, reply: Option<oneshot::Sender<()>>) {
         for (_, waiters) in self.queue.drain(..) {
             fail(waiters, || SessionError::Closed);
         }
@@ -269,6 +288,17 @@ impl<D: Driven> Driver<D> {
             let _ = reply.send(());
         }
         // Anything still asked gets its reply dropped: the handle reads Closed.
+    }
+}
+
+/// Ends the stream when the driver ends, however it ends: unwinding from a
+/// panic, or dropped with its task when the runtime shuts down. Every
+/// subscription then ends, so transports and peers see the session go.
+struct EndsTheStream(Hub);
+
+impl Drop for EndsTheStream {
+    fn drop(&mut self) {
+        self.0.close();
     }
 }
 
