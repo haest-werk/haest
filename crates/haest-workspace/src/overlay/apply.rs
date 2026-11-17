@@ -9,24 +9,127 @@
 //!   `root/path` itself, never through a link out of the project.
 //!
 //! A change the disk still refuses (permissions, a full disk) fails alone
-//! (`write-failed`); the caller goes on with the rest.
+//! (`write-failed`); the apply goes on with the rest.
+//!
+//! Deletes go first, then the writes, found again: on a disk that reads two
+//! spellings as one name, a delete takes the other spelling's file with it.
 
 use std::{
+    collections::{HashMap, HashSet},
     io,
     path::{Path, PathBuf},
 };
 
 use haest_core::{
     fs::Fs,
-    workspace::{ApplyFailureCode, ChangeKind},
+    workspace::{ApplyFailureCode, ApplyReport, ChangeKind, FailedChange},
 };
 
-use super::{OverlayChanges, links::Links};
+use super::{Found, OverlayChanges, Scanned, links::Links, state::Original};
 
 /// Why one change was not applied: its code and the reason for the human.
-pub(crate) type Refusal = (ApplyFailureCode, String);
+type Refusal = (ApplyFailureCode, String);
 
 impl OverlayChanges {
+    /// Every change that is not a conflict, onto the real disk: the deletes,
+    /// then the writes, each in path order.
+    pub(super) async fn apply_all(&self) -> ApplyReport {
+        let mut report = ApplyReport::default();
+        // One for the whole apply, both phases: each real path on the way is
+        // asked once.
+        let mut links = Links::new(self.book.disk.as_ref(), &self.book.root);
+        let found = self.survey().await;
+        let before: HashMap<PathBuf, Original> =
+            found.iter().map(|f| (f.path.clone(), f.now)).collect();
+        let (deletes, writes): (Vec<_>, Vec<_>) = found
+            .into_iter()
+            .filter_map(Found::change)
+            .partition(|s| s.change.kind == ChangeKind::Deleted);
+        let conflicts: HashSet<PathBuf> = deletes
+            .iter()
+            .chain(&writes)
+            .filter(|s| s.change.conflict)
+            .map(|s| s.path.clone())
+            .collect();
+        let tried = deletes.iter().any(|s| !s.change.conflict);
+        for s in deletes {
+            self.settle(s, &mut links, &mut report).await;
+        }
+        let writes = if tried {
+            self.writes_after_deletes(&before, &conflicts).await
+        } else {
+            writes
+        };
+        for s in writes {
+            self.settle(s, &mut links, &mut report).await;
+        }
+        report
+    }
+
+    /// The writes, found again once the deletes ran. On a disk that reads two
+    /// spellings as one name (`readme.md` and `README.md` on macOS's
+    /// default), deleting one took the other's file with it. A path there
+    /// before the deletes and gone after them is this apply's doing, not the
+    /// human's: it is compared from absent from now on. A path in `conflicts`
+    /// (a conflict when the apply started) stays one, never compared afresh.
+    async fn writes_after_deletes(
+        &self,
+        before: &HashMap<PathBuf, Original>,
+        conflicts: &HashSet<PathBuf>,
+    ) -> Vec<Scanned> {
+        let mut found = self.survey().await;
+        {
+            let mut touched = self.book.touched();
+            for f in &mut found {
+                let taken = f.now == Original::Absent
+                    && before
+                        .get(&f.path)
+                        .is_some_and(|was| *was != Original::Absent);
+                if taken && !conflicts.contains(&f.path) {
+                    f.original = Original::Absent;
+                    if let Some(original) = touched.get_mut(&f.path) {
+                        *original = Original::Absent;
+                    }
+                }
+            }
+        }
+        found
+            .into_iter()
+            .filter_map(Found::change)
+            // Each delete is in the report already.
+            .filter(|s| s.change.kind != ChangeKind::Deleted)
+            .map(|mut s| {
+                s.change.conflict |= conflicts.contains(&s.path);
+                s
+            })
+            .collect()
+    }
+
+    /// Put one change on the disk, or skip a conflict, into `report`.
+    async fn settle(&self, s: Scanned, links: &mut Links<'_>, report: &mut ApplyReport) {
+        let refused = if s.change.conflict {
+            None
+        } else {
+            match self.put(s.change.kind, &s.path, links).await {
+                Ok(()) => {
+                    self.book.touched().remove(&s.path);
+                    report.applied.push(s.change);
+                    return;
+                }
+                Err(refusal) => Some(refusal),
+            }
+        };
+        // A file found inside a created directory: remember it, so it is
+        // still listed once its directory is applied.
+        self.book.touched().entry(s.path).or_insert(s.original);
+        match refused {
+            Some((code, reason)) => report
+                .failed
+                .push(FailedChange::new(s.change, code, reason)),
+            None => report.skipped.push(s.change),
+        }
+    }
+
     /// The nearest symlink in the sandbox at `path` or on its way there, with
     /// its target. A deleted path is looked up from its parent: what is gone
     /// is not a link.
@@ -43,7 +146,7 @@ impl OverlayChanges {
 
     /// Write (or delete) overlay `path` on the real disk, or say why not;
     /// `links` is the apply's one lookup of links on the real disk.
-    pub(crate) async fn put(
+    async fn put(
         &self,
         kind: ChangeKind,
         path: &Path,

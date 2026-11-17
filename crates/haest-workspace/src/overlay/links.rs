@@ -12,10 +12,11 @@ use std::{
 use haest_core::fs::Fs;
 
 /// Asks the real disk about each component of a path, asking each real path
-/// on the way at most once: one serves a whole apply. Applying never makes a
-/// link, so nothing it writes turns a remembered answer into a link; a link
-/// someone else makes mid-apply is a race a fresh lookup per change would not
-/// close either.
+/// on the way at most once: one serves a whole apply, its deletes and its
+/// writes. Applying never makes a link, so nothing it writes or deletes turns
+/// a remembered answer into a link (a path remembered as there that a delete
+/// removed only means "look below"); a link someone else makes mid-apply is a
+/// race a fresh lookup per change would not close either.
 pub(crate) struct Links<'a> {
     disk: &'a dyn Fs,
     root: &'a Path,
