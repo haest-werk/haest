@@ -49,6 +49,7 @@ impl fmt::Debug for Names<'_> {
 /// assert_eq!(http.headers, BTreeMap::from([("Authorization".into(), "Bearer t0ken".into())]));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct McpServerConfig {
     /// The server's name: the `<server>` in `mcp__<server>__<tool>`, and the
     /// name a failure and a log line give.
@@ -113,6 +114,7 @@ impl McpTransport {
 /// in a header or the query, never the URL's path: a path segment cannot be
 /// told from a name, so the path shows in Debug output, logs and errors.
 #[derive(Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct HttpTransport {
     /// The server's endpoint, e.g. `https://example.com/mcp`. Its path is
     /// shown wherever the URL is, so it holds no key.
@@ -158,6 +160,7 @@ impl From<HttpTransport> for McpTransport {
 /// token rides in one too (mcp-remote's `--header "Authorization: Bearer
 /// ${API_TOKEN}"`, which `.mcp.json` fills in).
 #[derive(Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct StdioTransport {
     /// The program to run: a path, or a name looked up on the `PATH` the
     /// process is given (with none, only in the system's default

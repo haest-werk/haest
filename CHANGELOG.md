@@ -1526,6 +1526,11 @@ Hosts write less (round two of the review, and what porting brain onto
 - `StdioTransport::with_env` is `with_env_var` (breaking): it adds one
   variable, and `with_env` means replacing a whole environment everywhere
   else.
+- `McpServerConfig`, `HttpTransport` and `StdioTransport` are
+  `#[non_exhaustive]` (breaking for a struct literal), so a field
+  `.mcp.json` gains later breaks no host: `HttpTransport { url, headers }`
+  -> `McpTransport::http(url).with_header(..)`. Their fields read as
+  before.
 - `McpFailure`'s fields are private (breaking): `failure.name` ->
   `failure.name()`, `report(&*failure.error)` -> `report(failure.error())`.
 - `load_project_mcp_config` takes the variables as any closure (was
