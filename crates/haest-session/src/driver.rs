@@ -215,7 +215,9 @@ impl<D: Driven> Driver<D> {
                 let _ = reply.send(done);
             }
             Command::Snapshot(tx) => {
-                self.status = self.driven.status();
+                // A change nothing published yet (spend from a background
+                // subagent) goes out first, so every peer hears of it.
+                self.refresh();
                 let _ = tx.send(self.snapshot(State::Idle));
             }
             Command::History(tx) => {

@@ -11,7 +11,9 @@ use std::{
 use futures::FutureExt as _;
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Effort, LoopEvent, Message, ModelError, ShutWorkspace,
-    StopReason, ToolRef, Tools,
+    StopReason, ToolRef, Tools, Usage,
+    caps::ConversationCaps,
+    ledger::{Ledger, NoLedgerHooks},
     testing::{ScriptedProvider, text_answer, tool_answer},
 };
 use haest_wire::{Level, Outbound, Path, State};
@@ -1037,6 +1039,37 @@ async fn status_frames_say_when_a_turn_runs_and_what_changed() {
         vec![State::Idle, State::Running, State::Idle, State::Idle]
     );
     assert!(frames.iter().all(|f| f.path == Path::main()));
+    session.close().await;
+}
+
+/// A snapshot between turns took the conversation's status for itself and
+/// published nothing: a change only it saw (spend a background subagent
+/// charged) never reached the stream, and the next change was compared
+/// against it, so peers that follow the stream never heard of it. It goes
+/// out as a status frame, ahead of the snapshot's seq.
+#[tokio::test]
+async fn a_change_a_snapshot_sees_goes_out_on_the_stream() {
+    let model = answers(&[]);
+    let ledger = Ledger::new(ConversationCaps::default(), NoLedgerHooks);
+    let shared = haest_core::SharedDeps::new(model.resolver(), "/", ShutWorkspace)
+        .with_ledger(ledger.clone());
+    let deps = AgentDeps::new(shared, Tools::new(), "");
+    let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), hub());
+    let mut sub = session.subscribe(0);
+
+    // Spent outside a turn, as a background subagent's calls are.
+    ledger.charge(&Usage {
+        cost_usd: Some(0.5),
+        ..Usage::default()
+    });
+    let now = session.snapshot().await.unwrap();
+    assert_eq!(now.usd, Some(0.5));
+    let frames = until(
+        &mut sub,
+        |f| matches!(&f.body, Body::Wire(Outbound::Status(s)) if s.usd == Some(0.5)),
+    )
+    .await;
+    assert!(frames.last().unwrap().seq <= now.last_seq);
     session.close().await;
 }
 

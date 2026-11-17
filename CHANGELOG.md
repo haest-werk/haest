@@ -1916,6 +1916,12 @@ against it; the wire JSON is unchanged):
   stopped before it ran ends aborted with no model call), a snapshot is
   answered, and a turn's caller hears it ended as soon as it does.
   `RewritePrompt` says it should answer promptly and be cancel-safe.
+- A change a snapshot between turns sees goes out as a `status` frame
+  first. The snapshot took the conversation's status without publishing
+  it, so a change nothing else published (spend from a background
+  subagent) never reached the stream, and the next change was compared
+  against it: peers that follow the stream did not hear of it until the
+  next turn.
 
 ### haest-transport (new)
 
