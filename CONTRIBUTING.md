@@ -57,6 +57,9 @@
   system for the call takes `&dyn Fs` (the net guard `&dyn Resolve`), since
   that borrow takes the value (`&MemFs`) and its handle (`&FsRef`) alike, and
   `&impl Fs` would refuse the handle: a handle never implements its own trait.
+  A trait with a blanket impl (`KeySource` and `ModelResolver` for
+  closures) is the exception: the compiler tries that impl on the handle
+  and refuses it, so `&dyn KeySource` takes a handle as `keys.as_ref()`.
 - **One path per item.** A library's modules are private and everything a host
   uses is re-exported at its root, once (haest-core, whose modules are the
   contract, is the exception). `pub` only for what a host or a plug-in author

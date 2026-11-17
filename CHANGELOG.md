@@ -916,6 +916,8 @@ Hosts write less (round two of the review, and what porting brain onto
 - `CustomProviderConfig::resolved_key(&keys) -> String` ->
   `CustomProviderConfig::key(&keys) -> Option<String>` (breaking): None
   where it returned `"none"`, the placeholder the provider still sends.
+  It takes `&dyn KeySource`; a registry's key source goes in as
+  `entry.key(registry.keys().as_ref())`.
 - `AnthropicProvider`, `CompatProvider` and `ResponsesProvider` have
   inherent `id()` and `stream(req)`: `provider.stream(req)` needs no `use
   haest_core::Provider`. Each gains the getters `retry()`,

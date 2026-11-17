@@ -262,7 +262,12 @@ impl CustomProviderConfig {
     /// `keys` has under `apiKeyEnv`; None when neither is there (the provider
     /// then sends a placeholder, as a local server takes any key: a custom
     /// provider never fails for want of one).
-    pub fn key(&self, keys: &(impl KeySource + ?Sized)) -> Option<String> {
+    ///
+    /// `keys` is any key source; one a registry holds is borrowed from its
+    /// handle with `as_ref` (`entry.key(registry.keys().as_ref())`: a
+    /// `&KeySourceRef` itself is refused, as the compiler tries the
+    /// closure impl of [`KeySource`] on it first).
+    pub fn key(&self, keys: &dyn KeySource) -> Option<String> {
         self.api_key
             .clone()
             .or_else(|| self.api_key_env.as_ref().and_then(|k| keys.key(k)))
