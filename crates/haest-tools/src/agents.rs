@@ -61,9 +61,19 @@ impl AgentRef {
 ///
 /// let input = SpawnInput::new("List every TODO under src/ with its file and line.")
 ///     .with_description("find the TODOs")
-///     .in_background();
+///     .with_subagent_type("explore")
+///     .with_background(true);
 /// assert!(input.background);
+/// assert_eq!(input.subagent_type.as_deref(), Some("explore"));
 /// assert_eq!(input.name, None, "the hub names it from the description");
+///
+/// // A host holding an `Option` sets what it has.
+/// let asked: Option<&str> = Some("todo-finder");
+/// let input = match asked {
+///     Some(name) => input.with_name(name),
+///     None => input,
+/// };
+/// assert_eq!(input.name.as_deref(), Some("todo-finder"));
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 #[non_exhaustive]
@@ -107,39 +117,41 @@ impl SpawnInput {
         self
     }
 
-    /// The same, asking for this address (None: the hub makes one).
+    /// The same, asking for this address (without one, the hub makes one
+    /// from the description).
     #[must_use]
-    pub fn with_name(mut self, name: impl Into<Option<String>>) -> Self {
-        self.name = name.into();
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
         self
     }
 
-    /// The same, on this `provider:model` (None: the conversation's own).
+    /// The same, on this `provider:model` (without one, the conversation's own).
     #[must_use]
-    pub fn with_model_spec(mut self, model_spec: impl Into<Option<String>>) -> Self {
-        self.model_spec = model_spec.into();
+    pub fn with_model_spec(mut self, model_spec: impl Into<String>) -> Self {
+        self.model_spec = Some(model_spec.into());
         self
     }
 
-    /// The same, of this one of the host's [`SubagentTypes`] (None: the default).
+    /// The same, of this one of the host's [`SubagentTypes`] (without one,
+    /// the default).
     #[must_use]
-    pub fn with_subagent_type(mut self, subagent_type: impl Into<Option<String>>) -> Self {
-        self.subagent_type = subagent_type.into();
+    pub fn with_subagent_type(mut self, subagent_type: impl Into<String>) -> Self {
+        self.subagent_type = Some(subagent_type.into());
         self
     }
 
-    /// The same, under this budget (None: the caps alone).
+    /// The same, under this budget (without one, the caps alone).
     #[must_use]
-    pub fn with_budget(mut self, budget: impl Into<Option<SubagentBudget>>) -> Self {
-        self.budget = budget.into();
+    pub fn with_budget(mut self, budget: SubagentBudget) -> Self {
+        self.budget = Some(budget);
         self
     }
 
-    /// The same, in the background: the call returns at once and the answer
-    /// arrives as a message.
+    /// The same, in the background (`true`): the call returns at once and
+    /// the answer arrives as a message. In the foreground by default.
     #[must_use]
-    pub fn in_background(mut self) -> Self {
-        self.background = true;
+    pub fn with_background(mut self, background: bool) -> Self {
+        self.background = background;
         self
     }
 }

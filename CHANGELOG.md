@@ -926,8 +926,11 @@ Hosts write less (round two of the review, and what porting brain onto
   (`SpawnInput` has grown twice): a host builds a spawn with
   `SpawnInput::new(prompt)` and `with_description`, `with_name`,
   `with_model_spec`, `with_subagent_type`, `with_budget` and
-  `in_background`, and an answer with `SpawnOutcome::new(text, cost_usd)`;
-  the fields stay readable. `SpawnInput { description: "tidy".into(),
+  `with_background(bool)`, and an answer with
+  `SpawnOutcome::new(text, cost_usd)`; the fields stay readable. The
+  optional fields' setters take the value itself, so
+  `.with_subagent_type("explore")` compiles; a host holding an `Option`
+  sets what it has. `SpawnInput { description: "tidy".into(),
   prompt: "Tidy up.".into(), ..Default::default() }` ->
   `SpawnInput::new("Tidy up.").with_description("tidy")`, and
   `SpawnOutcome { text, cost_usd }` -> `SpawnOutcome::new(text, cost_usd)`.
