@@ -25,7 +25,7 @@ haest = { workspace = true, features = ["runtime", "config", "wire", "session", 
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
-anyhow = { workspace = true }
+anyhow = "1"
 # `string`: the setting flags are built at run time from the settings registry.
 clap = { version = "4.6", features = ["derive", "string"] }
 serde = { workspace = true }
