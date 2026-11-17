@@ -17,6 +17,7 @@ use std::{
     time::Duration,
 };
 
+use futures::StreamExt;
 use haest_core::{Effort, TurnOutcome, error::report};
 use haest_session::{BackendRef, Body, Control, Frame, Input, SessionError, Subscription};
 use haest_wire::{self as wire, Access, Envelope, Outbound, Request, Token, decode};
@@ -56,6 +57,18 @@ const MAX_IN_FLIGHT: usize = 32;
 /// Lines a peer sends: one request each.
 pub trait LineSource: Send {
     /// The next line; None when the peer is gone.
+    ///
+    /// [`serve`] calls it only when it takes a line: not while the backend
+    /// call of the line before is still to start, nor with 64 requests in
+    /// flight, and never again after None or an error. It keeps the future
+    /// of each call until that future resolves, and drops one still pending
+    /// only together with the source, when the connection ends. So a source
+    /// needs no cancel-safety of its own: a read may take its line when it
+    /// is called, or read it over several awaits.
+    ///
+    /// [`Peer`](crate::Peer) calls it once for each frame it reads, and
+    /// drops the future only when its own caller drops that call (a `recv`
+    /// raced against a timeout).
     fn next_line(&mut self) -> impl Future<Output = Option<Result<String, TransportError>>> + Send;
 }
 
@@ -171,10 +184,21 @@ pub async fn serve(
     backend: impl Into<BackendRef>,
     grant: Grant,
     start: Start,
-    mut source: impl LineSource,
+    source: impl LineSource,
     sink: impl LineSink,
 ) -> Ended {
     let backend: BackendRef = backend.into();
+    // The peer's lines, each read by a future that owns the source until it
+    // resolves. The loop's `select!` makes a `next()` on every pass, polled
+    // or not, and drops it whenever another branch comes first; the read
+    // inside stays, and `next_line` is called only when the loop polls for a
+    // line. It is never polled after its None (`unfold` would panic):
+    // reading ends there.
+    let lines = futures::stream::unfold(source, |mut source| async move {
+        let line = source.next_line().await?;
+        Some((line, source))
+    });
+    let mut lines = std::pin::pin!(lines);
     let (tx, rx) = mpsc::channel(OUT_BUFFER);
     let mut writer = AbortOnDrop(tokio::spawn(write(sink, rx, backend.meta().sid)));
     // What the writer ended with, once it was awaited (never awaited twice).
@@ -228,7 +252,7 @@ pub async fn serve(
             let placing = link.placing.is_some();
             tokio::select! {
                 () = placed_first(&mut link.placing), if placing => link.placing = None,
-                line = source.next_line(), if reading && room && !placing => match line {
+                line = lines.next(), if reading && room && !placing => match line {
                     None => {
                         reading = false;
                         why.get_or_insert(Ended::PeerLeft);

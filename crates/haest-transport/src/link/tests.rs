@@ -757,6 +757,7 @@ mod cap;
 mod keepalive;
 mod order;
 mod panics;
+mod sources;
 
 #[test]
 fn the_token_never_shows_in_debug_output() {

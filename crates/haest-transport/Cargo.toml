@@ -20,7 +20,7 @@ stdio = ["tokio/io-std", "tokio/sync"]
 unix = ["tokio/net", "dep:serde"]
 # The conversation dials out to a broker over a WebSocket (TLS on ring, the
 # platform's roots, as the model requests verify).
-broker = ["tokio/net", "dep:tokio-tungstenite", "dep:futures", "dep:rustls", "dep:rustls-platform-verifier", "dep:haest-http"]
+broker = ["tokio/net", "dep:tokio-tungstenite", "dep:rustls", "dep:rustls-platform-verifier", "dep:haest-http"]
 
 [dependencies]
 haest-core = { workspace = true }
@@ -31,7 +31,9 @@ haest-session = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "rt"] }
 serde_json = { workspace = true }
 serde = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
+# A connection reads its lines through a stream that owns the source
+# (link.rs); haest-core depends on it too.
+futures = { workspace = true }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-native-roots"], optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
 rustls-platform-verifier = { version = "0.7", optional = true }
