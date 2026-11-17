@@ -749,6 +749,8 @@ async fn a_stalled_peer_refused_again_and_again_lets_go_when_the_conversation_en
     a_stalled_peer_lets_go_when_the_conversation_ends(asks, false).await;
 }
 
+mod keepalive;
+
 #[test]
 fn the_token_never_shows_in_debug_output() {
     let start = Start {

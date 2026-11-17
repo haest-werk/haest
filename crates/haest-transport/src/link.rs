@@ -23,6 +23,11 @@ const OUT_BUFFER: usize = 1024;
 /// How long a connection that ends gets to write what it still holds.
 const FLUSH_GRACE: Duration = Duration::from_secs(1);
 
+/// How long the writer sends only lines after a keepalive that resolved at
+/// once ([`LineSink::keepalive`]): such a sink costs a keepalive this often,
+/// never a writer that does nothing else.
+const KEEPALIVE_REST: Duration = Duration::from_millis(100);
+
 /// Requests one connection may have waiting for their replies (a turn's
 /// end, a history asked mid-turn). At the cap the connection reads no more
 /// lines until one is answered, so a peer that only sends makes no more
@@ -45,9 +50,19 @@ pub trait LineSink: Send + 'static {
 
     /// Keep the link alive: resolves once the sink sent something of its own
     /// (the broker link's ping when the broker has been quiet), Err when that
-    /// failed, which ends the connection. Asked again after every line and
-    /// every keepalive, and dropped whenever a line comes first, so it starts
-    /// over from the sink's state each time. By default it never resolves.
+    /// failed, which ends the connection. By default it never resolves.
+    ///
+    /// The contract:
+    ///
+    /// - It waits for a reason to send (a timer, a quiet link). It is asked
+    ///   again after every line and every keepalive, so one that is ready at
+    ///   once would be all the writer does. The writer guards against that:
+    ///   after a keepalive that never waited, it sends only lines for 100 ms
+    ///   before it asks again. Such a sink still sends a keepalive that often.
+    /// - It is cancel-safe: it is dropped at any await whenever a line comes
+    ///   first, and starts over from the sink's state when asked again, so a
+    ///   drop must leave no half-sent frame behind (a frame is handed to the
+    ///   transport whole, or not at all).
     fn keepalive(&mut self) -> impl Future<Output = Result<(), TransportError>> + Send {
         std::future::pending()
     }
@@ -445,15 +460,39 @@ pub(crate) async fn until_closed(mut sub: Subscription) {
 /// between lines, busy or idle. Ends when the sink fails.
 async fn write(mut sink: impl LineSink, mut rx: mpsc::Receiver<Out>, sid: String) {
     let mut last = 0;
+    // After a keepalive that never waited: lines only, until then.
+    let mut rest: Option<tokio::time::Instant> = None;
     loop {
-        let out = tokio::select! {
-            // First, so a stream that is never idle still has its keepalive.
-            biased;
-            kept = sink.keepalive() => match kept {
-                Ok(()) => continue,
-                Err(_) => return,
+        let out = match rest {
+            Some(until) => tokio::select! {
+                out = rx.recv() => out,
+                () = tokio::time::sleep_until(until) => {
+                    rest = None;
+                    continue;
+                }
             },
-            out = rx.recv() => out,
+            None => {
+                let mut keepalive = std::pin::pin!(sink.keepalive());
+                let mut waited = false;
+                let kept = std::future::poll_fn(|cx| {
+                    let polled = keepalive.as_mut().poll(cx);
+                    waited |= polled.is_pending();
+                    polled.map(|kept| (kept, waited))
+                });
+                tokio::select! {
+                    // First, so a stream that is never idle still has its keepalive.
+                    biased;
+                    kept = kept => match kept {
+                        (Ok(()), true) => continue,
+                        (Ok(()), false) => {
+                            rest = Some(tokio::time::Instant::now() + KEEPALIVE_REST);
+                            continue;
+                        }
+                        (Err(_), _) => return,
+                    },
+                    out = rx.recv() => out,
+                }
+            }
         };
         let Some(out) = out else { return };
         let line = match out {

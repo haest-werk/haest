@@ -2053,7 +2053,11 @@ against it; the wire JSON is unchanged):
   cutting this one. `Broker::with_silence_limit(d)` sets it,
   `without_silence_limit()` turns the check off, `silence_limit()` reads
   it. The ping goes through `LineSink::keepalive`, a new method whose
-  default never resolves, so other sinks are unchanged.
+  default never resolves, so other sinks are unchanged. Its docs say what
+  a sink's own must do: wait for a reason to send, and be cancel-safe. A
+  keepalive that is ready at once had the writer do nothing else, so the
+  peer never even got its `hello` and the writer held a runtime thread;
+  after one that never waited, the writer now sends only lines for 100 ms.
 
 ### haest-issues
 
