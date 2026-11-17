@@ -16,7 +16,7 @@ use crate::{
     agent::test_support::*,
     caps::{ConversationCaps, TurnCaps},
     events::LoopEvent,
-    guard::TurnGuard,
+    guard::{SharedWatch, TurnGuard},
     ledger::{Ledger, NoLedgerHooks},
     messages::{AssistantMessage, Message, Usage},
     remedy::{Limit, Remedies},
@@ -104,7 +104,7 @@ fn crossed(
         let now = now.clone();
         move || now.load(Ordering::SeqCst)
     };
-    let watch = Arc::new(Mutex::new(Watch::new(Thresholds::none().wind_down(at))));
+    let watch = SharedWatch::new(Watch::new(Thresholds::none().wind_down(at)));
     let guard = TurnGuard::new(Arc::new(clock), ledger.cloned(), remedies.clone())
         .with_thresholds(watch, 0);
     now.store(elapsed.as_millis() as u64, Ordering::SeqCst);

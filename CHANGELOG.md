@@ -845,6 +845,17 @@ Hosts write less (round two of the review, and what porting brain onto
   board's lock: a change made while `on_change` runs is handed over once
   that call returns, and several made meanwhile as one call with the
   newest list. `on_change` may now change the board it hears from too.
+- Fixed: one panic in host code under a haest lock broke what came after
+  it. A `LedgerHooks::persist` that panicked once poisoned the ledger:
+  every later charge added its spend and then panicked with "ledger lock
+  poisoned". A turn threshold whose `rearm` (or `meter`, `mark`, `action`)
+  panicked once poisoned its agent's thresholds, so every later turn of
+  that agent panicked before its first model call. Neither runs under a
+  lock now: the ledger persists through the same in-order hand-over as
+  the task board (one `persist` at a time, never an older snapshot after
+  a newer one), and the agent checks its thresholds on a copy it puts
+  back. The host's panic still reaches the call that ran its code.
+- `threshold::Watch` is `Clone`.
 
 ### haest-http
 

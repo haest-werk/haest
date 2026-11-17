@@ -22,11 +22,7 @@ mod durable;
 pub(crate) mod test_support;
 mod turn;
 
-use std::{
-    fmt,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::{fmt, time::Instant};
 
 use tokio_util::sync::CancellationToken;
 
@@ -35,12 +31,12 @@ use crate::{
     compaction::last_context_tokens,
     deps::AgentDeps,
     events::{EventSink, Forward, TurnOutcome},
-    guard::TurnGuard,
+    guard::{SharedWatch, TurnGuard},
     media::fit_for_model,
     messages::{Message, StopReason, Usage},
     provider::Effort,
     request_prefix::{RequestPrefix, build_request_prefix},
-    threshold::{TurnSite, Watch},
+    threshold::Watch,
 };
 
 pub use control::AgentControl;
@@ -178,7 +174,7 @@ pub struct Agent {
     side_spend: Usage,
     /// The turn's thresholds and which have fired, across turns: this agent's
     /// own, following [`SharedDeps::thresholds`](crate::SharedDeps::thresholds).
-    thresholds: Arc<Mutex<Watch<TurnSite>>>,
+    thresholds: SharedWatch,
 }
 
 /// The model, the effort, how long the history is and whether a turn runs;
@@ -206,7 +202,7 @@ impl Agent {
             deps,
             control: AgentControl::new(),
             side_spend: Usage::default(),
-            thresholds: Arc::new(Mutex::new(thresholds)),
+            thresholds: SharedWatch::new(thresholds),
         }
     }
 
@@ -324,11 +320,11 @@ impl Agent {
     /// A fresh guard per turn: its caps and clock start over, and the
     /// thresholds that fire once a turn re-arm. Only for a turn that began.
     fn guard(&self) -> TurnGuard {
-        {
-            let mut watch = self.thresholds.lock().unwrap();
+        // A host's threshold runs here (`rearm`): on a copy, unlocked.
+        self.thresholds.update(|watch| {
             watch.follow(self.deps.shared().thresholds());
             watch.next_turn();
-        }
+        });
         self.bare_guard()
             .with_thresholds(self.thresholds.clone(), last_context_tokens(&self.history))
     }

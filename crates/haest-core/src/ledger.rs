@@ -41,6 +41,7 @@ pub use hold::{Hold, NotAvailable};
 use crate::{
     caps::{ConversationCap, ConversationCapOverrides, ConversationCaps},
     messages::Usage,
+    newest::Newest,
     remedy::{Limit, Remedies},
     threshold::{Action, Crossing, LedgerSite, Mark, Meter, Reading, Scope, Thresholds, Watch},
 };
@@ -70,9 +71,11 @@ pub struct LedgerSnapshot {
 pub trait LedgerHooks: Send + Sync {
     /// Save this snapshot (to the session log). Called after every charge
     /// that billed something and after every cap change, one call at a time
-    /// and never an older snapshot after a newer one, so the last one saved
-    /// is the ledger's state. It may read the ledger, but must not charge it
-    /// or set its cap. Default: not saved.
+    /// and never an older snapshot after a newer one: the changes made while
+    /// one is being saved are saved next as one, the newest. So the last one
+    /// saved is the ledger's state. It may read the ledger, but must not
+    /// charge it or set its cap. A panic here is the host's, and leaves the
+    /// ledger working. Default: not saved.
     fn persist(&self, _snapshot: &LedgerSnapshot) {}
     /// The human must hear this (once per crossing). Default: dropped.
     ///
@@ -147,8 +150,9 @@ const TOKENS: Meter = Meter::Tokens(Scope::Conversation);
 pub struct Ledger {
     state: Arc<Mutex<State>>,
     hooks: LedgerHooksRef,
-    /// Held while a snapshot is persisted: one at a time, in order.
-    persisted: Arc<Mutex<u64>>,
+    /// The snapshot after the latest change, put under the state's lock and
+    /// persisted with it released: one at a time, in order.
+    persists: Arc<Newest<LedgerSnapshot>>,
 }
 
 /// A ledger's sums, behind its lock.
@@ -162,9 +166,6 @@ struct State {
     /// USD held for spenders running now ([`Ledger::reserve`]), and how many holds.
     held: f64,
     holds: usize,
-    /// Bumped at every snapshot taken to persist, so an older one is never
-    /// saved after a newer one.
-    version: u64,
 }
 
 /// What it has spent and its caps, as [`Ledger::snapshot`] and
@@ -184,12 +185,11 @@ impl fmt::Debug for Ledger {
     }
 }
 
-/// What a change hands the hooks once the ledger is unlocked: the snapshot
-/// to persist (with its version), the warnings due, and the host's remedies
-/// to end them with. The remedies run unlocked too: one may read the ledger.
+/// What a change hands the hooks once the ledger is unlocked, beside the
+/// snapshot it put: the warnings due, and the host's remedies to end them
+/// with. The remedies run unlocked too: one may read the ledger.
 #[must_use]
 struct Report {
-    snapshot: Option<(u64, LedgerSnapshot)>,
     warnings: Vec<Crossing>,
     remedies: Remedies,
 }
@@ -207,28 +207,26 @@ impl Ledger {
             remedies: Remedies::default(),
             held: 0.0,
             holds: 0,
-            version: 0,
         };
         Self {
             state: Arc::new(Mutex::new(state)),
             hooks: hooks.into(),
-            persisted: Arc::default(),
+            persists: Arc::default(),
         }
     }
 
+    /// The ledger's sums. The lock is held only while haest's own sums run
+    /// (and a ledger threshold's accessors), never a hook or a remedy, so a
+    /// hook or a remedy that panics cannot poison it.
     fn state(&self) -> MutexGuard<'_, State> {
         self.state.lock().expect("ledger lock poisoned")
     }
 
-    /// Hand the hooks what a change left them, the ledger unlocked.
+    /// Hand the hooks what a change left them, the ledger unlocked: the
+    /// snapshot it put, then its warnings.
     fn report(&self, report: Report) {
-        if let Some((version, snapshot)) = report.snapshot {
-            let mut last = self.persisted.lock().expect("ledger lock poisoned");
-            if version > *last {
-                *last = version;
-                self.hooks.persist(&snapshot);
-            }
-        }
+        self.persists
+            .deliver(|snapshot| self.hooks.persist(snapshot));
         for crossing in report.warnings {
             self.hooks.warn(&crossing.remedied_text(&report.remedies));
         }
@@ -318,8 +316,8 @@ impl Ledger {
             if u.cost_usd.is_none() && u.context_tokens() == 0 {
                 return;
             }
+            self.persists.put(state.snapshot());
             Report {
-                snapshot: Some(state.versioned_snapshot()),
                 warnings: state.due_warnings(),
                 remedies: state.remedies.clone(),
             }
@@ -336,8 +334,8 @@ impl Ledger {
                 ConversationCap::UnpricedTokens(v) => state.set.max_unpriced_tokens = Some(v),
             }
             state.rearm();
+            self.persists.put(state.snapshot());
             Report {
-                snapshot: Some(state.versioned_snapshot()),
                 warnings: Vec::new(),
                 remedies: Remedies::default(),
             }
@@ -406,12 +404,6 @@ impl State {
             unpriced_tokens: self.unpriced_tokens,
             caps: (!self.set.is_empty()).then_some(self.set),
         }
-    }
-
-    /// The snapshot to persist, numbered after every one taken before it.
-    fn versioned_snapshot(&mut self) -> (u64, LedgerSnapshot) {
-        self.version += 1;
-        (self.version, self.snapshot())
     }
 
     fn readings(&self) -> [Reading; 2] {

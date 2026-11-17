@@ -281,6 +281,16 @@ impl<S: Site> Default for Watch<S> {
     }
 }
 
+/// Cheap: the thresholds are handles, and the copy keeps which have fired.
+impl<S: Site> Clone for Watch<S> {
+    fn clone(&self) -> Self {
+        Self {
+            thresholds: self.thresholds.clone(),
+            fired: self.fired.clone(),
+        }
+    }
+}
+
 impl<S: Site> fmt::Debug for Watch<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Watch")

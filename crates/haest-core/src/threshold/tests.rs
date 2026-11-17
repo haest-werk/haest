@@ -497,3 +497,53 @@ async fn a_once_a_turn_reminder_fires_once_when_a_hook_calls_run_mid_turn() {
     assert_eq!(p.requests().len(), 4);
     assert_eq!(guard_texts(&events), ["[haest guard] EACH at 1"]);
 }
+
+/// A host's threshold whose `rearm` panics the first time it is asked.
+#[derive(Default)]
+struct PanicsOnce(std::sync::atomic::AtomicBool);
+
+impl Threshold for PanicsOnce {
+    fn meter(&self) -> Meter {
+        Meter::Steps
+    }
+    fn mark(&self) -> Mark {
+        Mark::at(1000.0)
+    }
+    fn action(&self) -> Action {
+        Action::Remind
+    }
+    fn rearm(&self) -> Rearm {
+        if !self.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            panic!("the host's threshold has a bug, once");
+        }
+        Rearm::NextTurn
+    }
+    fn text(&self, _: &Reading) -> String {
+        "never reached".into()
+    }
+}
+
+/// The agent asked its thresholds' `rearm` with their lock held, so a host
+/// threshold that panicked once poisoned it: every later turn of that agent
+/// panicked with a `PoisonError` before its first model call.
+#[tokio::test]
+async fn a_host_threshold_that_panics_once_leaves_the_agent_working() {
+    use futures::FutureExt as _;
+
+    let p = ScriptedProvider::new([text_answer("after the panic")]);
+    let (mut agent, _) = agent(
+        &p,
+        Opts::default(),
+        vec![ThresholdRef::new(PanicsOnce::default())],
+    );
+    let mut events = Vec::new();
+    let first = std::panic::AssertUnwindSafe(agent.run("go", &mut events))
+        .catch_unwind()
+        .await;
+    assert!(first.is_err(), "the host's panic is the host's");
+    let second = std::panic::AssertUnwindSafe(agent.run("again", &mut events))
+        .catch_unwind()
+        .await;
+    let end = second.expect("the next turn panicked: the thresholds' lock is poisoned");
+    assert_eq!(end.stop_reason, StopReason::EndTurn);
+}

@@ -330,6 +330,50 @@ fn a_remedy_may_read_the_ledger_it_is_set_on() {
     assert!(stop.ends_with(" (spent $1.10)"), "{stop}");
 }
 
+/// Hooks whose `persist` panics on its first call only.
+#[derive(Default)]
+struct PanicsOnce {
+    panicked: std::sync::atomic::AtomicBool,
+    saved: Mutex<Vec<LedgerSnapshot>>,
+}
+
+impl LedgerHooks for PanicsOnce {
+    fn persist(&self, s: &LedgerSnapshot) {
+        if !self
+            .panicked
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            panic!("the host's disk is full, once");
+        }
+        self.saved.lock().unwrap().push(s.clone());
+    }
+}
+
+/// `persist` ran with a lock of the ledger's held, so a hook that panicked
+/// once poisoned it: every later charge added its spend and then panicked
+/// with "ledger lock poisoned", and the conversation could not charge again.
+#[test]
+fn a_hook_that_panics_once_leaves_the_ledger_working() {
+    let hooks = Arc::new(PanicsOnce::default());
+    let caps = ConversationCaps {
+        max_usd: 0.0,
+        max_unpriced_tokens: 0,
+    };
+    let ledger = Ledger::new(caps, hooks.clone());
+    let first = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ledger.charge(&cost(0.1));
+    }));
+    assert!(first.is_err(), "the host's panic is the host's");
+    let second = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ledger.charge(&cost(0.2));
+    }));
+    assert!(
+        second.is_ok(),
+        "the next charge panicked: the ledger is poisoned"
+    );
+    assert_eq!(*hooks.saved.lock().unwrap(), [ledger.snapshot()]);
+}
+
 /// Clones are one ledger: what one charges, every other reads and stops on.
 #[test]
 fn every_clone_is_the_same_ledger() {

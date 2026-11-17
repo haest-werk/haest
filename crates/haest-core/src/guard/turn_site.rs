@@ -3,7 +3,7 @@
 //! wind-down watch its tools ask.
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -14,16 +14,61 @@ use crate::{
     ledger::Ledger,
     messages::Usage,
     remedy::Limit,
-    threshold::{Action, Crossing, Meter, Reading, Scope, Threshold, TurnSite, Watch},
+    threshold::{Action, Crossing, Meter, Reading, Scope, Threshold, Thresholds, TurnSite, Watch},
     tool::ToolOutput,
     wind_down::{WindDownWatch, WindingDown},
 };
 
+/// An agent's thresholds and which have fired, across its turns: shared by
+/// the agent and its running turn's guard.
+///
+/// The lock is held only to copy the watch out or put it back, never while
+/// a host's threshold runs, so one that panics poisons nothing: a change
+/// works on a copy, unlocked, and puts it back. Only the running turn
+/// changes it, and an agent runs one turn at a time (a refused call never
+/// touches it), so no change lands between a copy and its put.
+#[derive(Clone, Default)]
+pub(crate) struct SharedWatch(Arc<Mutex<Watch<TurnSite>>>);
+
+impl SharedWatch {
+    /// Shares `watch`.
+    pub(crate) fn new(watch: Watch<TurnSite>) -> Self {
+        Self(Arc::new(Mutex::new(watch)))
+    }
+
+    /// A copy of the watch, to read with no lock held.
+    pub(crate) fn get(&self) -> Watch<TurnSite> {
+        self.lock().clone()
+    }
+
+    /// A copy of what it watches.
+    fn thresholds(&self) -> Thresholds<TurnSite> {
+        self.lock().thresholds().clone()
+    }
+
+    /// Change the watch: `f` runs on a copy with no lock held, and the copy
+    /// is put back. When `f` panics, the watch stays as it was.
+    pub(crate) fn update<R>(&self, f: impl FnOnce(&mut Watch<TurnSite>) -> R) -> R {
+        let mut watch = self.get();
+        let out = f(&mut watch);
+        *self.lock() = watch;
+        out
+    }
+
+    /// Held only to clone or swap the watch, so a poisoned one is a bug here.
+    fn lock(&self) -> MutexGuard<'_, Watch<TurnSite>> {
+        self.0
+            .lock()
+            .expect("the agent's thresholds' lock poisoned")
+    }
+}
+
 /// One turn's side of its thresholds.
+#[derive(Default)]
 pub(super) struct TurnThresholds {
     /// The agent's watch, across turns; a guard of its own unless the agent
     /// hands it one.
-    watch: Arc<Mutex<Watch<TurnSite>>>,
+    watch: SharedWatch,
     /// What the last model call sent: the context's size.
     pub(super) context: u64,
     /// The turn has said it is winding down: once a turn.
@@ -31,17 +76,6 @@ pub(super) struct TurnThresholds {
     /// The turn's spend as its tools see it: the loop's when the tools of the
     /// last answer started, plus what each of them spent since.
     spent: Arc<Mutex<Usage>>,
-}
-
-impl Default for TurnThresholds {
-    fn default() -> Self {
-        Self {
-            watch: Arc::new(Mutex::new(Watch::default())),
-            context: 0,
-            winding: false,
-            spent: Arc::default(),
-        }
-    }
 }
 
 /// A fired threshold as a durable run's record names it: its place in the
@@ -53,7 +87,7 @@ fn record_key(index: usize, t: &dyn Threshold) -> String {
 impl TurnThresholds {
     /// The thresholds that have fired, as a durable run records them.
     pub(super) fn fired_keys(&self) -> Vec<String> {
-        let watch = self.watch.lock().unwrap();
+        let watch = self.watch.get();
         let fired = watch.fired().enumerate().filter(|(_, (_, fired))| *fired);
         fired.map(|(i, (t, _))| record_key(i, t.as_ref())).collect()
     }
@@ -63,17 +97,21 @@ impl TurnThresholds {
     /// down does not say it twice. A key naming no threshold in this list
     /// (the host changed it) is skipped.
     pub(super) fn restore_fired(&mut self, keys: &[String]) {
-        let mut watch = self.watch.lock().unwrap();
-        let named: Vec<(usize, Action)> = watch
-            .fired()
-            .enumerate()
-            .filter(|(i, (t, _))| keys.contains(&record_key(*i, t.as_ref())))
-            .map(|(i, (t, _))| (i, t.action()))
-            .collect();
-        for (i, action) in named {
-            watch.set_fired(i);
-            self.winding |= action == Action::WindDown;
-        }
+        let winding = self.watch.update(|watch| {
+            let named: Vec<(usize, Action)> = watch
+                .fired()
+                .enumerate()
+                .filter(|(i, (t, _))| keys.contains(&record_key(*i, t.as_ref())))
+                .map(|(i, (t, _))| (i, t.action()))
+                .collect();
+            let mut winding = false;
+            for (i, action) in named {
+                watch.set_fired(i);
+                winding |= action == Action::WindDown;
+            }
+            winding
+        });
+        self.winding |= winding;
     }
 
     /// A tool answered: its own spend, and a subagent's, count from now on.
@@ -153,11 +191,7 @@ fn conversation(ledger: Option<&Ledger>) -> Option<[Reading; 2]> {
 impl TurnGuard {
     /// This turn checks the agent's thresholds (`watch`); the context held
     /// `context` tokens when it started.
-    pub(crate) fn with_thresholds(
-        mut self,
-        watch: Arc<Mutex<Watch<TurnSite>>>,
-        context: u64,
-    ) -> Self {
+    pub(crate) fn with_thresholds(mut self, watch: SharedWatch, context: u64) -> Self {
         self.turn.watch = watch;
         self.turn.context = context;
         self
@@ -177,8 +211,9 @@ impl TurnGuard {
     /// The thresholds that take `action` and fire now.
     fn crossed(&self, usage: &Usage, caps: Option<&TurnCaps>, action: Action) -> Vec<Crossing> {
         let readings = self.readings(usage, caps);
-        let mut watch = self.turn.watch.lock().unwrap();
-        watch.check(|m| readings.read(m), action)
+        self.turn
+            .watch
+            .update(|watch| watch.check(|m| readings.read(m), action))
     }
 
     /// The reminders due now: the texts, then each closing once.
@@ -236,7 +271,7 @@ impl TurnGuard {
     /// they start, `caps` the turn's caps for them. Live: a wind-down
     /// threshold past its mark now, whether or not it fired.
     pub(crate) fn wind_down_watch(&self, usage: &Usage, caps: Option<TurnCaps>) -> WindDownWatch {
-        let thresholds = self.turn.watch.lock().unwrap().thresholds().clone();
+        let thresholds = self.turn.watch.thresholds();
         if !thresholds.iter().any(|t| t.action() == Action::WindDown) {
             return WindDownWatch::default();
         }

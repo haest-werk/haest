@@ -33,6 +33,7 @@ mod turn_site;
 use std::{collections::HashSet, time::Duration};
 
 use signature::signature;
+pub(crate) use turn_site::SharedWatch;
 
 use crate::{
     caps::{TurnCaps, request_too_big},
