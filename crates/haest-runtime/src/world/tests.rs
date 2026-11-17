@@ -141,6 +141,36 @@ async fn a_spill_dir_that_cannot_be_made_is_named_in_the_error() {
     );
 }
 
+/// A sandbox that does not open says which dir, through to the line the
+/// human reads.
+#[tokio::test]
+async fn a_sandbox_that_does_not_open_names_the_dir() {
+    let root = scratch("no-project");
+    let s = Settings {
+        cwd: root.join("no/such/project"),
+        ..settings()
+    };
+    let world = World::disk(ChildEnv::default());
+    let built = workspace_for(
+        &s,
+        &world,
+        &ChildEnv::default(),
+        &[],
+        &root.join("spill"),
+        Remedies::default(),
+    )
+    .await;
+    let _ = std::fs::remove_dir_all(&root);
+    let err = built.err().unwrap();
+    assert!(
+        matches!(&err, WorkspaceError::Sandbox(e) if e.path() == s.cwd),
+        "{err:?}"
+    );
+    let shown = report(&err);
+    let named = format!("opening {} for the sandbox: ", s.cwd.display());
+    assert!(shown.starts_with(&named), "{shown}");
+}
+
 /// Spilled output is file contents and command output: on the disk its dir
 /// is private (0700), as the session dir is, whichever workspace spills
 /// into it (the spill itself makes the dir only when it is missing).

@@ -80,6 +80,27 @@ async fn a_writable_dir_inside_the_project_writes_through_to_the_disk() {
     assert!(!dir.join("b.txt").exists());
 }
 
+/// A sandbox that cannot open says which dir: the project, or a mount.
+#[tokio::test]
+async fn a_dir_that_does_not_open_is_named_in_the_error() {
+    let (_t, dir) = tempdir();
+    let missing = dir.join("no-such-dir");
+    for mounts in [
+        SandboxMounts::new(&missing),
+        SandboxMounts::new(&dir).with_readable(&missing),
+        SandboxMounts::new(&dir).with_writable(&missing),
+    ] {
+        let err = SandboxWorkspace::open(mounts.clone())
+            .await
+            .expect_err("the dir does not exist");
+        let shown = err.to_string();
+        assert!(
+            shown.contains(missing.to_str().unwrap()),
+            "{mounts:?}: {shown}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn a_readable_dir_around_the_project_shows_its_other_files() {
     let (_t, home) = tempdir();

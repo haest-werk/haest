@@ -18,7 +18,7 @@ mod exec;
 mod mounts;
 mod xan;
 
-use std::{fmt, io, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use async_trait::async_trait;
 use haest_core::{
@@ -29,7 +29,7 @@ use haest_core::{
     workspace::{ChangeSetRef, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
 
-pub use mounts::SandboxMounts;
+pub use mounts::{OpenSandboxError, SandboxMounts};
 
 use crate::bridge::{BashkitFsOverHaest, HaestFsOverBashkit};
 use exec::Shell;
@@ -152,8 +152,8 @@ impl SandboxWorkspace {
     /// # Errors
     ///
     /// When the project or a mounted directory does not exist or cannot be
-    /// opened.
-    pub async fn open(mounts: SandboxMounts) -> io::Result<Self> {
+    /// opened: the [`OpenSandboxError`] names it.
+    pub async fn open(mounts: SandboxMounts) -> Result<Self, OpenSandboxError> {
         let changes = mounts::project_overlay(&mounts.cwd).await?;
         let shell_fs = mounts::sandbox_fs(&mounts, &changes).await?;
         let fs = FsRef::new(HaestFsOverBashkit::new(shell_fs.clone()));

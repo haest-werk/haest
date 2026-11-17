@@ -141,7 +141,7 @@ mod sandbox;
 
 pub use overlay::OverlayChanges;
 pub use real::{RealFs, RealWorkspace};
-pub use sandbox::{SandboxMounts, SandboxWorkspace};
+pub use sandbox::{OpenSandboxError, SandboxMounts, SandboxWorkspace};
 
 use haest_core::workspace::{EXIT_NOT_FOUND, ExecResult};
 

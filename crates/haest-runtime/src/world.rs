@@ -18,7 +18,7 @@ use crate::{
         core::remedy::Remedies,
         mcp::{McpHub, McpServerConfig, McpTransport},
         tools::{InboxRef, JobHub},
-        workspace::{RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace},
+        workspace::{OpenSandboxError, RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace},
     },
 };
 
@@ -156,9 +156,10 @@ pub enum WorkspaceError {
         #[source]
         source: io::Error,
     },
-    /// The sandbox did not open over the cwd and its mounts.
-    #[error("opening the sandbox")]
-    Sandbox(#[source] io::Error),
+    /// The sandbox did not open over the cwd and its mounts: the error names
+    /// the dir.
+    #[error(transparent)]
+    Sandbox(#[from] OpenSandboxError),
 }
 
 /// The spill dir on the disk, made private (0700) as the session dir is:
@@ -217,9 +218,7 @@ pub(crate) async fn workspace_for(
                     mounts = mounts.with_readable(dir.clone());
                 }
             }
-            SandboxWorkspace::open(mounts)
-                .await
-                .map_err(WorkspaceError::Sandbox)?
+            SandboxWorkspace::open(mounts).await?
         }
         // A mode added later runs shut until it is named here: no files, no shell.
         _ => return Ok(ShutWorkspace.into()),

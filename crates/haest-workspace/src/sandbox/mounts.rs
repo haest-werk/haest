@@ -2,7 +2,7 @@
 //! is on [`SandboxMounts`]).
 
 use std::{
-    io,
+    fmt, io,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -117,8 +117,59 @@ fn limits() -> FsLimits {
         .max_path_length(d.max_path_length)
 }
 
-async fn real_dir(dir: &Path, mode: RealFsMode) -> io::Result<Arc<dyn FileSystem>> {
-    Ok(Arc::new(PosixFs::new(RealFs::open(dir, mode).await?)))
+/// A directory of the sandbox's that did not open
+/// ([`SandboxWorkspace::open`](crate::SandboxWorkspace::open)): the project
+/// or a mount, named, with the I/O error as its [`source`](std::error::Error::source).
+#[derive(Debug)]
+pub struct OpenSandboxError {
+    path: PathBuf,
+    source: io::Error,
+}
+
+impl OpenSandboxError {
+    fn new(path: &Path, source: io::Error) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            source,
+        }
+    }
+
+    /// The directory that did not open.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// What opening it hit (`NotFound`, `PermissionDenied`, ...).
+    pub fn kind(&self) -> io::ErrorKind {
+        self.source.kind()
+    }
+}
+
+impl fmt::Display for OpenSandboxError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "opening {} for the sandbox", self.path.display())
+    }
+}
+
+impl std::error::Error for OpenSandboxError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+/// Of the same kind, the dir named: `?` in a function that returns an
+/// [`io::Result`].
+impl From<OpenSandboxError> for io::Error {
+    fn from(e: OpenSandboxError) -> Self {
+        io::Error::new(e.kind(), e)
+    }
+}
+
+/// `dir` from the real disk, the error naming it.
+async fn real_dir(dir: &Path, mode: RealFsMode) -> Result<Arc<dyn FileSystem>, OpenSandboxError> {
+    let opened = RealFs::open(dir, mode).await;
+    let fs = opened.map_err(|e| OpenSandboxError::new(dir, e))?;
+    Ok(Arc::new(PosixFs::new(fs)))
 }
 
 /// What bashkit seeds every fresh in-memory layer with -- an overlay's upper
@@ -126,7 +177,7 @@ async fn real_dir(dir: &Path, mode: RealFsMode) -> io::Result<Arc<dyn FileSystem
 const SEEDED: [&str; 3] = ["/dev", "/home", "/tmp"];
 
 /// The copy-on-write overlay of `cwd` and its change ledger.
-pub(crate) async fn project_overlay(cwd: &Path) -> io::Result<OverlayChanges> {
+pub(crate) async fn project_overlay(cwd: &Path) -> Result<OverlayChanges, OpenSandboxError> {
     let lower = real_dir(cwd, RealFsMode::ReadOnly).await?;
     let overlay = OverlayFs::with_limits(lower, limits());
     for dir in SEEDED {
@@ -141,7 +192,7 @@ pub(crate) async fn project_overlay(cwd: &Path) -> io::Result<OverlayChanges> {
 pub(crate) async fn sandbox_fs(
     m: &SandboxMounts,
     changes: &OverlayChanges,
-) -> io::Result<Arc<MountableFs>> {
+) -> Result<Arc<MountableFs>, OpenSandboxError> {
     let base = Arc::new(InMemoryFs::with_limits(limits()));
     let fs = Arc::new(MountableFs::new(base.clone()));
     for (point, role) in roles(m) {
@@ -154,7 +205,7 @@ pub(crate) async fn sandbox_fs(
         // `cd ..` walk to a mount the way they would on the real disk.
         base.add_dir(&point, 0o755);
         fs.mount(&point, mounted)
-            .map_err(crate::bridge::io_from_bashkit)?;
+            .map_err(|e| OpenSandboxError::new(&point, crate::bridge::io_from_bashkit(e)))?;
     }
     Ok(fs)
 }

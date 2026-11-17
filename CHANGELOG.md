@@ -1086,6 +1086,12 @@ Hosts write less (round two of the review, and what porting brain onto
 - `RealWorkspace`, `SandboxWorkspace` and `OverlayChanges` implement
   `Debug` (a sandbox shows its commands and the names of its variables,
   never their values).
+- `SandboxWorkspace::open` fails with an `OpenSandboxError`, which names
+  the dir that did not open (the project or a mount) and keeps the I/O
+  error as its source (breaking): `opening the sandbox: No such file or
+  directory` -> `opening /work/project for the sandbox: No such file or
+  directory`. `path()` and `kind()` read it, and `?` still turns it into
+  an `io::Error` of the same kind.
 
 ### haest-code
 
@@ -1379,6 +1385,10 @@ Hosts write less (round two of the review, and what porting brain onto
   `BuildOptions { resume, model_spec_given: true, effort_given: false }` ->
   `BuildOptions { resume, on_resume: OnResume { model: Prefer::Settings, effort: Prefer::Saved } }`.
   The session file is unchanged.
+- `WorkspaceError::Sandbox` holds haest-workspace's `OpenSandboxError`
+  (was an `io::Error`) and shows its message, so a sandbox that does not
+  open names the dir (breaking only for a `match` that read the
+  `io::Error`: `e.kind()` still works on it).
 
 ### haest-ts
 
