@@ -185,9 +185,12 @@ impl Attached {
         Self { task: Some(task) }
     }
 
-    /// Wait for it to end on its own: why it did.
+    /// Wait for it to end on its own: why it did. Given up on before it
+    /// resolves (raced against a timeout, its task aborted), it stops the
+    /// transport, as dropping the `Attached` does.
     pub async fn ended(mut self) -> Ended {
-        let Some(task) = self.task.take() else {
+        // Awaited in place: dropping this wait drops `self`, which stops it.
+        let Some(task) = self.task.as_mut() else {
             return Ended::Closed;
         };
         match task.await {

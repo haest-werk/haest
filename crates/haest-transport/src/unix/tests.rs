@@ -77,6 +77,27 @@ async fn the_dir_is_0700_the_socket_0600_and_the_discovery_file_says_where() {
     .await;
 }
 
+/// A host that gives up waiting for the transport to end (a timeout around
+/// `ended`) stops it, as dropping the `Attached` does: both files go.
+#[tokio::test]
+async fn giving_up_on_ended_detaches_the_transport() {
+    let dir = Dir::new("gave-up");
+    let (s, _) = session(&answers(&[]), hub());
+    let attached = UnixSocket::new(&dir.0)
+        .attach(s.clone(), Grant::watch(Origin::Agent))
+        .unwrap();
+    let (socket, file) = (dir.0.join("s1.sock"), dir.0.join("s1.json"));
+    assert!(socket.exists() && file.exists());
+
+    let waited = tokio::time::timeout(Duration::from_millis(50), attached.ended()).await;
+    assert!(waited.is_err(), "the conversation still runs: {waited:?}");
+    eventually("the files are removed", || {
+        !socket.exists() && !file.exists()
+    })
+    .await;
+    s.close().await;
+}
+
 #[tokio::test]
 async fn a_dir_that_was_open_is_made_private() {
     let dir = Dir::new("open");

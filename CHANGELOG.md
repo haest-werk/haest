@@ -2127,6 +2127,12 @@ against it; the wire JSON is unchanged):
   kept its socket open, streamed the conversation to the broker and pinged
   it until the conversation ended. A dropped `serve` now stops both, so a
   detached broker link closes its socket.
+- `Attached::ended` given up on (raced against a timeout, or its task
+  aborted) stops the transport, as dropping the `Attached` does. It took
+  the transport's task out before it waited, so a dropped wait left the
+  transport serving with nothing left to stop it, and the session handle
+  the transport holds kept the conversation running after the host
+  dropped its own: `Driven::close` never ran.
 
 ### haest-issues
 
