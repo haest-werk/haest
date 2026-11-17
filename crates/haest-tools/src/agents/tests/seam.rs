@@ -371,3 +371,37 @@ async fn the_run_a_start_returns_names_the_members_model_caps_and_deps() {
     // Main's two calls on the conversation's ledger, the member's on its own.
     assert!(close(r.parent.ledger.usd(), 2.0 * CALL_USD));
 }
+
+/// A host's `on_subagent` that panics on a loop event panics inside the
+/// member's turn, which ends it as crashed: its run's end is still heard.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_whose_parent_panics_on_a_loop_event_still_ends_its_run() {
+    let l = Arc::new(Lifecycle::default());
+    let host = super::fake::Host {
+        lifecycle: Some(l.clone()),
+        panic_on_loop: true,
+        ..super::fake::Host::default()
+    };
+    let r = Rig::with_host(
+        now(|_, _| say("x")),
+        now(|_, _| say("ran")),
+        one_at_a_time(),
+        host,
+    );
+
+    let out = r
+        .hub
+        .spawn(&AgentRef::main(), named("p"), &CancellationToken::new())
+        .await
+        .unwrap();
+
+    assert!(out.text.contains("crashed"), "{}", out.text);
+    let ends = l.ends();
+    assert_eq!(ends.len(), 1, "its run's end was heard");
+    assert!(
+        matches!(&ends[0].ending, Ending::Crashed(why) if why.contains("a host bug")),
+        "{:?}",
+        ends[0].ending
+    );
+    assert_eq!(r.hub.running(), Vec::<String>::new());
+}

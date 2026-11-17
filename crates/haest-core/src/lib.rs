@@ -211,6 +211,9 @@ pub mod __private {
 
     pub use crate::deferred_tools::split::{advertised_tools, callable_tools};
     pub use crate::expand::{expand_vars, is_var_name, unset_note};
+    /// How a refusal says the USD asked and what is left: haest-tools'
+    /// subagent budgets say it as the ledger does.
+    pub use crate::ledger::hold::{budget_left, usd_asked};
     /// The one rule for what a cost is: a tool that sums its inner calls'
     /// costs (haest-code's Code) adds only these, with `add_cost`.
     pub use crate::messages::usage::{add_cost, real_cost};

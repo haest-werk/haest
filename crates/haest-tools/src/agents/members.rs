@@ -118,7 +118,9 @@ impl Members {
                 max_depth: caps.max_depth,
             });
         }
-        let running = self.running().count();
+        // Every member whose turn has not ended runs: one StopAgent stopped
+        // too, until its turn ends (a tool that ignores its cancel).
+        let running = self.live.len();
         if running >= caps.max_concurrent {
             return Err(AgentError::TooMany {
                 running,
@@ -225,5 +227,33 @@ mod tests {
         members.leave(&names[1]);
         assert_eq!(live(&members).len(), before.len() - 1);
         assert!(!live(&members).contains(&names[1]));
+    }
+
+    /// A member StopAgent stopped runs until its turn ends (a tool that
+    /// ignores its cancel keeps it going), but it no longer counted toward
+    /// `max_concurrent`: one more started beside it.
+    #[test]
+    fn a_stopped_member_still_winding_down_counts_toward_max_concurrent() {
+        let caps = SubagentCaps {
+            max_concurrent: 1,
+            ..SubagentCaps::default()
+        };
+        let mut members = Members::default();
+        let first = members.reserve(&AgentRef::main(), &named("a"), &caps, "r");
+        let first = first.unwrap().me.name.clone();
+        members.get_mut(&first).unwrap().status = Status::Stopped;
+
+        let second = members.reserve(&AgentRef::main(), &named("b"), &caps, "r");
+
+        assert!(
+            matches!(second, Err(AgentError::TooMany { running: 1, max: 1 })),
+            "a second agent started while the stopped one still ran"
+        );
+        members.leave(&first);
+        assert!(
+            members
+                .reserve(&AgentRef::main(), &named("b"), &caps, "r")
+                .is_ok()
+        );
     }
 }

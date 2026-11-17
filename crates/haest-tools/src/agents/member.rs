@@ -195,10 +195,11 @@ pub trait MemberRun: Send + Sync {
     /// whoever reads a background answer).
     ///
     /// Called at most once: once for every run that ends, a run whose
-    /// caller gave up included ([`Ending::CallerCancelled`]). Not called
-    /// when the run never ends: a host callback under it
-    /// ([`SubagentParent::on_subagent`](super::SubagentParent::on_subagent),
-    /// [`on_activity`](super::SubagentParent::on_activity)) panicked, or the
+    /// caller gave up included ([`Ending::CallerCancelled`]), and one whose
+    /// [`on_subagent`](super::SubagentParent::on_subagent) panicked on a
+    /// loop event ([`Ending::Crashed`]). Not called when the run never ends:
+    /// `on_subagent` panicked on its `Started` or `Stopped` event,
+    /// [`on_activity`](super::SubagentParent::on_activity) panicked, or the
     /// runtime shut down. Its seat is given back either way.
     async fn end(self: Box<Self>, end: MemberEnd) {
         let _ = end;

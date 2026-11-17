@@ -76,6 +76,8 @@ pub(super) struct Host {
     pub lifecycle: Option<Arc<Lifecycle>>,
     /// Its own note for a member; None = haest's.
     pub note: Option<fn(&MemberStart) -> String>,
+    /// Its `on_subagent` panics on a member's loop event (a host bug).
+    pub panic_on_loop: bool,
 }
 
 pub(super) struct FakeParent {
@@ -203,6 +205,9 @@ impl SubagentParent for FakeParent {
         }
     }
     fn on_subagent(&self, id: &str, event: SubagentEvent) {
+        if self.host.panic_on_loop && matches!(event, SubagentEvent::Loop(_)) {
+            panic!("a host bug while showing a loop event");
+        }
         let kind = match event {
             SubagentEvent::Started { .. } => "started",
             SubagentEvent::Loop(LoopEvent::Guard { .. }) => "guard",

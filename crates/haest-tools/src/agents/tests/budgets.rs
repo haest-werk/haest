@@ -133,6 +133,36 @@ fn a_refused_budget_says_both_amounts_in_cents() {
     );
 }
 
+/// What was left was rounded to the nearest cent, so it could round up to
+/// the amount asked: "a subagent's $0.10 does not fit: $0.10 is left".
+#[test]
+fn a_refused_budget_says_what_is_left_rounded_down_and_a_tiny_ask_as_it_is() {
+    let text = |asked: f64, available: f64| AgentError::OverBudget { asked, available }.to_string();
+    let left =
+        |usd: &str| format!("{usd} is left of the conversation's budget (max_conversation_usd)");
+    assert_eq!(
+        text(0.1, 0.0999),
+        format!(
+            "a subagent's $0.10 does not fit: {}; ask for less",
+            left("$0.09")
+        )
+    );
+    assert_eq!(
+        text(0.004, 0.003),
+        format!(
+            "a subagent's $0.004 does not fit: {}; ask for less",
+            left("$0.00")
+        )
+    );
+    assert_eq!(
+        text(0.0, 0.0999),
+        format!(
+            "a subagent with no spend cap does not fit: {}; give it a budget of at most that",
+            left("$0.09")
+        )
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_hold_lasts_while_its_child_runs_and_at_its_end_only_the_real_spend_stays() {
     let release = CancellationToken::new();

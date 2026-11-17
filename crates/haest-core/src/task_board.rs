@@ -247,14 +247,16 @@ impl TaskBoard {
     /// does not exist, or when the task would block itself. Every check runs
     /// before the first change: a refused patch changes nothing and fires
     /// nothing.
-    pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Option<Task>, TaskError> {
+    pub fn update(&self, id: &str, mut patch: TaskPatch) -> Result<Option<Task>, TaskError> {
         let now = self.now_ms();
+        let blocked_by = std::mem::take(&mut patch.add_blocked_by);
+        let blocks = std::mem::take(&mut patch.add_blocks);
         let out = {
             let mut s = self.state();
             let at = s.find(id)?;
             // Every refusal comes before the first change: an error after it would
             // leave an unsaved, unpublished edit.
-            for other in patch.add_blocked_by.iter().chain(&patch.add_blocks) {
+            for other in blocked_by.iter().chain(&blocks) {
                 s.find(other)?;
                 if other == id {
                     return Err(TaskError::BlocksItself { id: id.into() });
@@ -264,11 +266,12 @@ impl TaskBoard {
                 s.remove(id);
                 None
             } else {
-                set_fields(&mut s.tasks[at], &patch, now);
-                for b in &patch.add_blocked_by {
+                // The patch's text moves into the task.
+                set_fields(&mut s.tasks[at], patch, now);
+                for b in &blocked_by {
                     s.link(b, id)?;
                 }
-                for b in &patch.add_blocks {
+                for b in &blocks {
                     s.link(id, b)?;
                 }
                 Some(s.tasks[at].clone())
@@ -304,18 +307,18 @@ impl TaskBoard {
     }
 }
 
-fn set_fields(task: &mut Task, patch: &TaskPatch, now: u64) {
-    let set = |field: &mut Option<String>, v: &Option<String>| {
-        if let Some(v) = v {
-            *field = Some(v.clone());
+fn set_fields(task: &mut Task, patch: TaskPatch, now: u64) {
+    let set = |field: &mut Option<String>, v: Option<String>| {
+        if v.is_some() {
+            *field = v;
         }
     };
-    if let Some(s) = &patch.subject {
-        task.subject = s.clone();
+    if let Some(s) = patch.subject {
+        task.subject = s;
     }
-    set(&mut task.description, &patch.description);
-    set(&mut task.active_form, &patch.active_form);
-    set(&mut task.owner, &patch.owner);
+    set(&mut task.description, patch.description);
+    set(&mut task.active_form, patch.active_form);
+    set(&mut task.owner, patch.owner);
     if let Some(PatchStatus::Set(status)) = patch.status {
         task.status = status;
     }

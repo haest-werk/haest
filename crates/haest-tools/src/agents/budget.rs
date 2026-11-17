@@ -7,6 +7,7 @@
 use std::time::Duration;
 
 use haest_core::{
+    __private::{budget_left, usd_asked},
     ledger::{Hold, Ledger},
     tool::{JsonMap, ToolError},
 };
@@ -196,16 +197,19 @@ pub(super) fn hold(
         })
 }
 
-/// [`AgentError::OverBudget`]'s text.
+/// [`AgentError::OverBudget`]'s text: the amounts as the ledger's own
+/// refusal says them (what is left rounded down, since that is what fits).
 pub(super) fn over_budget(asked: f64, available: f64) -> String {
-    let left =
-        format!("${available:.2} is left of the conversation's budget (max_conversation_usd)");
+    let left = budget_left(available);
     if asked <= 0.0 {
         format!(
             "a subagent with no spend cap does not fit: {left}; give it a budget of at most that"
         )
     } else {
-        format!("a subagent's ${asked:.2} does not fit: {left}; ask for less")
+        format!(
+            "a subagent's {} does not fit: {left}; ask for less",
+            usd_asked(asked)
+        )
     }
 }
 

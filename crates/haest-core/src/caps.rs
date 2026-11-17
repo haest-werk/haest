@@ -128,7 +128,8 @@ crate::plug_ref! {
 pub struct SubagentCaps {
     /// How deep agents may nest (main = 0).
     pub max_depth: u32,
-    /// Subagents running at once, across the tree.
+    /// Subagents running at once, across the tree: one that was stopped
+    /// counts until its turn has ended.
     pub max_concurrent: usize,
     /// One subagent's spend.
     pub usd: f64,

@@ -94,11 +94,28 @@ impl fmt::Debug for Hold {
     }
 }
 
+/// An amount asked of the budget, as a refusal says it: in cents, and one
+/// under a cent as it is (`$0.004`), never `$0.00`.
+pub fn usd_asked(asked: f64) -> String {
+    if asked > 0.0 && asked < 0.01 {
+        format!("${asked}")
+    } else {
+        format!("${asked:.2}")
+    }
+}
+
+/// What is left of the conversation's budget, as a refusal says it: rounded
+/// DOWN to the cent, since that is what fits (to the nearest, it could read
+/// as the amount just refused). Float dust under a millionth of a cent is no
+/// cent short.
+pub fn budget_left(available: f64) -> String {
+    let cents = (available * 100.0 + 1e-6).floor() / 100.0;
+    format!("${cents:.2} is left of the conversation's budget (max_conversation_usd)")
+}
+
 /// A hold that does not fit what is left of the conversation's budget.
 #[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
-#[error(
-    "${asked:.2} does not fit: ${available:.2} is left of the conversation's budget (max_conversation_usd)"
-)]
+#[error("{} does not fit: {}", usd_asked(*asked), budget_left(*available))]
 pub struct NotAvailable {
     /// The USD asked for.
     pub asked: f64,
@@ -234,6 +251,27 @@ mod tests {
         assert_eq!(
             refused.to_string(),
             "$0.30 does not fit: $0.20 is left of the conversation's budget (max_conversation_usd)"
+        );
+    }
+
+    /// What was left was rounded to the nearest cent, so it could round up
+    /// to the amount asked: "$0.10 does not fit: $0.10 is left".
+    #[test]
+    fn a_refusal_says_what_is_left_rounded_down_and_a_tiny_ask_as_it_is() {
+        let text = |asked: f64, available: f64| NotAvailable { asked, available }.to_string();
+        let left = "is left of the conversation's budget (max_conversation_usd)";
+        assert_eq!(
+            text(0.1, 0.0999),
+            format!("$0.10 does not fit: $0.09 {left}")
+        );
+        assert_eq!(
+            text(0.004, 0.003),
+            format!("$0.004 does not fit: $0.00 {left}")
+        );
+        // Float dust under a cent costs no cent: 0.7 - 0.3 is 0.39999999999999997.
+        assert_eq!(
+            text(0.5, 0.7 - 0.3),
+            format!("$0.50 does not fit: $0.40 {left}")
         );
     }
 

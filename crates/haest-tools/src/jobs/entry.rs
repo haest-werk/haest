@@ -73,12 +73,17 @@ impl Jobs {
         self.entries.iter_mut().find(|e| e.job.id == id)
     }
 
-    pub(super) fn add(&mut self, command: &str, description: &str, stop: CancellationToken) -> Job {
+    pub(super) fn add(
+        &mut self,
+        command: String,
+        description: String,
+        stop: CancellationToken,
+    ) -> Job {
         self.next += 1;
         let job = Job {
             id: format!("b{}", self.next),
-            command: command.into(),
-            description: description.into(),
+            command,
+            description,
             status: JobStatus::Running,
             exit_code: None,
             started: Instant::now(),

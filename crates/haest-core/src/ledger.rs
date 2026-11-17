@@ -27,7 +27,7 @@
 //! its thresholds, by default the warning at 80% of each cap
 //! ([`Ledger::set_thresholds`] changes them).
 
-mod hold;
+pub(crate) mod hold;
 
 use std::{
     fmt,

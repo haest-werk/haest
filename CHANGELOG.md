@@ -660,7 +660,11 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   ledger that made it and no other, however its spender ends (cancelled on
   the way too); it is `#[must_use]`. Holds live in memory: a snapshot does
   not save them, a restore keeps the ones in flight. A refusal says both
-  amounts in cents ("$0.30 does not fit: $0.20 is left ..."). A hold
+  amounts in cents ("$0.30 does not fit: $0.20 is left ..."), what is
+  left rounded down, since that is what fits (to the nearest cent it
+  could read "$0.10 does not fit: $0.10 is left"), and an ask under a
+  cent as it is ("$0.004"); haest-tools' `AgentError::OverBudget` says
+  them the same way. A hold
   past `f64::MAX` holds `f64::MAX`, what is held stops there, and dropping
   one hold gives back only its own amount, however large the others are.
 - `caps::SubagentCaps` gains `budgets: bool` (default false); a literal
@@ -1382,6 +1386,10 @@ Hosts write less (round two of the review, and what porting brain onto
 - Fixed: GenerateImage passed on an Image API `usage.cost` below 0 as the
   call's cost, so the model read that the picture cost `$-1.500` and the
   call carried a refund. Such a cost is now no price, as the loop counts it.
+- Fixed: a subagent StopAgent stopped no longer counted toward
+  `max_concurrent`, though it runs until its turn ends (a tool that ignores
+  its cancel keeps it going), so one more could start beside it. It counts
+  until its turn has ended.
 
 ### haest-workspace
 

@@ -44,4 +44,10 @@ impl NewJob {
     pub fn description(&self) -> &str {
         self.description.as_deref().unwrap_or(&self.command)
     }
+
+    /// Its command and its description, moved out.
+    pub(super) fn into_parts(self) -> (String, String) {
+        let description = self.description.unwrap_or_else(|| self.command.clone());
+        (self.command, description)
+    }
 }

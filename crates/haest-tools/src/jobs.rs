@@ -287,7 +287,7 @@ impl JobHub {
     /// [`JobError::TooMany`] when [`MAX_JOBS`] already run,
     /// [`JobError::NoRuntime`] when there is no tokio runtime to run the job on.
     pub fn start(&self, job: NewJob, ctx: &ToolContext) -> Result<Job, JobError> {
-        let (command, description) = (job.command(), job.description());
+        let (command, description) = job.into_parts();
         let rt =
             tokio::runtime::Handle::try_current().map_err(|_no_runtime| JobError::NoRuntime)?;
         let shared = self.shared();
