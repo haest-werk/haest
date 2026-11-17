@@ -243,7 +243,7 @@ fn rig(main: Vec<Vec<AssistantPart>>, sub: Vec<Vec<AssistantPart>>, sub_permits:
     let hub = SubagentHub::new(app.clone(), SubagentCaps::default());
     let mut tools = app.base_tools();
     tools.extend(hub.tools_for(&AgentRef::main()));
-    let deps = AgentDeps::from_shared(app.deps(), tools, app.prompt());
+    let deps = AgentDeps::new(app.deps(), tools, app.prompt());
     Rig {
         agent: Agent::new(deps, AgentOptions::new(MODEL)),
         app,
@@ -270,8 +270,7 @@ impl Rig {
     /// The agent again, over the host's deps as `edit` changes them: the
     /// base tools, the host's prompt, what every agent shares.
     fn reseat(&mut self, edit: impl FnOnce(AgentDeps) -> AgentDeps) {
-        let deps =
-            AgentDeps::from_shared(self.app.deps(), self.app.base_tools(), self.app.prompt());
+        let deps = AgentDeps::new(self.app.deps(), self.app.base_tools(), self.app.prompt());
         self.agent = Agent::new(edit(deps), AgentOptions::new(MODEL));
     }
 

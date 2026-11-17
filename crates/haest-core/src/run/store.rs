@@ -99,15 +99,15 @@ fn lock(logs: &Logs) -> MutexGuard<'_, HashMap<RunKey, Vec<String>>> {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::run::RunError> {
 /// use haest_core::{
-///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tools,
+///     Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, Tools,
 ///     run::{MemoryRunStore, RunKey, Served},
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 ///
 /// let store = MemoryRunStore::new();
 /// let provider = ScriptedProvider::new([text_answer("done")]);
-/// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace)
-///     .with_run_store(store.clone());
+/// let shared = SharedDeps::new(provider.resolver(), "/", ShutWorkspace);
+/// let deps = AgentDeps::new(shared, Tools::new(), "").with_run_store(store.clone());
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 /// let key = RunKey::new("job-1");
 ///

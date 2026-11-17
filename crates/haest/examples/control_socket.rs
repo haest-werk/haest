@@ -19,7 +19,7 @@ use haest::BoxError;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), BoxError> {
     use haest::{
-        Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tools,
+        Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, Tools,
         core::testing::{ScriptedProvider, text_answer},
         session::{Body, Hub, start},
         transport::{Grant, Transport, UnixSocket, connect_session, running_sessions},
@@ -27,7 +27,8 @@ async fn main() -> Result<(), BoxError> {
     };
 
     let model = ScriptedProvider::new([text_answer("Noted.")]);
-    let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
+    let shared = SharedDeps::new(model.resolver(), "/", ShutWorkspace);
+    let deps = AgentDeps::new(shared, Tools::new(), "");
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let session = start(agent, Hub::new("example-1"));
 

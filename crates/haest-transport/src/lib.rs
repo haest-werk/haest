@@ -44,7 +44,7 @@
 //! in-memory ones, a watch-only peer that asks for a turn.
 //!
 //! ```
-//! use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::ScriptedProvider};
+//! use haest_core::{Agent, AgentDeps, AgentOptions, SharedDeps, ShutWorkspace, Tools, testing::ScriptedProvider};
 //! use haest_session::{Hub, start};
 //! use haest_transport::{Grant, LineSink, LineSource, Start, TransportError, serve};
 //! use haest_wire::Origin;
@@ -69,7 +69,7 @@
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), haest_core::BoxError> {
 //! let model = ScriptedProvider::new([]);
-//! let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
+//! let deps = AgentDeps::new(SharedDeps::new(model.resolver(), "/", ShutWorkspace), Tools::new(), "");
 //! let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 //!
 //! let asks = Lines(vec![r#"{"v":1,"id":"r1","type":"turn","text":"hi"}"#.into()]);

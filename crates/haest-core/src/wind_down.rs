@@ -48,8 +48,8 @@ pub use watch::WindDownWatch;
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::BoxError> {
 /// use haest_core::{
-///     Agent, AgentDeps, AgentOptions, JsonMap, LoopEvent, ShutWorkspace, Tool, ToolContext,
-///     ToolError, ToolOutput, Tools, Usage,
+///     Agent, AgentDeps, AgentOptions, JsonMap, LoopEvent, SharedDeps, ShutWorkspace, Tool,
+///     ToolContext, ToolError, ToolOutput, Tools, Usage,
 ///     caps::ConversationCaps,
 ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
 ///     testing::{ScriptedProvider, text_answer, tool_answer},
@@ -86,7 +86,8 @@ pub use watch::WindDownWatch;
 /// let provider = ScriptedProvider::new([asks, text_answer("Here is what I have.")]);
 /// let budget = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
 /// let ledger = Ledger::new(budget, Quiet);
-/// let deps = AgentDeps::new(provider.resolver(), Tools::new().with(Fan), "", "/", ShutWorkspace)
+/// let shared = SharedDeps::new(provider.resolver(), "/", ShutWorkspace);
+/// let deps = AgentDeps::new(shared, Tools::new().with(Fan), "")
 ///     .with_ledger(ledger.clone())
 ///     .with_thresholds(Thresholds::default().wind_down(WindDown::at(0.8)?));
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));

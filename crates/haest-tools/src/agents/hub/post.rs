@@ -2,15 +2,16 @@
 //! background answer on its way back.
 
 use super::SubagentHub;
-use crate::agents::{AgentError, MAIN_AGENT, Sender, SubagentEvent, members::Status};
+use crate::agents::{AgentError, AgentMessage, MAIN_AGENT, Sender, SubagentEvent, members::Status};
 
 impl SubagentHub {
-    /// Hand `text` from `sender` to `to`, main or a running subagent, and say
-    /// what to tell the sender. A subagent reads it at its next step; one for
-    /// main goes to the parent's [`Inbox::submit`](crate::Inbox::submit). The
-    /// receiver reads who wrote above the text: SendMessage is
-    /// [`Sender::Agent`] ([`AgentDirectory::deliver`](super::AgentDirectory::deliver)),
-    /// and a host lets the person write to a subagent with [`Sender::Person`].
+    /// Hand `message` to the agent it is for, main or a running subagent,
+    /// and say what to tell its sender. A subagent reads it at its next
+    /// step; one for main goes to the parent's
+    /// [`Inbox::submit`](crate::Inbox::submit). The receiver reads who wrote
+    /// above the text: SendMessage sends from [`Sender::Agent`]
+    /// ([`AgentDirectory::deliver`](super::AgentDirectory::deliver)), and a
+    /// host lets the person write with [`Sender::Person`].
     ///
     /// Every delivery tells the parent ([`SubagentEvent::Message`]); a
     /// subagent that has finished, or never ran here, refuses the message and
@@ -20,11 +21,12 @@ impl SubagentHub {
     ///
     /// [`AgentError::Finished`] or [`AgentError::UnknownAgent`], with who a
     /// message can reach now.
-    pub fn deliver_as(&self, sender: Sender, to: &str, text: &str) -> Result<String, AgentError> {
-        let body = format!("{}\n\n{text}", sender.header());
+    pub fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
+        let AgentMessage { from, to, text } = &message;
+        let body = format!("{}\n\n{text}", from.header());
         let (id, said) = if to == MAIN_AGENT {
             self.0.parent.submit(body);
-            (self.id_of(&sender), "Delivered to main.".to_string())
+            (self.id_of(from), "Delivered to main.".to_string())
         } else {
             let mut members = self.lock_members();
             let Some(m) = members.get_mut(to).filter(|m| m.status == Status::Running) else {
@@ -39,12 +41,9 @@ impl SubagentHub {
             let said = format!("Delivered to \"{to}\"; it reads it at its next step.");
             (m.id.clone(), said)
         };
-        let event = SubagentEvent::Message {
-            from: sender,
-            to: to.to_string(),
-            text: text.to_string(),
-        };
-        self.0.parent.on_subagent(&id, event);
+        self.0
+            .parent
+            .on_subagent(&id, SubagentEvent::Message(message));
         Ok(said)
     }
 

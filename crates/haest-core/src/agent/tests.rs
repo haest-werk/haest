@@ -196,13 +196,8 @@ async fn an_unknown_provider_ends_the_turn_as_an_error_not_a_panic() {
             known: Vec::new(),
         })
     };
-    let deps = AgentDeps::new(
-        resolve,
-        crate::tool::Tools::new(),
-        "",
-        "/tmp",
-        ShutWorkspace,
-    );
+    let shared = crate::SharedDeps::new(resolve, "/tmp", ShutWorkspace);
+    let deps = AgentDeps::new(shared, crate::tool::Tools::new(), "");
     let mut agent = Agent::new(deps, AgentOptions::new("zzz:m"));
     let events = collect(&mut agent, "hi").await;
     let (stop, _, error) = end(&events);

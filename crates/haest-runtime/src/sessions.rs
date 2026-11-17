@@ -161,7 +161,7 @@ async fn newest_first(fs: &dyn Fs, dir: &Path) -> Vec<Entry> {
 /// let fs = FsRef::new(MemFs::new());
 /// // A session that started in /work: its header, and nothing asked yet.
 /// let session = JsonlSessionFile::new(fs.clone(), "/data", "s1")?;
-/// session.create("c1", "/work", 0).await?;
+/// session.create("c1", Path::new("/work"), 0).await?;
 ///
 /// let sessions = list_sessions(&*fs, &sessions_dir(Path::new("/data"))).await;
 /// assert_eq!(sessions.len(), 1);

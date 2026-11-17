@@ -40,7 +40,7 @@ pub struct DrivenStatus {
 /// ```
 /// use haest_core::{
 ///     Agent, AgentControl, AgentDeps, AgentOptions, BoxError, Effort, EventSink, Message,
-///     ShutWorkspace, Tools, TurnOutcome,
+///     SharedDeps, ShutWorkspace, Tools, TurnOutcome,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 /// use haest_session::{Driven, DrivenStatus, Hub, Input, start};
@@ -79,7 +79,7 @@ pub struct DrivenStatus {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_session::SessionError> {
 /// let model = ScriptedProvider::new([text_answer("noted")]);
-/// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
+/// let deps = AgentDeps::new(SharedDeps::new(model.resolver(), "/", ShutWorkspace), Tools::new(), "");
 /// let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 /// let session = start(Noted(agent), Hub::new("s1"));
 ///

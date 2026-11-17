@@ -21,7 +21,7 @@ use haest_core::{caps::SubagentCaps, wind_down::WindingDown};
 use tokio_util::sync::CancellationToken;
 
 pub use budget::SubagentBudget;
-pub use events::{Sender, SubagentEvent};
+pub use events::{AgentMessage, Sender, SubagentEvent};
 pub use hub::SubagentHub;
 pub use member::{Ending, Member, MemberCaps, MemberEnd, MemberRun, MemberStart, Spend};
 pub use parent::{SubagentParent, SubagentParentRef};
@@ -281,8 +281,8 @@ pub struct SpawnOutcome {
 /// use async_trait::async_trait;
 /// use haest_core::{tool::{JsonMap, ToolContext}, workspace::ShutWorkspace};
 /// use haest_tools::{
-///     AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
-///     agent_tools,
+///     AgentDirectory, AgentError, AgentMessage, AgentRef, AgentToolOptions, SpawnInput,
+///     SpawnOutcome, agent_tools,
 /// };
 /// use serde_json::json;
 /// use tokio_util::sync::CancellationToken;
@@ -301,8 +301,8 @@ pub struct SpawnOutcome {
 ///         let text = format!("{} asked: {}", from.name, input.description);
 ///         Ok(SpawnOutcome { text, cost_usd: 0.01 })
 ///     }
-///     fn deliver(&self, _from: &str, to: &str, _text: &str) -> Result<String, AgentError> {
-///         Err(AgentError::UnknownAgent { name: to.into(), running: vec!["main".into()] })
+///     fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
+///         Err(AgentError::UnknownAgent { name: message.to, running: vec!["main".into()] })
 ///     }
 ///     fn stop(&self, _name: &str) -> bool {
 ///         false
@@ -333,15 +333,16 @@ pub trait AgentDirectory: Send + Sync {
         input: SpawnInput,
         cancel: &CancellationToken,
     ) -> Result<SpawnOutcome, AgentError>;
-    /// SendMessage: hand `text` from agent `from` to agent `to`, and say what
-    /// to tell the sender. The SendMessage tool refuses `to == from` itself.
+    /// SendMessage: hand `message` to the agent it is for, and say what to
+    /// tell its sender ([`Sender::Agent`], the agent that called the tool).
+    /// The SendMessage tool refuses a message to its own sender itself.
     ///
     /// # Errors
     ///
-    /// Why `to` cannot take the message, which the sender reads: the
-    /// [`SubagentHub`]'s are [`AgentError::UnknownAgent`] and
+    /// Why the agent it is for cannot take the message, which the sender
+    /// reads: the [`SubagentHub`]'s are [`AgentError::UnknownAgent`] and
     /// [`AgentError::Finished`].
-    fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError>;
+    fn deliver(&self, message: AgentMessage) -> Result<String, AgentError>;
     /// StopAgent: stop the agent `name`; false when it is not running.
     fn stop(&self, name: &str) -> bool;
 }

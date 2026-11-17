@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 
 use crate::{
     canonical::pick,
-    jobs::{JobError, JobHub},
+    jobs::{JobError, JobHub, NewJob},
 };
 
 const MIN_TIMEOUT: Duration = Duration::from_secs(1);
@@ -208,9 +208,12 @@ fn run_in_background(
     input: &JsonMap,
     ctx: &ToolContext,
 ) -> Result<ToolOutput, ToolError> {
-    let description = opt_str(input, "description")?.unwrap_or(command);
+    let mut job = NewJob::new(command);
+    if let Some(description) = opt_str(input, "description")? {
+        job = job.with_description(description);
+    }
     let job = jobs
-        .start(command, description, ctx)
+        .start(job, ctx)
         .map_err(|e: JobError| ToolError::Failed(e.to_string()))?;
     Ok(ToolOutput::text(format!(
         "Started background job {id}. Read its output with BashOutput (bash_id \"{id}\"), stop it with KillShell. You will be told when it exits -- do not poll in a loop.",

@@ -14,7 +14,8 @@
 use std::sync::{Arc, Mutex};
 
 use haest::{
-    Agent, AgentDeps, AgentOptions, BoxError, CancellationToken, LoopEvent, ShutWorkspace, Usage,
+    Agent, AgentDeps, AgentOptions, BoxError, CancellationToken, LoopEvent, SharedDeps,
+    ShutWorkspace, Usage,
     core::{
         caps::{ConversationCap, ConversationCaps},
         ledger::{Ledger, LedgerHooks, LedgerSnapshot},
@@ -26,8 +27,8 @@ use haest::{
     serde_json::json,
     settings::Settings,
     tools::{
-        AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
-        agent_tools,
+        AgentDirectory, AgentError, AgentMessage, AgentRef, AgentToolOptions, SpawnInput,
+        SpawnOutcome, agent_tools,
     },
 };
 
@@ -51,8 +52,11 @@ impl AgentDirectory for Helpers {
             cost_usd: 0.0,
         })
     }
-    fn deliver(&self, _from: &str, to: &str, _text: &str) -> Result<String, AgentError> {
-        Err(AgentError::Refused(format!("\"{to}\" is not running")))
+    fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
+        Err(AgentError::Refused(format!(
+            "\"{}\" is not running",
+            message.to
+        )))
     }
     fn stop(&self, _name: &str) -> bool {
         false
@@ -119,17 +123,12 @@ async fn run() -> Result<(), BoxError> {
         max_unpriced_tokens: 0,
     };
     let ledger = Ledger::new(budget, Quiet).with_remedies(remedies.clone());
-    let deps = AgentDeps::new(
-        provider.resolver(),
-        tools,
-        "You lead a small team.",
-        "/work",
-        ShutWorkspace,
-    )
-    .with_ledger(ledger)
-    .with_remedies(remedies)
-    // Wind-down is a set of thresholds, beside the guard's nudges.
-    .with_thresholds(Thresholds::default().wind_down(settings.wind_down_at));
+    let shared = SharedDeps::new(provider.resolver(), "/work", ShutWorkspace);
+    let deps = AgentDeps::new(shared, tools, "You lead a small team.")
+        .with_ledger(ledger)
+        .with_remedies(remedies)
+        // Wind-down is a set of thresholds, beside the guard's nudges.
+        .with_thresholds(Thresholds::default().wind_down(settings.wind_down_at));
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:lead"));
 
     let (mut refused, mut notices) = (0, 0);

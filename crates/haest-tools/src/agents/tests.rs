@@ -269,7 +269,7 @@ async fn the_hub_is_a_handle_a_clone_runs_the_same_subagents_and_dropping_it_end
     assert_eq!(out.unwrap().text, "found");
     drop(other);
     // The original knows the clone's subagent: finished, not unknown.
-    let refused = r.hub.deliver("main", "looker", "more?");
+    let refused = r.deliver(support::agent("main"), "looker", "more?");
     assert!(
         matches!(refused, Err(AgentError::Finished { ref name, .. }) if name == "looker"),
         "{refused:?}"

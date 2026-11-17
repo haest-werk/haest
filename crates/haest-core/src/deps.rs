@@ -1,13 +1,13 @@
 //! What the loop needs ([`AgentDeps`]), the host's optional say in it
 //! ([`AgentHooks`]), and the clock its time cap reads ([`Clock`]).
 //!
-//! [`AgentDeps::new`] takes the five things every agent needs: a
-//! [`ModelResolver`](crate::ModelResolver), a [`ToolSource`](crate::ToolSource),
-//! a [`SystemPrompt`], a working directory and a
-//! [`Workspace`](crate::Workspace), each as a plain value. Everything else is
-//! off until the host sets it with a `with_*` setter
-//! ([`AgentDeps::with_hooks`], [`SharedDeps::with_ledger`], ...).
-//! [`Agent::new`](crate::Agent::new) takes the result.
+//! [`SharedDeps::new`] takes what every agent of a conversation runs on: a
+//! [`ModelResolver`](crate::ModelResolver), a working directory and a
+//! [`Workspace`](crate::Workspace). [`AgentDeps::new`] takes that and the
+//! agent's own [`ToolSource`](crate::ToolSource) and [`SystemPrompt`], each
+//! as a plain value. Everything else is off until the host sets it with a
+//! `with_*` setter ([`AgentDeps::with_hooks`], [`SharedDeps::with_ledger`],
+//! ...). [`Agent::new`](crate::Agent::new) takes the result.
 //!
 //! Every plug point is held by a handle named after its trait
 //! ([`AgentHooksRef`], [`SystemPromptRef`], ...): cheap to clone, and built
@@ -101,8 +101,8 @@ crate::plug_ref! {
 /// use std::sync::{Arc, Mutex};
 ///
 /// use haest_core::{
-///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace,
-///     StopReason, Tools, TurnCaps,
+///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, SharedDeps,
+///     ShutWorkspace, StopReason, Tools, TurnCaps,
 ///     testing::{ScriptedProvider, tool_answer},
 /// };
 ///
@@ -122,7 +122,8 @@ crate::plug_ref! {
 /// // The model calls a tool, which needs a second model call to see the result.
 /// let provider = ScriptedProvider::new([tool_answer(&[("c1", "Lookup", serde_json::json!({}))])]);
 /// let host = Host::default();
-/// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace)
+/// let shared = SharedDeps::new(provider.resolver(), "/", ShutWorkspace);
+/// let deps = AgentDeps::new(shared, Tools::new(), "")
 ///     .with_hooks(host.clone())
 ///     .with_turn_caps(TurnCaps { max_turn_steps: 1, ..TurnCaps::default() });
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));

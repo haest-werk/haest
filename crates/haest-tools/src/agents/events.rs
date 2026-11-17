@@ -1,9 +1,9 @@
-//! What the hub tells its parent about a subagent ([`SubagentEvent`]), and who
-//! wrote a message ([`Sender`]).
+//! What the hub tells its parent about a subagent ([`SubagentEvent`]), and a
+//! message between agents ([`AgentMessage`]) and who wrote it ([`Sender`]).
 
 use haest_core::{LoopEvent, tool::InnerCallEvent};
 
-/// Who wrote a message ([`SubagentHub::deliver_as`](super::SubagentHub::deliver_as)).
+/// Who wrote an [`AgentMessage`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Sender {
@@ -56,16 +56,30 @@ pub enum SubagentEvent {
         ok: bool,
     },
     /// A message reached an agent of the conversation: SendMessage, or the
-    /// person ([`SubagentHub::deliver_as`](super::SubagentHub::deliver_as)).
+    /// person ([`SubagentHub::deliver`](super::SubagentHub::deliver)).
     /// Keyed by the receiving subagent's id; one for main by the sending
     /// subagent's, and one from the person to main by [`MAIN_AGENT`](super::MAIN_AGENT).
     /// A refused message fires nothing.
-    Message {
-        /// Who wrote it.
-        from: Sender,
-        /// Its receiver: [`MAIN_AGENT`](super::MAIN_AGENT) or a subagent's name.
-        to: String,
-        /// What they wrote, without the header the receiver reads.
-        text: String,
-    },
+    Message(
+        /// The message as it was sent, without the header the receiver reads.
+        AgentMessage,
+    ),
+}
+
+/// A message for an agent of the conversation: who wrote it, which agent it
+/// is for, and what it says.
+///
+/// SendMessage hands one from the agent that called it to
+/// [`AgentDirectory::deliver`](super::AgentDirectory::deliver); a host lets
+/// the person write to an agent with one from [`Sender::Person`]
+/// ([`SubagentHub::deliver`](super::SubagentHub::deliver)). Its fields are
+/// named, so the sender and the receiver cannot trade places unseen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentMessage {
+    /// Who wrote it.
+    pub from: Sender,
+    /// The agent it is for: [`MAIN_AGENT`](super::MAIN_AGENT) or a subagent's name.
+    pub to: String,
+    /// What it says.
+    pub text: String,
 }

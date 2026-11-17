@@ -14,7 +14,7 @@ use haest_core::Tools;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AgentDirectory, AgentError, AgentRef, AgentToolOptions, MemberStart, Sender, SpawnInput,
+    AgentDirectory, AgentError, AgentMessage, AgentRef, AgentToolOptions, MemberStart, SpawnInput,
     SpawnOutcome, SubagentCaps, SubagentParentRef, budget,
     members::{Due, Members, Status, run_id},
     run::Run,
@@ -50,8 +50,8 @@ use settle::{Open, Work};
 ///   when main started it or its starter has finished.
 ///   [`answers_due`](Self::answers_due) counts the ones on their way;
 ///   [`settled`](Self::settled) waits until nothing is in flight.
-/// - A message ([`deliver`](Self::deliver), or the person's through
-///   [`deliver_as`](Self::deliver_as)) lands at the receiver's next step; one
+/// - A message ([`deliver`](Self::deliver), an agent's or the person's, as
+///   its [`Sender`](super::Sender) says) lands at the receiver's next step; one
 ///   for "main" goes to the parent's inbox. Messages that reach an agent after
 ///   it finished are appended to its answer, unread.
 /// - A finished agent's name stays taken, so a message for it is refused, never
@@ -290,18 +290,6 @@ impl SubagentHub {
         })
     }
 
-    /// SendMessage: hand `text` from agent `from` to agent `to`, and say what
-    /// to tell the sender: [`deliver_as`](Self::deliver_as) with
-    /// [`Sender::Agent`].
-    ///
-    /// # Errors
-    ///
-    /// [`AgentError::Finished`] or [`AgentError::UnknownAgent`], with who a
-    /// message can reach now.
-    pub fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError> {
-        self.deliver_as(Sender::Agent(from.to_string()), to, text)
-    }
-
     /// StopAgent: stop the subagent `name`; false when it is not running.
     pub fn stop(&self, name: &str) -> bool {
         let mut members = self.lock_members();
@@ -347,8 +335,8 @@ impl AgentDirectory for SubagentHub {
         SubagentHub::spawn(self, from, input, cancel).await
     }
 
-    fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError> {
-        SubagentHub::deliver(self, from, to, text)
+    fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
+        SubagentHub::deliver(self, message)
     }
 
     fn stop(&self, name: &str) -> bool {

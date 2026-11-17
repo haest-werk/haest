@@ -9,7 +9,10 @@ use std::{
 use async_trait::async_trait;
 use tokio::sync::{mpsc, oneshot};
 
-use super::{InvalidSessionId, ReplayedSession, SessionRecord, replay, session_file, sessions_dir};
+use super::{
+    InvalidSessionId, ReplayedSession, SessionHeader, SessionRecord, replay, session_file,
+    sessions_dir,
+};
 use crate::fs::{Fs, FsRef, ensure_dir};
 
 /// Where a conversation's records go. `append` is synchronous so the loop's
@@ -63,7 +66,7 @@ enum Job {
 /// # async fn main() -> Result<(), haest_core::BoxError> {
 /// let fs = FsRef::new(MemFs::new());
 /// let file = JsonlSessionFile::new(fs.clone(), "/data", "s1")?;
-/// file.create("conversation-1", "/project", 0).await?;
+/// file.create("conversation-1", Path::new("/project"), 0).await?;
 /// file.append(&SessionRecord::Message { t: 1, message: Message::user("hi") });
 /// file.flush().await;
 ///
@@ -158,6 +161,8 @@ impl JsonlSessionFile {
     /// exists. Resolves once the header is on disk, in order with the records
     /// appended before it; an error here is the caller's, not `on_error`'s.
     /// `created_ms`: milliseconds since the epoch, for the header's `createdAt`.
+    /// The header's ids are this file's session id and `conversation_id`
+    /// ([`SessionHeader`]).
     ///
     /// # Errors
     ///
@@ -166,10 +171,15 @@ impl JsonlSessionFile {
     pub async fn create(
         &self,
         conversation_id: &str,
-        cwd: &str,
+        cwd: &Path,
         created_ms: u64,
     ) -> io::Result<()> {
-        let header = SessionRecord::header(&self.session_id, conversation_id, cwd, created_ms);
+        let header = SessionRecord::from(SessionHeader {
+            session_id: self.session_id.clone(),
+            conversation_id: conversation_id.into(),
+            cwd: cwd.into(),
+            created_ms,
+        });
         let (done, outcome) = oneshot::channel();
         let stopped = || io::Error::other("the session writer has stopped");
         self.tx

@@ -87,7 +87,7 @@ fn texts(messages: &[Message]) -> Vec<String> {
 async fn round_trips_messages_and_config_through_a_private_jsonl_file() {
     let fs = Arc::new(ModeFs::default());
     let s = store(&fs);
-    s.create("c1", "/x", 0).await.unwrap();
+    s.create("c1", Path::new("/x"), 0).await.unwrap();
     s.append(&msg(1, "one"));
     s.append(&SessionRecord::Config {
         t: 2,
@@ -109,7 +109,7 @@ async fn round_trips_messages_and_config_through_a_private_jsonl_file() {
 async fn queued_appends_land_in_call_order_header_first() {
     let fs = Arc::new(ModeFs::default());
     let s = store(&fs);
-    s.create("c1", "/x", 0).await.unwrap();
+    s.create("c1", Path::new("/x"), 0).await.unwrap();
     for i in 0..50 {
         s.append(&msg(i, &i.to_string()));
     }
@@ -124,9 +124,9 @@ async fn queued_appends_land_in_call_order_header_first() {
 async fn create_leaves_an_existing_file_alone() {
     let fs = Arc::new(ModeFs::default());
     let s = store(&fs);
-    s.create("c1", "/x", 0).await.unwrap();
+    s.create("c1", Path::new("/x"), 0).await.unwrap();
     s.append(&msg(1, "kept"));
-    s.create("c2", "/y", 5).await.unwrap();
+    s.create("c2", Path::new("/y"), 5).await.unwrap();
     let back = s.load().await.unwrap();
     assert_eq!(texts(&back.messages), ["kept"]);
     let text = fs.read_to_string(s.path()).await.unwrap();
@@ -137,7 +137,7 @@ async fn create_leaves_an_existing_file_alone() {
 async fn compaction_keeps_the_tail_and_prefixes_the_summary() {
     let fs = Arc::new(ModeFs::default());
     let s = store(&fs);
-    s.create("c1", "/x", 0).await.unwrap();
+    s.create("c1", Path::new("/x"), 0).await.unwrap();
     for c in ["a", "b", "c", "d"] {
         s.append(&msg(0, c));
     }
@@ -156,7 +156,7 @@ async fn compaction_keeps_the_tail_and_prefixes_the_summary() {
 async fn a_torn_last_line_is_counted_not_fatal() {
     let fs = Arc::new(ModeFs::default());
     let s = store(&fs);
-    s.create("c1", "/x", 0).await.unwrap();
+    s.create("c1", Path::new("/x"), 0).await.unwrap();
     s.append(&msg(0, "ok"));
     s.flush().await;
     let mut torn = b"{\"type\":\"message\",\"t\":0,\"mess".to_vec();
@@ -259,7 +259,12 @@ fn a_foreign_record_is_skipped_and_a_broken_haest_record_is_corrupt() {
 fn records_serialize_in_the_typescript_shape() {
     let cases = [
         (
-            SessionRecord::header("abc", "c1", "/x", 0),
+            SessionRecord::from(SessionHeader {
+                session_id: "abc".into(),
+                conversation_id: "c1".into(),
+                cwd: "/x".into(),
+                created_ms: 0,
+            }),
             r#"{"type":"header","v":1,"sessionId":"abc","conversationId":"c1","cwd":"/x","createdAt":"1970-01-01T00:00:00.000Z"}"#,
         ),
         (

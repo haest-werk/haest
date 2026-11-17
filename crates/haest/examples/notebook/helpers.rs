@@ -19,8 +19,8 @@ use haest::{
     CancellationToken, Effort, SharedDeps, ToolRef, Tools, WorkspaceRef, async_trait,
     core::caps::SubagentCaps,
     tools::{
-        AgentError, AgentToolOptions, Ending, Inbox, Member, MemberCaps, MemberEnd, MemberRun,
-        MemberStart, Sender, SubagentEvent, SubagentParent,
+        AgentError, AgentMessage, AgentToolOptions, Ending, Inbox, Member, MemberCaps, MemberEnd,
+        MemberRun, MemberStart, SubagentEvent, SubagentParent,
     },
 };
 
@@ -91,16 +91,6 @@ impl Node {
     pub(crate) fn closed(&self) -> Vec<Closed> {
         locked(&self.closed).clone()
     }
-}
-
-/// A message to a helper or main, for the panel.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct AgentMessage {
-    pub from: String,
-    pub to: String,
-    pub text: String,
-    /// The person wrote it, not an agent.
-    pub person: bool,
 }
 
 /// What reaches main, and how.
@@ -218,21 +208,9 @@ impl SubagentParent for NodeHelpers {
     }
     /// The run's events: here only the panel's messages.
     fn on_subagent(&self, _id: &str, event: SubagentEvent) {
-        let SubagentEvent::Message { from, to, text } = event else {
-            return;
-        };
-        let (from, person) = match from {
-            Sender::Agent(name) => (name, false),
-            Sender::Person(name) => (name, true),
-            _ => return,
-        };
-        let message = AgentMessage {
-            from,
-            to,
-            text,
-            person,
-        };
-        locked(&self.panel.messages).push(message);
+        if let SubagentEvent::Message(message) = event {
+            locked(&self.panel.messages).push(message);
+        }
     }
 
     /// The node starts the helper's run, or says why not.

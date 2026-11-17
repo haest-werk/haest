@@ -262,7 +262,8 @@ async fn killing_at_exit_counts_the_jobs_and_waits_until_they_are_gone() {
     let env: ChildEnv = std::env::vars().collect();
     let ctx = haest_core::tool::ToolContext::new(std::env::temp_dir(), RealWorkspace::new(env));
     for _ in 0..2 {
-        jobs.start("sleep 30", "s", &ctx).unwrap();
+        jobs.start(haest_tools::NewJob::new("sleep 30"), &ctx)
+            .unwrap();
     }
     assert_eq!(kill_jobs(&jobs).await, 2);
     assert!(jobs.running().is_empty());

@@ -237,11 +237,6 @@ pub trait SubagentParent: Inbox {
     /// # }
     /// ```
     fn subagent_note(&self, member: &MemberStart) -> String {
-        subagent_note(
-            &member.name,
-            &member.parent,
-            &member.input.description,
-            &member.caps,
-        )
+        subagent_note(member)
     }
 }

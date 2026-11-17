@@ -101,7 +101,7 @@ impl SubagentHub {
             tools: source.clone(),
             note,
         };
-        let deps = AgentDeps::from_shared(base.with_turn_caps(child_caps), source, prompt);
+        let deps = AgentDeps::new(base.with_turn_caps(child_caps), source, prompt);
         let mut opts = AgentOptions::new(model_spec);
         opts.effort = effort;
         Agent::new(deps, opts)

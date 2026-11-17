@@ -44,8 +44,8 @@
 //!
 //! ```
 //! use haest_core::{
-//!     Agent, AgentDeps, AgentOptions, JsonMap, Message, ShutWorkspace, Tool, ToolContext,
-//!     ToolError, ToolOutput, Tools,
+//!     Agent, AgentDeps, AgentOptions, JsonMap, Message, SharedDeps, ShutWorkspace, Tool,
+//!     ToolContext, ToolError, ToolOutput, Tools,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //! };
 //! use haest_session::{Hub, Input, start};
@@ -74,7 +74,7 @@
 //!     text_answer("done, and noted"),
 //! ]);
 //! let tools = Tools::new().with(Wait(gate));
-//! let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
+//! let deps = AgentDeps::new(SharedDeps::new(model.resolver(), "/", ShutWorkspace), tools, "");
 //! let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 //!
 //! let first = tokio::spawn({

@@ -23,9 +23,12 @@
 //! Bash through [`BashOptions::with_jobs`](crate::BashOptions::with_jobs).
 
 mod entry;
+mod new_job;
 mod task;
 #[cfg(test)]
 pub(crate) mod tests;
+
+pub use new_job::NewJob;
 
 use std::{
     fmt,
@@ -190,7 +193,7 @@ pub struct Taken {
 ///
 /// ```
 /// use haest_core::{fs::MemFs, tool::ToolContext};
-/// use haest_tools::JobHub;
+/// use haest_tools::{JobHub, NewJob};
 /// use haest_workspace::SandboxWorkspace;
 /// use tokio::sync::mpsc::unbounded_channel;
 ///
@@ -200,7 +203,7 @@ pub struct Taken {
 /// let (inbox, mut notices) = unbounded_channel::<String>();
 /// let hub = JobHub::new(inbox);
 /// let ctx = ToolContext::new("/", SandboxWorkspace::over(MemFs::new()));
-/// let job = hub.start("echo built", "build", &ctx)?;
+/// let job = hub.start(NewJob::new("echo built").with_description("build"), &ctx)?;
 /// assert_eq!(job.id, "b1");
 ///
 /// // It exited on its own, so the model is told.
@@ -269,21 +272,16 @@ impl JobHub {
         jobs.get(id).map(|e| e.output.clone())
     }
 
-    /// Start `command` in the context's `cwd`, through its workspace
+    /// Start `job`'s command in the context's `cwd`, through its workspace
     /// ([`Workspace::shell_streaming`](haest_core::Workspace::shell_streaming));
-    /// it runs until it exits or is killed, with no timeout. `description`
-    /// says what it is for (Bash passes the call's own, else the command).
+    /// it runs until it exits or is killed, with no timeout.
     ///
     /// # Errors
     ///
     /// [`JobError::TooMany`] when [`MAX_JOBS`] already run,
     /// [`JobError::NoRuntime`] when there is no tokio runtime to run the job on.
-    pub fn start(
-        &self,
-        command: &str,
-        description: &str,
-        ctx: &ToolContext,
-    ) -> Result<Job, JobError> {
+    pub fn start(&self, job: NewJob, ctx: &ToolContext) -> Result<Job, JobError> {
+        let (command, description) = (job.command(), job.description());
         let rt =
             tokio::runtime::Handle::try_current().map_err(|_no_runtime| JobError::NoRuntime)?;
         let shared = self.shared();

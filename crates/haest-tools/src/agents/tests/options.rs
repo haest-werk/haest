@@ -42,7 +42,7 @@ impl AgentDirectory for Recording {
             cost_usd: 0.0,
         })
     }
-    fn deliver(&self, _from: &str, _to: &str, _text: &str) -> Result<String, AgentError> {
+    fn deliver(&self, _: crate::AgentMessage) -> Result<String, AgentError> {
         Ok(String::new())
     }
     fn stop(&self, _name: &str) -> bool {

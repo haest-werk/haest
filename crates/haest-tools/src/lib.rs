@@ -77,7 +77,7 @@
 //! unique name. A message lands at the receiver's next step boundary
 //! ([`AgentControl::steer`]); one for main goes to the host's [`Inbox`]. The
 //! person writes to a running subagent through the hub
-//! ([`SubagentHub::deliver_as`]).
+//! ([`SubagentHub::deliver`], from a [`Sender::Person`]).
 //! Main is depth 0, an agent at the depth cap gets no Agent tool, and at
 //! most `max_concurrent` run at once across the whole tree. Wind-down
 //! (opt-in, [`haest_core::wind_down`]): once the caller's turn is past its
@@ -174,10 +174,10 @@ mod web_fetch;
 pub use haest_http as http;
 
 pub use agents::{
-    AgentDirectory, AgentDirectoryRef, AgentError, AgentRef, AgentToolOptions, Ending, MAIN_AGENT,
-    Member, MemberCaps, MemberEnd, MemberRun, MemberStart, Sender, SpawnInput, SpawnOutcome, Spend,
-    SubagentBudget, SubagentEvent, SubagentHub, SubagentParent, SubagentParentRef, SubagentTypes,
-    SubagentTypesError, agent_tools, subagent_note,
+    AgentDirectory, AgentDirectoryRef, AgentError, AgentMessage, AgentRef, AgentToolOptions,
+    Ending, MAIN_AGENT, Member, MemberCaps, MemberEnd, MemberRun, MemberStart, Sender, SpawnInput,
+    SpawnOutcome, Spend, SubagentBudget, SubagentEvent, SubagentHub, SubagentParent,
+    SubagentParentRef, SubagentTypes, SubagentTypesError, agent_tools, subagent_note,
 };
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;
@@ -193,7 +193,7 @@ pub use image::{
 pub use inbox::{Inbox, InboxRef, NoInbox};
 pub use jobs::{
     Job, JobError, JobEvents, JobEventsRef, JobHub, JobOutput, JobState, JobStatus, MAX_FINISHED,
-    MAX_JOBS, NoJobEvents, Taken,
+    MAX_JOBS, NewJob, NoJobEvents, Taken,
 };
 pub use net_guard::{
     Resolve, ResolveRef, SystemResolve, UrlRefused, assert_public_url, is_blocked,

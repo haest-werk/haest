@@ -14,7 +14,8 @@
 //!
 //! ```
 //! use haest_core::{
-//!     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tool, Tools,
+//!     Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, StopReason, Tool,
+//!     Tools,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //! };
 //! use serde_json::json;
@@ -39,7 +40,8 @@
 //!     tool_answer(&[("call-1", "Shout", json!({"text": "hello"}))]),
 //!     text_answer("It says HELLO."),
 //! ]);
-//! let deps = AgentDeps::new(model.resolver(), Tools::new().with(Shout), "You shout.", "/", ShutWorkspace);
+//! let shared = SharedDeps::new(model.resolver(), "/", ShutWorkspace);
+//! let deps = AgentDeps::new(shared, Tools::new().with(Shout), "You shout.");
 //! let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 //!
 //! let mut events: Vec<LoopEvent> = Vec::new();

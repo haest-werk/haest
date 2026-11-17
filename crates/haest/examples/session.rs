@@ -19,8 +19,8 @@
 use std::{sync::Arc, time::Duration};
 
 use haest::{
-    Agent, AgentDeps, AgentOptions, BoxError, JsonMap, LoopEvent, Message, ShutWorkspace, Tool,
-    ToolContext, ToolError, ToolOutput, Tools, async_trait,
+    Agent, AgentDeps, AgentOptions, BoxError, JsonMap, LoopEvent, Message, SharedDeps,
+    ShutWorkspace, Tool, ToolContext, ToolError, ToolOutput, Tools, async_trait,
     core::testing::{ScriptedProvider, text_answer, tool_answer},
     serde_json::{Value, json},
     session::{Body, Hub, Input, start},
@@ -59,7 +59,11 @@ async fn main() -> Result<(), BoxError> {
         text_answer("Done, and I saw your note."),
     ]);
     let tools = Tools::new().with(Wait(go.clone()));
-    let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
+    let deps = AgentDeps::new(
+        SharedDeps::new(model.resolver(), "/", ShutWorkspace),
+        tools,
+        "",
+    );
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 
     // The hub first: one stream, numbered, kept for catch-up.

@@ -80,8 +80,8 @@
 //! # async fn main() -> Result<(), haest_core::BoxError> {
 //! use async_trait::async_trait;
 //! use haest_core::{
-//!     Agent, AgentDeps, AgentOptions, JsonMap, LoopEvent, Message, ShutWorkspace, StopReason,
-//!     Tool, ToolContext, ToolError, ToolOutput, Tools, req_str,
+//!     Agent, AgentDeps, AgentOptions, JsonMap, LoopEvent, Message, SharedDeps, ShutWorkspace,
+//!     StopReason, Tool, ToolContext, ToolError, ToolOutput, Tools, req_str,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //! };
 //! use serde_json::{Value, json};
@@ -113,13 +113,14 @@
 //!     tool_answer(&[("call-1", "Shout", json!({"text": "hello"}))]),
 //!     text_answer("It says HELLO."),
 //! ]);
-//! let deps = AgentDeps::new(
-//!     provider.resolver(),     // which provider serves a `provider:model` spec
-//!     Tools::new().with(Shout), // what the model may call
-//!     "Use your tools.",       // the system prompt
-//!     "/work",                 // the working directory
-//!     ShutWorkspace,           // no files, no shell
+//! // What the conversation runs on, its subagents included.
+//! let shared = SharedDeps::new(
+//!     provider.resolver(), // which provider serves a `provider:model` spec
+//!     "/work",             // the working directory
+//!     ShutWorkspace,       // no files, no shell
 //! );
+//! // This agent's own: what the model may call, and the system prompt.
+//! let deps = AgentDeps::new(shared, Tools::new().with(Shout), "Use your tools.");
 //! let mut agent = Agent::new(deps, AgentOptions::new("scripted:model-1"));
 //!
 //! let mut sink = |ev: LoopEvent| match ev {

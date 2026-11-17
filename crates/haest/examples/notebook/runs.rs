@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use haest::{
     Agent, AgentOptions, BoxError, ShutWorkspace, StopReason, Tools, TurnOutcome, WorkspaceRef,
-    core::session::{SessionRecord, SessionSink, replay},
+    core::session::{SessionHeader, SessionRecord, SessionSink, replay},
     serde_json::json,
     tools::{AgentRef, Ending, SubagentHub},
     workspace::SandboxWorkspace,
@@ -69,7 +69,12 @@ pub(crate) async fn work(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
         deps(gateway, "", tools, workspace, host.clone()),
         AgentOptions::new(MODEL),
     );
-    sessions.append(&SessionRecord::header("s-1", "c-1", CWD, T0));
+    sessions.append(&SessionRecord::from(SessionHeader {
+        session_id: "s-1".into(),
+        conversation_id: "c-1".into(),
+        cwd: CWD.into(),
+        created_ms: T0,
+    }));
     gateway.script([
         reply(
             NARRATION,

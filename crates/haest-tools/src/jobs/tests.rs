@@ -12,7 +12,9 @@ use haest_core::tool::ToolContext;
 use haest_workspace::RealWorkspace;
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
-use super::{Job, JobError, JobEvents, JobHub, JobOutput, JobStatus, MAX_FINISHED, MAX_JOBS};
+use super::{
+    Job, JobError, JobEvents, JobHub, JobOutput, JobStatus, MAX_FINISHED, MAX_JOBS, NewJob,
+};
 use crate::testkit::{TestWorkspace, stdout};
 
 #[derive(Default)]
@@ -74,7 +76,7 @@ impl Rig {
     }
 
     pub(crate) fn start(&self, command: &str) -> Job {
-        self.hub.start(command, command, &self.ctx).unwrap()
+        self.hub.start(NewJob::new(command), &self.ctx).unwrap()
     }
 }
 
@@ -180,7 +182,8 @@ async fn at_most_max_jobs_run_at_once() {
     for _ in 0..MAX_JOBS {
         r.start("sleep 30");
     }
-    let refused = r.hub.start("sleep 30", "one too many", &r.ctx);
+    let one_more = NewJob::new("sleep 30").with_description("one too many");
+    let refused = r.hub.start(one_more, &r.ctx);
     assert!(matches!(refused, Err(JobError::TooMany { max: MAX_JOBS })));
     r.hub.kill_all();
     until(5000, || r.events.exit_count() == MAX_JOBS).await;
@@ -193,7 +196,10 @@ async fn a_workspace_that_cannot_stream_still_runs_a_job_and_hands_its_output_ov
     let hub = JobHub::new(tx);
     let ws = TestWorkspace::answering([("/p/.keep", "")], |_| stdout("built\n"));
     let job = hub
-        .start("make", "build", &ToolContext::new("/p", ws.clone()))
+        .start(
+            NewJob::new("make").with_description("build"),
+            &ToolContext::new("/p", ws.clone()),
+        )
         .unwrap();
     let notice = tokio::time::timeout(Duration::from_secs(3), notices.recv())
         .await

@@ -77,7 +77,7 @@ pub(crate) async fn open_session(
 pub(crate) async fn create(store: &JsonlSessionFile, cwd: &Path) -> Result<(), SessionError> {
     let id = store.session_id();
     store
-        .create(id, &cwd.to_string_lossy(), now_ms())
+        .create(id, cwd, now_ms())
         .await
         .map_err(|source| SessionError::Create {
             path: store.path().to_path_buf(),

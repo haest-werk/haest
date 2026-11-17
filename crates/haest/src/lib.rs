@@ -28,7 +28,7 @@
 //! use haest::providers::ProviderRegistry;
 //! use haest::tools::{BuiltinOptions, builtin_tools};
 //! use haest::workspace::RealWorkspace;
-//! use haest::{Agent, AgentDeps, AgentOptions, BoxError, ChildEnv, LoopEvent};
+//! use haest::{Agent, AgentDeps, AgentOptions, BoxError, ChildEnv, LoopEvent, SharedDeps};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), BoxError> {
@@ -41,13 +41,11 @@
 //!     let pass = |k: &'static str| (k, std::env::var(k).unwrap_or_default());
 //!     let env = ChildEnv::new([pass("PATH"), pass("HOME")]);
 //!
-//!     let deps = AgentDeps::new(
-//!         models,
-//!         builtin_tools(BuiltinOptions::default()),
-//!         "You are a careful engineer.",
-//!         std::env::current_dir()?,
-//!         RealWorkspace::new(env),
-//!     );
+//!     // What the conversation runs on: models, a working directory, files and shell.
+//!     let shared = SharedDeps::new(models, std::env::current_dir()?, RealWorkspace::new(env));
+//!     // The agent's own: its tools and its system prompt.
+//!     let tools = builtin_tools(BuiltinOptions::default());
+//!     let deps = AgentDeps::new(shared, tools, "You are a careful engineer.");
 //!     let model = AgentOptions::new("openrouter:anthropic/claude-sonnet-5.5");
 //!     let mut agent = Agent::new(deps, model);
 //!
@@ -89,8 +87,8 @@
 //!
 //! [`AgentDeps`] and the [`SharedDeps`] inside it are everything the loop is
 //! handed. Each part is a trait with haest's own implementations beside it; a
-//! host keeps those or brings its own. [`AgentDeps::new`] and every `with_*`
-//! setter take the part itself (a closure, a `String`, a host's own type), or
+//! host keeps those or brings its own. [`SharedDeps::new`], [`AgentDeps::new`]
+//! and every `with_*` setter take the part itself (a closure, a `String`, a host's own type), or
 //! an `Arc` of one the host already shares, so one object can fill several
 //! slots. Each slot holds it in a cheap handle named after its trait
 //! ([`ToolSourceRef`], [`AgentHooksRef`], ...).

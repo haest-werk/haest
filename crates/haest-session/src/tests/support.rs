@@ -88,7 +88,11 @@ impl Provider for Stall {
 }
 
 fn deps(models: impl Into<haest_core::ModelResolverRef>, tools: Tools) -> AgentDeps {
-    AgentDeps::new(models, tools, "", "/", ShutWorkspace)
+    AgentDeps::new(
+        haest_core::SharedDeps::new(models, "/", ShutWorkspace),
+        tools,
+        "",
+    )
 }
 
 /// An agent over `model`, with `tools`.

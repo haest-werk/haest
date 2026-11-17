@@ -8,7 +8,8 @@ use haest_core::tool::{
 use serde_json::{Value, json};
 
 use super::{
-    AgentDirectoryRef, AgentError, AgentRef, AgentToolOptions, SpawnInput, SubagentBudget, budget,
+    AgentDirectoryRef, AgentError, AgentMessage, AgentRef, AgentToolOptions, Sender, SpawnInput,
+    SubagentBudget, budget,
 };
 use haest_core::Tools;
 
@@ -163,10 +164,14 @@ impl Tool for SendMessageTool {
         if to == self.me.name {
             return Err(ToolError::Input("that is you".into()));
         }
-        let message = req_str(&input, "message")?;
+        let message = AgentMessage {
+            from: Sender::Agent(self.me.name.clone()),
+            to: to.to_string(),
+            text: req_str(&input, "message")?.to_string(),
+        };
         let said = self
             .hub
-            .deliver(&self.me.name, to, message)
+            .deliver(message)
             .map_err(|e| ToolError::Input(e.to_string()))?;
         Ok(ToolOutput::text(said))
     }

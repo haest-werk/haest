@@ -199,7 +199,8 @@ pub(crate) fn agent_with(p: &ScriptedProvider, opts: Opts) -> (Agent, Arc<TestHo
     let workspace = opts
         .workspace
         .unwrap_or_else(|| MemWorkspace::default().into());
-    let mut deps = AgentDeps::new(p.resolver(), tools, "sys", "/tmp", workspace)
+    let shared = crate::SharedDeps::new(p.resolver(), "/tmp", workspace);
+    let mut deps = AgentDeps::new(shared, tools, "sys")
         .with_hooks(hooks.clone())
         .with_turn_caps(hooks.clone())
         .with_clock(hooks.clone());

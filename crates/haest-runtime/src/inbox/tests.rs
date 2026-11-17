@@ -4,20 +4,15 @@ use tokio::sync::mpsc::unbounded_channel;
 
 use super::*;
 use crate::haest::{
-    Agent, AgentDeps, AgentOptions, ShutWorkspace, core::testing::ScriptedProvider,
+    Agent, AgentDeps, AgentOptions, SharedDeps, ShutWorkspace, core::testing::ScriptedProvider,
 };
 use haest_core::Tools;
 
 /// The control of an agent that never runs: what a test steers into it is
 /// what the last turn left unread.
 fn control() -> AgentControl {
-    let deps = AgentDeps::new(
-        ScriptedProvider::new([]).resolver(),
-        Tools::new(),
-        "",
-        "/w",
-        ShutWorkspace,
-    );
+    let shared = SharedDeps::new(ScriptedProvider::new([]).resolver(), "/w", ShutWorkspace);
+    let deps = AgentDeps::new(shared, Tools::new(), "");
     Agent::new(deps, AgentOptions::new("scripted:m")).control()
 }
 

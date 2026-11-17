@@ -18,7 +18,7 @@
 use std::path::Path;
 
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tools,
+    Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, StopReason, Tools,
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::ToolContext,
 };
@@ -82,13 +82,8 @@ async fn plan_on_a_board(root: &Path) {
         tool_answer(&[("c5", "IssueList", json!({}))]),
         text_answer("Filed the epic and its first card, and started it."),
     ]);
-    let deps = AgentDeps::new(
-        model.resolver(),
-        tools,
-        "You plan work on the team's board.",
-        root,
-        ShutWorkspace,
-    );
+    let shared = SharedDeps::new(model.resolver(), root, ShutWorkspace);
+    let deps = AgentDeps::new(shared, tools, "You plan work on the team's board.");
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:planner"));
     let mut events: Vec<LoopEvent> = Vec::new();
     let end = agent

@@ -16,7 +16,10 @@ use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 pub(super) use super::fake::{FakeParent, ForMain, Heard, Host, Quiet, explore_or_general};
 pub(super) use super::script::{CALL_USD, Script, call, now, say, spawns};
 use super::{
-    super::{AgentRef, SubagentCaps, SubagentHub, SubagentParent, SubagentTypes},
+    super::{
+        AgentError, AgentMessage, AgentRef, Sender, SubagentCaps, SubagentHub, SubagentParent,
+        SubagentTypes,
+    },
     lifecycle::Lifecycle,
     script::Roles,
 };
@@ -91,7 +94,7 @@ impl Rig {
         let _ = parent.hub.set(hub.downgrade());
         let mut tools = parent.base_tools();
         tools.extend(hub.tools_for(&AgentRef::main()));
-        let deps = AgentDeps::from_shared(parent.deps(), tools, "main");
+        let deps = AgentDeps::new(parent.deps(), tools, "main");
         let main = Agent::new(deps, AgentOptions::new("fake:main-model"));
         Self {
             hub,
@@ -107,7 +110,7 @@ impl Rig {
     pub(super) fn adjust(&mut self, f: impl Fn(SharedDeps) -> SharedDeps + Send + Sync + 'static) {
         *self.parent.adjust.lock().unwrap() = Some(Box::new(f));
         let tools = self.main.deps().tools().clone();
-        let deps = AgentDeps::from_shared(self.parent.deps(), tools, "main");
+        let deps = AgentDeps::new(self.parent.deps(), tools, "main");
         self.main = Agent::new(deps, AgentOptions::new("fake:main-model"));
     }
 
@@ -172,6 +175,20 @@ impl Rig {
     pub(super) fn for_main(&self) -> Vec<ForMain> {
         self.parent.for_main.lock().unwrap().clone()
     }
+
+    /// Hand `text` from `from` to the agent `to`, as the hub delivers it.
+    pub(super) fn deliver(&self, from: Sender, to: &str, text: &str) -> Result<String, AgentError> {
+        self.hub.deliver(AgentMessage {
+            from,
+            to: to.into(),
+            text: text.into(),
+        })
+    }
+}
+
+/// The agent `name`, as the sender of a message (SendMessage).
+pub(super) fn agent(name: &str) -> Sender {
+    Sender::Agent(name.into())
 }
 
 pub(super) fn texts(messages: &[Message]) -> Vec<String> {

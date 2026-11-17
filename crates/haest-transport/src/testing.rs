@@ -42,7 +42,8 @@ impl Tool for Wait {
 pub(crate) fn session(model: &ScriptedProvider, hub: Hub) -> (SessionHandle<Agent>, Arc<Notify>) {
     let go = Arc::new(Notify::new());
     let tools: Tools = Tools::from_iter([ToolRef::new(Wait(go.clone()))]);
-    let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
+    let shared = haest_core::SharedDeps::new(model.resolver(), "/", ShutWorkspace);
+    let deps = AgentDeps::new(shared, tools, "");
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     (start(agent, hub), go)
 }

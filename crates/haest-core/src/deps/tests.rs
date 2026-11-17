@@ -17,13 +17,12 @@ use crate::{
 
 fn deps(prompt: impl Into<SystemPromptRef>) -> AgentDeps {
     let provider = ScriptedProvider::new([]);
-    AgentDeps::new(
-        provider.resolver(),
-        Tools::new(),
-        prompt,
-        "/",
-        ShutWorkspace,
-    )
+    AgentDeps::new(on(&provider), Tools::new(), prompt)
+}
+
+/// What every deps here run on: `provider`, at `/`, with no workspace.
+fn on(provider: &ScriptedProvider) -> SharedDeps {
+    SharedDeps::new(provider.resolver(), "/", ShutWorkspace)
 }
 
 #[tokio::test]
@@ -129,13 +128,12 @@ async fn tools_reach_the_services_slot_not_the_hooks() {
     };
     let provider = ScriptedProvider::new(script());
     let tools = Tools::new().with(Publish);
-    let plain = AgentDeps::new(provider.resolver(), tools.clone(), "", "/", ShutWorkspace);
+    let plain = AgentDeps::new(on(&provider), tools.clone(), "");
     assert_eq!(published(plain).await, "none");
 
     let provider = ScriptedProvider::new(script());
     let blobs = Arc::new(Blobs::default());
-    let served = AgentDeps::new(provider.resolver(), tools, "", "/", ShutWorkspace)
-        .with_services(blobs.clone());
+    let served = AgentDeps::new(on(&provider), tools, "").with_services(blobs.clone());
     assert_eq!(published(served).await, "blob://0");
     assert_eq!(blobs.0.load(Ordering::SeqCst), 1);
 }

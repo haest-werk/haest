@@ -266,8 +266,8 @@ impl CompactionError {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::BoxError> {
 /// use haest_core::{
-///     Agent, AgentDeps, AgentHooks, AgentOptions, BoxError, LoopEvent, Message, ShutWorkspace,
-///     Tools,
+///     Agent, AgentDeps, AgentHooks, AgentOptions, BoxError, LoopEvent, Message, SharedDeps,
+///     ShutWorkspace, Tools,
 ///     compaction::{CompactionOptions, compact, needs_compaction},
 ///     testing::{ScriptedProvider, text_answer},
 /// };
@@ -295,8 +295,8 @@ impl CompactionError {
 /// // The summary request is answered first, then the turn's own call.
 /// let provider = ScriptedProvider::new([text_answer("Earlier: a and b."), text_answer("done")]);
 /// let cfg = CompactionOptions { keep_recent: 2, ..CompactionOptions::new(1_000) };
-/// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace)
-///     .with_hooks(Compacting(cfg));
+/// let shared = SharedDeps::new(provider.resolver(), "/", ShutWorkspace);
+/// let deps = AgentDeps::new(shared, Tools::new(), "").with_hooks(Compacting(cfg));
 ///
 /// // Resume a conversation whose last request filled 90% of the window.
 /// let mut full = text_answer("b done");

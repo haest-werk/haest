@@ -21,7 +21,7 @@
 //! | `LoopEvent::ToolCallStart` (narration taken out of the doc) | doc.rs |
 //! | `SessionSink` + `replay`, no JSONL writer of haest's | host.rs, `runs::work` |
 //! | haest's `SubagentHub`, each helper on a node run of its own (`SubagentParent::start_member`, `MemberRun`); the notebook's kinds and model text (`AgentToolOptions`) | helpers.rs, `runs::work` |
-//! | the person writing to a running helper (`SubagentHub::deliver_as`, `Sender::Person`), the panel's messages (`SubagentEvent::Message`), answers held for main (`Inbox::submit_answer`), waiting for the helpers (`SubagentHub::settled`), the notebook's own note (`SubagentParent::subagent_note`) | helpers.rs, panel.rs |
+//! | the person writing to a running helper (`SubagentHub::deliver` from `Sender::Person`), the panel's messages (`SubagentEvent::Message`), answers held for main (`Inbox::submit_answer`), waiting for the helpers (`SubagentHub::settled`), the notebook's own note (`SubagentParent::subagent_note`) | helpers.rs, panel.rs |
 
 mod config;
 mod doc;
@@ -178,5 +178,5 @@ pub(crate) fn deps(
     host: Arc<NotebookHost>,
 ) -> AgentDeps {
     let system = "You work inside a person's notebook, a shared knowledge base.";
-    AgentDeps::from_shared(shared(gateway, token, workspace, host), tools, system)
+    AgentDeps::new(shared(gateway, token, workspace, host), tools, system)
 }

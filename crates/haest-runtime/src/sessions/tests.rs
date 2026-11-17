@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use super::*;
 use crate::haest::{
     core::fs::{DirEntry, FsStat, MemFs},
+    core::session::SessionHeader,
     workspace::RealFs,
 };
 
@@ -100,7 +101,13 @@ const DIR: &str = "/s";
 /// A header, a torn line, then the first question.
 fn session_text(id: &str, cwd: &str, ask: &str) -> String {
     let lines = [
-        serde_json::to_string(&SessionRecord::header(id, id, cwd, 0)).unwrap(),
+        serde_json::to_string(&SessionRecord::from(SessionHeader {
+            session_id: id.into(),
+            conversation_id: id.into(),
+            cwd: cwd.into(),
+            created_ms: 0,
+        }))
+        .unwrap(),
         "{torn".to_string(),
         serde_json::to_string(&SessionRecord::Message {
             t: 1,

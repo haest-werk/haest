@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     caps,
     lifecycle::Lifecycle,
-    support::{ForMain, Heard, Host, Rig, Script, call, now, say},
+    support::{ForMain, Heard, Host, Rig, Script, agent, call, now, say},
 };
 use crate::agents::{AgentError, AgentRef, MemberCaps, MemberStart, Sender, SpawnInput};
 
@@ -71,13 +71,14 @@ async fn a_persons_message_reaches_a_running_member_and_fires_the_event_marked_a
     spawn.await.unwrap();
     arrived.cancelled().await;
 
-    let said = r.hub.deliver_as(person(), "looker", "only the docs");
+    let said = r.deliver(person(), "looker", "only the docs");
     assert_eq!(
         said.unwrap(),
         "Delivered to \"looker\"; it reads it at its next step."
     );
     // SendMessage from main, for contrast.
-    r.hub.deliver("main", "looker", "also the tests").unwrap();
+    r.deliver(agent("main"), "looker", "also the tests")
+        .unwrap();
     release.cancel();
     assert!(r.hub.settled(Duration::from_secs(5)).await);
 
@@ -107,7 +108,7 @@ async fn a_persons_message_reaches_a_running_member_and_fires_the_event_marked_a
         "{answer}"
     );
     // A finished member refuses the person too, and nothing more is heard.
-    let late = r.hub.deliver_as(person(), "looker", "one more");
+    let late = r.deliver(person(), "looker", "one more");
     assert!(matches!(late, Err(AgentError::Finished { .. })), "{late:?}");
     assert_eq!(r.heard().len(), 2);
 }
@@ -138,7 +139,7 @@ async fn main_gets_a_background_answer_through_submit_answer_and_a_message_throu
     };
     let out = r.hub.spawn(&main, foreground, &cancel);
     assert_eq!(out.await.unwrap().text, "done");
-    let to_main = r.hub.deliver_as(person(), "main", "how is it going?");
+    let to_main = r.deliver(person(), "main", "how is it going?");
     assert_eq!(to_main.unwrap(), "Delivered to main.");
 
     assert_eq!(

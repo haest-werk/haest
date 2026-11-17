@@ -3,7 +3,7 @@
 //! answer (not a message), and the run is settled once that answer has been
 //! handed back.
 //!
-//! PLUG POINTS: `SubagentHub::deliver_as` with `Sender::Person`,
+//! PLUG POINTS: `SubagentHub::deliver` from `Sender::Person`,
 //! `SubagentEvent::Message`, `Inbox::submit_answer`, `SubagentHub::settled`,
 //! `SubagentParent::subagent_note`.
 
@@ -13,13 +13,13 @@ use haest::{
     BoxError, ShutWorkspace, ToolContext, Tools,
     core::tool,
     serde_json::json,
-    tools::{AgentRef, Ending, Sender, SubagentHub},
+    tools::{AgentMessage, AgentRef, Ending, Sender, SubagentHub},
 };
 
 use crate::{
     CWD, T0, config,
     gateway::{Gateway, reply},
-    helpers::{AgentMessage, ForMain, Node, NodeHelpers, Panel, tree_caps},
+    helpers::{ForMain, Node, NodeHelpers, Panel, tree_caps},
     host::{NodeSessions, NotebookHost, RunClock},
     notebook_search, run_tools,
     tools::Attachments,
@@ -66,18 +66,17 @@ pub(crate) async fn panel(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
 
     // The person types to the helper from the panel, and the panel shows it
     // as theirs.
-    let said = hub.deliver_as(Sender::Person("owner".into()), &name, ASKED)?;
+    let typed = AgentMessage {
+        from: Sender::Person("owner".into()),
+        to: name.clone(),
+        text: ASKED.into(),
+    };
+    let said = hub.deliver(typed.clone())?;
     assert_eq!(
         said,
         format!("Delivered to \"{name}\"; it reads it at its next step.")
     );
-    let heard = AgentMessage {
-        from: "owner".into(),
-        to: name.clone(),
-        text: ASKED.into(),
-        person: true,
-    };
-    assert_eq!(panel.messages(), [heard]);
+    assert_eq!(panel.messages(), [typed]);
     assert!(
         !hub.settled(Duration::from_millis(20)).await,
         "the helper still works"

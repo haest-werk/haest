@@ -45,7 +45,7 @@ pub type UnixPeer = Peer<NdjsonSource<OwnedReadHalf>, NdjsonSink<OwnedWriteHalf>
 /// served under the same [`Grant`]; none is followed until it asks (`events`).
 ///
 /// ```
-/// use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::ScriptedProvider};
+/// use haest_core::{Agent, AgentDeps, AgentOptions, SharedDeps, ShutWorkspace, Tools, testing::ScriptedProvider};
 /// use haest_session::{Hub, start};
 /// use haest_transport::{Grant, Transport, UnixSocket, connect_session, running_sessions};
 /// use haest_wire::{Origin, Request};
@@ -54,7 +54,7 @@ pub type UnixPeer = Peer<NdjsonSource<OwnedReadHalf>, NdjsonSink<OwnedWriteHalf>
 /// # async fn main() -> Result<(), haest_core::BoxError> {
 /// # let dir = std::env::temp_dir().join(format!("hx-doc-{}", std::process::id()));
 /// let model = ScriptedProvider::new([]);
-/// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
+/// let deps = AgentDeps::new(SharedDeps::new(model.resolver(), "/", ShutWorkspace), Tools::new(), "");
 /// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 ///
 /// let attached = UnixSocket::new(&dir).attach(session, Grant::watch(Origin::Agent))?;

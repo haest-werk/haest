@@ -148,7 +148,8 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
     // A background job.
     let jobs = JobHub::new(NoInbox);
     let ws = RealWorkspace::new(std::env::vars().collect());
-    jobs.start("sleep 30", "s", &ToolContext::new(std::env::temp_dir(), ws))
+    let ctx = ToolContext::new(std::env::temp_dir(), ws);
+    jobs.start(haest_tools::NewJob::new("sleep 30"), &ctx)
         .unwrap();
     rt.jobs = Some(jobs.clone());
     // An MCP server.

@@ -42,9 +42,10 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 ### Upgrading
 
 1. Plug points take the value itself, or an `Arc` of one the host already
-   shares: `AgentDeps::new(Arc::new(models), Arc::new(tools),
+   shares, and `AgentDeps::new` takes what the conversation runs on as one
+   `SharedDeps`: `AgentDeps::new(Arc::new(models), Arc::new(tools),
    Arc::new("You are terse.".to_string()), cwd, Arc::new(workspace))` ->
-   `AgentDeps::new(models, tools, "You are terse.", cwd, workspace)`.
+   `AgentDeps::new(SharedDeps::new(models, cwd, workspace), tools, "You are terse.")`.
 2. `AgentDeps` and `SharedDeps` keep their fields private: set a part with
    its `with_*` setter (`deps.shared.hooks = Arc::new(host)` ->
    `deps.with_hooks(host)`), read it with the getter of its name
@@ -235,10 +236,10 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   quickstart and the compiled one in the docs differ.
 
 - The front page and every example build their deps the new way:
-  `ProviderRegistry::new(keys, ..)` and `AgentDeps::new(models,
-  builtin_tools(BuiltinOptions::default()), "You are a careful engineer.",
-  std::env::current_dir()?, RealWorkspace::new(env))`, in a `main` that
-  returns a `Result`. The plug-point table lists `Tools`,
+  `ProviderRegistry::new(keys)`, `SharedDeps::new(models,
+  std::env::current_dir()?, RealWorkspace::new(env))` and
+  `AgentDeps::new(shared, builtin_tools(BuiltinOptions::default()), "You are
+  a careful engineer.")`, in a `main` that returns a `Result`. The plug-point table lists `Tools`,
   `&'static str` and closures as prompts, and `ToolServices`.
 
 - New example `durable_run` (`cargo run -p haest --example durable_run`,
@@ -248,8 +249,9 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 - The `notebook` example runs its helpers on haest's `SubagentHub` through
   `SubagentParent::start_member`: each helper on a node run of its own (its
   token, model spec and caps), closed by `MemberRun::end`. A new panel run
-  puts a helper in the background: the person writes to it (`deliver_as`),
-  the panel hears `SubagentEvent::Message`, its answer reaches main through
+  puts a helper in the background: the person writes to it (`deliver` with
+  an `AgentMessage`), the panel hears the same `AgentMessage` in
+  `SubagentEvent::Message`, its answer reaches main through
   `Inbox::submit_answer`, the run waits on `SubagentHub::settled`, and every
   helper reads the notebook's own note.
 
@@ -285,17 +287,18 @@ Plug points without `Arc` (breaking):
   object, and is built `From` the value, an `Arc` of it or an
   `Arc<dyn Trait>`, so one host object can fill several slots;
   `XRef::new(value)` and `XRef::ptr_eq` besides.
-- `AgentDeps::new(models, tools, system_prompt, cwd, workspace)` takes each
-  part as `impl Into<..Ref>` (`cwd` as `impl Into<PathBuf>`), and so does
-  `SharedDeps::new(models, cwd, workspace)`:
+- `AgentDeps::new(shared, tools, system_prompt)` takes what the
+  conversation runs on as one `SharedDeps` (a subagent's deps from its
+  parent's are the same call), and `SharedDeps::new(models, cwd,
+  workspace)` takes each part as `impl Into<..Ref>` (`cwd` as
+  `impl Into<PathBuf>`), so no two string slots sit side by side to trade
+  places unseen (the prompt and the cwd both took a `&str`):
   `AgentDeps::new(Arc::new(m), Arc::new(t), Arc::new(p), cwd, Arc::new(w))`
-  -> `AgentDeps::new(m, t, p, cwd, w)`.
+  -> `AgentDeps::new(SharedDeps::new(m, cwd, w), t, p)`.
 - `AgentDeps`'s fields are private: `deps.tools` -> `deps.tools()` and
   `with_tools(..)`, `deps.system_prompt` -> `system_prompt()` and
   `with_system_prompt(..)`, `deps.shared` -> `shared()` and
-  `with_shared(..)`. New `AgentDeps::from_shared(shared, tools, prompt)`: a
-  subagent's deps from its parent's. Every `SharedDeps::with_*` is on
-  `AgentDeps` too.
+  `with_shared(..)`. Every `SharedDeps::with_*` is on `AgentDeps` too.
 - `SharedDeps`'s fields are private, read by a getter of the same name and
   set by a consuming `with_*`: `shared.hooks = Arc::new(h)` ->
   `shared.with_hooks(h)`. The setters: `with_models`, `with_cwd`,
@@ -569,6 +572,13 @@ Hosts write less (round two of the review, and what porting brain onto
   `Tools::new().with(a).with_all(more)`. They take the place of the
   slice's `get` and `contains` (breaking): `tools.get(0)` -> `tools.first()`
   or `tools[0]`.
+- A session file's header is built from a `SessionHeader` with named
+  fields, so the session's id and the conversation's cannot trade places
+  (breaking): `SessionRecord::header(sid, cid, cwd, ms)` ->
+  `SessionRecord::from(SessionHeader { session_id, conversation_id, cwd,
+  created_ms })`. `JsonlSessionFile::create` takes the cwd as a `&Path`:
+  `file.create(cid, "/project", ms)` ->
+  `file.create(cid, Path::new("/project"), ms)`.
 
 ### haest-http
 
@@ -645,8 +655,10 @@ Hosts write less (round two of the review, and what porting brain onto
   answer goes back. New `Member`, `MemberStart`, `MemberEnd`,
   `MemberCaps`, `Ending` and `Spend`; `MemberStart`, `MemberEnd` and
   `Ending` are `#[non_exhaustive]`.
-- `subagent_note` takes `&MemberCaps` (was `&SubagentCaps`): pass
-  `&MemberCaps::from(caps)`.
+- `subagent_note` takes the `&MemberStart` it writes the note for (was the
+  name, the parent's name, the description and `&SubagentCaps`, three
+  strings in a row): `subagent_note(name, parent, description, caps)` ->
+  `subagent_note(member)`.
 - A background spawn's reply names the member's model spec.
 - StopAgent on a member whose start has not returned: it never sends a
   model call, and its end is `Ending::Stopped`.
@@ -662,12 +674,16 @@ Hosts write less (round two of the review, and what porting brain onto
   New `SubagentBudget { usd, time }`.
 - `AgentError` gains `OverBudget { asked, available }` and
   `OverTime { asked, left, setting }`, and no longer derives `Eq`.
-- New `SubagentHub::deliver_as(Sender, to, text)` and
-  `Sender::{Agent, Person}` (`#[non_exhaustive]`): the person writes to a
-  running subagent, or to main, under "[Message from <name>, the person you
-  work for]". SendMessage is `Sender::Agent` and reads as before.
-- `SubagentEvent` gains `Message { from: Sender, to, text }`, through
-  `on_subagent` for every delivery (a refused one fires nothing).
+- `AgentDirectory::deliver` and `SubagentHub::deliver` take an
+  `AgentMessage { from, to, text }` (was three strings in a row, the
+  sender's name first): `hub.deliver("lead", "worker", "go")` ->
+  `hub.deliver(AgentMessage { from: Sender::Agent("lead".into()), to:
+  "worker".into(), text: "go".into() })`.
+- New `Sender::{Agent, Person}` (`#[non_exhaustive]`): the person writes to
+  a running subagent, or to main, under "[Message from <name>, the person
+  you work for]". SendMessage is `Sender::Agent` and reads as before.
+- `SubagentEvent` gains `Message(AgentMessage)`, the message as delivered,
+  through `on_subagent` for every delivery (a refused one fires nothing).
   `SubagentEvent` is `#[non_exhaustive]`: a `match` outside haest-tools
   needs a `_` arm.
 - New `Inbox::submit_answer(text)`, default `submit`: the hub hands a
@@ -695,10 +711,11 @@ Hosts write less (round two of the review, and what porting brain onto
   `JobHub::with_events(Arc::new(tx), Arc::new(events))` ->
   `JobHub::new(tx).with_events(events)`. New `InboxRef` and
   `JobEventsRef`.
-- `JobHub::start` takes the command, its description and the
-  `&ToolContext` it runs in:
+- `JobHub::start` takes a `NewJob` (the command, and a description the
+  job list shows, the command when none is set) and the `&ToolContext` it
+  runs in:
   `jobs.start(ctx.workspace().clone(), cmd, desc, ctx.cwd().into())` ->
-  `jobs.start(cmd, desc, &ctx)`.
+  `jobs.start(NewJob::new(cmd).with_description(desc), &ctx)`.
 - `JobEvents::on_output(job, chunk, done: bool)` ->
   `on_output(job, JobOutput::Chunk(chunk) | JobOutput::Done)`.
 - `Job::state()` returns a `JobState` that implements `Display` (was

@@ -7,7 +7,7 @@ use std::{
 };
 
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, Message, ToolResultMessage, Tools,
+    Agent, AgentDeps, AgentOptions, Message, SharedDeps, ToolResultMessage, Tools,
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::{OnResume, Tool, ToolSource},
     workspace::{ShutWorkspace, WorkspaceMode},
@@ -21,11 +21,9 @@ use crate::{
 
 fn agent(p: &ScriptedProvider, mods: &Mods, tools: Tools) -> Agent {
     let deps = AgentDeps::new(
-        p.resolver(),
+        SharedDeps::new(p.resolver(), CWD, ShutWorkspace),
         ModTools::new(tools, mods.clone()),
         ModSystemPrompt::new("You are haest.", mods.clone()),
-        CWD,
-        ShutWorkspace,
     );
     Agent::new(deps, AgentOptions::new("scripted:m"))
 }
@@ -162,11 +160,9 @@ async fn a_tool_the_source_keeps_back_runs_by_name_inside_the_mods_hooks() {
     let (reader, writer) = (Probe::read_only("Read"), Probe::new("Write"));
     let kept = KeptBack(Tools::from_iter([reader, writer.clone()]));
     let deps = AgentDeps::new(
-        p.resolver(),
+        SharedDeps::new(p.resolver(), CWD, ShutWorkspace),
         ModTools::new(kept, mods.clone()),
         "You are haest.",
-        CWD,
-        ShutWorkspace,
     );
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 

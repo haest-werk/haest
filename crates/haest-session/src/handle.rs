@@ -46,7 +46,7 @@ pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
 ///
 /// ```
 /// use haest_core::{
-///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tools,
+///     Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, StopReason, Tools,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 /// use haest_session::{Body, Hub, Input, start};
@@ -54,7 +54,7 @@ pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_session::SessionError> {
 /// let model = ScriptedProvider::new([text_answer("hello")]);
-/// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
+/// let deps = AgentDeps::new(SharedDeps::new(model.resolver(), "/", ShutWorkspace), Tools::new(), "");
 /// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 ///
 /// let end = session.turn(Input::human("say hello")).await?;

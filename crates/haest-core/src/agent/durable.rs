@@ -57,14 +57,14 @@ impl Agent {
     /// # #[tokio::main(flavor = "current_thread")]
     /// # async fn main() -> Result<(), haest_core::run::RunError> {
     /// use haest_core::{
-    ///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tools,
+    ///     Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, Tools,
     ///     run::{MemoryRunStore, RunError, RunKey, Served},
     ///     testing::{ScriptedProvider, text_answer},
     /// };
     ///
     /// let provider = ScriptedProvider::new([text_answer("Report sent.")]);
-    /// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace)
-    ///     .with_run_store(MemoryRunStore::new());
+    /// let shared = SharedDeps::new(provider.resolver(), "/", ShutWorkspace);
+    /// let deps = AgentDeps::new(shared, Tools::new(), "").with_run_store(MemoryRunStore::new());
     /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     /// let key = RunKey::new("report-2026-11-16");
     /// let mut events = Vec::<LoopEvent>::new();

@@ -85,7 +85,7 @@ use crate::{
 )]
 #[non_exhaustive]
 pub enum SessionRecord {
-    /// The first line: who the session is. Build it with [`SessionRecord::header`].
+    /// The first line: who the session is. Build it from a [`SessionHeader`].
     Header {
         /// Always 1.
         v: u32,
@@ -198,16 +198,43 @@ const KINDS: [&str; 9] = [
     "run_end",
 ];
 
-impl SessionRecord {
-    /// The first line of a session file, version 1. `created_ms`:
-    /// milliseconds since the epoch, written as an ISO 8601 date ([`iso_utc`]).
-    pub fn header(session_id: &str, conversation_id: &str, cwd: &str, created_ms: u64) -> Self {
+/// Who a session is: what its first line ([`SessionRecord::Header`]) says.
+/// `SessionRecord::from` turns it into that line, version 1.
+///
+/// Its fields are named, so the two ids cannot trade places unseen.
+///
+/// ```
+/// use haest_core::session::{SessionHeader, SessionRecord};
+///
+/// let header = SessionRecord::from(SessionHeader {
+///     session_id: "s1".into(),
+///     conversation_id: "c1".into(),
+///     cwd: "/project".into(),
+///     created_ms: 0,
+/// });
+/// assert!(matches!(header, SessionRecord::Header { ref created_at, .. } if created_at == "1970-01-01T00:00:00.000Z"));
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionHeader {
+    /// The session's id, also its file name.
+    pub session_id: String,
+    /// The host's conversation the session belongs to.
+    pub conversation_id: String,
+    /// The agent's working directory when the session began.
+    pub cwd: PathBuf,
+    /// When it began, in milliseconds since the epoch; the line holds it as
+    /// an ISO 8601 date ([`iso_utc`]).
+    pub created_ms: u64,
+}
+
+impl From<SessionHeader> for SessionRecord {
+    fn from(header: SessionHeader) -> Self {
         SessionRecord::Header {
             v: 1,
-            session_id: session_id.into(),
-            conversation_id: conversation_id.into(),
-            cwd: cwd.into(),
-            created_at: iso_utc(created_ms),
+            session_id: header.session_id,
+            conversation_id: header.conversation_id,
+            cwd: header.cwd.to_string_lossy().into_owned(),
+            created_at: iso_utc(header.created_ms),
         }
     }
 }

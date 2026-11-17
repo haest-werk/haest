@@ -90,13 +90,14 @@ impl AgentOptions {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::BoxError> {
 /// use haest_core::{
-///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tools,
+///     Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, StopReason, Tools,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 ///
 /// // A fake model that answers "hello"; a host resolves real providers here.
 /// let provider = ScriptedProvider::new([text_answer("hello")]);
-/// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "You are terse.", "/project", ShutWorkspace);
+/// let shared = SharedDeps::new(provider.resolver(), "/project", ShutWorkspace);
+/// let deps = AgentDeps::new(shared, Tools::new(), "You are terse.");
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:model-1"));
 ///
 /// let mut said = String::new();

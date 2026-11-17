@@ -58,7 +58,7 @@ fn appended(s: &JsonlSessionFile, messages: impl IntoIterator<Item = Message>) {
 async fn every_unanswered_call_is_answered_as_an_interrupted_error_after_its_answered_siblings() {
     let fs = Arc::new(ModeFs::default());
     let s = store(&fs);
-    s.create("c1", "/x", 0).await.unwrap();
+    s.create("c1", std::path::Path::new("/x"), 0).await.unwrap();
     appended(&s, [Message::user("go"), calls(&["A", "B"]), result("A")]);
     s.flush().await;
     let before = fs.read_to_string(s.path()).await.unwrap();
@@ -87,7 +87,7 @@ async fn every_unanswered_call_is_answered_as_an_interrupted_error_after_its_ans
 async fn a_later_compaction_keeps_the_tail_the_resumed_conversation_kept() {
     let fs = Arc::new(ModeFs::default());
     let s = store(&fs);
-    s.create("c1", "/x", 0).await.unwrap();
+    s.create("c1", std::path::Path::new("/x"), 0).await.unwrap();
     let next = [Message::user("next"), Message::user("more")];
     appended(
         &s,

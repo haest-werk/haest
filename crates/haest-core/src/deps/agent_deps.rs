@@ -19,22 +19,26 @@ use crate::{
 /// An agent's own tools and system prompt, and what it runs on besides
 /// ([`SharedDeps`]), which the agents of one conversation share.
 ///
-/// [`AgentDeps::new`] takes the five things every agent needs, each as a
-/// plain value; the `with_*` setters set the rest, the shared slots
-/// included. Cheap to clone. The loop reads the tools and the prompt again
-/// before every model call, so a source that changes behind its handle is
-/// seen at the next call.
+/// [`AgentDeps::new`] takes what the conversation runs on (a [`SharedDeps`]:
+/// models, a working directory, a workspace) and the agent's own tools and
+/// system prompt, each as a plain value; the `with_*` setters set the rest,
+/// the shared slots included. Cheap to clone. The loop reads the tools and
+/// the prompt again before every model call, so a source that changes
+/// behind its handle is seen at the next call.
 ///
 /// # Examples
 ///
 /// ```
-/// use haest_core::{AgentDeps, ModelError, ResolvedModel, ShutWorkspace, Tools, TurnCaps};
+/// use haest_core::{
+///     AgentDeps, ModelError, ResolvedModel, SharedDeps, ShutWorkspace, Tools, TurnCaps,
+/// };
 ///
 /// // A resolver that serves nothing; a host plugs in haest-providers' registry.
 /// let models = |spec: &str| -> Result<ResolvedModel, ModelError> {
 ///     Err(ModelError::BadSpec { spec: spec.into() })
 /// };
-/// let deps = AgentDeps::new(models, Tools::new(), "You are terse.", "/project", ShutWorkspace)
+/// let shared = SharedDeps::new(models, "/project", ShutWorkspace);
+/// let deps = AgentDeps::new(shared, Tools::new(), "You are terse.")
 ///     .with_turn_caps(TurnCaps { max_turn_steps: 10, ..TurnCaps::default() });
 /// assert_eq!(deps.shared().cwd(), std::path::Path::new("/project"));
 /// ```
@@ -46,25 +50,10 @@ pub struct AgentDeps {
 }
 
 impl AgentDeps {
-    /// The minimum: models, tools, a system prompt, a working directory and
-    /// a workspace; the rest as [`SharedDeps::new`] leaves it.
+    /// An agent of the conversation `shared` runs on, with its own `tools`
+    /// and `system_prompt`. A subagent is built the same way, from its
+    /// parent's [`shared`](Self::shared).
     pub fn new(
-        models: impl Into<ModelResolverRef>,
-        tools: impl Into<ToolSourceRef>,
-        system_prompt: impl Into<SystemPromptRef>,
-        cwd: impl Into<PathBuf>,
-        workspace: impl Into<WorkspaceRef>,
-    ) -> Self {
-        Self::from_shared(
-            SharedDeps::new(models, cwd, workspace),
-            tools,
-            system_prompt,
-        )
-    }
-
-    /// An agent of the conversation `shared` runs on, with its own tools and
-    /// system prompt: how a subagent is built from its parent's deps.
-    pub fn from_shared(
         shared: SharedDeps,
         tools: impl Into<ToolSourceRef>,
         system_prompt: impl Into<SystemPromptRef>,

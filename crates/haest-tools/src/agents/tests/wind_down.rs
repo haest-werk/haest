@@ -45,7 +45,7 @@ impl AgentDirectory for Counting {
             cost_usd: 0.0,
         })
     }
-    fn deliver(&self, _: &str, _: &str, _: &str) -> Result<String, AgentError> {
+    fn deliver(&self, _: crate::AgentMessage) -> Result<String, AgentError> {
         Ok(String::new())
     }
     fn stop(&self, _: &str) -> bool {

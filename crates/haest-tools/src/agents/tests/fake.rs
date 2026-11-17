@@ -18,8 +18,8 @@ use super::{lifecycle::Lifecycle, script::Roles};
 use crate::{
     GlobTool,
     agents::{
-        AgentError, AgentToolOptions, Member, MemberStart, Sender, SubagentEvent, SubagentParent,
-        SubagentTypes, hub::WeakHub, subagent_note,
+        AgentError, AgentMessage, AgentToolOptions, Member, MemberStart, Sender, SubagentEvent,
+        SubagentParent, SubagentTypes, hub::WeakHub, subagent_note,
     },
     inbox::Inbox,
     testkit::TestWorkspace,
@@ -189,12 +189,7 @@ impl SubagentParent for FakeParent {
         match self.host.note {
             Some(note) => note(member),
             // What the trait's default says.
-            None => subagent_note(
-                &member.name,
-                &member.parent,
-                &member.input.description,
-                &member.caps,
-            ),
+            None => subagent_note(member),
         }
     }
     fn on_subagent(&self, id: &str, event: SubagentEvent) {
@@ -204,7 +199,7 @@ impl SubagentParent for FakeParent {
             SubagentEvent::Loop(_) => "loop",
             SubagentEvent::InnerCall(_) => "inner",
             SubagentEvent::Stopped { .. } => "stopped",
-            SubagentEvent::Message { from, to, text } => {
+            SubagentEvent::Message(AgentMessage { from, to, text }) => {
                 let id = id.to_string();
                 let heard = Heard { id, from, to, text };
                 self.heard.lock().unwrap().push(heard);

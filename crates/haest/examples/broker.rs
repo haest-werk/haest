@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use haest::{
-    Agent, AgentDeps, AgentOptions, BoxError, ShutWorkspace, Tools,
+    Agent, AgentDeps, AgentOptions, BoxError, SharedDeps, ShutWorkspace, Tools,
     core::testing::{ScriptedProvider, text_answer},
     serde_json::{self, Value, json},
     session::{Hub, Input, start},
@@ -91,7 +91,8 @@ async fn main() -> Result<(), BoxError> {
         text_answer("The build is green."),
         text_answer("The deploy is done."),
     ]);
-    let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
+    let shared = SharedDeps::new(model.resolver(), "/", ShutWorkspace);
+    let deps = AgentDeps::new(shared, Tools::new(), "");
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let session = start(agent, Hub::new("example-link"));
 

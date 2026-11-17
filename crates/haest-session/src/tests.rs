@@ -469,7 +469,11 @@ async fn a_failed_change_changes_nothing_and_says_why() {
         Some(("scripted", _)) => known(spec),
         _ => Err(ModelError::BadSpec { spec: spec.into() }),
     };
-    let deps = AgentDeps::new(resolve, Tools::new(), "", "/", ShutWorkspace);
+    let deps = AgentDeps::new(
+        haest_core::SharedDeps::new(resolve, "/", ShutWorkspace),
+        Tools::new(),
+        "",
+    );
     let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), hub());
     let err = session
         .control(Control::SetModelSpec("nowhere:m".into()))

@@ -1,10 +1,10 @@
 //! BashOutput / KillShell / Bash's background switch, and the conversation half
 //! ported from host/jobs.test.ts: a background job's exit wakes the model.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, LoopEvent, Message, ToolRef, Tools,
+    Agent, AgentDeps, AgentOptions, LoopEvent, Message, SharedDeps, ToolRef, Tools,
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::{Tool, ToolError, ToolOutput},
 };
@@ -113,13 +113,12 @@ async fn a_background_job_shows_in_the_running_set_and_its_exit_wakes_the_model_
     ]);
     let mut tools: Tools = Tools::from_iter([ToolRef::new(bash(&r))]);
     tools.extend(job_tools(r.hub.clone()));
-    let deps = AgentDeps::new(
-        Arc::new(provider.resolver()),
-        Arc::new(tools),
-        Arc::new("system".to_string()),
+    let shared = SharedDeps::new(
+        provider.resolver(),
         r.dir.clone(),
         r.ctx.workspace().clone(),
     );
+    let deps = AgentDeps::new(shared, tools, "system");
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let mut events: Vec<LoopEvent> = Vec::new();
     agent.run("start the build", &mut events).await;

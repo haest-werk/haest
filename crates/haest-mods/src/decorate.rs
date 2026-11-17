@@ -22,7 +22,7 @@ use crate::{api::ModToolCall, registry::Mods};
 /// beside the host's.
 ///
 /// Give it to the agent in place of the host's own [`ToolSource`]
-/// (`AgentDeps::new(models, ModTools::new(tools, mods.clone()), ...)`). The
+/// (`AgentDeps::new(shared, ModTools::new(tools, mods.clone()), ...)`). The
 /// list is built again each time the loop asks, so a mod that registers a
 /// tool later is offered from the next model call.
 ///

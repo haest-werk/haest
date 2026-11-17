@@ -95,7 +95,8 @@ async fn shut_down_leaves_no_job_running_and_the_session_on_disk() {
         .expect("Bash in the real workspace leaves jobs");
     let workspace = rt.agent().deps().shared().workspace().clone();
     let ctx = crate::haest::core::tool::ToolContext::new(dir.clone(), workspace);
-    jobs.start("sleep 30", "waits", &ctx).unwrap();
+    jobs.start(haest_tools::NewJob::new("sleep 30"), &ctx)
+        .unwrap();
 
     let stopped = rt.shut_down().await;
     assert_eq!(

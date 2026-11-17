@@ -17,7 +17,8 @@ use haest_core::{
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AgentRef, Ending, MemberCaps, Spend, SubagentEvent, SubagentParent, SubagentParentRef,
+    AgentRef, Ending, MemberCaps, MemberStart, SpawnInput, Spend, SubagentEvent, SubagentParent,
+    SubagentParentRef,
 };
 
 /// One agent's run, as its driver needs it.
@@ -47,10 +48,18 @@ impl RunOutcome {
     }
 }
 
-/// The text appended to a subagent's system prompt: who it is (`name`), who
-/// started it and reads its answer (`parent`), what for (`description`), its
-/// caps, and how to talk to other agents.
-pub fn subagent_note(name: &str, parent: &str, description: &str, caps: &MemberCaps) -> String {
+/// The text appended to a subagent's system prompt: who it is (its name),
+/// who started it and reads its answer (its parent), what for (the Agent
+/// call's description), its caps, and how to talk to other agents.
+/// [`SubagentParent::subagent_note`]'s default.
+pub fn subagent_note(member: &MemberStart) -> String {
+    let MemberStart {
+        name,
+        parent,
+        input: SpawnInput { description, .. },
+        caps,
+        ..
+    } = member;
     format!(
         "# You are a subagent
 

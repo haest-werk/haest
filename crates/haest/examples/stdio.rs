@@ -18,8 +18,8 @@
 )]
 
 use haest::{
-    Agent, AgentDeps, AgentOptions, BoxError, JsonMap, ShutWorkspace, Tool, ToolContext, ToolError,
-    ToolOutput, Tools, async_trait,
+    Agent, AgentDeps, AgentOptions, BoxError, JsonMap, SharedDeps, ShutWorkspace, Tool,
+    ToolContext, ToolError, ToolOutput, Tools, async_trait,
     core::testing::{ScriptedProvider, text_answer, tool_answer},
     serde_json::{self, Value, json},
     session::{Hub, start},
@@ -92,7 +92,11 @@ async fn main() -> Result<(), BoxError> {
         tool_answer(&[("c1", "Forever", json!({}))]),
     ]);
     let tools = Tools::new().with(Forever);
-    let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
+    let deps = AgentDeps::new(
+        SharedDeps::new(model.resolver(), "/", ShutWorkspace),
+        tools,
+        "",
+    );
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let session = start(agent, Hub::new("example-stream"));
 

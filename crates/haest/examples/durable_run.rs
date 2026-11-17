@@ -24,8 +24,8 @@ use std::{
 };
 
 use haest::{
-    Agent, AgentDeps, AgentOptions, BoxError, JsonMap, LoopEvent, ShutWorkspace, Tool, ToolContext,
-    ToolError, ToolOutput, Tools, async_trait,
+    Agent, AgentDeps, AgentOptions, BoxError, JsonMap, LoopEvent, SharedDeps, ShutWorkspace, Tool,
+    ToolContext, ToolError, ToolOutput, Tools, async_trait,
     core::run::{MemoryRunStore, RunKey, Served},
     core::testing::{ScriptedProvider, text_answer, tool_answer},
     core::tool::OnResume,
@@ -132,14 +132,9 @@ impl Tool for Fetch {
 /// An agent on `provider` with `tools`, keeping its runs in `store`: the one
 /// line that makes runs durable is `run_store`.
 fn agent(provider: &ScriptedProvider, store: &MemoryRunStore, tools: Tools) -> Agent {
-    let deps = AgentDeps::new(
-        provider.resolver(),
-        tools,
-        "You send the daily report.",
-        "/",
-        ShutWorkspace,
-    )
-    .with_run_store(store.clone());
+    let shared = SharedDeps::new(provider.resolver(), "/", ShutWorkspace);
+    let deps =
+        AgentDeps::new(shared, tools, "You send the daily report.").with_run_store(store.clone());
     Agent::new(deps, AgentOptions::new("scripted:model-1"))
 }
 

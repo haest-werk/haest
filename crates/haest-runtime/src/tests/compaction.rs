@@ -28,7 +28,8 @@ fn full(hooks: &RuntimeHooks, provider: impl Into<ProviderRef>) -> (Agent, Ledge
     let resolve = move |_: &str| -> Result<ResolvedModel, ModelError> {
         Ok(ResolvedModel::new(provider.clone(), "m"))
     };
-    let deps = AgentDeps::new(resolve, Tools::new(), "", "/w", ShutWorkspace)
+    let shared = haest_core::SharedDeps::new(resolve, "/w", ShutWorkspace);
+    let deps = AgentDeps::new(shared, Tools::new(), "")
         .with_hooks(hooks.clone())
         .with_services(hooks.clone())
         .with_facts(hooks.clone())

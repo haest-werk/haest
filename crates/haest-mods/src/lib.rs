@@ -50,7 +50,7 @@
 //!
 //! ```
 //! use haest_core::{
-//!     Agent, AgentDeps, AgentOptions, MemFs, Message, ShutWorkspace, Tools,
+//!     Agent, AgentDeps, AgentOptions, MemFs, Message, SharedDeps, ShutWorkspace, Tools,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //!     tool::Tool,
 //!     workspace::WorkspaceMode,
@@ -102,11 +102,9 @@
 //!     text_answer("Understood, I will not."),
 //! ]);
 //! let deps = AgentDeps::new(
-//!     model.resolver(),
+//!     SharedDeps::new(model.resolver(), "/project", ShutWorkspace),
 //!     ModTools::new(tools, mods.clone()),
 //!     ModSystemPrompt::new(prompt, mods.clone()),
-//!     "/project",
-//!     ShutWorkspace,
 //! );
 //! let mut agent = Agent::new(deps, AgentOptions::new("scripted:model"));
 //! let text = mods.rewrite_prompt("free up some disk").await;

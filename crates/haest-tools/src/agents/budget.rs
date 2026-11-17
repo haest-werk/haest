@@ -28,8 +28,8 @@ use super::{AgentError, run::wall_clock};
 /// use async_trait::async_trait;
 /// use haest_core::{tool::{ToolContext, input}, workspace::ShutWorkspace};
 /// use haest_tools::{
-///     AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
-///     SubagentBudget, agent_tools,
+///     AgentDirectory, AgentError, AgentMessage, AgentRef, AgentToolOptions, SpawnInput,
+///     SpawnOutcome, SubagentBudget, agent_tools,
 /// };
 /// use serde_json::json;
 /// use tokio_util::sync::CancellationToken;
@@ -43,8 +43,8 @@ use super::{AgentError, run::wall_clock};
 ///         let _ = self.0.send(input.budget); // the host runs it under this
 ///         Ok(SpawnOutcome { text: "done".into(), cost_usd: 0.0 })
 ///     }
-///     fn deliver(&self, _: &str, to: &str, _: &str) -> Result<String, AgentError> {
-///         Err(AgentError::Refused(format!("{to} is not running")))
+///     fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
+///         Err(AgentError::Refused(format!("{} is not running", message.to)))
 ///     }
 ///     fn stop(&self, _: &str) -> bool {
 ///         false

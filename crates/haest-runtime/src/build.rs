@@ -226,7 +226,7 @@ where
         tools: tools.clone(),
     };
     let system_prompt = ModSystemPrompt::new(main_prompt, mods.clone());
-    let deps = AgentDeps::from_shared(shared, tools, system_prompt);
+    let deps = AgentDeps::new(shared, tools, system_prompt);
 
     let mut agent_opts = AgentOptions::new(model);
     agent_opts.effort = effort;

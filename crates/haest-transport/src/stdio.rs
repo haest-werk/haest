@@ -28,7 +28,7 @@ use crate::{
 /// pair works the same (a test's in-memory pipes).
 ///
 /// ```
-/// use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::{ScriptedProvider, text_answer}};
+/// use haest_core::{Agent, AgentDeps, AgentOptions, SharedDeps, ShutWorkspace, Tools, testing::{ScriptedProvider, text_answer}};
 /// use haest_session::{Hub, start};
 /// use haest_transport::{Grant, Stdio, Transport};
 /// use haest_wire::{LineDecoder, Origin};
@@ -37,7 +37,7 @@ use crate::{
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::BoxError> {
 /// let model = ScriptedProvider::new([text_answer("hi")]);
-/// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
+/// let deps = AgentDeps::new(SharedDeps::new(model.resolver(), "/", ShutWorkspace), Tools::new(), "");
 /// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 ///
 /// // The parent's ends of the two pipes.

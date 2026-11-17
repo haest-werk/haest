@@ -13,7 +13,7 @@ use tokio::sync::Notify;
 
 use super::{
     caps,
-    support::{CALL_USD, Rig, now, say, spawns},
+    support::{CALL_USD, Rig, agent, now, say, spawns},
 };
 use crate::agents::{AgentError, AgentRef};
 
@@ -52,7 +52,7 @@ async fn stop_ends_a_running_agent_and_the_post_office_refuses_who_is_not_runnin
     );
     r.turn("go").await;
     let main = AgentRef::main();
-    assert!(r.hub.deliver(&main.name, "slow", "hurry").is_ok());
+    assert!(r.deliver(agent(&main.name), "slow", "hurry").is_ok());
     assert!(r.hub.stop("slow"));
     assert!(!r.hub.stop("slow"), "stopped once");
     let finished = |t: &String| t.starts_with("[Agent \"slow\" finished]");
@@ -63,7 +63,7 @@ async fn stop_ends_a_running_agent_and_the_post_office_refuses_who_is_not_runnin
         answer.contains("hurry"),
         "a message it never read comes back with its answer"
     );
-    let refused = |to: &str| r.hub.deliver(&main.name, to, "x").unwrap_err();
+    let refused = |to: &str| r.deliver(agent(&main.name), to, "x").unwrap_err();
     assert!(matches!(refused("slow"), AgentError::Finished { running, .. } if running == ["main"]));
     assert!(matches!(refused("ghost"), AgentError::UnknownAgent { name, .. } if name == "ghost"));
 }
