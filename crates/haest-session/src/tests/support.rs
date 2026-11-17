@@ -137,6 +137,20 @@ impl RewritePrompt for Marks {
     }
 }
 
+/// A rewriter that never answers on the text "hang" (a host's prompt
+/// expander whose model call stalls); any other text as it is.
+pub(super) struct Hangs;
+
+#[async_trait]
+impl RewritePrompt for Hangs {
+    async fn rewrite_prompt(&self, text: &str) -> String {
+        if text == "hang" {
+            std::future::pending::<()>().await;
+        }
+        text.to_string()
+    }
+}
+
 /// A rewriter with a bug: it panics.
 pub(super) struct Panics;
 

@@ -2,7 +2,7 @@ mod support;
 
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -697,6 +697,112 @@ async fn a_snapshot_is_answered_while_a_job_runs() {
     assert_eq!(turn.await.unwrap().stop_reason, StopReason::EndTurn);
     let now = session.snapshot().await.unwrap();
     assert_eq!((now.queued, now.effort.as_deref()), (0, Some("high")));
+    session.close().await;
+}
+
+/// A session whose rewriter never answers on "hang".
+fn hanging(model: &ScriptedProvider, tools: Tools) -> (Recorded, Arc<Mutex<Vec<Asked>>>) {
+    let mut recorded = Recorded::new(agent(model, tools), 0);
+    recorded.rewriter = Some(Hangs.into());
+    let log = recorded.log.clone();
+    (recorded, log)
+}
+
+/// The turn's own rewrite ran before the driver read any request: a
+/// rewriter that never answered left the interrupt, the snapshot and the
+/// turn's caller waiting for good.
+#[tokio::test]
+async fn an_interrupt_stops_a_turn_whose_rewrite_never_answers() {
+    let model = answers(&["next answered"]);
+    let (recorded, _) = hanging(&model, Tools::new());
+    let session = start(recorded, hub());
+
+    let turn = session.send_input(Input::human("hang")).unwrap();
+    let now = within(session.snapshot()).await.unwrap();
+    assert_eq!(now.state, State::Running);
+    within(session.control(Control::Interrupt)).await.unwrap();
+    let end = within(turn).await.unwrap();
+    assert_eq!(end.stop_reason, StopReason::Aborted);
+    assert!(model.requests().is_empty(), "no model call");
+
+    let next = within(session.turn(Input::human("next"))).await.unwrap();
+    assert_eq!(next.stop_reason, StopReason::EndTurn, "the session goes on");
+    session.close().await;
+}
+
+/// The same for a close: it returned only once the rewrite answered, and
+/// the conversation was never closed.
+#[tokio::test]
+async fn close_stops_a_turn_whose_rewrite_never_answers() {
+    let model = answers(&[]);
+    let (recorded, log) = hanging(&model, Tools::new());
+    let session = start(recorded, hub());
+
+    let turn = session.send_input(Input::human("hang")).unwrap();
+    within(session.close()).await;
+    assert_eq!(log.lock().unwrap().last(), Some(&Asked::Close));
+    let end = within(turn).await.unwrap();
+    assert_eq!(end.stop_reason, StopReason::Aborted);
+    assert!(model.requests().is_empty(), "no model call");
+}
+
+/// Input steered into a turn whose rewrite never answers; the turn runs to
+/// its end. Returns the session, the turn's caller, the steered input's and
+/// what the driver asked.
+async fn steered_into_a_turn_that_ends(
+    model: &ScriptedProvider,
+) -> (
+    crate::SessionHandle<Recorded>,
+    crate::PendingTurn,
+    crate::PendingTurn,
+    Arc<Mutex<Vec<Asked>>>,
+) {
+    let go = Arc::new(Notify::new());
+    let wait = Tools::from_iter([ToolRef::new(Wait(go.clone()))]);
+    let (recorded, log) = hanging(model, wait);
+    let session = start(recorded, hub());
+    let first = session.send_input(Input::human("wait")).unwrap();
+    eventually(|| model.requests().len() == 1).await;
+    let steered = session.send_input(Input::human("hang")).unwrap();
+    // Answered during the turn, after the input was steered.
+    let _ = within(session.snapshot()).await.unwrap();
+    go.notify_one();
+    (session, first, steered, log)
+}
+
+/// After the turn the driver waited for every steered input's rewrite
+/// before it said the turn ended: one that never answered left the turn's
+/// caller, a snapshot and `close` waiting for good, though the turn was
+/// over.
+#[tokio::test]
+async fn a_steered_rewrite_that_never_answers_holds_up_nothing_after_the_turn() {
+    let model = waits_then(&["done"]);
+    let (session, first, steered, log) = steered_into_a_turn_that_ends(&model).await;
+
+    let end = within(first).await.unwrap();
+    assert_eq!(end.stop_reason, StopReason::EndTurn);
+    let now = within(session.snapshot()).await.unwrap();
+    assert_eq!(now.state, State::Idle);
+    within(session.close()).await;
+    assert_eq!(log.lock().unwrap().last(), Some(&Asked::Close));
+    assert!(matches!(within(steered).await, Err(SessionError::Closed)));
+}
+
+/// An interrupt then stops what is still being rewritten: its caller hears
+/// it ended aborted, and the next turn runs.
+#[tokio::test]
+async fn an_interrupt_stops_a_steered_rewrite_that_never_answers() {
+    let model = waits_then(&["done", "next answered"]);
+    let (session, first, steered, _) = steered_into_a_turn_that_ends(&model).await;
+
+    let _ = within(first).await.unwrap();
+    within(session.control(Control::Interrupt)).await.unwrap();
+    let end = within(steered).await.unwrap();
+    assert_eq!(end.stop_reason, StopReason::Aborted);
+
+    let next = within(session.turn(Input::human("next"))).await.unwrap();
+    assert_eq!(next.stop_reason, StopReason::EndTurn);
+    assert_eq!(model.requests().len(), 3, "the turn, then the next");
     session.close().await;
 }
 

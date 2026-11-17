@@ -27,7 +27,13 @@ pub struct DrivenStatus {
 /// input that starts a turn, and input steered into a running turn alike.
 ///
 /// It runs beside the turn, on its own clone, so a rewrite never waits for
-/// the turn to end.
+/// the turn to end. It does run on the driver's task, and holds up what
+/// comes after it: the turn whose input it rewrites, and the next turn when
+/// it rewrites input steered into one that ended meanwhile. Answer
+/// promptly. The driver reads requests while it waits, and drops a rewrite
+/// where it waits when an interrupt or a close comes first (or every handle
+/// is gone): that input never goes in. So a rewrite is cancel-safe: dropped
+/// at an await, it leaves nothing half done.
 #[async_trait]
 pub trait RewritePrompt: Send + Sync {
     /// `text` as the model should read it.

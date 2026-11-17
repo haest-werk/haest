@@ -39,7 +39,8 @@ impl Input {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum Control {
-    /// Stop the running turn now; nothing between turns.
+    /// Stop the running turn now, or a person's input the rewriter still
+    /// holds (its turn ends aborted); nothing between turns.
     Interrupt,
     /// The model from the next turn on, `provider:model`.
     SetModelSpec(String),

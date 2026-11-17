@@ -1888,6 +1888,15 @@ against it; the wire JSON is unchanged):
   broker that waits for a hello in vain refused the link for good. A
   snapshot's `queued` now also counts input sent during a job, which waits
   for its end.
+- A rewriter that does not answer no longer wedges the session. The turn's
+  own rewrite ran before the driver read any request, and after a turn the
+  driver waited for every steered input's rewrite before it said the turn
+  ended: an interrupt, a snapshot, `close` and the turn's caller all
+  waited for good. Requests are now read while a rewrite runs: an
+  interrupt or a close drops it (that input never goes in, and a turn
+  stopped before it ran ends aborted with no model call), a snapshot is
+  answered, and a turn's caller hears it ended as soon as it does.
+  `RewritePrompt` says it should answer promptly and be cancel-safe.
 
 ### haest-transport (new)
 
