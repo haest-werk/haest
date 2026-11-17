@@ -386,7 +386,7 @@ flag          --project-mods
 
 ### `approvals`
 
-The built-in approval mod: asks before a tool changes anything.
+The built-in approval mod: in the real workspace, asks before a shell command that cannot be undone (deleting recursively, rewriting git history or the remote, wiping a disk, killing processes by name, sudo); anything else runs without asking.
 
 - Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
 - Default: `true`

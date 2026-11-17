@@ -203,7 +203,7 @@ pub const DEFS: &[Def] = &[
     def("env", WORK, Vars, "GH_TOKEN=${GITHUB_TOKEN}", "A variable every process haest starts gets, the sandbox's shell included, over env_passthrough: NAME=VALUE, or NAME for haest's own value; repeat it for more. In a file: an [env] table. ${NAME} and ${NAME:-default} in a value are filled in from haest's environment").short('E'),
     def("mods", WORK, Bool, "true", "Your mods in <config dir>/mods"),
     def("project_mods", WORK, Bool, "true", "The project's mods in .haest/mods (its code runs; a trusted dir only)"),
-    def("approvals", WORK, Bool, "false", "The built-in approval mod: asks before a tool changes anything"),
+    def("approvals", WORK, Bool, "false", "The built-in approval mod: in the real workspace, asks before a shell command that cannot be undone (deleting recursively, rewriting git history or the remote, wiping a disk, killing processes by name, sudo); anything else runs without asking"),
     def("trusted_dirs", WORK, List(None), "~/projects,~/work", "Dirs whose project files haest reads (.haest/config.toml, .mcp.json, .haest/mods), with every dir inside them").scope(Scope::User),
     def("max_turn_usd", CAPS, Number, "5", "One turn's spend (0 = no cap)"),
     def("max_turn_tokens", CAPS, Number, "2000000", "One turn's tokens (unset: 10x the model's window; 0 = no cap)"),

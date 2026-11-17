@@ -89,7 +89,7 @@ async fn subcommand(cmd: Command, loaded: &Loaded) -> ExitCode {
         }
         Command::Settings => show::settings_report(loaded)
             .iter()
-            .for_each(|l| println!("{l}")),
+            .for_each(|l| println!("{}", render::inert(l))),
         #[cfg(unix)]
         Command::Ctl(cmd) => return ctl::run(cmd, &loaded.config.control_dir()).await,
         #[cfg(not(unix))]

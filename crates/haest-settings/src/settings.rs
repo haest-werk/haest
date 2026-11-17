@@ -107,7 +107,8 @@ pub struct Settings {
     /// No trust check happens here: haest-config turns this on only inside
     /// `trusted_dirs`. A host that sets it runs whatever `.haest/mods` holds.
     pub project_mods: bool,
-    /// The built-in approval mod: asks before a tool changes anything. Bare: on.
+    /// The built-in approval mod: in the real workspace, asks before a shell
+    /// command that cannot be undone. Bare: on.
     pub approvals: bool,
     /// The spend, token, step and time caps.
     pub caps: CapSettings,
