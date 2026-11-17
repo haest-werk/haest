@@ -9,7 +9,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use futures::FutureExt;
 use haest_core::{
     __private::{ToolIndex, run_unspilled},
     ToolRef, Tools,
@@ -21,10 +20,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::{render::CallRecord, report::InnerRow};
-use crate::{
-    call_gate::CallGate,
-    vm::{NativeFn, VmSpec},
-};
+use crate::{call_gate::CallGate, vm::VmSpec};
 
 /// The most tool calls one Code run may make (100); a call past it throws in
 /// the program, telling it to return what it has.
@@ -251,22 +247,20 @@ impl Bridge {
         let mut values = serde_json::Map::new();
         values.insert("__schemas".into(), Value::Object(self.schemas.clone()));
         values.insert("__refuse".into(), json!(self.refuse("NAME")));
-        let me = self.clone();
-        let call: NativeFn = Arc::new(move |args| {
-            let me = me.clone();
-            async move { Ok(me.call(arg(&args, 0), arg(&args, 1)).await?) }.boxed()
-        });
-        let me = self.clone();
-        let see: NativeFn = Arc::new(move |args| {
-            let me = me.clone();
-            async move { Ok(me.see(arg(&args, 0)).await?) }.boxed()
-        });
-        VmSpec {
+        let (me, also_me) = (self.clone(), self.clone());
+        let spec = VmSpec {
             prelude: GUEST_API.into(),
             values,
-            native_fns: [("__call".to_string(), call), ("__see".to_string(), see)].into(),
             ..Default::default()
-        }
+        };
+        spec.with_native_fn("__call", move |args| {
+            let me = me.clone();
+            async move { Ok(me.call(arg(&args, 0), arg(&args, 1)).await?) }
+        })
+        .with_native_fn("__see", move |args| {
+            let me = also_me.clone();
+            async move { Ok(me.see(arg(&args, 0)).await?) }
+        })
     }
 }
 

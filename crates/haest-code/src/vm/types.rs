@@ -43,6 +43,7 @@ impl Default for VmCaps {
 
 /// Why a run was cut short.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum VmStop {
     /// It reached [`VmCaps::timeout_ms`].
     Timeout,
@@ -53,6 +54,7 @@ pub enum VmStop {
 /// How one engine run ended: its value or error, what it printed, and whether
 /// it was stopped.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
 pub struct VmRun {
     /// Function mode: the code's return value -- a string as is, anything
     /// else as JSON (indented two spaces), with the promises inside a plain
@@ -95,6 +97,7 @@ impl VmRun {
 /// One heartbeat: how the run is doing, about once a second -- from the interrupt
 /// handler, so a CPU loop beats too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct VmBeat {
     /// Time since the engine started, in milliseconds.
     pub elapsed_ms: u64,

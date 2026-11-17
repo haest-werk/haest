@@ -6,12 +6,12 @@ mod report;
 #[cfg(test)]
 mod tests;
 
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 use async_trait::async_trait;
 use haest_core::{
     ToolRef,
-    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, opt_num, req_str},
+    tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSourceRef, opt_num, req_str},
 };
 use serde_json::{Value, json};
 
@@ -47,27 +47,27 @@ fn matches(name: &str, pattern: &str) -> bool {
 /// ```
 /// use haest_code::code_callable;
 /// use haest_core::ToolRef;
-/// use haest_tools::{BashOptions, BashTool, FILE_TOOLS, ReadTool};
+/// use haest_tools::{BashTool, FILE_TOOLS, ReadTool};
 ///
-/// let files = FILE_TOOLS.map(String::from);
 /// let read = ToolRef::new(ReadTool::default());
-/// let bash = ToolRef::new(BashTool::new(BashOptions::default()));
-/// assert!(code_callable(read.as_ref(), &files));
-/// assert!(!code_callable(read.as_ref(), &[]));
-/// assert!(!code_callable(bash.as_ref(), &files));
-/// assert!(code_callable(bash.as_ref(), &["Bash".to_string()]));
+/// let bash = ToolRef::new(BashTool::default());
+/// assert!(code_callable(&*read, &FILE_TOOLS));
+/// assert!(!code_callable(&*read, &["Grep"]));
+/// assert!(!code_callable(&*bash, &FILE_TOOLS));
+/// assert!(code_callable(&*bash, &["Bash"]));
 /// ```
-pub fn code_callable(t: &dyn Tool, allowed: &[String]) -> bool {
+pub fn code_callable(t: &dyn Tool, allowed: &[impl AsRef<str>]) -> bool {
     let name = t.name();
     if name == CODE_TOOL_NAME {
         return false;
     }
-    (name.starts_with("mcp__") && t.read_only()) || allowed.iter().any(|p| matches(name, p))
+    (name.starts_with("mcp__") && t.read_only())
+        || allowed.iter().any(|p| matches(name, p.as_ref()))
 }
 
 /// The names of `tools` a Code program may call ([`code_callable`] with
 /// `allowed`), in their order: what [`CodeTool::new`] takes.
-pub fn code_tool_names(tools: &[ToolRef], allowed: &[String]) -> Vec<String> {
+pub fn code_tool_names(tools: &[ToolRef], allowed: &[impl AsRef<str>]) -> Vec<String> {
     tools
         .iter()
         .filter(|t| code_callable(t.as_ref(), allowed))
@@ -108,7 +108,7 @@ Callable: {}.",
 ///     setting the human controls). Bash only when the host allows it; never
 ///     Code itself
 ///   - each call goes through the SAME tool the model calls directly (the
-///     [`ToolSource`], read per run), so whatever wraps the model's tools -- plan
+///     [`ToolSource`](haest_core::tool::ToolSource), read per run), so whatever wraps the model's tools -- plan
 ///     mode, approvals -- judges every inner call too
 ///   - writes run alone, reads share a gate; [`MAX_CALLS`]
 ///     calls, [`MAX_SEEN`] pictures, [`VM_MEMORY_BYTES`](crate::VM_MEMORY_BYTES) and a wall-clock deadline
@@ -170,21 +170,30 @@ Callable: {}.",
 /// per-result ceiling ([`MAX_TOOL_OUTPUT`](haest_core::tool::MAX_TOOL_OUTPUT)),
 /// three quarters of it at most for the returned value, so the generic spill
 /// never cuts through the fence.
+#[derive(Debug)]
 pub struct CodeTool {
     names: Vec<String>,
-    callable: Arc<dyn ToolSource>,
+    callable: ToolSourceRef,
 }
 
 impl CodeTool {
     /// The Code tool over `callable`, allowed to call `names`.
     ///
     /// `names` is what the program may call (from [`code_tool_names`]).
-    /// `callable` is the tool list as the model sees it, wrappers included,
-    /// read again on every run: a name in `names` that `callable` no longer
-    /// offers is not callable that run. Give it the same wrapped tools the
-    /// model gets, so mods and approvals judge every inner call too.
-    pub fn new(names: Vec<String>, callable: Arc<dyn ToolSource>) -> Self {
-        Self { names, callable }
+    /// `callable` is the tool list as the model sees it, wrappers included
+    /// (a [`Tools`](haest_core::Tools) list, or any
+    /// [`ToolSource`](haest_core::tool::ToolSource)), read again on every
+    /// run: a name in `names` that `callable` no longer offers is not
+    /// callable that run. Give it the same wrapped tools the model gets, so
+    /// mods and approvals judge every inner call too.
+    pub fn new(
+        names: impl IntoIterator<Item = impl Into<String>>,
+        callable: impl Into<ToolSourceRef>,
+    ) -> Self {
+        Self {
+            names: names.into_iter().map(Into::into).collect(),
+            callable: callable.into(),
+        }
     }
 }
 

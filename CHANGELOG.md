@@ -661,9 +661,28 @@ Good citizens:
 
 ### haest-code
 
-- `code_tool_names` takes `&[ToolRef]` (was `&[Arc<dyn Tool>]`).
-- `JsEnv::fs` is an `FsRef` (was `Arc<dyn Fs>`): `fs: Arc::new(mem)` ->
-  `fs: FsRef::new(mem)` or `fs: mem.into()`.
+- `code_tool_names` takes `&[ToolRef]` (was `&[Arc<dyn Tool>]`), and it
+  and `code_callable` take the allowed names as any strings
+  (`&[impl AsRef<str>]`, was `&[String]`): `&FILE_TOOLS` passes as is.
+- `CodeTool::new` takes the names as any strings and the tools themselves
+  (`impl Into<ToolSourceRef>`):
+  `CodeTool::new(names, Arc::new(tools))` -> `CodeTool::new(names, tools)`.
+- `JsEnv` is built with `JsEnv::new(fs, cwd)` and `with_env`,
+  `with_stdin`, `with_cancel` and `with_ends_at`; its fields are private,
+  read with `fs()` and `cwd()`:
+  `JsEnv { fs: Arc::new(mem), cwd, env, stdin: None, cancel, ends_at }` ->
+  `JsEnv::new(mem, cwd).with_ends_at(at)`. `js_command` and `run_js` take
+  their arguments as any strings.
+- `VmSpec` is built with `VmSpec::new()` and `with_prelude`, `with_value`,
+  `with_native_fn`, `with_modules` and `with_filename`; a native function
+  is a plain async closure, and `NativeFn` and `NativeFuture` are gone:
+  `spec.native_fns.insert(name, Arc::new(|args| async { .. }.boxed()))` ->
+  `VmSpec::new().with_native_fn(name, |args| async { .. })`.
+- `sandbox_commands` returns `Vec<ShellCommandRef>` (was
+  `Vec<Arc<dyn ShellCommand>>`).
+- `VmRun`, `VmBeat` and `VmStop` are `#[non_exhaustive]`; `CodeTool`,
+  `JsEnv` and `VmSpec` implement `Debug` (a `JsEnv` shows the names of its
+  variables, never their values).
 - The Code tool hands its caller's `turn_time_left` on to the calls it
   makes.
 - A tool the Code tool calls sees the caller's wind-down.

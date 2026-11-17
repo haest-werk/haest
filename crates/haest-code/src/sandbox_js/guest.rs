@@ -15,11 +15,10 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use futures::FutureExt;
 use haest_core::fs::{Fs, FsRef, ensure_dir, resolve_path};
 use serde_json::{Value, json};
 
-use crate::vm::{NativeFn, VmSpec};
+use crate::vm::VmSpec;
 
 const PROMISE_API: [&str; 11] = [
     "readFile",
@@ -251,7 +250,7 @@ pub(crate) fn js_script_spec(script: JsScript, filename: &str) -> VmSpec {
     values.insert("__stdin".into(), json!(script.stdin));
     values.insert("__cwd".into(), json!(script.cwd.display().to_string()));
     let (fs, cwd) = (script.fs.clone(), script.cwd.clone());
-    let fs_fn: NativeFn = Arc::new(move |args| {
+    let fs_fn = move |args: Vec<String>| {
         let (fs, cwd) = (fs.clone(), cwd.clone());
         async move {
             let op = args.first().cloned().unwrap_or_default();
@@ -259,23 +258,24 @@ pub(crate) fn js_script_spec(script: JsScript, filename: &str) -> VmSpec {
                 serde_json::from_str(args.get(1).map_or("[]", String::as_str))?;
             Ok(fs_op(fs.as_ref(), &cwd, &op, &parsed).await?.to_string())
         }
-        .boxed()
-    });
+    };
     // The guest throws right after calling it; the code lands before the run's result does.
     let exit = script.exit_code.clone();
-    let exit_fn: NativeFn = Arc::new(move |args| {
+    let exit_fn = move |args: Vec<String>| {
         let code = args
             .first()
             .and_then(|c| c.trim().parse::<f64>().ok())
             .filter(|c| c.is_finite());
         *exit.lock().unwrap() = Some(code.map_or(0, |c| c as i32));
-        async { Ok(String::new()) }.boxed()
-    });
-    VmSpec {
+        async { Ok(String::new()) }
+    };
+    let spec = VmSpec {
         prelude: prelude(),
         values,
-        native_fns: [("__fs".to_string(), fs_fn), ("__exit".to_string(), exit_fn)].into(),
         modules: Some(module_sources()),
         filename: Some(filename.to_string()),
-    }
+        ..Default::default()
+    };
+    spec.with_native_fn("__fs", fs_fn)
+        .with_native_fn("__exit", exit_fn)
 }

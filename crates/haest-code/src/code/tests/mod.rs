@@ -44,7 +44,7 @@ fn allowed(extra: &[&str]) -> Vec<String> {
 /// A Code tool over `tools`, the way a host builds it: names from the policy, calls into the list.
 fn code_over(tools: impl Into<Tools>, extra: &[&str]) -> CodeTool {
     let tools: Tools = tools.into();
-    CodeTool::new(code_tool_names(&tools, &allowed(extra)), Arc::new(tools))
+    CodeTool::new(code_tool_names(&tools, &allowed(extra)), tools)
 }
 
 async fn run_in(tool: &CodeTool, code: &str, extra: Value, ctx: &ToolContext) -> ToolOutput {
@@ -120,7 +120,7 @@ fn code_callable_follows_the_policy() {
     }
     let read = ReadTool::default();
     assert!(
-        !code_callable(&read, &[]),
+        !code_callable(&read, &[] as &[&str]),
         "a file tool the host leaves out"
     );
 }
@@ -204,7 +204,7 @@ async fn every_inner_call_goes_through_the_tools_the_model_is_given() {
         ToolRef::new(ReadTool::default()),
         ToolRef::new(Denied(ToolRef::new(WriteTool))),
     ]);
-    let tool = CodeTool::new(vec!["Read".into(), "Write".into()], Arc::new(wrapped));
+    let tool = CodeTool::new(["Read", "Write"], wrapped);
     let code = "try { await tools.Write({ file_path: 'x.txt', content: 'no' }); return 'wrote' } catch (e) { return 'denied' }";
     let out = run_in(&tool, code, json!({}), &ctx(ws.clone())).await;
     assert_eq!(returned(&out), Some(json!("denied")));

@@ -41,27 +41,24 @@
 //! direct call.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_code::{CodeTool, code_tool_names};
-//! use haest_core::{MemFs, Tool, ToolContext, Tools};
+//! use haest_core::{JsonMap, MemFs, Tool, ToolContext, Tools};
 //! use haest_tools::{FILE_TOOLS, GlobTool, ReadTool};
 //! use haest_workspace::SandboxWorkspace;
 //! use serde_json::json;
 //!
 //! # #[tokio::main]
-//! # async fn main() {
+//! # async fn main() -> Result<(), haest_core::error::BoxError> {
 //! let files = MemFs::with_files([
 //!     ("/project/notes/a.md", "TODO: write the intro\n"),
 //!     ("/project/notes/b.md", "done\n"),
-//!     ("/project/notes/c.md", "TODO: check the numbers\nTODO: ask Sam\n"),
+//!     ("/project/notes/c.md", "TODO: check the numbers\nTODO: ask a colleague\n"),
 //! ]);
-//! let workspace = SandboxWorkspace::over(Arc::new(files));
+//! let workspace = SandboxWorkspace::over(files);
 //!
 //! // The model's tools. Code may call the file tools among them.
 //! let tools = Tools::new().with(ReadTool::default()).with(GlobTool);
-//! let allowed = FILE_TOOLS.map(String::from);
-//! let code = CodeTool::new(code_tool_names(&tools, &allowed), Arc::new(tools));
+//! let code = CodeTool::new(code_tool_names(&tools, &FILE_TOOLS), tools.clone());
 //!
 //! let program = r#"
 //!   const files = (await tools.Glob({ pattern: 'notes/*.md' })).split('\n').filter(Boolean)
@@ -69,12 +66,13 @@
 //!   for (const f of files) todos += (await tools.Read({ file_path: f })).split('TODO').length - 1
 //!   return { files: files.length, todos }
 //! "#;
-//! let input = json!({ "code": program }).as_object().cloned().unwrap();
-//! let out = code.execute(input, &ToolContext::new("/project", workspace)).await.unwrap();
+//! let input: JsonMap = serde_json::from_value(json!({ "code": program }))?;
+//! let out = code.execute(input, &ToolContext::new("/project", workspace)).await?;
 //! assert!(!out.is_error, "{}", out.content);
 //! // The model reads the returned value (and a count of the calls it took),
 //! // not the four tool results.
 //! assert!(out.content.contains("\"todos\": 3"));
+//! # Ok(())
 //! # }
 //! ```
 //!
@@ -85,7 +83,7 @@
 //! script then runs inside the shell call, pipes and all.
 //!
 //! ```
-//! use std::{sync::Arc, time::Duration};
+//! use std::time::Duration;
 //!
 //! use haest_code::sandbox_commands;
 //! use haest_core::{ExecOptions, MemFs, Workspace};
@@ -99,7 +97,7 @@
 //! )]);
 //! let sandbox = sandbox_commands()
 //!     .into_iter()
-//!     .fold(SandboxWorkspace::over(Arc::new(files)), SandboxWorkspace::with_command);
+//!     .fold(SandboxWorkspace::over(files), SandboxWorkspace::with_command);
 //!
 //! let opts = ExecOptions::new("/project", Duration::from_secs(20));
 //! let run = sandbox.shell("js hi.ts haest | tr a-z A-Z", opts.clone()).await;
@@ -128,6 +126,5 @@ pub use sandbox_js::{
     JS_MAX_OUTPUT, JS_TIMEOUT, JsEnv, NOT_HERE, js_command, run_js, sandbox_commands,
 };
 pub use vm::{
-    MAX_ENGINES, NativeFn, NativeFuture, STOP_GRACE, VM_MEMORY_BYTES, VmBeat, VmCaps, VmRun,
-    VmSpec, VmStop, run_in_vm,
+    MAX_ENGINES, STOP_GRACE, VM_MEMORY_BYTES, VmBeat, VmCaps, VmRun, VmSpec, VmStop, run_in_vm,
 };

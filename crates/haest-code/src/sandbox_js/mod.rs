@@ -8,6 +8,7 @@ mod tests;
 
 use std::{
     collections::BTreeMap,
+    fmt,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -38,21 +39,88 @@ pub const JS_TIMEOUT: Duration = Duration::from_secs(300);
 pub const JS_MAX_OUTPUT: usize = 1_000_000;
 
 /// Where a `js` command runs: the sandbox's files and the shell call it is part of.
+///
+/// [`new`](Self::new) is a script over `fs` in `cwd` with no variables, no
+/// stdin, no interrupt and [`JS_TIMEOUT`]; the `with_*` setters change each.
 #[derive(Clone)]
 pub struct JsEnv {
     /// The files the script's `fs` reads and writes: the sandbox's own.
-    pub fs: FsRef,
+    pub(crate) fs: FsRef,
     /// The shell's working directory: relative paths, `process.cwd()` and the script's own path resolve against it.
-    pub cwd: PathBuf,
+    pub(crate) cwd: PathBuf,
     /// The shell's exported variables: the script's `process.env`.
-    pub env: BTreeMap<String, String>,
+    pub(crate) env: BTreeMap<String, String>,
     /// What is piped into the command (`process.stdin`, `/dev/stdin`); None =
     /// nothing.
-    pub stdin: Option<String>,
+    pub(crate) stdin: Option<String>,
     /// The shell call's interrupt.
-    pub cancel: CancellationToken,
+    pub(crate) cancel: CancellationToken,
     /// The running shell call's end; None = [`JS_TIMEOUT`] from now.
-    pub ends_at: Option<Instant>,
+    pub(crate) ends_at: Option<Instant>,
+}
+
+impl JsEnv {
+    /// A script over `fs` (the files its `fs` module reads and writes), in
+    /// `cwd` (what relative paths, `process.cwd()` and the script's own path
+    /// resolve against).
+    pub fn new(fs: impl Into<FsRef>, cwd: impl Into<PathBuf>) -> Self {
+        Self {
+            fs: fs.into(),
+            cwd: cwd.into(),
+            env: BTreeMap::new(),
+            stdin: None,
+            cancel: CancellationToken::new(),
+            ends_at: None,
+        }
+    }
+
+    /// The shell's exported variables, the script's `process.env`, in place
+    /// of none.
+    pub fn with_env(mut self, env: BTreeMap<String, String>) -> Self {
+        self.env = env;
+        self
+    }
+
+    /// What is piped into the command: `process.stdin` and `/dev/stdin`.
+    pub fn with_stdin(mut self, stdin: impl Into<String>) -> Self {
+        self.stdin = Some(stdin.into());
+        self
+    }
+
+    /// The shell call's interrupt: the script stops when it fires.
+    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
+    }
+
+    /// The running shell call's end, in place of [`JS_TIMEOUT`] from the
+    /// start (a later one is cut to that).
+    pub fn with_ends_at(mut self, ends_at: Instant) -> Self {
+        self.ends_at = Some(ends_at);
+        self
+    }
+
+    /// The files the script works on.
+    pub fn fs(&self) -> &FsRef {
+        &self.fs
+    }
+
+    /// The working directory the script runs in.
+    pub fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+}
+
+/// The variables by name only: a value may be a secret.
+impl fmt::Debug for JsEnv {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JsEnv")
+            .field("cwd", &self.cwd)
+            .field("env", &self.env.keys().collect::<Vec<_>>())
+            .field("stdin", &self.stdin.as_ref().map(String::len))
+            .field("ends_at", &self.ends_at)
+            .finish_non_exhaustive()
+    }
 }
 
 fn output(stdout: impl Into<String>, stderr: impl Into<String>, exit_code: i32) -> ExecResult {
@@ -145,8 +213,8 @@ pub(crate) fn not_here(name: &str) -> ExecResult {
 /// such a file is refused. A JSX file (`.tsx`, `.mtsx`, `.ctsx`, `.jsx`) is
 /// refused, exit 1: the engine runs no JSX.
 ///
-/// `env.cancel` stops the script; so does the shell call's deadline,
-/// `env.ends_at`.
+/// The env's interrupt ([`JsEnv::with_cancel`]) stops the script; so does
+/// the shell call's deadline ([`JsEnv::with_ends_at`]).
 ///
 /// # Examples
 ///
@@ -155,7 +223,6 @@ pub(crate) fn not_here(name: &str) -> ExecResult {
 ///
 /// use haest_code::{JsEnv, js_command};
 /// use haest_core::{FsRef, MemFs};
-/// use tokio_util::sync::CancellationToken;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> std::io::Result<()> {
@@ -165,24 +232,17 @@ pub(crate) fn not_here(name: &str) -> ExecResult {
 ///     const nums = (await readFile('nums.txt', 'utf8')).trim().split('\\n').map(Number)
 ///     await writeFile('total.txt', String(nums.reduce((a, b) => a + b, 0)))",
 /// ), ("/work/nums.txt", "1\n2\n3\n")]));
-/// let env = JsEnv {
-///    fs: fs.clone(),
-///    cwd: "/work".into(),
-///    env: Default::default(),
-///    stdin: None,
-///    cancel: CancellationToken::new(),
-///    ends_at: Some(Instant::now() + Duration::from_secs(20)),
-/// };
-/// let run = js_command(&["sum.js".to_string()], &env).await;
+/// let env = JsEnv::new(fs.clone(), "/work").with_ends_at(Instant::now() + Duration::from_secs(20));
+/// let run = js_command(&["sum.js"], &env).await;
 /// assert_eq!(run.exit_code, 0, "{}", run.stderr);
 /// assert_eq!(fs.read_to_string(Path::new("/work/total.txt")).await?, "6");
 ///
-/// assert_eq!(js_command(&["missing.js".to_string()], &env).await.exit_code, 1);
+/// assert_eq!(js_command(&["missing.js"], &env).await.exit_code, 1);
 /// # Ok(())
 /// # }
 /// ```
-pub async fn js_command(args: &[String], env: &JsEnv) -> ExecResult {
-    let Some(file) = args.first() else {
+pub async fn js_command(args: &[impl AsRef<str>], env: &JsEnv) -> ExecResult {
+    let Some(file) = args.first().map(AsRef::as_ref) else {
         return output("", usage(), 2);
     };
     if file == "-h" || file == "--help" {
@@ -212,14 +272,15 @@ pub async fn js_command(args: &[String], env: &JsEnv) -> ExecResult {
 ///
 /// The run gets the script API in [`js_command`](js_command#what-a-script-has)'s docs,
 /// [`VM_MEMORY_BYTES`](crate::VM_MEMORY_BYTES) of memory, and until
-/// `env.ends_at` (at most [`JS_TIMEOUT`]). The result is a CLI's: what it
-/// printed, and the exit code it passed to `process.exit`, else 1 when it
-/// threw or was stopped, else 0. An uncaught error, a stop (`env.cancel` or
-/// the deadline) and output past [`JS_MAX_OUTPUT`] each add a line to stderr.
-pub async fn run_js(path: &Path, code: &str, args: &[String], env: &JsEnv) -> ExecResult {
+/// the env's end ([`JsEnv::with_ends_at`], at most [`JS_TIMEOUT`]). The
+/// result is a CLI's: what it printed, and the exit code it passed to
+/// `process.exit`, else 1 when it threw or was stopped, else 0. An uncaught
+/// error, a stop (the env's interrupt or the deadline) and output past
+/// [`JS_MAX_OUTPUT`] each add a line to stderr.
+pub async fn run_js(path: &Path, code: &str, args: &[impl AsRef<str>], env: &JsEnv) -> ExecResult {
     let exit_code = Arc::new(Mutex::new(None));
     let mut argv = vec![JS_COMMAND.to_string(), path.display().to_string()];
-    argv.extend(args.iter().cloned());
+    argv.extend(args.iter().map(|a| a.as_ref().to_string()));
     let script = JsScript {
         fs: env.fs.clone(),
         cwd: env.cwd.clone(),

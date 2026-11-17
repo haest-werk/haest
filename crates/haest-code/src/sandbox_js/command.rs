@@ -1,11 +1,9 @@
 //! `js` and the runtime names that point at it, as haest [`ShellCommand`]s: what
 //! a sandbox shell registers ([`sandbox_commands`]).
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use haest_core::{
-    shell_command::{ShellCall, ShellCommand},
+    shell_command::{ShellCall, ShellCommand, ShellCommandRef},
     workspace::ExecResult,
 };
 
@@ -20,14 +18,12 @@ const JS_NOTE: &str = "To run a script you wrote, use `js <file.js> [args]`: pla
 /// `js` and, for every name in [`NOT_HERE`](crate::NOT_HERE), a command that
 /// points to it, ready for `SandboxWorkspace::with_command`. Only `js` has a
 /// note for the system prompt; the others stay unadvertised.
-pub fn sandbox_commands() -> Vec<Arc<dyn ShellCommand>> {
-    let mut out: Vec<Arc<dyn ShellCommand>> = vec![Arc::new(JsShellCommand)];
-    out.extend(
-        NOT_HERE
-            .iter()
-            .map(|name| Arc::new(NotHere(name)) as Arc<dyn ShellCommand>),
-    );
-    out
+pub fn sandbox_commands() -> Vec<ShellCommandRef> {
+    let js = ShellCommandRef::new(JsShellCommand);
+    let pointers = NOT_HERE
+        .iter()
+        .map(|name| ShellCommandRef::new(NotHere(name)));
+    std::iter::once(js).chain(pointers).collect()
 }
 
 /// The sandbox shell's `js <file> [args]` command: [`js_command`] over the
