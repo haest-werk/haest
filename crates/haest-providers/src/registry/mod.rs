@@ -214,9 +214,10 @@ impl ProviderRegistry {
     ///
     /// let registry = ProviderRegistry::new(|_: &str| None)
     ///     .with_provider("bedrock", ScriptedProvider::new([]));
-    /// let resolved = registry.resolve("bedrock:claude-opus-5-5").unwrap();
+    /// let resolved = registry.resolve("bedrock:claude-opus-5-5")?;
     /// assert_eq!(resolved.model(), "claude-opus-5-5");
     /// assert!(registry.names().contains(&"bedrock".to_string()));
+    /// # Ok::<(), haest_core::ModelError>(())
     /// ```
     #[must_use]
     pub fn with_provider(

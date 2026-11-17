@@ -70,12 +70,13 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `transport-broker` | `haest::transport::Broker` (the conversation dials out to a broker over a WebSocket; pulls a WebSocket client on rustls) | no |
 
 ```toml
+[dependencies]
 haest = "0.3"
-# the whole conversation with haest's own files, variables and flags (the CLI's way)
-haest = { version = "0.3", features = ["runtime", "config"] }
-# a host with its own HTTP client, files and tools (the notebook example);
-# `tools` still builds reqwest for WebFetch, so drop it too for a tree with none
-haest = { version = "0.3", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
+# or, the whole conversation with haest's own files, variables and flags (the CLI's way):
+# haest = { version = "0.3", features = ["runtime", "config"] }
+# or, a host with its own HTTP client, files and tools (the notebook example);
+# `tools` still builds reqwest for WebFetch, so drop it too for a tree with none:
+# haest = { version = "0.3", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
 
 ## Run the CLI

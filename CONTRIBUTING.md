@@ -1,8 +1,10 @@
 # Working on haest
 
-- **Port, don't reinvent.** Behaviour comes from the TypeScript haest at
-  remote-claude's `src/haest-agent-host/` (`core/`, `providers/`, `tools/`).
-  Read the TS file and its test first; keep its doc comments' intent.
+- **Keep the behaviour, don't reinvent it.** What haest does is defined by
+  its tests and doc comments: read the code's tests and docs first, and keep
+  their intent. haest was ported from a TypeScript original; where a
+  maintainer has it, it is the reference for intent, never a requirement
+  for a contributor.
 - **The contract is in `haest-core`** (`messages`, `provider`, `tool`, `fs`,
   `workspace`, `events`, `deps`, `agent`). Change it only when a port truly
   needs it, and say so in the commit message.
