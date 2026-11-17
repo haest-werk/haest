@@ -41,7 +41,11 @@ haest_core::word_enum! {
     ///
     /// Each relation has an inverse: `A parent B` is `B child A`,
     /// `A depends_on B` is `B blocks A`; `relates_to` is its own.
+    ///
+    /// More may come in a minor release (a duplicate): a tracker that
+    /// matches on one refuses, in a `_` arm, a relation it does not keep.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[non_exhaustive]
     pub enum Relation ("relation") {
         /// The target is this issue's parent (a GitHub parent issue, a card's epic).
         Parent = "parent",

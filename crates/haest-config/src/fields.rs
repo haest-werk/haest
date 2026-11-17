@@ -39,8 +39,10 @@ haest_core::word_enum! {
 
 haest_core::word_enum! {
     /// What a control socket lets a program on this machine do: the
-    /// `control_socket` setting. Off, it is not opened at all.
+    /// `control_socket` setting. Off, it is not opened at all. haest may add
+    /// a level in a minor release, as the transport's grants grow.
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum ControlSocket ("control_socket") {
         /// No socket.
         #[default]
@@ -54,7 +56,10 @@ haest_core::word_enum! {
 
 haest_core::word_enum! {
     /// What a broker may do over the link: the `broker_access` setting.
+    /// haest may add a level in a minor release, as the transport's grants
+    /// grow.
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum BrokerAccess ("broker_access") {
         /// Read the conversation: its stream, a snapshot, the history.
         #[default]

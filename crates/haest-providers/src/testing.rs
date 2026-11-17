@@ -39,8 +39,10 @@ use haest_core::{
 use haest_http::{Body, Bytes, HttpClient, HttpError, Request, Response, async_trait};
 use serde_json::Value;
 
-/// What happens after a reply's chunks.
+/// What happens after a reply's chunks. More endings may come in a minor
+/// release (a stall, then the rest): a `match` adds a `_` arm.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum FakeEnd {
     /// The body ends cleanly.
     Close,
@@ -50,8 +52,10 @@ pub enum FakeEnd {
     Hang,
 }
 
-/// One scripted answer.
+/// One scripted answer. More kinds may come in a minor release: a `match`
+/// adds a `_` arm.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum FakeReply {
     /// An answer: the status and headers, then the body in these chunks, then `end`.
     Response {

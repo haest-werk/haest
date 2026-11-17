@@ -72,8 +72,10 @@ impl McpServerConfig {
 ///
 /// A host that reaches a server some other way (a server in the same process,
 /// a socket it opened) connects it with `McpHub::connect_transport` (feature
-/// `rmcp`) instead.
+/// `rmcp`) instead. More transports may come in a minor release (`.mcp.json`
+/// also names `sse`): a `match` adds a `_` arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum McpTransport {
     /// Streamable HTTP.
     Http(HttpTransport),

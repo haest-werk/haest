@@ -163,8 +163,9 @@ fn control_socket(
 ) -> Option<Attached> {
     let grant = match open {
         ControlSocket::Off => return None,
-        ControlSocket::Watch => Grant::watch(Origin::Agent),
         ControlSocket::Command => Grant::command(Origin::Agent),
+        // Watch, and a level this command does not know yet: the least access.
+        _ => Grant::watch(Origin::Agent),
     };
     #[cfg(unix)]
     {
@@ -211,8 +212,9 @@ fn broker_link(
 ) -> Option<tokio::task::JoinHandle<()>> {
     let url = url.filter(|u| !u.trim().is_empty())?;
     let grant = match access {
-        BrokerAccess::Watch => Grant::watch(Origin::Agent),
         BrokerAccess::Command => Grant::command(Origin::Agent),
+        // Watch, and a level this command does not know yet: the least access.
+        _ => Grant::watch(Origin::Agent),
     };
     // Said without its credentials: the URL is not where a secret goes,
     // but one may be there.

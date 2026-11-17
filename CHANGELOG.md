@@ -920,6 +920,9 @@ Hosts write less (round two of the review, and what porting brain onto
 - `testing::FakeReply::header(&str, &str)` ->
   `FakeReply::with_header(name, value)`, taking `impl Into<String>` as
   `Response::with_header` does (breaking for tests).
+- `testing::FakeReply` and `testing::FakeEnd` are `#[non_exhaustive]`
+  (breaking for a test that matches on one): a `match` adds a `_` arm;
+  building one is unchanged.
 
 ### haest-tools
 
@@ -1217,6 +1220,9 @@ Hosts write less (round two of the review, and what porting brain onto
 - `McpStartError`, `McpConfigError` and `ProjectMcp` are
   `#[non_exhaustive]`; `McpHub` implements `Debug` (servers and failures
   by name, the environment's names but never its values).
+- `McpTransport` is `#[non_exhaustive]` (breaking): a `match` adds a `_`
+  arm, and haest adds a transport (`.mcp.json`'s `sse`) in a minor
+  release.
 
 ### haest-mods
 
@@ -1352,6 +1358,10 @@ Hosts write less (round two of the review, and what porting brain onto
 - `subagent_minutes` takes a fraction, as `max_turn_minutes` does
   (`2.5` is two and a half minutes; it was refused as not a whole number).
   A time too long for a `Duration` is the longest there is.
+- `ControlSocket` and `BrokerAccess` are `#[non_exhaustive]` (breaking): a
+  `match` adds a `_` arm (the `haest` command's gives the least access,
+  watch), and haest adds a level in a minor release as the transport's
+  grants grow.
 
 ### haest-runtime
 
@@ -1718,6 +1728,10 @@ against it; the wire JSON is unchanged):
   `.with_http(Arc::new(client))` -> `.with_http(client)`. `GithubTracker` is
   `Clone`.
 - `TrackerError` is `#[non_exhaustive]` (breaking): a `match` adds a `_` arm.
+- `Relation` is `#[non_exhaustive]` (breaking): a tracker that matches on
+  one refuses, in a `_` arm, a relation it does not keep, and haest adds
+  one (a duplicate) in a minor release. `LinkChange` stays exhaustive (add
+  and remove are the whole set).
 - New `reqwest` feature, on by default: the GitHub tracker's default client.
   With `default-features = false` no reqwest, rustls or ring is built (115
   crates in the tree become 38), and a tracker the host hands no client
