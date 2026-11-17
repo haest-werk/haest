@@ -13,17 +13,25 @@ fn call(name: &str, input: Value) -> ToolCall {
 
 /// `Read src/a.rs`, done in 3 ms; failed or not.
 pub(crate) fn read_result(is_error: bool) -> LoopEvent {
+    tool_result(
+        call("Read", json!({"path": "src/a.rs", "limit": 5})),
+        is_error,
+    )
+}
+
+/// `call`'s result, done in 3 ms; failed or not.
+fn tool_result(call: ToolCall, is_error: bool) -> LoopEvent {
     let mut output = ToolOutput::text("x");
     output.is_error = is_error;
     LoopEvent::ToolResult {
-        call: call("Read", json!({"path": "src/a.rs", "limit": 5})),
         message: ToolResultMessage {
             tool_call_id: "c".into(),
-            tool_name: "Read".into(),
+            tool_name: call.name.clone(),
             content: "x".into(),
             is_error,
             media: vec![],
         },
+        call,
         output,
         duration_ms: 3,
     }
@@ -314,4 +322,45 @@ fn a_watcher_sees_the_input_a_terminal_does_not_echo() {
         .showing_input()
         .event(&user);
     assert_eq!(String::from_utf8(err).unwrap(), "> fix the test\n");
+}
+
+/// Nothing the model, a tool call's input or a notice carries reaches the
+/// terminal raw: no escape sequence or carriage return can redraw the screen
+/// around an approval question, and no bidi control can reorder it.
+#[test]
+fn nothing_from_the_model_or_a_tool_reaches_a_terminal_raw() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    {
+        let mut r = Renderer::new(&mut out, &mut err, false, false).answering_a_terminal();
+        r.event(&LoopEvent::TextDelta {
+            text: "I'll clean the build.\x1b[2J\x1b[H\x1b[2;3r\x1b[2H\n".into(),
+        });
+        let bash = call(
+            "Bash",
+            json!({"command": "true \x1b[2J\x1b[3;4r\x1b[1;1H\x1b[8m"}),
+        );
+        r.event(&tool_result(bash, false));
+        r.notice(Level::Warning, "a server said\r\x1b[2KAllow Bash?");
+        r.ask("Allow Bash? \u{202e}dlihc\u{202c}\n[y]es / [a]lways / [N]o: ");
+    }
+    for (name, bytes) in [("stdout", out), ("stderr", err.clone())] {
+        let text = String::from_utf8(bytes).unwrap();
+        let raw: Vec<char> = text
+            .chars()
+            .filter(|&c| hides(c) || (c.is_control() && c != '\n'))
+            .collect();
+        assert!(raw.is_empty(), "{name}: {raw:?} in {text:?}");
+    }
+    let err = String::from_utf8(err).unwrap();
+    assert!(err.contains(r"- Bash true \u{1b}[2J"), "{err}");
+    let once = inert("\x1b[2J\r\u{202e}").into_owned();
+    assert_eq!(inert(&once), once, "a second pass changes nothing");
+}
+
+/// Into a file the answer goes byte for byte (`haest -p ... > out.md`).
+#[test]
+fn an_answer_into_a_file_keeps_its_bytes() {
+    let text = "a\tb\x1b[1mc\u{202e}d\r\n";
+    let (out, _) = render(false, &[LoopEvent::TextDelta { text: text.into() }]);
+    assert_eq!(out, text);
 }

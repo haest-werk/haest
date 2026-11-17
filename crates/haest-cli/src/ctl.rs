@@ -19,7 +19,10 @@ use haest::{
 };
 use serde_json::{Value, json};
 
-use crate::{args::Ctl, render::Renderer};
+use crate::{
+    args::Ctl,
+    render::{Renderer, inert},
+};
 
 /// How long a question that is not a turn may take.
 const ANSWER_WAIT: Duration = Duration::from_secs(10);
@@ -43,7 +46,7 @@ pub(crate) async fn run(cmd: Ctl, dir: &Path) -> ExitCode {
     match done {
         Ok(()) => ExitCode::SUCCESS,
         Err(why) => {
-            eprintln!("haest: {why}");
+            eprintln!("haest: {}", inert(&why));
             ExitCode::FAILURE
         }
     }
@@ -74,7 +77,7 @@ async fn list(dir: &Path, json: bool) {
     }
     for r in &found {
         let when = iso_utc(r.discovery.started_ms);
-        println!(
+        let row = format!(
             "{} {}Z  {}  {:7}  {}  pid {}",
             &when[..10],
             &when[11..16],
@@ -83,6 +86,7 @@ async fn list(dir: &Path, json: bool) {
             r.model_spec(),
             r.discovery.pid
         );
+        println!("{}", inert(&row));
     }
 }
 
@@ -95,11 +99,11 @@ async fn inspect(dir: &Path, id: &str, json: bool) -> Result<(), String> {
         println!("{now}");
         return Ok(());
     }
-    let field = |k: &str| now[k].as_str().unwrap_or("-").to_string();
+    let field = |k: &str| inert(now[k].as_str().unwrap_or("-")).into_owned();
     println!("session   {}", field("session"));
     println!("model     {}", field("model"));
     if let Some(effort) = now["effort"].as_str() {
-        println!("effort    {effort}");
+        println!("effort    {}", inert(effort));
     }
     println!("state     {}", field("state"));
     println!("messages  {}", now["messages"]);
@@ -153,8 +157,8 @@ async fn send(dir: &Path, id: &str, text: &str) -> Result<(), String> {
     let end = answered(Ok(peer.call(turn, |_| {}).await))?.unwrap_or_default();
     let stop = end["stopReason"].as_str().unwrap_or("-");
     match end["error"].as_str() {
-        Some(error) => eprintln!("The turn ended ({stop}): {error}"),
-        None => eprintln!("The turn ended ({stop})."),
+        Some(error) => eprintln!("The turn ended ({}): {}", inert(stop), inert(error)),
+        None => eprintln!("The turn ended ({}).", inert(stop)),
     }
     Ok(())
 }

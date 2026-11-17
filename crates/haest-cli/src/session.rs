@@ -11,5 +11,6 @@ pub(crate) fn format_row(s: &SessionInfo, show_cwd: bool) -> String {
     } else {
         String::new()
     };
-    format!("{when}  {}{cwd}  {}", s.id, s.preview)
+    let row = format!("{when}  {}{cwd}  {}", s.id, s.preview);
+    crate::render::inert(&row).into_owned()
 }

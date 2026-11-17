@@ -61,7 +61,7 @@ use crate::{
 
 #[expect(clippy::print_stderr, reason = "the CLI's own error line")]
 fn fail(code: u8, msg: impl std::fmt::Display) -> ExitCode {
-    eprintln!("haest: {msg}");
+    eprintln!("haest: {}", render::inert(&msg.to_string()));
     ExitCode::from(code)
 }
 

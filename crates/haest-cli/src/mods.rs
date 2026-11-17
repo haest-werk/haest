@@ -13,7 +13,7 @@ use haest::{
     session::SessionPrompter,
 };
 
-use crate::{ask, term::TermUi};
+use crate::{ask, render::inert, term::TermUi};
 
 pub(crate) struct TermPrompter {
     ui: Arc<TermUi>,
@@ -39,25 +39,10 @@ fn question(req: &ApprovalRequest) -> String {
     q + "\n[y]es / [a]lways / [N]o: "
 }
 
-/// `text` as the terminal shows it: every control character but a newline,
-/// and every character that reorders or hides text (bidi controls, zero-width
-/// ones), as its escape, so nothing in a command can draw over it; each
-/// further line indented under the first.
+/// `text` as the terminal shows it: [`inert`], a tab as `\t` too, so nothing
+/// in a command can draw over it; each further line indented under the first.
 fn shown(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        let hides = matches!(c,
-            '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}'
-            | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{feff}');
-        if hides {
-            out.extend(c.escape_unicode());
-        } else if c.is_control() && c != '\n' {
-            out.extend(c.escape_default());
-        } else {
-            out.push(c);
-        }
-    }
-    out.replace('\n', "\n  ")
+    inert(text).replace('\t', "\\t").replace('\n', "\n  ")
 }
 
 /// y / yes, a / always; anything else (an empty line included) is no.
@@ -170,7 +155,10 @@ mod tests {
         )));
 
         for q in [&drawn_over, &reordered] {
-            let raw: Vec<char> = q.chars().filter(|c| *c != '\n' && (c.is_control() || matches!(c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'))).collect();
+            let raw: Vec<char> = q
+                .chars()
+                .filter(|&c| crate::render::hides(c) || (c.is_control() && c != '\n'))
+                .collect();
             assert!(raw.is_empty(), "{raw:?} in {q:?}");
         }
         assert!(drawn_over.contains("touch PWNED"), "{drawn_over}");

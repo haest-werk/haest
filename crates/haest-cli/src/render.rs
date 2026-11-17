@@ -6,8 +6,14 @@
 //! replaces all of it with one JSON line per frame on stdout, each in
 //! haest-wire's envelope (`v`, `sid`, `seq`, `ts`, `path`, then the frame's
 //! own fields).
+//!
+//! Nothing it writes to a terminal can act on it: the model's text, a tool
+//! call's input, a server's error and a peer's words all go through [`inert`],
+//! so none of them can move the cursor, set a scroll region or recolour what
+//! follows (an approval question included).
 
 use std::{
+    borrow::Cow,
     io::{IsTerminal, Write},
     sync::mpsc::Sender,
 };
@@ -55,6 +61,9 @@ pub(crate) struct Renderer<O: Write, E: Write> {
     /// Write each input that enters the conversation (a watcher's view; at
     /// the terminal the human typed it).
     inputs: bool,
+    /// stdout is a terminal: the answer is shown [`inert`] too. Into a file
+    /// it goes byte for byte.
+    out_terminal: bool,
 }
 
 const DIM: &str = "\x1b[2m";
@@ -65,7 +74,12 @@ const RESET: &str = "\x1b[0m";
 impl Renderer<std::io::Stdout, std::io::Stderr> {
     pub(crate) fn terminal(json: bool) -> Self {
         let color = std::io::stderr().is_terminal();
-        Renderer::new(std::io::stdout(), std::io::stderr(), json, color)
+        let r = Renderer::new(std::io::stdout(), std::io::stderr(), json, color);
+        if std::io::stdout().is_terminal() {
+            r.answering_a_terminal()
+        } else {
+            r
+        }
     }
 }
 
@@ -85,7 +99,14 @@ impl<O: Write, E: Write> Renderer<O, E> {
             queued: 0,
             streamed: false,
             inputs: false,
+            out_terminal: false,
         }
+    }
+
+    /// stdout is a terminal: the answer is shown [`inert`], as stderr is.
+    pub(crate) fn answering_a_terminal(mut self) -> Self {
+        self.out_terminal = true;
+        self
     }
 
     /// Also write each input that enters the conversation: `haest ctl
@@ -213,7 +234,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
 
     fn note(&mut self, color: &str, text: &str) {
         self.end_line();
-        let line = self.paint(color, text);
+        let line = self.paint(color, &inert(text));
         match &self.above {
             Some(above) if above.send(line.clone()).is_ok() => {}
             _ => {
@@ -227,6 +248,11 @@ impl<O: Write, E: Write> Renderer<O, E> {
         if text.is_empty() {
             return;
         }
+        let text = if self.out_terminal {
+            inert(text)
+        } else {
+            Cow::Borrowed(text)
+        };
         let _ = write!(self.out, "{text}");
         let _ = self.out.flush();
         self.open_line = !text.ends_with('\n');
@@ -332,7 +358,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
             return self.json_line(Outbound::Ask { text });
         }
         self.end_line();
-        let text = self.paint(YELLOW, question);
+        let text = self.paint(YELLOW, &inert(question));
         let _ = write!(self.err, "{text}");
         let _ = self.err.flush();
     }
@@ -343,6 +369,35 @@ impl<O: Write, E: Write> Renderer<O, E> {
         let _ = self.out.write_all(encode_line(&frame).as_bytes());
         let _ = self.out.flush();
     }
+}
+
+/// `text` with nothing in it a terminal acts on: every control character but
+/// a newline and a tab, and every character that reorders or hides text, as
+/// its escape (`\u{1b}`, `\r`, `\u{202e}`). An escape is printable, so a
+/// second pass changes nothing.
+pub(crate) fn inert(text: &str) -> Cow<'_, str> {
+    let acts = |c: char| hides(c) || (c.is_control() && c != '\n' && c != '\t');
+    if !text.chars().any(acts) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 16);
+    for c in text.chars() {
+        if hides(c) {
+            out.extend(c.escape_unicode());
+        } else if acts(c) {
+            out.extend(c.escape_default());
+        } else {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// Bidi controls and zero-width characters: they reorder text or hide it.
+pub(crate) fn hides(c: char) -> bool {
+    matches!(c,
+        '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}'
+        | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{feff}')
 }
 
 /// `- Read src/a.rs (3 ms)`: a tool call's result, `x` for one that failed.
