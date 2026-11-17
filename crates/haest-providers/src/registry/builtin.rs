@@ -7,7 +7,7 @@ use haest_core::{
     catalog::{OpenRouterEffort, Reasoning},
 };
 
-use super::RegistryOptions;
+use super::Shared;
 use crate::{
     anthropic::AnthropicOptions,
     catalog::Catalog,
@@ -45,7 +45,7 @@ pub(super) fn openai_options(keys: &dyn KeySource) -> Result<ResponsesOptions, M
 /// `OPENROUTER_API_KEY`, and the registry's routing and app attribution.
 pub(super) fn openrouter_options(
     keys: &dyn KeySource,
-    registry: &RegistryOptions,
+    registry: &Shared,
 ) -> Result<CompatOptions, ModelError> {
     let key = need(keys, "OPENROUTER_API_KEY", "openrouter")?;
     let mut opts = CompatOptions::new("openrouter", key);

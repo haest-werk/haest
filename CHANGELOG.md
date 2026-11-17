@@ -159,6 +159,10 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   it buffered a line of any length. Each byte is now searched once, and a
   line or an event past 16 MiB ends the message with `StopReason::Error`,
   saying so.
+- `ProviderRegistry::with_http(client).with_options(opts)` dropped the
+  client: the options replaced everything, so the requests went over the
+  shared reqwest client (a test's fake was bypassed and the network used).
+  The registry now has one setter per option and no `with_options`.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a
@@ -734,22 +738,19 @@ Hosts write less (round two of the review, and what porting brain onto
 
 - `ProviderRegistry::new` takes only the keys, as `impl Into<KeySourceRef>`
   (an `Arc<dyn KeySource>` the host already shares still goes in as it is);
-  providers.json's entries and the options come by setter (breaking):
-  `ProviderRegistry::new(Arc::new(keys), custom, opts)` ->
-  `ProviderRegistry::new(keys).with_custom(custom).with_options(opts)`, and
-  `.with_http(client)` for the common case.
+  providers.json's entries and every option come by setter on the registry,
+  and `RegistryOptions` is gone (breaking):
+  `ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions { http:
+  Arc::new(client), routing, ..Default::default() })` ->
+  `ProviderRegistry::new(keys).with_custom(custom).with_http(client).with_routing(routing)`
+  (also `with_retry`, `with_headers_timeout`, `with_app_title`,
+  `without_app_title`, `with_app_url`), each read back with the getter of
+  its name. `with_routing` takes the scopes or an `Option` of them.
 - `ProviderRegistry::resolve` is inherent: `registry.resolve(spec)` needs no
   `use haest_core::ModelResolver`. The registry is still a `ModelResolver`.
   It is `Clone` and `Debug`: clones share what was built, so
   `Arc::new(registry)` -> `registry.clone()`; a `with_*` setter starts a
-  cache of its own. Getters `keys()`, `custom()`, `options()`.
-- `RegistryOptions` keeps its fields private (breaking): set a part with its
-  `with_*` setter, read it with the getter of its name.
-  `RegistryOptions { http: Arc::new(client), routing, ..Default::default() }`
-  -> `RegistryOptions::default().with_http(client).with_routing(routing)`
-  (also `with_retry`, `with_headers_timeout`, `with_app_title`,
-  `without_app_title`, `with_app_url`). `with_routing` takes the scopes or
-  an `Option` of them.
+  cache of its own. Getters `keys()`, `custom()`.
 - `AnthropicProvider::new`, `CompatProvider::new` and
   `ResponsesProvider::new` take `http: impl Into<HttpClientRef>` (breaking):
   `CompatProvider::new(opts, Arc::new(ReqwestClient::new()))` ->

@@ -18,7 +18,7 @@ use crate::{
         core::threshold::Thresholds,
         mods::{ApprovalGate, ModSystemPrompt, Prompter},
         now_ms,
-        providers::{ProviderRegistry, RegistryOptions},
+        providers::ProviderRegistry,
         tools::DeferredTools,
     },
     inbox, mods,
@@ -143,12 +143,10 @@ where
     // known, its key there), or the build fails with nothing written: a run
     // that cannot start leaves no session for a resume to pick up.
     let (model, effort) = start_on(&settings, session.saved.as_ref(), &opts);
-    let reg_opts = RegistryOptions::default()
-        .with_http(http.clone())
-        .with_routing(routing);
     let registry = ProviderRegistry::new(keys.clone())
         .with_custom(providers)
-        .with_options(reg_opts);
+        .with_http(http.clone())
+        .with_routing(routing);
     registry.resolve(&model)?;
     let spill = settings.spill_dir(session.store.session_id());
     let hooks = RuntimeHooks::new(settings, ui.clone(), session.store);

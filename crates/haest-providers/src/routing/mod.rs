@@ -28,7 +28,7 @@
 //!
 //! Start from [`parse_routing`]: a host's JSON (haest's `provider_routing`
 //! setting) in, a [`RoutingScopes`] out, which goes into
-//! [`RegistryOptions::with_routing`](crate::RegistryOptions::with_routing) or
+//! [`ProviderRegistry::with_routing`](crate::ProviderRegistry::with_routing) or
 //! [`CompatOptions::routing`](crate::CompatOptions::routing). A host may also
 //! build the scopes in code; every field is public.
 //!

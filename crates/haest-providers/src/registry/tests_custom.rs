@@ -7,7 +7,7 @@ use haest_core::{fs::MemFs, messages::Message, testing::assert_causes_said_once}
 use serde_json::json;
 
 use super::{
-    tests::{bad_entry, keys, opts, registry},
+    tests::{bad_entry, keys, over, registry},
     *,
 };
 use crate::testing::{FakeHttp, FakeReply, collect, request, request_with, typed_sse};
@@ -49,9 +49,10 @@ async fn a_custom_anthropic_entry_is_its_own_provider_and_its_thinking_replays_o
         "gateway".to_string(),
         json!({"type": "anthropic", "baseURL": "http://gateway"}),
     )]);
-    let reg = ProviderRegistry::new(keys(&[("ANTHROPIC_API_KEY", "k")]))
-        .with_custom(custom)
-        .with_options(opts(&t));
+    let reg = over(
+        ProviderRegistry::new(keys(&[("ANTHROPIC_API_KEY", "k")])).with_custom(custom),
+        &t,
+    );
     let gateway = reg.resolve("gateway:claude").unwrap();
     assert_eq!(gateway.provider().id(), "gateway");
     let (_, answer) = collect(gateway.provider().stream(request(gateway.model()))).await;
@@ -93,9 +94,7 @@ async fn a_custom_anthropic_provider_sends_its_configured_headers() {
         json!({"type": "anthropic", "baseURL": "http://proxy", "apiKey": "x",
                "headers": {"x-proxy-auth": "tok"}}),
     )]);
-    let reg = ProviderRegistry::new(keys(&[]))
-        .with_custom(custom)
-        .with_options(opts(&t));
+    let reg = over(ProviderRegistry::new(keys(&[])).with_custom(custom), &t);
     let r = reg.resolve("proxy:claude").unwrap();
     collect(r.provider().stream(request(r.model()))).await;
     let sent = &t.requests()[0].headers;
@@ -112,9 +111,7 @@ async fn a_configured_header_replaces_the_anthropic_default_of_that_name() {
         json!({"type": "anthropic", "baseURL": "http://proxy",
                "headers": {"X-Api-Key": "tok", "Accept": "text/event-stream"}}),
     )]);
-    let reg = ProviderRegistry::new(keys(&[]))
-        .with_custom(custom)
-        .with_options(opts(&t));
+    let reg = over(ProviderRegistry::new(keys(&[])).with_custom(custom), &t);
     let r = reg.resolve("proxy:claude").unwrap();
     collect(r.provider().stream(request(r.model()))).await;
     let sent = &t.requests()[0].headers;

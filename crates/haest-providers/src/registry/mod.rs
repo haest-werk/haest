@@ -53,39 +53,19 @@ use crate::{
 const BUILTIN: [&str; 4] = ["anthropic", "openai", "openrouter", "paperinstruments"];
 
 /// What every provider a [`ProviderRegistry`] builds shares: the HTTP client,
-/// the retry policy, the headers timeout and OpenRouter's extras.
-///
-/// The default sends over the process's shared [`ReqwestClient`], retries as
-/// the SDKs do, waits ten minutes for each try's status, sends no routing,
-/// and tells OpenRouter the app is `haest` (`X-Title`) with no URL. Change a
-/// part with its `with_*` setter; read it with the getter of its name. The
-/// default builds nothing: the shared client is built on the first request,
-/// so a host that brings its own never pays for it.
-///
-/// ```
-/// use std::time::Duration;
-///
-/// use haest_providers::{RegistryOptions, RetryPolicy, http::ReqwestClient};
-///
-/// let opts = RegistryOptions::default()
-///     .with_http(ReqwestClient::new())
-///     .with_retry(RetryPolicy::none())
-///     .with_headers_timeout(Duration::from_secs(60))
-///     .without_app_title();
-/// assert_eq!(opts.app_title(), None);
-/// assert_eq!(opts.retry().max_retries, 0);
-/// ```
+/// the retry policy, the headers timeout and OpenRouter's extras. Set and
+/// read on the registry.
 #[derive(Debug, Clone)]
-pub struct RegistryOptions {
+pub(crate) struct Shared {
     http: HttpClientRef,
     retry: RetryPolicy,
     headers_timeout: Duration,
-    routing: Option<RoutingScopes>,
-    app_title: Option<String>,
-    app_url: Option<String>,
+    pub(crate) routing: Option<RoutingScopes>,
+    pub(crate) app_title: Option<String>,
+    pub(crate) app_url: Option<String>,
 }
 
-impl Default for RegistryOptions {
+impl Default for Shared {
     fn default() -> Self {
         Self {
             http: ReqwestClient::new().into(),
@@ -95,91 +75,6 @@ impl Default for RegistryOptions {
             app_title: Some("haest".into()),
             app_url: None,
         }
-    }
-}
-
-impl RegistryOptions {
-    /// Every provider's requests going through `http` (the client itself, or
-    /// an `Arc` of one the host shares) instead of the shared [`ReqwestClient`].
-    #[must_use]
-    pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
-        self.http = http.into();
-        self
-    }
-
-    /// Every provider retrying a refused or unanswered request by `retry`.
-    #[must_use]
-    pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
-        self.retry = retry;
-        self
-    }
-
-    /// Each try waiting at most `wait` for its status and headers before it
-    /// counts as unanswered ([`AnthropicProvider::with_headers_timeout`]).
-    #[must_use]
-    pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
-        self.headers_timeout = wait;
-        self
-    }
-
-    /// OpenRouter provider routing to send, or none ([`crate::routing::parse_routing`]
-    /// reads the host's JSON: haest's `provider_routing` setting). Takes the
-    /// scopes or an `Option` of them; a host whose gateway routes leaves it off.
-    #[must_use]
-    pub fn with_routing(mut self, routing: impl Into<Option<RoutingScopes>>) -> Self {
-        self.routing = routing.into();
-        self
-    }
-
-    /// OpenRouter's app attribution `X-Title` (`haest` by default).
-    #[must_use]
-    pub fn with_app_title(mut self, title: impl Into<String>) -> Self {
-        self.app_title = Some(title.into());
-        self
-    }
-
-    /// No `X-Title` sent to OpenRouter.
-    #[must_use]
-    pub fn without_app_title(mut self) -> Self {
-        self.app_title = None;
-        self
-    }
-
-    /// OpenRouter's app attribution `HTTP-Referer` (none by default).
-    #[must_use]
-    pub fn with_app_url(mut self, url: impl Into<String>) -> Self {
-        self.app_url = Some(url.into());
-        self
-    }
-
-    /// How every provider's requests travel.
-    pub fn http(&self) -> &HttpClientRef {
-        &self.http
-    }
-
-    /// How every provider retries a refused or unanswered request.
-    pub fn retry(&self) -> &RetryPolicy {
-        &self.retry
-    }
-
-    /// How long each try waits for its status and headers.
-    pub fn headers_timeout(&self) -> Duration {
-        self.headers_timeout
-    }
-
-    /// The OpenRouter provider routing sent; None = none.
-    pub fn routing(&self) -> Option<&RoutingScopes> {
-        self.routing.as_ref()
-    }
-
-    /// OpenRouter's `X-Title`; None = not sent.
-    pub fn app_title(&self) -> Option<&str> {
-        self.app_title.as_deref()
-    }
-
-    /// OpenRouter's `HTTP-Referer`; None = not sent.
-    pub fn app_url(&self) -> Option<&str> {
-        self.app_url.as_deref()
     }
 }
 
@@ -239,20 +134,41 @@ pub struct ProviderRegistry {
 struct Setup {
     keys: KeySourceRef,
     custom: CustomProviders,
-    opts: RegistryOptions,
+    shared: Shared,
 }
 
 impl ProviderRegistry {
     /// The built-ins, their keys asked of `keys` (a closure, a `HashMap`, a
-    /// host's own [`KeySource`](haest_core::KeySource), or an `Arc` of one);
-    /// no providers.json entries and the default [`RegistryOptions`]. Nothing
-    /// is built, and no key asked for, until a spec is resolved.
+    /// host's own [`KeySource`](haest_core::KeySource), or an `Arc` of one),
+    /// and no providers.json entries. Every provider it builds sends over the
+    /// process's shared [`ReqwestClient`], retries as the SDKs do, waits ten
+    /// minutes for each try's status, sends no routing, and tells OpenRouter
+    /// the app is `haest` (`X-Title`) with no URL; change a part with its
+    /// `with_*` setter, read it with the getter of its name.
+    ///
+    /// Nothing is built, no key asked for and no client built until a spec is
+    /// resolved: a host that brings its own client never pays for the shared one.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use haest_providers::{ProviderRegistry, RetryPolicy, http::ReqwestClient};
+    ///
+    /// let keys = |name: &str| (name == "OPENROUTER_API_KEY").then(|| "sk-or-...".to_string());
+    /// let registry = ProviderRegistry::new(keys)
+    ///     .with_http(ReqwestClient::new())
+    ///     .with_retry(RetryPolicy::none())
+    ///     .with_headers_timeout(Duration::from_secs(60))
+    ///     .without_app_title();
+    /// assert_eq!(registry.app_title(), None);
+    /// assert_eq!(registry.retry().max_retries, 0);
+    /// ```
     pub fn new(keys: impl Into<KeySourceRef>) -> Self {
         Self {
             setup: Arc::new(Setup {
                 keys: keys.into(),
                 custom: CustomProviders::new(),
-                opts: RegistryOptions::default(),
+                shared: Shared::default(),
             }),
             cache: Arc::default(),
         }
@@ -266,20 +182,60 @@ impl ProviderRegistry {
         self
     }
 
-    /// This registry building every provider with `opts`.
+    /// This registry sending every provider's requests through `http` (the
+    /// client itself, or an `Arc` of one the host shares) instead of the
+    /// shared [`ReqwestClient`].
     #[must_use]
-    pub fn with_options(mut self, opts: RegistryOptions) -> Self {
-        self.setup_mut().opts = opts;
+    pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
+        self.shared_mut().http = http.into();
         self
     }
 
-    /// This registry sending every request through `http`: the same as
-    /// [`with_options`](Self::with_options) with
-    /// [`RegistryOptions::with_http`].
+    /// This registry's providers retrying a refused or unanswered request by
+    /// `retry`.
     #[must_use]
-    pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
-        let opts = &mut self.setup_mut().opts;
-        opts.http = http.into();
+    pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
+        self.shared_mut().retry = retry;
+        self
+    }
+
+    /// This registry's providers waiting at most `wait` for each try's status
+    /// and headers before it counts as unanswered
+    /// ([`AnthropicProvider::with_headers_timeout`]).
+    #[must_use]
+    pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
+        self.shared_mut().headers_timeout = wait;
+        self
+    }
+
+    /// OpenRouter provider routing to send, or none
+    /// ([`crate::routing::parse_routing`] reads the host's JSON: haest's
+    /// `provider_routing` setting). Takes the scopes or an `Option` of them;
+    /// a host whose gateway routes leaves it off.
+    #[must_use]
+    pub fn with_routing(mut self, routing: impl Into<Option<RoutingScopes>>) -> Self {
+        self.shared_mut().routing = routing.into();
+        self
+    }
+
+    /// OpenRouter's app attribution `X-Title` (`haest` by default).
+    #[must_use]
+    pub fn with_app_title(mut self, title: impl Into<String>) -> Self {
+        self.shared_mut().app_title = Some(title.into());
+        self
+    }
+
+    /// No `X-Title` sent to OpenRouter.
+    #[must_use]
+    pub fn without_app_title(mut self) -> Self {
+        self.shared_mut().app_title = None;
+        self
+    }
+
+    /// OpenRouter's app attribution `HTTP-Referer` (none by default).
+    #[must_use]
+    pub fn with_app_url(mut self, url: impl Into<String>) -> Self {
+        self.shared_mut().app_url = Some(url.into());
         self
     }
 
@@ -288,6 +244,10 @@ impl ProviderRegistry {
     fn setup_mut(&mut self) -> &mut Setup {
         self.cache = Arc::default();
         Arc::make_mut(&mut self.setup)
+    }
+
+    fn shared_mut(&mut self) -> &mut Shared {
+        &mut self.setup_mut().shared
     }
 
     /// Where the built-ins' keys come from.
@@ -300,9 +260,36 @@ impl ProviderRegistry {
         &self.setup.custom
     }
 
-    /// What every provider is built with.
-    pub fn options(&self) -> &RegistryOptions {
-        &self.setup.opts
+    /// How every provider's requests travel ([`with_http`](Self::with_http)).
+    pub fn http(&self) -> &HttpClientRef {
+        &self.setup.shared.http
+    }
+
+    /// How every provider retries ([`with_retry`](Self::with_retry)).
+    pub fn retry(&self) -> &RetryPolicy {
+        &self.setup.shared.retry
+    }
+
+    /// How long each try waits for its status and headers
+    /// ([`with_headers_timeout`](Self::with_headers_timeout)).
+    pub fn headers_timeout(&self) -> Duration {
+        self.setup.shared.headers_timeout
+    }
+
+    /// The OpenRouter provider routing sent; None = none
+    /// ([`with_routing`](Self::with_routing)).
+    pub fn routing(&self) -> Option<&RoutingScopes> {
+        self.setup.shared.routing.as_ref()
+    }
+
+    /// OpenRouter's `X-Title`; None = not sent ([`with_app_title`](Self::with_app_title)).
+    pub fn app_title(&self) -> Option<&str> {
+        self.setup.shared.app_title.as_deref()
+    }
+
+    /// OpenRouter's `HTTP-Referer`; None = not sent ([`with_app_url`](Self::with_app_url)).
+    pub fn app_url(&self) -> Option<&str> {
+        self.setup.shared.app_url.as_deref()
     }
 
     /// The provider and model id for `spec` (`openrouter:z-ai/glm-5` -> the
@@ -347,7 +334,7 @@ impl ProviderRegistry {
     }
 
     fn build(&self, name: &str) -> Result<ProviderRef, ModelError> {
-        let o = &self.setup.opts;
+        let o = &self.setup.shared;
         let (http, retry, wait) = (o.http.clone(), o.retry.clone(), o.headers_timeout);
         Ok(match self.provider_options(name)? {
             Options::Anthropic(o) => ProviderRef::new(
@@ -370,7 +357,11 @@ impl ProviderRegistry {
 
     /// `name`'s options: its providers.json entry, else the built-in.
     fn provider_options(&self, name: &str) -> Result<Options, ModelError> {
-        let Setup { keys, custom, opts } = &*self.setup;
+        let Setup {
+            keys,
+            custom,
+            shared,
+        } = &*self.setup;
         let keys = keys.as_ref();
         if let Some(raw) = custom.get(name) {
             let cfg = CustomProviderConfig::from_json(raw).map_err(|problem| {
@@ -387,7 +378,7 @@ impl ProviderRegistry {
         Ok(match name {
             "anthropic" => Options::Anthropic(anthropic_options(keys)?),
             "openai" => Options::Responses(openai_options(keys)?),
-            "openrouter" => Options::Compat(Box::new(openrouter_options(keys, opts)?)),
+            "openrouter" => Options::Compat(Box::new(openrouter_options(keys, shared)?)),
             "paperinstruments" => Options::Compat(Box::new(paper_instruments_options(keys)?)),
             _ => {
                 return Err(ModelError::UnknownProvider {
@@ -411,7 +402,7 @@ impl fmt::Debug for ProviderRegistry {
         };
         f.debug_struct("ProviderRegistry")
             .field("names", &self.names())
-            .field("options", &self.setup.opts)
+            .field("shared", &self.setup.shared)
             .field("built", &built)
             .finish_non_exhaustive()
     }
