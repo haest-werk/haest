@@ -11,6 +11,7 @@ use crate::{
 };
 
 mod answers;
+mod links;
 mod writes;
 
 fn filter(limit: usize) -> IssueFilter {
