@@ -24,6 +24,12 @@ use serde::Serialize;
 pub struct LineDecoder {
     buf: Vec<u8>,
     limit: usize,
+    /// How much of `buf` has been searched for a newline (none found): the
+    /// next push searches from here, so each byte is looked at once.
+    scanned: usize,
+    /// Bytes the newline search has looked at, ever: a test pins it linear.
+    #[cfg(test)]
+    examined: usize,
 }
 
 /// A line went past the [`LineDecoder`]'s limit without its newline.
@@ -51,6 +57,9 @@ impl LineDecoder {
         Self {
             buf: Vec::new(),
             limit,
+            scanned: 0,
+            #[cfg(test)]
+            examined: 0,
         }
     }
 
@@ -65,8 +74,14 @@ impl LineDecoder {
         self.buf.extend_from_slice(chunk);
         let mut lines = Vec::new();
         let mut start = 0;
-        while let Some(at) = self.buf[start..].iter().position(|b| *b == b'\n') {
-            let end = start + at;
+        // The tail kept from the last push has no newline: search only what is new.
+        let mut from = self.scanned;
+        while let Some(at) = self.buf[from..].iter().position(|b| *b == b'\n') {
+            #[cfg(test)]
+            {
+                self.examined += at + 1;
+            }
+            let end = from + at;
             let mut line = &self.buf[start..end];
             if line.last() == Some(&b'\r') {
                 line = &line[..line.len() - 1];
@@ -75,10 +90,17 @@ impl LineDecoder {
                 lines.push(String::from_utf8_lossy(line).into_owned());
             }
             start = end + 1;
+            from = start;
+        }
+        #[cfg(test)]
+        {
+            self.examined += self.buf.len() - from;
         }
         self.buf.drain(..start);
+        self.scanned = self.buf.len();
         if self.buf.len() > self.limit {
             self.buf.clear();
+            self.scanned = 0;
             return Err(LineTooLong { limit: self.limit });
         }
         Ok(lines)
@@ -89,6 +111,7 @@ impl LineDecoder {
     pub fn flush(&mut self) -> Option<String> {
         let tail = String::from_utf8_lossy(&self.buf).trim().to_string();
         self.buf.clear();
+        self.scanned = 0;
         (!tail.is_empty()).then_some(tail)
     }
 }
@@ -158,6 +181,35 @@ mod tests {
     fn a_line_past_the_limit_is_refused_and_dropped() {
         let mut d = LineDecoder::with_limit(8);
         assert_eq!(d.push(b"0123456789"), Err(LineTooLong { limit: 8 }));
+        assert_eq!(d.push(b"ok\n").unwrap(), ["ok"]);
+    }
+
+    /// A line that arrives a byte at a time is searched once, not once per
+    /// byte: a peer that never sends a newline costs linear time, not
+    /// quadratic.
+    #[test]
+    fn every_byte_is_searched_once_however_the_lines_are_split() {
+        let mut d = LineDecoder::new();
+        let long = "x".repeat(10_000);
+        for b in long.as_bytes() {
+            assert!(d.push(std::slice::from_ref(b)).unwrap().is_empty());
+        }
+        // The newline split from its \r, then a whole line and a tail.
+        let (cr, more, rest) = (b"\r", b"\n{\"b\":2}\n{\"c\"", b":3}\n");
+        assert!(d.push(cr).unwrap().is_empty());
+        assert_eq!(d.push(more).unwrap(), [&*long, "{\"b\":2}"]);
+        assert_eq!(d.push(rest).unwrap(), ["{\"c\":3}"]);
+        let pushed = long.len() + cr.len() + more.len() + rest.len();
+        assert_eq!(d.examined, pushed);
+
+        // A flushed tail and a refused line leave nothing behind: the next
+        // line is searched from its own start.
+        assert!(d.push(b"tail").unwrap().is_empty());
+        assert_eq!(d.flush().as_deref(), Some("tail"));
+        assert_eq!(d.push(b"ab\n").unwrap(), ["ab"]);
+        let mut d = LineDecoder::with_limit(8);
+        assert!(d.push(b"01234").unwrap().is_empty());
+        assert_eq!(d.push(b"56789"), Err(LineTooLong { limit: 8 }));
         assert_eq!(d.push(b"ok\n").unwrap(), ["ok"]);
     }
 

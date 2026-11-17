@@ -45,6 +45,10 @@ compiles as before.
   removes a session's files only when the connection was refused or the
   socket is gone, and only when the socket is the `<stream id>.sock` beside
   its own discovery file; anything else is skipped and kept.
+- `LineDecoder` searched its whole buffer for a newline again on every
+  chunk, so a peer that sent a long line in small pieces, or never sent a
+  newline, cost quadratic time: 16 MiB took about 3 seconds and the 64 MiB
+  limit about 50. Each byte is now searched once.
 
 ### Behaviour changes
 
