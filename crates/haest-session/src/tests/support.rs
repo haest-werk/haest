@@ -87,20 +87,14 @@ impl Provider for Stall {
     }
 }
 
-fn deps(models: Arc<dyn haest_core::ModelResolver>, tools: Tools) -> AgentDeps {
-    AgentDeps::new(
-        models,
-        Arc::new(tools),
-        Arc::new(String::new()),
-        "/",
-        Arc::new(ShutWorkspace),
-    )
+fn deps(models: impl Into<haest_core::ModelResolverRef>, tools: Tools) -> AgentDeps {
+    AgentDeps::new(models, tools, "", "/", ShutWorkspace)
 }
 
 /// An agent over `model`, with `tools`.
 pub fn agent(model: &ScriptedProvider, tools: Tools) -> Agent {
     Agent::new(
-        deps(Arc::new(model.resolver()), tools),
+        deps(model.resolver(), tools),
         AgentOptions::new("scripted:m"),
     )
 }
@@ -112,10 +106,7 @@ pub fn stalling_agent(stall: &Arc<Stall>) -> Agent {
         let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();
         Ok(ResolvedModel::new(p.clone(), model))
     };
-    Agent::new(
-        deps(Arc::new(resolve), Tools::new()),
-        AgentOptions::new("stall:m"),
-    )
+    Agent::new(deps(resolve, Tools::new()), AgentOptions::new("stall:m"))
 }
 
 /// A text answer per text.

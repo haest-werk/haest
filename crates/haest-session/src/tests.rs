@@ -469,14 +469,7 @@ async fn a_failed_change_changes_nothing_and_says_why() {
         Some(("scripted", _)) => known(spec),
         _ => Err(ModelError::BadSpec { spec: spec.into() }),
     };
-    let tools = Tools::new();
-    let deps = AgentDeps::new(
-        Arc::new(resolve),
-        Arc::new(tools),
-        Arc::new(String::new()),
-        "/",
-        Arc::new(ShutWorkspace),
-    );
+    let deps = AgentDeps::new(resolve, Tools::new(), "", "/", ShutWorkspace);
     let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), hub());
     let err = session
         .control(Control::SetModelSpec("nowhere:m".into()))
