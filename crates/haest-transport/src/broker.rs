@@ -461,7 +461,8 @@ impl LineSource for WsSource {
                     }));
                 }
                 Ok(Message::Close(_)) => return None,
-                Ok(_) => continue,
+                // A ping, a pong, a binary message: read on.
+                Ok(_) => {}
                 Err(e) => return Some(Err(TransportError::WebSocket(Box::new(e)))),
             }
         }

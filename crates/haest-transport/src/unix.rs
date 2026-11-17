@@ -271,15 +271,14 @@ pub async fn running_sessions(dir: &Path) -> Vec<RunningSession> {
 pub async fn connect_session(dir: &Path, id: &str) -> Result<UnixPeer, TransportError> {
     let all = discoveries(dir);
     let exact = all.iter().find(|(_, d)| d.sid == id);
-    let socket = match exact {
-        Some((file, _)) => file.with_extension("sock"),
-        None => {
-            let mut matches = all.iter().filter(|(_, d)| d.sid.starts_with(id));
-            match (matches.next(), matches.next()) {
-                (Some((file, _)), None) => file.with_extension("sock"),
-                (None, _) => return Err(TransportError::NoSession(id.into())),
-                (Some(_), Some(_)) => return Err(TransportError::Ambiguous(id.into())),
-            }
+    let socket = if let Some((file, _)) = exact {
+        file.with_extension("sock")
+    } else {
+        let mut matches = all.iter().filter(|(_, d)| d.sid.starts_with(id));
+        match (matches.next(), matches.next()) {
+            (Some((file, _)), None) => file.with_extension("sock"),
+            (None, _) => return Err(TransportError::NoSession(id.into())),
+            (Some(_), Some(_)) => return Err(TransportError::Ambiguous(id.into())),
         }
     };
     let stream = UnixStream::connect(&socket)

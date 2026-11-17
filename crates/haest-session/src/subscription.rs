@@ -67,7 +67,7 @@ impl Subscription {
         loop {
             match self.rx.recv().await {
                 // Already given from the ring.
-                Ok(frame) if frame.seq <= self.last => continue,
+                Ok(frame) if frame.seq <= self.last => {}
                 Ok(frame) => return Some(self.given(frame)),
                 Err(RecvError::Lagged(missed)) => {
                     return Some(gap(&self.sid, self.last, Some(missed)));
