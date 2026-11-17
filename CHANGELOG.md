@@ -1846,7 +1846,9 @@ against it; the wire JSON is unchanged):
   and nothing more goes until the broker's ack (`events` with the last seq
   it holds); the stream resumes there, so a frame lost in a closing socket is
   sent again, and a gap comes when the ring no longer holds what the broker
-  missed. A dropped link is dialed again after a full-jitter `Backoff`
+  missed. A dropped link, or one the broker goes silent on for the silence
+  limit (60 s, pinged after 20 s of quiet), is dialed again after a
+  full-jitter `Backoff`
   (500 ms doubling to 30 s); close 4401 or 4408 (`AUTH_CLOSE`), or a 401 or
   403 handshake, ends it with `TransportError::Auth`. `Broker`'s Debug and
   `TransportError::Url` show the URL without its userinfo, query values or
@@ -1911,6 +1913,19 @@ against it; the wire JSON is unchanged):
   up the connection itself. Once the conversation ended, what is still in
   flight gets about a second, and every reply goes out from a task of its
   own.
+- The broker link checks that the broker is still there. A path that went
+  silent (the broker's host lost power, a NAT forgot the mapping, the
+  machine slept) sends no close and no reset, so an idle link stayed
+  "linked" to a broker that had long dropped it, and was never dialed
+  again. haest now pings a broker it has not heard from for a third of the
+  silence limit, and a link that hears nothing, not even the pong, for the
+  whole limit ends with the new `TransportError::Silent` and is dialed
+  again. The limit is 60 s by default (`Broker::SILENCE_LIMIT`): a ping
+  every 20 s of quiet also keeps a proxy that cuts idle links at 60 s from
+  cutting this one. `Broker::with_silence_limit(d)` sets it,
+  `without_silence_limit()` turns the check off, `silence_limit()` reads
+  it. The ping goes through `LineSink::keepalive`, a new method whose
+  default never resolves, so other sinks are unchanged.
 
 ### haest-issues
 

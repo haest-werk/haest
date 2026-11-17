@@ -279,4 +279,9 @@ pub enum TransportError {
     /// The WebSocket to the broker failed (dialing, TLS, a read or a write).
     #[error("the broker link failed")]
     WebSocket(#[source] haest_core::error::BoxError),
+    /// Nothing came from the broker for this long, not even a pong to a
+    /// ping (the broker link's `with_silence_limit`): its path is taken for
+    /// dead, and the link is dialed again.
+    #[error("the broker sent nothing for {} s, not even a pong", .0.as_secs_f64())]
+    Silent(std::time::Duration),
 }

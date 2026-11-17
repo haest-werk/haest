@@ -11,19 +11,23 @@
 //!    last seq it holds. That is its ack, and the stream resumes there: a
 //!    frame handed to a socket that was already closing is sent again, and
 //!    when the ring no longer holds what the broker missed it gets a `gap`.
-//!    Nothing is sent before the ack.
+//!    No other frame is sent before the ack.
 //! 3. Requests from the broker are served under the host's [`Grant`]
 //!    (watch, unless the host says command).
 //!
 //! A link that drops is dialed again after a wait with full jitter (a random
-//! time up to a cap that doubles each try, [`Backoff`]). A broker that closes
-//! with 4401 (the token is wrong) or 4408 (it waited for one in vain), or
-//! refuses the handshake with 401 or 403, is not dialed again.
+//! time up to a cap that doubles each try, [`Backoff`]). So is a link the
+//! broker goes silent on: haest pings a broker it has not heard from for a
+//! while, and takes the path for dead when nothing, not even the pong, comes
+//! within the silence limit ([`Broker::with_silence_limit`], 60 s by
+//! default). A broker that closes with 4401 (the token is wrong) or 4408 (it
+//! waited for one in vain), or refuses the handshake with 401 or 403, is not
+//! dialed again.
 
 use std::{
     fmt,
     hash::{BuildHasher, Hasher},
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock, PoisonError},
     time::{Duration, Instant},
 };
 
@@ -79,6 +83,7 @@ pub struct Broker {
     url: String,
     token: Option<Token>,
     backoff: Backoff,
+    silence_limit: Option<Duration>,
 }
 
 impl fmt::Debug for Broker {
@@ -87,18 +92,25 @@ impl fmt::Debug for Broker {
             .field("url", &UrlDebug(&self.url))
             .field("token", &self.token)
             .field("backoff", &self.backoff)
+            .field("silence_limit", &self.silence_limit)
             .finish()
     }
 }
 
 impl Broker {
-    /// A link to the broker at `url` (`ws://` or `wss://`), with no token
-    /// and the default [`Backoff`].
+    /// The longest the broker may go unheard by default: see
+    /// [`with_silence_limit`](Self::with_silence_limit).
+    pub const SILENCE_LIMIT: Duration = Duration::from_secs(60);
+
+    /// A link to the broker at `url` (`ws://` or `wss://`), with no token,
+    /// the default [`Backoff`] and the default
+    /// [`SILENCE_LIMIT`](Self::SILENCE_LIMIT).
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
             token: None,
             backoff: Backoff::default(),
+            silence_limit: Some(Self::SILENCE_LIMIT),
         }
     }
 
@@ -116,6 +128,33 @@ impl Broker {
         self
     }
 
+    /// The longest the broker may go unheard before the link is taken for
+    /// dead and dialed again ([`TransportError::Silent`]): a path that went
+    /// silent (the broker's host lost power, a NAT forgot the mapping, the
+    /// machine slept) sends no close and no reset, so nothing else would
+    /// notice it while the conversation is idle. After a third of it with
+    /// nothing from the broker, haest pings it, so a live broker always has
+    /// something to answer (its WebSocket answers a ping with a pong by
+    /// itself). [`SILENCE_LIMIT`](Self::SILENCE_LIMIT), 60 s, by default: a
+    /// ping every 20 s of quiet also keeps a proxy that cuts idle links at
+    /// 60 s (nginx's and AWS's load balancers' default) from cutting this
+    /// one, and a dead link is dialed again within a minute or so. A limit
+    /// shorter than the broker's round trip drops a live link.
+    #[must_use]
+    pub fn with_silence_limit(mut self, limit: Duration) -> Self {
+        self.silence_limit = Some(limit);
+        self
+    }
+
+    /// No liveness check: no pings, no limit on silence. A path that goes
+    /// silent is then noticed only when a write to it fails, which may be
+    /// never while the conversation is idle.
+    #[must_use]
+    pub fn without_silence_limit(mut self) -> Self {
+        self.silence_limit = None;
+        self
+    }
+
     /// The broker's URL.
     pub fn url(&self) -> &str {
         &self.url
@@ -129,6 +168,12 @@ impl Broker {
     /// The wait between dials.
     pub fn backoff(&self) -> Backoff {
         self.backoff
+    }
+
+    /// The longest the broker may go unheard; None when the link does not
+    /// check ([`without_silence_limit`](Self::without_silence_limit)).
+    pub fn silence_limit(&self) -> Option<Duration> {
+        self.silence_limit
     }
 }
 
@@ -237,15 +282,19 @@ async fn link(broker: Broker, backend: BackendRef, grant: Grant) -> Ended {
                     follow_from: None,
                     token: broker.token.clone(),
                 };
-                match serve(
-                    backend.clone(),
-                    grant,
-                    start,
-                    WsSource(stream),
-                    WsSink(sink),
-                )
-                .await
-                {
+                let (heard, limit) = (Heard::now(), broker.silence_limit);
+                let source = WsSource {
+                    stream,
+                    heard: heard.clone(),
+                    limit,
+                };
+                let sink = WsSink {
+                    sink,
+                    heard,
+                    limit,
+                    pinged: tokio::time::Instant::now(),
+                };
+                match serve(backend.clone(), grant, start, source, sink).await {
                     Ended::Closed => return Ended::Closed,
                     Ended::Failed(e @ TransportError::Auth { .. }) => return Ended::Failed(e),
                     Ended::PeerLeft | Ended::Failed(_) => {}
@@ -314,13 +363,60 @@ fn tls() -> Result<Arc<rustls::ClientConfig>, TransportError> {
         .map_err(|e| TransportError::WebSocket(e.into()))
 }
 
-/// The broker's requests: one per text message.
-struct WsSource(SplitStream<Ws>);
+/// When the broker was last heard from (any frame, a pong too), shared by
+/// the link's two halves: the source reads by it, the sink pings by it.
+#[derive(Clone)]
+struct Heard(Arc<Mutex<tokio::time::Instant>>);
+
+impl Heard {
+    fn now() -> Self {
+        Self(Arc::new(Mutex::new(tokio::time::Instant::now())))
+    }
+
+    fn at(&self) -> tokio::time::Instant {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn mark(&self) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = tokio::time::Instant::now();
+    }
+}
+
+/// The broker's requests: one per text message. With a silence limit, a
+/// broker unheard for that long ends the link ([`TransportError::Silent`]).
+struct WsSource {
+    stream: SplitStream<Ws>,
+    heard: Heard,
+    limit: Option<Duration>,
+}
+
+impl WsSource {
+    /// The next message; Err when the broker has been silent past the limit
+    /// (measured from the last frame heard, so a dropped call loses nothing).
+    async fn next_message(
+        &mut self,
+    ) -> Result<Option<Result<Message, tungstenite::Error>>, TransportError> {
+        let Some(limit) = self.limit else {
+            return Ok(self.stream.next().await);
+        };
+        let deadline = self.heard.at() + limit;
+        tokio::time::timeout_at(deadline, self.stream.next())
+            .await
+            .map_err(|_elapsed| TransportError::Silent(limit))
+    }
+}
 
 impl LineSource for WsSource {
     async fn next_line(&mut self) -> Option<Result<String, TransportError>> {
         loop {
-            match self.0.next().await? {
+            let message = match self.next_message().await {
+                Ok(message) => message?,
+                Err(silent) => return Some(Err(silent)),
+            };
+            if message.is_ok() {
+                self.heard.mark();
+            }
+            match message {
                 Ok(Message::Text(text)) => return Some(Ok(text.as_str().to_string())),
                 Ok(Message::Close(Some(frame))) if AUTH_CLOSE.contains(&u16::from(frame.code)) => {
                     return Some(Err(TransportError::Auth {
@@ -336,13 +432,41 @@ impl LineSource for WsSource {
     }
 }
 
-/// Frames to the broker: one per text message.
-struct WsSink(SplitSink<Ws, Message>);
+/// Frames to the broker: one per text message. With a silence limit, a
+/// ping once the broker has been quiet for a third of it.
+struct WsSink {
+    sink: SplitSink<Ws, Message>,
+    heard: Heard,
+    limit: Option<Duration>,
+    /// The last ping sent: the next waits a third of the limit after it.
+    pinged: tokio::time::Instant,
+}
 
 impl LineSink for WsSink {
     async fn send_line(&mut self, line: String) -> Result<(), TransportError> {
-        self.0
+        self.sink
             .send(Message::Text(line.into()))
+            .await
+            .map_err(|e| TransportError::WebSocket(Box::new(e)))
+    }
+
+    async fn keepalive(&mut self) -> Result<(), TransportError> {
+        let Some(limit) = self.limit else {
+            return std::future::pending().await;
+        };
+        // A third of the limit: the broker has two pings to answer before it.
+        let quiet = (limit / 3).max(Duration::from_millis(1));
+        loop {
+            // Heard from since the wait began: wait again, from then.
+            let due = self.heard.at().max(self.pinged) + quiet;
+            if tokio::time::Instant::now() >= due {
+                break;
+            }
+            tokio::time::sleep_until(due).await;
+        }
+        self.pinged = tokio::time::Instant::now();
+        self.sink
+            .send(Message::Ping(Default::default()))
             .await
             .map_err(|e| TransportError::WebSocket(Box::new(e)))
     }

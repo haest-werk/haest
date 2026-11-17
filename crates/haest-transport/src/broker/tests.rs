@@ -364,6 +364,96 @@ async fn a_link_the_broker_closes_is_dialed_again() {
     assert_eq!(broker.accepted(), 2);
 }
 
+/// Silence limits short enough for a test.
+const SHORT: Duration = Duration::from_millis(300);
+
+/// A path that went silent sends no close and no reset: the link notices
+/// the silence itself, while the conversation is idle, and dials again.
+#[tokio::test]
+async fn a_broker_that_goes_silent_is_dialed_again() {
+    let mut broker = TestBroker::start(None).await;
+    let (s, _) = session(&answers(&[]), hub());
+    let _attached = Broker::new(&broker.url)
+        .with_backoff(FAST)
+        .with_silence_limit(SHORT)
+        .attach(s, Grant::watch(Origin::Agent))
+        .unwrap();
+    let mut first = broker.link().await;
+    first.next().await.unwrap();
+    first.ack(0).await;
+    // The broker's end of a dead path: held open, never read again, so no
+    // ping is answered.
+    let mut again = broker.link().await;
+    assert_eq!(ty(&again.next().await.unwrap()), "hello");
+    assert_eq!(broker.accepted(), 2);
+    drop(first);
+}
+
+/// The broker's end of one link, read to its end: the pings it got.
+fn count_pings(mut side: Link) -> Arc<AtomicUsize> {
+    let pings = Arc::new(AtomicUsize::new(0));
+    let counted = pings.clone();
+    tokio::spawn(async move {
+        // Reading is what sends the pong its WebSocket owes a ping.
+        while let Some(Ok(msg)) = side.0.next().await {
+            if matches!(msg, Message::Ping(_)) {
+                counted.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    });
+    pings
+}
+
+/// A live broker that only listens is pinged, answers, and keeps its link,
+/// while the conversation sends it frames and while it is idle.
+#[tokio::test]
+async fn a_live_broker_that_never_writes_keeps_its_link() {
+    let mut broker = TestBroker::start(None).await;
+    let hub = hub();
+    let (s, _) = session(&answers(&[]), hub.clone());
+    let _attached = Broker::new(&broker.url)
+        .with_backoff(FAST)
+        .with_silence_limit(SHORT)
+        .attach(s, Grant::watch(Origin::Agent))
+        .unwrap();
+    let mut side = broker.link().await;
+    side.next().await.unwrap();
+    side.ack(0).await;
+    let pings = count_pings(side);
+    for n in 0..30 {
+        hub.notice(Level::Info, format!("line {n}"));
+        tokio::time::sleep(SHORT / 15).await;
+    }
+    tokio::time::sleep(SHORT * 3).await;
+    assert_eq!(broker.accepted(), 1, "never dialed again");
+    assert!(pings.load(Ordering::SeqCst) >= 2, "it was pinged");
+}
+
+/// Without a limit the link sends no ping and waits on a silent broker as
+/// long as it stays open.
+#[tokio::test]
+async fn without_a_silence_limit_the_link_never_pings() {
+    let link = Broker::new("wss://broker.example/agents");
+    assert_eq!(link.silence_limit(), Some(Duration::from_secs(60)));
+    assert_eq!(link.silence_limit(), Some(Broker::SILENCE_LIMIT));
+
+    let mut broker = TestBroker::start(None).await;
+    let (s, _) = session(&answers(&[]), hub());
+    let _attached = Broker::new(&broker.url)
+        .with_backoff(FAST)
+        .with_silence_limit(SHORT)
+        .without_silence_limit()
+        .attach(s, Grant::watch(Origin::Agent))
+        .unwrap();
+    let mut side = broker.link().await;
+    side.next().await.unwrap();
+    side.ack(0).await;
+    let pings = count_pings(side);
+    tokio::time::sleep(SHORT * 3).await;
+    assert_eq!(broker.accepted(), 1);
+    assert_eq!(pings.load(Ordering::SeqCst), 0);
+}
+
 #[tokio::test]
 async fn the_brokers_commands_obey_the_access_the_host_gave() {
     for (grant, runs) in [

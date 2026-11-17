@@ -42,6 +42,15 @@ pub trait LineSink: Send + 'static {
         &mut self,
         line: String,
     ) -> impl Future<Output = Result<(), TransportError>> + Send;
+
+    /// Keep the link alive: resolves once the sink sent something of its own
+    /// (the broker link's ping when the broker has been quiet), Err when that
+    /// failed, which ends the connection. Asked again after every line and
+    /// every keepalive, and dropped whenever a line comes first, so it starts
+    /// over from the sink's state each time. By default it never resolves.
+    fn keepalive(&mut self) -> impl Future<Output = Result<(), TransportError>> + Send {
+        std::future::pending()
+    }
 }
 
 /// How a connection starts.
@@ -432,10 +441,21 @@ pub(crate) async fn until_closed(mut sub: Subscription) {
 }
 
 /// Every line to the peer, in order; a connection frame carries the seq of
-/// the last stream frame written before it. Ends when the sink fails.
+/// the last stream frame written before it, and the sink's keepalive goes
+/// between lines, busy or idle. Ends when the sink fails.
 async fn write(mut sink: impl LineSink, mut rx: mpsc::Receiver<Out>, sid: String) {
     let mut last = 0;
-    while let Some(out) = rx.recv().await {
+    loop {
+        let out = tokio::select! {
+            // First, so a stream that is never idle still has its keepalive.
+            biased;
+            kept = sink.keepalive() => match kept {
+                Ok(()) => continue,
+                Err(_) => return,
+            },
+            out = rx.recv() => out,
+        };
+        let Some(out) = out else { return };
         let line = match out {
             Out::Stream(frame) => {
                 if !matches!(frame.body, Body::Wire(Outbound::Gap { .. })) {
