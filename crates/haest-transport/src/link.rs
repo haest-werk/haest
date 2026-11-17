@@ -9,7 +9,10 @@ use std::{
     future::Future,
     panic::{self, AssertUnwindSafe},
     pin::Pin,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     task::{Context, Poll},
     time::Duration,
 };
@@ -37,11 +40,13 @@ const FLUSH_GRACE: Duration = Duration::from_secs(1);
 /// never a writer that does nothing else.
 const KEEPALIVE_REST: Duration = Duration::from_millis(100);
 
-/// Requests one connection may have waiting for their replies (a turn's
-/// end, a history asked mid-turn). At the cap, a request that would wait
-/// too is refused, and one answered at once ([`answered_at_once`]) is still
-/// served, so a busy peer keeps its stop button. At twice the cap (replies a
-/// peer does not read hold up the rest) the connection reads no more lines
+/// Requests of one connection the session may hold (a turn's end, a history
+/// asked mid-turn): a request counts from its first poll to its answer, so
+/// one not started yet, or answered at once, never does. At the cap, a
+/// request that would wait too is refused, and one answered at once
+/// ([`answered_at_once`]) is still served, so a busy peer keeps its stop
+/// button. At twice the cap in flight, of any kind (a burst not started
+/// yet, replies a peer does not read), the connection reads no more lines
 /// until one is answered, so a peer that only sends makes no more work than
 /// that, and the rest wait in its pipe.
 const MAX_IN_FLIGHT: usize = 32;
@@ -136,11 +141,11 @@ enum Out {
 /// connection outlive the conversation for long: once it ended, what still
 /// waits on a peer that does not read (a reply, the last frames) gets about
 /// a second each, then is dropped. Nor can one peer make unbounded work:
-/// once 32 of its requests wait for their replies, one more that would wait
-/// is refused with its id (send it again once one is answered), while one
-/// answered at once is still served: an `interrupt`, a `close`, an
-/// approval answer, a `snapshot`. At twice that, the connection reads no
-/// more lines until one is answered.
+/// once the session holds 32 of its requests (a turn's end, a history asked
+/// during a turn), one more that would wait is refused with its id (send it
+/// again once one is answered), while one answered at once is still served:
+/// an `interrupt`, a `close`, an approval answer, a `snapshot`. With 64 in
+/// flight, the connection reads no more lines until one is answered.
 ///
 /// Dropped before it returns (a transport detached, a host's own `select!`),
 /// the connection stops: nothing more is written to `sink`, which is dropped
@@ -181,6 +186,7 @@ pub async fn serve(
         written: watch::Sender::new(Written::NOTHING),
         tasks: JoinSet::new(),
         started: None,
+        held: Arc::default(),
     };
     // Why the connection stopped, or the request whose backend call
     // panicked. No hello: the conversation, or the peer, is already gone.
@@ -304,6 +310,9 @@ struct Link {
     /// waits for it, so the calls reach the backend in the order they were
     /// read.
     started: Option<oneshot::Receiver<()>>,
+    /// Backend calls started and not answered yet: what the session holds
+    /// for this peer, against [`MAX_IN_FLIGHT`].
+    held: Arc<AtomicUsize>,
 }
 
 impl Link {
@@ -339,7 +348,7 @@ impl Link {
             let why = "this connection may only watch: turns, controls and approval answers need command access";
             return self.reply(Outbound::refused(id, why));
         }
-        if self.tasks.len() >= MAX_IN_FLIGHT && !answered_at_once(&req) {
+        if self.held.load(Ordering::Relaxed) >= MAX_IN_FLIGHT && !answered_at_once(&req) {
             let why = format!(
                 "{MAX_IN_FLIGHT} requests already wait for their replies: send it again once one is answered"
             );
@@ -441,6 +450,7 @@ impl Link {
         let mut written = self.written.subscribe();
         let (start, started) = oneshot::channel();
         let before = self.started.replace(started);
+        let held = self.held.clone();
         let owed = id.clone();
         self.tasks.spawn(async move {
             let reply = caught(async move {
@@ -449,7 +459,7 @@ impl Link {
                 if let Some(before) = before {
                     let _ = before.await;
                 }
-                let reply = match first_polled(run(backend.clone()), start).await {
+                let reply = match placed(run(backend.clone()), start, &held).await {
                     Ok(result) => Outbound::done(id, result),
                     Err(e) => Outbound::refused(id, report(&e)),
                 };
@@ -616,20 +626,38 @@ async fn caught<F: Future>(fut: F) -> Result<F::Output, Box<dyn Any + Send>> {
     .await
 }
 
-/// `call`, telling `started` once it has been polled the first time: a
-/// [`Backend`](haest_session::Backend) call takes its place in the
-/// conversation then.
-async fn first_polled<F: Future>(call: F, started: oneshot::Sender<()>) -> F::Output {
+/// A backend call in its place: `started` is told once it has been polled
+/// the first time (a [`Backend`](haest_session::Backend) call takes its
+/// place in the conversation then), and from then until it is answered it
+/// counts in `held`.
+async fn placed<F: Future>(call: F, started: oneshot::Sender<()>, held: &AtomicUsize) -> F::Output {
     let mut call = std::pin::pin!(call);
-    let mut started = Some(started);
-    std::future::poll_fn(|cx| {
-        let polled = call.as_mut().poll(cx);
-        if let Some(started) = started.take() {
-            let _ = started.send(());
+    let first = std::future::poll_fn(|cx| Poll::Ready(call.as_mut().poll(cx))).await;
+    let _ = started.send(());
+    match first {
+        Poll::Ready(answer) => answer,
+        Poll::Pending => {
+            let _held = Held::new(held);
+            call.await
         }
-        polled
-    })
-    .await
+    }
+}
+
+/// One backend call the session holds, counted while this lives (dropped
+/// with the call when its task is aborted, too).
+struct Held<'a>(&'a AtomicUsize);
+
+impl<'a> Held<'a> {
+    fn new(count: &'a AtomicUsize) -> Self {
+        count.fetch_add(1, Ordering::Relaxed);
+        Self(count)
+    }
+}
+
+impl Drop for Held<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 /// Resolves when the stream closes: the conversation ended.

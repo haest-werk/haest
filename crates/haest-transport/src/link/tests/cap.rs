@@ -39,8 +39,9 @@ fn counted(
 }
 
 /// A peer that sends far more requests than it waits for replies to makes
-/// no more work than the cap: the ones past it that would wait are refused
-/// at once, the rest answered when the turn ends.
+/// bounded work: the session holds fewer than twice the cap of them, the
+/// ones past the cap that would wait are refused, and every request gets
+/// its reply in the end.
 #[tokio::test]
 async fn one_connection_has_at_most_its_cap_of_requests_in_flight() {
     let model = ScriptedProvider::new([
@@ -58,29 +59,30 @@ async fn one_connection_has_at_most_its_cap_of_requests_in_flight() {
     for n in 0..asked {
         peer.send(history(&format!("h{n}"))).await;
     }
-    // With the turn, the history asked first fills the cap.
-    replies(&mut peer, asked - (MAX_IN_FLIGHT - 1), false).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
     let busy = waiting.load(Ordering::SeqCst);
     assert!(
-        busy < MAX_IN_FLIGHT,
-        "{busy} history calls wait at once, the turn among the cap's {MAX_IN_FLIGHT}"
+        busy < 2 * MAX_IN_FLIGHT,
+        "{busy} history calls wait at once, the turn among twice the cap's {MAX_IN_FLIGHT}"
     );
 
     go.notify_one();
-    replies(&mut peer, MAX_IN_FLIGHT, true).await;
-    assert!(most.load(Ordering::SeqCst) <= MAX_IN_FLIGHT);
-}
-
-/// Reads frames up to the `n`th reply; each reply's `ok` is `ok`.
-async fn replies(peer: &mut Peer, n: usize, ok: bool) {
-    let mut seen = 0;
-    while seen < n {
+    let (mut served, mut refused) = (0, 0);
+    while served + refused < asked + 1 {
         let frame = peer.next().await.expect("the connection is still open");
         if ty(&frame) == "reply" {
-            assert_eq!(frame["ok"], ok, "{frame}");
-            seen += 1;
+            *(if frame["ok"] == true {
+                &mut served
+            } else {
+                &mut refused
+            }) += 1;
         }
     }
+    // Refused only once the turn and as many history calls as fill the cap
+    // were held.
+    assert!(served >= MAX_IN_FLIGHT, "{served} served");
+    assert!(refused > 0, "none past the cap was refused");
+    assert!(most.load(Ordering::SeqCst) < 2 * MAX_IN_FLIGHT);
 }
 
 /// A turn that runs, and history asked during it until the cap is reached
@@ -171,24 +173,45 @@ async fn a_peer_that_never_reads_its_replies_makes_bounded_work() {
     let sink = Stalls { room: 0 };
     let served = tokio::spawn(serve(s.clone(), grant, Start::default(), flood, sink));
 
-    // Until the connection stops reading.
-    let mut last = usize::MAX;
-    let still = async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            let now = read.load(Ordering::SeqCst);
-            if now == last {
-                return now;
-            }
-            last = now;
+    // The out buffer is full of replies, then the connection stops reading
+    // (one that never stops reads every line in far less than the wait).
+    let filled = async {
+        while read.load(Ordering::SeqCst) <= OUT_BUFFER {
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
     };
-    let read = within("the connection stops reading", still).await;
+    let filled = tokio::time::timeout(Duration::from_secs(10), filled).await;
+    filled.expect("the replies fill the out buffer");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let read = read.load(Ordering::SeqCst);
     let most = OUT_BUFFER + 2 * MAX_IN_FLIGHT;
     assert!(
-        (OUT_BUFFER..=most).contains(&read),
+        read <= most,
         "{read} lines read from a peer that reads nothing, at most {most}"
     );
     served.abort();
+    s.close().await;
+}
+
+/// Requests the session answers at once (no turn runs), written in one go
+/// by a parent that queues its work, are all served, the turn after them
+/// too: the cap counts what the session holds, never a request that has not
+/// reached it yet or was already answered.
+#[tokio::test]
+async fn a_burst_the_session_answers_at_once_is_never_refused() {
+    let (s, _) = session(&answers(&["one"]), hub());
+    let mut peer = Peer::attach(s.clone(), Grant::command(Origin::Human), Start::default());
+    let mut lines: Vec<String> = (0..MAX_IN_FLIGHT * 3)
+        .map(|n| history(&format!("h{n}")).to_string())
+        .collect();
+    lines.push(turn("t", "hi").to_string());
+    peer.send_raw(&lines.join("\n")).await;
+    peer.end_input().await;
+
+    let (rest, _) = peer.rest().await;
+    let replies: Vec<&Value> = rest.iter().filter(|f| ty(f) == "reply").collect();
+    let refused: Vec<&&Value> = replies.iter().filter(|f| f["ok"] == false).collect();
+    assert!(refused.is_empty(), "{refused:#?}");
+    assert_eq!(replies.len(), lines.len());
     s.close().await;
 }
