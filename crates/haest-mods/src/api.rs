@@ -94,6 +94,11 @@ pub trait ModUi: Send + Sync {
     async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision;
     /// A line the human sees: what a mod has to say (plan mode is on).
     fn info(&self, text: &str);
+    /// Something was skipped or held and the conversation goes on; the
+    /// human should see it. Default: an [`info`](Self::info) line.
+    fn warn(&self, text: &str) {
+        self.info(text)
+    }
     /// A mod failed to load or in an event; the human must see it. Default:
     /// an [`info`](Self::info) line.
     fn error(&self, text: &str) {
@@ -144,7 +149,7 @@ impl ModEnv {
         self.workspace
     }
 
-    /// The host's ask, and its info, error and debug lines.
+    /// The host's ask, and its info, warn, error and debug lines.
     pub fn ui(&self) -> &ModUiRef {
         &self.ui
     }
@@ -162,6 +167,21 @@ impl ModEnv {
     /// A line the human sees, through the host ([`ModUi::info`]).
     pub fn info(&self, text: &str) {
         self.ui.info(text)
+    }
+
+    /// Something skipped or held, through the host ([`ModUi::warn`]).
+    pub fn warn(&self, text: &str) {
+        self.ui.warn(text)
+    }
+
+    /// Something failed, through the host ([`ModUi::error`]).
+    pub fn error(&self, text: &str) {
+        self.ui.error(text)
+    }
+
+    /// A line for the host's diagnostic log ([`ModUi::debug`]).
+    pub fn debug(&self, message: &str) {
+        self.ui.debug(message)
     }
 }
 

@@ -131,8 +131,8 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// let (human, prompts) = mpsc::channel();
 /// // How the mods reach the human: asks through the gate, lines to the terminal.
 /// let ui = ApprovalGate::new(Human(human)).mod_ui(|line| match line {
-///     ModLine::Info(text) | ModLine::Error(text) => println!("{text}"),
 ///     ModLine::Debug(_) => {}
+///     line => println!("{}", line.text()),
 /// });
 /// let env = ModEnv::new("/project", WorkspaceMode::Real, ui);
 /// let mods = Mods::builder(env).with(ApprovalMod::new()).build();
@@ -235,8 +235,9 @@ impl ApprovalGate {
     }
 
     /// The host's whole [`ModUi`]: [`ask`](ModUi::ask) through this gate,
-    /// and every [`info`](ModUi::info), [`error`](ModUi::error) and
-    /// [`debug`](ModUi::debug) line to `lines`, as a [`ModLine`] that says which.
+    /// and every [`info`](ModUi::info), [`warn`](ModUi::warn),
+    /// [`error`](ModUi::error) and [`debug`](ModUi::debug) line to `lines`,
+    /// as a [`ModLine`] that says which.
     /// The gate stays the host's: an ALWAYS it [`revoke`](Self::revoke)s is
     /// gone for the `ModUi` too. The [class example](Self#examples) uses it.
     pub fn mod_ui<F>(&self, lines: F) -> impl ModUi + use<F>
@@ -252,14 +253,43 @@ impl ApprovalGate {
 
 /// A line a mod sends through the host's [`ModUi`], for the function given
 /// to [`ApprovalGate::mod_ui`]: one case per line method.
+///
+/// More kinds of line may come, as [`ModUi`] gains line methods: a `match`
+/// has a `_` arm, which still shows the line ([`text`](Self::text)).
+///
+/// ```
+/// use haest_mods::ModLine;
+///
+/// fn show(line: ModLine<'_>) -> String {
+///     match line {
+///         ModLine::Error(text) => format!("error: {text}"),
+///         ModLine::Debug(_) => String::new(),
+///         other => other.text().to_string(),
+///     }
+/// }
+/// assert_eq!(show(ModLine::Warn("held")), "held");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ModLine<'a> {
     /// [`ModUi::info`]: a line the human sees.
     Info(&'a str),
+    /// [`ModUi::warn`]: something was skipped or held; the human should see it.
+    Warn(&'a str),
     /// [`ModUi::error`]: a mod failed to load or in an event; the human must see it.
     Error(&'a str),
     /// [`ModUi::debug`]: for the host's diagnostic log; the human need not see it.
     Debug(&'a str),
+}
+
+impl<'a> ModLine<'a> {
+    /// The line's text, whichever kind it is.
+    pub fn text(&self) -> &'a str {
+        match *self {
+            ModLine::Info(text) | ModLine::Warn(text) | ModLine::Error(text) => text,
+            ModLine::Debug(message) => message,
+        }
+    }
 }
 
 /// An [`ApprovalGate`] and where the other lines go: the [`ModUi`] that
@@ -280,6 +310,10 @@ where
 
     fn info(&self, text: &str) {
         (self.lines)(ModLine::Info(text));
+    }
+
+    fn warn(&self, text: &str) {
+        (self.lines)(ModLine::Warn(text));
     }
 
     fn error(&self, text: &str) {

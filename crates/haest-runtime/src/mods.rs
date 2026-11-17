@@ -35,9 +35,11 @@ pub(crate) async fn mods_for(
     let cfg = host_mods.into_iter().fold(cfg, ModOptions::with_mod);
     let to = hooks.clone();
     let mod_ui = gate.mod_ui(move |line| match line {
-        ModLine::Info(text) => to.info(text),
+        ModLine::Warn(text) => to.warn(text),
         ModLine::Error(text) => to.error(text),
         ModLine::Debug(message) => ToolServices::debug(&to, message),
+        // Info, and a kind of line newer than this match: shown.
+        other => to.info(other.text()),
     });
     load_mods(cfg, fs, mod_ui).await
 }

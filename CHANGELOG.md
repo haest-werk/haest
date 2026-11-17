@@ -95,6 +95,9 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 11. A flag setter takes a `bool`, and an optional field's setter takes the
     value itself: `SkillToolOptions::new(set).with_name_enum()` ->
     `.with_name_enum(true)`.
+12. A `match` on a `ModLine` (the lines of `ApprovalGate::mod_ui`) adds
+    `ModLine::Warn` and an arm for kinds to come:
+    `ModLine::Info(t) => show(t)` -> `other => show(other.text())`.
 
 ### Bug fixes
 
@@ -1238,6 +1241,12 @@ Hosts write less (round two of the review, and what porting brain onto
   (`Mods` lists its mods by name; a closure shows only whether it is set);
   `ApprovalMod`, `ModOptions`, `ModTools` and `ModSystemPrompt` are `Clone`.
 - `ModLoadError` is `#[non_exhaustive]`: a `match` on it adds a `_` arm.
+- A line to the human is info / warn / error / debug here too: new
+  `ModUi::warn` (default: an `info` line), `ModLine::Warn`, and `ModEnv`
+  forwards `warn`, `error` and `debug` beside `info`. `ModLine` is
+  `#[non_exhaustive]`, with `text()` for whatever kind it is (breaking):
+  a `match` in the function given to `ApprovalGate::mod_ui` adds an arm
+  that still shows the line, `other => show(other.text())`.
 
 ### haest-settings
 

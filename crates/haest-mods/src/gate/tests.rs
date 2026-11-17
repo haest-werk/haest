@@ -87,6 +87,7 @@ async fn a_gates_mod_ui_asks_through_the_gate_and_sends_each_line_as_what_it_is(
     let ui = ApprovalGate::new(human.clone()).mod_ui(move |line| {
         to.lock().unwrap().push(match line {
             ModLine::Info(t) => format!("info {t}"),
+            ModLine::Warn(t) => format!("warn {t}"),
             ModLine::Error(t) => format!("error {t}"),
             ModLine::Debug(t) => format!("debug {t}"),
         })
@@ -96,9 +97,13 @@ async fn a_gates_mod_ui_asks_through_the_gate_and_sends_each_line_as_what_it_is(
     assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
     assert_eq!(human.prompts(), 1, "the gate's ALWAYS held");
     ui.info("n");
+    ui.warn("w");
     ui.error("e");
     ui.debug("l");
-    assert_eq!(*seen.lock().unwrap(), ["info n", "error e", "debug l"]);
+    assert_eq!(
+        *seen.lock().unwrap(),
+        ["info n", "warn w", "error e", "debug l"]
+    );
 }
 
 #[tokio::test]
