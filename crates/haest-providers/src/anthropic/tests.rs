@@ -245,7 +245,8 @@ fn thinking_is_replayed_only_to_the_provider_that_signed_it() {
 
 #[test]
 fn effort_maps_to_adaptive_thinking_on_current_models_and_a_budget_on_legacy_ones() {
-    let adaptive = Value::Object(thinking_params("claude-sonnet-5", Some(Effort::High)));
+    let max = DEFAULT_MAX_TOKENS;
+    let adaptive = Value::Object(thinking_params("claude-sonnet-5", Some(Effort::High), max));
     assert_eq!(
         adaptive,
         json!({"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}})
@@ -256,17 +257,48 @@ fn effort_maps_to_adaptive_thinking_on_current_models_and_a_budget_on_legacy_one
     assert!(uses_budget_thinking("claude-opus-4-20250514"));
     assert!(!uses_budget_thinking("claude-opus-4-10"));
     assert_eq!(
-        Value::Object(thinking_params("claude-haiku-4-5", Some(Effort::Low))),
+        Value::Object(thinking_params("claude-haiku-4-5", Some(Effort::Low), max)),
         json!({"thinking": {"type": "enabled", "budget_tokens": 2048}})
     );
-    assert!(thinking_params("claude-sonnet-5", None).is_empty());
-    assert!(thinking_params("claude-sonnet-5", Some(Effort::Off)).is_empty());
+    assert!(thinking_params("claude-sonnet-5", None, max).is_empty());
+    assert!(thinking_params("claude-sonnet-5", Some(Effort::Off), max).is_empty());
     let params = build_anthropic_params("anthropic", &request("claude-sonnet-5"));
     assert_eq!(
         params["system"],
         json!([{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}])
     );
     assert_eq!(params["max_tokens"], json!(32_000));
+}
+
+/// Anthropic takes a thinking budget of at least 1,024 tokens and below
+/// `max_tokens`, and a `max_tokens` above 0: any other request is a 400.
+#[test]
+fn a_thinking_budget_fits_under_the_requests_token_cap() {
+    let sent = |model: &str, effort: Effort, max: Option<u32>| {
+        let req = request(model).with_effort(effort).with_max_tokens(max);
+        build_anthropic_params("anthropic", &req)
+    };
+    for (effort, max) in [
+        (Effort::High, Some(4096)),
+        (Effort::Max, Some(16_000)),
+        (Effort::Low, Some(2048)),
+        (Effort::Max, None),
+        (Effort::Low, Some(0)),
+    ] {
+        let body = sent("claude-sonnet-4-5", effort, max);
+        let cap = body["max_tokens"].as_u64().unwrap();
+        assert!(cap > 0, "{effort:?} {max:?}: {body}");
+        let budget = body["thinking"]["budget_tokens"].as_u64().unwrap();
+        assert!((1024..cap).contains(&budget), "{effort:?} {max:?}: {body}");
+    }
+    // A cap too small to think in sends no thinking at all.
+    let body = sent("claude-sonnet-4-5", Effort::High, Some(1024));
+    assert_eq!(body["max_tokens"], json!(1024));
+    assert!(body.get("thinking").is_none(), "{body}");
+    // Adaptive thinking has no budget: the cap goes out as given.
+    let body = sent("claude-sonnet-5", Effort::High, Some(4096));
+    assert_eq!(body["max_tokens"], json!(4096));
+    assert_eq!(body["thinking"], json!({"type": "adaptive"}));
 }
 
 #[test]

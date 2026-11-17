@@ -264,6 +264,13 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   `ProjectMcp`, haest-config's `Loaded` and haest-runtime's
   `RuntimeInputs` showed the token. Debug now shows how many arguments
   there are.
+- `AnthropicProvider` sent a Claude 4.5 or older model a thinking budget
+  at or above the request's `max_tokens` (`with_max_tokens(4096)` with
+  high effort sent a budget of 16,384), and sent `max_tokens: 0` as
+  given: Anthropic refuses both with a 400, every call. The budget is now
+  kept below the cap, a cap of 1,024 or less (no room for the smallest
+  budget) sends no thinking, and a cap of 0 is the default 32,000, as the
+  other providers already read it.
 
 ### Behaviour changes
 

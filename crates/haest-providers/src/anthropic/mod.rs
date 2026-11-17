@@ -107,10 +107,11 @@ impl fmt::Debug for AnthropicOptions {
 /// Each request streams (`stream: true`) with a prompt-cache breakpoint on
 /// the system prompt, the last tool and the newest message block, so the next
 /// request reads everything before it from the cache. `max_tokens` defaults to
-/// 32,000. Effort becomes adaptive thinking with the effort level, or for
-/// models from before it (Claude 4.5 and older) a thinking budget of 2,048
-/// tokens for low up to 31,999 for max. Thinking is replayed, with its
-/// signature, only to this provider.
+/// 32,000 (also for a cap of 0). Effort becomes adaptive thinking with the
+/// effort level, or for models from before it (Claude 4.5 and older) a
+/// thinking budget of 2,048 tokens for low up to 31,999 for max, kept below
+/// `max_tokens` (a cap of 1,024 or less sends no thinking). Thinking is
+/// replayed, with its signature, only to this provider.
 ///
 /// Its [`Provider::id`] is [`AnthropicOptions::id`]: `anthropic` for the
 /// built-in, the entry's name for a providers.json entry of
@@ -212,14 +213,19 @@ impl AnthropicProvider {
 /// The streaming request body for `req`, as the [`AnthropicProvider`] named
 /// `provider_id` sends it.
 ///
-/// `model`, `max_tokens` (`req.max_tokens`, else 32,000), the system prompt
-/// as one cached text block, the messages ([`to_anthropic_messages`]), the
-/// tools when there are any ([`to_anthropic_tools`]) and the thinking fields
-/// for `req.effort` ([`thinking_params`]).
+/// `model`, `max_tokens` (`req.max_tokens` when above 0, else 32,000), the
+/// system prompt as one cached text block, the messages
+/// ([`to_anthropic_messages`]), the tools when there are any
+/// ([`to_anthropic_tools`]) and the thinking fields for `req.effort` under
+/// that cap ([`thinking_params`]).
 pub(crate) fn build_anthropic_params(provider_id: &str, req: &ProviderRequest) -> Value {
+    let max_tokens = req
+        .max_tokens
+        .filter(|m| *m > 0)
+        .unwrap_or(DEFAULT_MAX_TOKENS);
     let mut body = json!({
         "model": req.model,
-        "max_tokens": req.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+        "max_tokens": max_tokens,
         "system": [{"type": "text", "text": req.system, "cache_control": {"type": "ephemeral"}}],
         "messages": to_anthropic_messages(&req.messages, provider_id),
         "stream": true,
@@ -228,7 +234,7 @@ pub(crate) fn build_anthropic_params(provider_id: &str, req: &ProviderRequest) -
         body["tools"] = Value::Array(to_anthropic_tools(&req.tools));
     }
     if let Value::Object(map) = &mut body {
-        map.extend(thinking_params(&req.model, req.effort));
+        map.extend(thinking_params(&req.model, req.effort, max_tokens));
     }
     body
 }

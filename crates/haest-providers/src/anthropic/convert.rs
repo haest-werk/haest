@@ -208,21 +208,34 @@ fn budget(effort: Effort) -> u32 {
     }
 }
 
-/// `thinking` (+ `output_config`) for `effort`; empty for none or `off`.
+/// The smallest thinking budget Anthropic takes.
+const MIN_BUDGET: u32 = 1024;
+
+/// `thinking` (+ `output_config`) for `effort` in a request capped at
+/// `max_tokens`; empty for none or `off`.
 ///
 /// A model that [`uses_budget_thinking`] gets a token budget (2,048 for low
-/// up to 31,999 for max); any newer one gets adaptive thinking with the effort
-/// level in `output_config`.
-pub(crate) fn thinking_params(model: &str, effort: Option<Effort>) -> Map<String, Value> {
+/// up to 31,999 for max), cut to below `max_tokens` as Anthropic requires;
+/// a cap of 1,024 or less leaves no room for the smallest budget it takes,
+/// and that request thinks not at all. Any newer model gets adaptive
+/// thinking with the effort level in `output_config`.
+pub(crate) fn thinking_params(
+    model: &str,
+    effort: Option<Effort>,
+    max_tokens: u32,
+) -> Map<String, Value> {
     let mut out = Map::new();
     let Some(effort) = effort.filter(|e| *e != Effort::Off) else {
         return out;
     };
     if uses_budget_thinking(model) {
-        out.insert(
-            "thinking".into(),
-            json!({"type": "enabled", "budget_tokens": budget(effort)}),
-        );
+        let budget = budget(effort).min(max_tokens.saturating_sub(1));
+        if budget >= MIN_BUDGET {
+            out.insert(
+                "thinking".into(),
+                json!({"type": "enabled", "budget_tokens": budget}),
+            );
+        }
     } else {
         out.insert("thinking".into(), json!({"type": "adaptive"}));
         out.insert("output_config".into(), json!({"effort": effort}));
