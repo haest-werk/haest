@@ -26,6 +26,23 @@ fn a_run_that_cannot_start_leaves_no_session_behind() {
     assert_eq!(home.sessions(), Vec::<PathBuf>::new(), "nothing to ask");
 }
 
+/// A setting no one has stops the launch, and the `haest` command says where
+/// the ones it has are listed (the library's message names no command).
+#[test]
+fn an_unknown_setting_points_at_haest_settings() {
+    let home = Home::new("unknown-setting");
+    let dir = home.0.join(".config/haest");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), "tool = [\"read\"]\n").unwrap();
+    let out = home.haest(&["settings"], &[]);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    let said = stderr(&out);
+    assert!(
+        said.contains("tool: no such setting (haest settings lists them)"),
+        "{said}"
+    );
+}
+
 /// A variable that is not Unicode, in its name or its value, is skipped: the
 /// launch goes on, and the other variables still count.
 #[cfg(unix)]

@@ -88,6 +88,12 @@ async fn a_setting_no_one_has_is_unknown_wherever_it_is_given() {
         let unknown = matches!(&err, ConfigError::UnknownSetting { .. });
         assert!(unknown, "{key}: {err:?}");
         assert_eq!(refused(&err), Some((&at, key)), "{err}");
+        // Any host loads settings: the message points at no command of one.
+        let said = err.to_string();
+        assert!(
+            said.ends_with(&format!(": {key}: no such setting")),
+            "{said}"
+        );
     }
 }
 
