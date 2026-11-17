@@ -137,7 +137,7 @@ fn as_list(v: Option<&Meta>) -> Option<Vec<String>> {
 /// let text = "---\ndescription: Cut a release\nallowed-tools: Bash, Read\n---\nSteps...\n";
 /// let meta = parse_skill_file(text, "release").ok_or("not a skill file")?;
 /// assert_eq!(meta.name, "release"); // no `name:`, so the dir's name
-/// assert_eq!(meta.allowed_tools.unwrap(), ["Bash", "Read"]);
+/// assert_eq!(meta.allowed_tools.ok_or("no allowed-tools")?, ["Bash", "Read"]);
 /// assert!(meta.model_invocable);
 /// assert!(parse_skill_file("no frontmatter", "x").is_none());
 /// # Ok::<(), &'static str>(())

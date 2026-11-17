@@ -161,7 +161,7 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
         .and_then(|mut s| s.next_back().map(str::to_string))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| host_port(url));
-    media_output(&label, body, &media_type, ctx).await
+    media_output(body, &media_type, &label, ctx).await
 }
 
 /// The WebFetch tool (`WebFetch`, kind `web.fetch`, read-only): one public

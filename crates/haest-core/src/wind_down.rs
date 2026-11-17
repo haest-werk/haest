@@ -133,11 +133,12 @@ impl WindDown {
     /// [`BadShare`] for anything but a number from 0 to 1.
     ///
     /// ```
-    /// use haest_core::wind_down::WindDown;
+    /// use haest_core::wind_down::{BadShare, WindDown};
     ///
-    /// assert!(WindDown::at(0.8).unwrap().is_on());
-    /// assert_eq!(WindDown::at(0.0).unwrap(), WindDown::OFF);
+    /// assert!(WindDown::at(0.8)?.is_on());
+    /// assert_eq!(WindDown::at(0.0)?, WindDown::OFF);
     /// assert!(WindDown::at(8.0).is_err());
+    /// # Ok::<(), BadShare>(())
     /// ```
     pub fn at(share: f64) -> Result<Self, BadShare> {
         if (0.0..=1.0).contains(&share) {

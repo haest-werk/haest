@@ -581,8 +581,9 @@ Good citizens:
 - `BoxError` joins the prelude, so `haest_core::BoxError` (and
   `haest::BoxError`) names it: an `impl AgentHooks` returns it from
   `before_model_call`. `error::BoxError` still works.
-- Every doc example's `main` returns a `Result` and uses `?`; `unwrap` and
-  `expect` are left only inside asserts and on locks. The docs name an item
+- Every doc example's `main` returns a `Result` and uses `?`, inside its
+  asserts too; `unwrap` and `expect` are left only on locks and where the
+  trait gives no way out (a `SessionSink`'s `append`). The docs name an item
   the prelude holds by its root path (`haest_core::Agent`), everything else
   by its module path (`haest_core::run::RunKey`). `Ledger::reserve`
   documents its errors.
@@ -932,6 +933,11 @@ Hosts write less (round two of the review, and what porting brain onto
   `UrlRefused::Invalid`.
 - `NoInbox` and `NoJobEvents` are `Clone`, `Copy`, `PartialEq` and `Eq`,
   as haest-core's do-nothing parts are.
+- `media_output` takes the bytes, the media type and the name in the order
+  `media_from_bytes` does, the context last:
+  `media_output(label, bytes, media_type, ctx)` ->
+  `media_output(bytes, media_type, label, ctx)`. Both text arguments are
+  `&str`, so an old call still compiles: swap them by hand.
 
 ### haest-workspace
 

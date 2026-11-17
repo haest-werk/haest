@@ -124,7 +124,7 @@ impl ReplayedRun {
 ///
 /// let run = replay_run(&log).ok_or("no run in the log")?;
 /// assert_eq!(run.key.as_str(), "job-1");
-/// assert_eq!(run.end.unwrap().text, "hello");
+/// assert_eq!(run.end.ok_or("the run never ended")?.text, "hello");
 /// assert!(replay_run("").is_none());
 /// # Ok::<(), &'static str>(())
 /// ```

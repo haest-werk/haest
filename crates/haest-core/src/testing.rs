@@ -205,7 +205,8 @@ pub fn text_answer(text: &str) -> AssistantMessage {
 ///
 /// let answer = tool_answer(&[("call-1", "Read", json!({"path": "/project/README.md"}))]);
 /// assert_eq!(answer.stop_reason, StopReason::ToolUse);
-/// assert_eq!(answer.tool_calls().next().unwrap().name, "Read");
+/// assert_eq!(answer.tool_calls().next().ok_or("no call")?.name, "Read");
+/// # Ok::<(), &'static str>(())
 /// ```
 pub fn tool_answer(calls: &[(&str, &str, Value)]) -> AssistantMessage {
     let mut m = AssistantMessage::start("scripted", "m");

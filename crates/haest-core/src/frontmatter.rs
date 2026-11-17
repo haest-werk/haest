@@ -21,7 +21,7 @@
 //! let (_, title) = head[0].split_once(": ").ok_or("no title")?;
 //! assert_eq!(unquote(title), "Fix the \"login\" bug");
 //! let (_, labels) = head[1].split_once(": ").ok_or("no labels")?;
-//! assert_eq!(inline_list(labels).unwrap(), ["auth", "p1"]);
+//! assert_eq!(inline_list(labels).ok_or("not a list")?, ["auth", "p1"]);
 //! # Ok::<(), &'static str>(())
 //! ```
 

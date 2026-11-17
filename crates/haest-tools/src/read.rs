@@ -130,16 +130,18 @@ haest_core::plug_ref! {
 ///
 /// Read uses it for a media file, WebFetch for a media URL. `label` names it
 /// in the text the model reads (`label: image (image/png, 120 bytes),
-/// attached.`); its last path segment names the media part.
+/// attached.`); its last path segment names the media part. The bytes, the
+/// type and the name come in the order
+/// [`media_from_bytes`](haest_core::media::media_from_bytes) takes them.
 ///
 /// # Errors
 ///
 /// [`ToolError::Input`] when `media_type` is not one haest sends to a model,
 /// or `bytes` is over that kind's size limit.
 pub async fn media_output(
-    label: &str,
     bytes: Vec<u8>,
     media_type: &str,
+    label: &str,
     ctx: &ToolContext,
 ) -> Result<ToolOutput, ToolError> {
     let name = Path::new(label)
@@ -216,7 +218,7 @@ impl ReadTool {
         )?;
         let buf = fs.read(&path).await?;
         if let Some(media_type) = media_type_from_name(&shown) {
-            return media_output(&shown, buf, media_type, ctx).await;
+            return media_output(buf, media_type, &shown, ctx).await;
         }
         if looks_binary(&buf) {
             return Err(ToolError::Input(format!(
