@@ -68,6 +68,22 @@ fn truncate_middle_keeps_both_ends() {
     assert_eq!(truncate_middle("short", 10), ("short".to_string(), false));
 }
 
+/// An odd `max` keeps `max / 2` at each end, one less than `max` in all: the
+/// count said read one short (`len - max`) of what was dropped.
+#[test]
+fn truncate_middle_counts_every_dropped_character_for_an_odd_max() {
+    let (t, cut) = truncate_middle(&"x".repeat(100), 11);
+    assert!(cut);
+    let kept = t.chars().filter(|c| *c == 'x').count();
+    let said: usize = t
+        .split('[')
+        .nth(1)
+        .and_then(|s| s.split(' ').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("no count in {t:?}"));
+    assert_eq!((kept, kept + said), (10, 100), "{t}");
+}
+
 #[test]
 fn a_title_is_the_hosts_and_absent_unless_set() {
     let plain = serde_json::to_value(ToolOutput::text("sent")).unwrap();
