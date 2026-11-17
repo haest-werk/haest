@@ -454,6 +454,32 @@ async fn without_a_silence_limit_the_link_never_pings() {
     assert_eq!(pings.load(Ordering::SeqCst), 0);
 }
 
+/// A limit past the clock's range (`Duration::MAX`, a big number of seconds
+/// from a host's config) is no limit: the link serves, pinging no one, and
+/// ends with the conversation.
+#[tokio::test]
+async fn a_silence_limit_past_the_clocks_range_is_no_limit() {
+    for limit in [Duration::MAX, Duration::from_secs(u64::MAX)] {
+        let mut broker = TestBroker::start(None).await;
+        let (s, _) = session(&answers(&[]), hub());
+        let attached = Broker::new(&broker.url)
+            .with_backoff(FAST)
+            .with_silence_limit(limit)
+            .attach(s.clone(), Grant::watch(Origin::Agent))
+            .unwrap();
+        let mut side = broker.link().await;
+        assert_eq!(ty(&side.next().await.unwrap()), "hello", "{limit:?}");
+        side.ack(0).await;
+        side.until(|f| ty(f) == "reply").await;
+        s.close().await;
+        let ended = tokio::time::timeout(Duration::from_secs(5), attached.ended())
+            .await
+            .expect("the link ends with the conversation");
+        assert!(matches!(ended, Ended::Closed), "{limit:?}: {ended:?}");
+        assert_eq!(broker.accepted(), 1, "{limit:?}");
+    }
+}
+
 #[tokio::test]
 async fn the_brokers_commands_obey_the_access_the_host_gave() {
     for (grant, runs) in [

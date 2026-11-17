@@ -139,7 +139,9 @@ impl Broker {
     /// ping every 20 s of quiet also keeps a proxy that cuts idle links at
     /// 60 s (nginx's and AWS's load balancers' default) from cutting this
     /// one, and a dead link is dialed again within a minute or so. A limit
-    /// shorter than the broker's round trip drops a live link.
+    /// shorter than the broker's round trip drops a live link (zero drops
+    /// every link as soon as it is made, and dials again after the
+    /// backoff); one past the clock's range (`Duration::MAX`) is no limit.
     #[must_use]
     pub fn with_silence_limit(mut self, limit: Duration) -> Self {
         self.silence_limit = Some(limit);
@@ -363,6 +365,12 @@ fn tls() -> Result<Arc<rustls::ClientConfig>, TransportError> {
         .map_err(|e| TransportError::WebSocket(e.into()))
 }
 
+/// `wait` after `at`, or None when that is past the clock's range: a silence
+/// limit that long (`Duration::MAX`) is no limit, and its ping never due.
+fn after(at: tokio::time::Instant, wait: Duration) -> Option<tokio::time::Instant> {
+    at.checked_add(wait)
+}
+
 /// When the broker was last heard from (any frame, a pong too), shared by
 /// the link's two halves: the source reads by it, the sink pings by it.
 #[derive(Clone)]
@@ -399,7 +407,9 @@ impl WsSource {
         let Some(limit) = self.limit else {
             return Ok(self.stream.next().await);
         };
-        let deadline = self.heard.at() + limit;
+        let Some(deadline) = after(self.heard.at(), limit) else {
+            return Ok(self.stream.next().await);
+        };
         tokio::time::timeout_at(deadline, self.stream.next())
             .await
             .map_err(|_elapsed| TransportError::Silent(limit))
@@ -458,7 +468,9 @@ impl LineSink for WsSink {
         let quiet = (limit / 3).max(Duration::from_millis(1));
         loop {
             // Heard from since the wait began: wait again, from then.
-            let due = self.heard.at().max(self.pinged) + quiet;
+            let Some(due) = after(self.heard.at().max(self.pinged), quiet) else {
+                return std::future::pending().await;
+            };
             if tokio::time::Instant::now() >= due {
                 break;
             }
@@ -466,7 +478,7 @@ impl LineSink for WsSink {
         }
         self.pinged = tokio::time::Instant::now();
         self.sink
-            .send(Message::Ping(Default::default()))
+            .send(Message::Ping(tungstenite::Bytes::new()))
             .await
             .map_err(|e| TransportError::WebSocket(Box::new(e)))
     }

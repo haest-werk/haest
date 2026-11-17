@@ -2050,7 +2050,9 @@ against it; the wire JSON is unchanged):
   whole limit ends with the new `TransportError::Silent` and is dialed
   again. The limit is 60 s by default (`Broker::SILENCE_LIMIT`): a ping
   every 20 s of quiet also keeps a proxy that cuts idle links at 60 s from
-  cutting this one. `Broker::with_silence_limit(d)` sets it,
+  cutting this one. `Broker::with_silence_limit(d)` sets it (a limit past
+  the clock's range, `Duration::MAX`, is no limit; it overflowed the clock
+  and panicked the link's task, and `Attached::ended` with it),
   `without_silence_limit()` turns the check off, `silence_limit()` reads
   it. The ping goes through `LineSink::keepalive`, a new method whose
   default never resolves, so other sinks are unchanged. Its docs say what
