@@ -355,6 +355,32 @@ async fn events_replays_then_replies_then_follows() {
     assert!(tail.is_empty(), "nothing between: {tail:#?}");
 }
 
+/// A catch-up is a request like any other: a peer that asks for one and
+/// closes its input still gets it and its reply, and an `events` a later one
+/// replaced before its reply is answered too.
+#[tokio::test]
+async fn every_events_request_is_answered_when_replaced_or_when_the_input_ends() {
+    let hub = hub();
+    hub.notice(Level::Info, "line 1");
+    let (s, _) = session(&answers(&[]), hub);
+    let mut peer = Peer::attach(s, Grant::watch(Origin::Agent), Start::default());
+    peer.send(json!({"v": 1, "id": "e1", "type": "events", "after": 0, "follow": true}))
+        .await;
+    peer.send(json!({"v": 1, "id": "e2", "type": "events", "after": 0, "follow": false}))
+        .await;
+    peer.end_input().await;
+
+    let (rest, ended) = peer.rest().await;
+
+    assert!(rest.iter().any(|f| is_reply(f, "e1")), "{rest:#?}");
+    let e2 = position(&rest, |f| is_reply(f, "e2"));
+    assert!(
+        rest[..e2].iter().any(|f| f["text"] == "line 1"),
+        "{rest:#?}"
+    );
+    assert!(matches!(ended, Ended::PeerLeft), "{ended:?}");
+}
+
 #[tokio::test]
 async fn a_peer_later_than_the_ring_gets_a_gap_first() {
     let hub = Hub::new_with_options(

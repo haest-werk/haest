@@ -2143,6 +2143,12 @@ against it; the wire JSON is unchanged):
   conversation ended, while it went on, and a transport that dials again
   only after a peer left stopped for good: the broker link sent Close
   1000 and never dialed again.
+- Every `events` request gets its catch-up and its reply. Its reply came
+  from the task that writes the catch-up, which the connection stopped
+  when the peer's input ended (one request piped into the control socket
+  got its reply about 1 time in 4) or when a later `events` replaced it
+  (that one never got a reply). It is now waited for like any other
+  request, and one a later `events` replaced is refused with its id.
 
 ### haest-issues
 

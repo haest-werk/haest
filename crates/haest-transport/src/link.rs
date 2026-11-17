@@ -17,7 +17,7 @@ use haest_session::{BackendRef, Body, Control, Frame, Input, SessionError, Subsc
 use haest_wire::{self as wire, Access, Envelope, Outbound, Request, Token, decode};
 use serde_json::{Value, json};
 use tokio::{
-    sync::{mpsc, watch},
+    sync::{mpsc, oneshot, watch},
     task::{JoinError, JoinHandle, JoinSet},
 };
 
@@ -386,7 +386,21 @@ impl Link {
         self.follows += 1;
         let sub = self.backend.subscribe(after);
         let mark = Mark::new(self.written.clone(), self.follows, sub.last_seq());
-        let task = pump(sub, self.tx.clone(), id, follow, mark);
+        // A request in flight like any other, until the pump has replied:
+        // input that ends now still gets the catch-up and its reply, and a
+        // pump replaced (or stopped) before it replied leaves the reply here.
+        let reply = id.map(|id| {
+            let (sent, out) = oneshot::channel();
+            let (tx, owed) = (self.tx.clone(), id.clone());
+            self.tasks.spawn(async move {
+                if out.await.is_err() {
+                    let why = "its catch-up was not written: a later events request replaced it";
+                    let _ = tx.send(Out::Conn(Outbound::refused(owed, why))).await;
+                }
+            });
+            (id, sent)
+        });
+        let task = pump(sub, self.tx.clone(), reply, follow, mark);
         self.pump = Some(AbortOnDrop(tokio::spawn(task)));
     }
 
@@ -454,11 +468,13 @@ impl Drop for Mark {
 
 /// A subscription's frames to the peer: the catch-up, the reply to `id`
 /// (the peer is caught up), then with `follow` everything live until the
-/// stream closes, which means the conversation ended.
+/// stream closes, which means the conversation ended. `sent` tells the
+/// request's waiter the reply is queued, in the same poll: aborted, the pump
+/// either queued it or left it to the waiter, never both.
 async fn pump(
     mut sub: Subscription,
     tx: mpsc::Sender<Out>,
-    id: Option<String>,
+    reply: Option<(String, oneshot::Sender<()>)>,
     follow: bool,
     mark: Mark,
 ) {
@@ -469,8 +485,11 @@ async fn pump(
         }
         mark.set(sub.last_seq());
     }
-    if let Some(id) = id {
-        let _ = tx.send(Out::Conn(Outbound::done(id, None))).await;
+    if let Some((id, sent)) = reply {
+        if tx.send(Out::Conn(Outbound::done(id, None))).await.is_err() {
+            return;
+        }
+        let _ = sent.send(());
     }
     if !follow {
         return;
