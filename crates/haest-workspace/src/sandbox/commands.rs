@@ -1,18 +1,18 @@
 //! A host's [`ShellCommand`]s as bashkit builtins: one adapter per command per
 //! shell call, carrying that call's interrupt and deadline.
 
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use bashkit::{Builtin, BuiltinContext};
 use haest_core::{
-    fs::Fs,
-    shell_command::{ShellCall, ShellCommand},
+    fs::FsRef,
+    shell_command::{ShellCall, ShellCommandRef},
 };
 use tokio_util::sync::CancellationToken;
 
 pub(crate) struct HostCommand {
-    pub command: Arc<dyn ShellCommand>,
-    pub fs: Arc<dyn Fs>,
+    pub command: ShellCommandRef,
+    pub fs: FsRef,
     pub cancel: CancellationToken,
     pub ends_at: Instant,
 }

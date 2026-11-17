@@ -10,8 +10,8 @@ use std::{
 use bashkit::{Bash, ExecutionLimits, FileSystem, LimitExceeded};
 use haest_core::{
     ChildEnv,
-    fs::Fs,
-    shell_command::ShellCommand,
+    fs::FsRef,
+    shell_command::ShellCommandRef,
     workspace::{ExecOptions, ExecResult},
 };
 
@@ -34,8 +34,8 @@ const EXIT_INTERRUPTED: i32 = 130;
 /// as haest sees them, the host's extra commands and the variables it passes.
 pub(crate) struct Shell<'a> {
     pub fs: Arc<dyn FileSystem>,
-    pub haest_fs: &'a Arc<dyn Fs>,
-    pub commands: &'a [Arc<dyn ShellCommand>],
+    pub haest_fs: &'a FsRef,
+    pub commands: &'a [ShellCommandRef],
     pub env: &'a ChildEnv,
 }
 

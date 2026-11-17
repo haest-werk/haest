@@ -92,17 +92,18 @@
 //! overlay and no changes to review: the host decides what a write means.
 //!
 //! ```
-//! use std::{path::Path, sync::Arc, time::Duration};
+//! use std::{path::Path, time::Duration};
 //!
 //! use haest_core::{
-//!     fs::{Fs, MemFs},
+//!     fs::{Fs, FsRef, MemFs},
 //!     workspace::{ExecOptions, Workspace},
 //! };
 //! use haest_workspace::SandboxWorkspace;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> std::io::Result<()> {
-//! let files = Arc::new(MemFs::new());
+//! // A handle, so the host keeps the files after handing them over.
+//! let files = FsRef::new(MemFs::new());
 //! let ws = SandboxWorkspace::over(files.clone());
 //! let opts = ExecOptions::new("/", Duration::from_secs(10));
 //! let r = ws.shell("mkdir -p /notes && echo hi > /notes/a.md", opts).await;

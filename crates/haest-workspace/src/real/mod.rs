@@ -1,6 +1,6 @@
 //! The real workspace: the host's disk and the host's bash. The opt-out from
 //! the sandbox, and always what the HOST itself uses for its own files (session
-//! log, config) -- through the same [`Fs`] interface as everything else
+//! log, config) -- through the same [`Fs`](haest_core::fs::Fs) interface as everything else
 //! ([`RealFs`]).
 //!
 //! Children get their own process group so a timeout or an interrupt kills the
@@ -10,12 +10,10 @@
 mod exec;
 mod fs;
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use haest_core::{
     ChildEnv,
-    fs::{Fs, FsRef},
+    fs::FsRef,
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks, Workspace, WorkspaceMode},
 };
 
@@ -72,8 +70,9 @@ pub use fs::RealFs;
 /// [`Workspace::run`]: haest_core::workspace::Workspace::run
 /// [`Workspace::prompt_note`]: haest_core::workspace::Workspace::prompt_note
 /// [`ExecResult::timed_out`]: haest_core::workspace::ExecResult::timed_out
+#[derive(Debug)]
 pub struct RealWorkspace {
-    fs: Arc<dyn Fs>,
+    fs: FsRef,
     env: ChildEnv,
 }
 
@@ -81,14 +80,10 @@ impl RealWorkspace {
     /// The real disk through a fresh [`RealFs`]; every child process gets `env`
     /// and nothing else.
     pub fn new(env: ChildEnv) -> Self {
-        Self::with_fs(Arc::new(RealFs), env)
-    }
-
-    /// The same, with the host's own [`Fs`] for the files, so the host and the
-    /// tools share one instance. `fs` should be the real disk: the shell
-    /// always is.
-    pub fn with_fs(fs: Arc<dyn Fs>, env: ChildEnv) -> Self {
-        Self { fs, env }
+        Self {
+            fs: FsRef::new(RealFs),
+            env,
+        }
     }
 
     /// `program args...`, found on the handed env's `PATH`.
@@ -127,7 +122,7 @@ impl Workspace for RealWorkspace {
     }
 
     fn fs(&self) -> FsRef {
-        self.fs.clone().into()
+        self.fs.clone()
     }
 
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {

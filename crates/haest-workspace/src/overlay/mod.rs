@@ -78,8 +78,7 @@ struct Scanned {
 ///
 /// [`SandboxWorkspace::open`](crate::SandboxWorkspace::open) builds one over
 /// its project overlay; a host reaches it through
-/// [`Workspace::changes`](haest_core::workspace::Workspace::changes), or typed
-/// through [`SandboxWorkspace::overlay_changes`](crate::SandboxWorkspace::overlay_changes).
+/// [`Workspace::changes`](haest_core::workspace::Workspace::changes).
 ///
 /// Every mutation to the project -- haest's tools and the simulated shell
 /// alike -- first records the path it touched
@@ -110,6 +109,14 @@ struct Scanned {
 pub struct OverlayChanges {
     book: Arc<Book>,
     overlay: HaestFsOverBashkit,
+}
+
+impl std::fmt::Debug for OverlayChanges {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OverlayChanges")
+            .field("root", &self.book.root)
+            .finish_non_exhaustive()
+    }
 }
 
 impl OverlayChanges {

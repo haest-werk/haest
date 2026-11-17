@@ -1,4 +1,4 @@
-//! Any haest [`Fs`] as a bashkit file system: a host's own storage gets a
+//! Any haest [`Fs`](haest_core::fs::Fs) as a bashkit file system: a host's own storage gets a
 //! sandboxed bash, and `cat` shows exactly what the Write tool wrote.
 //!
 //! What a haest `Fs` cannot hold, stated: no symlinks (`ln -s` fails), no
@@ -10,19 +10,19 @@ use std::{
     collections::HashMap,
     io::{self, ErrorKind},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::Mutex,
     time::SystemTime,
 };
 
 use async_trait::async_trait;
 use bashkit::{DirEntry, FileSystem, FileSystemExt, FileType, Metadata};
-use haest_core::fs::{FileKind, Fs, FsStat, normalize};
+use haest_core::fs::{FileKind, FsRef, FsStat, normalize};
 
 use super::bashkit_from_io;
 
 type Result<T> = bashkit::Result<T>;
 
-/// Any haest [`Fs`] as a bashkit `FileSystem`: what puts a sandboxed bash over
+/// Any haest [`Fs`](haest_core::fs::Fs) as a bashkit `FileSystem`: what puts a sandboxed bash over
 /// a host's own storage ([`SandboxWorkspace::over`](crate::SandboxWorkspace::over)
 /// builds one).
 ///
@@ -38,13 +38,13 @@ type Result<T> = bashkit::Result<T>;
 /// - no settable times: `touch` on an existing file succeeds and leaves the
 ///   time to the `Fs`.
 pub(crate) struct BashkitFsOverHaest {
-    fs: Arc<dyn Fs>,
+    fs: FsRef,
     modes: Mutex<HashMap<PathBuf, u32>>,
 }
 
 impl BashkitFsOverHaest {
     /// Wrap `fs` so a bashkit shell can run over it.
-    pub(crate) fn new(fs: Arc<dyn Fs>) -> Self {
+    pub(crate) fn new(fs: FsRef) -> Self {
         Self {
             fs,
             modes: Mutex::default(),

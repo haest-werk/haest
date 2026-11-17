@@ -646,6 +646,18 @@ Good citizens:
   `SandboxWorkspace::changes` an `Option<ChangeSetRef>`, as `Workspace`
   now has them. `RealFs` and the sandbox's file system implement
   `create_dir`, `create_dir_all`, `remove` and `remove_all`.
+- `SandboxWorkspace::over` takes the files themselves, or a handle to them
+  (`impl Into<FsRef>`), and `with_command` the command itself
+  (`impl Into<ShellCommandRef>`):
+  `SandboxWorkspace::over(Arc::new(MemFs::new())).with_command(Arc::new(Shout))`
+  -> `SandboxWorkspace::over(MemFs::new()).with_command(Shout)`. A host that
+  reads the files afterwards keeps an `FsRef` and hands over a clone.
+- Removed `RealWorkspace::with_fs` and `SandboxWorkspace::overlay_changes`,
+  which nothing called: the real workspace is always over `RealFs`, and the
+  overlay's changes are `Workspace::changes()`.
+- `RealWorkspace`, `SandboxWorkspace` and `OverlayChanges` implement
+  `Debug` (a sandbox shows its commands and the names of its variables,
+  never their values).
 
 ### haest-code
 

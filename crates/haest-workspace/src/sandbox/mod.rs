@@ -8,7 +8,7 @@
 //! binaries.
 //!
 //! PLUG POINT: [`SandboxWorkspace::over`] puts the same sandboxed bash over a
-//! host's OWN [`Fs`], so the file the agent writes with Write is the file `cat`
+//! host's OWN [`Fs`](haest_core::fs::Fs), so the file the agent writes with Write is the file `cat`
 //! shows, wherever the host keeps it. [`SandboxWorkspace::with_command`] adds a
 //! command to the shell (haest-code's `js`). Every sandbox has `xan` (CSV verbs,
 //! `xan/`) beyond bashkit's builtins.
@@ -18,23 +18,20 @@ mod exec;
 mod mounts;
 mod xan;
 
-use std::{io, sync::Arc};
+use std::{fmt, io, sync::Arc};
 
 use async_trait::async_trait;
 use haest_core::{
     ChildEnv,
-    fs::{Fs, FsRef},
+    fs::FsRef,
     remedy::{Limit, Remedies},
-    shell_command::ShellCommand,
+    shell_command::ShellCommandRef,
     workspace::{ChangeSetRef, ExecOptions, ExecResult, Workspace, WorkspaceMode},
 };
 
 pub use mounts::SandboxMounts;
 
-use crate::{
-    bridge::{BashkitFsOverHaest, HaestFsOverBashkit},
-    overlay::OverlayChanges,
-};
+use crate::bridge::{BashkitFsOverHaest, HaestFsOverBashkit};
 use exec::Shell;
 
 /// What the shell is, for every sandbox. Each added command's own note follows it.
@@ -42,15 +39,15 @@ const SHELL_NOTE: &str = "Bash is a simulated shell: coreutils, grep, rg, sed, a
 
 /// The commands every sandbox has beyond bashkit's builtins (`xan`). A host's
 /// command of the same name replaces one.
-fn own_commands() -> Vec<Arc<dyn ShellCommand>> {
-    vec![Arc::new(xan::Xan)]
+fn own_commands() -> Vec<ShellCommandRef> {
+    vec![xan::Xan.into()]
 }
 
 /// Where edits go in the default sandbox, and how they reach the disk.
 const OVERLAY_NOTE: &str = "Reads come from the real project; every file you write or edit lives in memory until the human reviews it and puts it on disk -- otherwise it is discarded when this conversation ends. When you finish edits worth keeping, tell the human they are waiting for review. If the task needs real builds, tests or git, say so plainly.";
 
 /// bashkit, a simulated bash, over files the host chooses: the project as a
-/// copy-on-write overlay ([`open`](Self::open)), or the host's own [`Fs`]
+/// copy-on-write overlay ([`open`](Self::open)), or the host's own [`Fs`](haest_core::fs::Fs)
 /// ([`over`](Self::over)).
 ///
 /// The tools ([`Workspace::fs`]) and the shell see the same files: a file
@@ -84,7 +81,7 @@ const OVERLAY_NOTE: &str = "Reads come from the real project; every file you wri
 /// A host's variable, and a command added to the shell:
 ///
 /// ```
-/// use std::{sync::Arc, time::Duration};
+/// use std::time::Duration;
 ///
 /// use async_trait::async_trait;
 /// use haest_core::{
@@ -113,9 +110,9 @@ const OVERLAY_NOTE: &str = "Reads come from the real project; every file you wri
 ///
 /// # #[tokio::main]
 /// # async fn main() {
-/// let ws = SandboxWorkspace::over(Arc::new(MemFs::new()))
+/// let ws = SandboxWorkspace::over(MemFs::new())
 ///     .with_env(ChildEnv::new([("GREETING".to_string(), "hej".to_string())]))
-///     .with_command(Arc::new(Shout));
+///     .with_command(Shout);
 /// let opts = ExecOptions::new("/", Duration::from_secs(10));
 /// let r = ws.shell("shout \"$GREETING\" there", opts.clone()).await;
 /// assert_eq!(r.stdout, "HEJ THERE\n");
@@ -133,33 +130,34 @@ pub struct SandboxWorkspace {
     /// What the shell runs over.
     shell_fs: Arc<dyn bashkit::FileSystem>,
     /// What the tools see: the same files.
-    fs: Arc<dyn Fs>,
+    fs: FsRef,
     /// A host's replacement for the built note.
     note: Option<String>,
     /// The host's way to review and apply the overlay, for the note.
     remedies: Remedies,
-    commands: Vec<Arc<dyn ShellCommand>>,
+    commands: Vec<ShellCommandRef>,
     /// The variables the host passes the shell.
     env: ChildEnv,
-    changes: Option<Arc<OverlayChanges>>,
+    changes: Option<ChangeSetRef>,
 }
 
 impl SandboxWorkspace {
     /// The default sandbox: a copy-on-write overlay of `mounts.cwd`, the real
     /// writable and readable dirs at their own paths, a scratch disk elsewhere.
     ///
-    /// Its [`Workspace::changes`] (and [`overlay_changes`](Self::overlay_changes))
-    /// is the overlay's [`OverlayChanges`]: what the human reviews and applies.
+    /// Its [`Workspace::changes`] is the overlay's
+    /// [`OverlayChanges`](crate::OverlayChanges): what
+    /// the human reviews and applies.
     ///
     /// # Errors
     ///
     /// When the project or a mounted directory does not exist or cannot be
     /// opened.
     pub async fn open(mounts: SandboxMounts) -> io::Result<Self> {
-        let changes = Arc::new(mounts::project_overlay(&mounts.cwd).await?);
+        let changes = mounts::project_overlay(&mounts.cwd).await?;
         let shell_fs = mounts::sandbox_fs(&mounts, &changes).await?;
-        let fs = Arc::new(HaestFsOverBashkit::new(shell_fs.clone()));
-        Ok(Self::with_parts(shell_fs, fs, Some(changes)))
+        let fs = FsRef::new(HaestFsOverBashkit::new(shell_fs.clone()));
+        Ok(Self::with_parts(shell_fs, fs, Some(changes.into())))
     }
 
     /// A sandboxed bash over a host's own file system: the shell's whole world
@@ -178,14 +176,18 @@ impl SandboxWorkspace {
     /// directory`), except a permission refusal with a message of the host's
     /// own ("you can't edit there; tell them instead"), which reaches the
     /// shell's stderr as written.
-    pub fn over(fs: Arc<dyn Fs>) -> Self {
+    ///
+    /// `fs` is the files themselves, or a handle the host keeps a clone of
+    /// ([`FsRef`]) to read what the agent wrote.
+    pub fn over(fs: impl Into<FsRef>) -> Self {
+        let fs = fs.into();
         Self::with_parts(Arc::new(BashkitFsOverHaest::new(fs.clone())), fs, None)
     }
 
     fn with_parts(
         shell_fs: Arc<dyn bashkit::FileSystem>,
-        fs: Arc<dyn Fs>,
-        changes: Option<Arc<OverlayChanges>>,
+        fs: FsRef,
+        changes: Option<ChangeSetRef>,
     ) -> Self {
         Self {
             shell_fs,
@@ -227,7 +229,8 @@ impl SandboxWorkspace {
     ///
     /// The command runs inside the shell call it is part of, so pipes, `&&`
     /// and redirects work, and it gets that call's cancel token and deadline.
-    pub fn with_command(mut self, command: Arc<dyn ShellCommand>) -> Self {
+    pub fn with_command(mut self, command: impl Into<ShellCommandRef>) -> Self {
+        let command = command.into();
         self.commands.retain(|c| c.name() != command.name());
         self.commands.push(command);
         self
@@ -241,11 +244,16 @@ impl SandboxWorkspace {
             env: &self.env,
         }
     }
+}
 
-    /// The project overlay's edits, typed; [`Workspace::changes`] is the same
-    /// object. None for a sandbox made with [`over`](Self::over).
-    pub fn overlay_changes(&self) -> Option<Arc<OverlayChanges>> {
-        self.changes.clone()
+impl fmt::Debug for SandboxWorkspace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let commands: Vec<&str> = self.commands.iter().map(|c| c.name()).collect();
+        f.debug_struct("SandboxWorkspace")
+            .field("commands", &commands)
+            .field("env", &self.env)
+            .field("overlay", &self.changes.is_some())
+            .finish_non_exhaustive()
     }
 }
 
@@ -259,7 +267,7 @@ impl Workspace for SandboxWorkspace {
     }
 
     fn fs(&self) -> FsRef {
-        self.fs.clone().into()
+        self.fs.clone()
     }
 
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
@@ -286,6 +294,6 @@ impl Workspace for SandboxWorkspace {
     }
 
     fn changes(&self) -> Option<ChangeSetRef> {
-        self.changes.clone().map(ChangeSetRef::from)
+        self.changes.clone()
     }
 }
