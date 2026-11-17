@@ -100,14 +100,14 @@ impl Layer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Slot {
     Pending(Pending),
     Read(Layer),
 }
 
 /// The layers, in order.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Stack(pub Vec<Slot>);
 
 impl Stack {

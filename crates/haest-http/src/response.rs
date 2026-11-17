@@ -82,6 +82,13 @@ impl Stream for Body {
     }
 }
 
+/// No body ([`Body::empty`]).
+impl Default for Body {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 impl From<Bytes> for Body {
     fn from(whole: Bytes) -> Self {
         Self(futures::stream::iter([Ok(whole)]).boxed())

@@ -100,7 +100,7 @@ impl ParseMethodError {
 /// Its Debug output shows no credential: the URL without its userinfo
 /// (`user:password@`), each header's name without its value, and the body's
 /// length.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Request {
     /// The method.
     pub method: Method,

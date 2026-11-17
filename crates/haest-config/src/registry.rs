@@ -52,8 +52,9 @@ pub enum Kind {
 }
 
 /// Where a setting may come from. A layer that sets one it may not is an
-/// error naming the file.
+/// error naming the file. haest may add a scope in a minor release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Scope {
     /// Any file, any profile, the environment and flags.
     Any,

@@ -78,6 +78,7 @@ use crate::{
 /// Its Debug output shows the layers' settings and the variables' names,
 /// never a value: a variable may be a key.
 #[must_use = "a Loader reads nothing until .load()"]
+#[derive(Clone)]
 pub struct Loader {
     defaults: Settings,
     stack: Stack,

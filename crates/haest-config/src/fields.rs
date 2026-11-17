@@ -21,8 +21,10 @@ haest_core::word_enum! {
     /// What a process haest starts (bash, a background job, an MCP server) gets of
     /// haest's own environment: the `env_passthrough` setting. Codex's
     /// `shell_environment_policy.inherit`. What the `env` setting passes on
-    /// purpose comes on top, whichever it is.
+    /// purpose comes on top, whichever it is. haest may add a policy in a
+    /// minor release.
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum EnvPassthrough ("env_passthrough") {
         /// Nothing: a process gets only what `env` passes, and an MCP server
         /// its own `env` too.

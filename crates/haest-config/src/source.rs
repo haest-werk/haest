@@ -36,7 +36,9 @@ impl fmt::Display for Source {
     }
 }
 
-/// The project's `.haest/config.toml`, if there is one.
+/// The project's `.haest/config.toml`, if there is one. The three are the
+/// whole set (none, read, skipped), so a `match` needs no `_` arm (not
+/// `#[non_exhaustive]`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectFile {
     /// There is none from the working dir up, or the loader reads none

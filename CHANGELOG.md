@@ -769,6 +769,7 @@ Hosts write less (round two of the review, and what porting brain onto
   frames streamed, trailers skipped) and `http::Method: From<Method>`.
   The 25 lines a gateway host wrote for it become `req.try_into()?` and
   `Response::from(res)`. With `reqwest` on it adds no crate to the tree.
+- `Body` implements `Default` (empty) and `Request` implements `Eq`.
 
 ### haest-providers
 
@@ -1208,6 +1209,9 @@ Hosts write less (round two of the review, and what porting brain onto
   reading `.mcp.json` (148 crates become 50 without it).
 - The crate docs show loading real files: `.load(&RealFs)` with
   haest-workspace's disk, which every example before read from memory.
+- `Scope` and `EnvPassthrough` are `#[non_exhaustive]` (breaking): a
+  `match` adds a `_` arm, as on `Kind` and `Source`. `ProjectFile` stays
+  exhaustive (none, read, skipped is the whole set). `Loader` is `Clone`.
 
 ### haest-runtime
 

@@ -89,8 +89,9 @@ impl Link {
     }
 }
 
-/// Whether [`Tracker::link`] adds a link or takes one off.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Whether [`Tracker::link`] adds a link or takes one off. The two are the
+/// whole set, so a `match` needs no `_` arm (not `#[non_exhaustive]`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LinkChange {
     /// Add the link (a parent replaces the one there).
     Add,
