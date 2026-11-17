@@ -91,8 +91,9 @@ impl Prompter for SessionPrompter {
         match answer.await {
             Ok(Answer::Allow) => ApprovalAnswer::Allow,
             Ok(Answer::Always) => ApprovalAnswer::AllowAlways,
-            // Denied, or the hub closed with the ask open.
-            Ok(Answer::Deny) | Err(_) => ApprovalAnswer::Deny,
+            // Denied, an answer this prompter does not know (it fails
+            // closed), or the hub closed with the ask open.
+            Ok(_) | Err(_) => ApprovalAnswer::Deny,
         }
     }
 

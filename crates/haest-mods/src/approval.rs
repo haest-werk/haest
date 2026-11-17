@@ -110,8 +110,10 @@ pub fn irreversible_reason(command: &str) -> Option<&'static str> {
         .map(|(_, why)| *why)
 }
 
-/// What auto mode's [`AutoJudge`] makes of one Bash command.
+/// What auto mode's [`AutoJudge`] makes of one Bash command. More verdicts
+/// may come (refuse it outright): a `match` has a `_` arm.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum BashVerdict {
     /// Run it without asking.
     Run {

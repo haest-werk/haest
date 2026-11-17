@@ -133,8 +133,10 @@ pub enum Control {
 }
 
 word_enum! {
-    /// How a peer answers an approval ask.
+    /// How a peer answers an approval ask. More answers may come (for this
+    /// session only, deny always): a `match` has a `_` arm, which denies.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[non_exhaustive]
     pub enum Answer ("answer") {
         /// Allow this call.
         Allow = "allow",

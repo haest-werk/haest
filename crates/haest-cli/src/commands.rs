@@ -46,7 +46,8 @@ pub(crate) async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
         _ => match rt.mods().command(name, args).await {
             CommandOutcome::Unknown => return skill_or_text(rt, name, args, line).await,
             CommandOutcome::Prompt(text) => return Outcome::Send(text),
-            CommandOutcome::Handled => {}
+            // Handled, or an outcome newer than this host: the mod had its say.
+            _ => {}
         },
     }
     Outcome::Done

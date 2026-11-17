@@ -16,8 +16,10 @@ use crate::api::{Before, Mod, ModEnv, ModRef, ModToolCall};
 /// What the model reads for a call the human interrupted while a mod was deciding.
 const INTERRUPTED: &str = "Interrupted by the user before this tool ran.";
 
-/// What [`Mods::command`] did with a slash command.
+/// What [`Mods::command`] did with a slash command. More outcomes may come
+/// (a command that asks the host to act): a `match` has a `_` arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CommandOutcome {
     /// No mod has this command: the host handles the line (or says it is unknown).
     Unknown,

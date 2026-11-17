@@ -49,8 +49,10 @@ word_enum! {
 }
 
 word_enum! {
-    /// Whether a turn is running.
+    /// Whether a turn is running. More states may come (paused, compacting):
+    /// a `match` has a `_` arm.
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+    #[non_exhaustive]
     pub enum State ("state") {
         /// No turn runs: a turn sent now starts at once (unless the host holds it).
         #[default]

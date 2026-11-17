@@ -23,8 +23,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::{ApprovalRequest, Decision, ModUi};
 
-/// How the human answered one prompt: what a [`Prompter`] returns.
+/// How the human answered one prompt: what a [`Prompter`] returns. More
+/// answers may come (for this session only, deny always): a `match` has a
+/// `_` arm, which denies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ApprovalAnswer {
     /// Allow this one call.
     Allow,

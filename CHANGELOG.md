@@ -97,7 +97,9 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `.with_name_enum(true)`.
 12. A `match` on a `ModLine` (the lines of `ApprovalGate::mod_ui`) adds
     `ModLine::Warn` and an arm for kinds to come:
-    `ModLine::Info(t) => show(t)` -> `other => show(other.text())`.
+    `ModLine::Info(t) => show(t)` -> `other => show(other.text())`. A
+    `match` on `CommandOutcome` or `BashVerdict` adds a `_` arm too:
+    `CommandOutcome::Handled => {}` -> `_ => {}`.
 
 ### Bug fixes
 
@@ -1247,6 +1249,10 @@ Hosts write less (round two of the review, and what porting brain onto
   `#[non_exhaustive]`, with `text()` for whatever kind it is (breaking):
   a `match` in the function given to `ApprovalGate::mod_ui` adds an arm
   that still shows the line, `other => show(other.text())`.
+- `CommandOutcome`, `BashVerdict` and `ApprovalAnswer` are
+  `#[non_exhaustive]` (breaking): a mod command may come to ask the host
+  for more, a judge to refuse outright, a human to allow for the session
+  only. A `match` adds a `_` arm; building one is unchanged.
 
 ### haest-settings
 
@@ -1443,6 +1449,8 @@ Hosts write less (round two of the review, and what porting brain onto
 - `HubUi::hub` returns the stream its lines go into, so a host's own `Ui`
   wraps a `HubUi` for the lines and publishes its other frames beside them
   (the `haest` command's terminal does).
+- `Resume` is `#[non_exhaustive]`: more ways to pick a session may come, so
+  a `match` on it adds a `_` arm. Building one is unchanged.
 
 ### haest-ts
 
@@ -1507,6 +1515,10 @@ wrote them.
   `token.as_deref()` -> `token.as_ref().map(Token::expose)`. On the wire it
   is the same plain string.
 - `LineDecoder::limit` reads the limit back.
+- `State` and `Answer` are `#[non_exhaustive]`: more turn states and
+  approval answers may come, so a `match` adds a `_` arm (haest-session's
+  prompter denies an answer it does not know). The words on the wire are
+  unchanged.
 
 ### haest-session (new)
 
