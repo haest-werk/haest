@@ -223,10 +223,10 @@ pub(crate) async fn workspace_for(
         // A mode added later runs shut until it is named here: no files, no shell.
         _ => return Ok(ShutWorkspace.into()),
     };
-    let ws = sandbox_commands().into_iter().fold(
-        ws.with_env(passed_env.clone()).with_remedies(remedies),
-        SandboxWorkspace::with_command,
-    );
+    let ws = ws
+        .with_env(passed_env.clone())
+        .with_remedies(remedies)
+        .with_commands(sandbox_commands());
     Ok(ws.into())
 }
 

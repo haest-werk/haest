@@ -17,7 +17,7 @@ const JS_NOTE: &str = "To run a script you wrote, use `js <file.js|file.ts> [arg
 const JS_NOTE: &str = "To run a script you wrote, use `js <file.js> [args]`: plain JavaScript as an ES module with async fs (fs.promises / 'fs/promises'), path and process over the sandbox's files -- no npm packages, no sync fs, no TypeScript.";
 
 /// `js` and, for every name in [`NOT_HERE`](crate::NOT_HERE), a command that
-/// points to it, ready for `SandboxWorkspace::with_command`. Only `js` has a
+/// points to it, ready for `SandboxWorkspace::with_commands`. Only `js` has a
 /// note for the system prompt; the others stay unadvertised.
 pub fn sandbox_commands() -> Vec<ShellCommandRef> {
     let js = ShellCommandRef::new(JsShellCommand);

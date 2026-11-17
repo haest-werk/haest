@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use common::{opts, sandbox, tempdir};
 use haest_core::{
     ChildEnv,
-    shell_command::{ShellCall, ShellCommand},
+    shell_command::{ShellCall, ShellCommand, ShellCommandRef},
     workspace::{ExecResult, Workspace},
 };
 use haest_workspace::SandboxWorkspace;
@@ -98,6 +98,24 @@ async fn its_note_joins_the_prompt_and_a_later_command_by_the_same_name_replaces
     assert!(!ws.prompt_note().contains("shout"));
     let r = ws.shell("echo hi | shout", opts(&dir)).await;
     assert_eq!((r.stdout.as_str(), r.exit_code), ("", 0));
+}
+
+/// A list is added in order, each one as `with_command` adds it: the later
+/// of two by one name wins.
+#[tokio::test]
+async fn commands_added_as_a_list_go_in_in_order() {
+    let (_t, dir) = tempdir();
+    let loud: ShellCommandRef = Arc::new(Shout::default()).into();
+    let ws = sandbox(&dir)
+        .await
+        .with_commands([loud.clone(), ShellCommandRef::new(Quiet)]);
+    assert!(!ws.prompt_note().contains("shout"));
+    let ws = sandbox(&dir)
+        .await
+        .with_commands(vec![ShellCommandRef::new(Quiet), loud]);
+    assert!(ws.prompt_note().contains("Use `shout` to shout."));
+    let r = ws.shell("echo hi | shout", opts(&dir)).await;
+    assert_eq!(r.stdout, "HI\n");
 }
 
 /// Keeps the bytes a pipe fed it.

@@ -1092,6 +1092,9 @@ Hosts write less (round two of the review, and what porting brain onto
   directory` -> `opening /work/project for the sandbox: No such file or
   directory`. `path()` and `kind()` read it, and `?` still turns it into
   an `io::Error` of the same kind.
+- `SandboxWorkspace::with_commands` adds a list of commands in one call:
+  `sandbox_commands().into_iter().fold(ws, SandboxWorkspace::with_command)`
+  -> `ws.with_commands(sandbox_commands())`.
 
 ### haest-code
 

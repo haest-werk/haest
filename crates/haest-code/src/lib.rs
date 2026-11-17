@@ -95,9 +95,7 @@
 //!     "/project/hi.ts",
 //!     "const who: string = process.argv[2]\nconsole.log(`hi ${who}`)",
 //! )]);
-//! let sandbox = sandbox_commands()
-//!     .into_iter()
-//!     .fold(SandboxWorkspace::over(files), SandboxWorkspace::with_command);
+//! let sandbox = SandboxWorkspace::over(files).with_commands(sandbox_commands());
 //!
 //! let opts = ExecOptions::new("/project", Duration::from_secs(20));
 //! let run = sandbox.shell("js hi.ts haest | tr a-z A-Z", opts.clone()).await;

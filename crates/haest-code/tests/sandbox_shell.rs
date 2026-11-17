@@ -14,9 +14,7 @@ async fn sandbox(dir: &Path) -> SandboxWorkspace {
     let ws = SandboxWorkspace::open(SandboxMounts::new(dir))
         .await
         .unwrap();
-    sandbox_commands()
-        .into_iter()
-        .fold(ws, SandboxWorkspace::with_command)
+    ws.with_commands(sandbox_commands())
 }
 
 fn opts(cwd: &Path, timeout: Duration) -> ExecOptions {

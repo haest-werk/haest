@@ -240,6 +240,16 @@ impl SandboxWorkspace {
         self
     }
 
+    /// Add each command, in order, as [`with_command`](Self::with_command)
+    /// does: haest-code's `sandbox_commands()` in one call.
+    #[must_use]
+    pub fn with_commands(
+        self,
+        commands: impl IntoIterator<Item = impl Into<ShellCommandRef>>,
+    ) -> Self {
+        commands.into_iter().fold(self, Self::with_command)
+    }
+
     fn shell_world(&self) -> Shell<'_> {
         Shell {
             fs: self.shell_fs.clone(),

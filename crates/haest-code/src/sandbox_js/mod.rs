@@ -216,7 +216,7 @@ pub(crate) fn not_here(name: &str) -> ExecResult {
 ///
 /// This crate knows no shell. [`sandbox_commands`] is `js` and each of
 /// [`NOT_HERE`] as haest-core [`haest_core::shell_command::ShellCommand`]s; a
-/// sandbox takes each one (`SandboxWorkspace::with_command`), and `js`'s note
+/// sandbox takes them all (`SandboxWorkspace::with_commands`), and `js`'s note
 /// tells the model it is there. The [crate docs](crate#the-sandbox-js-command)
 /// wire one up. Without a shell, [`js_command`] runs the same command over
 /// any [`Fs`](haest_core::fs::Fs).
