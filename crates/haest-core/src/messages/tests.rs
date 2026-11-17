@@ -61,6 +61,32 @@ fn usage_adds_cost_only_when_reported() {
     assert_eq!(u.context_tokens(), 5);
 }
 
+/// A cost that is no real amount (a provider's NaN, a refund) made the sum a
+/// NaN, or lowered it: the turn's USD cap read that sum.
+#[test]
+fn usage_adds_no_cost_that_is_negative_or_not_finite() {
+    let mut u = Usage {
+        cost_usd: Some(0.25),
+        ..Default::default()
+    };
+    for bad in [f64::NAN, -1.0, f64::INFINITY, f64::NEG_INFINITY] {
+        u += &Usage {
+            input: 1,
+            cost_usd: Some(bad),
+            ..Default::default()
+        };
+    }
+    assert_eq!((u.cost_usd, u.input), (Some(0.25), 4));
+    let unpriced: Usage = [Some(f64::NAN), None]
+        .map(|cost_usd| Usage {
+            cost_usd,
+            ..Default::default()
+        })
+        .iter()
+        .sum();
+    assert_eq!(unpriced.cost_usd, None);
+}
+
 /// Token counts come from outside (a provider's usage, a session file): a
 /// sum or a total past u64::MAX stops there instead of overflowing.
 #[test]

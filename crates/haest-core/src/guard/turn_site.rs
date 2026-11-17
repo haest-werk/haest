@@ -16,6 +16,7 @@ use crate::{
     remedy::Limit,
     threshold::{Action, Crossing, Meter, Parts, Reading, Scope, Thresholds, TurnSite, Watch},
     tool::ToolOutput,
+    tool_exec::tool_spend,
     wind_down::{WindDownWatch, WindingDown},
 };
 
@@ -116,7 +117,7 @@ impl TurnThresholds {
 
     /// A tool answered: its own spend, and a subagent's, count from now on.
     pub(super) fn answered(&self, out: &ToolOutput) {
-        let paid = out.cost_usd.unwrap_or(0.0) + out.child_cost_usd.unwrap_or(0.0);
+        let paid = tool_spend(out);
         if paid != 0.0 {
             let mut spent = self.spent.lock().unwrap();
             spent.cost_usd = Some(spent.cost_usd.unwrap_or(0.0) + paid);

@@ -923,6 +923,18 @@ Hosts write less (round two of the review, and what porting brain onto
   `WordSet` import: `use haest_settings::{BuiltinTools, WordSet};
   tools.words()` -> `tools.words()`. An import kept for them now warns as
   unused.
+- Fixed: a cost that is no real amount was counted as it came. A negative
+  one (a server's `usage.cost`, a tool's bill) lowered what the turn and
+  the conversation had spent, which raised their USD caps in effect; a NaN
+  (a host's provider or tool dividing by zero) switched both caps off,
+  the ledger's for the rest of the conversation, and the ledger's
+  snapshots then saved `"usd": null`, which a replay skips as corrupt, so
+  a resumed conversation lost its spend. A cost that is negative or not a
+  finite number is now no price wherever haest adds one up: `Usage`'s
+  `+=` and `Sum`, a tool's spend, `Ledger::charge` (which counts such a
+  call by its tokens, as one with no price) and `book_priced_cost`, which
+  books the configured price in its place. The ledger's USD stops at
+  `f64::MAX`.
 
 ### haest-http
 

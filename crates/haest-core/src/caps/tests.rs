@@ -41,6 +41,28 @@ async fn a_turn_stops_once_its_reported_cost_reaches_the_usd_cap() {
     assert!(error.is_some_and(|e| !e.is_empty()));
 }
 
+/// A provider's bill that is no real amount switched the turn's USD cap off
+/// (a NaN: `NaN >= cap` is false for the rest of the turn), lowered what the
+/// turn had spent (a refund), or stopped it at once (an infinity).
+#[tokio::test]
+async fn a_cost_that_is_no_real_amount_is_no_price_to_the_turns_usd_cap() {
+    for bad in [f64::NAN, -50.0, f64::INFINITY] {
+        let billed = |i: usize, cost| {
+            with_usage(
+                echo(&format!("t{i}"), json!({"v": "x"})),
+                &usage(1, 1, Some(cost)),
+            )
+        };
+        let p = ScriptedProvider::new(
+            std::iter::once(billed(0, bad)).chain((1..50).map(|i| billed(i, 1.0))),
+        );
+        let (mut agent, _) = agent_with(&p, capped(|l| l.max_turn_usd = 2.5));
+        end(&collect(&mut agent, "go").await);
+        // $0, $1, $2, then $3 is past the cap: no fifth call.
+        assert_eq!(p.requests().len(), 4, "a first bill of {bad}");
+    }
+}
+
 #[tokio::test]
 async fn the_token_cap_stops_a_turn_on_a_provider_that_reports_no_cost() {
     let p = looping(usage(10, 5, None));

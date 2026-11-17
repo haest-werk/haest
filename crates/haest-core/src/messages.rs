@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 pub use usage::Usage;
+pub(crate) use usage::real_cost;
 
 /// One block of an [`AssistantMessage`], in the order the model produced it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

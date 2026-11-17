@@ -259,6 +259,25 @@ fn a_tools_own_spend_and_its_childrens_fold_into_the_turn() {
     assert_eq!(usage.cost_usd, Some(1.5));
 }
 
+/// A tool's bill that is no real amount (a server's negative `usage.cost`, a
+/// host's tool dividing by zero) lowered the turn's spend or made it a NaN.
+#[test]
+fn a_tools_spend_that_is_negative_or_not_finite_is_no_spend() {
+    let mut usage = Usage {
+        cost_usd: Some(1.0),
+        ..Default::default()
+    };
+    for (own, child) in [(f64::NAN, -1.0), (-5.0, f64::INFINITY), (0.5, f64::NAN)] {
+        let out = ToolOutput {
+            cost_usd: Some(own),
+            child_cost_usd: Some(child),
+            ..ToolOutput::text("billed")
+        };
+        fold_spend(&mut usage, &out);
+    }
+    assert_eq!(usage.cost_usd, Some(1.5));
+}
+
 #[test]
 fn a_result_message_carries_the_call_and_the_output() {
     let c = call("t9", "Echo", json!({}));

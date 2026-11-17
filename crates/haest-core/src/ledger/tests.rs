@@ -203,6 +203,35 @@ fn the_warning_and_the_stop_end_with_the_hosts_remedy_for_the_cap_in_force() {
     assert!(stop.ends_with(" RAISE-FROM-5"), "{stop}");
 }
 
+/// A bill that is no real amount was charged as it came: a negative one
+/// lowered the spend (a higher cap, in effect), and a NaN switched the cap
+/// off for good and wrote snapshots that do not read back (`"usd": null`),
+/// so a resumed conversation lost its spend.
+#[test]
+fn a_cost_that_is_negative_or_not_finite_is_no_price() {
+    let (ledger, rec) = ledger_with(1.0, 0);
+    ledger.charge(&cost(0.5));
+    for bad in [f64::NAN, -50.0, f64::INFINITY, f64::NEG_INFINITY] {
+        ledger.charge(&cost(bad));
+    }
+    assert_eq!(ledger.usd(), 0.5);
+    ledger.charge(&cost(0.6));
+    assert!(ledger.exhausted().is_some(), "the cap still stops it");
+    // Counted by its tokens, as a call with no price is.
+    ledger.charge(&Usage {
+        input: 10,
+        output: 5,
+        cost_usd: Some(f64::NAN),
+        ..Default::default()
+    });
+    assert_eq!(ledger.unpriced_tokens(), 15);
+    let json = serde_json::to_string(&ledger.snapshot()).unwrap();
+    let back: LedgerSnapshot = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, ledger.snapshot());
+    // A bad bill with no tokens changed nothing, so saved nothing.
+    assert_eq!(rec.saved.lock().unwrap().len(), 3);
+}
+
 #[test]
 fn a_call_that_billed_nothing_is_not_persisted() {
     let (ledger, rec) = ledger_with(0.0, 0);

@@ -40,7 +40,7 @@ pub use hold::{Hold, NotAvailable};
 
 use crate::{
     caps::{ConversationCap, ConversationCapOverrides, ConversationCaps},
-    messages::Usage,
+    messages::{Usage, real_cost},
     newest::Newest,
     remedy::{Limit, Remedies},
     threshold::{Action, Crossing, LedgerSite, Mark, Meter, Reading, Scope, Thresholds, Watch},
@@ -303,19 +303,23 @@ impl Ledger {
 
     /// One model call's bill, or a tool's own spend.
     ///
-    /// A priced call adds its USD; an unpriced one its billed tokens. Then
-    /// the snapshot is persisted and the human warned at a crossing; a call
-    /// with neither a price nor tokens changes nothing.
+    /// A priced call adds its USD; an unpriced one its billed tokens. A cost
+    /// that is negative or not a finite number is no price: it would lower
+    /// the spend, or switch the cap off and persist a snapshot that does not
+    /// read back. Then the snapshot is persisted and the human warned at a
+    /// crossing; a call with neither a price nor tokens changes nothing. The
+    /// USD stops at `f64::MAX`, the tokens at `u64::MAX`.
     pub fn charge(&self, u: &Usage) {
+        let priced = real_cost(u.cost_usd);
         let report = {
             let mut state = self.state();
-            match u.cost_usd {
-                Some(c) => state.usd += c,
+            match priced {
+                Some(c) => state.usd = (state.usd + c).min(f64::MAX),
                 None => {
                     state.unpriced_tokens = state.unpriced_tokens.saturating_add(u.context_tokens())
                 }
             }
-            if u.cost_usd.is_none() && u.context_tokens() == 0 {
+            if priced.is_none() && u.context_tokens() == 0 {
                 return;
             }
             self.persists.put(state.snapshot());
