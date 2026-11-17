@@ -72,6 +72,10 @@ impl ToolSource for ModTools {
     fn tools(&self) -> Tools {
         Self::wrap(&self.mods, self.inner.tools())
     }
+    /// A tool `inner` keeps back (a deferred one) runs by name, inside the hooks too.
+    fn callable(&self) -> Tools {
+        Self::wrap(&self.mods, self.inner.callable())
+    }
 }
 
 /// One tool inside the hooks.

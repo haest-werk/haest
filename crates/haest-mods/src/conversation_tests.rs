@@ -9,7 +9,7 @@ use std::{
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Message, ToolResultMessage, Tools,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::{OnResume, Tool},
+    tool::{OnResume, Tool, ToolSource},
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use serde_json::json;
@@ -136,6 +136,48 @@ async fn plan_mode_lets_the_hosts_planning_tools_through_and_no_others() {
     tools[0].execute(input(json!({})), &ctx()).await.unwrap();
     assert!(tools[1].execute(input(json!({})), &ctx()).await.is_err());
     assert_eq!((notes.ran().len(), tasks.ran().len()), (1, 0));
+}
+
+/// Advertises its first tool only and keeps the rest back, callable by name
+/// (as a deferral does).
+struct KeptBack(Tools);
+
+impl ToolSource for KeptBack {
+    fn tools(&self) -> Tools {
+        self.0[..1].iter().cloned().collect()
+    }
+    fn callable(&self) -> Tools {
+        self.0.clone()
+    }
+}
+
+/// Regression: ModTools offered only the advertised tools as callable, so
+/// over a source that keeps tools back (a `DeferredTools`) a tool the model
+/// called by name was unknown.
+#[tokio::test]
+async fn a_tool_the_source_keeps_back_runs_by_name_inside_the_mods_hooks() {
+    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real)).with(PlanMod::new());
+    let write = || tool_answer(&[("w", "Write", json!({"file_path": "/p/a.txt"}))]);
+    let p = ScriptedProvider::new([write(), text_answer("ok"), write(), text_answer("ok")]);
+    let (reader, writer) = (Probe::read_only("Read"), Probe::new("Write"));
+    let kept = KeptBack(Tools::from_iter([reader, writer.clone()]));
+    let deps = AgentDeps::new(
+        p.resolver(),
+        ModTools::new(kept, mods.clone()),
+        "You are haest.",
+        CWD,
+        ShutWorkspace,
+    );
+    let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
+
+    agent.run("write it", &mut Vec::new()).await;
+    assert_eq!(writer.ran().len(), 1, "{:?}", tool_results(&agent));
+
+    // Plan mode refuses a write: the kept-back tool runs inside the hooks.
+    assert_eq!(mods.command("plan", "").await, CommandOutcome::Handled);
+    agent.run("write it again", &mut Vec::new()).await;
+    assert_eq!(writer.ran().len(), 1);
+    assert!(tool_results(&agent)[1].is_error);
 }
 
 /// A payment tool that can look up what it did when a durable run resumes it.

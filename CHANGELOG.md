@@ -151,6 +151,10 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 - A warning threshold that fired in a subagent's turn never reached the
   human: the hooks a subagent runs with passed on the media and effort
   notices but not `AgentHooks::on_warning`. They pass it on now.
+- haest-mods' `ModTools` over a source that keeps tools back (a
+  `DeferredTools`) let the model call only the advertised ones: a deferred
+  tool called by name was "Unknown tool". `ModTools::callable` now offers
+  every tool the source can run, each inside the mods' hooks.
 
 ### Behaviour changes
 
