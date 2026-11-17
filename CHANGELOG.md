@@ -62,6 +62,11 @@ compiles as before.
   `Usage::context_tokens`, the ledger, the turn guard and the Chat
   Completions and Responses usage readers. Each count now stops at
   `u64::MAX`.
+- `Agent::run` called while a turn was running (from a
+  `before_model_call` hook, which holds the agent) was refused, but the
+  refusal still re-armed the running turn's once-a-turn thresholds, so a
+  `Rearm::NextTurn` reminder fired again at every step. The refused call
+  now touches nothing, as its docs say.
 
 ### Behaviour changes
 

@@ -246,7 +246,8 @@ impl Agent {
         let cancel = match self.control.begin() {
             Ok(c) => c,
             Err(e) => {
-                let mut turn = Turn::new(CancellationToken::new(), self.guard(), sink);
+                // The running turn's thresholds are its own: this guard has none.
+                let mut turn = Turn::new(CancellationToken::new(), self.bare_guard(), sink);
                 return turn.finish(TurnOutcome::with_error(StopReason::Error, e), started);
             }
         };
@@ -260,19 +261,25 @@ impl Agent {
     }
 
     /// A fresh guard per turn: its caps and clock start over, and the
-    /// thresholds that fire once a turn re-arm.
+    /// thresholds that fire once a turn re-arm. Only for a turn that began.
     fn guard(&self) -> TurnGuard {
         {
             let mut watch = self.thresholds.lock().unwrap();
             watch.follow(&self.deps.shared.thresholds);
             watch.next_turn();
         }
+        self.bare_guard()
+            .with_thresholds(self.thresholds.clone(), last_context_tokens(&self.history))
+    }
+
+    /// A guard that leaves the agent's thresholds alone: for a refused call,
+    /// which must not re-arm the running turn's.
+    fn bare_guard(&self) -> TurnGuard {
         TurnGuard::new(
             self.deps.shared.clock.clone(),
             self.deps.shared.ledger.clone(),
             self.deps.shared.remedies.clone(),
         )
-        .with_thresholds(self.thresholds.clone(), last_context_tokens(&self.history))
     }
 
     /// The hard caps for the current model spec; read fresh at every check.

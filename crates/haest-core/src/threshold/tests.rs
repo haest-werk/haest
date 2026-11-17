@@ -455,3 +455,42 @@ async fn an_agent_remembers_what_fired_from_one_turn_to_the_next() {
     let second = collect(&mut agent, "two").await;
     assert_eq!(guard_texts(&second), ["[haest guard] EACH at 1"]);
 }
+
+/// Calls `run` on its own agent before every model call: a re-entrant turn,
+/// refused while the real one runs.
+struct ReEnters;
+
+impl crate::tool::ToolServices for ReEnters {}
+
+#[async_trait::async_trait]
+impl crate::deps::AgentHooks for ReEnters {
+    async fn before_model_call(
+        &self,
+        agent: &mut crate::Agent,
+        _: &tokio_util::sync::CancellationToken,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut events: Vec<LoopEvent> = Vec::new();
+        let refused = agent.run("again", &mut events).await;
+        assert_eq!(refused.stop_reason, StopReason::Error);
+        Ok(())
+    }
+}
+
+/// The refused call touches nothing: the running turn's once-a-turn
+/// thresholds are not re-armed by it.
+#[tokio::test]
+async fn a_once_a_turn_reminder_fires_once_when_a_hook_calls_run_mid_turn() {
+    let p = ScriptedProvider::new(echoes(3));
+    let each = named(
+        Meter::Steps,
+        Mark::at(1.0),
+        Action::Remind,
+        Rearm::NextTurn,
+        "EACH",
+    );
+    let (mut agent, _) = agent(&p, Opts::default(), vec![each]);
+    agent.deps_mut().shared.hooks = Arc::new(ReEnters);
+    let events = collect(&mut agent, "go").await;
+    assert_eq!(p.requests().len(), 4);
+    assert_eq!(guard_texts(&events), ["[haest guard] EACH at 1"]);
+}
