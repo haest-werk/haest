@@ -148,7 +148,10 @@ impl From<HttpTransport> for McpTransport {
 /// with `env` laid over it, and nothing else of this process's environment.
 /// Its stderr is discarded, and it is killed when its connection drops.
 ///
-/// Its Debug output names the variables in `env` and never shows their values.
+/// Its Debug output names the variables in `env` and never shows their
+/// values, and says how many arguments there are, never what they say: a
+/// token rides in one too (mcp-remote's `--header "Authorization: Bearer
+/// ${API_TOKEN}"`, which `.mcp.json` fills in).
 #[derive(Clone, PartialEq, Eq)]
 pub struct StdioTransport {
     /// The program to run: a path, or a name looked up on the `PATH` the
@@ -191,7 +194,7 @@ impl fmt::Debug for StdioTransport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StdioTransport")
             .field("command", &self.command)
-            .field("args", &self.args)
+            .field("args", &self.args.len())
             .field("env", &Names(&self.env))
             .field("cwd", &self.cwd)
             .finish()

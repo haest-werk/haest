@@ -41,6 +41,23 @@ fn debug_names_headers_and_variables_but_never_their_values() {
     assert!(format!("{stdio:?}").contains("\"GITHUB_TOKEN\""));
 }
 
+/// mcp-remote's shape: the token in an argument, where `.mcp.json`'s
+/// `${API_TOKEN}` puts it.
+#[test]
+fn debug_counts_a_stdio_servers_arguments_but_never_shows_them() {
+    let stdio = McpTransport::stdio("npx").with_args([
+        "mcp-remote",
+        "https://mcp.example.com/sse",
+        "--header",
+        "Authorization: Bearer tok-s3cret",
+    ]);
+    let config = McpServerConfig::new("remote", stdio.clone());
+    for shown in [format!("{stdio:?}"), format!("{config:?}")] {
+        assert!(!shown.contains("s3cret"), "a secret in {shown}");
+        assert!(shown.contains("\"npx\"") && shown.contains('4'), "{shown}");
+    }
+}
+
 #[test]
 fn debug_shows_a_url_without_its_credentials() {
     let http = McpTransport::http("https://user:s3cret@docs.example.com/mcp?api_key=k3y");

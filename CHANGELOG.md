@@ -258,6 +258,12 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   failed tool call's answer to the model. rmcp's HTTP client now runs on a
   reqwest client whose errors name the URL without its query, fragment or
   userinfo.
+- `StdioTransport` printed its arguments in its Debug output, where
+  `.mcp.json` puts a filled-in `${API_TOKEN}` (mcp-remote's `--header
+  "Authorization: Bearer ${API_TOKEN}"`), so `McpServerConfig`,
+  `ProjectMcp`, haest-config's `Loaded` and haest-runtime's
+  `RuntimeInputs` showed the token. Debug now shows how many arguments
+  there are.
 
 ### Behaviour changes
 
