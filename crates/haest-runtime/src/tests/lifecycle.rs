@@ -191,10 +191,12 @@ async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resu
     let fs = Arc::new(MemFs::new());
     let mut rt = keyed(&fs, Resume::New).await;
     rt.set_model_spec(OTHER).unwrap();
-    rt.board.create(NewTask {
-        subject: "old work".into(),
-        ..Default::default()
-    });
+    rt.board
+        .create(NewTask {
+            subject: "old work".into(),
+            ..Default::default()
+        })
+        .unwrap();
     let old = rt.session_id();
 
     rt.clear().await.unwrap();
@@ -214,10 +216,12 @@ async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resu
 async fn a_clear_that_cannot_create_its_file_changes_nothing() {
     let fs = Arc::new(MemFs::new());
     let mut rt = keyed(&fs, Resume::New).await;
-    rt.board.create(NewTask {
-        subject: "kept".into(),
-        ..Default::default()
-    });
+    rt.board
+        .create(NewTask {
+            subject: "kept".into(),
+            ..Default::default()
+        })
+        .unwrap();
     let id = rt.session_id();
     rt.hooks.flush().await;
     block_sessions(&fs).await;

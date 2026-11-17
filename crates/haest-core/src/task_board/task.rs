@@ -96,6 +96,10 @@ pub enum TaskError {
         /// The task's id.
         id: String,
     },
+    /// Every id has been handed out: a task had the id `u64::MAX` (most
+    /// likely a hand-edited session file), and ids are never reused.
+    #[error("task ids have run out; no new task can be created")]
+    IdsExhausted,
 }
 
 fn existing_ids(ids: &[String]) -> String {

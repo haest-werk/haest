@@ -77,10 +77,12 @@ async fn bad_ids_and_statuses_go_back_as_input_errors() {
         .execute(input(json!({"taskId": "9", "status": "completed"})), &ctx())
         .await;
     assert!(matches!(unknown, Err(ToolError::Input(_))));
-    board.create(NewTask {
-        subject: "a".into(),
-        ..Default::default()
-    });
+    board
+        .create(NewTask {
+            subject: "a".into(),
+            ..Default::default()
+        })
+        .unwrap();
     let bad = update
         .execute(input(json!({"taskId": "1", "status": "done"})), &ctx())
         .await;

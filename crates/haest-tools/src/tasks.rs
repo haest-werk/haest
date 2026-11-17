@@ -133,11 +133,14 @@ impl Tool for TaskCreateTool {
         })
     }
     async fn execute(&self, input: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let t = self.0.create(NewTask {
-            subject: req_str(&input, "subject")?.into(),
-            description: opt_str(&input, "description")?.map(Into::into),
-            active_form: opt_str(&input, "activeForm")?.map(Into::into),
-        });
+        let t = self
+            .0
+            .create(NewTask {
+                subject: req_str(&input, "subject")?.into(),
+                description: opt_str(&input, "description")?.map(Into::into),
+                active_form: opt_str(&input, "activeForm")?.map(Into::into),
+            })
+            .map_err(on_board)?;
         Ok(ToolOutput::text(format!(
             "Task #{} created: {}",
             t.id, t.subject

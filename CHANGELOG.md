@@ -63,8 +63,9 @@ value itself, and holds it in a handle named after its trait. Read
 9. Smaller renames: `total.add(&u)` -> `total += &u` (`Usage`),
    `opt_bool(input, k)` -> `opt_bool(input, k)?`,
    `TaskBoard::with_clock(on_change, clock)` ->
-   `TaskBoard::new(on_change).with_clock(clock)`, and `Arc<TaskBoard>` /
-   `Arc<ToolDeferral>` -> `TaskBoard` / `ToolDeferral`.
+   `TaskBoard::new(on_change).with_clock(clock)`, `board.create(task)` ->
+   `board.create(task)?`, and `Arc<TaskBoard>` / `Arc<ToolDeferral>` ->
+   `TaskBoard` / `ToolDeferral`.
 
 ### Bug fixes
 
@@ -107,7 +108,8 @@ value itself, and holds it in a handle named after its trait. Read
   ledger snapshot, a durable run's `turn` record) panicked `Usage::add`,
   `Usage::context_tokens`, the ledger, the turn guard and the Chat
   Completions and Responses usage readers. Each count now stops at
-  `u64::MAX`.
+  `u64::MAX`, and the task board refuses a new task once its ids have run
+  out (`TaskError::IdsExhausted`) instead of handing an id out twice.
 - `Agent::run` called while a turn was running (from a
   `before_model_call` hook, which holds the agent) was refused, but the
   refusal still re-armed the running turn's once-a-turn thresholds, so a
@@ -440,6 +442,12 @@ Good citizens:
   `#[derive(Debug)] struct Host { deps: AgentDeps }` compiles. `ShellCall`
   shows its variables' names, never their values; `Agent` shows how long
   its history is, not the history.
+- `TaskBoard::create` returns `Result<Task, TaskError>` and never hands an
+  id out twice: once a task has the id `u64::MAX` (restored from a
+  hand-edited session file, or the last one counted) it refuses with the
+  new `TaskError::IdsExhausted`. `board.create(task)` ->
+  `board.create(task)?`. The TaskCreate tool hands the refusal to the
+  model.
 
 ### haest-providers
 

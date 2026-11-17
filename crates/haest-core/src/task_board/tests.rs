@@ -12,8 +12,8 @@ fn new(subject: &str) -> NewTask {
 #[test]
 fn ids_count_up_a_dependency_is_kept_on_both_ends_and_deleting_unlinks() {
     let b = TaskBoard::default();
-    let a = b.create(new("schema"));
-    let c = b.create(new("api"));
+    let a = b.create(new("schema")).unwrap();
+    let c = b.create(new("api")).unwrap();
     let patch = TaskPatch {
         add_blocked_by: vec![a.id.clone()],
         ..Default::default()
@@ -39,7 +39,8 @@ fn an_update_only_touches_the_fields_it_names() {
         subject: "keep me".into(),
         description: Some("details".into()),
         active_form: None,
-    });
+    })
+    .unwrap();
     let patch = TaskPatch {
         status: Some(PatchStatus::Set(TaskStatus::InProgress)),
         ..Default::default()
@@ -54,7 +55,7 @@ fn an_update_only_touches_the_fields_it_names() {
 #[test]
 fn an_unknown_id_is_refused_before_anything_changes() {
     let b = TaskBoard::default();
-    b.create(new("a"));
+    b.create(new("a")).unwrap();
     let patch = TaskPatch {
         add_blocked_by: vec!["9".into()],
         ..Default::default()
@@ -68,7 +69,7 @@ fn a_task_blocking_itself_is_refused_before_anything_changes() {
     let snapshots = Arc::new(Mutex::new(0));
     let seen = snapshots.clone();
     let b = TaskBoard::new(move |_| *seen.lock().unwrap() += 1);
-    b.create(new("a"));
+    b.create(new("a")).unwrap();
     let patch = TaskPatch {
         status: Some(PatchStatus::Set(TaskStatus::Completed)),
         add_blocked_by: vec!["1".into()],
@@ -82,25 +83,14 @@ fn a_task_blocking_itself_is_refused_before_anything_changes() {
 #[test]
 fn a_restored_list_continues_the_id_count() {
     let b = TaskBoard::default();
-    b.restore(vec![Task {
-        id: "7".into(),
-        subject: "x".into(),
-        description: None,
-        active_form: None,
-        status: TaskStatus::Pending,
-        blocked_by: vec![],
-        blocks: vec![],
-        owner: None,
-        updated_at: 0,
-        completed_at: None,
-    }]);
-    assert_eq!(b.create(new("y")).id, "8");
+    b.restore(vec![saved("7")]);
+    assert_eq!(b.create(new("y")).unwrap().id, "8");
 }
 
 #[test]
 fn completing_stamps_completed_at_from_the_board_clock() {
     let b = TaskBoard::default().with_clock(|| 42);
-    b.create(new("a"));
+    b.create(new("a")).unwrap();
     let patch = TaskPatch {
         status: Some(PatchStatus::Set(TaskStatus::Completed)),
         ..Default::default()
@@ -109,14 +99,24 @@ fn completing_stamps_completed_at_from_the_board_clock() {
     assert_eq!((t.updated_at, t.completed_at), (42, Some(42)));
 }
 
-/// A saved id at u64::MAX (a hand-edited session file) restores without
-/// overflowing the count, and the board goes on making tasks.
 #[test]
-fn a_restored_id_at_u64_max_does_not_overflow_the_count() {
-    let b = TaskBoard::default();
-    b.restore(vec![Task {
-        id: u64::MAX.to_string(),
-        subject: "x".into(),
+fn every_clone_is_the_same_board() {
+    let host = TaskBoard::default();
+    let tools = host.clone();
+    tools.create(new("a")).unwrap();
+    assert_eq!(host.list().len(), 1);
+    assert_eq!(
+        host.create(new("b")).unwrap().id,
+        "2",
+        "one count across clones"
+    );
+}
+
+/// A saved task with this id and nothing else set.
+fn saved(id: &str) -> Task {
+    Task {
+        id: id.into(),
+        subject: "saved".into(),
         description: None,
         active_form: None,
         status: TaskStatus::Pending,
@@ -125,17 +125,30 @@ fn a_restored_id_at_u64_max_does_not_overflow_the_count() {
         owner: None,
         updated_at: 0,
         completed_at: None,
-    }]);
-    b.create(new("y"));
-    b.create(new("z"));
-    assert_eq!(b.list().len(), 3);
+    }
 }
 
+/// A restored id near u64::MAX (a hand-edited session file) leaves room for
+/// one more task at most: no id is handed out twice.
 #[test]
-fn every_clone_is_the_same_board() {
-    let host = TaskBoard::default();
-    let tools = host.clone();
-    tools.create(new("a"));
-    assert_eq!(host.list().len(), 1);
-    assert_eq!(host.create(new("b")).id, "2", "one count across clones");
+fn ids_stay_unique_when_the_count_runs_out() {
+    let b = TaskBoard::default();
+    b.restore(vec![saved(&(u64::MAX - 1).to_string())]);
+    let last = b.create(new("last")).unwrap();
+    assert_eq!(last.id, u64::MAX.to_string());
+    assert_eq!(b.create(new("one too many")), Err(TaskError::IdsExhausted));
+    let ids: Vec<String> = b.list().into_iter().map(|t| t.id).collect();
+    let unique: std::collections::HashSet<&String> = ids.iter().collect();
+    assert_eq!(
+        unique.len(),
+        ids.len(),
+        "an id was handed out twice: {ids:?}"
+    );
+    assert_eq!(ids.len(), 2, "the refused create added nothing");
+
+    // Restored at the very top: nothing is left to hand out.
+    let full = TaskBoard::default();
+    full.restore(vec![saved(&u64::MAX.to_string())]);
+    assert_eq!(full.create(new("y")), Err(TaskError::IdsExhausted));
+    assert_eq!(full.list().len(), 1);
 }

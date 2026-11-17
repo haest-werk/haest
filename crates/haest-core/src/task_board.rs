@@ -26,8 +26,8 @@
 //! // The Task tools get a clone; it is the same board.
 //! let tools_board = board.clone();
 //!
-//! let schema = tools_board.create(NewTask { subject: "Write the schema".into(), ..Default::default() });
-//! let api = board.create(NewTask { subject: "Write the API".into(), ..Default::default() });
+//! let schema = tools_board.create(NewTask { subject: "Write the schema".into(), ..Default::default() })?;
+//! let api = board.create(NewTask { subject: "Write the API".into(), ..Default::default() })?;
 //! board.update(&api.id, TaskPatch { add_blocked_by: vec![schema.id.clone()], ..Default::default() })?;
 //! let done = TaskPatch { status: Some(PatchStatus::Set(TaskStatus::Completed)), ..Default::default() };
 //! board.update(&schema.id, done)?;
@@ -56,7 +56,8 @@ type OnChange = Arc<dyn Fn(&[Task]) + Send + Sync>;
 struct State {
     /// Insertion order is list order.
     tasks: Vec<Task>,
-    next: u64,
+    /// The id the next task gets; None once the ids have run out.
+    next: Option<u64>,
 }
 
 impl State {
@@ -133,7 +134,7 @@ impl TaskBoard {
         Self {
             state: Arc::new(Mutex::new(State {
                 tasks: Vec::new(),
-                next: 1,
+                next: Some(1),
             })),
             on_change: Arc::new(on_change),
             clock: ClockRef::new(WallClock),
@@ -166,11 +167,18 @@ impl TaskBoard {
 
     /// Add a task at the end of the list, `pending`, with the next id; fires
     /// `on_change`. Returns the new task.
-    pub fn create(&self, input: NewTask) -> Task {
+    ///
+    /// # Errors
+    ///
+    /// [`TaskError::IdsExhausted`] once an id of `u64::MAX` has been handed
+    /// out or restored: the board never hands out an id twice. Nothing
+    /// changes and nothing fires.
+    pub fn create(&self, input: NewTask) -> Result<Task, TaskError> {
         let task = {
             let mut s = self.state.lock().unwrap();
+            let id = s.next.ok_or(TaskError::IdsExhausted)?;
             let task = Task {
-                id: s.next.to_string(),
+                id: id.to_string(),
                 subject: input.subject,
                 description: input.description,
                 active_form: input.active_form,
@@ -181,12 +189,12 @@ impl TaskBoard {
                 updated_at: self.clock.now_ms(),
                 completed_at: None,
             };
-            s.next = s.next.saturating_add(1);
+            s.next = id.checked_add(1);
             s.tasks.push(task.clone());
             task
         };
         self.changed();
-        task
+        Ok(task)
     }
 
     /// Apply `patch` to task `id`; fires `on_change`. Returns the updated
@@ -234,7 +242,9 @@ impl TaskBoard {
 
     /// Replace the whole list (session replay); does not fire `on_change`.
     /// The next id is one past the highest numeric id in `tasks` (an id that
-    /// is not a number counts as 0); an empty list starts again at "1".
+    /// is not a number counts as 0); an empty list starts again at "1". A
+    /// restored id of `u64::MAX` leaves none: [`create`](Self::create) then
+    /// refuses.
     pub fn restore(&self, tasks: Vec<Task>) {
         let mut s = self.state.lock().unwrap();
         let max = tasks
@@ -242,7 +252,7 @@ impl TaskBoard {
             .map(|t| t.id.parse::<u64>().unwrap_or(0))
             .max()
             .unwrap_or(0);
-        s.next = max.saturating_add(1);
+        s.next = max.checked_add(1);
         s.tasks = tasks;
     }
 
