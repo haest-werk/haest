@@ -83,6 +83,23 @@ async fn a_command_runs_inside_the_shell_call_pipes_and_files_included() {
     assert!(left > Duration::from_secs(9) && left <= Duration::from_secs(11));
 }
 
+/// A call stops at ten minutes whatever its timeout, so a command's deadline
+/// is ten minutes at most: never a sum past what an `Instant` holds.
+#[tokio::test]
+async fn a_commands_deadline_is_ten_minutes_at_most() {
+    let (_t, dir) = tempdir();
+    let shout = Arc::new(Shout::default());
+    let ws = sandbox(&dir).await.with_command(shout.clone());
+    let mut o = opts(&dir);
+    o.timeout = Duration::MAX;
+    let started = Instant::now();
+    let r = ws.shell("echo hi | shout", o).await;
+    assert_eq!((r.stdout.as_str(), r.exit_code), ("HI\n", 0), "{r:?}");
+    let deadline = shout.deadline.lock().unwrap().unwrap();
+    let left = deadline.duration_since(started);
+    assert!(left > Duration::from_secs(599) && left <= Duration::from_secs(601));
+}
+
 #[tokio::test]
 async fn its_note_joins_the_prompt_and_a_later_command_by_the_same_name_replaces_it() {
     let (_t, dir) = tempdir();

@@ -1304,6 +1304,11 @@ Hosts write less (round two of the review, and what porting brain onto
   pipe. Streamed output is handed over whole, as before.
 - `SandboxWorkspace::with_remedies` takes `impl Into<Remedies>`: the
   closure itself too (`|l: Limit| ..`), as haest-core's setters do.
+- Fixed: `SandboxWorkspace` panicked ("overflow when adding duration to
+  instant") on a command whose timeout was `Duration::MAX`, the way a host
+  writes "no deadline", or any timeout past about 2^63 seconds. A sandbox
+  call stops at 10 minutes whatever its timeout, so a longer one is now
+  read as 10 minutes, and a host's command gets that as its deadline.
 
 ### haest-code
 

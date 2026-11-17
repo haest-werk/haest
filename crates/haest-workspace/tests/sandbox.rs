@@ -13,7 +13,7 @@ use common::{argv, opts, sandbox, tempdir};
 use haest_core::{
     fs::{Fs, MemFs},
     remedy::{Limit, Remedies},
-    workspace::{EXIT_NOT_FOUND, Workspace, WorkspaceMode},
+    workspace::{EXIT_NOT_FOUND, ExecOptions, Workspace, WorkspaceMode},
 };
 use haest_workspace::SandboxWorkspace;
 
@@ -160,6 +160,21 @@ async fn a_timeout_stops_the_call_and_says_so() {
     let r = ws.shell("sleep 30", o).await;
     assert!(r.timed_out);
     assert!(started.elapsed() < Duration::from_secs(3));
+}
+
+/// `Duration::MAX` is how a Rust host writes "no deadline". The sandbox added
+/// it to an `Instant`, which panicked: running a command never fails.
+#[tokio::test]
+async fn a_timeout_past_the_hard_deadline_runs_the_command() {
+    let ws = SandboxWorkspace::over(MemFs::new());
+    for timeout in [Duration::MAX, Duration::from_secs(u64::MAX / 2)] {
+        let r = ws.shell("echo hi", ExecOptions::new("/", timeout)).await;
+        assert_eq!(
+            (r.stdout.as_str(), r.exit_code, r.timed_out),
+            ("hi\n", 0, false),
+            "{timeout:?}"
+        );
+    }
 }
 
 #[tokio::test]

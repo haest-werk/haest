@@ -18,7 +18,8 @@ use haest_core::{
 use super::commands::HostCommand;
 use crate::MAX_OUTPUT_BYTES;
 
-/// The per-call timeout is the caller's; this only bounds a runaway construct.
+/// The per-call timeout is the caller's, at most this: it bounds a runaway
+/// construct, and keeps a deadline an `Instant` can hold.
 const HARD_DEADLINE: Duration = Duration::from_secs(600);
 /// Loop and command budgets per call, generous enough for real scripts.
 const MAX_COMMANDS: usize = 100_000;
@@ -82,14 +83,17 @@ pub(crate) async fn exec(
     positional: &[String],
     opts: ExecOptions,
 ) -> ExecResult {
+    // The shell stops at HARD_DEADLINE whatever the caller asked, and a longer
+    // timeout (`Duration::MAX` for "none") would overflow an `Instant`.
+    let timeout = opts.timeout.min(HARD_DEADLINE);
     let started = Instant::now();
-    let mut bash = shell(&world, &opts, started + opts.timeout);
+    let mut bash = shell(&world, &opts, started + timeout);
     // A CPU-bound script never yields to the select below, so the deadline and
     // the cancel ALSO raise the shell's own flag from another task: it stops at
     // the next command.
     let flag = bash.cancellation_token();
     let watcher = tokio::spawn({
-        let (cancel, timeout) = (opts.cancel.clone(), opts.timeout);
+        let cancel = opts.cancel.clone();
         async move {
             tokio::select! {
                 _ = cancel.cancelled() => {}
@@ -102,7 +106,7 @@ pub(crate) async fn exec(
     let sink: Sink = Arc::default();
     let streamed = sink.clone();
     let mut options = bashkit::ExecOptions::new()
-        .timeout(opts.timeout)
+        .timeout(timeout)
         .streaming(Box::new(move |out, err| {
             let mut s = streamed.lock().unwrap();
             s.0.extend_from_slice(out.as_bytes());
@@ -115,10 +119,10 @@ pub(crate) async fn exec(
     let outcome = tokio::select! {
         r = bash.exec_with_options(script, options) => Ok(r),
         _ = opts.cancel.cancelled() => Err(Stopped::Cancelled),
-        _ = tokio::time::sleep(opts.timeout) => Err(Stopped::TimedOut),
+        _ = tokio::time::sleep(timeout) => Err(Stopped::TimedOut),
     };
     watcher.abort();
-    let timed_out = started.elapsed() >= opts.timeout;
+    let timed_out = started.elapsed() >= timeout;
     let (out, err) = std::mem::take(&mut *sink.lock().unwrap());
     let partial = |extra: &str, exit_code: i32| ExecResult {
         stdout: String::from_utf8_lossy(&out).into_owned(),
