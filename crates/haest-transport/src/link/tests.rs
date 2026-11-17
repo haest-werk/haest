@@ -28,7 +28,7 @@ use tokio::{
 
 use super::{Ended, Start, serve};
 use crate::{
-    Grant, LineSource,
+    Grant, LineSink, LineSource,
     ndjson::{NdjsonSink, NdjsonSource},
     testing::{answers, hub, session},
 };
@@ -658,6 +658,95 @@ async fn a_connection_that_follows_nothing_ends_when_the_conversation_does() {
         .expect("it ended at once");
     assert!(rest.is_empty(), "{rest:#?}");
     assert!(matches!(ended, Ended::Closed), "{ended:?}");
+}
+
+/// A peer's lines, then nothing more: it is still there, and sends no more.
+struct Asks(std::vec::IntoIter<String>);
+
+impl LineSource for Asks {
+    async fn next_line(&mut self) -> Option<Result<String, crate::TransportError>> {
+        match self.0.next() {
+            Some(line) => Some(Ok(line)),
+            None => std::future::pending().await,
+        }
+    }
+}
+
+/// Takes `room` lines, then never another: the peer stopped reading, and
+/// its socket's buffer is full.
+struct Stalls {
+    room: usize,
+}
+
+impl LineSink for Stalls {
+    async fn send_line(&mut self, _line: String) -> Result<(), crate::TransportError> {
+        if self.room == 0 {
+            std::future::pending::<()>().await;
+        }
+        self.room -= 1;
+        Ok(())
+    }
+}
+
+/// A busy conversation (more frames than the connection's out buffer) and a
+/// peer that follows it, sends `asks`, and stops reading: once the
+/// conversation ends, `serve` returns all the same, within its grace.
+async fn a_stalled_peer_lets_go_when_the_conversation_ends(asks: Vec<String>, turn: bool) {
+    let hub = Hub::new_with_options(
+        "s1",
+        HubOptions {
+            ring: 5000,
+            ..HubOptions::default()
+        },
+    );
+    for n in 0..super::OUT_BUFFER * 3 {
+        hub.notice(Level::Info, format!("line {n}"));
+    }
+    let (s, _) = session(&answers(&["done"]), hub);
+    let start = Start {
+        follow_from: Some(0),
+        token: None,
+    };
+    let served = tokio::spawn(serve(
+        s.clone(),
+        Grant::command(Origin::Human),
+        start,
+        Asks(asks.into_iter()),
+        Stalls { room: 8 },
+    ));
+    if turn {
+        // The turn has run: its reply waits for frames the peer will not take.
+        let ran = async {
+            while s.snapshot().await.unwrap().messages < 2 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), ran)
+            .await
+            .expect("the turn ran");
+    } else {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    s.close().await;
+    let ended = tokio::time::timeout(Duration::from_secs(10), served).await;
+    let ended = ended.expect("serve returned after the conversation ended");
+    assert!(matches!(ended.unwrap(), Ended::Closed));
+}
+
+/// A turn's reply waits for the turn's frames to go out first; a peer that
+/// stopped reading never takes them.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stalled_peer_with_a_turn_in_flight_lets_go_when_the_conversation_ends() {
+    let asks = vec![turn("t1", "hi").to_string()];
+    a_stalled_peer_lets_go_when_the_conversation_ends(asks, true).await;
+}
+
+/// A refusal goes into the out buffer, which a peer that stopped reading has
+/// filled.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stalled_peer_refused_again_and_again_lets_go_when_the_conversation_ends() {
+    let asks = vec!["not a request".to_string(); super::OUT_BUFFER * 2];
+    a_stalled_peer_lets_go_when_the_conversation_ends(asks, false).await;
 }
 
 #[test]

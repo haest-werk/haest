@@ -1904,6 +1904,13 @@ against it; the wire JSON is unchanged):
   removed the socket and its discovery file, so nobody could attach to
   that conversation again after the pressure passed. The loop now pauses
   100 ms and accepts again; only the conversation's end stops it.
+- `serve` returns when the conversation ends, also under a peer that
+  stopped reading. A turn's reply waits for the turn's frames to go out,
+  which such a peer never takes, so `serve` (and the broker link and stdio
+  over it) never returned, and a refusal sent into a full out buffer held
+  up the connection itself. Once the conversation ended, what is still in
+  flight gets about a second, and every reply goes out from a task of its
+  own.
 
 ### haest-issues
 

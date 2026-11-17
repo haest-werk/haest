@@ -96,9 +96,12 @@ enum Out {
 /// `close` request was served.
 ///
 /// The conversation never waits on the peer: a peer that does not read falls
-/// behind and gets a `gap` frame, as any subscriber does. Nor can one peer
-/// make unbounded work: once 32 of its requests wait for their replies, the
-/// connection reads no more lines until one is answered.
+/// behind and gets a `gap` frame, as any subscriber does. Nor does the
+/// connection outlive the conversation for long: once it ended, what still
+/// waits on a peer that does not read (a reply, the last frames) gets about
+/// a second each, then is dropped. Nor can one peer make unbounded work:
+/// once 32 of its requests wait for their replies, the connection reads no
+/// more lines until one is answered.
 ///
 /// `backend` is any [`Backend`](haest_session::Backend) (a `session.clone()`),
 /// an `Arc` of one, or a [`BackendRef`].
@@ -132,9 +135,14 @@ pub async fn serve(
             }
             // Once the peer's input ends, or the conversation does, what the
             // peer asked for still finishes (a turn it sent runs to its end,
-            // a `close` gets its reply) before the connection ends.
+            // a `close` gets its reply) before the connection ends. Once the
+            // conversation ended, that is bounded: what still waits on the
+            // peer (a reply behind frames a peer that stopped reading never
+            // takes) gets the flush grace, no more.
             let mut reading = true;
             let mut why: Option<Ended> = None;
+            let grace = tokio::time::sleep(FLUSH_GRACE);
+            tokio::pin!(grace);
             loop {
                 if let Some(why) = why.take_if(|_| link.tasks.is_empty()) {
                     break why;
@@ -149,13 +157,15 @@ pub async fn serve(
                             why.get_or_insert(Ended::PeerLeft);
                         }
                         Some(Err(e)) => break Ended::Failed(e),
-                        Some(Ok(line)) => link.request(&line).await,
+                        Some(Ok(line)) => link.request(&line),
                     },
                     _ = link.tasks.join_next(), if !link.tasks.is_empty() => {}
                     () = &mut closed, if open => {
                         reading = false;
                         why = Some(Ended::Closed);
+                        grace.as_mut().reset(tokio::time::Instant::now() + FLUSH_GRACE);
                     }
+                    () = &mut grace, if !open => break Ended::Closed,
                     _ = &mut writer => break Ended::PeerLeft,
                 }
             }
@@ -199,17 +209,19 @@ impl Link {
         self.tx.send(Out::Conn(hello)).await.map_err(|_closed| ())
     }
 
-    /// One line from the peer.
-    async fn request(&mut self, line: &str) {
+    /// One line from the peer. Never waits: what it answers goes out from a
+    /// task of its own, so the connection still sees the conversation end
+    /// while a peer that stopped reading holds the out buffer full.
+    fn request(&mut self, line: &str) {
         let inbound = match decode(line) {
             Ok(inbound) => inbound,
-            Err(e) => return self.reply(Outbound::refused(id_of(line), report(&e))).await,
+            Err(e) => return self.reply(Outbound::refused(id_of(line), report(&e))),
         };
         let id = inbound.id;
         let req = inbound.request;
         if req.needs_command() && self.grant.access == Access::Watch {
             let why = "this connection may only watch: turns, controls and approval answers need command access";
-            return self.reply(Outbound::refused(id, why)).await;
+            return self.reply(Outbound::refused(id, why));
         }
         match req {
             Request::Events { after, follow } => self.events(Some(id), after, follow),
@@ -254,12 +266,12 @@ impl Link {
                         b.control(change).await?;
                         Ok(None)
                     }),
-                    Err(why) => self.reply(Outbound::refused(id, why)).await,
+                    Err(why) => self.reply(Outbound::refused(id, why)),
                 }
             }
             _ => {
                 let why = "this end does not serve that request";
-                self.reply(Outbound::refused(id, why)).await;
+                self.reply(Outbound::refused(id, why));
             }
         }
     }
@@ -274,8 +286,13 @@ impl Link {
         });
     }
 
-    async fn reply(&self, reply: Outbound) {
-        let _ = self.tx.send(Out::Conn(reply)).await;
+    /// An answer that is ready, sent from a task like every other reply: it
+    /// counts toward the cap, and it never holds up the connection.
+    fn reply(&mut self, reply: Outbound) {
+        let tx = self.tx.clone();
+        self.tasks.spawn(async move {
+            let _ = tx.send(Out::Conn(reply)).await;
+        });
     }
 
     /// Serve a request on its own task; its reply goes out when it is done.
