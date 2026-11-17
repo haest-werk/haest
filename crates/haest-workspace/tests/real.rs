@@ -154,6 +154,37 @@ async fn a_timeout_kills_the_whole_process_group_not_just_bash() {
     assert!(!alive(pid), "the background child outlived the timeout");
 }
 
+/// bash is reaped last: while a process that left its group holds the call's
+/// output, an exited bash stays a zombie, so its pid and group id stay this
+/// call's for the timeout's kill. Reaped, both are free for the system to
+/// hand to an unrelated process, which the kill would then reach.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_exited_bash_keeps_its_pid_until_the_call_ends() {
+    let (_t, dir) = tempdir();
+    let mut o = opts(&dir);
+    o.timeout = Duration::from_secs(2);
+    let ws = real();
+    let detached = "perl -e 'use POSIX qw(setsid); setsid(); sleep 3'";
+    let call = tokio::spawn(async move {
+        ws.shell(&format!("echo $$ > bash.pid; {detached} & sleep 0.2"), o)
+            .await
+    });
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let pid = std::fs::read_to_string(dir.join("bash.pid")).unwrap();
+    let ps = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", pid.trim()])
+        .output()
+        .unwrap();
+    let stat = String::from_utf8_lossy(&ps.stdout).trim().to_string();
+
+    assert!(
+        stat.starts_with('Z'),
+        "bash ({}) reads {stat:?}",
+        pid.trim()
+    );
+    assert!(call.await.unwrap().timed_out);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[expect(
     unsafe_code,

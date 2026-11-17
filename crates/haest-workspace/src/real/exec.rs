@@ -49,6 +49,8 @@ pub(crate) fn kill_group(pid: u32) {
     // SAFETY: kill(2) takes plain integers and touches no memory of ours.
     let group_gone = unsafe { libc::kill(-pid, libc::SIGKILL) } != 0;
     if group_gone {
+        // Only an unreaped child can still be here (its callers wait on it
+        // last), so this reaches it and nothing else.
         // SAFETY: the same call on the process alone: plain integers, no memory.
         unsafe { libc::kill(pid, libc::SIGKILL) };
     }
@@ -229,13 +231,15 @@ pub(super) async fn spawn_collect(
             stream,
         )),
     ];
-    // Done = the child exited AND both pipes closed (a background job may hold them).
+    // Done = both pipes closed (a background job may hold them) AND the child
+    // exited. Waited on LAST: an exited child stays a zombie until then, so its
+    // pid and its group id stay ours for the kills below (a reaped pid may
+    // already be another process's).
     let finished = async {
-        let status = child.wait().await;
         for r in readers {
             let _ = r.await;
         }
-        status
+        child.wait().await
     };
     tokio::pin!(finished);
 

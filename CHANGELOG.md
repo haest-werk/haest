@@ -206,6 +206,13 @@ write instead.
 
 ### Bug fixes
 
+- The real workspace's timeout, interrupt or drop could SIGKILL an
+  unrelated process. It reaped bash as soon as bash exited, then waited
+  for the output; when a process that left bash's group (`setsid`, a
+  detached Node child) kept the output open, the later kill went to
+  bash's pid and group id, which the system may by then have handed to
+  another process. bash is now reaped last, so its pid stays its own until
+  the kill decision.
 - A ledger hook that read the ledger it hears from (a warning shown with
   the budget's summary beside it) hung the turn for good: the hooks ran
   with the ledger locked. They run once it is unlocked; snapshots are still
