@@ -169,6 +169,8 @@ mod handed;
 mod keys;
 mod loader;
 mod profiles;
+#[cfg(doctest)]
+mod readme;
 mod registry;
 mod source;
 mod stack;

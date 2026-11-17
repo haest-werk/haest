@@ -306,8 +306,8 @@ in the inbox, `shut_down` at the end. In between it changes it with
 `set_model_spec`, `set_effort`, `clear` (a fresh session file) and
 `rescan_skills`, each applied to the agent, the runtime's hooks and the session
 file together. A host that owns some parts builds its own `AgentDeps` instead,
-with `haest::tools::builtin_tools_where(|w| settings.tools.has(w), ..)` for
-haest's tools.
+with `haest::tools::builtin_tools_where(|t| settings.tools.has(t.as_str()), ..)`
+for haest's tools.
 
 [`crates/haest/examples/notebook`](https://github.com/haest-werk/haest/tree/main/crates/haest/examples/notebook/)
 is a host that brings its own parts (a knowledge base whose node runs the

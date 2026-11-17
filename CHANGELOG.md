@@ -1555,8 +1555,8 @@ Hosts write less (round two of the review, and what porting brain onto
   is the way in, and the parts are read on the `Runtime`:
   `mods_for(&hooks, &*fs, &gate).await` -> `build(inputs, ui, prompter,
   opts).await?` then `rt.mods()`. A host that owns some parts builds its
-  own `AgentDeps`, with `builtin_tools_where(|w| settings.tools.has(w),
-  ..)` for haest's tools.
+  own `AgentDeps`, with `builtin_tools_where(|t|
+  settings.tools.has(t.as_str()), ..)` for haest's tools.
 - `Runtime` keeps its fields private, each read with the getter of its
   name (breaking): `rt.hooks.flush().await` -> `rt.hooks().flush().await`,
   `rt.jobs.clone()` -> `rt.jobs().cloned()`, `rt.gate.revoke("Bash")` ->
