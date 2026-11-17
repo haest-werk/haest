@@ -41,10 +41,7 @@ async fn the_keys_are_the_environment_and_routing_is_parsed_or_noted_with_its_so
     let mut env = ENV.to_vec();
     env.push(("HAEST_PROVIDER_ROUTING", routing));
     let r = run("/w", &[], &env, &[]).await.unwrap();
-    assert_eq!(
-        r.keys.get("OPENROUTER_API_KEY").map(String::as_str),
-        Some("k")
-    );
+    assert_eq!(r.keys.get("OPENROUTER_API_KEY"), Some("k"));
     assert!(r.routing.is_some() && r.notes.is_empty());
     let noted = |r: Loaded, from: &str| {
         assert!(r.routing.is_none());

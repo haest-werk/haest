@@ -1,7 +1,7 @@
 //! The layers in the order a host added them ([`crate::Loader`]), each read in
 //! its turn, then laid over the defaults: a later layer's value wins.
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, fmt, path::PathBuf};
 
 use crate::{
     ConfigError,
@@ -18,7 +18,8 @@ pub(crate) type Tagged = Vec<(&'static Def, String, Source)>;
 pub(crate) type Entries = Vec<(&'static Def, String)>;
 
 /// One value a host handed in, not yet checked: a variable's, a flag's.
-#[derive(Debug, Clone, PartialEq)]
+/// Debug shows the setting and its source, never the value (`env` passes keys).
+#[derive(Clone, PartialEq)]
 pub(crate) struct Given {
     key: String,
     raw: String,
@@ -32,6 +33,15 @@ impl Given {
             raw: raw.into(),
             source,
         }
+    }
+}
+
+impl fmt::Debug for Given {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Given")
+            .field("key", &self.key)
+            .field("source", &self.source)
+            .finish_non_exhaustive()
     }
 }
 
@@ -49,11 +59,22 @@ pub(crate) enum Pending {
 }
 
 /// A layer read: its values, and the profiles it defines (a file's
-/// `[profiles.<name>]` tables).
-#[derive(Debug, Clone, Default)]
+/// `[profiles.<name>]` tables). Debug shows each setting and its source,
+/// never a value, as [`Given`] does.
+#[derive(Clone, Default)]
 pub(crate) struct Layer {
     pub values: Tagged,
     pub profiles: BTreeMap<String, Entries>,
+}
+
+impl fmt::Debug for Layer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let values = self.values.iter().map(|(def, _, source)| (def.key, source));
+        f.debug_struct("Layer")
+            .field("values", &values.collect::<Vec<_>>())
+            .field("profiles", &self.profiles.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 impl Layer {

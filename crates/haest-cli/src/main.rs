@@ -326,11 +326,7 @@ async fn main() -> ExitCode {
     let broker: BrokerLink = (
         loaded.config.broker_url.clone(),
         loaded.config.broker_access,
-        loaded
-            .keys
-            .get("HAEST_BROKER_TOKEN")
-            .filter(|t| !t.is_empty())
-            .cloned(),
+        loaded.keys.key("HAEST_BROKER_TOKEN"),
     );
     if stdio && (args.print || args.json || args.prompt_text().is_some()) {
         return fail(

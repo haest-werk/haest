@@ -118,7 +118,7 @@
 //!
 //! // The provider key is the runtime's to use; a process haest starts gets
 //! // only the core variables (`env_passthrough = core`, the default).
-//! assert_eq!(loaded.keys["OPENROUTER_API_KEY"], "sk-or-example");
+//! assert_eq!(loaded.keys.get("OPENROUTER_API_KEY"), Some("sk-or-example"));
 //! assert_eq!(loaded.child_env.get("HOME"), Some("/home/me"));
 //! assert_eq!(loaded.child_env.get("OPENROUTER_API_KEY"), None);
 //! assert!(loaded.notes.is_empty());
@@ -132,6 +132,7 @@ mod error;
 mod fields;
 mod file;
 mod handed;
+mod keys;
 mod loader;
 mod profiles;
 mod registry;
@@ -141,7 +142,7 @@ mod stack;
 mod tests;
 mod value;
 
-use std::collections::HashMap;
+use std::fmt;
 
 use haest_core::ChildEnv;
 use haest_mcp::McpServerConfig;
@@ -149,6 +150,7 @@ use haest_providers::{CustomProviders, RoutingScopes};
 
 pub use error::{ConfigError, SetError};
 pub use fields::{BrokerAccess, CORE_VARS, Config, ControlSocket, EnvPassthrough};
+pub use keys::Keys;
 pub use loader::Loader;
 pub use registry::{DEFS, Def, Kind, Scope};
 pub use source::{ProjectFile, Resolved, Source};
@@ -164,14 +166,17 @@ pub use value::env_var;
 /// |---|---|
 /// | `RuntimeInputs::new(settings, world)` | `config.settings`, `World::disk(child_env)` |
 /// | `.with_passed_env(..)` | `passed_env` |
-/// | `.with_keys(..)` | `keys` (a `HashMap` is a `KeySource`) |
+/// | `.with_keys(..)` | `keys` (a [`KeySource`](haest_core::KeySource)) |
 /// | `.with_providers(..)` | `providers` |
 /// | `.with_mcp_servers(..)` | `mcp_servers` |
 /// | `.with_routing(..)` | `routing` |
 /// | `.with_http(..)` | not loaded: the host's own client; by default the shared `ReqwestClient` |
 ///
 /// Show the human every [`notes`](Self::notes) line before the run starts.
-#[derive(Debug, Clone)]
+///
+/// Its Debug output names the keys, the variables and the providers.json
+/// entries, and shows none of their values.
+#[derive(Clone)]
 pub struct Loaded {
     /// Every setting's value: the runtime's settings, and the ones only the
     /// loader reads.
@@ -185,7 +190,7 @@ pub struct Loaded {
     pub passed_env: ChildEnv,
     /// The environment [`Loader::env`] was given, as the source of the
     /// provider keys; empty when the loader reads no variables.
-    pub keys: HashMap<String, String>,
+    pub keys: Keys,
     /// `provider_routing`, parsed. None: no routing goes out (it is unset, or
     /// malformed and a note says so).
     pub routing: Option<RoutingScopes>,
@@ -198,4 +203,32 @@ pub struct Loaded {
     /// variable `env` names that has no value, a malformed `provider_routing`,
     /// a profile named but not read).
     pub notes: Vec<String>,
+}
+
+/// The providers.json entries by name: an entry may hold its `apiKey`.
+impl fmt::Debug for Loaded {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Loaded {
+            config,
+            resolved,
+            child_env,
+            passed_env,
+            keys,
+            routing,
+            providers,
+            mcp_servers,
+            notes,
+        } = self;
+        f.debug_struct("Loaded")
+            .field("config", config)
+            .field("resolved", resolved)
+            .field("child_env", child_env)
+            .field("passed_env", passed_env)
+            .field("keys", keys)
+            .field("routing", routing)
+            .field("providers", &providers.keys().collect::<Vec<_>>())
+            .field("mcp_servers", mcp_servers)
+            .field("notes", notes)
+            .finish()
+    }
 }

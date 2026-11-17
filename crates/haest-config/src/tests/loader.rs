@@ -93,6 +93,47 @@ fn a_built_in_profile_sets_only_what_a_profile_may() {
     }
 }
 
+/// A loader, what it loaded and the config in it are logged with `{:?}`:
+/// the names show, never a key, a passed variable's value or a URL's userinfo.
+#[tokio::test]
+async fn debug_output_names_the_secrets_and_shows_none_of_them() {
+    let fs = files(&[
+        (
+            USER_FILE,
+            "broker_url = \"wss://user:url-SECRET@broker.test/\"\n[env]\nGH_TOKEN = \"file-SECRET\"",
+        ),
+        (
+            "/h/.config/haest/providers.json",
+            r#"{"gw": {"baseURL": "http://localhost:1/v1", "apiKey": "json-SECRET"}}"#,
+        ),
+    ]);
+    let env = [
+        ("HOME", HOME),
+        ("OPENROUTER_API_KEY", "key-SECRET"),
+        ("HAEST_ENV", "FROM_VAR=var-SECRET"),
+    ];
+    let loader = Loader::standard(
+        Settings::bare("/w", HOME),
+        env,
+        [("env", "FROM_FLAG=flag-SECRET")],
+    );
+    let shown = format!("{loader:?}");
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(shown.contains("OPENROUTER_API_KEY"), "{shown}");
+
+    let loaded = loader.load(&fs).await.unwrap();
+    assert_eq!(loaded.passed_env.get("GH_TOKEN"), Some("file-SECRET"));
+    for shown in [format!("{loaded:?}"), format!("{:?}", loaded.config)] {
+        assert!(!shown.contains("SECRET"), "{shown}");
+        assert!(shown.contains("GH_TOKEN"), "{shown}");
+        assert!(shown.contains("broker.test"), "{shown}");
+    }
+    let shown = format!("{loaded:?}");
+    for name in ["OPENROUTER_API_KEY", "FROM_VAR", "FROM_FLAG", "gw"] {
+        assert!(shown.contains(name), "{name} in {shown}");
+    }
+}
+
 #[tokio::test]
 async fn a_config_file_error_says_what_failed_and_names_the_file() {
     let fs = files(&[(NAMED, "model = ")]);

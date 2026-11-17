@@ -5,9 +5,10 @@
 
 mod raw;
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, fmt, path::PathBuf};
 
 use haest_core::provider::WebSearchEngine;
+use haest_providers::http::__private::UrlDebug;
 use haest_settings::Settings;
 
 use self::raw::Raw;
@@ -72,8 +73,8 @@ pub const CORE_VARS: &[&str] = &[
 /// the loader reads.
 ///
 /// [`get`](Self::get) and [`set`](Self::set) reach any of them by the
-/// setting's name.
-#[derive(Debug, Clone, PartialEq)]
+/// setting's name. Its Debug output shows `env` by name only, as `get` does.
+#[derive(Clone, PartialEq)]
 pub struct Config {
     /// What the runtime is handed.
     pub settings: Settings,
@@ -202,6 +203,43 @@ impl From<Settings> for Config {
             broker_url: None,
             broker_access: BrokerAccess::Watch,
         }
+    }
+}
+
+/// Every field, but `env` by its variables' names (a value may be a key) and
+/// `broker_url` without its `user:password@`, as [`Config::get`] shows them.
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Config {
+            settings,
+            profile,
+            trusted_dirs,
+            env_passthrough,
+            env,
+            mcp,
+            provider_routing,
+            event_ring,
+            stdio,
+            control_socket,
+            control_dir,
+            broker_url,
+            broker_access,
+        } = self;
+        f.debug_struct("Config")
+            .field("settings", settings)
+            .field("profile", profile)
+            .field("trusted_dirs", trusted_dirs)
+            .field("env_passthrough", env_passthrough)
+            .field("env", &env.keys().collect::<Vec<_>>())
+            .field("mcp", mcp)
+            .field("provider_routing", provider_routing)
+            .field("event_ring", event_ring)
+            .field("stdio", stdio)
+            .field("control_socket", control_socket)
+            .field("control_dir", control_dir)
+            .field("broker_url", &broker_url.as_deref().map(UrlDebug))
+            .field("broker_access", broker_access)
+            .finish()
     }
 }
 

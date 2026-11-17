@@ -142,6 +142,12 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   variable's in `env` (a server's token), and so did the `McpTransport` and
   `McpServerConfig` holding them. Debug now names each header and variable
   and shows `<redacted>` for its value.
+- haest-config's `Loader` and `Loaded` printed the whole environment they
+  were given in their Debug output, API keys included, and `Loaded` every
+  providers.json entry's `apiKey`; `Config` printed each `env` variable's
+  value and a `broker_url`'s `user:password@`. A host that logged one with
+  `{:?}` logged the keys. Debug now names the variables, keys and entries
+  and shows no value, and the broker URL as `<redacted>@host`.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a
@@ -1098,6 +1104,11 @@ Hosts write less (round two of the review, and what porting brain onto
 - `ConfigError::Read` and `ConfigError::Toml` say what failed: `cannot read
   /x/config.toml` and `/x/config.toml is not valid TOML` (was the bare
   path), with where and why in the `source`.
+- `Loaded::keys` is a `Keys` (new), not a `HashMap<String, String>`
+  (breaking): a `KeySource` whose Debug output shows names only.
+  `loaded.keys["OPENROUTER_API_KEY"]` -> `loaded.keys.get("OPENROUTER_API_KEY")`
+  (an `Option<&str>`, None for an empty value); `.with_keys(loaded.keys)`
+  takes it as it is.
 
 ### haest-runtime
 

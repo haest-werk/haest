@@ -3,7 +3,7 @@
 
 mod resolve;
 
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, fmt, path::PathBuf};
 
 use haest_core::fs::Fs;
 use haest_providers::load_custom_providers;
@@ -74,12 +74,26 @@ use crate::{
 /// # Ok(())
 /// # }
 /// ```
+///
+/// Its Debug output shows the layers' settings and the variables' names,
+/// never a value: a variable may be a key.
 #[must_use = "a Loader reads nothing until .load()"]
-#[derive(Debug)]
 pub struct Loader {
     defaults: Settings,
     stack: Stack,
     env: HashMap<String, String>,
+}
+
+impl fmt::Debug for Loader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut names: Vec<&str> = self.env.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        f.debug_struct("Loader")
+            .field("defaults", &self.defaults)
+            .field("layers", &self.stack)
+            .field("env", &names)
+            .finish()
+    }
 }
 
 impl Loader {
@@ -277,7 +291,7 @@ impl Loader {
             child_env: handed::child_env(config.env_passthrough, &env),
             passed_env: handed::passed_env(&config.env, &env, &mut notes),
             routing: handed::routing(routing, &resolved.source("provider_routing"), &mut notes),
-            keys: env,
+            keys: env.into(),
             config,
             resolved,
             providers,
