@@ -5,22 +5,23 @@
 
 use std::{
     collections::HashMap,
+    io,
     path::{Component, Path, PathBuf},
 };
 
-use haest_core::fs::{FileKind, Fs};
+use haest_core::fs::Fs;
 
-/// Looks up each component on the real disk, listing each real directory on
-/// the way at most once: one serves a whole apply. Applying never makes a
+/// Asks the real disk about each component of a path, asking each real path
+/// on the way at most once: one serves a whole apply. Applying never makes a
 /// link, so nothing it writes turns a remembered answer into a link; a link
 /// someone else makes mid-apply is a race a fresh lookup per change would not
 /// close either.
 pub(crate) struct Links<'a> {
     disk: &'a dyn Fs,
     root: &'a Path,
-    /// Each real directory listed: its entries by name, true for a symlink;
-    /// None when it could not be listed (not there, or not a directory).
-    listed: HashMap<PathBuf, Option<HashMap<String, bool>>>,
+    /// Each real path asked, as spelled: Some(true) a symlink, Some(false)
+    /// something else, None not there.
+    seen: HashMap<PathBuf, Option<bool>>,
 }
 
 impl<'a> Links<'a> {
@@ -28,7 +29,7 @@ impl<'a> Links<'a> {
         Self {
             disk,
             root,
-            listed: HashMap::new(),
+            seen: HashMap::new(),
         }
     }
 
@@ -41,9 +42,18 @@ impl<'a> Links<'a> {
             let Component::Normal(name) = part else {
                 continue;
             };
-            match self.entry(&at, &name.to_string_lossy()).await {
+            at.push(name);
+            let link = match self.seen.get(&at) {
+                Some(&seen) => seen,
+                None => {
+                    let seen = self.kind_of(&at).await;
+                    self.seen.insert(at.clone(), seen);
+                    seen
+                }
+            };
+            match link {
                 Some(true) => return true,
-                Some(false) => at.push(name),
+                Some(false) => {}
                 // Not there: nothing below it is either.
                 None => return false,
             }
@@ -51,21 +61,26 @@ impl<'a> Links<'a> {
         false
     }
 
-    /// What `name` in the real directory `dir` is: Some(true) a symlink,
-    /// Some(false) something else, None not there.
-    async fn entry(&mut self, dir: &Path, name: &str) -> Option<bool> {
-        if !self.listed.contains_key(dir) {
-            // `stat` follows links; a listing names one for what it is.
-            let entries = self.disk.read_dir(dir).await.ok().map(|entries| {
-                entries
-                    .into_iter()
-                    .map(|e| (e.name, e.kind == FileKind::Symlink))
-                    .collect()
-            });
-            self.listed.insert(dir.to_path_buf(), entries);
+    /// What is at `at`, asked of the disk by the path itself, so the disk's
+    /// own rules for names hold: where it matches names without case or
+    /// Unicode normalization (macOS's default), `Vendor` is the link
+    /// `vendor`, which a lookup in the parent's listing would miss. `stat`
+    /// follows links; `read_link` does not.
+    async fn kind_of(&self, at: &Path) -> Option<bool> {
+        match self.disk.read_link(at).await {
+            Ok(_) => Some(true),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
+                None
+            }
+            // There and not a link (`InvalidInput`), or an answer that says
+            // neither (a permission): the components below it are still asked.
+            Err(_) => Some(false),
         }
-        let entries = self.listed.get(dir)?.as_ref()?;
-        entries.get(name).copied()
     }
 }
 
@@ -85,15 +100,15 @@ mod tests {
     use super::*;
     use crate::{bridge::BashkitFsOverHaest, overlay::OverlayChanges};
 
-    /// `MemFs`, noting each directory it lists.
+    /// `MemFs`, noting each path asked whether it is a link.
     #[derive(Default)]
-    struct Listings {
+    struct Asked {
         inner: MemFs,
-        listed: Mutex<Vec<PathBuf>>,
+        asked: Mutex<Vec<PathBuf>>,
     }
 
     #[async_trait]
-    impl Fs for Listings {
+    impl Fs for Asked {
         async fn read(&self, p: &Path) -> io::Result<Vec<u8>> {
             self.inner.read(p).await
         }
@@ -106,8 +121,11 @@ mod tests {
         async fn stat(&self, p: &Path) -> io::Result<FsStat> {
             self.inner.stat(p).await
         }
+        async fn read_link(&self, p: &Path) -> io::Result<PathBuf> {
+            self.asked.lock().unwrap().push(p.to_path_buf());
+            self.inner.read_link(p).await
+        }
         async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
-            self.listed.lock().unwrap().push(p.to_path_buf());
             self.inner.read_dir(p).await
         }
         async fn create_dir(&self, p: &Path) -> io::Result<()> {
@@ -127,12 +145,12 @@ mod tests {
         }
     }
 
-    /// Each change built its own lookup, which lists a component's parent to
-    /// learn what the component is: an apply of many files in one directory
-    /// listed that directory, and each above it, once per file.
+    /// Each change built its own lookup: an apply of many files in one
+    /// directory asked the disk about that directory, and each above it, once
+    /// per file.
     #[tokio::test]
-    async fn an_apply_lists_each_real_directory_on_the_way_once() {
-        let disk = Arc::new(Listings::default());
+    async fn an_apply_asks_about_each_real_directory_on_the_way_once() {
+        let disk = Arc::new(Asked::default());
         disk.inner
             .create_dir_all(Path::new("/p/src"))
             .await
@@ -149,11 +167,10 @@ mod tests {
 
         let report = changes.apply().await;
         assert_eq!(report.applied.len(), 3, "{report:?}");
-        let listed = disk.listed.lock().unwrap();
-        for dir in ["/p", "/p/src"] {
-            let times = listed.iter().filter(|d| d.as_path() == Path::new(dir));
-            assert_eq!(times.count(), 1, "{dir}: {listed:?}");
-        }
+        // The files are asked by the scan too; only the apply asks the way.
+        let asked = disk.asked.lock().unwrap();
+        let times = asked.iter().filter(|p| p.as_path() == Path::new("/p/src"));
+        assert_eq!(times.count(), 1, "{asked:?}");
     }
 
     #[tokio::test]

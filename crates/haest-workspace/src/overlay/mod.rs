@@ -239,7 +239,7 @@ impl ChangeSet for OverlayChanges {
     /// listed like a conflict.
     async fn apply(&self) -> ApplyReport {
         let mut report = ApplyReport::default();
-        // One for the whole apply: each real directory on the way is listed once.
+        // One for the whole apply: each real path on the way is asked once.
         let mut links = Links::new(self.book.disk.as_ref(), &self.book.root);
         for s in self.scan().await {
             let refused = if s.change.conflict {
