@@ -5,7 +5,7 @@
 
 use haest_wire::{
     Access, Answer, Control, Envelope, Framer, Inbound, Level, Origin, Outbound, Path, Request,
-    Snapshot, State, decode,
+    Snapshot, State, UnknownWord, decode,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
@@ -183,18 +183,49 @@ fn every_outbound_frame_is_the_line_it_was() {
     );
 }
 
+/// Each word is the JSON string it was, and its text both ways.
+fn word<T>(value: T, word: &str)
+where
+    T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug + std::fmt::Display,
+    T: std::str::FromStr<Err = UnknownWord>,
+{
+    pinned(&value, &format!("\"{word}\""));
+    assert_eq!(value.to_string(), word);
+    assert_eq!(
+        format!("{value:>9}|"),
+        format!("{word:>9}|"),
+        "a width pads"
+    );
+    assert_eq!(word.parse::<T>(), Ok(value), "{word}");
+}
+
 #[test]
 fn every_word_is_the_word_it_was() {
-    pinned(&Origin::Human, r#""human""#);
-    pinned(&Origin::Agent, r#""agent""#);
-    pinned(&Answer::Allow, r#""allow""#);
-    pinned(&Answer::Always, r#""always""#);
-    pinned(&Answer::Deny, r#""deny""#);
-    pinned(&State::Idle, r#""idle""#);
-    pinned(&State::Running, r#""running""#);
-    pinned(&Access::Watch, r#""watch""#);
-    pinned(&Access::Command, r#""command""#);
-    pinned(&Level::Info, r#""info""#);
-    pinned(&Level::Warning, r#""warning""#);
-    pinned(&Level::Error, r#""error""#);
+    word(Origin::Human, "human");
+    word(Origin::Agent, "agent");
+    word(Answer::Allow, "allow");
+    word(Answer::Always, "always");
+    word(Answer::Deny, "deny");
+    word(State::Idle, "idle");
+    word(State::Running, "running");
+    word(Access::Watch, "watch");
+    word(Access::Command, "command");
+    word(Level::Info, "info");
+    word(Level::Warning, "warning");
+    word(Level::Error, "error");
+}
+
+/// A word a type does not know is refused the same way as text and as JSON.
+#[test]
+fn an_unknown_word_names_the_words_there_are() {
+    let said = r#"unknown answer "maybe" (allow, always, deny)"#;
+    assert_eq!("maybe".parse::<Answer>().unwrap_err().to_string(), said);
+    let json = serde_json::from_str::<Answer>(r#""maybe""#).unwrap_err();
+    assert!(json.to_string().starts_with(said), "{json}");
+    let line = r#"{"v":1,"id":"x","type":"approval_answer","ask":1,"answer":"maybe"}"#;
+    let shape = decode(line).unwrap_err();
+    assert!(
+        std::error::Error::source(&shape).is_some_and(|cause| cause.to_string().starts_with(said)),
+        "{shape:?}"
+    );
 }

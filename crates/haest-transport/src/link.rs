@@ -227,6 +227,8 @@ impl Link {
                     wire::Control::SetEffort { effort } => {
                         effort_of(effort.as_deref()).map(Control::SetEffort)
                     }
+                    // A verb a newer haest-wire reads and this transport does not serve.
+                    _ => Err("this end does not serve that verb".to_string()),
                 };
                 match change {
                     Ok(change) => self.spawn(id, true, |b| async move {
@@ -235,6 +237,10 @@ impl Link {
                     }),
                     Err(why) => self.reply(Outbound::refused(id, why)).await,
                 }
+            }
+            _ => {
+                let why = "this end does not serve that request";
+                self.reply(Outbound::refused(id, why)).await;
             }
         }
     }

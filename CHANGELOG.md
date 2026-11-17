@@ -1028,6 +1028,14 @@ wrote them.
   (``missing field `model` ``) instead of by the transport (`set_model
   needs a model`); a field a verb does not use is still ignored.
 - `Request::commands()` -> `Request::needs_command()`.
+- `#[non_exhaustive]` on `Outbound`, `Request`, `Control`, `DecodeError`
+  and `Level`: a `match` adds a `_` arm, so a new frame type, request, verb
+  or level is additive in Rust as it already is on the wire.
+- `Access`, `Origin`, `Level`, `State` and `Answer` have `as_str`,
+  `Display` (a width pads it) and `FromStr`, and serde writes and reads the
+  same word from the same list. An unknown word is the new `UnknownWord`:
+  `unknown access "admin" (watch, command)`, also the cause of the
+  `DecodeError::Shape` for a request that sends one.
 
 ### haest-session (new)
 

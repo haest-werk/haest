@@ -134,6 +134,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
+mod words;
+
 mod envelope;
 mod frames;
 mod inbound;
@@ -145,3 +147,4 @@ pub use frames::{Access, Level, Origin, Outbound, Snapshot, State};
 pub use inbound::{Answer, Control, DecodeError, Inbound, Request, decode, decode_value};
 pub use lines::{LineDecoder, LineTooLong, encode_line};
 pub use ring::{Classify, FrameKind, Replay, Ring};
+pub use words::UnknownWord;

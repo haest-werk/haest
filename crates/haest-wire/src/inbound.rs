@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::WIRE_V;
+use crate::{WIRE_V, words::word_enum};
 
 /// One request from a peer: the wire version, an id the reply echoes, and
 /// what it asks ([`Request`], flattened in).
@@ -42,13 +42,15 @@ impl Inbound {
 /// What a peer asks. Tagged by `type` (snake_case), fields camelCase.
 ///
 /// `turn`, `control` and `approval_answer` need `command` access; the rest
-/// only watch.
+/// only watch. A new request type is additive on the wire, so a `match` has a
+/// `_` arm.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "type",
     rename_all = "snake_case",
     rename_all_fields = "camelCase"
 )]
+#[non_exhaustive]
 pub enum Request {
     /// Input for the conversation: a turn of its own when none runs, else it
     /// joins the running turn at its next step.
@@ -96,6 +98,7 @@ impl Request {
 /// What a [`Request::Control`] asks: tagged by `verb` (snake_case), with
 /// the verb's own field beside it. A verb carries only the field it uses, so
 /// `set_model` without a model is not a request (a [`DecodeError::Shape`]).
+/// More verbs may come: a `match` has a `_` arm.
 ///
 /// ```
 /// use haest_wire::{Control, Request, decode};
@@ -108,6 +111,7 @@ impl Request {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "verb", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Control {
     /// Stop the running turn; does nothing between turns.
     Interrupt,
@@ -128,21 +132,23 @@ pub enum Control {
     Close,
 }
 
-/// How a peer answers an approval ask.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Answer {
-    /// Allow this call.
-    Allow,
-    /// Allow, and every later ask with the same tool and key.
-    Always,
-    /// Refuse it.
-    Deny,
+word_enum! {
+    /// How a peer answers an approval ask.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum Answer ("answer") {
+        /// Allow this call.
+        Allow = "allow",
+        /// Allow, and every later ask with the same tool and key.
+        Always = "always",
+        /// Refuse it.
+        Deny = "deny",
+    }
 }
 
 /// Why a peer's line is not a request: the [`Reply`](crate::Outbound::Reply)'s
 /// error text.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum DecodeError {
     /// It is not JSON.
     #[error("the frame is not JSON")]

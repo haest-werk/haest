@@ -312,9 +312,10 @@ impl<O: Write, E: Write> Renderer<O, E> {
             return self.json_line(Outbound::Notice { level, text });
         }
         let color = match level {
-            Level::Info => DIM,
             Level::Warning => YELLOW,
             Level::Error => RED,
+            // Info, and a level a newer haest-wire adds: plain.
+            _ => DIM,
         };
         self.note(color, text);
     }

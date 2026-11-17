@@ -4,62 +4,60 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// What a peer may do: watch the stream, or also send turns, control verbs
-/// and approval answers. The host decides it per transport; a frame cannot
-/// raise it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Access {
-    /// Read only: `snapshot`, `history`, `events`.
-    #[default]
-    Watch,
-    /// Everything `watch` may, and `turn`, `control`, `approval_answer`.
-    Command,
-}
+use crate::words::word_enum;
 
-impl Access {
-    /// The word: `watch` or `command`.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Access::Watch => "watch",
-            Access::Command => "command",
-        }
+word_enum! {
+    /// What a peer may do: watch the stream, or also send turns, control verbs
+    /// and approval answers. The host decides it per transport; a frame cannot
+    /// raise it.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+    pub enum Access ("access") {
+        /// Read only: `snapshot`, `history`, `events`.
+        #[default]
+        Watch = "watch",
+        /// Everything `watch` may, and `turn`, `control`, `approval_answer`.
+        Command = "command",
     }
 }
 
-/// Who a peer's turns count as, for the gate that holds turns nobody asked
-/// for (the `max_agent_turns` setting). The host decides it per transport.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Origin {
-    /// A person: their turn starts the gate's count over.
-    #[default]
-    Human,
-    /// Another program or agent: its turns count against the gate.
-    Agent,
+word_enum! {
+    /// Who a peer's turns count as, for the gate that holds turns nobody asked
+    /// for (the `max_agent_turns` setting). The host decides it per transport.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+    pub enum Origin ("origin") {
+        /// A person: their turn starts the gate's count over.
+        #[default]
+        Human = "human",
+        /// Another program or agent: its turns count against the gate.
+        Agent = "agent",
+    }
 }
 
-/// How much a [`Outbound::Notice`] matters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Level {
-    /// Needs nothing from the human.
-    Info,
-    /// Something was skipped or held, and the run goes on.
-    Warning,
-    /// Something failed.
-    Error,
+word_enum! {
+    /// How much a [`Outbound::Notice`] matters. More levels may come: a
+    /// `match` has a `_` arm.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[non_exhaustive]
+    pub enum Level ("level") {
+        /// Needs nothing from the human.
+        Info = "info",
+        /// Something was skipped or held, and the run goes on.
+        Warning = "warning",
+        /// Something failed.
+        Error = "error",
+    }
 }
 
-/// Whether a turn is running.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum State {
-    /// No turn runs: a turn sent now starts at once (unless the host holds it).
-    #[default]
-    Idle,
-    /// A turn runs: a turn sent now joins it at its next step.
-    Running,
+word_enum! {
+    /// Whether a turn is running.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+    pub enum State ("state") {
+        /// No turn runs: a turn sent now starts at once (unless the host holds it).
+        #[default]
+        Idle = "idle",
+        /// A turn runs: a turn sent now joins it at its next step.
+        Running = "running",
+    }
 }
 
 /// The conversation now: what a [`Outbound::Status`] frame and a `snapshot`
@@ -102,13 +100,15 @@ pub struct Snapshot {
 ///
 /// The first seven are stream frames; [`Hello`](Self::Hello),
 /// [`Gap`](Self::Gap) and [`Reply`](Self::Reply) belong to one connection
-/// (the [crate docs](crate) say what that means for their `seq`).
+/// (the [crate docs](crate) say what that means for their `seq`). A new frame
+/// type is additive on the wire, so a `match` has a `_` arm.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "type",
     rename_all = "snake_case",
     rename_all_fields = "camelCase"
 )]
+#[non_exhaustive]
 pub enum Outbound {
     /// A line for the human: haest's notices, warnings and errors.
     Notice {

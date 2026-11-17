@@ -68,13 +68,12 @@ async fn list(dir: &Path, json: bool) {
     }
     for r in &found {
         let when = iso_utc(r.discovery.started_ms);
-        let access = serde_json::to_value(r.discovery.access).unwrap_or_default();
         println!(
             "{} {}Z  {}  {:7}  {}  pid {}",
             &when[..10],
             &when[11..16],
             r.discovery.sid,
-            access.as_str().unwrap_or_default(),
+            r.discovery.access,
             r.model_spec(),
             r.discovery.pid
         );
