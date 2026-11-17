@@ -645,7 +645,7 @@ flag          --subagent-steps 25
 
 One subagent's wall clock.
 
-- Takes: a whole number, 0 or more
+- Takes: a number, 0 or more
 - Default: `15`
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 

@@ -30,9 +30,31 @@ async fn caps_and_subagents_follow_their_variables() {
     assert_eq!(s.max_agent_turns, 0);
     let c = s.subagents;
     assert_eq!(
-        (c.max_depth, c.max_concurrent, c.usd, c.steps, c.minutes),
-        (0, 9, 0.25, 7, 3)
+        (c.max_depth, c.max_concurrent, c.usd, c.steps, c.time),
+        (0, 9, 0.25, 7, std::time::Duration::from_secs(180))
     );
+}
+
+/// Both wall-clock caps read and write minutes, a fraction too; one too long
+/// for a `Duration` is the longest there is, and a negative one is refused.
+#[tokio::test]
+async fn the_wall_clock_caps_are_minutes_either_way() {
+    let s = settings(
+        &[
+            ("HAEST_MAX_TURN_MINUTES", "0.5"),
+            ("HAEST_SUBAGENT_MINUTES", "2.5"),
+        ],
+        &[],
+    )
+    .await;
+    assert_eq!(s.caps.max_turn_time, std::time::Duration::from_secs(30));
+    assert_eq!(s.subagents.time, std::time::Duration::from_secs(150));
+    let mut c = crate::Config::from(s);
+    assert_eq!(c.get("max_turn_minutes").as_deref(), Some("0.5"));
+    assert_eq!(c.get("subagent_minutes").as_deref(), Some("2.5"));
+    c.set("max_turn_minutes", "1e300").unwrap();
+    assert_eq!(c.settings.caps.max_turn_time, std::time::Duration::MAX);
+    assert!(c.set("subagent_minutes", "-1").is_err());
 }
 
 #[tokio::test]

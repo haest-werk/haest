@@ -223,8 +223,9 @@ async fn garbage_is_refused_and_names_where_it_was() {
     }
 }
 
-/// A count (steps, minutes, tokens) given a fraction must not quietly become a
-/// smaller one: `subagent_minutes = 0.5` read as 0 would turn the cap off.
+/// A count (steps, tokens) given a fraction must not quietly become a
+/// smaller one: `max_turn_steps = 0.5` read as 0 would turn the cap off. A
+/// time (`subagent_minutes`) takes the fraction as it is.
 #[tokio::test]
 async fn a_number_setting_reads_what_it_was_given_or_refuses_it_by_name() {
     for def in DEFS.iter().filter(|d| d.kind == Kind::Number) {
@@ -233,10 +234,10 @@ async fn a_number_setting_reads_what_it_was_given_or_refuses_it_by_name() {
             Err(e) => assert!(report(&e).contains(&format!("--{}", def.flag())), "{e}"),
         }
     }
-    let file = [(USER_FILE, "subagent_minutes = 0.5")];
+    let file = [(USER_FILE, "max_turn_steps = 0.5")];
     let err = report(&run("/w", &file, &[], &[]).await.unwrap_err());
     assert!(
-        err.contains(USER_FILE) && err.contains("subagent_minutes"),
+        err.contains(USER_FILE) && err.contains("max_turn_steps"),
         "{err}"
     );
     let err = run("/w", &[], &[("HAEST_MAX_TURN_STEPS", "2.5")], &[])

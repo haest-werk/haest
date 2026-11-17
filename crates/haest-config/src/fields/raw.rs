@@ -1,7 +1,7 @@
 //! [`Raw`]: a field's value in the checked spelling, and back, for every
 //! type a setting's field has.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use haest_core::{
     Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine,
@@ -118,6 +118,18 @@ impl Raw for Vec<String> {
     }
     fn from_raw(raw: &str) -> Result<Self, String> {
         Ok(split_list(raw))
+    }
+}
+
+/// A wall-clock cap, in minutes as every time setting spells it (a fraction
+/// too; 0 = no cap). One too long for a `Duration` is the longest there is.
+impl Raw for Duration {
+    fn to_raw(&self) -> Option<String> {
+        Some((self.as_secs_f64() / 60.0).to_string())
+    }
+    fn from_raw(raw: &str) -> Result<Self, String> {
+        let minutes = number(raw, None)?;
+        Ok(Duration::try_from_secs_f64(minutes * 60.0).unwrap_or(Duration::MAX))
     }
 }
 

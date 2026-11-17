@@ -28,8 +28,9 @@ pub struct CapSettings {
     pub max_request_tokens: Option<u64>,
     /// Model calls in one turn. Bare: 100.
     pub max_turn_steps: u32,
-    /// One turn's wall clock, in minutes. Bare: 60.
-    pub max_turn_minutes: f64,
+    /// One turn's wall clock (the `max_turn_minutes` setting); zero = no
+    /// cap. Bare: 60 minutes.
+    pub max_turn_time: Duration,
     /// The same tool call in a row before the guard stops it. Bare: 6.
     pub max_repeats: u32,
     /// The whole conversation's spend in USD. Bare: 20.
@@ -61,7 +62,7 @@ impl Default for CapSettings {
             max_turn_tokens: None,
             max_request_tokens: None,
             max_turn_steps: 100,
-            max_turn_minutes: 60.0,
+            max_turn_time: Duration::from_secs(60 * 60),
             max_repeats: 6,
             max_conversation_usd: 20.0,
             max_conversation_tokens: 20_000_000,
@@ -85,15 +86,15 @@ pub struct SubagentCapSettings {
     pub usd: f64,
     /// One subagent's model calls.
     pub steps: u32,
-    /// One subagent's wall clock, in minutes.
-    pub minutes: u64,
+    /// One subagent's wall clock (the `subagent_minutes` setting).
+    pub time: Duration,
     /// The model may give a subagent tighter caps (the Agent tool's
     /// `budget`), held on the conversation's budget while it runs. Bare: off.
     pub budgets: bool,
 }
 
 impl Default for SubagentCapSettings {
-    /// haest-core's [`SubagentCaps::default`], in minutes.
+    /// haest-core's [`SubagentCaps::default`].
     fn default() -> Self {
         let c = SubagentCaps::default();
         Self {
@@ -101,15 +102,10 @@ impl Default for SubagentCapSettings {
             max_concurrent: c.max_concurrent,
             usd: c.usd,
             steps: c.steps,
-            minutes: c.time.as_secs() / 60,
+            time: c.time,
             budgets: c.budgets,
         }
     }
-}
-
-/// A duration of `m` minutes; a negative or non-finite one is zero (no cap).
-fn minutes(m: f64) -> Duration {
-    Duration::try_from_secs_f64(m * 60.0).unwrap_or(Duration::ZERO)
 }
 
 impl Settings {
@@ -136,9 +132,8 @@ impl Settings {
     ///
     /// An unset token cap follows the window: `max_turn_tokens` is 10x it
     /// (at most `u64::MAX`), `max_request_tokens` 90% of it. One set to
-    /// `Some(0)` stays 0, no cap. A negative or non-finite `max_turn_minutes`
-    /// is no cap. The window itself goes along, for a threshold on the
-    /// context's size.
+    /// `Some(0)` stays 0, no cap. The window itself goes along, for a
+    /// threshold on the context's size.
     pub fn turn_caps_for(&self, window: u64) -> TurnCaps {
         let l = &self.caps;
         // 90% is never more than the window, so it fits back in a u64.
@@ -148,7 +143,7 @@ impl Settings {
             max_turn_tokens: l.max_turn_tokens.unwrap_or(window.saturating_mul(10)),
             max_request_tokens: l.max_request_tokens.unwrap_or(ninety_percent),
             max_turn_steps: l.max_turn_steps,
-            max_turn_time: minutes(l.max_turn_minutes),
+            max_turn_time: l.max_turn_time,
             max_repeats: l.max_repeats,
             context_window: window,
             subagent: false,
@@ -164,8 +159,8 @@ impl Settings {
         }
     }
 
-    /// The caps on the subagent tree, for haest-tools' hub: `subagents` with
-    /// its minutes as a duration.
+    /// The caps on the subagent tree, for haest-tools' hub: `subagents` as
+    /// they are.
     pub fn subagent_caps(&self) -> SubagentCaps {
         let s = &self.subagents;
         SubagentCaps {
@@ -173,7 +168,7 @@ impl Settings {
             max_concurrent: s.max_concurrent,
             usd: s.usd,
             steps: s.steps,
-            time: Duration::from_secs(s.minutes.saturating_mul(60)),
+            time: s.time,
             budgets: s.budgets,
         }
     }

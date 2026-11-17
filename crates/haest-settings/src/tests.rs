@@ -37,12 +37,8 @@ fn the_default_caps_are_the_bare_caps() {
     let caps = CapSettings::default();
     assert_eq!(caps, bare().caps);
     assert_eq!(
-        (
-            caps.max_turn_usd,
-            caps.max_turn_steps,
-            caps.max_turn_minutes
-        ),
-        (2.0, 100, 60.0)
+        (caps.max_turn_usd, caps.max_turn_steps, caps.max_turn_time),
+        (2.0, 100, std::time::Duration::from_secs(60 * 60))
     );
     assert_eq!(
         (
@@ -104,9 +100,10 @@ fn agent_turns_and_subagent_caps_default_as_the_ts_haest() {
     assert_eq!(s.max_agent_turns, 30);
     let c = s.subagents;
     assert_eq!(
-        (c.max_depth, c.max_concurrent, c.usd, c.steps, c.minutes),
-        (2, 4, 1.0, 50, 15)
+        (c.max_depth, c.max_concurrent, c.usd, c.steps, c.time),
+        (2, 4, 1.0, 50, std::time::Duration::from_secs(15 * 60))
     );
+    assert_eq!(s.subagent_caps().time, c.time);
     assert!(
         !c.budgets && !s.subagent_caps().budgets,
         "budgets are opt-in"

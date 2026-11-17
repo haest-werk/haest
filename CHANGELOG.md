@@ -1160,6 +1160,12 @@ Hosts write less (round two of the review, and what porting brain onto
 - `CapSettings` implements `Default`: the bare caps, the ones
   `Settings::bare` starts from. A host changing one cap writes
   `CapSettings { max_turn_usd: 5.0, ..CapSettings::default() }`.
+- Both wall-clock caps are a `Duration`, the type haest-core's caps take
+  (breaking): `CapSettings::max_turn_minutes: f64` ->
+  `max_turn_time: Duration`, `SubagentCapSettings::minutes: u64` ->
+  `time: Duration`. `caps.max_turn_minutes = 1.5` ->
+  `caps.max_turn_time = Duration::from_secs(90)`. The settings keep their
+  names and read minutes (`max_turn_minutes`, `subagent_minutes`).
 
 ### haest-config
 
@@ -1212,6 +1218,9 @@ Hosts write less (round two of the review, and what porting brain onto
 - `Scope` and `EnvPassthrough` are `#[non_exhaustive]` (breaking): a
   `match` adds a `_` arm, as on `Kind` and `Source`. `ProjectFile` stays
   exhaustive (none, read, skipped is the whole set). `Loader` is `Clone`.
+- `subagent_minutes` takes a fraction, as `max_turn_minutes` does
+  (`2.5` is two and a half minutes; it was refused as not a whole number).
+  A time too long for a `Duration` is the longest there is.
 
 ### haest-runtime
 

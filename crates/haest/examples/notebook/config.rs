@@ -6,6 +6,8 @@
 //!
 //! PLUG POINT: `settings::Settings`, hardcoded (no loader).
 
+use std::time::Duration;
+
 use haest::{
     TurnCaps,
     settings::{BuiltinTools, CapSettings, Settings},
@@ -27,7 +29,7 @@ pub(crate) fn work() -> Settings {
         },
         agents: true,
         caps: CapSettings {
-            max_turn_minutes: 1.0,
+            max_turn_time: Duration::from_secs(60),
             ..CapSettings::default()
         },
         ..bare
