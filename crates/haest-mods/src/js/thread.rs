@@ -7,7 +7,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, mpsc},
+    sync::{Arc, Mutex, MutexGuard, mpsc},
     time::{Duration, Instant},
 };
 
@@ -87,16 +87,23 @@ struct Slice {
 
 impl Slice {
     fn begin(&self) {
-        *self.since.lock().unwrap() = Some(Instant::now());
+        *self.since() = Some(Instant::now());
     }
     /// How long that slice ran.
     fn end(&self) -> Duration {
-        let since = self.since.lock().unwrap().take();
+        let since = self.since().take();
         since.map_or(Duration::ZERO, |t| t.elapsed())
     }
     fn over(&self) -> bool {
-        let since = *self.since.lock().unwrap();
+        let since = *self.since();
         since.is_some_and(|t| t.elapsed() > self.limit)
+    }
+    /// When the running slice began. Held only to stamp or read an instant,
+    /// so a poisoned one is a bug here.
+    fn since(&self) -> MutexGuard<'_, Option<Instant>> {
+        self.since
+            .lock()
+            .expect("the mod's time slice lock poisoned")
     }
 }
 

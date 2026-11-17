@@ -1,7 +1,10 @@
 //! The async side of a mod's thread: the requests it takes, the handle that
 //! sends them, and what the mod has registered so far.
 
-use std::{collections::HashSet, sync::mpsc};
+use std::{
+    collections::HashSet,
+    sync::{Mutex, MutexGuard, mpsc},
+};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -46,6 +49,13 @@ pub(crate) struct JsMeta {
 }
 
 impl JsMeta {
+    /// `meta`, held until the guard drops. Held only to read or add a
+    /// registration, never while the mod's code or the host's runs, so a
+    /// poisoned one is a bug here.
+    pub(super) fn lock(meta: &Mutex<Self>) -> MutexGuard<'_, Self> {
+        meta.lock().expect("the mod's registrations lock poisoned")
+    }
+
     /// A second tool with the same name replaces the first.
     pub(super) fn add_tool(&mut self, tool: ToolMeta) {
         self.tools.retain(|t| t.name != tool.name);

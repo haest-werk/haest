@@ -116,7 +116,7 @@ impl std::fmt::Debug for JsMod {
 
 impl JsMod {
     fn hooks(&self, event: &str) -> bool {
-        self.meta.lock().unwrap().events.contains(event)
+        JsMeta::lock(&self.meta).events.contains(event)
     }
 
     /// An event this mod has a handler for; Ok(Null) when it has none.
@@ -213,7 +213,7 @@ impl Mod for JsMod {
     }
 
     fn tools(&self) -> Tools {
-        let meta = self.meta.lock().unwrap();
+        let meta = JsMeta::lock(&self.meta);
         meta.tools
             .iter()
             .map(|m| ToolRef::new(JsTool::new(m.clone(), self.thread.clone())))
@@ -221,7 +221,7 @@ impl Mod for JsMod {
     }
 
     fn commands(&self) -> Vec<String> {
-        self.meta.lock().unwrap().commands.clone()
+        JsMeta::lock(&self.meta).commands.clone()
     }
 
     async fn command(

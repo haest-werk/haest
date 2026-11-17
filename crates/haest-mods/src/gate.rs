@@ -232,9 +232,12 @@ impl ApprovalGate {
         self.lock_always().retain(|k| !k.starts_with(&prefix));
     }
 
-    /// The ALWAYS answers, held until the guard drops.
+    /// The ALWAYS answers, held until the guard drops. Never held while the
+    /// prompter runs, so a poisoned one is a bug here.
     fn lock_always(&self) -> MutexGuard<'_, HashSet<String>> {
-        self.always.lock().unwrap()
+        self.always
+            .lock()
+            .expect("the approval gate's ALWAYS lock poisoned")
     }
 
     /// The host's whole [`ModUi`]: [`ask`](ModUi::ask) through this gate,

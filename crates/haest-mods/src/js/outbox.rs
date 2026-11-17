@@ -6,7 +6,7 @@
 use serde::Deserialize;
 
 use super::{
-    channel::{ToJs, ToolMeta},
+    channel::{JsMeta, ToJs, ToolMeta},
     thread::Js,
 };
 use crate::api::{ApprovalRequest, Decision};
@@ -59,10 +59,10 @@ impl Js {
     fn forward(&mut self, out: Out) {
         match out {
             Out::On { event } => {
-                self.meta.lock().unwrap().events.insert(event);
+                JsMeta::lock(&self.meta).events.insert(event);
             }
-            Out::Tool { tool } => self.meta.lock().unwrap().add_tool(tool),
-            Out::Command { name } => self.meta.lock().unwrap().add_command(name),
+            Out::Tool { tool } => JsMeta::lock(&self.meta).add_tool(tool),
+            Out::Command { name } => JsMeta::lock(&self.meta).add_command(name),
             Out::Notice { text } => self.ui.info(&text),
             Out::Ask { id, req, signal } => self.ask(id, req, signal),
         }
