@@ -45,7 +45,8 @@ fn spec(fns: impl IntoIterator<Item = (&'static str, NativeFn)>) -> VmSpec {
 /// A run on a private pool, so parallel tests never queue behind each other.
 async fn run(code: &str, spec: &VmSpec, caps: VmCaps, cancel: &CancellationToken) -> VmRun {
     let slots = Semaphore::new(MAX_ENGINES);
-    run_with_slots(&slots, code, spec, caps, cancel, None).await
+    let spec = spec.clone().with_caps(caps);
+    run_with_slots(&slots, code, &spec, cancel, &|_| {}).await
 }
 
 fn cancel_after(ms: u64) -> CancellationToken {
@@ -87,16 +88,8 @@ async fn a_cpu_bound_run_keeps_sending_heartbeats() {
     let on_beat = |b: VmBeat| beats.lock().unwrap().push(b);
     let slots = Semaphore::new(1);
     let cancel = cancel_after(2600);
-    let spec = VmSpec::default();
-    run_with_slots(
-        &slots,
-        "while (true) {}",
-        &spec,
-        caps(30_000),
-        &cancel,
-        Some(&on_beat),
-    )
-    .await;
+    let spec = VmSpec::default().with_caps(caps(30_000));
+    run_with_slots(&slots, "while (true) {}", &spec, &cancel, &on_beat).await;
     let beats = beats.into_inner().unwrap();
     assert!(beats.len() >= 2, "{beats:?}");
     assert!(beats[1].elapsed_ms > beats[0].elapsed_ms);
@@ -116,19 +109,12 @@ async fn no_more_than_four_engines_run_at_once_the_rest_wait_their_turn() {
             Ok("ok".to_string())
         }
     });
-    let spec = spec([("__hold", hold)]);
+    let spec = spec([("__hold", hold)]).with_caps(caps(30_000));
     let slots = Semaphore::new(MAX_ENGINES);
     let never = CancellationToken::new();
-    let runs = futures::future::join_all((0..6).map(|_| {
-        run_with_slots(
-            &slots,
-            "return await __hold()",
-            &spec,
-            caps(30_000),
-            &never,
-            None,
-        )
-    }))
+    let runs = futures::future::join_all(
+        (0..6).map(|_| run_with_slots(&slots, "return await __hold()", &spec, &never, &|_| {})),
+    )
     .await;
     let values: Vec<_> = runs.iter().map(|r| r.value.as_deref()).collect();
     assert_eq!(values, vec![Some("ok"); 6]);
@@ -141,24 +127,17 @@ async fn a_run_waiting_for_a_slot_can_be_interrupted_without_ever_starting() {
         tokio::time::sleep(Duration::from_millis(400)).await;
         Ok("ok".to_string())
     });
-    let spec = spec([("__hold", hold)]);
+    let spec = spec([("__hold", hold)]).with_caps(caps(30_000));
     let slots = Semaphore::new(MAX_ENGINES);
     let never = CancellationToken::new();
-    let busy = futures::future::join_all((0..4).map(|_| {
-        run_with_slots(
-            &slots,
-            "return await __hold()",
-            &spec,
-            caps(30_000),
-            &never,
-            None,
-        )
-    }));
+    let busy = futures::future::join_all(
+        (0..4).map(|_| run_with_slots(&slots, "return await __hold()", &spec, &never, &|_| {})),
+    );
     let cancel = CancellationToken::new();
     let waiting = async {
         tokio::task::yield_now().await;
         cancel.cancel();
-        run_with_slots(&slots, "return 1", &spec, caps(30_000), &cancel, None).await
+        run_with_slots(&slots, "return 1", &spec, &cancel, &|_| {}).await
     };
     let (busy, waiting) = tokio::join!(busy, waiting);
     assert_eq!(waiting.stopped, Some(VmStop::Interrupted));

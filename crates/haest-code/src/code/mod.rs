@@ -257,8 +257,9 @@ impl Tool for CodeTool {
             timeout_ms,
             ..VmCaps::default()
         };
+        let spec = bridge.spec().with_caps(caps);
         let beat = |b: VmBeat| ctx.services().debug(&beat_line(ctx, b));
-        let run = run_in_vm(code, &bridge.spec(), caps, ctx.cancel(), Some(&beat)).await;
+        let run = run_in_vm(code, &spec, ctx.cancel(), beat).await;
         if run.killed {
             ctx.services().debug(&format!(
                 "[code {}] did not stop when asked; its engine was abandoned",

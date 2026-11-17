@@ -20,8 +20,8 @@
 //! pure posix `path` helper the prelude can build on; nothing else: no file
 //! system, network, timer or process.
 //!
-//! Start from [`run_in_vm`]; [`VmCaps`] bounds a run and [`VmRun`] is how
-//! it ended.
+//! Start from [`run_in_vm`]; the spec's [`VmCaps`] bound a run and
+//! [`VmRun`] is how it ended.
 
 mod engine;
 mod parts;
@@ -61,12 +61,15 @@ pub(crate) type NativeFuture = BoxFuture<'static, Result<String, BoxError>>;
 /// strings (each one `String(arg)`; pass objects as JSON text).
 pub(crate) type NativeFn = Arc<dyn Fn(Vec<String>) -> NativeFuture + Send + Sync>;
 
-/// What one run's guest gets, and nothing more.
+/// What one run's guest gets, and nothing more, and its bounds.
 ///
 /// [`VmSpec::new`] (and `Default`) is a bare run in function mode: `console`,
-/// no globals, no host functions. The `with_*` setters add each part.
+/// no globals, no host functions, the default [`VmCaps`]. The `with_*`
+/// setters add each part.
 #[derive(Clone, Default)]
 pub struct VmSpec {
+    /// The run's bounds: time, memory, output.
+    pub(crate) caps: VmCaps,
     /// Runs before the code, after the base prelude (console, `__settle`): builds the guest API.
     pub(crate) prelude: String,
     /// JSON globals, set before the prelude.
@@ -85,6 +88,22 @@ impl VmSpec {
     /// function, and its `return` value is [`VmRun::value`].
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The run's bounds (the default is [`VmCaps::default`]): past
+    /// [`VmCaps::timeout_ms`] it is stopped (wall clock, from when the
+    /// engine starts, waiting on native functions included), memory past
+    /// [`VmCaps::memory_bytes`] is an error inside the guest, and console
+    /// output past [`VmCaps::max_log_chars`] is dropped.
+    #[must_use]
+    pub fn with_caps(mut self, caps: VmCaps) -> Self {
+        self.caps = caps;
+        self
+    }
+
+    /// The run's bounds.
+    pub fn caps(&self) -> VmCaps {
+        self.caps
     }
 
     /// JavaScript that runs before the code, after the base prelude
@@ -143,6 +162,7 @@ impl VmSpec {
 impl fmt::Debug for VmSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VmSpec")
+            .field("caps", &self.caps)
             .field("values", &self.values.keys().collect::<Vec<_>>())
             .field("native_fns", &self.native_fns.keys().collect::<Vec<_>>())
             .field(
@@ -175,10 +195,7 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 /// it is stopped. Code that awaits a promise nothing can settle ends at once
 /// with an error saying so.
 ///
-/// `caps` bounds it: [`VmCaps::timeout_ms`] stops it (wall clock, from
-/// when the engine starts, waiting on native functions included), memory past
-/// [`VmCaps::memory_bytes`] is an error inside the guest, and console
-/// output past [`VmCaps::max_log_chars`] is dropped.
+/// The spec's [caps](VmSpec::with_caps) bound it: time, memory, output.
 ///
 /// `cancel` is the human's interrupt: it stops the run, even a CPU loop,
 /// within one interrupt poll, and what it printed is kept
@@ -188,7 +205,7 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 /// future stops the run too.
 ///
 /// `on_beat` hears, about once a second and on the task awaiting this call,
-/// how a long run is doing.
+/// how a long run is doing; `|_| {}` when nobody listens.
 ///
 /// # Examples
 ///
@@ -204,11 +221,11 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 ///         let text = args.first().cloned().unwrap_or_default();
 ///         Ok(text.to_uppercase())
 ///     })
-///     .with_value("WHO", "haest");
+///     .with_value("WHO", "haest")
+///     .with_caps(VmCaps { timeout_ms: 5_000, memory_bytes: 16 << 20, max_log_chars: 10_000 });
 ///
-/// let caps = VmCaps { timeout_ms: 5_000, memory_bytes: 16 << 20, max_log_chars: 10_000 };
 /// let code = "console.log('working'); return { said: await shout('hi ' + WHO) }";
-/// let run = run_in_vm(code, &spec, caps, &CancellationToken::new(), None).await;
+/// let run = run_in_vm(code, &spec, &CancellationToken::new(), |_| {}).await;
 ///
 /// assert_eq!(run.error, None);
 /// assert_eq!(run.stdout, "working\n");
@@ -220,11 +237,10 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 pub async fn run_in_vm(
     code: &str,
     spec: &VmSpec,
-    caps: VmCaps,
     cancel: &CancellationToken,
-    on_beat: Option<&(dyn Fn(VmBeat) + Send + Sync)>,
+    on_beat: impl Fn(VmBeat) + Send + Sync,
 ) -> VmRun {
-    run_with_slots(&ENGINES, code, spec, caps, cancel, on_beat).await
+    run_with_slots(&ENGINES, code, spec, cancel, &on_beat).await
 }
 
 /// A dropped run future stops its engine too.
@@ -240,9 +256,8 @@ pub(crate) async fn run_with_slots(
     slots: &Semaphore,
     code: &str,
     spec: &VmSpec,
-    caps: VmCaps,
     cancel: &CancellationToken,
-    on_beat: Option<&(dyn Fn(VmBeat) + Send + Sync)>,
+    on_beat: &(dyn Fn(VmBeat) + Send + Sync),
 ) -> VmRun {
     let _slot = tokio::select! {
         biased;
@@ -261,11 +276,11 @@ pub(crate) async fn run_with_slots(
         async_names: spec.native_fns.keys().cloned().collect(),
         modules: spec.modules.clone(),
         filename: spec.filename.clone().unwrap_or_else(|| "code.js".into()),
-        caps,
+        caps: spec.caps,
         stop: stop.clone(),
     };
     match spawn_engine(job) {
-        Ok(engine) => supervise::supervise(engine, spec, caps, stop, cancel, on_beat).await,
+        Ok(engine) => supervise::supervise(engine, spec, stop, cancel, on_beat).await,
         Err(e) => VmRun::failed(format!("haest's JS engine could not start: {e}")),
     }
 }

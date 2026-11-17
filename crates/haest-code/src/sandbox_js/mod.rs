@@ -309,8 +309,8 @@ pub async fn run_js(path: &Path, code: &str, args: &[impl AsRef<str>], env: &JsE
     let filename = path
         .file_name()
         .map_or_else(|| "script.js".into(), |n| n.to_string_lossy().into_owned());
-    let spec = js_script_spec(script, &filename);
-    let run = run_in_vm(code, &spec, caps, &env.cancel, None).await;
+    let spec = js_script_spec(script, &filename).with_caps(caps);
+    let run = run_in_vm(code, &spec, &env.cancel, |_| {}).await;
     let exited = *exit_code.lock().unwrap();
     cli_result(run, exited, timeout)
 }

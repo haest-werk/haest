@@ -1114,6 +1114,14 @@ Hosts write less (round two of the review, and what porting brain onto
 - The Code tool hands its caller's `turn_time_left` on to the calls it
   makes.
 - A tool the Code tool calls sees the caller's wind-down.
+- `run_in_vm` takes no `dyn` and two fewer arguments (breaking): the caps
+  are part of the spec (`VmSpec::with_caps`, read with `caps()`; the
+  default is `VmCaps::default()`), and `on_beat` is any closure, `|_| {}`
+  for none: `run_in_vm(code, &spec, caps, &cancel, Some(&|b| log(b)))` ->
+  `run_in_vm(code, &spec.with_caps(caps), &cancel, |b| log(b))`, and
+  `run_in_vm(code, &spec, caps, &cancel, None)` ->
+  `run_in_vm(code, &spec.with_caps(caps), &cancel, |_| {})`. `VmSpec`'s
+  `with_*` setters are `#[must_use]`.
 
 ### haest-mcp
 

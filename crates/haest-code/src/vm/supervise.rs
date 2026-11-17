@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     STOP_GRACE, VmSpec,
     thread::Engine,
-    types::{FromVm, ToVm, VmBeat, VmCaps, VmRun, VmStop},
+    types::{FromVm, ToVm, VmBeat, VmRun, VmStop},
 };
 
 type Answering = FuturesUnordered<BoxFuture<'static, (u64, Result<String, String>)>>;
@@ -56,12 +56,11 @@ impl Stopper {
 pub(super) async fn supervise(
     engine: Engine,
     spec: &VmSpec,
-    caps: VmCaps,
     stop: Arc<AtomicBool>,
     cancel: &CancellationToken,
-    on_beat: Option<&(dyn Fn(VmBeat) + Send + Sync)>,
+    on_beat: &(dyn Fn(VmBeat) + Send + Sync),
 ) -> VmRun {
-    let deadline = Instant::now() + Duration::from_millis(caps.timeout_ms);
+    let deadline = Instant::now() + Duration::from_millis(spec.caps.timeout_ms);
     let mut answering = Answering::new();
     let Engine { to_vm, mut from_vm } = engine;
     let mut stopper = Stopper {
@@ -74,11 +73,7 @@ pub(super) async fn supervise(
         tokio::select! {
             msg = from_vm.recv() => match msg {
                 Some(FromVm::Done(run)) => return stopper.finish(run),
-                Some(FromVm::Beat(b)) => {
-                    if let Some(f) = on_beat {
-                        f(b);
-                    }
-                }
+                Some(FromVm::Beat(b)) => on_beat(b),
                 Some(FromVm::Call { call_id, name, args }) => match spec.native_fns.get(&name) {
                     Some(f) => answering.push(f(args).map(move |r| (call_id, r.map_err(|e| e.to_string()))).boxed()),
                     None => {
