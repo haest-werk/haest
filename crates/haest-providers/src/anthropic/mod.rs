@@ -33,10 +33,10 @@ const API_VERSION: &str = "2023-06-01";
 
 /// Where an [`AnthropicProvider`] sends its requests, and with which key.
 ///
-/// [`AnthropicOptions::new`] takes the two fields every provider needs; set
-/// the others with the `with_*` setters (or on the fields). Its Debug output
-/// shows neither the key, nor a header's value, nor a `user:password@` in
-/// the base URL.
+/// [`AnthropicOptions::new`] takes the two every provider needs; set the
+/// others with the `with_*` setters, and read each back with the getter of
+/// its name (the key is never read back). Its Debug output shows neither the
+/// key, nor a header's value, nor a `user:password@` in the base URL.
 ///
 /// ```
 /// use haest_providers::AnthropicOptions;
@@ -44,22 +44,16 @@ const API_VERSION: &str = "2023-06-01";
 /// let opts = AnthropicOptions::new("gateway", "sk-ant-...")
 ///     .with_base_url("https://llm-gateway.example.com")
 ///     .with_header("X-Team", "platform");
-/// assert_eq!(opts.base_url.as_deref(), Some("https://llm-gateway.example.com"));
+/// assert_eq!(opts.base_url(), Some("https://llm-gateway.example.com"));
 /// assert!(!format!("{opts:?}").contains("sk-ant"));
 /// ```
 #[derive(Clone)]
 pub struct AnthropicOptions {
-    /// The provider's name: its [`Provider::id`], stored on every message it
-    /// answers. Thinking replays, with its signature, only to the provider
-    /// whose id a message carries: each endpoint signs its own.
-    pub id: String,
+    pub(crate) id: String,
     /// Sent as `x-api-key`.
-    pub api_key: String,
-    /// None = `https://api.anthropic.com`; requests go to `<base_url>/v1/messages`.
-    pub base_url: Option<String>,
-    /// Sent on every request (a proxy that authenticates by header); one
-    /// named like a default (`x-api-key`, in any case) replaces it.
-    pub headers: Vec<(String, String)>,
+    pub(crate) api_key: String,
+    pub(crate) base_url: Option<String>,
+    pub(crate) headers: Vec<(String, String)>,
 }
 
 impl AnthropicOptions {
@@ -74,6 +68,24 @@ impl AnthropicOptions {
         }
     }
 
+    /// The provider's name: its [`Provider::id`], stored on every message it
+    /// answers. Thinking replays, with its signature, only to the provider
+    /// whose id a message carries: each endpoint signs its own.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Where requests go: `<base_url>/v1/messages`; None =
+    /// `https://api.anthropic.com` ([`with_base_url`](Self::with_base_url)).
+    pub fn base_url(&self) -> Option<&str> {
+        self.base_url.as_deref()
+    }
+
+    /// Sent on every request, in order ([`with_header`](Self::with_header)).
+    pub fn headers(&self) -> &[(String, String)] {
+        &self.headers
+    }
+
     /// These options sending to `url` (`<url>/v1/messages`) instead of
     /// Anthropic's own API.
     #[must_use]
@@ -83,7 +95,8 @@ impl AnthropicOptions {
     }
 
     /// These options sending `name: value` on every request, after the ones
-    /// before it.
+    /// before it (a proxy that authenticates by header). One named like a
+    /// default (`x-api-key`, in any case) replaces it.
     #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((name.into(), value.into()));

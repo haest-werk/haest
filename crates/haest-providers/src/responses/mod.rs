@@ -29,21 +29,25 @@ use crate::{
 
 /// Where a [`ResponsesProvider`] sends its requests, and with which key.
 ///
-/// [`ResponsesOptions::new`] takes the two fields every provider needs; set
-/// the others with the `with_*` setters (or on the fields). Its Debug output
-/// shows neither the key, nor a header's value, nor a `user:password@` in
-/// the base URL.
+/// [`ResponsesOptions::new`] takes the two every provider needs; set the
+/// others with the `with_*` setters, and read each back with the getter of
+/// its name (the key is never read back). Its Debug output shows neither the
+/// key, nor a header's value, nor a `user:password@` in the base URL.
+///
+/// ```
+/// use haest_providers::ResponsesOptions;
+///
+/// let opts = ResponsesOptions::new("openai", "sk-...").with_header("OpenAI-Project", "proj_1");
+/// assert_eq!(opts.id(), "openai");
+/// assert_eq!(opts.base_url(), None);
+/// ```
 #[derive(Clone)]
 pub struct ResponsesOptions {
-    /// The provider's name: its [`Provider::id`], stored on every message it
-    /// answers. Reasoning replays only to the provider whose id a message carries.
-    pub id: String,
+    pub(crate) id: String,
     /// Sent as `Authorization: Bearer <api_key>`.
-    pub api_key: String,
-    /// None = `https://api.openai.com/v1`; requests go to `<base_url>/responses`.
-    pub base_url: Option<String>,
-    /// Sent on every request, after (and over) the defaults.
-    pub headers: Vec<(String, String)>,
+    pub(crate) api_key: String,
+    pub(crate) base_url: Option<String>,
+    pub(crate) headers: Vec<(String, String)>,
 }
 
 impl ResponsesOptions {
@@ -56,6 +60,25 @@ impl ResponsesOptions {
             base_url: None,
             headers: Vec::new(),
         }
+    }
+
+    /// The provider's name: its [`Provider::id`], stored on every message it
+    /// answers. Reasoning replays only to the provider whose id a message
+    /// carries.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Where requests go: `<base_url>/responses`; None =
+    /// `https://api.openai.com/v1` ([`with_base_url`](Self::with_base_url)).
+    pub fn base_url(&self) -> Option<&str> {
+        self.base_url.as_deref()
+    }
+
+    /// Sent on every request, after (and over) the defaults
+    /// ([`with_header`](Self::with_header)).
+    pub fn headers(&self) -> &[(String, String)] {
+        &self.headers
     }
 
     /// These options sending to `url` (`<url>/responses`) instead of

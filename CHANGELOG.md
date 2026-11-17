@@ -874,12 +874,19 @@ Hosts write less (round two of the review, and what porting brain onto
   `CompatProvider::new(opts, ReqwestClient::new())`; an `Arc` of the host's
   client still goes in as it is. The providers are `Clone` (a clone shares
   the client) and `Debug`, with an `options()` getter.
-- `AnthropicOptions`, `CompatOptions` and `ResponsesOptions` gain `with_*`
-  setters beside their public fields: `with_base_url`, `with_header`, and on
+- `AnthropicOptions`, `CompatOptions` and `ResponsesOptions` keep their
+  fields private (breaking), so a new option is never a breaking change:
+  set one with its `with_*` setter (`with_base_url`, `with_header`, and on
   `CompatOptions` `with_flavor`, `with_reasoning_effort`, `with_pricing`,
-  `with_routing`. `let mut opts = CompatOptions::new(id, key); opts.flavor =
+  `with_routing`) and read it with the getter of its name (`id()`,
+  `base_url()`, `headers()`, `flavor()`, `reasoning_effort()`,
+  `pricing()`, `routing()`); the key is never read back.
+  `let mut opts = CompatOptions::new(id, key); opts.flavor =
   CompatFlavor::OpenRouter; opts.base_url = Some(url.into());` ->
-  `CompatOptions::new(id, key).with_flavor(CompatFlavor::OpenRouter).with_base_url(url)`.
+  `CompatOptions::new(id, key).with_flavor(CompatFlavor::OpenRouter).with_base_url(url)`,
+  and `opts.base_url.as_deref()` -> `opts.base_url()`.
+  `CustomProviderConfig` keeps its public fields: it is a providers.json
+  entry's plain data, built over `Default` (`..CustomProviderConfig::anthropic(url)`).
 - `testing::FakeHttp::new` returns a `FakeHttp`, not an `Arc<FakeHttp>`
   (breaking): it is `Clone`, the clones sharing the script and the record, so
   a test hands `http.clone()` to a provider and reads `http.requests()`.

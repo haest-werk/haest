@@ -69,11 +69,11 @@ pub enum CompatFlavor {
 
 /// How a [`CompatProvider`] reaches its server and what it sends.
 ///
-/// [`CompatOptions::new`] takes the two fields every provider needs and
-/// leaves the rest plain ([`CompatFlavor::Generic`], no extras); set the
-/// others with the `with_*` setters (or on the fields). Its Debug output
-/// shows neither the key, nor a header's value, nor a `user:password@` in
-/// the base URL.
+/// [`CompatOptions::new`] takes the two every provider needs and leaves the
+/// rest plain ([`CompatFlavor::Generic`], no extras); set the others with the
+/// `with_*` setters, and read each back with the getter of its name (the key
+/// is never read back). Its Debug output shows neither the key, nor a
+/// header's value, nor a `user:password@` in the base URL.
 ///
 /// ```
 /// use haest_providers::{CompatFlavor, CompatOptions};
@@ -81,32 +81,20 @@ pub enum CompatFlavor {
 /// let opts = CompatOptions::new("openrouter", "sk-or-...")
 ///     .with_flavor(CompatFlavor::OpenRouter)
 ///     .with_base_url("https://gateway.example.com/v1");
-/// assert_eq!(opts.flavor, CompatFlavor::OpenRouter);
+/// assert_eq!(opts.flavor(), CompatFlavor::OpenRouter);
 /// assert!(!format!("{opts:?}").contains("sk-or"));
 /// ```
 #[derive(Clone)]
 pub struct CompatOptions {
-    /// The provider's name: its [`Provider::id`](haest_core::Provider::id),
-    /// stored on every message it answers. Reasoning replays only to the
-    /// provider whose id a message carries.
-    pub id: String,
-    /// OpenRouter's extras, or the plain body ([`CompatFlavor::Generic`], the default).
-    pub flavor: CompatFlavor,
+    pub(crate) id: String,
+    pub(crate) flavor: CompatFlavor,
     /// Sent as `Authorization: Bearer <api_key>`.
-    pub api_key: String,
-    /// None = `https://api.openai.com/v1`; requests go to `<base_url>/chat/completions`.
-    pub base_url: Option<String>,
-    /// Sent on every request, after (and over) the defaults.
-    pub headers: Vec<(String, String)>,
-    /// A provider that takes a top-level `reasoning_effort`: the levels it accepts
-    /// (haest's effort is fitted to the nearest; off only when it lists `none`).
-    /// None = no `reasoning_effort` is sent.
-    pub reasoning_effort: Option<Reasoning>,
-    /// Price per model id, for a provider whose API returns no cost (haest-core `pricing`).
-    pub pricing: HashMap<String, ModelPricing>,
-    /// OpenRouter only: provider routing, resolved per request against the request's model.
-    /// None = off: send no `provider` object (a host gateway may decide routing itself).
-    pub routing: Option<RoutingScopes>,
+    pub(crate) api_key: String,
+    pub(crate) base_url: Option<String>,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) reasoning_effort: Option<Reasoning>,
+    pub(crate) pricing: HashMap<String, ModelPricing>,
+    pub(crate) routing: Option<RoutingScopes>,
 }
 
 impl CompatOptions {
@@ -123,6 +111,52 @@ impl CompatOptions {
             pricing: HashMap::new(),
             routing: None,
         }
+    }
+
+    /// The provider's name: its [`Provider::id`](haest_core::Provider::id),
+    /// stored on every message it answers. Reasoning replays only to the
+    /// provider whose id a message carries.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// OpenRouter's extras, or the plain body ([`CompatFlavor::Generic`], the
+    /// default; [`with_flavor`](Self::with_flavor)).
+    pub fn flavor(&self) -> CompatFlavor {
+        self.flavor
+    }
+
+    /// Where requests go: `<base_url>/chat/completions`; None =
+    /// `https://api.openai.com/v1` ([`with_base_url`](Self::with_base_url)).
+    pub fn base_url(&self) -> Option<&str> {
+        self.base_url.as_deref()
+    }
+
+    /// Sent on every request, after (and over) the defaults
+    /// ([`with_header`](Self::with_header)).
+    pub fn headers(&self) -> &[(String, String)] {
+        &self.headers
+    }
+
+    /// The levels a provider that takes a top-level `reasoning_effort`
+    /// accepts (haest's effort is fitted to the nearest; off only when it
+    /// lists `none`); None = no `reasoning_effort` is sent
+    /// ([`with_reasoning_effort`](Self::with_reasoning_effort)).
+    pub fn reasoning_effort(&self) -> Option<&Reasoning> {
+        self.reasoning_effort.as_ref()
+    }
+
+    /// Price per model id, for a provider whose API returns no cost
+    /// ([`with_pricing`](Self::with_pricing)).
+    pub fn pricing(&self) -> &HashMap<String, ModelPricing> {
+        &self.pricing
+    }
+
+    /// OpenRouter's provider routing, resolved per request against the
+    /// request's model; None = off, no `provider` object is sent (a host's
+    /// gateway may route itself; [`with_routing`](Self::with_routing)).
+    pub fn routing(&self) -> Option<&RoutingScopes> {
+        self.routing.as_ref()
     }
 
     /// These options with OpenRouter's extras, or the plain body.
