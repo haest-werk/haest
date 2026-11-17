@@ -73,7 +73,10 @@
 - **One path per item.** A library's modules are private and everything a host
   uses is re-exported at its root, once (haest-core, whose modules are the
   contract, is the exception). `pub` only for what a host or a plug-in author
-  uses; what only the haest crates share goes in haest-core's `__private`. A
+  uses; what only the haest crates share goes in a `__private` module
+  (haest-core's, or haest-http's for what the crates that send share). Only
+  a crate released in step with the one it reaches into may use its
+  `__private`: haest-issues, versioned on its own, uses public items only. A
   re-exported crate (`reqwest` in haest-http, `rmcp` in haest-mcp) is part of
   the API: its breaking release is a breaking release of haest.
 - **Wire-compatible serde.** Anything that lands in a session file or an NDJSON

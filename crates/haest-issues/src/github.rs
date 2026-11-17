@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use haest_http::{__private::UrlDebug, HttpClientRef, Method};
+use haest_http::{HttpClientRef, Method, redacted_url};
 use serde_json::Value;
 
 use crate::tracker::TrackerError;
@@ -119,7 +119,7 @@ impl fmt::Debug for GithubTracker {
             .field("owner", &self.owner)
             .field("repo", &self.repo)
             .field("token", &self.token.as_ref().map(|_| "<handed in>"))
-            .field("api", &UrlDebug(&self.api))
+            .field("api", &redacted_url(&self.api))
             .finish_non_exhaustive()
     }
 }
