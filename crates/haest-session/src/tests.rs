@@ -45,6 +45,41 @@ async fn a_hubs_options_hold_for_every_clone() {
     assert_eq!(late.recv().await.map(|f| f.seq), Some(3));
 }
 
+/// A peer that resumes after a seq this stream never reached (it holds
+/// another run's frames under the same id) gets a gap first, then every new
+/// frame: none is skipped as already given.
+#[tokio::test]
+async fn a_resume_point_past_the_streams_end_gets_a_gap_and_skips_nothing() {
+    let hub = hub();
+    hub.notice(Level::Info, "line 1");
+    hub.notice(Level::Info, "line 2");
+    let mut sub = hub.subscribe(5);
+    for n in 3..=7 {
+        hub.notice(Level::Info, format!("line {n}"));
+    }
+    let mut got = Vec::new();
+    while let Ok(Some(frame)) = tokio::time::timeout(Duration::from_millis(100), sub.recv()).await {
+        got.push(frame);
+    }
+    let first = got.first().map(|f| (f.seq, f.body.clone()));
+    assert!(
+        matches!(
+            first,
+            Some((
+                2,
+                Body::Wire(Outbound::Gap {
+                    after: 2,
+                    missed: None
+                })
+            ))
+        ),
+        "{first:?}"
+    );
+    let seqs: Vec<u64> = got[1..].iter().map(|f| f.seq).collect();
+    assert_eq!(seqs, [3, 4, 5, 6, 7]);
+    assert_eq!(sub.last_seq(), 7);
+}
+
 /// A host's own frame, whose conversion into a [`Body`] panics.
 struct Unwritable;
 

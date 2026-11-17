@@ -1994,6 +1994,11 @@ against it; the wire JSON is unchanged):
   subagent) never reached the stream, and the next change was compared
   against it: peers that follow the stream did not hear of it until the
   next turn.
+- `Hub::subscribe(after)` with an `after` the stream never reached (a peer
+  that holds another run's frames under the same stream id, such as a
+  broker after a host restarted with a stable id) starts at the stream's
+  last seq with a `gap`. It skipped every new frame up to `after` as one
+  the peer already held, with no gap to say so.
 
 ### haest-transport (new)
 

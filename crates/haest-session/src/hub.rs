@@ -182,9 +182,18 @@ impl Hub {
 
     /// The frames after `after` from the ring (a `gap` first when it lost
     /// some), then every new one. Nothing is published between the two.
+    ///
+    /// An `after` past the last seq published is not this stream's (a peer
+    /// that holds another run's frames under the same id): the subscription
+    /// starts at the last seq with a `gap`, so the peer catches up
+    /// (`history`) and no new frame is skipped as one it holds.
     pub fn subscribe(&self, after: u64) -> Subscription {
         let state = self.lock();
-        let replay = state.ring.since(after);
+        let last = state.framer.seq();
+        let after_end = after > last;
+        let after = after.min(last);
+        let mut replay = state.ring.since(after);
+        replay.gap |= after_end;
         let rx = match &state.tx {
             Some(tx) => tx.subscribe(),
             None => broadcast::channel(1).1,

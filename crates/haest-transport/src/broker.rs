@@ -11,7 +11,9 @@
 //!    last seq it holds. That is its ack, and the stream resumes there: a
 //!    frame handed to a socket that was already closing is sent again, and
 //!    when the ring no longer holds what the broker missed it gets a `gap`.
-//!    No other frame is sent before the ack.
+//!    So does an `after` this stream never reached (a broker that kept
+//!    another run's frames under the same id): it then resumes from the
+//!    stream's last seq. No other frame is sent before the ack.
 //! 3. Requests from the broker are served under the host's [`Grant`]
 //!    (watch, unless the host says command).
 //!
