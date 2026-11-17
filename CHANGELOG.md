@@ -163,6 +163,9 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   client: the options replaced everything, so the requests went over the
   shared reqwest client (a test's fake was bypassed and the network used).
   The registry now has one setter per option and no `with_options`.
+- haest-ts parsed any file name ending in `x` as TSX (`box`, `index`), where
+  a `<number>x` cast is a syntax error. Only a `.tsx` extension, in any
+  case, is TSX now.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a

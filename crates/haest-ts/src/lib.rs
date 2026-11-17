@@ -129,8 +129,9 @@ pub enum StripError {
 /// its lines can move. Types are not checked. The source is read as an ES
 /// module.
 ///
-/// `filename` is used for two things: a name ending in `x` (`app.tsx`) is
-/// parsed as TSX, and it names the file in the stripper's own diagnostics.
+/// `filename` is used for two things: a `.tsx` extension (`app.tsx`, in any
+/// case) is parsed as TSX, and it names the file in the stripper's own
+/// diagnostics.
 /// Nothing is read from disk. JSX in a `.tsx` file is left as JSX, which
 /// QuickJS cannot run.
 ///
@@ -184,12 +185,19 @@ fn strip_here(source: &str, filename: &str) -> Result<String, String> {
     }
 }
 
+/// Whether `filename` is TSX: its extension is `.tsx`, in any case.
+fn is_tsx(filename: &str) -> bool {
+    std::path::Path::new(filename)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("tsx"))
+}
+
 fn strip(source: &str, filename: &str, mode: &str) -> Result<String, (ErrorCode, String)> {
     let options: Options = serde_json::from_value(json!({
         "module": true,
         "filename": filename,
         "mode": mode,
-        "parser": {"tsx": filename.ends_with('x'), "decorators": true},
+        "parser": {"tsx": is_tsx(filename), "decorators": true},
     }))
     .map_err(|e| (ErrorCode::Unknown, e.to_string()))?;
     let cm: Lrc<SourceMap> = Lrc::default();
@@ -254,6 +262,22 @@ mod tests {
         // Past what a stack is sized for: refused before swc sees it.
         let long = on_a_worker_stack("(".repeat(200_000), "a.ts");
         assert!(matches!(long, Err(StripError::TooLong { bytes: 200_000 })));
+    }
+
+    /// TSX is the `.tsx` extension, not a name that ends in `x`: in TSX a
+    /// `<T>x` cast is an unclosed element, so a script named `box` or
+    /// `index` would not parse.
+    #[test]
+    fn only_a_tsx_extension_parses_as_tsx() {
+        let cast = "const n = <number>JSON.parse(\"1\")";
+        for name in ["box", "index", "a.ts", "a.mtsx", "tsx", "a.tsx.ts"] {
+            let js = strip_types(cast, name).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert!(!js.contains("<number>"), "{name}: {js}");
+        }
+        let element = "const el = <div className=\"a\" />";
+        for name in ["a.tsx", "a.TSX", "dir/b.tsx"] {
+            assert!(strip_types(element, name).is_ok(), "{name}");
+        }
     }
 
     #[test]
