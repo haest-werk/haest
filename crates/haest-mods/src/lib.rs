@@ -108,7 +108,8 @@
 //! );
 //! let mut agent = Agent::new(deps, AgentOptions::new("scripted:model"));
 //! let text = mods.rewrite_prompt("free up some disk").await;
-//! agent.run(&text, &mut Vec::new()).await;
+//! let outcome = agent.run(&text, &mut Vec::new()).await;
+//! assert_eq!(outcome.error, None);
 //!
 //! // The model saw the mod's line, and its Bash call came back refused.
 //! assert!(model.requests()[0].system.contains("Ask before deleting anything."));

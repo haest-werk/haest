@@ -130,13 +130,18 @@
 //! use haest_core::LoopEvent;
 //! use haest_runtime::{Runtime, Ui};
 //!
-//! /// A turn the human started, then every turn waiting in the inbox.
+//! /// A turn the human started, then every turn waiting in the inbox; a turn
+//! /// that ended in an error or on a cap says why.
 //! async fn human<U: Ui>(rt: &mut Runtime<U>, text: &str) {
 //!     let mut show = |event: LoopEvent| println!("{event:?}");
-//!     rt.human_turn(text, &mut show).await;
+//!     if let Some(why) = rt.human_turn(text, &mut show).await.error {
+//!         eprintln!("the turn stopped: {why}");
+//!     }
 //!     // None: nothing waits, or the gate holds it until the human writes again.
 //!     while let Some(text) = rt.next_agent_turn() {
-//!         rt.run(&text, &mut show).await;
+//!         if let Some(why) = rt.run(&text, &mut show).await.error {
+//!             eprintln!("the turn stopped: {why}");
+//!         }
 //!     }
 //! }
 //!
