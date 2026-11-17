@@ -235,8 +235,8 @@ impl fmt::Debug for CompatOptions {
 /// what the server wants back (`reasoning_details`, `reasoning_content`) is
 /// kept on the message and replayed to the same provider. A tool call the
 /// server sends without an id gets one (`call_<hex>`). The message's cost is
-/// the server's when it reports one, else the price in
-/// [`CompatOptions::pricing`], else none.
+/// the server's when it reports one (at or above zero: a cost below it is
+/// not taken), else the price in [`CompatOptions::pricing`], else none.
 ///
 /// # Examples
 ///

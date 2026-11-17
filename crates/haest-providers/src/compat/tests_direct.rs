@@ -191,3 +191,25 @@ async fn an_unpriced_model_books_nothing_and_a_reported_cost_is_never_overwritte
     let reported = final_message(priced(), &[text, usage_chunk(reported_usage)]).await;
     assert_eq!(reported.usage.cost_usd, Some(7.0));
 }
+
+/// A cost below zero is no cost a call can have: booked, it would take spend
+/// off the ledger and lift a USD cap. It is not taken; the price is, as for
+/// a server that reports none.
+#[tokio::test]
+async fn a_reported_cost_below_zero_is_not_taken() {
+    let text = chunk(json!({"content": "x"}), Some("stop"));
+    let mut reported_usage = usage();
+    reported_usage["cost"] = json!(-1000);
+    let priced_msg = final_message(
+        priced(),
+        &[text.clone(), usage_chunk(reported_usage.clone())],
+    )
+    .await;
+    assert!(
+        close(priced_msg.usage.cost_usd, 0.075 + 0.015 + 1.0),
+        "{:?}",
+        priced_msg.usage.cost_usd
+    );
+    let unpriced = final_message(direct(), &[text, usage_chunk(reported_usage)]).await;
+    assert_eq!(unpriced.usage.cost_usd, None);
+}

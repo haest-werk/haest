@@ -287,6 +287,11 @@ write instead.
   kept below the cap, a cap of 1,024 or less (no room for the smallest
   budget) sends no thinking, and a cap of 0 is the default 32,000, as the
   other providers already read it.
+- The OpenAI-compatible provider took a server's `usage.cost` as it came,
+  so a cost below zero (a gateway's bug, a hostile server) was booked and
+  took spend off the ledger, lifting a USD cap by that much. A cost below
+  zero is no longer taken; the price in `CompatOptions::pricing` books the
+  call instead, as for a server that reports no cost.
 
 ### Behaviour changes
 
