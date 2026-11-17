@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 
 use haest_core::{
+    __private::real_cost,
     messages::{AssistantMessage, AssistantPart, StopReason, ToolCall},
     provider::ProviderEvent,
 };
@@ -151,8 +152,7 @@ fn apply_usage(u: &Value, msg: &mut AssistantMessage, st: &mut StreamState) {
     msg.usage.reasoning = count(u.pointer("/completion_tokens_details/reasoning_tokens"));
     // A cost below zero (or not finite, which JSON cannot carry) is no
     // cost: booked, it would take spend off the ledger. The price books it.
-    let cost = u.get("cost").and_then(Value::as_f64);
-    if let Some(cost) = cost.filter(|c| c.is_finite() && *c >= 0.0) {
+    if let Some(cost) = real_cost(u.get("cost").and_then(Value::as_f64)) {
         msg.usage.cost_usd = Some(cost);
     }
 }
