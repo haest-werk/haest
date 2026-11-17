@@ -164,11 +164,11 @@ impl Tool for SendMessageTool {
         if to == self.me.name {
             return Err(ToolError::Input("that is you".into()));
         }
-        let message = AgentMessage {
-            from: Sender::Agent(self.me.name.clone()),
-            to: to.to_string(),
-            text: req_str(&input, "message")?.to_string(),
-        };
+        let message = AgentMessage::new(
+            Sender::Agent(self.me.name.clone()),
+            to,
+            req_str(&input, "message")?,
+        );
         let said = self
             .hub
             .deliver(message)

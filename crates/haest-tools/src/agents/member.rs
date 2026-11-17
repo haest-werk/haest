@@ -12,7 +12,11 @@ use super::SpawnInput;
 
 /// One member's own caps: its turn's spend, model calls and wall clock. 0 (or
 /// a zero duration) is no cap, as in [`TurnCaps`](haest_core::caps::TurnCaps).
+///
+/// Built with [`new`](Self::new), or from the tree's caps, so a cap it gains
+/// later breaks no host; its fields read as they are.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct MemberCaps {
     /// Its turn's spend in USD.
     pub usd: f64,
@@ -20,6 +24,13 @@ pub struct MemberCaps {
     pub steps: u32,
     /// Its turn's wall clock.
     pub time: Duration,
+}
+
+impl MemberCaps {
+    /// A turn of at most `usd`, `steps` model calls and `time`; 0 is no cap.
+    pub const fn new(usd: f64, steps: u32, time: Duration) -> Self {
+        Self { usd, steps, time }
+    }
 }
 
 impl From<SubagentCaps> for MemberCaps {
@@ -140,7 +151,7 @@ pub struct MemberEnd {
 ///         Some(self.model_spec.clone())
 ///     }
 ///     fn caps(&self) -> Option<MemberCaps> {
-///         Some(MemberCaps { usd: 0.2, steps: 10, time: Duration::from_secs(120) })
+///         Some(MemberCaps::new(0.2, 10, Duration::from_secs(120)))
 ///     }
 ///     async fn end(self: Box<Self>, end: MemberEnd) {
 ///         // Here the host would close its run: flush its records, then stop it.

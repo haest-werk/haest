@@ -178,6 +178,15 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     ledger itself: delete a host's own
     `ledger.charge(&res.usage)` / `ledger.charge(&e.usage())` after it, or
     the calls are counted twice. `usage` still reports the cost.
+25. A model catalog row built in code is built with constructors (rows
+    read from JSON are unchanged):
+    `ModelPricing { input, cached_input, output, cache_write: None }` ->
+    `ModelPricing::new(input, cached_input, output)` (and
+    `.with_cache_write(usd)` for a price of its own),
+    `ModelInfo { spec, label, input, context_window, reasoning, pricing }`
+    -> `ModelInfo::new(spec, context_window).with_label(label).with_input(input)`
+    (and `.with_reasoning(r)`, `.with_pricing(p)`), and
+    `ModelGroup { label, models }` -> `ModelGroup::new(label, models)`.
 
 Every other breaking change is in its crate's section below, with what to
 write instead.
@@ -990,6 +999,15 @@ Hosts write less (round two of the review, and what porting brain onto
   Ctrl+C) booked none of the calls it had made and paid for. Dropped now,
   it loses only the call still running; `usage` still reports what the
   calls cost.
+- `catalog::ModelPricing`, `catalog::ModelInfo` and `catalog::ModelGroup`
+  are `#[non_exhaustive]` and built with `ModelPricing::new(input,
+  cached_input, output)` and `with_cache_write`, `ModelInfo::new(spec,
+  context_window)` (labelled with its spec, text only) and `with_label`,
+  `with_input`, `with_reasoning`, `with_pricing`, and
+  `ModelGroup::new(label, models)` (breaking for a host that builds a
+  catalog row in code; Upgrading 25): a price a row gains later (for
+  reasoning, for a search) breaks no host. Their fields read as before,
+  and their JSON is unchanged.
 - Fixed: a host that stopped `Agent::run` the usual async way, by dropping
   it (`tokio::time::timeout`, `select!`) while a tool ran, left that tool
   call in history with no result, and every later request sent it, which
@@ -1165,8 +1183,9 @@ Hosts write less (round two of the review, and what porting brain onto
   `deps() -> Option<SharedDeps>` (used as given, hooks included) and
   `end(MemberEnd)`, awaited once after the member's turn and before its
   answer goes back. New `Member`, `MemberStart`, `MemberEnd`,
-  `MemberCaps`, `Ending` and `Spend`; `MemberStart`, `MemberEnd` and
-  `Ending` are `#[non_exhaustive]`.
+  `MemberCaps`, `Ending` and `Spend`; `MemberStart`, `MemberEnd`,
+  `MemberCaps` and `Ending` are `#[non_exhaustive]`, and a host builds a
+  `MemberCaps` with `MemberCaps::new(usd, steps, time)` (a `const fn`).
 - `subagent_note` takes the `&MemberStart` it writes the note for (was the
   name, the parent's name, the description and `&SubagentCaps`, three
   strings in a row): `subagent_note(name, parent, description, caps)` ->
@@ -1198,10 +1217,12 @@ Hosts write less (round two of the review, and what porting brain onto
 - `AgentError` gains `OverBudget { asked, available }` and
   `OverTime { asked, left, setting }`, and no longer derives `Eq`.
 - `AgentDirectory::deliver` and `SubagentHub::deliver` take an
-  `AgentMessage { from, to, text }` (was three strings in a row, the
-  sender's name first): `hub.deliver("lead", "worker", "go")` ->
-  `hub.deliver(AgentMessage { from: Sender::Agent("lead".into()), to:
-  "worker".into(), text: "go".into() })`.
+  `AgentMessage` (was three strings in a row, the sender's name first),
+  `#[non_exhaustive]` and built with `AgentMessage::new(from, to, text)`,
+  its sender a `Sender`: `hub.deliver("lead", "worker", "go")` ->
+  `hub.deliver(AgentMessage::new(Sender::Agent("lead".into()), "worker", "go"))`.
+  Its fields read as they are; a pattern ends in `..`
+  (`let AgentMessage { from, to, text, .. } = message;`).
 - New `Sender::{Agent, Person}` (`#[non_exhaustive]`): the person writes to
   a running subagent, or to main, under "[Message from <name>, the person
   you work for]". SendMessage is `Sender::Agent` and reads as before.

@@ -27,7 +27,7 @@ const PER: f64 = 1_000_000.0;
 /// ```
 /// use haest_core::{Usage, catalog::ModelPricing, provider::book_priced_cost};
 ///
-/// let price = ModelPricing { input: 2.0, cached_input: 0.2, output: 8.0, cache_write: None };
+/// let price = ModelPricing::new(2.0, 0.2, 8.0);
 /// let mut usage = Usage { input: 500_000, output: 100_000, ..Default::default() };
 /// book_priced_cost(&mut usage, Some(&price));
 /// assert_eq!(usage.cost_usd, Some(1.8)); // 0.5 * $2 + 0.1 * $8
@@ -50,12 +50,7 @@ mod tests {
 
     #[test]
     fn a_priced_model_books_its_cost_and_a_reported_cost_wins() {
-        let p = ModelPricing {
-            input: 1.0,
-            cached_input: 0.1,
-            output: 2.0,
-            cache_write: None,
-        };
+        let p = ModelPricing::new(1.0, 0.1, 2.0);
         let mut u = Usage {
             input: 1_000_000,
             cache_write: 1_000_000,
@@ -83,12 +78,7 @@ mod tests {
     /// one out, and the call went unpriced.
     #[test]
     fn a_reported_cost_that_is_no_real_amount_gives_way_to_the_configured_price() {
-        let p = ModelPricing {
-            input: 1.0,
-            cached_input: 0.1,
-            output: 2.0,
-            cache_write: None,
-        };
+        let p = ModelPricing::new(1.0, 0.1, 2.0);
         for bad in [-50.0, f64::NAN, f64::INFINITY] {
             let mut u = Usage {
                 input: 1_000_000,

@@ -221,11 +221,7 @@ fn own_note(m: &MemberStart) -> String {
 async fn a_parents_own_note_replaces_haests_and_sees_the_member_as_its_run_has_it() {
     let lifecycle = Lifecycle {
         model_spec: Some("fake:run-model".into()),
-        caps: Some(MemberCaps {
-            usd: 0.3,
-            steps: 7,
-            time: Duration::from_secs(90),
-        }),
+        caps: Some(MemberCaps::new(0.3, 7, Duration::from_secs(90))),
         ..Lifecycle::default()
     };
     let host = Host {

@@ -180,11 +180,7 @@ impl Rig {
 
     /// Hand `text` from `from` to the agent `to`, as the hub delivers it.
     pub(super) fn deliver(&self, from: Sender, to: &str, text: &str) -> Result<String, AgentError> {
-        self.hub.deliver(AgentMessage {
-            from,
-            to: to.into(),
-            text: text.into(),
-        })
+        self.hub.deliver(AgentMessage::new(from, to, text))
     }
 }
 

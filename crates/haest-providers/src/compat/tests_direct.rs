@@ -141,15 +141,7 @@ fn usage() -> Value {
 
 fn priced() -> CompatOptions {
     let mut opts = direct();
-    opts.pricing = HashMap::from([(
-        MODEL.to_string(),
-        ModelPricing {
-            input: 0.15,
-            cached_input: 0.03,
-            output: 0.5,
-            cache_write: None,
-        },
-    )]);
+    opts.pricing = HashMap::from([(MODEL.to_string(), ModelPricing::new(0.15, 0.03, 0.5))]);
     opts
 }
 

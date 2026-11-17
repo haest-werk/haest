@@ -338,11 +338,7 @@ async fn a_foreground_spawn_dropped_while_its_member_runs_stops_it_as_a_cancelle
 async fn the_run_a_start_returns_names_the_members_model_caps_and_deps() {
     let l = Arc::new(Lifecycle {
         model_spec: Some("fake:node-model".into()),
-        caps: Some(MemberCaps {
-            usd: 1.0,
-            steps: 1,
-            time: Duration::from_secs(60),
-        }),
+        caps: Some(MemberCaps::new(1.0, 1, Duration::from_secs(60))),
         own_deps: true,
         ..Lifecycle::default()
     });

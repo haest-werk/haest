@@ -205,11 +205,7 @@ async fn a_budget_only_tightens_the_caps_and_an_absent_value_is_the_cap() {
     let Step::Start { start, .. } = &l.steps()[0] else {
         panic!()
     };
-    let expected = MemberCaps {
-        usd: 0.4,
-        steps: caps.steps,
-        time: Duration::from_secs(60),
-    };
+    let expected = MemberCaps::new(0.4, caps.steps, Duration::from_secs(60));
     assert_eq!(start.caps, expected);
     // A budget of nothing is the model's mistake, not "no cap".
     assert!(r.tool_results()[2].1);

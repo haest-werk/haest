@@ -62,11 +62,7 @@ pub(crate) async fn panel(gateway: &Gateway) -> Result<(), BoxError> {
 
     // The person types to the helper from the panel, and the panel shows it
     // as theirs.
-    let typed = AgentMessage {
-        from: Sender::Person("owner".into()),
-        to: name.clone(),
-        text: ASKED.into(),
-    };
+    let typed = AgentMessage::new(Sender::Person("owner".into()), name.clone(), ASKED);
     let said = hub.deliver(typed.clone())?;
     assert_eq!(
         said,

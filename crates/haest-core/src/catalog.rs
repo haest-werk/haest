@@ -151,8 +151,21 @@ impl Reasoning {
 
 /// A model's price in USD per 1M tokens, for a provider whose API returns no
 /// cost of its own ([`book_priced_cost`](crate::provider::book_priced_cost)).
+///
+/// Built with [`new`](Self::new) and [`with_cache_write`](Self::with_cache_write),
+/// so a price it gains later (for reasoning, for a search) breaks no host; its
+/// fields read as they are.
+///
+/// ```
+/// use haest_core::catalog::ModelPricing;
+///
+/// // $3 in, $0.30 from the cache, $15 out; a cache write costs $3.75.
+/// let price = ModelPricing::new(3.0, 0.3, 15.0).with_cache_write(3.75);
+/// assert_eq!(price.cache_write, Some(3.75));
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct ModelPricing {
     /// Uncached input tokens.
     pub input: f64,
@@ -165,10 +178,48 @@ pub struct ModelPricing {
     pub cache_write: Option<f64>,
 }
 
+impl ModelPricing {
+    /// `input`, `cached_input` and `output` USD per 1M tokens, in that
+    /// order; a cache write is billed as input.
+    pub fn new(input: f64, cached_input: f64, output: f64) -> Self {
+        Self {
+            input,
+            cached_input,
+            output,
+            cache_write: None,
+        }
+    }
+
+    /// Cache writes at `usd` per 1M tokens, not as input.
+    #[must_use]
+    pub fn with_cache_write(mut self, usd: f64) -> Self {
+        self.cache_write = Some(usd);
+        self
+    }
+}
+
 /// One model as a catalog lists it: its spec, what it takes, and what is known
 /// about its reasoning and price.
+///
+/// Built with [`new`](Self::new) and the `with_*` setters, so a part it gains
+/// later breaks no host; its fields read as they are.
+///
+/// ```
+/// use haest_core::{
+///     InputModality,
+///     catalog::{ModelInfo, ModelPricing},
+/// };
+///
+/// let row = ModelInfo::new("openrouter:example/model-1", 200_000)
+///     .with_label("Example Model 1")
+///     .with_input([InputModality::Text, InputModality::Image])
+///     .with_pricing(ModelPricing::new(3.0, 0.3, 15.0));
+/// assert_eq!(row.label, "Example Model 1");
+/// assert_eq!(row.reasoning, None, "unknown: the effort is sent as asked");
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct ModelInfo {
     /// `provider:model`, exactly what a model spec takes.
     pub spec: String,
@@ -186,11 +237,68 @@ pub struct ModelInfo {
     pub pricing: Option<ModelPricing>,
 }
 
+impl ModelInfo {
+    /// The model `spec` serving `context_window` tokens: labelled with its
+    /// spec, taking text only, its reasoning unknown and unpriced.
+    pub fn new(spec: impl Into<String>, context_window: u64) -> Self {
+        let spec = spec.into();
+        Self {
+            label: spec.clone(),
+            spec,
+            input: vec![InputModality::Text],
+            context_window,
+            reasoning: None,
+            pricing: None,
+        }
+    }
+
+    /// The name a picker shows.
+    #[must_use]
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = label.into();
+        self
+    }
+
+    /// What the model accepts as input, in place of text only.
+    #[must_use]
+    pub fn with_input(mut self, input: impl IntoIterator<Item = InputModality>) -> Self {
+        self.input = input.into_iter().collect();
+        self
+    }
+
+    /// How the model reasons.
+    #[must_use]
+    pub fn with_reasoning(mut self, reasoning: Reasoning) -> Self {
+        self.reasoning = Some(reasoning);
+        self
+    }
+
+    /// What the model costs.
+    #[must_use]
+    pub fn with_pricing(mut self, pricing: ModelPricing) -> Self {
+        self.pricing = Some(pricing);
+        self
+    }
+}
+
 /// A labelled group of models, as a picker shows them (by vendor, say).
+///
+/// Built with [`new`](Self::new), so a part it gains later breaks no host.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ModelGroup {
     /// The group's heading.
     pub label: String,
     /// The group's models, in the order a picker lists them.
     pub models: Vec<ModelInfo>,
+}
+
+impl ModelGroup {
+    /// The group `label` of `models`, in the order a picker lists them.
+    pub fn new(label: impl Into<String>, models: impl IntoIterator<Item = ModelInfo>) -> Self {
+        Self {
+            label: label.into(),
+            models: models.into_iter().collect(),
+        }
+    }
 }

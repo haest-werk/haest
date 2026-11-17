@@ -95,12 +95,7 @@ fn effort_is_fitted_on_the_wire_and_cost_booked_from_the_entry() {
     );
     assert_eq!(
         opts.pricing.get("m1"),
-        Some(&ModelPricing {
-            input: 1.0,
-            cached_input: 0.5,
-            output: 2.0,
-            cache_write: None
-        })
+        Some(&ModelPricing::new(1.0, 0.5, 2.0))
     );
 }
 

@@ -38,11 +38,7 @@ const EXPLORE: [&str; 4] = ["Read", "Glob", "Grep", "notebook_search"];
 pub(crate) const HELPER_MODEL: &str = "gateway:anthropic/claude-haiku-5";
 
 /// The node's caps on one helper run.
-pub(crate) const HELPER_CAPS: MemberCaps = MemberCaps {
-    usd: 0.25,
-    steps: 10,
-    time: Duration::from_secs(120),
-};
+pub(crate) const HELPER_CAPS: MemberCaps = MemberCaps::new(0.25, 10, Duration::from_secs(120));
 
 /// The caps on the notebook's helper tree: one level deep, two at once.
 pub(crate) fn tree_caps() -> SubagentCaps {

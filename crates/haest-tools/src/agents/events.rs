@@ -72,9 +72,20 @@ pub enum SubagentEvent {
 /// SendMessage hands one from the agent that called it to
 /// [`AgentDirectory::deliver`](super::AgentDirectory::deliver); a host lets
 /// the person write to an agent with one from [`Sender::Person`]
-/// ([`SubagentHub::deliver`](super::SubagentHub::deliver)). Its fields are
-/// named, so the sender and the receiver cannot trade places unseen.
+/// ([`SubagentHub::deliver`](super::SubagentHub::deliver)). The sender is a
+/// [`Sender`], so it cannot trade places with the receiver unseen. Built with
+/// [`new`](Self::new), so a part it gains later breaks no host; its fields
+/// read as they are.
+///
+/// ```
+/// use haest_tools::{AgentMessage, MAIN_AGENT, Sender};
+///
+/// let from = Sender::Person("Operator".into());
+/// let note = AgentMessage::new(from, MAIN_AGENT, "Use the staging database.");
+/// assert_eq!(note.to, "main");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AgentMessage {
     /// Who wrote it.
     pub from: Sender,
@@ -82,4 +93,17 @@ pub struct AgentMessage {
     pub to: String,
     /// What it says.
     pub text: String,
+}
+
+impl AgentMessage {
+    /// `text` from `from` to the agent `to` ([`MAIN_AGENT`](super::MAIN_AGENT)
+    /// or a subagent's name). A `to` that names no agent is refused when it
+    /// is delivered.
+    pub fn new(from: Sender, to: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            from,
+            to: to.into(),
+            text: text.into(),
+        }
+    }
 }
