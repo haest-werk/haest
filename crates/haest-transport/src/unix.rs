@@ -162,7 +162,9 @@ const ACCEPT_PAUSE: Duration = Duration::from_millis(100);
 /// out of descriptors for a moment, a client gone before it was accepted),
 /// so the loop pauses and accepts again. A connection whose `serve`
 /// panicked (the host's backend has a bug) ends the transport with that
-/// panic, which [`Attached::ended`] raises again for the host.
+/// panic, which [`Attached::ended`] raises again for the host. After the
+/// conversation ended, while the connections get their last second, the
+/// first such panic is kept and raised once they are done.
 async fn accept(
     listener: UnixListener,
     files: Files,
@@ -195,10 +197,20 @@ async fn accept(
         }
     };
     drop(listener);
+    let mut panicked = None;
     let _ = tokio::time::timeout(FLUSH_GRACE, async {
-        while conns.join_next().await.is_some() {}
+        while let Some(joined) = conns.join_next().await {
+            if let Err(e) = joined
+                && e.is_panic()
+            {
+                panicked.get_or_insert(e.into_panic());
+            }
+        }
     })
     .await;
+    if let Some(panic) = panicked {
+        std::panic::resume_unwind(panic);
+    }
     why
 }
 

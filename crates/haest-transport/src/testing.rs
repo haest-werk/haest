@@ -67,10 +67,13 @@ type HistoryHook =
 
 /// A host's own backend over a session: every call goes to the session but
 /// `history`, which the test writes (to count the calls that wait, or to
-/// break it).
+/// break it), and, when the test breaks it, `subscribe`.
 pub(crate) struct Hooked {
     inner: SessionHandle<Agent>,
     history: Box<HistoryHook>,
+    /// `subscribe` panics for the frames a peer asks for; the transport's
+    /// own wait for the end (from `u64::MAX`) still subscribes.
+    subscribe_panics: bool,
 }
 
 impl Hooked {
@@ -84,6 +87,7 @@ impl Hooked {
         Self {
             inner,
             history: Box::new(history),
+            subscribe_panics: false,
         }
     }
 
@@ -92,6 +96,17 @@ impl Hooked {
         Self::new(inner, |_| {
             Box::pin(async { panic!("the host's backend has a bug") })
         })
+    }
+
+    /// A backend whose `subscribe` panics for the frames a peer asks for: a
+    /// host's own bug, met on the connection's own task.
+    pub(crate) fn panicking_on_subscribe(inner: SessionHandle<Agent>) -> Self {
+        Self {
+            subscribe_panics: true,
+            ..Self::new(inner, |inner| {
+                Box::pin(async move { inner.history().await })
+            })
+        }
     }
 }
 
@@ -113,6 +128,9 @@ impl Backend for Hooked {
         self.inner.answer(ask, answer)
     }
     fn subscribe(&self, after: u64) -> Subscription {
+        if self.subscribe_panics && after != u64::MAX {
+            panic!("the host's backend has a bug");
+        }
         self.inner.subscribe(after)
     }
     async fn snapshot(&self) -> Result<Snapshot, SessionError> {

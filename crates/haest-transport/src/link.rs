@@ -161,9 +161,9 @@ enum Out {
 ///
 /// When `sink`, `source` or `backend` panics, after the connection has
 /// stopped: a host's own bug reaches the host, never reads as the peer
-/// leaving. A request whose backend call panicked is refused with its id
-/// first, so its peer is not left waiting for the reply, and the
-/// connection stops with it.
+/// leaving. A request whose backend call panicked (an `events` request's
+/// `subscribe` among them) is refused with its id first, so its peer is not
+/// left waiting for the reply, and the connection stops with it.
 ///
 /// `backend` is any [`Backend`](haest_session::Backend) (a `session.clone()`),
 /// an `Arc` of one, or a [`BackendRef`].
@@ -192,6 +192,7 @@ pub async fn serve(
         tasks: JoinSet::new(),
         placing: None,
         held: Arc::default(),
+        panicked: None,
     };
     // Why the connection stopped, or the request whose backend call
     // panicked. No hello: the conversation, or the peer, is already gone.
@@ -213,6 +214,9 @@ pub async fn serve(
         let grace = tokio::time::sleep(FLUSH_GRACE);
         tokio::pin!(grace);
         loop {
+            if let Some(panicked) = link.panicked.take() {
+                break Err(panicked);
+            }
             if let Some(why) = why.take_if(|_| link.tasks.is_empty()) {
                 break Ok(why);
             }
@@ -251,7 +255,7 @@ pub async fn serve(
         }
     };
     // Its request is still answered, as far as the peer takes it.
-    if let Some(id) = stopped.as_ref().err().map(|p| p.id.clone()) {
+    if let Some(id) = stopped.as_ref().err().and_then(|p| p.id.clone()) {
         let refused = Out::Conn(Outbound::refused(id, BACKEND_PANICKED));
         let _ = tokio::time::timeout(FLUSH_GRACE, link.tx.send(refused)).await;
     }
@@ -275,10 +279,11 @@ pub async fn serve(
 /// The refusal a request gets when the backend panicked serving it.
 const BACKEND_PANICKED: &str = "the backend failed while it served this request";
 
-/// A request whose backend call panicked: its id, still owed a reply, and
-/// the panic, which goes on to the host once the connection has stopped.
+/// A backend call that panicked: the id of its request, still owed a reply
+/// (none for the stream a connection follows from its start), and the
+/// panic, which goes on to the host once the connection has stopped.
 struct Panicked {
-    id: String,
+    id: Option<String>,
     panic: Box<dyn Any + Send>,
 }
 
@@ -322,6 +327,10 @@ struct Link {
     /// Backend calls started and not answered yet: what the session holds
     /// for this peer, against [`MAX_IN_FLIGHT`].
     held: Arc<AtomicUsize>,
+    /// A panic in the backend on `serve`'s own task (`subscribe` for an
+    /// `events`): the connection stops with it before it reads another
+    /// line, as with a backend call's.
+    panicked: Option<Panicked>,
 }
 
 impl Link {
@@ -478,19 +487,30 @@ impl Link {
                     let _ = tx.send(Out::Conn(reply)).await;
                     None
                 }
-                Err(panic) => Some(Panicked { id: owed, panic }),
+                Err(panic) => Some(Panicked {
+                    id: Some(owed),
+                    panic,
+                }),
             }
         });
     }
 
     /// The frames after `after` (a `gap` first if the ring lost some), then
     /// the reply to `id`, then with `follow` every new one. Replaces what the
-    /// peer asked for before.
+    /// peer asked for before. A panic in the backend's `subscribe`, which
+    /// runs here on `serve`'s task, is kept for `serve` to stop with.
     fn events(&mut self, id: Option<String>, after: u64, follow: bool) {
         // The one it replaces stops as it drops.
         self.pump = None;
         self.follows += 1;
-        let sub = self.backend.subscribe(after);
+        let subscribed = panic::catch_unwind(AssertUnwindSafe(|| self.backend.subscribe(after)));
+        let sub = match subscribed {
+            Ok(sub) => sub,
+            Err(panic) => {
+                self.panicked = Some(Panicked { id, panic });
+                return;
+            }
+        };
         let mark = Mark::new(self.written.clone(), self.follows, sub.last_seq());
         // A request in flight like any other, until the pump has replied:
         // input that ends now still gets the catch-up and its reply, and a
