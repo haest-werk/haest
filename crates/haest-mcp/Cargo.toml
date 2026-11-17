@@ -37,6 +37,9 @@ rmcp = { version = "3.9", default-features = false, features = [
     "reqwest-tls-no-provider",
 ] }
 haest-http = { workspace = true, features = ["reqwest"] }
+# The event type rmcp's HTTP client trait names; already in the tree through
+# rmcp. Named only to wrap reqwest's client so its errors lose the URL's key.
+sse-stream = "0.2"
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }

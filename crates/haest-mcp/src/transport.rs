@@ -2,6 +2,8 @@
 //! streamable HTTP. Building one can fail (no such program, a header HTTP cannot
 //! carry); that failure is the server's, never the hub's.
 
+mod scrubbed;
+
 use std::{collections::BTreeMap, io, path::Path, process::Stdio, sync::OnceLock};
 
 use haest_core::ChildEnv;
@@ -19,6 +21,7 @@ use rmcp::transport::{
 };
 
 use crate::McpStartError;
+use scrubbed::ScrubbedClient;
 
 /// `command args...` with the host's handed env plus the server's own `env`
 /// over it -- not this process's environment -- in `cwd`. A bare command is
@@ -79,15 +82,17 @@ pub(crate) fn header_map(
         .collect()
 }
 
-/// Streamable HTTP to `url`, `headers` on every request.
+/// Streamable HTTP to `url`, `headers` on every request. An error names the
+/// URL without its query, fragment or userinfo ([`ScrubbedClient`]): a key
+/// may ride in one.
 pub(crate) fn http(
     url: &str,
     headers: &BTreeMap<String, String>,
-) -> Result<StreamableHttpClientTransport<reqwest::Client>, McpStartError> {
+) -> Result<StreamableHttpClientTransport<ScrubbedClient>, McpStartError> {
     let headers = header_map(headers)?;
     let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(headers);
     Ok(StreamableHttpClientTransport::with_client(
-        http_client()?,
+        ScrubbedClient(http_client()?),
         config,
     ))
 }

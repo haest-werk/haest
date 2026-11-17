@@ -1054,6 +1054,7 @@ dependencies = [
  "haest-http",
  "rmcp",
  "serde_json",
+ "sse-stream",
  "thiserror",
  "tokio",
  "tokio-util",

@@ -249,6 +249,15 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   (`?key=...`) in its text and its Debug output. The URL in an
   `HttpError`'s cause now has no query, no fragment and no userinfo; the
   host and path still say where the request went.
+- An MCP server reached over HTTP with its key in the URL
+  (`https://mcp.example.com/mcp?api_key=...`) showed the key whenever a
+  request to it failed: in `McpStartError`'s cause (so in `report`, the
+  hub's log line and `McpHub`'s Debug output), in the warning haest-runtime
+  gives for a server that did not start, which the `haest` command puts
+  into the session stream (`--json`, `haest ctl`, the broker), and in a
+  failed tool call's answer to the model. rmcp's HTTP client now runs on a
+  reqwest client whose errors name the URL without its query, fragment or
+  userinfo.
 
 ### Behaviour changes
 
