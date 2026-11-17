@@ -2,6 +2,8 @@
 //! processes, a real process group), plus what the Rust hub adds: any workspace
 //! runs a job, and dropping the hub kills what runs.
 
+mod panics;
+
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},

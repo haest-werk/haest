@@ -132,6 +132,11 @@ pub enum JobOutput<'a> {
 /// Called as things happen (a start from [`JobHub::start`], the rest from the
 /// job's own task), never while the hub's table is locked: a handler may call
 /// the hub back.
+///
+/// A panic in [`on_output`](Self::on_output) does not stop the job: that
+/// handler hears no more of its output (the buffer still keeps it), the job
+/// ends as it would have and is reported ended, then the panic goes on, on
+/// the job's own task.
 pub trait JobEvents: Send + Sync {
     /// Every start and stop: the full set of running jobs, never a delta.
     /// One call at a time, and never an older set after a newer one: the

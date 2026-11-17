@@ -1,13 +1,20 @@
 //! One job's own task: it runs the command through the workspace, streams its
 //! output into the table, and reports the end (an exit notice to the inbox
 //! when it exited on its own).
+//!
+//! A panic on the way, in a host's [`JobEvents::on_output`](super::JobEvents::on_output)
+//! or in the workspace, never skips the end: the job is reported ended,
+//! then the panic goes on, as the session and the transport raise a host's.
 
 use std::{
+    any::Any,
+    panic::{self, AssertUnwindSafe},
     path::PathBuf,
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
+use futures::FutureExt;
 use haest_core::{
     newest::Newest,
     workspace::{ExecOptions, OutputChunks, WorkspaceRef},
@@ -19,6 +26,11 @@ use crate::inbox::InboxRef;
 
 /// A job has no timeout; this only keeps the deadline arithmetic finite.
 const NO_DEADLINE: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+/// The exit code of a job whose workspace panicked: it ended, how is unknown.
+const EXIT_UNKNOWN: i32 = -1;
+
+/// What `catch_unwind` hands over: the payload a panic carries.
+type Panic = Box<dyn Any + Send>;
 
 /// What a hub and its jobs' tasks share.
 pub(super) struct Shared {
@@ -92,14 +104,12 @@ impl Shared {
         }
     }
 
-    fn output(&self, id: &str, chunk: &str) {
-        let job = {
-            let mut jobs = self.lock_jobs();
-            let Some(e) = jobs.get_mut(id) else { return };
-            e.append(chunk);
-            e.job.clone()
-        };
-        self.events().on_output(&job, JobOutput::Chunk(chunk));
+    /// Keep `chunk` in job `id`'s buffer; the job as it stands then.
+    fn append(&self, id: &str, chunk: &str) -> Option<Job> {
+        let mut jobs = self.lock_jobs();
+        let e = jobs.get_mut(id)?;
+        e.append(chunk);
+        Some(e.job.clone())
     }
 
     /// Hand the listener in place the running set put last, unless another
@@ -134,6 +144,42 @@ impl Shared {
     }
 }
 
+/// Where one job's output goes: its buffer, then the listener. A listener
+/// that panics hears no more of this job's output, and the job runs on (its
+/// output still kept, a real process still read): the panic is kept for
+/// [`run`] to raise once the job has ended.
+struct Output {
+    shared: Arc<Shared>,
+    id: String,
+    panicked: Mutex<Option<Panic>>,
+}
+
+impl Output {
+    fn chunk(&self, chunk: &str) {
+        let Some(job) = self.shared.append(&self.id, chunk) else {
+            return;
+        };
+        if self.panicked().is_some() {
+            return;
+        }
+        let events = self.shared.events();
+        let heard = panic::catch_unwind(AssertUnwindSafe(|| {
+            events.on_output(&job, JobOutput::Chunk(chunk));
+        }));
+        if let Err(panic) = heard {
+            self.panicked().get_or_insert(panic);
+        }
+    }
+
+    /// The listener's panic, if it panicked. Held only to read or set it,
+    /// never while the listener runs, so a poisoned one is a bug here.
+    fn panicked(&self) -> MutexGuard<'_, Option<Panic>> {
+        self.panicked
+            .lock()
+            .expect("the job output's panic lock poisoned")
+    }
+}
+
 /// Run `job` until it exits or `stop` fires (the workspace kills it then).
 pub(super) async fn run(
     shared: Arc<Shared>,
@@ -142,11 +188,21 @@ pub(super) async fn run(
     cwd: PathBuf,
     stop: CancellationToken,
 ) {
-    let (to, id) = (shared.clone(), job.id.clone());
-    let on_output = OutputChunks::from(move |chunk: &str| to.output(&id, chunk));
+    let output = Arc::new(Output {
+        shared: shared.clone(),
+        id: job.id.clone(),
+        panicked: Mutex::default(),
+    });
+    let on_output = OutputChunks::from({
+        let output = output.clone();
+        move |chunk: &str| output.chunk(chunk)
+    });
     let opts = ExecOptions::new(cwd, NO_DEADLINE).with_cancel(stop);
-    let r = workspace
-        .shell_streaming(&job.command, opts, on_output)
+    let ran = AssertUnwindSafe(workspace.shell_streaming(&job.command, opts, on_output))
+        .catch_unwind()
         .await;
-    shared.finish(&job.id, r.exit_code);
+    shared.finish(&job.id, ran.as_ref().map_or(EXIT_UNKNOWN, |r| r.exit_code));
+    if let Some(panic) = ran.err().or_else(|| output.panicked().take()) {
+        panic::resume_unwind(panic);
+    }
 }
