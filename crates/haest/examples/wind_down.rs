@@ -107,7 +107,7 @@ async fn run() {
         max_usd: 1.0,
         max_unpriced_tokens: 0,
     };
-    let ledger = Ledger::new(budget, Arc::new(Quiet)).with_remedies(remedies.clone());
+    let ledger = Ledger::new(budget, Quiet).with_remedies(remedies.clone());
     let deps = AgentDeps::new(
         provider.resolver(),
         tools,
@@ -115,7 +115,7 @@ async fn run() {
         "/work",
         ShutWorkspace,
     )
-    .with_ledger(Arc::new(Mutex::new(ledger)))
+    .with_ledger(ledger)
     .with_remedies(remedies)
     // Wind-down is a set of thresholds, beside the guard's nudges.
     .with_thresholds(Thresholds::default().wind_down(settings.wind_down_at));

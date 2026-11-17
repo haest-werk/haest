@@ -3,7 +3,7 @@
 //! summary came out or not; an Esc while it is written ends the turn as
 //! cancelled, with no failure shown.
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use crate::{
     RuntimeHooks,
@@ -22,15 +22,9 @@ use haest_core::Tools;
 
 /// A conversation on `host` whose last request filled the window, so the
 /// next model call compacts first; its ledger has no cap.
-fn full(
-    hooks: &Arc<RuntimeHooks>,
-    provider: impl Into<ProviderRef>,
-) -> (Agent, Arc<Mutex<Ledger>>) {
+fn full(hooks: &Arc<RuntimeHooks>, provider: impl Into<ProviderRef>) -> (Agent, Ledger) {
     let provider = provider.into();
-    let ledger = Arc::new(Mutex::new(Ledger::new(
-        ConversationCaps::default(),
-        hooks.clone(),
-    )));
+    let ledger = Ledger::new(ConversationCaps::default(), hooks.clone());
     let resolve = move |_: &str| -> Result<ResolvedModel, ModelError> {
         Ok(ResolvedModel::new(provider.clone(), "m"))
     };
@@ -67,7 +61,7 @@ async fn a_failed_compaction_goes_on_the_conversations_bill_once() {
     let end = turn(&mut agent).await;
     assert_eq!(end.stop_reason, StopReason::Error, "{:?}", end.error);
     assert_eq!(replies.requests().len(), 2, "the warm and the cold summary");
-    assert_eq!(ledger.lock().unwrap().usd(), 0.75);
+    assert_eq!(ledger.usd(), 0.75);
 }
 
 /// The human presses Esc as each request goes out, once `control` is set.

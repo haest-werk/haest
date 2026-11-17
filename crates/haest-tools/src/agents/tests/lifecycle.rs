@@ -45,7 +45,7 @@ pub struct Lifecycle {
 #[derive(Default)]
 pub struct Kept {
     pub messages: Mutex<Vec<Message>>,
-    pub ledger: Mutex<Option<Arc<Mutex<Ledger>>>>,
+    pub ledger: Mutex<Option<Ledger>>,
 }
 
 impl AgentHooks for Kept {
@@ -88,10 +88,7 @@ impl Lifecycle {
             return Err(AgentError::Refused(format!("no {word} here")));
         }
         let deps = self.own_deps.then(|| {
-            let ledger = Arc::new(Mutex::new(Ledger::new(
-                ConversationCaps::default(),
-                Arc::new(Quiet),
-            )));
+            let ledger = Ledger::new(ConversationCaps::default(), Quiet);
             *self.kept.ledger.lock().unwrap() = Some(ledger.clone());
             parent
                 .deps()

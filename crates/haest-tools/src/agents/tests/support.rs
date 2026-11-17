@@ -76,10 +76,7 @@ impl Rig {
         let parent = Arc::new(FakeParent {
             provider,
             ws: TestWorkspace::with_files([("/p/a.txt", "a")]),
-            ledger: Arc::new(Mutex::new(Ledger::new(
-                ConversationCaps::default(),
-                Arc::new(Quiet),
-            ))),
+            ledger: Ledger::new(ConversationCaps::default(), Quiet),
             tx,
             activity: Mutex::default(),
             events: Mutex::default(),

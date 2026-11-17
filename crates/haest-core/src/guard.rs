@@ -30,11 +30,7 @@ mod state;
 mod tests;
 mod turn_site;
 
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::HashSet, time::Duration};
 
 use signature::signature;
 
@@ -71,7 +67,7 @@ struct Repeat {
 /// stop.
 pub(crate) struct TurnGuard {
     clock: ClockRef,
-    ledger: Option<Arc<Mutex<Ledger>>>,
+    ledger: Option<Ledger>,
     remedies: Remedies,
     started: u64,
     steps: u64,
@@ -91,7 +87,7 @@ impl TurnGuard {
     /// A stop's text ends with the host's remedy for its cap.
     pub(crate) fn new(
         clock: impl Into<ClockRef>,
-        ledger: Option<Arc<Mutex<Ledger>>>,
+        ledger: Option<Ledger>,
         remedies: Remedies,
     ) -> Self {
         let clock = clock.into();
@@ -111,7 +107,7 @@ impl TurnGuard {
 
     fn charge(&self, u: &Usage) {
         if let Some(l) = &self.ledger {
-            l.lock().unwrap().charge(u);
+            l.charge(u);
         }
     }
 
@@ -149,7 +145,7 @@ impl TurnGuard {
     /// ledger, a cap, then a threshold that stops it.
     pub(crate) fn stop(&self, usage: &Usage, caps: Option<&TurnCaps>) -> Option<String> {
         let ledger = self.ledger.as_ref();
-        if let Some(why) = ledger.and_then(|l| l.lock().unwrap().exhausted()) {
+        if let Some(why) = ledger.and_then(Ledger::exhausted) {
             return Some(format!("Turn stopped: {why}"));
         }
         let at_cap = self

@@ -12,8 +12,9 @@
 //! are absolute -- the latest wins -- so replaying the session log restores it,
 //! and a cleared conversation carries it forward.
 //!
-//! A host makes a [`Ledger`] and shares it as `Arc<Mutex<Ledger>>` on
-//! [`SharedDeps::ledger`](crate::SharedDeps::ledger). The turn guard charges
+//! A host makes a [`Ledger`], a cheap `Clone` whose clones are the one
+//! ledger, and hands a clone to [`SharedDeps::with_ledger`](crate::SharedDeps::with_ledger)
+//! (a subagent shares its parent's). The turn guard charges
 //! every model call and tool spend to it, and stops a turn before its next
 //! model call once [`Ledger::exhausted`] says so. A host's way to raise a cap
 //! ([`Ledger::with_remedies`]) ends the message that says so.
@@ -28,7 +29,7 @@
 
 mod hold;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
 
@@ -59,16 +60,27 @@ pub struct LedgerSnapshot {
 
 /// Where a [`Ledger`] reports: snapshots to persist, warnings for the human.
 ///
-/// Called with the ledger locked: neither method may lock it again.
+/// Called after the ledger has done its sums and let go of them: a hook may
+/// read the ledger it hears from (its [`summary`](Ledger::summary), say).
 pub trait LedgerHooks: Send + Sync {
     /// Save this snapshot (to the session log). Called after every charge
-    /// that billed something and after every cap change.
+    /// that billed something and after every cap change, one call at a time
+    /// and never an older snapshot after a newer one, so the last one saved
+    /// is the ledger's state. It may read the ledger, but must not charge it
+    /// or set its cap.
     fn persist(&self, snapshot: &LedgerSnapshot);
     /// The human must hear this (once per crossing).
     ///
     /// A crossing is the spend reaching a warning threshold, 80% of a cap by
     /// default; setting a new cap re-arms it.
     fn warn(&self, text: &str);
+}
+
+crate::plug_ref! {
+    /// [`LedgerHooks`], shared: what a [`Ledger`] reports to. Built from the
+    /// hooks themselves, or from an `Arc` of the host's object that fills
+    /// other slots too.
+    pub struct LedgerHooksRef(dyn LedgerHooks);
 }
 
 const STAYS: &str = "Posting again will not reset it.";
@@ -79,6 +91,10 @@ const USD: Meter = Meter::Usd(Scope::Conversation);
 const TOKENS: Meter = Meter::Tokens(Scope::Conversation);
 
 /// What one conversation has spent across all its turns, and its caps.
+///
+/// A cheap `Clone`: every clone is the same ledger, so the host keeps one to
+/// read and raise while the agent and its subagents charge theirs. Every
+/// method takes `&self`.
 ///
 /// # Examples
 ///
@@ -103,7 +119,7 @@ const TOKENS: Meter = Meter::Tokens(Scope::Conversation);
 ///
 /// let warnings = Arc::new(Warnings::default());
 /// let caps = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
-/// let mut ledger = Ledger::new(caps, warnings.clone());
+/// let ledger = Ledger::new(caps, warnings.clone());
 ///
 /// ledger.charge(&Usage { cost_usd: Some(0.85), ..Usage::default() });
 /// assert_eq!(warnings.0.lock().unwrap().len(), 1); // past 80% of the cap: warned once
@@ -115,40 +131,83 @@ const TOKENS: Meter = Meter::Tokens(Scope::Conversation);
 /// ledger.set_cap(ConversationCap::Usd(2.0)); // the human raises it
 /// assert!(ledger.exhausted().is_none());
 /// ```
+#[derive(Clone)]
 pub struct Ledger {
+    state: Arc<Mutex<State>>,
+    hooks: LedgerHooksRef,
+    /// Held while a snapshot is persisted: one at a time, in order.
+    persisted: Arc<Mutex<u64>>,
+}
+
+/// A ledger's sums, behind its lock.
+struct State {
     usd: f64,
     unpriced_tokens: u64,
     set: ConversationCapOverrides,
     warnings: Watch<LedgerSite>,
     defaults: ConversationCaps,
-    hooks: Arc<dyn LedgerHooks>,
     remedies: Remedies,
     /// USD held for spenders running now ([`Ledger::reserve`]), and how many holds.
     held: f64,
     holds: usize,
+    /// Bumped at every snapshot taken to persist, so an older one is never
+    /// saved after a newer one.
+    version: u64,
+}
+
+/// What a change hands the hooks once the ledger is unlocked: the snapshot
+/// to persist (with its version) and the warnings due.
+#[must_use]
+struct Report {
+    snapshot: Option<(u64, LedgerSnapshot)>,
+    warnings: Vec<String>,
 }
 
 impl Ledger {
     /// An empty ledger with `defaults` as its caps; `hooks` hear every charge
     /// and every new cap.
-    pub fn new(defaults: ConversationCaps, hooks: Arc<dyn LedgerHooks>) -> Self {
-        Self {
+    pub fn new(defaults: ConversationCaps, hooks: impl Into<LedgerHooksRef>) -> Self {
+        let state = State {
             usd: 0.0,
             unpriced_tokens: 0,
             set: ConversationCapOverrides::default(),
             warnings: Watch::default(),
             defaults,
-            hooks,
             remedies: Remedies::default(),
             held: 0.0,
             holds: 0,
+            version: 0,
+        };
+        Self {
+            state: Arc::new(Mutex::new(state)),
+            hooks: hooks.into(),
+            persisted: Arc::default(),
+        }
+    }
+
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().expect("ledger lock poisoned")
+    }
+
+    /// Hand the hooks what a change left them, the ledger unlocked.
+    fn report(&self, report: Report) {
+        if let Some((version, snapshot)) = report.snapshot {
+            let mut last = self.persisted.lock().expect("ledger lock poisoned");
+            if version > *last {
+                *last = version;
+                self.hooks.persist(&snapshot);
+            }
+        }
+        for text in report.warnings {
+            self.hooks.warn(&text);
         }
     }
 
     /// The host's way to raise a cap, added to the message that the cap is
     /// reached ([`exhausted`](Self::exhausted)) or near (the warning).
-    pub fn with_remedies(mut self, remedies: Remedies) -> Self {
-        self.remedies = remedies;
+    #[must_use]
+    pub fn with_remedies(self, remedies: Remedies) -> Self {
+        self.state().remedies = remedies;
         self
     }
 
@@ -156,8 +215,6 @@ impl Ledger {
     /// warnings ([`LedgerSite`]). What is spent already counts as heard.
     ///
     /// ```
-    /// use std::sync::Arc;
-    ///
     /// use haest_core::{
     ///     caps::ConversationCaps,
     ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
@@ -172,52 +229,47 @@ impl Ledger {
     ///
     /// // A ledger that never warns, only stops at its cap.
     /// let caps = ConversationCaps { max_usd: 10.0, max_unpriced_tokens: 0 };
-    /// let ledger = Ledger::new(caps, Arc::new(Quiet)).with_thresholds(Thresholds::<LedgerSite>::none());
+    /// let ledger = Ledger::new(caps, Quiet).with_thresholds(Thresholds::<LedgerSite>::none());
     /// ```
-    pub fn with_thresholds(mut self, thresholds: Thresholds<LedgerSite>) -> Self {
-        self.warnings = Watch::new(thresholds);
-        self.rearm();
+    #[must_use]
+    pub fn with_thresholds(self, thresholds: Thresholds<LedgerSite>) -> Self {
+        {
+            let mut state = self.state();
+            state.warnings = Watch::new(thresholds);
+            state.rearm();
+        }
         self
     }
 
     /// USD spent by calls that reported a price.
     pub fn usd(&self) -> f64 {
-        self.usd
+        self.state().usd
     }
 
     /// Tokens billed by calls that reported no price.
     pub fn unpriced_tokens(&self) -> u64 {
-        self.unpriced_tokens
+        self.state().unpriced_tokens
     }
 
     /// The caps in force: each one the human set, else the default.
     pub fn caps(&self) -> ConversationCaps {
-        ConversationCaps {
-            max_usd: self.set.max_usd.unwrap_or(self.defaults.max_usd),
-            max_unpriced_tokens: self
-                .set
-                .max_unpriced_tokens
-                .unwrap_or(self.defaults.max_unpriced_tokens),
-        }
+        self.state().caps()
     }
 
     /// The state to persist; `caps` names only what the human set.
     pub fn snapshot(&self) -> LedgerSnapshot {
-        LedgerSnapshot {
-            usd: self.usd,
-            unpriced_tokens: self.unpriced_tokens,
-            caps: (!self.set.is_empty()).then_some(self.set),
-        }
+        self.state().snapshot()
     }
 
     /// Take a snapshot's state (replaying a session log); persists nothing.
     /// A spend already past 80% of a cap does not warn again. Holds stay:
     /// they are this process's spenders, never in a snapshot.
-    pub fn restore(&mut self, s: &LedgerSnapshot) {
-        self.usd = s.usd;
-        self.unpriced_tokens = s.unpriced_tokens;
-        self.set = s.caps.unwrap_or_default();
-        self.rearm();
+    pub fn restore(&self, s: &LedgerSnapshot) {
+        let mut state = self.state();
+        state.usd = s.usd;
+        state.unpriced_tokens = s.unpriced_tokens;
+        state.set = s.caps.unwrap_or_default();
+        state.rearm();
     }
 
     /// One model call's bill, or a tool's own spend.
@@ -225,32 +277,48 @@ impl Ledger {
     /// A priced call adds its USD; an unpriced one its billed tokens. Then
     /// the snapshot is persisted and the human warned at a crossing; a call
     /// with neither a price nor tokens changes nothing.
-    pub fn charge(&mut self, u: &Usage) {
-        match u.cost_usd {
-            Some(c) => self.usd += c,
-            None => self.unpriced_tokens = self.unpriced_tokens.saturating_add(u.context_tokens()),
-        }
-        if u.cost_usd.is_none() && u.context_tokens() == 0 {
-            return;
-        }
-        self.hooks.persist(&self.snapshot());
-        self.maybe_warn();
+    pub fn charge(&self, u: &Usage) {
+        let report = {
+            let mut state = self.state();
+            match u.cost_usd {
+                Some(c) => state.usd += c,
+                None => {
+                    state.unpriced_tokens = state.unpriced_tokens.saturating_add(u.context_tokens())
+                }
+            }
+            if u.cost_usd.is_none() && u.context_tokens() == 0 {
+                return;
+            }
+            Report {
+                snapshot: Some(state.versioned_snapshot()),
+                warnings: state.due_warnings(),
+            }
+        };
+        self.report(report);
     }
 
     /// A new cap, from the human. The warning re-arms, so the next crossing is heard too.
-    pub fn set_cap(&mut self, cap: ConversationCap) {
-        match cap {
-            ConversationCap::Usd(v) => self.set.max_usd = Some(v),
-            ConversationCap::UnpricedTokens(v) => self.set.max_unpriced_tokens = Some(v),
-        }
-        self.rearm();
-        self.hooks.persist(&self.snapshot());
+    pub fn set_cap(&self, cap: ConversationCap) {
+        let report = {
+            let mut state = self.state();
+            match cap {
+                ConversationCap::Usd(v) => state.set.max_usd = Some(v),
+                ConversationCap::UnpricedTokens(v) => state.set.max_unpriced_tokens = Some(v),
+            }
+            state.rearm();
+            Report {
+                snapshot: Some(state.versioned_snapshot()),
+                warnings: Vec::new(),
+            }
+        };
+        self.report(report);
     }
 
     /// Why no further model call may go out in this conversation, or None.
     /// The text ends with the host's remedy, if it has one.
     pub fn exhausted(&self) -> Option<String> {
-        let [usd, tokens] = self.readings();
+        let state = self.state();
+        let [usd, tokens] = state.readings();
         let at_cap = |r: &Reading| Mark::share(1.0).reached(r);
         let (r, text) = if at_cap(&usd) {
             let (spent, cap) = (usd.value, usd.cap.unwrap_or_default());
@@ -266,7 +334,7 @@ impl Ledger {
         } else {
             return None;
         };
-        Some(r.remedied(text, &self.remedies))
+        Some(r.remedied(text, &state.remedies))
     }
 
     /// One line for the human: what was spent of each cap, "(no cap)" for
@@ -278,6 +346,36 @@ impl Ledger {
 
     /// The conversation's USD and unpriced tokens against the caps in force.
     pub(crate) fn readings(&self) -> [Reading; 2] {
+        self.state().readings()
+    }
+}
+
+impl State {
+    fn caps(&self) -> ConversationCaps {
+        ConversationCaps {
+            max_usd: self.set.max_usd.unwrap_or(self.defaults.max_usd),
+            max_unpriced_tokens: self
+                .set
+                .max_unpriced_tokens
+                .unwrap_or(self.defaults.max_unpriced_tokens),
+        }
+    }
+
+    fn snapshot(&self) -> LedgerSnapshot {
+        LedgerSnapshot {
+            usd: self.usd,
+            unpriced_tokens: self.unpriced_tokens,
+            caps: (!self.set.is_empty()).then_some(self.set),
+        }
+    }
+
+    /// The snapshot to persist, numbered after every one taken before it.
+    fn versioned_snapshot(&mut self) -> (u64, LedgerSnapshot) {
+        self.version += 1;
+        (self.version, self.snapshot())
+    }
+
+    fn readings(&self) -> [Reading; 2] {
         let caps = self.caps();
         let reading = |meter, value: f64, cap: f64, limit| Reading {
             meter,
@@ -309,15 +407,16 @@ impl Ledger {
             .settle(|m| readings.into_iter().find(|r| r.meter == m));
     }
 
-    fn maybe_warn(&mut self) {
+    /// The warnings a charge crossed, each ending with the host's remedy.
+    fn due_warnings(&mut self) -> Vec<String> {
         let readings = self.readings();
         let due = self.warnings.check(
             |m| readings.into_iter().find(|r| r.meter == m),
             Action::Warn,
         );
-        for crossing in due {
-            self.hooks.warn(&crossing.remedied_text(&self.remedies));
-        }
+        due.into_iter()
+            .map(|crossing| crossing.remedied_text(&self.remedies))
+            .collect()
     }
 }
 

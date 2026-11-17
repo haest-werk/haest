@@ -257,7 +257,7 @@ async fn the_run_a_start_returns_names_the_members_model_caps_and_deps() {
     // Its deps: their hooks kept its messages, their ledger took its spend.
     assert!(!l.kept.messages.lock().unwrap().is_empty());
     let own = l.kept.ledger.lock().unwrap().clone().unwrap();
-    assert!(close(own.lock().unwrap().usd(), CALL_USD));
+    assert!(close(own.usd(), CALL_USD));
     // Main's two calls on the conversation's ledger, the member's on its own.
-    assert!(close(r.parent.ledger.lock().unwrap().usd(), 2.0 * CALL_USD));
+    assert!(close(r.parent.ledger.usd(), 2.0 * CALL_USD));
 }

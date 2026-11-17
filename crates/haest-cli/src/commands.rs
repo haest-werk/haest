@@ -124,7 +124,7 @@ fn budget(rt: &mut Runtime, args: &str) {
         return rt.hooks.info("This conversation has no ledger.");
     };
     if args.is_empty() {
-        return rt.hooks.info(&ledger.lock().unwrap().summary());
+        return rt.hooks.info(&ledger.summary());
     }
     let (tokens, raw) = match args.split_once(char::is_whitespace) {
         Some((k, v)) if k.eq_ignore_ascii_case("tokens") => (true, v.trim()),
@@ -145,13 +145,11 @@ fn budget(rt: &mut Runtime, args: &str) {
     } else {
         ConversationCap::Usd(value)
     };
-    let mut l = ledger.lock().unwrap();
-    l.set_cap(cap);
-    let state = l
+    ledger.set_cap(cap);
+    let state = ledger
         .exhausted()
         .unwrap_or_else(|| "haest can continue.".into());
-    let text = format!("{} {state}", l.summary());
-    drop(l);
+    let text = format!("{} {state}", ledger.summary());
     rt.hooks.info(&text);
 }
 

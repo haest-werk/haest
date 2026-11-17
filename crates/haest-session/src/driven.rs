@@ -2,7 +2,9 @@
 //! and the plain implementation for a bare [`Agent`].
 
 use async_trait::async_trait;
-use haest_core::{Agent, AgentControl, Effort, EventSink, Message, TurnOutcome, error::BoxError};
+use haest_core::{
+    Agent, AgentControl, Effort, EventSink, Message, TurnOutcome, error::BoxError, ledger::Ledger,
+};
 
 /// What the conversation says about itself between turns.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -184,11 +186,7 @@ impl Driven for Agent {
     }
 
     fn status(&self) -> DrivenStatus {
-        let usd = self
-            .deps()
-            .shared()
-            .ledger()
-            .map(|l| l.lock().unwrap().usd());
+        let usd = self.deps().shared().ledger().map(Ledger::usd);
         DrivenStatus {
             session: String::new(),
             model_spec: self.model_spec().to_string(),

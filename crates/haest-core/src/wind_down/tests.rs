@@ -32,12 +32,12 @@ impl LedgerHooks for Quiet {
 }
 
 /// A conversation budget of `usd`.
-fn ledger(usd: f64) -> Arc<Mutex<Ledger>> {
+fn ledger(usd: f64) -> Ledger {
     let caps = ConversationCaps {
         max_usd: usd,
         max_unpriced_tokens: 0,
     };
-    Arc::new(Mutex::new(Ledger::new(caps, Arc::new(Quiet))))
+    Ledger::new(caps, Quiet)
 }
 
 /// "Spawn": starts new work unless the turn is winding down, then refuses
@@ -102,7 +102,7 @@ fn crossed(
     spent: &Usage,
     elapsed: Duration,
     caps: Option<&TurnCaps>,
-    ledger: Option<&Arc<Mutex<Ledger>>>,
+    ledger: Option<&Ledger>,
     remedies: &Remedies,
 ) -> Option<WindingDown> {
     let now = Arc::new(AtomicU64::new(0));

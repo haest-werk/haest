@@ -7,7 +7,7 @@
 //! refuse what would still have fit, never admit what does not. Holds are not
 //! saved: they belong to spenders of this process.
 
-use super::Ledger;
+use super::{Ledger, State};
 
 /// Slack for float sums: $0.40 must fit in a cap of $1 with $0.60 spent.
 const SLACK: f64 = 1e-9;
@@ -42,14 +42,13 @@ pub struct NotAvailable {
 impl Ledger {
     /// USD held now, for every spender still running.
     pub fn held(&self) -> f64 {
-        self.held
+        self.state().held
     }
 
     /// What a new hold may take: the USD cap in force, less what was spent and
     /// what is held, never below 0. None when there is no USD cap.
     pub fn available(&self) -> Option<f64> {
-        let cap = self.caps().max_usd;
-        (cap > 0.0).then(|| (cap - self.usd - self.held).max(0.0))
+        self.state().available()
     }
 
     /// Hold `usd` (a negative or NaN amount is 0) for a spender about to run;
@@ -57,8 +56,6 @@ impl Ledger {
     /// hold fits.
     ///
     /// ```
-    /// use std::sync::Arc;
-    ///
     /// use haest_core::{
     ///     caps::ConversationCaps,
     ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
@@ -71,20 +68,24 @@ impl Ledger {
     ///     fn warn(&self, _: &str) {}
     /// }
     ///
+    /// # fn main() -> Result<(), haest_core::ledger::NotAvailable> {
     /// let caps = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
-    /// let mut ledger = Ledger::new(caps, Arc::new(Quiet));
-    /// let a = ledger.reserve(0.6).unwrap();
+    /// let ledger = Ledger::new(caps, Quiet);
+    /// let a = ledger.reserve(0.6)?;
     /// let refused = ledger.reserve(0.6).unwrap_err();
     /// assert!((refused.available - 0.4).abs() < 1e-9);
     ///
     /// // The spender paid $0.10 as it ran; at its end the hold goes, the spend stays.
     /// ledger.charge(&Usage { cost_usd: Some(0.1), ..Usage::default() });
     /// ledger.release(a);
-    /// assert!((ledger.available().unwrap() - 0.9).abs() < 1e-9);
+    /// assert_eq!(ledger.available().map(|left| (left * 100.0).round()), Some(90.0));
+    /// # Ok(())
+    /// # }
     /// ```
-    pub fn reserve(&mut self, usd: f64) -> Result<Hold, NotAvailable> {
+    pub fn reserve(&self, usd: f64) -> Result<Hold, NotAvailable> {
         let usd = usd.max(0.0);
-        if let Some(available) = self.available()
+        let mut state = self.state();
+        if let Some(available) = state.available()
             && usd > available + SLACK
         {
             return Err(NotAvailable {
@@ -92,27 +93,33 @@ impl Ledger {
                 available,
             });
         }
-        self.held += usd;
-        self.holds += 1;
+        state.held += usd;
+        state.holds += 1;
         Ok(Hold { usd })
     }
 
     /// Give a hold back. Its spender's real spend stays charged.
-    pub fn release(&mut self, hold: Hold) {
-        self.holds = self.holds.saturating_sub(1);
-        self.held = if self.holds == 0 {
+    pub fn release(&self, hold: Hold) {
+        let mut state = self.state();
+        state.holds = state.holds.saturating_sub(1);
+        state.held = if state.holds == 0 {
             // No float dust left behind once nothing is held.
             0.0
         } else {
-            (self.held - hold.usd).max(0.0)
+            (state.held - hold.usd).max(0.0)
         };
+    }
+}
+
+impl State {
+    fn available(&self) -> Option<f64> {
+        let cap = self.caps().max_usd;
+        (cap > 0.0).then(|| (cap - self.usd - self.held).max(0.0))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
     use crate::{
         caps::ConversationCaps,
@@ -131,10 +138,10 @@ mod tests {
             max_usd,
             max_unpriced_tokens: 0,
         };
-        Ledger::new(caps, Arc::new(Quiet))
+        Ledger::new(caps, Quiet)
     }
 
-    fn spend(l: &mut Ledger, usd: f64) {
+    fn spend(l: &Ledger, usd: f64) {
         l.charge(&Usage {
             cost_usd: Some(usd),
             ..Usage::default()
@@ -147,8 +154,8 @@ mod tests {
 
     #[test]
     fn holds_and_spend_together_never_pass_the_cap_and_a_refusal_says_what_is_left() {
-        let mut l = ledger(1.0);
-        spend(&mut l, 0.2);
+        let l = ledger(1.0);
+        spend(&l, 0.2);
         let a = l.reserve(0.3).unwrap();
         let b = l.reserve(0.3).unwrap();
         assert!(close(l.available().unwrap(), 0.2));
@@ -165,9 +172,9 @@ mod tests {
 
     #[test]
     fn a_release_gives_the_hold_back_and_the_real_spend_stays() {
-        let mut l = ledger(1.0);
+        let l = ledger(1.0);
         let h = l.reserve(0.5).unwrap();
-        spend(&mut l, 0.1);
+        spend(&l, 0.1);
         // Held and spent both count while it runs: refuse rather than overshoot.
         assert!(close(l.available().unwrap(), 0.4));
         l.release(h);
@@ -178,7 +185,7 @@ mod tests {
 
     #[test]
     fn with_no_usd_cap_every_hold_fits_and_a_bad_amount_holds_nothing() {
-        let mut l = ledger(0.0);
+        let l = ledger(0.0);
         assert_eq!(l.available(), None);
         let big = l.reserve(1e9).unwrap();
         let nan = l.reserve(f64::NAN).unwrap();
@@ -192,7 +199,7 @@ mod tests {
 
     #[test]
     fn holds_are_not_saved_and_a_restore_keeps_what_is_held() {
-        let mut l = ledger(1.0);
+        let l = ledger(1.0);
         let h = l.reserve(0.5).unwrap();
         let snapshot = l.snapshot();
         l.restore(&snapshot);

@@ -4,10 +4,7 @@
 //! on the conversation's ledger while the subagent runs, so subagents running
 //! together fit the budget together. Every fit decision is here.
 
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::time::Duration;
 
 use haest_core::{
     ledger::{Hold, Ledger},
@@ -173,14 +170,14 @@ pub(super) fn fit_time(
 
 /// A subagent's USD, held on the conversation's ledger until dropped.
 pub(super) struct HeldBudget {
-    ledger: Arc<Mutex<Ledger>>,
+    ledger: Ledger,
     hold: Option<Hold>,
 }
 
 impl Drop for HeldBudget {
     fn drop(&mut self) {
         if let Some(hold) = self.hold.take() {
-            self.ledger.lock().unwrap().release(hold);
+            self.ledger.release(hold);
         }
     }
 }
@@ -189,26 +186,26 @@ impl Drop for HeldBudget {
 /// with what is left when it does not fit. No ledger, nothing to hold. One
 /// with no spend cap fits only a ledger with no USD cap.
 pub(super) fn hold(
-    ledger: Option<&Arc<Mutex<Ledger>>>,
+    ledger: Option<&Ledger>,
     budget: &SubagentBudget,
 ) -> Result<Option<HeldBudget>, AgentError> {
     let Some(ledger) = ledger else {
         return Ok(None);
     };
-    let mut l = ledger.lock().unwrap();
     if budget.usd <= 0.0
-        && let Some(available) = l.available()
+        && let Some(available) = ledger.available()
     {
         return Err(AgentError::OverBudget {
             asked: 0.0,
             available,
         });
     }
-    let hold = l.reserve(budget.usd).map_err(|e| AgentError::OverBudget {
-        asked: e.asked,
-        available: e.available,
-    })?;
-    drop(l);
+    let hold = ledger
+        .reserve(budget.usd)
+        .map_err(|e| AgentError::OverBudget {
+            asked: e.asked,
+            available: e.available,
+        })?;
     Ok(Some(HeldBudget {
         ledger: ledger.clone(),
         hold: Some(hold),

@@ -48,9 +48,7 @@ pub use watch::WindDownWatch;
 /// ```
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use std::sync::{Arc, Mutex};
-///
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tool, ToolContext, ToolError,
 ///     ToolOutput, Tools, Usage,
@@ -90,9 +88,9 @@ pub use watch::WindDownWatch;
 /// asks.usage = Usage { cost_usd: Some(0.85), ..Usage::default() };
 /// let provider = ScriptedProvider::new([asks, text_answer("Here is what I have.")]);
 /// let budget = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
-/// let ledger = Arc::new(Mutex::new(Ledger::new(budget, Arc::new(Quiet))));
+/// let ledger = Ledger::new(budget, Quiet);
 /// let deps = AgentDeps::new(provider.resolver(), Tools::new().with(Fan), "", "/", ShutWorkspace)
-///     .with_ledger(ledger)
+///     .with_ledger(ledger.clone())
 ///     .with_thresholds(Thresholds::default().wind_down(WindDown::at(0.8)?));
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
@@ -103,6 +101,7 @@ pub use watch::WindDownWatch;
 /// let notices = events.iter().filter(|e| matches!(e, LoopEvent::Guard { .. })).count();
 /// assert!(refused);
 /// assert_eq!(notices, 1);
+/// assert_eq!(ledger.usd(), 0.85);
 /// # Ok(())
 /// # }
 /// # #[cfg(not(feature = "testing"))]

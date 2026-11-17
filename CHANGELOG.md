@@ -52,9 +52,16 @@ value itself, and holds it in a handle named after its trait. Read
    `fn fs(&self) -> FsRef` (`self.fs.clone().into()`). `Fs::mkdir` and
    `Fs::remove` lose their `recursive` flag: `fs.mkdir(dir, true)` ->
    `fs.create_dir_all(dir)`, `fs.remove(path, true)` -> `fs.remove_all(path)`.
+7. A `Ledger` is shared by cloning it: `Arc<Mutex<Ledger>>` -> `Ledger`,
+   `ledger.lock().unwrap().usd()` -> `ledger.usd()`,
+   `.with_ledger(Arc::new(Mutex::new(ledger)))` -> `.with_ledger(ledger.clone())`.
 
 ### Bug fixes
 
+- A ledger hook that read the ledger it hears from (a warning shown with
+  the budget's summary beside it) hung the turn for good: the hooks ran
+  with the ledger locked. They run once it is unlocked; snapshots are still
+  persisted one at a time, never an older one after a newer one.
 - The caps settings are listed under "Caps" again, as 0.2.0 meant; the
   `Limits` -> `CapSettings` type rename had renamed the heading to
   "CapSettings" in `docs/settings.md` and `haest settings`.
@@ -184,7 +191,7 @@ Plug points without `Arc` (breaking):
   `ToolSourceRef`, `SystemPromptRef`, `ModelResolverRef`, `WorkspaceRef`,
   `AgentHooksRef`, `ToolServicesRef`, `ModelFactsRef`, `TurnCapsSourceRef`,
   `ClockRef`, `FsRef`, `ChangeSetRef`, `ProviderRef`, `KeySourceRef`,
-  `run::RunStoreRef`,
+  `ledger::LedgerHooksRef`, `run::RunStoreRef`,
   `session::SessionSinkRef`, `shell_command::ShellCommandRef` and
   `skills::SkillSetRef`. Each is a cheap `Clone`, derefs to the trait
   object, and is built `From` the value, an `Arc` of it or an
@@ -235,6 +242,13 @@ Plug points without `Arc` (breaking):
   `fs: impl Into<FsRef>`. `DiskSkills::new(skills, fs)` ->
   `DiskSkills::new(fs, skills)`, the closure last, `fs` as
   `impl Into<FsRef>`.
+- `Ledger` is a cheap `Clone` whose clones are the one ledger, and every
+  method takes `&self` (`charge`, `set_cap`, `restore`, `reserve`,
+  `release`): `Arc<Mutex<Ledger>>` -> `Ledger`. `SharedDeps::with_ledger`
+  takes a `Ledger` and `SharedDeps::ledger` returns `Option<&Ledger>`.
+  `Ledger::new(caps, impl Into<LedgerHooksRef>)`:
+  `Ledger::new(caps, Arc::new(hooks))` -> `Ledger::new(caps, hooks)`.
+  `LedgerHooks` are called after the ledger is unlocked and may read it.
 - `ResolvedModel`'s fields are private: `ResolvedModel { provider:
   Arc::new(p), model: m.into() }` -> `ResolvedModel::new(p, m)`,
   `resolved.provider` -> `resolved.provider()` (a `ProviderRef`),

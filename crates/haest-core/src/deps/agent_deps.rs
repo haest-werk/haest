@@ -1,9 +1,6 @@
 //! [`AgentDeps`]: one agent's tools and system prompt, and what it shares.
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::path::PathBuf;
 
 use super::{AgentHooksRef, ClockRef, SharedDeps, SystemPromptRef};
 use crate::{
@@ -138,7 +135,7 @@ forward! {
     with_facts(facts: impl Into<ModelFactsRef>),
     with_turn_caps(caps: impl Into<TurnCapsSourceRef>),
     with_clock(clock: impl Into<ClockRef>),
-    with_ledger(ledger: Arc<Mutex<Ledger>>),
+    with_ledger(ledger: Ledger),
     with_web_search(web_search: impl Into<Option<WebSearchOptions>>),
     with_remedies(remedies: Remedies),
     with_run_store(store: impl Into<RunStoreRef>),

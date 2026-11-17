@@ -167,7 +167,7 @@ pub fn with_usage(mut msg: AssistantMessage, usage: &Usage) -> AssistantMessage 
 pub struct Opts {
     pub tools: Option<Vec<ToolRef>>,
     pub caps: Option<TurnCaps>,
-    pub ledger: Option<Arc<Mutex<Ledger>>>,
+    pub ledger: Option<Ledger>,
     pub workspace: Option<WorkspaceRef>,
     pub spill_dir: Option<&'static str>,
 }

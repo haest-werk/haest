@@ -199,7 +199,6 @@ where
         s.code.then(|| s.code_tools.clone()),
     ));
     let ledger = Ledger::new(s.conversation_caps(), hooks.clone()).with_remedies(hooks.remedies());
-    let ledger = Arc::new(Mutex::new(ledger));
 
     // What every agent of the conversation runs on; tools and prompt are each
     // agent's own (the hub gives every subagent its own, main's hold the hub).

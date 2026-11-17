@@ -114,7 +114,7 @@ async fn crossing_the_conversations_share_refuses_mains_spawn_and_tells_main_onc
     r.adjust(wind_down_at(0.8));
     // Main's first call ($0.01) is past 80% of this budget.
     let budget = ConversationCap::Usd(PAST_80_IN_ONE_CALL);
-    r.parent.ledger.lock().unwrap().set_cap(budget);
+    r.parent.ledger.set_cap(budget);
     r.turn("go").await;
     assert!(r.ids("started").is_empty(), "no subagent started");
     let results = r.tool_results();
@@ -131,11 +131,7 @@ async fn below_the_share_main_spawns_and_hears_nothing() {
         caps(),
     );
     r.adjust(wind_down_at(0.8));
-    r.parent
-        .ledger
-        .lock()
-        .unwrap()
-        .set_cap(ConversationCap::Usd(100.0));
+    r.parent.ledger.set_cap(ConversationCap::Usd(100.0));
     r.turn("go").await;
     assert_eq!(r.ids("started").len(), 1);
     assert_eq!(r.ids("guard").len(), 0);

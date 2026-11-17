@@ -249,5 +249,5 @@ impl LedgerHooks for RuntimeHooks {
 /// has). A resumed session's spend includes what it cost before.
 pub fn session_usd(agent: &Agent) -> Option<f64> {
     let ledger = agent.deps().shared().ledger()?;
-    Some(ledger.lock().unwrap().snapshot().usd)
+    Some(ledger.usd())
 }

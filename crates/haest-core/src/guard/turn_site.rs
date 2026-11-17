@@ -146,8 +146,8 @@ fn since(clock: &dyn Clock, started: u64) -> Duration {
     Duration::from_millis(clock.now_ms().saturating_sub(started))
 }
 
-fn conversation(ledger: Option<&Mutex<Ledger>>) -> Option<[Reading; 2]> {
-    ledger.map(|l| l.lock().unwrap().readings())
+fn conversation(ledger: Option<&Ledger>) -> Option<[Reading; 2]> {
+    ledger.map(Ledger::readings)
 }
 
 impl TurnGuard {
@@ -170,7 +170,7 @@ impl TurnGuard {
             elapsed: since(self.clock.as_ref(), self.started),
             usage: usage.clone(),
             context: self.turn.context,
-            conversation: conversation(self.ledger.as_deref()),
+            conversation: conversation(self.ledger.as_ref()),
         }
     }
 
@@ -249,7 +249,7 @@ impl TurnGuard {
                 elapsed: since(clock.as_ref(), started),
                 usage: spent.lock().unwrap().clone(),
                 context,
-                conversation: conversation(ledger.as_deref()),
+                conversation: conversation(ledger.as_ref()),
             };
             let past = thresholds.past(|m| readings.read(m), Action::WindDown)?;
             Some(WindingDown::of(&past, &remedies))

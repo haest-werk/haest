@@ -87,7 +87,7 @@ pub struct Host {
 pub struct FakeParent {
     pub provider: Arc<Roles>,
     pub ws: Arc<TestWorkspace>,
-    pub ledger: Arc<Mutex<Ledger>>,
+    pub ledger: Ledger,
     pub tx: UnboundedSender<String>,
     pub activity: Mutex<Vec<usize>>,
     /// (agent id, event kind) in order.

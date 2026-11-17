@@ -2,10 +2,7 @@
 //! cwd), opened with its write errors going to the [`Ui`], created with its
 //! header before anything starts, and read back into place on a resume.
 
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::{path::Path, sync::Arc};
 
 use haest_settings::Settings;
 
@@ -107,7 +104,7 @@ pub(crate) fn record_start(hooks: &RuntimeHooks, agent: &Agent) {
         effort: Some(agent.effort()),
     });
     if let Some(ledger) = agent.deps().shared().ledger() {
-        let snapshot = ledger.lock().unwrap().snapshot();
+        let snapshot = ledger.snapshot();
         hooks.append(SessionRecord::Ledger {
             t: now_ms(),
             ledger: snapshot,
@@ -152,7 +149,7 @@ pub(crate) fn record_given(hooks: &RuntimeHooks, agent: &Agent, opts: &BuildOpti
 pub(crate) fn restore(
     hooks: &RuntimeHooks,
     saved: ReplayedSession,
-    ledger: &Mutex<Ledger>,
+    ledger: &Ledger,
     board: &TaskBoard,
     opts: &mut AgentOptions,
 ) {
@@ -163,7 +160,7 @@ pub(crate) fn restore(
         ));
     }
     if let Some(l) = &saved.ledger {
-        ledger.lock().unwrap().restore(l);
+        ledger.restore(l);
     }
     board.restore(saved.tasks.unwrap_or_default());
     opts.history = saved.messages;

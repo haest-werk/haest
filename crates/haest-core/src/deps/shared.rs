@@ -1,9 +1,6 @@
 //! [`SharedDeps`]: what every agent of one conversation runs on.
 
-use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-};
+use std::path::{Path, PathBuf};
 
 use super::{AgentHooksRef, ClockRef, NoHooks, WallClock};
 use crate::{
@@ -38,7 +35,7 @@ pub struct SharedDeps {
     facts: ModelFactsRef,
     turn_caps: TurnCapsSourceRef,
     clock: ClockRef,
-    ledger: Option<Arc<Mutex<Ledger>>>,
+    ledger: Option<Ledger>,
     web_search: Option<WebSearchOptions>,
     remedies: Remedies,
     run_store: Option<RunStoreRef>,
@@ -128,7 +125,7 @@ impl SharedDeps {
     /// What the conversation has spent across turns; every model call and
     /// tool spend is charged here. None = no conversation budget, only the
     /// turn caps.
-    pub fn ledger(&self) -> Option<&Arc<Mutex<Ledger>>> {
+    pub fn ledger(&self) -> Option<&Ledger> {
         self.ledger.as_ref()
     }
 
@@ -214,8 +211,9 @@ impl SharedDeps {
         self
     }
 
-    /// These deps charging `ledger` for every model call and tool spend.
-    pub fn with_ledger(mut self, ledger: Arc<Mutex<Ledger>>) -> Self {
+    /// These deps charging `ledger` for every model call and tool spend:
+    /// a clone of the host's, which it keeps to read and raise.
+    pub fn with_ledger(mut self, ledger: Ledger) -> Self {
         self.ledger = Some(ledger);
         self
     }

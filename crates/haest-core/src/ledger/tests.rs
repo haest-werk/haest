@@ -1,6 +1,9 @@
 //! The turn caps reset whenever anything posts; the ledger is the ceiling that does not.
 
-use std::sync::Mutex;
+use std::{
+    sync::{Mutex, OnceLock, mpsc},
+    time::Duration,
+};
 
 use serde_json::json;
 
@@ -36,10 +39,6 @@ fn ledger_with(max_usd: f64, max_unpriced_tokens: u64) -> (Ledger, Arc<Recorder>
     (Ledger::new(caps, rec.clone()), rec)
 }
 
-fn shared(l: Ledger) -> Arc<std::sync::Mutex<Ledger>> {
-    Arc::new(std::sync::Mutex::new(l))
-}
-
 fn cost(usd: f64) -> Usage {
     Usage {
         cost_usd: Some(usd),
@@ -55,7 +54,7 @@ fn answers(n: usize, usage: &Usage) -> Vec<crate::messages::AssistantMessage> {
 
 #[tokio::test]
 async fn spend_across_turns_stops_the_conversation_and_posting_again_does_not_reset_it() {
-    let ledger = shared(ledger_with(2.5, 0).0);
+    let ledger = ledger_with(2.5, 0).0;
     let billed = Usage {
         input: 1,
         output: 1,
@@ -80,7 +79,7 @@ async fn spend_across_turns_stops_the_conversation_and_posting_again_does_not_re
 
 #[tokio::test]
 async fn a_model_that_reports_no_price_is_capped_in_tokens() {
-    let ledger = shared(ledger_with(0.0, 30).0);
+    let ledger = ledger_with(0.0, 30).0;
     let unpriced = Usage {
         input: 10,
         output: 5,
@@ -98,7 +97,7 @@ async fn a_model_that_reports_no_price_is_capped_in_tokens() {
         collect(&mut agent, msg).await;
     }
     assert_eq!(p.requests().len(), 2);
-    assert_eq!(ledger.lock().unwrap().usd, 0.0);
+    assert_eq!(ledger.usd(), 0.0);
 }
 
 #[tokio::test]
@@ -109,7 +108,7 @@ async fn a_tools_own_spend_is_charged() {
             ..ToolOutput::text("drew it")
         })
     });
-    let ledger = shared(ledger_with(0.0, 0).0);
+    let ledger = ledger_with(0.0, 0).0;
     let billed = Usage {
         input: 1,
         output: 1,
@@ -129,25 +128,25 @@ async fn a_tools_own_spend_is_charged() {
         },
     );
     collect(&mut agent, "go").await;
-    assert_eq!(ledger.lock().unwrap().usd, 2.0);
+    assert_eq!(ledger.usd(), 2.0);
 }
 
 #[test]
 fn the_last_snapshot_restores_the_spend_and_a_raised_cap_and_raising_lets_it_continue() {
-    let (mut a, a_saved) = ledger_with(5.0, 0);
+    let (a, a_saved) = ledger_with(5.0, 0);
     a.charge(&cost(6.0));
     assert!(a.exhausted().is_some());
     a.set_cap(ConversationCap::Usd(10.0));
-    let (mut b, _) = ledger_with(5.0, 0);
+    let (b, _) = ledger_with(5.0, 0);
     b.restore(a_saved.saved.lock().unwrap().last().unwrap());
-    assert_eq!(b.usd, 6.0);
+    assert_eq!(b.usd(), 6.0);
     assert_eq!(b.caps().max_usd, 10.0);
     assert_eq!(b.exhausted(), None);
 }
 
 #[test]
 fn the_human_is_warned_once_on_crossing_80_percent_and_again_after_a_raise() {
-    let (mut ledger, rec) = ledger_with(10.0, 0);
+    let (ledger, rec) = ledger_with(10.0, 0);
     ledger.charge(&cost(8.0));
     ledger.charge(&cost(1.0));
     assert_eq!(rec.warnings.lock().unwrap().len(), 1);
@@ -158,7 +157,7 @@ fn the_human_is_warned_once_on_crossing_80_percent_and_again_after_a_raise() {
 
 #[test]
 fn the_summary_names_an_uncapped_measure_as_having_no_cap() {
-    let (mut ledger, _) = ledger_with(10.0, 0);
+    let (ledger, _) = ledger_with(10.0, 0);
     ledger.charge(&cost(1.0));
     let summary = ledger.summary();
     assert!(summary.contains("$1.00"), "{summary}");
@@ -169,7 +168,7 @@ fn the_summary_names_an_uncapped_measure_as_having_no_cap() {
 
 #[test]
 fn the_warning_names_only_the_cap_it_crossed() {
-    let (mut ledger, rec) = ledger_with(10.0, 1000);
+    let (ledger, rec) = ledger_with(10.0, 1000);
     ledger.charge(&cost(8.0));
     ledger.charge(&Usage {
         input: 900,
@@ -186,7 +185,7 @@ fn the_warning_names_only_the_cap_it_crossed() {
 #[test]
 fn the_warning_and_the_stop_end_with_the_hosts_remedy_for_the_cap_in_force() {
     let (ledger, rec) = ledger_with(10.0, 0);
-    let mut ledger = ledger.with_remedies(Remedies::new(|limit| match limit {
+    let ledger = ledger.with_remedies(Remedies::new(|limit| match limit {
         Limit::Conversation(ConversationCap::Usd(cap)) => Some(format!("RAISE-FROM-{cap}")),
         _ => None,
     }));
@@ -201,20 +200,20 @@ fn the_warning_and_the_stop_end_with_the_hosts_remedy_for_the_cap_in_force() {
 
 #[test]
 fn a_call_that_billed_nothing_is_not_persisted() {
-    let (mut ledger, rec) = ledger_with(0.0, 0);
+    let (ledger, rec) = ledger_with(0.0, 0);
     ledger.charge(&Usage::default());
     assert!(rec.saved.lock().unwrap().is_empty());
     ledger.charge(&Usage {
         input: 3,
         ..Default::default()
     });
-    assert_eq!(ledger.unpriced_tokens, 3);
+    assert_eq!(ledger.unpriced_tokens(), 3);
     assert_eq!(rec.saved.lock().unwrap().len(), 1);
 }
 
 #[test]
 fn a_snapshot_names_only_the_caps_the_human_set_and_keeps_the_ts_shape() {
-    let (mut ledger, _) = ledger_with(5.0, 100);
+    let (ledger, _) = ledger_with(5.0, 100);
     assert_eq!(ledger.snapshot().caps, None);
     ledger.set_cap(ConversationCap::UnpricedTokens(200));
     let s = serde_json::to_value(ledger.snapshot()).unwrap();
@@ -229,7 +228,7 @@ fn a_snapshot_names_only_the_caps_the_human_set_and_keeps_the_ts_shape() {
 /// without overflowing.
 #[test]
 fn unpriced_tokens_saturate_at_u64_max() {
-    let (mut l, _) = ledger_with(0.0, 0);
+    let (l, _) = ledger_with(0.0, 0);
     l.restore(&LedgerSnapshot {
         usd: 0.0,
         unpriced_tokens: u64::MAX,
@@ -240,4 +239,102 @@ fn unpriced_tokens_saturate_at_u64_max() {
         ..Default::default()
     });
     assert_eq!(l.unpriced_tokens(), u64::MAX);
+}
+
+/// Hooks that read the ledger they hear from: the warning shown with the
+/// budget beside it, the snapshot checked against the ledger's own.
+#[derive(Default)]
+struct ReadsBack {
+    ledger: OnceLock<Ledger>,
+    heard: Mutex<Vec<String>>,
+    saved: Mutex<Vec<(LedgerSnapshot, LedgerSnapshot)>>,
+}
+
+impl LedgerHooks for ReadsBack {
+    fn persist(&self, s: &LedgerSnapshot) {
+        let now = self.ledger.get().expect("set before any charge").snapshot();
+        self.saved.lock().unwrap().push((s.clone(), now));
+    }
+    fn warn(&self, text: &str) {
+        let summary = self.ledger.get().expect("set before any charge").summary();
+        self.heard
+            .lock()
+            .unwrap()
+            .push(format!("{text} | {summary}"));
+    }
+}
+
+/// The hooks used to run with the ledger locked, so a warn hook that read
+/// the ledger (its summary, beside the warning) hung the turn for good.
+#[test]
+fn a_hook_may_read_the_ledger_it_hears_from() {
+    let hooks = Arc::new(ReadsBack::default());
+    let caps = ConversationCaps {
+        max_usd: 10.0,
+        max_unpriced_tokens: 0,
+    };
+    let ledger = Ledger::new(caps, hooks.clone());
+    let _ = hooks.ledger.set(ledger.clone());
+    let (done, finished) = mpsc::channel();
+    let charging = ledger.clone();
+    std::thread::spawn(move || {
+        charging.charge(&cost(8.5));
+        charging.set_cap(ConversationCap::Usd(20.0));
+        let _ = done.send(());
+    });
+    finished
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the hooks ran with the ledger locked: deadlock");
+    let heard = hooks.heard.lock().unwrap().clone();
+    assert_eq!(heard.len(), 1, "{heard:?}");
+    assert!(
+        heard[0].ends_with(
+            "| Conversation budget: $8.50 spent of $10; 0 unpriced tokens billed (no cap)."
+        ),
+        "{heard:?}"
+    );
+    let saved = hooks.saved.lock().unwrap().clone();
+    assert_eq!(saved.len(), 2);
+    assert!(saved.iter().all(|(given, read)| given == read));
+}
+
+/// Clones are one ledger: what one charges, every other reads and stops on.
+#[test]
+fn every_clone_is_the_same_ledger() {
+    let (ledger, rec) = ledger_with(1.0, 0);
+    let spender = ledger.clone();
+    spender.charge(&cost(1.0));
+    assert_eq!(ledger.usd(), 1.0);
+    assert!(ledger.exhausted().is_some());
+    ledger.set_cap(ConversationCap::Usd(2.0));
+    assert!(spender.exhausted().is_none());
+    assert_eq!(rec.saved.lock().unwrap().len(), 2);
+}
+
+/// Charges from many threads at once: every one counts, and the snapshot
+/// saved last is the ledger's final state.
+#[test]
+fn the_last_snapshot_saved_is_the_final_state_whatever_the_threads_did() {
+    let (ledger, rec) = ledger_with(0.0, 0);
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            let l = ledger.clone();
+            std::thread::spawn(move || {
+                for _ in 0..100 {
+                    l.charge(&cost(0.25));
+                }
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().expect("a charging thread panicked");
+    }
+    assert_eq!(ledger.usd(), 200.0);
+    let saved = rec.saved.lock().unwrap();
+    assert_eq!(saved.last(), Some(&ledger.snapshot()));
+    let usds: Vec<f64> = saved.iter().map(|s| s.usd).collect();
+    assert!(
+        usds.windows(2).all(|w| w[0] < w[1]),
+        "never an older one after a newer one"
+    );
 }
