@@ -126,11 +126,10 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `ConfigError::Invalid { at, why }` -> `Invalid { at, key, why }`, with an
     unknown setting its own `UnknownSetting { at, key }`.
 16. A `match` on an enum that will grow adds a `_` arm, in every crate:
-    haest-core's `OpenRouterEffort`, `ApplyFailureCode`, `ConversationCap`,
-    `SkillSource` and `Served`, haest-http's `HttpError` and `Method`,
-    haest-providers' `CompatFlavor`, haest-mcp's `McpTransport`,
-    haest-config's `ControlSocket`, `BrokerAccess`, `ConfigError` and
-    `Source` among them:
+    haest-core's `OpenRouterEffort`, `ApplyFailureCode`, `ConversationCap`
+    and `SkillSource`, haest-http's `HttpError` and `Method`,
+    haest-providers' `CompatFlavor`, haest-mcp's `McpTransport`, and
+    haest-config's `ConfigError` and `Source` among them:
     `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b }`
     -> `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b, _ => c }`.
 17. An `Fs` builds its answers with constructors:
@@ -174,37 +173,23 @@ write instead.
   overflowed the default turn caps that follow it: a debug build panicked,
   a release build wrapped to a tiny cap. `max_turn_tokens` now stops at
   `u64::MAX`, and `max_request_tokens` is still exactly 90% of the window.
-- `running_sessions` (and so `haest ctl list`) removed whatever path a
-  discovery file's `socket` named whenever connecting to it failed for any
-  reason: a crafted discovery file deleted an arbitrary file, and a passing
-  error (too many open files) unlinked a live session's socket. It now
-  removes a session's files only when the connection was refused or the
-  socket is gone, and only when the socket is the `<stream id>.sock` beside
-  its own discovery file; anything else is skipped and kept.
-- `LineDecoder` searched its whole buffer for a newline again on every
-  chunk, so a peer that sent a long line in small pieces, or never sent a
-  newline, cost quadratic time: 16 MiB took about 3 seconds and the 64 MiB
-  limit about 50. Each byte is now searched once.
 - `AnthropicOptions`, `CompatOptions`, `ResponsesOptions` and
   `CustomProviderConfig` printed the API key and every header's value in
-  their Debug output, and `Broker` and `Start` the broker token, so a host
-  that logged one with `{:?}` logged the secret. Debug now shows
-  `<redacted>` for the key and the token, and a header's name without its
-  value.
+  their Debug output, so a host that logged one with `{:?}` logged the
+  key. Debug now shows `<redacted>` for the key, and a header's name
+  without its value.
 - A URL's credentials showed in Debug output: haest-http's `Request`
   printed its URL as it was (and its `Authorization` header, and
   `Response` its `set-cookie`); `AnthropicOptions`, `CompatOptions`,
   `ResponsesOptions`, `CustomProviderConfig` and haest-issues'
   `GithubTracker` their base URL (a gateway that takes its credentials in
-  the URL); haest-mcp's `HttpTransport` (and the `McpTransport`,
-  `McpServerConfig` and `RuntimeInputs` holding one) and `Broker` theirs,
-  so `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
-  password and the key; and `TransportError::Url` displayed it. A URL in
-  haest's Debug output now shows no userinfo, no query value and no
-  fragment (`https://<redacted>@docs.example.com/mcp?api_key=<redacted>`),
-  a header its name without its value, and a request's body its length.
-  `TransportError::Url` holds the URL shown that way, and the `haest`
-  command's "Broker link:" line shows it the same way.
+  the URL); and haest-mcp's `HttpTransport` (and the `McpTransport`,
+  `McpServerConfig` and `RuntimeInputs` holding one) its own, so
+  `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
+  password and the key. A URL in haest's Debug output now shows no
+  userinfo, no query value and no fragment
+  (`https://<redacted>@docs.example.com/mcp?api_key=<redacted>`), a header
+  its name without its value, and a request's body its length.
 - haest-mcp's `HttpTransport` printed every header's value in its Debug
   output (an `Authorization` included), and `StdioTransport` every
   variable's in `env` (a server's token), and so did the `McpTransport` and
@@ -213,9 +198,8 @@ write instead.
 - haest-config's `Loader` and `Loaded` printed the whole environment they
   were given in their Debug output, API keys included, and `Loaded` every
   providers.json entry's `apiKey`; `Config` printed each `env` variable's
-  value and a `broker_url`'s `user:password@`. A host that logged one with
-  `{:?}` logged the keys. Debug now names the variables, keys and entries
-  and shows no value, and the broker URL as `<redacted>@host`.
+  value. A host that logged one with `{:?}` logged the keys. Debug now
+  names the variables, keys and entries and shows no value.
 - haest-issues' `GithubTracker` read, changed, deleted and linked issues in
   any repository the model named (`{"id": "victim/secret#1"}`), with the
   host's token, though it is one repository's tracker. The issue a call
@@ -227,10 +211,6 @@ write instead.
   it buffered a line of any length. Each byte is now searched once, and a
   line or an event past 16 MiB ends the message with `StopReason::Error`,
   saying so.
-- `ProviderRegistry::with_http(client).with_options(opts)` dropped the
-  client: the options replaced everything, so the requests went over the
-  shared reqwest client (a test's fake was bypassed and the network used).
-  The registry now has one setter per option and no `with_options`.
 - haest-ts parsed any file name ending in `x` as TSX (`box`, `index`), where
   a `<number>x` cast is a syntax error. Only a `.tsx` extension, in any
   case, is TSX now.
@@ -243,19 +223,11 @@ write instead.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a
-  ledger snapshot, a durable run's `turn` record) panicked `Usage::add`,
+  ledger snapshot) panicked `Usage::add`,
   `Usage::context_tokens`, the ledger, the turn guard and the Chat
   Completions and Responses usage readers. Each count now stops at
   `u64::MAX`, and the task board refuses a new task once its ids have run
   out (`TaskError::IdsExhausted`) instead of handing an id out twice.
-- `Agent::run` called while a turn was running (from a
-  `before_model_call` hook, which holds the agent) was refused, but the
-  refusal still re-armed the running turn's once-a-turn thresholds, so a
-  `Rearm::NextTurn` reminder fired again at every step. The refused call
-  now touches nothing, as its docs say.
-- A warning threshold that fired in a subagent's turn never reached the
-  human: the hooks a subagent runs with passed on the media and effort
-  notices but not `AgentHooks::on_warning`. They pass it on now.
 - haest-mods' `ModTools` over a source that keeps tools back (a
   `DeferredTools`) let the model call only the advertised ones: a deferred
   tool called by name was "Unknown tool". `ModTools::callable` now offers
@@ -266,32 +238,6 @@ write instead.
   A `Tools` list now holds one tool per name: `with`, `push`, `extend`,
   `collect` and `From<Vec<ToolRef>>` put a tool in the place of the one of
   its name, so the list the model is sent and the tool that runs agree.
-- A session could stall on an inbox arrival: one that reached the inbox
-  after the driver had looked but before it started waiting was taken for
-  "every sender is gone", so a background subagent's answer sat until the
-  next request came (a quiet `--stdio` parent never sent one).
-  `InboxQueue::wait` returns whether anything can still arrive, and returns
-  at once when an arrival already waits (breaking, barely:
-  `q.wait().await;` -> `if !q.wait().await { /* nothing will come */ }`).
-- A person's input that reached a session while a turn ran was steered in
-  as it was, skipping the mods' `prompt.submit` that every other message a
-  person sends goes through. The session driver now runs a person's input
-  through the conversation's rewriter (`Driven::rewriter`, the runtime's
-  mods) once, steered in or not; a steer left unread runs next without a
-  second rewrite. Another program's input is never rewritten, as before.
-  The wire JSON is unchanged.
-- One connection could make unbounded work: every request ran on a task of
-  its own and the connection never stopped reading, so a peer with only
-  watch access that sent `history` 100,000 times without reading made
-  100,000 tasks, each holding a copy of the history. A connection now has
-  at most 32 requests waiting for their replies; at the cap it reads no
-  more lines until one is answered, so the rest wait in the peer's pipe.
-  The wire JSON is unchanged.
-- `connect_session` (and so `haest ctl`) dialed whatever socket any
-  discovery file in the dir named, so a crafted `<id>.json` sent the
-  client to another program's socket. It now dials only the
-  `<stream id>.sock` beside the discovery file, and `running_sessions`
-  neither dials nor lists a file that names another path.
 - `ReqwestClient`'s errors held the request's whole URL, as reqwest gives
   it, so a model call, a GitHub call or GenerateImage that failed to
   connect, or ran into a redirect loop, showed a key in the URL's query
@@ -359,9 +305,10 @@ write instead.
 - `broker_url` links the conversation to a broker over a WebSocket, its
   token the key `HAEST_BROKER_TOKEN` (never a setting; like a provider's key
   it stays with haest). `broker_access` is `watch` by default. haest says it
-  linked; a broker that refuses the token is a warning and is not dialed
-  again; a closing run gives the link up to 2 seconds to hand over the last
-  frames.
+  linked, and `haest settings` shows the URL, each without its userinfo,
+  query values or fragment; a broker that refuses the token is a warning
+  and is not dialed again; a closing run gives the link up to 2 seconds to
+  hand over the last frames.
 - `control_socket`, `control_dir`, `broker_url` and `broker_access` come from
   your own file, a variable or a flag, never from a project's file or a
   profile: a repository cannot open your conversation to anyone.
@@ -1672,6 +1619,10 @@ Hosts write less (round two of the review, and what porting brain onto
   (the `haest` command's terminal does).
 - `Resume` is `#[non_exhaustive]`: more ways to pick a session may come, so
   a `match` on it adds a `_` arm. Building one is unchanged.
+- `InboxQueue::wait` returns whether anything can still arrive, and
+  returns at once when an arrival already waits, so a session driver never
+  takes an arrival it raced for "every sender is gone" (breaking, barely:
+  `q.wait().await;` -> `if !q.wait().await { /* nothing will come */ }`).
 
 ### haest-ts
 
@@ -1691,7 +1642,9 @@ and `Answer`. `decode` and `decode_value` check `v` before the shape
 `capacity` frames outside the running turn and the running turn whole,
 drops a model call's pieces once its answer is in, and reports a gap only
 for an eviction (`Classify`, `FrameKind`, `Replay`). `LineDecoder` and
-`encode_line` are NDJSON with a line cap (`LineTooLong`).
+`encode_line` are NDJSON with a line cap (`LineTooLong`); the decoder
+looks at each byte once for a newline, however small the pieces a peer
+sends a long line in.
 
 Changed since the first cut of these crates on `main` (breaking for Rust
 code written against it). The JSON on the wire is unchanged, byte for byte:
@@ -1822,7 +1775,10 @@ against it; the wire JSON is unchanged):
   `id`, a turn's when it ends and after its last frame; stream frames only as
   asked for with `events {after, follow}`; a request of another version or
   one the access forbids is refused with its `id`; a slow peer gets a `gap`,
-  never a wait. `Grant` (`watch`, `command`), `Start`, `Ended`, the seams
+  never a wait. A connection has at most 32 requests waiting for their
+  replies; at the cap it reads no more lines until one is answered, so a
+  peer that never reads makes no more work than that. `Grant` (`watch`,
+  `command`), `Start`, `Ended`, the seams
   `LineSource` and `LineSink`, `NdjsonSource` and `NdjsonSink`, the trait
   `Transport` (`attach` returns an `Attached`: `ended`, `detach`; dropped is
   detached), `Peer` (the asking side) and `TransportError`.
@@ -1835,7 +1791,12 @@ against it; the wire JSON is unchanged):
   crashed run's socket is replaced, a live one refused (`InUse`).
   `running_sessions(dir)` lists the sessions that answer (`RunningSession`)
   and removes a crashed run's files; `connect_session(dir, id)` reaches one
-  by id or unique prefix (`UnixPeer`).
+  by id or unique prefix (`UnixPeer`). Both go only to the
+  `<stream id>.sock` beside a discovery file, and a file that names another
+  path is neither dialed nor listed; a session's files are removed only
+  when its connection was refused or its socket is gone, so a crafted
+  discovery file deletes nothing and a passing error (too many open files)
+  keeps a live session's socket.
 - Feature `broker`: `Broker::new(url).with_token(..).with_backoff(..)` dials out to a
   `ws://` or `wss://` broker. The token rides in `hello`, never in the URL,
   and nothing more goes until the broker's ack (`events` with the last seq
@@ -1843,7 +1804,9 @@ against it; the wire JSON is unchanged):
   sent again, and a gap comes when the ring no longer holds what the broker
   missed. A dropped link is dialed again after a full-jitter `Backoff`
   (500 ms doubling to 30 s); close 4401 or 4408 (`AUTH_CLOSE`), or a 401 or
-  403 handshake, ends it with `TransportError::Auth`.
+  403 handshake, ends it with `TransportError::Auth`. `Broker`'s Debug and
+  `TransportError::Url` show the URL without its userinfo, query values or
+  fragment, and the token never.
 
 Changed since the first cut on `main` (breaking for Rust code written
 against it; the wire JSON is unchanged):
