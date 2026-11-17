@@ -156,6 +156,9 @@ impl<D: Driven> SessionHandle<D> {
     /// [`submit`](Self::submit), then wait for the end of the turn it
     /// entered history in.
     ///
+    /// Dropped before it resolves, the input still runs: only the wait is
+    /// given up. ([`Control::Interrupt`] stops its turn.)
+    ///
     /// # Errors
     ///
     /// [`SessionError::Closed`]; [`SessionError::Held`] when the turn gate
@@ -166,6 +169,10 @@ impl<D: Driven> SessionHandle<D> {
 
     /// Change the conversation. [`Control::Interrupt`] acts at once; the rest
     /// wait for the running turn to end.
+    ///
+    /// Dropped before it resolves, the change is still made (a change that
+    /// waits for the running turn is made when it ends): only the wait is
+    /// given up.
     ///
     /// # Errors
     ///
