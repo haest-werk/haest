@@ -639,7 +639,8 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   Available is the cap less what is spent and held, floored at 0, `None`
   with no USD cap. `Hold` is `#[must_use]`; `release` takes it by value.
   Holds live in memory: a snapshot does not save them, a restore keeps the
-  ones in flight.
+  ones in flight. A refusal says both amounts in cents ("$0.30 does not
+  fit: $0.20 is left ...").
 - `caps::SubagentCaps` gains `budgets: bool` (default false); a literal
   written out in full adds it.
 - `ToolContext` gains `turn_time_left() -> Option<Duration>`: what is left

@@ -30,7 +30,7 @@ impl Hold {
 /// A hold that does not fit what is left of the conversation's budget.
 #[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
 #[error(
-    "${asked} does not fit: ${available:.2} is left of the conversation's budget (max_conversation_usd)"
+    "${asked:.2} does not fit: ${available:.2} is left of the conversation's budget (max_conversation_usd)"
 )]
 pub struct NotAvailable {
     /// The USD asked for.
@@ -162,6 +162,20 @@ mod tests {
             l.release(h);
         }
         assert_eq!(l.held(), 0.0);
+    }
+
+    /// The amount asked was printed as the float it was: a hold of
+    /// $0.10 + $0.20 read "$0.30000000000000004 does not fit".
+    #[test]
+    fn a_refusal_says_both_amounts_in_cents() {
+        let refused = NotAvailable {
+            asked: 0.1 + 0.2,
+            available: 0.2,
+        };
+        assert_eq!(
+            refused.to_string(),
+            "$0.30 does not fit: $0.20 is left of the conversation's budget (max_conversation_usd)"
+        );
     }
 
     #[test]

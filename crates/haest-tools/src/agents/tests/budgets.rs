@@ -119,6 +119,20 @@ async fn children_started_together_hold_their_spend_together_and_cannot_overshoo
     );
 }
 
+/// The budget a subagent asked for was printed as the float it was: one of
+/// $0.10 + $0.20 read "a subagent's $0.30000000000000004 does not fit".
+#[test]
+fn a_refused_budget_says_both_amounts_in_cents() {
+    let refused = AgentError::OverBudget {
+        asked: 0.1 + 0.2,
+        available: 0.2,
+    };
+    assert_eq!(
+        refused.to_string(),
+        "a subagent's $0.30 does not fit: $0.20 is left of the conversation's budget (max_conversation_usd); ask for less"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_hold_lasts_while_its_child_runs_and_at_its_end_only_the_real_spend_stays() {
     let release = CancellationToken::new();

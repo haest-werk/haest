@@ -221,7 +221,7 @@ pub(super) fn over_budget(asked: f64, available: f64) -> String {
             "a subagent with no spend cap does not fit: {left}; give it a budget of at most that"
         )
     } else {
-        format!("a subagent's ${asked} does not fit: {left}; ask for less")
+        format!("a subagent's ${asked:.2} does not fit: {left}; ask for less")
     }
 }
 
