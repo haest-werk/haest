@@ -96,6 +96,52 @@ pub struct Snapshot {
     pub last_seq: u64,
 }
 
+/// A credential a frame carries (a broker's token, in `hello`). On the wire
+/// it is the plain string; `Debug` never shows it.
+///
+/// ```
+/// use haest_wire::Token;
+///
+/// let token = Token::new("sekrit");
+/// assert_eq!(format!("{token:?}"), "Token(<redacted>)");
+/// assert_eq!(serde_json::to_string(&token)?, r#""sekrit""#);
+/// assert_eq!(token.expose(), "sekrit");
+/// # Ok::<(), serde_json::Error>(())
+/// ```
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Token(String);
+
+impl Token {
+    /// `token`, kept out of `Debug` output.
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+
+    /// The token itself: to check it, or send it on.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for Token {
+    fn from(token: String) -> Self {
+        Self(token)
+    }
+}
+
+impl From<&str> for Token {
+    fn from(token: &str) -> Self {
+        Self(token.into())
+    }
+}
+
+impl std::fmt::Debug for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Token(<redacted>)")
+    }
+}
+
 /// The frames the wire adds beside the conversation's events. Tagged by
 /// `type` (snake_case), fields camelCase, as the events are.
 ///
@@ -175,7 +221,7 @@ pub enum Outbound {
         access: Access,
         /// A credential the other end checks (a broker); None elsewhere.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        token: Option<String>,
+        token: Option<Token>,
     },
     /// Frames this connection should have had are lost: it was too slow, or
     /// the ring no longer holds them. Ask `history` to catch up.
@@ -276,6 +322,24 @@ mod tests {
             let back: Envelope<Outbound> = serde_json::from_str(&line).unwrap();
             assert_eq!(back.body, frame, "{line}");
         }
+    }
+
+    /// A hello's token is a credential: Debug output never shows it, the
+    /// line still carries it.
+    #[test]
+    fn a_hello_never_prints_its_token() {
+        let hello = Outbound::Hello {
+            session: "x".into(),
+            model_spec: "m".into(),
+            pid: 1,
+            access: Access::Watch,
+            token: Some("sekrit-token".into()),
+        };
+        let shown = format!("{hello:?}");
+        assert!(!shown.contains("sekrit-token"), "{shown}");
+        assert!(shown.contains("<redacted>"), "{shown}");
+        let line = serde_json::to_string(&hello).unwrap();
+        assert!(line.contains(r#""token":"sekrit-token""#), "{line}");
     }
 
     /// The tag and the field names are the event's: snake_case type, camelCase fields.

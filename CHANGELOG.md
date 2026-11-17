@@ -1051,6 +1051,11 @@ wrote them.
   bounds: the unfinished line kept between pushes, so a line that ends
   inside one push may pass it by up to that push's size.
 - Every doc example returns a `Result` and uses `?`.
+- `Outbound::Hello`'s `token` is a `Token`, so a hello's `Debug` (and a
+  `Frame`'s, a `RunningSession`'s) no longer prints the broker's
+  credential: `token: Some("t".to_string())` -> `token: Some("t".into())`,
+  `token.as_deref()` -> `token.as_ref().map(Token::expose)`. On the wire it
+  is the same plain string.
 
 ### haest-session (new)
 

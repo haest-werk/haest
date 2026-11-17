@@ -7,7 +7,7 @@ use std::{fmt, future::Future, sync::Arc, time::Duration};
 
 use haest_core::{Effort, TurnOutcome, error::report};
 use haest_session::{BackendRef, Body, Control, Frame, Input, SessionError, Subscription};
-use haest_wire::{self as wire, Access, Envelope, Outbound, Request, decode};
+use haest_wire::{self as wire, Access, Envelope, Outbound, Request, Token, decode};
 use serde_json::{Value, json};
 use tokio::{
     sync::{mpsc, watch},
@@ -179,7 +179,7 @@ impl Link {
             model_spec: now.model_spec,
             pid: self.backend.meta().pid,
             access: self.grant.access,
-            token,
+            token: token.map(Token::from),
         };
         self.tx.send(Out::Conn(hello)).await.map_err(|_| ())
     }
