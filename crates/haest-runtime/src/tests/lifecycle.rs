@@ -9,7 +9,7 @@ use haest_settings::Settings;
 
 use super::{hardcoded, keyed, keyed_with, openrouter_key, try_keyed};
 use crate::{
-    BuildError, BuildOptions, Resume, RuntimeInputs, SessionError, World, build,
+    BuildError, BuildOptions, Resume, RuntimeInputs, SessionFileError, World, build,
     haest::{
         Effort, ModelError, WorkspaceMode,
         core::fs::{Fs, MemFs},
@@ -77,7 +77,10 @@ async fn a_session_that_cannot_be_saved_fails_the_build_before_a_server_starts()
     let fs = Arc::new(MemFs::new());
     block_sessions(&fs).await;
     let (err, heard) = failed_build(hardcoded(), fs).await;
-    let cannot_create = matches!(err, BuildError::Session(SessionError::Create { .. }));
+    let cannot_create = matches!(
+        err,
+        BuildError::SessionFile(SessionFileError::Create { .. })
+    );
     assert!(cannot_create, "{err:?}");
     assert_eq!(heard, Vec::<String>::new(), "no server was started");
 }
@@ -226,7 +229,7 @@ async fn a_clear_that_cannot_create_its_file_changes_nothing() {
     block_sessions(&fs).await;
 
     let err = rt.clear().await.expect_err("the clear fails");
-    assert!(matches!(err, SessionError::Create { .. }), "{err:?}");
+    assert!(matches!(err, SessionFileError::Create { .. }), "{err:?}");
     assert_eq!(rt.session_id(), id);
     assert_eq!(rt.board().list().len(), 1);
 }

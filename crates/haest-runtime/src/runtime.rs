@@ -10,7 +10,7 @@ use std::{fmt, sync::Arc};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    RuntimeHooks, SessionError,
+    RuntimeHooks, SessionFileError,
     haest::{
         Agent, Effort, EventSink, ModelError, TurnOutcome,
         core::compaction::CompactionError,
@@ -283,7 +283,7 @@ impl<U> Runtime<U> {
     ///
     /// When the new session's file cannot be created. It is created, header
     /// first, before anything switches to it, so then nothing changes.
-    pub async fn clear(&mut self) -> Result<(), SessionError> {
+    pub async fn clear(&mut self) -> Result<(), SessionFileError> {
         let ui = self.hooks.ui().clone();
         let store = new_session(&self.fs, self.hooks.settings(), ui).await?;
         self.hooks.swap_store(store);

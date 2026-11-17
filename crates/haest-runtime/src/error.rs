@@ -1,5 +1,5 @@
 //! Why a conversation could not be built ([`BuildError`]), and why its
-//! session file could not be opened or created ([`SessionError`]).
+//! session file could not be opened or created ([`SessionFileError`]).
 
 use std::{io, path::PathBuf};
 
@@ -22,7 +22,7 @@ pub enum BuildError {
     /// The session to resume is not there or cannot be read, or a new
     /// session's file cannot be created.
     #[error(transparent)]
-    Session(#[from] SessionError),
+    SessionFile(#[from] SessionFileError),
     /// The model the conversation would start on cannot be used: the spec is
     /// malformed, its provider unknown, or the host hands in no key for it.
     #[error(transparent)]
@@ -32,12 +32,14 @@ pub enum BuildError {
     Workspace(#[from] WorkspaceError),
 }
 
-/// Why the session a run writes could not be opened, read or created.
+/// Why the session file a run writes could not be opened, read or created.
+/// (haest-session's `SessionError` is a running session's; this is its
+/// file's.)
 ///
 /// A `match` on it has a `_` arm: haest may add a cause in a minor release.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum SessionError {
+pub enum SessionFileError {
     /// The id to resume is not a session id; no file was looked for.
     #[error(transparent)]
     InvalidId(#[from] InvalidSessionId),

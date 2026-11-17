@@ -1317,7 +1317,7 @@ Hosts write less (round two of the review, and what porting brain onto
   enum inside (breaking): it needed main's `&mut Agent`, which no host
   holds. `hooks.compact_now(&mut agent, &cancel, false)` ->
   `rt.compact(&cancel)`, the human's /compact.
-- `#[non_exhaustive]` on `BuildError`, `SessionError`, `WorkspaceError`,
+- `#[non_exhaustive]` on `BuildError`, `SessionFileError`, `WorkspaceError`,
   `ShutDown` and `SessionInfo` (breaking): a `match` adds a `_` arm, and a
   host reads a `ShutDown` or a `SessionInfo` and never builds one.
 - `SessionInfo::cwd` is a `PathBuf` (was `String`):
@@ -1348,6 +1348,12 @@ Hosts write less (round two of the review, and what porting brain onto
 - A turn's warning threshold reaches the human through `Ui::warn`.
 - `Runtime::mods` returns `Mods`, now a cheap handle (was `Arc<Mods>`):
   `rt.mods().command(..)`.
+- The session file's error is `SessionFileError`, and `BuildError`'s
+  variant for it `SessionFile` (breaking), so the facade no longer has two
+  `SessionError`s (haest-session's is a running session's):
+  `BuildError::Session(SessionError::NotFound { .. })` ->
+  `BuildError::SessionFile(SessionFileError::NotFound { .. })`.
+  `Runtime::clear` returns it.
 
 ### haest-ts
 

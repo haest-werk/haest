@@ -39,7 +39,7 @@ use std::{
 use haest::{
     config::{BrokerAccess, ControlSocket, Loaded, Loader, env_var},
     core::{error::report, session::sessions_dir},
-    runtime::{BuildError, SessionError, Ui, list_sessions},
+    runtime::{BuildError, SessionFileError, Ui, list_sessions},
     session::{Hub, HubOptions, SessionPrompter, start},
     settings::Settings,
     transport::{Attached, Broker, Ended, Grant, Stdio, Transport},
@@ -269,7 +269,7 @@ fn build_failed(e: BuildError) -> String {
             "{}. Set its key, or pick another model with -m (haest models lists them).",
             report(&e)
         ),
-        BuildError::Session(e @ SessionError::NotFound { .. }) => {
+        BuildError::SessionFile(e @ SessionFileError::NotFound { .. }) => {
             format!("{e} (haest sessions lists them)")
         }
         e => report(&e),
@@ -421,7 +421,7 @@ mod tests {
     /// The runtime names no command; the CLI says where its sessions are listed.
     #[test]
     fn a_session_that_is_not_there_points_at_haest_sessions() {
-        let e = BuildError::Session(SessionError::NotFound { id: "abc".into() });
+        let e = BuildError::SessionFile(SessionFileError::NotFound { id: "abc".into() });
         let said = build_failed(e);
         assert!(
             said.contains("abc") && said.contains("haest sessions"),
@@ -434,7 +434,7 @@ mod tests {
     fn a_failed_build_reports_every_cause() {
         let source = std::io::Error::other("disk full");
         let path = PathBuf::from("/d/sessions/x.jsonl");
-        let e = BuildError::Session(SessionError::Create { path, source });
+        let e = BuildError::SessionFile(SessionFileError::Create { path, source });
         assert!(build_failed(e).ends_with("x.jsonl: disk full"));
     }
 }

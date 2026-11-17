@@ -185,7 +185,7 @@ mod haest {
 }
 
 pub use build::build;
-pub use error::{BuildError, SessionError};
+pub use error::{BuildError, SessionFileError};
 pub use hooks::RuntimeHooks;
 pub use inbox::InboxQueue;
 pub use inputs::{BuildOptions, Resume, RuntimeInputs};
