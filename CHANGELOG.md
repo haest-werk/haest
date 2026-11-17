@@ -382,9 +382,11 @@ write instead.
   withdrawal as lines.
 - The remedy for a cap names its setting through `Limit::setting()`, and
   the three subagent caps have one.
-- Ctrl+C gives up a slash command that does not end (a mod's whose promise
-  never settles): the prompt comes back, and `-p` exits 130. Before, Ctrl+C
-  did nothing while a command ran, and only a kill ended it.
+- Ctrl+C stops a slash command: it is told to stop and gets 2 seconds to
+  wind down (`/compact` books the summary call it stopped), then is given
+  up if it has not ended (a mod's whose promise never settles). The prompt
+  comes back, and `-p` exits 130. Before, Ctrl+C did nothing while a
+  command ran, and only a kill ended it.
 
 ### haest (the facade)
 

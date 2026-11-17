@@ -21,8 +21,9 @@ pub(crate) enum Outcome {
 
 const HELP: &str = "Commands: /model [provider:model], /effort [level|default], /budget [usd | tokens <n>], /compact, /clear, /skills, /changes and /apply (sandbox edits to disk), /<skill> [args], /exit";
 
-/// Resolve one input line. Plain text passes through unchanged.
-pub(crate) async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
+/// Resolve one input line. Plain text passes through unchanged. `cancel`
+/// stops a command that heeds it (`/compact`'s summary call).
+pub(crate) async fn resolve(rt: &mut Runtime, line: &str, cancel: &CancellationToken) -> Outcome {
     let Some(rest) = line.trim().strip_prefix('/') else {
         return Outcome::Send(line.to_string());
     };
@@ -35,7 +36,7 @@ pub(crate) async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
         "budget" => budget(rt, args),
         "compact" => {
             // A failure was said to the UI; /compact has nothing more to do.
-            let _ = rt.compact(&CancellationToken::new()).await;
+            let _ = rt.compact(cancel).await;
         }
         "clear" => clear(rt).await,
         "skills" => skills(rt).await,

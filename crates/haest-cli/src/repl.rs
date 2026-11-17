@@ -14,6 +14,7 @@ use std::sync::mpsc::Sender;
 
 use haest::runtime::Ui;
 use rustyline::{DefaultEditor, ExternalPrinter, error::ReadlineError};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     changes,
@@ -30,8 +31,10 @@ async fn handle(session: &Session, ui: &TermUi, line: &str) -> anyhow::Result<bo
     // be steered into.
     let hold = session.hold().await?;
     let line = line.to_string();
-    let resolved = session.with(move |rt| Box::pin(async move { resolve(rt, &line).await }));
-    let Some(outcome) = run::unless_interrupted(resolved).await else {
+    let cancel = CancellationToken::new();
+    let stop = cancel.clone();
+    let resolved = session.with(move |rt| Box::pin(async move { resolve(rt, &line, &stop).await }));
+    let Some(outcome) = run::unless_interrupted(&cancel, resolved).await else {
         ui.warn("Stopped the command.");
         return Ok(true);
     };

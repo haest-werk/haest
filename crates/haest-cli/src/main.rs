@@ -49,6 +49,7 @@ use haest::{
 
 #[cfg(unix)]
 use haest::transport::UnixSocket;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     args::{Args, Command},
@@ -109,8 +110,11 @@ fn print_input(args: &Args) -> Option<String> {
 /// `input` asked once ([`print_input`], read before the build).
 async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode {
     let input = input.to_string();
+    let cancel = CancellationToken::new();
+    let stop = cancel.clone();
     let outcome = run::unless_interrupted(
-        session.with(move |rt| Box::pin(async move { commands::resolve(rt, &input).await })),
+        &cancel,
+        session.with(move |rt| Box::pin(async move { commands::resolve(rt, &input, &stop).await })),
     )
     .await;
     let code = match outcome {

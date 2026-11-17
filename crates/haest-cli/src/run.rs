@@ -14,6 +14,7 @@ use haest::{
     wire::{Outbound, State},
 };
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::term::Runtime;
 
@@ -123,22 +124,44 @@ pub(crate) fn watch_interrupts(brakes: Arc<Brakes>, mut stream: Subscription) ->
     })
 }
 
-/// `work`, unless Ctrl+C comes first: then None, and `work` is dropped where
-/// it waits (a session job it waits for is withdrawn, so the session goes
-/// on). How the human gives up on a slash command whose mod never answers:
-/// between turns nothing else acts on Ctrl+C ([`watch_interrupts`] leaves
-/// it to the prompt).
-pub(crate) async fn unless_interrupted<T>(work: impl Future<Output = T>) -> Option<T> {
+/// How long a slash command stopped by Ctrl+C has to wind down (a compaction
+/// books the summary call it stopped) before it is dropped.
+const STOP_GRACE: Duration = Duration::from_secs(2);
+
+/// A slash command, unless Ctrl+C comes first: then None. `cancel` fires,
+/// the command gets [`STOP_GRACE`] to end (what heeds it books what it spent:
+/// `/compact`'s summary call), and is dropped after that wherever it waits
+/// (a session job it waits for is withdrawn, so the session goes on: a mod's
+/// command that never answers). Between turns nothing else acts on Ctrl+C
+/// ([`watch_interrupts`] leaves it to the prompt).
+pub(crate) async fn unless_interrupted<T>(
+    cancel: &CancellationToken,
+    work: impl Future<Output = T>,
+) -> Option<T> {
+    stop_on(tokio::signal::ctrl_c(), cancel, STOP_GRACE, work).await
+}
+
+/// [`unless_interrupted`] with its interrupt and grace given.
+async fn stop_on<T>(
+    interrupt: impl Future<Output = std::io::Result<()>>,
+    cancel: &CancellationToken,
+    grace: Duration,
+    work: impl Future<Output = T>,
+) -> Option<T> {
     tokio::pin!(work);
     tokio::select! {
         biased;
-        out = &mut work => Some(out),
-        signal = tokio::signal::ctrl_c() => match signal {
-            Ok(()) => None,
+        out = &mut work => return Some(out),
+        signal = interrupt => if signal.is_err() {
             // No Ctrl+C to be had: the work's end is the only way on.
-            Err(_) => Some(work.await),
+            return Some(work.await);
         },
     }
+    cancel.cancel();
+    // What heeds the stop ends now and books what it spent; what does not
+    // is dropped after the grace.
+    let _ = tokio::time::timeout(grace, work).await;
+    None
 }
 
 /// A turn the human started: the mods' `prompt.submit` may rewrite the text
@@ -268,6 +291,57 @@ mod tests {
             started.elapsed() < Duration::from_secs(2),
             "a turn that never ends holds the exit only for the grace"
         );
+    }
+
+    /// Ctrl+C on a command that heeds its token (`/compact`): the token fires
+    /// and the command ends within the grace, so what it books on the way
+    /// out (the summary call it stopped) is booked. Stopped, so None.
+    #[tokio::test]
+    async fn a_stopped_command_winds_down_before_it_is_dropped() {
+        let cancel = CancellationToken::new();
+        let booked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (heeds, book) = (cancel.clone(), booked.clone());
+        let command = async move {
+            heeds.cancelled().await;
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            book.store(true, std::sync::atomic::Ordering::SeqCst);
+        };
+        let out = stop_on(async { Ok(()) }, &cancel, Duration::from_secs(5), command).await;
+        assert!(out.is_none(), "stopped");
+        assert!(cancel.is_cancelled(), "the command was told to stop");
+        assert!(
+            booked.load(std::sync::atomic::Ordering::SeqCst),
+            "it booked what it spent before it was dropped"
+        );
+    }
+
+    /// A command that ignores its token (a mod's that never answers) is
+    /// dropped once the grace is up: Ctrl+C still gets the human out.
+    #[tokio::test]
+    async fn a_stopped_command_that_ignores_the_stop_is_dropped_after_the_grace() {
+        let started = Instant::now();
+        let out = stop_on(
+            async { Ok(()) },
+            &CancellationToken::new(),
+            Duration::from_millis(50),
+            std::future::pending::<()>(),
+        )
+        .await;
+        assert!(out.is_none());
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    /// A command that ends before any Ctrl+C is its own answer.
+    #[tokio::test]
+    async fn a_command_that_ends_first_answers() {
+        let out = stop_on(
+            std::future::pending(),
+            &CancellationToken::new(),
+            Duration::ZERO,
+            async { 7 },
+        )
+        .await;
+        assert_eq!(out, Some(7));
     }
 
     #[test]
