@@ -101,9 +101,10 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `board.create(task)` -> `board.create(task)?`, and
     `ChildEnv::new([("K".into(), v)])` -> `ChildEnv::new([("K", v)])`.
 13. A flag setter takes a `bool`, and an optional field's setter takes the
-    value itself: `SkillToolOptions::new(set).with_name_enum()` ->
-    `.with_name_enum(true)`. In haest-core that is `SharedDeps`/`AgentDeps`
-    `with_spill_dir`, `with_ledger` and `with_web_search`,
+    value itself: `SkillToolOptions::over(set).with_name_enum()` ->
+    `SkillToolOptions::new(set).with_name_enum(true)`. In haest-core that
+    is `SharedDeps`/`AgentDeps` `with_spill_dir`, `with_ledger` and
+    `with_web_search`,
     `AgentOptions::with_effort`, and the `ProviderRequest`, `ToolContext`
     and `TurnOutcome` setters: `opts.effort = effort` ->
     `if let Some(e) = effort { opts = opts.with_effort(e) }`, and
