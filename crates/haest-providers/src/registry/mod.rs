@@ -25,7 +25,7 @@ mod tests_custom;
 use std::{
     collections::HashMap,
     fmt,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -86,7 +86,8 @@ impl Default for Shared {
 /// for a model, so the registry goes into `AgentDeps` as it is. A provider is
 /// built on its name's first resolve and kept: later specs with that name
 /// share it, and the key it read then stays its key. A name that fails is
-/// tried again on the next resolve.
+/// tried again on the next resolve. The key source is asked with nothing
+/// locked, so a slow one holds up only the name it is asked for.
 ///
 /// Cloning is cheap, and the clones share what was built: one registry
 /// serves every agent of a conversation. A `with_*` setter gives the registry
@@ -307,15 +308,18 @@ impl ProviderRegistry {
     /// used.
     pub fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
         let (name, model) = parse_model_spec(spec)?;
-        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        let provider = match cache.get(name) {
-            Some(p) => p.clone(),
-            None => {
-                let p = self.build(name)?;
-                cache.insert(name.to_string(), p.clone());
-                p
-            }
-        };
+        if let Some(p) = self.built().get(name) {
+            return Ok(ResolvedModel::new(p.clone(), model));
+        }
+        // Built with the lock released: a key source may take its time, and
+        // only this name waits for it. Two first resolves of one name both
+        // build; the first kept is the one every spec shares.
+        let built = self.build(name)?;
+        let provider = self
+            .built()
+            .entry(name.to_string())
+            .or_insert(built)
+            .clone();
         Ok(ResolvedModel::new(provider, model))
     }
 
@@ -333,6 +337,12 @@ impl ProviderRegistry {
             .map(|s| s.to_string())
             .chain(added.cloned())
             .collect()
+    }
+
+    /// What has been built. Nothing panics while holding it, so a poisoned
+    /// lock still holds a whole map.
+    fn built(&self) -> MutexGuard<'_, HashMap<String, ProviderRef>> {
+        self.cache.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn build(&self, name: &str) -> Result<ProviderRef, ModelError> {
@@ -396,12 +406,8 @@ impl ProviderRegistry {
 /// an entry's JSON (an `apiKey` may be in it).
 impl fmt::Debug for ProviderRegistry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let built: Vec<String> = {
-            let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-            let mut names: Vec<String> = cache.keys().cloned().collect();
-            names.sort();
-            names
-        };
+        let mut built: Vec<String> = self.built().keys().cloned().collect();
+        built.sort();
         f.debug_struct("ProviderRegistry")
             .field("names", &self.names())
             .field("shared", &self.setup.shared)

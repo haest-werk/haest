@@ -241,6 +241,65 @@ fn a_clone_shares_what_was_built_and_a_with_setter_starts_its_own() {
     ));
 }
 
+/// A key source that takes its time (a vault over the network) holds up only
+/// the provider it is asked for: a spec whose provider is built resolves
+/// meanwhile, and so does the registry's Debug.
+#[test]
+fn a_slow_key_lookup_holds_up_no_other_resolve() {
+    use std::{
+        sync::mpsc,
+        thread,
+        time::{Duration, Instant},
+    };
+
+    let (asked, was_asked) = mpsc::channel::<()>();
+    let (release, released) = mpsc::channel::<()>();
+    let released = Mutex::new(released);
+    let vault = move |name: &str| {
+        if name == "ANTHROPIC_API_KEY" {
+            asked.send(()).ok();
+            released
+                .lock()
+                .expect("lock poisoned")
+                .recv_timeout(Duration::from_secs(10))
+                .ok();
+        }
+        Some("k".to_string())
+    };
+    let reg = registry(vault, CustomProviders::new());
+    reg.resolve("openrouter:a").unwrap();
+
+    let slow = {
+        let reg = reg.clone();
+        thread::spawn(move || reg.resolve("anthropic:claude").map(|_| ()))
+    };
+    was_asked
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the anthropic key is asked for");
+    let (done, finished) = mpsc::channel();
+    let fast = {
+        let reg = reg.clone();
+        thread::spawn(move || {
+            let start = Instant::now();
+            let resolved = reg.resolve("openrouter:b").is_ok();
+            let shown = format!("{reg:?}");
+            done.send((resolved, start.elapsed(), shown)).ok();
+        })
+    };
+    let waited = finished.recv_timeout(Duration::from_secs(2));
+    release.send(()).ok();
+    let (resolved, took, shown) =
+        waited.expect("a built provider resolves while a key is looked up");
+    assert!(resolved && took < Duration::from_secs(2), "{took:?}");
+    assert!(shown.contains("openrouter"), "{shown}");
+    fast.join().unwrap();
+    slow.join().unwrap().unwrap();
+    assert!(
+        format!("{reg:?}").contains("anthropic"),
+        "the slow one is kept too"
+    );
+}
+
 #[test]
 fn debug_names_the_providers_but_never_an_entry_key() {
     let custom = CustomProviders::from([(

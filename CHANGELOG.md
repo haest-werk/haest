@@ -166,6 +166,12 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 - haest-ts parsed any file name ending in `x` as TSX (`box`, `index`), where
   a `<number>x` cast is a syntax error. Only a `.tsx` extension, in any
   case, is TSX now.
+- `ProviderRegistry::resolve` asked the key source for a new provider's
+  key with the registry locked, so a slow key source (a vault over the
+  network) held up every other resolve, of providers already built too,
+  and a key source that resolved a model itself locked the registry twice
+  (a deadlock or a panic, by std's `Mutex`). The key is now
+  asked with nothing locked.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a
