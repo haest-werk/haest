@@ -968,6 +968,9 @@ Good citizens:
   `info.cwd == cwd.to_string_lossy()` -> `info.cwd == cwd`, and
   `format!("{}", info.cwd)` -> `format!("{}", info.cwd.display())`.
   `SessionInfo` implements `Eq`.
+- Every public type implements `Debug` (`Runtime`, `RuntimeInputs` and
+  `World` are new), and the crate warns on one that does not
+  (`missing_debug_implementations`).
 - The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
   as `with_hooks`; what tools publish, report and log reaches it as before.
 - Feature `session` (off; the facade's `session` turns it on with

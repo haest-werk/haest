@@ -148,7 +148,7 @@
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs)]
+#![warn(missing_docs, missing_debug_implementations)]
 
 mod build;
 mod error;
