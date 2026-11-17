@@ -2,7 +2,7 @@ use haest_core::{
     messages::{
         AssistantMessage, AssistantPart, Message, StopReason, ToolCall, ToolResultMessage, Usage,
     },
-    provider::{Effort, Provider},
+    provider::Effort,
 };
 use serde_json::{Value, json};
 

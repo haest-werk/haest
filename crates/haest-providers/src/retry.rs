@@ -37,7 +37,7 @@ use haest_http::Response;
 /// ```
 ///
 /// [`HttpError::is_retryable`]: haest_http::HttpError::is_retryable
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RetryPolicy {
     /// Tries after the first one; 0 never retries.
     pub max_retries: u32,

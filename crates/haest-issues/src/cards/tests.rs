@@ -5,7 +5,7 @@ use std::{fs, path::Path};
 use haest_workspace::RealFs;
 
 use super::{card::STATUSES, *};
-use crate::{IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, Tracker};
+use crate::{IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation};
 
 mod links;
 

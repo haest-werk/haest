@@ -759,6 +759,8 @@ Hosts write less (round two of the review, and what porting brain onto
   `reqwest`, the facade as `haest/reqwest`. In the workspace's
   `[workspace.dependencies]`, haest-http and haest-providers have default
   features off; haest-tools and haest-mcp ask for `reqwest` themselves.
+- `ReqwestClient::send` is inherent: `client.send(req)` needs no `use
+  haest_http::HttpClient` (an `HttpClientRef` never did).
 
 ### haest-providers
 
@@ -823,6 +825,14 @@ Hosts write less (round two of the review, and what porting brain onto
 - `CustomProviderConfig::resolved_key(&keys) -> String` ->
   `CustomProviderConfig::key(&keys) -> Option<String>` (breaking): None
   where it returned `"none"`, the placeholder the provider still sends.
+- `AnthropicProvider`, `CompatProvider` and `ResponsesProvider` have
+  inherent `id()` and `stream(req)`: `provider.stream(req)` needs no `use
+  haest_core::Provider`. Each gains the getters `retry()`,
+  `headers_timeout()` and `http()` beside its setters.
+- `RetryPolicy` is `Copy`, `Eq` and `Hash`, and
+  `ProviderRegistry::retry()` returns it by value (breaking for a caller
+  that read it through a reference): `registry.retry().clone()` ->
+  `registry.retry()`.
 
 ### haest-tools
 
@@ -1472,6 +1482,9 @@ against it; the wire JSON is unchanged):
   With `default-features = false` no reqwest, rustls or ring is built (115
   crates in the tree become 38), and a tracker the host hands no client
   (`with_http`) fails every call, saying so.
+- `CardTracker` and `GithubTracker` have every `Tracker` method inherent
+  (`info`, `list`, `search`, `get`, `create`, `update`, `delete`, `link`):
+  `tracker.get("42").await` needs no `use haest_issues::Tracker`.
 
 ## 0.2.0 (2026-11-17)
 

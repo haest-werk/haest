@@ -116,7 +116,7 @@ pub struct ResponsesProvider {
 impl ResponsesProvider {
     /// A provider sending over `http` (the client itself, or an `Arc` of one
     /// the host shares) with the default [`RetryPolicy`]. Nothing is sent
-    /// until [`Provider::stream`].
+    /// until [`stream`](Self::stream).
     pub fn new(opts: ResponsesOptions, http: impl Into<HttpClientRef>) -> Self {
         Self {
             opts,
@@ -145,6 +145,34 @@ impl ResponsesProvider {
         self
     }
 
+    /// How it retries ([`with_retry`](Self::with_retry)).
+    pub fn retry(&self) -> RetryPolicy {
+        self.sender.retry
+    }
+
+    /// How long each try waits for its status and headers
+    /// ([`with_headers_timeout`](Self::with_headers_timeout)).
+    pub fn headers_timeout(&self) -> Duration {
+        self.sender.headers_timeout
+    }
+
+    /// The client its requests go through.
+    pub fn http(&self) -> &HttpClientRef {
+        &self.sender.http
+    }
+
+    /// Its id, the options' `id`: what its answers carry as their provider.
+    pub fn id(&self) -> &str {
+        &self.opts.id
+    }
+
+    /// Sends `req` and streams the answer (the [`Provider`] method, callable
+    /// without importing the trait).
+    pub fn stream(&self, req: ProviderRequest) -> ProviderStream {
+        let fold = stream::ResponsesFold::new(&self.opts.id, &req.model);
+        drive(&self.sender, self.http_request(&req), req.cancel, fold)
+    }
+
     fn http_request(&self, req: &ProviderRequest) -> Request {
         bearer_post(
             endpoint(&self.opts.base_url, OPENAI_URL, "responses"),
@@ -155,13 +183,13 @@ impl ResponsesProvider {
     }
 }
 
+/// [`ResponsesProvider::id`] and [`ResponsesProvider::stream`].
 impl Provider for ResponsesProvider {
     fn id(&self) -> &str {
-        &self.opts.id
+        ResponsesProvider::id(self)
     }
 
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
-        let fold = stream::ResponsesFold::new(&self.opts.id, &req.model);
-        drive(&self.sender, self.http_request(&req), req.cancel, fold)
+        ResponsesProvider::stream(self, req)
     }
 }

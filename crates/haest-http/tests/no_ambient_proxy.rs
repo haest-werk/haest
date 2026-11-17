@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use haest_http::{HttpClient, Request, ReqwestClient};
+use haest_http::{Request, ReqwestClient};
 use serde_json::json;
 
 /// Answers every connection with an empty 200, and says each time it was reached.

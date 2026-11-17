@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-use haest_http::{HttpClient, Request, ReqwestClient, build_reqwest, reqwest_builder};
+use haest_http::{Request, ReqwestClient, build_reqwest, reqwest_builder};
 
 /// A local server answering every connection with an empty 200.
 fn server() -> String {

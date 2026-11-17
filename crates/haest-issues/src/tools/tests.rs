@@ -7,7 +7,6 @@ use super::*;
 use crate::{
     cards::CardTracker,
     testkit::{FakeHttp, ctx, github, input, issue, ok},
-    tracker::Tracker,
 };
 
 fn board() -> (CardTracker, Tools) {

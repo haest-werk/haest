@@ -10,7 +10,7 @@ use std::{
 
 use async_trait::async_trait;
 use haest_http::{
-    BoxError, HttpClient, Request, ReqwestClient,
+    BoxError, Request, ReqwestClient,
     reqwest::dns::{self, Name, Resolving},
 };
 

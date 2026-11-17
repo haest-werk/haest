@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::*;
 use crate::{
-    Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, Tracker,
+    Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation,
     testkit::{API, FakeHttp, github, issue, ok, with},
 };
 

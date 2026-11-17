@@ -324,8 +324,8 @@ impl ProviderRegistry {
     }
 
     /// How every provider retries ([`with_retry`](Self::with_retry)).
-    pub fn retry(&self) -> &RetryPolicy {
-        &self.setup.shared.retry
+    pub fn retry(&self) -> RetryPolicy {
+        self.setup.shared.retry
     }
 
     /// How long each try waits for its status and headers
@@ -409,7 +409,7 @@ impl ProviderRegistry {
 
     fn build(&self, name: &str) -> Result<ProviderRef, ModelError> {
         let o = &self.setup.shared;
-        let (http, retry, wait) = (o.http.clone(), o.retry.clone(), o.headers_timeout);
+        let (http, retry, wait) = (o.http.clone(), o.retry, o.headers_timeout);
         Ok(match self.provider_options(name)? {
             Options::Anthropic(o) => ProviderRef::new(
                 AnthropicProvider::new(o, http)

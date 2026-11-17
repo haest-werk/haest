@@ -172,9 +172,26 @@ impl fmt::Debug for ReqwestClient {
     }
 }
 
+/// [`ReqwestClient::send`].
 #[async_trait]
 impl HttpClient for ReqwestClient {
     async fn send(&self, req: Request) -> Result<Response, HttpError> {
+        ReqwestClient::send(self, req).await
+    }
+}
+
+impl ReqwestClient {
+    /// Sends `req` and returns the answer once its status and headers are
+    /// in; the body streams after (the [`HttpClient`] method, callable
+    /// without importing the trait).
+    ///
+    /// # Errors
+    ///
+    /// [`HttpError::Request`] when the client does not build or reqwest
+    /// refuses the request (a redirect off the origin among them), and
+    /// [`HttpError::Connect`] when the server cannot be reached or does not
+    /// answer.
+    pub async fn send(&self, req: Request) -> Result<Response, HttpError> {
         let method = match req.method {
             Method::Get => reqwest::Method::GET,
             Method::Post => reqwest::Method::POST,

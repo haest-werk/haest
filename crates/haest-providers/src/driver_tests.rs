@@ -3,10 +3,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use haest_core::{
-    messages::StopReason,
-    provider::{Provider, ProviderEvent},
-};
+use haest_core::{messages::StopReason, provider::ProviderEvent};
 use haest_http::{HttpClient, HttpError, Request, Response, async_trait};
 use serde_json::json;
 

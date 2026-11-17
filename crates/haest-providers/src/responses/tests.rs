@@ -1,6 +1,6 @@
 use haest_core::{
     messages::{AssistantMessage, AssistantPart, StopReason, ToolCall, Usage},
-    provider::{Provider, ProviderEvent},
+    provider::ProviderEvent,
 };
 use serde_json::{Value, json};
 

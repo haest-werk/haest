@@ -2,7 +2,6 @@
 //! routing config resolves to for THAT request's model -- read from the routing
 //! env var, never from anywhere else.
 
-use haest_core::provider::Provider;
 use serde_json::{Value, json};
 
 use super::*;

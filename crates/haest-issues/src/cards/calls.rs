@@ -1,7 +1,6 @@
-//! The [`Tracker`] calls on a board of cards: each reads the cards it needs,
-//! and a write changes one card under the tracker's lock.
+//! The [`Tracker`](crate::Tracker) calls on a board of cards: each reads the
+//! cards it needs, and a write changes one card under the tracker's lock.
 
-use async_trait::async_trait;
 use haest_core::session::iso_utc;
 
 use super::{
@@ -11,8 +10,8 @@ use super::{
     links::inverse_links,
 };
 use crate::tracker::{
-    Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, Tracker, TrackerError,
-    TrackerInfo, one_of,
+    Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, TrackerError,
+    TrackerInfo, forward_tracker, one_of,
 };
 
 /// Newest first; a card with no `created:` last; then by id.
@@ -22,9 +21,14 @@ fn sorted(mut issues: Vec<Issue>, limit: usize) -> Vec<Issue> {
     issues
 }
 
-#[async_trait]
-impl Tracker for CardTracker {
-    fn info(&self) -> TrackerInfo {
+forward_tracker!(CardTracker);
+
+/// The [`Tracker`](crate::Tracker) calls, inherent: each needs no trait
+/// import, and the trait's own forward here.
+impl CardTracker {
+    /// What it is and accepts: the board's lanes, priorities and relations
+    /// ([`Tracker::info`](crate::Tracker::info)).
+    pub fn info(&self) -> TrackerInfo {
         TrackerInfo {
             name: format!("the board cards in {}", self.dir.display()),
             id_hint: "the card id (its file name without .md), e.g. \"fix-login\"".into(),
@@ -35,7 +39,14 @@ impl Tracker for CardTracker {
         }
     }
 
-    async fn list(&self, filter: &IssueFilter) -> Result<Vec<Issue>, TrackerError> {
+    /// The cards `filter` picks, newest first
+    /// ([`Tracker::list`](crate::Tracker::list)).
+    ///
+    /// # Errors
+    ///
+    /// `Invalid` for a status or a priority the board does not have,
+    /// `Failed` when the board cannot be read.
+    pub async fn list(&self, filter: &IssueFilter) -> Result<Vec<Issue>, TrackerError> {
         let wanted = (filter.statuses.clone()).unwrap_or_else(|| as_strings(OPEN_STATUSES));
         for s in &wanted {
             one_of(s, &as_strings(STATUSES), "status")?;
@@ -52,7 +63,14 @@ impl Tracker for CardTracker {
         Ok(sorted(issues, filter.limit))
     }
 
-    async fn search(&self, query: &str, limit: usize) -> Result<Vec<Issue>, TrackerError> {
+    /// The cards in any lane whose title, body or tags hold `query`, newest
+    /// first ([`Tracker::search`](crate::Tracker::search)).
+    ///
+    /// # Errors
+    ///
+    /// `Invalid` for a query with no words, `Failed` when the board cannot
+    /// be read.
+    pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<Issue>, TrackerError> {
         if query.trim().is_empty() {
             return Err(TrackerError::Invalid("the search has no words".into()));
         }
@@ -63,7 +81,14 @@ impl Tracker for CardTracker {
         Ok(sorted(issues, limit))
     }
 
-    async fn get(&self, id: &str) -> Result<Issue, TrackerError> {
+    /// Card `id` in full, the links other cards hold to it included
+    /// ([`Tracker::get`](crate::Tracker::get)).
+    ///
+    /// # Errors
+    ///
+    /// `Invalid` for an id that is not a card name, `NotFound` for no such
+    /// card, `Failed` when the board cannot be read.
+    pub async fn get(&self, id: &str) -> Result<Issue, TrackerError> {
         let id = check_id(id).map_err(TrackerError::Invalid)?;
         let front = self.read(id).await?;
         let mut issue = self.issue(id, &front);
@@ -73,7 +98,14 @@ impl Tracker for CardTracker {
         Ok(issue)
     }
 
-    async fn create(&self, new: NewIssue) -> Result<Issue, TrackerError> {
+    /// A new card, its id made from its title
+    /// ([`Tracker::create`](crate::Tracker::create)).
+    ///
+    /// # Errors
+    ///
+    /// `Invalid` for no title or a status or a priority the board does not
+    /// have, `Failed` when the card cannot be written.
+    pub async fn create(&self, new: NewIssue) -> Result<Issue, TrackerError> {
         let title = new.title.trim();
         if title.is_empty() {
             return Err(TrackerError::Invalid("a card needs a title".into()));
@@ -101,7 +133,15 @@ impl Tracker for CardTracker {
         Ok(self.issue(&id, &front))
     }
 
-    async fn update(&self, id: &str, patch: IssuePatch) -> Result<Issue, TrackerError> {
+    /// Changes card `id` and returns it as it now is
+    /// ([`Tracker::update`](crate::Tracker::update)).
+    ///
+    /// # Errors
+    ///
+    /// `Invalid` for an empty patch, an empty title or a value the board
+    /// does not take, `NotFound` for no such card, `Failed` when it cannot be
+    /// read or written.
+    pub async fn update(&self, id: &str, patch: IssuePatch) -> Result<Issue, TrackerError> {
         if patch.is_empty() {
             return Err(TrackerError::Invalid("the update changes nothing".into()));
         }
@@ -137,7 +177,13 @@ impl Tracker for CardTracker {
         Ok(self.issue(id, &front))
     }
 
-    async fn delete(&self, id: &str) -> Result<(), TrackerError> {
+    /// Removes card `id`'s file ([`Tracker::delete`](crate::Tracker::delete)).
+    ///
+    /// # Errors
+    ///
+    /// `Invalid` for an id that is not a card name, `NotFound` for no such
+    /// card, `Failed` when the file cannot be removed.
+    pub async fn delete(&self, id: &str) -> Result<(), TrackerError> {
         let id = check_id(id).map_err(TrackerError::Invalid)?;
         let _one_writer = self.writes.lock().await;
         let path = self.path(id);
@@ -147,7 +193,20 @@ impl Tracker for CardTracker {
         (self.fs.remove(&path).await).map_err(|e| self.failed("delete", &path, e))
     }
 
-    async fn link(&self, id: &str, link: &Link, change: LinkChange) -> Result<(), TrackerError> {
+    /// Adds or removes `link` on card `id`
+    /// ([`Tracker::link`](crate::Tracker::link)).
+    ///
+    /// # Errors
+    ///
+    /// `Invalid` for an id that is not a card name or a link to itself,
+    /// `NotFound` for no such card, `Failed` when it cannot be read or
+    /// written.
+    pub async fn link(
+        &self,
+        id: &str,
+        link: &Link,
+        change: LinkChange,
+    ) -> Result<(), TrackerError> {
         self.change_link(id, link, change).await
     }
 }

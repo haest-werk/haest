@@ -10,7 +10,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use haest_http::{HttpClient, Request, ReqwestClient};
+use haest_http::{Request, ReqwestClient};
 
 /// The requests one server got, head and body, lowercased.
 type Seen = Arc<Mutex<Vec<String>>>;
