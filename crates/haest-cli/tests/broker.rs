@@ -75,7 +75,7 @@ impl Side {
     }
 
     /// Frames up to and including the first `stop` matches.
-    fn until(&mut self, stop: impl Fn(&Value) -> bool) -> Vec<Value> {
+    fn until(&mut self, mut stop: impl FnMut(&Value) -> bool) -> Vec<Value> {
         let mut seen = Vec::new();
         loop {
             let frame = self
@@ -96,10 +96,9 @@ impl Side {
     }
 }
 
-fn notice(frames: &[Value], start: &str) -> bool {
-    frames
-        .iter()
-        .any(|f| ty(f) == "notice" && f["text"].as_str().unwrap_or_default().starts_with(start))
+/// Whether `f` is a notice whose text starts with `start`.
+fn is_notice(f: &Value, start: &str) -> bool {
+    ty(f) == "notice" && f["text"].as_str().unwrap_or_default().starts_with(start)
 }
 
 #[test]
@@ -121,14 +120,24 @@ fn the_broker_meets_the_run_with_its_token_and_watches_its_turns() {
     assert_eq!(hello["token"], TOKEN);
     assert_eq!(hello["access"], "watch");
 
-    // The broker acks from the start and gets what the ring holds: the host
-    // said it linked. A turn the broker sends is refused.
+    // The broker acks from the start and follows: the ack is answered, and
+    // the host's line that it linked reaches the broker. That line is said
+    // once the link is set up, while the dial already runs, so it comes in
+    // the catch-up or after it: no order between the two is promised.
     side.send(json!({"v": 1, "id": "ack", "type": "events", "after": 0, "follow": true}));
-    let held = side.until(|f| ty(f) == "reply" && f["id"] == "ack");
-    assert!(
-        notice(&held, "Broker link: ws://"),
-        "the host said it linked: {held:#?}"
-    );
+    let (mut acked, mut said) = (false, false);
+    let held = side.until(|f| {
+        acked |= ty(f) == "reply" && f["id"] == "ack";
+        said |= is_notice(f, "Broker link: ws://");
+        acked && said
+    });
+    let ack = held
+        .iter()
+        .find(|f| ty(f) == "reply" && f["id"] == "ack")
+        .unwrap();
+    assert_eq!(ack["ok"], true, "{ack}");
+
+    // A turn the broker sends is refused.
     side.send(json!({"v": 1, "id": "b1", "type": "turn", "text": "from the broker"}));
     let refused = side.until(|f| ty(f) == "reply" && f["id"] == "b1");
     let refusal = refused.last().unwrap();

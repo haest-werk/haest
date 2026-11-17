@@ -205,6 +205,11 @@ const BROKER_DRAIN: std::time::Duration = std::time::Duration::from_secs(2);
 /// command`), its input another program's. A broker that refuses the token
 /// is said and not dialed again; a URL that is not one is said, and the run
 /// goes on without the link. It ends when the conversation does.
+///
+/// The "Broker link" line is said once the link is set up, and the dial
+/// already runs on a task of its own then: a broker may have its catch-up
+/// answered before the line is in the stream. A broker that follows the
+/// stream gets the line either way, in the catch-up or after it.
 fn broker_link(
     session: &Session,
     (url, access, token): BrokerLink,
