@@ -78,7 +78,9 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 9. Smaller renames: `total.add(&u)` -> `total += &u` (`Usage`),
    `opt_bool(input, k)` -> `opt_bool(input, k)?`,
    `TaskBoard::with_clock(on_change, clock)` ->
-   `TaskBoard::new(on_change).with_clock(clock)`, `board.create(task)` ->
+   `let board = TaskBoard::new(on_change); board.set_clock(clock);`,
+   `ledger.with_remedies(r)` -> `ledger.set_remedies(r)`,
+   `board.create(task)` ->
    `board.create(task)?`, `ChildEnv::new([("K".into(), v)])` ->
    `ChildEnv::new([("K", v)])`, and `Arc<TaskBoard>` / `Arc<ToolDeferral>`
    -> `TaskBoard` / `ToolDeferral`.
@@ -342,6 +344,9 @@ Plug points without `Arc` (breaking):
   `Ledger::new(caps, impl Into<LedgerHooksRef>)`:
   `Ledger::new(caps, Arc::new(hooks))` -> `Ledger::new(caps, hooks)`.
   `LedgerHooks` are called after the ledger is unlocked and may read it.
+  What changes every clone takes `&self` and says so:
+  `Ledger::new(caps, hooks).with_remedies(r)` ->
+  `let ledger = Ledger::new(caps, hooks); ledger.set_remedies(r);`.
 - `ResolvedModel`'s fields are private: `ResolvedModel { provider:
   Arc::new(p), model: m.into() }` -> `ResolvedModel::new(p, m)`,
   `resolved.provider` -> `resolved.provider()` (a `ProviderRef`),
@@ -356,9 +361,10 @@ Plug points without `Arc` (breaking):
   new list on their next call. A `SkillSet` over an `Fs`, like `DiskSkills`.
 - `task_board::TaskBoard` is a cheap `Clone` whose clones are the one
   board: `Arc<TaskBoard>` -> `TaskBoard`, the host keeps one and the Task
-  tools get another. `TaskBoard::with_clock(on_change, clock)` ->
-  `TaskBoard::new(on_change).with_clock(clock)`, the clock as
-  `impl Into<ClockRef>`.
+  tools get another. Its clock is the board's too:
+  `TaskBoard::with_clock(on_change, clock)` ->
+  `let board = TaskBoard::new(on_change); board.set_clock(clock);`, the
+  clock as `impl Into<ClockRef>`, and a clone made before reads it.
 - `deferred_tools::ToolDeferral` is a cheap `Clone` whose clones share what
   is loaded: `Arc<ToolDeferral>` -> `ToolDeferral`.
 
@@ -503,7 +509,7 @@ Thresholds; wind-down, opt-in:
   fire them again.
 - New `AgentHooks::on_warning(text)`, default nothing: a turn's warning
   threshold fired, and the human must hear it. No new `LoopEvent`.
-- New `Ledger::with_thresholds(Thresholds<LedgerSite>)`: the ledger's
+- New `Ledger::set_thresholds(Thresholds<LedgerSite>)`: the ledger's
   warning by default.
 - `CompactionOptions` implements `Threshold`; `needs_compaction` is its
   check, unchanged. New `compaction::COMPACT_SHARE` (0.8).
@@ -807,9 +813,9 @@ Hosts write less (round two of the review, and what porting brain onto
   kill them all). Hold it, not an `Arc<JobHub>`; `job_tools` takes it by
   value.
 - `JobHub::new` takes the inbox itself (`impl Into<InboxRef>`), and
-  `with_events` is a setter:
+  `set_events(&self)` sets the listener of every clone:
   `JobHub::with_events(Arc::new(tx), Arc::new(events))` ->
-  `JobHub::new(tx).with_events(events)`. New `InboxRef` and
+  `let hub = JobHub::new(tx); hub.set_events(events);`. New `InboxRef` and
   `JobEventsRef`.
 - `JobHub::start` takes a `NewJob` (the command, and a description the
   job list shows, the command when none is set) and the `&ToolContext` it

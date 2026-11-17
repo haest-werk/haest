@@ -61,7 +61,7 @@ refused with a typed `NotServed` when it is added, never ignored.
 | Site | Set on | Checks | Reads | Can |
 |---|---|---|---|---|
 | `TurnSite` | `SharedDeps::thresholds` | at every step boundary; Stop before every model call | context tokens (cap: the new `TurnCaps::context_window`), steps, wall time, the turn's and the conversation's USD and tokens | remind, warn, wind down, stop |
-| `LedgerSite` | `Ledger::with_thresholds` | at every charge | the conversation's USD and unpriced tokens | warn |
+| `LedgerSite` | `Ledger::set_thresholds` | at every charge | the conversation's USD and unpriced tokens | warn |
 | `AgentTurnSite` (haest-tools) | `AgentTurnGate::with_thresholds` | at every turn no human started | turns | remind, warn |
 | compaction | `CompactionOptions` is the threshold, `needs_compaction` its check | before every model call, in the host's hook | context tokens | compact |
 

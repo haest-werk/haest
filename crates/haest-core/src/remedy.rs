@@ -6,7 +6,7 @@
 //! haest [`Remedies`], and each message about that [`Limit`] gets the host's
 //! remedy after it. One value serves every place that writes such a message:
 //! [`SharedDeps::remedies`](crate::SharedDeps::remedies) (the turn caps and the
-//! request cap), [`Ledger::with_remedies`](crate::ledger::Ledger::with_remedies)
+//! request cap), [`Ledger::set_remedies`](crate::ledger::Ledger::set_remedies)
 //! (the conversation budget), haest-tools' `AgentTurnGate::with_remedies` and
 //! haest-workspace's `SandboxWorkspace::with_remedies`.
 //!

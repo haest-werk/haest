@@ -65,8 +65,10 @@ impl Rig {
         let (tx, notices) = unbounded_channel();
         let events = Arc::new(Recorder::default());
         let ws = RealWorkspace::new(std::env::vars().collect());
+        let hub = JobHub::new(tx);
+        hub.set_events(events.clone());
         Self {
-            hub: JobHub::new(tx).with_events(events.clone()),
+            hub,
             events,
             notices,
             ctx: ToolContext::new(&dir, ws),

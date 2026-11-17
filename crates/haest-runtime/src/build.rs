@@ -190,7 +190,8 @@ where
         mods.clone(),
         s.code.then(|| s.code_tools.clone()),
     ));
-    let ledger = Ledger::new(s.conversation_caps(), hooks.clone()).with_remedies(hooks.remedies());
+    let ledger = Ledger::new(s.conversation_caps(), hooks.clone());
+    ledger.set_remedies(hooks.remedies());
 
     // What every agent of the conversation runs on; tools and prompt are each
     // agent's own (the hub gives every subagent its own, main's hold the hub).

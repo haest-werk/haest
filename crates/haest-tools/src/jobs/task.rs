@@ -20,7 +20,7 @@ const NO_DEADLINE: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 /// What a hub and its jobs' tasks share.
 pub(super) struct Shared {
     pub(super) jobs: Mutex<Jobs>,
-    /// Set once, by `JobHub::with_events`; read (and the handle cloned) for every event.
+    /// Set by `JobHub::set_events`; read (and the handle cloned) for every event.
     pub(super) events: Mutex<JobEventsRef>,
     pub(super) inbox: InboxRef,
 }

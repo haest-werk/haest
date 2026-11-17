@@ -88,8 +88,11 @@ fn a_restored_list_continues_the_id_count() {
 }
 
 #[test]
-fn completing_stamps_completed_at_from_the_board_clock() {
-    let b = TaskBoard::default().with_clock(|| 42);
+fn completing_stamps_completed_at_from_the_board_clock_every_clone_reads() {
+    let host = TaskBoard::default();
+    // The tools' clone is made before the host sets the clock, and reads it.
+    let b = host.clone();
+    host.set_clock(|| 42);
     b.create(new("a")).unwrap();
     let patch = TaskPatch {
         status: Some(PatchStatus::Set(TaskStatus::Completed)),

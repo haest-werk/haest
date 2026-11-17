@@ -90,7 +90,7 @@ impl Threshold for CapNudge {
 }
 
 /// Checked at every charge, by the
-/// [`Ledger`](crate::ledger::Ledger) ([`with_thresholds`](crate::ledger::Ledger::with_thresholds)):
+/// [`Ledger`](crate::ledger::Ledger) ([`set_thresholds`](crate::ledger::Ledger::set_thresholds)):
 /// reads the conversation's USD and unpriced tokens, and warns the human
 /// ([`LedgerHooks::warn`](crate::ledger::LedgerHooks::warn)). A cap the human
 /// sets, and a ledger restored from the session log, settle it

@@ -17,7 +17,7 @@
 //! (a subagent shares its parent's). The turn guard charges
 //! every model call and tool spend to it, and stops a turn before its next
 //! model call once [`Ledger::exhausted`] says so. A host's way to raise a cap
-//! ([`Ledger::with_remedies`]) ends the message that says so.
+//! ([`Ledger::set_remedies`]) ends the message that says so.
 //!
 //! A spender that runs alongside others and pays as it goes (a subagent)
 //! holds its cap first ([`Ledger::reserve`]), so those running together fit
@@ -25,7 +25,7 @@
 //!
 //! The ledger is a threshold site ([`LedgerSite`]): at every charge it checks
 //! its thresholds, by default the warning at 80% of each cap
-//! ([`Ledger::with_thresholds`] changes them).
+//! ([`Ledger::set_thresholds`] changes them).
 
 mod hold;
 
@@ -233,15 +233,15 @@ impl Ledger {
     }
 
     /// The host's way to raise a cap, added to the message that the cap is
-    /// reached ([`exhausted`](Self::exhausted)) or near (the warning).
-    #[must_use]
-    pub fn with_remedies(self, remedies: Remedies) -> Self {
+    /// reached ([`exhausted`](Self::exhausted)) or near (the warning). Every
+    /// clone of this ledger says it from now on.
+    pub fn set_remedies(&self, remedies: Remedies) {
         self.state().remedies = remedies;
-        self
     }
 
     /// What the ledger checks at every charge, in place of its default
-    /// warnings ([`LedgerSite`]). What is spent already counts as heard.
+    /// warnings ([`LedgerSite`]), for every clone of it. What is spent
+    /// already counts as heard.
     ///
     /// ```
     /// use haest_core::{
@@ -252,16 +252,13 @@ impl Ledger {
     ///
     /// // A ledger that never warns, only stops at its cap.
     /// let caps = ConversationCaps { max_usd: 10.0, max_unpriced_tokens: 0 };
-    /// let ledger = Ledger::new(caps, NoLedgerHooks).with_thresholds(Thresholds::<LedgerSite>::none());
+    /// let ledger = Ledger::new(caps, NoLedgerHooks);
+    /// ledger.set_thresholds(Thresholds::<LedgerSite>::none());
     /// ```
-    #[must_use]
-    pub fn with_thresholds(self, thresholds: Thresholds<LedgerSite>) -> Self {
-        {
-            let mut state = self.state();
-            state.warnings = Watch::new(thresholds);
-            state.rearm();
-        }
-        self
+    pub fn set_thresholds(&self, thresholds: Thresholds<LedgerSite>) {
+        let mut state = self.state();
+        state.warnings = Watch::new(thresholds);
+        state.rearm();
     }
 
     /// USD spent by calls that reported a price.

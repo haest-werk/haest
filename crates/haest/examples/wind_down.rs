@@ -119,7 +119,8 @@ async fn run() -> Result<(), BoxError> {
         max_usd: 1.0,
         max_unpriced_tokens: 0,
     };
-    let ledger = Ledger::new(budget, Told).with_remedies(remedies.clone());
+    let ledger = Ledger::new(budget, Told);
+    ledger.set_remedies(remedies.clone());
     let shared = SharedDeps::new(provider.resolver(), "/work", ShutWorkspace);
     let deps = AgentDeps::new(shared, tools, "You lead a small team.")
         .with_ledger(ledger)

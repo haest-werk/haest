@@ -146,7 +146,7 @@ pub struct NoJobEvents;
 impl JobEvents for NoJobEvents {}
 
 haest_core::plug_ref! {
-    /// [`JobEvents`], shared: what [`JobHub::with_events`] takes. Built from
+    /// [`JobEvents`], shared: what [`JobHub::set_events`] takes. Built from
     /// the listener itself, or from an `Arc` of one the host keeps too.
     pub struct JobEventsRef(dyn JobEvents);
 }
@@ -243,12 +243,10 @@ impl JobHub {
         }))))
     }
 
-    /// `events` hears every start, output chunk and end, for the host's
-    /// transcript (this hub's and every clone's).
-    #[must_use]
-    pub fn with_events(self, events: impl Into<JobEventsRef>) -> Self {
+    /// `events` hears every start, output chunk and end from now on, for the
+    /// host's transcript: this hub's and every clone's.
+    pub fn set_events(&self, events: impl Into<JobEventsRef>) {
         self.shared().set_events(events.into());
-        self
     }
 
     fn shared(&self) -> &Arc<Shared> {

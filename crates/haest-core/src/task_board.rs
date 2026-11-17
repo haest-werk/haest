@@ -51,7 +51,16 @@ pub use task::{NewTask, PatchStatus, Task, TaskError, TaskPatch, TaskStatus};
 
 use crate::deps::{ClockRef, WallClock};
 
-type OnChange = Arc<dyn Fn(&[Task]) + Send + Sync>;
+type OnChange = Box<dyn Fn(&[Task]) + Send + Sync>;
+
+/// What every clone of a board is.
+struct Shared {
+    state: Mutex<State>,
+    on_change: OnChange,
+    /// Read with the state unlocked, and the handle cloned out first: a
+    /// host's clock may take its time.
+    clock: Mutex<ClockRef>,
+}
 
 struct State {
     /// Insertion order is list order.
@@ -95,25 +104,21 @@ impl State {
 
 /// The conversation's task list: create, update, list.
 ///
-/// A cheap `Clone`: every clone is the same board, so the host keeps one and
-/// hands the Task tools another.
+/// A cheap `Clone`: every clone is the same board, its tasks and its clock,
+/// so the host keeps one and hands the Task tools another.
 ///
 /// Every change hands the whole new list to `on_change`, with the board's lock
 /// released, so `on_change` may read the board. [`Default`] is a board whose
 /// `on_change` does nothing.
 #[derive(Clone)]
-pub struct TaskBoard {
-    state: Arc<Mutex<State>>,
-    on_change: OnChange,
-    clock: ClockRef,
-}
+pub struct TaskBoard(Arc<Shared>);
 
 /// The tasks, as [`TaskBoard::list`] has them; `<locked>` while another
 /// thread holds the board.
 impl fmt::Debug for TaskBoard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = f.debug_struct("TaskBoard");
-        match self.state.try_lock() {
+        match self.0.state.try_lock() {
             Ok(state) => out.field("tasks", &state.tasks),
             Err(_) => out.field("tasks", &format_args!("<locked>")),
         };
@@ -131,29 +136,42 @@ impl TaskBoard {
     /// An empty board that hands every new snapshot to `on_change`; the clock
     /// is the [`WallClock`].
     pub fn new(on_change: impl Fn(&[Task]) + Send + Sync + 'static) -> Self {
-        Self {
-            state: Arc::new(Mutex::new(State {
+        Self(Arc::new(Shared {
+            state: Mutex::new(State {
                 tasks: Vec::new(),
                 next: Some(1),
-            })),
-            on_change: Arc::new(on_change),
-            clock: ClockRef::new(WallClock),
-        }
+            }),
+            on_change: Box::new(on_change),
+            clock: Mutex::new(ClockRef::new(WallClock)),
+        }))
     }
 
-    /// The clock `updated_at` reads (a host's paused clock, a test's fixed
-    /// one; any `Fn() -> u64` is a [`Clock`](crate::deps::Clock)). Set it before
-    /// the board is cloned: a clone made earlier keeps the old clock.
-    #[must_use]
-    pub fn with_clock(mut self, clock: impl Into<ClockRef>) -> Self {
-        self.clock = clock.into();
-        self
+    /// The clock `updated_at` reads from now on (a host's paused clock, a
+    /// test's fixed one; any `Fn() -> u64` is a [`Clock`](crate::deps::Clock)),
+    /// for every clone of this board.
+    pub fn set_clock(&self, clock: impl Into<ClockRef>) {
+        *self.clock() = clock.into();
     }
 
     /// The board. Its lock is held only while this file's own code runs
     /// (never `on_change`, never the clock), so a poisoned one is a bug here.
     fn state(&self) -> MutexGuard<'_, State> {
-        self.state.lock().expect("the task board's lock poisoned")
+        self.0.state.lock().expect("the task board's lock poisoned")
+    }
+
+    /// The board's clock slot. Its lock is held only to swap or clone the
+    /// handle, never while the clock runs, so a poisoned one is a bug here.
+    fn clock(&self) -> MutexGuard<'_, ClockRef> {
+        self.0
+            .clock
+            .lock()
+            .expect("the task board's clock lock poisoned")
+    }
+
+    /// The board's clock, read with no lock held.
+    fn now_ms(&self) -> u64 {
+        let clock = self.clock().clone();
+        clock.now_ms()
     }
 
     /// Every task, in the order they were created.
@@ -180,7 +198,7 @@ impl TaskBoard {
     /// out or restored: the board never hands out an id twice. Nothing
     /// changes and nothing fires.
     pub fn create(&self, input: NewTask) -> Result<Task, TaskError> {
-        let now = self.clock.now_ms();
+        let now = self.now_ms();
         let task = {
             let mut s = self.state();
             let id = s.next.ok_or(TaskError::IdsExhausted)?;
@@ -217,7 +235,7 @@ impl TaskBoard {
     /// before the first change: a refused patch changes nothing and fires
     /// nothing.
     pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Option<Task>, TaskError> {
-        let now = self.clock.now_ms();
+        let now = self.now_ms();
         let out = {
             let mut s = self.state();
             let at = s.find(id)?;
@@ -266,7 +284,7 @@ impl TaskBoard {
     /// The snapshot goes out with the lock released, so `on_change` may read the board.
     fn changed(&self) {
         let snapshot = self.list();
-        (self.on_change)(&snapshot);
+        (self.0.on_change)(&snapshot);
     }
 }
 

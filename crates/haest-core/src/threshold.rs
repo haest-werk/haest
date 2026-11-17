@@ -18,7 +18,7 @@
 //! | Site | Checks | Reads | Can |
 //! |---|---|---|---|
 //! | [`TurnSite`]: [`SharedDeps::thresholds`](crate::SharedDeps::thresholds) | at every step boundary (stop: before every model call) | context tokens, steps, wall time, USD and tokens of the turn and the conversation | remind, warn, wind down, stop |
-//! | [`LedgerSite`]: [`Ledger::with_thresholds`](crate::ledger::Ledger::with_thresholds) | at every charge | the conversation's USD and unpriced tokens | warn |
+//! | [`LedgerSite`]: [`Ledger::set_thresholds`](crate::ledger::Ledger::set_thresholds) | at every charge | the conversation's USD and unpriced tokens | warn |
 //! | haest-tools' `AgentTurnSite`: `AgentTurnGate::with_thresholds` | at every turn no human started | turns | remind, warn |
 //! | compaction: [`needs_compaction`](crate::compaction::needs_compaction) | before every model call, from the host's hook | context tokens | compact; [`CompactionOptions`](crate::compaction::CompactionOptions) is the threshold |
 //!
