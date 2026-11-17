@@ -947,8 +947,9 @@ Hosts write less (round two of the review, and what porting brain onto
 
 - New `HttpClientRef`, the handle a part that sends holds its client in, in
   the shape of haest-core's handles: built from the client itself
-  (`ReqwestClient::new().into()`), an `Arc` of one, or an
-  `Arc<dyn HttpClient>`; cheap to clone, and it derefs to the client.
+  (`ReqwestClient::new().into()`), an `Arc` of one, an
+  `Arc<dyn HttpClient>` or a `Box<dyn HttpClient>` (a client picked at run
+  time); cheap to clone, and it derefs to the client.
 - `Method` and `HttpError` are `#[non_exhaustive]` (breaking): a `match`
   adds a `_` arm, and haest adds a method (`PUT`) or a variant in a minor
   release.

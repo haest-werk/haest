@@ -11,9 +11,10 @@ use crate::{HttpError, Request, Response};
 /// shares, so no signature names `Arc` or `dyn`.
 ///
 /// A parameter that takes `impl Into<HttpClientRef>` takes the client itself
-/// (`ReqwestClient::new()`, a host's own), an `Arc` of one, or another
-/// handle. Cloning is cheap: the clones share one client. It derefs to the
-/// client, so `http.send(req)` works on the handle.
+/// (`ReqwestClient::new()`, a host's own), an `Arc` of one, an
+/// `Arc<dyn HttpClient>`, a `Box<dyn HttpClient>` (a client picked at run
+/// time), or another handle. Cloning is cheap: the clones share one client.
+/// It derefs to the client, so `http.send(req)` works on the handle.
 ///
 /// [`Default`] is what every part that sends uses unless handed another:
 /// the process's shared `ReqwestClient` with the `reqwest` feature (the
@@ -112,6 +113,13 @@ impl From<Arc<dyn HttpClient>> for HttpClientRef {
     }
 }
 
+/// A client the host picked at run time (reqwest, or its gateway's).
+impl From<Box<dyn HttpClient>> for HttpClientRef {
+    fn from(client: Box<dyn HttpClient>) -> Self {
+        Self(client.into())
+    }
+}
+
 impl AsRef<dyn HttpClient> for HttpClientRef {
     fn as_ref(&self) -> &(dyn HttpClient + 'static) {
         &*self.0
@@ -175,5 +183,15 @@ mod tests {
         assert!(HttpClientRef::ptr_eq(&a, &b));
         assert!(HttpClientRef::ptr_eq(&a, &a.clone()));
         assert_eq!(format!("{a:?}"), "HttpClientRef(..)");
+    }
+
+    /// A client the host picked at run time goes in boxed, as on every
+    /// other handle.
+    #[tokio::test]
+    async fn a_boxed_client_goes_in_as_it_is() {
+        let picked: Box<dyn HttpClient> = Box::new(Teapot);
+        let http: HttpClientRef = picked.into();
+        let res = http.send(Request::get("https://a.test/")).await.unwrap();
+        assert_eq!(res.status, 418);
     }
 }
