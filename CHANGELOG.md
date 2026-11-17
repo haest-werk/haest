@@ -683,6 +683,20 @@ Good citizens:
 - New setting `wind_down_at` (`HAEST_WIND_DOWN_AT`, `--wind-down-at`): a
   share from 0 to 1, 0 = off, the default; the `claude` profile leaves it
   off. A value above 1 is refused at load, naming its source.
+- `Loader::env`, `Loader::flags` and `Loader::standard` take any pairs by
+  value, `impl IntoIterator<Item = (K, V)>` with both `Into<String>`
+  (breaking): a map moves in instead of being copied, and a literal needs
+  no map. `Loader::standard(defaults, &env, &flags)` ->
+  `Loader::standard(defaults, env, [("model", "x")])`; a
+  `&HashMap<String, String>` still goes in as it is, a `&Vec` of pairs
+  as `.iter().cloned()`. `Loader::xdg_dirs` takes pairs of anything
+  `AsRef<str>` and reads only the two XDG values.
+- `#[non_exhaustive]` on `ConfigError`, `SetError`, `Kind` and `Source`
+  (breaking): a `match` adds a `_` arm, and haest adds a setting kind or a
+  layer in a minor release.
+- `ConfigError::Read` and `ConfigError::Toml` say what failed: `cannot read
+  /x/config.toml` and `/x/config.toml is not valid TOML` (was the bare
+  path), with where and why in the `source`.
 
 ### haest-runtime
 

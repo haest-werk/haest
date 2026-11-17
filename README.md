@@ -284,13 +284,13 @@ let loaded = Loader::new(Settings::bare(&cwd, &home)) // the defaults: bare, or 
     .user_file()        // <config dir>/config.toml; .file(path) for one the host names
     .project_file()     // the project's .haest/config.toml, inside trusted_dirs only
     .profile()          // the profile `profile` names
-    .env(&env)          // HAEST_* variables (and the provider keys)
-    .flags(&flags)      // --model, -e, ...
+    .env(env)           // HAEST_* variables (and the provider keys), as pairs or a map
+    .flags(flags)       // --model, -e, ...
     .load(&fs)
     .await?;
 ```
 
-That chain is `Loader::standard(defaults, &env, &flags)`, what the `haest`
+That chain is `Loader::standard(defaults, env, flags)`, what the `haest`
 command reads. `loaded` holds the settings and everything the runtime is handed
 beside them. `haest::runtime::build` takes a `RuntimeInputs`: the settings, the
 `World` (the real disk with the environment a child gets, or the host's own

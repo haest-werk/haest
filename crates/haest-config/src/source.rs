@@ -6,8 +6,10 @@ use std::{collections::BTreeMap, fmt, path::PathBuf};
 /// The layer a setting's value came from.
 ///
 /// Its [`Display`](fmt::Display) is what `haest settings` shows: `default`, a
-/// file's path, `profile claude`, `HAEST_MODEL`, `--model`.
+/// file's path, `profile claude`, `HAEST_MODEL`, `--model`. More layers may
+/// come in a minor release.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Source {
     /// No layer set it: the defaults the loader started from.
     Default,

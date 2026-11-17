@@ -9,10 +9,11 @@ use crate::Source;
 
 /// Why [`Loader::load`](crate::Loader::load) failed: what is wrong, and where.
 ///
-/// The `Display` of [`Read`](Self::Read) and [`Toml`](Self::Toml) is the
-/// file's path; what went wrong in it is the
-/// [`source`](std::error::Error::source).
+/// The `Display` of [`Read`](Self::Read) and [`Toml`](Self::Toml) names the
+/// file; what went wrong in it is the [`source`](std::error::Error::source).
+/// More variants may come in a minor release.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ConfigError {
     /// A file the host named with [`Loader::file`](crate::Loader::file) is
     /// not there.
@@ -22,7 +23,7 @@ pub enum ConfigError {
         path: PathBuf,
     },
     /// A config file is there but could not be read.
-    #[error("{}", path.display())]
+    #[error("cannot read {}", path.display())]
     Read {
         /// The file.
         path: PathBuf,
@@ -31,7 +32,7 @@ pub enum ConfigError {
         source: io::Error,
     },
     /// A config file is not TOML.
-    #[error("{}", path.display())]
+    #[error("{} is not valid TOML", path.display())]
     Toml {
         /// The file.
         path: PathBuf,
@@ -63,8 +64,10 @@ pub enum ConfigError {
     Providers(#[from] ProvidersFileError),
 }
 
-/// Why [`Config::set`](crate::Config::set) set nothing.
+/// Why [`Config::set`](crate::Config::set) set nothing. More variants may
+/// come in a minor release.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum SetError {
     /// No setting has this name.
     #[error("unknown setting \"{key}\"")]

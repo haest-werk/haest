@@ -45,8 +45,8 @@ use crate::{
 ///     .user_file() // <config dir>/config.toml
 ///     .project_file() // the project's .haest/config.toml, inside trusted_dirs only
 ///     .profile() // the profile `profile` names
-///     .env(&env) // HAEST_* variables
-///     .flags(&flags) // --model, -e, ...
+///     .env(env) // HAEST_* variables
+///     .flags(flags) // --model, -e, ...
 ///     .load(fs)
 ///     .await?;
 /// # Ok(()) }
@@ -63,10 +63,9 @@ use crate::{
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_config::ConfigError> {
 /// let fs = MemFs::with_files([("/etc/myhost/haest.toml", "tools = [\"read\"]\nmodel = \"a:file\"")]);
-/// let flags = [("model".to_string(), "a:flag".to_string())];
 /// let loaded = Loader::new(Settings::bare("/srv/app", "/root"))
 ///     .file("/etc/myhost/haest.toml")
-///     .flags(&flags)
+///     .flags([("model", "a:flag")])
 ///     .load(&fs)
 ///     .await?;
 /// assert_eq!(loaded.config.settings.tools.words(), ["read"]);
@@ -104,15 +103,24 @@ impl Loader {
     /// [`profile`](Self::profile), [`env`](Self::env), [`flags`](Self::flags).
     ///
     /// `env` is the process's environment (its variables, the provider keys
-    /// among them); `flags` are `(setting, raw)` pairs as
-    /// [`flags`](Self::flags) takes them. The crate docs have an example.
-    pub fn standard(
+    /// among them), read once for both layers that take it; `flags` are
+    /// `(setting, raw)` pairs as [`flags`](Self::flags) takes them. Each is
+    /// any list of pairs: a `HashMap`, a `Vec`, an array, of `String`s or
+    /// `&str`s. The crate docs have an example.
+    pub fn standard<K, V, F, R>(
         defaults: Settings,
-        env: &HashMap<String, String>,
-        flags: &[(String, String)],
-    ) -> Self {
+        env: impl IntoIterator<Item = (K, V)>,
+        flags: impl IntoIterator<Item = (F, R)>,
+    ) -> Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+        F: Into<String>,
+        R: Into<String>,
+    {
+        let env = owned(env);
         Self::new(defaults)
-            .xdg_dirs(env)
+            .xdg_dirs(&env)
             .user_file()
             .project_file()
             .profile()
@@ -122,21 +130,36 @@ impl Loader {
 
     /// Adds a layer that makes `$XDG_DATA_HOME/haest` the `data_dir` and
     /// `$XDG_CONFIG_HOME/haest` the `config_dir`, each when that variable is
-    /// set and not empty. Their source is the variable's name.
-    pub fn xdg_dirs(self, env: &HashMap<String, String>) -> Self {
-        let given = [
+    /// set and not empty in `env` (any list of name, value pairs, borrowed:
+    /// only the two values are read). Their source is the variable's name.
+    pub fn xdg_dirs<K, V>(self, env: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        const DIRS: [(&str, &str); 2] = [
             ("XDG_DATA_HOME", "data_dir"),
             ("XDG_CONFIG_HOME", "config_dir"),
-        ]
-        .into_iter()
-        .filter_map(|(var, key)| {
-            let dir = PathBuf::from(env_var(env, var)?).join("haest");
-            Some(Given::new(
-                key,
-                dir.display().to_string(),
-                Source::Env(var.into()),
-            ))
-        });
+        ];
+        // A name given twice keeps the later value, as in a map.
+        let mut values: [Option<String>; 2] = Default::default();
+        for (var, value) in env {
+            if let Some(i) = DIRS.iter().position(|(name, _)| *name == var.as_ref()) {
+                values[i] = Some(value.as_ref().trim().to_string());
+            }
+        }
+        let given = DIRS
+            .into_iter()
+            .zip(values)
+            .filter_map(|((var, key), value)| {
+                let value = value.filter(|v| !v.is_empty())?;
+                let dir = PathBuf::from(value).join("haest");
+                Some(Given::new(
+                    key,
+                    dir.display().to_string(),
+                    Source::Env(var.into()),
+                ))
+            });
         self.add(Pending::Values(given.collect()))
     }
 
@@ -171,28 +194,44 @@ impl Loader {
         self.add(Pending::Profile)
     }
 
-    /// Adds a layer of the `HAEST_*` variables in `env` (an empty one counts as
-    /// unset). `env` is also what [`Loaded`] takes the provider keys, a child
-    /// process's environment and every `${NAME}` from: without `.env()` those
-    /// are empty.
-    pub fn env(mut self, env: &HashMap<String, String>) -> Self {
-        self.env.extend(env.clone());
-        let given = DEFS.iter().filter_map(|def| {
-            let var = def.env();
-            let raw = env_var(env, &var)?;
-            Some(Given::new(def.key, raw, Source::Env(var)))
-        });
-        self.add(Pending::Values(given.collect()))
+    /// Adds a layer of the `HAEST_*` variables in `env` (any list of name,
+    /// value pairs: the process's environment as a `HashMap`, a fixed array;
+    /// an empty value counts as unset). `env` is also what [`Loaded`] takes
+    /// the provider keys, a child process's environment and every `${NAME}`
+    /// from: without `.env()` those are empty. A second `.env()` adds to the
+    /// first, a name in both keeping the later value.
+    pub fn env<K, V>(mut self, env: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        let env = owned(env);
+        let given: Vec<Given> = DEFS
+            .iter()
+            .filter_map(|def| {
+                let var = def.env();
+                let raw = env_var(&env, &var)?;
+                Some(Given::new(def.key, raw, Source::Env(var)))
+            })
+            .collect();
+        self.env.extend(env);
+        self.add(Pending::Values(given))
     }
 
     /// Adds a layer of flags, `(setting, raw)` each (`("max_turn_usd", "5")`),
     /// in the order given: a setting given twice keeps the later value, except
     /// `env`, where each adds a variable. The setting is the TOML name, not the
     /// flag's spelling; an error names the flag (`--max-turn-usd`).
-    pub fn flags(self, flags: &[(String, String)]) -> Self {
-        let given = flags
-            .iter()
-            .map(|(key, raw)| Given::new(key, raw, Source::Flag(flag_name(key))));
+    pub fn flags<K, V>(self, flags: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        let given = flags.into_iter().map(|(key, raw)| {
+            let key: String = key.into();
+            let source = Source::Flag(flag_name(&key));
+            Given::new(key, raw, source)
+        });
         self.add(Pending::Values(given.collect()))
     }
 
@@ -246,4 +285,14 @@ impl Loader {
             notes,
         })
     }
+}
+
+/// Name, value pairs as the map a layer reads them from.
+fn owned<K: Into<String>, V: Into<String>>(
+    pairs: impl IntoIterator<Item = (K, V)>,
+) -> HashMap<String, String> {
+    pairs
+        .into_iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect()
 }

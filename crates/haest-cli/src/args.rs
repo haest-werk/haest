@@ -161,6 +161,8 @@ fn setting_arg(def: &Def) -> Arg {
         Kind::Path => arg.value_name("DIR"),
         Kind::Choice(_) | Kind::Text => arg.value_name("VALUE"),
         Kind::Vars => arg.action(ArgAction::Append).value_name("NAME=VALUE"),
+        // A kind haest-config adds later takes a plain value until named here.
+        _ => arg.value_name("VALUE"),
     };
     match def.short {
         Some(c) => arg.short(c),

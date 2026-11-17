@@ -142,14 +142,17 @@ impl Config {
     /// ```
     /// use haest_config::{Config, SetError};
     ///
+    /// # fn main() -> Result<(), SetError> {
     /// let mut c = Config::bare("/work", "/home/me");
-    /// c.set("tools", "grep,read").unwrap();
-    /// c.set("max_turn_usd", "5").unwrap();
+    /// c.set("tools", "grep,read")?;
+    /// c.set("max_turn_usd", "5")?;
     /// assert_eq!(c.get("tools").as_deref(), Some("read,grep"));
     /// assert_eq!(c.settings.caps.max_turn_usd, 5.0);
     ///
     /// assert!(matches!(c.set("tool", "read"), Err(SetError::Unknown { .. })));
     /// assert!(matches!(c.set("max_turn_steps", "2.5"), Err(SetError::Value { .. })));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn set(&mut self, key: &str, raw: &str) -> Result<(), SetError> {
         let (_, set) = field(key).ok_or_else(|| SetError::Unknown { key: key.into() })?;

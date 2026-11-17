@@ -28,7 +28,9 @@ const WORKSPACES: &[&str] = &["sandbox", "real"];
 /// Whatever layer a value comes from, it is checked against its kind and
 /// written the one way the typed settings read (`On` reads as `true`, `bash,
 /// read` as `read,bash`), so a file, a variable and a flag mean the same.
+/// More kinds may come in a minor release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Kind {
     /// true / false (also 1 / 0, on / off, yes / no).
     Bool,
@@ -68,13 +70,16 @@ pub enum Scope {
 /// ```
 /// use haest_config::{DEFS, Kind};
 ///
-/// let catalog = DEFS.iter().find(|d| d.key == "skill_catalog").unwrap();
+/// # fn main() -> Result<(), &'static str> {
+/// let catalog = DEFS.iter().find(|d| d.key == "skill_catalog").ok_or("no skill_catalog")?;
 /// assert_eq!(catalog.env(), "HAEST_SKILL_CATALOG");
 /// assert_eq!(catalog.flag(), "skill-catalog");
 /// assert_eq!(catalog.kind, Kind::Bool);
 ///
-/// let model = DEFS.iter().find(|d| d.key == "model").unwrap();
+/// let model = DEFS.iter().find(|d| d.key == "model").ok_or("no model")?;
 /// assert_eq!(model.short, Some('m'));
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Def {

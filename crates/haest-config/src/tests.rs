@@ -42,7 +42,7 @@ async fn run(
     flags: &[(&str, &str)],
 ) -> Result<Loaded, ConfigError> {
     let env = vars(&[&[("HOME", HOME)], env].concat());
-    Loader::standard(Settings::bare(cwd, HOME), &env, &owned(flags))
+    Loader::standard(Settings::bare(cwd, HOME), env, flags.iter().copied())
         .load(&files(fs))
         .await
 }

@@ -64,6 +64,11 @@ async fn providers_json_comes_from_the_config_dir_and_a_broken_one_stops_the_loa
     assert!(r.providers.contains_key("local"));
     let err = run("/w", &[(path, "{nope")], &[], &[]).await.unwrap_err();
     assert!(matches!(err, ConfigError::Providers(_)), "{err}");
+    assert!(
+        err.to_string()
+            .ends_with("providers.json is not valid JSON"),
+        "{err}"
+    );
 }
 
 const MCP_JSON: &str = r#"{"mcpServers": {"gh": {"command": "gh-mcp"}}}"#;

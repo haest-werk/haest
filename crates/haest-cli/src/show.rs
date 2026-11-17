@@ -63,7 +63,7 @@ mod tests {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
         let loaded = Loader::new(Settings::bare("/w", "/h"))
-            .flags(&flags)
+            .flags(flags)
             .load(&MemFs::new())
             .await
             .unwrap();

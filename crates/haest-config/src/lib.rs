@@ -76,8 +76,6 @@
 //! trusted project's config, a variable and a flag.
 //!
 //! ```
-//! use std::collections::HashMap;
-//!
 //! use haest_config::{Loader, ProjectFile, Source};
 //! use haest_core::fs::MemFs;
 //! use haest_settings::{BuiltinTools, Settings};
@@ -91,15 +89,16 @@
 //!     ),
 //!     ("/home/me/projects/app/.haest/config.toml", "tools = \"all\""),
 //! ]);
-//! let env = HashMap::from([
-//!     ("HOME".to_string(), "/home/me".to_string()),
-//!     ("HAEST_MAX_TURN_USD".to_string(), "3".to_string()),
-//!     ("OPENROUTER_API_KEY".to_string(), "sk-or-example".to_string()),
-//! ]);
-//! let flags = [("model".to_string(), "anthropic:claude-opus-5-5".to_string())];
+//! // The process's environment, as a map or as pairs.
+//! let env = [
+//!     ("HOME", "/home/me"),
+//!     ("HAEST_MAX_TURN_USD", "3"),
+//!     ("OPENROUTER_API_KEY", "sk-or-example"),
+//! ];
+//! let flags = [("model", "anthropic:claude-opus-5-5")];
 //!
 //! let defaults = Settings::bare("/home/me/projects/app", "/home/me");
-//! let loaded = Loader::standard(defaults, &env, &flags).load(&fs).await?;
+//! let loaded = Loader::standard(defaults, env, flags).load(&fs).await?;
 //! let settings = &loaded.config.settings;
 //!
 //! // ~/projects is trusted, so the project's file was read, over the user's.
@@ -167,11 +166,11 @@ pub use value::env_var;
 /// | `settings` | `config.settings` |
 /// | `world` | `World::Disk { child_env }` |
 /// | `passed_env` | `passed_env` |
-/// | `keys` | `Arc::new(keys)` (a `HashMap` is a `KeySource`) |
+/// | `keys` | `keys` (a `HashMap` is a `KeySource`) |
 /// | `providers` | `providers` |
 /// | `mcp_servers` | `mcp_servers` |
 /// | `routing` | `routing` |
-/// | `http` | not loaded: the host's own client, or `Arc::new(ReqwestClient::new())` |
+/// | `http` | not loaded: the host's own client, or `ReqwestClient::new()` |
 ///
 /// Show the human every [`notes`](Self::notes) line before the run starts.
 #[derive(Debug, Clone)]

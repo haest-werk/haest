@@ -303,7 +303,7 @@ async fn main() -> ExitCode {
     };
     let home = env_var(&env, "HOME").unwrap_or("/");
     let defaults = Settings::bare(cwd, home);
-    let loaded = match Loader::standard(defaults, &env, &cli.settings)
+    let loaded = match Loader::standard(defaults, env, cli.settings.clone())
         .load(&RealFs)
         .await
     {

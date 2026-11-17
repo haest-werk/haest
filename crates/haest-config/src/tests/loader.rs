@@ -24,8 +24,7 @@ async fn a_layer_added_later_wins_whatever_kind_it_is() {
 async fn a_layer_not_added_is_not_read() {
     let fs = files(&[(USER_FILE, "tools = \"all\""), ("/w/.mcp.json", "{}")]);
     let env = vars(&[("HAEST_TOOLS", "all"), ("OPENROUTER_API_KEY", "k")]);
-    let flags = owned(&[("model", "a:flag")]);
-    let only_flags = bare().flags(&flags).load(&fs).await.unwrap();
+    let only_flags = bare().flags([("model", "a:flag")]).load(&fs).await.unwrap();
     assert!(only_flags.config.settings.tools.is_empty());
     assert_eq!(only_flags.config.settings.model_spec, "a:flag");
     assert!(only_flags.keys.is_empty() && only_flags.child_env.vars().is_empty());
@@ -64,8 +63,11 @@ async fn the_hosts_own_defaults_are_the_bottom_layer() {
 
 #[tokio::test]
 async fn a_profile_named_with_no_profile_layer_is_a_note_not_a_silent_nothing() {
-    let flags = owned(&[("profile", "claude")]);
-    let r = bare().flags(&flags).load(&MemFs::new()).await.unwrap();
+    let r = bare()
+        .flags([("profile", "claude")])
+        .load(&MemFs::new())
+        .await
+        .unwrap();
     assert!(r.config.settings.tools.is_empty());
     assert_eq!(r.notes.len(), 1, "{:?}", r.notes);
     assert!(r.notes[0].contains("claude"), "{:?}", r.notes);
@@ -89,4 +91,15 @@ fn a_built_in_profile_sets_only_what_a_profile_may() {
             value::check(def, raw).unwrap_or_else(|e| panic!("{name}: {key}: {e}"));
         }
     }
+}
+
+#[tokio::test]
+async fn a_config_file_error_says_what_failed_and_names_the_file() {
+    let fs = files(&[(NAMED, "model = ")]);
+    let err = bare().file(NAMED).load(&fs).await.unwrap_err();
+    assert_eq!(err.to_string(), format!("{NAMED} is not valid TOML"));
+    assert!(
+        std::error::Error::source(&err).is_some(),
+        "the parser's words are the source"
+    );
 }
