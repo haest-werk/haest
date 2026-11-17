@@ -143,9 +143,10 @@ async fn run() -> Result<(), BoxError> {
         LoopEvent::TextDelta { text } => println!("model: {text}"),
         _ => {}
     };
-    agent
+    let end = agent
         .run("Find out what broke last night.", &mut sink)
         .await;
+    assert!(end.error.is_none(), "the lead concluded: {end:?}");
 
     assert_eq!(*helpers.0.lock().unwrap(), ["scout the logs"]);
     assert_eq!(refused, 1, "the spawn past 80% was refused");

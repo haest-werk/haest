@@ -17,7 +17,10 @@
 ///   struct (`this` is the `&dyn Trait`).
 ///
 /// It never implements the trait for the handle: that would overlap the
-/// reflexive `From<XRef>`.
+/// reflexive `From<XRef>`. So a function that only borrows an implementation
+/// for the call takes `&dyn Trait`, which a `&value` and a `&handle` both
+/// coerce to, where `&impl Trait` would refuse the handle: haest's one place
+/// for `dyn` in a signature (`&dyn Fs`, the net guard's `&dyn Resolve`).
 ///
 /// ```ignore
 /// haest_core::plug_ref! {

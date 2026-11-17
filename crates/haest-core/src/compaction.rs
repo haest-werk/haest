@@ -308,7 +308,8 @@ impl CompactionError {
 ///     Message::Assistant(full),
 /// ];
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m").with_history(history));
-/// agent.run("c", &mut Vec::<LoopEvent>::new()).await;
+/// let end = agent.run("c", &mut Vec::<LoopEvent>::new()).await;
+/// assert!(end.error.is_none(), "{end:?}");
 ///
 /// // [summary, "b done", "c", "done"]: the head became one message.
 /// assert_eq!(agent.history().len(), 4);

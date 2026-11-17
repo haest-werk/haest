@@ -220,7 +220,7 @@ async fn an_arrival_runs_through_the_gate_and_what_it_holds_rides_in_with_the_pe
     );
     session.idle().await;
 
-    session.turn(Input::human("what happened?")).await.unwrap();
+    let _ = session.turn(Input::human("what happened?")).await.unwrap();
     let mine = until(&mut sub, turn_end).await;
     let text = users(&mine).concat();
     assert!(

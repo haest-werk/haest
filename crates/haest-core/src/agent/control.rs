@@ -37,7 +37,8 @@ use tokio_util::sync::CancellationToken;
 ///         steered = true;
 ///     }
 /// };
-/// agent.run("say one", &mut sink).await;
+/// let end = agent.run("say one", &mut sink).await;
+/// assert!(end.error.is_none(), "{end:?}");
 ///
 /// // One turn, two model calls: the steering became a user message in between.
 /// assert_eq!(provider.requests().len(), 2);
@@ -45,7 +46,8 @@ use tokio_util::sync::CancellationToken;
 ///
 /// // What arrives after a turn's last step boundary waits for the caller.
 /// while let Some(next) = agent.control().take_queued() {
-///     agent.run(&next, &mut Vec::<LoopEvent>::new()).await;
+///     let end = agent.run(&next, &mut Vec::<LoopEvent>::new()).await;
+///     assert!(end.error.is_none(), "{end:?}");
 /// }
 /// # Ok(())
 /// # }

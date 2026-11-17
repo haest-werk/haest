@@ -110,7 +110,7 @@ impl ToolServices for Blobs {
 async fn published(deps: AgentDeps) -> String {
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let mut events: Vec<LoopEvent> = Vec::new();
-    agent.run("publish", &mut events).await;
+    let _ = agent.run("publish", &mut events).await;
     let result = events.iter().find_map(|e| match e {
         LoopEvent::ToolResult { output, .. } => Some(output.content.clone()),
         _ => None,

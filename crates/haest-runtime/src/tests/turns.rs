@@ -59,7 +59,7 @@ async fn what_the_gate_holds_rides_in_with_the_humans_next_turn() {
     assert_eq!(rt.next_agent_turn(), None, "past the cap the gate holds it");
 
     let mut sink = |_: LoopEvent| {};
-    rt.human_turn("what happened?", &mut sink).await;
+    let _ = rt.human_turn("what happened?", &mut sink).await;
     let sent = api.0.lock().unwrap().clone();
     let carried = |b: &String| b.contains("what happened?") && b.contains("job 2 exited");
     assert!(sent.iter().any(carried), "{sent:?}");

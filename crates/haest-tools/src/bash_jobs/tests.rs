@@ -121,14 +121,14 @@ async fn a_background_job_shows_in_the_running_set_and_its_exit_wakes_the_model_
     let deps = AgentDeps::new(shared, tools, "system");
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     let mut events: Vec<LoopEvent> = Vec::new();
-    agent.run("start the build", &mut events).await;
+    let _ = agent.run("start the build", &mut events).await;
 
     // The host's inbox: the exit arrives as a turn the human did not start.
     let notice = tokio::time::timeout(Duration::from_secs(5), r.notices.recv())
         .await
         .expect("the exit is announced")
         .unwrap();
-    agent.run(&notice, &mut events).await;
+    let _ = agent.run(&notice, &mut events).await;
 
     let snapshots = r.events.snapshots.lock().unwrap().clone();
     assert_eq!(snapshots.first(), Some(&vec!["b1".to_string()]));

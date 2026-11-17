@@ -156,7 +156,7 @@ async fn a_failed_answer_leaves_no_tool_call_without_a_result_in_history() {
     };
     assert_eq!(calls(agent.history()), 0);
     assert_eq!(calls(&hooks.persisted.lock().unwrap()), 0);
-    agent.run("again", &mut Vec::new()).await;
+    let _ = agent.run("again", &mut Vec::new()).await;
     assert_eq!(calls(&p.requests()[1].messages), 0);
 }
 
@@ -179,7 +179,7 @@ async fn input_steered_mid_turn_lands_after_the_tool_results_in_the_same_turn() 
         }
         events.push(ev);
     };
-    agent.run("first", &mut sink).await;
+    let _ = agent.run("first", &mut sink).await;
     assert_eq!(
         roles(&p.requests()[1].messages),
         ["user", "assistant", "tool", "user"]
@@ -214,7 +214,7 @@ async fn a_second_turn_while_one_is_active_is_refused() {
     let control = agent.control();
     let mut seen_running = false;
     let mut sink = |_: LoopEvent| seen_running |= control.running();
-    agent.run("one", &mut sink).await;
+    let _ = agent.run("one", &mut sink).await;
     assert!(seen_running);
     assert!(!agent.control().running());
     let held = agent.control().begin().unwrap();

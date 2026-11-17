@@ -124,6 +124,7 @@ pub enum LoopEvent {
 /// [`Agent::run`](crate::Agent::run) returns it.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
+#[must_use = "a turn can end in an error"]
 pub struct TurnOutcome {
     /// Why it ended. [`StopReason::MaxTokens`] here means a turn cap or the
     /// conversation budget stopped it.
@@ -154,7 +155,6 @@ impl TurnOutcome {
         }
     }
     /// The same ending, stopped by `limit` (None: no cap stopped it).
-    #[must_use]
     pub fn with_limit(mut self, limit: impl Into<Option<Limit>>) -> Self {
         self.limit = limit.into();
         self
@@ -189,6 +189,17 @@ impl EventSink for tokio::sync::mpsc::UnboundedSender<LoopEvent> {
 impl EventSink for Vec<LoopEvent> {
     fn emit(&mut self, ev: LoopEvent) {
         self.push(ev)
+    }
+}
+
+/// Any sink, the caller's own type or a `dyn EventSink`, as one the loop
+/// holds as `&mut dyn EventSink`: an unsized one cannot be coerced to it
+/// directly, this sized wrapper can.
+pub(crate) struct Forward<'a, S: ?Sized>(pub(crate) &'a mut S);
+
+impl<S: EventSink + ?Sized> EventSink for Forward<'_, S> {
+    fn emit(&mut self, ev: LoopEvent) {
+        self.0.emit(ev)
     }
 }
 

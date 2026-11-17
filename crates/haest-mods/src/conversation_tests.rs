@@ -56,14 +56,14 @@ async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_let
     let bash = Probe::new("Bash");
     let mut agent = agent(&p, &mods, Tools::from_iter([bash.clone()]));
 
-    agent.run("delete it", &mut Vec::new()).await;
+    let _ = agent.run("delete it", &mut Vec::new()).await;
     assert!(bash.ran().is_empty());
     assert!(tool_results(&agent)[0].is_error);
 
-    agent.run("again", &mut Vec::new()).await;
+    let _ = agent.run("again", &mut Vec::new()).await;
     assert_eq!(bash.ran().len(), 1);
 
-    agent.run("and once more", &mut Vec::new()).await;
+    let _ = agent.run("and once more", &mut Vec::new()).await;
     assert_eq!(bash.ran().len(), 2);
     assert_eq!(human.prompts(), 2, "ALWAYS answered the third");
     assert_eq!(human.receipts(), 1);
@@ -98,7 +98,7 @@ async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it()
     // A host's plan toggle runs the same command as `/plan`.
     assert_eq!(mods.command("plan", "").await, CommandOutcome::Handled);
     assert_eq!(states.lock().unwrap().last(), Some(&true));
-    agent.run("plan the change", &mut Vec::new()).await;
+    let _ = agent.run("plan the change", &mut Vec::new()).await;
     assert!(p.requests()[0].system.contains(PLAN_PROMPT));
     let errors: Vec<bool> = tool_results(&agent).iter().map(|r| r.is_error).collect();
     assert_eq!(errors, [false, true]);
@@ -106,7 +106,7 @@ async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it()
 
     assert_eq!(mods.command("/plan", "off").await, CommandOutcome::Handled);
     assert_eq!(states.lock().unwrap().last(), Some(&false));
-    agent.run("now do it", &mut Vec::new()).await;
+    let _ = agent.run("now do it", &mut Vec::new()).await;
     assert!(!p.requests()[2].system.contains(PLAN_PROMPT));
     assert_eq!(writer.ran().len(), 1);
     assert_eq!(ui.infos().len(), 2);
@@ -166,12 +166,12 @@ async fn a_tool_the_source_keeps_back_runs_by_name_inside_the_mods_hooks() {
     );
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 
-    agent.run("write it", &mut Vec::new()).await;
+    let _ = agent.run("write it", &mut Vec::new()).await;
     assert_eq!(writer.ran().len(), 1, "{:?}", tool_results(&agent));
 
     // Plan mode refuses a write: the kept-back tool runs inside the hooks.
     assert_eq!(mods.command("plan", "").await, CommandOutcome::Handled);
-    agent.run("write it again", &mut Vec::new()).await;
+    let _ = agent.run("write it again", &mut Vec::new()).await;
     assert_eq!(writer.ran().len(), 1);
     assert!(tool_results(&agent)[1].is_error);
 }

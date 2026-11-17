@@ -136,7 +136,7 @@ async fn an_answer_lands_as_soon_as_every_call_before_it_has_answered() {
             running_at_first_answer = Some(g.lock().unwrap().now);
         }
     };
-    agent.run("go", &mut sink).await;
+    let _ = agent.run("go", &mut sink).await;
     assert_eq!(running_at_first_answer, Some(1));
 }
 

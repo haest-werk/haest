@@ -87,7 +87,8 @@ pub use watch::WindDownWatch;
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
 /// let mut events = Vec::new();
-/// agent.run("fan out", &mut events).await;
+/// let end = agent.run("fan out", &mut events).await;
+/// assert!(end.error.is_none(), "the model concluded: {end:?}");
 ///
 /// let refused = events.iter().any(|e| matches!(e, LoopEvent::ToolResult { output, .. } if output.is_error));
 /// let notices = events.iter().filter(|e| matches!(e, LoopEvent::Guard { .. })).count();

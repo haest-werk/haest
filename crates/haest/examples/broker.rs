@@ -127,7 +127,8 @@ async fn main() -> Result<(), BoxError> {
     // its own; haest dials again, and the ack says what the broker holds,
     // so what came after is sent and nothing twice.
     drop(side);
-    session.turn(Input::human("and the deploy?")).await?;
+    let end = session.turn(Input::human("and the deploy?")).await?;
+    assert!(end.error.is_none(), "{end:?}");
     let mut side = accept(&listener).await?;
     assert_eq!(side.frame().await?["type"], "hello");
     side.send(json!({"v": 1, "id": "ack", "type": "events", "after": held, "follow": true}))

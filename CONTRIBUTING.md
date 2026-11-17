@@ -25,7 +25,12 @@
     (`GenerateImageOptions`, `ModOptions`); **`*Config`** names only an entry
     read from a file (`McpServerConfig`, `CustomProviderConfig`).
   - A tool struct is the name the model calls plus `Tool`
-    (`GenerateImageTool`); a builder method starts with `with_`.
+    (`GenerateImageTool`).
+  - **`with_*`** is a consuming setter that cannot fail (`self -> Self`,
+    `#[must_use]`), and nothing else: a constructor is `new`, `from_*` or
+    `new_with_*`, a fallible add `try_*`, a merge is named for what it
+    makes (`overlaid`), and what changes every clone of a shared service
+    takes `&self` as `set_*` (`Ledger::set_remedies`).
   - A line to the human is **info / warn / error / debug**, on `Ui`, `ModUi`,
     `ModEnv` and `ToolServices` alike.
   - **subagent**, one word. `AgentDeps` is one agent's own parts (tools,
@@ -44,6 +49,14 @@
   only shows the error (`Mod`'s events, `AgentHooks::before_model_call`).
   A private parser may keep `String`.
   Binaries (haest-cli) use `anyhow`.
+- **No `Arc`, `Box` or `dyn` in a signature.** A plug point is held in its
+  `<Trait>Ref` handle (`plug_ref!`), and a constructor or setter takes
+  `impl Into<XRef>`, so a host hands in the value itself. A service a host
+  shares is a cheap `Clone` whose clones are the one service, never an
+  `Arc` the host wraps. One exception: a function that only borrows a file
+  system for the call takes `&dyn Fs` (the net guard `&dyn Resolve`), since
+  that borrow takes the value (`&MemFs`) and its handle (`&FsRef`) alike, and
+  `&impl Fs` would refuse the handle: a handle never implements its own trait.
 - **One path per item.** A library's modules are private and everything a host
   uses is re-exported at its root, once (haest-core, whose modules are the
   contract, is the exception). `pub` only for what a host or a plug-in author

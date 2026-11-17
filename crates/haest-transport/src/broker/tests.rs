@@ -175,7 +175,7 @@ fn stream(frames: &[Value]) -> Vec<&Value> {
 async fn the_hello_carries_the_token_and_nothing_else_goes_before_the_ack() {
     let mut broker = TestBroker::start(None).await;
     let (backend, _) = session(&answers(&["before"]), hub());
-    backend.turn(Input::human("first")).await.unwrap();
+    let _ = backend.turn(Input::human("first")).await.unwrap();
     let link = Broker::new(&broker.url)
         .with_token("t0k")
         .with_backoff(FAST);
@@ -242,7 +242,7 @@ async fn a_cut_link_resumes_from_the_brokers_ack_and_loses_nothing() {
     assert_eq!(ty(&second.next().await.unwrap()), "hello");
     second.ack(kept).await;
     let after = second.until(|f| ty(f) == "turn_end").await;
-    turn.await.unwrap().unwrap();
+    let _ = turn.await.unwrap().unwrap();
 
     let resent: Vec<u64> = stream(&after).iter().map(|f| seq(f)).collect();
     assert!(

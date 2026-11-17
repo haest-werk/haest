@@ -249,7 +249,7 @@ async fn a_watch_socket_shows_the_stream_and_refuses_to_drive() {
     let _attached = UnixSocket::new(&dir.0)
         .attach(backend.clone(), Grant::watch(Origin::Agent))
         .unwrap();
-    backend.turn(Input::human("one")).await.unwrap();
+    let _ = backend.turn(Input::human("one")).await.unwrap();
 
     let mut peer = connect_session(&dir.0, "s1").await.unwrap();
     assert_eq!(peer.access(), Access::Watch);

@@ -132,7 +132,7 @@ async fn a_plain_turn_awaits_the_hosts_flush_before_side_effects_only() {
     let (mut agent, _) = agent_with(&p, opts);
     let host = Arc::new(Flushing::default());
     agent.map_deps(|d| d.with_hooks(host.clone()));
-    agent.run("go", &mut no_events()).await;
+    let _ = agent.run("go", &mut no_events()).await;
 
     // One batch with side effects; the reads and the unknown tool ran none.
     assert_eq!(*host.0.lock().unwrap(), 1);

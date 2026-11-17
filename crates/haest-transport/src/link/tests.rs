@@ -290,7 +290,7 @@ async fn a_watch_connection_may_read_but_not_drive() {
 async fn events_replays_then_replies_then_follows() {
     let model = answers(&["before", "after"]);
     let (backend, _) = session(&model, hub());
-    backend
+    let _ = backend
         .turn(haest_session::Input::human("first"))
         .await
         .unwrap();

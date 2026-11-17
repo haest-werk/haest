@@ -172,7 +172,7 @@ async fn the_warm_summary_request_extends_the_last_loop_request() {
     let p = ScriptedProvider::new([text_answer("answer"), text_answer("THE SUMMARY")]);
     let mut agent = agent_with(&p);
     let mut events: Vec<LoopEvent> = Vec::new();
-    agent.run("go", &mut events).await;
+    let _ = agent.run("go", &mut events).await;
     let res = compact(&mut agent, &CancellationToken::new(), &CFG)
         .await
         .unwrap()

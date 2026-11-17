@@ -34,7 +34,7 @@ use crate::{
     caps::TurnCaps,
     compaction::last_context_tokens,
     deps::AgentDeps,
-    events::{EventSink, TurnOutcome},
+    events::{EventSink, Forward, TurnOutcome},
     guard::TurnGuard,
     media::fit_for_model,
     messages::{Message, StopReason, Usage},
@@ -294,7 +294,15 @@ impl Agent {
     /// `TurnOutcome` saying why. (A hook that panics is the host's own panic.)
     /// Called while a turn of this agent is already running (from inside a
     /// hook), it ends at once with [`StopReason::Error`] and touches nothing.
-    pub async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
+    ///
+    /// `sink` is any [`EventSink`]: a `Vec<LoopEvent>`, a closure, a channel,
+    /// the host's own type, or a `&mut dyn EventSink` it was handed.
+    pub async fn run(&mut self, input: &str, sink: &mut (impl EventSink + ?Sized)) -> TurnOutcome {
+        self.run_on(input, &mut Forward(sink)).await
+    }
+
+    /// [`run`](Self::run), compiled once.
+    async fn run_on(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
         let started = Instant::now();
         let cancel = match self.control.begin() {
             Ok(c) => c,

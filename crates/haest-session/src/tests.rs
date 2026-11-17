@@ -239,7 +239,7 @@ async fn a_lagging_subscriber_gets_one_gap_and_the_turn_never_waits() {
     // Three turns while it reads nothing: none waits for it.
     for text in ["a", "b", "c"] {
         let turn = session.turn(Input::human(text));
-        tokio::time::timeout(Duration::from_secs(5), turn)
+        let _ = tokio::time::timeout(Duration::from_secs(5), turn)
             .await
             .unwrap()
             .unwrap();
@@ -279,7 +279,7 @@ async fn two_subscribers_see_the_same_frames_in_the_same_order() {
     let mut a = session.subscribe(0);
     let mut b = session.subscribe(0);
 
-    session.turn(Input::human("hello")).await.unwrap();
+    let _ = session.turn(Input::human("hello")).await.unwrap();
 
     let a = until(&mut a, turn_end).await;
     let b = until(&mut b, turn_end).await;
@@ -319,7 +319,7 @@ async fn a_late_subscriber_catches_up_on_the_running_turn() {
     // is still there, the notice before it may not be.
     let mut late = session.subscribe(0);
     go.notify_one();
-    turn.await.unwrap().unwrap();
+    let _ = turn.await.unwrap().unwrap();
     let frames = until(&mut late, turn_end).await;
     let bodies: Vec<_> = frames.iter().map(|f| &f.body).collect();
     assert!(
@@ -367,7 +367,7 @@ async fn a_change_waits_for_the_running_turn() {
     assert!(!change.is_finished());
 
     go.notify_one();
-    turn.await.unwrap().unwrap();
+    let _ = turn.await.unwrap().unwrap();
     change.await.unwrap().unwrap();
     assert_eq!(
         session.snapshot().await.unwrap().model_spec,
@@ -402,7 +402,7 @@ async fn with_runs_between_turns_and_hands_back_what_it_gives() {
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(!seen.is_finished(), "it waits for the running turn");
     go.notify_one();
-    turn.await.unwrap().unwrap();
+    let _ = turn.await.unwrap().unwrap();
     assert_eq!(seen.await.unwrap().unwrap(), 4, "the whole turn was in");
     session.close().await;
 }
@@ -419,8 +419,8 @@ async fn input_sent_under_a_hold_waits_and_runs_as_a_turn_of_its_own() {
     assert!(model.requests().is_empty());
     drop(hold);
 
-    first.await.unwrap();
-    second.await.unwrap();
+    let _ = first.await.unwrap();
+    let _ = second.await.unwrap();
     assert_eq!(model.requests().len(), 2, "two turns, one input each");
     let users = (session.history().await.unwrap().messages.iter())
         .filter(|m| matches!(m, Message::User(_)))
@@ -436,7 +436,7 @@ async fn close_closes_the_conversation_and_ends_every_stream() {
     let log = recorded.log.clone();
     let session = start(recorded, hub());
     let mut sub = session.subscribe(0);
-    session.turn(Input::human("hi")).await.unwrap();
+    let _ = session.turn(Input::human("hi")).await.unwrap();
 
     session.close().await;
     assert_eq!(log.lock().unwrap().last(), Some(&Asked::Close));
@@ -498,7 +498,7 @@ async fn status_frames_say_when_a_turn_runs_and_what_changed() {
     let model = answers(&["ok"]);
     let session = start(agent(&model, Tools::new()), hub());
     let mut sub = session.subscribe(0);
-    session.turn(Input::human("go")).await.unwrap();
+    let _ = session.turn(Input::human("go")).await.unwrap();
     session
         .control(Control::SetEffort(Some(Effort::High)))
         .await

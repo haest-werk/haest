@@ -92,8 +92,9 @@ async fn main() -> Result<(), BoxError> {
     });
     tokio::time::sleep(Duration::from_millis(20)).await;
     go.notify_one();
-    first.await??;
-    note.await??;
+    for end in [first.await??, note.await??] {
+        assert!(end.error.is_none(), "{end:?}");
+    }
 
     // One turn took both inputs: the note is a user message after the tool's result.
     let history = session.history().await?.messages;

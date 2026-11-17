@@ -210,13 +210,6 @@ impl Skills {
         }
     }
 
-    /// These skills, with `skills` in place of what they held.
-    #[must_use]
-    pub fn with_skills(self, skills: Vec<Skill>) -> Self {
-        self.replace(skills);
-        self
-    }
-
     /// Every skill held, the ones the model may not pick included.
     pub fn list(&self) -> Vec<Skill> {
         self.held().clone()

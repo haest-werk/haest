@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use crate::{
     agent::{Agent, control::Running, turn::Turn},
-    events::{EventSink, TurnOutcome},
+    events::{EventSink, Forward, TurnOutcome},
     messages::{Message, ToolCall},
     run::{
         Journal, ReplayedRun, RunEnd, RunError, RunKey, RunOutcome, Served, finished, input_hash,
@@ -86,6 +86,16 @@ impl Agent {
     /// # fn main() {}
     /// ```
     pub async fn run_durable(
+        &mut self,
+        key: &RunKey,
+        input: &str,
+        sink: &mut (impl EventSink + ?Sized),
+    ) -> Result<RunOutcome, RunError> {
+        self.run_durable_on(key, input, &mut Forward(sink)).await
+    }
+
+    /// [`run_durable`](Self::run_durable), compiled once.
+    async fn run_durable_on(
         &mut self,
         key: &RunKey,
         input: &str,

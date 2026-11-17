@@ -173,6 +173,6 @@ async fn a_plain_turn_never_touches_the_store_it_was_handed() {
         text_answer("done"),
     ]);
     let (mut agent, _) = durable(&p, &store, &[echo_tool()], None);
-    agent.run("go", &mut no_events()).await;
+    let _ = agent.run("go", &mut no_events()).await;
     assert!(store.keys().is_empty());
 }

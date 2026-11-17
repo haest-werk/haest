@@ -203,10 +203,10 @@ pub(crate) fn agent_with(p: &ScriptedProvider, opts: Opts) -> (Agent, Arc<TestHo
     (Agent::new(deps, AgentOptions::new("fake:m1")), hooks)
 }
 
-/// Every event of one turn.
+/// Every event of one turn; how it ended is the last one.
 pub(crate) async fn collect(agent: &mut Agent, input: &str) -> Vec<LoopEvent> {
     let mut events = Vec::new();
-    agent.run(input, &mut events).await;
+    let _ = agent.run(input, &mut events).await;
     events
 }
 

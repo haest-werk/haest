@@ -24,7 +24,9 @@ Breaking for a host that writes `TurnCaps` or `Settings` out in full;
 everything built with `::new`, `Default` or `..` compiles as before.
 
 No `Arc`, `Box` or `dyn` in haest-core's API: every plug point takes the
-value itself, and holds it in a handle named after its trait. Read
+value itself, and holds it in a handle named after its trait. The one
+`dyn` left is a borrow for the length of a call (`&dyn Fs`, the net
+guard's `&dyn Resolve`), which takes the value and its handle alike. Read
 "Upgrading" first.
 
 The workspace has a lint table (`[workspace.lints]` in the root
@@ -684,6 +686,15 @@ Hosts write less (round two of the review, and what porting brain onto
   example and the plug-in test hold their own parts the same way (no
   `Arc::new` left in either host), and the notebook's host fills its slots
   with `with_host`.
+- `Agent::run` and `Agent::run_durable` take `sink: &mut (impl EventSink +
+  ?Sized)` (was `&mut dyn EventSink`): every caller compiles as before, a
+  `&mut dyn EventSink` included.
+- `TurnOutcome` is `#[must_use]`, so a turn that ended in an error is never
+  dropped unseen: `agent.run(text, &mut sink).await;` warns ->
+  `let end = agent.run(text, &mut sink).await;`. Every consuming setter
+  (`ToolContext::with_*`, `ToolOutput::with_title`, haest-tools'
+  `BuiltinOptions::with_*` and the rest) is `#[must_use]` too:
+  `ctx.with_cwd(dir);` without its result warns instead of changing nothing.
 - The do-nothing parts are all `Clone`, `Copy`, `PartialEq` and `Eq`:
   `ShutWorkspace` and `ShutFs` gain all four, `NoHooks`, `NoServices`,
   `NoFacts` and `WallClock` the last two.

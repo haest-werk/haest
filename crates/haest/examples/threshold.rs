@@ -171,7 +171,8 @@ async fn run() -> Result<(), BoxError> {
         LoopEvent::TextDelta { text } => println!("model: {text}"),
         _ => {}
     };
-    agent.run("What moves the sea?", &mut sink).await;
+    let end = agent.run("What moves the sea?", &mut sink).await;
+    assert!(end.error.is_none(), "{end:?}");
 
     // Past 60% at 6,500 tokens, and not again at 7,000: it never fell under.
     assert_eq!(reminders.len(), 1);

@@ -131,7 +131,7 @@ impl Rig {
     }
 
     pub(super) async fn turn(&mut self, text: &str) {
-        self.main.run(text, &mut self.events).await;
+        let _ = self.main.run(text, &mut self.events).await;
     }
 
     /// Run whatever reached main's inbox as turns until `done` holds (5s at most).

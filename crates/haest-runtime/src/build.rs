@@ -50,7 +50,8 @@ async fn find(
     let skill_roots = SkillScanRoots::find(fs.as_ref(), &skill_options(s)).await;
     // Skill bodies are read from the host's Fs: a user skill lives outside
     // any sandbox mount.
-    let skills = Skills::new(fs.clone()).with_skills(skills_in(fs.as_ref(), &skill_roots).await);
+    let skills = Skills::new(fs.clone());
+    skills.replace(skills_in(fs.as_ref(), &skill_roots).await);
     let skill_dirs = skill_roots.dirs();
     let remedies = hooks.remedies();
     let workspace = workspace_for(s, world, passed_env, &skill_dirs, spill, remedies).await?;
