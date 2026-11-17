@@ -124,14 +124,14 @@ pub struct MemberEnd {
 /// caps, and hears the end.
 ///
 /// ```
-/// use std::{sync::{Arc, Mutex}, time::Duration};
+/// use std::{sync::mpsc, time::Duration};
 ///
 /// use async_trait::async_trait;
 /// use haest_tools::{Ending, Member, MemberCaps, MemberEnd, MemberRun};
 ///
 /// struct NodeRun {
 ///     model_spec: String,
-///     closed: Arc<Mutex<Vec<(Ending, f64)>>>,
+///     closed: mpsc::Sender<(Ending, f64)>,
 /// }
 ///
 /// #[async_trait]
@@ -144,11 +144,11 @@ pub struct MemberEnd {
 ///     }
 ///     async fn end(self: Box<Self>, end: MemberEnd) {
 ///         // Here the host would close its run: flush its records, then stop it.
-///         self.closed.lock().unwrap().push((end.ending, end.spend.usd()));
+///         let _ = self.closed.send((end.ending, end.spend.usd()));
 ///     }
 /// }
 ///
-/// let closed = Arc::new(Mutex::new(Vec::new()));
+/// let (closed, _ends) = mpsc::channel();
 /// // What start_member hands back.
 /// let member = Member::new(NodeRun { model_spec: "openrouter:a/b".into(), closed });
 /// # let _ = member;

@@ -23,10 +23,10 @@ use super::{AgentError, run::wall_clock};
 /// ([`AgentToolOptions::budget_caps`](super::AgentToolOptions::budget_caps)).
 ///
 /// ```
-/// use std::{sync::{Arc, Mutex}, time::Duration};
+/// use std::{sync::mpsc, time::Duration};
 ///
 /// use async_trait::async_trait;
-/// use haest_core::{tool::{JsonMap, ToolContext}, workspace::ShutWorkspace};
+/// use haest_core::{tool::{ToolContext, input}, workspace::ShutWorkspace};
 /// use haest_tools::{
 ///     AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
 ///     SubagentBudget, agent_tools,
@@ -34,13 +34,13 @@ use super::{AgentError, run::wall_clock};
 /// use serde_json::json;
 /// use tokio_util::sync::CancellationToken;
 ///
-/// #[derive(Default)]
-/// struct Remote(Mutex<Option<SubagentBudget>>);
+/// /// Runs a subagent elsewhere, and tells the host the budget it ran under.
+/// struct Remote(mpsc::Sender<Option<SubagentBudget>>);
 ///
 /// #[async_trait]
 /// impl AgentDirectory for Remote {
 ///     async fn spawn(&self, _: &AgentRef, input: SpawnInput, _: &CancellationToken) -> Result<SpawnOutcome, AgentError> {
-///         *self.0.lock().unwrap() = input.budget; // the host runs it under this
+///         let _ = self.0.send(input.budget); // the host runs it under this
 ///         Ok(SpawnOutcome { text: "done".into(), cost_usd: 0.0 })
 ///     }
 ///     fn deliver(&self, _: &str, to: &str, _: &str) -> Result<String, AgentError> {
@@ -53,18 +53,16 @@ use super::{AgentError, run::wall_clock};
 ///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
-/// // The host keeps the directory to look at it: the tools take a shared one.
-/// let remote = Arc::new(Remote::default());
+/// let (remote, budgets) = mpsc::channel();
 /// let caps = SubagentBudget { usd: 0.5, time: Duration::from_secs(300) };
 /// let opts = AgentToolOptions { budget_caps: Some(caps), ..Default::default() };
-/// let agent = agent_tools(remote.clone(), AgentRef::main(), opts)[0].clone();
+/// let agent = agent_tools(Remote(remote), AgentRef::main(), opts)[0].clone();
 /// assert!(agent.parameters()["properties"].get("budget").is_some());
 ///
 /// // The model asks for more money than the cap and less time: it gets the cap and its time.
 /// let call = json!({"description": "d", "prompt": "p", "budget": {"usd": 9, "minutes": 2}});
-/// let input: JsonMap = serde_json::from_value(call)?;
-/// agent.execute(input, &ToolContext::new("/", ShutWorkspace)).await?;
-/// let got = remote.0.lock().unwrap().ok_or("no budget")?;
+/// agent.execute(input(call)?, &ToolContext::new("/", ShutWorkspace)).await?;
+/// let got = budgets.try_recv()?.ok_or("no budget")?;
 /// assert_eq!(got, SubagentBudget { usd: 0.5, time: Duration::from_secs(120) });
 /// # Ok(())
 /// # }

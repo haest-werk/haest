@@ -82,7 +82,7 @@ pub trait SubagentParent: Inbox {
     /// A parent that refuses deploys and hears every end.
     ///
     /// ```
-    /// use std::sync::{Arc, Mutex};
+    /// use std::sync::mpsc;
     ///
     /// use async_trait::async_trait;
     /// use haest_core::{
@@ -100,18 +100,18 @@ pub trait SubagentParent: Inbox {
     ///
     /// struct Parent {
     ///     provider: ScriptedProvider,
-    ///     ended: Arc<Mutex<Vec<(String, Ending)>>>,
+    ///     ended: mpsc::Sender<(String, Ending)>,
     /// }
     ///
     /// struct Logged {
     ///     name: String,
-    ///     ended: Arc<Mutex<Vec<(String, Ending)>>>,
+    ///     ended: mpsc::Sender<(String, Ending)>,
     /// }
     ///
     /// #[async_trait]
     /// impl MemberRun for Logged {
     ///     async fn end(self: Box<Self>, end: MemberEnd) {
-    ///         self.ended.lock().unwrap().push((self.name.clone(), end.ending));
+    ///         let _ = self.ended.send((self.name.clone(), end.ending));
     ///     }
     /// }
     ///
@@ -147,8 +147,8 @@ pub trait SubagentParent: Inbox {
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), haest_core::error::BoxError> {
-    /// let ended = Arc::new(Mutex::new(Vec::new()));
-    /// let parent = Parent { provider: ScriptedProvider::new([text_answer("3 files")]), ended: ended.clone() };
+    /// let (ended, ends) = mpsc::channel();
+    /// let parent = Parent { provider: ScriptedProvider::new([text_answer("3 files")]), ended };
     /// let hub = SubagentHub::new(parent, SubagentCaps::default());
     /// let ask = |description: &str| SpawnInput {
     ///     description: description.into(),
@@ -162,7 +162,8 @@ pub trait SubagentParent: Inbox {
     ///
     /// let out = hub.spawn(&AgentRef::main(), ask("count files"), &turn).await?;
     /// assert_eq!(out.text, "3 files");
-    /// assert_eq!(*ended.lock().unwrap(), [("count-files-2".to_string(), Ending::Answered)]);
+    /// let ended: Vec<_> = ends.try_iter().collect();
+    /// assert_eq!(ended, [("count-files-2".to_string(), Ending::Answered)]);
     /// # Ok(())
     /// # }
     /// ```
