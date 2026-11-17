@@ -124,10 +124,11 @@ impl Fs for RealFs {
 
     async fn stat(&self, path: &Path) -> io::Result<FsStat> {
         let m = tokio::fs::metadata(path).await?;
-        Ok(FsStat {
-            kind: kind_of(m.file_type()),
-            size: m.len(),
-            modified: m.modified().ok(),
+        let stat = FsStat::new(kind_of(m.file_type()), m.len());
+        // A platform that keeps no time says so with an error: no time, then.
+        Ok(match m.modified() {
+            Ok(at) => stat.with_modified(at),
+            Err(_) => stat,
         })
     }
 
@@ -144,10 +145,7 @@ impl Fs for RealFs {
                 // Vanished between the listing and the look: skip it.
                 Err(_) => continue,
             };
-            out.push(DirEntry {
-                name: e.file_name().to_string_lossy().into_owned(),
-                kind,
-            });
+            out.push(DirEntry::new(e.file_name().to_string_lossy(), kind));
         }
         out.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(out)

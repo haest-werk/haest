@@ -161,11 +161,11 @@ impl FileSystem for BashkitFsOverHaest {
             let child = p.join(&e.name);
             // Listing metadata must match `stat` (bashkit callers trust it); a
             // dangling entry keeps the kind the listing gave it.
-            let st = self.fs.stat(&child).await.unwrap_or(FsStat {
-                kind: e.kind,
-                size: 0,
-                modified: None,
-            });
+            let st = self
+                .fs
+                .stat(&child)
+                .await
+                .unwrap_or_else(|_| FsStat::new(e.kind, 0));
             out.push(DirEntry {
                 metadata: self.metadata(&child, &st),
                 name: e.name,

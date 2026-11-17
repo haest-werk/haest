@@ -74,11 +74,7 @@ fn kind_of(t: FileType) -> FileKind {
 }
 
 fn stat_of(m: &Metadata) -> FsStat {
-    FsStat {
-        kind: kind_of(m.file_type),
-        size: m.size,
-        modified: Some(m.modified),
-    }
+    FsStat::new(kind_of(m.file_type), m.size).with_modified(m.modified)
 }
 
 #[async_trait]
@@ -138,10 +134,7 @@ impl Fs for HaestFsOverBashkit {
             .await
             .map_err(io_from_bashkit)?
             .into_iter()
-            .map(|e| DirEntry {
-                kind: kind_of(e.metadata.file_type),
-                name: e.name,
-            })
+            .map(|e| DirEntry::new(e.name, kind_of(e.metadata.file_type)))
             .collect();
         out.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(out)

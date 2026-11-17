@@ -241,16 +241,10 @@ impl Fs for MemFs {
     async fn stat(&self, path: &Path) -> io::Result<FsStat> {
         let p = normalize(path);
         match self.nodes().get(&p) {
-            Some(Node::File { data, modified }) => Ok(FsStat {
-                kind: FileKind::File,
-                size: data.len() as u64,
-                modified: Some(*modified),
-            }),
-            Some(Node::Dir) => Ok(FsStat {
-                kind: FileKind::Dir,
-                size: 0,
-                modified: None,
-            }),
+            Some(Node::File { data, modified }) => {
+                Ok(FsStat::new(FileKind::File, data.len() as u64).with_modified(*modified))
+            }
+            Some(Node::Dir) => Ok(FsStat::new(FileKind::Dir, 0)),
             None => Err(not_found(&p)),
         }
     }
@@ -265,17 +259,13 @@ impl Fs for MemFs {
         }
         Ok(Self::children(&nodes, &p)
             .filter(|(k, _)| k.parent() == Some(p.as_path()))
-            .map(|(k, n)| DirEntry {
-                name: k
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned(),
-                kind: if matches!(n, Node::Dir) {
+            .map(|(k, n)| {
+                let kind = if matches!(n, Node::Dir) {
                     FileKind::Dir
                 } else {
                     FileKind::File
-                },
+                };
+                DirEntry::new(k.file_name().unwrap_or_default().to_string_lossy(), kind)
             })
             .collect())
     }

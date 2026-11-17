@@ -66,7 +66,21 @@ pub enum FileKind {
 }
 
 /// What [`Fs::stat`] knows about a path.
+///
+/// Built with [`FsStat::new`] and [`with_modified`](FsStat::with_modified),
+/// so a field added later (a mode) breaks no [`Fs`] outside haest.
+///
+/// ```
+/// use std::time::SystemTime;
+///
+/// use haest_core::fs::{FileKind, FsStat};
+///
+/// let stat = FsStat::new(FileKind::File, 42).with_modified(SystemTime::UNIX_EPOCH);
+/// assert!(stat.is_file());
+/// assert_eq!((stat.size, stat.modified), (42, Some(SystemTime::UNIX_EPOCH)));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct FsStat {
     /// File, directory or link.
     pub kind: FileKind,
@@ -77,6 +91,22 @@ pub struct FsStat {
 }
 
 impl FsStat {
+    /// A path of `kind` holding `size` bytes, with no time it last changed.
+    pub fn new(kind: FileKind, size: u64) -> Self {
+        Self {
+            kind,
+            size,
+            modified: None,
+        }
+    }
+
+    /// The same, last changed `at`.
+    #[must_use]
+    pub fn with_modified(mut self, at: SystemTime) -> Self {
+        self.modified = Some(at);
+        self
+    }
+
     /// Is it a directory?
     pub fn is_dir(&self) -> bool {
         self.kind == FileKind::Dir
@@ -87,13 +117,25 @@ impl FsStat {
     }
 }
 
-/// One entry of a directory listing ([`Fs::read_dir`]).
+/// One entry of a directory listing ([`Fs::read_dir`]), built with
+/// [`DirEntry::new`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DirEntry {
     /// The entry's own name, no directory part.
     pub name: String,
     /// What it is; a link is [`FileKind::Symlink`], not followed.
     pub kind: FileKind,
+}
+
+impl DirEntry {
+    /// The entry `name` (no directory part), of `kind`.
+    pub fn new(name: impl Into<String>, kind: FileKind) -> Self {
+        Self {
+            name: name.into(),
+            kind,
+        }
+    }
 }
 
 /// A file system: the one way haest reads and writes files.
@@ -104,10 +146,13 @@ pub struct DirEntry {
 /// `NotADirectory` as "no file"; the sandboxed shell turns each kind into its
 /// own error).
 ///
-/// Eight methods are required. The rest have defaults built on them; override
-/// one when the store can do it better ([`Fs::read_head`] that stops early,
-/// [`Fs::create_dir_all`] and [`Fs::remove_all`] in one step, [`Fs::read_link`]
-/// and [`Fs::chmod`] on a store that has links and modes).
+/// Nine methods are required: `read`, `write`, `append`, `stat`, `read_dir`,
+/// `create_dir`, `remove`, `remove_all` (a store with no one-step removal
+/// walks the tree with [`remove_tree`]) and `rename`. The rest have defaults
+/// built on them; override one when the store can do it better
+/// ([`Fs::read_head`] that stops early, [`Fs::create_dir_all`] in one step,
+/// [`Fs::read_link`] and [`Fs::chmod`] on a store that has links and modes).
+/// [`FsStat`] and [`DirEntry`] are built with their `new`.
 ///
 /// Implementations here: [`MemFs`] and [`ShutFs`]; `haest-workspace` has the
 /// real disk (`RealFs`) and a copy-on-write sandbox over any `Fs`.

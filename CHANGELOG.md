@@ -127,6 +127,11 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `Source` among them:
     `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b }`
     -> `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b, _ => c }`.
+12. An `Fs` builds its answers with constructors:
+    `FsStat { kind, size, modified: Some(at) }` ->
+    `FsStat::new(kind, size).with_modified(at)` (no `with_modified` when
+    there is no time), and `DirEntry { name, kind }` ->
+    `DirEntry::new(name, kind)`.
 
 Every other breaking change is marked (breaking) in its crate's section
 below.
@@ -874,6 +879,12 @@ Hosts write less (round two of the review, and what porting brain onto
   `workspace::ApplyFailureCode`, `caps::ConversationCap`,
   `skills::SkillSource`, `run::Served`, and the struct `run::RunOutcome`,
   which a host reads and never builds.
+- `FsStat` and `DirEntry` are `#[non_exhaustive]`, built with
+  `FsStat::new(kind, size)` (and `with_modified(at)`) and
+  `DirEntry::new(name, kind)` (breaking for an `Fs` outside haest): a field
+  added later, such as a file's mode, breaks no `Fs`. Their fields still
+  read as before. The `Fs` docs count nine required methods (they said
+  eight) and name them.
 
 ### haest-http
 
