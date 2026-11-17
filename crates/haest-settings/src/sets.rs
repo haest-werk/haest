@@ -17,7 +17,7 @@ haest_core::word_set! {
     /// `builtin_tools_where(|t| tools.has(t.as_str()), opts)`.
     ///
     /// ```
-    /// use haest_settings::{BuiltinTools, WordSet};
+    /// use haest_settings::BuiltinTools;
     ///
     /// let tools = BuiltinTools { read: true, bash: true, ..BuiltinTools::NONE };
     /// assert!(tools.has("bash") && !tools.has("write"));

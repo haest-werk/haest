@@ -58,7 +58,7 @@ use crate::{
 /// ```
 /// use haest_config::Loader;
 /// use haest_core::fs::MemFs;
-/// use haest_settings::{Settings, WordSet};
+/// use haest_settings::Settings;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_config::ConfigError> {

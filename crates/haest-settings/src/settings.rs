@@ -141,7 +141,7 @@ impl Settings {
     /// `config_dir` `<home>/.config/haest`. Neither path is checked or created.
     ///
     /// ```
-    /// use haest_settings::{Settings, WordSet};
+    /// use haest_settings::Settings;
     /// use haest_core::WorkspaceMode;
     ///
     /// let s = Settings::bare("/work", "/home/me");

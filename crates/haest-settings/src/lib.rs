@@ -29,7 +29,7 @@
 //! [haest-runtime](https://docs.rs/haest-runtime/) builds a whole conversation
 //! from a `Settings`. A host that builds its own takes the parts it needs:
 //! [`Settings::turn_caps_for`] and [`Settings::conversation_caps`] for the loop's caps,
-//! [`WordSet::has`] on [`Settings::tools`] for haest-tools'
+//! [`BuiltinTools::has`] on [`Settings::tools`] for haest-tools'
 //! `builtin_tools_where`.
 //!
 //! The settings that decide what a run is handed rather than how it behaves
@@ -56,7 +56,7 @@
 //! one fixed order, and a typo is refused:
 //!
 //! ```
-//! use haest_settings::{BuiltinTools, WordSet};
+//! use haest_settings::BuiltinTools;
 //!
 //! # fn main() -> Result<(), haest_core::words::UnknownWord> {
 //! let tools = BuiltinTools::from_words(["bash", "read"])?;
