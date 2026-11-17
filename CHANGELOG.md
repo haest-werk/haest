@@ -1122,6 +1122,13 @@ Hosts write less (round two of the review, and what porting brain onto
   `run_in_vm(code, &spec, caps, &cancel, None)` ->
   `run_in_vm(code, &spec.with_caps(caps), &cancel, |_| {})`. `VmSpec`'s
   `with_*` setters are `#[must_use]`.
+- `JsEnv::with_env` takes a `ChildEnv`, as every other environment
+  parameter in haest does (breaking):
+  `.with_env(BTreeMap::from([("A".into(), "1".into())]))` ->
+  `.with_env(ChildEnv::new([("A", "1")]))`. A name listed twice has its
+  last value in `process.env`. `JsEnv` has a getter for each part it is
+  built with: `env()`, `stdin()`, `cancel()` and `ends_at()` beside `fs()`
+  and `cwd()`; its setters are `#[must_use]`.
 
 ### haest-mcp
 

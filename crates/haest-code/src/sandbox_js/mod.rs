@@ -7,7 +7,6 @@ mod source;
 mod tests;
 
 use std::{
-    collections::BTreeMap,
     fmt,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -15,6 +14,7 @@ use std::{
 };
 
 use haest_core::{
+    ChildEnv,
     fs::{FsRef, resolve_path},
     workspace::ExecResult,
 };
@@ -49,7 +49,7 @@ pub struct JsEnv {
     /// The shell's working directory: relative paths, `process.cwd()` and the script's own path resolve against it.
     pub(crate) cwd: PathBuf,
     /// The shell's exported variables: the script's `process.env`.
-    pub(crate) env: BTreeMap<String, String>,
+    pub(crate) env: ChildEnv,
     /// What is piped into the command (`process.stdin`, `/dev/stdin`); None =
     /// nothing.
     pub(crate) stdin: Option<String>,
@@ -67,7 +67,7 @@ impl JsEnv {
         Self {
             fs: fs.into(),
             cwd: cwd.into(),
-            env: BTreeMap::new(),
+            env: ChildEnv::default(),
             stdin: None,
             cancel: CancellationToken::new(),
             ends_at: None,
@@ -75,9 +75,9 @@ impl JsEnv {
     }
 
     /// The shell's exported variables, the script's `process.env`, in place
-    /// of none.
+    /// of none. A name listed twice has its last value.
     #[must_use]
-    pub fn with_env(mut self, env: BTreeMap<String, String>) -> Self {
+    pub fn with_env(mut self, env: ChildEnv) -> Self {
         self.env = env;
         self
     }
@@ -113,6 +113,26 @@ impl JsEnv {
     pub fn cwd(&self) -> &Path {
         &self.cwd
     }
+
+    /// The script's `process.env`.
+    pub fn env(&self) -> &ChildEnv {
+        &self.env
+    }
+
+    /// What is piped into the command; None = nothing.
+    pub fn stdin(&self) -> Option<&str> {
+        self.stdin.as_deref()
+    }
+
+    /// The shell call's interrupt.
+    pub fn cancel(&self) -> &CancellationToken {
+        &self.cancel
+    }
+
+    /// The running shell call's end; None = [`JS_TIMEOUT`] from the start.
+    pub fn ends_at(&self) -> Option<Instant> {
+        self.ends_at
+    }
 }
 
 /// The variables by name only: a value may be a secret.
@@ -120,7 +140,7 @@ impl fmt::Debug for JsEnv {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JsEnv")
             .field("cwd", &self.cwd)
-            .field("env", &self.env.keys().collect::<Vec<_>>())
+            .field("env", &self.env)
             .field("stdin", &self.stdin.as_ref().map(String::len))
             .field("ends_at", &self.ends_at)
             .finish_non_exhaustive()

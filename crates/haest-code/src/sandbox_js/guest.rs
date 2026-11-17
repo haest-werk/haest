@@ -15,7 +15,10 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use haest_core::fs::{Fs, FsRef, ensure_dir, resolve_path};
+use haest_core::{
+    ChildEnv,
+    fs::{Fs, FsRef, ensure_dir, resolve_path},
+};
 use serde_json::{Value, json};
 
 use crate::vm::VmSpec;
@@ -152,7 +155,7 @@ pub(crate) struct JsScript {
     pub fs: FsRef,
     pub cwd: PathBuf,
     pub argv: Vec<String>,
-    pub env: BTreeMap<String, String>,
+    pub env: ChildEnv,
     /// What was piped in; None = nothing.
     pub stdin: Option<String>,
     /// What the script passed to process.exit(), once it did.
@@ -246,7 +249,11 @@ async fn fs_op(fs: &dyn Fs, cwd: &Path, op: &str, args: &[Value]) -> Result<Valu
 pub(crate) fn js_script_spec(script: JsScript, filename: &str) -> VmSpec {
     let mut values = serde_json::Map::new();
     values.insert("__argv".into(), json!(script.argv));
-    values.insert("__env".into(), json!(script.env));
+    // A name listed twice has its last value, as a shell has it.
+    let env: BTreeMap<&str, &str> = (script.env.vars().iter())
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    values.insert("__env".into(), json!(env));
     values.insert("__stdin".into(), json!(script.stdin));
     values.insert("__cwd".into(), json!(script.cwd.display().to_string()));
     let (fs, cwd) = (script.fs.clone(), script.cwd.clone());

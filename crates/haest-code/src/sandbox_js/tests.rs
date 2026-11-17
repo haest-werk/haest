@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_core::{fs::MemFs, workspace::ExecResult};
+use haest_core::{ChildEnv, fs::MemFs, workspace::ExecResult};
 use tokio_util::sync::CancellationToken;
 
 use super::{JsEnv, NOT_HERE, js_command, not_here};
@@ -31,6 +31,18 @@ fn with_script(name: &str, body: &str) -> Arc<MemFs> {
 async fn js(fs: &Arc<MemFs>, line: &str) -> ExecResult {
     let args: Vec<String> = line.split_whitespace().map(String::from).collect();
     js_command(&args, &env(fs)).await
+}
+
+#[tokio::test]
+async fn process_env_is_the_envs_variables_the_last_of_a_name_winning() {
+    let fs = with_script("env.js", "console.log(process.env.WHO, process.env.LANG)");
+    let vars = ChildEnv::new([("WHO", "first"), ("LANG", "sv"), ("WHO", "last")]);
+    let e = JsEnv::new(fs.clone(), "/p").with_env(vars.clone());
+    assert_eq!(e.env(), &vars);
+    assert_eq!((e.stdin(), e.ends_at()), (None, None));
+    assert!(!e.cancel().is_cancelled());
+    let r = js_command(&["env.js"], &e).await;
+    assert_eq!(r.stdout.trim(), "last sv", "{}", r.stderr);
 }
 
 #[cfg(feature = "typescript")]

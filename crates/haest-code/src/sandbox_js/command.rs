@@ -3,6 +3,7 @@
 
 use async_trait::async_trait;
 use haest_core::{
+    ChildEnv,
     shell_command::{ShellCall, ShellCommand, ShellCommandRef},
     workspace::ExecResult,
 };
@@ -45,7 +46,7 @@ impl ShellCommand for JsShellCommand {
         let env = JsEnv {
             fs: call.fs,
             cwd: call.cwd,
-            env: call.env,
+            env: ChildEnv::new(call.env),
             stdin,
             cancel: call.cancel,
             ends_at: Some(call.ends_at),
