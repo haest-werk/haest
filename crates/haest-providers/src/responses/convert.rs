@@ -25,6 +25,8 @@ fn effort_name(effort: Effort) -> &'static str {
         Effort::Medium => "medium",
         Effort::High => "high",
         Effort::Xhigh | Effort::Max => "xhigh",
+        // A level added later: high until it is named here.
+        _ => "high",
     }
 }
 
@@ -83,6 +85,8 @@ fn assistant_items(msg: &AssistantMessage, provider_id: &str, out: &mut Vec<Valu
                 "name": c.name,
                 "arguments": Value::Object(c.input.clone()).to_string(),
             })),
+            // A kind of part the Responses API has no item for is not replayed.
+            _ => {}
         }
     }
 }

@@ -64,6 +64,8 @@ fn assistant_blocks(msg: &AssistantMessage, provider_id: &str) -> Vec<Value> {
                 "name": c.name,
                 "input": c.input,
             })),
+            // A kind of part Anthropic has no block for is not replayed.
+            _ => {}
         }
     }
     out
@@ -81,9 +83,8 @@ fn media_block(p: &MediaPart) -> Value {
             "title": p.name,
             "source": {"type": "base64", "media_type": "application/pdf", "data": p.data},
         }),
-        MediaKind::Audio | MediaKind::Video => {
-            json!({"type": "text", "text": dropped_note(p, "Anthropic")})
-        }
+        // Audio, video, and any kind added later.
+        _ => json!({"type": "text", "text": dropped_note(p, "Anthropic")}),
     }
 }
 
@@ -202,6 +203,8 @@ fn budget(effort: Effort) -> u32 {
         Effort::High => 16384,
         Effort::Xhigh => 24576,
         Effort::Max => 31999,
+        // A level added later: high's budget until it has its own.
+        _ => 16384,
     }
 }
 

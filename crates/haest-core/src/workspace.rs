@@ -23,6 +23,7 @@ use crate::fs::{FsRef, ShutFs};
 crate::word_enum! {
     /// What kind of world a [`Workspace`] is (the `workspace` setting's words).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum WorkspaceMode ("workspace mode") {
         /// A simulated bash over a copy-on-write overlay of the project. Writes stay in memory.
         Sandbox = "sandbox",

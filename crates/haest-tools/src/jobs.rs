@@ -52,6 +52,7 @@ pub const MAX_FINISHED: usize = 16;
 
 /// Where a job is in its life.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum JobStatus {
     /// Started and not stopped.
     Running,

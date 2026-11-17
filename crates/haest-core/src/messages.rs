@@ -39,6 +39,7 @@ pub use usage::Usage;
 /// One block of an [`AssistantMessage`], in the order the model produced it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AssistantPart {
     /// Text the model wrote for the human.
     Text {
@@ -108,6 +109,7 @@ crate::word_enum! {
     /// [`InputModality`](crate::catalog::InputModality). [`MediaKind::as_str`]
     /// is also the word a model or a human reads for the kind.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[non_exhaustive]
     pub enum MediaKind ("media kind") {
         /// A picture.
         Image = "image",

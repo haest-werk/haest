@@ -150,11 +150,7 @@ pub trait SubagentParent: Inbox {
     /// let (ended, ends) = mpsc::channel();
     /// let parent = Parent { provider: ScriptedProvider::new([text_answer("3 files")]), ended };
     /// let hub = SubagentHub::new(parent, SubagentCaps::default());
-    /// let ask = |description: &str| SpawnInput {
-    ///     description: description.into(),
-    ///     prompt: "Go.".into(),
-    ///     ..Default::default()
-    /// };
+    /// let ask = |description: &str| SpawnInput::new("Go.").with_description(description);
     /// let turn = CancellationToken::new();
     ///
     /// let refused = hub.spawn(&AgentRef::main(), ask("deploy it"), &turn).await;
@@ -229,7 +225,7 @@ pub trait SubagentParent: Inbox {
     /// let provider = ScriptedProvider::new([text_answer("done")]);
     /// let caps = SubagentCaps { usd: 0.5, ..SubagentCaps::default() };
     /// let hub = SubagentHub::new(Parent(provider.clone()), caps);
-    /// let input = SpawnInput { description: "tidy".into(), prompt: "Tidy up.".into(), ..Default::default() };
+    /// let input = SpawnInput::new("Tidy up.").with_description("tidy");
     /// hub.spawn(&AgentRef::main(), input, &CancellationToken::new()).await?;
     /// let system = &provider.requests()[0].system;
     /// assert_eq!(system, "You help a person.\n\nYou are tidy-1, for main. The person may write to you. Spend at most $0.5.");

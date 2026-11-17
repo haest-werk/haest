@@ -374,8 +374,20 @@ Room to grow (breaking):
 - `#[non_exhaustive]` on `LoopEvent`, `ProviderEvent`, `ToolError`,
   `InnerCallEvent`, `ModelError`, `run::RunError`, `CompactionError`,
   `MediaError`, `TaskError`, `SessionRecord` and `StopReason` (providers
-  keep adding stop words): a `match` outside haest-core adds `_ => ..`, and
-  haest adds a variant in a minor release.
+  keep adding stop words), and on the enums that grow with what models
+  and hosts do: `AssistantPart` (a new block kind), `MediaKind`,
+  `InputModality`, `Effort`, `WebSearchEngine`, `WorkspaceMode`,
+  `threshold::Meter` and `threshold::Action`. A `match` outside haest-core
+  adds `_ => ..`, and haest adds a variant in a minor release.
+- `TurnOutcome` is `#[non_exhaustive]` (it gained `limit` once already):
+  build one with `TurnOutcome::new` and `with_limit`; its fields stay
+  readable.
+- `AgentOptions` keeps its fields private: set them with `with_effort`
+  (an `Effort` or an `Option` of one), `with_history` and
+  `with_model_spec`, read them with the getter of the name:
+  `let mut opts = AgentOptions::new(spec); opts.effort = effort;
+  opts.history = saved.messages;` ->
+  `AgentOptions::new(spec).with_effort(effort).with_history(saved.messages)`.
 - `ProviderRequest`, `ExecOptions` and `ShellCall` are `#[non_exhaustive]`
   and built with `new` and a `with_*` per optional part; their fields stay
   readable. `ProviderRequest { model, system, messages, tools: vec![],
@@ -670,8 +682,16 @@ Hosts write less (round two of the review, and what porting brain onto
   is left. The hub holds the budget's USD on the ledger while the member
   runs, so members running at once cannot overshoot the cap together.
 - `SpawnInput` gains `budget` and `AgentToolOptions` gains `budget_caps`,
-  both `Option<SubagentBudget>`; a literal written out in full adds `None`.
-  New `SubagentBudget { usd, time }`.
+  both `Option<SubagentBudget>`. New `SubagentBudget { usd, time }`.
+- `SpawnInput`, `SpawnOutcome` and `JobStatus` are `#[non_exhaustive]`
+  (`SpawnInput` has grown twice): a host builds a spawn with
+  `SpawnInput::new(prompt)` and `with_description`, `with_name`,
+  `with_model_spec`, `with_subagent_type`, `with_budget` and
+  `in_background`, and an answer with `SpawnOutcome::new(text, cost_usd)`;
+  the fields stay readable. `SpawnInput { description: "tidy".into(),
+  prompt: "Tidy up.".into(), ..Default::default() }` ->
+  `SpawnInput::new("Tidy up.").with_description("tidy")`, and
+  `SpawnOutcome { text, cost_usd }` -> `SpawnOutcome::new(text, cost_usd)`.
 - `AgentError` gains `OverBudget { asked, available }` and
   `OverTime { asked, left, setting }`, and no longer derives `Eq`.
 - `AgentDirectory::deliver` and `SubagentHub::deliver` take an

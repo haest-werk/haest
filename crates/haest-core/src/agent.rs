@@ -48,17 +48,21 @@ use control::Running;
 use turn::Turn;
 
 /// How a new [`Agent`] starts: its model, its effort, and any history to resume.
-#[derive(Debug, Clone)]
+///
+/// ```
+/// use haest_core::{AgentOptions, Message, provider::Effort};
+///
+/// let resumed = AgentOptions::new("openrouter:example/model-1")
+///     .with_effort(Effort::High)
+///     .with_history(vec![Message::user("hi")]);
+/// assert_eq!(resumed.effort(), Some(Effort::High));
+/// assert_eq!(resumed.history().len(), 1);
+/// ```
+#[derive(Debug, Clone, PartialEq)]
 pub struct AgentOptions {
-    /// The model spec, `provider:model`, resolved by [`SharedDeps::models`](crate::SharedDeps::models)
-    /// before every model call. Becomes [`Agent::model_spec`].
-    pub model_spec: String,
-    /// The reasoning effort to ask for; None sends none and the model uses its
-    /// default. Becomes [`Agent::effort`].
-    pub effort: Option<Effort>,
-    /// The history to resume from (a replayed session); empty for a new
-    /// conversation. Becomes [`Agent::history`].
-    pub history: Vec<Message>,
+    model_spec: String,
+    effort: Option<Effort>,
+    history: Vec<Message>,
 }
 
 impl AgentOptions {
@@ -69,6 +73,46 @@ impl AgentOptions {
             effort: None,
             history: Vec::new(),
         }
+    }
+
+    /// The same, on another model spec.
+    #[must_use]
+    pub fn with_model_spec(mut self, model_spec: impl Into<String>) -> Self {
+        self.model_spec = model_spec.into();
+        self
+    }
+
+    /// The same, asking for `effort` (None: send none, the model uses its default).
+    #[must_use]
+    pub fn with_effort(mut self, effort: impl Into<Option<Effort>>) -> Self {
+        self.effort = effort.into();
+        self
+    }
+
+    /// The same, resuming from `history` (a replayed session's messages).
+    #[must_use]
+    pub fn with_history(mut self, history: impl Into<Vec<Message>>) -> Self {
+        self.history = history.into();
+        self
+    }
+
+    /// The model spec, `provider:model`, resolved by
+    /// [`SharedDeps::models`](crate::SharedDeps::models) before every model
+    /// call. Becomes [`Agent::model_spec`].
+    pub fn model_spec(&self) -> &str {
+        &self.model_spec
+    }
+
+    /// The reasoning effort to ask for; None sends none and the model uses
+    /// its default. Becomes [`Agent::effort`].
+    pub fn effort(&self) -> Option<Effort> {
+        self.effort
+    }
+
+    /// The history to resume from; empty for a new conversation. Becomes
+    /// [`Agent::history`].
+    pub fn history(&self) -> &[Message] {
+        &self.history
     }
 }
 

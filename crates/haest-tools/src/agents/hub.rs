@@ -116,11 +116,7 @@ use settle::{Open, Work};
 /// assert_eq!(names, ["Agent", "SendMessage", "StopAgent"]);
 ///
 /// // What the Agent tool does: one subagent turn, its final answer back.
-/// let input = SpawnInput {
-///     description: "count files".into(),
-///     prompt: "How many files are there?".into(),
-///     ..Default::default()
-/// };
+/// let input = SpawnInput::new("How many files are there?").with_description("count files");
 /// let out = hub.spawn(&AgentRef::main(), input, &CancellationToken::new()).await?;
 /// assert_eq!(out.text, "42 files");
 /// assert!(hub.running().is_empty());

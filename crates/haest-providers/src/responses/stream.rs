@@ -175,7 +175,7 @@ fn keep(p: &AssistantPart) -> bool {
             signature,
             ..
         } => !thinking.is_empty() || signature.as_deref().is_some_and(|s| !s.is_empty()),
-        AssistantPart::ToolCall(_) => true,
+        _ => true,
     }
 }
 

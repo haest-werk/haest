@@ -47,10 +47,7 @@ impl AgentDirectory for Helpers {
         let mut spawned = self.0.lock().expect("the helpers' lock poisoned");
         spawned.push(input.description.clone());
         let text = format!("{}: nothing unusual", input.description);
-        Ok(SpawnOutcome {
-            text,
-            cost_usd: 0.0,
-        })
+        Ok(SpawnOutcome::new(text, 0.0))
     }
     fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
         Err(AgentError::Refused(format!(

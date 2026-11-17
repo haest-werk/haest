@@ -41,7 +41,7 @@ use super::{AgentError, run::wall_clock};
 /// impl AgentDirectory for Remote {
 ///     async fn spawn(&self, _: &AgentRef, input: SpawnInput, _: &CancellationToken) -> Result<SpawnOutcome, AgentError> {
 ///         let _ = self.0.send(input.budget); // the host runs it under this
-///         Ok(SpawnOutcome { text: "done".into(), cost_usd: 0.0 })
+///         Ok(SpawnOutcome::new("done", 0.0))
 ///     }
 ///     fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
 ///         Err(AgentError::Refused(format!("{} is not running", message.to)))

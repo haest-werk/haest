@@ -51,6 +51,7 @@ fn chat_part(p: &MediaPart) -> Value {
             "input_audio": {"data": p.data, "format": audio_format(&p.media_type)},
         }),
         MediaKind::Video => json!({"type": "video_url", "video_url": {"url": data_url(p)}}),
+        _ => json!({"type": "text", "text": dropped_note(p, "the chat completions API")}),
     }
 }
 
@@ -62,7 +63,8 @@ fn responses_part(p: &MediaPart) -> Value {
         MediaKind::File => {
             json!({"type": "input_file", "filename": p.name, "file_data": data_url(p)})
         }
-        MediaKind::Audio | MediaKind::Video => json!({
+        // Audio, video, and any kind added later.
+        _ => json!({
             "type": "input_text",
             "text": dropped_note(p, "the OpenAI Responses API"),
         }),

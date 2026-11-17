@@ -228,13 +228,12 @@ where
     let system_prompt = ModSystemPrompt::new(main_prompt, mods.clone());
     let deps = AgentDeps::new(shared, tools, system_prompt);
 
-    let mut agent_opts = AgentOptions::new(model);
-    agent_opts.effort = effort;
+    let mut agent_opts = AgentOptions::new(model).with_effort(effort);
     let resumed = session.saved.is_some();
     if let Some(saved) = session.saved {
-        restore(&hooks, saved, &ledger, &board, &mut agent_opts);
+        agent_opts = restore(&hooks, saved, &ledger, &board, agent_opts);
         // The deferred tools it was using stay loaded: no new ToolSearch for them.
-        deferral.load_called(&agent_opts.history);
+        deferral.load_called(agent_opts.history());
     }
     let agent = Agent::new(deps, agent_opts);
     hooks.set_model_spec(agent.model_spec());

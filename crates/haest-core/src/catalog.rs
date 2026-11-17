@@ -71,6 +71,7 @@ impl ModelFacts for NoFacts {}
 crate::word_enum! {
     /// A kind of input a model accepts, in OpenRouter's names (`file` is a PDF).
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[non_exhaustive]
     pub enum InputModality ("input modality") {
         /// Text.
         Text = "text",

@@ -102,9 +102,7 @@ impl SubagentHub {
             note,
         };
         let deps = AgentDeps::new(base.with_turn_caps(child_caps), source, prompt);
-        let mut opts = AgentOptions::new(model_spec);
-        opts.effort = effort;
-        Agent::new(deps, opts)
+        Agent::new(deps, AgentOptions::new(model_spec).with_effort(effort))
     }
 
     /// Run `agent`'s one turn on `prompt`, reporting it to the parent, then

@@ -209,6 +209,8 @@ pub(crate) async fn workspace_for(
                 .await
                 .map_err(WorkspaceError::Sandbox)?
         }
+        // A mode added later runs shut until it is named here: no files, no shell.
+        _ => return Ok(ShutWorkspace.into()),
     };
     let ws = sandbox_commands().into_iter().fold(
         ws.with_env(passed_env.clone()).with_remedies(remedies),

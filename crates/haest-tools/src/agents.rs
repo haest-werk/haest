@@ -52,7 +52,21 @@ impl AgentRef {
 
 /// One Agent call, in the common agent-tool keys (`description`, `prompt`,
 /// `name`, `model`, `run_in_background`), so every model already knows it.
+///
+/// A host that spawns one itself builds it with [`SpawnInput::new`] and the
+/// setters; the Agent tool reads one from the model's call.
+///
+/// ```
+/// use haest_tools::SpawnInput;
+///
+/// let input = SpawnInput::new("List every TODO under src/ with its file and line.")
+///     .with_description("find the TODOs")
+///     .in_background();
+/// assert!(input.background);
+/// assert_eq!(input.name, None, "the hub names it from the description");
+/// ```
 #[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
 pub struct SpawnInput {
     /// A short label for the task (3-5 words).
     pub description: String,
@@ -74,6 +88,60 @@ pub struct SpawnInput {
     /// runs the subagent under it and holds its USD on the conversation's
     /// ledger while it runs; a host's own directory applies it as it sees fit.
     pub budget: Option<SubagentBudget>,
+}
+
+impl SpawnInput {
+    /// A call with this brief (`prompt`) and nothing else: no description,
+    /// the conversation's model, in the foreground.
+    pub fn new(prompt: impl Into<String>) -> Self {
+        Self {
+            prompt: prompt.into(),
+            ..Self::default()
+        }
+    }
+
+    /// The same, with a short label for the task (3-5 words).
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
+
+    /// The same, asking for this address (None: the hub makes one).
+    #[must_use]
+    pub fn with_name(mut self, name: impl Into<Option<String>>) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    /// The same, on this `provider:model` (None: the conversation's own).
+    #[must_use]
+    pub fn with_model_spec(mut self, model_spec: impl Into<Option<String>>) -> Self {
+        self.model_spec = model_spec.into();
+        self
+    }
+
+    /// The same, of this one of the host's [`SubagentTypes`] (None: the default).
+    #[must_use]
+    pub fn with_subagent_type(mut self, subagent_type: impl Into<Option<String>>) -> Self {
+        self.subagent_type = subagent_type.into();
+        self
+    }
+
+    /// The same, under this budget (None: the caps alone).
+    #[must_use]
+    pub fn with_budget(mut self, budget: impl Into<Option<SubagentBudget>>) -> Self {
+        self.budget = budget.into();
+        self
+    }
+
+    /// The same, in the background: the call returns at once and the answer
+    /// arrives as a message.
+    #[must_use]
+    pub fn in_background(mut self) -> Self {
+        self.background = true;
+        self
+    }
 }
 
 /// A host's kinds of subagent, under the common `subagent_type` key: what
@@ -252,11 +320,22 @@ pub enum AgentError {
 
 /// What a spawn hands back to the caller's turn.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct SpawnOutcome {
     /// The agent's final answer (or, in the background, that it started).
     pub text: String,
     /// What it spent, already charged to the ledger by its own loop.
     pub cost_usd: f64,
+}
+
+impl SpawnOutcome {
+    /// The answer `text`, having spent `cost_usd`.
+    pub fn new(text: impl Into<String>, cost_usd: f64) -> Self {
+        Self {
+            text: text.into(),
+            cost_usd,
+        }
+    }
 }
 
 /// What the agent tools need from a hub. An Err is an [`AgentError`] (a cap,
@@ -299,7 +378,7 @@ pub struct SpawnOutcome {
 ///     ) -> Result<SpawnOutcome, AgentError> {
 ///         // Here the host would run `input.prompt` somewhere.
 ///         let text = format!("{} asked: {}", from.name, input.description);
-///         Ok(SpawnOutcome { text, cost_usd: 0.01 })
+///         Ok(SpawnOutcome::new(text, 0.01))
 ///     }
 ///     fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
 ///         Err(AgentError::UnknownAgent { name: message.to, running: vec!["main".into()] })

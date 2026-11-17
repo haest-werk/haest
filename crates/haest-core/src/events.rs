@@ -123,6 +123,7 @@ pub enum LoopEvent {
 /// How a turn ended: the [`LoopEvent::TurnEnd`] event without its tallies.
 /// [`Agent::run`](crate::Agent::run) returns it.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct TurnOutcome {
     /// Why it ended. [`StopReason::MaxTokens`] here means a turn cap or the
     /// conversation budget stopped it.

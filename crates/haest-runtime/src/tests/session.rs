@@ -134,12 +134,9 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
     let mut rt = built(&fs, settings, Hang, &hub).await;
 
     // A background subagent waiting on its model call.
-    let spawn = SpawnInput {
-        description: "wait on the model".into(),
-        prompt: "go".into(),
-        background: true,
-        ..SpawnInput::default()
-    };
+    let spawn = SpawnInput::new("go")
+        .with_description("wait on the model")
+        .in_background();
     (rt.subagents()
         .spawn(&AgentRef::main(), spawn, &CancellationToken::new())
         .await)

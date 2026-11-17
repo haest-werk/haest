@@ -109,6 +109,7 @@ crate::word_enum! {
 /// What a threshold reads. A fixed list: each meter is read where haest
 /// already counts it, in the unit given here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Meter {
     /// What the last model call sent, in tokens (its
     /// [`Usage::context_tokens`](crate::Usage::context_tokens)): how full the
@@ -223,6 +224,7 @@ impl Mark {
 crate::word_enum! {
     /// What a threshold does when its meter reaches its mark.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[non_exhaustive]
     pub enum Action ("threshold action") {
         /// Tell the model, at the next step boundary, as input it reads (the
         /// human sees it too, as a [`LoopEvent::Guard`](crate::LoopEvent::Guard)).

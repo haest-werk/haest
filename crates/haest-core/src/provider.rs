@@ -48,6 +48,7 @@ crate::word_enum! {
     /// A request carries one as asked; the loop fits it to what the model
     /// accepts, per request. Written as its word (`"high"`) everywhere.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    #[non_exhaustive]
     pub enum Effort ("effort") {
         /// No reasoning, where the model can stop.
         Off = "off",
@@ -78,6 +79,7 @@ pub struct ToolSpec {
 crate::word_enum! {
     /// A provider-side web search (OpenRouter's `openrouter:web_search` server tool).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum WebSearchEngine ("web search engine") {
         /// The model's native search where it has one, else Exa.
         Auto = "auto",

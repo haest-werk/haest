@@ -145,14 +145,14 @@ pub(crate) fn record_given(hooks: &RuntimeHooks, agent: &Agent, opts: &BuildOpti
 }
 
 /// A saved session back in place: its ledger, task list and history (the
-/// model and effort are [`start_on`]'s).
+/// model and effort are [`start_on`]'s); `opts` with the history.
 pub(crate) fn restore(
     hooks: &RuntimeHooks,
     saved: ReplayedSession,
     ledger: &Ledger,
     board: &TaskBoard,
-    opts: &mut AgentOptions,
-) {
+    opts: AgentOptions,
+) -> AgentOptions {
     if saved.corrupt_lines > 0 {
         hooks.warn(&format!(
             "Skipped {} torn line(s) in the session file.",
@@ -163,5 +163,5 @@ pub(crate) fn restore(
         ledger.restore(l);
     }
     board.restore(saved.tasks.unwrap_or_default());
-    opts.history = saved.messages;
+    opts.with_history(saved.messages)
 }
