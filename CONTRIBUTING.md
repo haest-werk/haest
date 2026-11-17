@@ -37,8 +37,9 @@
     really needs to clear a field that has a default, that is a setter of
     its own, named for it (`without_app_title`). A flag's setter takes the
     bool (`with_background(bool)`), never a no-argument `in_background()`.
-  - A line to the human is **info / warn / error / debug**, on `Ui`, `ModUi`,
-    `ModEnv` and `ToolServices` alike.
+  - A line to the human is **info / warn / error / debug**, on `Ui`, `ModUi`
+    and `ModEnv` alike. A tool tells the human what it did in its result;
+    the one line `ToolServices` takes is `debug`, for the diagnostic log.
   - **subagent**, one word. `AgentDeps` is one agent's own parts (tools,
     system prompt); `SharedDeps` what every agent of a conversation shares.
 - **Errors are types.** No `Result<_, String>` and no `anyhow` in a library's
@@ -47,9 +48,10 @@
   existing }`), and the source error when there is one, as its source
   (`#[source]`, `#[from]` or a field named `source`). Its `Display` is its
   own words, never its source's: a variant with a source does not print it,
-  or the chain says that cause twice (`ConfigError::Read` is
-  `"{path}"`, not `"{path}: {source}"`). Show any error to the human or the
-  model with `haest_core::error::report`, which walks the chain; `{e}` alone
+  or the chain says that cause twice (`ConfigError::Read` is `"cannot read
+  {path}"`, not `"cannot read {path}: {source}"`). Show any error to the
+  human or the model with `haest_core::error::report`, which walks the
+  chain; `{e}` alone
   drops the cause. A trait a host implements may return
   `haest_core::error::BoxError` (`Box<dyn Error + Send + Sync>`) when haest
   only shows the error (`Mod`'s events, `AgentHooks::before_model_call`).
