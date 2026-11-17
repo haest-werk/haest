@@ -26,21 +26,35 @@ fn a_run_that_cannot_start_leaves_no_session_behind() {
     assert_eq!(home.sessions(), Vec::<PathBuf>::new(), "nothing to ask");
 }
 
-/// A setting no one has stops the launch, and the `haest` command says where
-/// the ones it has are listed (the library's message names no command).
+/// A setting no one has stops the launch, and the `haest` command names one
+/// of its own that lists the settings there are (the library's message names
+/// no command). That command works with the same broken config, and its list
+/// has the setting meant.
 #[test]
-fn an_unknown_setting_points_at_haest_settings() {
+fn an_unknown_setting_points_at_a_command_that_lists_them() {
     let home = Home::new("unknown-setting");
     let dir = home.0.join(".config/haest");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("config.toml"), "tool = [\"read\"]\n").unwrap();
-    let out = home.haest(&["settings"], &[]);
+    let out = home.haest(&["-p", "hi"], &[]);
     assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
     let said = stderr(&out);
-    assert!(
-        said.contains("tool: no such setting (haest settings lists them)"),
-        "{said}"
+    let hint = said
+        .split_once("(haest ")
+        .and_then(|(_, rest)| rest.split_once(" lists them)"))
+        .map(|(args, _)| args.split_whitespace().collect::<Vec<_>>());
+    let Some(hint) = hint else {
+        panic!("no command named: {said}")
+    };
+    let listed = home.haest(&hint, &[]);
+    assert_eq!(
+        listed.status.code(),
+        Some(0),
+        "{hint:?}: {}",
+        stderr(&listed)
     );
+    let shown = String::from_utf8_lossy(&listed.stdout);
+    assert!(shown.contains("tools"), "{hint:?}: {shown}");
 }
 
 /// A variable that is not Unicode, in its name or its value, is skipped: the

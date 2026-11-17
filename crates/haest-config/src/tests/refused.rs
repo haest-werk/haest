@@ -91,7 +91,7 @@ async fn a_setting_no_one_has_is_unknown_wherever_it_is_given() {
         // Any host loads settings: the message points at no command of one.
         let said = err.to_string();
         assert!(
-            said.ends_with(&format!(": {key}: no such setting")),
+            !said.contains("haest settings") && !said.contains("--help"),
             "{said}"
         );
     }

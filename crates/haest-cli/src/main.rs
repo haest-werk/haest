@@ -281,10 +281,11 @@ fn build_failed(e: BuildError) -> String {
 }
 
 /// What a failed load tells the human; a setting there is none of says
-/// where they are listed.
+/// where they are listed: `--help`, which reads no config (`haest settings`
+/// loads it, so it fails the same way).
 fn load_failed(e: ConfigError) -> String {
     match e {
-        e @ ConfigError::UnknownSetting { .. } => format!("{e} (haest settings lists them)"),
+        e @ ConfigError::UnknownSetting { .. } => format!("{e} (haest --help lists them)"),
         e => report(&e),
     }
 }
