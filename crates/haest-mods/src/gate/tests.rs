@@ -80,11 +80,11 @@ async fn revoking_always_for_a_tool_makes_its_asks_prompt_again() {
 }
 
 #[tokio::test]
-async fn a_gate_with_lines_asks_through_the_gate_and_sends_each_line_as_what_it_is() {
+async fn a_gates_mod_ui_asks_through_the_gate_and_sends_each_line_as_what_it_is() {
     let human = Human::answering([ApprovalAnswer::AllowAlways]);
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let to = seen.clone();
-    let ui = ApprovalGate::new(human.clone()).with_lines(move |line| {
+    let ui = ApprovalGate::new(human.clone()).mod_ui(move |line| {
         to.lock().unwrap().push(match line {
             ModLine::Info(t) => format!("info {t}"),
             ModLine::Error(t) => format!("error {t}"),
@@ -105,7 +105,7 @@ async fn a_gate_with_lines_asks_through_the_gate_and_sends_each_line_as_what_it_
 async fn the_gate_stays_reachable_after_it_becomes_the_mod_ui_so_always_can_be_revoked() {
     let human = Human::answering([ApprovalAnswer::AllowAlways, ApprovalAnswer::Deny]);
     let gate = ApprovalGate::new(human.clone());
-    let ui = gate.with_lines(|_| {});
+    let ui = gate.mod_ui(|_| {});
     let none = CancellationToken::new();
     assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
     assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);

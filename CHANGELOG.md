@@ -813,6 +813,45 @@ Good citizens:
 - `Mod::tools`, `Mods::tools` and `ModTools::wrap` take and return
   `haest_core::Tools` (was `Vec<Arc<dyn Tool>>`).
 - `ModTools` forwards the wrapped tool's `Tool::on_resume`.
+- `Mods` is a cheap handle: clones run the same mods, so hold it, not an
+  `Arc<Mods>`. `Mods::add` takes the mod itself (or an `Arc` of it the host
+  keeps), and the new `Mods::with` chains it:
+  `let mut m = Mods::new(env); m.add(Arc::new(NoDotEnv)); let m = Arc::new(m);`
+  -> `let m = Mods::new(env).with(NoDotEnv);`. A mod added to a clone after
+  sharing is in that clone only. The mods are held as the new `ModRef`.
+- `ModTools::new`, `ModTools::wrap` and `ModSystemPrompt::new` take `Mods`,
+  and the tool source and prompt themselves (`impl Into<ToolSourceRef>`,
+  `impl Into<SystemPromptRef>`):
+  `ModSystemPrompt::new(Arc::new(prompt), mods.clone())` ->
+  `ModSystemPrompt::new(prompt, mods.clone())`;
+  `ModTools::wrap(&Arc::new(mods), tools)` -> `ModTools::wrap(&mods, tools)`.
+- `ModEnv` takes the host's `ModUi` itself (`impl Into<ModUiRef>`) and its
+  fields are private, read with `cwd()`, `workspace()` and `ui()`:
+  `ModEnv::new(cwd, mode, Arc::new(Terminal))` ->
+  `ModEnv::new(cwd, mode, Terminal)`; `haest.workspace` ->
+  `haest.workspace()`. `load_mods` takes the `ModUi` the same way:
+  `load_mods(cfg, fs, Arc::new(ui))` -> `load_mods(cfg, fs, ui)`.
+- `ModOptions`' fields are private, set with `with_user_mods`,
+  `with_project_mods`, `without_approvals`, `with_auto`,
+  `with_shell_tools`, `with_plan_listener`, `with_planning_tools` and
+  `with_caps`, and read with getters of the same names:
+  `cfg.user_mods = true; cfg.auto = Some(Arc::new(judge));` ->
+  `ModOptions::new(..).with_user_mods().with_auto(judge)`.
+- `ApprovalMod::new` takes nothing; auto mode's judge goes in with
+  `with_auto` (held as the new `AutoJudgeRef`):
+  `ApprovalMod::new(Some(Arc::new(judge)))` ->
+  `ApprovalMod::new().with_auto(judge)`.
+- `PlanMod::new` takes nothing and the `PlanListener` alias is gone; the
+  listener is a closure given to `with_listener`:
+  `PlanMod::new(Some(Arc::new(|on| ..)))` ->
+  `PlanMod::new().with_listener(|on| ..)`.
+- `ApprovalGate::with_lines` is `mod_ui` (`with_*` is only ever a setter),
+  and `ApprovalGate::new` takes the prompter or an `Arc` of it (held as the
+  new `PrompterRef`): `Arc::new(gate.with_lines(f))` -> `gate.mod_ui(f)`.
+- `Mods`, `ModEnv`, `ModOptions`, `ModTools`, `ModSystemPrompt`,
+  `ApprovalMod`, `ApprovalGate`, `PlanMod` and `JsMod` implement `Debug`
+  (`Mods` lists its mods by name; a closure shows only whether it is set);
+  `ApprovalMod`, `ModOptions`, `ModTools` and `ModSystemPrompt` are `Clone`.
 
 ### haest-settings
 
@@ -867,6 +906,9 @@ Good citizens:
 - `wind_down_at` reaches the conversation as wind-down thresholds, for main
   and every subagent of its hub.
 - A turn's warning threshold reaches the human through `Ui::warn`.
+- `Runtime::mods`, `RuntimeParent::mods`, `WrappedTools::new` and
+  `mods_for` hold and return `Mods`, now a cheap handle (was `Arc<Mods>`):
+  `rt.mods.command(..)` reads as before.
 
 ### haest-ts
 

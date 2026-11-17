@@ -12,10 +12,9 @@ use crate::{api::Decision, decorate::ModTools, testkit::*};
 const HOME_MODS: &str = "/home/cfg/mods";
 
 fn cfg(workspace: WorkspaceMode) -> ModOptions {
-    let mut cfg = ModOptions::new(CWD, workspace, "/home/cfg");
-    cfg.user_mods = true;
-    cfg.caps = test_caps();
-    cfg
+    ModOptions::new(CWD, workspace, "/home/cfg")
+        .with_user_mods()
+        .with_caps(test_caps())
 }
 
 #[test]
@@ -55,8 +54,12 @@ async fn the_hosts_limits_bound_every_mod_file_it_loads() {
         "export default () => new Promise(() => {})",
     )]);
     let ui = TestUi::new();
-    let mut quick = cfg(WorkspaceMode::Sandbox);
-    quick.caps.load_timeout = Duration::from_millis(200);
+    let quick = cfg(WorkspaceMode::Sandbox);
+    let caps = ModCaps {
+        load_timeout: Duration::from_millis(200),
+        ..quick.caps()
+    };
+    let quick = quick.with_caps(caps);
     let started = Instant::now();
     let mods = load_mods(quick, &fs, ui.clone()).await;
     assert!(started.elapsed() < Duration::from_secs(5));
@@ -85,8 +88,7 @@ async fn project_mods_load_only_when_the_host_turns_them_on() {
     let fs = MemFs::with_files([(format!("{CWD}/.haest/mods/repo.js"), source)]);
     let off = load_mods(cfg(WorkspaceMode::Sandbox), &fs, TestUi::new()).await;
     assert_eq!(off.system_append().await, "");
-    let mut on_cfg = cfg(WorkspaceMode::Sandbox);
-    on_cfg.project_mods = true;
+    let on_cfg = cfg(WorkspaceMode::Sandbox).with_project_mods();
     let on = load_mods(on_cfg, &fs, TestUi::new()).await;
     assert_eq!(on.system_append().await, "from the repo");
 }
@@ -96,8 +98,7 @@ async fn the_built_ins_load_first_and_approvals_can_be_turned_off() {
     let fs = MemFs::new();
     let all = load_mods(cfg(WorkspaceMode::Real), &fs, TestUi::new()).await;
     assert_eq!(all.names(), ["approval", "plan"]);
-    let mut quiet = cfg(WorkspaceMode::Real);
-    quiet.approvals = false;
+    let quiet = cfg(WorkspaceMode::Real).without_approvals();
     let no_approvals = load_mods(quiet, &fs, TestUi::new()).await;
     assert_eq!(no_approvals.names(), ["plan"]);
     assert!(no_approvals.has_command(crate::plan::PLAN_COMMAND));
@@ -106,10 +107,10 @@ async fn the_built_ins_load_first_and_approvals_can_be_turned_off() {
 #[tokio::test]
 async fn the_hosts_tool_names_reach_the_built_ins() {
     let ui = TestUi::answering([Decision::Deny]);
-    let mut named = cfg(WorkspaceMode::Real);
-    named.shell_tools = vec!["Shell".into()];
-    named.planning_tools = vec!["Notes".into()];
-    let mods = Arc::new(load_mods(named, &MemFs::new(), ui.clone()).await);
+    let named = cfg(WorkspaceMode::Real)
+        .with_shell_tools(["Shell"])
+        .with_planning_tools(["Notes"]);
+    let mods = load_mods(named, &MemFs::new(), ui.clone()).await;
     let (shell, notes) = (Probe::new("Shell"), Probe::new("Notes"));
     let tools = ModTools::wrap(&mods, Tools::from_iter([shell.clone(), notes.clone()]));
     let rm = input(json!({"command": "rm -rf x"}));

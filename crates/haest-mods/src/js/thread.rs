@@ -19,7 +19,7 @@ use super::{
     channel::{JsMeta, Reply, ToJs},
     load::{ModCaps, ModLoadError},
 };
-use crate::api::ModUi;
+use crate::api::ModUiRef;
 
 const BOOTSTRAP: &str = include_str!("bootstrap.js");
 const STACK_BYTES: usize = 4 << 20;
@@ -27,7 +27,7 @@ const STACK_BYTES: usize = 4 << 20;
 pub(crate) struct Setup {
     pub path: PathBuf,
     pub source: String,
-    pub ui: Arc<dyn ModUi>,
+    pub ui: ModUiRef,
     pub meta: Arc<Mutex<JsMeta>>,
     pub caps: ModCaps,
     pub runtime: Handle,
@@ -138,7 +138,7 @@ pub(super) struct Js {
     ctx: Context,
     rt: Runtime,
     slice: Arc<Slice>,
-    pub(super) ui: Arc<dyn ModUi>,
+    pub(super) ui: ModUiRef,
     pub(super) meta: Arc<Mutex<JsMeta>>,
     pub(super) runtime: Handle,
     pub(super) own: mpsc::Sender<ToJs>,

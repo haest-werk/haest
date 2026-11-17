@@ -97,13 +97,21 @@ fn ctx_json(ctx: &ToolContext) -> Value {
 /// (every call into the mod in flight then fails, and the next call runs as
 /// usual), and the default export must return within 30 s. A host sets other
 /// caps with [`JsMod::load_with`] or
-/// [`ModOptions::caps`](crate::ModOptions::caps).
+/// [`ModOptions::with_caps`](crate::ModOptions::with_caps).
 ///
 /// The thread stops when the `JsMod` and every tool it added are dropped.
 pub struct JsMod {
     name: String,
     thread: Arc<JsThread>,
     meta: Arc<Mutex<JsMeta>>,
+}
+
+impl std::fmt::Debug for JsMod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JsMod")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
 }
 
 impl JsMod {

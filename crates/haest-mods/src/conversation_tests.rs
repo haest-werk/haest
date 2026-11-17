@@ -8,9 +8,8 @@ use std::{
 
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Message, ToolResultMessage, Tools,
-    deps::SystemPrompt,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::{OnResume, Tool, ToolSource},
+    tool::{OnResume, Tool},
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use serde_json::json;
@@ -20,15 +19,13 @@ use crate::{
     Mods, PLAN_PROMPT, PlanMod, testkit::*,
 };
 
-fn agent(p: &ScriptedProvider, mods: &Arc<Mods>, tools: Tools) -> Agent {
-    let source: Arc<dyn ToolSource> = Arc::new(tools);
-    let base: Arc<dyn SystemPrompt> = Arc::new("You are haest.".to_string());
+fn agent(p: &ScriptedProvider, mods: &Mods, tools: Tools) -> Agent {
     let deps = AgentDeps::new(
-        Arc::new(p.resolver()),
-        Arc::new(ModTools::new(source, mods.clone())),
-        Arc::new(ModSystemPrompt::new(base, mods.clone())),
+        p.resolver(),
+        ModTools::new(tools, mods.clone()),
+        ModSystemPrompt::new("You are haest.", mods.clone()),
         CWD,
-        Arc::new(ShutWorkspace),
+        ShutWorkspace,
     );
     Agent::new(deps, AgentOptions::new("scripted:m"))
 }
@@ -50,10 +47,8 @@ async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_let
     let human = Human::answering([ApprovalAnswer::Deny, ApprovalAnswer::AllowAlways]);
     // A prompt past those two answers is a deny soon, not a hang.
     let gate = ApprovalGate::new(human.clone()).with_timeout(Duration::from_secs(5));
-    let ui = Arc::new(gate.with_lines(|_| {}));
-    let mut mods = Mods::new(ModEnv::new(CWD, WorkspaceMode::Real, ui));
-    mods.add(Arc::new(ApprovalMod::default()));
-    let mods = Arc::new(mods);
+    let ui = gate.mod_ui(|_| {});
+    let mods = Mods::new(ModEnv::new(CWD, WorkspaceMode::Real, ui)).with(ApprovalMod::new());
     let rm = json!({"command": "rm -rf /p/doomed"});
     let p = ScriptedProvider::new([]);
     for id in ["a", "b", "c"] {
@@ -81,11 +76,8 @@ async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it()
     let states = Arc::new(Mutex::new(Vec::new()));
     let seen = states.clone();
     let ui = TestUi::new();
-    let mut mods = Mods::new(env(ui.clone(), WorkspaceMode::Real));
-    mods.add(Arc::new(PlanMod::new(Some(Arc::new(move |on| {
-        seen.lock().unwrap().push(on)
-    })))));
-    let mods = Arc::new(mods);
+    let plan = PlanMod::new().with_listener(move |on| seen.lock().unwrap().push(on));
+    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real)).with(plan);
     let read = ("r", "Read", json!({"file_path": "/p/plan.txt"}));
     let write = (
         "w",
@@ -124,9 +116,9 @@ async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it()
 
 #[tokio::test]
 async fn plan_with_a_topic_sends_the_topic_to_the_model() {
-    let mut mods = Mods::new(env(TestUi::new(), WorkspaceMode::Sandbox));
-    let plan = Arc::new(PlanMod::default());
-    mods.add(plan.clone());
+    // The host keeps an Arc of the mod, to look at it.
+    let plan = Arc::new(PlanMod::new());
+    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Sandbox)).with(plan.clone());
     match mods.command("plan", "  the migration ").await {
         CommandOutcome::Prompt(text) => assert!(text.contains("the migration")),
         other => panic!("nothing for the model: {other:?}"),
@@ -136,8 +128,8 @@ async fn plan_with_a_topic_sends_the_topic_to_the_model() {
 
 #[tokio::test]
 async fn plan_mode_lets_the_hosts_planning_tools_through_and_no_others() {
-    let mut mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real));
-    mods.add(Arc::new(PlanMod::default().with_planning_tools(["Notes"])));
+    let plan = PlanMod::new().with_planning_tools(["Notes"]);
+    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real)).with(plan);
     assert_eq!(mods.command("plan", "").await, CommandOutcome::Handled);
     let (notes, tasks) = (Probe::new("Notes"), Probe::new("TaskCreate"));
     let tools = wrapped(mods, Tools::from_iter([notes.clone(), tasks.clone()]));

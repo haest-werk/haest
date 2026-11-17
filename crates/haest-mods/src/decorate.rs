@@ -5,13 +5,13 @@
 //!   - `prompt.submit` is [`Mods::rewrite_prompt`], called on the human's text
 //!     before it goes to `Agent::run`; commands are [`Mods::command`].
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use haest_core::{
     ToolRef, Tools,
-    deps::SystemPrompt,
-    tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput, ToolSource},
+    deps::{SystemPrompt, SystemPromptRef},
+    tool::{
+        JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput, ToolSource, ToolSourceRef,
+    },
 };
 use serde_json::Value;
 
@@ -22,7 +22,7 @@ use crate::{api::ModToolCall, registry::Mods};
 /// beside the host's.
 ///
 /// Give it to the agent in place of the host's own [`ToolSource`]
-/// (`AgentDeps::new(models, Arc::new(ModTools::new(tools, mods)), ...)`). The
+/// (`AgentDeps::new(models, ModTools::new(tools, mods.clone()), ...)`). The
 /// list is built again each time the loop asks, so a mod that registers a
 /// tool later is offered from the next model call.
 ///
@@ -31,15 +31,19 @@ use crate::{api::ModToolCall, registry::Mods};
 /// back as [`ToolError::Input`] (`Refused: <reason>`), which the model reads;
 /// a mod that failed in `tool.before` as [`ToolError::Failed`], and the tool
 /// does not run.
+#[derive(Debug, Clone)]
 pub struct ModTools {
-    inner: Arc<dyn ToolSource>,
-    mods: Arc<Mods>,
+    inner: ToolSourceRef,
+    mods: Mods,
 }
 
 impl ModTools {
     /// `inner`'s tools, and every mod's, inside `mods`' hooks.
-    pub fn new(inner: Arc<dyn ToolSource>, mods: Arc<Mods>) -> Self {
-        Self { inner, mods }
+    pub fn new(inner: impl Into<ToolSourceRef>, mods: Mods) -> Self {
+        Self {
+            inner: inner.into(),
+            mods,
+        }
     }
 
     /// `tools` plus every mod's tool, each wrapped in the `tool.before` /
@@ -50,7 +54,7 @@ impl ModTools {
     ///
     /// The mods' tools come after `tools`, in load order. A wrapped tool keeps
     /// its name, description, schema, kind and `read_only`.
-    pub fn wrap(mods: &Arc<Mods>, tools: Tools) -> Tools {
+    pub fn wrap(mods: &Mods, tools: Tools) -> Tools {
         tools
             .into_iter()
             .chain(mods.tools())
@@ -73,7 +77,7 @@ impl ToolSource for ModTools {
 /// One tool inside the hooks.
 struct ModTool {
     tool: ToolRef,
-    mods: Arc<Mods>,
+    mods: Mods,
 }
 
 #[async_trait]
@@ -119,15 +123,19 @@ impl Tool for ModTool {
 /// Asked before every model call, so a mod's addition can change between
 /// calls (plan mode's brief comes and goes with `/plan`). Give it to the agent
 /// in place of the host's own [`SystemPrompt`].
+#[derive(Debug, Clone)]
 pub struct ModSystemPrompt {
-    inner: Arc<dyn SystemPrompt>,
-    mods: Arc<Mods>,
+    inner: SystemPromptRef,
+    mods: Mods,
 }
 
 impl ModSystemPrompt {
     /// `inner`, with what `mods` append.
-    pub fn new(inner: Arc<dyn SystemPrompt>, mods: Arc<Mods>) -> Self {
-        Self { inner, mods }
+    pub fn new(inner: impl Into<SystemPromptRef>, mods: Mods) -> Self {
+        Self {
+            inner: inner.into(),
+            mods,
+        }
     }
 }
 

@@ -3,7 +3,7 @@
 //! except a gate's ([`Mod::is_gate`], the approval mod), which judges after
 //! every other mod has had its say, on the call as it will run.
 
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use haest_core::{
     Tools,
@@ -11,7 +11,7 @@ use haest_core::{
     tool::{ToolContext, ToolError, ToolOutput},
 };
 
-use crate::api::{Before, Mod, ModEnv, ModToolCall};
+use crate::api::{Before, Mod, ModEnv, ModRef, ModToolCall};
 
 /// What the model reads for a call the human interrupted while a mod was deciding.
 const INTERRUPTED: &str = "Interrupted by the user before this tool ran.";
@@ -48,47 +48,79 @@ pub enum CommandOutcome {
 /// | a slash command | [`CommandOutcome::Handled`] |
 ///
 /// Build one with [`load_mods`](crate::load_mods), or with [`Mods::new`] and
-/// [`Mods::add`]; share it as an `Arc` between [`ModTools`](crate::ModTools),
-/// [`ModSystemPrompt`](crate::ModSystemPrompt) and the host's input path.
-pub struct Mods {
+/// [`Mods::with`]. It is a cheap handle: give a clone each to
+/// [`ModTools`](crate::ModTools), [`ModSystemPrompt`](crate::ModSystemPrompt)
+/// and the host's input path, and they all run the same mods. Add every mod
+/// before handing out clones: a mod added to one clone afterwards is in that
+/// clone only.
+#[derive(Clone)]
+pub struct Mods(Arc<Loaded>);
+
+/// What a [`Mods`] handle shares.
+#[derive(Clone)]
+struct Loaded {
     env: ModEnv,
-    list: Vec<Arc<dyn Mod>>,
+    list: Vec<ModRef>,
+}
+
+impl fmt::Debug for Mods {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Mods")
+            .field("env", &self.0.env)
+            .field("list", &self.0.list)
+            .finish()
+    }
 }
 
 impl Mods {
     /// No mods yet, in `env`.
     pub fn new(env: ModEnv) -> Self {
-        Self {
+        Self(Arc::new(Loaded {
             env,
             list: Vec::new(),
-        }
+        }))
     }
 
-    /// Add a mod after every mod already here (logged through [`ModUi::debug`](crate::ModUi::debug)).
-    pub fn add(&mut self, m: Arc<dyn Mod>) {
-        self.env.ui.debug(&format!("mod loaded: {}", m.name()));
-        self.list.push(m);
+    /// Add a mod after every mod already here (logged through
+    /// [`ModUi::debug`](crate::ModUi::debug)): the mod itself, or an `Arc` of
+    /// it the host keeps. Only this handle has it if it was cloned before.
+    pub fn add(&mut self, m: impl Into<ModRef>) {
+        let m = m.into();
+        let loaded = Arc::make_mut(&mut self.0);
+        loaded.env.ui().debug(&format!("mod loaded: {}", m.name()));
+        loaded.list.push(m);
+    }
+
+    /// These mods and `m` after them: [`add`](Self::add), chained.
+    #[must_use]
+    pub fn with(mut self, m: impl Into<ModRef>) -> Self {
+        self.add(m);
+        self
     }
 
     /// The environment every mod's events get.
     pub fn env(&self) -> &ModEnv {
-        &self.env
+        &self.0.env
+    }
+
+    fn list(&self) -> &[ModRef] {
+        &self.0.list
     }
 
     /// Every mod's name, in load order.
     pub fn names(&self) -> Vec<String> {
-        self.list.iter().map(|m| m.name().to_string()).collect()
+        self.list().iter().map(|m| m.name().to_string()).collect()
     }
 
     /// Every tool the mods add, unwrapped ([`crate::ModTools`] wraps them).
     pub fn tools(&self) -> Tools {
-        self.list.iter().flat_map(|m| m.tools()).collect()
+        self.list().iter().flat_map(|m| m.tools()).collect()
     }
 
     fn report(&self, m: &dyn Mod, event: &str, e: &BoxError) {
         let why = report(&**e);
-        self.env
-            .ui
+        self.env()
+            .ui()
             .error(&format!("Mod {} failed in {event}: {why}", m.name()));
     }
 
@@ -100,9 +132,9 @@ impl Mods {
         mut call: ModToolCall,
         ctx: &ToolContext,
     ) -> Result<ModToolCall, ToolError> {
-        let (gates, rest): (Vec<_>, Vec<_>) = self.list.iter().partition(|m| m.is_gate());
+        let (gates, rest): (Vec<_>, Vec<_>) = self.list().iter().partition(|m| m.is_gate());
         for m in rest.into_iter().chain(gates) {
-            match m.tool_before(&call, ctx, &self.env).await {
+            match m.tool_before(&call, ctx, self.env()).await {
                 Ok(Before::Pass) => {}
                 Ok(Before::Input(input)) => call.input = input,
                 Ok(Before::Deny(reason)) => {
@@ -131,8 +163,8 @@ impl Mods {
         mut output: ToolOutput,
         ctx: &ToolContext,
     ) -> ToolOutput {
-        for m in &self.list {
-            match m.tool_after(call, &output, ctx, &self.env).await {
+        for m in self.list() {
+            match m.tool_after(call, &output, ctx, self.env()).await {
                 Ok(Some(replaced)) => output = replaced,
                 Ok(None) => {}
                 Err(_) if ctx.cancel().is_cancelled() => {}
@@ -147,8 +179,8 @@ impl Mods {
     /// as it was. Call it on the human's text before it goes to the agent.
     pub async fn rewrite_prompt(&self, text: &str) -> String {
         let mut text = text.to_string();
-        for m in &self.list {
-            match m.prompt_submit(&text, &self.env).await {
+        for m in self.list() {
+            match m.prompt_submit(&text, self.env()).await {
                 Ok(Some(rewritten)) => text = rewritten,
                 Ok(None) => {}
                 Err(e) => self.report(m.as_ref(), "prompt.submit", &e),
@@ -162,8 +194,8 @@ impl Mods {
     /// puts it after the host's prompt.
     pub async fn system_append(&self) -> String {
         let mut parts = Vec::new();
-        for m in &self.list {
-            match m.system_prompt(&self.env).await {
+        for m in self.list() {
+            match m.system_prompt(self.env()).await {
                 Ok(Some(text)) if !text.is_empty() => parts.push(text),
                 Ok(_) => {}
                 Err(e) => self.report(m.as_ref(), "system.prompt", &e),
@@ -175,7 +207,7 @@ impl Mods {
     /// Every slash command the mods answer, without the `/`, once each.
     pub fn commands(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
-        for name in self.list.iter().flat_map(|m| m.commands()) {
+        for name in self.list().iter().flat_map(|m| m.commands()) {
             let name = bare(&name).to_string();
             if !out.contains(&name) {
                 out.push(name);
@@ -185,9 +217,9 @@ impl Mods {
     }
 
     /// The mod that answers `name`: a later mod's command replaces an earlier one's.
-    fn command_owner(&self, name: &str) -> Option<&Arc<dyn Mod>> {
+    fn command_owner(&self, name: &str) -> Option<&ModRef> {
         let name = bare(name);
-        self.list
+        self.list()
             .iter()
             .rev()
             .find(|m| m.commands().iter().any(|c| bare(c) == name))
@@ -207,7 +239,6 @@ impl Mods {
     /// # Examples
     ///
     /// ```
-    /// # use std::sync::Arc;
     /// # use haest_core::workspace::WorkspaceMode;
     /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
     /// use haest_mods::{CommandOutcome, ModEnv, Mods, PlanMod};
@@ -220,8 +251,8 @@ impl Mods {
     ///
     /// # #[tokio::main(flavor = "current_thread")]
     /// # async fn main() {
-    /// let mut mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Sandbox, Arc::new(Terminal)));
-    /// mods.add(Arc::new(PlanMod::default()));
+    /// let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Terminal);
+    /// let mods = Mods::new(env).with(PlanMod::new());
     ///
     /// assert_eq!(mods.commands(), ["plan"]);
     /// assert_eq!(mods.command("/plan", "").await, CommandOutcome::Handled);
@@ -232,7 +263,7 @@ impl Mods {
         let Some(m) = self.command_owner(name) else {
             return CommandOutcome::Unknown;
         };
-        match m.command(bare(name), args, &self.env).await {
+        match m.command(bare(name), args, self.env()).await {
             Ok(Some(text)) => CommandOutcome::Prompt(text),
             Ok(None) => CommandOutcome::Handled,
             Err(e) => {

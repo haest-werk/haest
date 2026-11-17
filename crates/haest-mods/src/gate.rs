@@ -13,6 +13,7 @@
 
 use std::{
     collections::HashSet,
+    fmt,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -37,7 +38,8 @@ pub enum ApprovalAnswer {
 /// dialog, a push notification -- for an [`ApprovalGate`].
 ///
 /// The gate keeps the rules (ALWAYS, the timeout, interrupts); a prompter
-/// only asks and reports what the human pressed.
+/// only asks and reports what the human pressed. The gate holds it in a
+/// [`PrompterRef`].
 #[async_trait]
 pub trait Prompter: Send + Sync {
     /// Ask and wait for the answer. The future is dropped when the ask is
@@ -47,6 +49,11 @@ pub trait Prompter: Send + Sync {
     /// An ask an earlier ALWAYS answered, without a prompt: show it, so the
     /// human's record of what ran stays complete. Default: nothing.
     fn auto_approved(&self, _req: &ApprovalRequest) {}
+}
+
+haest_core::plug_ref! {
+    /// A [`Prompter`], shared.
+    pub struct PrompterRef(dyn Prompter);
 }
 
 /// How long an [`ApprovalGate`] waits for an answer by default (10 minutes)
@@ -71,9 +78,9 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// keeps them for that conversation. A clone is the same gate (the same
 /// prompter, the same ALWAYS answers).
 ///
-/// [`with_lines`](Self::with_lines) makes the gate the host's whole
-/// [`ModUi`]: asks through the gate, every other line to one function. The
-/// host keeps the gate itself to [`revoke`](Self::revoke) an ALWAYS.
+/// [`mod_ui`](Self::mod_ui) makes the gate the host's whole [`ModUi`]: asks
+/// through the gate, every other line to one function. The host keeps the
+/// gate itself to [`revoke`](Self::revoke) an ALWAYS.
 ///
 /// # Examples
 ///
@@ -81,10 +88,10 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// before a Bash command that can destroy work.
 ///
 /// ```
-/// use std::sync::{Arc, Mutex};
+/// use std::sync::mpsc;
 ///
 /// use async_trait::async_trait;
-/// use haest_core::{ShutWorkspace, ToolContext, Tools, workspace::WorkspaceMode};
+/// use haest_core::{ShutWorkspace, ToolContext, Tools, tool::input, workspace::WorkspaceMode};
 /// use haest_mods::{
 ///     ApprovalAnswer, ApprovalGate, ApprovalMod, ApprovalRequest, ModEnv, ModLine, ModTools, Mods,
 ///     Prompter,
@@ -103,45 +110,59 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// #     }
 /// # }
 ///
-/// /// The human: presses ALWAYS on the first prompt and Deny on every other.
-/// struct Human(Arc<Mutex<Vec<String>>>);
+/// /// The human: presses ALWAYS to clear a build directory and Deny on
+/// /// anything else, and tells the host every prompt it saw.
+/// struct Human(mpsc::Sender<String>);
 ///
 /// #[async_trait]
 /// impl Prompter for Human {
 ///     async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer {
-///         let mut seen = self.0.lock().unwrap();
-///         seen.push(req.input_preview.clone());
-///         if seen.len() == 1 { ApprovalAnswer::AllowAlways } else { ApprovalAnswer::Deny }
+///         let _ = self.0.send(req.input_preview.clone());
+///         if req.input_preview.ends_with("build") {
+///             ApprovalAnswer::AllowAlways
+///         } else {
+///             ApprovalAnswer::Deny
+///         }
 ///     }
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
-/// let prompts = Arc::new(Mutex::new(Vec::new()));
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// let (human, prompts) = mpsc::channel();
 /// // How the mods reach the human: asks through the gate, lines to the terminal.
-/// let ui = ApprovalGate::new(Human(prompts.clone())).with_lines(|line| match line {
+/// let ui = ApprovalGate::new(Human(human)).mod_ui(|line| match line {
 ///     ModLine::Info(text) | ModLine::Error(text) => println!("{text}"),
 ///     ModLine::Debug(_) => {}
 /// });
-/// let ui = Arc::new(ui);
-/// let mut mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, ui));
-/// mods.add(Arc::new(ApprovalMod::default()));
-/// let tools = ModTools::wrap(&Arc::new(mods), Tools::new().with(Bash));
+/// let mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, ui)).with(ApprovalMod::new());
+/// let tools = ModTools::wrap(&mods, Tools::new().with(Bash));
 ///
 /// let ctx = ToolContext::new("/project", ShutWorkspace);
-/// let bash = |command: &str| tools[0].execute(json!({ "command": command }).as_object().cloned().unwrap(), &ctx);
-/// assert!(bash("ls").await.is_ok()); // nothing to ask
-/// assert!(bash("rm -rf build").await.is_ok()); // asked: ALWAYS
-/// assert!(bash("rm -rf build").await.is_ok()); // the same command: no prompt
-/// assert!(bash("rm -rf ~").await.is_err()); // another command: asked again, denied
-/// assert_eq!(*prompts.lock().unwrap(), ["rm -rf build", "rm -rf ~"]);
+/// let bash = |command: &str| input(json!({ "command": command }));
+/// tools[0].execute(bash("ls")?, &ctx).await?; // nothing to ask
+/// tools[0].execute(bash("rm -rf build")?, &ctx).await?; // asked: ALWAYS
+/// tools[0].execute(bash("rm -rf build")?, &ctx).await?; // the same command: no prompt
+/// assert!(tools[0].execute(bash("rm -rf ~")?, &ctx).await.is_err()); // asked again, denied
+/// assert_eq!(prompts.try_iter().collect::<Vec<_>>(), ["rm -rf build", "rm -rf ~"]);
+/// # Ok(())
 /// # }
 /// ```
 #[derive(Clone)]
 pub struct ApprovalGate {
-    prompter: Arc<dyn Prompter>,
+    prompter: PrompterRef,
     always: Arc<Mutex<HashSet<String>>>,
     timeout: Duration,
+}
+
+impl fmt::Debug for ApprovalGate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let always = self.always.lock().map_or(0, |a| a.len());
+        f.debug_struct("ApprovalGate")
+            .field("prompter", &self.prompter)
+            .field("always", &always)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 fn rule_key(req: &ApprovalRequest) -> String {
@@ -150,11 +171,11 @@ fn rule_key(req: &ApprovalRequest) -> String {
 }
 
 impl ApprovalGate {
-    /// A gate over `prompter`, with no ALWAYS answers yet and the default
-    /// [`ASK_TIMEOUT`].
-    pub fn new(prompter: impl Prompter + 'static) -> Self {
+    /// A gate over `prompter` (the host's value, or an `Arc` of it the host
+    /// keeps), with no ALWAYS answers yet and the default [`ASK_TIMEOUT`].
+    pub fn new(prompter: impl Into<PrompterRef>) -> Self {
         Self {
-            prompter: Arc::new(prompter),
+            prompter: prompter.into(),
             always: Arc::default(),
             timeout: ASK_TIMEOUT,
         }
@@ -162,6 +183,7 @@ impl ApprovalGate {
 
     /// The gate with another timeout: how long an ask waits for the human
     /// before it is a Deny.
+    #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -214,7 +236,7 @@ impl ApprovalGate {
     /// [`debug`](ModUi::debug) line to `lines`, as a [`ModLine`] that says which.
     /// The gate stays the host's: an ALWAYS it [`revoke`](Self::revoke)s is
     /// gone for the `ModUi` too. The [class example](Self#examples) uses it.
-    pub fn with_lines<F>(&self, lines: F) -> impl ModUi + use<F>
+    pub fn mod_ui<F>(&self, lines: F) -> impl ModUi + use<F>
     where
         F: Fn(ModLine<'_>) + Send + Sync + 'static,
     {
@@ -226,7 +248,7 @@ impl ApprovalGate {
 }
 
 /// A line a mod sends through the host's [`ModUi`], for the function given
-/// to [`ApprovalGate::with_lines`]: one case per line method.
+/// to [`ApprovalGate::mod_ui`]: one case per line method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModLine<'a> {
     /// [`ModUi::info`]: a line the human sees.
@@ -238,7 +260,7 @@ pub enum ModLine<'a> {
 }
 
 /// An [`ApprovalGate`] and where the other lines go: the [`ModUi`] that
-/// [`ApprovalGate::with_lines`] makes.
+/// [`ApprovalGate::mod_ui`] makes.
 struct GateUi<F> {
     gate: ApprovalGate,
     lines: F,

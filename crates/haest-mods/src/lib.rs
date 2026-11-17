@@ -20,7 +20,7 @@
 //! A mod runs with the HOST's full trust, sandbox or not: a native mod is the
 //! host's own code, and a mod file can do whatever its `haest` API reaches.
 //! Load a project's mod files only from a directory the human trusts
-//! ([`ModOptions::project_mods`]).
+//! ([`ModOptions::with_project_mods`]).
 //!
 //! # When to use this crate directly
 //!
@@ -34,11 +34,12 @@
 //! | [`Mod`] | a native mod: implement only the events it hooks |
 //! | [`JsMod`] | a `.js` / `.ts` mod file, and the `haest` API its default export gets; [`ModCaps`] bounds it, [`ModLoadError`] says why one did not load |
 //! | [`load_mods`] | the built-ins plus one conversation's mod files, as [`Mods`] |
-//! | [`Mods`] | every loaded mod, in order; [`Mods::add`] puts a host's own native mod in |
+//! | [`Mods`] | every loaded mod, in order, as a cheap handle; [`Mods::add`] puts a host's own native mod in |
 //! | [`ModTools`], [`ModSystemPrompt`] | the wrappers a host puts around its tool source and its system prompt |
 //! | [`Mods::rewrite_prompt`], [`Mods::command`] | `prompt.submit` and slash commands, for the host's input path |
 //! | [`ModUi`] | PLUG POINT: how the host asks the human and shows them a line |
-//! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts; [`ApprovalGate::with_lines`] makes it the host's whole [`ModUi`] |
+//! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts; [`ApprovalGate::mod_ui`] makes it the host's whole [`ModUi`] |
+//! | [`ModRef`], [`ModUiRef`], [`AutoJudgeRef`], [`PrompterRef`] | the handles the plug points are held by; a parameter that takes `impl Into<..Ref>` takes the value itself, or an `Arc` of it |
 //!
 //! # Putting mods in the loop
 //!
@@ -48,13 +49,10 @@
 //! scripted, so the example runs offline.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_core::{
 //!     Agent, AgentDeps, AgentOptions, MemFs, Message, ShutWorkspace, Tools,
-//!     deps::SystemPrompt,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
-//!     tool::{Tool, ToolSource},
+//!     tool::Tool,
 //!     workspace::WorkspaceMode,
 //! };
 //! use haest_mods::{ModOptions, ModSystemPrompt, ModTools, load_mods};
@@ -91,14 +89,14 @@
 //!          haest.on('system.prompt', () => 'Ask before deleting anything.')
 //!        }"#,
 //! )]);
-//! let mut config = ModOptions::new("/project", WorkspaceMode::Real, "/home/me/.config/haest");
-//! config.user_mods = true;
-//! let mods = Arc::new(load_mods(config, &files, Arc::new(Terminal)).await);
+//! let config = ModOptions::new("/project", WorkspaceMode::Real, "/home/me/.config/haest")
+//!     .with_user_mods();
+//! let mods = load_mods(config, &files, Terminal).await;
 //! assert_eq!(mods.names(), ["approval", "plan", "/home/me/.config/haest/mods/guard.js"]);
 //!
 //! // The agent's tools and system prompt, inside the mods.
-//! let tools: Arc<dyn ToolSource> = Arc::new(Tools::new().with(Bash));
-//! let prompt: Arc<dyn SystemPrompt> = Arc::new("You keep this machine tidy.".to_string());
+//! let tools = Tools::new().with(Bash);
+//! let prompt = "You keep this machine tidy.";
 //! let model = ScriptedProvider::new([
 //!     tool_answer(&[("t1", "Bash", json!({"command": "rm -rf /"}))]),
 //!     text_answer("Understood, I will not."),
@@ -130,10 +128,10 @@
 //! loaded [`Mods`]; [`ModTools::wrap`] then runs every tool inside it.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use async_trait::async_trait;
-//! use haest_core::{ShutWorkspace, ToolContext, Tools, error::BoxError, workspace::WorkspaceMode};
+//! use haest_core::{
+//!     ShutWorkspace, ToolContext, Tools, error::BoxError, tool::input, workspace::WorkspaceMode,
+//! };
 //! use haest_mods::{Before, Mod, ModEnv, ModToolCall, ModTools, Mods};
 //! use serde_json::json;
 //! # use haest_mods::{ApprovalRequest, Decision, ModUi};
@@ -180,18 +178,18 @@
 //! }
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() {
-//! let mut mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, Arc::new(Terminal)));
-//! mods.add(Arc::new(NoDotEnv));
-//! let mods = Arc::new(mods);
+//! # async fn main() -> Result<(), BoxError> {
+//! let env = ModEnv::new("/project", WorkspaceMode::Real, Terminal);
+//! let mods = Mods::new(env).with(NoDotEnv);
 //! assert_eq!(mods.system_append().await, "Never print a .env file.");
 //!
 //! let tools = ModTools::wrap(&mods, Tools::new().with(Bash));
 //! let ctx = ToolContext::new("/project", ShutWorkspace);
-//! let call = |command: &str| json!({ "command": command }).as_object().cloned().unwrap();
-//! let refused = tools[0].execute(call("cat .env"), &ctx).await.unwrap_err();
-//! assert!(refused.to_string().contains("secrets"));
-//! assert!(tools[0].execute(call("ls"), &ctx).await.is_ok());
+//! let call = |command: &str| input(json!({ "command": command }));
+//! let refused = tools[0].execute(call("cat .env")?, &ctx).await;
+//! assert!(refused.is_err_and(|e| e.to_string().contains("secrets")));
+//! tools[0].execute(call("ls")?, &ctx).await?;
+//! # Ok(())
 //! # }
 //! ```
 //!
@@ -203,9 +201,9 @@
 //! adds a slash command and a tool:
 //!
 //! ```
-//! use std::{path::Path, sync::Arc};
+//! use std::path::Path;
 //!
-//! use haest_core::{ShutWorkspace, ToolContext, Tools, workspace::WorkspaceMode};
+//! use haest_core::{ShutWorkspace, ToolContext, Tools, tool::input, workspace::WorkspaceMode};
 //! use haest_mods::{CommandOutcome, JsMod, ModEnv, ModTools, Mods};
 //! use serde_json::json;
 //! # use haest_mods::{ApprovalRequest, Decision, ModUi};
@@ -230,12 +228,10 @@
 //! "#;
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Arc::new(Terminal));
+//! # async fn main() -> Result<(), haest_core::error::BoxError> {
+//! let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Terminal);
 //! let standup = JsMod::load(Path::new("/mods/standup.ts"), STANDUP_TS.into(), &env).await?;
-//! let mut mods = Mods::new(env);
-//! mods.add(Arc::new(standup));
-//! let mods = Arc::new(mods);
+//! let mods = Mods::new(env).with(standup);
 //!
 //! // The human types `/standup yesterday's commits`; the model gets the text.
 //! let sent = mods.command("/standup", "yesterday's commits").await;
@@ -244,8 +240,8 @@
 //! // The mod's tool sits beside the host's, inside the same hooks.
 //! let tools = ModTools::wrap(&mods, Tools::new());
 //! let ctx = ToolContext::new("/project", ShutWorkspace);
-//! let input = json!({ "text": "one two three" }).as_object().cloned().unwrap();
-//! assert_eq!(tools[0].execute(input, &ctx).await?.content, "3");
+//! let count = input(json!({ "text": "one two three" }))?;
+//! assert_eq!(tools[0].execute(count, &ctx).await?.content, "3");
 //! # Ok(())
 //! # }
 //! ```
@@ -288,11 +284,15 @@ mod registry;
 #[cfg(test)]
 mod testkit;
 
-pub use api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModToolCall, ModUi};
-pub use approval::{ApprovalMod, AutoJudge, BashVerdict, SHELL_TOOLS, irreversible_reason};
+pub use api::{
+    ApprovalRequest, Before, Decision, Mod, ModEnv, ModRef, ModToolCall, ModUi, ModUiRef,
+};
+pub use approval::{
+    ApprovalMod, AutoJudge, AutoJudgeRef, BashVerdict, SHELL_TOOLS, irreversible_reason,
+};
 pub use decorate::{ModSystemPrompt, ModTools};
-pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter};
+pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter, PrompterRef};
 pub use js::{JsMod, ModCaps, ModLoadError};
 pub use loader::{ModOptions, load_mods};
-pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PLANNING_TOOLS, PlanListener, PlanMod};
+pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PLANNING_TOOLS, PlanMod};
 pub use registry::{CommandOutcome, Mods};

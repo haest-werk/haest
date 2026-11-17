@@ -45,7 +45,7 @@ pub struct RuntimeParent {
     /// and tools.
     pub prompt: Arc<RuntimePrompt>,
     /// The mods: their hooks wrap a subagent's tools and add to its prompt.
-    pub mods: Arc<Mods>,
+    pub mods: Mods,
     /// Where a subagent's message for main, or a background subagent's
     /// answer, goes.
     pub inbox: Arc<InboxSender>,
@@ -82,7 +82,7 @@ impl SubagentParent for RuntimeParent {
             model_spec: Some(model_spec.to_string()),
             tools: Arc::new(Tools::from(tools.to_vec())),
         };
-        ModSystemPrompt::new(Arc::new(prompt), self.mods.clone())
+        ModSystemPrompt::new(prompt, self.mods.clone())
             .system_prompt()
             .await
     }

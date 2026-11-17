@@ -112,7 +112,7 @@ impl Human {
 }
 
 #[async_trait]
-impl Prompter for Arc<Human> {
+impl Prompter for Human {
     async fn prompt(&self, _req: &ApprovalRequest) -> ApprovalAnswer {
         self.prompts.fetch_add(1, Ordering::SeqCst);
         let next = self.answers.lock().unwrap().pop_front();
@@ -131,7 +131,7 @@ pub(crate) fn env(ui: Arc<TestUi>, workspace: WorkspaceMode) -> ModEnv {
 }
 
 pub(crate) fn ctx() -> ToolContext {
-    ToolContext::new(CWD, Arc::new(ShutWorkspace))
+    ToolContext::new(CWD, ShutWorkspace)
 }
 
 pub(crate) fn input(v: Value) -> JsonMap {
@@ -210,7 +210,7 @@ pub(crate) async fn js(file: &str, source: &str, haest: &ModEnv) -> Result<JsMod
 
 /// `tools` wrapped in `mods`' hooks, plus the mods' own tools.
 pub(crate) fn wrapped<T: Into<ToolRef>>(mods: Mods, tools: impl IntoIterator<Item = T>) -> Tools {
-    ModTools::wrap(&Arc::new(mods), tools.into_iter().collect())
+    ModTools::wrap(&mods, tools.into_iter().collect())
 }
 
 pub(crate) fn find(tools: &[ToolRef], name: &str) -> ToolRef {

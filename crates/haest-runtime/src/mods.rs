@@ -22,17 +22,23 @@ use crate::{
 /// `gate` ([`ApprovalGate`]) to the host's prompter, which decides how a human
 /// answers; an ask nobody answers is a deny after its timeout. Never fails:
 /// the mods that loaded are the ones returned.
-pub async fn mods_for(hooks: &Arc<RuntimeHooks>, fs: &dyn Fs, gate: &ApprovalGate) -> Arc<Mods> {
+pub async fn mods_for(hooks: &Arc<RuntimeHooks>, fs: &dyn Fs, gate: &ApprovalGate) -> Mods {
     let s = &hooks.settings;
     let mut cfg = ModOptions::new(&s.cwd, s.workspace, &s.config_dir);
-    cfg.approvals = s.approvals;
-    cfg.user_mods = s.mods;
-    cfg.project_mods = s.project_mods;
+    if !s.approvals {
+        cfg = cfg.without_approvals();
+    }
+    if s.mods {
+        cfg = cfg.with_user_mods();
+    }
+    if s.project_mods {
+        cfg = cfg.with_project_mods();
+    }
     let to = hooks.clone();
-    let mod_ui = gate.with_lines(move |line| match line {
+    let mod_ui = gate.mod_ui(move |line| match line {
         ModLine::Info(text) => to.info(text),
         ModLine::Error(text) => to.error(text),
         ModLine::Debug(message) => ToolServices::debug(to.as_ref(), message),
     });
-    Arc::new(load_mods(cfg, fs, Arc::new(mod_ui)).await)
+    load_mods(cfg, fs, mod_ui).await
 }

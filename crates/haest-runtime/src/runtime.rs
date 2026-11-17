@@ -63,7 +63,7 @@ pub struct Runtime<U: ?Sized> {
     pub mcp: Arc<McpHub>,
     /// The mods turned on: the approval mod, plan mode, the human's and the
     /// project's. A host passes the human's text through `rewrite_prompt`.
-    pub mods: Arc<Mods>,
+    pub mods: Mods,
     /// The human's Allow / Deny every mod's ask goes through, with the
     /// ALWAYS answers given so far; [`revoke`](ApprovalGate::revoke) takes
     /// a tool's back.

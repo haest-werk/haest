@@ -111,7 +111,7 @@ impl JsMod {
     /// # Examples
     ///
     /// ```
-    /// # use std::{path::Path, sync::Arc};
+    /// # use std::path::Path;
     /// # use haest_core::workspace::WorkspaceMode;
     /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
     /// use haest_mods::{JsMod, Mod, ModEnv, ModLoadError};
@@ -123,14 +123,15 @@ impl JsMod {
     /// # }
     ///
     /// # #[tokio::main(flavor = "current_thread")]
-    /// # async fn main() {
-    /// let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Arc::new(Terminal));
+    /// # async fn main() -> Result<(), haest_core::error::BoxError> {
+    /// let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Terminal);
     /// let source = "export default (haest: any) => haest.on('prompt.submit', (t: string) => t.trim())";
-    /// let m = JsMod::load(Path::new("/mods/trim.ts"), source.into(), &env).await.unwrap();
-    /// assert_eq!(m.prompt_submit("  hello  ", &env).await.unwrap().as_deref(), Some("hello"));
+    /// let m = JsMod::load(Path::new("/mods/trim.ts"), source.into(), &env).await?;
+    /// assert_eq!(m.prompt_submit("  hello  ", &env).await?.as_deref(), Some("hello"));
     ///
     /// let broken = JsMod::load(Path::new("/mods/broken.js"), "export default 42".into(), &env).await;
     /// assert!(matches!(broken, Err(ModLoadError::NotAFunction)));
+    /// # Ok(())
     /// # }
     /// ```
     pub async fn load(path: &Path, source: String, haest: &ModEnv) -> Result<Self, ModLoadError> {
@@ -154,13 +155,13 @@ impl JsMod {
         let setup = Setup {
             path: path.to_path_buf(),
             source,
-            ui: haest.ui.clone(),
+            ui: haest.ui().clone(),
             meta: meta.clone(),
             caps,
             runtime,
         };
         let thread = Arc::new(JsThread::new(thread::start(setup).await?));
-        let env = json!({ "env": { "cwd": haest.cwd, "workspace": haest.workspace.as_str() } });
+        let env = json!({ "env": { "cwd": haest.cwd(), "workspace": haest.workspace().as_str() } });
         let wait = caps.load_timeout;
         match tokio::time::timeout(wait, thread.call("load", env, None)).await {
             Err(_) => Err(ModLoadError::Timeout(wait)),

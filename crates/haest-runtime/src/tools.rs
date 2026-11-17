@@ -125,7 +125,7 @@ impl ToolSource for BaseTools {
 /// subagent starts from this list.
 pub struct WrappedTools {
     base: Arc<BaseTools>,
-    mods: Arc<Mods>,
+    mods: Mods,
     /// The names Code may call: the file tools and `code_tools`; None = no
     /// Code tool.
     code: Option<Vec<String>>,
@@ -136,7 +136,7 @@ impl WrappedTools {
     /// tool; Some(extra) = a Code tool that may call the file tools, the
     /// read-only MCP tools, and the tools `extra` names (the `code_tools`
     /// setting: exact names, or `prefix*`).
-    pub fn new(own: Tools, mcp: Arc<McpHub>, mods: Arc<Mods>, code: Option<Vec<String>>) -> Self {
+    pub fn new(own: Tools, mcp: Arc<McpHub>, mods: Mods, code: Option<Vec<String>>) -> Self {
         let files = FILE_TOOLS.map(String::from);
         Self {
             base: Arc::new(BaseTools { own, mcp }),
@@ -152,7 +152,7 @@ impl ToolSource for WrappedTools {
         let mut tools = self.base.tools();
         if let Some(allowed) = &self.code {
             let names = code_tool_names(&tools, allowed);
-            let callable = Arc::new(ModTools::new(self.base.clone(), self.mods.clone()));
+            let callable = ModTools::new(self.base.clone(), self.mods.clone());
             tools.push(CodeTool::new(names, callable));
         }
         ModTools::wrap(&self.mods, tools)

@@ -30,7 +30,7 @@ use crate::{
         core::session::SessionRecord,
         core::tool::ToolContext,
         http::{HttpClient, HttpError, Request, Response},
-        mods::{ApprovalRequest, Decision, ModUi},
+        mods::{ApprovalRequest, Decision, ModUiRef},
         tools::{AgentRef, Inbox, JobHub, NoInbox, SpawnInput},
         workspace::RealWorkspace,
     },
@@ -319,7 +319,7 @@ async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
     let rt = build(inputs, ui, prompter, BuildOptions::default())
         .await
         .unwrap();
-    let (asks, gate) = (rt.mods.env().ui.clone(), rt.gate.clone());
+    let (asks, gate) = (rt.mods.env().ui().clone(), rt.gate.clone());
     let mut sub = hub.subscribe(0);
     let session = start(rt, hub);
     let rm = || ApprovalRequest {
@@ -329,7 +329,7 @@ async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
         tool_use_id: None,
         key: Some("rm -rf build".into()),
     };
-    let ask = |asks: &Arc<dyn ModUi>| {
+    let ask = |asks: &ModUiRef| {
         let asks = asks.clone();
         tokio::spawn(async move { asks.ask(rm(), &CancellationToken::new()).await })
     };

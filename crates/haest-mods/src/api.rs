@@ -1,7 +1,7 @@
 //! What a mod is ([`Mod`]), what it can reach ([`ModEnv`]), and the host's half
 //! ([`ModUi`]): the human's Allow / Deny and the lines they see.
 
-use std::{path::PathBuf, sync::Arc};
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use haest_core::{
@@ -82,9 +82,11 @@ haest_core::word_enum! {
 /// `ask` and the lines reach the human; how is the host's business. Most hosts
 /// do not implement this: an [`ApprovalGate`](crate::ApprovalGate) over their
 /// own [`Prompter`](crate::Prompter) keeps the rules every ask must keep, and
-/// [`ApprovalGate::with_lines`](crate::ApprovalGate::with_lines) makes it a
+/// [`ApprovalGate::mod_ui`](crate::ApprovalGate::mod_ui) makes it a
 /// `ModUi` that sends every other line where the host says.
 /// [`ApprovalGate`](crate::ApprovalGate#examples)'s example is a whole host.
+///
+/// Haest holds one in a [`ModUiRef`].
 #[async_trait]
 pub trait ModUi: Send + Sync {
     /// The human's Allow / Deny. Deny when `cancel` fires (an interrupt) or the
@@ -102,28 +104,49 @@ pub trait ModUi: Send + Sync {
     fn debug(&self, _message: &str) {}
 }
 
+haest_core::plug_ref! {
+    /// A [`ModUi`], shared: how the host reaches the human. A parameter that
+    /// takes `impl Into<ModUiRef>` takes the host's value itself, or an `Arc`
+    /// of it.
+    pub struct ModUiRef(dyn ModUi);
+}
+
 /// Where haest runs, and the human: what every mod event can reach.
 ///
 /// One per conversation, shared by every mod in [`Mods`](crate::Mods); the
-/// events get it as their `haest` argument.
-#[derive(Clone)]
+/// events get it as their `haest` argument. Cheap to clone.
+#[derive(Debug, Clone)]
 pub struct ModEnv {
-    /// The conversation's working directory.
-    pub cwd: PathBuf,
-    /// The workspace the agent's tools run in: [`ApprovalMod`](crate::ApprovalMod) asks only in `Real`.
-    pub workspace: WorkspaceMode,
-    /// The host's ask, and its info, error and debug lines.
-    pub ui: Arc<dyn ModUi>,
+    cwd: PathBuf,
+    workspace: WorkspaceMode,
+    ui: ModUiRef,
 }
 
 impl ModEnv {
-    /// The environment for one conversation's mods.
-    pub fn new(cwd: impl Into<PathBuf>, workspace: WorkspaceMode, ui: Arc<dyn ModUi>) -> Self {
+    /// The environment for one conversation's mods: its working directory,
+    /// the workspace its tools run in, and the host's [`ModUi`].
+    pub fn new(cwd: impl Into<PathBuf>, workspace: WorkspaceMode, ui: impl Into<ModUiRef>) -> Self {
         Self {
             cwd: cwd.into(),
             workspace,
-            ui,
+            ui: ui.into(),
         }
+    }
+
+    /// The conversation's working directory.
+    pub fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    /// The workspace the agent's tools run in:
+    /// [`ApprovalMod`](crate::ApprovalMod) asks only in `Real`.
+    pub fn workspace(&self) -> WorkspaceMode {
+        self.workspace
+    }
+
+    /// The host's ask, and its info, error and debug lines.
+    pub fn ui(&self) -> &ModUiRef {
+        &self.ui
     }
 
     /// The human's Allow / Deny, through the host; Deny on interrupt or
@@ -148,8 +171,9 @@ impl ModEnv {
 /// are mods like this; so is a host's own. The [crate docs](crate#a-native-mod)
 /// have one.
 ///
-/// A mod is put in a conversation with [`Mods::add`](crate::Mods::add); every
-/// event runs across the mods in the order they were added. An `Err` from an
+/// A mod is put in a conversation with [`Mods::add`](crate::Mods::add) (by
+/// value, or as an `Arc` the host keeps to look at it), and held in a
+/// [`ModRef`]; every event runs across the mods in the order they were added. An `Err` from an
 /// event (any error, or a line of text: `Err("why".into())`) is reported to
 /// the human through [`ModUi::error`] with its causes, and never takes the
 /// conversation down. What else a failure means depends on the event;
@@ -238,4 +262,11 @@ pub trait Mod: Send + Sync {
     ) -> Result<Option<String>, BoxError> {
         Ok(None)
     }
+}
+
+haest_core::plug_ref! {
+    /// A [`Mod`], shared: what [`Mods`](crate::Mods) holds. Its `Debug` shows
+    /// the mod's name.
+    pub struct ModRef(dyn Mod);
+    debug(m, f) { f.debug_tuple("ModRef").field(&m.name()).finish() }
 }

@@ -53,7 +53,7 @@ async fn a_host_takes_an_always_back_in_a_built_conversation() {
     let rt = build(inputs, ui, answers.clone(), BuildOptions::default())
         .await
         .unwrap();
-    let asks = rt.mods.env().ui.clone();
+    let asks = rt.mods.env().ui().clone();
     let none = CancellationToken::new();
 
     assert_eq!(asks.ask(rm("rm -rf a"), &none).await, Decision::Allow);

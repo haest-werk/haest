@@ -6,9 +6,12 @@
 //!     themselves (by default the task list, subagents, ToolSearch). Subagents
 //!     run through the same mods, so they are read-only too.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    fmt,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use async_trait::async_trait;
@@ -22,7 +25,7 @@ pub const PLAN_COMMAND: &str = "plan";
 
 /// The tools plan mode lets run though they are not read-only, unless a host
 /// names others ([`PlanMod::with_planning_tools`],
-/// [`ModOptions::planning_tools`](crate::ModOptions::planning_tools)): haest's
+/// [`ModOptions::with_planning_tools`](crate::ModOptions::with_planning_tools)): haest's
 /// task list, subagents and `ToolSearch`.
 pub const PLANNING_TOOLS: &[&str] = &[
     "TaskCreate",
@@ -40,9 +43,8 @@ pub const PLANNING_TOOLS: &[&str] = &[
 /// nothing.
 pub const PLAN_PROMPT: &str = "# Plan mode is ON\nThe human wants a plan before any change. Explore with read-only tools (Read, Grep, Glob, WebFetch, subagents), then answer with the plan: the goal in a sentence, the files you would touch and why, the steps in order, the risks, and how you would verify it works. Record the steps with TaskCreate. Do NOT edit files or run commands -- those tools are refused until the human turns plan mode off (/plan off).";
 
-/// Told whenever plan mode turns on (`true`) or off (`false`), however it was
-/// switched. Called on the task that ran the command; keep it short.
-pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
+/// Told whenever plan mode turns on (`true`) or off (`false`).
+pub(crate) type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 
 /// PLAN MODE (built in): read-only planning until the human turns it off.
 ///
@@ -64,9 +66,7 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
-/// use haest_core::{MemFs, ShutWorkspace, ToolContext, Tools, workspace::WorkspaceMode};
+/// use haest_core::{MemFs, ShutWorkspace, ToolContext, Tools, tool::input, workspace::WorkspaceMode};
 /// use haest_mods::{CommandOutcome, ModOptions, ModTools, PLAN_PROMPT, load_mods};
 /// use serde_json::json;
 /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
@@ -90,50 +90,75 @@ pub type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// # }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// let config = ModOptions::new("/project", WorkspaceMode::Sandbox, "/home/me/.config/haest");
-/// let mods = Arc::new(load_mods(config, &MemFs::new(), Arc::new(Terminal)).await);
+/// let mods = load_mods(config, &MemFs::new(), Terminal).await;
 /// let tools = ModTools::wrap(&mods, Tools::new().with(Write));
 /// let ctx = ToolContext::new("/project", ShutWorkspace);
-/// let write = || tools[0].execute(json!({ "file_path": "notes.md" }).as_object().cloned().unwrap(), &ctx);
+/// let write = json!({ "file_path": "notes.md" });
 ///
 /// // `/plan the migration`: plan mode on, and the topic goes to the model.
 /// let sent = mods.command("/plan", "the migration").await;
 /// assert!(matches!(sent, CommandOutcome::Prompt(text) if text.contains("the migration")));
 /// assert!(mods.system_append().await.contains(PLAN_PROMPT));
-/// assert!(write().await.is_err());
+/// assert!(tools[0].execute(input(write.clone())?, &ctx).await.is_err());
 ///
 /// assert_eq!(mods.command("/plan", "off").await, CommandOutcome::Handled);
-/// assert!(write().await.is_ok());
+/// tools[0].execute(input(write)?, &ctx).await?;
+/// # Ok(())
 /// # }
 /// ```
 pub struct PlanMod {
     on: AtomicBool,
-    on_change: Option<PlanListener>,
+    listener: Option<PlanListener>,
     planning_tools: Vec<String>,
 }
 
+impl fmt::Debug for PlanMod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PlanMod")
+            .field("on", &self.is_on())
+            .field("listener", &self.listener.is_some())
+            .field("planning_tools", &self.planning_tools)
+            .finish()
+    }
+}
+
 impl Default for PlanMod {
-    /// [`PlanMod::new`] with no listener.
     fn default() -> Self {
-        Self::new(None)
+        Self::new()
     }
 }
 
 impl PlanMod {
-    /// Plan mode, off, with the [`PLANNING_TOOLS`]. `on_change` tells the
-    /// host, so its plan toggle shows haest's state however it was switched.
-    pub fn new(on_change: Option<PlanListener>) -> Self {
+    /// Plan mode, off, with the [`PLANNING_TOOLS`] and no listener.
+    pub fn new() -> Self {
         Self {
             on: AtomicBool::new(false),
-            on_change,
+            listener: None,
             planning_tools: PLANNING_TOOLS.iter().map(|t| t.to_string()).collect(),
         }
+    }
+
+    /// Plan mode that tells `f` whenever it turns on (`true`) or off
+    /// (`false`), however it was switched, so a host's plan toggle shows
+    /// haest's state. `f` is called on the task that ran the command; keep it
+    /// short.
+    #[must_use]
+    pub fn with_listener(self, f: impl Fn(bool) + Send + Sync + 'static) -> Self {
+        self.listened_by(Some(Arc::new(f)))
+    }
+
+    /// Plan mode told through `listener`, or by nobody.
+    pub(crate) fn listened_by(mut self, listener: Option<PlanListener>) -> Self {
+        self.listener = listener;
+        self
     }
 
     /// Plan mode with these planning tools in place of [`PLANNING_TOOLS`]:
     /// the tools, by name, that run while it is on though they are not
     /// read-only (a host's own task list, say).
+    #[must_use]
     pub fn with_planning_tools(
         mut self,
         names: impl IntoIterator<Item = impl Into<String>>,
@@ -167,7 +192,7 @@ impl Mod for PlanMod {
         let args = args.trim();
         let on = args != "off";
         self.on.store(on, Ordering::SeqCst);
-        if let Some(f) = &self.on_change {
+        if let Some(f) = &self.listener {
             f(on);
         }
         haest.info(if on {

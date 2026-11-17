@@ -1,7 +1,7 @@
 //! THE APPROVAL MOD (built in): in the REAL workspace, a Bash command that can
 //! destroy work the human cannot get back waits for their Allow. The sandbox
 //! never asks -- its writes live in memory and vanish anyway. A host turns it
-//! off with [`ModOptions::approvals`](crate::ModOptions::approvals).
+//! off with [`ModOptions::without_approvals`](crate::ModOptions::without_approvals).
 //!
 //! The list is about irreversibility, not about danger in general: deleting
 //! recursively, rewriting git history or the remote, wiping a disk, killing
@@ -9,7 +9,7 @@
 //! on ([`AutoJudge`]), which judges every command and may ask, or let a
 //! git-recoverable delete through.
 
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use async_trait::async_trait;
 use haest_core::{error::BoxError, tool::ToolContext, workspace::WorkspaceMode};
@@ -128,7 +128,9 @@ pub enum BashVerdict {
 /// or let a delete through that git can bring back.
 ///
 /// haest ships no judge (the TypeScript haest's is not ported); a host that
-/// has one hands it in through [`ModOptions::auto`](crate::ModOptions::auto).
+/// has one hands it in through [`ApprovalMod::with_auto`] or
+/// [`ModOptions::with_auto`](crate::ModOptions::with_auto), and haest holds
+/// it in an [`AutoJudgeRef`].
 #[async_trait]
 pub trait AutoJudge: Send + Sync {
     /// Whether auto mode is on right now. Asked before every command, so a
@@ -139,9 +141,14 @@ pub trait AutoJudge: Send + Sync {
     async fn judge(&self, command: &str, ctx: &ToolContext) -> BashVerdict;
 }
 
+haest_core::plug_ref! {
+    /// An [`AutoJudge`], shared.
+    pub struct AutoJudgeRef(dyn AutoJudge);
+}
+
 /// The shell tools [`ApprovalMod`] judges, unless a host names others
 /// ([`ApprovalMod::with_shell_tools`],
-/// [`ModOptions::shell_tools`](crate::ModOptions::shell_tools)): haest's `Bash`.
+/// [`ModOptions::with_shell_tools`](crate::ModOptions::with_shell_tools)): haest's `Bash`.
 pub const SHELL_TOOLS: &[&str] = &["Bash"];
 
 /// THE APPROVAL MOD (built in): in the REAL workspace, a Bash command that can
@@ -158,35 +165,44 @@ pub const SHELL_TOOLS: &[&str] = &["Bash"];
 ///
 /// It is a gate ([`Mod::is_gate`]): it judges the command as it will run,
 /// after every other mod has rewritten it. [`load_mods`](crate::load_mods)
-/// adds it unless [`ModOptions::approvals`](crate::ModOptions::approvals) is
-/// off. [`ApprovalGate`](crate::ApprovalGate#examples)'s example shows it
-/// with a whole host.
+/// adds it unless
+/// [`ModOptions::without_approvals`](crate::ModOptions::without_approvals).
+/// [`ApprovalGate`](crate::ApprovalGate#examples)'s example shows it with a
+/// whole host.
+#[derive(Debug, Clone)]
 pub struct ApprovalMod {
-    auto: Option<Arc<dyn AutoJudge>>,
+    auto: Option<AutoJudgeRef>,
     shell_tools: Vec<String>,
 }
 
 impl Default for ApprovalMod {
-    /// [`ApprovalMod::new`] with no auto mode: the list decides.
     fn default() -> Self {
-        Self::new(None)
+        Self::new()
     }
 }
 
 impl ApprovalMod {
-    /// The approval mod over the [`SHELL_TOOLS`]. `auto`, when it is on,
-    /// judges every command instead of the list alone; None = the list
-    /// ([`ApprovalMod::default`]).
-    pub fn new(auto: Option<Arc<dyn AutoJudge>>) -> Self {
+    /// The approval mod over the [`SHELL_TOOLS`], with no auto mode: the
+    /// irreversible list decides.
+    pub fn new() -> Self {
         Self {
-            auto,
+            auto: None,
             shell_tools: SHELL_TOOLS.iter().map(|t| t.to_string()).collect(),
         }
+    }
+
+    /// The approval mod with auto mode's judge: while it is
+    /// [`on`](AutoJudge::on), it judges every command instead of the list alone.
+    #[must_use]
+    pub fn with_auto(mut self, judge: impl Into<AutoJudgeRef>) -> Self {
+        self.auto = Some(judge.into());
+        self
     }
 
     /// The approval mod judging these tools, by name, in place of
     /// [`SHELL_TOOLS`]: a host whose shell tool has another name. Each takes
     /// the command it runs as its `command` input.
+    #[must_use]
     pub fn with_shell_tools(mut self, names: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.shell_tools = names.into_iter().map(Into::into).collect();
         self
@@ -235,7 +251,7 @@ impl Mod for ApprovalMod {
         ctx: &ToolContext,
         haest: &ModEnv,
     ) -> Result<Before, BoxError> {
-        if haest.workspace != WorkspaceMode::Real || !self.shell_tools.contains(&call.name) {
+        if haest.workspace() != WorkspaceMode::Real || !self.shell_tools.contains(&call.name) {
             return Ok(Before::Pass);
         }
         let command = command_of(call);
