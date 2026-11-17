@@ -63,7 +63,7 @@ fn fail(code: u8, msg: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(code)
 }
 
-async fn subcommand(cmd: &Command, loaded: &Loaded) -> ExitCode {
+async fn subcommand(cmd: Command, loaded: &Loaded) -> ExitCode {
     let s = &loaded.config.settings;
     match cmd {
         Command::Models => print!("{}", models::render(haest::providers::Catalog::builtin())),
@@ -76,7 +76,7 @@ async fn subcommand(cmd: &Command, loaded: &Loaded) -> ExitCode {
                 .map(|info| session::format_row(info, !here))
                 .collect();
             if rows.is_empty() {
-                eprintln!("No saved sessions{}.", if *here { " here" } else { "" });
+                eprintln!("No saved sessions{}.", if here { " here" } else { "" });
             }
             rows.iter().for_each(|r| println!("{r}"));
         }
@@ -170,8 +170,7 @@ fn control_socket(
             Ok(attached) => {
                 let id = &sid[..8.min(sid.len())];
                 ui.info(&format!(
-                    "Control socket open ({}): haest ctl events {id} --follow",
-                    open.as_str()
+                    "Control socket open ({open}): haest ctl events {id} --follow"
                 ));
                 Some(attached)
             }
@@ -221,7 +220,7 @@ fn broker_link(
     }
     match link.attach(session.clone(), grant) {
         Ok(attached) => {
-            ui.info(&format!("Broker link: {shown} ({})", access.as_str()));
+            ui.info(&format!("Broker link: {shown} ({access})"));
             let ui = ui.clone();
             Some(tokio::spawn(async move {
                 if let Ended::Failed(e) = attached.ended().await {
@@ -292,10 +291,11 @@ fn working_dir(args: &Args) -> Result<PathBuf, String> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let cli = match args::parse_from(std::env::args_os()) {
+    let mut cli = match args::parse_from(std::env::args_os()) {
         Ok(c) => c,
         Err(e) => e.exit(),
     };
+    let command = cli.args.command.take();
     let args = &cli.args;
     let env = unicode_vars(std::env::vars_os());
     let cwd = match working_dir(args) {
@@ -311,7 +311,7 @@ async fn main() -> ExitCode {
         Ok(l) => l,
         Err(e) => return fail(2, report(&e)),
     };
-    if let Some(cmd) = &args.command {
+    if let Some(cmd) = command {
         return subcommand(cmd, &loaded).await;
     }
     let stdio = loaded.config.stdio;

@@ -18,21 +18,21 @@ use crate::{args::Ctl, render::Renderer};
 /// How long a question that is not a turn may take.
 const ANSWER_WAIT: Duration = Duration::from_secs(10);
 
-pub async fn run(cmd: &Ctl, dir: &Path) -> ExitCode {
+pub async fn run(cmd: Ctl, dir: &Path) -> ExitCode {
     let done = match cmd {
         Ctl::List { json } => {
-            list(dir, *json).await;
+            list(dir, json).await;
             Ok(())
         }
-        Ctl::Inspect { id, json } => inspect(dir, id, *json).await,
+        Ctl::Inspect { id, json } => inspect(dir, &id, json).await,
         Ctl::Events {
             id,
             after,
             follow,
             json,
-        } => events(dir, id, *after, *follow, *json).await,
-        Ctl::Send { id, text } => send(dir, id, &text.join(" ")).await,
-        Ctl::Interrupt { id } => interrupt(dir, id).await,
+        } => events(dir, &id, after, follow, json).await,
+        Ctl::Send { id, text } => send(dir, &id, &text.join(" ")).await,
+        Ctl::Interrupt { id } => interrupt(dir, &id).await,
     };
     match done {
         Ok(()) => ExitCode::SUCCESS,
