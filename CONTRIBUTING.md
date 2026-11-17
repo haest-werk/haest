@@ -31,6 +31,12 @@
     `new_with_*`, a fallible add `try_*`, a merge is named for what it
     makes (`overlaid`), and what changes every clone of a shared service
     takes `&self` as `set_*` (`Ledger::set_remedies`).
+  - A setter for an optional field takes the value (`with_name(impl
+    Into<String>)` sets it), never `impl Into<Option<_>>` or `Option<&str>`:
+    a caller holding an `Option` calls it only for `Some`. Where a caller
+    really needs to clear a field that has a default, that is a setter of
+    its own, named for it (`without_app_title`). A flag's setter takes the
+    bool (`with_background(bool)`), never a no-argument `in_background()`.
   - A line to the human is **info / warn / error / debug**, on `Ui`, `ModUi`,
     `ModEnv` and `ToolServices` alike.
   - **subagent**, one word. `AgentDeps` is one agent's own parts (tools,

@@ -137,8 +137,11 @@ async fn openrouter_routing_goes_out_only_when_handed_in_and_attribution_is_conf
             ProviderRegistry::new(keys(&[("OPENROUTER_API_KEY", "k")])),
             &t,
         )
-        .with_routing(handed)
         .with_app_url("https://example.test");
+        let reg = match handed {
+            Some(routing) => reg.with_routing(routing),
+            None => reg,
+        };
         let r = reg.resolve("openrouter:z-ai/glm-5").unwrap();
         collect(r.provider().stream(request(r.model()))).await;
         let sent = &t.requests()[0];
@@ -184,7 +187,7 @@ async fn the_client_handed_in_survives_every_later_setter() {
         .with_http(t.clone())
         .with_retry(RetryPolicy::none())
         .with_headers_timeout(std::time::Duration::from_secs(5))
-        .with_routing(None)
+        .with_routing(RoutingScopes::default())
         .with_app_title("host")
         .with_app_url("https://host.test");
     let r = reg.resolve("openrouter:m").unwrap();
@@ -366,11 +369,11 @@ fn a_host_hands_in_its_own_provider_and_typed_entries() {
 }
 
 #[test]
-fn routing_is_set_from_the_scopes_or_an_option_of_them() {
+fn routing_is_none_until_scopes_are_handed_in() {
     let scopes = parse_routing(r#"{"global": {"banned": ["novita"]}}"#)
         .unwrap()
         .unwrap();
-    let set = ProviderRegistry::new(keys(&[])).with_routing(scopes.clone());
-    assert_eq!(set.routing(), Some(&scopes));
-    assert_eq!(set.with_routing(None).routing(), None);
+    let unset = ProviderRegistry::new(keys(&[]));
+    assert_eq!(unset.routing(), None);
+    assert_eq!(unset.with_routing(scopes.clone()).routing(), Some(&scopes));
 }

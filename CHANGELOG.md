@@ -862,7 +862,8 @@ Hosts write less (round two of the review, and what porting brain onto
   `ProviderRegistry::new(keys).with_custom(custom).with_http(client).with_routing(routing)`
   (also `with_retry`, `with_headers_timeout`, `with_app_title`,
   `without_app_title`, `with_app_url`), each read back with the getter of
-  its name. `with_routing` takes the scopes or an `Option` of them.
+  its name. `with_routing` takes the scopes themselves: a host holding an
+  `Option` calls it only for `Some`.
 - `ProviderRegistry::resolve` is inherent: `registry.resolve(spec)` needs no
   `use haest_core::ModelResolver`. The registry is still a `ModelResolver`.
   It is `Clone` and `Debug`: clones share what was built, so

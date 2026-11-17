@@ -148,9 +148,11 @@ where
     let models = models.unwrap_or_else(|| {
         let registry = ProviderRegistry::new(keys.clone())
             .with_custom(providers)
-            .with_http(http.clone())
-            .with_routing(routing);
-        registry.into()
+            .with_http(http.clone());
+        match routing {
+            Some(routing) => registry.with_routing(routing).into(),
+            None => registry.into(),
+        }
     });
     models.resolve(&model)?;
     let spill = settings.spill_dir(session.store.session_id());

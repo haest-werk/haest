@@ -256,13 +256,13 @@ impl ProviderRegistry {
         self
     }
 
-    /// OpenRouter provider routing to send, or none
+    /// OpenRouter provider routing to send
     /// ([`parse_routing`](crate::parse_routing) reads the host's JSON: haest's
-    /// `provider_routing` setting). Takes the scopes or an `Option` of them;
-    /// a host whose gateway routes leaves it off.
+    /// `provider_routing` setting). None is sent until this is called; a host
+    /// whose gateway routes leaves it off.
     #[must_use]
-    pub fn with_routing(mut self, routing: impl Into<Option<RoutingScopes>>) -> Self {
-        self.shared_mut().routing = routing.into();
+    pub fn with_routing(mut self, routing: RoutingScopes) -> Self {
+        self.shared_mut().routing = Some(routing);
         self
     }
 
