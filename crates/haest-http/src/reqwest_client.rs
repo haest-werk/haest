@@ -71,7 +71,27 @@ fn same_origin_redirects() -> redirect::Policy {
 pub fn build_reqwest(builder: reqwest::ClientBuilder) -> Result<reqwest::Client, HttpError> {
     // Err = a provider is installed already (the host's, or ours): it is kept.
     let _ = rustls::crypto::ring::default_provider().install_default();
-    builder.build().map_err(|e| HttpError::Request(e.into()))
+    builder
+        .build()
+        .map_err(|e| HttpError::Request(without_credentials(e).into()))
+}
+
+/// `e` with nothing a credential rides in left in its URL: no userinfo, no
+/// query, no fragment. reqwest prints the request's URL in an error's text
+/// and its Debug output, and a URL may carry a key (`?api_key=`); what is
+/// left (scheme, host, port, path) still says where the request went.
+///
+/// haest-mcp scrubs rmcp's errors with it too: rmcp sends an MCP server's
+/// streamable HTTP over a reqwest client of its own.
+pub fn without_credentials(mut e: reqwest::Error) -> reqwest::Error {
+    if let Some(url) = e.url_mut() {
+        url.set_query(None);
+        url.set_fragment(None);
+        // Err = a URL that cannot have userinfo (no host): it has none.
+        let _ = url.set_username("");
+        let _ = url.set_password(None);
+    }
+    e
 }
 
 /// Settings on haest's builder: what [`ReqwestClient::configured`] takes.
@@ -206,10 +226,12 @@ impl ReqwestClient {
             builder = builder.body(req.body);
         }
         let res = builder.send().await.map_err(|e| {
-            if e.is_builder() || e.is_redirect() {
-                HttpError::Request(e.into())
+            let request_error = e.is_builder() || e.is_redirect();
+            let e = without_credentials(e).into();
+            if request_error {
+                HttpError::Request(e)
             } else {
-                HttpError::Connect(e.into())
+                HttpError::Connect(e)
             }
         })?;
         let headers = res
@@ -225,7 +247,7 @@ impl ReqwestClient {
             headers,
             body: Body::from_stream(
                 res.bytes_stream()
-                    .map(|chunk| chunk.map_err(|e| HttpError::Body(e.into()))),
+                    .map(|chunk| chunk.map_err(|e| HttpError::Body(without_credentials(e).into()))),
             ),
         })
     }

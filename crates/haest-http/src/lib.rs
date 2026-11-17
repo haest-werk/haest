@@ -127,10 +127,12 @@ mod reqwest_client;
 mod response;
 
 /// Shared by haest's crates, not part of the API: the Debug redaction their
-/// option and tracker types use.
+/// option and tracker types use, and the scrubbing of a reqwest error's URL.
 #[doc(hidden)]
 pub mod __private {
     pub use crate::redact::{HeaderNames, REDACTED, UrlDebug, redacted_url, without_userinfo};
+    #[cfg(feature = "reqwest")]
+    pub use crate::reqwest_client::without_credentials;
 }
 
 /// Marks an `impl HttpClient` so its `async fn` compiles; the macro the trait

@@ -243,6 +243,12 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   client to another program's socket. It now dials only the
   `<stream id>.sock` beside the discovery file, and `running_sessions`
   neither dials nor lists a file that names another path.
+- `ReqwestClient`'s errors held the request's whole URL, as reqwest gives
+  it, so a model call, a GitHub call or GenerateImage that failed to
+  connect, or ran into a redirect loop, showed a key in the URL's query
+  (`?key=...`) in its text and its Debug output. The URL in an
+  `HttpError`'s cause now has no query, no fragment and no userinfo; the
+  host and path still say where the request went.
 
 ### Behaviour changes
 
