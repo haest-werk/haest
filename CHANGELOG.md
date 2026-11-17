@@ -235,6 +235,9 @@ value itself, and holds it in a handle named after its trait. Read
   `transport-broker` (pulls a WebSocket client on rustls).
 - New examples, each run by `cargo test`: `wire`, `session`, `stdio`,
   `control_socket` and `broker`.
+- New feature `rmcp` (not in `default`; turns on `mcp`): haest-mcp's own
+  `rmcp` feature, so a host of the facade reaches `haest::mcp::rmcp` and
+  `McpHub::connect_transport` without depending on haest-mcp itself.
 - `runtime_inputs` builds the inputs with `RuntimeInputs`' setters; a host
   in another world changes it on the result:
   `inputs.world = World::Fs(fs)` -> `inputs.with_world(World::files(fs))`.

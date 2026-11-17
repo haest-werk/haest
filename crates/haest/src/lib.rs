@@ -185,6 +185,7 @@
 //! | `workspace` | [`workspace`]: the real disk and bash, or a sandbox over a copy-on-write overlay | yes |
 //! | `tools` | [`tools`]: Read, Write, Edit, Glob, Grep, Bash, WebFetch, tasks, subagents and more | yes |
 //! | `mcp` | [`mcp`]: MCP servers (stdio, streamable HTTP) and their tools | yes |
+//! | `rmcp` | `mcp::rmcp` and `mcp::McpHub::connect_transport`: an MCP server over a transport the host opened (rmcp's types in haest's API); turns on `mcp` | no |
 //! | `code` | [`code`]: the Code tool and the sandbox `js` command, in embedded QuickJS | yes |
 //! | `mods` | [`mods`]: change how haest behaves without forking it; approvals, plan mode | yes |
 //! | `settings` | [`settings`]: every setting as a plain value a host writes out in Rust | yes |

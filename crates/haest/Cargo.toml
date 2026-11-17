@@ -21,6 +21,10 @@ providers = ["dep:haest-providers", "http"]
 workspace = ["dep:haest-workspace"]
 tools = ["dep:haest-tools", "http"]
 mcp = ["dep:haest-mcp"]
+# rmcp in `haest::mcp`'s API: `haest::mcp::rmcp` and `McpHub::connect_transport`
+# (a server over a transport the host opened). Off, so an rmcp release that
+# breaks its API breaks only hosts that turn this on.
+rmcp = ["mcp", "haest-mcp/rmcp"]
 # The QuickJS engine: the Code tool and the sandbox `js` command.
 code = ["dep:haest-code"]
 # Mods: JS/TS files that hook tools, prompts and commands; approvals and plan mode.

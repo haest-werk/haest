@@ -54,6 +54,7 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `workspace` | `haest::workspace` | yes |
 | `tools` | `haest::tools` | yes |
 | `mcp` | `haest::mcp` | yes |
+| `rmcp` | `haest::mcp::rmcp` and `McpHub::connect_transport` (an MCP server over a transport the host opened; rmcp's types in haest's API); turns on `mcp` | no |
 | `code` | `haest::code` (the Code tool, the sandbox `js` command) | yes |
 | `mods` | `haest::mods` (mods, approvals, plan mode) | yes |
 | `settings` | `haest::settings` (the values, plain) | yes |
