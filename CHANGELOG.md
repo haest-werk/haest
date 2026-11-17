@@ -833,6 +833,9 @@ Hosts write less (round two of the review, and what porting brain onto
   `ProviderRegistry::retry()` returns it by value (breaking for a caller
   that read it through a reference): `registry.retry().clone()` ->
   `registry.retry()`.
+- `testing::FakeReply::header(&str, &str)` ->
+  `FakeReply::with_header(name, value)`, taking `impl Into<String>` as
+  `Response::with_header` does (breaking for tests).
 
 ### haest-tools
 
@@ -1485,6 +1488,12 @@ against it; the wire JSON is unchanged):
 - `CardTracker` and `GithubTracker` have every `Tracker` method inherent
   (`info`, `list`, `search`, `get`, `create`, `update`, `delete`, `link`):
   `tracker.get("42").await` needs no `use haest_issues::Tracker`.
+- `GithubTracker::with_api_url` takes `impl Into<String>` like the other
+  setters (was `&str`), and the tracker has the getters `owner()`,
+  `repo()`, `api_url()`, `http()` and `has_token()` (the token itself is
+  never read back). `CardTracker` gains `fs()` and `clock()`.
+- The `issues` example's `main` returns a `Result` and uses `?` where it
+  unwrapped.
 
 ## 0.2.0 (2026-11-17)
 

@@ -48,7 +48,7 @@ fn hello() -> FakeReply {
 async fn overload_rate_limit_and_a_dead_connection_are_retried_then_the_answer_streams() {
     let t = FakeHttp::new([
         FakeReply::status(529, r#"{"error":{"message":"overloaded"}}"#),
-        FakeReply::status(429, "slow down").header("retry-after-ms", "1"),
+        FakeReply::status(429, "slow down").with_header("retry-after-ms", "1"),
         FakeReply::Error(HttpError::Connect("connection refused".into())),
         hello(),
     ]);
@@ -76,7 +76,7 @@ async fn a_bad_request_is_not_retried_and_ends_as_an_error_naming_status_and_rea
 #[tokio::test]
 async fn the_server_can_veto_a_retry() {
     let t = FakeHttp::new([
-        FakeReply::status(500, "no").header("x-should-retry", "false"),
+        FakeReply::status(500, "no").with_header("x-should-retry", "false"),
         hello(),
     ]);
     let (_, msg) = collect(provider(&t).stream(request("m"))).await;

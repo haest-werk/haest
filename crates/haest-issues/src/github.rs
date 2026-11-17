@@ -62,7 +62,7 @@ const API: &str = "https://api.github.com";
 ///
 /// ```
 /// use haest_issues::{
-///     GithubTracker, IssueFilter, Tracker, TrackerError,
+///     GithubTracker, IssueFilter, TrackerError,
 ///     http::{HttpClient, HttpError, Request, Response, async_trait},
 /// };
 /// use serde_json::json;
@@ -153,14 +153,42 @@ impl GithubTracker {
     /// (its GraphQL endpoint is then `https://HOST/api/graphql`). The token,
     /// if any, goes to this host.
     #[must_use]
-    pub fn with_api_url(mut self, url: &str) -> Self {
-        let url = url.trim_end_matches('/');
+    pub fn with_api_url(mut self, url: impl Into<String>) -> Self {
+        let mut url = url.into();
+        url.truncate(url.trim_end_matches('/').len());
         self.graphql = match url.strip_suffix("/v3") {
             Some(root) => format!("{root}/graphql"),
             None => format!("{url}/graphql"),
         };
-        self.api = url.into();
+        self.api = url;
         self
+    }
+
+    /// The repository's owner.
+    pub fn owner(&self) -> &str {
+        &self.owner
+    }
+
+    /// The repository's name: the tracker works on `owner/repo`'s issues only.
+    pub fn repo(&self) -> &str {
+        &self.repo
+    }
+
+    /// The API root its requests go to ([`with_api_url`](Self::with_api_url);
+    /// `https://api.github.com` by default), with no trailing `/`.
+    pub fn api_url(&self) -> &str {
+        &self.api
+    }
+
+    /// The client its requests go through ([`with_http`](Self::with_http)).
+    pub fn http(&self) -> &HttpClientRef {
+        &self.http
+    }
+
+    /// Whether it sends a token ([`with_token`](Self::with_token)); the token
+    /// itself is never read back.
+    pub fn has_token(&self) -> bool {
+        self.token.is_some()
     }
 
     fn statuses() -> Vec<String> {

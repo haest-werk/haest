@@ -107,9 +107,10 @@ impl FakeReply {
         self
     }
 
-    /// Then add this response header (`retry-after`, `x-should-retry`, ...).
+    /// Then add this response header (`retry-after`, `x-should-retry`, ...),
+    /// as [`Response::with_header`](haest_http::Response::with_header) takes it.
     #[must_use]
-    pub fn header(mut self, name: &str, value: &str) -> Self {
+    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         if let FakeReply::Response { headers, .. } = &mut self {
             headers.push((name.into(), value.into()));
         }

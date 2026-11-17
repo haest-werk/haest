@@ -19,6 +19,7 @@ use std::path::Path;
 
 use haest_core::{
     Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, StopReason, Tools,
+    error::BoxError,
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::ToolContext,
 };
@@ -27,28 +28,29 @@ use haest_workspace::RealFs;
 use serde_json::json;
 
 #[tokio::main]
-async fn main() {
-    let tmp = tempfile::tempdir().expect("a temp dir");
-    plan_on_a_board(tmp.path()).await;
+async fn main() -> Result<(), BoxError> {
+    let tmp = tempfile::tempdir()?;
+    plan_on_a_board(tmp.path()).await?;
     let args: Vec<String> = std::env::args().collect();
     if let Some(repo) = args
         .iter()
         .position(|a| a == "--github")
         .and_then(|i| args.get(i + 1))
     {
-        list_github(repo).await;
+        list_github(repo).await?;
     }
+    Ok(())
 }
 
 #[tokio::test]
-async fn the_agent_plans_on_the_board() {
-    let tmp = tempfile::tempdir().unwrap();
-    plan_on_a_board(tmp.path()).await;
+async fn the_agent_plans_on_the_board() -> Result<(), BoxError> {
+    let tmp = tempfile::tempdir()?;
+    plan_on_a_board(tmp.path()).await
 }
 
 /// One turn: the model files an epic and a card under it, starts the card, and
 /// lists the board; every change lands in a card file.
-async fn plan_on_a_board(root: &Path) {
+async fn plan_on_a_board(root: &Path) -> Result<(), BoxError> {
     let dir = root.join("cards");
     // The host picks the directory and the file system; the tracker reads nothing else.
     let tracker = CardTracker::new(&dir, RealFs);
@@ -105,23 +107,29 @@ async fn plan_on_a_board(root: &Path) {
         .collect();
     assert_eq!(offered.len(), 7, "{offered:?}");
 
-    let card = tracker.get("index-the-titles").await.expect("the card");
+    let card = tracker.get("index-the-titles").await?;
     assert_eq!(card.status, "in-progress");
-    let text = std::fs::read_to_string(dir.join("index-the-titles.md")).expect("its file");
+    let text = std::fs::read_to_string(dir.join("index-the-titles.md"))?;
     assert!(text.contains("epic: search-v2"), "{text}");
     println!("\n{}:\n{text}", dir.join("index-the-titles.md").display());
+    Ok(())
 }
 
 /// The same tools over GitHub, called directly by a host: read only, no token
 /// (a public repository), so nothing on GitHub changes.
-async fn list_github(repo: &str) {
-    let (owner, name) = repo.split_once('/').expect("--github takes owner/repo");
+async fn list_github(repo: &str) -> Result<(), BoxError> {
+    let (owner, name) = repo.split_once('/').ok_or("--github takes owner/repo")?;
     let tools = issue_tools(GithubTracker::new(owner, name));
-    let list = tools.iter().find(|t| t.name() == "IssueList").unwrap();
+    let list = tools
+        .iter()
+        .find(|t| t.name() == "IssueList")
+        .ok_or("no IssueList tool")?;
     let ctx = ToolContext::new("/", ShutWorkspace);
-    let input = json!({"limit": 10}).as_object().cloned().unwrap();
+    let mut input = serde_json::Map::new();
+    input.insert("limit".into(), json!(10));
     match list.execute(input, &ctx).await {
         Ok(out) => println!("\n{repo}, open issues:\n{}", out.content),
         Err(e) => println!("\n{repo}: {e}"),
     }
+    Ok(())
 }

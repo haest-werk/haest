@@ -244,7 +244,13 @@ async fn relates_to_and_a_link_to_itself_are_refused_unsent() {
 #[tokio::test]
 async fn an_enterprise_root_moves_rest_and_graphql_alike() {
     let http = FakeHttp::new([ok(json!([])), ok(issue(4, "t")), ok(json!({"data": {}}))]);
-    let gh = github(http.clone()).with_api_url("https://ghe.example/api/v3/");
+    let root = String::from("https://ghe.example/api/v3/");
+    let gh = github(http.clone()).with_api_url(root);
+    assert_eq!(gh.api_url(), "https://ghe.example/api/v3");
+    assert_eq!((gh.owner(), gh.repo()), ("o", "r"));
+    assert!(gh.has_token() && !GithubTracker::new("o", "r").has_token());
+    let handed = haest_http::HttpClientRef::from(http.clone());
+    assert!(haest_http::HttpClientRef::ptr_eq(gh.http(), &handed));
     gh.list(&filter(1)).await.unwrap();
     gh.delete("4").await.unwrap();
     let sent = http.sent();

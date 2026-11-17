@@ -70,7 +70,7 @@ use front::Front;
 ///
 /// ```
 /// use haest_core::{FsRef, MemFs};
-/// use haest_issues::{CardTracker, Link, LinkChange, NewIssue, Relation, Tracker, TrackerError};
+/// use haest_issues::{CardTracker, Link, LinkChange, NewIssue, Relation, TrackerError};
 ///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), TrackerError> {
@@ -132,6 +132,16 @@ impl CardTracker {
     /// The directory the cards are in.
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// The file system the cards are read and written through.
+    pub fn fs(&self) -> &FsRef {
+        &self.fs
+    }
+
+    /// The clock a new card's `created:` comes from ([`with_clock`](Self::with_clock)).
+    pub fn clock(&self) -> &ClockRef {
+        &self.clock
     }
 
     fn path(&self, id: &str) -> PathBuf {
