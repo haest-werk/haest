@@ -37,7 +37,7 @@ pub enum HttpError {
     #[error("no connection")]
     Connect(#[source] BoxError),
     /// No status within the time the caller allowed. Another try may help.
-    #[error("no answer within {} s", .0.as_secs())]
+    #[error("no answer within {0:?}")]
     Timeout(Duration),
     /// The answer started, then its body broke off.
     #[error("the answer broke off")]
@@ -69,5 +69,19 @@ mod tests {
         assert!(HttpError::Timeout(Duration::from_secs(1)).is_retryable());
         assert!(!HttpError::Body("cut".into()).is_retryable());
         assert!(!HttpError::Request("bad header".into()).is_retryable());
+    }
+
+    /// A timeout says how long was waited, sub-second waits included: no
+    /// two waits read the same.
+    #[test]
+    fn a_timeout_tells_every_wait_apart() {
+        let said: Vec<String> = [250, 500, 1000, 1500]
+            .map(|ms| HttpError::Timeout(Duration::from_millis(ms)).to_string())
+            .into();
+        for (i, a) in said.iter().enumerate() {
+            for b in &said[i + 1..] {
+                assert_ne!(a, b, "two waits read the same");
+            }
+        }
     }
 }

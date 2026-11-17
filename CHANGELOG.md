@@ -845,6 +845,8 @@ Hosts write less (round two of the review, and what porting brain onto
   The 25 lines a gateway host wrote for it become `req.try_into()?` and
   `Response::from(res)`. With `reqwest` on it adds no crate to the tree.
 - `Body` implements `Default` (empty) and `Request` implements `Eq`.
+- `HttpError::Timeout` says the wait as given (`no answer within 500ms`):
+  it said whole seconds, so a sub-second headers timeout read `0 s`.
 
 ### haest-providers
 
