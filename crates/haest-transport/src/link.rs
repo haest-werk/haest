@@ -151,47 +151,47 @@ pub async fn serve(
         written: watch::Sender::new(Written::NOTHING),
         tasks: JoinSet::new(),
     };
-    let ended = match link.hello(start.token).await {
-        Err(()) => Ended::Closed,
-        Ok(()) => {
-            if let Some(after) = start.follow_from {
-                link.events(None, after, true);
+    // No hello: the conversation has already ended.
+    let ended = if link.hello(start.token).await.is_err() {
+        Ended::Closed
+    } else {
+        if let Some(after) = start.follow_from {
+            link.events(None, after, true);
+        }
+        // Once the peer's input ends, or the conversation does, what the
+        // peer asked for still finishes (a turn it sent runs to its end,
+        // a `close` gets its reply) before the connection ends. Once the
+        // conversation ended, that is bounded: what still waits on the
+        // peer (a reply behind frames a peer that stopped reading never
+        // takes) gets the flush grace, no more.
+        let mut reading = true;
+        let mut why: Option<Ended> = None;
+        let grace = tokio::time::sleep(FLUSH_GRACE);
+        tokio::pin!(grace);
+        loop {
+            if let Some(why) = why.take_if(|_| link.tasks.is_empty()) {
+                break why;
             }
-            // Once the peer's input ends, or the conversation does, what the
-            // peer asked for still finishes (a turn it sent runs to its end,
-            // a `close` gets its reply) before the connection ends. Once the
-            // conversation ended, that is bounded: what still waits on the
-            // peer (a reply behind frames a peer that stopped reading never
-            // takes) gets the flush grace, no more.
-            let mut reading = true;
-            let mut why: Option<Ended> = None;
-            let grace = tokio::time::sleep(FLUSH_GRACE);
-            tokio::pin!(grace);
-            loop {
-                if let Some(why) = why.take_if(|_| link.tasks.is_empty()) {
-                    break why;
-                }
-                let open = !matches!(why, Some(Ended::Closed));
-                // At the cap, the next line waits until a reply goes out.
-                let room = link.tasks.len() < MAX_IN_FLIGHT;
-                tokio::select! {
-                    line = source.next_line(), if reading && room => match line {
-                        None => {
-                            reading = false;
-                            why.get_or_insert(Ended::PeerLeft);
-                        }
-                        Some(Err(e)) => break Ended::Failed(e),
-                        Some(Ok(line)) => link.request(&line),
-                    },
-                    _ = link.tasks.join_next(), if !link.tasks.is_empty() => {}
-                    () = &mut closed, if open => {
+            let open = !matches!(why, Some(Ended::Closed));
+            // At the cap, the next line waits until a reply goes out.
+            let room = link.tasks.len() < MAX_IN_FLIGHT;
+            tokio::select! {
+                line = source.next_line(), if reading && room => match line {
+                    None => {
                         reading = false;
-                        why = Some(Ended::Closed);
-                        grace.as_mut().reset(tokio::time::Instant::now() + FLUSH_GRACE);
+                        why.get_or_insert(Ended::PeerLeft);
                     }
-                    () = &mut grace, if !open => break Ended::Closed,
-                    _ = &mut writer => break Ended::PeerLeft,
+                    Some(Err(e)) => break Ended::Failed(e),
+                    Some(Ok(line)) => link.request(&line),
+                },
+                _ = link.tasks.join_next(), if !link.tasks.is_empty() => {}
+                () = &mut closed, if open => {
+                    reading = false;
+                    why = Some(Ended::Closed);
+                    grace.as_mut().reset(tokio::time::Instant::now() + FLUSH_GRACE);
                 }
+                () = &mut grace, if !open => break Ended::Closed,
+                _ = &mut writer => break Ended::PeerLeft,
             }
         }
     };
@@ -463,35 +463,34 @@ async fn write(mut sink: impl LineSink, mut rx: mpsc::Receiver<Out>, sid: String
     // After a keepalive that never waited: lines only, until then.
     let mut rest: Option<tokio::time::Instant> = None;
     loop {
-        let out = match rest {
-            Some(until) => tokio::select! {
+        let out = if let Some(until) = rest {
+            tokio::select! {
                 out = rx.recv() => out,
                 () = tokio::time::sleep_until(until) => {
                     rest = None;
                     continue;
                 }
-            },
-            None => {
-                let mut keepalive = std::pin::pin!(sink.keepalive());
-                let mut waited = false;
-                let kept = std::future::poll_fn(|cx| {
-                    let polled = keepalive.as_mut().poll(cx);
-                    waited |= polled.is_pending();
-                    polled.map(|kept| (kept, waited))
-                });
-                tokio::select! {
-                    // First, so a stream that is never idle still has its keepalive.
-                    biased;
-                    kept = kept => match kept {
-                        (Ok(()), true) => continue,
-                        (Ok(()), false) => {
-                            rest = Some(tokio::time::Instant::now() + KEEPALIVE_REST);
-                            continue;
-                        }
-                        (Err(_), _) => return,
-                    },
-                    out = rx.recv() => out,
-                }
+            }
+        } else {
+            let mut keepalive = std::pin::pin!(sink.keepalive());
+            let mut waited = false;
+            let kept = std::future::poll_fn(|cx| {
+                let polled = keepalive.as_mut().poll(cx);
+                waited |= polled.is_pending();
+                polled.map(|kept| (kept, waited))
+            });
+            tokio::select! {
+                // First, so a stream that is never idle still has its keepalive.
+                biased;
+                kept = kept => match kept {
+                    (Ok(()), true) => continue,
+                    (Ok(()), false) => {
+                        rest = Some(tokio::time::Instant::now() + KEEPALIVE_REST);
+                        continue;
+                    }
+                    (Err(_), _) => return,
+                },
+                out = rx.recv() => out,
             }
         };
         let Some(out) = out else { return };
