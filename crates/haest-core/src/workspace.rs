@@ -345,7 +345,7 @@ crate::plug_ref! {
 /// No files, no shell: every file call fails ([`ShutFs`]) and every command
 /// ends with [`EXIT_NOT_FOUND`]. The prompt note tells the model to work with
 /// the tools it was given.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ShutWorkspace;
 
 const NO_SHELL: &str = "this workspace has no shell";

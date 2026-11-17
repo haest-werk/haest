@@ -11,7 +11,7 @@ use super::{DirEntry, Fs, FsStat};
 ///
 /// Every call fails with `PermissionDenied` (but [`Fs::chmod`], which has
 /// nothing to set), so [`Fs::exists`] is false for every path.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ShutFs;
 
 fn shut() -> io::Error {

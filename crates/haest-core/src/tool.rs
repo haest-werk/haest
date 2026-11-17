@@ -169,7 +169,7 @@ crate::plug_ref! {
 }
 
 /// Services that offer nothing: publish returns no URL, the rest is dropped.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct NoServices;
 
 impl ToolServices for NoServices {}

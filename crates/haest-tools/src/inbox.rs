@@ -47,7 +47,7 @@ impl Inbox for UnboundedSender<String> {
 }
 
 /// Nowhere: for a host that hears about exits some other way (and tells the model so itself).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct NoInbox;
 
 impl Inbox for NoInbox {

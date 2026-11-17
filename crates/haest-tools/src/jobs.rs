@@ -141,7 +141,7 @@ pub trait JobEvents: Send + Sync {
 }
 
 /// [`JobEvents`] that hears nothing: what [`JobHub::new`] uses.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct NoJobEvents;
 impl JobEvents for NoJobEvents {}
 

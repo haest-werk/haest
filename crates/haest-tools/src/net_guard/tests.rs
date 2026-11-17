@@ -7,7 +7,6 @@ use std::{
 
 use async_trait::async_trait;
 use haest_http::BoxError;
-use url::Url;
 
 use super::{Resolve, UrlRefused, assert_public_url, is_blocked};
 
@@ -111,24 +110,16 @@ impl Resolve for Fixed {
     }
 }
 
-fn url(s: &str) -> Url {
-    Url::parse(s).unwrap()
-}
-
 #[tokio::test]
 async fn a_host_is_refused_when_any_address_it_resolves_to_is_private() {
     let mixed = Fixed::new(&[PUBLIC, "10.0.0.5"]);
-    let refused = assert_public_url(&url("https://mixed.test/"), &mixed).await;
+    let refused = assert_public_url("https://mixed.test/", &mixed).await;
     let Err(UrlRefused::Blocked { ip, .. }) = refused else {
         panic!("not a Blocked refusal: {refused:?}");
     };
     assert_eq!(ip, "10.0.0.5".parse::<IpAddr>().unwrap());
     let fine = Fixed::new(&[PUBLIC]);
-    assert!(
-        assert_public_url(&url("https://fine.test/"), &fine)
-            .await
-            .is_ok()
-    );
+    assert!(assert_public_url("https://fine.test/", &fine).await.is_ok());
 }
 
 #[tokio::test]
@@ -143,7 +134,7 @@ async fn ip_literals_odd_ipv4_spellings_and_non_http_schemes_are_refused_without
         "ftp://files.test/x",
     ] {
         assert!(
-            assert_public_url(&url(u), &never).await.is_err(),
+            assert_public_url(u, &never).await.is_err(),
             "{u} must be refused"
         );
     }
@@ -153,11 +144,13 @@ async fn ip_literals_odd_ipv4_spellings_and_non_http_schemes_are_refused_without
 #[tokio::test]
 async fn credentials_unresolvable_and_addressless_hosts_are_refused() {
     let any = Fixed::new(&[PUBLIC]);
-    let creds = assert_public_url(&url("https://u:p@site.test/"), &any).await;
+    let creds = assert_public_url("https://u:p@site.test/", &any).await;
     assert!(matches!(creds, Err(UrlRefused::Credentials)));
+    let typo = assert_public_url("https//site.test", &any).await;
+    assert!(matches!(typo, Err(UrlRefused::Invalid { .. })));
     assert_eq!(any.lookups(), 0);
     let empty = Fixed::new(&[]);
-    let void = assert_public_url(&url("https://void.test/"), &empty).await;
+    let void = assert_public_url("https://void.test/", &empty).await;
     assert!(matches!(void, Err(UrlRefused::NoAddress { .. })));
     struct Failing;
     #[async_trait]
@@ -166,7 +159,7 @@ async fn credentials_unresolvable_and_addressless_hosts_are_refused() {
             Err("NXDOMAIN".into())
         }
     }
-    let gone = assert_public_url(&url("https://gone.test/"), &Failing).await;
+    let gone = assert_public_url("https://gone.test/", &Failing).await;
     let Err(UrlRefused::Unresolved { source, .. }) = gone else {
         panic!("not an Unresolved refusal: {gone:?}");
     };

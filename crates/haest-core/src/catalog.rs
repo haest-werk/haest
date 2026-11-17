@@ -63,7 +63,7 @@ crate::plug_ref! {
 }
 
 /// Facts about no model: every answer "unknown". [`AgentDeps::new`](crate::AgentDeps::new)'s default.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct NoFacts;
 
 impl ModelFacts for NoFacts {}

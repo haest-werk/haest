@@ -137,6 +137,15 @@ impl Resolve for SystemResolve {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum UrlRefused {
+    /// Not a URL at all.
+    #[error("\"{url}\" is not a URL")]
+    Invalid {
+        /// The text, as given.
+        url: String,
+        /// Why it does not parse.
+        #[source]
+        source: BoxError,
+    },
     /// Not http or https (`file:`, `ftp:`, ...).
     #[error("only http and https URLs can be fetched, not {scheme}:")]
     NotHttp {
@@ -198,11 +207,14 @@ pub(crate) fn host_port(url: &Url) -> String {
 /// (WebFetch's own does); the answer may have changed. Check every redirect
 /// hop again: a public page may redirect to a private one.
 ///
+/// `resolve` is borrowed as `&dyn Resolve`, so a resolver and its
+/// [`ResolveRef`] both go in.
+///
 /// # Errors
 ///
-/// [`UrlRefused`] when `url` is not http(s), carries a user name or password,
-/// has no host, does not resolve (or to no address), or resolves to any
-/// address [`is_blocked`] refuses.
+/// [`UrlRefused`] when `url` is not a URL, is not http(s), carries a user
+/// name or password, has no host, does not resolve (or to no address), or
+/// resolves to any address [`is_blocked`] refuses.
 ///
 /// # Examples
 ///
@@ -211,7 +223,6 @@ pub(crate) fn host_port(url: &Url) -> String {
 ///
 /// use async_trait::async_trait;
 /// use haest_tools::{Resolve, UrlRefused, assert_public_url, http::BoxError};
-/// use url::Url;
 ///
 /// /// A name that answers one public and one private address.
 /// struct Rebinding;
@@ -225,17 +236,25 @@ pub(crate) fn host_port(url: &Url) -> String {
 ///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), BoxError> {
-/// let public = Url::parse("https://93.184.215.14/page")?;
-/// assert_public_url(&public, &Rebinding).await?;
-/// let sneaky = Url::parse("https://example.test/")?;
-/// let refused = assert_public_url(&sneaky, &Rebinding).await.err();
-/// assert!(matches!(refused, Some(UrlRefused::Blocked { .. })));
-/// let file = Url::parse("file:///etc/passwd")?;
-/// assert!(assert_public_url(&file, &Rebinding).await.is_err());
+/// assert_public_url("https://93.184.215.14/page", &Rebinding).await?;
+/// let refused = assert_public_url("https://example.test/", &Rebinding).await;
+/// assert!(matches!(refused, Err(UrlRefused::Blocked { .. })));
+/// assert!(assert_public_url("file:///etc/passwd", &Rebinding).await.is_err());
+/// let typo = assert_public_url("https//example.test", &Rebinding).await;
+/// assert!(matches!(typo, Err(UrlRefused::Invalid { .. })));
 /// # Ok(())
 /// # }
 /// ```
-pub async fn assert_public_url(url: &Url, resolve: &dyn Resolve) -> Result<(), UrlRefused> {
+pub async fn assert_public_url(url: &str, resolve: &dyn Resolve) -> Result<(), UrlRefused> {
+    let parsed = Url::parse(url).map_err(|e| UrlRefused::Invalid {
+        url: url.to_string(),
+        source: e.into(),
+    })?;
+    check_public_url(&parsed, resolve).await
+}
+
+/// [`assert_public_url`] for a URL already parsed: WebFetch's every hop.
+pub(crate) async fn check_public_url(url: &Url, resolve: &dyn Resolve) -> Result<(), UrlRefused> {
     if !matches!(url.scheme(), "http" | "https") {
         let scheme = url.scheme().to_string();
         return Err(UrlRefused::NotHttp { scheme });

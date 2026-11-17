@@ -684,6 +684,9 @@ Hosts write less (round two of the review, and what porting brain onto
   example and the plug-in test hold their own parts the same way (no
   `Arc::new` left in either host), and the notebook's host fills its slots
   with `with_host`.
+- The do-nothing parts are all `Clone`, `Copy`, `PartialEq` and `Eq`:
+  `ShutWorkspace` and `ShutFs` gain all four, `NoHooks`, `NoServices`,
+  `NoFacts` and `WallClock` the last two.
 
 ### haest-http
 
@@ -912,6 +915,12 @@ Hosts write less (round two of the review, and what porting brain onto
   `sniff_image_type`, `ImageCatalog`, `ImageError`, `ImageReply`,
   `ModelSettings` and `SettingSpec` are no longer public. A host calls the
   Image API through `GenerateImageTool`.
+- `assert_public_url` takes the URL as text, so a host needs no `url`
+  crate of its own: `assert_public_url(&Url::parse(s)?, &dns)` ->
+  `assert_public_url(s, &dns)`. Text that is not a URL is the new
+  `UrlRefused::Invalid`.
+- `NoInbox` and `NoJobEvents` are `Clone`, `Copy`, `PartialEq` and `Eq`,
+  as haest-core's do-nothing parts are.
 
 ### haest-workspace
 

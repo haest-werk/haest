@@ -6,7 +6,7 @@ use haest_http::{HttpError, Request, Response};
 use url::Url;
 
 use super::WebFetchNet;
-use crate::net_guard::assert_public_url;
+use crate::net_guard::check_public_url;
 
 /// The largest body read; a longer one is refused, never cut.
 const MAX_BYTES: usize = 5 * 1024 * 1024;
@@ -20,7 +20,7 @@ pub(super) async fn guarded_get(
 ) -> Result<(Response, Url), ToolError> {
     let mut at = url.clone();
     for _ in 0..=MAX_REDIRECTS {
-        assert_public_url(&at, &*net.resolve)
+        check_public_url(&at, &*net.resolve)
             .await
             .map_err(|e| ToolError::Input(report(&e)))?;
         let get = Request::get(at.as_str()).with_header("user-agent", USER_AGENT);

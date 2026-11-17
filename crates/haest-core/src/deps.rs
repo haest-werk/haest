@@ -246,7 +246,7 @@ crate::plug_ref! {
 }
 
 /// The wall clock ([`now_ms`]): [`AgentDeps::new`]'s default.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct WallClock;
 
 impl Clock for WallClock {
@@ -256,7 +256,7 @@ impl Clock for WallClock {
 }
 
 /// Hooks that change nothing: [`AgentDeps::new`]'s default.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct NoHooks;
 
 impl AgentHooks for NoHooks {}
