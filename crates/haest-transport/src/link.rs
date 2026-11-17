@@ -36,9 +36,12 @@ const FLUSH_GRACE: Duration = Duration::from_secs(1);
 const KEEPALIVE_REST: Duration = Duration::from_millis(100);
 
 /// Requests one connection may have waiting for their replies (a turn's
-/// end, a history asked mid-turn). At the cap the connection reads no more
-/// lines until one is answered, so a peer that only sends makes no more
-/// work than this, and the rest wait in its pipe.
+/// end, a history asked mid-turn). At the cap, a request that would wait
+/// too is refused, and one answered at once ([`answered_at_once`]) is still
+/// served, so a busy peer keeps its stop button. At twice the cap (replies a
+/// peer does not read hold up the rest) the connection reads no more lines
+/// until one is answered, so a peer that only sends makes no more work than
+/// that, and the rest wait in its pipe.
 const MAX_IN_FLIGHT: usize = 32;
 
 /// Lines a peer sends: one request each.
@@ -131,7 +134,10 @@ enum Out {
 /// connection outlive the conversation for long: once it ended, what still
 /// waits on a peer that does not read (a reply, the last frames) gets about
 /// a second each, then is dropped. Nor can one peer make unbounded work:
-/// once 32 of its requests wait for their replies, the connection reads no
+/// once 32 of its requests wait for their replies, one more that would wait
+/// is refused with its id (send it again once one is answered), while one
+/// answered at once is still served: an `interrupt`, a `close`, an
+/// approval answer, a `snapshot`. At twice that, the connection reads no
 /// more lines until one is answered.
 ///
 /// Dropped before it returns (a transport detached, a host's own `select!`),
@@ -194,8 +200,8 @@ pub async fn serve(
                 break why;
             }
             let open = !matches!(why, Some(Ended::Closed));
-            // At the cap, the next line waits until a reply goes out.
-            let room = link.tasks.len() < MAX_IN_FLIGHT;
+            // At twice the cap, the next line waits until a reply goes out.
+            let room = link.tasks.len() < 2 * MAX_IN_FLIGHT;
             tokio::select! {
                 line = source.next_line(), if reading && room => match line {
                     None => {
@@ -301,6 +307,12 @@ impl Link {
         let req = inbound.request;
         if req.needs_command() && self.grant.access == Access::Watch {
             let why = "this connection may only watch: turns, controls and approval answers need command access";
+            return self.reply(Outbound::refused(id, why));
+        }
+        if self.tasks.len() >= MAX_IN_FLIGHT && !answered_at_once(&req) {
+            let why = format!(
+                "{MAX_IN_FLIGHT} requests already wait for their replies: send it again once one is answered"
+            );
             return self.reply(Outbound::refused(id, why));
         }
         match req {
@@ -613,6 +625,18 @@ async fn write(mut sink: impl LineSink, mut rx: mpsc::Receiver<Out>, sid: String
             return;
         }
     }
+}
+
+/// A request the session answers at once, while a turn runs too: served at
+/// the cap ([`MAX_IN_FLIGHT`]), so a peer's stop button and its approval
+/// answers never wait behind its own requests.
+fn answered_at_once(req: &Request) -> bool {
+    matches!(
+        req,
+        Request::ApprovalAnswer { .. }
+            | Request::Snapshot
+            | Request::Control(wire::Control::Interrupt | wire::Control::Close)
+    )
 }
 
 /// A turn's end, as a reply's result: `{"stopReason": ..., "error": ...}`.

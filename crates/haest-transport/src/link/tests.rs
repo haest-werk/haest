@@ -456,88 +456,6 @@ async fn a_peer_that_does_not_read_falls_behind_and_the_conversation_does_not_wa
     served.abort();
 }
 
-/// A session whose `history` calls are counted while they wait.
-struct Counted {
-    inner: SessionHandle<Agent>,
-    waiting: Arc<AtomicUsize>,
-    most: Arc<AtomicUsize>,
-}
-
-#[async_trait]
-impl Backend for Counted {
-    fn meta(&self) -> Meta {
-        self.inner.meta().clone()
-    }
-    async fn submit(&self, input: Input) -> Result<(), SessionError> {
-        self.inner.submit(input)
-    }
-    async fn turn(&self, input: Input) -> Result<TurnOutcome, SessionError> {
-        self.inner.turn(input).await
-    }
-    async fn control(&self, control: Control) -> Result<(), SessionError> {
-        self.inner.control(control).await
-    }
-    async fn answer(&self, ask: u64, answer: Answer) -> Result<(), SessionError> {
-        self.inner.answer(ask, answer)
-    }
-    fn subscribe(&self, after: u64) -> Subscription {
-        self.inner.subscribe(after)
-    }
-    async fn snapshot(&self) -> Result<Snapshot, SessionError> {
-        self.inner.snapshot().await
-    }
-    async fn history(&self) -> Result<History, SessionError> {
-        let now = self.waiting.fetch_add(1, Ordering::SeqCst) + 1;
-        self.most.fetch_max(now, Ordering::SeqCst);
-        let history = self.inner.history().await;
-        self.waiting.fetch_sub(1, Ordering::SeqCst);
-        history
-    }
-    async fn close(&self) {
-        self.inner.close().await;
-    }
-}
-
-/// A peer that sends far more requests than it waits for replies to makes
-/// no more work than the cap: the rest wait unread in its pipe.
-#[tokio::test]
-async fn one_connection_has_at_most_its_cap_of_requests_in_flight() {
-    let model = ScriptedProvider::new([
-        tool_answer(&[("c1", "Wait", json!({}))]),
-        text_answer("done"),
-    ]);
-    let (inner, go) = session(&model, hub());
-    let (waiting, most) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
-    let counted = Counted {
-        inner,
-        waiting: waiting.clone(),
-        most: most.clone(),
-    };
-    let mut peer = Peer::parent(counted);
-    peer.send(turn("t1", "wait")).await;
-    peer.until(|f| ty(f) == "assistant").await;
-
-    // History asked during a turn answers when it ends: each one waits.
-    let asked = super::MAX_IN_FLIGHT * 4;
-    for n in 0..asked {
-        peer.send(json!({"v": 1, "id": format!("h{n}"), "type": "history"}))
-            .await;
-    }
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let busy = waiting.load(Ordering::SeqCst);
-    assert!(
-        busy < super::MAX_IN_FLIGHT,
-        "{busy} history calls wait at once, the turn among the cap's {}",
-        super::MAX_IN_FLIGHT
-    );
-
-    go.notify_one();
-    let frames = peer.reply(&format!("h{}", asked - 1)).await;
-    let replies = frames.iter().filter(|f| ty(f) == "reply").count();
-    assert_eq!(replies, asked + 1, "every request was served in the end");
-    assert!(most.load(Ordering::SeqCst) <= super::MAX_IN_FLIGHT);
-}
-
 #[tokio::test]
 async fn snapshot_and_history_say_where_the_conversation_is() {
     let (s, _) = session(&answers(&["hi there"]), hub());
@@ -839,6 +757,7 @@ async fn a_panic_in_the_hosts_sink_reaches_the_host() {
     s.close().await;
 }
 
+mod cap;
 mod keepalive;
 mod order;
 
