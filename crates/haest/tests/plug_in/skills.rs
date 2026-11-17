@@ -44,7 +44,7 @@ async fn the_hosts_own_skills_load_through_haests_skill_tool() {
     let intro = "Skills: load one with Skill before you start.";
     let mut tools = r.app.base_tools();
     tools.push(SkillTool::new(
-        SkillToolOptions::new(set.clone()).with_name_enum(),
+        SkillToolOptions::new(set.clone()).with_name_enum(true),
     ));
     let prompt = format!(
         "{}\n\n{}",

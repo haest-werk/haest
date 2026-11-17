@@ -323,10 +323,13 @@ pub use haest_workspace as workspace;
 #[cfg_attr(docsrs, doc(cfg(all(feature = "config", feature = "runtime"))))]
 pub fn runtime_inputs(loaded: config::Loaded) -> runtime::RuntimeInputs {
     let world = runtime::World::disk(loaded.child_env);
-    runtime::RuntimeInputs::new(loaded.config.settings, world)
+    let inputs = runtime::RuntimeInputs::new(loaded.config.settings, world)
         .with_passed_env(loaded.passed_env)
         .with_keys(loaded.keys)
         .with_providers(loaded.providers)
-        .with_mcp_servers(loaded.mcp_servers)
-        .with_routing(loaded.routing)
+        .with_mcp_servers(loaded.mcp_servers);
+    match loaded.routing {
+        Some(routing) => inputs.with_routing(routing),
+        None => inputs,
+    }
 }

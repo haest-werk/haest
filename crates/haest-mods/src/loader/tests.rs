@@ -13,7 +13,7 @@ const HOME_MODS: &str = "/home/cfg/mods";
 
 fn cfg(workspace: WorkspaceMode) -> ModOptions {
     ModOptions::new(CWD, workspace, "/home/cfg")
-        .with_user_mods()
+        .with_user_mods(true)
         .with_caps(test_caps())
 }
 
@@ -88,7 +88,7 @@ async fn project_mods_load_only_when_the_host_turns_them_on() {
     let fs = MemFs::from_files([(format!("{CWD}/.haest/mods/repo.js"), source)]);
     let off = load_mods(cfg(WorkspaceMode::Sandbox), &fs, TestUi::new()).await;
     assert_eq!(off.system_append().await, "");
-    let on_cfg = cfg(WorkspaceMode::Sandbox).with_project_mods();
+    let on_cfg = cfg(WorkspaceMode::Sandbox).with_project_mods(true);
     let on = load_mods(on_cfg, &fs, TestUi::new()).await;
     assert_eq!(on.system_append().await, "from the repo");
 }
@@ -98,7 +98,7 @@ async fn the_built_ins_load_first_and_approvals_can_be_turned_off() {
     let fs = MemFs::new();
     let all = load_mods(cfg(WorkspaceMode::Real), &fs, TestUi::new()).await;
     assert_eq!(all.names(), ["approval", "plan"]);
-    let quiet = cfg(WorkspaceMode::Real).without_approvals();
+    let quiet = cfg(WorkspaceMode::Real).with_approvals(false);
     let no_approvals = load_mods(quiet, &fs, TestUi::new()).await;
     assert_eq!(no_approvals.names(), ["plan"]);
     assert!(no_approvals.has_command(crate::plan::PLAN_COMMAND));
@@ -131,7 +131,7 @@ async fn the_hosts_own_mods_load_last_in_order_mod_files_or_not() {
     let file = format!("{HOME_MODS}/file.js");
     assert_eq!(mods.names(), ["approval", "plan", &file, "first", "second"]);
     let bare = ModOptions::new(CWD, WorkspaceMode::Real, "/home/cfg")
-        .without_approvals()
+        .with_approvals(false)
         .with_mod(Hosts("only"));
     let mods = load_mods(bare, &fs, TestUi::new()).await;
     assert_eq!(mods.names(), ["plan", "only"]);

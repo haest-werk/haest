@@ -131,10 +131,10 @@ impl RuntimeInputs {
         self
     }
 
-    /// OpenRouter's `provider` routing; None = none goes out.
+    /// OpenRouter's `provider` routing; without it, none goes out.
     #[must_use]
-    pub fn with_routing(mut self, routing: impl Into<Option<RoutingScopes>>) -> Self {
-        self.routing = routing.into();
+    pub fn with_routing(mut self, routing: RoutingScopes) -> Self {
+        self.routing = Some(routing);
         self
     }
 

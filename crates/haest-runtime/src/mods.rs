@@ -28,19 +28,11 @@ pub(crate) async fn mods_for(
     host_mods: Vec<ModRef>,
 ) -> Mods {
     let s = hooks.settings();
-    let mut cfg = host_mods.into_iter().fold(
-        ModOptions::new(&s.cwd, s.workspace, &s.config_dir),
-        ModOptions::with_mod,
-    );
-    if !s.approvals {
-        cfg = cfg.without_approvals();
-    }
-    if s.mods {
-        cfg = cfg.with_user_mods();
-    }
-    if s.project_mods {
-        cfg = cfg.with_project_mods();
-    }
+    let cfg = ModOptions::new(&s.cwd, s.workspace, &s.config_dir)
+        .with_approvals(s.approvals)
+        .with_user_mods(s.mods)
+        .with_project_mods(s.project_mods);
+    let cfg = host_mods.into_iter().fold(cfg, ModOptions::with_mod);
     let to = hooks.clone();
     let mod_ui = gate.mod_ui(move |line| match line {
         ModLine::Info(text) => to.info(text),

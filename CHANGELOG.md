@@ -92,6 +92,9 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `World::files(fs)`, `inputs.keys = Arc::new(keys)` ->
     `RuntimeInputs::new(settings, world).with_keys(keys)`, and
     `rt.hooks.flush()` -> `rt.hooks().flush()`.
+11. A flag setter takes a `bool`, and an optional field's setter takes the
+    value itself: `SkillToolOptions::new(set).with_name_enum()` ->
+    `.with_name_enum(true)`.
 
 ### Bug fixes
 
@@ -1037,6 +1040,8 @@ Hosts write less (round two of the review, and what porting brain onto
   -> `SkillToolOptions::new(DiskSkills::new(fs, move || list()))` (or
   core's `Skills`), `SkillToolOptions::over(Arc::new(set))` ->
   `SkillToolOptions::new(set)`.
+- `SkillToolOptions::with_name_enum` takes the flag, as every flag setter
+  does (breaking): `.with_name_enum()` -> `.with_name_enum(true)`.
 - `task_tools` takes the board itself, a handle:
   `task_tools(Arc::new(board))` -> `task_tools(board)`.
 - `DeferredTools::new` takes `impl Into<ToolSourceRef>`, `deferral()`
@@ -1210,12 +1215,13 @@ Hosts write less (round two of the review, and what porting brain onto
   `ModEnv::new(cwd, mode, Terminal)`; `haest.workspace` ->
   `haest.workspace()`. `load_mods` takes the `ModUi` the same way:
   `load_mods(cfg, fs, Arc::new(ui))` -> `load_mods(cfg, fs, ui)`.
-- `ModOptions`' fields are private, set with `with_user_mods`,
-  `with_project_mods`, `without_approvals`, `with_auto`,
+- `ModOptions`' fields are private, set with `with_user_mods(bool)`,
+  `with_project_mods(bool)`, `with_approvals(bool)`, `with_auto`,
   `with_shell_tools`, `with_plan_listener`, `with_planning_tools` and
   `with_caps`, and read with getters of the same names:
   `cfg.user_mods = true; cfg.auto = Some(Arc::new(judge));` ->
-  `ModOptions::new(..).with_user_mods().with_auto(judge)`.
+  `ModOptions::new(..).with_user_mods(true).with_auto(judge)`, and
+  `cfg.approvals = s.approvals` -> `.with_approvals(s.approvals)`.
 - `ApprovalMod::new` takes nothing; auto mode's judge goes in with
   `with_auto` (held as the new `AutoJudgeRef`):
   `ApprovalMod::new(Some(Arc::new(judge)))` ->
@@ -1340,7 +1346,9 @@ Hosts write less (round two of the review, and what porting brain onto
   name. `inputs.keys = Arc::new(|name: &str| ..)` ->
   `.with_keys(|name: &str| ..)`, `inputs.http = Arc::new(gateway)` ->
   `.with_http(gateway)`, `inputs.mcp_servers = vec![server]` ->
-  `.with_mcp_servers([server])`; `keys()` is a `KeySourceRef` and
+  `.with_mcp_servers([server])`, `inputs.routing = Some(scopes)` ->
+  `.with_routing(scopes)` (the scopes themselves; leave it off for none);
+  `keys()` is a `KeySourceRef` and
   `http()` an `HttpClientRef` (were `Arc<dyn KeySource>` and
   `Arc<dyn HttpClient>`). `RuntimeInputs` implements `Debug`, the custom
   providers by name only (an entry may hold a key).

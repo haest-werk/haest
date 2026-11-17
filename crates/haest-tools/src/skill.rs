@@ -36,11 +36,12 @@ impl SkillToolOptions {
         }
     }
 
-    /// Name the offered skills in the parameter's `enum`, so a weak model
-    /// cannot misspell one. The schema then changes when the list does.
+    /// Whether to name the offered skills in the parameter's `enum`, so a
+    /// weak model cannot misspell one; the schema then changes when the list
+    /// does. Off by default.
     #[must_use]
-    pub fn with_name_enum(mut self) -> Self {
-        self.name_enum = true;
+    pub fn with_name_enum(mut self, on: bool) -> Self {
+        self.name_enum = on;
         self
     }
 }
@@ -222,7 +223,7 @@ mod tests {
             body: "My way.".into(),
         };
         let set = InlineSkills::merged([vec![notes]]);
-        let t = SkillTool::new(SkillToolOptions::new(set.clone()).with_name_enum());
+        let t = SkillTool::new(SkillToolOptions::new(set.clone()).with_name_enum(true));
         assert_eq!(
             t.parameters()["properties"]["skill"]["enum"],
             json!(["notes"])

@@ -90,7 +90,7 @@
 //!        }"#,
 //! )]);
 //! let config = ModOptions::new("/project", WorkspaceMode::Real, "/home/me/.config/haest")
-//!     .with_user_mods();
+//!     .with_user_mods(true);
 //! let mods = load_mods(config, &files, Terminal).await;
 //! assert_eq!(mods.names(), ["approval", "plan", "/home/me/.config/haest/mods/guard.js"]);
 //!

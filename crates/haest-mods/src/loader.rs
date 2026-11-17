@@ -40,7 +40,7 @@ use crate::{
 /// use haest_mods::ModOptions;
 ///
 /// let opts = ModOptions::new("/project", WorkspaceMode::Real, "/home/me/.config/haest")
-///     .with_user_mods()
+///     .with_user_mods(true)
 ///     .with_shell_tools(["Bash", "Shell"]);
 /// assert_eq!(opts.mod_dirs(), [PathBuf::from("/home/me/.config/haest/mods")]);
 /// assert!(opts.approvals());
@@ -107,29 +107,29 @@ impl ModOptions {
         }
     }
 
-    /// Also load the human's own mods, `<config_dir>/mods`. Off by default:
-    /// a host asks for them.
+    /// Whether to load the human's own mods too, `<config_dir>/mods`. Off by
+    /// default: a host asks for them.
     #[must_use]
-    pub fn with_user_mods(mut self) -> Self {
-        self.user_mods = true;
+    pub fn with_user_mods(mut self, on: bool) -> Self {
+        self.user_mods = on;
         self
     }
 
-    /// Also load the project's mods, `<cwd>/.haest/mods`. Off by default: a
-    /// repository's mod is that repository's code running in the host with
-    /// full trust, and cloning a repository must never be enough to run it.
-    /// Turn it on only for a directory the human trusts.
+    /// Whether to load the project's mods too, `<cwd>/.haest/mods`. Off by
+    /// default: a repository's mod is that repository's code running in the
+    /// host with full trust, and cloning a repository must never be enough
+    /// to run it. Turn it on only for a directory the human trusts.
     #[must_use]
-    pub fn with_project_mods(mut self) -> Self {
-        self.project_mods = true;
+    pub fn with_project_mods(mut self, on: bool) -> Self {
+        self.project_mods = on;
         self
     }
 
-    /// Leave out the built-in approval mod ([`ApprovalMod`]), which is on by
+    /// Whether to load the built-in approval mod ([`ApprovalMod`]). On by
     /// default.
     #[must_use]
-    pub fn without_approvals(mut self) -> Self {
-        self.approvals = false;
+    pub fn with_approvals(mut self, on: bool) -> Self {
+        self.approvals = on;
         self
     }
 
@@ -211,7 +211,7 @@ impl ModOptions {
         self.project_mods
     }
 
-    /// Whether the approval mod loads ([`without_approvals`](Self::without_approvals)).
+    /// Whether the approval mod loads ([`with_approvals`](Self::with_approvals)).
     pub fn approvals(&self) -> bool {
         self.approvals
     }
@@ -274,7 +274,7 @@ pub(crate) async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 
 /// Every mod for one conversation, in the order their events run.
 ///
-/// 1. Built in: the approval mod (unless [`ModOptions::without_approvals`],
+/// 1. Built in: the approval mod (unless [`ModOptions::with_approvals`] is off,
 ///    with auto mode's judge when [`ModOptions::with_auto`] gave one), then
 ///    plan mode, always.
 /// 2. The human's own mod files, `<config_dir>/mods/*`, with

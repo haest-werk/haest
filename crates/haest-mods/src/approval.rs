@@ -1,7 +1,7 @@
 //! THE APPROVAL MOD (built in): in the REAL workspace, a Bash command that can
 //! destroy work the human cannot get back waits for their Allow. The sandbox
 //! never asks -- its writes live in memory and vanish anyway. A host turns it
-//! off with [`ModOptions::without_approvals`](crate::ModOptions::without_approvals).
+//! off with [`ModOptions::with_approvals`](crate::ModOptions::with_approvals)`(false)`.
 //!
 //! The list is about irreversibility, not about danger in general: deleting
 //! recursively, rewriting git history or the remote, wiping a disk, killing
@@ -166,7 +166,7 @@ pub const SHELL_TOOLS: &[&str] = &["Bash"];
 /// It is a gate ([`Mod::is_gate`]): it judges the command as it will run,
 /// after every other mod has rewritten it. [`load_mods`](crate::load_mods)
 /// adds it unless
-/// [`ModOptions::without_approvals`](crate::ModOptions::without_approvals).
+/// [`ModOptions::with_approvals`](crate::ModOptions::with_approvals)`(false)`.
 /// [`ApprovalGate`](crate::ApprovalGate#examples)'s example shows it with a
 /// whole host.
 #[derive(Debug, Clone)]
