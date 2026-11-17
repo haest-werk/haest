@@ -89,8 +89,10 @@ pub const MAX_SOURCE_BYTES: usize = 128 * 1024;
 const STACK_PER_BYTE: usize = if cfg!(debug_assertions) { 24 } else { 4 } << 10;
 const STACK_BASE: usize = 8 << 20;
 
-/// Why [`strip_types`] gave no JavaScript.
+/// Why [`strip_types`] gave no JavaScript. More variants may come in a minor
+/// release.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum StripError {
     /// The source is longer than [`MAX_SOURCE_BYTES`]; it was not parsed.
     #[error(

@@ -715,6 +715,10 @@ Good citizens:
   and every subagent of its hub.
 - A turn's warning threshold reaches the human through `Ui::warn`.
 
+### haest-ts
+
+- `StripError` is `#[non_exhaustive]` (breaking): a `match` adds a `_` arm.
+
 ### haest-wire (new)
 
 The format, serde only (no I/O, no tokio): `Envelope<B>` (`v`, `sid`,
