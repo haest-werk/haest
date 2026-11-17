@@ -194,16 +194,26 @@ write instead.
 
 ### Security
 
-- The approval prompt shows the human the command that runs, all of it.
-  The approval mod cut the command to 200 characters without saying so,
-  and the haest command printed that preview raw. A command padded past
-  the cut with spaces, or one with a carriage return and an erase-line
-  in it, showed as `rm -rf ./build` while a hidden `; touch ...` ran on
-  "y" (in the terminal and over `--stdio`). The ask now carries the whole
-  command, and the haest command prints control characters, bidi controls
-  and zero-width characters as escapes, so nothing in a command can draw
-  over it. A host's own prompter should do the same with
-  `ApprovalRequest::input_preview`.
+- An approval shows the human all of the command that runs, and nothing
+  printed before it can hide part of it. The approval mod cut the command
+  to 200 characters without saying so, and the haest command printed that
+  preview raw. A command padded past the cut with spaces, or one with a
+  carriage return and an erase-line in it, showed as `rm -rf ./build`
+  while a hidden `; touch ...` ran on "y" (in the terminal and over
+  `--stdio`). The ask now carries the whole command. The haest command
+  writes nothing from the model, a tool's input, a server or a peer raw to
+  the terminal: control characters (but a newline and a tab), bidi controls
+  and zero-width characters show as escapes, in the answer (when stdout is
+  a terminal; into a file it keeps its bytes), every notice and tool line,
+  the question, `haest ctl` and `haest sessions`. An escape sequence in the
+  model's text could otherwise clear the screen or set a scroll region
+  just before the question. The question comes after the command, right
+  above the answer, and says how much command is above it; more than 2
+  blank lines, or more than 8 spaces or tabs, in a row show as their count,
+  so padding cannot push a command's start or the question off the screen.
+  A host's own prompter should do the same with
+  `ApprovalRequest::input_preview` and with whatever it shows just before
+  it asks.
 
 ### Bug fixes
 
@@ -1529,8 +1539,8 @@ Hosts write less (round two of the review, and what porting brain onto
 - `McpServerConfig`, `HttpTransport` and `StdioTransport` are
   `#[non_exhaustive]` (breaking for a struct literal), so a field
   `.mcp.json` gains later breaks no host: `HttpTransport { url, headers }`
-  -> `McpTransport::http(url).with_header(..)`. Their fields read as
-  before.
+  -> `McpTransport::http(url).with_header(..)`, and a pattern that names
+  every field ends in `..`. Their fields read as before.
 - `McpFailure`'s fields are private (breaking): `failure.name` ->
   `failure.name()`, `report(&*failure.error)` -> `report(failure.error())`.
 - `load_project_mcp_config` takes the variables as any closure (was
