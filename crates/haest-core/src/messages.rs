@@ -29,7 +29,7 @@
 //! [`Agent::history`]: crate::Agent::history
 //! [`Provider`]: crate::Provider
 
-mod usage;
+pub(crate) mod usage;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};

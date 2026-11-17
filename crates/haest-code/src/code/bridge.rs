@@ -10,7 +10,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use haest_core::{
-    __private::{ToolIndex, run_unspilled},
+    __private::{ToolIndex, real_cost, run_unspilled},
     ToolRef, Tools,
     messages::{MediaPart, ToolCall},
     tool::{JsonMap, ToolContext, ToolOutput, ToolServicesRef},
@@ -174,8 +174,10 @@ impl Bridge {
             row.end(&out);
         }
         let mut tally = self.tally();
-        tally.cost_usd += out.cost_usd.unwrap_or(0.0);
-        tally.child_cost_usd += out.child_cost_usd.unwrap_or(0.0);
+        // A cost that is no real amount is no price: it neither lowers the
+        // others nor makes the sum a NaN the loop then counts as none.
+        tally.cost_usd += real_cost(out.cost_usd).unwrap_or(0.0);
+        tally.child_cost_usd += real_cost(out.child_cost_usd).unwrap_or(0.0);
         tally.calls[n - 1].failed = out.is_error;
         Ok(out)
     }

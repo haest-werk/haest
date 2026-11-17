@@ -166,6 +166,20 @@ async fn posts_with_checked_settings_saves_with_the_extension_the_bytes_have_and
     );
 }
 
+/// The API's `usage.cost` below 0 is no price: the model was told the
+/// picture cost "$-1.500", and the call carried a refund.
+#[tokio::test]
+async fn a_cost_below_zero_is_no_price() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let r = Rig::new();
+    let refund = json!({"data": [{"b64_json": STANDARD.encode(JPEG)}], "usage": {"cost": -1.5}});
+    *r.api.answer.lock().unwrap() = json_answer(200, &refund);
+    let out = r.run(json!({"prompt": "x"})).await;
+    assert!(!out.is_error, "{}", out.content);
+    assert_eq!(out.cost_usd, None);
+    assert!(!out.content.contains('$'), "{}", out.content);
+}
+
 #[tokio::test]
 async fn another_allowed_model_is_used_when_picked() {
     let r = Rig::new();

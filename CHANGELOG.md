@@ -1310,6 +1310,9 @@ Hosts write less (round two of the review, and what porting brain onto
   over as the ledger and the task board do (haest-core's `Newest`): one
   call at a time, never an older set after a newer one, and the sets that
   change while one call runs are handed over next as one, the newest.
+- Fixed: GenerateImage passed on an Image API `usage.cost` below 0 as the
+  call's cost, so the model read that the picture cost `$-1.500` and the
+  call carried a refund. Such a cost is now no price, as the loop counts it.
 
 ### haest-workspace
 
@@ -1394,6 +1397,11 @@ Hosts write less (round two of the review, and what porting brain onto
   last value in `process.env`. `JsEnv` has a getter for each part it is
   built with: `env()`, `stdin()`, `cancel()` and `ends_at()` beside `fs()`
   and `cwd()`; its setters are `#[must_use]`.
+- Fixed: the Code tool added its calls' costs as they came. One call's NaN
+  made the run's whole spend a NaN, which the loop counts as no price (the
+  other calls' real spend with it), and a negative one lowered the spend.
+  A cost that is negative or not a finite number is now no price there
+  too; the others still count.
 
 ### haest-mcp
 

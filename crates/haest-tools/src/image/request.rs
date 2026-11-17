@@ -9,7 +9,7 @@
 //! ([`GenerateImageOptions::with_http`](super::GenerateImageOptions::with_http)).
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use haest_core::tool::spelled;
+use haest_core::{__private::real_cost, tool::spelled};
 use haest_http::{Bytes, HttpClient, HttpError, Request};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -195,6 +195,7 @@ pub(crate) async fn call_image_api(
         bytes,
         media_type,
         model: model.into(),
-        cost_usd: answer["usage"]["cost"].as_f64(),
+        // A cost below 0 is no price, as the loop counts it.
+        cost_usd: real_cost(answer["usage"]["cost"].as_f64()),
     })
 }

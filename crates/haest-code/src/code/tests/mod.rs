@@ -300,6 +300,32 @@ async fn an_inner_tools_spend_is_folded_into_the_code_call() {
     assert_eq!(out.cost_usd, Some(0.5));
 }
 
+/// An inner tool's bill that is no real amount (a NaN, a refund) made the
+/// Code call's spend a NaN, which the loop then counts as no price at all,
+/// the real spend of the other calls with it; or lowered that spend.
+#[tokio::test]
+async fn an_inner_spend_that_is_no_real_amount_leaves_the_others_counted() {
+    for bad in [f64::NAN, -1.0, f64::INFINITY] {
+        let mut paid = Probe::new("mcp__s__paid", true, 0);
+        paid.answer.cost_usd = Some(0.25);
+        paid.answer.child_cost_usd = Some(0.5);
+        let mut odd = Probe::new("mcp__s__odd", true, 0);
+        odd.answer.cost_usd = Some(bad);
+        odd.answer.child_cost_usd = Some(bad);
+        let tools = Tools::from_iter([ToolRef::new(paid), ToolRef::new(odd)]);
+        let out = run(
+            &code_over(tools, &[]),
+            "await tools.mcp__s__paid({}); await tools.mcp__s__odd({})",
+        )
+        .await;
+        assert_eq!(
+            (out.cost_usd, out.child_cost_usd),
+            (Some(0.25), Some(0.5)),
+            "an inner bill of {bad}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn describe_returns_the_input_schema_of_a_callable_tool() {
     let out = run(

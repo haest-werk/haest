@@ -64,7 +64,7 @@ impl AddAssign<&Usage> for Usage {
 /// so it can neither lower a spend nor switch a USD cap off (`NaN >= cap` is
 /// false). Every sum of a cost (a `Usage`'s, a tool's, the ledger's) goes
 /// through here.
-pub(crate) fn real_cost(cost: Option<f64>) -> Option<f64> {
+pub fn real_cost(cost: Option<f64>) -> Option<f64> {
     cost.filter(|c| c.is_finite() && *c >= 0.0)
 }
 
