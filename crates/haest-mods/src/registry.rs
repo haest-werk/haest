@@ -47,17 +47,15 @@ pub enum CommandOutcome {
 /// | `system.prompt` | that mod adds nothing |
 /// | a slash command | [`CommandOutcome::Handled`] |
 ///
-/// Build one with [`load_mods`](crate::load_mods), or with [`Mods::new`] and
-/// [`Mods::with`]. It is a cheap handle: give a clone each to
-/// [`ModTools`](crate::ModTools), [`ModSystemPrompt`](crate::ModSystemPrompt)
-/// and the host's input path, and they all run the same mods. Add every mod
-/// before handing out clones: a mod added to one clone afterwards is in that
-/// clone only.
+/// Build one with [`load_mods`](crate::load_mods), or with [`Mods::builder`].
+/// Once built, the list never changes. It is a cheap handle: give a clone
+/// each to [`ModTools`](crate::ModTools),
+/// [`ModSystemPrompt`](crate::ModSystemPrompt) and the host's input path,
+/// and they all run the same mods for good.
 #[derive(Clone)]
 pub struct Mods(Arc<Loaded>);
 
 /// What a [`Mods`] handle shares.
-#[derive(Clone)]
 struct Loaded {
     env: ModEnv,
     list: Vec<ModRef>,
@@ -72,30 +70,75 @@ impl fmt::Debug for Mods {
     }
 }
 
-impl Mods {
-    /// No mods yet, in `env`.
-    pub fn new(env: ModEnv) -> Self {
-        Self(Arc::new(Loaded {
-            env,
-            list: Vec::new(),
-        }))
-    }
+/// A [`Mods`] being put together: every mod, in load order, before any
+/// clone of it exists ([`Mods::builder`]).
+///
+/// ```
+/// # use haest_core::workspace::WorkspaceMode;
+/// # use haest_mods::{ApprovalRequest, Decision, ModUi};
+/// use haest_mods::{ApprovalMod, ModEnv, Mods, PlanMod};
+/// # struct Terminal;
+/// # #[async_trait::async_trait]
+/// # impl ModUi for Terminal {
+/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+/// #     fn info(&self, _: &str) {}
+/// # }
+///
+/// let env = ModEnv::new("/project", WorkspaceMode::Real, Terminal);
+/// let mods = Mods::builder(env)
+///     .with(ApprovalMod::new())
+///     .with(PlanMod::new())
+///     .build();
+/// assert_eq!(mods.names(), ["approval", "plan"]);
+/// ```
+#[must_use = "a builder does nothing until it is built"]
+pub struct ModsBuilder(Loaded);
 
+impl fmt::Debug for ModsBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModsBuilder")
+            .field("env", &self.0.env)
+            .field("list", &self.0.list)
+            .finish()
+    }
+}
+
+impl ModsBuilder {
     /// Add a mod after every mod already here (logged through
     /// [`ModUi::debug`](crate::ModUi::debug)): the mod itself, or an `Arc` of
-    /// it the host keeps. Only this handle has it if it was cloned before.
-    pub fn add(&mut self, m: impl Into<ModRef>) {
+    /// it the host keeps.
+    pub fn with(mut self, m: impl Into<ModRef>) -> Self {
         let m = m.into();
-        let loaded = Arc::make_mut(&mut self.0);
-        loaded.env.ui().debug(&format!("mod loaded: {}", m.name()));
-        loaded.list.push(m);
+        self.0.env.ui().debug(&format!("mod loaded: {}", m.name()));
+        self.0.list.push(m);
+        self
     }
 
-    /// These mods and `m` after them: [`add`](Self::add), chained.
+    /// Add each mod, in order, as [`with`](Self::with) does.
+    pub fn with_all(self, mods: impl IntoIterator<Item = impl Into<ModRef>>) -> Self {
+        mods.into_iter().fold(self, Self::with)
+    }
+
+    /// The mods, fixed: every clone of the result runs these.
     #[must_use]
-    pub fn with(mut self, m: impl Into<ModRef>) -> Self {
-        self.add(m);
-        self
+    pub fn build(self) -> Mods {
+        Mods(Arc::new(self.0))
+    }
+}
+
+impl Mods {
+    /// No mods, in `env`.
+    pub fn new(env: ModEnv) -> Self {
+        Self::builder(env).build()
+    }
+
+    /// A list to add mods to, in `env`, built into a [`Mods`] that never
+    /// changes ([`ModsBuilder`]).
+    pub fn builder(env: ModEnv) -> ModsBuilder {
+        ModsBuilder(Loaded {
+            env,
+            list: Vec::new(),
+        })
     }
 
     /// The environment every mod's events get.
@@ -252,7 +295,7 @@ impl Mods {
     /// # #[tokio::main(flavor = "current_thread")]
     /// # async fn main() {
     /// let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Terminal);
-    /// let mods = Mods::new(env).with(PlanMod::new());
+    /// let mods = Mods::builder(env).with(PlanMod::new()).build();
     ///
     /// assert_eq!(mods.commands(), ["plan"]);
     /// assert_eq!(mods.command("/plan", "").await, CommandOutcome::Handled);

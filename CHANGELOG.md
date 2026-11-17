@@ -1171,12 +1171,19 @@ Hosts write less (round two of the review, and what porting brain onto
 - `Mod::tools`, `Mods::tools` and `ModTools::wrap` take and return
   `haest_core::Tools` (was `Vec<Arc<dyn Tool>>`).
 - `ModTools` forwards the wrapped tool's `Tool::on_resume`.
-- `Mods` is a cheap handle: clones run the same mods, so hold it, not an
-  `Arc<Mods>`. `Mods::add` takes the mod itself (or an `Arc` of it the host
-  keeps), and the new `Mods::with` chains it:
+- `Mods` is a cheap handle whose list never changes once built: clones run
+  the same mods for good, so hold it, not an `Arc<Mods>`. It is built with
+  the new `ModsBuilder` (`Mods::builder`, `with`, `with_all`, `build`), and
+  `Mods::add` is gone: on a handle already handed out it changed that clone
+  only, so the runtime's tools and prompt never saw the mod.
   `let mut m = Mods::new(env); m.add(Arc::new(NoDotEnv)); let m = Arc::new(m);`
-  -> `let m = Mods::new(env).with(NoDotEnv);`. A mod added to a clone after
-  sharing is in that clone only. The mods are held as the new `ModRef`.
+  -> `let m = Mods::builder(env).with(NoDotEnv).build();`. `with` takes
+  the mod itself or an `Arc` of it the host keeps; the mods are held as the
+  new `ModRef`. `Mods::new(env)` is a list of none.
+- `ModOptions::with_mod` puts a host's own native mod in what `load_mods`
+  loads: after the built-ins and the mod files, in the order added
+  (`host_mods()` reads them back). It was `load_mods(..).await` then
+  `Mods::add`.
 - `ModTools::new`, `ModTools::wrap` and `ModSystemPrompt::new` take `Mods`,
   and the tool source and prompt themselves (`impl Into<ToolSourceRef>`,
   `impl Into<SystemPromptRef>`):

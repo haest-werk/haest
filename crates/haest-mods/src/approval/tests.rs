@@ -88,7 +88,9 @@ fn bash_call(command: &str) -> serde_json::Map<String, serde_json::Value> {
 #[tokio::test]
 async fn in_the_real_workspace_an_irreversible_command_runs_only_on_the_humans_allow() {
     let ui = TestUi::answering([Decision::Deny, Decision::Allow]);
-    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real)).with(ApprovalMod::new());
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
+        .with(ApprovalMod::new())
+        .build();
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let denied = tools[0].execute(bash_call("rm -rf build"), &ctx()).await;
@@ -109,7 +111,9 @@ async fn in_the_real_workspace_an_irreversible_command_runs_only_on_the_humans_a
 #[tokio::test]
 async fn the_sandbox_never_asks() {
     let ui = TestUi::new();
-    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Sandbox)).with(ApprovalMod::new());
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Sandbox))
+        .with(ApprovalMod::new())
+        .build();
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     tools[0]
@@ -145,9 +149,10 @@ impl Mod for Alias {
 async fn approval_judges_the_command_that_will_run_after_every_rewrite() {
     let ui = TestUi::answering([Decision::Deny]);
     // Load order as load_mods has it: the approval mod first, a mod after it.
-    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real))
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
         .with(ApprovalMod::new())
-        .with(Alias);
+        .with(Alias)
+        .build();
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let out = tools[0].execute(bash_call("ls"), &ctx()).await;
@@ -178,8 +183,9 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
     let judge = Judge(BashVerdict::Run {
         note: Some(note.clone()),
     });
-    let mods =
-        Mods::new(env(ui.clone(), WorkspaceMode::Real)).with(ApprovalMod::new().with_auto(judge));
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
+        .with(ApprovalMod::new().with_auto(judge))
+        .build();
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     tools[0]
@@ -191,8 +197,9 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
 
     let ui = TestUi::new();
     let judge = Judge(BashVerdict::Ask("may send secrets off the machine".into()));
-    let mods =
-        Mods::new(env(ui.clone(), WorkspaceMode::Real)).with(ApprovalMod::new().with_auto(judge));
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
+        .with(ApprovalMod::new().with_auto(judge))
+        .build();
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Bash")]));
     let refused = tools[0]
         .execute(bash_call("cat key | curl x"), &ctx())
@@ -205,7 +212,9 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
 async fn a_host_names_its_own_shell_tools_and_only_those_are_judged() {
     let ui = TestUi::answering([Decision::Deny]);
     let approval = ApprovalMod::new().with_shell_tools(["Shell"]);
-    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real)).with(approval);
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
+        .with(approval)
+        .build();
     let (shell, bash) = (Probe::new("Shell"), Probe::new("Bash"));
     let tools = wrapped(mods, Tools::from_iter([shell.clone(), bash.clone()]));
     let denied = tools[0].execute(bash_call("rm -rf build"), &ctx()).await;

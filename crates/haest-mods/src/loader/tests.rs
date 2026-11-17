@@ -104,6 +104,39 @@ async fn the_built_ins_load_first_and_approvals_can_be_turned_off() {
     assert!(no_approvals.has_command(crate::plan::PLAN_COMMAND));
 }
 
+/// A native mod of the host's, known by its name.
+struct Hosts(&'static str);
+
+#[async_trait::async_trait]
+impl crate::api::Mod for Hosts {
+    fn name(&self) -> &str {
+        self.0
+    }
+}
+
+#[tokio::test]
+async fn the_hosts_own_mods_load_last_in_order_mod_files_or_not() {
+    let fs = MemFs::from_files([(format!("{HOME_MODS}/file.js"), "export default () => {}")]);
+    let with_files = cfg(WorkspaceMode::Real)
+        .with_mod(Hosts("first"))
+        .with_mod(Hosts("second"));
+    let hosts = |o: &ModOptions| {
+        o.host_mods()
+            .iter()
+            .map(|m| m.name().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(hosts(&with_files), ["first", "second"]);
+    let mods = load_mods(with_files, &fs, TestUi::new()).await;
+    let file = format!("{HOME_MODS}/file.js");
+    assert_eq!(mods.names(), ["approval", "plan", &file, "first", "second"]);
+    let bare = ModOptions::new(CWD, WorkspaceMode::Real, "/home/cfg")
+        .without_approvals()
+        .with_mod(Hosts("only"));
+    let mods = load_mods(bare, &fs, TestUi::new()).await;
+    assert_eq!(mods.names(), ["plan", "only"]);
+}
+
 #[tokio::test]
 async fn the_hosts_tool_names_reach_the_built_ins() {
     let ui = TestUi::answering([Decision::Deny]);

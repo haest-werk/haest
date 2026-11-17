@@ -46,7 +46,8 @@ async fn an_irreversible_command_waits_for_the_human_deny_refuses_and_always_let
     // A prompt past those two answers is a deny soon, not a hang.
     let gate = ApprovalGate::new(human.clone()).with_timeout(Duration::from_secs(5));
     let ui = gate.mod_ui(|_| {});
-    let mods = Mods::new(ModEnv::new(CWD, WorkspaceMode::Real, ui)).with(ApprovalMod::new());
+    let env = ModEnv::new(CWD, WorkspaceMode::Real, ui);
+    let mods = Mods::builder(env).with(ApprovalMod::new()).build();
     let rm = json!({"command": "rm -rf /p/doomed"});
     let p = ScriptedProvider::new([]);
     for id in ["a", "b", "c"] {
@@ -75,7 +76,9 @@ async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it()
     let seen = states.clone();
     let ui = TestUi::new();
     let plan = PlanMod::new().with_listener(move |on| seen.lock().unwrap().push(on));
-    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real)).with(plan);
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
+        .with(plan)
+        .build();
     let read = ("r", "Read", json!({"file_path": "/p/plan.txt"}));
     let write = (
         "w",
@@ -116,7 +119,9 @@ async fn plan_mode_refuses_writes_but_not_reads_and_the_plan_command_drives_it()
 async fn plan_with_a_topic_sends_the_topic_to_the_model() {
     // The host keeps an Arc of the mod, to look at it.
     let plan = Arc::new(PlanMod::new());
-    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Sandbox)).with(plan.clone());
+    let mods = Mods::builder(env(TestUi::new(), WorkspaceMode::Sandbox))
+        .with(plan.clone())
+        .build();
     match mods.command("plan", "  the migration ").await {
         CommandOutcome::Prompt(text) => assert!(text.contains("the migration")),
         other => panic!("nothing for the model: {other:?}"),
@@ -127,7 +132,9 @@ async fn plan_with_a_topic_sends_the_topic_to_the_model() {
 #[tokio::test]
 async fn plan_mode_lets_the_hosts_planning_tools_through_and_no_others() {
     let plan = PlanMod::new().with_planning_tools(["Notes"]);
-    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real)).with(plan);
+    let mods = Mods::builder(env(TestUi::new(), WorkspaceMode::Real))
+        .with(plan)
+        .build();
     assert_eq!(mods.command("plan", "").await, CommandOutcome::Handled);
     let (notes, tasks) = (Probe::new("Notes"), Probe::new("TaskCreate"));
     let tools = wrapped(mods, Tools::from_iter([notes.clone(), tasks.clone()]));
@@ -154,7 +161,9 @@ impl ToolSource for KeptBack {
 /// called by name was unknown.
 #[tokio::test]
 async fn a_tool_the_source_keeps_back_runs_by_name_inside_the_mods_hooks() {
-    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real)).with(PlanMod::new());
+    let mods = Mods::builder(env(TestUi::new(), WorkspaceMode::Real))
+        .with(PlanMod::new())
+        .build();
     let write = || tool_answer(&[("w", "Write", json!({"file_path": "/p/a.txt"}))]);
     let p = ScriptedProvider::new([write(), text_answer("ok"), write(), text_answer("ok")]);
     let (reader, writer) = (Probe::read_only("Read"), Probe::new("Write"));

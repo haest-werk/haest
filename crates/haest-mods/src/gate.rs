@@ -134,7 +134,8 @@ pub const ASK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 ///     ModLine::Info(text) | ModLine::Error(text) => println!("{text}"),
 ///     ModLine::Debug(_) => {}
 /// });
-/// let mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, ui)).with(ApprovalMod::new());
+/// let env = ModEnv::new("/project", WorkspaceMode::Real, ui);
+/// let mods = Mods::builder(env).with(ApprovalMod::new()).build();
 /// let tools = ModTools::wrap(&mods, Tools::new().with(Bash));
 ///
 /// let ctx = ToolContext::new("/project", ShutWorkspace);

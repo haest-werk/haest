@@ -171,7 +171,9 @@ impl ModEnv {
 /// are mods like this; so is a host's own. The [crate docs](crate#a-native-mod)
 /// have one.
 ///
-/// A mod is put in a conversation with [`Mods::add`](crate::Mods::add) (by
+/// A mod is put in a conversation with
+/// [`ModOptions::with_mod`](crate::ModOptions::with_mod) or
+/// [`ModsBuilder::with`](crate::ModsBuilder::with) (by
 /// value, or as an `Arc` the host keeps to look at it), and held in a
 /// [`ModRef`]; every event runs across the mods in the order they were added. An `Err` from an
 /// event (any error, or a line of text: `Err("why".into())`) is reported to

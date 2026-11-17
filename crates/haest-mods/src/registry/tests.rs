@@ -53,7 +53,9 @@ impl Mod for Rewriter {
 
 #[tokio::test]
 async fn tool_before_can_refuse_or_rewrite_a_call_and_tool_after_can_rewrite_its_output() {
-    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real)).with(Rewriter);
+    let mods = Mods::builder(env(TestUi::new(), WorkspaceMode::Real))
+        .with(Rewriter)
+        .build();
     let echo = Probe::new("Echo");
     let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
     let ok = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
@@ -93,7 +95,9 @@ impl Mod for HouseRules {
 #[tokio::test]
 async fn prompt_system_prompt_tools_and_commands_from_a_mod_all_take_effect() {
     let house = HouseRules(Probe::new("Shout").into());
-    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Sandbox)).with(house);
+    let mods = Mods::builder(env(TestUi::new(), WorkspaceMode::Sandbox))
+        .with(house)
+        .build();
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
     assert_eq!(mods.system_append().await, "House rule: British spelling.");
     assert_eq!(mods.commands(), ["hello"]);
@@ -149,7 +153,9 @@ impl Mod for Broken {
 #[tokio::test]
 async fn a_failing_mod_is_reported_and_never_lets_a_guarded_call_through() {
     let ui = TestUi::new();
-    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real)).with(Broken);
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
+        .with(Broken)
+        .build();
     let echo = Probe::new("Echo");
     let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
     let refused = tools[0]
@@ -168,9 +174,10 @@ async fn a_failing_mod_is_reported_and_never_lets_a_guarded_call_through() {
 #[tokio::test]
 async fn a_failing_prompt_hook_leaves_the_text_as_it_was() {
     let ui = TestUi::new();
-    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real))
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
         .with(Broken)
-        .with(HouseRules(Probe::new("Shout").into()));
+        .with(HouseRules(Probe::new("Shout").into()))
+        .build();
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
     assert_eq!(ui.errors().len(), 1);
 }
@@ -195,7 +202,9 @@ impl Mod for Unread {
 #[tokio::test]
 async fn a_mod_failure_reaches_the_human_with_its_cause() {
     let ui = TestUi::new();
-    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real)).with(Unread);
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
+        .with(Unread)
+        .build();
     assert_eq!(mods.system_append().await, "");
     let errors = ui.errors();
     assert_eq!(errors.len(), 1);
@@ -205,7 +214,9 @@ async fn a_mod_failure_reaches_the_human_with_its_cause() {
 #[tokio::test]
 async fn an_interrupt_while_a_mod_decides_is_not_reported_as_a_mod_failure() {
     let ui = TestUi::new();
-    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real)).with(Broken);
+    let mods = Mods::builder(env(ui.clone(), WorkspaceMode::Real))
+        .with(Broken)
+        .build();
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
     let c = ctx();
     c.cancel().cancel();
@@ -215,15 +226,15 @@ async fn an_interrupt_while_a_mod_decides_is_not_reported_as_a_mod_failure() {
 }
 
 #[tokio::test]
-async fn mods_is_a_handle_its_clones_run_the_same_mods_and_a_later_add_stays_in_its_own_clone() {
-    let shared = Mods::new(env(TestUi::new(), WorkspaceMode::Sandbox)).with(PlanMod::new());
+async fn mods_is_a_handle_its_clones_run_the_same_mods() {
+    let shared = Mods::builder(env(TestUi::new(), WorkspaceMode::Sandbox))
+        .with(PlanMod::new())
+        .with_all([Unread])
+        .build();
     let host = shared.clone();
     // Plan mode switched through one clone is on for the other: the same mod.
     assert_eq!(host.command("plan", "").await, CommandOutcome::Handled);
     assert!(!shared.system_append().await.is_empty());
-    // A mod added to one clone afterwards is in that clone only.
-    let more = host.with(Unread);
-    assert_eq!(more.names(), ["plan", "unread"]);
-    assert_eq!(shared.names(), ["plan"]);
+    assert_eq!(host.names(), ["plan", "unread"]);
     assert!(format!("{shared:?}").contains("ModRef(\"plan\")"));
 }

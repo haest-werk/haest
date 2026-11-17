@@ -7,8 +7,10 @@
 //!      A repo's mod is code from that repo running inside the host with full
 //!      trust; cloning a repo must never be enough to run it.
 //!
+//!   4. the host's own native mods ([`ModOptions::with_mod`]), in the order given.
+//!
 //! A mod that fails to load is reported to the human and skipped; the rest
-//! still load. A host's own native mods go in with [`Mods::add`] afterwards.
+//! still load.
 
 use std::{
     fmt,
@@ -19,7 +21,7 @@ use std::{
 use haest_core::{error::report, fs::Fs, workspace::WorkspaceMode};
 
 use crate::{
-    api::{ModEnv, ModUiRef},
+    api::{ModEnv, ModRef, ModUiRef},
     approval::{ApprovalMod, AutoJudgeRef, SHELL_TOOLS},
     js::{JsMod, ModCaps},
     plan::{PLANNING_TOOLS, PlanListener, PlanMod},
@@ -56,6 +58,7 @@ pub struct ModOptions {
     plan_listener: Option<PlanListener>,
     planning_tools: Vec<String>,
     caps: ModCaps,
+    host_mods: Vec<ModRef>,
 }
 
 impl fmt::Debug for ModOptions {
@@ -72,6 +75,7 @@ impl fmt::Debug for ModOptions {
             .field("plan_listener", &self.plan_listener.is_some())
             .field("planning_tools", &self.planning_tools)
             .field("caps", &self.caps)
+            .field("host_mods", &self.host_mods)
             .finish()
     }
 }
@@ -80,7 +84,8 @@ impl ModOptions {
     /// The defaults for a conversation in `cwd`, whose agent's tools run in
     /// `workspace`, for a host whose own config directory is `config_dir`:
     /// approvals on over [`SHELL_TOOLS`], no mod files, no auto mode, no plan
-    /// listener, the [`PLANNING_TOOLS`], the default [`ModCaps`].
+    /// listener, the [`PLANNING_TOOLS`], the default [`ModCaps`], no mods of
+    /// the host's own.
     pub fn new(
         cwd: impl Into<PathBuf>,
         workspace: WorkspaceMode,
@@ -98,6 +103,7 @@ impl ModOptions {
             plan_listener: None,
             planning_tools: PLANNING_TOOLS.iter().map(|t| t.to_string()).collect(),
             caps: ModCaps::default(),
+            host_mods: Vec::new(),
         }
     }
 
@@ -169,6 +175,15 @@ impl ModOptions {
         self
     }
 
+    /// Add a native mod of the host's own (the mod itself, or an `Arc` of it
+    /// the host keeps): it loads after the built-ins and every mod file,
+    /// whatever else is on, and the host's mods in the order they were added.
+    #[must_use]
+    pub fn with_mod(mut self, m: impl Into<ModRef>) -> Self {
+        self.host_mods.push(m.into());
+        self
+    }
+
     /// The conversation's working directory: the project's mods are in
     /// `<cwd>/.haest/mods`, and every mod sees it as [`ModEnv::cwd`].
     pub fn cwd(&self) -> &Path {
@@ -216,6 +231,11 @@ impl ModOptions {
         self.caps
     }
 
+    /// The host's own native mods, in order ([`with_mod`](Self::with_mod)).
+    pub fn host_mods(&self) -> &[ModRef] {
+        &self.host_mods
+    }
+
     /// Where mod files are looked for, in load order: `<config_dir>/mods`
     /// with [`with_user_mods`](Self::with_user_mods), then `<cwd>/.haest/mods`
     /// with [`with_project_mods`](Self::with_project_mods). Empty by default.
@@ -261,13 +281,14 @@ pub(crate) async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 ///    [`ModOptions::with_user_mods`].
 /// 3. The project's, `<cwd>/.haest/mods/*`, with
 ///    [`ModOptions::with_project_mods`] only.
+/// 4. The host's own native mods ([`ModOptions::with_mod`]), in order.
 ///
 /// Each directory's `.ts`, `.js` and `.mjs` files (not `.d.ts`) load in name
 /// order (subdirectories are not searched); each one runs its default export
 /// now ([`JsMod::load_with`], within [`ModOptions::caps`]). A mod that fails
 /// to load is reported through [`ModUi::error`](crate::ModUi::error) and
-/// skipped; the rest still load, so this never fails. A host's own native
-/// mods go in afterwards with [`Mods::add`].
+/// skipped; the rest still load, so this never fails. The [`Mods`] returned
+/// never changes.
 ///
 /// `fs` is the HOST's own files (the real disk), never the agent's
 /// workspace: a mod file the agent wrote in its sandbox must not load. `ui`
@@ -282,18 +303,18 @@ pub(crate) async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 pub async fn load_mods(cfg: ModOptions, fs: &dyn Fs, ui: impl Into<ModUiRef>) -> Mods {
     let ui = ui.into();
     let env = ModEnv::new(cfg.cwd.clone(), cfg.workspace, ui.clone());
-    let mut mods = Mods::new(env.clone());
+    let mut mods = Mods::builder(env.clone());
     if cfg.approvals {
         let mut approval = ApprovalMod::new().with_shell_tools(cfg.shell_tools.clone());
         if let Some(auto) = cfg.auto.clone() {
             approval = approval.with_auto(auto);
         }
-        mods.add(approval);
+        mods = mods.with(approval);
     }
     let plan = PlanMod::new()
         .listened_by(cfg.plan_listener.clone())
         .with_planning_tools(cfg.planning_tools.clone());
-    mods.add(plan);
+    mods = mods.with(plan);
     for dir in cfg.mod_dirs() {
         for path in mod_files(fs, &dir).await {
             let loaded = match fs.read_to_string(&path).await {
@@ -303,7 +324,7 @@ pub async fn load_mods(cfg: ModOptions, fs: &dyn Fs, ui: impl Into<ModUiRef>) ->
                 Err(e) => Err(e.to_string()),
             };
             match loaded {
-                Ok(m) => mods.add(m),
+                Ok(m) => mods = mods.with(m),
                 Err(why) => ui.error(&format!(
                     "Mod {} failed to load and was skipped: {why}",
                     path.display()
@@ -311,7 +332,7 @@ pub async fn load_mods(cfg: ModOptions, fs: &dyn Fs, ui: impl Into<ModUiRef>) ->
             }
         }
     }
-    mods
+    mods.with_all(cfg.host_mods).build()
 }
 
 #[cfg(test)]
