@@ -106,25 +106,33 @@ pub fn usd_asked(asked: f64) -> String {
     }
 }
 
+/// What follows the amount in [`budget_left`].
+const LEFT_OF_BUDGET: &str = "is left of the conversation's budget (max_conversation_usd)";
+
 /// What is left of the conversation's budget, as a refusal says it: rounded
 /// DOWN to the cent, since that is what fits (to the nearest, it could read
 /// as the amount just refused). Float dust under a millionth of a cent is no
 /// cent short.
 pub fn budget_left(available: f64) -> String {
     let cents = (available * 100.0 + 1e-6).floor() / 100.0;
-    format!("${cents:.2} is left of the conversation's budget (max_conversation_usd)")
+    format!("${cents:.2} {LEFT_OF_BUDGET}")
 }
 
 /// An ask and what is left, as a refusal says them: [`usd_asked`] and
-/// [`budget_left`], but an ask whose cent would read as what is left (dust
-/// past the ledger's slack, under the rounding's) said as it is, so the two
-/// never read the same.
+/// [`budget_left`], but when their cents would read the same (dust past the
+/// ledger's slack, under the rounding's, on either side of a whole cent),
+/// both said as they are, so the two never read the same.
 pub fn refusal_amounts(asked: f64, available: f64) -> (String, String) {
     let (ask, left) = (usd_asked(asked), budget_left(available));
-    if left.starts_with(&format!("{ask} ")) {
-        return (format!("${asked}"), left);
+    if !left.starts_with(&format!("{ask} ")) {
+        return (ask, left);
     }
-    (ask, left)
+    // A refused ask is past what is left, so the two floats differ, and
+    // each prints as the shortest text that reads back to it.
+    (
+        format!("${asked}"),
+        format!("${available} {LEFT_OF_BUDGET}"),
+    )
 }
 
 fn not_available(asked: f64, available: f64) -> String {
@@ -306,12 +314,22 @@ mod tests {
             text(0.1 + 0.2, 0.2),
             format!("$0.30 does not fit: $0.20 {left}")
         );
-        // Dust past the ledger's slack but under the rounding's: the cent
-        // would read as what is left, so the ask is said as it is.
+        // Dust past the ledger's slack but under the rounding's: the cents
+        // would read alike, so both are said as they are.
         assert_eq!(
             text(1.000_000_005, 1.0),
-            format!("$1.000000005 does not fit: $1.00 {left}")
+            format!("$1.000000005 does not fit: $1 {left}")
         );
+        // The same dust on the side of what is left (a spend under a
+        // millionth of a cent) read "$0.3 does not fit: $0.30 is left".
+        let amount = |s: &str| s.trim_start_matches('$').parse::<f64>().unwrap();
+        let dust = [(1.000_000_005, 1.0), (0.3, 0.3 - 5e-9), (1.0, 1.0 - 2e-9)];
+        for (asked, available) in dust {
+            let shown = text(asked, available);
+            let (ask, rest) = shown.split_once(" does not fit: ").unwrap();
+            let (have, _) = rest.split_once(' ').unwrap();
+            assert_ne!(amount(ask), amount(have), "{shown}");
+        }
     }
 
     #[test]
