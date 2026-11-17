@@ -198,6 +198,13 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   A `Tools` list now holds one tool per name: `with`, `push`, `extend`,
   `collect` and `From<Vec<ToolRef>>` put a tool in the place of the one of
   its name, so the list the model is sent and the tool that runs agree.
+- A session could stall on an inbox arrival: one that reached the inbox
+  after the driver had looked but before it started waiting was taken for
+  "every sender is gone", so a background subagent's answer sat until the
+  next request came (a quiet `--stdio` parent never sent one).
+  `InboxQueue::wait` returns whether anything can still arrive, and returns
+  at once when an arrival already waits (breaking, barely:
+  `q.wait().await;` -> `if !q.wait().await { /* nothing will come */ }`).
 
 ### Behaviour changes
 

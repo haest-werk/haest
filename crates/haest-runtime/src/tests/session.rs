@@ -5,7 +5,7 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use haest_session::{Body, Frame, Hub, Input, SessionPrompter, Subscription, start};
+use haest_session::{Body, Driven, Frame, Hub, Input, SessionPrompter, Subscription, start};
 use haest_settings::Settings;
 use haest_wire::{Answer, Level, Outbound, State};
 use rmcp::{
@@ -228,6 +228,26 @@ async fn an_arrival_runs_through_the_gate_and_what_it_holds_rides_in_with_the_pe
         "{text}"
     );
     session.close().await;
+}
+
+/// An item that reached the inbox before the driver started waiting still
+/// wakes it: [`Driven::arrival`] resolves.
+#[tokio::test]
+async fn an_arrival_already_waiting_wakes_the_driver() {
+    let fs = Arc::new(MemFs::new());
+    let hub = Hub::new("s1");
+    let mut rt = built(&fs, hardcoded(), Gateway::default(), &hub).await;
+    let (sender, queue) = inbox(rt.hooks(), 0);
+    *rt.inbox_mut() = queue;
+    sender.submit("job b1 exited".into());
+
+    let woke = tokio::time::timeout(Duration::from_secs(2), Driven::arrival(&mut rt)).await;
+    assert!(woke.is_ok(), "the arrival never resolved");
+    let control = rt.agent().control();
+    assert_eq!(
+        rt.inbox_mut().take(&control).as_deref(),
+        Some("job b1 exited")
+    );
 }
 
 #[tokio::test]

@@ -133,12 +133,23 @@ impl InboxQueue {
         }
     }
 
-    /// Wait for an arrival and keep it for [`Self::take`]: how a host with no
+    /// Wait until an arrival waits for [`Self::take`]: how a host with no
     /// turn running (print mode, waiting on a background subagent) sleeps
-    /// until there is work. Cancel-safe, as [`arrival`](Self::arrival).
-    pub async fn wait(&mut self) {
-        if let Some(text) = self.rx.recv().await {
-            self.ready.push_back(text);
+    /// until there is work. Returns at once when one already waits.
+    /// Cancel-safe, as [`arrival`](Self::arrival).
+    ///
+    /// Returns false once every sender is gone and nothing waits: nothing
+    /// will ever arrive.
+    pub async fn wait(&mut self) -> bool {
+        if !self.ready.is_empty() {
+            return true;
+        }
+        match self.rx.recv().await {
+            Some(text) => {
+                self.ready.push_back(text);
+                true
+            }
+            None => false,
         }
     }
 

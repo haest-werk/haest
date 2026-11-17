@@ -47,9 +47,20 @@ fn one_turn_takes_what_the_last_turn_left_unread_then_the_arrivals_oldest_first(
 async fn an_arrival_waited_for_is_kept_for_the_next_turn() {
     let (tx, mut q) = queue(0);
     tx.send("job exited".into()).unwrap();
-    q.wait().await;
+    assert!(q.wait().await);
     assert_eq!(q.waiting(), 1);
+    assert!(q.wait().await, "one already waits: at once");
     assert_eq!(q.take(&control()).as_deref(), Some("job exited"));
+}
+
+#[tokio::test]
+async fn waiting_ends_false_once_nothing_can_arrive() {
+    let (tx, mut q) = queue(0);
+    tx.send("last words".into()).unwrap();
+    drop(tx);
+    assert!(q.wait().await, "what was sent still arrives");
+    assert_eq!(q.take(&control()).as_deref(), Some("last words"));
+    assert!(!q.wait().await);
 }
 
 #[test]

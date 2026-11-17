@@ -61,9 +61,7 @@ impl<U: Ui + 'static> Driven for Runtime<U> {
 
     /// The next arrival in the inbox; never, once nothing can send one.
     async fn arrival(&mut self) {
-        let before = self.inbox.waiting();
-        self.inbox.wait().await;
-        if self.inbox.waiting() == before {
+        if !self.inbox.wait().await {
             // Every sender is gone: nothing will arrive.
             std::future::pending::<()>().await;
         }
