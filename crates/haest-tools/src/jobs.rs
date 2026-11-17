@@ -24,17 +24,20 @@
 //! Bash through [`BashOptions::with_jobs`](crate::BashOptions::with_jobs).
 
 mod entry;
+mod events;
+mod job;
 mod new_job;
 mod task;
 #[cfg(test)]
 pub(crate) mod tests;
 
+pub use events::{JobEvents, JobEventsRef, JobOutput, NoJobEvents};
+pub use job::{Job, JobState, JobStatus};
 pub use new_job::NewJob;
 
 use std::{
     fmt,
     sync::{Arc, Mutex},
-    time::Instant,
 };
 
 use haest_core::{newest::Newest, tool::ToolContext};
@@ -50,117 +53,6 @@ pub(crate) const MAX_BUFFER: usize = 1_000_000;
 pub const MAX_JOBS: usize = 8;
 /// Finished jobs kept for BashOutput; older ones (and their up-to-1MB output) are forgotten.
 pub const MAX_FINISHED: usize = 16;
-
-/// Where a job is in its life.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum JobStatus {
-    /// Started and not stopped.
-    Running,
-    /// Ended on its own; [`Job::exit_code`] says how.
-    Exited,
-    /// Stopped by [`JobHub::kill`] (KillShell, [`JobHub::kill_all`], the hub
-    /// dropped). It leaves the running set at once; [`Job::exit_code`] is set
-    /// when its process is gone.
-    Killed,
-}
-
-/// One job as it stands.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct Job {
-    /// The model's short id: "b1", "b2", ... per hub.
-    pub id: String,
-    /// The command line, as the model gave it.
-    pub command: String,
-    /// What it is for (Bash passes the call's `description`, else the command).
-    pub description: String,
-    /// Running, exited or killed.
-    pub status: JobStatus,
-    /// Set once the job has ended (a killed one: the code the workspace
-    /// reports for the kill, e.g. `128 + 9`).
-    pub exit_code: Option<i32>,
-    /// When it was started.
-    pub started: Instant,
-}
-
-impl Job {
-    /// How it stands, for the model: `running for 12s`, `killed`, `exited
-    /// with code 3`.
-    ///
-    /// ```
-    /// # fn show(job: &haest_tools::Job) -> String {
-    /// format!("Job {} {}", job.id, job.state())
-    /// # }
-    /// ```
-    pub fn state(&self) -> JobState<'_> {
-        JobState(self)
-    }
-}
-
-/// How a job stands, as the model reads it ([`Job::state`]): shown with
-/// `Display`.
-#[derive(Debug, Clone, Copy)]
-pub struct JobState<'a>(&'a Job);
-
-impl fmt::Display for JobState<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let job = self.0;
-        match job.status {
-            JobStatus::Running => write!(f, "running for {}s", job.started.elapsed().as_secs()),
-            JobStatus::Killed => f.write_str("killed"),
-            JobStatus::Exited => match job.exit_code {
-                Some(code) => write!(f, "exited with code {code}"),
-                None => f.write_str("exited with code ?"),
-            },
-        }
-    }
-}
-
-/// What a job printed, as [`JobEvents::on_output`] hears it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum JobOutput<'a> {
-    /// Output as it arrived.
-    Chunk(&'a str),
-    /// The job ended: nothing more will come.
-    Done,
-}
-
-/// What a host hears about jobs, for its transcript. All optional.
-///
-/// Called as things happen (a start from [`JobHub::start`], the rest from the
-/// job's own task), never while the hub's table is locked: a handler may call
-/// the hub back.
-///
-/// A panic in [`on_output`](Self::on_output) does not stop the job: that
-/// handler hears no more of its output (the buffer still keeps it), the job
-/// ends as it would have and is reported ended, then the panic goes on, on
-/// the job's own task.
-pub trait JobEvents: Send + Sync {
-    /// Every start and stop: the full set of running jobs, never a delta.
-    /// One call at a time, and never an older set after a newer one: the
-    /// changes made while one call runs are handed over next as one, the
-    /// newest. So the last set it hears is the hub's.
-    fn on_change(&self, _running: &[Job]) {}
-    /// Output as it arrives, then [`JobOutput::Done`] once when the job ended.
-    fn on_output(&self, _job: &Job, _output: JobOutput<'_>) {}
-    /// The job ended: exited on its own, or killed. A job that started and
-    /// ended while one [`on_change`](Self::on_change) call ran may be in no
-    /// set it hears: its sets were folded into the newest.
-    fn on_exit(&self, _job: &Job) {}
-}
-
-/// [`JobEvents`] that hears nothing: what [`JobHub::new`] uses.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct NoJobEvents;
-impl JobEvents for NoJobEvents {}
-
-haest_core::plug_ref! {
-    /// [`JobEvents`], shared: what [`JobHub::set_events`] takes. Built from
-    /// the listener itself, or from an `Arc` of one the host keeps too.
-    pub struct JobEventsRef(dyn JobEvents);
-}
 
 /// Why [`JobHub::start`] started nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
