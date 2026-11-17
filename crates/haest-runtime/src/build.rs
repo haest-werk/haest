@@ -23,7 +23,6 @@ use crate::{
         now_ms,
         providers::{ProviderRegistry, RegistryOptions},
         tools::DeferredTools,
-        tools::GenerateImageOptions,
     },
     inbox, mods,
     prompt::{AgentPrompt, RuntimePrompt, skill_options},
@@ -178,7 +177,7 @@ where
     let (sender, inbox) = inbox::inbox(&hooks, s.max_agent_turns);
     let jobs = jobs_for(s, sender.clone());
     let image = match image_options(s, keys.as_ref()) {
-        Ok(opts) => opts.map(|o| GenerateImageOptions { http, ..o }),
+        Ok(opts) => opts.map(|o| o.with_http(http)),
         Err(e) => {
             hooks.warn(&format!("{e}."));
             None

@@ -13,8 +13,9 @@
 //! and charges to the ledger, so the turn total and the caps both count it.
 //! Ported from the TS haest's `tools/image.ts`.
 //!
-//! PLUG POINT: [`GenerateImageOptions::http`] (any [`HttpClient`]) and the API key
-//! are the host's; haest never reads a key from the environment.
+//! PLUG POINT: [`GenerateImageOptions::with_http`] (any
+//! [`HttpClient`](haest_http::HttpClient)) and the API key are the host's;
+//! haest never reads a key from the environment.
 //!
 //! Start from [`GenerateImageOptions::new`] and [`GenerateImageTool::new`]. GenerateImage
 //! is not one of the [`builtin_tools`](crate::builtin_tools): a host adds it
@@ -30,11 +31,9 @@ mod tool;
 
 use std::{fmt, sync::Arc};
 
-pub use catalog::ImageCatalog;
+use catalog::ImageCatalog;
 use haest_core::__private::OPENROUTER_URL;
-use haest_http::{HttpClient, ReqwestClient};
-pub use request::{ImageError, ImageReply, call_image_api, sniff_image_type};
-pub use settings::{ModelSettings, SettingSpec};
+use haest_http::{HttpClientRef, ReqwestClient};
 pub use tool::GenerateImageTool;
 
 /// The model GenerateImage uses unless told otherwise, as an OpenRouter
@@ -51,44 +50,54 @@ pub const DEFAULT_IMAGE_MODELS: [&str; 3] = [
 ];
 
 /// What GenerateImage runs on. Clones share the model list read so far.
+///
+/// ```
+/// use haest_tools::GenerateImageOptions;
+///
+/// let opts = GenerateImageOptions::new("sk-...")
+///     .with_base_url("https://images.example.com/v1")
+///     .with_models("vendor/fast", ["vendor/sharp"]);
+/// assert_eq!(opts.model(), "vendor/fast");
+/// assert_eq!(opts.models(), ["vendor/fast", "vendor/sharp"]);
+/// // The key is never printed.
+/// assert!(!format!("{opts:?}").contains("sk-"));
+/// ```
 #[derive(Clone)]
 pub struct GenerateImageOptions {
     /// The Image API's key, supplied by the host.
-    pub api_key: String,
+    api_key: String,
     /// Without a trailing slash: `/images` and `/images/models` are appended.
-    pub base_url: String,
+    base_url: String,
     /// The default model.
-    pub model: String,
+    model: String,
     /// Every model a call may pick, the default first.
-    pub models: Vec<String>,
+    models: Vec<String>,
     /// The client for the model list and the image request.
-    pub http: Arc<dyn HttpClient>,
+    http: HttpClientRef,
     /// The model list read so far, shared by clones of these options.
-    pub catalog: Arc<ImageCatalog>,
+    catalog: Arc<ImageCatalog>,
 }
 
 impl GenerateImageOptions {
     /// The defaults, with the host's key: OpenRouter's Image API,
     /// [`DEFAULT_IMAGE_MODEL`] among [`DEFAULT_IMAGE_MODELS`], the shared
     /// [`ReqwestClient::new`] (built on the first request, never here).
-    ///
-    /// ```
-    /// use haest_tools::GenerateImageOptions;
-    ///
-    /// let opts = GenerateImageOptions::new("sk-...").with_models("vendor/fast", ["vendor/sharp"]);
-    /// assert_eq!(opts.models, ["vendor/fast", "vendor/sharp"]);
-    /// // The key is never printed.
-    /// assert!(!format!("{opts:?}").contains("sk-"));
-    /// ```
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
             base_url: OPENROUTER_URL.into(),
             model: DEFAULT_IMAGE_MODEL.into(),
             models: DEFAULT_IMAGE_MODELS.map(String::from).to_vec(),
-            http: Arc::new(ReqwestClient::new()),
+            http: ReqwestClient::new().into(),
             catalog: Arc::default(),
         }
+    }
+
+    /// The Image API at `base_url`, without a trailing slash: `/images` and
+    /// `/images/models` are appended.
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
     }
 
     /// `model` as the default, then the `others` a call may pick (the default is never listed twice).
@@ -103,6 +112,28 @@ impl GenerateImageOptions {
         self.model = model;
         self
     }
+
+    /// Send the model list and the image requests through `http`: the
+    /// client itself, or a handle the host shares.
+    pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
+        self.http = http.into();
+        self
+    }
+
+    /// The Image API's base URL.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// The default model.
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    /// Every model a call may pick, the default first.
+    pub fn models(&self) -> &[String] {
+        &self.models
+    }
 }
 
 impl fmt::Debug for GenerateImageOptions {
@@ -112,6 +143,6 @@ impl fmt::Debug for GenerateImageOptions {
             .field("base_url", &self.base_url)
             .field("model", &self.model)
             .field("models", &self.models)
-            .finish()
+            .finish_non_exhaustive()
     }
 }

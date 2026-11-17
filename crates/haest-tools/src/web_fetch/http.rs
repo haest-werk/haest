@@ -24,17 +24,18 @@ use haest_http::{
     },
 };
 
-use crate::net_guard::{Resolve, resolve_public};
+use crate::net_guard::{ResolveRef, resolve_public};
 
 /// reqwest's resolver for WebFetch: names resolve through the guard's
-/// [`Resolve`], and a name with any blocked address does not resolve at all.
-struct Guarded(Arc<dyn Resolve>);
+/// [`Resolve`](crate::Resolve), and a name with any blocked address does not
+/// resolve at all.
+struct Guarded(ResolveRef);
 
 impl dns::Resolve for Guarded {
     fn resolve(&self, name: Name) -> Resolving {
         let resolve = self.0.clone();
         Box::pin(async move {
-            let addresses = resolve_public(name.as_str(), resolve.as_ref()).await?;
+            let addresses = resolve_public(name.as_str(), &*resolve).await?;
             Ok(socket_addrs(addresses))
         })
     }
@@ -47,7 +48,7 @@ fn socket_addrs(ips: Vec<IpAddr>) -> Addrs {
 }
 
 /// WebFetch's own client over `resolve`: no redirects, the guard at connect time.
-pub(super) fn guarded_client(resolve: Arc<dyn Resolve>) -> ReqwestClient {
+pub(super) fn guarded_client(resolve: ResolveRef) -> ReqwestClient {
     client_over(Arc::new(Guarded(resolve)))
 }
 

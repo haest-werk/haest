@@ -5,7 +5,8 @@
 //! it. Ported from the TS haest's `tools/image-request.ts`.
 //!
 //! The tool's two exchanges (`GET /images/models`, `POST /images`) go through
-//! the [`HttpClient`] in [`GenerateImageOptions::http`](super::GenerateImageOptions::http).
+//! the [`HttpClient`] its options hold
+//! ([`GenerateImageOptions::with_http`](super::GenerateImageOptions::with_http)).
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use haest_core::tool::spelled;
@@ -20,7 +21,7 @@ const MAX_ANSWER: usize = 64 * 1024 * 1024;
 /// Why an Image API call made no picture. The text is written for the model,
 /// which tunes its next call from it.
 #[derive(Debug, thiserror::Error)]
-pub enum ImageError {
+pub(crate) enum ImageError {
     /// No answer came, or it broke off (the cause is the HTTP error's).
     #[error(transparent)]
     NoAnswer(#[from] HttpError),
@@ -79,7 +80,7 @@ fn provider_note(provider: Option<&str>) -> String {
 pub(super) async fn exchange(
     http: &dyn HttpClient,
     req: Request,
-    cancel: CancellationToken,
+    cancel: &CancellationToken,
 ) -> Result<(u16, Bytes), ImageError> {
     let exchange = async {
         let res = http.send(req).await?;
@@ -94,7 +95,7 @@ pub(super) async fn exchange(
 
 /// The picture an image model made.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ImageReply {
+pub(crate) struct ImageReply {
     /// The image, decoded.
     pub bytes: Vec<u8>,
     /// What the bytes are (`image/png`, `image/jpeg`, `image/webp`,
@@ -119,14 +120,7 @@ const SIGNATURES: [(&str, Signature); 4] = [
 
 /// What the bytes are, by their first bytes (a model may say png and send
 /// jpeg): `image/png`, `image/jpeg`, `image/webp` or `image/gif`, else None.
-///
-/// ```
-/// use haest_tools::sniff_image_type;
-///
-/// assert_eq!(sniff_image_type(&[0xff, 0xd8, 0xff, 0xe0]), Some("image/jpeg"));
-/// assert_eq!(sniff_image_type(b"<svg"), None);
-/// ```
-pub fn sniff_image_type(b: &[u8]) -> Option<&'static str> {
+pub(crate) fn sniff_image_type(b: &[u8]) -> Option<&'static str> {
     let at = |offset: usize, sig: &[u8]| b.get(offset..offset + sig.len()) == Some(sig);
     SIGNATURES
         .iter()
@@ -160,13 +154,13 @@ fn refusal(model: &str, status: u16, answer: &Value) -> ImageError {
 /// [`ImageError`]: no answer came, the call was interrupted, the API refused
 /// (its status and its own words, the provider's too when it gave them), the
 /// answer has no image, or the image is not a PNG, JPEG, WebP or GIF.
-pub async fn call_image_api(
+pub(crate) async fn call_image_api(
     http: &dyn HttpClient,
     base_url: &str,
     api_key: &str,
     model: &str,
     body: &Value,
-    cancel: CancellationToken,
+    cancel: &CancellationToken,
 ) -> Result<ImageReply, ImageError> {
     let req = Request::post(format!("{base_url}/images"))
         .with_header("authorization", format!("Bearer {api_key}"))

@@ -13,17 +13,17 @@
 //! ([`WebFetchNet::unguarded`] says what that gives up). Start from
 //! [`WebFetchTool`].
 
-use std::{fmt, sync::Arc, time::Duration};
+use std::{fmt, time::Duration};
 
 use async_trait::async_trait;
 use haest_core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str};
-use haest_http::{HttpClient, Response};
+use haest_http::{HttpClientRef, Response};
 use serde_json::{Value, json};
 use url::Url;
 
 use crate::{
     canonical::pick,
-    net_guard::{Resolve, SystemResolve, host_port},
+    net_guard::{ResolveRef, SystemResolve, host_port},
     read::media_output,
 };
 use get::{capped_body, guarded_get};
@@ -82,18 +82,19 @@ pub fn markdown_of(html: &str) -> String {
 #[derive(Clone)]
 pub struct WebFetchNet {
     /// Name -> addresses, for the net guard.
-    resolve: Arc<dyn Resolve>,
+    resolve: ResolveRef,
     /// One GET per hop, redirects handed back, never followed.
-    http: Arc<dyn HttpClient>,
+    http: HttpClientRef,
 }
 
 impl WebFetchNet {
     /// The guard over `resolve`, and WebFetch's own client, which resolves
     /// through it when it connects and refuses a name with any blocked
     /// address. Nothing is built until the first fetch.
-    pub fn new(resolve: Arc<dyn Resolve>) -> Self {
+    pub fn new(resolve: impl Into<ResolveRef>) -> Self {
+        let resolve = resolve.into();
         Self {
-            http: Arc::new(http::guarded_client(resolve.clone())),
+            http: http::guarded_client(resolve.clone()).into(),
             resolve,
         }
     }
@@ -110,14 +111,17 @@ impl WebFetchNet {
     /// names through `resolve` and refuses a blocked address when it connects,
     /// as [`new`](Self::new)'s does. A fake web in a test, which answers from
     /// memory, is the usual reason to use this.
-    pub fn unguarded(resolve: Arc<dyn Resolve>, http: Arc<dyn HttpClient>) -> Self {
-        Self { resolve, http }
+    pub fn unguarded(resolve: impl Into<ResolveRef>, http: impl Into<HttpClientRef>) -> Self {
+        Self {
+            resolve: resolve.into(),
+            http: http.into(),
+        }
     }
 }
 
 impl Default for WebFetchNet {
     fn default() -> Self {
-        Self::new(Arc::new(SystemResolve))
+        Self::new(SystemResolve)
     }
 }
 
@@ -175,11 +179,11 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
 /// Over a fake web, so nothing leaves the process:
 ///
 /// ```
-/// use std::{net::IpAddr, sync::Arc};
+/// use std::net::IpAddr;
 ///
 /// use async_trait::async_trait;
 /// use haest_core::{
-///     tool::{Tool, ToolContext},
+///     tool::{Tool, ToolContext, input},
 ///     workspace::ShutWorkspace,
 /// };
 /// use haest_tools::{
@@ -194,7 +198,7 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
 /// #[async_trait]
 /// impl Resolve for FakeWeb {
 ///     async fn resolve(&self, _host: &str) -> Result<Vec<IpAddr>, BoxError> {
-///         Ok(vec!["93.184.215.14".parse().unwrap()])
+///         Ok(vec!["93.184.215.14".parse()?])
 ///     }
 /// }
 ///
@@ -207,17 +211,16 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
 /// }
 ///
 /// # #[tokio::main]
-/// # async fn main() {
-/// let web = Arc::new(FakeWeb);
-/// let tool = WebFetchTool::new(WebFetchNet::unguarded(web.clone(), web));
-/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-/// let input = json!({"url": "https://example.test/"});
-/// let out = tool.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// # async fn main() -> Result<(), BoxError> {
+/// let tool = WebFetchTool::new(WebFetchNet::unguarded(FakeWeb, FakeWeb));
+/// let ctx = ToolContext::new("/", ShutWorkspace);
+/// let out = tool.execute(input(json!({"url": "https://example.test/"}))?, &ctx).await?;
 /// assert!(out.content.contains("# Hello") && !out.content.contains("track"));
 ///
 /// // A private address is refused before any request is made.
-/// let input = json!({"url": "http://127.0.0.1:8080/admin"});
-/// assert!(tool.execute(input.as_object().unwrap().clone(), &ctx).await.is_err());
+/// let call = input(json!({"url": "http://127.0.0.1:8080/admin"}))?;
+/// assert!(tool.execute(call, &ctx).await.is_err());
+/// # Ok(())
 /// # }
 /// ```
 #[derive(Debug, Clone)]

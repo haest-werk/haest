@@ -190,15 +190,15 @@ pub use files::{EditTool, WriteTool};
 pub use guide::{FILE_TOOLS, tool_guide, touches_workspace};
 pub use image::{
     DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS, GenerateImageOptions, GenerateImageTool,
-    ImageCatalog, ImageError, ImageReply, ModelSettings, SettingSpec, call_image_api,
-    sniff_image_type,
 };
 pub use inbox::{Inbox, InboxRef, NoInbox};
 pub use jobs::{
     Job, JobError, JobEvents, JobEventsRef, JobHub, JobOutput, JobState, JobStatus, MAX_FINISHED,
     MAX_JOBS, NoJobEvents, Taken,
 };
-pub use net_guard::{Resolve, SystemResolve, UrlRefused, assert_public_url, is_blocked};
+pub use net_guard::{
+    Resolve, ResolveRef, SystemResolve, UrlRefused, assert_public_url, is_blocked,
+};
 pub use read::{
     READ_TOKEN_BUDGET, ReadIntercept, ReadInterceptRef, ReadTool, media_output, read_text_output,
 };

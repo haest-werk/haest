@@ -26,8 +26,9 @@ use crate::canonical::pick;
 /// ratio, resolution, ...).
 ///
 /// Before anything is paid for, the model and every setting are checked
-/// against the Image API's model list ([`ImageCatalog`](crate::ImageCatalog)); a
-/// refusal tells the model what the chosen image model takes. Then one request
+/// against the Image API's model list (read on the first call, kept an hour,
+/// shared by clones of the options); a refusal tells the model what the
+/// chosen image model takes. Then one request
 /// is sent, and the picture is written into the workspace under the extension
 /// its bytes have, published to the host, and attached so the model sees it.
 /// The spend comes back as the output's
@@ -41,12 +42,12 @@ use crate::canonical::pick;
 /// Over a fake Image API, so nothing is paid for:
 ///
 /// ```
-/// use std::{path::Path, sync::Arc};
+/// use std::path::Path;
 ///
 /// use async_trait::async_trait;
 /// use haest_core::{
-///     fs::{Fs, MemFs},
-///     tool::{Tool, ToolContext},
+///     fs::{Fs, FsRef, MemFs},
+///     tool::{Tool, ToolContext, input},
 /// };
 /// use haest_tools::{
 ///     GenerateImageTool, GenerateImageOptions,
@@ -76,29 +77,31 @@ use crate::canonical::pick;
 /// }
 ///
 /// # #[tokio::main]
-/// # async fn main() {
-/// let opts = GenerateImageOptions {
-///     http: Arc::new(FakeApi),
-///     ..GenerateImageOptions::new("the host's key")
-/// };
-/// let tool = GenerateImageTool::new(opts.with_models("vendor/pic", ["vendor/other"]));
-/// let files = Arc::new(MemFs::new());
-/// let ctx = ToolContext::new("/work", Arc::new(SandboxWorkspace::over(files.clone())));
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// let opts = GenerateImageOptions::new("the host's key")
+///     .with_http(FakeApi)
+///     .with_models("vendor/pic", ["vendor/other"]);
+/// let tool = GenerateImageTool::new(opts);
+/// // The host keeps a handle on the files, to look at them.
+/// let files = FsRef::new(MemFs::new());
+/// let ctx = ToolContext::new("/work", SandboxWorkspace::over(files.clone()));
 ///
-/// let input = json!({
+/// let call = json!({
 ///     "prompt": "a lighthouse at dusk",
 ///     "file_path": "art/lighthouse",
 ///     "settings": {"aspect_ratio": "16:9"}
 /// });
-/// let out = tool.execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// let out = tool.execute(input(call)?, &ctx).await?;
 /// assert_eq!(out.cost_usd, Some(0.04));
 /// assert!(files.exists(Path::new("/work/art/lighthouse.png")).await);
 ///
 /// // A setting the model does not take is refused before anything is sent.
-/// let input = json!({"prompt": "x", "settings": {"quality": "high"}});
-/// assert!(tool.execute(input.as_object().unwrap().clone(), &ctx).await.is_err());
+/// let call = json!({"prompt": "x", "settings": {"quality": "high"}});
+/// assert!(tool.execute(input(call)?, &ctx).await.is_err());
+/// # Ok(())
 /// # }
 /// ```
+#[derive(Debug, Clone)]
 pub struct GenerateImageTool {
     opts: GenerateImageOptions,
 }
@@ -202,10 +205,10 @@ impl Tool for GenerateImageTool {
         let chosen = self.pick_model(&input)?;
         let given = settings_input(&input)?;
         let refs = references(input.get("reference_images"), ctx).await?;
-        let (http, cancel) = (o.http.as_ref(), ctx.cancel().clone());
+        let (http, cancel) = (&*o.http, ctx.cancel());
         let params = o
             .catalog
-            .model_params(&o.base_url, &chosen, http, cancel.clone())
+            .model_params(http, &o.base_url, &chosen, cancel)
             .await
             .map_err(|e| ToolError::Input(report(&e)))?;
         let params = params.as_ref();
@@ -234,16 +237,10 @@ impl Tool for GenerateImageTool {
                 .map(|r| json!({"type": "image_url", "image_url": {"url": data_url(r)}}));
             body.insert("input_references".into(), refs.collect());
         }
-        let reply = call_image_api(
-            http,
-            &o.base_url,
-            &o.api_key,
-            &chosen,
-            &Value::Object(body),
-            cancel,
-        )
-        .await
-        .map_err(|e| ToolError::Failed(report(&e)))?;
+        let body = Value::Object(body);
+        let reply = call_image_api(http, &o.base_url, &o.api_key, &chosen, &body, cancel)
+            .await
+            .map_err(|e| ToolError::Failed(report(&e)))?;
         let path = output_path(
             ctx,
             opt_str(&input, "file_path")?,

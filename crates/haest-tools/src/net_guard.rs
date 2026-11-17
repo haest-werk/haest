@@ -113,6 +113,12 @@ pub trait Resolve: Send + Sync {
     async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>, BoxError>;
 }
 
+haest_core::plug_ref! {
+    /// A shared [`Resolve`]: what [`WebFetchNet`](crate::WebFetchNet) keeps.
+    /// Its constructors take the resolver itself.
+    pub struct ResolveRef(dyn Resolve);
+}
+
 /// The system resolver (`getaddrinfo`, through tokio).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SystemResolve;

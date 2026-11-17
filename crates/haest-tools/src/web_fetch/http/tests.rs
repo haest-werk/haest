@@ -77,7 +77,7 @@ async fn it_connects_where_the_resolver_says_never_through_the_system_dns() {
 async fn a_name_that_resolves_to_a_blocked_address_when_connecting_is_never_reached() {
     let (port, seen) = server(OK);
     let url = format!("http://rebinding.test:{port}/");
-    let sent = guarded_client(Arc::new(Loopback))
+    let sent = guarded_client(Loopback.into())
         .send(Request::get(url))
         .await;
     assert!(sent.is_err());

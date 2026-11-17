@@ -89,16 +89,16 @@ pub fn image_options(
         return Ok(None);
     }
     let key = keys.key("OPENROUTER_API_KEY").ok_or(NoImageKey)?;
-    let opts = GenerateImageOptions {
-        base_url: openrouter_base_url(keys),
-        ..GenerateImageOptions::new(key)
-    };
+    let opts = GenerateImageOptions::new(key).with_base_url(openrouter_base_url(keys));
     // Unset, each is the tool's own.
-    let model = s.image_model.clone().unwrap_or_else(|| opts.model.clone());
+    let model = s
+        .image_model
+        .clone()
+        .unwrap_or_else(|| opts.model().to_string());
     let others = s
         .image_models
         .clone()
-        .unwrap_or_else(|| opts.models.clone());
+        .unwrap_or_else(|| opts.models().to_vec());
     Ok(Some(opts.with_models(model, others)))
 }
 
@@ -255,17 +255,17 @@ mod tests {
         assert_eq!(image_options(&on, &keys(&[])).unwrap_err(), NoImageKey);
         let opts = image_options(&on, &with_key).unwrap().unwrap();
         assert_eq!(
-            (opts.api_key.as_str(), opts.base_url.as_str()),
-            ("k", crate::haest::core::__private::OPENROUTER_URL)
+            opts.base_url(),
+            crate::haest::core::__private::OPENROUTER_URL
         );
-        assert_eq!(opts.model, DEFAULT_IMAGE_MODEL);
-        assert_eq!(opts.models, DEFAULT_IMAGE_MODELS);
+        assert_eq!(opts.model(), DEFAULT_IMAGE_MODEL);
+        assert_eq!(opts.models(), DEFAULT_IMAGE_MODELS);
         let local = keys(&[
             ("OPENROUTER_API_KEY", "k"),
             ("OPENROUTER_BASE_URL", "http://l/v1"),
         ]);
         let opts = image_options(&on, &local).unwrap().unwrap();
-        assert_eq!(opts.base_url, "http://l/v1");
+        assert_eq!(opts.base_url(), "http://l/v1");
     }
 
     #[test]
@@ -278,7 +278,7 @@ mod tests {
                 image_models: others.map(|o| o.into_iter().map(String::from).collect()),
                 ..crate::testkit::settings()
             };
-            image_options(&s, &key).unwrap().unwrap().models
+            image_options(&s, &key).unwrap().unwrap().models().to_vec()
         };
         assert_eq!(with(None, None), DEFAULT_IMAGE_MODELS);
         let chosen = with(Some("x/pic"), Some(vec!["a/one", "x/pic", "b/two"]));

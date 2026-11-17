@@ -27,8 +27,8 @@ type Models = Arc<HashMap<String, ModelSettings>>;
 
 /// The Image API's model lists read so far, by base URL, each kept an hour.
 /// [`GenerateImageOptions`](super::GenerateImageOptions) holds one; `Default` is empty.
-#[derive(Default)]
-pub struct ImageCatalog {
+#[derive(Debug, Default)]
+pub(crate) struct ImageCatalog {
     kept: Mutex<HashMap<String, (Instant, Models)>>,
 }
 
@@ -47,7 +47,11 @@ fn settings_of(params: &serde_json::Map<String, Value>) -> ModelSettings {
 
 /// The list at `base_url`; None when it could not be read or names no model
 /// (the caller falls back to its last good copy, or goes unchecked).
-async fn fetch(base_url: &str, http: &dyn HttpClient, cancel: CancellationToken) -> Option<Models> {
+async fn fetch(
+    base_url: &str,
+    http: &dyn HttpClient,
+    cancel: &CancellationToken,
+) -> Option<Models> {
     let get = Request::get(format!("{base_url}/images/models"));
     let (status, body) = exchange(http, get, cancel).await.ok()?;
     if !(200..300).contains(&status) {
@@ -75,7 +79,7 @@ impl ImageCatalog {
         &self,
         base_url: &str,
         http: &dyn HttpClient,
-        cancel: CancellationToken,
+        cancel: &CancellationToken,
     ) -> Option<Models> {
         let kept = self.kept.lock().unwrap().get(base_url).cloned();
         if let Some((at, models)) = &kept
@@ -101,12 +105,12 @@ impl ImageCatalog {
     ///
     /// [`ImageError::UnknownModel`] when the list was read and `model` is not
     /// on it.
-    pub async fn model_params(
+    pub(crate) async fn model_params(
         &self,
+        http: &dyn HttpClient,
         base_url: &str,
         model: &str,
-        http: &dyn HttpClient,
-        cancel: CancellationToken,
+        cancel: &CancellationToken,
     ) -> Result<Option<ModelSettings>, ImageError> {
         let Some(all) = self.all(base_url, http, cancel).await else {
             return Ok(None);

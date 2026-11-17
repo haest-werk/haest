@@ -20,7 +20,7 @@ pub(super) async fn guarded_get(
 ) -> Result<(Response, Url), ToolError> {
     let mut at = url.clone();
     for _ in 0..=MAX_REDIRECTS {
-        assert_public_url(&at, net.resolve.as_ref())
+        assert_public_url(&at, &*net.resolve)
             .await
             .map_err(|e| ToolError::Input(report(&e)))?;
         let get = Request::get(at.as_str()).with_header("user-agent", USER_AGENT);

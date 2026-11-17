@@ -17,7 +17,7 @@ use values::{check_one, free_value};
 
 /// What a model publishes for one setting.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-pub struct SettingSpec {
+pub(crate) struct SettingSpec {
     /// `enum`, `range` or `boolean` ("takes it"); None or another word is
     /// taken as "takes it" too.
     #[serde(rename = "type", default)]
@@ -34,7 +34,7 @@ pub struct SettingSpec {
 }
 
 /// A model's settings by name, as the Image API's model list publishes them.
-pub type ModelSettings = HashMap<String, SettingSpec>;
+pub(crate) type ModelSettings = HashMap<String, SettingSpec>;
 
 /// The settings a call may pass, besides what to draw and the references.
 const IMAGE_SETTINGS: [&str; 8] = [

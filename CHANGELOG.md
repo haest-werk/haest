@@ -719,6 +719,20 @@ Good citizens:
 - `UrlRefused` is `#[non_exhaustive]`; `AgentTurnGate`, `WebFetchNet`,
   `WebFetchTool`, `SkillToolOptions` and `BuiltinOptions` implement
   `Debug`.
+- `WebFetchNet::new` takes the resolver itself (`impl Into<ResolveRef>`)
+  and `unguarded` the client too (`impl Into<HttpClientRef>`):
+  `WebFetchNet::unguarded(Arc::new(dns), Arc::new(client))` ->
+  `WebFetchNet::unguarded(dns, client)`. New `ResolveRef`.
+- `GenerateImageOptions`' fields are private:
+  `GenerateImageOptions { base_url, http, ..GenerateImageOptions::new(key) }`
+  -> `GenerateImageOptions::new(key).with_base_url(base_url).with_http(http)`,
+  where `with_http` takes the client itself or a shared handle; read with
+  `base_url()`, `model()` and `models()`. `GenerateImageTool` implements
+  `Debug` and `Clone`.
+- The Image API's helpers are the tool's own: `call_image_api`,
+  `sniff_image_type`, `ImageCatalog`, `ImageError`, `ImageReply`,
+  `ModelSettings` and `SettingSpec` are no longer public. A host calls the
+  Image API through `GenerateImageTool`.
 
 ### haest-workspace
 

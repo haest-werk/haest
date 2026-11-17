@@ -99,9 +99,10 @@ impl Rig {
             gets: Mutex::default(),
             posted: Mutex::default(),
         });
-        let mut opts = GenerateImageOptions::new("k").with_models("img-model", ["text-model"]);
-        opts.base_url = BASE.into();
-        opts.http = api.clone();
+        let opts = GenerateImageOptions::new("k")
+            .with_models("img-model", ["text-model"])
+            .with_base_url(BASE)
+            .with_http(api.clone());
         Self {
             api,
             ws: TestWorkspace::with_files([("/p/ref.png", [1u8, 2])]),
@@ -264,4 +265,15 @@ async fn a_gif_is_saved_as_a_gif() {
     let out = r.run(json!({"prompt": "x", "file_path": "anim.png"})).await;
     assert!(!out.is_error, "{}", out.content);
     assert!(r.ws.mem.exists(std::path::Path::new("/p/anim.gif")).await);
+}
+
+#[test]
+fn an_image_is_known_by_its_first_bytes_and_an_svg_is_none() {
+    use super::request::sniff_image_type;
+    assert_eq!(sniff_image_type(&JPEG), Some("image/jpeg"));
+    assert_eq!(
+        sniff_image_type(b"RIFF\0\0\0\0WEBPVP8 "),
+        Some("image/webp")
+    );
+    assert_eq!(sniff_image_type(b"<svg"), None);
 }

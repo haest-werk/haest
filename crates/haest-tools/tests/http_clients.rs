@@ -18,14 +18,13 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::{
-    tool::{Tool, ToolContext},
+    tool::{Tool, ToolContext, input},
     workspace::ShutWorkspace,
 };
 use haest_tools::{
-    GenerateImageOptions, Resolve, WebFetchNet, WebFetchTool, call_image_api, http::BoxError,
+    GenerateImageOptions, GenerateImageTool, Resolve, WebFetchNet, WebFetchTool, http::BoxError,
 };
 use serde_json::json;
-use tokio_util::sync::CancellationToken;
 
 /// The request heads one listener was sent, lowercased.
 type Seen = Arc<Mutex<Vec<String>>>;
@@ -91,38 +90,33 @@ fn proxy_in_env() -> Seen {
 }
 
 #[tokio::test]
-async fn the_image_api_and_its_key_go_straight_to_the_api_never_through_an_env_proxy() {
+async fn the_image_api_and_its_key_go_straight_to_the_api_never_through_an_env_proxy()
+-> Result<(), BoxError> {
     let proxy = proxy_in_env();
     let (api, direct) = listener();
-    let opts = GenerateImageOptions::new("image-api-key");
-    let cancel = CancellationToken::new();
-    let listed = opts
-        .catalog
-        .model_params(&api, "m", opts.http.as_ref(), cancel.clone())
+    let opts = GenerateImageOptions::new("image-api-key")
+        .with_base_url(&api)
+        .with_models("m", [] as [&str; 0]);
+    let tool = GenerateImageTool::new(opts);
+    // The model list (`{}`, unreadable: nothing is checked), then the image
+    // request: `{}` is no image, refused only after the API answered.
+    let posted = tool
+        .execute(
+            input(json!({"prompt": "p"}))?,
+            &ToolContext::new("/", ShutWorkspace),
+        )
         .await;
-    // `{}` is no image: refused, but only after the API answered.
-    let posted = call_image_api(
-        opts.http.as_ref(),
-        &api,
-        &opts.api_key,
-        "m",
-        &json!({"model": "m"}),
-        cancel,
-    )
-    .await;
 
     assert!(
         !asked_for(&proxy, &api),
         "the env proxy was sent the API's requests"
     );
-    assert!(
-        matches!(listed, Ok(None)),
-        "an unreadable list checks nothing"
-    );
     assert!(posted.is_err());
     let direct = direct.lock().unwrap();
-    assert_eq!(direct.len(), 2);
+    assert_eq!(direct.len(), 2, "the model list, then the image request");
+    assert!(direct[0].starts_with("get /images/models"), "{}", direct[0]);
     assert!(direct[1].contains("authorization: bearer image-api-key"));
+    Ok(())
 }
 
 /// The first lookup (the guard's check) answers a public address; every later
@@ -145,7 +139,7 @@ async fn webfetch_never_goes_through_an_env_proxy() {
     let url = "http://site.test:8080/page";
     let resolve = Arc::new(PublicOnce(AtomicUsize::new(0)));
     let tool = WebFetchTool::new(WebFetchNet::new(resolve.clone()));
-    let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
+    let ctx = ToolContext::new("/", ShutWorkspace);
     let input = json!({"url": url}).as_object().unwrap().clone();
     // Through the proxy this would be answered at once, and the name never
     // resolved here; direct, the client's own lookup fails.
