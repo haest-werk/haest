@@ -32,7 +32,7 @@ let mut tools = issue_tools(github);
 let board = CardTracker::new("/path/to/project/cards", RealFs);
 tools.extend(issue_tools_named("Card", board.clone())); // CardList, CardGet, ...
 
-// Hand `tools` to the agent with its others (AgentDeps::new(models, tools, ...)).
+// Hand `tools` to the agent with its others (AgentDeps::new(shared, tools, system_prompt)).
 ```
 
 `cargo run -p haest-issues --example issues` runs a scripted agent that plans

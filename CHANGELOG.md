@@ -82,7 +82,8 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 9. A `Ledger`, a `TaskBoard` and a `ToolDeferral` are shared by cloning
    them: `Arc<Mutex<Ledger>>` -> `Ledger`,
    `ledger.lock().unwrap().usd()` -> `ledger.usd()`,
-   `.with_ledger(Arc::new(Mutex::new(ledger)))` -> `.with_ledger(ledger.clone())`,
+   `deps.shared.ledger = Some(Arc::new(Mutex::new(ledger)))` ->
+   `deps.with_ledger(ledger.clone())`,
    and `Arc<TaskBoard>` / `Arc<ToolDeferral>` -> `TaskBoard` /
    `ToolDeferral`.
 10. `ProviderRequest`, `ExecOptions` and `ShellCall` are built with `new`
@@ -1050,11 +1051,11 @@ Hosts write less (round two of the review, and what porting brain onto
   and `RegistryOptions` is gone (breaking):
   `ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions { http:
   Arc::new(client), routing, ..Default::default() })` ->
-  `ProviderRegistry::new(keys).with_custom(custom).with_http(client).with_routing(routing)`
-  (also `with_retry`, `with_headers_timeout`, `with_app_title`,
+  `ProviderRegistry::new(keys).with_custom(custom).with_http(client)`,
+  then `.with_routing(scopes)` when `routing` is `Some(scopes)` (also
+  `with_retry`, `with_headers_timeout`, `with_app_title`,
   `without_app_title`, `with_app_url`), each read back with the getter of
-  its name. `with_routing` takes the scopes themselves: a host holding an
-  `Option` calls it only for `Some`.
+  its name. `with_routing` takes the scopes themselves, never an `Option`.
 - `ProviderRegistry::resolve` is inherent: `registry.resolve(spec)` needs no
   `use haest_core::ModelResolver`. The registry is still a `ModelResolver`.
   It is `Clone` and `Debug`: clones share what was built, so
