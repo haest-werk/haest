@@ -961,7 +961,14 @@ Hosts write less (round two of the review, and what porting brain onto
   (the headers as received, a name given twice kept twice), and a pattern
   on either ends in `..`. Reading and moving a field is unchanged.
   `Response { status, headers, body }` ->
-  `Response::new(status, body).with_headers(headers)`.
+  `Response::new(status, body).with_headers(headers)`, and a request's
+  body that is not JSON goes in with the new `Request::with_body` (a form,
+  a file; its content type set with `with_header`):
+  `Request { body, ..Request::post(url) }` ->
+  `Request::post(url).with_body(body)`.
+- New `redacted_url`: a URL as haest shows it in Debug output and errors,
+  without its userinfo, query values or fragment, for a host that shows a
+  URL it was given (the `haest` command's broker line uses it).
 - `HttpError::Timeout` says the wait as given (`no answer within 500ms`):
   it said whole seconds, so a sub-second headers timeout read `0 s`.
 

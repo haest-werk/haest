@@ -223,7 +223,7 @@ fn broker_link(
     };
     // Said without its credentials: the URL is not where a secret goes,
     // but one may be there.
-    let shown = haest::http::__private::redacted_url(&url).into_owned();
+    let shown = haest::http::redacted_url(&url).into_owned();
     let mut link = Broker::new(url);
     if let Some(token) = token {
         link = link.with_token(token);

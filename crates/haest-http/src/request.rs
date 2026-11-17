@@ -160,6 +160,14 @@ impl Request {
         self.with_header("content-type", "application/json")
     }
 
+    /// This request with `body` as it is (a form, a file); its content type
+    /// is the caller's to set with [`with_header`](Self::with_header).
+    #[must_use]
+    pub fn with_body(mut self, body: impl Into<Bytes>) -> Self {
+        self.body = body.into();
+        self
+    }
+
     /// A header's value, by case-insensitive name.
     pub fn header(&self, name: &str) -> Option<&str> {
         find_header(&self.headers, name)
@@ -223,6 +231,14 @@ mod tests {
     #[test]
     fn a_body_that_is_not_json_reads_as_null() {
         assert_eq!(Request::get("https://a.test/").json_body(), Value::Null);
+    }
+
+    #[test]
+    fn a_body_of_any_bytes_goes_as_it_is_and_sets_no_header() {
+        let req = Request::post("https://a.test/upload").with_body("a=1&b=2");
+        assert_eq!(req.body, Bytes::from_static(b"a=1&b=2"));
+        assert!(req.headers.is_empty());
+        assert_eq!(req.json_body(), Value::Null);
     }
 
     #[test]

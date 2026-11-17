@@ -55,7 +55,7 @@ fn rows(loaded: &Loaded, def: &Def) -> Vec<(String, String)> {
 /// the URL is not where a secret goes, but one may be there.
 fn shown(def: &Def, value: &str) -> String {
     if def.key == "broker_url" {
-        haest::http::__private::redacted_url(value).into_owned()
+        haest::http::redacted_url(value).into_owned()
     } else {
         value.to_string()
     }

@@ -20,10 +20,20 @@ pub fn without_userinfo(url: &str) -> Cow<'_, str> {
     }
 }
 
-/// `url` with nothing a credential may ride in: its userinfo
-/// [redacted](without_userinfo), each query parameter's value (a key, a
-/// token: `?api_key=<redacted>`) and a parameter with no name, and the
-/// fragment. The scheme, host, path and the query's names as they are.
+/// `url` with nothing a credential may ride in, as haest shows a URL in its
+/// Debug output and its errors: its userinfo (`user:password@`), each query
+/// parameter's value (a key, a token) and a parameter with no name, and the
+/// fragment, each shown as `<redacted>`. The scheme, host, path and the
+/// query's names stay, so it still says where it goes. For a host that
+/// shows a URL it was given (a broker's, an MCP server's).
+///
+/// ```
+/// use haest_http::redacted_url;
+///
+/// let shown = redacted_url("wss://agent:s3cret@broker.example/agents?key=k3y#t");
+/// assert_eq!(shown, "wss://<redacted>@broker.example/agents?key=<redacted>#<redacted>");
+/// assert_eq!(redacted_url("https://api.example/v1"), "https://api.example/v1");
+/// ```
 pub fn redacted_url(url: &str) -> Cow<'_, str> {
     let url = without_userinfo(url);
     let Some(cut) = url.find(['?', '#']) else {

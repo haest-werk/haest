@@ -35,7 +35,7 @@ use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
-use haest_http::__private::{UrlDebug, redacted_url};
+use haest_http::{__private::UrlDebug, redacted_url};
 use haest_session::BackendRef;
 use haest_wire::Token;
 use tokio::net::TcpStream;

@@ -130,7 +130,7 @@ mod response;
 /// option and tracker types use, and the scrubbing of a reqwest error's URL.
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::redact::{HeaderNames, REDACTED, UrlDebug, redacted_url, without_userinfo};
+    pub use crate::redact::{HeaderNames, REDACTED, UrlDebug, without_userinfo};
     #[cfg(feature = "reqwest")]
     pub use crate::reqwest_client::without_credentials;
 }
@@ -151,6 +151,7 @@ pub use reqwest;
 
 pub use client_ref::HttpClientRef;
 pub use error::{BoxError, HttpError};
+pub use redact::redacted_url;
 pub use request::{Method, ParseMethodError, Request};
 #[cfg(feature = "reqwest")]
 #[cfg_attr(docsrs, doc(cfg(feature = "reqwest")))]
