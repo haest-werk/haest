@@ -64,18 +64,15 @@ fn empty_answer() -> AssistantMessage {
 
 /// Compact whenever asked.
 const CFG: CompactionOptions = CompactionOptions {
-    context_window: 1,
     threshold: 0.0,
-    ceiling: None,
     keep_recent: 3,
+    ..CompactionOptions::new(1)
 };
 
 /// Compact at 800 tokens.
 const AT_800: CompactionOptions = CompactionOptions {
-    context_window: 1000,
-    threshold: 0.8,
-    ceiling: None,
     keep_recent: 3,
+    ..CompactionOptions::new(1000)
 };
 
 #[test]

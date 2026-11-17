@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
@@ -112,7 +110,7 @@ impl Tool for LooksUp {
 
 #[test]
 fn a_deferred_tool_keeps_what_it_does_on_resume() {
-    let d = Arc::new(ToolDeferral::new(DeferMode::Proxy));
+    let d = ToolDeferral::new(DeferMode::Proxy);
     let tools: Tools = Tools::from_iter([ToolRef::new(LooksUp)]);
     let callable = callable_tools(&d, &tools, marker);
     let pay = callable.iter().find(|t| t.name() == "mcp__x__pay").unwrap();
@@ -178,7 +176,7 @@ fn a_host_may_defer_every_tool_but_the_ones_it_always_needs() {
 
 #[test]
 fn every_tool_is_callable_and_calling_a_deferred_one_loads_it() {
-    let d = Arc::new(ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]));
+    let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]);
     let callable = callable_tools(&d, &host_tools(), marker);
     assert_eq!(
         names(&callable),
@@ -217,5 +215,16 @@ fn the_tools_a_resumed_conversation_called_count_as_loaded() {
     assert_eq!(
         names(&advertised_tools(&d, &host_tools(), marker)),
         ["Read", "ToolSearch", "search_transcripts"]
+    );
+}
+
+#[test]
+fn every_clone_shares_what_is_loaded() {
+    let d = ToolDeferral::new(DeferMode::Grow);
+    let search_side = d.clone();
+    search_side.load(["mcp__x__weather"]);
+    assert!(
+        names(&advertised_tools(&d, &all(), marker)).contains(&"mcp__x__weather"),
+        "a tool one clone loaded is advertised by the other"
     );
 }

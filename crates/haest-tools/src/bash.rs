@@ -236,10 +236,9 @@ impl Tool for BashTool {
     }
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let command = req_str(&input, "command")?;
+        let background = opt_bool(&input, "run_in_background")?;
         match &self.jobs {
-            Some(jobs) if opt_bool(&input, "run_in_background") => {
-                run_in_background(jobs, command, &input, ctx)
-            }
+            Some(jobs) if background => run_in_background(jobs, command, &input, ctx),
             _ => run_now(command, self.timeout(&input)?, ctx).await,
         }
     }

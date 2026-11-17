@@ -99,7 +99,7 @@ fn a_restored_list_continues_the_id_count() {
 
 #[test]
 fn completing_stamps_completed_at_from_the_board_clock() {
-    let b = TaskBoard::with_clock(|_| {}, || 42);
+    let b = TaskBoard::default().with_clock(|| 42);
     b.create(new("a"));
     let patch = TaskPatch {
         status: Some(PatchStatus::Set(TaskStatus::Completed)),
@@ -129,4 +129,13 @@ fn a_restored_id_at_u64_max_does_not_overflow_the_count() {
     b.create(new("y"));
     b.create(new("z"));
     assert_eq!(b.list().len(), 3);
+}
+
+#[test]
+fn every_clone_is_the_same_board() {
+    let host = TaskBoard::default();
+    let tools = host.clone();
+    tools.create(new("a"));
+    assert_eq!(host.list().len(), 1);
+    assert_eq!(host.create(new("b")).id, "2", "one count across clones");
 }

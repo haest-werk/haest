@@ -176,7 +176,7 @@ impl Agent {
             .await;
         // A summary the hook paid for counts toward this turn, and may stop it.
         let side = self.take_side_spend();
-        t.usage.add(&side);
+        t.usage += &side;
         // Cancelled while the hook ran (an Esc during the summary): the turn
         // was aborted, whatever the hook made of it.
         if cancel.is_cancelled() {
@@ -193,7 +193,7 @@ impl Agent {
             );
         }
         let msg = self.call_model(t).await;
-        t.usage.add(&msg.usage);
+        t.usage += &msg.usage;
         t.guard.called(&msg.usage);
         t.record_turn();
         if matches!(msg.stop_reason, StopReason::Error | StopReason::Aborted) {

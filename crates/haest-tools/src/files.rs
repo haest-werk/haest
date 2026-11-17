@@ -145,7 +145,7 @@ impl Tool for EditTool {
             "change it with Bash (sed)",
         )?;
         let text = fs.read_to_string(&path).await?;
-        let all = opt_bool(&input, "replace_all");
+        let all = opt_bool(&input, "replace_all")?;
         let (replaced, count) = replace_checked(&text, old, new, all, &path)?;
         fs.write(&path, replaced.as_bytes()).await?;
         let s = if count == 1 { "" } else { "s" };

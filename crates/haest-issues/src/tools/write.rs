@@ -205,7 +205,7 @@ impl Tool for IssueLinkTool {
                     known.join(", ")
                 ))
             })?;
-        let (change, done) = if opt_bool(&input, "remove") {
+        let (change, done) = if opt_bool(&input, "remove")? {
             (LinkChange::Remove, "Unlinked")
         } else {
             (LinkChange::Add, "Linked")

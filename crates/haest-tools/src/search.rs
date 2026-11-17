@@ -55,7 +55,7 @@ fn rg_args(input: &JsonMap) -> Result<Vec<String>, ToolError> {
     })?;
     let mut args = vec![flag.to_string()];
     for (key, flags) in BOOL_FLAGS {
-        if opt_bool(input, key) {
+        if opt_bool(input, key)? {
             args.extend(flags.iter().map(|f| f.to_string()));
         }
     }

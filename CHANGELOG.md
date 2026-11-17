@@ -60,6 +60,11 @@ value itself, and holds it in a handle named after its trait. Read
    `ShellCall` are built with `new` and `with_*`:
    `ExecOptions { cwd, cancel, timeout }` ->
    `ExecOptions::new(cwd, timeout).with_cancel(cancel)`.
+9. Smaller renames: `total.add(&u)` -> `total += &u` (`Usage`),
+   `opt_bool(input, k)` -> `opt_bool(input, k)?`,
+   `TaskBoard::with_clock(on_change, clock)` ->
+   `TaskBoard::new(on_change).with_clock(clock)`, and `Arc<TaskBoard>` /
+   `Arc<ToolDeferral>` -> `TaskBoard` / `ToolDeferral`.
 
 ### Bug fixes
 
@@ -119,6 +124,10 @@ value itself, and holds it in a handle named after its trait. Read
   and a subagent's life comes as `subagent_started`, its loop events and
   `subagent_stopped` under `["main", "<id>"]`, in place of `notice` lines
   with its name.
+- A flag the model sends as `"yes"` or `1` (`replace_all`,
+  `run_in_background`, `allow_large`, Grep's switches, haest-issues'
+  `remove`) is an input error the model reads, where it was a silent
+  false. `"True"` and `"FALSE"` read as the flag they spell.
 - The `haest` command runs its conversation as a session: the terminal is
   one subscriber of the stream, and what the human sees is as before.
 
@@ -266,6 +275,13 @@ Plug points without `Arc` (breaking):
 - New `skills::Skills`: a host's SKILL.md skills held where every clone sees
   them; `replace` after a rescan and the Skill tool and the prompt read the
   new list on their next call. A `SkillSet` over an `Fs`, like `DiskSkills`.
+- `task_board::TaskBoard` is a cheap `Clone` whose clones are the one
+  board: `Arc<TaskBoard>` -> `TaskBoard`, the host keeps one and the Task
+  tools get another. `TaskBoard::with_clock(on_change, clock)` ->
+  `TaskBoard::new(on_change).with_clock(clock)`, the clock as
+  `impl Into<ClockRef>`.
+- `deferred_tools::ToolDeferral` is a cheap `Clone` whose clones share what
+  is loaded: `Arc<ToolDeferral>` -> `ToolDeferral`.
 
 `Fs` splits its flags (breaking):
 
@@ -294,6 +310,8 @@ Room to grow (breaking):
   env, stdin, fs, cancel, ends_at }` -> `ShellCall::new(args, cwd, fs,
   ends_at)` (`with_env`, `with_stdin`, `with_cancel`).
 
+Turn endings and small idioms (breaking):
+
 - `TurnOutcome`, `run::RunEnd` and `run::RunOutcome` gain `limit:
   Option<Limit>`, the cap that stopped the turn (a turn cap, the
   conversation's budget, a request too big to send, a threshold that
@@ -304,6 +322,18 @@ Room to grow (breaking):
   `CompactionError::Failed { reason, usage }`.
 - `error::BoxError` wherever the box was spelled out:
   `ModelError::Unavailable`'s `source`, and the examples' hooks.
+- `Usage` adds up with `+=` (`&Usage` or `Usage`) and `Sum`:
+  `total.add(&u)` -> `total += &u`, `calls.iter().sum::<Usage>()`.
+  `Usage::add` is gone.
+- `tool::opt_bool` returns `Result<bool, ToolError>`, like `opt_num` and
+  `opt_str`: `if opt_bool(input, "all")` -> `if opt_bool(input, "all")?`.
+  Missing, `null` and `""` are false; `true`/`false` in any case, as a
+  boolean or a string, are the flag; anything else is `ToolError::Input`.
+- New `CompactionOptions::new(context_window)`: compact at `COMPACT_SHARE`
+  of the window, no ceiling, keep about the new `compaction::KEEP_RECENT`
+  (12) messages, which is what haest-runtime does. `CompactionOptions {
+  context_window, threshold: COMPACT_SHARE, ceiling: None, keep_recent: 12 }`
+  -> `CompactionOptions::new(context_window)`.
 
 Durable runs, opt-in: a host that hands no run store gets the haest it had.
 

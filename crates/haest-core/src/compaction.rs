@@ -29,6 +29,10 @@ use crate::{
 /// [`CompactionOptions::threshold`]).
 pub const COMPACT_SHARE: f64 = 0.8;
 
+/// About how many messages haest-runtime keeps verbatim after a summary (its
+/// [`CompactionOptions::keep_recent`]).
+pub const KEEP_RECENT: usize = 12;
+
 /// When to compact, and how much to keep.
 ///
 /// It is the compaction threshold ([`threshold`](crate::threshold)): it reads
@@ -36,6 +40,16 @@ pub const COMPACT_SHARE: f64 = 0.8;
 /// the window or `ceiling` when that is lower, and it compacts at every check
 /// it is past the mark ([`Rearm::EveryCheck`]: a check that found nothing to
 /// cut tries again at the next). [`needs_compaction`] is its check.
+///
+/// [`new`](Self::new) is haest-runtime's choice for a window; change a field
+/// with struct update syntax:
+///
+/// ```
+/// use haest_core::compaction::CompactionOptions;
+///
+/// let cfg = CompactionOptions { ceiling: Some(150_000), ..CompactionOptions::new(1_000_000) };
+/// assert_eq!((cfg.threshold, cfg.keep_recent), (0.8, 12));
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompactionOptions {
     /// The model's context window, in tokens.
@@ -46,6 +60,20 @@ pub struct CompactionOptions {
     pub ceiling: Option<u64>,
     /// Roughly how many recent messages to keep verbatim.
     pub keep_recent: usize,
+}
+
+impl CompactionOptions {
+    /// Compact at [`COMPACT_SHARE`] of `context_window` tokens, with no
+    /// ceiling, keeping about [`KEEP_RECENT`] messages.
+    #[must_use]
+    pub const fn new(context_window: u64) -> Self {
+        Self {
+            context_window,
+            threshold: COMPACT_SHARE,
+            ceiling: None,
+            keep_recent: KEEP_RECENT,
+        }
+    }
 }
 
 impl Threshold for CompactionOptions {
@@ -266,7 +294,7 @@ impl CompactionError {
 ///
 /// // The summary request is answered first, then the turn's own call.
 /// let provider = ScriptedProvider::new([text_answer("Earlier: a and b."), text_answer("done")]);
-/// let cfg = CompactionOptions { context_window: 1_000, threshold: 0.8, ceiling: None, keep_recent: 2 };
+/// let cfg = CompactionOptions { keep_recent: 2, ..CompactionOptions::new(1_000) };
 /// let deps = AgentDeps::new(provider.resolver(), Tools::new(), "", "/", ShutWorkspace)
 ///     .with_hooks(Compacting(cfg));
 ///

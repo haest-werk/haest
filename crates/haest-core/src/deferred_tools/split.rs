@@ -2,8 +2,6 @@
 //! tools its source has. haest-tools' `DeferredTools` is the one caller; it
 //! reaches these through `haest_core::__private`.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -44,7 +42,7 @@ pub fn advertised_tools(
 /// which loads itself when the model calls it by name. With nothing
 /// deferring this is `all`, and `deferral_tools` is not called.
 pub fn callable_tools(
-    deferral: &Arc<ToolDeferral>,
+    deferral: &ToolDeferral,
     all: &Tools,
     deferral_tools: impl FnOnce(&[ToolRef]) -> Tools,
 ) -> Tools {
@@ -63,7 +61,7 @@ pub fn callable_tools(
 /// A deferred tool as a call runs it: called by name, it counts as loaded.
 struct Loading {
     tool: ToolRef,
-    deferral: Arc<ToolDeferral>,
+    deferral: ToolDeferral,
 }
 
 #[async_trait]

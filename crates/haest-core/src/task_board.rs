@@ -14,15 +14,19 @@
 //! # Examples
 //!
 //! ```
-//! use std::sync::{Arc, Mutex};
+//! use std::sync::mpsc;
 //!
-//! use haest_core::task_board::{NewTask, PatchStatus, TaskBoard, TaskPatch, TaskStatus};
+//! use haest_core::task_board::{NewTask, PatchStatus, Task, TaskBoard, TaskPatch, TaskStatus};
 //!
-//! let published = Arc::new(Mutex::new(0));
-//! let seen = published.clone();
-//! let board = TaskBoard::new(move |_tasks| *seen.lock().unwrap() += 1);
+//! // Where the host saves and publishes each snapshot.
+//! let (save, saved) = mpsc::channel();
+//! let board = TaskBoard::new(move |tasks: &[Task]| {
+//!     let _ = save.send(tasks.to_vec());
+//! });
+//! // The Task tools get a clone; it is the same board.
+//! let tools_board = board.clone();
 //!
-//! let schema = board.create(NewTask { subject: "Write the schema".into(), ..Default::default() });
+//! let schema = tools_board.create(NewTask { subject: "Write the schema".into(), ..Default::default() });
 //! let api = board.create(NewTask { subject: "Write the API".into(), ..Default::default() });
 //! board.update(&api.id, TaskPatch { add_blocked_by: vec![schema.id.clone()], ..Default::default() })?;
 //! let done = TaskPatch { status: Some(PatchStatus::Set(TaskStatus::Completed)), ..Default::default() };
@@ -30,7 +34,7 @@
 //!
 //! assert_eq!(board.get("2")?.blocked_by, ["1"]);
 //! assert_eq!(board.get("1")?.status, TaskStatus::Completed);
-//! assert_eq!(*published.lock().unwrap(), 4, "one snapshot per change");
+//! assert_eq!(saved.try_iter().count(), 4, "one snapshot per change");
 //! # Ok::<(), haest_core::task_board::TaskError>(())
 //! ```
 
@@ -38,13 +42,13 @@ mod task;
 #[cfg(test)]
 mod tests;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub use task::{NewTask, PatchStatus, Task, TaskError, TaskPatch, TaskStatus};
 
-use crate::deps::{Clock, WallClock};
+use crate::deps::{ClockRef, WallClock};
 
-type OnChange = Box<dyn Fn(&[Task]) + Send + Sync>;
+type OnChange = Arc<dyn Fn(&[Task]) + Send + Sync>;
 
 struct State {
     /// Insertion order is list order.
@@ -85,16 +89,19 @@ impl State {
     }
 }
 
-/// The conversation's task list: create, update, list. Shared by reference
-/// (an `Arc`) between the Task tools and the host.
+/// The conversation's task list: create, update, list.
+///
+/// A cheap `Clone`: every clone is the same board, so the host keeps one and
+/// hands the Task tools another.
 ///
 /// Every change hands the whole new list to `on_change`, with the board's lock
 /// released, so `on_change` may read the board. [`Default`] is a board whose
 /// `on_change` does nothing.
+#[derive(Clone)]
 pub struct TaskBoard {
-    state: Mutex<State>,
+    state: Arc<Mutex<State>>,
     on_change: OnChange,
-    clock: Box<dyn Clock>,
+    clock: ClockRef,
 }
 
 impl Default for TaskBoard {
@@ -107,23 +114,23 @@ impl TaskBoard {
     /// An empty board that hands every new snapshot to `on_change`; the clock
     /// is the [`WallClock`].
     pub fn new(on_change: impl Fn(&[Task]) + Send + Sync + 'static) -> Self {
-        Self::with_clock(on_change, WallClock)
-    }
-
-    /// Same, with the clock `updated_at` reads (a host's paused clock, a test's
-    /// fixed one; any `Fn() -> u64` is a [`Clock`]).
-    pub fn with_clock(
-        on_change: impl Fn(&[Task]) + Send + Sync + 'static,
-        clock: impl Clock + 'static,
-    ) -> Self {
         Self {
-            state: Mutex::new(State {
+            state: Arc::new(Mutex::new(State {
                 tasks: Vec::new(),
                 next: 1,
-            }),
-            on_change: Box::new(on_change),
-            clock: Box::new(clock),
+            })),
+            on_change: Arc::new(on_change),
+            clock: ClockRef::new(WallClock),
         }
+    }
+
+    /// The clock `updated_at` reads (a host's paused clock, a test's fixed
+    /// one; any `Fn() -> u64` is a [`Clock`](crate::deps::Clock)). Set it before
+    /// the board is cloned: a clone made earlier keeps the old clock.
+    #[must_use]
+    pub fn with_clock(mut self, clock: impl Into<ClockRef>) -> Self {
+        self.clock = clock.into();
+        self
     }
 
     /// Every task, in the order they were created.

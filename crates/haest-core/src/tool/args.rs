@@ -12,15 +12,21 @@ use super::{JsonMap, ToolError};
 /// [`ToolError::Input`] when `key` is missing, empty or not a string.
 ///
 /// ```
-/// use haest_core::tool::{opt_bool, opt_num, opt_str, req_str};
+/// use haest_core::tool::{JsonMap, opt_bool, opt_num, opt_str, req_str};
 ///
-/// let input = serde_json::json!({"path": "a.txt", "limit": "20", "all": "true", "glob": ""});
-/// let input = input.as_object().unwrap();
-/// assert_eq!(req_str(input, "path").unwrap(), "a.txt");
-/// assert_eq!(opt_num(input, "limit").unwrap(), Some(20.0));
-/// assert!(opt_bool(input, "all"));
-/// assert_eq!(opt_str(input, "glob").unwrap(), None); // "" counts as left out
+/// # fn main() -> Result<(), haest_core::error::BoxError> {
+/// let input: JsonMap = serde_json::from_value(serde_json::json!({
+///     "path": "a.txt", "limit": "20", "all": "true", "glob": "", "force": "yes"
+/// }))?;
+/// let input = &input;
+/// assert_eq!(req_str(input, "path")?, "a.txt");
+/// assert_eq!(opt_num(input, "limit")?, Some(20.0));
+/// assert!(opt_bool(input, "all")?);
+/// assert_eq!(opt_str(input, "glob")?, None); // "" counts as left out
 /// assert!(req_str(input, "missing").is_err());
+/// assert!(opt_bool(input, "force").is_err()); // "yes" is not a boolean
+/// # Ok(())
+/// # }
 /// ```
 pub fn req_str<'a>(input: &'a JsonMap, key: &str) -> Result<&'a str, ToolError> {
     match input.get(key) {
@@ -66,12 +72,25 @@ pub fn opt_num(input: &JsonMap, key: &str) -> Result<Option<f64>, ToolError> {
         .ok_or_else(|| ToolError::Input(format!("\"{key}\" must be a number")))
 }
 
-/// `true` or `"true"`; anything else is false.
-pub fn opt_bool(input: &JsonMap, key: &str) -> bool {
+/// A flag: `true` and `false`, also as strings in any case (`"True"`).
+/// Missing, `null` and `""` are false.
+///
+/// # Errors
+///
+/// [`ToolError::Input`] when `key` holds anything else (`"yes"`, `1`): the
+/// model is told to send a boolean, instead of the flag being read as false.
+pub fn opt_bool(input: &JsonMap, key: &str) -> Result<bool, ToolError> {
+    let bad = || ToolError::Input(format!("\"{key}\" must be true or false"));
     match input.get(key) {
-        Some(Value::Bool(b)) => *b,
-        Some(Value::String(s)) => s == "true",
-        _ => false,
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(b)) => Ok(*b),
+        Some(Value::String(s)) => match s.trim() {
+            "" => Ok(false),
+            t if t.eq_ignore_ascii_case("true") => Ok(true),
+            t if t.eq_ignore_ascii_case("false") => Ok(false),
+            _ => Err(bad()),
+        },
+        Some(_) => Err(bad()),
     }
 }
 

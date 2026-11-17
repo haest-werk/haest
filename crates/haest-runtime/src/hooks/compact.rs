@@ -7,15 +7,12 @@ use tokio_util::sync::CancellationToken;
 use super::RuntimeHooks;
 use crate::haest::{
     Agent,
-    core::compaction::{COMPACT_SHARE, CompactionError, CompactionOptions, compact},
+    core::compaction::{CompactionError, CompactionOptions, compact},
     core::error::report,
     core::messages::Usage,
     core::session::SessionRecord,
     now_ms,
 };
-
-/// Messages kept verbatim after a compaction summary (the TS haest's number).
-const KEEP_RECENT: usize = 12;
 
 impl RuntimeHooks {
     /// When to compact a conversation on the model `spec`: at 80% of its
@@ -23,10 +20,8 @@ impl RuntimeHooks {
     /// lower and not 0. About the last 12 messages are kept as they are.
     pub fn compaction_for(&self, spec: &str) -> CompactionOptions {
         CompactionOptions {
-            context_window: self.window(spec),
-            threshold: COMPACT_SHARE,
             ceiling: Some(self.settings.caps.compact_at).filter(|n| *n > 0),
-            keep_recent: KEEP_RECENT,
+            ..CompactionOptions::new(self.window(spec))
         }
     }
 

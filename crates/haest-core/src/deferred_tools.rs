@@ -27,7 +27,10 @@
 //!
 //! The ToolSearch / CallTool tools themselves live in `haest-tools` (`tool_search`).
 
-use std::{collections::HashSet, sync::Mutex};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     messages::Message,
@@ -89,8 +92,10 @@ pub fn search_tools(pool: &[ToolRef], query: &str) -> Tools {
         .collect()
 }
 
-/// One agent's deferral state: which deferred tools it has loaded. Shared (`Arc`)
-/// between the host's tool source and the ToolSearch tool that loads them.
+/// One agent's deferral state: which deferred tools it has loaded.
+///
+/// A cheap `Clone`: every clone shares what is loaded, so the host's tool
+/// source and the ToolSearch tool that loads them hold the same deferral.
 ///
 /// By default MCP tools (names starting `mcp__`) defer, except those a host
 /// keeps loaded ([`with_always_loaded`](Self::with_always_loaded)).
@@ -110,12 +115,13 @@ pub fn search_tools(pool: &[ToolRef], query: &str) -> Tools {
 /// // tool joins the advertised list from the next call on.
 /// deferral.load(["mcp__docs__search"]);
 /// ```
+#[derive(Clone)]
 pub struct ToolDeferral {
     mode: DeferMode,
-    loaded: Mutex<HashSet<String>>,
-    always_loaded: Vec<String>,
+    loaded: Arc<Mutex<HashSet<String>>>,
+    always_loaded: Arc<[String]>,
     /// `Some`: every tool defers but these names. `None`: MCP tools only.
-    all_but: Option<HashSet<String>>,
+    all_but: Option<Arc<HashSet<String>>>,
 }
 
 impl ToolDeferral {
@@ -123,8 +129,8 @@ impl ToolDeferral {
     pub fn new(mode: DeferMode) -> Self {
         Self {
             mode,
-            loaded: Mutex::default(),
-            always_loaded: Vec::new(),
+            loaded: Arc::default(),
+            always_loaded: Arc::new([]),
             all_but: None,
         }
     }
@@ -132,6 +138,7 @@ impl ToolDeferral {
     /// Name suffixes of MCP tools that are never deferred: the ones a turn
     /// must not wait on a ToolSearch for (a host's `__send_message`, so a
     /// reply to another conversation goes out at once). None by default.
+    #[must_use]
     pub fn with_always_loaded(mut self, suffixes: impl IntoIterator<Item = String>) -> Self {
         self.always_loaded = suffixes.into_iter().collect();
         self
@@ -139,8 +146,9 @@ impl ToolDeferral {
 
     /// Defer EVERY tool, the host's own too, except these names (the ones
     /// nearly every turn uses). MCP tools matching [`Self::with_always_loaded`] stay too.
+    #[must_use]
     pub fn deferring_all_except(mut self, names: impl IntoIterator<Item = String>) -> Self {
-        self.all_but = Some(names.into_iter().collect());
+        self.all_but = Some(Arc::new(names.into_iter().collect()));
         self
     }
 

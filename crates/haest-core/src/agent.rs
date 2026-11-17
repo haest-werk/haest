@@ -179,7 +179,7 @@ impl Agent {
     /// A model call made for this conversation outside the loop (compaction's
     /// summary): it counts toward the running turn's caps before its next model call.
     pub(crate) fn spent_outside_the_loop(&mut self, usage: &Usage) {
-        self.side_spend.add(usage);
+        self.side_spend += usage;
     }
 
     /// What was spent outside the loop since the last look.

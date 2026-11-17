@@ -15,7 +15,15 @@ fn input_helpers_accept_what_models_send() {
     // "" for a number is no number.
     assert_eq!(opt_num(&i, "e").unwrap(), None);
     assert_eq!(opt_num(&i, "blank").unwrap(), None);
-    assert!(opt_bool(&i, "b"));
+    assert!(opt_bool(&i, "b").unwrap());
+    assert!(!opt_bool(&i, "e").unwrap(), "\"\" is a flag left out");
+    assert!(!opt_bool(&i, "missing").unwrap());
+    let flags = map(json!({"t": "True", "f": " false ", "yes": "yes", "one": 1}));
+    assert!(opt_bool(&flags, "t").unwrap());
+    assert!(!opt_bool(&flags, "f").unwrap());
+    for not_a_flag in ["yes", "one"] {
+        assert!(opt_bool(&flags, not_a_flag).is_err(), "{not_a_flag}");
+    }
     assert!(opt_num(&map(json!({"n": "x"})), "n").is_err());
 }
 

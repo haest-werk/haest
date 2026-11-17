@@ -114,6 +114,6 @@ pub(super) async fn summarize(
         *cold_why = format!("{cold_why} (the warm request: {warm_why})");
     }
     // The cold call came after the warm one: both were paid for.
-    cold.usage.add(&warm.usage);
+    cold.usage += &warm.usage;
     Ok((cold, SummaryPath::Cold))
 }

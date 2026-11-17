@@ -48,15 +48,15 @@ fn a_ts_user_turn_with_media_round_trips() {
 #[test]
 fn usage_adds_cost_only_when_reported() {
     let mut u = Usage::default();
-    u.add(&Usage {
+    u += &Usage {
         input: 5,
         ..Default::default()
-    });
+    };
     assert_eq!(u.cost_usd, None);
-    u.add(&Usage {
+    u += Usage {
         cost_usd: Some(0.25),
         ..Default::default()
-    });
+    };
     assert_eq!(u.cost_usd, Some(0.25));
     assert_eq!(u.context_tokens(), 5);
 }
@@ -74,7 +74,7 @@ fn usage_sums_and_totals_saturate_at_u64_max() {
         cost_usd: None,
     };
     let mut sum = max.clone();
-    sum.add(&max);
+    sum += &max;
     assert_eq!(sum, max);
     assert_eq!(max.context_tokens(), u64::MAX);
 }

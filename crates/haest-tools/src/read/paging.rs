@@ -100,7 +100,8 @@ fn at_least_one(input: &JsonMap, key: &str, default: usize) -> Result<usize, Too
 ///
 /// # Errors
 ///
-/// [`ToolError::Input`] when `offset` or `limit` is not a number.
+/// [`ToolError::Input`] when `offset` or `limit` is not a number, or
+/// `allow_large` is not a boolean.
 pub fn read_text_output(
     text: &str,
     bytes: usize,
@@ -111,7 +112,7 @@ pub fn read_text_output(
     // A closing newline ends the last line; it does not start one (`wc -l`'s count).
     let body = text.strip_suffix('\n').unwrap_or(text);
     let lines: Vec<&str> = body.split('\n').collect();
-    let allow_large = opt_bool(input, "allow_large");
+    let allow_large = opt_bool(input, "allow_large")?;
     let start = at_least_one(input, "offset", 1)?;
     let default_limit = if allow_large {
         lines.len()
