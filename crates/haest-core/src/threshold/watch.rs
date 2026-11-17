@@ -119,6 +119,15 @@ impl<S: Site> Thresholds<S> {
     }
 }
 
+impl<'a, S: Site> IntoIterator for &'a Thresholds<S> {
+    type Item = &'a ThresholdRef;
+    type IntoIter = std::slice::Iter<'a, ThresholdRef>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl<S: Site> Default for Thresholds<S> {
     fn default() -> Self {
         Self {

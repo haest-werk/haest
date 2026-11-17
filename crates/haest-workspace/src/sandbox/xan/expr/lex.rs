@@ -50,7 +50,7 @@ pub(super) fn tokenize(src: &str) -> Result<Vec<(Tok, usize)>, String> {
             let end = number_end(b, i);
             let n = src[i..end]
                 .parse()
-                .map_err(|_| format!("not a number: {}", &src[i..end]))?;
+                .map_err(|_not_a_number| format!("not a number: {}", &src[i..end]))?;
             i = end;
             Tok::Num(n)
         } else if c.is_alphabetic() || c == '_' {

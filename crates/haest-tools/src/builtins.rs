@@ -178,6 +178,7 @@ impl BuiltinOptions {
     /// PLUG POINT: asked before the workspace fs on every Read, so a host can
     /// answer some paths itself (an `attachment:<id>` that is no path at
     /// all). [`ReadIntercept`](crate::ReadIntercept) has an example.
+    #[must_use]
     pub fn with_read_intercept(mut self, intercept: impl Into<ReadInterceptRef>) -> Self {
         self.read_intercept = Some(intercept.into());
         self
@@ -185,18 +186,21 @@ impl BuiltinOptions {
 
     /// Bash's default timeout, and the job hub that adds background jobs
     /// (with BashOutput and KillShell).
+    #[must_use]
     pub fn with_bash(mut self, bash: BashOptions) -> Self {
         self.bash = bash;
         self
     }
 
     /// WebFetch over `net`: a host with its own resolver or client.
+    #[must_use]
     pub fn with_web_fetch(mut self, net: WebFetchNet) -> Self {
         self.web_fetch = Some(net);
         self
     }
 
     /// No WebFetch: a host with its own fetch, or no door to the network.
+    #[must_use]
     pub fn without_web_fetch(mut self) -> Self {
         self.web_fetch = None;
         self
@@ -204,12 +208,14 @@ impl BuiltinOptions {
 
     /// The task tools, over `board` (the host keeps a clone, to show the
     /// list and save it with the session).
+    #[must_use]
     pub fn with_tasks(mut self, board: TaskBoard) -> Self {
         self.tasks = Some(board);
         self
     }
 
     /// The Skill tool, reading what `skill` offers.
+    #[must_use]
     pub fn with_skill(mut self, skill: SkillToolOptions) -> Self {
         self.skill = Some(skill);
         self

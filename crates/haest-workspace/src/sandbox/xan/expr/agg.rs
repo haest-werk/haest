@@ -85,7 +85,7 @@ impl AggFn {
                 num_or_null(match n {
                     0 => None,
                     _ if n % 2 == 1 => Some(v[n / 2]),
-                    _ => Some((v[n / 2 - 1] + v[n / 2]) / 2.0),
+                    _ => Some(f64::midpoint(v[n / 2 - 1], v[n / 2])),
                 })
             }
             AggFn::Min | AggFn::Max => {

@@ -60,25 +60,28 @@ pub struct TurnCaps {
 impl TurnCaps {
     /// The [`Limit`] for `max_turn_usd`: the turn's, or the subagent's.
     pub(crate) fn usd_limit(&self) -> Limit {
-        match self.subagent {
-            true => Limit::SubagentUsd(self.max_turn_usd),
-            false => Limit::TurnUsd(self.max_turn_usd),
+        if self.subagent {
+            Limit::SubagentUsd(self.max_turn_usd)
+        } else {
+            Limit::TurnUsd(self.max_turn_usd)
         }
     }
 
     /// The [`Limit`] for `max_turn_steps`: the turn's, or the subagent's.
     pub(crate) fn steps_limit(&self) -> Limit {
-        match self.subagent {
-            true => Limit::SubagentSteps(self.max_turn_steps),
-            false => Limit::TurnSteps(self.max_turn_steps),
+        if self.subagent {
+            Limit::SubagentSteps(self.max_turn_steps)
+        } else {
+            Limit::TurnSteps(self.max_turn_steps)
         }
     }
 
     /// The [`Limit`] for `max_turn_time`: the turn's, or the subagent's.
     pub(crate) fn time_limit(&self) -> Limit {
-        match self.subagent {
-            true => Limit::SubagentTime(self.max_turn_time),
-            false => Limit::TurnTime(self.max_turn_time),
+        if self.subagent {
+            Limit::SubagentTime(self.max_turn_time)
+        } else {
+            Limit::TurnTime(self.max_turn_time)
         }
     }
 }

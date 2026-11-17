@@ -58,3 +58,47 @@ unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "warn"
 # The 2018-edition idioms, e.g. no hidden lifetime in a path (`Value<'_>`).
 rust_2018_idioms = { level = "warn", priority = -1 }
+
+# clippy's default groups stay on; these are picked from restriction and
+# pedantic for what they catch in a library. Settings: clippy.toml.
+[workspace.lints.clippy]
+# A suppression is an `#[expect]` with a reason, so it expires when unneeded.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+# One unsafe operation per block, each under a SAFETY comment, pointers made with `&raw`.
+undocumented_unsafe_blocks = "warn"
+multiple_unsafe_ops_per_block = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+borrow_as_ptr = "warn"
+# A library never prints (a host may speak a protocol on stdout) nor exits.
+print_stdout = "warn"
+print_stderr = "warn"
+exit = "warn"
+# No debugging leftovers or placeholders in a published crate.
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+# A replaced error stays the new one's source, or its binding says why not.
+map_err_ignore = "warn"
+# A public function's docs say how it fails and when it panics.
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+# API shape: no flag soup, no hasher lock-in, no `Option<Option<_>>`, no
+# needless `async`, `for x in &c` where `c.iter()` exists, `#[must_use]` setters.
+fn_params_excessive_bools = "warn"
+struct_excessive_bools = "warn"
+implicit_hasher = "warn"
+option_option = "warn"
+unused_async = "warn"
+iter_without_into_iter = "warn"
+into_iter_without_iter = "warn"
+return_self_not_must_use = "warn"
+# A hand-written Debug that leaves fields out says so (`finish_non_exhaustive`).
+missing_fields_in_debug = "warn"
+# Small correctness: lossless casts through `From`, a midpoint that cannot
+# overflow, file extensions compared without case, a bool matched by `if`.
+cast_lossless = "warn"
+manual_midpoint = "warn"
+case_sensitive_file_extension_comparisons = "warn"
+match_bool = "warn"

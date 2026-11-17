@@ -6,7 +6,7 @@
 //! workspaces (`haest-workspace`) and MCP servers (`haest-mcp`) start their
 //! processes with a [`ChildEnv`].
 
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, fmt, hash::BuildHasher, sync::Arc};
 
 /// Named values a provider asks the host for: its key and endpoint overrides
 /// (`OPENROUTER_API_KEY`, `ANTHROPIC_BASE_URL`, a providers.json entry's
@@ -40,7 +40,7 @@ impl<F: Fn(&str) -> Option<String> + Send + Sync> KeySource for F {
     }
 }
 
-impl KeySource for HashMap<String, String> {
+impl<S: BuildHasher + Send + Sync> KeySource for HashMap<String, String, S> {
     fn key(&self, name: &str) -> Option<String> {
         self.get(name).filter(|v| !v.is_empty()).cloned()
     }
@@ -100,6 +100,7 @@ impl ChildEnv {
     }
 
     /// These variables with `over`'s on top: a name in both has `over`'s value.
+    #[must_use]
     pub fn with(&self, over: &ChildEnv) -> ChildEnv {
         if over.0.is_empty() {
             return self.clone();

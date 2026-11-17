@@ -14,7 +14,7 @@
 use std::{
     collections::HashSet,
     fmt,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -202,7 +202,7 @@ impl ApprovalGate {
             return Decision::Deny;
         }
         let key = rule_key(&req);
-        if self.always.lock().unwrap().contains(&key) {
+        if self.lock_always().contains(&key) {
             self.prompter.auto_approved(&req);
             return Decision::Allow;
         }
@@ -214,7 +214,7 @@ impl ApprovalGate {
         match answer {
             ApprovalAnswer::Allow => Decision::Allow,
             ApprovalAnswer::AllowAlways => {
-                self.always.lock().unwrap().insert(key);
+                self.lock_always().insert(key);
                 Decision::Allow
             }
             ApprovalAnswer::Deny => Decision::Deny,
@@ -225,10 +225,12 @@ impl ApprovalGate {
     /// every ask of that tool prompts again.
     pub fn revoke(&self, tool_name: &str) {
         let prefix = format!("{tool_name}\n");
-        self.always
-            .lock()
-            .unwrap()
-            .retain(|k| !k.starts_with(&prefix));
+        self.lock_always().retain(|k| !k.starts_with(&prefix));
+    }
+
+    /// The ALWAYS answers, held until the guard drops.
+    fn lock_always(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.always.lock().unwrap()
     }
 
     /// The host's whole [`ModUi`]: [`ask`](ModUi::ask) through this gate,

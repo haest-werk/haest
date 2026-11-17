@@ -142,66 +142,77 @@ impl ToolContext {
     }
 
     /// This context in `cwd`.
+    #[must_use]
     pub fn with_cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
         self.cwd = cwd.into();
         self
     }
 
     /// This context, cancelled by `cancel`.
+    #[must_use]
     pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
         self.cancel = cancel;
         self
     }
 
     /// This context over `workspace`.
+    #[must_use]
     pub fn with_workspace(mut self, workspace: impl Into<WorkspaceRef>) -> Self {
         self.workspace = workspace.into();
         self
     }
 
     /// This context with the host's `services`.
+    #[must_use]
     pub fn with_services(mut self, services: impl Into<ToolServicesRef>) -> Self {
         self.services = services.into();
         self
     }
 
     /// This context with `tokens` of room before the request cap.
+    #[must_use]
     pub fn with_context_room_tokens(mut self, tokens: u64) -> Self {
         self.context_room_tokens = Some(tokens);
         self
     }
 
     /// This context for the call `id`.
+    #[must_use]
     pub fn with_tool_call_id(mut self, id: impl Into<String>) -> Self {
         self.tool_call_id = Some(id.into());
         self
     }
 
     /// This context, spilling big results into `dir`.
+    #[must_use]
     pub fn with_spill_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.spill_dir = Some(dir.into());
         self
     }
 
     /// This context inside the durable run `key`.
+    #[must_use]
     pub fn with_run_key(mut self, key: RunKey) -> Self {
         self.run_key = Some(key);
         self
     }
 
     /// This context for the `attempt` run of its call ([`Self::attempt`]).
+    #[must_use]
     pub fn with_attempt(mut self, attempt: Attempt) -> Self {
         self.attempt = attempt;
         self
     }
 
     /// This context with `left` of the turn's time cap.
+    #[must_use]
     pub fn with_turn_time_left(mut self, left: Duration) -> Self {
         self.turn_time_left = Some(left);
         self
     }
 
     /// This context, winding down as `watch` says.
+    #[must_use]
     pub fn with_wind_down(mut self, watch: WindDownWatch) -> Self {
         self.wind_down = watch;
         self

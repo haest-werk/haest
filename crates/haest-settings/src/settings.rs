@@ -49,6 +49,10 @@ pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 /// assert_eq!(review.data_dir, std::path::PathBuf::from("/home/me/.local/share/haest"));
 /// ```
 #[derive(Debug, Clone, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "one field per on/off setting of the settings file, each independent"
+)]
 pub struct Settings {
     /// The working directory: relative paths resolve against it, and
     /// instruction files and skills are looked for from it upward.

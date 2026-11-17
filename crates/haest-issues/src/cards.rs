@@ -123,6 +123,7 @@ impl CardTracker {
     /// The clock a new card's `created:` (and a fallback id) comes from; the
     /// [`WallClock`] by default. A test passes its own to fix the dates (any
     /// `Fn() -> u64` is a [`Clock`](haest_core::Clock)).
+    #[must_use]
     pub fn with_clock(mut self, clock: impl Into<ClockRef>) -> Self {
         self.clock = clock.into();
         self

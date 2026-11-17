@@ -210,7 +210,7 @@ impl<D: Driven> SessionHandle<D> {
     }
 
     fn send(&self, cmd: Command<D>) -> Result<(), SessionError> {
-        self.tx.send(cmd).map_err(|_| SessionError::Closed)
+        self.tx.send(cmd).map_err(|_closed| SessionError::Closed)
     }
 
     /// Ask the driver; its reply, or Closed when it has ended.
@@ -220,7 +220,7 @@ impl<D: Driven> SessionHandle<D> {
     ) -> Result<T, SessionError> {
         let (tx, rx) = oneshot::channel();
         self.send(cmd(tx))?;
-        rx.await.map_err(|_| SessionError::Closed)
+        rx.await.map_err(|_closed| SessionError::Closed)
     }
 
     /// Run `f` on the conversation between turns (after the running one
@@ -247,7 +247,7 @@ impl<D: Driven> SessionHandle<D> {
             })
         });
         self.send(Command::With(job))?;
-        rx.await.map_err(|_| SessionError::Closed)
+        rx.await.map_err(|_closed| SessionError::Closed)
     }
 
     /// Hold the session: once the running turn ends, no turn starts until

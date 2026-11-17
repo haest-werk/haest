@@ -183,7 +183,9 @@ pub(crate) async fn call_image_api(
     let not_an_image = || ImageError::NotAnImage {
         model: model.into(),
     };
-    let bytes = STANDARD.decode(b64.trim()).map_err(|_| not_an_image())?;
+    let bytes = STANDARD
+        .decode(b64.trim())
+        .map_err(|_not_base64| not_an_image())?;
     let media_type = sniff_image_type(&bytes)
         .map(String::from)
         .or_else(|| first["media_type"].as_str().map(String::from))

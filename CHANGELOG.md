@@ -31,6 +31,13 @@ The workspace has a lint table (`[workspace.lints]` in the root
 `Cargo.toml`), and every crate takes it: docs and `Debug` on every public
 item, `pub` only where a host can reach it, no type a host gets but cannot
 name, and unsafe code denied except where a site claims it with a reason.
+Clippy's picks from its restriction and pedantic groups come with it: a
+library never prints or exits, a public function documents how it fails
+and when it panics, and every `with_*` setter is `#[must_use]`, so a host
+that drops the value a setter returned (`deps.with_hooks(h);`, which never
+set anything) now gets a warning. `env_var` and the `HashMap`
+`KeySource` take a map with any hasher, and `&Thresholds` iterates in a
+`for` loop.
 
 ### Upgrading
 

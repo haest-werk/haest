@@ -83,6 +83,10 @@ fn turn_started(frame: &Frame) -> bool {
 /// [`wind_down`]. Between turns it does nothing here: the prompt reads its
 /// own Ctrl+C, and print mode's wait has its own ([`settle`]). `stream`
 /// says when a new turn starts; the watch ends with it.
+#[expect(
+    clippy::exit,
+    reason = "a second Ctrl+C quits the CLI with the shell's 130"
+)]
 pub(crate) fn watch_interrupts(brakes: Arc<Brakes>, mut stream: Subscription) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut asked = false;

@@ -171,7 +171,7 @@ pub fn strip_types(source: &str, filename: &str) -> Result<String, StripError> {
         .spawn(move || strip_here(&owned, &name))
         .map_err(StripError::Spawn)?
         .join()
-        .map_err(|_| StripError::Panicked)?;
+        .map_err(|_panic| StripError::Panicked)?;
     stripped.map_err(|message| StripError::Syntax { message })
 }
 

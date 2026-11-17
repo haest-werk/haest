@@ -126,6 +126,7 @@ impl CompatOptions {
     }
 
     /// These options with OpenRouter's extras, or the plain body.
+    #[must_use]
     pub fn with_flavor(mut self, flavor: CompatFlavor) -> Self {
         self.flavor = flavor;
         self
@@ -133,6 +134,7 @@ impl CompatOptions {
 
     /// These options sending to `url` (`<url>/chat/completions`) instead of
     /// OpenAI's own.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = Some(url.into());
         self
@@ -140,6 +142,7 @@ impl CompatOptions {
 
     /// These options sending `name: value` on every request, after the ones
     /// before it.
+    #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((name.into(), value.into()));
         self
@@ -147,6 +150,7 @@ impl CompatOptions {
 
     /// These options sending a top-level `reasoning_effort`, fitted to the
     /// levels `reasoning` lists.
+    #[must_use]
     pub fn with_reasoning_effort(mut self, reasoning: Reasoning) -> Self {
         self.reasoning_effort = Some(reasoning);
         self
@@ -154,6 +158,7 @@ impl CompatOptions {
 
     /// These options with `pricing` added, by model id, over the prices
     /// already set.
+    #[must_use]
     pub fn with_pricing(
         mut self,
         pricing: impl IntoIterator<Item = (impl Into<String>, ModelPricing)>,
@@ -164,6 +169,7 @@ impl CompatOptions {
     }
 
     /// These options sending OpenRouter provider routing (OpenRouter only).
+    #[must_use]
     pub fn with_routing(mut self, routing: RoutingScopes) -> Self {
         self.routing = Some(routing);
         self
@@ -233,6 +239,7 @@ impl CompatProvider {
     }
 
     /// The same provider with `retry` instead of the default policy.
+    #[must_use]
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.sender.retry = retry;
         self
@@ -241,6 +248,7 @@ impl CompatProvider {
     /// The same provider waiting at most `wait` for each try's status and
     /// headers (default ten minutes); past it the try counts as unanswered,
     /// as [`AnthropicProvider::with_headers_timeout`](crate::AnthropicProvider::with_headers_timeout) says.
+    #[must_use]
     pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
         self.sender.headers_timeout = wait;
         self

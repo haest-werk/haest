@@ -113,6 +113,7 @@ impl RunKey {
 
     /// A key under this one: `<this>/<part>`. A subagent's key is its
     /// parent's with the tool call id; a flow step's, the step's name.
+    #[must_use]
     pub fn child(&self, part: &str) -> RunKey {
         RunKey(format!("{}/{part}", self.0))
     }

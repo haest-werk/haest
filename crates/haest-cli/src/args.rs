@@ -31,6 +31,10 @@ pub(crate) struct Args {
 
     /// Continue a session: its id, or the latest session in this directory when no id is given.
     #[arg(short, long, num_args = 0..=1)]
+    #[expect(
+        clippy::option_option,
+        reason = "clap's shape for a flag whose value is optional: absent, bare, or with an id"
+    )]
     pub resume: Option<Option<String>>,
 
     /// Work in this directory instead of the current one.

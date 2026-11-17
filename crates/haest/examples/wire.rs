@@ -7,6 +7,11 @@
 //!
 //! A real peer reads the same lines from `haest --json -p "..."`.
 
+#![expect(
+    clippy::print_stdout,
+    reason = "an example shows on the terminal what it does"
+)]
+
 use haest::{
     BoxError,
     serde_json::{self, Value},

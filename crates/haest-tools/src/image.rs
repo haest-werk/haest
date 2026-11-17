@@ -95,12 +95,14 @@ impl GenerateImageOptions {
 
     /// The Image API at `base_url`, without a trailing slash: `/images` and
     /// `/images/models` are appended.
+    #[must_use]
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self
     }
 
     /// `model` as the default, then the `others` a call may pick (the default is never listed twice).
+    #[must_use]
     pub fn with_models<S: Into<String>>(
         mut self,
         model: impl Into<String>,
@@ -115,6 +117,7 @@ impl GenerateImageOptions {
 
     /// Send the model list and the image requests through `http`: the
     /// client itself, or a handle the host shares.
+    #[must_use]
     pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
         self.http = http.into();
         self

@@ -110,7 +110,7 @@ impl TurnReadings {
         Some(match meter {
             Meter::Steps => turn(
                 self.steps as f64,
-                caps.and_then(|c| capped(c.max_turn_steps as f64)),
+                caps.and_then(|c| capped(f64::from(c.max_turn_steps))),
                 caps.map(TurnCaps::steps_limit),
             ),
             Meter::WallTime => turn(

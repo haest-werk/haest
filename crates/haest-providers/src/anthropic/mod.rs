@@ -76,6 +76,7 @@ impl AnthropicOptions {
 
     /// These options sending to `url` (`<url>/v1/messages`) instead of
     /// Anthropic's own API.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = Some(url.into());
         self
@@ -83,6 +84,7 @@ impl AnthropicOptions {
 
     /// These options sending `name: value` on every request, after the ones
     /// before it.
+    #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((name.into(), value.into()));
         self
@@ -151,6 +153,7 @@ impl AnthropicProvider {
     }
 
     /// The same provider with `retry` instead of the default policy.
+    #[must_use]
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.sender.retry = retry;
         self
@@ -161,6 +164,7 @@ impl AnthropicProvider {
     /// can sit in a queue before the first byte). A try with no answer by
     /// then counts as unanswered, and the [`RetryPolicy`] may try again; the
     /// body then takes as long as it takes.
+    #[must_use]
     pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
         self.sender.headers_timeout = wait;
         self

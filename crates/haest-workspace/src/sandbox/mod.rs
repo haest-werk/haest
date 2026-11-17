@@ -203,6 +203,7 @@ impl SandboxWorkspace {
     /// Variables every command in the shell sees, over the shell's own
     /// (`HOME`, `USER`, ...). The host's environment never reaches the shell
     /// any other way.
+    #[must_use]
     pub fn with_env(mut self, env: ChildEnv) -> Self {
         self.env = env;
         self
@@ -211,6 +212,7 @@ impl SandboxWorkspace {
     /// Replace the note the system prompt carries about this workspace
     /// ([`Workspace::prompt_note`]) with `note`, the added commands' notes
     /// included.
+    #[must_use]
     pub fn with_prompt_note(mut self, note: impl Into<String>) -> Self {
         self.note = Some(note.into());
         self
@@ -218,6 +220,7 @@ impl SandboxWorkspace {
 
     /// The host's way to review the overlay's changes and put them on disk
     /// ([`Limit::SandboxEdits`]), added to the prompt note's part about them.
+    #[must_use]
     pub fn with_remedies(mut self, remedies: Remedies) -> Self {
         self.remedies = remedies;
         self
@@ -229,6 +232,7 @@ impl SandboxWorkspace {
     ///
     /// The command runs inside the shell call it is part of, so pipes, `&&`
     /// and redirects work, and it gets that call's cancel token and deadline.
+    #[must_use]
     pub fn with_command(mut self, command: impl Into<ShellCommandRef>) -> Self {
         let command = command.into();
         self.commands.retain(|c| c.name() != command.name());

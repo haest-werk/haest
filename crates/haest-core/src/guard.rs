@@ -226,7 +226,7 @@ impl TurnGuard {
         out.extend([
             Gauge {
                 used: steps as f64,
-                cap: l.max_turn_steps as f64,
+                cap: f64::from(l.max_turn_steps),
                 stop: format!(
                     "it made {steps} model calls, the cap is {}.",
                     l.max_turn_steps
@@ -267,7 +267,7 @@ impl TurnGuard {
             .iter()
             .map(|Repeat { name, count, .. }| Gauge {
                 used: *count as f64,
-                cap: cap as f64,
+                cap: f64::from(cap),
                 stop: format!("{name} was called {count} times with identical input and returned the identical result each time -- haest was stuck in a loop (the cap is {cap} repeats)."),
                 limit: Limit::Repeats(cap),
             })
@@ -279,7 +279,7 @@ impl TurnGuard {
         let Some(cap) = caps.map(|c| c.max_repeats).filter(|cap| *cap > 0) else {
             return Vec::new();
         };
-        let nudge_at = (cap as f64 * NUDGE_SHARE).ceil().max(2.0);
+        let nudge_at = (f64::from(cap) * NUDGE_SHARE).ceil().max(2.0);
         let due = self
             .repeats
             .iter()

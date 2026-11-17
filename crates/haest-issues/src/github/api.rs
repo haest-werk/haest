@@ -39,7 +39,7 @@ impl GithubTracker {
                 "\"{id}\" is not an issue: give its number, e.g. 42 (or owner/repo#42)"
             ))
         };
-        let number: u64 = number.parse().map_err(|_| bad())?;
+        let number: u64 = number.parse().map_err(|_not_a_number| bad())?;
         let (owner, repo) = match repo {
             None => (self.owner.clone(), self.repo.clone()),
             Some(full) => {

@@ -174,8 +174,8 @@ impl JsonlSessionFile {
         let stopped = || io::Error::other("the session writer has stopped");
         self.tx
             .send(Job::Create(line_of(&header), done))
-            .map_err(|_| stopped())?;
-        outcome.await.map_err(|_| stopped())?
+            .map_err(|_closed| stopped())?;
+        outcome.await.map_err(|_closed| stopped())?
     }
 
     /// Flush, then replay the file. Never fails on a bad line (see [`replay`]);

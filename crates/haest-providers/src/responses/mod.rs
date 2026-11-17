@@ -60,6 +60,7 @@ impl ResponsesOptions {
 
     /// These options sending to `url` (`<url>/responses`) instead of
     /// OpenAI's own API.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = Some(url.into());
         self
@@ -67,6 +68,7 @@ impl ResponsesOptions {
 
     /// These options sending `name: value` on every request, after the ones
     /// before it.
+    #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((name.into(), value.into()));
         self
@@ -128,6 +130,7 @@ impl ResponsesProvider {
     }
 
     /// The same provider with `retry` instead of the default policy.
+    #[must_use]
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.sender.retry = retry;
         self
@@ -136,6 +139,7 @@ impl ResponsesProvider {
     /// The same provider waiting at most `wait` for each try's status and
     /// headers (default ten minutes); past it the try counts as unanswered,
     /// as [`AnthropicProvider::with_headers_timeout`](crate::AnthropicProvider::with_headers_timeout) says.
+    #[must_use]
     pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
         self.sender.headers_timeout = wait;
         self

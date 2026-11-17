@@ -151,7 +151,8 @@ impl JsMod {
         haest: &ModEnv,
         caps: ModCaps,
     ) -> Result<Self, ModLoadError> {
-        let runtime = tokio::runtime::Handle::try_current().map_err(|_| ModLoadError::NoRuntime)?;
+        let runtime =
+            tokio::runtime::Handle::try_current().map_err(|_no_runtime| ModLoadError::NoRuntime)?;
         let meta = Arc::new(Mutex::new(JsMeta::default()));
         let setup = Setup {
             path: path.to_path_buf(),

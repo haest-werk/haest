@@ -55,6 +55,7 @@ impl Tools {
 
     /// This list with `tool` added at the end. If two tools share a name,
     /// the one listed later runs.
+    #[must_use]
     pub fn with(mut self, tool: impl Into<ToolRef>) -> Self {
         self.push(tool);
         self

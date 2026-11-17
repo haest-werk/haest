@@ -277,7 +277,10 @@ fn a_result_message_carries_the_call_and_the_output() {
 async fn a_tool_that_panics_is_a_failed_result_and_the_loop_goes_on() {
     let boom = FnTool::arc("Boom", false, |_, _| async move {
         let none: Option<u8> = None;
-        #[allow(clippy::unnecessary_literal_unwrap)]
+        #[expect(
+            clippy::unnecessary_literal_unwrap,
+            reason = "the tool panics on purpose"
+        )]
         let _ = none.expect("the tool's own bug");
         Ok(ToolOutput::text("never"))
     });

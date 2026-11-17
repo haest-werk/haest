@@ -101,12 +101,14 @@ impl Default for RegistryOptions {
 impl RegistryOptions {
     /// Every provider's requests going through `http` (the client itself, or
     /// an `Arc` of one the host shares) instead of the shared [`ReqwestClient`].
+    #[must_use]
     pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
         self.http = http.into();
         self
     }
 
     /// Every provider retrying a refused or unanswered request by `retry`.
+    #[must_use]
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.retry = retry;
         self
@@ -114,6 +116,7 @@ impl RegistryOptions {
 
     /// Each try waiting at most `wait` for its status and headers before it
     /// counts as unanswered ([`AnthropicProvider::with_headers_timeout`]).
+    #[must_use]
     pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
         self.headers_timeout = wait;
         self
@@ -122,24 +125,28 @@ impl RegistryOptions {
     /// OpenRouter provider routing to send, or none ([`crate::routing::parse_routing`]
     /// reads the host's JSON: haest's `provider_routing` setting). Takes the
     /// scopes or an `Option` of them; a host whose gateway routes leaves it off.
+    #[must_use]
     pub fn with_routing(mut self, routing: impl Into<Option<RoutingScopes>>) -> Self {
         self.routing = routing.into();
         self
     }
 
     /// OpenRouter's app attribution `X-Title` (`haest` by default).
+    #[must_use]
     pub fn with_app_title(mut self, title: impl Into<String>) -> Self {
         self.app_title = Some(title.into());
         self
     }
 
     /// No `X-Title` sent to OpenRouter.
+    #[must_use]
     pub fn without_app_title(mut self) -> Self {
         self.app_title = None;
         self
     }
 
     /// OpenRouter's app attribution `HTTP-Referer` (none by default).
+    #[must_use]
     pub fn with_app_url(mut self, url: impl Into<String>) -> Self {
         self.app_url = Some(url.into());
         self
@@ -253,12 +260,14 @@ impl ProviderRegistry {
 
     /// This registry with providers.json's entries beside the built-ins (an
     /// entry named like a built-in replaces it).
+    #[must_use]
     pub fn with_custom(mut self, custom: CustomProviders) -> Self {
         self.setup_mut().custom = custom;
         self
     }
 
     /// This registry building every provider with `opts`.
+    #[must_use]
     pub fn with_options(mut self, opts: RegistryOptions) -> Self {
         self.setup_mut().opts = opts;
         self
@@ -267,6 +276,7 @@ impl ProviderRegistry {
     /// This registry sending every request through `http`: the same as
     /// [`with_options`](Self::with_options) with
     /// [`RegistryOptions::with_http`].
+    #[must_use]
     pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
         let opts = &mut self.setup_mut().opts;
         opts.http = http.into();

@@ -10,6 +10,12 @@
 //! `runtime` and `session` features together), and a transport serves the
 //! handle to another process.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "an example shows on the terminal what it does"
+)]
+
 use std::{sync::Arc, time::Duration};
 
 use haest::{

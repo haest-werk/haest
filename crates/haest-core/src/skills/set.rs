@@ -211,6 +211,7 @@ impl Skills {
     }
 
     /// These skills, with `skills` in place of what they held.
+    #[must_use]
     pub fn with_skills(self, skills: Vec<Skill>) -> Self {
         self.replace(skills);
         self

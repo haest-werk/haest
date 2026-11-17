@@ -10,6 +10,11 @@
 //! cargo run -p haest-issues --example issues -- --github o/r  # also lists o/r's open issues (read only, no token)
 //! ```
 
+#![expect(
+    clippy::print_stdout,
+    reason = "an example shows on the terminal what it does"
+)]
+
 use std::path::Path;
 
 use haest_core::{

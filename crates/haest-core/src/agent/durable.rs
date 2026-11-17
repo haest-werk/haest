@@ -98,7 +98,10 @@ impl Agent {
             .cloned()
             .ok_or(RunError::NoStore)?;
         let started = Instant::now();
-        let cancel = self.control.begin().map_err(|_| RunError::TurnRunning)?;
+        let cancel = self
+            .control
+            .begin()
+            .map_err(|_running| RunError::TurnRunning)?;
         let _running = Running(self.control.clone());
         let given = input_hash(input);
         let stored = (store.load(key).await).map_err(|source| RunError::Store {

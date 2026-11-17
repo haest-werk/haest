@@ -157,42 +157,49 @@ impl SharedDeps {
     }
 
     /// These deps resolving models with `models`.
+    #[must_use]
     pub fn with_models(mut self, models: impl Into<ModelResolverRef>) -> Self {
         self.models = models.into();
         self
     }
 
     /// These deps working in `cwd`.
+    #[must_use]
     pub fn with_cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
         self.cwd = cwd.into();
         self
     }
 
     /// These deps on `workspace`.
+    #[must_use]
     pub fn with_workspace(mut self, workspace: impl Into<WorkspaceRef>) -> Self {
         self.workspace = workspace.into();
         self
     }
 
     /// These deps spilling big tool results into `dir`.
+    #[must_use]
     pub fn with_spill_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.spill_dir = Some(dir.into());
         self
     }
 
     /// These deps with `hooks` as the host's say in the loop.
+    #[must_use]
     pub fn with_hooks(mut self, hooks: impl Into<AgentHooksRef>) -> Self {
         self.hooks = hooks.into();
         self
     }
 
     /// These deps with `services` offered to every tool.
+    #[must_use]
     pub fn with_services(mut self, services: impl Into<ToolServicesRef>) -> Self {
         self.services = services.into();
         self
     }
 
     /// These deps with `facts` about each model.
+    #[must_use]
     pub fn with_facts(mut self, facts: impl Into<ModelFactsRef>) -> Self {
         self.facts = facts.into();
         self
@@ -200,12 +207,14 @@ impl SharedDeps {
 
     /// These deps capping each turn by `caps` (a [`TurnCaps`] caps every
     /// model alike).
+    #[must_use]
     pub fn with_turn_caps(mut self, caps: impl Into<TurnCapsSourceRef>) -> Self {
         self.turn_caps = caps.into();
         self
     }
 
     /// These deps reading time from `clock`.
+    #[must_use]
     pub fn with_clock(mut self, clock: impl Into<ClockRef>) -> Self {
         self.clock = clock.into();
         self
@@ -213,6 +222,7 @@ impl SharedDeps {
 
     /// These deps charging `ledger` for every model call and tool spend:
     /// a clone of the host's, which it keeps to read and raise.
+    #[must_use]
     pub fn with_ledger(mut self, ledger: Ledger) -> Self {
         self.ledger = Some(ledger);
         self
@@ -220,24 +230,28 @@ impl SharedDeps {
 
     /// These deps asking for provider-side web search on every model call
     /// (None turns it off).
+    #[must_use]
     pub fn with_web_search(mut self, web_search: impl Into<Option<WebSearchOptions>>) -> Self {
         self.web_search = web_search.into();
         self
     }
 
     /// These deps adding `remedies` to the error of a turn a cap stopped.
+    #[must_use]
     pub fn with_remedies(mut self, remedies: Remedies) -> Self {
         self.remedies = remedies;
         self
     }
 
     /// These deps keeping durable runs in `store`.
+    #[must_use]
     pub fn with_run_store(mut self, store: impl Into<RunStoreRef>) -> Self {
         self.run_store = Some(store.into());
         self
     }
 
     /// These deps checking `thresholds` as every turn runs.
+    #[must_use]
     pub fn with_thresholds(mut self, thresholds: Thresholds<TurnSite>) -> Self {
         self.thresholds = thresholds;
         self

@@ -58,11 +58,17 @@ use crate::{
     term::{Runtime, TermUi},
 };
 
+#[expect(clippy::print_stderr, reason = "the CLI's own error line")]
 fn fail(code: u8, msg: impl std::fmt::Display) -> ExitCode {
     eprintln!("haest: {msg}");
     ExitCode::from(code)
 }
 
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "a subcommand answers on the terminal"
+)]
 async fn subcommand(cmd: Command, loaded: &Loaded) -> ExitCode {
     let s = &loaded.config.settings;
     match cmd {
@@ -281,7 +287,8 @@ fn unicode_vars(vars: impl Iterator<Item = (OsString, OsString)>) -> HashMap<Str
 fn working_dir(args: &Args) -> Result<PathBuf, String> {
     let dir = match &args.cwd {
         Some(d) => d.clone(),
-        None => std::env::current_dir().map_err(|_| "the current directory is gone".to_string())?,
+        None => std::env::current_dir()
+            .map_err(|e| format!("cannot read the current directory: {e}"))?,
     };
     match std::fs::canonicalize(&dir) {
         Ok(real) if real.is_dir() => Ok(real),

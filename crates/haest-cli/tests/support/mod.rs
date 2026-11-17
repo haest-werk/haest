@@ -1,7 +1,10 @@
 //! What the `haest` binary's tests run it in: a home of its own, and a model
 //! that answers from a script over a local socket.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "every test binary includes this module and uses a different part of it"
+)]
 
 use std::{
     collections::VecDeque,

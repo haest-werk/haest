@@ -10,6 +10,11 @@
 //!    is not run again, and the report tool looks its effect key up in the
 //!    outbox instead of sending twice.
 
+#![expect(
+    clippy::print_stdout,
+    reason = "an example shows on the terminal what it does"
+)]
+
 use std::{
     collections::HashMap,
     sync::{

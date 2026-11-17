@@ -11,6 +11,12 @@
 //!
 //! The model is scripted, so nothing here calls a provider.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "an example shows on the terminal what it does"
+)]
+
 use haest::{
     Agent, AgentDeps, AgentOptions, BoxError, JsonMap, ShutWorkspace, Tool, ToolContext, ToolError,
     ToolOutput, Tools, async_trait,

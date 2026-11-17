@@ -184,6 +184,7 @@ impl ReadTool {
 
     /// Ask `intercept` first on every call: the [`ReadIntercept`] example
     /// has one.
+    #[must_use]
     pub fn with_intercept(mut self, intercept: impl Into<ReadInterceptRef>) -> Self {
         self.intercept = Some(intercept.into());
         self

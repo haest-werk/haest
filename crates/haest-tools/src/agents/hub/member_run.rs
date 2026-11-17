@@ -39,7 +39,7 @@ impl SubagentHub {
 
     fn report_activity(&self) {
         let ids: Vec<String> = {
-            let members = self.0.members.lock().unwrap();
+            let members = self.lock_members();
             members.running().map(|m| m.id.clone()).collect()
         };
         self.0.parent.on_activity(&ids);
@@ -139,7 +139,7 @@ impl SubagentHub {
             .parent
             .on_subagent(&run.id, SubagentEvent::Stopped { ok: out.ok() });
         // Leave first: from here a message for it is refused, not lost.
-        self.0.members.lock().unwrap().leave(&run.me.name);
+        self.lock_members().leave(&run.me.name);
         let late = agent.control().take_queued();
         self.report_activity();
         let unread = late.map_or_else(String::new, |late| {

@@ -58,6 +58,10 @@ pub(crate) const CWD: &str = "/notebook";
 pub(crate) const T0: u64 = 1_800_000_000_000;
 
 #[tokio::main]
+#[expect(
+    clippy::print_stdout,
+    reason = "an example shows on the terminal what it does"
+)]
 async fn main() -> Result<(), BoxError> {
     every_run().await?;
     println!("notebook example: every plug point held");

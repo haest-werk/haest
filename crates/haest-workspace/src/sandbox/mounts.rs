@@ -66,11 +66,13 @@ impl SandboxMounts {
     }
     /// Add a real directory the sandbox writes through to, at once and for
     /// good (it is not one of the changes to review).
+    #[must_use]
     pub fn with_writable(mut self, dir: impl Into<PathBuf>) -> Self {
         self.writable.push(dir.into());
         self
     }
     /// Add a real directory the sandbox may read and never write.
+    #[must_use]
     pub fn with_readable(mut self, dir: impl Into<PathBuf>) -> Self {
         self.readable.push(dir.into());
         self

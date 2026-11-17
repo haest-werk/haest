@@ -144,9 +144,10 @@ impl WindDown {
     /// assert!(WindDown::at(8.0).is_err());
     /// ```
     pub fn at(share: f64) -> Result<Self, BadShare> {
-        match (0.0..=1.0).contains(&share) {
-            true => Ok(Self { at: share }),
-            false => Err(BadShare { share }),
+        if (0.0..=1.0).contains(&share) {
+            Ok(Self { at: share })
+        } else {
+            Err(BadShare { share })
         }
     }
 
@@ -192,6 +193,7 @@ impl Thresholds<TurnSite> {
     /// assert_eq!(on.len() - off.len(), 5);
     /// # Ok::<(), haest_core::wind_down::BadShare>(())
     /// ```
+    #[must_use]
     pub fn wind_down(self, at: WindDown) -> Self {
         // A turn reads every watched meter and can wind down.
         self.served(at.thresholds())

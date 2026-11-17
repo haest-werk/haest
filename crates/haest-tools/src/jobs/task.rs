@@ -4,7 +4,7 @@
 
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -44,12 +44,22 @@ impl Shared {
         self.events.lock().unwrap().clone()
     }
 
+    /// Where every event goes from now on.
+    pub(super) fn set_events(&self, events: JobEventsRef) {
+        *self.events.lock().unwrap() = events;
+    }
+
+    /// The table, held until the guard drops.
+    pub(super) fn lock_jobs(&self) -> MutexGuard<'_, Jobs> {
+        self.jobs.lock().unwrap()
+    }
+
     pub(super) fn running(&self) -> Vec<Job> {
-        self.jobs.lock().unwrap().running()
+        self.lock_jobs().running()
     }
 
     pub(super) fn kill(&self, id: &str) -> bool {
-        let mut jobs = self.jobs.lock().unwrap();
+        let mut jobs = self.lock_jobs();
         match jobs.get_mut(id) {
             Some(e) if e.job.status == JobStatus::Running => {
                 e.job.status = JobStatus::Killed;
@@ -68,7 +78,7 @@ impl Shared {
 
     fn output(&self, id: &str, chunk: &str) {
         let job = {
-            let mut jobs = self.jobs.lock().unwrap();
+            let mut jobs = self.lock_jobs();
             let Some(e) = jobs.get_mut(id) else { return };
             e.append(chunk);
             e.job.clone()
@@ -78,7 +88,7 @@ impl Shared {
 
     fn finish(&self, id: &str, code: i32) {
         let (job, running) = {
-            let mut jobs = self.jobs.lock().unwrap();
+            let mut jobs = self.lock_jobs();
             let Some(e) = jobs.get_mut(id) else { return };
             e.job.exit_code = Some(code);
             if e.job.status == JobStatus::Running {

@@ -4,7 +4,7 @@
 use std::{
     fmt,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -167,9 +167,14 @@ impl SubagentHub {
         self.0.due.load(Ordering::SeqCst)
     }
 
+    /// The members' table, held until the guard drops.
+    fn lock_members(&self) -> MutexGuard<'_, Members> {
+        self.0.members.lock().unwrap()
+    }
+
     /// Names of the subagents running now.
     pub fn running(&self) -> Vec<String> {
-        let members = self.0.members.lock().unwrap();
+        let members = self.lock_members();
         members.running().map(|m| m.me.name.clone()).collect()
     }
 
@@ -221,7 +226,7 @@ impl SubagentHub {
             None => None,
         };
         let run = {
-            let mut members = self.0.members.lock().unwrap();
+            let mut members = self.lock_members();
             let m = members.reserve(from, &input, &self.0.caps, &self.0.run_id)?;
             Run {
                 me: m.me.clone(),
@@ -245,17 +250,13 @@ impl SubagentHub {
         let member = match self.0.parent.start_member(&start, cancel).await {
             Ok(member) => member,
             Err(refused) => {
-                self.0.members.lock().unwrap().forget(&run.me.name);
+                self.lock_members().forget(&run.me.name);
                 return Err(refused);
             }
         };
         let agent = self.build(&run, &start, effort, &member);
         let name = run.me.name.clone();
-        self.0
-            .members
-            .lock()
-            .unwrap()
-            .attach(&name, agent.control());
+        self.lock_members().attach(&name, agent.control());
         let prompt = start.input.prompt;
         if !start.input.background {
             let caller = Some(cancel.clone());
@@ -303,7 +304,7 @@ impl SubagentHub {
 
     /// StopAgent: stop the subagent `name`; false when it is not running.
     pub fn stop(&self, name: &str) -> bool {
-        let mut members = self.0.members.lock().unwrap();
+        let mut members = self.lock_members();
         match members.get_mut(name) {
             Some(m) if m.status == Status::Running => {
                 m.status = Status::Stopped;

@@ -38,6 +38,7 @@ impl SkillToolOptions {
 
     /// Name the offered skills in the parameter's `enum`, so a weak model
     /// cannot misspell one. The schema then changes when the list does.
+    #[must_use]
     pub fn with_name_enum(mut self) -> Self {
         self.name_enum = true;
         self

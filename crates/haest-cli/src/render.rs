@@ -25,6 +25,10 @@ pub(crate) use haest::wire::Level;
 use crate::agents::AgentLog;
 
 /// How events are written.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent switches and line state of one private renderer"
+)]
 pub(crate) struct Renderer<O: Write, E: Write> {
     out: O,
     err: E,

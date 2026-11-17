@@ -59,6 +59,7 @@ impl Default for BashOptions {
 
 impl BashOptions {
     /// The timeout when a call names none (clamped to 1 s..600 s).
+    #[must_use]
     pub fn with_default_timeout(mut self, timeout: Duration) -> Self {
         self.default_timeout = timeout;
         self
@@ -67,6 +68,7 @@ impl BashOptions {
     /// Background jobs on `jobs`: Bash takes `run_in_background`, and
     /// [`builtin_tools`](crate::builtin_tools) adds BashOutput and KillShell.
     /// Without one, neither.
+    #[must_use]
     pub fn with_jobs(mut self, jobs: JobHub) -> Self {
         self.jobs = Some(jobs);
         self

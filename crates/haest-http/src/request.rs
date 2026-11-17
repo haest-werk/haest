@@ -136,12 +136,14 @@ impl Request {
     /// This request with `name: value`. A header of the same name, in any
     /// case, is replaced: a header sent twice reaches the server as two
     /// values, and one that reads the first never sees the second.
+    #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         set_header(&mut self.headers, name.into(), value.into());
         self
     }
 
     /// This request with `body` as its JSON text, and `content-type: application/json`.
+    #[must_use]
     pub fn with_json(mut self, body: &Value) -> Self {
         self.body = Bytes::from(body.to_string());
         self.with_header("content-type", "application/json")

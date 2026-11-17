@@ -100,11 +100,13 @@ impl ToolOutput {
         }
     }
     /// The same output with `result` as the host's envelope.
+    #[must_use]
     pub fn with_result(mut self, result: Value) -> Self {
         self.result = Some(result);
         self
     }
     /// The same output with `title` as the host's title for the finished call.
+    #[must_use]
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self

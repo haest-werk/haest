@@ -63,12 +63,16 @@
   build the way docs.rs builds them, without a warning:
   `RUSTDOCFLAGS="-D warnings --cfg docsrs" cargo +nightly doc --workspace --all-features --no-deps`.
 - **Lints live in one place:** the root `Cargo.toml`'s `[workspace.lints]`,
-  which every crate takes with `[lints] workspace = true` (a new crate too).
-  No crate sets a lint of its own. When a lint is wrong for one item, put
-  `#[expect(lint, reason = "...")]` on that item, the narrowest one that
-  holds it; never a bare `#[allow]` (an `expect` warns once it is no longer
-  needed). Unsafe code is denied: a site that needs it claims it with an
-  `#[expect(unsafe_code, reason = "...")]`.
+  which every crate takes with `[lints] workspace = true` (a new crate too),
+  and clippy's settings in `clippy.toml`. No crate sets a lint of its own.
+  The table keeps clippy's default groups and adds picks from restriction
+  and pedantic, each group under a line that says why. When a lint is wrong
+  for one item, put `#[expect(lint, reason = "...")]` on that item, the
+  narrowest one that holds it; never a bare `#[allow]` (an `expect` warns
+  once it is no longer needed). The one exception is a test-support module
+  every test binary includes: each uses a different part, so it takes an
+  inner `#![allow(dead_code, reason = "...")]`. Unsafe code is denied: a
+  site that needs it claims it with an `#[expect(unsafe_code, reason = "...")]`.
 - **Docs are part of the API.** The lint table warns on a public item without
   docs: it gets a doc that says what it is for in plain words, and the types
   a host constructs or implements get a runnable example. Links between items

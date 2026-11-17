@@ -169,7 +169,7 @@ impl Parsed {
     pub(super) fn count(&self, flag: &str, verb: &Verb) -> R<Option<usize>> {
         self.get(flag)
             .map(|v| {
-                v.trim().parse().map_err(|_| {
+                v.trim().parse().map_err(|_not_a_number| {
                     usage(
                         Some(verb.name),
                         format!("--{flag} takes a number, not `{v}`"),

@@ -180,7 +180,7 @@ impl Tool for McpTool {
         // Dropping the call (cancel, timeout) tells the server with notifications/cancelled.
         let call = tokio::time::timeout(CALL_TIMEOUT, self.peer.call_tool_once(params));
         let res = tokio::select! {
-            r = call => r.map_err(|_| ToolError::Failed(format!(
+            r = call => r.map_err(|_elapsed| ToolError::Failed(format!(
                 "MCP {} {} timed out after {}ms",
                 self.server,
                 self.tool,

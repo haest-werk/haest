@@ -82,6 +82,7 @@ impl McpHub {
     /// Stdio servers this hub connects get `env`, with each one's own `env`
     /// over it. A host passes the variables it means a server to have
     /// (haest-config's `env_passthrough` is one way to pick them).
+    #[must_use]
     pub fn with_env(mut self, env: ChildEnv) -> Self {
         self.env = env;
         self
@@ -90,6 +91,7 @@ impl McpHub {
     /// `log` hears one line per server this hub connects: how many tools it
     /// has, or why it failed. Without one, the lines go nowhere; the failures
     /// are in [`failures`](Self::failures) either way.
+    #[must_use]
     pub fn with_log(mut self, log: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.log = Some(Arc::new(log));
         self
@@ -179,7 +181,7 @@ impl McpHub {
             Ok(started) => Some(started),
             Err(error) => {
                 let failure = McpFailure::new(name, error);
-                self.shared.failures.lock().unwrap().push(failure);
+                self.lock_failures().push(failure);
                 None
             }
         }
@@ -187,6 +189,10 @@ impl McpHub {
 
     fn lock_servers(&self) -> MutexGuard<'_, Vec<Server>> {
         self.shared.servers.lock().unwrap()
+    }
+
+    fn lock_failures(&self) -> MutexGuard<'_, Vec<McpFailure>> {
+        self.shared.failures.lock().unwrap()
     }
 
     /// Every connected server's tools: the servers in the order they were
@@ -202,7 +208,7 @@ impl McpHub {
     /// Every server that did not connect since the hub was made, in the order
     /// they failed.
     pub fn failures(&self) -> Vec<McpFailure> {
-        self.shared.failures.lock().unwrap().clone()
+        self.lock_failures().clone()
     }
 
     /// Shut every server down (a stdio server's process included) and forget
@@ -226,6 +232,10 @@ impl ToolSource for McpHub {
 
 /// The servers by name, the failures, and the names of the variables a
 /// stdio server gets (never their values).
+#[expect(
+    clippy::missing_fields_in_debug,
+    reason = "`shared` is shown as what it holds: the servers and the failures"
+)]
 impl fmt::Debug for McpHub {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let servers: Vec<String> = self.lock_servers().iter().map(|s| s.name.clone()).collect();

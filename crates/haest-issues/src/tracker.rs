@@ -58,6 +58,7 @@ haest_core::word_enum! {
 
 impl Relation {
     /// The same fact seen from the target.
+    #[must_use]
     pub fn inverse(self) -> Relation {
         match self {
             Relation::Parent => Relation::Child,

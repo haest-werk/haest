@@ -50,7 +50,7 @@ fn status(input: &JsonMap) -> Result<Option<PatchStatus>, ToolError> {
     if s == DELETED {
         return Ok(Some(PatchStatus::Deleted));
     }
-    let status = s.parse::<TaskStatus>().map_err(|_| {
+    let status = s.parse::<TaskStatus>().map_err(|_unknown| {
         ToolError::Input(format!(
             "\"status\" must be one of {}",
             status_words().join(", ")

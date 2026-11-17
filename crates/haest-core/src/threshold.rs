@@ -196,6 +196,7 @@ impl Mark {
     }
 
     /// Also at `value`: the mark is whichever comes first.
+    #[must_use]
     pub fn or_at(self, value: f64) -> Self {
         Self {
             at: Some(self.at.map_or(value, |at| at.min(value))),

@@ -89,12 +89,14 @@ impl VmSpec {
 
     /// JavaScript that runs before the code, after the base prelude
     /// (`console`): where a host builds the guest's API.
+    #[must_use]
     pub fn with_prelude(mut self, prelude: impl Into<String>) -> Self {
         self.prelude = prelude.into();
         self
     }
 
     /// The global `name`, set to `value` before the prelude runs.
+    #[must_use]
     pub fn with_value(mut self, name: impl Into<String>, value: impl Into<Value>) -> Self {
         self.values.insert(name.into(), value.into());
         self
@@ -106,6 +108,7 @@ impl VmSpec {
     /// text; its `Err` rejects it with an `Error` whose message is the
     /// error's text (a `String` turns into one with `.into()`), which the
     /// guest can catch. A second function of the same name replaces the first.
+    #[must_use]
     pub fn with_native_fn<F, Fut>(mut self, name: impl Into<String>, f: F) -> Self
     where
         F: Fn(Vec<String>) -> Fut + Send + Sync + 'static,
@@ -118,6 +121,7 @@ impl VmSpec {
 
     /// Module mode: the code is an ES module, and `modules` are the ones it
     /// may import (exact name -> source). A module-mode run has no value.
+    #[must_use]
     pub fn with_modules(
         mut self,
         modules: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
@@ -128,6 +132,7 @@ impl VmSpec {
     }
 
     /// The name stacks and error lines show, in place of `code.js`.
+    #[must_use]
     pub fn with_filename(mut self, filename: impl Into<String>) -> Self {
         self.filename = Some(filename.into());
         self

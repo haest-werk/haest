@@ -129,6 +129,7 @@ impl GithubTracker {
 
     /// A token (a personal access token, an app's installation token): sent
     /// as `Authorization: Bearer`, nowhere else.
+    #[must_use]
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
         self
@@ -137,6 +138,7 @@ impl GithubTracker {
     /// The tracker sending its requests through `http`: a host's own client,
     /// a recorder, a test's fake (the client itself, or an `Arc` of one). The
     /// 60 s limit and the 16 MiB cap on an answer still hold.
+    #[must_use]
     pub fn with_http(mut self, http: impl Into<HttpClientRef>) -> Self {
         self.http = http.into();
         self
@@ -145,6 +147,7 @@ impl GithubTracker {
     /// Another API root: GitHub Enterprise Server's `https://HOST/api/v3`
     /// (its GraphQL endpoint is then `https://HOST/api/graphql`). The token,
     /// if any, goes to this host.
+    #[must_use]
     pub fn with_api_url(mut self, url: &str) -> Self {
         let url = url.trim_end_matches('/');
         self.graphql = match url.strip_suffix("/v3") {

@@ -64,7 +64,7 @@ where
     );
     let client = tokio::time::timeout(CONNECT_TIMEOUT, info.serve(transport))
         .await
-        .map_err(|_| McpStartError::InitializeTimedOut(CONNECT_TIMEOUT))?
+        .map_err(|_elapsed| McpStartError::InitializeTimedOut(CONNECT_TIMEOUT))?
         .map_err(|e| McpStartError::Initialize(e.into()))?;
     let listed = tokio::time::timeout(CONNECT_TIMEOUT, client.peer().list_all_tools()).await;
     let listed = match listed {

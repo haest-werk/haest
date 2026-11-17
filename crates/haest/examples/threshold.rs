@@ -11,6 +11,11 @@
 //! The model looks things up three times, the context grows with each answer,
 //! and each threshold fires once.
 
+#![expect(
+    clippy::print_stdout,
+    reason = "an example shows on the terminal what it does"
+)]
+
 use std::sync::{Arc, Mutex};
 
 use haest::{

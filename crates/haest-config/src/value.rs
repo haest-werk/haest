@@ -4,6 +4,7 @@
 
 use std::{
     collections::HashMap,
+    hash::BuildHasher,
     path::{Path, PathBuf},
 };
 
@@ -28,7 +29,10 @@ use crate::{
 /// assert_eq!(haest_config::env_var(&env, "HOME"), Some("/home/me"));
 /// assert_eq!(haest_config::env_var(&env, "HAEST_MODEL"), None);
 /// ```
-pub fn env_var<'a>(env: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
+pub fn env_var<'a, S: BuildHasher>(
+    env: &'a HashMap<String, String, S>,
+    key: &str,
+) -> Option<&'a str> {
     env.get(key).map(|v| v.trim()).filter(|v| !v.is_empty())
 }
 

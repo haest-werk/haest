@@ -134,6 +134,7 @@ impl AgentTurnGate {
 
     /// The host's way past the cap ([`Limit::AgentTurns`]), added to the
     /// notice that messages are being held.
+    #[must_use]
     pub fn with_remedies(mut self, remedies: Remedies) -> Self {
         self.remedies = remedies;
         self
@@ -141,6 +142,7 @@ impl AgentTurnGate {
 
     /// What every turn no human started checks, in place of the nudge
     /// ([`AgentTurnSite`]).
+    #[must_use]
     pub fn with_thresholds(mut self, thresholds: Thresholds<AgentTurnSite>) -> Self {
         self.thresholds = Watch::new(thresholds);
         self

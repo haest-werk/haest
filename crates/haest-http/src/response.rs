@@ -161,6 +161,7 @@ impl Response {
 
     /// This response with `body` as its JSON text, and
     /// `content-type: application/json`.
+    #[must_use]
     pub fn with_json(mut self, body: &Value) -> Self {
         self.body = body.to_string().into();
         self.with_header("content-type", "application/json")
@@ -168,6 +169,7 @@ impl Response {
 
     /// This response with `name: value`. A header of the same name, in any
     /// case, is replaced, as on a [`Request`](crate::Request).
+    #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         set_header(&mut self.headers, name.into(), value.into());
         self

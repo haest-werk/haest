@@ -163,7 +163,7 @@ impl Link {
     /// The first frame: who this is, and what the peer may do. Err when the
     /// conversation has already ended.
     async fn hello(&mut self, token: Option<Token>) -> Result<(), ()> {
-        let now = self.backend.snapshot().await.map_err(|_| ())?;
+        let now = self.backend.snapshot().await.map_err(|_ended| ())?;
         let hello = Outbound::Hello {
             session: now.session,
             model_spec: now.model_spec,
@@ -171,7 +171,7 @@ impl Link {
             access: self.grant.access,
             token,
         };
-        self.tx.send(Out::Conn(hello)).await.map_err(|_| ())
+        self.tx.send(Out::Conn(hello)).await.map_err(|_closed| ())
     }
 
     /// One line from the peer.

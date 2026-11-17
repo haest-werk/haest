@@ -6,6 +6,11 @@
 //! is refused, saying what was spent of which cap and the host's remedy, and
 //! the model is told once to conclude. It answers with what it has.
 
+#![expect(
+    clippy::print_stdout,
+    reason = "an example shows on the terminal what it does"
+)]
+
 use std::sync::{Arc, Mutex};
 
 use haest::{

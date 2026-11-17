@@ -92,18 +92,21 @@ impl AgentDeps {
     }
 
     /// These deps with `tools`.
+    #[must_use]
     pub fn with_tools(mut self, tools: impl Into<ToolSourceRef>) -> Self {
         self.tools = tools.into();
         self
     }
 
     /// These deps with `system_prompt`.
+    #[must_use]
     pub fn with_system_prompt(mut self, system_prompt: impl Into<SystemPromptRef>) -> Self {
         self.system_prompt = system_prompt.into();
         self
     }
 
     /// These deps on `shared`.
+    #[must_use]
     pub fn with_shared(mut self, shared: SharedDeps) -> Self {
         self.shared = shared;
         self
@@ -116,6 +119,7 @@ macro_rules! forward {
         impl AgentDeps {
             $(
                 #[doc = concat!("[`SharedDeps::", stringify!($name), "`], on these deps' shared part.")]
+                #[must_use]
                 pub fn $name(mut self, $arg: $ty) -> Self {
                     self.shared = self.shared.$name($arg);
                     self

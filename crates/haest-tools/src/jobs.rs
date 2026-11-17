@@ -241,8 +241,9 @@ impl JobHub {
 
     /// `events` hears every start, output chunk and end, for the host's
     /// transcript (this hub's and every clone's).
+    #[must_use]
     pub fn with_events(self, events: impl Into<JobEventsRef>) -> Self {
-        *self.shared().events.lock().unwrap() = events.into();
+        self.shared().set_events(events.into());
         self
     }
 
@@ -258,13 +259,13 @@ impl JobHub {
     /// The job `id` as it stands, running or ended; None when it is unknown
     /// or long forgotten ([`MAX_FINISHED`]).
     pub fn get(&self, id: &str) -> Option<Job> {
-        let jobs = self.shared().jobs.lock().unwrap();
+        let jobs = self.shared().lock_jobs();
         jobs.get(id).map(|e| e.job.clone())
     }
 
     /// Everything kept of a job's output, without marking it read.
     pub fn buffer(&self, id: &str) -> Option<String> {
-        let jobs = self.shared().jobs.lock().unwrap();
+        let jobs = self.shared().lock_jobs();
         jobs.get(id).map(|e| e.output.clone())
     }
 
@@ -283,11 +284,12 @@ impl JobHub {
         description: &str,
         ctx: &ToolContext,
     ) -> Result<Job, JobError> {
-        let rt = tokio::runtime::Handle::try_current().map_err(|_| JobError::NoRuntime)?;
+        let rt =
+            tokio::runtime::Handle::try_current().map_err(|_no_runtime| JobError::NoRuntime)?;
         let shared = self.shared();
         let stop = CancellationToken::new();
         let (job, running) = {
-            let mut jobs = shared.jobs.lock().unwrap();
+            let mut jobs = shared.lock_jobs();
             if jobs.running().len() >= MAX_JOBS {
                 return Err(JobError::TooMany { max: MAX_JOBS });
             }
@@ -309,7 +311,7 @@ impl JobHub {
     /// New output since the last call, and the job as it stands; None for an
     /// unknown id. What it returns counts as read.
     pub fn take(&self, id: &str) -> Option<Taken> {
-        let mut jobs = self.shared().jobs.lock().unwrap();
+        let mut jobs = self.shared().lock_jobs();
         jobs.get_mut(id).map(Entry::take)
     }
 

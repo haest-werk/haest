@@ -91,8 +91,9 @@ pub(super) fn nearly_spent(r: &Reading) -> String {
 
 /// Seconds as a reader says them: whole minutes from two minutes up, else seconds.
 fn wall_clock(secs: f64) -> String {
-    match secs >= 120.0 {
-        true => format!("{} min", (secs / 60.0).round()),
-        false => format!("{} s", secs.round()),
+    if secs >= 120.0 {
+        format!("{} min", (secs / 60.0).round())
+    } else {
+        format!("{} s", secs.round())
     }
 }

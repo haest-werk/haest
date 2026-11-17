@@ -1,4 +1,7 @@
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "every test binary includes this module and uses a different part of it"
+)]
 
 use std::{
     path::{Path, PathBuf},

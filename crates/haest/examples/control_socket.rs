@@ -8,6 +8,11 @@
 //!
 //! The model is scripted, so nothing here calls a provider.
 
+#![expect(
+    clippy::print_stdout,
+    reason = "an example shows on the terminal what it does"
+)]
+
 use haest::BoxError;
 
 #[cfg(unix)]

@@ -100,7 +100,9 @@ impl JsThread {
             cancel: cancel.cloned(),
             reply,
         };
-        self.tx.send(request).map_err(|_| CallError::Stopped)?;
+        self.tx
+            .send(request)
+            .map_err(|_stopped| CallError::Stopped)?;
         let got = match cancel {
             Some(c) => tokio::select! {
                 r = rx => r,

@@ -1,0 +1,4 @@
+# Settings for the clippy lints in the root Cargo.toml's [workspace.lints].
+
+# A test may print: its output is only shown when it fails.
+allow-print-in-tests = true

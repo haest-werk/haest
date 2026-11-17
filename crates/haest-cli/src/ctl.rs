@@ -3,6 +3,12 @@
 //! what it allows: a `watch` one shows the conversation, a `command` one
 //! takes input and an interrupt too.
 
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "`haest ctl` answers on the terminal"
+)]
+
 use std::{path::Path, process::ExitCode, time::Duration};
 
 use haest::{

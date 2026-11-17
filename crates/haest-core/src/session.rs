@@ -221,6 +221,10 @@ fn millis<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
 }
 
 /// A present key, even `null`, is `Some`; only an absent key stays `None` (via `default`).
+#[expect(
+    clippy::option_option,
+    reason = "serde's shape for a key that may be absent, null, or set"
+)]
 fn present<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Option<Effort>>, D::Error> {
     Option::<Effort>::deserialize(d).map(Some)
 }

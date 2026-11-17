@@ -119,6 +119,7 @@ pub struct HttpTransport {
 
 impl HttpTransport {
     /// The header `name` with `value` on every request (one already set is replaced).
+    #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(name.into(), value.into());
         self
@@ -164,6 +165,7 @@ pub struct StdioTransport {
 
 impl StdioTransport {
     /// `args` after the ones it already has.
+    #[must_use]
     pub fn with_args<S: Into<String>>(mut self, args: impl IntoIterator<Item = S>) -> Self {
         self.args.extend(args.into_iter().map(Into::into));
         self
@@ -171,12 +173,14 @@ impl StdioTransport {
 
     /// The variable `name` set to `value` for this server alone, over the
     /// hub's environment (one already set is replaced).
+    #[must_use]
     pub fn with_env_var(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.env.insert(name.into(), value.into());
         self
     }
 
     /// The dir it runs in.
+    #[must_use]
     pub fn with_cwd(mut self, dir: impl Into<PathBuf>) -> Self {
         self.cwd = Some(dir.into());
         self

@@ -268,7 +268,7 @@ impl Tool for WebFetchTool {
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let raw = req_str(&input, "url")?;
         let url = Url::parse(raw)
-            .map_err(|_| ToolError::Input(format!("\"{raw}\" is not a valid URL")))?;
+            .map_err(|e| ToolError::Input(format!("\"{raw}\" is not a valid URL: {e}")))?;
         let fetch = async {
             let (res, at) = guarded_get(&url, &self.net).await?;
             to_output(&at, res, ctx).await

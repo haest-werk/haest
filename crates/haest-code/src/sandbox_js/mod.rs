@@ -76,18 +76,21 @@ impl JsEnv {
 
     /// The shell's exported variables, the script's `process.env`, in place
     /// of none.
+    #[must_use]
     pub fn with_env(mut self, env: BTreeMap<String, String>) -> Self {
         self.env = env;
         self
     }
 
     /// What is piped into the command: `process.stdin` and `/dev/stdin`.
+    #[must_use]
     pub fn with_stdin(mut self, stdin: impl Into<String>) -> Self {
         self.stdin = Some(stdin.into());
         self
     }
 
     /// The shell call's interrupt: the script stops when it fires.
+    #[must_use]
     pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
         self.cancel = cancel;
         self
@@ -95,6 +98,7 @@ impl JsEnv {
 
     /// The running shell call's end, in place of [`JS_TIMEOUT`] from the
     /// start (a later one is cut to that).
+    #[must_use]
     pub fn with_ends_at(mut self, ends_at: Instant) -> Self {
         self.ends_at = Some(ends_at);
         self
@@ -277,6 +281,10 @@ pub async fn js_command(args: &[impl AsRef<str>], env: &JsEnv) -> ExecResult {
 /// `process.exit`, else 1 when it threw or was stopped, else 0. An uncaught
 /// error, a stop (the env's interrupt or the deadline) and output past
 /// [`JS_MAX_OUTPUT`] each add a line to stderr.
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "only a poisoned exit-code lock panics, and its one writer cannot panic holding it"
+)]
 pub async fn run_js(path: &Path, code: &str, args: &[impl AsRef<str>], env: &JsEnv) -> ExecResult {
     let exit_code = Arc::new(Mutex::new(None));
     let mut argv = vec![JS_COMMAND.to_string(), path.display().to_string()];

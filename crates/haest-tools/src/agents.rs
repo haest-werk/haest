@@ -335,6 +335,12 @@ pub trait AgentDirectory: Send + Sync {
     ) -> Result<SpawnOutcome, AgentError>;
     /// SendMessage: hand `text` from agent `from` to agent `to`, and say what
     /// to tell the sender. The SendMessage tool refuses `to == from` itself.
+    ///
+    /// # Errors
+    ///
+    /// Why `to` cannot take the message, which the sender reads: the
+    /// [`SubagentHub`]'s are [`AgentError::UnknownAgent`] and
+    /// [`AgentError::Finished`].
     fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError>;
     /// StopAgent: stop the agent `name`; false when it is not running.
     fn stop(&self, name: &str) -> bool;

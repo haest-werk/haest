@@ -40,6 +40,10 @@ pub(super) async fn input(call: &ShellCall, file: Option<&str>) -> R<String> {
     }
 }
 
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "as xan itself: only a lowercase .tsv or .tab means tabs"
+)]
 pub(super) fn delimiter(p: &Parsed, file: Option<&str>, text: &str) -> R<u8> {
     if let Some(d) = p.get("delimiter") {
         return match d {
