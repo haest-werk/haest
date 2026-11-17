@@ -7,7 +7,7 @@ use std::{path::Path, sync::Arc};
 use haest_settings::Settings;
 
 use crate::{
-    BuildOptions, Resume, RuntimeHooks, SessionFileError, Ui,
+    BuildOptions, OnResume, Prefer, Resume, RuntimeHooks, SessionFileError, Ui,
     haest::{
         Agent, AgentOptions, Effort,
         core::fs::FsRef,
@@ -123,10 +123,13 @@ pub(crate) fn start_on(
     saved: Option<&ReplayedSession>,
     opts: &BuildOptions,
 ) -> (String, Option<Effort>) {
+    let saved_one = |prefer: Prefer| prefer == Prefer::Saved;
     let model = saved
         .and_then(|r| r.model_spec.clone())
-        .filter(|_| !opts.model_spec_given);
-    let effort = saved.and_then(|r| r.effort).filter(|_| !opts.effort_given);
+        .filter(|_| saved_one(opts.on_resume.model));
+    let effort = saved
+        .and_then(|r| r.effort)
+        .filter(|_| saved_one(opts.on_resume.effort));
     (
         model.unwrap_or_else(|| s.model_spec.clone()),
         effort.unwrap_or(s.effort),
@@ -136,13 +139,13 @@ pub(crate) fn start_on(
 /// A resume on a model or effort this run asked for: recorded like a switch,
 /// so the next resume goes on with it.
 pub(crate) fn record_given(hooks: &RuntimeHooks, agent: &Agent, opts: &BuildOptions) {
-    if opts.model_spec_given || opts.effort_given {
+    let OnResume { model, effort } = opts.on_resume;
+    let (model, effort) = (model == Prefer::Settings, effort == Prefer::Settings);
+    if model || effort {
         hooks.append(&SessionRecord::Config {
             t: now_ms(),
-            model_spec: opts
-                .model_spec_given
-                .then(|| agent.model_spec().to_string()),
-            effort: opts.effort_given.then_some(agent.effort()),
+            model_spec: model.then(|| agent.model_spec().to_string()),
+            effort: effort.then_some(agent.effort()),
         });
     }
 }

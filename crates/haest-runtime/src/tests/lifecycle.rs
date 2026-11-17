@@ -9,7 +9,8 @@ use haest_settings::Settings;
 
 use super::{hardcoded, keyed, keyed_with, openrouter_key, try_keyed};
 use crate::{
-    BuildError, BuildOptions, Resume, RuntimeInputs, SessionFileError, World, build,
+    BuildError, BuildOptions, OnResume, Prefer, Resume, RuntimeInputs, SessionFileError, World,
+    build,
     haest::{
         Effort, ModelError, WorkspaceMode,
         core::fs::{Fs, MemFs},
@@ -115,8 +116,10 @@ async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
     };
     let opts = BuildOptions {
         resume: Resume::Id(id),
-        model_spec_given: true,
-        ..BuildOptions::default()
+        on_resume: OnResume {
+            model: Prefer::Settings,
+            ..OnResume::default()
+        },
     };
     let built = try_keyed(&fs, keyless, opts).await;
     if let Ok(rt) = &built {
@@ -173,14 +176,14 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
         effort: Some(Effort::Low),
         ..hardcoded()
     };
-    let opts = |model_spec_given, effort_given| BuildOptions {
+    let opts = |model, effort| BuildOptions {
         resume: Resume::Id(id.clone()),
-        model_spec_given,
-        effort_given,
+        on_resume: OnResume { model, effort },
     };
-    let model_only = keyed_with(&fs, given.clone(), opts(true, false)).await;
+    let model_only = opts(Prefer::Settings, Prefer::Saved);
+    let model_only = keyed_with(&fs, given.clone(), model_only).await;
     assert_eq!(on(&model_only), (GIVEN.to_string(), Some(Effort::High)));
-    let both = keyed_with(&fs, given, opts(true, true)).await;
+    let both = keyed_with(&fs, given, opts(Prefer::Settings, Prefer::Settings)).await;
     assert_eq!(on(&both), (GIVEN.to_string(), Some(Effort::Low)));
     both.hooks.flush().await;
 

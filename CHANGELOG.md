@@ -1374,6 +1374,11 @@ Hosts write less (round two of the review, and what porting brain onto
   processes at all: `world.child_env(&ChildEnv::default()).is_some()` ->
   `world.starts_processes()`, and `world.child_env(&passed)` ->
   `world.child_env().map(|env| env.overlaid(&passed))`.
+- `BuildOptions` says which model and effort a resume goes on with in an
+  `OnResume` of two `Prefer`s, where it had two bools (breaking):
+  `BuildOptions { resume, model_spec_given: true, effort_given: false }` ->
+  `BuildOptions { resume, on_resume: OnResume { model: Prefer::Settings, effort: Prefer::Saved } }`.
+  The session file is unchanged.
 
 ### haest-ts
 

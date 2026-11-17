@@ -212,16 +212,47 @@ pub enum Resume {
 }
 
 /// What a host decides per run, beside the settings: which session to write,
-/// and whether the settings' model and effort were asked for on purpose.
+/// and which model and effort a resumed one goes on with.
 ///
-/// The default is a new session on the settings' model and effort.
-#[derive(Debug, Clone, Default)]
+/// The default is a new session on the settings' model and effort; a resume
+/// goes on with the session's own.
+///
+/// ```
+/// use haest_runtime::{BuildOptions, OnResume, Prefer, Resume};
+///
+/// // `-r -m a:b`: the latest session, on the model the flag picked.
+/// let opts = BuildOptions {
+///     resume: Resume::Latest,
+///     on_resume: OnResume { model: Prefer::Settings, effort: Prefer::Saved },
+/// };
+/// assert_ne!(opts.on_resume, OnResume::default());
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BuildOptions {
     /// The session to write: a new one, or one to go on with.
     pub resume: Resume,
-    /// The settings' model was asked for on purpose for this run (a flag):
-    /// a resume goes on with it, not with the one the session saved.
-    pub model_spec_given: bool,
-    /// The same, for the effort.
-    pub effort_given: bool,
+    /// Which model and effort a resume goes on with. A new session starts
+    /// on the settings' either way.
+    pub on_resume: OnResume,
+}
+
+/// Which model and which effort a resumed session goes on with.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OnResume {
+    /// The model.
+    pub model: Prefer,
+    /// The effort.
+    pub effort: Prefer,
+}
+
+/// Which of two a resume goes on with: the one the session saved, or the
+/// settings' one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Prefer {
+    /// The one the session saved (the settings' when it saved none).
+    #[default]
+    Saved,
+    /// The settings' one, asked for on purpose for this run (a flag). It is
+    /// recorded in the session, so the next resume goes on with it too.
+    Settings,
 }

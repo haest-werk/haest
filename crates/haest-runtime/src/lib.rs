@@ -188,7 +188,7 @@ pub use build::build;
 pub use error::{BuildError, SessionFileError};
 pub use hooks::RuntimeHooks;
 pub use inbox::InboxQueue;
-pub use inputs::{BuildOptions, Resume, RuntimeInputs};
+pub use inputs::{BuildOptions, OnResume, Prefer, Resume, RuntimeInputs};
 pub use runtime::{Runtime, ShutDown};
 #[cfg(feature = "session")]
 #[cfg_attr(docsrs, doc(cfg(feature = "session")))]

@@ -7,7 +7,7 @@ use std::{ffi::OsString, path::PathBuf};
 use clap::{Arg, ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand};
 use haest::{
     config::{DEFS, Def, Kind},
-    runtime::{BuildOptions, Resume},
+    runtime::{BuildOptions, OnResume, Prefer, Resume},
 };
 
 #[derive(Debug, Parser)]
@@ -137,10 +137,19 @@ impl Cli {
                 .filter(|id| !id.is_empty())
                 .map_or(Resume::Latest, Resume::Id),
         };
+        let prefer = |key: &str| {
+            if given(key) {
+                Prefer::Settings
+            } else {
+                Prefer::Saved
+            }
+        };
         BuildOptions {
             resume,
-            model_spec_given: given("model"),
-            effort_given: given("effort"),
+            on_resume: OnResume {
+                model: prefer("model"),
+                effort: prefer("effort"),
+            },
         }
     }
 }
@@ -279,12 +288,13 @@ mod tests {
 
     #[test]
     fn a_model_or_effort_flag_is_one_the_run_asked_for() {
+        let on_resume = |model, effort| OnResume { model, effort };
         let o = cli(&["-r", "-m", "a:b"]).build_options();
         assert_eq!(o.resume, Resume::Latest);
-        assert!(o.model_spec_given && !o.effort_given);
+        assert_eq!(o.on_resume, on_resume(Prefer::Settings, Prefer::Saved));
         let o = cli(&["-r", "abc", "-e", "low"]).build_options();
-        assert!(!o.model_spec_given && o.effort_given);
+        assert_eq!(o.on_resume, on_resume(Prefer::Saved, Prefer::Settings));
         let o = cli(&["-r"]).build_options();
-        assert!(!o.model_spec_given && !o.effort_given);
+        assert_eq!(o.on_resume, on_resume(Prefer::Saved, Prefer::Saved));
     }
 }
