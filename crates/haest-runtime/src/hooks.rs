@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use haest_settings::Settings;
 use tokio_util::sync::CancellationToken;
 
+pub(crate) use self::compact::Compact;
 use self::compact::compaction_failed;
 use crate::{
     Ui,
@@ -218,7 +219,7 @@ impl AgentHooks for RuntimeHooks {
         cancel: &CancellationToken,
     ) -> Result<(), BoxError> {
         if needs_compaction(agent.history(), &self.compaction_for(agent.model_spec())) {
-            let done = self.compact_now(agent, cancel, true).await;
+            let done = self.compact_now(agent, cancel, Compact::Auto).await;
             done.map_err(|e| compaction_failed(&e))?;
         }
         Ok(())

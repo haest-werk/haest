@@ -23,6 +23,7 @@ use crate::{
         now_ms,
         tools::{JobHub, SubagentHub},
     },
+    hooks::Compact,
     inbox::InboxQueue,
     store::{new_session, record_start},
     world::kill_jobs,
@@ -220,15 +221,19 @@ impl<U> Runtime<U> {
         ShutDown { subagents, jobs }
     }
 
-    /// Compact main's conversation now (the human's /compact): see
-    /// [`RuntimeHooks::compact_now`](crate::RuntimeHooks::compact_now). A
-    /// conversation too short to cut says so to the [`Ui`](crate::Ui).
+    /// Compact main's conversation now (the human's /compact): the older
+    /// messages become one summary, the latest are kept, and the session file
+    /// records it. What the summary calls cost goes on the conversation's
+    /// spend either way. A conversation too short to cut says so to the
+    /// [`Ui`](crate::Ui). `cancel` stops the summary call.
     ///
     /// # Errors
     ///
-    /// When no summary came out; the history is as it was.
+    /// When no summary came out: the history is as it was. The error is said
+    /// to the [`Ui`](crate::Ui) already, unless `cancel` fired.
     pub async fn compact(&mut self, cancel: &CancellationToken) -> Result<(), CompactionError> {
-        self.hooks.compact_now(&mut self.agent, cancel, false).await
+        let by = Compact::Manual;
+        self.hooks.compact_now(&mut self.agent, cancel, by).await
     }
 
     /// The id of the session file records go to now; [`clear`](Self::clear)

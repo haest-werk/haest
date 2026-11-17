@@ -14,6 +14,17 @@ use crate::haest::{
     now_ms,
 };
 
+/// Who asks for a compaction ([`RuntimeHooks::compact_now`]): it decides
+/// whether a conversation with nothing to cut yet is told so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Compact {
+    /// The human's /compact ([`Runtime::compact`](crate::Runtime::compact)):
+    /// the human hears "Nothing to compact yet."
+    Manual,
+    /// The loop's own check before a model call: nothing to cut stays silent.
+    Auto,
+}
+
 impl RuntimeHooks {
     /// When to compact a conversation on the model `spec`: at 80% of its
     /// [`window`](Self::window), or at the `compact_at` setting when that is
@@ -29,24 +40,23 @@ impl RuntimeHooks {
     /// summary, the latest are kept, and the session file records it. What
     /// the summary calls cost goes on the conversation's spend either way.
     ///
-    /// `auto`: the loop's own check, so nothing to cut stays silent; a host's
-    /// /compact passes false and the human hears "Nothing to compact yet."
-    /// `cancel` stops the summary call.
+    /// `by` says who asked: nothing to cut is said only to the human's
+    /// [`Compact::Manual`]. `cancel` stops the summary call.
     ///
     /// # Errors
     ///
     /// When no summary came out: the history is as it was. The error is said
     /// to the UI already, unless `cancel` fired: then the human stopped it,
     /// and the turn ends as aborted.
-    pub async fn compact_now(
+    pub(crate) async fn compact_now(
         &self,
         agent: &mut Agent,
         cancel: &CancellationToken,
-        auto: bool,
+        by: Compact,
     ) -> Result<(), CompactionError> {
         let cfg = self.compaction_for(agent.model_spec());
         match compact(agent, cancel, &cfg).await {
-            Ok(None) if !auto => self.info("Nothing to compact yet."),
+            Ok(None) if by == Compact::Manual => self.info("Nothing to compact yet."),
             Ok(None) => {}
             Ok(Some(res)) => {
                 charge(agent, &res.usage);

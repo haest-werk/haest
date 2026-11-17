@@ -957,6 +957,10 @@ Good citizens:
   has its own UI; the catalog is `Catalog::builtin()`), and `new`,
   `store`, `remedies`, `window` and `compaction_for` are crate-private:
   hooks come from `build`, the session's id from `rt.session_id()`.
+- `RuntimeHooks::compact_now` is crate-private, and its `auto: bool` an
+  enum inside (breaking): it needed main's `&mut Agent`, which no host
+  holds. `hooks.compact_now(&mut agent, &cancel, false)` ->
+  `rt.compact(&cancel)`, the human's /compact.
 - The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
   as `with_hooks`; what tools publish, report and log reaches it as before.
 - Feature `session` (off; the facade's `session` turns it on with
