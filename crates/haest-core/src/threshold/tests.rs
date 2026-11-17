@@ -471,7 +471,7 @@ impl crate::deps::AgentHooks for ReEnters {
         &self,
         agent: &mut crate::Agent,
         _: &tokio_util::sync::CancellationToken,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), crate::error::BoxError> {
         let mut events: Vec<LoopEvent> = Vec::new();
         let refused = agent.run("again", &mut events).await;
         assert_eq!(refused.stop_reason, StopReason::Error);
