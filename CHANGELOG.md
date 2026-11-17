@@ -2299,6 +2299,19 @@ against it; the wire JSON is unchanged):
   which `Attached::ended` raises, also one met in the second its
   connections get after the conversation ended; its accept loop dropped
   it too.
+- A host's `LineSource` loses no line to `serve`. `serve` made a
+  `next_line` future on every pass of its loop, also while it waited for
+  the request read last to reach the session, and dropped it unpolled: a
+  source that takes its line when `next_line` is called (one written with
+  `std::future::ready`, as clippy's pedantic group rewrites an `async fn`
+  that never awaits) lost the line after each request that reaches the
+  session, so 13 of 20 `history` requests got no reply. It also dropped a
+  pending read whenever something else came first, so a source that reads
+  a line over several awaits (`BufReader::read_line`) lost a line that
+  arrived in two pieces. `serve` now calls `next_line` only when it takes
+  a line, keeps each read until it resolves, and drops one still pending
+  only with the source when the connection ends, so a source needs no
+  cancel-safety of its own; `LineSource::next_line` says so.
 
 ### haest-issues
 
