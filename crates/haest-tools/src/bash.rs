@@ -192,7 +192,7 @@ async fn run_now(
             "stderr": truncate_middle(&r.stderr, TRUNCATE_CHARS).0,
             "exitCode": r.exit_code,
             "truncated": truncated,
-            "durationMs": started.elapsed().as_millis() as u64,
+            "durationMs": u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         })),
         ..Default::default()
     })

@@ -63,9 +63,9 @@ impl Threshold for StreakNudge {
     }
     fn text(&self, r: &Reading) -> String {
         format!(
-            "This is turn {} in a row started by another conversation or a background job, with no message from the human since. If you are trading messages with another agent or restarting jobs, make sure it is still going somewhere; if it is not, stop. At {} haest holds further messages until the human posts.",
-            r.value as u64,
-            r.cap.unwrap_or_default() as u64
+            "This is turn {:.0} in a row started by another conversation or a background job, with no message from the human since. If you are trading messages with another agent or restarting jobs, make sure it is still going somewhere; if it is not, stop. At {:.0} haest holds further messages until the human posts.",
+            r.value,
+            r.cap.unwrap_or_default()
         )
     }
 }
@@ -217,6 +217,8 @@ mod tests {
         assert_eq!(g.agent_turn("m1").as_deref(), Some("m1"));
         let nudged = g.agent_turn("m2").unwrap();
         assert!(nudged != "m2" && nudged.ends_with("m2"));
+        assert!(nudged.contains("This is turn 2 in a row"), "{nudged}");
+        assert!(nudged.contains("At 4 haest holds"), "{nudged}");
         assert!(g.agent_turn("m3").is_some());
         assert!(g.agent_turn("m4").is_some());
         assert_eq!(g.agent_turn("m5"), None);
