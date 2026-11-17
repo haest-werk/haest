@@ -69,6 +69,25 @@ async fn run_passes_argv_untouched_and_reports_a_missing_program_as_127() {
     assert_eq!(ws.run(&[], opts(&dir)).await.exit_code, EXIT_NOT_FOUND);
 }
 
+/// A command's output was kept whole, so one that printed without end (`yes`,
+/// `cat /dev/urandom`) filled the host's memory until its timeout. Each
+/// stream keeps its first 64 MiB, as the sandbox does, and the child is
+/// still read to its end: it never blocks on a full pipe.
+#[tokio::test]
+async fn each_stream_keeps_its_first_64_mib_and_the_child_runs_to_its_end() {
+    const KEPT: usize = 64 * 1024 * 1024;
+    let (_t, dir) = tempdir();
+    let past = KEPT + 1024 * 1024;
+    let script = format!(
+        "head -c {past} /dev/zero; head -c {past} /dev/zero >&2; echo then; echo exit-7 >&2; exit 7"
+    );
+    let r = real().shell(&script, opts(&dir)).await;
+    assert_eq!((r.exit_code, r.timed_out), (7, false));
+    assert_eq!(r.stdout.len(), KEPT, "stdout kept past the cap");
+    assert_eq!(r.stderr.len(), KEPT, "stderr kept past the cap");
+    assert!(r.stdout.bytes().all(|b| b == 0));
+}
+
 #[tokio::test]
 async fn output_that_is_not_utf8_is_decoded_lossily() {
     let (_t, dir) = tempdir();

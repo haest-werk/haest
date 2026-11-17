@@ -1213,6 +1213,12 @@ Hosts write less (round two of the review, and what porting brain onto
 - `SandboxWorkspace::with_commands` adds a list of commands in one call:
   `sandbox_commands().into_iter().fold(ws, SandboxWorkspace::with_command)`
   -> `ws.with_commands(sandbox_commands())`.
+- Fixed: `RealWorkspace` kept all of a command's output in memory, so one
+  the model ran that printed without end (`yes`, `cat /dev/urandom`) could
+  fill the host's memory before its timeout (Bash waits up to 10 minutes).
+  Each stream now keeps its first 64 MiB, the sandbox's cap, and drops the
+  rest; the child is still read to its end, so it never blocks on a full
+  pipe. Streamed output is handed over whole, as before.
 
 ### haest-code
 

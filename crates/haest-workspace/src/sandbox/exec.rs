@@ -16,14 +16,13 @@ use haest_core::{
 };
 
 use super::commands::HostCommand;
+use crate::MAX_OUTPUT_BYTES;
 
 /// The per-call timeout is the caller's; this only bounds a runaway construct.
 const HARD_DEADLINE: Duration = Duration::from_secs(600);
 /// Loop and command budgets per call, generous enough for real scripts.
 const MAX_COMMANDS: usize = 100_000;
 const MAX_LOOP_ITERATIONS: usize = 100_000;
-/// Output kept per stream; the tools cut it down to their own budget.
-const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 /// The shell's user: `$HOME` is `/home/user`, which the scratch disk holds.
 const USER: &str = "user";
 /// Shell conventions for a stopped command.

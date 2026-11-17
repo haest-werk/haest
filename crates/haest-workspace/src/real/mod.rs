@@ -36,7 +36,10 @@ pub use fs::RealFs;
 /// - A call ends when the child has exited AND its output pipes have closed:
 ///   a command that leaves a process behind holding them (`server &`) runs
 ///   until that process closes them or the timeout kills the group.
-/// - Output is decoded as UTF-8, invalid bytes replaced.
+/// - Output is decoded as UTF-8, invalid bytes replaced. The result keeps
+///   each stream's first 64 MiB, as the sandbox does, and drops the rest;
+///   the child is still read to its end. Streamed output
+///   ([`Workspace::shell_streaming`]) is handed over whole.
 ///
 /// [`Workspace::prompt_note`] is empty: the real world needs no explaining.
 ///

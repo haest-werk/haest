@@ -19,6 +19,8 @@ use tokio::{
     process::Command,
 };
 
+use crate::MAX_OUTPUT_BYTES;
+
 /// After a kill, how long the pipes may stay open (a grandchild that left the
 /// group still holds them) before the result is returned without them.
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
@@ -131,6 +133,9 @@ fn whole_chars(pending: &mut Vec<u8>, end: bool) -> String {
     text
 }
 
+/// Read `from` to its end, so the child never blocks on a full pipe: into
+/// `into`, its first [`MAX_OUTPUT_BYTES`] kept and the rest dropped, or to
+/// `stream` as whole characters.
 async fn drain(mut from: impl AsyncRead + Unpin, into: Sink, stream: Option<OutputChunks>) {
     let mut chunk = vec![0u8; 16 * 1024];
     let mut pending = Vec::new();
@@ -143,7 +148,9 @@ async fn drain(mut from: impl AsyncRead + Unpin, into: Sink, stream: Option<Outp
             if n == 0 {
                 return;
             }
-            into.lock().unwrap().extend_from_slice(&chunk[..n]);
+            let mut kept = into.lock().unwrap();
+            let room = MAX_OUTPUT_BYTES.saturating_sub(kept.len());
+            kept.extend_from_slice(&chunk[..n.min(room)]);
             continue;
         };
         pending.extend_from_slice(&chunk[..n]);

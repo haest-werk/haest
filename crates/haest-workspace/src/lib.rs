@@ -145,6 +145,12 @@ pub use sandbox::{OpenSandboxError, SandboxMounts, SandboxWorkspace};
 
 use haest_core::workspace::{EXIT_NOT_FOUND, ExecResult};
 
+/// Output a command keeps per stream, in either workspace: its first 64 MiB.
+/// The tools cut it down to their own budget; past this, a command that
+/// prints without end (`yes`) would fill the host's memory before its
+/// timeout.
+const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+
 /// What `run` answers for an empty argv, in either workspace.
 fn no_command() -> ExecResult {
     ExecResult {
