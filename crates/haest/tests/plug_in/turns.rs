@@ -3,8 +3,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use haest::{AgentHooks, core::error::BoxError};
-use tokio_util::sync::CancellationToken;
+use haest::{AgentHooks, BoxError, CancellationToken};
 
 use super::*;
 

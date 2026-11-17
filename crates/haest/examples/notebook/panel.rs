@@ -10,11 +10,11 @@
 use std::{sync::Arc, time::Duration};
 
 use haest::{
-    ShutWorkspace, Tools,
-    core::tool::ToolContext,
+    BoxError, ShutWorkspace, ToolContext, Tools,
+    core::tool,
+    serde_json::json,
     tools::{AgentRef, Ending, Sender, SubagentHub},
 };
-use serde_json::json;
 
 use crate::{
     CWD, T0, config,
@@ -29,7 +29,7 @@ use crate::{
 const ASKED: &str = "Only Q3, skip Q2.";
 const FOUND: &str = "Q3 only: /notebook/notes/plan.md";
 
-pub async fn panel(gateway: &Arc<Gateway>) {
+pub async fn panel(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
     let s = config::work();
     let host = Arc::new(NotebookHost::new(
         RunClock::new(T0, true),
@@ -38,7 +38,7 @@ pub async fn panel(gateway: &Arc<Gateway>) {
         config::turn_caps(&s),
     ));
     let own = Tools::new().with(notebook_search());
-    let base = run_tools(&s, own, Arc::new(Attachments::new(&[])));
+    let base = run_tools(&s, own, Arc::new(Attachments::new(&[])))?;
     let (node, panel) = (Arc::new(Node::default()), Arc::new(Panel::default()));
     let helpers = Arc::new(NodeHelpers {
         gateway: gateway.clone(),
@@ -55,19 +55,20 @@ pub async fn panel(gateway: &Arc<Gateway>) {
     gateway.script([reply("Looking.", &[]), reply(FOUND, &[])]);
     // Main's Agent call, in the background.
     let agent = hub.tools_for(&AgentRef::main())[0].clone();
-    let call = json!({"description": "Find the Q3 notes", "prompt": "Every note about Q3.", "run_in_background": true});
+    let call = tool::input(
+        json!({"description": "Find the Q3 notes", "prompt": "Every note about Q3.", "run_in_background": true}),
+    )?;
     let ctx = ToolContext::new(CWD, ShutWorkspace);
-    let started = agent.execute(call.as_object().unwrap().clone(), &ctx).await;
-    let started = started.unwrap().content;
+    let started = agent.execute(call, &ctx).await?.content;
     assert!(started.starts_with("Started agent"), "{started}");
     held.arrived.cancelled().await;
-    let name = node.started.lock().unwrap()[0].name.clone();
+    let name = node.started()[0].name.clone();
 
     // The person types to the helper from the panel, and the panel shows it
     // as theirs.
-    let said = hub.deliver_as(Sender::Person("owner".into()), &name, ASKED);
+    let said = hub.deliver_as(Sender::Person("owner".into()), &name, ASKED)?;
     assert_eq!(
-        said.unwrap(),
+        said,
         format!("Delivered to \"{name}\"; it reads it at its next step.")
     );
     let heard = AgentMessage {
@@ -76,7 +77,7 @@ pub async fn panel(gateway: &Arc<Gateway>) {
         text: ASKED.into(),
         person: true,
     };
-    assert_eq!(*panel.messages.lock().unwrap(), [heard]);
+    assert_eq!(panel.messages(), [heard]);
     assert!(
         !hub.settled(Duration::from_millis(20)).await,
         "the helper still works"
@@ -86,8 +87,8 @@ pub async fn panel(gateway: &Arc<Gateway>) {
     assert!(hub.settled(Duration::from_secs(5)).await);
     // Its answer waits for main's next turn: an answer, never a message.
     let answer = format!("[Agent \"{name}\" finished]\n\n{FOUND}");
-    assert_eq!(*panel.main.lock().unwrap(), [ForMain::Answer(answer)]);
-    let closed = node.closed.lock().unwrap().clone();
+    assert_eq!(panel.main(), [ForMain::Answer(answer)]);
+    let closed = node.closed();
     assert_eq!(closed.len(), 1);
     assert_eq!(closed[0].ending, Ending::Answered);
 
@@ -107,4 +108,5 @@ pub async fn panel(gateway: &Arc<Gateway>) {
     assert!(first.contains("(or from the person)"));
     assert!(first.contains("You only read and search"));
     assert!(!first.contains("# You are a subagent"), "haest's note");
+    Ok(())
 }

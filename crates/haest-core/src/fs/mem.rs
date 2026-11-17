@@ -4,7 +4,7 @@ use std::{
     collections::BTreeMap,
     io::{self, ErrorKind},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Mutex, MutexGuard},
     time::SystemTime,
 };
 
@@ -73,6 +73,12 @@ impl Default for MemFs {
 }
 
 impl MemFs {
+    /// The tree. Only this file's code runs under the lock, so a poisoned
+    /// one is a bug here.
+    fn nodes(&self) -> MutexGuard<'_, BTreeMap<PathBuf, Node>> {
+        self.nodes.lock().expect("the memory fs lock poisoned")
+    }
+
     /// An empty file system: only the root directory `/`.
     pub fn new() -> Self {
         Self::default()
@@ -83,15 +89,18 @@ impl MemFs {
     pub fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
         files: impl IntoIterator<Item = (P, D)>,
     ) -> Self {
+        let files: Vec<(PathBuf, Node)> = files
+            .into_iter()
+            .map(|(p, d)| (normalize(p.as_ref()), Node::file(d.as_ref())))
+            .collect();
         let fs = Self::new();
         {
-            let mut nodes = fs.nodes.lock().unwrap();
-            for (p, d) in files {
-                let p = normalize(p.as_ref());
+            let mut nodes = fs.nodes();
+            for (p, file) in files {
                 for dir in p.ancestors().skip(1) {
                     nodes.entry(dir.to_path_buf()).or_insert(Node::Dir);
                 }
-                nodes.insert(p, Node::file(d.as_ref()));
+                nodes.insert(p, file);
             }
         }
         fs
@@ -121,7 +130,7 @@ impl MemFs {
     /// The file's bytes, up to `max` of them, copied out from under the lock.
     fn copy(&self, path: &Path, max: usize) -> io::Result<Vec<u8>> {
         let p = normalize(path);
-        match self.nodes.lock().unwrap().get(&p) {
+        match self.nodes().get(&p) {
             Some(Node::File { data, .. }) => Ok(data[..max.min(data.len())].to_vec()),
             Some(Node::Dir) => Err(err(ErrorKind::IsADirectory, &p)),
             None => Err(not_found(&p)),
@@ -139,7 +148,7 @@ enum Recursive {
 impl MemFs {
     fn make_dir(&self, path: &Path, recursive: Recursive) -> io::Result<()> {
         let p = normalize(path);
-        let mut nodes = self.nodes.lock().unwrap();
+        let mut nodes = self.nodes();
         match nodes.get(&p) {
             Some(Node::Dir) if recursive == Recursive::Yes => return Ok(()),
             Some(_) => return Err(err(ErrorKind::AlreadyExists, &p)),
@@ -168,7 +177,7 @@ impl MemFs {
         if p.parent().is_none() {
             return Err(err(ErrorKind::ResourceBusy, &p));
         }
-        let mut nodes = self.nodes.lock().unwrap();
+        let mut nodes = self.nodes();
         match nodes.get(&p) {
             None => return Err(not_found(&p)),
             Some(Node::Dir) => {
@@ -200,7 +209,7 @@ impl Fs for MemFs {
 
     async fn write(&self, path: &Path, data: &[u8]) -> io::Result<()> {
         let p = normalize(path);
-        let mut nodes = self.nodes.lock().unwrap();
+        let mut nodes = self.nodes();
         Self::parent_is_dir(&nodes, &p)?;
         if matches!(nodes.get(&p), Some(Node::Dir)) {
             return Err(err(ErrorKind::IsADirectory, &p));
@@ -211,7 +220,7 @@ impl Fs for MemFs {
 
     async fn append(&self, path: &Path, data: &[u8]) -> io::Result<()> {
         let p = normalize(path);
-        let mut nodes = self.nodes.lock().unwrap();
+        let mut nodes = self.nodes();
         Self::parent_is_dir(&nodes, &p)?;
         match nodes.get_mut(&p) {
             Some(Node::File { data: d, modified }) => {
@@ -228,7 +237,7 @@ impl Fs for MemFs {
 
     async fn stat(&self, path: &Path) -> io::Result<FsStat> {
         let p = normalize(path);
-        match self.nodes.lock().unwrap().get(&p) {
+        match self.nodes().get(&p) {
             Some(Node::File { data, modified }) => Ok(FsStat {
                 kind: FileKind::File,
                 size: data.len() as u64,
@@ -245,7 +254,7 @@ impl Fs for MemFs {
 
     async fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
         let p = normalize(path);
-        let nodes = self.nodes.lock().unwrap();
+        let nodes = self.nodes();
         match nodes.get(&p) {
             Some(Node::Dir) => {}
             Some(Node::File { .. }) => return Err(err(ErrorKind::NotADirectory, &p)),
@@ -286,7 +295,7 @@ impl Fs for MemFs {
 
     async fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
         let (from, to) = (normalize(from), normalize(to));
-        let mut nodes = self.nodes.lock().unwrap();
+        let mut nodes = self.nodes();
         if !nodes.contains_key(&from) {
             return Err(not_found(&from));
         }

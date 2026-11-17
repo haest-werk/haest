@@ -34,22 +34,21 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use async_trait::async_trait;
 use haest::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, Effort,
     ExecResult, Fs, JsonMap, LoopEvent, MemFs, Message, ModelError, Provider, ProviderRequest,
     ProviderStream, ResolvedModel, SharedDeps, StopReason, Tool, ToolCall, ToolContext, ToolError,
-    ToolOutput, ToolRef, Tools, TurnOutcome, Usage, Workspace, answer_stream,
+    ToolOutput, ToolRef, Tools, TurnOutcome, Usage, Workspace, answer_stream, async_trait,
     core::caps::SubagentCaps,
     core::shell_command::{ShellCall, ShellCommand},
     req_str,
+    serde_json::{Value, json},
     tools::{
         AgentRef, BuiltinOptions, Inbox, SubagentEvent, SubagentHub, SubagentParent,
         builtin_tools_where,
     },
     workspace::SandboxWorkspace,
 };
-use serde_json::{Value, json};
 use tokio::sync::{
     Semaphore,
     mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},

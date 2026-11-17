@@ -14,14 +14,15 @@
 //! use haest_core::frontmatter::{inline_list, split_frontmatter, unquote};
 //!
 //! let card = "---\ntitle: \"Fix the \\\"login\\\" bug\"\nlabels: [auth, 'p1']\n---\nSteps to reproduce.\n";
-//! let (head, body) = split_frontmatter(card).unwrap();
+//! let (head, body) = split_frontmatter(card).ok_or("no frontmatter")?;
 //! assert_eq!(head, ["title: \"Fix the \\\"login\\\" bug\"", "labels: [auth, 'p1']"]);
 //! assert_eq!(body, "Steps to reproduce.\n");
 //!
-//! let (_, title) = head[0].split_once(": ").unwrap();
+//! let (_, title) = head[0].split_once(": ").ok_or("no title")?;
 //! assert_eq!(unquote(title), "Fix the \"login\" bug");
-//! let (_, labels) = head[1].split_once(": ").unwrap();
+//! let (_, labels) = head[1].split_once(": ").ok_or("no labels")?;
 //! assert_eq!(inline_list(labels).unwrap(), ["auth", "p1"]);
+//! # Ok::<(), &'static str>(())
 //! ```
 
 /// Splits `---\n<head>\n---\n<body>` into the head's lines and the body;

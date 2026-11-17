@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 /// until some call reported a price.
 ///
 /// ```
-/// use haest_core::messages::Usage;
+/// use haest_core::Usage;
 ///
 /// let calls = [
 ///     Usage { input: 100, output: 20, ..Usage::default() },

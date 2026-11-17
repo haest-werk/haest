@@ -3,7 +3,7 @@
 use std::{
     collections::HashMap,
     fmt, io,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use async_trait::async_trait;
@@ -54,7 +54,7 @@ use crate::session::{SessionRecord, SessionSink, SessionSinkRef};
 ///         Log(self.0.clone(), key.clone()).into()
 ///     }
 ///     async fn load(&self, key: &RunKey) -> io::Result<Option<ReplayedRun>> {
-///         let logs = self.0.lock().expect("not poisoned");
+///         let logs = self.0.lock().map_err(|_| io::Error::other("a writer panicked"))?;
 ///         Ok(logs.get(key).and_then(|text| replay_run(text)))
 ///     }
 /// }
@@ -79,6 +79,12 @@ crate::plug_ref! {
 }
 
 type Logs = Arc<Mutex<HashMap<RunKey, Vec<String>>>>;
+
+/// The logs. Only this file's code runs under the lock, so a poisoned one
+/// is a bug here.
+fn lock(logs: &Logs) -> MutexGuard<'_, HashMap<RunKey, Vec<String>>> {
+    logs.lock().expect("the memory run store's lock poisoned")
+}
 
 /// Durable runs kept in memory, as JSON lines: they survive an aborted or
 /// dropped turn, not the process. For tests, and for a host that only needs
@@ -138,13 +144,12 @@ impl MemoryRunStore {
     /// the lines a session file of the run would hold. Empty for a key never
     /// started.
     pub fn lines(&self, key: &RunKey) -> Vec<String> {
-        let logs = self.logs.lock().unwrap();
-        logs.get(key).cloned().unwrap_or_default()
+        lock(&self.logs).get(key).cloned().unwrap_or_default()
     }
 
     /// Every key with records, sorted.
     pub fn keys(&self) -> Vec<RunKey> {
-        let mut keys: Vec<RunKey> = self.logs.lock().unwrap().keys().cloned().collect();
+        let mut keys: Vec<RunKey> = lock(&self.logs).keys().cloned().collect();
         keys.sort();
         keys
     }
@@ -174,7 +179,7 @@ struct MemorySink {
 impl SessionSink for MemorySink {
     fn append(&self, record: &SessionRecord) {
         let line = serde_json::to_string(record).expect("a session record always serializes");
-        let mut logs = self.logs.lock().unwrap();
+        let mut logs = lock(&self.logs);
         logs.entry(self.key.clone()).or_default().push(line);
     }
 }

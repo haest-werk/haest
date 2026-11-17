@@ -118,7 +118,7 @@ pub enum ModelError {
 /// use haest_core::{
 ///     ModelError, ModelResolver, Provider, ProviderRef, ResolvedModel, provider::parse_model_spec,
 /// };
-/// # use haest_core::{ProviderRequest, provider::ProviderStream};
+/// # use haest_core::{ProviderRequest, ProviderStream};
 /// # struct Echo;
 /// # impl Provider for Echo {
 /// #     fn id(&self) -> &str { "echo" }

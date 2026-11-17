@@ -5,7 +5,7 @@
 
 use std::{
     fmt, io,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use async_trait::async_trait;
@@ -218,15 +218,23 @@ impl Skills {
 
     /// Every skill held, the ones the model may not pick included.
     pub fn list(&self) -> Vec<Skill> {
-        self.list
-            .read()
-            .expect("the skill list is never poisoned")
-            .clone()
+        self.held().clone()
     }
 
     /// Hold `skills` in place of the list: every clone sees them at once.
     pub fn replace(&self, skills: Vec<Skill>) {
-        *self.list.write().expect("the skill list is never poisoned") = skills;
+        *self.held_mut() = skills;
+    }
+
+    /// The list, to read. Only a clone or a move runs under the lock, so a
+    /// poisoned one is a bug here.
+    fn held(&self) -> RwLockReadGuard<'_, Vec<Skill>> {
+        self.list.read().expect("the skill list lock poisoned")
+    }
+
+    /// The list, to replace.
+    fn held_mut(&self) -> RwLockWriteGuard<'_, Vec<Skill>> {
+        self.list.write().expect("the skill list lock poisoned")
     }
 }
 

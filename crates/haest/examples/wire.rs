@@ -9,12 +9,15 @@
 
 use std::sync::Arc;
 
-use haest::wire::{
-    Classify, DecodeError, Envelope, FrameKind, Framer, Inbound, LineDecoder, Outbound, Path,
-    Request, Ring, decode, encode_line,
+use haest::{
+    BoxError,
+    serde_json::{self, Value},
+    wire::{
+        Classify, DecodeError, Envelope, FrameKind, Framer, Inbound, LineDecoder, Outbound, Path,
+        Request, Ring, decode, encode_line,
+    },
 };
 use serde::Serialize;
-use serde_json::Value;
 
 /// What this conversation sends: here only the wire's own frames.
 #[derive(Serialize)]
@@ -33,7 +36,7 @@ fn notice(text: &str) -> Body {
     })
 }
 
-fn main() {
+fn main() -> Result<(), BoxError> {
     // The conversation's side: one framer per stream, a ring of the last 3.
     let mut framer = Framer::new("example-stream");
     let mut ring = Ring::new(3);
@@ -48,9 +51,9 @@ fn main() {
     let mut lines = LineDecoder::new();
     let mut last_seq = 0;
     for piece in wire.as_bytes().chunks(7) {
-        for line in lines.push(piece).expect("short lines") {
+        for line in lines.push(piece)? {
             // A reader that knows no Rust types: the envelope's keys, the rest as JSON.
-            let frame: Envelope<Value> = serde_json::from_str(&line).expect("a frame");
+            let frame: Envelope<Value> = serde_json::from_str(&line)?;
             println!(
                 "seq {} {}: {}",
                 frame.seq, frame.body["type"], frame.body["text"]
@@ -80,10 +83,11 @@ fn main() {
         Err(e @ DecodeError::Version { .. }) => println!("refused: {e}"),
         other => panic!("a stale frame must be refused, got {other:?}"),
     }
+    Ok(())
 }
 
 /// `cargo test` runs the example, so a change that breaks it fails the suite.
 #[test]
-fn the_example_runs() {
-    main();
+fn the_example_runs() -> Result<(), BoxError> {
+    main()
 }

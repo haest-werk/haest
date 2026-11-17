@@ -36,7 +36,8 @@ mod tools;
 use std::sync::Arc;
 
 use haest::{
-    AgentDeps, ModelError, ModelResolverRef, ResolvedModel, SharedDeps, Tools, WorkspaceRef,
+    AgentDeps, BoxError, ModelError, ModelResolverRef, ProviderRef, ResolvedModel, SharedDeps,
+    Tools, WorkspaceRef,
     core::provider::parse_model_spec,
     providers::{CompatFlavor, CompatOptions, CompatProvider, RetryPolicy},
     settings::{Settings, WordSet},
@@ -55,22 +56,23 @@ pub const CWD: &str = "/notebook";
 pub const T0: u64 = 1_800_000_000_000;
 
 #[tokio::main]
-async fn main() {
-    every_run().await;
+async fn main() -> Result<(), BoxError> {
+    every_run().await?;
     println!("notebook example: every plug point held");
+    Ok(())
 }
 
-async fn every_run() {
+async fn every_run() -> Result<(), BoxError> {
     let gateway = Arc::new(Gateway::default());
-    runs::work(&gateway).await;
-    runs::dream(&gateway).await;
+    runs::work(&gateway).await?;
+    runs::dream(&gateway).await?;
     runs::clock(&gateway).await;
-    panel::panel(&gateway).await;
+    panel::panel(&gateway).await
 }
 
 #[tokio::test]
-async fn every_plug_point_the_notebook_uses_holds() {
-    every_run().await;
+async fn every_plug_point_the_notebook_uses_holds() -> Result<(), BoxError> {
+    every_run().await
 }
 
 /// `gateway:<model>` -> the OpenAI-compatible adapter over the node's gateway.
@@ -82,7 +84,8 @@ pub fn models(gateway: Arc<Gateway>, token: &str) -> ModelResolverRef {
     let mut opts = CompatOptions::new("gateway", token);
     opts.flavor = CompatFlavor::OpenRouter;
     opts.base_url = Some(BASE_URL.into());
-    let provider = Arc::new(CompatProvider::new(opts, gateway).with_retry(RetryPolicy::none()));
+    let provider =
+        ProviderRef::new(CompatProvider::new(opts, gateway).with_retry(RetryPolicy::none()));
     ModelResolverRef::new(move |spec: &str| {
         let (id, model) = parse_model_spec(spec)?;
         if id != "gateway" {
@@ -100,7 +103,11 @@ pub fn models(gateway: Arc<Gateway>, token: &str) -> ModelResolverRef {
 /// with the attachment intercept, Bash with no background jobs, no WebFetch:
 /// the node fetches) and the notebook's own (`own`). The agent tools come from
 /// the hub, over these (`runs::work`).
-pub fn run_tools(s: &Settings, own: Tools, attachments: Arc<Attachments>) -> Tools {
+pub fn run_tools(
+    s: &Settings,
+    own: Tools,
+    attachments: Arc<Attachments>,
+) -> Result<Tools, BoxError> {
     let opts = BuiltinOptions {
         read_intercept: Some(attachments),
         bash: BashOptions {
@@ -110,12 +117,11 @@ pub fn run_tools(s: &Settings, own: Tools, attachments: Arc<Attachments>) -> Too
         web_fetch: None,
         ..Default::default()
     };
-    // A word on whose option is None here (web_fetch, tasks, skill) would be
-    // an error, never a tool quietly missing; the notebook's runs turn on none of them.
-    let mut tools = builtin_tools_where(|w| s.tools.has(w), opts)
-        .expect("the notebook's runs pick only built-ins it gives the options for");
+    // A word on whose option is None here (web_fetch, tasks, skill) is an
+    // error, never a tool quietly missing; the notebook's runs turn on none of them.
+    let mut tools = builtin_tools_where(|w| s.tools.has(w), opts)?;
     tools.extend(own);
-    tools
+    Ok(tools)
 }
 
 /// The notebook's kinds of subagent (`explore` only reads) and the models it offers.

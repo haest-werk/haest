@@ -90,8 +90,8 @@ pub(crate) fn fit_effort(
 ///
 /// ```
 /// use haest_core::{
-///     Effort,
-///     catalog::{OpenRouterEffort as O, Reasoning},
+///     Effort, Reasoning,
+///     catalog::OpenRouterEffort as O,
 ///     provider::nearest_accepted_effort,
 /// };
 ///

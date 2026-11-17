@@ -13,9 +13,10 @@
 use std::{sync::Arc, time::Duration};
 
 use haest::{
-    Agent, AgentDeps, AgentOptions, JsonMap, LoopEvent, Message, ShutWorkspace, Tool, ToolContext,
-    ToolError, ToolOutput, Tools, async_trait,
+    Agent, AgentDeps, AgentOptions, BoxError, JsonMap, LoopEvent, Message, ShutWorkspace, Tool,
+    ToolContext, ToolError, ToolOutput, Tools, async_trait,
     core::testing::{ScriptedProvider, text_answer, tool_answer},
+    serde_json::{Value, json},
     session::{Backend, Body, Hub, HubOptions, Input, start},
     wire::{Outbound, encode_line},
 };
@@ -32,8 +33,8 @@ impl Tool for Wait {
     fn description(&self) -> String {
         "Waits until it is let go.".into()
     }
-    fn parameters(&self) -> serde_json::Value {
-        serde_json::json!({"type": "object"})
+    fn parameters(&self) -> Value {
+        json!({"type": "object"})
     }
     fn kind(&self) -> &str {
         "wait"
@@ -45,10 +46,10 @@ impl Tool for Wait {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
+async fn main() -> Result<(), BoxError> {
     let go = Arc::new(Notify::new());
     let model = ScriptedProvider::new([
-        tool_answer(&[("c1", "Wait", serde_json::json!({}))]),
+        tool_answer(&[("c1", "Wait", json!({}))]),
         text_answer("Done, and I saw your note."),
     ]);
     let tools = Tools::new().with(Wait(go.clone()));
@@ -81,11 +82,11 @@ async fn main() {
     });
     tokio::time::sleep(Duration::from_millis(20)).await;
     go.notify_one();
-    first.await.unwrap().unwrap();
-    note.await.unwrap().unwrap();
+    first.await??;
+    note.await??;
 
     // One turn took both inputs: the note is a user message after the tool's result.
-    let history = session.history().await.unwrap().messages;
+    let history = session.history().await?.messages;
     assert!(matches!(&history[3], Message::User(u) if u.content == "also: the build is green"));
     assert_eq!(model.requests().len(), 2);
 
@@ -103,22 +104,23 @@ async fn main() {
     assert_eq!(answer, "Done, and I saw your note.");
 
     // A snapshot says where the conversation stands.
-    let now = session.snapshot().await.unwrap();
+    let now = session.snapshot().await?;
     eprintln!("{} messages, last seq {}", now.messages, now.last_seq);
 
     // Closing ends every stream once it has handed over what it held.
     session.close().await;
-    watching.await.unwrap();
+    watching.await?;
     while let Some(frame) = late.recv().await {
         assert!(
             matches!(frame.body, Body::Wire(Outbound::Status(_))),
             "only the closing status is left"
         );
     }
+    Ok(())
 }
 
 /// `cargo test` runs the example, so a change that breaks it fails the suite.
 #[test]
-fn the_example_runs() {
-    main();
+fn the_example_runs() -> Result<(), BoxError> {
+    main()
 }

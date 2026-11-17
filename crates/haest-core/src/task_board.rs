@@ -44,7 +44,7 @@ mod tests;
 
 use std::{
     fmt,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 pub use task::{NewTask, PatchStatus, Task, TaskError, TaskPatch, TaskStatus};
@@ -150,9 +150,15 @@ impl TaskBoard {
         self
     }
 
+    /// The board. Its lock is held only while this file's own code runs
+    /// (never `on_change`, never the clock), so a poisoned one is a bug here.
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().expect("the task board's lock poisoned")
+    }
+
     /// Every task, in the order they were created.
     pub fn list(&self) -> Vec<Task> {
-        self.state.lock().unwrap().tasks.clone()
+        self.state().tasks.clone()
     }
 
     /// The task with this id.
@@ -161,7 +167,7 @@ impl TaskBoard {
     ///
     /// A [`TaskError`] naming the ids that exist, when none matches.
     pub fn get(&self, id: &str) -> Result<Task, TaskError> {
-        let s = self.state.lock().unwrap();
+        let s = self.state();
         s.find(id).map(|i| s.tasks[i].clone())
     }
 
@@ -174,8 +180,9 @@ impl TaskBoard {
     /// out or restored: the board never hands out an id twice. Nothing
     /// changes and nothing fires.
     pub fn create(&self, input: NewTask) -> Result<Task, TaskError> {
+        let now = self.clock.now_ms();
         let task = {
-            let mut s = self.state.lock().unwrap();
+            let mut s = self.state();
             let id = s.next.ok_or(TaskError::IdsExhausted)?;
             let task = Task {
                 id: id.to_string(),
@@ -186,7 +193,7 @@ impl TaskBoard {
                 blocked_by: Vec::new(),
                 blocks: Vec::new(),
                 owner: None,
-                updated_at: self.clock.now_ms(),
+                updated_at: now,
                 completed_at: None,
             };
             s.next = id.checked_add(1);
@@ -210,8 +217,9 @@ impl TaskBoard {
     /// before the first change: a refused patch changes nothing and fires
     /// nothing.
     pub fn update(&self, id: &str, patch: TaskPatch) -> Result<Option<Task>, TaskError> {
+        let now = self.clock.now_ms();
         let out = {
-            let mut s = self.state.lock().unwrap();
+            let mut s = self.state();
             let at = s.find(id)?;
             // Every refusal comes before the first change: an error after it would
             // leave an unsaved, unpublished edit.
@@ -225,7 +233,6 @@ impl TaskBoard {
                 s.remove(id);
                 None
             } else {
-                let now = self.clock.now_ms();
                 set_fields(&mut s.tasks[at], &patch, now);
                 for b in &patch.add_blocked_by {
                     s.link(b, id)?;
@@ -246,7 +253,7 @@ impl TaskBoard {
     /// restored id of `u64::MAX` leaves none: [`create`](Self::create) then
     /// refuses.
     pub fn restore(&self, tasks: Vec<Task>) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state();
         let max = tasks
             .iter()
             .map(|t| t.id.parse::<u64>().unwrap_or(0))

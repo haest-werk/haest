@@ -23,7 +23,7 @@ pub fn advertised_tools(
         return all.clone();
     };
     let grown: Vec<ToolRef> = if deferral.mode == DeferMode::Grow {
-        let loaded = deferral.loaded.lock().unwrap();
+        let loaded = deferral.loaded();
         deferred
             .iter()
             .filter(|t| loaded.contains(t.name()))

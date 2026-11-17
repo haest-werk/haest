@@ -17,7 +17,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! haest = "0.2"
+//! haest = "0.3"
 //! tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 //! ```
 //!
@@ -25,11 +25,10 @@
 //! directory:
 //!
 //! ```no_run
-//! use haest::core::error::BoxError;
 //! use haest::providers::{ProviderRegistry, RegistryOptions};
 //! use haest::tools::{BuiltinOptions, builtin_tools};
 //! use haest::workspace::RealWorkspace;
-//! use haest::{Agent, AgentDeps, AgentOptions, ChildEnv, LoopEvent};
+//! use haest::{Agent, AgentDeps, AgentOptions, BoxError, ChildEnv, LoopEvent};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), BoxError> {
@@ -170,7 +169,7 @@
 //!
 //! ```toml
 //! [dev-dependencies]
-//! haest = { version = "0.2", features = ["testing"] }
+//! haest = { version = "0.3", features = ["testing"] }
 //! ```
 //!
 //! # Features
@@ -204,11 +203,11 @@
 //!
 //! ```toml
 //! # a host with its own HTTP client, files and tools:
-//! haest = { version = "0.2", default-features = false, features = [
+//! haest = { version = "0.3", default-features = false, features = [
 //!     "providers", "workspace", "tools", "settings",
 //! ] }
 //! # the whole conversation from haest's own files, variables and flags (the CLI):
-//! haest = { version = "0.2", features = ["runtime", "config"] }
+//! haest = { version = "0.3", features = ["runtime", "config"] }
 //! ```
 //!
 //! # Going further

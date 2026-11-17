@@ -227,8 +227,7 @@ crate::plug_ref! {
 ///
 /// use async_trait::async_trait;
 /// use haest_core::{
-///     ExecOptions, ExecResult, MemFs, Workspace, WorkspaceMode,
-///     fs::FsRef,
+///     ExecOptions, ExecResult, FsRef, MemFs, Workspace, WorkspaceMode,
 ///     workspace::EXIT_NOT_FOUND,
 /// };
 ///
@@ -266,11 +265,12 @@ crate::plug_ref! {
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// let ws = Tiny { fs: MemFs::new().into() };
 /// let opts = ExecOptions::new("/project", Duration::from_secs(5));
 /// assert_eq!(ws.shell("pwd", opts.clone()).await.stdout, "/project\n");
 /// assert_eq!(ws.shell("make", opts).await.exit_code, EXIT_NOT_FOUND);
+/// # Ok(())
 /// # }
 /// ```
 #[async_trait]

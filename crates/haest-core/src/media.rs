@@ -20,8 +20,8 @@
 //! use haest_core::media::{MediaError, media_from_bytes, media_type_from_name};
 //!
 //! let png = [0x89, b'P', b'N', b'G'];
-//! let media_type = media_type_from_name("shot.png").unwrap();
-//! let part = media_from_bytes(&png, media_type, "shot.png").unwrap();
+//! let media_type = media_type_from_name("shot.png").ok_or("not a media file")?;
+//! let part = media_from_bytes(&png, media_type, "shot.png")?;
 //! assert_eq!(part.media_type, "image/png");
 //!
 //! // Too big for its kind: refused with a reason, before anything is sent.
@@ -30,6 +30,7 @@
 //!     media_from_bytes(&huge, "image/png", "huge.png"),
 //!     Err(MediaError::TooBig { .. })
 //! ));
+//! # Ok::<(), haest_core::BoxError>(())
 //! ```
 
 mod fit;

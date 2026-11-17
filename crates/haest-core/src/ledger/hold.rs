@@ -55,11 +55,18 @@ impl Ledger {
     /// refused with what is left when it does not fit. With no USD cap every
     /// hold fits.
     ///
+    /// # Errors
+    ///
+    /// [`NotAvailable`], saying what was asked and what is left, when `usd`
+    /// does not fit what the cap leaves after what is spent and held.
+    ///
+    /// # Examples
+    ///
     /// ```
     /// use haest_core::{
+    ///     Usage,
     ///     caps::ConversationCaps,
-    ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
-    ///     messages::Usage,
+    ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot, NotAvailable},
     /// };
     ///
     /// struct Quiet;
@@ -72,8 +79,11 @@ impl Ledger {
     /// let caps = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
     /// let ledger = Ledger::new(caps, Quiet);
     /// let a = ledger.reserve(0.6)?;
-    /// let refused = ledger.reserve(0.6).unwrap_err();
-    /// assert!((refused.available - 0.4).abs() < 1e-9);
+    /// // A second $0.60 does not fit: $0.40 is left.
+    /// assert!(matches!(
+    ///     ledger.reserve(0.6),
+    ///     Err(NotAvailable { available, .. }) if (available - 0.4).abs() < 1e-9
+    /// ));
     ///
     /// // The spender paid $0.10 as it ran; at its end the hold goes, the spend stays.
     /// ledger.charge(&Usage { cost_usd: Some(0.1), ..Usage::default() });

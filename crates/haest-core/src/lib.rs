@@ -77,13 +77,12 @@
 //! ```
 //! # #[cfg(feature = "testing")]
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() {
+//! # async fn main() -> Result<(), haest_core::BoxError> {
 //! use async_trait::async_trait;
 //! use haest_core::{
-//!     Agent, AgentDeps, AgentOptions, LoopEvent, Message, ShutWorkspace, StopReason, Tool,
-//!     ToolContext, ToolError, ToolOutput, Tools,
+//!     Agent, AgentDeps, AgentOptions, JsonMap, LoopEvent, Message, ShutWorkspace, StopReason,
+//!     Tool, ToolContext, ToolError, ToolOutput, Tools, req_str,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
-//!     tool::{JsonMap, req_str},
 //! };
 //! use serde_json::{Value, json};
 //!
@@ -134,6 +133,7 @@
 //! // The input, the call, its result, the answer.
 //! assert_eq!(agent.history().len(), 4);
 //! assert!(matches!(&agent.history()[2], Message::Tool(r) if r.content == "HELLO"));
+//! # Ok(())
 //! # }
 //! # #[cfg(not(feature = "testing"))]
 //! # fn main() {}
@@ -238,6 +238,7 @@ pub mod prelude {
         AgentDeps, AgentHooks, AgentHooksRef, Clock, ClockRef, NoHooks, SharedDeps, SystemPrompt,
         SystemPromptRef, WallClock, now_ms,
     };
+    pub use crate::error::BoxError;
     pub use crate::events::{EventSink, LoopEvent, TurnOutcome};
     pub use crate::fs::{DirEntry, FileKind, Fs, FsRef, FsStat, MemFs};
     pub use crate::handed::{ChildEnv, KeySource, KeySourceRef};

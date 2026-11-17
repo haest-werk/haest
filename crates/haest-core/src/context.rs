@@ -16,7 +16,7 @@
 //!
 //! ```
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() {
+//! # async fn main() -> Result<(), haest_core::BoxError> {
 //! use haest_core::{
 //!     MemFs,
 //!     context::{
@@ -46,6 +46,7 @@
 //!     ..PromptInputs::default()
 //! });
 //! assert!(prompt.contains("Run the tests before you commit."));
+//! # Ok(())
 //! # }
 //! ```
 

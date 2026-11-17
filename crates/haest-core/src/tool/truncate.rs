@@ -8,7 +8,7 @@
 /// is a little longer than `max`.
 ///
 /// ```
-/// use haest_core::tool::truncate_middle;
+/// use haest_core::truncate_middle;
 ///
 /// let (short, cut) = truncate_middle("abc", 10);
 /// assert_eq!((short.as_str(), cut), ("abc", false));

@@ -146,12 +146,13 @@ impl ShellCall {
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// let deadline = Instant::now() + Duration::from_secs(10);
 /// let call = ShellCall::new(Vec::<String>::new(), "/project", MemFs::new(), deadline)
 ///     .with_stdin(b"hello\n".as_slice());
 /// let out = Upper.run(call).await;
 /// assert_eq!((out.stdout.as_str(), out.exit_code), ("HELLO\n", 0));
+/// # Ok(())
 /// # }
 /// ```
 #[async_trait]

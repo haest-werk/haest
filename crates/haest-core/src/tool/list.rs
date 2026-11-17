@@ -16,7 +16,7 @@ use super::{ToolRef, ToolSource};
 ///
 /// ```
 /// use async_trait::async_trait;
-/// use haest_core::{Tool, ToolContext, ToolError, ToolOutput, ToolSource, Tools, tool::JsonMap};
+/// use haest_core::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSource, Tools};
 /// use serde_json::{Value, json};
 ///
 /// struct Ping;

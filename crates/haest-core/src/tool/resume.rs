@@ -14,7 +14,7 @@ use super::{Tool, ToolContext};
 ///
 /// ```
 /// use async_trait::async_trait;
-/// use haest_core::{Tool, ToolContext, ToolError, ToolOutput, tool::{JsonMap, OnResume}};
+/// use haest_core::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, tool::OnResume};
 /// use serde_json::{Value, json};
 ///
 /// struct Pay;

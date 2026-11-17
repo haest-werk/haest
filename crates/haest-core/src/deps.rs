@@ -97,7 +97,7 @@ crate::plug_ref! {
 /// ```
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// use std::sync::{Arc, Mutex};
 ///
 /// use haest_core::{
@@ -134,6 +134,7 @@ crate::plug_ref! {
 /// assert!(matches!(&agent.history()[2], Message::Tool(_)));
 /// // Every message the loop appended reached the hook.
 /// assert_eq!(*host.saved.lock().expect("not poisoned"), agent.history());
+/// # Ok(())
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}

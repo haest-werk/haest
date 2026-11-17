@@ -14,14 +14,14 @@
 use std::sync::{Arc, Mutex};
 
 use haest::{
-    Agent, AgentDeps, AgentHooks, AgentOptions, JsonMap, LoopEvent, ShutWorkspace, Tool,
+    Agent, AgentDeps, AgentHooks, AgentOptions, BoxError, JsonMap, LoopEvent, ShutWorkspace, Tool,
     ToolContext, ToolError, ToolOutput, Tools, TurnCaps, Usage,
     core::{
         testing::{ScriptedProvider, text_answer, tool_answer},
         threshold::{Action, Mark, Meter, Reading, Rearm, Threshold, Thresholds},
     },
+    serde_json::{Value, json},
 };
-use serde_json::{Value, json};
 
 /// The model's window, in tokens.
 const WINDOW: u64 = 10_000;
@@ -83,7 +83,8 @@ struct Host {
 impl AgentHooks for Host {
     fn on_warning(&self, text: &str) {
         println!("(for the human) {text}");
-        self.warnings.lock().unwrap().push(text.to_string());
+        let mut warnings = self.warnings.lock().expect("the warnings' lock poisoned");
+        warnings.push(text.to_string());
     }
 }
 
@@ -124,16 +125,16 @@ fn lookup(id: &str, topic: &str, context: u64) -> haest::AssistantMessage {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
-    run().await;
+async fn main() -> Result<(), BoxError> {
+    run().await
 }
 
 #[tokio::test]
-async fn each_threshold_fires_once() {
-    run().await;
+async fn each_threshold_fires_once() -> Result<(), BoxError> {
+    run().await
 }
 
-async fn run() {
+async fn run() -> Result<(), BoxError> {
     let provider = ScriptedProvider::new([
         lookup("a", "tides", 3_000),
         lookup("b", "currents", 6_500),
@@ -142,10 +143,7 @@ async fn run() {
     ]);
     let host = Arc::new(Host::default());
     // haest's own (the guard's nudges), then the host's.
-    let thresholds = Thresholds::default()
-        .with(SaveNotes)
-        .and_then(|t| t.with(LongTurn))
-        .expect("a turn reads both meters and can remind and warn");
+    let thresholds = Thresholds::default().with(SaveNotes)?.with(LongTurn)?;
     let deps = AgentDeps::new(
         provider.resolver(),
         Tools::new().with(Lookup),
@@ -180,8 +178,9 @@ async fn run() {
         "{reminders:?}"
     );
     // The third call warned the human, once; the model never saw it.
-    let warnings = host.warnings.lock().unwrap();
+    let warnings = host.warnings.lock().expect("the warnings' lock poisoned");
     assert_eq!(*warnings, ["This turn has made 3 model calls."]);
-    let sent = provider.requests();
-    assert!(!format!("{:?}", sent.last().unwrap().messages).contains("model calls"));
+    let last = provider.requests().pop().ok_or("the model was called")?;
+    assert!(!format!("{:?}", last.messages).contains("model calls"));
+    Ok(())
 }

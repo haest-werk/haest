@@ -9,9 +9,8 @@
 use std::sync::{Arc, Mutex};
 
 use haest::{
-    AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Usage,
+    Agent, AgentDeps, AgentOptions, BoxError, CancellationToken, LoopEvent, ShutWorkspace, Usage,
     core::{
-        Agent,
         caps::{ConversationCap, ConversationCaps},
         ledger::{Ledger, LedgerHooks, LedgerSnapshot},
         remedy::{Limit, Remedies},
@@ -19,11 +18,10 @@ use haest::{
         threshold::Thresholds,
         wind_down::WindDown,
     },
+    serde_json::json,
     settings::Settings,
     tools::{AgentDirectory, AgentError, AgentRef, SpawnInput, SpawnOutcome, agent_tools},
 };
-use serde_json::json;
-use tokio_util::sync::CancellationToken;
 
 /// The host's subagents: here each one answers at once, and is counted.
 #[derive(Default)]
@@ -37,7 +35,8 @@ impl AgentDirectory for Helpers {
         input: SpawnInput,
         _cancel: CancellationToken,
     ) -> Result<SpawnOutcome, AgentError> {
-        self.0.lock().unwrap().push(input.description.clone());
+        let mut spawned = self.0.lock().expect("the helpers' lock poisoned");
+        spawned.push(input.description.clone());
         let text = format!("{}: nothing unusual", input.description);
         Ok(SpawnOutcome {
             text,
@@ -72,20 +71,20 @@ fn spawn_at(id: &str, description: &str, usd: f64) -> haest::AssistantMessage {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
-    run().await;
+async fn main() -> Result<(), BoxError> {
+    run().await
 }
 
 #[tokio::test]
-async fn the_spawn_past_the_share_is_refused_and_the_model_told_once() {
-    run().await;
+async fn the_spawn_past_the_share_is_refused_and_the_model_told_once() -> Result<(), BoxError> {
+    run().await
 }
 
-async fn run() {
+async fn run() -> Result<(), BoxError> {
     // The setting as a host writes it out (haest-config reads `wind_down_at`
     // into the same field).
     let settings = Settings {
-        wind_down_at: WindDown::at(0.8).expect("a share from 0 to 1"),
+        wind_down_at: WindDown::at(0.8)?,
         ..Settings::bare("/work", "/home/me")
     };
 
@@ -142,4 +141,5 @@ async fn run() {
     assert_eq!(*helpers.0.lock().unwrap(), ["scout the logs"]);
     assert_eq!(refused, 1, "the spawn past 80% was refused");
     assert_eq!(notices, 1, "the model was told once");
+    Ok(())
 }

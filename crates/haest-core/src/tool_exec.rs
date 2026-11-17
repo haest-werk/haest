@@ -176,7 +176,7 @@ pub(crate) fn tool_result_message(call: &ToolCall, out: &ToolOutput) -> ToolResu
 ///
 /// ```
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// use haest_core::{
 ///     ShutWorkspace, ToolCall, ToolContext, Tools,
 ///     __private::{ToolIndex, run_unspilled},
@@ -186,6 +186,7 @@ pub(crate) fn tool_result_message(call: &ToolCall, out: &ToolOutput) -> ToolResu
 /// let ctx = ToolContext::new("/", ShutWorkspace);
 /// let out = run_unspilled(&ToolIndex::new(Tools::new()), &call, &ctx).await;
 /// assert!(out.is_error); // an answer the model reads, not a failure of the loop
+/// # Ok(())
 /// # }
 /// ```
 pub async fn run_unspilled(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> ToolOutput {

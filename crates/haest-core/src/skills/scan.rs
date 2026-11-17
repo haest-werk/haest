@@ -135,11 +135,12 @@ fn as_list(v: Option<&Meta>) -> Option<Vec<String>> {
 /// use haest_core::skills::parse_skill_file;
 ///
 /// let text = "---\ndescription: Cut a release\nallowed-tools: Bash, Read\n---\nSteps...\n";
-/// let meta = parse_skill_file(text, "release").unwrap();
+/// let meta = parse_skill_file(text, "release").ok_or("not a skill file")?;
 /// assert_eq!(meta.name, "release"); // no `name:`, so the dir's name
 /// assert_eq!(meta.allowed_tools.unwrap(), ["Bash", "Read"]);
 /// assert!(meta.model_invocable);
 /// assert!(parse_skill_file("no frontmatter", "x").is_none());
+/// # Ok::<(), &'static str>(())
 /// ```
 pub fn parse_skill_file(content: &str, fallback_name: &str) -> Option<SkillMeta> {
     let content = content.replace("\r\n", "\n");

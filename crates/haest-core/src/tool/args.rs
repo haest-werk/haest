@@ -15,10 +15,10 @@ use super::{JsonMap, ToolError};
 /// # Examples
 ///
 /// ```
-/// use haest_core::tool::{self, req_str};
+/// use haest_core::{req_str, tool};
 /// use serde_json::json;
 ///
-/// # fn main() -> Result<(), haest_core::error::BoxError> {
+/// # fn main() -> Result<(), haest_core::BoxError> {
 /// let input = tool::input(json!({"path": "a.txt"}))?;
 /// assert_eq!(req_str(&input, "path")?, "a.txt");
 /// assert!(tool::input(json!(["a.txt"])).is_err());
@@ -46,9 +46,9 @@ pub fn input(value: Value) -> Result<JsonMap, ToolError> {
 /// [`ToolError::Input`] when `key` is missing, empty or not a string.
 ///
 /// ```
-/// use haest_core::tool::{self, JsonMap, opt_bool, opt_num, opt_str, req_str};
+/// use haest_core::{JsonMap, opt_bool, opt_num, opt_str, req_str, tool};
 ///
-/// # fn main() -> Result<(), haest_core::error::BoxError> {
+/// # fn main() -> Result<(), haest_core::BoxError> {
 /// let input: JsonMap = tool::input(serde_json::json!({
 ///     "path": "a.txt", "limit": "20", "all": "true", "glob": "", "force": "yes"
 /// }))?;

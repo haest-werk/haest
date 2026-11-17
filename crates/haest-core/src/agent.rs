@@ -88,7 +88,7 @@ impl AgentOptions {
 /// ```
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tools,
 ///     testing::{ScriptedProvider, text_answer},
@@ -111,6 +111,7 @@ impl AgentOptions {
 /// assert_eq!(said, "hello");
 /// assert_eq!(agent.history().len(), 2); // the input, the answer
 /// assert_eq!(provider.requests()[0].system, "You are terse.");
+/// # Ok(())
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}

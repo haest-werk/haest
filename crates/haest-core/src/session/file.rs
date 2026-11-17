@@ -55,13 +55,12 @@ enum Job {
 /// use std::path::Path;
 ///
 /// use haest_core::{
-///     MemFs, Message,
-///     fs::FsRef,
+///     FsRef, MemFs, Message,
 ///     session::{JsonlSessionFile, SessionRecord, SessionSink},
 /// };
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// let fs = FsRef::new(MemFs::new());
 /// let file = JsonlSessionFile::new(fs.clone(), "/data", "s1")?;
 /// file.create("conversation-1", "/project", 0).await?;

@@ -67,7 +67,7 @@ impl Deltas {
 /// use haest_core::{AssistantMessage, AssistantPart, ProviderEvent, answer_stream};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// let mut answer = AssistantMessage::start("example", "model-1");
 /// let stream = answer_stream(|deltas| async move {
 ///     for word in ["hello ", "there"] {

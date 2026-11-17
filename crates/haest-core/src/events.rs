@@ -24,13 +24,15 @@
 //! turn refused because another one is running emits only `TurnEnd`.
 //!
 //! ```
-//! use haest_core::{LoopEvent, events::EventSink};
+//! use haest_core::{EventSink, LoopEvent};
 //!
 //! // A closure is a sink; so is a `Vec<LoopEvent>` and a tokio unbounded sender.
-//! let mut lines = Vec::new();
-//! let mut sink = |ev: LoopEvent| lines.push(serde_json::to_string(&ev).unwrap());
+//! let mut events = Vec::new();
+//! let mut sink = |ev: LoopEvent| events.push(ev);
 //! sink.emit(LoopEvent::TextDelta { text: "hi".into() });
-//! assert_eq!(lines, [r#"{"type":"text_delta","text":"hi"}"#]);
+//! // Each event is one JSON line in `--json` output and the TypeScript haest's shape.
+//! assert_eq!(serde_json::to_string(&events[0])?, r#"{"type":"text_delta","text":"hi"}"#);
+//! # Ok::<(), serde_json::Error>(())
 //! ```
 
 use serde::{Deserialize, Serialize};

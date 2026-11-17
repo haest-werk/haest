@@ -8,9 +8,11 @@
 //!
 //! The model is scripted, so nothing here calls a provider.
 
+use haest::BoxError;
+
 #[cfg(unix)]
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
+async fn main() -> Result<(), BoxError> {
     use std::sync::Arc;
 
     use haest::{
@@ -29,9 +31,7 @@ async fn main() {
     // The host: its session on a socket, input from it another program's.
     let dir = std::env::temp_dir().join(format!("haest-ex-{}", std::process::id()));
     let backend: Arc<dyn Backend> = Arc::new(session);
-    let attached = UnixSocket::new(&dir)
-        .attach(backend.clone(), Grant::command(Origin::Agent))
-        .unwrap();
+    let attached = UnixSocket::new(&dir).attach(backend.clone(), Grant::command(Origin::Agent))?;
 
     // Another program: what runs here?
     for found in running_sessions(&dir).await {
@@ -44,22 +44,25 @@ async fn main() {
     }
 
     // It follows the stream, and sends a turn on a second connection.
-    let mut watcher = connect_session(&dir, "example").await.unwrap();
+    let mut watcher = connect_session(&dir, "example").await?;
     let follow = Request::Events {
         after: 0,
         follow: true,
     };
-    watcher.call(follow, |_| {}).await.unwrap();
-    let mut driver = connect_session(&dir, "example-1").await.unwrap();
+    watcher.call(follow, |_| {}).await?;
+    let mut driver = connect_session(&dir, "example-1").await?;
     let turn = Request::Turn {
         text: "the build is green".into(),
     };
-    let end = driver.call(turn, |_| {}).await.unwrap().unwrap();
+    let end = driver
+        .call(turn, |_| {})
+        .await?
+        .ok_or("a turn's reply carries how it ended")?;
     println!("the turn ended: {}", end["stopReason"]);
 
     // The watcher saw it.
     while let Some(frame) = watcher.recv().await {
-        if let Body::Loop(LoopEvent::Assistant { message }) = frame.unwrap().body {
+        if let Body::Loop(LoopEvent::Assistant { message }) = frame?.body {
             println!("the watcher saw: {}", message.text());
             break;
         }
@@ -70,13 +73,16 @@ async fn main() {
     attached.ended().await;
     assert!(running_sessions(&dir).await.is_empty());
     let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
 }
 
 #[cfg(not(unix))]
-fn main() {}
+fn main() -> Result<(), BoxError> {
+    Ok(())
+}
 
 /// `cargo test` runs the example, so a change that breaks it fails the suite.
 #[test]
-fn the_example_runs() {
-    main();
+fn the_example_runs() -> Result<(), BoxError> {
+    main()
 }

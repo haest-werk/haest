@@ -2,7 +2,7 @@
 
 use std::{
     fmt,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use tokio_util::sync::CancellationToken;
@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 /// ```
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// # use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools};
 /// use haest_core::{LoopEvent, Message, testing::{ScriptedProvider, text_answer}};
 ///
@@ -46,6 +46,7 @@ use tokio_util::sync::CancellationToken;
 /// while let Some(next) = agent.control().take_queued() {
 ///     agent.run(&next, &mut Vec::<LoopEvent>::new()).await;
 /// }
+/// # Ok(())
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}
@@ -61,12 +62,28 @@ struct ControlInner {
     cancel: Mutex<Option<CancellationToken>>,
 }
 
+/// Neither lock is held while anything but this file's own code runs, so a
+/// poisoned one is a bug here.
+impl ControlInner {
+    fn queue(&self) -> MutexGuard<'_, Vec<String>> {
+        self.queue
+            .lock()
+            .expect("agent control's queue lock poisoned")
+    }
+
+    fn cancel(&self) -> MutexGuard<'_, Option<CancellationToken>> {
+        self.cancel
+            .lock()
+            .expect("agent control's turn lock poisoned")
+    }
+}
+
 /// Whether a turn runs and how many inputs are queued; not their text.
 impl fmt::Debug for AgentControl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AgentControl")
             .field("running", &self.running())
-            .field("queued", &self.inner.queue.lock().unwrap().len())
+            .field("queued", &self.inner.queue().len())
             .finish()
     }
 }
@@ -86,7 +103,7 @@ impl AgentControl {
     /// Input queued while no turn runs waits for [`take_queued`](Self::take_queued)
     /// or the next turn's first boundary.
     pub fn steer(&self, text: impl Into<String>) {
-        self.inner.queue.lock().unwrap().push(text.into());
+        self.inner.queue().push(text.into());
     }
 
     /// Cancel the running turn, if any; does nothing between turns.
@@ -98,20 +115,20 @@ impl AgentControl {
     /// [`StopReason::Aborted`](crate::StopReason::Aborted) instead of making another model call. Every
     /// tool call keeps its result, so the history can be sent again.
     pub fn abort(&self) {
-        if let Some(c) = self.inner.cancel.lock().unwrap().as_ref() {
+        if let Some(c) = self.inner.cancel().as_ref() {
             c.cancel();
         }
     }
 
     /// Whether a turn is running right now.
     pub fn running(&self) -> bool {
-        self.inner.cancel.lock().unwrap().is_some()
+        self.inner.cancel().is_some()
     }
 
     /// Drain queued steering input, joined by blank lines; the caller runs it
     /// as the next turn. None when nothing is queued.
     pub fn take_queued(&self) -> Option<String> {
-        let mut q = self.inner.queue.lock().unwrap();
+        let mut q = self.inner.queue();
         if q.is_empty() {
             return None;
         }
@@ -120,7 +137,7 @@ impl AgentControl {
 
     /// Mark a turn as running; Err when one already is.
     pub(crate) fn begin(&self) -> Result<CancellationToken, String> {
-        let mut c = self.inner.cancel.lock().unwrap();
+        let mut c = self.inner.cancel();
         if c.is_some() {
             return Err("a turn is already running; use steer()".into());
         }
@@ -130,7 +147,7 @@ impl AgentControl {
     }
 
     pub(crate) fn end(&self) {
-        *self.inner.cancel.lock().unwrap() = None;
+        *self.inner.cancel() = None;
     }
 }
 

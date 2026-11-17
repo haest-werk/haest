@@ -14,14 +14,14 @@
 use std::sync::Arc;
 
 use haest::{
-    Agent, AgentDeps, AgentOptions, JsonMap, ShutWorkspace, Tool, ToolContext, ToolError,
+    Agent, AgentDeps, AgentOptions, BoxError, JsonMap, ShutWorkspace, Tool, ToolContext, ToolError,
     ToolOutput, Tools, async_trait,
     core::testing::{ScriptedProvider, text_answer, tool_answer},
+    serde_json::{self, Value, json},
     session::{Hub, HubOptions, start},
     transport::{Grant, LineSource, NdjsonSource, Stdio, Transport},
     wire::Origin,
 };
-use serde_json::{Value, json};
 use tokio::io::{AsyncWriteExt, DuplexStream};
 
 /// A tool that runs until its call is stopped.
@@ -54,30 +54,35 @@ struct Parent {
 }
 
 impl Parent {
-    async fn send(&mut self, request: Value) {
+    async fn send(&mut self, request: Value) -> Result<(), BoxError> {
         let line = format!("{request}\n");
-        self.to_child.write_all(line.as_bytes()).await.unwrap();
+        self.to_child.write_all(line.as_bytes()).await?;
+        Ok(())
     }
 
     /// Frames until `stop` matches one; that one is returned.
-    async fn until(&mut self, stop: impl Fn(&Value) -> bool) -> Value {
+    async fn until(&mut self, stop: impl Fn(&Value) -> bool) -> Result<Value, BoxError> {
         loop {
-            let line = self.from_child.next_line().await.unwrap().unwrap();
-            let frame: Value = serde_json::from_str(&line).unwrap();
+            let line = self
+                .from_child
+                .next_line()
+                .await
+                .ok_or("the child hung up")??;
+            let frame: Value = serde_json::from_str(&line)?;
             println!("{line}");
             if stop(&frame) {
-                return frame;
+                return Ok(frame);
             }
         }
     }
 
-    async fn reply(&mut self, id: &str) -> Value {
+    async fn reply(&mut self, id: &str) -> Result<Value, BoxError> {
         self.until(|f| f["type"] == "reply" && f["id"] == id).await
     }
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
+async fn main() -> Result<(), BoxError> {
     let model = ScriptedProvider::new([
         text_answer("Hello from the child."),
         tool_answer(&[("c1", "Forever", json!({}))]),
@@ -93,44 +98,44 @@ async fn main() {
     let (to_child, child_stdin) = tokio::io::duplex(1 << 16);
     let (child_stdout, from_child) = tokio::io::duplex(1 << 16);
     let attached = Stdio::new(child_stdin, child_stdout)
-        .attach(Arc::new(session), Grant::command(Origin::Human))
-        .unwrap();
+        .attach(Arc::new(session), Grant::command(Origin::Human))?;
 
     let mut parent = Parent {
         to_child,
         from_child: NdjsonSource::new(from_child),
     };
-    let hello = parent.until(|f| f["type"] == "hello").await;
+    let hello = parent.until(|f| f["type"] == "hello").await?;
     assert_eq!(hello["access"], "command");
 
     // A turn: its frames, then its reply with how it ended.
     parent
         .send(json!({"v": 1, "id": "t1", "type": "turn", "text": "say hello"}))
-        .await;
-    let reply = parent.reply("t1").await;
+        .await?;
+    let reply = parent.reply("t1").await?;
     assert_eq!(reply["result"]["stopReason"], "end_turn");
 
     // A turn whose tool runs until stopped; the parent stops it.
     parent
         .send(json!({"v": 1, "id": "t2", "type": "turn", "text": "run forever"}))
-        .await;
-    parent.until(|f| f["type"] == "assistant").await;
+        .await?;
+    parent.until(|f| f["type"] == "assistant").await?;
     parent
         .send(json!({"v": 1, "id": "c1", "type": "control", "verb": "interrupt"}))
-        .await;
-    let reply = parent.reply("t2").await;
+        .await?;
+    let reply = parent.reply("t2").await?;
     assert_eq!(reply["result"]["stopReason"], "aborted");
 
     // Close: the reply, then the connection ends with the conversation.
     parent
         .send(json!({"v": 1, "id": "x", "type": "control", "verb": "close"}))
-        .await;
-    parent.reply("x").await;
+        .await?;
+    parent.reply("x").await?;
     eprintln!("ended: {:?}", attached.ended().await);
+    Ok(())
 }
 
 /// `cargo test` runs the example, so a change that breaks it fails the suite.
 #[test]
-fn the_example_runs() {
-    main();
+fn the_example_runs() -> Result<(), BoxError> {
+    main()
 }

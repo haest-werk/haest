@@ -3,12 +3,12 @@
 use std::{path::PathBuf, sync::Arc};
 
 use haest::{
-    Agent, AgentOptions, ShutWorkspace, StopReason, Tools, TurnOutcome, WorkspaceRef,
+    Agent, AgentOptions, BoxError, ShutWorkspace, StopReason, Tools, TurnOutcome, WorkspaceRef,
     core::session::{SessionRecord, SessionSink, replay},
+    serde_json::json,
     tools::{AgentRef, Ending, SubagentHub},
     workspace::SandboxWorkspace,
 };
-use serde_json::json;
 
 use crate::{
     CWD, MODEL, T0, config, deps,
@@ -28,7 +28,7 @@ const SUB_ANSWER: &str = "Two related notes: /notebook/notes/plan.md, /notebook/
 
 /// A work run: the sandboxed bash over NotebookFs, every notebook tool, a
 /// helper on a node run of its own, a pause mid-turn, records to the node.
-pub async fn work(gateway: &Arc<Gateway>) {
+pub async fn work(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
     let notebook = Arc::new(NotebookFs::new(&[(
         "/notebook/notes/plan.md",
         "Ship the Q3 review.\n",
@@ -48,7 +48,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         config::turn_caps(&s),
     ));
     let own = Tools::new().with(notebook_search());
-    let base = run_tools(&s, own, attachments.clone());
+    let base = run_tools(&s, own, attachments.clone())?;
     let workspace = WorkspaceRef::new(SandboxWorkspace::over(notebook.clone()));
     // haest's hub over the run: each helper on a node run of its own.
     let node = Arc::new(Node::default());
@@ -167,7 +167,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
 
     // Read: the intercept answered attachment:a1, the fs answered the real path.
     assert!(doc.output("c1").content.contains("Revenue up 12%."));
-    assert_eq!(*attachments.answered.lock().unwrap(), ["attachment:a1"]);
+    assert_eq!(attachments.answered(), ["attachment:a1"]);
     assert!(doc.output("c2").content.contains("Ship the Q3 review."));
 
     // Fs: the write is staged, and the sandboxed bash reads it from the same Fs.
@@ -185,7 +185,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
     assert!(doc.output("c5").content.contains("/notebook/notes/q2.md"));
     // The helper: the node started its run before its model call, on the model
     // the node resolved, with the notebook's explore tools only, and closed it after.
-    let started = node.started.lock().unwrap().clone();
+    let started = node.started();
     assert_eq!(started.len(), 1);
     assert!(started[0].name.starts_with("find-related-notes"));
     assert_eq!(started[0].asked_model.as_deref(), Some("haiku"));
@@ -202,7 +202,7 @@ pub async fn work(gateway: &Arc<Gateway>) {
         (c6.content.as_str(), c6.child_cost_usd),
         (SUB_ANSWER, Some(CALL_USD))
     );
-    let closed = node.closed.lock().unwrap().clone();
+    let closed = node.closed();
     assert_eq!(
         closed,
         [Closed {
@@ -236,15 +236,16 @@ pub async fn work(gateway: &Arc<Gateway>) {
     );
 
     // Session: the node's file (with a record kind of its own) replays to the same history.
-    let replayed = replay(&sessions.file_text());
+    let replayed = replay(&sessions.file_text()?);
     assert_eq!(replayed.corrupt_lines, 0);
     assert_eq!(agent.history().len(), 10);
     assert_eq!(replayed.messages, agent.history());
+    Ok(())
 }
 
 /// A dream run (`config::dream`): no files, no shell, only what the node
 /// hands it.
-pub async fn dream(gateway: &Arc<Gateway>) {
+pub async fn dream(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
     let s = config::dream();
     let sessions = Arc::new(NodeSessions::default());
     let host = Arc::new(NotebookHost::new(
@@ -254,7 +255,7 @@ pub async fn dream(gateway: &Arc<Gateway>) {
         config::turn_caps(&s),
     ));
     let own = Tools::new().with(DreamMaterial);
-    let tools = run_tools(&s, own, Arc::new(Attachments::new(&[])));
+    let tools = run_tools(&s, own, Arc::new(Attachments::new(&[])))?;
     let deps = deps(gateway, "", tools, ShutWorkspace, host);
     let mut agent = Agent::new(deps, AgentOptions::new(MODEL));
     gateway.script([
@@ -286,9 +287,10 @@ pub async fn dream(gateway: &Arc<Gateway>) {
     assert!(doc.output("d2").is_error, "no file system in a dream");
     let d3 = doc.output("d3");
     assert!(
-        d3.is_error && d3.result.as_ref().unwrap()["exitCode"] == 127,
+        d3.is_error && d3.result.as_ref().is_some_and(|r| r["exitCode"] == 127),
         "no shell in a dream"
     );
+    Ok(())
 }
 
 /// The counter-proof for the clock: the same pause on a clock that counts it

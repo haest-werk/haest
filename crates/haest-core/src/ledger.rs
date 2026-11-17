@@ -105,9 +105,9 @@ const TOKENS: Meter = Meter::Tokens(Scope::Conversation);
 /// use std::sync::mpsc;
 ///
 /// use haest_core::{
+///     Usage,
 ///     caps::{ConversationCap, ConversationCaps},
 ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
-///     messages::Usage,
 /// };
 ///
 /// /// Hands every warning to the host's UI.

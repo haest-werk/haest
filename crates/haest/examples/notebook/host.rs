@@ -6,18 +6,16 @@
 //! `SessionSink`.
 
 use std::sync::{
-    Arc, Mutex,
+    Mutex, MutexGuard,
     atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 
-use async_trait::async_trait;
 use haest::{
-    Agent, AgentHooks, Clock, Message, TurnCaps, TurnCapsSource,
-    core::error::BoxError,
-    core::session::{SessionRecord, SessionSink},
+    Agent, AgentHooks, BoxError, CancellationToken, Clock, Message, TurnCaps, TurnCapsSource,
+    async_trait,
+    core::session::{SessionRecord, SessionSink, SessionSinkRef},
+    serde_json::{self, json},
 };
-use serde_json::json;
-use tokio_util::sync::CancellationToken;
 
 /// How long the owner keeps the run paused: ten times notebook.toml's time cap.
 pub const PAUSE_MS: u64 = 600_000;
@@ -61,30 +59,36 @@ pub struct NodeSessions {
 
 impl SessionSink for NodeSessions {
     fn append(&self, record: &SessionRecord) {
-        self.records.lock().unwrap().push(record.clone());
+        self.records().push(record.clone());
     }
 }
 
 impl NodeSessions {
+    /// Only this file's code runs under the lock, so a poisoned one is a bug here.
+    fn records(&self) -> MutexGuard<'_, Vec<SessionRecord>> {
+        self.records
+            .lock()
+            .expect("the node's session records lock poisoned")
+    }
+
     /// The file as the node writes it: one JSON line per record, plus a line
     /// of the node's own kind that haest's replay must skip.
-    pub fn file_text(&self) -> String {
+    pub fn file_text(&self) -> serde_json::Result<String> {
         let mut text = String::new();
-        for (i, r) in self.records.lock().unwrap().iter().enumerate() {
+        for (i, r) in self.records().iter().enumerate() {
             if i == 1 {
                 text.push_str(&json!({"type": "pause", "t": 0, "state": "paused"}).to_string());
                 text.push('\n');
             }
-            text.push_str(&serde_json::to_string(r).expect("a record serialises"));
+            text.push_str(&serde_json::to_string(r)?);
             text.push('\n');
         }
-        text
+        Ok(text)
     }
 
     /// When each message record was stamped.
     pub fn message_times(&self) -> Vec<u64> {
-        let records = self.records.lock().unwrap();
-        records
+        self.records()
             .iter()
             .filter_map(|r| match r {
                 SessionRecord::Message { t, .. } => Some(*t),
@@ -96,7 +100,7 @@ impl NodeSessions {
 
 pub struct NotebookHost {
     pub clock: RunClock,
-    sessions: Arc<dyn SessionSink>,
+    sessions: SessionSinkRef,
     /// The owner pauses the run before this model call (1-based); 0 = never.
     pause_before_call: usize,
     calls: AtomicUsize,
@@ -107,13 +111,13 @@ pub struct NotebookHost {
 impl NotebookHost {
     pub fn new(
         clock: RunClock,
-        sessions: Arc<dyn SessionSink>,
+        sessions: impl Into<SessionSinkRef>,
         pause_before_call: usize,
         caps: TurnCaps,
     ) -> Self {
         Self {
             clock,
-            sessions,
+            sessions: sessions.into(),
             pause_before_call,
             calls: AtomicUsize::new(0),
             caps,

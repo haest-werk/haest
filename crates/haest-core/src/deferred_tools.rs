@@ -29,7 +29,7 @@
 
 use std::{
     collections::HashSet,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use crate::{
@@ -165,8 +165,14 @@ impl ToolDeferral {
 
     /// Mark tools loaded (ToolSearch did). Only `grow` changes the advertised list because of it.
     pub fn load<S: Into<String>>(&self, names: impl IntoIterator<Item = S>) {
-        let mut loaded = self.loaded.lock().unwrap();
-        loaded.extend(names.into_iter().map(Into::into));
+        let names: Vec<String> = names.into_iter().map(Into::into).collect();
+        self.loaded().extend(names);
+    }
+
+    /// What is loaded. Only this module's code runs under the lock, so a
+    /// poisoned one is a bug here.
+    pub(crate) fn loaded(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.loaded.lock().expect("the deferral's lock poisoned")
     }
 
     /// Every tool `history` called counts as loaded: a resumed conversation

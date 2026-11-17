@@ -11,20 +11,18 @@
 //! model text).
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
-use async_trait::async_trait;
 use haest::{
-    Effort, SharedDeps, ToolRef, Tools, WorkspaceRef,
+    CancellationToken, Effort, SharedDeps, ToolRef, Tools, WorkspaceRef, async_trait,
     core::caps::SubagentCaps,
     tools::{
         AgentError, AgentToolOptions, Ending, Inbox, MemberCaps, MemberEnd, MemberRun, MemberStart,
         Sender, SubagentEvent, SubagentParent,
     },
 };
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     MODEL, T0, agent_options,
@@ -79,8 +77,20 @@ pub struct Closed {
 /// The node's helper-run endpoint, faked: it starts and closes helper runs.
 #[derive(Default)]
 pub struct Node {
-    pub started: Mutex<Vec<Started>>,
-    pub closed: Mutex<Vec<Closed>>,
+    started: Mutex<Vec<Started>>,
+    closed: Mutex<Vec<Closed>>,
+}
+
+impl Node {
+    /// The helper runs the node started, oldest first.
+    pub fn started(&self) -> Vec<Started> {
+        locked(&self.started).clone()
+    }
+
+    /// The helper runs the node closed, oldest first.
+    pub fn closed(&self) -> Vec<Closed> {
+        locked(&self.closed).clone()
+    }
 }
 
 /// A message to a helper or main, for the panel.
@@ -105,8 +115,26 @@ pub enum ForMain {
 /// What the panel sees of the run's helpers.
 #[derive(Default)]
 pub struct Panel {
-    pub messages: Mutex<Vec<AgentMessage>>,
-    pub main: Mutex<Vec<ForMain>>,
+    messages: Mutex<Vec<AgentMessage>>,
+    main: Mutex<Vec<ForMain>>,
+}
+
+impl Panel {
+    /// Every message between the agents (and the person), oldest first.
+    pub fn messages(&self) -> Vec<AgentMessage> {
+        locked(&self.messages).clone()
+    }
+
+    /// What reached main, oldest first.
+    pub fn main(&self) -> Vec<ForMain> {
+        locked(&self.main).clone()
+    }
+}
+
+/// The node's and the panel's lists. Only this file's code runs under these
+/// locks, so a poisoned one is a bug here.
+fn locked<T>(list: &Mutex<T>) -> MutexGuard<'_, T> {
+    list.lock().expect("a helper list's lock poisoned")
 }
 
 /// The run's side of haest's hub.
@@ -124,11 +152,11 @@ pub struct NodeHelpers {
 impl Inbox for NodeHelpers {
     /// A message for main (SendMessage, the person): main hears it now.
     fn submit(&self, text: String) {
-        self.panel.main.lock().unwrap().push(ForMain::Message(text));
+        locked(&self.panel.main).push(ForMain::Message(text));
     }
     /// A background helper's answer: held for main's next turn.
     fn submit_answer(&self, text: String) {
-        self.panel.main.lock().unwrap().push(ForMain::Answer(text));
+        locked(&self.panel.main).push(ForMain::Answer(text));
     }
 }
 
@@ -204,7 +232,7 @@ impl SubagentParent for NodeHelpers {
             text,
             person,
         };
-        self.panel.messages.lock().unwrap().push(message);
+        locked(&self.panel.messages).push(message);
     }
 
     /// The node starts the helper's run, or says why not.
@@ -213,13 +241,17 @@ impl SubagentParent for NodeHelpers {
         start: &MemberStart,
         _cancel: &CancellationToken,
     ) -> Result<Box<dyn MemberRun>, AgentError> {
-        let token = format!("helper-run-{}", self.node.started.lock().unwrap().len() + 1);
-        self.node.started.lock().unwrap().push(Started {
-            name: start.name.clone(),
-            kind: start.input.subagent_type.clone(),
-            asked_model: start.input.model_spec.clone(),
-            token: token.clone(),
-        });
+        let token = {
+            let mut started = locked(&self.node.started);
+            let token = format!("helper-run-{}", started.len() + 1);
+            started.push(Started {
+                name: start.name.clone(),
+                kind: start.input.subagent_type.clone(),
+                asked_model: start.input.model_spec.clone(),
+                token: token.clone(),
+            });
+            token
+        };
         let model_spec = match start.input.model_spec.as_deref() {
             None => start.model_spec.clone(),
             Some("haiku") => HELPER_MODEL.into(),
@@ -266,7 +298,7 @@ impl MemberRun for HelperRun {
     }
     /// The run's records reach the node first, then the node closes it.
     async fn end(self: Box<Self>, end: MemberEnd) {
-        self.node.closed.lock().unwrap().push(Closed {
+        locked(&self.node.closed).push(Closed {
             token: self.token.clone(),
             ending: end.ending,
             answer: end.answer,

@@ -46,15 +46,14 @@ pub use watch::WindDownWatch;
 /// ```
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// use haest_core::{
-///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tool, ToolContext, ToolError,
-///     ToolOutput, Tools, Usage,
+///     Agent, AgentDeps, AgentOptions, JsonMap, LoopEvent, ShutWorkspace, Tool, ToolContext,
+///     ToolError, ToolOutput, Tools, Usage,
 ///     caps::ConversationCaps,
 ///     ledger::{Ledger, LedgerHooks, LedgerSnapshot},
 ///     testing::{ScriptedProvider, text_answer, tool_answer},
 ///     threshold::Thresholds,
-///     tool::JsonMap,
 ///     wind_down::WindDown,
 /// };
 /// use serde_json::{Value, json};
@@ -189,8 +188,9 @@ impl Thresholds<TurnSite> {
     /// use haest_core::{threshold::{Thresholds, TurnSite}, wind_down::WindDown};
     ///
     /// let off = Thresholds::<TurnSite>::default().wind_down(WindDown::OFF);
-    /// let on = Thresholds::<TurnSite>::default().wind_down(WindDown::at(0.8).unwrap());
+    /// let on = Thresholds::<TurnSite>::default().wind_down(WindDown::at(0.8)?);
     /// assert_eq!(on.len() - off.len(), 5);
+    /// # Ok::<(), haest_core::wind_down::BadShare>(())
     /// ```
     pub fn wind_down(self, at: WindDown) -> Self {
         // A turn reads every watched meter and can wind down.

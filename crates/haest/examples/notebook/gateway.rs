@@ -4,11 +4,16 @@
 //!
 //! PLUG POINT: `haest::http::HttpClient`.
 
-use std::{collections::VecDeque, sync::Mutex};
+use std::{
+    collections::VecDeque,
+    sync::{Mutex, MutexGuard},
+};
 
-use haest::http::{Body, Bytes, HttpClient, HttpError, Request, Response, async_trait};
-use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
+use haest::{
+    CancellationToken, async_trait,
+    http::{Body, Bytes, HttpClient, HttpError, Request, Response},
+    serde_json::{Value, json},
+};
 
 /// Where the gateway listens, as the provider's base URL. The client sends
 /// the path over the socket; the host part means nothing.
@@ -33,38 +38,44 @@ pub struct Gateway {
 impl Gateway {
     /// The model's next replies, in order. Out of script = a failed call.
     pub fn script(&self, replies: impl IntoIterator<Item = String>) {
-        *self.replies.lock().unwrap() = replies.into_iter().collect();
+        *locked(&self.replies) = replies.into_iter().collect();
     }
 
     /// Every request since the last call.
     pub fn take_requests(&self) -> Vec<Request> {
-        std::mem::take(&mut *self.requests.lock().unwrap())
+        std::mem::take(&mut *locked(&self.requests))
     }
 
     /// The next call that carries `authorization` waits for its release.
     pub fn hold(&self, authorization: &str) -> Held {
         let held = Held::default();
-        *self.held.lock().unwrap() = Some((authorization.into(), held.clone()));
+        *locked(&self.held) = Some((authorization.into(), held.clone()));
         held
     }
+}
+
+/// Only this file's code runs under the gateway's locks, so a poisoned one is
+/// a bug here.
+fn locked<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().expect("a gateway lock poisoned")
 }
 
 #[async_trait]
 impl HttpClient for Gateway {
     async fn send(&self, req: Request) -> Result<Response, HttpError> {
         let held = {
-            let mut held = self.held.lock().unwrap();
+            let mut held = locked(&self.held);
             let mine = held
                 .as_ref()
                 .is_some_and(|(auth, _)| req.header("authorization") == Some(auth.as_str()));
             if mine { held.take() } else { None }
         };
-        self.requests.lock().unwrap().push(req);
+        locked(&self.requests).push(req);
         if let Some((_, held)) = held {
             held.arrived.cancel();
             held.release.cancelled().await;
         }
-        let Some(body) = self.replies.lock().unwrap().pop_front() else {
+        let Some(body) = locked(&self.replies).pop_front() else {
             return Err(HttpError::Request("gateway: no scripted reply left".into()));
         };
         // The socket hands the body over in pieces; SSE events straddle them.

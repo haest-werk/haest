@@ -15,14 +15,15 @@
 //! the other.
 //!
 //! ```
-//! use haest_core::messages::{AssistantMessage, AssistantPart, Message};
+//! use haest_core::{AssistantMessage, AssistantPart, Message};
 //!
 //! let mut answer = AssistantMessage::start("anthropic", "claude-x");
 //! answer.content.push(AssistantPart::Text { text: "hi".into() });
 //! let history = vec![Message::user("say hi"), Message::Assistant(answer)];
 //!
-//! let line = serde_json::to_string(&history[0]).unwrap();
+//! let line = serde_json::to_string(&history[0])?;
 //! assert_eq!(line, r#"{"role":"user","content":"say hi"}"#);
+//! # Ok::<(), serde_json::Error>(())
 //! ```
 //!
 //! [`Agent::history`]: crate::Agent::history

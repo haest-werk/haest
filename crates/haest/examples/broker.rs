@@ -18,13 +18,13 @@ use std::{sync::Arc, time::Duration};
 
 use futures::{SinkExt, StreamExt};
 use haest::{
-    Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools,
+    Agent, AgentDeps, AgentOptions, BoxError, ShutWorkspace, Tools,
     core::testing::{ScriptedProvider, text_answer},
+    serde_json::{self, Value, json},
     session::{Backend, Hub, HubOptions, Input, start},
     transport::{Backoff, Broker, Grant, Transport},
     wire::Origin,
 };
-use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
 
@@ -32,48 +32,55 @@ use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
 struct Side(WebSocketStream<TcpStream>);
 
 impl Side {
-    async fn send(&mut self, request: Value) {
+    async fn send(&mut self, request: Value) -> Result<(), BoxError> {
         self.0
             .send(Message::Text(request.to_string().into()))
-            .await
-            .unwrap();
+            .await?;
+        Ok(())
     }
 
     /// The next frame; None once the link closed.
-    async fn next(&mut self) -> Option<Value> {
+    async fn next(&mut self) -> Result<Option<Value>, BoxError> {
         while let Some(msg) = self.0.next().await {
             match msg {
-                Ok(Message::Text(text)) => {
-                    return Some(serde_json::from_str(text.as_str()).unwrap());
-                }
-                Ok(Message::Close(_)) | Err(_) => return None,
+                Ok(Message::Text(text)) => return Ok(Some(serde_json::from_str(text.as_str())?)),
+                Ok(Message::Close(_)) | Err(_) => return Ok(None),
                 Ok(_) => {}
             }
         }
-        None
+        Ok(None)
+    }
+
+    /// The next frame, from a link that must still be open.
+    async fn frame(&mut self) -> Result<Value, BoxError> {
+        self.next().await?.ok_or_else(|| "the link closed".into())
     }
 
     /// Frames until `stop` matches one; the last stream seq seen.
-    async fn until(&mut self, stop: impl Fn(&Value) -> bool, mut last: u64) -> u64 {
+    async fn until(
+        &mut self,
+        stop: impl Fn(&Value) -> bool,
+        mut last: u64,
+    ) -> Result<u64, BoxError> {
         loop {
-            let frame = self.next().await.expect("the link is open");
+            let frame = self.frame().await?;
             println!("{frame}");
             last = frame["seq"].as_u64().unwrap_or(last);
             if stop(&frame) {
-                return last;
+                return Ok(last);
             }
         }
     }
 }
 
 /// The next link that dials the broker.
-async fn accept(listener: &TcpListener) -> Side {
-    let (tcp, _) = listener.accept().await.unwrap();
-    Side(tokio_tungstenite::accept_async(tcp).await.unwrap())
+async fn accept(listener: &TcpListener) -> Result<Side, BoxError> {
+    let (tcp, _) = listener.accept().await?;
+    Ok(Side(tokio_tungstenite::accept_async(tcp).await?))
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
+async fn main() -> Result<(), BoxError> {
     let model = ScriptedProvider::new([
         text_answer("The build is green."),
         text_answer("The deploy is done."),
@@ -84,8 +91,8 @@ async fn main() {
     let backend: Arc<dyn Backend> = Arc::new(session);
 
     // The broker: a WebSocket listener.
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("ws://{}/agents", listener.local_addr().unwrap());
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let url = format!("ws://{}/agents", listener.local_addr()?);
 
     // The host: its session linked to the broker, with a token from its keys.
     let quick = Backoff {
@@ -95,37 +102,40 @@ async fn main() {
     let attached = Broker::new(&url)
         .token(Some("example-token".into()))
         .backoff(quick)
-        .attach(backend.clone(), Grant::command(Origin::Agent))
-        .unwrap();
+        .attach(backend.clone(), Grant::command(Origin::Agent))?;
 
     // The first link: hello, the ack from the start, a turn.
-    let mut side = accept(&listener).await;
-    let hello = side.next().await.unwrap();
+    let mut side = accept(&listener).await?;
+    let hello = side.frame().await?;
     assert_eq!(hello["type"], "hello");
     assert_eq!(hello["token"], "example-token");
     side.send(json!({"v": 1, "id": "ack", "type": "events", "after": 0, "follow": true}))
-        .await;
+        .await?;
     side.send(json!({"v": 1, "id": "t1", "type": "turn", "text": "is the build green?"}))
-        .await;
+        .await?;
     let held = side
         .until(|f| f["type"] == "reply" && f["id"] == "t1", 0)
-        .await;
+        .await?;
 
     // The broker cuts the link. While it is down the host runs a turn of
     // its own; haest dials again, and the ack says what the broker holds,
     // so what came after is sent and nothing twice.
     drop(side);
-    backend.turn(Input::human("and the deploy?")).await.unwrap();
-    let mut side = accept(&listener).await;
-    assert_eq!(side.next().await.unwrap()["type"], "hello");
+    backend.turn(Input::human("and the deploy?")).await?;
+    let mut side = accept(&listener).await?;
+    assert_eq!(side.frame().await?["type"], "hello");
     side.send(json!({"v": 1, "id": "ack", "type": "events", "after": held, "follow": true}))
-        .await;
+        .await?;
     let mut missed = Vec::new();
     loop {
-        let frame = side.next().await.expect("the link is open");
+        let frame = side.frame().await?;
         println!("{frame}");
         if !matches!(frame["type"].as_str(), Some("reply" | "hello" | "gap")) {
-            missed.push(frame["seq"].as_u64().unwrap());
+            missed.push(
+                frame["seq"]
+                    .as_u64()
+                    .ok_or("a stream frame carries its seq")?,
+            );
         }
         if frame["type"] == "turn_end" {
             break;
@@ -138,12 +148,13 @@ async fn main() {
 
     // The conversation ends, and with it the link.
     backend.close().await;
-    while side.next().await.is_some() {}
+    while side.next().await?.is_some() {}
     eprintln!("ended: {:?}", attached.ended().await);
+    Ok(())
 }
 
 /// `cargo test` runs the example, so a change that breaks it fails the suite.
 #[test]
-fn the_example_runs() {
-    main();
+fn the_example_runs() -> Result<(), BoxError> {
+    main()
 }

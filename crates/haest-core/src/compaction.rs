@@ -264,11 +264,11 @@ impl CompactionError {
 /// ```
 /// # #[cfg(feature = "testing")]
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// use haest_core::{
-///     Agent, AgentDeps, AgentHooks, AgentOptions, LoopEvent, Message, ShutWorkspace, Tools,
+///     Agent, AgentDeps, AgentHooks, AgentOptions, BoxError, LoopEvent, Message, ShutWorkspace,
+///     Tools,
 ///     compaction::{CompactionOptions, compact, needs_compaction},
-///     error::BoxError,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
 /// use tokio_util::sync::CancellationToken;
@@ -313,6 +313,7 @@ impl CompactionError {
 /// // [summary, "b done", "c", "done"]: the head became one message.
 /// assert_eq!(agent.history().len(), 4);
 /// assert!(matches!(&agent.history()[0], Message::User(u) if u.content.contains("Earlier: a and b.")));
+/// # Ok(())
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}

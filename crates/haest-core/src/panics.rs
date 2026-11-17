@@ -20,8 +20,9 @@ use std::any::Any;
 ///     panic!("disk on fire");
 /// }
 ///
-/// let payload = std::panic::catch_unwind(tool).unwrap_err();
+/// let payload = std::panic::catch_unwind(tool).err().ok_or("the tool returned")?;
 /// assert_eq!(panic_message(payload.as_ref()), Some("disk on fire"));
+/// # Ok::<(), &'static str>(())
 /// ```
 pub fn panic_message(payload: &(dyn Any + Send)) -> Option<&str> {
     if let Some(s) = payload.downcast_ref::<&str>() {

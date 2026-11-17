@@ -19,19 +19,35 @@ use std::{
 };
 
 use haest::{
-    Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tool, ToolContext, ToolError,
-    ToolOutput, Tools, async_trait,
+    Agent, AgentDeps, AgentOptions, BoxError, JsonMap, LoopEvent, ShutWorkspace, Tool, ToolContext,
+    ToolError, ToolOutput, Tools, async_trait,
     core::run::{MemoryRunStore, RunKey, Served},
     core::testing::{ScriptedProvider, text_answer, tool_answer},
-    core::tool::{JsonMap, OnResume},
+    core::tool::OnResume,
+    serde_json::{Value, json},
 };
-use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 /// An outside service that honours idempotency keys: a report sent twice
 /// under one key is kept once.
 #[derive(Default)]
 struct Outbox(Mutex<HashMap<String, String>>);
+
+impl Outbox {
+    /// The report sent under `key`, if one was.
+    fn sent(&self, key: &str) -> Option<String> {
+        self.reports().get(key).cloned()
+    }
+
+    /// Keep `id` as the report sent under `key`.
+    fn send(&self, key: &str, id: &str) {
+        self.reports().insert(key.into(), id.into());
+    }
+
+    fn reports(&self) -> std::sync::MutexGuard<'_, HashMap<String, String>> {
+        self.0.lock().expect("the outbox's lock poisoned")
+    }
+}
 
 /// Sends the report through the outbox, keyed by the call's effect key. On
 /// resume it asks the outbox what happened instead of sending.
@@ -60,22 +76,19 @@ impl Tool for SendReport {
         OnResume::Lookup
     }
     async fn execute(&self, _input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
+        // A durable run hands every call one; outside one there is nothing to key on.
         let key = ctx
             .effect_key()
-            .expect("a durable run hands every call an effect key");
+            .ok_or_else(|| ToolError::Failed("SendReport runs only in a durable run".into()))?;
         if ctx.resumed() {
-            let sent = self.outbox.0.lock().unwrap().get(key.as_str()).cloned();
+            let sent = self.outbox.sent(key.as_str());
             return Ok(ToolOutput::text(match sent {
                 Some(id) => format!("already sent as {id}"),
                 None => "not sent yet; send it again".into(),
             }));
         }
         let id = format!("report-{}", &key.as_str()[..8]);
-        self.outbox
-            .0
-            .lock()
-            .unwrap()
-            .insert(key.to_string(), id.clone());
+        self.outbox.send(key.as_str(), &id);
         if let Some(crash) = &self.crash_once
             && !self.crashed.swap(true, Ordering::SeqCst)
         {
@@ -127,14 +140,14 @@ fn agent(provider: &ScriptedProvider, store: &MemoryRunStore, tools: Tools) -> A
 
 const JOB: &str = "send today's report";
 
-async fn the_shortcut(store: &MemoryRunStore) {
+async fn the_shortcut(store: &MemoryRunStore) -> Result<(), BoxError> {
     let key = RunKey::new("report-2026-11-16");
     let provider = ScriptedProvider::new([text_answer("Report sent.")]);
     let mut agent = agent(&provider, store, Tools::new());
     let mut events = Vec::<LoopEvent>::new();
 
-    let first = agent.run_durable(&key, JOB, &mut events).await.unwrap();
-    let again = agent.run_durable(&key, JOB, &mut events).await.unwrap();
+    let first = agent.run_durable(&key, JOB, &mut events).await?;
+    let again = agent.run_durable(&key, JOB, &mut events).await?;
 
     assert_eq!(
         (first.served, again.served),
@@ -147,9 +160,10 @@ async fn the_shortcut(store: &MemoryRunStore) {
         "the second start asked no model"
     );
     println!("shortcut: ran once, served twice ({:?})", again.served);
+    Ok(())
 }
 
-async fn a_kill_and_a_resume(store: &MemoryRunStore) {
+async fn a_kill_and_a_resume(store: &MemoryRunStore) -> Result<(), BoxError> {
     let key = RunKey::new("report-2026-11-17");
     let outbox = Arc::new(Outbox::default());
     let crash = Arc::new(Notify::new());
@@ -176,11 +190,10 @@ async fn a_kill_and_a_resume(store: &MemoryRunStore) {
     let mut second = agent(&provider, store, tools);
     let resumed = second
         .run_durable(&key, JOB, &mut Vec::<LoopEvent>::new())
-        .await
-        .unwrap();
+        .await?;
 
     assert_eq!(resumed.served, Served::Resumed);
-    assert_eq!(outbox.0.lock().unwrap().len(), 1, "sent once");
+    assert_eq!(outbox.reports().len(), 1, "sent once");
     assert_eq!(
         provider.requests().len(),
         1,
@@ -192,21 +205,23 @@ async fn a_kill_and_a_resume(store: &MemoryRunStore) {
         .any(|m| matches!(m, haest::Message::Tool(r) if r.content.starts_with("already sent")));
     assert!(lookup, "the report tool looked up instead of sending");
     println!("resumed: {} (served {:?})", resumed.text, resumed.served);
+    Ok(())
 }
 
-async fn every_scene() {
+async fn every_scene() -> Result<(), BoxError> {
     let store = MemoryRunStore::new();
-    the_shortcut(&store).await;
-    a_kill_and_a_resume(&store).await;
+    the_shortcut(&store).await?;
+    a_kill_and_a_resume(&store).await
 }
 
 #[tokio::main]
-async fn main() {
-    every_scene().await;
+async fn main() -> Result<(), BoxError> {
+    every_scene().await?;
     println!("durable_run example: every scene held");
+    Ok(())
 }
 
 #[tokio::test]
-async fn every_durable_scene_holds() {
-    every_scene().await;
+async fn every_durable_scene_holds() -> Result<(), BoxError> {
+    every_scene().await
 }

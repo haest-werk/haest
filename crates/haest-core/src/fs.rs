@@ -20,7 +20,10 @@
 //! ```
 //! use std::path::Path;
 //!
-//! use haest_core::fs::{Fs, MemFs, ensure_dir, read_text_if_present};
+//! use haest_core::{
+//!     Fs, MemFs,
+//!     fs::{ensure_dir, read_text_if_present},
+//! };
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> std::io::Result<()> {
@@ -117,7 +120,7 @@ pub struct DirEntry {
 /// use std::{io, path::Path};
 ///
 /// use async_trait::async_trait;
-/// use haest_core::fs::{DirEntry, Fs, FsStat, MemFs};
+/// use haest_core::{DirEntry, Fs, FsStat, MemFs};
 ///
 /// struct ReadOnly(MemFs);
 ///

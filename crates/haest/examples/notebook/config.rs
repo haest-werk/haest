@@ -7,7 +7,7 @@
 //! PLUG POINT: `settings::Settings`, hardcoded (no loader).
 
 use haest::{
-    core::caps::TurnCaps,
+    TurnCaps,
     settings::{BuiltinTools, CapSettings, Settings},
 };
 

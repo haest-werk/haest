@@ -102,14 +102,17 @@ pub trait WordSet: Sized + Default {
 ///     }
 /// }
 ///
-/// let on = Rooms::from_words(["hall"]).unwrap();
+/// let on = Rooms::from_words(["hall"])?;
 /// assert!(on.hall && !on.kitchen);
 /// assert_eq!(on.words(), ["hall"]);
 /// assert_eq!(Rooms::WORDS, ["kitchen", "hall"]);
-/// let err = Rooms::from_words(["attic"]).unwrap_err();
-/// assert_eq!((err.word.as_str(), err.what), ("attic", "room"));
+/// assert!(matches!(
+///     Rooms::from_words(["attic"]),
+///     Err(err) if err.word == "attic" && err.what == "room"
+/// ));
 /// assert!(Rooms::NONE.is_empty());
 /// assert_eq!(Rooms::ALL.words(), ["kitchen", "hall"]);
+/// # Ok::<(), haest_core::words::UnknownWord>(())
 /// ```
 #[macro_export]
 macro_rules! word_set {
@@ -183,9 +186,12 @@ macro_rules! word_set {
 /// assert_eq!(Volume::Quiet.to_string(), "quiet");
 /// assert_eq!("loud".parse::<Volume>(), Ok(Volume::Loud));
 /// assert_eq!(Volume::WORDS, ["quiet", "loud"]);
-/// let err = "shouty".parse::<Volume>().unwrap_err();
-/// assert_eq!((err.word.as_str(), err.expected), ("shouty", Volume::WORDS));
-/// assert_eq!(serde_json::to_string(&Volume::Loud).unwrap(), "\"loud\"");
+/// assert!(matches!(
+///     "shouty".parse::<Volume>(),
+///     Err(err) if err.word == "shouty" && err.expected == Volume::WORDS
+/// ));
+/// assert_eq!(serde_json::to_string(&Volume::Loud)?, "\"loud\"");
+/// # Ok::<(), serde_json::Error>(())
 /// ```
 #[macro_export]
 macro_rules! word_enum {

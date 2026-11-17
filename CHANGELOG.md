@@ -174,8 +174,20 @@ value itself, and holds it in a handle named after its trait. Read
   `haest::serde_json` are re-exported, and `haest::prelude` adds
   `CancellationToken`, `Value` and `json!`: `use haest::prelude::*;` is the
   only import an `impl Tool`, `impl Provider` (with `answer_stream`) or
-  `impl AgentHooks` needs, and a host adds `tokio-util` or `serde_json` to
-  its own Cargo.toml only to use them itself.
+  `impl AgentHooks` (with `BoxError`) needs, and a host adds `tokio-util` or
+  `serde_json` to its own Cargo.toml only to use them itself.
+
+- Every example's `main` (and its test) returns a `Result` and uses `?`
+  where it used `unwrap`; the examples and `tests/plug_in.rs` take
+  `async_trait`, `serde_json` and `CancellationToken` from haest, and name
+  each item by one path: the root one (`haest::Tool`, `haest::BoxError`)
+  for what the prelude holds, the module one (`haest::core::run::RunKey`)
+  for the rest. The notebook's host takes its session sink as `impl
+  Into<SessionSinkRef>` and its gateway provider as a `ProviderRef`.
+
+- The README's "Embed it" opens with the front page's quickstart, and its
+  pins (and the front page's) say `0.3`. A test fails when the README's
+  quickstart and the compiled one in the docs differ.
 
 - The front page and every example build their deps the new way:
   `ProviderRegistry::new(keys, ..)` and `AgentDeps::new(models,
@@ -487,6 +499,14 @@ Good citizens:
   the session file), so a plug-in crate that depends on haest-core alone no
   longer pulls in tokio's multi-thread runtime, macros and timers. The
   workspace's tokio entry names no features; each crate names its own.
+- `BoxError` joins the prelude, so `haest_core::BoxError` (and
+  `haest::BoxError`) names it: an `impl AgentHooks` returns it from
+  `before_model_call`. `error::BoxError` still works.
+- Every doc example's `main` returns a `Result` and uses `?`; `unwrap` and
+  `expect` are left only inside asserts and on locks. The docs name an item
+  the prelude holds by its root path (`haest_core::Agent`), everything else
+  by its module path (`haest_core::run::RunKey`). `Ledger::reserve`
+  documents its errors.
 
 ### haest-providers
 

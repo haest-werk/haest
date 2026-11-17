@@ -122,10 +122,11 @@ impl ReplayedRun {
 /// ]
 /// .join("\n");
 ///
-/// let run = replay_run(&log).unwrap();
+/// let run = replay_run(&log).ok_or("no run in the log")?;
 /// assert_eq!(run.key.as_str(), "job-1");
 /// assert_eq!(run.end.unwrap().text, "hello");
 /// assert!(replay_run("").is_none());
+/// # Ok::<(), &'static str>(())
 /// ```
 pub fn replay_run(text: &str) -> Option<ReplayedRun> {
     let mut run: Option<ReplayedRun> = None;

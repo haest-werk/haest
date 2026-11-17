@@ -128,13 +128,14 @@ name = "threshold"
 path = "examples/threshold.rs"
 test = true
 
-# The notebook example and tests/plug_in.rs: what a host implementing the plug points needs.
+# The notebook example and tests/plug_in.rs: what a host implementing the plug
+# points needs besides haest (async_trait, serde_json and CancellationToken come
+# from haest's own re-exports).
 [dev-dependencies]
 # The front page's runnable examples drive whole turns with the scripted model.
 haest-core = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 futures = { workspace = true }
-async-trait = { workspace = true }
 serde = { workspace = true }
 # The broker example's broker end.
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }

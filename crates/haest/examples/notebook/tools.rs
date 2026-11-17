@@ -5,19 +5,18 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
-use async_trait::async_trait;
 use haest::{
-    core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
+    JsonMap, Tool, ToolContext, ToolError, ToolOutput, async_trait, req_str,
+    serde_json::{Value, json},
     tools::{ReadIntercept, read_text_output},
 };
-use serde_json::{Value, json};
 
 /// `attachment:<id>` is no path: the node converts the attachment to Markdown
 /// and Read pages it like a file. Every other path falls through to the fs.
 pub struct Attachments {
     docs: HashMap<String, String>,
     /// Every path this intercept answered, as the model sent it.
-    pub answered: Mutex<Vec<String>>,
+    answered: Mutex<Vec<String>>,
 }
 
 impl Attachments {
@@ -30,6 +29,18 @@ impl Attachments {
             answered: Mutex::default(),
         }
     }
+
+    /// Every path this intercept answered, as the model sent it.
+    pub fn answered(&self) -> Vec<String> {
+        self.answered_paths().clone()
+    }
+
+    /// Only this file's code runs under the lock, so a poisoned one is a bug here.
+    fn answered_paths(&self) -> std::sync::MutexGuard<'_, Vec<String>> {
+        self.answered
+            .lock()
+            .expect("the attachments' lock poisoned")
+    }
 }
 
 #[async_trait]
@@ -41,7 +52,7 @@ impl ReadIntercept for Attachments {
         ctx: &ToolContext,
     ) -> Option<Result<ToolOutput, ToolError>> {
         let id = raw_path.strip_prefix("attachment:")?;
-        self.answered.lock().unwrap().push(raw_path.to_string());
+        self.answered_paths().push(raw_path.to_string());
         Some(match self.docs.get(id) {
             Some(md) => read_text_output(md, md.len(), input, ctx, ""),
             None => Err(ToolError::Input(format!("no attachment \"{id}\""))),
@@ -51,7 +62,7 @@ impl ReadIntercept for Attachments {
 
 /// notebook_search: the node's ranked full-text search over the notebook.
 pub struct NotebookSearch {
-    /// The the notebook's index: path, title, text.
+    /// The notebook's index: path, title, text.
     pub notes: Vec<(&'static str, &'static str, &'static str)>,
 }
 

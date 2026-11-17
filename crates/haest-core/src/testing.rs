@@ -19,7 +19,7 @@
 //! };
 //! use serde_json::json;
 //! # use async_trait::async_trait;
-//! # use haest_core::tool::{JsonMap, ToolContext, ToolError, ToolOutput, req_str};
+//! # use haest_core::{JsonMap, ToolContext, ToolError, ToolOutput, req_str};
 //! # use serde_json::Value;
 //! # struct Shout;
 //! # #[async_trait]
@@ -34,7 +34,7 @@
 //! # }
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() {
+//! # async fn main() -> Result<(), haest_core::BoxError> {
 //! let model = ScriptedProvider::new([
 //!     tool_answer(&[("call-1", "Shout", json!({"text": "hello"}))]),
 //!     text_answer("It says HELLO."),
@@ -55,13 +55,14 @@
 //! let sent = model.requests();
 //! assert_eq!((sent[0].model.as_str(), sent[0].system.as_str()), ("m", "You shout."));
 //! assert_eq!(sent[0].tools[0].name, "Shout");
+//! # Ok(())
 //! # }
 //! ```
 
 use std::{
     collections::VecDeque,
     fmt,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use futures::stream;
@@ -93,12 +94,24 @@ struct Script {
     requests: Mutex<Vec<ProviderRequest>>,
 }
 
+/// Only this file's code runs under either lock, so a poisoned one is a bug
+/// here.
+impl Script {
+    fn answers(&self) -> MutexGuard<'_, VecDeque<AssistantMessage>> {
+        self.answers.lock().expect("the script's lock poisoned")
+    }
+
+    fn requests(&self) -> MutexGuard<'_, Vec<ProviderRequest>> {
+        self.requests.lock().expect("the script's lock poisoned")
+    }
+}
+
 /// How many answers are left and how many requests came in.
 impl fmt::Debug for ScriptedProvider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ScriptedProvider")
-            .field("answers_left", &self.0.answers.lock().unwrap().len())
-            .field("requests", &self.0.requests.lock().unwrap().len())
+            .field("answers_left", &self.0.answers().len())
+            .field("requests", &self.0.requests().len())
             .finish()
     }
 }
@@ -114,12 +127,12 @@ impl ScriptedProvider {
 
     /// Add an answer at the end of the script.
     pub fn push(&self, msg: AssistantMessage) {
-        self.0.answers.lock().unwrap().push_back(msg);
+        self.0.answers().push_back(msg);
     }
 
     /// Every request so far.
     pub fn requests(&self) -> Vec<ProviderRequest> {
-        self.0.requests.lock().unwrap().clone()
+        self.0.requests().clone()
     }
 
     /// A resolver that serves every spec with this provider (model = the spec's model part, or the spec).
@@ -141,19 +154,13 @@ impl Provider for ScriptedProvider {
 
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
         let model = req.model.clone();
-        self.0.requests.lock().unwrap().push(req);
-        let msg = self
-            .0
-            .answers
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| {
-                let mut m = AssistantMessage::start("scripted", &model);
-                m.stop_reason = StopReason::Error;
-                m.error_message = Some("scripted provider: out of script".into());
-                m
-            });
+        self.0.requests().push(req);
+        let msg = self.0.answers().pop_front().unwrap_or_else(|| {
+            let mut m = AssistantMessage::start("scripted", &model);
+            m.stop_reason = StopReason::Error;
+            m.error_message = Some("scripted provider: out of script".into());
+            m
+        });
         let mut events: Vec<ProviderEvent> = (msg.content.iter())
             .map(|part| match part {
                 AssistantPart::Text { text } => ProviderEvent::TextDelta(text.clone()),
@@ -235,6 +242,11 @@ pub fn tool_answer(calls: &[(&str, &str, Value)]) -> AssistantMessage {
 ///
 /// assert_causes_said_once(&Twice { source: std::io::Error::other("denied") });
 /// ```
+///
+/// # Panics
+///
+/// When the text of a cause in `e`'s chain is said other than once in the
+/// report: that is the failure it tests for.
 pub fn assert_causes_said_once(e: &dyn std::error::Error) {
     let line = crate::error::report(e);
     let mut cause = e.source();

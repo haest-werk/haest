@@ -5,17 +5,16 @@
 //! Read, Write, Edit and the sandboxed Bash all go through it, so the file the
 //! agent writes is the file `cat` shows.
 //!
-//! PLUG POINT: `haest::core::fs::Fs`, under `SandboxWorkspace::over`.
+//! PLUG POINT: `haest::Fs`, under `SandboxWorkspace::over`.
 
 use std::{
     collections::BTreeSet,
     io,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Mutex, MutexGuard},
 };
 
-use async_trait::async_trait;
-use haest::core::fs::{DirEntry, Fs, FsStat, MemFs};
+use haest::{DirEntry, Fs, FsStat, MemFs, async_trait};
 
 pub struct NotebookFs {
     /// What the run sees: the notebook, plus what the run changed.
@@ -35,7 +34,7 @@ impl NotebookFs {
 
     /// The staged changes, path and new content, for the asker to review.
     pub async fn staged(&self) -> Vec<(PathBuf, String)> {
-        let paths: Vec<PathBuf> = self.staged.lock().unwrap().iter().cloned().collect();
+        let paths: Vec<PathBuf> = self.paths().iter().cloned().collect();
         let mut out = Vec::new();
         for p in paths {
             let text = self.view.read_to_string(&p).await.unwrap_or_default();
@@ -45,7 +44,12 @@ impl NotebookFs {
     }
 
     fn stage(&self, path: &Path) {
-        self.staged.lock().unwrap().insert(path.to_path_buf());
+        self.paths().insert(path.to_path_buf());
+    }
+
+    /// Only this file's code runs under the lock, so a poisoned one is a bug here.
+    fn paths(&self) -> MutexGuard<'_, BTreeSet<PathBuf>> {
+        self.staged.lock().expect("the staged paths' lock poisoned")
     }
 }
 

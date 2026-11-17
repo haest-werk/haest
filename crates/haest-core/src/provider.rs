@@ -301,7 +301,7 @@ pub(crate) async fn final_message(
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// # async fn main() -> Result<(), haest_core::BoxError> {
 /// use futures::StreamExt;
 ///
 /// let req = ProviderRequest::new("echo-1", vec![Message::user("hello")])

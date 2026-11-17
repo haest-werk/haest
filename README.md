@@ -68,11 +68,11 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `transport-broker` | `haest::transport::Broker` (the conversation dials out to a broker over a WebSocket; pulls a WebSocket client on rustls) | no |
 
 ```toml
-haest = "0.2"
+haest = "0.3"
 # the whole conversation with haest's own files, variables and flags (the CLI's way)
-haest = { version = "0.2", features = ["runtime", "config"] }
+haest = { version = "0.3", features = ["runtime", "config"] }
 # a host with its own HTTP client, files and tools (the notebook example)
-haest = { version = "0.2", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
+haest = { version = "0.3", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
 
 ## Run the CLI
@@ -188,17 +188,70 @@ More providers go in `<config dir>/providers.json`
 
 ## Embed it
 
+```toml
+[dependencies]
+haest = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+```
+
+One turn with a real model and haest's built-in tools, in the current
+directory:
+
+<!-- The same code as the Quickstart in crates/haest/src/lib.rs, where it compiles. -->
+
+```rust
+use haest::providers::{ProviderRegistry, RegistryOptions};
+use haest::tools::{BuiltinOptions, builtin_tools};
+use haest::workspace::RealWorkspace;
+use haest::{Agent, AgentDeps, AgentOptions, BoxError, ChildEnv, LoopEvent};
+
+#[tokio::main]
+async fn main() -> Result<(), BoxError> {
+    // The host decides where keys come from; here, this process's environment.
+    let keys = |name: &str| std::env::var(name).ok();
+    let models = ProviderRegistry::new(
+        keys,
+        Default::default(), // no providers.json entries
+        RegistryOptions::default(),
+    );
+
+    // Bash runs with only the variables you pass on.
+    let pass = |k: &'static str| (k, std::env::var(k).unwrap_or_default());
+    let env = ChildEnv::new([pass("PATH"), pass("HOME")]);
+
+    let deps = AgentDeps::new(
+        models,
+        builtin_tools(BuiltinOptions::default()),
+        "You are a careful engineer.",
+        std::env::current_dir()?,
+        RealWorkspace::new(env),
+    );
+    let model = AgentOptions::new("openrouter:anthropic/claude-sonnet-5.5");
+    let mut agent = Agent::new(deps, model);
+
+    // Every event of the turn goes to the sink, in order.
+    // This one prints the answer as it streams.
+    let mut sink = |ev: LoopEvent| match ev {
+        LoopEvent::TextDelta { text } => print!("{text}"),
+        LoopEvent::ToolCallStart { name, .. } => println!("\n[{name}]"),
+        _ => {}
+    };
+    let end = agent.run("What does this project do?", &mut sink).await;
+    println!("\n{:?}", end.stop_reason);
+    Ok(())
+}
+```
+
+Run it with `OPENROUTER_API_KEY` set. `anthropic:` and `openai:` models take
+`ANTHROPIC_API_KEY` and `OPENAI_API_KEY`; a `providers.json` adds any
+OpenAI-compatible server.
+
 A host builds `AgentDeps` (the agent's tools and system prompt, and the
 `SharedDeps` every agent of the conversation shares: models, workspace, hooks
 and the rest), makes an `Agent` and calls `run(input, &mut sink)` once per
 human turn. Each part goes in as the value itself (a closure, a string, a
-host's own type), never wrapped in an `Arc`:
-
-```rust
-let tools = builtin_tools(BuiltinOptions::default());
-let deps = AgentDeps::new(models, tools, "You are terse.", cwd, RealWorkspace::new(env))
-    .with_hooks(host);
-```
+host's own type), with no `Arc` around it; a part the host already shares
+goes in as its `Arc`, so one object can fill several slots.
 
 Every place a host differs is a trait: `HttpClient` for how requests
 travel, `Fs` and `Workspace` for files and shell, `Tool` and

@@ -14,7 +14,7 @@
 //! A row as the catalog file writes it (camelCase keys):
 //!
 //! ```
-//! use haest_core::catalog::{InputModality, ModelInfo};
+//! use haest_core::{InputModality, catalog::ModelInfo};
 //!
 //! let row: ModelInfo = serde_json::from_str(r#"{
 //!     "spec": "openrouter:example/model-1",
@@ -23,10 +23,11 @@
 //!     "contextWindow": 200000,
 //!     "reasoning": { "mandatory": false, "efforts": ["low", "high"] },
 //!     "pricing": { "input": 3.0, "cachedInput": 0.3, "output": 15.0 }
-//! }"#).unwrap();
+//! }"#)?;
 //!
 //! assert!(row.input.contains(&InputModality::Image));
-//! assert_eq!(row.pricing.unwrap().cache_write, None);
+//! assert_eq!(row.pricing.map(|p| p.cache_write), Some(None));
+//! # Ok::<(), serde_json::Error>(())
 //! ```
 
 use std::collections::HashSet;
