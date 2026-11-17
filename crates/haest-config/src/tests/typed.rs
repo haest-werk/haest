@@ -117,6 +117,24 @@ fn every_word_a_choice_offers_is_one_its_field_takes() {
     }
 }
 
+/// `get` reads back what `set` read; Debug shows where the URL goes and no
+/// credential riding in it, and `env` by its names, as `get` gives them.
+#[test]
+fn debug_shows_no_value_a_secret_may_ride_in() {
+    let mut c = Config::bare("/w", "/h");
+    let url = "wss://user:s3cret@broker.example/agents?token=t0ken#k3y";
+    c.set("broker_url", url).unwrap();
+    c.set("env", "GH_TOKEN=gh-v4lue").unwrap();
+    assert_eq!(c.get("broker_url").as_deref(), Some(url));
+    assert_eq!(c.get("env").as_deref(), Some("GH_TOKEN"));
+    let shown = format!("{c:?}");
+    for secret in ["s3cret", "t0ken", "k3y", "gh-v4lue"] {
+        assert!(!shown.contains(secret), "{secret} in {shown}");
+    }
+    assert!(shown.contains("broker.example/agents"), "{shown}");
+    assert!(shown.contains("GH_TOKEN"), "{shown}");
+}
+
 #[test]
 fn an_unknown_name_is_refused() {
     let mut c = Config::bare("/w", "/h");

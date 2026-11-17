@@ -213,8 +213,9 @@ impl From<Settings> for Config {
     }
 }
 
-/// Every field, but `env` by its variables' names (a value may be a key) and
-/// `broker_url` without its `user:password@`, as [`Config::get`] shows them.
+/// Every field, but `env` by its variables' names (a value may be a key;
+/// [`Config::get`] gives the names too) and `broker_url` without its
+/// userinfo, query values or fragment ([`Config::get`] gives it as set).
 impl fmt::Debug for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Config {

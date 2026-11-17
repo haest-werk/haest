@@ -45,9 +45,20 @@ fn rows(loaded: &Loaded, def: &Def) -> Vec<(String, String)> {
         None if source == Source::Default => (NONE.to_string(), NONE.to_string()),
         None => (NONE.to_string(), source.to_string()),
         Some("") => ("none".to_string(), source.to_string()),
-        Some(v) => (v.to_string(), source.to_string()),
+        Some(v) => (shown(def, v), source.to_string()),
     };
     vec![row]
+}
+
+/// A value as the report shows it. The broker's URL goes without its
+/// userinfo, query values and fragment, as the "Broker link" line says it:
+/// the URL is not where a secret goes, but one may be there.
+fn shown(def: &Def, value: &str) -> String {
+    if def.key == "broker_url" {
+        haest::http::__private::redacted_url(value).into_owned()
+    } else {
+        value.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -103,5 +114,17 @@ mod tests {
             .collect();
         assert_eq!(rows, [["env", "A", "--env"], ["env", "GH_TOKEN", "--env"]]);
         assert!(!report.join("\n").contains("s3cret"), "{report:#?}");
+    }
+
+    /// The report is what people paste when they ask for help: a broker
+    /// URL shows where it goes, never a credential riding in it.
+    #[tokio::test]
+    async fn the_broker_url_is_shown_without_its_credentials() {
+        let url = "wss://user:s3cret@broker.example/agents?token=t0ken#k3y";
+        let report = report(&[("broker_url", url)]).await.join("\n");
+        for secret in ["s3cret", "t0ken", "k3y"] {
+            assert!(!report.contains(secret), "{secret} in {report}");
+        }
+        assert!(report.contains("broker.example/agents"), "{report}");
     }
 }
