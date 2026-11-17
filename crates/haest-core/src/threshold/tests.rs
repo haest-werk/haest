@@ -611,3 +611,62 @@ fn a_list_reads_a_thresholds_parts_once_when_it_takes_it() {
         "read again after the list took it"
     );
 }
+
+/// A list's Debug (and a watch's and a crossing's) asked the threshold for
+/// its parts again, so for one whose mark moved it showed a mark the site
+/// does not check. It shows what the site checks.
+#[test]
+fn a_lists_debug_shows_the_parts_its_site_checks() {
+    use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+
+    /// Its mark is $1 the first time it is asked, $9 after.
+    #[derive(Default)]
+    struct Moving(AtomicUsize);
+    impl Threshold for Moving {
+        fn meter(&self) -> Meter {
+            Meter::Usd(Scope::Conversation)
+        }
+        fn mark(&self) -> Mark {
+            Mark::at(if self.0.fetch_add(1, SeqCst) == 0 {
+                1.0
+            } else {
+                9.0
+            })
+        }
+        fn action(&self) -> Action {
+            Action::Warn
+        }
+        fn rearm(&self) -> Rearm {
+            Rearm::BelowMark
+        }
+        fn text(&self, _: &Reading) -> String {
+            String::new()
+        }
+    }
+
+    let list = Thresholds::<LedgerSite>::new([ThresholdRef::new(Moving::default())]).unwrap();
+    let reading = |meter| {
+        Some(Reading {
+            meter,
+            value: 2.0,
+            cap: None,
+            limit: None,
+        })
+    };
+    let crossing = list.past(reading, Action::Warn).unwrap();
+    let watch = Watch::new(list.clone());
+    let (checked, moved) = (
+        format!("{:?}", Mark::at(1.0)),
+        format!("{:?}", Mark::at(9.0)),
+    );
+    for shown in [
+        format!("{list:?}"),
+        format!("{watch:?}"),
+        format!("{crossing:?}"),
+    ] {
+        assert!(
+            shown.contains(&checked) && !shown.contains(&moved),
+            "{shown}"
+        );
+    }
+}

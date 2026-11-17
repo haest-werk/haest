@@ -365,10 +365,22 @@ crate::plug_ref! {
 }
 
 /// A threshold that fired, and the reading it fired on.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Crossing {
     threshold: ThresholdRef,
+    /// The threshold as its site checked it: what Debug shows.
+    parts: Parts,
     reading: Reading,
+}
+
+/// The threshold as its site checked it, and the reading.
+impl fmt::Debug for Crossing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Crossing")
+            .field("threshold", &self.parts)
+            .field("reading", &self.reading)
+            .finish()
+    }
 }
 
 impl Crossing {

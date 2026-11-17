@@ -33,7 +33,7 @@ pub struct NotServed {
 
 /// What a threshold is, read once when a list takes it: its meter, mark,
 /// action and rearm. Host code, so it is never read under a site's lock.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub(crate) struct Parts {
     pub(crate) meter: Meter,
     pub(crate) mark: Mark,
@@ -49,6 +49,19 @@ impl Parts {
             action: threshold.action(),
             rearm: threshold.rearm(),
         }
+    }
+}
+
+/// The threshold as its site checks it, in the shape a threshold's own
+/// Debug has: a list, a watch and a crossing show these, never ask again.
+impl fmt::Debug for Parts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Threshold")
+            .field("meter", &self.meter)
+            .field("mark", &self.mark)
+            .field("action", &self.action)
+            .field("rearm", &self.rearm)
+            .finish()
     }
 }
 
@@ -155,6 +168,7 @@ impl<S: Site> Thresholds<S> {
                 let reading = read(p.meter)?;
                 p.mark.reached(&reading).then(|| Crossing {
                     threshold: t.clone(),
+                    parts: *p,
                     reading,
                 })
             })
@@ -186,9 +200,10 @@ impl<S: Site> Clone for Thresholds<S> {
     }
 }
 
+/// What the site checks: each threshold's parts as the list read them.
 impl<S: Site> fmt::Debug for Thresholds<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list().entries(self.list.iter()).finish()
+        f.debug_list().entries(&self.parts).finish()
     }
 }
 
@@ -279,6 +294,7 @@ impl<S: Site> Watch<S> {
             if fire {
                 due.push(Crossing {
                     threshold: t.clone(),
+                    parts: *p,
                     reading,
                 });
             }
