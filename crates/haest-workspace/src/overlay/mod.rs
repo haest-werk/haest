@@ -38,6 +38,7 @@ use haest_core::{
 };
 
 use crate::bridge::HaestFsOverBashkit;
+use links::Links;
 use recorder::Recorder;
 use state::{Original, state_of, walk};
 
@@ -238,11 +239,13 @@ impl ChangeSet for OverlayChanges {
     /// listed like a conflict.
     async fn apply(&self) -> ApplyReport {
         let mut report = ApplyReport::default();
+        // One for the whole apply: each real directory on the way is listed once.
+        let mut links = Links::new(self.book.disk.as_ref(), &self.book.root);
         for s in self.scan().await {
             let refused = if s.change.conflict {
                 None
             } else {
-                match self.put(s.change.kind, &s.path).await {
+                match self.put(s.change.kind, &s.path, &mut links).await {
                     Ok(()) => {
                         self.book.touched().remove(&s.path);
                         report.applied.push(s.change);

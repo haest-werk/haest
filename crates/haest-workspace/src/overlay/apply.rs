@@ -41,8 +41,14 @@ impl OverlayChanges {
         None
     }
 
-    /// Write (or delete) overlay `path` on the real disk, or say why not.
-    pub(crate) async fn put(&self, kind: ChangeKind, path: &Path) -> Result<(), Refusal> {
+    /// Write (or delete) overlay `path` on the real disk, or say why not;
+    /// `links` is the apply's one lookup of links on the real disk.
+    pub(crate) async fn put(
+        &self,
+        kind: ChangeKind,
+        path: &Path,
+        links: &mut Links<'_>,
+    ) -> Result<(), Refusal> {
         let deleted = kind == ChangeKind::Deleted;
         let link = self.sandbox_link(path, deleted).await;
         if let Some((at, target)) = &link
@@ -56,9 +62,9 @@ impl OverlayChanges {
                 ),
             ));
         }
-        // Checked now, not at the scan: a link may have appeared on disk since.
-        let disk = self.book.disk.as_ref();
-        if Links::new(disk, &self.book.root).through_a_link(path).await {
+        // Checked at the apply, not at the scan: a link may have appeared on
+        // disk since.
+        if links.through_a_link(path).await {
             return Err((
                 ApplyFailureCode::OutsideProject,
                 "a symlink on the real disk is on its way, and applying never writes through one"
