@@ -107,9 +107,31 @@ impl WebSearchOptions {
     }
 }
 
+/// [`WebSearchEngine::Auto`] with haest's result caps, as
+/// [`new`](WebSearchOptions::new) sets them.
+impl Default for WebSearchOptions {
+    fn default() -> Self {
+        Self::new(WebSearchEngine::Auto)
+    }
+}
+
 /// A provider-side web search for every model call ([`WebSearchOptions::new`]
 /// sets haest's caps). Only providers that run one (OpenRouter) send it;
 /// the rest ignore it.
+///
+/// Plain data: set the fields a host cares about and take the rest from
+/// [`Default`], so a setting added later breaks no host.
+///
+/// ```
+/// use haest_core::provider::{WebSearchEngine, WebSearchOptions};
+///
+/// let exa = WebSearchOptions {
+///     engine: WebSearchEngine::Exa,
+///     max_total_results: 10,
+///     ..WebSearchOptions::default()
+/// };
+/// assert_eq!(exa.max_results, 5);
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearchOptions {

@@ -889,6 +889,9 @@ Hosts write less (round two of the review, and what porting brain onto
   also built `From<Box<dyn Trait>>`, so a part the host picks at run time
   fills a slot as it is: `SharedDeps::new(models, cwd,
   Arc::<dyn Workspace>::from(boxed))` -> `SharedDeps::new(models, cwd, boxed)`.
+- `WebSearchOptions` is `Default` (`Auto`, 5 results a search, 15 a model
+  call, as `new` sets them), so a host that sets a field writes
+  `..WebSearchOptions::default()` and a setting added later breaks none.
 
 ### haest-http
 
