@@ -178,6 +178,7 @@ pub struct CompactionResult {
 
 /// Why [`compact`] wrote no summary. History is untouched either way.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CompactionError {
     /// The agent's model spec resolves to no provider (no call was made).
     #[error(transparent)]

@@ -78,11 +78,7 @@ pub(super) async fn run(
 ) {
     let (to, id) = (shared.clone(), job.id.clone());
     let on_output = OutputChunks::from(move |chunk: &str| to.output(&id, chunk));
-    let opts = ExecOptions {
-        cwd,
-        cancel: stop,
-        timeout: NO_DEADLINE,
-    };
+    let opts = ExecOptions::new(cwd, NO_DEADLINE).with_cancel(stop);
     let r = workspace
         .shell_streaming(&job.command, opts, on_output)
         .await;

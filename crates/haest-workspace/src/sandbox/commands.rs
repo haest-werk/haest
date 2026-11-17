@@ -20,19 +20,18 @@ pub(crate) struct HostCommand {
 #[async_trait::async_trait]
 impl Builtin for HostCommand {
     async fn execute(&self, ctx: BuiltinContext<'_>) -> bashkit::Result<bashkit::ExecResult> {
-        let call = ShellCall {
-            args: ctx.args.to_vec(),
-            cwd: ctx.cwd.clone(),
-            env: ctx
-                .env
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            stdin: ctx.stdin.map(|s| s.as_bytes().to_vec()),
-            fs: self.fs.clone().into(),
-            cancel: self.cancel.clone(),
-            ends_at: self.ends_at,
-        };
+        let env = ctx.env.iter().map(|(k, v)| (k.clone(), v.clone()));
+        let mut call = ShellCall::new(
+            ctx.args.iter().cloned(),
+            ctx.cwd.clone(),
+            self.fs.clone(),
+            self.ends_at,
+        )
+        .with_env(env.collect())
+        .with_cancel(self.cancel.clone());
+        if let Some(stdin) = ctx.stdin {
+            call = call.with_stdin(stdin.as_bytes());
+        }
         let out = self.command.run(call).await;
         let mut result = bashkit::ExecResult::with_code(out.stdout, out.exit_code);
         result.stderr = out.stderr.into();

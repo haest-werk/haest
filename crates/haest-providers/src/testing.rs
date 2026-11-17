@@ -37,7 +37,6 @@ use haest_core::{
 };
 use haest_http::{Body, Bytes, HttpClient, HttpError, Request, Response, async_trait};
 use serde_json::Value;
-use tokio_util::sync::CancellationToken;
 
 /// What happens after a reply's chunks.
 #[derive(Debug, Clone, PartialEq)]
@@ -212,16 +211,7 @@ pub fn request(model: &str) -> ProviderRequest {
 /// A request for `model` with these messages: system prompt `sys`, no tools,
 /// no effort, no token cap, no web search, a fresh cancellation token.
 pub fn request_with(model: &str, messages: Vec<Message>) -> ProviderRequest {
-    ProviderRequest {
-        model: model.into(),
-        system: "sys".into(),
-        messages,
-        tools: Vec::new(),
-        cancel: CancellationToken::new(),
-        effort: None,
-        max_tokens: None,
-        web_search: None,
-    }
+    ProviderRequest::new(model, messages).with_system("sys")
 }
 
 /// Drain a provider stream: every event, and the message `Done` carried.
@@ -252,6 +242,7 @@ pub fn kinds(events: &[ProviderEvent]) -> Vec<&'static str> {
             ProviderEvent::ThinkingDelta(_) => "thinking_delta",
             ProviderEvent::ToolCallStart { .. } => "tool_call_start",
             ProviderEvent::Done(_) => "done",
+            _ => "other",
         })
         .collect()
 }

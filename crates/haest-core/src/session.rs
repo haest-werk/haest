@@ -83,6 +83,7 @@ use crate::{
     rename_all = "snake_case",
     rename_all_fields = "camelCase"
 )]
+#[non_exhaustive]
 pub enum SessionRecord {
     /// The first line: who the session is. Build it with [`SessionRecord::header`].
     Header {

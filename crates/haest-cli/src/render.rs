@@ -281,6 +281,8 @@ impl<O: Write, E: Write> Renderer<O, E> {
             | LoopEvent::ModelStart { .. }
             | LoopEvent::ThinkingDelta { .. }
             | LoopEvent::ToolCallStart { .. } => {}
+            // A kind this terminal does not show yet.
+            _ => {}
         }
     }
 

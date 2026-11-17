@@ -66,6 +66,7 @@ impl fmt::Debug for ResolvedModel {
 /// [`Unavailable`](Self::Unavailable), fix the provider's configuration
 /// (its source says what is wrong).
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ModelError {
     /// The spec is not `<provider>:<model>`.
     #[error(

@@ -81,6 +81,7 @@ crate::word_enum! {
     /// Why a model call ended ([`AssistantMessage::stop_reason`]), or a whole
     /// turn ([`TurnOutcome::stop_reason`](crate::TurnOutcome::stop_reason)).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum StopReason ("stop reason") {
         /// The model finished its answer.
         EndTurn = "end_turn",

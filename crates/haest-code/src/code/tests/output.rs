@@ -133,6 +133,7 @@ async fn each_inner_call_reports_start_then_end_tied_to_the_code_call_a_failure_
                 call.id.clone(),
                 Some(output.is_error),
             ),
+            other => panic!("an inner call event this test does not know: {other:?}"),
         })
         .collect();
     let want = |phase, id: &str, err| (phase, "call-1".to_string(), id.to_string(), err);

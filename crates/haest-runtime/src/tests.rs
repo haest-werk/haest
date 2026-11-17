@@ -11,7 +11,6 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use haest_settings::{BuiltinTools, ContextSources, Settings};
 use serde_json::json;
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     BuildError, BuildOptions, Resume, Runtime, RuntimeInputs, World, build,
@@ -189,16 +188,7 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
         .models()
         .resolve(rt.agent().model_spec())
         .unwrap();
-    let req = ProviderRequest {
-        model: model.model().to_string(),
-        system: String::new(),
-        messages: vec![Message::user("hi")],
-        tools: vec![],
-        cancel: CancellationToken::new(),
-        effort: None,
-        max_tokens: None,
-        web_search: None,
-    };
+    let req = ProviderRequest::new(model.model(), vec![Message::user("hi")]);
     let events: Vec<ProviderEvent> = model.provider().stream(req).collect().await;
     assert!(matches!(events.last(), Some(ProviderEvent::Done(_))));
     assert_eq!(gateway.0.lock().unwrap().len(), 1, "the model call");

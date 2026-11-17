@@ -55,6 +55,11 @@ value itself, and holds it in a handle named after its trait. Read
 7. A `Ledger` is shared by cloning it: `Arc<Mutex<Ledger>>` -> `Ledger`,
    `ledger.lock().unwrap().usd()` -> `ledger.usd()`,
    `.with_ledger(Arc::new(Mutex::new(ledger)))` -> `.with_ledger(ledger.clone())`.
+8. A `match` on `LoopEvent`, `StopReason` or another haest-core event or
+   error enum adds a `_` arm. `ProviderRequest`, `ExecOptions` and
+   `ShellCall` are built with `new` and `with_*`:
+   `ExecOptions { cwd, cancel, timeout }` ->
+   `ExecOptions::new(cwd, timeout).with_cancel(cancel)`.
 
 ### Bug fixes
 
@@ -270,6 +275,24 @@ Plug points without `Arc` (breaking):
   `create_dir` and `remove`; `create_dir_all` and `remove_all` have defaults
   built on them, and `remove_all` removes a link without walking into it.
   `MemFs`, `ShutFs` and every `Fs` in the workspace implement all four.
+
+Room to grow (breaking):
+
+- `#[non_exhaustive]` on `LoopEvent`, `ProviderEvent`, `ToolError`,
+  `InnerCallEvent`, `ModelError`, `run::RunError`, `CompactionError`,
+  `MediaError`, `TaskError`, `SessionRecord` and `StopReason` (providers
+  keep adding stop words): a `match` outside haest-core adds `_ => ..`, and
+  haest adds a variant in a minor release.
+- `ProviderRequest`, `ExecOptions` and `ShellCall` are `#[non_exhaustive]`
+  and built with `new` and a `with_*` per optional part; their fields stay
+  readable. `ProviderRequest { model, system, messages, tools: vec![],
+  cancel, effort: None, max_tokens: None, web_search: None }` ->
+  `ProviderRequest::new(model, messages).with_system(system).with_cancel(cancel)`
+  (also `with_tools`, `with_effort`, `with_max_tokens`, `with_web_search`).
+  `ExecOptions { cwd, cancel: CancellationToken::new(), timeout }` ->
+  `ExecOptions::new(cwd, timeout)` (`with_cancel`). `ShellCall { args, cwd,
+  env, stdin, fs, cancel, ends_at }` -> `ShellCall::new(args, cwd, fs,
+  ends_at)` (`with_env`, `with_stdin`, `with_cancel`).
 
 Durable runs, opt-in: a host that hands no run store gets the haest it had.
 

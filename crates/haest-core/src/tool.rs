@@ -114,6 +114,7 @@ impl ToolOutput {
 /// Why a tool call failed. [`Tool::execute`] returns it; the loop turns it
 /// into an error result the model reads, and the turn goes on.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ToolError {
     /// A bad call the model can correct; the message goes back verbatim.
     #[error("{0}")]
@@ -136,6 +137,7 @@ impl From<std::io::Error> for ToolError {
 /// Reported through [`ToolServices::on_inner_call`]: a `Start`, then an `End`
 /// with the same call.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum InnerCallEvent {
     /// The inner call is about to run.
     Start {

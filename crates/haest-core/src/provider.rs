@@ -120,7 +120,11 @@ pub struct WebSearchOptions {
 
 /// One model call, provider-neutral: everything an adapter turns into its wire
 /// request.
+///
+/// Built with [`ProviderRequest::new`] and a `with_*` per optional part, so a
+/// part added later breaks no caller; an adapter reads the fields.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ProviderRequest {
     /// The provider's own model id (the spec without `provider:`).
     pub model: String,
@@ -142,9 +146,69 @@ pub struct ProviderRequest {
     pub web_search: Option<WebSearchOptions>,
 }
 
+impl ProviderRequest {
+    /// A call to `model` with `messages`: no system prompt, no tools, a fresh
+    /// cancel token, and the model's own effort, output cap and search.
+    pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
+        Self {
+            model: model.into(),
+            system: String::new(),
+            messages,
+            tools: Vec::new(),
+            cancel: CancellationToken::new(),
+            effort: None,
+            max_tokens: None,
+            web_search: None,
+        }
+    }
+
+    /// With `system` as the system prompt.
+    #[must_use]
+    pub fn with_system(mut self, system: impl Into<String>) -> Self {
+        self.system = system.into();
+        self
+    }
+
+    /// With `tools` offered to the model.
+    #[must_use]
+    pub fn with_tools(mut self, tools: Vec<ToolSpec>) -> Self {
+        self.tools = tools;
+        self
+    }
+
+    /// Interrupted by `cancel`.
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
+    }
+
+    /// At reasoning `effort`; None sends nothing (the model's default).
+    #[must_use]
+    pub fn with_effort(mut self, effort: impl Into<Option<Effort>>) -> Self {
+        self.effort = effort.into();
+        self
+    }
+
+    /// With at most `max_tokens` of output; None is the default cap.
+    #[must_use]
+    pub fn with_max_tokens(mut self, max_tokens: impl Into<Option<u32>>) -> Self {
+        self.max_tokens = max_tokens.into();
+        self
+    }
+
+    /// With a provider-side web search; None sends none.
+    #[must_use]
+    pub fn with_web_search(mut self, web_search: impl Into<Option<WebSearchOptions>>) -> Self {
+        self.web_search = web_search.into();
+        self
+    }
+}
+
 /// One event of a model call's stream. The deltas are for showing progress;
 /// only [`ProviderEvent::Done`]'s message goes into history.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum ProviderEvent {
     /// Answer text as it arrives.
     TextDelta(String),
@@ -211,7 +275,6 @@ pub(crate) async fn final_message(
 ///     AssistantMessage, AssistantPart, Message, Provider, ProviderEvent, ProviderRequest,
 ///     provider::ProviderStream,
 /// };
-/// use tokio_util::sync::CancellationToken;
 ///
 /// struct Echo;
 ///
@@ -233,16 +296,8 @@ pub(crate) async fn final_message(
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
-/// let req = ProviderRequest {
-///     model: "echo-1".into(),
-///     system: "Repeat the user.".into(),
-///     messages: vec![Message::user("hello")],
-///     tools: vec![],
-///     cancel: CancellationToken::new(),
-///     effort: None,
-///     max_tokens: None,
-///     web_search: None,
-/// };
+/// let req = ProviderRequest::new("echo-1", vec![Message::user("hello")])
+///     .with_system("Repeat the user.");
 /// let events: Vec<ProviderEvent> = Echo.stream(req).collect().await;
 /// let Some(ProviderEvent::Done(answer)) = events.last() else { panic!("Done comes last") };
 /// assert_eq!(answer.text(), "hello");

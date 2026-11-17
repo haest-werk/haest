@@ -156,11 +156,7 @@ impl Tool for GrepTool {
         let mut argv = vec!["rg".to_string()];
         argv.extend(rg_args(&input)?);
         argv.extend(["-e".into(), pattern.into(), target_arg(target)]);
-        let opts = ExecOptions {
-            cwd: ctx.cwd().to_path_buf(),
-            cancel: ctx.cancel().clone(),
-            timeout: GREP_TIMEOUT,
-        };
+        let opts = ExecOptions::new(ctx.cwd(), GREP_TIMEOUT).with_cancel(ctx.cancel().clone());
         let r = ctx.workspace().run(&argv, opts).await;
         if r.exit_code == EXIT_NOT_FOUND {
             return Err(ToolError::Input(

@@ -122,11 +122,7 @@ async fn run_now(
     ctx: &ToolContext,
 ) -> Result<ToolOutput, ToolError> {
     let started = Instant::now();
-    let opts = ExecOptions {
-        cwd: ctx.cwd().to_path_buf(),
-        cancel: ctx.cancel().clone(),
-        timeout,
-    };
+    let opts = ExecOptions::new(ctx.cwd(), timeout).with_cancel(ctx.cancel().clone());
     let r = ctx.workspace().shell(command, opts).await;
     let sep = if !r.stdout.is_empty() && !r.stderr.is_empty() {
         "\n"

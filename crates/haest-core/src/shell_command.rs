@@ -16,6 +16,10 @@ use crate::{fs::FsRef, workspace::ExecResult};
 
 /// One run of a [`ShellCommand`]: its arguments and everything of the shell
 /// call it is part of.
+///
+/// The sandbox builds it ([`ShellCall::new`], a test too); a command reads
+/// the fields.
+#[non_exhaustive]
 pub struct ShellCall {
     /// The arguments, not including the command's own name.
     pub args: Vec<String>,
@@ -37,6 +41,46 @@ pub struct ShellCall {
 }
 
 impl ShellCall {
+    /// A run with `args`, in `cwd` over `fs`, until `ends_at`: no variables,
+    /// nothing piped in, a fresh interrupt.
+    pub fn new(
+        args: impl IntoIterator<Item = impl Into<String>>,
+        cwd: impl Into<PathBuf>,
+        fs: impl Into<FsRef>,
+        ends_at: Instant,
+    ) -> Self {
+        Self {
+            args: args.into_iter().map(Into::into).collect(),
+            cwd: cwd.into(),
+            env: BTreeMap::new(),
+            stdin: None,
+            fs: fs.into(),
+            cancel: CancellationToken::new(),
+            ends_at,
+        }
+    }
+
+    /// With the shell's exported variables.
+    #[must_use]
+    pub fn with_env(mut self, env: BTreeMap<String, String>) -> Self {
+        self.env = env;
+        self
+    }
+
+    /// With `stdin` piped in.
+    #[must_use]
+    pub fn with_stdin(mut self, stdin: impl Into<Vec<u8>>) -> Self {
+        self.stdin = Some(stdin.into());
+        self
+    }
+
+    /// Interrupted by `cancel`.
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
+    }
+
     /// The stdin as text (invalid UTF-8 replaced).
     pub fn stdin_text(&self) -> Option<Cow<'_, str>> {
         self.stdin.as_deref().map(String::from_utf8_lossy)
@@ -57,14 +101,13 @@ impl ShellCall {
 /// # Examples
 ///
 /// ```
-/// use std::{path::PathBuf, time::{Duration, Instant}};
+/// use std::time::{Duration, Instant};
 ///
 /// use async_trait::async_trait;
 /// use haest_core::{
 ///     ExecResult, MemFs,
 ///     shell_command::{ShellCall, ShellCommand},
 /// };
-/// use tokio_util::sync::CancellationToken;
 ///
 /// /// `upper`: stdin, or the arguments, in capitals.
 /// struct Upper;
@@ -88,15 +131,9 @@ impl ShellCall {
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
-/// let call = ShellCall {
-///     args: vec![],
-///     cwd: PathBuf::from("/project"),
-///     env: Default::default(),
-///     stdin: Some(b"hello\n".to_vec()),
-///     fs: MemFs::new().into(),
-///     cancel: CancellationToken::new(),
-///     ends_at: Instant::now() + Duration::from_secs(10),
-/// };
+/// let deadline = Instant::now() + Duration::from_secs(10);
+/// let call = ShellCall::new(Vec::<String>::new(), "/project", MemFs::new(), deadline)
+///     .with_stdin(b"hello\n".as_slice());
 /// let out = Upper.run(call).await;
 /// assert_eq!((out.stdout.as_str(), out.exit_code), ("HELLO\n", 0));
 /// # }

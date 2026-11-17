@@ -53,7 +53,6 @@
 //!
 //! use haest_core::workspace::{ChangeKind, ExecOptions, Workspace};
 //! use haest_workspace::{SandboxMounts, SandboxWorkspace};
-//! use tokio_util::sync::CancellationToken;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> std::io::Result<()> {
@@ -62,11 +61,7 @@
 //! std::fs::write(project.join("notes.md"), "old\n")?;
 //!
 //! let ws = SandboxWorkspace::open(SandboxMounts::new(&project)).await?;
-//! let opts = ExecOptions {
-//!     cwd: project.clone(),
-//!     cancel: CancellationToken::new(),
-//!     timeout: Duration::from_secs(10),
-//! };
+//! let opts = ExecOptions::new(&project, Duration::from_secs(10));
 //! let r = ws.shell("echo new > notes.md && cat notes.md", opts).await;
 //! assert_eq!(r.stdout, "new\n");
 //! // The disk has not changed.
@@ -104,17 +99,12 @@
 //!     workspace::{ExecOptions, Workspace},
 //! };
 //! use haest_workspace::SandboxWorkspace;
-//! use tokio_util::sync::CancellationToken;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> std::io::Result<()> {
 //! let files = Arc::new(MemFs::new());
 //! let ws = SandboxWorkspace::over(files.clone());
-//! let opts = ExecOptions {
-//!     cwd: "/".into(),
-//!     cancel: CancellationToken::new(),
-//!     timeout: Duration::from_secs(10),
-//! };
+//! let opts = ExecOptions::new("/", Duration::from_secs(10));
 //! let r = ws.shell("mkdir -p /notes && echo hi > /notes/a.md", opts).await;
 //! assert_eq!(r.exit_code, 0, "{}", r.stderr);
 //! // The shell wrote into the host's own Fs.

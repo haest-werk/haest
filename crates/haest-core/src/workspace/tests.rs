@@ -6,11 +6,7 @@ use super::*;
 async fn a_workspace_that_cannot_stream_hands_the_output_over_when_it_ends() {
     let seen = Arc::new(Mutex::new(Vec::<String>::new()));
     let into = seen.clone();
-    let opts = ExecOptions {
-        cwd: "/".into(),
-        cancel: CancellationToken::new(),
-        timeout: Duration::from_secs(1),
-    };
+    let opts = ExecOptions::new("/", Duration::from_secs(1));
     let r = ShutWorkspace
         .shell_streaming(
             "true",

@@ -70,6 +70,7 @@ impl RunOutcome {
 /// Why [`Agent::run_durable`](crate::Agent::run_durable) did not run.
 /// Nothing was written and no event emitted.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum RunError {
     /// The agent has no run store to keep the run in.
     #[error("a durable run needs a run store, and the agent has none")]

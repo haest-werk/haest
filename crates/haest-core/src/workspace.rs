@@ -34,7 +34,10 @@ crate::word_enum! {
 }
 
 /// How to run one command: where, until when, and the interrupt.
+///
+/// Built with [`ExecOptions::new`]; a workspace reads the fields.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ExecOptions {
     /// The working directory, absolute.
     pub cwd: PathBuf,
@@ -43,6 +46,25 @@ pub struct ExecOptions {
     pub cancel: CancellationToken,
     /// How long the command may run before it is stopped.
     pub timeout: Duration,
+}
+
+impl ExecOptions {
+    /// Run in `cwd` for at most `timeout`, with a fresh interrupt
+    /// ([`with_cancel`](Self::with_cancel) shares the caller's).
+    pub fn new(cwd: impl Into<PathBuf>, timeout: Duration) -> Self {
+        Self {
+            cwd: cwd.into(),
+            cancel: CancellationToken::new(),
+            timeout,
+        }
+    }
+
+    /// Stopped when `cancel` fires.
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
+    }
 }
 
 /// How a command ended: what it printed, its exit code, and whether it ran
@@ -209,7 +231,6 @@ crate::plug_ref! {
 ///     fs::FsRef,
 ///     workspace::EXIT_NOT_FOUND,
 /// };
-/// use tokio_util::sync::CancellationToken;
 ///
 /// struct Tiny {
 ///     fs: FsRef,
@@ -247,11 +268,7 @@ crate::plug_ref! {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let ws = Tiny { fs: MemFs::new().into() };
-/// let opts = ExecOptions {
-///     cwd: "/project".into(),
-///     cancel: CancellationToken::new(),
-///     timeout: Duration::from_secs(5),
-/// };
+/// let opts = ExecOptions::new("/project", Duration::from_secs(5));
 /// assert_eq!(ws.shell("pwd", opts.clone()).await.stdout, "/project\n");
 /// assert_eq!(ws.shell("make", opts).await.exit_code, EXIT_NOT_FOUND);
 /// # }

@@ -90,7 +90,6 @@
 //! use haest_code::sandbox_commands;
 //! use haest_core::{ExecOptions, MemFs, Workspace};
 //! use haest_workspace::SandboxWorkspace;
-//! use tokio_util::sync::CancellationToken;
 //!
 //! # #[tokio::main]
 //! # async fn main() {
@@ -102,11 +101,7 @@
 //!     .into_iter()
 //!     .fold(SandboxWorkspace::over(Arc::new(files)), SandboxWorkspace::with_command);
 //!
-//! let opts = ExecOptions {
-//!     cwd: "/project".into(),
-//!     cancel: CancellationToken::new(),
-//!     timeout: Duration::from_secs(20),
-//! };
+//! let opts = ExecOptions::new("/project", Duration::from_secs(20));
 //! let run = sandbox.shell("js hi.ts haest | tr a-z A-Z", opts.clone()).await;
 //! assert_eq!((run.stdout.as_str(), run.exit_code), ("HI HAEST\n", 0));
 //!

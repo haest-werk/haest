@@ -1,14 +1,10 @@
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use haest_core::{
     fs::MemFs,
     shell_command::{ShellCall, ShellCommand},
     workspace::ExecResult,
 };
-use tokio_util::sync::CancellationToken;
 
 use super::Xan;
 
@@ -27,14 +23,15 @@ south,apple,200,paid,
 /// `xan args` in `/data` (sales.csv, t.tsv), 10s from its deadline.
 fn call(args: &[&str], stdin: Option<&str>) -> ShellCall {
     let fs = MemFs::with_files([("/data/sales.csv", SALES), ("/data/t.tsv", "a\tb\n1\t2\n")]);
-    ShellCall {
-        args: args.iter().map(|a| a.to_string()).collect(),
-        cwd: PathBuf::from("/data"),
-        env: Default::default(),
-        stdin: stdin.map(|s| s.as_bytes().to_vec()),
-        fs: fs.into(),
-        cancel: CancellationToken::new(),
-        ends_at: Instant::now() + Duration::from_secs(10),
+    let call = ShellCall::new(
+        args.iter().copied(),
+        "/data",
+        fs,
+        Instant::now() + Duration::from_secs(10),
+    );
+    match stdin {
+        Some(text) => call.with_stdin(text.as_bytes()),
+        None => call,
     }
 }
 

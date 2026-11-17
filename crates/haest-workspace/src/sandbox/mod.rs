@@ -94,7 +94,6 @@ const OVERLAY_NOTE: &str = "Reads come from the real project; every file you wri
 ///     workspace::{ExecOptions, ExecResult, Workspace},
 /// };
 /// use haest_workspace::SandboxWorkspace;
-/// use tokio_util::sync::CancellationToken;
 ///
 /// /// `shout WORDS`: the words in capitals.
 /// struct Shout;
@@ -117,11 +116,7 @@ const OVERLAY_NOTE: &str = "Reads come from the real project; every file you wri
 /// let ws = SandboxWorkspace::over(Arc::new(MemFs::new()))
 ///     .with_env(ChildEnv::new([("GREETING".to_string(), "hej".to_string())]))
 ///     .with_command(Arc::new(Shout));
-/// let opts = ExecOptions {
-///     cwd: "/".into(),
-///     cancel: CancellationToken::new(),
-///     timeout: Duration::from_secs(10),
-/// };
+/// let opts = ExecOptions::new("/", Duration::from_secs(10));
 /// let r = ws.shell("shout \"$GREETING\" there", opts.clone()).await;
 /// assert_eq!(r.stdout, "HEJ THERE\n");
 ///

@@ -52,18 +52,13 @@ pub use fs::RealFs;
 ///     workspace::{ExecOptions, Workspace},
 /// };
 /// use haest_workspace::RealWorkspace;
-/// use tokio_util::sync::CancellationToken;
 ///
 /// # #[tokio::main]
 /// # async fn main() {
 /// // The children see this PATH and no other variable of the host's.
 /// let env = ChildEnv::new([("PATH".to_string(), "/usr/bin:/bin".to_string())]);
 /// let ws = RealWorkspace::new(env);
-/// let opts = ExecOptions {
-///     cwd: std::env::temp_dir(),
-///     cancel: CancellationToken::new(),
-///     timeout: Duration::from_secs(10),
-/// };
+/// let opts = ExecOptions::new(std::env::temp_dir(), Duration::from_secs(10));
 /// let r = ws.shell("echo \"HOME is [$HOME]\"", opts.clone()).await;
 /// assert_eq!(r.stdout, "HOME is []\n");
 ///

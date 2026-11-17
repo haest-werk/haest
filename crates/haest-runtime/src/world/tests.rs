@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use haest_core::workspace::ExecOptions;
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     haest::{core::fs::MemFs, tools::NoInbox},
@@ -26,11 +25,7 @@ fn scratch(name: &str) -> PathBuf {
 
 /// What `script` prints in `ws`.
 async fn run(ws: &dyn Workspace, script: &str) -> String {
-    let opts = ExecOptions {
-        cwd: std::env::temp_dir(),
-        cancel: CancellationToken::new(),
-        timeout: Duration::from_secs(10),
-    };
+    let opts = ExecOptions::new(std::env::temp_dir(), Duration::from_secs(10));
     let out = ws.shell(script, opts).await;
     assert_eq!(out.exit_code, 0, "{script}: {}", out.stderr);
     out.stdout

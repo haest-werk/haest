@@ -9,7 +9,6 @@ use std::{
 use haest_code::sandbox_commands;
 use haest_core::workspace::{ExecOptions, Workspace};
 use haest_workspace::{SandboxMounts, SandboxWorkspace};
-use tokio_util::sync::CancellationToken;
 
 async fn sandbox(dir: &Path) -> SandboxWorkspace {
     let ws = SandboxWorkspace::open(SandboxMounts::new(dir))
@@ -21,11 +20,7 @@ async fn sandbox(dir: &Path) -> SandboxWorkspace {
 }
 
 fn opts(cwd: &Path, timeout: Duration) -> ExecOptions {
-    ExecOptions {
-        cwd: cwd.to_path_buf(),
-        cancel: CancellationToken::new(),
-        timeout,
-    }
+    ExecOptions::new(cwd, timeout)
 }
 
 fn tempdir() -> (tempfile::TempDir, PathBuf) {

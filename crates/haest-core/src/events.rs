@@ -48,6 +48,7 @@ use crate::{
     rename_all = "snake_case",
     rename_all_fields = "camelCase"
 )]
+#[non_exhaustive]
 pub enum LoopEvent {
     /// A user message entered history (the turn's input, or queued steering).
     User {

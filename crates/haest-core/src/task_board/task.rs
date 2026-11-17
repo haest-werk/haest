@@ -80,6 +80,7 @@ pub struct TaskPatch {
 /// A refusal the model can correct. The text is for the model: an unknown id
 /// lists the ids that exist.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum TaskError {
     /// No task has this id.
     #[error("no task \"{id}\"; existing ids: {}", existing_ids(existing))]

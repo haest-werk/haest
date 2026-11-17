@@ -116,6 +116,7 @@ fn kb(bytes: usize) -> String {
 /// Why bytes cannot be a media part: what [`media_from_bytes`] refuses. Its
 /// text is worded for the model, so a tool returns it as is.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum MediaError {
     /// The media type is not one haest sends to a model.
     #[error("{name} ({media_type}) is not a media type haest can send to a model")]

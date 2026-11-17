@@ -6,7 +6,6 @@ use std::{
 };
 
 use haest_core::workspace::ExecOptions;
-use tokio_util::sync::CancellationToken;
 
 /// A temp dir by its real path: on macOS the temp root is a symlink, and the
 /// sandbox mounts real paths.
@@ -17,11 +16,7 @@ pub fn tempdir() -> (tempfile::TempDir, PathBuf) {
 }
 
 pub fn opts(cwd: &Path) -> ExecOptions {
-    ExecOptions {
-        cwd: cwd.to_path_buf(),
-        cancel: CancellationToken::new(),
-        timeout: Duration::from_secs(10),
-    }
+    ExecOptions::new(cwd, Duration::from_secs(10))
 }
 
 pub fn argv(words: &[&str]) -> Vec<String> {

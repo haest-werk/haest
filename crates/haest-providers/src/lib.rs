@@ -77,7 +77,6 @@
 //!     CustomProviders, ProviderRegistry, RegistryOptions,
 //!     http::{HttpClient, HttpError, Request, Response, async_trait},
 //! };
-//! use tokio_util::sync::CancellationToken;
 //!
 //! /// Answers every request with the same stream. A real client would send
 //! /// `req` over its own connection.
@@ -110,16 +109,8 @@
 //!     let resolved = registry.resolve("openrouter:anthropic/claude-sonnet-5.5")?;
 //!     assert_eq!(resolved.model(), "anthropic/claude-sonnet-5.5");
 //!
-//!     let request = ProviderRequest {
-//!         model: resolved.model().to_string(),
-//!         system: "You are terse.".into(),
-//!         messages: vec![Message::user("Say hello.")],
-//!         tools: Vec::new(),
-//!         cancel: CancellationToken::new(),
-//!         effort: None,
-//!         max_tokens: None,
-//!         web_search: None,
-//!     };
+//!     let request = ProviderRequest::new(resolved.model(), vec![Message::user("Say hello.")])
+//!         .with_system("You are terse.");
 //!     let mut stream = resolved.provider().stream(request);
 //!     while let Some(event) = stream.next().await {
 //!         match event {
