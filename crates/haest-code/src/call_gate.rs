@@ -4,7 +4,11 @@
 //!
 //! [`CallGate`] is what the Code tool holds for each run.
 
-use std::{future::Future, pin::pin, sync::Mutex};
+use std::{
+    future::Future,
+    pin::pin,
+    sync::{Mutex, MutexGuard},
+};
 
 use tokio::sync::Notify;
 
@@ -34,7 +38,7 @@ struct Held<'a> {
 
 impl Drop for Held<'_> {
     fn drop(&mut self) {
-        let mut s = self.gate.state.lock().unwrap();
+        let mut s = self.gate.state();
         if self.exclusive {
             s.writing = false;
         } else {
@@ -67,13 +71,19 @@ impl CallGate {
         call.await
     }
 
+    /// Who is through the gate. Its lock is held only to count, never while a
+    /// call runs, so a poisoned one is a bug here.
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state.lock().expect("the call gate's lock poisoned")
+    }
+
     async fn enter(&self, exclusive: bool) -> Held<'_> {
         loop {
             // Registered BEFORE the check, so a release between check and wait still wakes us.
             let mut changed = pin!(self.changed.notified());
             changed.as_mut().enable();
             {
-                let mut s = self.state.lock().unwrap();
+                let mut s = self.state();
                 let busy = s.writing
                     || if exclusive {
                         s.reads > 0

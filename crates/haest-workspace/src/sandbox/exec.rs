@@ -3,7 +3,7 @@
 //! files do.
 
 use std::{
-    sync::{Arc, Mutex, atomic::Ordering},
+    sync::{Arc, Mutex, MutexGuard, atomic::Ordering},
     time::{Duration, Instant},
 };
 
@@ -70,6 +70,12 @@ fn shell(world: &Shell<'_>, opts: &ExecOptions, ends_at: Instant) -> Bash {
 
 type Sink = Arc<Mutex<(Vec<u8>, Vec<u8>)>>;
 
+/// The streamed copies of stdout and stderr. The lock is held only to copy
+/// bytes in or out, so a poisoned one is a bug here.
+fn streamed(s: &Sink) -> MutexGuard<'_, (Vec<u8>, Vec<u8>)> {
+    s.lock().expect("the streamed output's lock poisoned")
+}
+
 /// How a call ended when it did not finish on its own.
 enum Stopped {
     Cancelled,
@@ -104,11 +110,11 @@ pub(crate) async fn exec(
     });
     // Streamed copies of the output: what a stopped call returns.
     let sink: Sink = Arc::default();
-    let streamed = sink.clone();
+    let into = sink.clone();
     let mut options = bashkit::ExecOptions::new()
         .timeout(timeout)
         .streaming(Box::new(move |out, err| {
-            let mut s = streamed.lock().unwrap();
+            let mut s = streamed(&into);
             s.0.extend_from_slice(out.as_bytes());
             s.1.extend_from_slice(err.as_bytes());
         }));
@@ -123,7 +129,7 @@ pub(crate) async fn exec(
     };
     watcher.abort();
     let timed_out = started.elapsed() >= timeout;
-    let (out, err) = std::mem::take(&mut *sink.lock().unwrap());
+    let (out, err) = std::mem::take(&mut *streamed(&sink));
     let partial = |extra: &str, exit_code: i32| ExecResult {
         stdout: String::from_utf8_lossy(&out).into_owned(),
         stderr: String::from_utf8_lossy(&err).into_owned() + extra,

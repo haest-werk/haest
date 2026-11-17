@@ -48,17 +48,26 @@ fn exit_notice(job: &Job) -> String {
 impl Shared {
     /// The listener, never called with a lock held: a handler may call the hub back.
     pub(super) fn events(&self) -> JobEventsRef {
-        self.events.lock().unwrap().clone()
+        self.listener().clone()
     }
 
     /// Where every event goes from now on.
     pub(super) fn set_events(&self, events: JobEventsRef) {
-        *self.events.lock().unwrap() = events;
+        *self.listener() = events;
     }
 
-    /// The table, held until the guard drops.
+    /// The listener's slot. Held only to swap the handle, never while a
+    /// handler runs, so a poisoned one is a bug here.
+    fn listener(&self) -> MutexGuard<'_, JobEventsRef> {
+        self.events
+            .lock()
+            .expect("the job hub's listener lock poisoned")
+    }
+
+    /// The table, held until the guard drops. Never held while a handler
+    /// or a job runs, so a poisoned one is a bug here.
     pub(super) fn lock_jobs(&self) -> MutexGuard<'_, Jobs> {
-        self.jobs.lock().unwrap()
+        self.jobs.lock().expect("the job hub's table lock poisoned")
     }
 
     pub(super) fn running(&self) -> Vec<Job> {

@@ -28,7 +28,7 @@ mod state;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use async_trait::async_trait;
@@ -53,17 +53,26 @@ impl Book {
         self.root.join(path.strip_prefix("/").unwrap_or(path))
     }
 
+    /// The first-touch ledger. Its lock is held only to read or write the
+    /// map, never across an await or a host's code, so a poisoned one is a
+    /// bug here.
+    fn touched(&self) -> MutexGuard<'_, BTreeMap<PathBuf, Original>> {
+        self.touched
+            .lock()
+            .expect("the overlay's first-touch lock poisoned")
+    }
+
     pub(crate) async fn remember(&self, path: &Path) {
         let path = normalize(path);
-        if self.touched.lock().unwrap().contains_key(&path) {
+        if self.touched().contains_key(&path) {
             return;
         }
         let original = state_of(self.disk.as_ref(), &self.real(&path)).await;
-        self.touched.lock().unwrap().entry(path).or_insert(original);
+        self.touched().entry(path).or_insert(original);
     }
 
     fn snapshot(&self) -> BTreeMap<PathBuf, Original> {
-        self.touched.lock().unwrap().clone()
+        self.touched().clone()
     }
 }
 
@@ -235,7 +244,7 @@ impl ChangeSet for OverlayChanges {
             } else {
                 match self.put(s.change.kind, &s.path).await {
                     Ok(()) => {
-                        self.book.touched.lock().unwrap().remove(&s.path);
+                        self.book.touched().remove(&s.path);
                         report.applied.push(s.change);
                         continue;
                     }
@@ -244,7 +253,7 @@ impl ChangeSet for OverlayChanges {
             };
             // A file found inside a created directory: remember it, so it is
             // still listed once its directory is applied.
-            let mut touched = self.book.touched.lock().unwrap();
+            let mut touched = self.book.touched();
             touched.entry(s.path).or_insert(s.original);
             match refused {
                 Some((code, reason)) => report

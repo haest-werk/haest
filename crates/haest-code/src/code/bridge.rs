@@ -7,7 +7,7 @@
 //! transcript shows it as a row of its own -- the "transparent wrapper" Claude
 //! Code's REPL tool used, adapted: the Code row stays, its calls appear beneath it.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use haest_core::{
     __private::{ToolIndex, run_unspilled},
@@ -50,8 +50,14 @@ struct Held<'a> {
 
 impl Drop for Held<'_> {
     fn drop(&mut self) {
-        self.tally.lock().unwrap().held -= self.left;
+        lock_tally(self.tally).held -= self.left;
     }
+}
+
+/// A run's tally. Its lock is held only for the sums, never across an await
+/// or a tool's code, so a poisoned one is a bug here.
+fn lock_tally(tally: &Mutex<Tally>) -> MutexGuard<'_, Tally> {
+    tally.lock().expect("the Code run's tally lock poisoned")
 }
 
 pub(crate) struct Bridge {
@@ -65,7 +71,7 @@ pub(crate) struct Bridge {
     /// Inner calls are reported only inside the loop, where there is a call to hang them under.
     report: Option<ToolServicesRef>,
     gate: CallGate,
-    pub tally: Mutex<Tally>,
+    tally: Mutex<Tally>,
 }
 
 #[derive(Deserialize, Default)]
@@ -115,6 +121,11 @@ impl Bridge {
         })
     }
 
+    /// What the run has done so far.
+    pub(super) fn tally(&self) -> MutexGuard<'_, Tally> {
+        lock_tally(&self.tally)
+    }
+
     fn refuse(&self, name: &str) -> String {
         format!(
             "\"{name}\" cannot be called from Code. Callable: {}. Call it as a normal tool instead.",
@@ -129,7 +140,7 @@ impl Bridge {
             .get(name)
             .cloned()
             .ok_or_else(|| self.refuse(name))?;
-        let mut tally = self.tally.lock().unwrap();
+        let mut tally = self.tally();
         if tally.calls.len() >= MAX_CALLS {
             return Err(format!(
                 "Code may make at most {MAX_CALLS} tool calls per run. Return what you have, or split the work."
@@ -162,7 +173,7 @@ impl Bridge {
         if let Some(row) = row {
             row.end(&out);
         }
-        let mut tally = self.tally.lock().unwrap();
+        let mut tally = self.tally();
         tally.cost_usd += out.cost_usd.unwrap_or(0.0);
         tally.child_cost_usd += out.child_cost_usd.unwrap_or(0.0);
         tally.calls[n - 1].failed = out.is_error;
@@ -194,7 +205,7 @@ impl Bridge {
         let input: SeeInput = serde_json::from_str(args_json).map_err(|e| format!("see(): {e}"))?;
         // Claimed before the first Read is awaited.
         let mut held = {
-            let mut tally = self.tally.lock().unwrap();
+            let mut tally = self.tally();
             let already = tally.seen.len() + tally.held;
             if already + input.images.len() > MAX_SEEN {
                 return Err(format!(
@@ -221,7 +232,7 @@ impl Bridge {
             if out.media.is_empty() {
                 return Err(format!("see(): {path} is not an image or PDF"));
             }
-            let mut tally = self.tally.lock().unwrap();
+            let mut tally = self.tally();
             tally.held -= 1;
             held.left -= 1;
             tally.seen.extend(out.media);
@@ -233,7 +244,7 @@ impl Bridge {
             tally.notes.push(label);
         }
         if let Some(text) = input.text.filter(|t| !t.is_empty()) {
-            self.tally.lock().unwrap().notes.push(text);
+            self.tally().notes.push(text);
         }
         Ok(format!(
             "{} picture(s) attached to this result",

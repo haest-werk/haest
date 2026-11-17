@@ -6,7 +6,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -102,6 +102,12 @@ fn not_started(program: &str, e: &io::Error) -> ExecResult {
 
 type Sink = Arc<Mutex<Vec<u8>>>;
 
+/// A stream's kept bytes. The lock is held only to copy bytes in or out, so a
+/// poisoned one is a bug here.
+fn kept(s: &Sink) -> MutexGuard<'_, Vec<u8>> {
+    s.lock().expect("the kept output's lock poisoned")
+}
+
 /// How many bytes at the end of `b` begin a character the next chunk completes.
 fn cut_char(b: &[u8]) -> usize {
     for back in 1..=b.len().min(3) {
@@ -148,7 +154,7 @@ async fn drain(mut from: impl AsyncRead + Unpin, into: Sink, stream: Option<Outp
             if n == 0 {
                 return;
             }
-            let mut kept = into.lock().unwrap();
+            let mut kept = kept(&into);
             let room = MAX_OUTPUT_BYTES.saturating_sub(kept.len());
             kept.extend_from_slice(&chunk[..n.min(room)]);
             continue;
@@ -178,7 +184,7 @@ impl Drop for KillGroupOnDrop {
 }
 
 fn take(s: &Sink) -> String {
-    String::from_utf8_lossy(&std::mem::take(&mut *s.lock().unwrap())).into_owned()
+    String::from_utf8_lossy(&std::mem::take(&mut *kept(s))).into_owned()
 }
 
 /// Spawn `program args...` in its own process group, with `env` and nothing

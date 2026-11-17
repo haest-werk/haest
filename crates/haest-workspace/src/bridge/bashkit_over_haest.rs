@@ -10,7 +10,7 @@ use std::{
     collections::HashMap,
     io::{self, ErrorKind},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Mutex, MutexGuard},
     time::SystemTime,
 };
 
@@ -51,13 +51,21 @@ impl BashkitFsOverHaest {
         }
     }
 
+    /// The remembered modes. The lock is held only to read or write the map,
+    /// never across an await or a host's code, so a poisoned one is a bug here.
+    fn modes(&self) -> MutexGuard<'_, HashMap<PathBuf, u32>> {
+        self.modes
+            .lock()
+            .expect("the remembered modes' lock poisoned")
+    }
+
     fn metadata(&self, path: &Path, st: &FsStat) -> Metadata {
         let (file_type, default_mode) = match st.kind {
             FileKind::File => (FileType::File, 0o644),
             FileKind::Dir => (FileType::Directory, 0o755),
             FileKind::Symlink => (FileType::Symlink, 0o777),
         };
-        let mode = self.modes.lock().unwrap().get(path).copied();
+        let mode = self.modes().get(path).copied();
         let modified = st.modified.unwrap_or_else(SystemTime::now);
         Metadata {
             file_type,
@@ -74,7 +82,7 @@ impl BashkitFsOverHaest {
 
     /// Drop (or move) the remembered modes of `path` and everything under it.
     fn forget_modes(&self, path: &Path, moved_to: Option<&Path>) {
-        let mut modes = self.modes.lock().unwrap();
+        let mut modes = self.modes();
         let under: Vec<PathBuf> = modes
             .keys()
             .filter(|k| k.starts_with(path))
@@ -211,7 +219,7 @@ impl FileSystem for BashkitFsOverHaest {
     async fn chmod(&self, path: &Path, mode: u32) -> Result<()> {
         let p = normalize(path);
         self.stat_path(&p).await?;
-        self.modes.lock().unwrap().insert(p, mode);
+        self.modes().insert(p, mode);
         Ok(())
     }
 

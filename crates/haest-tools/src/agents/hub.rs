@@ -167,9 +167,13 @@ impl SubagentHub {
         self.0.due.load(Ordering::SeqCst)
     }
 
-    /// The members' table, held until the guard drops.
+    /// The members' table, held until the guard drops. Never held while the
+    /// parent's code or a member runs, so a poisoned one is a bug here.
     fn lock_members(&self) -> MutexGuard<'_, Members> {
-        self.0.members.lock().unwrap()
+        self.0
+            .members
+            .lock()
+            .expect("the subagent hub's members lock poisoned")
     }
 
     /// Names of the subagents running now.

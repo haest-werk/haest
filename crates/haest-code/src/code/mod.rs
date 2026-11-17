@@ -266,7 +266,7 @@ impl Tool for CodeTool {
                 ctx.tool_call_id().unwrap_or("-")
             ));
         }
-        let tally = std::mem::take(&mut *bridge.tally.lock().unwrap());
+        let tally = std::mem::take(&mut *bridge.tally());
         let nonzero = |v: f64| (v != 0.0).then_some(v);
         Ok(ToolOutput {
             content: render_code_output(&run, &tally.calls, timeout_ms, &tally.notes),

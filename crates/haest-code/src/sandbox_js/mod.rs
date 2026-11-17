@@ -331,7 +331,9 @@ pub async fn run_js(path: &Path, code: &str, args: &[impl AsRef<str>], env: &JsE
         .map_or_else(|| "script.js".into(), |n| n.to_string_lossy().into_owned());
     let spec = js_script_spec(script, &filename).with_caps(caps);
     let run = run_in_vm(code, &spec, &env.cancel, |_| {}).await;
-    let exited = *exit_code.lock().unwrap();
+    let exited = *exit_code
+        .lock()
+        .expect("the script's exit-code lock poisoned");
     cli_result(run, exited, timeout)
 }
 

@@ -44,7 +44,7 @@
 
 use std::{
     io::{self, Write},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use serde_json::json;
@@ -57,7 +57,7 @@ struct Diagnostics(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Diagnostics {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        self.bytes().extend_from_slice(buf);
         Ok(buf.len())
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -66,8 +66,14 @@ impl Write for Diagnostics {
 }
 
 impl Diagnostics {
+    /// What swc wrote. The lock is held only to copy bytes in or out, so a
+    /// poisoned one is a bug here.
+    fn bytes(&self) -> MutexGuard<'_, Vec<u8>> {
+        self.0.lock().expect("the diagnostics' lock poisoned")
+    }
+
     fn first_line(&self) -> Option<String> {
-        let text = String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned();
+        let text = String::from_utf8_lossy(&self.bytes()).into_owned();
         text.lines()
             .map(|l| l.trim().trim_start_matches(['x', '×', ' ']).trim())
             .find(|l| !l.is_empty())

@@ -273,7 +273,8 @@ pub(crate) fn js_script_spec(script: JsScript, filename: &str) -> VmSpec {
             .first()
             .and_then(|c| c.trim().parse::<f64>().ok())
             .filter(|c| c.is_finite());
-        *exit.lock().unwrap() = Some(code.map_or(0, |c| c as i32));
+        *exit.lock().expect("the script's exit-code lock poisoned") =
+            Some(code.map_or(0, |c| c as i32));
         async { Ok(String::new()) }
     };
     let spec = VmSpec {

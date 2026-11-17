@@ -7,7 +7,7 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 
@@ -74,6 +74,12 @@ async fn fetch(
 }
 
 impl ImageCatalog {
+    /// The lists read so far, by base URL. The lock is held only to copy an
+    /// entry in or out, never across the fetch, so a poisoned one is a bug here.
+    fn kept(&self) -> MutexGuard<'_, HashMap<String, (Instant, Models)>> {
+        self.kept.lock().expect("the image catalog's lock poisoned")
+    }
+
     /// Every listed model's settings, at most an hour old; None when the list was never read.
     async fn all(
         &self,
@@ -81,7 +87,7 @@ impl ImageCatalog {
         http: &dyn HttpClient,
         cancel: &CancellationToken,
     ) -> Option<Models> {
-        let kept = self.kept.lock().unwrap().get(base_url).cloned();
+        let kept = self.kept().get(base_url).cloned();
         if let Some((at, models)) = &kept
             && at.elapsed() < FRESH
         {
@@ -90,7 +96,7 @@ impl ImageCatalog {
         match fetch(base_url, http, cancel).await {
             Some(models) => {
                 let entry = (Instant::now(), models.clone());
-                self.kept.lock().unwrap().insert(base_url.into(), entry);
+                self.kept().insert(base_url.into(), entry);
                 Some(models)
             }
             None => kept.map(|(_, models)| models),

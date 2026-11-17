@@ -119,10 +119,17 @@ impl TurnThresholds {
     pub(super) fn answered(&self, out: &ToolOutput) {
         let paid = tool_spend(out);
         if paid != 0.0 {
-            let mut spent = self.spent.lock().unwrap();
+            let mut spent = spend(&self.spent);
             spent.cost_usd = Some(spent.cost_usd.unwrap_or(0.0) + paid);
         }
     }
+}
+
+/// The turn's spend as its tools see it. The lock is held only to copy it in
+/// or out or add a cost, never while host code runs, so a poisoned one is a
+/// bug here.
+fn spend(spent: &Mutex<Usage>) -> MutexGuard<'_, Usage> {
+    spent.lock().expect("the turn's spend lock poisoned")
 }
 
 /// A turn's meters at one moment.
@@ -279,7 +286,7 @@ impl TurnGuard {
         {
             return WindDownWatch::default();
         }
-        *self.turn.spent.lock().unwrap() = usage.clone();
+        *spend(&self.turn.spent) = usage.clone();
         let spent = self.turn.spent.clone();
         let (clock, started, steps) = (self.clock.clone(), self.started, self.steps);
         let (ledger, remedies) = (self.ledger.clone(), self.remedies.clone());
@@ -289,7 +296,7 @@ impl TurnGuard {
                 caps: caps.clone(),
                 steps,
                 elapsed: since(clock.as_ref(), started),
-                usage: spent.lock().unwrap().clone(),
+                usage: spend(&spent).clone(),
                 context,
                 conversation: conversation(ledger.as_ref()),
             };
