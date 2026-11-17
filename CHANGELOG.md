@@ -1128,7 +1128,7 @@ against it; the wire JSON is unchanged):
   `running_sessions(dir)` lists the sessions that answer (`RunningSession`)
   and removes a crashed run's files; `connect_session(dir, id)` reaches one
   by id or unique prefix (`UnixPeer`).
-- Feature `broker`: `Broker::new(url).token(..).backoff(..)` dials out to a
+- Feature `broker`: `Broker::new(url).with_token(..).with_backoff(..)` dials out to a
   `ws://` or `wss://` broker. The token rides in `hello`, never in the URL,
   and nothing more goes until the broker's ack (`events` with the last seq
   it holds); the stream resumes there, so a frame lost in a closing socket is
