@@ -92,8 +92,9 @@ impl SystemPrompt for ChildPrompt {
     }
 }
 
-/// The conversation's hooks for a subagent. Its messages are not the
-/// conversation's (nothing persisted, no compaction).
+/// The conversation's hooks for a subagent: what the human must hear still
+/// reaches them, but its messages are not the conversation's (nothing
+/// persisted, no compaction).
 pub(super) struct ChildHooks {
     pub hooks: AgentHooksRef,
 }
@@ -153,6 +154,9 @@ impl AgentHooks for ChildHooks {
     }
     fn on_effort_fitted(&self, model: &str, used: Effort) {
         self.hooks.on_effort_fitted(model, used);
+    }
+    fn on_warning(&self, text: &str) {
+        self.hooks.on_warning(text);
     }
 }
 

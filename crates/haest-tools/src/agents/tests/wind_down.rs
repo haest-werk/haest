@@ -5,10 +5,10 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use haest_core::{
-    LoopEvent, SharedDeps, ToolRef,
+    AgentHooks, LoopEvent, SharedDeps, ToolRef,
     caps::{ConversationCap, SubagentCaps},
     remedy::{Limit, Remedies},
-    threshold::Thresholds,
+    threshold::{Action, Mark, Meter, Reading, Rearm, Threshold, Thresholds},
     tool::ToolError,
     wind_down::{WindDown, WindDownWatch, WindingDown},
 };
@@ -167,6 +167,66 @@ async fn a_subagent_winds_down_on_its_own_caps_while_main_goes_on() {
     assert_eq!(r.ids("guard"), started, "the subagent heard it, once");
     assert_eq!(guards(&r.events), 0, "main's caps are not the subagent's");
     assert!(r.texts().iter().any(|t| t.contains("mid done")));
+}
+
+/// Warns the human at a turn's second model call.
+struct SecondCall;
+
+impl Threshold for SecondCall {
+    fn meter(&self) -> Meter {
+        Meter::Steps
+    }
+    fn mark(&self) -> Mark {
+        Mark::at(2.0)
+    }
+    fn action(&self) -> Action {
+        Action::Warn
+    }
+    fn rearm(&self) -> Rearm {
+        Rearm::NextTurn
+    }
+    fn text(&self, r: &Reading) -> String {
+        format!("{} model calls", r.value)
+    }
+}
+
+/// The conversation's hooks: what the human was warned of.
+#[derive(Default)]
+struct Warned(Mutex<Vec<String>>);
+
+impl AgentHooks for Warned {
+    fn on_warning(&self, text: &str) {
+        self.0.lock().unwrap().push(text.to_string());
+    }
+}
+
+/// Regression: a subagent's hooks dropped `on_warning`, so a warning
+/// threshold that fired in a subagent's turn never reached the human.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_warning_fired_in_a_subagents_turn_reaches_the_conversations_hooks() {
+    let mut r = Rig::new(
+        // Main spawns, then answers: one model call before a boundary.
+        spawns(json!({"description": "looker", "prompt": "p"}), "ok"),
+        // The subagent reaches its second call with tool calls, then answers.
+        now(|_, n| match n {
+            0 | 1 => vec![call(
+                &format!("g{n}"),
+                "Glob",
+                json!({"pattern": format!("*.{n}")}),
+            )],
+            _ => say("done"),
+        }),
+        caps(),
+    );
+    let warned = Arc::new(Warned::default());
+    let hooks = warned.clone();
+    r.adjust(move |d| {
+        let thresholds = Thresholds::default().with(SecondCall).unwrap();
+        d.with_hooks(hooks.clone()).with_thresholds(thresholds)
+    });
+    r.turn("go").await;
+    assert_eq!(r.ids("started").len(), 1);
+    assert_eq!(*warned.0.lock().unwrap(), ["2 model calls"]);
 }
 
 /// Regression: the hub's children ran on caps that did not say they were a

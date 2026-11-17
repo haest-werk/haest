@@ -148,6 +148,9 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   refusal still re-armed the running turn's once-a-turn thresholds, so a
   `Rearm::NextTurn` reminder fired again at every step. The refused call
   now touches nothing, as its docs say.
+- A warning threshold that fired in a subagent's turn never reached the
+  human: the hooks a subagent runs with passed on the media and effort
+  notices but not `AgentHooks::on_warning`. They pass it on now.
 
 ### Behaviour changes
 
