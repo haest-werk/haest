@@ -93,10 +93,27 @@ impl<D> Clone for SessionHandle<D> {
     }
 }
 
+/// Who it is and whether it still runs; never the conversation it drives.
+impl<D> std::fmt::Debug for SessionHandle<D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionHandle")
+            .field("meta", &self.meta)
+            .field("closed", &self.tx.is_closed())
+            .finish_non_exhaustive()
+    }
+}
+
 /// While held, the session starts no turn ([`SessionHandle::hold`]); dropping
 /// it lets go.
 pub struct Hold {
     release: Option<Box<dyn FnOnce() + Send + Sync>>,
+}
+
+/// A live hold has nothing to show but itself.
+impl std::fmt::Debug for Hold {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Hold").finish_non_exhaustive()
+    }
 }
 
 impl Drop for Hold {

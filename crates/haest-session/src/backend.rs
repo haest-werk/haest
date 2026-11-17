@@ -34,8 +34,10 @@ impl Input {
     }
 }
 
-/// A change to the conversation, or a stop.
+/// A change to the conversation, or a stop. More may come: a backend's
+/// `match` refuses what it does not know with a `_` arm.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Control {
     /// Stop the running turn now; nothing between turns.
     Interrupt,
@@ -71,6 +73,7 @@ pub struct History {
 
 /// Why a session refused or could not do what it was asked.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum SessionError {
     /// The conversation has ended: nothing more runs.
     #[error("the conversation has ended")]

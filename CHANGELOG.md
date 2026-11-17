@@ -1094,6 +1094,10 @@ against it; the wire JSON is unchanged):
 - `SessionHandle::with` says why it takes a closure returning a
   `BoxFuture`: an `AsyncFnOnce` cannot promise its future is `Send` on
   stable Rust, and the job runs on the driver's task.
+- `#[non_exhaustive]` on `Control` and `SessionError`: a backend that
+  matches a `Control` refuses one it does not know with a `_` arm.
+- `SessionHandle` and `Hold` implement `Debug` (the handle shows its `Meta`
+  and whether the session still runs).
 
 ### haest-transport (new)
 
