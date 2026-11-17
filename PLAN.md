@@ -7,14 +7,14 @@ and tools, plus 3.7k of tests), and brain runs a VENDORED copy of it that drifts
 `797cc9746`, patched in place). One library removes the copy and the drift.
 
 **The port's source of truth** is the TypeScript haest in
-`~/projects/remote-claude/src/haest-agent-host/` (`core/`, `providers/`, `tools/`).
+remote-claude's `src/haest-agent-host/` (`core/`, `providers/`, `tools/`).
 Behaviour comes from there, file by file, tests included.
 
 ## Decisions
 
 | Code | Decision | Why |
 |---|---|---|
-| D1 | Standalone repo `~/projects/haest`, a Cargo workspace | Sharable by remote-claude AND brain; remote-claude's repo is too heavy to be a git dependency |
+| D1 | Standalone repo `haest`, a Cargo workspace | Sharable by remote-claude AND brain; remote-claude's repo is too heavy to be a git dependency |
 | D2 | Crates: `haest-core`, `haest-providers`, `haest-workspace`, `haest-tools`, `haest-cli`, and `haest` (the facade: `use haest::...`, features pick the parts) | Codex's split (`codex-rs`) is the precedent; a host links only what it uses |
 | D3 | The session JSONL is the TS haest's format, byte compatible (camelCase keys, same record kinds) | Either haest resumes the other's session; brain's conversation files keep working |
 | D4 | haest-core has its OWN `Fs` trait; `haest-workspace` adapts any `Fs` into bashkit's `FileSystem` | haest-core stays free of a pre-1.0 dependency, and a host's own files (BrainFs) still get a sandboxed bash |

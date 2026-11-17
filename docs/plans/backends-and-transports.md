@@ -13,7 +13,7 @@ that takes none of them gets exactly the haest of today.
 
 Source: protokol's `agent-core` seam (`AgentBackend`, `ControlTransport`, the event hub) and
 `agent-protocol`, `agent-host`, `agent-broker`, `agent-ws-backend`, `agentctl`
-(`~/projects/protokol/packages/`, at `e8d0baa`).
+(protokol's `packages/`, at `e8d0baa`).
 
 Who needs this: brain does NOT. It links haest without `runtime` (`brain/node/Cargo.toml:61`),
 drives turns with its own sink (`run/drive.rs:90-151`), numbers its own run events for its live

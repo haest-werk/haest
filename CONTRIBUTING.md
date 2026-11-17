@@ -1,7 +1,7 @@
 # Working on haest
 
 - **Port, don't reinvent.** Behaviour comes from the TypeScript haest at
-  `~/projects/remote-claude/src/haest-agent-host/` (`core/`, `providers/`, `tools/`).
+  remote-claude's `src/haest-agent-host/` (`core/`, `providers/`, `tools/`).
   Read the TS file and its test first; keep its doc comments' intent.
 - **The contract is in `haest-core`** (`messages`, `provider`, `tool`, `fs`,
   `workspace`, `events`, `deps`, `agent`). Change it only when a port truly
