@@ -60,18 +60,37 @@ fn shown(text: &str) -> String {
     visible(&inert(text)).replace('\n', "\n  ")
 }
 
-/// `text`, [`inert`] already, with nothing in it that passes for a space: a
-/// tab, and any whitespace but a space or a newline, as its escape too.
+/// How a tab is shown: the word break bash makes of it, in notation that is
+/// not shell syntax (`\t` would read as the letter `t`).
+const TAB: &str = "⟨tab⟩";
+
+/// `text`, [`inert`] already, with nothing in it that passes for a space or
+/// draws as nothing: a tab as [`TAB`], and any other whitespace but a space
+/// or a newline, and every [`blank`] character, as its escape.
 fn visible(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         match c {
-            '\t' => out.push_str("\\t"),
-            c if c.is_whitespace() && !c.is_ascii() => out.extend(c.escape_unicode()),
+            '\t' => out.push_str(TAB),
+            c if (c.is_whitespace() && !c.is_ascii()) || blank(c) => {
+                out.extend(c.escape_unicode());
+            }
             c => out.push(c),
         }
     }
     out
+}
+
+/// Not whitespace, yet drawn as blank cells or as nothing: the Hangul
+/// fillers, the blank braille pattern, and the default-ignorable code points
+/// [`hides`](crate::render::hides) leaves out.
+fn blank(c: char) -> bool {
+    matches!(c,
+        '\u{00ad}' | '\u{034f}' | '\u{115f}' | '\u{1160}' | '\u{17b4}' | '\u{17b5}'
+        | '\u{180b}'..='\u{180f}' | '\u{206a}'..='\u{206f}' | '\u{2800}' | '\u{3164}'
+        | '\u{fe00}'..='\u{fe0f}' | '\u{ffa0}' | '\u{fff0}'..='\u{fff8}'
+        | '\u{1bca0}'..='\u{1bca3}' | '\u{1d159}' | '\u{1d173}'..='\u{1d17a}'
+        | '\u{e0000}'..='\u{e0fff}')
 }
 
 /// Spaces and tabs: what pads a command.
@@ -109,33 +128,51 @@ fn blank_lines(out: &mut Vec<String>, run: &mut Vec<&str>) {
     run.clear();
 }
 
-/// `line` with each run of more than 8 spaces or tabs counted.
+/// A line's indentation up to this many columns is drawn as it is: a
+/// script's nesting reads as written, and no more than a row of it can stand
+/// before a line.
+const INDENT: usize = 40;
+
+/// `line` with its indentation past [`INDENT`] columns, and each run of more
+/// than 8 spaces or tabs inside it, counted.
 fn counted_padding(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut run = String::new();
-    let end_run = |out: &mut String, run: &mut String| {
-        let n = run.chars().count();
-        if n <= 8 {
-            out.push_str(run);
-        } else if !run.contains('\t') {
-            out.push_str(&format!("⟨{n} spaces⟩"));
-        } else if !run.contains(' ') {
-            out.push_str(&format!("⟨{n} tabs⟩"));
-        } else {
-            out.push_str(&format!("⟨{n} spaces and tabs⟩"));
-        }
-        run.clear();
+    let body = line.trim_start_matches(pads);
+    let indent = &line[..line.len() - body.len()];
+    let tab = TAB.chars().count();
+    let width: usize = indent
+        .chars()
+        .map(|c| if c == '\t' { tab } else { 1 })
+        .sum();
+    let mut out = if width <= INDENT {
+        indent.to_owned()
+    } else {
+        counted(indent)
     };
-    for c in line.chars() {
+    let mut run = String::new();
+    for c in body.chars() {
         if pads(c) {
             run.push(c);
         } else {
-            end_run(&mut out, &mut run);
+            out.push_str(&counted(&run));
+            run.clear();
             out.push(c);
         }
     }
-    end_run(&mut out, &mut run);
-    out
+    out + &counted(&run)
+}
+
+/// A run of spaces and tabs: as it is up to 8, counted past that.
+fn counted(run: &str) -> String {
+    let n = run.chars().count();
+    if n <= 8 {
+        run.to_owned()
+    } else if !run.contains('\t') {
+        format!("⟨{n} spaces⟩")
+    } else if !run.contains(' ') {
+        format!("⟨{n} tabs⟩")
+    } else {
+        format!("⟨{n} spaces and tabs⟩")
+    }
 }
 
 /// y / yes, a / always; anything else (an empty line included) is no.
@@ -309,5 +346,43 @@ mod tests {
         assert!(q.contains("(1 line, 805 characters above)"), "{q}");
         let q = question(&ask("rm -rf ./build"));
         assert!(!q.contains("above"), "{q}");
+    }
+
+    /// A character that draws blank but is not whitespace shows as its
+    /// escape, so it cannot pad a command unseen.
+    #[test]
+    fn a_blank_drawing_character_shows_as_its_escape() {
+        for pad in ['\u{2800}', '\u{3164}', '\u{ffa0}', '\u{115f}'] {
+            let command = format!(
+                "touch PWNED6 #{}\nrm -rf ./build",
+                pad.to_string().repeat(3000)
+            );
+            let q = question(&ask(&command));
+            assert!(!q.contains(pad), "{pad:?} raw in the question");
+            assert!(q.contains(&format!("{}", pad.escape_unicode())), "{q}");
+        }
+    }
+
+    /// A tab shows as the word break bash makes of it, never as `\t`, which
+    /// bash would read as the letter `t`.
+    #[test]
+    fn a_tab_shows_as_the_word_break_it_is() {
+        let q = question(&ask("rm -rf ./build\t~"));
+        assert!(q.contains("./build⟨tab⟩~"), "{q}");
+        assert!(!q.contains(r"\t"), "{q}");
+    }
+
+    /// A script's nesting reads as written; only indentation that could
+    /// push the rest off the screen is counted.
+    #[test]
+    fn a_scripts_indentation_reads_as_written() {
+        let script = "for d in */; do\n    if [ -d \"$d/build\" ]; then\n        if [ -f \"$d/Makefile\" ]; then\n            rm -rf \"$d/build\"\n        fi\n    fi\ndone";
+        let q = question(&ask(script));
+        assert!(q.contains("\n              rm -rf \"$d/build\"\n"), "{q}");
+        let q = question(&ask(&format!(
+            "touch PWNED\n{}rm -rf ./build",
+            " ".repeat(3000)
+        )));
+        assert!(q.contains("⟨3000 spaces⟩rm -rf ./build"), "{q}");
     }
 }
