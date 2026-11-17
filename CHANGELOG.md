@@ -698,8 +698,10 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   amounts in cents ("$0.30 does not fit: $0.20 is left ..."), what is
   left rounded down, since that is what fits (to the nearest cent it
   could read "$0.10 does not fit: $0.10 is left"), and an ask under a
-  cent as it is ("$0.004"); haest-tools' `AgentError::OverBudget` says
-  them the same way. A hold
+  cent as it is ("$0.004"). When float dust under a millionth of a cent
+  would make the two cents read alike, both are said as they are ("$0.3
+  does not fit: $0.299999995 is left"). haest-tools'
+  `AgentError::OverBudget` says them the same way. A hold
   past `f64::MAX` holds `f64::MAX`, what is held stops there, and dropping
   one hold gives back only its own amount, however large the others are.
 - `caps::SubagentCaps` gains `budgets: bool` (default false); a literal
@@ -1468,6 +1470,29 @@ Hosts write less (round two of the review, and what porting brain onto
   writes "no deadline", or any timeout past about 2^63 seconds. A sandbox
   call stops at 10 minutes whatever its timeout, so a longer one is now
   read as 10 minutes, and a host's command gets that as its deadline.
+- Fixed: `RealWorkspace` kept reading a call's output after the call
+  returned, when a process that left bash's group (`setsid cmd &`, a
+  detached child) held the pipes: what that process printed later reached
+  the call's `on_output` (a background job's output after its `Done`), and
+  up to 64 MiB per stream was kept for a call that had ended. A call that
+  ends without its pipes closing (a timeout, a cancel, a drop) now stops
+  reading them, and that process gets SIGPIPE if it writes to them again.
+  A server meant to outlive the call redirects its output.
+- Fixed: `SandboxWorkspace::open` took a relative directory three ways:
+  it read the project from the process's current directory, but mounted
+  it at `/` plus its path and applied changes to the path as it was.
+  `SandboxMounts::new(".")` put the project over the sandbox's root, so
+  the tools found nothing at the project's real path, and scratch writes
+  (`/tmp/notes.txt`) became changes that `apply` wrote into the project.
+  A relative writable or readable dir was opened at `/` plus its path
+  (`tmp` was `/tmp`). Every directory is now made absolute when the
+  sandbox opens, from the process's current directory, and that one path
+  is opened, mounted and applied to.
+- Fixed: over a host's `Fs` (`SandboxWorkspace::over`), `mv a b` kept
+  `b`'s remembered mode, so a plain file moved over a script read as
+  executable. `b` now has `a`'s mode, as a POSIX rename gives it.
+- `OverlayChanges::apply` lists each real directory on the way to its
+  changes once; it listed it again for every change inside it.
 
 ### haest-code
 
