@@ -14,7 +14,10 @@ use crate::{
 ///
 /// The `Display` of each is its cause's own; [`std::error::Error::source`]
 /// goes on down the chain.
+///
+/// A `match` on it has a `_` arm: haest may add a cause in a minor release.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum BuildError {
     /// The session to resume is not there or cannot be read, or a new
     /// session's file cannot be created.
@@ -30,7 +33,10 @@ pub enum BuildError {
 }
 
 /// Why the session a run writes could not be opened, read or created.
+///
+/// A `match` on it has a `_` arm: haest may add a cause in a minor release.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum SessionError {
     /// The id to resume is not a session id; no file was looked for.
     #[error(transparent)]

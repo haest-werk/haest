@@ -69,11 +69,10 @@ async fn subcommand(cmd: &Command, loaded: &Loaded) -> ExitCode {
         Command::Models => print!("{}", models::render(haest::providers::Catalog::builtin())),
         Command::Sessions { here } => {
             let dir = sessions_dir(&s.data_dir);
-            let cwd = s.cwd.to_string_lossy();
             let rows: Vec<String> = list_sessions(&RealFs, &dir)
                 .await
                 .iter()
-                .filter(|info| !here || info.cwd == cwd)
+                .filter(|info| !here || info.cwd == s.cwd)
                 .map(|info| session::format_row(info, !here))
                 .collect();
             if rows.is_empty() {

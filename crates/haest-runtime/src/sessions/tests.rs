@@ -135,7 +135,7 @@ async fn sessions_list_newest_first_with_their_cwd_and_first_question() {
     let ids: Vec<_> = list.iter().map(|s| s.id.as_str()).collect();
     assert_eq!(ids, ["new", "old"]);
     assert_eq!(list[1].preview, "first question");
-    assert_eq!(list[1].cwd, "/a");
+    assert_eq!(list[1].cwd, Path::new("/a"));
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -167,8 +167,8 @@ async fn a_long_first_question_takes_one_more_read_and_the_rest_is_never_read() 
     spy.inner.append(&path, rest.as_bytes()).await.unwrap();
     let list = list_sessions(&spy, Path::new(DIR)).await;
     assert_eq!(
-        (list[0].cwd.as_str(), list[0].preview.as_str()),
-        ("/p", "the question")
+        (list[0].cwd.as_path(), list[0].preview.as_str()),
+        (Path::new("/p"), "the question")
     );
     let reads: Vec<usize> = spy.heads().into_iter().map(|(_, n)| n).collect();
     assert_eq!(reads, [FIRST_READ, MAX_READ]);

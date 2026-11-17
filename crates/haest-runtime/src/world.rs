@@ -126,7 +126,10 @@ pub async fn kill_jobs(jobs: &JobHub) -> usize {
 
 /// Why the workspace the settings pick could not open
 /// ([`BuildError::Workspace`](crate::BuildError::Workspace)).
+///
+/// A `match` on it has a `_` arm: haest may add a cause in a minor release.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum WorkspaceError {
     /// `workspace = real` in a [`World::files`]: the real workspace edits the
     /// real disk, and this host hands haest its own files.

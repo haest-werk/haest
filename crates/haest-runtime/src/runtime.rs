@@ -305,8 +305,10 @@ impl<U> Runtime<U> {
     }
 }
 
-/// What [`Runtime::shut_down`] stopped.
+/// What [`Runtime::shut_down`] stopped. haest may count more in a minor
+/// release, so a host reads its fields and never builds one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ShutDown {
     /// Subagents that were still running.
     pub subagents: usize,

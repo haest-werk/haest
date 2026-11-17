@@ -7,7 +7,7 @@ pub fn format_row(s: &SessionInfo, show_cwd: bool) -> String {
     let when = iso_utc(s.modified_ms);
     let when = format!("{} {}Z", &when[..10], &when[11..16]);
     let cwd = if show_cwd {
-        format!("  {}", s.cwd)
+        format!("  {}", s.cwd.display())
     } else {
         String::new()
     };

@@ -23,13 +23,14 @@ const MAX_READ: usize = 256 * 1024;
 /// Files stat'd or read at once while listing.
 const AT_ONCE: usize = 16;
 
-/// One saved session, as a list of them shows it.
-#[derive(Debug, Clone, PartialEq)]
+/// One saved session, as a list of them shows it ([`list_sessions`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SessionInfo {
     /// Its id: what [`Resume::Id`](crate::Resume::Id) takes.
     pub id: String,
     /// The working dir it started in, from its header.
-    pub cwd: String,
+    pub cwd: PathBuf,
     /// Last write, ms since the epoch.
     pub modified_ms: u64,
     /// The first line of the first thing the human asked, cut to 70
@@ -166,7 +167,7 @@ pub async fn list_sessions(fs: &dyn Fs, dir: &Path) -> Vec<SessionInfo> {
             let (cwd, preview) = head_of(fs, &e).await?;
             Some(SessionInfo {
                 id: e.id,
-                cwd,
+                cwd: cwd.into(),
                 modified_ms: e.modified_ms,
                 preview,
             })

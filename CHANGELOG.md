@@ -961,6 +961,13 @@ Good citizens:
   enum inside (breaking): it needed main's `&mut Agent`, which no host
   holds. `hooks.compact_now(&mut agent, &cancel, false)` ->
   `rt.compact(&cancel)`, the human's /compact.
+- `#[non_exhaustive]` on `BuildError`, `SessionError`, `WorkspaceError`,
+  `ShutDown` and `SessionInfo` (breaking): a `match` adds a `_` arm, and a
+  host reads a `ShutDown` or a `SessionInfo` and never builds one.
+- `SessionInfo::cwd` is a `PathBuf` (was `String`):
+  `info.cwd == cwd.to_string_lossy()` -> `info.cwd == cwd`, and
+  `format!("{}", info.cwd)` -> `format!("{}", info.cwd.display())`.
+  `SessionInfo` implements `Eq`.
 - The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
   as `with_hooks`; what tools publish, report and log reaches it as before.
 - Feature `session` (off; the facade's `session` turns it on with
