@@ -169,6 +169,7 @@ pub async fn serve(
         follows: 0,
         written: watch::Sender::new(Written::NOTHING),
         tasks: JoinSet::new(),
+        started: None,
     };
     // No hello: the conversation, or the peer, is already gone.
     let ended = if let Err(why) = link.hello(start.token).await {
@@ -263,6 +264,10 @@ struct Link {
     written: watch::Sender<Written>,
     /// Requests whose reply waits (a turn's end, a change between turns).
     tasks: JoinSet<()>,
+    /// Resolves once the backend call last spawned has started: the next one
+    /// waits for it, so the calls reach the backend in the order they were
+    /// read.
+    started: Option<oneshot::Receiver<()>>,
 }
 
 impl Link {
@@ -354,10 +359,9 @@ impl Link {
     /// `close`: the conversation ends, and the reply goes out before the
     /// connection ends with it.
     fn close(&mut self, id: String) {
-        let (backend, tx) = (self.backend.clone(), self.tx.clone());
-        self.tasks.spawn(async move {
-            backend.close().await;
-            let _ = tx.send(Out::Conn(Outbound::done(id, None))).await;
+        self.spawn(id, false, |b| async move {
+            b.close().await;
+            Ok(None)
         });
     }
 
@@ -374,17 +378,29 @@ impl Link {
     /// With `after_frames` (a turn, a change), the frames it made go out
     /// first, when the peer follows the stream: the reply to a turn comes
     /// after the turn's last frame.
+    ///
+    /// The calls reach the backend in the order they were read, whichever
+    /// task the runtime runs first: each starts once the one before it has
+    /// (a session takes a call's place in the conversation on its first
+    /// poll), so a `clear` sent before a `turn` never clears that turn, and
+    /// an `interrupt` sent after one stops it.
     fn spawn<F, Fut>(&mut self, id: String, after_frames: bool, run: F)
     where
-        F: FnOnce(BackendRef) -> Fut,
+        F: FnOnce(BackendRef) -> Fut + Send + 'static,
         Fut: Future<Output = Result<Option<Value>, SessionError>> + Send + 'static,
     {
         let tx = self.tx.clone();
         let backend = self.backend.clone();
         let mut written = self.written.subscribe();
-        let done = run(self.backend.clone());
+        let (start, started) = oneshot::channel();
+        let before = self.started.replace(started);
         self.tasks.spawn(async move {
-            let reply = match done.await {
+            // Ok, or Err when the one before was dropped unstarted: either
+            // way it is not ahead of this one.
+            if let Some(before) = before {
+                let _ = before.await;
+            }
+            let reply = match first_polled(run(backend.clone()), start).await {
                 Ok(result) => Outbound::done(id, result),
                 Err(e) => Outbound::refused(id, report(&e)),
             };
@@ -518,6 +534,22 @@ async fn pump(
         }
         mark.set(sub.last_seq());
     }
+}
+
+/// `call`, telling `started` once it has been polled the first time: a
+/// [`Backend`](haest_session::Backend) call takes its place in the
+/// conversation then.
+async fn first_polled<F: Future>(call: F, started: oneshot::Sender<()>) -> F::Output {
+    let mut call = std::pin::pin!(call);
+    let mut started = Some(started);
+    std::future::poll_fn(|cx| {
+        let polled = call.as_mut().poll(cx);
+        if let Some(started) = started.take() {
+            let _ = started.send(());
+        }
+        polled
+    })
+    .await
 }
 
 /// Resolves when the stream closes: the conversation ended.

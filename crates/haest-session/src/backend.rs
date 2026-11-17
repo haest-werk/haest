@@ -106,6 +106,12 @@ pub enum SessionError {
 /// a local session ([`SessionHandle`](crate::SessionHandle), handed over as
 /// `session.clone()`) and any other backend alike.
 ///
+/// A call takes its place in the conversation when it is first polled, as
+/// [`SessionHandle`](crate::SessionHandle)'s do: a transport starts a peer's
+/// requests in the order the peer sent them, each once the one before it
+/// was first polled, so a backend that queues a call only later may see them
+/// out of order.
+///
 /// [`SessionHandle`](crate::SessionHandle)'s docs drive one.
 #[async_trait]
 pub trait Backend: Send + Sync {

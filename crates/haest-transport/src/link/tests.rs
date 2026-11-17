@@ -840,6 +840,7 @@ async fn a_panic_in_the_hosts_sink_reaches_the_host() {
 }
 
 mod keepalive;
+mod order;
 
 #[test]
 fn the_token_never_shows_in_debug_output() {
