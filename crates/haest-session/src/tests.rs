@@ -611,6 +611,7 @@ fn a_failed_change_says_its_cause_once() {
     haest_core::testing::assert_causes_said_once(&e);
 }
 
+#[cfg(feature = "approvals")]
 mod approvals {
     use haest_mods::{ApprovalAnswer, ApprovalRequest, Prompter};
     use haest_wire::Answer;
