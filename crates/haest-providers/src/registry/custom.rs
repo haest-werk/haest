@@ -171,9 +171,8 @@ fn reasoning(v: Option<&Value>) -> Result<Option<Reasoning>, EntryProblem> {
     // A level haest has no name for can never be chosen; it is skipped, not refused.
     let efforts = efforts
         .iter()
-        .filter_map(|e| e.as_str()?.parse::<OpenRouterEffort>().ok())
-        .collect();
-    Ok(Some(Reasoning { mandatory, efforts }))
+        .filter_map(|e| e.as_str()?.parse::<OpenRouterEffort>().ok());
+    Ok(Some(Reasoning::new(efforts).with_mandatory(mandatory)))
 }
 
 fn pricing(v: Option<&Value>) -> Result<HashMap<String, ModelPricing>, EntryProblem> {

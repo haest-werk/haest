@@ -23,19 +23,11 @@ async fn a_workspace_that_cannot_stream_hands_the_output_over_when_it_ends() {
 /// plus `code` and `reason`.
 #[test]
 fn an_apply_report_has_the_ts_haests_wire_shape() {
-    let change = Change {
-        path: "/l".into(),
-        kind: ChangeKind::Added,
-        conflict: false,
-    };
+    let change = Change::new("/l", ChangeKind::Added);
     let report = ApplyReport {
         applied: vec![],
         skipped: vec![],
-        failed: vec![FailedChange {
-            change,
-            code: ApplyFailureCode::Symlink,
-            reason: "why".into(),
-        }],
+        failed: vec![FailedChange::new(change, ApplyFailureCode::Symlink, "why")],
     };
     let wire = serde_json::json!({
         "applied": [],

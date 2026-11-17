@@ -74,14 +74,14 @@ pub(crate) fn paper_instruments_options(keys: &dyn KeySource) -> Result<CompatOp
         keys.key("PAPERINSTRUMENTS_BASE_URL")
             .unwrap_or_else(|| "https://api.paperinstruments.com/v1".into()),
     );
-    opts.reasoning_effort = Some(Reasoning {
-        mandatory: true,
-        efforts: vec![
+    opts.reasoning_effort = Some(
+        Reasoning::new([
             OpenRouterEffort::Low,
             OpenRouterEffort::High,
             OpenRouterEffort::Max,
-        ],
-    });
+        ])
+        .with_mandatory(true),
+    );
     opts.pricing = Catalog::builtin().provider_pricing("paperinstruments");
     Ok(opts)
 }

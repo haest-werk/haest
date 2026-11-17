@@ -144,11 +144,7 @@ mod tests {
 
     #[test]
     fn a_change_line_shows_its_kind_its_path_and_a_conflict() {
-        let c = |kind, conflict| Change {
-            path: "/src/a.rs".into(),
-            kind,
-            conflict,
-        };
+        let c = |kind, conflict| Change::new("/src/a.rs", kind).with_conflict(conflict);
         assert_eq!(line_of(&c(ChangeKind::Added, false)), "+ src/a.rs");
         assert_eq!(line_of(&c(ChangeKind::Deleted, false)), "- src/a.rs");
         assert!(line_of(&c(ChangeKind::Modified, true)).starts_with("~ src/a.rs  (CONFLICT"));
@@ -157,16 +153,8 @@ mod tests {
     #[test]
     fn apply_names_every_failed_change_and_warns_while_any_is_left() {
         use haest::core::workspace::{ApplyFailureCode, FailedChange};
-        let change = |path: &str| Change {
-            path: path.into(),
-            kind: ChangeKind::Added,
-            conflict: false,
-        };
-        let failed = |path: &str| FailedChange {
-            change: change(path),
-            code: ApplyFailureCode::Symlink,
-            reason: "why".into(),
-        };
+        let change = |path: &str| Change::new(path, ChangeKind::Added);
+        let failed = |path: &str| FailedChange::new(change(path), ApplyFailureCode::Symlink, "why");
         let report = ApplyReport {
             applied: vec![change("/ok.txt")],
             skipped: vec![],

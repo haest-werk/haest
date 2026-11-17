@@ -184,11 +184,7 @@ impl OverlayChanges {
                 _ => ChangeKind::Modified,
             };
             out.push(Scanned {
-                change: Change {
-                    path: path.to_string_lossy().into_owned(),
-                    kind,
-                    conflict: original != now,
-                },
+                change: Change::new(path.to_string_lossy(), kind).with_conflict(original != now),
                 path,
                 original,
             });
@@ -251,11 +247,9 @@ impl ChangeSet for OverlayChanges {
             let mut touched = self.book.touched.lock().unwrap();
             touched.entry(s.path).or_insert(s.original);
             match refused {
-                Some((code, reason)) => report.failed.push(FailedChange {
-                    change: s.change,
-                    code,
-                    reason,
-                }),
+                Some((code, reason)) => report
+                    .failed
+                    .push(FailedChange::new(s.change, code, reason)),
                 None => report.skipped.push(s.change),
             }
         }

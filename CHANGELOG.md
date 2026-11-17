@@ -165,6 +165,14 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `World::files(fs)`, `inputs.keys = Arc::new(keys)` ->
     `RuntimeInputs::new(settings, world).with_keys(keys)`, and
     `rt.hooks.flush()` -> `rt.hooks().flush()`.
+23. What a `ModelFacts` and a `ChangeSet` answer is built with
+    constructors: `Reasoning { mandatory, efforts }` ->
+    `Reasoning::new(efforts).with_mandatory(mandatory)` (no
+    `with_mandatory` for a model that may stop reasoning),
+    `Change { path, kind, conflict }` ->
+    `Change::new(path, kind).with_conflict(conflict)`, and
+    `FailedChange { change, code, reason }` ->
+    `FailedChange::new(change, code, reason)`.
 
 Every other breaking change is in its crate's section below, with what to
 write instead.
@@ -941,6 +949,13 @@ Hosts write less (round two of the review, and what porting brain onto
   `deliver`s with it released. The ledger, the task board and haest-tools'
   job and subagent hubs hand their hooks their state this way; a plug-in
   with a hook of its own can too.
+- `catalog::Reasoning`, `workspace::Change` and `workspace::FailedChange`
+  are `#[non_exhaustive]` and built with `Reasoning::new(efforts)` and
+  `with_mandatory`, `Change::new(path, kind)` and `with_conflict`, and
+  `FailedChange::new(change, code, reason)` (breaking for a host that
+  answers `ModelFacts::reasoning` or has its own `ChangeSet`): a part one
+  gains later (a reasoning budget, a rename's source) breaks no host. Their
+  fields read as before, and their JSON is unchanged.
 
 ### haest-http
 

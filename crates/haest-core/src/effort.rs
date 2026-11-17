@@ -95,7 +95,7 @@ pub(crate) fn fit_effort(
 ///     provider::nearest_accepted_effort,
 /// };
 ///
-/// let row = Reasoning { mandatory: false, efforts: vec![O::Low, O::High] };
+/// let row = Reasoning::new([O::Low, O::High]);
 /// // `medium` is one step from both: the tie goes up.
 /// assert_eq!(nearest_accepted_effort(Effort::Medium, &row), Some(O::High));
 /// assert_eq!(nearest_accepted_effort(Effort::Max, &row), Some(O::High));
@@ -143,10 +143,7 @@ mod tests {
     }
 
     fn r(mandatory: bool, efforts: &[OpenRouterEffort]) -> Reasoning {
-        Reasoning {
-            mandatory,
-            efforts: efforts.to_vec(),
-        }
+        Reasoning::new(efforts.iter().copied()).with_mandatory(mandatory)
     }
 
     struct Mandatory(Mutex<Vec<Effort>>);

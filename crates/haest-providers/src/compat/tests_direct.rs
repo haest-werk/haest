@@ -21,10 +21,7 @@ const MODEL: &str = "ultramarine-1-flash";
 
 fn mandatory_low_high_max() -> Reasoning {
     use OpenRouterEffort as O;
-    Reasoning {
-        mandatory: true,
-        efforts: vec![O::Low, O::High, O::Max],
-    }
+    Reasoning::new([O::Low, O::High, O::Max]).with_mandatory(true)
 }
 
 fn direct() -> CompatOptions {
@@ -77,10 +74,7 @@ fn never_the_openrouter_reasoning_object_and_nothing_at_all_when_effort_is_unset
 fn a_provider_that_lists_none_gets_it_for_off_and_one_with_no_dialect_gets_no_field() {
     use OpenRouterEffort as O;
     let mut optional = direct();
-    optional.reasoning_effort = Some(Reasoning {
-        mandatory: false,
-        efforts: vec![O::None, O::Low, O::High],
-    });
+    optional.reasoning_effort = Some(Reasoning::new([O::None, O::Low, O::High]));
     assert_eq!(
         body_of(&optional, Some(Effort::Off))["reasoning_effort"],
         json!("none")

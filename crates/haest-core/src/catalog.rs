@@ -112,12 +112,41 @@ pub enum OpenRouterEffort ("reasoning effort") {
 }
 
 /// How a model reasons: whether it can stop, and the levels it accepts.
+///
+/// Built with [`new`](Self::new) and [`with_mandatory`](Self::with_mandatory),
+/// so a part it gains later breaks no host; its fields read as they are.
+///
+/// ```
+/// use haest_core::catalog::{OpenRouterEffort, Reasoning};
+///
+/// let r = Reasoning::new([OpenRouterEffort::Low, OpenRouterEffort::High]).with_mandatory(true);
+/// assert!(r.mandatory);
+/// assert_eq!(r.efforts.len(), 2);
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Reasoning {
     /// The model cannot turn reasoning off: `enabled: false` is a 400, not a cheaper turn.
     pub mandatory: bool,
     /// The levels the model accepts, in any order.
     pub efforts: Vec<OpenRouterEffort>,
+}
+
+impl Reasoning {
+    /// A model that accepts `efforts` and may turn reasoning off.
+    pub fn new(efforts: impl IntoIterator<Item = OpenRouterEffort>) -> Self {
+        Self {
+            mandatory: false,
+            efforts: efforts.into_iter().collect(),
+        }
+    }
+
+    /// Whether the model cannot turn reasoning off.
+    #[must_use]
+    pub fn with_mandatory(mut self, mandatory: bool) -> Self {
+        self.mandatory = mandatory;
+        self
+    }
 }
 
 /// A model's price in USD per 1M tokens, for a provider whose API returns no

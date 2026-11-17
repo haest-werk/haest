@@ -150,7 +150,19 @@ impl fmt::Debug for OutputChunks {
 
 /// One path the sandbox changed: what a host lists for the human to review,
 /// and applies ([`ChangeSet`]).
+///
+/// Built with [`new`](Self::new) and [`with_conflict`](Self::with_conflict),
+/// so a part it gains later breaks no change set; its fields read as they are.
+///
+/// ```
+/// use haest_core::workspace::{Change, ChangeKind};
+///
+/// let c = Change::new("/src/a.rs", ChangeKind::Modified).with_conflict(true);
+/// assert!(c.conflict);
+/// assert_eq!(c.path, "/src/a.rs");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Change {
     /// Overlay path, e.g. /src/a.ts.
     pub path: String,
@@ -159,6 +171,24 @@ pub struct Change {
     /// The real file changed since the sandbox first touched it: applying would
     /// overwrite the human's edit, so apply skips it.
     pub conflict: bool,
+}
+
+impl Change {
+    /// `path` was `kind` in the sandbox, with no conflict.
+    pub fn new(path: impl Into<String>, kind: ChangeKind) -> Self {
+        Self {
+            path: path.into(),
+            kind,
+            conflict: false,
+        }
+    }
+
+    /// Whether the real file changed since the sandbox first touched it.
+    #[must_use]
+    pub fn with_conflict(mut self, conflict: bool) -> Self {
+        self.conflict = conflict;
+        self
+    }
 }
 
 crate::word_enum! {
@@ -192,7 +222,11 @@ crate::word_enum! {
 }
 
 /// A change applying could not put on disk. It stays in the sandbox, still listed.
+///
+/// Built with [`new`](Self::new), so a part it gains later breaks no change
+/// set; its fields read as they are.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct FailedChange {
     /// The change (its keys inline on the wire, beside `code` and `reason`).
     #[serde(flatten)]
@@ -201,6 +235,18 @@ pub struct FailedChange {
     pub code: ApplyFailureCode,
     /// Why, for the human.
     pub reason: String,
+}
+
+impl FailedChange {
+    /// `change` was not applied, for the reason `code`, said to the human as
+    /// `reason`.
+    pub fn new(change: Change, code: ApplyFailureCode, reason: impl Into<String>) -> Self {
+        Self {
+            change,
+            code,
+            reason: reason.into(),
+        }
+    }
 }
 
 /// What applying did with every change ([`ChangeSet::apply`]).
