@@ -28,7 +28,8 @@ reqwest = ["haest-http?/reqwest", "haest-providers?/reqwest"]
 providers = ["dep:haest-providers", "http"]
 workspace = ["dep:haest-workspace"]
 tools = ["dep:haest-tools", "http"]
-mcp = ["dep:haest-mcp"]
+# With `config` too: the loader reads a trusted project's .mcp.json.
+mcp = ["dep:haest-mcp", "haest-config?/mcp"]
 # rmcp in `haest::mcp`'s API: `haest::mcp::rmcp` and `McpHub::connect_transport`
 # (a server over a transport the host opened). Off, so an rmcp release that
 # breaks its API breaks only hosts that turn this on.
@@ -41,8 +42,9 @@ mods = ["dep:haest-mods", "haest-session?/approvals"]
 # Settings as plain values a host writes out: no files, no environment, no flags.
 settings = ["dep:haest-settings"]
 # The loader: settings from TOML files, HAEST_* variables and flags, plus what
-# the runtime is handed beside them (keys, providers.json, .mcp.json, child env).
-config = ["dep:haest-config", "settings", "providers", "mcp"]
+# the runtime is handed beside them (keys, providers.json, child env; with `mcp`
+# too, a trusted project's .mcp.json).
+config = ["dep:haest-config", "settings", "providers"]
 # The whole conversation built from what a host hands in, behind its UI (the CLI's base).
 runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods"]
 # The wire format: the envelope around a conversation's events, requests, the

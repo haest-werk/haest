@@ -71,6 +71,7 @@ async fn providers_json_comes_from_the_config_dir_and_a_broken_one_stops_the_loa
 const MCP_JSON: &str = r#"{"mcpServers": {"gh": {"command": "gh-mcp"}}}"#;
 const TRUST: (&str, &str) = (USER_FILE, "trusted_dirs = [\"/w\"]");
 
+#[cfg(feature = "mcp")]
 #[tokio::test]
 async fn mcp_servers_are_read_only_with_mcp_on_in_a_trusted_dir() {
     let mcp_file = ("/w/.mcp.json", MCP_JSON);
@@ -89,6 +90,21 @@ async fn mcp_servers_are_read_only_with_mcp_on_in_a_trusted_dir() {
         .map(|s| s.name.as_str())
         .collect();
     assert_eq!(names, ["gh"]);
+}
+
+/// Without the `mcp` feature nothing reads `.mcp.json`, trusted or not, and
+/// `mcp` on says so instead of going quiet.
+#[cfg(not(feature = "mcp"))]
+#[tokio::test]
+async fn without_the_mcp_feature_mcp_on_is_a_note_and_nothing_is_read() {
+    let mcp_file = ("/w/.mcp.json", MCP_JSON);
+    let off = run("/w", &[mcp_file, TRUST], &[], &[]).await.unwrap();
+    assert!(off.notes.is_empty(), "{:?}", off.notes);
+    let on = run("/w", &[mcp_file, TRUST], &[], &[("mcp", "true")])
+        .await
+        .unwrap();
+    assert_eq!(on.notes.len(), 1, "{:?}", on.notes);
+    assert!(on.notes[0].contains("`mcp` feature"), "{:?}", on.notes);
 }
 
 /// `env` adds variable by variable, each layer over the one before; a value's

@@ -258,7 +258,7 @@ impl Loader {
     /// read what the runtime is handed beside the settings.
     ///
     /// Beside the settings it reads `<config dir>/providers.json`, a trusted
-    /// project's `.mcp.json` (with `mcp` on), and parses `provider_routing`. It
+    /// project's `.mcp.json` (with `mcp` on and the `mcp` feature), and parses `provider_routing`. It
     /// turns `project_mods` off outside a trusted dir. What is asked for and
     /// not honoured is a note in [`Loaded::notes`], not an error.
     ///
@@ -283,8 +283,11 @@ impl Loader {
         let cwd = config.settings.cwd.clone();
         let project_mods = &mut config.settings.project_mods;
         handed::gate_project_mods(fs, &cwd, project_mods, resolved.trusted, &mut notes).await;
+        #[cfg(feature = "mcp")]
         let mcp_servers =
             handed::mcp_servers(fs, &cwd, config.mcp, resolved.trusted, &env, &mut notes).await;
+        #[cfg(not(feature = "mcp"))]
+        handed::no_mcp(config.mcp, &mut notes);
         let providers = load_custom_providers(fs, &config.settings.config_dir).await?;
         let routing = config.provider_routing.as_deref();
         Ok(Loaded {
@@ -295,6 +298,7 @@ impl Loader {
             config,
             resolved,
             providers,
+            #[cfg(feature = "mcp")]
             mcp_servers,
             notes,
         })

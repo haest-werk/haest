@@ -27,7 +27,8 @@ haest-code = { version = "0.2.0", path = "crates/haest-code" }
 haest-mods = { version = "0.2.0", path = "crates/haest-mods" }
 haest-ts = { version = "0.2.0", path = "crates/haest-ts" }
 haest-settings = { version = "0.2.0", path = "crates/haest-settings" }
-haest-config = { version = "0.2.0", path = "crates/haest-config" }
+# No default features: the facade's `mcp` turns on the loader's `mcp`.
+haest-config = { version = "0.2.0", path = "crates/haest-config", default-features = false }
 haest-runtime = { version = "0.2.0", path = "crates/haest-runtime" }
 haest = { version = "0.2.0", path = "crates/haest" }
 haest-wire = { version = "0.2.0", path = "crates/haest-wire" }

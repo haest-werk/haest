@@ -40,7 +40,9 @@ async fn the_example_files_load_together_and_do_what_they_say() {
         ),
     ];
     let r = run(PROJECT, &files, ENV, &[]).await.unwrap();
-    assert!(r.notes.is_empty(), "{:?}", r.notes);
+    // Without the `mcp` feature the one note is that .mcp.json is not read.
+    let notes = usize::from(cfg!(not(feature = "mcp")));
+    assert_eq!(r.notes.len(), notes, "{:?}", r.notes);
     assert!(r.resolved.trusted, "~/projects is trusted");
     assert_eq!(r.config.control_socket, crate::ControlSocket::Watch);
     assert_eq!(r.config.broker_access, crate::BrokerAccess::Watch);
@@ -69,9 +71,12 @@ async fn the_example_files_load_together_and_do_what_they_say() {
         ["DATABASE_URL", "GH_TOKEN", "NODE_ENV", "PAGER", "RUST_LOG"]
     );
     assert_eq!(r.passed_env.get("NODE_ENV"), Some("development"));
-    let mut servers: Vec<&str> = r.mcp_servers.iter().map(|s| s.name.as_str()).collect();
-    servers.sort();
-    assert_eq!(servers, ["docs", "github"]);
+    #[cfg(feature = "mcp")]
+    {
+        let mut servers: Vec<&str> = r.mcp_servers.iter().map(|s| s.name.as_str()).collect();
+        servers.sort();
+        assert_eq!(servers, ["docs", "github"]);
+    }
     assert_eq!(
         r.providers.keys().map(String::as_str).collect::<Vec<_>>(),
         ["gateway", "local"]

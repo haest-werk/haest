@@ -1149,6 +1149,15 @@ Hosts write less (round two of the review, and what porting brain onto
 - `Loaded` is `#[non_exhaustive]` (breaking): a host reads it and never
   builds it; `let Loaded { config, keys } = loaded;` ->
   `let Loaded { config, keys, .. } = loaded;`.
+- New `mcp` feature, in `default`: a trusted project's `.mcp.json`, read
+  into `Loaded::mcp_servers`. A settings loader with `default-features =
+  false` builds no MCP client, so no rmcp, reqwest, rustls or ring (147
+  crates in the tree become 49); `mcp = true` is then a note in
+  `Loaded::notes`, and `Loaded::mcp_servers` is not there. Through the
+  facade (breaking): `config` no longer turns on `mcp`, and the facade's
+  `mcp` turns on the loader's. `features = ["config"]` with
+  `default-features = false` -> `features = ["config", "mcp"]` to keep
+  reading `.mcp.json` (148 crates become 50 without it).
 
 ### haest-runtime
 

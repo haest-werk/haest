@@ -7,12 +7,14 @@ use std::{
     path::Path,
 };
 
+#[cfg(feature = "mcp")]
+use haest_core::error::report;
 use haest_core::{
     __private::{expand_vars, unset_note},
     ChildEnv,
-    error::report,
     fs::Fs,
 };
+#[cfg(feature = "mcp")]
 use haest_mcp::{McpServerConfig, load_project_mcp_config, project_mcp_path};
 use haest_providers::{RoutingScopes, routing::parse_routing};
 
@@ -88,6 +90,7 @@ async fn note_untrusted(fs: &dyn Fs, path: &Path, root: &Path, notes: &mut Vec<S
 
 /// The project's `.mcp.json` servers: with `mcp` on, in a trusted dir, its
 /// `${NAME}`s filled in from `env`.
+#[cfg(feature = "mcp")]
 pub(crate) async fn mcp_servers(
     fs: &dyn Fs,
     cwd: &Path,
@@ -112,6 +115,18 @@ pub(crate) async fn mcp_servers(
             notes.push(format!(".mcp.json not loaded: {}", report(&e)));
             Vec::new()
         }
+    }
+}
+
+/// The note for `mcp` on in a loader built without its `mcp` feature: no
+/// `.mcp.json` is read, so the human hears why the servers are missing.
+#[cfg(not(feature = "mcp"))]
+pub(crate) fn no_mcp(mcp: bool, notes: &mut Vec<String>) {
+    if mcp {
+        notes.push(
+            "mcp is on, but this loader is built without its `mcp` feature: .mcp.json is not read."
+                .to_owned(),
+        );
     }
 }
 

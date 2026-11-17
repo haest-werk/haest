@@ -125,6 +125,13 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! # Features
+//!
+//! - `mcp` (on by default): a trusted project's `.mcp.json`, read into
+//!   [`Loaded::mcp_servers`]. With `default-features = false` the loader
+//!   builds no MCP client (rmcp, reqwest, rustls): `mcp = true` is then a
+//!   note in [`Loaded::notes`] and no `.mcp.json` is read.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -145,6 +152,7 @@ mod value;
 use std::fmt;
 
 use haest_core::ChildEnv;
+#[cfg(feature = "mcp")]
 use haest_mcp::McpServerConfig;
 use haest_providers::{CustomProviders, RoutingScopes};
 
@@ -168,7 +176,7 @@ pub use value::env_var;
 /// | `.with_passed_env(..)` | `passed_env` |
 /// | `.with_keys(..)` | `keys` (a [`KeySource`](haest_core::KeySource)) |
 /// | `.with_providers(..)` | `providers` |
-/// | `.with_mcp_servers(..)` | `mcp_servers` |
+/// | `.with_mcp_servers(..)` | `mcp_servers` (the `mcp` feature) |
 /// | `.with_routing(..)` | `routing` |
 /// | `.with_http(..)` | not loaded: the host's own client; by default the shared `ReqwestClient` |
 ///
@@ -202,6 +210,8 @@ pub struct Loaded {
     /// `<config dir>/providers.json`'s entries; empty when there is no file.
     pub providers: CustomProviders,
     /// A trusted project's `.mcp.json` servers, with `mcp` on; empty otherwise.
+    #[cfg(feature = "mcp")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "mcp")))]
     pub mcp_servers: Vec<McpServerConfig>,
     /// What the host should tell the human: a setting asked for and not
     /// honoured (an untrusted project's file, mods or MCP servers skipped, a
@@ -221,19 +231,20 @@ impl fmt::Debug for Loaded {
             keys,
             routing,
             providers,
+            #[cfg(feature = "mcp")]
             mcp_servers,
             notes,
         } = self;
-        f.debug_struct("Loaded")
-            .field("config", config)
+        let mut out = f.debug_struct("Loaded");
+        out.field("config", config)
             .field("resolved", resolved)
             .field("child_env", child_env)
             .field("passed_env", passed_env)
             .field("keys", keys)
             .field("routing", routing)
-            .field("providers", &providers.keys().collect::<Vec<_>>())
-            .field("mcp_servers", mcp_servers)
-            .field("notes", notes)
-            .finish()
+            .field("providers", &providers.keys().collect::<Vec<_>>());
+        #[cfg(feature = "mcp")]
+        out.field("mcp_servers", mcp_servers);
+        out.field("notes", notes).finish()
     }
 }

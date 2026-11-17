@@ -13,13 +13,21 @@ categories.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["mcp"]
+# A trusted project's .mcp.json, read into `Loaded::mcp_servers`. Off, the
+# loader builds no MCP client (rmcp, reqwest, rustls, ring): `mcp = true` is
+# then a note, and nothing is read.
+mcp = ["dep:haest-mcp"]
+
 [dependencies]
 haest-core = { workspace = true }
 haest-settings = { workspace = true }
 # providers.json and the OpenRouter routing variable, read here and handed in.
+# Its types only: the loader sends nothing, so no client.
 haest-providers = { workspace = true }
 # A trusted project's .mcp.json, read here and handed in.
-haest-mcp = { workspace = true }
+haest-mcp = { workspace = true, optional = true }
 # The config files: ~/.config/haest/config.toml and a trusted project's .haest/config.toml.
 toml = "1.1"
 thiserror = { workspace = true }

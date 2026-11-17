@@ -188,7 +188,7 @@
 //! | `code` | [`code`]: the Code tool and the sandbox `js` command, in embedded QuickJS | yes |
 //! | `mods` | [`mods`]: change how haest behaves without forking it; approvals, plan mode | yes |
 //! | `settings` | [`settings`]: every setting as a plain value a host writes out in Rust | yes |
-//! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags | no |
+//! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags; with `mcp` too, it reads a trusted project's `.mcp.json` | no |
 //! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI | no |
 //! | `wire` | [`wire`]: the envelope around a conversation's events, the requests a peer sends, a replay ring with gaps, an NDJSON codec | no |
 //! | `session` | [`session`]: a conversation another program watches and drives while it runs (input mid-turn, catch-up, approvals over it); with `runtime`, the whole conversation is one | no |
