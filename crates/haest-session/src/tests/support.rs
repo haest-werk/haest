@@ -53,11 +53,11 @@ impl Tool for Wait {
 /// from the script.
 pub struct Stall {
     calls: AtomicUsize,
-    then: Arc<ScriptedProvider>,
+    then: ScriptedProvider,
 }
 
 impl Stall {
-    pub fn new(then: Arc<ScriptedProvider>) -> Arc<Self> {
+    pub fn new(then: ScriptedProvider) -> Arc<Self> {
         Arc::new(Self {
             calls: AtomicUsize::new(0),
             then,
@@ -98,7 +98,7 @@ fn deps(models: Arc<dyn haest_core::ModelResolver>, tools: Tools) -> AgentDeps {
 }
 
 /// An agent over `model`, with `tools`.
-pub fn agent(model: &Arc<ScriptedProvider>, tools: Tools) -> Agent {
+pub fn agent(model: &ScriptedProvider, tools: Tools) -> Agent {
     Agent::new(
         deps(Arc::new(model.resolver()), tools),
         AgentOptions::new("scripted:m"),
@@ -110,10 +110,7 @@ pub fn stalling_agent(stall: &Arc<Stall>) -> Agent {
     let p = stall.clone();
     let resolve = move |spec: &str| -> Result<ResolvedModel, ModelError> {
         let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();
-        Ok(ResolvedModel {
-            provider: p.clone(),
-            model,
-        })
+        Ok(ResolvedModel::new(p.clone(), model))
     };
     Agent::new(
         deps(Arc::new(resolve), Tools::new()),
@@ -122,7 +119,7 @@ pub fn stalling_agent(stall: &Arc<Stall>) -> Agent {
 }
 
 /// A text answer per text.
-pub fn answers(texts: &[&str]) -> Arc<ScriptedProvider> {
+pub fn answers(texts: &[&str]) -> ScriptedProvider {
     ScriptedProvider::new(texts.iter().map(|t| text_answer(t)))
 }
 

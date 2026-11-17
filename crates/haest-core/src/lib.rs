@@ -235,13 +235,13 @@ pub mod prelude {
     };
     pub use crate::events::{EventSink, LoopEvent, TurnOutcome};
     pub use crate::fs::{DirEntry, FileKind, Fs, FsRef, FsStat, MemFs};
-    pub use crate::handed::{ChildEnv, KeySource};
+    pub use crate::handed::{ChildEnv, KeySource, KeySourceRef};
     pub use crate::messages::{
         AssistantMessage, AssistantPart, MediaPart, Message, StopReason, ToolCall,
         ToolResultMessage, Usage, UserMessage,
     };
     pub use crate::provider::{
-        Effort, ModelError, ModelResolver, ModelResolverRef, Provider, ProviderEvent,
+        Effort, ModelError, ModelResolver, ModelResolverRef, Provider, ProviderEvent, ProviderRef,
         ProviderRequest, ProviderStream, ResolvedModel,
     };
     pub use crate::tool::{

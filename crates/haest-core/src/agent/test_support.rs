@@ -188,7 +188,7 @@ pub fn capped(f: impl FnOnce(&mut TurnCaps)) -> Opts {
 }
 
 /// An agent on `fake:m1` served by `p`, with Echo unless `opts.tools` says otherwise.
-pub fn agent_with(p: &Arc<ScriptedProvider>, opts: Opts) -> (Agent, Arc<TestHooks>) {
+pub fn agent_with(p: &ScriptedProvider, opts: Opts) -> (Agent, Arc<TestHooks>) {
     let hooks = Arc::new(TestHooks {
         caps: opts.caps,
         ..Default::default()

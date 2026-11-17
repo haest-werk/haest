@@ -20,7 +20,7 @@ use crate::{
     Mods, PLAN_PROMPT, PlanMod, testkit::*,
 };
 
-fn agent(p: &Arc<ScriptedProvider>, mods: &Arc<Mods>, tools: Tools) -> Agent {
+fn agent(p: &ScriptedProvider, mods: &Arc<Mods>, tools: Tools) -> Agent {
     let source: Arc<dyn ToolSource> = Arc::new(tools);
     let base: Arc<dyn SystemPrompt> = Arc::new("You are haest.".to_string());
     let deps = AgentDeps::new(

@@ -281,7 +281,7 @@ fn the_defaults_are_the_guards_nudge_and_the_ledgers_warning() {
 
 /// The guard's nudges and `more`, on an agent with Echo and `opts`.
 fn agent(
-    p: &Arc<ScriptedProvider>,
+    p: &ScriptedProvider,
     opts: Opts,
     more: Vec<Arc<dyn Threshold>>,
 ) -> (crate::Agent, Arc<TestHooks>) {

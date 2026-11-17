@@ -146,9 +146,10 @@ value itself, and holds it in a handle named after its trait. Read
 ### haest (the facade)
 
 - The front page and every example build their deps the new way:
-  `AgentDeps::new(models, builtin_tools(BuiltinOptions::default()), "You
-  are a careful engineer.", std::env::current_dir()?, RealWorkspace::new(env))`,
-  in a `main` that returns a `Result`. The plug-point table lists `Tools`,
+  `ProviderRegistry::new(keys, ..)` and `AgentDeps::new(models,
+  builtin_tools(BuiltinOptions::default()), "You are a careful engineer.",
+  std::env::current_dir()?, RealWorkspace::new(env))`, in a `main` that
+  returns a `Result`. The plug-point table lists `Tools`,
   `&'static str` and closures as prompts, and `ToolServices`.
 
 - New example `durable_run` (`cargo run -p haest --example durable_run`,
@@ -182,7 +183,8 @@ Plug points without `Arc` (breaking):
 - New handles, one per plug point, named after the trait: `ToolRef`,
   `ToolSourceRef`, `SystemPromptRef`, `ModelResolverRef`, `WorkspaceRef`,
   `AgentHooksRef`, `ToolServicesRef`, `ModelFactsRef`, `TurnCapsSourceRef`,
-  `ClockRef`, `FsRef`, `ChangeSetRef`, `run::RunStoreRef`,
+  `ClockRef`, `FsRef`, `ChangeSetRef`, `ProviderRef`, `KeySourceRef`,
+  `run::RunStoreRef`,
   `session::SessionSinkRef`, `shell_command::ShellCommandRef` and
   `skills::SkillSetRef`. Each is a cheap `Clone`, derefs to the trait
   object, and is built `From` the value, an `Arc` of it or an
@@ -233,6 +235,15 @@ Plug points without `Arc` (breaking):
   `fs: impl Into<FsRef>`. `DiskSkills::new(skills, fs)` ->
   `DiskSkills::new(fs, skills)`, the closure last, `fs` as
   `impl Into<FsRef>`.
+- `ResolvedModel`'s fields are private: `ResolvedModel { provider:
+  Arc::new(p), model: m.into() }` -> `ResolvedModel::new(p, m)`,
+  `resolved.provider` -> `resolved.provider()` (a `ProviderRef`),
+  `resolved.model` -> `resolved.model()` (a `&str`); `with_provider` and
+  `with_model` besides.
+- `testing::ScriptedProvider::new` returns the provider itself (was
+  `Arc<ScriptedProvider>`): a cheap `Clone` whose clones answer from one
+  script and record into one list, and `resolver(&self)`.
+  `&Arc<ScriptedProvider>` -> `&ScriptedProvider`.
 - New `skills::Skills`: a host's SKILL.md skills held where every clone sees
   them; `replace` after a rescan and the Skill tool and the prompt read the
   new list on their next call. A `SkillSet` over an `Fs`, like `DiskSkills`.
@@ -335,6 +346,13 @@ Thresholds; wind-down, opt-in:
   `ctx.wind_down().check()`.
 - `remedy::Limit` gains `SubagentSteps`, `SubagentTime` and `SubagentUsd`,
   and `Limit::setting()`, the plain name of the setting behind each limit.
+
+### haest-providers
+
+- `ProviderRegistry::new` takes `keys: impl Into<KeySourceRef>`:
+  `ProviderRegistry::new(Arc::new(keys), custom, opts)` ->
+  `ProviderRegistry::new(keys, custom, opts)`. An `Arc<dyn KeySource>` the
+  host already shares still goes in as it is.
 
 ### haest-tools
 

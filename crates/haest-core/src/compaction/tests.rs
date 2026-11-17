@@ -51,7 +51,7 @@ fn history() -> Vec<Message> {
 }
 
 /// The loop tests' agent (Echo, one model), at high effort, on [`history`].
-fn agent_with(provider: &Arc<ScriptedProvider>) -> Agent {
+fn agent_with(provider: &ScriptedProvider) -> Agent {
     let (mut agent, _) = test_support::agent_with(provider, Opts::default());
     agent.set_effort(Some(Effort::High));
     agent.replace_history(history());

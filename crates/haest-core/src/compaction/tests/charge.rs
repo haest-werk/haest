@@ -43,7 +43,7 @@ fn costly_empty(input: u64) -> AssistantMessage {
     m
 }
 
-fn compacting(p: &Arc<ScriptedProvider>, caps: Option<TurnCaps>) -> Agent {
+fn compacting(p: &ScriptedProvider, caps: Option<TurnCaps>) -> Agent {
     let mut agent = agent_with(p);
     let host = Arc::new(CompactsFirst { caps, esc: false });
     agent.map_deps(|d| d.with_hooks(host.clone()));

@@ -2,7 +2,7 @@
 //! catalog row, and a providers.json entry declaring the same effort dialect
 //! and prices. Asserted on the wire body and the booked cost; no network.
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use haest_core::{
     catalog::{InputModality, ModelPricing},
@@ -32,14 +32,14 @@ fn registry(keys: HashMap<String, String>) -> ProviderRegistry {
         http: FakeHttp::new([]),
         ..RegistryOptions::default()
     };
-    ProviderRegistry::new(Arc::new(keys), Default::default(), opts)
+    ProviderRegistry::new(keys, Default::default(), opts)
 }
 
 #[test]
 fn paperinstruments_resolves_with_its_key_and_names_the_env_var_without_one() {
     let spec = "paperinstruments:ultramarine-1-flash";
     assert_eq!(
-        registry(pi_env()).resolve(spec).unwrap().provider.id(),
+        registry(pi_env()).resolve(spec).unwrap().provider().id(),
         "paperinstruments"
     );
     assert!(matches!(

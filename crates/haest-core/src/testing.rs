@@ -79,42 +79,46 @@ use crate::{
 /// Each answer streams like a real one: a delta or a tool-call start per
 /// part, then [`ProviderEvent::Done`] with the message as scripted. Its id is
 /// `scripted`. It ignores the request's `cancel`.
+///
+/// A cheap `Clone`: every clone answers from the same script and records
+/// into the same list, so a test keeps one to read [`requests`](Self::requests)
+/// while the agent holds another.
+#[derive(Clone, Default)]
+pub struct ScriptedProvider(Arc<Script>);
+
 #[derive(Default)]
-pub struct ScriptedProvider {
-    script: Mutex<VecDeque<AssistantMessage>>,
+struct Script {
+    answers: Mutex<VecDeque<AssistantMessage>>,
     requests: Mutex<Vec<ProviderRequest>>,
 }
 
 impl ScriptedProvider {
     /// A provider that gives these answers, one per call, in order.
-    pub fn new(script: impl IntoIterator<Item = AssistantMessage>) -> Arc<Self> {
-        Arc::new(Self {
-            script: Mutex::new(script.into_iter().collect()),
+    pub fn new(script: impl IntoIterator<Item = AssistantMessage>) -> Self {
+        Self(Arc::new(Script {
+            answers: Mutex::new(script.into_iter().collect()),
             requests: Mutex::default(),
-        })
+        }))
     }
 
     /// Add an answer at the end of the script.
     pub fn push(&self, msg: AssistantMessage) {
-        self.script.lock().unwrap().push_back(msg);
+        self.0.answers.lock().unwrap().push_back(msg);
     }
 
     /// Every request so far.
     pub fn requests(&self) -> Vec<ProviderRequest> {
-        self.requests.lock().unwrap().clone()
+        self.0.requests.lock().unwrap().clone()
     }
 
     /// A resolver that serves every spec with this provider (model = the spec's model part, or the spec).
     pub fn resolver(
-        self: &Arc<Self>,
+        &self,
     ) -> impl Fn(&str) -> Result<ResolvedModel, ModelError> + Send + Sync + 'static {
         let p = self.clone();
         move |spec: &str| {
-            let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();
-            Ok(ResolvedModel {
-                provider: p.clone(),
-                model,
-            })
+            let model = spec.split_once(':').map_or(spec, |(_, m)| m);
+            Ok(ResolvedModel::new(p.clone(), model))
         }
     }
 }
@@ -126,13 +130,19 @@ impl Provider for ScriptedProvider {
 
     fn stream(&self, req: ProviderRequest) -> ProviderStream {
         let model = req.model.clone();
-        self.requests.lock().unwrap().push(req);
-        let msg = self.script.lock().unwrap().pop_front().unwrap_or_else(|| {
-            let mut m = AssistantMessage::start("scripted", &model);
-            m.stop_reason = StopReason::Error;
-            m.error_message = Some("scripted provider: out of script".into());
-            m
-        });
+        self.0.requests.lock().unwrap().push(req);
+        let msg = self
+            .0
+            .answers
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| {
+                let mut m = AssistantMessage::start("scripted", &model);
+                m.stop_reason = StopReason::Error;
+                m.error_message = Some("scripted provider: out of script".into());
+                m
+            });
         let mut events: Vec<ProviderEvent> = (msg.content.iter())
             .map(|part| match part {
                 AssistantPart::Text { text } => ProviderEvent::TextDelta(text.clone()),

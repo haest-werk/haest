@@ -124,7 +124,7 @@ impl Tool for Probe {
 
 /// An agent on `p` with `tools`, keeping its runs in `store`.
 fn durable(
-    p: &Arc<ScriptedProvider>,
+    p: &ScriptedProvider,
     store: &MemoryRunStore,
     tools: &[ToolRef],
     caps: Option<TurnCaps>,

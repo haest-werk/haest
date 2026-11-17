@@ -19,7 +19,7 @@ fn hub() -> Hub {
 }
 
 /// A model that calls `Wait` once, then answers each of `then`.
-fn waits_then(then: &[&str]) -> Arc<ScriptedProvider> {
+fn waits_then(then: &[&str]) -> ScriptedProvider {
     let first = tool_answer(&[("c1", "Wait", json!({}))]);
     ScriptedProvider::new(std::iter::once(first).chain(then.iter().map(|t| text_answer(t))))
 }

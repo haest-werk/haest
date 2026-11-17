@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// A model that calls a tool forever, billing `usage` per call.
-fn looping(usage: Usage) -> std::sync::Arc<ScriptedProvider> {
+fn looping(usage: Usage) -> ScriptedProvider {
     ScriptedProvider::new(
         (0..50).map(|i| with_usage(echo(&format!("t{i}"), json!({"v": "x"})), &usage)),
     )

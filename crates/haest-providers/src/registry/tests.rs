@@ -11,12 +11,12 @@ use crate::{
 };
 
 /// What the host answers for these names (nothing else).
-pub(super) fn keys(pairs: &[(&str, &str)]) -> Arc<dyn KeySource> {
+pub(super) fn keys(pairs: &[(&str, &str)]) -> KeySourceRef {
     let map: HashMap<String, String> = pairs
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-    Arc::new(map)
+    map.into()
 }
 
 pub(super) fn opts(t: &Arc<FakeHttp>) -> RegistryOptions {
@@ -27,7 +27,7 @@ pub(super) fn opts(t: &Arc<FakeHttp>) -> RegistryOptions {
     }
 }
 
-pub(super) fn registry(keys: Arc<dyn KeySource>, custom: CustomProviders) -> ProviderRegistry {
+pub(super) fn registry(keys: impl Into<KeySourceRef>, custom: CustomProviders) -> ProviderRegistry {
     ProviderRegistry::new(keys, custom, opts(&FakeHttp::new([])))
 }
 
@@ -70,7 +70,7 @@ fn built_ins_need_their_key_and_the_error_names_it() {
 #[test]
 fn a_key_comes_from_whatever_the_host_answers_with() {
     let vault = |name: &str| (name == "OPENROUTER_API_KEY").then(|| "from-vault".to_string());
-    let reg = registry(Arc::new(vault), CustomProviders::new());
+    let reg = registry(vault, CustomProviders::new());
     assert!(reg.resolve("openrouter:x/y").is_ok());
     assert_eq!(
         missing_key(&reg, "anthropic:claude").as_deref(),
@@ -84,11 +84,11 @@ fn a_spec_resolves_keeping_slashes_and_colons_in_the_model_id_and_the_provider_i
     let r = reg
         .resolve("openrouter:anthropic/claude-sonnet-5:beta")
         .unwrap();
-    assert_eq!(r.provider.id(), "openrouter");
-    assert_eq!(r.model, "anthropic/claude-sonnet-5:beta");
-    assert!(Arc::ptr_eq(
-        &reg.resolve("openrouter:other").unwrap().provider,
-        &r.provider
+    assert_eq!(r.provider().id(), "openrouter");
+    assert_eq!(r.model(), "anthropic/claude-sonnet-5:beta");
+    assert!(ProviderRef::ptr_eq(
+        reg.resolve("openrouter:other").unwrap().provider(),
+        r.provider()
     ));
 }
 
@@ -111,7 +111,7 @@ async fn openai_speaks_responses_while_openrouter_and_custom_servers_speak_chat_
     let reg = ProviderRegistry::new(k, custom, opts(&t));
     for spec in ["openai:gpt-5.5", "openrouter:openai/gpt-5.5", "local:qwen"] {
         let r = reg.resolve(spec).unwrap();
-        collect(r.provider.stream(request(&r.model))).await;
+        collect(r.provider().stream(request(r.model()))).await;
     }
     let paths: Vec<String> = t.requests().into_iter().map(|r| r.url).collect();
     assert_eq!(
@@ -137,7 +137,7 @@ async fn openrouter_routing_goes_out_only_when_handed_in_and_attribution_is_conf
         let reg =
             ProviderRegistry::new(keys(&[("OPENROUTER_API_KEY", "k")]), Default::default(), o);
         let r = reg.resolve("openrouter:z-ai/glm-5").unwrap();
-        collect(r.provider.stream(request(&r.model))).await;
+        collect(r.provider().stream(request(r.model()))).await;
         let sent = &t.requests()[0];
         assert_eq!(sent.json_body().get("provider").is_some(), sends);
         assert_eq!(sent.header("http-referer"), Some("https://example.test"));
@@ -163,9 +163,10 @@ async fn every_dialect_the_registry_builds_waits_only_the_headers_timeout_it_was
     for spec in ["anthropic:m", "openai:m", "openrouter:m"] {
         let r = reg.resolve(spec).unwrap();
         let ended = std::time::Duration::from_secs(5);
-        let (_, msg) = tokio::time::timeout(ended, collect(r.provider.stream(request(&r.model))))
-            .await
-            .unwrap_or_else(|_| panic!("{spec} waited past its headers timeout"));
+        let (_, msg) =
+            tokio::time::timeout(ended, collect(r.provider().stream(request(r.model()))))
+                .await
+                .unwrap_or_else(|_| panic!("{spec} waited past its headers timeout"));
         assert_eq!(
             msg.stop_reason,
             haest_core::messages::StopReason::Error,

@@ -39,7 +39,7 @@ impl Tool for Wait {
 }
 
 /// A session over a scripted model, with the Wait tool.
-pub fn session(model: &Arc<ScriptedProvider>, hub: Hub) -> (SessionHandle<Agent>, Arc<Notify>) {
+pub fn session(model: &ScriptedProvider, hub: Hub) -> (SessionHandle<Agent>, Arc<Notify>) {
     let go = Arc::new(Notify::new());
     let tools: Tools = Tools::from_iter([ToolRef::new(Wait(go.clone()))]);
     let deps = AgentDeps::new(
@@ -57,6 +57,6 @@ pub fn hub() -> Hub {
     Hub::new("s1", HubOptions::default())
 }
 
-pub fn answers(texts: &[&str]) -> Arc<ScriptedProvider> {
+pub fn answers(texts: &[&str]) -> ScriptedProvider {
     ScriptedProvider::new(texts.iter().map(|t| text_answer(t)))
 }

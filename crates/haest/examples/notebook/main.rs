@@ -92,10 +92,7 @@ pub fn models(gateway: Arc<Gateway>, token: &str) -> ModelResolverRef {
                 known: vec!["gateway".into()],
             });
         }
-        Ok(ResolvedModel {
-            provider: provider.clone(),
-            model: model.into(),
-        })
+        Ok(ResolvedModel::new(provider.clone(), model))
     })
 }
 

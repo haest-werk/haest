@@ -5,7 +5,7 @@ use super::*;
 use crate::provider::{Provider, ProviderRequest, ProviderStream, ResolvedModel};
 
 /// Cancels the run's token while the reply streams (Esc), then answers with what it had.
-struct EscMidStream(Arc<ScriptedProvider>);
+struct EscMidStream(ScriptedProvider);
 
 impl Provider for EscMidStream {
     fn id(&self) -> &str {
@@ -50,10 +50,7 @@ async fn a_cancelled_summary_is_never_committed() {
         let esc = Arc::new(EscMidStream(p.clone()));
         agent.map_deps(|d| {
             d.with_models(Arc::new(move |_: &str| {
-                Ok(ResolvedModel {
-                    provider: esc.clone(),
-                    model: "m".into(),
-                })
+                Ok(ResolvedModel::new(esc.clone(), "m"))
             }))
         });
         let res = compact(&mut agent, &CancellationToken::new(), &CFG).await;

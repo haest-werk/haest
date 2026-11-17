@@ -77,7 +77,7 @@ fn refusals(events: &[LoopEvent]) -> usize {
 }
 
 /// The agent the tests share: Spawn and Echo, `opts`, winding down at `at`.
-fn agent(p: &Arc<ScriptedProvider>, opts: Opts, at: f64) -> (crate::Agent, Arc<Mutex<u32>>) {
+fn agent(p: &ScriptedProvider, opts: Opts, at: f64) -> (crate::Agent, Arc<Mutex<u32>>) {
     let started = Arc::new(Mutex::new(0));
     let tools = vec![spawn_tool(started.clone()), echo_tool()];
     let opts = Opts {

@@ -9,8 +9,8 @@ use crate::{
     RuntimeHooks,
     haest::{
         Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
-        ModelError, Provider, ProviderRequest, ResolvedModel, ShutWorkspace, StopReason,
-        TurnOutcome,
+        ModelError, Provider, ProviderRef, ProviderRequest, ResolvedModel, ShutWorkspace,
+        StopReason, TurnOutcome,
         core::caps::ConversationCaps,
         core::ledger::Ledger,
         core::provider::ProviderStream,
@@ -22,16 +22,17 @@ use haest_core::Tools;
 
 /// A conversation on `host` whose last request filled the window, so the
 /// next model call compacts first; its ledger has no cap.
-fn full(hooks: &Arc<RuntimeHooks>, provider: Arc<dyn Provider>) -> (Agent, Arc<Mutex<Ledger>>) {
+fn full(
+    hooks: &Arc<RuntimeHooks>,
+    provider: impl Into<ProviderRef>,
+) -> (Agent, Arc<Mutex<Ledger>>) {
+    let provider = provider.into();
     let ledger = Arc::new(Mutex::new(Ledger::new(
         ConversationCaps::default(),
         hooks.clone(),
     )));
     let resolve = move |_: &str| -> Result<ResolvedModel, ModelError> {
-        Ok(ResolvedModel {
-            provider: provider.clone(),
-            model: "m".into(),
-        })
+        Ok(ResolvedModel::new(provider.clone(), "m"))
     };
     let deps = AgentDeps::new(resolve, Tools::new(), "", "/w", ShutWorkspace)
         .with_hooks(hooks.clone())
@@ -71,7 +72,7 @@ async fn a_failed_compaction_goes_on_the_conversations_bill_once() {
 
 /// The human presses Esc as each request goes out, once `control` is set.
 struct EscOnEveryCall {
-    replies: Arc<ScriptedProvider>,
+    replies: ScriptedProvider,
     control: OnceLock<AgentControl>,
 }
 

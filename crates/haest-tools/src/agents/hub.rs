@@ -77,7 +77,7 @@ use settle::{Open, Work};
 /// use haest_tools::{AgentDirectory, AgentRef, Inbox, SpawnInput, SubagentHub, SubagentParent};
 /// use tokio_util::sync::CancellationToken;
 ///
-/// struct Parent(Arc<ScriptedProvider>);
+/// struct Parent(ScriptedProvider);
 ///
 /// impl Inbox for Parent {
 ///     fn submit(&self, text: String) {

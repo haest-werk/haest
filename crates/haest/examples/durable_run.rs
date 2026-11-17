@@ -113,7 +113,7 @@ impl Tool for Fetch {
 
 /// An agent on `provider` with `tools`, keeping its runs in `store`: the one
 /// line that makes runs durable is `run_store`.
-fn agent(provider: &Arc<ScriptedProvider>, store: &MemoryRunStore, tools: Tools) -> Agent {
+fn agent(provider: &ScriptedProvider, store: &MemoryRunStore, tools: Tools) -> Agent {
     let deps = AgentDeps::new(
         provider.resolver(),
         tools,

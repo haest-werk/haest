@@ -219,17 +219,17 @@ impl Agent {
             Err(e) => return refuse(&self.model_spec, &report(&e), t),
         };
         t.sink.emit(LoopEvent::ModelStart {
-            provider: resolved.provider.id().to_string(),
-            model: resolved.model.clone(),
+            provider: resolved.provider().id().to_string(),
+            model: resolved.model().to_string(),
         });
-        let prefix = self.request_prefix(&resolved.model).await;
-        let messages = self.sendable(&self.history, &resolved.model);
+        let prefix = self.request_prefix(resolved.model()).await;
+        let messages = self.sendable(&self.history, resolved.model());
         let estimate = estimate_request_tokens(&prefix.system, &messages, &prefix.tools);
         if let Some(too_big) = t.guard.too_big(estimate, self.turn_caps().as_ref()) {
-            return refuse(&resolved.model, &too_big, t);
+            return refuse(resolved.model(), &too_big, t);
         }
-        let req = prefix.request(resolved.model.clone(), messages, t.cancel.clone());
-        let done = final_message(resolved.provider.stream(req), |ev| match ev {
+        let req = prefix.request(resolved.model().to_string(), messages, t.cancel.clone());
+        let done = final_message(resolved.provider().stream(req), |ev| match ev {
             ProviderEvent::TextDelta(text) => t.sink.emit(LoopEvent::TextDelta { text }),
             ProviderEvent::ThinkingDelta(text) => t.sink.emit(LoopEvent::ThinkingDelta { text }),
             ProviderEvent::ToolCallStart { id, name } => {
@@ -239,7 +239,7 @@ impl Agent {
             ProviderEvent::Done(_) => {}
         })
         .await;
-        let mut msg = done.unwrap_or_else(|| error_assistant(&resolved.model, NO_RESPONSE));
+        let mut msg = done.unwrap_or_else(|| error_assistant(resolved.model(), NO_RESPONSE));
         if matches!(msg.stop_reason, StopReason::Error | StopReason::Aborted) {
             // A failed answer runs no tool, so a call in it would stay in
             // history with no result, and the next request would be refused.

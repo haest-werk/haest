@@ -143,10 +143,7 @@ impl SubagentParent for FakeParent {
         let p = self.provider.clone();
         let models = move |spec: &str| {
             let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();
-            Ok::<_, ModelError>(ResolvedModel {
-                provider: p.clone(),
-                model,
-            })
+            Ok::<_, ModelError>(ResolvedModel::new(p.clone(), model))
         };
         let d = SharedDeps::new(models, "/p", self.ws.clone()).with_ledger(self.ledger.clone());
         match &*self.adjust.lock().unwrap() {

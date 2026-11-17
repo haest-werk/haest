@@ -190,7 +190,7 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
         .resolve(rt.agent().model_spec())
         .unwrap();
     let req = ProviderRequest {
-        model: model.model,
+        model: model.model().to_string(),
         system: String::new(),
         messages: vec![Message::user("hi")],
         tools: vec![],
@@ -199,7 +199,7 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
         max_tokens: None,
         web_search: None,
     };
-    let events: Vec<ProviderEvent> = model.provider.stream(req).collect().await;
+    let events: Vec<ProviderEvent> = model.provider().stream(req).collect().await;
     assert!(matches!(events.last(), Some(ProviderEvent::Done(_))));
     assert_eq!(gateway.0.lock().unwrap().len(), 1, "the model call");
 

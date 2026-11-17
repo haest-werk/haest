@@ -72,7 +72,7 @@
 //! use std::{collections::HashMap, sync::Arc};
 //!
 //! use futures::StreamExt;
-//! use haest_core::{Message, ModelResolver, ProviderEvent, ProviderRequest, StopReason};
+//! use haest_core::{Message, ModelError, ModelResolver, ProviderEvent, ProviderRequest, StopReason};
 //! use haest_providers::{
 //!     CustomProviders, ProviderRegistry, RegistryOptions,
 //!     http::{HttpClient, HttpError, Request, Response, async_trait},
@@ -98,20 +98,20 @@
 //! }
 //!
 //! #[tokio::main(flavor = "current_thread")]
-//! async fn main() {
+//! async fn main() -> Result<(), ModelError> {
 //!     // The host answers key names; here from a map.
 //!     let keys = HashMap::from([("OPENROUTER_API_KEY".to_string(), "sk-test".to_string())]);
 //!     let registry = ProviderRegistry::new(
-//!         Arc::new(keys),
+//!         keys,
 //!         CustomProviders::new(),
 //!         RegistryOptions { http: Arc::new(Canned), ..RegistryOptions::default() },
 //!     );
 //!
-//!     let resolved = registry.resolve("openrouter:anthropic/claude-sonnet-5.5").unwrap();
-//!     assert_eq!(resolved.model, "anthropic/claude-sonnet-5.5");
+//!     let resolved = registry.resolve("openrouter:anthropic/claude-sonnet-5.5")?;
+//!     assert_eq!(resolved.model(), "anthropic/claude-sonnet-5.5");
 //!
 //!     let request = ProviderRequest {
-//!         model: resolved.model.clone(),
+//!         model: resolved.model().to_string(),
 //!         system: "You are terse.".into(),
 //!         messages: vec![Message::user("Say hello.")],
 //!         tools: Vec::new(),
@@ -120,7 +120,7 @@
 //!         max_tokens: None,
 //!         web_search: None,
 //!     };
-//!     let mut stream = resolved.provider.stream(request);
+//!     let mut stream = resolved.provider().stream(request);
 //!     while let Some(event) = stream.next().await {
 //!         match event {
 //!             ProviderEvent::TextDelta(text) => print!("{text}"),
@@ -131,6 +131,7 @@
 //!             _ => {}
 //!         }
 //!     }
+//!     Ok(())
 //! }
 //! ```
 //!

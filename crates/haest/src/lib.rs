@@ -25,8 +25,6 @@
 //! directory:
 //!
 //! ```no_run
-//! use std::sync::Arc;
-//!
 //! use haest::core::error::BoxError;
 //! use haest::providers::{ProviderRegistry, RegistryOptions};
 //! use haest::tools::{BuiltinOptions, builtin_tools};
@@ -38,7 +36,7 @@
 //!     // The host decides where keys come from; here, this process's environment.
 //!     let keys = |name: &str| std::env::var(name).ok();
 //!     let models = ProviderRegistry::new(
-//!         Arc::new(keys),
+//!         keys,
 //!         Default::default(), // no providers.json entries
 //!         RegistryOptions::default(),
 //!     );

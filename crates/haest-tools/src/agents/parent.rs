@@ -96,7 +96,7 @@ pub trait SubagentParent: Inbox {
     /// use tokio_util::sync::CancellationToken;
     ///
     /// struct Parent {
-    ///     provider: Arc<ScriptedProvider>,
+    ///     provider: ScriptedProvider,
     ///     ended: Arc<Mutex<Vec<(String, Ending)>>>,
     /// }
     ///
@@ -195,7 +195,7 @@ pub trait SubagentParent: Inbox {
     /// };
     /// use tokio_util::sync::CancellationToken;
     ///
-    /// struct Parent(Arc<ScriptedProvider>);
+    /// struct Parent(ScriptedProvider);
     ///
     /// impl Inbox for Parent {
     ///     fn submit(&self, _text: String) {}

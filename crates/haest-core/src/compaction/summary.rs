@@ -82,7 +82,7 @@ pub(super) async fn summarize(
         .models()
         .resolve(agent.model_spec())
         .map_err(CompactionError::Model)?;
-    let (provider, model) = (resolved.provider.as_ref(), resolved.model);
+    let (provider, model) = (resolved.provider().as_ref(), resolved.model().to_string());
     let prefix = agent.request_prefix(&model).await;
     let mut messages = agent.sendable(agent.history(), &model);
     messages.push(Message::user(warm_instruction(kept)));

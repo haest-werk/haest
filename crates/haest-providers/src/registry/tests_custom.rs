@@ -23,8 +23,11 @@ async fn custom_providers_come_from_providers_json_by_dialect() {
     let fs = MemFs::with_files([("/cfg/providers.json", file.to_string())]);
     let custom = load_custom_providers(&fs, Path::new("/cfg")).await.unwrap();
     let reg = registry(keys(&[]), custom);
-    assert_eq!(reg.resolve("local:qwen").unwrap().provider.id(), "local");
-    assert_eq!(reg.resolve("proxy:claude").unwrap().provider.id(), "proxy");
+    assert_eq!(reg.resolve("local:qwen").unwrap().provider().id(), "local");
+    assert_eq!(
+        reg.resolve("proxy:claude").unwrap().provider().id(),
+        "proxy"
+    );
     assert!(reg.names().contains(&"local".to_string()));
 }
 
@@ -50,8 +53,8 @@ async fn a_custom_anthropic_entry_is_its_own_provider_and_its_thinking_replays_o
     )]);
     let reg = ProviderRegistry::new(keys(&[("ANTHROPIC_API_KEY", "k")]), custom, opts(&t));
     let gateway = reg.resolve("gateway:claude").unwrap();
-    assert_eq!(gateway.provider.id(), "gateway");
-    let (_, answer) = collect(gateway.provider.stream(request(&gateway.model))).await;
+    assert_eq!(gateway.provider().id(), "gateway");
+    let (_, answer) = collect(gateway.provider().stream(request(gateway.model()))).await;
     assert_eq!(answer.provider, "gateway");
 
     let history = vec![
@@ -61,7 +64,11 @@ async fn a_custom_anthropic_entry_is_its_own_provider_and_its_thinking_replays_o
     ];
     for spec in ["gateway:claude", "anthropic:claude"] {
         let r = reg.resolve(spec).unwrap();
-        collect(r.provider.stream(request_with(&r.model, history.clone()))).await;
+        collect(
+            r.provider()
+                .stream(request_with(r.model(), history.clone())),
+        )
+        .await;
     }
     let replays_thinking = |i: usize| {
         let body = t.requests()[i].json_body();
@@ -88,7 +95,7 @@ async fn a_custom_anthropic_provider_sends_its_configured_headers() {
     )]);
     let reg = ProviderRegistry::new(keys(&[]), custom, opts(&t));
     let r = reg.resolve("proxy:claude").unwrap();
-    collect(r.provider.stream(request(&r.model))).await;
+    collect(r.provider().stream(request(r.model()))).await;
     let sent = &t.requests()[0].headers;
     assert!(sent.contains(&("x-proxy-auth".to_string(), "tok".to_string())));
 }
@@ -105,7 +112,7 @@ async fn a_configured_header_replaces_the_anthropic_default_of_that_name() {
     )]);
     let reg = ProviderRegistry::new(keys(&[]), custom, opts(&t));
     let r = reg.resolve("proxy:claude").unwrap();
-    collect(r.provider.stream(request(&r.model))).await;
+    collect(r.provider().stream(request(r.model()))).await;
     let sent = &t.requests()[0].headers;
     let values = |name: &str| -> Vec<&str> {
         sent.iter()

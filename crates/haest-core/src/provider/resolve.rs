@@ -1,16 +1,50 @@
 //! Resolving a `provider:model` spec to the provider that serves it.
 
-use std::{fmt, sync::Arc};
+use std::fmt;
 
-use super::Provider;
+use super::ProviderRef;
 
 /// A spec resolved to the provider that serves it and the provider's model id.
 #[derive(Clone)]
 pub struct ResolvedModel {
+    provider: ProviderRef,
+    model: String,
+}
+
+impl ResolvedModel {
+    /// `model` on `provider`: the provider itself, or an `Arc` of one the
+    /// resolver keeps.
+    pub fn new(provider: impl Into<ProviderRef>, model: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            model: model.into(),
+        }
+    }
+
     /// The provider that serves the spec.
-    pub provider: Arc<dyn Provider>,
-    /// The id that provider knows the model by (what [`ProviderRequest::model`](super::ProviderRequest::model) gets).
-    pub model: String,
+    pub fn provider(&self) -> &ProviderRef {
+        &self.provider
+    }
+
+    /// The id that provider knows the model by (what
+    /// [`ProviderRequest::model`](super::ProviderRequest::model) gets).
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    /// The same model on `provider`.
+    #[must_use]
+    pub fn with_provider(mut self, provider: impl Into<ProviderRef>) -> Self {
+        self.provider = provider.into();
+        self
+    }
+
+    /// Another model id on the same provider.
+    #[must_use]
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
+        self
+    }
 }
 
 impl fmt::Debug for ResolvedModel {
@@ -79,9 +113,9 @@ pub enum ModelError {
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
-/// use haest_core::{ModelError, ModelResolver, Provider, ResolvedModel, provider::parse_model_spec};
+/// use haest_core::{
+///     ModelError, ModelResolver, Provider, ProviderRef, ResolvedModel, provider::parse_model_spec,
+/// };
 /// # use haest_core::{ProviderRequest, provider::ProviderStream};
 /// # struct Echo;
 /// # impl Provider for Echo {
@@ -89,20 +123,23 @@ pub enum ModelError {
 /// #     fn stream(&self, _: ProviderRequest) -> ProviderStream { unimplemented!() }
 /// # }
 ///
-/// let echo: Arc<dyn Provider> = Arc::new(Echo);
+/// # fn main() -> Result<(), ModelError> {
+/// let echo = ProviderRef::new(Echo);
 /// let resolver = move |spec: &str| match parse_model_spec(spec)? {
-///     ("echo", model) => Ok(ResolvedModel { provider: echo.clone(), model: model.into() }),
+///     ("echo", model) => Ok(ResolvedModel::new(echo.clone(), model)),
 ///     (other, _) => Err(ModelError::UnknownProvider {
 ///         provider: other.into(),
 ///         known: vec!["echo".into()],
 ///     }),
 /// };
 ///
-/// assert_eq!(resolver.resolve("echo:echo-1").unwrap().model, "echo-1");
+/// assert_eq!(resolver.resolve("echo:echo-1")?.model(), "echo-1");
 /// assert!(matches!(
 ///     resolver.resolve("acme:big"),
 ///     Err(ModelError::UnknownProvider { provider, .. }) if provider == "acme"
 /// ));
+/// # Ok(())
+/// # }
 /// ```
 pub trait ModelResolver: Send + Sync {
     /// The provider and model id for `spec`.

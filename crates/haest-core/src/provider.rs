@@ -256,6 +256,13 @@ pub trait Provider: Send + Sync {
     fn stream(&self, req: ProviderRequest) -> ProviderStream;
 }
 
+crate::plug_ref! {
+    /// A [`Provider`], shared: what a [`ResolvedModel`] holds. Built from the
+    /// provider itself, or from an `Arc` of one a resolver keeps.
+    pub struct ProviderRef(dyn Provider);
+    debug(provider, f) { f.debug_tuple("ProviderRef").field(&provider.id()).finish() }
+}
+
 mod adapter;
 mod resolve;
 #[cfg(test)]

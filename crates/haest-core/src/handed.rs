@@ -46,6 +46,12 @@ impl KeySource for HashMap<String, String> {
     }
 }
 
+crate::plug_ref! {
+    /// A [`KeySource`], shared: what `haest-providers`' registry asks. Built
+    /// from the source itself (a closure, a map), or from an `Arc` of one.
+    pub struct KeySourceRef(dyn KeySource);
+}
+
 /// The environment of every process the agent starts: a real shell, its
 /// background jobs, an MCP server. A child gets these variables and nothing
 /// else -- not the host's own environment, not its keys -- unless the host put

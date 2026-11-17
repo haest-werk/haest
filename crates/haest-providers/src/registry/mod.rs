@@ -27,8 +27,8 @@ use std::{
 };
 
 use haest_core::{
-    KeySource,
-    provider::{ModelError, ModelResolver, Provider, ResolvedModel, parse_model_spec},
+    KeySourceRef,
+    provider::{ModelError, ModelResolver, ProviderRef, ResolvedModel, parse_model_spec},
 };
 
 pub(crate) use builtin::paper_instruments_options;
@@ -103,46 +103,52 @@ impl Default for RegistryOptions {
 /// `:`; the model id is the rest, colons and slashes included. It fails with
 /// [`ModelError::BadSpec`] or [`ModelError::UnknownProvider`] for a spec it
 /// cannot place, [`ModelError::MissingKey`] when a built-in's key is missing
-/// from the [`KeySource`], and [`ModelError::Unavailable`] (the
+/// from the [`KeySource`](haest_core::KeySource), and [`ModelError::Unavailable`] (the
 /// [`EntryProblem`] its source) when the providers.json entry cannot be used.
 ///
 /// # Examples
 ///
 /// ```
-/// use std::{collections::HashMap, sync::Arc};
+/// use std::collections::HashMap;
 ///
-/// use haest_core::{ModelError, ModelResolver};
+/// use haest_core::{ModelError, ModelResolver, error::BoxError};
 /// use haest_providers::{CustomProviders, ProviderRegistry, RegistryOptions};
 ///
+/// # fn main() -> Result<(), BoxError> {
 /// let keys = HashMap::from([("ANTHROPIC_API_KEY".to_string(), "sk-ant-...".to_string())]);
 /// let custom: CustomProviders = serde_json::from_str(
 ///     r#"{"local": {"type": "openai", "baseURL": "http://localhost:1234/v1"}}"#,
-/// )
-/// .unwrap();
-/// let registry = ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions::default());
+/// )?;
+/// let registry = ProviderRegistry::new(keys, custom, RegistryOptions::default());
 ///
-/// let opus = registry.resolve("anthropic:claude-opus-5-5").unwrap();
-/// assert_eq!((opus.provider.id(), opus.model.as_str()), ("anthropic", "claude-opus-5-5"));
-/// assert_eq!(registry.resolve("local:qwen3-coder").unwrap().provider.id(), "local");
+/// let opus = registry.resolve("anthropic:claude-opus-5-5")?;
+/// assert_eq!((opus.provider().id(), opus.model()), ("anthropic", "claude-opus-5-5"));
+/// assert_eq!(registry.resolve("local:qwen3-coder")?.provider().id(), "local");
 ///
 /// // No OPENROUTER_API_KEY: the error names it.
 /// let err = registry.resolve("openrouter:z-ai/glm-5.3").unwrap_err();
 /// assert!(matches!(err, ModelError::MissingKey { key, .. } if key == "OPENROUTER_API_KEY"));
+/// # Ok(())
+/// # }
 /// ```
 pub struct ProviderRegistry {
-    keys: Arc<dyn KeySource>,
+    keys: KeySourceRef,
     custom: CustomProviders,
     opts: RegistryOptions,
-    cache: Mutex<HashMap<String, Arc<dyn Provider>>>,
+    cache: Mutex<HashMap<String, ProviderRef>>,
 }
 
 impl ProviderRegistry {
     /// The built-ins and `custom` (providers.json's entries; empty = none),
     /// their keys from `keys`. Nothing is built, and no key asked for, until
     /// a spec is resolved.
-    pub fn new(keys: Arc<dyn KeySource>, custom: CustomProviders, opts: RegistryOptions) -> Self {
+    pub fn new(
+        keys: impl Into<KeySourceRef>,
+        custom: CustomProviders,
+        opts: RegistryOptions,
+    ) -> Self {
         Self {
-            keys,
+            keys: keys.into(),
             custom,
             opts,
             cache: Mutex::default(),
@@ -164,21 +170,21 @@ impl ProviderRegistry {
             .collect()
     }
 
-    fn build(&self, name: &str) -> Result<Arc<dyn Provider>, ModelError> {
+    fn build(&self, name: &str) -> Result<ProviderRef, ModelError> {
         let (http, retry) = (self.opts.http.clone(), self.opts.retry.clone());
         let wait = self.opts.headers_timeout;
         Ok(match self.options(name)? {
-            Options::Anthropic(o) => Arc::new(
+            Options::Anthropic(o) => ProviderRef::new(
                 AnthropicProvider::new(o, http)
                     .with_retry(retry)
                     .with_headers_timeout(wait),
             ),
-            Options::Compat(o) => Arc::new(
+            Options::Compat(o) => ProviderRef::new(
                 CompatProvider::new(*o, http)
                     .with_retry(retry)
                     .with_headers_timeout(wait),
             ),
-            Options::Responses(o) => Arc::new(
+            Options::Responses(o) => ProviderRef::new(
                 ResponsesProvider::new(o, http)
                     .with_retry(retry)
                     .with_headers_timeout(wait),
@@ -237,9 +243,6 @@ impl ModelResolver for ProviderRegistry {
                 p
             }
         };
-        Ok(ResolvedModel {
-            provider,
-            model: model.to_string(),
-        })
+        Ok(ResolvedModel::new(provider, model))
     }
 }

@@ -178,12 +178,8 @@ impl Inbox for App {
 impl SubagentParent for App {
     fn deps(&self) -> SharedDeps {
         let provider = self.provider.clone();
-        let models = move |spec: &str| {
-            Ok::<_, ModelError>(ResolvedModel {
-                provider: provider.clone(),
-                model: spec.to_string(),
-            })
-        };
+        let models =
+            move |spec: &str| Ok::<_, ModelError>(ResolvedModel::new(provider.clone(), spec));
         SharedDeps::new(models, CWD, self.workspace.clone())
     }
     fn base_tools(&self) -> Tools {
