@@ -56,6 +56,8 @@ pub(crate) struct Driver<D> {
     rx: mpsc::UnboundedReceiver<Command<D>>,
     /// Every handle is gone: nothing more can arrive.
     orphaned: bool,
+    /// A close was asked: a host's job that has not started never will.
+    closing: bool,
     /// Inputs that wait for a turn of their own.
     queue: VecDeque<(Input, Vec<Waiter>)>,
     /// Requests that wait for the running turn to end.
@@ -95,6 +97,7 @@ impl<D: Driven> Driver<D> {
             hub,
             rx,
             orphaned: false,
+            closing: false,
             queue: VecDeque::new(),
             deferred: VecDeque::new(),
             leftover: None,
@@ -220,10 +223,13 @@ impl<D: Driven> Driver<D> {
                 let messages = self.driven.history();
                 let _ = tx.send(History { seq, messages });
             }
-            Command::With(job) => {
-                job(&mut self.driven).await;
+            // After a close was asked it is dropped unstarted, and its
+            // caller reads Closed: the close comes first.
+            Command::With(job) if !self.closing => {
+                self.job(job).await;
                 self.refresh();
             }
+            Command::With(_) => {}
             Command::Hold(tx) => {
                 self.holds += 1;
                 let _ = tx.send(());
@@ -234,6 +240,33 @@ impl<D: Driven> Driver<D> {
             Command::Close(tx) => return Flow::Stop(Some(tx)),
         }
         Flow::Go
+    }
+
+    /// A host's job. What is asked meanwhile waits for its end, in order,
+    /// but a close stops it: its future is dropped where it waits, and its
+    /// caller reads Closed. (A job whose caller gave up stops itself:
+    /// [`SessionHandle::with`](crate::SessionHandle::with).)
+    async fn job(&mut self, job: Job<D>) {
+        let mut run = job(&mut self.driven);
+        loop {
+            tokio::select! {
+                biased;
+                () = &mut run => return,
+                cmd = self.rx.recv(), if !self.orphaned => match cmd {
+                    Some(cmd) => {
+                        let close = matches!(cmd, Command::Close(_));
+                        self.deferred.push_back(cmd);
+                        if close {
+                            self.closing = true;
+                            return;
+                        }
+                    }
+                    // Every handle is gone, the job's caller with them: it
+                    // has stopped itself.
+                    None => self.orphaned = true,
+                },
+            }
+        }
     }
 
     /// A change between turns; nothing changes when it fails.

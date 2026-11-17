@@ -103,6 +103,7 @@ impl<D: Driven> Driver<D> {
                         }
                         Some(cmd @ Command::Close(_)) => {
                             control.abort();
+                            self.closing = true;
                             self.deferred.push_back(cmd);
                         }
                         Some(cmd) => self.deferred.push_back(cmd),

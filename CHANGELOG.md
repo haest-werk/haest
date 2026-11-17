@@ -1423,6 +1423,9 @@ Hosts write less (round two of the review, and what porting brain onto
   `#[non_exhaustive]` (breaking): a mod command may come to ask the host
   for more, a judge to refuse outright, a human to allow for the session
   only. A `match` adds a `_` arm; building one is unchanged.
+- `Mods::command` says what a command whose promise never settles does: it
+  never returns (`ModCaps` stops code that runs, not code that waits), and
+  a host bounds it by dropping the call, which is cancel-safe.
 
 ### haest-settings
 
@@ -1791,6 +1794,13 @@ against it; the wire JSON is unchanged):
   and the conversation was not saved. The stream now ends however the
   driver ends, a panic in `Driven::close` itself included, and
   `Hub::close` never panics.
+- `SessionHandle::with` is cancel-safe: a job whose caller gave up on it
+  (dropped the call: Ctrl-C, a timeout) is withdrawn. One that has not
+  started never runs; one that runs is dropped where it waits. It ran to
+  its end regardless, so a job that never ended (a mod's slash command
+  whose promise never settles) held the session for good: no turn ran
+  again and `close` never returned. `close` now stops a job that has not
+  ended the same way, and the job's caller reads `Closed`.
 
 ### haest-transport (new)
 

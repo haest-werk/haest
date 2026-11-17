@@ -100,6 +100,21 @@ async fn commands_system_prompt_and_notices_from_a_mod_take_effect() {
     assert_eq!(mods.system_append().await, "House rule: sandbox");
 }
 
+/// A command whose promise never settles never returns; a host that gives
+/// up on it (drops the call) finds the mod serving the next one.
+#[tokio::test]
+async fn a_command_given_up_on_leaves_the_mod_serving() {
+    let source = r#"export default function (haest) {
+      haest.command('wait', () => new Promise(() => {}))
+      haest.command('hello', args => 'hello ' + args)
+    }"#;
+    let mods = with_mod(TestUi::new(), "wait.js", source).await;
+    let waited = tokio::time::timeout(Duration::from_millis(200), mods.command("wait", "")).await;
+    assert!(waited.is_err(), "it never settles: {waited:?}");
+    let next = tokio::time::timeout(Duration::from_secs(5), mods.command("hello", "bob")).await;
+    assert_eq!(next.ok(), Some(CommandOutcome::Prompt("hello bob".into())));
+}
+
 #[tokio::test]
 async fn a_throwing_mod_is_reported_and_the_host_carries_on() {
     let source = r#"export default function (haest) {

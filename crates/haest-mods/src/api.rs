@@ -276,6 +276,9 @@ pub trait Mod: Send + Sync {
     /// Run one of [`Mod::commands`]: Some text goes to the model; None = the mod
     /// handled the line itself. `name` comes without its `/`; `args` is the
     /// rest of the line.
+    ///
+    /// A host that gives up on a command drops the call: what it leaves at
+    /// an await must be safe to leave there.
     async fn command(
         &self,
         _name: &str,

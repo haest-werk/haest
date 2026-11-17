@@ -1,7 +1,14 @@
 mod support;
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
+use futures::FutureExt as _;
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Effort, LoopEvent, Message, ModelError, ShutWorkspace,
     StopReason, ToolRef, Tools,
@@ -9,7 +16,7 @@ use haest_core::{
 };
 use haest_wire::{Level, Outbound, Path, State};
 use serde_json::json;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, oneshot};
 
 use self::support::*;
 use crate::{Body, Control, Hub, HubOptions, Input, SessionError, start};
@@ -506,6 +513,150 @@ async fn with_runs_between_turns_and_hands_back_what_it_gives() {
     session.close().await;
 }
 
+/// A job that waits for good, as a mod's slash command whose promise never
+/// settles does; `started` is told once it runs.
+fn stuck_job<D>(
+    started: oneshot::Sender<()>,
+) -> impl for<'a> FnOnce(&'a mut D) -> crate::BoxFuture<'a, ()> + Send + 'static {
+    move |_| {
+        Box::pin(async move {
+            let _ = started.send(());
+            std::future::pending::<()>().await;
+        })
+    }
+}
+
+/// A job ran on the driver to its end whether or not anyone still waited
+/// for it: one that never ended held the session for good after its caller
+/// gave up on it (Ctrl-C, a timeout), and no turn ran again.
+#[tokio::test]
+async fn a_job_whose_caller_gave_up_stops_and_the_next_turn_runs() {
+    let model = answers(&["one"]);
+    let session = start(agent(&model, Tools::new()), hub());
+    let (started, running) = oneshot::channel();
+    tokio::select! {
+        job = session.with(stuck_job(started)) => panic!("the job never ends: {job:?}"),
+        // The host gives up once it runs.
+        _ = running => {}
+    }
+    let turn = tokio::time::timeout(Duration::from_secs(5), session.turn(Input::human("a"))).await;
+    assert!(matches!(turn, Ok(Ok(_))), "the next turn runs: {turn:?}");
+    session.close().await;
+}
+
+/// The same before the job started (a turn ran): it never starts.
+#[tokio::test]
+async fn a_job_whose_caller_gave_up_before_it_started_never_runs() {
+    let go = Arc::new(Notify::new());
+    let model = waits_then(&["done"]);
+    let session = start(
+        agent(&model, Tools::from_iter([ToolRef::new(Wait(go.clone()))])),
+        hub(),
+    );
+    let turn = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::human("wait")).await }
+    });
+    eventually(|| model.requests().len() == 1).await;
+    let ran = Arc::new(AtomicBool::new(false));
+    let job = session.with({
+        let ran = ran.clone();
+        move |_| Box::pin(async move { ran.store(true, Ordering::SeqCst) })
+    });
+    assert!(job.now_or_never().is_none(), "sent, then given up on");
+    go.notify_one();
+    let _ = turn.await.unwrap().unwrap();
+
+    // Asked after the job, so answered after the driver took it.
+    let _ = session.history().await.unwrap();
+    assert!(!ran.load(Ordering::SeqCst), "nobody waits for it");
+    session.close().await;
+}
+
+/// `close` waited for a job that never ended, so it never returned and the
+/// conversation was never closed.
+#[tokio::test]
+async fn close_stops_a_job_that_never_ends() {
+    let model = answers(&[]);
+    let recorded = Recorded::new(agent(&model, Tools::new()), 0);
+    let log = recorded.log.clone();
+    let session = start(recorded, hub());
+    let (started, running) = oneshot::channel();
+    let job = tokio::spawn({
+        let s = session.clone();
+        async move { s.with(stuck_job(started)).await }
+    });
+    running.await.unwrap();
+
+    tokio::time::timeout(Duration::from_secs(5), session.close())
+        .await
+        .expect("close returns");
+    assert_eq!(log.lock().unwrap().last(), Some(&Asked::Close));
+    assert!(matches!(job.await.unwrap(), Err(SessionError::Closed)));
+}
+
+/// A job that waits behind the running turn when a close comes never
+/// starts: the close comes first.
+#[tokio::test]
+async fn close_during_a_turn_drops_the_job_that_waits_behind_it() {
+    let go = Arc::new(Notify::new());
+    let model = waits_then(&["never sent"]);
+    let session = start(
+        agent(&model, Tools::from_iter([ToolRef::new(Wait(go))])),
+        hub(),
+    );
+    let turn = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::human("wait")).await }
+    });
+    eventually(|| model.requests().len() == 1).await;
+    let ran = Arc::new(AtomicBool::new(false));
+    let mut job = Box::pin(session.with({
+        let ran = ran.clone();
+        move |_| {
+            Box::pin(async move {
+                ran.store(true, Ordering::SeqCst);
+                std::future::pending::<()>().await;
+            })
+        }
+    }));
+    assert!((&mut job).now_or_never().is_none(), "sent");
+    // Asked after the job and answered during the turn: the driver holds
+    // the job until the turn ends.
+    assert_eq!(session.snapshot().await.unwrap().state, State::Running);
+
+    tokio::time::timeout(Duration::from_secs(5), session.close())
+        .await
+        .expect("close returns");
+    assert!(!ran.load(Ordering::SeqCst), "the job never started");
+    assert!(matches!(job.await, Err(SessionError::Closed)));
+    assert!(turn.await.unwrap().is_ok());
+}
+
+/// What is asked while a job runs waits for its end, in order.
+#[tokio::test]
+async fn input_sent_while_a_job_runs_waits_for_it() {
+    let model = answers(&["after the job"]);
+    let session = start(agent(&model, Tools::new()), hub());
+    let (started, running) = oneshot::channel();
+    let (release, gate) = oneshot::channel::<()>();
+    let mut job = Box::pin(session.with(move |a| {
+        Box::pin(async move {
+            let _ = started.send(());
+            let _ = gate.await;
+            a.history().len()
+        })
+    }));
+    assert!((&mut job).now_or_never().is_none(), "sent");
+    running.await.unwrap();
+    let turn = session.send_input(Input::human("a")).unwrap();
+    let _ = release.send(());
+
+    assert_eq!(job.await.unwrap(), 0, "the turn waited for the job");
+    assert_eq!(turn.await.unwrap().stop_reason, StopReason::EndTurn);
+    session.close().await;
+}
+
 #[tokio::test]
 async fn input_sent_under_a_hold_waits_and_runs_as_a_turn_of_its_own() {
     let model = answers(&["one", "two"]);
@@ -531,7 +682,6 @@ async fn input_sent_under_a_hold_waits_and_runs_as_a_turn_of_its_own() {
 /// A host that gives up on `hold()` before it resolves: a `select!` with
 /// Ctrl-C, a timeout, an aborted task.
 fn give_up_on_a_hold(session: &crate::SessionHandle<impl crate::Driven>) {
-    use futures::FutureExt as _;
     assert!(
         session.hold().now_or_never().is_none(),
         "the hold was not granted on its first poll"

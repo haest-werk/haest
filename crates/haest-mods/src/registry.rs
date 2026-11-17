@@ -281,6 +281,12 @@ impl Mods {
     /// When two mods answer the same name, the one loaded later runs. A host
     /// sends [`CommandOutcome::Prompt`] to the model as the human's message.
     ///
+    /// A command takes as long as its mod does: a mod file's command whose
+    /// promise never settles never returns ([`ModCaps`](crate::ModCaps)
+    /// stops code that runs too long, not code that waits). Cancel-safe: a
+    /// host bounds it by dropping the call (a timeout, Ctrl-C), which stops
+    /// the wait and leaves the mod's promise to settle on its own.
+    ///
     /// # Examples
     ///
     /// ```

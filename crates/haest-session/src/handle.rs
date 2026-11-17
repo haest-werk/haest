@@ -212,6 +212,10 @@ impl<D: Driven> SessionHandle<D> {
     /// End the conversation: the running turn is stopped, then everything it
     /// started is stopped and its session saved. Returns once that is done
     /// (at once when it has already ended).
+    ///
+    /// A [`with`](Self::with) job that has not ended is stopped first: the
+    /// running one where it waits, and one waiting for its turn never
+    /// starts. Their callers read [`SessionError::Closed`].
     pub async fn close(&self) {
         let _ = self.ask(Command::Close).await;
     }
@@ -240,18 +244,42 @@ impl<D: Driven> SessionHandle<D> {
     /// (`AsyncFnOnce`) cannot promise that on stable Rust. A panic in it ends
     /// the session ([`start`] says how).
     ///
+    /// No turn starts and no other request is served while `f` runs, so a
+    /// host bounds a job that may wait for good (a mod's slash command) by
+    /// giving up on it. Cancel-safe: dropped before it resolves (raced
+    /// against Ctrl-C or a timeout), the job is withdrawn. One that has not
+    /// started never runs; one that runs is stopped where it waits (its
+    /// future is dropped), and the session goes on. [`close`](Self::close)
+    /// stops it the same way.
+    ///
     /// # Errors
     ///
-    /// [`SessionError::Closed`] once the session ended.
+    /// [`SessionError::Closed`] once the session ended, or when a close
+    /// stopped the job.
     pub async fn with<R, F>(&self, f: F) -> Result<R, SessionError>
     where
         R: Send + 'static,
         F: for<'a> FnOnce(&'a mut D) -> BoxFuture<'a, R> + Send + 'static,
     {
-        let (tx, rx) = oneshot::channel();
+        let (mut tx, rx) = oneshot::channel();
         let job: Job<D> = job(move |driven| {
             Box::pin(async move {
-                let _ = tx.send(f(driven).await);
+                if tx.is_closed() {
+                    // Its caller gave up before it started.
+                    return;
+                }
+                let done = {
+                    let run = f(driven);
+                    tokio::select! {
+                        biased;
+                        done = run => Some(done),
+                        // Its caller gave up: `f`'s future is dropped here.
+                        () = tx.closed() => None,
+                    }
+                };
+                if let Some(done) = done {
+                    let _ = tx.send(done);
+                }
             })
         });
         self.send(Command::With(job))?;
