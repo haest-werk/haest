@@ -118,7 +118,7 @@ pub async fn apply(rt: &Runtime) {
         return rt.hooks.info(REAL_FS);
     };
     let report = set.apply().await;
-    match apply_message(&report, &rt.hooks.settings.cwd) {
+    match apply_message(&report, &rt.hooks.settings().cwd) {
         (text, true) => rt.hooks.warn(&text),
         (text, false) => rt.hooks.info(&text),
     }

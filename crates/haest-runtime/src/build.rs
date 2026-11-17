@@ -3,20 +3,17 @@
 //! included), mods, subagents, the inbox and the session file -- resumed or
 //! new -- and the agent over all of it ([`build`]).
 
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::{path::Path, sync::Arc};
 
 use crate::{
     BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui,
     haest::{
-        Agent, AgentDeps, AgentOptions, ChildEnv, SharedDeps, Workspace,
+        Agent, AgentDeps, AgentOptions, ChildEnv, SharedDeps, ToolSourceRef, WorkspaceRef,
         core::deferred_tools::ToolDeferral,
-        core::fs::Fs,
+        core::fs::FsRef,
         core::ledger::Ledger,
         core::session::SessionRecord,
-        core::skills::{Skill, SkillScanRoots, skills_in},
+        core::skills::{SkillScanRoots, Skills, skills_in},
         core::task_board::TaskBoard,
         core::threshold::Thresholds,
         mods::{ApprovalGate, ModSystemPrompt, Prompter},
@@ -37,49 +34,44 @@ use crate::{
 /// fixed parts.
 struct Found {
     skill_roots: SkillScanRoots,
-    skills: Arc<Mutex<Vec<Skill>>>,
-    workspace: Arc<dyn Workspace>,
+    skills: Skills,
+    workspace: WorkspaceRef,
     prompt: Arc<RuntimePrompt>,
 }
 
 async fn find(
-    hooks: &Arc<RuntimeHooks>,
+    hooks: &RuntimeHooks,
     world: &World,
     passed_env: &ChildEnv,
-    fs: &Arc<dyn Fs>,
+    fs: &FsRef,
     spill: &Path,
 ) -> Result<Found, WorkspaceError> {
-    let skill_roots = SkillScanRoots::find(fs.as_ref(), &skill_options(&hooks.settings)).await;
-    let skills = Arc::new(Mutex::new(skills_in(fs.as_ref(), &skill_roots).await));
+    let s = hooks.settings();
+    let skill_roots = SkillScanRoots::find(fs.as_ref(), &skill_options(s)).await;
+    // Skill bodies are read from the host's Fs: a user skill lives outside
+    // any sandbox mount.
+    let skills = Skills::new(fs.clone()).with_skills(skills_in(fs.as_ref(), &skill_roots).await);
     let skill_dirs = skill_roots.dirs();
     let remedies = hooks.remedies();
-    let workspace = workspace_for(
-        &hooks.settings,
-        world,
-        passed_env,
-        &skill_dirs,
-        spill,
-        remedies,
-    )
-    .await?;
-    let prompt = Arc::new(RuntimePrompt::new(hooks, fs, &skills, workspace.as_ref()).await);
+    let workspace = workspace_for(s, world, passed_env, &skill_dirs, spill, remedies).await?;
+    let prompt = RuntimePrompt::new(hooks, fs, &skills, workspace.as_ref()).await;
     Ok(Found {
         skill_roots,
         skills,
         workspace,
-        prompt,
+        prompt: Arc::new(prompt),
     })
 }
 
 /// The task list, saved to the session file on every change.
-fn task_board(hooks: &Arc<RuntimeHooks>) -> Arc<TaskBoard> {
+fn task_board(hooks: &RuntimeHooks) -> TaskBoard {
     let hooks = hooks.clone();
-    Arc::new(TaskBoard::new(move |tasks| {
+    TaskBoard::new(move |tasks| {
         hooks.append(SessionRecord::Tasks {
             t: now_ms(),
             tasks: tasks.to_vec(),
         })
-    }))
+    })
 }
 
 /// Build the whole conversation from what the host hands in, behind `ui`;
@@ -139,7 +131,7 @@ where
         routing,
         http,
     } = inputs;
-    let fs = world.fs();
+    let fs: FsRef = world.fs().into();
     let session = open_session(&fs, &settings, &opts.resume, ui.clone()).await?;
     // The model the conversation starts on is one it can use (its provider
     // known, its key there), or the build fails with nothing written: a run
@@ -153,12 +145,8 @@ where
         .with_options(reg_opts);
     registry.resolve(&model)?;
     let spill = settings.spill_dir(session.store.session_id());
-    let hooks = Arc::new(RuntimeHooks::new(
-        settings,
-        ui.clone(),
-        session.store.clone(),
-    ));
-    let s = &hooks.settings;
+    let hooks = RuntimeHooks::new(settings, ui.clone(), session.store);
+    let s = hooks.settings();
 
     // Whatever can fail runs before anything starts, so a failed build has
     // started nothing and left no file: the model is checked (above), the
@@ -166,7 +154,7 @@ where
     // together; from there on nothing fails.
     let found = find(&hooks, &world, &passed_env, &fs, &spill).await?;
     if session.saved.is_none() {
-        create(&session.store, &s.cwd).await?;
+        create(&hooks.store(), &s.cwd).await?;
     }
     let gate = ApprovalGate::new(prompter);
     let (mcp, mods) = tokio::join!(
@@ -188,7 +176,6 @@ where
         &s.tools,
         board.clone(),
         found.skills.clone(),
-        fs.clone(),
         jobs.clone(),
         image,
     );
@@ -222,17 +209,18 @@ where
     }
     .hub();
     let main_hub = s.agents.then(|| subagents.clone());
-    let tools = Arc::new(DeferredTools::new(
+    let deferred = DeferredTools::new(
         MainTools::new(wrapped, main_hub),
         ToolDeferral::new(s.deferred_tools),
-    ));
-    let deferral = tools.deferral().clone();
+    );
+    let deferral = deferred.deferral().clone();
+    let tools = ToolSourceRef::new(deferred);
     let main_prompt = AgentPrompt {
         prompt: found.prompt,
         model_spec: None,
         tools: tools.clone(),
     };
-    let system_prompt = ModSystemPrompt::new(Arc::new(main_prompt), mods.clone());
+    let system_prompt = ModSystemPrompt::new(main_prompt, mods.clone());
     let deps = AgentDeps::from_shared(shared, tools, system_prompt);
 
     let mut agent_opts = AgentOptions::new(model);

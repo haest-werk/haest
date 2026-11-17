@@ -42,11 +42,11 @@ impl Ui for Recorded {
 }
 
 /// A host on these settings; its session file is in memory. Needs a tokio runtime.
-pub fn hooks(settings: Settings) -> (Arc<RuntimeHooks>, Arc<Recorded>) {
+pub fn hooks(settings: Settings) -> (RuntimeHooks, Arc<Recorded>) {
     let ui = Arc::new(Recorded::default());
-    let store = JsonlSessionFile::new(Arc::new(MemFs::new()), Path::new("/d"), "t").unwrap();
-    let hooks = RuntimeHooks::new(settings, ui.clone(), Arc::new(store));
-    (Arc::new(hooks), ui)
+    let store = JsonlSessionFile::new(MemFs::new(), Path::new("/d"), "t").unwrap();
+    let hooks = RuntimeHooks::new(settings, ui.clone(), store);
+    (hooks, ui)
 }
 
 /// Says no to every ask.

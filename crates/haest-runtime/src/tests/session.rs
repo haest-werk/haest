@@ -144,7 +144,7 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
         .unwrap();
     assert_eq!(rt.subagents.running().len(), 1);
     // A background job.
-    let jobs = Arc::new(JobHub::new(NoInbox));
+    let jobs = JobHub::new(NoInbox);
     let ws = RealWorkspace::new(std::env::vars().collect());
     jobs.start("sleep 30", "s", &ToolContext::new(std::env::temp_dir(), ws))
         .unwrap();

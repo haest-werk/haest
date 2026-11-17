@@ -12,13 +12,13 @@ use haest_settings::Settings;
 use crate::{
     RuntimeHooks,
     haest::{
-        ChildEnv, ShutWorkspace, Workspace, WorkspaceMode,
+        ChildEnv, ShutWorkspace, WorkspaceMode, WorkspaceRef,
         code::sandbox_commands,
         core::error::report,
         core::fs::{Fs, ensure_dir},
         core::remedy::Remedies,
         mcp::{McpHub, McpServerConfig, McpTransport},
-        tools::{Inbox, JobHub},
+        tools::{InboxRef, JobHub},
         workspace::{RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace},
     },
 };
@@ -89,9 +89,9 @@ const KILL_WAIT: Duration = Duration::from_secs(3);
 /// `bash` tool on, in the real workspace (the sandbox has no real processes to
 /// leave running). As the TS haest's `host/jobs.ts`. A job that exits on its
 /// own tells main through `inbox`.
-pub(crate) fn jobs_for(s: &Settings, inbox: Arc<dyn Inbox>) -> Option<Arc<JobHub>> {
+pub(crate) fn jobs_for(s: &Settings, inbox: impl Into<InboxRef>) -> Option<JobHub> {
     let real_bash = s.workspace == WorkspaceMode::Real && s.tools.bash;
-    real_bash.then(|| Arc::new(JobHub::new(inbox)))
+    real_bash.then(|| JobHub::new(inbox))
 }
 
 /// Kill every running job and wait until each one's process group is gone
@@ -168,13 +168,13 @@ pub(crate) async fn workspace_for(
     skill_dirs: &[PathBuf],
     spill: &Path,
     remedies: Remedies,
-) -> Result<Arc<dyn Workspace>, WorkspaceError> {
+) -> Result<WorkspaceRef, WorkspaceError> {
     let fs = world.fs();
     let ws = match (s.workspace, world.child_env(passed_env)) {
-        (WorkspaceMode::Shut, _) => return Ok(Arc::new(ShutWorkspace)),
+        (WorkspaceMode::Shut, _) => return Ok(ShutWorkspace.into()),
         (WorkspaceMode::Real, Some(env)) => {
             private_spill_dir(fs.as_ref(), spill).await?;
-            return Ok(Arc::new(RealWorkspace::new(env)));
+            return Ok(RealWorkspace::new(env).into());
         }
         (WorkspaceMode::Real, None) => return Err(WorkspaceError::RealNeedsDisk),
         (WorkspaceMode::Sandbox, None) => SandboxWorkspace::over(fs),
@@ -198,7 +198,7 @@ pub(crate) async fn workspace_for(
         ws.with_env(passed_env.clone()).with_remedies(remedies),
         SandboxWorkspace::with_command,
     );
-    Ok(Arc::new(ws))
+    Ok(ws.into())
 }
 
 /// The MCP servers the host listed, started. A stdio server is a real
@@ -214,7 +214,7 @@ pub(crate) async fn connect_mcp(
     world: &World,
     passed_env: &ChildEnv,
     servers: Vec<McpServerConfig>,
-) -> Arc<McpHub> {
+) -> McpHub {
     let Some(child_env) = world.child_env(passed_env) else {
         let (stdio, http): (Vec<_>, Vec<_>) = servers
             .into_iter()
@@ -230,12 +230,12 @@ pub(crate) async fn connect_mcp(
     start(hooks, McpHub::new().with_env(child_env), servers).await
 }
 
-async fn start(hooks: &RuntimeHooks, hub: McpHub, servers: Vec<McpServerConfig>) -> Arc<McpHub> {
+async fn start(hooks: &RuntimeHooks, hub: McpHub, servers: Vec<McpServerConfig>) -> McpHub {
     if servers.is_empty() {
-        return Arc::new(hub);
+        return hub;
     }
-    let hub = if hooks.settings.debug {
-        let ui = hooks.ui.clone();
+    let hub = if hooks.settings().debug {
+        let ui = hooks.ui().clone();
         hub.with_log(move |m| ui.debug(m))
     } else {
         hub
@@ -245,7 +245,7 @@ async fn start(hooks: &RuntimeHooks, hub: McpHub, servers: Vec<McpServerConfig>)
         let why = report(f.error());
         hooks.warn(&format!("MCP server {} did not start: {why}", f.name()));
     }
-    Arc::new(hub)
+    hub
 }
 
 #[cfg(test)]

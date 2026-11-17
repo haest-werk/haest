@@ -1,9 +1,6 @@
 //! The system prompt: [`RuntimePrompt`] and [`AgentPrompt`].
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use haest_settings::Settings;
@@ -11,15 +8,14 @@ use haest_settings::Settings;
 use crate::{
     RuntimeHooks,
     haest::{
-        SystemPrompt, Workspace,
+        SystemPrompt, ToolSourceRef, Workspace,
         core::context::{
             InstructionOptions, PromptInputs, build_system_prompt, current_git_branch,
             find_instruction_files,
         },
-        core::fs::Fs,
+        core::fs::FsRef,
         core::session::iso_utc,
-        core::skills::{Skill, SkillOptions},
-        core::tool::ToolSource,
+        core::skills::{SkillOptions, Skills},
         now_ms,
         tools::{tool_guide, touches_workspace},
     },
@@ -67,12 +63,12 @@ fn claude_dir(s: &Settings) -> PathBuf {
 /// Wrap it in an [`AgentPrompt`] to give an agent its prompt.
 pub(crate) struct RuntimePrompt {
     /// Where the instruction files are read from.
-    fs: Arc<dyn Fs>,
+    fs: FsRef,
     /// Its settings say which instruction files to read (`context`) and
     /// whether the skill list goes in (`skill_catalog`).
-    hooks: Arc<RuntimeHooks>,
+    hooks: RuntimeHooks,
     /// The skills found; listed in the prompt with `skill_catalog` on.
-    skills: Arc<Mutex<Vec<Skill>>>,
+    skills: Skills,
     /// Everything but the instructions, skills, tools and model, fixed for the process.
     base: PromptInputs,
 }
@@ -84,12 +80,12 @@ impl RuntimePrompt {
     /// dir, the platform, today's date, the git branch, the workspace's own
     /// note, `append_system_prompt`.
     pub(crate) async fn new(
-        hooks: &Arc<RuntimeHooks>,
-        fs: &Arc<dyn Fs>,
-        skills: &Arc<Mutex<Vec<Skill>>>,
+        hooks: &RuntimeHooks,
+        fs: &FsRef,
+        skills: &Skills,
         workspace: &dyn Workspace,
     ) -> Self {
-        let s = &hooks.settings;
+        let s = hooks.settings();
         let note = workspace.prompt_note();
         let base = PromptInputs {
             identity: s.system_prompt.clone(),
@@ -114,7 +110,7 @@ impl RuntimePrompt {
     /// workspace's note when a tool can touch it, the instruction files read
     /// again now, and the skill list with `skill_catalog` on.
     pub(crate) async fn build(&self, model: String, tool_names: Vec<String>) -> String {
-        let s = &self.hooks.settings;
+        let s = self.hooks.settings();
         let mut p = self.base.clone();
         p.model_spec = model;
         p.tool_guide = tool_guide(&tool_names);
@@ -124,7 +120,7 @@ impl RuntimePrompt {
         p.tool_names = tool_names;
         p.instructions = find_instruction_files(self.fs.as_ref(), &instruction_options(s)).await;
         if s.skill_catalog {
-            p.skills = self.skills.lock().unwrap().clone();
+            p.skills = self.skills.list();
         }
         build_system_prompt(&p)
     }
@@ -141,7 +137,7 @@ pub(crate) struct AgentPrompt {
     /// ([`RuntimeHooks::model_spec`]), as for main.
     pub(crate) model_spec: Option<String>,
     /// The agent's tools: the prompt names the ones its next call offers.
-    pub(crate) tools: Arc<dyn ToolSource>,
+    pub(crate) tools: ToolSourceRef,
 }
 
 #[async_trait]
@@ -181,9 +177,9 @@ mod tests {
         const NOTE: &str = "SANDBOX LIMITS";
         let (hooks, _) = hooks(Settings::bare(PathBuf::from("/w"), PathBuf::from("/h")));
         let prompt = RuntimePrompt {
-            fs: Arc::new(MemFs::new()),
+            fs: FsRef::new(MemFs::new()),
             hooks,
-            skills: Arc::default(),
+            skills: Skills::new(MemFs::new()),
             base: PromptInputs {
                 workspace_note: Some(NOTE.into()),
                 ..Default::default()

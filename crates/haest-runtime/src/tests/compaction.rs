@@ -22,7 +22,7 @@ use haest_core::Tools;
 
 /// A conversation on `host` whose last request filled the window, so the
 /// next model call compacts first; its ledger has no cap.
-fn full(hooks: &Arc<RuntimeHooks>, provider: impl Into<ProviderRef>) -> (Agent, Ledger) {
+fn full(hooks: &RuntimeHooks, provider: impl Into<ProviderRef>) -> (Agent, Ledger) {
     let provider = provider.into();
     let ledger = Ledger::new(ConversationCaps::default(), hooks.clone());
     let resolve = move |_: &str| -> Result<ResolvedModel, ModelError> {

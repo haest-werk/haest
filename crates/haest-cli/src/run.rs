@@ -56,9 +56,9 @@ async fn turn_ended(control: &AgentControl) {
 /// before it starts.
 pub struct Brakes {
     control: AgentControl,
-    hooks: Arc<RuntimeHooks>,
-    jobs: Option<Arc<JobHub>>,
-    subagents: Arc<SubagentHub>,
+    hooks: RuntimeHooks,
+    jobs: Option<JobHub>,
+    subagents: SubagentHub,
 }
 
 impl Brakes {
@@ -102,7 +102,7 @@ pub fn watch_interrupts(brakes: Arc<Brakes>, mut stream: Subscription) -> JoinHa
                     brakes.control.abort();
                     if asked {
                         let ended = turn_ended(&brakes.control);
-                        wind_down(ended, &brakes.hooks, brakes.jobs.as_deref(), QUIT_GRACE).await;
+                        wind_down(ended, &brakes.hooks, brakes.jobs.as_ref(), QUIT_GRACE).await;
                         std::process::exit(130);
                     }
                     asked = true;
@@ -157,28 +157,40 @@ pub fn exit_code(end: &TurnOutcome) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::Path, sync::Arc, time::Instant};
+    use std::{
+        path::{Path, PathBuf},
+        sync::Arc,
+        time::Instant,
+    };
 
     use haest::{
         Message, ToolResultMessage,
         core::fs::{Fs, MemFs},
-        core::session::{JsonlSessionFile, SessionRecord},
+        core::session::SessionRecord,
+        runtime::{BuildOptions, RuntimeInputs, World, build},
+        session::{Hub, HubOptions, SessionPrompter},
         settings::Settings,
     };
 
     use super::*;
     use crate::term::TermUi;
 
-    /// A host whose session file `/data/sessions/s.jsonl` is in `fs`.
-    async fn hooks_over(fs: &Arc<MemFs>) -> Arc<RuntimeHooks> {
-        let store = JsonlSessionFile::new(fs.clone(), Path::new("/data"), "s").unwrap();
-        store.create("s", "/w", 0).await.unwrap();
+    /// A conversation whose session file is in `fs`, under `/data/sessions`:
+    /// its hooks, and that file.
+    async fn hooks_over(fs: &Arc<MemFs>) -> (RuntimeHooks, PathBuf) {
+        let settings = Settings {
+            data_dir: "/data".into(),
+            ..Settings::bare("/w", "/h")
+        };
+        let mut inputs = RuntimeInputs::new(settings, World::Fs(fs.clone()));
+        inputs.keys = Arc::new(|k: &str| (k == "OPENROUTER_API_KEY").then(|| "k".to_string()));
         let ui = Arc::new(TermUi::new(false));
-        Arc::new(RuntimeHooks::new(
-            Settings::bare("/w", "/h"),
-            ui,
-            Arc::new(store),
-        ))
+        let asks = SessionPrompter::new(Hub::new("t", HubOptions::default()));
+        let rt = build(inputs, ui, asks, BuildOptions::default())
+            .await
+            .unwrap();
+        let file = Path::new("/data/sessions").join(format!("{}.jsonl", rt.session_id()));
+        (rt.hooks.clone(), file)
     }
 
     /// A tool call's answer, as the session file records it.
@@ -205,7 +217,7 @@ mod tests {
         const QUEUED: &str = "answer 1";
         const LATE: &str = "answer 2";
         let fs = Arc::new(MemFs::new());
-        let hooks = hooks_over(&fs).await;
+        let (hooks, file) = hooks_over(&fs).await;
         hooks.append(answer(QUEUED));
         let turn = hooks.clone();
         let ends = async move {
@@ -213,10 +225,7 @@ mod tests {
             turn.append(answer(LATE));
         };
         wind_down(ends, &hooks, None, Duration::from_secs(5)).await;
-        let file = fs
-            .read_to_string(Path::new("/data/sessions/s.jsonl"))
-            .await
-            .unwrap();
+        let file = fs.read_to_string(&file).await.unwrap();
         assert!(file.contains(QUEUED) && file.contains(LATE), "{file}");
 
         let started = Instant::now();

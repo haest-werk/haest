@@ -1,7 +1,7 @@
 //! The inbox: [`inbox`] makes its two ends, the [`InboxSender`] the jobs and
 //! the subagents submit to and the [`InboxQueue`] the turns take from.
 
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, fmt};
 
 use crate::{
     RuntimeHooks,
@@ -16,10 +16,11 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 ///
 /// Its [`Inbox::submit`] queues the text for main and shows the human its
 /// first line, cut short ([`Ui::arrival`](crate::Ui::arrival)). Made by
-/// [`inbox`].
+/// [`inbox`]; clones send to the same queue.
+#[derive(Clone)]
 pub(crate) struct InboxSender {
     tx: UnboundedSender<String>,
-    hooks: Arc<RuntimeHooks>,
+    hooks: RuntimeHooks,
 }
 
 /// What the human sees of an arrival: its first line, cut short.
@@ -34,7 +35,7 @@ fn headline(text: &str) -> String {
 
 impl Inbox for InboxSender {
     fn submit(&self, text: String) {
-        self.hooks.ui.arrival(&headline(&text));
+        self.hooks.ui().arrival(&headline(&text));
         let _ = self.tx.send(text);
     }
 }
@@ -68,16 +69,23 @@ pub struct InboxQueue {
     gate: AgentTurnGate,
 }
 
+/// How many wait, and the gate.
+impl fmt::Debug for InboxQueue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InboxQueue")
+            .field("waiting", &self.waiting())
+            .field("gate", &self.gate)
+            .finish_non_exhaustive()
+    }
+}
+
 /// The conversation's inbox: the [`InboxSender`] the jobs and the subagents
 /// submit to, and the [`InboxQueue`] the turns take from.
 ///
 /// `max_agent_turns` is the gate's cap: turns in a row with no message from
 /// the human before the rest are held (0 = no cap). The human hears through
 /// `hooks` when the gate starts holding.
-pub(crate) fn inbox(
-    hooks: &Arc<RuntimeHooks>,
-    max_agent_turns: u32,
-) -> (Arc<InboxSender>, InboxQueue) {
+pub(crate) fn inbox(hooks: &RuntimeHooks, max_agent_turns: u32) -> (InboxSender, InboxQueue) {
     let (tx, rx) = unbounded_channel();
     let notice = hooks.clone();
     let gate = AgentTurnGate::new(max_agent_turns, move |text| notice.warn(text))
@@ -86,7 +94,7 @@ pub(crate) fn inbox(
         tx,
         hooks: hooks.clone(),
     };
-    (Arc::new(sender), InboxQueue::new(rx, gate))
+    (sender, InboxQueue::new(rx, gate))
 }
 
 impl InboxQueue {

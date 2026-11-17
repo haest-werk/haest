@@ -1,6 +1,6 @@
 //! The tools a conversation offers: [`own_tools`], [`WrappedTools`], [`MainTools`].
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use haest_settings::{BuiltinTools, Settings, WordSet};
 
@@ -8,8 +8,7 @@ use crate::haest::{
     KeySource,
     code::{CodeTool, code_tool_names},
     core::__private::openrouter_base_url,
-    core::fs::Fs,
-    core::skills::{DiskSkills, Skill},
+    core::skills::Skills,
     core::task_board::TaskBoard,
     core::tool::ToolSource,
     mcp::McpHub,
@@ -41,20 +40,17 @@ use haest_core::Tools;
 /// `image` is ([`image_options`]).
 pub(crate) fn own_tools(
     picked: &BuiltinTools,
-    board: Arc<TaskBoard>,
-    skills: Arc<Mutex<Vec<Skill>>>,
-    host_fs: Arc<dyn Fs>,
-    jobs: Option<Arc<JobHub>>,
+    board: TaskBoard,
+    skills: Skills,
+    jobs: Option<JobHub>,
     image: Option<GenerateImageOptions>,
 ) -> Tools {
     let bash = jobs
-        .map(|jobs| (*jobs).clone())
         .into_iter()
         .fold(BashOptions::default(), BashOptions::with_jobs);
-    let skills = DiskSkills::new(host_fs, move || skills.lock().unwrap().clone());
     let opts = BuiltinOptions::new()
         .with_bash(bash)
-        .with_tasks(TaskBoard::clone(&board))
+        .with_tasks(board)
         .with_skill(SkillToolOptions::new(skills));
     let mut tools = builtin_tools_where(|t| picked.has(t.as_str()), opts)
         .expect("every option a built-in needs is given");
@@ -106,7 +102,7 @@ pub(crate) fn image_options(
 /// that reconnects is picked up on the next call).
 struct BaseTools {
     own: Tools,
-    mcp: Arc<McpHub>,
+    mcp: McpHub,
 }
 
 impl ToolSource for BaseTools {
@@ -136,7 +132,7 @@ impl WrappedTools {
     /// tool; Some(extra) = a Code tool that may call the file tools, the
     /// read-only MCP tools, and the tools `extra` names (the `code_tools`
     /// setting: exact names, or `prefix*`).
-    pub(crate) fn new(own: Tools, mcp: Arc<McpHub>, mods: Mods, code: Option<Vec<String>>) -> Self {
+    pub(crate) fn new(own: Tools, mcp: McpHub, mods: Mods, code: Option<Vec<String>>) -> Self {
         let files = FILE_TOOLS.map(String::from);
         Self {
             base: Arc::new(BaseTools { own, mcp }),
@@ -164,13 +160,13 @@ impl ToolSource for WrappedTools {
 /// `DeferredTools`, which defers as the `deferred_tools` setting says.
 pub(crate) struct MainTools {
     wrapped: Arc<WrappedTools>,
-    hub: Option<Arc<SubagentHub>>,
+    hub: Option<SubagentHub>,
 }
 
 impl MainTools {
     /// Main's list over `wrapped`, with `hub`'s agent tools for main (None =
     /// no agent tools).
-    pub(crate) fn new(wrapped: Arc<WrappedTools>, hub: Option<Arc<SubagentHub>>) -> Self {
+    pub(crate) fn new(wrapped: Arc<WrappedTools>, hub: Option<SubagentHub>) -> Self {
         Self { wrapped, hub }
     }
 }
@@ -201,9 +197,8 @@ mod tests {
 
     /// The own tools `picked` names, with no jobs and no image.
     fn build(picked: &BuiltinTools) -> Tools {
-        let fs: Arc<dyn Fs> = Arc::new(crate::haest::MemFs::new());
-        let skills = Arc::new(Mutex::new(Vec::new()));
-        own_tools(picked, Arc::default(), skills, fs, None, None)
+        let skills = Skills::new(crate::haest::MemFs::new());
+        own_tools(picked, TaskBoard::default(), skills, None, None)
     }
 
     #[test]

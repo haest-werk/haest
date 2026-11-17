@@ -119,7 +119,7 @@ fn welcome(rt: &Runtime) -> std::path::PathBuf {
             String::new()
         },
     ));
-    rt.hooks.settings.data_dir.join("history")
+    rt.hooks.settings().data_dir.join("history")
 }
 
 pub async fn repl(session: &Session, ui: &TermUi, first: Option<String>) -> anyhow::Result<()> {

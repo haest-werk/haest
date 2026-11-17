@@ -5,7 +5,7 @@ use std::time::Duration;
 use haest_core::workspace::ExecOptions;
 
 use crate::{
-    haest::{core::fs::MemFs, tools::NoInbox},
+    haest::{Workspace, core::fs::MemFs, tools::NoInbox},
     testkit::{hooks, settings},
 };
 
@@ -262,7 +262,7 @@ fn background_jobs_exist_only_for_bash_in_the_real_workspace() {
             ..settings()
         };
         s.tools.bash = bash;
-        jobs_for(&s, Arc::new(NoInbox)).is_some()
+        jobs_for(&s, NoInbox).is_some()
     };
     assert!(!jobs(WorkspaceMode::Sandbox, true));
     assert!(!jobs(WorkspaceMode::Real, false));

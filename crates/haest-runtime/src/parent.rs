@@ -33,7 +33,7 @@ use haest_core::{ToolRef, ToolSourceRef, Tools};
 pub(crate) struct RuntimeParent {
     /// The runtime's hooks: the settings' caps, the current model and
     /// effort, the [`Ui`](crate::Ui) a subagent's life goes to.
-    pub(crate) hooks: Arc<RuntimeHooks>,
+    pub(crate) hooks: RuntimeHooks,
     /// What every agent of the conversation runs on (models, workspace,
     /// hooks, ledger, ...); each agent's tools and prompt are its own.
     pub(crate) deps: SharedDeps,
@@ -47,15 +47,15 @@ pub(crate) struct RuntimeParent {
     pub(crate) mods: Mods,
     /// Where a subagent's message for main, or a background subagent's
     /// answer, goes.
-    pub(crate) inbox: Arc<InboxSender>,
+    pub(crate) inbox: InboxSender,
 }
 
 impl RuntimeParent {
     /// The hub, capped by the settings' `subagents` (how deep they nest, how
     /// many run at once, each one's spend, steps and time).
-    pub(crate) fn hub(self) -> Arc<SubagentHub> {
-        let caps = self.hooks.settings.subagent_caps();
-        Arc::new(SubagentHub::new(self, caps))
+    pub(crate) fn hub(self) -> SubagentHub {
+        let caps = self.hooks.settings().subagent_caps();
+        SubagentHub::new(self, caps)
     }
 }
 
@@ -79,7 +79,7 @@ impl SubagentParent for RuntimeParent {
         let prompt = AgentPrompt {
             prompt: self.prompt.clone(),
             model_spec: Some(model_spec.to_string()),
-            tools: Arc::new(Tools::from(tools.to_vec())),
+            tools: Tools::from(tools.to_vec()).into(),
         };
         ModSystemPrompt::new(prompt, self.mods.clone())
             .system_prompt()
@@ -92,15 +92,15 @@ impl SubagentParent for RuntimeParent {
 
     /// The agent's fixed list behind its own deferral (ToolSearch loads per agent).
     fn tool_source(&self, tools: Tools) -> ToolSourceRef {
-        let deferral = ToolDeferral::new(self.hooks.settings.deferred_tools);
+        let deferral = ToolDeferral::new(self.hooks.settings().deferred_tools);
         DeferredTools::new(tools, deferral).into()
     }
 
     fn on_activity(&self, ids: &[String]) {
-        self.hooks.ui.subagents_running(ids);
+        self.hooks.ui().subagents_running(ids);
     }
 
     fn on_subagent(&self, id: &str, event: SubagentEvent) {
-        self.hooks.ui.subagent(id, &event);
+        self.hooks.ui().subagent(id, &event);
     }
 }

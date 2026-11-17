@@ -5,7 +5,7 @@
 //! hooks' own setters are crate-private, so these are the only way to make
 //! one all three see.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
@@ -14,9 +14,9 @@ use crate::{
     haest::{
         Agent, Effort, EventSink, ModelError, TurnOutcome,
         core::compaction::CompactionError,
-        core::fs::Fs,
+        core::fs::FsRef,
         core::session::SessionRecord,
-        core::skills::{Skill, SkillScanRoots, skills_in},
+        core::skills::{Skill, SkillScanRoots, Skills, skills_in},
         core::task_board::TaskBoard,
         mcp::McpHub,
         mods::{ApprovalGate, Mods},
@@ -46,21 +46,21 @@ pub struct Runtime<U: ?Sized> {
     pub(crate) agent: Agent,
     /// What the agent reports to: the session file, the [`Ui`](crate::Ui),
     /// the current model and effort, compaction.
-    pub hooks: Arc<RuntimeHooks>,
+    pub hooks: RuntimeHooks,
     /// The host's own UI, as it handed it in.
     pub ui: Arc<U>,
     /// Where the conversation reads and writes: the world's
     /// [`Fs`](crate::World::fs).
-    pub fs: Arc<dyn Fs>,
+    pub fs: FsRef,
     /// The task list, saved to the session file on every change.
-    pub board: Arc<TaskBoard>,
+    pub board: TaskBoard,
     /// The skills offered now: the Skill tool and the system prompt read
     /// this list ([`rescan_skills`](Self::rescan_skills) refreshes it).
-    pub skills: Arc<Mutex<Vec<Skill>>>,
+    pub skills: Skills,
     /// Where the skills were found at the start; the sandbox mounts these.
     pub(crate) skill_roots: SkillScanRoots,
     /// The connected MCP servers; [`McpHub::close`] them at the end.
-    pub mcp: Arc<McpHub>,
+    pub mcp: McpHub,
     /// The mods turned on: the approval mod, plan mode, the human's and the
     /// project's. A host passes the human's text through `rewrite_prompt`.
     pub mods: Mods,
@@ -72,10 +72,10 @@ pub struct Runtime<U: ?Sized> {
     pub inbox: InboxQueue,
     /// Main's subagents (none run when `agents` is off); `stop_all` them at
     /// the end.
-    pub subagents: Arc<SubagentHub>,
+    pub subagents: SubagentHub,
     /// Background shell jobs; None unless Bash runs in the real workspace.
     /// Kill them at the end ([`kill_jobs`](crate::kill_jobs)).
-    pub jobs: Option<Arc<JobHub>>,
+    pub jobs: Option<JobHub>,
 }
 
 impl<U: ?Sized> Runtime<U> {
@@ -203,8 +203,9 @@ impl<U: ?Sized> Runtime<U> {
     /// When the new session's file cannot be created. It is created, header
     /// first, before anything switches to it, so then nothing changes.
     pub async fn clear(&mut self) -> Result<(), SessionError> {
-        let store = new_session(&self.fs, &self.hooks.settings, self.hooks.ui.clone()).await?;
-        self.hooks.swap_store(Arc::new(store));
+        let ui = self.hooks.ui().clone();
+        let store = new_session(&self.fs, self.hooks.settings(), ui).await?;
+        self.hooks.swap_store(store);
         self.agent.replace_history(Vec::new());
         self.board.restore(Vec::new());
         record_start(&self.hooks, &self.agent);
@@ -218,7 +219,7 @@ impl<U: ?Sized> Runtime<U> {
     /// Returns the skills found, which [`skills`](Self::skills) now holds.
     pub async fn rescan_skills(&self) -> Vec<Skill> {
         let found = skills_in(self.fs.as_ref(), &self.skill_roots).await;
-        *self.skills.lock().unwrap() = found.clone();
+        self.skills.replace(found.clone());
         found
     }
 }

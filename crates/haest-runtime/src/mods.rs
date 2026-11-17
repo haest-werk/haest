@@ -1,7 +1,5 @@
 //! [`mods_for`]: the conversation's mods.
 
-use std::sync::Arc;
-
 use crate::{
     RuntimeHooks,
     haest::{
@@ -22,8 +20,8 @@ use crate::{
 /// `gate` ([`ApprovalGate`]) to the host's prompter, which decides how a human
 /// answers; an ask nobody answers is a deny after its timeout. Never fails:
 /// the mods that loaded are the ones returned.
-pub(crate) async fn mods_for(hooks: &Arc<RuntimeHooks>, fs: &dyn Fs, gate: &ApprovalGate) -> Mods {
-    let s = &hooks.settings;
+pub(crate) async fn mods_for(hooks: &RuntimeHooks, fs: &dyn Fs, gate: &ApprovalGate) -> Mods {
+    let s = hooks.settings();
     let mut cfg = ModOptions::new(&s.cwd, s.workspace, &s.config_dir);
     if !s.approvals {
         cfg = cfg.without_approvals();
@@ -38,7 +36,7 @@ pub(crate) async fn mods_for(hooks: &Arc<RuntimeHooks>, fs: &dyn Fs, gate: &Appr
     let mod_ui = gate.mod_ui(move |line| match line {
         ModLine::Info(text) => to.info(text),
         ModLine::Error(text) => to.error(text),
-        ModLine::Debug(message) => ToolServices::debug(to.as_ref(), message),
+        ModLine::Debug(message) => ToolServices::debug(&to, message),
     });
     load_mods(cfg, fs, mod_ui).await
 }

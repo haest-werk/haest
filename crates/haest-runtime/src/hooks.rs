@@ -8,7 +8,8 @@ mod compact;
 
 use std::{
     collections::HashSet,
-    sync::{Arc, Mutex},
+    fmt,
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use async_trait::async_trait;
@@ -45,23 +46,34 @@ use crate::{
 /// levels) from the settings and the built-in catalog, and keeps the model and
 /// effort the conversation is on now, which a subagent starts on.
 ///
-/// [`build`](crate::build) makes one, shared as [`Runtime::hooks`](crate::Runtime::hooks).
-pub struct RuntimeHooks {
-    /// The run's settings, as handed in. Their `model_spec` and `effort` are
-    /// what the run started from: the ones in use now are [`model_spec`](Self::model_spec)
-    /// and [`effort`](Self::effort).
-    pub settings: Settings,
-    /// haest's built-in model catalog: windows, input kinds, effort levels.
-    pub catalog: &'static Catalog,
-    /// The host's UI, as a trait object.
-    pub ui: Arc<dyn Ui>,
+/// [`build`](crate::build) makes one, read on the runtime as
+/// [`Runtime::hooks`](crate::Runtime::hooks). A cheap `Clone`: every clone is
+/// the same hooks, so a host that hands the runtime to a session keeps one to
+/// tell the human through, or to flush the session file at exit.
+#[derive(Clone)]
+pub struct RuntimeHooks(Arc<Shared>);
+
+/// What every clone of a [`RuntimeHooks`] shares.
+struct Shared {
+    /// The run's settings, as handed in.
+    settings: Settings,
+    /// The host's UI.
+    ui: Arc<dyn Ui>,
+    /// The session file records go to now; /clear swaps it.
     store: Mutex<Arc<JsonlSessionFile>>,
     /// The model the system prompt names and a subagent starts on; kept in step
     /// with the agent's spec.
     model_spec: Mutex<String>,
     /// The effort a subagent starts on; kept in step with the agent's.
     effort: Mutex<Option<Effort>>,
+    /// The models the human was told once that they do not take an effort.
     effort_notes: Mutex<HashSet<String>>,
+}
+
+/// Every lock here is held only while this file's own code runs (never the
+/// UI, never a write), so a poisoned one is a bug here.
+fn held<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
+    lock.lock().expect("a runtime hooks lock poisoned")
 }
 
 impl RuntimeHooks {
@@ -70,37 +82,48 @@ impl RuntimeHooks {
     ///
     /// Create `store`'s file first ([`JsonlSessionFile::create`] writes its
     /// header): a record appended before that lands in a file with no header,
-    /// or nowhere. [`build`](crate::build) sees to that for its own. Needs a
-    /// tokio runtime, as the session file does.
-    pub fn new(settings: Settings, ui: Arc<dyn Ui>, store: Arc<JsonlSessionFile>) -> Self {
+    /// or nowhere. [`build`](crate::build) sees to that. Needs a tokio
+    /// runtime, as the session file does.
+    pub(crate) fn new(settings: Settings, ui: Arc<dyn Ui>, store: JsonlSessionFile) -> Self {
         let (model_spec, effort) = (settings.model_spec.clone(), settings.effort);
-        Self {
+        Self(Arc::new(Shared {
             settings,
-            catalog: Catalog::builtin(),
             ui,
-            store: Mutex::new(store),
+            store: Mutex::new(Arc::new(store)),
             model_spec: Mutex::new(model_spec),
             effort: Mutex::new(effort),
             effort_notes: Mutex::default(),
-        }
+        }))
+    }
+
+    /// The run's settings, as handed in. Their `model_spec` and `effort` are
+    /// what the run started from: the ones in use now are
+    /// [`model_spec`](Self::model_spec) and [`effort`](Self::effort).
+    pub fn settings(&self) -> &Settings {
+        &self.0.settings
+    }
+
+    /// The host's UI.
+    pub(crate) fn ui(&self) -> &Arc<dyn Ui> {
+        &self.0.ui
     }
 
     /// The UI's [`remedy`](Ui::remedy) for every limit, as the loop, the
     /// ledger, the inbox's gate and the sandbox take it.
-    pub fn remedies(&self) -> Remedies {
-        let ui = self.ui.clone();
+    pub(crate) fn remedies(&self) -> Remedies {
+        let ui = self.0.ui.clone();
         Remedies::new(move |limit| ui.remedy(limit))
     }
 
     /// The session file records go to now. [`Runtime::clear`](crate::Runtime::clear)
     /// swaps it, so ask again rather than keep it.
-    pub fn store(&self) -> Arc<JsonlSessionFile> {
-        self.store.lock().unwrap().clone()
+    pub(crate) fn store(&self) -> Arc<JsonlSessionFile> {
+        held(&self.0.store).clone()
     }
 
     /// A fresh session file (/clear); records go there from now on.
-    pub(crate) fn swap_store(&self, store: Arc<JsonlSessionFile>) {
-        *self.store.lock().unwrap() = store;
+    pub(crate) fn swap_store(&self, store: JsonlSessionFile) {
+        *held(&self.0.store) = Arc::new(store);
     }
 
     /// Queue `record` for the session file. It returns at once: the write runs
@@ -119,50 +142,61 @@ impl RuntimeHooks {
     /// The model spec the conversation is on now: what the system prompt names
     /// and a subagent starts on.
     pub fn model_spec(&self) -> String {
-        self.model_spec.lock().unwrap().clone()
+        held(&self.0.model_spec).clone()
     }
 
     pub(crate) fn set_model_spec(&self, spec: &str) {
-        *self.model_spec.lock().unwrap() = spec.to_string();
+        *held(&self.0.model_spec) = spec.to_string();
     }
 
     /// The effort the conversation is on now (None = the model's default):
     /// what a subagent starts on.
     pub fn effort(&self) -> Option<Effort> {
-        *self.effort.lock().unwrap()
+        *held(&self.0.effort)
     }
 
     pub(crate) fn set_effort(&self, effort: Option<Effort>) {
-        *self.effort.lock().unwrap() = effort;
+        *held(&self.0.effort) = effort;
     }
 
-    /// [`Ui::info`] on [`ui`](Self::ui).
+    /// [`Ui::info`] on the host's UI.
     pub fn info(&self, text: &str) {
-        self.ui.info(text);
+        self.0.ui.info(text);
     }
 
-    /// [`Ui::warn`] on [`ui`](Self::ui).
+    /// [`Ui::warn`] on the host's UI.
     pub fn warn(&self, text: &str) {
-        self.ui.warn(text);
+        self.0.ui.warn(text);
     }
 
-    /// [`Ui::error`] on [`ui`](Self::ui).
+    /// [`Ui::error`] on the host's UI.
     pub fn error(&self, text: &str) {
-        self.ui.error(text);
+        self.0.ui.error(text);
     }
 
     /// The window of the model `spec`, in tokens: the `context_window`
-    /// setting, else the catalog's, else 200K.
-    pub fn window(&self, spec: &str) -> u64 {
-        self.settings
-            .window(self.catalog.model(spec).map(|m| m.context_window))
+    /// setting, else the built-in catalog's, else 200K.
+    pub(crate) fn window(&self, spec: &str) -> u64 {
+        let catalog = Catalog::builtin().model(spec);
+        self.0.settings.window(catalog.map(|m| m.context_window))
+    }
+}
+
+/// The session file, the model and effort the conversation is on now.
+impl fmt::Debug for RuntimeHooks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RuntimeHooks")
+            .field("store", &self.store())
+            .field("model_spec", &self.model_spec())
+            .field("effort", &self.effort())
+            .finish_non_exhaustive()
     }
 }
 
 impl ToolServices for RuntimeHooks {
     fn debug(&self, message: &str) {
-        if self.settings.debug {
-            self.ui.debug(message);
+        if self.0.settings.debug {
+            self.0.ui.debug(message);
         }
     }
 }
@@ -199,7 +233,7 @@ impl AgentHooks for RuntimeHooks {
 
     fn on_effort_fitted(&self, model: &str, used: Effort) {
         let key = format!("{model}:{}", used.as_str());
-        if self.effort_notes.lock().unwrap().insert(key) {
+        if held(&self.0.effort_notes).insert(key) {
             self.info(&format!(
                 "{model} does not take that effort; sent {}.",
                 used.as_str()
@@ -216,18 +250,18 @@ impl AgentHooks for RuntimeHooks {
 /// The token caps follow the model's window.
 impl TurnCapsSource for RuntimeHooks {
     fn turn_caps(&self, spec: &str) -> Option<TurnCaps> {
-        Some(self.settings.turn_caps_for(self.window(spec)))
+        Some(self.0.settings.turn_caps_for(self.window(spec)))
     }
 }
 
-/// The inputs and reasoning are the catalog's rows.
+/// The inputs and reasoning are the built-in catalog's rows.
 impl ModelFacts for RuntimeHooks {
     fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
-        self.catalog.input_modalities(spec)
+        Catalog::builtin().input_modalities(spec)
     }
 
     fn reasoning(&self, spec: &str) -> Option<Reasoning> {
-        self.catalog.reasoning(spec).cloned()
+        Catalog::builtin().reasoning(spec).cloned()
     }
 }
 

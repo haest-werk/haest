@@ -10,7 +10,7 @@ use crate::{
     BuildOptions, Resume, RuntimeHooks, SessionError, Ui,
     haest::{
         Agent, AgentOptions, Effort,
-        core::fs::Fs,
+        core::fs::FsRef,
         core::ledger::Ledger,
         core::session::{JsonlSessionFile, ReplayedSession, SessionRecord, sessions_dir},
         core::task_board::TaskBoard,
@@ -22,7 +22,7 @@ use crate::{
 /// The session a run writes, opened and, on a resume, read. Nothing has
 /// started yet, so an error here fails the build with nothing to undo.
 pub(crate) struct OpenSession {
-    pub store: Arc<JsonlSessionFile>,
+    pub store: JsonlSessionFile,
     /// What a resumed session saved; None = a new session, its file not
     /// created yet ([`create`]).
     pub saved: Option<ReplayedSession>,
@@ -30,7 +30,7 @@ pub(crate) struct OpenSession {
 
 /// The session file `id` under `data_dir`; a failed write is the [`Ui`]'s error.
 fn open_store(
-    fs: &Arc<dyn Fs>,
+    fs: &FsRef,
     data_dir: &Path,
     id: &str,
     ui: Arc<dyn Ui>,
@@ -43,14 +43,14 @@ fn open_store(
 
 /// The session this run writes, as `resume` says.
 pub(crate) async fn open_session(
-    fs: &Arc<dyn Fs>,
+    fs: &FsRef,
     s: &Settings,
     resume: &Resume,
     ui: Arc<dyn Ui>,
 ) -> Result<OpenSession, SessionError> {
     let id = match resume {
         Resume::New => {
-            let store = Arc::new(open_store(fs, &s.data_dir, &new_session_id(), ui)?);
+            let store = open_store(fs, &s.data_dir, &new_session_id(), ui)?;
             return Ok(OpenSession { store, saved: None });
         }
         Resume::Latest => latest_in(fs.as_ref(), &sessions_dir(&s.data_dir), &s.cwd)
@@ -67,7 +67,7 @@ pub(crate) async fn open_session(
         source,
     })?;
     Ok(OpenSession {
-        store: Arc::new(store),
+        store,
         saved: Some(saved),
     })
 }
@@ -87,7 +87,7 @@ pub(crate) async fn create(store: &JsonlSessionFile, cwd: &Path) -> Result<(), S
 
 /// A new session with its file created: what /clear starts.
 pub(crate) async fn new_session(
-    fs: &Arc<dyn Fs>,
+    fs: &FsRef,
     s: &Settings,
     ui: Arc<dyn Ui>,
 ) -> Result<JsonlSessionFile, SessionError> {

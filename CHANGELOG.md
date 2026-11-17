@@ -908,6 +908,20 @@ Good citizens:
   opts).await?` then `rt.mods`. A host that owns some parts builds its
   own `AgentDeps`, with `builtin_tools_where(|w| settings.tools.has(w),
   ..)` for haest's tools.
+- A runtime's services are handles, held by cloning them (breaking).
+  `RuntimeHooks` is a cheap `Clone` (it was shared as an
+  `Arc<RuntimeHooks>`), and the runtime holds `McpHub`, `SubagentHub`,
+  `Option<JobHub>`, `TaskBoard` and an `FsRef` where it held an `Arc` of
+  each: `let hooks: Arc<RuntimeHooks> = rt.hooks.clone()` ->
+  `let hooks = rt.hooks.clone()`.
+- The skills offered are core's `Skills` (was `Arc<Mutex<Vec<Skill>>>`):
+  `*rt.skills.lock().unwrap() = found` -> `rt.skills.replace(found)`, and
+  `rt.skills.list()` reads them.
+- `RuntimeHooks` keeps its fields private: `hooks.settings` ->
+  `hooks.settings()`. `hooks.ui` and `hooks.catalog` are gone (the host
+  has its own UI; the catalog is `Catalog::builtin()`), and `new`,
+  `store`, `remedies`, `window` and `compaction_for` are crate-private:
+  hooks come from `build`, the session's id from `rt.session_id()`.
 - The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
   as `with_hooks`; what tools publish, report and log reaches it as before.
   `WrappedTools::new` takes `Tools`.

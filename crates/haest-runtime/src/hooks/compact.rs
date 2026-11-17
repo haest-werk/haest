@@ -18,9 +18,9 @@ impl RuntimeHooks {
     /// When to compact a conversation on the model `spec`: at 80% of its
     /// [`window`](Self::window), or at the `compact_at` setting when that is
     /// lower and not 0. About the last 12 messages are kept as they are.
-    pub fn compaction_for(&self, spec: &str) -> CompactionOptions {
+    pub(crate) fn compaction_for(&self, spec: &str) -> CompactionOptions {
         CompactionOptions {
-            ceiling: Some(self.settings.caps.compact_at).filter(|n| *n > 0),
+            ceiling: Some(self.settings().caps.compact_at).filter(|n| *n > 0),
             ..CompactionOptions::new(self.window(spec))
         }
     }

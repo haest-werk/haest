@@ -62,13 +62,7 @@ fn help(rt: &Runtime) {
 }
 
 async fn skill_or_text(rt: &Runtime, name: &str, args: &str, line: &str) -> Outcome {
-    let skill = rt
-        .skills
-        .lock()
-        .unwrap()
-        .iter()
-        .find(|s| s.name == name)
-        .cloned();
+    let skill = rt.skills.list().into_iter().find(|s| s.name == name);
     let Some(skill) = skill else {
         return Outcome::Send(line.to_string());
     };

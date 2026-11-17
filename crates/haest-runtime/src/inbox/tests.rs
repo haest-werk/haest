@@ -11,13 +11,12 @@ use haest_core::Tools;
 /// The control of an agent that never runs: what a test steers into it is
 /// what the last turn left unread.
 fn control() -> AgentControl {
-    let none = Tools::new();
     let deps = AgentDeps::new(
-        Arc::new(ScriptedProvider::new([]).resolver()),
-        Arc::new(none),
-        Arc::new(String::new()),
+        ScriptedProvider::new([]).resolver(),
+        Tools::new(),
+        "",
         "/w",
-        Arc::new(ShutWorkspace),
+        ShutWorkspace,
     );
     Agent::new(deps, AgentOptions::new("scripted:m")).control()
 }
