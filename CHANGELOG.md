@@ -2059,6 +2059,11 @@ against it; the wire JSON is unchanged):
   broker after a host restarted with a stable id) starts at the stream's
   last seq with a `gap`. It skipped every new frame up to `after` as one
   the peer already held, with no gap to say so.
+- `Backend`'s docs say a call takes its place in the conversation when it
+  is first polled, as `SessionHandle`'s do: a transport starts a peer's
+  requests in the order the peer sent them, each once the one before it
+  was first polled, so a backend that queues a call only later may see
+  them out of order.
 
 ### haest-transport (new)
 
@@ -2067,10 +2072,13 @@ against it; the wire JSON is unchanged):
   `id`, a turn's when it ends and after its last frame; stream frames only as
   asked for with `events {after, follow}`; a request of another version or
   one the access forbids is refused with its `id`; a slow peer gets a `gap`,
-  never a wait. A connection has at most 32 requests waiting for their
-  replies; at the cap it reads no more lines until one is answered, so a
-  peer that never reads makes no more work than that. `Grant` (`watch`,
-  `command`), `Start`, `Ended`, the seams
+  never a wait. Once the session holds 32 of a connection's requests (a
+  turn's end, a history asked during a turn), one more that would wait is
+  refused, while an `interrupt`, a `close`, an approval answer or a
+  `snapshot` is still served; with 64 in flight the connection reads no
+  more lines until one is answered, so a peer that never reads makes no
+  more work than that. A peer's requests reach the session in the order
+  it sent them. `Grant` (`watch`, `command`), `Start`, `Ended`, the seams
   `LineSource` and `LineSink`, `NdjsonSource` and `NdjsonSink`, the trait
   `Transport` (`attach` returns an `Attached`: `ended`, `detach`; dropped is
   detached), `Peer` (the asking side) and `TransportError`.
@@ -2213,6 +2221,34 @@ against it; the wire JSON is unchanged):
   stopped, as one in its `LineSource` does. `serve` reported it as
   `Ended::PeerLeft`, so a host that dials again after a peer left dialed
   its own bug again forever.
+- A connection's requests reach the session in the order the peer sent
+  them. Each request's backend call started on a task of its own, and on
+  a runtime of several threads (the `haest` command's `--stdio`, control
+  socket and broker link) the newest task usually ran first: a `clear`
+  written together with a `turn` cleared that turn, a `set_model` before
+  a `turn` ran the turn on the old model, and an `interrupt` sent right
+  after a `turn` was spent between turns while the turn ran on. A call
+  now starts once the one before it has been polled the first time.
+- A peer at the request cap keeps its stop button. Once 32 requests
+  waited for their replies the connection read no more lines, and a turn
+  and every `history` asked during it wait for the turn's end: a
+  dashboard polling once a second hit the cap 31 seconds into a long
+  turn, and from then on its `interrupt` and its approval answers sat
+  unread until the turn ended (an approval ask the turn waited on was
+  denied at the gate's timeout). At the cap a request that would wait too
+  is now refused with its id, to send again once one is answered, while
+  `interrupt`, `close`, an approval answer and `snapshot` are still
+  served. The cap counts what the session holds, from a request's first
+  poll to its answer: a request of a burst written in one go that has not
+  reached the session yet does not count, nor does one already answered.
+  With 64 requests in flight the connection stops reading, as it did at
+  32.
+- A panic in a host's `Backend` while it serves a request reaches the
+  host once the connection has stopped, as one in its `LineSink` does,
+  and that request is refused with its id first. `serve` dropped it: the
+  peer waited for good for the reply, and the connection went on. The
+  Unix socket transport now ends with a connection's panic, which
+  `Attached::ended` raises; its accept loop dropped it too.
 
 ### haest-issues
 
