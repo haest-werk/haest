@@ -26,7 +26,7 @@ pub(crate) struct Given {
 }
 
 impl Given {
-    pub fn new(key: impl Into<String>, raw: impl Into<String>, source: Source) -> Self {
+    pub(crate) fn new(key: impl Into<String>, raw: impl Into<String>, source: Source) -> Self {
         Self {
             key: key.into(),
             raw: raw.into(),
@@ -58,7 +58,7 @@ pub(crate) struct Layer {
 
 impl Layer {
     /// Every value checked against its setting; an error names where it came from.
-    pub fn checked(given: Vec<Given>) -> Result<Self, ConfigError> {
+    pub(crate) fn checked(given: Vec<Given>) -> Result<Self, ConfigError> {
         let values = given
             .into_iter()
             .map(|g| {
@@ -98,7 +98,7 @@ impl Stack {
     }
 
     /// Check every layer of values in hand.
-    pub fn read_values(&mut self) -> Result<(), ConfigError> {
+    pub(crate) fn read_values(&mut self) -> Result<(), ConfigError> {
         for slot in &mut self.0 {
             if let Slot::Pending(Pending::Values(given)) = slot {
                 *slot = Slot::Read(Layer::checked(std::mem::take(given))?);
@@ -108,7 +108,7 @@ impl Stack {
     }
 
     /// The last value `key` has in the layers read so far.
-    pub fn last(&self, key: &str) -> Option<&str> {
+    pub(crate) fn last(&self, key: &str) -> Option<&str> {
         self.read()
             .flat_map(|layer| &layer.values)
             .filter(|(def, _, _)| def.key == key)
@@ -117,24 +117,24 @@ impl Stack {
     }
 
     /// The `[profiles.<name>]` tables of the layers read so far, in order.
-    pub fn profile_tables(&self, name: &str) -> Vec<&Entries> {
+    pub(crate) fn profile_tables(&self, name: &str) -> Vec<&Entries> {
         self.read().filter_map(|l| l.profiles.get(name)).collect()
     }
 
     /// Every profile name a layer read so far defines.
-    pub fn profile_names(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn profile_names(&self) -> impl Iterator<Item = &str> {
         self.read()
             .flat_map(|l| l.profiles.keys().map(String::as_str))
     }
 
-    pub fn has(&self, pending: &Pending) -> bool {
+    pub(crate) fn has(&self, pending: &Pending) -> bool {
         self.0
             .iter()
             .any(|slot| matches!(slot, Slot::Pending(p) if p == pending))
     }
 
     /// Every layer still `pending` reads `layer`.
-    pub fn fill(&mut self, pending: &Pending, layer: &Layer) {
+    pub(crate) fn fill(&mut self, pending: &Pending, layer: &Layer) {
         for slot in &mut self.0 {
             if matches!(slot, Slot::Pending(p) if p == pending) {
                 *slot = Slot::Read(layer.clone());
@@ -146,7 +146,7 @@ impl Stack {
     /// layer still pending read nothing (no project file, no profile named).
     /// A variable of `env` has a source of its own (`env.NAME`), and `env` as
     /// a whole the last layer that passed one.
-    pub fn fold(
+    pub(crate) fn fold(
         self,
         mut config: Config,
     ) -> Result<(Config, BTreeMap<String, Source>), ConfigError> {

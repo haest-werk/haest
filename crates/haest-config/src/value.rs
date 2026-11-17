@@ -42,7 +42,7 @@ pub(crate) fn absolute(dir: &str, cwd: &Path, home: &Path) -> PathBuf {
 }
 
 /// true / 1 / on / yes and false / 0 / off / no, any case.
-pub fn parse_bool(raw: &str) -> Option<bool> {
+pub(crate) fn parse_bool(raw: &str) -> Option<bool> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "true" | "1" | "on" | "yes" => Some(true),
         "false" | "0" | "off" | "no" => Some(false),
@@ -51,7 +51,7 @@ pub fn parse_bool(raw: &str) -> Option<bool> {
 }
 
 /// `a, b,,c` -> [a, b, c].
-pub fn split_list(raw: &str) -> Vec<String> {
+pub(crate) fn split_list(raw: &str) -> Vec<String> {
     raw.split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -77,7 +77,7 @@ pub(crate) fn number(raw: &str, whole_up_to: Option<f64>) -> Result<f64, String>
 }
 
 /// `raw` as `def` takes it, or why not.
-pub fn check(def: &Def, raw: &str) -> Result<String, String> {
+pub(crate) fn check(def: &Def, raw: &str) -> Result<String, String> {
     let word = raw.trim();
     match def.kind {
         Kind::Bool => parse_bool(word)

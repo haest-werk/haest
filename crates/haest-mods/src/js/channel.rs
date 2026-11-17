@@ -47,11 +47,11 @@ pub(crate) struct JsMeta {
 
 impl JsMeta {
     /// A second tool with the same name replaces the first.
-    pub fn add_tool(&mut self, tool: ToolMeta) {
+    pub(super) fn add_tool(&mut self, tool: ToolMeta) {
         self.tools.retain(|t| t.name != tool.name);
         self.tools.push(tool);
     }
-    pub fn add_command(&mut self, name: String) {
+    pub(super) fn add_command(&mut self, name: String) {
         if !self.commands.contains(&name) {
             self.commands.push(name);
         }

@@ -103,6 +103,10 @@ async fn streamed_output_arrives_while_the_command_runs_and_stays_out_of_the_res
     );
 }
 
+#[expect(
+    unsafe_code,
+    reason = "kill(2) with signal 0 asks whether a pid lives; std cannot"
+)]
 fn alive(pid: libc::pid_t) -> bool {
     // SAFETY: signal 0 only asks whether the process exists.
     unsafe { libc::kill(pid, 0) == 0 }
@@ -132,6 +136,10 @@ async fn a_timeout_kills_the_whole_process_group_not_just_bash() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[expect(
+    unsafe_code,
+    reason = "kill(2) cleans up a child that survived; std cannot"
+)]
 async fn a_dropped_run_kills_the_whole_process_group() {
     let (_t, dir) = tempdir();
     let pid_file = dir.join("child.pid");

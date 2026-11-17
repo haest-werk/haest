@@ -28,7 +28,7 @@ const SUB_ANSWER: &str = "Two related notes: /notebook/notes/plan.md, /notebook/
 
 /// A work run: the sandboxed bash over NotebookFs, every notebook tool, a
 /// helper on a node run of its own, a pause mid-turn, records to the node.
-pub async fn work(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
+pub(crate) async fn work(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
     let notebook = Arc::new(NotebookFs::new(&[(
         "/notebook/notes/plan.md",
         "Ship the Q3 review.\n",
@@ -245,7 +245,7 @@ pub async fn work(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
 
 /// A dream run (`config::dream`): no files, no shell, only what the node
 /// hands it.
-pub async fn dream(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
+pub(crate) async fn dream(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
     let s = config::dream();
     let sessions = Arc::new(NodeSessions::default());
     let host = Arc::new(NotebookHost::new(
@@ -295,7 +295,7 @@ pub async fn dream(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
 
 /// The counter-proof for the clock: the same pause on a clock that counts it
 /// stops the turn at its cap, before the third model call.
-pub async fn clock(gateway: &Arc<Gateway>) {
+pub(crate) async fn clock(gateway: &Arc<Gateway>) {
     let caps = config::turn_caps(&config::work());
     assert_eq!(
         caps.max_turn_time,

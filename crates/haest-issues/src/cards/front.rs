@@ -64,7 +64,7 @@ pub(crate) struct Front {
 
 impl Front {
     /// None when `content` has no frontmatter block.
-    pub fn parse(content: &str) -> Option<Front> {
+    pub(super) fn parse(content: &str) -> Option<Front> {
         let (head, body) = split_frontmatter(content)?;
         let mut front = Front {
             keys: Vec::new(),
@@ -115,12 +115,12 @@ impl Front {
         Some(front)
     }
 
-    pub fn get(&self, key: &str) -> Option<&Val> {
+    pub(super) fn get(&self, key: &str) -> Option<&Val> {
         self.keys.iter().find(|(k, _)| k == key).map(|(_, v)| v)
     }
 
     /// A scalar key's value; None when absent, blank or not a scalar.
-    pub fn str(&self, key: &str) -> Option<&str> {
+    pub(super) fn str(&self, key: &str) -> Option<&str> {
         match self.get(key) {
             Some(Val::Str(s)) if !s.trim().is_empty() => Some(s),
             _ => None,
@@ -128,7 +128,7 @@ impl Front {
     }
 
     /// A key's values: a list's items, a scalar as one item, else none.
-    pub fn list(&self, key: &str) -> Vec<String> {
+    pub(super) fn list(&self, key: &str) -> Vec<String> {
         match self.get(key) {
             Some(Val::List(items)) => items.clone(),
             Some(Val::Str(s)) if !s.is_empty() => vec![s.clone()],
@@ -137,20 +137,20 @@ impl Front {
     }
 
     /// Replace the key's value where it stands, or add it last.
-    pub fn set(&mut self, key: &str, val: Val) {
+    pub(super) fn set(&mut self, key: &str, val: Val) {
         match self.keys.iter_mut().find(|(k, _)| k == key) {
             Some((_, v)) => *v = val,
             None => self.keys.push((key.to_string(), val)),
         }
     }
 
-    pub fn remove(&mut self, key: &str) {
+    pub(super) fn remove(&mut self, key: &str) {
         self.keys.retain(|(k, _)| k != key);
     }
 
     /// A list key: set to `items`, or gone when there are none (an empty list
     /// is the same fact as no key).
-    pub fn set_list(&mut self, key: &str, items: Vec<String>) {
+    pub(super) fn set_list(&mut self, key: &str, items: Vec<String>) {
         if items.is_empty() {
             self.remove(key);
         } else {
@@ -159,7 +159,7 @@ impl Front {
     }
 
     /// The card's bytes: the ordered keys, every other key, the blocks, the body.
-    pub fn render(&self) -> String {
+    pub(super) fn render(&self) -> String {
         let mut lines = vec!["---".to_string()];
         for key in ORDER {
             match self.get(key) {

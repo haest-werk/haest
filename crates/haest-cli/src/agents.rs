@@ -11,13 +11,13 @@ use haest::tools::SubagentEvent;
 use crate::render::{Level, result_line};
 
 #[derive(Debug, Default)]
-pub struct AgentLog {
+pub(crate) struct AgentLog {
     names: HashMap<String, String>,
     running: usize,
 }
 
 impl AgentLog {
-    pub fn activity(&mut self, running: usize) -> Option<String> {
+    pub(crate) fn activity(&mut self, running: usize) -> Option<String> {
         if running == self.running {
             return None;
         }
@@ -28,7 +28,7 @@ impl AgentLog {
     /// One subagent event, whichever: the lines the renderer makes from the
     /// stream's frames, in one call.
     #[cfg(test)]
-    pub fn event(&mut self, id: &str, event: &SubagentEvent) -> Option<(Level, String)> {
+    pub(crate) fn event(&mut self, id: &str, event: &SubagentEvent) -> Option<(Level, String)> {
         match event {
             SubagentEvent::Started {
                 name,
@@ -51,7 +51,7 @@ impl AgentLog {
     }
 
     /// It started: its name is kept for its lines.
-    pub fn started(
+    pub(crate) fn started(
         &mut self,
         id: &str,
         name: &str,
@@ -67,7 +67,7 @@ impl AgentLog {
 
     /// One of its loop events: a line for a tool it ran or a guard notice,
     /// nothing for its streaming.
-    pub fn loop_event(&mut self, id: &str, ev: &LoopEvent) -> Option<(Level, String)> {
+    pub(crate) fn loop_event(&mut self, id: &str, ev: &LoopEvent) -> Option<(Level, String)> {
         let name = self.name(id);
         match ev {
             LoopEvent::ToolResult {
@@ -85,7 +85,7 @@ impl AgentLog {
     }
 
     /// It stopped: finished, or stopped early (a warning).
-    pub fn stopped(&mut self, id: &str, ok: bool) -> (Level, String) {
+    pub(crate) fn stopped(&mut self, id: &str, ok: bool) -> (Level, String) {
         let name = self.name(id);
         self.names.remove(id);
         if ok {

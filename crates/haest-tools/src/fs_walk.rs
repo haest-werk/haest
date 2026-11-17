@@ -18,11 +18,11 @@ use tokio_util::sync::CancellationToken;
 
 const SKIP_DIRS: [&str; 2] = ["node_modules", ".git"];
 /// A walk that visits this many entries stops and says so, never hangs a turn.
-pub const WALK_LIMIT: usize = 100_000;
+pub(crate) const WALK_LIMIT: usize = 100_000;
 
 /// One file a glob matched.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GlobHit {
+pub(crate) struct GlobHit {
     /// Its absolute path.
     pub path: PathBuf,
     /// When it last changed; the Unix epoch when the `Fs` does not say.
@@ -31,7 +31,7 @@ pub struct GlobHit {
 
 /// What a walk found ([`glob_fs`]).
 #[derive(Debug, Default)]
-pub struct GlobResult {
+pub(crate) struct GlobResult {
     /// The matching files, in walk order.
     pub hits: Vec<GlobHit>,
     /// True when [`WALK_LIMIT`] stopped the walk before the tree was exhausted.
@@ -51,7 +51,7 @@ fn static_prefix(pattern: &str) -> (String, String) {
 }
 
 /// One compiled pattern, matched against paths relative to the walk's start.
-pub struct Matcher {
+pub(crate) struct Matcher {
     glob: GlobMatcher,
     negate: bool,
 }
@@ -63,7 +63,7 @@ impl Matcher {
     ///
     /// A pattern globset cannot parse (an unclosed `[`), with a message for
     /// the model.
-    pub fn new(pattern: &str) -> Result<Self, String> {
+    pub(crate) fn new(pattern: &str) -> Result<Self, String> {
         let (negate, body) = match pattern.strip_prefix('!') {
             Some(rest) => (true, rest),
             None => (false, pattern),
@@ -80,7 +80,7 @@ impl Matcher {
     }
 
     /// Whether `rel`, a `/`-separated path relative to the walk's start, matches.
-    pub fn is_match(&self, rel: &str) -> bool {
+    pub(crate) fn is_match(&self, rel: &str) -> bool {
         self.glob.is_match(rel) != self.negate
     }
 }
@@ -149,7 +149,7 @@ impl Walk<'_> {
 /// # Errors
 ///
 /// An invalid pattern, with a message for the model.
-pub async fn glob_fs(
+pub(crate) async fn glob_fs(
     fs: &dyn Fs,
     base: &Path,
     pattern: &str,

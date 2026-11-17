@@ -4,7 +4,7 @@
 //! character) may be split anywhere; the parser buffers until a line is whole.
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct SseEvent {
+pub(crate) struct SseEvent {
     /// The `event:` name, when the server sent one.
     pub event: Option<String>,
     /// Every `data:` line of the event, joined with `\n`.
@@ -12,7 +12,7 @@ pub struct SseEvent {
 }
 
 #[derive(Debug, Default)]
-pub struct SseParser {
+pub(crate) struct SseParser {
     buf: Vec<u8>,
     event: Option<String>,
     data: Vec<String>,
@@ -20,7 +20,7 @@ pub struct SseParser {
 
 impl SseParser {
     /// Feed a chunk; returns the events it completed.
-    pub fn push(&mut self, bytes: &[u8]) -> Vec<SseEvent> {
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> Vec<SseEvent> {
         self.buf.extend_from_slice(bytes);
         let mut out = Vec::new();
         let mut start = 0;
@@ -50,7 +50,7 @@ impl SseParser {
     }
 
     /// The body ended: a last event without its blank line still counts.
-    pub fn finish(&mut self) -> Vec<SseEvent> {
+    pub(crate) fn finish(&mut self) -> Vec<SseEvent> {
         let mut out = Vec::new();
         if !self.buf.is_empty() {
             let rest = std::mem::take(&mut self.buf);

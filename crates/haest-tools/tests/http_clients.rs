@@ -69,20 +69,24 @@ fn asked_for(seen: &Seen, url: &str) -> bool {
 }
 
 /// Point every proxy variable at a listener that must see nothing; once per binary.
+#[expect(
+    unsafe_code,
+    reason = "setting the environment is unsafe, and these tests set a proxy"
+)]
 fn proxy_in_env() -> Seen {
     static PROXY: OnceLock<Seen> = OnceLock::new();
     PROXY
         .get_or_init(|| {
             let (url, seen) = listener();
-            // SAFETY: set once, before any test of this binary builds a client
-            // (each calls this first and waits for it); nothing else here
-            // touches the environment.
-            unsafe {
-                std::env::remove_var("NO_PROXY");
-                std::env::remove_var("no_proxy");
-                for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
-                    std::env::set_var(var, &url);
-                }
+            for var in ["NO_PROXY", "no_proxy"] {
+                // SAFETY: set once, before any test of this binary builds a
+                // client (each calls this first and waits for it); nothing
+                // else here touches the environment.
+                unsafe { std::env::remove_var(var) };
+            }
+            for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
+                // SAFETY: as above: once, before any client exists.
+                unsafe { std::env::set_var(var, &url) };
             }
             seen
         })

@@ -128,7 +128,6 @@
 //! [`Fs`]: haest_core::fs::Fs
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs)]
 
 #[cfg(not(unix))]
 compile_error!(

@@ -26,14 +26,14 @@ use crate::{
 };
 
 /// Every cap off; a test turns on the one it is about.
-pub fn uncapped() -> TurnCaps {
+pub(crate) fn uncapped() -> TurnCaps {
     TurnCaps::default()
 }
 
 /// Records what the loop persists and warns; serves fixed limits and a
 /// settable clock.
 #[derive(Default)]
-pub struct TestHooks {
+pub(crate) struct TestHooks {
     pub caps: Option<TurnCaps>,
     pub persisted: Mutex<Vec<Message>>,
     pub warnings: Mutex<Vec<String>>,
@@ -41,7 +41,7 @@ pub struct TestHooks {
 }
 
 impl TestHooks {
-    pub fn set_now(&self, ms: u64) {
+    pub(crate) fn set_now(&self, ms: u64) {
         self.now.store(ms, Ordering::SeqCst);
     }
 }
@@ -70,7 +70,7 @@ impl Clock for TestHooks {
 
 /// Files in memory, no shell.
 #[derive(Default)]
-pub struct MemWorkspace {
+pub(crate) struct MemWorkspace {
     pub fs: Arc<MemFs>,
 }
 
@@ -103,14 +103,14 @@ type Run =
     dyn Fn(JsonMap, ToolContext) -> BoxFuture<'static, Result<ToolOutput, ToolError>> + Send + Sync;
 
 /// A tool made of a closure.
-pub struct FnTool {
+pub(crate) struct FnTool {
     name: String,
     read_only: bool,
     run: Box<Run>,
 }
 
 impl FnTool {
-    pub fn arc<F, Fut>(name: &str, read_only: bool, f: F) -> ToolRef
+    pub(crate) fn arc<F, Fut>(name: &str, read_only: bool, f: F) -> ToolRef
     where
         F: Fn(JsonMap, ToolContext) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<ToolOutput, ToolError>> + Send + 'static,
@@ -146,7 +146,7 @@ impl Tool for FnTool {
 }
 
 /// `echo:<v>`, a write (not read-only), like the default tool of every loop test.
-pub fn echo_tool() -> ToolRef {
+pub(crate) fn echo_tool() -> ToolRef {
     FnTool::arc("Echo", false, |input, _| async move {
         let v = input.get("v").map_or("undefined".into(), spelled);
         Ok(ToolOutput::text(format!("echo:{v}")))
@@ -154,17 +154,17 @@ pub fn echo_tool() -> ToolRef {
 }
 
 /// One call of Echo.
-pub fn echo(id: &str, input: Value) -> AssistantMessage {
+pub(crate) fn echo(id: &str, input: Value) -> AssistantMessage {
     tool_answer(&[(id, "Echo", input)])
 }
 
-pub fn with_usage(mut msg: AssistantMessage, usage: &Usage) -> AssistantMessage {
+pub(crate) fn with_usage(mut msg: AssistantMessage, usage: &Usage) -> AssistantMessage {
     msg.usage = usage.clone();
     msg
 }
 
 #[derive(Default)]
-pub struct Opts {
+pub(crate) struct Opts {
     pub tools: Option<Vec<ToolRef>>,
     pub caps: Option<TurnCaps>,
     pub ledger: Option<Ledger>,
@@ -173,14 +173,14 @@ pub struct Opts {
 }
 
 /// Every cap off but what `f` turns on.
-pub fn turn_caps(f: impl FnOnce(&mut TurnCaps)) -> TurnCaps {
+pub(crate) fn turn_caps(f: impl FnOnce(&mut TurnCaps)) -> TurnCaps {
     let mut l = uncapped();
     f(&mut l);
     l
 }
 
 /// The default agent with only the caps `f` turns on.
-pub fn capped(f: impl FnOnce(&mut TurnCaps)) -> Opts {
+pub(crate) fn capped(f: impl FnOnce(&mut TurnCaps)) -> Opts {
     Opts {
         caps: Some(turn_caps(f)),
         ..Default::default()
@@ -188,7 +188,7 @@ pub fn capped(f: impl FnOnce(&mut TurnCaps)) -> Opts {
 }
 
 /// An agent on `fake:m1` served by `p`, with Echo unless `opts.tools` says otherwise.
-pub fn agent_with(p: &ScriptedProvider, opts: Opts) -> (Agent, Arc<TestHooks>) {
+pub(crate) fn agent_with(p: &ScriptedProvider, opts: Opts) -> (Agent, Arc<TestHooks>) {
     let hooks = Arc::new(TestHooks {
         caps: opts.caps,
         ..Default::default()
@@ -213,14 +213,14 @@ pub fn agent_with(p: &ScriptedProvider, opts: Opts) -> (Agent, Arc<TestHooks>) {
 }
 
 /// Every event of one turn.
-pub async fn collect(agent: &mut Agent, input: &str) -> Vec<LoopEvent> {
+pub(crate) async fn collect(agent: &mut Agent, input: &str) -> Vec<LoopEvent> {
     let mut events = Vec::new();
     agent.run(input, &mut events).await;
     events
 }
 
 /// The `TurnEnd` event's fields; panics when the turn did not end with one.
-pub fn end(events: &[LoopEvent]) -> (StopReason, Usage, Option<String>) {
+pub(crate) fn end(events: &[LoopEvent]) -> (StopReason, Usage, Option<String>) {
     match events.last() {
         Some(LoopEvent::TurnEnd {
             stop_reason,
@@ -232,6 +232,6 @@ pub fn end(events: &[LoopEvent]) -> (StopReason, Usage, Option<String>) {
     }
 }
 
-pub fn count(events: &[LoopEvent], pred: impl Fn(&LoopEvent) -> bool) -> usize {
+pub(crate) fn count(events: &[LoopEvent], pred: impl Fn(&LoopEvent) -> bool) -> usize {
     events.iter().filter(|e| pred(e)).count()
 }

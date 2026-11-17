@@ -148,7 +148,6 @@
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs, missing_debug_implementations)]
 
 mod build;
 mod error;
@@ -174,15 +173,15 @@ mod world;
 /// The names the runtime's code uses, laid out as the `haest` facade lays
 /// them out: core's key types at the root, its modules under `core`.
 mod haest {
-    pub use haest_code as code;
-    pub use haest_core as core;
-    pub use haest_core::prelude::*;
-    pub use haest_mcp as mcp;
-    pub use haest_mods as mods;
-    pub use haest_providers as providers;
-    pub use haest_providers::http;
-    pub use haest_tools as tools;
-    pub use haest_workspace as workspace;
+    pub(crate) use haest_code as code;
+    pub(crate) use haest_core as core;
+    pub(crate) use haest_core::prelude::*;
+    pub(crate) use haest_mcp as mcp;
+    pub(crate) use haest_mods as mods;
+    pub(crate) use haest_providers as providers;
+    pub(crate) use haest_providers::http;
+    pub(crate) use haest_tools as tools;
+    pub(crate) use haest_workspace as workspace;
 }
 
 pub use build::build;

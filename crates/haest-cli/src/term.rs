@@ -23,13 +23,13 @@ use crate::{
     render::{Level, Renderer},
 };
 
-pub type Term = Renderer<Stdout, Stderr>;
+pub(crate) type Term = Renderer<Stdout, Stderr>;
 
 /// A conversation as the CLI runs it: the CLI shares its UI with the
 /// approval prompter, the control socket and the broker link.
-pub type Runtime = haest::runtime::Runtime<Arc<TermUi>>;
+pub(crate) type Runtime = haest::runtime::Runtime<Arc<TermUi>>;
 
-pub struct TermUi {
+pub(crate) struct TermUi {
     pub term: Arc<Mutex<Term>>,
     /// Who reads the terminal: the REPL prompt, or one approval ask at a time.
     pub stdin: tokio::sync::Mutex<()>,
@@ -44,13 +44,13 @@ pub struct TermUi {
 impl TermUi {
     /// A terminal over a stream of its own (a new id, the default ring).
     #[cfg(test)]
-    pub fn new(json: bool) -> Self {
+    pub(crate) fn new(json: bool) -> Self {
         let sid = uuid::Uuid::new_v4().to_string();
         Self::with_hub(json, Hub::new(sid))
     }
 
     /// A terminal over `hub`: the stream the session publishes into too.
-    pub fn with_hub(json: bool, hub: Hub) -> Self {
+    pub(crate) fn with_hub(json: bool, hub: Hub) -> Self {
         Self {
             term: Arc::new(Mutex::new(Renderer::terminal(json))),
             stdin: tokio::sync::Mutex::new(()),
@@ -62,20 +62,20 @@ impl TermUi {
 
     /// No terminal: a parent process drives haest over stdio, and reads
     /// every line as a frame.
-    pub fn over_stdio(mut self) -> Self {
+    pub(crate) fn over_stdio(mut self) -> Self {
         self.slash = false;
         self
     }
 
     /// A question answered on the next line (see `ask.rs`).
-    pub fn ask(&self, question: &str) {
+    pub(crate) fn ask(&self, question: &str) {
         let text = question.to_string();
         self.hub.publish(Path::main(), Outbound::Ask { text });
     }
 
     /// The REPL prompt is open (a line printed now lands above it): an
     /// arrival waits for Enter, an approval asks above the prompt.
-    pub fn prompting(&self) -> bool {
+    pub(crate) fn prompting(&self) -> bool {
         self.term.lock().unwrap().prompting()
     }
 
@@ -85,7 +85,7 @@ impl TermUi {
 }
 
 /// The terminal shows `sub`, frame by frame, until the stream closes.
-pub fn show(term: Arc<Mutex<Term>>, mut sub: Subscription) -> JoinHandle<()> {
+pub(crate) fn show(term: Arc<Mutex<Term>>, mut sub: Subscription) -> JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(frame) = sub.recv().await {
             term.lock().unwrap().frame(&frame);

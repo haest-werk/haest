@@ -15,13 +15,13 @@ use haest::{
 
 use crate::{ask, term::TermUi};
 
-pub struct TermPrompter {
+pub(crate) struct TermPrompter {
     ui: Arc<TermUi>,
     interactive: bool,
 }
 
 impl TermPrompter {
-    pub fn new(ui: Arc<TermUi>, interactive: bool) -> Self {
+    pub(crate) fn new(ui: Arc<TermUi>, interactive: bool) -> Self {
         Self { ui, interactive }
     }
 }
@@ -83,7 +83,7 @@ impl Prompter for TermPrompter {
 
 /// Who answers approval asks: the human at the terminal, or the parent that
 /// drives haest over stdio (each ask an `approval_ask` frame).
-pub enum CliPrompter {
+pub(crate) enum CliPrompter {
     Term(TermPrompter),
     Session(SessionPrompter),
 }

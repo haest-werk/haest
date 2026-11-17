@@ -17,18 +17,18 @@ use haest::{
 
 /// Where the gateway listens, as the provider's base URL. The client sends
 /// the path over the socket; the host part means nothing.
-pub const BASE_URL: &str = "http://files.sock/agent/llm/v1";
+pub(crate) const BASE_URL: &str = "http://files.sock/agent/llm/v1";
 
 /// A slow model call: `arrived` fires when it reaches the gateway, which
 /// answers it once `release` fires.
 #[derive(Clone, Default)]
-pub struct Held {
+pub(crate) struct Held {
     pub arrived: CancellationToken,
     pub release: CancellationToken,
 }
 
 #[derive(Default)]
-pub struct Gateway {
+pub(crate) struct Gateway {
     replies: Mutex<VecDeque<String>>,
     requests: Mutex<Vec<Request>>,
     /// The next request with this authorization waits (`Gateway::hold`).
@@ -37,17 +37,17 @@ pub struct Gateway {
 
 impl Gateway {
     /// The model's next replies, in order. Out of script = a failed call.
-    pub fn script(&self, replies: impl IntoIterator<Item = String>) {
+    pub(crate) fn script(&self, replies: impl IntoIterator<Item = String>) {
         *locked(&self.replies) = replies.into_iter().collect();
     }
 
     /// Every request since the last call.
-    pub fn take_requests(&self) -> Vec<Request> {
+    pub(crate) fn take_requests(&self) -> Vec<Request> {
         std::mem::take(&mut *locked(&self.requests))
     }
 
     /// The next call that carries `authorization` waits for its release.
-    pub fn hold(&self, authorization: &str) -> Held {
+    pub(crate) fn hold(&self, authorization: &str) -> Held {
         let held = Held::default();
         *locked(&self.held) = Some((authorization.into(), held.clone()));
         held
@@ -90,15 +90,15 @@ impl HttpClient for Gateway {
 }
 
 /// A tool call the scripted model makes: id, tool name, input.
-pub struct Call(pub &'static str, pub &'static str, pub Value);
+pub(crate) struct Call(pub &'static str, pub &'static str, pub Value);
 
 /// What every scripted model call costs, as OpenRouter reports it in the usage.
-pub const CALL_USD: f64 = 0.001;
+pub(crate) const CALL_USD: f64 = 0.001;
 
 /// One model reply in Chat Completions SSE: `text` streamed, then each call
 /// (id and name first, the arguments in a later fragment, the way servers
 /// stream them), the finish reason, and a usage chunk with OpenRouter's cost.
-pub fn reply(text: &str, calls: &[Call]) -> String {
+pub(crate) fn reply(text: &str, calls: &[Call]) -> String {
     let mut chunks = Vec::new();
     if !text.is_empty() {
         chunks.push(delta(json!({"content": text})));
@@ -131,7 +131,7 @@ fn delta(d: Value) -> Value {
 }
 
 /// The tool names a request offered the model, in order.
-pub fn tool_names(body: &Value) -> Vec<String> {
+pub(crate) fn tool_names(body: &Value) -> Vec<String> {
     body["tools"]
         .as_array()
         .into_iter()
@@ -141,7 +141,7 @@ pub fn tool_names(body: &Value) -> Vec<String> {
 }
 
 /// The JSON Schema a request sent for one tool.
-pub fn tool_schema<'a>(body: &'a Value, name: &str) -> &'a Value {
+pub(crate) fn tool_schema<'a>(body: &'a Value, name: &str) -> &'a Value {
     body["tools"]
         .as_array()
         .into_iter()

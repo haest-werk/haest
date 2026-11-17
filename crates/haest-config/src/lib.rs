@@ -127,7 +127,6 @@
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs)]
 
 mod error;
 mod fields;

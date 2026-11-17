@@ -10,7 +10,7 @@ use haest::{
 
 /// What the human can do about `limit` here; None for a limit with no way
 /// past it. With `slash` false, no slash command is named.
-pub fn remedy(limit: Limit, slash: bool) -> Option<String> {
+pub(crate) fn remedy(limit: Limit, slash: bool) -> Option<String> {
     Some(match limit {
         Limit::RequestTokens(_) if !slash => format!(
             "A `clear` control starts the conversation over. {}",

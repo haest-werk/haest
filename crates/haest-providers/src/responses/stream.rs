@@ -33,7 +33,7 @@ pub(crate) struct ResponsesFold {
 }
 
 impl ResponsesFold {
-    pub fn new(provider_id: &str, model: &str) -> Self {
+    pub(super) fn new(provider_id: &str, model: &str) -> Self {
         Self {
             msg: AssistantMessage::start(provider_id, model),
             items: BTreeMap::new(),

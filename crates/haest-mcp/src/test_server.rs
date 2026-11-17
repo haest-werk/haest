@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use tokio::{io::DuplexStream, sync::Notify, task::JoinHandle};
 
 #[derive(Clone, Default)]
-pub struct TestServer {
+pub(crate) struct TestServer {
     /// Signalled when a `hang` call arrives.
     pub hanging: Arc<Notify>,
     /// Signalled when a `hang` call is cancelled by the client.
@@ -31,7 +31,7 @@ pub struct TestServer {
 
 impl TestServer {
     /// A server labelled `label` with these extra tools.
-    pub fn named(label: &str, names: &[&str]) -> Self {
+    pub(crate) fn named(label: &str, names: &[&str]) -> Self {
         Self {
             label: label.into(),
             names: names.iter().map(|n| n.to_string()).collect(),
@@ -111,7 +111,7 @@ impl ServerHandler for TestServer {
 
 /// The server running on one end of a duplex; the other end is for the client.
 /// The handle finishes when the server's connection ends.
-pub fn spawn(server: TestServer) -> (DuplexStream, JoinHandle<()>) {
+pub(crate) fn spawn(server: TestServer) -> (DuplexStream, JoinHandle<()>) {
     let (client_end, server_end) = tokio::io::duplex(64 * 1024);
     let handle = tokio::spawn(async move {
         if let Ok(running) = server.serve(server_end).await {

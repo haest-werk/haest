@@ -26,7 +26,7 @@ pub(crate) struct FakeHttp {
 }
 
 impl FakeHttp {
-    pub fn new(replies: impl IntoIterator<Item = Response>) -> Arc<Self> {
+    pub(crate) fn new(replies: impl IntoIterator<Item = Response>) -> Arc<Self> {
         Arc::new(Self {
             replies: Mutex::new(replies.into_iter().map(Ok).collect()),
             ..Default::default()
@@ -34,7 +34,7 @@ impl FakeHttp {
     }
 
     /// A network that never connects.
-    pub fn down(why: &str) -> Arc<Self> {
+    pub(crate) fn down(why: &str) -> Arc<Self> {
         let refused = HttpError::Connect(why.into());
         Arc::new(Self {
             replies: Mutex::new([Err(refused)].into()),
@@ -43,19 +43,19 @@ impl FakeHttp {
     }
 
     /// A server that never answers.
-    pub fn hanging() -> Arc<Self> {
+    pub(crate) fn hanging() -> Arc<Self> {
         Arc::new(Self {
             hang: true,
             ..Default::default()
         })
     }
 
-    pub fn calls(&self) -> Vec<Request> {
+    pub(crate) fn calls(&self) -> Vec<Request> {
         self.calls.lock().unwrap().clone()
     }
 
     /// `METHOD url` of every request so far.
-    pub fn sent(&self) -> Vec<String> {
+    pub(crate) fn sent(&self) -> Vec<String> {
         (self.calls().iter())
             .map(|c| format!("{} {}", c.method.as_str(), c.url))
             .collect()

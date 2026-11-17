@@ -19,7 +19,7 @@ pub(crate) struct SearchAcc {
 }
 
 impl SearchAcc {
-    pub fn apply_annotations(&mut self, annotations: Option<&Value>) {
+    pub(crate) fn apply_annotations(&mut self, annotations: Option<&Value>) {
         let Some(list) = annotations.and_then(Value::as_array) else {
             return;
         };
@@ -41,7 +41,7 @@ impl SearchAcc {
         }
     }
 
-    pub fn apply_usage(&mut self, usage: &Value) {
+    pub(crate) fn apply_usage(&mut self, usage: &Value) {
         let n = usage
             .pointer("/server_tool_use_details/web_search_requests")
             .and_then(Value::as_f64);
@@ -51,7 +51,7 @@ impl SearchAcc {
     }
 
     /// The message's record of the search, or None when nothing was searched or cited.
-    pub fn into_use(self) -> Option<WebSearchUse> {
+    pub(crate) fn into_use(self) -> Option<WebSearchUse> {
         if self.searches == 0 && self.sources.is_empty() {
             return None;
         }
@@ -66,7 +66,7 @@ impl SearchAcc {
 /// the model decides when to search, OpenRouter runs it inside the same call and
 /// bills it into `usage.cost`. Last in the list, after the function tools, so a
 /// config change never shifts the cached prefix of the ones before it.
-pub fn web_search_tool(cfg: &WebSearchOptions) -> Value {
+pub(crate) fn web_search_tool(cfg: &WebSearchOptions) -> Value {
     json!({
         "type": "openrouter:web_search",
         "parameters": {

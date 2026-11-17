@@ -62,14 +62,14 @@ pub(crate) struct Logs {
 }
 
 impl Logs {
-    pub fn new(max: usize) -> Self {
+    pub(super) fn new(max: usize) -> Self {
         Self {
             max,
             ..Default::default()
         }
     }
 
-    pub fn add(&mut self, level: &str, line: &str) {
+    pub(super) fn add(&mut self, level: &str, line: &str) {
         if self.truncated {
             return;
         }

@@ -17,7 +17,7 @@ fn price(m: &ModelInfo) -> String {
         .map_or("-".into(), |p| format!("${} / ${}", p.input, p.output))
 }
 
-pub fn render(catalog: &Catalog) -> String {
+pub(crate) fn render(catalog: &Catalog) -> String {
     let mut out = String::new();
     for group in catalog.groups() {
         out.push_str(&format!("{}\n", group.label));

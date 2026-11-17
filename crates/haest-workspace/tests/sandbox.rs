@@ -78,6 +78,10 @@ async fn writes_never_reach_the_real_disk() {
 }
 
 #[tokio::test]
+#[expect(
+    unsafe_code,
+    reason = "setting the environment is unsafe, and the test plants a secret"
+)]
 async fn the_host_environment_does_not_leak_into_the_shell() {
     let (_t, dir) = tempdir();
     // SAFETY: a variable no other test reads or writes.

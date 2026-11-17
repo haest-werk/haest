@@ -47,7 +47,7 @@ impl Tool for TaskCreate {
     }
 }
 
-pub struct Quiet;
+pub(super) struct Quiet;
 impl LedgerHooks for Quiet {
     fn persist(&self, _: &LedgerSnapshot) {}
     fn warn(&self, _: &str) {}
@@ -55,7 +55,7 @@ impl LedgerHooks for Quiet {
 
 /// What reached main, and through which door of its inbox.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ForMain {
+pub(super) enum ForMain {
     /// [`Inbox::submit`]: a message.
     Message(String),
     /// [`Inbox::submit_answer`]: a background answer.
@@ -64,7 +64,7 @@ pub enum ForMain {
 
 /// One [`SubagentEvent::Message`] as the parent heard it.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Heard {
+pub(super) struct Heard {
     /// The id it was keyed by.
     pub id: String,
     pub from: Sender,
@@ -74,7 +74,7 @@ pub struct Heard {
 
 /// What the host does beyond haest's defaults.
 #[derive(Default)]
-pub struct Host {
+pub(super) struct Host {
     /// Its kinds of subagent: `explore` (no tools of its own, the default)
     /// and `general` (the base tools); None = no kinds.
     pub kinds: Option<SubagentTypes>,
@@ -84,7 +84,7 @@ pub struct Host {
     pub note: Option<fn(&MemberStart) -> String>,
 }
 
-pub struct FakeParent {
+pub(super) struct FakeParent {
     pub provider: Arc<Roles>,
     pub ws: Arc<TestWorkspace>,
     pub ledger: Ledger,
@@ -109,7 +109,7 @@ pub struct FakeParent {
 type Adjust = dyn Fn(SharedDeps) -> SharedDeps + Send + Sync;
 
 /// The kinds a host with kinds has: `explore` (the default) and `general`.
-pub fn explore_or_general() -> SubagentTypes {
+pub(super) fn explore_or_general() -> SubagentTypes {
     SubagentTypes::new(["explore", "general"], "explore", "explore only looks").unwrap()
 }
 

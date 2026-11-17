@@ -45,7 +45,7 @@ pub(crate) struct VmPort {
 
 impl VmPort {
     /// How a guest function asks haest to answer it; the answer arrives through [`Self::wait`].
-    pub fn caller(&self) -> impl Fn(u64, String, Vec<String>) + 'static {
+    pub(super) fn caller(&self) -> impl Fn(u64, String, Vec<String>) + 'static {
         let to = self.to_haest.clone();
         move |call_id, name, args| {
             let _ = to.send(FromVm::Call {
@@ -57,7 +57,7 @@ impl VmPort {
     }
 
     /// A beat sender the interrupt handler can own.
-    pub fn beats(&self) -> impl Fn(VmBeat) + 'static {
+    pub(super) fn beats(&self) -> impl Fn(VmBeat) + 'static {
         let to = self.to_haest.clone();
         move |b| {
             let _ = to.send(FromVm::Beat(b));
@@ -66,7 +66,7 @@ impl VmPort {
 
     /// haest's next message, waiting at most `timeout`. A stop -- or haest gone
     /// away -- also sets the stop flag, so the run sees it however it asks.
-    pub fn wait(&self, timeout: Duration) -> Option<ToVm> {
+    pub(super) fn wait(&self, timeout: Duration) -> Option<ToVm> {
         match self.from_haest.recv_timeout(timeout) {
             Ok(m) => Some(self.seen(m)),
             Err(RecvTimeoutError::Timeout) => None,
@@ -75,7 +75,7 @@ impl VmPort {
     }
 
     /// A message already waiting, without blocking.
-    pub fn try_next(&self) -> Option<ToVm> {
+    pub(super) fn try_next(&self) -> Option<ToVm> {
         self.from_haest.try_recv().ok().map(|m| self.seen(m))
     }
 

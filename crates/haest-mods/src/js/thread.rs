@@ -187,7 +187,7 @@ impl Js {
                 Err(rquickjs::Error::WouldBlock) => return Ok(Loaded::NeverFinished),
                 other => other?,
             }
-            let main: Value = module.get("default")?;
+            let main: Value<'_> = module.get("default")?;
             if !main.is_function() {
                 return Ok(Loaded::NotAFunction);
             }
@@ -225,7 +225,7 @@ impl Js {
             self.signals.insert(id, cancel);
         }
         let sent = self.enter(|ctx| {
-            let f: Function = haest(ctx)?.get("dispatch")?;
+            let f: Function<'_> = haest(ctx)?.get("dispatch")?;
             f.call::<_, ()>((id as f64, op, payload))
         });
         if let Err(e) = sent {
@@ -239,7 +239,7 @@ impl Js {
             Err(e) => (false, e),
         };
         if let Err(e) = self.enter(|ctx| {
-            let f: Function = haest(ctx)?.get("answer")?;
+            let f: Function<'_> = haest(ctx)?.get("answer")?;
             f.call::<_, ()>((id as f64, ok, value))
         }) {
             self.fail_all(&e);
@@ -250,7 +250,7 @@ impl Js {
     fn settle(&mut self) {
         let stopped = self.run_jobs();
         match self.enter(|ctx| {
-            let f: Function = haest(ctx)?.get("drain")?;
+            let f: Function<'_> = haest(ctx)?.get("drain")?;
             f.call::<_, String>(())
         }) {
             Ok(json) => self.apply(&json),

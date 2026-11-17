@@ -18,16 +18,16 @@ use haest_core::{
 };
 use serde_json::{Value, json};
 
-pub const CWD: &str = "/p";
+pub(crate) const CWD: &str = "/p";
 
 /// Files in memory. `rg ... -e PATTERN TARGET` is answered by a literal scan of
 /// them (files with a match, the way `rg -l` prints them); any other command exits 127.
-pub struct MemWorkspace {
+pub(crate) struct MemWorkspace {
     pub mem: Arc<MemFs>,
 }
 
 impl MemWorkspace {
-    pub fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
+    pub(crate) fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
         files: impl IntoIterator<Item = (P, D)>,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -35,7 +35,7 @@ impl MemWorkspace {
         })
     }
 
-    pub async fn contents(&self, path: &str) -> Option<String> {
+    pub(crate) async fn contents(&self, path: &str) -> Option<String> {
         self.mem.read_to_string(Path::new(path)).await.ok()
     }
 
@@ -109,17 +109,17 @@ impl Workspace for MemWorkspace {
     }
 }
 
-pub fn ctx(ws: Arc<MemWorkspace>) -> ToolContext {
+pub(crate) fn ctx(ws: Arc<MemWorkspace>) -> ToolContext {
     ToolContext::new(CWD, ws)
 }
 
-pub fn input(v: Value) -> JsonMap {
+pub(crate) fn input(v: Value) -> JsonMap {
     v.as_object().cloned().expect("a JSON object")
 }
 
 /// Records what tools report to their [`ToolServices`].
 #[derive(Default)]
-pub struct Recorder {
+pub(crate) struct Recorder {
     pub events: Mutex<Vec<InnerCallEvent>>,
 }
 
@@ -130,7 +130,7 @@ impl ToolServices for Recorder {
 }
 
 /// A fake tool that counts calls and peak concurrency, answering `answer` after `ms`.
-pub struct Probe {
+pub(crate) struct Probe {
     pub name: String,
     pub read_only: bool,
     pub ms: u64,
@@ -141,7 +141,7 @@ pub struct Probe {
 }
 
 impl Probe {
-    pub fn new(name: &str, read_only: bool, ms: u64) -> Self {
+    pub(crate) fn new(name: &str, read_only: bool, ms: u64) -> Self {
         Self {
             name: name.into(),
             read_only,
@@ -153,11 +153,11 @@ impl Probe {
         }
     }
 
-    pub fn calls(&self) -> usize {
+    pub(crate) fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
 
-    pub fn peak(&self) -> usize {
+    pub(crate) fn peak(&self) -> usize {
         self.peak.load(Ordering::SeqCst)
     }
 }

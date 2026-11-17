@@ -188,7 +188,6 @@
 //! [`KeySource`]: haest_core::KeySource
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs)]
 
 mod anthropic;
 mod catalog;

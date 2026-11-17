@@ -3,7 +3,7 @@
 
 /// The column called `name`: exactly, else the one that matches ignoring case
 /// and surrounding spaces (a header "Amount " is still `amount`).
-pub fn resolve_name(headers: &[String], name: &str) -> Option<usize> {
+pub(super) fn resolve_name(headers: &[String], name: &str) -> Option<usize> {
     if let Some(i) = headers.iter().position(|h| h == name) {
         return Some(i);
     }
@@ -19,7 +19,7 @@ pub fn resolve_name(headers: &[String], name: &str) -> Option<usize> {
 }
 
 /// The headers for an error message, at most 30.
-pub fn column_list(headers: &[String]) -> String {
+pub(super) fn column_list(headers: &[String]) -> String {
     let mut shown: Vec<String> = headers.iter().take(30).map(|h| format!("`{h}`")).collect();
     if headers.len() > 30 {
         shown.push(format!("and {} more (xan headers)", headers.len() - 30));
@@ -82,7 +82,7 @@ fn items(spec: &str) -> Vec<Item> {
 
 /// The columns `spec` picks, in its order (a column named twice comes twice).
 /// Items starting with `!` leave columns out: alone they mean "all but these".
-pub fn select(spec: &str, headers: &[String]) -> Result<Vec<usize>, String> {
+pub(super) fn select(spec: &str, headers: &[String]) -> Result<Vec<usize>, String> {
     let mut picked = Vec::new();
     let mut dropped = Vec::new();
     let mut any_positive = false;

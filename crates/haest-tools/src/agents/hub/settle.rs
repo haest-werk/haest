@@ -25,7 +25,7 @@ pub(super) struct Work {
 pub(super) struct Open(Arc<Work>);
 
 impl Open {
-    pub fn begin(work: &Arc<Work>) -> Self {
+    pub(super) fn begin(work: &Arc<Work>) -> Self {
         work.open.fetch_add(1, Ordering::SeqCst);
         Self(work.clone())
     }

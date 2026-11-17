@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 use crate::term::Runtime;
 
 /// The conversation, running: a session over the runtime.
-pub type Session = SessionHandle<Runtime>;
+pub(crate) type Session = SessionHandle<Runtime>;
 
 /// How long the second Ctrl+C gives the cancelled turn to end on its own, and
 /// then the session writer to land what it holds, before haest exits anyway.
@@ -54,7 +54,7 @@ async fn turn_ended(control: &AgentControl) {
 
 /// What Ctrl+C reaches while the session owns the runtime: taken from it
 /// before it starts.
-pub struct Brakes {
+pub(crate) struct Brakes {
     control: AgentControl,
     hooks: RuntimeHooks,
     jobs: Option<JobHub>,
@@ -62,7 +62,7 @@ pub struct Brakes {
 }
 
 impl Brakes {
-    pub fn of(rt: &Runtime) -> Self {
+    pub(crate) fn of(rt: &Runtime) -> Self {
         Self {
             control: rt.agent().control(),
             hooks: rt.hooks().clone(),
@@ -83,7 +83,7 @@ fn turn_started(frame: &Frame) -> bool {
 /// [`wind_down`]. Between turns it does nothing here: the prompt reads its
 /// own Ctrl+C, and print mode's wait has its own ([`settle`]). `stream`
 /// says when a new turn starts; the watch ends with it.
-pub fn watch_interrupts(brakes: Arc<Brakes>, mut stream: Subscription) -> JoinHandle<()> {
+pub(crate) fn watch_interrupts(brakes: Arc<Brakes>, mut stream: Subscription) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut asked = false;
         loop {
@@ -116,7 +116,7 @@ pub fn watch_interrupts(brakes: Arc<Brakes>, mut stream: Subscription) -> JoinHa
 /// A turn the human started: the mods' `prompt.submit` may rewrite the text
 /// first, then anything the gate held rides in ahead of it (the session's
 /// way with a person's input). Its end, or None when the session is gone.
-pub async fn human(session: &Session, text: String) -> Option<TurnOutcome> {
+pub(crate) async fn human(session: &Session, text: String) -> Option<TurnOutcome> {
     session.turn(Input::human(text)).await.ok()
 }
 
@@ -124,7 +124,7 @@ pub async fn human(session: &Session, text: String) -> Option<TurnOutcome> {
 /// background subagent still works, its answer is waited for and run too
 /// (the session does both). Ctrl+C between turns stops the subagents and
 /// the wait.
-pub async fn settle(session: &Session, brakes: &Brakes) {
+pub(crate) async fn settle(session: &Session, brakes: &Brakes) {
     let settled = session.settled();
     tokio::pin!(settled);
     loop {
@@ -147,7 +147,7 @@ pub async fn settle(session: &Session, brakes: &Brakes) {
 }
 
 /// How a print-mode run exits: 0 answered, 130 interrupted, 1 anything else.
-pub fn exit_code(end: &TurnOutcome) -> ExitCode {
+pub(crate) fn exit_code(end: &TurnOutcome) -> ExitCode {
     match end.stop_reason {
         StopReason::Aborted => ExitCode::from(130),
         StopReason::EndTurn if end.error.is_none() => ExitCode::SUCCESS,

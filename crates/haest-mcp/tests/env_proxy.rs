@@ -52,16 +52,20 @@ fn read_request(s: &mut impl Read) -> String {
 }
 
 #[tokio::test]
+#[expect(
+    unsafe_code,
+    reason = "setting the environment is unsafe, and the test sets a proxy"
+)]
 async fn an_http_server_and_its_headers_are_never_sent_through_an_env_proxy() {
     let (proxy, via_proxy) = listener();
     let (server, direct) = listener();
-    // SAFETY: this binary's only test, and it sets them before any client exists.
-    unsafe {
-        std::env::remove_var("NO_PROXY");
-        std::env::remove_var("no_proxy");
-        for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
-            std::env::set_var(var, &proxy);
-        }
+    for var in ["NO_PROXY", "no_proxy"] {
+        // SAFETY: this binary's only test, and it sets them before any client exists.
+        unsafe { std::env::remove_var(var) };
+    }
+    for var in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
+        // SAFETY: as above: the only test, and no client exists yet.
+        unsafe { std::env::set_var(var, &proxy) };
     }
     let http =
         McpTransport::http(format!("{server}/mcp")).with_header("Authorization", "Bearer mcp-key");

@@ -10,6 +10,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 # haest-core only: a host that writes its settings out pulls in no tools, no HTTP.
 haest-core = { workspace = true }

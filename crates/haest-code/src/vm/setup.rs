@@ -45,7 +45,7 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
-    pub fn new(max_log_chars: usize) -> Rc<Self> {
+    pub(super) fn new(max_log_chars: usize) -> Rc<Self> {
         Rc::new(Self {
             logs: RefCell::new(Logs::new(max_log_chars)),
             pending: RefCell::default(),
@@ -55,7 +55,7 @@ impl Shared {
         })
     }
 
-    pub fn inflight(&self) -> usize {
+    pub(super) fn inflight(&self) -> usize {
         self.pending.try_borrow().map_or(0, |p| p.len())
     }
 }
@@ -71,7 +71,7 @@ pub(crate) struct Clock {
 }
 
 impl Clock {
-    pub fn new(job: &VmJob, shared: Rc<Shared>, send: Box<dyn Fn(VmBeat)>) -> Rc<Self> {
+    pub(super) fn new(job: &VmJob, shared: Rc<Shared>, send: Box<dyn Fn(VmBeat)>) -> Rc<Self> {
         let started = Instant::now();
         Rc::new(Self {
             started,
@@ -83,7 +83,7 @@ impl Clock {
         })
     }
 
-    pub fn stop_reason(&self) -> Option<VmStop> {
+    pub(super) fn stop_reason(&self) -> Option<VmStop> {
         if self.stop.load(Ordering::SeqCst) {
             Some(VmStop::Interrupted)
         } else if Instant::now() > self.deadline {
@@ -93,7 +93,7 @@ impl Clock {
         }
     }
 
-    pub fn beat_if_due(&self) {
+    pub(super) fn beat_if_due(&self) {
         let now = Instant::now();
         if now.duration_since(self.last_beat.get()) < BEAT {
             return;

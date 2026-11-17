@@ -145,7 +145,6 @@
 //! [`SubagentCaps`]: haest_core::caps::SubagentCaps
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs)]
 
 mod agents;
 mod bash;

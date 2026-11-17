@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 /// A tool that answers once it is let go (or its call is stopped).
-pub struct Wait(Arc<Notify>);
+pub(crate) struct Wait(Arc<Notify>);
 
 #[async_trait]
 impl Tool for Wait {
@@ -39,7 +39,7 @@ impl Tool for Wait {
 }
 
 /// A session over a scripted model, with the Wait tool.
-pub fn session(model: &ScriptedProvider, hub: Hub) -> (SessionHandle<Agent>, Arc<Notify>) {
+pub(crate) fn session(model: &ScriptedProvider, hub: Hub) -> (SessionHandle<Agent>, Arc<Notify>) {
     let go = Arc::new(Notify::new());
     let tools: Tools = Tools::from_iter([ToolRef::new(Wait(go.clone()))]);
     let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
@@ -47,10 +47,10 @@ pub fn session(model: &ScriptedProvider, hub: Hub) -> (SessionHandle<Agent>, Arc
     (start(agent, hub), go)
 }
 
-pub fn hub() -> Hub {
+pub(crate) fn hub() -> Hub {
     Hub::new("s1")
 }
 
-pub fn answers(texts: &[&str]) -> ScriptedProvider {
+pub(crate) fn answers(texts: &[&str]) -> ScriptedProvider {
     ScriptedProvider::new(texts.iter().map(|t| text_answer(t)))
 }

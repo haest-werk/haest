@@ -18,7 +18,7 @@ pub(super) struct Entry {
 }
 
 impl Entry {
-    pub fn append(&mut self, chunk: &str) {
+    pub(super) fn append(&mut self, chunk: &str) {
         self.output.push_str(chunk);
         if self.output.len() <= MAX_BUFFER {
             return;
@@ -31,7 +31,7 @@ impl Entry {
         self.dropped += cut;
     }
 
-    pub fn take(&mut self) -> Taken {
+    pub(super) fn take(&mut self) -> Taken {
         // Both offsets are ends of whole chunks, so `from` is a character boundary.
         let from = self.read.saturating_sub(self.dropped);
         let missed = self.dropped.saturating_sub(self.read);
@@ -57,7 +57,7 @@ pub(super) struct Jobs {
 }
 
 impl Jobs {
-    pub fn running(&self) -> Vec<Job> {
+    pub(super) fn running(&self) -> Vec<Job> {
         self.entries
             .iter()
             .filter(|e| e.job.status == JobStatus::Running)
@@ -65,15 +65,15 @@ impl Jobs {
             .collect()
     }
 
-    pub fn get(&self, id: &str) -> Option<&Entry> {
+    pub(super) fn get(&self, id: &str) -> Option<&Entry> {
         self.entries.iter().find(|e| e.job.id == id)
     }
 
-    pub fn get_mut(&mut self, id: &str) -> Option<&mut Entry> {
+    pub(super) fn get_mut(&mut self, id: &str) -> Option<&mut Entry> {
         self.entries.iter_mut().find(|e| e.job.id == id)
     }
 
-    pub fn add(&mut self, command: &str, description: &str, stop: CancellationToken) -> Job {
+    pub(super) fn add(&mut self, command: &str, description: &str, stop: CancellationToken) -> Job {
         self.next += 1;
         let job = Job {
             id: format!("b{}", self.next),
@@ -95,7 +95,7 @@ impl Jobs {
 
     /// Keep the last [`MAX_FINISHED`] that ENDED (a killed job still dying is kept:
     /// its end has yet to be reported).
-    pub fn forget_old_finished(&mut self) {
+    pub(super) fn forget_old_finished(&mut self) {
         let ended = self.entries.iter().filter(|e| e.ended()).count();
         let mut excess = ended.saturating_sub(MAX_FINISHED);
         self.entries.retain(|e| {

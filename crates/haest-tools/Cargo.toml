@@ -10,6 +10,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 haest-core = { workspace = true }
 # WebFetch's and GenerateImage's requests; re-exported as `haest_tools::http`.

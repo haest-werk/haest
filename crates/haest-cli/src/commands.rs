@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{changes, term::Runtime};
 
-pub enum Outcome {
+pub(crate) enum Outcome {
     /// Send this to the model as the human's turn.
     Send(String),
     /// Handled here; nothing goes to the model.
@@ -22,7 +22,7 @@ pub enum Outcome {
 const HELP: &str = "Commands: /model [provider:model], /effort [level|default], /budget [usd | tokens <n>], /compact, /clear, /skills, /changes and /apply (sandbox edits to disk), /<skill> [args], /exit";
 
 /// Resolve one input line. Plain text passes through unchanged.
-pub async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
+pub(crate) async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
     let Some(rest) = line.trim().strip_prefix('/') else {
         return Outcome::Send(line.to_string());
     };

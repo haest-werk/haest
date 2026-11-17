@@ -25,7 +25,7 @@ pub(super) fn run_id() -> String {
 pub(super) struct Due(Arc<AtomicUsize>);
 
 impl Due {
-    pub fn owe(count: &Arc<AtomicUsize>) -> Self {
+    pub(super) fn owe(count: &Arc<AtomicUsize>) -> Self {
         count.fetch_add(1, Ordering::SeqCst);
         Self(count.clone())
     }
@@ -57,14 +57,14 @@ pub(super) struct Member {
 }
 
 impl Member {
-    pub fn steer(&mut self, text: String) {
+    pub(super) fn steer(&mut self, text: String) {
         match &self.control {
             Some(c) => c.steer(text),
             None => self.pending.push(text),
         }
     }
 
-    pub fn abort(&self) {
+    pub(super) fn abort(&self) {
         self.stop.cancel();
         if let Some(c) = &self.control {
             c.abort();
@@ -85,28 +85,28 @@ pub(super) struct Members {
 }
 
 impl Members {
-    pub fn running(&self) -> impl Iterator<Item = &Member> {
+    pub(super) fn running(&self) -> impl Iterator<Item = &Member> {
         self.live.iter().filter(|m| m.status == Status::Running)
     }
 
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut Member> {
+    pub(super) fn get_mut(&mut self, name: &str) -> Option<&mut Member> {
         self.live.iter_mut().find(|m| m.me.name == name)
     }
 
     /// Ever started here (running, or finished and gone).
-    pub fn known(&self, name: &str) -> bool {
+    pub(super) fn known(&self, name: &str) -> bool {
         self.finished.contains(name) || self.live.iter().any(|m| m.me.name == name)
     }
 
     /// Who a message can reach right now, for a refusal.
-    pub fn reachable(&self) -> Vec<String> {
+    pub(super) fn reachable(&self) -> Vec<String> {
         let mut names = vec![MAIN_AGENT.to_string()];
         names.extend(self.running().map(|m| m.me.name.clone()));
         names
     }
 
     /// Check the caps and take a unique name for a new agent of `from`.
-    pub fn reserve(
+    pub(super) fn reserve(
         &mut self,
         from: &AgentRef,
         input: &SpawnInput,
@@ -154,7 +154,7 @@ impl Members {
     }
 
     /// Its agent exists: what waited for it is steered in.
-    pub fn attach(&mut self, name: &str, control: AgentControl) {
+    pub(super) fn attach(&mut self, name: &str, control: AgentControl) {
         if let Some(m) = self.get_mut(name) {
             for text in m.pending.drain(..) {
                 control.steer(text);
@@ -165,12 +165,12 @@ impl Members {
 
     /// Its start was refused: it never ran, so it leaves the table AND its
     /// name is free again. Messages that waited for it go with it.
-    pub fn forget(&mut self, name: &str) {
+    pub(super) fn forget(&mut self, name: &str) {
         self.live.retain(|m| m.me.name != name);
     }
 
     /// Its turn ended: it leaves the table, its name stays taken.
-    pub fn leave(&mut self, name: &str) {
+    pub(super) fn leave(&mut self, name: &str) {
         if let Some(i) = self.live.iter().position(|m| m.me.name == name) {
             let mut m = self.live.remove(i);
             if m.status == Status::Running {

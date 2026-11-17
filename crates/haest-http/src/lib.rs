@@ -78,7 +78,6 @@
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs)]
 
 mod client_ref;
 mod error;

@@ -41,29 +41,29 @@ pub(crate) struct TestUi {
 }
 
 impl TestUi {
-    pub fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         Arc::default()
     }
     /// Answers asks in this order; out of answers = deny.
-    pub fn answering(answers: impl IntoIterator<Item = Decision>) -> Arc<Self> {
+    pub(crate) fn answering(answers: impl IntoIterator<Item = Decision>) -> Arc<Self> {
         Arc::new(Self {
             answers: Mutex::new(answers.into_iter().collect()),
             ..Default::default()
         })
     }
-    pub fn holding() -> Arc<Self> {
+    pub(crate) fn holding() -> Arc<Self> {
         Arc::new(Self {
             hold: true,
             ..Default::default()
         })
     }
-    pub fn infos(&self) -> Vec<String> {
+    pub(crate) fn infos(&self) -> Vec<String> {
         self.infos.lock().unwrap().clone()
     }
-    pub fn errors(&self) -> Vec<String> {
+    pub(crate) fn errors(&self) -> Vec<String> {
         self.errors.lock().unwrap().clone()
     }
-    pub fn asks(&self) -> Vec<ApprovalRequest> {
+    pub(crate) fn asks(&self) -> Vec<ApprovalRequest> {
         self.asks.lock().unwrap().clone()
     }
 }
@@ -97,16 +97,16 @@ pub(crate) struct Human {
 }
 
 impl Human {
-    pub fn answering(answers: impl IntoIterator<Item = ApprovalAnswer>) -> Arc<Self> {
+    pub(crate) fn answering(answers: impl IntoIterator<Item = ApprovalAnswer>) -> Arc<Self> {
         Arc::new(Self {
             answers: Mutex::new(answers.into_iter().collect()),
             ..Default::default()
         })
     }
-    pub fn prompts(&self) -> usize {
+    pub(crate) fn prompts(&self) -> usize {
         self.prompts.load(Ordering::SeqCst)
     }
-    pub fn receipts(&self) -> usize {
+    pub(crate) fn receipts(&self) -> usize {
         self.receipts.load(Ordering::SeqCst)
     }
 }
@@ -153,13 +153,13 @@ impl Probe {
             ran: Mutex::default(),
         })
     }
-    pub fn new(name: &str) -> Arc<Self> {
+    pub(crate) fn new(name: &str) -> Arc<Self> {
         Self::with(name, false)
     }
-    pub fn read_only(name: &str) -> Arc<Self> {
+    pub(crate) fn read_only(name: &str) -> Arc<Self> {
         Self::with(name, true)
     }
-    pub fn ran(&self) -> Vec<JsonMap> {
+    pub(crate) fn ran(&self) -> Vec<JsonMap> {
         self.ran.lock().unwrap().clone()
     }
 }

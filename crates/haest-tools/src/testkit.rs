@@ -21,11 +21,11 @@ use haest_core::{
 use serde_json::Value;
 
 /// The working directory every test context runs in.
-pub const CWD: &str = "/p";
+pub(crate) const CWD: &str = "/p";
 
 /// One command a tool ran: `shell` = a command line, else a program and its argv.
 #[derive(Debug, Clone)]
-pub struct Call {
+pub(crate) struct Call {
     pub shell: bool,
     pub argv: Vec<String>,
     pub cwd: PathBuf,
@@ -34,7 +34,7 @@ pub struct Call {
 
 type Answer = Box<dyn Fn(&Call) -> ExecResult + Send + Sync>;
 
-pub struct TestWorkspace {
+pub(crate) struct TestWorkspace {
     pub mem: Arc<MemFs>,
     answer: Answer,
     calls: Mutex<Vec<Call>>,
@@ -42,7 +42,7 @@ pub struct TestWorkspace {
 
 impl TestWorkspace {
     /// Files only; every command exits 127 (no such program).
-    pub fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
+    pub(crate) fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
         files: impl IntoIterator<Item = (P, D)>,
     ) -> Arc<Self> {
         Self::answering(files, |_| ExecResult {
@@ -51,7 +51,7 @@ impl TestWorkspace {
         })
     }
 
-    pub fn answering<P: AsRef<Path>, D: AsRef<[u8]>>(
+    pub(crate) fn answering<P: AsRef<Path>, D: AsRef<[u8]>>(
         files: impl IntoIterator<Item = (P, D)>,
         answer: impl Fn(&Call) -> ExecResult + Send + Sync + 'static,
     ) -> Arc<Self> {
@@ -62,12 +62,12 @@ impl TestWorkspace {
         })
     }
 
-    pub fn calls(&self) -> Vec<Call> {
+    pub(crate) fn calls(&self) -> Vec<Call> {
         self.calls.lock().unwrap().clone()
     }
 
     /// What the workspace says is in a file.
-    pub async fn contents(&self, path: &str) -> String {
+    pub(crate) async fn contents(&self, path: &str) -> String {
         self.mem.read_to_string(Path::new(path)).await.unwrap()
     }
 
@@ -103,21 +103,21 @@ impl Workspace for TestWorkspace {
     }
 }
 
-pub fn ctx(ws: Arc<TestWorkspace>) -> ToolContext {
+pub(crate) fn ctx(ws: Arc<TestWorkspace>) -> ToolContext {
     ToolContext::new(CWD, ws)
 }
 
 /// For a tool that never touches a workspace (tasks, skills, agents, ToolSearch).
-pub fn shut_ctx() -> ToolContext {
+pub(crate) fn shut_ctx() -> ToolContext {
     ToolContext::new(CWD, Arc::new(ShutWorkspace))
 }
 
-pub fn input(v: Value) -> JsonMap {
+pub(crate) fn input(v: Value) -> JsonMap {
     v.as_object().cloned().expect("a JSON object")
 }
 
 /// An exit-0 result with this stdout.
-pub fn stdout(text: &str) -> ExecResult {
+pub(crate) fn stdout(text: &str) -> ExecResult {
     ExecResult {
         stdout: text.to_string(),
         ..Default::default()
@@ -126,14 +126,14 @@ pub fn stdout(text: &str) -> ExecResult {
 
 /// Files whose stat claims `size` bytes, with whole reads counted: what a tool
 /// does with a file too big to hold, without one on disk.
-pub struct ClaimedSizeFs {
+pub(crate) struct ClaimedSizeFs {
     mem: MemFs,
     size: u64,
     pub whole_reads: AtomicUsize,
 }
 
 impl ClaimedSizeFs {
-    pub fn new<P: AsRef<Path>>(
+    pub(crate) fn new<P: AsRef<Path>>(
         files: impl IntoIterator<Item = (P, &'static str)>,
         size: u64,
     ) -> Arc<Self> {
@@ -144,12 +144,12 @@ impl ClaimedSizeFs {
         })
     }
 
-    pub fn reads(&self) -> usize {
+    pub(crate) fn reads(&self) -> usize {
         self.whole_reads.load(Ordering::SeqCst)
     }
 
     /// A context over these files, a sandboxed shell beside them.
-    pub fn ctx(self: &Arc<Self>) -> ToolContext {
+    pub(crate) fn ctx(self: &Arc<Self>) -> ToolContext {
         let ws = haest_workspace::SandboxWorkspace::over(self.clone());
         ToolContext::new(CWD, Arc::new(ws))
     }

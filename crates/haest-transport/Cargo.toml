@@ -10,6 +10,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # The parent process drives the conversation over the child's stdin and stdout.
 stdio = ["tokio/io-std", "tokio/sync"]

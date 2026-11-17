@@ -160,7 +160,7 @@ impl Run<'_> {
                 Ok(p) => p,
                 Err(e) => return Some((Err(e.to_string()), None)),
             };
-            Some(match p.result::<Value>()? {
+            Some(match p.result::<Value<'_>>()? {
                 Err(e) => (Err(caught(&ctx, e, filename)), None),
                 Ok(v) if keep_value && !v.is_undefined() => {
                     (Ok(()), v.get::<Coerced<String>>().map(|s| s.0).ok())

@@ -30,21 +30,24 @@ fn serve(listener: TcpListener) -> mpsc::Receiver<()> {
 }
 
 #[tokio::test]
+#[expect(
+    unsafe_code,
+    reason = "setting the environment is unsafe, and the test sets a proxy"
+)]
 async fn the_default_client_goes_direct_whatever_the_proxy_variables_say() {
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
     let proxy_url = format!("http://{}", proxy.local_addr().unwrap());
     let url = format!("http://{}/v1/messages", server.local_addr().unwrap());
-    // SAFETY: the only test in this binary, and no thread of it reads the
-    // environment while these are set.
-    unsafe {
-        for name in ["NO_PROXY", "no_proxy", "REQUEST_METHOD"] {
-            std::env::remove_var(name);
-        }
-        for name in ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"] {
-            std::env::set_var(name, &proxy_url);
-        }
-        std::env::set_var("ALL_PROXY", &proxy_url);
+    for name in ["NO_PROXY", "no_proxy", "REQUEST_METHOD"] {
+        // SAFETY: the only test in this binary, and no thread of it reads the
+        // environment while these are set.
+        unsafe { std::env::remove_var(name) };
+    }
+    let proxies = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"];
+    for name in proxies.into_iter().chain(["ALL_PROXY"]) {
+        // SAFETY: as above: the only test, and nothing reads the environment yet.
+        unsafe { std::env::set_var(name, &proxy_url) };
     }
     let (reached, proxied) = (serve(server), serve(proxy));
 

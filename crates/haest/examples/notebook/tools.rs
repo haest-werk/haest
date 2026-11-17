@@ -13,14 +13,14 @@ use haest::{
 
 /// `attachment:<id>` is no path: the node converts the attachment to Markdown
 /// and Read pages it like a file. Every other path falls through to the fs.
-pub struct Attachments {
+pub(crate) struct Attachments {
     docs: HashMap<String, String>,
     /// Every path this intercept answered, as the model sent it.
     answered: Mutex<Vec<String>>,
 }
 
 impl Attachments {
-    pub fn new(docs: &[(&str, &str)]) -> Self {
+    pub(crate) fn new(docs: &[(&str, &str)]) -> Self {
         Self {
             docs: docs
                 .iter()
@@ -31,7 +31,7 @@ impl Attachments {
     }
 
     /// Every path this intercept answered, as the model sent it.
-    pub fn answered(&self) -> Vec<String> {
+    pub(crate) fn answered(&self) -> Vec<String> {
         self.answered_paths().clone()
     }
 
@@ -61,7 +61,7 @@ impl ReadIntercept for Attachments {
 }
 
 /// notebook_search: the node's ranked full-text search over the notebook.
-pub struct NotebookSearch {
+pub(crate) struct NotebookSearch {
     /// The notebook's index: path, title, text.
     pub notes: Vec<(&'static str, &'static str, &'static str)>,
 }
@@ -109,9 +109,9 @@ impl Tool for NotebookSearch {
 
 /// dream_material: what the dream run reads -- conversations since the last
 /// dream and every memory. The node has it; the dream needs no files.
-pub struct DreamMaterial;
+pub(crate) struct DreamMaterial;
 
-pub const DREAM_MEMORY: &str = "prefers short weekly summaries";
+pub(crate) const DREAM_MEMORY: &str = "prefers short weekly summaries";
 
 #[async_trait]
 impl Tool for DreamMaterial {

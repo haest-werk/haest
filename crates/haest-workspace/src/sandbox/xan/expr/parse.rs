@@ -11,7 +11,7 @@ use super::{
 };
 
 /// One aggregation a groupby computes per group.
-pub struct AggSlot {
+pub(crate) struct AggSlot {
     pub func: AggFn,
     /// None: `count()`.
     pub arg: Option<Expr>,
@@ -25,12 +25,12 @@ pub struct AggSlot {
 
 /// How deep the parser may recurse: each `(`, `!`, `-`, `not`, call and
 /// operand of `**` nests one level.
-pub const MAX_NESTING: usize = 128;
+pub(crate) const MAX_NESTING: usize = 128;
 
 /// How deep the tree may be: those, and one level per operator of a chain
 /// (`a or b or c` is two deep, with no recursion in the parser). A list of 500
 /// `or`s fits.
-pub const MAX_DEPTH: usize = 512;
+pub(crate) const MAX_DEPTH: usize = 512;
 
 fn too_deep(cap: usize) -> String {
     format!(
@@ -61,7 +61,7 @@ fn deeper(below: usize) -> Result<usize, String> {
 }
 
 /// A filter's expression, columns bound to `headers`.
-pub fn compile(src: &str, headers: &[String]) -> Result<Expr, String> {
+pub(crate) fn compile(src: &str, headers: &[String]) -> Result<Expr, String> {
     let mut p = Parser::new(src, headers, false)?;
     let (e, _) = p.expr(0)?;
     p.expect_end()?;
@@ -70,11 +70,11 @@ pub fn compile(src: &str, headers: &[String]) -> Result<Expr, String> {
 
 /// A compiled groupby list: the aggregations to run per group, and each output
 /// column (its name, an expression over their results).
-pub type Aggs = (Vec<AggSlot>, Vec<(String, Expr)>);
+pub(super) type Aggs = (Vec<AggSlot>, Vec<(String, Expr)>);
 
 /// A groupby's list: `sum(amount) as total, count(), mean(price)`. Each item
 /// is an expression over aggregations, named by `as` or by its own text.
-pub fn compile_aggs(src: &str, headers: &[String]) -> Result<Aggs, String> {
+pub(crate) fn compile_aggs(src: &str, headers: &[String]) -> Result<Aggs, String> {
     let mut p = Parser::new(src, headers, true)?;
     let mut items = Vec::new();
     loop {

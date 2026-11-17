@@ -27,6 +27,11 @@ No `Arc`, `Box` or `dyn` in haest-core's API: every plug point takes the
 value itself, and holds it in a handle named after its trait. Read
 "Upgrading" first.
 
+The workspace has a lint table (`[workspace.lints]` in the root
+`Cargo.toml`), and every crate takes it: docs and `Debug` on every public
+item, `pub` only where a host can reach it, no type a host gets but cannot
+name, and unsafe code denied except where a site claims it with a reason.
+
 ### Upgrading
 
 1. Plug points take the value itself, or an `Arc` of one the host already

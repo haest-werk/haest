@@ -6,7 +6,7 @@ use super::Value;
 
 /// What a groupby can compute over a group.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum AggFn {
+pub(crate) enum AggFn {
     /// `count()`: the rows; `count(x)`: the rows where x is true (a cell: not empty).
     Count,
     CountEmpty,
@@ -31,7 +31,7 @@ pub enum AggFn {
 }
 
 impl AggFn {
-    pub fn named(name: &str) -> Option<Self> {
+    pub(crate) fn named(name: &str) -> Option<Self> {
         Some(match name {
             "count" => AggFn::Count,
             "count_empty" => AggFn::CountEmpty,
@@ -60,7 +60,7 @@ impl AggFn {
     /// row count, which `count()` reports). Empty cells and text count for
     /// nothing in the numeric ones; with no number at all they are empty, but
     /// a sum is 0.
-    pub fn finish(self, vals: &[Value], rows: usize, counted_rows: bool) -> Value {
+    pub(crate) fn finish(self, vals: &[Value], rows: usize, counted_rows: bool) -> Value {
         let nums = || vals.iter().filter(|v| !v.is_empty()).filter_map(Value::num);
         let present = || vals.iter().filter(|v| !v.is_empty());
         let num_or_null = |n: Option<f64>| n.map_or(Value::Null, Value::Num);

@@ -29,7 +29,7 @@ use crate::{
 const ASKED: &str = "Only Q3, skip Q2.";
 const FOUND: &str = "Q3 only: /notebook/notes/plan.md";
 
-pub async fn panel(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
+pub(crate) async fn panel(gateway: &Arc<Gateway>) -> Result<(), BoxError> {
     let s = config::work();
     let host = Arc::new(NotebookHost::new(
         RunClock::new(T0, true),

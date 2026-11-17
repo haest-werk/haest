@@ -23,9 +23,9 @@ const CLAUDE: &[(&str, &str)] = &[
     ("env_passthrough", "all"),
 ];
 
-pub const BUILTIN: &[(&str, &[(&str, &str)])] = &[("claude", CLAUDE)];
+pub(crate) const BUILTIN: &[(&str, &[(&str, &str)])] = &[("claude", CLAUDE)];
 
-pub fn builtin(name: &str) -> Option<&'static [(&'static str, &'static str)]> {
+pub(crate) fn builtin(name: &str) -> Option<&'static [(&'static str, &'static str)]> {
     BUILTIN.iter().find(|(n, _)| *n == name).map(|(_, p)| *p)
 }
 

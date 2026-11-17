@@ -17,7 +17,7 @@ use haest::{
     about = "An agent in your terminal: a model, tools, a workspace.",
     after_help = "Every setting below is also a HAEST_* variable and a key in ~/.config/haest/config.toml (flag > variable > profile > files). haest is bare by default: no tools, no context files, no skills until you turn them on (--profile claude turns on everything Claude Code has that haest reads)."
 )]
-pub struct Args {
+pub(crate) struct Args {
     /// What to ask. Without it (and with a terminal on stdin) haest starts a conversation.
     pub prompt: Vec<String>,
 
@@ -42,7 +42,7 @@ pub struct Args {
 }
 
 #[derive(Debug, Subcommand)]
-pub enum Command {
+pub(crate) enum Command {
     /// List the models haest knows, with their windows and prices.
     Models,
     /// List saved sessions, newest first.
@@ -61,7 +61,7 @@ pub enum Command {
 /// `haest ctl`: another haest on this machine, by its control socket. An id
 /// may be shortened to a prefix only it has.
 #[derive(Debug, Subcommand)]
-pub enum Ctl {
+pub(crate) enum Ctl {
     /// List the haests running here with a control socket, oldest first.
     List {
         /// One JSON array.
@@ -107,7 +107,7 @@ pub enum Ctl {
 
 impl Args {
     /// The prompt words joined, or None.
-    pub fn prompt_text(&self) -> Option<String> {
+    pub(crate) fn prompt_text(&self) -> Option<String> {
         let text = self.prompt.join(" ");
         (!text.trim().is_empty()).then_some(text)
     }
@@ -115,7 +115,7 @@ impl Args {
 
 /// What the command line said: the CLI's own flags, and `(key, raw)` per setting flag.
 #[derive(Debug)]
-pub struct Cli {
+pub(crate) struct Cli {
     pub args: Args,
     pub settings: Vec<(String, String)>,
 }
@@ -124,7 +124,7 @@ impl Cli {
     /// What this run asks of the build: the session to resume, and whether a
     /// flag picked the model or the effort (a flag wins over a resumed
     /// session's own; a variable or a file does not).
-    pub fn build_options(&self) -> BuildOptions {
+    pub(crate) fn build_options(&self) -> BuildOptions {
         let given = |key: &str| self.settings.iter().any(|(k, _)| k == key);
         // `-r ""` is `-r`, as it always was.
         let resume = match self.args.resume.clone() {
@@ -170,7 +170,7 @@ fn setting_arg(def: &Def) -> Arg {
     }
 }
 
-pub fn command() -> clap::Command {
+pub(crate) fn command() -> clap::Command {
     DEFS.iter()
         .fold(Args::command(), |cmd, d| cmd.arg(setting_arg(d)))
 }
@@ -185,7 +185,7 @@ fn settings_of(m: &ArgMatches) -> Vec<(String, String)> {
         .collect()
 }
 
-pub fn parse_from<I, T>(argv: I) -> Result<Cli, clap::Error>
+pub(crate) fn parse_from<I, T>(argv: I) -> Result<Cli, clap::Error>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,

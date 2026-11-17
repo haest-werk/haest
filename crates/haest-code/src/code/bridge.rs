@@ -82,7 +82,7 @@ struct SeeImage {
 }
 
 impl Bridge {
-    pub fn new(callable: Tools, ctx: &ToolContext, cancel: CancellationToken) -> Arc<Self> {
+    pub(super) fn new(callable: Tools, ctx: &ToolContext, cancel: CancellationToken) -> Arc<Self> {
         let schemas = callable
             .iter()
             .map(|t| (t.name().to_string(), t.parameters()))
@@ -243,7 +243,7 @@ impl Bridge {
 
     /// The guest this bridge answers: its API, the schemas as data (describe() answers
     /// inside the engine, no round trip), and the two native functions.
-    pub fn spec(self: &Arc<Self>) -> VmSpec {
+    pub(super) fn spec(self: &Arc<Self>) -> VmSpec {
         let mut values = serde_json::Map::new();
         values.insert("__schemas".into(), Value::Object(self.schemas.clone()));
         values.insert("__refuse".into(), json!(self.refuse("NAME")));

@@ -16,7 +16,7 @@ use std::{
 
 use haest::{DirEntry, Fs, FsStat, MemFs, async_trait};
 
-pub struct NotebookFs {
+pub(crate) struct NotebookFs {
     /// What the run sees: the notebook, plus what the run changed.
     view: MemFs,
     /// Every path the run changed: the review the asker gets.
@@ -25,7 +25,7 @@ pub struct NotebookFs {
 
 impl NotebookFs {
     /// The notebook as the asker may see it.
-    pub fn new(files: &[(&str, &str)]) -> Self {
+    pub(crate) fn new(files: &[(&str, &str)]) -> Self {
         Self {
             view: MemFs::with_files(files.iter().copied()),
             staged: Mutex::default(),
@@ -33,7 +33,7 @@ impl NotebookFs {
     }
 
     /// The staged changes, path and new content, for the asker to review.
-    pub async fn staged(&self) -> Vec<(PathBuf, String)> {
+    pub(crate) async fn staged(&self) -> Vec<(PathBuf, String)> {
         let paths: Vec<PathBuf> = self.paths().iter().cloned().collect();
         let mut out = Vec::new();
         for p in paths {

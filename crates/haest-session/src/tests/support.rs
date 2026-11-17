@@ -25,7 +25,7 @@ use tokio::sync::Notify;
 use crate::{Body, Driven, DrivenStatus, Frame, Subscription};
 
 /// A tool that answers once it is let go (or its call is stopped).
-pub struct Wait(pub Arc<Notify>);
+pub(super) struct Wait(pub Arc<Notify>);
 
 #[async_trait]
 impl Tool for Wait {
@@ -51,20 +51,20 @@ impl Tool for Wait {
 
 /// A model whose first call waits until the turn is stopped, then answers
 /// from the script.
-pub struct Stall {
+pub(super) struct Stall {
     calls: AtomicUsize,
     then: ScriptedProvider,
 }
 
 impl Stall {
-    pub fn new(then: ScriptedProvider) -> Arc<Self> {
+    pub(super) fn new(then: ScriptedProvider) -> Arc<Self> {
         Arc::new(Self {
             calls: AtomicUsize::new(0),
             then,
         })
     }
 
-    pub fn calls(&self) -> usize {
+    pub(super) fn calls(&self) -> usize {
         self.calls.load(Ordering::Relaxed)
     }
 }
@@ -92,7 +92,7 @@ fn deps(models: impl Into<haest_core::ModelResolverRef>, tools: Tools) -> AgentD
 }
 
 /// An agent over `model`, with `tools`.
-pub fn agent(model: &ScriptedProvider, tools: Tools) -> Agent {
+pub(super) fn agent(model: &ScriptedProvider, tools: Tools) -> Agent {
     Agent::new(
         deps(model.resolver(), tools),
         AgentOptions::new("scripted:m"),
@@ -100,7 +100,7 @@ pub fn agent(model: &ScriptedProvider, tools: Tools) -> Agent {
 }
 
 /// An agent whose first model call stalls until stopped.
-pub fn stalling_agent(stall: &Arc<Stall>) -> Agent {
+pub(super) fn stalling_agent(stall: &Arc<Stall>) -> Agent {
     let p = stall.clone();
     let resolve = move |spec: &str| -> Result<ResolvedModel, ModelError> {
         let model = spec.split_once(':').map_or(spec, |(_, m)| m).to_string();
@@ -110,13 +110,13 @@ pub fn stalling_agent(stall: &Arc<Stall>) -> Agent {
 }
 
 /// A text answer per text.
-pub fn answers(texts: &[&str]) -> ScriptedProvider {
+pub(super) fn answers(texts: &[&str]) -> ScriptedProvider {
     ScriptedProvider::new(texts.iter().map(|t| text_answer(t)))
 }
 
 /// What the driver asked of a [`Recorded`] conversation.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Asked {
+pub(super) enum Asked {
     Human(String),
     Gate(String),
     Run(String),
@@ -125,14 +125,14 @@ pub enum Asked {
 
 /// An agent that records what the driver asks of it, with a gate that lets
 /// `gate_passes` turns nobody asked for through and holds the rest.
-pub struct Recorded {
+pub(super) struct Recorded {
     pub agent: Agent,
     pub log: Arc<Mutex<Vec<Asked>>>,
     pub gate_passes: usize,
 }
 
 impl Recorded {
-    pub fn new(agent: Agent, gate_passes: usize) -> Self {
+    pub(super) fn new(agent: Agent, gate_passes: usize) -> Self {
         Self {
             agent,
             log: Arc::default(),
@@ -191,7 +191,10 @@ impl Driven for Recorded {
 }
 
 /// Frames until (and with) the first that `stop` picks; panics after 5 s.
-pub async fn until(sub: &mut Subscription, stop: impl Fn(&Frame) -> bool) -> Vec<Arc<Frame>> {
+pub(super) async fn until(
+    sub: &mut Subscription,
+    stop: impl Fn(&Frame) -> bool,
+) -> Vec<Arc<Frame>> {
     let mut seen = Vec::new();
     let read = async {
         while let Some(frame) = sub.recv().await {
@@ -209,12 +212,12 @@ pub async fn until(sub: &mut Subscription, stop: impl Fn(&Frame) -> bool) -> Vec
 }
 
 /// Whether a frame is the conversation's own turn end.
-pub fn turn_end(frame: &Frame) -> bool {
+pub(super) fn turn_end(frame: &Frame) -> bool {
     frame.path.is_main() && matches!(frame.body, Body::Loop(LoopEvent::TurnEnd { .. }))
 }
 
 /// Polls until `cond` holds; panics after 5 s.
-pub async fn eventually(cond: impl Fn() -> bool) {
+pub(super) async fn eventually(cond: impl Fn() -> bool) {
     let wait = async {
         while !cond() {
             tokio::time::sleep(Duration::from_millis(2)).await;

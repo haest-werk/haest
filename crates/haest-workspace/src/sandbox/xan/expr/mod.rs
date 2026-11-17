@@ -17,14 +17,14 @@ mod value;
 
 use regex::Regex;
 
-pub use agg::AggFn;
+pub(super) use agg::AggFn;
 #[cfg(test)]
 pub(super) use parse::{MAX_DEPTH, MAX_NESTING};
-pub use parse::{compile, compile_aggs};
-pub use value::{Value, parse_num};
+pub(super) use parse::{compile, compile_aggs};
+pub(super) use value::{Value, parse_num};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Bin {
+pub(super) enum Bin {
     Or,
     And,
     /// `==` and friends: as numbers when both sides are, else as text.
@@ -42,7 +42,7 @@ pub enum Bin {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Ordering {
+pub(super) enum Ordering {
     Eq,
     Ne,
     Lt,
@@ -66,7 +66,7 @@ impl Ordering {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Func {
+pub(super) enum Func {
     Len,
     Lower,
     Upper,
@@ -134,7 +134,7 @@ impl Func {
 }
 
 #[derive(Clone, Debug)]
-pub enum Expr {
+pub(super) enum Expr {
     Lit(Value),
     Col(usize),
     Neg(Box<Expr>),
@@ -149,7 +149,7 @@ pub enum Expr {
 
 impl Expr {
     /// The value for `row`; `aggs`: the group's finished aggregations.
-    pub fn eval(&self, row: &[String], aggs: &[Value]) -> Value {
+    pub(super) fn eval(&self, row: &[String], aggs: &[Value]) -> Value {
         match self {
             Expr::Lit(v) => v.clone(),
             Expr::Col(i) => Value::Str(row.get(*i).cloned().unwrap_or_default()),

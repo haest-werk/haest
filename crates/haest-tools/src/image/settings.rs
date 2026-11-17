@@ -51,7 +51,7 @@ const IMAGE_SETTINGS: [&str; 8] = [
 /// Why a call's settings were refused. Its text is for the model: it names the
 /// model and, where it helps, what the model takes.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-pub enum ImageSettingsError {
+pub(super) enum ImageSettingsError {
     /// A setting GenerateImage does not have at all.
     #[error("GenerateImage has no setting \"{name}\". {model} takes: {takes}.")]
     UnknownSetting {
@@ -117,7 +117,7 @@ fn describe_setting(name: &str, spec: &SettingSpec) -> String {
 }
 
 /// How many reference images a model takes (0 when it says nothing).
-pub fn max_references(params: Option<&ModelSettings>) -> u64 {
+pub(super) fn max_references(params: Option<&ModelSettings>) -> u64 {
     params
         .and_then(|p| p.get("input_references"))
         .and_then(|s| s.max)
@@ -125,7 +125,7 @@ pub fn max_references(params: Option<&ModelSettings>) -> u64 {
 }
 
 /// A model that only makes SVG: a browser runs SVG as a page, so it is never written.
-pub fn svg_only(params: Option<&ModelSettings>) -> bool {
+pub(super) fn svg_only(params: Option<&ModelSettings>) -> bool {
     let formats = params
         .and_then(|p| p.get("output_format"))
         .map(values_of)
@@ -134,7 +134,7 @@ pub fn svg_only(params: Option<&ModelSettings>) -> bool {
 }
 
 /// What a model takes, in one line: success results and every refusal say it.
-pub fn describe_model(params: Option<&ModelSettings>) -> String {
+pub(super) fn describe_model(params: Option<&ModelSettings>) -> String {
     let Some(params) = params else {
         return "settings unknown (the model list could not be read); pass only what the request needs".into();
     };
@@ -216,7 +216,7 @@ fn with_defaults(out: &mut Map<String, Value>, params: Option<&ModelSettings>) {
 /// # Errors
 ///
 /// The first setting refused, as an [`ImageSettingsError`].
-pub fn check_image_settings(
+pub(super) fn check_image_settings(
     model: &str,
     params: Option<&ModelSettings>,
     given: &Map<String, Value>,

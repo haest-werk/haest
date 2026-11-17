@@ -10,6 +10,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 default = ["typescript"]
 # `js file.ts`: type annotations stripped before the run (swc's type stripper).

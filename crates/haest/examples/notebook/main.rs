@@ -50,10 +50,12 @@ use crate::{
     tools::{Attachments, NotebookSearch},
 };
 
-pub const MODEL: &str = "gateway:anthropic/claude-sonnet-5";
-pub const CWD: &str = "/notebook";
+/// The model every run of the notebook uses, through its gateway.
+pub(crate) const MODEL: &str = "gateway:anthropic/claude-sonnet-5";
+/// Where the notebook's files are, as its runs see them.
+pub(crate) const CWD: &str = "/notebook";
 /// The run clock's start, milliseconds since the epoch.
-pub const T0: u64 = 1_800_000_000_000;
+pub(crate) const T0: u64 = 1_800_000_000_000;
 
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
@@ -79,7 +81,7 @@ async fn every_plug_point_the_notebook_uses_holds() -> Result<(), BoxError> {
 /// The gateway speaks OpenRouter's dialect, but decides routing itself: no
 /// `provider` object goes out (`routing: None`, the default). `token` is the
 /// node run's own (a helper's), or empty.
-pub fn models(gateway: Arc<Gateway>, token: &str) -> ModelResolverRef {
+pub(crate) fn models(gateway: Arc<Gateway>, token: &str) -> ModelResolverRef {
     // The run holds no provider keys: the gateway adds them.
     let opts = CompatOptions::new("gateway", token)
         .with_flavor(CompatFlavor::OpenRouter)
@@ -103,7 +105,7 @@ pub fn models(gateway: Arc<Gateway>, token: &str) -> ModelResolverRef {
 /// with the attachment intercept, Bash with no background jobs, no WebFetch:
 /// the node fetches) and the notebook's own (`own`). The agent tools come from
 /// the hub, over these (`runs::work`).
-pub fn run_tools(
+pub(crate) fn run_tools(
     s: &Settings,
     own: Tools,
     attachments: Arc<Attachments>,
@@ -119,7 +121,7 @@ pub fn run_tools(
 }
 
 /// The notebook's kinds of subagent (`explore` only reads) and the models it offers.
-pub fn agent_options() -> AgentToolOptions {
+pub(crate) fn agent_options() -> AgentToolOptions {
     AgentToolOptions {
         types: Some(
             SubagentTypes::new(
@@ -138,7 +140,8 @@ pub fn agent_options() -> AgentToolOptions {
     }
 }
 
-pub fn notebook_search() -> NotebookSearch {
+/// The notebook's search tool over two notes.
+pub(crate) fn notebook_search() -> NotebookSearch {
     NotebookSearch {
         notes: vec![
             ("/notebook/notes/plan.md", "Plan", "Ship the Q3 review."),
@@ -149,7 +152,7 @@ pub fn notebook_search() -> NotebookSearch {
 
 /// What a run shares with its helpers; the node run's token, the workspace
 /// and host differ per run.
-pub fn shared(
+pub(crate) fn shared(
     gateway: &Arc<Gateway>,
     token: &str,
     workspace: impl Into<WorkspaceRef>,
@@ -163,7 +166,7 @@ pub fn shared(
 
 /// A run's deps: what it shares ([`shared`]), its tools and the notebook's
 /// system prompt.
-pub fn deps(
+pub(crate) fn deps(
     gateway: &Arc<Gateway>,
     token: &str,
     tools: Tools,

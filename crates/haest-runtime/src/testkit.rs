@@ -17,16 +17,16 @@ use crate::{
     },
 };
 
-pub fn settings() -> Settings {
+pub(crate) fn settings() -> Settings {
     Settings::bare("/w", "/h")
 }
 
 /// Keeps what the runtime warned about.
 #[derive(Default)]
-pub struct Recorded(Mutex<Vec<String>>);
+pub(crate) struct Recorded(Mutex<Vec<String>>);
 
 impl Recorded {
-    pub fn warnings(&self) -> Vec<String> {
+    pub(crate) fn warnings(&self) -> Vec<String> {
         self.0.lock().unwrap().clone()
     }
 }
@@ -42,7 +42,7 @@ impl Ui for Recorded {
 }
 
 /// A host on these settings; its session file is in memory. Needs a tokio runtime.
-pub fn hooks(settings: Settings) -> (RuntimeHooks, Arc<Recorded>) {
+pub(crate) fn hooks(settings: Settings) -> (RuntimeHooks, Arc<Recorded>) {
     let ui = Arc::new(Recorded::default());
     let store = JsonlSessionFile::new(MemFs::new(), Path::new("/d"), "t").unwrap();
     let hooks = RuntimeHooks::new(settings, ui.clone(), store);
@@ -50,7 +50,7 @@ pub fn hooks(settings: Settings) -> (RuntimeHooks, Arc<Recorded>) {
 }
 
 /// Says no to every ask.
-pub struct Deny;
+pub(crate) struct Deny;
 
 #[async_trait]
 impl Prompter for Deny {

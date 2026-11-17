@@ -7,7 +7,7 @@
 use haest::{EventSink, LoopEvent, ToolOutput};
 
 #[derive(Default)]
-pub struct DocSink {
+pub(crate) struct DocSink {
     pub doc: String,
     /// Where the current model call's text began.
     step_start: usize,
@@ -33,7 +33,7 @@ impl EventSink for DocSink {
 
 impl DocSink {
     /// The output of tool call `id`.
-    pub fn output(&self, id: &str) -> &ToolOutput {
+    pub(crate) fn output(&self, id: &str) -> &ToolOutput {
         self.events
             .iter()
             .find_map(|ev| match ev {
@@ -44,7 +44,7 @@ impl DocSink {
     }
 
     /// The guard nudged the model this turn.
-    pub fn guarded(&self) -> bool {
+    pub(crate) fn guarded(&self) -> bool {
         self.events
             .iter()
             .any(|ev| matches!(ev, LoopEvent::Guard { .. }))

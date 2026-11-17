@@ -5,7 +5,7 @@ use super::*;
 
 /// One request as the model saw it.
 #[derive(Clone)]
-pub struct Seen {
+pub(crate) struct Seen {
     pub sub: bool,
     pub system: String,
     pub tools: Vec<String>,
@@ -15,7 +15,7 @@ pub struct Seen {
 /// Main and subagents answer from separate scripts (a subagent is told apart
 /// by haest's subagent note in its system prompt). A subagent's call waits for
 /// a permit from `sub_gate`, so a test decides when a background one finishes.
-pub struct Scripted {
+pub(crate) struct Scripted {
     pub main: Mutex<VecDeque<Vec<AssistantPart>>>,
     pub sub: Mutex<VecDeque<Vec<AssistantPart>>>,
     pub sub_gate: Arc<Semaphore>,
@@ -23,7 +23,7 @@ pub struct Scripted {
 }
 
 impl Scripted {
-    pub fn requests(&self, sub: bool) -> Vec<Seen> {
+    pub(crate) fn requests(&self, sub: bool) -> Vec<Seen> {
         let seen = self.seen.lock().unwrap();
         seen.iter().filter(|s| s.sub == sub).cloned().collect()
     }
@@ -71,11 +71,11 @@ impl Provider for Scripted {
     }
 }
 
-pub fn say(text: &str) -> Vec<AssistantPart> {
+pub(crate) fn say(text: &str) -> Vec<AssistantPart> {
     vec![AssistantPart::Text { text: text.into() }]
 }
 
-pub fn call(id: &str, name: &str, input: Value) -> AssistantPart {
+pub(crate) fn call(id: &str, name: &str, input: Value) -> AssistantPart {
     AssistantPart::ToolCall(ToolCall {
         id: id.into(),
         name: name.into(),

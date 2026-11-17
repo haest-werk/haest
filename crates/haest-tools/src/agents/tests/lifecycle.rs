@@ -14,7 +14,7 @@ use crate::agents::{
 
 /// One step of a member's life, with the subagent model calls made before it.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Step {
+pub(super) enum Step {
     Start {
         start: MemberStart,
         calls_before: usize,
@@ -28,7 +28,7 @@ pub enum Step {
 
 /// What the parent does at a start.
 #[derive(Default)]
-pub struct Lifecycle {
+pub(super) struct Lifecycle {
     /// Refuse a start whose description contains this.
     pub refuse: Option<&'static str>,
     /// The model spec its run names.
@@ -45,7 +45,7 @@ pub struct Lifecycle {
 }
 
 #[derive(Default)]
-pub struct Kept {
+pub(super) struct Kept {
     pub messages: Mutex<Vec<Message>>,
     pub ledger: Mutex<Option<Ledger>>,
 }
@@ -57,11 +57,11 @@ impl AgentHooks for Kept {
 }
 
 impl Lifecycle {
-    pub fn steps(&self) -> Vec<Step> {
+    pub(super) fn steps(&self) -> Vec<Step> {
         self.log.lock().unwrap().clone()
     }
 
-    pub fn ends(&self) -> Vec<MemberEnd> {
+    pub(super) fn ends(&self) -> Vec<MemberEnd> {
         let steps = self.steps();
         let ends = steps.into_iter().filter_map(|s| match s {
             Step::End { end, .. } => Some(end),
@@ -70,7 +70,7 @@ impl Lifecycle {
         ends.collect()
     }
 
-    pub async fn start(
+    pub(super) async fn start(
         self: &Arc<Self>,
         start: &MemberStart,
         provider: &Arc<Roles>,

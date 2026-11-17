@@ -36,7 +36,7 @@ struct ToolAcc {
 }
 
 #[derive(Debug, Default)]
-pub struct StreamState {
+pub(crate) struct StreamState {
     text: String,
     thinking: String,
     tools: BTreeMap<i64, ToolAcc>,
@@ -155,7 +155,7 @@ fn apply_usage(u: &Value, msg: &mut AssistantMessage, st: &mut StreamState) {
 }
 
 /// Fold one chunk into the message + state; pushes the live events it produced.
-pub fn apply_chunk(
+pub(crate) fn apply_chunk(
     chunk: &Value,
     msg: &mut AssistantMessage,
     st: &mut StreamState,
@@ -201,7 +201,7 @@ fn tool_part(t: ToolAcc) -> AssistantPart {
 }
 
 /// Close the message. A failed stream keeps text/thinking but never half-built tool calls.
-pub fn finish_message(msg: &mut AssistantMessage, st: StreamState, failed: bool) {
+pub(crate) fn finish_message(msg: &mut AssistantMessage, st: StreamState, failed: bool) {
     if !st.thinking.is_empty() {
         msg.content.push(AssistantPart::Thinking {
             thinking: st.thinking,

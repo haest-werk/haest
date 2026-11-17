@@ -59,7 +59,7 @@ async fn diffs_of(set: &dyn ChangeSet, list: &[Change]) -> String {
     cut_diffs(diffs)
 }
 
-pub async fn show(rt: &Runtime) {
+pub(crate) async fn show(rt: &Runtime) {
     let Some(set) = rt.agent().deps().shared().workspace().changes() else {
         return rt.hooks().info(REAL_FS);
     };
@@ -113,7 +113,7 @@ fn apply_message(report: &ApplyReport, cwd: &Path) -> (String, bool) {
     (text, left)
 }
 
-pub async fn apply(rt: &Runtime) {
+pub(crate) async fn apply(rt: &Runtime) {
     let Some(set) = rt.agent().deps().shared().workspace().changes() else {
         return rt.hooks().info(REAL_FS);
     };
@@ -125,7 +125,7 @@ pub async fn apply(rt: &Runtime) {
 }
 
 /// What exiting now would throw away, as the warning to print; None = nothing.
-pub async fn unapplied(rt: &Runtime) -> Option<String> {
+pub(crate) async fn unapplied(rt: &Runtime) -> Option<String> {
     let set = rt.agent().deps().shared().workspace().changes()?;
     let list = set.list().await;
     if list.is_empty() {

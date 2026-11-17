@@ -101,7 +101,6 @@
 //! [`ToolError::Failed`]: haest_core::tool::ToolError::Failed
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs)]
 
 mod cards;
 mod github;

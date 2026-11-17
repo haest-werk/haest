@@ -241,11 +241,11 @@ pub const DEFS: &[Def] = &[
     def("debug", PATHS, Bool, "true", "Log what haest does under the hood"),
 ];
 
-pub fn find(key: &str) -> Option<&'static Def> {
+pub(crate) fn find(key: &str) -> Option<&'static Def> {
     DEFS.iter().find(|d| d.key == key)
 }
 
 /// A setting's flag, without the dashes in front: `skill_catalog` -> `skill-catalog`.
-pub fn flag_name(key: &str) -> String {
+pub(crate) fn flag_name(key: &str) -> String {
     key.replace('_', "-")
 }

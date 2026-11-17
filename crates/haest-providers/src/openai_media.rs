@@ -71,7 +71,7 @@ fn responses_part(p: &MediaPart) -> Value {
 
 impl Parts {
     /// A user message's content: the plain string when there is no media (the common case, unchanged on the wire).
-    pub fn user_content(&self, text: &str, media: &[MediaPart]) -> Value {
+    pub(crate) fn user_content(&self, text: &str, media: &[MediaPart]) -> Value {
         if media.is_empty() {
             return Value::String(text.to_string());
         }

@@ -41,7 +41,7 @@ use entry::Entry;
 use task::{Shared, run};
 
 /// Rolling output kept per job, in bytes; older output is dropped from the front.
-pub const MAX_BUFFER: usize = 1_000_000;
+pub(crate) const MAX_BUFFER: usize = 1_000_000;
 /// Jobs one hub runs at once; [`JobHub::start`] refuses one more.
 pub const MAX_JOBS: usize = 8;
 /// Finished jobs kept for BashOutput; older ones (and their up-to-1MB output) are forgotten.

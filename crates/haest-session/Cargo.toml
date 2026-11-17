@@ -10,6 +10,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # Approval asks answered over the session (a Prompter for haest-mods' gate).
 approvals = ["dep:haest-mods"]

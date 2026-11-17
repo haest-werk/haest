@@ -122,7 +122,11 @@ fn welcome(rt: &Runtime) -> std::path::PathBuf {
     rt.hooks().settings().data_dir.join("history")
 }
 
-pub async fn repl(session: &Session, ui: &TermUi, first: Option<String>) -> anyhow::Result<()> {
+pub(crate) async fn repl(
+    session: &Session,
+    ui: &TermUi,
+    first: Option<String>,
+) -> anyhow::Result<()> {
     let history = session
         .with(|rt| Box::pin(async move { welcome(rt) }))
         .await?;

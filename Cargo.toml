@@ -42,3 +42,19 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 anyhow = "1"
+
+# Every crate opts in with `[lints] workspace = true`. The gates run clippy with
+# `-D warnings`, so a "warn" here fails them; a lint that is wrong for one item
+# gets `#[expect(lint, reason = "...")]` on that item, never a blanket allow.
+[workspace.lints.rust]
+# The public surface: every item documented and debuggable, `pub` only where a
+# host can reach it, and no type a host can get but cannot name.
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unnameable_types = "warn"
+# Unsafe code is an exception each site claims with an `#[expect]` and a reason.
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "warn"
+# The 2018-edition idioms, e.g. no hidden lifetime in a path (`Value<'_>`).
+rust_2018_idioms = { level = "warn", priority = -1 }

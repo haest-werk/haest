@@ -29,7 +29,7 @@ use crate::{
 
 /// A file the host named (it must be there), else `<config dir>/config.toml`
 /// (None when there is none).
-pub async fn read_user_file(
+pub(crate) async fn read_user_file(
     fs: &dyn Fs,
     named: Option<PathBuf>,
     config_dir: &Path,
@@ -46,13 +46,13 @@ pub async fn read_user_file(
 }
 
 /// A trusted project's `.haest/config.toml`.
-pub async fn read_project_file(fs: &dyn Fs, path: &Path) -> Result<Layer, ConfigError> {
+pub(crate) async fn read_project_file(fs: &dyn Fs, path: &Path) -> Result<Layer, ConfigError> {
     let text = read(fs, path).await?.unwrap_or_default();
     parse_file(path, &text, FileKind::Project)
 }
 
 /// The nearest `.haest/config.toml` from `cwd` up, not counting the home dir's own.
-pub async fn find_project_file(fs: &dyn Fs, cwd: &Path, home: &Path) -> Option<PathBuf> {
+pub(crate) async fn find_project_file(fs: &dyn Fs, cwd: &Path, home: &Path) -> Option<PathBuf> {
     for dir in project_chain(cwd, home).iter().rev() {
         let path = dir.join(".haest/config.toml");
         if fs.exists(&path).await {
@@ -63,7 +63,7 @@ pub async fn find_project_file(fs: &dyn Fs, cwd: &Path, home: &Path) -> Option<P
 }
 
 /// `<root>/.haest/config.toml`: the root is what must be trusted.
-pub fn project_root(path: &Path) -> &Path {
+pub(crate) fn project_root(path: &Path) -> &Path {
     path.parent()
         .and_then(Path::parent)
         .unwrap_or(Path::new("/"))

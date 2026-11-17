@@ -42,7 +42,7 @@ pub(super) struct RunOutcome {
 
 impl RunOutcome {
     /// It ended its turn with an answer (no stop, no cap, no error).
-    pub fn ok(&self) -> bool {
+    pub(super) fn ok(&self) -> bool {
         self.ending == Ending::Answered
     }
 }

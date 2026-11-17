@@ -12,7 +12,7 @@ use std::{
 };
 
 /// Can a human answer here: stdin is a terminal.
-pub fn interactive() -> bool {
+pub(crate) fn interactive() -> bool {
     std::io::stdin().is_terminal()
 }
 
@@ -26,7 +26,7 @@ impl Drop for Withdraw {
 }
 
 /// A line from stdin; None when stdin closed or the read was withdrawn.
-pub async fn read_line() -> Option<String> {
+pub(crate) async fn read_line() -> Option<String> {
     let stop = Arc::new(AtomicBool::new(false));
     let _withdraw = Withdraw(stop.clone());
     tokio::task::spawn_blocking(move || read_line_until(&stop))
@@ -54,8 +54,9 @@ fn read_line_until(stop: &AtomicBool) -> Option<String> {
         revents: 0,
     };
     while !stop.load(Ordering::Relaxed) {
+        #[expect(unsafe_code, reason = "poll(2) waits on stdin without taking it")]
         // SAFETY: one valid, initialised pollfd, and the count says one.
-        let ready = unsafe { libc::poll(&mut fd, 1, 100) };
+        let ready = unsafe { libc::poll(&raw mut fd, 1, 100) };
         if ready > 0 {
             return read_one();
         }

@@ -41,7 +41,7 @@ impl JobEvents for Recorder {
 }
 
 impl Recorder {
-    pub fn exit_count(&self) -> usize {
+    pub(crate) fn exit_count(&self) -> usize {
         self.exits.lock().unwrap().len()
     }
 }
@@ -57,7 +57,7 @@ pub(crate) struct Rig {
 }
 
 impl Rig {
-    pub fn real() -> Self {
+    pub(crate) fn real() -> Self {
         let tmp = tempfile::tempdir().unwrap();
         let dir = std::fs::canonicalize(tmp.path()).unwrap();
         let (tx, notices) = unbounded_channel();
@@ -73,7 +73,7 @@ impl Rig {
         }
     }
 
-    pub fn start(&self, command: &str) -> Job {
+    pub(crate) fn start(&self, command: &str) -> Job {
         self.hub.start(command, command, &self.ctx).unwrap()
     }
 }
@@ -86,6 +86,10 @@ pub(crate) async fn until(ms: u64, cond: impl Fn() -> bool) {
     }
 }
 
+#[expect(
+    unsafe_code,
+    reason = "kill(2) with signal 0 asks whether a pid lives; std cannot"
+)]
 fn alive(pid: libc::pid_t) -> bool {
     // SAFETY: signal 0 only asks whether the process exists.
     unsafe { libc::kill(pid, 0) == 0 }

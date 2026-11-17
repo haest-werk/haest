@@ -20,12 +20,12 @@ use haest::{
 use serde::Serialize;
 use serde_json::Value;
 
-pub use haest::wire::Level;
+pub(crate) use haest::wire::Level;
 
 use crate::agents::AgentLog;
 
 /// How events are written.
-pub struct Renderer<O: Write, E: Write> {
+pub(crate) struct Renderer<O: Write, E: Write> {
     out: O,
     err: E,
     json: bool,
@@ -59,14 +59,14 @@ const YELLOW: &str = "\x1b[33m";
 const RESET: &str = "\x1b[0m";
 
 impl Renderer<std::io::Stdout, std::io::Stderr> {
-    pub fn terminal(json: bool) -> Self {
+    pub(crate) fn terminal(json: bool) -> Self {
         let color = std::io::stderr().is_terminal();
         Renderer::new(std::io::stdout(), std::io::stderr(), json, color)
     }
 }
 
 impl<O: Write, E: Write> Renderer<O, E> {
-    pub fn new(out: O, err: E, json: bool, color: bool) -> Self {
+    pub(crate) fn new(out: O, err: E, json: bool, color: bool) -> Self {
         Self {
             out,
             err,
@@ -86,7 +86,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
 
     /// Also write each input that enters the conversation: `haest ctl
     /// events` watches a conversation someone else drives.
-    pub fn showing_input(mut self) -> Self {
+    pub(crate) fn showing_input(mut self) -> Self {
         self.inputs = true;
         self
     }
@@ -95,7 +95,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
     /// otherwise what the human reads of it. The cost line comes after a
     /// turn of the conversation's own, with the session's total from the
     /// status that follows it.
-    pub fn frame(&mut self, frame: &Frame) {
+    pub(crate) fn frame(&mut self, frame: &Frame) {
         if self.json {
             let _ = self.out.write_all(encode_line(frame).as_bytes());
             let _ = self.out.flush();
@@ -182,12 +182,12 @@ impl<O: Write, E: Write> Renderer<O, E> {
     }
 
     /// The prompt opened (Some: its printer) or closed (None).
-    pub fn set_above(&mut self, above: Option<Sender<String>>) {
+    pub(crate) fn set_above(&mut self, above: Option<Sender<String>>) {
         self.above = above;
     }
 
     /// The REPL prompt is open: the human is (or may be) typing.
-    pub fn prompting(&self) -> bool {
+    pub(crate) fn prompting(&self) -> bool {
         self.above.is_some()
     }
 
@@ -228,7 +228,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
         self.open_line = !text.ends_with('\n');
     }
 
-    pub fn event(&mut self, ev: &LoopEvent) {
+    pub(crate) fn event(&mut self, ev: &LoopEvent) {
         if self.json {
             return self.json_line(ev);
         }
@@ -287,7 +287,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
     }
 
     /// The cost line after a turn, on stderr.
-    pub fn usage(&mut self, usage: &Usage, total_usd: Option<f64>) {
+    pub(crate) fn usage(&mut self, usage: &Usage, total_usd: Option<f64>) {
         if self.json {
             return;
         }
@@ -306,7 +306,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
     }
 
     /// A line for the human: stderr, or a `notice` line on stdout in json mode.
-    pub fn notice(&mut self, level: Level, text: &str) {
+    pub(crate) fn notice(&mut self, level: Level, text: &str) {
         if self.json {
             let text = text.to_string();
             return self.json_line(Outbound::Notice { level, text });
@@ -322,7 +322,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
 
     /// A question the human answers on the next line: stderr with no newline,
     /// or an `ask` line on stdout in json mode.
-    pub fn ask(&mut self, question: &str) {
+    pub(crate) fn ask(&mut self, question: &str) {
         if self.json {
             let text = question.to_string();
             return self.json_line(Outbound::Ask { text });
@@ -342,7 +342,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
 }
 
 /// `- Read src/a.rs (3 ms)`: a tool call's result, `x` for one that failed.
-pub fn result_line(call: &ToolCall, is_error: bool, duration_ms: u64) -> String {
+pub(crate) fn result_line(call: &ToolCall, is_error: bool, duration_ms: u64) -> String {
     let mark = if is_error { "x" } else { "-" };
     format!("{mark} {} ({duration_ms} ms)", call_summary(call))
 }

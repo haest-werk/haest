@@ -17,10 +17,10 @@ use serde_json::{Value, json};
 
 /// A home of its own (haest's files and data under it) with a project dir in
 /// it; gone at the end.
-pub struct Home(pub PathBuf);
+pub(crate) struct Home(pub PathBuf);
 
 impl Home {
-    pub fn new(name: &str) -> Self {
+    pub(crate) fn new(name: &str) -> Self {
         let dir = std::env::temp_dir().join(format!("haest-cli-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("w")).unwrap();
@@ -29,7 +29,7 @@ impl Home {
 
     /// `haest <args>` in the project, stdin empty, its environment only HOME
     /// and what the caller adds.
-    pub fn command(&self, args: &[&str]) -> Command {
+    pub(crate) fn command(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_haest"));
         cmd.arg("-C")
             .arg(self.0.join("w"))
@@ -41,13 +41,13 @@ impl Home {
     }
 
     /// [`Self::command`] with `vars`, run to its end.
-    pub fn haest(&self, args: &[&str], vars: &[(&str, &str)]) -> Output {
+    pub(crate) fn haest(&self, args: &[&str], vars: &[(&str, &str)]) -> Output {
         let mut cmd = self.command(args);
         cmd.envs(vars.iter().copied()).output().unwrap()
     }
 
     /// The session files haest saved.
-    pub fn sessions(&self) -> Vec<PathBuf> {
+    pub(crate) fn sessions(&self) -> Vec<PathBuf> {
         match std::fs::read_dir(self.0.join(".local/share/haest/sessions")) {
             Ok(dir) => dir.map(|e| e.unwrap().path()).collect(),
             Err(_) => Vec::new(),
@@ -56,7 +56,7 @@ impl Home {
 
     /// The provider `local` (an OpenAI-compatible server at `model`), its key
     /// read from `LOCAL_KEY`: run with `-m local:m` and [`LOCAL_KEY`].
-    pub fn serve(&self, model: &FakeModel) {
+    pub(crate) fn serve(&self, model: &FakeModel) {
         let dir = self.0.join(".config/haest");
         std::fs::create_dir_all(&dir).unwrap();
         let providers = json!({"local": {
@@ -75,15 +75,15 @@ impl Drop for Home {
 }
 
 /// The variable the `local` provider's key is read from, with a value.
-pub const LOCAL_KEY: (&str, &str) = ("LOCAL_KEY", "k");
+pub(crate) const LOCAL_KEY: (&str, &str) = ("LOCAL_KEY", "k");
 
-pub fn stderr(out: &Output) -> String {
+pub(crate) fn stderr(out: &Output) -> String {
     String::from_utf8_lossy(&out.stderr).into_owned()
 }
 
 /// One answer of the [`FakeModel`].
 #[derive(Debug, Clone)]
-pub enum Reply {
+pub(crate) enum Reply {
     /// Text, then the end of the answer.
     Text(String),
     /// One tool call: its name and its input.
@@ -92,7 +92,7 @@ pub enum Reply {
 
 /// An OpenAI-compatible model on a local socket: each request gets the next
 /// reply of its script, streamed; with the script used up, "out of script".
-pub struct FakeModel {
+pub(crate) struct FakeModel {
     pub url: String,
     script: Arc<Mutex<VecDeque<Reply>>>,
     /// Every request's body, in order.
@@ -100,7 +100,7 @@ pub struct FakeModel {
 }
 
 impl FakeModel {
-    pub fn new(script: impl IntoIterator<Item = Reply>) -> Self {
+    pub(crate) fn new(script: impl IntoIterator<Item = Reply>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let script = Arc::new(Mutex::new(script.into_iter().collect::<VecDeque<_>>()));
@@ -121,7 +121,7 @@ impl FakeModel {
     }
 
     /// The bodies of the requests so far.
-    pub fn requests(&self) -> Vec<Value> {
+    pub(crate) fn requests(&self) -> Vec<Value> {
         self.requests.lock().unwrap().clone()
     }
 }
@@ -196,19 +196,19 @@ fn sse(reply: Option<Reply>) -> String {
 }
 
 /// A running `haest --stdio`, from the parent's side.
-pub struct Parent {
+pub(crate) struct Parent {
     pub child: Child,
     stdin: Option<ChildStdin>,
     frames: mpsc::Receiver<Value>,
 }
 
 impl Parent {
-    pub fn start(home: &Home, args: &[&str]) -> Self {
+    pub(crate) fn start(home: &Home, args: &[&str]) -> Self {
         Self::start_with(home, args, &[])
     }
 
     /// [`Self::start`] with `vars` in its environment too.
-    pub fn start_with(home: &Home, args: &[&str], vars: &[(&str, &str)]) -> Self {
+    pub(crate) fn start_with(home: &Home, args: &[&str], vars: &[(&str, &str)]) -> Self {
         let mut cmd = home.command(&[&["--stdio", "-m", "local:m"], args].concat());
         let mut child = cmd
             .env(LOCAL_KEY.0, LOCAL_KEY.1)
@@ -236,28 +236,28 @@ impl Parent {
         }
     }
 
-    pub fn send(&mut self, request: Value) {
+    pub(crate) fn send(&mut self, request: Value) {
         let stdin = self.stdin.as_mut().expect("stdin is open");
         writeln!(stdin, "{request}").unwrap();
         stdin.flush().unwrap();
     }
 
-    pub fn turn(&mut self, id: &str, text: &str) {
+    pub(crate) fn turn(&mut self, id: &str, text: &str) {
         self.send(json!({"v": 1, "id": id, "type": "turn", "text": text}));
     }
 
-    pub fn control(&mut self, id: &str, verb: &str) {
+    pub(crate) fn control(&mut self, id: &str, verb: &str) {
         self.send(json!({"v": 1, "id": id, "type": "control", "verb": verb}));
     }
 
-    pub fn answer(&mut self, id: &str, ask: &Value, answer: &str) {
+    pub(crate) fn answer(&mut self, id: &str, ask: &Value, answer: &str) {
         self.send(
             json!({"v": 1, "id": id, "type": "approval_answer", "ask": ask, "answer": answer}),
         );
     }
 
     /// Frames up to and including the first `stop` matches.
-    pub fn until(&self, stop: impl Fn(&Value) -> bool) -> Vec<Value> {
+    pub(crate) fn until(&self, stop: impl Fn(&Value) -> bool) -> Vec<Value> {
         let mut seen = Vec::new();
         loop {
             let frame = match self.frames.recv_timeout(Duration::from_secs(20)) {
@@ -273,28 +273,28 @@ impl Parent {
     }
 
     /// Frames up to the reply to `id`, which is the last.
-    pub fn reply(&self, id: &str) -> Vec<Value> {
+    pub(crate) fn reply(&self, id: &str) -> Vec<Value> {
         self.until(|f| ty(f) == "reply" && f["id"] == id)
     }
 
     /// The next approval ask.
-    pub fn ask(&self) -> Value {
+    pub(crate) fn ask(&self) -> Value {
         self.until(|f| ty(f) == "approval_ask").pop().unwrap()
     }
 
     /// Close stdin and wait for the exit: its code and stderr.
-    pub fn finish(mut self) -> (Option<i32>, String) {
+    pub(crate) fn finish(mut self) -> (Option<i32>, String) {
         drop(self.stdin.take());
         let out = self.child.wait_with_output().unwrap();
         (out.status.code(), stderr(&out))
     }
 }
 
-pub fn ty(frame: &Value) -> &str {
+pub(crate) fn ty(frame: &Value) -> &str {
     frame["type"].as_str().unwrap_or_default()
 }
 
-pub fn bash(command: &str) -> Reply {
+pub(crate) fn bash(command: &str) -> Reply {
     Reply::Tool(
         "Bash".into(),
         json!({"command": command, "description": command}),

@@ -6,7 +6,7 @@ use haest::config::{DEFS, Def, Kind, Loaded, ProjectFile, Source};
 const NONE: &str = "-";
 
 /// The report, one line each.
-pub fn settings_report(loaded: &Loaded) -> Vec<String> {
+pub(crate) fn settings_report(loaded: &Loaded) -> Vec<String> {
     let r = &loaded.resolved;
     let s = &loaded.config.settings;
     let user = s.config_dir.join("config.toml");

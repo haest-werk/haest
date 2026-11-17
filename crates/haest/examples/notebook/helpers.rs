@@ -35,17 +35,17 @@ use crate::{
 const EXPLORE: [&str; 4] = ["Read", "Glob", "Grep", "notebook_search"];
 
 /// The model the node gives a helper that names "haiku".
-pub const HELPER_MODEL: &str = "gateway:anthropic/claude-haiku-5";
+pub(crate) const HELPER_MODEL: &str = "gateway:anthropic/claude-haiku-5";
 
 /// The node's caps on one helper run.
-pub const HELPER_CAPS: MemberCaps = MemberCaps {
+pub(crate) const HELPER_CAPS: MemberCaps = MemberCaps {
     usd: 0.25,
     steps: 10,
     time: Duration::from_secs(120),
 };
 
 /// The caps on the notebook's helper tree: one level deep, two at once.
-pub fn tree_caps() -> SubagentCaps {
+pub(crate) fn tree_caps() -> SubagentCaps {
     SubagentCaps {
         max_depth: 1,
         max_concurrent: 2,
@@ -55,7 +55,7 @@ pub fn tree_caps() -> SubagentCaps {
 
 /// One helper run the node started.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Started {
+pub(crate) struct Started {
     pub name: String,
     pub kind: Option<String>,
     pub asked_model: Option<String>,
@@ -64,7 +64,7 @@ pub struct Started {
 
 /// One helper run the node closed: its answer, how it ended, what it cost.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Closed {
+pub(crate) struct Closed {
     pub token: String,
     pub ending: Ending,
     pub answer: String,
@@ -76,26 +76,26 @@ pub struct Closed {
 
 /// The node's helper-run endpoint, faked: it starts and closes helper runs.
 #[derive(Default)]
-pub struct Node {
+pub(crate) struct Node {
     started: Mutex<Vec<Started>>,
     closed: Mutex<Vec<Closed>>,
 }
 
 impl Node {
     /// The helper runs the node started, oldest first.
-    pub fn started(&self) -> Vec<Started> {
+    pub(crate) fn started(&self) -> Vec<Started> {
         locked(&self.started).clone()
     }
 
     /// The helper runs the node closed, oldest first.
-    pub fn closed(&self) -> Vec<Closed> {
+    pub(crate) fn closed(&self) -> Vec<Closed> {
         locked(&self.closed).clone()
     }
 }
 
 /// A message to a helper or main, for the panel.
 #[derive(Debug, Clone, PartialEq)]
-pub struct AgentMessage {
+pub(crate) struct AgentMessage {
     pub from: String,
     pub to: String,
     pub text: String,
@@ -105,7 +105,7 @@ pub struct AgentMessage {
 
 /// What reaches main, and how.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ForMain {
+pub(crate) enum ForMain {
     /// Main hears it at once.
     Message(String),
     /// A helper's answer, held until every helper is done.
@@ -114,19 +114,19 @@ pub enum ForMain {
 
 /// What the panel sees of the run's helpers.
 #[derive(Default)]
-pub struct Panel {
+pub(crate) struct Panel {
     messages: Mutex<Vec<AgentMessage>>,
     main: Mutex<Vec<ForMain>>,
 }
 
 impl Panel {
     /// Every message between the agents (and the person), oldest first.
-    pub fn messages(&self) -> Vec<AgentMessage> {
+    pub(crate) fn messages(&self) -> Vec<AgentMessage> {
         locked(&self.messages).clone()
     }
 
     /// What reached main, oldest first.
-    pub fn main(&self) -> Vec<ForMain> {
+    pub(crate) fn main(&self) -> Vec<ForMain> {
         locked(&self.main).clone()
     }
 }
@@ -138,7 +138,7 @@ fn locked<T>(list: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// The run's side of haest's hub.
-pub struct NodeHelpers {
+pub(crate) struct NodeHelpers {
     pub gateway: Arc<Gateway>,
     /// The run's tools, without the agent tools.
     pub base: Tools,

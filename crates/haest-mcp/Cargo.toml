@@ -10,6 +10,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 # rmcp in haest-mcp's API: `haest_mcp::rmcp` and `McpHub::connect_transport`
 # (a server over a transport the host opened). Off by default, so an rmcp

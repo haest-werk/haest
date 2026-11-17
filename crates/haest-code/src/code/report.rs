@@ -18,7 +18,7 @@ pub(crate) struct InnerRow {
 }
 
 impl InnerRow {
-    pub fn start(services: ToolServicesRef, parent_id: &str, call: &ToolCall) -> Self {
+    pub(super) fn start(services: ToolServicesRef, parent_id: &str, call: &ToolCall) -> Self {
         services.on_inner_call(InnerCallEvent::Start {
             parent_id: parent_id.to_string(),
             call: call.clone(),
@@ -31,7 +31,7 @@ impl InnerRow {
         }
     }
 
-    pub fn end(mut self, output: &ToolOutput) {
+    pub(super) fn end(mut self, output: &ToolOutput) {
         self.send(output.clone());
     }
 

@@ -15,7 +15,7 @@ use crate::CWD;
 
 /// A work run: haest's file tools and its bash. Glob and Grep are the notebook's own,
 /// on the node; WebFetch is the node's too.
-pub fn work() -> Settings {
+pub(crate) fn work() -> Settings {
     let bare = Settings::bare(CWD, "/node");
     Settings {
         tools: BuiltinTools {
@@ -36,7 +36,7 @@ pub fn work() -> Settings {
 
 /// A dream reads what the node hands it: nothing that writes, no agents. Read
 /// and Bash stay, over a shut workspace: they reach no file and no shell.
-pub fn dream() -> Settings {
+pub(crate) fn dream() -> Settings {
     Settings {
         tools: BuiltinTools {
             read: true,
@@ -50,6 +50,6 @@ pub fn dream() -> Settings {
 
 /// The turn caps a run's host hands the loop (the gateway's models are not in
 /// haest's catalog: the default window).
-pub fn turn_caps(s: &Settings) -> TurnCaps {
+pub(crate) fn turn_caps(s: &Settings) -> TurnCaps {
     s.turn_caps_for(s.window(None))
 }

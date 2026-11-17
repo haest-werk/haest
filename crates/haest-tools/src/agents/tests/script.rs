@@ -11,11 +11,11 @@ use haest_core::{
 };
 use serde_json::Value;
 
-pub type Script =
+pub(super) type Script =
     Box<dyn Fn(ProviderRequest, usize) -> BoxFuture<'static, Vec<AssistantPart>> + Send + Sync>;
 
 /// A script that answers at once.
-pub fn now(
+pub(super) fn now(
     f: impl Fn(&ProviderRequest, usize) -> Vec<AssistantPart> + Send + Sync + 'static,
 ) -> Script {
     Box::new(move |req, n| {
@@ -24,11 +24,11 @@ pub fn now(
     })
 }
 
-pub fn say(text: &str) -> Vec<AssistantPart> {
+pub(super) fn say(text: &str) -> Vec<AssistantPart> {
     vec![AssistantPart::Text { text: text.into() }]
 }
 
-pub fn call(id: &str, name: &str, input: Value) -> AssistantPart {
+pub(super) fn call(id: &str, name: &str, input: Value) -> AssistantPart {
     AssistantPart::ToolCall(ToolCall {
         id: id.into(),
         name: name.into(),
@@ -37,7 +37,7 @@ pub fn call(id: &str, name: &str, input: Value) -> AssistantPart {
 }
 
 /// Main's script: one Agent call with `input`, then `then` on every later call.
-pub fn spawns(input: Value, then: &'static str) -> Script {
+pub(super) fn spawns(input: Value, then: &'static str) -> Script {
     now(move |_, n| match n {
         0 => vec![call("a", "Agent", input.clone())],
         _ => say(then),
@@ -45,9 +45,9 @@ pub fn spawns(input: Value, then: &'static str) -> Script {
 }
 
 /// Every call costs $0.01.
-pub const CALL_USD: f64 = 0.01;
+pub(super) const CALL_USD: f64 = 0.01;
 
-pub struct Roles {
+pub(super) struct Roles {
     pub(super) main: Script,
     pub(super) sub: Script,
     pub(super) calls: Mutex<(usize, usize)>,

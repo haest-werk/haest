@@ -198,9 +198,15 @@ mod tests {
 
     use super::*;
 
+    #[expect(
+        unsafe_code,
+        reason = "std cannot make a FIFO, and these tests read one"
+    )]
     fn mkfifo(path: &Path) {
         let c = CString::new(path.as_os_str().as_bytes()).unwrap();
-        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+        // SAFETY: `c` is a NUL-terminated path that outlives the call.
+        let made = unsafe { libc::mkfifo(c.as_ptr(), 0o600) };
+        assert_eq!(made, 0, "mkfifo {}", path.display());
     }
 
     /// Lets a reader stuck in open() on `fifo` go (it then reads an empty pipe).

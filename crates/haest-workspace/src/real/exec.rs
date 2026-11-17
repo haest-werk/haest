@@ -39,15 +39,16 @@ fn group_of(pid: u32) -> Option<libc::pid_t> {
 /// and nothing is signalled: `kill(0)` is the caller's own group, `kill(-1)`
 /// every process the caller may signal. Errors are ignored: a process that
 /// has exited is the goal.
+#[expect(unsafe_code, reason = "kill(2) signals a process group; std cannot")]
 pub(crate) fn kill_group(pid: u32) {
     let Some(pid) = group_of(pid) else {
         return;
     };
     // SAFETY: kill(2) takes plain integers and touches no memory of ours.
-    unsafe {
-        if libc::kill(-pid, libc::SIGKILL) != 0 {
-            libc::kill(pid, libc::SIGKILL);
-        }
+    let group_gone = unsafe { libc::kill(-pid, libc::SIGKILL) } != 0;
+    if group_gone {
+        // SAFETY: the same call on the process alone: plain integers, no memory.
+        unsafe { libc::kill(pid, libc::SIGKILL) };
     }
 }
 
@@ -57,7 +58,7 @@ const DEFAULT_PATH: &str = "/usr/bin:/bin";
 
 /// Where `program` would run from: a path with a slash is taken from `cwd`,
 /// a bare name is looked up on `env`'s `PATH`, else on [`DEFAULT_PATH`].
-pub fn which(program: &str, cwd: &Path, env: &ChildEnv) -> Option<PathBuf> {
+pub(super) fn which(program: &str, cwd: &Path, env: &ChildEnv) -> Option<PathBuf> {
     if program.is_empty() {
         return None;
     }
@@ -176,7 +177,7 @@ fn take(s: &Sink) -> String {
 /// Spawn `program args...` in its own process group, with `env` and nothing
 /// else, and collect its output (or hand it to `stream` as it arrives: then the
 /// result carries none). The deadline and the cancel token both kill the group.
-pub async fn spawn_collect(
+pub(super) async fn spawn_collect(
     program: &Path,
     args: &[String],
     opts: ExecOptions,

@@ -18,18 +18,18 @@ use haest::{
 };
 
 /// How long the owner keeps the run paused: ten times notebook.toml's time cap.
-pub const PAUSE_MS: u64 = 600_000;
+pub(crate) const PAUSE_MS: u64 = 600_000;
 
 /// The notebook's PauseGate, reduced to its clock: wall time without the pauses.
 /// `leave_out_pauses: false` is a plain wall clock, the counter-proof.
-pub struct RunClock {
+pub(crate) struct RunClock {
     wall: AtomicU64,
     paused: AtomicU64,
     leave_out_pauses: bool,
 }
 
 impl RunClock {
-    pub fn new(start_ms: u64, leave_out_pauses: bool) -> Self {
+    pub(crate) fn new(start_ms: u64, leave_out_pauses: bool) -> Self {
         Self {
             wall: AtomicU64::new(start_ms),
             paused: AtomicU64::new(0),
@@ -45,7 +45,7 @@ impl RunClock {
         }
     }
 
-    pub fn now(&self) -> u64 {
+    pub(crate) fn now(&self) -> u64 {
         self.wall.load(Ordering::SeqCst) - self.paused.load(Ordering::SeqCst)
     }
 }
@@ -53,7 +53,7 @@ impl RunClock {
 /// The node's session store: haest hands it records in history order, the node
 /// writes the file (with record kinds of its own).
 #[derive(Default)]
-pub struct NodeSessions {
+pub(crate) struct NodeSessions {
     records: Mutex<Vec<SessionRecord>>,
 }
 
@@ -73,7 +73,7 @@ impl NodeSessions {
 
     /// The file as the node writes it: one JSON line per record, plus a line
     /// of the node's own kind that haest's replay must skip.
-    pub fn file_text(&self) -> serde_json::Result<String> {
+    pub(crate) fn file_text(&self) -> serde_json::Result<String> {
         let mut text = String::new();
         for (i, r) in self.records().iter().enumerate() {
             if i == 1 {
@@ -87,7 +87,7 @@ impl NodeSessions {
     }
 
     /// When each message record was stamped.
-    pub fn message_times(&self) -> Vec<u64> {
+    pub(crate) fn message_times(&self) -> Vec<u64> {
         self.records()
             .iter()
             .filter_map(|r| match r {
@@ -98,7 +98,7 @@ impl NodeSessions {
     }
 }
 
-pub struct NotebookHost {
+pub(crate) struct NotebookHost {
     pub clock: RunClock,
     sessions: SessionSinkRef,
     /// The owner pauses the run before this model call (1-based); 0 = never.
@@ -109,7 +109,7 @@ pub struct NotebookHost {
 }
 
 impl NotebookHost {
-    pub fn new(
+    pub(crate) fn new(
         clock: RunClock,
         sessions: impl Into<SessionSinkRef>,
         pause_before_call: usize,
@@ -127,7 +127,7 @@ impl NotebookHost {
 
 impl NotebookHost {
     /// The run's caps, as its settings set them.
-    pub fn caps(&self) -> TurnCaps {
+    pub(crate) fn caps(&self) -> TurnCaps {
         self.caps.clone()
     }
 }

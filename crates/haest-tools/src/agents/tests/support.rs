@@ -13,8 +13,8 @@ use haest_core::{
 };
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
-pub use super::fake::{FakeParent, ForMain, Heard, Host, Quiet, explore_or_general};
-pub use super::script::{CALL_USD, Script, call, now, say, spawns};
+pub(super) use super::fake::{FakeParent, ForMain, Heard, Host, Quiet, explore_or_general};
+pub(super) use super::script::{CALL_USD, Script, call, now, say, spawns};
 use super::{
     super::{AgentRef, SubagentCaps, SubagentHub, SubagentParent, SubagentTypes},
     lifecycle::Lifecycle,
@@ -22,7 +22,7 @@ use super::{
 };
 use crate::testkit::TestWorkspace;
 
-pub struct Rig {
+pub(super) struct Rig {
     pub hub: SubagentHub,
     pub parent: Arc<FakeParent>,
     pub main: Agent,
@@ -31,12 +31,12 @@ pub struct Rig {
 }
 
 impl Rig {
-    pub fn new(main: Script, sub: Script, caps: SubagentCaps) -> Self {
+    pub(super) fn new(main: Script, sub: Script, caps: SubagentCaps) -> Self {
         Self::with_host(main, sub, caps, Host::default())
     }
 
     /// A conversation whose host has `kinds` of subagent.
-    pub fn with_kinds(
+    pub(super) fn with_kinds(
         main: Script,
         sub: Script,
         caps: SubagentCaps,
@@ -50,7 +50,7 @@ impl Rig {
     }
 
     /// A conversation whose host implements the member hooks (`lifecycle`).
-    pub fn with_lifecycle(
+    pub(super) fn with_lifecycle(
         main: Script,
         sub: Script,
         caps: SubagentCaps,
@@ -64,7 +64,7 @@ impl Rig {
     }
 
     /// A conversation whose host does what `host` says.
-    pub fn with_host(main: Script, sub: Script, caps: SubagentCaps, host: Host) -> Self {
+    pub(super) fn with_host(main: Script, sub: Script, caps: SubagentCaps, host: Host) -> Self {
         let provider = Arc::new(Roles {
             main,
             sub,
@@ -104,7 +104,7 @@ impl Rig {
 
     /// Change the conversation's deps: main's from now on, and every
     /// subagent's when it starts.
-    pub fn adjust(&mut self, f: impl Fn(SharedDeps) -> SharedDeps + Send + Sync + 'static) {
+    pub(super) fn adjust(&mut self, f: impl Fn(SharedDeps) -> SharedDeps + Send + Sync + 'static) {
         *self.parent.adjust.lock().unwrap() = Some(Box::new(f));
         let tools = self.main.deps().tools().clone();
         let deps = AgentDeps::from_shared(self.parent.deps(), tools, "main");
@@ -112,11 +112,11 @@ impl Rig {
     }
 
     /// The tool names each subagent's model calls offered, in call order.
-    pub fn provider_sub_tools(&self) -> Vec<Vec<String>> {
+    pub(super) fn provider_sub_tools(&self) -> Vec<Vec<String>> {
         self.parent.provider.sub_tools.lock().unwrap().clone()
     }
 
-    pub fn main_tools(&self) -> Vec<String> {
+    pub(super) fn main_tools(&self) -> Vec<String> {
         self.main
             .deps()
             .tools()
@@ -126,12 +126,12 @@ impl Rig {
             .collect()
     }
 
-    pub async fn turn(&mut self, text: &str) {
+    pub(super) async fn turn(&mut self, text: &str) {
         self.main.run(text, &mut self.events).await;
     }
 
     /// Run whatever reached main's inbox as turns until `done` holds (5s at most).
-    pub async fn settle(&mut self, done: impl Fn(&Rig) -> bool) {
+    pub(super) async fn settle(&mut self, done: impl Fn(&Rig) -> bool) {
         let end = Instant::now() + Duration::from_secs(5);
         while !done(self) && Instant::now() < end {
             match self.inbox.try_recv() {
@@ -142,11 +142,11 @@ impl Rig {
     }
 
     /// Main's user and tool-result texts, in order.
-    pub fn texts(&self) -> Vec<String> {
+    pub(super) fn texts(&self) -> Vec<String> {
         texts(self.main.history())
     }
 
-    pub fn tool_results(&self) -> Vec<(String, bool)> {
+    pub(super) fn tool_results(&self) -> Vec<(String, bool)> {
         let results = self.main.history().iter().filter_map(|m| match m {
             Message::Tool(t) => Some((t.content.clone(), t.is_error)),
             _ => None,
@@ -154,7 +154,7 @@ impl Rig {
         results.collect()
     }
 
-    pub fn ids(&self, kind: &str) -> Vec<String> {
+    pub(super) fn ids(&self, kind: &str) -> Vec<String> {
         let events = self.parent.events.lock().unwrap();
         events
             .iter()
@@ -164,17 +164,17 @@ impl Rig {
     }
 
     /// Every message the parent heard of.
-    pub fn heard(&self) -> Vec<Heard> {
+    pub(super) fn heard(&self) -> Vec<Heard> {
         self.parent.heard.lock().unwrap().clone()
     }
 
     /// What reached main's inbox, and how.
-    pub fn for_main(&self) -> Vec<ForMain> {
+    pub(super) fn for_main(&self) -> Vec<ForMain> {
         self.parent.for_main.lock().unwrap().clone()
     }
 }
 
-pub fn texts(messages: &[Message]) -> Vec<String> {
+pub(super) fn texts(messages: &[Message]) -> Vec<String> {
     let texts = messages.iter().filter_map(|m| match m {
         Message::User(u) => Some(u.content.clone()),
         Message::Tool(t) => Some(t.content.clone()),
