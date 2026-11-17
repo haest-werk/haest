@@ -905,18 +905,35 @@ Good citizens:
   file, so "the pieces" never served a host that owns some parts. `build`
   is the way in, and the parts are read on the `Runtime`:
   `mods_for(&hooks, &*fs, &gate).await` -> `build(inputs, ui, prompter,
-  opts).await?` then `rt.mods`. A host that owns some parts builds its
+  opts).await?` then `rt.mods()`. A host that owns some parts builds its
   own `AgentDeps`, with `builtin_tools_where(|w| settings.tools.has(w),
   ..)` for haest's tools.
+- `Runtime` keeps its fields private, each read with the getter of its
+  name (breaking): `rt.hooks.flush().await` -> `rt.hooks().flush().await`,
+  `rt.jobs.clone()` -> `rt.jobs().cloned()`, `rt.gate.revoke("Bash")` ->
+  `rt.gate().revoke("Bash")`. A host running its own turn loop over the
+  inbox takes `rt.inbox_mut()`. `Runtime` implements `Debug` (the host's
+  UI left out).
+- `build` takes the UI by value, as it takes the prompter (breaking):
+  `build(inputs, Arc::new(Lines), DenyAll, opts)` ->
+  `build(inputs, Lines, DenyAll, opts)`, and `rt.ui()` hands it back as
+  the host's own type. A host that keeps its UI as well hands in an `Arc`
+  of it: an `Arc` of a `Ui` is a `Ui`, and the runtime is then a
+  `Runtime<Arc<TermUi>>`.
+- `World` is a struct with two constructors (breaking):
+  `World::Disk { child_env }` -> `World::disk(child_env)`,
+  `World::Fs(Arc::new(MemFs::new()))` -> `World::files(MemFs::new())`.
+  `World::fs` returns `&FsRef`; it made a new `Arc` of the real disk on
+  every call. `World` implements `Debug`.
 - A runtime's services are handles, held by cloning them (breaking).
   `RuntimeHooks` is a cheap `Clone` (it was shared as an
   `Arc<RuntimeHooks>`), and the runtime holds `McpHub`, `SubagentHub`,
   `Option<JobHub>`, `TaskBoard` and an `FsRef` where it held an `Arc` of
   each: `let hooks: Arc<RuntimeHooks> = rt.hooks.clone()` ->
-  `let hooks = rt.hooks.clone()`.
+  `let hooks = rt.hooks().clone()`.
 - The skills offered are core's `Skills` (was `Arc<Mutex<Vec<Skill>>>`):
-  `*rt.skills.lock().unwrap() = found` -> `rt.skills.replace(found)`, and
-  `rt.skills.list()` reads them.
+  `*rt.skills.lock().unwrap() = found` -> `rt.skills().replace(found)`,
+  and `rt.skills().list()` reads them.
 - `RuntimeHooks` keeps its fields private: `hooks.settings` ->
   `hooks.settings()`. `hooks.ui` and `hooks.catalog` are gone (the host
   has its own UI; the catalog is `Catalog::builtin()`), and `new`,
@@ -924,7 +941,6 @@ Good citizens:
   hooks come from `build`, the session's id from `rt.session_id()`.
 - The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
   as `with_hooks`; what tools publish, report and log reaches it as before.
-  `WrappedTools::new` takes `Tools`.
 - Feature `session` (off; the facade's `session` turns it on with
   `runtime`): `impl Driven for Runtime<U>`. The driver calls the runtime's
   own `human_turn`, `next_agent_turn`, `run` and `shut_down`, so a session
@@ -933,9 +949,8 @@ Good citizens:
 - `wind_down_at` reaches the conversation as wind-down thresholds, for main
   and every subagent of its hub.
 - A turn's warning threshold reaches the human through `Ui::warn`.
-- `Runtime::mods`, `RuntimeParent::mods`, `WrappedTools::new` and
-  `mods_for` hold and return `Mods`, now a cheap handle (was `Arc<Mods>`):
-  `rt.mods.command(..)` reads as before.
+- `Runtime::mods` returns `Mods`, now a cheap handle (was `Arc<Mods>`):
+  `rt.mods().command(..)`.
 
 ### haest-ts
 

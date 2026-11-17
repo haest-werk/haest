@@ -96,29 +96,30 @@
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), haest_runtime::BuildError> {
-//! let fs = Arc::new(MemFs::with_files([("/work/AGENTS.md", "Answer in one line.")]));
+//! let files = MemFs::with_files([("/work/AGENTS.md", "Answer in one line.")]);
 //! let settings = Settings {
 //!     context: ContextSources { agents: true, ..ContextSources::NONE },
 //!     tools: BuiltinTools { read: true, grep: true, ..BuiltinTools::NONE },
 //!     data_dir: "/data".into(),
 //!     ..Settings::bare("/work", "/home/me")
 //! };
-//! let mut inputs = RuntimeInputs::new(settings, World::Fs(fs.clone()));
+//! let mut inputs = RuntimeInputs::new(settings, World::files(files));
 //! // The default model is OpenRouter's: hand in its key, and no other.
 //! inputs.keys = Arc::new(|name: &str| {
 //!     (name == "OPENROUTER_API_KEY").then(|| "sk-or-example".to_string())
 //! });
 //!
-//! let rt = build(inputs, Arc::new(Lines), DenyAll, BuildOptions::default()).await?;
+//! let rt = build(inputs, Lines, DenyAll, BuildOptions::default()).await?;
 //!
 //! let deps = rt.agent().deps();
 //! let tools: Vec<String> = deps.tools().tools().iter().map(|t| t.name().to_string()).collect();
 //! assert_eq!(tools, ["Read", "Grep"]);
 //! assert!(deps.system_prompt().system_prompt().await.contains("Answer in one line."));
 //!
-//! rt.hooks.flush().await;
+//! // The session file is in the host's files.
+//! rt.hooks().flush().await;
 //! let session = Path::new("/data/sessions").join(format!("{}.jsonl", rt.session_id()));
-//! assert!(fs.exists(&session).await);
+//! assert!(rt.fs().exists(&session).await);
 //! # Ok(())
 //! # }
 //! ```

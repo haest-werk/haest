@@ -5,7 +5,7 @@
 //! hooks' own setters are crate-private, so these are the only way to make
 //! one all three see.
 
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use tokio_util::sync::CancellationToken;
 
@@ -40,49 +40,125 @@ use crate::{
 ///
 /// `U` is the host's own [`Ui`](crate::Ui) type, so [`ui`](Self::ui) gives it
 /// back as the host made it.
-pub struct Runtime<U: ?Sized> {
+///
+/// Every part it runs on is read with the getter of its name. The services
+/// among them ([`hooks`](Self::hooks), [`mcp`](Self::mcp),
+/// [`subagents`](Self::subagents), [`jobs`](Self::jobs), ...) are cheap
+/// handles: a host that hands the runtime on (to a session) clones the ones
+/// it still needs first.
+pub struct Runtime<U> {
     /// The main agent. Only the methods here change it, so the hooks and the
     /// session file always know its model and effort.
     pub(crate) agent: Agent,
-    /// What the agent reports to: the session file, the [`Ui`](crate::Ui),
-    /// the current model and effort, compaction.
-    pub hooks: RuntimeHooks,
-    /// The host's own UI, as it handed it in.
-    pub ui: Arc<U>,
-    /// Where the conversation reads and writes: the world's
-    /// [`Fs`](crate::World::fs).
-    pub fs: FsRef,
-    /// The task list, saved to the session file on every change.
-    pub board: TaskBoard,
-    /// The skills offered now: the Skill tool and the system prompt read
-    /// this list ([`rescan_skills`](Self::rescan_skills) refreshes it).
-    pub skills: Skills,
+    pub(crate) hooks: RuntimeHooks,
+    pub(crate) ui: Arc<U>,
+    pub(crate) fs: FsRef,
+    pub(crate) board: TaskBoard,
+    pub(crate) skills: Skills,
     /// Where the skills were found at the start; the sandbox mounts these.
     pub(crate) skill_roots: SkillScanRoots,
-    /// The connected MCP servers; [`McpHub::close`] them at the end.
-    pub mcp: McpHub,
-    /// The mods turned on: the approval mod, plan mode, the human's and the
-    /// project's. A host passes the human's text through `rewrite_prompt`.
-    pub mods: Mods,
-    /// The human's Allow / Deny every mod's ask goes through, with the
-    /// ALWAYS answers given so far; [`revoke`](ApprovalGate::revoke) takes
-    /// a tool's back.
-    pub gate: ApprovalGate,
-    /// Turns the human did not start, waiting for main.
-    pub inbox: InboxQueue,
-    /// Main's subagents (none run when `agents` is off); `stop_all` them at
-    /// the end.
-    pub subagents: SubagentHub,
-    /// Background shell jobs; None unless Bash runs in the real workspace.
-    /// Kill them at the end ([`kill_jobs`](crate::kill_jobs)).
-    pub jobs: Option<JobHub>,
+    pub(crate) mcp: McpHub,
+    pub(crate) mods: Mods,
+    pub(crate) gate: ApprovalGate,
+    pub(crate) inbox: InboxQueue,
+    pub(crate) subagents: SubagentHub,
+    pub(crate) jobs: Option<JobHub>,
 }
 
-impl<U: ?Sized> Runtime<U> {
+/// The parts it runs on; the host's UI is left out.
+impl<U> fmt::Debug for Runtime<U> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Runtime")
+            .field("agent", &self.agent)
+            .field("hooks", &self.hooks)
+            .field("board", &self.board)
+            .field("skills", &self.skills)
+            .field("mcp", &self.mcp)
+            .field("mods", &self.mods)
+            .field("gate", &self.gate)
+            .field("inbox", &self.inbox)
+            .field("subagents", &self.subagents)
+            .field("jobs", &self.jobs)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<U> Runtime<U> {
     /// The main agent, to read: its history, model, effort and deps, and
     /// [`Agent::control`] to steer or stop the turn running.
     pub fn agent(&self) -> &Agent {
         &self.agent
+    }
+
+    /// What the agent reports to: the session file, the [`Ui`](crate::Ui),
+    /// the current model and effort, compaction.
+    pub fn hooks(&self) -> &RuntimeHooks {
+        &self.hooks
+    }
+
+    /// The host's own UI, as it handed it to [`build`](crate::build).
+    pub fn ui(&self) -> &U {
+        &self.ui
+    }
+
+    /// Where the conversation reads and writes: the world's
+    /// [`fs`](crate::World::fs).
+    pub fn fs(&self) -> &FsRef {
+        &self.fs
+    }
+
+    /// The task list, saved to the session file on every change.
+    pub fn board(&self) -> &TaskBoard {
+        &self.board
+    }
+
+    /// The skills offered now: the Skill tool and the system prompt read
+    /// this list. [`rescan_skills`](Self::rescan_skills) reads the skill
+    /// dirs again; [`Skills::replace`] puts a list of the host's own.
+    pub fn skills(&self) -> &Skills {
+        &self.skills
+    }
+
+    /// The connected MCP servers. [`shut_down`](Self::shut_down) closes them.
+    pub fn mcp(&self) -> &McpHub {
+        &self.mcp
+    }
+
+    /// The mods turned on: the approval mod, plan mode, the human's and the
+    /// project's. [`human_turn`](Self::human_turn) passes the human's text
+    /// through their `rewrite_prompt`; a host runs their commands.
+    pub fn mods(&self) -> &Mods {
+        &self.mods
+    }
+
+    /// The human's Allow / Deny every mod's ask goes through, with the
+    /// ALWAYS answers given so far; [`revoke`](ApprovalGate::revoke) takes
+    /// a tool's back.
+    pub fn gate(&self) -> &ApprovalGate {
+        &self.gate
+    }
+
+    /// Turns the human did not start, waiting for main.
+    pub fn inbox(&self) -> &InboxQueue {
+        &self.inbox
+    }
+
+    /// The same, for a host that runs its own turn loop over it.
+    pub fn inbox_mut(&mut self) -> &mut InboxQueue {
+        &mut self.inbox
+    }
+
+    /// Main's subagents (none run when the `agents` setting is off).
+    /// [`shut_down`](Self::shut_down) stops them.
+    pub fn subagents(&self) -> &SubagentHub {
+        &self.subagents
+    }
+
+    /// Background shell jobs; None unless Bash runs in the real workspace.
+    /// [`shut_down`](Self::shut_down) kills them, and so does
+    /// [`kill_jobs`](crate::kill_jobs).
+    pub fn jobs(&self) -> Option<&JobHub> {
+        self.jobs.as_ref()
     }
 
     /// A turn the human started: `text` through the mods' prompt rewrite

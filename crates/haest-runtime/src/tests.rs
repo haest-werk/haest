@@ -45,10 +45,9 @@ fn openrouter_key() -> Arc<dyn KeySource> {
 #[tokio::test]
 async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
     let fs = Arc::new(MemFs::with_files([("/w/AGENTS.md", "Answer in haiku.")]));
-    let mut inputs = RuntimeInputs::new(hardcoded(), World::Fs(fs.clone()));
+    let mut inputs = RuntimeInputs::new(hardcoded(), World::files(fs.clone()));
     inputs.keys = openrouter_key();
-    let ui = Arc::new(Recorded::default());
-    let rt = build(inputs, ui.clone(), Deny, BuildOptions::default())
+    let rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
         .await
         .unwrap();
 
@@ -67,7 +66,7 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
         .collect();
     assert_eq!(tools, ["Read"]);
 
-    rt.hooks.flush().await;
+    rt.hooks().flush().await;
     let session = Path::new("/data/sessions").join(format!("{}.jsonl", rt.session_id()));
     assert!(fs.exists(&session).await, "the session is in the host's Fs");
 
@@ -84,7 +83,7 @@ async fn a_conversation_over_the_hosts_files_reads_and_writes_only_them() {
         err.contains("ANTHROPIC_API_KEY"),
         "no key unless handed: {err}"
     );
-    assert_eq!(ui.warnings(), Vec::<String>::new());
+    assert_eq!(rt.ui().warnings(), Vec::<String>::new());
 }
 
 /// A conversation over `fs` with an OpenRouter key; `resume` as [`BuildOptions`].
@@ -107,10 +106,9 @@ async fn try_keyed(
     settings: Settings,
     opts: BuildOptions,
 ) -> Result<Runtime<Recorded>, BuildError> {
-    let mut inputs = RuntimeInputs::new(settings, World::Fs(fs.clone()));
+    let mut inputs = RuntimeInputs::new(settings, World::files(fs.clone()));
     inputs.keys = openrouter_key();
-    let ui = Arc::new(Recorded::default());
-    build(inputs, ui, Deny, opts).await
+    build(inputs, Recorded::default(), Deny, opts).await
 }
 
 #[tokio::test]
@@ -169,17 +167,12 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
         image: true,
         ..hardcoded()
     };
-    let mut inputs = RuntimeInputs::new(settings, World::Fs(Arc::new(MemFs::new())));
+    let mut inputs = RuntimeInputs::new(settings, World::files(MemFs::new()));
     inputs.keys = openrouter_key();
     inputs.http = gateway.clone();
-    let rt = build(
-        inputs,
-        Arc::new(Recorded::default()),
-        Deny,
-        BuildOptions::default(),
-    )
-    .await
-    .unwrap();
+    let rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
+        .await
+        .unwrap();
 
     let model = rt
         .agent()
@@ -195,7 +188,7 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
 
     let tools = rt.agent().deps().tools().tools();
     let image = tools.iter().find(|t| t.name() == "GenerateImage").unwrap();
-    let ctx = ToolContext::new("/w", Arc::new(ShutWorkspace));
+    let ctx = ToolContext::new("/w", ShutWorkspace);
     let input = json!({"prompt": "a lighthouse"});
     let made = image
         .execute(input.as_object().unwrap().clone(), &ctx)

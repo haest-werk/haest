@@ -26,7 +26,7 @@ use crate::{
 /// ([`Runtime::human_turn`], [`Runtime::next_agent_turn`], [`Runtime::run`],
 /// [`Runtime::shut_down`]): there is one turn loop, and the driver runs it.
 #[async_trait]
-impl<U: Ui + ?Sized + 'static> Driven for Runtime<U> {
+impl<U: Ui + 'static> Driven for Runtime<U> {
     fn control(&self) -> AgentControl {
         self.agent().control()
     }
@@ -142,9 +142,9 @@ impl<U: Ui + ?Sized + 'static> Driven for Runtime<U> {
 ///     data_dir: "/data".into(),
 ///     ..Settings::bare("/work", "/home/me")
 /// };
-/// let mut inputs = RuntimeInputs::new(settings, World::Fs(Arc::new(MemFs::new())));
+/// let mut inputs = RuntimeInputs::new(settings, World::files(MemFs::new()));
 /// inputs.keys = Arc::new(|name: &str| (name == "OPENROUTER_API_KEY").then(|| "sk-or-example".to_string()));
-/// let ui = Arc::new(HubUi::new(hub.clone()));
+/// let ui = HubUi::new(hub.clone());
 /// let rt = build(inputs, ui, SessionPrompter::new(hub.clone()), BuildOptions::default()).await?;
 /// let id = rt.session_id();
 ///

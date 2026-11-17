@@ -43,7 +43,7 @@ pub async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
         "apply" => changes::apply(rt).await,
         "help" => help(rt),
         "exit" | "quit" => return Outcome::Exit,
-        _ => match rt.mods.command(name, args).await {
+        _ => match rt.mods().command(name, args).await {
             CommandOutcome::Unknown => return skill_or_text(rt, name, args, line).await,
             CommandOutcome::Prompt(text) => return Outcome::Send(text),
             CommandOutcome::Handled => {}
@@ -53,23 +53,28 @@ pub async fn resolve(rt: &mut Runtime, line: &str) -> Outcome {
 }
 
 fn help(rt: &Runtime) {
-    let mods: Vec<String> = rt.mods.commands().iter().map(|c| format!("/{c}")).collect();
+    let mods: Vec<String> = rt
+        .mods()
+        .commands()
+        .iter()
+        .map(|c| format!("/{c}"))
+        .collect();
     if mods.is_empty() {
-        return rt.hooks.info(HELP);
+        return rt.hooks().info(HELP);
     }
-    rt.hooks
+    rt.hooks()
         .info(&format!("{HELP}\nFrom mods: {}", mods.join(", ")));
 }
 
 async fn skill_or_text(rt: &Runtime, name: &str, args: &str, line: &str) -> Outcome {
-    let skill = rt.skills.list().into_iter().find(|s| s.name == name);
+    let skill = rt.skills().list().into_iter().find(|s| s.name == name);
     let Some(skill) = skill else {
         return Outcome::Send(line.to_string());
     };
-    match load_skill_body(rt.fs.as_ref(), &skill, Some(args)).await {
+    match load_skill_body(rt.fs().as_ref(), &skill, Some(args)).await {
         Ok(body) => Outcome::Send(body),
         Err(e) => {
-            rt.hooks
+            rt.hooks()
                 .error(&format!("Skill {name} could not be read: {e}"));
             Outcome::Done
         }
@@ -79,13 +84,13 @@ async fn skill_or_text(rt: &Runtime, name: &str, args: &str, line: &str) -> Outc
 fn model(rt: &mut Runtime, spec: &str) {
     if spec.is_empty() {
         return rt
-            .hooks
+            .hooks()
             .info(&format!("Model: {}", rt.agent().model_spec()));
     }
     match rt.set_model_spec(spec) {
-        Ok(()) => rt.hooks.info(&format!("Model set to {spec}")),
+        Ok(()) => rt.hooks().info(&format!("Model set to {spec}")),
         Err(e) => rt
-            .hooks
+            .hooks()
             .error(&format!("Model not changed: {}", report(&e))),
     }
 }
@@ -94,7 +99,7 @@ fn effort(rt: &mut Runtime, arg: &str) {
     let label = |e: Option<Effort>| e.map_or("model default", Effort::as_str).to_string();
     if arg.is_empty() {
         return rt
-            .hooks
+            .hooks()
             .info(&format!("Effort: {}", label(rt.agent().effort())));
     }
     let effort = match arg {
@@ -102,23 +107,23 @@ fn effort(rt: &mut Runtime, arg: &str) {
         _ => match arg.parse::<Effort>() {
             Ok(e) => Some(e),
             Err(_) => {
-                return rt.hooks.error(&format!(
+                return rt.hooks().error(&format!(
                     "Unknown effort \"{arg}\". Use off, low, medium, high, xhigh, max or default."
                 ));
             }
         },
     };
     rt.set_effort(effort);
-    rt.hooks.info(&format!("Effort set to {}", label(effort)));
+    rt.hooks().info(&format!("Effort set to {}", label(effort)));
 }
 
 /// `/budget` shows the ledger; `/budget 40` sets the USD cap; `/budget tokens 4e7` the unpriced-token cap.
 fn budget(rt: &mut Runtime, args: &str) {
     let Some(ledger) = rt.agent().deps().shared().ledger().cloned() else {
-        return rt.hooks.info("This conversation has no ledger.");
+        return rt.hooks().info("This conversation has no ledger.");
     };
     if args.is_empty() {
-        return rt.hooks.info(&ledger.summary());
+        return rt.hooks().info(&ledger.summary());
     }
     let (tokens, raw) = match args.split_once(char::is_whitespace) {
         Some((k, v)) if k.eq_ignore_ascii_case("tokens") => (true, v.trim()),
@@ -130,7 +135,7 @@ fn budget(rt: &mut Runtime, args: &str) {
         .ok()
         .filter(|v| v.is_finite() && *v >= 0.0);
     let Some(value) = value else {
-        return rt.hooks.error(&format!(
+        return rt.hooks().error(&format!(
             "\"{args}\" is not a budget. Usage: /budget (show), /budget <usd>, /budget tokens <n>. 0 removes the cap."
         ));
     };
@@ -144,15 +149,15 @@ fn budget(rt: &mut Runtime, args: &str) {
         .exhausted()
         .unwrap_or_else(|| "haest can continue.".into());
     let text = format!("{} {state}", ledger.summary());
-    rt.hooks.info(&text);
+    rt.hooks().info(&text);
 }
 
 async fn clear(rt: &mut Runtime) {
     match rt.clear().await {
         Ok(()) => rt
-            .hooks
+            .hooks()
             .info(&format!("Started a fresh session ({}).", rt.session_id())),
-        Err(e) => rt.hooks.error(&format!("Not cleared: {}", report(&e))),
+        Err(e) => rt.hooks().error(&format!("Not cleared: {}", report(&e))),
     }
 }
 
@@ -170,8 +175,8 @@ async fn skills(rt: &mut Runtime) {
         })
         .collect();
     if lines.is_empty() {
-        rt.hooks.info("No skills found.");
+        rt.hooks().info("No skills found.");
     } else {
-        rt.hooks.info(&format!("Skills:\n{}", lines.join("\n")));
+        rt.hooks().info(&format!("Skills:\n{}", lines.join("\n")));
     }
 }

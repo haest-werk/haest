@@ -25,8 +25,9 @@ use crate::{
 
 pub type Term = Renderer<Stdout, Stderr>;
 
-/// A conversation as the CLI runs it.
-pub type Runtime = haest::runtime::Runtime<TermUi>;
+/// A conversation as the CLI runs it: the CLI shares its UI with the
+/// approval prompter, the control socket and the broker link.
+pub type Runtime = haest::runtime::Runtime<Arc<TermUi>>;
 
 pub struct TermUi {
     pub term: Arc<Mutex<Term>>,

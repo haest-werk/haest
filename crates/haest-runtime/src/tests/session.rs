@@ -56,13 +56,17 @@ async fn built(
     http: Arc<dyn HttpClient>,
     hub: &Hub,
 ) -> Runtime<HubUi> {
-    let mut inputs = RuntimeInputs::new(settings, World::Fs(fs.clone()));
+    let mut inputs = RuntimeInputs::new(settings, World::files(fs.clone()));
     inputs.keys = openrouter_key();
     inputs.http = http;
-    let ui = Arc::new(HubUi::new(hub.clone()));
-    build(inputs, ui, Deny, BuildOptions::default())
-        .await
-        .unwrap()
+    build(
+        inputs,
+        HubUi::new(hub.clone()),
+        Deny,
+        BuildOptions::default(),
+    )
+    .await
+    .unwrap()
 }
 
 /// An MCP server in this process with one tool; the handle ends when its
@@ -138,11 +142,11 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
         background: true,
         ..SpawnInput::default()
     };
-    (rt.subagents
+    (rt.subagents()
         .spawn(&AgentRef::main(), spawn, &CancellationToken::new())
         .await)
         .unwrap();
-    assert_eq!(rt.subagents.running().len(), 1);
+    assert_eq!(rt.subagents().running().len(), 1);
     // A background job.
     let jobs = JobHub::new(NoInbox);
     let ws = RealWorkspace::new(std::env::vars().collect());
@@ -156,16 +160,16 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
             let _ = running.waiting().await;
         }
     });
-    rt.mcp.connect_transport("echo", client).await;
-    assert_eq!(rt.mcp.tools().len(), 1);
+    rt.mcp().connect_transport("echo", client).await;
+    assert_eq!(rt.mcp().tools().len(), 1);
     // A record the session file has not written yet.
-    rt.hooks.append(SessionRecord::Config {
+    rt.hooks().append(SessionRecord::Config {
         t: 1,
         model_spec: Some("openrouter:held/back".into()),
         effort: None,
     });
 
-    let (agents, mcp, file) = (rt.subagents.clone(), rt.mcp.clone(), rt.session_id());
+    let (agents, mcp, file) = (rt.subagents().clone(), rt.mcp().clone(), rt.session_id());
     let session = start(rt, hub);
     session.close().await;
 
@@ -190,8 +194,8 @@ async fn an_arrival_runs_through_the_gate_and_what_it_holds_rides_in_with_the_pe
     let hub = Hub::new("s1", HubOptions::default());
     let mut rt = built(&fs, hardcoded(), Arc::new(Gateway::default()), &hub).await;
     // An inbox the test can send to, its gate letting one turn through.
-    let (sender, queue) = inbox(&rt.hooks, 1);
-    rt.inbox = queue;
+    let (sender, queue) = inbox(rt.hooks(), 1);
+    *rt.inbox_mut() = queue;
     let mut sub = hub.subscribe(0);
     let session = start(rt, hub);
 
@@ -312,14 +316,14 @@ async fn next_ask(sub: &mut Subscription) -> u64 {
 #[tokio::test]
 async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
     let hub = Hub::new("s1", HubOptions::default());
-    let mut inputs = RuntimeInputs::new(hardcoded(), World::Fs(Arc::new(MemFs::new())));
+    let mut inputs = RuntimeInputs::new(hardcoded(), World::files(MemFs::new()));
     inputs.keys = openrouter_key();
-    let ui = Arc::new(HubUi::new(hub.clone()));
+    let ui = HubUi::new(hub.clone());
     let prompter = SessionPrompter::new(hub.clone());
     let rt = build(inputs, ui, prompter, BuildOptions::default())
         .await
         .unwrap();
-    let (asks, gate) = (rt.mods.env().ui().clone(), rt.gate.clone());
+    let (asks, gate) = (rt.mods().env().ui().clone(), rt.gate().clone());
     let mut sub = hub.subscribe(0);
     let session = start(rt, hub);
     let rm = || ApprovalRequest {

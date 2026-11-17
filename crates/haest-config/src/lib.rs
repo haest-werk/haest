@@ -164,7 +164,7 @@ pub use value::env_var;
 /// | `RuntimeInputs` | from `Loaded` |
 /// |---|---|
 /// | `settings` | `config.settings` |
-/// | `world` | `World::Disk { child_env }` |
+/// | `world` | `World::disk(child_env)` |
 /// | `passed_env` | `passed_env` |
 /// | `keys` | `keys` (a `HashMap` is a `KeySource`) |
 /// | `providers` | `providers` |

@@ -65,9 +65,9 @@ impl Brakes {
     pub fn of(rt: &Runtime) -> Self {
         Self {
             control: rt.agent().control(),
-            hooks: rt.hooks.clone(),
-            jobs: rt.jobs.clone(),
-            subagents: rt.subagents.clone(),
+            hooks: rt.hooks().clone(),
+            jobs: rt.jobs().cloned(),
+            subagents: rt.subagents().clone(),
         }
     }
 }
@@ -182,15 +182,15 @@ mod tests {
             data_dir: "/data".into(),
             ..Settings::bare("/w", "/h")
         };
-        let mut inputs = RuntimeInputs::new(settings, World::Fs(fs.clone()));
+        let mut inputs = RuntimeInputs::new(settings, World::files(fs.clone()));
         inputs.keys = Arc::new(|k: &str| (k == "OPENROUTER_API_KEY").then(|| "k".to_string()));
-        let ui = Arc::new(TermUi::new(false));
+        let ui = TermUi::new(false);
         let asks = SessionPrompter::new(Hub::new("t", HubOptions::default()));
         let rt = build(inputs, ui, asks, BuildOptions::default())
             .await
             .unwrap();
         let file = Path::new("/data/sessions").join(format!("{}.jsonl", rt.session_id()));
-        (rt.hooks.clone(), file)
+        (rt.hooks().clone(), file)
     }
 
     /// A tool call's answer, as the session file records it.

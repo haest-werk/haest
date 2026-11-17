@@ -125,7 +125,7 @@ async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode
         .with(|rt| {
             Box::pin(async move {
                 if let Some(lost) = changes::unapplied(rt).await {
-                    rt.hooks.warn(&format!(
+                    rt.hooks().warn(&format!(
                         "{lost}\nRun with -w real to edit the project directly, or interactively and /apply."
                     ));
                 }
@@ -247,11 +247,11 @@ async fn shutdown(rt: &Runtime) {
     let stopped = rt.shut_down().await;
     if stopped.subagents > 0 {
         let line = format!("Stopped {}.", count(stopped.subagents, "subagent"));
-        rt.hooks.info(&line);
+        rt.hooks().info(&line);
     }
     if stopped.jobs > 0 {
         let line = format!("Killed {}.", count(stopped.jobs, "background job"));
-        rt.hooks.info(&line);
+        rt.hooks().info(&line);
     }
 }
 

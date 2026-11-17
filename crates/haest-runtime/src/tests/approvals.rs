@@ -47,18 +47,22 @@ fn rm(command: &str) -> ApprovalRequest {
 async fn a_host_takes_an_always_back_in_a_built_conversation() {
     let answers = Answers::default();
     answers.0.lock().unwrap().0 = vec![ApprovalAnswer::AllowAlways, ApprovalAnswer::Deny];
-    let mut inputs = RuntimeInputs::new(hardcoded(), World::Fs(Arc::new(MemFs::new())));
+    let mut inputs = RuntimeInputs::new(hardcoded(), World::files(MemFs::new()));
     inputs.keys = openrouter_key();
-    let ui = Arc::new(Recorded::default());
-    let rt = build(inputs, ui, answers.clone(), BuildOptions::default())
-        .await
-        .unwrap();
-    let asks = rt.mods.env().ui().clone();
+    let rt = build(
+        inputs,
+        Recorded::default(),
+        answers.clone(),
+        BuildOptions::default(),
+    )
+    .await
+    .unwrap();
+    let asks = rt.mods().env().ui().clone();
     let none = CancellationToken::new();
 
     assert_eq!(asks.ask(rm("rm -rf a"), &none).await, Decision::Allow);
     assert_eq!(asks.ask(rm("rm -rf a"), &none).await, Decision::Allow);
-    rt.gate.revoke("Bash");
+    rt.gate().revoke("Bash");
     assert_eq!(asks.ask(rm("rm -rf a"), &none).await, Decision::Deny);
     assert_eq!(
         answers.0.lock().unwrap().1,

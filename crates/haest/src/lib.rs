@@ -326,9 +326,7 @@ pub use haest_workspace as workspace;
 pub fn runtime_inputs(loaded: config::Loaded) -> runtime::RuntimeInputs {
     runtime::RuntimeInputs {
         settings: loaded.config.settings,
-        world: runtime::World::Disk {
-            child_env: loaded.child_env,
-        },
+        world: runtime::World::disk(loaded.child_env),
         passed_env: loaded.passed_env,
         keys: std::sync::Arc::new(loaded.keys),
         providers: loaded.providers,

@@ -77,6 +77,10 @@ fn task_board(hooks: &RuntimeHooks) -> TaskBoard {
 /// Build the whole conversation from what the host hands in, behind `ui`;
 /// `prompter` answers the approval mod's asks.
 ///
+/// Both are taken as they are, and the runtime keeps `ui` as the host's own
+/// type ([`Runtime::ui`]). A host that also keeps its UI for itself hands in
+/// an `Arc` of it: an `Arc` of a [`Ui`] is one.
+///
 /// It opens the session `opts` names (a new one, the latest in the cwd, or one
 /// by id) and puts a resumed one back in place: its history, task list,
 /// spend, model and effort (the settings' model or effort instead, when
@@ -87,7 +91,7 @@ fn task_board(hooks: &RuntimeHooks) -> TaskBoard {
 /// session file then holds the model and effort the conversation starts on.
 ///
 /// What goes wrong after that start is told to `ui`, never returned: an MCP
-/// server that did not start, a stdio server a [`World::Fs`] cannot run, a mod
+/// server that did not start, a stdio server a [`World::files`] cannot run, a mod
 /// that did not load, GenerateImage turned on with no key for it, torn lines
 /// skipped in a resumed session.
 ///
@@ -105,15 +109,15 @@ fn task_board(hooks: &RuntimeHooks) -> TaskBoard {
 /// - [`Model`](BuildError::Model): the model it would start on cannot be
 ///   used: a malformed spec, an unknown provider, no key for it;
 /// - [`Workspace`](BuildError::Workspace): `workspace = real` in a
-///   [`World::Fs`], a spill dir that cannot be made, a sandbox that fails to
-///   open.
+///   [`World::files`], a spill dir that cannot be made, a sandbox that fails
+///   to open.
 ///
 /// # Examples
 ///
 /// The crate docs build a whole conversation over a host's files.
 pub async fn build<U, P>(
     inputs: RuntimeInputs,
-    ui: Arc<U>,
+    ui: U,
     prompter: P,
     opts: BuildOptions,
 ) -> Result<Runtime<U>, BuildError>
@@ -121,6 +125,7 @@ where
     U: Ui + 'static,
     P: Prompter + 'static,
 {
+    let ui = Arc::new(ui);
     let RuntimeInputs {
         settings,
         world,
@@ -131,7 +136,7 @@ where
         routing,
         http,
     } = inputs;
-    let fs: FsRef = world.fs().into();
+    let fs = world.fs().clone();
     let session = open_session(&fs, &settings, &opts.resume, ui.clone()).await?;
     // The model the conversation starts on is one it can use (its provider
     // known, its key there), or the build fails with nothing written: a run

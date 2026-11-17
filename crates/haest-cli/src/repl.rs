@@ -70,7 +70,7 @@ async fn before_quitting(rt: &Runtime) -> Option<String> {
             "{changes}\n/apply them, or quit again to drop them."
         ));
     }
-    let waiting = rt.inbox.waiting();
+    let waiting = rt.inbox().waiting();
     if waiting > 0 {
         lost.push(format!(
             "{waiting} message(s) for haest have not run yet: press Enter to run them, or quit again to drop them."
@@ -108,7 +108,7 @@ impl QuitGuard {
 fn welcome(rt: &Runtime) -> std::path::PathBuf {
     let restored = rt.agent().history().len();
     let workspace = rt.agent().deps().shared().workspace().mode();
-    rt.hooks.info(&format!(
+    rt.hooks().info(&format!(
         "haest {} -- {} -- {workspace} workspace -- session {}{}\n/help for commands, Ctrl+D to quit.",
         env!("CARGO_PKG_VERSION"),
         rt.agent().model_spec(),
@@ -119,7 +119,7 @@ fn welcome(rt: &Runtime) -> std::path::PathBuf {
             String::new()
         },
     ));
-    rt.hooks.settings().data_dir.join("history")
+    rt.hooks().settings().data_dir.join("history")
 }
 
 pub async fn repl(session: &Session, ui: &TermUi, first: Option<String>) -> anyhow::Result<()> {

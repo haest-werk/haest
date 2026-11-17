@@ -3,7 +3,6 @@
 use std::{
     io,
     path::{Path, PathBuf},
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -15,7 +14,7 @@ use crate::{
         ChildEnv, ShutWorkspace, WorkspaceMode, WorkspaceRef,
         code::sandbox_commands,
         core::error::report,
-        core::fs::{Fs, ensure_dir},
+        core::fs::{Fs, FsRef, ensure_dir},
         core::remedy::Remedies,
         mcp::{McpHub, McpServerConfig, McpTransport},
         tools::{InboxRef, JobHub},
@@ -30,55 +29,69 @@ use crate::{
 /// jobs (Bash in the real workspace only; [`kill_jobs`] ends them) and the
 /// MCP servers the host listed.
 ///
-/// ```
-/// use std::sync::Arc;
+/// Two worlds: the real disk ([`World::disk`]) or the host's own files
+/// ([`World::files`]).
 ///
+/// ```
 /// use haest_core::{ChildEnv, fs::MemFs};
 /// use haest_runtime::World;
 ///
+/// # fn main() -> Result<(), std::env::VarError> {
 /// // The real disk; what haest starts gets PATH and nothing else.
-/// let path = std::env::var("PATH").unwrap_or_default();
-/// let disk = World::Disk { child_env: ChildEnv::new([("PATH", path)]) };
+/// let disk = World::disk(ChildEnv::new([("PATH", std::env::var("PATH")?)]));
 /// assert!(disk.child_env(&ChildEnv::default()).is_some());
 ///
 /// // The host's own files; haest starts no process at all.
-/// let own = World::Fs(Arc::new(MemFs::new()));
+/// let own = World::files(MemFs::new());
 /// assert!(own.child_env(&ChildEnv::default()).is_none());
+/// # Ok(())
+/// # }
 /// ```
-#[derive(Clone)]
-pub enum World {
-    /// The real disk: sessions, skills and instruction files are read and
-    /// written there, `workspace = real` edits it, the sandbox overlays it.
-    /// Every process haest starts (real bash, a background job, a stdio MCP
-    /// server) gets `child_env` and nothing else of the host's environment.
-    Disk {
-        /// The environment every process haest starts gets, before the
-        /// variables the host passes on purpose ([`RuntimeInputs::passed_env`](crate::RuntimeInputs::passed_env)).
-        child_env: ChildEnv,
-    },
-    /// The host's own files: everything haest reads and writes goes through
-    /// this [`Fs`], the sandbox runs over it, and no real process starts
-    /// (no real workspace, no background jobs, no stdio MCP server).
-    Fs(Arc<dyn Fs>),
+#[derive(Debug, Clone)]
+pub struct World {
+    /// Everything is read from and written to it.
+    fs: FsRef,
+    /// The environment of every process haest starts; None = it starts none.
+    child_env: Option<ChildEnv>,
 }
 
 impl World {
-    /// The [`Fs`] everything is read from and written to: the real disk's
-    /// ([`RealFs`]) or the host's own.
-    pub fn fs(&self) -> Arc<dyn Fs> {
-        match self {
-            World::Disk { .. } => Arc::new(RealFs),
-            World::Fs(fs) => fs.clone(),
+    /// The real disk: sessions, skills and instruction files are read and
+    /// written there, `workspace = real` edits it, the sandbox overlays it.
+    /// Every process haest starts (real bash, a background job, a stdio MCP
+    /// server) gets `child_env` and nothing else of the host's environment,
+    /// with the variables the host passes on purpose on top
+    /// ([`RuntimeInputs::passed_env`](crate::RuntimeInputs::passed_env)).
+    pub fn disk(child_env: ChildEnv) -> Self {
+        Self {
+            fs: FsRef::new(RealFs),
+            child_env: Some(child_env),
         }
     }
 
-    /// The environment of a process haest starts: `child_env` with the
-    /// variables the host passes on purpose on top. None = it starts none.
-    pub fn child_env(&self, passed_env: &ChildEnv) -> Option<ChildEnv> {
-        match self {
-            World::Disk { child_env } => Some(child_env.with(passed_env)),
-            World::Fs(_) => None,
+    /// The host's own files: everything haest reads and writes goes through
+    /// `fs` (the file system itself, or an `Arc` of one the host shares), the
+    /// sandbox runs over it, and no real process starts (no real workspace,
+    /// no background jobs, no stdio MCP server).
+    pub fn files(fs: impl Into<FsRef>) -> Self {
+        Self {
+            fs: fs.into(),
+            child_env: None,
         }
+    }
+
+    /// The [`Fs`] everything is read from and written to: the real disk's
+    /// ([`RealFs`]) or the host's own.
+    pub fn fs(&self) -> &FsRef {
+        &self.fs
+    }
+
+    /// The environment of a process haest starts: the disk's `child_env`
+    /// with the variables the host passes on purpose on top. None = it
+    /// starts none (the host's own files).
+    pub fn child_env(&self, passed_env: &ChildEnv) -> Option<ChildEnv> {
+        let child_env = self.child_env.as_ref()?;
+        Some(child_env.with(passed_env))
     }
 }
 
@@ -115,7 +128,7 @@ pub async fn kill_jobs(jobs: &JobHub) -> usize {
 /// ([`BuildError::Workspace`](crate::BuildError::Workspace)).
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
-    /// `workspace = real` in a [`World::Fs`]: the real workspace edits the
+    /// `workspace = real` in a [`World::files`]: the real workspace edits the
     /// real disk, and this host hands haest its own files.
     #[error("workspace = real needs the real disk; this host hands haest its own files")]
     RealNeedsDisk,
@@ -158,7 +171,7 @@ async fn private_spill_dir(fs: &dyn Fs, spill: &Path) -> Result<(), WorkspaceErr
 ///
 /// # Errors
 ///
-/// A [`WorkspaceError`]: `workspace = real` in a [`World::Fs`] (the real
+/// A [`WorkspaceError`]: `workspace = real` in a [`World::files`] (the real
 /// workspace needs the real disk), a spill dir that cannot be made, a sandbox
 /// that cannot open.
 pub(crate) async fn workspace_for(
@@ -177,7 +190,7 @@ pub(crate) async fn workspace_for(
             return Ok(RealWorkspace::new(env).into());
         }
         (WorkspaceMode::Real, None) => return Err(WorkspaceError::RealNeedsDisk),
-        (WorkspaceMode::Sandbox, None) => SandboxWorkspace::over(fs),
+        (WorkspaceMode::Sandbox, None) => SandboxWorkspace::over(fs.clone()),
         (WorkspaceMode::Sandbox, Some(_)) => {
             // The spill dir is mounted read-write, so the path in a spill notice is real.
             private_spill_dir(fs.as_ref(), spill).await?;

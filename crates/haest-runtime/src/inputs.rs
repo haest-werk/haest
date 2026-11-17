@@ -42,7 +42,7 @@ pub struct RuntimeInputs {
     pub keys: Arc<dyn KeySource>,
     /// providers.json's entries, by name: providers beside the built-in ones.
     pub providers: CustomProviders,
-    /// The MCP servers to start. In a [`World::Fs`] the stdio ones are skipped
+    /// The MCP servers to start. In a [`World::files`] the stdio ones are skipped
     /// with a warning: they are real processes.
     pub mcp_servers: Vec<McpServerConfig>,
     /// OpenRouter's `provider` routing; None = none goes out.

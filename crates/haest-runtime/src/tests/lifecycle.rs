@@ -33,14 +33,14 @@ fn closed_server() -> McpServerConfig {
 /// `settings` over `fs`, the closed server listed: the build's error, and
 /// everything the Ui was told.
 async fn failed_build(settings: Settings, fs: Arc<MemFs>) -> (BuildError, Vec<String>) {
-    let mut inputs = RuntimeInputs::new(settings, World::Fs(fs));
+    let mut inputs = RuntimeInputs::new(settings, World::files(fs));
     inputs.keys = openrouter_key();
     inputs.mcp_servers = vec![closed_server()];
+    // The test keeps the UI too, to read what it was told after a failed build.
     let ui = Arc::new(Recorded::default());
     let err = build(inputs, ui.clone(), Deny, BuildOptions::default())
         .await
-        .err()
-        .expect("the build fails");
+        .expect_err("the build fails");
     (err, ui.warnings())
 }
 
@@ -87,12 +87,11 @@ async fn a_session_that_cannot_be_saved_fails_the_build_before_a_server_starts()
 #[tokio::test]
 async fn a_model_the_build_cannot_use_fails_it_and_leaves_no_session_file() {
     let fs = Arc::new(MemFs::new());
-    let inputs = RuntimeInputs::new(hardcoded(), World::Fs(fs.clone()));
-    let ui = Arc::new(Recorded::default());
-    let built = build(inputs, ui, Deny, BuildOptions::default()).await;
+    let inputs = RuntimeInputs::new(hardcoded(), World::files(fs.clone()));
+    let built = build(inputs, Recorded::default(), Deny, BuildOptions::default()).await;
     let left = list_sessions(fs.as_ref(), Path::new(SESSIONS)).await;
     assert!(left.is_empty(), "no session file is left behind");
-    let err = built.err().expect("the build fails");
+    let err = built.expect_err("the build fails");
     assert!(no_key(&err, "OPENROUTER_API_KEY"), "{err:?}");
 }
 
@@ -102,7 +101,7 @@ async fn a_model_the_build_cannot_use_fails_it_and_leaves_no_session_file() {
 async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
     let fs = Arc::new(MemFs::new());
     let rt = keyed(&fs, Resume::New).await;
-    rt.hooks.flush().await;
+    rt.hooks().flush().await;
     let id = rt.session_id();
     let file = Path::new(SESSIONS).join(format!("{id}.jsonl"));
     let saved = fs.read_to_string(&file).await.unwrap();
@@ -118,11 +117,11 @@ async fn a_resume_onto_a_model_it_cannot_use_leaves_the_session_as_it_was() {
     };
     let built = try_keyed(&fs, keyless, opts).await;
     if let Ok(rt) = &built {
-        rt.hooks.flush().await;
+        rt.hooks().flush().await;
     }
     let now = fs.read_to_string(&file).await.unwrap();
     assert_eq!(now, saved, "the session is as it was");
-    let err = built.err().expect("the build fails");
+    let err = built.expect_err("the build fails");
     assert!(no_key(&err, "ANTHROPIC_API_KEY"), "{err:?}");
 }
 
@@ -133,17 +132,17 @@ async fn a_model_or_effort_switch_outlives_a_resume_and_a_bad_spec_changes_nothi
     let before = rt.agent().model_spec().to_string();
     assert!(rt.set_model_spec("nowhere:x").is_err());
     assert_eq!(
-        (rt.agent().model_spec(), rt.hooks.model_spec()),
+        (rt.agent().model_spec(), rt.hooks().model_spec()),
         (before.as_str(), before.clone())
     );
 
     rt.set_model_spec(OTHER).unwrap();
     rt.set_effort(Some(Effort::High));
     assert_eq!(
-        (rt.hooks.model_spec(), rt.hooks.effort()),
+        (rt.hooks().model_spec(), rt.hooks().effort()),
         (OTHER.to_string(), Some(Effort::High))
     );
-    rt.hooks.flush().await;
+    rt.hooks().flush().await;
 
     let back = keyed(&fs, Resume::Id(rt.session_id())).await;
     assert_eq!(back.agent().model_spec(), OTHER);
@@ -158,7 +157,7 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
     let mut rt = keyed(&fs, Resume::New).await;
     rt.set_model_spec(OTHER).unwrap();
     rt.set_effort(Some(Effort::High));
-    rt.hooks.flush().await;
+    rt.hooks().flush().await;
     let id = rt.session_id();
     let on =
         |rt: &crate::Runtime<Recorded>| (rt.agent().model_spec().to_string(), rt.agent().effort());
@@ -191,7 +190,7 @@ async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resu
     let fs = Arc::new(MemFs::new());
     let mut rt = keyed(&fs, Resume::New).await;
     rt.set_model_spec(OTHER).unwrap();
-    rt.board
+    rt.board()
         .create(NewTask {
             subject: "old work".into(),
             ..Default::default()
@@ -201,8 +200,8 @@ async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resu
 
     rt.clear().await.unwrap();
     assert_ne!(rt.session_id(), old);
-    assert!(rt.board.list().is_empty());
-    rt.hooks.flush().await;
+    assert!(rt.board().list().is_empty());
+    rt.hooks().flush().await;
 
     let fresh = keyed(&fs, Resume::Id(rt.session_id())).await;
     assert_eq!(fresh.agent().model_spec(), OTHER);
@@ -216,18 +215,18 @@ async fn clear_starts_a_new_session_on_the_same_model_and_the_old_one_still_resu
 async fn a_clear_that_cannot_create_its_file_changes_nothing() {
     let fs = Arc::new(MemFs::new());
     let mut rt = keyed(&fs, Resume::New).await;
-    rt.board
+    rt.board()
         .create(NewTask {
             subject: "kept".into(),
             ..Default::default()
         })
         .unwrap();
     let id = rt.session_id();
-    rt.hooks.flush().await;
+    rt.hooks().flush().await;
     block_sessions(&fs).await;
 
     let err = rt.clear().await.expect_err("the clear fails");
     assert!(matches!(err, SessionError::Create { .. }), "{err:?}");
     assert_eq!(rt.session_id(), id);
-    assert_eq!(rt.board.list().len(), 1);
+    assert_eq!(rt.board().list().len(), 1);
 }

@@ -1,6 +1,8 @@
 //! What a host shows the human. The runtime decides WHAT happened; the [`Ui`]
 //! decides how it looks (a terminal, a web panel, a log).
 
+use std::sync::Arc;
+
 use haest_core::remedy::Limit;
 use haest_tools::SubagentEvent;
 
@@ -69,5 +71,35 @@ pub trait Ui: Send + Sync {
     /// None by default.
     fn remedy(&self, _limit: Limit) -> Option<String> {
         None
+    }
+}
+
+/// A UI the host shares is one: a host that keeps its UI for itself as well
+/// hands [`build`](crate::build) an `Arc` of it. Every call goes to the UI
+/// inside, its own defaults included.
+impl<T: Ui + ?Sized> Ui for Arc<T> {
+    fn info(&self, text: &str) {
+        (**self).info(text);
+    }
+    fn warn(&self, text: &str) {
+        (**self).warn(text);
+    }
+    fn error(&self, text: &str) {
+        (**self).error(text);
+    }
+    fn debug(&self, text: &str) {
+        (**self).debug(text);
+    }
+    fn arrival(&self, headline: &str) {
+        (**self).arrival(headline);
+    }
+    fn subagent(&self, id: &str, event: &SubagentEvent) {
+        (**self).subagent(id, event);
+    }
+    fn subagents_running(&self, ids: &[String]) {
+        (**self).subagents_running(ids);
+    }
+    fn remedy(&self, limit: Limit) -> Option<String> {
+        (**self).remedy(limit)
     }
 }

@@ -41,17 +41,16 @@ impl HttpClient for Refusing {
 async fn what_the_gate_holds_rides_in_with_the_humans_next_turn() {
     let api = Arc::new(Refusing::default());
     let fs = Arc::new(MemFs::new());
-    let mut inputs = RuntimeInputs::new(hardcoded(), World::Fs(fs.clone()));
+    let mut inputs = RuntimeInputs::new(hardcoded(), World::files(fs.clone()));
     inputs.keys = openrouter_key();
     inputs.http = api.clone();
-    let ui = Arc::new(Recorded::default());
-    let mut rt = build(inputs, ui, Deny, BuildOptions::default())
+    let mut rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
         .await
         .unwrap();
     // The test's own end of a fresh inbox: what a job or a subagent submits
     // to. One turn in a row with no human message, then the gate holds.
-    let (sender, queue) = inbox(&rt.hooks, 1);
-    rt.inbox = queue;
+    let (sender, queue) = inbox(rt.hooks(), 1);
+    *rt.inbox_mut() = queue;
 
     sender.submit("job 1 exited".into());
     let first = rt.next_agent_turn().expect("the first agent turn runs");
@@ -86,15 +85,14 @@ async fn shut_down_leaves_no_job_running_and_the_session_on_disk() {
     };
     let path = std::env::var("PATH").unwrap_or_default();
     let child_env = ChildEnv::new([("PATH", path)]);
-    let mut inputs = RuntimeInputs::new(settings, World::Disk { child_env });
+    let mut inputs = RuntimeInputs::new(settings, World::disk(child_env));
     inputs.keys = openrouter_key();
-    let ui = Arc::new(Recorded::default());
-    let rt = build(inputs, ui, Deny, BuildOptions::default())
+    let rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
         .await
         .unwrap();
     let jobs = rt
-        .jobs
-        .clone()
+        .jobs()
+        .cloned()
         .expect("Bash in the real workspace leaves jobs");
     let workspace = rt.agent().deps().shared().workspace().clone();
     let ctx = crate::haest::core::tool::ToolContext::new(dir.clone(), workspace);
