@@ -6,6 +6,7 @@ use serde_json::json;
 use super::*;
 use crate::{
     agent::test_support::*,
+    events::LoopEvent,
     messages::{
         AssistantMessage, AssistantPart, MediaKind, MediaPart, StopReason, Usage, UserMessage,
     },
@@ -104,6 +105,26 @@ async fn an_oversized_request_is_never_sent_and_nothing_is_added_to_history() {
     assert_eq!(stop, StopReason::Error);
     assert_eq!(agent.history().len(), 1);
     assert!(matches!(&agent.history()[0], Message::User(_)));
+}
+
+/// A request too big to send never went out, so no `ModelStart` says it
+/// did: the same as a spec with no provider. One used to come first.
+#[tokio::test]
+async fn an_oversized_request_announces_no_model_call() {
+    let p = ScriptedProvider::new([text_answer("never")]);
+    let (mut agent, _) = agent_with(&p, capped(|l| l.max_request_tokens = 100));
+    let events = collect(&mut agent, &"x".repeat(2000)).await;
+    let kinds: Vec<&str> = events
+        .iter()
+        .map(|e| match e {
+            LoopEvent::User { .. } => "user",
+            LoopEvent::ModelStart { .. } => "model_start",
+            LoopEvent::Assistant { .. } => "assistant",
+            LoopEvent::TurnEnd { .. } => "turn_end",
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(kinds, ["user", "assistant", "turn_end"]);
 }
 
 /// The turn's ending names the cap, so a host need not read the text.

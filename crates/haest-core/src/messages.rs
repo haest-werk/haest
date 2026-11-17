@@ -89,8 +89,10 @@ crate::word_enum! {
         EndTurn = "end_turn",
         /// The model stopped so the tools it called could run.
         ToolUse = "tool_use",
-        /// The answer hit its output token limit. For a turn: a turn cap or the
-        /// conversation budget stopped it, and the turn's `error` says which.
+        /// The answer hit its output token limit. For a turn: the model's own
+        /// output limit cut its last answer (the turn's `limit` and `error`
+        /// are None), or a turn cap or the conversation budget stopped it
+        /// (`limit` says which, `error` says it in words).
         MaxTokens = "max_tokens",
         /// The model or the provider's filter declined to answer.
         Refusal = "refusal",

@@ -856,6 +856,15 @@ Hosts write less (round two of the review, and what porting brain onto
   a newer one), and the agent checks its thresholds on a copy it puts
   back. The host's panic still reaches the call that ran its code.
 - `threshold::Watch` is `Clone`.
+- Fixed: a request over `max_request_tokens` emitted `LoopEvent::ModelStart`
+  before it was refused, though it never went out; a spec with no provider
+  emitted none. Neither does now: the request is sized before the call is
+  announced, and the events doc names both. haest-tools' subagent spend no
+  longer counts the refused request as a model call.
+- Docs: `StopReason::MaxTokens` on a turn (`TurnOutcome`, `RunOutcome`) said
+  a turn cap or the conversation budget had stopped it, with `error` saying
+  which. It is also the model's own output limit cutting the last answer,
+  with `limit` and `error` None; a cap fills `limit`.
 
 ### haest-http
 

@@ -226,10 +226,8 @@ impl Agent {
             Ok(r) => r,
             Err(e) => return refuse(&self.model_spec, &report(&e), t),
         };
-        t.sink.emit(LoopEvent::ModelStart {
-            provider: resolved.provider().id().to_string(),
-            model: resolved.model().to_string(),
-        });
+        // Sized before it is announced: a request too big to send never
+        // went out, so no ModelStart says it did.
         let prefix = self.request_prefix(resolved.model()).await;
         let messages = self.sendable(&self.history, resolved.model());
         let estimate = estimate_request_tokens(&prefix.system, &messages, &prefix.tools);
@@ -237,6 +235,10 @@ impl Agent {
             t.refused_by = too_big.limit;
             return refuse(resolved.model(), &too_big.text, t);
         }
+        t.sink.emit(LoopEvent::ModelStart {
+            provider: resolved.provider().id().to_string(),
+            model: resolved.model().to_string(),
+        });
         let req = prefix.request(resolved.model().to_string(), messages, t.cancel.clone());
         let mut msg = resolved
             .complete_streaming(req, |ev| match ev {

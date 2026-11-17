@@ -19,8 +19,10 @@
 //!    model calls tools or steering arrived;
 //! 4. [`LoopEvent::TurnEnd`], always last, exactly once.
 //!
-//! A model call that never went out (no provider for the spec) is an
-//! [`Assistant`](LoopEvent::Assistant) event with no `ModelStart` before it. A
+//! A model call that never went out (no provider for the spec, a request
+//! over [`max_request_tokens`](crate::caps::TurnCaps::max_request_tokens))
+//! is an [`Assistant`](LoopEvent::Assistant) event with no `ModelStart`
+//! before it. A
 //! turn refused because another one is running emits only `TurnEnd`.
 //!
 //! ```
@@ -126,8 +128,9 @@ pub enum LoopEvent {
 #[non_exhaustive]
 #[must_use = "a turn can end in an error"]
 pub struct TurnOutcome {
-    /// Why it ended. [`StopReason::MaxTokens`] here means a turn cap or the
-    /// conversation budget stopped it.
+    /// Why it ended. [`StopReason::MaxTokens`] here means the model's own
+    /// output limit cut its last answer (`limit` None), or a turn cap or the
+    /// conversation budget stopped the turn (`limit` says which).
     pub stop_reason: StopReason,
     /// What went wrong, or which cap was hit; None for a turn that ended normally.
     pub error: Option<String>,

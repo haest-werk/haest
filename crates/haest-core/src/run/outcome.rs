@@ -48,8 +48,10 @@ pub enum Served {
 /// [`Agent::run_durable`](crate::Agent::run_durable) returns it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunOutcome {
-    /// Why the turn ended. [`StopReason::MaxTokens`] means a turn cap or the
-    /// conversation budget stopped it.
+    /// Why the turn ended, as [`TurnOutcome::stop_reason`](crate::TurnOutcome::stop_reason)
+    /// says: [`StopReason::MaxTokens`] is the model's own output limit, or a
+    /// turn cap or the conversation budget, which `limit` names for a turn
+    /// that ran now and `error` for a stored result.
     pub stop_reason: StopReason,
     /// Which cap stopped it, or what went wrong; None for a turn that ended normally.
     pub error: Option<String>,

@@ -281,9 +281,11 @@ impl Agent {
     ///
     /// `input` becomes a user message, with whatever
     /// [`attach_media`](crate::AgentHooks::attach_media) finds in it. The turn
-    /// then makes model calls until one answers without tools, a cap or the
-    /// conversation budget stops it ([`StopReason::MaxTokens`]), a hook or the
-    /// provider fails ([`StopReason::Error`]), or it is aborted.
+    /// then makes model calls until one answers without tools (its stop
+    /// reason, [`StopReason::MaxTokens`] when the model's output limit cut
+    /// it), a cap or the conversation budget stops it
+    /// ([`StopReason::MaxTokens`], with [`TurnOutcome::limit`] saying which),
+    /// a hook or the provider fails ([`StopReason::Error`]), or it is aborted.
     ///
     /// A provider error, an unknown model spec and a tool that fails or
     /// panics are values, not panics: the turn goes on, or ends with a
