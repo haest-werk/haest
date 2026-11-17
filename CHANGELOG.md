@@ -195,25 +195,35 @@ write instead.
 ### Security
 
 - An approval shows the human all of the command that runs, and nothing
-  printed before it can hide part of it. The approval mod cut the command
-  to 200 characters without saying so, and the haest command printed that
-  preview raw. A command padded past the cut with spaces, or one with a
-  carriage return and an erase-line in it, showed as `rm -rf ./build`
-  while a hidden `; touch ...` ran on "y" (in the terminal and over
-  `--stdio`). The ask now carries the whole command. The haest command
-  writes nothing from the model, a tool's input, a server or a peer raw to
-  the terminal: control characters (but a newline and a tab), bidi controls
-  and zero-width characters show as escapes, in the answer (when stdout is
-  a terminal; into a file it keeps its bytes), every notice and tool line,
-  the question, `haest ctl` and `haest sessions`. An escape sequence in the
-  model's text could otherwise clear the screen or set a scroll region
-  just before the question. The question comes after the command, right
-  above the answer, and says how much command is above it; more than 2
-  blank lines, or more than 8 spaces or tabs, in a row show as their count,
-  so padding cannot push a command's start or the question off the screen.
+  printed before or while it waits can hide part of it. The approval mod
+  cut the command to 200 characters without saying so, and the haest
+  command printed that preview raw. A command padded past the cut with
+  spaces, or one with a carriage return and an erase-line in it, showed as
+  `rm -rf ./build` while a hidden `; touch ...` ran on "y" (in the terminal
+  and over `--stdio`). The ask now carries the whole command, and the haest
+  command:
+  - writes nothing from the model, a tool's input, a server or a peer raw
+    to the terminal: control characters (but a newline and a tab), bidi
+    controls and zero-width characters show as escapes, in the answer
+    (unless stdout is a regular file, which gets its bytes; a pipe into
+    `tee` can end on the terminal), every notice and tool line, the
+    question, `haest ctl`, `haest sessions` and `haest settings`. An
+    escape sequence in the model's text could otherwise clear the screen
+    or set a scroll region just before the question;
+  - asks after the command, right above the answer, saying how much
+    command is above it, and shows nothing else until the question is
+    answered (or given up): a subagent's lines, a background job's
+    arrival and the main agent's answer text wait and follow it, so none
+    of them can scroll the question away or draw one of its own;
+  - shows, in the command, a tab as `⟨tab⟩` (`\t` reads as a letter to
+    bash), any whitespace but a space and every character that draws as
+    blank or as nothing as its escape, more than 2 blank lines in a row,
+    more than 8 spaces or tabs inside a line, and indentation past 40
+    columns as their count, so padding cannot push a command's start or
+    the question off the screen; a script's indentation reads as written.
   A host's own prompter should do the same with
   `ApprovalRequest::input_preview` and with whatever it shows just before
-  it asks.
+  it asks and while the human answers.
 
 ### Bug fixes
 
@@ -411,8 +421,12 @@ write instead.
   your own file, a variable or a flag, never from a project's file or a
   profile: a repository cannot open your conversation to anyone.
 - A watcher's terminal writes an answer whole when its streamed pieces were
-  not seen (replayed from the ring), and shows approval asks and their
-  withdrawal as lines.
+  not seen (replayed from the ring), shows approval asks and their
+  withdrawal as lines, and ends the line of a question another terminal
+  answers.
+- The `approvals` help (and docs/settings.md) says what the mod asks about:
+  a shell command that cannot be undone, in the real workspace. It said
+  "asks before a tool changes anything".
 - The remedy for a cap names its setting through `Limit::setting()`, and
   the three subagent caps have one.
 - Ctrl+C stops a slash command: it is told to stop and gets 2 seconds to
