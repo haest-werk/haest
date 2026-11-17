@@ -54,8 +54,8 @@ pub trait SubagentParent: Inbox {
         &self,
         start: &MemberStart,
         cancel: &CancellationToken,
-    ) -> Result<Box<dyn MemberRun>, AgentError> {
-        Ok(Box::new(InProcessRun))
+    ) -> Result<Member, AgentError> {
+        Ok(Member::in_process())
     }
     /// The note under the member's system prompt; `member` has its run's model spec and caps.
     fn subagent_note(&self, member: &MemberStart) -> String { haest's }   // B14, G-H5

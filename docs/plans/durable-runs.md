@@ -156,12 +156,14 @@ One trait. Each provider is its own opt-in piece; none is on by default.
 ```rust
 #[async_trait]
 pub trait RunStore: Send + Sync {
-    /// Where the run's records go (the existing seam).
-    fn sink(&self, key: &RunKey) -> Arc<dyn SessionSink>;
+    /// Where the run's records go (the existing seam), as the handle sinks are held by.
+    fn sink(&self, key: &RunKey) -> SessionSinkRef;
     /// The run's records so far; None for a key never started.
     async fn load(&self, key: &RunKey) -> io::Result<Option<ReplayedRun>>;
 }
 ```
+
+(As built: `haest_core::run::RunStore`, held as a `RunStoreRef`.)
 
 | Provider | Lives in | Notes |
 |---|---|---|
