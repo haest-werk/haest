@@ -15,9 +15,7 @@ use super::{
     lifecycle::{Lifecycle, Step},
     support::{CALL_USD, Rig, call, now, say, spawns},
 };
-use crate::agents::{
-    AgentDirectory, AgentError, AgentRef, Ending, MemberCaps, SpawnInput, SubagentCaps,
-};
+use crate::agents::{AgentError, AgentRef, Ending, MemberCaps, SpawnInput, SubagentCaps};
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9
@@ -103,9 +101,8 @@ async fn a_refused_start_refuses_the_spawn_as_the_parents_typed_error_runs_nothi
         ..Default::default()
     };
     let main = AgentRef::main();
-    let again = r
-        .hub
-        .spawn(&main, ask("deploy now"), CancellationToken::new());
+    let cancel = CancellationToken::new();
+    let again = r.hub.spawn(&main, ask("deploy now"), &cancel);
     assert_eq!(again.await, Err(refusal));
     assert!(r.provider_sub_tools().is_empty(), "nothing ran");
     assert!(r.hub.running().is_empty());
@@ -114,7 +111,7 @@ async fn a_refused_start_refuses_the_spawn_as_the_parents_typed_error_runs_nothi
         "no end for a member that never started"
     );
     // The name never ran, so it is free again.
-    let out = r.hub.spawn(&main, ask("look"), CancellationToken::new());
+    let out = r.hub.spawn(&main, ask("look"), &cancel);
     assert_eq!(out.await.unwrap().text, "deployed");
     let names: Vec<String> = (l.steps().into_iter())
         .filter_map(|s| match s {
@@ -174,7 +171,7 @@ async fn a_member_stopped_while_its_run_starts_never_runs_and_its_end_says_stopp
         ..Default::default()
     };
     let spawn = tokio::spawn(async move {
-        hub.spawn(&AgentRef::main(), input, CancellationToken::new())
+        hub.spawn(&AgentRef::main(), input, &CancellationToken::new())
             .await
     });
     let until = Instant::now() + Duration::from_secs(5);
@@ -207,7 +204,7 @@ async fn a_cancelled_caller_reaches_its_foreground_members_end() {
         prompt: "p".into(),
         ..Default::default()
     };
-    let spawn = tokio::spawn(async move { hub.spawn(&AgentRef::main(), input, caller).await });
+    let spawn = tokio::spawn(async move { hub.spawn(&AgentRef::main(), input, &caller).await });
     let end = Instant::now() + Duration::from_secs(5);
     while r.provider_sub_tools().is_empty() && Instant::now() < end {
         tokio::time::sleep(Duration::from_millis(5)).await;

@@ -8,7 +8,9 @@ use async_trait::async_trait;
 use haest_core::{AgentHooks, Message, SharedDeps, caps::ConversationCaps, ledger::Ledger};
 
 use super::{script::Roles, support::Quiet};
-use crate::agents::{AgentError, MemberCaps, MemberEnd, MemberRun, MemberStart, SubagentParent};
+use crate::agents::{
+    AgentError, Member, MemberCaps, MemberEnd, MemberRun, MemberStart, SubagentParent,
+};
 
 /// One step of a member's life, with the subagent model calls made before it.
 #[derive(Debug, Clone, PartialEq)]
@@ -73,7 +75,7 @@ impl Lifecycle {
         start: &MemberStart,
         provider: &Arc<Roles>,
         parent: &dyn SubagentParent,
-    ) -> Result<Box<dyn MemberRun>, AgentError> {
+    ) -> Result<Member, AgentError> {
         let calls_before = provider.sub_tools.lock().unwrap().len();
         self.log.lock().unwrap().push(Step::Start {
             start: start.clone(),
@@ -95,7 +97,7 @@ impl Lifecycle {
                 .with_hooks(self.kept.clone())
                 .with_ledger(ledger)
         });
-        Ok(Box::new(Watched {
+        Ok(Member::new(Watched {
             name: start.name.clone(),
             lifecycle: self.clone(),
             provider: provider.clone(),

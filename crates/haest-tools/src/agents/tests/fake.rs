@@ -2,7 +2,7 @@
 //! running set, every event, every message, what reaches main and how) and
 //! may implement the hooks a host can (kinds, member runs, its own note).
 
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use async_trait::async_trait;
 use haest_core::{
@@ -18,8 +18,8 @@ use super::{lifecycle::Lifecycle, script::Roles};
 use crate::{
     GlobTool,
     agents::{
-        AgentError, AgentToolOptions, InProcessRun, MemberRun, MemberStart, Sender, SubagentEvent,
-        SubagentHub, SubagentParent, SubagentTypes, subagent_note,
+        AgentError, AgentToolOptions, Member, MemberStart, Sender, SubagentEvent, SubagentParent,
+        SubagentTypes, hub::WeakHub, subagent_note,
     },
     inbox::Inbox,
     testkit::TestWorkspace,
@@ -97,7 +97,7 @@ pub struct FakeParent {
     /// as main's turns ([`super::support::Rig::settle`]).
     pub for_main: Mutex<Vec<ForMain>>,
     /// The hub over this parent, to look at as an answer lands.
-    pub hub: OnceLock<Weak<SubagentHub>>,
+    pub hub: OnceLock<WeakHub>,
     /// Whether the hub called itself idle as each answer landed.
     pub idle_at_answer: Mutex<Vec<bool>>,
     pub host: Host,
@@ -110,11 +110,7 @@ type Adjust = dyn Fn(SharedDeps) -> SharedDeps + Send + Sync;
 
 /// The kinds a host with kinds has: `explore` (the default) and `general`.
 pub fn explore_or_general() -> SubagentTypes {
-    SubagentTypes {
-        names: vec!["explore".into(), "general".into()],
-        description: "explore only looks".into(),
-        default: "explore".into(),
-    }
+    SubagentTypes::new(["explore", "general"], "explore", "explore only looks").unwrap()
 }
 
 impl Inbox for FakeParent {
@@ -126,7 +122,7 @@ impl Inbox for FakeParent {
         let _ = self.tx.send(text);
     }
     fn submit_answer(&self, text: String) {
-        if let Some(hub) = self.hub.get().and_then(Weak::upgrade) {
+        if let Some(hub) = self.hub.get().and_then(WeakHub::upgrade) {
             self.idle_at_answer.lock().unwrap().push(hub.idle());
         }
         self.for_main
@@ -183,10 +179,10 @@ impl SubagentParent for FakeParent {
         &self,
         start: &MemberStart,
         _cancel: &tokio_util::sync::CancellationToken,
-    ) -> Result<Box<dyn MemberRun>, AgentError> {
+    ) -> Result<Member, AgentError> {
         match &self.host.lifecycle {
             Some(l) => l.start(start, &self.provider, self).await,
-            None => Ok(Box::new(InProcessRun)),
+            None => Ok(Member::in_process()),
         }
     }
     fn subagent_note(&self, member: &MemberStart) -> String {

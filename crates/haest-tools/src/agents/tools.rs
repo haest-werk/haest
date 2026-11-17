@@ -1,8 +1,6 @@
 //! The agent tools. Each agent gets its own copies, bound to its name -- that is
 //! the `from` on every message it sends.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use haest_core::tool::{
     JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_bool, opt_str, req_str,
@@ -10,12 +8,13 @@ use haest_core::tool::{
 use serde_json::{Value, json};
 
 use super::{
-    AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SubagentBudget, budget,
+    AgentDirectoryRef, AgentError, AgentRef, AgentToolOptions, SpawnInput, SubagentBudget, budget,
 };
 use haest_core::Tools;
 
+#[derive(Debug)]
 struct AgentTool {
-    hub: Arc<dyn AgentDirectory>,
+    hub: AgentDirectoryRef,
     me: AgentRef,
     opts: AgentToolOptions,
 }
@@ -26,11 +25,11 @@ impl AgentTool {
         let Some(types) = &self.opts.types else {
             return Ok(None);
         };
-        let kind = opt_str(input, "subagent_type")?.unwrap_or(&types.default);
-        if !types.names.iter().any(|n| n == kind) {
+        let kind = opt_str(input, "subagent_type")?.unwrap_or(types.default());
+        if !types.names().iter().any(|n| n == kind) {
             return Err(ToolError::Input(format!(
                 "subagent_type \"{kind}\" is not one of: {}",
-                types.names.join(", ")
+                types.names().join(", ")
             )));
         }
         Ok(Some(kind.to_string()))
@@ -88,8 +87,11 @@ impl Tool for AgentTool {
             "required": ["description", "prompt"]
         });
         if let Some(types) = &self.opts.types {
-            params["properties"]["subagent_type"] =
-                json!({"type": "string", "enum": types.names, "description": types.description});
+            params["properties"]["subagent_type"] = json!({
+                "type": "string",
+                "enum": types.names(),
+                "description": types.description()
+            });
         }
         if let Some(caps) = &self.opts.budget_caps {
             params["properties"]["budget"] = budget::schema(caps);
@@ -109,7 +111,7 @@ impl Tool for AgentTool {
         };
         let out = self
             .hub
-            .spawn(&self.me, spawn, ctx.cancel().clone())
+            .spawn(&self.me, spawn, ctx.cancel())
             .await
             .map_err(|e| ToolError::Input(e.to_string()))?;
         Ok(ToolOutput {
@@ -129,8 +131,9 @@ fn refuse_while_winding_down(ctx: &ToolContext) -> Result<(), ToolError> {
     }
 }
 
+#[derive(Debug)]
 struct SendMessageTool {
-    hub: Arc<dyn AgentDirectory>,
+    hub: AgentDirectoryRef,
     me: AgentRef,
 }
 
@@ -169,8 +172,9 @@ impl Tool for SendMessageTool {
     }
 }
 
+#[derive(Debug)]
 struct StopAgentTool {
-    hub: Arc<dyn AgentDirectory>,
+    hub: AgentDirectoryRef,
 }
 
 #[async_trait]
@@ -202,26 +206,23 @@ impl Tool for StopAgentTool {
     }
 }
 
-/// The agent tools `me` gets, over `hub`: Agent only when it may still spawn
-/// (`can_spawn`), SendMessage and StopAgent always. Each is bound to `me`: it
-/// is the `from` of every spawn and message.
+/// The agent tools `me` gets, over `hub` (the directory itself, or an `Arc`
+/// of one the host keeps too): Agent only when it may still spawn
+/// ([`AgentToolOptions::can_spawn`]), SendMessage and StopAgent always. Each
+/// is bound to `me`: it is the `from` of every spawn and message. `opts` adds
+/// the host's kinds of subagent, its `model` text and budgets.
 ///
-/// [`SubagentHub::tools_for`](super::SubagentHub::tools_for) works out
-/// `can_spawn` from the hub's caps.
-pub fn agent_tools(hub: Arc<dyn AgentDirectory>, me: AgentRef, can_spawn: bool) -> Tools {
-    agent_tools_with(hub, me, can_spawn, AgentToolOptions::default())
-}
-
-/// [`agent_tools`] with the host's kinds of subagent and `model` text
-/// ([`AgentToolOptions`]). [`AgentDirectory`] has an example.
-pub fn agent_tools_with(
-    hub: Arc<dyn AgentDirectory>,
+/// [`SubagentHub::tools_for`](super::SubagentHub::tools_for) builds these
+/// over the hub, working out `can_spawn` from its caps.
+/// [`AgentDirectory`](super::AgentDirectory) has an example.
+pub fn agent_tools(
+    hub: impl Into<AgentDirectoryRef>,
     me: AgentRef,
-    can_spawn: bool,
     opts: AgentToolOptions,
 ) -> Tools {
+    let hub = hub.into();
     let mut tools = Tools::new();
-    if can_spawn {
+    if opts.can_spawn {
         tools.push(AgentTool {
             hub: hub.clone(),
             me: me.clone(),

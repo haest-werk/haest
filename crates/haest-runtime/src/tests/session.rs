@@ -31,7 +31,7 @@ use crate::{
         core::tool::ToolContext,
         http::{HttpClient, HttpError, Request, Response},
         mods::{ApprovalRequest, Decision, ModUi},
-        tools::{AgentDirectory, AgentRef, Inbox, JobHub, NoInbox, SpawnInput},
+        tools::{AgentRef, Inbox, JobHub, NoInbox, SpawnInput},
         workspace::RealWorkspace,
     },
     inbox,
@@ -139,7 +139,7 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
         ..SpawnInput::default()
     };
     (rt.subagents
-        .spawn(&AgentRef::main(), spawn, CancellationToken::new())
+        .spawn(&AgentRef::main(), spawn, &CancellationToken::new())
         .await)
         .unwrap();
     assert_eq!(rt.subagents.running().len(), 1);

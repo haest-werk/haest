@@ -15,9 +15,7 @@ use super::{
     script::Script,
     support::{CALL_USD, Rig, call, now, say},
 };
-use crate::agents::{
-    AgentDirectory, AgentError, AgentRef, MemberCaps, SpawnInput, SubagentBudget, SubagentCaps,
-};
+use crate::agents::{AgentError, AgentRef, MemberCaps, SpawnInput, SubagentBudget, SubagentCaps};
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9
@@ -224,7 +222,8 @@ async fn a_child_with_no_spend_cap_does_not_fit_a_capped_conversation_and_says_w
         ..Default::default()
     };
     let main = AgentRef::main();
-    let refused = r.hub.spawn(&main, ask(0.0), CancellationToken::new()).await;
+    let cancel = CancellationToken::new();
+    let refused = r.hub.spawn(&main, ask(0.0), &cancel).await;
     assert_eq!(
         refused,
         Err(AgentError::OverBudget {
@@ -232,7 +231,7 @@ async fn a_child_with_no_spend_cap_does_not_fit_a_capped_conversation_and_says_w
             available: 1.0
         })
     );
-    let out = r.hub.spawn(&main, ask(0.2), CancellationToken::new()).await;
+    let out = r.hub.spawn(&main, ask(0.2), &cancel).await;
     assert_eq!(out.unwrap().text, "done");
 }
 

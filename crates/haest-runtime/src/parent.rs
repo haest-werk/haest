@@ -22,7 +22,7 @@ use crate::{
     prompt::{AgentPrompt, RuntimePrompt},
     tools::WrappedTools,
 };
-use haest_core::{ToolRef, Tools};
+use haest_core::{ToolRef, ToolSourceRef, Tools};
 
 /// The runtime's [`SubagentParent`]: what a conversation's subagents are
 /// made from, behind its [`SubagentHub`].
@@ -56,7 +56,7 @@ impl RuntimeParent {
     /// many run at once, each one's spend, steps and time).
     pub fn hub(self) -> Arc<SubagentHub> {
         let caps = self.hooks.settings.subagent_caps();
-        SubagentHub::new(Arc::new(self), caps)
+        Arc::new(SubagentHub::new(self, caps))
     }
 }
 
@@ -92,9 +92,9 @@ impl SubagentParent for RuntimeParent {
     }
 
     /// The agent's fixed list behind its own deferral (ToolSearch loads per agent).
-    fn tool_source(&self, tools: Tools) -> Arc<dyn ToolSource> {
+    fn tool_source(&self, tools: Tools) -> ToolSourceRef {
         let deferral = ToolDeferral::new(self.hooks.settings.deferred_tools);
-        Arc::new(DeferredTools::new(tools, deferral))
+        DeferredTools::new(tools, deferral).into()
     }
 
     fn on_activity(&self, ids: &[String]) {

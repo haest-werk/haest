@@ -43,7 +43,7 @@ impl SubagentHub {
     /// background answer handed back (to its starter, or to the parent's
     /// [`Inbox::submit_answer`](crate::Inbox::submit_answer)).
     pub fn idle(&self) -> bool {
-        self.work.open.load(Ordering::SeqCst) == 0
+        self.0.work.open.load(Ordering::SeqCst) == 0
     }
 
     /// Wait until the hub is [idle](Self::idle), at most `timeout`: true once
@@ -52,7 +52,7 @@ impl SubagentHub {
     /// answer is in, or before a one-shot run exits) waits here.
     /// `Duration::MAX` waits for as long as it takes.
     pub async fn settled(&self, timeout: Duration) -> bool {
-        let mut pulse = self.work.pulse.subscribe();
+        let mut pulse = self.0.work.pulse.subscribe();
         let deadline = Instant::now().checked_add(timeout);
         while !self.idle() {
             let changed = match deadline {

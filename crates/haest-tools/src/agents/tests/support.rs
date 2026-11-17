@@ -23,7 +23,7 @@ use super::{
 use crate::testkit::TestWorkspace;
 
 pub struct Rig {
-    pub hub: Arc<SubagentHub>,
+    pub hub: SubagentHub,
     pub parent: Arc<FakeParent>,
     pub main: Agent,
     pub events: Vec<LoopEvent>,
@@ -88,7 +88,7 @@ impl Rig {
             adjust: Mutex::default(),
         });
         let hub = SubagentHub::new(parent.clone(), caps);
-        let _ = parent.hub.set(Arc::downgrade(&hub));
+        let _ = parent.hub.set(hub.downgrade());
         let mut tools = parent.base_tools();
         tools.extend(hub.tools_for(&AgentRef::main()));
         let deps = AgentDeps::from_shared(parent.deps(), tools, "main");

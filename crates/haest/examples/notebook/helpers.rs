@@ -19,8 +19,8 @@ use haest::{
     CancellationToken, Effort, SharedDeps, ToolRef, Tools, WorkspaceRef, async_trait,
     core::caps::SubagentCaps,
     tools::{
-        AgentError, AgentToolOptions, Ending, Inbox, MemberCaps, MemberEnd, MemberRun, MemberStart,
-        Sender, SubagentEvent, SubagentParent,
+        AgentError, AgentToolOptions, Ending, Inbox, Member, MemberCaps, MemberEnd, MemberRun,
+        MemberStart, Sender, SubagentEvent, SubagentParent,
     },
 };
 
@@ -240,7 +240,7 @@ impl SubagentParent for NodeHelpers {
         &self,
         start: &MemberStart,
         _cancel: &CancellationToken,
-    ) -> Result<Box<dyn MemberRun>, AgentError> {
+    ) -> Result<Member, AgentError> {
         let token = {
             let mut started = locked(&self.node.started);
             let token = format!("helper-run-{}", started.len() + 1);
@@ -266,7 +266,7 @@ impl SubagentParent for NodeHelpers {
             self.host.caps(),
         ));
         let deps = shared(&self.gateway, &token, self.workspace.clone(), host);
-        Ok(Box::new(HelperRun {
+        Ok(Member::new(HelperRun {
             token,
             model_spec,
             deps,

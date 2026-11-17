@@ -88,9 +88,9 @@
 //! tools. [`SubagentHub`] is the default, over a [`SubagentParent`]; a parent
 //! whose members run on runs of its own (its own models, caps, records, and
 //! an end it must close) keeps the hub and implements
-//! [`SubagentParent::start_member`], which hands back a [`MemberRun`].
-//! [`AgentToolOptions`] gives the Agent tool the host's kinds of subagent
-//! (`subagent_type`) and its own `model` text: to [`agent_tools_with`]
+//! [`SubagentParent::start_member`], which hands back a [`Member`] over a
+//! [`MemberRun`]. [`AgentToolOptions`] gives the Agent tool the host's kinds
+//! of subagent (`subagent_type`) and its own `model` text: to [`agent_tools`]
 //! directly, or to the hub through [`SubagentParent::agent_tool_options`],
 //! whose [`subagent_tools`](SubagentParent::subagent_tools) then says what
 //! each kind may use.
@@ -174,10 +174,10 @@ mod web_fetch;
 pub use haest_http as http;
 
 pub use agents::{
-    AgentDirectory, AgentError, AgentRef, AgentToolOptions, Ending, InProcessRun, MAIN_AGENT,
-    MemberCaps, MemberEnd, MemberRun, MemberStart, Sender, SpawnInput, SpawnOutcome, Spend,
-    SubagentBudget, SubagentEvent, SubagentHub, SubagentParent, SubagentTypes, agent_tools,
-    agent_tools_with, subagent_note,
+    AgentDirectory, AgentDirectoryRef, AgentError, AgentRef, AgentToolOptions, Ending, MAIN_AGENT,
+    Member, MemberCaps, MemberEnd, MemberRun, MemberStart, Sender, SpawnInput, SpawnOutcome, Spend,
+    SubagentBudget, SubagentEvent, SubagentHub, SubagentParent, SubagentParentRef, SubagentTypes,
+    SubagentTypesError, agent_tools, subagent_note,
 };
 pub use bash::{BashOptions, BashTool};
 pub use bash_jobs::job_tools;

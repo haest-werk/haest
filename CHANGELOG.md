@@ -579,8 +579,8 @@ Good citizens:
 ### haest-tools
 
 - Tool lists are `haest_core::Tools` and single tools `ToolRef`:
-  `builtin_tools`, `builtin_tools_where`, `agent_tools`, `agent_tools_with`,
-  `job_tools`, `task_tools`, `SubagentHub::tools_for` and
+  `builtin_tools`, `builtin_tools_where`, `agent_tools`, `job_tools`,
+  `task_tools`, `SubagentHub::tools_for` and
   `SubagentParent::{base_tools, subagent_tools, tool_source}` take or return
   `Tools` (was `Vec<Arc<dyn Tool>>`), `SubagentParent::system_prompt` takes
   `&[ToolRef]`, `skill_tool` returns `ToolRef`. `JobHub::start` takes
@@ -588,14 +588,14 @@ Good citizens:
 - A subagent's lent services are their own wrapper (`ChildServices`), beside
   its lent hooks, now that `ToolServices` is a slot of its own.
 - New `SubagentParent::start_member(&MemberStart, &CancellationToken)`,
-  default `InProcessRun` (the member haest has always run). It runs before
-  a member's loop exists: an `Err` refuses the spawn (the name is freed,
-  nothing runs, no end follows), an `Ok` hands back the member's
-  `MemberRun`.
+  default `Member::in_process()` (the member haest has always run). It runs
+  before a member's loop exists: an `Err` refuses the spawn (the name is
+  freed, nothing runs, no end follows), an `Ok` hands back the member, a
+  `Member` over the host's run (`Member::new(run)`).
 - New `MemberRun`, every method a default: `model_spec()`, `caps()`,
   `deps() -> Option<SharedDeps>` (used as given, hooks included) and
   `end(MemberEnd)`, awaited once after the member's turn and before its
-  answer goes back. New `InProcessRun`, `MemberStart`, `MemberEnd`,
+  answer goes back. New `Member`, `MemberStart`, `MemberEnd`,
   `MemberCaps`, `Ending` and `Spend`; `MemberStart`, `MemberEnd` and
   `Ending` are `#[non_exhaustive]`.
 - `subagent_note` takes `&MemberCaps` (was `&SubagentCaps`): pass
@@ -661,6 +661,29 @@ Good citizens:
   read with `jobs()` and `default_timeout()`.
 - `Job`, `Taken` and `JobError` are `#[non_exhaustive]`; `BashTool`
   implements `Debug` and `Clone`.
+- `SubagentHub` is a cheap handle: clones share the subagents, and
+  `SubagentHub::new` takes the parent itself (`impl Into<SubagentParentRef>`)
+  and returns the hub: `SubagentHub::new(Arc::new(parent), caps)` (an
+  `Arc<SubagentHub>`) -> `SubagentHub::new(parent, caps)`. Its `spawn`,
+  `deliver` and `stop` are inherent: no `AgentDirectory` import to call them.
+- One `agent_tools(hub, me, opts)`, over `impl Into<AgentDirectoryRef>`;
+  whether the caller may still spawn is `AgentToolOptions::can_spawn`
+  (default true): `agent_tools_with(Arc::new(dir), me, false, opts)` ->
+  `agent_tools(dir, me, AgentToolOptions { can_spawn: false, ..opts })`,
+  and `agent_tools(dir, me, true)` -> `agent_tools(dir, me,
+  AgentToolOptions::default())`. New `AgentDirectoryRef` and
+  `SubagentParentRef`.
+- `AgentDirectory::spawn` takes `&CancellationToken` (was by value).
+- `SubagentParent::start_member` returns `Result<Member, AgentError>`
+  (was `Box<dyn MemberRun>`): `Ok(Box::new(run))` -> `Ok(Member::new(run))`.
+  `SubagentParent::tool_source` returns a `ToolSourceRef`:
+  `Arc::new(source)` -> `source.into()`.
+- `SubagentTypes`' fields are private and `SubagentTypes::new(names,
+  default, description)` refuses a default that is not one of the names
+  (`SubagentTypesError`): `SubagentTypes { names, description, default }`
+  -> `SubagentTypes::new(names, default, description)?`; read with
+  `names()`, `default()` and `description()`.
+- `AgentError` is `#[non_exhaustive]`; the agent tools implement `Debug`.
 
 ### haest-workspace
 

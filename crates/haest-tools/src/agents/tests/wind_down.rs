@@ -20,7 +20,10 @@ use super::{
     support::{CALL_USD, Rig, call, now, say, spawns},
 };
 use crate::{
-    agents::{AgentDirectory, AgentError, AgentRef, SpawnInput, SpawnOutcome, agent_tools},
+    agents::{
+        AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
+        agent_tools,
+    },
     testkit::{input, shut_ctx},
 };
 
@@ -34,7 +37,7 @@ impl AgentDirectory for Counting {
         &self,
         _: &AgentRef,
         _: SpawnInput,
-        _: CancellationToken,
+        _: &CancellationToken,
     ) -> Result<SpawnOutcome, AgentError> {
         *self.0.lock().unwrap() += 1;
         Ok(SpawnOutcome {
@@ -54,7 +57,7 @@ impl AgentDirectory for Counting {
 const PAST_80_IN_ONE_CALL: f64 = CALL_USD * 1.2;
 
 fn agent_tool(dir: &Arc<Counting>) -> ToolRef {
-    agent_tools(dir.clone(), AgentRef::main(), true)[0].clone()
+    agent_tools(dir.clone(), AgentRef::main(), AgentToolOptions::default())[0].clone()
 }
 
 /// The conversation winds down at `share`.

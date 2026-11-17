@@ -23,10 +23,10 @@ use tokio_util::sync::CancellationToken;
 pub use budget::SubagentBudget;
 pub use events::{Sender, SubagentEvent};
 pub use hub::SubagentHub;
-pub use member::{Ending, InProcessRun, MemberCaps, MemberEnd, MemberRun, MemberStart, Spend};
-pub use parent::SubagentParent;
+pub use member::{Ending, Member, MemberCaps, MemberEnd, MemberRun, MemberStart, Spend};
+pub use parent::{SubagentParent, SubagentParentRef};
 pub use run::subagent_note;
-pub use tools::{agent_tools, agent_tools_with};
+pub use tools::agent_tools;
 
 /// The conversation's own agent.
 pub const MAIN_AGENT: &str = "main";
@@ -80,20 +80,86 @@ pub struct SpawnInput {
 /// the model may pick, and what it reads about each. The default hub has the
 /// ones its parent gives ([`SubagentParent::agent_tool_options`]); none unless
 /// it gives some.
+///
+/// ```
+/// use haest_tools::SubagentTypes;
+///
+/// let kinds = SubagentTypes::new(["explore", "general"], "explore", "explore only reads")?;
+/// assert_eq!(kinds.default(), "explore");
+/// // A default that is not one of the kinds is refused here, not in front of the model.
+/// assert!(SubagentTypes::new(["explore"], "general", "").is_err());
+/// # Ok::<(), haest_tools::SubagentTypesError>(())
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubagentTypes {
-    /// The kinds the model may name; the parameter's `enum`. An Agent call
-    /// that names another is an input error.
-    pub names: Vec<String>,
-    /// The parameter's description: what each kind may do.
-    pub description: String,
-    /// What an Agent call that names no kind gets; one of `names`.
-    pub default: String,
+    names: Vec<String>,
+    default: String,
+    description: String,
 }
 
-/// PLUG POINT: what a host changes about the agent tools ([`agent_tools_with`]).
-#[derive(Debug, Clone, Default, PartialEq)]
+impl SubagentTypes {
+    /// The kinds the model may name (the parameter's `enum`), the one an
+    /// Agent call that names none gets (`default`), and the parameter's
+    /// `description`: what each kind may do.
+    ///
+    /// # Errors
+    ///
+    /// [`SubagentTypesError`] when `default` is not one of `names` (`names`
+    /// empty included): every Agent call that names no kind would be refused.
+    pub fn new(
+        names: impl IntoIterator<Item = impl Into<String>>,
+        default: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Result<Self, SubagentTypesError> {
+        let names: Vec<String> = names.into_iter().map(Into::into).collect();
+        let default = default.into();
+        if !names.contains(&default) {
+            return Err(SubagentTypesError { default, names });
+        }
+        Ok(Self {
+            names,
+            default,
+            description: description.into(),
+        })
+    }
+
+    /// The kinds the model may name. An Agent call that names another is an
+    /// input error.
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+
+    /// What an Agent call that names no kind gets; one of [`names`](Self::names).
+    pub fn default(&self) -> &str {
+        &self.default
+    }
+
+    /// The parameter's description: what each kind may do.
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+}
+
+/// Why [`SubagentTypes::new`] refused: its default is not one of its kinds.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("the default subagent type \"{default}\" is not one of: {}", if names.is_empty() { "(none)".to_string() } else { names.join(", ") })]
+pub struct SubagentTypesError {
+    /// The default, as given.
+    pub default: String,
+    /// The kinds, as given.
+    pub names: Vec<String>,
+}
+
+/// PLUG POINT: what a host changes about the agent tools ([`agent_tools`]).
+///
+/// The default: the Agent tool, haest's own `model` text, no kinds, no
+/// budgets.
+#[derive(Debug, Clone, PartialEq)]
 pub struct AgentToolOptions {
+    /// The caller may still start subagents: the Agent tool is there.
+    /// False at the depth cap (SendMessage and StopAgent stay).
+    /// [`SubagentHub::tools_for`] sets it from its caps.
+    pub can_spawn: bool,
     /// The host's kinds of subagent: adds the `subagent_type` parameter.
     pub types: Option<SubagentTypes>,
     /// The `model` parameter's description, e.g. the models this host offers;
@@ -107,9 +173,21 @@ pub struct AgentToolOptions {
     pub budget_caps: Option<SubagentBudget>,
 }
 
+impl Default for AgentToolOptions {
+    fn default() -> Self {
+        Self {
+            can_spawn: true,
+            types: None,
+            model_description: None,
+            budget_caps: None,
+        }
+    }
+}
+
 /// An agent tool's refusal, for the model to correct: it goes back as an
 /// input error.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 pub enum AgentError {
     /// The caller already runs as deep as agents may nest.
     #[error("agents may nest {max_depth} deep")]
@@ -186,7 +264,7 @@ pub struct SpawnOutcome {
 ///
 /// [`SubagentHub`] is the default; a host with its own idea of a subagent
 /// (one that runs elsewhere, with its own types) implements this and keeps
-/// the tools ([`agent_tools_with`]). None of them is read-only:
+/// the tools ([`agent_tools`]). None of them is read-only:
 ///
 /// | Tool | Kind | What it does |
 /// |---|---|---|
@@ -200,13 +278,11 @@ pub struct SpawnOutcome {
 /// answer comes back as the Agent call's result.
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use async_trait::async_trait;
-/// use haest_core::{tool::ToolContext, workspace::ShutWorkspace};
+/// use haest_core::{tool::{JsonMap, ToolContext}, workspace::ShutWorkspace};
 /// use haest_tools::{
 ///     AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
-///     agent_tools_with,
+///     agent_tools,
 /// };
 /// use serde_json::json;
 /// use tokio_util::sync::CancellationToken;
@@ -219,7 +295,7 @@ pub struct SpawnOutcome {
 ///         &self,
 ///         from: &AgentRef,
 ///         input: SpawnInput,
-///         _cancel: CancellationToken,
+///         _cancel: &CancellationToken,
 ///     ) -> Result<SpawnOutcome, AgentError> {
 ///         // Here the host would run `input.prompt` somewhere.
 ///         let text = format!("{} asked: {}", from.name, input.description);
@@ -234,14 +310,16 @@ pub struct SpawnOutcome {
 /// }
 ///
 /// # #[tokio::main]
-/// # async fn main() {
-/// let tools = agent_tools_with(Arc::new(Remote), AgentRef::main(), true, AgentToolOptions::default());
-/// let ctx = ToolContext::new("/", Arc::new(ShutWorkspace));
-/// let input = json!({"description": "find the bug", "prompt": "Look at parse.rs."});
-/// let out = tools[0].execute(input.as_object().unwrap().clone(), &ctx).await.unwrap();
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// let tools = agent_tools(Remote, AgentRef::main(), AgentToolOptions::default());
+/// let ctx = ToolContext::new("/", ShutWorkspace);
+/// let input: JsonMap =
+///     serde_json::from_value(json!({"description": "find the bug", "prompt": "Look at parse.rs."}))?;
+/// let out = tools[0].execute(input, &ctx).await?;
 /// assert_eq!(out.content, "main asked: find the bug");
 /// // Its spend counts toward the caller's turn, never charged twice.
 /// assert_eq!(out.child_cost_usd, Some(0.01));
+/// # Ok(())
 /// # }
 /// ```
 #[async_trait]
@@ -253,11 +331,18 @@ pub trait AgentDirectory: Send + Sync {
         &self,
         from: &AgentRef,
         input: SpawnInput,
-        cancel: CancellationToken,
+        cancel: &CancellationToken,
     ) -> Result<SpawnOutcome, AgentError>;
     /// SendMessage: hand `text` from agent `from` to agent `to`, and say what
     /// to tell the sender. The SendMessage tool refuses `to == from` itself.
     fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError>;
     /// StopAgent: stop the agent `name`; false when it is not running.
     fn stop(&self, name: &str) -> bool;
+}
+
+haest_core::plug_ref! {
+    /// An [`AgentDirectory`], shared: what the agent tools speak to
+    /// ([`agent_tools`]). Built from the directory itself (a
+    /// [`SubagentHub`] clone, a host's own), or from an `Arc` of one.
+    pub struct AgentDirectoryRef(dyn AgentDirectory);
 }

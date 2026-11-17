@@ -19,7 +19,7 @@ use super::support::{Rig, call, explore_or_general, now, say};
 use crate::{
     agents::{
         AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
-        SubagentBudget, SubagentCaps, SubagentTypes, agent_tools, agent_tools_with,
+        SubagentBudget, SubagentCaps, SubagentTypes, agent_tools,
     },
     testkit::{input, shut_ctx},
 };
@@ -34,7 +34,7 @@ impl AgentDirectory for Recording {
         &self,
         _from: &AgentRef,
         input: SpawnInput,
-        _cancel: CancellationToken,
+        _cancel: &CancellationToken,
     ) -> Result<SpawnOutcome, AgentError> {
         self.0.lock().unwrap().push(input);
         Ok(SpawnOutcome {
@@ -51,7 +51,7 @@ impl AgentDirectory for Recording {
 }
 
 fn agent(dir: &Arc<Recording>, opts: AgentToolOptions) -> ToolRef {
-    agent_tools_with(dir.clone(), AgentRef::main(), true, opts)
+    agent_tools(dir.clone(), AgentRef::main(), opts)
         .into_iter()
         .find(|t| t.name() == "Agent")
         .unwrap()
@@ -59,14 +59,22 @@ fn agent(dir: &Arc<Recording>, opts: AgentToolOptions) -> ToolRef {
 
 fn kinds() -> AgentToolOptions {
     AgentToolOptions {
-        types: Some(SubagentTypes {
-            names: vec!["explore".into(), "general".into()],
-            description: "explore only reads".into(),
-            default: "explore".into(),
-        }),
+        types: Some(
+            SubagentTypes::new(["explore", "general"], "explore", "explore only reads").unwrap(),
+        ),
         model_description: Some("one of: a:x, b:y".into()),
-        budget_caps: None,
+        ..Default::default()
     }
+}
+
+#[test]
+fn kinds_whose_default_is_not_one_of_them_are_refused_naming_both() {
+    let err = SubagentTypes::new(["explore"], "general", "x").unwrap_err();
+    let said = "the default subagent type \"general\" is not one of: explore";
+    assert_eq!(err.to_string(), said);
+    let none = SubagentTypes::new(Vec::<String>::new(), "explore", "x").unwrap_err();
+    let said = "the default subagent type \"explore\" is not one of: (none)";
+    assert_eq!(none.to_string(), said);
 }
 
 #[tokio::test]
@@ -142,7 +150,7 @@ async fn the_hubs_agent_tool_offers_the_parents_kinds_and_each_kind_gets_its_own
 #[tokio::test]
 async fn with_no_kinds_there_is_no_subagent_type_at_all() {
     let dir = Arc::new(Recording::default());
-    let tool = agent_tools(dir.clone(), AgentRef::main(), true)
+    let tool = agent_tools(dir.clone(), AgentRef::main(), AgentToolOptions::default())
         .into_iter()
         .find(|t| t.name() == "Agent")
         .unwrap();
@@ -161,7 +169,7 @@ fn agent_tool(dir: &Arc<Recording>, caps: SubagentBudget) -> ToolRef {
         budget_caps: Some(caps),
         ..Default::default()
     };
-    agent_tools_with(dir.clone(), AgentRef::main(), true, opts)[0].clone()
+    agent_tools(dir.clone(), AgentRef::main(), opts)[0].clone()
 }
 
 #[tokio::test]

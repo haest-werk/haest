@@ -2,17 +2,19 @@
 //! parent): its deps, tools and system prompt to build a subagent from, and
 //! where the subagents' activity goes.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
-use haest_core::{SharedDeps, ToolRef, Tools, provider::Effort, tool::ToolSource};
+use haest_core::{SharedDeps, ToolRef, ToolSourceRef, Tools, provider::Effort};
 use tokio_util::sync::CancellationToken;
 
-use super::{
-    AgentError, AgentToolOptions, InProcessRun, MemberRun, MemberStart, SubagentEvent,
-    subagent_note,
-};
+use super::{AgentError, AgentToolOptions, Member, MemberStart, SubagentEvent, subagent_note};
 use crate::inbox::Inbox;
+
+haest_core::plug_ref! {
+    /// A [`SubagentParent`], shared: what [`SubagentHub::new`](super::SubagentHub::new)
+    /// takes. Built from the parent itself, or from an `Arc` of one the host
+    /// keeps too.
+    pub struct SubagentParentRef(dyn SubagentParent);
+}
 
 /// The parent conversation's side of the default hub
 /// ([`SubagentHub`](super::SubagentHub)): what a subagent is built from, and
@@ -53,8 +55,8 @@ pub trait SubagentParent: Inbox {
         self.base_tools()
     }
     /// Where an agent's tool list goes through (deferral); default: as it is.
-    fn tool_source(&self, tools: Tools) -> Arc<dyn ToolSource> {
-        Arc::new(tools)
+    fn tool_source(&self, tools: Tools) -> ToolSourceRef {
+        tools.into()
     }
     /// The running set changed: the ids of every subagent running now, for
     /// the host's roster. An id (`haest-<name>-<hub>`) is unique across hubs;
@@ -63,9 +65,10 @@ pub trait SubagentParent: Inbox {
     /// One subagent's activity, keyed by its id.
     fn on_subagent(&self, _id: &str, _event: SubagentEvent) {}
     /// A member is about to start, before its loop exists: run it in this
-    /// process as the hub would (the default, [`InProcessRun`]), run it on a
-    /// run of the host's own ([`MemberRun`]: its model, caps, deps, and its
-    /// end), or refuse.
+    /// process as the hub would (the default, [`Member::in_process`]), run it
+    /// on a run of the host's own ([`Member::new`] over a
+    /// [`MemberRun`](super::MemberRun): its model, caps, deps, and its end),
+    /// or refuse.
     ///
     /// An `Err` is the spawn's refusal, as the model reads it
     /// ([`AgentError::Refused`] for a reason of the host's own): the member
@@ -90,7 +93,7 @@ pub trait SubagentParent: Inbox {
     ///     workspace::ShutWorkspace,
     /// };
     /// use haest_tools::{
-    ///     AgentDirectory, AgentError, AgentRef, Ending, Inbox, MemberEnd, MemberRun, MemberStart,
+    ///     AgentError, AgentRef, Ending, Inbox, Member, MemberEnd, MemberRun, MemberStart,
     ///     SpawnInput, SubagentHub, SubagentParent,
     /// };
     /// use tokio_util::sync::CancellationToken;
@@ -134,45 +137,48 @@ pub trait SubagentParent: Inbox {
     ///         &self,
     ///         start: &MemberStart,
     ///         _cancel: &CancellationToken,
-    ///     ) -> Result<Box<dyn MemberRun>, AgentError> {
+    ///     ) -> Result<Member, AgentError> {
     ///         if start.input.description.contains("deploy") {
     ///             return Err(AgentError::Refused("helpers do not deploy".into()));
     ///         }
-    ///         Ok(Box::new(Logged { name: start.name.clone(), ended: self.ended.clone() }))
+    ///         Ok(Member::new(Logged { name: start.name.clone(), ended: self.ended.clone() }))
     ///     }
     /// }
     ///
     /// # #[tokio::main]
-    /// # async fn main() {
+    /// # async fn main() -> Result<(), haest_core::error::BoxError> {
     /// let ended = Arc::new(Mutex::new(Vec::new()));
     /// let parent = Parent { provider: ScriptedProvider::new([text_answer("3 files")]), ended: ended.clone() };
-    /// let hub = SubagentHub::new(Arc::new(parent), SubagentCaps::default());
+    /// let hub = SubagentHub::new(parent, SubagentCaps::default());
     /// let ask = |description: &str| SpawnInput {
     ///     description: description.into(),
     ///     prompt: "Go.".into(),
     ///     ..Default::default()
     /// };
+    /// let turn = CancellationToken::new();
     ///
-    /// let refused = hub.spawn(&AgentRef::main(), ask("deploy it"), CancellationToken::new()).await;
+    /// let refused = hub.spawn(&AgentRef::main(), ask("deploy it"), &turn).await;
     /// assert!(matches!(refused, Err(AgentError::Refused(_))));
     ///
-    /// let out = hub.spawn(&AgentRef::main(), ask("count files"), CancellationToken::new()).await;
-    /// assert_eq!(out.unwrap().text, "3 files");
+    /// let out = hub.spawn(&AgentRef::main(), ask("count files"), &turn).await?;
+    /// assert_eq!(out.text, "3 files");
     /// assert_eq!(*ended.lock().unwrap(), [("count-files-2".to_string(), Ending::Answered)]);
+    /// # Ok(())
     /// # }
     /// ```
     async fn start_member(
         &self,
         start: &MemberStart,
         cancel: &CancellationToken,
-    ) -> Result<Box<dyn MemberRun>, AgentError> {
+    ) -> Result<Member, AgentError> {
         let _ = (start, cancel);
-        Ok(Box::new(InProcessRun))
+        Ok(Member::in_process())
     }
     /// The note the hub appends to a member's system prompt: who it is, who
     /// reads its answer, its caps, how to talk to other agents. `member` is the
     /// member as it runs: its run's model spec and caps where the run names
-    /// them ([`MemberRun::model_spec`], [`MemberRun::caps`]), its kind in
+    /// them ([`MemberRun::model_spec`](super::MemberRun::model_spec),
+    /// [`MemberRun::caps`](super::MemberRun::caps)), its kind in
     /// `input.subagent_type`. Default: haest's ([`subagent_note`]).
     ///
     /// # Examples
@@ -180,8 +186,6 @@ pub trait SubagentParent: Inbox {
     /// A parent whose members hear about the person they work for.
     ///
     /// ```
-    /// use std::sync::Arc;
-    ///
     /// use async_trait::async_trait;
     /// use haest_core::{
     ///     SharedDeps, ToolRef, Tools,
@@ -190,9 +194,7 @@ pub trait SubagentParent: Inbox {
     ///     testing::{ScriptedProvider, text_answer},
     ///     workspace::ShutWorkspace,
     /// };
-    /// use haest_tools::{
-    ///     AgentDirectory, AgentRef, Inbox, MemberStart, SpawnInput, SubagentHub, SubagentParent,
-    /// };
+    /// use haest_tools::{AgentRef, Inbox, MemberStart, SpawnInput, SubagentHub, SubagentParent};
     /// use tokio_util::sync::CancellationToken;
     ///
     /// struct Parent(ScriptedProvider);
@@ -222,14 +224,15 @@ pub trait SubagentParent: Inbox {
     /// }
     ///
     /// # #[tokio::main]
-    /// # async fn main() {
+    /// # async fn main() -> Result<(), haest_core::error::BoxError> {
     /// let provider = ScriptedProvider::new([text_answer("done")]);
     /// let caps = SubagentCaps { usd: 0.5, ..SubagentCaps::default() };
-    /// let hub = SubagentHub::new(Arc::new(Parent(provider.clone())), caps);
+    /// let hub = SubagentHub::new(Parent(provider.clone()), caps);
     /// let input = SpawnInput { description: "tidy".into(), prompt: "Tidy up.".into(), ..Default::default() };
-    /// hub.spawn(&AgentRef::main(), input, CancellationToken::new()).await.unwrap();
+    /// hub.spawn(&AgentRef::main(), input, &CancellationToken::new()).await?;
     /// let system = &provider.requests()[0].system;
     /// assert_eq!(system, "You help a person.\n\nYou are tidy-1, for main. The person may write to you. Spend at most $0.5.");
+    /// # Ok(())
     /// # }
     /// ```
     fn subagent_note(&self, member: &MemberStart) -> String {

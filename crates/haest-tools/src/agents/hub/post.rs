@@ -23,10 +23,10 @@ impl SubagentHub {
     pub fn deliver_as(&self, sender: Sender, to: &str, text: &str) -> Result<String, AgentError> {
         let body = format!("{}\n\n{text}", sender.header());
         let (id, said) = if to == MAIN_AGENT {
-            self.parent.submit(body);
+            self.0.parent.submit(body);
             (self.id_of(&sender), "Delivered to main.".to_string())
         } else {
-            let mut members = self.members.lock().unwrap();
+            let mut members = self.0.members.lock().unwrap();
             let Some(m) = members.get_mut(to).filter(|m| m.status == Status::Running) else {
                 let (name, running) = (to.to_string(), members.reachable());
                 return Err(if members.known(to) {
@@ -44,7 +44,7 @@ impl SubagentHub {
             to: to.to_string(),
             text: text.to_string(),
         };
-        self.parent.on_subagent(&id, event);
+        self.0.parent.on_subagent(&id, event);
         Ok(said)
     }
 
@@ -53,7 +53,7 @@ impl SubagentHub {
         let Sender::Agent(name) = sender else {
             return MAIN_AGENT.to_string();
         };
-        let mut members = self.members.lock().unwrap();
+        let mut members = self.0.members.lock().unwrap();
         members
             .get_mut(name)
             .map_or_else(|| MAIN_AGENT.to_string(), |m| m.id.clone())
@@ -64,12 +64,12 @@ impl SubagentHub {
     /// started it or its starter has finished meanwhile. Never fails: an
     /// answer must not be lost to a race.
     pub(super) fn hand_back(&self, parent: &str, text: String) {
-        let mut members = self.members.lock().unwrap();
+        let mut members = self.0.members.lock().unwrap();
         match members.get_mut(parent) {
             Some(p) if p.status == Status::Running => p.steer(text),
             _ => {
                 drop(members);
-                self.parent.submit_answer(text);
+                self.0.parent.submit_answer(text);
             }
         }
     }

@@ -1,9 +1,12 @@
 //! THE AGENT HUB: every subagent of one conversation, and the post office
 //! between them (the default [`AgentDirectory`]).
 
-use std::sync::{
-    Arc, Mutex, Weak,
-    atomic::{AtomicUsize, Ordering},
+use std::{
+    fmt,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use async_trait::async_trait;
@@ -12,10 +15,10 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     AgentDirectory, AgentError, AgentRef, AgentToolOptions, MemberStart, Sender, SpawnInput,
-    SpawnOutcome, SubagentCaps, SubagentParent, budget,
+    SpawnOutcome, SubagentCaps, SubagentParentRef, budget,
     members::{Due, Members, Status, run_id},
     run::Run,
-    tools::agent_tools_with,
+    tools::agent_tools,
 };
 
 mod member_run;
@@ -29,14 +32,14 @@ use settle::{Open, Work};
 ///
 /// A spawn checks the caps (depth, and how many run at once across the tree),
 /// takes a unique name, and builds an [`Agent`] from the parent's
-/// [`deps`](SubagentParent::deps) with its own tools (the parent's
-/// [`subagent_tools`](SubagentParent::subagent_tools) for its kind minus the
+/// [`deps`](super::SubagentParent::deps) with its own tools (the parent's
+/// [`subagent_tools`](super::SubagentParent::subagent_tools) for its kind minus the
 /// task tools, plus its own agent tools), its own system prompt (the parent's, then
 /// [`subagent_note`](super::subagent_note)) and its own turn caps. It runs one
 /// turn; its final answer is the result.
 ///
 /// - Before its loop exists, the parent's
-///   [`start_member`](SubagentParent::start_member) runs it here (the
+///   [`start_member`](super::SubagentParent::start_member) runs it here (the
 ///   default) or on a run of the host's own, or refuses the spawn. That run
 ///   ([`MemberRun`](super::MemberRun)) may name the member's model spec, caps and
 ///   deps, and its [`end`](super::MemberRun::end) hears how the member ended,
@@ -47,13 +50,16 @@ use settle::{Open, Work};
 ///   when main started it or its starter has finished.
 ///   [`answers_due`](Self::answers_due) counts the ones on their way;
 ///   [`settled`](Self::settled) waits until nothing is in flight.
-/// - A message ([`deliver`](AgentDirectory::deliver), or the person's through
+/// - A message ([`deliver`](Self::deliver), or the person's through
 ///   [`deliver_as`](Self::deliver_as)) lands at the receiver's next step; one
 ///   for "main" goes to the parent's inbox. Messages that reach an agent after
 ///   it finished are appended to its answer, unread.
 /// - A finished agent's name stays taken, so a message for it is refused, never
 ///   delivered to a newcomer.
 /// - A crash inside a subagent comes back as its answer, never as a panic.
+///
+/// A hub is a cheap handle: clones share the subagents. The agent tools it
+/// hands out ([`tools_for`](Self::tools_for)) hold a clone.
 ///
 /// # Panics
 ///
@@ -63,8 +69,6 @@ use settle::{Open, Work};
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use async_trait::async_trait;
 /// use haest_core::{
 ///     SharedDeps, ToolRef, Tools,
@@ -74,7 +78,7 @@ use settle::{Open, Work};
 ///     testing::{ScriptedProvider, text_answer},
 ///     workspace::ShutWorkspace,
 /// };
-/// use haest_tools::{AgentDirectory, AgentRef, Inbox, SpawnInput, SubagentHub, SubagentParent};
+/// use haest_tools::{AgentRef, Inbox, SpawnInput, SubagentHub, SubagentParent};
 /// use tokio_util::sync::CancellationToken;
 ///
 /// struct Parent(ScriptedProvider);
@@ -102,9 +106,9 @@ use settle::{Open, Work};
 /// }
 ///
 /// # #[tokio::main]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// let provider = ScriptedProvider::new([text_answer("42 files")]);
-/// let hub = SubagentHub::new(Arc::new(Parent(provider)), SubagentCaps::default());
+/// let hub = SubagentHub::new(Parent(provider), SubagentCaps::default());
 ///
 /// // Main's agent tools; a host adds them to main's tool list.
 /// let tools = hub.tools_for(&AgentRef::main());
@@ -117,37 +121,41 @@ use settle::{Open, Work};
 ///     prompt: "How many files are there?".into(),
 ///     ..Default::default()
 /// };
-/// let out = hub.spawn(&AgentRef::main(), input, CancellationToken::new()).await.unwrap();
+/// let out = hub.spawn(&AgentRef::main(), input, &CancellationToken::new()).await?;
 /// assert_eq!(out.text, "42 files");
 /// assert!(hub.running().is_empty());
+/// # Ok(())
 /// # }
 /// ```
 ///
 /// [`Agent`]: haest_core::Agent
-pub struct SubagentHub {
-    parent: Arc<dyn SubagentParent>,
+#[derive(Clone)]
+pub struct SubagentHub(Arc<Inner>);
+
+/// What a hub's clones share.
+struct Inner {
+    parent: SubagentParentRef,
     caps: SubagentCaps,
     run_id: String,
     members: Mutex<Members>,
     /// Background agents whose answer has not been handed back yet.
     due: Arc<AtomicUsize>,
-    /// Spawns in flight, for [`Self::idle`] and [`Self::settled`].
+    /// Spawns in flight, for [`SubagentHub::idle`] and [`SubagentHub::settled`].
     work: Arc<Work>,
-    this: Weak<SubagentHub>,
 }
 
 impl SubagentHub {
-    /// A hub with no subagents yet, over `parent`, under `caps`.
-    pub fn new(parent: Arc<dyn SubagentParent>, caps: SubagentCaps) -> Arc<Self> {
-        Arc::new_cyclic(|this| Self {
-            parent,
+    /// A hub with no subagents yet, over `parent` (the parent itself, or an
+    /// `Arc` of one the host keeps too), under `caps`.
+    pub fn new(parent: impl Into<SubagentParentRef>, caps: SubagentCaps) -> Self {
+        Self(Arc::new(Inner {
+            parent: parent.into(),
             caps,
             run_id: run_id(),
             members: Mutex::default(),
             due: Arc::default(),
             work: Arc::default(),
-            this: this.clone(),
-        })
+        }))
     }
 
     /// Background agents whose answer has not reached its reader yet: running,
@@ -156,33 +164,28 @@ impl SubagentHub {
     /// [`Self::running`]: an agent leaves the running set BEFORE its answer is
     /// handed back.
     pub fn answers_due(&self) -> usize {
-        self.due.load(Ordering::SeqCst)
-    }
-
-    fn arc(&self) -> Arc<Self> {
-        self.this
-            .upgrade()
-            .expect("a hub is alive while it is called")
+        self.0.due.load(Ordering::SeqCst)
     }
 
     /// Names of the subagents running now.
     pub fn running(&self) -> Vec<String> {
-        let members = self.members.lock().unwrap();
+        let members = self.0.members.lock().unwrap();
         members.running().map(|m| m.me.name.clone()).collect()
     }
 
     /// The agent tools `me` gets: Agent only while it may still nest (and
     /// `max_concurrent` is not 0), SendMessage and StopAgent always. The Agent
     /// tool offers the parent's kinds of subagent
-    /// ([`SubagentParent::agent_tool_options`]), and a `budget` when
-    /// [`SubagentCaps::budgets`] is on.
+    /// ([`SubagentParent::agent_tool_options`](super::SubagentParent::agent_tool_options)),
+    /// and a `budget` when [`SubagentCaps::budgets`] is on.
     pub fn tools_for(&self, me: &AgentRef) -> Tools {
-        let can_spawn = me.depth < self.caps.max_depth && self.caps.max_concurrent > 0;
+        let caps = &self.0.caps;
         let opts = AgentToolOptions {
-            budget_caps: self.caps.budgets.then(|| self.budget_caps()),
-            ..self.parent.agent_tool_options()
+            can_spawn: me.depth < caps.max_depth && caps.max_concurrent > 0,
+            budget_caps: caps.budgets.then(|| self.budget_caps()),
+            ..self.0.parent.agent_tool_options()
         };
-        agent_tools_with(self.arc(), me.clone(), can_spawn, opts)
+        agent_tools(self.clone(), me.clone(), opts)
     }
 
     /// Stop every running subagent, as StopAgent does for one. A background
@@ -192,28 +195,34 @@ impl SubagentHub {
             self.stop(&name);
         }
     }
-}
 
-#[async_trait]
-impl AgentDirectory for SubagentHub {
-    async fn spawn(
+    /// Agent: run a subagent for `from`. `cancel` is the caller's turn: a
+    /// foreground agent stops with it. What [`AgentDirectory::spawn`] does
+    /// for the agent tools.
+    ///
+    /// # Errors
+    ///
+    /// An [`AgentError`] the model corrects: a cap ([`AgentError::TooDeep`],
+    /// [`AgentError::TooMany`], [`AgentError::OverBudget`]), or the parent's
+    /// refusal from [`start_member`](super::SubagentParent::start_member).
+    pub async fn spawn(
         &self,
         from: &AgentRef,
         input: SpawnInput,
-        cancel: CancellationToken,
+        cancel: &CancellationToken,
     ) -> Result<SpawnOutcome, AgentError> {
         // In flight until its answer is back, however it ends (refused too).
-        let open = Open::begin(&self.work);
+        let open = Open::begin(&self.0.work);
         // A budget only tightens, whoever built the input; its USD is held
         // first, released when the member ends (or never starts).
         let budget = (input.budget).map(|b| budget::clamp(b, &self.budget_caps()));
         let held = match &budget {
-            Some(b) => budget::hold(self.parent.deps().ledger(), b)?,
+            Some(b) => budget::hold(self.0.parent.deps().ledger(), b)?,
             None => None,
         };
         let run = {
-            let mut members = self.members.lock().unwrap();
-            let m = members.reserve(from, &input, &self.caps, &self.run_id)?;
+            let mut members = self.0.members.lock().unwrap();
+            let m = members.reserve(from, &input, &self.0.caps, &self.0.run_id)?;
             Run {
                 me: m.me.clone(),
                 id: m.id.clone(),
@@ -223,7 +232,7 @@ impl AgentDirectory for SubagentHub {
             }
         };
         // The parent is asked with the table unlocked: it may call the hub back.
-        let (main_spec, effort) = self.parent.default_model();
+        let (main_spec, effort) = self.0.parent.default_model();
         let start = MemberStart {
             name: run.me.name.clone(),
             id: run.id.clone(),
@@ -233,19 +242,24 @@ impl AgentDirectory for SubagentHub {
             caps: self.member_caps(budget.as_ref()),
             input: SpawnInput { budget, ..input },
         };
-        let member = match self.parent.start_member(&start, &cancel).await {
+        let member = match self.0.parent.start_member(&start, cancel).await {
             Ok(member) => member,
             Err(refused) => {
-                self.members.lock().unwrap().forget(&run.me.name);
+                self.0.members.lock().unwrap().forget(&run.me.name);
                 return Err(refused);
             }
         };
-        let agent = self.build(&run, &start, effort, member.as_ref());
+        let agent = self.build(&run, &start, effort, &member);
         let name = run.me.name.clone();
-        self.members.lock().unwrap().attach(&name, agent.control());
+        self.0
+            .members
+            .lock()
+            .unwrap()
+            .attach(&name, agent.control());
         let prompt = start.input.prompt;
         if !start.input.background {
-            let out = (self.run_member(run, agent, member, prompt, Some(cancel))).await;
+            let caller = Some(cancel.clone());
+            let out = (self.run_member(run, agent, member, prompt, caller)).await;
             drop(held);
             return Ok(out);
         }
@@ -253,8 +267,8 @@ impl AgentDirectory for SubagentHub {
             "Started agent \"{name}\" ({}) in the background. Its answer will arrive as a message; SendMessage reaches it while it runs.",
             agent.model_spec()
         );
-        let hub = self.arc();
-        let due = Due::owe(&self.due);
+        let hub = self.clone();
+        let due = Due::owe(&self.0.due);
         tokio::spawn(async move {
             // Dropped last: the answer is handed back before it stops being
             // due, and the hub is idle only after that.
@@ -275,12 +289,21 @@ impl AgentDirectory for SubagentHub {
         })
     }
 
-    fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError> {
+    /// SendMessage: hand `text` from agent `from` to agent `to`, and say what
+    /// to tell the sender: [`deliver_as`](Self::deliver_as) with
+    /// [`Sender::Agent`].
+    ///
+    /// # Errors
+    ///
+    /// [`AgentError::Finished`] or [`AgentError::UnknownAgent`], with who a
+    /// message can reach now.
+    pub fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError> {
         self.deliver_as(Sender::Agent(from.to_string()), to, text)
     }
 
-    fn stop(&self, name: &str) -> bool {
-        let mut members = self.members.lock().unwrap();
+    /// StopAgent: stop the subagent `name`; false when it is not running.
+    pub fn stop(&self, name: &str) -> bool {
+        let mut members = self.0.members.lock().unwrap();
         match members.get_mut(name) {
             Some(m) if m.status == Status::Running => {
                 m.status = Status::Stopped;
@@ -289,5 +312,55 @@ impl AgentDirectory for SubagentHub {
             }
             _ => false,
         }
+    }
+
+    /// A handle that does not keep the hub alive, for a test's parent that
+    /// looks at its own hub.
+    #[cfg(test)]
+    pub(crate) fn downgrade(&self) -> WeakHub {
+        WeakHub(Arc::downgrade(&self.0))
+    }
+}
+
+/// A [`SubagentHub`] that does not keep it alive ([`SubagentHub::downgrade`]).
+#[cfg(test)]
+pub(crate) struct WeakHub(std::sync::Weak<Inner>);
+
+#[cfg(test)]
+impl WeakHub {
+    pub(crate) fn upgrade(&self) -> Option<SubagentHub> {
+        self.0.upgrade().map(SubagentHub)
+    }
+}
+
+/// The agent tools speak to the hub through these; each forwards to the
+/// hub's own method of the same name.
+#[async_trait]
+impl AgentDirectory for SubagentHub {
+    async fn spawn(
+        &self,
+        from: &AgentRef,
+        input: SpawnInput,
+        cancel: &CancellationToken,
+    ) -> Result<SpawnOutcome, AgentError> {
+        SubagentHub::spawn(self, from, input, cancel).await
+    }
+
+    fn deliver(&self, from: &str, to: &str, text: &str) -> Result<String, AgentError> {
+        SubagentHub::deliver(self, from, to, text)
+    }
+
+    fn stop(&self, name: &str) -> bool {
+        SubagentHub::stop(self, name)
+    }
+}
+
+/// The running subagents by name, and the caps.
+impl fmt::Debug for SubagentHub {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SubagentHub")
+            .field("running", &self.running())
+            .field("caps", &self.0.caps)
+            .finish_non_exhaustive()
     }
 }

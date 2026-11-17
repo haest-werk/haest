@@ -14,9 +14,7 @@ use super::{
     lifecycle::Lifecycle,
     support::{ForMain, Heard, Host, Rig, Script, call, now, say},
 };
-use crate::agents::{
-    AgentDirectory, AgentError, AgentRef, MemberCaps, MemberStart, Sender, SpawnInput,
-};
+use crate::agents::{AgentError, AgentRef, MemberCaps, MemberStart, Sender, SpawnInput};
 
 fn user_texts(req: &ProviderRequest) -> Vec<String> {
     let texts = req.messages.iter().filter_map(|m| match m {
@@ -68,11 +66,8 @@ async fn a_persons_message_reaches_a_running_member_and_fires_the_event_marked_a
     };
     let r = Rig::new(now(|_, _| say("ok")), sub, caps());
     let main = AgentRef::main();
-    let spawn = r.hub.spawn(
-        &main,
-        background("looker", "look"),
-        CancellationToken::new(),
-    );
+    let cancel = CancellationToken::new();
+    let spawn = r.hub.spawn(&main, background("looker", "look"), &cancel);
     spawn.await.unwrap();
     arrived.cancelled().await;
 
@@ -132,11 +127,8 @@ async fn main_gets_a_background_answer_through_submit_answer_and_a_message_throu
         caps(),
     );
     let main = AgentRef::main();
-    let spawn = r.hub.spawn(
-        &main,
-        background("worker", "work"),
-        CancellationToken::new(),
-    );
+    let cancel = CancellationToken::new();
+    let spawn = r.hub.spawn(&main, background("worker", "work"), &cancel);
     spawn.await.unwrap();
     assert!(r.hub.settled(Duration::from_secs(5)).await);
     // A foreground answer is the Agent call's result: it reaches no inbox.
@@ -144,7 +136,7 @@ async fn main_gets_a_background_answer_through_submit_answer_and_a_message_throu
         background: false,
         ..background("quick", "p")
     };
-    let out = r.hub.spawn(&main, foreground, CancellationToken::new());
+    let out = r.hub.spawn(&main, foreground, &cancel);
     assert_eq!(out.await.unwrap().text, "done");
     let to_main = r.hub.deliver_as(person(), "main", "how is it going?");
     assert_eq!(to_main.unwrap(), "Delivered to main.");
@@ -188,9 +180,8 @@ async fn settled_resolves_once_the_last_member_has_ended_and_its_answer_is_hande
 
     let main = AgentRef::main();
     for name in ["first", "second"] {
-        let spawn = r
-            .hub
-            .spawn(&main, background(name, name), CancellationToken::new());
+        let cancel = CancellationToken::new();
+        let spawn = r.hub.spawn(&main, background(name, name), &cancel);
         spawn.await.unwrap();
     }
     assert!(!r.hub.idle());
@@ -247,7 +238,8 @@ async fn a_parents_own_note_replaces_haests_and_sees_the_member_as_its_run_has_i
         ..background("tidy", "p")
     };
     let main = AgentRef::main();
-    let out = r.hub.spawn(&main, input, CancellationToken::new());
+    let cancel = CancellationToken::new();
+    let out = r.hub.spawn(&main, input, &cancel);
     assert_eq!(out.await.unwrap().text, "tidy");
 
     let systems = r.parent.provider.sub_systems.lock().unwrap().clone();

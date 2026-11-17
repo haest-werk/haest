@@ -2,7 +2,7 @@
 //! hooks: the conversation's, with its own caps and nothing persisted), and
 //! what comes back (its last answer, or why there is none).
 
-use std::{panic::AssertUnwindSafe, sync::Arc, time::Duration};
+use std::{panic::AssertUnwindSafe, time::Duration};
 
 use async_trait::async_trait;
 use futures::FutureExt;
@@ -16,7 +16,9 @@ use haest_core::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{AgentRef, Ending, MemberCaps, Spend, SubagentEvent, SubagentParent};
+use super::{
+    AgentRef, Ending, MemberCaps, Spend, SubagentEvent, SubagentParent, SubagentParentRef,
+};
 
 /// One agent's run, as its driver needs it.
 pub(super) struct Run {
@@ -73,7 +75,7 @@ pub(super) fn wall_clock(time: Duration) -> String {
 
 /// The parent's system prompt for this agent's model and tools, then its note.
 pub(super) struct ChildPrompt {
-    pub parent: Arc<dyn SubagentParent>,
+    pub parent: SubagentParentRef,
     pub model_spec: String,
     pub tools: ToolSourceRef,
     pub note: String,
@@ -100,7 +102,7 @@ pub(super) struct ChildHooks {
 /// go to its own card.
 pub(super) struct ChildServices {
     pub services: ToolServicesRef,
-    pub parent: Arc<dyn SubagentParent>,
+    pub parent: SubagentParentRef,
     pub id: String,
 }
 

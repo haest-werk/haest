@@ -1,8 +1,9 @@
 //! A member's life as its parent sees it: the start that may refuse or run it
 //! elsewhere ([`SubagentParent::start_member`](super::SubagentParent::start_member)),
-//! the handle that run returns ([`MemberRun`]), and how it ended ([`MemberEnd`]).
+//! the run it hands back ([`Member`], over a [`MemberRun`]), and how it ended
+//! ([`MemberEnd`]).
 
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use async_trait::async_trait;
 use haest_core::{SharedDeps, caps::SubagentCaps, messages::Usage};
@@ -112,10 +113,10 @@ pub struct MemberEnd {
 }
 
 /// A started member's run: what its parent decided about it, and where its
-/// end goes. Returned by
+/// end goes. Wrapped in a [`Member`] and returned by
 /// [`SubagentParent::start_member`](super::SubagentParent::start_member);
-/// every method has a default, so [`InProcessRun`] (all defaults) is the
-/// member haest has always run.
+/// every method has a default, so [`Member::in_process`] (all defaults) is
+/// the member haest has always run.
 ///
 /// # Examples
 ///
@@ -126,7 +127,7 @@ pub struct MemberEnd {
 /// use std::{sync::{Arc, Mutex}, time::Duration};
 ///
 /// use async_trait::async_trait;
-/// use haest_tools::{Ending, MemberCaps, MemberEnd, MemberRun};
+/// use haest_tools::{Ending, Member, MemberCaps, MemberEnd, MemberRun};
 ///
 /// struct NodeRun {
 ///     model_spec: String,
@@ -146,6 +147,11 @@ pub struct MemberEnd {
 ///         self.closed.lock().unwrap().push((end.ending, end.spend.usd()));
 ///     }
 /// }
+///
+/// let closed = Arc::new(Mutex::new(Vec::new()));
+/// // What start_member hands back.
+/// let member = Member::new(NodeRun { model_spec: "openrouter:a/b".into(), closed });
+/// # let _ = member;
 /// ```
 ///
 /// [`SubagentParent::start_member`](super::SubagentParent::start_member)
@@ -181,11 +187,58 @@ pub trait MemberRun: Send + Sync {
     }
 }
 
-/// The default member: a loop in this process on the parent's deps, the
-/// call's model spec and the hub's caps. What
-/// [`SubagentParent::start_member`](super::SubagentParent::start_member)
-/// returns unless a parent says otherwise.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct InProcessRun;
+/// The default member: every [`MemberRun`] default.
+struct InProcessRun;
 
 impl MemberRun for InProcessRun {}
+
+/// A started member, as
+/// [`SubagentParent::start_member`](super::SubagentParent::start_member)
+/// hands it back: [`Member::in_process`] (the default), or a host's own
+/// [`MemberRun`] ([`Member::new`], or `.into()` from one).
+pub struct Member(Box<dyn MemberRun>);
+
+impl Member {
+    /// A member run by `run`: its model spec, caps and deps where it names
+    /// them, and its end.
+    pub fn new(run: impl MemberRun + 'static) -> Self {
+        Self(Box::new(run))
+    }
+
+    /// The default member: a loop in this process on the parent's deps, the
+    /// call's model spec and the hub's caps. What
+    /// [`SubagentParent::start_member`](super::SubagentParent::start_member)
+    /// returns unless a parent says otherwise.
+    pub fn in_process() -> Self {
+        Self::new(InProcessRun)
+    }
+
+    pub(super) fn run(&self) -> &dyn MemberRun {
+        &*self.0
+    }
+
+    pub(super) fn into_run(self) -> Box<dyn MemberRun> {
+        self.0
+    }
+}
+
+impl Default for Member {
+    fn default() -> Self {
+        Self::in_process()
+    }
+}
+
+impl<T: MemberRun + 'static> From<T> for Member {
+    fn from(run: T) -> Self {
+        Self::new(run)
+    }
+}
+
+impl fmt::Debug for Member {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Member")
+            .field("model_spec", &self.0.model_spec())
+            .field("caps", &self.0.caps())
+            .finish_non_exhaustive()
+    }
+}

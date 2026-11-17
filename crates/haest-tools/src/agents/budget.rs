@@ -26,10 +26,10 @@ use super::{AgentError, run::wall_clock};
 /// use std::{sync::{Arc, Mutex}, time::Duration};
 ///
 /// use async_trait::async_trait;
-/// use haest_core::{tool::ToolContext, workspace::ShutWorkspace};
+/// use haest_core::{tool::{JsonMap, ToolContext}, workspace::ShutWorkspace};
 /// use haest_tools::{
 ///     AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
-///     SubagentBudget, agent_tools_with,
+///     SubagentBudget, agent_tools,
 /// };
 /// use serde_json::json;
 /// use tokio_util::sync::CancellationToken;
@@ -39,7 +39,7 @@ use super::{AgentError, run::wall_clock};
 ///
 /// #[async_trait]
 /// impl AgentDirectory for Remote {
-///     async fn spawn(&self, _: &AgentRef, input: SpawnInput, _: CancellationToken) -> Result<SpawnOutcome, AgentError> {
+///     async fn spawn(&self, _: &AgentRef, input: SpawnInput, _: &CancellationToken) -> Result<SpawnOutcome, AgentError> {
 ///         *self.0.lock().unwrap() = input.budget; // the host runs it under this
 ///         Ok(SpawnOutcome { text: "done".into(), cost_usd: 0.0 })
 ///     }
@@ -52,19 +52,21 @@ use super::{AgentError, run::wall_clock};
 /// }
 ///
 /// # #[tokio::main]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// // The host keeps the directory to look at it: the tools take a shared one.
 /// let remote = Arc::new(Remote::default());
 /// let caps = SubagentBudget { usd: 0.5, time: Duration::from_secs(300) };
 /// let opts = AgentToolOptions { budget_caps: Some(caps), ..Default::default() };
-/// let agent = agent_tools_with(remote.clone(), AgentRef::main(), true, opts)[0].clone();
+/// let agent = agent_tools(remote.clone(), AgentRef::main(), opts)[0].clone();
 /// assert!(agent.parameters()["properties"].get("budget").is_some());
 ///
 /// // The model asks for more money than the cap and less time: it gets the cap and its time.
 /// let call = json!({"description": "d", "prompt": "p", "budget": {"usd": 9, "minutes": 2}});
-/// let ctx = ToolContext::new("/", ShutWorkspace);
-/// agent.execute(call.as_object().unwrap().clone(), &ctx).await.unwrap();
-/// let got = remote.0.lock().unwrap().unwrap();
+/// let input: JsonMap = serde_json::from_value(call)?;
+/// agent.execute(input, &ToolContext::new("/", ShutWorkspace)).await?;
+/// let got = remote.0.lock().unwrap().ok_or("no budget")?;
 /// assert_eq!(got, SubagentBudget { usd: 0.5, time: Duration::from_secs(120) });
+/// # Ok(())
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]

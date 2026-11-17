@@ -5,14 +5,13 @@ use std::panic::AssertUnwindSafe;
 
 use futures::FutureExt;
 use haest_core::{
-    __private::panic_message, Agent, AgentDeps, AgentOptions, ToolSourceRef, Tools,
-    provider::Effort,
+    __private::panic_message, Agent, AgentDeps, AgentOptions, Tools, provider::Effort,
 };
 use tokio_util::sync::CancellationToken;
 
 use super::SubagentHub;
 use crate::agents::{
-    MemberCaps, MemberEnd, MemberRun, MemberStart, SpawnOutcome, SubagentBudget, SubagentEvent,
+    Member, MemberCaps, MemberEnd, MemberStart, SpawnOutcome, SubagentBudget, SubagentEvent,
     run::{ChildCaps, ChildHooks, ChildPrompt, ChildServices, Run, drive},
 };
 
@@ -20,14 +19,14 @@ impl SubagentHub {
     /// What a subagent's budget is clamped to: the per-agent caps.
     pub(super) fn budget_caps(&self) -> SubagentBudget {
         SubagentBudget {
-            usd: self.caps.usd,
-            time: self.caps.time,
+            usd: self.0.caps.usd,
+            time: self.0.caps.time,
         }
     }
 
     /// A member's caps: the per-agent caps, with a budget's spend and time.
     pub(super) fn member_caps(&self, budget: Option<&SubagentBudget>) -> MemberCaps {
-        let caps = MemberCaps::from(self.caps);
+        let caps = MemberCaps::from(self.0.caps);
         match budget {
             Some(b) => MemberCaps {
                 usd: b.usd,
@@ -40,10 +39,10 @@ impl SubagentHub {
 
     fn report_activity(&self) {
         let ids: Vec<String> = {
-            let members = self.members.lock().unwrap();
+            let members = self.0.members.lock().unwrap();
             members.running().map(|m| m.id.clone()).collect()
         };
-        self.parent.on_activity(&ids);
+        self.0.parent.on_activity(&ids);
     }
 
     /// The agent for `run`: its run's deps (else the conversation's) with its
@@ -56,16 +55,18 @@ impl SubagentHub {
         run: &Run,
         start: &MemberStart,
         effort: Option<Effort>,
-        member: &dyn MemberRun,
+        member: &Member,
     ) -> Agent {
         let mut tools: Tools = self
+            .0
             .parent
             .subagent_tools(start.input.subagent_type.as_deref())
             .into_iter()
             .filter(|t| crate::builtin_word(t.name()) != Some("tasks"))
             .collect();
         tools.extend(self.tools_for(&run.me));
-        let source: ToolSourceRef = self.parent.tool_source(tools).into();
+        let source = self.0.parent.tool_source(tools);
+        let member = member.run();
         let model_spec = member
             .model_spec()
             .unwrap_or_else(|| start.model_spec.clone());
@@ -76,16 +77,16 @@ impl SubagentHub {
             caps,
             ..start.clone()
         };
-        let note = self.parent.subagent_note(&runs);
+        let note = self.0.parent.subagent_note(&runs);
         // Its own deps keep their hooks; the conversation's are lent, persisting nothing.
         let base = member.deps().unwrap_or_else(|| {
-            let base = self.parent.deps();
+            let base = self.0.parent.deps();
             let hooks = ChildHooks {
                 hooks: base.hooks().clone(),
             };
             let services = ChildServices {
                 services: base.services().clone(),
-                parent: self.parent.clone(),
+                parent: self.0.parent.clone(),
                 id: run.id.clone(),
             };
             base.with_hooks(hooks).with_services(services)
@@ -95,7 +96,7 @@ impl SubagentHub {
             subagent: caps,
         };
         let prompt = ChildPrompt {
-            parent: self.parent.clone(),
+            parent: self.0.parent.clone(),
             model_spec: model_spec.clone(),
             tools: source.clone(),
             note,
@@ -113,7 +114,7 @@ impl SubagentHub {
         &self,
         run: Run,
         mut agent: Agent,
-        member: Box<dyn MemberRun>,
+        member: Member,
         prompt: String,
         caller: Option<CancellationToken>,
     ) -> SpawnOutcome {
@@ -123,8 +124,8 @@ impl SubagentHub {
             parent: run.parent.clone(),
             description: run.description.clone(),
         };
-        self.parent.on_subagent(&run.id, started);
-        let parent = self.parent.as_ref();
+        self.0.parent.on_subagent(&run.id, started);
+        let parent = &*self.0.parent;
         let out = drive(
             &mut agent,
             &prompt,
@@ -134,10 +135,11 @@ impl SubagentHub {
             &run.id,
         )
         .await;
-        self.parent
+        self.0
+            .parent
             .on_subagent(&run.id, SubagentEvent::Stopped { ok: out.ok() });
         // Leave first: from here a message for it is refused, not lost.
-        self.members.lock().unwrap().leave(&run.me.name);
+        self.0.members.lock().unwrap().leave(&run.me.name);
         let late = agent.control().take_queued();
         self.report_activity();
         let unread = late.map_or_else(String::new, |late| {
@@ -154,10 +156,13 @@ impl SubagentHub {
             spend: out.spend,
         };
         // A host's end that panics must not lose the answer (a background one is handed back next).
-        if let Err(p) = AssertUnwindSafe(member.end(end)).catch_unwind().await {
+        if let Err(p) = AssertUnwindSafe(member.into_run().end(end))
+            .catch_unwind()
+            .await
+        {
             let why = panic_message(p.as_ref()).unwrap_or("a panic");
             let log = format!("subagent {}: its run's end panicked: {why}", run.id);
-            self.parent.deps().services().debug(&log);
+            self.0.parent.deps().services().debug(&log);
         }
         SpawnOutcome { text, cost_usd }
     }

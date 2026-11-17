@@ -20,7 +20,10 @@ use haest::{
     },
     serde_json::json,
     settings::Settings,
-    tools::{AgentDirectory, AgentError, AgentRef, SpawnInput, SpawnOutcome, agent_tools},
+    tools::{
+        AgentDirectory, AgentError, AgentRef, AgentToolOptions, SpawnInput, SpawnOutcome,
+        agent_tools,
+    },
 };
 
 /// The host's subagents: here each one answers at once, and is counted.
@@ -33,7 +36,7 @@ impl AgentDirectory for Helpers {
         &self,
         _from: &AgentRef,
         input: SpawnInput,
-        _cancel: CancellationToken,
+        _cancel: &CancellationToken,
     ) -> Result<SpawnOutcome, AgentError> {
         let mut spawned = self.0.lock().expect("the helpers' lock poisoned");
         spawned.push(input.description.clone());
@@ -94,7 +97,11 @@ async fn run() -> Result<(), BoxError> {
         text_answer("From the logs: nothing unusual. I stopped there: the budget is nearly spent."),
     ]);
     let helpers = Arc::new(Helpers::default());
-    let tools = agent_tools(helpers.clone(), AgentRef::main(), true);
+    let tools = agent_tools(
+        helpers.clone(),
+        AgentRef::main(),
+        AgentToolOptions::default(),
+    );
     // The host's way past the budget, added to haest's refusal.
     let remedies = Remedies::new(|limit| match limit {
         Limit::Conversation(ConversationCap::Usd(cap)) => {
