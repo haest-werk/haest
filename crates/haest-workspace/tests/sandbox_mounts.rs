@@ -3,7 +3,7 @@
 
 mod common;
 
-use std::os::unix::fs::PermissionsExt;
+use std::{os::unix::fs::PermissionsExt, path::PathBuf};
 
 use common::{opts, tempdir};
 use haest_core::workspace::Workspace;
@@ -13,14 +13,26 @@ fn mode(path: &std::path::Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
-/// A temp dir inside this process's current directory (the crate's root), so
-/// a test can name it by a relative path without changing the process-wide
-/// current directory.
-fn tempdir_here() -> (tempfile::TempDir, std::path::PathBuf) {
+/// A temp dir by its real path and by a path relative to this process's
+/// current directory (the crate's root), so a test names it relatively
+/// without changing the process-wide current directory. It is made in the
+/// target directory's scratch space (`target/tmp`, which `cargo clean`
+/// empties), never in the crate: a run killed mid-test skips the cleanup.
+/// The relative path climbs only to where the two paths part, so (with the
+/// target directory in the workspace) it is not the real path again once a
+/// mount table roots it at `/`, as the bug this file pins did.
+fn tempdir_relative() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let t = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let real = std::fs::canonicalize(t.path()).unwrap();
     let here = std::env::current_dir().unwrap();
-    let t = tempfile::tempdir_in(&here).unwrap();
-    let rel = t.path().strip_prefix(&here).unwrap().to_path_buf();
-    (t, rel)
+    let shared = here
+        .components()
+        .zip(real.components())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let mut rel: PathBuf = here.components().skip(shared).map(|_| "..").collect();
+    rel.extend(real.components().skip(shared));
+    (t, real, rel)
 }
 
 /// A relative project was mounted at `/` + its path, and the overlay applied
@@ -29,18 +41,18 @@ fn tempdir_here() -> (tempfile::TempDir, std::path::PathBuf) {
 /// changes to apply.
 #[tokio::test]
 async fn a_relative_project_is_mounted_at_its_real_path() {
-    let (t, rel) = tempdir_here();
-    std::fs::write(t.path().join("a.txt"), "hello\n").unwrap();
+    let (_t, dir, rel) = tempdir_relative();
+    std::fs::write(dir.join("a.txt"), "hello\n").unwrap();
     let ws = SandboxWorkspace::open(SandboxMounts::new(&rel))
         .await
         .unwrap();
 
-    let real = t.path().join("a.txt");
+    let real = dir.join("a.txt");
     assert_eq!(ws.fs().read_to_string(&real).await.unwrap(), "hello\n");
     let r = ws
         .shell(
             "cat a.txt && mkdir -p /tmp && echo x > /tmp/n.txt",
-            opts(t.path()),
+            opts(&dir),
         )
         .await;
     assert_eq!(r.stdout, "hello\n", "{r:?}");
@@ -52,12 +64,12 @@ async fn a_relative_project_is_mounted_at_its_real_path() {
 #[tokio::test]
 async fn a_relative_writable_dir_writes_through_at_its_real_path() {
     let (_t, dir) = tempdir();
-    let (o, rel) = tempdir_here();
+    let (_o, out, rel) = tempdir_relative();
     let ws = SandboxWorkspace::open(SandboxMounts::new(&dir).with_writable(&rel))
         .await
         .unwrap();
 
-    let kept = o.path().join("kept.txt");
+    let kept = out.join("kept.txt");
     ws.fs().write(&kept, b"kept").await.unwrap();
     assert_eq!(std::fs::read_to_string(&kept).unwrap(), "kept");
 }
