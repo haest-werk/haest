@@ -1411,6 +1411,9 @@ Hosts write less (round two of the review, and what porting brain onto
   built-in providers: every model spec resolves through it, so a test or
   an offline host runs a whole conversation without a key or a faked
   provider wire format. `models()` reads it back.
+- `HubUi::hub` returns the stream its lines go into, so a host's own `Ui`
+  wraps a `HubUi` for the lines and publishes its other frames beside them
+  (the `haest` command's terminal does).
 
 ### haest-ts
 

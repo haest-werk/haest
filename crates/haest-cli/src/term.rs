@@ -11,17 +11,14 @@ use std::{
 
 use haest::{
     core::remedy::Limit,
-    runtime::{Ui, subagent_frame},
+    runtime::{HubUi, Ui},
     session::{Hub, Subscription},
     tools::SubagentEvent,
     wire::{Outbound, Path},
 };
 use tokio::task::JoinHandle;
 
-use crate::{
-    agents::AgentLog,
-    render::{Level, Renderer},
-};
+use crate::{agents::AgentLog, render::Renderer};
 
 pub(crate) type Term = Renderer<Stdout, Stderr>;
 
@@ -33,8 +30,9 @@ pub(crate) struct TermUi {
     pub term: Arc<Mutex<Term>>,
     /// Who reads the terminal: the REPL prompt, or one approval ask at a time.
     pub stdin: tokio::sync::Mutex<()>,
-    /// The stream every line goes into, and the terminal shows.
-    hub: Hub,
+    /// The runtime's lines into the stream the terminal shows: notices and
+    /// subagent frames, as any session's.
+    lines: HubUi,
     log: Mutex<AgentLog>,
     /// The human types slash commands here (not when a parent drives haest
     /// over stdio): a remedy may name one.
@@ -54,7 +52,7 @@ impl TermUi {
         Self {
             term: Arc::new(Mutex::new(Renderer::terminal(json))),
             stdin: tokio::sync::Mutex::new(()),
-            hub,
+            lines: HubUi::new(hub),
             log: Mutex::default(),
             slash: true,
         }
@@ -70,17 +68,15 @@ impl TermUi {
     /// A question answered on the next line (see `ask.rs`).
     pub(crate) fn ask(&self, question: &str) {
         let text = question.to_string();
-        self.hub.publish(Path::main(), Outbound::Ask { text });
+        self.lines
+            .hub()
+            .publish(Path::main(), Outbound::Ask { text });
     }
 
     /// The REPL prompt is open (a line printed now lands above it): an
     /// arrival waits for Enter, an approval asks above the prompt.
     pub(crate) fn prompting(&self) -> bool {
         self.term.lock().unwrap().prompting()
-    }
-
-    fn notice(&self, level: Level, text: &str) {
-        self.hub.notice(level, text);
     }
 }
 
@@ -93,17 +89,19 @@ pub(crate) fn show(term: Arc<Mutex<Term>>, mut sub: Subscription) -> JoinHandle<
     })
 }
 
+/// The runtime's lines as any session's ([`HubUi`]); the terminal adds the
+/// remedies, where an arrival waits, and what the subagents are doing.
 impl Ui for TermUi {
     fn info(&self, text: &str) {
-        self.notice(Level::Info, text);
+        self.lines.info(text);
     }
 
     fn warn(&self, text: &str) {
-        self.notice(Level::Warning, text);
+        self.lines.warn(text);
     }
 
     fn error(&self, text: &str) {
-        self.notice(Level::Error, text);
+        self.lines.error(text);
     }
 
     fn remedy(&self, limit: Limit) -> Option<String> {
@@ -119,12 +117,12 @@ impl Ui for TermUi {
     }
 
     fn subagent(&self, id: &str, event: &SubagentEvent) {
-        subagent_frame(&self.hub, id, event);
+        self.lines.subagent(id, event);
     }
 
     fn subagents_running(&self, ids: &[String]) {
         if let Some(text) = self.log.lock().unwrap().activity(ids.len()) {
-            self.notice(Level::Info, &text);
+            self.lines.info(&text);
         }
     }
 }

@@ -186,6 +186,12 @@ impl HubUi {
     pub fn new(hub: Hub) -> Self {
         Self { hub }
     }
+
+    /// The stream the lines go into: a host's own `Ui` over this one
+    /// publishes its other frames there.
+    pub fn hub(&self) -> &Hub {
+        &self.hub
+    }
 }
 
 impl Ui for HubUi {
