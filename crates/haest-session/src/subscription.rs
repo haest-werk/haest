@@ -14,7 +14,9 @@ use crate::{Body, Frame};
 /// When frames it should have had are gone (the ring evicted them, or it fell
 /// further behind than the hub's buffer) it gets ONE `gap` frame saying after
 /// which seq, and goes on from the next frame it can have. A gap frame is
-/// this subscriber's own: its seq is the last frame it was given before it.
+/// this subscriber's own: its seq is where the subscriber stands, the last
+/// frame it was given or the seq it started from (one past the stream's end
+/// starts from its end).
 ///
 /// Made by [`Hub::subscribe`](crate::Hub::subscribe) or
 /// [`Backend::subscribe`](crate::Backend::subscribe).
@@ -47,7 +49,8 @@ impl Subscription {
         }
     }
 
-    /// The seq of the last stream frame given so far: where to resume from.
+    /// Where this subscriber stands, the seq of the last stream frame given
+    /// so far or the one it started from: where to resume from.
     pub fn last_seq(&self) -> u64 {
         self.last
     }

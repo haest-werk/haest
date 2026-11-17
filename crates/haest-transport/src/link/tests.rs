@@ -808,6 +808,37 @@ async fn a_peer_gone_before_its_hello_has_left_and_the_conversation_goes_on() {
     s.close().await;
 }
 
+/// A sink that panics on its first line: a host's own bug.
+struct Panics;
+
+impl LineSink for Panics {
+    async fn send_line(&mut self, _line: String) -> Result<(), crate::TransportError> {
+        panic!("the host's sink has a bug");
+    }
+
+    async fn keepalive(&mut self) -> Result<(), crate::TransportError> {
+        Ok(())
+    }
+}
+
+/// A panic in the host's sink reaches the host, as one in its source does,
+/// after the connection stopped; it never reads as the peer leaving (a host
+/// that dials again after a peer left would dial its bug again forever).
+#[tokio::test]
+async fn a_panic_in_the_hosts_sink_reaches_the_host() {
+    let (s, _) = session(&answers(&[]), hub());
+    let asks = Asks(Vec::new().into_iter());
+    let grant = Grant::watch(Origin::Agent);
+    let served = tokio::spawn(serve(s.clone(), grant, Start::default(), asks, Panics));
+
+    let ended = served.await;
+
+    let panic = ended.expect_err("serve returned instead of panicking");
+    assert!(panic.is_panic(), "{panic:?}");
+    assert!(s.snapshot().await.is_ok(), "the conversation still runs");
+    s.close().await;
+}
+
 mod keepalive;
 
 #[test]

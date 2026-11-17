@@ -136,7 +136,13 @@ enum Out {
 ///
 /// Dropped before it returns (a transport detached, a host's own `select!`),
 /// the connection stops: nothing more is written to `sink`, which is dropped
-/// with it, and no subscription it made goes on.
+/// with it (a line being written may be cut short), and no subscription it
+/// made goes on.
+///
+/// # Panics
+///
+/// When `sink` or `source` panics, after the connection has stopped: a
+/// host's own bug reaches the host, never reads as the peer leaving.
 ///
 /// `backend` is any [`Backend`](haest_session::Backend) (a `session.clone()`),
 /// an `Arc` of one, or a [`BackendRef`].
@@ -150,6 +156,8 @@ pub async fn serve(
     let backend: BackendRef = backend.into();
     let (tx, rx) = mpsc::channel(OUT_BUFFER);
     let mut writer = AbortOnDrop(tokio::spawn(write(sink, rx, backend.meta().sid)));
+    // What the writer ended with, once it was awaited (never awaited twice).
+    let mut writer_done: Option<Result<(), JoinError>> = None;
     // The conversation's end, whatever the peer asked for.
     let closed = until_closed(backend.subscribe(u64::MAX));
     tokio::pin!(closed);
@@ -177,6 +185,7 @@ pub async fn serve(
         // takes) gets the flush grace, no more.
         let mut reading = true;
         let mut why: Option<Ended> = None;
+        let writer_done = &mut writer_done;
         let grace = tokio::time::sleep(FLUSH_GRACE);
         tokio::pin!(grace);
         loop {
@@ -202,13 +211,22 @@ pub async fn serve(
                     grace.as_mut().reset(tokio::time::Instant::now() + FLUSH_GRACE);
                 }
                 () = &mut grace, if !open => break Ended::Closed,
-                _ = &mut writer => break Ended::PeerLeft,
+                done = &mut writer => {
+                    *writer_done = Some(done);
+                    break Ended::PeerLeft;
+                }
             }
         }
     };
     link.finish(matches!(ended, Ended::Closed)).await;
-    if !writer.0.is_finished() {
-        let _ = tokio::time::timeout(FLUSH_GRACE, &mut writer).await;
+    if writer_done.is_none() {
+        writer_done = tokio::time::timeout(FLUSH_GRACE, &mut writer).await.ok();
+    }
+    // The host's sink panicked: its bug, never the peer leaving.
+    if let Some(Err(e)) = writer_done
+        && e.is_panic()
+    {
+        std::panic::resume_unwind(e.into_panic());
     }
     ended
 }

@@ -2149,6 +2149,10 @@ against it; the wire JSON is unchanged):
   got its reply about 1 time in 4) or when a later `events` replaced it
   (that one never got a reply). It is now waited for like any other
   request, and one a later `events` replaced is refused with its id.
+- A panic in a host's `LineSink` reaches the host once the connection has
+  stopped, as one in its `LineSource` does. `serve` reported it as
+  `Ended::PeerLeft`, so a host that dials again after a peer left dialed
+  its own bug again forever.
 
 ### haest-issues
 

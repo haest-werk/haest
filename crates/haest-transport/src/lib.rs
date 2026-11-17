@@ -202,7 +202,8 @@ impl Attached {
     }
 
     /// Stop serving now. The conversation goes on; frames not yet written
-    /// are dropped.
+    /// are dropped, and a line being written may be cut short (a reader
+    /// skips a last line with no newline).
     pub fn detach(mut self) {
         self.stop();
     }
