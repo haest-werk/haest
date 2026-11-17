@@ -37,7 +37,7 @@ use std::{
 };
 
 use haest::{
-    config::{BrokerAccess, ControlSocket, Loaded, Loader, env_var},
+    config::{BrokerAccess, ConfigError, ControlSocket, Loaded, Loader, env_var},
     core::{error::report, session::sessions_dir},
     runtime::{BuildError, SessionFileError, Ui, list_sessions},
     session::{Hub, HubOptions, SessionPrompter, start},
@@ -280,6 +280,15 @@ fn build_failed(e: BuildError) -> String {
     }
 }
 
+/// What a failed load tells the human; a setting there is none of says
+/// where they are listed.
+fn load_failed(e: ConfigError) -> String {
+    match e {
+        e @ ConfigError::UnknownSetting { .. } => format!("{e} (haest settings lists them)"),
+        e => report(&e),
+    }
+}
+
 /// The environment's variables whose name and value are both Unicode; any
 /// other is skipped (`std::env::vars` would panic on it).
 fn unicode_vars(vars: impl Iterator<Item = (OsString, OsString)>) -> HashMap<String, String> {
@@ -320,7 +329,7 @@ async fn main() -> ExitCode {
         .await
     {
         Ok(l) => l,
-        Err(e) => return fail(2, report(&e)),
+        Err(e) => return fail(2, load_failed(e)),
     };
     if let Some(cmd) = command {
         return subcommand(cmd, &loaded).await;

@@ -41,8 +41,9 @@ pub enum ConfigError {
         source: toml::de::Error,
     },
     /// No setting has this name: a typo, or a setting this haest does not
-    /// have (`haest settings` lists them).
-    #[error("{at}: {key}: no such setting (haest settings lists them)")]
+    /// have ([`DEFS`](crate::DEFS) lists them; the `haest` command says
+    /// `haest settings` does).
+    #[error("{at}: {key}: no such setting")]
     UnknownSetting {
         /// The layer it is in: a file, a variable, a flag, a profile.
         at: Source,
