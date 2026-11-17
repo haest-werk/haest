@@ -64,11 +64,12 @@ set anything) now gets a warning. `env_var` and the `HashMap`
    and a `with_*` setter per part (`ToolContext { cwd, cancel, .. }` ->
    `ToolContext::new(cwd, workspace).with_cancel(cancel)`).
 6. A `Workspace` hands out handles: `fn fs(&self) -> Arc<dyn Fs>` ->
-   `fn fs(&self) -> FsRef` (`self.fs.clone().into()`). `Fs::mkdir` and
-   `Fs::remove` lose their `recursive` flag: `fs.mkdir(dir, true)` ->
-   `fs.create_dir_all(dir)`, `fs.remove(path, true)` -> `fs.remove_all(path)`.
-   An `Fs` implements `remove_all` itself (`fs::remove_tree(self, path)`
-   walks the tree).
+   `fn fs(&self) -> FsRef` (`self.fs.clone().into()`). `Fs::mkdir` is
+   `create_dir` without the `recursive` flag, and `Fs::remove` loses its
+   flag: `fs.mkdir(dir, true)` -> `fs.create_dir_all(dir)`,
+   `fs.mkdir(dir, false)` -> `fs.create_dir(dir)`, `fs.remove(path, true)`
+   -> `fs.remove_all(path)`. An `Fs` implements `create_dir` (was `mkdir`)
+   and `remove_all` itself (`fs::remove_tree(self, path)` walks the tree).
 7. An `Fs` builds its answers with constructors:
    `FsStat { kind, size, modified: Some(at) }` ->
    `FsStat::new(kind, size).with_modified(at)` (no `with_modified` when
@@ -285,9 +286,8 @@ write instead.
   syntax, where a `repo:`, an `org:` or an `OR` could widen it past the
   repository: the text is searched as plain words now, and a result from
   another repository is dropped. An owner named `repos` is read as an
-  owner: it read as no repository, so those checks refused its own issues,
-  and its issues elsewhere were named by a bare number, which names one of
-  this repository's.
+  owner: its issues in another repository were named by a bare number,
+  which names one of this repository's.
 - The model providers' stream parser searched a line from its start again
   on every chunk, so a server that sent one long line in small pieces cost
   quadratic time on an executor thread (8 MiB in 1 KiB chunks: 16 s), and
