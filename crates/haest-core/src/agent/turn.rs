@@ -18,7 +18,7 @@ use crate::{
     provider::{NO_RESPONSE, ProviderEvent, final_message},
     remedy::Limit,
     run::Journal,
-    tool::ToolContext,
+    tool::{Attempt, ToolContext},
     tool_batch::{Answer, Answers, Redo, redo_calls, run_tool_batches},
     tool_exec::{ToolIndex, error_assistant, tool_result_message},
 };
@@ -285,7 +285,7 @@ impl Agent {
             tool_call_id: None,
             spill_dir: self.deps.shared().spill_dir().map(Path::to_path_buf),
             run_key: t.journal.as_ref().map(|j| j.key().clone()),
-            resumed: false,
+            attempt: Attempt::First,
             turn_time_left: t.guard.time_left(caps.as_ref()),
             wind_down: t.guard.wind_down_watch(&t.usage, caps.clone()),
         };

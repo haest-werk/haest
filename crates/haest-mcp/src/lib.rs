@@ -184,7 +184,7 @@
 //!
 //! // What a stdio server's process gets of this one's environment: PATH only.
 //! let path = std::env::var("PATH").unwrap_or_default();
-//! let hub = Arc::new(McpHub::with_env(ChildEnv::new(vec![("PATH".into(), path)])));
+//! let hub = Arc::new(McpHub::with_env(ChildEnv::new([("PATH", path)])));
 //! let mut servers = vec![github, docs];
 //! servers.extend(project.servers);
 //! hub.connect(&servers, &|line| eprintln!("{line}")).await;

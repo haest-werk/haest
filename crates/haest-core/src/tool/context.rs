@@ -7,7 +7,7 @@ use std::{
 
 use tokio_util::sync::CancellationToken;
 
-use super::{NoServices, ToolServicesRef};
+use super::{Attempt, NoServices, ToolServicesRef};
 use crate::{
     fs::resolve_path,
     run::{EffectKey, RunKey},
@@ -45,7 +45,7 @@ pub struct ToolContext {
     pub(crate) tool_call_id: Option<String>,
     pub(crate) spill_dir: Option<PathBuf>,
     pub(crate) run_key: Option<RunKey>,
-    pub(crate) resumed: bool,
+    pub(crate) attempt: Attempt,
     pub(crate) turn_time_left: Option<Duration>,
     pub(crate) wind_down: WindDownWatch,
 }
@@ -64,7 +64,7 @@ impl ToolContext {
             tool_call_id: None,
             spill_dir: None,
             run_key: None,
-            resumed: false,
+            attempt: Attempt::First,
             turn_time_left: None,
             wind_down: WindDownWatch::default(),
         }
@@ -112,10 +112,17 @@ impl ToolContext {
         self.run_key.as_ref()
     }
 
-    /// This call may have run before: a resumed durable run runs it again
-    /// ([`OnResume`](super::OnResume)). False for every first run.
+    /// Which run of this call this is: [`Attempt::First`], or
+    /// [`Attempt::Resumed`] when a resumed durable run runs it again
+    /// ([`OnResume`](super::OnResume)).
+    pub fn attempt(&self) -> Attempt {
+        self.attempt
+    }
+
+    /// This call may have run before: [`attempt`](Self::attempt) is
+    /// [`Attempt::Resumed`]. False for every first run.
     pub fn resumed(&self) -> bool {
-        self.resumed
+        self.attempt == Attempt::Resumed
     }
 
     /// What was left of the turn's wall-clock cap
@@ -182,9 +189,9 @@ impl ToolContext {
         self
     }
 
-    /// This context for a call that may have run before ([`Self::resumed`]).
-    pub fn with_resumed(mut self, resumed: bool) -> Self {
-        self.resumed = resumed;
+    /// This context for the `attempt` run of its call ([`Self::attempt`]).
+    pub fn with_attempt(mut self, attempt: Attempt) -> Self {
+        self.attempt = attempt;
         self
     }
 

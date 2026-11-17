@@ -64,8 +64,9 @@ value itself, and holds it in a handle named after its trait. Read
    `opt_bool(input, k)` -> `opt_bool(input, k)?`,
    `TaskBoard::with_clock(on_change, clock)` ->
    `TaskBoard::new(on_change).with_clock(clock)`, `board.create(task)` ->
-   `board.create(task)?`, and `Arc<TaskBoard>` / `Arc<ToolDeferral>` ->
-   `TaskBoard` / `ToolDeferral`.
+   `board.create(task)?`, `ChildEnv::new([("K".into(), v)])` ->
+   `ChildEnv::new([("K", v)])`, and `Arc<TaskBoard>` / `Arc<ToolDeferral>`
+   -> `TaskBoard` / `ToolDeferral`.
 
 ### Bug fixes
 
@@ -357,9 +358,11 @@ Durable runs, opt-in: a host that hands no run store gets the haest it had.
   and `run_end` in the file. An exhaustive `match` adds them.
   `session::replay` skips them, and so does any reader that does not know
   them (the TypeScript haest included), so the conversation reads the same.
-- `ToolContext` gains `run_key()`, `resumed()` (set by the loop;
-  `with_run_key`, `with_resumed`) and `effect_key()`. `ToolContext::new`
-  has no run key and is not resumed.
+- `ToolContext` gains `run_key()`, `attempt()` (the new `tool::Attempt`:
+  `First`, or `Resumed` when a resumed run runs the call again) and its
+  shorthand `resumed()`, all set by the loop (`with_run_key`,
+  `with_attempt`), and `effect_key()`. `ToolContext::new` has no run key
+  and is the first attempt.
 - New `Tool::on_resume() -> tool::OnResume` (`Rerun`, `Report`, `Lookup`;
   default `Rerun` for a read-only tool, else `Report`): what a call that
   may have run before the stop does on resume. A tool wrapper forwards it,
@@ -448,6 +451,18 @@ Good citizens:
   new `TaskError::IdsExhausted`. `board.create(task)` ->
   `board.create(task)?`. The TaskCreate tool hands the refusal to the
   model.
+- `ChildEnv::new` takes `(name, value)` pairs of anything that becomes a
+  `String`, and a `ChildEnv` collects from them too:
+  `ChildEnv::new([("PATH".to_string(), path)])` ->
+  `ChildEnv::new([("PATH", path)])`. A pair written `("PATH".into(), ..)`
+  no longer infers its type: drop the `.into()`.
+- `ToolDeferral::with_always_loaded` and `deferring_all_except` take names
+  of any `S: Into<String>`, as `load` does:
+  `.deferring_all_except(["Read".to_string()])` ->
+  `.deferring_all_except(["Read"])`.
+- `JsonlSessionFile::new` and `with_error_handler` take `data_dir: impl
+  AsRef<Path>`: `JsonlSessionFile::new(fs, Path::new("/data"), id)` ->
+  `JsonlSessionFile::new(fs, "/data", id)`.
 
 ### haest-providers
 

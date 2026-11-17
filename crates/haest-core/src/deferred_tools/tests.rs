@@ -133,7 +133,7 @@ fn no_mcp_tool_is_kept_loaded_unless_a_host_names_it() {
 
 #[test]
 fn a_host_names_its_own_always_loaded_tools() {
-    let d = ToolDeferral::new(DeferMode::Proxy).with_always_loaded(["__weather".to_string()]);
+    let d = ToolDeferral::new(DeferMode::Proxy).with_always_loaded(["__weather"]);
     assert_eq!(
         names(&advertised_tools(&d, &all(), marker)),
         ["Read", "mcp__x__weather", "ToolSearch"]
@@ -151,7 +151,7 @@ fn host_tools() -> Tools {
 
 #[test]
 fn a_host_may_defer_every_tool_but_the_ones_it_always_needs() {
-    let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]);
+    let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read"]);
     assert_eq!(
         names(&advertised_tools(&d, &host_tools(), marker)),
         ["Read", "ToolSearch"]
@@ -176,7 +176,7 @@ fn a_host_may_defer_every_tool_but_the_ones_it_always_needs() {
 
 #[test]
 fn every_tool_is_callable_and_calling_a_deferred_one_loads_it() {
-    let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]);
+    let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read"]);
     let callable = callable_tools(&d, &host_tools(), marker);
     assert_eq!(
         names(&callable),
@@ -205,7 +205,7 @@ fn every_tool_is_callable_and_calling_a_deferred_one_loads_it() {
 #[test]
 fn the_tools_a_resumed_conversation_called_count_as_loaded() {
     use crate::{messages::Message, testing::tool_answer};
-    let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read".to_string()]);
+    let d = ToolDeferral::new(DeferMode::Grow).deferring_all_except(["Read"]);
     let called = |name: &str| Message::Assistant(tool_answer(&[("c", name, json!({}))]));
     d.load_called(&[
         Message::user("hi"),

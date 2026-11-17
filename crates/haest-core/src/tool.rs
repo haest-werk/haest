@@ -32,7 +32,7 @@ use serde_json::{Map, Value};
 pub use args::{opt_bool, opt_num, opt_str, req_str, spelled};
 pub use context::ToolContext;
 pub use list::Tools;
-pub use resume::OnResume;
+pub use resume::{Attempt, OnResume};
 pub use truncate::{TRUNCATE_CHARS, truncate_middle};
 
 pub use crate::slug::slug;

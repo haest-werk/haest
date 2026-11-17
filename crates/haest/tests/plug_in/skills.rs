@@ -74,7 +74,7 @@ async fn the_hosts_own_skills_load_through_haests_skill_tool() {
 
 /// The rig's agent over the host's tools deferred, all but Bash.
 fn defer_all_but_bash(r: &mut Rig, mode: DeferMode) {
-    let deferral = ToolDeferral::new(mode).deferring_all_except(["Bash".to_string()]);
+    let deferral = ToolDeferral::new(mode).deferring_all_except(["Bash"]);
     let source = DeferredTools::new(r.app.base_tools(), deferral);
     r.reseat(|deps| deps.with_tools(source));
 }

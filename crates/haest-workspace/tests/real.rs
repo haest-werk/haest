@@ -20,7 +20,7 @@ use haest_workspace::{RealFs, RealWorkspace};
 async fn a_child_sees_only_the_env_the_host_handed_in() {
     let (_t, dir) = tempdir();
     let path = std::env::var("PATH").unwrap();
-    let env = ChildEnv::new([("PATH".into(), path), ("ONLY".into(), "1".into())]);
+    let env = ChildEnv::new([("PATH", path.as_str()), ("ONLY", "1")]);
     let r = RealWorkspace::new(env)
         .shell("echo \"${HOME-unset} $ONLY\"", opts(&dir))
         .await;

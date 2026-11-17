@@ -42,7 +42,7 @@
 //!     );
 //!
 //!     // Bash runs with only the variables you pass on.
-//!     let pass = |k: &str| (k.to_string(), std::env::var(k).unwrap_or_default());
+//!     let pass = |k: &'static str| (k, std::env::var(k).unwrap_or_default());
 //!     let env = ChildEnv::new([pass("PATH"), pass("HOME")]);
 //!
 //!     let deps = AgentDeps::new(

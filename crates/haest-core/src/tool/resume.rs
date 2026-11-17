@@ -1,4 +1,5 @@
-//! [`OnResume`]: what a resumed durable run does with a call of a tool.
+//! [`OnResume`]: what a resumed durable run does with a call of a tool;
+//! [`Attempt`]: which run of a call a tool is in.
 
 #[cfg(doc)]
 use super::{Tool, ToolContext};
@@ -52,4 +53,28 @@ pub enum OnResume {
     /// [`ToolContext::resumed`] set and the same
     /// [`effect key`](ToolContext::effect_key), and asks its backend.
     Lookup,
+}
+
+/// Which run of a tool call this is ([`ToolContext::attempt`]): its first,
+/// or a run again after a durable run ([`crate::run`]) resumed.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::{ShutWorkspace, ToolContext, tool::Attempt};
+///
+/// let first = ToolContext::new("/", ShutWorkspace);
+/// assert_eq!(first.attempt(), Attempt::First);
+/// let again = first.with_attempt(Attempt::Resumed);
+/// assert!(again.resumed());
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Attempt {
+    /// The call's first run: none of it can have happened yet.
+    #[default]
+    First,
+    /// A resumed durable run runs the call again: it may have run, in whole
+    /// or in part, before the run stopped ([`OnResume`]).
+    Resumed,
 }

@@ -63,7 +63,7 @@ mod interrupted;
 const DATA: &str = "/data";
 
 fn store(fs: &Arc<ModeFs>) -> JsonlSessionFile {
-    JsonlSessionFile::new(fs.clone(), Path::new(DATA), "abc").unwrap()
+    JsonlSessionFile::new(fs.clone(), DATA, "abc").unwrap()
 }
 
 fn msg(t: u64, text: &str) -> SessionRecord {

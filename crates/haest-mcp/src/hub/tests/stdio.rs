@@ -125,7 +125,7 @@ async fn a_bare_command_with_no_path_handed_fails_naming_the_missing_path() {
         "the missing PATH goes unnamed: {error:?}"
     );
     // With a PATH handed in, a missing program is only missing.
-    let path = ChildEnv::new([("PATH".into(), "/usr/bin:/bin".into())]);
+    let path = ChildEnv::new([("PATH", "/usr/bin:/bin")]);
     let hub = McpHub::with_env(path);
     hub.connect(&bare(), &|_| {}).await;
     let error = &hub.failures()[0].error;
@@ -138,7 +138,7 @@ async fn a_stdio_server_runs_in_its_cwd_with_the_handed_env_and_its_own_and_noth
     // Not an MCP server: it records what it was given and exits, so connecting fails.
     let script =
         r#"printf '%s|%s|%s|%s' "$HAEST_MCP_TEST" "$(pwd -P)" "$HANDED" "${HOME-unset}" > seen"#;
-    let hub = McpHub::with_env(ChildEnv::new([("HANDED".into(), "h".into())]));
+    let hub = McpHub::with_env(ChildEnv::new([("HANDED", "h")]));
     hub.connect(
         &[sh("probe", script, &dir, &[("HAEST_MCP_TEST", "v")])],
         &|_| {},

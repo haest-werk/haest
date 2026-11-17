@@ -84,7 +84,7 @@ async fn shut_down_leaves_no_job_running_and_the_session_on_disk() {
         ..Settings::bare(dir.clone(), dir.clone())
     };
     let path = std::env::var("PATH").unwrap_or_default();
-    let child_env = ChildEnv::new(vec![("PATH".into(), path)]);
+    let child_env = ChildEnv::new([("PATH", path)]);
     let mut inputs = RuntimeInputs::new(settings, World::Disk { child_env });
     inputs.keys = openrouter_key();
     let ui = Arc::new(Recorded::default());

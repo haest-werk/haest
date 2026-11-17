@@ -62,8 +62,8 @@ crate::plug_ref! {
 /// ```
 /// use haest_core::ChildEnv;
 ///
-/// let base = ChildEnv::new([("PATH".to_string(), "/usr/bin:/bin".to_string())]);
-/// let job = base.with(&ChildEnv::new([("TOKEN".to_string(), "secret".to_string())]));
+/// let base = ChildEnv::new([("PATH", "/usr/bin:/bin")]);
+/// let job = base.with(&ChildEnv::new([("TOKEN", "secret")]));
 /// assert_eq!(job.get("PATH"), Some("/usr/bin:/bin"));
 /// assert!(!format!("{job:?}").contains("secret"));
 /// ```
@@ -71,9 +71,18 @@ crate::plug_ref! {
 pub struct ChildEnv(Arc<Vec<(String, String)>>);
 
 impl ChildEnv {
-    /// These variables, in order.
-    pub fn new(vars: impl IntoIterator<Item = (String, String)>) -> Self {
-        Self(Arc::new(vars.into_iter().collect()))
+    /// These variables, in order: `(name, value)` pairs of anything that
+    /// becomes a `String` (`&str`, `String`, ...).
+    pub fn new<K, V>(vars: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        Self(Arc::new(
+            vars.into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+        ))
     }
 
     /// Every variable, in order, values included.
@@ -100,8 +109,8 @@ impl ChildEnv {
     }
 }
 
-impl FromIterator<(String, String)> for ChildEnv {
-    fn from_iter<I: IntoIterator<Item = (String, String)>>(iter: I) -> Self {
+impl<K: Into<String>, V: Into<String>> FromIterator<(K, V)> for ChildEnv {
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
         Self::new(iter)
     }
 }
@@ -129,11 +138,7 @@ mod tests {
 
     #[test]
     fn a_child_env_with_another_on_top_takes_its_values_and_keeps_one_of_each_name() {
-        let pairs = |p: &[(&str, &str)]| -> ChildEnv {
-            p.iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect()
-        };
+        let pairs = |p: &[(&str, &str)]| -> ChildEnv { p.iter().copied().collect() };
         let base = pairs(&[("PATH", "/bin"), ("HOME", "/h")]);
         let both = base.with(&pairs(&[("HOME", "/other"), ("GH_TOKEN", "t")]));
         assert_eq!(
@@ -145,7 +150,7 @@ mod tests {
 
     #[test]
     fn a_child_env_never_prints_a_value() {
-        let env = ChildEnv::new([("TOKEN".to_string(), "secret".to_string())]);
+        let env = ChildEnv::new([("TOKEN", "secret")]);
         assert_eq!(env.get("TOKEN"), Some("secret"));
         let shown = format!("{env:?}");
         assert!(

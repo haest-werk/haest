@@ -109,7 +109,7 @@ pub fn search_tools(pool: &[ToolRef], query: &str) -> Tools {
 /// use haest_core::deferred_tools::{DeferMode, ToolDeferral};
 ///
 /// let deferral = ToolDeferral::new(DeferMode::Grow)
-///     .deferring_all_except(["Read".to_string(), "Bash".to_string()]);
+///     .deferring_all_except(["Read", "Bash"]);
 /// assert_eq!(deferral.mode(), DeferMode::Grow);
 /// // What ToolSearch does when the model asks for a schema; in `grow` the
 /// // tool joins the advertised list from the next call on.
@@ -139,16 +139,22 @@ impl ToolDeferral {
     /// must not wait on a ToolSearch for (a host's `__send_message`, so a
     /// reply to another conversation goes out at once). None by default.
     #[must_use]
-    pub fn with_always_loaded(mut self, suffixes: impl IntoIterator<Item = String>) -> Self {
-        self.always_loaded = suffixes.into_iter().collect();
+    pub fn with_always_loaded<S: Into<String>>(
+        mut self,
+        suffixes: impl IntoIterator<Item = S>,
+    ) -> Self {
+        self.always_loaded = suffixes.into_iter().map(Into::into).collect();
         self
     }
 
     /// Defer EVERY tool, the host's own too, except these names (the ones
     /// nearly every turn uses). MCP tools matching [`Self::with_always_loaded`] stay too.
     #[must_use]
-    pub fn deferring_all_except(mut self, names: impl IntoIterator<Item = String>) -> Self {
-        self.all_but = Some(Arc::new(names.into_iter().collect()));
+    pub fn deferring_all_except<S: Into<String>>(
+        mut self,
+        names: impl IntoIterator<Item = S>,
+    ) -> Self {
+        self.all_but = Some(Arc::new(names.into_iter().map(Into::into).collect()));
         self
     }
 

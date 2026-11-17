@@ -63,13 +63,13 @@ enum Job {
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// let fs = FsRef::new(MemFs::new());
-/// let file = JsonlSessionFile::new(fs.clone(), Path::new("/data"), "s1")?;
+/// let file = JsonlSessionFile::new(fs.clone(), "/data", "s1")?;
 /// file.create("conversation-1", "/project", 0).await?;
 /// file.append(&SessionRecord::Message { t: 1, message: Message::user("hi") });
 /// file.flush().await;
 ///
 /// // Later, or in another process: the same file, replayed.
-/// let again = JsonlSessionFile::new(fs, Path::new("/data"), "s1")?;
+/// let again = JsonlSessionFile::new(fs, "/data", "s1")?;
 /// assert_eq!(again.path(), Path::new("/data/sessions/s1.jsonl"));
 /// assert_eq!(again.load().await?.messages, [Message::user("hi")]);
 /// # Ok(())
@@ -106,7 +106,7 @@ impl JsonlSessionFile {
     /// Outside a tokio runtime.
     pub fn new(
         fs: impl Into<FsRef>,
-        data_dir: &Path,
+        data_dir: impl AsRef<Path>,
         session_id: &str,
     ) -> Result<Self, InvalidSessionId> {
         Self::with_error_handler(fs, data_dir, session_id, |_| {})
@@ -124,12 +124,12 @@ impl JsonlSessionFile {
     /// Outside a tokio runtime.
     pub fn with_error_handler(
         fs: impl Into<FsRef>,
-        data_dir: &Path,
+        data_dir: impl AsRef<Path>,
         session_id: &str,
         on_error: impl Fn(io::Error) + Send + 'static,
     ) -> Result<Self, InvalidSessionId> {
         let fs = fs.into();
-        let path = session_file(&sessions_dir(data_dir), session_id)?;
+        let path = session_file(&sessions_dir(data_dir.as_ref()), session_id)?;
         let (tx, rx) = mpsc::unbounded_channel();
         tokio::spawn(write_queue(fs.clone(), path.clone(), rx, on_error));
         Ok(Self {

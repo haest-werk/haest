@@ -40,7 +40,7 @@ use crate::{
 ///
 /// // The real disk; what haest starts gets PATH and nothing else.
 /// let path = std::env::var("PATH").unwrap_or_default();
-/// let disk = World::Disk { child_env: ChildEnv::new(vec![("PATH".into(), path)]) };
+/// let disk = World::Disk { child_env: ChildEnv::new([("PATH", path)]) };
 /// assert!(disk.child_env(&ChildEnv::default()).is_some());
 ///
 /// // The host's own files; haest starts no process at all.

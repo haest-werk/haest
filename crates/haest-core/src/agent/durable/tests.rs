@@ -109,7 +109,7 @@ impl Tool for Probe {
         self.log.lock().unwrap().push(Seen {
             tool: self.name.clone(),
             call: ctx.tool_call_id.clone().unwrap_or_default(),
-            resumed: ctx.resumed,
+            resumed: ctx.resumed(),
             effect_key: ctx.effect_key().map(|k| k.to_string()),
         });
         if let Some(signal) = &self.hang

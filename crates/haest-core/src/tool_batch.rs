@@ -19,7 +19,7 @@ use futures::{StreamExt, future::BoxFuture, stream::FuturesOrdered};
 use crate::{
     messages::{ToolCall, Usage},
     session::INTERRUPTED,
-    tool::{OnResume, ToolContext, ToolOutput},
+    tool::{Attempt, OnResume, ToolContext, ToolOutput},
     tool_exec::{ToolIndex, fold_spend, run_call},
 };
 
@@ -159,7 +159,7 @@ pub(crate) async fn redo_calls(
                 let mut ctx = ctx.clone();
                 ctx.context_room_tokens = to.room();
                 ctx.tool_call_id = Some(call.id.clone());
-                ctx.resumed = true;
+                ctx.attempt = Attempt::Resumed;
                 run_call(tools, call, &ctx).await
             }
         };
