@@ -26,7 +26,7 @@ use tokio_tungstenite::{
 
 use super::{Backoff, Broker};
 use crate::{
-    Ended, Grant, Transport, TransportError,
+    Ended, Grant, TransportError,
     testing::{answers, hub, session},
 };
 

@@ -15,7 +15,7 @@ use serde_json::json;
 
 use super::{SocketDiscovery, UnixPeer, UnixSocket, connect_session, running_sessions};
 use crate::{
-    Grant, Transport, TransportError,
+    Grant, TransportError,
     testing::{answers, hub, session},
 };
 

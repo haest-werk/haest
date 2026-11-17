@@ -30,7 +30,7 @@ use crate::{
 /// ```
 /// use haest_core::{Agent, AgentDeps, AgentOptions, SharedDeps, ShutWorkspace, Tools, testing::{ScriptedProvider, text_answer}};
 /// use haest_session::{Hub, start};
-/// use haest_transport::{Grant, Stdio, Transport};
+/// use haest_transport::{Grant, Stdio};
 /// use haest_wire::{LineDecoder, Origin};
 /// use tokio::io::{AsyncReadExt, AsyncWriteExt};
 ///
@@ -43,7 +43,7 @@ use crate::{
 /// // The parent's ends of the two pipes.
 /// let (mut to_child, child_in) = tokio::io::duplex(1 << 16);
 /// let (child_out, mut from_child) = tokio::io::duplex(1 << 16);
-/// let attached = Stdio::new(child_in, child_out).attach(session, Grant::command(Origin::Human))?;
+/// let attached = Stdio::new(child_in, child_out).attach(session, Grant::command(Origin::Human));
 ///
 /// to_child.write_all(b"{\"v\":1,\"id\":\"r1\",\"type\":\"turn\",\"text\":\"say hi\"}\n").await?;
 /// drop(to_child); // the input ends; the turn it asked for still finishes
@@ -179,6 +179,25 @@ impl<R, W> std::fmt::Debug for Stdio<R, W> {
     }
 }
 
+impl<R, W> Stdio<R, W>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    /// Serve `backend` under `grant` over the pipes, on a task of its own (in
+    /// the current tokio runtime), as [`Transport::attach`] does; it cannot
+    /// fail, so there is no `Result`.
+    pub fn attach(self, backend: impl Into<BackendRef>, grant: Grant) -> Attached {
+        let source = NdjsonSource::new(self.read);
+        let sink = NdjsonSink::new(self.write);
+        let backend: BackendRef = backend.into();
+        Attached::new(tokio::spawn(serve(
+            backend, grant, self.start, source, sink,
+        )))
+    }
+}
+
+/// [`Stdio::attach`], which never fails.
 impl<R, W> Transport for Stdio<R, W>
 where
     R: AsyncRead + Unpin + Send + 'static,
@@ -189,10 +208,6 @@ where
         backend: impl Into<BackendRef>,
         grant: Grant,
     ) -> Result<Attached, TransportError> {
-        let source = NdjsonSource::new(self.read);
-        let sink = NdjsonSink::new(self.write);
-        let backend: BackendRef = backend.into();
-        let task = tokio::spawn(serve(backend, grant, self.start, source, sink));
-        Ok(Attached::new(task))
+        Ok(Stdio::attach(self, backend, grant))
     }
 }

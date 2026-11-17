@@ -42,7 +42,7 @@ use haest::{
     runtime::{BuildError, SessionFileError, Ui, list_sessions},
     session::{Hub, HubOptions, SessionPrompter, start},
     settings::Settings,
-    transport::{Attached, Broker, Ended, Grant, Stdio, Transport},
+    transport::{Attached, Broker, Ended, Grant, Stdio},
     wire::Origin,
     workspace::RealFs,
 };
@@ -144,10 +144,7 @@ async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode
 /// terminal would drive it, until stdin closes (once what it asked has
 /// finished) or it sends `close`.
 async fn stdio_mode(session: &Session) -> ExitCode {
-    let attached = match Stdio::process().attach(session.clone(), Grant::command(Origin::Human)) {
-        Ok(attached) => attached,
-        Err(e) => return fail(1, report(&e)),
-    };
+    let attached = Stdio::process().attach(session.clone(), Grant::command(Origin::Human));
     match attached.ended().await {
         Ended::PeerLeft | Ended::Closed => ExitCode::SUCCESS,
         Ended::Failed(e) => fail(1, format!("reading stdin: {}", report(&e))),

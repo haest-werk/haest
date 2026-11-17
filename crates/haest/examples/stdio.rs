@@ -23,7 +23,7 @@ use haest::{
     core::testing::{ScriptedProvider, text_answer, tool_answer},
     serde_json::{self, Value, json},
     session::{Hub, start},
-    transport::{Grant, LineSource, NdjsonSource, Stdio, Transport},
+    transport::{Grant, LineSource, NdjsonSource, Stdio},
     wire::Origin,
 };
 use tokio::io::{AsyncWriteExt, DuplexStream};
@@ -106,7 +106,7 @@ async fn main() -> Result<(), BoxError> {
     let (to_child, child_stdin) = tokio::io::duplex(1 << 16);
     let (child_stdout, from_child) = tokio::io::duplex(1 << 16);
     let attached =
-        Stdio::new(child_stdin, child_stdout).attach(session, Grant::command(Origin::Human))?;
+        Stdio::new(child_stdin, child_stdout).attach(session, Grant::command(Origin::Human));
 
     let mut parent = Parent {
         to_child,

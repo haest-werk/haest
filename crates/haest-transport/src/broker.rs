@@ -63,7 +63,7 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 ///
 /// ```no_run
 /// # async fn link(session: impl haest_session::Backend + 'static, token: String) -> Result<(), haest_transport::TransportError> {
-/// use haest_transport::{Broker, Grant, Transport};
+/// use haest_transport::{Broker, Grant};
 /// use haest_wire::Origin;
 ///
 /// // The token comes from the host's keys; it rides in the hello.
@@ -182,8 +182,27 @@ fn jitter() -> f64 {
     (h.finish() >> 11) as f64 / (1u64 << 53) as f64
 }
 
+/// [`Broker::attach`].
 impl Transport for Broker {
     fn attach(
+        self,
+        backend: impl Into<BackendRef>,
+        grant: Grant,
+    ) -> Result<Attached, TransportError> {
+        Broker::attach(self, backend, grant)
+    }
+}
+
+impl Broker {
+    /// Link `backend` to the broker under `grant`, on a task of its own (in
+    /// the current tokio runtime), as [`Transport::attach`] does: it dials,
+    /// serves, and dials again after a dropped link until the conversation
+    /// ends or the broker refuses the token ([`Attached::ended`] says which).
+    ///
+    /// # Errors
+    ///
+    /// [`TransportError::Url`] when the URL is not `ws://` or `wss://`.
+    pub fn attach(
         self,
         backend: impl Into<BackendRef>,
         grant: Grant,

@@ -22,7 +22,7 @@ async fn main() -> Result<(), BoxError> {
         Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, Tools,
         core::testing::{ScriptedProvider, text_answer},
         session::{Body, Hub, start},
-        transport::{Grant, Transport, UnixSocket, connect_session, running_sessions},
+        transport::{Grant, UnixSocket, connect_session, running_sessions},
         wire::{Origin, Request},
     };
 

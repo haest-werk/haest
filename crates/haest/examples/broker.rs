@@ -28,7 +28,7 @@ use haest::{
     core::testing::{ScriptedProvider, text_answer},
     serde_json::{self, Value, json},
     session::{Hub, Input, start},
-    transport::{Backoff, Broker, Grant, Transport},
+    transport::{Backoff, Broker, Grant},
     wire::Origin,
 };
 use tokio::net::{TcpListener, TcpStream};

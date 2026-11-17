@@ -1590,6 +1590,12 @@ against it; the wire JSON is unchanged):
 - `Attached` is `#[must_use]`: `UnixSocket::new(&dir).attach(s, g)?;`
   warns, since dropping it detaches the transport and removes the socket
   at once.
+- `Stdio`, `UnixSocket` and `Broker` have `attach` of their own, so
+  attaching one needs no `use haest_transport::Transport` (the trait
+  forwards to them, for code generic over a transport). `Stdio::attach`
+  cannot fail and returns the `Attached` itself (breaking):
+  `let attached = Stdio::process().attach(s, g)?;` ->
+  `let attached = Stdio::process().attach(s, g);`.
 
 ### haest-issues
 

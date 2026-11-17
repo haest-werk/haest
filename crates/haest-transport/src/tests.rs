@@ -30,6 +30,31 @@ fn every_error_with_a_cause_says_it_once() {
     assert_causes_said_once(&shape);
 }
 
+/// A host generic over its transport attaches through the trait, which
+/// does what the transport's own `attach` does.
+#[cfg(feature = "stdio")]
+#[tokio::test]
+async fn the_trait_attaches_as_the_transports_own_attach_does() {
+    use haest_wire::Origin;
+    use tokio::io::AsyncReadExt;
+
+    use crate::{Attached, Grant, Stdio, Transport, testing};
+
+    fn through(t: impl Transport, b: haest_session::BackendRef) -> Attached {
+        t.attach(b, Grant::watch(Origin::Agent))
+            .expect("a pipe pair always attaches")
+    }
+    let (session, _go) = testing::session(&testing::answers(&[]), testing::hub());
+    let (to_child, child_in) = tokio::io::duplex(1 << 16);
+    let (child_out, mut from_child) = tokio::io::duplex(1 << 16);
+    let attached = through(Stdio::new(child_in, child_out), session.into());
+    drop(to_child);
+    attached.ended().await;
+    let mut out = String::new();
+    from_child.read_to_string(&mut out).await.unwrap();
+    assert!(out.contains(r#""type":"hello""#), "{out}");
+}
+
 /// A path error says what was tried on the path, not the path alone.
 #[test]
 fn a_path_error_says_what_failed_on_it() {

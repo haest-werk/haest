@@ -47,7 +47,7 @@ pub type UnixPeer = Peer<NdjsonSource<OwnedReadHalf>, NdjsonSink<OwnedWriteHalf>
 /// ```
 /// use haest_core::{Agent, AgentDeps, AgentOptions, SharedDeps, ShutWorkspace, Tools, testing::ScriptedProvider};
 /// use haest_session::{Hub, start};
-/// use haest_transport::{Grant, Transport, UnixSocket, connect_session, running_sessions};
+/// use haest_transport::{Grant, UnixSocket, connect_session, running_sessions};
 /// use haest_wire::{Origin, Request};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
@@ -100,8 +100,28 @@ pub struct SocketDiscovery {
     pub socket: PathBuf,
 }
 
+/// [`UnixSocket::attach`].
 impl Transport for UnixSocket {
     fn attach(
+        self,
+        backend: impl Into<BackendRef>,
+        grant: Grant,
+    ) -> Result<Attached, TransportError> {
+        UnixSocket::attach(self, backend, grant)
+    }
+}
+
+impl UnixSocket {
+    /// Serve `backend` under `grant` on `<dir>/<stream id>.sock`, with its
+    /// discovery file beside it, on a task of its own (in the current tokio
+    /// runtime), as [`Transport::attach`] does.
+    ///
+    /// # Errors
+    ///
+    /// [`TransportError`] when the dir, the socket or the discovery file
+    /// cannot be made, or a live session already holds the socket
+    /// ([`InUse`](TransportError::InUse)).
+    pub fn attach(
         self,
         backend: impl Into<BackendRef>,
         grant: Grant,
