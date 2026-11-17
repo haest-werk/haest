@@ -93,6 +93,7 @@ haest-transport = { workspace = true, optional = true }
 [[example]]
 name = "notebook"
 path = "examples/notebook/main.rs"
+required-features = ["providers", "settings", "tools", "workspace"]
 test = true
 
 # A durable run on the memory store: the finished-run shortcut, a kill and a resume.
@@ -135,6 +136,7 @@ test = true
 [[example]]
 name = "wind_down"
 path = "examples/wind_down.rs"
+required-features = ["settings", "tools"]
 test = true
 
 # A host's own thresholds (remind the model, warn the human), against a scripted model.
@@ -142,6 +144,12 @@ test = true
 name = "threshold"
 path = "examples/threshold.rs"
 test = true
+
+# A host's own implementation of each plug point, driven through a turn.
+[[test]]
+name = "plug_in"
+path = "tests/plug_in.rs"
+required-features = ["tools", "workspace"]
 
 # The notebook example and tests/plug_in.rs: what a host implementing the plug
 # points needs besides haest (async_trait, serde_json and CancellationToken come

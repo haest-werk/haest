@@ -4,7 +4,8 @@
 use std::{fs, path::Path};
 
 /// The first fenced block after `marker` whose fence line is `fence`, its
-/// lines with `prefix` taken off.
+/// lines with `prefix` taken off, as a reader sees it: without the lines
+/// rustdoc hides (`# `).
 fn block(text: &str, marker: &str, fence: &str, prefix: &str) -> Option<String> {
     let mut lines = text.lines().skip_while(|l| !l.contains(marker));
     lines.find(|l| l.trim_end() == fence)?;
@@ -15,6 +16,10 @@ fn block(text: &str, marker: &str, fence: &str, prefix: &str) -> Option<String> 
         .map(|l| {
             l.strip_prefix(prefix)
                 .unwrap_or(l.trim_start_matches(prefix.trim_end()))
+        })
+        .filter(|l| {
+            let l = l.trim_start();
+            l != "#" && !l.starts_with("# ")
         })
         .collect();
     Some(code.join("\n"))

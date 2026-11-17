@@ -429,6 +429,10 @@ below.
   subagents).
 - Feature `testing` also turns on the providers' fakes when `providers` is
   on: `haest::providers::testing::{FakeHttp, chat_sse, typed_sse}`.
+- `cargo test -p haest` builds with any set of features, not only the
+  default ones: the `notebook` and `wind_down` examples and the `plug_in`
+  test name the features they need (`required-features`), and the front
+  page's quickstart builds only with `providers`, `tools` and `workspace`.
 
 ### haest-core
 

@@ -25,6 +25,9 @@
 //! directory:
 //!
 //! ```no_run
+//! # // Built with the default features; without them there is nothing to run.
+//! # #[cfg(all(feature = "providers", feature = "tools", feature = "workspace"))]
+//! # mod quickstart {
 //! use haest::providers::ProviderRegistry;
 //! use haest::tools::{BuiltinOptions, builtin_tools};
 //! use haest::workspace::RealWorkspace;
@@ -60,6 +63,8 @@
 //!     println!("\n{:?}", end.stop_reason);
 //!     Ok(())
 //! }
+//! # }
+//! # fn main() {}
 //! ```
 //!
 //! Run it with `OPENROUTER_API_KEY` set. `anthropic:` and `openai:` models take
