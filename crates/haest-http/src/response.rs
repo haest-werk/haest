@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::{
     HttpError,
+    redact::HeaderNames,
     request::{find_header, set_header},
 };
 
@@ -25,8 +26,8 @@ use crate::{
 /// use haest_http::{Body, Bytes, HttpError};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
-/// let whole = Body::from("hello").bytes(1024).await.unwrap();
+/// # async fn main() -> Result<(), HttpError> {
+/// let whole = Body::from("hello").bytes(1024).await?;
 /// assert_eq!(whole, Bytes::from("hello"));
 ///
 /// // A body past the reader's limit is refused, never cut.
@@ -35,7 +36,8 @@ use crate::{
 ///
 /// // A client that streams hands over its chunks as they come.
 /// let chunks = futures::stream::iter([Ok(Bytes::from("hel")), Ok(Bytes::from("lo"))]);
-/// assert_eq!(Body::from_stream(chunks).bytes(1024).await.unwrap(), Bytes::from("hello"));
+/// assert_eq!(Body::from_stream(chunks).bytes(1024).await?, Bytes::from("hello"));
+/// # Ok(())
 /// # }
 /// ```
 pub struct Body(BoxStream<'static, Result<Bytes, HttpError>>);
@@ -125,7 +127,9 @@ impl fmt::Debug for Body {
 /// assert!(!res.is_success());
 /// assert_eq!(res.header("X-Request-Id"), Some("7"));
 /// ```
-#[derive(Debug)]
+///
+/// Its Debug output shows each header's name without its value (a
+/// `set-cookie` is a credential).
 pub struct Response {
     /// The status code, whatever it is.
     pub status: u16,
@@ -133,6 +137,16 @@ pub struct Response {
     pub headers: Vec<(String, String)>,
     /// The body, as it arrives.
     pub body: Body,
+}
+
+impl fmt::Debug for Response {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Response")
+            .field("status", &self.status)
+            .field("headers", &HeaderNames(&self.headers))
+            .field("body", &self.body)
+            .finish()
+    }
 }
 
 impl Response {

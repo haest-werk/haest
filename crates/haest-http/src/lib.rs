@@ -48,17 +48,21 @@
 //! }
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() -> Result<(), HttpError> {
+//! # async fn main() -> Result<(), haest_http::BoxError> {
 //! let http = Fake;
 //! let req = Request::get("https://api.example.com/answer").with_header("Authorization", "Bearer t0k3n");
 //! let res = http.send(req).await?;
 //! assert!(res.is_success());
 //! let body = res.body.bytes(1024 * 1024).await?;
-//! let answer: serde_json::Value = serde_json::from_slice(&body).unwrap();
+//! let answer: serde_json::Value = serde_json::from_slice(&body)?;
 //! assert_eq!(answer["answer"], 42);
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! A part that sends holds its client as an [`HttpClientRef`], and takes
+//! `impl Into<HttpClientRef>`: the client itself, or an `Arc` of one the host
+//! shares.
 //!
 //! The default sends for real; nothing is built until the first request:
 //!
@@ -76,10 +80,19 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
 
+mod client_ref;
 mod error;
+mod redact;
 mod request;
 mod reqwest_client;
 mod response;
+
+/// Shared by haest's crates, not part of the API: the Debug redaction their
+/// option and tracker types use.
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::redact::{HeaderNames, REDACTED, UrlDebug, without_userinfo};
+}
 
 /// Marks an `impl HttpClient` so its `async fn` compiles; the macro the trait
 /// is declared with.
@@ -93,8 +106,9 @@ pub use bytes::Bytes;
 /// after 0.13) is a breaking release of haest-http and of haest.
 pub use reqwest;
 
+pub use client_ref::HttpClientRef;
 pub use error::{BoxError, HttpError};
-pub use request::{Method, Request};
+pub use request::{Method, ParseMethodError, Request};
 pub use reqwest_client::{ReqwestClient, build_reqwest, reqwest_builder};
 pub use response::{Body, Response};
 
@@ -112,7 +126,8 @@ pub use response::{Body, Response};
 ///   the human stopped, a fetch that timed out). Hold nothing that must
 ///   outlive the future.
 ///
-/// [`ReqwestClient`] is the default; the crate docs have a fake.
+/// [`ReqwestClient`] is the default; the crate docs have a fake. A part
+/// that sends holds one as an [`HttpClientRef`].
 #[async_trait]
 pub trait HttpClient: Send + Sync {
     /// Send `req`. Returns once the status and headers are in; the body streams.

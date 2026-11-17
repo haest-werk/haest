@@ -97,18 +97,21 @@ struct Own {
 /// share the client.
 ///
 /// ```
-/// use std::{sync::Arc, time::Duration};
+/// use std::time::Duration;
 ///
-/// use haest_http::{HttpClient, ReqwestClient, reqwest};
+/// use haest_http::{HttpClientRef, ReqwestClient, reqwest};
 ///
+/// # fn main() -> Result<(), haest_http::BoxError> {
 /// // What the model calls, GenerateImage and the GitHub tracker use unless handed another.
-/// let shared: Arc<dyn HttpClient> = Arc::new(ReqwestClient::new());
+/// let shared: HttpClientRef = ReqwestClient::new().into();
 ///
 /// // A host's own: through its proxy, a shorter connect timeout.
-/// let own = ReqwestClient::configured(|builder| {
-///     let proxy = reqwest::Proxy::all("http://proxy.internal:3128").expect("a proxy URL");
-///     builder.proxy(proxy).connect_timeout(Duration::from_secs(5))
+/// let proxy = reqwest::Proxy::all("http://proxy.internal:3128")?;
+/// let own = ReqwestClient::configured(move |builder| {
+///     builder.proxy(proxy.clone()).connect_timeout(Duration::from_secs(5))
 /// });
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone, Default)]
 pub struct ReqwestClient {

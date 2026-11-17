@@ -1,10 +1,29 @@
 //! One request, ready to send.
 
+use std::{fmt, str::FromStr};
+
 use bytes::Bytes;
 use serde_json::Value;
 
-/// The HTTP methods haest sends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use crate::redact::{HeaderNames, UrlDebug};
+
+/// The HTTP methods haest sends. More may come in a minor release.
+///
+/// It reads and writes as the word on the wire, case-sensitive as HTTP is:
+///
+/// ```
+/// use haest_http::Method;
+///
+/// # fn main() -> Result<(), haest_http::ParseMethodError> {
+/// let method: Method = "PATCH".parse()?;
+/// assert_eq!(method, Method::Patch);
+/// assert_eq!(method.to_string(), "PATCH");
+/// assert!("patch".parse::<Method>().is_err());
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Method {
     /// `GET`: read (a web page, a model list, an issue).
     Get,
@@ -28,6 +47,41 @@ impl Method {
     }
 }
 
+impl fmt::Display for Method {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for Method {
+    type Err = ParseMethodError;
+
+    /// The method `word` names, exactly as [`as_str`](Method::as_str) writes it.
+    fn from_str(word: &str) -> Result<Self, Self::Err> {
+        [Method::Get, Method::Post, Method::Patch, Method::Delete]
+            .into_iter()
+            .find(|m| m.as_str() == word)
+            .ok_or_else(|| ParseMethodError {
+                word: word.to_string(),
+            })
+    }
+}
+
+/// A word that names no [`Method`] haest sends: what `"PUT".parse::<Method>()`
+/// fails with.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("\"{word}\" is not an HTTP method haest sends (GET, POST, PATCH, DELETE)")]
+pub struct ParseMethodError {
+    word: String,
+}
+
+impl ParseMethodError {
+    /// The word, as given.
+    pub fn word(&self) -> &str {
+        &self.word
+    }
+}
+
 /// One request, ready to send: everything an [`HttpClient`](crate::HttpClient)
 /// is handed.
 ///
@@ -42,7 +96,11 @@ impl Method {
 /// assert_eq!(req.header("content-type"), Some("application/json"));
 /// assert_eq!(req.json_body()["name"], "first");
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Its Debug output shows no credential: the URL without its userinfo
+/// (`user:password@`), each header's name without its value, and the body's
+/// length.
+#[derive(Clone, PartialEq)]
 pub struct Request {
     /// The method.
     pub method: Method,
@@ -101,6 +159,17 @@ impl Request {
     }
 }
 
+impl fmt::Debug for Request {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Request")
+            .field("method", &self.method)
+            .field("url", &UrlDebug(&self.url))
+            .field("headers", &HeaderNames(&self.headers))
+            .field("body", &format_args!("{} bytes", self.body.len()))
+            .finish()
+    }
+}
+
 /// `name: value` in `headers`, replacing a header of the same name in any
 /// case: what `with_header` means on a request and on a response.
 pub(crate) fn set_header(headers: &mut Vec<(String, String)>, name: String, value: String) {
@@ -141,5 +210,23 @@ mod tests {
     #[test]
     fn a_body_that_is_not_json_reads_as_null() {
         assert_eq!(Request::get("https://a.test/").json_body(), Value::Null);
+    }
+
+    #[test]
+    fn debug_shows_no_credential_of_the_url_or_the_headers() {
+        let req = Request::post("https://user:pa55@gateway.test/v1/chat")
+            .with_header("Authorization", "Bearer sk-secret")
+            .with_json(&serde_json::json!({"model": "m"}));
+        let shown = format!("{req:?}");
+        for secret in ["pa55", "user:", "sk-secret"] {
+            assert!(!shown.contains(secret), "{secret} in {shown}");
+        }
+        assert!(shown.contains("gateway.test/v1/chat"), "{shown}");
+        assert!(shown.contains("Authorization"), "{shown}");
+
+        let res = crate::Response::new(200, "").with_header("set-cookie", "session=abc123");
+        let shown = format!("{res:?}");
+        assert!(!shown.contains("abc123"), "{shown}");
+        assert!(shown.contains("set-cookie"), "{shown}");
     }
 }

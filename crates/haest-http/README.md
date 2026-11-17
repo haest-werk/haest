@@ -25,7 +25,8 @@ an `HttpClient`).
   ([haest-mcp](https://crates.io/crates/haest-mcp)), whose SDK runs only on
   reqwest, gets its client from here too.
 - Implement `HttpClient` to send everything somewhere else: a gateway, a
-  recorder, a fake for tests.
+  recorder, a fake for tests. A part that sends takes
+  `impl Into<HttpClientRef>`, so it is handed the client itself.
 
 ```rust
 use haest_http::{HttpClient, HttpError, Request, Response, async_trait};

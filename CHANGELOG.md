@@ -103,6 +103,10 @@ value itself, and holds it in a handle named after its trait. Read
   that logged one with `{:?}` logged the secret. Debug now shows
   `<redacted>` for the key and the token, and a header's name without its
   value.
+- haest-http's `Request` printed its `Authorization` header and a URL's
+  `user:password@` in its Debug output, and `Response` its `set-cookie`.
+  Debug now shows each header's name without its value, the URL as
+  `https://<redacted>@host/...`, and a request's body as its length.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a
@@ -507,6 +511,19 @@ Good citizens:
   the prelude holds by its root path (`haest_core::Agent`), everything else
   by its module path (`haest_core::run::RunKey`). `Ledger::reserve`
   documents its errors.
+
+### haest-http
+
+- New `HttpClientRef`, the handle a part that sends holds its client in, in
+  the shape of haest-core's handles: built from the client itself
+  (`ReqwestClient::new().into()`), an `Arc` of one, or an
+  `Arc<dyn HttpClient>`; cheap to clone, and it derefs to the client.
+- `Method` and `HttpError` are `#[non_exhaustive]` (breaking): a `match`
+  adds a `_` arm, and haest adds a method (`PUT`) or a variant in a minor
+  release.
+- `Method` implements `Display` and `FromStr` (the word on the wire,
+  case-sensitive; a word it does not name is a `ParseMethodError`), and
+  `Hash`.
 
 ### haest-providers
 

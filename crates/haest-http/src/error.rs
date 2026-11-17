@@ -25,7 +25,10 @@ pub type BoxError = Box<dyn Error + Send + Sync>;
 ///
 /// assert!(!HttpError::TooLarge(1024).is_retryable());
 /// ```
+///
+/// More variants may come in a minor release: a `match` on one adds a `_` arm.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum HttpError {
     /// No answer came: the name did not resolve, the connection was refused
     /// or reset, TLS failed, a timeout set on the client ran out. Another try
