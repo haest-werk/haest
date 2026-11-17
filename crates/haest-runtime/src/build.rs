@@ -136,6 +136,7 @@ where
         mcp_servers,
         routing,
         http,
+        host_mods,
     } = inputs;
     let fs = world.fs().clone();
     let session = open_session(&fs, &settings, &opts.resume, ui.clone()).await?;
@@ -163,7 +164,7 @@ where
     let gate = ApprovalGate::new(prompter);
     let (mcp, mods) = tokio::join!(
         connect_mcp(&hooks, &world, &passed_env, mcp_servers),
-        mods::mods_for(&hooks, fs.as_ref(), &gate),
+        mods::mods_for(&hooks, fs.as_ref(), &gate, host_mods),
     );
 
     let board = task_board(&hooks);

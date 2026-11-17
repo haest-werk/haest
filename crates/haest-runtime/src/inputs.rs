@@ -11,6 +11,7 @@ use crate::{
         ChildEnv, KeySourceRef,
         http::HttpClientRef,
         mcp::McpServerConfig,
+        mods::ModRef,
         providers::{CustomProviders, RoutingScopes},
     },
     world::World,
@@ -48,13 +49,14 @@ pub struct RuntimeInputs {
     pub(crate) mcp_servers: Vec<McpServerConfig>,
     pub(crate) routing: Option<RoutingScopes>,
     pub(crate) http: HttpClientRef,
+    pub(crate) host_mods: Vec<ModRef>,
 }
 
 impl RuntimeInputs {
     /// The settings in this world, and nothing else: no variables passed, no
     /// keys, no custom providers, no MCP servers, no routing, the default
     /// client ([`HttpClientRef::default`]: the shared `ReqwestClient`, built
-    /// on the first request).
+    /// on the first request), no mods of the host's own.
     ///
     /// With no keys, [`build`](crate::build) fails unless the model's provider needs none:
     /// hand in the [`keys`](Self::with_keys) the settings' providers use.
@@ -69,6 +71,7 @@ impl RuntimeInputs {
             mcp_servers: Vec::new(),
             routing: None,
             http: HttpClientRef::default(),
+            host_mods: Vec::new(),
         }
     }
 
@@ -142,6 +145,16 @@ impl RuntimeInputs {
         self
     }
 
+    /// Add a native mod of the host's own (the mod itself, or an `Arc` of it
+    /// the host keeps): it runs after the built-ins and the mod files, the
+    /// host's mods in the order they were added, whatever the `mods`
+    /// settings say (those are about mod files).
+    #[must_use]
+    pub fn with_mod(mut self, m: impl Into<ModRef>) -> Self {
+        self.host_mods.push(m.into());
+        self
+    }
+
     /// The settings ([`with_settings`](Self::with_settings)).
     pub fn settings(&self) -> &Settings {
         &self.settings
@@ -181,6 +194,11 @@ impl RuntimeInputs {
     pub fn http(&self) -> &HttpClientRef {
         &self.http
     }
+
+    /// The host's own mods, in order ([`with_mod`](Self::with_mod)).
+    pub fn host_mods(&self) -> &[ModRef] {
+        &self.host_mods
+    }
 }
 
 /// The custom providers by name only (their own Debug): an entry may hold a key.
@@ -195,6 +213,7 @@ impl fmt::Debug for RuntimeInputs {
             .field("mcp_servers", &self.mcp_servers)
             .field("routing", &self.routing)
             .field("http", &self.http)
+            .field("host_mods", &self.host_mods)
             .finish()
     }
 }

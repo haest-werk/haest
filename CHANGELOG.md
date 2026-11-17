@@ -1399,6 +1399,11 @@ Hosts write less (round two of the review, and what porting brain onto
   (was an `io::Error`) and shows its message, so a sandbox that does not
   open names the dir (breaking only for a `match` that read the
   `io::Error`: `e.kind()` still works on it).
+- `RuntimeInputs::with_mod` puts a host's own native mod in the
+  conversation, after the built-ins and the mod files, whatever the `mods`
+  settings say; `host_mods()` reads them back. A host had no way to: the
+  `Mods` the runtime hands out was already shared, and a mod added to a
+  clone of it reached nothing.
 
 ### haest-ts
 

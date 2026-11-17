@@ -147,6 +147,49 @@ async fn a_key_the_host_hands_in_is_the_key_haest_uses() {
     );
 }
 
+/// A host's own native mod: it adds to the system prompt and the human's text.
+struct HouseStyle;
+
+#[async_trait]
+impl crate::haest::mods::Mod for HouseStyle {
+    fn name(&self) -> &str {
+        "house-style"
+    }
+    async fn system_prompt(
+        &self,
+        _: &crate::haest::mods::ModEnv,
+    ) -> Result<Option<String>, haest_core::error::BoxError> {
+        Ok(Some("Use British spelling.".into()))
+    }
+    async fn prompt_submit(
+        &self,
+        text: &str,
+        _: &crate::haest::mods::ModEnv,
+    ) -> Result<Option<String>, haest_core::error::BoxError> {
+        Ok(Some(format!("{text} (house style)")))
+    }
+}
+
+#[tokio::test]
+async fn a_hosts_own_mod_runs_in_the_conversation_after_the_built_ins() {
+    let inputs = RuntimeInputs::new(hardcoded(), World::files(MemFs::new()))
+        .with_keys(openrouter_key())
+        .with_mod(HouseStyle);
+    assert_eq!(inputs.host_mods().len(), 1);
+    let rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
+        .await
+        .unwrap();
+    let names = rt.mods().names();
+    assert_eq!(
+        names.last().map(String::as_str),
+        Some("house-style"),
+        "{names:?}"
+    );
+    let prompt = rt.agent().deps().system_prompt().system_prompt().await;
+    assert!(prompt.contains("Use British spelling."), "{prompt}");
+    assert_eq!(rt.mods().rewrite_prompt("hi").await, "hi (house style)");
+}
+
 /// A host's gateway: the URL of every request it is sent, each refused.
 #[derive(Default)]
 struct Gateway(Mutex<Vec<String>>);

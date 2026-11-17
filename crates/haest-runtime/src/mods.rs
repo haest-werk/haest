@@ -5,7 +5,7 @@ use crate::{
     haest::{
         core::fs::Fs,
         core::tool::ToolServices,
-        mods::{ApprovalGate, ModLine, ModOptions, Mods, load_mods},
+        mods::{ApprovalGate, ModLine, ModOptions, ModRef, Mods, load_mods},
     },
 };
 
@@ -18,11 +18,20 @@ use crate::{
 /// dir; whoever loaded the settings decided). A mod's lines, and one that does
 /// not load, go to the host's [`Ui`](crate::Ui). An approval ask goes through
 /// `gate` ([`ApprovalGate`]) to the host's prompter, which decides how a human
-/// answers; an ask nobody answers is a deny after its timeout. Never fails:
-/// the mods that loaded are the ones returned.
-pub(crate) async fn mods_for(hooks: &RuntimeHooks, fs: &dyn Fs, gate: &ApprovalGate) -> Mods {
+/// answers; an ask nobody answers is a deny after its timeout. The host's own
+/// mods (`host_mods`) run after all of those, whatever the settings say.
+/// Never fails: the mods that loaded are the ones returned.
+pub(crate) async fn mods_for(
+    hooks: &RuntimeHooks,
+    fs: &dyn Fs,
+    gate: &ApprovalGate,
+    host_mods: Vec<ModRef>,
+) -> Mods {
     let s = hooks.settings();
-    let mut cfg = ModOptions::new(&s.cwd, s.workspace, &s.config_dir);
+    let mut cfg = host_mods.into_iter().fold(
+        ModOptions::new(&s.cwd, s.workspace, &s.config_dir),
+        ModOptions::with_mod,
+    );
     if !s.approvals {
         cfg = cfg.without_approvals();
     }
