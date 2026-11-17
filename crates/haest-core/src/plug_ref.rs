@@ -11,6 +11,7 @@
 ///   value itself;
 /// - `From<Arc<T>>` and `From<Arc<dyn Trait>>`, so one object the caller
 ///   shares can fill several slots without a second `Arc`;
+/// - `From<Box<dyn Trait>>`, for a part the host picks at run time;
 /// - `Deref<Target = dyn Trait>` and `AsRef<dyn Trait>`, so the handle is called
 ///   like the trait;
 /// - `Debug`: `XRef(..)`, or the `debug(this, f) { .. }` body given after the
@@ -94,6 +95,12 @@ macro_rules! plug_ref {
         impl ::std::convert::From<::std::sync::Arc<dyn $trait>> for $name {
             fn from(value: ::std::sync::Arc<dyn $trait>) -> Self {
                 Self(value)
+            }
+        }
+
+        impl ::std::convert::From<::std::boxed::Box<dyn $trait>> for $name {
+            fn from(value: ::std::boxed::Box<dyn $trait>) -> Self {
+                Self(value.into())
             }
         }
 

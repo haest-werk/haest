@@ -885,6 +885,10 @@ Hosts write less (round two of the review, and what porting brain onto
   added later, such as a file's mode, breaks no `Fs`. Their fields still
   read as before. The `Fs` docs count nine required methods (they said
   eight) and name them.
+- Every plug-point handle (`WorkspaceRef`, `ToolRef`, `ClockRef`, ...) is
+  also built `From<Box<dyn Trait>>`, so a part the host picks at run time
+  fills a slot as it is: `SharedDeps::new(models, cwd,
+  Arc::<dyn Workspace>::from(boxed))` -> `SharedDeps::new(models, cwd, boxed)`.
 
 ### haest-http
 

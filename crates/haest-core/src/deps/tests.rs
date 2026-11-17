@@ -73,6 +73,21 @@ fn one_shared_object_fills_several_slots() {
     ));
 }
 
+/// A part the host picks at run time, as a `Box<dyn Trait>`, fills a slot
+/// as it is: no `Arc::<dyn Trait>::from(b)` first.
+#[test]
+fn a_boxed_part_fills_a_slot() {
+    let clock: Box<dyn Clock> = Box::new(|| 7_u64);
+    let deps = deps("p").with_clock(clock);
+    assert_eq!(deps.shared().clock().now_ms(), 7);
+    let workspace: Box<dyn crate::Workspace> = Box::new(ShutWorkspace);
+    let shared = SharedDeps::new(ScriptedProvider::new([]).resolver(), "/", workspace);
+    assert_eq!(
+        shared.workspace().mode(),
+        crate::workspace::WorkspaceMode::Shut
+    );
+}
+
 /// Publishes what it is called with.
 struct Publish;
 
