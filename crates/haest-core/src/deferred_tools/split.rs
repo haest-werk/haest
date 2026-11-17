@@ -3,10 +3,9 @@
 //! reaches these through `haest_core::__private`.
 
 use async_trait::async_trait;
-use serde_json::Value;
 
 use super::{DeferMode, ToolDeferral};
-use crate::tool::{JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput, ToolRef, Tools};
+use crate::tool::{JsonMap, ToolContext, ToolError, ToolOutput, ToolRef, ToolWrapper, Tools};
 
 /// The tools this call advertises, given every tool the agent has.
 ///
@@ -65,28 +64,9 @@ struct Loading {
 }
 
 #[async_trait]
-#[warn(clippy::missing_trait_methods)]
-impl Tool for Loading {
-    fn name(&self) -> &str {
-        self.tool.name()
-    }
-    fn description(&self) -> String {
-        self.tool.description()
-    }
-    fn parameters(&self) -> Value {
-        self.tool.parameters()
-    }
-    fn kind(&self) -> &str {
-        self.tool.kind()
-    }
-    fn read_only(&self) -> bool {
-        self.tool.read_only()
-    }
-    fn on_resume(&self) -> OnResume {
-        self.tool.on_resume()
-    }
-    fn canonical_input(&self, input: &JsonMap) -> JsonMap {
-        self.tool.canonical_input(input)
+impl ToolWrapper for Loading {
+    fn inner(&self) -> &ToolRef {
+        &self.tool
     }
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         self.deferral.load([self.tool.name()]);

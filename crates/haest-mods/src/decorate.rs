@@ -9,11 +9,8 @@ use async_trait::async_trait;
 use haest_core::{
     ToolRef, Tools,
     deps::{SystemPrompt, SystemPromptRef},
-    tool::{
-        JsonMap, OnResume, Tool, ToolContext, ToolError, ToolOutput, ToolSource, ToolSourceRef,
-    },
+    tool::{JsonMap, ToolContext, ToolError, ToolOutput, ToolSource, ToolSourceRef, ToolWrapper},
 };
-use serde_json::Value;
 
 use crate::{api::ModToolCall, registry::Mods};
 
@@ -86,28 +83,9 @@ struct ModTool {
 }
 
 #[async_trait]
-#[warn(clippy::missing_trait_methods)]
-impl Tool for ModTool {
-    fn name(&self) -> &str {
-        self.tool.name()
-    }
-    fn description(&self) -> String {
-        self.tool.description()
-    }
-    fn parameters(&self) -> Value {
-        self.tool.parameters()
-    }
-    fn kind(&self) -> &str {
-        self.tool.kind()
-    }
-    fn read_only(&self) -> bool {
-        self.tool.read_only()
-    }
-    fn on_resume(&self) -> OnResume {
-        self.tool.on_resume()
-    }
-    fn canonical_input(&self, input: &JsonMap) -> JsonMap {
-        self.tool.canonical_input(input)
+impl ToolWrapper for ModTool {
+    fn inner(&self) -> &ToolRef {
+        &self.tool
     }
 
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {

@@ -78,7 +78,9 @@
   hooks over the conversation's) puts `#[warn(clippy::missing_trait_methods)]`
   on that impl. Each method then forwards, or says why it does not: a method
   the trait gains later fails the gates there instead of quietly running the
-  default in place of the inner value's.
+  default in place of the inner value's. A tool over a tool implements
+  `ToolWrapper` instead and names only what it changes: its blanket `Tool`
+  impl is the one that takes the lint.
 - **Docs are part of the API.** The lint table warns on a public item without
   docs: it gets a doc that says what it is for in plain words, and the types
   a host constructs or implements get a runnable example. Links between items

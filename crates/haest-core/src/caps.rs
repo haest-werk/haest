@@ -93,8 +93,12 @@ impl TurnCaps {
 /// window. A [`TurnCaps`] is one (the same caps for every model), and so is a
 /// closure `Fn(&str) -> Option<TurnCaps>`.
 pub trait TurnCapsSource: Send + Sync {
-    /// The caps for `spec`; None = uncapped.
-    fn turn_caps(&self, spec: &str) -> Option<TurnCaps>;
+    /// The caps for `spec`; None = uncapped. Default: None, so a host object
+    /// that fills every slot ([`SharedDeps::with_host`](crate::SharedDeps::with_host))
+    /// and caps nothing leaves it an empty `impl`.
+    fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
+        None
+    }
 }
 
 impl TurnCapsSource for TurnCaps {

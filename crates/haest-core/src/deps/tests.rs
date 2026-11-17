@@ -137,3 +137,32 @@ async fn tools_reach_the_services_slot_not_the_hooks() {
     assert_eq!(published(served).await, "blob://0");
     assert_eq!(blobs.0.load(Ordering::SeqCst), 1);
 }
+
+// The rest of the host slots, as their defaults.
+impl ToolServices for Host {}
+impl crate::catalog::ModelFacts for Host {}
+impl crate::caps::TurnCapsSource for Host {}
+
+/// Where a slot's value lives: one host behind every slot has one address.
+fn at<T: ?Sized>(slot: &T) -> *const () {
+    (slot as *const T).cast()
+}
+
+#[test]
+fn one_host_fills_every_host_slot_with_the_one_value() {
+    let provider = ScriptedProvider::new([]);
+    let deps = AgentDeps::new(on(&provider), Tools::new(), "").with_host(Host::default());
+    let s = deps.shared();
+    let slots = [
+        at(&**s.hooks()),
+        at(&**s.services()),
+        at(&**s.facts()),
+        at(&**s.turn_caps()),
+        at(&**s.clock()),
+    ];
+    assert!(slots.iter().all(|p| *p == slots[0]), "{slots:?}");
+    // A setter after it changes its own slot only.
+    let deps = deps.with_clock(|| 7);
+    assert_eq!(deps.shared().clock().now_ms(), 7);
+    assert_eq!(at(&**deps.shared().facts()), slots[0]);
+}

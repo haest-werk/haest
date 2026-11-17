@@ -591,6 +591,44 @@ Hosts write less (round two of the review, and what porting brain onto
   created_ms })`. `JsonlSessionFile::create` takes the cwd as a `&Path`:
   `file.create(cid, "/project", ms)` ->
   `file.create(cid, Path::new("/project"), ms)`.
+- New `tool::ToolWrapper`: a tool made from another. It names the tool it
+  wraps (`inner`) and implements only what it changes; every other `Tool`
+  method forwards to the wrapped tool, in one place, so a wrapper that
+  changes `execute` keeps the wrapped tool's `read_only`, `on_resume` and
+  `canonical_input`, and a method `Tool` gains later. Every `ToolWrapper`
+  is a `Tool`. The 8-method hand-written forwarder (which compiled with
+  `on_resume` left out) -> `impl ToolWrapper for Noted { fn inner(&self)
+  -> &ToolRef { &self.0 } async fn execute(..) { .. } }`. haest-mods'
+  tool wrapper and the deferred tools' are built on it.
+- New `ToolOverride` (in the prelude): a tool with its name, description
+  or parameter schema changed and the rest the wrapped tool's.
+  `ToolOverride::new(read).with_description("Read a notebook page.")`,
+  pushed onto a `Tools` list, takes `Read`'s place.
+- `OnResume` joins the prelude.
+- New `ToolError::message()` and `ToolError::map_message(f)`: the same
+  kind of error with its message changed, so a note added to every error
+  needs no `match` and no `Err(e) => Err(e)` arm for kinds added later.
+- New `SharedDeps::with_host(host)` (and on `AgentDeps`): one value in the
+  hooks, services, facts, turn caps and clock slots at once, behind one
+  `Arc` haest makes. `let h = Arc::new(host);
+  deps.with_hooks(h.clone()).with_facts(h.clone()).with_turn_caps(h.clone()).with_clock(h)`
+  -> `deps.with_host(host)`. `Clock::now_ms` (the wall clock) and
+  `TurnCapsSource::turn_caps` (no caps) have default bodies now, so the
+  slots a host has nothing to say in are an empty `impl`.
+- The `SharedDeps` setters and their `AgentDeps` twins are made from one
+  list, and every setter is `#[must_use]`. New `without_run_store()`.
+- A setter of a slot that may be empty takes an `Option` of its value, so
+  a host passes what it has without an `if let` (breaking where a `&str`
+  went in): `SharedDeps::with_spill_dir` and `ToolContext::with_spill_dir`
+  take `impl Into<Option<PathBuf>>`, `SharedDeps::with_ledger`
+  `impl Into<Option<Ledger>>`, `ToolContext::with_run_key`
+  `impl Into<Option<RunKey>>` and `ToolContext::with_turn_time_left`
+  `impl Into<Option<Duration>>`. `.with_spill_dir("/data/spill")` ->
+  `.with_spill_dir(PathBuf::from("/data/spill"))`, and
+  `if let Some(d) = ctx.spill_dir() { inner = inner.with_spill_dir(d) }` ->
+  `inner.with_spill_dir(ctx.spill_dir().map(Path::to_path_buf))`. The run
+  store keeps taking the store itself (an `Option` of a handle would take
+  only a `RunStoreRef`), and `without_run_store()` empties it.
 
 ### haest-http
 

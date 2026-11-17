@@ -226,8 +226,12 @@ pub fn now_ms() -> u64 {
 /// gives one that stands still while paused. A closure `Fn() -> u64` is a
 /// clock.
 pub trait Clock: Send + Sync {
-    /// Now, in milliseconds since the epoch.
-    fn now_ms(&self) -> u64;
+    /// Now, in milliseconds since the epoch. Default: the wall clock
+    /// ([`now_ms`]), so a host object that fills every slot
+    /// ([`SharedDeps::with_host`]) keeps it with an empty `impl`.
+    fn now_ms(&self) -> u64 {
+        now_ms()
+    }
 }
 
 impl<F: Fn() -> u64 + Send + Sync> Clock for F {

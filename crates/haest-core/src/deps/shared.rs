@@ -1,17 +1,20 @@
 //! [`SharedDeps`]: what every agent of one conversation runs on.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use super::{AgentHooksRef, ClockRef, NoHooks, WallClock};
+use super::{AgentDeps, AgentHooks, AgentHooksRef, Clock, ClockRef, NoHooks, WallClock};
 use crate::{
-    caps::{TurnCaps, TurnCapsSourceRef},
-    catalog::{ModelFactsRef, NoFacts},
+    caps::{TurnCaps, TurnCapsSource, TurnCapsSourceRef},
+    catalog::{ModelFacts, ModelFactsRef, NoFacts},
     ledger::Ledger,
     provider::{ModelResolverRef, WebSearchOptions},
     remedy::Remedies,
     run::RunStoreRef,
     threshold::{Thresholds, TurnSite},
-    tool::{NoServices, ToolServicesRef},
+    tool::{NoServices, ToolServices, ToolServicesRef},
     workspace::WorkspaceRef,
 };
 
@@ -156,104 +159,149 @@ impl SharedDeps {
         &self.thresholds
     }
 
-    /// These deps resolving models with `models`.
+    /// These deps with `host` in every slot a host fills: the
+    /// [`hooks`](Self::with_hooks), the [`services`](Self::with_services),
+    /// the [`facts`](Self::with_facts), the [`turn caps`](Self::with_turn_caps)
+    /// and the [`clock`](Self::with_clock), one value behind them all. Each
+    /// trait's methods have defaults, so a host implements only what it says
+    /// and leaves the rest an empty `impl`. A setter called after this
+    /// replaces its own slot only.
+    ///
+    /// ```
+    /// use haest_core::{
+    ///     AgentHooks, Clock, ModelFacts, SharedDeps, ShutWorkspace, ToolServices, TurnCaps,
+    ///     TurnCapsSource, provider::ModelError, ResolvedModel,
+    /// };
+    ///
+    /// /// The host: its own turn caps and a clock that stands still.
+    /// struct Host;
+    /// impl AgentHooks for Host {}
+    /// impl ToolServices for Host {}
+    /// impl ModelFacts for Host {}
+    /// impl TurnCapsSource for Host {
+    ///     fn turn_caps(&self, _spec: &str) -> Option<TurnCaps> {
+    ///         Some(TurnCaps { max_turn_steps: 10, ..TurnCaps::default() })
+    ///     }
+    /// }
+    /// impl Clock for Host {
+    ///     fn now_ms(&self) -> u64 {
+    ///         1_000
+    ///     }
+    /// }
+    ///
+    /// let models = |spec: &str| -> Result<ResolvedModel, ModelError> {
+    ///     Err(ModelError::BadSpec { spec: spec.into() })
+    /// };
+    /// let shared = SharedDeps::new(models, "/project", ShutWorkspace).with_host(Host);
+    /// assert_eq!(shared.clock().now_ms(), 1_000);
+    /// assert_eq!(shared.turn_caps().turn_caps("m").map(|c| c.max_turn_steps), Some(10));
+    /// ```
     #[must_use]
-    pub fn with_models(mut self, models: impl Into<ModelResolverRef>) -> Self {
-        self.models = models.into();
+    pub fn with_host<H>(self, host: H) -> Self
+    where
+        H: AgentHooks + ToolServices + ModelFacts + TurnCapsSource + Clock + 'static,
+    {
+        let host = Arc::new(host);
+        self.with_hooks(Arc::clone(&host))
+            .with_services(Arc::clone(&host))
+            .with_facts(Arc::clone(&host))
+            .with_turn_caps(Arc::clone(&host))
+            .with_clock(host)
+    }
+}
+
+impl AgentDeps {
+    /// [`SharedDeps::with_host`], on these deps' shared part.
+    #[must_use]
+    pub fn with_host<H>(mut self, host: H) -> Self
+    where
+        H: AgentHooks + ToolServices + ModelFacts + TurnCapsSource + Clock + 'static,
+    {
+        self.shared = self.shared.with_host(host);
         self
     }
+}
+
+/// Each slot's setter: on [`SharedDeps`], and the same on [`AgentDeps`] for
+/// its shared part. One list, so the two cannot drift apart.
+macro_rules! setters {
+    ($(
+        $(#[$meta:meta])*
+        $name:ident($($arg:ident: $ty:ty)?) { $slot:ident = $value:expr }
+    )*) => {
+        impl SharedDeps {
+            $(
+                $(#[$meta])*
+                #[must_use]
+                pub fn $name(mut self, $($arg: $ty)?) -> Self {
+                    self.$slot = $value;
+                    self
+                }
+            )*
+        }
+
+        impl AgentDeps {
+            $(
+                #[doc = concat!("[`SharedDeps::", stringify!($name), "`], on these deps' shared part.")]
+                #[must_use]
+                pub fn $name(mut self, $($arg: $ty)?) -> Self {
+                    self.shared = self.shared.$name($($arg)?);
+                    self
+                }
+            )*
+        }
+    };
+}
+
+setters! {
+    /// These deps resolving models with `models`.
+    with_models(models: impl Into<ModelResolverRef>) { models = models.into() }
 
     /// These deps working in `cwd`.
-    #[must_use]
-    pub fn with_cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
-        self.cwd = cwd.into();
-        self
-    }
+    with_cwd(cwd: impl Into<PathBuf>) { cwd = cwd.into() }
 
     /// These deps on `workspace`.
-    #[must_use]
-    pub fn with_workspace(mut self, workspace: impl Into<WorkspaceRef>) -> Self {
-        self.workspace = workspace.into();
-        self
-    }
+    with_workspace(workspace: impl Into<WorkspaceRef>) { workspace = workspace.into() }
 
-    /// These deps spilling big tool results into `dir`.
-    #[must_use]
-    pub fn with_spill_dir(mut self, dir: impl Into<PathBuf>) -> Self {
-        self.spill_dir = Some(dir.into());
-        self
-    }
+    /// These deps spilling big tool results into `dir` (None: no spill
+    /// directory).
+    with_spill_dir(dir: impl Into<Option<PathBuf>>) { spill_dir = dir.into() }
 
     /// These deps with `hooks` as the host's say in the loop.
-    #[must_use]
-    pub fn with_hooks(mut self, hooks: impl Into<AgentHooksRef>) -> Self {
-        self.hooks = hooks.into();
-        self
-    }
+    with_hooks(hooks: impl Into<AgentHooksRef>) { hooks = hooks.into() }
 
     /// These deps with `services` offered to every tool.
-    #[must_use]
-    pub fn with_services(mut self, services: impl Into<ToolServicesRef>) -> Self {
-        self.services = services.into();
-        self
-    }
+    with_services(services: impl Into<ToolServicesRef>) { services = services.into() }
 
     /// These deps with `facts` about each model.
-    #[must_use]
-    pub fn with_facts(mut self, facts: impl Into<ModelFactsRef>) -> Self {
-        self.facts = facts.into();
-        self
-    }
+    with_facts(facts: impl Into<ModelFactsRef>) { facts = facts.into() }
 
     /// These deps capping each turn by `caps` (a [`TurnCaps`] caps every
     /// model alike).
-    #[must_use]
-    pub fn with_turn_caps(mut self, caps: impl Into<TurnCapsSourceRef>) -> Self {
-        self.turn_caps = caps.into();
-        self
-    }
+    with_turn_caps(caps: impl Into<TurnCapsSourceRef>) { turn_caps = caps.into() }
 
     /// These deps reading time from `clock`.
-    #[must_use]
-    pub fn with_clock(mut self, clock: impl Into<ClockRef>) -> Self {
-        self.clock = clock.into();
-        self
-    }
+    with_clock(clock: impl Into<ClockRef>) { clock = clock.into() }
 
     /// These deps charging `ledger` for every model call and tool spend:
-    /// a clone of the host's, which it keeps to read and raise.
-    #[must_use]
-    pub fn with_ledger(mut self, ledger: Ledger) -> Self {
-        self.ledger = Some(ledger);
-        self
-    }
+    /// a clone of the host's, which it keeps to read and raise (None: no
+    /// conversation budget).
+    with_ledger(ledger: impl Into<Option<Ledger>>) { ledger = ledger.into() }
 
     /// These deps asking for provider-side web search on every model call
     /// (None turns it off).
-    #[must_use]
-    pub fn with_web_search(mut self, web_search: impl Into<Option<WebSearchOptions>>) -> Self {
-        self.web_search = web_search.into();
-        self
-    }
+    with_web_search(web_search: impl Into<Option<WebSearchOptions>>) { web_search = web_search.into() }
 
     /// These deps adding `remedies` to the error of a turn a cap stopped.
-    #[must_use]
-    pub fn with_remedies(mut self, remedies: Remedies) -> Self {
-        self.remedies = remedies;
-        self
-    }
+    with_remedies(remedies: Remedies) { remedies = remedies }
 
     /// These deps keeping durable runs in `store`.
-    #[must_use]
-    pub fn with_run_store(mut self, store: impl Into<RunStoreRef>) -> Self {
-        self.run_store = Some(store.into());
-        self
-    }
+    with_run_store(store: impl Into<RunStoreRef>) { run_store = Some(store.into()) }
+
+    /// These deps with no run store: no run is durable. (A store is a
+    /// handle, so its setter takes the store itself, not an `Option`.)
+    without_run_store() { run_store = None }
 
     /// These deps checking `thresholds` as every turn runs.
-    #[must_use]
-    pub fn with_thresholds(mut self, thresholds: Thresholds<TurnSite>) -> Self {
-        self.thresholds = thresholds;
-        self
-    }
+    with_thresholds(thresholds: Thresholds<TurnSite>) { thresholds = thresholds }
 }

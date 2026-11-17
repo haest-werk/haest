@@ -7,7 +7,10 @@
 //! transcript shows it as a row of its own -- the "transparent wrapper" Claude
 //! Code's REPL tool used, adapted: the Code row stays, its calls appear beneath it.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 use haest_core::{
     __private::{ToolIndex, run_unspilled},
@@ -91,15 +94,11 @@ impl Bridge {
         let names = tools.names().into_iter().map(String::from).collect();
         // A program's inner calls have no stable ids: no effect keys for them
         // (no run key). A tool Code calls winds down with the turn that called Code.
-        let mut inner = ToolContext::new(ctx.cwd(), ctx.workspace().clone())
+        let inner = ToolContext::new(ctx.cwd(), ctx.workspace().clone())
             .with_cancel(cancel)
-            .with_wind_down(ctx.wind_down().clone());
-        if let Some(dir) = ctx.spill_dir() {
-            inner = inner.with_spill_dir(dir);
-        }
-        if let Some(left) = ctx.turn_time_left() {
-            inner = inner.with_turn_time_left(left);
-        }
+            .with_wind_down(ctx.wind_down().clone())
+            .with_spill_dir(ctx.spill_dir().map(Path::to_path_buf))
+            .with_turn_time_left(ctx.turn_time_left());
         Arc::new(Self {
             tools,
             names,

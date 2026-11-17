@@ -19,11 +19,13 @@
 
 mod args;
 mod context;
+mod error;
 mod list;
 mod resume;
 #[cfg(test)]
 mod tests;
 mod truncate;
+mod wrap;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -31,9 +33,11 @@ use serde_json::{Map, Value};
 
 pub use args::{input, opt_bool, opt_num, opt_str, req_str, spelled};
 pub use context::ToolContext;
+pub use error::ToolError;
 pub use list::Tools;
 pub use resume::{Attempt, OnResume};
 pub use truncate::{TRUNCATE_CHARS, truncate_middle};
+pub use wrap::{ToolOverride, ToolWrapper};
 
 pub use crate::slug::slug;
 
@@ -110,27 +114,6 @@ impl ToolOutput {
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self
-    }
-}
-
-/// Why a tool call failed. [`Tool::execute`] returns it; the loop turns it
-/// into an error result the model reads, and the turn goes on.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum ToolError {
-    /// A bad call the model can correct; the message goes back verbatim.
-    #[error("{0}")]
-    Input(String),
-    /// Anything else; the message goes back as an error result, prefixed with
-    /// the tool's name (`Read failed: ...`).
-    #[error("{0}")]
-    Failed(String),
-}
-
-/// An I/O error is a [`ToolError::Failed`] with the error's text.
-impl From<std::io::Error> for ToolError {
-    fn from(e: std::io::Error) -> Self {
-        ToolError::Failed(e.to_string())
     }
 }
 

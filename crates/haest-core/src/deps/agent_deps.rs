@@ -1,19 +1,7 @@
 //! [`AgentDeps`]: one agent's tools and system prompt, and what it shares.
 
-use std::path::PathBuf;
-
-use super::{AgentHooksRef, ClockRef, SharedDeps, SystemPromptRef};
-use crate::{
-    caps::TurnCapsSourceRef,
-    catalog::ModelFactsRef,
-    ledger::Ledger,
-    provider::{ModelResolverRef, WebSearchOptions},
-    remedy::Remedies,
-    run::RunStoreRef,
-    threshold::{Thresholds, TurnSite},
-    tool::{ToolServicesRef, ToolSourceRef},
-    workspace::WorkspaceRef,
-};
+use super::{SharedDeps, SystemPromptRef};
+use crate::tool::ToolSourceRef;
 
 /// Everything the loop needs: what [`Agent::new`](crate::Agent::new) takes.
 /// An agent's own tools and system prompt, and what it runs on besides
@@ -46,7 +34,8 @@ use crate::{
 pub struct AgentDeps {
     tools: ToolSourceRef,
     system_prompt: SystemPromptRef,
-    shared: SharedDeps,
+    /// `pub(super)`: `shared.rs` forwards each shared setter onto it.
+    pub(super) shared: SharedDeps,
 }
 
 impl AgentDeps {
@@ -102,35 +91,5 @@ impl AgentDeps {
     }
 }
 
-/// Each `with_*` of [`SharedDeps`], on an agent's shared deps.
-macro_rules! forward {
-    ($($name:ident($arg:ident: $ty:ty)),* $(,)?) => {
-        impl AgentDeps {
-            $(
-                #[doc = concat!("[`SharedDeps::", stringify!($name), "`], on these deps' shared part.")]
-                #[must_use]
-                pub fn $name(mut self, $arg: $ty) -> Self {
-                    self.shared = self.shared.$name($arg);
-                    self
-                }
-            )*
-        }
-    };
-}
-
-forward! {
-    with_models(models: impl Into<ModelResolverRef>),
-    with_cwd(cwd: impl Into<PathBuf>),
-    with_workspace(workspace: impl Into<WorkspaceRef>),
-    with_spill_dir(dir: impl Into<PathBuf>),
-    with_hooks(hooks: impl Into<AgentHooksRef>),
-    with_services(services: impl Into<ToolServicesRef>),
-    with_facts(facts: impl Into<ModelFactsRef>),
-    with_turn_caps(caps: impl Into<TurnCapsSourceRef>),
-    with_clock(clock: impl Into<ClockRef>),
-    with_ledger(ledger: Ledger),
-    with_web_search(web_search: impl Into<Option<WebSearchOptions>>),
-    with_remedies(remedies: Remedies),
-    with_run_store(store: impl Into<RunStoreRef>),
-    with_thresholds(thresholds: Thresholds<TurnSite>),
-}
+// Every `SharedDeps` setter is on `AgentDeps` too, from the one list in
+// `shared.rs`.

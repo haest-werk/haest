@@ -1,3 +1,5 @@
+mod wrap;
+
 use super::*;
 use async_trait::async_trait;
 use serde_json::json;
@@ -139,4 +141,16 @@ fn a_tool_is_found_and_removed_by_name() {
     assert!(tools.remove("Write").is_none());
     // A clone made before is its own list.
     assert!(kept.contains("Write"));
+}
+
+/// A note added to every error keeps each error's kind: the model still
+/// gets a bad call back verbatim, and a failure still names the tool.
+#[test]
+fn a_mapped_error_keeps_its_kind_and_says_the_new_message() {
+    let note = |m: String| format!("{m} (see the notebook)");
+    let input = ToolError::Input("bad path".into()).map_message(note);
+    let failed = ToolError::Failed("disk full".into()).map_message(note);
+    assert!(matches!(&input, ToolError::Input(m) if m == "bad path (see the notebook)"));
+    assert!(matches!(&failed, ToolError::Failed(m) if m == "disk full (see the notebook)"));
+    assert_eq!(failed.message(), "disk full (see the notebook)");
 }

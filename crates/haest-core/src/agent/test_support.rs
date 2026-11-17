@@ -200,16 +200,12 @@ pub(crate) fn agent_with(p: &ScriptedProvider, opts: Opts) -> (Agent, Arc<TestHo
         .workspace
         .unwrap_or_else(|| MemWorkspace::default().into());
     let shared = crate::SharedDeps::new(p.resolver(), "/tmp", workspace);
-    let mut deps = AgentDeps::new(shared, tools, "sys")
+    let deps = AgentDeps::new(shared, tools, "sys")
         .with_hooks(hooks.clone())
         .with_turn_caps(hooks.clone())
-        .with_clock(hooks.clone());
-    if let Some(ledger) = opts.ledger {
-        deps = deps.with_ledger(ledger);
-    }
-    if let Some(dir) = opts.spill_dir {
-        deps = deps.with_spill_dir(dir);
-    }
+        .with_clock(hooks.clone())
+        .with_ledger(opts.ledger)
+        .with_spill_dir(opts.spill_dir.map(std::path::PathBuf::from));
     (Agent::new(deps, AgentOptions::new("fake:m1")), hooks)
 }
 
