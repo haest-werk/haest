@@ -1579,6 +1579,9 @@ against it; the wire JSON is unchanged):
   or steered input skips it.
 - `Hold` is `#[must_use]`: `session.hold().await?;` warns, since dropping
   the hold at once lets go of it.
+- An approval ask after the hub closed is denied at once. It waited for
+  the gate's timeout (10 minutes by default) or an interrupt, with no frame
+  out for anyone to answer.
 
 ### haest-transport (new)
 

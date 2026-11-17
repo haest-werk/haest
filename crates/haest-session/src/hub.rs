@@ -198,7 +198,9 @@ impl Hub {
         state.asks.waiting.clear();
     }
 
-    /// Publish an approval ask; the receiver gets the answer.
+    /// Publish an approval ask; the receiver gets the answer. After
+    /// [`close`](Self::close) nobody can answer: the receiver is closed at
+    /// once and nothing is published.
     #[cfg(feature = "approvals")]
     pub(crate) fn ask(&self, info: AskInfo) -> (u64, oneshot::Receiver<Answer>) {
         let (tx, rx) = oneshot::channel();
@@ -206,6 +208,10 @@ impl Hub {
             let mut state = self.lock();
             state.asks.next += 1;
             let ask = state.asks.next;
+            if state.tx.is_none() {
+                // `tx` drops here: its prompt reads a closed hub, a deny.
+                return (ask, rx);
+            }
             state.asks.waiting.insert(ask, tx);
             ask
         };

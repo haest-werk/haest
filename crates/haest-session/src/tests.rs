@@ -715,4 +715,16 @@ mod approvals {
         hub.close();
         assert_eq!(prompt.await.unwrap(), ApprovalAnswer::Deny);
     }
+
+    #[tokio::test]
+    async fn an_ask_after_the_hub_closed_is_denied_at_once() {
+        let hub = hub();
+        let prompter = SessionPrompter::new(hub.clone());
+        hub.close();
+        // Nobody can answer it: denied now, not after the gate's timeout.
+        let req = request();
+        let prompt = prompter.prompt(&req);
+        let answer = tokio::time::timeout(std::time::Duration::from_secs(2), prompt).await;
+        assert_eq!(answer.ok(), Some(ApprovalAnswer::Deny));
+    }
 }
