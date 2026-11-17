@@ -8,7 +8,10 @@ use std::{
     time::Duration,
 };
 
-use haest_core::workspace::{ExecOptions, OutputChunks, WorkspaceRef};
+use haest_core::{
+    newest::Newest,
+    workspace::{ExecOptions, OutputChunks, WorkspaceRef},
+};
 use tokio_util::sync::CancellationToken;
 
 use super::{Job, JobEventsRef, JobOutput, JobStatus, entry::Jobs};
@@ -23,6 +26,10 @@ pub(super) struct Shared {
     /// Set by `JobHub::set_events`; read (and the handle cloned) for every event.
     pub(super) events: Mutex<JobEventsRef>,
     pub(super) inbox: InboxRef,
+    /// The running set after the latest start or end, put under the table's
+    /// lock and handed to `on_change` with it released: in order, the
+    /// newest last.
+    pub(super) running: Newest<Vec<Job>>,
 }
 
 /// The text the model gets, through the [`Inbox`](crate::Inbox), for a job
@@ -86,8 +93,14 @@ impl Shared {
         self.events().on_output(&job, JobOutput::Chunk(chunk));
     }
 
+    /// Hand `on_change` the running set put last, unless another caller is
+    /// handing it over: then that one hands this one's over too.
+    pub(super) fn report_running(&self, events: &JobEventsRef) {
+        self.running.deliver(|running| events.on_change(running));
+    }
+
     fn finish(&self, id: &str, code: i32) {
-        let (job, running) = {
+        let job = {
             let mut jobs = self.lock_jobs();
             let Some(e) = jobs.get_mut(id) else { return };
             e.job.exit_code = Some(code);
@@ -96,11 +109,12 @@ impl Shared {
             }
             let job = e.job.clone();
             jobs.forget_old_finished();
-            (job, jobs.running())
+            self.running.put(jobs.running());
+            job
         };
         let events = self.events();
         events.on_output(&job, JobOutput::Done);
-        events.on_change(&running);
+        self.report_running(&events);
         events.on_exit(&job);
         if job.status == JobStatus::Exited {
             self.inbox.submit(exit_notice(&job));

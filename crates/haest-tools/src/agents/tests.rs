@@ -12,11 +12,15 @@ mod seam;
 mod support;
 mod wind_down;
 
+use std::time::Duration;
+
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::{AgentError, SubagentCaps};
-use support::{Rig, call, now, say, spawns};
+use crate::jobs::tests::until;
+use fake::ActivityGate;
+use support::{ForMain, Rig, call, now, say, spawns};
 
 pub(super) fn caps() -> SubagentCaps {
     SubagentCaps::default()
@@ -155,6 +159,63 @@ async fn past_the_concurrency_cap_a_spawn_is_refused_with_the_cap_named() {
     })
     .await;
     assert!(r.hub.running().is_empty());
+}
+
+/// Two subagents that end at once each handed their running set over from
+/// their own task, so the older set could arrive last: the host's roster
+/// then kept a subagent that had ended. The last set the host hears is the
+/// hub's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_last_running_set_the_host_hears_is_the_hubs() {
+    let release = CancellationToken::new();
+    let gate = release.clone();
+    let background = |id, description| {
+        let input = json!({"description": description, "prompt": "p", "run_in_background": true});
+        call(id, "Agent", input)
+    };
+    let mut r = Rig::new(
+        now(move |_, n| match n {
+            0 => vec![background("a", "one"), background("b", "two")],
+            _ => say("ok"),
+        }),
+        Box::new(move |_, _| {
+            let gate = gate.clone();
+            Box::pin(async move {
+                gate.cancelled().await;
+                say("done")
+            })
+        }),
+        caps(),
+    );
+    let (entered, in_hook) = std::sync::mpsc::channel();
+    let (go, held) = std::sync::mpsc::channel();
+    *r.parent.activity_gate.lock().unwrap() = Some(ActivityGate { entered, go: held });
+    r.turn("go").await;
+    assert_eq!(r.hub.running().len(), 2);
+    release.cancel();
+    // The first end's set is in the host's hands, held there...
+    tokio::task::spawn_blocking(move || in_hook.recv_timeout(Duration::from_secs(5)))
+        .await
+        .unwrap()
+        .expect("an end handed its set over");
+    // ...while the other subagent ends, all the way to its answer.
+    let answers = |r: &Rig| {
+        let for_main = r.for_main();
+        for_main
+            .iter()
+            .filter(|m| matches!(m, ForMain::Answer(_)))
+            .count()
+    };
+    until(3000, || answers(&r) == 1).await;
+    go.send(()).unwrap();
+    until(3000, || answers(&r) == 2).await;
+    assert!(r.hub.running().is_empty());
+    let activity = r.parent.activity.lock().unwrap().clone();
+    assert_eq!(
+        activity.last(),
+        Some(&0),
+        "the host kept an ended subagent: {activity:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

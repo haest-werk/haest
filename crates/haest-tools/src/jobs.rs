@@ -13,7 +13,8 @@
 //! Output is kept in a rolling buffer the model reads with BashOutput ("what is
 //! new since I last looked"); it also streams to [`JobEvents::on_output`] for
 //! the transcript. Every start and stop hands the full set of running jobs to
-//! [`JobEvents::on_change`] -- a snapshot, never a delta.
+//! [`JobEvents::on_change`] -- a snapshot, never a delta, and never an older
+//! one after a newer one.
 //!
 //! A job that EXITS on its own tells the model through the host's
 //! [`Inbox`](crate::Inbox), as a turn the human did not start. A job the model
@@ -36,7 +37,7 @@ use std::{
     time::Instant,
 };
 
-use haest_core::tool::ToolContext;
+use haest_core::{newest::Newest, tool::ToolContext};
 use tokio_util::sync::CancellationToken;
 
 use crate::inbox::InboxRef;
@@ -133,6 +134,9 @@ pub enum JobOutput<'a> {
 /// the hub back.
 pub trait JobEvents: Send + Sync {
     /// Every start and stop: the full set of running jobs, never a delta.
+    /// One call at a time, and never an older set after a newer one: the
+    /// changes made while one call runs are handed over next as one, the
+    /// newest. So the last set it hears is the hub's.
     fn on_change(&self, _running: &[Job]) {}
     /// Output as it arrives, then [`JobOutput::Done`] once when the job ended.
     fn on_output(&self, _job: &Job, _output: JobOutput<'_>) {}
@@ -240,6 +244,7 @@ impl JobHub {
             jobs: Mutex::default(),
             events: Mutex::new(JobEventsRef::new(NoJobEvents)),
             inbox: inbox.into(),
+            running: Newest::new(),
         }))))
     }
 
@@ -285,16 +290,17 @@ impl JobHub {
             tokio::runtime::Handle::try_current().map_err(|_no_runtime| JobError::NoRuntime)?;
         let shared = self.shared();
         let stop = CancellationToken::new();
-        let (job, running) = {
+        let job = {
             let mut jobs = shared.lock_jobs();
             if jobs.running().len() >= MAX_JOBS {
                 return Err(JobError::TooMany { max: MAX_JOBS });
             }
             let job = jobs.add(command, description, stop.clone());
-            (job, jobs.running())
+            shared.running.put(jobs.running());
+            job
         };
         // Before the job runs, so a job that ends at once is never reported before it started.
-        shared.events().on_change(&running);
+        shared.report_running(&shared.events());
         rt.spawn(run(
             shared.clone(),
             ctx.workspace().clone(),

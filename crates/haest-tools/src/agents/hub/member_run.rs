@@ -92,12 +92,17 @@ impl SubagentHub {
         }
     }
 
+    /// Hand the parent the running set, put under the table's lock and
+    /// handed over with it released: in the order of the changes, so the
+    /// last set it hears is the hub's.
     fn report_activity(&self) {
-        let ids: Vec<String> = {
+        {
             let members = self.lock_members();
-            members.running().map(|m| m.id.clone()).collect()
-        };
-        self.0.parent.on_activity(&ids);
+            let ids = members.running().map(|m| m.id.clone()).collect();
+            self.0.activity.put(ids);
+        }
+        let parent = &self.0.parent;
+        self.0.activity.deliver(|ids| parent.on_activity(ids));
     }
 
     /// The agent for `run`: its run's deps (else the conversation's) with its

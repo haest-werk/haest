@@ -84,6 +84,9 @@ pub(super) struct FakeParent {
     pub ledger: Ledger,
     pub tx: UnboundedSender<String>,
     pub activity: Mutex<Vec<usize>>,
+    /// Set by a test: `on_activity` holds the first set that shrank to one
+    /// from two until the test lets go.
+    pub activity_gate: Mutex<Option<ActivityGate>>,
     /// (agent id, event kind) in order.
     pub events: Mutex<Vec<(String, &'static str)>>,
     pub heard: Mutex<Vec<Heard>>,
@@ -101,6 +104,13 @@ pub(super) struct FakeParent {
 }
 
 type Adjust = dyn Fn(SharedDeps) -> SharedDeps + Send + Sync;
+
+/// A host slow with one running set (it renders, it takes a lock of its
+/// own): it says so on `entered`, then waits for `go`.
+pub(super) struct ActivityGate {
+    pub entered: std::sync::mpsc::Sender<()>,
+    pub go: std::sync::mpsc::Receiver<()>,
+}
 
 /// The kinds a host with kinds has: `explore` (the default) and `general`.
 pub(super) fn explore_or_general() -> SubagentTypes {
@@ -165,6 +175,14 @@ impl SubagentParent for FakeParent {
         }
     }
     fn on_activity(&self, running: &[String]) {
+        let shrank_from_two = running.len() == 1 && self.activity.lock().unwrap().contains(&2);
+        let gate = shrank_from_two
+            .then(|| self.activity_gate.lock().unwrap().take())
+            .flatten();
+        if let Some(gate) = gate {
+            gate.entered.send(()).unwrap();
+            let _ = gate.go.recv_timeout(std::time::Duration::from_secs(5));
+        }
         self.activity.lock().unwrap().push(running.len());
     }
     async fn start_member(

@@ -83,6 +83,7 @@ impl Rig {
             ledger: Ledger::new(ConversationCaps::default(), NoLedgerHooks),
             tx,
             activity: Mutex::default(),
+            activity_gate: Mutex::default(),
             events: Mutex::default(),
             heard: Mutex::default(),
             for_main: Mutex::default(),

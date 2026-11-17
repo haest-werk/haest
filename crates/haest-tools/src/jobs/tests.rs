@@ -239,6 +239,69 @@ async fn dropping_one_clone_of_the_hub_kills_nothing_the_last_one_kills_all() {
     assert!(gone(pid).await, "a job outlived the hub's last clone");
 }
 
+/// Hears the running sets, and holds the first one an end hands it (one job
+/// left of two) until the test lets go: a host that renders, or takes a
+/// lock of its own, while the other job ends.
+struct SlowRoster {
+    entered: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    go: Mutex<std::sync::mpsc::Receiver<()>>,
+    sets: Mutex<Vec<Vec<String>>>,
+    exits: Mutex<usize>,
+}
+
+impl JobEvents for SlowRoster {
+    fn on_change(&self, running: &[Job]) {
+        let after_both_started = self.sets.lock().unwrap().iter().any(|s| s.len() == 2);
+        if running.len() == 1 && after_both_started {
+            let entered = self.entered.lock().unwrap().take();
+            if let Some(entered) = entered {
+                entered.send(()).unwrap();
+                let _ = self.go.lock().unwrap().recv_timeout(Duration::from_secs(5));
+            }
+        }
+        let ids = running.iter().map(|j| j.id.clone()).collect();
+        self.sets.lock().unwrap().push(ids);
+    }
+    fn on_exit(&self, _job: &Job) {
+        *self.exits.lock().unwrap() += 1;
+    }
+}
+
+/// Two jobs that end at once each handed their set over from their own task,
+/// so the older set could arrive last: the host's roster then kept a job that
+/// had ended. The last set the host hears is the hub's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_last_running_set_the_host_hears_is_the_hubs() {
+    let r = Rig::real();
+    let (entered, in_hook) = std::sync::mpsc::channel();
+    let (go, held) = std::sync::mpsc::channel();
+    let roster = Arc::new(SlowRoster {
+        entered: Mutex::new(Some(entered)),
+        go: Mutex::new(held),
+        sets: Mutex::default(),
+        exits: Mutex::default(),
+    });
+    r.hub.set_events(roster.clone());
+    r.start("sleep 0.3");
+    r.start("sleep 0.3");
+    // The first end's set is in the host's hands, held there...
+    tokio::task::spawn_blocking(move || in_hook.recv_timeout(Duration::from_secs(5)))
+        .await
+        .unwrap()
+        .expect("an end handed its set over");
+    // ...while the other job ends, all the way to its exit.
+    until(3000, || *roster.exits.lock().unwrap() == 1).await;
+    go.send(()).unwrap();
+    until(3000, || *roster.exits.lock().unwrap() == 2).await;
+    assert!(r.hub.running().is_empty());
+    let sets = roster.sets.lock().unwrap().clone();
+    assert_eq!(
+        sets.last(),
+        Some(&vec![]),
+        "the host kept an ended job: {sets:?}"
+    );
+}
+
 #[test]
 fn a_job_state_reads_as_the_model_is_told() {
     let job = |status, exit_code| Job {

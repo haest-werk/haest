@@ -1,15 +1,18 @@
 //! [`Newest`]: the newest value of something that changes, handed to a
-//! host's hook one call at a time and never under a lock of haest's.
+//! host's hook one call at a time and never under the owner's lock.
 
-use std::sync::{
-    Mutex, MutexGuard,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    fmt,
+    sync::{
+        Mutex, MutexGuard,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// The newest value of something that changes (a task list, a ledger's
-/// snapshot), handed to a host's hook in the order of the changes, one call
-/// at a time, with no lock held: the hook may read (and change) its owner,
-/// and a hook that panics poisons nothing.
+/// snapshot, the jobs or subagents running), handed to a host's hook in the
+/// order of the changes, one call at a time, with no lock held: the hook may
+/// read (and change) its owner, and a hook that panics poisons nothing.
 ///
 /// The owner [`put`](Self::put)s each new value while it holds its own lock,
 /// so the values arrive in the order of the changes, then calls
@@ -18,7 +21,45 @@ use std::sync::{
 /// that land while the hook runs are handed over as one call with the
 /// newest. So the hook never hears an older value after a newer one, and the
 /// last value it hears is the owner's state.
-pub(crate) struct Newest<T> {
+///
+/// haest's ledger, task board, job hub and subagent hub hand their hooks
+/// their state this way; a plug-in with a hook of its own uses it too.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Mutex;
+///
+/// use haest_core::newest::Newest;
+///
+/// /// Names a host shows, and every change to them.
+/// #[derive(Default)]
+/// struct Roster {
+///     names: Mutex<Vec<String>>,
+///     changes: Newest<Vec<String>>,
+/// }
+///
+/// impl Roster {
+///     fn add(&self, name: &str, on_change: impl Fn(&Vec<String>)) {
+///         {
+///             let mut names = self.names.lock().expect("the roster's lock poisoned");
+///             names.push(name.to_string());
+///             // At the change, under the owner's lock: in the order of the changes.
+///             self.changes.put(names.clone());
+///         }
+///         // The lock released: the hook may read the roster.
+///         self.changes.deliver(on_change);
+///     }
+/// }
+///
+/// let roster = Roster::default();
+/// let heard = Mutex::new(Vec::new());
+/// let hook = |names: &Vec<String>| heard.lock().expect("poisoned").push(names.len());
+/// roster.add("scout", hook);
+/// roster.add("builder", hook);
+/// assert_eq!(*heard.lock().expect("poisoned"), [1, 2]);
+/// ```
+pub struct Newest<T> {
     /// The value not handed over yet, if any.
     slot: Mutex<Option<T>>,
     /// A caller is handing values over.
@@ -27,23 +68,48 @@ pub(crate) struct Newest<T> {
 
 impl<T> Default for Newest<T> {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Whether a value waits, and whether a delivery runs; never the value.
+impl<T> fmt::Debug for Newest<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let waiting = self.slot.try_lock().map(|slot| slot.is_some());
+        let mut out = f.debug_struct("Newest");
+        match waiting {
+            Ok(waiting) => out.field("waiting", &waiting),
+            Err(_) => out.field("waiting", &format_args!("<locked>")),
+        };
+        out.field("delivering", &self.delivering.load(Ordering::Relaxed))
+            .finish()
+    }
+}
+
+impl<T> Newest<T> {
+    /// Nothing put yet.
+    pub const fn new() -> Self {
         Self {
             slot: Mutex::new(None),
             delivering: AtomicBool::new(false),
         }
     }
-}
 
-impl<T> Newest<T> {
     /// `value` is the newest: call it under the owner's lock, at the change.
-    pub(crate) fn put(&self, value: T) {
+    pub fn put(&self, value: T) {
         *self.slot() = Some(value);
     }
 
     /// Hand `hook` every value put and not handed over yet, newest last,
     /// unless another caller is doing so: then that one hands this caller's
-    /// value over too. Call it with the owner's lock released.
-    pub(crate) fn deliver(&self, hook: impl Fn(&T)) {
+    /// value over too, with its own hook. So every caller passes the same
+    /// hook (the owner's). Call it with the owner's lock released.
+    ///
+    /// # Panics
+    ///
+    /// When `hook` panics: the panic goes on to this caller, and the next
+    /// delivery works.
+    pub fn deliver(&self, hook: impl Fn(&T)) {
         // A value put while the last delivery was ending is seen here: either
         // this check finds it, or its caller found `delivering` cleared.
         while self.has_value() && self.claim() {

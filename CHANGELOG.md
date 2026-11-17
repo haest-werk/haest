@@ -935,6 +935,12 @@ Hosts write less (round two of the review, and what porting brain onto
   call by its tokens, as one with no price) and `book_priced_cost`, which
   books the configured price in its place. The ledger's USD stops at
   `f64::MAX`.
+- New `newest::Newest<T>`: the newest value of something that changes,
+  handed to a hook in the order of the changes, one call at a time, with
+  no lock held. The owner `put`s each value under its own lock and
+  `deliver`s with it released. The ledger, the task board and haest-tools'
+  job and subagent hubs hand their hooks their state this way; a plug-in
+  with a hook of its own can too.
 
 ### haest-http
 
@@ -1281,6 +1287,14 @@ Hosts write less (round two of the review, and what porting brain onto
   foreground spawn now needs a tokio runtime, as a background one did.
 - `AgentTurnGate::with_remedies` takes `impl Into<Remedies>`: the closure
   itself too (`|l: Limit| ..`), as haest-core's setters do.
+- Fixed: `JobEvents::on_change` and `SubagentParent::on_activity` could
+  hear an older running set last. Two jobs (or subagents) that ended at
+  once each handed their set over from their own task, so a host whose
+  handler was slow for one (it rendered, it took a lock of its own) kept a
+  job or subagent on its roster that had ended. Both now hand their sets
+  over as the ledger and the task board do (haest-core's `Newest`): one
+  call at a time, never an older set after a newer one, and the sets that
+  change while one call runs are handed over next as one, the newest.
 
 ### haest-workspace
 

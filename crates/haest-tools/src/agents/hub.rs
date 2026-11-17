@@ -10,7 +10,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use haest_core::Tools;
+use haest_core::{Tools, newest::Newest};
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -134,6 +134,9 @@ struct Inner {
     caps: SubagentCaps,
     run_id: String,
     members: Mutex<Members>,
+    /// The running set after the latest start or end, for the parent's
+    /// `on_activity`.
+    activity: Newest<Vec<String>>,
     /// Background agents whose answer has not been handed back yet.
     due: Arc<AtomicUsize>,
     /// Spawns in flight, for [`SubagentHub::idle`] and [`SubagentHub::settled`].
@@ -149,6 +152,7 @@ impl SubagentHub {
             caps,
             run_id: run_id(),
             members: Mutex::default(),
+            activity: Newest::new(),
             due: Arc::default(),
             work: Arc::default(),
         }))
