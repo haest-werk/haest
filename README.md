@@ -49,7 +49,8 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 
 | Feature | Brings | Default |
 |---|---|---|
-| `http` | `haest::http` (the HTTP seam: `HttpClient` and its reqwest default; not WebFetch's or MCP's clients); on with `providers` and `tools` | yes |
+| `http` | `haest::http` (the HTTP seam: `HttpClient`, how every model request travels; not WebFetch's or MCP's clients); on with `providers` and `tools` | yes |
+| `reqwest` | the default `HttpClient`, `haest::http::ReqwestClient`, over reqwest and rustls. Off, a host hands the providers its own client; `tools` and `mcp` build reqwest anyway (WebFetch and rmcp run on it) | yes |
 | `providers` | `haest::providers` | yes |
 | `workspace` | `haest::workspace` | yes |
 | `tools` | `haest::tools` | yes |
@@ -72,7 +73,8 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 haest = "0.3"
 # the whole conversation with haest's own files, variables and flags (the CLI's way)
 haest = { version = "0.3", features = ["runtime", "config"] }
-# a host with its own HTTP client, files and tools (the notebook example)
+# a host with its own HTTP client, files and tools (the notebook example);
+# `tools` still builds reqwest for WebFetch, so drop it too for a tree with none
 haest = { version = "0.3", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
 
