@@ -87,11 +87,39 @@
 //!   own: what a host with its own HTTP stack (a gateway, a recorder) wants.
 //!   haest-providers and haest-issues forward it as their own `reqwest`
 //!   feature, and the facade as `haest/reqwest`.
+//! - `http`: conversions to and from the [`http`](https://docs.rs/http/1)
+//!   crate's types, for a host whose stack speaks them (an axum router, a
+//!   hyper client): `http::Request<Bytes>: TryFrom<Request>`,
+//!   `Response: From<http::Response<B>>` for any `http_body::Body` `B`, and
+//!   `http::Method: From<Method>`. With `reqwest` on it adds no crate. A
+//!   host on the facade turns it on with a direct `haest-http` dependency
+//!   (`features = ["http"]`), and imports the facade's module under another
+//!   name (`use haest::http as haest_http;`) beside the `http` crate.
+//!
+//! ```
+//! # #[cfg(feature = "http")]
+//! # fn main() -> Result<(), haest_http::HttpError> {
+//! use haest_http::{Bytes, Request, Response};
+//!
+//! // A gateway that answers from its own router: haest's request in, its answer back.
+//! let req = Request::get("https://gateway.internal/v1/models").with_header("x-team", "a");
+//! let req: http::Request<Bytes> = req.try_into()?;
+//! assert_eq!(req.uri().path(), "/v1/models");
+//! let answer = http::Response::new(String::from("[]"));
+//! let res = Response::from(answer);
+//! assert!(res.is_success());
+//! # Ok(())
+//! # }
+//! # #[cfg(not(feature = "http"))]
+//! # fn main() {}
+//! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod client_ref;
 mod error;
+#[cfg(feature = "http")]
+mod http_crate;
 mod redact;
 mod request;
 #[cfg(feature = "reqwest")]

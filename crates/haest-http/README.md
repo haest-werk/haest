@@ -32,6 +32,10 @@ an `HttpClient`).
   and its types only: no reqwest, rustls or ring is built, and the default
   client (`HttpClientRef::default()`) refuses every request until you hand
   one in.
+- The `http` feature (off by default) converts to and from the `http`
+  crate: a `Request` into an `http::Request<Bytes>`, an
+  `http::Response<B>` into a `Response`, for a client that is an axum
+  router or a hyper client underneath.
 
 ```rust
 use haest_http::{HttpClient, HttpError, Request, Response, async_trait};

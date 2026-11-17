@@ -20,6 +20,11 @@ default = ["reqwest"]
 # default client (`HttpClientRef::default()`) refuses every request until a
 # host hands in its own: a host with its own HTTP stack builds no reqwest.
 reqwest = ["dep:reqwest", "dep:rustls"]
+# Conversions to and from the `http` crate's types, for a host whose own
+# stack speaks them (an axum router, a hyper client): `Request` into an
+# `http::Request<Bytes>`, an `http::Response<B>` into a `Response`. reqwest
+# builds on the same `http` and `http-body`, so with it this adds no crate.
+http = ["dep:http", "dep:http-body"]
 
 [dependencies]
 async-trait = { workspace = true }
@@ -32,6 +37,8 @@ bytes = "1"
 # proxy settings (D15). `stream`: a model's answer is read as it arrives.
 reqwest = { version = "0.13", optional = true, default-features = false, features = ["rustls-no-provider", "http2", "stream"] }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["ring"] }
+http = { version = "1", optional = true }
+http-body = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }

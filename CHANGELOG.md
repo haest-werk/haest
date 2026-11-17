@@ -761,6 +761,14 @@ Hosts write less (round two of the review, and what porting brain onto
   features off; haest-tools and haest-mcp ask for `reqwest` themselves.
 - `ReqwestClient::send` is inherent: `client.send(req)` needs no `use
   haest_http::HttpClient` (an `HttpClientRef` never did).
+- New `http` feature, off by default: conversions to and from the `http`
+  crate for a host whose stack speaks it (an axum router behind a gateway,
+  a hyper client). `http::Request<Bytes>: TryFrom<Request>` (an
+  `HttpError::Request` for a URL or header the wire cannot carry),
+  `Response: From<http::Response<B>>` for any `http_body::Body` (data
+  frames streamed, trailers skipped) and `http::Method: From<Method>`.
+  The 25 lines a gateway host wrote for it become `req.try_into()?` and
+  `Response::from(res)`. With `reqwest` on it adds no crate to the tree.
 
 ### haest-providers
 

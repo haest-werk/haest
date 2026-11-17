@@ -1018,6 +1018,8 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
+ "http",
+ "http-body",
  "reqwest",
  "rustls",
  "serde_json",
