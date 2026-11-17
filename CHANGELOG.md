@@ -153,8 +153,8 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `Ok(Response::new(status, Body::from_stream(s)).with_headers(headers))`,
     and `let Request { method, url, headers, body } = req;` ends in `..`.
 
-Every other breaking change is marked (breaking) in its crate's section
-below.
+Every other breaking change is in its crate's section below, with what to
+write instead.
 
 ### Bug fixes
 
@@ -998,7 +998,7 @@ Hosts write less (round two of the review, and what porting brain onto
   `HttpClientRef::default`). With `default-features = false` no reqwest,
   rustls or ring is built (118 crates in the tree become 41), and a
   provider or registry not handed a client ends each message as an error
-  saying to hand one in.
+  saying to hand one in (breaking for `default-features = false`).
 - `ProviderRegistry::new` takes only the keys, as `impl Into<KeySourceRef>`
   (an `Arc<dyn KeySource>` the host already shares still goes in as it is);
   providers.json's entries and every option come by setter on the registry,
@@ -1367,30 +1367,35 @@ Hosts write less (round two of the review, and what porting brain onto
 
 ### haest-mcp
 
-- `McpHub::tools` returns `haest_core::Tools` (was `Vec<Arc<dyn Tool>>`).
+- `McpHub::tools` returns `haest_core::Tools` (was `Vec<Arc<dyn Tool>>`;
+  breaking).
 - `McpHub` is a cheap handle: clones share the servers and failures, and
   the servers shut down when the last clone is dropped. Hold it, not an
   `Arc<McpHub>`.
 - `McpHub::with_env` is a setter, and the log is set once with `with_log`
-  instead of on every connect:
+  instead of on every connect (breaking):
   `McpHub::with_env(env).connect(&servers, &|line| ..)` ->
   `McpHub::new().with_env(env).with_log(|line| ..).connect(&servers)`.
   Without a log the lines go nowhere; `failures()` has them either way.
 - `McpHub::connect_transport` and the `rmcp` re-export are behind the new
   `rmcp` feature (off), so rmcp is not in haest-mcp's API unless a host
-  asks: `haest-mcp = { .., features = ["rmcp"] }`.
+  asks (breaking): `haest-mcp = { .., features = ["rmcp"] }`.
   `hub.connect_transport(name, io, &|_| {})` -> `hub.connect_transport(name, io)`.
-- `StdioTransport::with_env` is `with_env_var`: it adds one variable, and
-  `with_env` means replacing a whole environment everywhere else.
-- `McpFailure`'s fields are private: `failure.name` -> `failure.name()`,
-  `report(&*failure.error)` -> `report(failure.error())`.
+- `StdioTransport::with_env` is `with_env_var` (breaking): it adds one
+  variable, and `with_env` means replacing a whole environment everywhere
+  else.
+- `McpFailure`'s fields are private (breaking): `failure.name` ->
+  `failure.name()`, `report(&*failure.error)` -> `report(failure.error())`.
 - `load_project_mcp_config` takes the variables as any closure (was
-  `&dyn Fn`): `load_project_mcp_config(fs, cwd, &vars)` ->
-  `load_project_mcp_config(fs, cwd, vars)`, with the closure's argument
-  typed (`|name: &str| ..`).
+  `&dyn Fn`; breaking for a closure whose argument is not typed):
+  `load_project_mcp_config(fs, cwd, &|name| ..)` ->
+  `load_project_mcp_config(fs, cwd, |name: &str| ..)`.
 - `McpStartError`, `McpConfigError` and `ProjectMcp` are
-  `#[non_exhaustive]`; `McpHub` implements `Debug` (servers and failures
-  by name, the environment's names but never its values).
+  `#[non_exhaustive]` (breaking): a `match` adds a `_` arm, and
+  `ProjectMcp { servers, ..Default::default() }` ->
+  `let mut p = ProjectMcp::default(); p.servers = servers;`. `McpHub`
+  implements `Debug` (servers and failures by name, the environment's
+  names but never its values).
 - `McpTransport` is `#[non_exhaustive]` (breaking): a `match` adds a `_`
   arm, and haest adds a transport (`.mcp.json`'s `sse`) in a minor
   release.
@@ -1462,8 +1467,10 @@ Hosts write less (round two of the review, and what porting brain onto
 ### haest-settings
 
 - `SubagentCapSettings` gains `budgets` (the `subagent_budgets` setting,
-  default off; the `claude` profile leaves it off).
-- `Settings` gains `wind_down_at: WindDown` (bare: off).
+  default off; the `claude` profile leaves it off), breaking for a struct
+  literal without `..`.
+- `Settings` gains `wind_down_at: WindDown` (bare: off), breaking for a
+  struct literal without `..`.
 - `turn_caps_for` fills `TurnCaps::context_window` with the window.
 - `CapSettings` implements `Default`: the bare caps, the ones
   `Settings::bare` starts from. A host changing one cap writes
@@ -1479,12 +1486,13 @@ Hosts write less (round two of the review, and what porting brain onto
 
 - New setting `subagent_budgets`: `HAEST_SUBAGENT_BUDGETS`,
   `--subagent-budgets`, in docs/settings.md and docs/examples/config.toml.
-
 - New settings, each off or at its old behaviour by default: `event_ring`
   (1000), `stdio`, `control_socket`, `control_dir`, `broker_url`,
-  `broker_access`. New `ControlSocket`, `BrokerAccess` and
-  `Config::control_dir()`; `Config` gains their fields (a struct literal
-  breaks).
+  `broker_access`. New `ControlSocket` and `BrokerAccess`
+  (`#[non_exhaustive]`: haest adds a level as the transport's grants grow,
+  and a `match` gives an unknown one the least access, as the `haest`
+  command's does) and `Config::control_dir()`. `Config` gains their
+  fields, breaking for a struct literal without `..`.
 - docs/settings.md: a process-scoped setting's "Set in" reads "its variable
   or its flag only, never a config file".
 - New setting `wind_down_at` (`HAEST_WIND_DOWN_AT`, `--wind-down-at`): a
@@ -1497,10 +1505,12 @@ Hosts write less (round two of the review, and what porting brain onto
   `Loader::standard(defaults, env, [("model", "x")])`; a
   `&HashMap<String, String>` still goes in as it is, a `&Vec` of pairs
   as `.iter().cloned()`. `Loader::xdg_dirs` takes pairs of anything
-  `AsRef<str>` and reads only the two XDG values.
-- `#[non_exhaustive]` on `ConfigError`, `SetError`, `Kind` and `Source`
-  (breaking): a `match` adds a `_` arm, and haest adds a setting kind or a
-  layer in a minor release.
+  `AsRef<str>` and reads only the two XDG values. `Loader` is `Clone`.
+- `#[non_exhaustive]` on `ConfigError`, `SetError`, `Kind`, `Source`,
+  `Scope` and `EnvPassthrough` (breaking): a `match` adds a `_` arm, and
+  haest adds an error, a setting kind, a layer or a scope in a minor
+  release. `ProjectFile` stays exhaustive (none, read, skipped is the
+  whole set).
 - `ConfigError::Read` and `ConfigError::Toml` say what failed: `cannot read
   /x/config.toml` and `/x/config.toml is not valid TOML` (was the bare
   path), with where and why in the `source`.
@@ -1525,9 +1535,6 @@ Hosts write less (round two of the review, and what porting brain onto
   reading `.mcp.json` (148 crates become 50 without it).
 - The crate docs show loading real files: `.load(&RealFs)` with
   haest-workspace's disk, which every example before read from memory.
-- `Scope` and `EnvPassthrough` are `#[non_exhaustive]` (breaking): a
-  `match` adds a `_` arm, as on `Kind` and `Source`. `ProjectFile` stays
-  exhaustive (none, read, skipped is the whole set). `Loader` is `Clone`.
 - `subagent_minutes` takes a fraction, as `max_turn_minutes` does
   (`2.5` is two and a half minutes; it was refused as not a whole number).
   A time too long for a `Duration` is the longest there is.
@@ -1538,10 +1545,6 @@ Hosts write less (round two of the review, and what porting brain onto
   it, in a file its TOML path (`max_turn_steps`, `profiles.review.tools`,
   `env.GH_TOKEN`), so an editor or a settings screen can point at it
   without parsing the text.
-- `ControlSocket` and `BrokerAccess` are `#[non_exhaustive]` (breaking): a
-  `match` adds a `_` arm (the `haest` command's gives the least access,
-  watch), and haest adds a level in a minor release as the transport's
-  grants grow.
 
 ### haest-runtime
 
@@ -1898,7 +1901,7 @@ against it; the wire JSON is unchanged):
 ### haest-issues
 
 - `issue_tools` and `issue_tools_named` return `haest_core::Tools` (was
-  `Vec<Arc<dyn Tool>>`).
+  `Vec<Arc<dyn Tool>>`; breaking).
 - `issue_tools` and `issue_tools_named` take the tracker itself, as
   `impl Into<TrackerRef>` (new: the handle the tools hold a tracker in), and
   `issue_tools_named` takes the noun first (breaking):
@@ -1923,7 +1926,8 @@ against it; the wire JSON is unchanged):
 - New `reqwest` feature, on by default: the GitHub tracker's default client.
   With `default-features = false` no reqwest, rustls or ring is built (115
   crates in the tree become 38), and a tracker the host hands no client
-  (`with_http`) fails every call, saying so.
+  (`with_http`) fails every call, saying so (breaking for
+  `default-features = false`).
 - `CardTracker` and `GithubTracker` have every `Tracker` method inherent
   (`info`, `list`, `search`, `get`, `create`, `update`, `delete`, `link`):
   `tracker.get("42").await` needs no `use haest_issues::Tracker`.
