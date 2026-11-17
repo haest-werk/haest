@@ -1,11 +1,9 @@
 //! Rebuilding a durable run from its records: [`replay_run`].
 
-use std::collections::HashSet;
-
 use super::{RunEnd, RunKey, TurnState};
 use crate::{
     messages::{Message, ToolCall},
-    session::{Line, SessionRecord, answer_interrupted, compact, parse_line},
+    session::{Line, SessionRecord, compact, parse_line, split_pending},
 };
 
 /// A durable run rebuilt from its records ([`replay_run`]): what
@@ -68,36 +66,7 @@ impl ReplayedRun {
     /// The last answer's unanswered calls become `pending`; every earlier
     /// call without a result is answered as interrupted.
     fn settle(&mut self) {
-        let messages = std::mem::take(&mut self.messages);
-        let last = messages
-            .iter()
-            .rposition(|m| matches!(m, Message::Assistant(_)));
-        let Some(last) = last.filter(|&i| {
-            messages[i + 1..]
-                .iter()
-                .all(|m| matches!(m, Message::Tool(_)))
-        }) else {
-            self.messages = answer_interrupted(messages);
-            return;
-        };
-        let mut head = messages;
-        let tail = head.split_off(last);
-        self.messages = answer_interrupted(head);
-        let answered: HashSet<&str> = tail
-            .iter()
-            .filter_map(|m| match m {
-                Message::Tool(r) => Some(r.tool_call_id.as_str()),
-                _ => None,
-            })
-            .collect();
-        if let Message::Assistant(a) = &tail[0] {
-            self.pending = a
-                .tool_calls()
-                .filter(|c| !answered.contains(c.id.as_str()))
-                .cloned()
-                .collect();
-        }
-        self.messages.extend(tail);
+        (self.messages, self.pending) = split_pending(std::mem::take(&mut self.messages));
     }
 }
 

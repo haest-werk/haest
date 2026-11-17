@@ -6,7 +6,8 @@
 //! stop a running turn from elsewhere through [`AgentControl`].
 //!
 //! Invariants the loop keeps so every provider accepts the history:
-//!   - every tool call gets exactly one tool result, even on interrupt;
+//!   - every tool call gets exactly one tool result, even on interrupt (a
+//!     turn dropped mid-tool has its calls answered when the next one starts);
 //!   - input that arrives mid-turn ([`AgentControl::steer`]) is queued and
 //!     injected at the next step boundary (after the tool results), never dropped;
 //!   - the turn guard (every cap, and the ledger) is asked before every model
@@ -86,7 +87,9 @@ impl AgentOptions {
         self
     }
 
-    /// The same, resuming from `history` (a replayed session's messages).
+    /// The same, resuming from `history` (a replayed session's messages). A
+    /// tool call in it with no result is answered as interrupted when the
+    /// first turn starts, as [`replay`](crate::session::replay) answers one.
     #[must_use]
     pub fn with_history(mut self, history: impl Into<Vec<Message>>) -> Self {
         self.history = history.into();
@@ -277,8 +280,10 @@ impl Agent {
     /// One human turn. Every event goes to `sink` in order, the last one is
     /// [`crate::LoopEvent::TurnEnd`]; the return value is how that turn ended.
     /// Input that arrives meanwhile goes through [`AgentControl::steer`]; stop it
-    /// with [`AgentControl::abort`] -- dropping this future mid-turn instead can
-    /// leave a tool call in history without its result.
+    /// with [`AgentControl::abort`], or drop this future (a `timeout`, a
+    /// `select!`): a tool call the dropped turn left without a result is
+    /// answered at the start of the next turn, as interrupted, the way
+    /// [`replay`](crate::session::replay) answers one in a log.
     ///
     /// `input` becomes a user message, with whatever
     /// [`attach_media`](crate::AgentHooks::attach_media) finds in it. The turn
@@ -312,6 +317,7 @@ impl Agent {
             }
         };
         let _running = Running(self.control.clone());
+        self.answer_dropped_calls();
         // Spent between turns (a compaction the human asked for) belongs to no turn.
         self.take_side_spend();
         let mut turn = Turn::new(cancel, self.guard(), sink);

@@ -18,6 +18,7 @@ use crate::{
     provider::ProviderEvent,
     remedy::Limit,
     run::Journal,
+    session::{interrupted, split_pending},
     tool::{Attempt, ToolContext},
     tool_batch::{Answer, Answers, Redo, redo_calls, run_tool_batches},
     tool_exec::{ToolIndex, error_assistant, tool_result_message},
@@ -100,6 +101,24 @@ fn append(
 }
 
 impl Agent {
+    /// Every call in history with no result answered as interrupted, as a
+    /// replayed log is: a turn dropped mid-tool, or a history handed in that
+    /// ends there, left calls every provider refuses. The last answer's are
+    /// appended like any message (the persistence hook records them); an
+    /// earlier one, only in a history a host handed in, is answered in place.
+    pub(super) fn answer_dropped_calls(&mut self) {
+        let (history, dropped) = split_pending(std::mem::take(&mut self.history));
+        self.history = history;
+        for call in dropped {
+            append(
+                &mut self.history,
+                self.deps.shared().hooks().as_ref(),
+                None,
+                Message::Tool(interrupted(call)),
+            );
+        }
+    }
+
     pub(super) async fn add_user(&mut self, text: &str, t: &mut Turn<'_>) {
         let user = user_message(text, self.deps.shared().hooks().as_ref(), &t.cancel).await;
         append(

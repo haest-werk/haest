@@ -3,8 +3,11 @@
 
 mod plug_points;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde_json::json;
+use tokio::sync::Notify;
 
 use super::*;
 use crate::{
@@ -221,6 +224,136 @@ async fn a_second_turn_while_one_is_active_is_refused() {
     assert!(agent.control().begin().is_err());
     drop(held);
     agent.control().end();
+}
+
+/// The calls in `messages` that no result answers in the results right after
+/// their answer: what a provider refuses.
+fn unanswered(messages: &[Message]) -> Vec<String> {
+    let mut missing = Vec::new();
+    for (i, m) in messages.iter().enumerate() {
+        let Message::Assistant(a) = m else { continue };
+        let answered: Vec<&str> = messages[i + 1..]
+            .iter()
+            .map_while(|m| match m {
+                Message::Tool(r) => Some(r.tool_call_id.as_str()),
+                _ => None,
+            })
+            .collect();
+        missing.extend(
+            a.tool_calls()
+                .filter(|c| !answered.contains(&c.id.as_str()))
+                .map(|c| c.id.clone()),
+        );
+    }
+    missing
+}
+
+/// `Slow`: says it started, then never answers (a build longer than the host waits).
+fn hanging(started: &Arc<Notify>) -> crate::tool::ToolRef {
+    let started = started.clone();
+    FnTool::arc("Slow", false, move |_, _| {
+        let started = started.clone();
+        async move {
+            started.notify_one();
+            std::future::pending().await
+        }
+    })
+}
+
+fn interrupted(m: &Message, id: &str) -> bool {
+    matches!(m, Message::Tool(r)
+        if r.tool_call_id == id && r.is_error && r.content == crate::session::INTERRUPTED)
+}
+
+#[tokio::test]
+async fn a_turn_dropped_mid_tool_leaves_the_next_request_no_call_without_a_result() {
+    let started = Arc::new(Notify::new());
+    let p = ScriptedProvider::new([
+        tool_answer(&[("c1", "Echo", json!({"v": "1"})), ("c2", "Slow", json!({}))]),
+        text_answer("ok"),
+    ]);
+    let tools = vec![echo_tool(), hanging(&started)];
+    let opts = Opts {
+        tools: Some(tools),
+        ..Default::default()
+    };
+    let (mut agent, hooks) = agent_with(&p, opts);
+    let mut events = Vec::new();
+    // The host bounds the turn the usual way and drops it while c2 runs.
+    tokio::select! {
+        _ = agent.run("build it", &mut events) => panic!("the turn was to be dropped mid-tool"),
+        () = started.notified() => {}
+    }
+
+    let second = agent.run("never mind", &mut Vec::new()).await;
+
+    assert_eq!(second.stop_reason, StopReason::EndTurn);
+    let sent = &p.requests()[1].messages;
+    assert_eq!(roles(sent), ["user", "assistant", "tool", "tool", "user"]);
+    assert_eq!(unanswered(sent), Vec::<String>::new());
+    assert!(interrupted(&sent[3], "c2"), "{:?}", sent[3]);
+    // The answer was appended like any message: the host's file holds it.
+    assert_eq!(*hooks.persisted.lock().unwrap(), agent.history());
+}
+
+#[tokio::test]
+async fn a_history_handed_in_that_ends_mid_tool_is_answered_before_the_first_request() {
+    let p = ScriptedProvider::new([text_answer("ok")]);
+    let call = tool_answer(&[("c1", "Echo", json!({"v": "1"})), ("c2", "Echo", json!({}))]);
+    let c1 = crate::tool_exec::tool_result_message(
+        &call.tool_calls().next().unwrap().clone(),
+        &crate::tool::ToolOutput::text("echo:1"),
+    );
+    let logged = vec![
+        Message::user("build it"),
+        Message::Assistant(call),
+        Message::Tool(c1),
+    ];
+    let opts = Opts {
+        history: logged,
+        ..Default::default()
+    };
+    let (mut agent, hooks) = agent_with(&p, opts);
+
+    let end = agent.run("go on", &mut Vec::new()).await;
+
+    assert_eq!(end.stop_reason, StopReason::EndTurn);
+    let sent = &p.requests()[0].messages;
+    assert_eq!(roles(sent), ["user", "assistant", "tool", "tool", "user"]);
+    assert_eq!(unanswered(sent), Vec::<String>::new());
+    assert!(interrupted(&sent[3], "c2"), "{:?}", sent[3]);
+    // The host's file gets the answer, then the turn.
+    assert_eq!(
+        roles(&hooks.persisted.lock().unwrap()),
+        ["tool", "user", "assistant"]
+    );
+}
+
+#[tokio::test]
+async fn a_history_handed_in_with_a_call_answered_by_nothing_is_answered_in_place() {
+    // An older log: a turn dropped mid-tool, then another turn on top of it.
+    let p = ScriptedProvider::new([text_answer("ok")]);
+    let logged = vec![
+        Message::user("build it"),
+        Message::Assistant(tool_answer(&[("c1", "Echo", json!({}))])),
+        Message::user("never mind"),
+        Message::Assistant(text_answer("fine")),
+    ];
+    let opts = Opts {
+        history: logged,
+        ..Default::default()
+    };
+    let (mut agent, _) = agent_with(&p, opts);
+
+    let end = agent.run("go on", &mut Vec::new()).await;
+
+    assert_eq!(end.stop_reason, StopReason::EndTurn);
+    let sent = &p.requests()[0].messages;
+    assert_eq!(
+        roles(sent),
+        ["user", "assistant", "tool", "user", "assistant", "user"]
+    );
+    assert!(interrupted(&sent[2], "c1"), "{:?}", sent[2]);
 }
 
 #[test]

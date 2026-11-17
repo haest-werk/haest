@@ -31,9 +31,10 @@ impl Agent {
     /// again. Its [`TurnEnd`](crate::LoopEvent::TurnEnd) usage, like the
     /// outcome's, includes what the run spent before the stop.
     ///
-    /// The run starts on the agent's history as it is, and keeps only its own
-    /// messages; to resume, hand the agent the history it had when the run
-    /// started. A history that holds the run's messages after that is cut back
+    /// The run starts on the agent's history as it is (a call a dropped turn
+    /// left without a result answered first, as [`Agent::run`] answers it),
+    /// and keeps only its own messages; to resume, hand the agent the history
+    /// it had when the run started. A history that holds the run's messages after that is cut back
     /// to it (the run's records are the authority on them).
     ///
     /// A turn that ends on its own (an answer, a cap) is finished: a second
@@ -143,6 +144,9 @@ impl Agent {
         let mut turn = Turn::new(cancel, guard, sink).journaled(journal.clone(), usage);
         let (base, served, end) = match stored {
             None => {
+                // A resumed run answers its own pending calls (`resume`);
+                // a fresh one starts on a history every provider takes.
+                self.answer_dropped_calls();
                 let base = self.history.len();
                 journal.started(&given, base);
                 self.add_user(input, &mut turn).await;

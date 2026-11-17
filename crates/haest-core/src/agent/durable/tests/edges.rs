@@ -191,3 +191,33 @@ async fn a_start_whose_input_never_landed_runs_the_turn() {
     assert_eq!(p2.requests().len(), 1);
     assert_eq!(p2.requests()[0].messages, [Message::user("go")]);
 }
+
+#[tokio::test]
+async fn a_fresh_run_on_a_history_a_dropped_turn_left_answers_its_calls_first() {
+    let (store, key, log) = (MemoryRunStore::new(), RunKey::new("job"), Log::default());
+    let hung = Arc::new(Notify::new());
+    let tools = vec![Probe::new("Slow", false, &log).hangs(&hung).arc()];
+    let p = ScriptedProvider::new([tool_answer(&[("c1", "Slow", json!({}))]), text_answer("ok")]);
+    let (mut agent, hooks) = durable(&p, &store, &tools, None);
+    // A plain turn the host dropped mid-tool.
+    kill_when(&hung, agent.run("go", &mut no_events())).await;
+
+    let fresh = agent
+        .run_durable(&key, "again", &mut no_events())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        (fresh.served, fresh.stop_reason),
+        (Served::Fresh, StopReason::EndTurn)
+    );
+    let sent = &p.requests()[1].messages;
+    assert!(
+        matches!(&sent[2], Message::Tool(r) if r.tool_call_id == "c1" && r.content == crate::session::INTERRUPTED),
+        "{sent:?}"
+    );
+    // The answer is the history the run started on, not one of its messages.
+    let run = crate::run::replay_run(&store.lines(&key).join("\n")).unwrap();
+    assert_eq!(run.base, 3);
+    assert_eq!(*hooks.persisted.lock().unwrap(), agent.history());
+}

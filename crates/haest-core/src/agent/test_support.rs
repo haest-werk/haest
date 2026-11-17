@@ -164,6 +164,8 @@ pub(crate) struct Opts {
     pub ledger: Option<Ledger>,
     pub workspace: Option<WorkspaceRef>,
     pub spill_dir: Option<&'static str>,
+    /// What the agent resumes from ([`AgentOptions::with_history`]).
+    pub history: Vec<Message>,
 }
 
 /// Every cap off but what `f` turns on.
@@ -204,7 +206,8 @@ pub(crate) fn agent_with(p: &ScriptedProvider, opts: Opts) -> (Agent, Arc<TestHo
     if let Some(dir) = opts.spill_dir {
         deps = deps.with_spill_dir(dir);
     }
-    (Agent::new(deps, AgentOptions::new("fake:m1")), hooks)
+    let opts = AgentOptions::new("fake:m1").with_history(opts.history);
+    (Agent::new(deps, opts), hooks)
 }
 
 /// Every event of one turn; how it ended is the last one.

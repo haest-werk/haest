@@ -66,13 +66,24 @@ pub(crate) fn parse_line(line: &str) -> Line {
 pub(crate) const INTERRUPTED: &str =
     "Interrupted: haest stopped before this tool call returned, so it may or may not have run.";
 
+/// `call` answered with the error saying it was interrupted ([`INTERRUPTED`]).
+pub(crate) fn interrupted(call: ToolCall) -> ToolResultMessage {
+    ToolResultMessage {
+        tool_call_id: call.id,
+        tool_name: call.name,
+        content: INTERRUPTED.into(),
+        is_error: true,
+        media: Vec::new(),
+    }
+}
+
 /// A log that ends mid-tool (the process was killed) holds calls with no
 /// result, and every provider refuses that history. Each such call is answered
 /// after its siblings' results with an error saying so. Never written: the
 /// file keeps what happened and every replay makes the same repair, so a
 /// resumed conversation's history -- what a later compaction counted its tail
 /// on -- is rebuilt exactly.
-pub(crate) fn answer_interrupted(messages: Vec<Message>) -> Vec<Message> {
+fn answer_interrupted(messages: Vec<Message>) -> Vec<Message> {
     let mut out = Vec::with_capacity(messages.len());
     let mut rest = messages.into_iter().peekable();
     while let Some(m) = rest.next() {
@@ -91,18 +102,50 @@ pub(crate) fn answer_interrupted(messages: Vec<Message>) -> Vec<Message> {
             calls
                 .into_iter()
                 .filter(|c| !answered.contains(&c.id))
-                .map(|c| {
-                    Message::Tool(ToolResultMessage {
-                        tool_call_id: c.id,
-                        tool_name: c.name,
-                        content: INTERRUPTED.into(),
-                        is_error: true,
-                        media: Vec::new(),
-                    })
-                }),
+                .map(|c| Message::Tool(interrupted(c))),
         );
     }
     out
+}
+
+/// `messages` with the calls of the last answer that have no result taken
+/// out as pending, in call order, when only results follow that answer (a
+/// turn that stopped mid-tool); every other call without a result is answered
+/// as [`answer_interrupted`] answers it.
+///
+/// A durable run's replay resumes the pending calls; a turn that starts
+/// answers them as interrupted, after the results already there.
+pub(crate) fn split_pending(messages: Vec<Message>) -> (Vec<Message>, Vec<ToolCall>) {
+    let last = messages
+        .iter()
+        .rposition(|m| matches!(m, Message::Assistant(_)));
+    let Some(last) = last.filter(|&i| {
+        messages[i + 1..]
+            .iter()
+            .all(|m| matches!(m, Message::Tool(_)))
+    }) else {
+        return (answer_interrupted(messages), Vec::new());
+    };
+    let mut head = messages;
+    let tail = head.split_off(last);
+    let mut settled = answer_interrupted(head);
+    let answered: HashSet<&str> = tail
+        .iter()
+        .filter_map(|m| match m {
+            Message::Tool(r) => Some(r.tool_call_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    let pending = match &tail[0] {
+        Message::Assistant(a) => a
+            .tool_calls()
+            .filter(|c| !answered.contains(c.id.as_str()))
+            .cloned()
+            .collect(),
+        _ => Vec::new(),
+    };
+    settled.extend(tail);
+    (settled, pending)
 }
 
 fn apply(s: &mut ReplayedSession, r: SessionRecord) {

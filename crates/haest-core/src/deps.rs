@@ -146,7 +146,9 @@ pub trait AgentHooks: Send + Sync {
     ///
     /// Not called for [`Agent::replace_history`], nor for the summary
     /// [`compact`](crate::compaction::compact) puts in place: a host that
-    /// persists history records those itself.
+    /// persists history records those itself. Nor for a call answered as
+    /// interrupted in the middle of a history a host handed in: replaying
+    /// the host's file answers it the same way.
     fn on_message(&self, _msg: &Message) {}
 
     /// Runs before each model call; may replace history (compaction). `Err`

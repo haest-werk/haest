@@ -986,6 +986,16 @@ Hosts write less (round two of the review, and what porting brain onto
   Ctrl+C) booked none of the calls it had made and paid for. Dropped now,
   it loses only the call still running; `usage` still reports what the
   calls cost.
+- Fixed: a host that stopped `Agent::run` the usual async way, by dropping
+  it (`tokio::time::timeout`, `select!`) while a tool ran, left that tool
+  call in history with no result, and every later request sent it, which
+  every provider refuses. A turn now starts by answering each such call as
+  interrupted, as `session::replay` answers one in a log: the last
+  answer's are appended through `AgentHooks::on_message`, and an earlier
+  one, only in a history a host hands in (`AgentOptions::with_history`,
+  `Agent::replace_history`), is answered in place. A fresh
+  `Agent::run_durable` does the same; a resumed one still answers its own
+  calls by their tool's `OnResume`.
 
 ### haest-http
 
