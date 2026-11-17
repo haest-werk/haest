@@ -100,6 +100,32 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `ModLine::Info(t) => show(t)` -> `other => show(other.text())`. A
     `match` on `CommandOutcome` or `BashVerdict` adds a `_` arm too:
     `CommandOutcome::Handled => {}` -> `_ => {}`.
+13. The model registry is built by setters:
+    `ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions { http:
+    Arc::new(client), routing, ..Default::default() })` ->
+    `ProviderRegistry::new(keys).with_custom(custom).with_http(client)`,
+    then `.with_routing(scopes)` when there are any. A provider's options
+    keep their fields private: `opts.base_url = Some(url)` ->
+    `opts.with_base_url(url)`, `opts.base_url.as_deref()` ->
+    `opts.base_url()`. The routing types are at haest-providers' root:
+    `haest_providers::routing::parse_routing` -> `haest_providers::parse_routing`.
+14. An MCP hub's log is set once: `McpHub::with_env(env).connect(&servers,
+    &|line| ..)` ->
+    `McpHub::new().with_env(env).with_log(|line| ..).connect(&servers)`.
+15. haest-config takes pairs by value and names a refused setting:
+    `Loader::standard(defaults, &env, &flags)` ->
+    `Loader::standard(defaults, &env, flags)`,
+    `loaded.keys["OPENROUTER_API_KEY"]` ->
+    `loaded.keys.get("OPENROUTER_API_KEY")`, and
+    `ConfigError::Invalid { at, why }` -> `Invalid { at, key, why }`, with an
+    unknown setting its own `UnknownSetting { at, key }`.
+16. A `match` on an enum that will grow adds a `_` arm, in every crate:
+    haest-http's `HttpError` and `Method`, haest-providers' `CompatFlavor`,
+    haest-mcp's `McpTransport`, haest-config's `ControlSocket`,
+    `BrokerAccess`, `ConfigError` and `Source` among them.
+
+Every other breaking change is marked (breaking) in its crate's section
+below.
 
 ### Bug fixes
 
@@ -136,15 +162,20 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   that logged one with `{:?}` logged the secret. Debug now shows
   `<redacted>` for the key and the token, and a header's name without its
   value.
-- haest-http's `Request` printed its `Authorization` header and a URL's
-  `user:password@` in its Debug output, and `Response` its `set-cookie`.
-  Debug now shows each header's name without its value, the URL as
-  `https://<redacted>@host/...`, and a request's body as its length.
-- The Debug output of `AnthropicOptions`, `CompatOptions`,
-  `ResponsesOptions` and `CustomProviderConfig` still printed a base URL's
-  `user:password@` (a gateway that takes its credentials in the URL), and
-  haest-issues' `GithubTracker` its API root's. They show `<redacted>@` in
-  their place.
+- A URL's credentials showed in Debug output: haest-http's `Request`
+  printed its URL as it was (and its `Authorization` header, and
+  `Response` its `set-cookie`); `AnthropicOptions`, `CompatOptions`,
+  `ResponsesOptions`, `CustomProviderConfig` and haest-issues'
+  `GithubTracker` their base URL (a gateway that takes its credentials in
+  the URL); haest-mcp's `HttpTransport` (and the `McpTransport`,
+  `McpServerConfig` and `RuntimeInputs` holding one) and `Broker` theirs,
+  so `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
+  password and the key; and `TransportError::Url` displayed it. A URL in
+  haest's Debug output now shows no userinfo, no query value and no
+  fragment (`https://<redacted>@docs.example.com/mcp?api_key=<redacted>`),
+  a header its name without its value, and a request's body its length.
+  `TransportError::Url` holds the URL shown that way, and the `haest`
+  command's "Broker link:" line shows it the same way.
 - haest-mcp's `HttpTransport` printed every header's value in its Debug
   output (an `Authorization` included), and `StdioTransport` every
   variable's in `env` (a server's token), and so did the `McpTransport` and
@@ -227,17 +258,6 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   at most 32 requests waiting for their replies; at the cap it reads no
   more lines until one is answered, so the rest wait in the peer's pipe.
   The wire JSON is unchanged.
-- haest-mcp's `HttpTransport` (and the `McpTransport`, `McpServerConfig`
-  and `RuntimeInputs` holding one) printed its URL in Debug as it was, so
-  `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
-  password and the key; `Broker` did the same with its URL, and
-  `TransportError::Url` displayed it. A URL in haest's Debug output now
-  shows no userinfo, no query value and no fragment
-  (`https://<redacted>@docs.example.com/mcp?api_key=<redacted>`): this
-  covers haest-http's `Request`, the providers' options and
-  `GithubTracker` too, and `TransportError::Url` holds the URL shown that
-  way. The `haest` command's "Broker link:" line kept the userinfo; it
-  shows the URL the same way.
 - `connect_session` (and so `haest ctl`) dialed whatever socket any
   discovery file in the dir named, so a crafted `<id>.json` sent the
   client to another program's socket. It now dials only the
@@ -1356,7 +1376,9 @@ Hosts write less (round two of the review, and what porting brain onto
   (an `Option<&str>`, None for an empty value); `.with_keys(loaded.keys)`
   takes it as it is.
 - `Loaded` is `#[non_exhaustive]` (breaking): a host reads it and never
-  builds it; `let Loaded { config, keys } = loaded;` ->
+  builds it, and a pattern names the fields it takes then `..`:
+  `let Loaded { config, resolved, child_env, passed_env, keys, routing,
+  providers, mcp_servers, notes } = loaded;` ->
   `let Loaded { config, keys, .. } = loaded;`.
 - New `mcp` feature, in `default`: a trusted project's `.mcp.json`, read
   into `Loaded::mcp_servers`. A settings loader with `default-features =
