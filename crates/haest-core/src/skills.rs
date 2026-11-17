@@ -78,6 +78,7 @@ use crate::fs::Fs;
 crate::word_enum! {
     /// Which kind of skill dir a skill was found in.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum SkillSource ("skill source") {
         /// The user's own: `<claude dir>/skills` or `~/.agents/skills`.
         User = "user",

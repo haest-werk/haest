@@ -120,9 +120,13 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `ConfigError::Invalid { at, why }` -> `Invalid { at, key, why }`, with an
     unknown setting its own `UnknownSetting { at, key }`.
 16. A `match` on an enum that will grow adds a `_` arm, in every crate:
-    haest-http's `HttpError` and `Method`, haest-providers' `CompatFlavor`,
-    haest-mcp's `McpTransport`, haest-config's `ControlSocket`,
-    `BrokerAccess`, `ConfigError` and `Source` among them.
+    haest-core's `OpenRouterEffort`, `ApplyFailureCode`, `ConversationCap`,
+    `SkillSource` and `Served`, haest-http's `HttpError` and `Method`,
+    haest-providers' `CompatFlavor`, haest-mcp's `McpTransport`,
+    haest-config's `ControlSocket`, `BrokerAccess`, `ConfigError` and
+    `Source` among them:
+    `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b }`
+    -> `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b, _ => c }`.
 
 Every other breaking change is marked (breaking) in its crate's section
 below.
@@ -865,6 +869,11 @@ Hosts write less (round two of the review, and what porting brain onto
   a turn cap or the conversation budget had stopped it, with `error` saying
   which. It is also the model's own output limit cutting the last answer,
   with `limit` and `error` None; a cap fills `limit`.
+- `#[non_exhaustive]` on what will grow (breaking for a `match`):
+  `catalog::OpenRouterEffort` (OpenRouter keeps adding levels),
+  `workspace::ApplyFailureCode`, `caps::ConversationCap`,
+  `skills::SkillSource`, `run::Served`, and the struct `run::RunOutcome`,
+  which a host reads and never builds.
 
 ### haest-http
 

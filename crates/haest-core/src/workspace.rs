@@ -178,6 +178,7 @@ crate::word_enum! {
     /// Why a change was not applied. The words are the TS haest's (`ApplyFailure`
     /// in `overlay-apply.ts`).
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum ApplyFailureCode ("apply failure") {
         /// A symlink on the real disk is on its way, so the write could land
         /// outside the project.

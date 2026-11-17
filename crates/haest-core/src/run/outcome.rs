@@ -35,6 +35,7 @@ pub struct RunEnd {
 
 /// Where a durable run's result came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Served {
     /// The store had nothing under the key: the turn ran.
     Fresh,
@@ -47,6 +48,7 @@ pub enum Served {
 /// How a durable run ended: [`RunEnd`] and where it came from.
 /// [`Agent::run_durable`](crate::Agent::run_durable) returns it.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct RunOutcome {
     /// Why the turn ended, as [`TurnOutcome::stop_reason`](crate::TurnOutcome::stop_reason)
     /// says: [`StopReason::MaxTokens`] is the model's own output limit, or a

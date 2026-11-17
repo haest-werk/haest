@@ -92,6 +92,7 @@ crate::word_enum! {
 /// Wider than haest's own [`Effort`](crate::Effort): `none` and `minimal` have
 /// no haest name; each of haest's levels but `off` has one of the same name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
 pub enum OpenRouterEffort ("reasoning effort") {
     /// Reasoning off.
     None = "none",

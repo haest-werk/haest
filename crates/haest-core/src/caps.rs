@@ -213,6 +213,7 @@ impl ConversationCapOverrides {
 
 /// One conversation cap the human sets ([`Ledger::set_cap`](crate::ledger::Ledger::set_cap)).
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum ConversationCap {
     /// USD across the conversation; 0 = no cap.
     Usd(f64),
