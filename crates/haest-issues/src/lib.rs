@@ -24,7 +24,11 @@
 //! them; here they are called directly.
 //!
 //! ```
-//! use haest_core::{MemFs, ShutWorkspace, ToolContext, error::BoxError, tool::ToolError};
+//! use haest_core::{
+//!     MemFs, ShutWorkspace, ToolContext,
+//!     error::BoxError,
+//!     tool::{self, ToolError},
+//! };
 //! use haest_issues::{CardTracker, issue_tools};
 //! use serde_json::json;
 //!
@@ -39,11 +43,10 @@
 //!
 //! let ctx = ToolContext::new("/project", ShutWorkspace);
 //! let call = |name: &str, input: serde_json::Value| {
-//!     let tool = tools.iter().find(|t| t.name() == name).cloned();
-//!     let (input, ctx) = (input.as_object().cloned().unwrap_or_default(), ctx.clone());
+//!     let (tool, ctx) = (tools.get(name).cloned(), ctx.clone());
 //!     async move {
 //!         let tool = tool.ok_or_else(|| ToolError::Input("no such tool".into()))?;
-//!         tool.execute(input, &ctx).await
+//!         tool.execute(tool::input(input)?, &ctx).await
 //!     }
 //! };
 //!

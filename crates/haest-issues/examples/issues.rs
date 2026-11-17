@@ -21,7 +21,7 @@ use haest_core::{
     Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, StopReason, Tools,
     error::BoxError,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::ToolContext,
+    tool::{self, ToolContext},
 };
 use haest_issues::{CardTracker, GithubTracker, issue_tools};
 use haest_workspace::RealFs;
@@ -120,14 +120,9 @@ async fn plan_on_a_board(root: &Path) -> Result<(), BoxError> {
 async fn list_github(repo: &str) -> Result<(), BoxError> {
     let (owner, name) = repo.split_once('/').ok_or("--github takes owner/repo")?;
     let tools = issue_tools(GithubTracker::new(owner, name));
-    let list = tools
-        .iter()
-        .find(|t| t.name() == "IssueList")
-        .ok_or("no IssueList tool")?;
+    let list = tools.get("IssueList").ok_or("no IssueList tool")?;
     let ctx = ToolContext::new("/", ShutWorkspace);
-    let mut input = serde_json::Map::new();
-    input.insert("limit".into(), json!(10));
-    match list.execute(input, &ctx).await {
+    match list.execute(tool::input(json!({"limit": 10}))?, &ctx).await {
         Ok(out) => println!("\n{repo}, open issues:\n{}", out.content),
         Err(e) => println!("\n{repo}: {e}"),
     }
