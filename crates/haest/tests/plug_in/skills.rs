@@ -10,15 +10,10 @@ use haest::{
 use super::*;
 
 fn skill(name: &str, origin: &str, description: &str, when: &str, body: &str) -> InlineSkill {
-    InlineSkill {
-        card: SkillCard {
-            name: name.into(),
-            description: description.into(),
-            when: when.into(),
-            origin: Some(origin.into()),
-        },
-        body: body.into(),
-    }
+    let card = SkillCard::new(name, description)
+        .with_when(when)
+        .with_origin(origin);
+    InlineSkill::new(card, body)
 }
 
 #[tokio::test]

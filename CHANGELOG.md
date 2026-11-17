@@ -143,6 +143,11 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `effort: EffortChange::To(e)`, `Some(None)` -> `EffortChange::ModelDefault`,
     `None` -> `EffortChange::Unchanged`, and
     `replayed.effort.unwrap_or(current)` -> `replayed.effort.applied_to(current)`.
+19. A host's skills are built with constructors:
+    `SkillCard { name, description, when, origin: Some(o) }` ->
+    `SkillCard::new(name, description).with_when(when).with_origin(o)`
+    (no `with_when` or `with_origin` for one not said), and
+    `InlineSkill { card, body }` -> `InlineSkill::new(card, body)`.
 
 Every other breaking change is marked (breaking) in its crate's section
 below.
@@ -915,6 +920,12 @@ Hosts write less (round two of the review, and what porting brain onto
   the effort after it, and `From<Option<Effort>>` turns what an agent holds
   into a change. The session file's JSON is the same: no key, `null`, or
   the level.
+- `skills::SkillCard` and `skills::InlineSkill` are `#[non_exhaustive]`,
+  built with `SkillCard::new(name, description)` (and `with_when`,
+  `with_origin`) and `InlineSkill::new(card, body)` (breaking for a host
+  whose skills are not SKILL.md files): a field the card gains later, such
+  as a skill's argument hint, breaks no host. Their fields still read as
+  before.
 - A `word_set!` struct (`SkillSources`, `ContextSources`, haest-settings'
   `BuiltinTools`, a host's own) has `WORDS`, `has`, `turn_on`, `words`,
   `is_empty` and `from_words` of its own, so calling them needs no

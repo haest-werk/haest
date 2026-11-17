@@ -67,15 +67,7 @@ impl SkillToolOptions {
 ///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
-/// let release = InlineSkill {
-///     card: SkillCard {
-///         name: "release".into(),
-///         description: "How we ship.".into(),
-///         when: String::new(),
-///         origin: None,
-///     },
-///     body: "Tag, build, publish.".into(),
-/// };
+/// let release = InlineSkill::new(SkillCard::new("release", "How we ship."), "Tag, build, publish.");
 /// let skill = SkillTool::new(SkillToolOptions::new(InlineSkills::merged([vec![release]])));
 /// let ctx = ToolContext::new("/", ShutWorkspace);
 /// let out = skill.execute(input(json!({"skill": "/release"}))?, &ctx).await?;
@@ -213,15 +205,8 @@ mod tests {
     #[tokio::test]
     async fn a_hosts_own_skills_load_through_the_tool_named_by_an_enum() {
         use haest_core::skills::{InlineSkill, InlineSkills, SkillCard};
-        let notes = InlineSkill {
-            card: SkillCard {
-                name: "notes".into(),
-                description: "Mine.".into(),
-                when: String::new(),
-                origin: Some("personal".into()),
-            },
-            body: "My way.".into(),
-        };
+        let card = SkillCard::new("notes", "Mine.").with_origin("personal");
+        let notes = InlineSkill::new(card, "My way.");
         let set = InlineSkills::merged([vec![notes]]);
         let t = SkillTool::new(SkillToolOptions::new(set.clone()).with_name_enum(true));
         assert_eq!(

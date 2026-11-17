@@ -14,7 +14,11 @@ use super::{Skill, load_skill_body};
 use crate::fs::FsRef;
 
 /// One skill as the model is offered it: a line of the prompt's list.
+///
+/// Built with [`SkillCard::new`] and its `with_*` setters, so a field added
+/// later breaks no host; its fields read as they are.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SkillCard {
     /// The name the model loads it by.
     pub name: String,
@@ -24,6 +28,33 @@ pub struct SkillCard {
     pub when: String,
     /// Where it comes from, as the list names it ("built in", "from /team/"); None = not named.
     pub origin: Option<String>,
+}
+
+impl SkillCard {
+    /// The card of the skill `name`, for `description`; it says neither when
+    /// to load it nor where it comes from.
+    pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            description: description.into(),
+            when: String::new(),
+            origin: None,
+        }
+    }
+
+    /// When to load it ("the user asks for a standup").
+    #[must_use]
+    pub fn with_when(mut self, when: impl Into<String>) -> Self {
+        self.when = when.into();
+        self
+    }
+
+    /// Where it comes from, as the list names it ("built in").
+    #[must_use]
+    pub fn with_origin(mut self, origin: impl Into<String>) -> Self {
+        self.origin = Some(origin.into());
+        self
+    }
 }
 
 /// Where the Skill tool and the prompt's list get a host's skills.
@@ -38,13 +69,10 @@ pub struct SkillCard {
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> std::io::Result<()> {
-/// let card = SkillCard {
-///     name: "standup".into(),
-///     description: "Write the daily standup".into(),
-///     when: "the user asks for a standup".into(),
-///     origin: Some("built in".into()),
-/// };
-/// let set = InlineSkills::merged([vec![InlineSkill { card, body: "Yesterday, today, blockers.".into() }]]);
+/// let card = SkillCard::new("standup", "Write the daily standup")
+///     .with_when("the user asks for a standup")
+///     .with_origin("built in");
+/// let set = InlineSkills::merged([vec![InlineSkill::new(card, "Yesterday, today, blockers.")]]);
 ///
 /// assert_eq!(set.offered()[0].name, "standup");
 /// let loaded = set.load("standup", None).await?;
@@ -252,13 +280,25 @@ impl SkillSet for Skills {
     }
 }
 
-/// One skill a host holds in memory.
+/// One skill a host holds in memory. Built with [`InlineSkill::new`], so a
+/// field added later breaks no host.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct InlineSkill {
     /// How it is listed.
     pub card: SkillCard,
     /// What the model reads when it loads it.
     pub body: String,
+}
+
+impl InlineSkill {
+    /// The skill `card` lists, whose `body` the model reads when it loads it.
+    pub fn new(card: SkillCard, body: impl Into<String>) -> Self {
+        Self {
+            card,
+            body: body.into(),
+        }
+    }
 }
 
 /// A host's skills held in memory, one per name, listed by name. Build it

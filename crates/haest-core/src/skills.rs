@@ -153,12 +153,7 @@ pub struct SkillOptions {
 impl Skill {
     /// Its line in the prompt's list.
     pub fn card(&self) -> SkillCard {
-        SkillCard {
-            name: self.name.clone(),
-            description: self.description.clone(),
-            when: String::new(),
-            origin: None,
-        }
+        SkillCard::new(&self.name, &self.description)
     }
 }
 

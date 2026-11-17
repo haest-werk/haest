@@ -88,19 +88,16 @@ async fn the_prompt_lists_model_invocable_skills_only_never_bodies() {
 }
 
 fn card(name: &str, origin: Option<&str>, when: &str) -> SkillCard {
-    SkillCard {
-        name: name.into(),
-        description: format!("{}'s {name}", origin.unwrap_or("nobody")),
-        when: when.into(),
-        origin: origin.map(String::from),
+    let description = format!("{}'s {name}", origin.unwrap_or("nobody"));
+    let card = SkillCard::new(name, description).with_when(when);
+    match origin {
+        Some(origin) => card.with_origin(origin),
+        None => card,
     }
 }
 
 fn inline(name: &str, origin: &str, body: &str) -> InlineSkill {
-    InlineSkill {
-        card: card(name, Some(origin), ""),
-        body: body.into(),
-    }
+    InlineSkill::new(card(name, Some(origin), ""), body)
 }
 
 #[test]
