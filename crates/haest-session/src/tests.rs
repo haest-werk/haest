@@ -18,13 +18,12 @@ fn hub() -> Hub {
     Hub::new("s1")
 }
 
-/// Options set right after `new` reach a clone made before them: one
-/// stream, one ring.
+/// The options a hub is made with hold for every clone: one stream, one
+/// ring.
 #[tokio::test]
-async fn options_set_after_new_reach_every_clone() {
-    let hub = Hub::new("s1");
+async fn a_hubs_options_hold_for_every_clone() {
+    let hub = Hub::new_with_options("s1", HubOptions { ring: 1, buffer: 1 });
     let early = hub.clone();
-    let hub = hub.with_options(HubOptions { ring: 1, buffer: 1 });
     for n in 0..3 {
         early.notice(Level::Info, format!("line {n}"));
     }
@@ -310,7 +309,7 @@ async fn a_lagging_subscriber_gets_one_gap_and_the_turn_never_waits() {
     };
     let session = start(
         agent(&model, Tools::new()),
-        Hub::new("s1").with_options(opts),
+        Hub::new_with_options("s1", opts),
     );
     let mut slow = session.subscribe(0);
 
@@ -382,7 +381,7 @@ async fn a_late_subscriber_catches_up_on_the_running_turn() {
     };
     let session = start(
         agent(&model, Tools::from_iter([ToolRef::new(Wait(go.clone()))])),
-        Hub::new("s1").with_options(opts),
+        Hub::new_with_options("s1", opts),
     );
     session.hub().notice(Level::Info, "before the turn");
 

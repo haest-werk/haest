@@ -1453,11 +1453,12 @@ wrote them.
 Changed since the first cut on `main` (breaking for Rust code written
 against it; the wire JSON is unchanged):
 
-- `Hub::new` takes the stream id alone and options are a setter:
-  `Hub::new("s1", HubOptions::default())` -> `Hub::new("s1")`, and
-  `Hub::new(sid, opts)` -> `Hub::new(sid).with_options(opts)`. Every clone
-  of the hub sees the options; the buffer changes only while nobody is
-  subscribed.
+- `Hub::new` takes the stream id alone, and a hub with options of its own
+  is `Hub::new_with_options`: `Hub::new("s1", HubOptions::default())` ->
+  `Hub::new("s1")`, and `Hub::new(sid, opts)` ->
+  `Hub::new_with_options(sid, opts)`. The options are fixed when the hub
+  is made, before any clone or subscriber exists; there is no setter that
+  changes them for every clone, or that a subscriber made a no-op.
 - `SessionHandle` drives itself: `turn`, `submit`, `control`, `answer`,
   `subscribe`, `snapshot`, `history`, `close` and `meta` are its own
   methods, and its `Backend` impl forwards to them, so a host no longer

@@ -337,10 +337,11 @@ async fn main() -> ExitCode {
     let print = !stdio && (args.print || args.json || !std::io::stdin().is_terminal());
     // The stream first: what the build says is in it, and the terminal shows
     // it (over stdio, the parent reads it from the start).
-    let hub = Hub::new(uuid::Uuid::new_v4().to_string()).with_options(HubOptions {
+    let opts = HubOptions {
         ring: loaded.config.event_ring,
         ..HubOptions::default()
-    });
+    };
+    let hub = Hub::new_with_options(uuid::Uuid::new_v4().to_string(), opts);
     let ui = TermUi::with_hub(args.json, hub.clone());
     let ui = Arc::new(if stdio { ui.over_stdio() } else { ui });
     let shown = (!stdio).then(|| term::show(ui.term.clone(), hub.subscribe(0)));

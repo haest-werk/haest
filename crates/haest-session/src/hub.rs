@@ -12,7 +12,7 @@ use tokio::sync::{broadcast, oneshot};
 
 use crate::{Body, Frame, SessionError, Subscription};
 
-/// How a [`Hub`] keeps frames ([`Hub::with_options`]).
+/// How a [`Hub`] keeps frames ([`Hub::new_with_options`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HubOptions {
     /// Frames the ring keeps for catch-up besides the running turn (the
@@ -98,9 +98,32 @@ impl Hub {
     /// A hub for the stream `sid` (one per running conversation), with
     /// nothing published yet and the default [`HubOptions`].
     pub fn new(sid: impl Into<String>) -> Self {
+        Self::new_with_options(sid, HubOptions::default())
+    }
+
+    /// A hub for the stream `sid` that keeps frames as `opts` says. They are
+    /// fixed for the hub's life, the same for every clone and subscriber.
+    ///
+    /// ```
+    /// use haest_session::{Hub, HubOptions};
+    /// use haest_wire::Level;
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let opts = HubOptions { ring: 2, ..HubOptions::default() };
+    /// let hub = Hub::new_with_options("s1", opts);
+    /// for n in 1..=3 {
+    ///     hub.notice(Level::Info, format!("line {n}"));
+    /// }
+    /// // The ring kept the last two: a peer from the start gets a gap first.
+    /// let mut late = hub.subscribe(0);
+    /// let first = late.recv().await.map(|f| f.body.clone());
+    /// assert!(matches!(first, Some(haest_session::Body::Wire(haest_wire::Outbound::Gap { .. }))));
+    /// # }
+    /// ```
+    pub fn new_with_options(sid: impl Into<String>, opts: HubOptions) -> Self {
         let sid = sid.into();
-        let opts = HubOptions::default();
-        let (tx, _) = broadcast::channel(opts.buffer);
+        let (tx, _) = broadcast::channel(opts.buffer.max(1));
         let state = State {
             framer: Framer::new(sid.clone()),
             ring: Ring::new(opts.ring),
@@ -113,40 +136,6 @@ impl Hub {
                 state: Mutex::new(state),
             }),
         }
-    }
-
-    /// The hub keeping frames as `opts` says. Meant right after
-    /// [`new`](Self::new), before anyone subscribes: the ring keeps
-    /// `opts.ring` frames from now on (a smaller ring evicts at once), and
-    /// the buffer, which every subscription shares, changes only while
-    /// nobody is subscribed. Every clone of the hub sees the change.
-    ///
-    /// ```
-    /// use haest_session::{Hub, HubOptions};
-    /// use haest_wire::Level;
-    ///
-    /// # #[tokio::main(flavor = "current_thread")]
-    /// # async fn main() {
-    /// let hub = Hub::new("s1").with_options(HubOptions { ring: 2, ..HubOptions::default() });
-    /// for n in 1..=3 {
-    ///     hub.notice(Level::Info, format!("line {n}"));
-    /// }
-    /// // The ring kept the last two: a peer from the start gets a gap first.
-    /// let mut late = hub.subscribe(0);
-    /// let first = late.recv().await.map(|f| f.body.clone());
-    /// assert!(matches!(first, Some(haest_session::Body::Wire(haest_wire::Outbound::Gap { .. }))));
-    /// # }
-    /// ```
-    #[must_use]
-    pub fn with_options(self, opts: HubOptions) -> Self {
-        {
-            let mut state = self.lock();
-            state.ring.set_capacity(opts.ring);
-            if state.tx.as_ref().is_some_and(|tx| tx.receiver_count() == 0) {
-                state.tx = Some(broadcast::channel(opts.buffer.max(1)).0);
-            }
-        }
-        self
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {

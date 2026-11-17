@@ -373,10 +373,13 @@ async fn a_command_socket_drives_the_conversation() {
 #[tokio::test]
 async fn a_late_watcher_whose_frames_the_ring_lost_gets_a_gap() {
     let dir = Dir::new("gap");
-    let hub = Hub::new("s1").with_options(HubOptions {
-        ring: 2,
-        buffer: 64,
-    });
+    let hub = Hub::new_with_options(
+        "s1",
+        HubOptions {
+            ring: 2,
+            buffer: 64,
+        },
+    );
     for n in 0..6 {
         hub.notice(Level::Info, format!("line {n}"));
     }
