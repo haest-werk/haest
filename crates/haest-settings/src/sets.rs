@@ -12,8 +12,9 @@ haest_core::word_set! {
     /// Each field is also a word ([`WordSet`](haest_core::words::WordSet)): the
     /// field's name is how a config file, a `HAEST_TOOLS` list and `--tools`
     /// spell it. `NONE` has every switch off, `ALL` every one on. haest-tools
-    /// maps a tool's name to its word (`haest_tools::builtin_word`) and builds
-    /// the tools whose word is on (`haest_tools::builtin_tools_where`).
+    /// names each switch a `haest_tools::BuiltinTool`, whose `as_str` is the
+    /// word, and builds the tools a set turns on:
+    /// `builtin_tools_where(|t| tools.has(t.as_str()), opts)`.
     ///
     /// ```
     /// use haest_settings::{BuiltinTools, WordSet};
