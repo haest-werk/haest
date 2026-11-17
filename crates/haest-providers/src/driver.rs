@@ -60,13 +60,20 @@ pub(crate) fn drive<F: StreamFold>(
                         }
                         next = body.next() => next,
                     };
-                    let (events, ended) = match next {
+                    let (parsed, ended) = match next {
                         Some(Ok(bytes)) => (parser.push(&bytes), false),
                         Some(Err(e)) => {
                             failure = Some(report(&e));
                             break 'read;
                         }
                         None => (parser.finish(), true),
+                    };
+                    let events = match parsed {
+                        Ok(events) => events,
+                        Err(too_long) => {
+                            failure = Some(too_long.to_string());
+                            break 'read;
+                        }
                     };
                     for ev in &events {
                         match fold.on_event(ev, &mut out) {

@@ -153,6 +153,12 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   host's token, though it is one repository's tracker. The issue a call
   acts on must now be in its own repository, else the call is refused as
   `Invalid` and nothing is sent; only a link's other end may be elsewhere.
+- The model providers' stream parser searched a line from its start again
+  on every chunk, so a server that sent one long line in small pieces cost
+  quadratic time on an executor thread (8 MiB in 1 KiB chunks: 16 s), and
+  it buffered a line of any length. Each byte is now searched once, and a
+  line or an event past 16 MiB ends the message with `StopReason::Error`,
+  saying so.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a

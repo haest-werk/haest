@@ -159,6 +159,28 @@ async fn a_cancelled_stream_ends_with_done_even_while_the_body_hangs() {
     assert_eq!(stream.next().await, None);
 }
 
+/// A server that sends one line past the cap, in 64 KiB chunks, and never ends it.
+#[tokio::test]
+async fn a_line_past_the_cap_ends_the_stream_as_an_error_naming_the_cap() {
+    let chunk = haest_http::Bytes::from(vec![b'x'; 64 * 1024]);
+    let mut chunks = vec![haest_http::Bytes::from_static(b"data: ")];
+    chunks.extend(std::iter::repeat_n(chunk, (16 << 20 >> 16) + 1));
+    let t = FakeHttp::new([FakeReply::Response {
+        status: 200,
+        headers: Vec::new(),
+        chunks,
+        end: FakeEnd::Hang,
+    }]);
+    let stream = provider(&t).stream(request("m"));
+    let (events, msg) = tokio::time::timeout(Duration::from_secs(30), collect(stream))
+        .await
+        .expect("the cap ends the stream, though the line never does");
+    assert_eq!(kinds(&events), ["done"]);
+    assert_eq!(msg.stop_reason, StopReason::Error);
+    let err = msg.error_message.unwrap_or_default();
+    assert!(err.contains("16 MiB"), "{err}");
+}
+
 /// A server that takes every request and never sends a status.
 #[derive(Default)]
 pub(crate) struct Silent(pub(crate) std::sync::atomic::AtomicUsize);
