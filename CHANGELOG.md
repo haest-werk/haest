@@ -2088,11 +2088,12 @@ against it; the wire JSON is unchanged):
   one the access forbids is refused with its `id`; a slow peer gets a `gap`,
   never a wait. Once the session holds 32 of a connection's requests (a
   turn's end, a history asked during a turn), one more that would wait is
-  refused, while an `interrupt`, a `close`, an approval answer or a
-  `snapshot` is still served; with 64 in flight the connection reads no
-  more lines until one is answered, so a peer that never reads makes no
-  more work than that. A peer's requests reach the session in the order
-  it sent them. `Grant` (`watch`, `command`), `Start`, `Ended`, the seams
+  refused, while an `interrupt`, a `close`, an approval answer, a
+  `snapshot` or an `events` is still served; with 64 in flight the
+  connection reads no more lines until one is answered, so a peer that
+  never reads makes no more work than that. A peer's requests reach the
+  session in the order it sent them, and a burst written in one go meets
+  the cap as requests sent one at a time do. `Grant` (`watch`, `command`), `Start`, `Ended`, the seams
   `LineSource` and `LineSink`, `NdjsonSource` and `NdjsonSink`, the trait
   `Transport` (`attach` returns an `Attached`: `ended`, `detach`; dropped is
   detached), `Peer` (the asking side) and `TransportError`.
@@ -2241,8 +2242,9 @@ against it; the wire JSON is unchanged):
   socket and broker link) the newest task usually ran first: a `clear`
   written together with a `turn` cleared that turn, a `set_model` before
   a `turn` ran the turn on the old model, and an `interrupt` sent right
-  after a `turn` was spent between turns while the turn ran on. A call
-  now starts once the one before it has been polled the first time.
+  after a `turn` was spent between turns while the turn ran on. The
+  connection now reads the next line once the call before it has been
+  polled the first time.
 - A peer at the request cap keeps its stop button. Once 32 requests
   waited for their replies the connection read no more lines, and a turn
   and every `history` asked during it wait for the turn's end: a
@@ -2251,18 +2253,24 @@ against it; the wire JSON is unchanged):
   unread until the turn ended (an approval ask the turn waited on was
   denied at the gate's timeout). At the cap a request that would wait too
   is now refused with its id, to send again once one is answered, while
-  `interrupt`, `close`, an approval answer and `snapshot` are still
-  served. The cap counts what the session holds, from a request's first
-  poll to its answer: a request of a burst written in one go that has not
-  reached the session yet does not count, nor does one already answered.
-  With 64 requests in flight the connection stops reading, as it did at
-  32.
+  `interrupt`, `close`, an approval answer, `snapshot` and `events` (the
+  stream's ring answers it) are still served. The cap counts what the
+  session holds, from a request's first poll to its answer, and the next
+  line is read only once the request before it has reached the session,
+  so a burst written in one go while a turn runs meets the cap as
+  requests sent one at a time do; a request already answered does not
+  count. With 64 requests in flight the connection stops reading, as it
+  did at 32.
 - A panic in a host's `Backend` while it serves a request reaches the
   host once the connection has stopped, as one in its `LineSink` does,
-  and that request is refused with its id first. `serve` dropped it: the
-  peer waited for good for the reply, and the connection went on. The
-  Unix socket transport now ends with a connection's panic, which
-  `Attached::ended` raises; its accept loop dropped it too.
+  and that request is refused with its id first; a panic in its
+  `subscribe` for an `events` request too. `serve` dropped a call's
+  panic: the peer waited for good for the reply, and the connection went
+  on; one in `subscribe` unwound `serve` at once, with no reply to the
+  `events`. The Unix socket transport now ends with a connection's panic,
+  which `Attached::ended` raises, also one met in the second its
+  connections get after the conversation ended; its accept loop dropped
+  it too.
 
 ### haest-issues
 
