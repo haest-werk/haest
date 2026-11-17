@@ -12,7 +12,7 @@ mod wind_down;
 use std::{collections::HashMap, path::PathBuf};
 
 use haest_core::{error::report, fs::MemFs};
-use haest_settings::{Settings, WordSet};
+use haest_settings::Settings;
 
 use super::*;
 

@@ -38,7 +38,7 @@ use haest::{
     Tools, WorkspaceRef,
     core::provider::parse_model_spec,
     providers::{CompatFlavor, CompatOptions, CompatProvider, RetryPolicy},
-    settings::{Settings, WordSet},
+    settings::Settings,
     tools::{AgentToolOptions, BuiltinOptions, SubagentTypes, builtin_tools_where},
 };
 

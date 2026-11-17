@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use haest_settings::{BuiltinTools, Settings, WordSet};
+use haest_settings::{BuiltinTools, Settings};
 
 use crate::haest::{
     KeySource,

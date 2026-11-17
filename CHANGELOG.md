@@ -903,6 +903,12 @@ Hosts write less (round two of the review, and what porting brain onto
   the effort after it, and `From<Option<Effort>>` turns what an agent holds
   into a change. The session file's JSON is the same: no key, `null`, or
   the level.
+- A `word_set!` struct (`SkillSources`, `ContextSources`, haest-settings'
+  `BuiltinTools`, a host's own) has `WORDS`, `has`, `turn_on`, `words`,
+  `is_empty` and `from_words` of its own, so calling them needs no
+  `WordSet` import: `use haest_settings::{BuiltinTools, WordSet};
+  tools.words()` -> `tools.words()`. An import kept for them now warns as
+  unused.
 
 ### haest-http
 

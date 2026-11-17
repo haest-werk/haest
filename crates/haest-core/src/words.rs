@@ -79,7 +79,9 @@ pub trait WordSet: Sized + Default {
 }
 
 /// Declares a struct with one `pub bool` field per word, the constants `NONE`
-/// and `ALL`, and its [`WordSet`](crate::words::WordSet).
+/// and `ALL`, and its [`WordSet`](crate::words::WordSet). Each `WordSet`
+/// method and `WORDS` is also on the struct itself, so a caller needs no
+/// trait import (`settings.tools.words()`).
 ///
 /// The field name is the word; `$what` (the literal in parentheses) is what
 /// one word names, for the [`UnknownWord`](crate::words::UnknownWord) error.
@@ -90,7 +92,7 @@ pub trait WordSet: Sized + Default {
 /// # Examples
 ///
 /// ```
-/// use haest_core::{word_set, words::WordSet};
+/// use haest_core::word_set;
 ///
 /// word_set! {
 ///     /// Which rooms the lights are on in.
@@ -123,11 +125,47 @@ macro_rules! word_set {
             $($(#[$fdoc])* pub $field: bool,)+
         }
 
+        /// The set's constants, and its `WordSet` methods callable with no
+        /// trait in scope.
         impl $name {
             /// Every word off.
             pub const NONE: Self = Self { $($field: false,)+ };
             /// Every word on.
             pub const ALL: Self = Self { $($field: true,)+ };
+            /// Every word, in the order a list setting writes them.
+            pub const WORDS: &'static [&'static str] =
+                <Self as $crate::words::WordSet>::WORDS;
+
+            /// Is `word` on? An unknown word is off.
+            pub fn has(&self, word: &str) -> bool {
+                <Self as $crate::words::WordSet>::has(self, word)
+            }
+
+            /// Turn `word` on; false for a word this set does not know.
+            pub fn turn_on(&mut self, word: &str) -> bool {
+                <Self as $crate::words::WordSet>::turn_on(self, word)
+            }
+
+            /// The words that are on, in [`WORDS`](Self::WORDS) order.
+            pub fn words(&self) -> ::std::vec::Vec<&'static str> {
+                <Self as $crate::words::WordSet>::words(self)
+            }
+
+            /// True when no word is on.
+            pub fn is_empty(&self) -> bool {
+                <Self as $crate::words::WordSet>::is_empty(self)
+            }
+
+            /// The set with these words on (every other one off).
+            ///
+            /// # Errors
+            ///
+            /// `UnknownWord` for the first word the set does not know.
+            pub fn from_words<'a>(
+                words: impl ::std::iter::IntoIterator<Item = &'a str>,
+            ) -> ::std::result::Result<Self, $crate::words::UnknownWord> {
+                <Self as $crate::words::WordSet>::from_words(words)
+            }
         }
 
         impl $crate::words::WordSet for $name {

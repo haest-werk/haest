@@ -4,7 +4,7 @@
 //! (`Config::bare`): every capability off until asked for, every brake on.
 
 use haest_core::{Effort, deferred_tools::DeferMode, provider::WebSearchEngine};
-use haest_settings::{BuiltinTools, ContextSources, SkillSources, WordSet};
+use haest_settings::{BuiltinTools, ContextSources, SkillSources};
 
 use crate::fields::{BrokerAccess, ControlSocket, EnvPassthrough};
 

@@ -7,7 +7,7 @@ use haest_core::{
     Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine,
     wind_down::WindDown, words::UnknownWord,
 };
-use haest_settings::{BuiltinTools, ContextSources, SkillSources, WordSet};
+use haest_settings::{BuiltinTools, ContextSources, SkillSources};
 
 use super::{BrokerAccess, ControlSocket, EnvPassthrough};
 use crate::value::{number, parse_bool, split_list};
