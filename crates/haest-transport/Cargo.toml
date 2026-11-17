@@ -23,7 +23,7 @@ broker = ["tokio/net", "dep:tokio-tungstenite", "dep:futures", "dep:rustls", "de
 haest-core = { workspace = true }
 haest-wire = { workspace = true }
 haest-session = { workspace = true }
-tokio = { workspace = true, features = ["io-util", "rt"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "rt"] }
 serde_json = { workspace = true }
 serde = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
@@ -37,7 +37,7 @@ haest-core = { workspace = true, features = ["testing"] }
 haest-session = { workspace = true, features = ["approvals"] }
 haest-mods = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["io-util", "rt", "macros", "test-util", "net"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "rt", "test-util", "net"] }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }
 
 [package.metadata.docs.rs]

@@ -32,7 +32,9 @@ haest-wire = { version = "0.2.0", path = "crates/haest-wire" }
 haest-session = { version = "0.2.0", path = "crates/haest-session" }
 haest-transport = { version = "0.2.0", path = "crates/haest-transport" }
 
-tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time"] }
+# No features here: each crate names the ones it uses (haest-core: a task and
+# channels, not the runtime).
+tokio = { version = "1.54", default-features = false }
 tokio-util = "0.7"
 futures = "0.3"
 async-trait = "0.1"

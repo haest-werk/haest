@@ -48,7 +48,7 @@ impl Provider for Scripted {
             .pop_front()
             .unwrap_or_else(|| say("(the script ran out)"));
         let (gate, model) = (self.sub_gate.clone(), req.model.clone());
-        Box::pin(futures::stream::once(async move {
+        answer_stream(move |_| async move {
             if sub {
                 gate.acquire().await.expect("the gate stays open").forget();
             }
@@ -66,8 +66,8 @@ impl Provider for Scripted {
                 cost_usd: Some(0.001),
                 ..Default::default()
             };
-            ProviderEvent::Done(m)
-        }))
+            m
+        })
     }
 }
 

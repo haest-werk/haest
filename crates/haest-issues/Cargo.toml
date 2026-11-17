@@ -16,12 +16,12 @@ haest-core = { workspace = true }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 # GitHub's requests: the workspace's one HTTP seam; re-exported as `haest_issues::http`.
 haest-http = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
 # The process-wide TLS provider: a new tracker must not have set one up.
 rustls = { version = "0.23", default-features = false }
 # The example drives a whole agent turn with the scripted provider.

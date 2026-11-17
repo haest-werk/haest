@@ -222,10 +222,14 @@ pub use prelude::*;
 /// with `use haest_core::prelude::*;`. It holds types, traits and functions
 /// only, never a module, so a glob import shadows nothing.
 ///
-/// Every trait here comes with the types its methods name, so implementing
-/// one ([`Fs`], [`Provider`], [`ModelFacts`], [`AgentHooks`], [`Workspace`])
-/// needs no other import, and a tool gets its argument helpers
-/// ([`req_str`], [`opt_str`], [`opt_num`], [`opt_bool`], [`truncate_middle`]).
+/// Every trait here comes with the haest types its methods name, so
+/// implementing one ([`Fs`], [`Provider`], [`ModelFacts`], [`AgentHooks`],
+/// [`Workspace`]) needs no other haest import: a provider builds its stream
+/// with [`answer_stream`], and a tool gets its argument helpers ([`req_str`],
+/// [`opt_str`], [`opt_num`], [`opt_bool`], [`truncate_middle`]). What it
+/// names of other crates (serde_json's `Value`, tokio-util's
+/// `CancellationToken`) comes from those crates; the `haest` facade's
+/// prelude has both.
 pub mod prelude {
     pub use crate::agent::{Agent, AgentControl, AgentOptions};
     pub use crate::caps::{TurnCaps, TurnCapsSource, TurnCapsSourceRef};
@@ -243,7 +247,7 @@ pub mod prelude {
     };
     pub use crate::provider::{
         Effort, ModelError, ModelResolver, ModelResolverRef, Provider, ProviderEvent, ProviderRef,
-        ProviderRequest, ProviderStream, ResolvedModel,
+        ProviderRequest, ProviderStream, ResolvedModel, answer_stream,
     };
     pub use crate::tool::{
         InnerCallEvent, JsonMap, NoServices, Tool, ToolContext, ToolError, ToolOutput, ToolRef,

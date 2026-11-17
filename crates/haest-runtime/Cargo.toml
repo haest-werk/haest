@@ -19,7 +19,7 @@ haest-mcp = { workspace = true }
 haest-code = { workspace = true }
 haest-mods = { workspace = true }
 haest-settings = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
@@ -40,7 +40,7 @@ session = ["dep:haest-session", "dep:haest-wire"]
 haest-core = { workspace = true, features = ["testing"] }
 # server: the session tests close a real MCP server over an in-memory duplex.
 rmcp = { version = "3.9", default-features = false, features = ["client", "server"] }
-tokio = { workspace = true, features = ["io-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
 
 [package.metadata.docs.rs]
 all-features = true

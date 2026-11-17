@@ -37,13 +37,12 @@ use std::{
 use async_trait::async_trait;
 use haest::{
     Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, AssistantPart, Effort,
-    ExecResult, Fs, LoopEvent, MemFs, Message, ModelError, Provider, ProviderEvent,
-    ProviderRequest, ResolvedModel, SharedDeps, StopReason, ToolCall, ToolRef, Tools, TurnOutcome,
-    Usage, Workspace,
+    ExecResult, Fs, JsonMap, LoopEvent, MemFs, Message, ModelError, Provider, ProviderRequest,
+    ProviderStream, ResolvedModel, SharedDeps, StopReason, Tool, ToolCall, ToolContext, ToolError,
+    ToolOutput, ToolRef, Tools, TurnOutcome, Usage, Workspace, answer_stream,
     core::caps::SubagentCaps,
-    core::provider::ProviderStream,
     core::shell_command::{ShellCall, ShellCommand},
-    core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, req_str},
+    req_str,
     tools::{
         AgentRef, BuiltinOptions, Inbox, SubagentEvent, SubagentHub, SubagentParent,
         builtin_tools_where,

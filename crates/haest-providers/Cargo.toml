@@ -18,7 +18,7 @@ testing = []
 haest-core = { workspace = true }
 # How every request travels; re-exported as `haest_providers::http`.
 haest-http = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-util = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
@@ -28,7 +28,7 @@ async-stream = "0.3"
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
 
 [package.metadata.docs.rs]
 all-features = true

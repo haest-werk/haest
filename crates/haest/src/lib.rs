@@ -124,7 +124,6 @@
 //!
 //! ```
 //! use haest::prelude::*;
-//! use serde_json::{Value, json};
 //!
 //! struct Shout;
 //!
@@ -239,11 +238,22 @@ pub use haest_core::prelude::*;
 /// `async fn`s compile; the same macro haest's traits are declared with.
 pub use async_trait::async_trait;
 
+/// The turn's cancel token, as [`AgentHooks::before_model_call`],
+/// [`ToolContext::cancel`] and [`ProviderRequest::cancel`] hand it out:
+/// tokio-util's, re-exported so a host names the same version.
+pub use tokio_util::sync::CancellationToken;
+
+/// The JSON a tool's schema and input are made of ([`Tool::parameters`],
+/// [`JsonMap`]): the serde_json haest is built with.
+pub use serde_json;
+
 #[doc(inline)]
 pub use haest_core as core;
 
-/// The key types and [`async_trait`](macro@async_trait), for a glob import:
-/// `use haest::prelude::*;`.
+/// The key types, [`async_trait`](macro@async_trait),
+/// [`CancellationToken`] and serde_json's `Value` and `json!`, for a glob
+/// import: `use haest::prelude::*;` is all an `impl Tool`, `impl Provider`
+/// or `impl AgentHooks` needs.
 ///
 /// Glob-import this rather than the facade's root: the root also holds
 /// [`core`], which a glob import would let shadow the standard library's
@@ -258,9 +268,11 @@ pub use haest_core as core;
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::async_trait;
+    pub use crate::{CancellationToken, async_trait};
     #[doc(no_inline)]
     pub use haest_core::prelude::*;
+    #[doc(no_inline)]
+    pub use serde_json::{Value, json};
 }
 
 #[cfg(feature = "code")]

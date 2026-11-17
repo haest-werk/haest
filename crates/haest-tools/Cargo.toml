@@ -17,7 +17,7 @@ haest-http = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["net"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
 tokio-util = { workspace = true }
 # Glob: the pattern matcher only; the directory walk goes through the workspace Fs.
 globset = { version = "0.4", default-features = false }
@@ -32,7 +32,7 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 # process: the Grep test runs the real rg (when installed) to prove it takes our argv.
-tokio = { workspace = true, features = ["process"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
 # testing: the scripted provider, for tests that run a whole agent turn.
 haest-core = { workspace = true, features = ["testing"] }
 # Background jobs are tested over the real workspace: real processes, a real process group.

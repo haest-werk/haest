@@ -55,7 +55,10 @@ testing = ["haest-core/testing"]
 
 [dependencies]
 haest-core = { workspace = true }
+# Named by the traits a host implements: re-exported, so the host's versions match.
 async-trait = { workspace = true }
+serde_json = { workspace = true }
+tokio-util = { workspace = true }
 haest-http = { workspace = true, optional = true }
 haest-providers = { workspace = true, optional = true }
 haest-workspace = { workspace = true, optional = true }
@@ -129,11 +132,9 @@ test = true
 [dev-dependencies]
 # The front page's runnable examples drive whole turns with the scripted model.
 haest-core = { workspace = true, features = ["testing"] }
-tokio = { workspace = true }
-tokio-util = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 futures = { workspace = true }
 async-trait = { workspace = true }
-serde_json = { workspace = true }
 serde = { workspace = true }
 # The broker example's broker end.
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }

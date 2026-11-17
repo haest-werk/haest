@@ -22,7 +22,7 @@ toml = "1.1"
 thiserror = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 # The image tool's own models, for docs/settings.md's "Default" of an unset key.
 haest-tools = { workspace = true }
 

@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub use args::{opt_bool, opt_num, opt_str, req_str, spelled};
+pub use args::{input, opt_bool, opt_num, opt_str, req_str, spelled};
 pub use context::ToolContext;
 pub use list::Tools;
 pub use resume::{Attempt, OnResume};
@@ -200,10 +200,7 @@ impl ToolServices for NoServices {}
 ///
 /// ```
 /// use async_trait::async_trait;
-/// use haest_core::{
-///     ShutWorkspace, Tool, ToolContext, ToolError, ToolOutput,
-///     tool::{JsonMap, opt_num},
-/// };
+/// use haest_core::{JsonMap, ShutWorkspace, Tool, ToolContext, ToolError, ToolOutput, opt_num, tool};
 /// use serde_json::{Value, json};
 ///
 /// /// Adds two numbers.
@@ -242,7 +239,7 @@ impl ToolServices for NoServices {}
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// // Outside the loop: a context of its own. The loop builds one per call.
 /// let ctx = ToolContext::new("/", ShutWorkspace);
-/// let input: JsonMap = serde_json::from_value(json!({"a": 2, "b": "3"}))?; // models send numbers as strings too
+/// let input = tool::input(json!({"a": 2, "b": "3"}))?; // models send numbers as strings too
 /// let out = Add.execute(input, &ctx).await?;
 /// assert_eq!(out.content, "5");
 /// # Ok(())

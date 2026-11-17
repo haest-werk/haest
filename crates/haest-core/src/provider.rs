@@ -34,6 +34,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 pub use adapter::mark_stream_failed;
+pub use answer::{Deltas, answer_stream};
 pub use resolve::{ModelError, ModelResolver, ModelResolverRef, ResolvedModel, parse_model_spec};
 
 pub use crate::{effort::nearest_accepted_effort, pricing::book_priced_cost};
@@ -267,13 +268,14 @@ pub(crate) async fn final_message(
 ///
 /// # Examples
 ///
-/// A provider that answers every request with the last user message:
+/// A provider that answers every request with the last user message, built
+/// with [`answer_stream`], which ends the stream with the answer the async
+/// block returns:
 ///
 /// ```
-/// use futures::{StreamExt, stream};
 /// use haest_core::{
 ///     AssistantMessage, AssistantPart, Message, Provider, ProviderEvent, ProviderRequest,
-///     provider::ProviderStream,
+///     ProviderStream, answer_stream,
 /// };
 ///
 /// struct Echo;
@@ -288,20 +290,29 @@ pub(crate) async fn final_message(
 ///             Some(Message::User(u)) => u.content.clone(),
 ///             _ => String::new(),
 ///         };
-///         let mut msg = AssistantMessage::start(self.id(), &req.model);
-///         msg.content.push(AssistantPart::Text { text: said.clone() });
-///         Box::pin(stream::iter([ProviderEvent::TextDelta(said), ProviderEvent::Done(msg)]))
+///         let mut answer = AssistantMessage::start(self.id(), &req.model);
+///         answer_stream(|deltas| async move {
+///             // A real provider sends each piece as its API streams it.
+///             deltas.text(said.as_str());
+///             answer.content.push(AssistantPart::Text { text: said });
+///             answer
+///         })
 ///     }
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// use futures::StreamExt;
+///
 /// let req = ProviderRequest::new("echo-1", vec![Message::user("hello")])
 ///     .with_system("Repeat the user.");
 /// let events: Vec<ProviderEvent> = Echo.stream(req).collect().await;
-/// let Some(ProviderEvent::Done(answer)) = events.last() else { panic!("Done comes last") };
-/// assert_eq!(answer.text(), "hello");
-/// assert_eq!(answer.provider, "echo");
+/// assert_eq!(events[0], ProviderEvent::TextDelta("hello".into()));
+/// let Some(ProviderEvent::Done(answer)) = events.last() else {
+///     return Err("Done comes last".into());
+/// };
+/// assert_eq!((answer.text(), answer.provider.as_str()), ("hello".into(), "echo"));
+/// # Ok(())
 /// # }
 /// ```
 pub trait Provider: Send + Sync {
@@ -319,6 +330,7 @@ crate::plug_ref! {
 }
 
 mod adapter;
+mod answer;
 mod resolve;
 #[cfg(test)]
 mod tests;

@@ -5,6 +5,40 @@ use serde_json::Value;
 
 use super::{JsonMap, ToolError};
 
+/// A tool's input from a JSON value, as a model sends it: for a test, an
+/// example or a host that runs a tool itself.
+///
+/// # Errors
+///
+/// [`ToolError::Input`] when `value` is not a JSON object.
+///
+/// # Examples
+///
+/// ```
+/// use haest_core::tool::{self, req_str};
+/// use serde_json::json;
+///
+/// # fn main() -> Result<(), haest_core::error::BoxError> {
+/// let input = tool::input(json!({"path": "a.txt"}))?;
+/// assert_eq!(req_str(&input, "path")?, "a.txt");
+/// assert!(tool::input(json!(["a.txt"])).is_err());
+/// # Ok(())
+/// # }
+/// ```
+pub fn input(value: Value) -> Result<JsonMap, ToolError> {
+    let kind = match value {
+        Value::Object(input) => return Ok(input),
+        Value::Null => "null",
+        Value::Bool(_) => "a boolean",
+        Value::Number(_) => "a number",
+        Value::String(_) => "a string",
+        Value::Array(_) => "an array",
+    };
+    Err(ToolError::Input(format!(
+        "a tool's input must be a JSON object, not {kind}"
+    )))
+}
+
 /// A required, non-empty string argument.
 ///
 /// # Errors
@@ -12,10 +46,10 @@ use super::{JsonMap, ToolError};
 /// [`ToolError::Input`] when `key` is missing, empty or not a string.
 ///
 /// ```
-/// use haest_core::tool::{JsonMap, opt_bool, opt_num, opt_str, req_str};
+/// use haest_core::tool::{self, JsonMap, opt_bool, opt_num, opt_str, req_str};
 ///
 /// # fn main() -> Result<(), haest_core::error::BoxError> {
-/// let input: JsonMap = serde_json::from_value(serde_json::json!({
+/// let input: JsonMap = tool::input(serde_json::json!({
 ///     "path": "a.txt", "limit": "20", "all": "true", "glob": "", "force": "yes"
 /// }))?;
 /// let input = &input;

@@ -16,7 +16,7 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["process"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
 base64 = "0.22"
 # The official MCP SDK, client side: stdio servers as child processes, remote ones
 # over streamable HTTP. rmcp's HTTP transport runs only on a reqwest client, so it
@@ -33,7 +33,7 @@ haest-http = { workspace = true }
 haest-core = { workspace = true, features = ["testing"] }
 # server: the tests run a real MCP server over an in-memory duplex, never the network.
 rmcp = { version = "3.9", default-features = false, features = ["client", "server"] }
-tokio = { workspace = true, features = ["test-util", "io-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "test-util", "io-util"] }
 tokio-util = { workspace = true }
 
 [package.metadata.docs.rs]

@@ -19,7 +19,7 @@ doc = false
 
 [dependencies]
 haest = { workspace = true, features = ["runtime", "config", "wire", "session", "transport-stdio", "transport-unix", "transport-broker"] }
-tokio = { workspace = true, features = ["signal"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }

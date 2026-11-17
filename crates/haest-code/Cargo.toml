@@ -21,7 +21,7 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-util = { workspace = true }
 # Native QuickJS (no WASM). `loader`: ES module imports, for the sandbox `js` command.
 rquickjs = { version = "0.14", default-features = false, features = ["std", "loader"] }

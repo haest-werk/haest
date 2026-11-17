@@ -169,6 +169,14 @@ value itself, and holds it in a handle named after its trait. Read
 
 ### haest (the facade)
 
+- `haest::CancellationToken` (tokio-util's, as `before_model_call`,
+  `ToolContext::cancel` and `ProviderRequest::cancel` hand it out) and
+  `haest::serde_json` are re-exported, and `haest::prelude` adds
+  `CancellationToken`, `Value` and `json!`: `use haest::prelude::*;` is the
+  only import an `impl Tool`, `impl Provider` (with `answer_stream`) or
+  `impl AgentHooks` needs, and a host adds `tokio-util` or `serde_json` to
+  its own Cargo.toml only to use them itself.
+
 - The front page and every example build their deps the new way:
   `ProviderRegistry::new(keys, ..)` and `AgentDeps::new(models,
   builtin_tools(BuiltinOptions::default()), "You are a careful engineer.",
@@ -463,6 +471,22 @@ Good citizens:
 - `JsonlSessionFile::new` and `with_error_handler` take `data_dir: impl
   AsRef<Path>`: `JsonlSessionFile::new(fs, Path::new("/data"), id)` ->
   `JsonlSessionFile::new(fs, "/data", id)`.
+- New `answer_stream` (`provider::answer_stream`, in the prelude) and
+  `provider::Deltas`: a provider's stream written as an async block that
+  sends its deltas as they arrive (`deltas.text(..)`, `thinking`,
+  `tool_call_start`) and returns the answer, which the stream ends with as
+  its one `Done`. The `Provider` contract holds by construction, and the
+  provider needs no stream crate:
+  `Box::pin(stream::iter([.., ProviderEvent::Done(msg)]))` ->
+  `answer_stream(|deltas| async move { ..; msg })`.
+- New `tool::input(value) -> Result<JsonMap, ToolError>`: a tool's input
+  from a JSON value, for a test or a host that runs a tool itself;
+  `ToolError::Input` when it is not an object.
+  `json!(..).as_object().unwrap().clone()` -> `tool::input(json!(..))?`.
+- haest-core asks tokio for `rt` and `sync` only (a task and channels for
+  the session file), so a plug-in crate that depends on haest-core alone no
+  longer pulls in tokio's multi-thread runtime, macros and timers. The
+  workspace's tokio entry names no features; each crate names its own.
 
 ### haest-providers
 
