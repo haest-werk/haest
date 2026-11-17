@@ -971,6 +971,9 @@ Good citizens:
 - Every public type implements `Debug` (`Runtime`, `RuntimeInputs` and
   `World` are new), and the crate warns on one that does not
   (`missing_debug_implementations`).
+- Every doc example that can fail returns a `Result` and uses `?`; none
+  writes an `Arc::new` or an `unwrap`. `list_sessions`' example lists a
+  session it created, and `RuntimeInputs` has one of its own.
 - The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
   as `with_hooks`; what tools publish, report and log reaches it as before.
 - Feature `session` (off; the facade's `session` turns it on with

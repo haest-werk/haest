@@ -131,7 +131,7 @@ impl<U: Ui + 'static> Driven for Runtime<U> {
 /// use haest_wire::{Outbound, State};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), haest_runtime::BuildError> {
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// let hub = Hub::new("run-1", HubOptions::default());
 /// let mut watcher = hub.subscribe(0);
 ///
@@ -147,11 +147,11 @@ impl<U: Ui + 'static> Driven for Runtime<U> {
 /// let id = rt.session_id();
 ///
 /// let session = start(rt, hub);
-/// let now = session.snapshot().await.unwrap();
+/// let now = session.snapshot().await?;
 /// assert_eq!((now.state, now.session.as_str()), (State::Idle, id.as_str()));
 ///
 /// // The watcher saw the session start; closing it shuts the conversation down.
-/// let first = watcher.recv().await.unwrap();
+/// let first = watcher.recv().await.ok_or("the stream ended")?;
 /// assert!(matches!(&first.body, Body::Wire(Outbound::Status(_))));
 /// session.close().await;
 /// # Ok(())
@@ -200,7 +200,7 @@ impl Ui for HubUi {
 /// use haest_wire::{Outbound, Path};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// let hub = Hub::new("s1", HubOptions::default());
 /// let mut sub = hub.subscribe(0);
 /// let started = SubagentEvent::Started {
@@ -211,10 +211,12 @@ impl Ui for HubUi {
 /// subagent_frame(&hub, "a1", &started);
 /// subagent_frame(&hub, "a1", &SubagentEvent::Loop(LoopEvent::TextDelta { text: "hi".into() }));
 ///
-/// let first = sub.recv().await.unwrap();
+/// let first = sub.recv().await.ok_or("the stream ended")?;
 /// assert_eq!(first.path, Path::subagent("a1"));
 /// assert!(matches!(&first.body, Body::Wire(Outbound::SubagentStarted { name, .. }) if name == "reader"));
-/// assert!(matches!(sub.recv().await.unwrap().body, Body::Loop(LoopEvent::TextDelta { .. })));
+/// let next = sub.recv().await.ok_or("the stream ended")?;
+/// assert!(matches!(next.body, Body::Loop(LoopEvent::TextDelta { .. })));
+/// # Ok(())
 /// # }
 /// ```
 pub fn subagent_frame(hub: &Hub, id: &str, event: &SubagentEvent) -> Option<u64> {

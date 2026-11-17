@@ -152,13 +152,22 @@ async fn newest_first(fs: &dyn Fs, dir: &Path) -> Vec<Entry> {
 /// ```
 /// use std::path::Path;
 ///
-/// use haest_core::fs::MemFs;
+/// use haest_core::fs::{FsRef, MemFs};
+/// use haest_core::session::{JsonlSessionFile, sessions_dir};
 /// use haest_runtime::list_sessions;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
-/// let none = list_sessions(&MemFs::new(), Path::new("/data/sessions")).await;
-/// assert!(none.is_empty());
+/// # async fn main() -> Result<(), haest_core::error::BoxError> {
+/// let fs = FsRef::new(MemFs::new());
+/// // A session that started in /work: its header, and nothing asked yet.
+/// let session = JsonlSessionFile::new(fs.clone(), "/data", "s1")?;
+/// session.create("c1", "/work", 0).await?;
+///
+/// let sessions = list_sessions(&*fs, &sessions_dir(Path::new("/data"))).await;
+/// assert_eq!(sessions.len(), 1);
+/// assert_eq!((sessions[0].id.as_str(), sessions[0].cwd.as_path()), ("s1", Path::new("/work")));
+/// assert!(sessions[0].preview.is_empty());
+/// # Ok(())
 /// # }
 /// ```
 pub async fn list_sessions(fs: &dyn Fs, dir: &Path) -> Vec<SessionInfo> {
