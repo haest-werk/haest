@@ -85,8 +85,6 @@
 //! The conversation's side: number frames, keep them, catch a peer up.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_wire::{Classify, FrameKind, Framer, Level, Outbound, Path, Ring};
 //!
 //! /// This end's bodies: here only the wire's own.
@@ -103,7 +101,7 @@
 //! let mut ring = Ring::new(2); // keeps the last two frames
 //! for text in ["one", "two", "three"] {
 //!     let notice = Outbound::Notice { level: Level::Info, text: text.into() };
-//!     ring.push(Arc::new(framer.stamp(Path::main(), Body(notice))));
+//!     ring.push(framer.stamp(Path::main(), Body(notice)));
 //! }
 //!
 //! // A peer that has seq 1 gets 2 and 3: nothing lost.
@@ -115,8 +113,9 @@
 //! assert!(ring.since(0).gap);
 //!
 //! // One line on the wire.
-//! let line = serde_json::to_value(&*replay.frames[0]).unwrap();
+//! let line = serde_json::to_value(&*replay.frames[0])?;
 //! assert_eq!((line["type"].as_str(), line["seq"].as_u64()), (Some("notice"), Some(2)));
+//! # Ok::<(), serde_json::Error>(())
 //! ```
 //!
 //! The peer's side: send a request, refuse a frame of another version.
@@ -124,11 +123,12 @@
 //! ```
 //! use haest_wire::{DecodeError, Request, decode};
 //!
-//! let turn = decode(r#"{"v":1,"id":"r1","type":"turn","text":"hi"}"#).unwrap();
+//! let turn = decode(r#"{"v":1,"id":"r1","type":"turn","text":"hi"}"#)?;
 //! assert_eq!(turn.request, Request::Turn { text: "hi".into() });
 //!
 //! let old = decode(r#"{"v":0,"id":"r1","type":"turn","text":"hi"}"#);
 //! assert!(matches!(old, Err(DecodeError::Version { got: 0, .. })));
+//! # Ok::<(), DecodeError>(())
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]

@@ -8,17 +8,22 @@ use serde::Serialize;
 ///
 /// Keeps the unfinished tail until its newline comes, so a character split
 /// between two reads is put back together. A line ends at `\n`; a `\r` before
-/// it is dropped and an empty line is skipped. A line longer than the limit
-/// ([`with_limit`](Self::with_limit), 64 MiB by default) is refused: a peer
-/// that never sends a newline cannot fill the memory.
+/// it is dropped and an empty line is skipped.
+///
+/// The limit ([`with_limit`](Self::with_limit), 64 MiB by default) bounds
+/// the unfinished tail kept between pushes: a peer that never sends a newline
+/// cannot fill the memory. A line that ends inside one push is not measured,
+/// so a line may run past the limit by up to the size of the chunk that ends
+/// it; the reader decides that size (16 KiB for haest-transport's).
 ///
 /// ```
 /// use haest_wire::LineDecoder;
 ///
 /// let mut lines = LineDecoder::new();
-/// assert_eq!(lines.push(b"{\"a\":1}\n{\"b\":").unwrap(), [r#"{"a":1}"#]);
-/// assert_eq!(lines.push(b"2}\n").unwrap(), [r#"{"b":2}"#]);
+/// assert_eq!(lines.push(b"{\"a\":1}\n{\"b\":")?, [r#"{"a":1}"#]);
+/// assert_eq!(lines.push(b"2}\n")?, [r#"{"b":2}"#]);
 /// assert_eq!(lines.flush(), None);
+/// # Ok::<(), haest_wire::LineTooLong>(())
 /// ```
 #[derive(Debug)]
 pub struct LineDecoder {
@@ -47,20 +52,25 @@ impl Default for LineDecoder {
 }
 
 impl LineDecoder {
-    /// A decoder with nothing buffered and the default limit (64 MiB).
-    pub fn new() -> Self {
-        Self::with_limit(64 << 20)
-    }
+    /// The limit [`new`](Self::new) sets: 64 MiB.
+    pub const DEFAULT_LIMIT: usize = 64 << 20;
 
-    /// A decoder whose lines may be at most `limit` bytes.
-    pub fn with_limit(limit: usize) -> Self {
+    /// A decoder with nothing buffered and the default limit
+    /// ([`DEFAULT_LIMIT`](Self::DEFAULT_LIMIT)).
+    pub fn new() -> Self {
         Self {
             buf: Vec::new(),
-            limit,
+            limit: Self::DEFAULT_LIMIT,
             scanned: 0,
             #[cfg(test)]
             examined: 0,
         }
+    }
+
+    /// The decoder with an unfinished line of at most `limit` bytes.
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = limit;
+        self
     }
 
     /// Feed a chunk; every line it completed, in order. Bytes that are not
@@ -68,8 +78,8 @@ impl LineDecoder {
     ///
     /// # Errors
     ///
-    /// [`LineTooLong`] when the unfinished line passes the limit; what was
-    /// buffered is dropped.
+    /// [`LineTooLong`] when the unfinished line kept after this chunk passes
+    /// the limit; what was buffered is dropped.
     pub fn push(&mut self, chunk: &[u8]) -> Result<Vec<String>, LineTooLong> {
         self.buf.extend_from_slice(chunk);
         let mut lines = Vec::new();
@@ -179,9 +189,19 @@ mod tests {
     /// A peer that never sends a newline is refused, and the decoder works on.
     #[test]
     fn a_line_past_the_limit_is_refused_and_dropped() {
-        let mut d = LineDecoder::with_limit(8);
+        let mut d = LineDecoder::new().with_limit(8);
         assert_eq!(d.push(b"0123456789"), Err(LineTooLong { limit: 8 }));
         assert_eq!(d.push(b"ok\n").unwrap(), ["ok"]);
+    }
+
+    /// The limit bounds the tail kept between pushes, as the docs say: a
+    /// line that ends inside the push that brings it is not measured.
+    #[test]
+    fn the_limit_bounds_the_unfinished_tail() {
+        let mut d = LineDecoder::new().with_limit(8);
+        assert!(d.push(b"0123456").unwrap().is_empty());
+        assert_eq!(d.push(b"789abc\nde").unwrap(), ["0123456789abc"]);
+        assert_eq!(d.push(b"\n").unwrap(), ["de"]);
     }
 
     /// A line that arrives a byte at a time is searched once, not once per
@@ -207,7 +227,7 @@ mod tests {
         assert!(d.push(b"tail").unwrap().is_empty());
         assert_eq!(d.flush().as_deref(), Some("tail"));
         assert_eq!(d.push(b"ab\n").unwrap(), ["ab"]);
-        let mut d = LineDecoder::with_limit(8);
+        let mut d = LineDecoder::new().with_limit(8);
         assert!(d.push(b"01234").unwrap().is_empty());
         assert_eq!(d.push(b"56789"), Err(LineTooLong { limit: 8 }));
         assert_eq!(d.push(b"ok\n").unwrap(), ["ok"]);

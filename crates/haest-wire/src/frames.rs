@@ -67,9 +67,10 @@ word_enum! {
 /// use haest_wire::{Snapshot, State};
 ///
 /// let s = Snapshot { model_spec: "anthropic:claude-opus-5-5".into(), ..Snapshot::default() };
-/// let json = serde_json::to_value(&s).unwrap();
+/// let json = serde_json::to_value(&s)?;
 /// assert_eq!((json["state"].as_str(), json["lastSeq"].as_u64()), (Some("idle"), Some(0)));
 /// assert_eq!(json["model"], "anthropic:claude-opus-5-5");
+/// # Ok::<(), serde_json::Error>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

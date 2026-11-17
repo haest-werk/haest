@@ -1036,6 +1036,21 @@ wrote them.
   same word from the same list. An unknown word is the new `UnknownWord`:
   `unknown access "admin" (watch, command)`, also the cause of the
   `DecodeError::Shape` for a request that sends one.
+- `Path` keeps its segments private: `path.0` -> `path.segments()` (`main`
+  first). Every path starts with `main` by construction, and a line whose
+  path does not is no longer read as a frame. `Path::main()` allocates
+  nothing, where it allocated a `Vec` and a `String` for every frame.
+- `Ring::push` takes the frame itself, or an `Arc` of one the caller also
+  hands out: `ring.push(Arc::new(frame))` -> `ring.push(frame)`. `new`,
+  `capacity`, `len`, `is_empty` and `since` no longer need `B: Classify`,
+  and the new `set_capacity` changes what a ring keeps (a smaller capacity
+  evicts at once, a gap like any eviction).
+- `LineDecoder::with_limit` is a setter:
+  `LineDecoder::with_limit(n)` -> `LineDecoder::new().with_limit(n)`;
+  `LineDecoder::DEFAULT_LIMIT` is the 64 MiB. Its docs say what the limit
+  bounds: the unfinished line kept between pushes, so a line that ends
+  inside one push may pass it by up to that push's size.
+- Every doc example returns a `Result` and uses `?`.
 
 ### haest-session (new)
 

@@ -108,7 +108,7 @@ mod tests {
     async fn a_line_that_never_ends_is_refused() {
         let (mut peer, ours) = tokio::io::duplex(1 << 16);
         let mut source = NdjsonSource {
-            lines: LineDecoder::with_limit(8),
+            lines: LineDecoder::new().with_limit(8),
             ..NdjsonSource::new(ours)
         };
         peer.write_all(b"0123456789abcdef").await.unwrap();

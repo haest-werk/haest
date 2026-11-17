@@ -7,8 +7,6 @@
 //!
 //! A real peer reads the same lines from `haest --json -p "..."`.
 
-use std::sync::Arc;
-
 use haest::{
     BoxError,
     serde_json::{self, Value},
@@ -42,8 +40,8 @@ fn main() -> Result<(), BoxError> {
     let mut ring = Ring::new(3);
     let mut wire = String::new();
     for text in ["starting", "reading files", "running tests", "done"] {
-        let frame = Arc::new(framer.stamp(Path::main(), notice(text)));
-        wire.push_str(&encode_line(&*frame));
+        let frame = framer.stamp(Path::main(), notice(text));
+        wire.push_str(&encode_line(&frame));
         ring.push(frame);
     }
 

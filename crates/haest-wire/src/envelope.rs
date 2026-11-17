@@ -3,7 +3,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 /// The wire version this crate speaks. A changed shape of an existing frame
 /// bumps it; a new frame type or field does not.
@@ -20,17 +20,28 @@ pub fn now_ms() -> u64 {
 /// Who a frame is about: `["main"]` for the conversation itself,
 /// `["main", "<subagent id>"]` for one of its subagents.
 ///
+/// Every path starts with `main`: a path is made only by
+/// [`main`](Self::main) and [`subagent`](Self::subagent), and a line whose
+/// path does not start with it does not read as a frame. `Path::main()`
+/// allocates nothing.
+///
 /// ```
 /// use haest_wire::Path;
 ///
 /// assert!(Path::main().is_main());
 /// let sub = Path::subagent("explore-1");
-/// assert_eq!(serde_json::to_string(&sub).unwrap(), r#"["main","explore-1"]"#);
+/// assert_eq!(serde_json::to_string(&sub)?, r#"["main","explore-1"]"#);
+/// assert_eq!(sub.segments().collect::<Vec<_>>(), ["main", "explore-1"]);
 /// assert!(!sub.is_main());
+///
+/// assert!(serde_json::from_str::<Path>(r#"["explore-1"]"#).is_err());
+/// # Ok::<(), serde_json::Error>(())
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Path(pub Vec<String>);
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct Path {
+    /// The segments after `main`; empty for `["main"]`.
+    below: Vec<String>,
+}
 
 impl Path {
     /// The conversation's own name in a path.
@@ -38,23 +49,44 @@ impl Path {
 
     /// `["main"]`.
     pub fn main() -> Self {
-        Self(vec![Self::MAIN.to_string()])
+        Self { below: Vec::new() }
     }
 
     /// `["main", id]`: a subagent of the conversation.
     pub fn subagent(id: impl Into<String>) -> Self {
-        Self(vec![Self::MAIN.to_string(), id.into()])
+        Self {
+            below: vec![id.into()],
+        }
     }
 
     /// Whether this is `["main"]`.
     pub fn is_main(&self) -> bool {
-        self.0.len() == 1 && self.0[0] == Self::MAIN
+        self.below.is_empty()
+    }
+
+    /// The segments in order, `main` first.
+    pub fn segments(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(Self::MAIN).chain(self.below.iter().map(String::as_str))
     }
 }
 
-impl Default for Path {
-    fn default() -> Self {
-        Self::main()
+impl Serialize for Path {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(self.segments())
+    }
+}
+
+impl<'de> Deserialize<'de> for Path {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut segments = Vec::<String>::deserialize(d)?;
+        if segments.first().map(String::as_str) != Some(Self::MAIN) {
+            return Err(de::Error::custom(format!(
+                "a path starts with \"{}\"",
+                Self::MAIN
+            )));
+        }
+        segments.remove(0);
+        Ok(Self { below: segments })
     }
 }
 
@@ -66,15 +98,16 @@ impl Default for Path {
 /// makes stream frames; [`Envelope::connection`] makes a connection's own.
 ///
 /// ```
-/// use haest_wire::{Envelope, Framer, Level, Outbound, Path};
+/// use haest_wire::{Envelope, Framer, Outbound, Path};
 ///
 /// let mut framer = Framer::new("s1").with_clock(|| 1000);
 /// let frame = framer.stamp(Path::main(), Outbound::Ask { text: "Allow?".into() });
-/// let line = serde_json::to_string(&frame).unwrap();
+/// let line = serde_json::to_string(&frame)?;
 /// assert_eq!(line, r#"{"v":1,"sid":"s1","seq":1,"ts":1000,"path":["main"],"type":"ask","text":"Allow?"}"#);
 ///
-/// let back: Envelope<Outbound> = serde_json::from_str(&line).unwrap();
+/// let back: Envelope<Outbound> = serde_json::from_str(&line)?;
 /// assert_eq!(back, frame);
+/// # Ok::<(), serde_json::Error>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Envelope<B> {
@@ -231,5 +264,23 @@ mod tests {
         let line =
             serde_json::json!({"v": WIRE_V, "id": "x", "type": "control", "verb": "interrupt"});
         assert!(decode(&line.to_string()).is_ok());
+    }
+
+    /// A path reads back as itself, deeper ones too; one that does not start
+    /// with `main` is not a path.
+    #[test]
+    fn every_path_starts_with_main() {
+        for line in [r#"["main"]"#, r#"["main","a1"]"#, r#"["main","a1","b2"]"#] {
+            let path: Path = serde_json::from_str(line).unwrap();
+            assert_eq!(serde_json::to_string(&path).unwrap(), line);
+        }
+        assert_eq!(Path::default(), Path::main());
+        for line in [r#"[]"#, r#"["a1"]"#, r#"["a1","main"]"#] {
+            let err = serde_json::from_str::<Path>(line).unwrap_err();
+            assert!(
+                err.to_string().contains("starts with \"main\""),
+                "{line}: {err}"
+            );
+        }
     }
 }

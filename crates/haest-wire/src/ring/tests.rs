@@ -27,7 +27,7 @@ fn ring_of(capacity: usize, evs: &[(Path, Ev)]) -> Ring<Ev> {
     let mut framer = Framer::new("s");
     let mut ring = Ring::new(capacity);
     for (path, ev) in evs {
-        ring.push(Arc::new(framer.stamp(path.clone(), *ev)));
+        ring.push(framer.stamp(path.clone(), *ev));
     }
     ring
 }
@@ -90,9 +90,36 @@ fn the_running_turn_is_never_evicted() {
 
     let mut ring = ring;
     let mut framer = Framer::new("s").starting_after(9);
-    ring.push(Arc::new(framer.stamp(Path::main(), Ev::End)));
+    // A frame the caller shares (a broadcast) goes in as its Arc.
+    let end = Arc::new(framer.stamp(Path::main(), Ev::End));
+    ring.push(end.clone());
+    assert!(Arc::ptr_eq(&ring.since(9).frames[0], &end));
     assert_eq!(ring.len(), 2);
     assert!(ring.since(3).gap);
+}
+
+/// A smaller capacity evicts at once, a gap like any eviction; the running
+/// turn still stays whole.
+#[test]
+fn a_smaller_capacity_evicts_at_once() {
+    let mut ring = ring_of(10, &notes(5));
+    ring.set_capacity(2);
+    assert_eq!((ring.capacity(), ring.len()), (2, 2));
+    let r = ring.since(0);
+    assert_eq!((seqs(&r), r.gap), (vec![4, 5], true));
+    ring.set_capacity(0);
+    assert_eq!(ring.capacity(), 1, "at least one");
+
+    let mut evs = notes(2);
+    evs.push((Path::main(), Ev::Start));
+    evs.extend(notes(3));
+    let mut ring = ring_of(10, &evs);
+    ring.set_capacity(1);
+    assert_eq!(
+        seqs(&ring.since(0)),
+        [2, 3, 4, 5, 6],
+        "one frame before the turn, and the turn whole"
+    );
 }
 
 /// A model call's pieces go once its answer is in; their seqs are skipped

@@ -51,8 +51,6 @@ pub struct Replay<B> {
 /// - Only an eviction makes a gap.
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_wire::{Classify, FrameKind, Framer, Path, Ring};
 ///
 /// #[derive(Clone, Copy)]
@@ -72,7 +70,7 @@ pub struct Replay<B> {
 /// let mut framer = Framer::new("s");
 /// let mut ring = Ring::new(1);
 /// for ev in [Ev::Start, Ev::Piece, Ev::Piece, Ev::Answer] {
-///     ring.push(Arc::new(framer.stamp(Path::main(), ev)));
+///     ring.push(framer.stamp(Path::main(), ev));
 /// }
 /// // Mid-turn the whole turn is kept, past the capacity; the pieces went
 /// // when the answer came, and that is not a gap.
@@ -80,7 +78,7 @@ pub struct Replay<B> {
 /// assert_eq!(replay.frames.iter().map(|f| f.seq).collect::<Vec<_>>(), [1, 4]);
 /// assert!(!replay.gap);
 ///
-/// ring.push(Arc::new(framer.stamp(Path::main(), Ev::End)));
+/// ring.push(framer.stamp(Path::main(), Ev::End));
 /// // The turn ended: down to the capacity, and the start is gone.
 /// assert!(ring.since(0).gap);
 /// assert_eq!(ring.len(), 1);
@@ -95,7 +93,7 @@ pub struct Ring<B> {
     running_from: Option<u64>,
 }
 
-impl<B: Classify> Ring<B> {
+impl<B> Ring<B> {
     /// A ring that keeps `capacity` frames (at least 1) besides the running turn.
     pub fn new(capacity: usize) -> Self {
         Self {
@@ -111,6 +109,14 @@ impl<B: Classify> Ring<B> {
         self.capacity
     }
 
+    /// Keep `capacity` frames (at least 1) besides the running turn from now
+    /// on: a smaller one evicts the oldest at once, and that is a gap as any
+    /// eviction is.
+    pub fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = capacity.max(1);
+        self.evict();
+    }
+
     /// The frames it holds now.
     pub fn len(&self) -> usize {
         self.frames.len()
@@ -121,16 +127,18 @@ impl<B: Classify> Ring<B> {
         self.frames.is_empty()
     }
 
-    /// Keep `frame`, the stream's newest; evict the oldest past the capacity.
-    pub fn push(&mut self, frame: Arc<Envelope<B>>) {
-        let main = frame.path.is_main();
-        match frame.body.kind() {
-            FrameKind::Answer => drop_deltas(&mut self.frames, &frame.path),
-            FrameKind::TurnStart if main => self.running_from = Some(frame.seq),
-            FrameKind::TurnEnd if main => self.running_from = None,
-            _ => {}
+    /// The frames kept after `after`, oldest first, and whether some after
+    /// it were evicted (a peer at `after` has a hole).
+    pub fn since(&self, after: u64) -> Replay<B> {
+        let first = self.frames.partition_point(|f| f.seq <= after);
+        Replay {
+            frames: self.frames.range(first..).cloned().collect(),
+            gap: after < self.evicted_through,
         }
-        self.frames.push_back(frame);
+    }
+
+    /// Evict the oldest frames outside the running turn past the capacity.
+    fn evict(&mut self) {
         let outside = match self.running_from {
             Some(from) => self.frames.partition_point(|f| f.seq < from),
             None => self.frames.len(),
@@ -141,15 +149,23 @@ impl<B: Classify> Ring<B> {
             }
         }
     }
+}
 
-    /// The frames kept after `after`, oldest first, and whether some after
-    /// it were evicted (a peer at `after` has a hole).
-    pub fn since(&self, after: u64) -> Replay<B> {
-        let first = self.frames.partition_point(|f| f.seq <= after);
-        Replay {
-            frames: self.frames.range(first..).cloned().collect(),
-            gap: after < self.evicted_through,
+impl<B: Classify> Ring<B> {
+    /// Keep `frame`, the stream's newest; evict the oldest past the capacity.
+    /// Takes the frame or an `Arc` of it: one the caller also hands out (a
+    /// broadcast) is shared, not copied.
+    pub fn push(&mut self, frame: impl Into<Arc<Envelope<B>>>) {
+        let frame = frame.into();
+        let main = frame.path.is_main();
+        match frame.body.kind() {
+            FrameKind::Answer => drop_deltas(&mut self.frames, &frame.path),
+            FrameKind::TurnStart if main => self.running_from = Some(frame.seq),
+            FrameKind::TurnEnd if main => self.running_from = None,
+            _ => {}
         }
+        self.frames.push_back(frame);
+        self.evict();
     }
 }
 

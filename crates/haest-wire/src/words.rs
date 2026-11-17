@@ -11,9 +11,9 @@
 /// ```
 /// use haest_wire::Access;
 ///
-/// let err = "admin".parse::<Access>().unwrap_err();
-/// assert_eq!(err.to_string(), r#"unknown access "admin" (watch, command)"#);
 /// assert_eq!("command".parse::<Access>(), Ok(Access::Command));
+/// let said = "admin".parse::<Access>().map_err(|e| e.to_string());
+/// assert_eq!(said, Err(r#"unknown access "admin" (watch, command)"#.to_string()));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("unknown {what} \"{word}\" ({})", expected.join(", "))]

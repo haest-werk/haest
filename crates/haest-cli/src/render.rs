@@ -101,7 +101,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
             let _ = self.out.flush();
             return;
         }
-        let subagent = frame.path.0.get(1).map(String::as_str);
+        let subagent = frame.path.segments().nth(1);
         match (&frame.body, subagent) {
             (Body::Loop(ev), None) => {
                 if let LoopEvent::TurnEnd { usage, .. } = ev {
