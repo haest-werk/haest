@@ -204,7 +204,8 @@ pub struct CompactionResult {
     pub usage: Usage,
 }
 
-/// Why [`compact`] wrote no summary. History is untouched either way.
+/// Why [`compact`] wrote no summary. History is untouched either way, but
+/// for a call a dropped turn left, which [`compact`] answers first.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CompactionError {
@@ -212,7 +213,7 @@ pub enum CompactionError {
     #[error(transparent)]
     Model(#[from] ModelError),
     /// Neither path produced a summary, or the run was cancelled; history is
-    /// untouched. Why, and what the calls made cost (see [`Self::usage`]).
+    /// untouched but for that repair. Why, and what the calls made cost (see [`Self::usage`]).
     #[error("compaction summary failed: {reason}")]
     Failed {
         /// Why no summary came out.

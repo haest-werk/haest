@@ -115,9 +115,26 @@ pub fn budget_left(available: f64) -> String {
     format!("${cents:.2} is left of the conversation's budget (max_conversation_usd)")
 }
 
+/// An ask and what is left, as a refusal says them: [`usd_asked`] and
+/// [`budget_left`], but an ask whose cent would read as what is left (dust
+/// past the ledger's slack, under the rounding's) said as it is, so the two
+/// never read the same.
+pub fn refusal_amounts(asked: f64, available: f64) -> (String, String) {
+    let (ask, left) = (usd_asked(asked), budget_left(available));
+    if left.starts_with(&format!("{ask} ")) {
+        return (format!("${asked}"), left);
+    }
+    (ask, left)
+}
+
+fn not_available(asked: f64, available: f64) -> String {
+    let (ask, left) = refusal_amounts(asked, available);
+    format!("{ask} does not fit: {left}")
+}
+
 /// A hold that does not fit what is left of the conversation's budget.
 #[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
-#[error("{} does not fit: {}", usd_asked(*asked), budget_left(*available))]
+#[error("{}", not_available(*asked, *available))]
 pub struct NotAvailable {
     /// The USD asked for.
     pub asked: f64,
@@ -288,6 +305,12 @@ mod tests {
         assert_eq!(
             text(0.1 + 0.2, 0.2),
             format!("$0.30 does not fit: $0.20 {left}")
+        );
+        // Dust past the ledger's slack but under the rounding's: the cent
+        // would read as what is left, so the ask is said as it is.
+        assert_eq!(
+            text(1.000_000_005, 1.0),
+            format!("$1.000000005 does not fit: $1.00 {left}")
         );
     }
 

@@ -89,7 +89,7 @@ impl AgentOptions {
 
     /// The same, resuming from `history` (a replayed session's messages). A
     /// tool call in it with no result is answered as interrupted when the
-    /// first turn starts, as [`replay`](crate::session::replay) answers one.
+    /// first turn or compaction starts, as [`replay`](crate::session::replay) answers one.
     #[must_use]
     pub fn with_history(mut self, history: impl Into<Vec<Message>>) -> Self {
         self.history = history.into();
@@ -283,7 +283,7 @@ impl Agent {
     /// Input that arrives meanwhile goes through [`AgentControl::steer`]; stop it
     /// with [`AgentControl::abort`], or drop this future (a `timeout`, a
     /// `select!`): a tool call the dropped turn left without a result is
-    /// answered at the start of the next turn, as interrupted, the way
+    /// answered at the start of the next turn or compaction, as interrupted, the way
     /// [`replay`](crate::session::replay) answers one in a log.
     ///
     /// `input` becomes a user message, with whatever

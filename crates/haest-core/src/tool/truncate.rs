@@ -27,7 +27,7 @@ pub fn truncate_middle(text: &str, max: usize) -> (String, bool) {
     (
         format!(
             "{head}\n\n... [{} characters truncated] ...\n\n{tail}",
-            len - max
+            len - 2 * half
         ),
         true,
     )
