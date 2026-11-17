@@ -42,7 +42,10 @@ mod task;
 #[cfg(test)]
 mod tests;
 
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+};
 
 pub use task::{NewTask, PatchStatus, Task, TaskError, TaskPatch, TaskStatus};
 
@@ -102,6 +105,19 @@ pub struct TaskBoard {
     state: Arc<Mutex<State>>,
     on_change: OnChange,
     clock: ClockRef,
+}
+
+/// The tasks, as [`TaskBoard::list`] has them; `<locked>` while another
+/// thread holds the board.
+impl fmt::Debug for TaskBoard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = f.debug_struct("TaskBoard");
+        match self.state.try_lock() {
+            Ok(state) => out.field("tasks", &state.tasks),
+            Err(_) => out.field("tasks", &format_args!("<locked>")),
+        };
+        out.finish_non_exhaustive()
+    }
 }
 
 impl Default for TaskBoard {

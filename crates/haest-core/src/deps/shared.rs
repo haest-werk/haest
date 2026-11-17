@@ -24,7 +24,7 @@ use crate::{
 /// Cheap to clone: every slot is a handle or small. The loop reads the
 /// models, hooks and the rest again before every model call, so a source
 /// that changes behind its handle is seen at the next call.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SharedDeps {
     models: ModelResolverRef,
     cwd: PathBuf,

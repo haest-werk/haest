@@ -147,6 +147,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
+#![warn(missing_debug_implementations)]
 
 pub mod agent;
 pub mod caps;

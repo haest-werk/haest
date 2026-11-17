@@ -60,6 +60,7 @@
 
 use std::{
     collections::VecDeque,
+    fmt,
     sync::{Arc, Mutex},
 };
 
@@ -90,6 +91,16 @@ pub struct ScriptedProvider(Arc<Script>);
 struct Script {
     answers: Mutex<VecDeque<AssistantMessage>>,
     requests: Mutex<Vec<ProviderRequest>>,
+}
+
+/// How many answers are left and how many requests came in.
+impl fmt::Debug for ScriptedProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ScriptedProvider")
+            .field("answers_left", &self.0.answers.lock().unwrap().len())
+            .field("requests", &self.0.requests.lock().unwrap().len())
+            .finish()
+    }
 }
 
 impl ScriptedProvider {

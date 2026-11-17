@@ -38,7 +38,7 @@ use crate::{
 ///     .with_turn_caps(TurnCaps { max_turn_steps: 10, ..TurnCaps::default() });
 /// assert_eq!(deps.shared().cwd(), std::path::Path::new("/project"));
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AgentDeps {
     tools: ToolSourceRef,
     system_prompt: SystemPromptRef,

@@ -23,6 +23,7 @@ pub(crate) mod test_support;
 mod turn;
 
 use std::{
+    fmt,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -47,6 +48,7 @@ use control::Running;
 use turn::Turn;
 
 /// How a new [`Agent`] starts: its model, its effort, and any history to resume.
+#[derive(Debug, Clone)]
 pub struct AgentOptions {
     /// The model spec, `provider:model`, resolved by [`SharedDeps::models`](crate::SharedDeps::models)
     /// before every model call. Becomes [`Agent::model_spec`].
@@ -131,6 +133,20 @@ pub struct Agent {
     /// The turn's thresholds and which have fired, across turns: this agent's
     /// own, following [`SharedDeps::thresholds`](crate::SharedDeps::thresholds).
     thresholds: Arc<Mutex<Watch<TurnSite>>>,
+}
+
+/// The model, the effort, how long the history is and whether a turn runs;
+/// not the history itself, which can be long.
+impl fmt::Debug for Agent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Agent")
+            .field("model_spec", &self.model_spec)
+            .field("effort", &self.effort)
+            .field("history_len", &self.history.len())
+            .field("control", &self.control)
+            .field("deps", &self.deps)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Agent {

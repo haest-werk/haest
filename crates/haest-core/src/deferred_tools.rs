@@ -115,7 +115,7 @@ pub fn search_tools(pool: &[ToolRef], query: &str) -> Tools {
 /// // tool joins the advertised list from the next call on.
 /// deferral.load(["mcp__docs__search"]);
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ToolDeferral {
     mode: DeferMode,
     loaded: Arc<Mutex<HashSet<String>>>,

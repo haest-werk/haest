@@ -430,6 +430,17 @@ Thresholds; wind-down, opt-in:
 - `remedy::Limit` gains `SubagentSteps`, `SubagentTime` and `SubagentUsd`,
   and `Limit::setting()`, the plain name of the setting behind each limit.
 
+Good citizens:
+
+- Every public type has `Debug`: `Agent`, `AgentOptions` (`Clone` too),
+  `AgentControl`, `AgentDeps`, `SharedDeps`, `ToolContext`, `Ledger`,
+  `task_board::TaskBoard`, `deferred_tools::ToolDeferral`,
+  `run::MemoryRunStore`, `session::JsonlSessionFile`,
+  `shell_command::ShellCall` and `testing::ScriptedProvider`, so a host's
+  `#[derive(Debug)] struct Host { deps: AgentDeps }` compiles. `ShellCall`
+  shows its variables' names, never their values; `Agent` shows how long
+  its history is, not the history.
+
 ### haest-providers
 
 - `ProviderRegistry::new` takes `keys: impl Into<KeySourceRef>`:

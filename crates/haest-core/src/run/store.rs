@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    io,
+    fmt, io,
     sync::{Arc, Mutex},
 };
 
@@ -117,6 +117,15 @@ type Logs = Arc<Mutex<HashMap<RunKey, Vec<String>>>>;
 #[derive(Clone, Default)]
 pub struct MemoryRunStore {
     logs: Logs,
+}
+
+/// The keys it holds records for, sorted; not the records.
+impl fmt::Debug for MemoryRunStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MemoryRunStore")
+            .field("keys", &self.keys())
+            .finish_non_exhaustive()
+    }
 }
 
 impl MemoryRunStore {

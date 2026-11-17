@@ -35,7 +35,7 @@ use crate::{
 /// assert_eq!(ctx.tool_call_id(), Some("call-1"));
 /// assert!(!ctx.cancel().is_cancelled());
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ToolContext {
     pub(crate) cwd: PathBuf,
     pub(crate) cancel: CancellationToken,

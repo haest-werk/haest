@@ -230,6 +230,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
+#![warn(missing_debug_implementations)]
 
 #[doc(inline)]
 pub use haest_core::prelude::*;

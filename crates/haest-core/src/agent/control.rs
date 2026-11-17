@@ -1,6 +1,9 @@
 //! [`AgentControl`]: steering and stopping a running turn from another task.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+};
 
 use tokio_util::sync::CancellationToken;
 
@@ -56,6 +59,16 @@ pub struct AgentControl {
 struct ControlInner {
     queue: Mutex<Vec<String>>,
     cancel: Mutex<Option<CancellationToken>>,
+}
+
+/// Whether a turn runs and how many inputs are queued; not their text.
+impl fmt::Debug for AgentControl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AgentControl")
+            .field("running", &self.running())
+            .field("queued", &self.inner.queue.lock().unwrap().len())
+            .finish()
+    }
 }
 
 impl AgentControl {

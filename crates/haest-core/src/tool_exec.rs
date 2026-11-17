@@ -34,6 +34,7 @@ pub(crate) fn error_assistant(model: &str, error: &str) -> AssistantMessage {
 }
 
 /// The tools of one model call, looked up by name. A name listed twice: the later one wins.
+#[derive(Debug)]
 pub struct ToolIndex(Tools);
 
 impl ToolIndex {

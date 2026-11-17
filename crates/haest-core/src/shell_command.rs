@@ -7,7 +7,7 @@
 //! (`haest_workspace::SandboxWorkspace::with_command`). Each run gets a
 //! [`ShellCall`] and answers with an [`ExecResult`], as a program would.
 
-use std::{borrow::Cow, collections::BTreeMap, path::PathBuf, time::Instant};
+use std::{borrow::Cow, collections::BTreeMap, fmt, path::PathBuf, time::Instant};
 
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
@@ -38,6 +38,22 @@ pub struct ShellCall {
     /// The shell call's deadline. A CPU-bound command never yields to a timer,
     /// so it checks this clock itself.
     pub ends_at: Instant,
+}
+
+/// The arguments, the directory, the NAMES of the variables (their values
+/// may be secrets) and how many bytes are piped in.
+impl fmt::Debug for ShellCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ShellCall")
+            .field("args", &self.args)
+            .field("cwd", &self.cwd)
+            .field("env", &self.env.keys().collect::<Vec<_>>())
+            .field("stdin_len", &self.stdin.as_ref().map(Vec::len))
+            .field("fs", &self.fs)
+            .field("cancel", &self.cancel)
+            .field("ends_at", &self.ends_at)
+            .finish()
+    }
 }
 
 impl ShellCall {
@@ -159,4 +175,19 @@ crate::plug_ref! {
     /// A [`ShellCommand`], shared: what a sandbox holds for each command it
     /// was given.
     pub struct ShellCommandRef(dyn ShellCommand);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fs::MemFs;
+
+    #[test]
+    fn debug_names_the_variables_but_never_prints_their_values() {
+        let env = BTreeMap::from([("API_KEY".to_string(), "sk-secret".to_string())]);
+        let call = ShellCall::new(["ls"], "/", MemFs::new(), Instant::now()).with_env(env);
+        let shown = format!("{call:?}");
+        assert!(shown.contains("API_KEY"), "{shown}");
+        assert!(!shown.contains("sk-secret"), "{shown}");
+    }
 }

@@ -2,7 +2,7 @@
 //! writes itself through an [`Fs`].
 
 use std::{
-    io,
+    fmt, io,
     path::{Path, PathBuf},
 };
 
@@ -80,6 +80,16 @@ pub struct JsonlSessionFile {
     session_id: String,
     fs: FsRef,
     tx: mpsc::UnboundedSender<Job>,
+}
+
+/// The file's path and the session's id.
+impl fmt::Debug for JsonlSessionFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JsonlSessionFile")
+            .field("path", &self.path)
+            .field("session_id", &self.session_id)
+            .finish_non_exhaustive()
+    }
 }
 
 impl JsonlSessionFile {

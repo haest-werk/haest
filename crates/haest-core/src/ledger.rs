@@ -29,7 +29,10 @@
 
 mod hold;
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    fmt,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -153,6 +156,23 @@ struct State {
     /// Bumped at every snapshot taken to persist, so an older one is never
     /// saved after a newer one.
     version: u64,
+}
+
+/// What it has spent and its caps, as [`Ledger::snapshot`] and
+/// [`Ledger::caps`] say; `<locked>` while another thread holds it.
+impl fmt::Debug for Ledger {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = f.debug_struct("Ledger");
+        match self.state.try_lock() {
+            Ok(state) => out
+                .field("usd", &state.usd)
+                .field("unpriced_tokens", &state.unpriced_tokens)
+                .field("held", &state.held)
+                .field("caps", &state.caps()),
+            Err(_) => out.field("state", &format_args!("<locked>")),
+        };
+        out.finish_non_exhaustive()
+    }
 }
 
 /// What a change hands the hooks once the ledger is unlocked: the snapshot
