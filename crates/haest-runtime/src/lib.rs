@@ -26,7 +26,7 @@
 //! together. A host that owns some parts itself (its own models, files or
 //! tools) builds its agent from haest's crates instead, an
 //! `AgentDeps` over its own parts, and picks the built-in tools the settings
-//! name with `haest_tools::builtin_tools_where(|w| settings.tools.has(w), ..)`:
+//! name with `haest_tools::builtin_tools_where(|t| settings.tools.has(t.as_str()), ..)`:
 //! it needs no runtime at all.
 //!
 //! Every switch in the settings is honoured here, once: a capability they
