@@ -22,7 +22,7 @@ use haest_core::{
 };
 use tokio::sync::Notify;
 
-use crate::{Body, Driven, DrivenStatus, Frame, Subscription};
+use crate::{Body, Driven, DrivenStatus, Frame, RewritePrompt, RewritePromptRef, Subscription};
 
 /// A tool that answers once it is let go (or its call is stopped).
 pub(super) struct Wait(pub Arc<Notify>);
@@ -127,12 +127,23 @@ pub(super) enum Asked {
     Close,
 }
 
+/// A rewriter that puts `[R] ` in front of a person's text.
+pub(super) struct Marks;
+
+#[async_trait]
+impl RewritePrompt for Marks {
+    async fn rewrite_prompt(&self, text: &str) -> String {
+        format!("[R] {text}")
+    }
+}
+
 /// An agent that records what the driver asks of it, with a gate that lets
 /// `gate_passes` turns nobody asked for through and holds the rest.
 pub(super) struct Recorded {
     pub agent: Agent,
     pub log: Arc<Mutex<Vec<Asked>>>,
     pub gate_passes: usize,
+    pub rewriter: Option<RewritePromptRef>,
 }
 
 impl Recorded {
@@ -141,6 +152,7 @@ impl Recorded {
             agent,
             log: Arc::default(),
             gate_passes,
+            rewriter: None,
         }
     }
 
@@ -157,6 +169,9 @@ impl Driven for Recorded {
     async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
         self.note(Asked::Run(input.to_string()));
         self.agent.run(input, sink).await
+    }
+    fn rewriter(&self) -> Option<RewritePromptRef> {
+        self.rewriter.clone()
     }
     async fn human_turn(&mut self, text: &str, sink: &mut dyn EventSink) -> TurnOutcome {
         self.note(Asked::Human(text.to_string()));

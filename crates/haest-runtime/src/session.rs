@@ -3,28 +3,41 @@
 //! session's stream instead of a terminal.
 //!
 //! The session's driver runs the runtime's own turn loop: a person's text
-//! through [`Runtime::human_turn`], each turn the inbox holds through
+//! through the mods' `prompt.submit` and [`Runtime::human_turn`]'s gate
+//! (steered in, when a turn runs), each turn the inbox holds through
 //! [`Runtime::next_agent_turn`] and [`Runtime::run`] (which steers what
 //! reaches the inbox into the running turn and flushes the session file),
 //! and [`Runtime::shut_down`] at the end.
 
 use async_trait::async_trait;
-use haest_session::{Driven, DrivenStatus, Hub};
+use haest_session::{Driven, DrivenStatus, Hub, RewritePrompt, RewritePromptRef};
 use haest_wire::{Level, Outbound, Path};
 
 use crate::{
     Runtime, Ui,
     haest::{
-        AgentControl, Effort, EventSink, Message, TurnOutcome, core::error::BoxError,
+        AgentControl, Effort, EventSink, Message, TurnOutcome, core::error::BoxError, mods::Mods,
         tools::SubagentEvent,
     },
     hooks::session_usd,
 };
 
+/// The mods' `prompt.submit`, as the session driver's rewriter.
+struct ModsPrompt(Mods);
+
+#[async_trait]
+impl RewritePrompt for ModsPrompt {
+    async fn rewrite_prompt(&self, text: &str) -> String {
+        self.0.rewrite_prompt(text).await
+    }
+}
+
 /// The whole conversation as a session drives it. Each turn step is one of
 /// the runtime's own methods, the ones a host without a session calls
 /// ([`Runtime::human_turn`], [`Runtime::next_agent_turn`], [`Runtime::run`],
 /// [`Runtime::shut_down`]): there is one turn loop, and the driver runs it.
+/// The driver runs a person's text through the mods itself, so input
+/// steered into a running turn is rewritten too.
 #[async_trait]
 impl<U: Ui + 'static> Driven for Runtime<U> {
     fn control(&self) -> AgentControl {
@@ -37,10 +50,18 @@ impl<U: Ui + 'static> Driven for Runtime<U> {
         Runtime::run(self, input, sink).await
     }
 
-    /// [`Runtime::human_turn`]: the mods' `rewrite_prompt`, what the gate
-    /// held riding in ahead of the text, then [`Runtime::run`].
+    /// The mods' `prompt.submit` ([`Mods::rewrite_prompt`]), on a clone of
+    /// the runtime's [`Mods`].
+    fn rewriter(&self) -> Option<RewritePromptRef> {
+        Some(ModsPrompt(self.mods.clone()).into())
+    }
+
+    /// [`Runtime::human_turn`] after its rewrite (the driver ran the
+    /// [`rewriter`](Driven::rewriter)): what the gate held riding in ahead of
+    /// the text, then [`Runtime::run`].
     async fn human_turn(&mut self, text: &str, sink: &mut dyn EventSink) -> TurnOutcome {
-        Runtime::human_turn(self, text, sink).await
+        let text = self.inbox.human(text);
+        Runtime::run(self, &text, sink).await
     }
 
     /// [`Runtime::next_agent_turn`].

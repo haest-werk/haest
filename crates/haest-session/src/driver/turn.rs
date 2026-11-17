@@ -6,11 +6,12 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use haest_core::LoopEvent;
+use futures::{StreamExt, stream::FuturesOrdered};
+use haest_core::{AgentControl, LoopEvent};
 use haest_wire::{Origin, State};
 
 use super::{Command, Driver, Leftover, TurnInput, Waiter, snapshot};
-use crate::{Control, Driven};
+use crate::{BoxFuture, Control, Driven, Input, RewritePromptRef};
 
 /// Input steered into the running turn: it landed if a user message entered
 /// history after it was steered.
@@ -21,11 +22,44 @@ struct Steer {
     done: Option<Waiter>,
 }
 
+/// Input on its way into the running turn: a person's through the rewriter
+/// first. They go in in the order they came.
+type Steering = BoxFuture<'static, (Input, Option<Waiter>)>;
+
+/// `input` as the turn should read it: a person's through `rewriter`.
+fn prepare(rewriter: Option<RewritePromptRef>, mut input: Input, done: Option<Waiter>) -> Steering {
+    Box::pin(async move {
+        if let (Some(rewriter), Origin::Human) = (rewriter, input.origin) {
+            input.text = rewriter.rewrite_prompt(&input.text).await;
+        }
+        (input, done)
+    })
+}
+
+/// Steer `input` in, and note when.
+fn steer(control: &AgentControl, users: &AtomicUsize, input: Input, done: Option<Waiter>) -> Steer {
+    control.steer(input.text);
+    Steer {
+        at: users.load(Ordering::Relaxed),
+        human: input.origin == Origin::Human,
+        done,
+    }
+}
+
 impl<D: Driven> Driver<D> {
     /// Run `input` as a turn; `waiters` get its outcome.
     pub(super) async fn turn(&mut self, input: TurnInput, mut waiters: Vec<Waiter>) {
         self.publish_status(State::Running);
         let control = self.driven.control();
+        let rewriter = self.driven.rewriter();
+        let (text, human) = match input {
+            TurnInput::Human(text) => match &rewriter {
+                Some(rewriter) => (rewriter.rewrite_prompt(&text).await, true),
+                None => (text, true),
+            },
+            TurnInput::HumanRewritten(text) => (text, true),
+            TurnInput::Ready(text) => (text, false),
+        };
         let users = Arc::new(AtomicUsize::new(0));
         let mut sink = {
             let (hub, users) = (self.hub.clone(), users.clone());
@@ -37,10 +71,12 @@ impl<D: Driven> Driver<D> {
             }
         };
         let mut steered: Vec<Steer> = Vec::new();
+        let mut steering: FuturesOrdered<Steering> = FuturesOrdered::new();
         let outcome = {
-            let run = match &input {
-                TurnInput::Human(text) => self.driven.human_turn(text, &mut sink),
-                TurnInput::Ready(text) => self.driven.run(text, &mut sink),
+            let run = if human {
+                self.driven.human_turn(&text, &mut sink)
+            } else {
+                self.driven.run(&text, &mut sink)
             };
             tokio::pin!(run);
             loop {
@@ -49,12 +85,12 @@ impl<D: Driven> Driver<D> {
                     // poll, so an interrupt that comes right after reaches it.
                     biased;
                     end = &mut run => break end,
+                    Some((input, done)) = steering.next(), if !steering.is_empty() => {
+                        steered.push(steer(&control, &users, input, done));
+                    }
                     cmd = self.rx.recv(), if !self.orphaned => match cmd {
                         Some(Command::Submit { input, done }) => {
-                            control.steer(input.text);
-                            let at = users.load(Ordering::Relaxed);
-                            let human = input.origin == Origin::Human;
-                            steered.push(Steer { at, human, done });
+                            steering.push_back(prepare(rewriter.clone(), input, done));
                         }
                         Some(Command::Control { control: Control::Interrupt, reply }) => {
                             control.abort();
@@ -79,6 +115,11 @@ impl<D: Driven> Driver<D> {
                 }
             }
         };
+        // Input still being rewritten when the turn ended goes in now: it
+        // was not read, so it runs next.
+        while let Some((input, done)) = steering.next().await {
+            steered.push(steer(&control, &users, input, done));
+        }
         // The turn's own input is its first user message: a steer landed only
         // if one came after it and after the steer. (A steer that arrives
         // while queued input is being turned into a message counts as landed

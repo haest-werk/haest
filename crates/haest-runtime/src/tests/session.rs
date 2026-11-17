@@ -17,13 +17,14 @@ use rmcp::{
     service::RequestContext,
 };
 use serde_json::json;
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use super::{Gateway, hardcoded, openrouter_key};
 use crate::{
     BuildOptions, HubUi, Runtime, RuntimeInputs, World, build,
     haest::{
-        LoopEvent,
+        LoopEvent, Message,
         core::fs::{Fs, MemFs},
         core::session::SessionRecord,
         core::tool::ToolContext,
@@ -248,6 +249,100 @@ async fn an_arrival_already_waiting_wakes_the_driver() {
         rt.inbox_mut().take(&control).as_deref(),
         Some("job b1 exited")
     );
+}
+
+/// A mod that marks every prompt it sees.
+const REWRITE_JS: &str = r#"export default function (haest) {
+  haest.on('prompt.submit', text => '[REWRITTEN] ' + text)
+}"#;
+
+/// A model whose first call (a Read of `/w/a.txt`) answers once `go` is let
+/// go; every later call answers "ok". Counts its calls.
+struct ReadsOnce {
+    calls: std::sync::atomic::AtomicUsize,
+    go: Arc<Notify>,
+}
+
+/// One OpenRouter stream of `chunks`.
+fn sse(chunks: &[&str]) -> String {
+    let mut body: String = chunks.iter().map(|c| format!("data: {c}\n\n")).collect();
+    body.push_str("data: [DONE]\n\n");
+    body
+}
+
+#[async_trait]
+impl HttpClient for ReadsOnce {
+    async fn send(&self, _: Request) -> Result<Response, HttpError> {
+        use std::sync::atomic::Ordering;
+        let body = if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            self.go.notified().await;
+            sse(&[
+                r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"Read","arguments":"{\"file_path\":\"/w/a.txt\"}"}}]},"finish_reason":null}]}"#,
+                r#"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":3,"completion_tokens":4}}"#,
+            ])
+        } else {
+            sse(&[
+                r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":null}]}"#,
+                r#"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}"#,
+            ])
+        };
+        Ok(Response::new(200, body).with_header("content-type", "text/event-stream"))
+    }
+}
+
+/// A person's input steered into a running turn goes through the mods'
+/// `prompt.submit` once, as the input that started the turn does.
+#[tokio::test]
+async fn a_persons_input_steered_mid_turn_goes_through_the_mods() {
+    use std::sync::atomic::Ordering;
+    let fs = Arc::new(MemFs::from_files([
+        ("/h/.config/haest/mods/rw.js", REWRITE_JS),
+        ("/w/a.txt", "hello"),
+    ]));
+    let settings = Settings {
+        mods: true,
+        ..hardcoded()
+    };
+    let go = Arc::new(Notify::new());
+    let model = Arc::new(ReadsOnce {
+        calls: 0.into(),
+        go: go.clone(),
+    });
+    let hub = Hub::new("s1");
+    let rt = built(&fs, settings, model.clone(), &hub).await;
+    let session = start(rt, hub);
+
+    let first = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::human("first")).await }
+    });
+    let called = async {
+        while model.calls.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(10), called)
+        .await
+        .expect("the model was never called");
+    let second = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::human("second")).await }
+    });
+    // The second reaches the driver before the model call answers.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    go.notify_one();
+    let _ = first.await.unwrap().unwrap();
+    let _ = second.await.unwrap().unwrap();
+
+    let history = session.history().await.unwrap().messages;
+    let said: Vec<&str> = (history.iter())
+        .filter_map(|m| match m {
+            Message::User(u) => Some(u.content.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(said, ["[REWRITTEN] first", "[REWRITTEN] second"]);
+    session.close().await;
 }
 
 #[tokio::test]

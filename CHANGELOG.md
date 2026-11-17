@@ -205,6 +205,13 @@ set anything) now gets a warning. `env_var` and the `HashMap`
   `InboxQueue::wait` returns whether anything can still arrive, and returns
   at once when an arrival already waits (breaking, barely:
   `q.wait().await;` -> `if !q.wait().await { /* nothing will come */ }`).
+- A person's input that reached a session while a turn ran was steered in
+  as it was, skipping the mods' `prompt.submit` that every other message a
+  person sends goes through. The session driver now runs a person's input
+  through the conversation's rewriter (`Driven::rewriter`, the runtime's
+  mods) once, steered in or not; a steer left unread runs next without a
+  second rewrite. Another program's input is never rewritten, as before.
+  The wire JSON is unchanged.
 
 ### Behaviour changes
 
@@ -1308,8 +1315,10 @@ Hosts write less (round two of the review, and what porting brain onto
   as `with_hooks`; what tools publish, report and log reaches it as before.
 - Feature `session` (off; the facade's `session` turns it on with
   `runtime`): `impl Driven for Runtime<U>`. The driver calls the runtime's
-  own `human_turn`, `next_agent_turn`, `run` and `shut_down`, so a session
-  runs the turn loop a host without one runs. New at the root: `HubUi` (a
+  own `next_agent_turn`, `run` and `shut_down`, and its mods are the
+  driver's rewriter, so a session runs the turn loop a host without one
+  runs, and a person's input steered into a turn goes through the mods
+  too. New at the root: `HubUi` (a
   `Ui` whose lines are `notice` frames) and `subagent_frame`.
 - `wind_down_at` reaches the conversation as wind-down thresholds, for main
   and every subagent of its hub.
@@ -1429,6 +1438,13 @@ against it; the wire JSON is unchanged):
 - New `BackendRef`, the shared handle to a `Backend` (`plug_ref!`, as every
   other plug point): built from the backend itself, an `Arc` of one, or an
   `Arc<dyn Backend>`. Its `Debug` shows the stream's id.
+- New plug point `RewritePrompt` (`RewritePromptRef`) and the defaulted
+  `Driven::rewriter`: the driver runs every person's input through it,
+  the input that starts a turn and input steered into one alike.
+  `Driven::human_turn` now gets text the rewriter already ran on (breaking
+  for a `Driven` that rewrote in `human_turn`): move the rewrite to
+  `fn rewriter(&self) -> Option<RewritePromptRef> { Some(MyRewrite.into()) }`,
+  or steered input skips it.
 
 ### haest-transport (new)
 

@@ -198,6 +198,84 @@ async fn an_unread_human_steer_runs_next_as_a_human_turn() {
     session.close().await;
 }
 
+/// The rewriter runs on a person's input once: the input that starts a
+/// turn, input steered in, and never again when a steer left unread runs
+/// next. Another program's input is not a person's: never rewritten.
+#[tokio::test]
+async fn a_persons_input_goes_through_the_rewriter_once_steered_or_not() {
+    let go = Arc::new(Notify::new());
+    let model = waits_then(&["noted"]);
+    let wait = Tools::from_iter([ToolRef::new(Wait(go.clone()))]);
+    let mut recorded = Recorded::new(agent(&model, wait), 0);
+    recorded.rewriter = Some(Marks.into());
+    let session = start(recorded, hub());
+
+    let first = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::human("first")).await }
+    });
+    eventually(|| model.requests().len() == 1).await;
+    let second = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::human("second")).await }
+    });
+    let peer = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::agent("from a peer")).await }
+    });
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    go.notify_one();
+    for turn in [first, second, peer] {
+        let _ = turn.await.unwrap().unwrap();
+    }
+
+    let history = session.history().await.unwrap().messages;
+    let said: Vec<&str> = (history.iter())
+        .filter_map(|m| match m {
+            Message::User(u) => Some(u.content.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(said, ["[R] first", "[R] second\n\nfrom a peer"]);
+    session.close().await;
+}
+
+#[tokio::test]
+async fn an_unread_steer_is_not_rewritten_again_when_it_runs_next() {
+    let stall = Stall::new(answers(&["second answered"]));
+    let mut recorded = Recorded::new(stalling_agent(&stall), 0);
+    recorded.rewriter = Some(Marks.into());
+    let log = recorded.log.clone();
+    let session = start(recorded, hub());
+
+    let first = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::human("first")).await }
+    });
+    eventually(|| stall.calls() == 1).await;
+    let second = tokio::spawn({
+        let s = session.clone();
+        async move { s.turn(Input::human("second")).await }
+    });
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    session.control(Control::Interrupt).await.unwrap();
+    let _ = first.await.unwrap().unwrap();
+    let _ = second.await.unwrap().unwrap();
+
+    let humans: Vec<Asked> = (log.lock().unwrap().iter())
+        .filter(|a| matches!(a, Asked::Human(_)))
+        .cloned()
+        .collect();
+    assert_eq!(
+        humans,
+        [
+            Asked::Human("[R] first".into()),
+            Asked::Human("[R] second".into())
+        ]
+    );
+    session.close().await;
+}
+
 #[tokio::test]
 async fn an_interrupt_stops_the_running_tool_and_the_turn() {
     let go = Arc::new(Notify::new());

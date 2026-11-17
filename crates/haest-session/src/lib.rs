@@ -117,7 +117,7 @@ mod tests;
 
 pub use backend::{Backend, BackendRef, Control, History, Input, Meta, SessionError};
 pub use body::{Body, Frame};
-pub use driven::{Driven, DrivenStatus};
+pub use driven::{Driven, DrivenStatus, RewritePrompt, RewritePromptRef};
 pub use handle::{Hold, PendingTurn, SessionHandle, start};
 pub use hub::{Hub, HubOptions};
 #[cfg(feature = "approvals")]

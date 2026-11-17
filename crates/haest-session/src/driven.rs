@@ -21,21 +21,41 @@ pub struct DrivenStatus {
     pub messages: usize,
 }
 
+/// PLUG POINT: what a person's text becomes before the model reads it (a
+/// host's mods' `prompt.submit`). [`Driven::rewriter`] hands one to the
+/// driver, which runs every person's input through it exactly once: the
+/// input that starts a turn, and input steered into a running turn alike.
+///
+/// It runs beside the turn, on its own clone, so a rewrite never waits for
+/// the turn to end.
+#[async_trait]
+pub trait RewritePrompt: Send + Sync {
+    /// `text` as the model should read it.
+    async fn rewrite_prompt(&self, text: &str) -> String;
+}
+
+haest_core::plug_ref! {
+    /// A [`RewritePrompt`], shared: what [`Driven::rewriter`] returns.
+    pub struct RewritePromptRef(dyn RewritePrompt);
+}
+
 /// PLUG POINT: what the session driver drives. The driver owns it on its own
 /// task, runs one turn at a time, steers input that arrives mid-turn through
 /// [`control`](Self::control), and makes changes only between turns.
 ///
 /// Every method but [`control`](Self::control), [`run`](Self::run),
 /// [`history`](Self::history), [`status`](Self::status) and the three changes
-/// has a default that fits a bare agent: no gate, no inbox, nothing to close.
-/// haest-runtime's `Runtime` implements all of it with its own methods (its
-/// `human_turn`, `next_agent_turn`, `run` and `shut_down`), so the turn loop
-/// it documents is the one the driver runs.
+/// has a default that fits a bare agent: no rewrite, no gate, no inbox,
+/// nothing to close. haest-runtime's `Runtime` implements all of it with its
+/// own methods (its `next_agent_turn`, `run` and `shut_down`; its mods as the
+/// [`rewriter`](Self::rewriter)), so the turn loop it documents is the one
+/// the driver runs.
 ///
 /// # Examples
 ///
-/// A host's own conversation: an agent whose people's turns carry a note.
-/// Only the required methods and the one it changes are written out.
+/// A host's own conversation: an agent whose people's input carries a note,
+/// whether it starts a turn or is steered into one. Only the required
+/// methods and the one it changes are written out.
 ///
 /// ```
 /// use haest_core::{
@@ -43,7 +63,16 @@ pub struct DrivenStatus {
 ///     SharedDeps, ShutWorkspace, Tools, TurnOutcome,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
-/// use haest_session::{Driven, DrivenStatus, Hub, Input, start};
+/// use haest_session::{Driven, DrivenStatus, Hub, Input, RewritePrompt, RewritePromptRef, start};
+///
+/// struct FromTheDesk;
+///
+/// #[async_trait::async_trait]
+/// impl RewritePrompt for FromTheDesk {
+///     async fn rewrite_prompt(&self, text: &str) -> String {
+///         format!("(from the desk) {text}")
+///     }
+/// }
 ///
 /// struct Noted(Agent);
 ///
@@ -55,8 +84,8 @@ pub struct DrivenStatus {
 ///     async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
 ///         self.0.run(input, sink).await
 ///     }
-///     async fn human_turn(&mut self, text: &str, sink: &mut dyn EventSink) -> TurnOutcome {
-///         self.0.run(&format!("(from the desk) {text}"), sink).await
+///     fn rewriter(&self) -> Option<RewritePromptRef> {
+///         Some(FromTheDesk.into())
 ///     }
 ///     fn history(&self) -> Vec<Message> {
 ///         self.0.history().to_vec()
@@ -99,9 +128,17 @@ pub trait Driven: Send + 'static {
     /// it holds is saved when the turn ends.
     async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome;
 
-    /// A turn a person started: `text` made ready (a host's mods rewrite it,
-    /// held turns ride in ahead of it), then [`run`](Self::run). Default: run
-    /// as it is.
+    /// What every person's input goes through before the model reads it,
+    /// or None to take it as it is. The driver asks before each turn, and
+    /// runs a person's text through it before [`human_turn`](Self::human_turn)
+    /// and before steering it into the running turn. Default: None.
+    fn rewriter(&self) -> Option<RewritePromptRef> {
+        None
+    }
+
+    /// A turn a person started, on `text` the [`rewriter`](Self::rewriter)
+    /// already ran on: made ready (held turns ride in ahead of it), then
+    /// [`run`](Self::run). Default: run as it is.
     async fn human_turn(&mut self, text: &str, sink: &mut dyn EventSink) -> TurnOutcome {
         self.run(text, sink).await
     }

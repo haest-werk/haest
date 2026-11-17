@@ -68,15 +68,19 @@ pub(crate) struct Driver<D> {
     settled: Vec<oneshot::Sender<()>>,
 }
 
-/// Whether the driver goes on after a request.
 /// A turn's input, and how it runs.
 pub(super) enum TurnInput {
-    /// A person's text: [`Driven::human_turn`] makes it ready and runs it.
+    /// A person's text as they sent it: through the [`Driven::rewriter`],
+    /// then [`Driven::human_turn`].
     Human(String),
+    /// A person's text the rewriter already ran on (steered into the last
+    /// turn and left unread, with what arrived since): [`Driven::human_turn`].
+    HumanRewritten(String),
     /// Ready as it is (through the gate already): [`Driven::run`].
     Ready(String),
 }
 
+/// Whether the driver goes on after a request.
 enum Flow {
     Go,
     Stop(Option<oneshot::Sender<()>>),
@@ -143,7 +147,9 @@ impl<D: Driven> Driver<D> {
     fn next_turn(&mut self) -> Option<(TurnInput, Vec<Waiter>)> {
         if let Some(left) = self.leftover.take() {
             match self.driven.take_unread() {
-                Some(text) if left.human => return Some((TurnInput::Human(text), left.waiters)),
+                Some(text) if left.human => {
+                    return Some((TurnInput::HumanRewritten(text), left.waiters));
+                }
                 Some(text) => match self.driven.gate_agent(text) {
                     Some(text) => return Some((TurnInput::Ready(text), left.waiters)),
                     None => fail(left.waiters, || SessionError::Held),
