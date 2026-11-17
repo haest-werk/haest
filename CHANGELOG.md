@@ -112,6 +112,11 @@ value itself, and holds it in a handle named after its trait. Read
   `user:password@` (a gateway that takes its credentials in the URL), and
   haest-issues' `GithubTracker` its API root's. They show `<redacted>@` in
   their place.
+- haest-mcp's `HttpTransport` printed every header's value in its Debug
+  output (an `Authorization` included), and `StdioTransport` every
+  variable's in `env` (a server's token), and so did the `McpTransport` and
+  `McpServerConfig` holding them. Debug now names each header and variable
+  and shows `<redacted>` for its value.
 - Token counts and ids that come from outside were added without a check:
   a session file's task id of 18446744073709551615 panicked the task board
   on restore, and token counts near `u64::MAX` (a provider's usage, a

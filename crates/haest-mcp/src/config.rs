@@ -1,6 +1,20 @@
 //! Which MCP servers to connect: a server's name and how to reach it.
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, fmt, path::PathBuf};
+
+/// What a header's or a variable's value shows as in Debug output.
+const REDACTED: &str = "<redacted>";
+
+/// Headers or variables as Debug output shows them: each name, never its
+/// value (a token rides in one).
+struct Names<'a>(&'a BTreeMap<String, String>);
+
+impl fmt::Debug for Names<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let names = self.0.keys().map(|name| (name, REDACTED));
+        f.debug_map().entries(names).finish()
+    }
+}
 
 /// One MCP server to connect: its name and how to reach it.
 ///
@@ -92,7 +106,9 @@ impl McpTransport {
 
 /// A streamable-HTTP MCP server; `headers` ride on every request (an
 /// `Authorization` included). Start from [`McpTransport::http`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Its Debug output names the headers and never shows their values.
+#[derive(Clone, PartialEq, Eq)]
 pub struct HttpTransport {
     /// The server's endpoint, e.g. `https://example.com/mcp`.
     pub url: String,
@@ -109,6 +125,15 @@ impl HttpTransport {
     }
 }
 
+impl fmt::Debug for HttpTransport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HttpTransport")
+            .field("url", &self.url)
+            .field("headers", &Names(&self.headers))
+            .finish()
+    }
+}
+
 impl From<HttpTransport> for McpTransport {
     fn from(http: HttpTransport) -> Self {
         Self::Http(http)
@@ -121,7 +146,9 @@ impl From<HttpTransport> for McpTransport {
 /// It gets the hub's environment ([`McpHub::with_env`](crate::McpHub::with_env))
 /// with `env` laid over it, and nothing else of this process's environment.
 /// Its stderr is discarded, and it is killed when its connection drops.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Its Debug output names the variables in `env` and never shows their values.
+#[derive(Clone, PartialEq, Eq)]
 pub struct StdioTransport {
     /// The program to run: a path, or a name looked up on the `PATH` the
     /// process is given (with none, only in the system's default
@@ -153,6 +180,17 @@ impl StdioTransport {
     pub fn with_cwd(mut self, dir: impl Into<PathBuf>) -> Self {
         self.cwd = Some(dir.into());
         self
+    }
+}
+
+impl fmt::Debug for StdioTransport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StdioTransport")
+            .field("command", &self.command)
+            .field("args", &self.args)
+            .field("env", &Names(&self.env))
+            .field("cwd", &self.cwd)
+            .finish()
     }
 }
 
