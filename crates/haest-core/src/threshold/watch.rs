@@ -202,7 +202,7 @@ impl<S: Site> fmt::Debug for Thresholds<S> {
 /// let mut watch = Watch::new(Thresholds::<LedgerSite>::default());
 /// let read = |usd: f64| move |m: Meter| {
 ///     (m == Meter::Usd(Scope::Conversation))
-///         .then_some(Reading { meter: m, value: usd, cap: Some(1.0), limit: None })
+///         .then_some(Reading::new(m, usd).with_cap(1.0))
 /// };
 /// assert_eq!(watch.check(read(0.85), Action::Warn).len(), 1);
 /// assert!(watch.check(read(0.90), Action::Warn).is_empty()); // once per crossing

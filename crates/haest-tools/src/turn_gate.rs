@@ -178,12 +178,9 @@ impl AgentTurnGate {
         }
         self.streak += 1;
         self.thresholds.next_turn();
-        let reading = Reading {
-            meter: Meter::Turns,
-            value: f64::from(self.streak),
-            cap: (self.cap > 0).then_some(f64::from(self.cap)),
-            limit: Some(Limit::AgentTurns(self.cap)),
-        };
+        let reading = Reading::new(Meter::Turns, f64::from(self.streak))
+            .with_cap(f64::from(self.cap))
+            .with_limit(Limit::AgentTurns(self.cap));
         let read = |m: Meter| (m == Meter::Turns).then_some(reading);
         for warning in self.thresholds.check(read, Action::Warn) {
             (self.notice)(&warning.remedied_text(&self.remedies));

@@ -663,7 +663,10 @@ Thresholds; wind-down, opt-in:
   and `Thresholds::new(impl IntoIterator<Item = impl Into<ThresholdRef>>)`
   (`.try_with(SaveNotes)?`); `Site::defaults`, `WindDown::thresholds` and
   `Thresholds::iter` hand out `ThresholdRef`s. `Crossing`'s fields are
-  private: `crossing.threshold()`, `crossing.reading()`.
+  private: `crossing.threshold()`, `crossing.reading()`. A `Reading` a
+  host's own site hands `Watch::check` is built with
+  `Reading::new(meter, value)`, `with_cap` (0 is no cap) and `with_limit`;
+  it is `#[non_exhaustive]`, so a field it gains breaks no host.
 - New `SharedDeps::with_thresholds(Thresholds<TurnSite>)`: what a turn
   checks, the guard's nudges unless set. Remind, warn and wind down at every step
   boundary (a resumed durable run's too); stop before every model call.

@@ -409,11 +409,10 @@ impl State {
 
     fn readings(&self) -> [Reading; 2] {
         let caps = self.caps();
-        let reading = |meter, value: f64, cap: f64, limit| Reading {
-            meter,
-            value,
-            cap: (cap > 0.0).then_some(cap),
-            limit: Some(Limit::Conversation(limit)),
+        let reading = |meter, value: f64, cap: f64, limit| {
+            Reading::new(meter, value)
+                .with_cap(cap)
+                .with_limit(Limit::Conversation(limit))
         };
         [
             reading(

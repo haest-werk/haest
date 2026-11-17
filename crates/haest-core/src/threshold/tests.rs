@@ -140,23 +140,25 @@ fn a_meter_the_site_cannot_read_is_skipped_and_stays_armed() {
 
 #[test]
 fn a_share_needs_a_cap_and_a_value_does_not() {
-    let no_cap = |value: f64| Reading {
-        meter: Meter::Steps,
-        value,
-        cap: None,
-        limit: None,
-    };
+    let no_cap = |value: f64| Reading::new(Meter::Steps, value);
     assert!(!Mark::share(0.5).reached(&no_cap(1e12)));
     assert!(Mark::at(3.0).reached(&no_cap(3.0)));
     assert!(!Mark::at(3.0).reached(&no_cap(2.9)));
     // Whichever comes first.
     let both = Mark::share(0.5).or_at(3.0);
-    let capped = |value| Reading {
-        cap: Some(100.0),
-        ..no_cap(value)
-    };
+    let capped = |value| no_cap(value).with_cap(100.0);
     assert!(both.reached(&capped(3.0)));
     assert!(Mark::share(0.5).or_at(80.0).reached(&capped(50.0)));
+}
+
+/// A cap of 0 is a cap that is off, as the caps' settings say.
+#[test]
+fn a_reading_capped_at_0_has_no_cap() {
+    let reading = Reading::new(Meter::Steps, 3.0);
+    assert_eq!(reading.with_cap(0.0).cap, None);
+    assert_eq!(reading.with_cap(10.0).cap, Some(10.0));
+    let limit = Limit::TurnSteps(10);
+    assert_eq!(reading.with_limit(limit).limit, Some(limit));
 }
 
 #[test]

@@ -263,7 +263,11 @@ crate::word_enum! {
 }
 
 /// A meter as a site read it, when it checked.
+///
+/// Built with [`Reading::new`] and its `with_*` setters, so a field added
+/// later breaks no site of a host's; its fields read as they are.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct Reading {
     /// What was read.
     pub meter: Meter,
@@ -277,6 +281,30 @@ pub struct Reading {
 }
 
 impl Reading {
+    /// `meter` at `value`, in the meter's unit, with no cap and no limit.
+    pub fn new(meter: Meter, value: f64) -> Self {
+        Self {
+            meter,
+            value,
+            cap: None,
+            limit: None,
+        }
+    }
+
+    /// The meter's cap in force (0 is a cap that is off, as no cap).
+    #[must_use]
+    pub fn with_cap(mut self, cap: f64) -> Self {
+        self.cap = (cap > 0.0).then_some(cap);
+        self
+    }
+
+    /// That cap as a host's [`Remedies`] knows it.
+    #[must_use]
+    pub fn with_limit(mut self, limit: Limit) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
     /// `text`, then the host's remedy for this meter's cap ([`Self::limit`]).
     pub fn remedied(&self, text: String, remedies: &Remedies) -> String {
         match self.limit {
