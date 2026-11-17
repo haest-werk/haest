@@ -32,7 +32,7 @@ use crate::{
 /// use std::sync::Arc;
 ///
 /// use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::{ScriptedProvider, text_answer}};
-/// use haest_session::{Hub, HubOptions, start};
+/// use haest_session::{Hub, start};
 /// use haest_transport::{Grant, Stdio, Transport};
 /// use haest_wire::{LineDecoder, Origin};
 /// use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -41,7 +41,7 @@ use crate::{
 /// # async fn main() {
 /// let model = ScriptedProvider::new([text_answer("hi")]);
 /// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
-/// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1", HubOptions::default()));
+/// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 ///
 /// // The parent's ends of the two pipes.
 /// let (mut to_child, child_in) = tokio::io::duplex(1 << 16);

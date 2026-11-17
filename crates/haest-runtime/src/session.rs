@@ -126,13 +126,13 @@ impl<U: Ui + 'static> Driven for Runtime<U> {
 /// ```
 /// use haest_core::fs::MemFs;
 /// use haest_runtime::{BuildOptions, HubUi, RuntimeInputs, World, build};
-/// use haest_session::{Backend, Body, Hub, HubOptions, SessionPrompter, start};
+/// use haest_session::{Body, Hub, SessionPrompter, start};
 /// use haest_settings::{BuiltinTools, Settings};
 /// use haest_wire::{Outbound, State};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
-/// let hub = Hub::new("run-1", HubOptions::default());
+/// let hub = Hub::new("run-1");
 /// let mut watcher = hub.subscribe(0);
 ///
 /// let settings = Settings {
@@ -195,13 +195,13 @@ impl Ui for HubUi {
 /// ```
 /// use haest_core::LoopEvent;
 /// use haest_runtime::subagent_frame;
-/// use haest_session::{Body, Hub, HubOptions};
+/// use haest_session::{Body, Hub};
 /// use haest_tools::SubagentEvent;
 /// use haest_wire::{Outbound, Path};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
-/// let hub = Hub::new("s1", HubOptions::default());
+/// let hub = Hub::new("s1");
 /// let mut sub = hub.subscribe(0);
 /// let started = SubagentEvent::Started {
 ///     name: "reader".into(),

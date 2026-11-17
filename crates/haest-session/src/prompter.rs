@@ -21,12 +21,12 @@ use crate::{Hub, hub::AskInfo};
 /// use std::time::Duration;
 ///
 /// use haest_mods::{ApprovalAnswer, ApprovalRequest, Prompter};
-/// use haest_session::{Body, Hub, HubOptions, SessionPrompter};
+/// use haest_session::{Body, Hub, SessionPrompter};
 /// use haest_wire::{Answer, Outbound};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
-/// let hub = Hub::new("s1", HubOptions::default());
+/// # async fn main() -> Result<(), haest_core::BoxError> {
+/// let hub = Hub::new("s1");
 /// let prompter = SessionPrompter::new(hub.clone());
 /// let mut peer = hub.subscribe(0);
 ///
@@ -40,10 +40,14 @@ use crate::{Hub, hub::AskInfo};
 /// let ask = tokio::spawn(async move { prompter.prompt(&req).await });
 ///
 /// // The peer sees the ask and answers it.
-/// let frame = peer.recv().await.unwrap();
-/// let Body::Wire(Outbound::ApprovalAsk { ask: n, .. }) = frame.body else { panic!() };
-/// hub.answer(n, Answer::Always).unwrap();
-/// assert_eq!(ask.await.unwrap(), ApprovalAnswer::AllowAlways);
+/// while let Some(frame) = peer.recv().await {
+///     if let Body::Wire(Outbound::ApprovalAsk { ask: n, .. }) = frame.body {
+///         hub.answer(n, Answer::Always)?;
+///         break;
+///     }
+/// }
+/// assert_eq!(ask.await?, ApprovalAnswer::AllowAlways);
+/// # Ok(())
 /// # }
 /// ```
 #[derive(Debug, Clone)]

@@ -18,7 +18,7 @@ async fn main() -> Result<(), BoxError> {
     use haest::{
         Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, Tools,
         core::testing::{ScriptedProvider, text_answer},
-        session::{Backend, Body, Hub, HubOptions, start},
+        session::{Backend, Body, Hub, start},
         transport::{Grant, Transport, UnixSocket, connect_session, running_sessions},
         wire::{Origin, Request},
     };
@@ -26,7 +26,7 @@ async fn main() -> Result<(), BoxError> {
     let model = ScriptedProvider::new([text_answer("Noted.")]);
     let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
-    let session = start(agent, Hub::new("example-1", HubOptions::default()));
+    let session = start(agent, Hub::new("example-1"));
 
     // The host: its session on a socket, input from it another program's.
     let dir = std::env::temp_dir().join(format!("haest-ex-{}", std::process::id()));

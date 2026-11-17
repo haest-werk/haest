@@ -38,15 +38,12 @@ pub struct DrivenStatus {
 /// Only the required methods and the one it changes are written out.
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_core::{
-///     Agent, AgentControl, AgentDeps, AgentOptions, Effort, EventSink, Message, ShutWorkspace,
-///     Tools, TurnOutcome,
+///     Agent, AgentControl, AgentDeps, AgentOptions, BoxError, Effort, EventSink, Message,
+///     ShutWorkspace, Tools, TurnOutcome,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
-/// use haest_core::error::BoxError;
-/// use haest_session::{Backend, Driven, DrivenStatus, Hub, HubOptions, Input, start};
+/// use haest_session::{Driven, DrivenStatus, Hub, Input, start};
 ///
 /// struct Noted(Agent);
 ///
@@ -80,16 +77,17 @@ pub struct DrivenStatus {
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_session::SessionError> {
 /// let model = ScriptedProvider::new([text_answer("noted")]);
 /// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
 /// let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
-/// let session = start(Noted(agent), Hub::new("s1", HubOptions::default()));
+/// let session = start(Noted(agent), Hub::new("s1"));
 ///
-/// session.turn(Input::human("the lamp is broken")).await.unwrap();
-/// let history = session.history().await.unwrap().messages;
+/// session.turn(Input::human("the lamp is broken")).await?;
+/// let history = session.history().await?.messages;
 /// assert!(matches!(&history[0], Message::User(u) if u.content == "(from the desk) the lamp is broken"));
 /// session.close().await;
+/// # Ok(())
 /// # }
 /// ```
 #[async_trait]

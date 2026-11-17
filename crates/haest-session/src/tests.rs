@@ -12,10 +12,29 @@ use serde_json::json;
 use tokio::sync::Notify;
 
 use self::support::*;
-use crate::{Backend, Body, Control, Hub, HubOptions, Input, SessionError, start};
+use crate::{Body, Control, Hub, HubOptions, Input, SessionError, start};
 
 fn hub() -> Hub {
-    Hub::new("s1", HubOptions::default())
+    Hub::new("s1")
+}
+
+/// Options set right after `new` reach a clone made before them: one
+/// stream, one ring.
+#[tokio::test]
+async fn options_set_after_new_reach_every_clone() {
+    let hub = Hub::new("s1");
+    let early = hub.clone();
+    let hub = hub.with_options(HubOptions { ring: 1, buffer: 1 });
+    for n in 0..3 {
+        early.notice(Level::Info, format!("line {n}"));
+    }
+    let mut late = hub.subscribe(0);
+    let first = late.recv().await.map(|f| f.body.clone());
+    assert!(
+        matches!(first, Some(Body::Wire(Outbound::Gap { after: 0, .. }))),
+        "the ring kept one frame: {first:?}"
+    );
+    assert_eq!(late.recv().await.map(|f| f.seq), Some(3));
 }
 
 /// A model that calls `Wait` once, then answers each of `then`.
@@ -211,7 +230,10 @@ async fn a_lagging_subscriber_gets_one_gap_and_the_turn_never_waits() {
         ring: 1000,
         buffer: 2,
     };
-    let session = start(agent(&model, Tools::new()), Hub::new("s1", opts));
+    let session = start(
+        agent(&model, Tools::new()),
+        Hub::new("s1").with_options(opts),
+    );
     let mut slow = session.subscribe(0);
 
     // Three turns while it reads nothing: none waits for it.
@@ -282,7 +304,7 @@ async fn a_late_subscriber_catches_up_on_the_running_turn() {
     };
     let session = start(
         agent(&model, Tools::from_iter([ToolRef::new(Wait(go.clone()))])),
-        Hub::new("s1", opts),
+        Hub::new("s1").with_options(opts),
     );
     session.hub().notice(Level::Info, "before the turn");
 

@@ -46,7 +46,7 @@ impl TermUi {
     #[cfg(test)]
     pub fn new(json: bool) -> Self {
         let sid = uuid::Uuid::new_v4().to_string();
-        Self::with_hub(json, Hub::new(sid, haest::session::HubOptions::default()))
+        Self::with_hub(json, Hub::new(sid))
     }
 
     /// A terminal over `hub`: the stream the session publishes into too.

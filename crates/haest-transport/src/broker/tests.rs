@@ -286,13 +286,10 @@ async fn a_cut_link_resumes_from_the_brokers_ack_and_loses_nothing() {
 #[tokio::test]
 async fn a_gap_when_the_ring_no_longer_holds_what_the_broker_missed() {
     let mut broker = TestBroker::start(None).await;
-    let hub = Hub::new(
-        "s1",
-        HubOptions {
-            ring: 2,
-            buffer: 64,
-        },
-    );
+    let hub = Hub::new("s1").with_options(HubOptions {
+        ring: 2,
+        buffer: 64,
+    });
     for n in 0..10 {
         hub.notice(Level::Info, format!("line {n}"));
     }

@@ -18,9 +18,10 @@ use crate::{
 /// Start a session over `driven`, publishing into `hub`: the driver runs on
 /// its own tokio task from now on, and the handle drives it.
 ///
-/// Needs a tokio runtime. The driver ends when [`Backend::close`] is called
-/// or every handle is dropped; either way the conversation is closed
-/// ([`Driven::close`]) and the hub with it.
+/// Needs a tokio runtime. The driver ends when
+/// [`close`](SessionHandle::close) is called or every handle is dropped;
+/// either way the conversation is closed ([`Driven::close`]) and the hub
+/// with it.
 pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
     let (tx, rx) = mpsc::unbounded_channel();
     let meta = Meta {
@@ -33,8 +34,10 @@ pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
 }
 
 /// A running session: the local [`Backend`], plus what only the host that
-/// started it may do ([`with`](Self::with), [`hold`](Self::hold)). Cheap to
-/// clone; every clone drives the same session.
+/// started it may do ([`with`](Self::with), [`hold`](Self::hold)). Every
+/// [`Backend`] method is also its own, so driving one needs no trait import.
+/// Cheap to clone; every clone drives the same session, and a transport takes
+/// a clone as it is.
 ///
 /// # Examples
 ///
@@ -42,23 +45,19 @@ pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
 /// second subscriber catches up from the ring.
 ///
 /// ```
-/// use std::sync::Arc;
-///
 /// use haest_core::{
 ///     Agent, AgentDeps, AgentOptions, LoopEvent, ShutWorkspace, StopReason, Tools,
 ///     testing::{ScriptedProvider, text_answer},
 /// };
-/// use haest_session::{Backend, Body, Hub, HubOptions, Input, start};
+/// use haest_session::{Body, Hub, Input, start};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() {
+/// # async fn main() -> Result<(), haest_session::SessionError> {
 /// let model = ScriptedProvider::new([text_answer("hello")]);
 /// let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
-/// let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
+/// let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 ///
-/// let hub = Hub::new("s1", HubOptions::default());
-/// let session = start(agent, hub);
-/// let end = session.turn(Input::human("say hello")).await.unwrap();
+/// let end = session.turn(Input::human("say hello")).await?;
 /// assert_eq!(end.stop_reason, StopReason::EndTurn);
 ///
 /// // A peer that connects now gets the whole turn from the ring: the
@@ -75,6 +74,7 @@ pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
 /// }
 /// assert_eq!(said, "hello");
 /// session.close().await;
+/// # Ok(())
 /// # }
 /// ```
 pub struct SessionHandle<D> {
@@ -108,9 +108,88 @@ impl Drop for Hold {
 }
 
 impl<D: Driven> SessionHandle<D> {
+    /// Who this is, for a peer's `hello`: the stream's id, the process, when
+    /// the session started.
+    pub fn meta(&self) -> &Meta {
+        &self.meta
+    }
+
     /// The stream this session publishes into.
     pub fn hub(&self) -> &Hub {
         &self.hub
+    }
+
+    /// Queue `input`: it joins a running turn at its next step, or runs as a
+    /// turn of its own. Never waits.
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::Closed`] once the conversation ended.
+    pub fn submit(&self, input: Input) -> Result<(), SessionError> {
+        self.send(Command::Submit { input, done: None })
+    }
+
+    /// [`submit`](Self::submit), then wait for the end of the turn it
+    /// entered history in.
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::Closed`]; [`SessionError::Held`] when the turn gate
+    /// held it.
+    pub async fn turn(&self, input: Input) -> Result<TurnOutcome, SessionError> {
+        self.send_input(input)?.await
+    }
+
+    /// Change the conversation. [`Control::Interrupt`] acts at once; the rest
+    /// wait for the running turn to end.
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::Closed`]; [`SessionError::Control`] when the change
+    /// failed (nothing changed then).
+    pub async fn control(&self, control: Control) -> Result<(), SessionError> {
+        self.ask(|reply| Command::Control { control, reply })
+            .await?
+    }
+
+    /// A peer's answer to an approval ask. Never waits.
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::NoSuchAsk`].
+    pub fn answer(&self, ask: u64, answer: Answer) -> Result<(), SessionError> {
+        self.hub.answer(ask, answer)
+    }
+
+    /// The stream's frames after `after`, then every new one (see [`Subscription`]).
+    pub fn subscribe(&self, after: u64) -> Subscription {
+        self.hub.subscribe(after)
+    }
+
+    /// The conversation now.
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::Closed`].
+    pub async fn snapshot(&self) -> Result<Snapshot, SessionError> {
+        self.ask(Command::Snapshot).await
+    }
+
+    /// The messages and the seq they are current to. Asked during a turn, it
+    /// answers when that turn ends (the running turn's frames are in the ring).
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::Closed`].
+    pub async fn history(&self) -> Result<History, SessionError> {
+        self.ask(Command::History).await
+    }
+
+    /// End the conversation: the running turn is stopped, then everything it
+    /// started is stopped and its session saved. Returns once that is done
+    /// (at once when it has already ended).
+    pub async fn close(&self) {
+        let _ = self.ask(Command::Close).await;
     }
 
     fn send(&self, cmd: Command<D>) -> Result<(), SessionError> {
@@ -130,6 +209,11 @@ impl<D: Driven> SessionHandle<D> {
     /// Run `f` on the conversation between turns (after the running one
     /// ends) and return what it gives: how a host makes a change the
     /// [`Backend`] has no word for (a terminal's slash commands).
+    ///
+    /// `f` returns its future boxed, `|rt| Box::pin(async move { .. })`
+    /// ([`BoxFuture`]): the future borrows the conversation and runs on the
+    /// driver's task, so it must be `Send`, and an async closure
+    /// (`AsyncFnOnce`) cannot promise that on stable Rust.
     ///
     /// # Errors
     ///
@@ -165,7 +249,7 @@ impl<D: Driven> SessionHandle<D> {
     }
 
     /// Send `input` now; await the [`PendingTurn`] for the end of the turn that
-    /// takes it. [`Backend::turn`] in two steps, for a host that sends before
+    /// takes it. [`turn`](Self::turn) in two steps, for a host that sends before
     /// it lets go of a [`Hold`]: the input then waits for a turn of its own,
     /// after what already waited. (Sent while a turn runs, it is steered into
     /// that turn, as any input.)
@@ -220,42 +304,42 @@ where
     Box::new(f)
 }
 
+/// Each method is the handle's own.
 #[async_trait]
 impl<D: Driven> Backend for SessionHandle<D> {
     fn meta(&self) -> Meta {
-        self.meta.clone()
+        SessionHandle::meta(self).clone()
     }
 
     async fn submit(&self, input: Input) -> Result<(), SessionError> {
-        self.send(Command::Submit { input, done: None })
+        SessionHandle::submit(self, input)
     }
 
     async fn turn(&self, input: Input) -> Result<TurnOutcome, SessionError> {
-        self.send_input(input)?.await
+        SessionHandle::turn(self, input).await
     }
 
     async fn control(&self, control: Control) -> Result<(), SessionError> {
-        self.ask(|reply| Command::Control { control, reply })
-            .await?
+        SessionHandle::control(self, control).await
     }
 
     async fn answer(&self, ask: u64, answer: Answer) -> Result<(), SessionError> {
-        self.hub.answer(ask, answer)
+        SessionHandle::answer(self, ask, answer)
     }
 
     fn subscribe(&self, after: u64) -> Subscription {
-        self.hub.subscribe(after)
+        SessionHandle::subscribe(self, after)
     }
 
     async fn snapshot(&self) -> Result<Snapshot, SessionError> {
-        self.ask(Command::Snapshot).await
+        SessionHandle::snapshot(self).await
     }
 
     async fn history(&self) -> Result<History, SessionError> {
-        self.ask(Command::History).await
+        SessionHandle::history(self).await
     }
 
     async fn close(&self) {
-        let _ = self.ask(Command::Close).await;
+        SessionHandle::close(self).await;
     }
 }

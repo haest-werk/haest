@@ -9,7 +9,7 @@ use std::{process::ExitCode, sync::Arc, time::Duration};
 use haest::{
     AgentControl, StopReason, TurnOutcome,
     runtime::{RuntimeHooks, kill_jobs},
-    session::{Backend, Body, Frame, Input, SessionHandle, Subscription},
+    session::{Body, Frame, Input, SessionHandle, Subscription},
     tools::{JobHub, SubagentHub},
     wire::{Outbound, State},
 };
@@ -168,7 +168,7 @@ mod tests {
         core::fs::{Fs, MemFs},
         core::session::SessionRecord,
         runtime::{BuildOptions, RuntimeInputs, World, build},
-        session::{Hub, HubOptions, SessionPrompter},
+        session::{Hub, SessionPrompter},
         settings::Settings,
     };
 
@@ -185,7 +185,7 @@ mod tests {
         let inputs = RuntimeInputs::new(settings, World::files(fs.clone()))
             .with_keys(|k: &str| (k == "OPENROUTER_API_KEY").then(|| "k".to_string()));
         let ui = TermUi::new(false);
-        let asks = SessionPrompter::new(Hub::new("t", HubOptions::default()));
+        let asks = SessionPrompter::new(Hub::new("t"));
         let rt = build(inputs, ui, asks, BuildOptions::default())
             .await
             .unwrap();

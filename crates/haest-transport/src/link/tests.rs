@@ -346,13 +346,10 @@ async fn events_replays_then_replies_then_follows() {
 
 #[tokio::test]
 async fn a_peer_later_than_the_ring_gets_a_gap_first() {
-    let hub = Hub::new(
-        "s1",
-        HubOptions {
-            ring: 4,
-            buffer: 64,
-        },
-    );
+    let hub = Hub::new("s1").with_options(HubOptions {
+        ring: 4,
+        buffer: 64,
+    });
     for n in 0..10 {
         hub.notice(Level::Info, format!("line {n}"));
     }
@@ -373,7 +370,7 @@ async fn a_peer_later_than_the_ring_gets_a_gap_first() {
 
 #[tokio::test]
 async fn a_peer_that_does_not_read_falls_behind_and_the_conversation_does_not_wait() {
-    let hub = Hub::new("s1", HubOptions { ring: 8, buffer: 8 });
+    let hub = Hub::new("s1").with_options(HubOptions { ring: 8, buffer: 8 });
     let (s, _) = session(&answers(&[]), hub.clone());
     // A tiny pipe the peer does not read.
     let (ours, theirs) = tokio::io::duplex(1 << 20);

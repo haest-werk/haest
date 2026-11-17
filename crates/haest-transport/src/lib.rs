@@ -47,7 +47,7 @@
 //! use std::sync::Arc;
 //!
 //! use haest_core::{Agent, AgentDeps, AgentOptions, ShutWorkspace, Tools, testing::ScriptedProvider};
-//! use haest_session::{Hub, HubOptions, start};
+//! use haest_session::{Hub, start};
 //! use haest_transport::{Grant, LineSink, LineSource, Start, TransportError, serve};
 //! use haest_wire::Origin;
 //!
@@ -72,7 +72,7 @@
 //! # async fn main() {
 //! let model = ScriptedProvider::new([]);
 //! let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
-//! let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1", HubOptions::default()));
+//! let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 //!
 //! let asks = Lines(vec![r#"{"v":1,"id":"r1","type":"turn","text":"hi"}"#.into()]);
 //! let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();

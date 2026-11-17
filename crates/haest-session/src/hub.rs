@@ -12,7 +12,7 @@ use tokio::sync::{broadcast, oneshot};
 
 use crate::{Body, Frame, SessionError, Subscription};
 
-/// How a [`Hub`] keeps frames.
+/// How a [`Hub`] keeps frames ([`Hub::with_options`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HubOptions {
     /// Frames the ring keeps for catch-up besides the running turn (the
@@ -42,22 +42,22 @@ impl Default for HubOptions {
 /// then starts the session over it ([`start`](crate::start)).
 ///
 /// ```
-/// use haest_session::{Hub, HubOptions};
+/// use haest_session::Hub;
 /// use haest_wire::Level;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
-/// let hub = Hub::new("s1", HubOptions::default());
+/// let hub = Hub::new("s1");
 /// let mut early = hub.subscribe(0);
 /// hub.notice(Level::Info, "building");
 /// hub.notice(Level::Warning, "an MCP server did not start");
 ///
-/// let first = early.recv().await.unwrap();
-/// assert_eq!((first.seq, first.sid.as_str()), (1, "s1"));
+/// let first = early.recv().await;
+/// assert_eq!(first.map(|f| (f.seq, f.sid.clone())), Some((1, "s1".to_string())));
 ///
 /// // A late subscriber catches up from the ring.
 /// let mut late = hub.subscribe(1);
-/// assert_eq!(late.recv().await.unwrap().seq, 2);
+/// assert_eq!(late.recv().await.map(|f| f.seq), Some(2));
 /// # }
 /// ```
 #[derive(Clone)]
@@ -96,10 +96,11 @@ pub(crate) struct AskInfo {
 
 impl Hub {
     /// A hub for the stream `sid` (one per running conversation), with
-    /// nothing published yet.
-    pub fn new(sid: impl Into<String>, opts: HubOptions) -> Self {
+    /// nothing published yet and the default [`HubOptions`].
+    pub fn new(sid: impl Into<String>) -> Self {
         let sid = sid.into();
-        let (tx, _) = broadcast::channel(opts.buffer.max(1));
+        let opts = HubOptions::default();
+        let (tx, _) = broadcast::channel(opts.buffer);
         let state = State {
             framer: Framer::new(sid.clone()),
             ring: Ring::new(opts.ring),
@@ -114,6 +115,43 @@ impl Hub {
         }
     }
 
+    /// The hub keeping frames as `opts` says. Meant right after
+    /// [`new`](Self::new), before anyone subscribes: the ring keeps
+    /// `opts.ring` frames from now on (a smaller ring evicts at once), and
+    /// the buffer, which every subscription shares, changes only while
+    /// nobody is subscribed. Every clone of the hub sees the change.
+    ///
+    /// ```
+    /// use haest_session::{Hub, HubOptions};
+    /// use haest_wire::Level;
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let hub = Hub::new("s1").with_options(HubOptions { ring: 2, ..HubOptions::default() });
+    /// for n in 1..=3 {
+    ///     hub.notice(Level::Info, format!("line {n}"));
+    /// }
+    /// // The ring kept the last two: a peer from the start gets a gap first.
+    /// let mut late = hub.subscribe(0);
+    /// let first = late.recv().await.map(|f| f.body.clone());
+    /// assert!(matches!(first, Some(haest_session::Body::Wire(haest_wire::Outbound::Gap { .. }))));
+    /// # }
+    /// ```
+    pub fn with_options(self, opts: HubOptions) -> Self {
+        {
+            let mut state = self.lock();
+            state.ring.set_capacity(opts.ring);
+            if state.tx.as_ref().is_some_and(|tx| tx.receiver_count() == 0) {
+                state.tx = Some(broadcast::channel(opts.buffer.max(1)).0);
+            }
+        }
+        self
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, State> {
+        self.inner.state.lock().expect("the hub's lock is poisoned")
+    }
+
     /// The stream's id.
     pub fn sid(&self) -> &str {
         &self.inner.sid
@@ -121,17 +159,17 @@ impl Hub {
 
     /// The seq of the last frame published; 0 before the first.
     pub fn last_seq(&self) -> u64 {
-        self.inner.state.lock().unwrap().framer.seq()
+        self.lock().framer.seq()
     }
 
     /// `body`, about `path`, as the stream's next frame: numbered, kept, and
     /// sent to every subscriber. Returns its seq. After [`close`](Self::close)
     /// it is still numbered and kept, but nobody gets it.
     pub fn publish(&self, path: Path, body: impl Into<Body>) -> u64 {
-        let mut state = self.inner.state.lock().unwrap();
+        let mut state = self.lock();
         let frame = Arc::new(state.framer.stamp(path, body.into()));
         let seq = frame.seq;
-        state.ring.push(frame.clone());
+        state.ring.push(Arc::clone(&frame));
         if let Some(tx) = &state.tx {
             // No subscriber is not an error: the ring has it.
             let _ = tx.send(frame);
@@ -153,7 +191,7 @@ impl Hub {
     /// The frames after `after` from the ring (a `gap` first when it lost
     /// some), then every new one. Nothing is published between the two.
     pub fn subscribe(&self, after: u64) -> Subscription {
-        let state = self.inner.state.lock().unwrap();
+        let state = self.lock();
         let replay = state.ring.since(after);
         let rx = match &state.tx {
             Some(tx) => tx.subscribe(),
@@ -165,7 +203,7 @@ impl Hub {
     /// No more frames go out: every subscription ends once it has what it
     /// holds. Waiting approval asks go unanswered (their prompts deny).
     pub fn close(&self) {
-        let mut state = self.inner.state.lock().unwrap();
+        let mut state = self.lock();
         state.tx = None;
         state.asks.waiting.clear();
     }
@@ -175,7 +213,7 @@ impl Hub {
     pub(crate) fn ask(&self, info: AskInfo) -> (u64, oneshot::Receiver<Answer>) {
         let (tx, rx) = oneshot::channel();
         let ask = {
-            let mut state = self.inner.state.lock().unwrap();
+            let mut state = self.lock();
             state.asks.next += 1;
             let ask = state.asks.next;
             state.asks.waiting.insert(ask, tx);
@@ -196,7 +234,7 @@ impl Hub {
     /// nowhere, and the stream says so. Nothing when it was answered.
     #[cfg(feature = "approvals")]
     pub(crate) fn withdraw(&self, ask: u64) {
-        let waiting = self.inner.state.lock().unwrap().asks.waiting.remove(&ask);
+        let waiting = self.lock().asks.waiting.remove(&ask);
         if waiting.is_some() {
             self.publish(Path::main(), Outbound::ApprovalWithdrawn { ask });
         }
@@ -209,7 +247,7 @@ impl Hub {
     /// [`SessionError::NoSuchAsk`] when no such ask waits (answered,
     /// withdrawn, or never asked).
     pub fn answer(&self, ask: u64, answer: Answer) -> Result<(), SessionError> {
-        let waiting = self.inner.state.lock().unwrap().asks.waiting.remove(&ask);
+        let waiting = self.lock().asks.waiting.remove(&ask);
         match waiting.map(|tx| tx.send(answer)) {
             Some(Ok(())) => Ok(()),
             _ => Err(SessionError::NoSuchAsk { ask }),

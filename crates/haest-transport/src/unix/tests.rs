@@ -129,7 +129,7 @@ async fn a_socket_a_running_session_serves_is_not_taken() {
 #[tokio::test]
 async fn running_lists_the_live_sessions_and_clears_what_a_crashed_run_left() {
     let dir = Dir::new("list");
-    let (s, _) = session(&answers(&[]), Hub::new("live-1", HubOptions::default()));
+    let (s, _) = session(&answers(&[]), Hub::new("live-1"));
     let _attached = UnixSocket::new(&dir.0)
         .attach(Arc::new(s), Grant::command(Origin::Agent))
         .unwrap();
@@ -220,7 +220,7 @@ async fn a_session_is_reached_by_its_id_or_a_prefix_only_it_has() {
     let dir = Dir::new("prefix");
     let mut kept = Vec::new();
     for sid in ["abc-1", "abd-2"] {
-        let (s, _) = session(&answers(&[]), Hub::new(sid, HubOptions::default()));
+        let (s, _) = session(&answers(&[]), Hub::new(sid));
         kept.push(
             UnixSocket::new(&dir.0)
                 .attach(Arc::new(s), Grant::watch(Origin::Agent))
@@ -351,13 +351,10 @@ async fn a_command_socket_drives_the_conversation() {
 #[tokio::test]
 async fn a_late_watcher_whose_frames_the_ring_lost_gets_a_gap() {
     let dir = Dir::new("gap");
-    let hub = Hub::new(
-        "s1",
-        HubOptions {
-            ring: 2,
-            buffer: 64,
-        },
-    );
+    let hub = Hub::new("s1").with_options(HubOptions {
+        ring: 2,
+        buffer: 64,
+    });
     for n in 0..6 {
         hub.notice(Level::Info, format!("line {n}"));
     }

@@ -17,7 +17,7 @@ use haest::{
     ToolContext, ToolError, ToolOutput, Tools, async_trait,
     core::testing::{ScriptedProvider, text_answer, tool_answer},
     serde_json::{Value, json},
-    session::{Backend, Body, Hub, HubOptions, Input, start},
+    session::{Body, Hub, Input, start},
     wire::{Outbound, encode_line},
 };
 use tokio::sync::Notify;
@@ -57,7 +57,7 @@ async fn main() -> Result<(), BoxError> {
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 
     // The hub first: one stream, numbered, kept for catch-up.
-    let hub = Hub::new("example-stream", HubOptions::default());
+    let hub = Hub::new("example-stream");
     let mut watcher = hub.subscribe(0);
     let session = start(agent, hub);
 

@@ -1076,6 +1076,25 @@ wrote them.
 - Feature `approvals`: `SessionPrompter`, a `Prompter` whose asks are
   `approval_ask` frames a peer answers, under the runtime's `ApprovalGate`.
 
+Changed since the first cut on `main` (breaking for Rust code written
+against it; the wire JSON is unchanged):
+
+- `Hub::new` takes the stream id alone and options are a setter:
+  `Hub::new("s1", HubOptions::default())` -> `Hub::new("s1")`, and
+  `Hub::new(sid, opts)` -> `Hub::new(sid).with_options(opts)`. Every clone
+  of the hub sees the options; the buffer changes only while nobody is
+  subscribed.
+- `SessionHandle` drives itself: `turn`, `submit`, `control`, `answer`,
+  `subscribe`, `snapshot`, `history`, `close` and `meta` are its own
+  methods, and its `Backend` impl forwards to them, so a host no longer
+  writes `use haest_session::Backend`. `submit` and `answer` never wait, so
+  the handle's are not `async`: `session.answer(n, a).await` ->
+  `session.answer(n, a)`; `meta` lends (`&Meta`) where the trait's returns
+  one.
+- `SessionHandle::with` says why it takes a closure returning a
+  `BoxFuture`: an `AsyncFnOnce` cannot promise its future is `Send` on
+  stable Rust, and the job runs on the driver's task.
+
 ### haest-transport (new)
 
 - `serve(backend, grant, start, source, sink)`: one connection's rules,

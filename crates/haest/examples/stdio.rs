@@ -18,7 +18,7 @@ use haest::{
     ToolOutput, Tools, async_trait,
     core::testing::{ScriptedProvider, text_answer, tool_answer},
     serde_json::{self, Value, json},
-    session::{Hub, HubOptions, start},
+    session::{Hub, start},
     transport::{Grant, LineSource, NdjsonSource, Stdio, Transport},
     wire::Origin,
 };
@@ -90,7 +90,7 @@ async fn main() -> Result<(), BoxError> {
     let tools = Tools::new().with(Forever);
     let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
-    let session = start(agent, Hub::new("example-stream", HubOptions::default()));
+    let session = start(agent, Hub::new("example-stream"));
 
     // The child's side: its session served over the pipe pair. The host
     // decides what the parent may do (command) and whose input it sends

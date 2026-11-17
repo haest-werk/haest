@@ -14,10 +14,11 @@
 //!   made, a hold) waits and runs as a turn of its own, through the turn gate
 //!   (a person's input starts its count over, another program's counts
 //!   against it). Model, effort and clear wait for the running turn to end.
-//! - [`SessionHandle`]: the running session, as a [`Backend`]: the one seam a
-//!   transport needs (haest-transport serves it over stdio, a Unix socket or
-//!   a broker link). Its frames are [`Frame`]s: the wire's envelope around a
-//!   [`Body`], the conversation's events or the wire's own frames.
+//! - [`SessionHandle`]: the running session, driven through its own methods,
+//!   and a [`Backend`]: the one seam a transport needs (haest-transport
+//!   serves it over stdio, a Unix socket or a broker link). Its frames are
+//!   [`Frame`]s: the wire's envelope around a [`Body`], the conversation's
+//!   events or the wire's own frames.
 //! - [`SessionPrompter`] (feature `approvals`): approval asks answered by a
 //!   peer, for a conversation with no terminal.
 //!
@@ -33,8 +34,8 @@
 //!    when nobody sits at a terminal.
 //! 3. [`start`] the session over it; subscribe the host's own display, attach
 //!    transports.
-//! 4. Drive it through the handle; [`Backend::close`] at the end stops what
-//!    the conversation started and saves it.
+//! 4. Drive it through the handle; [`SessionHandle::close`] at the end stops
+//!    what the conversation started and saves it.
 //!
 //! # Examples
 //!
@@ -42,18 +43,16 @@
 //! here waits until it is let go, so the input arrives while it runs.
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_core::{
 //!     Agent, AgentDeps, AgentOptions, JsonMap, Message, ShutWorkspace, Tool, ToolContext,
 //!     ToolError, ToolOutput, Tools,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //! };
-//! use haest_session::{Backend, Hub, HubOptions, Input, start};
-//! use tokio::sync::Notify;
+//! use haest_session::{Hub, Input, start};
+//! use tokio::sync::watch;
 //!
 //! /// A tool that answers once it is let go.
-//! struct Wait(Arc<Notify>);
+//! struct Wait(watch::Receiver<bool>);
 //!
 //! #[async_trait::async_trait]
 //! impl Tool for Wait {
@@ -62,21 +61,21 @@
 //!     fn parameters(&self) -> serde_json::Value { serde_json::json!({"type": "object"}) }
 //!     fn kind(&self) -> &str { "wait" }
 //!     async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
-//!         self.0.notified().await;
+//!         let _ = self.0.clone().wait_for(|go| *go).await;
 //!         Ok(ToolOutput::text("waited"))
 //!     }
 //! }
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() {
-//! let go = Arc::new(Notify::new());
+//! # async fn main() -> Result<(), haest_core::BoxError> {
+//! let (go, gate) = watch::channel(false);
 //! let model = ScriptedProvider::new([
 //!     tool_answer(&[("c1", "Wait", serde_json::json!({}))]),
 //!     text_answer("done, and noted"),
 //! ]);
-//! let tools = Tools::new().with(Wait(go.clone()));
+//! let tools = Tools::new().with(Wait(gate));
 //! let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
-//! let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1", HubOptions::default()));
+//! let session = start(Agent::new(deps, AgentOptions::new("scripted:m")), Hub::new("s1"));
 //!
 //! let first = tokio::spawn({
 //!     let session = session.clone();
@@ -89,15 +88,16 @@
 //!     async move { session.turn(Input::human("also note this")).await }
 //! });
 //! tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-//! go.notify_one();
+//! go.send_replace(true);
 //!
 //! // One turn took both: the second input is a user message after the tool result.
-//! first.await.unwrap().unwrap();
-//! second.await.unwrap().unwrap();
-//! let history = session.history().await.unwrap().messages;
+//! first.await??;
+//! second.await??;
+//! let history = session.history().await?.messages;
 //! assert!(matches!(&history[3], Message::User(u) if u.content == "also note this"));
 //! assert_eq!(model.requests().len(), 2);
 //! session.close().await;
+//! # Ok(())
 //! # }
 //! ```
 

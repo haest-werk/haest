@@ -5,9 +5,7 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use haest_session::{
-    Backend, Body, Frame, Hub, HubOptions, Input, SessionPrompter, Subscription, start,
-};
+use haest_session::{Body, Frame, Hub, Input, SessionPrompter, Subscription, start};
 use haest_settings::Settings;
 use haest_wire::{Answer, Level, Outbound, State};
 use rmcp::{
@@ -128,7 +126,7 @@ fn users(frames: &[Arc<Frame>]) -> Vec<String> {
 #[tokio::test]
 async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
     let fs = Arc::new(MemFs::new());
-    let hub = Hub::new("s1", HubOptions::default());
+    let hub = Hub::new("s1");
     let settings = Settings {
         agents: true,
         ..hardcoded()
@@ -191,7 +189,7 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
 #[tokio::test]
 async fn an_arrival_runs_through_the_gate_and_what_it_holds_rides_in_with_the_person() {
     let fs = Arc::new(MemFs::new());
-    let hub = Hub::new("s1", HubOptions::default());
+    let hub = Hub::new("s1");
     let mut rt = built(&fs, hardcoded(), Gateway::default(), &hub).await;
     // An inbox the test can send to, its gate letting one turn through.
     let (sender, queue) = inbox(rt.hooks(), 1);
@@ -237,7 +235,7 @@ async fn an_arrival_runs_through_the_gate_and_what_it_holds_rides_in_with_the_pe
 #[tokio::test]
 async fn the_status_names_the_session_file_and_follows_a_model_change() {
     let fs = Arc::new(MemFs::new());
-    let hub = Hub::new("s1", HubOptions::default());
+    let hub = Hub::new("s1");
     let rt = built(&fs, hardcoded(), Gateway::default(), &hub).await;
     let id = rt.session_id();
     let session = start(rt, hub);
@@ -277,7 +275,7 @@ async fn the_status_names_the_session_file_and_follows_a_model_change() {
 
 #[tokio::test]
 async fn hub_ui_lines_are_notices_in_the_stream() {
-    let hub = Hub::new("s1", HubOptions::default());
+    let hub = Hub::new("s1");
     let mut sub = hub.subscribe(0);
     let ui = HubUi::new(hub.clone());
     crate::Ui::warn(&ui, "an MCP server did not start");
@@ -315,7 +313,7 @@ async fn next_ask(sub: &mut Subscription) -> u64 {
 /// it back on [`Runtime::gate`](crate::Runtime).
 #[tokio::test]
 async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
-    let hub = Hub::new("s1", HubOptions::default());
+    let hub = Hub::new("s1");
     let inputs =
         RuntimeInputs::new(hardcoded(), World::files(MemFs::new())).with_keys(openrouter_key());
     let ui = HubUi::new(hub.clone());
@@ -340,7 +338,7 @@ async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
 
     let first = ask(&asks);
     let id = next_ask(&mut sub).await;
-    session.answer(id, Answer::Always).await.unwrap();
+    session.answer(id, Answer::Always).unwrap();
     assert_eq!(first.await.unwrap(), Decision::Allow);
     let covered = asks.ask(rm(), &CancellationToken::new()).await;
     assert_eq!(covered, Decision::Allow, "the ALWAYS covers it, no ask");
@@ -348,7 +346,7 @@ async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
     gate.revoke("Bash");
     let again = ask(&asks);
     let id = next_ask(&mut sub).await;
-    session.answer(id, Answer::Deny).await.unwrap();
+    session.answer(id, Answer::Deny).unwrap();
     assert_eq!(
         again.await.unwrap(),
         Decision::Deny,

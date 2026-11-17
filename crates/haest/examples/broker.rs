@@ -21,7 +21,7 @@ use haest::{
     Agent, AgentDeps, AgentOptions, BoxError, ShutWorkspace, Tools,
     core::testing::{ScriptedProvider, text_answer},
     serde_json::{self, Value, json},
-    session::{Backend, Hub, HubOptions, Input, start},
+    session::{Backend, Hub, Input, start},
     transport::{Backoff, Broker, Grant, Transport},
     wire::Origin,
 };
@@ -87,7 +87,7 @@ async fn main() -> Result<(), BoxError> {
     ]);
     let deps = AgentDeps::new(model.resolver(), Tools::new(), "", "/", ShutWorkspace);
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
-    let session = start(agent, Hub::new("example-link", HubOptions::default()));
+    let session = start(agent, Hub::new("example-link"));
     let backend: Arc<dyn Backend> = Arc::new(session);
 
     // The broker: a WebSocket listener.

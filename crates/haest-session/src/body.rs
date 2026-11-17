@@ -19,9 +19,10 @@ pub type Frame = Envelope<Body>;
 ///
 /// let mut framer = Framer::new("s1");
 /// let frame: Frame = framer.stamp(Path::main(), Body::Loop(LoopEvent::TextDelta { text: "hi".into() }));
-/// let line = serde_json::to_string(&frame).unwrap();
-/// let back: Frame = serde_json::from_str(&line).unwrap();
+/// let line = serde_json::to_string(&frame)?;
+/// let back: Frame = serde_json::from_str(&line)?;
 /// assert!(matches!(back.body, Body::Loop(LoopEvent::TextDelta { .. })));
+/// # Ok::<(), serde_json::Error>(())
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]

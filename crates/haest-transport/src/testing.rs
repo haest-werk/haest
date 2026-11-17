@@ -9,7 +9,7 @@ use haest_core::{
     ToolOutput, ToolRef, Tools,
     testing::{ScriptedProvider, text_answer},
 };
-use haest_session::{Hub, HubOptions, SessionHandle, start};
+use haest_session::{Hub, SessionHandle, start};
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 
@@ -42,19 +42,13 @@ impl Tool for Wait {
 pub fn session(model: &ScriptedProvider, hub: Hub) -> (SessionHandle<Agent>, Arc<Notify>) {
     let go = Arc::new(Notify::new());
     let tools: Tools = Tools::from_iter([ToolRef::new(Wait(go.clone()))]);
-    let deps = AgentDeps::new(
-        Arc::new(model.resolver()),
-        Arc::new(tools),
-        Arc::new(String::new()),
-        "/",
-        Arc::new(ShutWorkspace),
-    );
+    let deps = AgentDeps::new(model.resolver(), tools, "", "/", ShutWorkspace);
     let agent = Agent::new(deps, AgentOptions::new("scripted:m"));
     (start(agent, hub), go)
 }
 
 pub fn hub() -> Hub {
-    Hub::new("s1", HubOptions::default())
+    Hub::new("s1")
 }
 
 pub fn answers(texts: &[&str]) -> ScriptedProvider {
