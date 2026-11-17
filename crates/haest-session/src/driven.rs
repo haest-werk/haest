@@ -130,7 +130,7 @@ pub trait Driven: Send + 'static {
     /// wrote). Cancel-safe: the driver waits on it beside its requests.
     /// Default: never.
     async fn arrival(&mut self) {
-        std::future::pending::<()>().await
+        std::future::pending::<()>().await;
     }
 
     /// Whether work is still out that will arrive later (a background

@@ -143,7 +143,7 @@ impl std::fmt::Debug for Token {
 }
 
 /// The frames the wire adds beside the conversation's events. Tagged by
-/// `type` (snake_case), fields camelCase, as the events are.
+/// `type` (`snake_case`), fields `camelCase`, as the events are.
 ///
 /// The first seven are stream frames; [`Hello`](Self::Hello),
 /// [`Gap`](Self::Gap) and [`Reply`](Self::Reply) belong to one connection

@@ -11,10 +11,11 @@ pub const WIRE_V: u32 = 1;
 
 /// Milliseconds since the Unix epoch, now: what a [`Framer`] stamps as `ts`
 /// unless given another clock. 0 if the system clock is before the epoch.
+#[must_use]
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as u64)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// Who a frame is about: `["main"]` for the conversation itself,
@@ -173,12 +174,14 @@ impl Framer {
     }
 
     /// The framer, its next frame after `seq` (a stream that resumes).
+    #[must_use]
     pub fn starting_after(mut self, seq: u64) -> Self {
         self.seq = seq;
         self
     }
 
     /// The framer with another clock for `ts`.
+    #[must_use]
     pub fn with_clock(mut self, clock: fn() -> u64) -> Self {
         self.clock = clock;
         self

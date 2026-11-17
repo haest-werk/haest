@@ -158,6 +158,7 @@ impl<R, W> Stdio<R, W> {
     }
 
     /// Start otherwise: follow from another seq, or not until asked.
+    #[must_use]
     pub fn with_start(mut self, start: Start) -> Self {
         self.start = start;
         self

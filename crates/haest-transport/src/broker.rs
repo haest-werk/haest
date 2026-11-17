@@ -90,12 +90,14 @@ impl Broker {
     }
 
     /// The token the `hello` carries.
+    #[must_use]
     pub fn with_token(mut self, token: impl Into<Token>) -> Self {
         self.token = Some(token.into());
         self
     }
 
     /// How long to wait between dials.
+    #[must_use]
     pub fn with_backoff(mut self, backoff: Backoff) -> Self {
         self.backoff = backoff;
         self

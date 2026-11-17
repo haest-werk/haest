@@ -39,7 +39,7 @@ impl Inbound {
     }
 }
 
-/// What a peer asks. Tagged by `type` (snake_case), fields camelCase.
+/// What a peer asks. Tagged by `type` (`snake_case`), fields `camelCase`.
 ///
 /// `turn`, `control` and `approval_answer` need `command` access; the rest
 /// only watch. A new request type is additive on the wire, so a `match` has a
@@ -95,7 +95,7 @@ impl Request {
     }
 }
 
-/// What a [`Request::Control`] asks: tagged by `verb` (snake_case), with
+/// What a [`Request::Control`] asks: tagged by `verb` (`snake_case`), with
 /// the verb's own field beside it. A verb carries only the field it uses, so
 /// `set_model` without a model is not a request (a [`DecodeError::Shape`]).
 /// More verbs may come: a `match` has a `_` arm.

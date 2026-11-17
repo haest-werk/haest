@@ -137,6 +137,7 @@ impl Hub {
     /// assert!(matches!(first, Some(haest_session::Body::Wire(haest_wire::Outbound::Gap { .. }))));
     /// # }
     /// ```
+    #[must_use]
     pub fn with_options(self, opts: HubOptions) -> Self {
         {
             let mut state = self.lock();

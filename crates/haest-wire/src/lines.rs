@@ -68,6 +68,7 @@ impl LineDecoder {
     }
 
     /// The decoder with an unfinished line of at most `limit` bytes.
+    #[must_use]
     pub fn with_limit(mut self, limit: usize) -> Self {
         self.limit = limit;
         self

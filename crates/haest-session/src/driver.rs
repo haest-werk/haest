@@ -130,8 +130,8 @@ impl<D: Driven> Driver<D> {
                     Some(cmd) => self.deferred.push_back(cmd),
                     None => self.orphaned = true,
                 },
-                _ = self.driven.arrival(), if free => {}
-                _ = tokio::time::sleep(SETTLE_POLL), if poll => {}
+                () = self.driven.arrival(), if free => {}
+                () = tokio::time::sleep(SETTLE_POLL), if poll => {}
             }
         }
     }
