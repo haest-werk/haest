@@ -55,6 +55,44 @@ async fn the_trait_attaches_as_the_transports_own_attach_does() {
     assert!(out.contains(r#""type":"hello""#), "{out}");
 }
 
+/// A detached transport stops serving: a peer that follows the stream gets
+/// nothing said after the detach, and what it reads ends.
+#[cfg(feature = "stdio")]
+#[tokio::test]
+async fn a_detached_transport_writes_nothing_more() {
+    use std::time::Duration;
+
+    use haest_wire::{Level, Origin};
+
+    use crate::{Grant, LineSource, NdjsonSource, Stdio, testing};
+
+    let (session, _go) = testing::session(&testing::answers(&[]), testing::hub());
+    let (_to_child, child_in) = tokio::io::duplex(1 << 16);
+    let (child_out, from_child) = tokio::io::duplex(1 << 16);
+    let attached =
+        Stdio::new(child_in, child_out).attach(session.clone(), Grant::watch(Origin::Agent));
+    let mut from_child = NdjsonSource::new(from_child);
+    let hello = from_child.next_line().await.unwrap().unwrap();
+    assert!(hello.contains(r#""type":"hello""#), "{hello}");
+
+    attached.detach();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    session.hub().notice(Level::Info, "said after the detach");
+    let mut rest = Vec::new();
+    let read = async {
+        while let Some(line) = from_child.next_line().await {
+            rest.push(line.unwrap());
+        }
+    };
+    let ended = tokio::time::timeout(Duration::from_secs(2), read).await;
+    assert!(ended.is_ok(), "still served after the detach: {rest:?}");
+    assert!(
+        rest.iter().all(|l| !l.contains("said after the detach")),
+        "{rest:?}"
+    );
+    session.close().await;
+}
+
 /// Why a connection ended, in words a person reads; a failure with its
 /// causes.
 #[test]

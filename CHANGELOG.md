@@ -2119,6 +2119,14 @@ against it; the wire JSON is unchanged):
   conversation ended") when the conversation ends. It dropped the socket,
   which the broker read as a connection reset, the same as a path that
   died and will be dialed again.
+- A detached transport stops serving. `serve` writes to the peer and
+  follows the stream on tasks of its own, and nothing stopped them when
+  `serve` was dropped, which is how `Attached::detach`, a dropped
+  `Attached` and a host's own `select!` stop a connection: a peer that
+  followed the stream kept getting every frame, and a detached broker link
+  kept its socket open, streamed the conversation to the broker and pinged
+  it until the conversation ended. A dropped `serve` now stops both, so a
+  detached broker link closes its socket.
 
 ### haest-issues
 

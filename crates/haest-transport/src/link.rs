@@ -3,7 +3,14 @@
 //! asked for them, and a `reply` for every request. Every transport runs its
 //! connections through here, so the rules are the same on each.
 
-use std::{fmt, future::Future, sync::Arc, time::Duration};
+use std::{
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use haest_core::{Effort, TurnOutcome, error::report};
 use haest_session::{BackendRef, Body, Control, Frame, Input, SessionError, Subscription};
@@ -11,7 +18,7 @@ use haest_wire::{self as wire, Access, Envelope, Outbound, Request, Token, decod
 use serde_json::{Value, json};
 use tokio::{
     sync::{mpsc, watch},
-    task::{JoinHandle, JoinSet},
+    task::{JoinError, JoinHandle, JoinSet},
 };
 
 use crate::{Grant, TransportError};
@@ -127,6 +134,10 @@ enum Out {
 /// once 32 of its requests wait for their replies, the connection reads no
 /// more lines until one is answered.
 ///
+/// Dropped before it returns (a transport detached, a host's own `select!`),
+/// the connection stops: nothing more is written to `sink`, which is dropped
+/// with it, and no subscription it made goes on.
+///
 /// `backend` is any [`Backend`](haest_session::Backend) (a `session.clone()`),
 /// an `Arc` of one, or a [`BackendRef`].
 pub async fn serve(
@@ -138,7 +149,7 @@ pub async fn serve(
 ) -> Ended {
     let backend: BackendRef = backend.into();
     let (tx, rx) = mpsc::channel(OUT_BUFFER);
-    let mut writer = tokio::spawn(write(sink, rx, backend.meta().sid));
+    let mut writer = AbortOnDrop(tokio::spawn(write(sink, rx, backend.meta().sid)));
     // The conversation's end, whatever the peer asked for.
     let closed = until_closed(backend.subscribe(u64::MAX));
     tokio::pin!(closed);
@@ -196,11 +207,29 @@ pub async fn serve(
         }
     };
     link.finish(matches!(ended, Ended::Closed)).await;
-    if !writer.is_finished() {
+    if !writer.0.is_finished() {
         let _ = tokio::time::timeout(FLUSH_GRACE, &mut writer).await;
     }
-    writer.abort();
     ended
+}
+
+/// A task a connection started, aborted when this drops: however `serve`
+/// ends, returned or dropped where it waits, nothing it started goes on
+/// writing to the peer or following the stream.
+struct AbortOnDrop<T>(JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+impl<T> Future for AbortOnDrop<T> {
+    type Output = Result<T, JoinError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.0).poll(cx)
+    }
 }
 
 /// One connection's state while it is served.
@@ -209,7 +238,7 @@ struct Link {
     grant: Grant,
     tx: mpsc::Sender<Out>,
     /// The frames it asked for (`events`): one subscription at a time.
-    pump: Option<JoinHandle<()>>,
+    pump: Option<AbortOnDrop<()>>,
     /// Subscriptions made so far: the current one's number.
     follows: u64,
     /// How far the current subscription has been written.
@@ -348,14 +377,13 @@ impl Link {
     /// the reply to `id`, then with `follow` every new one. Replaces what the
     /// peer asked for before.
     fn events(&mut self, id: Option<String>, after: u64, follow: bool) {
-        if let Some(old) = self.pump.take() {
-            old.abort();
-        }
+        // The one it replaces stops as it drops.
+        self.pump = None;
         self.follows += 1;
         let sub = self.backend.subscribe(after);
         let mark = Mark::new(self.written.clone(), self.follows, sub.last_seq());
         let task = pump(sub, self.tx.clone(), id, follow, mark);
-        self.pump = Some(tokio::spawn(task));
+        self.pump = Some(AbortOnDrop(tokio::spawn(task)));
     }
 
     /// The connection is over: what is queued still goes out, nothing more
@@ -363,10 +391,11 @@ impl Link {
     /// When the conversation ended, the stream the peer follows is written to
     /// its last frame first.
     async fn finish(mut self, closed: bool) {
+        // The subscription stops as it drops, after its last frame or not.
         if let Some(mut pump) = self.pump.take()
-            && (!closed || tokio::time::timeout(FLUSH_GRACE, &mut pump).await.is_err())
+            && closed
         {
-            pump.abort();
+            let _ = tokio::time::timeout(FLUSH_GRACE, &mut pump).await;
         }
         self.tasks.shutdown().await;
     }

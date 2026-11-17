@@ -429,6 +429,44 @@ async fn a_live_broker_that_never_writes_keeps_its_link() {
     assert!(pings.load(Ordering::SeqCst) >= 2, "it was pinged");
 }
 
+/// A detached link drops: its socket closes, and the broker gets nothing
+/// more, neither the stream nor a ping.
+#[tokio::test]
+async fn a_detached_link_closes_its_socket_and_sends_nothing_more() {
+    let mut broker = TestBroker::start(None).await;
+    let hub = hub();
+    let (s, _) = session(&answers(&[]), hub.clone());
+    let attached = Broker::new(&broker.url)
+        .with_backoff(FAST)
+        .with_silence_limit(SHORT)
+        .attach(s.clone(), Grant::watch(Origin::Agent))
+        .unwrap();
+    let mut side = broker.link().await;
+    side.next().await.unwrap();
+    side.ack(0).await;
+    side.until(|f| ty(f) == "reply").await;
+
+    attached.detach();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    hub.notice(Level::Info, "said after the detach");
+    let mut rest = Vec::new();
+    let read = async {
+        while let Some(Ok(msg)) = side.0.next().await {
+            rest.push(msg);
+        }
+    };
+    // A ping is due every 100 ms: a link still up never lets this end.
+    let ended = tokio::time::timeout(SHORT * 3, read).await;
+    assert!(ended.is_ok(), "still linked after the detach: {rest:?}");
+    assert!(
+        rest.iter()
+            .all(|m| !matches!(m, Message::Text(_) | Message::Ping(_))),
+        "{rest:?}"
+    );
+    assert_eq!(broker.accepted(), 1, "not dialed again");
+    s.close().await;
+}
+
 /// Without a limit the link sends no ping and waits on a silent broker as
 /// long as it stays open.
 #[tokio::test]
