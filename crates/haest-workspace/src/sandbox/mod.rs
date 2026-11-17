@@ -157,7 +157,7 @@ impl SandboxWorkspace {
         let changes = mounts::project_overlay(&mounts.cwd).await?;
         let shell_fs = mounts::sandbox_fs(&mounts, &changes).await?;
         let fs = FsRef::new(HaestFsOverBashkit::new(shell_fs.clone()));
-        Ok(Self::with_parts(shell_fs, fs, Some(changes.into())))
+        Ok(Self::from_parts(shell_fs, fs, Some(changes.into())))
     }
 
     /// A sandboxed bash over a host's own file system: the shell's whole world
@@ -181,10 +181,12 @@ impl SandboxWorkspace {
     /// ([`FsRef`]) to read what the agent wrote.
     pub fn over(fs: impl Into<FsRef>) -> Self {
         let fs = fs.into();
-        Self::with_parts(Arc::new(BashkitFsOverHaest::new(fs.clone())), fs, None)
+        Self::from_parts(Arc::new(BashkitFsOverHaest::new(fs.clone())), fs, None)
     }
 
-    fn with_parts(
+    /// A sandbox over the shell's file system, the tools' one and the
+    /// changes to review, with no commands but its own.
+    fn from_parts(
         shell_fs: Arc<dyn bashkit::FileSystem>,
         fs: FsRef,
         changes: Option<ChangeSetRef>,

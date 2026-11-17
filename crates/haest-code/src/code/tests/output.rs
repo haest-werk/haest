@@ -47,7 +47,7 @@ async fn an_inner_result_reaches_the_program_whole_however_big() {
 
 #[tokio::test]
 async fn a_call_nobody_awaited_still_finishes_before_the_result() {
-    let ws = MemWorkspace::with_files([("/p/keep.txt", "")]);
+    let ws = MemWorkspace::from_files([("/p/keep.txt", "")]);
     let code = "tools.Write({ file_path: 'late.txt', content: 'landed' }); return 'done'";
     let out = run_in(
         &code_over(builtins(), &[]),
@@ -108,7 +108,7 @@ async fn each_inner_call_reports_start_then_end_tied_to_the_code_call_a_failure_
     bad.answer = ToolOutput::error("nope");
     let tools = vec![arc(&ok), ToolRef::new(bad)];
     let services = Arc::new(Recorder::default());
-    let c = ctx(MemWorkspace::with_files::<&str, &str>([]))
+    let c = ctx(MemWorkspace::from_files::<&str, &str>([]))
         .with_tool_call_id("call-1")
         .with_services(services.clone());
     let code = "await tools.mcp__s__ok({}); try { await tools.mcp__s__bad({}) } catch (e) {}";
@@ -152,7 +152,7 @@ async fn each_inner_call_reports_start_then_end_tied_to_the_code_call_a_failure_
 async fn outside_the_loop_no_inner_call_is_reported() {
     let ok = probe("mcp__s__ok", true, 0);
     let services = Arc::new(Recorder::default());
-    let c = ctx(MemWorkspace::with_files::<&str, &str>([])).with_services(services.clone());
+    let c = ctx(MemWorkspace::from_files::<&str, &str>([])).with_services(services.clone());
     run_in(
         &code_over(vec![arc(&ok)], &[]),
         "await tools.mcp__s__ok({})",
@@ -167,7 +167,7 @@ const PNG: [u8; 8] = [0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0];
 
 #[tokio::test]
 async fn see_attaches_the_image_to_the_code_result_as_media_the_model_sees() {
-    let ws = MemWorkspace::with_files([("/p/shot.png", PNG)]);
+    let ws = MemWorkspace::from_files([("/p/shot.png", PNG)]);
     let code = "await see({ text: 'the login page', images: [{ path: 'shot.png' }] })";
     let out = run_in(&code_over(builtins(), &[]), code, json!({}), &ctx(ws)).await;
     assert!(!out.is_error, "{}", out.content);
@@ -188,7 +188,7 @@ async fn see_stops_at_its_cap_per_run_and_refuses_a_non_image() {
         .map(|i| (format!("/p/s{i}.png"), PNG.to_vec()))
         .collect();
     files.push(("/p/notes.txt".into(), b"text".to_vec()));
-    let ws = MemWorkspace::with_files(files);
+    let ws = MemWorkspace::from_files(files);
     let code = format!(
         "const r = []
        for (let i = 0; i <= {MAX_SEEN}; i++) {{ try {{ await see({{ images: [{{ path: 's' + i + '.png' }}] }}); r.push('ok') }} catch (e) {{ r.push('refused') }} }}

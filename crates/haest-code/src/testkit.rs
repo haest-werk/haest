@@ -27,7 +27,8 @@ pub(crate) struct MemWorkspace {
 }
 
 impl MemWorkspace {
-    pub(crate) fn with_files<P: AsRef<Path>, D: AsRef<[u8]>>(
+    /// A workspace over `files` (path, contents), as `MemFs::from_files` has them.
+    pub(crate) fn from_files<P: AsRef<Path>, D: AsRef<[u8]>>(
         files: impl IntoIterator<Item = (P, D)>,
     ) -> Arc<Self> {
         Arc::new(Self {

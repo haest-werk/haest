@@ -58,7 +58,7 @@ async fn run(tool: &CodeTool, code: &str) -> ToolOutput {
         tool,
         code,
         json!({}),
-        &ctx(MemWorkspace::with_files::<&str, &str>([])),
+        &ctx(MemWorkspace::from_files::<&str, &str>([])),
     )
     .await
 }
@@ -135,7 +135,7 @@ fn code_never_calls_itself_even_when_allowlisted() {
 
 #[tokio::test]
 async fn composes_several_tool_calls_and_returns_only_the_aggregate() {
-    let ws = MemWorkspace::with_files([
+    let ws = MemWorkspace::from_files([
         ("/p/a.ts", "export const TODO_A = 1\n"),
         ("/p/b.ts", "nothing here\n"),
         ("/p/c.ts", "TODO one\nTODO two\n"),
@@ -152,7 +152,7 @@ async fn composes_several_tool_calls_and_returns_only_the_aggregate() {
 
 #[tokio::test]
 async fn a_write_lands_through_the_workspace() {
-    let ws = MemWorkspace::with_files([("/p/keep.txt", "")]);
+    let ws = MemWorkspace::from_files([("/p/keep.txt", "")]);
     let code = "await tools.Write({ file_path: 'new.txt', content: 'hi' }); return 1";
     let out = run_in(
         &code_over(builtins(), &[]),
@@ -199,7 +199,7 @@ impl Tool for Denied {
 
 #[tokio::test]
 async fn every_inner_call_goes_through_the_tools_the_model_is_given() {
-    let ws = MemWorkspace::with_files([("/p/keep.txt", "")]);
+    let ws = MemWorkspace::from_files([("/p/keep.txt", "")]);
     let wrapped: Tools = Tools::from_iter([
         ToolRef::new(ReadTool::default()),
         ToolRef::new(Denied(ToolRef::new(WriteTool::new()))),
@@ -227,7 +227,7 @@ async fn the_guest_has_no_host_reach_of_its_own() {
 #[tokio::test]
 async fn a_cpu_loop_is_stopped_at_the_deadline() {
     let started = Instant::now();
-    let c = ctx(MemWorkspace::with_files::<&str, &str>([]));
+    let c = ctx(MemWorkspace::from_files::<&str, &str>([]));
     let out = run_in(
         &code_over(Tools::new(), &[]),
         "while (true) {}",
@@ -243,7 +243,7 @@ async fn a_cpu_loop_is_stopped_at_the_deadline() {
 async fn the_caller_aborting_stops_a_run_parked_on_a_slow_tool() {
     let slow = probe("mcp__s__slow", true, 10_000);
     let cancel = CancellationToken::new();
-    let c = ctx(MemWorkspace::with_files::<&str, &str>([])).with_cancel(cancel.clone());
+    let c = ctx(MemWorkspace::from_files::<&str, &str>([])).with_cancel(cancel.clone());
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(100)).await;
         cancel.cancel();

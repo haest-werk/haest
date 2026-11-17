@@ -49,7 +49,7 @@ async fn a_tool_called_from_code_sees_the_callers_wind_down() {
     let sees = Arc::new(Sees::default());
     let tool = code_over(vec![ToolRef::from(sees.clone())], &["Sees"]);
     let code = "await tools.Sees({}); return 1";
-    let c = ctx(MemWorkspace::with_files::<&str, &str>([]));
+    let c = ctx(MemWorkspace::from_files::<&str, &str>([]));
     run_in(&tool, code, json!({}), &c).await;
     let c = c.with_wind_down(WindDownWatch::new(|| {
         Some(WindingDown {
