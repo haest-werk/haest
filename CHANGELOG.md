@@ -69,30 +69,38 @@ set anything) now gets a warning. `env_var` and the `HashMap`
    `fs.create_dir_all(dir)`, `fs.remove(path, true)` -> `fs.remove_all(path)`.
    An `Fs` implements `remove_all` itself (`fs::remove_tree(self, path)`
    walks the tree).
-7. A `Ledger` is shared by cloning it: `Arc<Mutex<Ledger>>` -> `Ledger`,
+7. An `Fs` builds its answers with constructors:
+   `FsStat { kind, size, modified: Some(at) }` ->
+   `FsStat::new(kind, size).with_modified(at)` (no `with_modified` when
+   there is no time), and `DirEntry { name, kind }` ->
+   `DirEntry::new(name, kind)`.
+8. A host's skills are built with constructors:
+   `SkillCard { name, description, when, origin: Some(o) }` ->
+   `SkillCard::new(name, description).with_when(when).with_origin(o)`
+   (no `with_when` or `with_origin` for one not said), and
+   `InlineSkill { card, body }` -> `InlineSkill::new(card, body)`.
+9. A `Ledger`, a `TaskBoard` and a `ToolDeferral` are shared by cloning
+   them: `Arc<Mutex<Ledger>>` -> `Ledger`,
    `ledger.lock().unwrap().usd()` -> `ledger.usd()`,
-   `.with_ledger(Arc::new(Mutex::new(ledger)))` -> `.with_ledger(ledger.clone())`.
-8. A `match` on `LoopEvent`, `StopReason` or another haest-core event or
-   error enum adds a `_` arm. `ProviderRequest`, `ExecOptions` and
-   `ShellCall` are built with `new` and `with_*`:
-   `ExecOptions { cwd, cancel, timeout }` ->
-   `ExecOptions::new(cwd, timeout).with_cancel(cancel)`.
-9. Smaller renames: `total.add(&u)` -> `total += &u` (`Usage`),
-   `opt_bool(input, k)` -> `opt_bool(input, k)?`,
-   `TaskBoard::with_clock(on_change, clock)` ->
-   `let board = TaskBoard::new(on_change); board.set_clock(clock);`,
-   `ledger.with_remedies(r)` -> `ledger.set_remedies(r)`,
-   `board.create(task)` ->
-   `board.create(task)?`, `ChildEnv::new([("K".into(), v)])` ->
-   `ChildEnv::new([("K", v)])`, and `Arc<TaskBoard>` / `Arc<ToolDeferral>`
-   -> `TaskBoard` / `ToolDeferral`.
-10. A haest-runtime host hands in values and reads parts with getters:
-    `build(inputs, Arc::new(ui), prompter, opts)` ->
-    `build(inputs, ui, prompter, opts)`, `World::Fs(Arc::new(fs))` ->
-    `World::files(fs)`, `inputs.keys = Arc::new(keys)` ->
-    `RuntimeInputs::new(settings, world).with_keys(keys)`, and
-    `rt.hooks.flush()` -> `rt.hooks().flush()`.
-11. A flag setter takes a `bool`, and an optional field's setter takes the
+   `.with_ledger(Arc::new(Mutex::new(ledger)))` -> `.with_ledger(ledger.clone())`,
+   and `Arc<TaskBoard>` / `Arc<ToolDeferral>` -> `TaskBoard` /
+   `ToolDeferral`.
+10. `ProviderRequest`, `ExecOptions` and `ShellCall` are built with `new`
+    and `with_*`: `ExecOptions { cwd, cancel, timeout }` ->
+    `ExecOptions::new(cwd, timeout).with_cancel(cancel)`.
+11. A session's effort change is an `EffortChange`:
+    `SessionRecord::Config { effort: Some(Some(e)), .. }` ->
+    `effort: EffortChange::To(e)`, `Some(None)` -> `EffortChange::ModelDefault`,
+    `None` -> `EffortChange::Unchanged`, and
+    `replayed.effort.unwrap_or(current)` -> `replayed.effort.applied_to(current)`.
+12. Smaller renames: `total.add(&u)` -> `total += &u` (`Usage`),
+    `opt_bool(input, k)` -> `opt_bool(input, k)?`,
+    `TaskBoard::with_clock(on_change, clock)` ->
+    `let board = TaskBoard::new(on_change); board.set_clock(clock);`,
+    `ledger.with_remedies(r)` -> `ledger.set_remedies(r)`,
+    `board.create(task)` -> `board.create(task)?`, and
+    `ChildEnv::new([("K".into(), v)])` -> `ChildEnv::new([("K", v)])`.
+13. A flag setter takes a `bool`, and an optional field's setter takes the
     value itself: `SkillToolOptions::new(set).with_name_enum()` ->
     `.with_name_enum(true)`. In haest-core that is `SharedDeps`/`AgentDeps`
     `with_spill_dir`, `with_ledger` and `with_web_search`,
@@ -101,12 +109,20 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `if let Some(e) = effort { opts = opts.with_effort(e) }`, and
     `deps.shared.web_search = on.then_some(search)` ->
     `if on { deps = deps.with_web_search(search) }`.
-12. A `match` on a `ModLine` (the lines of `ApprovalGate::mod_ui`) adds
-    `ModLine::Warn` and an arm for kinds to come:
-    `ModLine::Info(t) => show(t)` -> `other => show(other.text())`. A
-    `match` on `CommandOutcome` or `BashVerdict` adds a `_` arm too:
-    `CommandOutcome::Handled => {}` -> `_ => {}`.
-13. The model registry is built by setters:
+14. A `match` on an enum that will grow adds a `_` arm, in every crate:
+    haest-core's `LoopEvent`, `StopReason` and its other event and error
+    enums, `OpenRouterEffort`, `ApplyFailureCode`, `ConversationCap` and
+    `SkillSource`, haest-http's `HttpError` and `Method`, haest-providers'
+    `CompatFlavor`, haest-mcp's `McpTransport`, haest-mods'
+    `CommandOutcome` and `BashVerdict`, and haest-config's `ConfigError`
+    and `Source` among them:
+    `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b }`
+    -> `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b, _ => c }`.
+15. An `HttpClient` builds its `Response` with `new`:
+    `Ok(Response { status, headers, body: Body::from_stream(s) })` ->
+    `Ok(Response::new(status, Body::from_stream(s)).with_headers(headers))`,
+    and `let Request { method, url, headers, body } = req;` ends in `..`.
+16. The model registry is built by setters:
     `ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions { http:
     Arc::new(client), routing, ..Default::default() })` ->
     `ProviderRegistry::new(keys).with_custom(custom).with_http(client)`,
@@ -115,42 +131,39 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `opts.with_base_url(url)`, `opts.base_url.as_deref()` ->
     `opts.base_url()`. The routing types are at haest-providers' root:
     `haest_providers::routing::parse_routing` -> `haest_providers::parse_routing`.
-14. An MCP hub's log is set once: `McpHub::with_env(env).connect(&servers,
+17. haest's built-in tools are picked by `BuiltinTool` and built with
+    setters: `builtin_tools_where(|w| set.has(w), opts)` ->
+    `builtin_tools_where(|t| set.has(t.as_str()), opts)`,
+    `BuiltinOptions { tasks: Some(Arc::new(board)), ..Default::default() }`
+    -> `BuiltinOptions::new().with_tasks(board)`, and
+    `task_tools(Arc::new(board))` -> `task_tools(board)`.
+18. An MCP hub's log is set once: `McpHub::with_env(env).connect(&servers,
     &|line| ..)` ->
     `McpHub::new().with_env(env).with_log(|line| ..).connect(&servers)`.
-15. haest-config takes pairs by value and names a refused setting:
+19. A host's own mods go in when the list is built, and `Mods` is held as
+    it is (clones share it):
+    `let mut m = Mods::new(env); m.add(Arc::new(NoDotEnv)); let m = Arc::new(m);`
+    -> `let m = Mods::builder(env).with(NoDotEnv).build();`. A `match` on a
+    `ModLine` (the lines of `ApprovalGate::mod_ui`) adds `ModLine::Warn`
+    and an arm for kinds to come: `ModLine::Info(t) => show(t)` ->
+    `other => show(other.text())`.
+20. Both wall-clock caps are a `Duration`:
+    `caps.max_turn_minutes = 1.5` -> `caps.max_turn_time = Duration::from_secs(90)`,
+    and `sub.minutes = 5` -> `sub.time = Duration::from_secs(300)`
+    (`SubagentCapSettings`).
+21. haest-config takes pairs by value and names a refused setting:
     `Loader::standard(defaults, &env, &flags)` ->
     `Loader::standard(defaults, &env, flags)`,
     `loaded.keys["OPENROUTER_API_KEY"]` ->
     `loaded.keys.get("OPENROUTER_API_KEY")`, and
     `ConfigError::Invalid { at, why }` -> `Invalid { at, key, why }`, with an
     unknown setting its own `UnknownSetting { at, key }`.
-16. A `match` on an enum that will grow adds a `_` arm, in every crate:
-    haest-core's `OpenRouterEffort`, `ApplyFailureCode`, `ConversationCap`
-    and `SkillSource`, haest-http's `HttpError` and `Method`,
-    haest-providers' `CompatFlavor`, haest-mcp's `McpTransport`, and
-    haest-config's `ConfigError` and `Source` among them:
-    `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b }`
-    -> `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b, _ => c }`.
-17. An `Fs` builds its answers with constructors:
-    `FsStat { kind, size, modified: Some(at) }` ->
-    `FsStat::new(kind, size).with_modified(at)` (no `with_modified` when
-    there is no time), and `DirEntry { name, kind }` ->
-    `DirEntry::new(name, kind)`.
-18. A session's effort change is an `EffortChange`:
-    `SessionRecord::Config { effort: Some(Some(e)), .. }` ->
-    `effort: EffortChange::To(e)`, `Some(None)` -> `EffortChange::ModelDefault`,
-    `None` -> `EffortChange::Unchanged`, and
-    `replayed.effort.unwrap_or(current)` -> `replayed.effort.applied_to(current)`.
-19. A host's skills are built with constructors:
-    `SkillCard { name, description, when, origin: Some(o) }` ->
-    `SkillCard::new(name, description).with_when(when).with_origin(o)`
-    (no `with_when` or `with_origin` for one not said), and
-    `InlineSkill { card, body }` -> `InlineSkill::new(card, body)`.
-20. An `HttpClient` builds its `Response` with `new`:
-    `Ok(Response { status, headers, body: Body::from_stream(s) })` ->
-    `Ok(Response::new(status, Body::from_stream(s)).with_headers(headers))`,
-    and `let Request { method, url, headers, body } = req;` ends in `..`.
+22. A haest-runtime host hands in values and reads parts with getters:
+    `build(inputs, Arc::new(ui), prompter, opts)` ->
+    `build(inputs, ui, prompter, opts)`, `World::Fs(Arc::new(fs))` ->
+    `World::files(fs)`, `inputs.keys = Arc::new(keys)` ->
+    `RuntimeInputs::new(settings, world).with_keys(keys)`, and
+    `rt.hooks.flush()` -> `rt.hooks().flush()`.
 
 Every other breaking change is in its crate's section below, with what to
 write instead.
