@@ -1519,6 +1519,10 @@ wrote them.
   approval answers may come, so a `match` adds a `_` arm (haest-session's
   prompter denies an answer it does not know). The words on the wire are
   unchanged.
+- `LineDecoder` gives a line one way however it ends: the whitespace around
+  it goes and a blank line is skipped, for a line ended by its newline as
+  for the last one `flush` gives. A pushed line kept its spaces, and a line
+  of spaces came out as a line, which then failed to parse as a frame.
 
 ### haest-session (new)
 

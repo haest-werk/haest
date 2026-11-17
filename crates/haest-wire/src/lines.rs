@@ -7,8 +7,10 @@ use serde::Serialize;
 /// or several in one read.
 ///
 /// Keeps the unfinished tail until its newline comes, so a character split
-/// between two reads is put back together. A line ends at `\n`; a `\r` before
-/// it is dropped and an empty line is skipped.
+/// between two reads is put back together. A line ends at `\n`; the
+/// whitespace around it goes (a `\r` before the newline with it), and a
+/// blank line is skipped. A last line without its newline
+/// ([`flush`](Self::flush)) is given the same way.
 ///
 /// The limit ([`with_limit`](Self::with_limit), 64 MiB by default) bounds
 /// the unfinished tail kept between pushes: a peer that never sends a newline
@@ -98,12 +100,8 @@ impl LineDecoder {
                 self.examined += at + 1;
             }
             let end = from + at;
-            let mut line = &self.buf[start..end];
-            if line.last() == Some(&b'\r') {
-                line = &line[..line.len() - 1];
-            }
-            if !line.is_empty() {
-                lines.push(String::from_utf8_lossy(line).into_owned());
+            if let Some(line) = line_of(&self.buf[start..end]) {
+                lines.push(line);
             }
             start = end + 1;
             from = start;
@@ -125,11 +123,19 @@ impl LineDecoder {
     /// The last line, when the stream ended without its newline; None once
     /// it was given, or when the stream ended cleanly.
     pub fn flush(&mut self) -> Option<String> {
-        let tail = String::from_utf8_lossy(&self.buf).trim().to_string();
+        let tail = line_of(&self.buf);
         self.buf.clear();
         self.scanned = 0;
-        (!tail.is_empty()).then_some(tail)
+        tail
     }
+}
+
+/// One line's bytes (its newline gone) as the decoder gives it: without the
+/// whitespace around it (a `\r` before the newline is some), None when
+/// nothing is left. JSON's whitespace is ASCII, so ASCII is what goes.
+fn line_of(bytes: &[u8]) -> Option<String> {
+    let line = bytes.trim_ascii();
+    (!line.is_empty()).then(|| String::from_utf8_lossy(line).into_owned())
 }
 
 /// `value` as one NDJSON line: compact JSON and a newline.
@@ -175,6 +181,21 @@ mod tests {
             d.push(b"{\"a\":1}\r\n\n{\"b\":2}\n").unwrap(),
             ["{\"a\":1}", "{\"b\":2}"]
         );
+    }
+
+    /// One rule for a line, however it ends: whitespace around it goes, and
+    /// a blank line is skipped.
+    #[test]
+    fn a_line_is_trimmed_and_a_blank_one_skipped_whether_pushed_or_flushed() {
+        let mut d = LineDecoder::new();
+        assert_eq!(
+            d.push(b" {\"a\":1} \r\n \t\r\n{\"b\":2}\n").unwrap(),
+            ["{\"a\":1}", "{\"b\":2}"]
+        );
+        assert!(d.push(b" {\"c\":3} ").unwrap().is_empty());
+        assert_eq!(d.flush().as_deref(), Some("{\"c\":3}"));
+        assert!(d.push(b" \t ").unwrap().is_empty());
+        assert_eq!(d.flush(), None);
     }
 
     #[test]
