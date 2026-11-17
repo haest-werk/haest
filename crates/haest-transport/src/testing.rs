@@ -128,9 +128,10 @@ impl Backend for Hooked {
         self.inner.answer(ask, answer)
     }
     fn subscribe(&self, after: u64) -> Subscription {
-        if self.subscribe_panics && after != u64::MAX {
-            panic!("the host's backend has a bug");
-        }
+        assert!(
+            !self.subscribe_panics || after == u64::MAX,
+            "the host's backend has a bug"
+        );
         self.inner.subscribe(after)
     }
     async fn snapshot(&self) -> Result<Snapshot, SessionError> {
