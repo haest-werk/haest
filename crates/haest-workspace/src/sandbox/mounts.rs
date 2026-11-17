@@ -23,7 +23,9 @@ const MEMORY_BYTES: u64 = 256 * 1024 * 1024;
 ///
 /// Every directory is mounted at its own path, so a path means the same inside
 /// the sandbox and out. A relative one is taken from this process's current
-/// directory when the sandbox opens, as the real disk reads it.
+/// directory when the sandbox opens. Dots are resolved by the path alone, as
+/// `cd ..` does in a shell: `link/..` is the directory that holds `link`,
+/// wherever `link` points.
 ///
 /// ```text
 ///   cwd         copy-on-write overlay of the project: reads from disk, writes in memory
@@ -86,8 +88,8 @@ impl SandboxMounts {
 
     /// Every directory as one absolute path, which the sandbox opens, mounts
     /// and applies to: a relative one from this process's current directory,
-    /// as the real disk reads it, dots resolved lexically. An empty path is
-    /// refused.
+    /// dots resolved by the path alone (`link/..` is where `link` sits). An
+    /// empty path is refused.
     pub(crate) fn absolute(self) -> Result<Self, OpenSandboxError> {
         let abs = |dir: PathBuf| {
             std::path::absolute(&dir)
@@ -165,7 +167,7 @@ impl OpenSandboxError {
         }
     }
 
-    /// The directory that did not open.
+    /// The directory that did not open (empty when it was an empty path).
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -178,6 +180,9 @@ impl OpenSandboxError {
 
 impl fmt::Display for OpenSandboxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.path.as_os_str().is_empty() {
+            return f.write_str("opening an empty path for the sandbox");
+        }
         write!(f, "opening {} for the sandbox", self.path.display())
     }
 }
