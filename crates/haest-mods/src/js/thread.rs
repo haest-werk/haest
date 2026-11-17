@@ -41,7 +41,7 @@ pub(crate) async fn start(setup: Setup) -> Result<mpsc::Sender<ToJs>, ModLoadErr
     std::thread::Builder::new()
         .name("haest-mod".into())
         .stack_size(STACK_BYTES)
-        .spawn(move || serve(setup, rx, own, ready_tx))
+        .spawn(move || serve(setup, &rx, own, ready_tx))
         .map_err(ModLoadError::Thread)?;
     match ready_rx.await {
         Ok(Ok(())) => Ok(tx),
@@ -52,7 +52,7 @@ pub(crate) async fn start(setup: Setup) -> Result<mpsc::Sender<ToJs>, ModLoadErr
 
 fn serve(
     setup: Setup,
-    rx: mpsc::Receiver<ToJs>,
+    rx: &mpsc::Receiver<ToJs>,
     own: mpsc::Sender<ToJs>,
     ready: oneshot::Sender<Result<(), ModLoadError>>,
 ) {
@@ -108,7 +108,7 @@ impl Slice {
 }
 
 /// What a thrown value says.
-pub(super) fn error_text(ctx: &Ctx<'_>, e: rquickjs::Error) -> String {
+pub(super) fn error_text(ctx: &Ctx<'_>, e: &rquickjs::Error) -> String {
     if !e.is_exception() {
         return e.to_string();
     }
@@ -213,7 +213,7 @@ impl Js {
         self.slice.begin();
         let out = self
             .ctx
-            .with(|ctx| f(&ctx).map_err(|e| error_text(&ctx, e)));
+            .with(|ctx| f(&ctx).map_err(|e| error_text(&ctx, &e)));
         self.slice.end();
         out
     }
@@ -282,7 +282,7 @@ impl Js {
                 Err(job) => {
                     let thrown = job
                         .0
-                        .with(|ctx| error_text(&ctx, rquickjs::Error::Exception));
+                        .with(|ctx| error_text(&ctx, &rquickjs::Error::Exception));
                     stopped = Some(if took > self.slice.limit {
                         format!(
                             "its code ran over {:.1}s without pausing and was stopped",

@@ -200,7 +200,6 @@ pub(crate) async fn workspace_for(
 ) -> Result<WorkspaceRef, WorkspaceError> {
     let fs = world.fs();
     let ws = match (s.workspace, world.child_env_with(passed_env)) {
-        (WorkspaceMode::Shut, _) => return Ok(ShutWorkspace.into()),
         (WorkspaceMode::Real, Some(env)) => {
             private_spill_dir(fs.as_ref(), spill).await?;
             return Ok(RealWorkspace::new(env).into());
@@ -220,7 +219,8 @@ pub(crate) async fn workspace_for(
             }
             SandboxWorkspace::open(mounts).await?
         }
-        // A mode added later runs shut until it is named here: no files, no shell.
+        // `shut`, and a mode added later until it is named here: no files,
+        // no shell.
         _ => return Ok(ShutWorkspace.into()),
     };
     let ws = ws
