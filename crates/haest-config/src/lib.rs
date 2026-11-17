@@ -176,7 +176,12 @@ pub use value::env_var;
 ///
 /// Its Debug output names the keys, the variables and the providers.json
 /// entries, and shows none of their values.
+///
+/// A host reads it and never builds it: it is `#[non_exhaustive]`, so haest
+/// may hand the runtime something more in a minor release (destructure it
+/// with `..`).
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct Loaded {
     /// Every setting's value: the runtime's settings, and the ones only the
     /// loader reads.

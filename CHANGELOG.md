@@ -1146,6 +1146,9 @@ Hosts write less (round two of the review, and what porting brain onto
   `loaded.keys["OPENROUTER_API_KEY"]` -> `loaded.keys.get("OPENROUTER_API_KEY")`
   (an `Option<&str>`, None for an empty value); `.with_keys(loaded.keys)`
   takes it as it is.
+- `Loaded` is `#[non_exhaustive]` (breaking): a host reads it and never
+  builds it; `let Loaded { config, keys } = loaded;` ->
+  `let Loaded { config, keys, .. } = loaded;`.
 
 ### haest-runtime
 
