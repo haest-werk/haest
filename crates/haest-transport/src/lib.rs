@@ -174,6 +174,7 @@ pub trait Transport {
 
 /// An attached transport. Dropping it detaches it, as [`detach`](Self::detach) does.
 #[derive(Debug)]
+#[must_use = "dropping it detaches the transport"]
 pub struct Attached {
     task: Option<JoinHandle<Ended>>,
 }

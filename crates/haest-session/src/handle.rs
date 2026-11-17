@@ -105,6 +105,7 @@ impl<D> std::fmt::Debug for SessionHandle<D> {
 
 /// While held, the session starts no turn ([`SessionHandle::hold`]); dropping
 /// it lets go.
+#[must_use = "dropping it releases the hold"]
 pub struct Hold {
     release: Option<Box<dyn FnOnce() + Send + Sync>>,
 }

@@ -1525,6 +1525,8 @@ against it; the wire JSON is unchanged):
   for a `Driven` that rewrote in `human_turn`): move the rewrite to
   `fn rewriter(&self) -> Option<RewritePromptRef> { Some(MyRewrite.into()) }`,
   or steered input skips it.
+- `Hold` is `#[must_use]`: `session.hold().await?;` warns, since dropping
+  the hold at once lets go of it.
 
 ### haest-transport (new)
 
@@ -1585,6 +1587,9 @@ against it; the wire JSON is unchanged):
 - `Peer::start`'s docs say `NotHello` for a first frame that is not a
   `hello` (`NotAFrame` only when the line is not a frame at all).
 - `#![warn(missing_docs)]`, as the other crates have.
+- `Attached` is `#[must_use]`: `UnixSocket::new(&dir).attach(s, g)?;`
+  warns, since dropping it detaches the transport and removes the socket
+  at once.
 
 ### haest-issues
 
