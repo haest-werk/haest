@@ -223,9 +223,14 @@ impl<U> Runtime<U> {
 
     /// Compact main's conversation now (the human's /compact): the older
     /// messages become one summary, the latest are kept, and the session file
-    /// records it. What the summary calls cost goes on the conversation's
-    /// spend either way. A conversation too short to cut says so to the
-    /// [`Ui`](crate::Ui). `cancel` stops the summary call.
+    /// records it. Each summary call's cost goes on the conversation's spend
+    /// as it comes back, summary or not. A conversation too short to cut says
+    /// so to the [`Ui`](crate::Ui). `cancel` stops the summary call.
+    ///
+    /// Dropped before it returns (a host that gives up on it), it has booked
+    /// every summary call that came back; the call still running is lost with
+    /// its bill, which never came, and the history is as it was. To book that
+    /// call too, fire `cancel` and await it.
     ///
     /// # Errors
     ///

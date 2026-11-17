@@ -3,19 +3,28 @@
 //! summary came out or not; an Esc while it is written ends the turn as
 //! cancelled, with no failure shown.
 
-use std::sync::{Arc, OnceLock};
+use std::{
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
+
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     RuntimeHooks,
     haest::{
         Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
-        ModelError, Provider, ProviderRef, ProviderRequest, ResolvedModel, ShutWorkspace,
-        StopReason, TurnOutcome,
+        ModelError, Provider, ProviderEvent, ProviderRef, ProviderRequest, ResolvedModel,
+        ShutWorkspace, StopReason, TurnOutcome,
         core::caps::ConversationCaps,
         core::ledger::Ledger,
         core::provider::ProviderStream,
         core::testing::{ScriptedProvider, text_answer},
     },
+    hooks::Compact,
     testkit::{hooks, settings},
 };
 use haest_core::Tools;
@@ -63,6 +72,53 @@ async fn a_failed_compaction_goes_on_the_conversations_bill_once() {
     assert_eq!(end.stop_reason, StopReason::Error, "{:?}", end.error);
     assert_eq!(replies.requests().len(), 2, "the warm and the cold summary");
     assert_eq!(ledger.usd(), 0.75);
+}
+
+/// Answers the first call with `first`; every call after it runs until it
+/// is dropped (a cold summary the human gives up on).
+struct FirstThenStuck {
+    first: AssistantMessage,
+    calls: AtomicUsize,
+}
+
+impl Provider for FirstThenStuck {
+    fn id(&self) -> &str {
+        "scripted"
+    }
+
+    fn stream(&self, _req: ProviderRequest) -> ProviderStream {
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            let done = ProviderEvent::Done(self.first.clone());
+            return Box::pin(futures::stream::iter([done]));
+        }
+        Box::pin(futures::stream::pending())
+    }
+}
+
+/// The ledger was charged only once the summary calls were all back, so a
+/// /compact given up while its cold call ran (dropped: the terminal's
+/// Ctrl+C) booked nothing, though the warm call it had made was paid for.
+#[tokio::test]
+async fn a_compaction_given_up_part_way_has_booked_the_calls_that_came_back() {
+    let stuck = Arc::new(FirstThenStuck {
+        first: priced_nothing(0.25),
+        calls: AtomicUsize::new(0),
+    });
+    let (hooks, _) = hooks(settings());
+    let (mut agent, ledger) = full(&hooks, stuck.clone());
+    let cancel = CancellationToken::new();
+    let compacting = hooks.compact_now(&mut agent, &cancel, Compact::Manual);
+    let cold_is_out = async {
+        while stuck.calls.load(Ordering::SeqCst) < 2 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    };
+    tokio::select! {
+        done = compacting => panic!("the cold call never answers: {done:?}"),
+        () = cold_is_out => {}
+    }
+    // Given up: the compaction was dropped where it waited.
+    assert_eq!(ledger.usd(), 0.25, "the warm call is booked");
 }
 
 /// The human presses Esc as each request goes out, once `control` is set.

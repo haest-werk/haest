@@ -9,7 +9,6 @@ use crate::haest::{
     Agent,
     core::compaction::{CompactionError, CompactionOptions, compact},
     core::error::report,
-    core::messages::Usage,
     core::session::SessionRecord,
     now_ms,
 };
@@ -37,8 +36,9 @@ impl RuntimeHooks {
     }
 
     /// Compact `agent`'s conversation now: the older messages become one
-    /// summary, the latest are kept, and the session file records it. What
-    /// the summary calls cost goes on the conversation's spend either way.
+    /// summary, the latest are kept, and the session file records it. Each
+    /// summary call's cost goes on the conversation's spend as it comes back
+    /// (core's `compact` books it), summary or not.
     ///
     /// `by` says who asked: nothing to cut is said only to the human's
     /// [`Compact::Manual`]. `cancel` stops the summary call.
@@ -59,7 +59,6 @@ impl RuntimeHooks {
             Ok(None) if by == Compact::Manual => self.info("Nothing to compact yet."),
             Ok(None) => {}
             Ok(Some(res)) => {
-                charge(agent, &res.usage);
                 self.append(&SessionRecord::Compaction {
                     t: now_ms(),
                     summary: res.summary,
@@ -71,7 +70,6 @@ impl RuntimeHooks {
                 ));
             }
             Err(e) => {
-                charge(agent, &e.usage());
                 if !cancel.is_cancelled() {
                     self.error(&compaction_failed(&e));
                 }
@@ -85,12 +83,4 @@ impl RuntimeHooks {
 /// What the human and a failed turn are told when a summary did not come out.
 pub(super) fn compaction_failed(e: &CompactionError) -> String {
     format!("Compaction failed: {}", report(e))
-}
-
-/// What the summary calls cost goes on the conversation's bill, summary or
-/// not. The loop only counts it toward the turn's caps (`take_side_spend`).
-fn charge(agent: &Agent, usage: &Usage) {
-    if let Some(ledger) = agent.deps().shared().ledger() {
-        ledger.charge(usage);
-    }
 }

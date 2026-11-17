@@ -199,8 +199,8 @@ pub struct CompactionResult {
     /// Which request wrote the summary.
     pub path: SummaryPath,
     /// What every summary call cost, the warm one too when the cold one wrote
-    /// it. Already counted toward the running turn's caps; the caller charges
-    /// it to the conversation's ledger.
+    /// it. Already on the conversation's ledger and counted toward the
+    /// running turn's caps: [`compact`] books each call as it comes back.
     pub usage: Usage,
 }
 
@@ -224,8 +224,8 @@ pub enum CompactionError {
 
 impl CompactionError {
     /// What the summary calls cost before it failed: a failure is paid for too.
-    /// Already counted toward the running turn's caps; the caller charges it to
-    /// the conversation's ledger.
+    /// Already on the conversation's ledger and counted toward the running
+    /// turn's caps.
     pub fn usage(&self) -> Usage {
         match self {
             CompactionError::Model(_) => Usage::default(),
@@ -236,15 +236,17 @@ impl CompactionError {
 
 /// Compact in place. Returns the summary, how many messages were kept and how it
 /// was written, or None if there is nothing to cut. On error history is untouched.
-/// Every call it makes counts toward the running turn's caps, success or not.
 ///
 /// The summary is asked of the agent's own model ([`Agent::model_spec`]),
 /// warm first, then cold if the warm reply is not a whole summary (it failed,
 /// called a tool, was cut off, or said nothing). The head of history is replaced by
 /// one user message carrying the summary; [`on_message`](crate::AgentHooks::on_message)
 /// is not called, so a host that persists history records the change itself.
-/// The cost is not charged to the ledger: the caller does that with
-/// [`CompactionResult::usage`] or [`CompactionError::usage`].
+///
+/// Each call's cost is booked as it comes back, success or not: on the
+/// agent's ledger ([`SharedDeps::ledger`](crate::SharedDeps::ledger)) and
+/// toward the running turn's caps. [`CompactionResult::usage`] and
+/// [`CompactionError::usage`] report it; a caller does not charge it again.
 ///
 /// # Errors
 ///
@@ -256,6 +258,10 @@ impl CompactionError {
 ///
 /// `cancel` goes to every summary request. Cancelled during the warm one, it
 /// skips the cold one and returns [`CompactionError::Failed`].
+///
+/// Dropped before it returns, it has booked every call that came back; the
+/// call still running is lost with its bill, which never came. To book that
+/// one too, fire `cancel` and await it.
 ///
 /// # Examples
 ///
@@ -285,7 +291,7 @@ impl CompactionError {
 ///         if !needs_compaction(agent.history(), &self.0) {
 ///             return Ok(());
 ///         }
-///         // A host also charges the usage to its ledger and saves the new history.
+///         // A host also saves the new history.
 ///         // An error ends the turn instead of retrying before every call.
 ///         compact(agent, cancel, &self.0).await?;
 ///         Ok(())
@@ -329,8 +335,7 @@ pub async fn compact(
         return Ok(None);
     }
     let kept = agent.history().len() - cut;
-    let (res, path) = summarize(agent, &agent.history()[..cut], kept, cancel).await?;
-    agent.spent_outside_the_loop(&res.usage);
+    let (res, path) = summarize(agent, cut, kept, cancel).await?;
     let summary = match res.text {
         Ok(summary) => summary,
         Err(reason) => {

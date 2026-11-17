@@ -1,14 +1,20 @@
-//! Every model call compaction makes is counted: in what it reports, and in
-//! the running turn's caps, whether the summary came out or not.
+//! Every model call compaction makes is counted: in what it reports, on the
+//! conversation's ledger, and in the running turn's caps, whether the
+//! summary came out or not.
+
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 
 use super::*;
 use crate::{
-    agent::test_support::{collect, end, turn_caps},
-    caps::{TurnCaps, TurnCapsSource},
+    AgentDeps, AgentOptions, ResolvedModel, SharedDeps, Tools,
+    agent::test_support::{MemWorkspace, collect, end, turn_caps},
+    caps::{ConversationCaps, TurnCaps, TurnCapsSource},
     deps::AgentHooks,
     error::BoxError,
+    ledger::{Ledger, NoLedgerHooks},
+    provider::{Provider, ProviderRef, ProviderRequest, ProviderStream},
 };
 
 /// A host that compacts before every model call, as the runtime's does.
@@ -62,7 +68,85 @@ async fn a_cold_summary_reports_the_warm_call_too() {
     assert_eq!(res.usage.input, 700 + 10);
 }
 
-/// What the caller charges to the conversation's ledger.
+/// Answers the first call from `first`; every call after it runs until it
+/// is dropped (a cold summary given up on).
+struct FirstThenStuck {
+    first: ScriptedProvider,
+    calls: AtomicUsize,
+}
+
+impl Provider for FirstThenStuck {
+    fn id(&self) -> &str {
+        "scripted"
+    }
+
+    fn stream(&self, req: ProviderRequest) -> ProviderStream {
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            return self.first.stream(req);
+        }
+        Box::pin(futures::stream::pending())
+    }
+}
+
+/// The compaction tests' history, on `provider`, charging `ledger`.
+fn on_ledger(provider: impl Into<ProviderRef>, ledger: &Ledger) -> Agent {
+    let provider = provider.into();
+    let resolve = move |_: &str| Ok::<_, ModelError>(ResolvedModel::new(provider.clone(), "m"));
+    let shared =
+        SharedDeps::new(resolve, "/tmp", MemWorkspace::default()).with_ledger(ledger.clone());
+    let mut agent = Agent::new(
+        AgentDeps::new(shared, Tools::new(), "sys"),
+        AgentOptions::new("fake:m1"),
+    );
+    agent.replace_history(history());
+    agent
+}
+
+/// The caller charged the ledger once `compact` returned, so one dropped
+/// while its cold call ran (the human gave up on a /compact) had booked
+/// nothing, though the warm call it made was paid for. Each call goes on
+/// the ledger as it comes back.
+#[tokio::test]
+async fn a_compaction_dropped_part_way_has_booked_the_call_that_came_back() {
+    let mut warm = empty_answer();
+    warm.usage.cost_usd = Some(0.25);
+    let stuck = Arc::new(FirstThenStuck {
+        first: ScriptedProvider::new([warm]),
+        calls: AtomicUsize::new(0),
+    });
+    let ledger = Ledger::new(ConversationCaps::default(), NoLedgerHooks);
+    let mut agent = on_ledger(stuck.clone(), &ledger);
+    let cancel = CancellationToken::new();
+    let compacting = compact(&mut agent, &cancel, &CFG);
+    let cold_is_out = async {
+        while stuck.calls.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::select! {
+        done = compacting => panic!("the cold call never answers: {done:?}"),
+        () = cold_is_out => {}
+    }
+    assert_eq!(ledger.usd(), 0.25, "the warm call is booked");
+}
+
+/// What the summary calls cost is reported, and already on the ledger: a
+/// caller that charged it again would count it twice.
+#[tokio::test]
+async fn a_compaction_books_each_call_on_the_ledger_once() {
+    let mut warm = empty_answer();
+    warm.usage.cost_usd = Some(0.25);
+    let mut cold = text_answer("COLD");
+    cold.usage.cost_usd = Some(0.5);
+    let ledger = Ledger::new(ConversationCaps::default(), NoLedgerHooks);
+    let mut agent = on_ledger(ScriptedProvider::new([warm, cold]), &ledger);
+    let res = compact(&mut agent, &CancellationToken::new(), &CFG).await;
+    let res = res.unwrap().unwrap();
+    assert_eq!(res.usage.cost_usd, Some(0.75), "what it reports");
+    assert_eq!(ledger.usd(), 0.75, "what the ledger holds");
+}
+
+/// What the caller is told the calls cost.
 #[tokio::test]
 async fn a_failed_compaction_says_what_its_calls_cost() {
     let p = ScriptedProvider::new([costly_empty(700), costly_empty(300)]);

@@ -158,7 +158,8 @@ pub trait AgentHooks: Send + Sync {
     ///
     /// `agent` is the running agent; `cancel` is its turn's token, to pass to
     /// any model call the hook makes. A model call made here through
-    /// [`compact`](crate::compaction::compact) counts toward the turn's caps.
+    /// [`compact`](crate::compaction::compact) counts toward the turn's caps
+    /// and goes on the conversation's ledger.
     async fn before_model_call(
         &self,
         _agent: &mut Agent,

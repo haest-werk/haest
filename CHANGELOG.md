@@ -173,6 +173,10 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `Change::new(path, kind).with_conflict(conflict)`, and
     `FailedChange { change, code, reason }` ->
     `FailedChange::new(change, code, reason)`.
+24. `compaction::compact` puts what its summary calls cost on the agent's
+    ledger itself: delete a host's own
+    `ledger.charge(&res.usage)` / `ledger.charge(&e.usage())` after it, or
+    the calls are counted twice. `usage` still reports the cost.
 
 Every other breaking change is in its crate's section below, with what to
 write instead.
@@ -956,6 +960,14 @@ Hosts write less (round two of the review, and what porting brain onto
   answers `ModelFacts::reasoning` or has its own `ChangeSet`): a part one
   gains later (a reasoning budget, a rename's source) breaks no host. Their
   fields read as before, and their JSON is unchanged.
+- `compaction::compact` books each summary call's cost on the agent's
+  ledger as the call comes back, summary or not (breaking: a host that
+  charged `CompactionResult::usage` or `CompactionError::usage` itself now
+  counts it twice; drop that charge). The caller charged it once `compact`
+  returned, so a compaction dropped part way (a /compact given up with
+  Ctrl+C) booked none of the calls it had made and paid for. Dropped now,
+  it loses only the call still running; `usage` still reports what the
+  calls cost.
 
 ### haest-http
 
@@ -1717,6 +1729,13 @@ Hosts write less (round two of the review, and what porting brain onto
   returns at once when an arrival already waits, so a session driver never
   takes an arrival it raced for "every sender is gone" (breaking, barely:
   `q.wait().await;` -> `if !q.wait().await { /* nothing will come */ }`).
+- A /compact given up before it returned (`Runtime::compact` dropped: the
+  terminal's Ctrl+C) put none of its summary calls' cost on the
+  conversation's spend, though its docs said "either way": the runtime
+  charged the ledger once the compaction returned. Each call is booked as
+  it comes back now (haest-core's `compact` does it), so a drop loses only
+  the call still running, and `Runtime::compact` says so: to book that one
+  too, fire `cancel` and await it.
 
 ### haest-ts
 
