@@ -181,7 +181,14 @@ pub trait MemberRun: Send + Sync {
     }
     /// Its turn is over and it has left the hub: how it ended, its answer and
     /// its spend. Awaited before the answer goes back to its caller (or to
-    /// whoever reads a background answer); called exactly once.
+    /// whoever reads a background answer).
+    ///
+    /// Called at most once: once for every run that ends, a run whose
+    /// caller gave up included ([`Ending::CallerCancelled`]). Not called
+    /// when the run never ends: a host callback under it
+    /// ([`SubagentParent::on_subagent`](super::SubagentParent::on_subagent),
+    /// [`on_activity`](super::SubagentParent::on_activity)) panicked, or the
+    /// runtime shut down. Its seat is given back either way.
     async fn end(self: Box<Self>, end: MemberEnd) {
         let _ = end;
     }
