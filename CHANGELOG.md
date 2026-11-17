@@ -224,6 +224,18 @@ write instead.
   A host's own prompter should do the same with
   `ApprovalRequest::input_preview` and with whatever it shows just before
   it asks and while the human answers.
+- On macOS, applying a sandbox's changes could write through a project
+  symlink to a directory outside the project. `OverlayChanges::apply`
+  looked for a link on the way by its exact name in the parent's listing,
+  but macOS's default disk matches names without case, and APFS without
+  Unicode normalization. With `vendor` a link out of the project, one
+  sandbox command (`mkdir -p Vendor && echo x > Vendor/a`) put `a` in the
+  link's target, while the change list showed `/Vendor/a`, a path inside
+  the project. A link named `café` was reached the same way through `café`
+  spelled with a combining accent, on case-sensitive APFS too. Each path
+  on the way is now asked of the disk itself, by its own spelling, so the
+  disk's own rules for names hold, and such a change fails as
+  `OutsideProject`.
 
 ### Bug fixes
 
@@ -1443,6 +1455,14 @@ Hosts write less (round two of the review, and what porting brain onto
   `max_concurrent`, though it runs until its turn ends (a tool that ignores
   its cancel keeps it going), so one more could start beside it. It counts
   until its turn has ended.
+- Fixed: a host's `JobEvents::on_output` that panicked left a job over the
+  sandbox running for good, with no exit code, no `Done`, no `on_exit` and
+  no exit notice, counting toward `MAX_JOBS`; over the real workspace it
+  ended the pipe's reader, and the command died of SIGPIPE (exit 141) on
+  its next write. That handler now hears no more of the job's output (the
+  buffer still keeps it), the job runs to its end and is reported ended
+  with its own exit code, then the panic goes on, on the job's own task. A
+  workspace that panics ends its job the same way, with exit code -1.
 
 ### haest-workspace
 
@@ -1501,12 +1521,20 @@ Hosts write less (round two of the review, and what porting brain onto
   A relative writable or readable dir was opened at `/` plus its path
   (`tmp` was `/tmp`). Every directory is now made absolute when the
   sandbox opens, from the process's current directory, and that one path
-  is opened, mounted and applied to.
+  is opened, mounted and applied to. Dots are resolved by the path alone,
+  as `cd ..` does in a shell: `link/..` is the directory that holds
+  `link`, wherever `link` points. An empty path fails with `InvalidInput`,
+  and the error says it was an empty path.
 - Fixed: over a host's `Fs` (`SandboxWorkspace::over`), `mv a b` kept
   `b`'s remembered mode, so a plain file moved over a script read as
   executable. `b` now has `a`'s mode, as a POSIX rename gives it.
-- `OverlayChanges::apply` lists each real directory on the way to its
-  changes once; it listed it again for every change inside it.
+- `OverlayChanges::apply` asks the disk about each real path on the way to
+  its changes once; it listed each directory again for every change inside
+  it. It asks by the path itself, so a link spelled another way is still a
+  link (see Security).
+- Fixed: a sandbox call dropped in flight (a Code run that timed out) left
+  a task behind, asleep until the call's timeout, up to 10 minutes.
+  Dropping the call now ends it.
 
 ### haest-code
 
