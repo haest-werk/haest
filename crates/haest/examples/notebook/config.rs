@@ -28,7 +28,7 @@ pub fn work() -> Settings {
         agents: true,
         caps: CapSettings {
             max_turn_minutes: 1.0,
-            ..bare.caps.clone()
+            ..CapSettings::default()
         },
         ..bare
     }

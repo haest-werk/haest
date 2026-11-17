@@ -30,6 +30,39 @@ fn bare_turns_every_capability_off_and_every_brake_on() {
     );
 }
 
+/// The caps' default is bare's, so `..CapSettings::default()` keeps every
+/// brake bare has.
+#[test]
+fn the_default_caps_are_the_bare_caps() {
+    let caps = CapSettings::default();
+    assert_eq!(caps, bare().caps);
+    assert_eq!(
+        (
+            caps.max_turn_usd,
+            caps.max_turn_steps,
+            caps.max_turn_minutes
+        ),
+        (2.0, 100, 60.0)
+    );
+    assert_eq!(
+        (
+            caps.max_repeats,
+            caps.max_conversation_usd,
+            caps.max_conversation_tokens
+        ),
+        (6, 20.0, 20_000_000)
+    );
+    assert_eq!(
+        (
+            caps.max_turn_tokens,
+            caps.max_request_tokens,
+            caps.context_window
+        ),
+        (None, None, None)
+    );
+    assert_eq!(caps.compact_at, 400_000);
+}
+
 #[test]
 fn token_caps_follow_the_window_unless_set() {
     let mut s = bare();

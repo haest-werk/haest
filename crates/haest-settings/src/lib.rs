@@ -58,9 +58,14 @@
 //! ```
 //! use haest_settings::{BuiltinTools, WordSet};
 //!
-//! let tools = BuiltinTools::from_words(["bash", "read"]).unwrap();
+//! # fn main() -> Result<(), haest_core::words::UnknownWord> {
+//! let tools = BuiltinTools::from_words(["bash", "read"])?;
 //! assert_eq!(tools.words(), ["read", "bash"]);
-//! assert_eq!(BuiltinTools::from_words(["bsh"]).unwrap_err().word, "bsh");
+//!
+//! let typo = BuiltinTools::from_words(["bsh"]).expect_err("no tool is called bsh");
+//! assert_eq!(typo.word, "bsh");
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! The caps for a model with a one-million-token window, when the token caps

@@ -667,6 +667,9 @@ Good citizens:
   default off; the `claude` profile leaves it off).
 - `Settings` gains `wind_down_at: WindDown` (bare: off).
 - `turn_caps_for` fills `TurnCaps::context_window` with the window.
+- `CapSettings` implements `Default`: the bare caps, the ones
+  `Settings::bare` starts from. A host changing one cap writes
+  `CapSettings { max_turn_usd: 5.0, ..CapSettings::default() }`.
 
 ### haest-config
 

@@ -43,6 +43,34 @@ pub struct CapSettings {
     pub compact_at: u64,
 }
 
+impl Default for CapSettings {
+    /// The bare caps, what [`Settings::bare`] starts from: 2 USD, 100 model
+    /// calls and 60 minutes a turn, 6 repeats, 20 USD and 20M unpriced tokens
+    /// a conversation, compaction past 400K tokens, the token caps and the
+    /// window following the model.
+    ///
+    /// ```
+    /// use haest_settings::{CapSettings, Settings};
+    ///
+    /// let caps = CapSettings { max_turn_usd: 5.0, ..CapSettings::default() };
+    /// assert_eq!(caps.max_turn_steps, Settings::bare("/w", "/h").caps.max_turn_steps);
+    /// ```
+    fn default() -> Self {
+        Self {
+            max_turn_usd: 2.0,
+            max_turn_tokens: None,
+            max_request_tokens: None,
+            max_turn_steps: 100,
+            max_turn_minutes: 60.0,
+            max_repeats: 6,
+            max_conversation_usd: 20.0,
+            max_conversation_tokens: 20_000_000,
+            context_window: None,
+            compact_at: 400_000,
+        }
+    }
+}
+
 /// The subagent tree's caps as settings hold them: the `max_agent_depth`,
 /// `max_subagents`, `subagent_usd`, `subagent_steps`, `subagent_minutes` and
 /// `subagent_budgets` settings. [`Settings::subagent_caps`] turns them into haest-core's
