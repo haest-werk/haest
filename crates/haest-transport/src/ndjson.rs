@@ -16,18 +16,34 @@ pub struct NdjsonSource<R> {
     read: R,
     lines: LineDecoder,
     ready: VecDeque<String>,
+    /// What each read fills: made on the first read, then kept.
+    chunk: Vec<u8>,
     ended: bool,
 }
 
 impl<R> NdjsonSource<R> {
-    /// Lines from `read`.
+    /// Lines from `read`, each at most [`LineDecoder::DEFAULT_LIMIT`] bytes.
     pub fn new(read: R) -> Self {
         Self {
             read,
             lines: LineDecoder::new(),
             ready: VecDeque::new(),
+            chunk: Vec::new(),
             ended: false,
         }
+    }
+
+    /// Lines of at most `limit` bytes: a longer one ends the stream with
+    /// [`TransportError::LineTooLong`].
+    #[must_use]
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.lines = std::mem::take(&mut self.lines).with_limit(limit);
+        self
+    }
+
+    /// The most a line may hold, in bytes ([`with_limit`](Self::with_limit)).
+    pub fn limit(&self) -> usize {
+        self.lines.limit()
     }
 }
 
@@ -44,7 +60,6 @@ impl<R> std::fmt::Debug for NdjsonSource<R> {
 impl<R: AsyncRead + Unpin + Send> LineSource for NdjsonSource<R> {
     /// Cancel-safe: a line read but not yet taken stays for the next call.
     async fn next_line(&mut self) -> Option<Result<String, TransportError>> {
-        let mut chunk = vec![0; READ_CHUNK];
         loop {
             if let Some(line) = self.ready.pop_front() {
                 return Some(Ok(line));
@@ -52,7 +67,10 @@ impl<R: AsyncRead + Unpin + Send> LineSource for NdjsonSource<R> {
             if self.ended {
                 return None;
             }
-            let n = match self.read.read(&mut chunk).await {
+            if self.chunk.is_empty() {
+                self.chunk = vec![0; READ_CHUNK];
+            }
+            let n = match self.read.read(&mut self.chunk).await {
                 Ok(n) => n,
                 Err(e) => return Some(Err(e.into())),
             };
@@ -61,7 +79,7 @@ impl<R: AsyncRead + Unpin + Send> LineSource for NdjsonSource<R> {
                 self.ready.extend(self.lines.flush());
                 continue;
             }
-            match self.lines.push(&chunk[..n]) {
+            match self.lines.push(&self.chunk[..n]) {
                 Ok(lines) => self.ready.extend(lines),
                 Err(e) => return Some(Err(e.into())),
             }
@@ -122,15 +140,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_line_that_never_ends_is_refused() {
+    async fn a_line_past_the_hosts_limit_is_refused() {
         let (mut peer, ours) = tokio::io::duplex(1 << 16);
-        let mut source = NdjsonSource {
-            lines: LineDecoder::new().with_limit(8),
-            ..NdjsonSource::new(ours)
-        };
+        assert_eq!(
+            NdjsonSource::new(&b""[..]).limit(),
+            LineDecoder::DEFAULT_LIMIT
+        );
+        let mut source = NdjsonSource::new(ours).with_limit(8);
+        assert_eq!(source.limit(), 8);
         peer.write_all(b"0123456789abcdef").await.unwrap();
         let err = source.next_line().await.unwrap().unwrap_err();
         assert!(matches!(err, TransportError::LineTooLong(_)), "{err}");
+    }
+
+    /// A line already waiting is handed over without a read, and every read
+    /// fills the one buffer the source keeps.
+    #[tokio::test]
+    async fn a_waiting_line_needs_no_read_and_reads_reuse_one_buffer() {
+        let mut source = NdjsonSource::new(&b"{\"a\":1}\n{\"b\":2}\n"[..]);
+        assert!(source.chunk.is_empty(), "nothing is made before a read");
+        assert_eq!(source.next_line().await.unwrap().unwrap(), r#"{"a":1}"#);
+        let made = source.chunk.as_ptr();
+        assert_eq!(source.next_line().await.unwrap().unwrap(), r#"{"b":2}"#);
+        assert!(source.next_line().await.is_none());
+        assert_eq!(source.chunk.as_ptr(), made, "the same buffer");
     }
 
     #[tokio::test]

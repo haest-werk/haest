@@ -74,6 +74,11 @@ impl LineDecoder {
         self
     }
 
+    /// The most an unfinished line may hold, in bytes ([`with_limit`](Self::with_limit)).
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
     /// Feed a chunk; every line it completed, in order. Bytes that are not
     /// UTF-8 become U+FFFD.
     ///

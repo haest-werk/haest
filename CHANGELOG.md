@@ -1477,6 +1477,7 @@ wrote them.
   credential: `token: Some("t".to_string())` -> `token: Some("t".into())`,
   `token.as_deref()` -> `token.as_ref().map(Token::expose)`. On the wire it
   is the same plain string.
+- `LineDecoder::limit` reads the limit back.
 
 ### haest-session (new)
 
@@ -1610,6 +1611,10 @@ against it; the wire JSON is unchanged):
   `reading from the peer failed: ` and the error with its causes), so a
   host shows why a connection ended without Debug text; the `haest`
   command's "the connection ended" line uses it.
+- `NdjsonSource::with_limit` sets the longest line it takes (64 MiB by
+  default; `limit()` reads it), and the source keeps one read buffer
+  where it allocated 16 KiB on every `next_line`, even with a line
+  already waiting.
 
 ### haest-issues
 
