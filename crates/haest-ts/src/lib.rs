@@ -22,19 +22,22 @@
 //! # Examples
 //!
 //! ```
+//! # fn main() -> Result<(), haest_ts::StripError> {
 //! let ts = "const n: number = 1\nconsole.log(n as number)";
-//! let js = haest_ts::strip_types(ts, "main.ts").unwrap();
+//! let js = haest_ts::strip_types(ts, "main.ts")?;
 //! assert!(!js.contains("number"));
 //! // Line 2 is still line 2.
-//! assert!(js.lines().nth(1).unwrap().contains("console.log(n"));
+//! assert!(js.lines().nth(1).is_some_and(|line| line.contains("console.log(n")));
 //!
 //! // An enum has no JavaScript form of its own: it becomes code.
-//! let js = haest_ts::strip_types("enum Color { Red, Green }", "colors.ts").unwrap();
+//! let js = haest_ts::strip_types("enum Color { Red, Green }", "colors.ts")?;
 //! assert!(!js.contains("enum "));
 //!
 //! // A syntax error is an Err that names the problem.
-//! let err = haest_ts::strip_types("const = ;", "broken.ts").unwrap_err();
+//! let err = haest_ts::strip_types("const = ;", "broken.ts").expect_err("not TypeScript");
 //! assert!(matches!(err, haest_ts::StripError::Syntax { .. }));
+//! # Ok(())
+//! # }
 //! ```
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
