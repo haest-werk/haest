@@ -26,7 +26,7 @@ use crate::{
     haest::{
         LoopEvent, Message,
         core::fs::{Fs, MemFs},
-        core::session::SessionRecord,
+        core::session::{EffortChange, SessionRecord},
         core::tool::ToolContext,
         http::{HttpClient, HttpClientRef, HttpError, Request, Response},
         mods::{ApprovalRequest, Decision, ModUiRef},
@@ -163,7 +163,7 @@ async fn close_stops_the_subagents_kills_the_jobs_closes_mcp_and_flushes() {
     rt.hooks().append(&SessionRecord::Config {
         t: 1,
         model_spec: Some("openrouter:held/back".into()),
-        effort: None,
+        effort: EffortChange::Unchanged,
     });
 
     let (agents, mcp, file) = (rt.subagents().clone(), rt.mcp().clone(), rt.session_id());

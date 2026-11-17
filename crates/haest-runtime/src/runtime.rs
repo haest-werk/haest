@@ -15,7 +15,7 @@ use crate::{
         Agent, Effort, EventSink, ModelError, TurnOutcome,
         core::compaction::CompactionError,
         core::fs::FsRef,
-        core::session::SessionRecord,
+        core::session::{EffortChange, SessionRecord},
         core::skills::{Skill, SkillScanRoots, Skills, skills_in},
         core::task_board::TaskBoard,
         mcp::McpHub,
@@ -256,7 +256,7 @@ impl<U> Runtime<U> {
         self.hooks.append(&SessionRecord::Config {
             t: now_ms(),
             model_spec: Some(spec.to_string()),
-            effort: None,
+            effort: EffortChange::Unchanged,
         });
         Ok(())
     }
@@ -271,7 +271,7 @@ impl<U> Runtime<U> {
         self.hooks.append(&SessionRecord::Config {
             t: now_ms(),
             model_spec: None,
-            effort: Some(effort),
+            effort: effort.into(),
         });
     }
 

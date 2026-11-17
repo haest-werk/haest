@@ -57,7 +57,7 @@ mod time;
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use file::{JsonlSessionFile, SessionSink, SessionSinkRef};
 pub(crate) use replay::{INTERRUPTED, Line, answer_interrupted, compact, parse_line};
@@ -125,13 +125,15 @@ pub enum SessionRecord {
         /// The new model spec; absent (or empty) = unchanged.
         #[serde(rename = "model", default, skip_serializing_if = "Option::is_none")]
         model_spec: Option<String>,
-        /// Absent = unchanged; `null` = back to the model's default.
+        /// The `effort` key: absent = unchanged, `null` = back to the
+        /// model's default, a level = that level.
         #[serde(
             default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "present"
+            skip_serializing_if = "EffortChange::is_unchanged",
+            serialize_with = "effort_out",
+            deserialize_with = "effort_in"
         )]
-        effort: Option<Option<Effort>>,
+        effort: EffortChange,
     },
     /// What the conversation has spent so far; the last one wins.
     Ledger {
@@ -247,13 +249,74 @@ fn millis<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
         .unwrap_or(0))
 }
 
-/// A present key, even `null`, is `Some`; only an absent key stays `None` (via `default`).
-#[expect(
-    clippy::option_option,
-    reason = "serde's shape for a key that may be absent, null, or set"
-)]
-fn present<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Option<Effort>>, D::Error> {
-    Option::<Effort>::deserialize(d).map(Some)
+/// What a [`SessionRecord::Config`] does to the effort the agent asks for:
+/// the three states of its `effort` key.
+///
+/// ```
+/// use haest_core::{Effort, session::EffortChange};
+///
+/// let before = Some(Effort::Low);
+/// assert_eq!(EffortChange::Unchanged.applied_to(before), before);
+/// assert_eq!(EffortChange::ModelDefault.applied_to(before), None);
+/// assert_eq!(EffortChange::To(Effort::High).applied_to(before), Some(Effort::High));
+/// // What `Agent::effort` holds, as a change to it.
+/// assert_eq!(EffortChange::from(None), EffortChange::ModelDefault);
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EffortChange {
+    /// Left as it was: the record has no `effort` key.
+    #[default]
+    Unchanged,
+    /// Back to the model's own default, no effort sent: `"effort": null`.
+    ModelDefault,
+    /// This level: `"effort": "high"`.
+    To(Effort),
+}
+
+impl EffortChange {
+    /// The effort after this change, from `current`.
+    pub fn applied_to(self, current: Option<Effort>) -> Option<Effort> {
+        match self {
+            Self::Unchanged => current,
+            Self::ModelDefault => None,
+            Self::To(effort) => Some(effort),
+        }
+    }
+
+    /// It changes nothing (the record leaves out its `effort` key).
+    pub fn is_unchanged(&self) -> bool {
+        *self == Self::Unchanged
+    }
+}
+
+/// The change to `effort`, as an agent holds it: None is
+/// [`ModelDefault`](EffortChange::ModelDefault).
+impl From<Option<Effort>> for EffortChange {
+    fn from(effort: Option<Effort>) -> Self {
+        effort.map_or(Self::ModelDefault, Self::To)
+    }
+}
+
+/// [`To`](EffortChange::To) `effort`.
+impl From<Effort> for EffortChange {
+    fn from(effort: Effort) -> Self {
+        Self::To(effort)
+    }
+}
+
+/// A present `effort` key: `null` is back to the model's default. An absent
+/// one never gets here (`default`: unchanged).
+fn effort_in<'de, D: Deserializer<'de>>(d: D) -> Result<EffortChange, D::Error> {
+    Option::<Effort>::deserialize(d).map(EffortChange::from)
+}
+
+/// The `effort` key's value; an unchanged effort writes no key
+/// (`skip_serializing_if`), so it never gets here.
+fn effort_out<S: Serializer>(change: &EffortChange, s: S) -> Result<S::Ok, S::Error> {
+    match change {
+        EffortChange::To(effort) => effort.serialize(s),
+        EffortChange::ModelDefault | EffortChange::Unchanged => s.serialize_none(),
+    }
 }
 
 /// A session id that is not `[a-zA-Z0-9_-]+`, refused so its file cannot

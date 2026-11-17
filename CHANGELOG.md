@@ -132,6 +132,11 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     `FsStat::new(kind, size).with_modified(at)` (no `with_modified` when
     there is no time), and `DirEntry { name, kind }` ->
     `DirEntry::new(name, kind)`.
+13. A session's effort change is an `EffortChange`:
+    `SessionRecord::Config { effort: Some(Some(e)), .. }` ->
+    `effort: EffortChange::To(e)`, `Some(None)` -> `EffortChange::ModelDefault`,
+    `None` -> `EffortChange::Unchanged`, and
+    `replayed.effort.unwrap_or(current)` -> `replayed.effort.applied_to(current)`.
 
 Every other breaking change is marked (breaking) in its crate's section
 below.
@@ -892,6 +897,12 @@ Hosts write less (round two of the review, and what porting brain onto
 - `WebSearchOptions` is `Default` (`Auto`, 5 results a search, 15 a model
   call, as `new` sets them), so a host that sets a field writes
   `..WebSearchOptions::default()` and a setting added later breaks none.
+- New `session::EffortChange` (`Unchanged`, `ModelDefault`, `To(effort)`)
+  in place of `Option<Option<Effort>>` in `SessionRecord::Config::effort`
+  and `ReplayedSession::effort` (breaking). `applied_to(current)` gives
+  the effort after it, and `From<Option<Effort>>` turns what an agent holds
+  into a change. The session file's JSON is the same: no key, `null`, or
+  the level.
 
 ### haest-http
 

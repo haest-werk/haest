@@ -12,7 +12,9 @@ use crate::{
         Agent, AgentOptions, Effort,
         core::fs::FsRef,
         core::ledger::Ledger,
-        core::session::{JsonlSessionFile, ReplayedSession, SessionRecord, sessions_dir},
+        core::session::{
+            EffortChange, JsonlSessionFile, ReplayedSession, SessionRecord, sessions_dir,
+        },
         core::task_board::TaskBoard,
         now_ms,
     },
@@ -104,7 +106,7 @@ pub(crate) fn record_start(hooks: &RuntimeHooks, agent: &Agent) {
     hooks.append(&SessionRecord::Config {
         t: now_ms(),
         model_spec: Some(agent.model_spec().to_string()),
-        effort: Some(agent.effort()),
+        effort: agent.effort().into(),
     });
     if let Some(ledger) = agent.deps().shared().ledger() {
         let snapshot = ledger.snapshot();
@@ -128,11 +130,12 @@ pub(crate) fn start_on(
         .and_then(|r| r.model_spec.clone())
         .filter(|_| saved_one(opts.on_resume.model));
     let effort = saved
-        .and_then(|r| r.effort)
-        .filter(|_| saved_one(opts.on_resume.effort));
+        .map(|r| r.effort)
+        .filter(|_| saved_one(opts.on_resume.effort))
+        .unwrap_or_default();
     (
         model.unwrap_or_else(|| s.model_spec.clone()),
-        effort.unwrap_or(s.effort),
+        effort.applied_to(s.effort),
     )
 }
 
@@ -145,7 +148,11 @@ pub(crate) fn record_given(hooks: &RuntimeHooks, agent: &Agent, opts: &BuildOpti
         hooks.append(&SessionRecord::Config {
             t: now_ms(),
             model_spec: model.then(|| agent.model_spec().to_string()),
-            effort: effort.then_some(agent.effort()),
+            effort: if effort {
+                agent.effort().into()
+            } else {
+                EffortChange::Unchanged
+            },
         });
     }
 }

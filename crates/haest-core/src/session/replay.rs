@@ -4,11 +4,10 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
-use super::{KINDS, SessionRecord, compaction_summary_message};
+use super::{EffortChange, KINDS, SessionRecord, compaction_summary_message};
 use crate::{
     ledger::LedgerSnapshot,
     messages::{Message, ToolCall, ToolResultMessage},
-    provider::Effort,
     task_board::Task,
 };
 
@@ -27,8 +26,9 @@ pub struct ReplayedSession {
     pub messages: Vec<Message>,
     /// The last model spec a config record named.
     pub model_spec: Option<String>,
-    /// None = no config record set it; `Some(None)` = set back to the model's default.
-    pub effort: Option<Option<Effort>>,
+    /// What the config records did to the effort, the last that changed it
+    /// winning: [`EffortChange::Unchanged`] when none did.
+    pub effort: EffortChange,
     /// The last ledger record; None when there was none.
     pub ledger: Option<LedgerSnapshot>,
     /// The last task list; None when there was none.
@@ -120,7 +120,7 @@ fn apply(s: &mut ReplayedSession, r: SessionRecord) {
             if let Some(m) = model.filter(|m| !m.is_empty()) {
                 s.model_spec = Some(m);
             }
-            if effort.is_some() {
+            if !effort.is_unchanged() {
                 s.effort = effort;
             }
         }
