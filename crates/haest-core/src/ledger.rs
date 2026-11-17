@@ -99,7 +99,7 @@ const TOKENS: Meter = Meter::Tokens(Scope::Conversation);
 /// # Examples
 ///
 /// ```
-/// use std::sync::{Arc, Mutex};
+/// use std::sync::mpsc;
 ///
 /// use haest_core::{
 ///     caps::{ConversationCap, ConversationCaps},
@@ -107,22 +107,22 @@ const TOKENS: Meter = Meter::Tokens(Scope::Conversation);
 ///     messages::Usage,
 /// };
 ///
-/// #[derive(Default)]
-/// struct Warnings(Mutex<Vec<String>>);
+/// /// Hands every warning to the host's UI.
+/// struct Warnings(mpsc::Sender<String>);
 ///
 /// impl LedgerHooks for Warnings {
 ///     fn persist(&self, _snapshot: &LedgerSnapshot) {}
 ///     fn warn(&self, text: &str) {
-///         self.0.lock().unwrap().push(text.to_string());
+///         let _ = self.0.send(text.to_string());
 ///     }
 /// }
 ///
-/// let warnings = Arc::new(Warnings::default());
+/// let (warn, warned) = mpsc::channel();
 /// let caps = ConversationCaps { max_usd: 1.0, max_unpriced_tokens: 0 };
-/// let ledger = Ledger::new(caps, warnings.clone());
+/// let ledger = Ledger::new(caps, Warnings(warn));
 ///
 /// ledger.charge(&Usage { cost_usd: Some(0.85), ..Usage::default() });
-/// assert_eq!(warnings.0.lock().unwrap().len(), 1); // past 80% of the cap: warned once
+/// assert_eq!(warned.try_iter().count(), 1); // past 80% of the cap: warned once
 /// assert!(ledger.exhausted().is_none());
 ///
 /// ledger.charge(&Usage { cost_usd: Some(0.20), ..Usage::default() });
