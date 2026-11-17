@@ -36,7 +36,7 @@ pub use job::{Job, JobState, JobStatus};
 pub use new_job::NewJob;
 
 use std::{
-    fmt,
+    fmt, panic,
     sync::{Arc, Mutex},
 };
 
@@ -45,7 +45,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::inbox::InboxRef;
 use entry::Entry;
-use task::{Shared, run};
+use task::{Shared, host_call, run};
 
 /// Rolling output kept per job, in bytes; older output is dropped from the front.
 pub(crate) const MAX_BUFFER: usize = 1_000_000;
@@ -183,6 +183,11 @@ impl JobHub {
     ///
     /// [`JobError::TooMany`] when [`MAX_JOBS`] already run,
     /// [`JobError::NoRuntime`] when there is no tokio runtime to run the job on.
+    ///
+    /// # Panics
+    ///
+    /// When the host's [`JobEvents::on_change`] panics on the new running
+    /// set: the job is started all the same, and runs and ends as any other.
     pub fn start(&self, job: NewJob, ctx: &ToolContext) -> Result<Job, JobError> {
         let (command, description) = job.into_parts();
         let rt =
@@ -201,8 +206,10 @@ impl JobHub {
         // Before the job runs, so its set is put before its end's. While
         // another caller is handing a set over, that one hands this one over
         // too, and a job that ends meanwhile is folded into the newer set
-        // (`JobEvents::on_exit` says so).
-        shared.report_running();
+        // (`JobEvents::on_exit` says so). A host's panic here goes on once
+        // the job is spawned: a job in the table must run to its end.
+        let mut reported = None;
+        host_call(&mut reported, || shared.report_running());
         rt.spawn(run(
             shared.clone(),
             ctx.workspace().clone(),
@@ -210,6 +217,9 @@ impl JobHub {
             ctx.cwd().to_path_buf(),
             stop,
         ));
+        if let Some(panic) = reported {
+            panic::resume_unwind(panic);
+        }
         Ok(job)
     }
 

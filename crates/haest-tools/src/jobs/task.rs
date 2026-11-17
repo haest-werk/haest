@@ -2,7 +2,7 @@
 //! output into the table, and reports the end (an exit notice to the inbox
 //! when it exited on its own).
 //!
-//! A panic on the way, in a host's [`JobEvents::on_output`](super::JobEvents::on_output)
+//! A panic on the way, in a host's [`JobEvents`](super::JobEvents) handler
 //! or in the workspace, never skips the end: the job is reported ended,
 //! then the panic goes on, as the session and the transport raise a host's.
 
@@ -121,10 +121,14 @@ impl Shared {
             .deliver(|running| self.events().on_change(running));
     }
 
-    fn finish(&self, id: &str, code: i32) {
+    /// Mark job `id` ended with `code`, then report it: Done (unless the
+    /// listener panicked on its output, `heard` false), the running set, the
+    /// end, the model's notice. A host's panic in one skips none of the
+    /// others; the first is handed back, for the job's task to raise.
+    fn finish(&self, id: &str, code: i32, heard: bool) -> Option<Panic> {
         let job = {
             let mut jobs = self.lock_jobs();
-            let Some(e) = jobs.get_mut(id) else { return };
+            let e = jobs.get_mut(id)?;
             e.job.exit_code = Some(code);
             if e.job.status == JobStatus::Running {
                 e.job.status = JobStatus::Exited;
@@ -134,13 +138,27 @@ impl Shared {
             self.running.put(jobs.running());
             job
         };
+        let mut first = None;
         // Each event goes to the listener in place when it is made.
-        self.events().on_output(&job, JobOutput::Done);
-        self.report_running();
-        self.events().on_exit(&job);
-        if job.status == JobStatus::Exited {
-            self.inbox.submit(exit_notice(&job));
+        if heard {
+            host_call(&mut first, || {
+                self.events().on_output(&job, JobOutput::Done);
+            });
         }
+        host_call(&mut first, || self.report_running());
+        host_call(&mut first, || self.events().on_exit(&job));
+        if job.status == JobStatus::Exited {
+            host_call(&mut first, || self.inbox.submit(exit_notice(&job)));
+        }
+        first
+    }
+}
+
+/// Run `f`, a call into a host's code; its panic is kept in `first`, unless
+/// one is kept already.
+pub(super) fn host_call(first: &mut Option<Panic>, f: impl FnOnce()) {
+    if let Err(panic) = panic::catch_unwind(AssertUnwindSafe(f)) {
+        first.get_or_insert(panic);
     }
 }
 
@@ -201,8 +219,13 @@ pub(super) async fn run(
     let ran = AssertUnwindSafe(workspace.shell_streaming(&job.command, opts, on_output))
         .catch_unwind()
         .await;
-    shared.finish(&job.id, ran.as_ref().map_or(EXIT_UNKNOWN, |r| r.exit_code));
-    if let Some(panic) = ran.err().or_else(|| output.panicked().take()) {
+    let code = ran.as_ref().map_or(EXIT_UNKNOWN, |r| r.exit_code);
+    let heard = output.panicked().is_none();
+    let late = shared.finish(&job.id, code, heard);
+    // One panic, once the job's state is final: the workspace's, else the
+    // listener's on the output, else the first of its end's.
+    let panic = ran.err().or_else(|| output.panicked().take()).or(late);
+    if let Some(panic) = panic {
         panic::resume_unwind(panic);
     }
 }

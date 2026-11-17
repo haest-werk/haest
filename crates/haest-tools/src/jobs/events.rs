@@ -8,7 +8,8 @@ use super::Job;
 pub enum JobOutput<'a> {
     /// Output as it arrived.
     Chunk(&'a str),
-    /// The job ended: nothing more will come.
+    /// The job ended: nothing more will come. Not sent once
+    /// [`on_output`](JobEvents::on_output) panicked on this job's output.
     Done,
 }
 
@@ -19,17 +20,23 @@ pub enum JobOutput<'a> {
 /// task), never while the hub's table is locked: a handler may call the hub
 /// back.
 ///
-/// A panic in [`on_output`](Self::on_output) does not stop the job: that
-/// handler hears no more of its output (the buffer still keeps it), the job
-/// ends as it would have and is reported ended, then the panic goes on, on
-/// the job's own task.
+/// A panic in a handler stops nothing: the job runs to its end with its own
+/// exit code and is reported ended (the running set,
+/// [`on_exit`](Self::on_exit), the model's notice through the inbox), one
+/// call's panic skipping none of the others. Then one panic goes on, the
+/// first: out of [`JobHub::start`](super::JobHub::start) when it was the
+/// start's [`on_change`](Self::on_change) (the job is started all the same),
+/// else on the job's own task. Once [`on_output`](Self::on_output) panicked,
+/// it hears no more of that job's output, [`JobOutput::Done`] included (the
+/// buffer still keeps it).
 pub trait JobEvents: Send + Sync {
     /// Every start and stop: the full set of running jobs, never a delta.
     /// One call at a time, and never an older set after a newer one: the
     /// changes made while one call runs are handed over next as one, the
     /// newest. So the last set it hears is the hub's.
     fn on_change(&self, _running: &[Job]) {}
-    /// Output as it arrives, then [`JobOutput::Done`] once when the job ended.
+    /// Output as it arrives, then [`JobOutput::Done`] once when the job
+    /// ended; nothing more of a job once a call for it panicked.
     fn on_output(&self, _job: &Job, _output: JobOutput<'_>) {}
     /// The job ended: exited on its own, or killed. A job that started and
     /// ended while one [`on_change`](Self::on_change) call ran may be in no
