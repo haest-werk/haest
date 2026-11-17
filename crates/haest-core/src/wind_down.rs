@@ -26,10 +26,8 @@
 mod fact;
 mod watch;
 
-use std::sync::Arc;
-
 use crate::threshold::{
-    Action, Mark, Meter, Reading, Rearm, Scope, Threshold, Thresholds, TurnSite,
+    Action, Mark, Meter, Reading, Rearm, Scope, Threshold, ThresholdRef, Thresholds, TurnSite,
 };
 
 pub use fact::WindingDown;
@@ -164,20 +162,17 @@ impl WindDown {
     }
 
     /// Its thresholds: one per watched cap, none when off.
-    pub fn thresholds(self) -> Vec<Arc<dyn Threshold>> {
+    pub fn thresholds(self) -> Vec<ThresholdRef> {
         if !self.is_on() {
             return Vec::new();
         }
         let at = |meter| {
-            Arc::new(WindDownAt {
+            ThresholdRef::new(WindDownAt {
                 meter,
                 share: self.share_for(meter),
             })
         };
-        WATCHED
-            .into_iter()
-            .map(|m| at(m) as Arc<dyn Threshold>)
-            .collect()
+        WATCHED.into_iter().map(at).collect()
     }
 
     /// The share at which `meter`'s cap winds down. The one place that says

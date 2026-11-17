@@ -143,8 +143,8 @@ async fn run() {
     let host = Arc::new(Host::default());
     // haest's own (the guard's nudges), then the host's.
     let thresholds = Thresholds::default()
-        .with(Arc::new(SaveNotes))
-        .and_then(|t| t.with(Arc::new(LongTurn)))
+        .with(SaveNotes)
+        .and_then(|t| t.with(LongTurn))
         .expect("a turn reads both meters and can remind and warn");
     let deps = AgentDeps::new(
         provider.resolver(),

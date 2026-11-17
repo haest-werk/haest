@@ -191,7 +191,7 @@ Plug points without `Arc` (breaking):
   `ToolSourceRef`, `SystemPromptRef`, `ModelResolverRef`, `WorkspaceRef`,
   `AgentHooksRef`, `ToolServicesRef`, `ModelFactsRef`, `TurnCapsSourceRef`,
   `ClockRef`, `FsRef`, `ChangeSetRef`, `ProviderRef`, `KeySourceRef`,
-  `ledger::LedgerHooksRef`, `run::RunStoreRef`,
+  `ledger::LedgerHooksRef`, `threshold::ThresholdRef`, `run::RunStoreRef`,
   `session::SessionSinkRef`, `shell_command::ShellCommandRef` and
   `skills::SkillSetRef`. Each is a cheap `Clone`, derefs to the trait
   object, and is built `From` the value, an `Arc` of it or an
@@ -330,6 +330,11 @@ Thresholds; wind-down, opt-in:
   fired in a `Watch<S>`; a threshold a site cannot check is refused
   (`NotServed`). Sites: `TurnSite` and `LedgerSite` here, haest-tools'
   `AgentTurnSite`; compaction's threshold is `CompactionOptions`.
+- A threshold goes in as itself: `Thresholds::with(impl Into<ThresholdRef>)`
+  and `Thresholds::new(impl IntoIterator<Item = impl Into<ThresholdRef>>)`
+  (`.with(SaveNotes)?`); `Site::defaults`, `WindDown::thresholds` and
+  `Thresholds::iter` hand out `ThresholdRef`s. `Crossing`'s fields are
+  private: `crossing.threshold()`, `crossing.reading()`.
 - New `SharedDeps::with_thresholds(Thresholds<TurnSite>)`: what a turn
   checks, the guard's nudges unless set. Remind, warn and wind down at every step
   boundary (a resumed durable run's too); stop before every model call.

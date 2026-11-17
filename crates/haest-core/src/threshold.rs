@@ -44,11 +44,11 @@
 //! falls back under the mark (after a compaction, say).
 //!
 //! ```
-//! use std::sync::Arc;
-//!
 //! use haest_core::threshold::{
 //!     Action, Mark, Meter, Reading, Rearm, Threshold, Thresholds, TurnSite,
 //! };
+//!
+//! # fn main() -> Result<(), haest_core::threshold::NotServed> {
 //!
 //! struct SaveNotes;
 //!
@@ -63,7 +63,7 @@
 //! }
 //!
 //! // The guard's nudges, and this one.
-//! let thresholds = Thresholds::<TurnSite>::default().with(Arc::new(SaveNotes)).unwrap();
+//! let thresholds = Thresholds::<TurnSite>::default().with(SaveNotes)?;
 //! assert_eq!(thresholds.len(), 5);
 //!
 //! // A turn cannot compact: compaction is the host's, before a model call.
@@ -75,7 +75,9 @@
 //!     fn rearm(&self) -> Rearm { Rearm::EveryCheck }
 //!     fn text(&self, _: &Reading) -> String { String::new() }
 //! }
-//! assert!(Thresholds::<TurnSite>::none().with(Arc::new(Squeeze)).is_err());
+//! assert!(Thresholds::<TurnSite>::none().with(Squeeze).is_err());
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! `cargo run -p haest --example threshold` runs one in a whole turn.
@@ -85,7 +87,7 @@ mod sites;
 mod tests;
 mod watch;
 
-use std::{fmt, sync::Arc};
+use std::fmt;
 
 pub use sites::{LedgerSite, NUDGE_SHARE, TurnSite, WARN_SHARE};
 pub(crate) use sites::{WAY_OUT, minutes};
@@ -316,16 +318,31 @@ impl fmt::Debug for dyn Threshold {
     }
 }
 
+crate::plug_ref! {
+    /// A [`Threshold`], shared: what a [`Thresholds`] list holds. Built from
+    /// the threshold itself, or from an `Arc` of one.
+    pub struct ThresholdRef(dyn Threshold);
+    debug(threshold, f) { fmt::Debug::fmt(threshold, f) }
+}
+
 /// A threshold that fired, and the reading it fired on.
 #[derive(Debug, Clone)]
 pub struct Crossing {
-    /// The threshold.
-    pub threshold: Arc<dyn Threshold>,
-    /// What its meter read.
-    pub reading: Reading,
+    threshold: ThresholdRef,
+    reading: Reading,
 }
 
 impl Crossing {
+    /// The threshold.
+    pub fn threshold(&self) -> &ThresholdRef {
+        &self.threshold
+    }
+
+    /// What its meter read.
+    pub fn reading(&self) -> &Reading {
+        &self.reading
+    }
+
     /// What the threshold says about this reading ([`Threshold::text`]).
     pub fn text(&self) -> String {
         self.threshold.text(&self.reading)

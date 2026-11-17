@@ -13,13 +13,11 @@
 //! The gate is a threshold site ([`AgentTurnSite`]): the nudge is its default
 //! threshold, and [`AgentTurnGate::with_thresholds`] changes it.
 
-use std::sync::Arc;
-
 use haest_core::{
     remedy::{Limit, Remedies},
     threshold::{
-        Action, Crossing, Mark, Meter, NUDGE_SHARE, Reading, Rearm, Site, Threshold, Thresholds,
-        Watch,
+        Action, Crossing, Mark, Meter, NUDGE_SHARE, Reading, Rearm, Site, Threshold, ThresholdRef,
+        Thresholds, Watch,
     },
 };
 
@@ -40,8 +38,8 @@ impl Site for AgentTurnSite {
         meter == Meter::Turns && matches!(action, Action::Remind | Action::Warn)
     }
 
-    fn defaults() -> Vec<Arc<dyn Threshold>> {
-        vec![Arc::new(StreakNudge)]
+    fn defaults() -> Vec<ThresholdRef> {
+        vec![StreakNudge.into()]
     }
 }
 

@@ -1,9 +1,9 @@
 //! [`Thresholds`] (a site's list), [`Site`] (where a list is checked) and
 //! [`Watch`] (which have fired).
 
-use std::{fmt, marker::PhantomData, ptr, sync::Arc};
+use std::{fmt, marker::PhantomData};
 
-use super::{Action, Crossing, Meter, Reading, Rearm, Threshold};
+use super::{Action, Crossing, Meter, Reading, Rearm, ThresholdRef};
 
 /// PLUG POINT: where thresholds are checked, and so what they may read and
 /// do. haest-core has [`TurnSite`](super::TurnSite) and
@@ -15,7 +15,7 @@ pub trait Site: 'static {
     /// It reads `meter` and can take `action`.
     fn serves(meter: Meter, action: Action) -> bool;
     /// What it checks unless a host says otherwise.
-    fn defaults() -> Vec<Arc<dyn Threshold>>;
+    fn defaults() -> Vec<ThresholdRef>;
 }
 
 /// A threshold its site cannot check: it does not read the meter, or cannot
@@ -34,7 +34,7 @@ pub struct NotServed {
 /// The thresholds one site checks, in order: the order a site says what is
 /// due. `Default` is the site's defaults; cheap to clone.
 pub struct Thresholds<S: Site> {
-    list: Vec<Arc<dyn Threshold>>,
+    list: Vec<ThresholdRef>,
     site: PhantomData<fn() -> S>,
 }
 
@@ -52,7 +52,7 @@ impl<S: Site> Thresholds<S> {
     /// # Errors
     ///
     /// [`NotServed`] for the first threshold this site cannot check.
-    pub fn new(list: impl IntoIterator<Item = Arc<dyn Threshold>>) -> Result<Self, NotServed> {
+    pub fn new(list: impl IntoIterator<Item = impl Into<ThresholdRef>>) -> Result<Self, NotServed> {
         list.into_iter().try_fold(Self::none(), Self::with)
     }
 
@@ -61,7 +61,8 @@ impl<S: Site> Thresholds<S> {
     /// # Errors
     ///
     /// [`NotServed`] when this site cannot check it.
-    pub fn with(mut self, threshold: Arc<dyn Threshold>) -> Result<Self, NotServed> {
+    pub fn with(mut self, threshold: impl Into<ThresholdRef>) -> Result<Self, NotServed> {
+        let threshold = threshold.into();
         let (meter, action) = (threshold.meter(), threshold.action());
         if !S::serves(meter, action) {
             return Err(NotServed {
@@ -75,7 +76,7 @@ impl<S: Site> Thresholds<S> {
     }
 
     /// These, and `more` after them, which the caller knows this site checks.
-    pub(crate) fn served(mut self, more: impl IntoIterator<Item = Arc<dyn Threshold>>) -> Self {
+    pub(crate) fn served(mut self, more: impl IntoIterator<Item = ThresholdRef>) -> Self {
         let more: Vec<_> = more.into_iter().collect();
         debug_assert!(more.iter().all(|t| S::serves(t.meter(), t.action())));
         self.list.extend(more);
@@ -83,7 +84,7 @@ impl<S: Site> Thresholds<S> {
     }
 
     /// Every threshold, in order.
-    pub fn iter(&self) -> std::slice::Iter<'_, Arc<dyn Threshold>> {
+    pub fn iter(&self) -> std::slice::Iter<'_, ThresholdRef> {
         self.list.iter()
     }
 
@@ -175,10 +176,11 @@ impl<S: Site> Watch<S> {
     }
 
     /// Watch `thresholds` from now on: one it already watched (the same
-    /// `Arc`) keeps whether it fired, a new one starts armed.
+    /// object, [`ThresholdRef::ptr_eq`]) keeps whether it fired, a new one
+    /// starts armed.
     pub fn follow(&mut self, thresholds: &Thresholds<S>) {
         let fired = thresholds.iter().map(|t| {
-            let same = |o: &Arc<dyn Threshold>| ptr::addr_eq(Arc::as_ptr(o), Arc::as_ptr(t));
+            let same = |o: &ThresholdRef| ThresholdRef::ptr_eq(o, t);
             let before = self.thresholds.iter().position(same);
             before.is_some_and(|i| self.fired[i])
         });
@@ -235,7 +237,7 @@ impl<S: Site> Watch<S> {
     }
 
     /// Each threshold, and whether it has fired (and not re-armed since).
-    pub(crate) fn fired(&self) -> impl Iterator<Item = (&Arc<dyn Threshold>, bool)> {
+    pub(crate) fn fired(&self) -> impl Iterator<Item = (&ThresholdRef, bool)> {
         self.thresholds.list.iter().zip(self.fired.iter().copied())
     }
 

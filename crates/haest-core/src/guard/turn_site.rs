@@ -190,7 +190,7 @@ impl TurnGuard {
         let due = self.crossed(usage, caps, Action::Remind);
         let texts = due.iter().map(Crossing::text).collect();
         let mut closings: Vec<String> = Vec::new();
-        for closing in due.iter().filter_map(|c| c.threshold.closing()) {
+        for closing in due.iter().filter_map(|c| c.threshold().closing()) {
             if !closings.iter().any(|seen| seen == closing) {
                 closings.push(closing.to_string());
             }
@@ -211,7 +211,7 @@ impl TurnGuard {
         let due = self.crossed(usage, caps, Action::Stop);
         let first = due.first()?;
         let text = format!("Turn stopped: {}", first.text());
-        Some(first.reading.remedied(text, &self.remedies))
+        Some(first.reading().remedied(text, &self.remedies))
     }
 
     /// The wind-down notice due now: the first time this turn a wind-down

@@ -39,7 +39,7 @@ impl Threshold for Host {
     }
 }
 
-fn host(meter: Meter, mark: Mark, action: Action, rearm: Rearm) -> Arc<dyn Threshold> {
+fn host(meter: Meter, mark: Mark, action: Action, rearm: Rearm) -> ThresholdRef {
     named(meter, mark, action, rearm, "HOST")
 }
 
@@ -49,8 +49,8 @@ fn named(
     action: Action,
     rearm: Rearm,
     says: &'static str,
-) -> Arc<dyn Threshold> {
-    Arc::new(Host {
+) -> ThresholdRef {
+    ThresholdRef::new(Host {
         meter,
         mark,
         action,
@@ -173,13 +173,13 @@ fn settle_takes_a_reading_as_heard_and_fires_nothing() {
     // Past the mark counts as fired: only the level-triggered one fires.
     let due = w.check(steps(7.0), Action::Remind);
     assert_eq!(due.len(), 1);
-    assert_eq!(due[0].threshold.rearm(), Rearm::EveryCheck);
+    assert_eq!(due[0].threshold().rearm(), Rearm::EveryCheck);
     // Under the mark, a below-mark threshold re-arms.
     w.settle(steps(2.0));
     let due: Vec<Rearm> = w
         .check(steps(6.0), Action::Remind)
         .iter()
-        .map(|c| c.threshold.rearm())
+        .map(|c| c.threshold().rearm())
         .collect();
     assert_eq!(due, [Rearm::BelowMark, Rearm::EveryCheck]);
 }
@@ -194,7 +194,7 @@ fn follow_keeps_what_fired_and_arms_what_is_new() {
     w.follow(&Thresholds::new([twin.clone(), a]).unwrap());
     let due = w.check(steps(6.0), Action::Remind);
     assert_eq!(due.len(), 1);
-    assert!(Arc::ptr_eq(&due[0].threshold, &twin));
+    assert!(ThresholdRef::ptr_eq(due[0].threshold(), &twin));
 }
 
 #[test]
@@ -248,7 +248,7 @@ fn a_site_refuses_what_it_cannot_check_and_says_why() {
 /// actions and rearms on the same meters.
 #[test]
 fn the_defaults_are_the_guards_nudge_and_the_ledgers_warning() {
-    let parts = |t: &Arc<dyn Threshold>| (t.meter(), t.mark(), t.action(), t.rearm());
+    let parts = |t: &ThresholdRef| (t.meter(), t.mark(), t.action(), t.rearm());
     let turn: Vec<_> = Thresholds::<TurnSite>::default()
         .iter()
         .map(parts)
@@ -283,7 +283,7 @@ fn the_defaults_are_the_guards_nudge_and_the_ledgers_warning() {
 fn agent(
     p: &ScriptedProvider,
     opts: Opts,
-    more: Vec<Arc<dyn Threshold>>,
+    more: Vec<ThresholdRef>,
 ) -> (crate::Agent, Arc<TestHooks>) {
     let (mut agent, hooks) = agent_with(p, opts);
     let mut thresholds = Thresholds::default();

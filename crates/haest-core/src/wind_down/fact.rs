@@ -24,7 +24,7 @@ pub struct WindingDown {
 impl WindingDown {
     /// The wind-down `crossing` states, with the host's remedy for its cap.
     pub(crate) fn of(crossing: &Crossing, remedies: &Remedies) -> Self {
-        let limit = crossing.reading.limit;
+        let limit = crossing.reading().limit;
         Self {
             fact: crossing.text(),
             limit,

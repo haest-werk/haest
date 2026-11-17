@@ -1,9 +1,7 @@
 //! haest-core's two sites, [`TurnSite`] and [`LedgerSite`], and their
 //! defaults: the guard's nudge and the ledger's warning.
 
-use std::sync::Arc;
-
-use super::{Action, Mark, Meter, Reading, Rearm, Scope, Site, Threshold};
+use super::{Action, Mark, Meter, Reading, Rearm, Scope, Site, Threshold, ThresholdRef};
 
 /// The share of a turn cap at which the guard nudges the model: half.
 pub const NUDGE_SHARE: f64 = 0.5;
@@ -38,7 +36,7 @@ impl Site for TurnSite {
         meter != Meter::Turns && action != Action::Compact
     }
 
-    fn defaults() -> Vec<Arc<dyn Threshold>> {
+    fn defaults() -> Vec<ThresholdRef> {
         [
             Meter::Steps,
             Meter::WallTime,
@@ -46,7 +44,7 @@ impl Site for TurnSite {
             Meter::Tokens(Scope::Turn),
         ]
         .into_iter()
-        .map(|meter| Arc::new(CapNudge(meter)) as Arc<dyn Threshold>)
+        .map(|meter| ThresholdRef::new(CapNudge(meter)))
         .collect()
     }
 }
@@ -113,13 +111,13 @@ impl Site for LedgerSite {
         ) && action == Action::Warn
     }
 
-    fn defaults() -> Vec<Arc<dyn Threshold>> {
+    fn defaults() -> Vec<ThresholdRef> {
         [
             Meter::Usd(Scope::Conversation),
             Meter::Tokens(Scope::Conversation),
         ]
         .into_iter()
-        .map(|meter| Arc::new(BudgetWarning(meter)) as Arc<dyn Threshold>)
+        .map(|meter| ThresholdRef::new(BudgetWarning(meter)))
         .collect()
     }
 }
