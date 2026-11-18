@@ -17,10 +17,12 @@
 //! before it starts where it would stop partway (`removable.rs`). Each
 //! change's real path is read again right before it is put on the disk; one
 //! that moved since the scan, or whose name or directory the disk now holds
-//! under another spelling, is skipped as a conflict.
+//! under another spelling, is skipped as a conflict. A directory removed
+//! whole is read again with each change listed under it: one of them that
+//! moved keeps the directory as a conflict too, never removed with it.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     io,
     path::{Path, PathBuf},
 };
@@ -30,11 +32,24 @@ use haest_core::{
     workspace::{ApplyFailureCode, ApplyReport, ChangeKind, FailedChange},
 };
 
-use super::{OverlayChanges, Scanned, links::Links, modes, removable, state::Original};
+use super::{
+    OverlayChanges, Scanned, links::Links, modes, removable, scan::under, state::Original,
+};
 use crate::spelling::Ways;
 
 /// Why one change was not applied: its code and the reason for the human.
 type Refusal = (ApplyFailureCode, String);
+
+/// One apply, as it goes through the changes.
+struct Run<'a> {
+    /// The apply's one lookup of links on the real disk: each real path on
+    /// the way is asked once, for the deletes and the writes.
+    links: Links<'a>,
+    /// What the scan found at each path it listed: on the disk, then in the
+    /// overlay.
+    listed: BTreeMap<PathBuf, (Original, Original)>,
+    report: ApplyReport,
+}
 
 /// What became of a change `put` did not refuse.
 enum Put {
@@ -50,23 +65,27 @@ impl OverlayChanges {
     /// Every change that is not a conflict, onto the real disk: the deletes,
     /// then the writes, each in path order.
     pub(super) async fn apply_all(&self) -> ApplyReport {
-        let mut report = ApplyReport::default();
-        // One for the whole apply, deletes and writes: each real path on the
-        // way is asked once.
-        let mut links = Links::new(self.book.disk.as_ref(), &self.book.root);
         // The ones this scan compares under: a wipe made while the apply
         // runs, of one of these too, is not.
         let wiped = self.book.wipes();
         // Read as the sandbox spells each path, a delete takes only its own
         // name and what is under it, never a write's: one scan serves both.
-        let (deletes, writes): (Vec<_>, Vec<_>) = self
-            .scan()
-            .await
+        let scanned = self.scan().await;
+        let mut run = Run {
+            links: Links::new(self.book.disk.as_ref(), &self.book.root),
+            listed: scanned
+                .iter()
+                .map(|s| (s.path.clone(), (s.now, s.mine)))
+                .collect(),
+            report: ApplyReport::default(),
+        };
+        let (deletes, writes): (Vec<_>, Vec<_>) = scanned
             .into_iter()
             .partition(|s| s.change.kind == ChangeKind::Deleted);
         for s in deletes.into_iter().chain(writes) {
-            self.settle(s, &mut links, &mut report).await;
+            self.settle(s, &mut run).await;
         }
+        let report = run.report;
         self.read_through_dirs(&report.applied).await;
         // What a wiped directory hid is on the disk now, or each path of it
         // not applied is remembered (`settle`): it is forgotten, unless its
@@ -85,17 +104,17 @@ impl OverlayChanges {
     }
 
     /// Put one change on the disk, or skip a conflict (at the scan, or a real
-    /// path that moved since), into `report`.
-    async fn settle(&self, mut s: Scanned, links: &mut Links<'_>, report: &mut ApplyReport) {
+    /// path that moved since), into the run's report.
+    async fn settle(&self, mut s: Scanned, run: &mut Run<'_>) {
         let refused = if s.change.conflict {
             None
         } else {
-            match self.put(&s, links).await {
+            match self.put(&s, run).await {
                 Ok(Put::Applied(took)) => {
                     self.read_through(&s, &took).await;
                     self.book.touched().remove(&s.path);
                     self.book.modes.forget(&s.path);
-                    report.applied.push(s.change);
+                    run.report.applied.push(s.change);
                     return;
                 }
                 Ok(Put::Moved) => {
@@ -109,10 +128,11 @@ impl OverlayChanges {
         // still listed once its directory is applied.
         self.book.touched().entry(s.path).or_insert(s.original);
         match refused {
-            Some((code, reason)) => report
+            Some((code, reason)) => run
+                .report
                 .failed
                 .push(FailedChange::new(s.change, code, reason)),
-            None => report.skipped.push(s.change),
+            None => run.report.skipped.push(s.change),
         }
     }
 
@@ -131,9 +151,8 @@ impl OverlayChanges {
     }
 
     /// Write (or delete) `s` on the real disk, find its real path moved, or
-    /// say why not; `links` is the apply's one lookup of links on the real
-    /// disk.
-    async fn put(&self, s: &Scanned, links: &mut Links<'_>) -> Result<Put, Refusal> {
+    /// say why not.
+    async fn put(&self, s: &Scanned, run: &mut Run<'_>) -> Result<Put, Refusal> {
         let path = s.path.as_path();
         let deleted = s.change.kind == ChangeKind::Deleted;
         let link = self.sandbox_link(path, deleted).await;
@@ -150,7 +169,7 @@ impl OverlayChanges {
         }
         // Checked at the apply, not at the scan: a link may have appeared on
         // disk since.
-        if links.through_a_link(path).await {
+        if run.links.through_a_link(path).await {
             return Err((
                 ApplyFailureCode::OutsideProject,
                 "a symlink on the real disk is on its way, and applying never writes through one"
@@ -180,10 +199,37 @@ impl OverlayChanges {
         if moved || again.held.is_some() {
             return Ok(Put::Moved);
         }
+        // A directory removed whole takes along what is under it: a change
+        // listed there that moved since the scan would go too, while it is
+        // reported skipped.
+        if again.state == Original::Dir
+            && s.removes_tree()
+            && self.moved_under(path, &run.listed).await
+        {
+            return Ok(Put::Moved);
+        }
         self.write(s, again.state == s.mine)
             .await
             .map(Put::Applied)
             .map_err(|e| (ApplyFailureCode::WriteFailed, e.to_string()))
+    }
+
+    /// Whether a change `listed` under `dir` moved on the disk since the
+    /// scan: it holds neither what the scan found there nor the sandbox's
+    /// version (the human saved or made it meanwhile).
+    async fn moved_under(
+        &self,
+        dir: &Path,
+        listed: &BTreeMap<PathBuf, (Original, Original)>,
+    ) -> bool {
+        let mut ways = Ways::default();
+        for (path, &(now, mine)) in under(listed, dir) {
+            let again = self.book.on_disk(path, &mut ways).await.state;
+            if again != now && again != mine {
+                return true;
+            }
+        }
+        false
     }
 
     /// Put `s` on the disk; `holds` when the disk holds the sandbox's

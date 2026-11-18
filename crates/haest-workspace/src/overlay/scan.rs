@@ -2,7 +2,8 @@
 //! and whether it is a conflict.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
+    ops::Bound,
     path::{Path, PathBuf},
 };
 
@@ -35,6 +36,17 @@ pub(super) struct ModeChange {
 }
 
 impl Found {
+    /// The overlay differs from the disk here: a change is listed.
+    fn changed(&self) -> bool {
+        self.now != self.mine || self.mode.differs
+    }
+
+    /// The human changed the disk here since the sandbox first read it (an
+    /// edit, a delete, a mode): applying would go over it.
+    fn edited(&self) -> bool {
+        self.original != self.now || self.mode.moved
+    }
+
     /// A delete that is not a conflict: applying frees its name.
     fn frees(&self) -> bool {
         self.mine == Original::Absent && self.now != Original::Absent && self.original == self.now
@@ -51,7 +63,7 @@ impl Found {
     /// The change the overlay makes here; None when it holds what the disk
     /// does. `freed` are the names this change set's deletes free.
     fn change(self, freed: &BTreeSet<PathBuf>) -> Option<Scanned> {
-        if self.now == self.mine && !self.mode.differs {
+        if !self.changed() {
             return None;
         }
         let kind = match (self.mine, self.now) {
@@ -68,7 +80,7 @@ impl Found {
         let keeps = self.lands_on(freed).map(|h| h.at.clone());
         Some(Scanned {
             change: Change::new(self.path.to_string_lossy(), kind)
-                .with_conflict(self.original != self.now || keeps.is_some() || self.mode.moved),
+                .with_conflict(self.edited() || keeps.is_some()),
             keeps: keeps.flatten(),
             frees: false,
             path: self.path,
@@ -84,11 +96,37 @@ fn under_any(path: &Path, dirs: &BTreeSet<PathBuf>) -> bool {
     path.ancestors().any(|a| dirs.contains(a))
 }
 
+/// The paths of `paths` under `dir`, `dir` itself not counted: in path
+/// order, they come right after it.
+pub(super) fn under<'a, V>(
+    paths: &'a BTreeMap<PathBuf, V>,
+    dir: &'a Path,
+) -> impl Iterator<Item = (&'a PathBuf, &'a V)> {
+    paths
+        .range::<Path, _>((Bound::Excluded(dir), Bound::Unbounded))
+        .take_while(move |(p, _)| p.starts_with(dir))
+}
+
+/// Whether `paths` holds one under `dir`, `dir` itself not counted.
+fn any_under(paths: &BTreeSet<PathBuf>, dir: &Path) -> bool {
+    paths
+        .range::<Path, _>((Bound::Excluded(dir), Bound::Unbounded))
+        .next()
+        .is_some_and(|p| p.starts_with(dir))
+}
+
 /// The changes among `found`, in its order.
 pub(super) fn changes(found: Vec<Found>) -> Vec<Scanned> {
+    // What the human changed under a directory the sandbox removes keeps
+    // that directory's delete waiting (below), so it frees no name.
+    let edited: BTreeSet<PathBuf> = found
+        .iter()
+        .filter(|f| f.changed() && f.edited())
+        .map(|f| f.path.clone())
+        .collect();
     let freed: BTreeSet<PathBuf> = found
         .iter()
-        .filter(|f| f.frees())
+        .filter(|f| f.frees() && !any_under(&edited, &f.path))
         .map(|f| f.path.clone())
         .collect();
     // The deletes a write needs: each frees the name the write lands on.
@@ -112,6 +150,19 @@ pub(super) fn changes(found: Vec<Found>) -> Vec<Scanned> {
             s.change.conflict = true;
         }
     }
+    // A change that removes a directory takes all under it along: a
+    // conflict there would go with it while the report says it was
+    // skipped, and the human's version with it. It waits too.
+    let waiting: BTreeSet<PathBuf> = scanned
+        .iter()
+        .filter(|s| s.change.conflict)
+        .map(|s| s.path.clone())
+        .collect();
+    for s in &mut scanned {
+        if s.removes_tree() && any_under(&waiting, &s.path) {
+            s.change.conflict = true;
+        }
+    }
     scanned
 }
 
@@ -129,4 +180,12 @@ pub(super) struct Scanned {
     pub(super) now: Original,
     /// The overlay's version when scanned.
     pub(super) mine: Original,
+}
+
+impl Scanned {
+    /// Applied, it removes a directory the disk held when scanned (a
+    /// delete, or a directory become a file), with all under it.
+    pub(super) fn removes_tree(&self) -> bool {
+        self.now == Original::Dir && self.mine != Original::Dir
+    }
 }

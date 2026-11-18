@@ -9,7 +9,10 @@
 //! real file now, and the overlay's version. If the real file moved in between
 //! (the human edited it, or changed its mode), the path is a CONFLICT and is
 //! skipped -- named, never overwritten; it is read once more right before its
-//! write, so a move during the apply counts too. Everything else is written (or
+//! write, so a move during the apply counts too. A directory the sandbox
+//! removes whole (deleted, or a file in its place) waits as a conflict too
+//! while a conflict waits under it: removing it would take the human's
+//! version along. Everything else is written (or
 //! deleted) on the real disk, deletes first, unless `apply.rs` refuses it: a
 //! symlink on the real disk on its way, a symlink the sandbox made, or a
 //! directory a rename by case must delete that could not go whole
@@ -27,9 +30,10 @@
 //! Paths here are the overlay's own (`/src/a.ts`); `root` maps them to the disk.
 //! A symlink is compared as a link (`state.rs`), never as what it points to.
 //! Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
-//! directory, not file by file -- an edit the human made INSIDE it meanwhile
-//! does not count as a conflict, also where the sandbox makes it again and
-//! each path under it is compared.
+//! directory, not file by file -- an edit the human made INSIDE it meanwhile,
+//! to a file the sandbox did not change on its own, does not count as a
+//! conflict, also where the sandbox makes it again and each path under it is
+//! compared.
 
 mod apply;
 mod book;
@@ -81,7 +85,9 @@ use state::{Original, state_of, walk};
 ///   a directory before its files. A path whose real file changed since the
 ///   first touch (the human edited it), or that would land on a name the
 ///   disk holds under another spelling (below), is a
-///   [`conflict`](haest_core::workspace::Change::conflict).
+///   [`conflict`](haest_core::workspace::Change::conflict); so is a
+///   directory the sandbox removes whole while a conflict waits under it,
+///   which removing it would take along.
 /// - [`diff`](ChangeSet::diff): a unified diff of one change.
 /// - [`apply`](ChangeSet::apply): writes (or deletes) every change that is not
 ///   a conflict, and reports each as applied, skipped or failed. An applied
@@ -109,11 +115,12 @@ use state::{Original, state_of, walk};
 /// such writes is deleted whole or not at all: where a directory at or under
 /// it may not be emptied (read-only to this process), it fails before
 /// anything is deleted, and its writes wait. Each change's real path is read
-/// again right before it is put on the disk. One that moved since the scan
-/// (the human saved or deleted it), or whose name or directory the disk now
+/// again right before it is put on the disk, and so is each change listed
+/// under a directory removed whole. One that moved since the scan (the
+/// human saved or deleted it), or whose name or directory the disk now
 /// holds under another spelling (an earlier write of this apply: the sandbox
 /// wrote both `README.md` and `readme.md`; or the rename's delete failed), is
-/// skipped as a conflict and stays listed.
+/// skipped as a conflict and stays listed, and so is the directory above it.
 ///
 /// `apply` never writes through a symlink: not one on the real disk on the
 /// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),
@@ -140,8 +147,9 @@ use state::{Original, state_of, walk};
 /// while the apply ran stays its own.
 ///
 /// Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
-/// directory, not file by file -- an edit the human made INSIDE it meanwhile
-/// does not count as a conflict. Where the sandbox makes it again
+/// directory, not file by file -- an edit the human made INSIDE it meanwhile,
+/// to a file the sandbox did not change on its own, does not count as a
+/// conflict. Where the sandbox makes it again
 /// (`rm -r dir && mkdir dir`, `rm -r dist && mv build dist`), each path under
 /// it that differs, on the disk or in the sandbox, is listed, and the same
 /// holds for it.

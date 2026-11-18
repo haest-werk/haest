@@ -168,3 +168,39 @@ async fn a_directory_wiped_again_while_the_apply_runs_is_still_compared() {
     changes.apply().await;
     assert_eq!(on_disk(&disk, "/p/lib/h.rs").await, None);
 }
+
+/// The sandbox edits `lib/a.rs`, then removes `lib` whole; the human saves
+/// `lib/a.rs` once the apply has scanned it. The delete of `lib` took the
+/// save along, and `/lib/a.rs`'s delete then found it gone and was
+/// reported applied.
+#[tokio::test]
+async fn a_save_the_human_makes_during_the_apply_inside_a_removed_directory_is_kept() {
+    let disk = Arc::new(Disk::default());
+    let changes = project(&disk).await;
+    disk.inner
+        .create_dir_all(Path::new("/p/lib"))
+        .await
+        .unwrap();
+    disk.inner
+        .write(Path::new("/p/lib/a.rs"), b"a\n")
+        .await
+        .unwrap();
+    let view = changes.overlay.inner().clone();
+    view.mkdir(Path::new("/lib"), false).await.unwrap();
+    view.write_file(Path::new("/lib/a.rs"), b"a\n")
+        .await
+        .unwrap();
+    let recorder = changes.recorder();
+    recorder
+        .write_file(Path::new("/lib/a.rs"), b"x\n")
+        .await
+        .unwrap();
+    recorder.remove(Path::new("/lib"), true).await.unwrap();
+    disk.edit_on_read("/p/lib/a.rs", HUMAN.as_bytes());
+
+    let report = changes.apply().await;
+    let both = [("/lib", true), ("/lib/a.rs", true)];
+    assert_eq!(conflicts(&report.skipped), both, "{report:?}");
+    assert_eq!(on_disk(&disk, "/p/lib/a.rs").await.as_deref(), Some(HUMAN));
+    assert_eq!(conflicts(&changes.list().await), both);
+}

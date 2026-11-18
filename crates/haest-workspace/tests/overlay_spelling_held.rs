@@ -154,6 +154,35 @@ async fn a_held_rename_applies_once_the_old_spelling_goes() {
     assert_eq!(contents(&dir), pairs(&[("Lib/a.rs", "a\n")]));
 }
 
+/// The rename waits (`mv lib Lib && mkdir lib`), the human saves
+/// `lib/a.rs`, and the sandbox removes the `lib` it made again. That delete
+/// freed the name, so the apply removed `lib` with the human's save in it
+/// and wrote `Lib`'s old copy. (A disk that tells the spellings apart
+/// applies the rename at once: above.)
+#[tokio::test]
+async fn a_held_rename_keeps_a_save_the_human_makes_under_the_old_spelling() {
+    let (_t, dir) = tempdir();
+    fs::create_dir(dir.join("lib")).unwrap();
+    fs::write(dir.join("lib/a.rs"), "a\n").unwrap();
+    fs::write(dir.join("lib/b.rs"), "b\n").unwrap();
+    if !reads_as_one(&dir, "lib", "Lib") {
+        return;
+    }
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "mv lib Lib && mkdir lib").await;
+    let _ = changes(&ws).apply().await;
+    fs::write(dir.join("lib/a.rs"), "human\n").unwrap();
+    run(&ws, &dir, "rmdir lib").await;
+    let report = changes(&ws).apply().await;
+    let want = [("lib/a.rs", "human\n"), ("lib/b.rs", "b\n")];
+    assert_eq!(contents(&dir), pairs(&want), "{report:?}");
+    assert!(report.applied.is_empty(), "{report:?}");
+    assert!(report.failed.is_empty(), "{report:?}");
+    let left = changes(&ws).list().await;
+    assert_eq!(paths(&left), paths(&report.skipped));
+    assert!(left.iter().all(|c| c.conflict), "{left:?}");
+}
+
 /// A rename by case whose delete would stop partway (a read-only directory
 /// inside the old name): `remove_all` took `a.rs` before it failed, and
 /// every write under `Lib` was then skipped, so `a.rs` was only in the

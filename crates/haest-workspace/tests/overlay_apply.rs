@@ -1,11 +1,16 @@
 //! What applying may not do to the real disk, whatever the sandbox wrote:
-//! reach through a symlink in the project, out of it or anywhere else.
+//! reach through a symlink in the project, out of it or anywhere else, or
+//! take a file the human saved along with a directory it removes.
 
 mod common;
 
 use std::{fs, path::Path};
 
-use common::{opts, sandbox, tempdir};
+use common::{
+    opts, sandbox,
+    spelling::{changes, contents, paths},
+    tempdir,
+};
 use haest_core::workspace::{ApplyFailureCode, Workspace};
 
 async fn run(ws: &impl Workspace, dir: &Path, command: &str) {
@@ -171,6 +176,40 @@ async fn a_directory_that_became_a_file_and_a_file_that_became_a_directory_are_a
     assert_eq!(fs::read_to_string(dir.join("build")).unwrap(), "x\n");
     assert_eq!(fs::read_to_string(dir.join("out/a")).unwrap(), "y\n");
     assert!(ws.changes().unwrap().list().await.is_empty());
+}
+
+/// The sandbox edits `lib/a.rs`, then removes `lib` whole (`rm -r`, `mv`, a
+/// file in its place); the human saves `lib/a.rs` before the apply. The
+/// report said `/lib/a.rs` was skipped as a conflict, but the delete of
+/// `/lib` had taken the save along, and nothing was listed afterwards.
+#[tokio::test]
+async fn a_conflict_inside_a_directory_the_sandbox_removes_is_never_deleted() {
+    for command in [
+        "echo x > lib/a.rs && rm -r lib",
+        "echo x > lib/a.rs && mv lib src",
+        "echo x > lib/a.rs && rm -r lib && echo f > lib",
+    ] {
+        let (_t, dir) = tempdir();
+        fs::create_dir(dir.join("lib")).unwrap();
+        fs::write(dir.join("lib/a.rs"), "a\n").unwrap();
+        fs::write(dir.join("lib/b.rs"), "b\n").unwrap();
+        let ws = sandbox(&dir).await;
+        run(&ws, &dir, command).await;
+        fs::write(dir.join("lib/a.rs"), "human\n").unwrap();
+        let report = changes(&ws).apply().await;
+        let human = ("lib/a.rs".to_owned(), "human\n".to_owned());
+        assert!(
+            contents(&dir).contains(&human),
+            "{command}: {:?}, {report:?}",
+            contents(&dir)
+        );
+        assert!(report.failed.is_empty(), "{command}: {report:?}");
+        // What waits is a conflict, and stays listed until the human settles it.
+        let left = changes(&ws).list().await;
+        assert!(paths(&left).contains(&"/lib/a.rs".to_owned()), "{command}");
+        assert_eq!(paths(&left), paths(&report.skipped), "{command}");
+        assert!(left.iter().all(|c| c.conflict), "{command}: {left:?}");
+    }
 }
 
 /// B38: what the disk refuses, and a link the sandbox made, are each reported

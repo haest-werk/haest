@@ -173,7 +173,8 @@ pub struct Change {
     /// the sandbox first touched it (the human's edit), or the disk holds
     /// the name under another spelling. A change that would take away what
     /// such a write leaves on the disk under that spelling waits with it, a
-    /// conflict too.
+    /// conflict too, and so does one that removes a directory with a
+    /// conflict under it.
     pub conflict: bool,
 }
 
