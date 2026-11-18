@@ -271,6 +271,14 @@ pub enum TransportError {
     /// as given, without its credentials (its userinfo, a query's values).
     #[error("{0} is not a ws:// or wss:// URL")]
     Url(String),
+    /// The broker's URL has an `@` past its host, which a URL parser
+    /// misreads: a password with an unescaped `/`, `?` or `#` ends the host
+    /// there, so the link would dial another host and send it the rest of
+    /// the password. Nothing is dialed. The source (haest-http's
+    /// `EndpointUrlError`) shows the URL without its credentials and says
+    /// how to write it.
+    #[error("the broker URL is refused")]
+    UrlRefused(#[source] haest_core::error::BoxError),
     /// The broker refused the token: it closed with 4401 or 4408, or
     /// refused the handshake with 401 or 403. The link is not dialed again.
     #[error("the broker refused the link ({code}): {reason}")]

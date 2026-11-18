@@ -38,7 +38,7 @@ use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
-use haest_http::{__private::UrlDebug, redacted_url};
+use haest_http::{__private::UrlDebug, check_endpoint_url, redacted_url};
 use haest_session::BackendRef;
 use haest_wire::Token;
 use tokio::net::TcpStream;
@@ -114,6 +114,10 @@ impl Broker {
     /// A link to the broker at `url` (`ws://` or `wss://`), with no token,
     /// the default [`Backoff`] and the default
     /// [`SILENCE_LIMIT`](Self::SILENCE_LIMIT).
+    ///
+    /// A password in `url` goes percent-encoded (`/` as `%2F`, `?` as `%3F`,
+    /// `#` as `%23`, `@` as `%40`): [`attach`](Self::attach) refuses a URL
+    /// with an `@` past its host, which a URL parser reads as another host.
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -257,7 +261,11 @@ impl Broker {
     ///
     /// # Errors
     ///
-    /// [`TransportError::Url`] when the URL is not `ws://` or `wss://`.
+    /// [`TransportError::Url`] when the URL is not `ws://` or `wss://`, and
+    /// [`TransportError::UrlRefused`] when it has an `@` past its host
+    /// (`check_endpoint_url`): a password holding an unescaped `/`, `?` or
+    /// `#` would send the rest of it to another host. Either way nothing is
+    /// dialed.
     pub fn attach(
         self,
         backend: impl Into<BackendRef>,
@@ -266,6 +274,7 @@ impl Broker {
         if !(self.url.starts_with("ws://") || self.url.starts_with("wss://")) {
             return Err(TransportError::Url(redacted_url(&self.url).into_owned()));
         }
+        check_endpoint_url(&self.url).map_err(|e| TransportError::UrlRefused(e.into()))?;
         Ok(Attached::new(tokio::spawn(link(
             self,
             backend.into(),

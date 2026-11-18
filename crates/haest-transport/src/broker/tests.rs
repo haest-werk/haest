@@ -615,6 +615,37 @@ fn the_token_never_shows_in_debug_output() {
     assert!(shown.contains("broker.example"), "{shown}");
 }
 
+/// A password with an unescaped `/` reads to a URL parser as a host, a port
+/// and a path: `ws://127.0.0.1:<port>/s3cret@broker.example/agents` meant
+/// the user `127.0.0.1` with the password `<port>/s3cret`, and a parser
+/// dials 127.0.0.1 on that port and sends it the rest of the password in
+/// the request line. The link refuses it before anything dials, and says
+/// how to write it.
+#[tokio::test]
+async fn a_url_a_parser_misreads_is_refused_before_anything_dials() {
+    let misread_host = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = misread_host.local_addr().unwrap().port();
+    let url = format!("ws://127.0.0.1:{port}/s3cret@broker.example/agents");
+    let (s, _) = session(&answers(&[]), hub());
+    let link = Broker::new(&url)
+        .with_backoff(FAST)
+        .attach(s.clone(), Grant::watch(Origin::Agent));
+    let dialed = tokio::time::timeout(Duration::from_millis(500), misread_host.accept()).await;
+    assert!(dialed.is_err(), "the misread host was dialed: {dialed:?}");
+    let refused = link.expect_err("a URL a parser misreads");
+    assert!(
+        matches!(refused, TransportError::UrlRefused(_)),
+        "{refused:?}"
+    );
+    let said = haest_core::error::report(&refused);
+    assert!(!said.contains("s3cret"), "{said}");
+    assert!(
+        said.contains("%2F") && said.contains("broker.example/agents"),
+        "{said}"
+    );
+    s.close().await;
+}
+
 /// A credential in the URL (userinfo, a query's value) shows nowhere: not
 /// in the link's Debug, not in the error for a URL it does not dial.
 #[tokio::test]
