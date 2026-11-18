@@ -695,13 +695,20 @@ write instead.
   one subscriber of the stream, and what the human sees is as before.
 - A resume of a session another run is writing fails with
   `SessionFileError::InUse` ("session "<id>" is in use by another run"),
-  where both runs wrote it. A run holds its session file from the build
-  (or a /clear) until it is dropped, through a lock the system drops with
-  the process, so a crash leaves no session locked. `haest -r` in a second
-  terminal stops with that error while the first still runs. A data dir on
-  NFS takes the lock too; on a file system that takes none, a run goes on
-  without it. On a host's own file system nothing changes unless it
-  implements `Fs::try_lock`.
+  where both runs wrote it. A run holds its session from the build (or a
+  /clear) until it is dropped, through a lock the system drops with the
+  process, so a crash leaves no session locked. `haest -r` in a second
+  terminal stops with that error while the first still runs. The lock is
+  on a file of its own beside the session, `<id>.lock` in the sessions
+  dir, which nothing reads or writes (a lock on the session file itself
+  refused the writer its own records where locks are mandatory, as on
+  SMB); these empty files stay after their session ends. A new session is
+  held before its file is written, so one in use leaves no file. A data
+  dir on NFS takes the lock too; on a file system that takes none, a run
+  goes on without it, and on one that cannot take it (any error but
+  another holder) the run goes on unlocked and the human is warned that
+  another run could write the session too. On a host's own file system
+  nothing changes unless it implements `Fs::try_lock`.
 
 ### The haest command
 
@@ -1429,11 +1436,13 @@ Hosts write less (round two of the review, and what porting brain onto
   results).
 - New `Fs::try_lock` and `FsLock`, the guard it hands back: a file held
   for one writer until the guard drops, never past the process that holds
-  it. The default is `Ok(None)`, a file system with no locks, which holds
-  nothing and refuses nothing; a store more than one writer shares
-  overrides it. `JsonlSessionFile::try_lock` holds the session file that
-  way until the value is dropped; a second writer's fails with
-  `WouldBlock`.
+  it, and made empty by the store when it is not there. The default is
+  `Ok(None)`, a file system with no locks, which holds nothing, refuses
+  nothing and makes no file; a store more than one writer shares
+  overrides it. `JsonlSessionFile::try_lock` holds the session that way
+  until the value is dropped, through `<id>.lock` beside the session file
+  (made with the sessions dir when missing, so it may come before
+  `create`); a second writer's fails with `WouldBlock`.
 
 ### haest-http
 
@@ -1949,7 +1958,7 @@ Hosts write less (round two of the review, and what porting brain onto
   the file to read and write for the lock, since an NFS client refuses an
   exclusive lock on a file opened only to read, and only to read where the
   file or its mount may not be written (a file made 0400, a read-only
-  mount).
+  mount). A file that is not there is made, empty and 0600.
 
 ### haest-code
 
