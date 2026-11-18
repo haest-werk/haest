@@ -1,9 +1,13 @@
-use haest::{AssistantMessage, ToolOutput, ToolResultMessage};
+use haest::{
+    AssistantMessage, ToolOutput, ToolResultMessage,
+    session::{Body, Frame},
+    wire::Outbound,
+};
 use serde_json::json;
 
 use super::*;
 
-fn call(name: &str, input: Value) -> ToolCall {
+pub(super) fn call(name: &str, input: Value) -> ToolCall {
     ToolCall {
         id: "c".into(),
         name: name.into(),
@@ -20,7 +24,7 @@ pub(crate) fn read_result(is_error: bool) -> LoopEvent {
 }
 
 /// `call`'s result, done in 3 ms; failed or not.
-fn tool_result(call: ToolCall, is_error: bool) -> LoopEvent {
+pub(super) fn tool_result(call: ToolCall, is_error: bool) -> LoopEvent {
     let mut output = ToolOutput::text("x");
     output.is_error = is_error;
     LoopEvent::ToolResult {
@@ -37,7 +41,7 @@ fn tool_result(call: ToolCall, is_error: bool) -> LoopEvent {
     }
 }
 
-fn render(json: bool, evs: &[LoopEvent]) -> (String, String) {
+pub(super) fn render(json: bool, evs: &[LoopEvent]) -> (String, String) {
     let (mut out, mut err) = (Vec::new(), Vec::new());
     {
         let mut r = Renderer::new(&mut out, &mut err, json, false);
@@ -59,7 +63,7 @@ fn the_answer_goes_to_stdout_and_the_work_to_stderr() {
     assert!(err.contains("Read src/a.rs"));
 }
 
-fn turn_end(stop_reason: StopReason, error: Option<&str>) -> LoopEvent {
+pub(super) fn turn_end(stop_reason: StopReason, error: Option<&str>) -> LoopEvent {
     LoopEvent::TurnEnd {
         stop_reason,
         usage: Usage::default(),
@@ -212,7 +216,7 @@ fn a_summary_picks_the_input_that_says_what_happened() {
     assert_eq!(call_summary(&call("Thing", json!({"n": 1}))), "Thing");
 }
 
-fn wire_frame(seq: u64, body: Outbound) -> Frame {
+pub(super) fn wire_frame(seq: u64, body: Outbound) -> Frame {
     haest::wire::Envelope {
         v: 1,
         sid: "s".into(),
@@ -221,63 +225,6 @@ fn wire_frame(seq: u64, body: Outbound) -> Frame {
         path: Path::main(),
         body: Body::Wire(body),
     }
-}
-
-fn idle(queued: usize) -> Outbound {
-    Outbound::Status(haest::wire::Snapshot {
-        state: State::Idle,
-        session: "x".into(),
-        model_spec: "m".into(),
-        effort: None,
-        usd: None,
-        queued,
-        messages: 0,
-        last_seq: 0,
-    })
-}
-
-#[test]
-fn input_from_another_program_queued_while_the_prompt_is_open_is_announced_above_it() {
-    let (mut out, mut err) = (Vec::new(), Vec::new());
-    let (tx, rx) = std::sync::mpsc::channel();
-    {
-        let mut r = Renderer::new(&mut out, &mut err, false, false);
-        r.frame(&wire_frame(1, idle(0)));
-        r.set_above(Some(tx));
-        r.frame(&wire_frame(2, idle(1)));
-        // Already said: the same count again says nothing.
-        r.frame(&wire_frame(3, idle(1)));
-        r.set_above(None);
-        // Not prompting: the turn about to run shows itself.
-        r.frame(&wire_frame(4, idle(2)));
-    }
-    let above: Vec<String> = rx.try_iter().collect();
-    assert_eq!(above.len(), 1, "{above:?}");
-    assert!(above[0].contains("press Enter"), "{above:?}");
-    assert!(err.is_empty() && out.is_empty());
-}
-
-#[test]
-fn an_approval_ask_and_its_withdrawal_are_lines_for_a_watcher() {
-    let (mut out, mut err) = (Vec::new(), Vec::new());
-    {
-        let mut r = Renderer::new(&mut out, &mut err, false, false);
-        let ask = Outbound::ApprovalAsk {
-            ask: 3,
-            tool_name: "Bash".into(),
-            description: "delete the build dir".into(),
-            preview: "rm -rf build".into(),
-            key: None,
-        };
-        r.frame(&wire_frame(1, ask));
-        r.frame(&wire_frame(2, Outbound::ApprovalWithdrawn { ask: 3 }));
-    }
-    let err = String::from_utf8(err).unwrap();
-    assert!(
-        err.contains("Bash asks for approval: delete the build dir"),
-        "{err}"
-    );
-    assert!(err.contains("withdrawn"), "{err}");
 }
 
 fn answer(text: &str) -> LoopEvent {
@@ -322,132 +269,4 @@ fn a_watcher_sees_the_input_a_terminal_does_not_echo() {
         .watching()
         .event(&user);
     assert_eq!(String::from_utf8(err).unwrap(), "> fix the test\n");
-}
-
-/// Nothing the model, a tool call's input or a notice carries reaches the
-/// terminal raw: no escape sequence or carriage return can redraw the screen
-/// around an approval question, and no bidi control can reorder it.
-#[test]
-fn nothing_from_the_model_or_a_tool_reaches_a_terminal_raw() {
-    let (mut out, mut err) = (Vec::new(), Vec::new());
-    {
-        let mut r = Renderer::new(&mut out, &mut err, false, false).inert_answer();
-        r.event(&LoopEvent::TextDelta {
-            text: "I'll clean the build.\x1b[2J\x1b[H\x1b[2;3r\x1b[2H\n".into(),
-        });
-        let bash = call(
-            "Bash",
-            json!({"command": "true \x1b[2J\x1b[3;4r\x1b[1;1H\x1b[8m"}),
-        );
-        r.event(&tool_result(bash, false));
-        r.notice(Level::Warning, "a server said\r\x1b[2KAllow Bash?");
-        r.ask("Allow Bash? \u{202e}dlihc\u{202c}\n[y]es / [a]lways / [N]o: ");
-    }
-    for (name, bytes) in [("stdout", out), ("stderr", err.clone())] {
-        let text = String::from_utf8(bytes).unwrap();
-        let raw: Vec<char> = text
-            .chars()
-            .filter(|&c| hides(c) || (c.is_control() && c != '\n'))
-            .collect();
-        assert!(raw.is_empty(), "{name}: {raw:?} in {text:?}");
-    }
-    let err = String::from_utf8(err).unwrap();
-    assert!(err.contains(r"- Bash true \u{1b}[2J"), "{err}");
-    let once = inert("\x1b[2J\r\u{202e}").into_owned();
-    assert_eq!(inert(&once), once, "a second pass changes nothing");
-}
-
-/// Into a file the answer goes byte for byte (`haest -p ... > out.md`).
-#[test]
-fn an_answer_into_a_file_keeps_its_bytes() {
-    let text = "a\tb\x1b[1mc\u{202e}d\r\n";
-    let (out, _) = render(false, &[LoopEvent::TextDelta { text: text.into() }]);
-    assert_eq!(out, text);
-}
-
-/// The answer keeps its bytes only into a regular file: a pipe (`| tee
-/// out.md`, `| cat`) can end on the terminal where a question is asked.
-#[cfg(unix)]
-#[test]
-fn only_a_regular_file_takes_the_answer_byte_for_byte() {
-    let file = std::fs::File::open(std::env::current_exe().unwrap()).unwrap();
-    assert!(is_a_file(&file));
-    let (_reader, writer) = std::io::pipe().unwrap();
-    assert!(!is_a_file(&writer), "a pipe can end on the terminal");
-}
-
-/// While the terminal's own question waits, nothing else reaches the screen:
-/// not a subagent's many-line description that draws a question of its own,
-/// a tool line or the main agent's answer. Once it is answered they follow,
-/// in order.
-#[test]
-fn nothing_lands_below_the_question_until_it_is_answered() {
-    let question = "  touch PWNED\n  rm -rf ./build\nAllow Bash? deletes (2 lines above)\n[y]es / [a]lways / [N]o: ";
-    let forged = format!(
-        "{}  rm -rf ./build\nAllow Bash? deletes\n[y]es / [a]lways / [N]o: ",
-        "\n".repeat(30)
-    );
-    let (mut out, mut err) = (Vec::new(), Vec::new());
-    let (out_then, err_then);
-    {
-        let mut r = Renderer::new(&mut out, &mut err, false, false);
-        r.answering();
-        r.ask(question);
-        r.notice(Level::Info, &forged);
-        r.event(&read_result(false));
-        r.event(&LoopEvent::TextDelta {
-            text: "meanwhile".into(),
-        });
-        r.event(&turn_end(StopReason::EndTurn, None));
-        (out_then, err_then) = (r.out.len(), r.err.len());
-        r.answered(true);
-    }
-    assert_eq!(out_then, 0, "nothing on stdout while it waits");
-    assert_eq!(err_then, question.len(), "the question is the last thing");
-    let (out, err) = (
-        String::from_utf8(out).unwrap(),
-        String::from_utf8(err).unwrap(),
-    );
-    assert_eq!(out, "meanwhile\n");
-    let after = &err[question.len()..];
-    assert!(after.starts_with(&forged), "{after:?}");
-    assert!(after.ends_with("- Read src/a.rs (3 ms)\n"), "{after:?}");
-}
-
-/// A question given up (the read dropped, or stdin closed) ends its line
-/// before what waited is shown; one typed ahead, answered before it was
-/// drawn, holds nothing.
-#[test]
-fn a_question_given_up_or_answered_ahead_lets_the_lines_go() {
-    let (mut out, mut err) = (Vec::new(), Vec::new());
-    {
-        let mut r = Renderer::new(&mut out, &mut err, false, false);
-        r.answering();
-        r.ask("Allow Bash? x\n[y]es / [a]lways / [N]o: ");
-        r.notice(Level::Info, "later");
-        r.answered(false);
-        r.answering();
-        r.answered(true);
-        r.ask("Allow Bash? y\n[y]es / [a]lways / [N]o: ");
-        r.notice(Level::Info, "at once");
-    }
-    let err = String::from_utf8(err).unwrap();
-    assert_eq!(
-        err,
-        "Allow Bash? x\n[y]es / [a]lways / [N]o: \nlater\nAllow Bash? y\n[y]es / [a]lways / [N]o: at once\n"
-    );
-}
-
-/// A watcher shows another terminal's question on a line of its own: nothing
-/// there answers it, so the next line does not join it.
-#[test]
-fn a_watcher_ends_the_questions_line() {
-    let (mut out, mut err) = (Vec::new(), Vec::new());
-    {
-        let mut r = Renderer::new(&mut out, &mut err, false, false).watching();
-        r.ask("Allow Bash? x\n[y]es / [a]lways / [N]o: ");
-        r.event(&read_result(false));
-    }
-    let err = String::from_utf8(err).unwrap();
-    assert!(err.ends_with("[N]o: \n- Read src/a.rs (3 ms)\n"), "{err:?}");
 }
