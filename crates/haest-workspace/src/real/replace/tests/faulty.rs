@@ -136,6 +136,10 @@ impl Fs for Faulty {
         }
         RealFs.write(p, d).await
     }
+    /// The real disk's whole write, over this disk, so its faults apply.
+    async fn write_whole(&self, p: &Path, d: &[u8]) -> io::Result<()> {
+        crate::real::replace::put_file(self, p, d).await
+    }
     async fn read(&self, p: &Path) -> io::Result<Vec<u8>> {
         RealFs.read(p).await
     }

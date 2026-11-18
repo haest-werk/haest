@@ -2037,6 +2037,11 @@ Hosts write less (round two of the review, and what porting brain onto
   `mkdir(path, 0700)`, in one step and never sets it after, so on Linux
   one made in a directory that passes its group on (setgid) keeps that
   group and the bit.
+- `RealFs::write_whole` is the apply's whole-or-nothing write, the one
+  implementation of it: a new file beside the file, renamed over it, or
+  the bytes in place where a new file would not stand in for it. The
+  apply goes through it, and so do Edit, and Write over a file that is
+  there, in the real workspace (see Bug fixes).
 
 ### haest-code
 

@@ -28,6 +28,21 @@ use tokio::io::AsyncReadExt;
 /// - [`write`](Fs::write) and [`append`](Fs::append) report a write the
 ///   file system refused, also one an NFS client reports only as the file
 ///   closes (no room on the server, a quota).
+/// - [`write_whole`](Fs::write_whole) puts the bytes in a new file beside
+///   the file, in a directory of its own that only its owner may enter,
+///   gives it the file's permission bits and renames it over the file, so
+///   a write the disk stops partway (a full disk, a kill) leaves the file
+///   as it was. The overlay's apply and the tools that rewrite a file go
+///   through it. A file made read-only is refused. It writes in place, as
+///   `write` does, where a new file would not stand in for the file
+///   (another hard link to it, another owner or group, a symlink) or the
+///   disk will not make one, make it its owner's alone or move it over (a
+///   share mounted for one fixed owner, a path just short of the system's
+///   cap): there a full disk still cuts the file short, and says so. A
+///   replaced file does not keep its extended attributes or ACLs, a
+///   process that holds it open to write goes on writing to the old one,
+///   the disk needs room for the second copy, and a kill partway can leave
+///   `.<name>.haest-<pid>-<n>` beside it, which only its owner may reach.
 /// - [`chmod`](Fs::chmod) sets Unix permission bits (a no-op elsewhere).
 /// - [`create_private_dir`](Fs::create_private_dir) makes the directory
 ///   with its mode (0700) in one step, never setting it after.
@@ -132,6 +147,13 @@ impl Fs for RealFs {
     /// a session record that did not land is never read as written.
     async fn append(&self, path: &Path, data: &[u8]) -> io::Result<()> {
         super::write::append(path, data).await
+    }
+
+    /// The bytes go into a new file beside it, which is renamed over it,
+    /// so a write the disk stops partway leaves it as it was; where a new
+    /// file would not stand in for it, they go in place (`replace.rs`).
+    async fn write_whole(&self, path: &Path, data: &[u8]) -> io::Result<()> {
+        super::replace::put_file(self, path, data).await
     }
 
     async fn exists(&self, path: &Path) -> bool {

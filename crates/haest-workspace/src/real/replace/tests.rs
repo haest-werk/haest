@@ -4,6 +4,7 @@
 //! group on.
 
 mod faulty;
+mod whole;
 
 use std::{
     fs::{self, Metadata, Permissions},

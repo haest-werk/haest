@@ -22,7 +22,6 @@ use haest_core::{
 };
 
 pub use fs::RealFs;
-pub(crate) use replace::put_file;
 
 /// The real disk and the real `bash`: the workspace where the agent's edits
 /// land on disk at once and its commands are real programs.

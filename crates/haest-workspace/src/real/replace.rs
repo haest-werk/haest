@@ -1,16 +1,18 @@
-//! A file the apply writes, put on the disk whole or not at all. The
-//! sandbox's bytes go into a new file, in a directory of its own beside the
-//! real one that only its owner may enter from the moment it is made; a
-//! new file that replaces one is its owner's alone too before they go in.
-//! It then takes the real one's permission bits and is renamed over it, so
-//! a disk that fills up, or a kill, partway leaves the human's file as it
-//! was. Where a new file would not be the same file, or the disk will not
-//! make one, make it its owner's alone or move it there, the bytes are
-//! written in place, as before; where the new file's bytes do not all go
-//! in, the change fails instead, since in place they would cut the human's
-//! file short. An apply dropped partway (Ctrl+C at the haest command's
-//! `/apply`, a host's timeout) removes the new file and its directory as
-//! it drops.
+//! The real disk's whole write ([`Fs::write_whole`]): a file put on the
+//! disk whole or not at all, by the overlay's apply and by the tools that
+//! rewrite a file in the real workspace (Edit, and Write over one). The
+//! bytes go into a new file, in a directory of its own beside the real one
+//! that only its owner may enter from the moment it is made; a new file
+//! that replaces one is its owner's alone too before they go in. It then
+//! takes the real one's permission bits and is renamed over it, so a disk
+//! that fills up, or a kill, partway leaves the human's file as it was.
+//! Where a new file would not be the same file, or the disk will not make
+//! one, make it its owner's alone or move it there, the bytes are written
+//! in place, as a plain write puts them; where the new file's bytes do not
+//! all go in, the write fails instead, since in place they would cut the
+//! human's file short. A write dropped partway (Ctrl+C at the haest
+//! command's `/apply`, a host's timeout) removes the new file and its
+//! directory as it drops.
 
 use std::{
     fs::Metadata,
@@ -40,13 +42,13 @@ const NAME_PART: usize = 64;
 /// new files its own group). It is written in place, too, where the disk
 /// will not make the new file, make it its owner's alone, or move it over
 /// the real one ([`in_place_instead`]). Where the new file's bytes do not
-/// all go in (a full disk), the change fails and never falls back: in
+/// all go in (a full disk), the write fails and never falls back: in
 /// place they would not all go in either, and the human's file would be
 /// cut short.
-pub(crate) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
     let old = if disk.exists(real).await {
         // Opened to write as an in-place write opens it, but nothing is
-        // cut or written: refused, the change fails as it did.
+        // cut or written: refused, the write fails as a plain one would.
         disk.append(real, &[]).await?;
         // What the `Fs` does not carry; None on a disk that is not the
         // host's own (nothing to keep, then).
@@ -132,7 +134,7 @@ async fn put_new(
 ///   own (one file bind-mounted into the project), which nothing can be
 ///   renamed over.
 ///
-/// Anything else fails the change, a disk with no room above all: the
+/// Anything else fails the write, a disk with no room above all: the
 /// bytes would not all go in in place either, and the human's file would
 /// be cut short.
 fn in_place_instead(e: &io::Error) -> bool {
@@ -159,14 +161,15 @@ async fn fill(disk: &dyn Fs, path: &Path, old: Option<&Metadata>, bytes: &[u8]) 
 }
 
 /// The new file and its directory beside the real file, from just before
-/// the directory is made until both are gone. An apply dropped meanwhile
-/// drops it, and it removes them: the apply leaves nothing beside the
-/// human's file. A write the runtime still holds then (dropping its future
-/// does not stop it) finds no directory to land in, and the file of one it
-/// is running goes with the directory. Only a directory the runtime is
-/// still to make is left, empty. The removal cannot wait, so it is the
-/// system's own, on the host's disk, which the overlay's disk is; on a disk
-/// that is not, nothing has the path (its name is this process's own).
+/// the directory is made until both are gone. A whole write dropped
+/// meanwhile (an apply, a tool's) drops it, and it removes them: nothing
+/// is left beside the human's file. A write the runtime still holds then
+/// (dropping its future does not stop it) finds no directory to land in,
+/// and the file of one it is running goes with the directory. Only a
+/// directory the runtime is still to make is left, empty. The removal
+/// cannot wait, so it is the system's own, on the host's disk, which the
+/// real disk is; on a disk that is not, nothing has the path (its name is
+/// this process's own).
 struct NewFile {
     /// Only its owner may enter it, from the moment it is made; its mode
     /// is never set after, so one made where the real file's directory
@@ -202,10 +205,11 @@ impl NewFile {
                 pending: true,
             };
             // Owner-only as it is made, its mode never set after: in a
-            // directory that passes its group on (setgid), Linux drops the
-            // bit where a run not in that group sets the mode, and the new
-            // file would then get the run's own group, not the one a file
-            // made beside the real one gets.
+            // directory that passes its group on (setgid), it inherits the
+            // bit, a chmod to 0700 clears it, and a run not in that group
+            // cannot set it again (Linux). The new file would then get the
+            // run's own group, not the one a file made beside the real one
+            // gets.
             if let Err(e) = disk.create_private_dir(&new.dir).await {
                 // Not made, or another's (a name taken, a link included,
                 // dangling or not): nothing to remove.
