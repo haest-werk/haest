@@ -270,7 +270,8 @@ impl Broker {
     /// [`TransportError::Url`] when the URL is not `ws://` or `wss://`;
     /// [`TransportError::UrlRefused`] when it has an `@` past its host (a
     /// password holding an unescaped `/`, `?` or `#` would send the rest of
-    /// it to another host) or no host (`check_endpoint_url`); and
+    /// it to another host) or no host (`wss:///agents`,
+    /// `wss://:8443/agents`; `check_endpoint_url`); and
     /// [`TransportError::Undialable`] when no dial can reach it: it does not
     /// parse as a request (a space, a host outside ASCII, a `\`), or its port
     /// is past 65535. Nothing is dialed then.

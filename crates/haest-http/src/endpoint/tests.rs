@@ -44,6 +44,37 @@ const NO_HOST: [&str; 6] = [
     "HTTPS://#f",
 ];
 
+/// Refused too: an authority that is only a userinfo and a port
+/// (`wss://${HOST}:8443/agents` with the variable empty), and a missing
+/// host behind a space, tab, CR or LF, which a URL parser drops before it
+/// reads the URL (a CRLF `.env` keeps the `\r` of an empty `HOST=`).
+const NO_HOST_PART: [&str; 12] = [
+    "wss://:8443/agents",
+    "http://:8080/v1",
+    "wss://:443",
+    "ws://agent:s3cret@:9/agents",
+    "ws://@:9/agents",
+    "https://u:p@/v1",
+    "ws://[]:9/agents",
+    "https://\r:8443/v1",
+    " https:///anthropic",
+    "\thttps:///anthropic",
+    "https://\t/anthropic",
+    "https://\n/anthropic",
+];
+
+/// Passed: a host, with the spaces and line ends a parser drops around or
+/// inside the URL.
+const HOST_THERE: [&str; 7] = [
+    "https://h",
+    "https://@h/v1",
+    "wss://u:p@h:1/x",
+    "http://[::1]:8080/v1",
+    "https://gw.example/v1\r",
+    " https://gw.example/v1 \n",
+    "\thttps://u:p@gw.example/v1",
+];
+
 /// A URL with no host passed, and the joined URL dialed the first part
 /// of the path as the host. It is refused, and stays refused under a
 /// path, so the check on a request's URL agrees with the one on its base.
@@ -58,6 +89,29 @@ fn a_url_with_no_host_is_refused_with_any_path_under_it() {
     // A host, or `@` with one after it, is a host.
     for url in ["https://h", "https://@h/v1", "wss://u:p@h:1/x"] {
         assert_eq!(check_endpoint_url(url), Ok(()), "{url}");
+    }
+}
+
+/// An authority with only a userinfo or a port, or a host left out behind
+/// whitespace a parser drops, passed: the whole authority was not empty, or
+/// the check read the space as part of it. Each is refused as having no
+/// host, under any path too; a URL with a host around that whitespace
+/// still passes.
+#[test]
+fn an_authority_with_no_host_in_it_is_refused() {
+    for url in NO_HOST_PART {
+        let refused = check_endpoint_url(url);
+        assert!(
+            matches!(&refused, Err(e) if e.why == Why::NoHost),
+            "{url:?}: {refused:?}"
+        );
+        let joined = join_path(url, "v1/messages");
+        assert!(check_endpoint_url(&joined).is_err(), "{joined:?}");
+    }
+    for url in HOST_THERE {
+        assert_eq!(check_endpoint_url(url), Ok(()), "{url:?}");
+        let joined = join_path(url, "v1/messages");
+        assert_eq!(check_endpoint_url(&joined), Ok(()), "{joined:?}");
     }
 }
 
@@ -187,5 +241,13 @@ fn a_parser_dials_another_host_for_a_refused_url_and_the_meant_one_for_a_passed_
         (READ_RIGHT[5], "broker.example"),
     ] {
         assert_eq!(host(url).as_deref(), Some(meant), "{url}");
+    }
+    // The parser drops the whitespace, then takes the path's first part
+    // for the host; a URL with only a port or a userinfo dials nothing.
+    for url in &NO_HOST_PART[..8] {
+        assert_eq!(host(url), None, "{url:?}");
+    }
+    for url in &NO_HOST_PART[8..] {
+        assert_eq!(host(url).as_deref(), Some("anthropic"), "{url:?}");
     }
 }

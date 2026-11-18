@@ -348,9 +348,11 @@ write instead.
   empty makes `https:///anthropic`, and a URL parser skips the extra `/`
   and takes `anthropic` for the host. Over `https` the certificate check
   stopped it before the key went out; over `http` a name that resolved (a
-  search domain, a hosts entry) got the key header. haest now refuses such
-  a URL wherever it refuses one with an `@` past its host (above), saying
-  it has no host.
+  search domain, a hosts entry) got the key header. A parser drops the
+  spaces and control characters around a URL and the tabs, CRs and LFs in
+  it, so a CRLF `.env` that keeps the `\r` of an empty `GATEWAY_HOST=` did
+  the same (`https://\r/anthropic`). haest now refuses such a URL wherever
+  it refuses one with an `@` past its host (above), saying it has no host.
 - A providers.json entry with a misspelt key sent the entry's key, and the
   conversation, to OpenAI's or Anthropic's own API. haest read each key by
   its exact name and skipped any other, and an entry with no `baseURL` is
@@ -1312,10 +1314,13 @@ Hosts write less (round two of the review, and what porting brain onto
   comes before that `@`.
 - New `check_endpoint_url` and its `EndpointUrlError`: refuses a URL haest
   is configured to dial when an `@` comes after the first `/`, `?`, `#` or
-  `\` past the scheme, where a URL parser ends the host, or when nothing
-  comes between `scheme://` and the first of them (no host). The error shows
-  the URL as `redacted_url` does and says how to write it. For a host's
-  own configured URLs too; never for a URL a tool fetches.
+  `\` past the scheme, where a URL parser ends the host, or when it has no
+  host: nothing between `scheme://` and the first of them, or only a
+  userinfo or a port (`wss://:8443/agents`, `https://u:p@/v1`). It reads
+  the URL as a parser does, without the spaces and control characters
+  around it and the tabs, CRs and LFs in it. The error shows the URL as
+  `redacted_url` does and says how to write it. For a host's own
+  configured URLs too; never for a URL a tool fetches.
 - `HttpError::Timeout` says the wait as given (`no answer within 500ms`):
   it said whole seconds, so a sub-second headers timeout read `0 s`.
 
@@ -2581,7 +2586,9 @@ against it; the wire JSON is unchanged):
   any socket opened, the link dropped each error and dialed again for
   good, and the `haest` command said "Broker link: <url>" as if it worked.
   A port past 65535 was dialed as the scheme's default port. A URL with
-  no host is refused as `UrlRefused`.
+  no host is refused as `UrlRefused`: `wss:///agents`, and
+  `wss://:8443/agents` (what `wss://${BROKER_HOST}:8443/agents` makes of
+  an empty variable), which was attached and dialed in vain for good.
 - The broker link dials a URL with a query right after the host
   (`wss://h.example?team=x`) with `/` for its path. tungstenite wrote
   `GET ?team=x HTTP/1.1`, which a broker refuses (RFC 6455, section 3), so

@@ -2,7 +2,7 @@
 //! when a URL parser would dial another host than the one meant
 //! ([`check_endpoint_url`]), and a path put under one ([`join_path`]).
 
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 use crate::redact::{after_scheme, redacted_url};
 
@@ -70,7 +70,13 @@ pub fn authority(url: &str) -> std::ops::Range<usize> {
 /// (`https:///v1`, what `https://${HOST}/v1` makes of an empty variable) is
 /// refused too: a parser skips the extra `/` and takes the first part of
 /// the path for the host, so `https:///anthropic/v1` dials the host
-/// `anthropic`.
+/// `anthropic`. So is one whose authority holds only a userinfo or a port
+/// (`wss://:8443/agents`, `https://user:pass@/v1`), which no dial reaches.
+///
+/// The check reads the URL as a parser does: without the spaces and control
+/// characters before and after it, and without any tab, CR or LF in it. A
+/// CRLF `.env` that keeps the `\r` of an empty `HOST=` makes
+/// `https://\r/anthropic`, which a parser reads as `https:///anthropic`.
 ///
 /// For the URLs haest is configured with (a broker's, a provider's base
 /// URL, an MCP server's, a tracker's API root), never a URL a tool fetches:
@@ -80,9 +86,9 @@ pub fn authority(url: &str) -> std::ops::Range<usize> {
 /// # Errors
 ///
 /// [`EndpointUrlError`] when an `@` comes after the first `/`, `?`, `#` or
-/// `\` past the scheme, or nothing comes between `scheme://` and the first
-/// of them. Its message shows the URL as [`redacted_url`] does, and says
-/// how to write it.
+/// `\` past the scheme, or no host comes between `scheme://` (and a
+/// userinfo's last `@`) and the port or the first of them. Its message
+/// shows the URL as [`redacted_url`] does, and says how to write it.
 ///
 /// ```
 /// use haest_http::check_endpoint_url;
@@ -95,12 +101,15 @@ pub fn authority(url: &str) -> std::ops::Range<usize> {
 /// assert!(check_endpoint_url("https://api.example.com/v1").is_ok());
 /// // No host: a parser would dial the host `v1`.
 /// assert!(check_endpoint_url("https:///v1").is_err());
+/// // No host before the port: no dial reaches it.
+/// assert!(check_endpoint_url("wss://:8443/agents").is_err());
 /// ```
 pub fn check_endpoint_url(url: &str) -> Result<(), EndpointUrlError> {
-    let host = authority(url);
-    let why = match url.rfind('@') {
+    let seen = as_parsed(url);
+    let host = authority(&seen);
+    let why = match seen.rfind('@') {
         Some(at) if at >= host.end => Why::AtPastHost,
-        _ if host.start > 0 && host.is_empty() => Why::NoHost,
+        _ if host.start > 0 && matches!(host_of(&seen[host]), "" | "[]") => Why::NoHost,
         _ => return Ok(()),
     };
     Err(EndpointUrlError {
@@ -109,11 +118,37 @@ pub fn check_endpoint_url(url: &str) -> Result<(), EndpointUrlError> {
     })
 }
 
+/// `url` as a URL parser reads it (the WHATWG URL standard, which reqwest's
+/// parser follows): without the control characters and spaces before and
+/// after it, and without any tab, CR or LF in it.
+fn as_parsed(url: &str) -> Cow<'_, str> {
+    let url = url.trim_matches(|c: char| c <= ' ');
+    if url.contains(['\t', '\r', '\n']) {
+        Cow::Owned(url.replace(['\t', '\r', '\n'], ""))
+    } else {
+        Cow::Borrowed(url)
+    }
+}
+
+/// The host in `authority` (`user:password@host:port`): after its last `@`,
+/// before its port. An IPv6 host keeps its brackets (`[::1]`, or `[]` for
+/// none).
+fn host_of(authority: &str) -> &str {
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    match host.find(']') {
+        Some(end) if host.starts_with('[') => &host[..=end],
+        _ => host.split(':').next().unwrap_or(host),
+    }
+}
+
 /// A URL haest is configured to dial that [`check_endpoint_url`] refused: an
 /// `@` comes past where a URL parser ends its host, so it may dial another
 /// host than the one after that `@`; or it has no host, so a parser takes
-/// the first part of its path for one. Its message shows the URL without
-/// its credentials ([`redacted_url`]), and says how to write it.
+/// the first part of its path for one, or dials nothing. Its message shows
+/// the URL without its credentials ([`redacted_url`]), and says how to
+/// write it.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{shown} {why}")]
 pub struct EndpointUrlError {
@@ -142,7 +177,7 @@ impl fmt::Display for Why {
                 "has an @ past its host, which haest cannot tell from one that ends a password: a URL parser ends the host at the first /, ?, # or \\, so a password holding one would send the rest of it, and the host after the @, to another host. Percent-encode the password (/ as %2F, ? as %3F, # as %23, \\ as %5C, @ as %40). A URL with an @ meant for its path, query or fragment cannot be used as it is: %40 there makes another URL, which the server may or may not read the same"
             }
             Self::NoHost => {
-                "has no host: a URL parser would take the first part of its path for one. Write the host after the //, and check that no variable it is made from is empty"
+                "has no host: a URL parser would take the first part of its path for one, or dial nothing. Write the host after the // (and after a user:password@), and check that no variable it is made from is empty"
             }
         })
     }

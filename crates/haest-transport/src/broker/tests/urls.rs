@@ -64,6 +64,36 @@ async fn a_url_no_dial_can_reach_is_refused_at_attach() {
     }
 }
 
+/// A URL with nothing between `//` (or the userinfo's `@`) and its port
+/// (`wss://:8443/agents`, what `wss://${HOST}:8443/agents` makes of an empty
+/// variable) was attached, and every dial failed to look up the empty host
+/// name: the link dialed in vain for good, and the host never heard.
+/// `attach` refuses it, as it does `wss:///agents`, and dials nothing.
+#[tokio::test]
+async fn a_url_with_no_host_before_its_port_is_refused() {
+    for url in [
+        "wss://:8443/agents",
+        "ws://:9",
+        "ws://agent:s3cret@:9/agents",
+        "ws://@:9/agents",
+        "ws://[]:9/agents",
+        "wss://\r:443/agents",
+    ] {
+        let (s, _) = session(&answers(&[]), hub());
+        let refused = Broker::new(url)
+            .with_backoff(FAST)
+            .attach(s.clone(), Grant::watch(Origin::Agent));
+        let refused = refused.expect_err(url);
+        assert!(
+            matches!(refused, TransportError::UrlRefused(_)),
+            "{url:?}: {refused:?}"
+        );
+        let said = haest_core::error::report(&refused);
+        assert!(!said.contains("s3cret"), "{said}");
+        s.close().await;
+    }
+}
+
 /// The URL the link dials: no userinfo, and `/` for a path when it has none.
 #[test]
 fn the_link_dials_the_url_without_its_userinfo_and_with_a_path() {

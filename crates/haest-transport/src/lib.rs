@@ -249,7 +249,8 @@ pub enum TransportError {
     /// unescaped `/`, `?` or `#` ends the host a URL parser reads there, so
     /// the link would dial another host and send it the rest of the
     /// password), or no host (`wss:///agents`: a parser takes `agents` for
-    /// one). Nothing is dialed. The source (haest-http's
+    /// one; `wss://:8443/agents`: every dial looks up an empty name).
+    /// Nothing is dialed. The source (haest-http's
     /// `EndpointUrlError`) shows the URL without its credentials and says
     /// how to write it.
     #[error("the broker URL is refused")]
