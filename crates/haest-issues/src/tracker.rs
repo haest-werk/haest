@@ -419,14 +419,8 @@ macro_rules! forward_tracker {
 }
 pub(crate) use forward_tracker;
 
-haest_core::plug_ref! {
-    /// A [`Tracker`], shared: what the issue tools hold. Built from the
-    /// tracker itself (a [`CardTracker`](crate::CardTracker), a
-    /// [`GithubTracker`](crate::GithubTracker), a host's own), or from an
-    /// `Arc` of one, so [`issue_tools`](crate::issue_tools) takes either.
-    pub struct TrackerRef(dyn Tracker);
-    debug(tracker, f) { f.debug_tuple("TrackerRef").field(&tracker.info().name).finish() }
-}
+mod handle;
+pub use handle::TrackerRef;
 
 #[cfg(test)]
 mod tests;

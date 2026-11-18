@@ -76,7 +76,9 @@
   uses; what only the haest crates share goes in a `__private` module
   (haest-core's, or haest-http's for what the crates that send share). Only
   a crate released in step with the one it reaches into may use its
-  `__private`: haest-issues, versioned on its own, uses public items only. A
+  `__private`: haest-issues, versioned on its own, uses public items only
+  (no `__private` path and no `#[doc(hidden)]` macro such as `plug_ref!`;
+  its `TrackerRef` is written out by hand). A
   re-exported crate (`reqwest` in haest-http, `rmcp` in haest-mcp) is part of
   the API: its breaking release is a breaking release of haest.
 - **Wire-compatible serde.** Anything that lands in a session file or an NDJSON
