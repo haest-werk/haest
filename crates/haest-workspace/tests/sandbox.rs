@@ -132,19 +132,29 @@ async fn each_call_is_a_fresh_shell_over_the_same_files() {
     assert_eq!(r.stdout, format!("[]\n{}\nkept\n", dir.display()), "{r:?}");
 }
 
+/// The cancel goes once the script is past its echo (it has written the
+/// marker): at a fixed 200 ms, a loaded machine had not echoed yet. A
+/// cancel that did nothing would run into the call's 10 s timeout.
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_stops_a_long_sleep_quickly() {
     let (_t, dir) = tempdir();
     let ws = sandbox(&dir).await;
     let o = opts(&dir);
     let cancel = o.cancel.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(200)).await;
+    let fs = ws.fs();
+    let marker = dir.join("started");
+    let canceller = tokio::spawn(async move {
+        let waited = Instant::now();
+        while !fs.exists(&marker).await && waited.elapsed() < Duration::from_secs(10) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
         cancel.cancel();
+        Instant::now()
     });
-    let started = Instant::now();
-    let r = ws.shell("echo started; sleep 30", o).await;
-    assert!(started.elapsed() < Duration::from_secs(3));
+    let r = ws.shell("echo started; echo > started; sleep 30", o).await;
+    let ended = Instant::now();
+    let cancelled = canceller.await.unwrap();
+    assert!(ended.duration_since(cancelled) < Duration::from_secs(3));
     assert!(!r.timed_out);
     assert_ne!(r.exit_code, 0);
     assert_eq!(r.stdout, "started\n", "output before the cancel is kept");
