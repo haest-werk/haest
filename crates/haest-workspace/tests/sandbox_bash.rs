@@ -48,3 +48,27 @@ async fn appending_under_a_removed_directory_fails_as_in_bash() {
     apply_all(&ws).await;
     assert!(contents(&dir).is_empty());
 }
+
+/// `mkdir -p` through a file fails in bash ("Not a directory"). In the
+/// sandbox it made a directory over the file, which then was gone there,
+/// and listed one that applying could only fail.
+#[tokio::test]
+async fn mkdir_through_a_file_fails_as_in_bash() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("notes"), "n\n").unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "echo m > mine").await;
+    for script in [
+        "mkdir -p notes/x/y",
+        "mkdir -p notes/x",
+        "mkdir notes/x",
+        "mkdir -p mine/x/y",
+    ] {
+        let r = ws.shell(script, opts(&dir)).await;
+        assert_ne!(r.exit_code, 0, "{script}: {r:?}");
+    }
+    let r = ws.shell("cat notes mine", opts(&dir)).await;
+    assert_eq!(r.stdout, "n\nm\n", "{r:?}");
+    apply_all(&ws).await;
+    assert_eq!(contents(&dir), pairs(&[("mine", "m\n"), ("notes", "n\n")]));
+}

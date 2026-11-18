@@ -111,31 +111,40 @@ impl FileSystem for Recorder {
         Ok(())
     }
     async fn mkdir(&self, path: &Path, recursive: bool) -> Result<()> {
-        if recursive {
-            // bashkit's overlay unhides `path` alone: a parent the sandbox
-            // removed (`rm -rf dist`, then `mkdir -p dist/sub`) stayed
-            // removed, and hid all made under it. So each missing parent is
-            // made on its own, from the top (recursive: the overlay's upper
-            // layer may lack the parents the disk holds). A directory that
-            // is there has all of its own.
-            //
-            // Not recorded, as when the overlay makes them: one the disk
-            // holds is hidden only by a removal recorded at it or above it,
-            // from which the scan compares what is under it, and a new one
-            // is made by applying `path`. Each one recorded would be walked
-            // at every scan, and the overlay lists a directory by going
-            // through all it holds.
-            let mut missing = Vec::new();
-            let mut at = path.parent();
-            while let Some(dir) = at
-                && !self.inner.exists(dir).await.unwrap_or(true)
-            {
-                missing.push(dir);
-                at = dir.parent();
-            }
-            for dir in missing.into_iter().rev() {
-                self.inner.mkdir(dir, true).await?;
-            }
+        // bashkit's overlay unhides `path` alone: a parent the sandbox
+        // removed (`rm -rf dist`, then `mkdir -p dist/sub`) stayed removed,
+        // and hid all made under it. So each missing parent is made on its
+        // own, from the top (recursive: the overlay's upper layer may lack
+        // the parents the disk holds). A directory that is there has all of
+        // its own.
+        //
+        // Not recorded, as when the overlay makes them: one the disk holds
+        // is hidden only by a removal recorded at it or above it, from which
+        // the scan compares what is under it, and a new one is made by
+        // applying `path`. Each one recorded would be walked at every scan,
+        // and the overlay lists a directory by going through all it holds.
+        let mut missing = Vec::new();
+        let mut at = path.parent();
+        while recursive
+            && let Some(dir) = at
+            && !self.inner.exists(dir).await.unwrap_or(true)
+        {
+            missing.push(dir);
+            at = dir.parent();
+        }
+        // The nearest one the sandbox shows is a file: bash fails ("Not a
+        // directory"), where the overlay made a directory over the file.
+        if let Some(dir) = at
+            && self
+                .inner
+                .stat(dir)
+                .await
+                .is_ok_and(|m| !m.file_type.is_dir())
+        {
+            return Err(io::Error::from(io::ErrorKind::NotADirectory).into());
+        }
+        for dir in missing.into_iter().rev() {
+            self.inner.mkdir(dir, true).await?;
         }
         self.book.remember(path).await;
         self.inner.mkdir(path, recursive).await
