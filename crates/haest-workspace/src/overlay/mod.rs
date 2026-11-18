@@ -28,6 +28,7 @@ mod apply;
 mod book;
 mod diff;
 mod links;
+mod modes;
 mod recorder;
 mod removable;
 mod scan;
@@ -112,6 +113,16 @@ use state::{Original, state_of, walk};
 /// the human makes that link. A write the disk refuses is
 /// [`WriteFailed`](haest_core::workspace::ApplyFailureCode::WriteFailed) and
 /// stops nothing else.
+///
+/// A mode the sandbox set (`chmod`, `install -m`) is listed (`Modified`, if
+/// nothing else changed; the diff names both modes) and applied, and a file
+/// the sandbox added gets its execute bits: a script made executable, or
+/// moved, lands executable. A file the sandbox only edits keeps the disk's
+/// mode. Applying takes away any permission the sandbox took, but grants none
+/// but execute, and that only to whom may read the file: `chmod +x` gives a
+/// new file what it gives under the disk's umask, and `chmod 666` or a setuid
+/// bit is not applied. A mode the human changed on the disk since the
+/// sandbox set its own is a conflict.
 ///
 /// Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
 /// directory, not file by file -- an edit the human made INSIDE it meanwhile
@@ -233,12 +244,14 @@ impl OverlayChanges {
                 self.book.on_disk(&path, &mut ways),
                 state_of(&self.overlay, &path)
             );
+            let mode = self.mode_change(&path, mine).await;
             out.push(Found {
                 path,
                 original: original.unwrap_or(now.state),
                 now: now.state,
                 held: now.held,
                 mine,
+                mode,
             });
         }
         out
@@ -274,7 +287,11 @@ impl ChangeSet for OverlayChanges {
             ChangeKind::Deleted => Vec::new(),
             _ => diff::file_bytes(&self.overlay, &path).await,
         };
-        diff::unified(&c.path, &before, &after)
+        let mode = match c.kind {
+            ChangeKind::Deleted => String::new(),
+            _ => self.mode_line(&path, &c.path).await,
+        };
+        mode + &diff::unified(&c.path, &before, &after)
     }
 
     /// Write every non-conflicting change to the real disk, the deletes

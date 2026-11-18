@@ -30,7 +30,7 @@ use haest_core::{
     workspace::{ApplyFailureCode, ApplyReport, ChangeKind, FailedChange},
 };
 
-use super::{OverlayChanges, Scanned, links::Links, removable};
+use super::{OverlayChanges, Scanned, links::Links, modes, removable, state::Original};
 use crate::spelling::Ways;
 
 /// Why one change was not applied: its code and the reason for the human.
@@ -89,6 +89,7 @@ impl OverlayChanges {
             match self.put(&s, links).await {
                 Ok(Put::Applied) => {
                     self.book.touched().remove(&s.path);
+                    self.book.modes.forget(&s.path);
                     report.applied.push(s.change);
                     return;
                 }
@@ -166,20 +167,23 @@ impl OverlayChanges {
         // spelling now (an earlier write of this apply, a delete that failed
         // or was skipped), where the write or delete would land. A path that
         // already holds the sandbox's version (a file its directory's delete
-        // took along) loses nothing, and is put as usual. Asked afresh: a
-        // directory this apply made changes the answer.
+        // took along, a change of mode alone) loses nothing, and is put
+        // without writing it again. Asked afresh: a directory this apply
+        // made changes the answer.
         let again = self.book.on_disk(path, &mut Ways::default()).await;
         let moved = again.state != s.now && again.state != s.mine;
         if moved || again.held.is_some() {
             return Ok(Put::Moved);
         }
-        self.write(s)
+        self.write(s, again.state == s.mine)
             .await
             .map(|()| Put::Applied)
             .map_err(|e| (ApplyFailureCode::WriteFailed, e.to_string()))
     }
 
-    async fn write(&self, s: &Scanned) -> io::Result<()> {
+    /// Put `s` on the disk; `holds` when the disk holds the sandbox's
+    /// version already, and only its mode may be left to put.
+    async fn write(&self, s: &Scanned, holds: bool) -> io::Result<()> {
         let path = s.path.as_path();
         let deleted = s.change.kind == ChangeKind::Deleted;
         let disk = self.book.disk.as_ref();
@@ -223,12 +227,36 @@ impl OverlayChanges {
             disk.remove_all(&real).await?;
         }
         if dir {
-            return disk.create_dir_all(&real).await;
+            disk.create_dir_all(&real).await?;
+        } else if !holds {
+            if let Some(parent) = real.parent() {
+                disk.create_dir_all(parent).await?;
+            }
+            disk.write(&real, &self.overlay.read(path).await?).await?;
         }
-        if let Some(parent) = real.parent() {
-            disk.create_dir_all(parent).await?;
+        self.carry_mode(s, &real).await
+    }
+
+    /// Put the mode the sandbox chose for `s` on the disk at `real`: the one
+    /// it set, or the execute bits of a file it added (`modes.rs`).
+    async fn carry_mode(&self, s: &Scanned, real: &Path) -> io::Result<()> {
+        let Some(disk) = modes::on_disk(real).await else {
+            return Ok(());
+        };
+        let want = if let Some(set) = self.book.modes.get(&s.path) {
+            modes::carried(disk, set.mode)
+        } else if s.change.kind == ChangeKind::Added && matches!(s.mine, Original::File(_)) {
+            match self.overlay.inner().stat(&s.path).await {
+                Ok(mine) => modes::added(disk, mine.mode),
+                Err(_) => disk,
+            }
+        } else {
+            disk
+        };
+        if want == disk {
+            return Ok(());
         }
-        disk.write(&real, &self.overlay.read(path).await?).await
+        self.book.disk.chmod(real, want).await
     }
 }
 

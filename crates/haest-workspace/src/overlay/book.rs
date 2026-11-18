@@ -13,7 +13,10 @@ use std::{
 
 use haest_core::fs::{Fs, normalize};
 
-use super::state::{Original, state_of};
+use super::{
+    modes::{self, SetMode, SetModes},
+    state::{Original, state_of},
+};
 use crate::spelling::{Spelled, Spelling, Ways};
 
 /// The first-touch ledger the recorder writes and the scan reads.
@@ -23,6 +26,8 @@ pub(crate) struct Book {
     /// onto: the overlay hides all the disk held under each then, and
     /// records only the directory itself.
     wiped: Mutex<BTreeSet<PathBuf>>,
+    /// The modes the sandbox set (`chmod`).
+    pub(super) modes: SetModes,
     pub(super) disk: Arc<dyn Fs>,
     pub(super) root: PathBuf,
     spelling: Spelling,
@@ -72,6 +77,7 @@ impl Book {
         Self {
             touched: Mutex::default(),
             wiped: Mutex::default(),
+            modes: SetModes::default(),
             disk,
             spelling: Spelling::of(&root),
             root,
@@ -132,6 +138,27 @@ impl Book {
         let mut wiped = self.wiped();
         for dir in dirs {
             wiped.remove(dir);
+        }
+    }
+
+    /// The sandbox set `path`'s mode to `mode`. The disk's mode there is
+    /// kept from the first time it did.
+    pub(crate) async fn set_mode(&self, path: &Path, mode: u32) {
+        let path = normalize(path);
+        let disk = match self.modes.get(&path) {
+            Some(set) => set.disk,
+            None => self.disk_mode(&path).await,
+        };
+        self.modes.insert(path, SetMode { mode, disk });
+    }
+
+    /// The mode of `path` (an overlay path) on the real disk, as the sandbox
+    /// spells it: None where the disk holds it only under another spelling.
+    pub(super) async fn disk_mode(&self, path: &Path) -> Option<u32> {
+        let mode = modes::on_disk(&self.real(path)).await?;
+        match self.spelling.spelled(path).await {
+            Spelled::AsAsked => Some(mode),
+            Spelled::Other(_) => None,
         }
     }
 

@@ -10,8 +10,8 @@ use std::{
 
 use async_trait::async_trait;
 use bashkit::{
-    DirEntry, DirListing, FileSystem, FileSystemExt, FsLimits, FsUsage, Metadata, SearchCapable,
-    VfsSnapshot, WalkOptions,
+    DirEntry, DirListing, FileSystem, FileSystemExt, FileType, FsLimits, FsUsage, Metadata,
+    SearchCapable, VfsSnapshot, WalkOptions,
 };
 
 use super::Book;
@@ -35,6 +35,24 @@ impl Recorder {
                 Err(io::Error::new(io::ErrorKind::NotFound, "parent directory not found").into())
             }
             _ => Ok(()),
+        }
+    }
+
+    /// The mode of the file at `path` as the sandbox shows it, None for
+    /// anything else. bashkit's overlay gives a file it writes 0644, where
+    /// bash keeps the file's own (`>`, `>>`, an edit): the write puts it
+    /// back with [`keep_mode`](Self::keep_mode).
+    async fn file_mode(&self, path: &Path) -> Option<u32> {
+        let meta = self.inner.stat(path).await.ok()?;
+        (meta.file_type == FileType::File).then_some(meta.mode)
+    }
+
+    /// Put `mode`, the file's own before a write, back on it. The write has
+    /// landed: a mode that cannot go back changes none of its content, so
+    /// that failure is not the write's.
+    async fn keep_mode(&self, path: &Path, mode: Option<u32>) {
+        if let Some(mode) = mode {
+            let _ = self.inner.chmod(path, mode).await;
         }
     }
 }
@@ -72,7 +90,10 @@ impl FileSystem for Recorder {
     async fn write_file(&self, path: &Path, content: &[u8]) -> Result<()> {
         self.parent_shown(path).await?;
         self.book.remember(path).await;
-        self.inner.write_file(path, content).await
+        let mode = self.file_mode(path).await;
+        self.inner.write_file(path, content).await?;
+        self.keep_mode(path, mode).await;
+        Ok(())
     }
     async fn append_file(&self, path: &Path, content: &[u8]) -> Result<()> {
         // bashkit's overlay makes a file on append only where its upper
@@ -84,7 +105,10 @@ impl FileSystem for Recorder {
             return self.write_file(path, content).await;
         }
         self.book.remember(path).await;
-        self.inner.append_file(path, content).await
+        let mode = self.file_mode(path).await;
+        self.inner.append_file(path, content).await?;
+        self.keep_mode(path, mode).await;
+        Ok(())
     }
     async fn mkdir(&self, path: &Path, recursive: bool) -> Result<()> {
         if recursive {
@@ -119,6 +143,7 @@ impl FileSystem for Recorder {
     async fn remove(&self, path: &Path, recursive: bool) -> Result<()> {
         self.book.remember(path).await;
         self.inner.remove(path, recursive).await?;
+        self.book.modes.moved(path, None);
         if recursive {
             self.book.wipe(path);
         }
@@ -141,6 +166,7 @@ impl FileSystem for Recorder {
         self.book.remember(from).await;
         self.book.remember(to).await;
         self.inner.rename(from, to).await?;
+        self.book.modes.moved(from, Some(to));
         // A directory moves as a whole: its old place and its new one each
         // record only the directory.
         self.book.wipe(from);
@@ -162,7 +188,9 @@ impl FileSystem for Recorder {
     }
     async fn chmod(&self, path: &Path, mode: u32) -> Result<()> {
         self.book.remember(path).await;
-        self.inner.chmod(path, mode).await
+        self.inner.chmod(path, mode).await?;
+        self.book.set_mode(path, mode).await;
+        Ok(())
     }
     async fn set_modified_time(&self, path: &Path, time: SystemTime) -> Result<()> {
         self.book.remember(path).await;

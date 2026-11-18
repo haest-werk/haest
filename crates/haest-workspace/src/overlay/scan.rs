@@ -20,6 +20,18 @@ pub(super) struct Found {
     /// under another spelling.
     pub(super) held: Option<Held>,
     pub(super) mine: Original,
+    pub(super) mode: ModeChange,
+}
+
+/// What a mode the sandbox set at a path does to the disk's.
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct ModeChange {
+    /// Applying changes the disk's mode: with nothing else changed, the
+    /// path is listed for it.
+    pub(super) differs: bool,
+    /// And the human changed the disk's mode since the sandbox set its own:
+    /// a conflict, as an edit is.
+    pub(super) moved: bool,
 }
 
 impl Found {
@@ -39,7 +51,7 @@ impl Found {
     /// The change the overlay makes here; None when it holds what the disk
     /// does. `freed` are the names this change set's deletes free.
     fn change(self, freed: &BTreeSet<PathBuf>) -> Option<Scanned> {
-        if self.now == self.mine {
+        if self.now == self.mine && !self.mode.differs {
             return None;
         }
         let kind = match (self.mine, self.now) {
@@ -56,7 +68,7 @@ impl Found {
         let keeps = self.lands_on(freed).map(|h| h.at.clone());
         Some(Scanned {
             change: Change::new(self.path.to_string_lossy(), kind)
-                .with_conflict(self.original != self.now || keeps.is_some()),
+                .with_conflict(self.original != self.now || keeps.is_some() || self.mode.moved),
             keeps: keeps.flatten(),
             frees: false,
             path: self.path,
