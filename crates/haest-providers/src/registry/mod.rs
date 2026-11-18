@@ -368,7 +368,8 @@ impl ProviderRegistry {
     /// unescaped `/`, `?` or `#` reads to a URL parser as another host, and
     /// so does the first part of the path of a URL with no host. That
     /// error's source names where the URL was set (`ANTHROPIC_BASE_URL`,
-    /// `providers.json baseURL`), and its source is haest-http's
+    /// `providers.json baseURL`, or the `base_url` of an entry the host
+    /// built in Rust), and its source is haest-http's
     /// [`EndpointUrlError`](haest_http::EndpointUrlError).
     pub fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
         let (name, model) = parse_model_spec(spec)?;
@@ -464,7 +465,12 @@ impl ProviderRegistry {
                 Dialect::Anthropic => Options::Anthropic(cfg.anthropic_options(name, keys)),
                 Dialect::OpenAi => Options::Compat(Box::new(cfg.compat_options(name, keys))),
             };
-            return Ok((options, "providers.json baseURL"));
+            let from = if custom.is_json(name) {
+                "providers.json baseURL"
+            } else {
+                HOST_BASE_URL
+            };
+            return Ok((options, from));
         }
         Ok(match name {
             "anthropic" => (
@@ -490,9 +496,13 @@ impl ProviderRegistry {
     }
 }
 
+/// Where a custom entry the host built in Rust set its base URL: it came
+/// from no providers.json.
+const HOST_BASE_URL: &str = "the base_url the host gave it";
+
 /// A provider's base URL [`check_endpoint_url`] refused, and where it was
-/// set (`ANTHROPIC_BASE_URL`, an entry's `baseURL`): the human then knows
-/// which one to fix.
+/// set (`ANTHROPIC_BASE_URL`, an entry's `baseURL`, the `base_url` of an
+/// entry the host built): the human then knows which one to fix.
 #[derive(Debug, thiserror::Error)]
 #[error("{from}")]
 struct BaseUrlRefused {

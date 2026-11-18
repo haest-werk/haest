@@ -1401,7 +1401,8 @@ Hosts write less (round two of the review, and what porting brain onto
 - A providers.json entry is written in Rust: `CustomProviderConfig` has
   `Default`, `openai(url)`, `anthropic(url)` and serde `Deserialize` (as
   `from_json` reads it), and `ProviderRegistry::with_custom_provider(name,
-  config)` adds one. Before, the registry took only JSON.
+  config)` adds one. Before, the registry took only JSON. A refused base
+  URL of such an entry says the host gave it, not providers.json.
 - `CustomProviders` is a type of its own, not a `BTreeMap<String,
   serde_json::Value>` (breaking). `serde_json::from_str` still reads a
   providers.json text into one, each entry still checked when first

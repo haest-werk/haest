@@ -112,8 +112,9 @@ fn a_base_url_a_parser_misreads_is_refused_at_resolve() {
 }
 
 /// A refused base URL says where it was set, as a refused `broker_url`
-/// does: the built-in's variable, or the entry's `baseURL` (an entry named
-/// like a built-in included).
+/// does: the built-in's variable, the entry's `baseURL` (an entry named
+/// like a built-in included), or, for an entry the host built in Rust, the
+/// `base_url` it gave (that entry is in no providers.json).
 #[test]
 fn a_refused_base_url_names_where_it_was_set() {
     let misread = "http://user:1234/s3cret@gw.example/v1";
@@ -136,14 +137,14 @@ fn a_refused_base_url_names_where_it_was_set() {
         ("openrouter", "OPENROUTER_BASE_URL"),
         ("paperinstruments", "PAPERINSTRUMENTS_BASE_URL"),
         ("json", "providers.json baseURL"),
-        ("rust", "providers.json baseURL"),
+        ("rust", HOST_BASE_URL),
     ] {
         let e = reg.resolve(&format!("{name}:m")).expect_err(name);
-        let said = haest_core::error::report(&e);
-        assert!(
-            said.contains(&format!("\"{name}\" cannot be used: {from}: http")),
-            "{said}"
-        );
+        let ModelError::Unavailable { source, .. } = &e else {
+            panic!("{name}: {e:?}");
+        };
+        let refused = source.downcast_ref::<BaseUrlRefused>();
+        assert_eq!(refused.map(|r| r.from), Some(from), "{name}");
         haest_core::testing::assert_causes_said_once(&e);
     }
 }

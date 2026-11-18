@@ -468,6 +468,12 @@ impl CustomProviders {
         self.entries.contains_key(name)
     }
 
+    /// Whether the entry `name` was read from JSON (a providers.json text),
+    /// not built in Rust.
+    pub(super) fn is_json(&self, name: &str) -> bool {
+        matches!(self.entries.get(name), Some(Entry::Json(_)))
+    }
+
     /// The entries' names, in order.
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.entries.keys().map(String::as_str)
