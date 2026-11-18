@@ -194,14 +194,18 @@ write instead.
 
 ### Security
 
-- An approval shows the human all of the command that runs, and nothing
-  printed before or while it waits can hide part of it. The approval mod
-  cut the command to 200 characters without saying so, and the haest
-  command printed that preview raw. A command padded past the cut with
-  spaces, or one with a carriage return and an erase-line in it, showed as
+- An approval shows the human all of the command that runs, nothing
+  printed before or while it waits can hide part of it, and only what the
+  human types once it is on the screen answers it. The approval mod cut
+  the command to 200 characters without saying so, and the haest command
+  printed that preview raw. A command padded past the cut with spaces, or
+  one with a carriage return and an erase-line in it, showed as
   `rm -rf ./build` while a hidden `; touch ...` ran on "y" (in the terminal
-  and over `--stdio`). The ask now carries the whole command, and the haest
-  command:
+  and over `--stdio`). And the terminal took whatever line was already
+  waiting as the answer: a "y" typed at text that only looked like a
+  question (the model's own words) or at an ask that was then withdrawn
+  approved the next real one, a `rm -rf` nobody had seen yet. The ask now
+  carries the whole command, and the haest command:
   - writes nothing from the model, a tool's input, a server or a peer raw
     to the terminal: control characters (but a newline and a tab), bidi
     controls and zero-width characters show as escapes, in the answer
@@ -213,8 +217,12 @@ write instead.
   - asks after the command, right above the answer, saying how much
     command is above it, and shows nothing else until the question is
     answered (or given up): a subagent's lines, a background job's
-    arrival and the main agent's answer text wait and follow it, so none
-    of them can scroll the question away or draw one of its own;
+    arrival and the main agent's answer text (when stdout is not a
+    regular file) wait and follow it, so none of them can scroll the
+    question away or draw one of its own;
+  - reads the answer only once the question is drawn, first dropping what
+    was typed before (a line, or keys with no Enter), and reads it from
+    the terminal a byte at a time, so no buffer keeps a key typed earlier;
   - shows, in the command, a tab as `⟨tab⟩` (`\t` reads as a letter to
     bash), any whitespace but a space and every character that draws as
     blank or as nothing as its escape, more than 2 blank lines in a row,
@@ -223,7 +231,8 @@ write instead.
     the question off the screen; a script's indentation reads as written.
   A host's own prompter should do the same with
   `ApprovalRequest::input_preview` and with whatever it shows just before
-  it asks and while the human answers.
+  it asks and while the human answers, and take as the answer only what
+  is typed once the question is shown.
 - On macOS, applying a sandbox's changes could write through a project
   symlink to a directory outside the project. `OverlayChanges::apply`
   looked for a link on the way by its exact name in the parent's listing,
@@ -455,6 +464,17 @@ write instead.
 - The `approvals` help (and docs/settings.md) says what the mod asks about:
   a shell command that cannot be undone, in the real workspace. It said
   "asks before a tool changes anything".
+- haest asks for approval on the terminal only when the question can be
+  seen: in text mode stderr, where it shows, must be a terminal as well as
+  stdin. With `2>log` or `2>/dev/null` an ask is refused at once, as with
+  no terminal, and the line that says so names stderr. Before, the
+  question went into the file and haest waited up to 10 minutes with
+  nothing on the screen. With `--json` the question is a line on stdout,
+  and stdin alone decides.
+- While the terminal's question waits, at most 2000 held lines wait with
+  it; past that the oldest go, and a note counts them. The answer's text
+  is never let go of, and into a regular file it is not held at all, so
+  `haest -p ... > out.md` keeps the whole answer.
 - The remedy for a cap names its setting through `Limit::setting()`, and
   the three subagent caps have one.
 - Ctrl+C stops a slash command: it is told to stop and gets 2 seconds to
