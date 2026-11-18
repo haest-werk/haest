@@ -112,6 +112,27 @@ pub fn redacted_url(url: &str) -> Cow<'_, str> {
     Cow::Owned(shown)
 }
 
+/// `url` as an error message shows it: [`redacted_url`], with each control
+/// character escaped (a CR as `\r`), so a message printed to a terminal
+/// cannot move the cursor or wipe the line it is on. (Debug output escapes
+/// them already.)
+#[must_use]
+pub fn shown_url(url: &str) -> String {
+    let shown = redacted_url(url);
+    if !shown.chars().any(char::is_control) {
+        return shown.into_owned();
+    }
+    let mut out = String::with_capacity(shown.len() + 8);
+    for c in shown.chars() {
+        if c.is_control() {
+            out.extend(c.escape_default());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// A URL as Debug output shows it: quoted, with nothing a credential may
 /// ride in ([`redacted_url`]).
 pub struct UrlDebug<'a>(pub &'a str);

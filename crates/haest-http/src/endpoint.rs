@@ -4,7 +4,7 @@
 
 use std::{borrow::Cow, fmt};
 
-use crate::redact::{SCHEMES, after_scheme, redacted_url};
+use crate::redact::{SCHEMES, after_scheme, shown_url};
 
 /// `path` under `base`, a URL haest is configured with (a provider's base
 /// URL, an Image API's): after `base`'s path, one `/` between however many
@@ -98,7 +98,8 @@ pub fn authority(url: &str) -> std::ops::Range<usize> {
 /// `\` past the scheme, or no host comes between `scheme://` (and a
 /// userinfo's last `@`) and the port or the first of them, or only `/` and
 /// `\` come after `scheme:` up to its query, fragment or end. Its message
-/// shows the URL as [`redacted_url`] does, and says how to write it.
+/// shows the URL as [`redacted_url`](crate::redacted_url) does, with its
+/// control characters escaped (a CR as `\r`), and says how to write it.
 ///
 /// ```
 /// use haest_http::check_endpoint_url;
@@ -126,7 +127,7 @@ pub fn check_endpoint_url(url: &str) -> Result<(), EndpointUrlError> {
         _ => return Ok(()),
     };
     Err(EndpointUrlError {
-        shown: redacted_url(url).into_owned(),
+        shown: shown_url(url),
         why,
     })
 }
@@ -173,8 +174,8 @@ fn host_of(authority: &str) -> &str {
 /// `@` comes past where a URL parser ends its host, so it may dial another
 /// host than the one after that `@`; or it has no host, so a parser takes
 /// the first part of its path for one, or dials nothing. Its message shows
-/// the URL without its credentials ([`redacted_url`]), and says how to
-/// write it.
+/// the URL without its credentials ([`redacted_url`](crate::redacted_url))
+/// and with its control characters escaped, and says how to write it.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{shown} {why}")]
 pub struct EndpointUrlError {
@@ -183,7 +184,8 @@ pub struct EndpointUrlError {
 }
 
 impl EndpointUrlError {
-    /// The URL refused, as [`redacted_url`] shows it.
+    /// The URL refused, as [`redacted_url`](crate::redacted_url) shows it,
+    /// with each control character escaped (a CR as `\r`).
     pub fn url(&self) -> &str {
         &self.shown
     }

@@ -1390,7 +1390,8 @@ Hosts write less (round two of the review, and what porting brain onto
   no `//`, `http:localhost:8080`, passes). It reads
   the URL as a parser does, without the spaces and control characters
   around it and the tabs, CRs and LFs in it. The error shows the URL as
-  `redacted_url` does and says how to write it. For a host's own
+  `redacted_url` does, with its control characters escaped (a CR as `\r`,
+  so a printed message keeps its line), and says how to write it. For a host's own
   configured URLs too; never for a URL a tool fetches.
 - `HttpError::Timeout` says the wait as given (`no answer within 500ms`):
   it said whole seconds, so a sub-second headers timeout read `0 s`.

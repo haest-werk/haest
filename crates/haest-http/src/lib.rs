@@ -128,13 +128,13 @@ mod reqwest_client;
 mod response;
 
 /// Shared by haest's crates, not part of the API: the Debug redaction their
-/// option and tracker types use, the scrubbing of a reqwest error's URL,
-/// putting a path under a configured base URL, and where a configured URL's
-/// authority is.
+/// option and tracker types use, a URL as an error message shows it, the
+/// scrubbing of a reqwest error's URL, putting a path under a configured
+/// base URL, and where a configured URL's authority is.
 #[doc(hidden)]
 pub mod __private {
     pub use crate::endpoint::{authority, join_path};
-    pub use crate::redact::{HeaderNames, REDACTED, UrlDebug};
+    pub use crate::redact::{HeaderNames, REDACTED, UrlDebug, shown_url};
     #[cfg(feature = "reqwest")]
     pub use crate::reqwest_client::without_credentials;
 }

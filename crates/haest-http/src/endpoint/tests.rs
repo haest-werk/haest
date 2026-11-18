@@ -2,6 +2,7 @@
 //! `join_path`.
 
 use super::*;
+use crate::redacted_url;
 
 /// Refused: an `@` past where a parser ends the host, whatever ends it.
 const MISREAD: [&str; 10] = [
@@ -156,6 +157,23 @@ fn an_authority_with_no_host_in_it_is_refused() {
         assert_eq!(check_endpoint_url(url), Ok(()), "{url:?}");
         let joined = join_path(url, "v1/messages");
         assert_eq!(check_endpoint_url(&joined), Ok(()), "{joined:?}");
+    }
+}
+
+/// A refused URL's message carried its control characters as they are: a
+/// CR (a CRLF `.env`) printed to a terminal moved the cursor to the start
+/// of the line, and the rest of the message wrote over the URL. They show
+/// escaped.
+#[test]
+fn a_refused_urls_control_characters_show_escaped() {
+    for url in [
+        "https://\r/anthropic",
+        "wss://:8443/agents\u{7}",
+        "https:\u{1b}",
+    ] {
+        let e = check_endpoint_url(url).expect_err(url);
+        assert!(!e.url().chars().any(char::is_control), "{:?}", e.url());
+        assert!(!e.to_string().chars().any(char::is_control), "{e:?}");
     }
 }
 
