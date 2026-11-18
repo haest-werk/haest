@@ -3,10 +3,12 @@
 //! real one that only its owner may enter; the new file takes the real
 //! one's permission bits and is then renamed over it, so a disk that fills
 //! up, or a kill, partway leaves the human's file as it was. Where a new
-//! file would not be the same file, the bytes are written in place, as
-//! before. An apply dropped partway (Ctrl+C at the haest command's
-//! `/apply`, a host's timeout) removes the new file and its directory as
-//! it drops.
+//! file would not be the same file, or the disk will not make one or move
+//! it there, the bytes are written in place, as before; where the new
+//! file's bytes do not all go in, the change fails instead, since in place
+//! they would cut the human's file short. An apply dropped partway (Ctrl+C
+//! at the haest command's `/apply`, a host's timeout) removes the new file
+//! and its directory as it drops.
 
 use std::{
     fs::Metadata,
@@ -31,11 +33,13 @@ const NAME_PART: usize = 64;
 /// A file there must still take a write: one the human made read-only is
 /// refused as an in-place write is, never replaced. It is written in place
 /// where a new file would not stand in for it: another name links to it,
-/// it is not a regular file, the new file would have another owner or
+/// it is not a regular file, or the new file would have another owner or
 /// group (another user's file the human may write, a directory that gives
-/// new files its own group), or the directory takes no new file
-/// (`PermissionDenied`). A new file the disk has no room for fails the
-/// change, and never falls back to writing in place.
+/// new files its own group). It is written in place, too, where the disk
+/// will not make the new file or move it over the real one
+/// ([`in_place_instead`]). Where the new file's bytes do not all go in (a
+/// full disk), the change fails and never falls back: in place they would
+/// not all go in either, and the human's file would be cut short.
 pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
     let old = if disk.exists(real).await {
         // Opened to write as an in-place write opens it, but nothing is
@@ -53,23 +57,77 @@ pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Re
     {
         return disk.write(real, bytes).await;
     }
-    let Some(new) = NewFile::beside(disk, real).await? else {
-        return disk.write(real, bytes).await;
+    match put_new(disk, real, old.as_ref(), bytes).await? {
+        Put::Replaced => Ok(()),
+        Put::InPlace => disk.write(real, bytes).await,
+    }
+}
+
+/// What became of the new file, gone either way.
+enum Put {
+    /// Renamed over the real file.
+    Replaced,
+    /// Not put in its place: the real file is to take the bytes in place.
+    InPlace,
+}
+
+/// Put `bytes` in a new file beside `real`, which holds `old`, and rename
+/// it over it. What it makes it removes again, whatever comes.
+async fn put_new(
+    disk: &dyn Fs,
+    real: &Path,
+    old: Option<&Metadata>,
+    bytes: &[u8],
+) -> io::Result<Put> {
+    let new = match NewFile::beside(disk, real).await {
+        Ok(new) => new,
+        Err(e) if in_place_instead(&e) => return Ok(Put::InPlace),
+        Err(e) => return Err(e),
     };
-    if let Some(old) = &old {
+    if let Some(old) = old {
         let made = tokio::fs::symlink_metadata(&new.path).await.ok();
         if made.is_some_and(|m| (m.uid(), m.gid()) != (old.uid(), old.gid())) {
             new.clear(disk).await;
-            return disk.write(real, bytes).await;
+            return Ok(Put::InPlace);
         }
     }
-    let put = async {
-        fill(disk, &new.path, old.as_ref(), bytes).await?;
-        disk.rename(&new.path, real).await
-    };
-    let put = put.await;
+    if let Err(e) = fill(disk, &new.path, old, bytes).await {
+        new.clear(disk).await;
+        return Err(e);
+    }
+    let moved = disk.rename(&new.path, real).await;
     new.clear(disk).await;
-    put
+    match moved {
+        Ok(()) => Ok(Put::Replaced),
+        Err(e) if in_place_instead(&e) => Ok(Put::InPlace),
+        Err(e) => Err(e),
+    }
+}
+
+/// Whether the disk's refusal to make the new file, or to move it over the
+/// real one, leaves the real file to take the bytes in place, which needs
+/// neither a new name nor a move:
+/// - `PermissionDenied`: a directory that takes no new name, or a rename an
+///   ACL or a security module forbids;
+/// - `InvalidFilename`: the new file's longer path, past the system's cap;
+/// - `ReadOnlyFilesystem`: a read-only mount around a file on a writable
+///   mount of its own;
+/// - `ResourceBusy`, `CrossesDevices`: a file that is a mount point of its
+///   own (one file bind-mounted into the project), which nothing can be
+///   renamed over.
+///
+/// Anything else fails the change, a disk with no room above all: the
+/// bytes would not all go in in place either, and the human's file would
+/// be cut short.
+fn in_place_instead(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::PermissionDenied
+            | io::ErrorKind::InvalidFilename
+            | io::ErrorKind::ReadOnlyFilesystem
+            | io::ErrorKind::ResourceBusy
+            | io::ErrorKind::CrossesDevices
+    )
 }
 
 /// The sandbox's `bytes` into the new file at `path`, with the mode of
@@ -103,9 +161,8 @@ struct NewFile {
 
 impl NewFile {
     /// A new, empty file, in a directory of its own beside `real` under a
-    /// dot-name nothing on the disk has (`.<name>.haest-<pid>-<n>`); None
-    /// where the directory takes no new name.
-    async fn beside(disk: &dyn Fs, real: &Path) -> io::Result<Option<Self>> {
+    /// dot-name nothing on the disk has (`.<name>.haest-<pid>-<n>`).
+    async fn beside(disk: &dyn Fs, real: &Path) -> io::Result<Self> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let name = real
             .file_name()
@@ -126,18 +183,14 @@ impl NewFile {
                 dir,
                 pending: true,
             };
-            match disk.create_dir(&new.dir).await {
-                Ok(()) => {}
-                Err(e) => {
-                    // Not made, or another's (a name taken, a link
-                    // included, dangling or not): nothing to remove.
-                    new.settled();
-                    match e.kind() {
-                        io::ErrorKind::AlreadyExists => continue,
-                        io::ErrorKind::PermissionDenied => return Ok(None),
-                        _ => return Err(e),
-                    }
+            if let Err(e) = disk.create_dir(&new.dir).await {
+                // Not made, or another's (a name taken, a link included,
+                // dangling or not): nothing to remove.
+                new.settled();
+                if e.kind() == io::ErrorKind::AlreadyExists {
+                    continue;
                 }
+                return Err(e);
             }
             let made = async {
                 // A group the directory passes on (setgid) stays, so the
@@ -150,7 +203,7 @@ impl NewFile {
                 disk.write(&new.path, &[]).await
             };
             return match made.await {
-                Ok(()) => Ok(Some(new)),
+                Ok(()) => Ok(new),
                 Err(e) => {
                     new.clear(disk).await;
                     Err(e)

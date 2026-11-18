@@ -1,5 +1,6 @@
 //! The new file the apply puts in a file's place, on the real disk with a
-//! fault in it: a full disk, a write the runtime is slow to start.
+//! fault in it: a full disk, a write the runtime is slow to start, a rename
+//! nothing can do, a name the system refuses.
 
 use std::{
     fs::{self, Metadata, Permissions},
@@ -22,6 +23,9 @@ use tokio::sync::Notify;
 
 use crate::{RealFs, bridge::BashkitFsOverHaest, overlay::OverlayChanges};
 
+const HUMAN: &str = "the human's version\n";
+const SANDBOX: &str = "the sandbox's version\n";
+
 /// What goes wrong on the disk beside `real`, the file the apply writes.
 #[derive(Clone, Copy, PartialEq)]
 enum Fault {
@@ -29,6 +33,13 @@ enum Fault {
     /// which starts it late, as it starts `tokio::fs::write` under load;
     /// dropping the write's future does not stop it.
     SlowWrite,
+    /// A rename onto `real` fails as one onto a mount point does: the file
+    /// is bind-mounted into the project on its own.
+    BusyRename,
+    /// A name made in `real`'s directory fails with this OS error:
+    /// `ENAMETOOLONG` where `real`'s path is just short of the system's
+    /// cap, `ENOSPC` on a disk with no room for even an empty file.
+    NewName(i32),
 }
 
 /// The real disk, with `fault` in it.
@@ -51,11 +62,23 @@ impl Faulty {
             began: Notify::new(),
         })
     }
+
+    /// A name the apply makes beside `real`, refused as [`Fault::NewName`]
+    /// says.
+    fn refuses_name(&self, p: &Path) -> io::Result<()> {
+        match self.fault {
+            Some(Fault::NewName(code)) if p != self.real && p.parent() == self.real.parent() => {
+                Err(io::Error::from_raw_os_error(code))
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[async_trait]
 impl Fs for Faulty {
     async fn write(&self, p: &Path, d: &[u8]) -> io::Result<()> {
+        self.refuses_name(p)?;
         let room = self.room.load(Ordering::SeqCst);
         if d.len() > room {
             RealFs.write(p, &d[..room]).await?;
@@ -88,6 +111,7 @@ impl Fs for Faulty {
         RealFs.read_dir(p).await
     }
     async fn create_dir(&self, p: &Path) -> io::Result<()> {
+        self.refuses_name(p)?;
         RealFs.create_dir(p).await
     }
     async fn create_dir_all(&self, p: &Path) -> io::Result<()> {
@@ -100,6 +124,9 @@ impl Fs for Faulty {
         RealFs.remove_all(p).await
     }
     async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
+        if self.fault == Some(Fault::BusyRename) && b == self.real {
+            return Err(io::Error::from_raw_os_error(libc::EBUSY));
+        }
         RealFs.rename(a, b).await
     }
     async fn chmod(&self, p: &Path, mode: u32) -> io::Result<()> {
@@ -214,10 +241,8 @@ async fn a_write_the_full_disk_stops_leaves_the_humans_file_whole() {
 /// private `secret.env` in it, under a name its own ignore pattern missed.
 #[tokio::test]
 async fn an_apply_dropped_before_its_write_starts_leaves_no_copy_open_to_others() {
-    let human = "TOKEN=the human's\n";
-    let sandbox = "TOKEN=the sandbox's\n";
-    let (_t, real, disk, changes) =
-        edited("secret.env", human, sandbox, Some(Fault::SlowWrite)).await;
+    let fault = Some(Fault::SlowWrite);
+    let (_t, real, disk, changes) = edited("secret.env", HUMAN, SANDBOX, fault).await;
     fs::set_permissions(&real, Permissions::from_mode(0o600)).unwrap();
 
     let dropped = tokio::select! {
@@ -233,11 +258,59 @@ async fn an_apply_dropped_before_its_write_starts_leaves_no_copy_open_to_others(
     for (path, meta) in under(root).iter().filter(|(p, _)| *p != real) {
         let shown = path.display();
         assert!(owner_only(meta), "{shown} is open to others: {meta:?}");
-        if meta.is_file() && fs::read(path).unwrap() == sandbox.as_bytes() {
+        if meta.is_file() && fs::read(path).unwrap() == SANDBOX.as_bytes() {
             let dir = path.parent().unwrap();
             let own = dir != root && owner_only(&fs::metadata(dir).unwrap());
             assert!(own, "{shown} holds the sandbox's version");
         }
     }
-    assert_eq!(fs::read_to_string(&real).unwrap(), human);
+    assert_eq!(fs::read_to_string(&real).unwrap(), HUMAN);
+}
+
+/// The sandbox's edit of `name`, applied to the disk `fault` makes: on the
+/// disk, nothing left beside it, listed no more.
+async fn assert_applied(name: &str, fault: Fault) {
+    let (_t, real, _disk, changes) = edited(name, HUMAN, SANDBOX, Some(fault)).await;
+    let report = changes.apply().await;
+    assert!(report.failed.is_empty(), "{report:?}");
+    let path = format!("/{name}");
+    assert_eq!(conflicts(&report.applied), [(path.as_str(), false)]);
+    assert_eq!(fs::read_to_string(&real).unwrap(), SANDBOX);
+    assert_eq!(names(real.parent().unwrap()), [name]);
+    assert!(changes.list().await.is_empty());
+}
+
+/// `config.yml` is a mount point of its own (one file bind-mounted into the
+/// project, as a dev container does): nothing can be renamed over it. Its
+/// edit failed on every apply; it is written in place.
+#[tokio::test]
+async fn a_file_nothing_can_be_renamed_over_is_written_in_place() {
+    assert_applied("config.yml", Fault::BusyRename).await;
+}
+
+/// `notes.txt`'s path is just short of the system's cap on a path, so the
+/// longer name of a new file beside it is refused. Its edit failed on every
+/// apply; it is written in place.
+#[tokio::test]
+async fn a_file_whose_new_name_the_system_refuses_is_written_in_place() {
+    assert_applied("notes.txt", Fault::NewName(libc::ENAMETOOLONG)).await;
+}
+
+/// The disk has no room for even an empty new file beside `notes.txt`:
+/// the change fails, and is not written in place, where the bytes would
+/// not all go in either. The human's file stays whole, the change listed.
+#[tokio::test]
+async fn a_disk_with_no_room_for_a_new_name_fails_the_change() {
+    let fault = Some(Fault::NewName(libc::ENOSPC));
+    let (_t, real, _disk, changes) = edited("notes.txt", HUMAN, SANDBOX, fault).await;
+    let report = changes.apply().await;
+    let failed: Vec<_> = report
+        .failed
+        .iter()
+        .map(|f| f.change.path.as_str())
+        .collect();
+    assert_eq!(failed, ["/notes.txt"], "{report:?}");
+    assert_eq!(fs::read_to_string(&real).unwrap(), HUMAN);
+    assert_eq!(names(real.parent().unwrap()), ["notes.txt"]);
+    assert_eq!(conflicts(&changes.list().await), [("/notes.txt", false)]);
 }
