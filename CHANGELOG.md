@@ -2597,7 +2597,9 @@ against it; the wire JSON is unchanged):
   file are named after the id, which is the backend's (`Hub::new`,
   `Meta::new`). An id with a `/` (a `..`, a dir, an absolute path) put both
   outside the dir, renamed the discovery file over a `.json` file of that
-  name, and removed that file when the transport ended.
+  name, and removed that file when the transport ended. An empty id and
+  `.` are refused too: `.` named `..json`, and `attach` failed as a write
+  to the dir's parent.
 - `Broker::attach` refuses a URL no dial can reach, with the new
   `TransportError::Undialable`, and no longer dials it. Such a URL (a
   space, a host outside ASCII, no host, a `\`) failed every dial before

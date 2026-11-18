@@ -4,7 +4,7 @@
 //!
 //! The socket is `<dir>/<stream id>.sock`, beside it a discovery file
 //! `<dir>/<stream id>.json` ([`SocketDiscovery`]); a stream id that is not a
-//! plain file name (empty, or with a `/`) is refused. The dir is made 0700 and the
+//! plain file name (empty, `.`, or with a `/`) is refused. The dir is made 0700 and the
 //! socket 0600: only the user who runs haest reaches it. Both files go when
 //! the transport ends; a run that crashed leaves them, and [`running_sessions`]
 //! removes them once nothing answers on the socket.
@@ -123,8 +123,8 @@ impl UnixSocket {
     /// cannot be made, or a live session already holds the socket
     /// ([`InUse`](TransportError::InUse)), and
     /// [`StreamId`](TransportError::StreamId) when the backend's stream id is
-    /// not a plain file name (empty, or with a `/` or a NUL): nothing is
-    /// made then.
+    /// not a plain file name (empty, `.`, or with a `/` or a NUL): nothing
+    /// is made then.
     pub fn attach(
         self,
         backend: impl Into<BackendRef>,
@@ -133,7 +133,8 @@ impl UnixSocket {
         let backend: BackendRef = backend.into();
         let meta = backend.meta();
         // Both files are named after it, and removed when the transport ends.
-        if meta.sid.is_empty() || meta.sid.contains(['/', '\0']) {
+        // `.` names `..json`, whose `with_extension` is the dir's parent.
+        if matches!(meta.sid.as_str(), "" | ".") || meta.sid.contains(['/', '\0']) {
             return Err(TransportError::StreamId(meta.sid));
         }
         private_dir(&self.dir)?;
