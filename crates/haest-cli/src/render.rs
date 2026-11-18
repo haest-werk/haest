@@ -16,7 +16,7 @@ mod held;
 mod inert;
 mod stream;
 
-use std::{borrow::Cow, collections::VecDeque, io::Write, sync::mpsc::Sender};
+use std::{borrow::Cow, io::Write, sync::mpsc::Sender};
 
 use haest::{
     LoopEvent, StopReason, ToolCall, Usage,
@@ -74,11 +74,9 @@ pub(crate) struct Renderer<O: Write, E: Write> {
     /// The stream this terminal shows has ended: a question asked now is
     /// never drawn.
     ended: bool,
-    /// What came after the question while it waited, in order, shown once it
-    /// is answered: the question stays the last thing on the screen.
-    held: Option<VecDeque<Held>>,
-    /// Held lines let go of because too many waited.
-    held_dropped: usize,
+    /// What came after the question while it waited, shown once it is
+    /// answered: the question stays the last thing on the screen.
+    held: Option<Held>,
 }
 
 const DIM: &str = "\x1b[2m";
@@ -106,7 +104,6 @@ impl<O: Write, E: Write> Renderer<O, E> {
             question: None,
             ended: false,
             held: None,
-            held_dropped: 0,
         }
     }
 

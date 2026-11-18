@@ -32,8 +32,8 @@ fn asking<O: std::io::Write, E: std::io::Write>(
 
 /// While the terminal's own question waits, nothing else reaches the screen:
 /// not a subagent's many-line description that draws a question of its own,
-/// a tool line or the main agent's answer. Once it is answered they follow,
-/// in order.
+/// a tool line or the main agent's answer (stdout may be the screen too).
+/// Once it is answered they follow, in order.
 #[test]
 fn nothing_lands_below_the_question_until_it_is_answered() {
     let question = "  touch PWNED\n  rm -rf ./build\nAllow Bash? deletes (2 lines above)\n[y]es / [a]lways / [N]o: ";
@@ -44,7 +44,7 @@ fn nothing_lands_below_the_question_until_it_is_answered() {
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let (out_then, err_then);
     {
-        let mut r = Renderer::new(&mut out, &mut err, false, false);
+        let mut r = Renderer::new(&mut out, &mut err, false, false).inert_answer();
         let mut drawn = asking(&mut r, 1, question);
         r.frame(&ask_frame(1, question));
         assert_eq!(drawn.try_recv(), Ok(()), "its prompter is told");
@@ -158,6 +158,72 @@ fn a_question_the_ended_stream_never_draws_tells_its_prompter() {
     assert_eq!(waited.try_recv(), Err(TryRecvError::Closed));
     let mut late = asking(&mut r, 2, "Allow Bash?");
     assert_eq!(late.try_recv(), Err(TryRecvError::Closed));
+}
+
+/// The number in the last line of `text` (a note's count).
+fn count_in_last_line(text: &str) -> Option<usize> {
+    let last = text.lines().last()?;
+    last.split(|c: char| !c.is_ascii_digit())
+        .find(|n| !n.is_empty())?
+        .parse()
+        .ok()
+}
+
+/// Past the cap the oldest held LINES are let go of, counted as the lines
+/// they were; the answer's text never is, so `-p ... > out.md` keeps all of
+/// it.
+#[test]
+fn held_answer_text_is_never_let_go_of() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    {
+        let mut r = Renderer::new(&mut out, &mut err, false, false).inert_answer();
+        let _drawn = asking(&mut r, 1, "Allow Bash?");
+        r.frame(&ask_frame(1, "Allow Bash?"));
+        r.event(&LoopEvent::TextDelta {
+            text: "HEAD\n".into(),
+        });
+        r.notice(Level::Info, "oldest a\noldest b\noldest c");
+        r.event(&LoopEvent::TextDelta {
+            text: "MIDDLE\n".into(),
+        });
+        for n in 0..2000 {
+            r.notice(Level::Info, &format!("line {n}"));
+        }
+        // Given up: the question's line is ended before what waited.
+        r.answered(false);
+    }
+    let (out, err) = (
+        String::from_utf8(out).unwrap(),
+        String::from_utf8(err).unwrap(),
+    );
+    assert_eq!(out, "HEAD\nMIDDLE\n", "the answer's start was let go of");
+    assert!(!err.contains("oldest"), "the oldest line stays: {err}");
+    assert!(err.contains("\nline 0\n") && err.contains("\nline 1999\n"));
+    let note = err.lines().last();
+    assert_eq!(count_in_last_line(&err), Some(3), "{note:?}");
+}
+
+/// Answer text into a regular file never reaches the screen, so it is not
+/// held while the question waits.
+#[test]
+fn answer_text_into_a_file_is_not_held() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let out_then;
+    {
+        let mut r = Renderer::new(&mut out, &mut err, false, false);
+        let _drawn = asking(&mut r, 1, "Allow Bash?");
+        r.frame(&ask_frame(1, "Allow Bash?"));
+        r.event(&LoopEvent::TextDelta {
+            text: "meanwhile".into(),
+        });
+        out_then = r.out.len();
+        r.answered(true);
+    }
+    assert_eq!(
+        out_then,
+        "meanwhile".len(),
+        "held, though it goes to a file"
+    );
 }
 
 /// A watcher shows another terminal's question on a line of its own: nothing

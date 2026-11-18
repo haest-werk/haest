@@ -21,35 +21,81 @@ pub(super) struct Question {
     drawn: Option<oneshot::Sender<()>>,
 }
 
+/// What came after the question while it waited, in order, shown once it is
+/// answered.
+#[derive(Default)]
+pub(super) struct Held {
+    pieces: VecDeque<Piece>,
+    /// How many of the pieces are lines.
+    lines: usize,
+    /// Lines let go of because too many waited.
+    dropped: usize,
+}
+
 /// A piece of output that waits for the question's answer.
-pub(super) enum Held {
+enum Piece {
     /// Answer text for stdout (consecutive pieces in one).
     Out(String),
-    /// A line for stderr.
+    /// A line for stderr (a notice may take several rows).
     Line(String),
 }
 
-/// At most this many pieces wait for a question's answer; past it the oldest
-/// is let go of, and counted.
+/// At most this many lines wait for a question's answer; past it the oldest
+/// is let go of, and counted. Answer text is never let go of: it is the
+/// run's output, and the file it goes into keeps all of it.
 const MAX_HELD: usize = 2000;
 
-fn hold(held: &mut VecDeque<Held>, dropped: &mut usize, piece: Held) {
-    if held.len() == MAX_HELD {
-        held.pop_front();
-        *dropped += 1;
+impl Held {
+    /// Answer text, after what waits.
+    fn out(&mut self, text: &str) {
+        match self.pieces.back_mut() {
+            Some(Piece::Out(run)) => run.push_str(text),
+            _ => self.pieces.push_back(Piece::Out(text.to_owned())),
+        }
     }
-    held.push_back(piece);
+
+    /// A line, after what waits; past [`MAX_HELD`] lines the oldest goes.
+    fn line(&mut self, line: String) {
+        if self.lines >= MAX_HELD {
+            self.let_the_oldest_line_go();
+        }
+        self.pieces.push_back(Piece::Line(line));
+        self.lines += 1;
+    }
+
+    /// The oldest line goes, counted as the rows it takes, and the answer
+    /// text on either side of it is one piece again.
+    fn let_the_oldest_line_go(&mut self) {
+        let oldest = self.pieces.iter().position(|p| matches!(p, Piece::Line(_)));
+        let Some(i) = oldest else {
+            return;
+        };
+        if let Some(Piece::Line(line)) = self.pieces.remove(i) {
+            self.lines -= 1;
+            self.dropped += line.split('\n').count();
+        }
+        let before = i.checked_sub(1).and_then(|b| self.pieces.get(b));
+        let joins = matches!(
+            (before, self.pieces.get(i)),
+            (Some(Piece::Out(_)), Some(Piece::Out(_)))
+        );
+        if joins
+            && let Some(Piece::Out(after)) = self.pieces.remove(i)
+            && let Some(Piece::Out(before)) = self.pieces.get_mut(i - 1)
+        {
+            before.push_str(&after);
+        }
+    }
 }
 
 impl<O: Write, E: Write> Renderer<O, E> {
-    /// `text` to stdout, or held while the question waits.
+    /// `text` to stdout, or held while the question waits. Into a regular
+    /// file it never reaches the screen, and is not held.
     pub(super) fn put_out(&mut self, text: &str) {
-        if let Some(held) = &mut self.held {
-            match held.back_mut() {
-                Some(Held::Out(run)) => run.push_str(text),
-                _ => hold(held, &mut self.held_dropped, Held::Out(text.to_owned())),
-            }
-            return;
+        if self.inert_answer
+            && let Some(held) = &mut self.held
+        {
+            return held.out(text);
         }
         let _ = write!(self.out, "{text}");
         let _ = self.out.flush();
@@ -59,7 +105,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
     /// while the question waits.
     pub(super) fn put_line(&mut self, line: String) {
         if let Some(held) = &mut self.held {
-            return hold(held, &mut self.held_dropped, Held::Line(line));
+            return held.line(line);
         }
         match &self.above {
             Some(above) if above.send(line.clone()).is_ok() => {}
@@ -131,7 +177,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
         let text = self.paint(YELLOW, &inert(text));
         let _ = write!(self.err, "{text}");
         let _ = self.err.flush();
-        self.held.get_or_insert_with(VecDeque::new);
+        self.held.get_or_insert_with(Held::default);
         self.drew_question();
     }
 
@@ -161,17 +207,18 @@ impl<O: Write, E: Write> Renderer<O, E> {
         if !enter {
             let _ = writeln!(self.err);
         }
-        for h in held {
-            match h {
-                Held::Out(text) => self.put_out(&text),
-                Held::Line(line) => self.put_line(line),
+        for piece in held.pieces {
+            match piece {
+                Piece::Out(text) => self.put_out(&text),
+                Piece::Line(line) => self.put_line(line),
             }
         }
-        let dropped = std::mem::take(&mut self.held_dropped);
-        if dropped > 0 {
-            let lines = format!("({dropped} lines not shown while haest asked)");
-            self.note(DIM, &lines);
-        }
+        let lines = match held.dropped {
+            0 => return,
+            1 => "1 line".to_owned(),
+            n => format!("{n} lines"),
+        };
+        self.note(DIM, &format!("({lines} not shown while haest asked)"));
     }
 
     /// A question nothing on this terminal reads the answer to (a watcher's
