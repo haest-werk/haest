@@ -8,8 +8,20 @@
 //!   (`outside-project`): applying writes, creates and deletes only at
 //!   `root/path` itself, never through a link out of the project.
 //!
-//! A change the disk still refuses (permissions, a full disk) fails alone
-//! (`write-failed`); the apply goes on with the rest.
+//! A file goes on the disk whole or not at all (`replace.rs`): the
+//! sandbox's version is written to a new file beside it, which takes the
+//! file's permission bits, then renamed over it. A change the disk still
+//! refuses (permissions, a full disk) fails alone (`write-failed`) with the
+//! human's file as it was, still listed (not a conflict) for an apply once
+//! the disk takes it; the apply goes on with the rest. A file the human
+//! made read-only is refused, never replaced. A file a new one would not
+//! stand in for is written in place, as before: one with another hard
+//! link, one whose owner or group a new file would not have, one in a
+//! directory that takes no new file. The trade-off: a file replaced so does
+//! not keep its extended attributes or ACLs, and a kill partway (or, rarely,
+//! an apply dropped just as the system starts the write it began) can leave
+//! the new file, `.<name>.haest-<pid>-<n>`, beside it, never a file cut
+//! short.
 //!
 //! Deletes go first, then the writes: on a disk that reads two spellings as
 //! one name, a rename by case (`/readme.md` deleted, `/README.md` added)
@@ -330,7 +342,7 @@ impl OverlayChanges {
             if let Some(parent) = real.parent() {
                 disk.create_dir_all(parent).await?;
             }
-            disk.write(&real, &self.overlay.read(path).await?).await?;
+            replace::put_file(disk, &real, &self.overlay.read(path).await?).await?;
         }
         self.carry_mode(path, s.change.kind, s.mine, &real).await?;
         Ok(took)
@@ -391,5 +403,6 @@ impl OverlayChanges {
     }
 }
 
+mod replace;
 #[cfg(test)]
 mod tests;

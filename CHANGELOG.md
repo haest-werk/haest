@@ -520,6 +520,19 @@ write instead.
   The directory's delete is now a conflict too, listed with the file, and
   applying deletes only what under it is not a conflict. The same holds
   for a save the human makes while the apply runs.
+- An apply the disk stopped partway (a full disk) had already emptied the
+  file it was writing: the human's version was gone, the change failed,
+  and since the disk then held neither version, every later list showed
+  it as a conflict and every apply skipped it. A kill during the write
+  left the same, unreported. A file now goes on the disk whole or not at
+  all: the sandbox's version is written to a new file beside it, with the
+  file's permission bits, and renamed over it. A failure leaves the
+  human's file as it was and the change listed, to apply once there is
+  room. A read-only file is still refused; a file with another hard link,
+  one whose owner or group a new file would not have, and one in a
+  directory that takes no new file are written in place as before. A
+  replaced file does not keep its extended attributes or ACLs, and a kill
+  partway can leave the new file (`.<name>.haest-<pid>-<n>`) beside it.
 - An apply dropped partway lost the files of a tree the sandbox had moved.
   After `mv src gen`, the files under `gen` were listed only by walking
   `gen`, and only until `gen` was on the disk; the apply deletes first, so
