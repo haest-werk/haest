@@ -37,7 +37,7 @@ mod term;
 use std::{
     collections::HashMap,
     ffi::OsString,
-    io::{IsTerminal, Read},
+    io::{IsTerminal, Read, Write},
     path::PathBuf,
     process::ExitCode,
     sync::Arc,
@@ -50,13 +50,14 @@ use haest::{
     session::{Hub, HubOptions, SessionPrompter, start},
     settings::Settings,
     transport::{Attached, Broker, Ended, Grant, Stdio, UnixSocket},
-    wire::Origin,
+    wire::{Level, Origin, encode_line},
     workspace::RealFs,
 };
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     args::{Args, Command},
+    changes::Sandbox,
     commands::Outcome,
     mods::{CliPrompter, TermPrompter},
     run::{Brakes, Session},
@@ -160,6 +161,25 @@ async fn stdio_mode(session: &Session) -> ExitCode {
         Ended::Failed(e) => fail(1, format!("reading stdin: {}", report(&e))),
         other => fail(1, format!("the connection ended: {other}")),
     }
+}
+
+/// A `--stdio` run is over, its conversation closed: what the sandbox still
+/// holds goes when haest exits, now, and the parent cannot apply it (the
+/// wire has no /apply). So it is said, as print mode says it: on stdout as
+/// the stream's last frame (the connection has ended, so it is written
+/// here) and on stderr. Asked once the conversation has closed, so nothing
+/// changes the sandbox after.
+async fn stdio_lost(ui: &TermUi, sandbox: &Sandbox) {
+    let Some(lost) = sandbox.unapplied().await else {
+        return;
+    };
+    let text = format!("{lost}\nRun with -w real to edit the project directly.");
+    if let Some(frame) = ui.last_notice(Level::Warning, &text).await {
+        let mut out = std::io::stdout().lock();
+        let _ = out.write_all(encode_line(&*frame).as_bytes());
+        let _ = out.flush();
+    }
+    let _ = writeln!(std::io::stderr().lock(), "{}", render::inert(&text));
 }
 
 /// The control socket, when the setting opens one: another program here
@@ -390,6 +410,9 @@ async fn main() -> ExitCode {
         Err(e) => return ended(hub, shown, 2, build_failed(e)).await,
     };
     let brakes = Arc::new(Brakes::of(&rt));
+    // Held here, the sandbox lives until haest exits, also when a peer
+    // closes the conversation first.
+    let sandbox = Sandbox::of(&rt);
     let session = start(rt, hub.clone());
     let interrupts = run::watch_interrupts(brakes.clone(), hub.subscribe(hub.last_seq()));
     let _control = control_socket(&session, control, &ui);
@@ -411,6 +434,9 @@ async fn main() -> ExitCode {
         .await;
     session.close().await;
     drop(held);
+    if stdio && let Some(sandbox) = &sandbox {
+        stdio_lost(&ui, sandbox).await;
+    }
     // The link hands the broker the last frames, then ends; a broker that
     // does not read them is not waited for long.
     if let Some(mut link) = link

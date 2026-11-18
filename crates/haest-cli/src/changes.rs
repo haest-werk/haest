@@ -3,18 +3,18 @@
 //! the model can ask for them, never run them.
 //!
 //! The sandbox lives in this process: what is not applied when haest exits is
-//! gone, so [`unapplied`] is asked before every exit.
+//! gone, so [`Sandbox::unapplied`] is asked before every exit. haest holds the
+//! [`Sandbox`] apart from the conversation, so it outlives a conversation a
+//! peer closed, until haest exits.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use haest::core::workspace::{ApplyReport, Change, ChangeKind, ChangeSet};
+use haest::core::workspace::{ApplyReport, Change, ChangeKind, ChangeSet, ChangeSetRef};
 
 use crate::term::Runtime;
 
 /// Diff text shown by /changes before it is cut; the full list is always shown.
 const MAX_DIFF_CHARS: usize = 12_000;
-
-const REAL_FS: &str = "This conversation runs on the real file system: every edit is already on disk, there is nothing to apply.";
 
 fn line_of(c: &Change) -> String {
     let sign = match c.kind {
@@ -59,22 +59,66 @@ async fn diffs_of(set: &dyn ChangeSet, list: &[Change]) -> String {
     cut_diffs(diffs)
 }
 
-pub(crate) async fn show(rt: &Runtime) {
-    let Some(set) = rt.agent().deps().shared().workspace().changes() else {
-        return rt.hooks().info(REAL_FS);
-    };
-    let list = set.list().await;
-    if list.is_empty() {
-        return rt
-            .hooks()
-            .info("The sandbox has changed nothing in the project.");
+/// A sandbox conversation's changes to the project, and the project they go
+/// to. Cheap to clone: every clone is the same sandbox, and it lives as long
+/// as one does.
+#[derive(Clone)]
+pub(crate) struct Sandbox {
+    set: ChangeSetRef,
+    cwd: PathBuf,
+}
+
+impl Sandbox {
+    /// `rt`'s sandbox; None when its workspace is another.
+    pub(crate) fn of(rt: &Runtime) -> Option<Self> {
+        let set = rt.agent().deps().shared().workspace().changes()?;
+        let cwd = rt.hooks().settings().cwd.clone();
+        Some(Self { set, cwd })
     }
-    let diffs = diffs_of(set.as_ref(), &list).await;
-    rt.hooks().info(&format!(
-        "{} change(s) in the sandbox, not on disk yet:\n{}\n\n{diffs}\nRun /apply to write them to the project.",
-        list.len(),
-        lines_of(&list)
-    ));
+
+    /// What /changes shows: each change, and its diff.
+    pub(crate) async fn changes(&self) -> String {
+        let list = self.set.list().await;
+        if list.is_empty() {
+            return "The sandbox has changed nothing in the project.".to_string();
+        }
+        let diffs = diffs_of(self.set.as_ref(), &list).await;
+        format!(
+            "{} change(s) in the sandbox, not on disk yet:\n{}\n\n{diffs}\nRun /apply to write them to the project.",
+            list.len(),
+            lines_of(&list)
+        )
+    }
+
+    /// /apply: every change it can put on the disk, and what it says of
+    /// them; true when some were left in the sandbox (a warning).
+    pub(crate) async fn apply(&self) -> (String, bool) {
+        let report = self.set.apply().await;
+        apply_message(&report, &self.cwd)
+    }
+
+    /// What exiting now would throw away, as the warning to print; None = nothing.
+    pub(crate) async fn unapplied(&self) -> Option<String> {
+        let list = self.set.list().await;
+        if list.is_empty() {
+            return None;
+        }
+        Some(format!(
+            "{} change(s) are only in the sandbox and are lost when haest exits:\n{}",
+            list.len(),
+            lines_of(&list)
+        ))
+    }
+}
+
+/// What /changes and /apply say when there is no sandbox.
+const REAL_FS: &str = "This conversation runs on the real file system: every edit is already on disk, there is nothing to apply.";
+
+pub(crate) async fn show(rt: &Runtime) {
+    match Sandbox::of(rt) {
+        Some(sandbox) => rt.hooks().info(&sandbox.changes().await),
+        None => rt.hooks().info(REAL_FS),
+    }
 }
 
 /// What /apply tells the human, and whether it is a warning (something was
@@ -114,11 +158,10 @@ fn apply_message(report: &ApplyReport, cwd: &Path) -> (String, bool) {
 }
 
 pub(crate) async fn apply(rt: &Runtime) {
-    let Some(set) = rt.agent().deps().shared().workspace().changes() else {
+    let Some(sandbox) = Sandbox::of(rt) else {
         return rt.hooks().info(REAL_FS);
     };
-    let report = set.apply().await;
-    match apply_message(&report, &rt.hooks().settings().cwd) {
+    match sandbox.apply().await {
         (text, true) => rt.hooks().warn(&text),
         (text, false) => rt.hooks().info(&text),
     }
@@ -126,16 +169,7 @@ pub(crate) async fn apply(rt: &Runtime) {
 
 /// What exiting now would throw away, as the warning to print; None = nothing.
 pub(crate) async fn unapplied(rt: &Runtime) -> Option<String> {
-    let set = rt.agent().deps().shared().workspace().changes()?;
-    let list = set.list().await;
-    if list.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "{} change(s) are only in the sandbox and are lost when haest exits:\n{}",
-        list.len(),
-        lines_of(&list)
-    ))
+    Sandbox::of(rt)?.unapplied().await
 }
 
 #[cfg(test)]

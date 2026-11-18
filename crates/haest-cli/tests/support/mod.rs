@@ -287,6 +287,23 @@ impl Parent {
         self.until(|f| ty(f) == "approval_ask").pop().unwrap()
     }
 
+    /// Close stdin: the parent has nothing more to ask.
+    pub(crate) fn close_stdin(&mut self) {
+        drop(self.stdin.take());
+    }
+
+    /// Every frame still to come, until haest closes its stdout.
+    pub(crate) fn rest(&self) -> Vec<Value> {
+        let mut seen = Vec::new();
+        loop {
+            match self.frames.recv_timeout(Duration::from_secs(20)) {
+                Ok(frame) => seen.push(frame),
+                Err(mpsc::RecvTimeoutError::Disconnected) => return seen,
+                Err(e) => panic!("{e} waiting for stdout to close; seen: {seen:#?}"),
+            }
+        }
+    }
+
     /// Close stdin and wait for the exit: its code and stderr.
     pub(crate) fn finish(mut self) -> (Option<i32>, String) {
         drop(self.stdin.take());

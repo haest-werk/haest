@@ -153,6 +153,52 @@ fn a_close_ends_the_run_while_the_parent_still_holds_stdin() {
     assert_eq!(status, Some(0));
 }
 
+/// A run in the sandbox whose model writes `new.txt`, ended by `end` once
+/// that turn is over: the parent is told, in a notice frame and on stderr,
+/// that the file is only in the sandbox, which goes when haest exits. The
+/// wire has no apply, so this is all the parent can learn of it.
+fn a_sandbox_edit_is_named_when_the_run_ends(name: &str, end: impl FnOnce(&mut Parent)) {
+    let home = Home::new(name);
+    let model = FakeModel::new([
+        bash("echo sandboxed > new.txt"),
+        Reply::Text("wrote new.txt".into()),
+    ]);
+    home.serve(&model);
+    let mut parent = Parent::start(&home, &["--tools", "bash"]);
+    parent.turn("t1", "write new.txt");
+    let frames = parent.reply("t1");
+    assert_eq!(result(frames.last().unwrap())["stopReason"], "end_turn");
+    assert!(frames.iter().any(|f| ty(f) == "tool_result"), "{frames:#?}");
+
+    end(&mut parent);
+    let rest = parent.rest();
+    let (code, err) = parent.finish();
+    assert_eq!(code, Some(0), "{err}");
+    let named = rest.iter().find(|f| {
+        ty(f) == "notice"
+            && f["level"] == "warning"
+            && f["text"].as_str().unwrap().contains("new.txt")
+    });
+    assert!(named.is_some(), "no notice names new.txt: {rest:#?}");
+    assert!(err.contains("new.txt"), "stderr does not name it: {err}");
+    assert!(
+        !home.0.join("w/new.txt").exists(),
+        "the sandbox wrote the disk"
+    );
+}
+
+#[test]
+fn stdin_closing_on_sandbox_edits_tells_the_parent_what_is_lost() {
+    a_sandbox_edit_is_named_when_the_run_ends("stdio-lost-eof", Parent::close_stdin);
+}
+
+#[test]
+fn a_close_on_sandbox_edits_tells_the_parent_what_is_lost() {
+    a_sandbox_edit_is_named_when_the_run_ends("stdio-lost-close", |parent| {
+        parent.control("x", "close");
+    });
+}
+
 #[test]
 fn stdio_takes_no_prompt() {
     let home = Home::new("stdio-prompt");

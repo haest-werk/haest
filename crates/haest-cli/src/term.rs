@@ -12,9 +12,9 @@ use std::{
 use haest::{
     core::remedy::Limit,
     runtime::{HubUi, Ui},
-    session::{Body, Hub, Subscription},
+    session::{Body, Frame, Hub, Subscription},
     tools::SubagentEvent,
-    wire::{Envelope, Outbound, Path, WIRE_V, now_ms},
+    wire::{Envelope, Level, Outbound, Path, WIRE_V, now_ms},
 };
 use tokio::{sync::oneshot, task::JoinHandle};
 
@@ -111,6 +111,22 @@ impl TermUi {
             drawn,
             enter: false,
         }
+    }
+
+    /// `text` as a notice once the stream has ended: numbered and kept as its
+    /// next frame, which no subscriber gets any more, so it is returned for
+    /// the caller to hand on, as the stream keeps it. None if the ring lost
+    /// it to a frame published at the same time.
+    pub(crate) async fn last_notice(&self, level: Level, text: &str) -> Option<Arc<Frame>> {
+        let hub = self.lines.hub();
+        let seq = hub.notice(level, text);
+        let mut kept = hub.subscribe(seq.saturating_sub(1));
+        while let Some(frame) = kept.recv().await {
+            if frame.seq >= seq {
+                return (frame.seq == seq).then_some(frame);
+            }
+        }
+        None
     }
 }
 
