@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use haest_core::error::report;
-use haest_http::{Bytes, HttpError, Method, Request};
+use haest_http::{Bytes, HttpError, Method, Request, check_endpoint_url};
 use serde_json::Value;
 
 use super::GithubTracker;
@@ -149,7 +149,8 @@ impl GithubTracker {
     }
 
     /// One request; the answer's JSON (Null for an empty body). A 404 or 410
-    /// becomes `NotFound(missing)`.
+    /// becomes `NotFound(missing)`. An API root with an `@` past its host is
+    /// never sent to ([`check_endpoint_url`]): `Failed`, saying why.
     pub(super) async fn call(
         &self,
         method: Method,
@@ -157,6 +158,7 @@ impl GithubTracker {
         body: Option<Value>,
         missing: &str,
     ) -> Result<Value, TrackerError> {
+        check_endpoint_url(&self.api).map_err(|e| TrackerError::Failed(e.to_string()))?;
         let (status, answer) = self
             .exchange(self.request(method, url, body.as_ref()))
             .await

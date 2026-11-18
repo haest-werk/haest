@@ -169,6 +169,12 @@ impl GithubTracker {
     /// Another API root: GitHub Enterprise Server's `https://HOST/api/v3`
     /// (its GraphQL endpoint is then `https://HOST/api/graphql`). The token,
     /// if any, goes to this host.
+    ///
+    /// A root with an `@` past its host is never sent to: every call fails
+    /// (`Failed`) saying why (haest-http's `check_endpoint_url`). A password
+    /// holding an unescaped `/`, `?` or `#` ends the host a URL parser reads
+    /// there, so the token and the rest of the password would go to another
+    /// host; it goes in percent-encoded (`/` as `%2F`).
     #[must_use]
     pub fn with_api_url(mut self, url: impl Into<String>) -> Self {
         let mut url = url.into();

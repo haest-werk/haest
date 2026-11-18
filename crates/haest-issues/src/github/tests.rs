@@ -249,6 +249,34 @@ fn the_token_never_shows_in_debug_output() {
     assert!(shown.contains("ghe.example.com/api/v3"), "{shown}");
 }
 
+/// An API root whose password holds an unescaped `/` reads to a URL parser
+/// as another host (`ci`, port 1234), which would be sent the token and the
+/// rest of the password: no call goes out, and each says why and how to
+/// write the root. Percent-encoded, it is sent to.
+#[tokio::test]
+async fn an_api_root_a_parser_misreads_is_never_sent_to() {
+    let http = FakeHttp::new([ok(issue(1, "one")), ok(issue(1, "one"))]);
+    let gh = github(http.clone()).with_api_url("https://ci:1234/s3cret@ghe.example/api/v3");
+    for call in [
+        gh.get("1").await.map(|_| ()),
+        gh.list(&filter(5)).await.map(|_| ()),
+    ] {
+        let Err(TrackerError::Failed(why)) = call else {
+            panic!("{call:?}");
+        };
+        assert!(!why.contains("s3cret") && !why.contains("1234"), "{why}");
+        assert!(
+            why.contains("%2F") && why.contains("ghe.example/api/v3"),
+            "{why}"
+        );
+    }
+    assert!(http.calls().is_empty(), "{:?}", http.calls());
+
+    let encoded = github(http.clone()).with_api_url("https://ci:1234%2Fs3cret@ghe.example/api/v3");
+    assert!(encoded.get("1").await.is_ok());
+    assert_eq!(http.calls().len(), 1);
+}
+
 /// The one live check: reads haest's own public repository with no token.
 /// `cargo test -p haest-issues -- --ignored` runs it.
 #[tokio::test]
