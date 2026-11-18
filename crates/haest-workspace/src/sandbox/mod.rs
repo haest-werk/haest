@@ -79,7 +79,9 @@ fn own_commands() -> Vec<ShellCommandRef> {
 /// conflict until a delete frees that name
 /// ([`OverlayChanges`](crate::OverlayChanges)). A case-folding directory on
 /// Linux (`chattr +F`) is not told apart: there, names read as the disk finds
-/// them.
+/// them. Nor are the names in a directory the sandbox may enter but not list
+/// (mode `0311`): asked under another spelling, or through a symlink, they
+/// read as the disk finds them too.
 ///
 /// # Examples
 ///
