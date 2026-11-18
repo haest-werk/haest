@@ -213,9 +213,9 @@ write instead.
   the command to 200 characters without saying so, and the haest command
   printed that preview raw. A command padded past the cut with spaces, or
   one with a carriage return and an erase-line in it, showed as
-  `rm -rf ./build` while a hidden `; touch ...` ran on "y" (in the terminal
-  and over `--stdio`). And the terminal took whatever line was already
-  waiting as the answer: a "y" typed at text that only looked like a
+  `rm -rf ./build` while a hidden `; touch ...` ran on "y". And the
+  terminal took whatever line was already waiting as the answer: a "y"
+  typed at text that only looked like a
   question (the model's own words) or at an ask that was then withdrawn
   approved the next real one, a `rm -rf` nobody had seen yet. The ask now
   carries the whole command, and the haest command:
@@ -264,8 +264,8 @@ write instead.
   `ResponsesOptions`, `CustomProviderConfig`, haest-tools'
   `GenerateImageOptions` and haest-issues' `GithubTracker` their base URL
   (a gateway that takes its credentials in the URL); and haest-mcp's
-  `HttpTransport` (and the `McpTransport`, `McpServerConfig` and
-  `RuntimeInputs` holding one) its own, so
+  `HttpTransport` (and the `McpTransport` and `McpServerConfig` holding
+  one) its own, so
   `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
   password and the key. A URL in haest's Debug output now shows no
   userinfo, no query value and no fragment
@@ -298,9 +298,8 @@ write instead.
 - `StdioTransport` printed its arguments in its Debug output, where
   `.mcp.json` puts a filled-in `${API_TOKEN}` (mcp-remote's `--header
   "Authorization: Bearer ${API_TOKEN}"`), so `McpServerConfig`,
-  `ProjectMcp`, haest-config's `Loaded` and haest-runtime's
-  `RuntimeInputs` showed the token. Debug now shows how many arguments
-  there are.
+  `ProjectMcp` and haest-config's `Loaded` showed the token. Debug now
+  shows how many arguments there are.
 - haest-config's `Loader` and `Loaded` printed the whole environment they
   were given in their Debug output, API keys included, and `Loaded` every
   providers.json entry's `apiKey`; `Config` printed each `env` variable's
@@ -317,29 +316,29 @@ write instead.
   then no URL is named.
 - An MCP server reached over HTTP with its key in the URL
   (`https://mcp.example.com/mcp?api_key=...`) showed the key whenever a
-  request to it failed: in `McpStartError`'s cause (so in `report`, the
-  hub's log line and `McpHub`'s Debug output), in the warning haest-runtime
-  gives for a server that did not start, which the `haest` command puts
-  into the session stream (`--json`, and `haest ctl` and the broker now),
+  request to it failed: in `McpStartError`'s cause (so in `report` and the
+  hub's log line), in the warning haest-runtime gives for a server that
+  did not start, which the `haest` command puts into the session stream
+  (`--json`, and `haest ctl` and the broker now),
   and in a failed tool call's answer to the model. rmcp's HTTP client now
   runs on a reqwest client whose errors name the URL without its query,
   fragment or userinfo, and name none when an `@` past its host may end a
   password.
 - A configured URL whose password held an unescaped `/`, `?` or `#` sent
   the rest of that password to the wrong host, in the clear. A URL parser
-  ends the host at the first of them, so
-  `wss://user:1234/s3cret@broker.example/agents` dialed the host `user` on
-  port 1234 and sent `/s3cret@broker.example/agents` as the path; a
-  provider's base URL, an MCP server's URL, GenerateImage's base URL and
-  a GitHub Enterprise API root sent their key or token header along with
-  it. haest now refuses a configured URL with an `@` past its host before
-  anything connects: `broker_url` at load, naming where it was set; a
-  provider's base URL when the provider is resolved, naming the variable
-  or the providers.json key it came from (`ANTHROPIC_BASE_URL`,
-  `providers.json baseURL`), and again before each
+  ends the host at the first of them, so a base URL
+  `https://user:1234/s3cret@gw.example/v1` dialed the host `user` on port
+  1234 and sent `/s3cret@gw.example/v1/...` as the path; a provider's base
+  URL, an MCP server's URL, GenerateImage's base URL and a GitHub
+  Enterprise API root sent their key or token header along with it. haest
+  now refuses a configured URL with an `@` past its host before anything
+  connects: a provider's base URL when the provider is resolved, naming
+  the variable or the providers.json key it came from
+  (`ANTHROPIC_BASE_URL`, `providers.json baseURL`), and again before each
   request; an MCP server's URL when the server starts (that server fails,
-  the others start); the broker link, GenerateImage and the GitHub
-  tracker before they send. Each refusal shows the URL without its
+  the others start); GenerateImage and the GitHub tracker before they
+  send. The new broker link refuses such a URL too (see haest-transport
+  and haest-config). Each refusal shows the URL without its
   credentials and says how to write it: percent-encode the password (`/`
   as `%2F`, `?` as `%3F`, `#` as `%23`, `\` as `%5C`, `@` as `%40`). A
   configured URL that needs a real `@` in its path or query cannot be used
