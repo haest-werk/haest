@@ -540,9 +540,10 @@ write instead.
   owner or group a new file would not have, and one where the disk will
   not make the new file, make it its owner's alone, or move it over the
   old one (a directory that takes no new name, a share mounted for one
-  fixed owner the run is not, a path just short of the system's cap, a
-  file that is a mount point of its own, as one bind-mounted into a dev
-  container). A replaced file does not keep its extended attributes or
+  fixed owner the run is not, a file system that cannot set a mode at
+  all, as a FUSE one without setattr, a path just short of the system's
+  cap, a file that is a mount point of its own, as one bind-mounted into
+  a dev container). A replaced file does not keep its extended attributes or
   ACLs, and a process that holds it open to write (a log a server appends
   to, a database) goes on writing to the old file. A kill partway can
   leave the new file's directory (`.<name>.haest-<pid>-<n>`) beside it,
@@ -572,8 +573,8 @@ write instead.
   hard link, one whose owner or group a new file would not have, a
   symlink, and one where the disk will not make the new file, make it its
   owner's alone, or move it over (a share mounted for one fixed owner the
-  run is not, a path just short of the system's cap). A read-only file is
-  still refused.
+  run is not, a FUSE file system without setattr, a path just short of
+  the system's cap). A read-only file is still refused.
 - On a network file system, a write the server refused (no room, a
   quota) read as done. An NFS client reports it only as the file closes,
   and `RealFs::write` and `RealFs::append` ignored what closing it said:

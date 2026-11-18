@@ -35,9 +35,10 @@ pub(super) enum Fault {
     /// A directory made beside `real` passes its group on (setgid), as
     /// Linux makes every directory in one that does: a team's directory.
     Setgid,
-    /// Every chmod is refused (`EPERM`), as on a share mounted for one
-    /// fixed owner the run is not: it makes files, but sets no mode.
-    NoModes,
+    /// Every chmod fails with this OS error: it makes files, but sets no
+    /// mode. `EPERM` on a share mounted for one fixed owner the run is
+    /// not, `ENOSYS` on a FUSE file system that has no setattr.
+    NoModes(i32),
 }
 
 /// The real disk, with `fault` in it.
@@ -184,8 +185,8 @@ impl Fs for Faulty {
         if setgid_dir(p) {
             self.setgid_chmods.lock().unwrap().push(mode);
         }
-        if self.fault == Some(Fault::NoModes) {
-            return Err(io::Error::from_raw_os_error(libc::EPERM));
+        if let Some(Fault::NoModes(code)) = self.fault {
+            return Err(io::Error::from_raw_os_error(code));
         }
         RealFs.chmod(p, mode).await
     }

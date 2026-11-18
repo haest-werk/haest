@@ -148,7 +148,9 @@ async fn put_new(
 ///   mount of its own;
 /// - `ResourceBusy`, `CrossesDevices`: a file that is a mount point of its
 ///   own (one file bind-mounted into the project), which nothing can be
-///   renamed over.
+///   renamed over;
+/// - `Unsupported`: a file system that has no such call at all (`ENOSYS`,
+///   `ENOTSUP`: a FUSE one without setattr cannot set a mode).
 ///
 /// Anything else fails the write, a disk with no room above all: the
 /// bytes would not all go in in place either, and the human's file would
@@ -161,6 +163,7 @@ fn in_place_instead(e: &io::Error) -> bool {
             | io::ErrorKind::ReadOnlyFilesystem
             | io::ErrorKind::ResourceBusy
             | io::ErrorKind::CrossesDevices
+            | io::ErrorKind::Unsupported
     )
 }
 

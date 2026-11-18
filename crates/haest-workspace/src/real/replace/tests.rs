@@ -193,7 +193,15 @@ async fn a_file_whose_new_name_the_system_refuses_is_written_in_place() {
 /// where the disk will not make the new file.
 #[tokio::test]
 async fn a_file_on_a_disk_that_sets_no_mode_is_written_in_place() {
-    assert_applied("notes.txt", Fault::NoModes).await;
+    assert_applied("notes.txt", Fault::NoModes(libc::EPERM)).await;
+}
+
+/// `notes.txt` is on a FUSE file system that has no setattr: every chmod
+/// fails as unsupported. Its edit failed on every apply, and an Edit or
+/// Write of it failed; it is written in place.
+#[tokio::test]
+async fn a_file_on_a_disk_that_cannot_set_a_mode_is_written_in_place() {
+    assert_applied("notes.txt", Fault::NoModes(libc::ENOSYS)).await;
 }
 
 /// The disk has no room for even an empty new file beside `notes.txt`:

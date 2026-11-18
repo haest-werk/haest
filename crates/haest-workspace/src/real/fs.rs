@@ -38,8 +38,9 @@ use tokio::io::AsyncReadExt;
 ///   (another hard link to it, another owner or group, a symlink, a FIFO
 ///   or a device, which it opens once, as `write` does) or the
 ///   disk will not make one, make it its owner's alone or move it over (a
-///   share mounted for one fixed owner, a path just short of the system's
-///   cap): there a full disk still cuts the file short, and says so. A
+///   share mounted for one fixed owner, a FUSE file system without
+///   setattr, a path just short of the system's cap): there a full disk
+///   still cuts the file short, and says so. A
 ///   replaced file does not keep its extended attributes or ACLs, a
 ///   process that holds it open to write goes on writing to the old one,
 ///   the disk needs room for the second copy, and a kill partway can leave
