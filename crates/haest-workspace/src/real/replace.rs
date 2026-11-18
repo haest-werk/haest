@@ -34,34 +34,37 @@ const NAME_PART: usize = 64;
 
 /// Put `bytes` at the real path `real` on `disk`, whole or not at all.
 ///
-/// A file there must still take a write: one the human made read-only is
-/// refused as an in-place write is, never replaced. It is written in place
-/// where a new file would not stand in for it: another name links to it,
-/// it is not a regular file, or the new file would have another owner or
-/// group (another user's file the human may write, a directory that gives
-/// new files its own group). It is written in place, too, where the disk
-/// will not make the new file, make it its owner's alone, or move it over
-/// the real one ([`in_place_instead`]). Where the new file's bytes do not
-/// all go in (a full disk), the write fails and never falls back: in
-/// place they would not all go in either, and the human's file would be
-/// cut short.
+/// It is written in place where a new file would not stand in for the one
+/// there: another name links to it, or it is not a regular file (a
+/// symlink, a FIFO, a device). That one is opened once, as a plain write
+/// opens it: a FIFO opened twice hands its reader an empty message first.
+/// A regular file must still take a write: one the human made read-only
+/// is refused as an in-place write is, never replaced. It is written in
+/// place, too, where the new file would have another owner or group
+/// (another user's file the human may write, a directory that gives new
+/// files its own group), or where the disk will not make the new file,
+/// make it its owner's alone, or move it over the real one
+/// ([`in_place_instead`]). Where the new file's bytes do not all go in (a
+/// full disk), the write fails and never falls back: in place they would
+/// not all go in either, and the human's file would be cut short.
 pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
     let old = if disk.exists(real).await {
+        // What the `Fs` does not carry; None on a disk that is not the
+        // host's own (nothing to keep, then).
+        let old = tokio::fs::symlink_metadata(real).await.ok();
+        if old
+            .as_ref()
+            .is_some_and(|m| m.nlink() > 1 || !m.file_type().is_file())
+        {
+            return disk.write(real, bytes).await;
+        }
         // Opened to write as an in-place write opens it, but nothing is
         // cut or written: refused, the write fails as a plain one would.
         disk.append(real, &[]).await?;
-        // What the `Fs` does not carry; None on a disk that is not the
-        // host's own (nothing to keep, then).
-        tokio::fs::symlink_metadata(real).await.ok()
+        old
     } else {
         None
     };
-    if old
-        .as_ref()
-        .is_some_and(|m| m.nlink() > 1 || !m.file_type().is_file())
-    {
-        return disk.write(real, bytes).await;
-    }
     match put_new(disk, real, old.as_ref(), bytes).await? {
         Put::Replaced => Ok(()),
         Put::InPlace => disk.write(real, bytes).await,

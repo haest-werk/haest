@@ -35,7 +35,8 @@ use tokio::io::AsyncReadExt;
 ///   as it was. The overlay's apply and the tools that rewrite a file go
 ///   through it. A file made read-only is refused. It writes in place, as
 ///   `write` does, where a new file would not stand in for the file
-///   (another hard link to it, another owner or group, a symlink) or the
+///   (another hard link to it, another owner or group, a symlink, a FIFO
+///   or a device, which it opens once, as `write` does) or the
 ///   disk will not make one, make it its owner's alone or move it over (a
 ///   share mounted for one fixed owner, a path just short of the system's
 ///   cap): there a full disk still cuts the file short, and says so. A
@@ -250,30 +251,10 @@ impl Fs for RealFs {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        ffi::CString, os::unix::ffi::OsStrExt, os::unix::fs::OpenOptionsExt, time::Duration,
-    };
+    use std::time::Duration;
 
     use super::*;
-
-    #[expect(
-        unsafe_code,
-        reason = "std cannot make a FIFO, and these tests read one"
-    )]
-    fn mkfifo(path: &Path) {
-        let c = CString::new(path.as_os_str().as_bytes()).unwrap();
-        // SAFETY: `c` is a NUL-terminated path that outlives the call.
-        let made = unsafe { libc::mkfifo(c.as_ptr(), 0o600) };
-        assert_eq!(made, 0, "mkfifo {}", path.display());
-    }
-
-    /// Lets a reader stuck in open() on `fifo` go (it then reads an empty pipe).
-    fn release(fifo: &Path) {
-        let _ = std::fs::OpenOptions::new()
-            .write(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(fifo);
-    }
+    use crate::real::testing::{mkfifo, release};
 
     #[tokio::test]
     async fn a_fifo_is_refused_at_once_never_waited_on() {

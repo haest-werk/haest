@@ -12,6 +12,8 @@ mod fs;
 mod lock;
 mod pipe;
 mod replace;
+#[cfg(test)]
+mod testing;
 mod write;
 
 use async_trait::async_trait;

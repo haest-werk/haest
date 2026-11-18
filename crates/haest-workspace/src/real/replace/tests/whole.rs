@@ -3,14 +3,18 @@
 
 use std::{
     fs::{self, Permissions},
-    os::unix::fs::{MetadataExt, PermissionsExt},
+    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     sync::atomic::Ordering,
+    time::Duration,
 };
 
 use haest_core::fs::Fs;
 
 use super::{faulty::Faulty, names};
-use crate::RealFs;
+use crate::{
+    RealFs,
+    real::testing::{mkfifo, release},
+};
 
 /// The disk fills up while a tool rewrites `notes.txt`. The write emptied
 /// the file first, so the disk stopped it with the human's file cut short:
@@ -65,4 +69,51 @@ async fn the_real_disk_replaces_a_file_whole_and_keeps_its_mode() {
     RealFs.write_whole(&new, b"made\n").await.unwrap();
     assert_eq!(fs::read_to_string(&new).unwrap(), "made\n");
     assert_eq!(names(t.path()), ["new.txt", "notes.txt"]);
+}
+
+/// A Write onto a FIFO a reader reads once (`cat pipe > got`). The whole
+/// write opened it to look at it before it saw what it was: the reader got
+/// an empty message and left, and the write that followed waited for a
+/// reader that never came. It now opens it once, as a plain write does.
+#[tokio::test]
+async fn a_fifo_is_opened_once_and_its_reader_gets_the_bytes() {
+    let t = tempfile::tempdir().unwrap();
+    let fifo = t.path().join("pipe");
+    mkfifo(&fifo);
+    let reader = std::thread::spawn({
+        let fifo = fifo.clone();
+        move || fs::read(fifo)
+    });
+
+    let wait = Duration::from_secs(2);
+    let wrote = tokio::time::timeout(wait, RealFs.write_whole(&fifo, b"x")).await;
+    // Nothing is left waiting on the pipe, whatever came of it.
+    release(&fifo);
+    let got = reader.join().unwrap().unwrap();
+    assert!(matches!(wrote, Ok(Ok(()))), "the write: {wrote:?}");
+    assert_eq!(got, b"x");
+}
+
+/// A symlink is written through, in place: the link stays a link, and the
+/// file it names, in another directory, takes the bytes under its own name.
+#[tokio::test]
+async fn a_symlink_is_written_through_in_place() {
+    let t = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(t.path()).unwrap();
+    let (here, there) = (root.join("here"), root.join("there"));
+    fs::create_dir(&here).unwrap();
+    fs::create_dir(&there).unwrap();
+    let target = there.join("Target.txt");
+    fs::write(&target, "the human's notes\n").unwrap();
+    let before = fs::metadata(&target).unwrap().ino();
+    let link = here.join("link.txt");
+    symlink(&target, &link).unwrap();
+
+    RealFs.write_whole(&link, b"edited\n").await.unwrap();
+    assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+    assert_eq!(fs::read_link(&link).unwrap(), target);
+    assert_eq!(fs::read_to_string(&target).unwrap(), "edited\n");
+    assert_eq!(fs::metadata(&target).unwrap().ino(), before);
+    assert_eq!(names(&here), ["link.txt"]);
+    assert_eq!(names(&there), ["Target.txt"]);
 }
