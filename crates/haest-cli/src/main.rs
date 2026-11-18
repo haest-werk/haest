@@ -109,8 +109,18 @@ fn print_input(args: &Args) -> Option<String> {
     })
 }
 
+/// What a `-p` run that ends with changes only in the sandbox says to do.
+const PRINT_HINT: &str =
+    "Run with -w real to edit the project directly, or interactively and /apply.";
+
 /// `input` asked once ([`print_input`], read before the build).
-async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode {
+async fn print_mode(
+    session: &Session,
+    brakes: &Brakes,
+    input: &str,
+    ui: &TermUi,
+    sandbox: Option<&Sandbox>,
+) -> ExitCode {
     let input = input.to_string();
     let cancel = CancellationToken::new();
     let stop = cancel.clone();
@@ -137,17 +147,26 @@ async fn print_mode(session: &Session, brakes: &Brakes, input: &str) -> ExitCode
         Some(Ok(Outcome::Done | Outcome::Exit)) => ExitCode::SUCCESS,
         Some(Err(_)) => ExitCode::FAILURE,
     };
-    let _ = session
+    let asked = session
         .with(|rt| {
             Box::pin(async move {
                 if let Some(lost) = changes::unapplied(rt).await {
-                    rt.hooks().warn(&format!(
-                        "{lost}\nRun with -w real to edit the project directly, or interactively and /apply."
-                    ));
+                    rt.hooks().warn(&format!("{lost}\n{PRINT_HINT}"));
                 }
             })
         })
         .await;
+    // A peer closed the conversation first. The sandbox is still haest's,
+    // and is asked once the stream has ended, when nothing changes it more.
+    if asked.is_err()
+        && let Some(sandbox) = sandbox
+    {
+        ui.shown().await;
+        if let Some(lost) = sandbox.unapplied().await {
+            let text = format!("{lost}\n{PRINT_HINT}");
+            ui.tell_after_the_end(Level::Warning, &text).await;
+        }
+    }
     code
 }
 
@@ -420,7 +439,10 @@ async fn main() -> ExitCode {
     // The REPL quits with the session held: what waits never starts.
     let (code, held) = match input {
         _ if stdio => (stdio_mode(&session).await, None),
-        Some(input) => (print_mode(&session, &brakes, &input).await, None),
+        Some(input) => {
+            let code = print_mode(&session, &brakes, &input, &ui, sandbox.as_ref()).await;
+            (code, None)
+        }
         None => match repl::repl(&session, &ui, args.prompt_text(), sandbox.clone()).await {
             Ok(hold) => (ExitCode::SUCCESS, Some(hold)),
             Err(e) => (fail(1, e), None),

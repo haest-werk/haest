@@ -319,6 +319,69 @@ fn since(s: &str, at: usize) -> &str {
     &s[at..]
 }
 
+/// A peer closes a `-p` run while its turn runs, after the model wrote a
+/// file in the sandbox: the run still names the file it drops, as every
+/// `-p` run that ends with sandbox edits does.
+#[test]
+fn a_peers_close_of_a_print_run_names_what_the_sandbox_drops() {
+    let home = Home::new("ctl-close-print");
+    let dir = ControlDir::new("closep");
+    let model = FakeModel::new([
+        bash("echo sandboxed > new.txt"),
+        bash("sleep 30"),
+        Reply::Text("done".into()),
+    ]);
+    home.serve(&model);
+    let flag = dir.flag();
+    let args = [
+        "-p",
+        "write new.txt",
+        "--json",
+        "-m",
+        "local:m",
+        "--tools",
+        "bash",
+        "--control-socket",
+        "command",
+        flag.as_str(),
+    ];
+    let run = home
+        .command(&args)
+        .env(LOCAL_KEY.0, LOCAL_KEY.1)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let sid = dir.sid();
+    // The model was asked again: new.txt is written and the sleep runs.
+    for _ in 0..300 {
+        if model.requests().len() >= 2 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    // Its reply may not come: the run exits as the conversation ends.
+    let _peer = send_close(&dir, &sid);
+
+    let run = run.wait_with_output().unwrap();
+    let frames: Vec<Value> = stdout(&run)
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let named = frames.iter().any(|f| {
+        ty(f) == "notice"
+            && f["level"] == "warning"
+            && f["text"].as_str().unwrap().contains("new.txt")
+    });
+    assert!(
+        named,
+        "no warning names new.txt: {frames:#?}\n{}",
+        stderr(&run)
+    );
+    assert!(!home.0.join("w/new.txt").exists());
+}
+
 /// A peer closes the conversation while the human's prompt is open and the
 /// sandbox holds a file the model wrote. The close is served as ever; the
 /// terminal says at once, with no key pressed, that the conversation ended
