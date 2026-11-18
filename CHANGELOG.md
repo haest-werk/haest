@@ -236,6 +236,16 @@ write instead.
   on the way is now asked of the disk itself, by its own spelling, so the
   disk's own rules for names hold, and such a change fails as
   `OutsideProject`.
+- On macOS, applying a sandbox's changes could delete a file from the real
+  project while the report said every change was applied. The disk reads
+  `readme.md` and `README.md` as one file (and `café` in either Unicode
+  spelling, on case-sensitive APFS too); the sandbox tells them apart.
+  `mv readme.md README.md` listed only the old name's delete, and applying
+  it deleted the file. With an edit, the new name was written, then
+  deleted; `mv lib Lib` deleted the whole directory. `OverlayChanges::apply` now
+  runs every delete first, then the writes: a path those deletes took with
+  them is written as new, and a change that was a conflict when the apply
+  started is still skipped.
 
 ### Bug fixes
 
@@ -1463,6 +1473,16 @@ Hosts write less (round two of the review, and what porting brain onto
   buffer still keeps it), the job runs to its end and is reported ended
   with its own exit code, then the panic goes on, on the job's own task. A
   workspace that panics ends its job the same way, with exit code -1.
+- Fixed: a job could still stay running for good, or end without the model
+  being told. A host's `JobEvents::on_change` that panicked in
+  `JobHub::start` left the job in the table as running, never run, and
+  after `MAX_JOBS` such starts every start was refused: the job is now
+  started all the same, then the panic goes on out of `start`. At a job's
+  end, a panic in `Done`, `on_change`, `on_exit` or the inbox skipped the
+  calls after it and the exit notice: each now runs whatever the others
+  do, and the first panic goes on once, on the job's task. A handler whose
+  `on_output` panicked hears no `Done` either, none of that job's output,
+  as `JobEvents` says.
 
 ### haest-workspace
 
@@ -1535,6 +1555,13 @@ Hosts write less (round two of the review, and what porting brain onto
 - Fixed: a sandbox call dropped in flight (a Code run that timed out) left
   a task behind, asleep until the call's timeout, up to 10 minutes.
   Dropping the call now ends it.
+- `OverlayChanges::apply` runs every delete before any write, so a rename
+  that changes only the case keeps its file (see Security).
+- Fixed: over the real workspace, a caller's own `on_output` that panicked
+  in `shell_streaming` ended the pipe's reader: the panic was lost, and the
+  command died of SIGPIPE (exit 141) on its next write. It is now called
+  no more, the pipes are still read to their end, and the panic reaches the
+  caller once the call has ended, as over the sandbox.
 
 ### haest-code
 
