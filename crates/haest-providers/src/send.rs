@@ -14,7 +14,7 @@ use std::{
 
 use futures::StreamExt;
 use haest_core::error::report;
-use haest_http::{HttpClientRef, HttpError, Request, Response};
+use haest_http::{HttpClientRef, HttpError, Request, Response, check_endpoint_url};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -47,11 +47,16 @@ impl Sender {
 
     /// POST until the server answers 2xx, a refusal is final, or the retries
     /// run out. The error is the message for `AssistantMessage::error_message`.
+    ///
+    /// A URL with an `@` past its host is never sent to
+    /// ([`check_endpoint_url`]): a base URL whose password holds an
+    /// unescaped `/`, `?` or `#` reads to a URL parser as another host.
     pub(crate) async fn send(
         &self,
         req: &Request,
         cancel: &CancellationToken,
     ) -> Result<Response, String> {
+        check_endpoint_url(&req.url).map_err(|refused| refused.to_string())?;
         let retry = &self.retry;
         let mut attempt = 0;
         loop {

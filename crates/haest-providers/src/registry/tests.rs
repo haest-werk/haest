@@ -72,6 +72,45 @@ fn built_ins_need_their_key_and_the_error_names_it() {
     ));
 }
 
+/// A base URL whose password holds an unescaped `/` reads to a URL parser
+/// as another host (`user`, port 1234): each built-in's variable, a
+/// providers.json entry and an entry written in Rust are refused when the
+/// provider is resolved, the reason saying how to write it and showing no
+/// credential. Percent-encoded, each resolves.
+#[test]
+fn a_base_url_a_parser_misreads_is_refused_at_resolve() {
+    let misread = "http://user:1234/s3cret@gw.example/v1";
+    let encoded = "http://user:1234%2Fs3cret@gw.example/v1";
+    for url in [misread, encoded] {
+        let keys = keys(&[
+            ("ANTHROPIC_API_KEY", "k"),
+            ("ANTHROPIC_BASE_URL", url),
+            ("OPENAI_API_KEY", "k"),
+            ("OPENAI_BASE_URL", url),
+            ("OPENROUTER_API_KEY", "k"),
+            ("OPENROUTER_BASE_URL", url),
+            ("PAPERINSTRUMENTS_API_KEY", "k"),
+            ("PAPERINSTRUMENTS_BASE_URL", url),
+        ]);
+        let custom = entries(serde_json::json!({"json": {"baseURL": url}}))
+            .with_entry("rust", CustomProviderConfig::anthropic(url));
+        let reg = registry(keys, custom);
+        for name in BUILTIN.into_iter().chain(["json", "rust"]) {
+            let resolved = reg.resolve(&format!("{name}:m"));
+            if url == encoded {
+                assert!(resolved.is_ok(), "{name}: {:?}", resolved.err());
+                continue;
+            }
+            let Err(e @ ModelError::Unavailable { .. }) = resolved else {
+                panic!("{name}: {:?}", resolved.map(|r| r.model().to_string()));
+            };
+            let said = haest_core::error::report(&e);
+            assert!(!said.contains("s3cret") && !said.contains("1234"), "{said}");
+            assert!(said.contains(name) && said.contains("%2F"), "{said}");
+        }
+    }
+}
+
 #[test]
 fn a_key_comes_from_whatever_the_host_answers_with() {
     let vault = |name: &str| (name == "OPENROUTER_API_KEY").then(|| "from-vault".to_string());

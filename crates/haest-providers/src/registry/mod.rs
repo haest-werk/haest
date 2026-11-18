@@ -40,7 +40,7 @@ use builtin::{anthropic_options, openai_options, openrouter_options};
 pub use custom::{CustomProviderConfig, CustomProviders, Dialect, load_custom_providers};
 pub use error::{EntryProblem, ProvidersFileError};
 
-use haest_http::HttpClientRef;
+use haest_http::{HttpClientRef, check_endpoint_url};
 
 use crate::{
     anthropic::{AnthropicOptions, AnthropicProvider},
@@ -359,9 +359,13 @@ impl ProviderRegistry {
     ///
     /// [`ModelError::BadSpec`] or [`ModelError::UnknownProvider`] for a spec
     /// it cannot place, [`ModelError::MissingKey`] when a built-in's key is
-    /// missing from the key source, and [`ModelError::Unavailable`] (the
-    /// [`EntryProblem`] its source) when the providers.json entry cannot be
-    /// used.
+    /// missing from the key source, and [`ModelError::Unavailable`] when the
+    /// providers.json entry cannot be used (the [`EntryProblem`] its source)
+    /// or the provider's base URL (a built-in's `*_BASE_URL`, an entry's
+    /// `baseURL`) has an `@` past its host (haest-http's
+    /// [`EndpointUrlError`](haest_http::EndpointUrlError) its source): a
+    /// password with an unescaped `/`, `?` or `#` reads to a URL parser as
+    /// another host.
     pub fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
         let (name, model) = parse_model_spec(spec)?;
         if let Some(p) = self.setup.providers.get(name) {
@@ -411,7 +415,14 @@ impl ProviderRegistry {
     fn build(&self, name: &str) -> Result<ProviderRef, ModelError> {
         let o = &self.setup.shared;
         let (http, retry, wait) = (o.http.clone(), o.retry, o.headers_timeout);
-        Ok(match self.provider_options(name)? {
+        let options = self.provider_options(name)?;
+        if let Some(url) = options.base_url() {
+            check_endpoint_url(url).map_err(|refused| ModelError::Unavailable {
+                provider: name.to_string(),
+                source: Box::new(refused),
+            })?;
+        }
+        Ok(match options {
             Options::Anthropic(o) => ProviderRef::new(
                 AnthropicProvider::new(o, http)
                     .with_retry(retry)
@@ -483,6 +494,17 @@ enum Options {
     Anthropic(AnthropicOptions),
     Compat(Box<CompatOptions>),
     Responses(ResponsesOptions),
+}
+
+impl Options {
+    /// Where its requests go, when not the dialect's own API.
+    fn base_url(&self) -> Option<&str> {
+        match self {
+            Self::Anthropic(o) => o.base_url(),
+            Self::Compat(o) => o.base_url(),
+            Self::Responses(o) => o.base_url(),
+        }
+    }
 }
 
 /// [`ProviderRegistry::resolve`], for the agent loop.

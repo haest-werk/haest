@@ -59,6 +59,46 @@ async fn overload_rate_limit_and_a_dead_connection_are_retried_then_the_answer_s
     assert_eq!(t.requests().len(), 4);
 }
 
+/// A base URL whose password holds an unescaped `/` reads to a URL parser
+/// as another host (`user`, port 1234) with the rest of the password in the
+/// path. Every dialect refuses to send to it, before the request leaves,
+/// and the message says why and how to write it, showing no credential.
+#[tokio::test]
+async fn a_base_url_a_parser_misreads_is_never_sent_to() {
+    use crate::{AnthropicOptions, AnthropicProvider, ResponsesOptions, ResponsesProvider};
+    let misread = "http://user:1234/s3cret@gw.example/v1";
+    let t = FakeHttp::new([hello(), hello(), hello()]);
+    let streams = [
+        AnthropicProvider::new(
+            AnthropicOptions::new("a", "k").with_base_url(misread),
+            t.clone(),
+        )
+        .stream(request("m")),
+        CompatProvider::new(
+            CompatOptions::new("c", "k").with_base_url(misread),
+            t.clone(),
+        )
+        .stream(request("m")),
+        ResponsesProvider::new(
+            ResponsesOptions::new("r", "k").with_base_url(misread),
+            t.clone(),
+        )
+        .stream(request("m")),
+    ];
+    for stream in streams {
+        let (events, msg) = collect(stream).await;
+        assert_eq!(kinds(&events), ["done"]);
+        assert_eq!(msg.stop_reason, StopReason::Error);
+        let err = msg.error_message.unwrap_or_default();
+        assert!(!err.contains("s3cret") && !err.contains("1234"), "{err}");
+        assert!(
+            err.contains("%2F") && err.contains("gw.example/v1"),
+            "{err}"
+        );
+    }
+    assert_eq!(t.requests().len(), 0, "a request went out");
+}
+
 #[tokio::test]
 async fn a_bad_request_is_not_retried_and_ends_as_an_error_naming_status_and_reason() {
     let t = FakeHttp::new([

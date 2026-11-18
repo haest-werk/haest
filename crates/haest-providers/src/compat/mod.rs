@@ -170,6 +170,11 @@ impl CompatOptions {
     /// OpenAI's own. Its path shows in Debug output and errors: a gateway's
     /// key goes in a header ([`with_header`](Self::with_header)) or the
     /// query, never the path.
+    ///
+    /// A URL with an `@` past its host is never sent to: every request
+    /// ends as an error saying so (haest-http's `check_endpoint_url`). A
+    /// password holding an unescaped `/`, `?` or `#` ends the host a URL
+    /// parser reads there, so it goes in percent-encoded (`/` as `%2F`).
     #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = Some(url.into());

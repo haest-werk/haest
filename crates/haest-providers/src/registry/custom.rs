@@ -88,6 +88,11 @@ pub struct CustomProviderConfig {
     /// `baseURL`; None = the dialect's own API (OpenAI's or Anthropic's).
     /// Its path shows in Debug output and errors: a key goes in `apiKey`,
     /// `apiKeyEnv` or `headers`, never in the path.
+    ///
+    /// One with an `@` past its host fails the provider's resolve
+    /// ([`ProviderRegistry::resolve`](super::ProviderRegistry::resolve)): a
+    /// password holding an unescaped `/`, `?` or `#` ends the host a URL
+    /// parser reads there, so it goes in percent-encoded (`/` as `%2F`).
     pub base_url: Option<String>,
     /// `apiKey`: the key itself, in the file.
     pub api_key: Option<String>,
