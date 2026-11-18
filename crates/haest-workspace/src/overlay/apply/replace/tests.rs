@@ -186,6 +186,15 @@ async fn a_file_whose_new_name_the_system_refuses_is_written_in_place() {
     assert_applied("notes.txt", Fault::NewName(libc::ENAMETOOLONG)).await;
 }
 
+/// `notes.txt` is on a share mounted for one fixed owner the run is not:
+/// the disk makes a new file but refuses to set its mode, so the new file
+/// cannot be made its owner's alone. Its edit is written in place, as
+/// where the disk will not make the new file.
+#[tokio::test]
+async fn a_file_on_a_disk_that_sets_no_mode_is_written_in_place() {
+    assert_applied("notes.txt", Fault::NoModes).await;
+}
+
 /// The disk has no room for even an empty new file beside `notes.txt`:
 /// the change fails, and is not written in place, where the bytes would
 /// not all go in either. The human's file stays whole, the change listed.
@@ -246,9 +255,9 @@ async fn a_new_file_is_its_owners_alone_before_the_sandboxs_bytes_go_in() {
 /// A team's directory passes its group on (setgid). The apply set the
 /// mode of the new file's directory, and Linux drops the bit for a run not
 /// in that group: the new file got the run's own group, so the edit was
-/// written in place (cut short on a full disk). That directory now keeps
-/// the mode it was made with, and the new file is its owner's alone before
-/// anything goes in.
+/// written in place (cut short on a full disk). That directory's mode is
+/// now never set (it is made owner-only), and the new file is its owner's
+/// alone before anything goes in.
 #[tokio::test]
 async fn a_directory_that_passes_its_group_on_keeps_its_mode() {
     let disk = replaced("notes.txt", Some(Fault::Setgid)).await;
@@ -256,4 +265,18 @@ async fn a_directory_that_passes_its_group_on_keeps_its_mode() {
     let chmods: Vec<_> = chmods.iter().map(|m| format!("{m:o}")).collect();
     assert!(chmods.is_empty(), "its mode was set: {chmods:?}");
     filled_owner_only(&disk);
+}
+
+/// A team's directory passes its group on (setgid). The new file's
+/// directory kept the mode it was made with (the umask's, 02755), so
+/// anyone could open the new file between its create and its 0600 and
+/// read the sandbox's version of a private file through that descriptor.
+#[tokio::test]
+async fn a_new_files_directory_is_its_owners_alone_where_it_passes_a_group_on() {
+    let disk = replaced("secret.env", Some(Fault::Setgid)).await;
+    let dirs = disk.new_file_dirs.lock().unwrap().clone();
+    assert!(!dirs.is_empty(), "no new file was written");
+    for mode in dirs {
+        assert!(mode & 0o077 == 0, "a new file's directory at {mode:o}");
+    }
 }

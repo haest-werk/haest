@@ -525,28 +525,29 @@ write instead.
   and since the disk then held neither version, every later list showed
   it as a conflict and every apply skipped it. A kill during the write
   left the same, unreported. A file now goes on the disk whole or not at
-  all: the sandbox's version is written to a new file, its owner's alone,
-  in a directory of its own beside it, which only its owner may enter,
-  given the file's permission bits, and renamed over it. In a directory
-  that passes its group on (setgid), the new file's directory keeps the
-  mode it was made with, so the new file gets that group, as a file made
-  there does, also for a run not in that group. A new file the disk has
-  no room for (a full disk, an NFS server out of room or over a quota)
-  leaves the human's file as it was and the change listed, to apply once
-  there is room; an apply now needs room for that second copy of each
-  file it replaces. A read-only file is still refused.
+  all: the sandbox's version is written to a new file in a directory of
+  its own beside it, which only its owner may enter from the moment it is
+  made (a new file that replaces one is its owner's alone too, before the
+  bytes go in), given the file's permission bits, and renamed over it.
+  That directory's mode is never set after it is made, so in a directory
+  that passes its group on (setgid) the new file gets that group, as a
+  file made there does, also for a run not in that group. A new file the
+  disk has no room for (a full disk, an NFS server out of room or over a
+  quota) leaves the human's file as it was and the change listed, to
+  apply once there is room; an apply now needs room for that second copy
+  of each file it replaces. A read-only file is still refused.
   Written in place as before: a file with another hard link, one whose
   owner or group a new file would not have, and one where the disk will
-  not make the new file or move it over the old one (a directory that
-  takes no new name, a path just short of the system's cap, a file that
-  is a mount point of its own, as one bind-mounted into a dev container).
-  A replaced file does not keep its extended attributes or ACLs, and a
-  process that holds it open to write (a log a server appends to, a
-  database) goes on writing to the old file. A kill partway can leave the
-  new file's directory (`.<name>.haest-<pid>-<n>`) beside it, owner-only
-  (in a directory that passes its group on, at the umask's mode, with
-  the new file owner-only), and an apply dropped partway, rarely, that
-  directory empty; `.*.haest-*` in an ignore file matches it.
+  not make the new file, make it its owner's alone, or move it over the
+  old one (a directory that takes no new name, a share mounted for one
+  fixed owner the run is not, a path just short of the system's cap, a
+  file that is a mount point of its own, as one bind-mounted into a dev
+  container). A replaced file does not keep its extended attributes or
+  ACLs, and a process that holds it open to write (a log a server appends
+  to, a database) goes on writing to the old file. A kill partway can
+  leave the new file's directory (`.<name>.haest-<pid>-<n>`) beside it,
+  owner-only, and an apply dropped partway, rarely, that directory empty;
+  `.*.haest-*` in an ignore file matches it.
 - On a network file system, a write the server refused (no room, a
   quota) read as done. An NFS client reports it only as the file closes,
   and `RealFs::write` and `RealFs::append` ignored what closing it said:
@@ -2023,6 +2024,10 @@ Hosts write less (round two of the review, and what porting brain onto
   exclusive lock on a file opened only to read, and only to read where the
   file or its mount may not be written (a file made 0400, a read-only
   mount). A file that is not there is made, empty and 0600.
+- `RealFs::create_private_dir` makes the directory with its mode,
+  `mkdir(path, 0700)`, in one step and never sets it after, so on Linux
+  one made in a directory that passes its group on (setgid) keeps that
+  group and the bit.
 
 ### haest-code
 

@@ -9,12 +9,14 @@
 //!   `root/path` itself, never through a link out of the project.
 //!
 //! A file goes on the disk whole or not at all (`replace.rs`): the
-//! sandbox's version is written to a new file, its owner's alone, in a
-//! directory of its own beside it that only its owner may enter; the new
-//! file then takes the file's permission bits and is renamed over it.
-//! Where the file's directory passes its group on (setgid), the new file's
-//! directory keeps the mode it was made with, so the new file gets that
-//! group, as one made beside the file would. A change the disk still
+//! sandbox's version is written to a new file in a directory of its own
+//! beside it that only its owner may enter from the moment it is made (a
+//! new file that replaces one is its owner's alone too, before the bytes
+//! go in); the new file then takes the file's permission bits and is
+//! renamed over it. That directory's mode is never set after it is made,
+//! so where the file's directory passes its group on (setgid), the new
+//! file gets that group, as one made beside the file would, also for a
+//! run not in that group. A change the disk still
 //! refuses (permissions, a full disk, an NFS server out of room, which
 //! says so only as the new file closes) fails alone (`write-failed`) with
 //! the human's file as it was, still listed (not a conflict) for an apply
@@ -22,10 +24,12 @@
 //! made read-only is refused, never replaced. Written in place, as before:
 //! a file a new one would not stand in for (one with another hard link,
 //! one whose owner or group a new file would not have), and one where the
-//! disk will not make the new file or move it there (a directory that
-//! takes no new name, a path the longer name takes past the system's cap,
-//! a file that is a mount point of its own). A new file the disk has no
-//! room for fails the change: in place, the bytes would cut the file short.
+//! disk will not make the new file, make it its owner's alone, or move it
+//! there (a directory that takes no new name, a share mounted for one
+//! fixed owner the run is not, a path the longer name takes past the
+//! system's cap, a file that is a mount point of its own). A new file the
+//! disk has no room for fails the change: in place, the bytes would cut
+//! the file short.
 //! The trade-offs of a file replaced so:
 //! - it does not keep its extended attributes or ACLs;
 //! - a process that holds it open to write (a log a server appends to, a
@@ -35,10 +39,8 @@
 //!   a file written in place needs none;
 //! - a kill partway can leave the new file's directory,
 //!   `.<name>.haest-<pid>-<n>`, beside it, with the new file in it, which
-//!   only its owner may reach (in a directory that passes its group on,
-//!   that directory has the umask's mode and the new file is its owner's
-//!   alone); never a file cut short. An apply dropped just as the system
-//!   starts making that directory can leave it empty.
+//!   only its owner may reach; never a file cut short. An apply dropped
+//!   just as the system starts making that directory can leave it empty.
 //!   The name matches none of the file's own ignore patterns; `.*.haest-*`
 //!   matches every one.
 //!

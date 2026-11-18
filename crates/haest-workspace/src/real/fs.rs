@@ -29,6 +29,8 @@ use tokio::io::AsyncReadExt;
 ///   file system refused, also one an NFS client reports only as the file
 ///   closes (no room on the server, a quota).
 /// - [`chmod`](Fs::chmod) sets Unix permission bits (a no-op elsewhere).
+/// - [`create_private_dir`](Fs::create_private_dir) makes the directory
+///   with its mode (0700) in one step, never setting it after.
 /// - [`try_lock`](Fs::try_lock) takes an exclusive `flock(2)`, which the
 ///   system drops with the process that held it. It opens the file to read
 ///   and write for it (an NFS client refuses an exclusive lock on a file
@@ -167,6 +169,13 @@ impl Fs for RealFs {
 
     async fn create_dir(&self, path: &Path) -> io::Result<()> {
         tokio::fs::create_dir(path).await
+    }
+
+    /// Made with its mode, `mkdir(path, 0700)`, and never set after: on
+    /// Linux, one made in a directory that passes its group on (setgid)
+    /// keeps that group and the bit, also for a process not in the group.
+    async fn create_private_dir(&self, path: &Path) -> io::Result<()> {
+        tokio::fs::DirBuilder::new().mode(0o700).create(path).await
     }
 
     async fn create_dir_all(&self, path: &Path) -> io::Result<()> {

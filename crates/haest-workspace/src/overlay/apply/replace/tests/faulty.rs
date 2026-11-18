@@ -35,6 +35,9 @@ pub(super) enum Fault {
     /// A directory made beside `real` passes its group on (setgid), as
     /// Linux makes every directory in one that does: a team's directory.
     Setgid,
+    /// Every chmod is refused (`EPERM`), as on a share mounted for one
+    /// fixed owner the run is not: it makes files, but sets no mode.
+    NoModes,
 }
 
 /// The real disk, with `fault` in it.
@@ -51,6 +54,9 @@ pub(super) struct Faulty {
     pub(super) filled: Mutex<Vec<Option<u32>>>,
     /// Each mode put on a directory that passes its group on.
     pub(super) setgid_chmods: Mutex<Vec<u32>>,
+    /// The mode of the directory each new file beside `real` was written
+    /// in, as it was written (the empty create and the fill).
+    pub(super) new_file_dirs: Mutex<Vec<u32>>,
 }
 
 impl Faulty {
@@ -62,6 +68,7 @@ impl Faulty {
             began: Notify::new(),
             filled: Mutex::new(Vec::new()),
             setgid_chmods: Mutex::new(Vec::new()),
+            new_file_dirs: Mutex::new(Vec::new()),
         })
     }
 
@@ -76,12 +83,30 @@ impl Faulty {
         }
     }
 
-    /// Note who may reach the file at `p`, beside `real`, as `d` goes in.
+    /// Note who may reach the file at `p`, beside `real`, as `d` goes in,
+    /// and who may enter the new-file directory it is in.
     fn note_fill(&self, p: &Path, d: &[u8]) {
         if p != self.real && !d.is_empty() {
             let mode = fs::symlink_metadata(p).ok().map(|m| m.permissions().mode());
             self.filled.lock().unwrap().push(mode.map(|m| m & 0o7777));
         }
+        if let Some(dir) = p.parent().filter(|d| d.parent() == self.real.parent())
+            && let Ok(m) = fs::symlink_metadata(dir)
+        {
+            let mode = m.permissions().mode() & 0o7777;
+            self.new_file_dirs.lock().unwrap().push(mode);
+        }
+    }
+
+    /// Under [`Fault::Setgid`], the directory `p` just made beside `real`
+    /// gets the setgid bit, as Linux gives it whatever mode it was made
+    /// with.
+    fn pass_group_on(&self, p: &Path) -> io::Result<()> {
+        if self.fault == Some(Fault::Setgid) && p.parent() == self.real.parent() {
+            let mode = fs::symlink_metadata(p)?.permissions().mode();
+            fs::set_permissions(p, Permissions::from_mode(mode | 0o2000))?;
+        }
+        Ok(())
     }
 }
 
@@ -129,11 +154,12 @@ impl Fs for Faulty {
     async fn create_dir(&self, p: &Path) -> io::Result<()> {
         self.refuses_name(p)?;
         RealFs.create_dir(p).await?;
-        if self.fault == Some(Fault::Setgid) && p.parent() == self.real.parent() {
-            let mode = fs::symlink_metadata(p)?.permissions().mode();
-            fs::set_permissions(p, Permissions::from_mode(mode | 0o2000))?;
-        }
-        Ok(())
+        self.pass_group_on(p)
+    }
+    async fn create_private_dir(&self, p: &Path) -> io::Result<()> {
+        self.refuses_name(p)?;
+        RealFs.create_private_dir(p).await?;
+        self.pass_group_on(p)
     }
     async fn create_dir_all(&self, p: &Path) -> io::Result<()> {
         RealFs.create_dir_all(p).await
@@ -153,6 +179,9 @@ impl Fs for Faulty {
     async fn chmod(&self, p: &Path, mode: u32) -> io::Result<()> {
         if setgid_dir(p) {
             self.setgid_chmods.lock().unwrap().push(mode);
+        }
+        if self.fault == Some(Fault::NoModes) {
+            return Err(io::Error::from_raw_os_error(libc::EPERM));
         }
         RealFs.chmod(p, mode).await
     }

@@ -1,15 +1,16 @@
 //! A file the apply writes, put on the disk whole or not at all. The
 //! sandbox's bytes go into a new file, in a directory of its own beside the
-//! real one; a new file that replaces one is its owner's alone before they
-//! go in. It then takes the real one's permission bits and is renamed over
-//! it, so a disk that fills up, or a kill, partway leaves the human's file
-//! as it was. Where a new
-//! file would not be the same file, or the disk will not make one or move
-//! it there, the bytes are written in place, as before; where the new
-//! file's bytes do not all go in, the change fails instead, since in place
-//! they would cut the human's file short. An apply dropped partway (Ctrl+C
-//! at the haest command's `/apply`, a host's timeout) removes the new file
-//! and its directory as it drops.
+//! real one that only its owner may enter from the moment it is made; a
+//! new file that replaces one is its owner's alone too before they go in.
+//! It then takes the real one's permission bits and is renamed over it, so
+//! a disk that fills up, or a kill, partway leaves the human's file as it
+//! was. Where a new file would not be the same file, or the disk will not
+//! make one, make it its owner's alone or move it there, the bytes are
+//! written in place, as before; where the new file's bytes do not all go
+//! in, the change fails instead, since in place they would cut the human's
+//! file short. An apply dropped partway (Ctrl+C at the haest command's
+//! `/apply`, a host's timeout) removes the new file and its directory as
+//! it drops.
 
 use std::{
     fs::Metadata,
@@ -37,10 +38,11 @@ const NAME_PART: usize = 64;
 /// it is not a regular file, or the new file would have another owner or
 /// group (another user's file the human may write, a directory that gives
 /// new files its own group). It is written in place, too, where the disk
-/// will not make the new file or move it over the real one
-/// ([`in_place_instead`]). Where the new file's bytes do not all go in (a
-/// full disk), the change fails and never falls back: in place they would
-/// not all go in either, and the human's file would be cut short.
+/// will not make the new file, make it its owner's alone, or move it over
+/// the real one ([`in_place_instead`]). Where the new file's bytes do not
+/// all go in (a full disk), the change fails and never falls back: in
+/// place they would not all go in either, and the human's file would be
+/// cut short.
 pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
     let old = if disk.exists(real).await {
         // Opened to write as an in-place write opens it, but nothing is
@@ -91,6 +93,17 @@ async fn put_new(
             new.clear(disk).await;
             return Ok(Put::InPlace);
         }
+        // Its owner's alone before any byte goes in. A disk that will not
+        // set its mode (a share mounted for one fixed owner the run is
+        // not) is one that will not make it so: the bytes go in place.
+        if let Err(e) = disk.chmod(&new.path, 0o600).await {
+            new.clear(disk).await;
+            return if in_place_instead(&e) {
+                Ok(Put::InPlace)
+            } else {
+                Err(e)
+            };
+        }
     }
     if let Err(e) = fill(disk, &new.path, old, bytes).await {
         new.clear(disk).await;
@@ -105,11 +118,13 @@ async fn put_new(
     }
 }
 
-/// Whether the disk's refusal to make the new file, or to move it over the
-/// real one, leaves the real file to take the bytes in place, which needs
-/// neither a new name nor a move:
-/// - `PermissionDenied`: a directory that takes no new name, or a rename an
-///   ACL or a security module forbids;
+/// Whether the disk's refusal to make the new file, to make it its owner's
+/// alone, or to move it over the real one, leaves the real file to take
+/// the bytes in place, which needs neither a new name, a new mode nor a
+/// move:
+/// - `PermissionDenied`: a directory that takes no new name, a mode the
+///   disk will not set (a share mounted for one fixed owner the run is
+///   not), or a rename an ACL or a security module forbids;
 /// - `InvalidFilename`: the new file's longer path, past the system's cap;
 /// - `ReadOnlyFilesystem`: a read-only mount around a file on a writable
 ///   mount of its own;
@@ -134,11 +149,6 @@ fn in_place_instead(e: &io::Error) -> bool {
 /// The sandbox's `bytes` into the new file at `path`, with the mode of
 /// `old`, the file it is to replace.
 async fn fill(disk: &dyn Fs, path: &Path, old: Option<&Metadata>, bytes: &[u8]) -> io::Result<()> {
-    if old.is_some() {
-        // Its owner's alone before any byte goes in, whatever its
-        // directory's mode (one that passes a group on keeps its own).
-        disk.chmod(path, 0o600).await?;
-    }
     disk.write(path, bytes).await?;
     if let Some(old) = old {
         // The old file's mode, so the apply's own mode check
@@ -158,10 +168,9 @@ async fn fill(disk: &dyn Fs, path: &Path, old: Option<&Metadata>, bytes: &[u8]) 
 /// system's own, on the host's disk, which the overlay's disk is; on a disk
 /// that is not, nothing has the path (its name is this process's own).
 struct NewFile {
-    /// Only its owner may enter it, before anything goes in. One that
-    /// passes a group on (setgid) keeps the mode it was made with (the
-    /// umask's), and a kill there can leave the new file in it: its
-    /// owner's alone where it was to replace a file.
+    /// Only its owner may enter it, from the moment it is made; its mode
+    /// is never set after, so one made where the real file's directory
+    /// passes its group on (setgid) keeps that bit and that group.
     dir: PathBuf,
     path: PathBuf,
     /// Still to remove.
@@ -192,7 +201,12 @@ impl NewFile {
                 dir,
                 pending: true,
             };
-            if let Err(e) = disk.create_dir(&new.dir).await {
+            // Owner-only as it is made, its mode never set after: in a
+            // directory that passes its group on (setgid), Linux drops the
+            // bit where a run not in that group sets the mode, and the new
+            // file would then get the run's own group, not the one a file
+            // made beside the real one gets.
+            if let Err(e) = disk.create_private_dir(&new.dir).await {
                 // Not made, or another's (a name taken, a link included,
                 // dangling or not): nothing to remove.
                 new.settled();
@@ -201,21 +215,7 @@ impl NewFile {
                 }
                 return Err(e);
             }
-            let made = async {
-                // One that passes a group on (setgid) keeps the mode it was
-                // made with: Linux drops the bit where a run not in that
-                // group sets the mode, and the new file would then get the
-                // run's own group, not the one a file made beside the real
-                // one gets.
-                let setgid = tokio::fs::symlink_metadata(&new.dir)
-                    .await
-                    .is_ok_and(|m| m.permissions().mode() & 0o2000 != 0);
-                if !setgid {
-                    disk.chmod(&new.dir, 0o700).await?;
-                }
-                disk.write(&new.path, &[]).await
-            };
-            return match made.await {
+            return match disk.write(&new.path, &[]).await {
                 Ok(()) => Ok(new),
                 Err(e) => {
                     new.clear(disk).await;
