@@ -45,7 +45,7 @@ use std::{
 
 use haest::{
     config::{BrokerAccess, ConfigError, ControlSocket, Loaded, Loader, env_var},
-    core::{error::report, session::sessions_dir},
+    core::{ModelError, error::report, session::sessions_dir},
     runtime::{BuildError, SessionFileError, Ui, list_sessions},
     session::{Hub, HubOptions, SessionPrompter, start},
     settings::Settings,
@@ -266,14 +266,22 @@ async fn shutdown(rt: &Runtime) {
     }
 }
 
-/// What a failed build tells the human; a model it cannot use, or a session
-/// that is not there, says where to find another.
+/// What a failed build tells the human; a model it cannot use says what to
+/// do about it (a key only when one is missing), and a model or a session
+/// that is not there says where to find another.
 fn build_failed(e: BuildError) -> String {
     match e {
-        BuildError::Model(e) => format!(
-            "{}. Set its key, or pick another model with -m (haest models lists them).",
-            report(&e)
-        ),
+        BuildError::Model(e) => {
+            let next = match &e {
+                ModelError::MissingKey { .. } => "Set its key, or pick",
+                ModelError::Unavailable { .. } => "Fix the provider's configuration, or pick",
+                _ => "Pick",
+            };
+            format!(
+                "{}. {next} another model with -m (haest models lists them).",
+                report(&e)
+            )
+        }
         BuildError::SessionFile(e @ SessionFileError::NotFound { .. }) => {
             format!("{e} (haest sessions lists them)")
         }
@@ -445,6 +453,35 @@ mod tests {
             said.contains("abc") && said.contains("haest sessions"),
             "{said}"
         );
+    }
+
+    /// Each model error ends with what to do about it: a key only when one
+    /// is missing. A refused base URL said "Set its key" with the key set.
+    #[test]
+    fn a_model_that_cannot_be_used_says_what_to_do_about_it() {
+        let unavailable = ModelError::Unavailable {
+            provider: "anthropic".into(),
+            source: "its base URL has an @ past its host".into(),
+        };
+        let said = build_failed(BuildError::Model(unavailable));
+        assert!(!said.contains("key"), "{said}");
+        assert!(
+            said.contains("@ past its host") && said.contains("Fix the provider's configuration"),
+            "{said}"
+        );
+        let missing = ModelError::MissingKey {
+            provider: "anthropic".into(),
+            key: "ANTHROPIC_API_KEY".into(),
+        };
+        let said = build_failed(BuildError::Model(missing));
+        assert!(said.contains("Set its key"), "{said}");
+        let unknown = ModelError::UnknownProvider {
+            provider: "nope".into(),
+            known: vec!["anthropic".into()],
+        };
+        let said = build_failed(BuildError::Model(unknown));
+        assert!(!said.contains("key"), "{said}");
+        assert!(said.contains("haest models lists them"), "{said}");
     }
 
     /// A cause under the error is part of the line.

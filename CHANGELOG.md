@@ -550,6 +550,10 @@ write instead.
   `haest -p ... > out.md` keeps the whole answer.
 - The remedy for a cap names its setting through `Limit::setting()`, and
   the three subagent caps have one.
+- A model haest cannot use ends with what to do about it: "Set its key"
+  only when the key is missing, "Fix the provider's configuration" for a
+  refused base URL or a bad providers.json entry, and "Pick another
+  model" for an unknown one. Every one of them said "Set its key".
 - Ctrl+C stops a slash command: it is told to stop and gets 2 seconds to
   wind down (`/compact` books the summary call it stopped), then is given
   up if it has not ended (a mod's whose promise never settles). The prompt
