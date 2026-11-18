@@ -100,6 +100,12 @@ impl GenerateImageOptions {
 
     /// The Image API at `base_url`, without a trailing slash: `/images` and
     /// `/images/models` are appended.
+    ///
+    /// A URL with an `@` past its host is never sent to: every call fails
+    /// saying why (haest-http's `check_endpoint_url`). A password holding an
+    /// unescaped `/`, `?` or `#` ends the host a URL parser reads there, so
+    /// the key and the rest of the password would go to another host; it
+    /// goes in percent-encoded (`/` as `%2F`).
     #[must_use]
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();

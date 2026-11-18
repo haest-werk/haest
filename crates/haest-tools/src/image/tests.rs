@@ -297,6 +297,33 @@ async fn the_base_urls_credentials_never_show() {
     assert!(r.posted().is_empty());
 }
 
+/// A base URL whose password holds an unescaped `/` reads to a URL parser
+/// as another host (`user`, port 1234), which would be sent the key and the
+/// rest of the password: the call fails before any request, saying why and
+/// how to write the URL.
+#[tokio::test]
+async fn a_base_url_a_parser_misreads_is_never_sent_to() {
+    let r = Rig::at("https://user:1234/s3cret@images.test/api/v1");
+    let out = r.run(json!({"prompt": "x"})).await;
+    assert!(out.is_error, "{}", out.content);
+    assert!(
+        !out.content.contains("s3cret") && !out.content.contains("1234"),
+        "{}",
+        out.content
+    );
+    assert!(
+        out.content.contains("%2F") && out.content.contains("images.test/api/v1"),
+        "{}",
+        out.content
+    );
+    assert_eq!(
+        *r.api.gets.lock().unwrap(),
+        0,
+        "the model list was asked for"
+    );
+    assert!(r.posted().is_empty());
+}
+
 #[tokio::test]
 async fn the_model_list_is_read_once_and_kept() {
     let r = Rig::new();

@@ -6,6 +6,7 @@ use haest_core::{
     media::data_url,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_str, req_str},
 };
+use haest_http::check_endpoint_url;
 use serde_json::{Map, Value, json};
 
 use super::{
@@ -201,6 +202,7 @@ impl Tool for GenerateImageTool {
     }
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let o = &self.opts;
+        check_endpoint_url(&o.base_url).map_err(|e| ToolError::Failed(e.to_string()))?;
         let prompt = req_str(&input, "prompt")?;
         let chosen = self.pick_model(&input)?;
         let given = settings_input(&input)?;
