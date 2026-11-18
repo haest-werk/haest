@@ -2210,6 +2210,12 @@ against it; the wire JSON is unchanged):
   requests in the order the peer sent them, each once the one before it
   was first polled, so a backend that queues a call only later may see
   them out of order.
+- The driver calls `Driven::arrival` only when it waits on it: between
+  turns, with no `Hold` held. While a `Hold` was held, it called
+  `arrival` once for each request it served and dropped the future
+  unpolled, so a host whose `arrival` does work in the call, outside its
+  future, did that work again on every request. `Driven::arrival` says
+  when it is called.
 
 ### haest-transport (new)
 
@@ -2415,7 +2421,9 @@ against it; the wire JSON is unchanged):
   arrived in two pieces. `serve` now calls `next_line` only when it takes
   a line, keeps each read until it resolves, and drops one still pending
   only with the source when the connection ends, so a source needs no
-  cancel-safety of its own; `LineSource::next_line` says so.
+  cancel-safety of its own; `LineSource::next_line` says so. The source
+  itself is kept until the connection ends too, also after it returned
+  None, while the requests still in flight are answered.
 
 ### haest-issues
 
