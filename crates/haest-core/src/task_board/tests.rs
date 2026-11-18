@@ -212,3 +212,38 @@ fn on_change_may_change_the_board() {
     assert_eq!(*heard.lock().unwrap(), [1, 2]);
     assert_eq!(board.list().len(), 2);
 }
+
+/// A clock whose drop sets the board's clock again (a host's paused clock
+/// handing over to the wall clock as it goes).
+struct SetsClockOnDrop(TaskBoard);
+
+impl crate::deps::Clock for SetsClockOnDrop {
+    fn now_ms(&self) -> u64 {
+        7
+    }
+}
+
+impl Drop for SetsClockOnDrop {
+    fn drop(&mut self) {
+        self.0.set_clock(|| 0);
+    }
+}
+
+/// The board held the last handle to the old clock, and dropped it while it
+/// held the clock lock: the drop's `set_clock` waited for that lock for good.
+#[test]
+fn a_clock_set_clock_lets_go_of_may_call_the_board_back() {
+    let board = TaskBoard::default();
+    board.set_clock(SetsClockOnDrop(board.clone()));
+    let (done, finished) = std::sync::mpsc::channel();
+    let setting = board.clone();
+    std::thread::spawn(move || {
+        setting.set_clock(|| 1);
+        let _ = done.send(());
+    });
+    let returned = finished.recv_timeout(std::time::Duration::from_secs(5));
+    assert!(
+        returned.is_ok(),
+        "set_clock never returned: the old clock's drop ran under the board's lock"
+    );
+}

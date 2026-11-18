@@ -43,7 +43,7 @@ mod task;
 mod tests;
 
 use std::{
-    fmt,
+    fmt, mem,
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -162,7 +162,10 @@ impl TaskBoard {
     /// test's fixed one; any `Fn() -> u64` is a [`Clock`](crate::deps::Clock)),
     /// for every clone of this board.
     pub fn set_clock(&self, clock: impl Into<ClockRef>) {
-        *self.clock() = clock.into();
+        let clock = clock.into();
+        let old = mem::replace(&mut *self.clock(), clock);
+        // Dropped with the lock released: a clock's drop is a host's code.
+        drop(old);
     }
 
     /// The board. Its lock is held only while this file's own code runs

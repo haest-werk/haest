@@ -30,7 +30,7 @@
 pub(crate) mod hold;
 
 use std::{
-    fmt,
+    fmt, mem,
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -238,7 +238,10 @@ impl Ledger {
     /// so far, [`usd`](Self::usd)), but must not charge it or set its cap.
     /// [`Remedies`], or the closure that writes them.
     pub fn set_remedies(&self, remedies: impl Into<Remedies>) {
-        self.state().remedies = remedies.into();
+        let remedies = remedies.into();
+        let old = mem::replace(&mut self.state().remedies, remedies);
+        // Dropped with the ledger unlocked: a remedy's drop is a host's code.
+        drop(old);
     }
 
     /// What the ledger checks at every charge, in place of its default
@@ -263,9 +266,14 @@ impl Ledger {
     /// ledger.set_thresholds(Thresholds::<LedgerSite>::none());
     /// ```
     pub fn set_thresholds(&self, thresholds: Thresholds<LedgerSite>) {
-        let mut state = self.state();
-        state.warnings = Watch::new(thresholds);
-        state.rearm();
+        let old = {
+            let mut state = self.state();
+            let old = mem::replace(&mut state.warnings, Watch::new(thresholds));
+            state.rearm();
+            old
+        };
+        // Dropped with the ledger unlocked: a threshold's drop is a host's code.
+        drop(old);
     }
 
     /// USD spent by calls that reported a price.
