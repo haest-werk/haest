@@ -179,3 +179,25 @@ async fn a_later_compaction_keeps_the_tail_the_resumed_conversation_kept() {
         ["a:A", "t:A!", "u:next", "u:more"]
     );
 }
+
+/// The disk filled up as the answer's record was written, and the tool
+/// then freed room (`rm -rf target/`), so its result landed whole: the
+/// resumed history holds neither, and both are counted.
+#[tokio::test]
+async fn a_result_written_after_its_answer_failed_to_land_is_dropped() {
+    let fs = Arc::new(ModeFs::default());
+    let s = store(&fs);
+    s.create("c1", std::path::Path::new("/x"), 0).await.unwrap();
+    appended(&s, [Message::user("go")]);
+    s.flush().await;
+    *fs.short_append.lock().unwrap() = Some(20);
+    appended(&s, [calls(&["A"]), result("A"), Message::user("go on")]);
+    s.flush().await;
+
+    let back = store(&fs).load().await.unwrap();
+    assert_eq!(shape(&back.messages), ["u:go", "u:go on"]);
+    assert_eq!(
+        back.corrupt_lines, 2,
+        "the answer cut short, and its result"
+    );
+}

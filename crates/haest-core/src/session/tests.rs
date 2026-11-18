@@ -25,6 +25,9 @@ struct ModeFs {
     locked: Arc<Mutex<HashSet<PathBuf>>>,
     /// Once set, what locking a `.lock` file fails with, before it is made.
     lock_file_refused: Mutex<Option<io::ErrorKind>>,
+    /// Once set, the next append keeps this many bytes and fails with
+    /// `StorageFull`, as a full disk's short write does.
+    short_append: Mutex<Option<usize>>,
 }
 
 /// Unlocks its path as it drops.
@@ -58,6 +61,11 @@ impl Fs for ModeFs {
     }
     async fn append(&self, p: &Path, d: &[u8]) -> io::Result<()> {
         self.refused_while_locked(p)?;
+        let short = self.short_append.lock().unwrap().take();
+        if let Some(kept) = short {
+            self.inner.append(p, &d[..kept.min(d.len())]).await?;
+            return Err(io::ErrorKind::StorageFull.into());
+        }
         self.inner.append(p, d).await
     }
     async fn stat(&self, p: &Path) -> io::Result<FsStat> {
@@ -102,6 +110,7 @@ impl Fs for ModeFs {
     }
 }
 
+mod full_disk;
 mod interrupted;
 mod lock;
 

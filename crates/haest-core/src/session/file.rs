@@ -122,7 +122,9 @@ impl JsonlSessionFile {
     }
 
     /// Same, handing every failed queued write to `on_error` (on the writer
-    /// task); later writes still run.
+    /// task); later writes still run. The record after a failed one starts
+    /// on a line of its own, so what a full disk kept of the failed record
+    /// never takes the next one with it.
     ///
     /// # Errors
     ///
@@ -239,13 +241,22 @@ async fn write_queue(
     mut rx: mpsc::UnboundedReceiver<Job>,
     on_error: impl Fn(io::Error),
 ) {
+    // An append that failed may have left part of its line (a full disk
+    // takes what fits): the next line starts on a line of its own, or it
+    // would end the fragment and be skipped with it.
+    let mut torn = false;
     while let Some(job) = rx.recv().await {
         let res = match job {
             Job::Create(header, done) => {
                 let _ = done.send(create(&*fs, &path, &header).await);
                 Ok(())
             }
-            Job::Line(line) => fs.append(&path, line.as_bytes()).await,
+            Job::Line(line) => {
+                let line = if torn { format!("\n{line}") } else { line };
+                let res = fs.append(&path, line.as_bytes()).await;
+                torn = res.is_err();
+                res
+            }
             Job::Flush(done) => {
                 let _ = done.send(());
                 Ok(())
