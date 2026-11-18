@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 /// assert_eq!(req.key.as_deref(), Some("rm -rf build"));
 /// assert_eq!(req.tool_use_id, None);
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct ApprovalRequest {

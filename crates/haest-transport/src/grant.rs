@@ -23,11 +23,13 @@ impl Grant {
     }
 
     /// May only watch: `events`, `snapshot`, `history`.
+    #[must_use]
     pub fn watch(origin: Origin) -> Self {
         Self::new(Access::Watch, origin)
     }
 
     /// May watch and drive: turns, controls and approval answers too.
+    #[must_use]
     pub fn command(origin: Origin) -> Self {
         Self::new(Access::Command, origin)
     }

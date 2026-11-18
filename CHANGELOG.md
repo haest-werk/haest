@@ -2008,7 +2008,7 @@ Hosts write less (round two of the review, and what porting brain onto
   `with_tool_use_id`, `with_key` (breaking): see Upgrading item 26. The
   preview has a setter of its own, so it cannot be swapped with the
   description, which is a string too. A mod file's `haest.ask(req)` reads
-  the same JSON.
+  the same JSON. `ApprovalRequest` implements `Eq`.
 
 ### haest-settings
 

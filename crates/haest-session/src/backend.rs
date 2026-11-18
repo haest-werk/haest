@@ -30,11 +30,13 @@ impl Input {
     }
 
     /// Input a person wrote.
+    #[must_use]
     pub fn human(text: impl Into<String>) -> Self {
         Self::new(text, Origin::Human)
     }
 
     /// Input from another program or agent.
+    #[must_use]
     pub fn agent(text: impl Into<String>) -> Self {
         Self::new(text, Origin::Agent)
     }
