@@ -67,6 +67,15 @@ pub(crate) fn pairs(want: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The mode of the directory `dir`, which is then made writable again
+/// (0755) so the temp dir around it can go; None when it is not there.
+pub(crate) fn writable_again(dir: &Path) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    let was = fs::metadata(dir).ok()?.permissions().mode() & 0o7777;
+    let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o755));
+    Some(was)
+}
+
 /// Apply everything the sandbox changed; nothing may be skipped or fail, and
 /// nothing is left listed.
 pub(crate) async fn apply_all(ws: &SandboxWorkspace) {

@@ -12,7 +12,7 @@ use std::fs;
 
 use common::{
     sandbox,
-    spelling::{apply_all, changes, contents, pairs, paths, reads_as_one, run},
+    spelling::{apply_all, changes, contents, pairs, paths, reads_as_one, run, writable_again},
     tempdir,
 };
 use haest_core::workspace::Change;
@@ -215,12 +215,9 @@ async fn a_rename_by_case_whose_delete_would_stop_partway_keeps_every_file() {
         );
     }
     let second = changes(&ws).apply().await;
-    // `ro` keeps its mode through the rename, as with `mv`; writable again,
-    // so the temp dir goes.
-    let ro = dir.join("Lib/ro");
-    let kept = fs::metadata(&ro).map(|m| m.permissions().mode() & 0o7777);
-    let _ = fs::set_permissions(&ro, fs::Permissions::from_mode(0o755));
-    assert_eq!(kept.ok(), Some(0o555), "{first:?}, {second:?}");
+    // `ro` keeps its mode through the rename, as with `mv`.
+    let kept = writable_again(&dir.join("Lib/ro"));
+    assert_eq!(kept, Some(0o555), "{first:?}, {second:?}");
     let want = [("Lib/a.rs", "a\n"), ("Lib/ro/x.txt", "x\n")];
     assert_eq!(contents(&dir), pairs(&want), "{first:?}, {second:?}");
     assert_eq!(changes(&ws).list().await, Vec::<Change>::new());

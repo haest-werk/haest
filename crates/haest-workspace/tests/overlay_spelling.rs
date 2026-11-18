@@ -14,7 +14,9 @@ use std::fs;
 
 use common::{
     sandbox,
-    spelling::{apply_all, changes, contents, folds_case, pairs, paths, reads_as_one, run},
+    spelling::{
+        apply_all, changes, contents, folds_case, pairs, paths, reads_as_one, run, writable_again,
+    },
     tempdir,
 };
 
@@ -336,6 +338,9 @@ async fn a_rename_by_case_whose_delete_fails_writes_nothing_into_the_old_name() 
     // The delete took what it could: `lib/ro` is still there unless it went.
     let _ = mode(0o755);
     let second = changes(&ws).apply().await;
+    // `ro` keeps its mode through the rename, as with `mv`.
+    let kept = writable_again(&dir.join("Lib/ro"));
+    assert_eq!(kept, Some(0o555), "first {first:?}, second {second:?}");
     let want = [("Lib/a.rs", "a\n"), ("Lib/ro/x.txt", "x\n")];
     assert_eq!(
         contents(&dir),
