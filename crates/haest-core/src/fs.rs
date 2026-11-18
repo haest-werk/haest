@@ -202,6 +202,7 @@ impl fmt::Debug for FsLock {
 /// walks the tree with [`remove_tree`]) and `rename`. The rest have defaults
 /// built on them; override one when the store can do it better
 /// ([`Fs::read_head`] that stops early, [`Fs::create_dir_all`] in one step,
+/// [`Fs::write_whole`] on a disk whose write empties a file first,
 /// [`Fs::read_link`], [`Fs::chmod`] and [`Fs::create_private_dir`] on a
 /// store that has links and modes, [`Fs::try_lock`] on a store more than
 /// one writer shares).
@@ -302,6 +303,27 @@ pub trait Fs: Send + Sync {
     /// `NotFound` when the parent directory does not exist (it is never
     /// created: see [`ensure_dir`]), and an error when `path` is a directory.
     async fn write(&self, path: &Path, data: &[u8]) -> io::Result<()>;
+    /// Replace what the file at `path` holds with `data`, whole or not at
+    /// all where the store can: a write it stops partway (a full disk, a
+    /// kill) leaves the file as it was, never emptied or cut short. The
+    /// tools that rewrite a file that is there call it (Edit, and Write
+    /// over one), since the model cannot put back a file it only edited; a
+    /// new file is made with [`Fs::write`].
+    ///
+    /// The default is [`Fs::write`]: a store whose write cannot stop
+    /// partway (memory), or that keeps writes its own way (a host's,
+    /// staging them for review), has nothing to add. A disk that empties a
+    /// file before it writes it overrides it (the real disk writes a new
+    /// file beside it and renames it over); a wrapper over another `Fs`
+    /// forwards it.
+    ///
+    /// # Errors
+    ///
+    /// [`Fs::write`]'s, and the store's own where it cannot replace the
+    /// file whole (no room for the new copy), with the file as it was.
+    async fn write_whole(&self, path: &Path, data: &[u8]) -> io::Result<()> {
+        self.write(path, data).await
+    }
     /// Add `data` to the end of the file, creating it when it is missing.
     /// The session log writes every record this way.
     ///

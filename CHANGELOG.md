@@ -1510,6 +1510,13 @@ Hosts write less (round two of the review, and what porting brain onto
   Linux, a directory made in a setgid one gets the bit too, the chmod
   drops it, and what is made inside then gets the process's group); an
   `Fs` that wraps another forwards it.
+- New `Fs::write_whole`: replace what a file holds, whole or not at all
+  where the store can, so a write stopped partway (a full disk, a kill)
+  leaves the file as it was. Edit, and Write over a file that is there,
+  call it. The default is `Fs::write`, right for a store whose write
+  cannot stop partway or that keeps writes its own way; a disk whose
+  write empties a file first overrides it, and an `Fs` that wraps another
+  forwards it.
 
 ### haest-http
 

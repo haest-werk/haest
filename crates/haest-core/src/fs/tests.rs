@@ -145,6 +145,17 @@ async fn the_default_create_dir_all_makes_every_parent_and_takes_one_already_the
     );
 }
 
+/// A store with nothing of its own to add replaces a file whole with its
+/// own write, and refuses what its write refuses.
+#[tokio::test]
+async fn the_default_whole_write_is_the_stores_write() {
+    let fs = Minimal(MemFs::from_files([("/p/a.txt", "the old text")]));
+    fs.write_whole(Path::new("/p/a.txt"), b"new").await.unwrap();
+    assert_eq!(fs.read(Path::new("/p/a.txt")).await.unwrap(), b"new");
+    let no_dir = fs.write_whole(Path::new("/q/a.txt"), b"x").await;
+    assert_eq!(no_dir.map_err(|e| e.kind()), Err(io::ErrorKind::NotFound));
+}
+
 #[tokio::test]
 async fn remove_tree_deletes_a_whole_tree_and_remove_does_not() {
     let fs = Minimal(MemFs::from_files([
