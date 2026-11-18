@@ -3,6 +3,7 @@
 
 use std::{
     fmt,
+    panic::{self, AssertUnwindSafe},
     sync::{
         Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
@@ -12,7 +13,8 @@ use std::{
 /// The newest value of something that changes (a task list, a ledger's
 /// snapshot, the jobs or subagents running), handed to a host's hook in the
 /// order of the changes, one call at a time, with no lock held: the hook may
-/// read (and change) its owner, and a hook that panics poisons nothing.
+/// read (and change) its owner, and a hook that panics poisons nothing and
+/// skips no value.
 ///
 /// The owner [`put`](Self::put)s each new value while it holds its own lock,
 /// so the values arrive in the order of the changes, then calls
@@ -109,9 +111,11 @@ impl<T> Newest<T> {
     ///
     /// # Panics
     ///
-    /// When `hook` panics: the panic goes on to this caller, and the next
-    /// delivery works.
+    /// When `hook` panics: this caller still hands over every value waiting
+    /// (one another caller put meanwhile included), then the first panic
+    /// goes on to it. The next delivery works.
     pub fn deliver(&self, hook: impl Fn(&T)) {
+        let mut panicked = None;
         // A value put while the last delivery was ending is seen here: either
         // this check finds it, or its caller found `delivering` cleared.
         while self.has_value() && self.claim() {
@@ -121,8 +125,13 @@ impl<T> Newest<T> {
                 let Some(value) = self.slot().take() else {
                     break;
                 };
-                hook(&value);
+                if let Err(p) = panic::catch_unwind(AssertUnwindSafe(|| hook(&value))) {
+                    panicked.get_or_insert(p);
+                }
             }
+        }
+        if let Some(p) = panicked {
+            panic::resume_unwind(p);
         }
     }
 
@@ -207,6 +216,44 @@ mod tests {
         go_on.wait();
         first.join().unwrap();
         assert_eq!(*heard.lock().unwrap(), [1, 3]);
+    }
+
+    /// A value another caller put while the hook ran was left waiting when
+    /// the hook panicked: nothing heard it until the next change.
+    #[test]
+    fn a_value_put_while_a_hook_panics_is_still_handed_over() {
+        let newest = Arc::new(Newest::default());
+        let (in_hook, go_on) = (Arc::new(Barrier::new(2)), Arc::new(Barrier::new(2)));
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let first = std::thread::spawn({
+            let (newest, in_hook, go_on, heard) = (
+                newest.clone(),
+                in_hook.clone(),
+                go_on.clone(),
+                heard.clone(),
+            );
+            move || {
+                newest.put(1);
+                let delivered = catch_unwind(AssertUnwindSafe(|| {
+                    newest.deliver(|v| {
+                        if *v == 1 {
+                            in_hook.wait();
+                            go_on.wait();
+                            panic!("host bug on 1");
+                        }
+                        heard.lock().unwrap().push(*v);
+                    });
+                }));
+                delivered.is_err()
+            }
+        });
+        in_hook.wait();
+        newest.put(2);
+        // Returns at once: the first caller is delivering.
+        newest.deliver(|v| heard.lock().unwrap().push(*v + 100));
+        go_on.wait();
+        assert!(first.join().unwrap(), "the hook's panic reaches its caller");
+        assert_eq!(*heard.lock().unwrap(), [2], "{newest:?}");
     }
 
     #[test]
