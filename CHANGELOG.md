@@ -703,12 +703,26 @@ write instead.
   dir, which nothing reads or writes (a lock on the session file itself
   refused the writer its own records where locks are mandatory, as on
   SMB); these empty files stay after their session ends. A new session is
-  held before its file is written, so one in use leaves no file. A data
-  dir on NFS takes the lock too; on a file system that takes none, a run
-  goes on without it, and on one that cannot take it (any error but
-  another holder) the run goes on unlocked and the human is warned that
-  another run could write the session too. On a host's own file system
-  nothing changes unless it implements `Fs::try_lock`.
+  held before its file is written, so one in use leaves no file, and its
+  sessions dir is made private (0700) first, as its file needs, so a dir
+  its owner made read-only does not leave it unlocked. A saved session
+  whose lock file cannot be opened or made (another user's, as a run as
+  root leaves; a sessions dir that takes no new file; a quota or a full
+  disk) is held through the session file itself, as before the lock file.
+  Such a run and one that holds `<id>.lock` do not keep each other out,
+  which takes runs as two users, or a dir or disk that took a new file
+  again between them; and on SMB such a session refuses its writer its
+  own records, as every session did before the lock file. A data dir on
+  NFS takes the lock too. On a file system that takes none, a run goes on
+  without it and nothing is said; the real disk counts as that a lock it
+  does not support (`ENOLCK` too) and an NFS client's `EBADF` on a lock
+  file it could open only to read. On one where taking it fails otherwise
+  (any error but another holder) the run goes on unlocked and the human
+  is warned that another run could write the session too: for each
+  session it holds, so again at each /clear, and just before the error
+  where a new session's lock file could not be made for a reason its own
+  file then fails on too (no sessions dir, a full disk). On a host's own
+  file system nothing changes unless it implements `Fs::try_lock`.
 
 ### The haest command
 
@@ -1441,8 +1455,13 @@ Hosts write less (round two of the review, and what porting brain onto
   nothing and makes no file; a store more than one writer shares
   overrides it. `JsonlSessionFile::try_lock` holds the session that way
   until the value is dropped, through `<id>.lock` beside the session file
-  (made with the sessions dir when missing, so it may come before
-  `create`); a second writer's fails with `WouldBlock`.
+  (for a new session it first makes the sessions dir private, 0700, and
+  makes it when missing, where it can, so it may come before `create`,
+  which reports a dir it cannot make); a second
+  writer's fails with `WouldBlock`. A saved session whose lock file fails
+  to open or be made with `PermissionDenied`, `ReadOnlyFilesystem`,
+  `QuotaExceeded` or `StorageFull` is held through the session file
+  itself; its docs give the trade-offs.
 
 ### haest-http
 
