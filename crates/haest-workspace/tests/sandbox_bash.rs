@@ -72,3 +72,57 @@ async fn mkdir_through_a_file_fails_as_in_bash() {
     apply_all(&ws).await;
     assert_eq!(contents(&dir), pairs(&[("mine", "m\n"), ("notes", "n\n")]));
 }
+
+/// A move onto the path the file is at leaves it, in bash. bashkit moves a
+/// file by writing the new name and removing the old one, so in the sandbox
+/// that removed the file, and applying deleted it from the disk. A loop
+/// that renames files to a name some of them already have (lowercasing,
+/// `${f// /_}`) took exactly those.
+#[tokio::test]
+async fn a_move_onto_itself_keeps_the_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_t, dir) = tempdir();
+    fs::create_dir(dir.join("d")).unwrap();
+    let want = [
+        ("Todo.md", "t\n"),
+        ("a", "a\n"),
+        ("d/b", "b\n"),
+        ("d/c", "c\n"),
+        ("my notes.txt", "m\n"),
+        ("notes.md", "n\n"),
+        ("secret.key", "k\n"),
+    ];
+    for (name, body) in want {
+        fs::write(dir.join(name), body).unwrap();
+    }
+    let ws = sandbox(&dir).await;
+    run(
+        &ws,
+        &dir,
+        "mv a ./a && mv d/b d && mv d/c d/../d/c \
+         && for f in *.md; do mv \"$f\" \"$(echo \"$f\" | tr A-Z a-z)\"; done \
+         && for f in *.txt; do mv \"$f\" \"${f// /_}\"; done \
+         && chmod 600 secret.key && mv secret.key ./secret.key",
+    )
+    .await;
+    let r = ws
+        .shell(
+            "cat a d/b d/c notes.md todo.md my_notes.txt secret.key",
+            opts(&dir),
+        )
+        .await;
+    assert_eq!(r.stdout, "a\nb\nc\nn\nt\nm\nk\n", "{r:?}");
+    apply_all(&ws).await;
+    let want = [
+        ("a", "a\n"),
+        ("d/b", "b\n"),
+        ("d/c", "c\n"),
+        ("my_notes.txt", "m\n"),
+        ("notes.md", "n\n"),
+        ("secret.key", "k\n"),
+        ("todo.md", "t\n"),
+    ];
+    assert_eq!(contents(&dir), pairs(&want));
+    let key = fs::metadata(dir.join("secret.key")).unwrap().permissions();
+    assert_eq!(key.mode() & 0o7777, 0o600);
+}

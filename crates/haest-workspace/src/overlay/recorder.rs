@@ -227,6 +227,14 @@ impl FileSystem for Recorder {
     }
     async fn rename(&self, from: &Path, to: &Path) -> Result<()> {
         let _turn = self.turn().await;
+        // bashkit's overlay moves a file by writing `to` and then removing
+        // `from`: onto itself (`mv a ./a`, `mv d/a d`, a renaming loop over
+        // names already right) that removed the file, and applying deleted
+        // it from the disk. A rename onto itself does nothing, as in bash.
+        // A directory onto itself already fails in bashkit, as in bash.
+        if normalize(from) == normalize(to) && !self.inner.lstat(from).await?.file_type.is_dir() {
+            return Ok(());
+        }
         self.parent_shown(to).await?;
         self.book.remember(from).await;
         self.book.remember(to).await;
