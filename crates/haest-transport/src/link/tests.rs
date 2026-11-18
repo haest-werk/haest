@@ -750,6 +750,7 @@ async fn a_panic_in_the_hosts_sink_reaches_the_host() {
 }
 
 mod cap;
+mod dropped;
 mod keepalive;
 mod order;
 mod panics;

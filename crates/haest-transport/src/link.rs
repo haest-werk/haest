@@ -201,9 +201,15 @@ pub async fn serve(
     });
     let mut lines = std::pin::pin!(lines);
     let (tx, rx) = mpsc::channel(OUT_BUFFER);
-    let mut writer = AbortOnDrop(tokio::spawn(write(sink, rx, backend.meta().sid)));
-    // What the writer ended with, once it was awaited (never awaited twice).
-    let mut writer_done: Option<Result<(), JoinError>> = None;
+    // The writer runs inside this future, not on a task of its own: dropped
+    // with it, it calls the sink no more, and the sink goes at once. (An
+    // aborted task stops only once it is next polled, and one being polled
+    // on another worker goes on writing until that poll ends.)
+    let writer = caught(write(sink, rx, backend.meta().sid));
+    let mut writer = std::pin::pin!(writer);
+    // What the writer ended with, once it was awaited (never awaited twice):
+    // Err is the sink's panic.
+    let mut writer_done: Option<Result<(), Box<dyn Any + Send>>> = None;
     // The conversation's end, whatever the peer asked for.
     let closed = until_closed(backend.subscribe(u64::MAX));
     tokio::pin!(closed);
@@ -279,12 +285,24 @@ pub async fn serve(
             }
         }
     };
-    // Its request is still answered, as far as the peer takes it.
-    if let Some(id) = stopped.as_ref().err().and_then(|p| p.id.clone()) {
-        let refused = Out::Conn(Outbound::refused(id, BACKEND_PANICKED));
-        let _ = tokio::time::timeout(FLUSH_GRACE, link.tx.send(refused)).await;
-    }
-    let dropped = link.finish(matches!(stopped, Ok(Ended::Closed))).await;
+    // Its request is still answered, as far as the peer takes it; the
+    // writer goes on writing meanwhile.
+    let owed = stopped.as_ref().err().and_then(|p| p.id.clone());
+    let conversation_ended = matches!(stopped, Ok(Ended::Closed));
+    let finishing = async move {
+        if let Some(id) = owed {
+            let refused = Out::Conn(Outbound::refused(id, BACKEND_PANICKED));
+            let _ = tokio::time::timeout(FLUSH_GRACE, link.tx.send(refused)).await;
+        }
+        link.finish(conversation_ended).await
+    };
+    let mut finishing = std::pin::pin!(finishing);
+    let dropped = loop {
+        tokio::select! {
+            dropped = &mut finishing => break dropped,
+            done = &mut writer, if writer_done.is_none() => writer_done = Some(done),
+        }
+    };
     if writer_done.is_none() {
         writer_done = tokio::time::timeout(FLUSH_GRACE, &mut writer).await.ok();
     }
@@ -293,10 +311,8 @@ pub async fn serve(
         (Err(panicked), _) | (Ok(_), Some(panicked)) => panic::resume_unwind(panicked.panic),
         (Ok(ended), None) => ended,
     };
-    if let Some(Err(e)) = writer_done
-        && e.is_panic()
-    {
-        panic::resume_unwind(e.into_panic());
+    if let Some(Err(panic)) = writer_done {
+        panic::resume_unwind(panic);
     }
     ended
 }
@@ -312,9 +328,11 @@ struct Panicked {
     panic: Box<dyn Any + Send>,
 }
 
-/// A task a connection started, aborted when this drops: however `serve`
-/// ends, returned or dropped where it waits, nothing it started goes on
-/// writing to the peer or following the stream.
+/// A task a connection started (the pump, a request), aborted when this
+/// drops: however `serve` ends, returned or dropped where it waits, nothing
+/// it started goes on following the stream. An abort lands at the task's
+/// next poll, so one being polled at that moment finishes that step; what
+/// it queues goes nowhere, since the writer went with `serve`.
 struct AbortOnDrop<T>(JoinHandle<T>);
 
 impl<T> Drop for AbortOnDrop<T> {

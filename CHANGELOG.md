@@ -2565,7 +2565,12 @@ against it; the wire JSON is unchanged):
   followed the stream kept getting every frame, and a detached broker link
   kept its socket open, streamed the conversation to the broker and pinged
   it until the conversation ended. A dropped `serve` now stops both, so a
-  detached broker link closes its socket.
+  detached broker link closes its socket. The writer runs inside `serve`,
+  so a dropped `serve` calls the host's `LineSink` no more and drops it
+  there. Aborting a writer on a task of its own was not enough: an abort
+  lands at the task's next poll, so a writer busy on another worker went
+  on calling the sink after the host dropped `serve`, and the sink
+  outlived it.
 - `Attached::ended` given up on (raced against a timeout, or its task
   aborted) stops the transport, as dropping the `Attached` does. It took
   the transport's task out before it waited, so a dropped wait left the
