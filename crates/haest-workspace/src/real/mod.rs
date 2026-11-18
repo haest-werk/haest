@@ -9,6 +9,7 @@
 
 mod exec;
 mod fs;
+mod pipe;
 
 use async_trait::async_trait;
 use haest_core::{
@@ -42,7 +43,10 @@ pub use fs::RealFs;
 /// - Output is decoded as UTF-8, invalid bytes replaced. The result keeps
 ///   each stream's first 64 MiB, as the sandbox does, and drops the rest;
 ///   the child is still read to its end. Streamed output
-///   ([`Workspace::shell_streaming`]) is handed over whole.
+///   ([`Workspace::shell_streaming`]) is handed over whole. A panic in the
+///   caller's `on_output` stops its calls, never the command: the pipes are
+///   still read to their end, and the panic reaches the caller once the call
+///   has ended, as it does over the sandbox.
 ///
 /// [`Workspace::prompt_note`] is empty: the real world needs no explaining.
 ///
@@ -136,7 +140,8 @@ impl Workspace for RealWorkspace {
     }
 
     /// The output streams straight from the pipes, nothing is kept: a
-    /// background job's dev server may print for hours.
+    /// background job's dev server may print for hours. A panic in
+    /// `on_output` goes on once the call has ended; it hears nothing more.
     async fn shell_streaming(
         &self,
         command: &str,

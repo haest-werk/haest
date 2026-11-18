@@ -3,10 +3,10 @@
 //! esbuild), not just bash.
 
 use std::{
-    io,
+    io, panic,
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::Arc,
     time::Duration,
 };
 
@@ -14,12 +14,9 @@ use haest_core::{
     ChildEnv,
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks},
 };
-use tokio::{
-    io::{AsyncRead, AsyncReadExt},
-    process::Command,
-};
+use tokio::process::Command;
 
-use crate::MAX_OUTPUT_BYTES;
+use super::pipe::{Listener, Sink, drain, take};
 
 /// After a kill, how long the pipes may stay open (a grandchild that left the
 /// group still holds them) before the result is returned without them.
@@ -102,76 +99,6 @@ fn not_started(program: &str, e: &io::Error) -> ExecResult {
     }
 }
 
-type Sink = Arc<Mutex<Vec<u8>>>;
-
-/// A stream's kept bytes. The lock is held only to copy bytes in or out, so a
-/// poisoned one is a bug here.
-fn kept(s: &Sink) -> MutexGuard<'_, Vec<u8>> {
-    s.lock().expect("the kept output's lock poisoned")
-}
-
-/// How many bytes at the end of `b` begin a character the next chunk completes.
-fn cut_char(b: &[u8]) -> usize {
-    for back in 1..=b.len().min(3) {
-        let byte = b[b.len() - back];
-        if byte & 0xC0 == 0x80 {
-            continue;
-        }
-        let need = match byte {
-            0xC0..=0xDF => 2,
-            0xE0..=0xEF => 3,
-            0xF0..=0xF7 => 4,
-            _ => 1,
-        };
-        return if need > back { back } else { 0 };
-    }
-    0
-}
-
-/// The text at the front of `pending` that is whole characters (all of it at
-/// the end of the stream); bytes that are not UTF-8 become U+FFFD.
-fn whole_chars(pending: &mut Vec<u8>, end: bool) -> String {
-    let upto = if end {
-        pending.len()
-    } else {
-        pending.len() - cut_char(pending)
-    };
-    let text = String::from_utf8_lossy(&pending[..upto]).into_owned();
-    pending.drain(..upto);
-    text
-}
-
-/// Read `from` to its end, so the child never blocks on a full pipe: into
-/// `into`, its first [`MAX_OUTPUT_BYTES`] kept and the rest dropped, or to
-/// `stream` as whole characters.
-async fn drain(mut from: impl AsyncRead + Unpin, into: Sink, stream: Option<OutputChunks>) {
-    let mut chunk = vec![0u8; 16 * 1024];
-    let mut pending = Vec::new();
-    loop {
-        let n = match from.read(&mut chunk).await {
-            Ok(0) | Err(_) => 0,
-            Ok(n) => n,
-        };
-        let Some(on_output) = &stream else {
-            if n == 0 {
-                return;
-            }
-            let mut kept = kept(&into);
-            let room = MAX_OUTPUT_BYTES.saturating_sub(kept.len());
-            kept.extend_from_slice(&chunk[..n.min(room)]);
-            continue;
-        };
-        pending.extend_from_slice(&chunk[..n]);
-        let text = whole_chars(&mut pending, n == 0);
-        if !text.is_empty() {
-            on_output(&text);
-        }
-        if n == 0 {
-            return;
-        }
-    }
-}
-
 /// Kills the child's whole group if the run is dropped before it ends (a
 /// Code run that times out drops its calls in flight): `kill_on_drop` alone
 /// kills only bash, and `sleep 1000 &` or `npm run dev` would run on.
@@ -185,13 +112,11 @@ impl Drop for KillGroupOnDrop {
     }
 }
 
-fn take(s: &Sink) -> String {
-    String::from_utf8_lossy(&std::mem::take(&mut *kept(s))).into_owned()
-}
-
 /// Spawn `program args...` in its own process group, with `env` and nothing
 /// else, and collect its output (or hand it to `stream` as it arrives: then the
 /// result carries none). The deadline and the cancel token both kill the group.
+/// A panic in `stream` goes on once the call has cleaned up, as the trait's
+/// default raises it once the command has ended.
 pub(super) async fn spawn_collect(
     program: &Path,
     args: &[String],
@@ -219,18 +144,19 @@ pub(super) async fn spawn_collect(
     let pid = child.id().unwrap_or(0);
     let mut on_drop = KillGroupOnDrop(Some(pid));
     let (out, err): (Sink, Sink) = Default::default();
+    let listener = stream.map(|s| Arc::new(Listener::new(s)));
     // Held in a set, never detached: a dropped call drops the set, which
     // aborts them.
     let mut readers = tokio::task::JoinSet::new();
     readers.spawn(drain(
         child.stdout.take().expect("piped"),
         out.clone(),
-        stream.clone(),
+        listener.clone(),
     ));
     readers.spawn(drain(
         child.stderr.take().expect("piped"),
         err.clone(),
-        stream,
+        listener.clone(),
     ));
 
     let mut timed_out = false;
@@ -264,6 +190,11 @@ pub(super) async fn spawn_collect(
     // hold them for good: stop reading, so nothing reaches `stream` after the
     // return and nothing more is kept. It gets SIGPIPE if it writes again.
     readers.shutdown().await;
+    // The child is reaped and nothing reads for it: the caller's own panic
+    // in `stream` goes on now.
+    if let Some(panic) = listener.and_then(|l| l.take_panic()) {
+        panic::resume_unwind(panic);
+    }
     ExecResult {
         stdout: take(&out),
         stderr: take(&err),

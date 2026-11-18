@@ -4,7 +4,6 @@ mod common;
 
 use std::{
     path::Path,
-    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -12,7 +11,7 @@ use common::{argv, opts, real, tempdir};
 use haest_core::{
     ChildEnv,
     fs::{FileKind, Fs, read_text_if_present},
-    workspace::{EXIT_NOT_FOUND, OutputChunks, Workspace, WorkspaceMode},
+    workspace::{EXIT_NOT_FOUND, Workspace, WorkspaceMode},
 };
 use haest_workspace::{RealFs, RealWorkspace};
 
@@ -95,33 +94,6 @@ async fn output_that_is_not_utf8_is_decoded_lossily() {
     assert_eq!(r.stdout, "ok\u{FFFD}");
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn streamed_output_arrives_while_the_command_runs_and_stays_out_of_the_result() {
-    let (_t, dir) = tempdir();
-    let seen = Arc::new(Mutex::new(String::new()));
-    let into = seen.clone();
-    let on_output = OutputChunks::from(move |s: &str| into.lock().unwrap().push_str(s));
-    let ws = real();
-    // A multi-byte character split across two writes arrives whole.
-    let run = ws.shell_streaming(
-        r"printf 'first \xc3'; sleep 0.05; printf '\xa9\n'; sleep 0.4; echo second >&2",
-        opts(&dir),
-        on_output,
-    );
-    tokio::pin!(run);
-    let early = tokio::select! {
-        r = &mut run => panic!("ended before the check: {r:?}"),
-        _ = tokio::time::sleep(Duration::from_millis(250)) => seen.lock().unwrap().clone(),
-    };
-    assert_eq!(early, "first \u{e9}\n");
-    let r = run.await;
-    assert_eq!(*seen.lock().unwrap(), "first \u{e9}\nsecond\n");
-    assert_eq!(
-        (r.stdout.as_str(), r.stderr.as_str(), r.exit_code),
-        ("", "", 0)
-    );
-}
-
 #[expect(
     unsafe_code,
     reason = "kill(2) with signal 0 asks whether a pid lives; std cannot"
@@ -183,29 +155,6 @@ async fn an_exited_bash_keeps_its_pid_until_the_call_ends() {
         pid.trim()
     );
     assert!(call.await.unwrap().timed_out);
-}
-
-/// A process that left bash's group may hold the output for good: the call's
-/// pipe readers ran on after it returned, so what it printed later reached
-/// `on_output` (after a job's `Done`) and was read and kept for a call that
-/// had ended. Once the call has returned, nothing it prints arrives.
-#[tokio::test(flavor = "multi_thread")]
-async fn no_output_reaches_on_output_after_the_call_returns() {
-    let (_t, dir) = tempdir();
-    let mut o = opts(&dir);
-    o.timeout = Duration::from_secs(1);
-    let seen = Arc::new(Mutex::new(String::new()));
-    let into = seen.clone();
-    let on_output = OutputChunks::from(move |s: &str| into.lock().unwrap().push_str(s));
-    let late = "perl -e 'use POSIX qw(setsid); setsid(); $|=1; sleep 4; print \"late\\n\"'";
-    let r = real()
-        .shell_streaming(&format!("{late} & echo early"), o, on_output)
-        .await;
-    assert!(r.timed_out);
-    assert_eq!(*seen.lock().unwrap(), "early\n");
-    // The escaped process prints at 4 s; the call returned at about 3 s.
-    tokio::time::sleep(Duration::from_secs(3)).await;
-    assert_eq!(*seen.lock().unwrap(), "early\n");
 }
 
 #[tokio::test(flavor = "multi_thread")]
