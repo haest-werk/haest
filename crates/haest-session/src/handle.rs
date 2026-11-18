@@ -30,11 +30,7 @@ use crate::{
 /// the task ends, a panic in `Driven::close` itself included.
 pub fn start<D: Driven>(driven: D, hub: Hub) -> SessionHandle<D> {
     let (tx, rx) = mpsc::unbounded_channel();
-    let meta = Meta {
-        sid: hub.sid().to_string(),
-        pid: std::process::id(),
-        started_ms: now_ms(),
-    };
+    let meta = Meta::new(hub.sid(), std::process::id(), now_ms());
     tokio::spawn(Driver::new(driven, hub.clone(), rx).run());
     SessionHandle { tx, hub, meta }
 }

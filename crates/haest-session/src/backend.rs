@@ -51,8 +51,10 @@ pub enum Control {
 }
 
 /// What a backend says about itself once, for a peer's `hello` and a
-/// discovery file.
+/// discovery file. More may come: a backend builds one with
+/// [`new`](Self::new).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Meta {
     /// The stream's id.
     pub sid: String,
@@ -62,14 +64,37 @@ pub struct Meta {
     pub started_ms: u64,
 }
 
+impl Meta {
+    /// The stream `sid`, run by process `pid`, started at `started_ms` (ms
+    /// since the Unix epoch).
+    #[must_use]
+    pub fn new(sid: impl Into<String>, pid: u32, started_ms: u64) -> Self {
+        Self {
+            sid: sid.into(),
+            pid,
+            started_ms,
+        }
+    }
+}
+
 /// The conversation's messages, and the seq of the last frame they include:
-/// follow the stream from that seq to stay current.
+/// follow the stream from that seq to stay current. More may come: a
+/// backend builds one with [`new`](Self::new).
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct History {
     /// The last frame these messages include.
     pub seq: u64,
     /// The messages, oldest first.
     pub messages: Vec<Message>,
+}
+
+impl History {
+    /// `messages`, oldest first, current to the frame `seq`.
+    #[must_use]
+    pub fn new(seq: u64, messages: Vec<Message>) -> Self {
+        Self { seq, messages }
+    }
 }
 
 /// Why a session refused or could not do what it was asked.

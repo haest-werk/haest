@@ -226,7 +226,7 @@ impl<D: Driven> Driver<D> {
             Command::History(tx) => {
                 let seq = self.hub.last_seq();
                 let messages = self.driven.history();
-                let _ = tx.send(History { seq, messages });
+                let _ = tx.send(History::new(seq, messages));
             }
             // After a close was asked it is dropped unstarted, and its
             // caller reads Closed: the close comes first.

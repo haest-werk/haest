@@ -2200,6 +2200,11 @@ against it; the wire JSON is unchanged):
   stable Rust, and the job runs on the driver's task.
 - `#[non_exhaustive]` on `Control` and `SessionError`: a backend that
   matches a `Control` refuses one it does not know with a `_` arm.
+- `Meta` and `History` are `#[non_exhaustive]`, and a host's own
+  `Backend` builds them with `new`:
+  `Meta { sid, pid, started_ms }` -> `Meta::new(sid, pid, started_ms)`,
+  and `History { seq, messages }` -> `History::new(seq, messages)`. Their
+  fields stay public to read.
 - `SessionHandle` and `Hold` implement `Debug` (the handle shows its `Meta`
   and whether the session still runs).
 - New `BackendRef`, the shared handle to a `Backend` (`plug_ref!`, as every
