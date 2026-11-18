@@ -314,20 +314,29 @@ write instead.
   showed the tree it meant. A sandbox that wrote both names
   (`echo upper > README.md && echo lower > readme.md`) had the second
   written over the first, and the first's content was lost, listed
-  nowhere. Now:
+  nowhere. A write onto a name the disk held under another spelling, or
+  into a directory it held so, went into the disk's spelling and left the
+  change list as applied, even with the same content
+  (`cp readme.md README.md`, or `mkdir Lib && echo n > Lib/new.rs` beside
+  `lib`); removing the old spelling later (`rm readme.md`, `rm -r lib`)
+  then deleted it on apply too, while the sandbox still showed it. Now:
   - the sandbox finds a project path only as the disk spells it, so
     `mv lib Lib` is a rename, as in bash, and the change list shows a
     rename by case or by Unicode spelling as one: `/readme.md` deleted and
-    `/README.md` added, `/lib` deleted and each `/Lib/...` file added;
+    `/README.md` added, `/lib` deleted and each `/Lib/...` file added, a
+    symlink that points nowhere included (apply leaves every link to the
+    human);
   - `OverlayChanges::apply` runs every delete first, then the writes, so
     such a rename keeps its files;
-  - a change that would land on a file the disk holds under another
-    spelling is a conflict, listed as one and skipped, unless the same
-    apply deletes that file;
+  - a change that would land on a name the disk holds under another
+    spelling, the file itself or a directory on its way, is a conflict
+    whatever that holds, listed as one and skipped, unless the same apply
+    deletes that name;
   - the apply reads each change's real path again right before putting it
     on the disk: one that moved since the scan (an earlier write of the
-    apply under another spelling, or the human saving or deleting it
-    meanwhile) is skipped as a conflict and stays listed.
+    apply under another spelling, the new name of a rename whose delete
+    failed, or the human saving or deleting it meanwhile) is skipped as a
+    conflict and stays listed.
   The cost: in the sandbox, `cat README.md` does not find `readme.md`,
   where real bash on that disk would (see haest-workspace). A case-folding
   directory on Linux (`chattr +F`) is not told apart.
@@ -1170,7 +1179,8 @@ Hosts write less (round two of the review, and what porting brain onto
   with a hook of its own can too. A hook that panics poisons nothing and
   skips no value: the caller it panicked in still hands over every value
   waiting (one another caller put meanwhile too), then the first panic
-  goes on to it.
+  goes on to it. `put` drops the value it replaces with no lock held, so a
+  plug-in's value may run code as it drops, `put` again included.
 - `catalog::Reasoning`, `workspace::Change` and `workspace::FailedChange`
   are `#[non_exhaustive]` and built with `Reasoning::new(efforts)` and
   `with_mandatory`, `Change::new(path, kind)` and `with_conflict`, and
@@ -1678,15 +1688,19 @@ Hosts write less (round two of the review, and what porting brain onto
   as the disk spells each path, and `apply` runs every delete before any
   write (see Security). A rename by case or by Unicode spelling lists as
   the old name deleted and the new one added and applies as bash leaves
-  it; a change that would land on a file the disk holds under another
-  spelling, or whose real path moved since the scan, is a conflict and is
-  skipped (`Change::conflict` says so). In the sandbox a name the disk
-  spells another way is not found, where real bash on that disk finds it:
+  it; a change that would land on a name the disk holds under another
+  spelling (the file itself, or a directory on its way), or whose real
+  path moved since the scan, is a conflict and is skipped
+  (`Change::conflict` says so). In the sandbox a name the disk spells
+  another way is not found, where real bash on that disk finds it:
   `cat README.md` fails over `readme.md`, `echo x > README.md` makes a
   second file beside it, and `rm -r lib && mkdir Lib` works (it failed
   with "File exists"). Each read in the project looks its path up once
-  more; one through a symlink inside the project also lists each
-  directory on the way, about 2.5 times as slow.
+  more. One through a symlink inside the project, or of a symlink that
+  points nowhere, also reads the listing of each directory on the way,
+  once: it is read again only after that directory changed. In a
+  directory the sandbox may enter but not list (mode `0311`), a name asked
+  under another spelling or through a symlink reads as the disk finds it.
 - Fixed: over the real workspace, a caller's own `on_output` that panicked
   in `shell_streaming` ended the pipe's reader: the panic was lost, and the
   command died of SIGPIPE (exit 141) on its next write. It is now called
