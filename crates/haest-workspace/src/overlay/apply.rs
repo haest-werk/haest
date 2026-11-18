@@ -138,11 +138,16 @@ impl OverlayChanges {
             match self.put(&s, run).await {
                 Ok(Put::Applied(took)) => {
                     self.read_through(&s, &took).await;
-                    self.book.touched().remove(&s.path);
                     if s.mine == Original::Dir {
+                        // Its mode goes on last (`dir_mode`): till then it
+                        // stays in the ledger, as the directory the disk
+                        // holds now, so an apply dropped first leaves the
+                        // mode listed.
+                        self.book.touched().insert(s.path.clone(), Original::Dir);
                         let at = run.report.applied.len();
                         run.dirs.push((at, s.path));
                     } else {
+                        self.book.touched().remove(&s.path);
                         self.book.modes.forget(&s.path);
                     }
                     run.report.applied.push(s.change);
@@ -340,14 +345,14 @@ impl OverlayChanges {
             .carry_mode(path, kind, Original::Dir, &self.book.real(path))
             .await;
         match done {
-            Ok(()) => self.book.modes.forget(path),
+            Ok(()) => {
+                self.book.touched().remove(path);
+                self.book.modes.forget(path);
+            }
             Err(e) => {
+                // Still in the ledger as the directory the disk holds now
+                // (`settle`): only its mode is left.
                 let change = report.applied.remove(at);
-                // The disk holds the directory now: only its mode is left.
-                self.book
-                    .touched()
-                    .entry(path.to_path_buf())
-                    .or_insert(Original::Dir);
                 let code = ApplyFailureCode::WriteFailed;
                 report
                     .failed

@@ -8,7 +8,7 @@ mod common;
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
 use common::{
-    opts, sandbox,
+    drop_apply_partway, opts, sandbox,
     spelling::{apply_all, changes, paths, run},
     tempdir,
 };
@@ -301,6 +301,40 @@ async fn a_directory_made_read_only_after_a_write_into_it_still_gets_the_write()
         assert_eq!(landed.as_deref(), Some("x\n"), "{command}");
         assert!(modes.iter().all(|m| m == "555"), "{command}: {modes:?}");
     }
+}
+
+/// The haest command drops `/apply` 2 s after Ctrl+C. A directory's mode
+/// goes on after every write, but the directory left the list as soon as
+/// it was on the disk: a drop in between left the mode off the disk and
+/// off the list, for good. The sandbox still showed it.
+#[tokio::test]
+async fn an_apply_dropped_partway_keeps_a_directorys_mode_listed() {
+    let (_t, dir) = tempdir();
+    fs::create_dir(dir.join("conf")).unwrap();
+    set_mode(&dir.join("conf"), 0o755);
+    fs::create_dir(dir.join("src")).unwrap();
+    for i in 0..20 {
+        fs::write(dir.join(format!("src/f{i:02}")), format!("{i}\n")).unwrap();
+    }
+    let ws = sandbox(&dir).await;
+    run(
+        &ws,
+        &dir,
+        "chmod 700 conf && cp -r src gen && chmod 700 gen",
+    )
+    .await;
+    let gen_dir = dir.join("gen");
+    drop_apply_partway(&changes(&ws), || {
+        fs::read_dir(&gen_dir).is_ok_and(|mut d| d.next().is_some())
+    })
+    .await;
+    let listed = paths(&changes(&ws).list().await);
+    for d in ["/conf", "/gen"] {
+        assert!(listed.iter().any(|p| p == d), "{d} in {listed:?}");
+    }
+    apply_all(&ws).await;
+    assert_eq!(mode(&dir.join("conf")), 0o700);
+    assert_eq!(mode(&gen_dir), 0o700);
 }
 
 /// A directory's mode the disk refuses (a locked directory) fails alone,
