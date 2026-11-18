@@ -46,7 +46,7 @@ async fn appending_under_a_removed_directory_fails_as_in_bash() {
     let r = ws.shell("echo x >> lib/a.rs", opts(&dir)).await;
     assert_ne!(r.exit_code, 0, "{r:?}");
     apply_all(&ws).await;
-    assert!(contents(&dir).is_empty());
+    assert_eq!(contents(&dir), pairs(&[]));
 }
 
 /// `mkdir -p` through a file fails in bash ("Not a directory"). In the

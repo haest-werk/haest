@@ -94,13 +94,12 @@ impl Spelling {
     pub(crate) async fn spelled_way(&self, path: &Path, ways: &mut Ways) -> Spelled {
         let mut at = path.parent();
         while let Some(dir) = at.filter(|d| d.parent().is_some()) {
-            let found = match ways.0.get(dir) {
-                Some(found) => found.clone(),
-                None => {
-                    let found = self.find(dir).await;
-                    ways.0.insert(dir.to_path_buf(), found.clone());
-                    found
-                }
+            let found = if let Some(found) = ways.0.get(dir) {
+                found.clone()
+            } else {
+                let found = self.find(dir).await;
+                ways.0.insert(dir.to_path_buf(), found.clone());
+                found
             };
             if let Some(spelled) = found {
                 return spelled;

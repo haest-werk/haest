@@ -15,6 +15,7 @@ use common::{
     spelling::{apply_all, changes, contents, pairs, paths, reads_as_one, run},
     tempdir,
 };
+use haest_core::workspace::Change;
 
 /// The disk's `lib` holds `a.rs` and `b.rs`. The deletes and overwrites
 /// under `lib` were applied while every write under `Lib` was skipped as a
@@ -187,5 +188,5 @@ async fn a_rename_by_case_whose_delete_would_stop_partway_keeps_every_file() {
     let second = changes(&ws).apply().await;
     let want = [("Lib/a.rs", "a\n"), ("Lib/ro/x.txt", "x\n")];
     assert_eq!(contents(&dir), pairs(&want), "{first:?}, {second:?}");
-    assert!(changes(&ws).list().await.is_empty());
+    assert_eq!(changes(&ws).list().await, Vec::<Change>::new());
 }

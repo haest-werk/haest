@@ -81,7 +81,8 @@ async fn a_mode_change_alone_shows_in_its_diff() {
     run(&ws, &dir, "chmod +x run.sh").await;
     let list = changes(&ws).list().await;
     assert_eq!(list.len(), 1, "{list:?}");
-    assert!(!changes(&ws).diff(&list[0]).await.is_empty());
+    let diff = changes(&ws).diff(&list[0]).await;
+    assert_eq!(diff, "Mode /run.sh 644 -> 755\n", "{list:?}");
 }
 
 /// What `chmod` takes away is applied: `chmod -x` and `chmod 600`.

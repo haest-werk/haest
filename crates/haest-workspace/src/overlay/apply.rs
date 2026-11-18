@@ -26,7 +26,7 @@ use std::{
 };
 
 use haest_core::{
-    fs::Fs,
+    fs::{Fs, FsStat},
     workspace::{ApplyFailureCode, ApplyReport, ChangeKind, FailedChange},
 };
 
@@ -193,7 +193,7 @@ impl OverlayChanges {
         let disk = self.book.disk.as_ref();
         let real = self.book.real(path);
         let found = disk.stat(&real).await.ok();
-        let was_dir = found.as_ref().is_some_and(|st| st.is_dir());
+        let was_dir = found.as_ref().is_some_and(FsStat::is_dir);
         // A directory whose name this apply's writes land on under another
         // spelling (a rename by case) goes whole or not at all: what a
         // delete took before it stopped would otherwise be only in the
