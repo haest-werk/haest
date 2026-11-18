@@ -525,14 +525,22 @@ write instead.
   and since the disk then held neither version, every later list showed
   it as a conflict and every apply skipped it. A kill during the write
   left the same, unreported. A file now goes on the disk whole or not at
-  all: the sandbox's version is written to a new file beside it, with the
-  file's permission bits, and renamed over it. A failure leaves the
-  human's file as it was and the change listed, to apply once there is
-  room. A read-only file is still refused; a file with another hard link,
-  one whose owner or group a new file would not have, and one in a
-  directory that takes no new file are written in place as before. A
-  replaced file does not keep its extended attributes or ACLs, and a kill
-  partway can leave the new file (`.<name>.haest-<pid>-<n>`) beside it.
+  all: the sandbox's version is written to a new file in a directory of
+  its own beside it, which only its owner may enter, given the file's
+  permission bits, and renamed over it. A new file the disk has no room
+  for leaves the human's file as it was and the change listed, to apply
+  once there is room; an apply now needs room for that second copy of
+  each file it replaces. A read-only file is still refused. Written in
+  place as before: a file with another hard link, one whose owner or
+  group a new file would not have, and one where the disk will not make
+  the new file or move it over the old one (a directory that takes no
+  new name, a path just short of the system's cap, a file that is a
+  mount point of its own, as one bind-mounted into a dev container). A
+  replaced file does not keep its extended attributes or ACLs, and a
+  process that holds it open to write (a log a server appends to, a
+  database) goes on writing to the old file. A kill partway can leave the
+  new file's directory (`.<name>.haest-<pid>-<n>`) beside it, owner-only;
+  `.*.haest-*` in an ignore file matches it.
 - An apply dropped partway lost the files of a tree the sandbox had moved.
   After `mv src gen`, the files under `gen` were listed only by walking
   `gen`, and only until `gen` was on the disk; the apply deletes first, so

@@ -15,15 +15,25 @@
 //! refuses (permissions, a full disk) fails alone (`write-failed`) with the
 //! human's file as it was, still listed (not a conflict) for an apply once
 //! the disk takes it; the apply goes on with the rest. A file the human
-//! made read-only is refused, never replaced. A file a new one would not
-//! stand in for is written in place, as before: one with another hard
-//! link, one whose owner or group a new file would not have, one in a
-//! directory that takes no new file. The trade-off: a file replaced so does
-//! not keep its extended attributes or ACLs, and a kill partway (or an
-//! apply dropped while the system runs a step it began) can leave the new
-//! file's directory, `.<name>.haest-<pid>-<n>`, beside it: empty, or with
-//! the new file in it, which only its owner may reach. Never a file cut
-//! short.
+//! made read-only is refused, never replaced. Written in place, as before:
+//! a file a new one would not stand in for (one with another hard link,
+//! one whose owner or group a new file would not have), and one where the
+//! disk will not make the new file or move it there (a directory that
+//! takes no new name, a path the longer name takes past the system's cap,
+//! a file that is a mount point of its own). A new file the disk has no
+//! room for fails the change: in place, the bytes would cut the file short.
+//! The trade-offs of a file replaced so:
+//! - it does not keep its extended attributes or ACLs;
+//! - a process that holds it open to write (a log a server appends to, a
+//!   database) goes on writing to the old file: nothing it writes after
+//!   the apply shows at the path;
+//! - the disk needs room for a second copy of it while the new one fills;
+//!   a file written in place needs none;
+//! - a kill partway, or an apply dropped while the system runs a step it
+//!   began, can leave the new file's directory, `.<name>.haest-<pid>-<n>`,
+//!   beside it: empty, or with the new file in it, which only its owner may
+//!   reach; never a file cut short. The name matches none of the file's own
+//!   ignore patterns; `.*.haest-*` matches every one.
 //!
 //! Deletes go first, then the writes: on a disk that reads two spellings as
 //! one name, a rename by case (`/readme.md` deleted, `/README.md` added)
