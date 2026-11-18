@@ -93,6 +93,11 @@ struct Rig {
 
 impl Rig {
     fn new() -> Self {
+        Self::at(BASE)
+    }
+
+    /// The tool over the Image API at `base`.
+    fn at(base: &str) -> Self {
         let api = Arc::new(FakeApi {
             list: Mutex::new(json_answer(200, &models())),
             answer: Mutex::new(image_answer(&JPEG)),
@@ -101,7 +106,7 @@ impl Rig {
         });
         let opts = GenerateImageOptions::new("k")
             .with_models("img-model", ["text-model"])
-            .with_base_url(BASE)
+            .with_base_url(base)
             .with_http(api.clone());
         Self {
             api,
@@ -262,6 +267,34 @@ async fn a_refusal_or_an_answer_without_an_image_is_an_error_the_model_can_act_o
             .is_error
     );
     assert!(!r.ws.mem.exists(std::path::Path::new("/p/a.svg")).await);
+}
+
+/// A base URL may carry `user:password@` (a gateway that takes its
+/// credentials in the URL): neither the options' Debug output nor the error
+/// for a model the Image API does not list shows it.
+#[tokio::test]
+async fn the_base_urls_credentials_never_show() {
+    let base = "https://user:s3cret@images.test/api/v1";
+    let opts = GenerateImageOptions::new("k").with_base_url(format!("{base}?key=k3y"));
+    let shown = format!("{opts:?}");
+    assert!(
+        !shown.contains("s3cret") && !shown.contains("k3y"),
+        "{shown}"
+    );
+    assert!(shown.contains("images.test/api/v1"), "{shown}");
+
+    let r = Rig::at(base);
+    let unlisted = json!({"data": [{"id": "other", "supported_parameters": {}}]});
+    *r.api.list.lock().unwrap() = json_answer(200, &unlisted);
+    let out = r.run(json!({"prompt": "x"})).await;
+    assert!(out.is_error, "{}", out.content);
+    assert!(!out.content.contains("s3cret"), "{}", out.content);
+    assert!(
+        out.content.contains("images.test/api/v1/images/models"),
+        "{}",
+        out.content
+    );
+    assert!(r.posted().is_empty());
 }
 
 #[tokio::test]

@@ -33,7 +33,10 @@ use std::{fmt, sync::Arc};
 
 use catalog::ImageCatalog;
 use haest_core::__private::OPENROUTER_URL;
-use haest_http::{HttpClientRef, ReqwestClient};
+use haest_http::{
+    __private::{REDACTED, UrlDebug},
+    HttpClientRef, ReqwestClient,
+};
 pub use tool::GenerateImageTool;
 
 /// The model GenerateImage uses unless told otherwise, as an OpenRouter
@@ -50,6 +53,8 @@ pub const DEFAULT_IMAGE_MODELS: [&str; 3] = [
 ];
 
 /// What GenerateImage runs on. Clones share the model list read so far.
+/// Its Debug output shows neither the key nor a credential in the base URL
+/// (its userinfo, a query's values).
 ///
 /// ```
 /// use haest_tools::GenerateImageOptions;
@@ -139,11 +144,13 @@ impl GenerateImageOptions {
     }
 }
 
+/// Never the key; the base URL without its userinfo, query values or
+/// fragment.
 impl fmt::Debug for GenerateImageOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GenerateImageOptions")
-            .field("api_key", &"<redacted>")
-            .field("base_url", &self.base_url)
+            .field("api_key", &REDACTED)
+            .field("base_url", &UrlDebug(&self.base_url))
             .field("model", &self.model)
             .field("models", &self.models)
             .finish_non_exhaustive()

@@ -62,7 +62,9 @@ pub(crate) enum ImageError {
     UnknownModel {
         /// The model asked.
         model: String,
-        /// The Image API's base URL.
+        /// The Image API's base URL, without its credentials
+        /// ([`redacted_url`](haest_http::redacted_url)): the model and the
+        /// transcript are shown this error.
         base_url: String,
     },
 }

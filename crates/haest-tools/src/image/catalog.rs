@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_http::{HttpClient, Request};
+use haest_http::{HttpClient, Request, redacted_url};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -125,7 +125,7 @@ impl ImageCatalog {
             Some(params) => Ok(Some(params.clone())),
             None => Err(ImageError::UnknownModel {
                 model: model.into(),
-                base_url: base_url.into(),
+                base_url: redacted_url(base_url).into_owned(),
             }),
         }
     }
