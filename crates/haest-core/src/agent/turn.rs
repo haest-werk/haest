@@ -106,10 +106,12 @@ impl Agent {
     /// ends there, left calls every provider refuses. The last answer's are
     /// appended like any message (the persistence hook records them); an
     /// earlier one, only in a history a host handed in, is answered in place.
+    /// A result without its call, only in a history a host handed in, is
+    /// dropped, as a replayed log's is.
     pub(crate) fn answer_dropped_calls(&mut self) {
-        let (history, dropped) = split_pending(std::mem::take(&mut self.history));
-        self.history = history;
-        for call in dropped {
+        let repaired = split_pending(std::mem::take(&mut self.history));
+        self.history = repaired.messages;
+        for call in repaired.pending {
             append(
                 &mut self.history,
                 self.deps.shared().hooks().as_ref(),

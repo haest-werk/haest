@@ -19,7 +19,8 @@ pub struct ReplayedRun {
     pub base: usize,
     /// The run's own messages. The last answer's calls that have no result
     /// stay unanswered (they are [`pending`](Self::pending)); any other call
-    /// without a result is answered as interrupted, as [`replay`](crate::session::replay) does.
+    /// without a result is answered as interrupted, and a result without its
+    /// call dropped, as [`replay`](crate::session::replay) does.
     pub messages: Vec<Message>,
     /// The calls of the last answer that have no result, in call order.
     pub pending: Vec<ToolCall>,
@@ -28,7 +29,8 @@ pub struct ReplayedRun {
     pub turn: Option<TurnState>,
     /// How the run ended; None for a run that never ended.
     pub end: Option<RunEnd>,
-    /// Lines that are not a record, and known records that do not parse.
+    /// Lines that are not a record, known records that do not parse, and
+    /// the run's results dropped because the answer with their call was lost.
     pub corrupt_lines: usize,
 }
 
@@ -50,7 +52,7 @@ impl ReplayedRun {
         match record {
             SessionRecord::Message { message, .. } => self.messages.push(message),
             SessionRecord::Compaction { summary, kept, .. } => {
-                compact(&mut self.messages, &summary, kept)
+                self.corrupt_lines += compact(&mut self.messages, &summary, kept);
             }
             SessionRecord::Turn { state, .. } => self.turn = Some(state),
             SessionRecord::RunEnd { end, .. } => self.end = Some(end),
@@ -64,9 +66,12 @@ impl ReplayedRun {
     }
 
     /// The last answer's unanswered calls become `pending`; every earlier
-    /// call without a result is answered as interrupted.
+    /// call without a result is answered as interrupted, and every result
+    /// without its call is dropped and counted.
     fn settle(&mut self) {
-        (self.messages, self.pending) = split_pending(std::mem::take(&mut self.messages));
+        let repaired = split_pending(std::mem::take(&mut self.messages));
+        (self.messages, self.pending) = (repaired.messages, repaired.pending);
+        self.corrupt_lines += repaired.dropped;
     }
 }
 
@@ -124,6 +129,6 @@ pub fn replay_run(text: &str) -> Option<ReplayedRun> {
     }
     let mut run = run?;
     run.settle();
-    run.corrupt_lines = corrupt;
+    run.corrupt_lines += corrupt;
     Some(run)
 }

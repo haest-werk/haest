@@ -213,6 +213,25 @@ fn an_earlier_call_without_a_result_is_answered_as_interrupted() {
     assert!(matches!(&run.messages[2], Message::Tool(r) if r.tool_call_id == "c1" && r.is_error));
 }
 
+/// A full disk cut the last answer's record short, and its result landed:
+/// the run resumes without a result no answer has a call for, and counts it.
+#[test]
+fn a_result_whose_call_never_landed_is_dropped_and_counted() {
+    let first = Message::Assistant(tool_answer(&[("c1", "Echo", json!({}))]));
+    let torn = r#"{"type":"message","t":1,"message":{"role":"assis"#;
+    let log = [
+        log_of(&[start("job"), msg(Message::user("go")), msg(first.clone())]),
+        log_of(&[msg(result("c1"))]),
+        torn.into(),
+        log_of(&[msg(result("c2"))]),
+    ]
+    .join("\n");
+    let run = replay_run(&log).unwrap();
+    assert_eq!(run.messages, [Message::user("go"), first, result("c1")]);
+    assert!(run.pending.is_empty());
+    assert_eq!(run.corrupt_lines, 2, "the torn answer, and its result");
+}
+
 #[test]
 fn a_later_run_record_starts_the_run_over() {
     let log = log_of(&[

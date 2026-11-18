@@ -89,7 +89,8 @@ impl AgentOptions {
 
     /// The same, resuming from `history` (a replayed session's messages). A
     /// tool call in it with no result is answered as interrupted when the
-    /// first turn or compaction starts, as [`replay`](crate::session::replay) answers one.
+    /// first turn or compaction starts, and a tool result without its call
+    /// dropped, as [`replay`](crate::session::replay) repairs them.
     #[must_use]
     pub fn with_history(mut self, history: impl Into<Vec<Message>>) -> Self {
         self.history = history.into();

@@ -22,7 +22,7 @@ use crate::{
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ReplayedSession {
     /// The history, compactions applied, every unanswered tool call answered
-    /// as interrupted.
+    /// as interrupted, and every tool result without its call dropped.
     pub messages: Vec<Message>,
     /// The last model spec a config record named.
     pub model_spec: Option<String>,
@@ -34,7 +34,8 @@ pub struct ReplayedSession {
     /// The last task list; None when there was none.
     pub tasks: Option<Vec<Task>>,
     /// Lines that are not a record (a torn final line from a crash mid-write),
-    /// and records of a kind haest knows that do not parse.
+    /// records of a kind haest knows that do not parse, and tool results
+    /// dropped because the answer with their call was lost ([`replay`]).
     pub corrupt_lines: usize,
 }
 
@@ -77,75 +78,82 @@ pub(crate) fn interrupted(call: ToolCall) -> ToolResultMessage {
     }
 }
 
+/// A history every provider takes, made by [`answer_interrupted`] or
+/// [`split_pending`].
+pub(crate) struct Repaired {
+    /// The history, repaired.
+    pub(crate) messages: Vec<Message>,
+    /// The calls of the last answer that have no result, in call order, when
+    /// only results follow that answer and [`split_pending`] made it; else
+    /// none.
+    pub(crate) pending: Vec<ToolCall>,
+    /// Results dropped: the answer each follows has no call of its id.
+    pub(crate) dropped: usize,
+}
+
 /// A log that ends mid-tool (the process was killed) holds calls with no
-/// result, and every provider refuses that history. Each such call is answered
-/// after its siblings' results with an error saying so. Never written: the
+/// result, and one a full disk cut short can hold a result whose call never
+/// landed: every provider refuses both. Each call with no result is answered
+/// after its siblings' results with an error saying so, and each result that
+/// answers no call of the answer it follows is dropped. Never written: the
 /// file keeps what happened and every replay makes the same repair, so a
 /// resumed conversation's history -- what a later compaction counted its tail
 /// on -- is rebuilt exactly.
-fn answer_interrupted(messages: Vec<Message>) -> Vec<Message> {
-    let mut out = Vec::with_capacity(messages.len());
-    let mut rest = messages.into_iter().peekable();
-    while let Some(m) = rest.next() {
-        let Message::Assistant(a) = &m else {
-            out.push(m);
-            continue;
-        };
-        let calls: Vec<ToolCall> = a.tool_calls().cloned().collect();
-        out.push(m);
-        let mut answered = HashSet::new();
-        while let Some(Message::Tool(r)) = rest.peek() {
-            answered.insert(r.tool_call_id.clone());
-            out.extend(rest.next());
-        }
-        out.extend(
-            calls
-                .into_iter()
-                .filter(|c| !answered.contains(&c.id))
-                .map(|c| Message::Tool(interrupted(c))),
-        );
-    }
-    out
+fn answer_interrupted(messages: Vec<Message>) -> Repaired {
+    repair(messages, false)
 }
 
 /// `messages` with the calls of the last answer that have no result taken
 /// out as pending, in call order, when only results follow that answer (a
-/// turn that stopped mid-tool); every other call without a result is answered
-/// as [`answer_interrupted`] answers it.
+/// turn that stopped mid-tool); every other call without a result, and every
+/// result without a call, is repaired as [`answer_interrupted`] repairs it.
 ///
 /// A durable run's replay resumes the pending calls; a turn that starts
 /// answers them as interrupted, after the results already there.
-pub(crate) fn split_pending(messages: Vec<Message>) -> (Vec<Message>, Vec<ToolCall>) {
-    let last = messages
-        .iter()
-        .rposition(|m| matches!(m, Message::Assistant(_)));
-    let Some(last) = last.filter(|&i| {
-        messages[i + 1..]
-            .iter()
-            .all(|m| matches!(m, Message::Tool(_)))
-    }) else {
-        return (answer_interrupted(messages), Vec::new());
+pub(crate) fn split_pending(messages: Vec<Message>) -> Repaired {
+    repair(messages, true)
+}
+
+/// [`answer_interrupted`]'s repair; with `leave_pending`, [`split_pending`]'s.
+fn repair(messages: Vec<Message>, leave_pending: bool) -> Repaired {
+    let mut out = Repaired {
+        messages: Vec::with_capacity(messages.len()),
+        pending: Vec::new(),
+        dropped: 0,
     };
-    let mut head = messages;
-    let tail = head.split_off(last);
-    let mut settled = answer_interrupted(head);
-    let answered: HashSet<&str> = tail
-        .iter()
-        .filter_map(|m| match m {
-            Message::Tool(r) => Some(r.tool_call_id.as_str()),
-            _ => None,
-        })
-        .collect();
-    let pending = match &tail[0] {
-        Message::Assistant(a) => a
-            .tool_calls()
-            .filter(|c| !answered.contains(c.id.as_str()))
-            .cloned()
-            .collect(),
-        _ => Vec::new(),
-    };
-    settled.extend(tail);
-    (settled, pending)
+    let mut rest = messages.into_iter().peekable();
+    while let Some(m) = rest.next() {
+        let calls: Vec<ToolCall> = match &m {
+            Message::Assistant(a) => a.tool_calls().cloned().collect(),
+            Message::User(_) => {
+                out.messages.push(m);
+                continue;
+            }
+            // A result that follows no answer: its answer never landed.
+            Message::Tool(_) => {
+                out.dropped += 1;
+                continue;
+            }
+        };
+        out.messages.push(m);
+        let mut answered = HashSet::new();
+        while let Some(Message::Tool(r)) = rest.next_if(|m| matches!(m, Message::Tool(_))) {
+            if calls.iter().any(|c| c.id == r.tool_call_id) {
+                answered.insert(r.tool_call_id.clone());
+                out.messages.push(Message::Tool(r));
+            } else {
+                out.dropped += 1;
+            }
+        }
+        let unanswered = calls.into_iter().filter(|c| !answered.contains(&c.id));
+        if leave_pending && rest.peek().is_none() {
+            out.pending = unanswered.collect();
+        } else {
+            let answers = unanswered.map(|c| Message::Tool(interrupted(c)));
+            out.messages.extend(answers);
+        }
+    }
+    out
 }
 
 fn apply(s: &mut ReplayedSession, r: SessionRecord) {
@@ -153,7 +161,7 @@ fn apply(s: &mut ReplayedSession, r: SessionRecord) {
         SessionRecord::Header { .. } => {}
         SessionRecord::Message { message, .. } => s.messages.push(message),
         SessionRecord::Compaction { summary, kept, .. } => {
-            compact(&mut s.messages, &summary, kept);
+            s.corrupt_lines += compact(&mut s.messages, &summary, kept);
         }
         SessionRecord::Config {
             model_spec: model,
@@ -174,11 +182,15 @@ fn apply(s: &mut ReplayedSession, r: SessionRecord) {
     }
 }
 
-/// A compaction record: keep the `kept` latest messages behind the summary.
-pub(crate) fn compact(messages: &mut Vec<Message>, summary: &str, kept: usize) {
-    *messages = answer_interrupted(std::mem::take(messages));
+/// A compaction record: keep the `kept` latest messages behind the summary,
+/// after [`answer_interrupted`]'s repair. Returns how many results that
+/// dropped.
+pub(crate) fn compact(messages: &mut Vec<Message>, summary: &str, kept: usize) -> usize {
+    let repaired = answer_interrupted(std::mem::take(messages));
+    *messages = repaired.messages;
     let from = messages.len().saturating_sub(kept);
     messages.splice(..from, [compaction_summary_message(summary)]);
+    repaired.dropped
 }
 
 /// Rebuild a session from a file's text. Split on '\n' only: U+2028/2029 are
@@ -191,8 +203,11 @@ pub(crate) fn compact(messages: &mut Vec<Message>, summary: &str, kept: usize) {
 ///
 /// A tool call left without a result (the process was killed mid-tool) comes
 /// back answered with an error saying it was interrupted and may or may not
-/// have run: every provider refuses a call with no result. The repair is
-/// never written, so every replay of the same file gives the same history.
+/// have run: every provider refuses a call with no result. A tool result
+/// whose call is not in the answer it follows (that answer's record was
+/// lost, as a full disk loses one) is dropped and counted in
+/// `corrupt_lines`: every provider refuses a result with no call. The repair
+/// is never written, so every replay of the same file gives the same history.
 pub fn replay(text: &str) -> ReplayedSession {
     let mut s = ReplayedSession::default();
     for line in text.split('\n') {
@@ -206,6 +221,8 @@ pub fn replay(text: &str) -> ReplayedSession {
             Line::Corrupt => s.corrupt_lines += 1,
         }
     }
-    s.messages = answer_interrupted(s.messages);
+    let repaired = answer_interrupted(s.messages);
+    s.messages = repaired.messages;
+    s.corrupt_lines += repaired.dropped;
     s
 }

@@ -54,6 +54,80 @@ fn appended(s: &JsonlSessionFile, messages: impl IntoIterator<Item = Message>) {
     }
 }
 
+/// `message`'s record, as the file holds it.
+fn line(message: Message) -> String {
+    serde_json::to_string(&SessionRecord::Message { t: 0, message }).unwrap()
+}
+
+/// What a disk that filled up mid-record kept of an answer's record.
+const TORN_ANSWER: &str = r#"{"type":"message","t":0,"message":{"role":"assis"#;
+
+/// A full disk cut an answer's record short, and its tool's result landed
+/// once there was room again: no answer in the file has its call, and every
+/// provider refuses a result with no call. It is dropped, and counted with
+/// the torn line.
+#[test]
+fn a_result_whose_call_never_landed_is_dropped_and_counted() {
+    let text = [
+        line(Message::user("go")),
+        line(calls(&["A"])),
+        line(result("A")),
+        TORN_ANSWER.into(),
+        line(result("B")),
+        line(Message::user("go on")),
+    ]
+    .join("\n");
+    let back = replay(&text);
+    assert_eq!(shape(&back.messages), ["u:go", "a:A", "t:A", "u:go on"]);
+    assert_eq!(back.corrupt_lines, 2, "the torn answer, and its result");
+}
+
+/// The answer lost was the turn's first: its result follows the human's
+/// message, and goes the same way, counted once also where a later
+/// compaction summarised it.
+#[test]
+fn a_result_that_follows_no_answer_is_dropped_and_counted_once() {
+    let head = [
+        line(Message::user("go")),
+        TORN_ANSWER.into(),
+        line(result("B")),
+        line(calls(&["C"])),
+        line(result("C")),
+    ]
+    .join("\n");
+    let next = line(Message::user("next"));
+    let back = replay(&format!("{head}\n{next}"));
+    assert_eq!(shape(&back.messages), ["u:go", "a:C", "t:C", "u:next"]);
+    assert_eq!(back.corrupt_lines, 2, "the torn answer, and its result");
+
+    // The compaction kept the last answer and its result.
+    let compaction = SessionRecord::Compaction {
+        t: 0,
+        summary: "SUM".into(),
+        kept: 2,
+    };
+    let compaction = serde_json::to_string(&compaction).unwrap();
+    let back = replay(&format!("{head}\n{compaction}\n{next}"));
+    assert_eq!(shape(&back.messages[1..]), ["a:C", "t:C", "u:next"]);
+    assert_eq!(back.corrupt_lines, 2, "the torn answer, and its result");
+}
+
+#[test]
+fn calls_and_their_results_replay_untouched() {
+    let history = [
+        Message::user("go"),
+        calls(&["A", "B"]),
+        result("A"),
+        result("B"),
+        Message::user("next"),
+        calls(&["C"]),
+        result("C"),
+    ];
+    let back = replay(&history.clone().map(line).join("\n"));
+    assert_eq!(back.messages, history);
+    assert_eq!(back.corrupt_lines, 0);
+}
+
 #[tokio::test]
 async fn every_unanswered_call_is_answered_as_an_interrupted_error_after_its_answered_siblings() {
     let fs = Arc::new(ModeFs::default());
