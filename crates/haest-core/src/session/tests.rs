@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     io,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -8,16 +9,26 @@ use async_trait::async_trait;
 
 use super::*;
 use crate::{
-    fs::{DirEntry, Fs, FsStat, MemFs},
+    fs::{DirEntry, Fs, FsLock, FsStat, MemFs},
     messages::Message,
     provider::Effort,
 };
 
-/// A MemFs that remembers every chmod.
+/// A MemFs that remembers every chmod, and locks files for this process.
 #[derive(Default)]
 struct ModeFs {
     inner: MemFs,
     modes: Mutex<Vec<(PathBuf, u32)>>,
+    locked: Arc<Mutex<HashSet<PathBuf>>>,
+}
+
+/// Unlocks its path as it drops.
+struct Unlock(Arc<Mutex<HashSet<PathBuf>>>, PathBuf);
+
+impl Drop for Unlock {
+    fn drop(&mut self) {
+        self.0.lock().unwrap().remove(&self.1);
+    }
 }
 
 #[async_trait]
@@ -55,6 +66,14 @@ impl Fs for ModeFs {
     async fn chmod(&self, p: &Path, mode: u32) -> io::Result<()> {
         self.modes.lock().unwrap().push((p.to_path_buf(), mode));
         Ok(())
+    }
+    async fn try_lock(&self, p: &Path) -> io::Result<Option<FsLock>> {
+        self.inner.stat(p).await?;
+        if !self.locked.lock().unwrap().insert(p.to_path_buf()) {
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
+        let unlock = Unlock(self.locked.clone(), p.to_path_buf());
+        Ok(Some(FsLock::new(unlock)))
     }
 }
 
@@ -191,6 +210,39 @@ async fn a_record_written_after_a_torn_last_line_replays() {
     let back = store(&fs).load().await.unwrap();
     assert_eq!(texts(&back.messages), ["ok", "after the crash", "and on"]);
     assert_eq!(back.corrupt_lines, 1, "the torn line, and nothing else");
+}
+
+/// One writer per session: a second one's `try_lock` is refused until the
+/// first is dropped. The holder taking it again is no second lock.
+#[tokio::test]
+async fn a_held_session_file_refuses_another_writer_until_the_holder_drops() {
+    let fs = Arc::new(ModeFs::default());
+    let s = store(&fs);
+    assert_eq!(
+        s.try_lock().await.unwrap_err().kind(),
+        io::ErrorKind::NotFound,
+        "no file to hold yet"
+    );
+    s.create("c1", Path::new("/x"), 0).await.unwrap();
+    s.try_lock().await.unwrap();
+    s.try_lock().await.unwrap();
+
+    let other = store(&fs);
+    let refused = other.try_lock().await.unwrap_err();
+    assert_eq!(refused.kind(), io::ErrorKind::WouldBlock);
+    drop(s);
+    other.try_lock().await.unwrap();
+}
+
+/// A file system with no locks holds nothing and refuses nothing.
+#[tokio::test]
+async fn on_a_file_system_with_no_locks_every_writer_goes_on() {
+    let fs = Arc::new(MemFs::new());
+    let s = JsonlSessionFile::new(fs.clone(), DATA, "abc").unwrap();
+    s.create("c1", Path::new("/x"), 0).await.unwrap();
+    s.try_lock().await.unwrap();
+    let other = JsonlSessionFile::new(fs, DATA, "abc").unwrap();
+    other.try_lock().await.unwrap();
 }
 
 #[test]

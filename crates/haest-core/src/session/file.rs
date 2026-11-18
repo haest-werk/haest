@@ -7,13 +7,13 @@ use std::{
 };
 
 use async_trait::async_trait;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use super::{
     InvalidSessionId, ReplayedSession, SessionHeader, SessionRecord, replay, session_file,
     sessions_dir,
 };
-use crate::fs::{Fs, FsRef, ensure_dir};
+use crate::fs::{Fs, FsLock, FsRef, ensure_dir};
 
 /// Where a conversation's records go. `append` is synchronous so the loop's
 /// `on_message` hook can call it; records land in call order.
@@ -51,6 +51,8 @@ enum Job {
 ///
 /// Must be created inside a tokio runtime (the writer task is spawned there).
 /// The writer stops when the value is dropped, after what is queued.
+/// [`try_lock`](Self::try_lock) holds the file for this writer alone until
+/// then, so two runs never write one session.
 ///
 /// # Examples
 ///
@@ -82,6 +84,9 @@ pub struct JsonlSessionFile {
     session_id: String,
     fs: FsRef,
     tx: mpsc::UnboundedSender<Job>,
+    /// The file's lock once [`JsonlSessionFile::try_lock`] took it; None
+    /// before, or where the file system has no locks.
+    held: Mutex<Option<FsLock>>,
 }
 
 /// The file's path and the session's id.
@@ -139,6 +144,7 @@ impl JsonlSessionFile {
             session_id: session_id.into(),
             fs,
             tx,
+            held: Mutex::default(),
         })
     }
 
@@ -186,6 +192,30 @@ impl JsonlSessionFile {
             .send(Job::Create(line_of(&header), done))
             .map_err(|_closed| stopped())?;
         outcome.await.map_err(|_closed| stopped())?
+    }
+
+    /// Hold the file for this writer alone until this value is dropped
+    /// ([`Fs::try_lock`]): meanwhile another writer's `try_lock` of the
+    /// session, in this process or another, fails with `WouldBlock`. On a
+    /// file system with no locks it holds nothing, and succeeds. Once it
+    /// holds the file, it returns at once.
+    ///
+    /// Take it before the first record of a session another writer may open:
+    /// after [`create`](Self::create) for a new one, before
+    /// [`load`](Self::load) for a saved one. The lock goes as this value is
+    /// dropped, before its queued records land: [`flush`](SessionSink::flush)
+    /// first.
+    ///
+    /// # Errors
+    ///
+    /// `WouldBlock` when another writer holds the session, `NotFound` when
+    /// the file is not there yet, and the file system's other errors.
+    pub async fn try_lock(&self) -> io::Result<()> {
+        let mut held = self.held.lock().await;
+        if held.is_none() {
+            *held = self.fs.try_lock(&self.path).await?;
+        }
+        Ok(())
     }
 
     /// Flush, then replay the file. Never fails on a bad line (see [`replay`]);

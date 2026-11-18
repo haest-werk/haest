@@ -19,8 +19,8 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum BuildError {
-    /// The session to resume is not there or cannot be read, or a new
-    /// session's file cannot be created.
+    /// The session to resume is not there, cannot be read or is in use by
+    /// another run, or a new session's file cannot be created.
     #[error(transparent)]
     SessionFile(#[from] SessionFileError),
     /// The model the conversation would start on cannot be used: the spec is
@@ -54,6 +54,14 @@ pub enum SessionFileError {
     #[error("no saved session \"{id}\"")]
     NotFound {
         /// The id, as given.
+        id: String,
+    },
+    /// Another run is writing the session: it holds the session's file
+    /// until it ends (a second `haest -r` while the first still runs).
+    /// Nothing was read or written.
+    #[error("session \"{id}\" is in use by another run")]
+    InUse {
+        /// The session's id.
         id: String,
     },
     /// The saved session's file could not be read.

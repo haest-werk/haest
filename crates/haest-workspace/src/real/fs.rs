@@ -10,7 +10,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use haest_core::fs::{DirEntry, FileKind, Fs, FsStat};
+use haest_core::fs::{DirEntry, FileKind, Fs, FsLock, FsStat};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// The host's disk as a haest [`Fs`], through tokio's file system calls.
@@ -26,6 +26,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 ///   [`InvalidInput`](io::ErrorKind::InvalidInput), never waited on: a FIFO
 ///   would block until a writer came, `/dev/zero` never ends.
 /// - [`chmod`](Fs::chmod) sets Unix permission bits (a no-op elsewhere).
+/// - [`try_lock`](Fs::try_lock) takes an exclusive `flock(2)`, which the
+///   system drops with the process that held it.
 ///
 /// # Examples
 ///
@@ -186,6 +188,48 @@ impl Fs for RealFs {
         use std::os::unix::fs::PermissionsExt;
         tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).await
     }
+
+    /// An exclusive `flock(2)` on the file, opened to read as
+    /// [`read`](Fs::read) opens it; dropping the lock closes it. The system
+    /// drops it with the process, so a crash never leaves the file locked.
+    /// A child this process forks shares it until the child starts its
+    /// program, which closes the file (it is opened close-on-exec).
+    /// `Ok(None)` where the file's file system takes no such locks.
+    async fn try_lock(&self, path: &Path) -> io::Result<Option<FsLock>> {
+        let file = open_file(path).await?.into_std().await;
+        match flock_exclusive(&file) {
+            Ok(()) => Ok(Some(FsLock::new(file))),
+            Err(e) if takes_no_locks(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// Lock `file` for this open file alone, without waiting: `WouldBlock` when
+/// another open file of it (in this process or another) holds the lock.
+/// `std::fs::File::try_lock` does the same from Rust 1.89, past haest's MSRV.
+#[expect(
+    unsafe_code,
+    reason = "flock(2) takes a lock the system drops with the process; std's needs Rust 1.89"
+)]
+fn flock_exclusive(file: &std::fs::File) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    loop {
+        // SAFETY: the descriptor is `file`'s, open for the whole call.
+        let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if rc == 0 {
+            return Ok(());
+        }
+        let e = io::Error::last_os_error();
+        if e.kind() != io::ErrorKind::Interrupted {
+            return Err(e);
+        }
+    }
+}
+
+/// The file system has no `flock(2)` (some network file systems).
+fn takes_no_locks(e: &io::Error) -> bool {
+    e.kind() == io::ErrorKind::Unsupported || e.raw_os_error() == Some(libc::ENOLCK)
 }
 
 #[cfg(test)]
@@ -244,5 +288,84 @@ mod tests {
         // A link to a device is the device.
         std::os::unix::fs::symlink("/dev/null", dir.path().join("null")).unwrap();
         assert!(RealFs.read(&dir.path().join("null")).await.is_err());
+    }
+
+    fn refused(lock: &io::Result<Option<FsLock>>) -> bool {
+        lock.as_ref()
+            .is_err_and(|e| e.kind() == io::ErrorKind::WouldBlock)
+    }
+
+    /// The lock on `file` once it is free, waiting at most 5 s. A process
+    /// another test forks shares this one's open files until it starts its
+    /// program, so a lock just dropped can stay held that long.
+    async fn lock_once_free(file: &Path) -> io::Result<Option<FsLock>> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let lock = RealFs.try_lock(file).await;
+            if !refused(&lock) || std::time::Instant::now() > deadline {
+                return lock;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_locked_file_is_refused_until_its_lock_drops() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("s.jsonl");
+        std::fs::write(&file, "{}\n").unwrap();
+
+        let held = RealFs.try_lock(&file).await.unwrap();
+        assert!(held.is_some(), "the disk takes locks");
+        let again = RealFs.try_lock(&file).await;
+        assert!(refused(&again), "held in this process");
+        drop(held);
+        assert!(lock_once_free(&file).await.unwrap().is_some());
+
+        let missing = RealFs.try_lock(&dir.path().join("none")).await;
+        assert!(missing.is_err_and(|e| e.kind() == io::ErrorKind::NotFound));
+    }
+
+    /// Set in a run of this test binary that holds the file it names.
+    const HOLD: &str = "HAEST_TEST_HOLD_LOCK";
+
+    /// A process that dies holding a lock leaves the file free: a crash
+    /// never leaves a session locked.
+    #[tokio::test]
+    async fn a_lock_goes_with_the_process_that_held_it() {
+        let test = "a_lock_goes_with_the_process_that_held_it";
+        if let Some(file) = std::env::var_os(HOLD) {
+            // The holder: hold the file, say so, wait to be killed.
+            let file = PathBuf::from(file);
+            let _held = RealFs.try_lock(&file).await.unwrap().unwrap();
+            std::fs::write(file.with_extension("held"), "").unwrap();
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("s.jsonl");
+        std::fs::write(&file, "{}\n").unwrap();
+        let (_, module) = module_path!().split_once("::").unwrap();
+        let mut holder = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([&format!("{module}::{test}"), "--exact"])
+            .env(HOLD, &file)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let held = async {
+            while !file.with_extension("held").exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        let waited = tokio::time::timeout(Duration::from_secs(30), held).await;
+        let refused_while_held = refused(&RealFs.try_lock(&file).await);
+        holder.kill().unwrap();
+        holder.wait().unwrap();
+
+        waited.expect("the holder never held the file");
+        assert!(refused_while_held, "another process holds it");
+        let after = lock_once_free(&file).await.unwrap();
+        assert!(after.is_some(), "the lock went with the process");
     }
 }

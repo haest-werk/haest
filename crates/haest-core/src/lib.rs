@@ -247,7 +247,7 @@ pub mod prelude {
     };
     pub use crate::error::BoxError;
     pub use crate::events::{EventSink, LoopEvent, TurnOutcome};
-    pub use crate::fs::{DirEntry, FileKind, Fs, FsRef, FsStat, MemFs};
+    pub use crate::fs::{DirEntry, FileKind, Fs, FsLock, FsRef, FsStat, MemFs};
     pub use crate::handed::{ChildEnv, KeySource, KeySourceRef};
     pub use crate::messages::{
         AssistantMessage, AssistantPart, MediaPart, Message, StopReason, ToolCall,

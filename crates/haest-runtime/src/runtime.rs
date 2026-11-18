@@ -282,7 +282,8 @@ impl<U> Runtime<U> {
 
     /// A fresh session (the human's /clear): new id, new file, empty history
     /// and task list, on the same model and effort; the ledger (the spend so
-    /// far) carries over. The old session stays on disk and still resumes.
+    /// far) carries over. The old session stays on disk and still resumes:
+    /// this run holds the new one from now on, and lets the old one go.
     ///
     /// # Errors
     ///

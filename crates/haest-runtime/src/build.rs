@@ -106,7 +106,8 @@ fn task_board(hooks: &RuntimeHooks) -> TaskBoard {
 /// and left no file for a resume to pick up. A [`BuildError`]:
 ///
 /// - [`SessionFile`](BuildError::SessionFile): the session to resume is not there,
-///   or cannot be read; a new session's file cannot be created;
+///   cannot be read, or another run is writing it; a new session's file cannot
+///   be created;
 /// - [`Model`](BuildError::Model): the model it would start on cannot be
 ///   used: a malformed spec, an unknown provider, no key for it;
 /// - [`Workspace`](BuildError::Workspace): `workspace = real` in a

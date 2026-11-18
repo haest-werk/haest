@@ -46,7 +46,8 @@
 //! ```
 
 use std::{
-    io,
+    any::Any,
+    fmt, io,
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -138,6 +139,56 @@ impl DirEntry {
     }
 }
 
+/// A lock on a file, held until this value is dropped: what [`Fs::try_lock`]
+/// hands back.
+///
+/// It holds whatever releases the lock as it drops: the open file the
+/// system's lock is on, or a guard of the host's own store.
+///
+/// ```
+/// use std::sync::{
+///     Arc,
+///     atomic::{AtomicBool, Ordering},
+/// };
+///
+/// use haest_core::fs::FsLock;
+///
+/// /// A host's store marks a file held; this unmarks it as it drops.
+/// struct Unmark(Arc<AtomicBool>);
+///
+/// impl Drop for Unmark {
+///     fn drop(&mut self) {
+///         self.0.store(false, Ordering::SeqCst);
+///     }
+/// }
+///
+/// let held = Arc::new(AtomicBool::new(true));
+/// let lock = FsLock::new(Unmark(held.clone()));
+/// assert!(held.load(Ordering::SeqCst));
+/// drop(lock);
+/// assert!(!held.load(Ordering::SeqCst));
+/// ```
+pub struct FsLock {
+    _held: Box<dyn Any + Send + Sync>,
+}
+
+impl FsLock {
+    /// A lock held until this value is dropped, which drops `held`: what
+    /// releases the lock as it drops.
+    pub fn new(held: impl Send + Sync + 'static) -> Self {
+        Self {
+            _held: Box::new(held),
+        }
+    }
+}
+
+/// Nothing of what it holds.
+impl fmt::Debug for FsLock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FsLock").finish_non_exhaustive()
+    }
+}
+
 /// A file system: the one way haest reads and writes files.
 ///
 /// Every path is absolute (see [`resolve_path`]). Errors are `io::Error`s with
@@ -151,7 +202,8 @@ impl DirEntry {
 /// walks the tree with [`remove_tree`]) and `rename`. The rest have defaults
 /// built on them; override one when the store can do it better
 /// ([`Fs::read_head`] that stops early, [`Fs::create_dir_all`] in one step,
-/// [`Fs::read_link`] and [`Fs::chmod`] on a store that has links and modes).
+/// [`Fs::read_link`] and [`Fs::chmod`] on a store that has links and modes,
+/// [`Fs::try_lock`] on a store more than one writer shares).
 /// [`FsStat`] and [`DirEntry`] are built with their `new`.
 ///
 /// Implementations here: [`MemFs`] and [`ShutFs`]; `haest-workspace` has the
@@ -365,6 +417,25 @@ pub trait Fs: Send + Sync {
     /// host's own store) has nothing to set.
     async fn chmod(&self, _path: &Path, _mode: u32) -> io::Result<()> {
         Ok(())
+    }
+    /// Hold the file at `path` for one writer until the returned lock is
+    /// dropped; it never waits for one. Meanwhile every other `try_lock` of
+    /// the file, in this process or another, fails. A lock must not outlive
+    /// the process that holds it, so a crash never leaves a file locked. A
+    /// session file is held this way while a conversation writes it
+    /// ([`JsonlSessionFile::try_lock`](crate::session::JsonlSessionFile::try_lock)).
+    ///
+    /// `Ok(None)` when the file system has no locks: nothing is held, and
+    /// nothing is refused. That is the default (memory, a host's own store
+    /// that one writer uses); a store more than one writer shares overrides
+    /// it.
+    ///
+    /// # Errors
+    ///
+    /// `WouldBlock` when another holder has the file, `NotFound` when
+    /// nothing is there.
+    async fn try_lock(&self, _path: &Path) -> io::Result<Option<FsLock>> {
+        Ok(None)
     }
 }
 

@@ -1,8 +1,9 @@
 //! The session file a run writes: which one (new, named, or the latest in the
-//! cwd), opened with its write errors going to the [`Ui`], created with its
-//! header before anything starts, and read back into place on a resume.
+//! cwd), opened with its write errors going to the [`Ui`], held for this run
+//! alone, created with its header before anything starts, and read back into
+//! place on a resume.
 
-use std::{path::Path, sync::Arc};
+use std::{io, path::Path, sync::Arc};
 
 use haest_settings::Settings;
 
@@ -43,7 +44,23 @@ fn open_store(
     Ok(store)
 }
 
-/// The session this run writes, as `resume` says.
+/// The session file held for this run alone while the store lives, so no
+/// other run writes it: `InUse` when another holds it, `failed`'s error when
+/// it cannot be held.
+async fn hold(
+    store: &JsonlSessionFile,
+    failed: impl FnOnce(io::Error) -> SessionFileError,
+) -> Result<(), SessionFileError> {
+    store.try_lock().await.map_err(|e| match e.kind() {
+        io::ErrorKind::WouldBlock => SessionFileError::InUse {
+            id: store.session_id().to_string(),
+        },
+        _ => failed(e),
+    })
+}
+
+/// The session this run writes, as `resume` says. A saved one is held for
+/// this run before it is read (a new one once it is created, [`create`]).
 pub(crate) async fn open_session(
     fs: &FsRef,
     s: &Settings,
@@ -64,30 +81,32 @@ pub(crate) async fn open_session(
     if !store.exists().await {
         return Err(SessionFileError::NotFound { id });
     }
-    let saved = store
-        .load()
-        .await
-        .map_err(|source| SessionFileError::Read {
-            path: store.path().to_path_buf(),
-            source,
-        })?;
+    let read_failed = |source| SessionFileError::Read {
+        path: store.path().to_path_buf(),
+        source,
+    };
+    hold(&store, read_failed).await?;
+    let saved = store.load().await.map_err(read_failed)?;
     Ok(OpenSession {
         store,
         saved: Some(saved),
     })
 }
 
-/// A new session's file, on disk with its header. Until it is, nothing of the
-/// session has been written: a session that cannot be saved fails here.
+/// A new session's file, on disk with its header and held for this run.
+/// Until it is, nothing of the session has been written: a session that
+/// cannot be saved fails here.
 pub(crate) async fn create(store: &JsonlSessionFile, cwd: &Path) -> Result<(), SessionFileError> {
     let id = store.session_id();
+    let create_failed = |source| SessionFileError::Create {
+        path: store.path().to_path_buf(),
+        source,
+    };
     store
         .create(id, cwd, now_ms())
         .await
-        .map_err(|source| SessionFileError::Create {
-            path: store.path().to_path_buf(),
-            source,
-        })
+        .map_err(create_failed)?;
+    hold(store, create_failed).await
 }
 
 /// A new session with its file created: what /clear starts.

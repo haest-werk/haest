@@ -256,6 +256,12 @@ impl fmt::Debug for RuntimeInputs {
 
 /// Which session a run writes: a new one, or a saved one it goes on with.
 ///
+/// The run holds its session for itself until it is dropped: a resume of a
+/// session another run writes fails with
+/// [`SessionFileError::InUse`](crate::SessionFileError::InUse), on the real
+/// disk and on any host file system with locks
+/// ([`Fs::try_lock`](haest_core::fs::Fs::try_lock)).
+///
 /// More ways to pick one may come (a fork of one): a `match` has a `_` arm.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
