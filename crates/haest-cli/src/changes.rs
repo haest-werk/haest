@@ -23,7 +23,7 @@ fn line_of(c: &Change) -> String {
         ChangeKind::Deleted => '-',
     };
     let conflict = if c.conflict {
-        "  (CONFLICT: changed on disk since the sandbox read it)"
+        "  (CONFLICT: changed on disk since the sandbox read it, or on disk under another spelling)"
     } else {
         ""
     };
@@ -92,7 +92,7 @@ fn apply_message(report: &ApplyReport, cwd: &Path) -> (String, bool) {
     };
     if !report.skipped.is_empty() {
         text.push_str(&format!(
-            "\n\nSkipped {} -- changed on disk since the sandbox read them, so applying would overwrite your edit:\n{}",
+            "\n\nSkipped {} -- each changed on disk since the sandbox read it, or the disk holds its name under another spelling (README.md for readme.md), so applying would overwrite what the sandbox never saw:\n{}",
             report.skipped.len(),
             lines_of(&report.skipped)
         ));
