@@ -1,8 +1,8 @@
 //! [`GithubTracker`]: GitHub Issues as a [`Tracker`](crate::Tracker).
 
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
-use haest_http::{__private::as_parsed, HttpClientRef, Method, redacted_url};
+use haest_http::{HttpClientRef, Method, redacted_url};
 use serde_json::Value;
 
 use crate::tracker::TrackerError;
@@ -265,6 +265,20 @@ impl GithubTracker {
             )));
         }
         Ok((r, v))
+    }
+}
+
+/// `url` as a URL parser reads it (the WHATWG URL standard): without the
+/// control characters and spaces before and after it, and without any tab,
+/// CR or LF in it. haest-http reads a URL the same way; this crate keeps its
+/// own copy because it uses only haest-http's public items (it is versioned
+/// on its own).
+fn as_parsed(url: &str) -> Cow<'_, str> {
+    let url = url.trim_matches(|c: char| c <= ' ');
+    if url.contains(['\t', '\r', '\n']) {
+        Cow::Owned(url.replace(['\t', '\r', '\n'], ""))
+    } else {
+        Cow::Borrowed(url)
     }
 }
 

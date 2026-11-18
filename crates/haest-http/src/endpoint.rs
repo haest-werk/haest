@@ -134,8 +134,9 @@ pub fn check_endpoint_url(url: &str) -> Result<(), EndpointUrlError> {
 
 /// `url` as a URL parser reads it (the WHATWG URL standard, which reqwest's
 /// parser follows): without the control characters and spaces before and
-/// after it, and without any tab, CR or LF in it.
-pub fn as_parsed(url: &str) -> Cow<'_, str> {
+/// after it, and without any tab, CR or LF in it. (haest-issues keeps a copy:
+/// it uses haest-http's public items only.)
+pub(crate) fn as_parsed(url: &str) -> Cow<'_, str> {
     let url = url.trim_matches(|c: char| c <= ' ');
     if url.contains(['\t', '\r', '\n']) {
         Cow::Owned(url.replace(['\t', '\r', '\n'], ""))
