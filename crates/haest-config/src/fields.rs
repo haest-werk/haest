@@ -119,8 +119,8 @@ pub struct Config {
     /// `wss://agent:12/34@broker.example/agents` reads to a URL parser as
     /// the host `agent` on port 12, which would be sent the rest of the
     /// password in the path. A password goes in percent-encoded (`/` as
-    /// `%2F`). [`Config::set`] writes it unchecked; the broker link checks it
-    /// again before it dials.
+    /// `%2F`); the link never sends it, nor the user. [`Config::set`] writes
+    /// it unchecked; the broker link checks it again before it dials.
     ///
     /// [`Kind::Url`]: crate::Kind::Url
     pub broker_url: Option<String>,

@@ -36,9 +36,16 @@ const HOST_ENDS: [char; 4] = ['/', '?', '#', '\\'];
 /// `@` in a path, a query or a fragment cannot be told from one that ends
 /// such a password, so every one is refused. Write the password
 /// percent-encoded (`/` as `%2F`, `?` as `%3F`, `#` as `%23`, `\` as `%5C`,
-/// `@` as `%40`), and an `@` meant for the path, the query or the fragment
-/// as `%40`. An `@` inside the userinfo with none of those before it
-/// (`https://u:p@ss@host/v1`) is read the same by every parser, and passes.
+/// `@` as `%40`). A URL that needs a real `@` in its path, query or
+/// fragment cannot be configured as it is: `%40` there makes another URL
+/// (RFC 3986, section 2.2), which a server may or may not read the same.
+///
+/// An `@` inside the userinfo with none of those before it
+/// (`https://u:p@ss@host/v1`) passes: a URL parser reads the host after the
+/// last `@`. A client that writes its own `Host` header from the authority
+/// may read it from after the first (tungstenite does), and send part of
+/// the userinfo in that header: hand such a client the URL without its
+/// userinfo, as haest's broker link does.
 ///
 /// For the URLs haest is configured with (a broker's, a provider's base
 /// URL, an MCP server's, a tracker's API root), never a URL a tool fetches:
@@ -77,7 +84,7 @@ pub fn check_endpoint_url(url: &str) -> Result<(), EndpointUrlError> {
 /// credentials ([`redacted_url`]), and says how to write it.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error(
-    "{shown} has an @ past its host, which a URL parser misreads: it ends the host at the first /, ?, # or \\, so a password holding one would send the rest of it, and the host after the @, to another host. Percent-encode the password (/ as %2F, ? as %3F, # as %23, \\ as %5C, @ as %40), and an @ meant for the path, the query or the fragment as %40"
+    "{shown} has an @ past its host, which a URL parser misreads: it ends the host at the first /, ?, # or \\, so a password holding one would send the rest of it, and the host after the @, to another host. Percent-encode the password (/ as %2F, ? as %3F, # as %23, \\ as %5C, @ as %40). A URL with an @ meant for its path, query or fragment cannot be used as it is: %40 there makes another URL, which the server may or may not read the same"
 )]
 pub struct EndpointUrlError {
     shown: String,
@@ -110,7 +117,7 @@ mod tests {
         "user:p/ss@host/x",
     ];
 
-    /// Passed: every parser reads the host after the last `@` of the
+    /// Passed: a URL parser reads the host after the last `@` of the
     /// userinfo, or there is none.
     const READ_RIGHT: [&str; 8] = [
         "https://user:p%2Fss@broker.example/agents",

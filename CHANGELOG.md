@@ -258,14 +258,16 @@ write instead.
   userinfo, no query value and no fragment
   (`https://<redacted>@docs.example.com/mcp?api_key=<redacted>`), a header
   its name without its value, and a request's body its length. It fails
-  safe for a password a parser misreads: an unescaped `/`, `?`, `#` or `@`
-  in it (a pasted base64 token; about half of them hold a `/`) ends the
+  safe for a password a parser misreads: an unescaped `/`, `?` or `#` in
+  it (a pasted base64 token; about half of them hold a `/`) ends the
   authority a parser sees, so `wss://agent:abc/def@broker.example/agents`
-  reads as the host `agent` and a path. Everything between the scheme and
-  the last `@` is hidden, nothing past the scheme shows when a `?` or `#`
-  comes before that `@`, and the scheme shows only when it is `http`,
-  `https`, `ws` or `wss`. A URL with an `@` past its host shows less than
-  it could (`https://<redacted>@scope/pkg`), never a credential.
+  reads as the host `agent` and a path. An unescaped `@` in the userinfo
+  may sit on either side of where a reader ends it (a URL parser takes the
+  last `@`, tungstenite's `Host` header the first). Everything between the
+  scheme and the last `@` is hidden, nothing past the scheme shows when a
+  `?` or `#` comes before that `@`, and the scheme shows only when it is
+  `http`, `https`, `ws` or `wss`. A URL with an `@` past its host shows
+  less than it could (`https://<redacted>@scope/pkg`), never a credential.
   `redacted_url` and the `haest` command (`haest settings`, the "Broker
   link" line) show a URL the same way, and so does GenerateImage's error
   for a model the Image API does not list, which the model is shown and
@@ -284,9 +286,11 @@ write instead.
   the others start); the broker link, GenerateImage and the GitHub
   tracker before they send. Each refusal shows the URL without its
   credentials and says how to write it: percent-encode the password (`/`
-  as `%2F`, `?` as `%3F`, `#` as `%23`, `\` as `%5C`, `@` as `%40`), and an
-  `@` meant for the path or the query as `%40`. A URL that WebFetch
-  fetches is not a configured one, and an `@` in its path still works.
+  as `%2F`, `?` as `%3F`, `#` as `%23`, `\` as `%5C`, `@` as `%40`). A
+  configured URL that needs a real `@` in its path or query cannot be used
+  as it is: `%40` there makes another URL (RFC 3986, section 2.2), which
+  the server may or may not read the same. A URL that WebFetch fetches is
+  not a configured one, and an `@` in its path still works.
 - The broker link (new in this release) sent part of its URL's userinfo,
   up to the whole password, in its HTTP `Host` header. tungstenite writes
   `Host` from after the first `@` and dials the host after the last, so a

@@ -122,8 +122,10 @@ pub struct HttpTransport {
     /// One with an `@` past its host fails this server before any request
     /// goes out ([`McpStartError::Url`](crate::McpStartError::Url)): a
     /// password holding an unescaped `/`, `?` or `#` ends the host a URL
-    /// parser reads there, so it goes in percent-encoded (`/` as `%2F`), and
-    /// an `@` meant for the path or the query as `%40`.
+    /// parser reads there, so it goes in percent-encoded (`/` as `%2F`). A
+    /// server whose URL has a real `@` in its path or query cannot be
+    /// configured as it is: `%40` there makes another URL, which the server
+    /// may or may not read the same.
     pub url: String,
     /// Header names and values sent with every request. One that HTTP
     /// cannot carry fails this server before any request goes out.

@@ -32,10 +32,12 @@ pub(crate) fn after_scheme(url: &str) -> usize {
 /// shows a URL it was given (a broker's, an MCP server's).
 ///
 /// It fails safe: whatever a parser makes of the URL, no byte of a
-/// credential shows. A password with an unescaped `/`, `?`, `#` or `@` (a
-/// pasted base64 token) ends the authority a parser sees early, and an `@`
-/// in a path cannot be told from one that ends such a password, so
-/// everything between the scheme and the last `@` is hidden. When a `?` or
+/// credential shows. A password with an unescaped `/`, `?` or `#` (a pasted
+/// base64 token) ends the authority a parser sees early, and an `@` in a
+/// path cannot be told from one that ends such a password. An unescaped
+/// `@` in the userinfo may sit on either side of where a reader ends it: a
+/// URL parser takes the last `@`, tungstenite's `Host` header the first.
+/// So everything between the scheme and the last `@` is hidden. When a `?` or
 /// a `#` comes before that `@`, what follows it may be a query value or the
 /// fragment, and nothing past the scheme shows. The scheme shows only when
 /// it is one haest dials (`http`, `https`, `ws`, `wss`): before an `@`, any
@@ -177,10 +179,10 @@ mod tests {
         }
     }
 
-    /// A password with a `/`, `?`, `#` or `@` in it, unescaped (a pasted
-    /// base64 token), ends the authority a parser sees early: a parser reads
+    /// A password with a `/`, `?` or `#` in it, unescaped (a pasted base64
+    /// token), ends the authority a parser sees early: a parser reads
     /// `agent:abc` as a host and port, or fails on it. Whatever it makes of
-    /// the URL, no byte of the userinfo shows.
+    /// the URL (an `@` in the password too), no byte of the userinfo shows.
     #[test]
     fn a_password_a_parser_misreads_is_hidden_whatever_it_reads() {
         let cases = [
