@@ -673,10 +673,12 @@ write instead.
   up if it has not ended (a mod's whose promise never settles). The prompt
   comes back, and `-p` exits 130. Before, Ctrl+C did nothing while a
   command ran, and only a kill ended it.
-- `/changes` and `/apply` say a conflict is a change on disk or a name the
-  disk holds under another spelling (`README.md` for `readme.md`). They
-  called every conflict a change on disk that applying would overwrite,
-  so a spelling conflict read as a human's edit.
+- `/changes` and `/apply` say a conflict is a change on disk, or a change
+  that waits on a name the disk holds under another spelling (`README.md`
+  for `readme.md`, or `lib/` while `Lib/` cannot be written). They called
+  every conflict a change on disk that applying would overwrite, so a
+  spelling conflict read as a human's edit, and a delete held so the disk
+  keeps the only copy read as one that would overwrite something.
 
 ### haest (the facade)
 
