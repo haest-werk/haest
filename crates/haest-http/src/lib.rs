@@ -117,6 +117,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod client_ref;
+mod endpoint;
 mod error;
 #[cfg(feature = "http")]
 mod http_crate;
@@ -150,8 +151,9 @@ pub use bytes::Bytes;
 pub use reqwest;
 
 pub use client_ref::HttpClientRef;
+pub use endpoint::{EndpointUrlError, check_endpoint_url};
 pub use error::{BoxError, HttpError};
-pub use redact::{EndpointUrlError, check_endpoint_url, redacted_url};
+pub use redact::redacted_url;
 pub use request::{Method, ParseMethodError, Request};
 #[cfg(feature = "reqwest")]
 #[cfg_attr(docsrs, doc(cfg(feature = "reqwest")))]
