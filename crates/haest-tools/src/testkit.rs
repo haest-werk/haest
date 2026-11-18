@@ -2,6 +2,8 @@
 //! closure and recorded. haest-workspace owns the real disk and the real bash;
 //! these tests defend what the TOOLS do with a workspace, not the workspace.
 
+mod noted;
+
 use std::{
     io,
     path::{Path, PathBuf},
@@ -18,7 +20,10 @@ use haest_core::{
     tool::{JsonMap, ToolContext},
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, ShutWorkspace, Workspace, WorkspaceMode},
 };
+use noted::{Noted, Writes};
 use serde_json::Value;
+
+pub(crate) use noted::Write;
 
 /// The working directory every test context runs in.
 pub(crate) const CWD: &str = "/p";
@@ -36,6 +41,8 @@ type Answer = Box<dyn Fn(&Call) -> ExecResult + Send + Sync>;
 
 pub(crate) struct TestWorkspace {
     pub mem: MemFs,
+    /// Each write a tool asked the files for.
+    writes: Writes,
     answer: Answer,
     calls: Mutex<Vec<Call>>,
 }
@@ -54,6 +61,7 @@ impl TestWorkspace {
     ) -> Arc<Self> {
         Arc::new(Self {
             mem: MemFs::from_files(files),
+            writes: Writes::default(),
             answer: Box::new(answer),
             calls: Mutex::default(),
         })
@@ -61,6 +69,11 @@ impl TestWorkspace {
 
     pub(crate) fn calls(&self) -> Vec<Call> {
         self.calls.lock().unwrap().clone()
+    }
+
+    /// Each write a tool asked the files for, with its path, in order.
+    pub(crate) fn writes(&self) -> Vec<(Write, PathBuf)> {
+        self.writes.lock().unwrap().clone()
     }
 
     /// What the workspace says is in a file.
@@ -87,7 +100,8 @@ impl Workspace for TestWorkspace {
         WorkspaceMode::Sandbox
     }
     fn fs(&self) -> FsRef {
-        self.mem.clone().into()
+        let (mem, writes) = (self.mem.clone(), self.writes.clone());
+        FsRef::new(Noted { mem, writes })
     }
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
         self.record(true, vec![command.to_string()], opts)

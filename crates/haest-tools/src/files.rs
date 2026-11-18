@@ -6,16 +6,33 @@
 //! `old_string`, ...) on purpose: every frontier model has seen millions of
 //! those calls, and hosts' legacy renderers already understand them.
 
-use std::path::Path;
+use std::{io, path::Path};
 
 use async_trait::async_trait;
 use haest_core::{
-    fs::ensure_dir,
+    fs::{Fs, ensure_dir},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, opt_bool, req_str},
 };
 use serde_json::{Value, json};
 
 use crate::{canonical::pick, read::within_cap};
+
+/// Put `data` in the file at `path`, making its parent directories. One
+/// that is there is replaced whole or not at all ([`Fs::write_whole`]): a
+/// disk that fills up partway leaves the human's version as it was, which
+/// the model may not hold. A new one is made with [`Fs::write`]. Returns
+/// whether one was there.
+pub(crate) async fn save(fs: &dyn Fs, path: &Path, data: &[u8]) -> io::Result<bool> {
+    if fs.exists(path).await {
+        fs.write_whole(path, data).await?;
+        return Ok(true);
+    }
+    if let Some(parent) = path.parent() {
+        ensure_dir(fs, parent).await?;
+    }
+    fs.write(path, data).await?;
+    Ok(false)
+}
 
 /// A string input that may be empty (a file's content, a replacement).
 fn any_str<'a>(input: &'a JsonMap, key: &str) -> Result<&'a str, ToolError> {
@@ -33,6 +50,10 @@ fn any_str<'a>(input: &'a JsonMap, key: &str) -> Result<&'a str, ToolError> {
 /// Input: `file_path` (absolute, or relative to the context's `cwd`) and
 /// `content` (may be empty). The model is told whether it created or
 /// overwrote the file, and how many bytes it wrote.
+///
+/// A file that is there is replaced as [`EditTool`] replaces it, whole or
+/// not at all ([`Fs::write_whole`]), so the human's version outlives a
+/// disk that fills up partway; a new file is made with [`Fs::write`].
 #[derive(Debug, Default, Clone)]
 #[non_exhaustive]
 pub struct WriteTool;
@@ -72,11 +93,7 @@ impl Tool for WriteTool {
         let path = ctx.resolve(req_str(&input, "file_path")?);
         let content = any_str(&input, "content")?;
         let fs = ctx.workspace().fs();
-        let existed = fs.exists(&path).await;
-        if let Some(parent) = path.parent() {
-            ensure_dir(fs.as_ref(), parent).await?;
-        }
-        fs.write(&path, content.as_bytes()).await?;
+        let existed = save(fs.as_ref(), &path, content.as_bytes()).await?;
         let verb = if existed { "Overwrote" } else { "Created" };
         Ok(ToolOutput::text(format!(
             "{verb} {} ({} bytes)",
@@ -96,6 +113,22 @@ impl Tool for WriteTool {
 /// Refused with a [`ToolError::Input`] that says what to do: no such file
 /// (use Write), `old_string` not found, found more than once without
 /// `replace_all`, identical strings, or a file over 32 MB.
+///
+/// The edited text replaces the file whole or not at all
+/// ([`Fs::write_whole`]): the model holds only what it replaced, so it
+/// could never put back a file the disk cut short. In the real workspace
+/// (haest-workspace's `RealWorkspace`), the text goes into a new file
+/// beside the file, which takes its permission bits and is renamed over
+/// it: a disk that fills up, or a kill, partway leaves the file as it
+/// was, and the tool fails with the disk's error. That file does not keep
+/// the old one's extended attributes or ACLs, a process holding the old
+/// one open to write goes on writing to it, the disk needs room for the
+/// second copy, and a kill partway can leave `.<name>.haest-<pid>-<n>`
+/// beside it. A file with another hard link, another owner or group, or a
+/// symlink, and one where the disk refuses to make the new file, set its
+/// mode or rename it, is written in place, where a full disk still cuts
+/// it short and the tool says so. In the default sandbox the edit stays
+/// in memory until the human applies it, which writes the same way.
 #[derive(Debug, Default, Clone)]
 #[non_exhaustive]
 pub struct EditTool;
@@ -165,7 +198,9 @@ impl Tool for EditTool {
         let text = fs.read_to_string(&path).await?;
         let all = opt_bool(&input, "replace_all")?;
         let (replaced, count) = replace_checked(&text, old, new, all, &path)?;
-        fs.write(&path, replaced.as_bytes()).await?;
+        // Whole or not at all: the model holds only what it replaced, so a
+        // file a full disk cut short is one it cannot put back.
+        fs.write_whole(&path, replaced.as_bytes()).await?;
         let s = if count == 1 { "" } else { "s" };
         Ok(ToolOutput::text(format!(
             "Edited {} ({count} replacement{s})",

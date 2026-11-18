@@ -548,6 +548,29 @@ write instead.
   leave the new file's directory (`.<name>.haest-<pid>-<n>`) beside it,
   owner-only, and an apply dropped partway, rarely, that directory empty;
   `.*.haest-*` in an ignore file matches it.
+- In the real workspace (`workspace = real`, or a host's
+  `RealWorkspace`), an Edit the disk had no room for emptied the human's
+  file (APFS, HFS+) or cut its tail off (ext4, tmpfs): the tool wrote the
+  edited text with a write that empties the file first. It reported "No
+  space left on device", but the model, which holds only the strings it
+  replaced, could not put the file back. A kill during the write left the
+  same, unreported. Write over a file that is there, and GenerateImage
+  over an image that is there, lost the human's version the same way.
+  They now replace the file whole or not at all, as the apply does
+  (`Fs::write_whole`): the new text goes into a new file beside it, which
+  takes the file's permission bits and is renamed over it, and a disk
+  that fills up partway leaves the file as it was. The apply's trade-offs
+  come with it: a replaced file does not keep its extended attributes or
+  ACLs, a process that holds it open to write (a log a server appends to,
+  a database) goes on writing to the old file, the disk needs room for a
+  second copy, and a kill partway can leave `.<name>.haest-<pid>-<n>`
+  beside it, owner-only. Written in place as before, where a full disk
+  still cuts the file short and the tool says so: a file with another
+  hard link, one whose owner or group a new file would not have, a
+  symlink, and one where the disk will not make the new file, make it its
+  owner's alone, or move it over (a share mounted for one fixed owner the
+  run is not, a path just short of the system's cap). A read-only file is
+  still refused.
 - On a network file system, a write the server refused (no room, a
   quota) read as done. An NFS client reports it only as the file closes,
   and `RealFs::write` and `RealFs::append` ignored what closing it said:
@@ -1928,6 +1951,9 @@ Hosts write less (round two of the review, and what porting brain onto
   do, and the first panic goes on once, on the job's task. A handler whose
   `on_output` panicked hears no `Done` either, none of that job's output,
   as `JobEvents` says.
+- Edit, Write over a file that is there, and GenerateImage over an image
+  that is there replace it with `Fs::write_whole`, whole or not at all
+  (see Bug fixes); a new file is still made with `Fs::write`.
 
 ### haest-workspace
 

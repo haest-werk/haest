@@ -14,8 +14,7 @@ use crate::RealFs;
 
 /// The disk fills up while a tool rewrites `notes.txt`. The write emptied
 /// the file first, so the disk stopped it with the human's file cut short:
-/// emptied on a disk that frees the old blocks only later (APFS), its tail
-/// gone on one that frees them at once (ext4, tmpfs). The model holds only
+/// emptied (APFS, HFS+) or its tail gone (ext4, tmpfs). The model holds only
 /// what it replaced and could not put it back. The file now stays as it
 /// was, and nothing is left beside it.
 #[tokio::test]

@@ -2,6 +2,8 @@
 //! workspace is in memory. Runs through `run_call`, as the loop does, so a
 //! refusal is an error result.
 
+mod overwrite;
+
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;

@@ -31,7 +31,9 @@ use crate::canonical::pick;
 /// shared by clones of the options); a refusal tells the model what the
 /// chosen image model takes. Then one request
 /// is sent, and the picture is written into the workspace under the extension
-/// its bytes have, published to the host, and attached so the model sees it.
+/// its bytes have (over a file that is there, whole or not at all, as
+/// [`WriteTool`](crate::WriteTool) writes), published to the host, and
+/// attached so the model sees it.
 /// The spend comes back as the output's
 /// [`cost_usd`](haest_core::tool::ToolOutput::cost_usd).
 ///

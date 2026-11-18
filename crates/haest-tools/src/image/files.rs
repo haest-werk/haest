@@ -4,7 +4,6 @@
 use std::path::{Path, PathBuf};
 
 use haest_core::{
-    fs::ensure_dir,
     media::{media_from_bytes, media_type_from_name},
     messages::MediaPart,
     now_ms,
@@ -13,6 +12,7 @@ use haest_core::{
 use serde_json::{Value, json};
 
 use super::request::ImageReply;
+use crate::files::save;
 
 fn file_name(path: &Path) -> String {
     path.file_name()
@@ -98,11 +98,9 @@ pub(super) async fn save_and_show(
     path: &Path,
     takes: &str,
 ) -> Result<ToolOutput, ToolError> {
+    // Over an image that is there, whole or not at all, as Write does.
     let fs = ctx.workspace().fs();
-    if let Some(dir) = path.parent() {
-        ensure_dir(fs.as_ref(), dir).await?;
-    }
-    fs.write(path, &reply.bytes).await?;
+    save(fs.as_ref(), path, &reply.bytes).await?;
     let (len, mt, model) = (
         reply.bytes.len(),
         reply.media_type.as_str(),

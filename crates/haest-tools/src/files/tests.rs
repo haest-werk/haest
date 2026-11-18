@@ -1,6 +1,6 @@
 //! Ported from tools/tools.test.ts (Write + Edit).
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use haest_core::{
     fs::Fs,
@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use super::{EditTool, WriteTool};
 use crate::{
     read::ReadTool,
-    testkit::{ClaimedSizeFs, TestWorkspace, ctx, input},
+    testkit::{ClaimedSizeFs, TestWorkspace, Write, ctx, input},
 };
 
 async fn run(tool: &dyn Tool, ws: &Arc<TestWorkspace>, v: Value) -> Result<ToolOutput, ToolError> {
@@ -106,6 +106,38 @@ async fn edit_treats_dollar_in_the_replacement_literally() {
     .await
     .unwrap();
     assert_eq!(ws.contents("/p/d.txt").await, "$& $1 $$'");
+}
+
+/// An Edit rewrote the file with a plain write, which on the real disk
+/// empties it first: a disk that filled up partway left the human's file
+/// emptied or cut short, and the model, holding only what it replaced,
+/// could not put it back. It asks for the whole write.
+#[tokio::test]
+async fn edit_replaces_the_file_whole_never_with_a_plain_write() {
+    let ws = TestWorkspace::from_files([("/p/e.txt", "one two")]);
+    let call = json!({"file_path": "e.txt", "old_string": "two", "new_string": "2"});
+    run(&EditTool, &ws, call).await.unwrap();
+    assert_eq!(ws.writes(), [(Write::Whole, PathBuf::from("/p/e.txt"))]);
+    assert_eq!(ws.contents("/p/e.txt").await, "one 2");
+}
+
+/// Write over a file that is there replaced the human's version with a
+/// plain write, cut short on a full disk. It asks for the whole write
+/// there, and makes a new file with a plain one.
+#[tokio::test]
+async fn write_replaces_a_file_that_is_there_whole_and_makes_a_new_one() {
+    let ws = TestWorkspace::from_files([("/p/e.txt", "the human's")]);
+    let over = json!({"file_path": "e.txt", "content": "the model's"});
+    run(&WriteTool, &ws, over).await.unwrap();
+    let new = json!({"file_path": "n/new.txt", "content": "new"});
+    run(&WriteTool, &ws, new).await.unwrap();
+    let writes = [
+        (Write::Whole, PathBuf::from("/p/e.txt")),
+        (Write::Plain, PathBuf::from("/p/n/new.txt")),
+    ];
+    assert_eq!(ws.writes(), writes);
+    assert_eq!(ws.contents("/p/e.txt").await, "the model's");
+    assert_eq!(ws.contents("/p/n/new.txt").await, "new");
 }
 
 #[tokio::test]

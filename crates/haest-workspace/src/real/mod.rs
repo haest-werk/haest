@@ -26,6 +26,20 @@ pub use fs::RealFs;
 /// The real disk and the real `bash`: the workspace where the agent's edits
 /// land on disk at once and its commands are real programs.
 ///
+/// - A tool that rewrites a file that is there (Edit, and Write over one)
+///   replaces it whole or not at all ([`Fs::write_whole`] on [`RealFs`]):
+///   the new text goes into a new file beside it, which takes its
+///   permission bits and is renamed over it, so a disk that fills up, or a
+///   kill, partway leaves the human's file as it was, and the tool fails
+///   with the disk's error. The trade-offs are the overlay apply's: the
+///   file does not keep its extended attributes or ACLs, a process holding
+///   it open to write goes on writing to the old file, the disk needs room
+///   for a second copy, and a kill partway can leave
+///   `.<name>.haest-<pid>-<n>` beside it, which only its owner may reach. A
+///   file with another hard link, another owner or group, or a symlink, and
+///   one where the disk refuses to make the new file, set its mode or
+///   rename it (a share mounted for one fixed owner), is written in place:
+///   a full disk still cuts it short, and the tool says so.
 /// - [`Workspace::shell`] runs `bash -c <command>`; [`Workspace::run`] runs a
 ///   program with its argv, no shell parsing. A bare program name is looked up
 ///   on the `PATH` in the [`ChildEnv`] (`/usr/bin:/bin` when it has none), a
@@ -79,6 +93,7 @@ pub use fs::RealFs;
 /// ```
 ///
 /// [`Workspace`]: haest_core::workspace::Workspace
+/// [`Fs::write_whole`]: haest_core::fs::Fs::write_whole
 /// [`Workspace::shell`]: haest_core::workspace::Workspace::shell
 /// [`Workspace::run`]: haest_core::workspace::Workspace::run
 /// [`Workspace::prompt_note`]: haest_core::workspace::Workspace::prompt_note
