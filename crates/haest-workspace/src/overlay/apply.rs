@@ -13,7 +13,8 @@
 //!
 //! Deletes go first, then the writes: on a disk that reads two spellings as
 //! one name, a rename by case (`/readme.md` deleted, `/README.md` added)
-//! finds its new name free. A directory delete that frees such a name fails
+//! finds its new name free. Each directory's mode goes on last, deepest
+//! first, so one made read-only still gets what was written into it. A directory delete that frees such a name fails
 //! before it starts where it would stop partway (`removable.rs`). Each
 //! change's real path is read again right before it is put on the disk; one
 //! that moved since the scan, or whose name or directory the disk now holds
@@ -49,6 +50,9 @@ struct Run<'a> {
     /// overlay.
     listed: BTreeMap<PathBuf, (Original, Original)>,
     report: ApplyReport,
+    /// Each directory put on the disk, by its place in `report.applied`:
+    /// its mode goes on once everything under it is written.
+    dirs: Vec<(usize, PathBuf)>,
 }
 
 /// What became of a change `put` did not refuse.
@@ -81,6 +85,7 @@ impl OverlayChanges {
                 .map(|s| (s.path.clone(), (s.now, s.mine)))
                 .collect(),
             report: ApplyReport::default(),
+            dirs: Vec::new(),
         };
         let (deletes, writes): (Vec<_>, Vec<_>) = scanned
             .into_iter()
@@ -88,7 +93,13 @@ impl OverlayChanges {
         for s in deletes.into_iter().chain(writes) {
             self.settle(s, &mut run).await;
         }
-        let report = run.report;
+        let mut report = run.report;
+        // Deepest first, and after every write: `chmod 555 out` after a
+        // write into it must not stop that write. Taken from the end, so
+        // each place in `applied` still holds its directory.
+        for (at, path) in run.dirs.into_iter().rev() {
+            self.dir_mode(at, &path, &mut report).await;
+        }
         self.read_through_dirs(&report.applied).await;
         // What a wiped directory hid is on the disk now, or each path of it
         // not applied is remembered (`settle`): it is forgotten, unless its
@@ -116,7 +127,12 @@ impl OverlayChanges {
                 Ok(Put::Applied(took)) => {
                     self.read_through(&s, &took).await;
                     self.book.touched().remove(&s.path);
-                    self.book.modes.forget(&s.path);
+                    if s.mine == Original::Dir {
+                        let at = run.report.applied.len();
+                        run.dirs.push((at, s.path));
+                    } else {
+                        self.book.modes.forget(&s.path);
+                    }
                     run.report.applied.push(s.change);
                     return;
                 }
@@ -291,27 +307,62 @@ impl OverlayChanges {
             disk.remove_all(&real).await?;
         }
         if dir {
+            // Its mode goes on once all under it is written (`dir_mode`).
             disk.create_dir_all(&real).await?;
-        } else if !holds {
+            return Ok(took);
+        }
+        if !holds {
             if let Some(parent) = real.parent() {
                 disk.create_dir_all(parent).await?;
             }
             disk.write(&real, &self.overlay.read(path).await?).await?;
         }
-        self.carry_mode(s, &real).await?;
+        self.carry_mode(path, s.change.kind, s.mine, &real).await?;
         Ok(took)
     }
 
-    /// Put the mode the sandbox chose for `s` on the disk at `real`: the one
-    /// it set, or the execute bits of a file it added (`modes.rs`).
-    async fn carry_mode(&self, s: &Scanned, real: &Path) -> io::Result<()> {
+    /// Put the mode of the directory at `path`, applied as `report.applied`'s
+    /// `at`, on the disk. One the disk refuses moves to `failed`, and stays
+    /// listed for its mode.
+    async fn dir_mode(&self, at: usize, path: &Path, report: &mut ApplyReport) {
+        let kind = report.applied[at].kind;
+        let done = self
+            .carry_mode(path, kind, Original::Dir, &self.book.real(path))
+            .await;
+        match done {
+            Ok(()) => self.book.modes.forget(path),
+            Err(e) => {
+                let change = report.applied.remove(at);
+                // The disk holds the directory now: only its mode is left.
+                self.book
+                    .touched()
+                    .entry(path.to_path_buf())
+                    .or_insert(Original::Dir);
+                let code = ApplyFailureCode::WriteFailed;
+                report
+                    .failed
+                    .push(FailedChange::new(change, code, e.to_string()));
+            }
+        }
+    }
+
+    /// Put the mode the sandbox chose for `path`, a `kind` change to `mine`,
+    /// on the disk at `real`: the one it set, or the execute bits of a file
+    /// it added (`modes.rs`).
+    async fn carry_mode(
+        &self,
+        path: &Path,
+        kind: ChangeKind,
+        mine: Original,
+        real: &Path,
+    ) -> io::Result<()> {
         let Some(disk) = modes::on_disk(real).await else {
             return Ok(());
         };
-        let want = if let Some(set) = self.book.modes.get(&s.path) {
+        let want = if let Some(set) = self.book.modes.get(path) {
             modes::carried(disk, set.mode)
-        } else if s.change.kind == ChangeKind::Added && matches!(s.mine, Original::File(_)) {
-            match self.overlay.inner().stat(&s.path).await {
+        } else if kind == ChangeKind::Added && matches!(mine, Original::File(_)) {
+            match self.overlay.inner().stat(path).await {
                 Ok(mine) => modes::added(disk, mine.mode),
                 Err(_) => disk,
             }

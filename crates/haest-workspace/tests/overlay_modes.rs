@@ -9,10 +9,10 @@ use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
 use common::{
     opts, sandbox,
-    spelling::{apply_all, changes, run},
+    spelling::{apply_all, changes, paths, run},
     tempdir,
 };
-use haest_core::workspace::{ChangeKind, Workspace};
+use haest_core::workspace::{ApplyFailureCode, ChangeKind, Workspace};
 
 fn mode(path: &Path) -> u32 {
     fs::metadata(path).unwrap().permissions().mode() & 0o7777
@@ -166,6 +166,68 @@ async fn a_file_made_again_does_not_keep_the_old_ones_mode() {
     run(&ws, &dir, "chmod +x a.sh && rm a.sh && echo b > a.sh").await;
     apply_all(&ws).await;
     assert_eq!(mode(&dir.join("a.sh")), 0o644);
+}
+
+/// Bash writes into a directory, then makes it read-only. Apply put each
+/// directory's mode on first (path order), so the write into it then failed
+/// with "Permission denied".
+#[tokio::test]
+async fn a_directory_made_read_only_after_a_write_into_it_still_gets_the_write() {
+    for (command, file, dirs) in [
+        ("echo x > out/g && chmod 555 out", "out/g", &["out"][..]),
+        (
+            "mkdir -p gen/sub && echo x > gen/sub/a && chmod 555 gen/sub gen",
+            "gen/sub/a",
+            &["gen/sub", "gen"][..],
+        ),
+    ] {
+        let (_t, dir) = tempdir();
+        fs::create_dir(dir.join("out")).unwrap();
+        let ws = sandbox(&dir).await;
+        run(&ws, &dir, command).await;
+        let report = changes(&ws).apply().await;
+        let modes: Vec<String> = dirs
+            .iter()
+            .map(|d| format!("{:o}", mode(&dir.join(d))))
+            .collect();
+        // Writable again, so the temp dir goes.
+        for d in dirs.iter().rev() {
+            set_mode(&dir.join(d), 0o755);
+        }
+        assert!(report.failed.is_empty(), "{command}: {report:?}");
+        let landed = fs::read_to_string(dir.join(file)).ok();
+        assert_eq!(landed.as_deref(), Some("x\n"), "{command}");
+        assert!(modes.iter().all(|m| m == "555"), "{command}: {modes:?}");
+    }
+}
+
+/// A directory's mode the disk refuses (a locked directory) fails alone,
+/// once the rest is written, and stays listed.
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn a_directory_mode_the_disk_refuses_fails_and_stays_listed() {
+    let (_t, dir) = tempdir();
+    fs::create_dir(dir.join("out")).unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "chmod 700 out && echo x > note.md").await;
+    let lock = |flag: &str| {
+        let status = std::process::Command::new("chflags")
+            .args([flag, &dir.join("out").to_string_lossy()])
+            .status();
+        assert!(status.unwrap().success(), "chflags {flag}");
+    };
+    lock("uchg");
+    let report = changes(&ws).apply().await;
+    let left = changes(&ws).list().await;
+    lock("nouchg");
+    assert_eq!(paths(&report.applied), ["/note.md"], "{report:?}");
+    let failed: Vec<_> = report
+        .failed
+        .iter()
+        .map(|f| (f.change.path.as_str(), f.code))
+        .collect();
+    assert_eq!(failed, [("/out", ApplyFailureCode::WriteFailed)]);
+    assert_eq!(paths(&left), ["/out"]);
 }
 
 /// The human changes a file's mode after the sandbox set its own: the
