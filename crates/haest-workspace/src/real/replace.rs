@@ -43,7 +43,7 @@ const NAME_PART: usize = 64;
 /// all go in (a full disk), the change fails and never falls back: in
 /// place they would not all go in either, and the human's file would be
 /// cut short.
-pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
     let old = if disk.exists(real).await {
         // Opened to write as an in-place write opens it, but nothing is
         // cut or written: refused, the change fails as it did.
