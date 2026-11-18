@@ -51,8 +51,8 @@ enum Job {
 ///
 /// Must be created inside a tokio runtime (the writer task is spawned there).
 /// The writer stops when the value is dropped, after what is queued.
-/// [`try_lock`](Self::try_lock) holds the file for this writer alone until
-/// then, so two runs never write one session.
+/// [`try_lock`](Self::try_lock) holds the session for this writer alone
+/// until then, so two runs never write one session.
 ///
 /// # Examples
 ///
@@ -194,26 +194,37 @@ impl JsonlSessionFile {
         outcome.await.map_err(|_closed| stopped())?
     }
 
-    /// Hold the file for this writer alone until this value is dropped
-    /// ([`Fs::try_lock`]): meanwhile another writer's `try_lock` of the
-    /// session, in this process or another, fails with `WouldBlock`. On a
-    /// file system with no locks it holds nothing, and succeeds. Once it
-    /// holds the file, it returns at once.
+    /// Hold the session for this writer alone until this value is dropped:
+    /// meanwhile another writer's `try_lock` of the session, in this process
+    /// or another, fails with `WouldBlock`. On a file system with no locks
+    /// it holds nothing, and succeeds. Once it holds the session, it returns
+    /// at once.
+    ///
+    /// What it holds is [`Fs::try_lock`] on `<id>.lock` beside the session
+    /// file, which nothing reads or writes: where locks are mandatory (SMB),
+    /// a lock on the session file itself would refuse the writer its own
+    /// reads and writes. The lock file is made when missing (the sessions
+    /// dir too, 0700) and stays when the session ends: one removed while
+    /// another writer opens it would leave the session two lock files.
     ///
     /// Take it before the first record of a session another writer may open:
-    /// after [`create`](Self::create) for a new one, before
-    /// [`load`](Self::load) for a saved one. The lock goes as this value is
-    /// dropped, before its queued records land: [`flush`](SessionSink::flush)
-    /// first.
+    /// before [`create`](Self::create) for a new one, so a session in use
+    /// leaves no file, and before [`load`](Self::load) for a saved one. The
+    /// lock goes as this value is dropped, before its queued records land:
+    /// [`flush`](SessionSink::flush) first.
     ///
     /// # Errors
     ///
-    /// `WouldBlock` when another writer holds the session, `NotFound` when
-    /// the file is not there yet, and the file system's other errors.
+    /// `WouldBlock` when another writer holds the session, and the file
+    /// system's other errors, from making the sessions dir or the lock.
     pub async fn try_lock(&self) -> io::Result<()> {
         let mut held = self.held.lock().await;
         if held.is_none() {
-            *held = self.fs.try_lock(&self.path).await?;
+            let dir = dir_of(&self.path);
+            if !self.fs.exists(dir).await {
+                private_dir(&*self.fs, dir).await?;
+            }
+            *held = self.fs.try_lock(&self.path.with_extension("lock")).await?;
         }
         Ok(())
     }
@@ -283,9 +294,18 @@ async fn create(fs: &dyn Fs, path: &Path, header: &str) -> io::Result<()> {
     if fs.exists(path).await {
         return Ok(());
     }
-    let dir = path.parent().unwrap_or(Path::new("/"));
-    ensure_dir(fs, dir).await?;
-    fs.chmod(dir, 0o700).await?;
+    private_dir(fs, dir_of(path)).await?;
     fs.write(path, header.as_bytes()).await?;
     fs.chmod(path, 0o600).await
+}
+
+/// The sessions dir a session's file is in.
+fn dir_of(file: &Path) -> &Path {
+    file.parent().unwrap_or(Path::new("/"))
+}
+
+/// `dir`, made if missing, for its owner alone (0700).
+async fn private_dir(fs: &dyn Fs, dir: &Path) -> io::Result<()> {
+    ensure_dir(fs, dir).await?;
+    fs.chmod(dir, 0o700).await
 }

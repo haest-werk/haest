@@ -422,18 +422,21 @@ pub trait Fs: Send + Sync {
     /// dropped; it never waits for one. Meanwhile every other `try_lock` of
     /// the file, in this process or another, fails. A lock must not outlive
     /// the process that holds it, so a crash never leaves a file locked. A
-    /// session file is held this way while a conversation writes it
+    /// store makes the file, empty, when it is not there (its dir must be).
+    /// A session is held this way while a conversation writes it, through a
+    /// lock file of its own beside the session file
     /// ([`JsonlSessionFile::try_lock`](crate::session::JsonlSessionFile::try_lock)).
     ///
-    /// `Ok(None)` when the file system has no locks: nothing is held, and
-    /// nothing is refused. That is the default (memory, a host's own store
-    /// that one writer uses); a store more than one writer shares overrides
-    /// it.
+    /// `Ok(None)` when the file system has no locks: nothing is held, nothing
+    /// is refused, and no file is made. That is the default (memory, a
+    /// host's own store that one writer uses); a store more than one writer
+    /// shares overrides it.
     ///
     /// # Errors
     ///
-    /// `WouldBlock` when another holder has the file, `NotFound` when
-    /// nothing is there.
+    /// `WouldBlock` when another holder has the file, and the file system's
+    /// other errors: the file cannot be made or opened, or the lock cannot be
+    /// taken.
     async fn try_lock(&self, _path: &Path) -> io::Result<Option<FsLock>> {
         Ok(None)
     }

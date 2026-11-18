@@ -51,10 +51,14 @@ impl Home {
         cmd.envs(vars.iter().copied()).output().unwrap()
     }
 
-    /// The session files haest saved.
+    /// The session files haest saved (`<id>.jsonl`; a session's lock file
+    /// beside it is not one).
     pub(crate) fn sessions(&self) -> Vec<PathBuf> {
         match std::fs::read_dir(self.0.join(".local/share/haest/sessions")) {
-            Ok(dir) => dir.map(|e| e.unwrap().path()).collect(),
+            Ok(dir) => dir
+                .map(|e| e.unwrap().path())
+                .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
+                .collect(),
             Err(_) => Vec::new(),
         }
     }

@@ -30,7 +30,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 ///   system drops with the process that held it. It opens the file to read
 ///   and write for it (an NFS client refuses an exclusive lock on a file
 ///   opened only to read), or only to read where the file may not be
-///   written (made read-only, or on a read-only mount).
+///   written (made read-only, or on a read-only mount). A file that is not
+///   there is made, empty and 0600.
 ///
 /// # Examples
 ///
@@ -199,7 +200,8 @@ impl Fs for RealFs {
     /// client takes the lock as a write lock on the server, and refuses it
     /// on a file opened only to read. Where the file or its mount may not be
     /// written (`PermissionDenied`, `ReadOnlyFilesystem`), it is opened only
-    /// to read, which a local disk locks all the same. Dropping the lock
+    /// to read, which a local disk locks all the same. A file that is not
+    /// there is made, empty and 0600 (its dir must be). Dropping the lock
     /// closes the file. The system drops it with the process, so a crash
     /// never leaves the file locked. A child this process forks shares it
     /// until the child starts its program, which closes the file (it is

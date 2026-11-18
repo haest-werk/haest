@@ -6,7 +6,8 @@ use haest_core::fs::FsLock;
 
 use super::fs::open_file;
 
-/// An exclusive `flock(2)` on the file at `path`, held until the lock drops.
+/// An exclusive `flock(2)` on the file at `path` (made if missing), held
+/// until the lock drops.
 pub(super) async fn exclusive(path: &Path) -> io::Result<Option<FsLock>> {
     let file = open_to_lock(path).await?.into_std().await;
     match flock_exclusive(&file) {
@@ -16,12 +17,25 @@ pub(super) async fn exclusive(path: &Path) -> io::Result<Option<FsLock>> {
     }
 }
 
+/// `path` opened to lock, made when it is not there yet (a new session is
+/// held before its file is written).
+async fn open_to_lock(path: &Path) -> io::Result<tokio::fs::File> {
+    match open_existing(path).await {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => match make(path).await {
+            // Another holder made it meanwhile.
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => open_existing(path).await,
+            made => made,
+        },
+        opened => opened,
+    }
+}
+
 /// `path` opened to read and write: an NFS client takes an exclusive
 /// `flock` as a write lock on the server, and refuses it on a file opened
 /// only to read (EBADF on Linux, EIO on macOS). Where the file or its mount
-/// may not be written (a session file made 0400, a read-only mount), it is
-/// opened only to read, which a local disk locks all the same.
-async fn open_to_lock(path: &Path) -> io::Result<tokio::fs::File> {
+/// may not be written (a file made 0400, a read-only mount), it is opened
+/// only to read, which a local disk locks all the same.
+async fn open_existing(path: &Path) -> io::Result<tokio::fs::File> {
     match open_file(path, true).await {
         Err(e)
             if matches!(
@@ -33,6 +47,19 @@ async fn open_to_lock(path: &Path) -> io::Result<tokio::fs::File> {
         }
         opened => opened,
     }
+}
+
+/// A new, empty file at `path` for its owner alone (0600), opened to read
+/// and write; `AlreadyExists` when anything is there, a link included, so
+/// it is always a file of its own.
+async fn make(path: &Path) -> io::Result<tokio::fs::File> {
+    tokio::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .await
 }
 
 /// Lock `file` for this open file alone, without waiting: `WouldBlock` when
@@ -121,9 +148,21 @@ mod tests {
         assert!(refused(&again), "held in this process");
         drop(held);
         assert!(lock_once_free(&file).await.unwrap().is_some());
+    }
 
-        let missing = RealFs.try_lock(&dir.path().join("none")).await;
-        assert!(missing.is_err_and(|e| e.kind() == io::ErrorKind::NotFound));
+    /// A lock file that is not there yet is made, for its owner alone
+    /// (0600), and held: a new session is held before its file is written.
+    #[tokio::test]
+    async fn a_missing_file_is_made_owner_only_and_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("s.lock");
+
+        let held = RealFs.try_lock(&file).await.unwrap();
+        assert!(held.is_some(), "the disk takes locks");
+        let made = std::fs::metadata(&file).unwrap();
+        assert!(made.is_file());
+        assert_eq!(made.permissions().mode() & 0o777, 0o600);
+        assert!(refused(&RealFs.try_lock(&file).await), "held");
     }
 
     /// A session file the human made read-only (0400) still locks, and
