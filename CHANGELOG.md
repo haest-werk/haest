@@ -563,7 +563,9 @@ write instead.
   keeps its execute bits, and a write keeps the file's mode. A directory's
   mode goes on after everything under it is written, so a write into `out`
   followed by `chmod 555 out` applies both; till then the directory stays
-  listed, so an apply dropped partway leaves its mode to the next one.
+  listed, so an apply dropped partway leaves its mode to the next one
+  (not yet for a directory that replaced a file: its mode is then listed
+  as a conflict, and the directory stays at the umask's mode).
   Applying grants nothing but execute, and that only to whom may read the
   file (`chmod 666` or a setuid bit is not applied); a mode the human
   changed on the disk meanwhile is a conflict.
