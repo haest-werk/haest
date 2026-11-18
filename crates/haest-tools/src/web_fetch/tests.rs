@@ -100,6 +100,22 @@ async fn html_comes_back_as_markdown_with_scripts_and_styles_dropped() {
     assert!(!out.content.contains("steal"));
 }
 
+/// A page the model asks for is not an endpoint haest is configured with:
+/// an `@` in its path or query is the page's own, and it is fetched (the
+/// check on configured URLs, haest-http's `check_endpoint_url`, never
+/// applies here).
+#[tokio::test]
+async fn a_page_with_an_at_in_its_path_is_fetched() {
+    let url = "https://registry.test/@scope/pkg?by=a@b.test";
+    let web = Arc::new(FakeWeb::default().route(url, || {
+        answer(200, &[("Content-Type", "text/plain")], "the package")
+    }));
+    let out = fetch(&web, url).await.unwrap();
+    assert!(!out.is_error, "{}", out.content);
+    assert!(out.content.contains("the package"), "{}", out.content);
+    assert_eq!(web.hits(), [url]);
+}
+
 #[tokio::test]
 async fn a_redirect_to_a_private_address_is_refused_before_it_is_fetched() {
     let web = Arc::new(
