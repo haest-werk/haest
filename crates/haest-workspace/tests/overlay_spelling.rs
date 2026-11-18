@@ -345,3 +345,34 @@ async fn a_rename_by_case_whose_delete_fails_writes_nothing_into_the_old_name() 
     let left = changes(&ws).list().await;
     assert!(left.is_empty(), "left {left:?}");
 }
+
+/// A tree made beside a file the disk spells another way (`NOTES/x` beside
+/// the file `notes`). The disk answers "not a directory" for `NOTES/x`, and
+/// that ended the search for how the disk spells the way, so the file below
+/// it was a plain add, and applying it failed with "Not a directory". It is a
+/// conflict, as the directories above it are, until the file goes.
+#[tokio::test]
+async fn a_write_below_a_directory_beside_a_file_spelled_another_way_is_a_conflict() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("notes"), "n\n").unwrap();
+    let one = reads_as_one(&dir, "notes", "NOTES");
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "mkdir -p NOTES/x && echo y > NOTES/x/y").await;
+    let report = changes(&ws).apply().await;
+    assert!(report.failed.is_empty(), "{report:?}");
+    let left = changes(&ws).list().await;
+    assert_eq!(paths(&left), paths(&report.skipped), "{report:?}");
+    assert!(left.iter().all(|c| c.conflict), "{left:?}");
+    if one {
+        let want = ["/NOTES", "/NOTES/x", "/NOTES/x/y"];
+        assert_eq!(paths(&report.skipped), want, "{report:?}");
+        assert_eq!(contents(&dir), pairs(&[("notes", "n\n")]));
+    }
+    run(&ws, &dir, "rm notes").await;
+    apply_all(&ws).await;
+    assert_eq!(
+        contents(&dir),
+        pairs(&[("NOTES/x/y", "y\n")]),
+        "one name: {one}"
+    );
+}

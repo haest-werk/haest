@@ -112,7 +112,12 @@ impl Spelling {
                 // or one of a loop) is still a name its directory lists, by
                 // this spelling or not.
                 let Ok(link) = tokio::fs::symlink_metadata(&asked).await else {
-                    return (e.kind() != io::ErrorKind::NotFound).then_some(Spelled::AsAsked);
+                    // Not there, or a file on the way: nothing is there.
+                    let gone = matches!(
+                        e.kind(),
+                        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                    );
+                    return (!gone).then_some(Spelled::AsAsked);
                 };
                 if self.listed(dir, rel).await {
                     return Some(Spelled::AsAsked);
@@ -435,6 +440,25 @@ mod tests {
         for asked in ["/LIB/new.rs", "/LIB/new/deeper/x.rs"] {
             assert_eq!(s.spelled_way(Path::new(asked)).await, want, "{asked}");
         }
+    }
+
+    /// Below a file the disk spells another way (`/NOTES/x/y` beside the
+    /// file `notes`), the disk answers "not a directory" for `NOTES/x`: the
+    /// way goes on up to the file, and it ended there as asked.
+    #[tokio::test]
+    async fn the_way_below_a_file_spelled_another_way_is_that_file() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path();
+        std::fs::write(dir.join("notes"), "").unwrap();
+        let s = Spelling::of(dir);
+        let want = if dir.join("NOTES").exists() {
+            Spelled::Other(Some(PathBuf::from("/notes")))
+        } else {
+            Spelled::AsAsked
+        };
+        assert_eq!(s.spelled_way(Path::new("/NOTES/x/y")).await, want);
+        let asked = s.spelled_way(Path::new("/notes/x/y")).await;
+        assert_eq!(asked, Spelled::AsAsked);
     }
 
     #[tokio::test]
