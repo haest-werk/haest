@@ -559,7 +559,10 @@ write instead.
   They now replace the file whole or not at all, as the apply does
   (`Fs::write_whole`): the new text goes into a new file beside it, which
   takes the file's permission bits and is renamed over it, and a disk
-  that fills up partway leaves the file as it was. The apply's trade-offs
+  that fills up partway leaves the file as it was. The file keeps its
+  name: on a disk that reads `readme.md` as `README.md` (HFS+, exFAT and
+  FAT on macOS), the new file takes the name the directory lists, however
+  the model spells it. The apply's trade-offs
   come with it: a replaced file does not keep its extended attributes or
   ACLs, a process that holds it open to write (a log a server appends to,
   a database) goes on writing to the old file, the disk needs room for a

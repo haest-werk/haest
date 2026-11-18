@@ -14,6 +14,8 @@
 //! command's `/apply`, a host's timeout) removes the new file and its
 //! directory as it drops.
 
+mod listed;
+
 use std::{
     fs::Metadata,
     io,
@@ -23,6 +25,7 @@ use std::{
 };
 
 use haest_core::fs::Fs;
+use listed::as_listed;
 
 /// The permission bits a replaced file keeps: all but setuid and setgid,
 /// which a write into the file takes away as well.
@@ -46,7 +49,10 @@ const NAME_PART: usize = 64;
 /// make it its owner's alone, or move it over the real one
 /// ([`in_place_instead`]). Where the new file's bytes do not all go in (a
 /// full disk), the write fails and never falls back: in place they would
-/// not all go in either, and the human's file would be cut short.
+/// not all go in either, and the human's file would be cut short. A file
+/// that is replaced keeps the name its directory lists it by, however
+/// `real` spells it; where that name cannot be told, it is written in
+/// place, which keeps any name ([`as_listed`]).
 pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
     let old = if disk.exists(real).await {
         // What the `Fs` does not carry; None on a disk that is not the
@@ -65,9 +71,16 @@ pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Re
     } else {
         None
     };
-    match put_new(disk, real, old.as_ref(), bytes).await? {
+    let real = match &old {
+        Some(old) => match as_listed(real, old).await {
+            Some(listed) => listed,
+            None => return disk.write(real, bytes).await,
+        },
+        None => real.to_path_buf(),
+    };
+    match put_new(disk, &real, old.as_ref(), bytes).await? {
         Put::Replaced => Ok(()),
-        Put::InPlace => disk.write(real, bytes).await,
+        Put::InPlace => disk.write(&real, bytes).await,
     }
 }
 
