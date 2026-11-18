@@ -3,10 +3,10 @@
 
 mod common;
 
-use std::fs;
+use std::{fs, io};
 
 use common::{
-    sandbox,
+    opts, sandbox,
     spelling::{apply_all, contents, pairs, run},
     tempdir,
 };
@@ -137,4 +137,42 @@ async fn a_file_the_human_makes_after_the_apply_is_not_deleted_by_the_next() {
     apply_all(&ws).await;
     let want = [("lib/a.rs", "human\n"), ("lib/c.rs", "c\n")];
     assert_eq!(contents(&dir), pairs(&want));
+}
+
+/// A file written under a directory the sandbox removed (`rm -rf dist;
+/// echo x > dist/f`): bashkit's overlay made the missing parent beneath the
+/// removed one, so the write said it succeeded and nothing could read the
+/// file back. It fails as in bash, and so do `cp`, `ln -s` and a rename
+/// there.
+#[tokio::test]
+async fn a_write_under_a_removed_directory_fails_as_in_bash() {
+    for command in [
+        "rm -rf dist; echo x > dist/f",
+        "rm -rf dist; cp keep.md dist/k.md",
+        "rm -rf dist; ln -s ../keep.md dist/l",
+        "rm -rf dist && mkdir dist && echo x > dist/sub/f",
+    ] {
+        let (_t, dir) = tempdir();
+        fs::create_dir_all(dir.join("dist/sub")).unwrap();
+        fs::write(dir.join("keep.md"), "k\n").unwrap();
+        let ws = sandbox(&dir).await;
+        let r = ws.shell(command, opts(&dir)).await;
+        assert_ne!(r.exit_code, 0, "{command}: {r:?}");
+    }
+    let (_t, dir) = tempdir();
+    fs::create_dir(dir.join("dist")).unwrap();
+    fs::write(dir.join("keep.md"), "k\n").unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "rm -rf dist").await;
+    let files = ws.fs();
+    let gone = files.write(&dir.join("dist/f"), b"x\n").await.unwrap_err();
+    assert_eq!(gone.kind(), io::ErrorKind::NotFound, "{gone}");
+    let from = dir.join("keep.md");
+    let gone = files
+        .rename(&from, &dir.join("dist/k.md"))
+        .await
+        .unwrap_err();
+    assert_eq!(gone.kind(), io::ErrorKind::NotFound, "{gone}");
+    apply_all(&ws).await;
+    assert_eq!(contents(&dir), pairs(&[("keep.md", "k\n")]));
 }

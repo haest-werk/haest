@@ -2,6 +2,7 @@
 //! haest's tools and the simulated shell both go through it, so both are seen.
 
 use std::{
+    io,
     path::{Path, PathBuf},
     sync::Arc,
     time::SystemTime,
@@ -20,6 +21,22 @@ type Result<T> = bashkit::Result<T>;
 pub(crate) struct Recorder {
     pub(crate) inner: Arc<dyn FileSystem>,
     pub(crate) book: Arc<Book>,
+}
+
+impl Recorder {
+    /// Fails with `NotFound` where the sandbox shows no directory above
+    /// `path`, a new entry. bashkit's overlay makes that parent when the disk
+    /// holds it, though the sandbox removed it (`rm -rf dist; echo x >
+    /// dist/f`): the entry lands beneath the removed parent, hidden, and the
+    /// call succeeds for a file nothing reads back. Bash fails there.
+    async fn parent_shown(&self, path: &Path) -> Result<()> {
+        match path.parent() {
+            Some(parent) if !self.inner.exists(parent).await.unwrap_or(true) => {
+                Err(io::Error::new(io::ErrorKind::NotFound, "parent directory not found").into())
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[async_trait]
@@ -53,6 +70,7 @@ impl FileSystem for Recorder {
         self.inner.read_file(path).await
     }
     async fn write_file(&self, path: &Path, content: &[u8]) -> Result<()> {
+        self.parent_shown(path).await?;
         self.book.remember(path).await;
         self.inner.write_file(path, content).await
     }
@@ -105,6 +123,7 @@ impl FileSystem for Recorder {
         self.inner.exists(path).await
     }
     async fn rename(&self, from: &Path, to: &Path) -> Result<()> {
+        self.parent_shown(to).await?;
         self.book.remember(from).await;
         self.book.remember(to).await;
         self.inner.rename(from, to).await?;
@@ -115,10 +134,12 @@ impl FileSystem for Recorder {
         Ok(())
     }
     async fn copy(&self, from: &Path, to: &Path) -> Result<()> {
+        self.parent_shown(to).await?;
         self.book.remember(to).await;
         self.inner.copy(from, to).await
     }
     async fn symlink(&self, target: &Path, link: &Path) -> Result<()> {
+        self.parent_shown(link).await?;
         self.book.remember(link).await;
         self.inner.symlink(target, link).await
     }
