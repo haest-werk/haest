@@ -28,7 +28,6 @@
 //! Close frame, code 1000, so the broker knows it will not be dialed again.
 
 use std::{
-    borrow::Cow,
     fmt,
     hash::{BuildHasher, Hasher},
     sync::{Arc, Mutex, OnceLock, PoisonError},
@@ -39,7 +38,10 @@ use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
-use haest_http::{__private::UrlDebug, check_endpoint_url, redacted_url};
+use haest_http::{
+    __private::{UrlDebug, authority},
+    check_endpoint_url, redacted_url,
+};
 use haest_session::BackendRef;
 use haest_wire::Token;
 use tokio::net::TcpStream;
@@ -47,6 +49,7 @@ use tokio_tungstenite::{
     Connector, MaybeTlsStream, WebSocketStream, connect_async_tls_with_config,
     tungstenite::{
         self, Message,
+        client::IntoClientRequest,
         protocol::{CloseFrame, frame::coding::CloseCode},
     },
 };
@@ -264,11 +267,13 @@ impl Broker {
     ///
     /// # Errors
     ///
-    /// [`TransportError::Url`] when the URL is not `ws://` or `wss://`, and
-    /// [`TransportError::UrlRefused`] when it has an `@` past its host
-    /// (`check_endpoint_url`): a password holding an unescaped `/`, `?` or
-    /// `#` would send the rest of it to another host. Either way nothing is
-    /// dialed.
+    /// [`TransportError::Url`] when the URL is not `ws://` or `wss://`;
+    /// [`TransportError::UrlRefused`] when it has an `@` past its host (a
+    /// password holding an unescaped `/`, `?` or `#` would send the rest of
+    /// it to another host) or no host (`check_endpoint_url`); and
+    /// [`TransportError::Undialable`] when no dial can reach it: it does not
+    /// parse as a request (a space, a host outside ASCII, a `\`), or its port
+    /// is past 65535. Nothing is dialed then.
     pub fn attach(
         self,
         backend: impl Into<BackendRef>,
@@ -278,6 +283,11 @@ impl Broker {
             return Err(TransportError::Url(redacted_url(&self.url).into_owned()));
         }
         check_endpoint_url(&self.url).map_err(|e| TransportError::UrlRefused(e.into()))?;
+        if !dialable(&dialed_url(&self.url)) {
+            return Err(TransportError::Undialable(
+                redacted_url(&self.url).into_owned(),
+            ));
+        }
         Ok(Attached::new(tokio::spawn(link(
             self,
             backend.into(),
@@ -291,7 +301,7 @@ impl Broker {
 async fn link(broker: Broker, backend: BackendRef, grant: Grant) -> Ended {
     let closed = until_closed(backend.subscribe(u64::MAX));
     tokio::pin!(closed);
-    let url = without_userinfo(&broker.url);
+    let url = dialed_url(&broker.url);
     let mut attempt = 0u32;
     loop {
         let began = Instant::now();
@@ -356,21 +366,50 @@ async fn say_ended(sink: &tokio::sync::Mutex<SplitSink<Ws, Message>>) {
     let _ = tokio::time::timeout(CLOSE_WAIT, close).await;
 }
 
-/// `url` as the link dials it: without its userinfo. tungstenite never sends
-/// a URL's userinfo as a credential (the broker's is the token, in the
-/// `hello`), and it writes the Host header from after the first `@` while
-/// it dials the host after the last: a user or a password with an unescaped
-/// `@` (`me@corp.example:pw@broker.example`) would go out in that header.
-/// [`Broker::attach`] has refused an `@` past the host, so the last `@`
-/// before the first `/`, `?` or `#` ends the userinfo.
-fn without_userinfo(url: &str) -> Cow<'_, str> {
-    let Some((scheme, rest)) = url.split_once("://") else {
-        return Cow::Borrowed(url);
+/// `url` as the link dials it: without its userinfo, and with `/` for its
+/// path when it has none.
+///
+/// tungstenite never sends a URL's userinfo as a credential (the broker's
+/// is the token, in the `hello`), and it writes the Host header from after
+/// the first `@` while it dials the host after the last: a user or a
+/// password with an unescaped `@` (`me@corp.example:pw@broker.example`)
+/// would go out in that header. [`Broker::attach`] has refused an `@` past
+/// the host, so the last `@` of the authority ends the userinfo.
+///
+/// tungstenite writes the request line from the path and query as they
+/// are, so `wss://h?v=1` went out as `GET ?v=1`, which a server refuses
+/// (RFC 6455, section 3: the resource name starts with `/`).
+fn dialed_url(url: &str) -> String {
+    let at = authority(url);
+    let (scheme, host, rest) = (&url[..at.start], &url[at.clone()], &url[at.end..]);
+    let host = host.rfind('@').map_or(host, |i| &host[i + 1..]);
+    // A `\` there stays: tungstenite refuses it, so `attach` does.
+    let slash = if rest.starts_with(['/', '\\']) {
+        ""
+    } else {
+        "/"
     };
-    let host_ends = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    match rest[..host_ends].rfind('@') {
-        Some(at) => Cow::Owned(format!("{scheme}://{}", &rest[at + 1..])),
-        None => Cow::Borrowed(url),
+    format!("{scheme}{host}{slash}{rest}")
+}
+
+/// Whether a dial can reach `url` (as [`dialed_url`] makes it): tungstenite
+/// reads it as a request, and its port fits in 16 bits. A URL that fails
+/// either fails every dial the same way: tungstenite refuses it before any
+/// socket opens, or, for a port past 65535, dials the scheme's default port
+/// (`Uri::port_u16` is None for it).
+fn dialable(url: &str) -> bool {
+    let Ok(request) = url.into_client_request() else {
+        return false;
+    };
+    let Some(authority) = request.uri().authority() else {
+        return false;
+    };
+    let port = authority.as_str().rsplit_once(':').map(|(_, port)| port);
+    match port {
+        Some(port) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+            authority.port_u16().is_some()
+        }
+        _ => true,
     }
 }
 

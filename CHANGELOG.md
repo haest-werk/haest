@@ -2363,10 +2363,13 @@ against it; the wire JSON is unchanged):
   (500 ms doubling to 30 s); close 4401 or 4408 (`AUTH_CLOSE`), or a 401 or
   403 handshake, ends it with `TransportError::Auth`. `Broker`'s Debug and
   `TransportError::Url` show the URL without its userinfo, query values or
-  fragment, and the token never. A URL with an `@` past its host is
-  refused by `attach` with `TransportError::UrlRefused`, and nothing is
-  dialed. The link dials the URL without its userinfo: no part of it goes
-  out.
+  fragment, and the token never. `attach` refuses a URL with an `@` past
+  its host, or no host, with `TransportError::UrlRefused`, and one no dial
+  can reach with `TransportError::Undialable`: one that does not parse as
+  a request (a space, a host outside ASCII, a `\`), or whose port is past
+  65535 (tungstenite would dial the scheme's default port). Nothing is
+  dialed then. The link dials the URL without its userinfo, so no part of
+  it goes out, and with `/` for its path when it has none.
 
 Changed since the first cut on `main` (breaking for Rust code written
 against it; the wire JSON is unchanged):
@@ -2529,6 +2532,17 @@ against it; the wire JSON is unchanged):
   cancel-safety of its own; `LineSource::next_line` says so. The source
   itself is kept until the connection ends too, also after it returned
   None, while the requests still in flight are answered.
+- `Broker::attach` refuses a URL no dial can reach, with the new
+  `TransportError::Undialable`, and no longer dials it. Such a URL (a
+  space, a host outside ASCII, no host, a `\`) failed every dial before
+  any socket opened, the link dropped each error and dialed again for
+  good, and the `haest` command said "Broker link: <url>" as if it worked.
+  A port past 65535 was dialed as the scheme's default port. A URL with
+  no host is refused as `UrlRefused`.
+- The broker link dials a URL with a query right after the host
+  (`wss://h.example?team=x`) with `/` for its path. tungstenite wrote
+  `GET ?team=x HTTP/1.1`, which a broker refuses (RFC 6455, section 3), so
+  such a link never came up.
 
 ### haest-issues
 

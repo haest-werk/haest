@@ -28,6 +28,20 @@ pub fn join_path(base: &str, path: &str) -> String {
 /// `/`; it ends the host here in any URL).
 const HOST_ENDS: [char; 4] = ['/', '?', '#', '\\'];
 
+/// Where `url`'s authority (`user:password@host:port`) is, as
+/// [`check_endpoint_url`] reads it: from past `scheme://` (`http`, `https`,
+/// `ws` or `wss`; else from the start) to the first `/`, `?`, `#` or `\`
+/// after that, or the end. In a URL the check passes, every `@` is in it, so
+/// the last one ends the userinfo.
+#[must_use]
+pub fn authority(url: &str) -> std::ops::Range<usize> {
+    let start = after_scheme(url);
+    let end = url[start..]
+        .find(HOST_ENDS)
+        .map_or(url.len(), |i| start + i);
+    start..end
+}
+
 /// Refuses `url`, a URL haest is configured to dial, when an `@` comes past
 /// where a URL parser ends its host, or when it has no host: before
 /// anything connects to it.
@@ -83,11 +97,10 @@ const HOST_ENDS: [char; 4] = ['/', '?', '#', '\\'];
 /// assert!(check_endpoint_url("https:///v1").is_err());
 /// ```
 pub fn check_endpoint_url(url: &str) -> Result<(), EndpointUrlError> {
-    let start = after_scheme(url);
-    let rest = &url[start..];
-    let why = match rest.rfind('@') {
-        Some(at) if rest[..at].contains(HOST_ENDS) => Why::AtPastHost,
-        _ if start > 0 && rest.find(HOST_ENDS).map_or(rest.is_empty(), |i| i == 0) => Why::NoHost,
+    let host = authority(url);
+    let why = match url.rfind('@') {
+        Some(at) if at >= host.end => Why::AtPastHost,
+        _ if host.start > 0 && host.is_empty() => Why::NoHost,
         _ => return Ok(()),
     };
     Err(EndpointUrlError {

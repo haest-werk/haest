@@ -280,6 +280,16 @@ pub enum TransportError {
     /// how to write it.
     #[error("the broker URL is refused")]
     UrlRefused(#[source] haest_core::error::BoxError),
+    /// The broker's URL starts with `ws://` or `wss://`, but no dial can
+    /// reach it: it does not parse as a request (a space, a host outside
+    /// ASCII, which goes in as punycode, a `\`), or its port is past 65535,
+    /// which tungstenite would dial as the scheme's default port. Every
+    /// dial would fail the same way, so nothing is dialed. The URL as
+    /// given, without its credentials.
+    #[error(
+        "{0} cannot be dialed: it does not parse as a URL (a space, a host outside ASCII, a \\), or its port is past 65535"
+    )]
+    Undialable(String),
     /// The broker refused the token: it closed with 4401 or 4408, or
     /// refused the handshake with 401 or 403. The link is not dialed again.
     #[error("the broker refused the link ({code}): {reason}")]
