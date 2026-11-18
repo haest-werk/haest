@@ -282,6 +282,46 @@ write instead.
   link" line) show a URL the same way, and so does GenerateImage's error
   for a model the Image API does not list, which the model is shown and
   which named the base URL as given.
+- `AnthropicOptions`, `CompatOptions`, `ResponsesOptions` and
+  `CustomProviderConfig` printed the API key and every header's value in
+  their Debug output, so a host that logged one with `{:?}` logged the
+  key. Debug now shows `<redacted>` for the key, and a header's name
+  without its value.
+- haest-mcp's `HttpTransport` printed every header's value in its Debug
+  output (an `Authorization` included), and `StdioTransport` every
+  variable's in `env` (a server's token), and so did the `McpTransport` and
+  `McpServerConfig` holding them. Debug now names each header and variable
+  and shows `<redacted>` for its value.
+- `StdioTransport` printed its arguments in its Debug output, where
+  `.mcp.json` puts a filled-in `${API_TOKEN}` (mcp-remote's `--header
+  "Authorization: Bearer ${API_TOKEN}"`), so `McpServerConfig`,
+  `ProjectMcp`, haest-config's `Loaded` and haest-runtime's
+  `RuntimeInputs` showed the token. Debug now shows how many arguments
+  there are.
+- haest-config's `Loader` and `Loaded` printed the whole environment they
+  were given in their Debug output, API keys included, and `Loaded` every
+  providers.json entry's `apiKey`; `Config` printed each `env` variable's
+  value. A host that logged one with `{:?}` logged the keys. Debug now
+  names the variables, keys and entries and shows no value.
+- `ReqwestClient`'s errors held the request's whole URL, as reqwest gives
+  it, so a model call, a GitHub call or GenerateImage that failed to
+  connect, or ran into a redirect loop, showed a key in the URL's query
+  (`?key=...`) in its text and its Debug output. The URL in an
+  `HttpError`'s cause now has no query, no fragment and no userinfo; the
+  host and path still say where the request went, unless an `@` past the
+  host means they may hold a password a parser misread
+  (`https://user:12/34@host` reads as the host `user`, the port 12), and
+  then no URL is named.
+- An MCP server reached over HTTP with its key in the URL
+  (`https://mcp.example.com/mcp?api_key=...`) showed the key whenever a
+  request to it failed: in `McpStartError`'s cause (so in `report`, the
+  hub's log line and `McpHub`'s Debug output), in the warning haest-runtime
+  gives for a server that did not start, which the `haest` command puts
+  into the session stream (`--json`, and `haest ctl` and the broker now),
+  and in a failed tool call's answer to the model. rmcp's HTTP client now
+  runs on a reqwest client whose errors name the URL without its query,
+  fragment or userinfo, and name none when an `@` past its host may end a
+  password.
 - A configured URL whose password held an unescaped `/`, `?` or `#` sent
   the rest of that password to the wrong host, in the clear. A URL parser
   ends the host at the first of them, so
@@ -323,15 +363,37 @@ write instead.
   is close (`baseUrl` and `base_url` for `baseURL`, `header` for
   `headers`). Nothing is sent. An entry with a key of its own that the
   TypeScript haest skipped (a `"_comment"`) fails too: delete the key.
-- The broker link (new in this release) sent part of its URL's userinfo,
-  up to the whole password, in its HTTP `Host` header. tungstenite writes
-  `Host` from after the first `@` and dials the host after the last, so a
-  user or a password with an unescaped `@` (a username that is an email
-  address: `wss://me@corp.example:s3cret@broker.example/agents`) went out
-  as `Host: corp.example:s3cret@broker.example`, to the broker and to
-  every proxy in front of it that logs the header. The link now dials the
-  URL without its userinfo. tungstenite never sent the userinfo as a
-  credential: the broker's is the token, in the `hello`.
+- haest-issues' `GithubTracker` read, changed, deleted and linked issues in
+  any repository the model named (`{"id": "victim/secret#1"}`), with the
+  host's token, though it is one repository's tracker. The issue a call
+  acts on must now be in its own repository, else the call is refused as
+  `Invalid` and nothing is sent. Only a link's other end may be elsewhere,
+  and only for a `child` or `depends_on` link: GitHub keeps a `parent` link
+  on the parent and a `blocks` link on the issue that waits, so one whose
+  other end is in another repository would change that repository's issue,
+  and is refused the same way. A name GitHub cannot give an owner or a
+  repository is refused too: `../..#9` sent the token to
+  `{api}/repos/../../issues/9`, which leaves `/repos/` (and a GitHub
+  Enterprise root's `/api/v3`). And every new parent was sent with
+  `replace_parent`, which takes the child off its old parent, an issue that
+  could be another repository's (a `child` link to `owner/other#9`, or a
+  `parent` link from this repository's issue whose parent is elsewhere). A
+  new parent now replaces an old one only when the old one is this
+  repository's, else the link is refused as `Invalid` before anything is
+  written; an issue with no parent is sent without `replace_parent`.
+- haest-issues' `GithubTracker` took GitHub's answer to be the issue it
+  asked for. GitHub answers 301 for an issue moved to another repository,
+  and with a host's client that follows it, `delete` deleted the issue in
+  its new repository, and a link or a label change acted on it. An issue
+  the tracker reads (a get, and the read before a delete, a label change
+  or a link) is now checked to be the one it asked for, else the call is
+  `NotFound` and nothing more is sent; a change answered with another
+  issue is `Failed`. And a search took the model's text as GitHub's search
+  syntax, where a `repo:`, an `org:` or an `OR` could widen it past the
+  repository: the text is searched as plain words now, and a result from
+  another repository is dropped. An owner named `repos` is read as an
+  owner: its issues in another repository were named by a bare number,
+  which names one of this repository's.
 - On macOS, applying a sandbox's changes could delete or overwrite files,
   or a whole directory, in the real project while the report said every
   change was applied. The disk reads `readme.md` and `README.md` as one
@@ -398,52 +460,6 @@ write instead.
   overflowed the default turn caps that follow it: a debug build panicked,
   a release build wrapped to a tiny cap. `max_turn_tokens` now stops at
   `u64::MAX`, and `max_request_tokens` is still exactly 90% of the window.
-- `AnthropicOptions`, `CompatOptions`, `ResponsesOptions` and
-  `CustomProviderConfig` printed the API key and every header's value in
-  their Debug output, so a host that logged one with `{:?}` logged the
-  key. Debug now shows `<redacted>` for the key, and a header's name
-  without its value.
-- haest-mcp's `HttpTransport` printed every header's value in its Debug
-  output (an `Authorization` included), and `StdioTransport` every
-  variable's in `env` (a server's token), and so did the `McpTransport` and
-  `McpServerConfig` holding them. Debug now names each header and variable
-  and shows `<redacted>` for its value.
-- haest-config's `Loader` and `Loaded` printed the whole environment they
-  were given in their Debug output, API keys included, and `Loaded` every
-  providers.json entry's `apiKey`; `Config` printed each `env` variable's
-  value. A host that logged one with `{:?}` logged the keys. Debug now
-  names the variables, keys and entries and shows no value.
-- haest-issues' `GithubTracker` read, changed, deleted and linked issues in
-  any repository the model named (`{"id": "victim/secret#1"}`), with the
-  host's token, though it is one repository's tracker. The issue a call
-  acts on must now be in its own repository, else the call is refused as
-  `Invalid` and nothing is sent. Only a link's other end may be elsewhere,
-  and only for a `child` or `depends_on` link: GitHub keeps a `parent` link
-  on the parent and a `blocks` link on the issue that waits, so one whose
-  other end is in another repository would change that repository's issue,
-  and is refused the same way. A name GitHub cannot give an owner or a
-  repository is refused too: `../..#9` sent the token to
-  `{api}/repos/../../issues/9`, which leaves `/repos/` (and a GitHub
-  Enterprise root's `/api/v3`). And every new parent was sent with
-  `replace_parent`, which takes the child off its old parent, an issue that
-  could be another repository's (a `child` link to `owner/other#9`, or a
-  `parent` link from this repository's issue whose parent is elsewhere). A
-  new parent now replaces an old one only when the old one is this
-  repository's, else the link is refused as `Invalid` before anything is
-  written; an issue with no parent is sent without `replace_parent`.
-- haest-issues' `GithubTracker` took GitHub's answer to be the issue it
-  asked for. GitHub answers 301 for an issue moved to another repository,
-  and with a host's client that follows it, `delete` deleted the issue in
-  its new repository, and a link or a label change acted on it. An issue
-  the tracker reads (a get, and the read before a delete, a label change
-  or a link) is now checked to be the one it asked for, else the call is
-  `NotFound` and nothing more is sent; a change answered with another
-  issue is `Failed`. And a search took the model's text as GitHub's search
-  syntax, where a `repo:`, an `org:` or an `OR` could widen it past the
-  repository: the text is searched as plain words now, and a result from
-  another repository is dropped. An owner named `repos` is read as an
-  owner: its issues in another repository were named by a bare number,
-  which names one of this repository's.
 - The model providers' stream parser searched a line from its start again
   on every chunk, so a server that sent one long line in small pieces cost
   quadratic time on an executor thread (8 MiB in 1 KiB chunks: 16 s), and
@@ -477,24 +493,6 @@ write instead.
   A `Tools` list now holds one tool per name: `with`, `push`, `extend`,
   `collect` and `From<Vec<ToolRef>>` put a tool in the place of the one of
   its name, so the list the model is sent and the tool that runs agree.
-- `ReqwestClient`'s errors held the request's whole URL, as reqwest gives
-  it, so a model call, a GitHub call or GenerateImage that failed to
-  connect, or ran into a redirect loop, showed a key in the URL's query
-  (`?key=...`) in its text and its Debug output. The URL in an
-  `HttpError`'s cause now has no query, no fragment and no userinfo; the
-  host and path still say where the request went, unless an `@` past the
-  host means they may hold a password a parser misread
-  (`https://user:12/34@host` reads as the host `user`, the port 12), and
-  then no URL is named.
-- An MCP server reached over HTTP with its key in the URL
-  (`https://mcp.example.com/mcp?api_key=...`) showed the key whenever a
-  request to it failed: in `McpStartError`'s cause (so in `report`, the
-  hub's log line and `McpHub`'s Debug output), in the warning haest-runtime
-  gives for a server that did not start, which the `haest` command puts
-  into the session stream (`--json`, `haest ctl`, the broker), and in a
-  failed tool call's answer to the model. rmcp's HTTP client now runs on a
-  reqwest client whose errors name the URL without its query, fragment or
-  userinfo, and name none when an `@` past its host may end a password.
 - A provider's base URL with a query (a gateway's key, which the
   `with_base_url` docs put in a header or the query; Azure OpenAI's
   `api-version`) sent every request to the base path, with the endpoint
@@ -503,15 +501,9 @@ write instead.
   model call failed. GenerateImage built `/images` and `/images/models`
   the same way, from the same `OPENROUTER_BASE_URL`. Both now put the path
   after the base URL's path and before its query and fragment, through
-  one function (haest-http's `join_path`). GenerateImage also takes a base
+  one function. GenerateImage also takes a base
   URL ending in `/` now (it sent `//images`), and its error for a model
   the list does not name shows the list's URL as it was read.
-- `StdioTransport` printed its arguments in its Debug output, where
-  `.mcp.json` puts a filled-in `${API_TOKEN}` (mcp-remote's `--header
-  "Authorization: Bearer ${API_TOKEN}"`), so `McpServerConfig`,
-  `ProjectMcp`, haest-config's `Loaded` and haest-runtime's
-  `RuntimeInputs` showed the token. Debug now shows how many arguments
-  there are.
 - `AnthropicProvider` sent a Claude 4.5 or older model a thinking budget
   at or above the request's `max_tokens` (`with_max_tokens(4096)` with
   high effort sent a budget of 16,384), and sent `max_tokens: 0` as
@@ -2555,6 +2547,14 @@ against it; the wire JSON is unchanged):
   cancel-safety of its own; `LineSource::next_line` says so. The source
   itself is kept until the connection ends too, also after it returned
   None, while the requests still in flight are answered.
+- The broker link sends no part of its URL's userinfo, in the `Host`
+  header either. tungstenite writes `Host` from after the first `@` and
+  dials the host after the last, so a user or a password with an
+  unescaped `@` (`wss://me@corp.example:s3cret@broker.example/agents`)
+  went out as `Host: corp.example:s3cret@broker.example`, to the broker
+  and to every proxy in front of it that logs the header. The link now
+  dials the URL without its userinfo. tungstenite never sent it as a
+  credential: the broker's is the token, in the `hello`.
 - `UnixSocket::attach` refuses a stream id that is not a plain file name,
   with the new `TransportError::StreamId`. The socket and the discovery
   file are named after the id, which is the backend's (`Hub::new`,
