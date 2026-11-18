@@ -381,7 +381,7 @@ async fn main() -> ExitCode {
     let prompter = if stdio {
         CliPrompter::Session(SessionPrompter::new(hub.clone()))
     } else {
-        CliPrompter::Term(TermPrompter::new(ui.clone(), ask::interactive()))
+        CliPrompter::Term(TermPrompter::new(ui.clone(), ask::interactive(args.json)))
     };
     let opts = cli.build_options();
     let inputs = haest::runtime_inputs(loaded);

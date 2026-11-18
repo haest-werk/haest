@@ -22,9 +22,35 @@ use std::{
     },
 };
 
-/// Can a human answer here: stdin is a terminal.
-pub(crate) fn interactive() -> bool {
-    std::io::stdin().is_terminal()
+/// Why a human cannot answer an approval here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NoTerminal {
+    /// stdin is not a terminal: nobody types an answer.
+    Stdin,
+    /// stderr, where the question shows, is not a terminal (`2>log`): it
+    /// would be asked where nobody sees it.
+    Stderr,
+}
+
+impl std::fmt::Display for NoTerminal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Stdin => "there is no terminal to ask on",
+            Self::Stderr => "stderr, where haest asks, is not a terminal",
+        })
+    }
+}
+
+/// Can a human answer here: stdin is a terminal, and so is where the
+/// question shows (stderr; with `json` it is a line on stdout).
+pub(crate) fn interactive(json: bool) -> Result<(), NoTerminal> {
+    if !std::io::stdin().is_terminal() {
+        Err(NoTerminal::Stdin)
+    } else if !json && !std::io::stderr().is_terminal() {
+        Err(NoTerminal::Stderr)
+    } else {
+        Ok(())
+    }
 }
 
 /// Raised when the read's future is dropped: the blocked reader then stops.

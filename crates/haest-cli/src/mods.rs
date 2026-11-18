@@ -1,5 +1,7 @@
 //! Approval asks on the terminal. With no terminal to ask on, an ask is a deny
-//! that says why. The terminal has one reader at a time: asks from main and
+//! that says why: stdin must be a terminal, and so must stderr, where the
+//! question shows (with --json it is a line on stdout). The terminal has one
+//! reader at a time: asks from main and
 //! from subagents take turns, and one raised while the REPL prompt is open
 //! waits for it (announced above the prompt). Driven over stdio, the parent
 //! answers them instead ([`CliPrompter::Session`]).
@@ -16,15 +18,19 @@ use haest::{
 };
 
 use self::question::question;
-use crate::{ask, term::TermUi};
+use crate::{
+    ask::{self, NoTerminal},
+    term::TermUi,
+};
 
 pub(crate) struct TermPrompter {
     ui: Arc<TermUi>,
-    interactive: bool,
+    /// Can a human answer here ([`ask::interactive`]).
+    interactive: Result<(), NoTerminal>,
 }
 
 impl TermPrompter {
-    pub(crate) fn new(ui: Arc<TermUi>, interactive: bool) -> Self {
+    pub(crate) fn new(ui: Arc<TermUi>, interactive: Result<(), NoTerminal>) -> Self {
         Self { ui, interactive }
     }
 }
@@ -41,9 +47,9 @@ fn answer(line: Option<&str>) -> ApprovalAnswer {
 #[async_trait]
 impl Prompter for TermPrompter {
     async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer {
-        if !self.interactive {
+        if let Err(why) = self.interactive {
             self.ui.warn(&format!(
-                "Denied {}: {} -- approval needed and there is no terminal to ask on (--approvals=false turns approvals off).",
+                "Denied {}: {} -- approval needed and {why} (--approvals=false turns approvals off).",
                 req.tool_name, req.description
             ));
             return ApprovalAnswer::Deny;
