@@ -3,6 +3,7 @@
 //! runs a job, and dropping the hub kills what runs.
 
 mod panics;
+mod set_events;
 
 use std::{
     path::{Path, PathBuf},

@@ -8,6 +8,7 @@
 
 use std::{
     any::Any,
+    mem,
     panic::{self, AssertUnwindSafe},
     path::PathBuf,
     sync::{Arc, Mutex, MutexGuard},
@@ -63,9 +64,11 @@ impl Shared {
         self.listener().clone()
     }
 
-    /// Where every event goes from now on.
+    /// Where every event goes from now on. The old listener is dropped once
+    /// the lock is released: its drop is a host's code, and may call back.
     pub(super) fn set_events(&self, events: JobEventsRef) {
-        *self.listener() = events;
+        let old = mem::replace(&mut *self.listener(), events);
+        drop(old);
     }
 
     /// The listener's slot. Held only to swap the handle, never while a
