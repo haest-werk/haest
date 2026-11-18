@@ -325,12 +325,15 @@ write instead.
   fragment or userinfo, and name none when an `@` past its host may end a
   password.
 - A configured URL whose password held an unescaped `/`, `?` or `#` sent
-  the rest of that password to the wrong host, in the clear. A URL parser
-  ends the host at the first of them, so a base URL
-  `https://user:1234/s3cret@gw.example/v1` dialed the host `user` on port
-  1234 and sent `/s3cret@gw.example/v1/...` as the path; a provider's base
-  URL, an MCP server's URL, GenerateImage's base URL and a GitHub
-  Enterprise API root sent their key or token header along with it. haest
+  the rest of that password to the wrong host. A URL parser ends the host
+  at the first of them, so a base URL
+  `http://user:1234/s3cret@gw.example/v1` (a gateway on a LAN) dialed the
+  host `user` on port 1234 and sent `/s3cret@gw.example/v1/...` as the
+  path, in the clear; a provider's base URL, an MCP server's URL,
+  GenerateImage's base URL and a GitHub Enterprise API root sent their key
+  or token header along with it. Over `https` the certificate check
+  stopped the request before it went out, but the name `user` was still
+  looked up. haest
   now refuses a configured URL with an `@` past its host before anything
   connects: a provider's base URL when the provider is resolved, naming
   the variable or the providers.json key it came from
@@ -360,11 +363,12 @@ write instead.
   (above), saying it has no host; a host with no `//`
   (`http:localhost:8080`) still works.
   The GitHub tracker cut the `//` after the scheme with a root's trailing
-  `/`, so `https://${GHE_HOST}` with the variable empty became `https:`,
-  and its token went to `https:/repos/...`, which a parser reads as the
+  `/`, so `http://${GHE_HOST}` with the variable empty became `http:`,
+  and its token went to `http:/repos/...`, which a parser reads as the
   host `repos`. It keeps that `//` now, checks the root and each URL as it
-  would send it, and cuts an Enterprise Server root's `/v3` only from the path (a
-  root `https://v3` sent the token to the host `graphql`).
+  would send it, and cuts an Enterprise Server root's `/v3` only from the
+  path (a root `http://v3` sent the token to the host `graphql`). Over
+  `https` the certificate check stopped both.
 - A providers.json entry with a misspelt key sent the entry's key, and the
   conversation, to OpenAI's or Anthropic's own API. haest read each key by
   its exact name and skipped any other, and an entry with no `baseURL` is
