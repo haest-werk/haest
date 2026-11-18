@@ -16,17 +16,13 @@
 mod commands;
 mod exec;
 mod mounts;
+mod workspace;
 mod xan;
 
 use std::{fmt, sync::Arc};
 
-use async_trait::async_trait;
 use haest_core::{
-    ChildEnv,
-    fs::FsRef,
-    remedy::{Limit, Remedies},
-    shell_command::ShellCommandRef,
-    workspace::{ChangeSetRef, ExecOptions, ExecResult, Workspace, WorkspaceMode},
+    ChildEnv, fs::FsRef, remedy::Remedies, shell_command::ShellCommandRef, workspace::ChangeSetRef,
 };
 
 pub use mounts::{OpenSandboxError, SandboxMounts};
@@ -34,17 +30,11 @@ pub use mounts::{OpenSandboxError, SandboxMounts};
 use crate::bridge::{BashkitFsOverHaest, HaestFsOverBashkit};
 use exec::Shell;
 
-/// What the shell is, for every sandbox. Each added command's own note follows it.
-const SHELL_NOTE: &str = "Bash is a simulated shell: coreutils, grep, rg, sed, awk, jq, find, diff, tar and friends, but NO git, bun, node, npm, python or network, and no other real programs (for a web page, use the WebFetch tool -- it runs outside the sandbox).";
-
 /// The commands every sandbox has beyond bashkit's builtins (`xan`). A host's
 /// command of the same name replaces one.
 fn own_commands() -> Vec<ShellCommandRef> {
     vec![xan::Xan.into()]
 }
-
-/// Where edits go in the default sandbox, and how they reach the disk.
-const OVERLAY_NOTE: &str = "Reads come from the real project; every file you write or edit lives in memory until the human reviews it and puts it on disk -- otherwise it is discarded when this conversation ends. When you finish edits worth keeping, tell the human they are waiting for review. If the task needs real builds, tests or git, say so plainly.";
 
 /// bashkit, a simulated bash, over files the host chooses: the project as a
 /// copy-on-write overlay ([`open`](Self::open)), or the host's own [`Fs`](haest_core::fs::Fs)
@@ -53,10 +43,10 @@ const OVERLAY_NOTE: &str = "Reads come from the real project; every file you wri
 /// The tools ([`Workspace::fs`]) and the shell see the same files: a file
 /// written with the Write tool is the file `cat` shows.
 ///
-/// Each [`shell`](Workspace::shell) call gets a FRESH shell over those files:
-/// variables, functions and `cd` do not outlive the call, files do.
-/// [`run`](Workspace::run) runs its argv as `"$@"`, with no shell parsing; an
-/// empty argv is exit 127. A call ends the way a real shell reports it:
+/// Each [`shell`][shell] call gets a FRESH shell over those files: variables,
+/// functions and `cd` do not outlive the call, files do. [`run`][run] runs
+/// its argv as `"$@"`, with no shell parsing; an empty argv is exit 127. A
+/// call ends the way a real shell reports it:
 ///
 /// | Ended by | `exit_code` | `timed_out` | Output |
 /// |---|---|---|---|
@@ -126,6 +116,8 @@ const OVERLAY_NOTE: &str = "Reads come from the real project; every file you wri
 ///
 /// [`Workspace::fs`]: haest_core::workspace::Workspace::fs
 /// [`Workspace::prompt_note`]: haest_core::workspace::Workspace::prompt_note
+/// [shell]: haest_core::workspace::Workspace::shell
+/// [run]: haest_core::workspace::Workspace::run
 pub struct SandboxWorkspace {
     /// What the shell runs over.
     shell_fs: Arc<dyn bashkit::FileSystem>,
@@ -148,8 +140,10 @@ impl SandboxWorkspace {
     /// now.
     ///
     /// Its [`Workspace::changes`] is the overlay's
-    /// [`OverlayChanges`](crate::OverlayChanges): what
-    /// the human reviews and applies.
+    /// [`OverlayChanges`](crate::OverlayChanges): what the human reviews and
+    /// applies.
+    ///
+    /// [`Workspace::changes`]: haest_core::workspace::Workspace::changes
     ///
     /// # Errors
     ///
@@ -218,6 +212,8 @@ impl SandboxWorkspace {
     /// Replace the note the system prompt carries about this workspace
     /// ([`Workspace::prompt_note`]) with `note`, the added commands' notes
     /// included.
+    ///
+    /// [`Workspace::prompt_note`]: haest_core::workspace::Workspace::prompt_note
     #[must_use]
     pub fn with_prompt_note(mut self, note: impl Into<String>) -> Self {
         self.note = Some(note.into());
@@ -227,6 +223,8 @@ impl SandboxWorkspace {
     /// The host's way to review the overlay's changes and put them on disk
     /// ([`Limit::SandboxEdits`]), added to the prompt note's part about them:
     /// [`Remedies`], or the closure that writes them.
+    ///
+    /// [`Limit::SandboxEdits`]: haest_core::remedy::Limit::SandboxEdits
     #[must_use]
     pub fn with_remedies(mut self, remedies: impl Into<Remedies>) -> Self {
         self.remedies = remedies.into();
@@ -275,46 +273,5 @@ impl fmt::Debug for SandboxWorkspace {
             .field("env", &self.env)
             .field("overlay", &self.changes.is_some())
             .finish_non_exhaustive()
-    }
-}
-
-/// `"$@"` runs the positional parameters as one command: argv, no shell parsing.
-const RUN_ARGV: &str = "\"$@\"";
-
-#[async_trait]
-impl Workspace for SandboxWorkspace {
-    fn mode(&self) -> WorkspaceMode {
-        WorkspaceMode::Sandbox
-    }
-
-    fn fs(&self) -> FsRef {
-        self.fs.clone()
-    }
-
-    async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
-        exec::exec(self.shell_world(), command, &[], opts).await
-    }
-
-    async fn run(&self, argv: &[String], opts: ExecOptions) -> ExecResult {
-        if argv.first().is_none_or(String::is_empty) {
-            return crate::no_command();
-        }
-        exec::exec(self.shell_world(), RUN_ARGV, argv, opts).await
-    }
-
-    fn prompt_note(&self) -> String {
-        if let Some(note) = &self.note {
-            return note.clone();
-        }
-        let mut parts = vec![SHELL_NOTE.to_string()];
-        parts.extend(self.commands.iter().filter_map(|c| c.note()));
-        if self.changes.is_some() {
-            parts.push(self.remedies.add_to(OVERLAY_NOTE, Limit::SandboxEdits));
-        }
-        format!("# Sandbox\nYou run in a SANDBOX. {}", parts.join(" "))
-    }
-
-    fn changes(&self) -> Option<ChangeSetRef> {
-        self.changes.clone()
     }
 }
