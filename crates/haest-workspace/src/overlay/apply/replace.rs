@@ -1,12 +1,15 @@
 //! A file the apply writes, put on the disk whole or not at all. The
-//! sandbox's bytes go into a new file beside the real one, which takes the
-//! real one's permission bits and is then renamed over it, so a disk that
-//! fills up, or a kill, partway leaves the human's file as it was. Where a
-//! new file would not be the same file, the bytes are written in place, as
+//! sandbox's bytes go into a new file, in a directory of its own beside the
+//! real one that only its owner may enter; the new file takes the real
+//! one's permission bits and is then renamed over it, so a disk that fills
+//! up, or a kill, partway leaves the human's file as it was. Where a new
+//! file would not be the same file, the bytes are written in place, as
 //! before. An apply dropped partway (Ctrl+C at the haest command's
-//! `/apply`, a host's timeout) removes the new file as it drops.
+//! `/apply`, a host's timeout) removes the new file and its directory as
+//! it drops.
 
 use std::{
+    fs::Metadata,
     io,
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
@@ -50,54 +53,125 @@ pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Re
     {
         return disk.write(real, bytes).await;
     }
-    let Some(new) = new_beside(disk, real).await? else {
+    let Some(new) = NewFile::beside(disk, real).await? else {
         return disk.write(real, bytes).await;
     };
     if let Some(old) = &old {
         let made = tokio::fs::symlink_metadata(&new.path).await.ok();
         if made.is_some_and(|m| (m.uid(), m.gid()) != (old.uid(), old.gid())) {
-            let _ = disk.remove(&new.path).await;
-            new.settled();
+            new.clear(disk).await;
             return disk.write(real, bytes).await;
         }
     }
     let put = async {
-        if old.is_some() {
-            // Its owner's alone while it fills, so the bytes are never open
-            // to more people than the file they replace is.
-            disk.chmod(&new.path, 0o600).await?;
-        }
-        disk.write(&new.path, bytes).await?;
-        if let Some(old) = &old {
-            // The old file's mode, so the apply's own mode check
-            // (`carry_mode`) reads it as the disk's.
-            disk.chmod(&new.path, old.permissions().mode() & KEPT)
-                .await?;
-        }
+        fill(disk, &new.path, old.as_ref(), bytes).await?;
         disk.rename(&new.path, real).await
     };
     let put = put.await;
-    if put.is_err() {
-        let _ = disk.remove(&new.path).await;
-    }
-    new.settled();
+    new.clear(disk).await;
     put
 }
 
-/// The new file beside the real one, from just before it is made until it
-/// is renamed over the real one or removed. An apply dropped meanwhile
-/// drops it, and it removes the file: the apply leaves nothing beside the
-/// human's file. The removal cannot wait, so it is the system's own, on
-/// the host's disk, which the overlay's disk is; on a disk that is not,
-/// nothing has the path (its name is this process's own).
+/// The sandbox's `bytes` into the new file at `path`, with the mode of
+/// `old`, the file it is to replace.
+async fn fill(disk: &dyn Fs, path: &Path, old: Option<&Metadata>, bytes: &[u8]) -> io::Result<()> {
+    disk.write(path, bytes).await?;
+    if let Some(old) = old {
+        // The old file's mode, so the apply's own mode check
+        // (`carry_mode`) reads it as the disk's.
+        disk.chmod(path, old.permissions().mode() & KEPT).await?;
+    }
+    Ok(())
+}
+
+/// The new file and its directory beside the real file, from just before
+/// the directory is made until both are gone. An apply dropped meanwhile
+/// drops it, and it removes them: the apply leaves nothing beside the
+/// human's file. A write the runtime still holds then (dropping its future
+/// does not stop it) finds no directory to land in; one it is running lands
+/// in the directory, where only its owner may reach it. The removal cannot
+/// wait, so it is the system's own, on the host's disk, which the overlay's
+/// disk is; on a disk that is not, nothing has the path (its name is this
+/// process's own).
 struct NewFile {
+    /// Only its owner may enter it, before anything goes in.
+    dir: PathBuf,
     path: PathBuf,
-    /// Still to rename or remove.
+    /// Still to remove.
     pending: bool,
 }
 
 impl NewFile {
-    /// Renamed over the real file, or removed: nothing left to remove.
+    /// A new, empty file, in a directory of its own beside `real` under a
+    /// dot-name nothing on the disk has (`.<name>.haest-<pid>-<n>`); None
+    /// where the directory takes no new name.
+    async fn beside(disk: &dyn Fs, real: &Path) -> io::Result<Option<Self>> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let name = real
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default();
+        let mut cut = name.len().min(NAME_PART);
+        while !name.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        for _ in 0..100 {
+            let n = NEXT.fetch_add(1, Ordering::Relaxed);
+            let pid = std::process::id();
+            let dir = real.with_file_name(format!(".{}.haest-{pid}-{n}", &name[..cut]));
+            // Held before the create that makes it: dropped there, it may
+            // be made.
+            let new = Self {
+                path: dir.join("new"),
+                dir,
+                pending: true,
+            };
+            match disk.create_dir(&new.dir).await {
+                Ok(()) => {}
+                Err(e) => {
+                    // Not made, or another's (a name taken, a link
+                    // included, dangling or not): nothing to remove.
+                    new.settled();
+                    match e.kind() {
+                        io::ErrorKind::AlreadyExists => continue,
+                        io::ErrorKind::PermissionDenied => return Ok(None),
+                        _ => return Err(e),
+                    }
+                }
+            }
+            let made = async {
+                // A group the directory passes on (setgid) stays, so the
+                // new file gets the group one made beside the real file
+                // would.
+                let setgid = tokio::fs::symlink_metadata(&new.dir)
+                    .await
+                    .map_or(0, |m| m.permissions().mode() & 0o2000);
+                disk.chmod(&new.dir, 0o700 | setgid).await?;
+                disk.write(&new.path, &[]).await
+            };
+            return match made.await {
+                Ok(()) => Ok(Some(new)),
+                Err(e) => {
+                    new.clear(disk).await;
+                    Err(e)
+                }
+            };
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("no free name beside {} to write it", real.display()),
+        ))
+    }
+
+    /// Remove the file (unless it was renamed over the real one) and its
+    /// directory; dropped partway, the drop does.
+    async fn clear(self, disk: &dyn Fs) {
+        let _ = disk.remove(&self.path).await;
+        let _ = disk.remove(&self.dir).await;
+        self.settled();
+    }
+
+    /// Removed, or never made: nothing left to remove.
     fn settled(mut self) {
         self.pending = false;
     }
@@ -107,186 +181,10 @@ impl Drop for NewFile {
     fn drop(&mut self) {
         if self.pending {
             let _ = std::fs::remove_file(&self.path);
+            let _ = std::fs::remove_dir(&self.dir);
         }
     }
-}
-
-/// A new, empty file beside `real`, under a dot-name nothing on the disk
-/// has (`.<name>.haest-<pid>-<n>`); None where the directory takes no new
-/// file.
-async fn new_beside(disk: &dyn Fs, real: &Path) -> io::Result<Option<NewFile>> {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    let name = real
-        .file_name()
-        .map(|n| n.to_string_lossy())
-        .unwrap_or_default();
-    let mut cut = name.len().min(NAME_PART);
-    while !name.is_char_boundary(cut) {
-        cut -= 1;
-    }
-    for _ in 0..100 {
-        let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        let pid = std::process::id();
-        let path = real.with_file_name(format!(".{}.haest-{pid}-{n}", &name[..cut]));
-        // A link counts, dangling or not: a write would go where it points.
-        if disk.read_link(&path).await.is_ok() || disk.exists(&path).await {
-            continue;
-        }
-        // Held before the write that makes it: dropped there, it may be made.
-        let new = NewFile {
-            path,
-            pending: true,
-        };
-        return match disk.write(&new.path, &[]).await {
-            Ok(()) => Ok(Some(new)),
-            Err(e) => {
-                new.settled();
-                match e.kind() {
-                    io::ErrorKind::PermissionDenied => Ok(None),
-                    _ => Err(e),
-                }
-            }
-        };
-    }
-    Err(io::Error::new(
-        io::ErrorKind::AlreadyExists,
-        format!("no free name beside {} to write it", real.display()),
-    ))
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{
-        io,
-        path::{Path, PathBuf},
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
-    };
-
-    use async_trait::async_trait;
-    use haest_core::{
-        fs::{DirEntry, Fs, FsRef, FsStat, MemFs},
-        workspace::{ApplyFailureCode, Change, ChangeSet},
-    };
-
-    use crate::{RealFs, bridge::BashkitFsOverHaest, overlay::OverlayChanges};
-
-    /// The real disk, filling up: a write past `room` bytes writes that
-    /// many, then fails as a full disk does.
-    struct Filling {
-        room: AtomicUsize,
-    }
-
-    #[async_trait]
-    impl Fs for Filling {
-        async fn write(&self, p: &Path, d: &[u8]) -> io::Result<()> {
-            let room = self.room.load(Ordering::SeqCst);
-            if d.len() <= room {
-                return RealFs.write(p, d).await;
-            }
-            RealFs.write(p, &d[..room]).await?;
-            Err(io::Error::from_raw_os_error(libc::ENOSPC))
-        }
-        async fn read(&self, p: &Path) -> io::Result<Vec<u8>> {
-            RealFs.read(p).await
-        }
-        async fn append(&self, p: &Path, d: &[u8]) -> io::Result<()> {
-            RealFs.append(p, d).await
-        }
-        async fn stat(&self, p: &Path) -> io::Result<FsStat> {
-            RealFs.stat(p).await
-        }
-        async fn read_link(&self, p: &Path) -> io::Result<PathBuf> {
-            RealFs.read_link(p).await
-        }
-        async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
-            RealFs.read_dir(p).await
-        }
-        async fn create_dir(&self, p: &Path) -> io::Result<()> {
-            RealFs.create_dir(p).await
-        }
-        async fn create_dir_all(&self, p: &Path) -> io::Result<()> {
-            RealFs.create_dir_all(p).await
-        }
-        async fn remove(&self, p: &Path) -> io::Result<()> {
-            RealFs.remove(p).await
-        }
-        async fn remove_all(&self, p: &Path) -> io::Result<()> {
-            RealFs.remove_all(p).await
-        }
-        async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
-            RealFs.rename(a, b).await
-        }
-        async fn chmod(&self, p: &Path, mode: u32) -> io::Result<()> {
-            RealFs.chmod(p, mode).await
-        }
-    }
-
-    fn conflicts(changes: &[Change]) -> Vec<(&str, bool)> {
-        changes
-            .iter()
-            .map(|c| (c.path.as_str(), c.conflict))
-            .collect()
-    }
-
-    fn names(dir: &Path) -> Vec<String> {
-        let mut all: Vec<String> = std::fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        all.sort();
-        all
-    }
-
-    /// The disk fills up while the apply writes the sandbox's `notes.txt`.
-    /// The write had emptied the human's file first: the change failed,
-    /// the human's text was gone, and since the disk then held neither
-    /// version, every later scan listed it as a conflict and every apply
-    /// skipped it.
-    #[tokio::test]
-    async fn a_write_the_full_disk_stops_leaves_the_humans_file_whole() {
-        let t = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(t.path()).unwrap();
-        let human = "the human's notes\n".repeat(50);
-        let sandbox = "the sandbox's longer notes\n".repeat(100);
-        std::fs::write(root.join("notes.txt"), &human).unwrap();
-        let files = MemFs::from_files([("/notes.txt", human.as_str())]);
-        let overlay = Arc::new(BashkitFsOverHaest::new(FsRef::new(files)));
-        let disk = Arc::new(Filling {
-            room: AtomicUsize::new(64),
-        });
-        let changes = OverlayChanges::new(overlay, disk.clone(), &root);
-        let recorder = changes.recorder();
-        let notes = Path::new("/notes.txt");
-        recorder
-            .write_file(notes, sandbox.as_bytes())
-            .await
-            .unwrap();
-
-        let report = changes.apply().await;
-        let failed: Vec<_> = report
-            .failed
-            .iter()
-            .map(|f| (f.change.path.as_str(), f.code))
-            .collect();
-        assert_eq!(failed, [("/notes.txt", ApplyFailureCode::WriteFailed)]);
-        let on_disk = std::fs::read_to_string(root.join("notes.txt")).unwrap();
-        assert!(
-            on_disk == human,
-            "the human's file: {} bytes",
-            on_disk.len()
-        );
-        assert_eq!(names(&root), ["notes.txt"], "nothing left beside it");
-        assert_eq!(conflicts(&changes.list().await), [("/notes.txt", false)]);
-
-        // Room is made: the next apply writes it.
-        disk.room.store(usize::MAX, Ordering::SeqCst);
-        let report = changes.apply().await;
-        assert_eq!(conflicts(&report.applied), [("/notes.txt", false)]);
-        let on_disk = std::fs::read_to_string(root.join("notes.txt")).unwrap();
-        assert!(on_disk == sandbox, "the sandbox's: {} bytes", on_disk.len());
-        assert!(changes.list().await.is_empty());
-    }
-}
+mod tests;

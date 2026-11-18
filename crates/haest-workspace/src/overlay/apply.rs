@@ -9,8 +9,9 @@
 //!   `root/path` itself, never through a link out of the project.
 //!
 //! A file goes on the disk whole or not at all (`replace.rs`): the
-//! sandbox's version is written to a new file beside it, which takes the
-//! file's permission bits, then renamed over it. A change the disk still
+//! sandbox's version is written to a new file in a directory of its own
+//! beside it, which only its owner may enter; the new file takes the
+//! file's permission bits, then is renamed over it. A change the disk still
 //! refuses (permissions, a full disk) fails alone (`write-failed`) with the
 //! human's file as it was, still listed (not a conflict) for an apply once
 //! the disk takes it; the apply goes on with the rest. A file the human
@@ -18,9 +19,10 @@
 //! stand in for is written in place, as before: one with another hard
 //! link, one whose owner or group a new file would not have, one in a
 //! directory that takes no new file. The trade-off: a file replaced so does
-//! not keep its extended attributes or ACLs, and a kill partway (or, rarely,
-//! an apply dropped just as the system starts the write it began) can leave
-//! the new file, `.<name>.haest-<pid>-<n>`, beside it, never a file cut
+//! not keep its extended attributes or ACLs, and a kill partway (or an
+//! apply dropped while the system runs a step it began) can leave the new
+//! file's directory, `.<name>.haest-<pid>-<n>`, beside it: empty, or with
+//! the new file in it, which only its owner may reach. Never a file cut
 //! short.
 //!
 //! Deletes go first, then the writes: on a disk that reads two spellings as
