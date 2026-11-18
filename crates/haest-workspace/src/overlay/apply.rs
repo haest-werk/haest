@@ -15,9 +15,10 @@
 //! Where the file's directory passes its group on (setgid), the new file's
 //! directory keeps the mode it was made with, so the new file gets that
 //! group, as one made beside the file would. A change the disk still
-//! refuses (permissions, a full disk) fails alone (`write-failed`) with the
-//! human's file as it was, still listed (not a conflict) for an apply once
-//! the disk takes it; the apply goes on with the rest. A file the human
+//! refuses (permissions, a full disk, an NFS server out of room, which
+//! says so only as the new file closes) fails alone (`write-failed`) with
+//! the human's file as it was, still listed (not a conflict) for an apply
+//! once the disk takes it; the apply goes on with the rest. A file the human
 //! made read-only is refused, never replaced. Written in place, as before:
 //! a file a new one would not stand in for (one with another hard link,
 //! one whose owner or group a new file would not have), and one where the

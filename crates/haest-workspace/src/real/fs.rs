@@ -11,7 +11,7 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::fs::{DirEntry, FileKind, Fs, FsLock, FsStat};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 
 /// The host's disk as a haest [`Fs`], through tokio's file system calls.
 ///
@@ -25,6 +25,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 ///   only. A FIFO, a socket or a device is refused at once with
 ///   [`InvalidInput`](io::ErrorKind::InvalidInput), never waited on: a FIFO
 ///   would block until a writer came, `/dev/zero` never ends.
+/// - [`write`](Fs::write) and [`append`](Fs::append) report a write the
+///   file system refused, also one an NFS client reports only as the file
+///   closes (no room on the server, a quota).
 /// - [`chmod`](Fs::chmod) sets Unix permission bits (a no-op elsewhere).
 /// - [`try_lock`](Fs::try_lock) takes an exclusive `flock(2)`, which the
 ///   system drops with the process that held it. It opens the file to read
@@ -113,18 +116,20 @@ impl Fs for RealFs {
         Ok(buf)
     }
 
+    /// Makes the file, or empties it first and keeps its mode, and writes
+    /// all of `data`. A write the file system refused is an error, on a
+    /// network file system too, where an NFS client reports it only as the
+    /// file closes (no room on the server, a quota).
     async fn write(&self, path: &Path, data: &[u8]) -> io::Result<()> {
-        tokio::fs::write(path, data).await
+        super::write::write(path, data).await
     }
 
+    /// Makes the file if it is missing, and adds all of `data` to its end.
+    /// A write the file system refused is an error, on a network file
+    /// system too, where an NFS client reports it only as the file closes:
+    /// a session record that did not land is never read as written.
     async fn append(&self, path: &Path, data: &[u8]) -> io::Result<()> {
-        let mut f = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-            .await?;
-        f.write_all(data).await?;
-        f.flush().await
+        super::write::append(path, data).await
     }
 
     async fn exists(&self, path: &Path) -> bool {

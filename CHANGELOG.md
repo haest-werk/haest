@@ -531,9 +531,10 @@ write instead.
   that passes its group on (setgid), the new file's directory keeps the
   mode it was made with, so the new file gets that group, as a file made
   there does, also for a run not in that group. A new file the disk has
-  no room for leaves the human's file as it was and the change listed,
-  to apply once there is room; an apply now needs room for that second
-  copy of each file it replaces. A read-only file is still refused.
+  no room for (a full disk, an NFS server out of room or over a quota)
+  leaves the human's file as it was and the change listed, to apply once
+  there is room; an apply now needs room for that second copy of each
+  file it replaces. A read-only file is still refused.
   Written in place as before: a file with another hard link, one whose
   owner or group a new file would not have, and one where the disk will
   not make the new file or move it over the old one (a directory that
@@ -546,6 +547,15 @@ write instead.
   (in a directory that passes its group on, at the umask's mode, with
   the new file owner-only), and an apply dropped partway, rarely, that
   directory empty; `.*.haest-*` in an ignore file matches it.
+- On a network file system, a write the server refused (no room, a
+  quota) read as done. An NFS client reports it only as the file closes,
+  and `RealFs::write` and `RealFs::append` ignored what closing it said:
+  an apply renamed the cut-short new file over the human's file and
+  reported it applied, a file written in place was cut short without a
+  word, and a session record the server never took reached no error
+  handler (`JsonlSessionFile::new_with_error_handler`). Both now report
+  what close says as the write's error: the apply fails the change, the
+  human's file whole and still listed, and a lost record is reported.
 - An apply dropped partway lost the files of a tree the sandbox had moved.
   After `mv src gen`, the files under `gen` were listed only by walking
   `gen`, and only until `gen` was on the disk; the apply deletes first, so

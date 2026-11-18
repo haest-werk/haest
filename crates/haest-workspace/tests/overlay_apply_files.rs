@@ -1,8 +1,8 @@
 //! What applying keeps of a file it writes over, where a new file put in
 //! its place would lose it: its other links, its group, the read-only mode
 //! the human gave it. And a file in a directory that takes no new file is
-//! still written. (Its mode: `an_edit_keeps_the_files_mode` in
-//! `overlay_modes.rs`.)
+//! still written, and one an NFS server has no room for stays as it was.
+//! (Its mode: `an_edit_keeps_the_files_mode` in `overlay_modes.rs`.)
 
 mod common;
 
@@ -17,7 +17,7 @@ use common::{
     spelling::{apply_all, changes, paths, run, writable_again},
     tempdir,
 };
-use haest_core::workspace::ApplyFailureCode;
+use haest_core::workspace::{ApplyFailureCode, Workspace};
 
 fn set_mode(path: &Path, mode: u32) {
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
@@ -169,4 +169,39 @@ async fn a_directory_whose_group_the_run_is_not_in_still_gives_it_on() {
     assert_ne!(meta("edit.txt").ino(), before, "written in place");
     assert_eq!(meta("edit.txt").gid(), group, "edit.txt's group");
     assert_eq!(meta("new.txt").gid(), group, "new.txt's group");
+}
+
+/// Names a directory on an NFS mount with less than 1 MiB free, for the
+/// test of a write the server refuses; unset, the test passes without
+/// running.
+const FULL_NFS_DIR: &str = "HAEST_TEST_FULL_NFS_DIR";
+
+/// An NFS client sends what was written as the file closes, and reports a
+/// write the server refused (no room, a quota) only there. That answer was
+/// dropped: the apply renamed the cut-short new file over `notes.txt` and
+/// reported it applied. The change now fails, and the human's file stays
+/// whole and listed.
+#[tokio::test]
+async fn a_write_an_nfs_server_refuses_fails_and_leaves_the_humans_file() {
+    let Some(base) = std::env::var_os(FULL_NFS_DIR) else {
+        return;
+    };
+    let t = tempfile::tempdir_in(base).unwrap();
+    let dir = fs::canonicalize(t.path()).unwrap();
+    let human = "the human's line\n".repeat(100);
+    fs::write(dir.join("notes.txt"), &human).unwrap();
+    let ws = sandbox(&dir).await;
+    let (files, longer) = (ws.fs(), vec![b'x'; 1 << 20]);
+    files.write(&dir.join("notes.txt"), &longer).await.unwrap();
+    let report = changes(&ws).apply().await;
+    let failed: Vec<_> = report
+        .failed
+        .iter()
+        .map(|f| (f.change.path.as_str(), f.code))
+        .collect();
+    assert_eq!(failed, [("/notes.txt", ApplyFailureCode::WriteFailed)]);
+    let on_disk = fs::read(dir.join("notes.txt"));
+    let whole = on_disk.as_deref().ok() == Some(human.as_bytes());
+    assert!(whole, "the human's file: {:?}", on_disk.map(|b| b.len()));
+    assert_eq!(paths(&changes(&ws).list().await), ["/notes.txt"]);
 }

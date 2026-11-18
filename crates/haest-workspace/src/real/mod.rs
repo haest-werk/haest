@@ -11,6 +11,7 @@ mod exec;
 mod fs;
 mod lock;
 mod pipe;
+mod write;
 
 use async_trait::async_trait;
 use haest_core::{
