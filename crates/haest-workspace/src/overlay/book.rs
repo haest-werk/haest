@@ -14,7 +14,7 @@ use std::{
 use haest_core::fs::{Fs, normalize};
 
 use super::state::{Original, state_of};
-use crate::spelling::{Spelled, Spelling};
+use crate::spelling::{Spelled, Spelling, Ways};
 
 /// The first-touch ledger the recorder writes and the scan reads.
 pub(crate) struct Book {
@@ -149,11 +149,12 @@ impl Book {
     }
 
     /// `path` (an overlay path) on the real disk, as the sandbox spells it,
-    /// and where a write to it would land instead.
-    pub(super) async fn on_disk(&self, path: &Path) -> OnDisk {
+    /// and where a write to it would land instead. `ways` keeps how the disk
+    /// spells the directories above a missing path, for one scan.
+    pub(super) async fn on_disk(&self, path: &Path, ways: &mut Ways) -> OnDisk {
         let found = state_of(self.disk.as_ref(), &self.real(path)).await;
         let spelled = if found == Original::Absent {
-            self.spelling.spelled_way(path).await
+            self.spelling.spelled_way(path, ways).await
         } else {
             self.spelling.spelled(path).await
         };

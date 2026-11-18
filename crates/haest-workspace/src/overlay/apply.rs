@@ -30,6 +30,7 @@ use haest_core::{
 };
 
 use super::{OverlayChanges, Scanned, links::Links};
+use crate::spelling::Ways;
 
 /// Why one change was not applied: its code and the reason for the human.
 type Refusal = (ApplyFailureCode, String);
@@ -164,8 +165,9 @@ impl OverlayChanges {
         // spelling now (an earlier write of this apply, a delete that failed
         // or was skipped), where the write or delete would land. A path that
         // already holds the sandbox's version (a file its directory's delete
-        // took along) loses nothing, and is put as usual.
-        let again = self.book.on_disk(path).await;
+        // took along) loses nothing, and is put as usual. Asked afresh: a
+        // directory this apply made changes the answer.
+        let again = self.book.on_disk(path, &mut Ways::default()).await;
         let moved = again.state != s.now && again.state != s.mine;
         if moved || again.held.is_some() {
             return Ok(Put::Moved);

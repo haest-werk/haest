@@ -47,7 +47,7 @@ use haest_core::{
     workspace::{ApplyReport, Change, ChangeKind, ChangeSet},
 };
 
-use crate::bridge::HaestFsOverBashkit;
+use crate::{bridge::HaestFsOverBashkit, spelling::Ways};
 use book::{Book, Held};
 use recorder::Recorder;
 use state::{Original, state_of, walk};
@@ -286,9 +286,14 @@ impl OverlayChanges {
     /// map is ordered): a directory before its files.
     async fn survey(&self) -> Vec<Found> {
         let mut out = Vec::new();
+        // The files of one new tree all ask how the disk spells the same
+        // directories above them: each is asked once per scan.
+        let mut ways = Ways::default();
         for (path, original) in self.candidates().await {
-            let (now, mine) =
-                tokio::join!(self.book.on_disk(&path), state_of(&self.overlay, &path));
+            let (now, mine) = tokio::join!(
+                self.book.on_disk(&path, &mut ways),
+                state_of(&self.overlay, &path)
+            );
             out.push(Found {
                 path,
                 original: original.unwrap_or(now.state),

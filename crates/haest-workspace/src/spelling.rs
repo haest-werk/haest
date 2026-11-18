@@ -49,6 +49,12 @@ pub(crate) struct Spelling {
     settled: Duration,
 }
 
+/// What [`Spelling::spelled_way`] found for each directory it asked: the
+/// files under one new directory all ask the same ones. Kept only while the
+/// disk is taken to stand still, so for one scan, never across writes.
+#[derive(Debug, Default)]
+pub(crate) struct Ways(HashMap<PathBuf, Option<Spelled>>);
+
 /// How the disk spells a project path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Spelled {
@@ -82,10 +88,21 @@ impl Spelling {
     /// there: the nearest directory above it that is. A write to `path`
     /// lands in that directory, so where the disk holds it under another
     /// spelling (`lib` for `/Lib/new.rs`), the write lands there too.
-    pub(crate) async fn spelled_way(&self, path: &Path) -> Spelled {
+    ///
+    /// `ways` keeps what each directory answered, for the lookups that
+    /// follow while the disk is taken to stand still (one scan).
+    pub(crate) async fn spelled_way(&self, path: &Path, ways: &mut Ways) -> Spelled {
         let mut at = path.parent();
         while let Some(dir) = at.filter(|d| d.parent().is_some()) {
-            if let Some(spelled) = self.find(dir).await {
+            let found = match ways.0.get(dir) {
+                Some(found) => found.clone(),
+                None => {
+                    let found = self.find(dir).await;
+                    ways.0.insert(dir.to_path_buf(), found.clone());
+                    found
+                }
+            };
+            if let Some(spelled) = found {
                 return spelled;
             }
             at = dir.parent();
@@ -420,6 +437,11 @@ mod tests {
         }
     }
 
+    /// How the disk spells the way to `asked`, asked afresh.
+    async fn way(s: &Spelling, asked: &str) -> Spelled {
+        s.spelled_way(Path::new(asked), &mut Ways::default()).await
+    }
+
     /// A path that is not there lands in the nearest directory above it that
     /// is, as the disk spells that one.
     #[tokio::test]
@@ -429,8 +451,7 @@ mod tests {
         std::fs::create_dir(dir.join("lib")).unwrap();
         let s = Spelling::of(dir);
         for asked in ["/lib/new.rs", "/lib/new/deeper/x.rs", "/nope/x.rs", "/x.rs"] {
-            let got = s.spelled_way(Path::new(asked)).await;
-            assert_eq!(got, Spelled::AsAsked, "{asked}");
+            assert_eq!(way(&s, asked).await, Spelled::AsAsked, "{asked}");
         }
         let want = if dir.join("LIB").exists() {
             Spelled::Other(Some(PathBuf::from("/lib")))
@@ -438,7 +459,7 @@ mod tests {
             Spelled::AsAsked
         };
         for asked in ["/LIB/new.rs", "/LIB/new/deeper/x.rs"] {
-            assert_eq!(s.spelled_way(Path::new(asked)).await, want, "{asked}");
+            assert_eq!(way(&s, asked).await, want, "{asked}");
         }
     }
 
@@ -456,9 +477,26 @@ mod tests {
         } else {
             Spelled::AsAsked
         };
-        assert_eq!(s.spelled_way(Path::new("/NOTES/x/y")).await, want);
-        let asked = s.spelled_way(Path::new("/notes/x/y")).await;
-        assert_eq!(asked, Spelled::AsAsked);
+        assert_eq!(way(&s, "/NOTES/x/y").await, want);
+        assert_eq!(way(&s, "/notes/x/y").await, Spelled::AsAsked);
+    }
+
+    /// Each new file asked its way up through the same new directories
+    /// again: one scan of a new tree asked each of them once per file.
+    #[tokio::test]
+    async fn the_files_of_one_new_tree_ask_their_way_once() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path();
+        std::fs::create_dir(dir.join("lib")).unwrap();
+        let s = Spelling::of(dir);
+        let mut ways = Ways::default();
+        for i in 0..20 {
+            let asked = format!("/lib/new/deeper/f{i}.rs");
+            let got = s.spelled_way(Path::new(&asked), &mut ways).await;
+            assert_eq!(got, Spelled::AsAsked, "{asked}");
+        }
+        // `/lib/new/deeper`, `/lib/new` and `/lib`.
+        assert_eq!(ways.0.len(), 3, "{ways:?}");
     }
 
     #[tokio::test]
