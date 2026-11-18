@@ -50,7 +50,8 @@ fn image_answer(bytes: &[u8]) -> Canned {
 struct FakeApi {
     list: Mutex<Canned>,
     answer: Mutex<Canned>,
-    gets: Mutex<usize>,
+    /// The URL of every GET (the model list).
+    gets: Mutex<Vec<String>>,
     /// (url, bearer key, body) of every POST.
     posted: Mutex<Vec<(String, String, Value)>>,
 }
@@ -59,8 +60,7 @@ struct FakeApi {
 impl HttpClient for FakeApi {
     async fn send(&self, req: Request) -> Result<Response, HttpError> {
         let (status, body) = if req.method == Method::Get {
-            assert!(req.url.ends_with("/images/models"));
-            *self.gets.lock().unwrap() += 1;
+            self.gets.lock().unwrap().push(req.url.clone());
             self.list.lock().unwrap().clone()
         } else {
             let auth = req.header("authorization").unwrap_or_default();
@@ -133,6 +133,10 @@ impl Rig {
 
     fn posted(&self) -> Vec<(String, String, Value)> {
         self.api.posted.lock().unwrap().clone()
+    }
+
+    fn gets(&self) -> Vec<String> {
+        self.api.gets.lock().unwrap().clone()
     }
 }
 
@@ -316,11 +320,7 @@ async fn a_base_url_a_parser_misreads_is_never_sent_to() {
         "{}",
         out.content
     );
-    assert_eq!(
-        *r.api.gets.lock().unwrap(),
-        0,
-        "the model list was asked for"
-    );
+    assert_eq!(r.gets(), [""; 0], "the model list was asked for");
     assert!(r.posted().is_empty());
 }
 
@@ -329,7 +329,48 @@ async fn the_model_list_is_read_once_and_kept() {
     let r = Rig::new();
     r.run(json!({"prompt": "x"})).await;
     r.run(json!({"prompt": "y"})).await;
-    assert_eq!(*r.api.gets.lock().unwrap(), 1);
+    assert_eq!(r.gets(), [format!("{BASE}/images/models")]);
+}
+
+/// A base URL's query (a gateway's key) stays the query: `/images` and
+/// `/images/models` go after the base's path, before it, however many
+/// slashes that path ends in. They went after the query, so the API saw
+/// the base path, and a key with the path glued onto it.
+#[tokio::test]
+async fn a_base_urls_query_stays_after_the_path() {
+    for base in [
+        "https://images.test/api/v1?key=k3y",
+        "https://images.test/api/v1/?key=k3y",
+    ] {
+        let r = Rig::at(base);
+        let out = r.run(json!({"prompt": "x"})).await;
+        assert!(!out.is_error, "{}", out.content);
+        let list = "https://images.test/api/v1/images/models?key=k3y";
+        assert_eq!(r.gets(), [list], "{base}");
+        let posted: Vec<String> = r.posted().into_iter().map(|p| p.0).collect();
+        assert_eq!(
+            posted,
+            ["https://images.test/api/v1/images?key=k3y"],
+            "{base}"
+        );
+    }
+}
+
+/// The list's URL in the error for a model it does not name is the one the
+/// list was read from, its query after the path and its values hidden.
+#[tokio::test]
+async fn the_unknown_model_error_names_the_list_as_it_was_read() {
+    let r = Rig::at("https://images.test/api/v1?key=k3y");
+    let unlisted = json!({"data": [{"id": "other", "supported_parameters": {}}]});
+    *r.api.list.lock().unwrap() = json_answer(200, &unlisted);
+    let out = r.run(json!({"prompt": "x"})).await;
+    assert!(out.is_error, "{}", out.content);
+    assert!(
+        out.content
+            .contains("(GET https://images.test/api/v1/images/models?key=<redacted>)"),
+        "{}",
+        out.content
+    );
 }
 
 #[tokio::test]

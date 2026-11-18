@@ -450,6 +450,17 @@ write instead.
   failed tool call's answer to the model. rmcp's HTTP client now runs on a
   reqwest client whose errors name the URL without its query, fragment or
   userinfo, and name none when an `@` past its host may end a password.
+- A provider's base URL with a query (a gateway's key, which the
+  `with_base_url` docs put in a header or the query; Azure OpenAI's
+  `api-version`) sent every request to the base path, with the endpoint
+  glued onto the query: `https://gw.example/anthropic?key=k3y` went out as
+  the path `/anthropic` and the query `key=k3y/v1/messages`, so every
+  model call failed. GenerateImage built `/images` and `/images/models`
+  the same way, from the same `OPENROUTER_BASE_URL`. Both now put the path
+  after the base URL's path and before its query and fragment, through
+  one function (haest-http's `join_path`). GenerateImage also takes a base
+  URL ending in `/` now (it sent `//images`), and its error for a model
+  the list does not name shows the list's URL as it was read.
 - `StdioTransport` printed its arguments in its Debug output, where
   `.mcp.json` puts a filled-in `${API_TOKEN}` (mcp-remote's `--header
   "Authorization: Bearer ${API_TOKEN}"`), so `McpServerConfig`,

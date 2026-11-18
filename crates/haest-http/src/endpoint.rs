@@ -1,7 +1,23 @@
-//! The URLs haest is configured to dial that a URL parser misreads, refused
-//! before anything connects ([`check_endpoint_url`]).
+//! The URLs haest is configured to dial: refused before anything connects
+//! when a URL parser misreads them ([`check_endpoint_url`]), and a path put
+//! under one ([`join_path`]).
 
 use crate::redact::{after_scheme, redacted_url};
+
+/// `path` under `base`, a URL haest is configured with (a provider's base
+/// URL, an Image API's): after `base`'s path, one `/` between however many
+/// it ends in, and before its query and its fragment. A gateway's key or an
+/// `api-version` in the query stays the query:
+/// `https://gw.example/v1?key=k` and `chat/completions` make
+/// `https://gw.example/v1/chat/completions?key=k`.
+///
+/// A URL [`check_endpoint_url`] refuses stays refused, and one it passes
+/// stays passed: the path goes in after every `@` of a URL it passes.
+#[must_use]
+pub fn join_path(base: &str, path: &str) -> String {
+    let (base, after) = base.split_at(base.find(['?', '#']).unwrap_or(base.len()));
+    format!("{}/{path}{after}", base.trim_end_matches('/'))
+}
 
 /// What ends a URL's host for a parser: the first of these past the scheme
 /// (a `\` only in an `http`, `https`, `ws` or `wss` URL, which reads it as a
@@ -106,6 +122,51 @@ mod tests {
         "http://[::1]:8080/v1",
         "",
     ];
+
+    #[test]
+    fn a_path_goes_after_the_bases_path_and_before_its_query_and_fragment() {
+        let cases = [
+            ("https://gw.example/v1", "https://gw.example/v1/x/y"),
+            ("https://gw.example/v1/", "https://gw.example/v1/x/y"),
+            ("https://gw.example/v1//", "https://gw.example/v1/x/y"),
+            ("https://gw.example", "https://gw.example/x/y"),
+            (
+                "https://gw.example/v1?key=k",
+                "https://gw.example/v1/x/y?key=k",
+            ),
+            (
+                "https://gw.example/v1/?key=k&v=2",
+                "https://gw.example/v1/x/y?key=k&v=2",
+            ),
+            ("https://gw.example?key=k", "https://gw.example/x/y?key=k"),
+            ("https://gw.example/v1#f", "https://gw.example/v1/x/y#f"),
+            (
+                "https://gw.example/v1?key=a/b#f/g",
+                "https://gw.example/v1/x/y?key=a/b#f/g",
+            ),
+            (
+                "https://u:p@ss@gw.example:8443/v1?key=k",
+                "https://u:p@ss@gw.example:8443/v1/x/y?key=k",
+            ),
+        ];
+        for (base, joined) in cases {
+            assert_eq!(join_path(base, "x/y"), joined, "{base}");
+        }
+    }
+
+    /// The check's verdict on a base URL holds for every path under it, so
+    /// checking the base or the URL sent is the same.
+    #[test]
+    fn a_path_under_a_url_keeps_the_checks_verdict() {
+        for url in MISREAD {
+            let joined = join_path(url, "v1/messages");
+            assert!(check_endpoint_url(&joined).is_err(), "{joined}");
+        }
+        for url in READ_RIGHT {
+            let joined = join_path(url, "v1/messages");
+            assert_eq!(check_endpoint_url(&joined), Ok(()), "{joined}");
+        }
+    }
 
     #[test]
     fn a_url_with_an_at_past_its_host_is_refused() {

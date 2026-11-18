@@ -99,6 +99,44 @@ async fn a_base_url_a_parser_misreads_is_never_sent_to() {
     assert_eq!(t.requests().len(), 0, "a request went out");
 }
 
+/// A base URL's query (a gateway's key, an `api-version`) stays the query:
+/// each dialect's path goes after the base's path, before it. It went after
+/// the query, so the gateway saw the base path, and a key with the path
+/// glued onto it.
+#[tokio::test]
+async fn a_base_urls_query_stays_after_the_dialects_path() {
+    use crate::{AnthropicOptions, AnthropicProvider, ResponsesOptions, ResponsesProvider};
+    let base = "https://gw.example/anthropic?key=k3y";
+    let refused = || FakeReply::status(400, "no");
+    let t = FakeHttp::new([refused(), refused(), refused()]);
+    let streams = [
+        AnthropicProvider::new(
+            AnthropicOptions::new("a", "k").with_base_url(base),
+            t.clone(),
+        )
+        .stream(request("m")),
+        CompatProvider::new(CompatOptions::new("c", "k").with_base_url(base), t.clone())
+            .stream(request("m")),
+        ResponsesProvider::new(
+            ResponsesOptions::new("r", "k").with_base_url(base),
+            t.clone(),
+        )
+        .stream(request("m")),
+    ];
+    for stream in streams {
+        collect(stream).await;
+    }
+    let sent: Vec<String> = t.requests().into_iter().map(|r| r.url).collect();
+    assert_eq!(
+        sent,
+        [
+            "https://gw.example/anthropic/v1/messages?key=k3y",
+            "https://gw.example/anthropic/chat/completions?key=k3y",
+            "https://gw.example/anthropic/responses?key=k3y",
+        ]
+    );
+}
+
 #[tokio::test]
 async fn a_bad_request_is_not_retried_and_ends_as_an_error_naming_status_and_reason() {
     let t = FakeHttp::new([

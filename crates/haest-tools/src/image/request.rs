@@ -10,7 +10,7 @@
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use haest_core::{__private::real_cost, tool::spelled};
-use haest_http::{Bytes, HttpClient, HttpError, Request};
+use haest_http::{__private::join_path, Bytes, HttpClient, HttpError, Request};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -58,14 +58,14 @@ pub(crate) enum ImageError {
     },
     /// The model list was read and `model` is not on it
     /// ([`ImageCatalog::model_params`](super::ImageCatalog::model_params)).
-    #[error("{model} is not on the Image API's model list (GET {base_url}/images/models)")]
+    #[error("{model} is not on the Image API's model list (GET {list_url})")]
     UnknownModel {
         /// The model asked.
         model: String,
-        /// The Image API's base URL, without its credentials
+        /// The URL the list was read from, without its credentials
         /// ([`redacted_url`](haest_http::redacted_url)): the model and the
         /// transcript are shown this error.
-        base_url: String,
+        list_url: String,
     },
 }
 
@@ -146,8 +146,8 @@ fn refusal(model: &str, status: u16, answer: &Value) -> ImageError {
     }
 }
 
-/// Send one image request (`POST {base_url}/images` with `body`) and read the
-/// picture out of the answer (`data[0].b64_json`, `usage.cost`).
+/// Send one image request (`POST` to `images` under `base_url`, with `body`)
+/// and read the picture out of the answer (`data[0].b64_json`, `usage.cost`).
 ///
 /// `body` is sent as given: GenerateImage checks it first.
 ///
@@ -164,7 +164,7 @@ pub(crate) async fn call_image_api(
     body: &Value,
     cancel: &CancellationToken,
 ) -> Result<ImageReply, ImageError> {
-    let req = Request::post(format!("{base_url}/images"))
+    let req = Request::post(join_path(base_url, "images"))
         .with_header("authorization", format!("Bearer {api_key}"))
         .with_json(body);
     let (status, res) = exchange(http, req, cancel).await?;

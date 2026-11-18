@@ -14,7 +14,9 @@ use std::{
 
 use futures::StreamExt;
 use haest_core::error::report;
-use haest_http::{HttpClientRef, HttpError, Request, Response, check_endpoint_url};
+use haest_http::{
+    __private::join_path, HttpClientRef, HttpError, Request, Response, check_endpoint_url,
+};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -164,10 +166,11 @@ pub(crate) fn random_hex(n: usize) -> String {
 /// OpenAI's own API: where both OpenAI dialects go when no base URL is set.
 pub(crate) const OPENAI_URL: &str = "https://api.openai.com/v1";
 
-/// `path` under `base` (None = `default`), however many slashes `base` ends in.
+/// `path` under `base` (None = `default`), however many slashes its path
+/// ends in, and before its query: a gateway's key or an `api-version` there
+/// stays the query (haest-http's `join_path`).
 pub(crate) fn endpoint(base: &Option<String>, default: &str, path: &str) -> String {
-    let base = base.as_deref().unwrap_or(default);
-    format!("{}/{path}", base.trim_end_matches('/'))
+    join_path(base.as_deref().unwrap_or(default), path)
 }
 
 /// A model call to one of the OpenAI dialects: `body` POSTed as JSON to `url`
@@ -211,6 +214,15 @@ mod tests {
         assert_eq!(error_detail(r#"{"message":"top"}"#).as_deref(), Some("top"));
         assert_eq!(error_detail("plain").as_deref(), Some("plain"));
         assert_eq!(error_detail(""), None);
+    }
+
+    #[test]
+    fn the_path_goes_before_the_base_urls_query() {
+        let base = Some("https://gw.example/v1/?key=k".to_string());
+        let url = endpoint(&base, OPENAI_URL, "chat/completions");
+        assert_eq!(url, "https://gw.example/v1/chat/completions?key=k");
+        let url = endpoint(&None, OPENAI_URL, "responses");
+        assert_eq!(url, "https://api.openai.com/v1/responses");
     }
 
     #[test]

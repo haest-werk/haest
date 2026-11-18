@@ -71,7 +71,7 @@ pub const DEFAULT_IMAGE_MODELS: [&str; 3] = [
 pub struct GenerateImageOptions {
     /// The Image API's key, supplied by the host.
     api_key: String,
-    /// Without a trailing slash: `/images` and `/images/models` are appended.
+    /// `images` and `images/models` go under it (haest-http's `join_path`).
     base_url: String,
     /// The default model.
     model: String,
@@ -98,8 +98,9 @@ impl GenerateImageOptions {
         }
     }
 
-    /// The Image API at `base_url`, without a trailing slash: `/images` and
-    /// `/images/models` are appended.
+    /// The Image API at `base_url`: `/images` and `/images/models` go after
+    /// its path, however many slashes that ends in, and before its query (a
+    /// gateway's key there stays the query).
     ///
     /// A URL with an `@` past its host is never sent to: every call fails
     /// saying why (haest-http's `check_endpoint_url`). A password holding an

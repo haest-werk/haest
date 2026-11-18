@@ -81,10 +81,10 @@ impl ResponsesOptions {
         &self.headers
     }
 
-    /// These options sending to `url` (`<url>/responses`) instead of
-    /// OpenAI's own API. Its path shows in Debug output and errors: a
-    /// gateway's key goes in a header ([`with_header`](Self::with_header))
-    /// or the query, never the path.
+    /// These options sending to `url` (`<url>/responses`, the path before
+    /// `url`'s query) instead of OpenAI's own API. Its path shows in Debug
+    /// output and errors: a gateway's key goes in a header
+    /// ([`with_header`](Self::with_header)) or the query, never the path.
     ///
     /// A URL with an `@` past its host is never sent to: every request
     /// ends as an error saying so (haest-http's `check_endpoint_url`). A

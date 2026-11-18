@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_http::{HttpClient, Request, redacted_url};
+use haest_http::{__private::join_path, HttpClient, Request, redacted_url};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -22,6 +22,9 @@ use super::{
 };
 
 const FRESH: Duration = Duration::from_secs(60 * 60);
+
+/// Where the list is, under the base URL.
+const LIST_PATH: &str = "images/models";
 
 type Models = Arc<HashMap<String, ModelSettings>>;
 
@@ -52,7 +55,7 @@ async fn fetch(
     http: &dyn HttpClient,
     cancel: &CancellationToken,
 ) -> Option<Models> {
-    let get = Request::get(format!("{base_url}/images/models"));
+    let get = Request::get(join_path(base_url, LIST_PATH));
     let (status, body) = exchange(http, get, cancel).await.ok()?;
     if !(200..300).contains(&status) {
         return None;
@@ -125,7 +128,7 @@ impl ImageCatalog {
             Some(params) => Ok(Some(params.clone())),
             None => Err(ImageError::UnknownModel {
                 model: model.into(),
-                base_url: redacted_url(base_url).into_owned(),
+                list_url: redacted_url(&join_path(base_url, LIST_PATH)).into_owned(),
             }),
         }
     }
