@@ -29,6 +29,7 @@ mod book;
 mod diff;
 mod links;
 mod recorder;
+mod removable;
 mod scan;
 mod state;
 #[cfg(test)]
@@ -88,15 +89,22 @@ use state::{Original, state_of, walk};
 /// (`Lib/new.rs` beside the disk's `lib`), would land there: it is a
 /// conflict, whatever that holds, unless a delete in the list frees the name
 /// first (the rename). So the disk holds what the sandbox shows once the
-/// list is applied.
+/// list is applied. Where such a change is a conflict, so is every change
+/// that would take something away at or under the disk's spelling of that
+/// name (a delete, an overwrite): after `mv lib Lib && mkdir lib`, every file
+/// stays in the disk's `lib` until the human settles it, never deleted while
+/// `Lib`'s copies wait.
 ///
 /// `apply` deletes first, then writes, each in path order, so a rename by
-/// case finds its new name free. Each change's real path is read again right
-/// before it is put on the disk. One that moved since the scan (the human
-/// saved or deleted it), or whose name or directory the disk now holds under
-/// another spelling (an earlier write of this apply: the sandbox wrote both
-/// `README.md` and `readme.md`; or the rename's delete failed), is skipped
-/// as a conflict and stays listed.
+/// case finds its new name free. A directory whose delete frees the name for
+/// such writes is deleted whole or not at all: where a directory at or under
+/// it may not be emptied (read-only to this process), it fails before
+/// anything is deleted, and its writes wait. Each change's real path is read
+/// again right before it is put on the disk. One that moved since the scan
+/// (the human saved or deleted it), or whose name or directory the disk now
+/// holds under another spelling (an earlier write of this apply: the sandbox
+/// wrote both `README.md` and `readme.md`; or the rename's delete failed), is
+/// skipped as a conflict and stays listed.
 ///
 /// `apply` never writes through a symlink: not one on the real disk on the
 /// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),

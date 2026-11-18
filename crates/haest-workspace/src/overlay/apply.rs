@@ -13,10 +13,11 @@
 //!
 //! Deletes go first, then the writes: on a disk that reads two spellings as
 //! one name, a rename by case (`/readme.md` deleted, `/README.md` added)
-//! finds its new name free. Each change's real path is read again right
-//! before it is put on the disk; one that moved since the scan, or whose name
-//! or directory the disk now holds under another spelling, is skipped as a
-//! conflict.
+//! finds its new name free. A directory delete that frees such a name fails
+//! before it starts where it would stop partway (`removable.rs`). Each
+//! change's real path is read again right before it is put on the disk; one
+//! that moved since the scan, or whose name or directory the disk now holds
+//! under another spelling, is skipped as a conflict.
 
 use std::{
     collections::BTreeSet,
@@ -29,7 +30,7 @@ use haest_core::{
     workspace::{ApplyFailureCode, ApplyReport, ChangeKind, FailedChange},
 };
 
-use super::{OverlayChanges, Scanned, links::Links};
+use super::{OverlayChanges, Scanned, links::Links, removable};
 use crate::spelling::Ways;
 
 /// Why one change was not applied: its code and the reason for the human.
@@ -172,15 +173,35 @@ impl OverlayChanges {
         if moved || again.held.is_some() {
             return Ok(Put::Moved);
         }
-        self.write(deleted, path)
+        self.write(s)
             .await
             .map(|()| Put::Applied)
             .map_err(|e| (ApplyFailureCode::WriteFailed, e.to_string()))
     }
 
-    async fn write(&self, deleted: bool, path: &Path) -> io::Result<()> {
+    async fn write(&self, s: &Scanned) -> io::Result<()> {
+        let path = s.path.as_path();
+        let deleted = s.change.kind == ChangeKind::Deleted;
         let disk = self.book.disk.as_ref();
         let real = self.book.real(path);
+        // A directory whose name this apply's writes land on under another
+        // spelling (a rename by case) goes whole or not at all: what a
+        // delete took before it stopped would otherwise be only in the
+        // sandbox, its writes waiting on the name.
+        if deleted
+            && s.frees
+            && disk.stat(&real).await.is_ok_and(|st| st.is_dir())
+            && let Some(blocker) = removable::blocker(&real).await
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "{} may not be emptied or changed, so the delete would stop partway; \
+                     nothing was deleted",
+                    blocker.display()
+                ),
+            ));
+        }
         if deleted {
             return match disk.remove_all(&real).await {
                 // Gone already, or under a directory that became a file.
