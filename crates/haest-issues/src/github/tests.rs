@@ -277,6 +277,42 @@ async fn an_api_root_a_parser_misreads_is_never_sent_to() {
     assert_eq!(http.calls().len(), 1);
 }
 
+/// An API root with no host (`https://`, what `https://${GHE_HOST}` makes of
+/// an empty variable) lost the `//` after its scheme to the trim of its
+/// trailing `/`: `https:` passed the check, and the request went to
+/// `https:/repos/...`, which a URL parser dials as the host `repos`, with
+/// the token. Every call, GraphQL's too, now fails and sends nothing.
+#[tokio::test]
+async fn an_api_root_with_no_host_is_never_sent_to() {
+    for root in ["https://", "http://", "https:///", "https:///api/v3"] {
+        let http = FakeHttp::new([ok(json!([])), ok(json!({"data": {}}))]);
+        let gh = github(http.clone()).with_api_url(root);
+        let listed = gh.list(&filter(5)).await.map(|_| ());
+        let asked = gh.graphql("query { viewer { login } }", json!({})).await;
+        for call in [listed, asked.map(|_| ())] {
+            assert!(
+                matches!(call, Err(TrackerError::Failed(_))),
+                "{root}: {call:?}"
+            );
+        }
+        assert!(http.calls().is_empty(), "{root}: {:?}", http.sent());
+    }
+}
+
+/// A root whose host is `v3` (no path) lost its host to the cut of an
+/// Enterprise Server root's `/v3`: its GraphQL endpoint was
+/// `https://graphql`, another host, sent the token. Only a `/v3` in the
+/// path is cut.
+#[tokio::test]
+async fn only_a_v3_in_the_roots_path_is_cut_for_graphql() {
+    let http = FakeHttp::new([ok(json!({"data": {}}))]);
+    let gh = github(http.clone()).with_api_url("https://v3");
+    gh.graphql("query { viewer { login } }", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(http.sent(), ["POST https://v3/graphql"]);
+}
+
 /// The one live check: reads haest's own public repository with no token.
 /// `cargo test -p haest-issues -- --ignored` runs it.
 #[tokio::test]

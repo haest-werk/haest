@@ -353,6 +353,12 @@ write instead.
   it, so a CRLF `.env` that keeps the `\r` of an empty `GATEWAY_HOST=` did
   the same (`https://\r/anthropic`). haest now refuses such a URL wherever
   it refuses one with an `@` past its host (above), saying it has no host.
+  The GitHub tracker cut the `//` after the scheme with a root's trailing
+  `/`, so `https://${GHE_HOST}` with the variable empty became `https:`,
+  and its token went to `https:/repos/...`, which a parser reads as the
+  host `repos`. It keeps that `//` now, checks each URL as it would send
+  it, and cuts an Enterprise Server root's `/v3` only from the path (a
+  root `https://v3` sent the token to the host `graphql`).
 - A providers.json entry with a misspelt key sent the entry's key, and the
   conversation, to OpenAI's or Anthropic's own API. haest read each key by
   its exact name and skipped any other, and an entry with no `baseURL` is

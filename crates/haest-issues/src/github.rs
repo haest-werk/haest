@@ -170,16 +170,24 @@ impl GithubTracker {
     /// (its GraphQL endpoint is then `https://HOST/api/graphql`). The token,
     /// if any, goes to this host.
     ///
-    /// A root with an `@` past its host is never sent to: every call fails
-    /// (`Failed`) saying why (haest-http's `check_endpoint_url`). A password
-    /// holding an unescaped `/`, `?` or `#` ends the host a URL parser reads
-    /// there, so the token and the rest of the password would go to another
-    /// host; it goes in percent-encoded (`/` as `%2F`).
+    /// A root with an `@` past its host, or with no host (`https://`, what
+    /// `https://${GHE_HOST}` makes of an empty variable), is never sent to:
+    /// every call fails (`Failed`) saying why (haest-http's
+    /// `check_endpoint_url`). A password holding an unescaped `/`, `?` or
+    /// `#` ends the host a URL parser reads there, so the token and the rest
+    /// of the password would go to another host; it goes in percent-encoded
+    /// (`/` as `%2F`). With no host, a parser takes the first part of the
+    /// path for one.
     #[must_use]
     pub fn with_api_url(mut self, url: impl Into<String>) -> Self {
         let mut url = url.into();
-        url.truncate(url.trim_end_matches('/').len());
-        self.graphql = match url.strip_suffix("/v3") {
+        // Only the path's `/` go, never the `//` after the scheme: a root
+        // with no host stays one, and the check refuses it.
+        let host = url.find("://").map_or(0, |i| i + 3);
+        url.truncate(url.trim_end_matches('/').len().max(host));
+        // Enterprise Server's GraphQL is beside `/api/v3`: the `/v3` cut is
+        // the path's, never a host named `v3`.
+        self.graphql = match url.strip_suffix("/v3").filter(|root| root.len() >= host) {
             Some(root) => format!("{root}/graphql"),
             None => format!("{url}/graphql"),
         };
@@ -198,7 +206,8 @@ impl GithubTracker {
     }
 
     /// The API root its requests go to ([`with_api_url`](Self::with_api_url);
-    /// `https://api.github.com` by default), with no trailing `/`.
+    /// `https://api.github.com` by default), with no trailing `/` on its
+    /// path.
     pub fn api_url(&self) -> &str {
         &self.api
     }
