@@ -482,7 +482,12 @@ write instead.
   a path's mode through `mv`, and `cp` gives a new file its source's; the
   sandbox now does the same, and applying puts that mode on as it puts on
   a `chmod`: it adds nothing but execute. A file only the sandbox made
-  still lands at the umask's mode.
+  still lands at the umask's mode. One case is not fixed: a directory the
+  sandbox changed something under before moving or copying it. After
+  `echo x > certs/new` or `mkdir -p certs/sub`, the sandbox shows a 0700
+  `certs` as 0755, and each directory between it and the change too, so
+  `mv certs keys` or `cp -r certs copy` still lands 0755 under the usual
+  umask.
 
 ### Bug fixes
 
@@ -515,6 +520,15 @@ write instead.
   The directory's delete is now a conflict too, listed with the file, and
   applying deletes only what under it is not a conflict. The same holds
   for a save the human makes while the apply runs.
+- An apply dropped partway lost the files of a tree the sandbox had moved.
+  After `mv src gen`, the files under `gen` were listed only by walking
+  `gen`, and only until `gen` was on the disk; the apply deletes first, so
+  `src` was gone by then. An apply dropped after that (the `haest` command
+  drops `/apply` 2 s after Ctrl+C; a host's timeout does the same) left
+  each file of the tree it had not written yet in the sandbox alone: not
+  listed, not applied by the next apply, not named by the warning on
+  exit, and gone when the session ended. Each change the apply has not
+  put on the disk now stays listed.
 - After an apply, the sandbox went on reading its own copy of each file it
   had changed, and nothing where it had deleted one, whatever the human
   did on the disk since. Its next change there went over the human's edit,
@@ -532,6 +546,14 @@ write instead.
   under a directory the sandbox removed they still fail, as in bash. The
   fault is in bashkit's overlay (0.21.0 has it too), so the fix is in
   haest.
+- In the sandbox, `mv` of a file onto its own path deleted it (`mv a ./a`,
+  `mv d/a d`, `mv d/a d/../d/a`), so a loop that renames files
+  (`mv "$f" "$(echo "$f" | tr A-Z a-z)"`, `mv "$f" "${f// /_}"`) deleted
+  each one whose name was already right. Each `mv` exited 0, the list
+  showed the file deleted, and applying deleted it from the disk. It now
+  stays, as in bash. The fault is in bashkit's overlay, which moves a file
+  by writing the new name and removing the old one, so the fix is in
+  haest.
 - A mode the sandbox set was never listed or applied: a script made
   executable with `chmod +x` ran in the sandbox and landed on the disk
   without its execute bits, and `chmod +x` on a file the disk held was not
@@ -540,10 +562,11 @@ write instead.
   listed (`Modified`, if nothing else changed) and applied, a file it adds
   keeps its execute bits, and a write keeps the file's mode. A directory's
   mode goes on after everything under it is written, so a write into `out`
-  followed by `chmod 555 out` applies both. Applying grants nothing but
-  execute, and that only to whom may read the file (`chmod 666` or a
-  setuid bit is not applied); a mode the human changed on the disk
-  meanwhile is a conflict.
+  followed by `chmod 555 out` applies both; till then the directory stays
+  listed, so an apply dropped partway leaves its mode to the next one.
+  Applying grants nothing but execute, and that only to whom may read the
+  file (`chmod 666` or a setuid bit is not applied); a mode the human
+  changed on the disk meanwhile is a conflict.
 - In the sandbox, `mkdir -p notes/x` beside a file `notes` succeeded: the
   file was then gone there, and applying the listed directory failed. It
   fails now with "Not a directory", as in bash.
