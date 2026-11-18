@@ -391,10 +391,11 @@ struct Link {
 }
 
 impl Link {
-    /// The first frame: who this is, and what the peer may do. Err says why
-    /// there is none: the conversation has already ended
-    /// ([`Ended::Closed`]), or the writer has, so the peer is gone
-    /// ([`Ended::PeerLeft`]).
+    /// The first frame: who this is, and what the peer may do. Err when the
+    /// conversation has already ended: there is no hello ([`Ended::Closed`]).
+    /// A sink that is already gone is found by the writer, which `serve`
+    /// polls from its next step on ([`Ended::PeerLeft`] there); the writer's
+    /// receiver lives in `serve` itself, so this send does not fail.
     async fn hello(&mut self, token: Option<Token>) -> Result<(), Ended> {
         let now = self.backend.snapshot().await;
         let now = now.map_err(|_ended| Ended::Closed)?;
