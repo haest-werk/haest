@@ -54,8 +54,9 @@ impl OverlayChanges {
         // One for the whole apply, deletes and writes: each real path on the
         // way is asked once.
         let mut links = Links::new(self.book.disk.as_ref(), &self.book.root);
-        // The ones this scan compares under (a wipe during the apply is not).
-        let wiped = self.book.wiped_dirs();
+        // The ones this scan compares under: a wipe made while the apply
+        // runs, of one of these too, is not.
+        let wiped = self.book.wipes();
         // Read as the sandbox spells each path, a delete takes only its own
         // name and what is under it, never a write's: one scan serves both.
         let (deletes, writes): (Vec<_>, Vec<_>) = self
@@ -69,8 +70,9 @@ impl OverlayChanges {
         self.read_through_dirs(&report.applied).await;
         // What a wiped directory hid is on the disk now, or each path of it
         // not applied is remembered (`settle`): it is forgotten, unless its
-        // own change is still to apply. A name the human makes there later is
-        // theirs, never one to delete.
+        // own change is still to apply, or the sandbox wiped it again while
+        // the apply ran. A name the human makes there later is theirs, never
+        // one to delete.
         let left: BTreeSet<&Path> = report
             .skipped
             .iter()
@@ -78,7 +80,7 @@ impl OverlayChanges {
             .map(|c| Path::new(&c.path))
             .collect();
         self.book
-            .forget_wiped(wiped.iter().filter(|d| !left.contains(d.as_path())));
+            .forget_wiped(wiped.iter().filter(|w| !left.contains(w.dir.as_path())));
         report
     }
 

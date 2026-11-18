@@ -6,7 +6,7 @@
 //! counts too.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -25,12 +25,27 @@ pub(crate) struct Book {
     /// Directories the sandbox removed whole, moved away or moved a tree
     /// onto: the overlay hides all the disk held under each then, and
     /// records only the directory itself.
-    wiped: Mutex<BTreeSet<PathBuf>>,
+    wiped: Mutex<Wiped>,
     /// The modes the sandbox set (`chmod`).
     pub(super) modes: SetModes,
     pub(super) disk: Arc<dyn Fs>,
     pub(super) root: PathBuf,
     spelling: Spelling,
+}
+
+/// The directories wiped, each with the count of the last wipe of it.
+#[derive(Debug, Default)]
+struct Wiped {
+    dirs: BTreeMap<PathBuf, u64>,
+    /// Wipes so far.
+    count: u64,
+}
+
+/// One wipe of a directory: forgotten only if it is still the last one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Wipe {
+    pub(super) dir: PathBuf,
+    count: u64,
 }
 
 /// A project path on the real disk, read as the sandbox spells it.
@@ -121,8 +136,8 @@ impl Book {
     }
 
     /// The directories wiped so far. Their lock is held only to read or
-    /// write the set, like the ledger's.
-    fn wiped(&self) -> MutexGuard<'_, BTreeSet<PathBuf>> {
+    /// write them, like the ledger's.
+    fn wiped(&self) -> MutexGuard<'_, Wiped> {
         self.wiped
             .lock()
             .expect("the overlay's wiped lock poisoned")
@@ -134,20 +149,36 @@ impl Book {
     pub(crate) fn wipe(&self, path: &Path) {
         let path = normalize(path);
         if self.touched().get(&path) == Some(&Original::Dir) {
-            self.wiped().insert(path);
+            let mut wiped = self.wiped();
+            wiped.count += 1;
+            let count = wiped.count;
+            wiped.dirs.insert(path, count);
         }
     }
 
     /// Every directory wiped so far, in path order: one before those under it.
     pub(super) fn wiped_dirs(&self) -> Vec<PathBuf> {
-        self.wiped().iter().cloned().collect()
+        self.wiped().dirs.keys().cloned().collect()
     }
 
-    /// Forget each of `dirs` as wiped.
-    pub(super) fn forget_wiped<'a>(&self, dirs: impl IntoIterator<Item = &'a PathBuf>) {
+    /// The last wipe of each directory wiped so far, in path order.
+    pub(super) fn wipes(&self) -> Vec<Wipe> {
+        let wiped = self.wiped();
+        let wipes = wiped.dirs.iter().map(|(dir, &count)| Wipe {
+            dir: dir.clone(),
+            count,
+        });
+        wipes.collect()
+    }
+
+    /// Forget each of `wipes`, where the sandbox has not wiped its directory
+    /// again since: what a wipe made later hid is still to compare.
+    pub(super) fn forget_wiped<'a>(&self, wipes: impl IntoIterator<Item = &'a Wipe>) {
         let mut wiped = self.wiped();
-        for dir in dirs {
-            wiped.remove(dir);
+        for wipe in wipes {
+            if wiped.dirs.get(&wipe.dir) == Some(&wipe.count) {
+                wiped.dirs.remove(&wipe.dir);
+            }
         }
     }
 

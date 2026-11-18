@@ -110,3 +110,61 @@ async fn a_file_the_human_saves_during_the_apply_is_skipped_not_deleted() {
     assert_eq!(on_disk(&disk, "/p/b.md").await.as_deref(), Some(HUMAN));
     assert_eq!(conflicts(&changes.list().await), [("/b.md", true)]);
 }
+
+/// The sandbox wipes `lib` again while the apply runs (`rm -r lib && mkdir
+/// lib`), over a file the human made there meanwhile. The apply forgot `lib`
+/// as wiped all the same, so no list looked inside it again: the file was
+/// gone in the sandbox, stayed on the disk, and was never listed.
+#[tokio::test]
+async fn a_directory_wiped_again_while_the_apply_runs_is_still_compared() {
+    let disk = Arc::new(Disk::default());
+    let changes = project(&disk).await;
+    disk.inner
+        .create_dir_all(Path::new("/p/lib"))
+        .await
+        .unwrap();
+    disk.inner
+        .write(Path::new("/p/lib/a.rs"), b"a\n")
+        .await
+        .unwrap();
+    // The sandbox's view, written past the recorder: what it reads there.
+    let view = changes.overlay.inner().clone();
+    view.mkdir(Path::new("/lib"), false).await.unwrap();
+    view.write_file(Path::new("/lib/a.rs"), b"a\n")
+        .await
+        .unwrap();
+    let recorder = changes.recorder();
+    recorder.remove(Path::new("/lib"), true).await.unwrap();
+    recorder.mkdir(Path::new("/lib"), false).await.unwrap();
+    // Once the apply has deleted lib/a.rs: the human makes lib/h.rs, the
+    // sandbox reads it, and wipes lib again.
+    let human = disk.clone();
+    let sandbox = (view, recorder);
+    disk.after_remove(
+        "/p/lib/a.rs",
+        Box::new(move || {
+            Box::pin(async move {
+                let h = Path::new("/lib/h.rs");
+                human
+                    .inner
+                    .write(Path::new("/p/lib/h.rs"), b"h\n")
+                    .await
+                    .unwrap();
+                let (view, recorder) = sandbox;
+                view.write_file(h, b"h\n").await.unwrap();
+                recorder.remove(Path::new("/lib"), true).await.unwrap();
+                recorder.mkdir(Path::new("/lib"), false).await.unwrap();
+            })
+        }),
+    );
+
+    let report = changes.apply().await;
+    assert_eq!(
+        conflicts(&report.applied),
+        [("/lib/a.rs", false)],
+        "{report:?}"
+    );
+    assert_eq!(conflicts(&changes.list().await), [("/lib/h.rs", false)]);
+    changes.apply().await;
+    assert_eq!(on_disk(&disk, "/p/lib/h.rs").await, None);
+}

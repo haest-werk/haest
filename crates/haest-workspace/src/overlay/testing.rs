@@ -3,8 +3,10 @@
 
 use std::{
     collections::HashMap,
+    future::Future,
     io,
     path::{Path, PathBuf},
+    pin::Pin,
     sync::Mutex,
 };
 
@@ -24,7 +26,14 @@ pub(super) struct Disk {
     /// What the human does to each path after its next read: save this
     /// content, or (None) delete it.
     edits: Mutex<HashMap<PathBuf, Option<Vec<u8>>>>,
+    /// What runs once a path is removed whole (`remove_all`), while the
+    /// apply that removed it goes on.
+    after_remove: Mutex<HashMap<PathBuf, Hook>>,
 }
+
+/// Work a test runs in the middle of an apply: the human's, or the
+/// sandbox's.
+pub(super) type Hook = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send>;
 
 impl Disk {
     /// The next read of `path` returns what is there, then the human saves
@@ -38,6 +47,12 @@ impl Disk {
     /// deletes it.
     pub(super) fn delete_on_read(&self, path: impl Into<PathBuf>) {
         self.edits.lock().unwrap().insert(path.into(), None);
+    }
+
+    /// Once the next `remove_all` of `path` is done, `hook` runs, before
+    /// the apply goes on.
+    pub(super) fn after_remove(&self, path: impl Into<PathBuf>, hook: Hook) {
+        self.after_remove.lock().unwrap().insert(path.into(), hook);
     }
 }
 
@@ -80,7 +95,12 @@ impl Fs for Disk {
         self.inner.remove(p).await
     }
     async fn remove_all(&self, p: &Path) -> io::Result<()> {
-        self.inner.remove_all(p).await
+        let removed = self.inner.remove_all(p).await;
+        let hook = self.after_remove.lock().unwrap().remove(p);
+        if let Some(hook) = hook {
+            hook().await;
+        }
+        removed
     }
     async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
         self.inner.rename(a, b).await
