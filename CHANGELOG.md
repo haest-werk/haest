@@ -2343,7 +2343,9 @@ against it; the wire JSON is unchanged):
 - Feature `unix` (Unix only): `UnixSocket::new(dir)` serves
   `<dir>/<stream id>.sock` with a discovery file beside it
   (`SocketDiscovery`); the dir is 0700, the socket and the file 0600; a
-  crashed run's socket is replaced, a live one refused (`InUse`).
+  crashed run's socket is replaced, a live one refused (`InUse`). A stream
+  id that is not a plain file name (empty, or with a `/` or a NUL) is
+  refused (`StreamId`), and nothing is made.
   `running_sessions(dir)` lists the sessions that answer (`RunningSession`)
   and removes a crashed run's files; `connect_session(dir, id)` reaches one
   by id or unique prefix (`UnixPeer`). Both go only to the
@@ -2532,6 +2534,12 @@ against it; the wire JSON is unchanged):
   cancel-safety of its own; `LineSource::next_line` says so. The source
   itself is kept until the connection ends too, also after it returned
   None, while the requests still in flight are answered.
+- `UnixSocket::attach` refuses a stream id that is not a plain file name,
+  with the new `TransportError::StreamId`. The socket and the discovery
+  file are named after the id, which is the backend's (`Hub::new`,
+  `Meta::new`). An id with a `/` (a `..`, a dir, an absolute path) put both
+  outside the dir, renamed the discovery file over a `.json` file of that
+  name, and removed that file when the transport ended.
 - `Broker::attach` refuses a URL no dial can reach, with the new
   `TransportError::Undialable`, and no longer dials it. Such a URL (a
   space, a host outside ASCII, no host, a `\`) failed every dial before

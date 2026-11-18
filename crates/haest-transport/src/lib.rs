@@ -290,6 +290,12 @@ pub enum TransportError {
         "{0} cannot be dialed: it does not parse as a URL (a space, a host outside ASCII, a \\), or its port is past 65535"
     )]
     Undialable(String),
+    /// The backend's stream id is not a plain file name, so no control
+    /// socket can be named after it: it is empty, or holds a `/` (a path, a
+    /// `..`) or a NUL, which would put the socket and its discovery file
+    /// outside the dir. Nothing is made.
+    #[error("the stream id {0:?} is not a file name, so no control socket can be named after it")]
+    StreamId(String),
     /// The broker refused the token: it closed with 4401 or 4408, or
     /// refused the handshake with 401 or 403. The link is not dialed again.
     #[error("the broker refused the link ({code}): {reason}")]

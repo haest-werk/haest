@@ -66,7 +66,9 @@ pub struct Meta {
 
 impl Meta {
     /// The stream `sid`, run by process `pid`, started at `started_ms` (ms
-    /// since the Unix epoch).
+    /// since the Unix epoch). A transport that names files after the id
+    /// (haest-transport's Unix socket) refuses one that is not a plain file
+    /// name: keep `/` out of it.
     #[must_use]
     pub fn new(sid: impl Into<String>, pid: u32, started_ms: u64) -> Self {
         Self {

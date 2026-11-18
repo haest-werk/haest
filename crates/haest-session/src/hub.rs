@@ -96,7 +96,9 @@ pub(crate) struct AskInfo {
 
 impl Hub {
     /// A hub for the stream `sid` (one per running conversation), with
-    /// nothing published yet and the default [`HubOptions`].
+    /// nothing published yet and the default [`HubOptions`]. A transport
+    /// that names files after the id (haest-transport's Unix socket)
+    /// refuses one that is not a plain file name: keep `/` out of it.
     pub fn new(sid: impl Into<String>) -> Self {
         Self::new_with_options(sid, HubOptions::default())
     }
