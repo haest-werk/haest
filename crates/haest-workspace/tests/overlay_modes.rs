@@ -12,7 +12,7 @@ use common::{
     spelling::{apply_all, changes, paths, run},
     tempdir,
 };
-use haest_core::workspace::{ApplyFailureCode, ChangeKind, Workspace};
+use haest_core::workspace::{ChangeKind, Workspace};
 
 fn mode(path: &Path) -> u32 {
     fs::metadata(path).unwrap().permissions().mode() & 0o7777
@@ -362,7 +362,10 @@ async fn a_directory_mode_the_disk_refuses_fails_and_stays_listed() {
         .iter()
         .map(|f| (f.change.path.as_str(), f.code))
         .collect();
-    assert_eq!(failed, [("/out", ApplyFailureCode::WriteFailed)]);
+    assert_eq!(
+        failed,
+        [("/out", haest_core::workspace::ApplyFailureCode::WriteFailed)]
+    );
     assert_eq!(paths(&left), ["/out"]);
 }
 
