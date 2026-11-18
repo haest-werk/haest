@@ -9,7 +9,8 @@
 //!
 //! One `realpath` answers most lookups: on macOS it returns the disk's own
 //! spelling. Only when that differs (another spelling, or a symlink on the
-//! way) are the directories' listings read. On Linux, `realpath` keeps the
+//! way), or there is none for a name that is there (a symlink that dangles
+//! or loops), are the directories' listings read. On Linux, `realpath` keeps the
 //! spelling it is given, so a case-folding directory there (`chattr +F`)
 //! still reads a name the way the disk finds it.
 
@@ -81,10 +82,21 @@ impl Spelling {
         if !rel.components().all(|c| matches!(c, Component::Normal(_))) {
             return Some(Spelled::AsAsked);
         }
-        let found = match tokio::fs::canonicalize(dir.join(rel)).await {
+        let asked = dir.join(rel);
+        let found = match tokio::fs::canonicalize(&asked).await {
             Ok(found) => found,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return None,
-            Err(_) => return Some(Spelled::AsAsked),
+            Err(e) => {
+                // A last name that does not resolve (a symlink that dangles,
+                // or one of a loop) is still a name its directory lists, by
+                // this spelling or not.
+                let Ok(link) = tokio::fs::symlink_metadata(&asked).await else {
+                    return (e.kind() != io::ErrorKind::NotFound).then_some(Spelled::AsAsked);
+                };
+                if listed(dir, rel).await {
+                    return Some(Spelled::AsAsked);
+                }
+                return Some(Spelled::Other(link_at(real, &asked, &link).await));
+            }
         };
         if found == real.join(rel) || listed(dir, rel).await {
             return Some(Spelled::AsAsked);
@@ -92,6 +104,23 @@ impl Spelling {
         let inside = found.strip_prefix(real).ok();
         Some(Spelled::Other(inside.map(|r| Path::new("/").join(r))))
     }
+}
+
+/// Where the disk holds `asked`, a symlink that does not resolve, as a
+/// project path: its directory as `realpath` spells it, and its own name as
+/// that directory lists the same link. None when that cannot be told, or is
+/// outside the project `real`.
+async fn link_at(real: &Path, asked: &Path, link: &std::fs::Metadata) -> Option<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    let dir = tokio::fs::canonicalize(asked.parent()?).await.ok()?;
+    let mut entries = tokio::fs::read_dir(&dir).await.ok()?;
+    while let Some(e) = entries.next_entry().await.ok()? {
+        if e.ino() == link.ino() {
+            let inside = dir.strip_prefix(real).ok()?;
+            return Some(Path::new("/").join(inside).join(e.file_name()));
+        }
+    }
+    None
 }
 
 /// Whether each name in `rel` is one its directory lists, as written. A
@@ -149,6 +178,39 @@ mod tests {
         for asked in ["/LIB/caf\u{e9}", "/lib/cafe\u{301}"] {
             let want = if dir.join(&asked[1..]).exists() {
                 Spelled::Other(Some(PathBuf::from("/lib/caf\u{e9}")))
+            } else {
+                Spelled::AsAsked
+            };
+            assert_eq!(s.spelled(Path::new(asked)).await, want, "{asked}");
+        }
+    }
+
+    /// A symlink that dangles or loops has no `realpath`; it is found by its
+    /// directory's listing, and its place by the entry that is the same link.
+    #[tokio::test]
+    async fn a_link_that_does_not_resolve_is_found_only_as_the_disk_spells_it() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path();
+        std::fs::create_dir(dir.join("lib")).unwrap();
+        std::os::unix::fs::symlink("nowhere", dir.join("lib/d")).unwrap();
+        std::os::unix::fs::symlink("l2", dir.join("lib/l1")).unwrap();
+        std::os::unix::fs::symlink("l1", dir.join("lib/l2")).unwrap();
+        let s = Spelling::of(dir);
+        for asked in ["/lib/d", "/lib/l1", "/lib/l2"] {
+            assert_eq!(
+                s.spelled(Path::new(asked)).await,
+                Spelled::AsAsked,
+                "{asked}"
+            );
+        }
+        for (asked, disk) in [
+            ("/LIB/d", "/lib/d"),
+            ("/lib/D", "/lib/d"),
+            ("/lib/L1", "/lib/l1"),
+        ] {
+            let folds = std::fs::symlink_metadata(dir.join(&asked[1..])).is_ok();
+            let want = if folds {
+                Spelled::Other(Some(PathBuf::from(disk)))
             } else {
                 Spelled::AsAsked
             };

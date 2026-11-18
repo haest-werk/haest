@@ -10,10 +10,10 @@ use std::fs;
 
 use common::{
     opts, sandbox,
-    spelling::{apply_all, changes, contents, pairs, reads_as_one, run},
+    spelling::{apply_all, changes, contents, pairs, paths, reads_as_one, run},
     tempdir,
 };
-use haest_core::workspace::{ChangeKind, Workspace};
+use haest_core::workspace::{ApplyFailureCode, ChangeKind, Workspace};
 
 /// Where the disk reads `Lib` as `lib`, the sandbox showed the files of a
 /// `lib` it had renamed or deleted under `Lib/`, read through from the disk.
@@ -122,4 +122,44 @@ async fn the_sandbox_finds_a_path_only_as_the_disk_spells_it() {
         want.insert(0, ("README.md", "new\n"));
     }
     assert_eq!(contents(&dir), pairs(&want), "one name: {one}");
+}
+
+/// A symlink that does not resolve (dangling, or one of a loop) answers no
+/// `realpath`, so it read as asked under any spelling: after `mv lib Lib`
+/// the disk's `lib/d` stood in for `/Lib/d`, which was never listed, and
+/// apply's delete of `/lib` took it while the report said every change was
+/// applied. It is listed now, and refused like any link the sandbox made.
+/// (The last case reads as one name on any APFS.)
+#[tokio::test]
+async fn a_link_that_does_not_resolve_in_a_renamed_directory_is_listed() {
+    use std::os::unix::fs::symlink;
+    for (old, new, command) in [
+        ("lib", "Lib", "mv lib Lib"),
+        ("lib", "Lib", "mv lib tmp && mv tmp Lib"),
+        ("caf\u{e9}", "cafe\u{301}", "mv caf\u{e9} cafe\u{301}"),
+    ] {
+        let (_t, dir) = tempdir();
+        fs::create_dir(dir.join(old)).unwrap();
+        fs::write(dir.join(old).join("a.rs"), "a\n").unwrap();
+        symlink("nowhere", dir.join(old).join("d")).unwrap();
+        symlink("l2", dir.join(old).join("l1")).unwrap();
+        symlink("l1", dir.join(old).join("l2")).unwrap();
+        let ws = sandbox(&dir).await;
+        run(&ws, &dir, command).await;
+        let links = ["d", "l1", "l2"].map(|l| format!("/{new}/{l}"));
+        let mut want = vec![format!("/{new}"), format!("/{new}/a.rs"), format!("/{old}")];
+        want.extend(links.clone());
+        want.sort();
+        assert_eq!(paths(&changes(&ws).list().await), want, "{command}");
+        let report = changes(&ws).apply().await;
+        let mut failed: Vec<_> = report
+            .failed
+            .iter()
+            .map(|f| (f.change.path.clone(), f.code))
+            .collect();
+        failed.sort_by(|a, b| a.0.cmp(&b.0));
+        let refused = links.map(|l| (l, ApplyFailureCode::Symlink));
+        assert_eq!(failed, refused, "{command}: {report:?}");
+        assert!(report.skipped.is_empty(), "{command}: {report:?}");
+    }
 }
