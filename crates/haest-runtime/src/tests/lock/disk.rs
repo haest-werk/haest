@@ -1,8 +1,11 @@
 //! On the real disk: a second run of a session is refused while the first
-//! runs, and a /clear moves the hold to the new session.
+//! runs, also where the sessions dir was not the owner's to write, and a
+//! /clear moves the hold to the new session.
 
 use std::{
-    path::PathBuf,
+    fs::Permissions,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -107,4 +110,39 @@ async fn a_clear_holds_the_new_session_and_lets_the_old_one_go() {
     assert!(in_use(&on_new, &new), "{on_new:?}");
     let on_old = dir.resume_once_free(&old).await;
     assert!(on_old.is_ok(), "{on_old:?}");
+}
+
+/// A file or dir at a mode the test set, given `after` back as this drops,
+/// even when the test fails: a dir left 0500 could not be removed.
+struct Mode(PathBuf, u32);
+
+impl Mode {
+    fn set(path: &Path, mode: u32, after: u32) -> Self {
+        std::fs::set_permissions(path, Permissions::from_mode(mode)).unwrap();
+        Self(path.to_path_buf(), after)
+    }
+}
+
+impl Drop for Mode {
+    fn drop(&mut self) {
+        let _ = std::fs::set_permissions(&self.0, Permissions::from_mode(self.1));
+    }
+}
+
+/// A new session in a sessions dir its owner made read-only (0500) is held
+/// all the same, with no warning: the dir is made private (0700) before the
+/// lock file is made in it, as the session's file needs it anyway. A second
+/// run of the session is refused while the first runs.
+#[tokio::test]
+async fn a_new_session_in_a_read_only_sessions_dir_keeps_a_second_run_out() {
+    let dir = Scratch::new("new-in-read-only-dir");
+    let sessions = dir.0.join("data/sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let _taken = Mode::set(&sessions, 0o500, 0o700);
+
+    let first = dir.build(Resume::New).await.unwrap();
+    let id = first.session_id();
+    let second = dir.build(Resume::Id(id.clone())).await;
+    assert_eq!(first.ui().warnings().len(), 0, "held, no warning");
+    assert!(in_use(&second, &id), "{second:?}");
 }

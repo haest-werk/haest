@@ -44,6 +44,28 @@ async fn a_held_session_refuses_another_writer_until_the_holder_drops() {
     other.try_lock().await.unwrap();
 }
 
+/// Holding a new session makes its dir private (0700), even when the dir
+/// is there: the lock file is made in it, and the session's file needs
+/// that anyway (a dir that took no new file left the session unlocked). A
+/// saved session's dir is left as it is.
+#[tokio::test]
+async fn holding_a_new_session_makes_its_dir_private_and_a_saved_one_leaves_it_alone() {
+    let fs = Arc::new(ModeFs::default());
+    fs.create_dir_all(Path::new("/data/sessions"))
+        .await
+        .unwrap();
+    let s = store(&fs);
+    s.try_lock().await.unwrap();
+    let modes = fs.modes.lock().unwrap().clone();
+    assert_eq!(modes, [(PathBuf::from("/data/sessions"), 0o700)]);
+    s.create("c1", Path::new("/x"), 0).await.unwrap();
+    drop(s);
+
+    fs.modes.lock().unwrap().clear();
+    store(&fs).try_lock().await.unwrap();
+    assert_eq!(*fs.modes.lock().unwrap(), []);
+}
+
 /// A file system with no locks holds nothing, refuses nothing, and gets no
 /// lock file.
 #[tokio::test]

@@ -203,9 +203,14 @@ impl JsonlSessionFile {
     /// What it holds is [`Fs::try_lock`] on `<id>.lock` beside the session
     /// file, which nothing reads or writes: where locks are mandatory (SMB),
     /// a lock on the session file itself would refuse the writer its own
-    /// reads and writes. The lock file is made when missing (the sessions
-    /// dir too, 0700) and stays when the session ends: one removed while
-    /// another writer opens it would leave the session two lock files.
+    /// reads and writes. The lock file is made when missing and stays when
+    /// the session ends: one removed while another writer opens it would
+    /// leave the session two lock files. For a new session (no file yet),
+    /// the sessions dir is first made private (0700, and made when missing),
+    /// as [`create`](Self::create) leaves it, so the lock file can be made
+    /// there; a saved session's dir is left as it is. Where the dir cannot
+    /// be made private, the lock is tried all the same: `create` needs the
+    /// dir too, and fails with the dir's own error.
     ///
     /// Take it before the first record of a session another writer may open:
     /// before [`create`](Self::create) for a new one, so a session in use
@@ -216,13 +221,13 @@ impl JsonlSessionFile {
     /// # Errors
     ///
     /// `WouldBlock` when another writer holds the session, and the file
-    /// system's other errors, from making the sessions dir or the lock.
+    /// system's other errors from taking the lock.
     pub async fn try_lock(&self) -> io::Result<()> {
         let mut held = self.held.lock().await;
         if held.is_none() {
-            let dir = dir_of(&self.path);
-            if !self.fs.exists(dir).await {
-                private_dir(&*self.fs, dir).await?;
+            if !self.fs.exists(&self.path).await {
+                // `create` makes the dir private too, and says why it cannot.
+                let _ = private_dir(&*self.fs, dir_of(&self.path)).await;
             }
             *held = self.fs.try_lock(&self.path.with_extension("lock")).await?;
         }
