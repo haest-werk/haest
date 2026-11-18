@@ -15,6 +15,7 @@
 
 use std::{
     ffi::OsStr,
+    io,
     path::{Component, Path, PathBuf},
 };
 
@@ -51,22 +52,45 @@ impl Spelling {
     /// disk cannot resolve (not there, unreadable) reads as asked: the call
     /// that follows answers for it.
     pub(crate) async fn spelled(&self, path: &Path) -> Spelled {
+        self.find(path).await.unwrap_or(Spelled::AsAsked)
+    }
+
+    /// How the disk spells the way to `path`, a project path that is not
+    /// there: the nearest directory above it that is. A write to `path`
+    /// lands in that directory, so where the disk holds it under another
+    /// spelling (`lib` for `/Lib/new.rs`), the write lands there too.
+    pub(crate) async fn spelled_way(&self, path: &Path) -> Spelled {
+        let mut at = path.parent();
+        while let Some(dir) = at.filter(|d| d.parent().is_some()) {
+            if let Some(spelled) = self.find(dir).await {
+                return spelled;
+            }
+            at = dir.parent();
+        }
+        Spelled::AsAsked
+    }
+
+    /// How the disk spells `path`; None when nothing is there by any
+    /// spelling.
+    async fn find(&self, path: &Path) -> Option<Spelled> {
         let Some((dir, real)) = &self.root else {
-            return Spelled::AsAsked;
+            return Some(Spelled::AsAsked);
         };
         let rel = path.strip_prefix("/").unwrap_or(path);
         // Overlay paths come normalized; anything else is the call's to answer.
         if !rel.components().all(|c| matches!(c, Component::Normal(_))) {
-            return Spelled::AsAsked;
+            return Some(Spelled::AsAsked);
         }
-        let Ok(found) = tokio::fs::canonicalize(dir.join(rel)).await else {
-            return Spelled::AsAsked;
+        let found = match tokio::fs::canonicalize(dir.join(rel)).await {
+            Ok(found) => found,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return None,
+            Err(_) => return Some(Spelled::AsAsked),
         };
         if found == real.join(rel) || listed(dir, rel).await {
-            return Spelled::AsAsked;
+            return Some(Spelled::AsAsked);
         }
         let inside = found.strip_prefix(real).ok();
-        Spelled::Other(inside.map(|r| Path::new("/").join(r)))
+        Some(Spelled::Other(inside.map(|r| Path::new("/").join(r))))
     }
 }
 
@@ -129,6 +153,28 @@ mod tests {
                 Spelled::AsAsked
             };
             assert_eq!(s.spelled(Path::new(asked)).await, want, "{asked}");
+        }
+    }
+
+    /// A path that is not there lands in the nearest directory above it that
+    /// is, as the disk spells that one.
+    #[tokio::test]
+    async fn the_way_to_a_missing_path_is_its_nearest_directory_there() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = t.path();
+        std::fs::create_dir(dir.join("lib")).unwrap();
+        let s = Spelling::of(dir);
+        for asked in ["/lib/new.rs", "/lib/new/deeper/x.rs", "/nope/x.rs", "/x.rs"] {
+            let got = s.spelled_way(Path::new(asked)).await;
+            assert_eq!(got, Spelled::AsAsked, "{asked}");
+        }
+        let want = if dir.join("LIB").exists() {
+            Spelled::Other(Some(PathBuf::from("/lib")))
+        } else {
+            Spelled::AsAsked
+        };
+        for asked in ["/LIB/new.rs", "/LIB/new/deeper/x.rs"] {
+            assert_eq!(s.spelled_way(Path::new(asked)).await, want, "{asked}");
         }
     }
 

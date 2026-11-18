@@ -15,7 +15,8 @@
 //! one name, a rename by case (`/readme.md` deleted, `/README.md` added)
 //! finds its new name free. Each change's real path is read again right
 //! before it is put on the disk; one that moved since the scan, or whose name
-//! the disk now holds under another spelling, is skipped as a conflict.
+//! or directory the disk now holds under another spelling, is skipped as a
+//! conflict.
 
 use std::{
     io,
@@ -36,8 +37,8 @@ type Refusal = (ApplyFailureCode, String);
 enum Put {
     /// On the real disk now.
     Applied,
-    /// Its real path moved since the scan, or the disk holds its name under
-    /// another spelling: not written, a conflict.
+    /// Its real path moved since the scan, or the disk holds its name or a
+    /// directory on its way under another spelling: not written, a conflict.
     Moved,
 }
 
@@ -144,15 +145,14 @@ impl OverlayChanges {
         }
         // Read again right before the write: the human may have changed it
         // since the scan, and on a disk that reads two spellings as one name,
-        // the disk may hold it under another spelling now (an earlier write
-        // of this apply, a delete that was skipped), where the write or
-        // delete would land. A path that already holds the sandbox's version
-        // (a file its directory's delete took along, a directory another
-        // spelling made) loses nothing, and is put as usual.
+        // the disk may hold it, or a directory on its way, under another
+        // spelling now (an earlier write of this apply, a delete that failed
+        // or was skipped), where the write or delete would land. A path that
+        // already holds the sandbox's version (a file its directory's delete
+        // took along) loses nothing, and is put as usual.
         let again = self.book.on_disk(path).await;
         let moved = again.state != s.now && again.state != s.mine;
-        let elsewhere = again.held.is_some_and(|h| h.state != s.mine);
-        if moved || elsewhere {
+        if moved || again.held.is_some() {
             return Ok(Put::Moved);
         }
         self.write(deleted, path)

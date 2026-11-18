@@ -3,6 +3,10 @@
 //! `readme.md` and `README.md` apart; under it the disk holds one file for
 //! both. Every test holds on a disk that tells them apart too, and says what
 //! each kind of disk ends up holding.
+//!
+//! What the sandbox shows of the project is what the disk holds once every
+//! change is applied: a change that cannot land as the sandbox spells it is
+//! a conflict, and stays listed until it can.
 
 mod common;
 
@@ -186,12 +190,15 @@ async fn two_spellings_the_sandbox_wrote_never_overwrite_each_other() {
 }
 
 /// The same with two spellings of a directory. Where the disk reads them as
-/// one, their files go into the one directory, which was written first and
-/// does not make them look moved; only the file both spell alike is skipped
-/// as a conflict. Where the disk tells them apart, both directories are
-/// applied whole.
+/// one, it holds one directory: the spelling written first is applied whole,
+/// and the other, with everything in it, would land in that one, so it is
+/// skipped as a conflict. Its files went into the first directory and were
+/// reported applied, so nothing listed them any more: removing the first
+/// spelling in the sandbox later deleted them on apply, while the sandbox
+/// still showed them under the second. Where the disk tells the spellings
+/// apart, both directories are applied whole.
 #[tokio::test]
-async fn two_spellings_of_a_directory_share_it_and_only_a_file_in_both_conflicts() {
+async fn two_spellings_of_a_directory_apply_one_and_the_other_conflicts() {
     let (_t, dir) = tempdir();
     let one = folds_case(&dir);
     let ws = sandbox(&dir).await;
@@ -207,16 +214,13 @@ async fn two_spellings_of_a_directory_share_it_and_only_a_file_in_both_conflicts
     let left = changes(&ws).list().await;
     assert!(left.iter().chain(&report.skipped).all(|c| c.conflict));
     if one {
-        let applied = ["/Lib", "/Lib/a.rs", "/Lib/same.rs", "/lib", "/lib/b.rs"];
+        let applied = ["/Lib", "/Lib/a.rs", "/Lib/same.rs"];
         assert_eq!(paths(&report.applied), applied, "{report:?}");
-        assert_eq!(paths(&report.skipped), ["/lib/same.rs"], "{report:?}");
-        let want = [
-            ("Lib/a.rs", "a\n"),
-            ("Lib/b.rs", "b\n"),
-            ("Lib/same.rs", "upper\n"),
-        ];
+        let skipped = ["/lib", "/lib/b.rs", "/lib/same.rs"];
+        assert_eq!(paths(&report.skipped), skipped, "{report:?}");
+        let want = [("Lib/a.rs", "a\n"), ("Lib/same.rs", "upper\n")];
         assert_eq!(contents(&dir), pairs(&want));
-        assert_eq!(paths(&left), ["/lib/same.rs"], "{report:?}");
+        assert_eq!(paths(&left), skipped, "{report:?}");
     } else {
         assert_eq!(report.applied.len(), 6, "{report:?}");
         assert!(report.skipped.is_empty(), "{report:?}");
@@ -229,4 +233,115 @@ async fn two_spellings_of_a_directory_share_it_and_only_a_file_in_both_conflicts
         assert_eq!(contents(&dir), pairs(&want));
         assert!(left.is_empty(), "{left:?}");
     }
+    // The model tidies the first spelling away: the disk ends as the
+    // sandbox shows it, on either disk.
+    run(&ws, &dir, "rm -r Lib").await;
+    apply_all(&ws).await;
+    let want = [("lib/b.rs", "b\n"), ("lib/same.rs", "lower\n")];
+    assert_eq!(contents(&dir), pairs(&want), "one name: {one}");
+}
+
+/// A name the sandbox writes under another spelling of a file or a
+/// directory the disk holds, the content alike or not. The write landed on
+/// the disk's spelling, was reported applied and left the change list, and
+/// the sandbox kept showing the two apart. Removing the old spelling in a
+/// later round deleted both on apply: the disk ended without the file the
+/// sandbox still showed. (The last case reads as one name on any APFS.)
+#[tokio::test]
+async fn a_write_under_another_spelling_of_what_the_disk_holds_is_never_forgotten() {
+    /// The disk's one file (`x\n`), the sandbox's two rounds, and the one
+    /// file the disk holds after both.
+    struct Case {
+        file: &'static str,
+        first: &'static str,
+        second: &'static str,
+        want: (&'static str, &'static str),
+    }
+    let cases = [
+        Case {
+            file: "lib/a.rs",
+            first: "mkdir Lib && echo n > Lib/new.rs",
+            second: "rm -r lib",
+            want: ("Lib/new.rs", "n\n"),
+        },
+        Case {
+            file: "lib/a.rs",
+            first: "mkdir -p Lib/sub && echo n > Lib/sub/new.rs",
+            second: "rm -r lib",
+            want: ("Lib/sub/new.rs", "n\n"),
+        },
+        Case {
+            file: "lib/a.rs",
+            first: "cp -r lib Lib",
+            second: "rm -r lib",
+            want: ("Lib/a.rs", "x\n"),
+        },
+        Case {
+            file: "readme.md",
+            first: "cp readme.md README.md",
+            second: "rm readme.md",
+            want: ("README.md", "x\n"),
+        },
+        Case {
+            file: "caf\u{e9}/a.rs",
+            first: "mkdir cafe\u{301} && echo n > cafe\u{301}/new.rs",
+            second: "rm -r caf\u{e9}",
+            want: ("cafe\u{301}/new.rs", "n\n"),
+        },
+    ];
+    for Case {
+        file,
+        first,
+        second,
+        want,
+    } in cases
+    {
+        let (_t, dir) = tempdir();
+        fs::create_dir_all(dir.join(file).parent().unwrap()).unwrap();
+        fs::write(dir.join(file), "x\n").unwrap();
+        let one = folds_case(&dir);
+        let ws = sandbox(&dir).await;
+        run(&ws, &dir, first).await;
+        let report = changes(&ws).apply().await;
+        // What is not applied is a conflict, and stays listed.
+        assert!(report.failed.is_empty(), "{first}: {report:?}");
+        let left = changes(&ws).list().await;
+        assert_eq!(paths(&left), paths(&report.skipped), "{first}");
+        assert!(left.iter().all(|c| c.conflict), "{first}: {left:?}");
+        run(&ws, &dir, second).await;
+        apply_all(&ws).await;
+        let case = format!("{first}, then {second}; one name: {one}; first apply {report:?}");
+        assert_eq!(contents(&dir), pairs(&[want]), "{case}");
+    }
+}
+
+/// A rename by case whose delete fails partway (a read-only directory inside
+/// the old name). The new name's writes landed in the old directory, where
+/// the disk reads both names as one, and were reported applied; only the
+/// delete stayed listed, and applying again once the human made the
+/// directory writable deleted every file. (As root nothing is read-only, and
+/// the rename applies at once.)
+#[tokio::test]
+async fn a_rename_by_case_whose_delete_fails_writes_nothing_into_the_old_name() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_t, dir) = tempdir();
+    fs::create_dir_all(dir.join("lib/ro")).unwrap();
+    fs::write(dir.join("lib/a.rs"), "a\n").unwrap();
+    fs::write(dir.join("lib/ro/x.txt"), "x\n").unwrap();
+    let mode = |m| fs::set_permissions(dir.join("lib/ro"), fs::Permissions::from_mode(m));
+    mode(0o555).unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "mv lib Lib").await;
+    let first = changes(&ws).apply().await;
+    // The delete took what it could: `lib/ro` is still there unless it went.
+    let _ = mode(0o755);
+    let second = changes(&ws).apply().await;
+    let want = [("Lib/a.rs", "a\n"), ("Lib/ro/x.txt", "x\n")];
+    assert_eq!(
+        contents(&dir),
+        pairs(&want),
+        "first {first:?}, second {second:?}"
+    );
+    let left = changes(&ws).list().await;
+    assert!(left.is_empty(), "left {left:?}");
 }

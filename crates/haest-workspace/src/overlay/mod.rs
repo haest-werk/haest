@@ -55,7 +55,8 @@ struct Found {
     path: PathBuf,
     original: Original,
     now: Original,
-    /// What the disk holds under another spelling of the path's name.
+    /// Where the disk holds the path's name, or a directory on its way,
+    /// under another spelling.
     held: Option<Held>,
     mine: Original,
 }
@@ -78,13 +79,14 @@ impl Found {
             _ => ChangeKind::Modified,
         };
         // Applied, it would land on what the disk holds under another
-        // spelling: unless that already holds the sandbox's version, or a
-        // delete frees its name first (a rename by case).
+        // spelling, itself or a directory on its way, unless a delete frees
+        // that name first (a rename by case). Even where that holds the
+        // sandbox's version already: once applied, the change leaves the
+        // list while the sandbox still shows the two names apart, and a
+        // delete of the other name would take it along.
         let lands_on_another = self.held.is_some_and(|h| {
-            h.state != self.mine
-                && !h
-                    .at
-                    .is_some_and(|at| freed.iter().any(|d| at.starts_with(d)))
+            !h.at
+                .is_some_and(|at| freed.iter().any(|d| at.starts_with(d)))
         });
         Some(Scanned {
             change: Change::new(self.path.to_string_lossy(), kind)
@@ -133,7 +135,7 @@ struct Scanned {
 /// - [`list`](ChangeSet::list): every touched path whose overlay version
 ///   differs from the real disk, by its path inside the project (`/src/a.ts`),
 ///   a directory before its files. A path whose real file changed since the
-///   first touch (the human edited it), or that would land on a file the
+///   first touch (the human edited it), or that would land on a name the
 ///   disk holds under another spelling (below), is a
 ///   [`conflict`](haest_core::workspace::Change::conflict).
 /// - [`diff`](ChangeSet::diff): a unified diff of one change.
@@ -148,17 +150,19 @@ struct Scanned {
 /// while the disk holds `readme.md`. So `mv readme.md README.md` lists
 /// `/readme.md` deleted and `/README.md` added, and `mv lib Lib` lists the
 /// same for the directory and each file in it. A change onto a name the disk
-/// holds under another spelling would land on that file: it is a conflict,
-/// unless that file already holds the sandbox's version, or a delete in the
-/// list frees the name first (the rename).
+/// holds under another spelling, or into a directory it holds so
+/// (`Lib/new.rs` beside the disk's `lib`), would land there: it is a
+/// conflict, whatever that holds, unless a delete in the list frees the name
+/// first (the rename). So the disk holds what the sandbox shows once the
+/// list is applied.
 ///
 /// `apply` deletes first, then writes, each in path order, so a rename by
 /// case finds its new name free. Each change's real path is read again right
 /// before it is put on the disk. One that moved since the scan (the human
-/// saved or deleted it), or whose name the disk now holds under another
-/// spelling (an earlier write of this apply: the sandbox wrote both
-/// `README.md` and `readme.md`), is skipped as a conflict and stays listed,
-/// unless it already holds the sandbox's version.
+/// saved or deleted it), or whose name or directory the disk now holds under
+/// another spelling (an earlier write of this apply: the sandbox wrote both
+/// `README.md` and `readme.md`; or the rename's delete failed), is skipped
+/// as a conflict and stays listed.
 ///
 /// `apply` never writes through a symlink: not one on the real disk on the
 /// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),

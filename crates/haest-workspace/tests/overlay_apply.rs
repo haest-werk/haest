@@ -109,13 +109,16 @@ async fn apply_never_writes_or_deletes_through_a_symlink_in_the_project() {
     );
 }
 
-/// The link is asked for by the path the change spells: on a disk that
-/// matches names without case or normalization (macOS's default), `Vendor`
-/// and `cafe\u{301}` are the links `vendor` and `caf\u{e9}`. A lookup in the
-/// parent's listing missed both, and apply wrote through them. On a disk that
-/// tells the spellings apart they are new directories in the project.
+/// On a disk that matches names without case or normalization (macOS's
+/// default), `Vendor` and `cafe\u{301}` are the links `vendor` and
+/// `caf\u{e9}`. A lookup in the parent's listing missed both, and apply
+/// wrote through them. A write into a name the disk holds under another
+/// spelling is a conflict, so it is skipped before any link is asked about
+/// (the link lookup by the change's own spelling is `Links`' unit test). On
+/// a disk that tells the spellings apart they are new directories in the
+/// project.
 #[tokio::test]
-async fn a_link_spelled_another_way_is_still_a_link_on_the_way() {
+async fn a_link_spelled_another_way_is_never_written_through() {
     use std::os::unix::fs::symlink;
     let (_t, dir) = tempdir();
     let (_o, outside) = tempdir();
@@ -137,13 +140,10 @@ async fn a_link_spelled_another_way_is_still_a_link_on_the_way() {
     let escaped = names(&outside);
     assert!(escaped.is_empty(), "outside holds {escaped:?}: {report:?}");
     for (path, through_a_link) in spelled {
-        let refused = report
-            .failed
-            .iter()
-            .any(|f| f.change.path == path && f.code == ApplyFailureCode::OutsideProject);
+        let skipped = report.skipped.iter().any(|c| c.path == path && c.conflict);
         let applied = report.applied.iter().any(|c| c.path == path);
         assert!(
-            if through_a_link { refused } else { applied },
+            if through_a_link { skipped } else { applied },
             "{path}, a link on this disk: {through_a_link}: {report:?}"
         );
     }

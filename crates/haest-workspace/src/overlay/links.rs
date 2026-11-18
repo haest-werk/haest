@@ -128,6 +128,27 @@ mod tests {
         assert_eq!(times.count(), 1, "{asked:?}");
     }
 
+    /// The link is asked for by the path the change spells: on a disk that
+    /// matches names without case or normalization (macOS's default),
+    /// `Vendor` and `cafe\u{301}` are the links `vendor` and `caf\u{e9}`,
+    /// which a lookup in the parent's listing missed.
+    #[tokio::test]
+    async fn a_link_spelled_another_way_is_still_a_link_on_the_way() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = std::fs::canonicalize(t.path()).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.join("vendor")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.join("caf\u{e9}")).unwrap();
+        let mut links = Links::new(&crate::RealFs, &dir);
+        for name in ["Vendor", "cafe\u{301}", "vendor"] {
+            // Whether this disk reads the name as the link.
+            let link =
+                std::fs::symlink_metadata(dir.join(name)).is_ok_and(|m| m.file_type().is_symlink());
+            let path = Path::new("/").join(name).join("a");
+            assert_eq!(links.through_a_link(&path).await, link, "{name}");
+        }
+    }
+
     #[tokio::test]
     async fn a_plain_path_is_not_through_a_link_present_or_not() {
         let fs = MemFs::from_files([("/p/src/a.rs", "x")]);

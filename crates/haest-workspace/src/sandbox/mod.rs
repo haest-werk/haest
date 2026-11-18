@@ -74,8 +74,9 @@ fn own_commands() -> Vec<ShellCommandRef> {
 /// `readme.md`, where real bash would find it, and `echo x > README.md`
 /// makes a second file beside it. The model reads the disk's spelling from
 /// `ls`. So the sandbox shows what applying writes: `mv lib Lib` is a rename,
-/// in the sandbox and on the disk, and a write that would land on a file the
-/// disk holds under another spelling is a conflict
+/// in the sandbox and on the disk, and a write that would land on a name the
+/// disk holds under another spelling, a file or a directory on its way, is a
+/// conflict until a delete frees that name
 /// ([`OverlayChanges`](crate::OverlayChanges)). A case-folding directory on
 /// Linux (`chattr +F`) is not told apart: there, names read as the disk finds
 /// them.

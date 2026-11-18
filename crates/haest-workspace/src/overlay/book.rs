@@ -1,6 +1,9 @@
 //! The first-touch ledger, and the real disk read as the sandbox spells a
 //! path: where the disk holds a name only under another spelling (`lib` for
-//! `/Lib`), the path is absent, and what the disk holds there is kept apart.
+//! `/Lib`), the path is absent, and where a write to it would land instead
+//! is kept apart. A path that is not there lands in the nearest directory
+//! above it that is (`/Lib/new.rs` in `lib`), so that directory's spelling
+//! counts too.
 
 use std::{
     collections::BTreeMap,
@@ -26,16 +29,37 @@ pub(super) struct OnDisk {
     /// What is there: absent where the disk holds the name only under
     /// another spelling.
     pub(super) state: Original,
-    /// Where it does: what the disk holds under that other spelling.
+    /// Where it does, or holds a directory on its way so: a write to the
+    /// path lands there, not where the sandbox shows it.
     pub(super) held: Option<Held>,
 }
 
-/// What the disk holds under another spelling of a path's name.
+/// Where the disk holds a path's name, or a directory on its way, under
+/// another spelling.
 pub(super) struct Held {
-    pub(super) state: Original,
-    /// The disk's spelling, as a project path (`/lib/a.rs`); None when it
-    /// resolves outside the project.
+    /// The disk's own spelling of the first name on the way it spells
+    /// differently, as a project path (`/lib` for `/Lib/a.rs`): a delete of
+    /// it frees the way. None when the path resolves outside the project.
     pub(super) at: Option<PathBuf>,
+}
+
+impl Held {
+    /// `asked` (an overlay path) is held at `found`, the disk's own spelling
+    /// of it or of a directory above it.
+    fn new(asked: &Path, found: Option<PathBuf>) -> Self {
+        let at = found.map(|found| {
+            let mut asked = asked.iter();
+            let mut at = PathBuf::new();
+            for name in &found {
+                at.push(name);
+                if asked.next() != Some(name) {
+                    break;
+                }
+            }
+            at
+        });
+        Self { at }
+    }
 }
 
 impl Book {
@@ -67,7 +91,7 @@ impl Book {
         if self.touched().contains_key(&path) {
             return;
         }
-        let original = self.on_disk(&path).await.state;
+        let original = self.state(&path).await;
         self.touched().entry(path).or_insert(original);
     }
 
@@ -75,23 +99,36 @@ impl Book {
         self.touched().clone()
     }
 
-    /// `path` (an overlay path) on the real disk, as the sandbox spells it.
-    pub(super) async fn on_disk(&self, path: &Path) -> OnDisk {
+    /// What the sandbox reads at `path` (an overlay path) on the real disk:
+    /// absent where the disk holds it only under another spelling.
+    async fn state(&self, path: &Path) -> Original {
         let found = state_of(self.disk.as_ref(), &self.real(path)).await;
         if found == Original::Absent {
-            return OnDisk {
-                state: found,
-                held: None,
-            };
+            return found;
         }
         match self.spelling.spelled(path).await {
+            Spelled::AsAsked => found,
+            Spelled::Other(_) => Original::Absent,
+        }
+    }
+
+    /// `path` (an overlay path) on the real disk, as the sandbox spells it,
+    /// and where a write to it would land instead.
+    pub(super) async fn on_disk(&self, path: &Path) -> OnDisk {
+        let found = state_of(self.disk.as_ref(), &self.real(path)).await;
+        let spelled = if found == Original::Absent {
+            self.spelling.spelled_way(path).await
+        } else {
+            self.spelling.spelled(path).await
+        };
+        match spelled {
             Spelled::AsAsked => OnDisk {
                 state: found,
                 held: None,
             },
             Spelled::Other(at) => OnDisk {
                 state: Original::Absent,
-                held: Some(Held { state: found, at }),
+                held: Some(Held::new(path, at)),
             },
         }
     }
