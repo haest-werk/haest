@@ -78,6 +78,18 @@ impl OverlayChanges {
         // Read as the sandbox spells each path, a delete takes only its own
         // name and what is under it, never a write's: one scan serves both.
         let scanned = self.scan().await;
+        // Each change stays in the ledger until it is on the disk. What is
+        // under a directory the sandbox made is found by walking it, so once
+        // that directory is on the disk, a path under it not written yet
+        // (skipped, failed, or not reached by an apply dropped partway, as
+        // Ctrl+C at the haest command's `/apply` does) would be listed
+        // nowhere.
+        {
+            let mut touched = self.book.touched();
+            for s in &scanned {
+                touched.entry(s.path.clone()).or_insert(s.original);
+            }
+        }
         let mut run = Run {
             links: Links::new(self.book.disk.as_ref(), &self.book.root),
             listed: scanned
@@ -143,9 +155,7 @@ impl OverlayChanges {
                 Err(refusal) => Some(refusal),
             }
         };
-        // A file found inside a created directory: remember it, so it is
-        // still listed once its directory is applied.
-        self.book.touched().entry(s.path).or_insert(s.original);
+        // Still in the ledger (`apply_all`), so still listed.
         match refused {
             Some((code, reason)) => run
                 .report

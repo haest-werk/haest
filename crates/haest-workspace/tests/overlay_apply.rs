@@ -1,14 +1,15 @@
 //! What applying may not do to the real disk, whatever the sandbox wrote:
 //! reach through a symlink in the project, out of it or anywhere else, or
-//! take a file the human saved along with a directory it removes.
+//! take a file the human saved along with a directory it removes. And what
+//! an apply dropped partway may not do: forget a change it did not write.
 
 mod common;
 
 use std::{fs, path::Path};
 
 use common::{
-    opts, sandbox,
-    spelling::{changes, contents, paths},
+    drop_apply_partway, opts, sandbox,
+    spelling::{apply_all, changes, contents, paths},
     tempdir,
 };
 use haest_core::workspace::{ApplyFailureCode, Workspace};
@@ -251,4 +252,41 @@ async fn a_change_that_cannot_be_applied_is_reported_and_the_others_still_are() 
     // Still listed: nothing was lost.
     let left: Vec<_> = set.list().await.into_iter().map(|c| c.path).collect();
     assert_eq!(left, ["/l", "/locked/new.txt"]);
+}
+
+/// The haest command drops `/apply` 2 s after Ctrl+C. After `mv src gen`,
+/// what is under `gen` was found by walking it, so once `gen` was on the
+/// disk, a drop left each file not yet written listed nowhere, with `src`
+/// already deleted: the files were in the sandbox alone, and gone when the
+/// session ended.
+#[tokio::test]
+async fn an_apply_dropped_partway_forgets_nothing() {
+    let (_t, dir) = tempdir();
+    fs::create_dir_all(dir.join("src/sub")).unwrap();
+    fs::write(dir.join("src/sub/g"), "g\n").unwrap();
+    let mut want = vec![("gen/sub/g".to_owned(), "g\n".to_owned())];
+    for i in 0..20 {
+        fs::write(dir.join(format!("src/f{i:02}")), format!("{i}\n")).unwrap();
+        want.push((format!("gen/f{i:02}"), format!("{i}\n")));
+    }
+    want.sort();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "mv src gen").await;
+    let shown = ws.shell("find gen -type f", opts(&dir)).await.stdout;
+    assert_eq!(shown.lines().count(), want.len(), "{shown}");
+    let gen_dir = dir.join("gen");
+    drop_apply_partway(&changes(&ws), || {
+        fs::read_dir(&gen_dir).is_ok_and(|mut d| d.next().is_some())
+    })
+    .await;
+    // Each file the sandbox shows is on the disk or still listed.
+    let listed = paths(&changes(&ws).list().await);
+    let lost: Vec<&str> = shown
+        .lines()
+        .filter(|f| !dir.join(f).exists() && !listed.contains(&format!("/{f}")))
+        .collect();
+    assert!(lost.is_empty(), "lost {lost:?}, listed {listed:?}");
+    apply_all(&ws).await;
+    assert!(!dir.join("src").exists());
+    assert_eq!(contents(&dir), want);
 }

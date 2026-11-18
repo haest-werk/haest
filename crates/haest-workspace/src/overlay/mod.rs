@@ -91,7 +91,9 @@ use state::{Original, state_of, walk};
 /// - [`diff`](ChangeSet::diff): a unified diff of one change.
 /// - [`apply`](ChangeSet::apply): writes (or deletes) every change that is not
 ///   a conflict, and reports each as applied, skipped or failed. An applied
-///   change is no longer listed; a skipped or failed one stays.
+///   change is no longer listed; a skipped or failed one stays, and so does
+///   one an apply dropped partway (a host's timeout, Ctrl+C) had not put on
+///   the disk yet.
 ///
 /// On a disk that reads two spellings as one name (macOS's default:
 /// `readme.md` and `README.md`; any APFS: `caf\u{e9}` and `cafe\u{301}`), a
