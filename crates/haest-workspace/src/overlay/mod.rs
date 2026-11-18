@@ -7,15 +7,22 @@
 //!
 //! Applying compares three things per path: the real file at first touch, the
 //! real file now, and the overlay's version. If the real file moved in between
-//! (the human edited it), the path is a CONFLICT and is skipped -- named, never
-//! overwritten; it is read once more right before its write, so a move during
-//! the apply counts too. Everything else is written (or deleted) on the real disk,
-//! deletes first, unless `apply.rs` refuses it: a symlink on the real disk on
-//! its way, or a symlink the sandbox made. A refused change is reported as
-//! failed with its code, and stays listed.
+//! (the human edited it, or changed its mode), the path is a CONFLICT and is
+//! skipped -- named, never overwritten; it is read once more right before its
+//! write, so a move during the apply counts too. Everything else is written (or
+//! deleted) on the real disk, deletes first, unless `apply.rs` refuses it: a
+//! symlink on the real disk on its way, a symlink the sandbox made, or a
+//! directory a rename by case must delete that could not go whole
+//! (`removable.rs`). A refused change
+//! is reported as failed with its code, and stays listed. Once a change is on
+//! the disk, the sandbox reads the disk there again (`through.rs`).
 //!
 //! The real disk is read as the sandbox spells each path (`book.rs`): on a
-//! disk that reads `Lib` as `lib`, `/Lib` is absent while `lib` is there.
+//! disk that reads `Lib` as `lib`, `/Lib` is absent while `lib` is there. A
+//! write that would land on a name the disk holds under another spelling is a
+//! conflict too, unless the same apply deletes that name; and what would take
+//! something away under the disk's spelling then waits with it, a conflict as
+//! well, so the disk keeps what the sandbox could not write (`scan.rs`).
 //!
 //! Paths here are the overlay's own (`/src/a.ts`); `root` maps them to the disk.
 //! A symlink is compared as a link (`state.rs`), never as what it points to.

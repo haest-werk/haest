@@ -168,9 +168,12 @@ pub struct Change {
     pub path: String,
     /// Added, modified or deleted.
     pub kind: ChangeKind,
-    /// Applying would overwrite what the sandbox never saw, so apply skips
-    /// it: the real file changed since the sandbox first touched it (the
-    /// human's edit), or the disk holds the name under another spelling.
+    /// Apply skips it and keeps it listed, because applying would go over
+    /// what the sandbox never saw: the real file (or its mode) changed since
+    /// the sandbox first touched it (the human's edit), or the disk holds
+    /// the name under another spelling. A change that would take away what
+    /// such a write leaves on the disk under that spelling waits with it, a
+    /// conflict too.
     pub conflict: bool,
 }
 
@@ -184,7 +187,7 @@ impl Change {
         }
     }
 
-    /// Whether the real file changed since the sandbox first touched it.
+    /// Whether apply must skip it ([`conflict`](Self::conflict)).
     #[must_use]
     pub fn with_conflict(mut self, conflict: bool) -> Self {
         self.conflict = conflict;
