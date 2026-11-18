@@ -165,12 +165,20 @@ async fn past_the_concurrency_cap_a_spawn_is_refused_with_the_cap_named() {
 /// their own task, so the older set could arrive last: the host's roster
 /// then kept a subagent that had ended. The last set the host hears is the
 /// hub's.
+///
+/// The test ends each subagent itself, so the ends overlap the same way every
+/// run. Left to end at once, the host may never hear the set with both, or
+/// the one with one left: each start and end reads the table as it reports,
+/// by when the other may have started or left too, and the sets put while a
+/// call runs are folded into the newest
+/// ([`on_activity`](super::SubagentParent::on_activity)).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_last_running_set_the_host_hears_is_the_hubs() {
-    let release = CancellationToken::new();
-    let gate = release.clone();
-    let background = |id, description| {
-        let input = json!({"description": description, "prompt": "p", "run_in_background": true});
+    let (one, two) = (CancellationToken::new(), CancellationToken::new());
+    let ends = (one.clone(), two.clone());
+    let background = |id, name| {
+        let input =
+            json!({"description": name, "name": name, "prompt": "p", "run_in_background": true});
         call(id, "Agent", input)
     };
     let mut r = Rig::new(
@@ -178,27 +186,42 @@ async fn the_last_running_set_the_host_hears_is_the_hubs() {
             0 => vec![background("a", "one"), background("b", "two")],
             _ => say("ok"),
         }),
-        Box::new(move |_, _| {
-            let gate = gate.clone();
+        Box::new(move |req, _| {
+            let end = if req.system.contains("agent \"one\"") {
+                ends.0.clone()
+            } else {
+                ends.1.clone()
+            };
             Box::pin(async move {
-                gate.cancelled().await;
+                end.cancelled().await;
                 say("done")
             })
         }),
         caps(),
     );
+    r.turn("go").await;
+    // Both started, each after its set was handed over: no set is on its way.
+    let heard_both = |r: &Rig| {
+        let started = r.ids("started").len() == 2;
+        started && r.parent.activity.lock().unwrap().last() == Some(&2)
+    };
+    until(30_000, || heard_both(&r)).await;
+    assert!(heard_both(&r), "{:?}", r.parent.activity.lock().unwrap());
     let (entered, in_hook) = std::sync::mpsc::channel();
     let (go, held) = std::sync::mpsc::channel();
     *r.parent.activity_gate.lock().unwrap() = Some(ActivityGate { entered, go: held });
-    r.turn("go").await;
-    assert_eq!(r.hub.running().len(), 2);
-    release.cancel();
-    // The first end's set is in the host's hands, held there...
-    tokio::task::spawn_blocking(move || in_hook.recv_timeout(Duration::from_secs(5)))
+    one.cancel();
+    // One's end hands the host the set with two alone, held there...
+    let set = tokio::task::spawn_blocking(move || in_hook.recv_timeout(Duration::from_secs(30)))
         .await
         .unwrap()
-        .expect("an end handed its set over");
-    // ...while the other subagent ends, all the way to its answer.
+        .expect("one's end handed its set over");
+    assert!(
+        matches!(&set[..], [id] if id.starts_with("haest-two-")),
+        "the set held is two alone: {set:?}"
+    );
+    // ...while two ends, all the way to its answer.
+    two.cancel();
     let answers = |r: &Rig| {
         let for_main = r.for_main();
         for_main
@@ -206,9 +229,10 @@ async fn the_last_running_set_the_host_hears_is_the_hubs() {
             .filter(|m| matches!(m, ForMain::Answer(_)))
             .count()
     };
-    until(3000, || answers(&r) == 1).await;
+    until(30_000, || answers(&r) == 1).await;
+    assert_eq!(answers(&r), 1, "two's answer, while one's set is held");
     go.send(()).unwrap();
-    until(3000, || answers(&r) == 2).await;
+    until(30_000, || answers(&r) == 2).await;
     assert!(r.hub.running().is_empty());
     let activity = r.parent.activity.lock().unwrap().clone();
     assert_eq!(
