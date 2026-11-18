@@ -37,6 +37,7 @@ mod state;
 mod testing;
 #[cfg(test)]
 mod tests;
+mod through;
 
 use std::{
     collections::BTreeMap,
@@ -124,6 +125,13 @@ use state::{Original, state_of, walk};
 /// bit is not applied. A mode the human changed on the disk since the
 /// sandbox set its own is a conflict.
 ///
+/// Over [`SandboxWorkspace`](crate::SandboxWorkspace)'s project overlay, what
+/// is applied reads through to the disk again: the sandbox sees what the
+/// human does there afterwards (an edit, a delete, a file made again where
+/// the sandbox deleted one), and its next change to such a path is checked
+/// against that, never written over it. A path the sandbox changed again
+/// while the apply ran stays its own.
+///
 /// Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
 /// directory, not file by file -- an edit the human made INSIDE it meanwhile
 /// does not count as a conflict. Where the sandbox makes it again
@@ -135,6 +143,9 @@ use state::{Original, state_of, walk};
 pub struct OverlayChanges {
     book: Arc<Book>,
     overlay: HaestFsOverBashkit,
+    /// The overlay itself, where it is bashkit's copy-on-write one: what is
+    /// applied reads through to the disk again (`through.rs`).
+    cow: Option<Arc<bashkit::OverlayFs>>,
 }
 
 impl std::fmt::Debug for OverlayChanges {
@@ -159,6 +170,21 @@ impl OverlayChanges {
         Self {
             book: Arc::new(Book::new(disk, root.into())),
             overlay: HaestFsOverBashkit::new(overlay),
+            cow: None,
+        }
+    }
+
+    /// The same over bashkit's copy-on-write overlay of the project: once a
+    /// change is applied, the sandbox reads the disk there again.
+    pub(crate) fn over_cow(
+        overlay: Arc<bashkit::OverlayFs>,
+        disk: Arc<dyn Fs>,
+        root: impl Into<PathBuf>,
+    ) -> Self {
+        let cow = overlay.clone();
+        Self {
+            cow: Some(cow),
+            ..Self::new(overlay, disk, root)
         }
     }
 
@@ -202,12 +228,8 @@ impl OverlayChanges {
             walked = Some(path);
         }
         for dir in self.made_again(&touched).await {
-            let on_disk = walk(self.book.disk.as_ref(), &self.book.real(&dir)).await;
-            let on_disk = on_disk
-                .iter()
-                .filter_map(|p| p.strip_prefix(&self.book.root).ok())
-                .map(|rel| Path::new("/").join(rel));
-            for inside in on_disk.chain(walk(&self.overlay, &dir).await) {
+            let on_disk = self.book.tree(&dir).await;
+            for inside in on_disk.into_iter().chain(walk(&self.overlay, &dir).await) {
                 all.entry(inside).or_insert(None);
             }
         }

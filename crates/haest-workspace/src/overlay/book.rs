@@ -15,7 +15,7 @@ use haest_core::fs::{Fs, normalize};
 
 use super::{
     modes::{self, SetMode, SetModes},
-    state::{Original, state_of},
+    state::{Original, state_of, walk},
 };
 use crate::spelling::{Spelled, Spelling, Ways};
 
@@ -86,6 +86,16 @@ impl Book {
 
     pub(super) fn real(&self, path: &Path) -> PathBuf {
         self.root.join(path.strip_prefix("/").unwrap_or(path))
+    }
+
+    /// Every path the disk holds under `dir` (an overlay path), as overlay
+    /// paths.
+    pub(super) async fn tree(&self, dir: &Path) -> Vec<PathBuf> {
+        let real = walk(self.disk.as_ref(), &self.real(dir)).await;
+        real.iter()
+            .filter_map(|p| p.strip_prefix(&self.root).ok())
+            .map(|rel| Path::new("/").join(rel))
+            .collect()
     }
 
     /// The first-touch ledger. Its lock is held only to read or write the

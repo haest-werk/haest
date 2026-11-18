@@ -38,8 +38,9 @@ type Refusal = (ApplyFailureCode, String);
 
 /// What became of a change `put` did not refuse.
 enum Put {
-    /// On the real disk now.
-    Applied,
+    /// On the real disk now; with the names the disk held under a tree it
+    /// removed (a directory deleted, or become a file).
+    Applied(Vec<PathBuf>),
     /// Its real path moved since the scan, or the disk holds its name or a
     /// directory on its way under another spelling: not written, a conflict.
     Moved,
@@ -65,6 +66,7 @@ impl OverlayChanges {
         for s in deletes.into_iter().chain(writes) {
             self.settle(s, &mut links, &mut report).await;
         }
+        self.read_through_dirs(&report.applied).await;
         // What a wiped directory hid is on the disk now, or each path of it
         // not applied is remembered (`settle`): it is forgotten, unless its
         // own change is still to apply. A name the human makes there later is
@@ -87,7 +89,8 @@ impl OverlayChanges {
             None
         } else {
             match self.put(&s, links).await {
-                Ok(Put::Applied) => {
+                Ok(Put::Applied(took)) => {
+                    self.read_through(&s, &took).await;
                     self.book.touched().remove(&s.path);
                     self.book.modes.forget(&s.path);
                     report.applied.push(s.change);
@@ -177,24 +180,27 @@ impl OverlayChanges {
         }
         self.write(s, again.state == s.mine)
             .await
-            .map(|()| Put::Applied)
+            .map(Put::Applied)
             .map_err(|e| (ApplyFailureCode::WriteFailed, e.to_string()))
     }
 
     /// Put `s` on the disk; `holds` when the disk holds the sandbox's
-    /// version already, and only its mode may be left to put.
-    async fn write(&self, s: &Scanned, holds: bool) -> io::Result<()> {
+    /// version already, and only its mode may be left to put. Returns the
+    /// names the disk held under a tree it removed.
+    async fn write(&self, s: &Scanned, holds: bool) -> io::Result<Vec<PathBuf>> {
         let path = s.path.as_path();
         let deleted = s.change.kind == ChangeKind::Deleted;
         let disk = self.book.disk.as_ref();
         let real = self.book.real(path);
+        let found = disk.stat(&real).await.ok();
+        let was_dir = found.as_ref().is_some_and(|st| st.is_dir());
         // A directory whose name this apply's writes land on under another
         // spelling (a rename by case) goes whole or not at all: what a
         // delete took before it stopped would otherwise be only in the
         // sandbox, its writes waiting on the name.
         if deleted
             && s.frees
-            && disk.stat(&real).await.is_ok_and(|st| st.is_dir())
+            && was_dir
             && let Some(blocker) = removable::blocker(&real).await
         {
             return Err(io::Error::new(
@@ -206,6 +212,14 @@ impl OverlayChanges {
                 ),
             ));
         }
+        // The names under a directory this change removes, which the
+        // overlay hides until the apply has read through (`through.rs`).
+        let dir = !deleted && self.overlay.stat(path).await?.is_dir();
+        let took = if was_dir && !dir && self.cow.is_some() {
+            self.book.tree(path).await
+        } else {
+            Vec::new()
+        };
         if deleted {
             return match disk.remove_all(&real).await {
                 // Gone already, or under a directory that became a file.
@@ -217,13 +231,12 @@ impl OverlayChanges {
                 {
                     Err(e)
                 }
-                _ => Ok(()),
+                _ => Ok(took),
             };
         }
-        let dir = self.overlay.stat(path).await?.is_dir();
         // A directory that became a file, or a file that became a directory
         // (`rm -rf build && echo x > build`): the old one goes first.
-        if disk.stat(&real).await.is_ok_and(|s| s.is_dir() != dir) {
+        if found.is_some_and(|st| st.is_dir() != dir) {
             disk.remove_all(&real).await?;
         }
         if dir {
@@ -234,7 +247,8 @@ impl OverlayChanges {
             }
             disk.write(&real, &self.overlay.read(path).await?).await?;
         }
-        self.carry_mode(s, &real).await
+        self.carry_mode(s, &real).await?;
+        Ok(took)
     }
 
     /// Put the mode the sandbox chose for `s` on the disk at `real`: the one

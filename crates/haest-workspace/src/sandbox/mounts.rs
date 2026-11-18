@@ -223,7 +223,11 @@ pub(crate) async fn project_overlay(cwd: &Path) -> Result<OverlayChanges, OpenSa
         // Straight on the upper layer: no whiteout, the project's own shows through.
         let _ = overlay.upper().remove(Path::new(dir), true).await;
     }
-    Ok(OverlayChanges::new(Arc::new(overlay), Arc::new(Disk), cwd))
+    Ok(OverlayChanges::over_cow(
+        Arc::new(overlay),
+        Arc::new(Disk),
+        cwd,
+    ))
 }
 
 /// The whole sandbox file system, over mounts made
