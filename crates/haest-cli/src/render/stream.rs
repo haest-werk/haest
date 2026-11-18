@@ -19,10 +19,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
     pub(crate) fn frame(&mut self, frame: &Frame) {
         self.after_lost_question(frame.seq);
         if self.json {
-            let _ = self.out.write_all(encode_line(frame).as_bytes());
-            let _ = self.out.flush();
-            self.wrote(frame.seq);
-            return;
+            return self.json_frame(frame);
         }
         let subagent = frame.path.segments().nth(1);
         match (&frame.body, subagent) {
@@ -39,6 +36,13 @@ impl<O: Write, E: Write> Renderer<O, E> {
             }
             (Body::Wire(wire), subagent) => self.wire(frame.seq, wire, subagent),
         }
+    }
+
+    /// `frame`'s line on stdout, as the stream has it (json mode).
+    pub(super) fn json_frame(&mut self, frame: &Frame) {
+        let _ = self.out.write_all(encode_line(frame).as_bytes());
+        let _ = self.out.flush();
+        self.wrote(frame.seq);
     }
 
     /// One of the wire's own frames, frame `seq` of the stream, in text mode.

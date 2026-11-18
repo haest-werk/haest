@@ -6,6 +6,10 @@
 
 use std::{collections::VecDeque, io::Write};
 
+use haest::{
+    session::{Body, Frame},
+    wire::Outbound,
+};
 use tokio::sync::oneshot;
 
 use super::{DIM, Renderer, YELLOW, inert};
@@ -13,12 +17,20 @@ use super::{DIM, Renderer, YELLOW, inert};
 /// The terminal's own question, from when it goes into the stream until it
 /// is answered or given up.
 pub(super) struct Question {
-    /// Its frame's seq.
-    seq: u64,
-    /// What it asks: drawn from here if its frame is lost.
-    text: String,
+    /// Its frame, as the stream has it: written (json) or drawn from here if
+    /// the terminal loses it.
+    frame: Frame,
     /// Told once it is drawn; None from then on.
     drawn: Option<oneshot::Sender<()>>,
+}
+
+/// What `frame`, an `ask`, asks.
+fn asks(frame: &Frame) -> &str {
+    match &frame.body {
+        Body::Wire(Outbound::Ask { text }) => text,
+        // Only an ask is a question (`TermUi::ask` makes it).
+        _ => "",
+    }
 }
 
 /// What came after the question while it waited, in order, shown once it is
@@ -115,15 +127,15 @@ impl<O: Write, E: Write> Renderer<O, E> {
         }
     }
 
-    /// The terminal's own question went into the stream as frame `seq`: from
-    /// when it is drawn until [`answered`](Self::answered), every other line
-    /// waits, so the question stays the last thing on the screen. `drawn` is
-    /// told once it is on the screen, and drops untold if it never will be
-    /// (the stream has ended).
-    pub(crate) fn answering(&mut self, seq: u64, text: String, drawn: oneshot::Sender<()>) {
+    /// The terminal's own question went into the stream as `frame`, an
+    /// `ask`: from when it is drawn until [`answered`](Self::answered), every
+    /// other line waits, so the question stays the last thing on the screen.
+    /// `drawn` is told once it is on the screen, and drops untold if it never
+    /// will be (the stream has ended).
+    pub(crate) fn answering(&mut self, frame: Frame, drawn: oneshot::Sender<()>) {
         if !self.ended {
             let drawn = Some(drawn);
-            self.question = Some(Question { seq, text, drawn });
+            self.question = Some(Question { frame, drawn });
         }
     }
 
@@ -143,7 +155,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
         if self
             .question
             .as_ref()
-            .is_some_and(|q| q.seq == seq && q.drawn.is_some())
+            .is_some_and(|q| q.frame.seq == seq && q.drawn.is_some())
         {
             self.draw_question(text);
         } else {
@@ -153,20 +165,21 @@ impl<O: Write, E: Write> Renderer<O, E> {
 
     /// Frame `seq` comes after the terminal's own question, which was not
     /// drawn: its frame was lost (the terminal fell behind the stream), so it
-    /// is drawn now, before what came after it.
+    /// is drawn now, before what came after it; in json mode its line is the
+    /// stream's frame, as it would have been.
     pub(super) fn after_lost_question(&mut self, seq: u64) {
-        let Some(q) = self.question.as_mut() else {
+        let Some(q) = &self.question else {
             return;
         };
-        if q.drawn.is_none() || seq <= q.seq {
+        if q.drawn.is_none() || seq <= q.frame.seq {
             return;
         }
-        let text = std::mem::take(&mut q.text);
+        // Copied out: writing it borrows the renderer.
+        let frame = q.frame.clone();
         if self.json {
-            self.ask(&text);
-            self.drew_question();
+            self.json_frame(&frame);
         } else {
-            self.draw_question(&text);
+            self.draw_question(asks(&frame));
         }
     }
 
@@ -184,7 +197,7 @@ impl<O: Write, E: Write> Renderer<O, E> {
     /// Json mode wrote frame `seq` as it is: when it is the terminal's own
     /// question, its prompter is told.
     pub(super) fn wrote(&mut self, seq: u64) {
-        if self.question.as_ref().is_some_and(|q| q.seq == seq) {
+        if self.question.as_ref().is_some_and(|q| q.frame.seq == seq) {
             self.drew_question();
         }
     }

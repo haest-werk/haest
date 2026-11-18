@@ -26,7 +26,7 @@ fn asking<O: std::io::Write, E: std::io::Write>(
     text: &str,
 ) -> oneshot::Receiver<()> {
     let (tell, drawn) = oneshot::channel();
-    r.answering(seq, text.into(), tell);
+    r.answering(ask_frame(seq, text), tell);
     drawn
 }
 
@@ -145,6 +145,39 @@ fn a_question_whose_frame_was_lost_is_drawn_before_what_follows() {
     }
     let err = String::from_utf8(err).unwrap();
     assert!(err.ends_with(&format!("{question}after it\n")), "{err:?}");
+}
+
+/// In json mode a question whose frame the terminal lost is written as the
+/// stream's frame: its sid and seq, so a reader that checks the one or
+/// resumes by the other reads it right.
+#[test]
+fn in_json_a_question_whose_frame_was_lost_is_the_streams_frame() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    {
+        let mut r = Renderer::new(&mut out, &mut err, true, false);
+        let mut drawn = asking(&mut r, 5, "Allow Bash?");
+        let lost = Outbound::Gap {
+            after: 3,
+            missed: Some(4),
+        };
+        r.frame(&wire_frame(3, lost));
+        r.frame(&notice_frame(7, "after it"));
+        assert_eq!(drawn.try_recv(), Ok(()));
+    }
+    let out = String::from_utf8(out).unwrap();
+    let lines: Vec<serde_json::Value> = out
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let types: Vec<&str> = lines.iter().map(|l| l["type"].as_str().unwrap()).collect();
+    assert_eq!(types, ["gap", "ask", "notice"], "{out}");
+    let ask = &lines[1];
+    assert_eq!(
+        (ask["sid"].as_str(), ask["seq"].as_u64()),
+        (Some("s"), Some(5)),
+        "{out}"
+    );
+    assert_eq!(ask["text"], "Allow Bash?");
 }
 
 /// A question asked once the stream has ended is never drawn, nor is one

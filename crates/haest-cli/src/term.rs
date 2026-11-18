@@ -12,9 +12,9 @@ use std::{
 use haest::{
     core::remedy::Limit,
     runtime::{HubUi, Ui},
-    session::{Hub, Subscription},
+    session::{Body, Hub, Subscription},
     tools::SubagentEvent,
-    wire::{Outbound, Path},
+    wire::{Envelope, Outbound, Path, WIRE_V, now_ms},
 };
 use tokio::{sync::oneshot, task::JoinHandle};
 
@@ -86,15 +86,25 @@ impl TermUi {
     /// thing on the screen while the human reads it.
     pub(crate) fn ask(&self, question: &str) -> Answering<'_> {
         let (tell, drawn) = oneshot::channel();
-        let text = question.to_string();
+        let ask = Outbound::Ask {
+            text: question.to_string(),
+        };
         // Under the terminal's lock: the renderer knows which frame is the
         // question before it can draw that frame.
         let mut term = self.term.lock().unwrap();
-        let seq = self
-            .lines
-            .hub()
-            .publish(Path::main(), Outbound::Ask { text });
-        term.answering(seq, question.to_string(), tell);
+        let hub = self.lines.hub();
+        let seq = hub.publish(Path::main(), ask.clone());
+        // The frame as the stream has it (its time is now, not the hub's
+        // stamp: the same moment, to the millisecond or so).
+        let frame = Envelope {
+            v: WIRE_V,
+            sid: hub.sid().to_string(),
+            seq,
+            ts: now_ms(),
+            path: Path::main(),
+            body: Body::Wire(ask),
+        };
+        term.answering(frame, tell);
         drop(term);
         Answering {
             ui: self,
