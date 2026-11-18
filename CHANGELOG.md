@@ -444,6 +444,20 @@ write instead.
   bash's pid and group id, which the system may by then have handed to
   another process. bash is now reaped last, so its pid stays its own until
   the kill decision.
+- The sandbox lost what it made in a directory it had removed, and
+  applying left old files behind:
+  - After `rm -rf dist`, `mkdir -p dist/sub` (or the Write tool making a
+    file's parent) left `dist` removed. Every file written under it was
+    reported written, `cat` found none of them, and applying deleted
+    `dist` and wrote nothing. `echo x > dist/f`, `cp` and `ln -s` there
+    reported success the same way; they now fail, as in bash.
+  - A directory the sandbox removed or moved away and then made again
+    (`rm -r lib && mkdir lib`, `rm -rf dist && mv build dist`) had nothing
+    under it listed. Applying left its old files on the disk, never wrote
+    a tree moved onto it, and reported everything applied. Each path under
+    such a directory that differs, on the disk or in the sandbox, is now
+    listed and applied. As for `rm -r`, an edit the human made in it
+    meanwhile is not a conflict.
 - A ledger hook that read the ledger it hears from (a warning shown with
   the budget's summary beside it) hung the turn for good: the hooks ran
   with the ledger locked. They run once it is unlocked; snapshots are still
