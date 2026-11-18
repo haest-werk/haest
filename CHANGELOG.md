@@ -462,8 +462,9 @@ write instead.
     `Lib`'s copies wait;
   - a directory whose delete frees such a name is deleted whole or not at
     all: where a directory in it may not be emptied (read-only to haest's
-    process), the delete fails before anything is removed, and the writes
-    wait;
+    process, sticky and not its own with another user's files in it, or
+    with an entry that cannot be read), the delete fails before anything
+    is removed, and the writes wait;
   - the apply reads each change's real path again right before putting it
     on the disk: one that moved since the scan (an earlier write of the
     apply under another spelling, the new name of a rename whose delete
@@ -472,6 +473,16 @@ write instead.
   The cost: in the sandbox, `cat README.md` does not find `readme.md`,
   where real bash on that disk would (see haest-workspace). A case-folding
   directory on Linux (`chattr +F`) is not told apart.
+- A file or directory the sandbox moved or copied landed on the disk at
+  the umask's mode, whatever mode it had. After `mv secret.key moved.key`
+  or `cp secret.key copy.key` on a 0600 key, applying wrote the new file
+  0644, readable by every local account that can reach the project.
+  `mv certs keys` on a 0700 directory wrote `keys` 0755 and each file in
+  it 0644. A key moved onto an existing 0644 file stayed 0644. bash keeps
+  a path's mode through `mv`, and `cp` gives a new file its source's; the
+  sandbox now does the same, and applying puts that mode on as it puts on
+  a `chmod`: it adds nothing but execute. A file only the sandbox made
+  still lands at the umask's mode.
 
 ### Bug fixes
 
@@ -497,6 +508,13 @@ write instead.
     listed and applied, also where the sandbox removes the directory again
     while an apply runs. As for `rm -r`, an edit the human made in it
     meanwhile is not a conflict.
+- Applying deleted a file the human saved after the sandbox had edited it
+  and then removed its directory whole (`echo x > lib/a.rs && rm -r lib`,
+  or `mv lib src`, or `lib` made a file). The report said the file was
+  skipped as a conflict, but it was gone from the disk, and from the list.
+  The directory's delete is now a conflict too, listed with the file, and
+  applying deletes only what under it is not a conflict. The same holds
+  for a save the human makes while the apply runs.
 - After an apply, the sandbox went on reading its own copy of each file it
   had changed, and nothing where it had deleted one, whatever the human
   did on the disk since. Its next change there went over the human's edit,
@@ -504,7 +522,9 @@ write instead.
   `haest` command applies mid-session, so one edit between two applies was
   enough. What is applied now reads through to the disk again: the sandbox
   sees the human's edits, deletes and new files there, and its next change
-  is checked against them.
+  is checked against them. A change the sandbox makes while an apply runs
+  (a background job's) waits for the apply to end, so none is lost or
+  left unlisted.
 - In the sandbox, `>>`, `tee -a` and `cat >> f <<EOF` onto a file that was
   not there failed with "No such file or directory" in each directory the
   sandbox had not written in yet, and after `rm f`, where bash makes the
@@ -518,10 +538,12 @@ write instead.
   listed at all. The sandbox also gave a file 0644 on each `>` or `>>`, so
   a script it rewrote lost `+x` there. Now a mode the sandbox sets is
   listed (`Modified`, if nothing else changed) and applied, a file it adds
-  keeps its execute bits, and a write keeps the file's mode. Applying
-  grants nothing but execute, and that only to whom may read the file
-  (`chmod 666` or a setuid bit is not applied); a mode the human changed
-  on the disk meanwhile is a conflict.
+  keeps its execute bits, and a write keeps the file's mode. A directory's
+  mode goes on after everything under it is written, so a write into `out`
+  followed by `chmod 555 out` applies both. Applying grants nothing but
+  execute, and that only to whom may read the file (`chmod 666` or a
+  setuid bit is not applied); a mode the human changed on the disk
+  meanwhile is a conflict.
 - In the sandbox, `mkdir -p notes/x` beside a file `notes` succeeded: the
   file was then gone there, and applying the listed directory failed. It
   fails now with "Not a directory", as in bash.
@@ -1842,7 +1864,8 @@ Hosts write less (round two of the review, and what porting brain onto
   caller once the call has ended, as over the sandbox.
 - `OverlayChanges::diff` starts with a line `Mode /run.sh 644 -> 755`
   where applying changes the file's mode (see Bug fixes); a change of mode
-  alone has that line and no hunk.
+  alone has that line and no hunk. A path the sandbox adds with a mode of
+  its own starts with `Mode /b.sh 755`, as git shows a new file's mode.
 
 ### haest-code
 
