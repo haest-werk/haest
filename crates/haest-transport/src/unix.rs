@@ -29,8 +29,9 @@ use tokio::{
 };
 
 use crate::{
-    Attached, Ended, Grant, NdjsonSink, NdjsonSource, Peer, Start, Transport, TransportError,
-    link::until_closed, serve,
+    Attached, Ended, Grant, NdjsonSink, NdjsonSource, Peer, Start, StopFlag, Transport,
+    TransportError,
+    link::{serve_until, until_closed},
 };
 
 /// How long [`running_sessions`] waits for a session's `hello`.
@@ -156,9 +157,9 @@ impl UnixSocket {
         files.0.push(file.clone());
         write_private(&file, &discovery)?;
         let closed = backend.subscribe(u64::MAX);
-        Ok(Attached::new(tokio::spawn(accept(
-            listener, files, backend, grant, closed,
-        ))))
+        let detached = StopFlag::default();
+        let accepting = accept(listener, files, backend, grant, closed, detached.clone());
+        Ok(Attached::stopping(tokio::spawn(accepting), detached))
     }
 }
 
@@ -180,6 +181,7 @@ async fn accept(
     backend: BackendRef,
     grant: Grant,
     closed: Subscription,
+    detached: StopFlag,
 ) -> Ended {
     let _files = files;
     let ended = until_closed(closed);
@@ -191,7 +193,9 @@ async fn accept(
                 Ok((stream, _)) => {
                     let (read, write) = stream.into_split();
                     let (source, sink) = (NdjsonSource::new(read), NdjsonSink::new(write));
-                    conns.spawn(serve(backend.clone(), grant, Start::default(), source, sink));
+                    let detached = detached.clone();
+                    let start = Start::default();
+                    conns.spawn(serve_until(backend.clone(), grant, start, source, sink, detached));
                 }
                 Err(_) => tokio::time::sleep(ACCEPT_PAUSE).await,
             },

@@ -55,8 +55,8 @@ use tokio_tungstenite::{
 };
 
 use crate::{
-    Attached, Ended, Grant, LineSink, LineSource, Start, Transport, TransportError,
-    link::until_closed, serve,
+    Attached, Ended, Grant, LineSink, LineSource, Start, StopFlag, Transport, TransportError,
+    link::{serve_until, until_closed},
 };
 
 /// Close codes that mean the broker refused the token: no point dialing again.
@@ -289,17 +289,15 @@ impl Broker {
                 redacted_url(&self.url).into_owned(),
             ));
         }
-        Ok(Attached::new(tokio::spawn(link(
-            self,
-            backend.into(),
-            grant,
-        ))))
+        let detached = StopFlag::default();
+        let linked = link(self, backend.into(), grant, detached.clone());
+        Ok(Attached::stopping(tokio::spawn(linked), detached))
     }
 }
 
 /// Dial, serve, dial again, until the conversation ends or the broker
 /// refuses the token.
-async fn link(broker: Broker, backend: BackendRef, grant: Grant) -> Ended {
+async fn link(broker: Broker, backend: BackendRef, grant: Grant, detached: StopFlag) -> Ended {
     let closed = until_closed(backend.subscribe(u64::MAX));
     tokio::pin!(closed);
     let url = dialed_url(&broker.url);
@@ -330,7 +328,8 @@ async fn link(broker: Broker, backend: BackendRef, grant: Grant) -> Ended {
                     limit,
                     pinged: tokio::time::Instant::now(),
                 };
-                match serve(backend.clone(), grant, start, source, ws_sink).await {
+                let detached = detached.clone();
+                match serve_until(backend.clone(), grant, start, source, ws_sink, detached).await {
                     Ended::Closed => {
                         say_ended(&sink).await;
                         return Ended::Closed;

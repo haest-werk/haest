@@ -2570,7 +2570,12 @@ against it; the wire JSON is unchanged):
   there. Aborting a writer on a task of its own was not enough: an abort
   lands at the task's next poll, so a writer busy on another worker went
   on calling the sink after the host dropped `serve`, and the sink
-  outlived it.
+  outlived it. `Attached::detach` (or a dropped `Attached`) of the
+  transports here also writes nothing the conversation makes after it: a
+  connection in the middle of a step on another worker finished that step
+  before the abort landed, and could write the next frame first (the next
+  turn's input reached a Unix peer). An `Attached::new` around a host's own
+  task is stopped by the abort alone, and its docs say so.
 - `Attached::ended` given up on (raced against a timeout, or its task
   aborted) stops the transport, as dropping the `Attached` does. It took
   the transport's task out before it waited, so a dropped wait left the

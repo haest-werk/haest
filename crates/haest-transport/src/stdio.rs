@@ -14,8 +14,8 @@ use tokio::{
 };
 
 use crate::{
-    Attached, Grant, Start, Transport, TransportError,
-    link::serve,
+    Attached, Grant, Start, StopFlag, Transport, TransportError,
+    link::serve_until,
     ndjson::{NdjsonSink, NdjsonSource},
 };
 
@@ -191,9 +191,9 @@ where
         let source = NdjsonSource::new(self.read);
         let sink = NdjsonSink::new(self.write);
         let backend: BackendRef = backend.into();
-        Attached::new(tokio::spawn(serve(
-            backend, grant, self.start, source, sink,
-        )))
+        let detached = StopFlag::default();
+        let served = serve_until(backend, grant, self.start, source, sink, detached.clone());
+        Attached::stopping(tokio::spawn(served), detached)
     }
 }
 

@@ -93,6 +93,112 @@ async fn a_detached_transport_writes_nothing_more() {
     session.close().await;
 }
 
+/// An output that holds the write of the line holding `hold`, blocking its
+/// worker, until the test lets it go, so the connection is in the middle of
+/// a step; it keeps every byte it was given, and says when it is dropped.
+#[cfg(feature = "stdio")]
+struct HeldOut {
+    hold: &'static str,
+    entered: Option<tokio::sync::oneshot::Sender<()>>,
+    go: std::sync::mpsc::Receiver<()>,
+    written: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+    gone: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+#[cfg(feature = "stdio")]
+impl tokio::io::AsyncWrite for HeldOut {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        let holds = String::from_utf8_lossy(buf).contains(this.hold);
+        if holds && let Some(entered) = this.entered.take() {
+            let _ = entered.send(());
+            let _ = this.go.recv_timeout(std::time::Duration::from_secs(5));
+        }
+        this.written
+            .lock()
+            .expect("lock poisoned")
+            .extend_from_slice(buf);
+        std::task::Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(feature = "stdio")]
+impl Drop for HeldOut {
+    fn drop(&mut self) {
+        if let Some(gone) = self.gone.take() {
+            let _ = gone.send(());
+        }
+    }
+}
+
+/// A detach while a connection is writing a line, on another worker, lets
+/// nothing the conversation makes after it out. An abort lands only once
+/// that step ends, and the writer went on to the next frame first.
+#[cfg(feature = "stdio")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_detach_mid_write_lets_nothing_made_after_it_out() {
+    use std::time::Duration;
+
+    use haest_wire::{Level, Origin};
+    use tokio::sync::oneshot;
+
+    use crate::{Grant, Stdio, testing};
+
+    let (session, _go) = testing::session(&testing::answers(&[]), testing::hub());
+    // In the ring, so the connection's catch-up writes it.
+    session.hub().notice(Level::Info, "hold here");
+    let (_to_child, child_in) = tokio::io::duplex(1 << 16);
+    let (entered_tx, entered) = oneshot::channel();
+    let (go, held) = std::sync::mpsc::channel();
+    let (gone_tx, gone) = oneshot::channel();
+    let written = std::sync::Arc::default();
+    let out = HeldOut {
+        hold: "hold here",
+        entered: Some(entered_tx),
+        go: held,
+        written: std::sync::Arc::clone(&written),
+        gone: Some(gone_tx),
+    };
+    let attached = Stdio::new(child_in, out).attach(session.clone(), Grant::watch(Origin::Agent));
+    let entered = tokio::time::timeout(Duration::from_secs(5), entered).await;
+    assert!(
+        matches!(entered, Ok(Ok(()))),
+        "the held line was never written"
+    );
+
+    attached.detach();
+    session.hub().notice(Level::Info, "said after the detach");
+    // The stream reaches the connection's out queue meanwhile.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    go.send(()).expect("the output is still held");
+    let gone = tokio::time::timeout(Duration::from_secs(2), gone).await;
+    assert!(gone.is_ok(), "the output outlived the detach");
+
+    let written = written.lock().expect("lock poisoned").clone();
+    let written = String::from_utf8_lossy(&written);
+    assert!(written.contains("hold here"), "{written}");
+    assert!(!written.contains("said after the detach"), "{written}");
+    session.close().await;
+}
+
 /// Why a connection ended, in words a person reads; a failure with its
 /// causes.
 #[test]

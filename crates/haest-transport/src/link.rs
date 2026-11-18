@@ -27,7 +27,7 @@ use tokio::{
     task::{JoinError, JoinHandle, JoinSet},
 };
 
-use crate::{Grant, TransportError};
+use crate::{Grant, StopFlag, TransportError};
 
 /// Frames waiting for a slow peer before its subscription falls behind (and
 /// gets a `gap`): the conversation never waits on a peer.
@@ -187,6 +187,20 @@ pub async fn serve(
     source: impl LineSource,
     sink: impl LineSink,
 ) -> Ended {
+    serve_until(backend, grant, start, source, sink, StopFlag::default()).await
+}
+
+/// [`serve`] for a transport of this crate: once `detached` is set, nothing
+/// more is written to `sink`, also by a step that was being run on another
+/// worker when its task was aborted.
+pub(crate) async fn serve_until(
+    backend: impl Into<BackendRef>,
+    grant: Grant,
+    start: Start,
+    source: impl LineSource,
+    sink: impl LineSink,
+    detached: StopFlag,
+) -> Ended {
     let backend: BackendRef = backend.into();
     // The peer's lines, each read by a future that owns the source until it
     // resolves. The loop's `select!` makes a `next()` on every pass, polled
@@ -205,7 +219,7 @@ pub async fn serve(
     // with it, it calls the sink no more, and the sink goes at once. (An
     // aborted task stops only once it is next polled, and one being polled
     // on another worker goes on writing until that poll ends.)
-    let writer = caught(write(sink, rx, backend.meta().sid));
+    let writer = caught(write(sink, rx, backend.meta().sid, detached));
     let mut writer = std::pin::pin!(writer);
     // What the writer ended with, once it was awaited (never awaited twice):
     // Err is the sink's panic.
@@ -747,8 +761,14 @@ pub(crate) async fn until_closed(mut sub: Subscription) {
 
 /// Every line to the peer, in order; a connection frame carries the seq of
 /// the last stream frame written before it, and the sink's keepalive goes
-/// between lines, busy or idle. Ends when the sink fails.
-async fn write(mut sink: impl LineSink, mut rx: mpsc::Receiver<Out>, sid: String) {
+/// between lines, busy or idle. Ends when the sink fails, or at the next
+/// line once the transport is detached.
+async fn write(
+    mut sink: impl LineSink,
+    mut rx: mpsc::Receiver<Out>,
+    sid: String,
+    detached: StopFlag,
+) {
     let mut last = 0;
     // After a keepalive that never waited: lines only, until then.
     let mut rest: Option<tokio::time::Instant> = None;
@@ -797,7 +817,7 @@ async fn write(mut sink: impl LineSink, mut rx: mpsc::Receiver<Out>, sid: String
             }
         };
         let Ok(line) = line else { continue };
-        if sink.send_line(line).await.is_err() {
+        if detached.is_set() || sink.send_line(line).await.is_err() {
             return;
         }
     }
