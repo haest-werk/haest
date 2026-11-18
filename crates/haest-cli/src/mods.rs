@@ -65,9 +65,12 @@ impl Prompter for TermPrompter {
         };
         // Nothing else reaches the screen until it is answered, or given up
         // (the read dropped: the guard lets go then too).
-        let answering = self.ui.answering();
-        self.ui.ask(&question(req));
-        let line = ask::read_line().await;
+        let mut answering = self.ui.ask(&question(req));
+        // Only what is typed once the question is on the screen answers it.
+        if !answering.drawn().await {
+            return ApprovalAnswer::Deny;
+        }
+        let line = ask::read_answer().await;
         answering.answered(line.as_deref());
         answer(line.as_deref())
     }

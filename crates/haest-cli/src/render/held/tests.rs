@@ -1,9 +1,34 @@
-use haest::{LoopEvent, StopReason};
+use haest::{LoopEvent, StopReason, wire::Outbound};
+use tokio::sync::oneshot::{self, error::TryRecvError};
 
 use crate::render::{
     Level, Renderer,
-    tests::{read_result, turn_end},
+    tests::{read_result, turn_end, wire_frame},
 };
+
+/// Frame `seq` of the stream: the question `text`.
+fn ask_frame(seq: u64, text: &str) -> haest::session::Frame {
+    let text = text.into();
+    wire_frame(seq, Outbound::Ask { text })
+}
+
+/// Frame `seq` of the stream: a line for the human.
+fn notice_frame(seq: u64, text: &str) -> haest::session::Frame {
+    let (level, text) = (Level::Info, text.into());
+    wire_frame(seq, Outbound::Notice { level, text })
+}
+
+/// `r` asks the terminal's own question `text` as frame `seq`: what tells
+/// its prompter it was drawn.
+fn asking<O: std::io::Write, E: std::io::Write>(
+    r: &mut Renderer<O, E>,
+    seq: u64,
+    text: &str,
+) -> oneshot::Receiver<()> {
+    let (tell, drawn) = oneshot::channel();
+    r.answering(seq, text.into(), tell);
+    drawn
+}
 
 /// While the terminal's own question waits, nothing else reaches the screen:
 /// not a subagent's many-line description that draws a question of its own,
@@ -20,8 +45,9 @@ fn nothing_lands_below_the_question_until_it_is_answered() {
     let (out_then, err_then);
     {
         let mut r = Renderer::new(&mut out, &mut err, false, false);
-        r.answering();
-        r.ask(question);
+        let mut drawn = asking(&mut r, 1, question);
+        r.frame(&ask_frame(1, question));
+        assert_eq!(drawn.try_recv(), Ok(()), "its prompter is told");
         r.notice(Level::Info, &forged);
         r.event(&read_result(false));
         r.event(&LoopEvent::TextDelta {
@@ -44,27 +70,94 @@ fn nothing_lands_below_the_question_until_it_is_answered() {
 }
 
 /// A question given up (the read dropped, or stdin closed) ends its line
-/// before what waited is shown; one typed ahead, answered before it was
-/// drawn, holds nothing.
+/// before what waited is shown. One given up before it was drawn holds
+/// nothing, and is drawn on a line of its own when its frame comes: nothing
+/// reads its answer.
 #[test]
-fn a_question_given_up_or_answered_ahead_lets_the_lines_go() {
+fn a_question_given_up_lets_the_lines_go() {
     let (mut out, mut err) = (Vec::new(), Vec::new());
     {
         let mut r = Renderer::new(&mut out, &mut err, false, false);
-        r.answering();
-        r.ask("Allow Bash? x\n[y]es / [a]lways / [N]o: ");
+        let _drawn = asking(&mut r, 1, "Allow Bash? x\n[y]es / [a]lways / [N]o: ");
+        r.frame(&ask_frame(1, "Allow Bash? x\n[y]es / [a]lways / [N]o: "));
         r.notice(Level::Info, "later");
         r.answered(false);
-        r.answering();
-        r.answered(true);
-        r.ask("Allow Bash? y\n[y]es / [a]lways / [N]o: ");
+        let _drawn = asking(&mut r, 2, "Allow Bash? y\n[y]es / [a]lways / [N]o: ");
+        r.answered(false);
+        r.frame(&ask_frame(2, "Allow Bash? y\n[y]es / [a]lways / [N]o: "));
         r.notice(Level::Info, "at once");
     }
     let err = String::from_utf8(err).unwrap();
     assert_eq!(
         err,
-        "Allow Bash? x\n[y]es / [a]lways / [N]o: \nlater\nAllow Bash? y\n[y]es / [a]lways / [N]o: at once\n"
+        "Allow Bash? x\n[y]es / [a]lways / [N]o: \nlater\nAllow Bash? y\n[y]es / [a]lways / [N]o: \nat once\n"
     );
+}
+
+/// The prompter is told only when its own question is on the screen: not
+/// when an earlier question's frame is drawn late (an ask given up before
+/// its frame was drawn), which takes a line of its own.
+#[test]
+fn the_prompter_is_told_when_its_own_question_is_drawn() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    {
+        let mut r = Renderer::new(&mut out, &mut err, false, false);
+        let mut drawn = asking(&mut r, 5, "Allow Bash? new\n[y]es / [a]lways / [N]o: ");
+        r.frame(&ask_frame(4, "Allow Bash? old\n[y]es / [a]lways / [N]o: "));
+        assert_eq!(drawn.try_recv(), Err(TryRecvError::Empty), "not yet");
+        r.frame(&ask_frame(5, "Allow Bash? new\n[y]es / [a]lways / [N]o: "));
+        assert_eq!(drawn.try_recv(), Ok(()));
+    }
+    let err = String::from_utf8(err).unwrap();
+    assert!(
+        err.ends_with("[N]o: \nAllow Bash? new\n[y]es / [a]lways / [N]o: "),
+        "{err:?}"
+    );
+
+    // In json mode, once its line is written.
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let mut r = Renderer::new(&mut out, &mut err, true, false);
+    let mut drawn = asking(&mut r, 2, "Allow Bash?");
+    r.frame(&notice_frame(1, "before"));
+    assert_eq!(drawn.try_recv(), Err(TryRecvError::Empty), "not yet");
+    r.frame(&ask_frame(2, "Allow Bash?"));
+    assert_eq!(drawn.try_recv(), Ok(()));
+}
+
+/// A question whose frame the terminal lost (it fell behind the stream) is
+/// drawn before what came after it, and its prompter is told.
+#[test]
+fn a_question_whose_frame_was_lost_is_drawn_before_what_follows() {
+    let question = "Allow Bash? x\n[y]es / [a]lways / [N]o: ";
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    {
+        let mut r = Renderer::new(&mut out, &mut err, false, false);
+        let mut drawn = asking(&mut r, 5, question);
+        let lost = Outbound::Gap {
+            after: 3,
+            missed: Some(4),
+        };
+        r.frame(&wire_frame(3, lost));
+        assert_eq!(drawn.try_recv(), Err(TryRecvError::Empty), "not yet");
+        r.frame(&notice_frame(7, "after it"));
+        assert_eq!(drawn.try_recv(), Ok(()));
+        r.answered(true);
+    }
+    let err = String::from_utf8(err).unwrap();
+    assert!(err.ends_with(&format!("{question}after it\n")), "{err:?}");
+}
+
+/// A question asked once the stream has ended is never drawn, nor is one
+/// that waited for its frame: their prompters hear so.
+#[test]
+fn a_question_the_ended_stream_never_draws_tells_its_prompter() {
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let mut r = Renderer::new(&mut out, &mut err, false, false);
+    let mut waited = asking(&mut r, 1, "Allow Bash?");
+    r.ended();
+    assert_eq!(waited.try_recv(), Err(TryRecvError::Closed));
+    let mut late = asking(&mut r, 2, "Allow Bash?");
+    assert_eq!(late.try_recv(), Err(TryRecvError::Closed));
 }
 
 /// A watcher shows another terminal's question on a line of its own: nothing
@@ -74,7 +167,7 @@ fn a_watcher_ends_the_questions_line() {
     let (mut out, mut err) = (Vec::new(), Vec::new());
     {
         let mut r = Renderer::new(&mut out, &mut err, false, false).watching();
-        r.ask("Allow Bash? x\n[y]es / [a]lways / [N]o: ");
+        r.frame(&ask_frame(1, "Allow Bash? x\n[y]es / [a]lways / [N]o: "));
         r.event(&read_result(false));
     }
     let err = String::from_utf8(err).unwrap();

@@ -17,9 +17,11 @@ impl<O: Write, E: Write> Renderer<O, E> {
     /// turn of the conversation's own, with the session's total from the
     /// status that follows it.
     pub(crate) fn frame(&mut self, frame: &Frame) {
+        self.after_lost_question(frame.seq);
         if self.json {
             let _ = self.out.write_all(encode_line(frame).as_bytes());
             let _ = self.out.flush();
+            self.wrote(frame.seq);
             return;
         }
         let subagent = frame.path.segments().nth(1);
@@ -35,15 +37,15 @@ impl<O: Write, E: Write> Renderer<O, E> {
                     self.notice(level, &text);
                 }
             }
-            (Body::Wire(wire), subagent) => self.wire(wire, subagent),
+            (Body::Wire(wire), subagent) => self.wire(frame.seq, wire, subagent),
         }
     }
 
-    /// One of the wire's own frames, in text mode.
-    fn wire(&mut self, frame: &Outbound, subagent: Option<&str>) {
+    /// One of the wire's own frames, frame `seq` of the stream, in text mode.
+    fn wire(&mut self, seq: u64, frame: &Outbound, subagent: Option<&str>) {
         match (frame, subagent) {
             (Outbound::Notice { level, text }, _) => self.notice(*level, text),
-            (Outbound::Ask { text }, _) => self.ask(text),
+            (Outbound::Ask { text }, _) => self.asked(seq, text),
             (Outbound::Status(now), None) => {
                 // Only another program queues input while the prompt is
                 // open (the human's own line waits for it to close).

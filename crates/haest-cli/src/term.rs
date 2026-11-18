@@ -16,7 +16,7 @@ use haest::{
     tools::SubagentEvent,
     wire::{Outbound, Path},
 };
-use tokio::task::JoinHandle;
+use tokio::{sync::oneshot, task::JoinHandle};
 
 use crate::{agents::AgentLog, render::Renderer};
 
@@ -65,44 +65,59 @@ impl TermUi {
         self
     }
 
-    /// A question answered on the next line (see `ask.rs`).
-    pub(crate) fn ask(&self, question: &str) {
-        let text = question.to_string();
-        self.lines
-            .hub()
-            .publish(Path::main(), Outbound::Ask { text });
-    }
-
     /// The REPL prompt is open (a line printed now lands above it): an
     /// arrival waits for Enter, an approval asks above the prompt.
     pub(crate) fn prompting(&self) -> bool {
         self.term.lock().unwrap().prompting()
     }
 
-    /// This terminal's own question is about to be asked: once it is drawn,
+    /// Asks this terminal's own question, answered on the next line (see
+    /// `ask.rs`): it goes into the stream, and once the terminal draws it,
     /// everything else the stream carries waits until the guard says it was
     /// answered (or drops, an ask given up), so the question stays the last
     /// thing on the screen while the human reads it.
-    pub(crate) fn answering(&self) -> Answering<'_> {
-        self.term.lock().unwrap().answering();
+    pub(crate) fn ask(&self, question: &str) -> Answering<'_> {
+        let (tell, drawn) = oneshot::channel();
+        let text = question.to_string();
+        // Under the terminal's lock: the renderer knows which frame is the
+        // question before it can draw that frame.
+        let mut term = self.term.lock().unwrap();
+        let seq = self
+            .lines
+            .hub()
+            .publish(Path::main(), Outbound::Ask { text });
+        term.answering(seq, question.to_string(), tell);
+        drop(term);
         Answering {
             ui: self,
+            drawn,
             enter: false,
         }
     }
 }
 
-/// Brackets the read of a question's answer ([`TermUi::answering`]).
+/// Brackets the read of a question's answer ([`TermUi::ask`]).
 pub(crate) struct Answering<'a> {
     ui: &'a TermUi,
+    /// Told once the terminal has drawn the question.
+    drawn: oneshot::Receiver<()>,
     /// The human ended the question's line.
     enter: bool,
 }
 
 impl Answering<'_> {
-    /// The read is over: `line` is what the human typed (None: stdin closed).
+    /// Waits until the terminal has drawn the question: only what is typed
+    /// from then on answers it. False when it never will be (the stream the
+    /// terminal shows has ended).
+    pub(crate) async fn drawn(&mut self) -> bool {
+        (&mut self.drawn).await.is_ok()
+    }
+
+    /// The read is over: `line` is what the human typed (None: stdin
+    /// closed). Only Enter ended the question's line on the screen; keys
+    /// handed over with Ctrl+D did not.
     pub(crate) fn answered(mut self, line: Option<&str>) {
-        self.enter = line.is_some();
+        self.enter = line.is_some_and(|l| l.ends_with('\n'));
     }
 }
 
@@ -119,6 +134,9 @@ pub(crate) fn show(term: Arc<Mutex<Term>>, mut sub: Subscription) -> JoinHandle<
     tokio::spawn(async move {
         while let Some(frame) = sub.recv().await {
             term.lock().unwrap().frame(&frame);
+        }
+        if let Ok(mut term) = term.lock() {
+            term.ended();
         }
     })
 }

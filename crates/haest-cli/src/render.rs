@@ -30,7 +30,7 @@ pub(crate) use haest::wire::Level;
 pub(crate) use inert::hides;
 pub(crate) use inert::inert;
 
-use self::held::Held;
+use self::held::{Held, Question};
 use crate::agents::AgentLog;
 
 /// How events are written.
@@ -62,16 +62,18 @@ pub(crate) struct Renderer<O: Write, E: Write> {
     /// The answer's text was written as it streamed (its pieces seen).
     streamed: bool,
     /// A watcher's view (`haest ctl events`): each input that enters the
-    /// conversation is written (at the terminal the human typed it), and
-    /// another peer answers the questions.
+    /// conversation is written (at the terminal the human typed it).
     watching: bool,
     /// The answer is shown [`inert`] too: stdout is not a regular file, so it
     /// may end on this terminal (a pipe into `tee`). Into a file it goes byte
     /// for byte.
     inert_answer: bool,
-    /// The terminal's own question is about to be asked or waits for its
-    /// answer (the prompter brackets the read).
-    answering: bool,
+    /// The terminal's own question, from when it goes into the stream until
+    /// it is answered or given up (the prompter brackets the read).
+    question: Option<Question>,
+    /// The stream this terminal shows has ended: a question asked now is
+    /// never drawn.
+    ended: bool,
     /// What came after the question while it waited, in order, shown once it
     /// is answered: the question stays the last thing on the screen.
     held: Option<VecDeque<Held>>,
@@ -101,7 +103,8 @@ impl<O: Write, E: Write> Renderer<O, E> {
             streamed: false,
             watching: false,
             inert_answer: false,
-            answering: false,
+            question: None,
+            ended: false,
             held: None,
             held_dropped: 0,
         }
