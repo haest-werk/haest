@@ -9,7 +9,7 @@ use super::{
     channel::{JsMeta, ToJs, ToolMeta},
     thread::Js,
 };
-use crate::api::{ApprovalRequest, Decision};
+use crate::ask::{ApprovalRequest, Decision};
 
 #[derive(Deserialize)]
 struct Drained {

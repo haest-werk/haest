@@ -21,7 +21,10 @@ use std::{
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::{ApprovalRequest, Decision, ModUi};
+use crate::{
+    api::ModUi,
+    ask::{ApprovalRequest, Decision},
+};
 
 /// How the human answered one prompt: what a [`Prompter`] returns. More
 /// answers may come (for this session only, deny always): a `match` has a

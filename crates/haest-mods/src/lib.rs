@@ -271,6 +271,7 @@
 
 mod api;
 mod approval;
+mod ask;
 #[cfg(test)]
 mod conversation_tests;
 mod decorate;
@@ -282,12 +283,11 @@ mod registry;
 #[cfg(test)]
 mod testkit;
 
-pub use api::{
-    ApprovalRequest, Before, Decision, Mod, ModEnv, ModRef, ModToolCall, ModUi, ModUiRef,
-};
+pub use api::{Before, Mod, ModEnv, ModRef, ModToolCall, ModUi, ModUiRef};
 pub use approval::{
     ApprovalMod, AutoJudge, AutoJudgeRef, BashVerdict, SHELL_TOOLS, irreversible_reason,
 };
+pub use ask::{ApprovalRequest, Decision};
 pub use decorate::{ModSystemPrompt, ModTools};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter, PrompterRef};
 pub use js::{JsMod, ModCaps, ModLoadError};

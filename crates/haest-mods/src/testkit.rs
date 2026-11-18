@@ -21,7 +21,8 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    api::{ApprovalRequest, Decision, ModEnv, ModUi},
+    api::{ModEnv, ModUi},
+    ask::{ApprovalRequest, Decision},
     decorate::ModTools,
     gate::{ApprovalAnswer, Prompter},
     js::{JsMod, ModCaps, ModLoadError},

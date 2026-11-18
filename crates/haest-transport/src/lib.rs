@@ -8,7 +8,7 @@
 //! code, so the rules are the same on each:
 //!
 //! - The first frame is `hello`: the session, its model, the process, and
-//!   the [`Access`] the connection has.
+//!   the [`Access`](haest_wire::Access) the connection has.
 //! - Each request gets one `reply` with its `id`; a turn's reply comes when
 //!   the turn ends, with its stop reason.
 //! - Stream frames come only as asked for: `events {after, follow}` replays
@@ -20,8 +20,8 @@
 //!   conversation never waits on it.
 //!
 //! The host decides who a connection speaks for, in a [`Grant`]: its access
-//! (watch or command) and the [`Origin`] of the input it sends (a person or
-//! a program, for the turn gate). No frame can raise either.
+//! (watch or command) and the [`Origin`](haest_wire::Origin) of the input it
+//! sends (a person or a program, for the turn gate). No frame can raise either.
 //!
 //! Nothing here reads a file, a variable or a socket path of its own: the
 //! host hands in what a transport needs. Each transport is its own feature,
@@ -90,11 +90,12 @@
 use std::path::PathBuf;
 
 use haest_session::BackendRef;
-use haest_wire::{Access, LineTooLong, Origin};
+use haest_wire::LineTooLong;
 use tokio::task::JoinHandle;
 
 #[cfg(feature = "broker")]
 mod broker;
+mod grant;
 mod link;
 mod ndjson;
 mod peer;
@@ -110,6 +111,7 @@ mod unix;
 #[cfg(feature = "broker")]
 #[cfg_attr(docsrs, doc(cfg(feature = "broker")))]
 pub use broker::{AUTH_CLOSE, Backoff, Broker};
+pub use grant::Grant;
 pub use link::{Ended, LineSink, LineSource, Start, serve};
 pub use ndjson::{NdjsonSink, NdjsonSource};
 pub use peer::Peer;
@@ -121,37 +123,6 @@ pub use stdio::{ProcessStdin, Stdio};
 pub use unix::{
     RunningSession, SocketDiscovery, UnixPeer, UnixSocket, connect_session, running_sessions,
 };
-
-/// Who a connection speaks for, as the host decides it: what it may do and
-/// whose input it sends. Nothing the peer sends changes it. More may come
-/// (a narrower scope): a host builds one with [`new`](Self::new),
-/// [`watch`](Self::watch) or [`command`](Self::command).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct Grant {
-    /// Watch only, or command too (turns, controls, approval answers).
-    pub access: Access,
-    /// Whose input its turns are, for the turn gate.
-    pub origin: Origin,
-}
-
-impl Grant {
-    /// `access`, its turns `origin`'s input.
-    #[must_use]
-    pub fn new(access: Access, origin: Origin) -> Self {
-        Self { access, origin }
-    }
-
-    /// May only watch: `events`, `snapshot`, `history`.
-    pub fn watch(origin: Origin) -> Self {
-        Self::new(Access::Watch, origin)
-    }
-
-    /// May watch and drive: turns, controls and approval answers too.
-    pub fn command(origin: Origin) -> Self {
-        Self::new(Access::Command, origin)
-    }
-}
 
 /// A way to serve a session to other programs.
 ///

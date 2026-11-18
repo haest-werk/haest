@@ -16,7 +16,10 @@ use haest_core::{error::BoxError, tool::ToolContext, workspace::WorkspaceMode};
 use regex::bytes::{Regex, RegexBuilder};
 use serde_json::Value;
 
-use crate::api::{ApprovalRequest, Before, Decision, Mod, ModEnv, ModToolCall};
+use crate::{
+    api::{Before, Mod, ModEnv, ModToolCall},
+    ask::{ApprovalRequest, Decision},
+};
 
 /// ASCII classes, the way the JavaScript patterns these came from match.
 fn re(pattern: &str) -> Regex {

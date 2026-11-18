@@ -5,7 +5,7 @@ use serde_json::json;
 
 use super::{JsMod, ModCaps, ModLoadError};
 use crate::{
-    api::Decision,
+    ask::Decision,
     registry::{CommandOutcome, Mods},
     testkit::*,
 };
