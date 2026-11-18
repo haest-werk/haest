@@ -136,7 +136,12 @@ use state::{Original, state_of, walk};
 /// it adds) and applied, and so is
 /// the mode a path takes along when the sandbox moves or copies it (`mv`
 /// keeps it, and `cp` gives a new file its source's): a 0600 key moved or
-/// copied lands 0600, and a script moved lands executable. A file the
+/// copied lands 0600, and a script moved lands executable. Not so a
+/// directory the disk holds that the sandbox changed something under first
+/// (`echo x > certs/new`, `mkdir -p certs/sub`): from then on bashkit's
+/// overlay shows it at 0755, whatever the disk's mode, and every directory
+/// between it and the change too, so `mv certs keys` or `cp -r certs copy`
+/// of a 0700 `certs` lands 0755. A file the
 /// sandbox only edits keeps the disk's mode, and one it made lands as the
 /// disk's umask makes it. Applying takes away any permission the sandbox
 /// took, but grants none but execute, and that only to whom may read the

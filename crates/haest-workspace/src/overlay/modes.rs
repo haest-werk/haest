@@ -4,7 +4,10 @@
 //! sandbox moved or copied it (`mv` keeps a path's mode, and `cp` gives a
 //! new file its source's), both kept in [`SetModes`], and the execute bits
 //! of a file it adds. A file it only edits keeps the disk's mode, as an
-//! edit does in bash.
+//! edit does in bash. A move or a copy takes along the mode the sandbox
+//! shows, and for a directory the disk holds that the sandbox changed
+//! something under, that is 0755, not the disk's: bashkit's overlay copies
+//! each directory on the way into its upper layer at its default.
 //!
 //! Applying takes away any permission the sandbox took, but grants none but
 //! execute, and that only to whom may read the file: `chmod +x` on a new file

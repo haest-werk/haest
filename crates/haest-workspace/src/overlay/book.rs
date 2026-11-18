@@ -208,7 +208,9 @@ impl Book {
     /// disk holds the path under any spelling. A path only the sandbox made
     /// has bashkit's default mode, where bash gives the umask's: applying
     /// gives it the umask's. (One it made again after removing the disk's
-    /// counts as the disk's: it lands 0644 at most.)
+    /// counts as the disk's: it lands 0644 at most. A directory the disk
+    /// holds that the sandbox changed something under counts as well,
+    /// though the sandbox shows it 0755, not the disk's mode.)
     pub(crate) async fn own_mode(&self, path: &Path) -> bool {
         self.modes.get(&normalize(path)).is_some()
             || modes::on_disk(&self.real(path)).await.is_some()
