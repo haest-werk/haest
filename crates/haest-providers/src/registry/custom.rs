@@ -53,6 +53,11 @@ pub enum Dialect ("provider type") {
 /// | `reasoningEffort` | [`reasoning_effort`](Self::reasoning_effort) | `{ "efforts": [...], "mandatory": bool }` |
 /// | `pricing` | [`pricing`](Self::pricing) | `{ "<model id>": { "input", "cachedInput", "output", "cacheWrite"? } }` |
 ///
+/// A key this table does not list is refused
+/// ([`EntryProblem::UnknownKey`]), naming the key meant when one is close:
+/// read past, a misspelt `baseURL` (`baseUrl`) would send the entry's key
+/// and the conversation to the dialect's own API.
+///
 /// `reasoningEffort` and `pricing` apply to `type: "openai"` only.
 /// `reasoningEffort`: send a top-level `reasoning_effort`, fitted to the listed
 /// levels ([`CompatOptions::reasoning_effort`]). Absent = no effort is sent.
@@ -149,6 +154,51 @@ impl<'de> Deserialize<'de> for CustomProviderConfig {
 /// What a custom provider sends when it has no key: a local server takes any.
 const NO_KEY: &str = "none";
 
+/// The keys a providers.json entry has, in the order its docs list them.
+pub(super) const ENTRY_KEYS: [&str; 7] = [
+    "type",
+    "baseURL",
+    "apiKey",
+    "apiKeyEnv",
+    "headers",
+    "reasoningEffort",
+    "pricing",
+];
+
+/// The entry key `key` is a misspelling of, if one is close: the same
+/// letters in another case or with `_` or `-` between them
+/// (`baseUrl`, `base_url`), or at most two letters off (`header`).
+fn meant(key: &str) -> Option<&'static str> {
+    let plain = |k: &str| -> Vec<u8> {
+        k.bytes()
+            .filter(u8::is_ascii_alphanumeric)
+            .map(|b| b.to_ascii_lowercase())
+            .collect()
+    };
+    let written = plain(key);
+    ENTRY_KEYS
+        .iter()
+        .map(|known| (edit_distance(&written, &plain(known)), *known))
+        .filter(|(distance, _)| *distance <= 2)
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, known)| known)
+}
+
+/// How many letters must be added, removed or changed to make `a` into `b`.
+fn edit_distance(a: &[u8], b: &[u8]) -> usize {
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let changed = diagonal + usize::from(ca != cb);
+            diagonal = row[j + 1];
+            row[j + 1] = changed.min(row[j] + 1).min(diagonal + 1);
+        }
+    }
+    row[b.len()]
+}
+
 fn opt_string(v: &Value, key: &str) -> Option<String> {
     v.get(key).and_then(Value::as_str).map(str::to_string)
 }
@@ -212,15 +262,18 @@ impl CustomProviderConfig {
         }
     }
 
-    /// Read the providers.json entry `name`; a mistyped dialect, a malformed
-    /// effort list or price is refused, never sent or booked as garbage.
+    /// Read the providers.json entry `name`; a key the entry does not have, a
+    /// mistyped dialect, a malformed effort list or price is refused, never
+    /// sent or booked as garbage.
     ///
     /// No `type` is Chat Completions. An effort level haest has no name for is
     /// skipped.
     ///
     /// # Errors
     ///
-    /// The [`EntryProblem`] when the entry is not a JSON object, its `type`
+    /// The [`EntryProblem`] when the entry is not a JSON object, has a key
+    /// [`CustomProviderConfig`]'s table does not list (`baseUrl` for
+    /// `baseURL`), its `type`
     /// is neither `"openai"` nor `"anthropic"`,
     /// `reasoningEffort` lacks an `efforts` array or a `mandatory` boolean, or
     /// a `pricing` row lacks a numeric `input`, `cachedInput` or `output`, or
@@ -243,8 +296,16 @@ impl CustomProviderConfig {
     /// # }
     /// ```
     pub fn from_json(v: &Value) -> Result<Self, EntryProblem> {
-        if !v.is_object() {
+        let Some(entry) = v.as_object() else {
             return Err(EntryProblem::NotAnObject);
+        };
+        // Read past, a misspelt `baseURL` would make this an entry for the
+        // dialect's own API, which would get the entry's key.
+        if let Some(key) = entry.keys().find(|k| !ENTRY_KEYS.contains(&k.as_str())) {
+            return Err(EntryProblem::UnknownKey {
+                key: key.clone(),
+                meant: meant(key),
+            });
         }
         let headers = v
             .get("headers")

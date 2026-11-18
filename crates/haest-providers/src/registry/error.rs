@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use haest_core::words::UnknownWord;
 
+use super::custom::ENTRY_KEYS;
+
 /// What is wrong with one providers.json entry
 /// ([`CustomProviderConfig::from_json`](super::CustomProviderConfig::from_json)).
 /// Resolving a spec of that provider fails with
@@ -17,6 +19,22 @@ pub enum EntryProblem {
     /// The entry is not a JSON object.
     #[error("the entry is not a JSON object")]
     NotAnObject,
+    /// A key no entry has (`baseUrl` for `baseURL`): refused, so a misspelt
+    /// `baseURL` never sends the entry's key and the conversation to the
+    /// dialect's own API.
+    #[error(
+        "unknown key \"{key}\"{}; an entry takes {}",
+        meant.map(|m| format!(" (did you mean \"{m}\"?)")).unwrap_or_default(),
+        ENTRY_KEYS.join(", ")
+    )]
+    UnknownKey {
+        /// The key, as written.
+        key: String,
+        /// The key it is close to, when one is: the same letters in
+        /// another case or with `_` or `-` between them, or at most two
+        /// letters off.
+        meant: Option<&'static str>,
+    },
     /// `type` names no wire dialect haest speaks: a typo is refused, never
     /// sent as Chat Completions. A `type` that is not a string is its JSON
     /// text here.

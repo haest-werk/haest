@@ -159,6 +159,54 @@ fn a_type_haest_does_not_speak_is_refused_and_no_type_is_chat_completions() {
     assert!(reg.resolve("plain:m").is_ok());
 }
 
+/// A key no entry has is refused, naming it and the key meant when one is
+/// close. Read past, a misspelt `baseURL` made the entry one for the
+/// dialect's own API, which then got the entry's key and the conversation.
+#[tokio::test]
+async fn a_key_no_entry_has_is_refused_and_nothing_is_sent() {
+    let t = FakeHttp::new([FakeReply::status(400, "")]);
+    let custom = entries(json!({
+        "gateway": {"type": "anthropic", "baseUrl": "https://gw.example", "apiKey": "gw-key"},
+        "local": {"base_url": "http://localhost:1234/v1", "apiKeyEnv": "LOCAL_KEY"},
+        "keyed": {"baseURL": "http://x/v1", "api_key_env": "LOCAL_KEY"},
+        "listed": {"baseURL": "http://x/v1", "models": ["m"]},
+        "team": {"baseURL": "http://x/v1", "header": {"X-Team": "platform"}},
+    }));
+    let reg = over(
+        ProviderRegistry::new(keys(&[("LOCAL_KEY", "local-key")])).with_custom(custom),
+        &t,
+    );
+    for (name, unknown, close) in [
+        ("gateway", "baseUrl", Some("baseURL")),
+        ("local", "base_url", Some("baseURL")),
+        ("keyed", "api_key_env", Some("apiKeyEnv")),
+        ("listed", "models", None),
+        ("team", "header", Some("headers")),
+    ] {
+        let resolved = reg.resolve(&format!("{name}:m"));
+        if let Ok(r) = &resolved {
+            collect(r.provider().stream(request(r.model()))).await;
+        }
+        let sent: Vec<String> = t.requests().into_iter().map(|r| r.url).collect();
+        let Err(ModelError::Unavailable { provider, source }) = resolved else {
+            panic!("{name}: resolved, and sent to {sent:?}");
+        };
+        let problem = source.downcast::<EntryProblem>().expect("an entry problem");
+        assert!(
+            matches!(&*problem, EntryProblem::UnknownKey { key, meant }
+                if key == unknown && *meant == close),
+            "{name}: {problem:?}"
+        );
+        assert_eq!(provider, name);
+        let said = problem.to_string();
+        assert!(
+            said.contains(unknown) && said.contains("apiKeyEnv"),
+            "{said}"
+        );
+    }
+    assert!(t.requests().is_empty(), "nothing sent");
+}
+
 #[test]
 fn an_entry_that_is_not_an_object_is_refused() {
     let custom = entries(json!({"local": "http://localhost:1234/v1"}));

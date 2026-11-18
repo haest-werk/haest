@@ -291,6 +291,18 @@ write instead.
   as it is: `%40` there makes another URL (RFC 3986, section 2.2), which
   the server may or may not read the same. A URL that WebFetch fetches is
   not a configured one, and an `@` in its path still works.
+- A providers.json entry with a misspelt key sent the entry's key, and the
+  conversation, to OpenAI's or Anthropic's own API. haest read each key by
+  its exact name and skipped any other, and an entry with no `baseURL` is
+  one for the dialect's own API. So `"baseUrl":
+  "https://llm-gateway.example.com"` in a `"type": "anthropic"` entry sent
+  the gateway's key, the system prompt and the first message to
+  `api.anthropic.com`, and the 401 came back only after that. A key an
+  entry does not have now fails that entry when its provider is resolved
+  (`EntryProblem::UnknownKey`), naming the key, and the key meant when one
+  is close (`baseUrl` and `base_url` for `baseURL`, `header` for
+  `headers`). Nothing is sent. An entry with a key of its own that the
+  TypeScript haest skipped (a `"_comment"`) fails too: delete the key.
 - The broker link (new in this release) sent part of its URL's userinfo,
   up to the whole password, in its HTTP `Host` header. tungstenite writes
   `Host` from after the first `@` and dials the host after the last, so a
