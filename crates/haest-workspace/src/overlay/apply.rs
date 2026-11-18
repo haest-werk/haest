@@ -65,6 +65,9 @@ impl OverlayChanges {
     /// Every change that is not a conflict, onto the real disk: the deletes,
     /// then the writes, each in path order.
     pub(super) async fn apply_all(&self) -> ApplyReport {
+        // The sandbox's writes wait for the apply, and the apply for those
+        // under way: between the scan and the end, the overlay holds still.
+        let _alone = self.book.gate.write().await;
         // The ones this scan compares under: a wipe made while the apply
         // runs, of one of these too, is not.
         let wiped = self.book.wipes();

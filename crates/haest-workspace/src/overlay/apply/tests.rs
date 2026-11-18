@@ -114,7 +114,8 @@ async fn a_file_the_human_saves_during_the_apply_is_skipped_not_deleted() {
 /// The sandbox wipes `lib` again while the apply runs (`rm -r lib && mkdir
 /// lib`), over a file the human made there meanwhile. The apply forgot `lib`
 /// as wiped all the same, so no list looked inside it again: the file was
-/// gone in the sandbox, stayed on the disk, and was never listed.
+/// gone in the sandbox, stayed on the disk, and was never listed. (The wipe
+/// now waits for the apply to end.)
 #[tokio::test]
 async fn a_directory_wiped_again_while_the_apply_runs_is_still_compared() {
     let disk = Arc::new(Disk::default());
@@ -140,6 +141,7 @@ async fn a_directory_wiped_again_while_the_apply_runs_is_still_compared() {
     // sandbox reads it, and wipes lib again.
     let human = disk.clone();
     let sandbox = (view, recorder);
+    let (tx, rx) = std::sync::mpsc::channel();
     disk.after_remove(
         "/p/lib/a.rs",
         Box::new(move || {
@@ -152,13 +154,19 @@ async fn a_directory_wiped_again_while_the_apply_runs_is_still_compared() {
                     .unwrap();
                 let (view, recorder) = sandbox;
                 view.write_file(h, b"h\n").await.unwrap();
-                recorder.remove(Path::new("/lib"), true).await.unwrap();
-                recorder.mkdir(Path::new("/lib"), false).await.unwrap();
+                // The sandbox's own work, as a job runs it: it waits for
+                // the apply.
+                let wipe = tokio::spawn(async move {
+                    recorder.remove(Path::new("/lib"), true).await.unwrap();
+                    recorder.mkdir(Path::new("/lib"), false).await.unwrap();
+                });
+                tx.send(wipe).unwrap();
             })
         }),
     );
 
     let report = changes.apply().await;
+    rx.recv().unwrap().await.unwrap();
     assert_eq!(
         conflicts(&report.applied),
         [("/lib/a.rs", false)],
@@ -203,4 +211,43 @@ async fn a_save_the_human_makes_during_the_apply_inside_a_removed_directory_is_k
     assert_eq!(conflicts(&report.skipped), both, "{report:?}");
     assert_eq!(on_disk(&disk, "/p/lib/a.rs").await.as_deref(), Some(HUMAN));
     assert_eq!(conflicts(&changes.list().await), both);
+}
+
+/// The sandbox writes `a.md` again while the apply deletes it (a job that
+/// runs while the human applies). The apply then forgot the path: the
+/// sandbox held the new file, the disk nothing, and no list showed it.
+#[tokio::test]
+async fn a_sandbox_write_during_the_apply_is_still_listed() {
+    let disk = Arc::new(Disk::default());
+    let changes = project(&disk).await;
+    let recorder = changes.recorder();
+    recorder.remove(Path::new("/a.md"), false).await.unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let sandbox = recorder.clone();
+    disk.after_remove(
+        "/p/a.md",
+        Box::new(move || {
+            Box::pin(async move {
+                let mut job = tokio::spawn(async move {
+                    sandbox
+                        .write_file(Path::new("/a.md"), b"a3\n")
+                        .await
+                        .unwrap();
+                });
+                // It lands now, or it waits for the apply.
+                let wait = std::time::Duration::from_millis(100);
+                let landed = tokio::time::timeout(wait, &mut job).await;
+                tx.send(landed.is_err().then_some(job)).unwrap();
+            })
+        }),
+    );
+
+    let report = changes.apply().await;
+    if let Some(job) = rx.recv().unwrap() {
+        job.await.unwrap();
+    }
+    assert_eq!(conflicts(&report.applied), [("/a.md", false)], "{report:?}");
+    let shown = changes.overlay.inner().read_file(Path::new("/a.md")).await;
+    assert_eq!(shown.unwrap(), b"a3\n");
+    assert_eq!(conflicts(&changes.list().await), [("/a.md", false)]);
 }

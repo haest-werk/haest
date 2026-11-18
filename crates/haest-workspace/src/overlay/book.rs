@@ -12,6 +12,7 @@ use std::{
 };
 
 use haest_core::fs::{Fs, normalize};
+use tokio::sync::RwLock;
 
 use super::{
     modes::{self, SetMode, SetModes},
@@ -28,6 +29,12 @@ pub(crate) struct Book {
     wiped: Mutex<Wiped>,
     /// The modes the sandbox set (`chmod`).
     pub(super) modes: SetModes,
+    /// Held shared by each change the recorder passes on, and alone by an
+    /// apply: a sandbox write waits for the apply in progress, and the
+    /// apply for the writes already under way, so none lands between the
+    /// apply's read of a path and its reading the disk there again or
+    /// forgetting it.
+    pub(super) gate: RwLock<()>,
     pub(super) disk: Arc<dyn Fs>,
     pub(super) root: PathBuf,
     spelling: Spelling,
@@ -93,6 +100,7 @@ impl Book {
             touched: Mutex::default(),
             wiped: Mutex::default(),
             modes: SetModes::default(),
+            gate: RwLock::new(()),
             disk,
             spelling: Spelling::of(&root),
             root,

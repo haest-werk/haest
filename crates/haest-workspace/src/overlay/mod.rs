@@ -143,8 +143,10 @@ use state::{Original, state_of, walk};
 /// is applied reads through to the disk again: the sandbox sees what the
 /// human does there afterwards (an edit, a delete, a file made again where
 /// the sandbox deleted one), and its next change to such a path is checked
-/// against that, never written over it. A path the sandbox changed again
-/// while the apply ran stays its own.
+/// against that, never written over it. A change the sandbox makes while an
+/// apply runs (a background job's) waits for the apply to end, and one under
+/// way when it starts is let finish first: none is lost, nor forgotten
+/// unapplied.
 ///
 /// Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
 /// directory, not file by file -- an edit the human made INSIDE it meanwhile,

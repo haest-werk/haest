@@ -13,6 +13,7 @@ use bashkit::{
     DirEntry, DirListing, FileSystem, FileSystemExt, FileType, FsLimits, FsUsage, Metadata,
     SearchCapable, VfsSnapshot, WalkOptions,
 };
+use tokio::sync::RwLockReadGuard;
 
 use super::Book;
 
@@ -55,6 +56,23 @@ impl Recorder {
             let _ = self.inner.chmod(path, mode).await;
         }
     }
+
+    /// The sandbox's turn to change the project: shared with its other
+    /// changes, never with an apply. Taken once per change, never twice by
+    /// one (a second would wait behind an apply that waits for the first).
+    async fn turn(&self) -> RwLockReadGuard<'_, ()> {
+        self.book.gate.read().await
+    }
+
+    /// `write_file`, its turn taken.
+    async fn write(&self, path: &Path, content: &[u8]) -> Result<()> {
+        self.parent_shown(path).await?;
+        self.book.remember(path).await;
+        let mode = self.file_mode(path).await;
+        self.inner.write_file(path, content).await?;
+        self.keep_mode(path, mode).await;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -64,6 +82,7 @@ impl FileSystemExt for Recorder {
         self.inner.usage()
     }
     async fn mkfifo(&self, path: &Path, mode: u32) -> Result<()> {
+        let _turn = self.turn().await;
         self.book.remember(path).await;
         self.inner.mkfifo(path, mode).await
     }
@@ -88,21 +107,18 @@ impl FileSystem for Recorder {
         self.inner.read_file(path).await
     }
     async fn write_file(&self, path: &Path, content: &[u8]) -> Result<()> {
-        self.parent_shown(path).await?;
-        self.book.remember(path).await;
-        let mode = self.file_mode(path).await;
-        self.inner.write_file(path, content).await?;
-        self.keep_mode(path, mode).await;
-        Ok(())
+        let _turn = self.turn().await;
+        self.write(path, content).await
     }
     async fn append_file(&self, path: &Path, content: &[u8]) -> Result<()> {
+        let _turn = self.turn().await;
         // bashkit's overlay makes a file on append only where its upper
         // layer holds the directory, and never where the sandbox removed
         // one: `>>` onto a new file in a directory only the disk holds, or
         // onto one `rm` took, failed. Appending to nothing is writing, and a
         // write checks that the sandbox shows the parent, as bash does.
         if !self.inner.exists(path).await.unwrap_or(true) {
-            return self.write_file(path, content).await;
+            return self.write(path, content).await;
         }
         self.book.remember(path).await;
         let mode = self.file_mode(path).await;
@@ -111,6 +127,7 @@ impl FileSystem for Recorder {
         Ok(())
     }
     async fn mkdir(&self, path: &Path, recursive: bool) -> Result<()> {
+        let _turn = self.turn().await;
         // bashkit's overlay unhides `path` alone: a parent the sandbox
         // removed (`rm -rf dist`, then `mkdir -p dist/sub`) stayed removed,
         // and hid all made under it. So each missing parent is made on its
@@ -150,6 +167,7 @@ impl FileSystem for Recorder {
         self.inner.mkdir(path, recursive).await
     }
     async fn remove(&self, path: &Path, recursive: bool) -> Result<()> {
+        let _turn = self.turn().await;
         self.book.remember(path).await;
         self.inner.remove(path, recursive).await?;
         self.book.modes.moved(path, None);
@@ -171,6 +189,7 @@ impl FileSystem for Recorder {
         self.inner.exists(path).await
     }
     async fn rename(&self, from: &Path, to: &Path) -> Result<()> {
+        let _turn = self.turn().await;
         self.parent_shown(to).await?;
         self.book.remember(from).await;
         self.book.remember(to).await;
@@ -183,11 +202,13 @@ impl FileSystem for Recorder {
         Ok(())
     }
     async fn copy(&self, from: &Path, to: &Path) -> Result<()> {
+        let _turn = self.turn().await;
         self.parent_shown(to).await?;
         self.book.remember(to).await;
         self.inner.copy(from, to).await
     }
     async fn symlink(&self, target: &Path, link: &Path) -> Result<()> {
+        let _turn = self.turn().await;
         self.parent_shown(link).await?;
         self.book.remember(link).await;
         self.inner.symlink(target, link).await
@@ -196,12 +217,14 @@ impl FileSystem for Recorder {
         self.inner.read_link(path).await
     }
     async fn chmod(&self, path: &Path, mode: u32) -> Result<()> {
+        let _turn = self.turn().await;
         self.book.remember(path).await;
         self.inner.chmod(path, mode).await?;
         self.book.set_mode(path, mode).await;
         Ok(())
     }
     async fn set_modified_time(&self, path: &Path, time: SystemTime) -> Result<()> {
+        let _turn = self.turn().await;
         self.book.remember(path).await;
         self.inner.set_modified_time(path, time).await
     }
