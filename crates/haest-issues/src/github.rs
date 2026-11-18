@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use haest_http::{HttpClientRef, Method, redacted_url};
+use haest_http::{__private::as_parsed, HttpClientRef, Method, redacted_url};
 use serde_json::Value;
 
 use crate::tracker::TrackerError;
@@ -167,8 +167,10 @@ impl GithubTracker {
     }
 
     /// Another API root: GitHub Enterprise Server's `https://HOST/api/v3`
-    /// (its GraphQL endpoint is then `https://HOST/api/graphql`). The token,
-    /// if any, goes to this host.
+    /// (its GraphQL endpoint is then `https://HOST/api/graphql`, for `/V3`
+    /// too). The token, if any, goes to this host. The root is read as a URL
+    /// parser reads it: without the spaces and control characters around it
+    /// (a CR from a CRLF `.env`) and the tabs, CRs and LFs in it.
     ///
     /// A root with an `@` past its host, or with no host (`https://`, what
     /// `https://${GHE_HOST}` makes of an empty variable, or `https:`), is
@@ -181,16 +183,23 @@ impl GithubTracker {
     /// path for one.
     #[must_use]
     pub fn with_api_url(mut self, url: impl Into<String>) -> Self {
-        let mut url = url.into();
+        // As a parser reads it: a CR from a CRLF `.env`, or a space before
+        // it, would hide a `/v3` at its end.
+        let mut url = as_parsed(&url.into()).into_owned();
         // Only the path's `/` go, never the `//` after the scheme: a root
         // with no host stays one, and the check refuses it.
         let host = url.find("://").map_or(0, |i| i + 3);
         url.truncate(url.trim_end_matches('/').len().max(host));
-        // Enterprise Server's GraphQL is beside `/api/v3`: the `/v3` cut is
-        // the path's, never a host named `v3`.
-        self.graphql = match url.strip_suffix("/v3").filter(|root| root.len() >= host) {
-            Some(root) => format!("{root}/graphql"),
-            None => format!("{url}/graphql"),
+        // Enterprise Server's GraphQL is beside `/api/v3`, in any case: the
+        // `/v3` cut is the path's, never a host named `v3`.
+        let v3 = url.len().saturating_sub(3);
+        let ends_in_v3 = url
+            .get(v3..)
+            .is_some_and(|end| end.eq_ignore_ascii_case("/v3"));
+        self.graphql = if ends_in_v3 && v3 >= host {
+            format!("{}/graphql", &url[..v3])
+        } else {
+            format!("{url}/graphql")
         };
         self.api = url;
         self
@@ -207,8 +216,8 @@ impl GithubTracker {
     }
 
     /// The API root its requests go to ([`with_api_url`](Self::with_api_url);
-    /// `https://api.github.com` by default), with no trailing `/` on its
-    /// path.
+    /// `https://api.github.com` by default), as a URL parser reads it, with
+    /// no trailing `/` on its path.
     pub fn api_url(&self) -> &str {
         &self.api
     }

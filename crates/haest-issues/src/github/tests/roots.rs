@@ -91,6 +91,39 @@ async fn an_api_root_of_a_scheme_alone_is_never_sent_to() {
     }
 }
 
+/// An Enterprise Server root with a CR after it (a CRLF `.env`), a space
+/// before it, or written in upper case kept its `/v3` for GraphQL
+/// (`.../api/v3/graphql`, a 404 on the same host). The root is read as a
+/// parser reads it, and the `/v3` cut in any case.
+#[tokio::test]
+async fn an_enterprise_root_with_a_cr_or_in_upper_case_cuts_v3_for_graphql() {
+    for (root, graphql) in [
+        (
+            "https://ghe.example/api/v3\r",
+            "https://ghe.example/api/graphql",
+        ),
+        (
+            "https://ghe.example/api/v3/\r\n",
+            "https://ghe.example/api/graphql",
+        ),
+        (
+            " https://ghe.example/api/v3",
+            "https://ghe.example/api/graphql",
+        ),
+        (
+            "HTTPS://GHE.EXAMPLE/API/V3",
+            "HTTPS://GHE.EXAMPLE/API/graphql",
+        ),
+    ] {
+        let http = FakeHttp::new([ok(json!({"data": {}}))]);
+        let gh = github(http.clone()).with_api_url(root);
+        gh.graphql("query { viewer { login } }", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(http.sent(), [format!("POST {graphql}")], "{root:?}");
+    }
+}
+
 /// A root whose host is `v3` (no path) lost its host to the cut of an
 /// Enterprise Server root's `/v3`: its GraphQL endpoint was
 /// `https://graphql`, another host, sent the token. Only a `/v3` in the
