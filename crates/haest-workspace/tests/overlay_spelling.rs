@@ -364,7 +364,7 @@ async fn a_write_below_a_directory_beside_a_file_spelled_another_way_is_a_confli
     assert_eq!(paths(&left), paths(&report.skipped), "{report:?}");
     assert!(left.iter().all(|c| c.conflict), "{left:?}");
     if one {
-        let want = ["/NOTES", "/NOTES/x", "/NOTES/x/y"];
+        let want = ["/NOTES/x", "/NOTES/x/y"];
         assert_eq!(paths(&report.skipped), want, "{report:?}");
         assert_eq!(contents(&dir), pairs(&[("notes", "n\n")]));
     }

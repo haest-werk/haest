@@ -237,7 +237,7 @@ impl OverlayChanges {
         let touched = self.book.snapshot();
         let mut all: BTreeMap<_, _> = touched.iter().map(|(p, o)| (p.clone(), Some(*o))).collect();
         // In path order, a directory comes right before those under it, which
-        // its walk covers (`mkdir -p` records every directory it makes).
+        // its walk covers (`mkdir a a/b a/b/c` records all three).
         let mut walked: Option<&Path> = None;
         for (path, original) in &touched {
             if walked.is_some_and(|outer| path.starts_with(outer))

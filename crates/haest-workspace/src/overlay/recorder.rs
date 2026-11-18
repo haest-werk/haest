@@ -86,6 +86,13 @@ impl FileSystem for Recorder {
             // made on its own, from the top (recursive: the overlay's upper
             // layer may lack the parents the disk holds). A directory that
             // is there has all of its own.
+            //
+            // Not recorded, as when the overlay makes them: one the disk
+            // holds is hidden only by a removal recorded at it or above it,
+            // from which the scan compares what is under it, and a new one
+            // is made by applying `path`. Each one recorded would be walked
+            // at every scan, and the overlay lists a directory by going
+            // through all it holds.
             let mut missing = Vec::new();
             let mut at = path.parent();
             while let Some(dir) = at
@@ -95,7 +102,6 @@ impl FileSystem for Recorder {
                 at = dir.parent();
             }
             for dir in missing.into_iter().rev() {
-                self.book.remember(dir).await;
                 self.inner.mkdir(dir, true).await?;
             }
         }

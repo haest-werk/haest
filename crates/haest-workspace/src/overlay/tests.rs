@@ -10,9 +10,9 @@ use haest_core::{
 use super::{OverlayChanges, testing::Disk};
 use crate::bridge::BashkitFsOverHaest;
 
-/// `mkdir -p` records every directory it makes, and the scan walked the
-/// tree of each one it found new: a tree three deep was listed three times
-/// over at its top, and the deeper, the more.
+/// A tree whose every directory the sandbox made (`mkdir a a/b a/b/c`):
+/// the scan walked the tree of each one it found new, so the top was
+/// listed three times over, and the deeper, the more.
 #[tokio::test]
 async fn a_new_tree_is_walked_once_per_scan() {
     let disk = Arc::new(Disk::default());
@@ -21,7 +21,9 @@ async fn a_new_tree_is_walked_once_per_scan() {
     let overlay = Arc::new(BashkitFsOverHaest::new(FsRef::from(files.clone())));
     let changes = OverlayChanges::new(overlay, disk, "/p");
     let recorder = changes.recorder();
-    recorder.mkdir(Path::new("/a/b/c"), true).await.unwrap();
+    for dir in ["/a", "/a/b", "/a/b/c"] {
+        recorder.mkdir(Path::new(dir), false).await.unwrap();
+    }
     recorder
         .write_file(Path::new("/a/b/c/f"), b"x")
         .await
