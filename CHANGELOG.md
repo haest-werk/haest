@@ -444,6 +444,16 @@ write instead.
     spelling, the file itself or a directory on its way, is a conflict
     whatever that holds, listed as one and skipped, unless the same apply
     deletes that name;
+  - where such a change is a conflict, so is every delete and every
+    overwrite at or under the disk's spelling of that name: after
+    `mv lib Lib && mkdir lib`, `mkdir Lib && mv lib/* Lib/` or
+    `cp -r lib Lib && rm lib/a.rs`, every file stays in the disk's `lib`,
+    listed as a conflict until the human settles it, never deleted while
+    `Lib`'s copies wait;
+  - a directory whose delete frees such a name is deleted whole or not at
+    all: where a directory in it may not be emptied (read-only to haest's
+    process), the delete fails before anything is removed, and the writes
+    wait;
   - the apply reads each change's real path again right before putting it
     on the disk: one that moved since the scan (an earlier write of the
     apply under another spelling, the new name of a rename whose delete
@@ -474,8 +484,37 @@ write instead.
     under it listed. Applying left its old files on the disk, never wrote
     a tree moved onto it, and reported everything applied. Each path under
     such a directory that differs, on the disk or in the sandbox, is now
-    listed and applied. As for `rm -r`, an edit the human made in it
+    listed and applied, also where the sandbox removes the directory again
+    while an apply runs. As for `rm -r`, an edit the human made in it
     meanwhile is not a conflict.
+- After an apply, the sandbox went on reading its own copy of each file it
+  had changed, and nothing where it had deleted one, whatever the human
+  did on the disk since. Its next change there went over the human's edit,
+  or deleted a file the human had made again, with no conflict. The
+  `haest` command applies mid-session, so one edit between two applies was
+  enough. What is applied now reads through to the disk again: the sandbox
+  sees the human's edits, deletes and new files there, and its next change
+  is checked against them.
+- In the sandbox, `>>`, `tee -a` and `cat >> f <<EOF` onto a file that was
+  not there failed with "No such file or directory" in each directory the
+  sandbox had not written in yet, and after `rm f`, where bash makes the
+  file. A failed `tee -a` ended the whole script. They make the file now;
+  under a directory the sandbox removed they still fail, as in bash. The
+  fault is in bashkit's overlay (0.21.0 has it too), so the fix is in
+  haest.
+- A mode the sandbox set was never listed or applied: a script made
+  executable with `chmod +x` ran in the sandbox and landed on the disk
+  without its execute bits, and `chmod +x` on a file the disk held was not
+  listed at all. The sandbox also gave a file 0644 on each `>` or `>>`, so
+  a script it rewrote lost `+x` there. Now a mode the sandbox sets is
+  listed (`Modified`, if nothing else changed) and applied, a file it adds
+  keeps its execute bits, and a write keeps the file's mode. Applying
+  grants nothing but execute, and that only to whom may read the file
+  (`chmod 666` or a setuid bit is not applied); a mode the human changed
+  on the disk meanwhile is a conflict.
+- In the sandbox, `mkdir -p notes/x` beside a file `notes` succeeded: the
+  file was then gone there, and applying the listed directory failed. It
+  fails now with "Not a directory", as in bash.
 - A ledger hook that read the ledger it hears from (a warning shown with
   the budget's summary beside it) hung the turn for good: the hooks ran
   with the ledger locked. They run once it is unlocked; snapshots are still
@@ -1774,6 +1813,9 @@ Hosts write less (round two of the review, and what porting brain onto
   command died of SIGPIPE (exit 141) on its next write. It is now called
   no more, the pipes are still read to their end, and the panic reaches the
   caller once the call has ended, as over the sandbox.
+- `OverlayChanges::diff` starts with a line `Mode /run.sh 644 -> 755`
+  where applying changes the file's mode (see Bug fixes); a change of mode
+  alone has that line and no hunk.
 
 ### haest-code
 
