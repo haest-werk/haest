@@ -40,7 +40,9 @@ use crate::{
 /// the tools report to.
 ///
 /// It is the loop's [`AgentHooks`]: every message goes to the session file,
-/// and a model call that would overflow the window is compacted first. It is
+/// a tool with side effects runs only once the answer that called it is
+/// written there, and a model call that would overflow the window is
+/// compacted first. It is
 /// the ledger's [`LedgerHooks`] (the spend goes to the session file) and the
 /// tools' [`ToolServices`] (their log lines reach [`Ui::debug`] with `debug` on).
 /// It answers the per-model questions (window, caps, input kinds, effort
@@ -223,6 +225,12 @@ impl AgentHooks for RuntimeHooks {
             done.map_err(|e| compaction_failed(&e))?;
         }
         Ok(())
+    }
+
+    /// The answer that asked for the calls is written before any of them
+    /// runs, so a resume after a crash knows they may have run.
+    async fn before_effects(&self) {
+        self.flush().await;
     }
 
     fn on_media_withheld(&self, parts: &[MediaPart], model: &str) {

@@ -1,10 +1,17 @@
 //! A host's turns and its end, through the runtime's own methods: what the
 //! inbox's gate holds rides in with the human's next turn, every turn is in
-//! the session file when it ends, and shut_down leaves nothing running.
+//! the session file when it ends, a tool with side effects starts with its
+//! call in the session file, and shut_down leaves nothing running.
 
-use std::{path::Path, sync::Arc, sync::Mutex};
+use std::{
+    io,
+    path::Path,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
+use haest_core::testing::{ScriptedProvider, text_answer, tool_answer};
 use haest_settings::{BuiltinTools, Settings};
 use serde_json::json;
 
@@ -12,9 +19,13 @@ use super::{hardcoded, openrouter_key};
 use crate::{
     BuildOptions, RuntimeInputs, ShutDown, World, build,
     haest::{
-        ChildEnv, LoopEvent, WorkspaceMode,
-        core::fs::{Fs, MemFs},
+        ChildEnv, LoopEvent, Message, WorkspaceMode,
+        core::error::BoxError,
+        core::fs::{DirEntry, Fs, FsStat, MemFs},
+        core::session::replay,
+        core::tool::ToolContext,
         http::{HttpClient, HttpError, Request, Response},
+        mods::{Before, Mod, ModEnv, ModToolCall},
         tools::Inbox,
         workspace::RealFs,
     },
@@ -68,6 +79,123 @@ async fn what_the_gate_holds_rides_in_with_the_humans_next_turn() {
     let file = Path::new("/data/sessions").join(format!("{}.jsonl", rt.session_id()));
     let saved = fs.read_to_string(&file).await.unwrap();
     assert!(saved.contains("what happened?"));
+}
+
+const SESSIONS: &str = "/data/sessions";
+
+/// A host's files where each append to a session file takes 50 ms (a
+/// network or a synced disk).
+struct SlowAppends(Arc<MemFs>);
+
+#[async_trait]
+impl Fs for SlowAppends {
+    async fn read(&self, p: &Path) -> io::Result<Vec<u8>> {
+        self.0.read(p).await
+    }
+    async fn write(&self, p: &Path, d: &[u8]) -> io::Result<()> {
+        self.0.write(p, d).await
+    }
+    async fn append(&self, p: &Path, d: &[u8]) -> io::Result<()> {
+        if p.starts_with(SESSIONS) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        self.0.append(p, d).await
+    }
+    async fn stat(&self, p: &Path) -> io::Result<FsStat> {
+        self.0.stat(p).await
+    }
+    async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
+        self.0.read_dir(p).await
+    }
+    async fn create_dir(&self, p: &Path) -> io::Result<()> {
+        self.0.create_dir(p).await
+    }
+    async fn remove(&self, p: &Path) -> io::Result<()> {
+        self.0.remove(p).await
+    }
+    async fn remove_all(&self, p: &Path) -> io::Result<()> {
+        self.0.remove_all(p).await
+    }
+    async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
+        self.0.rename(a, b).await
+    }
+}
+
+/// A tool's name, and the ids of the tool calls the session file held as it
+/// started: what a resume after a crash there would see.
+type Start = (String, Vec<String>);
+
+/// Keeps a [`Start`] for each tool that starts.
+struct Witness {
+    fs: Arc<MemFs>,
+    seen: Arc<Mutex<Vec<Start>>>,
+}
+
+#[async_trait]
+impl Mod for Witness {
+    fn name(&self) -> &str {
+        "witness"
+    }
+
+    async fn tool_before(
+        &self,
+        call: &ModToolCall,
+        _: &ToolContext,
+        _: &ModEnv,
+    ) -> Result<Before, BoxError> {
+        let sessions = self.fs.read_dir(Path::new(SESSIONS)).await?;
+        let [file] = sessions.as_slice() else {
+            return Err(format!("one session file expected: {sessions:?}").into());
+        };
+        let text = (self.fs)
+            .read_to_string(&Path::new(SESSIONS).join(&file.name))
+            .await?;
+        let calls = (replay(&text).messages.iter())
+            .filter_map(|m| match m {
+                Message::Assistant(a) => Some(a.tool_calls().map(|c| c.id.clone())),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        self.seen.lock().unwrap().push((call.name.clone(), calls));
+        Ok(Before::Pass)
+    }
+}
+
+/// The answer that asked for a tool with side effects is in the session
+/// file before the tool starts, however slow the file's writes: a resume
+/// after a crash then knows the call may have run.
+#[tokio::test]
+async fn a_tool_with_side_effects_starts_with_its_call_in_the_session_file() {
+    let files = Arc::new(MemFs::new());
+    let settings = Settings {
+        tools: BuiltinTools {
+            write: true,
+            ..BuiltinTools::NONE
+        },
+        ..hardcoded()
+    };
+    let write = json!({"file_path": "/w/out.txt", "content": "effect"});
+    let model = ScriptedProvider::new([
+        tool_answer(&[("call-1", "Write", write)]),
+        text_answer("written"),
+    ]);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let witness = Witness {
+        fs: files.clone(),
+        seen: seen.clone(),
+    };
+    let inputs = RuntimeInputs::new(settings, World::files(SlowAppends(files)))
+        .with_models(model.resolver())
+        .with_mod(witness);
+    let mut rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
+        .await
+        .unwrap();
+
+    let outcome = rt.human_turn("write it", &mut |_: LoopEvent| {}).await;
+    assert_eq!(outcome.error, None, "{outcome:?}");
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(seen, [("Write".to_string(), vec!["call-1".to_string()])]);
 }
 
 #[tokio::test]
