@@ -120,11 +120,23 @@ mod tests {
     /// URL shows where it goes, never a credential riding in it.
     #[tokio::test]
     async fn the_broker_url_is_shown_without_its_credentials() {
-        let url = "wss://user:s3cret@broker.example/agents?token=t0ken#k3y";
-        let report = report(&[("broker_url", url)]).await.join("\n");
-        for secret in ["s3cret", "t0ken", "k3y"] {
-            assert!(!report.contains(secret), "{secret} in {report}");
+        let cases = [
+            (
+                "wss://user:s3cret@broker.example/agents?token=t0ken#k3y",
+                &["s3cret", "t0ken", "k3y"][..],
+            ),
+            // A pasted base64 token, its `/` unescaped.
+            (
+                "wss://agent:abc/def+ghi=@broker.example/agents",
+                &["agent:", "abc", "def+ghi"][..],
+            ),
+        ];
+        for (url, secrets) in cases {
+            let shown = report(&[("broker_url", url)]).await.join("\n");
+            for secret in secrets {
+                assert!(!shown.contains(secret), "{secret} in {shown}");
+            }
+            assert!(shown.contains("broker.example/agents"), "{shown}");
         }
-        assert!(report.contains("broker.example/agents"), "{report}");
     }
 }

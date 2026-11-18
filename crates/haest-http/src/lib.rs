@@ -130,7 +130,7 @@ mod response;
 /// option and tracker types use, and the scrubbing of a reqwest error's URL.
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::redact::{HeaderNames, REDACTED, UrlDebug, without_userinfo};
+    pub use crate::redact::{HeaderNames, REDACTED, UrlDebug};
     #[cfg(feature = "reqwest")]
     pub use crate::reqwest_client::without_credentials;
 }

@@ -55,6 +55,25 @@ async fn a_server_that_cannot_be_reached_is_reported_without_the_urls_credential
     assert_no_credentials(&e);
 }
 
+/// A password with an unescaped `/` reads to the URL parser as a host, a
+/// port and a path: `127.0.0.1:<port>/pa55-SECRET@broker.example/...` meant
+/// the user `127.0.0.1` and the password `<port>/pa55-SECRET`. The request
+/// goes where the parser says, and its error names no part of that URL.
+#[tokio::test]
+async fn a_password_the_parser_took_for_a_path_is_not_in_the_error() {
+    let closed = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = closed.local_addr().unwrap();
+    drop(closed);
+    let url = format!("http://{addr}/pa55-SECRET@broker.example/v1/messages");
+    let e = ReqwestClient::new()
+        .send(Request::get(url))
+        .await
+        .unwrap_err();
+    assert!(matches!(e, HttpError::Connect(_)), "{e:?}");
+    let text = shown(&e);
+    assert!(!text.contains("pa55-SECRET"), "{text}");
+}
+
 #[tokio::test]
 async fn a_redirect_loop_is_reported_without_the_urls_credentials() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

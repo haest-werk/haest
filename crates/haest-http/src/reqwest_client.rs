@@ -81,9 +81,24 @@ pub fn build_reqwest(builder: reqwest::ClientBuilder) -> Result<reqwest::Client,
 /// and its Debug output, and a URL may carry a key (`?api_key=`); what is
 /// left (scheme, host, port, path) still says where the request went.
 ///
+/// A URL with an `@` past its host loses its URL altogether, as
+/// [`redacted_url`](crate::redacted_url) fails safe: a password with an
+/// unescaped `/` or `?` (`https://user:12/34@host`) reads to the parser as
+/// a host, a port and a path, so what it took for them may be the
+/// password.
+///
 /// haest-mcp scrubs rmcp's errors with it too: rmcp sends an MCP server's
 /// streamable HTTP over a reqwest client of its own.
 pub fn without_credentials(mut e: reqwest::Error) -> reqwest::Error {
+    let misread = e.url().is_some_and(|url| {
+        [Some(url.path()), url.query(), url.fragment()]
+            .into_iter()
+            .flatten()
+            .any(|part| part.contains('@'))
+    });
+    if misread {
+        return e.without_url();
+    }
     if let Some(url) = e.url_mut() {
         url.set_query(None);
         url.set_fragment(None);
