@@ -98,8 +98,13 @@ impl<T> Newest<T> {
     }
 
     /// `value` is the newest: call it under the owner's lock, at the change.
+    /// The value it replaces, one not handed over yet, is dropped with the
+    /// slot unlocked: a plug-in's value may run code as it drops, and call
+    /// this `Newest` back.
     pub fn put(&self, value: T) {
-        *self.slot() = Some(value);
+        // The guard drops with this statement.
+        let old = self.slot().replace(value);
+        drop(old);
     }
 
     /// Hand `hook` every value put and not handed over yet, newest last,
@@ -254,6 +259,69 @@ mod tests {
         go_on.wait();
         assert!(first.join().unwrap(), "the hook's panic reaches its caller");
         assert_eq!(*heard.lock().unwrap(), [2], "{newest:?}");
+    }
+
+    /// A plug-in's value that puts its successor as it drops.
+    struct PutsOnDrop(Option<Arc<Newest<PutsOnDrop>>>);
+
+    impl Drop for PutsOnDrop {
+        fn drop(&mut self) {
+            if let Some(newest) = self.0.take() {
+                newest.put(PutsOnDrop(None));
+            }
+        }
+    }
+
+    /// `put` dropped the value it replaced with the slot locked: a value
+    /// whose drop called the same `Newest` back waited for that lock for
+    /// good.
+    #[test]
+    fn a_value_put_replaces_may_call_it_back_as_it_drops() {
+        let newest = Arc::new(Newest::new());
+        newest.put(PutsOnDrop(Some(newest.clone())));
+        let (done, finished) = std::sync::mpsc::channel();
+        let putting = newest.clone();
+        std::thread::spawn(move || {
+            putting.put(PutsOnDrop(None));
+            let _ = done.send(());
+        });
+        let returned = finished.recv_timeout(std::time::Duration::from_secs(5));
+        assert!(
+            returned.is_ok(),
+            "put never returned: the old value dropped under the slot's lock"
+        );
+    }
+
+    /// A value whose drop panics, a plug-in's bug.
+    enum Value {
+        PanicsOnDrop,
+        Plain(u32),
+    }
+
+    impl Drop for Value {
+        fn drop(&mut self) {
+            if let Value::PanicsOnDrop = self {
+                panic!("a plug-in's drop");
+            }
+        }
+    }
+
+    /// Dropped under the slot's lock, the panic poisoned it: every later
+    /// `put` and `deliver` panicked.
+    #[test]
+    fn a_value_that_panics_as_it_drops_poisons_nothing() {
+        let newest = Newest::new();
+        newest.put(Value::PanicsOnDrop);
+        let replaced = catch_unwind(AssertUnwindSafe(|| newest.put(Value::Plain(1))));
+        assert!(replaced.is_err(), "the drop's panic reaches the caller");
+        let heard = Mutex::new(Vec::new());
+        newest.put(Value::Plain(2));
+        newest.deliver(|v| {
+            if let Value::Plain(n) = v {
+                heard.lock().unwrap().push(*n);
+            }
+        });
+        assert_eq!(*heard.lock().unwrap(), [2]);
     }
 
     #[test]
