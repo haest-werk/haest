@@ -151,7 +151,7 @@ pub use reqwest;
 
 pub use client_ref::HttpClientRef;
 pub use error::{BoxError, HttpError};
-pub use redact::redacted_url;
+pub use redact::{EndpointUrlError, check_endpoint_url, redacted_url};
 pub use request::{Method, ParseMethodError, Request};
 #[cfg(feature = "reqwest")]
 #[cfg_attr(docsrs, doc(cfg(feature = "reqwest")))]
