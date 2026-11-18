@@ -20,7 +20,7 @@ pub(super) fn mkfifo(path: &Path) {
     assert_eq!(made, 0, "mkfifo {}", path.display());
 }
 
-/// Lets a reader or a writer stuck in open() on `fifo` go: a writer finds
+/// Lets a reader or a writer stuck in `open()` on `fifo` go: a writer finds
 /// a reader that leaves at once, a reader an empty pipe.
 pub(super) fn release(fifo: &Path) {
     let end = |read| {

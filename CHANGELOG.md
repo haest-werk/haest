@@ -543,12 +543,15 @@ write instead.
   fixed owner the run is not, a file system that cannot set a mode at
   all, as a FUSE one without setattr, a path just short of the system's
   cap, a file that is a mount point of its own, as one bind-mounted into
-  a dev container). A replaced file does not keep its extended attributes or
-  ACLs, and a process that holds it open to write (a log a server appends
-  to, a database) goes on writing to the old file. A kill partway can
-  leave the new file's directory (`.<name>.haest-<pid>-<n>`) beside it,
-  owner-only, and an apply dropped partway, rarely, that directory empty;
-  `.*.haest-*` in an ignore file matches it.
+  a dev container). A replaced file does not keep its extended
+  attributes or ACLs, and whatever holds the old file keeps it: a process
+  that has it open (a log a server appends to, a database, `tail -f`), an
+  inotify watch on it, and a container it is bind-mounted into on its own
+  (`./server.conf:/etc/server.conf`, whose reload then reads the old
+  text). A kill partway can leave the new file's directory
+  (`.<name>.haest-<pid>-<n>`) beside it, owner-only, and an apply dropped
+  partway, rarely, that directory empty; `.*.haest-*` in an ignore file
+  matches it.
 - In the real workspace (`workspace = real`, or a host's
   `RealWorkspace`), an Edit the disk had no room for emptied the human's
   file (APFS, HFS+) or cut its tail off (ext4, tmpfs): the tool wrote the
@@ -563,11 +566,12 @@ write instead.
   that fills up partway leaves the file as it was. The file keeps its
   name: on a disk that reads `readme.md` as `README.md` (HFS+, exFAT and
   FAT on macOS), the new file takes the name the directory lists, however
-  the model spells it. The apply's trade-offs
-  come with it: a replaced file does not keep its extended attributes or
-  ACLs, a process that holds it open to write (a log a server appends to,
-  a database) goes on writing to the old file, the disk needs room for a
-  second copy, and a kill partway can leave `.<name>.haest-<pid>-<n>`
+  the model spells it. The apply's trade-offs come with it: a replaced
+  file does not keep its extended attributes or ACLs, whatever holds the
+  old file keeps it (a process that has it open, as a log a server
+  appends to, a database or `tail -f`, an inotify watch on it, a
+  container it is bind-mounted into on its own), the disk needs room for
+  a second copy, and a kill partway can leave `.<name>.haest-<pid>-<n>`
   beside it, owner-only. Written in place as before, where a full disk
   still cuts the file short and the tool says so: a file with another
   hard link, one whose owner or group a new file would not have, a
@@ -1539,11 +1543,13 @@ Hosts write less (round two of the review, and what porting brain onto
   `Fs` that wraps another forwards it.
 - New `Fs::write_whole`: replace what a file holds, whole or not at all
   where the store can, so a write stopped partway (a full disk, a kill)
-  leaves the file as it was. Edit, and Write over a file that is there,
-  call it. The default is `Fs::write`, right for a store whose write
-  cannot stop partway or that keeps writes its own way; a disk whose
-  write empties a file first overrides it, and an `Fs` that wraps another
-  forwards it.
+  leaves the file as it was. Edit, Write over a file that is there,
+  GenerateImage over an image that is there, and the overlay's apply call
+  it. The default is `Fs::write`, right for a store whose write cannot
+  stop partway or that keeps writes its own way; a disk whose write
+  empties a file first overrides it, and an `Fs` that wraps another
+  forwards it (`#[warn(clippy::missing_trait_methods)]` on the wrapper's
+  impl names a method it left out).
 
 ### haest-http
 
@@ -2070,8 +2076,9 @@ Hosts write less (round two of the review, and what porting brain onto
 - `RealFs::write_whole` is the apply's whole-or-nothing write, the one
   implementation of it: a new file beside the file, renamed over it, or
   the bytes in place where a new file would not stand in for it. The
-  apply goes through it, and so do Edit, and Write over a file that is
-  there, in the real workspace (see Bug fixes).
+  apply goes through it, and so do Edit, Write over a file that is
+  there, and GenerateImage over an image that is there, in the real
+  workspace (see Bug fixes).
 
 ### haest-code
 

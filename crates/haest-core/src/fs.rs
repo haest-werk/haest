@@ -206,6 +206,12 @@ impl fmt::Debug for FsLock {
 /// [`Fs::read_link`], [`Fs::chmod`] and [`Fs::create_private_dir`] on a
 /// store that has links and modes, [`Fs::try_lock`] on a store more than
 /// one writer shares).
+/// A host's wrapper over another `Fs` forwards each method it does not
+/// change, [`Fs::write_whole`] and [`Fs::try_lock`] above all (left to its
+/// default, the one writes with the inner store's plain `write`, which on
+/// the real disk empties the file first, and the other holds nothing), and
+/// puts `#[warn(clippy::missing_trait_methods)]` on its impl, which names
+/// each one it left out.
 /// [`FsStat`] and [`DirEntry`] are built with their `new`.
 ///
 /// Implementations here: [`MemFs`] and [`ShutFs`]; `haest-workspace` has the
@@ -306,9 +312,10 @@ pub trait Fs: Send + Sync {
     /// Replace what the file at `path` holds with `data`, whole or not at
     /// all where the store can: a write it stops partway (a full disk, a
     /// kill) leaves the file as it was, never emptied or cut short. The
-    /// tools that rewrite a file that is there call it (Edit, and Write
-    /// over one), since the model cannot put back a file it only edited; a
-    /// new file is made with [`Fs::write`].
+    /// tools that rewrite a file that is there call it (Edit, Write over
+    /// one, `GenerateImage` over an image), since the model cannot put back
+    /// a file it only edited, and so does the overlay's apply; a new file
+    /// is made with [`Fs::write`].
     ///
     /// The default is [`Fs::write`]: a store whose write cannot stop
     /// partway (memory), or that keeps writes its own way (a host's,
@@ -320,7 +327,10 @@ pub trait Fs: Send + Sync {
     /// # Errors
     ///
     /// [`Fs::write`]'s, and the store's own where it cannot replace the
-    /// file whole (no room for the new copy), with the file as it was.
+    /// file whole (no room for the new copy), with the file as it was. A
+    /// store that writes some files in place all the same (the real disk:
+    /// one with another hard link, a symlink) can fail with such a file
+    /// cut short.
     async fn write_whole(&self, path: &Path, data: &[u8]) -> io::Result<()> {
         self.write(path, data).await
     }

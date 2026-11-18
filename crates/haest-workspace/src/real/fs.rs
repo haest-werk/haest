@@ -33,18 +33,21 @@ use tokio::io::AsyncReadExt;
 ///   gives it the file's permission bits and renames it over the file, so
 ///   a write the disk stops partway (a full disk, a kill) leaves the file
 ///   as it was. The overlay's apply and the tools that rewrite a file go
-///   through it. A file made read-only is refused. It writes in place, as
-///   `write` does, where a new file would not stand in for the file
+///   through it. The file keeps the name its directory lists, however the
+///   path spells it. A file made read-only is refused. It writes in place,
+///   as `write` does, where a new file would not stand in for the file
 ///   (another hard link to it, another owner or group, a symlink, a FIFO
-///   or a device, which it opens once, as `write` does) or the
-///   disk will not make one, make it its owner's alone or move it over (a
-///   share mounted for one fixed owner, a FUSE file system without
-///   setattr, a path just short of the system's cap): there a full disk
-///   still cuts the file short, and says so. A
-///   replaced file does not keep its extended attributes or ACLs, a
-///   process that holds it open to write goes on writing to the old one,
-///   the disk needs room for the second copy, and a kill partway can leave
-///   `.<name>.haest-<pid>-<n>` beside it, which only its owner may reach.
+///   or a device, which it opens once, as `write` does) or the disk will
+///   not make one, make it its owner's alone or move it over (a share
+///   mounted for one fixed owner, a FUSE file system without setattr, a
+///   path just short of the system's cap): there a full disk still cuts
+///   the file short, and says so. A replaced file does not keep its
+///   extended attributes or ACLs, and whatever holds the old file keeps
+///   it: a process that has it open (a log a server appends to, `tail
+///   -f`), an inotify watch on it, a container it is bind-mounted into on
+///   its own. The disk needs room for the second copy, and a kill partway
+///   can leave `.<name>.haest-<pid>-<n>` beside it, which only its owner
+///   may reach.
 /// - [`chmod`](Fs::chmod) sets Unix permission bits (a no-op elsewhere).
 /// - [`create_private_dir`](Fs::create_private_dir) makes the directory
 ///   with its mode (0700) in one step, never setting it after.

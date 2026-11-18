@@ -33,11 +33,15 @@ pub use fs::RealFs;
 ///   the new text goes into a new file beside it, which takes its
 ///   permission bits and is renamed over it, so a disk that fills up, or a
 ///   kill, partway leaves the human's file as it was, and the tool fails
-///   with the disk's error. The trade-offs are the overlay apply's: the
-///   file does not keep its extended attributes or ACLs, a process holding
-///   it open to write goes on writing to the old file, the disk needs room
-///   for a second copy, and a kill partway can leave
-///   `.<name>.haest-<pid>-<n>` beside it, which only its owner may reach. A
+///   with the disk's error. The file keeps the name its directory lists,
+///   however the model spells it. The trade-offs are the overlay apply's:
+///   the file does not keep its extended attributes or ACLs, and whatever
+///   holds the old file keeps it (a process that has it open, as a log a
+///   server appends to or `tail -f`, an inotify watch on it, a container
+///   it is bind-mounted into on its own, whose reload then reads the old
+///   text). The disk needs room for a second copy, and a kill partway can
+///   leave `.<name>.haest-<pid>-<n>` beside it, which only its owner may
+///   reach. A
 ///   file with another hard link, another owner or group, or a symlink, and
 ///   one where the disk refuses to make the new file, set its mode or
 ///   rename it (a share mounted for one fixed owner), is written in place:

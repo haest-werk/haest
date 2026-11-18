@@ -120,15 +120,18 @@ impl Tool for WriteTool {
 /// (haest-workspace's `RealWorkspace`), the text goes into a new file
 /// beside the file, which takes its permission bits and is renamed over
 /// it: a disk that fills up, or a kill, partway leaves the file as it
-/// was, and the tool fails with the disk's error. That file does not keep
-/// the old one's extended attributes or ACLs, a process holding the old
-/// one open to write goes on writing to it, the disk needs room for the
-/// second copy, and a kill partway can leave `.<name>.haest-<pid>-<n>`
-/// beside it. A file with another hard link, another owner or group, or a
-/// symlink, and one where the disk refuses to make the new file, set its
-/// mode or rename it, is written in place, where a full disk still cuts
-/// it short and the tool says so. In the default sandbox the edit stays
-/// in memory until the human applies it, which writes the same way.
+/// was, and the tool fails with the disk's error. The file keeps the name
+/// its directory lists, however the model spells it. The new file does
+/// not keep the old one's extended attributes or ACLs, and whatever holds
+/// the old one keeps it: a process that has it open (a log a server
+/// appends to, `tail -f`), an inotify watch on it, a container it is
+/// bind-mounted into on its own. The disk needs room for the second copy,
+/// and a kill partway can leave `.<name>.haest-<pid>-<n>` beside it. A
+/// file with another hard link, another owner or group, or a symlink, and
+/// one where the disk refuses to make the new file, set its mode or
+/// rename it, is written in place, where a full disk still cuts it short
+/// and the tool says so. In the default sandbox the edit stays in memory
+/// until the human applies it, which writes the same way.
 #[derive(Debug, Default, Clone)]
 #[non_exhaustive]
 pub struct EditTool;
