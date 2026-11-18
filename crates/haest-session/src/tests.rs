@@ -1153,7 +1153,8 @@ mod approvals {
     use crate::SessionPrompter;
 
     fn request() -> ApprovalRequest {
-        ApprovalRequest::new("Bash", "remove the build dir", "rm -rf build")
+        ApprovalRequest::new("Bash", "remove the build dir")
+            .with_input_preview("rm -rf build")
             .with_key("rm -rf build")
     }
 

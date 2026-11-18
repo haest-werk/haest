@@ -9,13 +9,16 @@ use serde::{Deserialize, Serialize};
 /// A mod file builds one as the `req` of `haest.ask(req, signal)`, in
 /// camelCase: `{ toolName, description, inputPreview, toolUseId?, key? }`.
 /// More may come: a native mod builds one with [`new`](Self::new) and a
-/// `with_*` setter per optional part.
+/// `with_*` setter per further part, the preview included, so the command
+/// and the question can never be swapped.
 ///
 /// ```
 /// use haest_mods::ApprovalRequest;
 ///
-/// let req = ApprovalRequest::new("Bash", "haest wants to delete files", "rm -rf build")
+/// let req = ApprovalRequest::new("Bash", "haest wants to delete files")
+///     .with_input_preview("rm -rf build")
 ///     .with_key("rm -rf build");
+/// assert_eq!(req.input_preview, "rm -rf build");
 /// assert_eq!(req.key.as_deref(), Some("rm -rf build"));
 /// assert_eq!(req.tool_use_id, None);
 /// ```
@@ -30,6 +33,7 @@ pub struct ApprovalRequest {
     /// What the human reads to decide: a shell command whole (it is what
     /// runs; a cut could hide its tail), else the start of the input. A
     /// prompter shows it as text: control characters escaped, never drawn.
+    /// Empty when there is nothing to show but the question.
     pub input_preview: String,
     /// The tool call this ask holds up, when the mod knows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -41,22 +45,25 @@ pub struct ApprovalRequest {
 }
 
 impl ApprovalRequest {
-    /// An ask about `tool_name`, saying `description`, showing
-    /// `input_preview`: tied to no tool call, and its ALWAYS keyed on the
-    /// description.
+    /// An ask about `tool_name`, saying `description`: no preview, tied to
+    /// no tool call, and its ALWAYS keyed on the description.
     #[must_use]
-    pub fn new(
-        tool_name: impl Into<String>,
-        description: impl Into<String>,
-        input_preview: impl Into<String>,
-    ) -> Self {
+    pub fn new(tool_name: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
             tool_name: tool_name.into(),
             description: description.into(),
-            input_preview: input_preview.into(),
+            input_preview: String::new(),
             tool_use_id: None,
             key: None,
         }
+    }
+
+    /// What the human reads to decide: the command whole, else the start
+    /// of the input.
+    #[must_use]
+    pub fn with_input_preview(mut self, preview: impl Into<String>) -> Self {
+        self.input_preview = preview.into();
+        self
     }
 
     /// The tool call this ask holds up.

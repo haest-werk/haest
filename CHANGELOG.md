@@ -191,13 +191,16 @@ set anything) now gets a warning. `env_var` and the `HashMap`
 26. A native mod's approval ask and a tracker's info are built with
     constructors:
     `ApprovalRequest { tool_name, description, input_preview, tool_use_id: None, key: Some(k) }`
-    -> `ApprovalRequest::new(tool_name, description, input_preview).with_key(k)`
+    -> `ApprovalRequest::new(tool_name, description).with_input_preview(input_preview).with_key(k)`
     (and `.with_tool_use_id(id)` for an ask tied to a tool call), and
     haest-issues'
     `TrackerInfo { name, id_hint, statuses, open_statuses, priorities, relations }`
     -> `TrackerInfo::new(name, id_hint, statuses).with_open_statuses(open_statuses).with_priorities(priorities).with_relations(relations)`
     (no `with_open_statuses` when every status is open, no
-    `with_priorities` or `with_relations` for none).
+    `with_priorities` or `with_relations` for none). A pattern that names
+    every field of either ends in `..`:
+    `let ApprovalRequest { tool_name, description, input_preview, tool_use_id, key } = req;`
+    -> `let ApprovalRequest { tool_name, description, input_preview, .. } = req;`.
 
 Every other breaking change is in its crate's section below, with what to
 write instead.
@@ -1928,9 +1931,11 @@ Hosts write less (round two of the review, and what porting brain onto
   a host bounds it by dropping the call, which is cancel-safe.
 - `ApprovalRequest` is `#[non_exhaustive]`, so a field (what the ask is
   about beyond its tool) is not a breaking change; a native mod builds one
-  with the new `new(tool_name, description, input_preview)` and
-  `with_tool_use_id`, `with_key` (breaking): see Upgrading item 26. A mod
-  file's `haest.ask(req)` reads the same JSON.
+  with the new `new(tool_name, description)` and `with_input_preview`,
+  `with_tool_use_id`, `with_key` (breaking): see Upgrading item 26. The
+  preview has a setter of its own, so it cannot be swapped with the
+  description, which is a string too. A mod file's `haest.ask(req)` reads
+  the same JSON.
 
 ### haest-settings
 

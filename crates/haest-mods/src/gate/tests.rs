@@ -9,8 +9,8 @@ fn bash(command: &str) -> ApprovalRequest {
     ApprovalRequest::new(
         "Bash",
         "haest wants to run a command that deletes files recursively or by force",
-        command,
     )
+    .with_input_preview(command)
     .with_key(command)
 }
 

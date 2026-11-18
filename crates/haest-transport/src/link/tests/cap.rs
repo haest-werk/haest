@@ -122,7 +122,8 @@ async fn at_the_cap_an_interrupt_and_an_approval_answer_are_still_served() {
     let over = within("the request past the cap refused", peer.reply("over")).await;
     assert_eq!(over.last().unwrap()["ok"], false, "{over:#?}");
 
-    let req = ApprovalRequest::new("Bash", "delete the build dir", "rm -rf build")
+    let req = ApprovalRequest::new("Bash", "delete the build dir")
+        .with_input_preview("rm -rf build")
         .with_key("rm -rf build");
     let asked = tokio::spawn(async move { prompter.prompt(&req).await });
     let ask = peer.until(|f| ty(f) == "approval_ask").await.pop().unwrap();

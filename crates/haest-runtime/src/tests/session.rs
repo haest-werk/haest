@@ -438,7 +438,8 @@ async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
     let mut sub = hub.subscribe(0);
     let session = start(rt, hub);
     let rm = || {
-        ApprovalRequest::new("Bash", "haest wants to delete files", "rm -rf build")
+        ApprovalRequest::new("Bash", "haest wants to delete files")
+            .with_input_preview("rm -rf build")
             .with_key("rm -rf build")
     };
     let ask = |asks: &ModUiRef| {

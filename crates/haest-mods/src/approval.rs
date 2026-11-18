@@ -267,8 +267,8 @@ impl Mod for ApprovalMod {
         let req = ApprovalRequest::new(
             call.name.clone(),
             format!("haest wants to run a command that {why}"),
-            command.clone(),
         )
+        .with_input_preview(command.clone())
         .with_key(command);
         Ok(match haest.ask(req, ctx.cancel()).await {
             Decision::Allow => Before::Pass,
