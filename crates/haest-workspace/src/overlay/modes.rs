@@ -18,7 +18,7 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-use haest_core::fs::normalize;
+use haest_core::fs::{Fs, normalize};
 
 use super::{
     OverlayChanges, diff,
@@ -96,19 +96,41 @@ impl OverlayChanges {
     }
 
     /// `Mode <path> <disk's> -> <applied>` where applying changes the mode
-    /// the disk has at `path`; empty where it does not.
+    /// the disk has at `path`, and `Mode <path> <applied>` for a path the
+    /// disk does not hold, where its mode is its own (git's "new file
+    /// mode"); empty for any other.
     pub(super) async fn mode_line(&self, path: &Path, shown: &str) -> String {
         let Some(set) = self.book.modes.get(path) else {
             return String::new();
         };
-        match self.book.disk_mode(path).await {
-            Some(disk) if carried(disk, set.mode) != disk => {
-                diff::mode(shown, disk, carried(disk, set.mode))
-            }
-            _ => String::new(),
+        if let Some(disk) = self.book.disk_mode(path).await {
+            let applied = carried(disk, set.mode);
+            return if applied == disk {
+                String::new()
+            } else {
+                diff::mode(shown, Some(disk), applied)
+            };
+        }
+        // Added: the disk makes it, at the usual umask's mode or narrower,
+        // and the sandbox's mode goes on that.
+        let made = match self.overlay.stat(path).await {
+            Ok(st) if st.is_dir() => MADE_DIR,
+            Ok(_) => MADE_FILE,
+            Err(_) => return String::new(),
+        };
+        let applied = carried(made, set.mode);
+        if applied == made {
+            String::new()
+        } else {
+            diff::mode(shown, None, applied)
         }
     }
 }
+
+/// The mode bashkit gives a file it makes, and a directory: what bash
+/// gives them under the usual umask (022).
+const MADE_FILE: u32 = 0o644;
+const MADE_DIR: u32 = 0o755;
 
 /// The disk's mode `disk`, as the sandbox set it to `mine`: every bit both
 /// have, and execute where `mine` has it and the disk lets that class read.

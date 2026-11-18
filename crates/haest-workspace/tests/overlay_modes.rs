@@ -85,6 +85,45 @@ async fn a_mode_change_alone_shows_in_its_diff() {
     assert_eq!(diff, "Mode /run.sh 644 -> 755\n", "{list:?}");
 }
 
+/// A path the sandbox adds with a mode of its own shows that mode in its
+/// diff, as git's "new file mode" does: a script made executable and moved,
+/// a 0600 key moved, a 0700 directory. The diff was content only, so the
+/// mode that landed was never seen in review. A file made plainly shows
+/// none.
+#[tokio::test]
+async fn an_added_paths_own_mode_shows_in_its_diff() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("a.sh"), "echo a\n").unwrap();
+    set_mode(&dir.join("a.sh"), 0o644);
+    fs::write(dir.join("secret.key"), "k\n").unwrap();
+    set_mode(&dir.join("secret.key"), 0o600);
+    let ws = sandbox(&dir).await;
+    run(
+        &ws,
+        &dir,
+        "chmod +x a.sh && mv a.sh b.sh && mv secret.key moved.key \
+         && mkdir private && chmod 700 private && echo n > new.txt",
+    )
+    .await;
+    let set = changes(&ws);
+    let mut firsts = Vec::new();
+    for c in set.list().await {
+        if c.kind == ChangeKind::Added {
+            let diff = set.diff(&c).await;
+            let first = diff.lines().next().unwrap_or_default().to_owned();
+            firsts.push((c.path, first));
+        }
+    }
+    let want = [
+        ("/b.sh", "Mode /b.sh 755"),
+        ("/moved.key", "Mode /moved.key 600"),
+        ("/new.txt", "--- a/new.txt"),
+        ("/private", "Mode /private 700"),
+    ]
+    .map(|(p, l)| (p.to_owned(), l.to_owned()));
+    assert_eq!(firsts, want);
+}
+
 /// What `chmod` takes away is applied: `chmod -x` and `chmod 600`.
 #[tokio::test]
 async fn a_mode_taken_away_is_applied() {

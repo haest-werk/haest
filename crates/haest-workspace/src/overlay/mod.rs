@@ -130,7 +130,8 @@ use state::{Original, state_of, walk};
 /// stops nothing else.
 ///
 /// A mode the sandbox set (`chmod`, `install -m`) is listed (`Modified`, if
-/// nothing else changed; the diff names both modes) and applied, and so is
+/// nothing else changed; the diff names both modes, or the mode of a path
+/// it adds) and applied, and so is
 /// the mode a path takes along when the sandbox moves or copies it (`mv`
 /// keeps it, and `cp` gives a new file its source's): a 0600 key moved or
 /// copied lands 0600, and a script moved lands executable. A file the

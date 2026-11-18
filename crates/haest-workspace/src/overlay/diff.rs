@@ -21,9 +21,13 @@ pub(crate) fn link(path: &str, target: &Path) -> String {
     format!("Symbolic link {path} -> {}\n", target.display())
 }
 
-/// The one line a change of mode gets, before the content's diff.
-pub(crate) fn mode(path: &str, old: u32, new: u32) -> String {
-    format!("Mode {path} {old:o} -> {new:o}\n")
+/// The one line a change of mode gets, before the content's diff: from the
+/// disk's mode `old`, or the mode `new` of a path the disk does not hold.
+pub(crate) fn mode(path: &str, old: Option<u32>, new: u32) -> String {
+    match old {
+        Some(old) => format!("Mode {path} {old:o} -> {new:o}\n"),
+        None => format!("Mode {path} {new:o}\n"),
+    }
 }
 
 /// `a<path>` -> `b<path>`; empty when both sides are empty, one line when
