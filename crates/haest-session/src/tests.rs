@@ -1153,13 +1153,8 @@ mod approvals {
     use crate::SessionPrompter;
 
     fn request() -> ApprovalRequest {
-        ApprovalRequest {
-            tool_name: "Bash".into(),
-            description: "remove the build dir".into(),
-            input_preview: "rm -rf build".into(),
-            tool_use_id: None,
-            key: Some("rm -rf build".into()),
-        }
+        ApprovalRequest::new("Bash", "remove the build dir", "rm -rf build")
+            .with_key("rm -rf build")
     }
 
     async fn asked(sub: &mut crate::Subscription) -> u64 {

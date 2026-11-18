@@ -30,13 +30,8 @@ use crate::{Hub, hub::AskInfo};
 /// let prompter = SessionPrompter::new(hub.clone());
 /// let mut peer = hub.subscribe(0);
 ///
-/// let req = ApprovalRequest {
-///     tool_name: "Bash".into(),
-///     description: "delete the build dir".into(),
-///     input_preview: "rm -rf build".into(),
-///     tool_use_id: None,
-///     key: Some("rm -rf build".into()),
-/// };
+/// let req = ApprovalRequest::new("Bash", "delete the build dir", "rm -rf build")
+///     .with_key("rm -rf build");
 /// let ask = tokio::spawn(async move { prompter.prompt(&req).await });
 ///
 /// // The peer sees the ask and answers it.

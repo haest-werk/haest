@@ -34,13 +34,7 @@ impl Prompter for Answers {
 }
 
 fn rm(command: &str) -> ApprovalRequest {
-    ApprovalRequest {
-        tool_name: "Bash".into(),
-        description: "haest wants to delete files".into(),
-        input_preview: command.into(),
-        tool_use_id: None,
-        key: Some(command.into()),
-    }
+    ApprovalRequest::new("Bash", "haest wants to delete files", command).with_key(command)
 }
 
 #[tokio::test]

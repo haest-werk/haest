@@ -209,7 +209,20 @@ impl IssuePatch {
 }
 
 /// What a tracker is and accepts, for the tools' descriptions and schemas.
+/// More may come: a tracker builds one with [`new`](Self::new) and a
+/// `with_*` setter per optional part.
+///
+/// ```
+/// use haest_issues::{Relation, TrackerInfo};
+///
+/// let info = TrackerInfo::new("the tickets of team X", "a ticket key, e.g. \"X-12\"", ["todo", "doing", "done"])
+///     .with_open_statuses(["todo", "doing"])
+///     .with_relations([Relation::Parent, Relation::Child]);
+/// assert_eq!(info.statuses[0], "todo", "a new issue's");
+/// assert!(info.priorities.is_empty());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct TrackerInfo {
     /// What the tools say they work on: "the GitHub issues of owner/repo".
     pub name: String,
@@ -223,6 +236,61 @@ pub struct TrackerInfo {
     pub priorities: Vec<String>,
     /// The relations it stores; IssueLink offers only these.
     pub relations: Vec<Relation>,
+}
+
+/// `items` as owned strings.
+fn strings(items: impl IntoIterator<Item = impl Into<String>>) -> Vec<String> {
+    items.into_iter().map(Into::into).collect()
+}
+
+impl TrackerInfo {
+    /// A tracker the tools call `name`, its ids described by `id_hint`, with
+    /// `statuses` (the first is a new issue's): every status open, no
+    /// priorities, no relations.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        id_hint: impl Into<String>,
+        statuses: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        let statuses = strings(statuses);
+        Self {
+            name: name.into(),
+            id_hint: id_hint.into(),
+            open_statuses: statuses.clone(),
+            statuses,
+            priorities: Vec::new(),
+            relations: Vec::new(),
+        }
+    }
+
+    /// The statuses a list shows when it names none (the work not
+    /// finished), in place of every status.
+    #[must_use]
+    pub fn with_open_statuses(
+        mut self,
+        statuses: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.open_statuses = strings(statuses);
+        self
+    }
+
+    /// The priorities an issue may have.
+    #[must_use]
+    pub fn with_priorities(
+        mut self,
+        priorities: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.priorities = strings(priorities);
+        self
+    }
+
+    /// The relations it stores: IssueLink offers only these.
+    #[must_use]
+    pub fn with_relations(mut self, relations: impl IntoIterator<Item = Relation>) -> Self {
+        self.relations = relations.into_iter().collect();
+        self
+    }
 }
 
 /// Why a [`Tracker`] call failed. The tools hand `NotFound` and `Invalid` to

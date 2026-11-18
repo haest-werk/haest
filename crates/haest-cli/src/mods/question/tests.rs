@@ -3,13 +3,12 @@ use haest::mods::ApprovalRequest;
 use super::*;
 
 fn ask(preview: &str) -> ApprovalRequest {
-    ApprovalRequest {
-        tool_name: "Bash".into(),
-        description: "haest wants to run a command that deletes files".into(),
-        input_preview: preview.into(),
-        tool_use_id: None,
-        key: Some(preview.into()),
-    }
+    ApprovalRequest::new(
+        "Bash",
+        "haest wants to run a command that deletes files",
+        preview,
+    )
+    .with_key(preview)
 }
 
 /// Nothing in a command can draw over it on the terminal: no carriage

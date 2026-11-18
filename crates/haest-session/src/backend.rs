@@ -7,8 +7,11 @@ use haest_wire::{Answer, Origin, Snapshot};
 
 use crate::Subscription;
 
-/// Input for the conversation, and who it counts as.
+/// Input for the conversation, and who it counts as. More may come (an
+/// image, a file): a host builds one with [`new`](Self::new),
+/// [`human`](Self::human) or [`agent`](Self::agent).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Input {
     /// The text.
     pub text: String,
@@ -17,20 +20,23 @@ pub struct Input {
 }
 
 impl Input {
-    /// Input a person wrote.
-    pub fn human(text: impl Into<String>) -> Self {
+    /// `text` from `origin`.
+    #[must_use]
+    pub fn new(text: impl Into<String>, origin: Origin) -> Self {
         Self {
             text: text.into(),
-            origin: Origin::Human,
+            origin,
         }
+    }
+
+    /// Input a person wrote.
+    pub fn human(text: impl Into<String>) -> Self {
+        Self::new(text, Origin::Human)
     }
 
     /// Input from another program or agent.
     pub fn agent(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            origin: Origin::Agent,
-        }
+        Self::new(text, Origin::Agent)
     }
 }
 

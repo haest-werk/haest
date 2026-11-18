@@ -553,13 +553,8 @@ async fn an_approval_ask_is_answered_by_a_command_peer() {
     let (s, _) = session(&answers(&[]), hub);
     let mut peer = Peer::parent(s);
 
-    let req = ApprovalRequest {
-        tool_name: "Bash".into(),
-        description: "delete the build dir".into(),
-        input_preview: "rm -rf build".into(),
-        tool_use_id: None,
-        key: Some("rm -rf build".into()),
-    };
+    let req = ApprovalRequest::new("Bash", "delete the build dir", "rm -rf build")
+        .with_key("rm -rf build");
     let asked = tokio::spawn(async move { prompter.prompt(&req).await });
 
     let ask = peer.until(|f| ty(f) == "approval_ask").await.pop().unwrap();

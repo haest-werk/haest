@@ -56,19 +56,18 @@ impl GithubTracker {
     /// What it is and accepts: the repository's issues, `open` and `closed`
     /// ([`Tracker::info`](crate::Tracker::info)).
     pub fn info(&self) -> TrackerInfo {
-        TrackerInfo {
-            name: format!("the GitHub issues of {}/{}", self.owner, self.repo),
-            id_hint: "the issue number, e.g. \"42\"".into(),
-            statuses: Self::statuses(),
-            open_statuses: vec!["open".into()],
-            priorities: Vec::new(),
-            relations: vec![
-                Relation::Parent,
-                Relation::Child,
-                Relation::DependsOn,
-                Relation::Blocks,
-            ],
-        }
+        TrackerInfo::new(
+            format!("the GitHub issues of {}/{}", self.owner, self.repo),
+            "the issue number, e.g. \"42\"",
+            Self::statuses(),
+        )
+        .with_open_statuses(["open"])
+        .with_relations([
+            Relation::Parent,
+            Relation::Child,
+            Relation::DependsOn,
+            Relation::Blocks,
+        ])
     }
 
     /// The issues `filter` picks, newest first, pull requests skipped

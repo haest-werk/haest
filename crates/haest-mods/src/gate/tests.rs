@@ -6,14 +6,12 @@ use super::*;
 use crate::testkit::Human;
 
 fn bash(command: &str) -> ApprovalRequest {
-    ApprovalRequest {
-        tool_name: "Bash".into(),
-        description: "haest wants to run a command that deletes files recursively or by force"
-            .into(),
-        input_preview: command.into(),
-        tool_use_id: None,
-        key: Some(command.into()),
-    }
+    ApprovalRequest::new(
+        "Bash",
+        "haest wants to run a command that deletes files recursively or by force",
+        command,
+    )
+    .with_key(command)
 }
 
 #[tokio::test]

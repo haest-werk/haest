@@ -29,14 +29,14 @@ impl CardTracker {
     /// What it is and accepts: the board's lanes, priorities and relations
     /// ([`Tracker::info`](crate::Tracker::info)).
     pub fn info(&self) -> TrackerInfo {
-        TrackerInfo {
-            name: format!("the board cards in {}", self.dir.display()),
-            id_hint: "the card id (its file name without .md), e.g. \"fix-login\"".into(),
-            statuses: as_strings(STATUSES),
-            open_statuses: as_strings(OPEN_STATUSES),
-            priorities: as_strings(PRIORITIES),
-            relations: Relation::ALL.to_vec(),
-        }
+        TrackerInfo::new(
+            format!("the board cards in {}", self.dir.display()),
+            "the card id (its file name without .md), e.g. \"fix-login\"",
+            STATUSES,
+        )
+        .with_open_statuses(OPEN_STATUSES)
+        .with_priorities(PRIORITIES)
+        .with_relations(Relation::ALL.iter().copied())
     }
 
     /// The cards `filter` picks, newest first

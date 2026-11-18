@@ -437,12 +437,9 @@ async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
     let (asks, gate) = (rt.mods().env().ui().clone(), rt.gate().clone());
     let mut sub = hub.subscribe(0);
     let session = start(rt, hub);
-    let rm = || ApprovalRequest {
-        tool_name: "Bash".into(),
-        description: "haest wants to delete files".into(),
-        input_preview: "rm -rf build".into(),
-        tool_use_id: None,
-        key: Some("rm -rf build".into()),
+    let rm = || {
+        ApprovalRequest::new("Bash", "haest wants to delete files", "rm -rf build")
+            .with_key("rm -rf build")
     };
     let ask = |asks: &ModUiRef| {
         let asks = asks.clone();

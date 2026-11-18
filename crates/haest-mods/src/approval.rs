@@ -260,14 +260,13 @@ impl Mod for ApprovalMod {
         let Some(why) = self.ask_why(&command, ctx, haest).await else {
             return Ok(Before::Pass);
         };
-        let req = ApprovalRequest {
-            tool_name: call.name.clone(),
-            description: format!("haest wants to run a command that {why}"),
-            // The human approves what runs, all of it: a cut could hide a tail.
-            input_preview: command.clone(),
-            tool_use_id: None,
-            key: Some(command),
-        };
+        // The human approves what runs, all of it: a cut could hide a tail.
+        let req = ApprovalRequest::new(
+            call.name.clone(),
+            format!("haest wants to run a command that {why}"),
+            command.clone(),
+        )
+        .with_key(command);
         Ok(match haest.ask(req, ctx.cancel()).await {
             Decision::Allow => Before::Pass,
             Decision::Deny => Before::Deny(format!(

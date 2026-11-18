@@ -188,6 +188,16 @@ set anything) now gets a warning. `env_var` and the `HashMap`
     -> `ModelInfo::new(spec, context_window).with_label(label).with_input(input)`
     (and `.with_reasoning(r)`, `.with_pricing(p)`), and
     `ModelGroup { label, models }` -> `ModelGroup::new(label, models)`.
+26. A native mod's approval ask and a tracker's info are built with
+    constructors:
+    `ApprovalRequest { tool_name, description, input_preview, tool_use_id: None, key: Some(k) }`
+    -> `ApprovalRequest::new(tool_name, description, input_preview).with_key(k)`
+    (and `.with_tool_use_id(id)` for an ask tied to a tool call), and
+    haest-issues'
+    `TrackerInfo { name, id_hint, statuses, open_statuses, priorities, relations }`
+    -> `TrackerInfo::new(name, id_hint, statuses).with_open_statuses(open_statuses).with_priorities(priorities).with_relations(relations)`
+    (no `with_open_statuses` when every status is open, no
+    `with_priorities` or `with_relations` for none).
 
 Every other breaking change is in its crate's section below, with what to
 write instead.
@@ -1887,6 +1897,11 @@ Hosts write less (round two of the review, and what porting brain onto
 - `Mods::command` says what a command whose promise never settles does: it
   never returns (`ModCaps` stops code that runs, not code that waits), and
   a host bounds it by dropping the call, which is cancel-safe.
+- `ApprovalRequest` is `#[non_exhaustive]`, so a field (what the ask is
+  about beyond its tool) is not a breaking change; a native mod builds one
+  with the new `new(tool_name, description, input_preview)` and
+  `with_tool_use_id`, `with_key` (breaking): see Upgrading item 26. A mod
+  file's `haest.ask(req)` reads the same JSON.
 
 ### haest-settings
 
@@ -2242,6 +2257,9 @@ against it; the wire JSON is unchanged):
   `Meta { sid, pid, started_ms }` -> `Meta::new(sid, pid, started_ms)`,
   and `History { seq, messages }` -> `History::new(seq, messages)`. Their
   fields stay public to read.
+- `Input` is `#[non_exhaustive]`, so a part (an image, a file) is not a
+  breaking change, and has `Input::new(text, origin)` beside `human` and
+  `agent`: `Input { text, origin }` -> `Input::new(text, origin)`.
 - `SessionHandle` and `Hold` implement `Debug` (the handle shows its `Meta`
   and whether the session still runs).
 - New `BackendRef`, the shared handle to a `Backend` (`plug_ref!`, as every
@@ -2393,6 +2411,9 @@ against it; the wire JSON is unchanged):
   `Broker` and the hello all keep it out of `Debug` the same way:
   `token: Some("t".to_string())` -> `token: Some("t".into())`.
 - `#[non_exhaustive]` on `Ended`: a `match` adds a `_` arm.
+- `Grant` is `#[non_exhaustive]`, so a narrower scope is not a breaking
+  change, and has `Grant::new(access, origin)` beside `watch` and
+  `command`: `Grant { access, origin }` -> `Grant::new(access, origin)`.
 - `NdjsonSource`, `NdjsonSink`, `Peer` and `Stdio` implement `Debug`
   (counts and the start, never the pipes or a line's text).
 - `TransportError::Path` says what failed on the path: it has a `what`
@@ -2591,6 +2612,11 @@ against it; the wire JSON is unchanged):
   never read back). `CardTracker` gains `fs()` and `clock()`.
 - The `issues` example's `main` returns a `Result` and uses `?` where it
   unwrapped.
+- `TrackerInfo` is `#[non_exhaustive]`, so a field (milestones, issue
+  kinds) is not a breaking change; a host's tracker builds one with the new
+  `new(name, id_hint, statuses)` (every status open, no priorities, no
+  relations) and `with_open_statuses`, `with_priorities`,
+  `with_relations` (breaking): see Upgrading item 26.
 
 ## 0.2.0 (2026-11-17)
 

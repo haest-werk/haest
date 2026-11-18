@@ -408,10 +408,7 @@ impl Link {
                 Ok(Some(json!({"seq": h.seq, "messages": h.messages})))
             }),
             Request::Turn { text } => {
-                let input = Input {
-                    text,
-                    origin: self.grant.origin,
-                };
+                let input = Input::new(text, self.grant.origin);
                 self.spawn(id, true, |b| async move {
                     Ok(Some(outcome(&b.turn(input).await?)))
                 });
