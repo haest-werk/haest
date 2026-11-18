@@ -156,6 +156,41 @@ fn with_json_the_question_on_stdout_is_asked_though_stderr_is_a_file() {
     assert!(victim.exists(), "../victim is gone:\n{}", pty.screen());
 }
 
+/// With --json and stdout in a file (`> out.jsonl`) the question would be a
+/// line nobody sees: haest refuses the command at once, says why on stderr,
+/// and the stream in the file says it too.
+#[test]
+fn with_json_and_stdout_in_a_file_an_approval_is_refused_at_once() {
+    let (home, _model, victim) = victim_run("json-stdout-file");
+    let out = home.0.join("out.jsonl");
+    let (pty, end) = Pty::open();
+    let mut child = haest_on(&home, &[&PRINT[..], &["--json"]].concat(), &end)
+        .stdout(File::create(&out).unwrap())
+        .spawn()
+        .unwrap();
+    let waits = !exits_within(&mut child, Duration::from_secs(20));
+    let _ = child.kill();
+    let lines = std::fs::read_to_string(&out).unwrap();
+    let last = lines.lines().last().unwrap_or_default();
+    assert!(
+        !waits,
+        "haest still waits 20 s later; out.jsonl ends with {last}\nthe terminal:\n{}",
+        pty.screen()
+    );
+    assert!(victim.exists(), "../victim is gone");
+    assert!(!lines.contains(r#""type":"ask""#), "asked into the file");
+    let refused = |line: &&str| line.contains(r#""type":"notice""#) && line.contains("stdout");
+    assert!(
+        lines.lines().any(|l| refused(&l)),
+        "the file does not say why: {lines}"
+    );
+    let shown = pty.screen();
+    assert!(
+        shown.contains("Denied") && shown.contains("stdout"),
+        "{shown}"
+    );
+}
+
 /// At the REPL prompt, while a background job's end waits to be taken, one
 /// Ctrl+D quits nothing and runs nothing: haest says what quitting would
 /// drop. The second quits, the waiting turn still not run (it would call

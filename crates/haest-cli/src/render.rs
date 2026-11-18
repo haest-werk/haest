@@ -28,7 +28,7 @@ use serde_json::Value;
 pub(crate) use haest::wire::Level;
 #[cfg(test)]
 pub(crate) use inert::hides;
-pub(crate) use inert::inert;
+pub(crate) use inert::{inert, is_a_file};
 
 use self::held::{Held, Question};
 use crate::agents::AgentLog;

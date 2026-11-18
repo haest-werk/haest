@@ -21,7 +21,7 @@ impl Renderer<std::io::Stdout, std::io::Stderr> {
 
 /// `out` is a regular file (`> out.md`), not a terminal, a pipe or a socket.
 #[cfg(unix)]
-fn is_a_file(out: &impl std::os::fd::AsFd) -> bool {
+pub(crate) fn is_a_file(out: &impl std::os::fd::AsFd) -> bool {
     out.as_fd()
         .try_clone_to_owned()
         .map(std::fs::File::from)
@@ -31,7 +31,7 @@ fn is_a_file(out: &impl std::os::fd::AsFd) -> bool {
 
 /// `out` is a regular file (`> out.md`), not a console, a pipe or a socket.
 #[cfg(windows)]
-fn is_a_file(out: &impl std::os::windows::io::AsHandle) -> bool {
+pub(crate) fn is_a_file(out: &impl std::os::windows::io::AsHandle) -> bool {
     out.as_handle()
         .try_clone_to_owned()
         .map(std::fs::File::from)

@@ -30,6 +30,9 @@ pub(crate) enum NoTerminal {
     /// stderr, where the question shows, is not a terminal (`2>log`): it
     /// would be asked where nobody sees it.
     Stderr,
+    /// With --json the question is a line on stdout, and stdout is a
+    /// regular file (`> out.jsonl`): no screen shows it. (A pipe may: `| jq`.)
+    Stdout,
 }
 
 impl std::fmt::Display for NoTerminal {
@@ -37,15 +40,19 @@ impl std::fmt::Display for NoTerminal {
         f.write_str(match self {
             Self::Stdin => "there is no terminal to ask on",
             Self::Stderr => "stderr, where haest asks, is not a terminal",
+            Self::Stdout => "stdout, where haest asks with --json, is a file",
         })
     }
 }
 
-/// Can a human answer here: stdin is a terminal, and so is where the
-/// question shows (stderr; with `json` it is a line on stdout).
+/// Can a human answer here: stdin is a terminal, and the question shows
+/// where someone can read it: on stderr, a terminal; with `json` a line on
+/// stdout, which must not be a regular file.
 pub(crate) fn interactive(json: bool) -> Result<(), NoTerminal> {
     if !std::io::stdin().is_terminal() {
         Err(NoTerminal::Stdin)
+    } else if json && crate::render::is_a_file(&std::io::stdout()) {
+        Err(NoTerminal::Stdout)
     } else if !json && !std::io::stderr().is_terminal() {
         Err(NoTerminal::Stderr)
     } else {

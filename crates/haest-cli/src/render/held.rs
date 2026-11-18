@@ -221,6 +221,16 @@ impl<O: Write, E: Write> Renderer<O, E> {
         self.note(DIM, &format!("({lines} not shown while haest asked)"));
     }
 
+    /// An approval refused, since nobody could answer it here, said on
+    /// stderr. In text mode its warning in the stream shows there already;
+    /// with --json the stream is stdout (a file, or a program's pipe), so
+    /// this is where the human at the terminal reads why.
+    pub(crate) fn refused(&mut self, why: &str) {
+        if self.json {
+            self.note(YELLOW, why);
+        }
+    }
+
     /// A question nothing on this terminal reads the answer to (a watcher's
     /// view, or one given up before it was drawn): a line of its own on
     /// stderr, so the next line does not join it, or an `ask` line on stdout

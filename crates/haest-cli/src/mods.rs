@@ -1,6 +1,7 @@
 //! Approval asks on the terminal. With no terminal to ask on, an ask is a deny
-//! that says why: stdin must be a terminal, and so must stderr, where the
-//! question shows (with --json it is a line on stdout). The terminal has one
+//! that says why, on stderr: stdin must be a terminal, and so must stderr,
+//! where the question shows (with --json it is a line on stdout, which must
+//! not be a regular file). The terminal has one
 //! reader at a time: asks from main and from subagents take turns, and one
 //! raised while the REPL prompt is open waits for it (announced above the
 //! prompt). Driven over stdio, the parent answers them instead
@@ -48,7 +49,7 @@ fn answer(line: Option<&str>) -> ApprovalAnswer {
 impl Prompter for TermPrompter {
     async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer {
         if let Err(why) = self.interactive {
-            self.ui.warn(&format!(
+            self.ui.refused(&format!(
                 "Denied {}: {} -- approval needed and {why} (--approvals=false turns approvals off).",
                 req.tool_name, req.description
             ));

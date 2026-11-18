@@ -71,6 +71,14 @@ impl TermUi {
         self.term.lock().unwrap().prompting()
     }
 
+    /// An approval refused, since nobody could answer it here: a warning in
+    /// the stream, as every line, and with --json on stderr too, where the
+    /// human reads it ([`Renderer::refused`]).
+    pub(crate) fn refused(&self, why: &str) {
+        self.warn(why);
+        self.term.lock().unwrap().refused(why);
+    }
+
     /// Asks this terminal's own question, answered on the next line (see
     /// `ask.rs`): it goes into the stream, and once the terminal draws it,
     /// everything else the stream carries waits until the guard says it was
