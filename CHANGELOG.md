@@ -2488,8 +2488,10 @@ against it; the wire JSON is unchanged):
   fragment, and the token never. `attach` refuses a URL with an `@` past
   its host, or no host, with `TransportError::UrlRefused`, and one no dial
   can reach with `TransportError::Undialable`: one that does not parse as
-  a request (a space, a host outside ASCII, a `\`), or whose port is past
-  65535 (tungstenite would dial the scheme's default port). Nothing is
+  a request (a space or a control character in it or around it, a host
+  outside ASCII, a `\`), or whose port is past 65535 (tungstenite would
+  dial the scheme's default port). A refusal shows the URL with its
+  control characters escaped (a CR as `\r`). Nothing is
   dialed then. The link dials the URL without its userinfo, so no part of
   it goes out, and with `/` for its path when it has none.
 
@@ -2692,6 +2694,9 @@ against it; the wire JSON is unchanged):
   no host is refused as `UrlRefused`: `wss:///agents`, and
   `wss://:8443/agents` (what `wss://${BROKER_HOST}:8443/agents` makes of
   an empty variable), which was attached and dialed in vain for good.
+  A URL with a space or a control character before it (` ws://...`) is
+  `Undialable` too, which names the cause; it was refused as `Url`, "not
+  a ws:// or wss:// URL".
 - The broker link dials a URL with a query right after the host
   (`wss://h.example?team=x`) with `/` for its path. tungstenite wrote
   `GET ?team=x HTTP/1.1`, which a broker refuses (RFC 6455, section 3), so

@@ -285,7 +285,8 @@ pub enum TransportError {
     #[error("refused: {0}")]
     Refused(String),
     /// Not a URL a broker link dials: it takes `ws://` or `wss://`. The URL
-    /// as given, without its credentials (its userinfo, a query's values).
+    /// as given, without its credentials (its userinfo, a query's values),
+    /// its control characters escaped (a CR as `\r`).
     #[error("{0} is not a ws:// or wss:// URL")]
     Url(String),
     /// The broker's URL has an `@` past its host (a password with an
@@ -299,13 +300,14 @@ pub enum TransportError {
     #[error("the broker URL is refused")]
     UrlRefused(#[source] haest_core::error::BoxError),
     /// The broker's URL starts with `ws://` or `wss://`, but no dial can
-    /// reach it: it does not parse as a request (a space, a host outside
-    /// ASCII, which goes in as punycode, a `\`), or its port is past 65535,
-    /// which tungstenite would dial as the scheme's default port. Every
-    /// dial would fail the same way, so nothing is dialed. The URL as
-    /// given, without its credentials.
+    /// reach it: it does not parse as a request (a space or a control
+    /// character in it or around it, a host outside ASCII (write it in
+    /// punycode), a `\`), or its port is past 65535, which tungstenite would
+    /// dial as the scheme's default port. Every dial would fail the same
+    /// way, so nothing is dialed. The URL as given, without its credentials,
+    /// its control characters escaped (a CR as `\r`).
     #[error(
-        "{0} cannot be dialed: it does not parse as a URL (a space, a host outside ASCII, a \\), or its port is past 65535"
+        "{0} cannot be dialed: it does not parse as a URL (a space or a control character, a host outside ASCII, a \\), or its port is past 65535"
     )]
     Undialable(String),
     /// The backend's stream id is not a plain file name, so no control

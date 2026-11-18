@@ -39,8 +39,8 @@ use futures::{
     stream::{SplitSink, SplitStream},
 };
 use haest_http::{
-    __private::{UrlDebug, authority},
-    check_endpoint_url, redacted_url,
+    __private::{UrlDebug, authority, shown_url},
+    check_endpoint_url,
 };
 use haest_session::BackendRef;
 use haest_wire::Token;
@@ -273,21 +273,24 @@ impl Broker {
     /// it to another host) or no host (`wss:///agents`,
     /// `wss://:8443/agents`; `check_endpoint_url`); and
     /// [`TransportError::Undialable`] when no dial can reach it: it does not
-    /// parse as a request (a space, a host outside ASCII, a `\`), or its port
-    /// is past 65535. Nothing is dialed then.
+    /// parse as a request (a space or a control character in it or around
+    /// it, a host outside ASCII, a `\`), or its port is past 65535. Nothing
+    /// is dialed then.
     pub fn attach(
         self,
         backend: impl Into<BackendRef>,
         grant: Grant,
     ) -> Result<Attached, TransportError> {
-        if !(self.url.starts_with("ws://") || self.url.starts_with("wss://")) {
-            return Err(TransportError::Url(redacted_url(&self.url).into_owned()));
+        // The scheme is read past a space or a control character before it,
+        // as a URL parser reads it: such a URL is refused below as one no
+        // dial reaches, which names the cause, not as another scheme.
+        let from_scheme = self.url.trim_start_matches(|c: char| c <= ' ');
+        if !(from_scheme.starts_with("ws://") || from_scheme.starts_with("wss://")) {
+            return Err(TransportError::Url(shown_url(&self.url)));
         }
         check_endpoint_url(&self.url).map_err(|e| TransportError::UrlRefused(e.into()))?;
         if !dialable(&dialed_url(&self.url)) {
-            return Err(TransportError::Undialable(
-                redacted_url(&self.url).into_owned(),
-            ));
+            return Err(TransportError::Undialable(shown_url(&self.url)));
         }
         let detached = StopFlag::default();
         let linked = link(self, backend.into(), grant, detached.clone());

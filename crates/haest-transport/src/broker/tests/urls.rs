@@ -94,6 +94,40 @@ async fn a_url_with_no_host_before_its_port_is_refused() {
     }
 }
 
+/// A broker URL with a space, a tab or a CR around or in it is refused
+/// before any dial. One that led with it was refused as `Url` ("not a ws://
+/// URL"), and the URL in a refusal carried a CR as it is, which wipes the
+/// line a host prints it on. Each is `Undialable`, and the URL shows with
+/// its control characters escaped.
+#[tokio::test]
+async fn a_url_with_whitespace_is_undialable_and_shows_it() {
+    for url in [
+        " ws://127.0.0.1:9/agents",
+        "\tws://127.0.0.1:9/agents",
+        "ws://127.0.0.1:9/agents\r",
+        "ws://127.0.0.1:9/agents\r\n",
+        "ws://127.0.0.1:9/my\tagents",
+    ] {
+        let (s, _) = session(&answers(&[]), hub());
+        let refused = Broker::new(url).attach(s.clone(), Grant::watch(Origin::Agent));
+        let refused = refused.expect_err(url);
+        let TransportError::Undialable(shown) = &refused else {
+            panic!("{url:?}: {refused:?}");
+        };
+        assert!(!shown.chars().any(char::is_control), "{shown:?}");
+        s.close().await;
+    }
+    // Not a ws:// URL, its control character shown escaped too.
+    let (s, _) = session(&answers(&[]), hub());
+    let refused =
+        Broker::new("http://127.0.0.1:9/agents\r").attach(s.clone(), Grant::watch(Origin::Agent));
+    let Err(TransportError::Url(shown)) = &refused else {
+        panic!("{refused:?}");
+    };
+    assert!(!shown.chars().any(char::is_control), "{shown:?}");
+    s.close().await;
+}
+
 /// The URL the link dials: no userinfo, and `/` for a path when it has none.
 #[test]
 fn the_link_dials_the_url_without_its_userinfo_and_with_a_path() {
