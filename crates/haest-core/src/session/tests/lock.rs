@@ -66,6 +66,63 @@ async fn holding_a_new_session_makes_its_dir_private_and_a_saved_one_leaves_it_a
     assert_eq!(*fs.modes.lock().unwrap(), []);
 }
 
+/// A lock file that cannot be made or opened says nothing of whether the
+/// file system locks: it is another user's, or the dir takes no new file
+/// (read-only, at its quota, a full disk). A saved session is then held
+/// through its own file, so a second writer is still refused.
+#[tokio::test]
+async fn a_saved_session_whose_lock_file_cannot_be_opened_is_held_through_its_own_file() {
+    use io::ErrorKind::{PermissionDenied, QuotaExceeded, ReadOnlyFilesystem, StorageFull};
+    let lock_then_file = [
+        PathBuf::from("/data/sessions/abc.lock"),
+        PathBuf::from("/data/sessions/abc.jsonl"),
+    ];
+    for kind in [
+        PermissionDenied,
+        ReadOnlyFilesystem,
+        QuotaExceeded,
+        StorageFull,
+    ] {
+        let fs = Arc::new(ModeFs::default());
+        store(&fs).create("c1", Path::new("/x"), 0).await.unwrap();
+        *fs.lock_file_refused.lock().unwrap() = Some(kind);
+
+        let s = store(&fs);
+        s.try_lock().await.unwrap();
+        let asked = fs.asked_to_lock.lock().unwrap().clone();
+        assert_eq!(asked, lock_then_file, "{kind:?}");
+        let refused = store(&fs).try_lock().await.unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::WouldBlock, "{kind:?}");
+    }
+}
+
+/// The session file is held only in a saved session's place, and only
+/// for a lock file that could not be made or opened: a new session has no
+/// file to hold (holding one would make it, empty), and any other error
+/// is the lock's own, the caller's to see.
+#[tokio::test]
+async fn a_new_session_or_a_lock_that_fails_holds_nothing_in_its_place() {
+    let new = Arc::new(ModeFs::default());
+    *new.lock_file_refused.lock().unwrap() = Some(io::ErrorKind::StorageFull);
+    let failed = store(&new).try_lock().await.unwrap_err();
+    assert_eq!(failed.kind(), io::ErrorKind::StorageFull);
+    assert!(!store(&new).exists().await, "nothing of the session made");
+
+    let saved = Arc::new(ModeFs::default());
+    store(&saved)
+        .create("c1", Path::new("/x"), 0)
+        .await
+        .unwrap();
+    *saved.lock_file_refused.lock().unwrap() = Some(io::ErrorKind::Other);
+    let failed = store(&saved).try_lock().await.unwrap_err();
+    assert_eq!(failed.kind(), io::ErrorKind::Other);
+
+    for fs in [new, saved] {
+        let asked = fs.asked_to_lock.lock().unwrap().clone();
+        assert_eq!(asked, [PathBuf::from("/data/sessions/abc.lock")]);
+    }
+}
+
 /// A file system with no locks holds nothing, refuses nothing, and gets no
 /// lock file.
 #[tokio::test]

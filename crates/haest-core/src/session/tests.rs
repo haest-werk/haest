@@ -23,6 +23,8 @@ struct ModeFs {
     modes: Mutex<Vec<(PathBuf, u32)>>,
     asked_to_lock: Mutex<Vec<PathBuf>>,
     locked: Arc<Mutex<HashSet<PathBuf>>>,
+    /// Once set, what locking a `.lock` file fails with, before it is made.
+    lock_file_refused: Mutex<Option<io::ErrorKind>>,
 }
 
 /// Unlocks its path as it drops.
@@ -85,6 +87,10 @@ impl Fs for ModeFs {
     }
     async fn try_lock(&self, p: &Path) -> io::Result<Option<FsLock>> {
         self.asked_to_lock.lock().unwrap().push(p.to_path_buf());
+        let refused = *self.lock_file_refused.lock().unwrap();
+        if let Some(kind) = refused.filter(|_| p.extension() == Some("lock".as_ref())) {
+            return Err(kind.into());
+        }
         if !self.inner.exists(p).await {
             self.inner.write(p, b"").await?;
         }

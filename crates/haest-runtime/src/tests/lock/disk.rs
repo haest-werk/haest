@@ -1,6 +1,6 @@
 //! On the real disk: a second run of a session is refused while the first
-//! runs, also where the sessions dir was not the owner's to write, and a
-//! /clear moves the hold to the new session.
+//! runs, also where its lock file is another user's or its sessions dir
+//! takes no new file, and a /clear moves the hold to the new session.
 
 use std::{
     fs::Permissions,
@@ -126,6 +126,36 @@ impl Mode {
 impl Drop for Mode {
     fn drop(&mut self) {
         let _ = std::fs::set_permissions(&self.0, Permissions::from_mode(self.1));
+    }
+}
+
+/// A saved session whose lock file this user cannot open (one another user
+/// left behind, a run under sudo say), or whose sessions dir takes no new
+/// file, still keeps a second run out: the disk locks, so the run holds
+/// the session through its own file, and no one is warned.
+#[tokio::test]
+async fn a_lock_file_this_user_cannot_open_still_keeps_a_second_run_out() {
+    for case in ["foreign-lock", "read-only-dir"] {
+        let dir = Scratch::new(case);
+        let first = dir.build(Resume::New).await.unwrap();
+        let id = first.session_id();
+        first.shut_down().await;
+        drop(first);
+        let sessions = dir.0.join("data/sessions");
+        let lock = sessions.join(format!("{id}.lock"));
+        let _taken = if case == "foreign-lock" {
+            Mode::set(&lock, 0o000, 0o600)
+        } else {
+            std::fs::remove_file(&lock).unwrap();
+            Mode::set(&sessions, 0o500, 0o700)
+        };
+
+        let one = dir.resume_once_free(&id).await;
+        let two = dir.build(Resume::Id(id.clone())).await;
+        let warned = one.as_ref().ok().map(|rt| rt.ui().warnings().len());
+        let failed = one.as_ref().err();
+        assert_eq!(warned, Some(0), "{case}: held, no warning: {failed:?}");
+        assert!(in_use(&two, &id), "{case}: {two:?}");
     }
 }
 
