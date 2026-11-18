@@ -685,8 +685,10 @@ write instead.
   where both runs wrote it. A run holds its session file from the build
   (or a /clear) until it is dropped, through a lock the system drops with
   the process, so a crash leaves no session locked. `haest -r` in a second
-  terminal stops with that error while the first still runs. On a host's
-  own file system nothing changes unless it implements `Fs::try_lock`.
+  terminal stops with that error while the first still runs. A data dir on
+  NFS takes the lock too; on a file system that takes none, a run goes on
+  without it. On a host's own file system nothing changes unless it
+  implements `Fs::try_lock`.
 
 ### The haest command
 
@@ -1930,7 +1932,11 @@ Hosts write less (round two of the review, and what porting brain onto
   its own starts with `Mode /b.sh 755`, as git shows a new file's mode.
 - `RealFs::try_lock` takes an exclusive `flock(2)` on the file, which the
   system drops with the process that held it; on a file system that takes
-  no such locks it is `Ok(None)`.
+  no such locks, or refuses one on this file, it is `Ok(None)`. It opens
+  the file to read and write for the lock, since an NFS client refuses an
+  exclusive lock on a file opened only to read, and only to read where the
+  file or its mount may not be written (a file made 0400, a read-only
+  mount).
 
 ### haest-code
 

@@ -9,6 +9,7 @@
 
 mod exec;
 mod fs;
+mod lock;
 mod pipe;
 
 use async_trait::async_trait;
