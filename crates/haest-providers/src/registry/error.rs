@@ -11,7 +11,9 @@ use super::custom::ENTRY_KEYS;
 /// Resolving a spec of that provider fails with
 /// [`ModelError::Unavailable`](haest_core::ModelError::Unavailable), this as
 /// its source; every other entry still resolves. Its message says it is
-/// about providers.json.
+/// about providers.json, where haest reads entries. A host that reads an
+/// entry from a file of its own (through `Deserialize` or `from_json`) names
+/// that file around the message, or maps the problem to its own words.
 ///
 /// More problems may come in a minor release.
 #[derive(Debug, thiserror::Error)]
@@ -36,8 +38,17 @@ pub enum EntryProblem {
     /// `baseURL`, `apiKey` or `apiKeyEnv` is there but is not a string
     /// (`null`, a number, a list): refused, so a `baseURL` a generator wrote
     /// as `null` never sends the entry's key and the conversation to the
-    /// dialect's own API. An entry for that API has no `baseURL` at all.
-    #[error("providers.json \"{key}\" is {found}, not a string; delete the key to leave it unset")]
+    /// dialect's own API. An entry for that API has no `baseURL` at all, so
+    /// the message for `baseURL` says to write the server's URL; for the
+    /// other two, to delete the key.
+    #[error(
+        "providers.json \"{key}\" is {found}, not a string; {}",
+        if *key == "baseURL" {
+            "write the server's URL (an entry with no baseURL is one for the dialect's own API)"
+        } else {
+            "delete the key to leave it unset"
+        }
+    )]
     NotAString {
         /// The key.
         key: &'static str,

@@ -292,7 +292,9 @@ impl CustomProviderConfig {
     /// [`CustomProviderConfig`]'s table does not list (`baseUrl` for
     /// `baseURL`), its `type` is neither `"openai"` nor `"anthropic"`, its
     /// `baseURL`, `apiKey` or `apiKeyEnv` is not a string (`null` included:
-    /// delete the key to leave it unset),
+    /// delete `apiKey` or `apiKeyEnv` to leave it unset; a `baseURL` takes the
+    /// server's URL, since an entry with none is one for the dialect's own
+    /// API),
     /// `reasoningEffort` lacks an `efforts` array or a `mandatory` boolean, or
     /// a `pricing` row lacks a numeric `input`, `cachedInput` or `output`, or
     /// has a `cacheWrite` that is not a number.

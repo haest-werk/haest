@@ -388,7 +388,9 @@ write instead.
   `baseURL`, `apiKey` or `apiKeyEnv` that is not a string, `null`
   included, now fails that entry when its provider is resolved
   (`EntryProblem::NotAString`), naming the key and the type, never the
-  value. Nothing is sent. An entry leaves one unset by not having the key.
+  value. Nothing is sent. An entry leaves `apiKey` or `apiKeyEnv` unset by
+  not having the key; one with no `baseURL` is one for the dialect's own
+  API, so the refusal of a `baseURL` says to write the server's URL.
 - haest-issues' `GithubTracker` read, changed, deleted and linked issues in
   any repository the model named (`{"id": "victim/secret#1"}`), with the
   host's token, though it is one repository's tracker. The issue a call
@@ -1487,6 +1489,13 @@ Hosts write less (round two of the review, and what porting brain onto
 - An `EntryProblem`'s message says it is about providers.json
   (`provider "local" cannot be used: the providers.json entry has an
   unknown key "_comment"; ...`), where it named only the key or the field.
+  A host that reads an entry from a file of its own names that file around
+  the message, or maps the problem to its own words.
+- New `EntryProblem::UnknownKeys { keys }` and `EntryProblem::NotAString
+  { key, found }` (Security, above). Each of `keys` is the new public
+  `UnknownKey`: the key as written (`key`) and the entry key it is close
+  to (`meant`), shown as the key in quotes, then `(did you mean
+  "baseURL"?)` when one is close.
 
 ### haest-tools
 
