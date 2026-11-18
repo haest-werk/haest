@@ -670,3 +670,50 @@ async fn a_credential_in_the_url_never_shows() {
     }
     s.close().await;
 }
+
+/// tungstenite dials the host after the last `@` of the userinfo, but
+/// writes its Host header from after the first: a user or a password with
+/// an unescaped `@` went out in that header, to the broker and to every
+/// proxy that logs it. The link sends no part of the userinfo (tungstenite
+/// never sent it as a credential).
+#[tokio::test]
+async fn no_part_of_the_userinfo_goes_out_in_the_request() {
+    use tokio::io::AsyncReadExt;
+    for userinfo in ["me@corp.example:s3cret", "agent:s3@cret", "agent:s3cret"] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url = format!("ws://{userinfo}@127.0.0.1:{port}/agents?v=1");
+        let (s, _) = session(&answers(&[]), hub());
+        let link = Broker::new(&url)
+            .with_backoff(FAST)
+            .attach(s.clone(), Grant::watch(Origin::Agent))
+            .unwrap();
+        let dialed = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await;
+        let (mut tcp, _) = dialed.expect("dialed within 5 s").unwrap();
+        let mut head = Vec::new();
+        let mut chunk = [0; 1024];
+        while !head.ends_with(b"\r\n\r\n") {
+            let read = tokio::time::timeout(Duration::from_secs(5), tcp.read(&mut chunk)).await;
+            let n = read.expect("the request within 5 s").unwrap();
+            assert!(n > 0, "the request ended early: {head:?}");
+            head.extend_from_slice(&chunk[..n]);
+        }
+        let head = String::from_utf8_lossy(&head);
+        // The handshake key is random, and may hold any piece by chance.
+        let checked: Vec<&str> = head
+            .lines()
+            .filter(|line| !line.starts_with("Sec-WebSocket-Key:"))
+            .collect();
+        for secret in ["s3", "cret", "corp", "me@", "agent:"] {
+            let shown = checked.iter().find(|line| line.contains(secret));
+            assert!(shown.is_none(), "{secret} of {userinfo}: {head}");
+        }
+        assert!(head.starts_with("GET /agents?v=1 HTTP/1.1\r\n"), "{head}");
+        assert!(
+            head.contains(&format!("Host: 127.0.0.1:{port}\r\n")),
+            "{head}"
+        );
+        link.detach();
+        s.close().await;
+    }
+}

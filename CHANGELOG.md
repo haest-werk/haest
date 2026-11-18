@@ -287,6 +287,15 @@ write instead.
   as `%2F`, `?` as `%3F`, `#` as `%23`, `\` as `%5C`, `@` as `%40`), and an
   `@` meant for the path or the query as `%40`. A URL that WebFetch
   fetches is not a configured one, and an `@` in its path still works.
+- The broker link (new in this release) sent part of its URL's userinfo,
+  up to the whole password, in its HTTP `Host` header. tungstenite writes
+  `Host` from after the first `@` and dials the host after the last, so a
+  user or a password with an unescaped `@` (a username that is an email
+  address: `wss://me@corp.example:s3cret@broker.example/agents`) went out
+  as `Host: corp.example:s3cret@broker.example`, to the broker and to
+  every proxy in front of it that logs the header. The link now dials the
+  URL without its userinfo. tungstenite never sent the userinfo as a
+  credential: the broker's is the token, in the `hello`.
 - On macOS, applying a sandbox's changes could delete or overwrite files,
   or a whole directory, in the real project while the report said every
   change was applied. The disk reads `readme.md` and `README.md` as one
@@ -2295,7 +2304,8 @@ against it; the wire JSON is unchanged):
   `TransportError::Url` show the URL without its userinfo, query values or
   fragment, and the token never. A URL with an `@` past its host is
   refused by `attach` with `TransportError::UrlRefused`, and nothing is
-  dialed.
+  dialed. The link dials the URL without its userinfo: no part of it goes
+  out.
 
 Changed since the first cut on `main` (breaking for Rust code written
 against it; the wire JSON is unchanged):

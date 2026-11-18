@@ -28,6 +28,7 @@
 //! Close frame, code 1000, so the broker knows it will not be dialed again.
 
 use std::{
+    borrow::Cow,
     fmt,
     hash::{BuildHasher, Hasher},
     sync::{Arc, Mutex, OnceLock, PoisonError},
@@ -115,9 +116,11 @@ impl Broker {
     /// the default [`Backoff`] and the default
     /// [`SILENCE_LIMIT`](Self::SILENCE_LIMIT).
     ///
-    /// A password in `url` goes percent-encoded (`/` as `%2F`, `?` as `%3F`,
-    /// `#` as `%23`, `@` as `%40`): [`attach`](Self::attach) refuses a URL
-    /// with an `@` past its host, which a URL parser reads as another host.
+    /// The link never sends the URL's userinfo (`user:password@`), not as a
+    /// credential and not in a header: the broker's credential is the
+    /// token, in the `hello` ([`with_token`](Self::with_token)).
+    /// [`attach`](Self::attach) refuses a URL with an `@` past its host,
+    /// which a URL parser reads as another host.
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
@@ -288,11 +291,12 @@ impl Broker {
 async fn link(broker: Broker, backend: BackendRef, grant: Grant) -> Ended {
     let closed = until_closed(backend.subscribe(u64::MAX));
     tokio::pin!(closed);
+    let url = without_userinfo(&broker.url);
     let mut attempt = 0u32;
     loop {
         let began = Instant::now();
         let dialed = tokio::select! {
-            dialed = dial(&broker.url) => dialed,
+            dialed = dial(&url) => dialed,
             () = &mut closed => return Ended::Closed,
         };
         match dialed {
@@ -350,6 +354,24 @@ async fn say_ended(sink: &tokio::sync::Mutex<SplitSink<Ws, Message>>) {
     };
     let close = async { sink.lock().await.send(Message::Close(Some(frame))).await };
     let _ = tokio::time::timeout(CLOSE_WAIT, close).await;
+}
+
+/// `url` as the link dials it: without its userinfo. tungstenite never sends
+/// a URL's userinfo as a credential (the broker's is the token, in the
+/// `hello`), and it writes the Host header from after the first `@` while
+/// it dials the host after the last: a user or a password with an unescaped
+/// `@` (`me@corp.example:pw@broker.example`) would go out in that header.
+/// [`Broker::attach`] has refused an `@` past the host, so the last `@`
+/// before the first `/`, `?` or `#` ends the userinfo.
+fn without_userinfo(url: &str) -> Cow<'_, str> {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return Cow::Borrowed(url);
+    };
+    let host_ends = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    match rest[..host_ends].rfind('@') {
+        Some(at) => Cow::Owned(format!("{scheme}://{}", &rest[at + 1..])),
+        None => Cow::Borrowed(url),
+    }
 }
 
 /// One WebSocket to the broker; a handshake refused with 401 or 403 is the
