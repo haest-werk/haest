@@ -48,8 +48,12 @@ fn open_store(
 /// The session held for this run alone while the store lives, so no other
 /// run writes it: `InUse` when another holds it. A lock the file system
 /// cannot take must not cost the session: the run goes on unlocked, as runs
-/// did before sessions were locked, and `ui` is told once that another run
-/// could write the session too.
+/// did before sessions were locked, and `ui` is warned that another run
+/// could write the session too. That is once a hold: at the build or the
+/// resume, and again at each /clear. Where a new session's lock file could
+/// not be made for a reason its own file then fails on too (no sessions
+/// dir, a full disk), it comes just before `create`'s error. A file system
+/// with no locks holds nothing and warns of nothing.
 async fn hold(store: &JsonlSessionFile, ui: &dyn Ui) -> Result<(), SessionFileError> {
     match store.try_lock().await {
         Err(e) if e.kind() == io::ErrorKind::WouldBlock => Err(SessionFileError::InUse {

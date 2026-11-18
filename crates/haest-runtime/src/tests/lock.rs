@@ -127,8 +127,8 @@ async fn one_turn(fs: &Arc<Locks>, resume: Resume, question: &str) -> (String, u
 /// A lock the file system cannot take (an I/O error, not another holder)
 /// costs nothing of the session: a new run and a resume both go on
 /// unlocked, as before sessions were locked, and every turn lands and
-/// replays. The human is warned, once a run, that another run could write
-/// the session too.
+/// replays. The human is warned, once for the session each run holds, that
+/// another run could write it too.
 #[tokio::test]
 async fn a_lock_the_file_system_cannot_take_runs_unlocked_with_a_warning() {
     let fs = Locks::refusing(|| io::Error::from_raw_os_error(libc::EIO));

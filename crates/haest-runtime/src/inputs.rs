@@ -260,9 +260,17 @@ impl fmt::Debug for RuntimeInputs {
 /// session another run writes fails with
 /// [`SessionFileError::InUse`](crate::SessionFileError::InUse), on the real
 /// disk and on any host file system with locks
-/// ([`Fs::try_lock`](haest_core::fs::Fs::try_lock)). Where the file system
-/// cannot take the lock, the run goes on unlocked and the [`Ui`](crate::Ui)
-/// is warned.
+/// ([`Fs::try_lock`](haest_core::fs::Fs::try_lock)). On a file system with
+/// no locks the run goes on unlocked, and nothing is said. The real disk
+/// counts as that a file system whose `flock(2)` fails with `ENOLCK` or as
+/// not supported, and an NFS client that refuses it (`EBADF`) on a lock
+/// file it could open only to read. Where taking the lock fails otherwise,
+/// the run goes on unlocked and the [`Ui`](crate::Ui) is warned that
+/// another run could write the session too. The warning comes for each
+/// session the run holds, so again at each
+/// [`Runtime::clear`](crate::Runtime::clear). Where a new session's lock
+/// file could not be made for a reason its own file then fails on too (no
+/// sessions dir, a full disk), it comes just before that error.
 ///
 /// More ways to pick one may come (a fork of one): a `match` has a `_` arm.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
