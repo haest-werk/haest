@@ -243,10 +243,11 @@ async fn dropping_one_clone_of_the_hub_kills_nothing_the_last_one_kills_all() {
 }
 
 /// Hears the running sets, and holds the first one an end hands it (one job
-/// left of two) until the test lets go: a host that renders, or takes a
-/// lock of its own, while the other job ends.
+/// left of two) until the test lets go, or drops `go`: a host that renders,
+/// or takes a lock of its own, while the other job ends.
 struct SlowRoster {
-    entered: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    /// The set held goes out here.
+    entered: Mutex<Option<std::sync::mpsc::Sender<Vec<String>>>>,
     go: Mutex<std::sync::mpsc::Receiver<()>>,
     sets: Mutex<Vec<Vec<String>>>,
     exits: Mutex<usize>,
@@ -254,15 +255,15 @@ struct SlowRoster {
 
 impl JobEvents for SlowRoster {
     fn on_change(&self, running: &[Job]) {
+        let ids: Vec<String> = running.iter().map(|j| j.id.clone()).collect();
         let after_both_started = self.sets.lock().unwrap().iter().any(|s| s.len() == 2);
         if running.len() == 1 && after_both_started {
             let entered = self.entered.lock().unwrap().take();
             if let Some(entered) = entered {
-                entered.send(()).unwrap();
-                let _ = self.go.lock().unwrap().recv_timeout(Duration::from_secs(5));
+                entered.send(ids.clone()).unwrap();
+                let _ = self.go.lock().unwrap().recv();
             }
         }
-        let ids = running.iter().map(|j| j.id.clone()).collect();
         self.sets.lock().unwrap().push(ids);
     }
     fn on_exit(&self, _job: &Job) {
@@ -273,6 +274,11 @@ impl JobEvents for SlowRoster {
 /// Two jobs that end at once each handed their set over from their own task,
 /// so the older set could arrive last: the host's roster then kept a job that
 /// had ended. The last set the host hears is the hub's.
+///
+/// The test ends each job itself, so the ends overlap the same way every run.
+/// Left to end at once, the two may never hand the host the set with one
+/// left: it is folded into the newest when the other ends between the
+/// first's change and its delivery (a host slow on the first's output, say).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_last_running_set_the_host_hears_is_the_hubs() {
     let r = Rig::real();
@@ -285,17 +291,26 @@ async fn the_last_running_set_the_host_hears_is_the_hubs() {
         exits: Mutex::default(),
     });
     r.hub.set_events(roster.clone());
-    r.start("sleep 0.3");
-    r.start("sleep 0.3");
+    let first = r.start("sleep 30");
+    let second = r.start("sleep 30");
+    assert!(r.hub.kill(&first.id));
     // The first end's set is in the host's hands, held there...
-    tokio::task::spawn_blocking(move || in_hook.recv_timeout(Duration::from_secs(5)))
+    let set = tokio::task::spawn_blocking(move || in_hook.recv_timeout(Duration::from_secs(30)))
         .await
         .unwrap()
         .expect("an end handed its set over");
+    assert_eq!(
+        set,
+        std::slice::from_ref(&second.id),
+        "the set held is the second alone"
+    );
     // ...while the other job ends, all the way to its exit.
-    until(3000, || *roster.exits.lock().unwrap() == 1).await;
+    assert!(r.hub.kill(&second.id));
+    until(30_000, || *roster.exits.lock().unwrap() == 1).await;
+    let exits = *roster.exits.lock().unwrap();
+    assert_eq!(exits, 1, "the second's exit, while the first's set is held");
     go.send(()).unwrap();
-    until(3000, || *roster.exits.lock().unwrap() == 2).await;
+    until(30_000, || *roster.exits.lock().unwrap() == 2).await;
     assert!(r.hub.running().is_empty());
     let sets = roster.sets.lock().unwrap().clone();
     assert_eq!(
