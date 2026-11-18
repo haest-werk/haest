@@ -248,10 +248,11 @@ write instead.
 - A URL's credentials showed in Debug output: haest-http's `Request`
   printed its URL as it was (and its `Authorization` header, and
   `Response` its `set-cookie`); `AnthropicOptions`, `CompatOptions`,
-  `ResponsesOptions`, `CustomProviderConfig` and haest-issues'
-  `GithubTracker` their base URL (a gateway that takes its credentials in
-  the URL); and haest-mcp's `HttpTransport` (and the `McpTransport`,
-  `McpServerConfig` and `RuntimeInputs` holding one) its own, so
+  `ResponsesOptions`, `CustomProviderConfig`, haest-tools'
+  `GenerateImageOptions` and haest-issues' `GithubTracker` their base URL
+  (a gateway that takes its credentials in the URL); and haest-mcp's
+  `HttpTransport` (and the `McpTransport`, `McpServerConfig` and
+  `RuntimeInputs` holding one) its own, so
   `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
   password and the key. A URL in haest's Debug output now shows no
   userinfo, no query value and no fragment
@@ -266,7 +267,26 @@ write instead.
   `https`, `ws` or `wss`. A URL with an `@` past its host shows less than
   it could (`https://<redacted>@scope/pkg`), never a credential.
   `redacted_url` and the `haest` command (`haest settings`, the "Broker
-  link" line) show a URL the same way.
+  link" line) show a URL the same way, and so does GenerateImage's error
+  for a model the Image API does not list, which the model is shown and
+  which named the base URL as given.
+- A configured URL whose password held an unescaped `/`, `?` or `#` sent
+  the rest of that password to the wrong host, in the clear. A URL parser
+  ends the host at the first of them, so
+  `wss://user:1234/s3cret@broker.example/agents` dialed the host `user` on
+  port 1234 and sent `/s3cret@broker.example/agents` as the path; a
+  provider's base URL, an MCP server's URL, GenerateImage's base URL and
+  a GitHub Enterprise API root sent their key or token header along with
+  it. haest now refuses a configured URL with an `@` past its host before
+  anything connects: `broker_url` at load, naming where it was set; a
+  provider's base URL when the provider is resolved, and again before each
+  request; an MCP server's URL when the server starts (that server fails,
+  the others start); the broker link, GenerateImage and the GitHub
+  tracker before they send. Each refusal shows the URL without its
+  credentials and says how to write it: percent-encode the password (`/`
+  as `%2F`, `?` as `%3F`, `#` as `%23`, `\` as `%5C`, `@` as `%40`), and an
+  `@` meant for the path or the query as `%40`. A URL that WebFetch
+  fetches is not a configured one, and an `@` in its path still works.
 - On macOS, applying a sandbox's changes could delete or overwrite files,
   or a whole directory, in the real project while the report said every
   change was applied. The disk reads `readme.md` and `README.md` as one
@@ -1214,6 +1234,11 @@ Hosts write less (round two of the review, and what porting brain onto
   safe for a password a parser misreads: everything between the scheme and
   the last `@` is hidden, and nothing past the scheme when a `?` or `#`
   comes before that `@`.
+- New `check_endpoint_url` and its `EndpointUrlError`: refuses a URL haest
+  is configured to dial when an `@` comes after the first `/`, `?`, `#` or
+  `\` past the scheme, where a URL parser ends the host. The error shows
+  the URL as `redacted_url` does and says how to write it. For a host's
+  own configured URLs too; never for a URL a tool fetches.
 - `HttpError::Timeout` says the wait as given (`no answer within 500ms`):
   it said whole seconds, so a sub-second headers timeout read `0 s`.
 
@@ -1727,6 +1752,9 @@ Hosts write less (round two of the review, and what porting brain onto
 - `McpTransport` is `#[non_exhaustive]` (breaking): a `match` adds a `_`
   arm, and haest adds a transport (`.mcp.json`'s `sse`) in a minor
   release.
+- New `McpStartError::Url`: an HTTP server whose URL has an `@` past its
+  host fails before any request goes out, haest-http's `EndpointUrlError`
+  its source.
 
 ### haest-mods
 
@@ -1876,6 +1904,10 @@ Hosts write less (round two of the review, and what porting brain onto
   it, in a file its TOML path (`max_turn_steps`, `profiles.review.tools`,
   `env.GH_TOKEN`), so an editor or a settings screen can point at it
   without parsing the text.
+- New setting kind `Kind::Url`, which `broker_url` takes: a URL with an `@`
+  past its host is refused at load (haest-http's `check_endpoint_url`).
+  docs/settings.md says what it refuses and why, and the `haest` command
+  names the flag's value `URL`.
 
 ### haest-runtime
 
@@ -2261,7 +2293,9 @@ against it; the wire JSON is unchanged):
   (500 ms doubling to 30 s); close 4401 or 4408 (`AUTH_CLOSE`), or a 401 or
   403 handshake, ends it with `TransportError::Auth`. `Broker`'s Debug and
   `TransportError::Url` show the URL without its userinfo, query values or
-  fragment, and the token never.
+  fragment, and the token never. A URL with an `@` past its host is
+  refused by `attach` with `TransportError::UrlRefused`, and nothing is
+  dialed.
 
 Changed since the first cut on `main` (breaking for Rust code written
 against it; the wire JSON is unchanged):
