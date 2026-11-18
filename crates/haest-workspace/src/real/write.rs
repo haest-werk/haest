@@ -76,7 +76,8 @@ mod tests {
     }
 
     /// A write makes the file, or empties it first and keeps its mode (the
-    /// apply makes a new file its owner's alone, then fills it).
+    /// apply makes a new file that replaces one its owner's alone, then
+    /// fills it).
     #[tokio::test]
     async fn a_write_makes_the_file_or_empties_it_and_keeps_its_mode() {
         let dir = tempfile::tempdir().unwrap();

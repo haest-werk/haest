@@ -29,7 +29,9 @@
 //! fixed owner the run is not, a path the longer name takes past the
 //! system's cap, a file that is a mount point of its own). A new file the
 //! disk has no room for fails the change: in place, the bytes would cut
-//! the file short.
+//! the file short. A file written in place that the disk stops partway (a
+//! full disk, an NFS server out of room) is still cut short: the change
+//! fails, and later lists show it as a conflict.
 //! The trade-offs of a file replaced so:
 //! - it does not keep its extended attributes or ACLs;
 //! - a process that holds it open to write (a log a server appends to, a

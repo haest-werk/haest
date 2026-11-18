@@ -555,8 +555,10 @@ write instead.
   reported it applied, a file written in place was cut short without a
   word, and a session record the server never took reached no error
   handler (`JsonlSessionFile::new_with_error_handler`). Both now report
-  what close says as the write's error: the apply fails the change, the
-  human's file whole and still listed, and a lost record is reported.
+  what close says as the write's error, and a lost record is reported.
+  The apply fails the change: a file it replaces stays whole and listed;
+  a file written in place (one with another hard link or owner) is still
+  cut short, but now reported, and later lists show it as a conflict.
 - An apply dropped partway lost the files of a tree the sandbox had moved.
   After `mv src gen`, the files under `gen` were listed only by walking
   `gen`, and only until `gen` was on the disk; the apply deletes first, so
