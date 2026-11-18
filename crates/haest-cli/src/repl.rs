@@ -1,5 +1,7 @@
 //! The interactive conversation: a line editor with history, slash commands,
-//! one turn per line. Ctrl+D (or /exit) quits; Ctrl+C at the prompt clears the line.
+//! one turn per line. Ctrl+D (or /exit) quits, once haest has said what that
+//! drops (edits only in the sandbox, turns that wait), and Ctrl+D runs none
+//! of those turns; Ctrl+C at the prompt clears the line.
 //!
 //! Turns the human did not start (`inbox.rs`) never run under an open prompt:
 //! the prompt owns the terminal (an approval ask would fight it for stdin) and
@@ -12,7 +14,7 @@
 
 use std::sync::mpsc::Sender;
 
-use haest::runtime::Ui;
+use haest::{runtime::Ui, session::Hold};
 use rustyline::{DefaultEditor, ExternalPrinter, error::ReadlineError};
 use tokio_util::sync::CancellationToken;
 
@@ -129,11 +131,14 @@ fn welcome(rt: &Runtime) -> std::path::PathBuf {
     rt.hooks().settings().data_dir.join("history")
 }
 
+/// The conversation at the prompt, until the human quits. The session is
+/// still held then: the caller lets go of the [`Hold`] only once the session
+/// is closed, so nothing that waited starts on the way out.
 pub(crate) async fn repl(
     session: &Session,
     ui: &TermUi,
     first: Option<String>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Hold> {
     let history = session
         .with(|rt| Box::pin(async move { welcome(rt) }))
         .await?;
@@ -146,23 +151,31 @@ pub(crate) async fn repl(
         None => true,
     };
     let mut guard = QuitGuard::default();
-    loop {
+    // Kept from a Ctrl+D to the quit it asks for: what waits starts only if
+    // the human goes on.
+    let mut held: Option<Hold> = None;
+    let hold = loop {
         if go_on {
             guard.went_on();
             // Every turn that waits runs before the prompt opens.
             session.idle().await;
-        } else {
+        }
+        // No turn starts while the prompt is open, or while a quit is
+        // decided; the terminal is the prompt's (an approval ask waits for
+        // it to return).
+        let hold = match held.take() {
+            Some(hold) => hold,
+            None => session.hold().await?,
+        };
+        if !go_on {
             let lost = session
                 .with(|rt| Box::pin(async move { before_quitting(rt).await }))
                 .await?;
             match guard.quit(lost) {
                 Some(lost) => ui.warn(&lost),
-                None => break,
+                None => break hold,
             }
         }
-        // No turn starts while the prompt is open; the terminal is the
-        // prompt's (an approval ask waits for it to return).
-        let hold = session.hold().await?;
         let terminal = ui.stdin.lock().await;
         ui.term.lock().unwrap().set_above(above.clone());
         let (ed, line) = tokio::task::spawn_blocking(move || {
@@ -172,8 +185,14 @@ pub(crate) async fn repl(
         .await?;
         ui.term.lock().unwrap().set_above(None);
         drop(terminal);
-        drop(hold);
         editor = ed;
+        // Ctrl+D asks to quit: still held, so whether it may is decided
+        // before anything that waits can start.
+        if matches!(line, Err(ReadlineError::Eof)) {
+            held = Some(hold);
+        } else {
+            drop(hold);
+        }
         go_on = match line {
             Ok(line) if line.trim().is_empty() => true,
             Ok(line) => {
@@ -186,12 +205,12 @@ pub(crate) async fn repl(
             Err(ReadlineError::Eof) => false,
             Err(e) => return Err(e.into()),
         };
-    }
+    };
     if let Some(dir) = history.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     let _ = editor.save_history(&history);
-    Ok(())
+    Ok(hold)
 }
 
 #[cfg(test)]

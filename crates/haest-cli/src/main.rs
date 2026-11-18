@@ -394,12 +394,13 @@ async fn main() -> ExitCode {
     let interrupts = run::watch_interrupts(brakes.clone(), hub.subscribe(hub.last_seq()));
     let _control = control_socket(&session, control, &ui);
     let link = broker_link(&session, broker, &ui);
-    let code = match input {
-        _ if stdio => stdio_mode(&session).await,
-        Some(input) => print_mode(&session, &brakes, &input).await,
+    // The REPL quits with the session held: what waits never starts.
+    let (code, held) = match input {
+        _ if stdio => (stdio_mode(&session).await, None),
+        Some(input) => (print_mode(&session, &brakes, &input).await, None),
         None => match repl::repl(&session, &ui, args.prompt_text()).await {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => fail(1, e),
+            Ok(hold) => (ExitCode::SUCCESS, Some(hold)),
+            Err(e) => (fail(1, e), None),
         },
     };
     // What haest stops is said; then the session closes the conversation
@@ -409,6 +410,7 @@ async fn main() -> ExitCode {
         .with(|rt| Box::pin(async move { shutdown(rt).await }))
         .await;
     session.close().await;
+    drop(held);
     // The link hands the broker the last frames, then ends; a broker that
     // does not read them is not waited for long.
     if let Some(mut link) = link
