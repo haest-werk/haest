@@ -84,8 +84,8 @@ pub(crate) fn header_map(
 
 /// Streamable HTTP to `url`, `headers` on every request. An error names the
 /// URL without its query, fragment or userinfo ([`ScrubbedClient`]): a key
-/// may ride in one. A URL with an `@` past its host fails here, before
-/// anything is sent ([`check_endpoint_url`]).
+/// may ride in one. A URL with an `@` past its host, or with no host, fails
+/// here, before anything is sent ([`check_endpoint_url`]).
 pub(crate) fn http(
     url: &str,
     headers: &BTreeMap<String, String>,

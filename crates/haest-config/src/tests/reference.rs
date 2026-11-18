@@ -63,7 +63,7 @@ fn takes(def: &Def) -> String {
             None => "a number, 0 or more".into(),
         },
         Kind::Text => "text".into(),
-        Kind::Url => "a URL; one with an `@` past its host is refused: a URL parser ends the host at the first `/`, `?` or `#`, so a password holding one would send the rest of it, and the host after the `@`, to another host. Percent-encode the password (`/` as `%2F`, `?` as `%3F`, `#` as `%23`, `\\` as `%5C`, `@` as `%40`). A URL with an `@` meant for its path or query cannot be used as it is: `%40` there makes another URL, which the server may or may not read the same".into(),
+        Kind::Url => "a URL; one with an `@` past its host is refused: a URL parser ends the host at the first `/`, `?` or `#`, so a password holding one would send the rest of it, and the host after the `@`, to another host. Percent-encode the password (`/` as `%2F`, `?` as `%3F`, `#` as `%23`, `\\` as `%5C`, `@` as `%40`). A URL with an `@` meant for its path or query cannot be used as it is: `%40` there makes another URL, which the server may or may not read the same. One with no host is refused too (`wss:///agents` or `wss://:8443/agents`, what an empty `${HOST}` makes): a parser takes the first part of its path for the host, or dials nothing".into(),
         Kind::Path => "a directory: `~/x` is under your home dir, `x` under the working dir".into(),
         Kind::Choice(w) => format!("one of {}", words(w)),
         Kind::List(Some(w)) => format!("a list of {}; `all` (every one) or `none`", words(w)),

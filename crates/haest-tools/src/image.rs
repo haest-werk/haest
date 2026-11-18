@@ -102,7 +102,8 @@ impl GenerateImageOptions {
     /// its path, however many slashes that ends in, and before its query (a
     /// gateway's key there stays the query).
     ///
-    /// A URL with an `@` past its host is never sent to: every call fails
+    /// A URL with an `@` past its host, or with no host (`https:///api/v1`,
+    /// what an empty `${HOST}` makes), is never sent to: every call fails
     /// saying why (haest-http's `check_endpoint_url`). A password holding an
     /// unescaped `/`, `?` or `#` ends the host a URL parser reads there, so
     /// the key and the rest of the password would go to another host; it

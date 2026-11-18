@@ -101,7 +101,8 @@ pub struct CustomProviderConfig {
     /// One with an `@` past its host fails the provider's resolve
     /// ([`ProviderRegistry::resolve`](super::ProviderRegistry::resolve)): a
     /// password holding an unescaped `/`, `?` or `#` ends the host a URL
-    /// parser reads there, so it goes in percent-encoded (`/` as `%2F`).
+    /// parser reads there, so it goes in percent-encoded (`/` as `%2F`). So
+    /// does one with no host (`https:///v1`, what an empty `${HOST}` makes).
     pub base_url: Option<String>,
     /// `apiKey`: the key itself, in the file.
     pub api_key: Option<String>,

@@ -42,8 +42,9 @@ pub enum Kind {
     /// A URL haest dials, as written. One with an `@` past its host is
     /// refused: a URL parser ends the host at the first `/`, `?` or `#`, so
     /// a password holding one unescaped would send the rest of it, and the
-    /// host after the `@`, to another host (haest-http's
-    /// `check_endpoint_url`).
+    /// host after the `@`, to another host. So is one with no host
+    /// (`wss:///agents`, `wss://:8443/agents`: what an empty `${HOST}`
+    /// makes). Both are haest-http's `check_endpoint_url`.
     Url,
     /// A dir: `~/x` is in the home dir, `x` in the working dir.
     Path,

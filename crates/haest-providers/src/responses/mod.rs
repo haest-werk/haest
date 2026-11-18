@@ -86,8 +86,9 @@ impl ResponsesOptions {
     /// output and errors: a gateway's key goes in a header
     /// ([`with_header`](Self::with_header)) or the query, never the path.
     ///
-    /// A URL with an `@` past its host is never sent to: every request
-    /// ends as an error saying so (haest-http's `check_endpoint_url`). A
+    /// A URL with an `@` past its host, or with no host (`https:///v1`,
+    /// what an empty `${HOST}` makes), is never sent to: every request ends
+    /// as an error saying so (haest-http's `check_endpoint_url`). A
     /// password holding an unescaped `/`, `?` or `#` ends the host a URL
     /// parser reads there, so it goes in percent-encoded (`/` as `%2F`).
     #[must_use]

@@ -59,7 +59,8 @@
 //! a vault). A missing key is an error when its provider is first resolved,
 //! not before. So is a base URL with an `@` past its host: a password
 //! holding an unescaped `/`, `?` or `#` ends the host a URL parser reads
-//! there, so it goes in percent-encoded (`/` as `%2F`).
+//! there, so it goes in percent-encoded (`/` as `%2F`). And so is one with
+//! no host (`https:///v1`, what an empty `${HOST}` makes).
 //!
 //! # Plugging in your own HTTP client
 //!

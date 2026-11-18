@@ -125,7 +125,9 @@ pub struct HttpTransport {
     /// parser reads there, so it goes in percent-encoded (`/` as `%2F`). A
     /// server whose URL has a real `@` in its path or query cannot be
     /// configured as it is: `%40` there makes another URL, which the server
-    /// may or may not read the same.
+    /// may or may not read the same. One with no host fails the same way
+    /// (`https:///mcp`, what `https://${HOST}/mcp` makes of an empty
+    /// variable: a parser would dial the host `mcp`).
     pub url: String,
     /// Header names and values sent with every request. One that HTTP
     /// cannot carry fails this server before any request goes out.

@@ -50,9 +50,10 @@ impl Sender {
     /// POST until the server answers 2xx, a refusal is final, or the retries
     /// run out. The error is the message for `AssistantMessage::error_message`.
     ///
-    /// A URL with an `@` past its host is never sent to
+    /// A URL with an `@` past its host, or with no host, is never sent to
     /// ([`check_endpoint_url`]): a base URL whose password holds an
-    /// unescaped `/`, `?` or `#` reads to a URL parser as another host.
+    /// unescaped `/`, `?` or `#` reads to a URL parser as another host, and
+    /// so does the first part of the path of a URL with no host.
     pub(crate) async fn send(
         &self,
         req: &Request,

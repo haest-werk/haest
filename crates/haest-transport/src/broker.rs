@@ -123,7 +123,7 @@ impl Broker {
     /// credential and not in a header: the broker's credential is the
     /// token, in the `hello` ([`with_token`](Self::with_token)).
     /// [`attach`](Self::attach) refuses a URL with an `@` past its host,
-    /// which a URL parser reads as another host.
+    /// which a URL parser reads as another host, and one with no host.
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),

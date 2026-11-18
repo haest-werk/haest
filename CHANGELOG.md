@@ -1864,8 +1864,9 @@ Hosts write less (round two of the review, and what porting brain onto
   arm, and haest adds a transport (`.mcp.json`'s `sse`) in a minor
   release.
 - New `McpStartError::Url`: an HTTP server whose URL has an `@` past its
-  host fails before any request goes out, haest-http's `EndpointUrlError`
-  its source.
+  host, or no host (`https:///mcp`, what `https://${HOST}/mcp` makes of an
+  empty variable), fails before any request goes out, haest-http's
+  `EndpointUrlError` its source.
 
 ### haest-mods
 
@@ -2023,7 +2024,9 @@ Hosts write less (round two of the review, and what porting brain onto
   `env.GH_TOKEN`), so an editor or a settings screen can point at it
   without parsing the text.
 - New setting kind `Kind::Url`, which `broker_url` takes: a URL with an `@`
-  past its host is refused at load (haest-http's `check_endpoint_url`).
+  past its host, or with no host (`wss://:8443/agents`, what an empty
+  `${BROKER_HOST}` makes), is refused at load (haest-http's
+  `check_endpoint_url`).
   docs/settings.md says what it refuses and why, and the `haest` command
   names the flag's value `URL`.
 
