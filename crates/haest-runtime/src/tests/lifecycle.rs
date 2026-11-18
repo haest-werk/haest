@@ -5,14 +5,15 @@
 
 use std::{path::Path, sync::Arc};
 
+use haest_core::testing::{ScriptedProvider, text_answer};
 use haest_settings::Settings;
 
 use super::{hardcoded, keyed, keyed_with, openrouter_key, try_keyed};
 use crate::{
-    BuildError, BuildOptions, OnResume, Prefer, Resume, RuntimeInputs, SessionFileError, World,
-    build,
+    BuildError, BuildOptions, OnResume, Prefer, Resume, Runtime, RuntimeInputs, SessionFileError,
+    World, build,
     haest::{
-        Effort, ModelError, WorkspaceMode,
+        Effort, LoopEvent, Message, ModelError, WorkspaceMode,
         core::fs::{Fs, MemFs},
         core::task_board::NewTask,
         mcp::{McpServerConfig, McpTransport},
@@ -189,6 +190,59 @@ async fn a_model_or_effort_given_for_a_resume_wins_over_the_saved_one() {
 
     let next = keyed(&fs, Resume::Id(id)).await;
     assert_eq!(on(&next), (GIVEN.to_string(), Some(Effort::Low)));
+}
+
+/// A conversation over `fs` whose model answers `answer` once, with no key
+/// and no network; `resume` as [`BuildOptions`].
+async fn answering(fs: &Arc<MemFs>, resume: Resume, answer: &str) -> Runtime<Recorded> {
+    let model = ScriptedProvider::new([text_answer(answer)]);
+    let inputs =
+        RuntimeInputs::new(hardcoded(), World::files(fs.clone())).with_models(model.resolver());
+    let opts = BuildOptions {
+        resume,
+        ..BuildOptions::default()
+    };
+    build(inputs, Recorded::default(), Deny, opts)
+        .await
+        .unwrap()
+}
+
+/// The text of every user message in `history`.
+fn said(history: &[Message]) -> Vec<&str> {
+    let users = history.iter().filter_map(|m| match m {
+        Message::User(u) => Some(u.content.as_str()),
+        _ => None,
+    });
+    users.collect()
+}
+
+/// A session file whose last line a crash tore, resumed: the turn run after
+/// the resume is there on the next one.
+#[tokio::test]
+async fn a_turn_run_after_resuming_a_torn_file_outlives_the_next_resume() {
+    let fs = Arc::new(MemFs::new());
+    let mut sink = |_: LoopEvent| {};
+    let mut rt = answering(&fs, Resume::New, "answer one").await;
+    let outcome = rt.human_turn("first question", &mut sink).await;
+    assert_eq!(outcome.error, None, "{outcome:?}");
+    rt.shut_down().await;
+    let id = rt.session_id();
+    drop(rt);
+    // A crash mid-write: a record's first bytes, and no newline.
+    let file = Path::new(SESSIONS).join(format!("{id}.jsonl"));
+    let torn = br#"{"type":"message","t":1,"message":{"role":"assis"#;
+    fs.append(&file, torn).await.unwrap();
+
+    let mut rt = answering(&fs, Resume::Id(id.clone()), "answer two").await;
+    let outcome = rt.human_turn("second question", &mut sink).await;
+    assert_eq!(outcome.error, None, "{outcome:?}");
+    rt.shut_down().await;
+    drop(rt);
+
+    let back = answering(&fs, Resume::Id(id), "unused").await;
+    let history = back.agent().history();
+    assert_eq!(said(history), ["first question", "second question"]);
+    assert_eq!(history.len(), 4, "a question and its answer, twice");
 }
 
 #[tokio::test]

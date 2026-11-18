@@ -167,6 +167,32 @@ async fn a_torn_last_line_is_counted_not_fatal() {
     assert_eq!(back.corrupt_lines, 1);
 }
 
+/// A resume after a crash mid-write goes on writing: its first record is a
+/// line of its own, not the end of the torn one, so the next resume has it.
+#[tokio::test]
+async fn a_record_written_after_a_torn_last_line_replays() {
+    let fs = Arc::new(ModeFs::default());
+    let s = store(&fs);
+    s.create("c1", Path::new("/x"), 0).await.unwrap();
+    s.append(&msg(0, "ok"));
+    s.flush().await;
+    let torn = b"{\"type\":\"message\",\"t\":0,\"mess";
+    fs.append(s.path(), torn).await.unwrap();
+
+    let resumed = store(&fs);
+    assert_eq!(resumed.load().await.unwrap().corrupt_lines, 1);
+    resumed.append(&msg(1, "after the crash"));
+    resumed.flush().await;
+    let again = resumed.load().await.unwrap();
+    assert_eq!(again.corrupt_lines, 1, "a second load counts the same line");
+    resumed.append(&msg(2, "and on"));
+    resumed.flush().await;
+
+    let back = store(&fs).load().await.unwrap();
+    assert_eq!(texts(&back.messages), ["ok", "after the crash", "and on"]);
+    assert_eq!(back.corrupt_lines, 1, "the torn line, and nothing else");
+}
+
 #[test]
 fn session_ids_cannot_escape_the_sessions_dir() {
     let dir = sessions_dir(Path::new(DATA));

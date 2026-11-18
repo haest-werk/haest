@@ -189,7 +189,9 @@ impl JsonlSessionFile {
     }
 
     /// Flush, then replay the file. Never fails on a bad line (see [`replay`]);
-    /// invalid UTF-8 from a torn write is replaced, not fatal.
+    /// invalid UTF-8 from a torn write is replaced, not fatal. A file that
+    /// ends mid-line (a write a crash cut off) gets that line ended before the
+    /// next record, so the record is a line of its own and replays.
     ///
     /// # Errors
     ///
@@ -197,6 +199,9 @@ impl JsonlSessionFile {
     pub async fn load(&self) -> io::Result<ReplayedSession> {
         SessionSink::flush(self).await;
         let bytes = self.fs.read(&self.path).await?;
+        if bytes.last().is_some_and(|&b| b != b'\n') {
+            let _ = self.tx.send(Job::Line("\n".into()));
+        }
         Ok(replay(&String::from_utf8_lossy(&bytes)))
     }
 }
