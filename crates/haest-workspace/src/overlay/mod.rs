@@ -130,14 +130,16 @@ use state::{Original, state_of, walk};
 /// stops nothing else.
 ///
 /// A mode the sandbox set (`chmod`, `install -m`) is listed (`Modified`, if
-/// nothing else changed; the diff names both modes) and applied, and a file
-/// the sandbox added gets its execute bits: a script made executable, or
-/// moved, lands executable. A file the sandbox only edits keeps the disk's
-/// mode. Applying takes away any permission the sandbox took, but grants none
-/// but execute, and that only to whom may read the file: `chmod +x` gives a
-/// new file what it gives under the disk's umask, and `chmod 666` or a setuid
-/// bit is not applied. A mode the human changed on the disk since the
-/// sandbox set its own is a conflict.
+/// nothing else changed; the diff names both modes) and applied, and so is
+/// the mode a path takes along when the sandbox moves or copies it (`mv`
+/// keeps it, and `cp` gives a new file its source's): a 0600 key moved or
+/// copied lands 0600, and a script moved lands executable. A file the
+/// sandbox only edits keeps the disk's mode, and one it made lands as the
+/// disk's umask makes it. Applying takes away any permission the sandbox
+/// took, but grants none but execute, and that only to whom may read the
+/// file: `chmod +x` gives a new file what it gives under the disk's umask,
+/// and `chmod 666` or a setuid bit is not applied. A mode the human changed
+/// on the disk since the sandbox set its own is a conflict.
 ///
 /// Over [`SandboxWorkspace`](crate::SandboxWorkspace)'s project overlay, what
 /// is applied reads through to the disk again: the sandbox sees what the

@@ -1,8 +1,10 @@
 //! A file's mode, from the sandbox to the real disk. bashkit gives a file it
 //! makes 0644, whatever the disk's umask would, so only a mode the sandbox
-//! chose is carried: one it set (`chmod`, kept in [`SetModes`]), and the
-//! execute bits of a file it adds (a script moved or copied keeps them). A
-//! file it only edits keeps the disk's mode, as an edit does in bash.
+//! chose is carried: one it set (`chmod`), one a path took along when the
+//! sandbox moved or copied it (`mv` keeps a path's mode, and `cp` gives a
+//! new file its source's), both kept in [`SetModes`], and the execute bits
+//! of a file it adds. A file it only edits keeps the disk's mode, as an
+//! edit does in bash.
 //!
 //! Applying takes away any permission the sandbox took, but grants none but
 //! execute, and that only to whom may read the file: `chmod +x` on a new file
@@ -18,18 +20,22 @@ use std::{
 
 use haest_core::fs::normalize;
 
-use super::{OverlayChanges, diff, scan::ModeChange, state::Original};
+use super::{
+    OverlayChanges, diff,
+    scan::{ModeChange, under},
+    state::Original,
+};
 
 /// The permission bits, setuid, setgid and sticky included.
-const PERMISSIONS: u32 = 0o7777;
+pub(super) const PERMISSIONS: u32 = 0o7777;
 
-/// A mode the sandbox set at a path.
+/// A mode the sandbox set at a path, or a move or a copy brought there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SetMode {
     pub(super) mode: u32,
-    /// The disk's mode there when the sandbox first set one; None where the
-    /// disk held nothing there (a new file, or one moved there). Another one
-    /// there now means the human changed it since.
+    /// The disk's mode there when the sandbox first set or brought one; None
+    /// where the disk held nothing there (a new file). Another one there now
+    /// means the human changed it since.
     pub(super) disk: Option<u32>,
 }
 
@@ -52,30 +58,16 @@ impl SetModes {
         self.map().insert(path, set);
     }
 
-    /// `path` and everything under it are gone, or (`to`) moved there over
-    /// what `to` had: their modes go too, or move along.
-    pub(super) fn moved(&self, path: &Path, to: Option<&Path>) {
+    /// `path` and everything under it are gone (removed, or moved away):
+    /// their modes go too.
+    pub(super) fn gone(&self, path: &Path) {
         let path = normalize(path);
-        let to = to.map(normalize);
-        if to.as_ref() == Some(&path) {
-            return;
-        }
         let mut map = self.map();
-        if let Some(to) = &to {
-            map.retain(|p, _| !p.starts_with(to));
+        let below: Vec<PathBuf> = under(&map, &path).map(|(p, _)| p.clone()).collect();
+        for p in below {
+            map.remove(&p);
         }
-        let under: Vec<PathBuf> = map
-            .keys()
-            .filter(|p| p.starts_with(&path))
-            .cloned()
-            .collect();
-        for old in under {
-            let set = map.remove(&old).expect("listed above");
-            if let (Some(to), Ok(rest)) = (&to, old.strip_prefix(&path)) {
-                let disk = None;
-                map.insert(normalize(&to.join(rest)), SetMode { disk, ..set });
-            }
-        }
+        map.remove(&path);
     }
 
     /// The mode set at `path` is on the disk now.
@@ -159,6 +151,9 @@ mod tests {
         // chmod 666 and 4755 grant nothing.
         assert_eq!(carried(0o644, 0o666), 0o644);
         assert_eq!(carried(0o755, 0o4755), 0o755);
+        // A 0644 file moved in, made 0664 under umask 002, and a 0600 key.
+        assert_eq!(carried(0o664, 0o644), 0o644);
+        assert_eq!(carried(0o644, 0o600), 0o600);
     }
 
     #[test]
@@ -169,24 +164,28 @@ mod tests {
     }
 
     #[test]
-    fn a_set_mode_moves_with_its_path_and_goes_with_it() {
+    fn a_set_mode_goes_with_its_path_and_only_with_it() {
         let modes = SetModes::default();
-        let at = |p: &str, mode| {
-            let disk = Some(0o644);
-            modes.insert(PathBuf::from(p), SetMode { mode, disk });
-        };
-        at("/bin/run.sh", 0o755);
-        at("/old.sh", 0o700);
-        at("/bin2/x", 0o600);
-        modes.moved(Path::new("/bin"), Some(Path::new("/bin2")));
-        let moved = SetMode {
-            mode: 0o755,
-            disk: None,
-        };
-        assert_eq!(modes.get(Path::new("/bin2/run.sh")), Some(moved));
-        assert_eq!(modes.get(Path::new("/bin2/x")), None, "bin2's own went");
-        assert_eq!(modes.get(Path::new("/bin/run.sh")), None);
-        modes.moved(Path::new("/old.sh"), None);
-        assert_eq!(modes.get(Path::new("/old.sh")), None);
+        let all = [
+            "/bin",
+            "/bin/run.sh",
+            "/bin/sub/x",
+            "/bin2/x",
+            "/bin.d",
+            "/b",
+        ];
+        for p in all {
+            let set = SetMode {
+                mode: 0o755,
+                disk: Some(0o644),
+            };
+            modes.insert(PathBuf::from(p), set);
+        }
+        modes.gone(Path::new("/bin/"));
+        let left: Vec<_> = all
+            .into_iter()
+            .filter(|p| modes.get(Path::new(p)).is_some())
+            .collect();
+        assert_eq!(left, ["/bin2/x", "/bin.d", "/b"]);
     }
 }

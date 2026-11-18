@@ -201,6 +201,29 @@ impl Book {
         self.modes.insert(path, SetMode { mode, disk });
     }
 
+    /// Whether the sandbox's mode at `path` is the path's own, which `mv`
+    /// and `cp` take along: one the sandbox set, or the disk's, where the
+    /// disk holds the path under any spelling. A path only the sandbox made
+    /// has bashkit's default mode, where bash gives the umask's: applying
+    /// gives it the umask's. (One it made again after removing the disk's
+    /// counts as the disk's: it lands 0644 at most.)
+    pub(crate) async fn own_mode(&self, path: &Path) -> bool {
+        self.modes.get(&normalize(path)).is_some()
+            || modes::on_disk(&self.real(path)).await.is_some()
+    }
+
+    /// A move or a copy brought `mode` to `path`, as the path's own. Kept as
+    /// a mode the sandbox set, so applying carries it, unless the disk has
+    /// that mode there already: then the path is an edit, and a mode the
+    /// human gives it later is theirs, as after any edit.
+    pub(crate) async fn bring_mode(&self, path: &Path, mode: u32) {
+        if self.disk_mode(path).await == Some(mode & modes::PERMISSIONS) {
+            self.modes.forget(&normalize(path));
+        } else {
+            self.set_mode(path, mode).await;
+        }
+    }
+
     /// The mode of `path` (an overlay path) on the real disk, as the sandbox
     /// spells it: None where the disk holds it only under another spelling.
     pub(super) async fn disk_mode(&self, path: &Path) -> Option<u32> {

@@ -13,6 +13,7 @@ use bashkit::{
     DirEntry, DirListing, FileSystem, FileSystemExt, FileType, FsLimits, FsUsage, Metadata,
     SearchCapable, VfsSnapshot, WalkOptions,
 };
+use haest_core::fs::normalize;
 use tokio::sync::RwLockReadGuard;
 
 use super::Book;
@@ -72,6 +73,42 @@ impl Recorder {
         self.inner.write_file(path, content).await?;
         self.keep_mode(path, mode).await;
         Ok(())
+    }
+
+    /// The sandbox moved or copied `from` to `to`, where it shows `mode`:
+    /// kept for applying where that mode is `from`'s own
+    /// ([`Book::own_mode`]), and none is kept where it is bashkit's.
+    async fn bring(&self, from: &Path, to: &Path, mode: u32) {
+        if self.book.own_mode(from).await {
+            self.book.bring_mode(to, mode).await;
+        } else {
+            self.book.modes.forget(&normalize(to));
+        }
+    }
+
+    /// Each path at and under `to`, where a move from `from` put it, with
+    /// its mode and where it came from. bashkit's rename keeps each one's
+    /// mode, as `mv` does; links and pipes take none.
+    async fn moved(&self, from: &Path, to: &Path) -> Vec<(PathBuf, PathBuf, u32)> {
+        let mut found = Vec::new();
+        let Ok(top) = self.inner.lstat(to).await else {
+            return found;
+        };
+        let mut pending = vec![(PathBuf::new(), top)];
+        while let Some((rest, meta)) = pending.pop() {
+            let at = to.join(&rest);
+            match meta.file_type {
+                FileType::File => {}
+                FileType::Directory => {
+                    for e in self.inner.read_dir(&at).await.unwrap_or_default() {
+                        pending.push((rest.join(&e.name), e.metadata));
+                    }
+                }
+                FileType::Symlink | FileType::Fifo => continue,
+            }
+            found.push((from.join(&rest), at, meta.mode));
+        }
+        found
     }
 }
 
@@ -170,7 +207,7 @@ impl FileSystem for Recorder {
         let _turn = self.turn().await;
         self.book.remember(path).await;
         self.inner.remove(path, recursive).await?;
-        self.book.modes.moved(path, None);
+        self.book.modes.gone(path);
         if recursive {
             self.book.wipe(path);
         }
@@ -194,7 +231,11 @@ impl FileSystem for Recorder {
         self.book.remember(from).await;
         self.book.remember(to).await;
         self.inner.rename(from, to).await?;
-        self.book.modes.moved(from, Some(to));
+        let moved = self.moved(from, to).await;
+        for (was, at, mode) in moved {
+            self.bring(&was, &at, mode).await;
+        }
+        self.book.modes.gone(from);
         // A directory moves as a whole: its old place and its new one each
         // record only the directory.
         self.book.wipe(from);
@@ -205,7 +246,21 @@ impl FileSystem for Recorder {
         let _turn = self.turn().await;
         self.parent_shown(to).await?;
         self.book.remember(to).await;
-        self.inner.copy(from, to).await
+        // `cp` keeps the mode of a file it copies onto, and gives a new one
+        // its source's; bashkit's copy makes the file 0644 either way.
+        let onto = self.file_mode(to).await;
+        let source = self.file_mode(from).await;
+        self.inner.copy(from, to).await?;
+        match (onto, source) {
+            (Some(_), _) => self.keep_mode(to, onto).await,
+            (None, Some(mode)) => {
+                self.keep_mode(to, source).await;
+                self.bring(from, to, mode).await;
+            }
+            // A link, copied as a link.
+            (None, None) => {}
+        }
+        Ok(())
     }
     async fn symlink(&self, target: &Path, link: &Path) -> Result<()> {
         let _turn = self.turn().await;

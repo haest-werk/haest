@@ -136,6 +136,69 @@ async fn a_moved_script_stays_executable() {
     }
 }
 
+/// `mv` keeps a path's mode, and `cp` gives a new file its source's and
+/// keeps the mode of a file it copies onto. A 0600 key and a 0700 directory
+/// the sandbox moved or copied landed 0644 and 0755, readable by every
+/// local account, and a key moved onto a file landed with that file's mode.
+/// A file the sandbox made lands as made, moved or not.
+#[tokio::test]
+async fn a_path_the_sandbox_moves_or_copies_keeps_its_mode() {
+    let (_t, dir) = tempdir();
+    for (name, m) in [
+        ("secret.key", 0o600),
+        ("other.key", 0o600),
+        ("config.key", 0o644),
+        ("plain.txt", 0o644),
+    ] {
+        fs::write(dir.join(name), format!("{name}\n")).unwrap();
+        set_mode(&dir.join(name), m);
+    }
+    fs::create_dir(dir.join("certs")).unwrap();
+    fs::write(dir.join("certs/id"), "k\n").unwrap();
+    set_mode(&dir.join("certs/id"), 0o600);
+    set_mode(&dir.join("certs"), 0o700);
+    let ws = sandbox(&dir).await;
+    run(
+        &ws,
+        &dir,
+        "cp secret.key copy.key && cp secret.key plain.txt && cp -r certs copied \
+         && mv secret.key moved.key && mv other.key config.key && mv certs keys \
+         && echo n > new.txt && echo n > made.txt && mv made.txt fresh.txt",
+    )
+    .await;
+    apply_all(&ws).await;
+    let shown = |path: &str| format!("{:o}", mode(&dir.join(path)));
+    let got: Vec<(&str, String)> = [
+        "copy.key",
+        "plain.txt",
+        "copied",
+        "copied/id",
+        "moved.key",
+        "config.key",
+        "keys",
+        "keys/id",
+        "fresh.txt",
+    ]
+    .into_iter()
+    .map(|p| (p, shown(p)))
+    .collect();
+    let mut want: Vec<(&str, String)> = [
+        ("copy.key", "600"),
+        ("plain.txt", "644"),
+        ("copied", "700"),
+        ("copied/id", "600"),
+        ("moved.key", "600"),
+        ("config.key", "600"),
+        ("keys", "700"),
+        ("keys/id", "600"),
+    ]
+    .into_iter()
+    .map(|(p, m)| (p, m.to_owned()))
+    .collect();
+    want.push(("fresh.txt", shown("new.txt")));
+    assert_eq!(got, want);
+}
+
 /// An edit keeps the file's mode, in the sandbox as in bash: `>` and `>>`
 /// made an executable file a plain one there.
 #[tokio::test]
