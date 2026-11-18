@@ -649,6 +649,20 @@ write instead.
   (a CRLF `.env`), a space after it, or written in upper case
   (`HTTPS://GHE.EXAMPLE/API/V3`): the cut of `/v3` saw neither. The root
   is now read as a URL parser reads it, and `/v3` is cut in any case.
+- A resume lost the first record it wrote when the session file's last
+  line was torn (a kill or a crash mid-write, or the `haest` command's
+  second Ctrl+C during a large record). Nothing ended the torn line, so
+  the record was appended onto it, and the next resume skipped both as one
+  torn line: the human's question was gone (or the model a resume was
+  given), and the history held two answers in a row.
+  `JsonlSessionFile::load` now ends a torn last line before the next
+  record.
+- Two runs that resumed one session both wrote its file: `haest -r` in a
+  second terminal resumes the session the first one is writing. The
+  ledger record is a snapshot and the last one wins, so the run that wrote
+  last erased the other's spend, and every later resume counted the USD
+  cap from too low a number; the two conversations came back interleaved.
+  A run now holds its session for itself (see Behaviour changes).
 
 ### Behaviour changes
 
@@ -666,6 +680,13 @@ write instead.
   false. `"True"` and `"FALSE"` read as the flag they spell.
 - The `haest` command runs its conversation as a session: the terminal is
   one subscriber of the stream, and what the human sees is as before.
+- A resume of a session another run is writing fails with
+  `SessionFileError::InUse` ("session "<id>" is in use by another run"),
+  where both runs wrote it. A run holds its session file from the build
+  (or a /clear) until it is dropped, through a lock the system drops with
+  the process, so a crash leaves no session locked. `haest -r` in a second
+  terminal stops with that error while the first still runs. On a host's
+  own file system nothing changes unless it implements `Fs::try_lock`.
 
 ### The haest command
 
@@ -1391,6 +1412,13 @@ Hosts write less (round two of the review, and what porting brain onto
   call with no result in its warm request, and counted what it kept on a
   history the session file did not replay to (the call came back with two
   results).
+- New `Fs::try_lock` and `FsLock`, the guard it hands back: a file held
+  for one writer until the guard drops, never past the process that holds
+  it. The default is `Ok(None)`, a file system with no locks, which holds
+  nothing and refuses nothing; a store more than one writer shares
+  overrides it. `JsonlSessionFile::try_lock` holds the session file that
+  way until the value is dropped; a second writer's fails with
+  `WouldBlock`.
 
 ### haest-http
 
@@ -1900,6 +1928,9 @@ Hosts write less (round two of the review, and what porting brain onto
   where applying changes the file's mode (see Bug fixes); a change of mode
   alone has that line and no hunk. A path the sandbox adds with a mode of
   its own starts with `Mode /b.sh 755`, as git shows a new file's mode.
+- `RealFs::try_lock` takes an exclusive `flock(2)` on the file, which the
+  system drops with the process that held it; on a file system that takes
+  no such locks it is `Ok(None)`.
 
 ### haest-code
 
@@ -2292,6 +2323,15 @@ Hosts write less (round two of the review, and what porting brain onto
   it comes back now (haest-core's `compact` does it), so a drop loses only
   the call still running, and `Runtime::compact` says so: to book that one
   too, fire `cancel` and await it.
+- `RuntimeHooks` kept `AgentHooks::before_effects` at its default, which
+  returns at once, so a tool with side effects (Write, an MCP tool that
+  sends, a paid GenerateImage) started while the answer that called it
+  was still queued for the session file. A crash then lost the call but
+  not its effect, and the resume had nothing to answer as interrupted; on
+  a slow host file system even the human's message was not written yet.
+  It now waits for the session file there.
+- New `SessionFileError::InUse { id }`: the session to resume is held by
+  another run (see Behaviour changes).
 
 ### haest-ts
 
