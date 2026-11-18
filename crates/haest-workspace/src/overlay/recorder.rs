@@ -75,6 +75,14 @@ impl FileSystem for Recorder {
         self.inner.write_file(path, content).await
     }
     async fn append_file(&self, path: &Path, content: &[u8]) -> Result<()> {
+        // bashkit's overlay makes a file on append only where its upper
+        // layer holds the directory, and never where the sandbox removed
+        // one: `>>` onto a new file in a directory only the disk holds, or
+        // onto one `rm` took, failed. Appending to nothing is writing, and a
+        // write checks that the sandbox shows the parent, as bash does.
+        if !self.inner.exists(path).await.unwrap_or(true) {
+            return self.write_file(path, content).await;
+        }
         self.book.remember(path).await;
         self.inner.append_file(path, content).await
     }
