@@ -6,7 +6,7 @@
 //! counts too.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -19,6 +19,10 @@ use crate::spelling::{Spelled, Spelling};
 /// The first-touch ledger the recorder writes and the scan reads.
 pub(crate) struct Book {
     touched: Mutex<BTreeMap<PathBuf, Original>>,
+    /// Directories the sandbox removed whole, moved away or moved a tree
+    /// onto: the overlay hides all the disk held under each then, and
+    /// records only the directory itself.
+    wiped: Mutex<BTreeSet<PathBuf>>,
     pub(super) disk: Arc<dyn Fs>,
     pub(super) root: PathBuf,
     spelling: Spelling,
@@ -67,6 +71,7 @@ impl Book {
     pub(super) fn new(disk: Arc<dyn Fs>, root: PathBuf) -> Self {
         Self {
             touched: Mutex::default(),
+            wiped: Mutex::default(),
             disk,
             spelling: Spelling::of(&root),
             root,
@@ -97,6 +102,37 @@ impl Book {
 
     pub(super) fn snapshot(&self) -> BTreeMap<PathBuf, Original> {
         self.touched().clone()
+    }
+
+    /// The directories wiped so far. Their lock is held only to read or
+    /// write the set, like the ledger's.
+    fn wiped(&self) -> MutexGuard<'_, BTreeSet<PathBuf>> {
+        self.wiped
+            .lock()
+            .expect("the overlay's wiped lock poisoned")
+    }
+
+    /// The sandbox removed `path` whole (`rm -r`), moved it away, or moved a
+    /// tree onto it. Kept only where the disk held a directory at first
+    /// touch: under anything else, the overlay hides nothing of the disk's.
+    pub(crate) fn wipe(&self, path: &Path) {
+        let path = normalize(path);
+        if self.touched().get(&path) == Some(&Original::Dir) {
+            self.wiped().insert(path);
+        }
+    }
+
+    /// Every directory wiped so far, in path order: one before those under it.
+    pub(super) fn wiped_dirs(&self) -> Vec<PathBuf> {
+        self.wiped().iter().cloned().collect()
+    }
+
+    /// Forget each of `dirs` as wiped.
+    pub(super) fn forget_wiped<'a>(&self, dirs: impl IntoIterator<Item = &'a PathBuf>) {
+        let mut wiped = self.wiped();
+        for dir in dirs {
+            wiped.remove(dir);
+        }
     }
 
     /// What the sandbox reads at `path` (an overlay path) on the real disk:

@@ -21,7 +21,8 @@
 //! A symlink is compared as a link (`state.rs`), never as what it points to.
 //! Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
 //! directory, not file by file -- an edit the human made INSIDE it meanwhile
-//! does not count as a conflict.
+//! does not count as a conflict, also where the sandbox makes it again and
+//! each path under it is compared.
 
 mod apply;
 mod book;
@@ -173,7 +174,10 @@ struct Scanned {
 ///
 /// Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
 /// directory, not file by file -- an edit the human made INSIDE it meanwhile
-/// does not count as a conflict.
+/// does not count as a conflict. Where the sandbox makes it again
+/// (`rm -r dir && mkdir dir`, `rm -r dist && mv build dist`), each path under
+/// it that differs, on the disk or in the sandbox, is listed, and the same
+/// holds for it.
 ///
 /// The crate docs have an example of the whole round.
 pub struct OverlayChanges {
@@ -215,22 +219,58 @@ impl OverlayChanges {
         })
     }
 
-    /// Every path to compare: the touched ones, plus everything inside a directory
-    /// the sandbox CREATED (`mv d1 d2`, `cp -r a b` record only `d2` / `b`, and
-    /// applying that as a bare mkdir would leave it empty). Nothing under it existed
-    /// on disk at first touch, so each file inside starts out absent.
-    async fn candidates(&self) -> BTreeMap<PathBuf, Original> {
+    /// Every path to compare, with what it was at first touch: the touched
+    /// ones, plus everything inside a directory the sandbox CREATED (`mv d1
+    /// d2`, `cp -r a b` record only `d2` / `b`, and applying that as a bare
+    /// mkdir would leave it empty). Nothing under it existed on disk at first
+    /// touch, so each file inside starts out absent.
+    ///
+    /// And a directory the disk holds that the sandbox wiped (removed whole,
+    /// moved away, or moved a tree onto) and that is a directory again: the
+    /// overlay hides all the disk held under it, so everything under it, on
+    /// the disk and in the overlay, is compared too. Each such path starts
+    /// from what the disk holds at this scan (None): the stated limit of
+    /// `rm -r`, which checks no file inside.
+    async fn candidates(&self) -> BTreeMap<PathBuf, Option<Original>> {
         let touched = self.book.snapshot();
-        let mut all = touched.clone();
+        let mut all: BTreeMap<_, _> = touched.iter().map(|(p, o)| (p.clone(), Some(*o))).collect();
         for (path, original) in &touched {
             if *original == Original::Dir || state_of(&self.overlay, path).await != Original::Dir {
                 continue;
             }
             for inside in walk(&self.overlay, path).await {
-                all.entry(inside).or_insert(Original::Absent);
+                all.entry(inside).or_insert(Some(Original::Absent));
+            }
+        }
+        for dir in self.made_again(&touched).await {
+            let on_disk = walk(self.book.disk.as_ref(), &self.book.real(&dir)).await;
+            let on_disk = on_disk
+                .iter()
+                .filter_map(|p| p.strip_prefix(&self.book.root).ok())
+                .map(|rel| Path::new("/").join(rel));
+            for inside in on_disk.chain(walk(&self.overlay, &dir).await) {
+                all.entry(inside).or_insert(None);
             }
         }
         all
+    }
+
+    /// The wiped directories that were directories on the disk at first
+    /// touch and are directories in the overlay again, none under another
+    /// (walking the outer one covers it).
+    async fn made_again(&self, touched: &BTreeMap<PathBuf, Original>) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = Vec::new();
+        // In path order, so one comes right before those under it.
+        for dir in self.book.wiped_dirs() {
+            if out.last().is_some_and(|outer| dir.starts_with(outer))
+                || touched.get(&dir) != Some(&Original::Dir)
+                || state_of(&self.overlay, &dir).await != Original::Dir
+            {
+                continue;
+            }
+            out.push(dir);
+        }
+        out
     }
 
     /// Every path to compare as it stands, in path order (the candidates'
@@ -242,7 +282,7 @@ impl OverlayChanges {
                 tokio::join!(self.book.on_disk(&path), state_of(&self.overlay, &path));
             out.push(Found {
                 path,
-                original,
+                original: original.unwrap_or(now.state),
                 now: now.state,
                 held: now.held,
                 mine,

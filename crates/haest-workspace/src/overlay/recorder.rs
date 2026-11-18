@@ -66,7 +66,11 @@ impl FileSystem for Recorder {
     }
     async fn remove(&self, path: &Path, recursive: bool) -> Result<()> {
         self.book.remember(path).await;
-        self.inner.remove(path, recursive).await
+        self.inner.remove(path, recursive).await?;
+        if recursive {
+            self.book.wipe(path);
+        }
+        Ok(())
     }
     async fn stat(&self, path: &Path) -> Result<Metadata> {
         self.inner.stat(path).await
@@ -83,7 +87,12 @@ impl FileSystem for Recorder {
     async fn rename(&self, from: &Path, to: &Path) -> Result<()> {
         self.book.remember(from).await;
         self.book.remember(to).await;
-        self.inner.rename(from, to).await
+        self.inner.rename(from, to).await?;
+        // A directory moves as a whole: its old place and its new one each
+        // record only the directory.
+        self.book.wipe(from);
+        self.book.wipe(to);
+        Ok(())
     }
     async fn copy(&self, from: &Path, to: &Path) -> Result<()> {
         self.book.remember(to).await;

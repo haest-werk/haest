@@ -19,6 +19,7 @@
 //! conflict.
 
 use std::{
+    collections::BTreeSet,
     io,
     path::{Path, PathBuf},
 };
@@ -50,6 +51,8 @@ impl OverlayChanges {
         // One for the whole apply, deletes and writes: each real path on the
         // way is asked once.
         let mut links = Links::new(self.book.disk.as_ref(), &self.book.root);
+        // The ones this scan compares under (a wipe during the apply is not).
+        let wiped = self.book.wiped_dirs();
         // Read as the sandbox spells each path, a delete takes only its own
         // name and what is under it, never a write's: one scan serves both.
         let (deletes, writes): (Vec<_>, Vec<_>) = self
@@ -60,6 +63,18 @@ impl OverlayChanges {
         for s in deletes.into_iter().chain(writes) {
             self.settle(s, &mut links, &mut report).await;
         }
+        // What a wiped directory hid is on the disk now, or each path of it
+        // not applied is remembered (`settle`): it is forgotten, unless its
+        // own change is still to apply. A name the human makes there later is
+        // theirs, never one to delete.
+        let left: BTreeSet<&Path> = report
+            .skipped
+            .iter()
+            .chain(report.failed.iter().map(|f| &f.change))
+            .map(|c| Path::new(&c.path))
+            .collect();
+        self.book
+            .forget_wiped(wiped.iter().filter(|d| !left.contains(d.as_path())));
         report
     }
 
