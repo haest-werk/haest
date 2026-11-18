@@ -11,6 +11,7 @@ use crate::{
     BuildOptions, OnResume, Prefer, Resume, RuntimeHooks, SessionFileError, Ui,
     haest::{
         Agent, AgentOptions, Effort,
+        core::error::report,
         core::fs::FsRef,
         core::ledger::Ledger,
         core::session::{
@@ -44,23 +45,30 @@ fn open_store(
     Ok(store)
 }
 
-/// The session file held for this run alone while the store lives, so no
-/// other run writes it: `InUse` when another holds it, `failed`'s error when
-/// it cannot be held.
-async fn hold(
-    store: &JsonlSessionFile,
-    failed: impl FnOnce(io::Error) -> SessionFileError,
-) -> Result<(), SessionFileError> {
-    store.try_lock().await.map_err(|e| match e.kind() {
-        io::ErrorKind::WouldBlock => SessionFileError::InUse {
+/// The session held for this run alone while the store lives, so no other
+/// run writes it: `InUse` when another holds it. A lock the file system
+/// cannot take must not cost the session: the run goes on unlocked, as runs
+/// did before sessions were locked, and `ui` is told once that another run
+/// could write the session too.
+async fn hold(store: &JsonlSessionFile, ui: &dyn Ui) -> Result<(), SessionFileError> {
+    match store.try_lock().await {
+        Err(e) if e.kind() == io::ErrorKind::WouldBlock => Err(SessionFileError::InUse {
             id: store.session_id().to_string(),
-        },
-        _ => failed(e),
-    })
+        }),
+        Err(e) => {
+            ui.warn(&format!(
+                "Session {} cannot be locked here ({}), so another run could write it too.",
+                store.session_id(),
+                report(&e)
+            ));
+            Ok(())
+        }
+        Ok(()) => Ok(()),
+    }
 }
 
 /// The session this run writes, as `resume` says. A saved one is held for
-/// this run before it is read (a new one once it is created, [`create`]).
+/// this run before it is read (a new one before it is created, [`create`]).
 pub(crate) async fn open_session(
     fs: &FsRef,
     s: &Settings,
@@ -77,36 +85,42 @@ pub(crate) async fn open_session(
             .ok_or_else(|| SessionFileError::NoneToResume { cwd: s.cwd.clone() })?,
         Resume::Id(id) => id.clone(),
     };
-    let store = open_store(fs, &s.data_dir, &id, ui)?;
+    let store = open_store(fs, &s.data_dir, &id, ui.clone())?;
     if !store.exists().await {
         return Err(SessionFileError::NotFound { id });
     }
-    let read_failed = |source| SessionFileError::Read {
-        path: store.path().to_path_buf(),
-        source,
-    };
-    hold(&store, read_failed).await?;
-    let saved = store.load().await.map_err(read_failed)?;
+    hold(&store, &*ui).await?;
+    let saved = store
+        .load()
+        .await
+        .map_err(|source| SessionFileError::Read {
+            path: store.path().to_path_buf(),
+            source,
+        })?;
     Ok(OpenSession {
         store,
         saved: Some(saved),
     })
 }
 
-/// A new session's file, on disk with its header and held for this run.
-/// Until it is, nothing of the session has been written: a session that
+/// A new session held for this run, then its file on disk with its header.
+/// It is held first, so a session in use leaves no file behind. Until the
+/// file is there, nothing of the session has been written: a session that
 /// cannot be saved fails here.
-pub(crate) async fn create(store: &JsonlSessionFile, cwd: &Path) -> Result<(), SessionFileError> {
+pub(crate) async fn create(
+    store: &JsonlSessionFile,
+    cwd: &Path,
+    ui: &dyn Ui,
+) -> Result<(), SessionFileError> {
+    hold(store, ui).await?;
     let id = store.session_id();
-    let create_failed = |source| SessionFileError::Create {
-        path: store.path().to_path_buf(),
-        source,
-    };
     store
         .create(id, cwd, now_ms())
         .await
-        .map_err(create_failed)?;
-    hold(store, create_failed).await
+        .map_err(|source| SessionFileError::Create {
+            path: store.path().to_path_buf(),
+            source,
+        })
 }
 
 /// A new session with its file created: what /clear starts.
@@ -115,8 +129,8 @@ pub(crate) async fn new_session(
     s: &Settings,
     ui: Arc<dyn Ui>,
 ) -> Result<JsonlSessionFile, SessionFileError> {
-    let store = open_store(fs, &s.data_dir, &new_session_id(), ui)?;
-    create(&store, &s.cwd).await?;
+    let store = open_store(fs, &s.data_dir, &new_session_id(), ui.clone())?;
+    create(&store, &s.cwd, &*ui).await?;
     Ok(store)
 }
 

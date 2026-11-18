@@ -260,7 +260,9 @@ impl fmt::Debug for RuntimeInputs {
 /// session another run writes fails with
 /// [`SessionFileError::InUse`](crate::SessionFileError::InUse), on the real
 /// disk and on any host file system with locks
-/// ([`Fs::try_lock`](haest_core::fs::Fs::try_lock)).
+/// ([`Fs::try_lock`](haest_core::fs::Fs::try_lock)). Where the file system
+/// cannot take the lock, the run goes on unlocked and the [`Ui`](crate::Ui)
+/// is warned.
 ///
 /// More ways to pick one may come (a fork of one): a `match` has a `_` arm.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

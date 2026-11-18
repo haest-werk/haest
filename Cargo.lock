@@ -1107,6 +1107,7 @@ dependencies = [
  "haest-tools",
  "haest-wire",
  "haest-workspace",
+ "libc",
  "rmcp",
  "serde_json",
  "thiserror",

@@ -273,6 +273,7 @@ mod approvals;
 mod compaction;
 mod deferral;
 mod lifecycle;
+mod lock;
 #[cfg(feature = "session")]
 mod session;
 mod turns;

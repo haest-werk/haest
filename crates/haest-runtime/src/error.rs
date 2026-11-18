@@ -56,7 +56,7 @@ pub enum SessionFileError {
         /// The id, as given.
         id: String,
     },
-    /// Another run is writing the session: it holds the session's file
+    /// Another run is writing the session: it holds the session's lock
     /// until it ends (a second `haest -r` while the first still runs).
     /// Nothing was read or written.
     #[error("session \"{id}\" is in use by another run")]

@@ -46,6 +46,8 @@ haest-mcp = { workspace = true, features = ["rmcp"] }
 # server: the session tests close a real MCP server over an in-memory duplex.
 rmcp = { version = "3.9", default-features = false, features = ["client", "server"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
+# The session lock tests fail a lock with a real errno (EIO).
+libc = "0.2"
 
 [package.metadata.docs.rs]
 all-features = true

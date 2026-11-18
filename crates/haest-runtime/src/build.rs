@@ -106,8 +106,8 @@ fn task_board(hooks: &RuntimeHooks) -> TaskBoard {
 /// and left no file for a resume to pick up. A [`BuildError`]:
 ///
 /// - [`SessionFile`](BuildError::SessionFile): the session to resume is not there,
-///   cannot be read, or another run is writing it; a new session's file cannot
-///   be created;
+///   cannot be read, or another run is writing it; a new session is in use or
+///   its file cannot be created;
 /// - [`Model`](BuildError::Model): the model it would start on cannot be
 ///   used: a malformed spec, an unknown provider, no key for it;
 /// - [`Workspace`](BuildError::Workspace): `workspace = real` in a
@@ -162,11 +162,11 @@ where
 
     // Whatever can fail runs before anything starts, so a failed build has
     // started nothing and left no file: the model is checked (above), the
-    // files are found, then a new session's file is created. Then the MCP servers and the mods start,
+    // files are found, then a new session is held and its file created. Then the MCP servers and the mods start,
     // together; from there on nothing fails.
     let found = find(&hooks, &world, &passed_env, &fs, &spill).await?;
     if session.saved.is_none() {
-        create(&hooks.store(), &s.cwd).await?;
+        create(&hooks.store(), &s.cwd, &*ui).await?;
     }
     let gate = ApprovalGate::new(prompter);
     let (mcp, mods) = tokio::join!(

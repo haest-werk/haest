@@ -287,8 +287,9 @@ impl<U> Runtime<U> {
     ///
     /// # Errors
     ///
-    /// When the new session's file cannot be created. It is created, header
-    /// first, before anything switches to it, so then nothing changes.
+    /// When the new session is in use or its file cannot be created. It is
+    /// held, then created, header first, before anything switches to it, so
+    /// then nothing changes.
     pub async fn clear(&mut self) -> Result<(), SessionFileError> {
         let ui = self.hooks.ui().clone();
         let store = new_session(&self.fs, self.hooks.settings(), ui).await?;
