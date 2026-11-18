@@ -192,10 +192,11 @@ pub async fn serve(
     // resolves. The loop's `select!` makes a `next()` on every pass, polled
     // or not, and drops it whenever another branch comes first; the read
     // inside stays, and `next_line` is called only when the loop polls for a
-    // line. It is never polled after its None (`unfold` would panic):
-    // reading ends there.
+    // line. The stream never ends: the peer's end is an item (`None`), so
+    // the source stays here until the connection ends, as `LineSource`
+    // says, and reading stops there.
     let lines = futures::stream::unfold(source, |mut source| async move {
-        let line = source.next_line().await?;
+        let line = source.next_line().await;
         Some((line, source))
     });
     let mut lines = std::pin::pin!(lines);
@@ -252,7 +253,7 @@ pub async fn serve(
             let placing = link.placing.is_some();
             tokio::select! {
                 () = placed_first(&mut link.placing), if placing => link.placing = None,
-                line = lines.next(), if reading && room && !placing => match line {
+                line = lines.next(), if reading && room && !placing => match line.flatten() {
                     None => {
                         reading = false;
                         why.get_or_insert(Ended::PeerLeft);

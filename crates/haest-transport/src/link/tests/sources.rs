@@ -227,3 +227,78 @@ async fn a_source_is_asked_for_a_line_only_once_the_read_before_it_resolved_on_o
 async fn a_source_is_asked_for_a_line_only_once_the_read_before_it_resolved_on_many_threads() {
     a_source_is_asked_for_a_line_only_once_the_read_before_it_resolved().await;
 }
+
+/// A source that tells, through its flag, when it is dropped.
+struct Told(
+    std::vec::IntoIter<String>,
+    Arc<std::sync::atomic::AtomicBool>,
+);
+
+impl Drop for Told {
+    fn drop(&mut self) {
+        self.1.store(true, Ordering::SeqCst);
+    }
+}
+
+impl LineSource for Told {
+    fn next_line(
+        &mut self,
+    ) -> impl Future<Output = Option<Result<String, crate::TransportError>>> + Send {
+        std::future::ready(self.0.next().map(Ok))
+    }
+}
+
+/// Into a channel, each line with whether the source was dropped by then.
+struct Noting(
+    mpsc::UnboundedSender<(String, bool)>,
+    Arc<std::sync::atomic::AtomicBool>,
+);
+
+impl LineSink for Noting {
+    fn send_line(
+        &mut self,
+        line: String,
+    ) -> impl Future<Output = Result<(), crate::TransportError>> + Send {
+        let _ = self.0.send((line, self.1.load(Ordering::SeqCst)));
+        std::future::ready(Ok(()))
+    }
+}
+
+/// The peer's input ends while its turn runs: the source is kept until the
+/// connection ends, so the turn's reply goes out before the source drops.
+#[tokio::test]
+async fn the_source_is_kept_until_the_connection_ends() {
+    let model = ScriptedProvider::new([
+        tool_answer(&[("c1", "Wait", json!({}))]),
+        text_answer("done"),
+    ]);
+    let (s, go) = session(&model, hub());
+    let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let source = Told(
+        vec![turn("t1", "wait").to_string()].into_iter(),
+        dropped.clone(),
+    );
+    let (tx, mut sent) = mpsc::unbounded_channel();
+    let grant = Grant::command(Origin::Human);
+    let served = tokio::spawn(serve(
+        s.clone(),
+        grant,
+        Start::default(),
+        source,
+        Noting(tx, dropped.clone()),
+    ));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    go.notify_one();
+    let ended = served.await.unwrap();
+
+    assert!(matches!(ended, Ended::PeerLeft), "{ended:?}");
+    let (_, gone) = std::iter::from_fn(|| sent.try_recv().ok())
+        .find(|(line, _)| line.contains(r#""id":"t1""#) && line.contains(r#""type":"reply""#))
+        .expect("t1 answered");
+    assert!(!gone, "the source was dropped before t1's reply went out");
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "dropped with the connection"
+    );
+    s.close().await;
+}
