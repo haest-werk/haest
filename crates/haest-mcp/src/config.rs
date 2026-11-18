@@ -118,6 +118,12 @@ impl McpTransport {
 pub struct HttpTransport {
     /// The server's endpoint, e.g. `https://example.com/mcp`. Its path is
     /// shown wherever the URL is, so it holds no key.
+    ///
+    /// One with an `@` past its host fails this server before any request
+    /// goes out ([`McpStartError::Url`](crate::McpStartError::Url)): a
+    /// password holding an unescaped `/`, `?` or `#` ends the host a URL
+    /// parser reads there, so it goes in percent-encoded (`/` as `%2F`), and
+    /// an `@` meant for the path or the query as `%40`.
     pub url: String,
     /// Header names and values sent with every request. One that HTTP
     /// cannot carry fails this server before any request goes out.

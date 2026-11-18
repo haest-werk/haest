@@ -4,7 +4,7 @@
 use std::{io, sync::Arc, time::Duration};
 
 use haest_core::error::BoxError;
-use haest_http::HttpError;
+use haest_http::{EndpointUrlError, HttpError};
 
 /// A server that did not connect, and why: what [`McpHub::failures`](super::McpHub::failures) lists.
 ///
@@ -76,6 +76,13 @@ pub enum McpStartError {
         /// Why HTTP cannot carry it.
         source: BoxError,
     },
+    /// An HTTP server's URL has an `@` past its host, which a URL parser
+    /// misreads: a password with an unescaped `/`, `?` or `#` ends the host
+    /// there, so the server's requests, its headers with them, would go to
+    /// another host. Nothing is sent. The source shows the URL without its
+    /// credentials and says how to write it.
+    #[error("the server's URL is refused")]
+    Url(#[source] EndpointUrlError),
     /// The HTTP client could not be built (its TLS set-up failed).
     #[error("the HTTP client could not be built")]
     Client(#[source] HttpError),

@@ -125,6 +125,40 @@ async fn a_server_that_cannot_be_reached_fails_without_showing_its_urls_key() {
     assert!(shown.contains("/mcp"), "where it went is gone: {shown}");
 }
 
+/// A password with an unescaped `/` reads to a URL parser as a host, a port
+/// and a path: `http://127.0.0.1:<port>/s3cret@mcp.example/mcp` meant the
+/// user `127.0.0.1` with the password `<port>/s3cret`, and a parser sends
+/// 127.0.0.1 on that port the rest of the password in the request line,
+/// the server's headers with it. The server fails before anything is sent.
+#[tokio::test]
+async fn a_url_a_parser_misreads_fails_its_server_before_anything_is_sent() {
+    let misread_host = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = misread_host.local_addr().unwrap().port();
+    let (heard, requests) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for mut conn in misread_host.incoming().flatten() {
+            let _ = heard.send(read_request(&mut conn).0);
+        }
+    });
+    let (hub, logs) = connect(format!("http://127.0.0.1:{port}/s3cret@mcp.example/mcp")).await;
+    let sent = requests.try_recv().ok();
+    assert_eq!(sent, None, "the misread host was sent a request");
+    let failures = hub.failures();
+    assert!(
+        matches!(
+            failures.first().map(McpFailure::error),
+            Some(McpStartError::Url(_))
+        ),
+        "{failures:?}"
+    );
+    let shown = everything_shown(&hub, &logs);
+    assert!(!shown.contains("s3cret"), "{shown}");
+    assert!(
+        shown.contains("%2F") && shown.contains("mcp.example/mcp"),
+        "{shown}"
+    );
+}
+
 #[tokio::test]
 async fn a_server_that_breaks_off_listing_its_tools_fails_without_showing_its_urls_key() {
     let (hub, logs) = connect(serve("tools/list")).await;

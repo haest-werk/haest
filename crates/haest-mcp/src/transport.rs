@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, io, path::Path, process::Stdio, sync::OnceLock}
 
 use haest_core::ChildEnv;
 use haest_http::{
-    build_reqwest,
+    build_reqwest, check_endpoint_url,
     reqwest::{
         self,
         header::{HeaderName, HeaderValue},
@@ -84,11 +84,13 @@ pub(crate) fn header_map(
 
 /// Streamable HTTP to `url`, `headers` on every request. An error names the
 /// URL without its query, fragment or userinfo ([`ScrubbedClient`]): a key
-/// may ride in one.
+/// may ride in one. A URL with an `@` past its host fails here, before
+/// anything is sent ([`check_endpoint_url`]).
 pub(crate) fn http(
     url: &str,
     headers: &BTreeMap<String, String>,
 ) -> Result<StreamableHttpClientTransport<ScrubbedClient>, McpStartError> {
+    check_endpoint_url(url).map_err(McpStartError::Url)?;
     let headers = header_map(headers)?;
     let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(headers);
     Ok(StreamableHttpClientTransport::with_client(
