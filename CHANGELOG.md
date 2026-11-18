@@ -676,7 +676,9 @@ write instead.
   answers (allow, always, deny), withdrawn on an interrupt. haest exits 0
   when stdin closes (once what was asked has finished) or after a `close`,
   and 1 when reading stdin fails. A prompt, `-p` or `--json` with it is a
-  usage error.
+  usage error. The wire has no `/apply`, so a run that ends with changes
+  only in the sandbox says which, as `-p` does: a `notice` frame (a
+  warning) after the stream's last frame, and the same text on stderr.
 - `control_socket = "watch" | "command"` opens a control socket in
   `control_dir` (default `<data_dir>/control`), and haest says how to follow
   it. Input over it is another program's: the turn gate counts it, and at an
@@ -695,6 +697,13 @@ write instead.
 - `control_socket`, `control_dir`, `broker_url` and `broker_access` come from
   your own file, a variable or a flag, never from a project's file or a
   profile: a repository cannot open your conversation to anyone.
+- A peer with command access (over the control socket or the broker) may
+  `close` the conversation; it ends at once. The sandbox stays with haest
+  until it exits: at the prompt, haest says at once that the conversation
+  ended, and names the changes only in the sandbox; `/changes` and `/apply`
+  still work until the human leaves, and any other line, Enter or Ctrl+D
+  leaves, held back once while that would drop changes. A `-p` run a peer
+  closes still names them.
 - A watcher's terminal writes an answer whole when its streamed pieces were
   not seen (replayed from the ring), shows approval asks and their
   withdrawal as lines, and ends the line of a question another terminal
