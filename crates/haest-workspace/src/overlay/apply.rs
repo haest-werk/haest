@@ -13,6 +13,8 @@
 //!
 //! Deletes go first, then the writes, found again: on a disk that reads two
 //! spellings as one name, a delete takes the other spelling's file with it.
+//! Each change's real path is read again right before it is put on the
+//! disk; one that moved since the scan is skipped as a conflict.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -25,10 +27,22 @@ use haest_core::{
     workspace::{ApplyFailureCode, ApplyReport, ChangeKind, FailedChange},
 };
 
-use super::{Found, OverlayChanges, Scanned, links::Links, state::Original};
+use super::{
+    Found, OverlayChanges, Scanned,
+    links::Links,
+    state::{Original, state_of},
+};
 
 /// Why one change was not applied: its code and the reason for the human.
 type Refusal = (ApplyFailureCode, String);
+
+/// What became of a change `put` did not refuse.
+enum Put {
+    /// On the real disk now.
+    Applied,
+    /// Its real path moved since the scan: not written, a conflict.
+    Moved,
+}
 
 impl OverlayChanges {
     /// Every change that is not a conflict, onto the real disk: the deletes,
@@ -105,16 +119,21 @@ impl OverlayChanges {
             .collect()
     }
 
-    /// Put one change on the disk, or skip a conflict, into `report`.
-    async fn settle(&self, s: Scanned, links: &mut Links<'_>, report: &mut ApplyReport) {
+    /// Put one change on the disk, or skip a conflict (at the scan, or a real
+    /// path that moved since), into `report`.
+    async fn settle(&self, mut s: Scanned, links: &mut Links<'_>, report: &mut ApplyReport) {
         let refused = if s.change.conflict {
             None
         } else {
-            match self.put(s.change.kind, &s.path, links).await {
-                Ok(()) => {
+            match self.put(&s, links).await {
+                Ok(Put::Applied) => {
                     self.book.touched().remove(&s.path);
                     report.applied.push(s.change);
                     return;
+                }
+                Ok(Put::Moved) => {
+                    s.change.conflict = true;
+                    None
                 }
                 Err(refusal) => Some(refusal),
             }
@@ -144,15 +163,12 @@ impl OverlayChanges {
         None
     }
 
-    /// Write (or delete) overlay `path` on the real disk, or say why not;
-    /// `links` is the apply's one lookup of links on the real disk.
-    async fn put(
-        &self,
-        kind: ChangeKind,
-        path: &Path,
-        links: &mut Links<'_>,
-    ) -> Result<(), Refusal> {
-        let deleted = kind == ChangeKind::Deleted;
+    /// Write (or delete) `s` on the real disk, find its real path moved, or
+    /// say why not; `links` is the apply's one lookup of links on the real
+    /// disk.
+    async fn put(&self, s: &Scanned, links: &mut Links<'_>) -> Result<Put, Refusal> {
+        let path = s.path.as_path();
+        let deleted = s.change.kind == ChangeKind::Deleted;
         let link = self.sandbox_link(path, deleted).await;
         if let Some((at, target)) = &link
             && at == path
@@ -183,8 +199,18 @@ impl OverlayChanges {
                 ),
             ));
         }
+        // Read again right before the write: the human, or an earlier write
+        // of this apply under another spelling, may have changed it since the
+        // scan. A path that already holds the sandbox's version (a file its
+        // directory's delete took along, a directory another spelling made)
+        // loses nothing, and is put as usual.
+        let again = state_of(self.book.disk.as_ref(), &self.book.real(path)).await;
+        if again != s.now && again != s.mine {
+            return Ok(Put::Moved);
+        }
         self.write(deleted, path)
             .await
+            .map(|()| Put::Applied)
             .map_err(|e| (ApplyFailureCode::WriteFailed, e.to_string()))
     }
 
@@ -218,5 +244,95 @@ impl OverlayChanges {
             disk.create_dir_all(parent).await?;
         }
         disk.write(&real, &self.overlay.read(path).await?).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::Path, sync::Arc};
+
+    use haest_core::{
+        fs::{Fs, FsRef, MemFs},
+        workspace::{Change, ChangeSet},
+    };
+
+    use crate::{
+        bridge::BashkitFsOverHaest,
+        overlay::{OverlayChanges, testing::Disk},
+    };
+
+    /// The project `/p` on `disk`, holding `a.md` and `b.md`, and the changes
+    /// of a sandbox over it.
+    async fn project(disk: &Arc<Disk>) -> OverlayChanges {
+        let mem = MemFs::new();
+        disk.inner.create_dir_all(Path::new("/p")).await.unwrap();
+        for (name, body) in [("a.md", "a1\n"), ("b.md", "b1\n")] {
+            let real = Path::new("/p").join(name);
+            disk.inner.write(&real, body.as_bytes()).await.unwrap();
+            mem.write(&Path::new("/").join(name), body.as_bytes())
+                .await
+                .unwrap();
+        }
+        let overlay = Arc::new(BashkitFsOverHaest::new(FsRef::new(mem)));
+        OverlayChanges::new(overlay, disk.clone(), "/p")
+    }
+
+    /// Each change's path and whether it is a conflict.
+    fn conflicts(changes: &[Change]) -> Vec<(&str, bool)> {
+        changes
+            .iter()
+            .map(|c| (c.path.as_str(), c.conflict))
+            .collect()
+    }
+
+    async fn on_disk(disk: &Disk, path: &str) -> Option<String> {
+        disk.inner.read_to_string(Path::new(path)).await.ok()
+    }
+
+    const HUMAN: &str = "the human was here\n";
+
+    /// The human saves `b.md` after the apply scanned it, before its write.
+    /// The sandbox's version was written over the human's, and reported
+    /// applied.
+    #[tokio::test]
+    async fn a_file_the_human_saves_during_the_apply_is_skipped_not_written_over() {
+        let disk = Arc::new(Disk::default());
+        let changes = project(&disk).await;
+        let recorder = changes.recorder();
+        recorder
+            .write_file(Path::new("/a.md"), b"a2\n")
+            .await
+            .unwrap();
+        recorder
+            .write_file(Path::new("/b.md"), b"b2\n")
+            .await
+            .unwrap();
+        disk.edit_on_read("/p/b.md", HUMAN.as_bytes());
+
+        let report = changes.apply().await;
+        assert_eq!(conflicts(&report.applied), [("/a.md", false)], "{report:?}");
+        assert_eq!(conflicts(&report.skipped), [("/b.md", true)], "{report:?}");
+        assert_eq!(on_disk(&disk, "/p/a.md").await.as_deref(), Some("a2\n"));
+        assert_eq!(on_disk(&disk, "/p/b.md").await.as_deref(), Some(HUMAN));
+        // Still listed, as a conflict: the human decides.
+        assert_eq!(conflicts(&changes.list().await), [("/b.md", true)]);
+    }
+
+    /// The same for a delete: the human's save was deleted.
+    #[tokio::test]
+    async fn a_file_the_human_saves_during_the_apply_is_skipped_not_deleted() {
+        let disk = Arc::new(Disk::default());
+        let changes = project(&disk).await;
+        let recorder = changes.recorder();
+        recorder.remove(Path::new("/a.md"), false).await.unwrap();
+        recorder.remove(Path::new("/b.md"), false).await.unwrap();
+        disk.edit_on_read("/p/b.md", HUMAN.as_bytes());
+
+        let report = changes.apply().await;
+        assert_eq!(conflicts(&report.applied), [("/a.md", false)], "{report:?}");
+        assert_eq!(conflicts(&report.skipped), [("/b.md", true)], "{report:?}");
+        assert_eq!(on_disk(&disk, "/p/a.md").await, None);
+        assert_eq!(on_disk(&disk, "/p/b.md").await.as_deref(), Some(HUMAN));
+        assert_eq!(conflicts(&changes.list().await), [("/b.md", true)]);
     }
 }

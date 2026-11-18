@@ -27,6 +27,15 @@ fn reads_as_one(dir: &Path, name: &str, other: &str) -> bool {
     dir.join(other).exists()
 }
 
+/// Whether the disk under `dir` reads names without case, asked with a file
+/// that is gone again once it answers.
+fn folds_case(dir: &Path) -> bool {
+    fs::write(dir.join("probe"), "").unwrap();
+    let one = reads_as_one(dir, "probe", "PROBE");
+    fs::remove_file(dir.join("probe")).unwrap();
+    one
+}
+
 /// Every file under `dir`, by its path inside it as the disk lists it, with
 /// its content.
 fn contents(dir: &Path) -> Vec<(String, String)> {
@@ -198,5 +207,83 @@ async fn a_conflict_stays_a_conflict_after_a_delete_under_another_spelling() {
         assert_eq!(applied, ["/NOTES.md", "/notes.md"], "{report:?}");
         assert!(skipped.is_empty(), "{report:?}");
         assert_eq!(contents(&dir), pairs(&[("NOTES.md", "draft\n")]));
+    }
+}
+
+/// The sandbox writes two spellings, neither on the disk before. Where the
+/// disk reads them as one file, the first written (upper case sorts first)
+/// made the second's real path move: the second was written over it all
+/// the same, both were reported applied, and the sandbox's `README.md` was
+/// lost, listed nowhere. It is now skipped as a conflict and stays listed.
+/// Where the disk tells them apart, both are applied.
+#[tokio::test]
+async fn two_spellings_the_sandbox_wrote_never_overwrite_each_other() {
+    let (_t, dir) = tempdir();
+    let one = folds_case(&dir);
+    let ws = sandbox(&dir).await;
+    let command = "echo upper > README.md && echo lower > readme.md";
+    run(&ws, &dir, command).await;
+    let report = changes(&ws).apply().await;
+    assert!(report.failed.is_empty(), "{report:?}");
+    let left = changes(&ws).list().await;
+    assert!(left.iter().chain(&report.skipped).all(|c| c.conflict));
+    if one {
+        assert_eq!(paths(&report.applied), ["/README.md"], "{report:?}");
+        assert_eq!(paths(&report.skipped), ["/readme.md"], "{report:?}");
+        assert_eq!(contents(&dir), pairs(&[("README.md", "upper\n")]));
+        assert_eq!(paths(&left), ["/readme.md"], "{report:?}");
+    } else {
+        let both = ["/README.md", "/readme.md"];
+        assert_eq!(paths(&report.applied), both, "{report:?}");
+        assert!(report.skipped.is_empty(), "{report:?}");
+        let want = [("README.md", "upper\n"), ("readme.md", "lower\n")];
+        assert_eq!(contents(&dir), pairs(&want));
+        assert!(left.is_empty(), "{left:?}");
+    }
+}
+
+/// The same with two spellings of a directory. Where the disk reads them as
+/// one, their files go into the one directory, which was written first and
+/// does not make them look moved; only the file both spell alike is skipped
+/// as a conflict. Where the disk tells them apart, both directories are
+/// applied whole.
+#[tokio::test]
+async fn two_spellings_of_a_directory_share_it_and_only_a_file_in_both_conflicts() {
+    let (_t, dir) = tempdir();
+    let one = folds_case(&dir);
+    let ws = sandbox(&dir).await;
+    run(
+        &ws,
+        &dir,
+        "mkdir Lib lib && echo a > Lib/a.rs && echo b > lib/b.rs \
+         && echo upper > Lib/same.rs && echo lower > lib/same.rs",
+    )
+    .await;
+    let report = changes(&ws).apply().await;
+    assert!(report.failed.is_empty(), "{report:?}");
+    let left = changes(&ws).list().await;
+    assert!(left.iter().chain(&report.skipped).all(|c| c.conflict));
+    if one {
+        let applied = ["/Lib", "/Lib/a.rs", "/Lib/same.rs", "/lib", "/lib/b.rs"];
+        assert_eq!(paths(&report.applied), applied, "{report:?}");
+        assert_eq!(paths(&report.skipped), ["/lib/same.rs"], "{report:?}");
+        let want = [
+            ("Lib/a.rs", "a\n"),
+            ("Lib/b.rs", "b\n"),
+            ("Lib/same.rs", "upper\n"),
+        ];
+        assert_eq!(contents(&dir), pairs(&want));
+        assert_eq!(paths(&left), ["/lib/same.rs"], "{report:?}");
+    } else {
+        assert_eq!(report.applied.len(), 6, "{report:?}");
+        assert!(report.skipped.is_empty(), "{report:?}");
+        let want = [
+            ("Lib/a.rs", "a\n"),
+            ("Lib/same.rs", "upper\n"),
+            ("lib/b.rs", "b\n"),
+            ("lib/same.rs", "lower\n"),
+        ];
+        assert_eq!(contents(&dir), pairs(&want));
+        assert!(left.is_empty(), "{left:?}");
     }
 }

@@ -87,71 +87,25 @@ impl<'a> Links<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io,
-        sync::{Arc, Mutex},
-    };
+    use std::sync::Arc;
 
-    use async_trait::async_trait;
     use haest_core::{
-        fs::{DirEntry, FsRef, FsStat, MemFs},
+        fs::{FsRef, MemFs},
         workspace::ChangeSet,
     };
 
     use super::*;
-    use crate::{bridge::BashkitFsOverHaest, overlay::OverlayChanges};
-
-    /// `MemFs`, noting each path asked whether it is a link.
-    #[derive(Default)]
-    struct Asked {
-        inner: MemFs,
-        asked: Mutex<Vec<PathBuf>>,
-    }
-
-    #[async_trait]
-    impl Fs for Asked {
-        async fn read(&self, p: &Path) -> io::Result<Vec<u8>> {
-            self.inner.read(p).await
-        }
-        async fn write(&self, p: &Path, d: &[u8]) -> io::Result<()> {
-            self.inner.write(p, d).await
-        }
-        async fn append(&self, p: &Path, d: &[u8]) -> io::Result<()> {
-            self.inner.append(p, d).await
-        }
-        async fn stat(&self, p: &Path) -> io::Result<FsStat> {
-            self.inner.stat(p).await
-        }
-        async fn read_link(&self, p: &Path) -> io::Result<PathBuf> {
-            self.asked.lock().unwrap().push(p.to_path_buf());
-            self.inner.read_link(p).await
-        }
-        async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
-            self.inner.read_dir(p).await
-        }
-        async fn create_dir(&self, p: &Path) -> io::Result<()> {
-            self.inner.create_dir(p).await
-        }
-        async fn create_dir_all(&self, p: &Path) -> io::Result<()> {
-            self.inner.create_dir_all(p).await
-        }
-        async fn remove(&self, p: &Path) -> io::Result<()> {
-            self.inner.remove(p).await
-        }
-        async fn remove_all(&self, p: &Path) -> io::Result<()> {
-            self.inner.remove_all(p).await
-        }
-        async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
-            self.inner.rename(a, b).await
-        }
-    }
+    use crate::{
+        bridge::BashkitFsOverHaest,
+        overlay::{OverlayChanges, testing::Disk},
+    };
 
     /// Each change built its own lookup: an apply of many files in one
     /// directory asked the disk about that directory, and each above it, once
     /// per file.
     #[tokio::test]
     async fn an_apply_asks_about_each_real_directory_on_the_way_once() {
-        let disk = Arc::new(Asked::default());
+        let disk = Arc::new(Disk::default());
         disk.inner
             .create_dir_all(Path::new("/p/src"))
             .await

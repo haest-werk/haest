@@ -8,7 +8,8 @@
 //! Applying compares three things per path: the real file at first touch, the
 //! real file now, and the overlay's version. If the real file moved in between
 //! (the human edited it), the path is a CONFLICT and is skipped -- named, never
-//! overwritten. Everything else is written (or deleted) on the real disk,
+//! overwritten; it is read once more right before its write, so a move during
+//! the apply counts too. Everything else is written (or deleted) on the real disk,
 //! deletes first, unless `apply.rs` refuses it: a symlink on the real disk on
 //! its way, or a symlink the sandbox made. A refused change is reported as
 //! failed with its code, and stays listed.
@@ -24,6 +25,8 @@ mod diff;
 mod links;
 mod recorder;
 mod state;
+#[cfg(test)]
+mod testing;
 
 use std::{
     collections::BTreeMap,
@@ -101,14 +104,21 @@ impl Found {
                 .with_conflict(self.original != self.now),
             path: self.path,
             original: self.original,
+            now: self.now,
+            mine: self.mine,
         })
     }
 }
 
+/// One change, and the states it was found from.
 struct Scanned {
     change: Change,
     path: PathBuf,
     original: Original,
+    /// The real path when scanned: what applying expects to find there.
+    now: Original,
+    /// The overlay's version when scanned.
+    mine: Original,
 }
 
 /// What a sandbox changed in the project, and putting it on the real disk
@@ -140,6 +150,12 @@ struct Scanned {
 /// apply's doing, so it is compared from absent: a rename that changes only
 /// the case is applied as a rename. A change that was a conflict when `apply`
 /// started is skipped, whatever its deletes did to the disk.
+///
+/// Each change's real path is read again right before it is put on the disk.
+/// One that moved since the scan, by the human or by an earlier write of this
+/// apply under another spelling (the sandbox wrote both `README.md` and
+/// `readme.md`), is skipped as a conflict and stays listed, unless it already
+/// holds the sandbox's version.
 ///
 /// `apply` never writes through a symlink: not one on the real disk on the
 /// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),
@@ -269,7 +285,8 @@ impl ChangeSet for OverlayChanges {
     }
 
     /// Write every non-conflicting change to the real disk, the deletes
-    /// first. Returns what was applied, what was skipped (a conflict), and
+    /// first, each skipped as a conflict if its real path moved since the
+    /// scan. Returns what was applied, what was skipped (a conflict), and
     /// what failed, each with why (a symlink, a disk error). One that fails
     /// stops nothing else, and stays listed like a conflict.
     async fn apply(&self) -> ApplyReport {

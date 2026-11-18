@@ -145,6 +145,38 @@ async fn a_directory_moved_or_copied_whole_is_applied_with_its_files() {
     assert_eq!(read(&dir, "d3/a.txt"), "A\n");
 }
 
+/// A file the sandbox edited, then removed with its directory: both deletes
+/// are listed, and the directory's, first in path order, takes the file
+/// with it. The file's delete then finds it gone, as the sandbox has it:
+/// applied, not a conflict.
+#[tokio::test]
+async fn a_file_removed_with_its_directory_is_applied_with_it() {
+    let (_t, dir) = project();
+    fs::create_dir(dir.join("lib")).unwrap();
+    fs::write(dir.join("lib/a.rs"), "a\n").unwrap();
+    let ws = sandbox(&dir).await;
+    let r = ws
+        .shell("echo more >> lib/a.rs && rm -r lib", opts(&dir))
+        .await;
+    assert_eq!(r.exit_code, 0, "{r:?}");
+    let list = changes(&ws).list().await;
+    assert_eq!(
+        rows(&list),
+        [
+            ("/lib", ChangeKind::Deleted, false),
+            ("/lib/a.rs", ChangeKind::Deleted, false),
+        ]
+    );
+    let report = changes(&ws).apply().await;
+    assert_eq!(rows(&report.applied), rows(&list), "{report:?}");
+    assert!(
+        report.skipped.is_empty() && report.failed.is_empty(),
+        "{report:?}"
+    );
+    assert!(!dir.join("lib").exists());
+    assert!(changes(&ws).list().await.is_empty());
+}
+
 #[tokio::test]
 async fn a_binary_file_is_named_in_the_diff_not_dumped_into_it() {
     let (_t, dir) = project();
