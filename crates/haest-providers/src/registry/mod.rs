@@ -362,11 +362,12 @@ impl ProviderRegistry {
     /// missing from the key source, and [`ModelError::Unavailable`] when the
     /// providers.json entry cannot be used (the [`EntryProblem`] its source)
     /// or the provider's base URL (a built-in's `*_BASE_URL`, an entry's
-    /// `baseURL`) has an `@` past its host or no host (haest-http's
-    /// [`EndpointUrlError`](haest_http::EndpointUrlError) its source): a
-    /// password with an unescaped `/`, `?` or `#` reads to a URL parser as
-    /// another host, and so does the first part of the path of a URL with
-    /// no host.
+    /// `baseURL`) has an `@` past its host or no host: a password with an
+    /// unescaped `/`, `?` or `#` reads to a URL parser as another host, and
+    /// so does the first part of the path of a URL with no host. That
+    /// error's source names where the URL was set (`ANTHROPIC_BASE_URL`,
+    /// `providers.json baseURL`), and its source is haest-http's
+    /// [`EndpointUrlError`](haest_http::EndpointUrlError).
     pub fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
         let (name, model) = parse_model_spec(spec)?;
         if let Some(p) = self.setup.providers.get(name) {
@@ -416,11 +417,11 @@ impl ProviderRegistry {
     fn build(&self, name: &str) -> Result<ProviderRef, ModelError> {
         let o = &self.setup.shared;
         let (http, retry, wait) = (o.http.clone(), o.retry, o.headers_timeout);
-        let options = self.provider_options(name)?;
+        let (options, from) = self.provider_options(name)?;
         if let Some(url) = options.base_url() {
-            check_endpoint_url(url).map_err(|refused| ModelError::Unavailable {
+            check_endpoint_url(url).map_err(|source| ModelError::Unavailable {
                 provider: name.to_string(),
-                source: Box::new(refused),
+                source: Box::new(BaseUrlRefused { from, source }),
             })?;
         }
         Ok(match options {
@@ -442,8 +443,9 @@ impl ProviderRegistry {
         })
     }
 
-    /// `name`'s options: its providers.json entry, else the built-in.
-    fn provider_options(&self, name: &str) -> Result<Options, ModelError> {
+    /// `name`'s options, its providers.json entry else the built-in, and
+    /// where its base URL is set.
+    fn provider_options(&self, name: &str) -> Result<(Options, &'static str), ModelError> {
         let Setup {
             keys,
             custom,
@@ -456,16 +458,26 @@ impl ProviderRegistry {
                 provider: name.to_string(),
                 source: Box::new(problem),
             })?;
-            return Ok(match cfg.dialect {
+            let options = match cfg.dialect {
                 Dialect::Anthropic => Options::Anthropic(cfg.anthropic_options(name, keys)),
                 Dialect::OpenAi => Options::Compat(Box::new(cfg.compat_options(name, keys))),
-            });
+            };
+            return Ok((options, "providers.json baseURL"));
         }
         Ok(match name {
-            "anthropic" => Options::Anthropic(anthropic_options(keys)?),
-            "openai" => Options::Responses(openai_options(keys)?),
-            "openrouter" => Options::Compat(Box::new(openrouter_options(keys, shared)?)),
-            "paperinstruments" => Options::Compat(Box::new(paper_instruments_options(keys)?)),
+            "anthropic" => (
+                Options::Anthropic(anthropic_options(keys)?),
+                "ANTHROPIC_BASE_URL",
+            ),
+            "openai" => (Options::Responses(openai_options(keys)?), "OPENAI_BASE_URL"),
+            "openrouter" => (
+                Options::Compat(Box::new(openrouter_options(keys, shared)?)),
+                "OPENROUTER_BASE_URL",
+            ),
+            "paperinstruments" => (
+                Options::Compat(Box::new(paper_instruments_options(keys)?)),
+                "PAPERINSTRUMENTS_BASE_URL",
+            ),
             _ => {
                 return Err(ModelError::UnknownProvider {
                     provider: name.into(),
@@ -474,6 +486,18 @@ impl ProviderRegistry {
             }
         })
     }
+}
+
+/// A provider's base URL [`check_endpoint_url`] refused, and where it was
+/// set (`ANTHROPIC_BASE_URL`, an entry's `baseURL`): the human then knows
+/// which one to fix.
+#[derive(Debug, thiserror::Error)]
+#[error("{from}")]
+struct BaseUrlRefused {
+    /// The variable or the providers.json key the URL came from.
+    from: &'static str,
+    /// What is wrong with it.
+    source: haest_http::EndpointUrlError,
 }
 
 /// The names it resolves, what it builds with and what it has built; never

@@ -281,7 +281,9 @@ write instead.
   a GitHub Enterprise API root sent their key or token header along with
   it. haest now refuses a configured URL with an `@` past its host before
   anything connects: `broker_url` at load, naming where it was set; a
-  provider's base URL when the provider is resolved, and again before each
+  provider's base URL when the provider is resolved, naming the variable
+  or the providers.json key it came from (`ANTHROPIC_BASE_URL`,
+  `providers.json baseURL`), and again before each
   request; an MCP server's URL when the server starts (that server fails,
   the others start); the broker link, GenerateImage and the GitHub
   tracker before they send. Each refusal shows the URL without its

@@ -111,6 +111,43 @@ fn a_base_url_a_parser_misreads_is_refused_at_resolve() {
     }
 }
 
+/// A refused base URL says where it was set, as a refused `broker_url`
+/// does: the built-in's variable, or the entry's `baseURL` (an entry named
+/// like a built-in included).
+#[test]
+fn a_refused_base_url_names_where_it_was_set() {
+    let misread = "http://user:1234/s3cret@gw.example/v1";
+    let keys = keys(&[
+        ("ANTHROPIC_API_KEY", "k"),
+        ("ANTHROPIC_BASE_URL", misread),
+        ("OPENAI_API_KEY", "k"),
+        ("OPENAI_BASE_URL", misread),
+        ("OPENROUTER_API_KEY", "k"),
+        ("OPENROUTER_BASE_URL", misread),
+        ("PAPERINSTRUMENTS_API_KEY", "k"),
+        ("PAPERINSTRUMENTS_BASE_URL", "https:///v1"),
+    ]);
+    let custom = entries(json!({"json": {"baseURL": misread}, "openai": {"baseURL": misread}}))
+        .with_entry("rust", CustomProviderConfig::anthropic(misread));
+    let reg = registry(keys, custom);
+    for (name, from) in [
+        ("anthropic", "ANTHROPIC_BASE_URL"),
+        ("openai", "providers.json baseURL"),
+        ("openrouter", "OPENROUTER_BASE_URL"),
+        ("paperinstruments", "PAPERINSTRUMENTS_BASE_URL"),
+        ("json", "providers.json baseURL"),
+        ("rust", "providers.json baseURL"),
+    ] {
+        let e = reg.resolve(&format!("{name}:m")).expect_err(name);
+        let said = haest_core::error::report(&e);
+        assert!(
+            said.contains(&format!("\"{name}\" cannot be used: {from}: http")),
+            "{said}"
+        );
+        haest_core::testing::assert_causes_said_once(&e);
+    }
+}
+
 #[test]
 fn a_key_comes_from_whatever_the_host_answers_with() {
     let vault = |name: &str| (name == "OPENROUTER_API_KEY").then(|| "from-vault".to_string());
