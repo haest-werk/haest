@@ -9,9 +9,12 @@
 //!   `root/path` itself, never through a link out of the project.
 //!
 //! A file goes on the disk whole or not at all (`replace.rs`): the
-//! sandbox's version is written to a new file in a directory of its own
-//! beside it, which only its owner may enter; the new file takes the
-//! file's permission bits, then is renamed over it. A change the disk still
+//! sandbox's version is written to a new file, its owner's alone, in a
+//! directory of its own beside it that only its owner may enter; the new
+//! file then takes the file's permission bits and is renamed over it.
+//! Where the file's directory passes its group on (setgid), the new file's
+//! directory keeps the mode it was made with, so the new file gets that
+//! group, as one made beside the file would. A change the disk still
 //! refuses (permissions, a full disk) fails alone (`write-failed`) with the
 //! human's file as it was, still listed (not a conflict) for an apply once
 //! the disk takes it; the apply goes on with the rest. A file the human
@@ -31,8 +34,10 @@
 //!   a file written in place needs none;
 //! - a kill partway can leave the new file's directory,
 //!   `.<name>.haest-<pid>-<n>`, beside it, with the new file in it, which
-//!   only its owner may reach; never a file cut short. An apply dropped
-//!   just as the system starts making that directory can leave it empty.
+//!   only its owner may reach (in a directory that passes its group on,
+//!   that directory has the umask's mode and the new file is its owner's
+//!   alone); never a file cut short. An apply dropped just as the system
+//!   starts making that directory can leave it empty.
 //!   The name matches none of the file's own ignore patterns; `.*.haest-*`
 //!   matches every one.
 //!

@@ -1,8 +1,9 @@
 //! A file the apply writes, put on the disk whole or not at all. The
 //! sandbox's bytes go into a new file, in a directory of its own beside the
-//! real one that only its owner may enter; the new file takes the real
-//! one's permission bits and is then renamed over it, so a disk that fills
-//! up, or a kill, partway leaves the human's file as it was. Where a new
+//! real one; a new file that replaces one is its owner's alone before they
+//! go in. It then takes the real one's permission bits and is renamed over
+//! it, so a disk that fills up, or a kill, partway leaves the human's file
+//! as it was. Where a new
 //! file would not be the same file, or the disk will not make one or move
 //! it there, the bytes are written in place, as before; where the new
 //! file's bytes do not all go in, the change fails instead, since in place
@@ -133,6 +134,11 @@ fn in_place_instead(e: &io::Error) -> bool {
 /// The sandbox's `bytes` into the new file at `path`, with the mode of
 /// `old`, the file it is to replace.
 async fn fill(disk: &dyn Fs, path: &Path, old: Option<&Metadata>, bytes: &[u8]) -> io::Result<()> {
+    if old.is_some() {
+        // Its owner's alone before any byte goes in, whatever its
+        // directory's mode (one that passes a group on keeps its own).
+        disk.chmod(path, 0o600).await?;
+    }
     disk.write(path, bytes).await?;
     if let Some(old) = old {
         // The old file's mode, so the apply's own mode check
@@ -152,7 +158,10 @@ async fn fill(disk: &dyn Fs, path: &Path, old: Option<&Metadata>, bytes: &[u8]) 
 /// system's own, on the host's disk, which the overlay's disk is; on a disk
 /// that is not, nothing has the path (its name is this process's own).
 struct NewFile {
-    /// Only its owner may enter it, before anything goes in.
+    /// Only its owner may enter it, before anything goes in. One that
+    /// passes a group on (setgid) keeps the mode it was made with (the
+    /// umask's), and a kill there can leave the new file in it: its
+    /// owner's alone where it was to replace a file.
     dir: PathBuf,
     path: PathBuf,
     /// Still to remove.
@@ -193,13 +202,17 @@ impl NewFile {
                 return Err(e);
             }
             let made = async {
-                // A group the directory passes on (setgid) stays, so the
-                // new file gets the group one made beside the real file
-                // would.
+                // One that passes a group on (setgid) keeps the mode it was
+                // made with: Linux drops the bit where a run not in that
+                // group sets the mode, and the new file would then get the
+                // run's own group, not the one a file made beside the real
+                // one gets.
                 let setgid = tokio::fs::symlink_metadata(&new.dir)
                     .await
-                    .map_or(0, |m| m.permissions().mode() & 0o2000);
-                disk.chmod(&new.dir, 0o700 | setgid).await?;
+                    .is_ok_and(|m| m.permissions().mode() & 0o2000 != 0);
+                if !setgid {
+                    disk.chmod(&new.dir, 0o700).await?;
+                }
                 disk.write(&new.path, &[]).await
             };
             return match made.await {

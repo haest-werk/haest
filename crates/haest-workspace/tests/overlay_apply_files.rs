@@ -131,3 +131,42 @@ async fn a_file_keeps_its_group_where_its_directory_gives_another() {
     assert_eq!(read(&shared.join("a.txt")), "new\n");
     assert_eq!(fs::metadata(shared.join("a.txt")).unwrap().gid(), own);
 }
+
+/// Names a directory that passes its group on (setgid) to a group this
+/// process is not in (only root can make one), for the test of it; unset,
+/// the test passes without running.
+#[cfg(target_os = "linux")]
+const FOREIGN_SETGID_DIR: &str = "HAEST_TEST_FOREIGN_SETGID_DIR";
+
+/// A team's directory passes its group on (setgid) to a group the run is
+/// not in: a user added to the group who has not logged in again, a
+/// container run as the human's uid without the team's group. Linux drops
+/// the bit where such a run sets the mode of a directory it made there,
+/// and the apply's new file, made in a directory of its own, got the run's
+/// group: the edit of `edit.txt` was written in place (cut short on a full
+/// disk), and `new.txt` was added in the run's group. Both now take the
+/// directory's group, and the edit replaces the file.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_directory_whose_group_the_run_is_not_in_still_gives_it_on() {
+    let Some(base) = std::env::var_os(FOREIGN_SETGID_DIR) else {
+        return;
+    };
+    let t = tempfile::tempdir_in(base).unwrap();
+    let dir = fs::canonicalize(t.path()).unwrap();
+    let group = fs::metadata(&dir).unwrap().gid();
+    let passes_on = fs::metadata(&dir).unwrap().mode() & 0o2000 != 0;
+    assert!(passes_on, "{} passes no group on", dir.display());
+    let member = my_groups().contains(&group);
+    assert!(!member, "this run is in group {group}");
+    fs::write(dir.join("edit.txt"), "old\n").unwrap();
+    let before = fs::metadata(dir.join("edit.txt")).unwrap().ino();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "echo new > edit.txt; echo added > new.txt").await;
+    apply_all(&ws).await;
+    let meta = |name: &str| fs::metadata(dir.join(name)).unwrap();
+    assert_eq!(read(&dir.join("edit.txt")), "new\n");
+    assert_ne!(meta("edit.txt").ino(), before, "written in place");
+    assert_eq!(meta("edit.txt").gid(), group, "edit.txt's group");
+    assert_eq!(meta("new.txt").gid(), group, "new.txt's group");
+}

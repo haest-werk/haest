@@ -1,138 +1,28 @@
 //! The new file the apply puts in a file's place, on the real disk with a
 //! fault in it: a full disk, a write the runtime is slow to start, a rename
-//! nothing can do, a name the system refuses.
+//! nothing can do, a name the system refuses, a directory that passes its
+//! group on.
+
+mod faulty;
 
 use std::{
     fs::{self, Metadata, Permissions},
-    io,
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
-use async_trait::async_trait;
+use faulty::{Fault, Faulty};
 use haest_core::{
-    fs::{DirEntry, Fs, FsRef, FsStat, MemFs},
+    fs::{FsRef, MemFs},
     workspace::{ApplyFailureCode, Change, ChangeSet},
 };
-use tokio::sync::Notify;
 
-use crate::{RealFs, bridge::BashkitFsOverHaest, overlay::OverlayChanges};
+use crate::{bridge::BashkitFsOverHaest, overlay::OverlayChanges};
 
 const HUMAN: &str = "the human's version\n";
 const SANDBOX: &str = "the sandbox's version\n";
-
-/// What goes wrong on the disk beside `real`, the file the apply writes.
-#[derive(Clone, Copy, PartialEq)]
-enum Fault {
-    /// A write of bytes anywhere but `real` is left to the runtime's pool,
-    /// which starts it late, as it starts `tokio::fs::write` under load;
-    /// dropping the write's future does not stop it.
-    SlowWrite,
-    /// A rename onto `real` fails as one onto a mount point does: the file
-    /// is bind-mounted into the project on its own.
-    BusyRename,
-    /// A name made in `real`'s directory fails with this OS error:
-    /// `ENAMETOOLONG` where `real`'s path is just short of the system's
-    /// cap, `ENOSPC` on a disk with no room for even an empty file.
-    NewName(i32),
-}
-
-/// The real disk, with `fault` in it.
-struct Faulty {
-    real: PathBuf,
-    fault: Option<Fault>,
-    /// A write past this many bytes writes that many, then fails as a full
-    /// disk does.
-    room: AtomicUsize,
-    /// Told once a [`Fault::SlowWrite`] is in the runtime's hands.
-    began: Notify,
-}
-
-impl Faulty {
-    fn new(real: &Path, fault: Option<Fault>) -> Arc<Self> {
-        Arc::new(Self {
-            real: real.to_path_buf(),
-            fault,
-            room: AtomicUsize::new(usize::MAX),
-            began: Notify::new(),
-        })
-    }
-
-    /// A name the apply makes beside `real`, refused as [`Fault::NewName`]
-    /// says.
-    fn refuses_name(&self, p: &Path) -> io::Result<()> {
-        match self.fault {
-            Some(Fault::NewName(code)) if p != self.real && p.parent() == self.real.parent() => {
-                Err(io::Error::from_raw_os_error(code))
-            }
-            _ => Ok(()),
-        }
-    }
-}
-
-#[async_trait]
-impl Fs for Faulty {
-    async fn write(&self, p: &Path, d: &[u8]) -> io::Result<()> {
-        self.refuses_name(p)?;
-        let room = self.room.load(Ordering::SeqCst);
-        if d.len() > room {
-            RealFs.write(p, &d[..room]).await?;
-            return Err(io::Error::from_raw_os_error(libc::ENOSPC));
-        }
-        if self.fault == Some(Fault::SlowWrite) && p != self.real && !d.is_empty() {
-            let (p, d) = (p.to_path_buf(), d.to_vec());
-            let write = tokio::task::spawn_blocking(move || {
-                std::thread::sleep(Duration::from_millis(100));
-                fs::write(p, d)
-            });
-            self.began.notify_one();
-            return write.await.map_err(io::Error::other)?;
-        }
-        RealFs.write(p, d).await
-    }
-    async fn read(&self, p: &Path) -> io::Result<Vec<u8>> {
-        RealFs.read(p).await
-    }
-    async fn append(&self, p: &Path, d: &[u8]) -> io::Result<()> {
-        RealFs.append(p, d).await
-    }
-    async fn stat(&self, p: &Path) -> io::Result<FsStat> {
-        RealFs.stat(p).await
-    }
-    async fn read_link(&self, p: &Path) -> io::Result<PathBuf> {
-        RealFs.read_link(p).await
-    }
-    async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
-        RealFs.read_dir(p).await
-    }
-    async fn create_dir(&self, p: &Path) -> io::Result<()> {
-        self.refuses_name(p)?;
-        RealFs.create_dir(p).await
-    }
-    async fn create_dir_all(&self, p: &Path) -> io::Result<()> {
-        RealFs.create_dir_all(p).await
-    }
-    async fn remove(&self, p: &Path) -> io::Result<()> {
-        RealFs.remove(p).await
-    }
-    async fn remove_all(&self, p: &Path) -> io::Result<()> {
-        RealFs.remove_all(p).await
-    }
-    async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
-        if self.fault == Some(Fault::BusyRename) && b == self.real {
-            return Err(io::Error::from_raw_os_error(libc::EBUSY));
-        }
-        RealFs.rename(a, b).await
-    }
-    async fn chmod(&self, p: &Path, mode: u32) -> io::Result<()> {
-        RealFs.chmod(p, mode).await
-    }
-}
 
 /// A project dir by its real path, holding `name` with `human` in it, and
 /// the sandbox's edit of it to `sandbox`, applied to the disk `fault` makes.
@@ -313,4 +203,57 @@ async fn a_disk_with_no_room_for_a_new_name_fails_the_change() {
     assert_eq!(fs::read_to_string(&real).unwrap(), HUMAN);
     assert_eq!(names(real.parent().unwrap()), ["notes.txt"]);
     assert_eq!(conflicts(&changes.list().await), [("/notes.txt", false)]);
+}
+
+/// The sandbox's edit of `name` on the disk `fault` makes, applied: the
+/// file is replaced, with its group and mode, and nothing is left beside
+/// it. Returns the disk, which saw what the apply did.
+async fn replaced(name: &str, fault: Option<Fault>) -> Arc<Faulty> {
+    let (_t, real, disk, changes) = edited(name, HUMAN, SANDBOX, fault).await;
+    fs::set_permissions(&real, Permissions::from_mode(0o640)).unwrap();
+    let before = fs::metadata(&real).unwrap();
+    let report = changes.apply().await;
+    assert!(report.failed.is_empty(), "{report:?}");
+    assert_eq!(fs::read_to_string(&real).unwrap(), SANDBOX);
+    let after = fs::metadata(&real).unwrap();
+    assert_ne!(after.ino(), before.ino(), "written in place, not replaced");
+    assert_eq!(after.gid(), before.gid());
+    assert_eq!(after.permissions().mode() & 0o7777, 0o640);
+    assert_eq!(names(real.parent().unwrap()), [name]);
+    disk
+}
+
+/// Each new file `disk` saw the sandbox's bytes go into was its owner's
+/// alone by then.
+fn filled_owner_only(disk: &Faulty) {
+    let filled = disk.filled.lock().unwrap().clone();
+    assert!(!filled.is_empty(), "no bytes went into a new file");
+    for mode in filled {
+        let own = mode.is_some_and(|m| m & 0o077 == 0);
+        let mode = mode.map(|m| format!("{m:o}"));
+        assert!(own, "the sandbox's bytes went into a file at {mode:?}");
+    }
+}
+
+/// The sandbox's bytes went into the new file while its group and
+/// everyone else could still open it (its directory kept them out).
+#[tokio::test]
+async fn a_new_file_is_its_owners_alone_before_the_sandboxs_bytes_go_in() {
+    let disk = replaced("secret.env", None).await;
+    filled_owner_only(&disk);
+}
+
+/// A team's directory passes its group on (setgid). The apply set the
+/// mode of the new file's directory, and Linux drops the bit for a run not
+/// in that group: the new file got the run's own group, so the edit was
+/// written in place (cut short on a full disk). That directory now keeps
+/// the mode it was made with, and the new file is its owner's alone before
+/// anything goes in.
+#[tokio::test]
+async fn a_directory_that_passes_its_group_on_keeps_its_mode() {
+    let disk = replaced("notes.txt", Some(Fault::Setgid)).await;
+    let chmods = disk.setgid_chmods.lock().unwrap().clone();
+    let chmods: Vec<_> = chmods.iter().map(|m| format!("{m:o}")).collect();
+    assert!(chmods.is_empty(), "its mode was set: {chmods:?}");
+    filled_owner_only(&disk);
 }
