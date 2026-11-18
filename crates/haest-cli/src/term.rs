@@ -16,7 +16,10 @@ use haest::{
     tools::SubagentEvent,
     wire::{Envelope, Level, Outbound, Path, WIRE_V, now_ms},
 };
-use tokio::{sync::oneshot, task::JoinHandle};
+use tokio::{
+    sync::{oneshot, watch},
+    task::JoinHandle,
+};
 
 use crate::{agents::AgentLog, render::Renderer};
 
@@ -37,6 +40,8 @@ pub(crate) struct TermUi {
     /// The human types slash commands here (not when a parent drives haest
     /// over stdio): a remedy may name one.
     slash: bool,
+    /// The terminal has shown the stream to its end ([`show`]).
+    shown: watch::Sender<bool>,
 }
 
 impl TermUi {
@@ -55,6 +60,7 @@ impl TermUi {
             lines: HubUi::new(hub),
             log: Mutex::default(),
             slash: true,
+            shown: watch::Sender::new(false),
         }
     }
 
@@ -128,6 +134,37 @@ impl TermUi {
         }
         None
     }
+
+    /// Resolves once the terminal has shown the stream to its end: the
+    /// conversation has ended, and every frame it made is on the screen.
+    pub(crate) async fn shown(&self) {
+        let mut shown = self.shown.subscribe();
+        let _ = shown.wait_for(|shown| *shown).await;
+    }
+
+    /// `text` on the terminal once the conversation has ended (the stream
+    /// no longer reaches it), after everything the stream showed: a line on
+    /// stderr, or above the prompt while it is open; with --json, the
+    /// stream's next frame on stdout.
+    pub(crate) async fn tell_after_the_end(&self, level: Level, text: &str) {
+        self.shown().await;
+        let frame = self.last_notice(level, text).await;
+        let mut term = self.term.lock().unwrap();
+        match frame {
+            Some(frame) => term.frame(&frame),
+            None => term.notice(level, text),
+        }
+    }
+}
+
+/// Tells the [`TermUi`] the stream has been shown to its end when dropped:
+/// when [`show`] is done, or its task ends any other way.
+struct ShownToTheEnd(Arc<TermUi>);
+
+impl Drop for ShownToTheEnd {
+    fn drop(&mut self) {
+        self.0.shown.send_replace(true);
+    }
 }
 
 /// Brackets the read of a question's answer ([`TermUi::ask`]).
@@ -163,9 +200,11 @@ impl Drop for Answering<'_> {
     }
 }
 
-/// The terminal shows `sub`, frame by frame, until the stream closes.
-pub(crate) fn show(term: Arc<Mutex<Term>>, mut sub: Subscription) -> JoinHandle<()> {
+/// `ui`'s terminal shows `sub`, frame by frame, until the stream closes.
+pub(crate) fn show(ui: &Arc<TermUi>, mut sub: Subscription) -> JoinHandle<()> {
+    let done = ShownToTheEnd(ui.clone());
     tokio::spawn(async move {
+        let term = &done.0.term;
         while let Some(frame) = sub.recv().await {
             term.lock().unwrap().frame(&frame);
         }

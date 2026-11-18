@@ -4,15 +4,15 @@
 mod support;
 
 use std::{
-    io::{BufRead, BufReader},
-    os::unix::fs::PermissionsExt,
+    io::{BufRead, BufReader, Write},
+    os::{fd::OwnedFd, unix::fs::PermissionsExt, unix::net::UnixStream},
     path::{Path, PathBuf},
-    process::Stdio,
+    process::{Child, Stdio},
     time::Duration,
 };
 
 use serde_json::{Value, json};
-use support::{FakeModel, Home, LOCAL_KEY, Parent, Reply, bash, stderr, ty};
+use support::{FakeModel, Home, LOCAL_KEY, Parent, Reply, bash, pty::Pty, stderr, ty};
 
 /// A control dir short enough for a socket path (a temp dir's own path can
 /// be most of the 104 bytes one may have); gone at the end.
@@ -260,6 +260,152 @@ fn a_watch_socket_refuses_send_and_an_unknown_id_says_where_to_look() {
     host.send(json!({"v": 1, "id": "x", "type": "control", "verb": "close"}));
     let (code, err) = host.finish();
     assert_eq!(code, Some(0), "{err}");
+}
+
+/// A peer on the session's socket sends `close`: the connection, to read
+/// its reply from.
+fn send_close(dir: &ControlDir, sid: &str) -> UnixStream {
+    let socket = dir.0.join(format!("{sid}.sock"));
+    let mut peer = UnixStream::connect(socket).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(20)))
+        .unwrap();
+    let close = json!({"v": 1, "id": "c1", "type": "control", "verb": "close"});
+    writeln!(peer, "{close}").unwrap();
+    peer
+}
+
+/// A peer on the session's socket sends `close`, and waits for its reply:
+/// true when the reply came, ok.
+fn peer_closes(dir: &ControlDir, sid: &str) -> bool {
+    BufReader::new(send_close(dir, sid))
+        .lines()
+        .map_while(Result::ok)
+        .filter_map(|l| serde_json::from_str::<Value>(&l).ok())
+        .find(|f| ty(f) == "reply" && f["id"] == "c1")
+        .is_some_and(|reply| reply["ok"] == true)
+}
+
+/// `haest <args>` at a terminal (`pty_end` its stdin, stdout and stderr),
+/// with a command socket in `dir`, in the default sandbox.
+fn at_a_prompt(home: &Home, dir: &ControlDir, args: &[&str], pty_end: &OwnedFd) -> Child {
+    let flag = dir.flag();
+    let socket = ["--control-socket", "command", flag.as_str()];
+    let on_the_terminal = || Stdio::from(pty_end.try_clone().unwrap());
+    home.command(&[&["-m", "local:m", "--tools", "bash"], &socket[..], args].concat())
+        .env(LOCAL_KEY.0, LOCAL_KEY.1)
+        .stdin(on_the_terminal())
+        .stdout(on_the_terminal())
+        .stderr(on_the_terminal())
+        .spawn()
+        .unwrap()
+}
+
+/// Waits up to 20 s for `child` to exit: true when it has.
+fn exits(child: &mut Child) -> bool {
+    for _ in 0..200 {
+        if child.try_wait().unwrap().is_some() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
+/// What the screen `s` showed from byte `at` on (at a character boundary).
+fn since(s: &str, at: usize) -> &str {
+    let at = (at..=s.len())
+        .find(|&i| s.is_char_boundary(i))
+        .unwrap_or(s.len());
+    &s[at..]
+}
+
+/// A peer closes the conversation while the human's prompt is open and the
+/// sandbox holds a file the model wrote. The close is served as ever; the
+/// terminal says at once, with no key pressed, that the conversation ended
+/// and names the file, and the human can still /apply it before leaving.
+#[test]
+fn a_peers_close_at_the_prompt_leaves_the_sandbox_to_the_human() {
+    let home = Home::new("ctl-close-sandbox");
+    let dir = ControlDir::new("closesb");
+    let model = FakeModel::new([
+        bash("echo sandboxed > new.txt"),
+        Reply::Text("wrote new.txt".into()),
+    ]);
+    home.serve(&model);
+    let (mut pty, end) = Pty::open();
+    let mut child = at_a_prompt(&home, &dir, &["write new.txt"], &end);
+    let prompt = |s: &str| {
+        s.find("wrote new.txt")
+            .is_some_and(|at| s[at..].contains("> "))
+    };
+    let ready = pty.wait_for(Duration::from_secs(30), prompt);
+    assert!(ready, "no prompt after the turn:\n{}", pty.screen());
+    // Past the prompt's own start (it asks the terminal where its cursor is).
+    std::thread::sleep(Duration::from_millis(300));
+    let before = pty.screen().len();
+
+    assert!(peer_closes(&dir, &dir.sid()), "the close was not served");
+    let said = pty.wait_for(Duration::from_secs(10), |s| {
+        since(s, before).contains("new.txt")
+    });
+    assert!(
+        said,
+        "the terminal did not name new.txt after the close:\n{}",
+        since(&pty.screen(), before)
+    );
+
+    pty.type_keys("/apply\n");
+    let file = home.0.join("w/new.txt");
+    for _ in 0..100 {
+        if file.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let applied = std::fs::read_to_string(&file).ok();
+    pty.type_keys("\x04");
+    let left = exits(&mut child);
+    let _ = child.kill();
+    assert_eq!(
+        applied.as_deref(),
+        Some("sandboxed\n"),
+        "/apply after the close did not write new.txt:\n{}",
+        pty.screen()
+    );
+    assert!(left, "haest did not exit on Ctrl+D:\n{}", pty.screen());
+}
+
+/// A peer closes a conversation with nothing in the sandbox: it ends at
+/// once, as it always did, and the open prompt says so at once, not at the
+/// next Enter; Enter then leaves.
+#[test]
+fn a_peers_close_with_nothing_to_lose_ends_the_prompt_at_once() {
+    let home = Home::new("ctl-close-nothing");
+    let dir = ControlDir::new("closeno");
+    let model = FakeModel::new([Reply::Text("hello".into())]);
+    home.serve(&model);
+    let (mut pty, end) = Pty::open();
+    let mut child = at_a_prompt(&home, &dir, &["say hello"], &end);
+    let prompt = |s: &str| s.find("hello").is_some_and(|at| s[at..].contains("> "));
+    let ready = pty.wait_for(Duration::from_secs(30), prompt);
+    assert!(ready, "no prompt after the turn:\n{}", pty.screen());
+    std::thread::sleep(Duration::from_millis(300));
+    let before = pty.screen().len();
+
+    assert!(peer_closes(&dir, &dir.sid()), "the close was not served");
+    let said = pty.wait_for(Duration::from_secs(10), |s| {
+        since(s, before).to_lowercase().contains("ended")
+    });
+    assert!(
+        said,
+        "the prompt did not say the conversation ended:\n{}",
+        since(&pty.screen(), before)
+    );
+    pty.type_keys("\n");
+    let left = exits(&mut child);
+    let _ = child.kill();
+    assert!(left, "haest did not exit on Enter:\n{}", pty.screen());
+    assert!(dir.is_empty(), "the socket is gone");
 }
 
 #[test]

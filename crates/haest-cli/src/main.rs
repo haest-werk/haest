@@ -387,7 +387,7 @@ async fn main() -> ExitCode {
     let hub = Hub::new_with_options(uuid::Uuid::new_v4().to_string(), opts);
     let ui = TermUi::with_hub(args.json, hub.clone());
     let ui = Arc::new(if stdio { ui.over_stdio() } else { ui });
-    let shown = (!stdio).then(|| term::show(ui.term.clone(), hub.subscribe(0)));
+    let shown = (!stdio).then(|| term::show(&ui, hub.subscribe(0)));
     loaded.notes.iter().for_each(|n| ui.warn(n));
     // What print mode asks, read before the build: with nothing to ask, the
     // run fails having created no session.
@@ -421,7 +421,7 @@ async fn main() -> ExitCode {
     let (code, held) = match input {
         _ if stdio => (stdio_mode(&session).await, None),
         Some(input) => (print_mode(&session, &brakes, &input).await, None),
-        None => match repl::repl(&session, &ui, args.prompt_text()).await {
+        None => match repl::repl(&session, &ui, args.prompt_text(), sandbox.clone()).await {
             Ok(hold) => (ExitCode::SUCCESS, Some(hold)),
             Err(e) => (fail(1, e), None),
         },

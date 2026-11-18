@@ -112,7 +112,7 @@ impl Sandbox {
 }
 
 /// What /changes and /apply say when there is no sandbox.
-const REAL_FS: &str = "This conversation runs on the real file system: every edit is already on disk, there is nothing to apply.";
+pub(crate) const REAL_FS: &str = "This conversation runs on the real file system: every edit is already on disk, there is nothing to apply.";
 
 pub(crate) async fn show(rt: &Runtime) {
     match Sandbox::of(rt) {
