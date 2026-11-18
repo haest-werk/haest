@@ -146,11 +146,11 @@ async fn fill(disk: &dyn Fs, path: &Path, old: Option<&Metadata>, bytes: &[u8]) 
 /// the directory is made until both are gone. An apply dropped meanwhile
 /// drops it, and it removes them: the apply leaves nothing beside the
 /// human's file. A write the runtime still holds then (dropping its future
-/// does not stop it) finds no directory to land in; one it is running lands
-/// in the directory, where only its owner may reach it. The removal cannot
-/// wait, so it is the system's own, on the host's disk, which the overlay's
-/// disk is; on a disk that is not, nothing has the path (its name is this
-/// process's own).
+/// does not stop it) finds no directory to land in, and the file of one it
+/// is running goes with the directory. Only a directory the runtime is
+/// still to make is left, empty. The removal cannot wait, so it is the
+/// system's own, on the host's disk, which the overlay's disk is; on a disk
+/// that is not, nothing has the path (its name is this process's own).
 struct NewFile {
     /// Only its owner may enter it, before anything goes in.
     dir: PathBuf,
@@ -234,7 +234,12 @@ impl Drop for NewFile {
     fn drop(&mut self) {
         if self.pending {
             let _ = std::fs::remove_file(&self.path);
-            let _ = std::fs::remove_dir(&self.dir);
+            if std::fs::remove_dir(&self.dir).is_err() {
+                // A write the system was running as the drop came made the
+                // file between the two: it is made now, so it goes.
+                let _ = std::fs::remove_file(&self.path);
+                let _ = std::fs::remove_dir(&self.dir);
+            }
         }
     }
 }

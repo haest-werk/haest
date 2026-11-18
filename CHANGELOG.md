@@ -539,7 +539,8 @@ write instead.
   replaced file does not keep its extended attributes or ACLs, and a
   process that holds it open to write (a log a server appends to, a
   database) goes on writing to the old file. A kill partway can leave the
-  new file's directory (`.<name>.haest-<pid>-<n>`) beside it, owner-only;
+  new file's directory (`.<name>.haest-<pid>-<n>`) beside it, owner-only,
+  and an apply dropped partway, rarely, that directory empty;
   `.*.haest-*` in an ignore file matches it.
 - An apply dropped partway lost the files of a tree the sandbox had moved.
   After `mv src gen`, the files under `gen` were listed only by walking

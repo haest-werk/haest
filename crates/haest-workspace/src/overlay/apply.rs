@@ -29,11 +29,12 @@
 //!   the apply shows at the path;
 //! - the disk needs room for a second copy of it while the new one fills;
 //!   a file written in place needs none;
-//! - a kill partway, or an apply dropped while the system runs a step it
-//!   began, can leave the new file's directory, `.<name>.haest-<pid>-<n>`,
-//!   beside it: empty, or with the new file in it, which only its owner may
-//!   reach; never a file cut short. The name matches none of the file's own
-//!   ignore patterns; `.*.haest-*` matches every one.
+//! - a kill partway can leave the new file's directory,
+//!   `.<name>.haest-<pid>-<n>`, beside it, with the new file in it, which
+//!   only its owner may reach; never a file cut short. An apply dropped
+//!   just as the system starts making that directory can leave it empty.
+//!   The name matches none of the file's own ignore patterns; `.*.haest-*`
+//!   matches every one.
 //!
 //! Deletes go first, then the writes: on a disk that reads two spellings as
 //! one name, a rename by case (`/readme.md` deleted, `/README.md` added)
