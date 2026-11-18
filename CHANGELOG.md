@@ -693,6 +693,20 @@ write instead.
   given), and the history held two answers in a row.
   `JsonlSessionFile::load` now ends a torn last line before the next
   record.
+- A session lost a record it wrote once a full disk had room again. The
+  disk took part of a record and refused the rest (HFS+, Linux tmpfs, an
+  NFS server for a large write); the failure was reported, but the next
+  record was appended onto that part, with no error, and the next resume
+  skipped both as one torn line. Through the `haest` command, the human's
+  "go on" after a turn that filled the disk never reached the model again.
+  The record after a failed append now starts on a line of its own. And
+  where the lost record was an answer that called a tool, and the tool
+  freed room (`rm -rf target/`) so its result landed, every resume sent a
+  tool result with no call, which providers refuse: each turn of the
+  resumed conversation failed. Replay now drops a tool result that
+  answers no call of the answer it follows and counts it with the torn
+  lines (`ReplayedSession::corrupt_lines`, `ReplayedRun::corrupt_lines`),
+  as it already answers a call that has no result.
 - Two runs that resumed one session both wrote its file: `haest -r` in a
   second terminal resumes the session the first one is writing. The
   ledger record is a snapshot and the last one wins, so the run that wrote
