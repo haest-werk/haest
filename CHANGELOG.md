@@ -367,8 +367,8 @@ write instead.
   the gateway's key, the system prompt and the first message to
   `api.anthropic.com`, and the 401 came back only after that. A key an
   entry does not have now fails that entry when its provider is resolved
-  (`EntryProblem::UnknownKey`), naming the key, and the key meant when one
-  is close (`baseUrl` and `base_url` for `baseURL`, `header` for
+  (`EntryProblem::UnknownKeys`), naming every such key, and the key meant
+  when one is close (`baseUrl` and `base_url` for `baseURL`, `header` for
   `headers`). Nothing is sent. An entry with a key of its own that the
   TypeScript haest skipped (a `"_comment"`) fails too: delete the key.
 - A providers.json `baseURL` that was not a string read as no `baseURL`,
@@ -1428,6 +1428,9 @@ Hosts write less (round two of the review, and what porting brain onto
 - `testing::FakeReply` and `testing::FakeEnd` are `#[non_exhaustive]`
   (breaking for a test that matches on one): a `match` adds a `_` arm;
   building one is unchanged.
+- An `EntryProblem`'s message says it is about providers.json
+  (`provider "local" cannot be used: the providers.json entry has an
+  unknown key "_comment"; ...`), where it named only the key or the field.
 
 ### haest-tools
 

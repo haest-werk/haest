@@ -14,7 +14,7 @@ use haest_core::{
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::Value;
 
-use super::{EntryProblem, ProvidersFileError};
+use super::{EntryProblem, ProvidersFileError, UnknownKey};
 use crate::{
     anthropic::AnthropicOptions,
     catalog::Catalog,
@@ -54,7 +54,8 @@ pub enum Dialect ("provider type") {
 /// | `pricing` | [`pricing`](Self::pricing) | `{ "<model id>": { "input", "cachedInput", "output", "cacheWrite"? } }` |
 ///
 /// A key this table does not list is refused
-/// ([`EntryProblem::UnknownKey`]), naming the key meant when one is close:
+/// ([`EntryProblem::UnknownKeys`], naming each, and the key meant when one
+/// is close):
 /// read past, a misspelt `baseURL` (`baseUrl`) would send the entry's key
 /// and the conversation to the dialect's own API. So is a `baseURL`,
 /// `apiKey` or `apiKeyEnv` that is not a string
@@ -317,11 +318,13 @@ impl CustomProviderConfig {
         };
         // Read past, a misspelt `baseURL` would make this an entry for the
         // dialect's own API, which would get the entry's key.
-        if let Some(key) = entry.keys().find(|k| !ENTRY_KEYS.contains(&k.as_str())) {
-            return Err(EntryProblem::UnknownKey {
-                key: key.clone(),
-                meant: meant(key),
-            });
+        let unknown: Vec<UnknownKey> = entry
+            .keys()
+            .filter(|k| !ENTRY_KEYS.contains(&k.as_str()))
+            .map(|k| UnknownKey::new(k.as_str(), meant(k)))
+            .collect();
+        if !unknown.is_empty() {
+            return Err(EntryProblem::UnknownKeys { keys: unknown });
         }
         let headers = v
             .get("headers")

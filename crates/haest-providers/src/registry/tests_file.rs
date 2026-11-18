@@ -83,8 +83,8 @@ async fn a_key_no_entry_has_is_refused_and_nothing_is_sent() {
         };
         let problem = source.downcast::<EntryProblem>().expect("an entry problem");
         assert!(
-            matches!(&*problem, EntryProblem::UnknownKey { key, meant }
-                if key == unknown && *meant == close),
+            matches!(&*problem, EntryProblem::UnknownKeys { keys }
+                if *keys == [UnknownKey::new(unknown, close)]),
             "{name}: {problem:?}"
         );
         assert_eq!(provider, name);
@@ -95,6 +95,31 @@ async fn a_key_no_entry_has_is_refused_and_nothing_is_sent() {
         );
     }
     assert!(t.requests().is_empty(), "nothing sent");
+}
+
+/// An entry with more than one key no entry has was refused one key per
+/// run, the first only: every one is named at once.
+#[test]
+fn every_key_no_entry_has_is_named_at_once() {
+    let entry = json!({
+        "_comment": "a note",
+        "apiKey": "k",
+        "baseUrl": "https://gw.example",
+        "models": ["m"],
+    });
+    let problem = CustomProviderConfig::from_json(&entry).unwrap_err();
+    let EntryProblem::UnknownKeys { keys } = &problem else {
+        panic!("{problem:?}");
+    };
+    let named: Vec<(&str, Option<&str>)> = keys.iter().map(|k| (k.key.as_str(), k.meant)).collect();
+    assert_eq!(
+        named,
+        [
+            ("_comment", None),
+            ("baseUrl", Some("baseURL")),
+            ("models", None)
+        ]
+    );
 }
 
 /// A `baseURL`, `apiKey` or `apiKeyEnv` that is there but not a string

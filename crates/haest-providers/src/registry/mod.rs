@@ -40,7 +40,7 @@ use haest_core::{
 pub(crate) use builtin::paper_instruments_options;
 use builtin::{anthropic_options, openai_options, openrouter_options};
 pub use custom::{CustomProviderConfig, CustomProviders, Dialect, load_custom_providers};
-pub use error::{EntryProblem, ProvidersFileError};
+pub use error::{EntryProblem, ProvidersFileError, UnknownKey};
 
 use haest_http::{HttpClientRef, check_endpoint_url};
 

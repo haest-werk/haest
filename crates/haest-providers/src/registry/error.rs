@@ -1,6 +1,6 @@
 //! What is wrong with a providers.json entry, and why providers.json cannot be read.
 
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 use haest_core::words::UnknownWord;
 
@@ -10,36 +10,34 @@ use super::custom::ENTRY_KEYS;
 /// ([`CustomProviderConfig::from_json`](super::CustomProviderConfig::from_json)).
 /// Resolving a spec of that provider fails with
 /// [`ModelError::Unavailable`](haest_core::ModelError::Unavailable), this as
-/// its source; every other entry still resolves.
+/// its source; every other entry still resolves. Its message says it is
+/// about providers.json.
 ///
 /// More problems may come in a minor release.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum EntryProblem {
     /// The entry is not a JSON object.
-    #[error("the entry is not a JSON object")]
+    #[error("the providers.json entry is not a JSON object")]
     NotAnObject,
-    /// A key no entry has (`baseUrl` for `baseURL`): refused, so a misspelt
-    /// `baseURL` never sends the entry's key and the conversation to the
-    /// dialect's own API.
+    /// Keys no entry has (`baseUrl` for `baseURL`), every one of them:
+    /// refused, so a misspelt `baseURL` never sends the entry's key and the
+    /// conversation to the dialect's own API.
     #[error(
-        "unknown key \"{key}\"{}; an entry takes {}",
-        meant.map(|m| format!(" (did you mean \"{m}\"?)")).unwrap_or_default(),
+        "the providers.json entry has {} {}; an entry takes {}",
+        if keys.len() == 1 { "an unknown key" } else { "unknown keys" },
+        keys.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "),
         ENTRY_KEYS.join(", ")
     )]
-    UnknownKey {
-        /// The key, as written.
-        key: String,
-        /// The key it is close to, when one is: the same letters in
-        /// another case or with `_` or `-` between them, or at most two
-        /// letters off.
-        meant: Option<&'static str>,
+    UnknownKeys {
+        /// Every such key the entry has.
+        keys: Vec<UnknownKey>,
     },
     /// `baseURL`, `apiKey` or `apiKeyEnv` is there but is not a string
     /// (`null`, a number, a list): refused, so a `baseURL` a generator wrote
     /// as `null` never sends the entry's key and the conversation to the
     /// dialect's own API. An entry for that API has no `baseURL` at all.
-    #[error("\"{key}\" is {found}, not a string; delete the key to leave it unset")]
+    #[error("providers.json \"{key}\" is {found}, not a string; delete the key to leave it unset")]
     NotAString {
         /// The key.
         key: &'static str,
@@ -50,19 +48,52 @@ pub enum EntryProblem {
     /// `type` names no wire dialect haest speaks: a typo is refused, never
     /// sent as Chat Completions. A `type` that is not a string is its JSON
     /// text here.
-    #[error("\"type\": {0}")]
+    #[error("providers.json \"type\": {0}")]
     UnknownType(UnknownWord),
     /// `reasoningEffort` lacks its `efforts` array or its `mandatory` boolean.
-    #[error("reasoningEffort needs \"efforts\" (array) and \"mandatory\" (boolean)")]
+    #[error("providers.json reasoningEffort needs \"efforts\" (array) and \"mandatory\" (boolean)")]
     ReasoningEffort,
     /// A `pricing` row is not `{input, cachedInput, output, cacheWrite?}`, in numbers.
-    #[error("pricing.{model} cannot be read")]
+    #[error("providers.json pricing.{model} cannot be read")]
     Pricing {
         /// The model id the row is for.
         model: String,
         /// What reading the row failed with.
         source: serde_json::Error,
     },
+}
+
+/// A key a providers.json entry has that no entry takes
+/// ([`EntryProblem::UnknownKeys`]), and the key it is close to. Shown as
+/// the key, quoted, then `(did you mean "baseURL"?)` when one is close.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct UnknownKey {
+    /// The key, as written.
+    pub key: String,
+    /// The key it is close to, when one is: the same letters in another case
+    /// or with `_` or `-` between them, or at most two letters off.
+    pub meant: Option<&'static str>,
+}
+
+impl UnknownKey {
+    /// `key`, and the entry key it is close to.
+    pub(super) fn new(key: impl Into<String>, meant: Option<&'static str>) -> Self {
+        Self {
+            key: key.into(),
+            meant,
+        }
+    }
+}
+
+impl fmt::Display for UnknownKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"{}\"", self.key)?;
+        match self.meant {
+            Some(meant) => write!(f, " (did you mean \"{meant}\"?)"),
+            None => Ok(()),
+        }
+    }
 }
 
 /// Why `<config dir>/providers.json` could not be read

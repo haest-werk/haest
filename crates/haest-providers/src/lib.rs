@@ -231,7 +231,7 @@ pub use catalog::Catalog;
 pub use compat::{CompatFlavor, CompatOptions, CompatProvider};
 pub use registry::{
     CustomProviderConfig, CustomProviders, Dialect, EntryProblem, ProviderRegistry,
-    ProvidersFileError, load_custom_providers,
+    ProvidersFileError, UnknownKey, load_custom_providers,
 };
 pub use responses::{ResponsesOptions, ResponsesProvider};
 pub use retry::RetryPolicy;
