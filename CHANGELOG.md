@@ -245,22 +245,6 @@ write instead.
   on the way is now asked of the disk itself, by its own spelling, so the
   disk's own rules for names hold, and such a change fails as
   `OutsideProject`.
-- On macOS, applying a sandbox's changes could delete or overwrite a file
-  in the real project while the report said every change was applied. The
-  disk reads `readme.md` and `README.md` as one file (and `café` in either
-  Unicode spelling, on case-sensitive APFS too); the sandbox tells them
-  apart. `mv readme.md README.md` listed only the old name's delete, and
-  applying it deleted the file. With an edit, the new name was written,
-  then deleted; `mv lib Lib` deleted the whole directory. A sandbox that
-  wrote both names (`echo upper > README.md && echo lower > readme.md`)
-  had the second written over the first, and the first's content was lost,
-  listed nowhere. `OverlayChanges::apply` now runs every delete first, then
-  the writes: a path those deletes took with them is written as new, and a
-  change that was a conflict when the apply started is still skipped. It
-  also reads each change's real path again right before putting it on the
-  disk: one that moved since the scan (an earlier write of the apply under
-  another spelling, or the human saving it meanwhile) is skipped as a
-  conflict and stays listed.
 - A URL's credentials showed in Debug output: haest-http's `Request`
   printed its URL as it was (and its `Authorization` header, and
   `Response` its `set-cookie`); `AnthropicOptions`, `CompatOptions`,
@@ -283,6 +267,37 @@ write instead.
   it could (`https://<redacted>@scope/pkg`), never a credential.
   `redacted_url` and the `haest` command (`haest settings`, the "Broker
   link" line) show a URL the same way.
+- On macOS, applying a sandbox's changes could delete or overwrite files,
+  or a whole directory, in the real project while the report said every
+  change was applied. The disk reads `readme.md` and `README.md` as one
+  name (and `café` in either Unicode spelling, on case-sensitive APFS
+  too). The sandbox's own files tell them apart, but it read the project
+  through the disk, so asked for `Lib` it found `lib`.
+  `mv readme.md README.md` listed only the old name's delete, and applying
+  it deleted the file; with an edit, the new name was written, then
+  deleted. `mv lib Lib` moved `lib` into itself as `Lib/lib`, so the model
+  saw every file twice, and applying it deleted the whole directory, as
+  did tidying the copy away (`rm -r Lib/lib`), after which the sandbox
+  showed the tree it meant. A sandbox that wrote both names
+  (`echo upper > README.md && echo lower > readme.md`) had the second
+  written over the first, and the first's content was lost, listed
+  nowhere. Now:
+  - the sandbox finds a project path only as the disk spells it, so
+    `mv lib Lib` is a rename, as in bash, and the change list shows a
+    rename by case or by Unicode spelling as one: `/readme.md` deleted and
+    `/README.md` added, `/lib` deleted and each `/Lib/...` file added;
+  - `OverlayChanges::apply` runs every delete first, then the writes, so
+    such a rename keeps its files;
+  - a change that would land on a file the disk holds under another
+    spelling is a conflict, listed as one and skipped, unless the same
+    apply deletes that file;
+  - the apply reads each change's real path again right before putting it
+    on the disk: one that moved since the scan (an earlier write of the
+    apply under another spelling, or the human saving or deleting it
+    meanwhile) is skipped as a conflict and stays listed.
+  The cost: in the sandbox, `cat README.md` does not find `readme.md`,
+  where real bash on that disk would (see haest-workspace). A case-folding
+  directory on Linux (`chattr +F`) is not told apart.
 
 ### Bug fixes
 
@@ -656,7 +671,9 @@ Plug points without `Arc` (breaking):
   tools get another. Its clock is the board's too:
   `TaskBoard::with_clock(on_change, clock)` ->
   `let board = TaskBoard::new(on_change); board.set_clock(clock);`, the
-  clock as `impl Into<ClockRef>`, and a clone made before reads it.
+  clock as `impl Into<ClockRef>`, and a clone made before reads it. The
+  clock it replaces is dropped once the board is unlocked, so a clock that
+  holds the board may use it as it drops.
 - `deferred_tools::ToolDeferral` is a cheap `Clone` whose clones share what
   is loaded: `Arc<ToolDeferral>` -> `ToolDeferral`.
 
@@ -1006,7 +1023,9 @@ Hosts write less (round two of the review, and what porting brain onto
   threshold's text with its lock held, so a remedy that read the ledger it
   is set on (one naming the spend so far) hung the first charge that
   warned, for good. Both now run once the ledger is unlocked, for the
-  warning and for `Ledger::exhausted`.
+  warning and for `Ledger::exhausted`, and `set_remedies` and
+  `set_thresholds` drop the remedies and thresholds they replace once it
+  is unlocked too, so one that holds the ledger may read it as it drops.
 - Fixed: two changes to a `TaskBoard` at once (main and a background
   subagent share one) could hand `on_change` the newer list first and the
   older one last, so the session's last `tasks` record, which a resume
@@ -1100,7 +1119,10 @@ Hosts write less (round two of the review, and what porting brain onto
   no lock held. The owner `put`s each value under its own lock and
   `deliver`s with it released. The ledger, the task board and haest-tools'
   job and subagent hubs hand their hooks their state this way; a plug-in
-  with a hook of its own can too.
+  with a hook of its own can too. A hook that panics poisons nothing and
+  skips no value: the caller it panicked in still hands over every value
+  waiting (one another caller put meanwhile too), then the first panic
+  goes on to it.
 - `catalog::Reasoning`, `workspace::Change` and `workspace::FailedChange`
   are `#[non_exhaustive]` and built with `Reasoning::new(efforts)` and
   `with_mandatory`, `Change::new(path, kind)` and `with_conflict`, and
@@ -1376,7 +1398,8 @@ Hosts write less (round two of the review, and what porting brain onto
   `set_events(&self)` sets the listener of every clone:
   `JobHub::with_events(Arc::new(tx), Arc::new(events))` ->
   `let hub = JobHub::new(tx); hub.set_events(events);`. New `InboxRef` and
-  `JobEventsRef`.
+  `JobEventsRef`. The listener it replaces is dropped once the hub is
+  unlocked, so a listener that holds the hub may call it as it drops.
 - `JobHub::start` takes a `NewJob` (the command, and a description the
   job list shows, the command when none is set) and the `&ToolContext` it
   runs in:
@@ -1598,9 +1621,19 @@ Hosts write less (round two of the review, and what porting brain onto
 - Fixed: a sandbox call dropped in flight (a Code run that timed out) left
   a task behind, asleep until the call's timeout, up to 10 minutes.
   Dropping the call now ends it.
-- `OverlayChanges::apply` runs every delete before any write, so a rename
-  that changes only the case keeps its file, and skips as a conflict a
-  change whose real path moved since the scan (see Security).
+- The sandbox reads the project, and `OverlayChanges` reads the disk, only
+  as the disk spells each path, and `apply` runs every delete before any
+  write (see Security). A rename by case or by Unicode spelling lists as
+  the old name deleted and the new one added and applies as bash leaves
+  it; a change that would land on a file the disk holds under another
+  spelling, or whose real path moved since the scan, is a conflict and is
+  skipped (`Change::conflict` says so). In the sandbox a name the disk
+  spells another way is not found, where real bash on that disk finds it:
+  `cat README.md` fails over `readme.md`, `echo x > README.md` makes a
+  second file beside it, and `rm -r lib && mkdir Lib` works (it failed
+  with "File exists"). Each read in the project looks its path up once
+  more; one through a symlink inside the project also lists each
+  directory on the way, about 2.5 times as slow.
 - Fixed: over the real workspace, a caller's own `on_output` that panicked
   in `shell_streaming` ended the pipe's reader: the panic was lost, and the
   command died of SIGPIPE (exit 141) on its next write. It is now called
