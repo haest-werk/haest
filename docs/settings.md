@@ -387,6 +387,7 @@ flag          --project-mods
 ### `approvals`
 
 The built-in approval mod: in the real workspace, asks before a shell command that cannot be undone (deleting recursively, rewriting git history or the remote, wiping a disk, killing processes by name, sudo); anything else runs without asking.
+haest asks on a terminal only where the question can be seen and answered: stdin must be a terminal, and so must stderr, where the question shows (with --json it is a line on stdout, which must not be a regular file). Otherwise each approval is refused at once, and haest says why on stderr.
 
 - Takes: `true` or `false` (also `1`/`0`, `on`/`off`, `yes`/`no`); a flag alone is `true`
 - Default: `true`
