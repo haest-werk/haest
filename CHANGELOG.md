@@ -291,6 +291,14 @@ write instead.
   as it is: `%40` there makes another URL (RFC 3986, section 2.2), which
   the server may or may not read the same. A URL that WebFetch fetches is
   not a configured one, and an `@` in its path still works.
+- A configured URL with no host sent its key to the host the first part of
+  its path named. `https://${GATEWAY_HOST}/anthropic` with the variable
+  empty makes `https:///anthropic`, and a URL parser skips the extra `/`
+  and takes `anthropic` for the host. Over `https` the certificate check
+  stopped it before the key went out; over `http` a name that resolved (a
+  search domain, a hosts entry) got the key header. haest now refuses such
+  a URL wherever it refuses one with an `@` past its host (above), saying
+  it has no host.
 - A providers.json entry with a misspelt key sent the entry's key, and the
   conversation, to OpenAI's or Anthropic's own API. haest read each key by
   its exact name and skipped any other, and an entry with no `baseURL` is
@@ -1286,7 +1294,8 @@ Hosts write less (round two of the review, and what porting brain onto
   comes before that `@`.
 - New `check_endpoint_url` and its `EndpointUrlError`: refuses a URL haest
   is configured to dial when an `@` comes after the first `/`, `?`, `#` or
-  `\` past the scheme, where a URL parser ends the host. The error shows
+  `\` past the scheme, where a URL parser ends the host, or when nothing
+  comes between `scheme://` and the first of them (no host). The error shows
   the URL as `redacted_url` does and says how to write it. For a host's
   own configured URLs too; never for a URL a tool fetches.
 - `HttpError::Timeout` says the wait as given (`no answer within 500ms`):

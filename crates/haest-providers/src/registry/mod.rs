@@ -362,10 +362,11 @@ impl ProviderRegistry {
     /// missing from the key source, and [`ModelError::Unavailable`] when the
     /// providers.json entry cannot be used (the [`EntryProblem`] its source)
     /// or the provider's base URL (a built-in's `*_BASE_URL`, an entry's
-    /// `baseURL`) has an `@` past its host (haest-http's
+    /// `baseURL`) has an `@` past its host or no host (haest-http's
     /// [`EndpointUrlError`](haest_http::EndpointUrlError) its source): a
     /// password with an unescaped `/`, `?` or `#` reads to a URL parser as
-    /// another host.
+    /// another host, and so does the first part of the path of a URL with
+    /// no host.
     pub fn resolve(&self, spec: &str) -> Result<ResolvedModel, ModelError> {
         let (name, model) = parse_model_spec(spec)?;
         if let Some(p) = self.setup.providers.get(name) {

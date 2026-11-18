@@ -76,11 +76,12 @@ pub enum McpStartError {
         /// Why HTTP cannot carry it.
         source: BoxError,
     },
-    /// An HTTP server's URL has an `@` past its host, which a URL parser
-    /// misreads: a password with an unescaped `/`, `?` or `#` ends the host
-    /// there, so the server's requests, its headers with them, would go to
-    /// another host. Nothing is sent. The source shows the URL without its
-    /// credentials and says how to write it.
+    /// An HTTP server's URL has an `@` past its host (a password with an
+    /// unescaped `/`, `?` or `#` ends the host a URL parser reads there), or
+    /// no host (a parser takes the first part of the path for one), so the
+    /// server's requests, its headers with them, would go to another host.
+    /// Nothing is sent. The source shows the URL without its credentials
+    /// and says how to write it.
     #[error("the server's URL is refused")]
     Url(#[source] EndpointUrlError),
     /// The HTTP client could not be built (its TLS set-up failed).

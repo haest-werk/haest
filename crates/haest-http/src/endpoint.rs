@@ -1,6 +1,8 @@
 //! The URLs haest is configured to dial: refused before anything connects
-//! when a URL parser misreads them ([`check_endpoint_url`]), and a path put
-//! under one ([`join_path`]).
+//! when a URL parser would dial another host than the one meant
+//! ([`check_endpoint_url`]), and a path put under one ([`join_path`]).
+
+use std::fmt;
 
 use crate::redact::{after_scheme, redacted_url};
 
@@ -12,11 +14,13 @@ use crate::redact::{after_scheme, redacted_url};
 /// `https://gw.example/v1/chat/completions?key=k`.
 ///
 /// A URL [`check_endpoint_url`] refuses stays refused, and one it passes
-/// stays passed: the path goes in after every `@` of a URL it passes.
+/// stays passed: the path goes in after every `@` of a URL it passes, and
+/// the `//` after the scheme stays.
 #[must_use]
 pub fn join_path(base: &str, path: &str) -> String {
     let (base, after) = base.split_at(base.find(['?', '#']).unwrap_or(base.len()));
-    format!("{}/{path}{after}", base.trim_end_matches('/'))
+    let (scheme, rest) = base.split_at(after_scheme(base));
+    format!("{scheme}{}/{path}{after}", rest.trim_end_matches('/'))
 }
 
 /// What ends a URL's host for a parser: the first of these past the scheme
@@ -25,7 +29,8 @@ pub fn join_path(base: &str, path: &str) -> String {
 const HOST_ENDS: [char; 4] = ['/', '?', '#', '\\'];
 
 /// Refuses `url`, a URL haest is configured to dial, when an `@` comes past
-/// where a URL parser ends its host: before anything connects to it.
+/// where a URL parser ends its host, or when it has no host: before
+/// anything connects to it.
 ///
 /// A parser ends the host at the first `/`, `?` or `#` after the scheme
 /// (and at a `\` in an `http`, `https`, `ws` or `wss` URL). A password that
@@ -47,6 +52,12 @@ const HOST_ENDS: [char; 4] = ['/', '?', '#', '\\'];
 /// the userinfo in that header: hand such a client the URL without its
 /// userinfo, as haest's broker link does.
 ///
+/// A URL with no host after `http://`, `https://`, `ws://` or `wss://`
+/// (`https:///v1`, what `https://${HOST}/v1` makes of an empty variable) is
+/// refused too: a parser skips the extra `/` and takes the first part of
+/// the path for the host, so `https:///anthropic/v1` dials the host
+/// `anthropic`.
+///
 /// For the URLs haest is configured with (a broker's, a provider's base
 /// URL, an MCP server's, a tracker's API root), never a URL a tool fetches:
 /// an `@` in a page's path (`https://registry.example/@scope/pkg`) is the
@@ -55,8 +66,9 @@ const HOST_ENDS: [char; 4] = ['/', '?', '#', '\\'];
 /// # Errors
 ///
 /// [`EndpointUrlError`] when an `@` comes after the first `/`, `?`, `#` or
-/// `\` past the scheme. Its message shows the URL as [`redacted_url`] does,
-/// and says how to write it.
+/// `\` past the scheme, or nothing comes between `scheme://` and the first
+/// of them. Its message shows the URL as [`redacted_url`] does, and says
+/// how to write it.
 ///
 /// ```
 /// use haest_http::check_endpoint_url;
@@ -67,33 +79,59 @@ const HOST_ENDS: [char; 4] = ['/', '?', '#', '\\'];
 /// // The same password, percent-encoded.
 /// assert!(check_endpoint_url("http://user:1234%2Fsecret@broker.example/agents").is_ok());
 /// assert!(check_endpoint_url("https://api.example.com/v1").is_ok());
+/// // No host: a parser would dial the host `v1`.
+/// assert!(check_endpoint_url("https:///v1").is_err());
 /// ```
 pub fn check_endpoint_url(url: &str) -> Result<(), EndpointUrlError> {
-    let rest = &url[after_scheme(url)..];
-    match rest.rfind('@') {
-        Some(at) if rest[..at].contains(HOST_ENDS) => Err(EndpointUrlError {
-            shown: redacted_url(url).into_owned(),
-        }),
-        _ => Ok(()),
-    }
+    let start = after_scheme(url);
+    let rest = &url[start..];
+    let why = match rest.rfind('@') {
+        Some(at) if rest[..at].contains(HOST_ENDS) => Why::AtPastHost,
+        _ if start > 0 && rest.find(HOST_ENDS).map_or(rest.is_empty(), |i| i == 0) => Why::NoHost,
+        _ => return Ok(()),
+    };
+    Err(EndpointUrlError {
+        shown: redacted_url(url).into_owned(),
+        why,
+    })
 }
 
 /// A URL haest is configured to dial that [`check_endpoint_url`] refused: an
-/// `@` comes past where a URL parser ends its host, so it would dial another
-/// host than the one after that `@`. Its message shows the URL without its
-/// credentials ([`redacted_url`]), and says how to write it.
+/// `@` comes past where a URL parser ends its host, so it may dial another
+/// host than the one after that `@`; or it has no host, so a parser takes
+/// the first part of its path for one. Its message shows the URL without
+/// its credentials ([`redacted_url`]), and says how to write it.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error(
-    "{shown} has an @ past its host, which a URL parser misreads: it ends the host at the first /, ?, # or \\, so a password holding one would send the rest of it, and the host after the @, to another host. Percent-encode the password (/ as %2F, ? as %3F, # as %23, \\ as %5C, @ as %40). A URL with an @ meant for its path, query or fragment cannot be used as it is: %40 there makes another URL, which the server may or may not read the same"
-)]
+#[error("{shown} {why}")]
 pub struct EndpointUrlError {
     shown: String,
+    why: Why,
 }
 
 impl EndpointUrlError {
     /// The URL refused, as [`redacted_url`] shows it.
     pub fn url(&self) -> &str {
         &self.shown
+    }
+}
+
+/// Why [`check_endpoint_url`] refused a URL: the rest of its message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Why {
+    AtPastHost,
+    NoHost,
+}
+
+impl fmt::Display for Why {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::AtPastHost => {
+                "has an @ past its host, which haest cannot tell from one that ends a password: a URL parser ends the host at the first /, ?, # or \\, so a password holding one would send the rest of it, and the host after the @, to another host. Percent-encode the password (/ as %2F, ? as %3F, # as %23, \\ as %5C, @ as %40). A URL with an @ meant for its path, query or fragment cannot be used as it is: %40 there makes another URL, which the server may or may not read the same"
+            }
+            Self::NoHost => {
+                "has no host: a URL parser would take the first part of its path for one. Write the host after the //, and check that no variable it is made from is empty"
+            }
+        })
     }
 }
 
@@ -129,6 +167,50 @@ mod tests {
         "http://[::1]:8080/v1",
         "",
     ];
+
+    /// Refused: no host after `scheme://` (an empty variable,
+    /// `https://${HOST}/v1`). A parser takes the first part of the path for
+    /// one: `https:///anthropic` dials the host `anthropic`.
+    const NO_HOST: [&str; 6] = [
+        "https://",
+        "https:///anthropic",
+        "https://?key=k",
+        "http:///openrouter/api/v1",
+        "wss:///agents",
+        "HTTPS://#f",
+    ];
+
+    /// A URL with no host passed, and the joined URL dialed the first part
+    /// of the path as the host. It is refused, and stays refused under a
+    /// path, so the check on a request's URL agrees with the one on its base.
+    #[test]
+    fn a_url_with_no_host_is_refused_with_any_path_under_it() {
+        for url in NO_HOST {
+            let said = check_endpoint_url(url).expect_err(url).to_string();
+            assert!(said.contains("has no host"), "{url}: {said}");
+            let joined = join_path(url, "v1/messages");
+            assert!(check_endpoint_url(&joined).is_err(), "{joined}");
+        }
+        // A host, or `@` with one after it, is a host.
+        for url in ["https://h", "https://@h/v1", "wss://u:p@h:1/x"] {
+            assert_eq!(check_endpoint_url(url), Ok(()), "{url}");
+        }
+    }
+
+    /// An `@` in a path or a query is refused because it cannot be told from
+    /// one that ends a password. A parser reads such a URL right, and the
+    /// refusal does not say it misreads it.
+    #[test]
+    fn the_refusal_of_an_at_in_a_path_or_query_does_not_say_a_parser_misreads_it() {
+        for url in &MISREAD[6..9] {
+            let said = check_endpoint_url(url).expect_err(url).to_string();
+            assert!(!said.contains("misreads"), "{said}");
+            assert!(
+                said.contains("cannot tell from one that ends a password"),
+                "{said}"
+            );
+        }
+    }
 
     #[test]
     fn a_path_goes_after_the_bases_path_and_before_its_query_and_fragment() {
@@ -205,7 +287,14 @@ mod tests {
             for secret in pieces {
                 assert!(!said.contains(secret), "{secret} of {url}: {said}");
             }
-            for hint in ["%2F", "%3F", "%23", "%5C", "%40", "a URL parser misreads"] {
+            for hint in [
+                "%2F",
+                "%3F",
+                "%23",
+                "%5C",
+                "%40",
+                "a URL parser ends the host",
+            ] {
                 assert!(said.contains(hint), "{hint} missing: {said}");
             }
         }
