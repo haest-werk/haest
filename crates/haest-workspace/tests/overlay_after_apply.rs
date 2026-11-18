@@ -5,11 +5,11 @@
 
 mod common;
 
-use std::fs;
+use std::{fs, os::unix::fs::PermissionsExt};
 
 use common::{
     opts, sandbox,
-    spelling::{apply_all, contents, pairs, run},
+    spelling::{apply_all, changes, contents, pairs, paths, run},
     tempdir,
 };
 use haest_core::workspace::Workspace;
@@ -100,4 +100,23 @@ async fn a_directory_the_human_removes_after_an_apply_is_gone_in_the_sandbox() {
     fs::remove_dir_all(dir.join("src")).unwrap();
     let r = ws.shell("test -e src", opts(&dir)).await;
     assert_ne!(r.exit_code, 0, "the sandbox sees the human's delete");
+}
+
+/// A directory whose mode the sandbox set waits as a conflict (the human
+/// changed it meanwhile), while a file in it is applied: the sandbox still
+/// shows its own mode there, as the list does.
+#[tokio::test]
+async fn a_mode_that_waits_stays_in_the_sandbox_after_an_apply_inside_it() {
+    let (_t, dir) = tempdir();
+    fs::create_dir(dir.join("lib")).unwrap();
+    fs::set_permissions(dir.join("lib"), fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(dir.join("lib/a.rs"), "a\n").unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "chmod 700 lib && echo b > lib/a.rs").await;
+    fs::set_permissions(dir.join("lib"), fs::Permissions::from_mode(0o750)).unwrap();
+    let report = changes(&ws).apply().await;
+    assert_eq!(paths(&report.applied), ["/lib/a.rs"], "{report:?}");
+    assert_eq!(paths(&report.skipped), ["/lib"], "{report:?}");
+    let r = ws.shell("stat -c %a lib", opts(&dir)).await;
+    assert_eq!(r.stdout, "700\n", "{r:?}");
 }

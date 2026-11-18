@@ -39,7 +39,8 @@ impl OverlayChanges {
     /// it put on the disk whose copy in the sandbox holds nothing of its own
     /// any more (each file in it read through, and `mkdir -p`'s parents,
     /// which apply makes with it) goes too, where the disk holds that
-    /// directory, so the sandbox reads the disk's.
+    /// directory, so the sandbox reads the disk's. Not one whose mode the
+    /// sandbox set and is still to apply: that mode is its own.
     pub(super) async fn read_through_dirs(&self, applied: &[Change]) {
         let Some(cow) = &self.cow else {
             return;
@@ -54,8 +55,10 @@ impl OverlayChanges {
         {
             let changed = Path::new(&c.path);
             for dir in changed.ancestors().filter(|d| d.parent().is_some()) {
-                let empty = upper.read_dir(dir).await.is_ok_and(|e| e.is_empty());
-                if empty && self.book.on_disk(dir, &mut ways).await.state == Original::Dir {
+                let none_of_its_own = upper.read_dir(dir).await.is_ok_and(|e| e.is_empty())
+                    && self.book.modes.get(dir).is_none();
+                if none_of_its_own && self.book.on_disk(dir, &mut ways).await.state == Original::Dir
+                {
                     let _ = upper.remove(dir, false).await;
                 } else if dir != changed {
                     break;
