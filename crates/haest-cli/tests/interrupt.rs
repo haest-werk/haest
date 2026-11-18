@@ -1,7 +1,5 @@
 //! Ctrl+C on the `haest` binary while no turn runs.
 
-#![cfg(unix)]
-
 mod support;
 
 use std::{

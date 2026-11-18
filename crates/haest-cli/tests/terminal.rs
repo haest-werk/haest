@@ -1,8 +1,6 @@
 //! The `haest` binary on a terminal: what a human types and sees when it
 //! asks for approval.
 
-#![cfg(unix)]
-
 mod support;
 
 use std::{

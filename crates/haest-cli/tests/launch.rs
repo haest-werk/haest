@@ -59,7 +59,6 @@ fn an_unknown_setting_points_at_a_command_that_lists_them() {
 
 /// A variable that is not Unicode, in its name or its value, is skipped: the
 /// launch goes on, and the other variables still count.
-#[cfg(unix)]
 #[test]
 fn a_variable_that_is_not_unicode_is_skipped_never_a_crash() {
     use std::{ffi::OsStr, os::unix::ffi::OsStrExt};

@@ -82,7 +82,7 @@ haest = "0.3"
 ## Run the CLI
 
 ```sh
-cargo install haest-cli               # puts `haest` on your PATH
+cargo install haest-cli               # puts `haest` on your PATH (macOS, Linux: Unix only)
 export OPENROUTER_API_KEY=...         # openrouter: models; anthropic: takes ANTHROPIC_API_KEY, openai: OPENAI_API_KEY
 haest -p "say hi"                     # bare: a model and nothing else
 haest --tools read,grep,glob -p "what is this project?"

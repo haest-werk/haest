@@ -9,13 +9,20 @@
 //!   haest models | sessions   what haest knows / what it has saved
 //!   haest settings            every setting, its value and where it came from
 //!   haest ctl list | events <id> --follow | send <id> "..."   another haest here, by its control socket
+//!
+//! Unix only (macOS, Linux): the terminal, the workspace's process groups
+//! and the control socket are Unix's.
+
+#[cfg(not(unix))]
+compile_error!(
+    "haest-cli runs on Unix only (macOS, Linux): its terminal, process groups and control socket"
+);
 
 mod agents;
 mod args;
 mod ask;
 mod changes;
 mod commands;
-#[cfg(unix)]
 mod ctl;
 mod models;
 mod mods;
@@ -42,13 +49,10 @@ use haest::{
     runtime::{BuildError, SessionFileError, Ui, list_sessions},
     session::{Hub, HubOptions, SessionPrompter, start},
     settings::Settings,
-    transport::{Attached, Broker, Ended, Grant, Stdio},
+    transport::{Attached, Broker, Ended, Grant, Stdio, UnixSocket},
     wire::Origin,
     workspace::RealFs,
 };
-
-#[cfg(unix)]
-use haest::transport::UnixSocket;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -90,10 +94,7 @@ async fn subcommand(cmd: Command, loaded: &Loaded) -> ExitCode {
         Command::Settings => show::settings_report(loaded)
             .iter()
             .for_each(|l| println!("{}", render::inert(l))),
-        #[cfg(unix)]
         Command::Ctl(cmd) => return ctl::run(cmd, &loaded.config.control_dir()).await,
-        #[cfg(not(unix))]
-        Command::Ctl(_) => return fail(2, "haest ctl needs Unix sockets"),
     }
     ExitCode::SUCCESS
 }
@@ -176,28 +177,19 @@ fn control_socket(
         // Watch, and a level this command does not know yet: the least access.
         _ => Grant::watch(Origin::Agent),
     };
-    #[cfg(unix)]
-    {
-        let sid = &session.meta().sid;
-        match UnixSocket::new(&dir).attach(session.clone(), grant) {
-            Ok(attached) => {
-                let id = &sid[..8.min(sid.len())];
-                ui.info(&format!(
-                    "Control socket open ({open}): haest ctl events {id} --follow"
-                ));
-                Some(attached)
-            }
-            Err(e) => {
-                ui.warn(&format!("No control socket: {}", report(&e)));
-                None
-            }
+    let sid = &session.meta().sid;
+    match UnixSocket::new(&dir).attach(session.clone(), grant) {
+        Ok(attached) => {
+            let id = &sid[..8.min(sid.len())];
+            ui.info(&format!(
+                "Control socket open ({open}): haest ctl events {id} --follow"
+            ));
+            Some(attached)
         }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (session, dir, grant);
-        ui.warn("No control socket: it needs Unix sockets.");
-        None
+        Err(e) => {
+            ui.warn(&format!("No control socket: {}", report(&e)));
+            None
+        }
     }
 }
 

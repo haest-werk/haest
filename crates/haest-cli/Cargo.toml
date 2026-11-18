@@ -34,9 +34,8 @@ serde_json = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 # The interactive prompt: line editing and history.
 rustyline = "19"
-
-[target.'cfg(unix)'.dependencies]
 # poll(2) on stdin, so an approval ask's read can be withdrawn (ask.rs).
+# haest-cli is Unix only (a compile_error! elsewhere, src/main.rs).
 libc = "0.2"
 
 [dev-dependencies]

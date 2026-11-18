@@ -6,7 +6,6 @@
     reason = "every test binary includes this module and uses a different part of it"
 )]
 
-#[cfg(unix)]
 pub(crate) mod pty;
 
 use std::{

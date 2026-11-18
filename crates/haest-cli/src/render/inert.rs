@@ -20,19 +20,8 @@ impl Renderer<std::io::Stdout, std::io::Stderr> {
 }
 
 /// `out` is a regular file (`> out.md`), not a terminal, a pipe or a socket.
-#[cfg(unix)]
 pub(crate) fn is_a_file(out: &impl std::os::fd::AsFd) -> bool {
     out.as_fd()
-        .try_clone_to_owned()
-        .map(std::fs::File::from)
-        .and_then(|f| f.metadata())
-        .is_ok_and(|m| m.is_file())
-}
-
-/// `out` is a regular file (`> out.md`), not a console, a pipe or a socket.
-#[cfg(windows)]
-pub(crate) fn is_a_file(out: &impl std::os::windows::io::AsHandle) -> bool {
-    out.as_handle()
         .try_clone_to_owned()
         .map(std::fs::File::from)
         .and_then(|f| f.metadata())
@@ -122,7 +111,6 @@ mod tests {
 
     /// The answer keeps its bytes only into a regular file: a pipe (`| tee
     /// out.md`, `| cat`) can end on the terminal where a question is asked.
-    #[cfg(unix)]
     #[test]
     fn only_a_regular_file_takes_the_answer_byte_for_byte() {
         let file = std::fs::File::open(std::env::current_exe().unwrap()).unwrap();
