@@ -171,7 +171,8 @@ impl GithubTracker {
     /// if any, goes to this host.
     ///
     /// A root with an `@` past its host, or with no host (`https://`, what
-    /// `https://${GHE_HOST}` makes of an empty variable), is never sent to:
+    /// `https://${GHE_HOST}` makes of an empty variable, or `https:`), is
+    /// never sent to:
     /// every call fails (`Failed`) saying why (haest-http's
     /// `check_endpoint_url`). A password holding an unescaped `/`, `?` or
     /// `#` ends the host a URL parser reads there, so the token and the rest

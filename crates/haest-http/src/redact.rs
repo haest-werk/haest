@@ -11,7 +11,7 @@ pub const REDACTED: &str = "<redacted>";
 /// The schemes haest dials, which [`redacted_url`] shows. Any other text
 /// before a `://` may be a credential's (`user:a://b@host`, a token
 /// `ab://cd@host` with no scheme), and is hidden with it.
-const SCHEMES: [&str; 4] = ["http", "https", "ws", "wss"];
+pub(crate) const SCHEMES: [&str; 4] = ["http", "https", "ws", "wss"];
 
 /// Where what follows `url`'s scheme starts: past `scheme://` for one of
 /// [`SCHEMES`], else 0.

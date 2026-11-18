@@ -353,13 +353,17 @@ write instead.
   search domain, a hosts entry) got the key header. A parser drops the
   spaces and control characters around a URL and the tabs, CRs and LFs in
   it, so a CRLF `.env` that keeps the `\r` of an empty `GATEWAY_HOST=` did
-  the same (`https://\r/anthropic`). haest now refuses such a URL wherever
-  it refuses one with an `@` past its host (above), saying it has no host.
+  the same (`https://\r/anthropic`). So did a URL that is a scheme with
+  only slashes after it (`http:`, `http:/`): a parser skips them, so
+  `http:` with `/v1/messages` under it dialed the host `v1`. haest now
+  refuses such a URL wherever it refuses one with an `@` past its host
+  (above), saying it has no host; a host with no `//`
+  (`http:localhost:8080`) still works.
   The GitHub tracker cut the `//` after the scheme with a root's trailing
   `/`, so `https://${GHE_HOST}` with the variable empty became `https:`,
   and its token went to `https:/repos/...`, which a parser reads as the
-  host `repos`. It keeps that `//` now, checks each URL as it would send
-  it, and cuts an Enterprise Server root's `/v3` only from the path (a
+  host `repos`. It keeps that `//` now, checks the root and each URL as it
+  would send it, and cuts an Enterprise Server root's `/v3` only from the path (a
   root `https://v3` sent the token to the host `graphql`).
 - A providers.json entry with a misspelt key sent the entry's key, and the
   conversation, to OpenAI's or Anthropic's own API. haest read each key by
@@ -1375,7 +1379,9 @@ Hosts write less (round two of the review, and what porting brain onto
   is configured to dial when an `@` comes after the first `/`, `?`, `#` or
   `\` past the scheme, where a URL parser ends the host, or when it has no
   host: nothing between `scheme://` and the first of them, or only a
-  userinfo or a port (`wss://:8443/agents`, `https://u:p@/v1`). It reads
+  userinfo or a port (`wss://:8443/agents`, `https://u:p@/v1`), or a
+  scheme with only `/` or `\` after it (`https:`, `https:/`; a host with
+  no `//`, `http:localhost:8080`, passes). It reads
   the URL as a parser does, without the spaces and control characters
   around it and the tabs, CRs and LFs in it. The error shows the URL as
   `redacted_url` does and says how to write it. For a host's own

@@ -68,6 +68,29 @@ async fn an_api_root_with_no_host_is_never_sent_to() {
     }
 }
 
+/// A root that is a scheme with only slashes after it (`https:`, `https:/`)
+/// passed: a request URL under it (`https:/repos/...`) reads to a parser as
+/// the host `repos`, which was sent the token, and GraphQL went to the host
+/// `graphql`. A request URL under it cannot be told from one under a root
+/// whose host is `repos`, so the root is checked too: every call fails and
+/// sends nothing.
+#[tokio::test]
+async fn an_api_root_of_a_scheme_alone_is_never_sent_to() {
+    for root in ["https:", "https:/", "https:\\", "http:"] {
+        let http = FakeHttp::new([ok(json!([])), ok(json!({"data": {}}))]);
+        let gh = github(http.clone()).with_api_url(root);
+        let listed = gh.list(&filter(5)).await.map(|_| ());
+        let asked = gh.graphql("query { viewer { login } }", json!({})).await;
+        for call in [listed, asked.map(|_| ())] {
+            assert!(
+                matches!(call, Err(TrackerError::Failed(_))),
+                "{root}: {call:?}"
+            );
+        }
+        assert!(http.calls().is_empty(), "{root}: {:?}", http.sent());
+    }
+}
+
 /// A root whose host is `v3` (no path) lost its host to the cut of an
 /// Enterprise Server root's `/v3`: its GraphQL endpoint was
 /// `https://graphql`, another host, sent the token. Only a `/v3` in the

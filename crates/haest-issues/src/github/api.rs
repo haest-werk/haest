@@ -150,8 +150,10 @@ impl GithubTracker {
 
     /// One request; the answer's JSON (Null for an empty body). A 404 or 410
     /// becomes `NotFound(missing)`. A URL with an `@` past its host, or with
-    /// no host, is never sent to ([`check_endpoint_url`], on the URL as it
-    /// would be sent): `Failed`, saying why.
+    /// no host, is never sent to ([`check_endpoint_url`], on the root and
+    /// on the URL as it would be sent): `Failed`, saying why. The root is
+    /// checked too because a URL under a root that is a scheme alone
+    /// (`https:/repos/...` under `https:`) reads as one with a host.
     pub(super) async fn call(
         &self,
         method: Method,
@@ -159,7 +161,9 @@ impl GithubTracker {
         body: Option<Value>,
         missing: &str,
     ) -> Result<Value, TrackerError> {
-        check_endpoint_url(&url).map_err(|e| TrackerError::Failed(e.to_string()))?;
+        check_endpoint_url(&self.api)
+            .and_then(|()| check_endpoint_url(&url))
+            .map_err(|e| TrackerError::Failed(e.to_string()))?;
         let (status, answer) = self
             .exchange(self.request(method, url, body.as_ref()))
             .await

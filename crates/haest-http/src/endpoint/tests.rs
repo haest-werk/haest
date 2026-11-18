@@ -75,6 +75,50 @@ const HOST_THERE: [&str; 7] = [
     "\thttps://u:p@gw.example/v1",
 ];
 
+/// Refused too: `http`, `https`, `ws` or `wss` with nothing after its `:`
+/// but `/` and `\` up to its query, its fragment or its end. A parser skips
+/// them, so the first part of a path joined under it is the host: `https:`
+/// and `v1/messages` dial the host `v1`.
+const BARE_SCHEME: [&str; 8] = [
+    "https:",
+    "https:/",
+    "https:\\",
+    "HTTP:\\\\",
+    "wss:?x",
+    "http:#f",
+    "https:\r",
+    " https:/ ",
+];
+
+/// Passed: no `//`, but a host after the scheme, which a parser dials.
+const HOST_WITHOUT_SLASHES: [&str; 3] = [
+    "http:localhost:8080/v1",
+    "https:/anthropic/v1",
+    "http:\\gw.example\\v1",
+];
+
+/// A scheme with only slashes after it passed: the check read no authority
+/// without `scheme://`, and a path joined under it dialed its first part
+/// as the host, with the key. It is refused, under any path too; a scheme
+/// with a host after it and no `//` still passes.
+#[test]
+fn a_scheme_with_only_slashes_after_it_is_refused() {
+    for url in BARE_SCHEME {
+        let refused = check_endpoint_url(url);
+        assert!(
+            matches!(&refused, Err(e) if e.why == Why::NoHost),
+            "{url:?}: {refused:?}"
+        );
+        let joined = join_path(url, "v1/messages");
+        assert!(check_endpoint_url(&joined).is_err(), "{joined:?}");
+    }
+    for url in HOST_WITHOUT_SLASHES {
+        assert_eq!(check_endpoint_url(url), Ok(()), "{url:?}");
+        let joined = join_path(url, "v1/messages");
+        assert_eq!(check_endpoint_url(&joined), Ok(()), "{joined:?}");
+    }
+}
+
 /// A URL with no host passed, and the joined URL dialed the first part
 /// of the path as the host. It is refused, and stays refused under a
 /// path, so the check on a request's URL agrees with the one on its base.
@@ -249,5 +293,19 @@ fn a_parser_dials_another_host_for_a_refused_url_and_the_meant_one_for_a_passed_
     }
     for url in &NO_HOST_PART[8..] {
         assert_eq!(host(url).as_deref(), Some("anthropic"), "{url:?}");
+    }
+    // A scheme with only slashes, a path put under it: the path's first
+    // part is the host.
+    for (joined, dialed) in [
+        ("https:/v1/messages", "v1"),
+        ("HTTP:\\\\/v1/messages", "v1"),
+        ("https:\r/repos/o/r", "repos"),
+        ("wss:/agents?x", "agents"),
+    ] {
+        assert_eq!(host(joined).as_deref(), Some(dialed), "{joined:?}");
+    }
+    let meant = ["localhost", "anthropic", "gw.example"];
+    for (url, meant) in HOST_WITHOUT_SLASHES.into_iter().zip(meant) {
+        assert_eq!(host(url).as_deref(), Some(meant), "{url:?}");
     }
 }

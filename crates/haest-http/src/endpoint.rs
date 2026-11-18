@@ -4,7 +4,7 @@
 
 use std::{borrow::Cow, fmt};
 
-use crate::redact::{after_scheme, redacted_url};
+use crate::redact::{SCHEMES, after_scheme, redacted_url};
 
 /// `path` under `base`, a URL haest is configured with (a provider's base
 /// URL, an Image API's): after `base`'s path, one `/` between however many
@@ -15,10 +15,15 @@ use crate::redact::{after_scheme, redacted_url};
 ///
 /// A URL [`check_endpoint_url`] refuses stays refused, and one it passes
 /// stays passed: the path goes in after every `@` of a URL it passes, and
-/// the `//` after the scheme stays.
+/// the `//` after the scheme stays. A scheme with only slashes after it
+/// (`https:`) has no host to put the path under: the path goes after
+/// `scheme://`, so the URL still has none (`https:///v1/messages`).
 #[must_use]
 pub fn join_path(base: &str, path: &str) -> String {
     let (base, after) = base.split_at(base.find(['?', '#']).unwrap_or(base.len()));
+    if let Some(scheme) = bare_scheme(&as_parsed(base)) {
+        return format!("{scheme}:///{path}{after}");
+    }
     let (scheme, rest) = base.split_at(after_scheme(base));
     format!("{scheme}{}/{path}{after}", rest.trim_end_matches('/'))
 }
@@ -71,7 +76,11 @@ pub fn authority(url: &str) -> std::ops::Range<usize> {
 /// refused too: a parser skips the extra `/` and takes the first part of
 /// the path for the host, so `https:///anthropic/v1` dials the host
 /// `anthropic`. So is one whose authority holds only a userinfo or a port
-/// (`wss://:8443/agents`, `https://user:pass@/v1`), which no dial reaches.
+/// (`wss://:8443/agents`, `https://user:pass@/v1`), which no dial reaches,
+/// and a scheme with nothing after it but `/` or `\` (`https:`, `https:/`):
+/// a parser skips them, so a path joined under it dials the path's first
+/// part. A host after the scheme with no `//` (`http:localhost:8080`) is a
+/// host, and passes.
 ///
 /// The check reads the URL as a parser does: without the spaces and control
 /// characters before and after it, and without any tab, CR or LF in it. A
@@ -87,7 +96,8 @@ pub fn authority(url: &str) -> std::ops::Range<usize> {
 ///
 /// [`EndpointUrlError`] when an `@` comes after the first `/`, `?`, `#` or
 /// `\` past the scheme, or no host comes between `scheme://` (and a
-/// userinfo's last `@`) and the port or the first of them. Its message
+/// userinfo's last `@`) and the port or the first of them, or only `/` and
+/// `\` come after `scheme:` up to its query, fragment or end. Its message
 /// shows the URL as [`redacted_url`] does, and says how to write it.
 ///
 /// ```
@@ -103,6 +113,8 @@ pub fn authority(url: &str) -> std::ops::Range<usize> {
 /// assert!(check_endpoint_url("https:///v1").is_err());
 /// // No host before the port: no dial reaches it.
 /// assert!(check_endpoint_url("wss://:8443/agents").is_err());
+/// // A scheme alone: a parser would dial the first part of a path under it.
+/// assert!(check_endpoint_url("https:").is_err());
 /// ```
 pub fn check_endpoint_url(url: &str) -> Result<(), EndpointUrlError> {
     let seen = as_parsed(url);
@@ -110,6 +122,7 @@ pub fn check_endpoint_url(url: &str) -> Result<(), EndpointUrlError> {
     let why = match seen.rfind('@') {
         Some(at) if at >= host.end => Why::AtPastHost,
         _ if host.start > 0 && matches!(host_of(&seen[host]), "" | "[]") => Why::NoHost,
+        _ if bare_scheme(&seen).is_some() => Why::NoHost,
         _ => return Ok(()),
     };
     Err(EndpointUrlError {
@@ -128,6 +141,19 @@ fn as_parsed(url: &str) -> Cow<'_, str> {
     } else {
         Cow::Borrowed(url)
     }
+}
+
+/// The scheme of `seen`, a URL as a parser reads it, when it is `http`,
+/// `https`, `ws` or `wss` with nothing after its `:` but `/` and `\` up to
+/// its query, its fragment or its end (`https:`, `https:/`, `https://`): a
+/// parser skips them and takes the first part of a path under it for the
+/// host.
+fn bare_scheme(seen: &str) -> Option<&str> {
+    let (scheme, rest) = seen.split_once(':')?;
+    let rest = rest.trim_start_matches(['/', '\\']);
+    let bare = SCHEMES.iter().any(|s| s.eq_ignore_ascii_case(scheme))
+        && (rest.is_empty() || rest.starts_with(['?', '#']));
+    bare.then_some(scheme)
 }
 
 /// The host in `authority` (`user:password@host:port`): after its last `@`,
