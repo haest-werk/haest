@@ -97,6 +97,59 @@ async fn a_key_no_entry_has_is_refused_and_nothing_is_sent() {
     assert!(t.requests().is_empty(), "nothing sent");
 }
 
+/// A `baseURL`, `apiKey` or `apiKeyEnv` that is there but not a string
+/// (`null`, which a generator writes for an unset value, a number, a list)
+/// read as absent. A `baseURL` read so made the entry one for the dialect's
+/// own API, which got the gateway's key and the conversation. Each is
+/// refused, naming the key and never the value, and nothing is sent.
+#[tokio::test]
+async fn a_url_or_key_that_is_not_a_string_is_refused_and_nothing_is_sent() {
+    let t = FakeHttp::new([FakeReply::status(400, "")]);
+    let custom = entries(json!({
+        "null": {"type": "anthropic", "baseURL": null, "apiKeyEnv": "GW"},
+        "number": {"type": "anthropic", "baseURL": 42, "apiKeyEnv": "GW"},
+        "list": {"baseURL": ["https://gw.example"], "apiKeyEnv": "GW"},
+        "object": {"baseURL": {"url": "https://gw.example"}, "apiKeyEnv": "GW"},
+        "key": {"baseURL": "http://x/v1", "apiKey": 987_654_321},
+        "env": {"baseURL": "http://x/v1", "apiKeyEnv": false},
+    }));
+    let reg = over(
+        ProviderRegistry::new(keys(&[("GW", "gw-secret")])).with_custom(custom),
+        &t,
+    );
+    for (name, key) in [
+        ("null", "baseURL"),
+        ("number", "baseURL"),
+        ("list", "baseURL"),
+        ("object", "baseURL"),
+        ("key", "apiKey"),
+        ("env", "apiKeyEnv"),
+    ] {
+        let resolved = reg.resolve(&format!("{name}:m"));
+        if let Ok(r) = &resolved {
+            collect(r.provider().stream(request(r.model()))).await;
+        }
+        let sent: Vec<String> = t.requests().into_iter().map(|r| r.url).collect();
+        let Err(e @ ModelError::Unavailable { .. }) = resolved else {
+            panic!("{name}: resolved, and sent to {sent:?}");
+        };
+        let said = haest_core::error::report(&e);
+        assert!(!said.contains("987654321"), "{said}");
+        let problem = bad_entry(&reg, &format!("{name}:m")).map(|(_, p)| p);
+        assert!(
+            matches!(&problem, Some(EntryProblem::NotAString { key: k, .. }) if *k == key),
+            "{name}: {problem:?}"
+        );
+    }
+    assert!(t.requests().is_empty(), "nothing sent");
+    // No key at all still means the default.
+    let plain = CustomProviderConfig::from_json(&json!({"type": "anthropic"})).unwrap();
+    assert_eq!(
+        (plain.base_url, plain.api_key, plain.api_key_env),
+        (None, None, None)
+    );
+}
+
 #[test]
 fn an_entry_that_is_not_an_object_is_refused() {
     let custom = entries(json!({"local": "http://localhost:1234/v1"}));

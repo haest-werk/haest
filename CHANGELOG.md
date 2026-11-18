@@ -371,6 +371,14 @@ write instead.
   is close (`baseUrl` and `base_url` for `baseURL`, `header` for
   `headers`). Nothing is sent. An entry with a key of its own that the
   TypeScript haest skipped (a `"_comment"`) fails too: delete the key.
+- A providers.json `baseURL` that was not a string read as no `baseURL`,
+  so the entry's key and the conversation went to OpenAI's or Anthropic's
+  own API the same way. `null` is what a generator writes for an unset
+  value (Python's `json.dump` of `os.environ.get("GATEWAY_URL")`). A
+  `baseURL`, `apiKey` or `apiKeyEnv` that is not a string, `null`
+  included, now fails that entry when its provider is resolved
+  (`EntryProblem::NotAString`), naming the key and the type, never the
+  value. Nothing is sent. An entry leaves one unset by not having the key.
 - haest-issues' `GithubTracker` read, changed, deleted and linked issues in
   any repository the model named (`{"id": "victim/secret#1"}`), with the
   host's token, though it is one repository's tracker. The issue a call

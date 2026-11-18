@@ -35,6 +35,18 @@ pub enum EntryProblem {
         /// letters off.
         meant: Option<&'static str>,
     },
+    /// `baseURL`, `apiKey` or `apiKeyEnv` is there but is not a string
+    /// (`null`, a number, a list): refused, so a `baseURL` a generator wrote
+    /// as `null` never sends the entry's key and the conversation to the
+    /// dialect's own API. An entry for that API has no `baseURL` at all.
+    #[error("\"{key}\" is {found}, not a string; delete the key to leave it unset")]
+    NotAString {
+        /// The key.
+        key: &'static str,
+        /// What its value is (`null`, `a number`, `a list`, ...), never the
+        /// value itself: an `apiKey` written as a number is a key.
+        found: &'static str,
+    },
     /// `type` names no wire dialect haest speaks: a typo is refused, never
     /// sent as Chat Completions. A `type` that is not a string is its JSON
     /// text here.

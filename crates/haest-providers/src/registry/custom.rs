@@ -56,7 +56,10 @@ pub enum Dialect ("provider type") {
 /// A key this table does not list is refused
 /// ([`EntryProblem::UnknownKey`]), naming the key meant when one is close:
 /// read past, a misspelt `baseURL` (`baseUrl`) would send the entry's key
-/// and the conversation to the dialect's own API.
+/// and the conversation to the dialect's own API. So is a `baseURL`,
+/// `apiKey` or `apiKeyEnv` that is not a string
+/// ([`EntryProblem::NotAString`]), `null` included: an entry leaves one
+/// unset by not having the key.
 ///
 /// `reasoningEffort` and `pricing` apply to `type: "openai"` only.
 /// `reasoningEffort`: send a top-level `reasoning_effort`, fitted to the listed
@@ -199,8 +202,20 @@ fn edit_distance(a: &[u8], b: &[u8]) -> usize {
     row[b.len()]
 }
 
-fn opt_string(v: &Value, key: &str) -> Option<String> {
-    v.get(key).and_then(Value::as_str).map(str::to_string)
+/// The string `key` holds, None when the entry has no `key`; any other value
+/// (`null` included) is refused, so a `baseURL` that is not a string never
+/// reads as "the dialect's own API".
+fn opt_string(v: &Value, key: &'static str) -> Result<Option<String>, EntryProblem> {
+    let found = match v.get(key) {
+        None => return Ok(None),
+        Some(Value::String(s)) => return Ok(Some(s.clone())),
+        Some(Value::Null) => "null",
+        Some(Value::Bool(_)) => "a boolean",
+        Some(Value::Number(_)) => "a number",
+        Some(Value::Array(_)) => "a list",
+        Some(Value::Object(_)) => "an object",
+    };
+    Err(EntryProblem::NotAString { key, found })
 }
 
 /// `type`: no value is Chat Completions; anything but a known word is refused.
@@ -273,8 +288,9 @@ impl CustomProviderConfig {
     ///
     /// The [`EntryProblem`] when the entry is not a JSON object, has a key
     /// [`CustomProviderConfig`]'s table does not list (`baseUrl` for
-    /// `baseURL`), its `type`
-    /// is neither `"openai"` nor `"anthropic"`,
+    /// `baseURL`), its `type` is neither `"openai"` nor `"anthropic"`, its
+    /// `baseURL`, `apiKey` or `apiKeyEnv` is not a string (`null` included:
+    /// delete the key to leave it unset),
     /// `reasoningEffort` lacks an `efforts` array or a `mandatory` boolean, or
     /// a `pricing` row lacks a numeric `input`, `cachedInput` or `output`, or
     /// has a `cacheWrite` that is not a number.
@@ -316,9 +332,9 @@ impl CustomProviderConfig {
             .collect();
         Ok(Self {
             dialect: dialect(v.get("type"))?,
-            base_url: opt_string(v, "baseURL"),
-            api_key: opt_string(v, "apiKey"),
-            api_key_env: opt_string(v, "apiKeyEnv"),
+            base_url: opt_string(v, "baseURL")?,
+            api_key: opt_string(v, "apiKey")?,
+            api_key_env: opt_string(v, "apiKeyEnv")?,
             headers,
             reasoning_effort: reasoning(v.get("reasoningEffort"))?,
             pricing: pricing(v.get("pricing"))?,
