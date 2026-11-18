@@ -9,6 +9,7 @@ use std::{
 };
 
 use haest_core::{__private::is_var_name, fs::resolve_path};
+use haest_providers::http::check_endpoint_url;
 
 use crate::{
     fields::{up_to, whole_up_to},
@@ -94,6 +95,9 @@ pub(crate) fn check(def: &Def, raw: &str) -> Result<String, String> {
             _ => Ok(word.to_string()),
         },
         Kind::Text | Kind::Path => Ok(word.to_string()),
+        Kind::Url => check_endpoint_url(word)
+            .map(|()| word.to_string())
+            .map_err(|refused| refused.to_string()),
         Kind::Choice(words) => words
             .iter()
             .find(|w| w.eq_ignore_ascii_case(word))

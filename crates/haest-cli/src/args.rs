@@ -172,6 +172,7 @@ fn setting_arg(def: &Def) -> Arg {
         Kind::List(_) => arg.value_name("LIST"),
         Kind::Number => arg.value_name("N"),
         Kind::Path => arg.value_name("DIR"),
+        Kind::Url => arg.value_name("URL"),
         Kind::Choice(_) | Kind::Text => arg.value_name("VALUE"),
         Kind::Vars => arg.action(ArgAction::Append).value_name("NAME=VALUE"),
         // A kind haest-config adds later takes a plain value until named here.

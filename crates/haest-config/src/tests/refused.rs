@@ -97,6 +97,39 @@ async fn a_setting_no_one_has_is_unknown_wherever_it_is_given() {
     }
 }
 
+/// A broker URL whose password holds an unescaped `/` reads to every URL
+/// parser as another host (`user`, port 1234) with the rest of the
+/// password in the path: it is refused where it is given, saying why and
+/// how to write it, and showing no part of the password. Percent-encoded,
+/// it loads.
+#[tokio::test]
+async fn a_broker_url_a_parser_misreads_is_refused_where_it_is_given() {
+    let url = "wss://user:1234/s3cret@broker.example/agents";
+    let quoted = format!("broker_url = \"{url}\"");
+    let in_file = [(USER_FILE, quoted.as_str())];
+    let cases = [
+        (run("/w", &in_file, &[], &[]).await, file(USER_FILE)),
+        (
+            run("/w", &[], &[("HAEST_BROKER_URL", url)], &[]).await,
+            Source::Env("HAEST_BROKER_URL".into()),
+        ),
+        (
+            run("/w", &[], &[], &[("broker_url", url)]).await,
+            Source::Flag("broker-url".into()),
+        ),
+    ];
+    for (loaded, at) in cases {
+        let err = loaded.expect_err(&at.to_string());
+        assert_eq!(refused(&err), Some((&at, "broker_url")), "{err}");
+        let said = err.to_string();
+        assert!(!said.contains("s3cret") && !said.contains("1234"), "{said}");
+        assert!(said.contains("%2F") && said.contains("%40"), "{said}");
+    }
+    let encoded = "wss://user:1234%2Fs3cret@broker.example/agents";
+    let r = run("/w", &[], &[("HAEST_BROKER_URL", encoded)], &[]).await;
+    assert_eq!(r.unwrap().config.broker_url.as_deref(), Some(encoded));
+}
+
 /// A count (steps, tokens) given a fraction must not quietly become a
 /// smaller one: `max_turn_steps = 0.5` read as 0 would turn the cap off. A
 /// time (`subagent_minutes`) takes the fraction as it is.

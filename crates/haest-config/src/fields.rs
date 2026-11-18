@@ -114,6 +114,15 @@ pub struct Config {
     pub control_dir: Option<PathBuf>,
     /// The broker the conversation links to, `ws://` or `wss://`; None = no
     /// link. Its token is a key (`HAEST_BROKER_TOKEN`), never a setting.
+    ///
+    /// The loader refuses one with an `@` past its host ([`Kind::Url`]):
+    /// `wss://agent:12/34@broker.example/agents` reads to a URL parser as
+    /// the host `agent` on port 12, which would be sent the rest of the
+    /// password in the path. A password goes in percent-encoded (`/` as
+    /// `%2F`). [`Config::set`] writes it unchecked; the broker link checks it
+    /// again before it dials.
+    ///
+    /// [`Kind::Url`]: crate::Kind::Url
     pub broker_url: Option<String>,
     /// What the broker may do over the link. Default watch.
     pub broker_access: BrokerAccess,

@@ -39,6 +39,12 @@ pub enum Kind {
     Number,
     /// Any text, as written.
     Text,
+    /// A URL haest dials, as written. One with an `@` past its host is
+    /// refused: a URL parser ends the host at the first `/`, `?` or `#`, so
+    /// a password holding one unescaped would send the rest of it, and the
+    /// host after the `@`, to another host (haest-http's
+    /// `check_endpoint_url`).
+    Url,
     /// A dir: `~/x` is in the home dir, `x` in the working dir.
     Path,
     /// One of these words.
@@ -167,7 +173,7 @@ const AGENTS: &str = "Subagents";
 const SESSION: &str = "Watching and driving";
 const PATHS: &str = "Paths";
 
-use Kind::{Bool, Choice, List, Number, Path, Text, Vars};
+use Kind::{Bool, Choice, List, Number, Path, Text, Url, Vars};
 
 /// Every setting haest has, one row each, in the order `--help` and
 /// `haest settings` list them: key, heading, kind, an example value, help.
@@ -234,7 +240,7 @@ pub const DEFS: &[Def] = &[
         .scope(Scope::User)
         .detail("The socket goes in `control_dir`, named after the conversation's stream id and readable by you only (the dir 0700, the socket 0600), with a discovery file beside it that `haest ctl list` reads; both go when haest exits. What arrives over a command socket is another program's input: it counts against `max_agent_turns`, and at an open prompt it waits for Enter. Never from a project's file: a repository cannot open a socket into your conversation."),
     def("control_dir", SESSION, Path, "~/.haest/control", "Where control sockets and their discovery files go (unset: <data_dir>/control)").scope(Scope::User),
-    def("broker_url", SESSION, Text, "wss://broker.example/agents", "A broker the conversation links to over a WebSocket (ws:// or wss://), so a fleet view elsewhere watches it; its token is the key HAEST_BROKER_TOKEN")
+    def("broker_url", SESSION, Url, "wss://broker.example/agents", "A broker the conversation links to over a WebSocket (ws:// or wss://), so a fleet view elsewhere watches it; its token is the key HAEST_BROKER_TOKEN")
         .scope(Scope::User)
         .detail("haest dials out: the first frame is `hello` with the token in it (never in the URL), the broker answers with the last seq it holds, and the stream resumes there; a link that drops is dialed again, after a random wait that doubles each try (at most 30 s), and so is one the broker goes silent on (haest pings a broker it has not heard from in 20 s, and gives up on it after 60 s of silence). A broker that refuses the token (close 4401 or 4408, or a 401 or 403 handshake) is not dialed again, and haest says so. Never from a project's file: a repository cannot send your conversation somewhere."),
     def("broker_access", SESSION, Choice(BrokerAccess::WORDS), "command", "What the broker may do: watch (the stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too)").scope(Scope::User),

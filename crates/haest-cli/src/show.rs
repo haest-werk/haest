@@ -50,11 +50,11 @@ fn rows(loaded: &Loaded, def: &Def) -> Vec<(String, String)> {
     vec![row]
 }
 
-/// A value as the report shows it. The broker's URL goes without its
+/// A value as the report shows it. A URL (the broker's) goes without its
 /// userinfo, query values and fragment, as the "Broker link" line says it:
 /// the URL is not where a secret goes, but one may be there.
 fn shown(def: &Def, value: &str) -> String {
-    if def.key == "broker_url" {
+    if def.kind == Kind::Url {
         haest::http::redacted_url(value).into_owned()
     } else {
         value.to_string()
@@ -67,18 +67,21 @@ mod tests {
 
     use super::*;
 
-    /// The report for bare settings in `/w` with these flags.
-    async fn report(flags: &[(&str, &str)]) -> Vec<String> {
+    /// Bare settings in `/w` with these flags.
+    async fn load(flags: &[(&str, &str)]) -> Result<Loaded, haest::config::ConfigError> {
         let flags: Vec<(String, String)> = flags
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        let loaded = Loader::new(Settings::bare("/w", "/h"))
+        Loader::new(Settings::bare("/w", "/h"))
             .flags(flags)
             .load(&MemFs::new())
             .await
-            .unwrap();
-        settings_report(&loaded)
+    }
+
+    /// The report for bare settings in `/w` with these flags.
+    async fn report(flags: &[(&str, &str)]) -> Vec<String> {
+        settings_report(&load(flags).await.unwrap())
     }
 
     #[tokio::test]
@@ -117,26 +120,24 @@ mod tests {
     }
 
     /// The report is what people paste when they ask for help: a broker
-    /// URL shows where it goes, never a credential riding in it.
+    /// URL shows where it goes, never a credential riding in it. One whose
+    /// password a parser misreads (a pasted base64 token, its `/`
+    /// unescaped) is refused at load, and the refusal shows none of it.
     #[tokio::test]
     async fn the_broker_url_is_shown_without_its_credentials() {
-        let cases = [
-            (
-                "wss://user:s3cret@broker.example/agents?token=t0ken#k3y",
-                &["s3cret", "t0ken", "k3y"][..],
-            ),
-            // A pasted base64 token, its `/` unescaped.
-            (
-                "wss://agent:abc/def+ghi=@broker.example/agents",
-                &["agent:", "abc", "def+ghi"][..],
-            ),
-        ];
-        for (url, secrets) in cases {
-            let shown = report(&[("broker_url", url)]).await.join("\n");
-            for secret in secrets {
-                assert!(!shown.contains(secret), "{secret} in {shown}");
-            }
-            assert!(shown.contains("broker.example/agents"), "{shown}");
+        let url = "wss://user:s3cret@broker.example/agents?token=t0ken#k3y";
+        let shown = report(&[("broker_url", url)]).await.join("\n");
+        for secret in ["s3cret", "t0ken", "k3y"] {
+            assert!(!shown.contains(secret), "{secret} in {shown}");
         }
+        assert!(shown.contains("broker.example/agents"), "{shown}");
+
+        let misread = "wss://agent:abc/def+ghi=@broker.example/agents";
+        let refused = load(&[("broker_url", misread)]).await.unwrap_err();
+        let said = haest::core::error::report(&refused);
+        for secret in ["agent:", "abc", "def+ghi"] {
+            assert!(!said.contains(secret), "{secret} in {said}");
+        }
+        assert!(said.contains("broker.example/agents"), "{said}");
     }
 }

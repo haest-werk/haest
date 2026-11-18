@@ -63,6 +63,7 @@ fn takes(def: &Def) -> String {
             None => "a number, 0 or more".into(),
         },
         Kind::Text => "text".into(),
+        Kind::Url => "a URL; one with an `@` past its host is refused: a URL parser ends the host at the first `/`, `?` or `#`, so a password holding one would send the rest of it, and the host after the `@`, to another host. Percent-encode the password (`/` as `%2F`, `?` as `%3F`, `#` as `%23`, `\\` as `%5C`, `@` as `%40`), and an `@` meant for the path or the query as `%40`".into(),
         Kind::Path => "a directory: `~/x` is under your home dir, `x` under the working dir".into(),
         Kind::Choice(w) => format!("one of {}", words(w)),
         Kind::List(Some(w)) => format!("a list of {}; `all` (every one) or `none`", words(w)),
@@ -139,7 +140,9 @@ fn toml_line(def: &Def) -> Option<String> {
             let (name, value) = var_parts(raw);
             format!("[{}]\n{name} = {}", def.key, string(value))
         }
-        Kind::Text | Kind::Path | Kind::Choice(_) => format!("{} = {}", def.key, string(raw)),
+        Kind::Text | Kind::Url | Kind::Path | Kind::Choice(_) => {
+            format!("{} = {}", def.key, string(raw))
+        }
     })
 }
 

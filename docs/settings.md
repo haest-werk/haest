@@ -736,7 +736,7 @@ flag          --control-dir '~/.haest/control'
 A broker the conversation links to over a WebSocket (ws:// or wss://), so a fleet view elsewhere watches it; its token is the key HAEST_BROKER_TOKEN.
 haest dials out: the first frame is `hello` with the token in it (never in the URL), the broker answers with the last seq it holds, and the stream resumes there; a link that drops is dialed again, after a random wait that doubles each try (at most 30 s), and so is one the broker goes silent on (haest pings a broker it has not heard from in 20 s, and gives up on it after 60 s of silence). A broker that refuses the token (close 4401 or 4408, or a 401 or 403 handshake) is not dialed again, and haest says so. Never from a project's file: a repository cannot send your conversation somewhere.
 
-- Takes: text
+- Takes: a URL; one with an `@` past its host is refused: a URL parser ends the host at the first `/`, `?` or `#`, so a password holding one would send the rest of it, and the host after the `@`, to another host. Percent-encode the password (`/` as `%2F`, `?` as `%3F`, `#` as `%23`, `\` as `%5C`, `@` as `%40`), and an `@` meant for the path or the query as `%40`
 - Default: unset
 - Set in: your own config file, its variable, its flag; never a project's file or a profile
 
