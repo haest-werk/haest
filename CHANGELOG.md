@@ -261,6 +261,28 @@ write instead.
   disk: one that moved since the scan (an earlier write of the apply under
   another spelling, or the human saving it meanwhile) is skipped as a
   conflict and stays listed.
+- A URL's credentials showed in Debug output: haest-http's `Request`
+  printed its URL as it was (and its `Authorization` header, and
+  `Response` its `set-cookie`); `AnthropicOptions`, `CompatOptions`,
+  `ResponsesOptions`, `CustomProviderConfig` and haest-issues'
+  `GithubTracker` their base URL (a gateway that takes its credentials in
+  the URL); and haest-mcp's `HttpTransport` (and the `McpTransport`,
+  `McpServerConfig` and `RuntimeInputs` holding one) its own, so
+  `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
+  password and the key. A URL in haest's Debug output now shows no
+  userinfo, no query value and no fragment
+  (`https://<redacted>@docs.example.com/mcp?api_key=<redacted>`), a header
+  its name without its value, and a request's body its length. It fails
+  safe for a password a parser misreads: an unescaped `/`, `?`, `#` or `@`
+  in it (a pasted base64 token; about half of them hold a `/`) ends the
+  authority a parser sees, so `wss://agent:abc/def@broker.example/agents`
+  reads as the host `agent` and a path. Everything between the scheme and
+  the last `@` is hidden, nothing past the scheme shows when a `?` or `#`
+  comes before that `@`, and the scheme shows only when it is `http`,
+  `https`, `ws` or `wss`. A URL with an `@` past its host shows less than
+  it could (`https://<redacted>@scope/pkg`), never a credential.
+  `redacted_url` and the `haest` command (`haest settings`, the "Broker
+  link" line) show a URL the same way.
 
 ### Bug fixes
 
@@ -292,18 +314,6 @@ write instead.
   their Debug output, so a host that logged one with `{:?}` logged the
   key. Debug now shows `<redacted>` for the key, and a header's name
   without its value.
-- A URL's credentials showed in Debug output: haest-http's `Request`
-  printed its URL as it was (and its `Authorization` header, and
-  `Response` its `set-cookie`); `AnthropicOptions`, `CompatOptions`,
-  `ResponsesOptions`, `CustomProviderConfig` and haest-issues'
-  `GithubTracker` their base URL (a gateway that takes its credentials in
-  the URL); and haest-mcp's `HttpTransport` (and the `McpTransport`,
-  `McpServerConfig` and `RuntimeInputs` holding one) its own, so
-  `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
-  password and the key. A URL in haest's Debug output now shows no
-  userinfo, no query value and no fragment
-  (`https://<redacted>@docs.example.com/mcp?api_key=<redacted>`), a header
-  its name without its value, and a request's body its length.
 - haest-mcp's `HttpTransport` printed every header's value in its Debug
   output (an `Authorization` included), and `StdioTransport` every
   variable's in `env` (a server's token), and so did the `McpTransport` and
@@ -383,7 +393,10 @@ write instead.
   connect, or ran into a redirect loop, showed a key in the URL's query
   (`?key=...`) in its text and its Debug output. The URL in an
   `HttpError`'s cause now has no query, no fragment and no userinfo; the
-  host and path still say where the request went.
+  host and path still say where the request went, unless an `@` past the
+  host means they may hold a password a parser misread
+  (`https://user:12/34@host` reads as the host `user`, the port 12), and
+  then no URL is named.
 - An MCP server reached over HTTP with its key in the URL
   (`https://mcp.example.com/mcp?api_key=...`) showed the key whenever a
   request to it failed: in `McpStartError`'s cause (so in `report`, the
@@ -392,7 +405,7 @@ write instead.
   into the session stream (`--json`, `haest ctl`, the broker), and in a
   failed tool call's answer to the model. rmcp's HTTP client now runs on a
   reqwest client whose errors name the URL without its query, fragment or
-  userinfo.
+  userinfo, and name none when an `@` past its host may end a password.
 - `StdioTransport` printed its arguments in its Debug output, where
   `.mcp.json` puts a filled-in `${API_TOKEN}` (mcp-remote's `--header
   "Authorization: Bearer ${API_TOKEN}"`), so `McpServerConfig`,
@@ -465,12 +478,13 @@ write instead.
   a shell command that cannot be undone, in the real workspace. It said
   "asks before a tool changes anything".
 - haest asks for approval on the terminal only when the question can be
-  seen: in text mode stderr, where it shows, must be a terminal as well as
-  stdin. With `2>log` or `2>/dev/null` an ask is refused at once, as with
-  no terminal, and the line that says so names stderr. Before, the
-  question went into the file and haest waited up to 10 minutes with
-  nothing on the screen. With `--json` the question is a line on stdout,
-  and stdin alone decides.
+  seen: stdin must be a terminal, and so must stderr, where the question
+  shows; with `--json` it is a line on stdout, and stdout must not be a
+  regular file (a pipe still asks: `| jq` shows the line). With `2>log`,
+  `2>/dev/null` or `--json > out.jsonl` an ask is refused at once, as with
+  no terminal, and the line that says so names stderr or stdout; with
+  `--json` it goes to stderr too. Before, the question went into the file
+  and haest waited up to 10 minutes with nothing on the screen.
 - While the terminal's question waits, at most 2000 held lines wait with
   it; past that the oldest go, and a note counts them. The answer's text
   is never let go of, and into a regular file it is not held at all, so
@@ -1174,7 +1188,10 @@ Hosts write less (round two of the review, and what porting brain onto
   `Request::post(url).with_body(body)`.
 - New `redacted_url`: a URL as haest shows it in Debug output and errors,
   without its userinfo, query values or fragment, for a host that shows a
-  URL it was given (the `haest` command's broker line uses it).
+  URL it was given (the `haest` command's broker line uses it). It fails
+  safe for a password a parser misreads: everything between the scheme and
+  the last `@` is hidden, and nothing past the scheme when a `?` or `#`
+  comes before that `@`.
 - `HttpError::Timeout` says the wait as given (`no answer within 500ms`):
   it said whole seconds, so a sub-second headers timeout read `0 s`.
 
