@@ -408,12 +408,15 @@ fn count_pings(mut side: Link) -> Arc<AtomicUsize> {
 /// while the conversation sends it frames and while it is idle.
 #[tokio::test]
 async fn a_live_broker_that_never_writes_keeps_its_link() {
+    // Not `SHORT`: a stall of about 200 ms on either end (a loaded machine)
+    // missed a 300 ms limit and dialed again. A second leaves about 600 ms.
+    let limit = Duration::from_secs(1);
     let mut broker = TestBroker::start(None).await;
     let hub = hub();
     let (s, _) = session(&answers(&[]), hub.clone());
     let _attached = Broker::new(&broker.url)
         .with_backoff(FAST)
-        .with_silence_limit(SHORT)
+        .with_silence_limit(limit)
         .attach(s, Grant::watch(Origin::Agent))
         .unwrap();
     let mut side = broker.link().await;
@@ -422,9 +425,9 @@ async fn a_live_broker_that_never_writes_keeps_its_link() {
     let pings = count_pings(side);
     for n in 0..30 {
         hub.notice(Level::Info, format!("line {n}"));
-        tokio::time::sleep(SHORT / 15).await;
+        tokio::time::sleep(limit / 15).await;
     }
-    tokio::time::sleep(SHORT * 3).await;
+    tokio::time::sleep(limit * 3).await;
     assert_eq!(broker.accepted(), 1, "never dialed again");
     assert!(pings.load(Ordering::SeqCst) >= 2, "it was pinged");
 }
@@ -455,8 +458,10 @@ async fn a_detached_link_closes_its_socket_and_sends_nothing_more() {
             rest.push(msg);
         }
     };
-    // A ping is due every 100 ms: a link still up never lets this end.
-    let ended = tokio::time::timeout(SHORT * 3, read).await;
+    // A ping is due every 100 ms: a link still up never lets this end. The
+    // wait is long for a socket that closes at once, so a loaded machine
+    // has room.
+    let ended = tokio::time::timeout(Duration::from_secs(3), read).await;
     assert!(ended.is_ok(), "still linked after the detach: {rest:?}");
     assert!(
         rest.iter()
