@@ -171,21 +171,23 @@ impl Book {
 
     /// The last wipe of each directory wiped so far, in path order.
     pub(super) fn wipes(&self) -> Vec<Wipe> {
-        let wiped = self.wiped();
-        let wipes = wiped.dirs.iter().map(|(dir, &count)| Wipe {
-            dir: dir.clone(),
-            count,
-        });
-        wipes.collect()
+        self.wiped()
+            .dirs
+            .iter()
+            .map(|(dir, &count)| Wipe {
+                dir: dir.clone(),
+                count,
+            })
+            .collect()
     }
 
     /// Forget each of `wipes`, where the sandbox has not wiped its directory
     /// again since: what a wipe made later hid is still to compare.
     pub(super) fn forget_wiped<'a>(&self, wipes: impl IntoIterator<Item = &'a Wipe>) {
-        let mut wiped = self.wiped();
+        let mut book = self.wiped();
         for wipe in wipes {
-            if wiped.dirs.get(&wipe.dir) == Some(&wipe.count) {
-                wiped.dirs.remove(&wipe.dir);
+            if book.dirs.get(&wipe.dir) == Some(&wipe.count) {
+                book.dirs.remove(&wipe.dir);
             }
         }
     }

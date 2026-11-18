@@ -143,7 +143,7 @@ async fn cancel_stops_a_long_sleep_quickly() {
     let cancel = o.cancel.clone();
     let fs = ws.fs();
     let marker = dir.join("started");
-    let canceller = tokio::spawn(async move {
+    let watch = tokio::spawn(async move {
         let waited = Instant::now();
         while !fs.exists(&marker).await && waited.elapsed() < Duration::from_secs(10) {
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -153,8 +153,8 @@ async fn cancel_stops_a_long_sleep_quickly() {
     });
     let r = ws.shell("echo started; echo > started; sleep 30", o).await;
     let ended = Instant::now();
-    let cancelled = canceller.await.unwrap();
-    assert!(ended.duration_since(cancelled) < Duration::from_secs(3));
+    let sent = watch.await.unwrap();
+    assert!(ended.duration_since(sent) < Duration::from_secs(3));
     assert!(!r.timed_out);
     assert_ne!(r.exit_code, 0);
     assert_eq!(r.stdout, "started\n", "output before the cancel is kept");
