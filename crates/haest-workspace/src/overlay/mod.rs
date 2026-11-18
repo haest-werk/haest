@@ -32,6 +32,8 @@ mod recorder;
 mod state;
 #[cfg(test)]
 mod testing;
+#[cfg(test)]
+mod tests;
 
 use std::{
     collections::BTreeMap,
@@ -234,13 +236,20 @@ impl OverlayChanges {
     async fn candidates(&self) -> BTreeMap<PathBuf, Option<Original>> {
         let touched = self.book.snapshot();
         let mut all: BTreeMap<_, _> = touched.iter().map(|(p, o)| (p.clone(), Some(*o))).collect();
+        // In path order, a directory comes right before those under it, which
+        // its walk covers (`mkdir -p` records every directory it makes).
+        let mut walked: Option<&Path> = None;
         for (path, original) in &touched {
-            if *original == Original::Dir || state_of(&self.overlay, path).await != Original::Dir {
+            if walked.is_some_and(|outer| path.starts_with(outer))
+                || *original == Original::Dir
+                || state_of(&self.overlay, path).await != Original::Dir
+            {
                 continue;
             }
             for inside in walk(&self.overlay, path).await {
                 all.entry(inside).or_insert(Some(Original::Absent));
             }
+            walked = Some(path);
         }
         for dir in self.made_again(&touched).await {
             let on_disk = walk(self.book.disk.as_ref(), &self.book.real(&dir)).await;

@@ -11,14 +11,16 @@ use std::{
 use async_trait::async_trait;
 use haest_core::fs::{DirEntry, Fs, FsStat, MemFs};
 
-/// `MemFs` as the real disk. It notes each path asked whether it is a link,
-/// and plays the human: a path handed to [`edit_on_read`](Self::edit_on_read)
-/// is rewritten (or [deleted](Self::delete_on_read)) right after its next
-/// read has returned.
+/// `MemFs` as the real disk (or the overlay's files). It notes each path
+/// asked whether it is a link, and each directory listed, and plays the
+/// human: a path handed to [`edit_on_read`](Self::edit_on_read) is rewritten
+/// (or [deleted](Self::delete_on_read)) right after its next read has
+/// returned.
 #[derive(Default)]
 pub(super) struct Disk {
     pub(super) inner: MemFs,
     pub(super) asked: Mutex<Vec<PathBuf>>,
+    pub(super) listed: Mutex<Vec<PathBuf>>,
     /// What the human does to each path after its next read: save this
     /// content, or (None) delete it.
     edits: Mutex<HashMap<PathBuf, Option<Vec<u8>>>>,
@@ -65,6 +67,7 @@ impl Fs for Disk {
         self.inner.read_link(p).await
     }
     async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
+        self.listed.lock().unwrap().push(p.to_path_buf());
         self.inner.read_dir(p).await
     }
     async fn create_dir(&self, p: &Path) -> io::Result<()> {
