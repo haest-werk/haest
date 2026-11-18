@@ -183,7 +183,7 @@ impl GithubTracker {
     /// path for one.
     #[must_use]
     pub fn with_api_url(mut self, url: impl Into<String>) -> Self {
-        // As a parser reads it: a CR from a CRLF `.env`, or a space before
+        // As a parser reads it: a CR from a CRLF `.env`, or a space after
         // it, would hide a `/v3` at its end.
         let mut url = as_parsed(&url.into()).into_owned();
         // Only the path's `/` go, never the `//` after the scheme: a root

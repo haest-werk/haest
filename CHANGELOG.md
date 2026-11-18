@@ -621,7 +621,7 @@ write instead.
   call instead, as for a server that reports no cost.
 - haest-issues' `GithubTracker` sent GraphQL to `.../api/v3/graphql`, a
   404 on the same host, for an Enterprise Server root with a CR after it
-  (a CRLF `.env`), a space before it, or written in upper case
+  (a CRLF `.env`), a space after it, or written in upper case
   (`HTTPS://GHE.EXAMPLE/API/V3`): the cut of `/v3` saw neither. The root
   is now read as a URL parser reads it, and `/v3` is cut in any case.
 

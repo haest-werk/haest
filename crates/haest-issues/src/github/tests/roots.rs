@@ -92,7 +92,7 @@ async fn an_api_root_of_a_scheme_alone_is_never_sent_to() {
 }
 
 /// An Enterprise Server root with a CR after it (a CRLF `.env`), a space
-/// before it, or written in upper case kept its `/v3` for GraphQL
+/// after it, or written in upper case kept its `/v3` for GraphQL
 /// (`.../api/v3/graphql`, a 404 on the same host). The root is read as a
 /// parser reads it, and the `/v3` cut in any case.
 #[tokio::test]
@@ -107,7 +107,7 @@ async fn an_enterprise_root_with_a_cr_or_in_upper_case_cuts_v3_for_graphql() {
             "https://ghe.example/api/graphql",
         ),
         (
-            " https://ghe.example/api/v3",
+            "https://ghe.example/api/v3 ",
             "https://ghe.example/api/graphql",
         ),
         (
