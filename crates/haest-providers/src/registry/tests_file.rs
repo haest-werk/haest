@@ -1,0 +1,143 @@
+//! providers.json: reading the file and checking each entry.
+
+use std::path::Path;
+
+use haest_core::{fs::MemFs, testing::assert_causes_said_once};
+use serde_json::json;
+
+use super::{
+    tests::{bad_entry, entries, keys, over, registry},
+    *,
+};
+use crate::testing::{FakeHttp, FakeReply, collect, request};
+
+#[tokio::test]
+async fn a_broken_providers_json_is_a_clear_error_and_a_missing_one_is_empty() {
+    let fs = MemFs::from_files([("/cfg/providers.json", "{nope")]);
+    assert!(
+        load_custom_providers(&fs, Path::new("/none"))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let e = load_custom_providers(&fs, Path::new("/cfg"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&e, ProvidersFileError::Parse { path, .. } if path == Path::new("/cfg/providers.json")),
+        "{e}"
+    );
+}
+
+#[test]
+fn a_type_haest_does_not_speak_is_refused_and_no_type_is_chat_completions() {
+    let custom = entries(json!({
+        "typo": {"type": "anthropc"},
+        "number": {"type": 3},
+        "plain": {"baseURL": "http://x/v1"},
+    }));
+    let reg = registry(keys(&[]), custom);
+    for name in ["typo", "number"] {
+        let e = bad_entry(&reg, &format!("{name}:m"));
+        assert!(
+            matches!(&e, Some((provider, EntryProblem::UnknownType(_))) if provider == name),
+            "{e:?}"
+        );
+    }
+    let plain = CustomProviderConfig::from_json(&json!({})).unwrap();
+    assert_eq!(plain.dialect, Dialect::OpenAi);
+    assert!(reg.resolve("plain:m").is_ok());
+}
+
+/// A key no entry has is refused, naming it and the key meant when one is
+/// close. Read past, a misspelt `baseURL` made the entry one for the
+/// dialect's own API, which then got the entry's key and the conversation.
+#[tokio::test]
+async fn a_key_no_entry_has_is_refused_and_nothing_is_sent() {
+    let t = FakeHttp::new([FakeReply::status(400, "")]);
+    let custom = entries(json!({
+        "gateway": {"type": "anthropic", "baseUrl": "https://gw.example", "apiKey": "gw-key"},
+        "local": {"base_url": "http://localhost:1234/v1", "apiKeyEnv": "LOCAL_KEY"},
+        "keyed": {"baseURL": "http://x/v1", "api_key_env": "LOCAL_KEY"},
+        "listed": {"baseURL": "http://x/v1", "models": ["m"]},
+        "team": {"baseURL": "http://x/v1", "header": {"X-Team": "platform"}},
+    }));
+    let reg = over(
+        ProviderRegistry::new(keys(&[("LOCAL_KEY", "local-key")])).with_custom(custom),
+        &t,
+    );
+    for (name, unknown, close) in [
+        ("gateway", "baseUrl", Some("baseURL")),
+        ("local", "base_url", Some("baseURL")),
+        ("keyed", "api_key_env", Some("apiKeyEnv")),
+        ("listed", "models", None),
+        ("team", "header", Some("headers")),
+    ] {
+        let resolved = reg.resolve(&format!("{name}:m"));
+        if let Ok(r) = &resolved {
+            collect(r.provider().stream(request(r.model()))).await;
+        }
+        let sent: Vec<String> = t.requests().into_iter().map(|r| r.url).collect();
+        let Err(ModelError::Unavailable { provider, source }) = resolved else {
+            panic!("{name}: resolved, and sent to {sent:?}");
+        };
+        let problem = source.downcast::<EntryProblem>().expect("an entry problem");
+        assert!(
+            matches!(&*problem, EntryProblem::UnknownKey { key, meant }
+                if key == unknown && *meant == close),
+            "{name}: {problem:?}"
+        );
+        assert_eq!(provider, name);
+        let said = problem.to_string();
+        assert!(
+            said.contains(unknown) && said.contains("apiKeyEnv"),
+            "{said}"
+        );
+    }
+    assert!(t.requests().is_empty(), "nothing sent");
+}
+
+#[test]
+fn an_entry_that_is_not_an_object_is_refused() {
+    let custom = entries(json!({"local": "http://localhost:1234/v1"}));
+    let e = bad_entry(&registry(keys(&[]), custom), "local:m");
+    assert!(matches!(&e, Some((_, EntryProblem::NotAnObject))), "{e:?}");
+}
+
+/// A providers.json that is not JSON, or an entry with a bad price, says
+/// each cause once.
+#[tokio::test]
+async fn a_broken_providers_json_says_each_cause_once() {
+    let fs = MemFs::from_files([("/cfg/providers.json", "{not json")]);
+    let e = load_custom_providers(&fs, Path::new("/cfg"))
+        .await
+        .unwrap_err();
+    assert_causes_said_once(&e);
+    let custom = entries(json!({"p": {"pricing": {"m": {"input": "free"}}}}));
+    let e = registry(keys(&[]), custom).resolve("p:m").unwrap_err();
+    assert_causes_said_once(&e);
+}
+
+#[tokio::test]
+async fn a_providers_json_that_is_not_an_object_is_refused() {
+    let fs = MemFs::from_files([("/cfg/providers.json", r#"[{"local": {}}]"#)]);
+    let e = load_custom_providers(&fs, Path::new("/cfg"))
+        .await
+        .unwrap_err();
+    assert!(matches!(&e, ProvidersFileError::NotAnObject { .. }), "{e}");
+}
+
+#[test]
+fn one_bad_custom_entry_blocks_only_itself() {
+    let custom = entries(json!({
+        "bad": {"type": "openai", "reasoningEffort": {"efforts": "low"}},
+        "good": {"type": "openai", "baseURL": "http://x/v1"},
+    }));
+    assert_eq!(custom.len(), 2, "both are kept: checked when resolved");
+    let reg = registry(keys(&[]), custom);
+    assert!(matches!(
+        bad_entry(&reg, "bad:m"),
+        Some((provider, EntryProblem::ReasoningEffort)) if provider == "bad"
+    ));
+    assert!(reg.resolve("good:m").is_ok());
+}

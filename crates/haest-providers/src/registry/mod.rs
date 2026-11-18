@@ -22,6 +22,8 @@ mod error;
 mod tests;
 #[cfg(test)]
 mod tests_custom;
+#[cfg(test)]
+mod tests_file;
 
 use std::{
     collections::{BTreeMap, HashMap},
