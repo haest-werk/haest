@@ -11,13 +11,13 @@
 //! A change the disk still refuses (permissions, a full disk) fails alone
 //! (`write-failed`); the apply goes on with the rest.
 //!
-//! Deletes go first, then the writes, found again: on a disk that reads two
-//! spellings as one name, a delete takes the other spelling's file with it.
-//! Each change's real path is read again right before it is put on the
-//! disk; one that moved since the scan is skipped as a conflict.
+//! Deletes go first, then the writes: on a disk that reads two spellings as
+//! one name, a rename by case (`/readme.md` deleted, `/README.md` added)
+//! finds its new name free. Each change's real path is read again right
+//! before it is put on the disk; one that moved since the scan, or whose name
+//! the disk now holds under another spelling, is skipped as a conflict.
 
 use std::{
-    collections::{HashMap, HashSet},
     io,
     path::{Path, PathBuf},
 };
@@ -27,11 +27,7 @@ use haest_core::{
     workspace::{ApplyFailureCode, ApplyReport, ChangeKind, FailedChange},
 };
 
-use super::{
-    Found, OverlayChanges, Scanned,
-    links::Links,
-    state::{Original, state_of},
-};
+use super::{OverlayChanges, Scanned, links::Links};
 
 /// Why one change was not applied: its code and the reason for the human.
 type Refusal = (ApplyFailureCode, String);
@@ -40,7 +36,8 @@ type Refusal = (ApplyFailureCode, String);
 enum Put {
     /// On the real disk now.
     Applied,
-    /// Its real path moved since the scan: not written, a conflict.
+    /// Its real path moved since the scan, or the disk holds its name under
+    /// another spelling: not written, a conflict.
     Moved,
 }
 
@@ -49,74 +46,20 @@ impl OverlayChanges {
     /// then the writes, each in path order.
     pub(super) async fn apply_all(&self) -> ApplyReport {
         let mut report = ApplyReport::default();
-        // One for the whole apply, both phases: each real path on the way is
-        // asked once.
+        // One for the whole apply, deletes and writes: each real path on the
+        // way is asked once.
         let mut links = Links::new(self.book.disk.as_ref(), &self.book.root);
-        let found = self.survey().await;
-        let before: HashMap<PathBuf, Original> =
-            found.iter().map(|f| (f.path.clone(), f.now)).collect();
-        let (deletes, writes): (Vec<_>, Vec<_>) = found
+        // Read as the sandbox spells each path, a delete takes only its own
+        // name and what is under it, never a write's: one scan serves both.
+        let (deletes, writes): (Vec<_>, Vec<_>) = self
+            .scan()
+            .await
             .into_iter()
-            .filter_map(Found::change)
             .partition(|s| s.change.kind == ChangeKind::Deleted);
-        let conflicts: HashSet<PathBuf> = deletes
-            .iter()
-            .chain(&writes)
-            .filter(|s| s.change.conflict)
-            .map(|s| s.path.clone())
-            .collect();
-        let tried = deletes.iter().any(|s| !s.change.conflict);
-        for s in deletes {
-            self.settle(s, &mut links, &mut report).await;
-        }
-        let writes = if tried {
-            self.writes_after_deletes(&before, &conflicts).await
-        } else {
-            writes
-        };
-        for s in writes {
+        for s in deletes.into_iter().chain(writes) {
             self.settle(s, &mut links, &mut report).await;
         }
         report
-    }
-
-    /// The writes, found again once the deletes ran. On a disk that reads two
-    /// spellings as one name (`readme.md` and `README.md` on macOS's
-    /// default), deleting one took the other's file with it. A path there
-    /// before the deletes and gone after them is this apply's doing, not the
-    /// human's: it is compared from absent from now on. A path in `conflicts`
-    /// (a conflict when the apply started) stays one, never compared afresh.
-    async fn writes_after_deletes(
-        &self,
-        before: &HashMap<PathBuf, Original>,
-        conflicts: &HashSet<PathBuf>,
-    ) -> Vec<Scanned> {
-        let mut found = self.survey().await;
-        {
-            let mut touched = self.book.touched();
-            for f in &mut found {
-                let taken = f.now == Original::Absent
-                    && before
-                        .get(&f.path)
-                        .is_some_and(|was| *was != Original::Absent);
-                if taken && !conflicts.contains(&f.path) {
-                    f.original = Original::Absent;
-                    if let Some(original) = touched.get_mut(&f.path) {
-                        *original = Original::Absent;
-                    }
-                }
-            }
-        }
-        found
-            .into_iter()
-            .filter_map(Found::change)
-            // Each delete is in the report already.
-            .filter(|s| s.change.kind != ChangeKind::Deleted)
-            .map(|mut s| {
-                s.change.conflict |= conflicts.contains(&s.path);
-                s
-            })
-            .collect()
     }
 
     /// Put one change on the disk, or skip a conflict (at the scan, or a real
@@ -199,13 +142,17 @@ impl OverlayChanges {
                 ),
             ));
         }
-        // Read again right before the write: the human, or an earlier write
-        // of this apply under another spelling, may have changed it since the
-        // scan. A path that already holds the sandbox's version (a file its
-        // directory's delete took along, a directory another spelling made)
-        // loses nothing, and is put as usual.
-        let again = state_of(self.book.disk.as_ref(), &self.book.real(path)).await;
-        if again != s.now && again != s.mine {
+        // Read again right before the write: the human may have changed it
+        // since the scan, and on a disk that reads two spellings as one name,
+        // the disk may hold it under another spelling now (an earlier write
+        // of this apply, a delete that was skipped), where the write or
+        // delete would land. A path that already holds the sandbox's version
+        // (a file its directory's delete took along, a directory another
+        // spelling made) loses nothing, and is put as usual.
+        let again = self.book.on_disk(path).await;
+        let moved = again.state != s.now && again.state != s.mine;
+        let elsewhere = again.held.is_some_and(|h| h.state != s.mine);
+        if moved || elsewhere {
             return Ok(Put::Moved);
         }
         self.write(deleted, path)
@@ -315,6 +262,29 @@ mod tests {
         assert_eq!(on_disk(&disk, "/p/a.md").await.as_deref(), Some("a2\n"));
         assert_eq!(on_disk(&disk, "/p/b.md").await.as_deref(), Some(HUMAN));
         // Still listed, as a conflict: the human decides.
+        assert_eq!(conflicts(&changes.list().await), [("/b.md", true)]);
+    }
+
+    /// The human deletes `b.md` after the apply scanned it, while the apply
+    /// deletes `a.md`. Taken for this apply's own doing, `b.md` was written
+    /// back as an add.
+    #[tokio::test]
+    async fn a_file_the_human_deletes_during_the_apply_is_skipped_not_written_back() {
+        let disk = Arc::new(Disk::default());
+        let changes = project(&disk).await;
+        let recorder = changes.recorder();
+        recorder.remove(Path::new("/a.md"), false).await.unwrap();
+        recorder
+            .write_file(Path::new("/b.md"), b"b2\n")
+            .await
+            .unwrap();
+        disk.delete_on_read("/p/b.md");
+
+        let report = changes.apply().await;
+        assert_eq!(conflicts(&report.applied), [("/a.md", false)], "{report:?}");
+        assert_eq!(conflicts(&report.skipped), [("/b.md", true)], "{report:?}");
+        assert_eq!(on_disk(&disk, "/p/a.md").await, None);
+        assert_eq!(on_disk(&disk, "/p/b.md").await, None);
         assert_eq!(conflicts(&changes.list().await), [("/b.md", true)]);
     }
 

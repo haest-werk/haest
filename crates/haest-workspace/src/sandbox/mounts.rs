@@ -12,6 +12,7 @@ use bashkit::{
 };
 use haest_core::fs::normalize;
 
+use super::spelled_fs::SpelledFs;
 use crate::{overlay::OverlayChanges, real::RealFs as Disk};
 
 /// What the project overlay (and, apart, the scratch disk) may hold in memory
@@ -212,9 +213,11 @@ async fn real_dir(dir: &Path, mode: RealFsMode) -> Result<Arc<dyn FileSystem>, O
 /// layer included, where they would show up as phantom project directories.
 const SEEDED: [&str; 3] = ["/dev", "/home", "/tmp"];
 
-/// The copy-on-write overlay of `cwd` and its change ledger.
+/// The copy-on-write overlay of `cwd` and its change ledger. Under it, the
+/// project is found only as the disk spells each path.
 pub(crate) async fn project_overlay(cwd: &Path) -> Result<OverlayChanges, OpenSandboxError> {
     let lower = real_dir(cwd, RealFsMode::ReadOnly).await?;
+    let lower: Arc<dyn FileSystem> = Arc::new(SpelledFs::new(lower, cwd));
     let overlay = OverlayFs::with_limits(lower, limits());
     for dir in SEEDED {
         // Straight on the upper layer: no whiteout, the project's own shows through.

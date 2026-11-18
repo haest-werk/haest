@@ -6,80 +6,13 @@
 
 mod common;
 
-use std::{fs, path::Path};
+use std::fs;
 
-use common::{opts, sandbox, tempdir};
-use haest_core::workspace::{Change, ChangeSetRef, Workspace};
-use haest_workspace::SandboxWorkspace;
-
-async fn run(ws: &impl Workspace, dir: &Path, command: &str) {
-    let r = ws.shell(command, opts(dir)).await;
-    assert_eq!(r.exit_code, 0, "{command}: {r:?}");
-}
-
-fn changes(ws: &SandboxWorkspace) -> ChangeSetRef {
-    ws.changes().expect("the sandbox records its changes")
-}
-
-/// Whether this disk reads `other` as the name `name` already in `dir`.
-fn reads_as_one(dir: &Path, name: &str, other: &str) -> bool {
-    assert!(dir.join(name).exists(), "{name} is in {}", dir.display());
-    dir.join(other).exists()
-}
-
-/// Whether the disk under `dir` reads names without case, asked with a file
-/// that is gone again once it answers.
-fn folds_case(dir: &Path) -> bool {
-    fs::write(dir.join("probe"), "").unwrap();
-    let one = reads_as_one(dir, "probe", "PROBE");
-    fs::remove_file(dir.join("probe")).unwrap();
-    one
-}
-
-/// Every file under `dir`, by its path inside it as the disk lists it, with
-/// its content.
-fn contents(dir: &Path) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(d) = pending.pop() {
-        for e in fs::read_dir(&d).unwrap() {
-            let p = e.unwrap().path();
-            if p.is_dir() {
-                pending.push(p);
-            } else {
-                let rel = p.strip_prefix(dir).unwrap().to_string_lossy().into_owned();
-                out.push((rel, fs::read_to_string(&p).unwrap()));
-            }
-        }
-    }
-    out.sort();
-    out
-}
-
-/// The changes' paths, sorted: apply reports the deletes first.
-fn paths(changes: &[Change]) -> Vec<String> {
-    let mut all: Vec<_> = changes.iter().map(|c| c.path.clone()).collect();
-    all.sort();
-    all
-}
-
-fn pairs(want: &[(&str, &str)]) -> Vec<(String, String)> {
-    want.iter()
-        .map(|(p, b)| ((*p).to_owned(), (*b).to_owned()))
-        .collect()
-}
-
-/// Apply everything the sandbox changed; nothing may be skipped or fail, and
-/// nothing is left listed.
-async fn apply_all(ws: &SandboxWorkspace) {
-    let report = changes(ws).apply().await;
-    assert!(
-        report.failed.is_empty() && report.skipped.is_empty(),
-        "{report:?}"
-    );
-    let left = changes(ws).list().await;
-    assert!(left.is_empty(), "left {left:?} after {report:?}");
-}
+use common::{
+    sandbox,
+    spelling::{apply_all, changes, contents, folds_case, pairs, paths, reads_as_one, run},
+    tempdir,
+};
 
 /// Where the disk reads both names as one, the new name read the same as the
 /// disk and was never listed: only the old name's delete was, and applying it
@@ -113,10 +46,9 @@ async fn a_case_rename_with_an_edit_keeps_the_edit() {
     assert_eq!(contents(&dir), pairs(&[("NOTES.md", "notes\nmore\n")]));
 }
 
-/// Where the disk reads `Lib` as `lib`, the sandbox's `mv` finds `Lib`
-/// there and moves `lib` into it; applying wrote `lib/lib/...`, then the
-/// delete of `lib` took the whole directory. On a disk that tells them apart
-/// it is a plain rename.
+/// Where the disk reads `Lib` as `lib`, the sandbox's `mv` found the real
+/// `lib` under `Lib` and moved `lib` into it: applying wrote `Lib/lib/...`,
+/// a tree no shell makes. Real bash renames it, on either disk.
 #[tokio::test]
 async fn a_directory_renamed_by_case_keeps_its_files() {
     let (_t, dir) = tempdir();
@@ -127,11 +59,7 @@ async fn a_directory_renamed_by_case_keeps_its_files() {
     let ws = sandbox(&dir).await;
     run(&ws, &dir, "mv lib Lib").await;
     apply_all(&ws).await;
-    let want = if one {
-        [("Lib/lib/a.rs", "a\n"), ("Lib/lib/b.rs", "b\n")]
-    } else {
-        [("Lib/a.rs", "a\n"), ("Lib/b.rs", "b\n")]
-    };
+    let want = [("Lib/a.rs", "a\n"), ("Lib/b.rs", "b\n")];
     assert_eq!(
         contents(&dir),
         pairs(&want),
@@ -181,32 +109,47 @@ async fn a_human_edit_after_a_case_rename_stays_a_conflict() {
     assert_eq!(contents(&dir), pairs(want_disk), "one name: {one}");
 }
 
-/// A conflict when the apply starts is skipped, whatever its deletes do to
-/// the disk. The sandbox writes `NOTES.md`, the human then edits the file,
-/// and the sandbox removes `notes.md`. Where the disk reads both names as
-/// one, `NOTES.md` was written over a file the human changed since: it stays
-/// a conflict even once the delete of `notes.md` (which saw the human's
-/// version) has removed the file. Where the disk tells them apart, both
-/// apply.
+/// The sandbox writes `NOTES.md`, a file of its own (it finds `notes.md`
+/// only by that spelling), and removes `notes.md`. A human edit made before
+/// that `rm` is one the sandbox saw and deleted: both apply, on either disk,
+/// as the sandbox shows. One made after the `rm` is a conflict and stays one:
+/// the delete is skipped, and where the disk reads both names as one, so is
+/// `NOTES.md`, which would land on the human's file.
 #[tokio::test]
 async fn a_conflict_stays_a_conflict_after_a_delete_under_another_spelling() {
-    let (_t, dir) = tempdir();
-    fs::write(dir.join("notes.md"), "v1\n").unwrap();
-    let one = reads_as_one(&dir, "notes.md", "NOTES.md");
-    let ws = sandbox(&dir).await;
-    run(&ws, &dir, "echo draft > NOTES.md").await;
-    fs::write(dir.join("notes.md"), "the human was here\n").unwrap();
-    run(&ws, &dir, "rm notes.md").await;
-    let report = changes(&ws).apply().await;
-    let (applied, skipped) = (paths(&report.applied), paths(&report.skipped));
-    if one {
-        assert_eq!(applied, ["/notes.md"], "{report:?}");
-        assert_eq!(skipped, ["/NOTES.md"], "{report:?}");
-        assert!(changes(&ws).list().await.iter().all(|c| c.conflict));
-    } else {
-        assert_eq!(applied, ["/NOTES.md", "/notes.md"], "{report:?}");
-        assert!(skipped.is_empty(), "{report:?}");
-        assert_eq!(contents(&dir), pairs(&[("NOTES.md", "draft\n")]));
+    const HUMAN: &str = "the human was here\n";
+    for edit_first in [true, false] {
+        let (_t, dir) = tempdir();
+        fs::write(dir.join("notes.md"), "v1\n").unwrap();
+        let one = reads_as_one(&dir, "notes.md", "NOTES.md");
+        let ws = sandbox(&dir).await;
+        run(&ws, &dir, "echo draft > NOTES.md").await;
+        if edit_first {
+            fs::write(dir.join("notes.md"), HUMAN).unwrap();
+        }
+        run(&ws, &dir, "rm notes.md").await;
+        if !edit_first {
+            fs::write(dir.join("notes.md"), HUMAN).unwrap();
+        }
+        let report = changes(&ws).apply().await;
+        let (applied, skipped) = (paths(&report.applied), paths(&report.skipped));
+        let case = format!("edit first: {edit_first}, one name: {one}: {report:?}");
+        assert!(report.failed.is_empty(), "{case}");
+        let disk: &[(&str, &str)] = if edit_first {
+            assert_eq!(applied, ["/NOTES.md", "/notes.md"], "{case}");
+            &[("NOTES.md", "draft\n")]
+        } else if one {
+            assert!(applied.is_empty(), "{case}");
+            assert_eq!(skipped, ["/NOTES.md", "/notes.md"], "{case}");
+            &[("notes.md", HUMAN)]
+        } else {
+            assert_eq!(applied, ["/NOTES.md"], "{case}");
+            assert_eq!(skipped, ["/notes.md"], "{case}");
+            &[("NOTES.md", "draft\n"), ("notes.md", HUMAN)]
+        };
+        assert_eq!(contents(&dir), pairs(disk), "{case}");
+        let left = changes(&ws).list().await;
+        assert!(left.iter().all(|c| c.conflict), "{case}: left {left:?}");
     }
 }
 

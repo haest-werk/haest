@@ -168,8 +168,9 @@ pub struct Change {
     pub path: String,
     /// Added, modified or deleted.
     pub kind: ChangeKind,
-    /// The real file changed since the sandbox first touched it: applying would
-    /// overwrite the human's edit, so apply skips it.
+    /// Applying would overwrite what the sandbox never saw, so apply skips
+    /// it: the real file changed since the sandbox first touched it (the
+    /// human's edit), or the disk holds the name under another spelling.
     pub conflict: bool,
 }
 

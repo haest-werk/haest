@@ -13,12 +13,15 @@ use haest_core::fs::{DirEntry, Fs, FsStat, MemFs};
 
 /// `MemFs` as the real disk. It notes each path asked whether it is a link,
 /// and plays the human: a path handed to [`edit_on_read`](Self::edit_on_read)
-/// is rewritten right after its next read has returned.
+/// is rewritten (or [deleted](Self::delete_on_read)) right after its next
+/// read has returned.
 #[derive(Default)]
 pub(super) struct Disk {
     pub(super) inner: MemFs,
     pub(super) asked: Mutex<Vec<PathBuf>>,
-    edits: Mutex<HashMap<PathBuf, Vec<u8>>>,
+    /// What the human does to each path after its next read: save this
+    /// content, or (None) delete it.
+    edits: Mutex<HashMap<PathBuf, Option<Vec<u8>>>>,
 }
 
 impl Disk {
@@ -26,7 +29,13 @@ impl Disk {
     /// `content` over it.
     pub(super) fn edit_on_read(&self, path: impl Into<PathBuf>, content: &[u8]) {
         let mut edits = self.edits.lock().unwrap();
-        edits.insert(path.into(), content.to_vec());
+        edits.insert(path.into(), Some(content.to_vec()));
+    }
+
+    /// The next read of `path` returns what is there, then the human
+    /// deletes it.
+    pub(super) fn delete_on_read(&self, path: impl Into<PathBuf>) {
+        self.edits.lock().unwrap().insert(path.into(), None);
     }
 }
 
@@ -35,8 +44,10 @@ impl Fs for Disk {
     async fn read(&self, p: &Path) -> io::Result<Vec<u8>> {
         let read = self.inner.read(p).await;
         let edit = self.edits.lock().unwrap().remove(p);
-        if let Some(content) = edit {
-            self.inner.write(p, &content).await?;
+        match edit {
+            Some(Some(content)) => self.inner.write(p, &content).await?,
+            Some(None) => self.inner.remove(p).await?,
+            None => {}
         }
         read
     }

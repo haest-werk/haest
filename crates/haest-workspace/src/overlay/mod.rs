@@ -14,6 +14,9 @@
 //! its way, or a symlink the sandbox made. A refused change is reported as
 //! failed with its code, and stays listed.
 //!
+//! The real disk is read as the sandbox spells each path (`book.rs`): on a
+//! disk that reads `Lib` as `lib`, `/Lib` is absent while `lib` is there.
+//!
 //! Paths here are the overlay's own (`/src/a.ts`); `root` maps them to the disk.
 //! A symlink is compared as a link (`state.rs`), never as what it points to.
 //! Limit, stated: a directory removed whole (`rm -r dir`) is checked as a
@@ -21,6 +24,7 @@
 //! does not count as a conflict.
 
 mod apply;
+mod book;
 mod diff;
 mod links;
 mod recorder;
@@ -31,7 +35,7 @@ mod testing;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::Arc,
 };
 
 use async_trait::async_trait;
@@ -41,56 +45,30 @@ use haest_core::{
 };
 
 use crate::bridge::HaestFsOverBashkit;
+use book::{Book, Held};
 use recorder::Recorder;
 use state::{Original, state_of, walk};
 
-/// The first-touch ledger the recorder writes and the scan reads.
-pub(crate) struct Book {
-    touched: Mutex<BTreeMap<PathBuf, Original>>,
-    disk: Arc<dyn Fs>,
-    root: PathBuf,
-}
-
-impl Book {
-    fn real(&self, path: &Path) -> PathBuf {
-        self.root.join(path.strip_prefix("/").unwrap_or(path))
-    }
-
-    /// The first-touch ledger. Its lock is held only to read or write the
-    /// map, never across an await or a host's code, so a poisoned one is a
-    /// bug here.
-    fn touched(&self) -> MutexGuard<'_, BTreeMap<PathBuf, Original>> {
-        self.touched
-            .lock()
-            .expect("the overlay's first-touch lock poisoned")
-    }
-
-    pub(crate) async fn remember(&self, path: &Path) {
-        let path = normalize(path);
-        if self.touched().contains_key(&path) {
-            return;
-        }
-        let original = state_of(self.disk.as_ref(), &self.real(&path)).await;
-        self.touched().entry(path).or_insert(original);
-    }
-
-    fn snapshot(&self) -> BTreeMap<PathBuf, Original> {
-        self.touched().clone()
-    }
-}
-
-/// One path to compare, as it stands: at first touch, on the real disk now,
-/// and in the overlay.
+/// One path to compare, as it stands: at first touch, on the real disk now
+/// (both as the sandbox spells the path), and in the overlay.
 struct Found {
     path: PathBuf,
     original: Original,
     now: Original,
+    /// What the disk holds under another spelling of the path's name.
+    held: Option<Held>,
     mine: Original,
 }
 
 impl Found {
-    /// The change the overlay makes here; None when it holds what the disk does.
-    fn change(self) -> Option<Scanned> {
+    /// A delete that is not a conflict: applying frees its name.
+    fn frees(&self) -> bool {
+        self.mine == Original::Absent && self.now != Original::Absent && self.original == self.now
+    }
+
+    /// The change the overlay makes here; None when it holds what the disk
+    /// does. `freed` are the names this change set's deletes free.
+    fn change(self, freed: &[PathBuf]) -> Option<Scanned> {
         if self.now == self.mine {
             return None;
         }
@@ -99,15 +77,34 @@ impl Found {
             (_, Original::Absent) => ChangeKind::Added,
             _ => ChangeKind::Modified,
         };
+        // Applied, it would land on what the disk holds under another
+        // spelling: unless that already holds the sandbox's version, or a
+        // delete frees its name first (a rename by case).
+        let lands_on_another = self.held.is_some_and(|h| {
+            h.state != self.mine
+                && !h
+                    .at
+                    .is_some_and(|at| freed.iter().any(|d| at.starts_with(d)))
+        });
         Some(Scanned {
             change: Change::new(self.path.to_string_lossy(), kind)
-                .with_conflict(self.original != self.now),
+                .with_conflict(self.original != self.now || lands_on_another),
             path: self.path,
             original: self.original,
             now: self.now,
             mine: self.mine,
         })
     }
+}
+
+/// The changes among `found`, in its order.
+fn changes(found: Vec<Found>) -> Vec<Scanned> {
+    let freed: Vec<PathBuf> = found
+        .iter()
+        .filter(|f| f.frees())
+        .map(|f| f.path.clone())
+        .collect();
+    found.into_iter().filter_map(|f| f.change(&freed)).collect()
 }
 
 /// One change, and the states it was found from.
@@ -136,26 +133,32 @@ struct Scanned {
 /// - [`list`](ChangeSet::list): every touched path whose overlay version
 ///   differs from the real disk, by its path inside the project (`/src/a.ts`),
 ///   a directory before its files. A path whose real file changed since the
-///   first touch (the human edited it) is a [`conflict`](haest_core::workspace::Change::conflict).
+///   first touch (the human edited it), or that would land on a file the
+///   disk holds under another spelling (below), is a
+///   [`conflict`](haest_core::workspace::Change::conflict).
 /// - [`diff`](ChangeSet::diff): a unified diff of one change.
 /// - [`apply`](ChangeSet::apply): writes (or deletes) every change that is not
 ///   a conflict, and reports each as applied, skipped or failed. An applied
 ///   change is no longer listed; a skipped or failed one stays.
 ///
-/// `apply` deletes first, then writes, each in path order. On a disk that
-/// reads two spellings as one name (macOS's default: `readme.md` and
-/// `README.md`, `caf\u{e9}` and `cafe\u{301}`), the sandbox's two paths are
-/// one file, and a delete after the write would take the write with it. A
-/// path those deletes took with them (there before them, gone after) is this
-/// apply's doing, so it is compared from absent: a rename that changes only
-/// the case is applied as a rename. A change that was a conflict when `apply`
-/// started is skipped, whatever its deletes did to the disk.
+/// On a disk that reads two spellings as one name (macOS's default:
+/// `readme.md` and `README.md`; any APFS: `caf\u{e9}` and `cafe\u{301}`), a
+/// path is read only as the disk spells it, as the sandbox reads it (see
+/// [`SandboxWorkspace`](crate::SandboxWorkspace)): `/README.md` is absent
+/// while the disk holds `readme.md`. So `mv readme.md README.md` lists
+/// `/readme.md` deleted and `/README.md` added, and `mv lib Lib` lists the
+/// same for the directory and each file in it. A change onto a name the disk
+/// holds under another spelling would land on that file: it is a conflict,
+/// unless that file already holds the sandbox's version, or a delete in the
+/// list frees the name first (the rename).
 ///
-/// Each change's real path is read again right before it is put on the disk.
-/// One that moved since the scan, by the human or by an earlier write of this
-/// apply under another spelling (the sandbox wrote both `README.md` and
-/// `readme.md`), is skipped as a conflict and stays listed, unless it already
-/// holds the sandbox's version.
+/// `apply` deletes first, then writes, each in path order, so a rename by
+/// case finds its new name free. Each change's real path is read again right
+/// before it is put on the disk. One that moved since the scan (the human
+/// saved or deleted it), or whose name the disk now holds under another
+/// spelling (an earlier write of this apply: the sandbox wrote both
+/// `README.md` and `readme.md`), is skipped as a conflict and stays listed,
+/// unless it already holds the sandbox's version.
 ///
 /// `apply` never writes through a symlink: not one on the real disk on the
 /// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),
@@ -194,11 +197,7 @@ impl OverlayChanges {
         root: impl Into<PathBuf>,
     ) -> Self {
         Self {
-            book: Arc::new(Book {
-                touched: Mutex::default(),
-                disk,
-                root: root.into(),
-            }),
+            book: Arc::new(Book::new(disk, root.into())),
             overlay: HaestFsOverBashkit::new(overlay),
         }
     }
@@ -235,15 +234,13 @@ impl OverlayChanges {
     async fn survey(&self) -> Vec<Found> {
         let mut out = Vec::new();
         for (path, original) in self.candidates().await {
-            let real = self.book.real(&path);
-            let (now, mine) = tokio::join!(
-                state_of(self.book.disk.as_ref(), &real),
-                state_of(&self.overlay, &path)
-            );
+            let (now, mine) =
+                tokio::join!(self.book.on_disk(&path), state_of(&self.overlay, &path));
             out.push(Found {
                 path,
                 original,
-                now,
+                now: now.state,
+                held: now.held,
                 mine,
             });
         }
@@ -251,8 +248,7 @@ impl OverlayChanges {
     }
 
     async fn scan(&self) -> Vec<Scanned> {
-        let found = self.survey().await;
-        found.into_iter().filter_map(Found::change).collect()
+        changes(self.survey().await)
     }
 }
 

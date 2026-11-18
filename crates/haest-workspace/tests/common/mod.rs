@@ -10,6 +10,8 @@ use std::{
 
 use haest_core::workspace::ExecOptions;
 
+pub(crate) mod spelling;
+
 /// A temp dir by its real path: on macOS the temp root is a symlink, and the
 /// sandbox mounts real paths.
 pub(crate) fn tempdir() -> (tempfile::TempDir, PathBuf) {

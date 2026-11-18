@@ -16,6 +16,7 @@
 mod commands;
 mod exec;
 mod mounts;
+mod spelled_fs;
 mod workspace;
 mod xan;
 
@@ -65,6 +66,19 @@ fn own_commands() -> Vec<ShellCommandRef> {
 /// shell's own `HOME` and `USER` (`/home/user`, `user`).
 /// [`Workspace::prompt_note`] tells the model all of that, and, over the
 /// overlay, that its edits wait for the human to apply them.
+///
+/// Over the project, on a disk that reads two spellings of a name as one
+/// (macOS's default reads `README.md` as `readme.md`; APFS, the
+/// case-sensitive kind too, reads `caf\u{e9}` and `cafe\u{301}` as one), a
+/// path is found only as the disk spells it: `cat README.md` does not find
+/// `readme.md`, where real bash would find it, and `echo x > README.md`
+/// makes a second file beside it. The model reads the disk's spelling from
+/// `ls`. So the sandbox shows what applying writes: `mv lib Lib` is a rename,
+/// in the sandbox and on the disk, and a write that would land on a file the
+/// disk holds under another spelling is a conflict
+/// ([`OverlayChanges`](crate::OverlayChanges)). A case-folding directory on
+/// Linux (`chattr +F`) is not told apart: there, names read as the disk finds
+/// them.
 ///
 /// # Examples
 ///
