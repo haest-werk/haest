@@ -237,6 +237,47 @@ impl Driven for Recorded {
     }
 }
 
+/// An agent whose `arrival` is written by hand, as `#[async_trait]` spells
+/// it, so it counts each call (not each poll) and never resolves: work a
+/// host does in the call itself, outside the future, shows.
+pub(super) struct CountsArrival {
+    pub agent: Agent,
+    pub calls: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl Driven for CountsArrival {
+    fn control(&self) -> AgentControl {
+        self.agent.control()
+    }
+    async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
+        self.agent.run(input, sink).await
+    }
+    fn arrival<'l0, 'at>(&'l0 mut self) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send + 'at>>
+    where
+        'l0: 'at,
+        Self: 'at,
+    {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(std::future::pending())
+    }
+    fn history(&self) -> Vec<Message> {
+        self.agent.history().to_vec()
+    }
+    fn status(&self) -> DrivenStatus {
+        Driven::status(&self.agent)
+    }
+    fn set_model_spec(&mut self, spec: &str) -> Result<(), BoxError> {
+        Driven::set_model_spec(&mut self.agent, spec)
+    }
+    fn set_effort(&mut self, effort: Option<Effort>) {
+        self.agent.set_effort(effort);
+    }
+    async fn clear(&mut self) -> Result<(), BoxError> {
+        Ok(())
+    }
+}
+
 /// Frames until (and with) the first that `stop` picks; panics after 5 s.
 pub(super) async fn until(
     sub: &mut Subscription,

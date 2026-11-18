@@ -151,12 +151,15 @@ impl<D: Driven> Driver<D> {
             }
             let poll = !self.settled.is_empty();
             let free = self.holds == 0;
+            let driven = &mut self.driven;
             tokio::select! {
                 cmd = self.rx.recv() => match cmd {
                     Some(cmd) => self.deferred.push_back(cmd),
                     None => self.orphaned = true,
                 },
-                () = self.driven.arrival(), if free => {}
+                // In a block, so `arrival` is called only when the branch is
+                // polled: `select!` evaluates a disabled branch's expression.
+                () = async { driven.arrival().await }, if free => {}
                 () = tokio::time::sleep(SETTLE_POLL), if poll => {}
             }
         }

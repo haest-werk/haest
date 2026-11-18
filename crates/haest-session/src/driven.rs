@@ -170,7 +170,9 @@ pub trait Driven: Send + 'static {
     }
 
     /// Resolves when something arrives for a turn (a job ended, an agent
-    /// wrote). Cancel-safe: the driver waits on it beside its requests.
+    /// wrote). Cancel-safe: the driver waits on it beside its requests, and
+    /// drops the future when a request comes first. It is called only when
+    /// the driver waits on it: between turns, with no `Hold` held.
     /// Default: never.
     async fn arrival(&mut self) {
         std::future::pending::<()>().await;

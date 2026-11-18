@@ -3,7 +3,7 @@ mod support;
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -885,6 +885,30 @@ async fn a_hold_dropped_before_it_was_granted_holds_nothing() {
     give_up_on_a_hold(&session);
     let turn = tokio::time::timeout(Duration::from_secs(5), session.turn(Input::human("a"))).await;
     assert!(matches!(turn, Ok(Ok(_))), "the next turn runs: {turn:?}");
+    session.close().await;
+}
+
+/// While a `Hold` is held, the driver does not wait on `arrival`, and does
+/// not call it either: `select!` evaluates a disabled branch's expression,
+/// so it called `arrival` once per request it served, and dropped each
+/// future unpolled.
+#[tokio::test]
+async fn a_held_session_does_not_call_arrival() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let driven = CountsArrival {
+        agent: agent(&answers(&[]), Tools::new()),
+        calls: calls.clone(),
+    };
+    let session = start(driven, hub());
+    session.idle().await;
+    let hold = session.hold().await.unwrap();
+    let before = calls.load(Ordering::SeqCst);
+    for _ in 0..20 {
+        session.snapshot().await.unwrap();
+    }
+    let during = calls.load(Ordering::SeqCst) - before;
+    assert_eq!(during, 0, "arrival was called {during} times while held");
+    drop(hold);
     session.close().await;
 }
 
