@@ -1499,6 +1499,14 @@ Hosts write less (round two of the review, and what porting brain onto
   to open or be made with `PermissionDenied`, `ReadOnlyFilesystem`,
   `QuotaExceeded` or `StorageFull` is held through the session file
   itself; its docs give the trade-offs.
+- New `Fs::create_private_dir`: a directory its owner's alone (0700)
+  from the start, so no one else can open a file made in it at any
+  moment. The default makes it with `create_dir`, then sets the mode with
+  `chmod`, and removes it again where that fails. A disk that can make a
+  directory with its mode overrides it and never sets the mode after (on
+  Linux, a directory made in a setgid one gets the bit too, the chmod
+  drops it, and what is made inside then gets the process's group); an
+  `Fs` that wraps another forwards it.
 
 ### haest-http
 

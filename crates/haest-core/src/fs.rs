@@ -202,8 +202,9 @@ impl fmt::Debug for FsLock {
 /// walks the tree with [`remove_tree`]) and `rename`. The rest have defaults
 /// built on them; override one when the store can do it better
 /// ([`Fs::read_head`] that stops early, [`Fs::create_dir_all`] in one step,
-/// [`Fs::read_link`] and [`Fs::chmod`] on a store that has links and modes,
-/// [`Fs::try_lock`] on a store more than one writer shares).
+/// [`Fs::read_link`], [`Fs::chmod`] and [`Fs::create_private_dir`] on a
+/// store that has links and modes, [`Fs::try_lock`] on a store more than
+/// one writer shares).
 /// [`FsStat`] and [`DirEntry`] are built with their `new`.
 ///
 /// Implementations here: [`MemFs`] and [`ShutFs`]; `haest-workspace` has the
@@ -351,6 +352,34 @@ pub trait Fs: Send + Sync {
     /// parent is missing, and an error when a file sits where the parent
     /// should be.
     async fn create_dir(&self, path: &Path) -> io::Result<()>;
+    /// Create the directory `path`, its owner's alone (0700) from the
+    /// start, so no one else can open a file made in it at any moment; its
+    /// parent must exist.
+    ///
+    /// The default is [`Fs::create_dir`], then [`Fs::chmod`], and removes
+    /// the directory again where the chmod fails. A disk that can make it
+    /// with its mode should, and never set the mode after: on Linux, a
+    /// directory made in one that passes its group on (setgid) gets the
+    /// setgid bit too, the chmod drops it (a process outside that group
+    /// cannot set it again), and what is made inside then gets the
+    /// process's group, not the parent's. A store with no modes (memory, a
+    /// host's own) has nothing to set; a wrapper over another `Fs`
+    /// forwards it. Dropped partway, the directory may be made, and by the
+    /// default not yet private: the caller removes it.
+    ///
+    /// # Errors
+    ///
+    /// [`Fs::create_dir`]'s (`AlreadyExists` where anything is at `path`,
+    /// a dangling link included), and [`Fs::chmod`]'s.
+    async fn create_private_dir(&self, path: &Path) -> io::Result<()> {
+        self.create_dir(path).await?;
+        let private = self.chmod(path, 0o700).await;
+        if private.is_err() {
+            // Made, but open to others: not left behind.
+            let _ = self.remove(path).await;
+        }
+        private
+    }
     /// Create the directory `path` and every missing parent, like `mkdir -p`;
     /// a directory already there is fine. The default walks down from the
     /// root with [`Fs::stat`] and [`Fs::create_dir`]; a store that can do it
