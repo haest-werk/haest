@@ -61,6 +61,26 @@ impl FileSystem for Recorder {
         self.inner.append_file(path, content).await
     }
     async fn mkdir(&self, path: &Path, recursive: bool) -> Result<()> {
+        if recursive {
+            // bashkit's overlay unhides `path` alone: a parent the sandbox
+            // removed (`rm -rf dist`, then `mkdir -p dist/sub`) stayed
+            // removed, and hid all made under it. So each missing parent is
+            // made on its own, from the top (recursive: the overlay's upper
+            // layer may lack the parents the disk holds). A directory that
+            // is there has all of its own.
+            let mut missing = Vec::new();
+            let mut at = path.parent();
+            while let Some(dir) = at
+                && !self.inner.exists(dir).await.unwrap_or(true)
+            {
+                missing.push(dir);
+                at = dir.parent();
+            }
+            for dir in missing.into_iter().rev() {
+                self.book.remember(dir).await;
+                self.inner.mkdir(dir, true).await?;
+            }
+        }
         self.book.remember(path).await;
         self.inner.mkdir(path, recursive).await
     }

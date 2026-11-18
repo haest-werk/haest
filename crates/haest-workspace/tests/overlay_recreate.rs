@@ -10,7 +10,57 @@ use common::{
     spelling::{apply_all, contents, pairs, run},
     tempdir,
 };
-use haest_core::workspace::Workspace;
+use haest_core::{fs::ensure_dir, workspace::Workspace};
+
+/// `rm -rf dist && mkdir -p dist/sub`: the overlay's recursive mkdir cleared
+/// the whiteout of `dist/sub` alone, so `dist` stayed removed and hid all
+/// made under it. Every command said it succeeded, `cat` found nothing, and
+/// applying deleted `dist` and wrote none of it. One level down, `rm -rf`
+/// left a whiteout at `dist/sub` too.
+#[tokio::test]
+async fn a_tree_made_with_mkdir_p_under_a_removed_directory_is_kept() {
+    for (command, file) in [
+        (
+            "rm -rf dist && mkdir -p dist/sub && echo c > dist/sub/c.js",
+            "dist/sub/c.js",
+        ),
+        (
+            "rm -rf dist && mkdir dist && mkdir -p dist/sub/x && echo c > dist/sub/x/c.js",
+            "dist/sub/x/c.js",
+        ),
+    ] {
+        let (_t, dir) = tempdir();
+        fs::create_dir_all(dir.join("dist/sub")).unwrap();
+        fs::write(dir.join("dist/a.js"), "a\n").unwrap();
+        fs::write(dir.join("dist/sub/b.js"), "b\n").unwrap();
+        let ws = sandbox(&dir).await;
+        run(&ws, &dir, command).await;
+        run(&ws, &dir, &format!("cat {file}")).await;
+        apply_all(&ws).await;
+        assert_eq!(contents(&dir), pairs(&[(file, "c\n")]), "{command}");
+    }
+}
+
+/// The Write tool makes a file's parent with `ensure_dir` (a recursive
+/// mkdir): under a directory the shell removed, the file it reported
+/// created read back as missing, and was never applied.
+#[tokio::test]
+async fn a_file_written_under_a_removed_directory_reads_back() {
+    let (_t, dir) = tempdir();
+    fs::create_dir_all(dir.join("src/old")).unwrap();
+    fs::write(dir.join("src/old/a.rs"), "a\n").unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "rm -rf src/old").await;
+    let files = ws.fs();
+    let file = dir.join("src/old/new/b.rs");
+    ensure_dir(files.as_ref(), file.parent().unwrap())
+        .await
+        .unwrap();
+    files.write(&file, b"b\n").await.unwrap();
+    assert_eq!(files.read(&file).await.unwrap(), b"b\n");
+    apply_all(&ws).await;
+    assert_eq!(contents(&dir), pairs(&[("src/old/new/b.rs", "b\n")]));
+}
 
 /// `rm -r lib && mkdir lib`: the files the sandbox removed with `lib` were
 /// never listed, so applying left them on the disk while the sandbox showed
