@@ -31,9 +31,15 @@ use crate::canonical::pick;
 /// shared by clones of the options); a refusal tells the model what the
 /// chosen image model takes. Then one request
 /// is sent, and the picture is written into the workspace under the extension
-/// its bytes have (over a file that is there, whole or not at all, as
-/// [`WriteTool`](crate::WriteTool) writes), published to the host, and
-/// attached so the model sees it.
+/// its bytes have, published to the host, and attached so the model sees it.
+/// It goes over a file only at the very path the model named, extension and
+/// all, and then whole or not at all, as [`WriteTool`](crate::WriteTool)
+/// writes. A path the tool chose, the default or the model's with the
+/// extension switched (`hero.png` for a JPEG is `hero.jpg`), never replaces
+/// a file: where it is taken the picture goes to the first free
+/// `<stem>-<n>.<ext>` beside it (`hero-2.jpg`), and the model is told. The
+/// picture is paid for before its format is known, so a refusal there would
+/// waste the spend.
 /// The spend comes back as the output's
 /// [`cost_usd`](haest_core::tool::ToolOutput::cost_usd).
 ///
@@ -245,12 +251,12 @@ impl Tool for GenerateImageTool {
         let reply = call_image_api(http, &o.base_url, &o.api_key, &chosen, &body, cancel)
             .await
             .map_err(|e| ToolError::Failed(report(&e)))?;
-        let path = output_path(
+        let out = output_path(
             ctx,
             opt_str(&input, "file_path")?,
             prompt,
             &reply.media_type,
         );
-        save_and_show(ctx, reply, &path, &takes).await
+        save_and_show(ctx, reply, out, &takes).await
     }
 }

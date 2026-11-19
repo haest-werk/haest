@@ -585,6 +585,15 @@ write instead.
   owner's alone, or move it over (a share mounted for one fixed owner the
   run is not, a FUSE file system without setattr, a path just short of
   the system's cap). A read-only file is still refused.
+- GenerateImage saves a picture under the extension its bytes have, and
+  went over whatever file had that name: asked for `art.png`, a JPEG
+  answer replaced the human's `art.jpg`; asked for a JPEG of `logo.png`,
+  passed as the reference, a PNG answer replaced `logo.png`. It now goes
+  over a file only at the very path the model named. Where the tool chose
+  the name (the default, or the model's with the extension switched) and
+  that name is taken, the picture goes to the first free
+  `<stem>-<n>.<ext>` beside it (`art-2.jpg`), and the model is told. It is
+  not refused: the picture is already paid for when its format is known.
 - On a network file system, a write the server refused (no room, a
   quota) read as done. An NFS client reports it only as the file closes,
   and `RealFs::write` and `RealFs::append` ignored what closing it said:
