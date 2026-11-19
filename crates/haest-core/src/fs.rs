@@ -465,13 +465,17 @@ pub trait Fs: Send + Sync {
     /// `NotFound` when nothing is there, and an error when any part of the
     /// tree could not be removed.
     async fn remove_all(&self, path: &Path) -> io::Result<()>;
-    /// Move a file or a whole directory tree from `from` to `to`, replacing a
-    /// file at `to`. The parent of `to` must exist.
+    /// Move a file or a whole directory tree from `from` to `to`, as
+    /// rename(2): a file replaces a file at `to`, a directory an empty
+    /// directory, and onto itself nothing changes. The parent of `to` must
+    /// exist.
     ///
     /// # Errors
     ///
     /// `NotFound` when `from` (or `to`'s parent) is missing; `InvalidInput`
-    /// when `to` is inside the directory `from`.
+    /// when `to` is inside the directory `from`; `IsADirectory` for a file
+    /// onto a directory, `NotADirectory` for a directory onto a file, and
+    /// `DirectoryNotEmpty` for a directory onto one with anything in it.
     async fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
     /// Set Unix permission bits (the session log is 0600 in a 0700 dir). The
     /// default does nothing: a file system with no permissions (memory, a

@@ -83,6 +83,24 @@ async fn a_moved_file_takes_its_own_mode_over_the_one_it_replaced() {
     assert_eq!(r.stdout, "d-runs\n", "{r:?}");
 }
 
+/// `mv build out` when `out/build` is already there: rename(2) refuses
+/// ("Directory not empty") and both builds stay. Over `MemFs` the sandbox
+/// said exit 0, and `out/build/app.js` held the new build's bytes.
+#[tokio::test]
+async fn mv_into_a_dir_holding_a_same_named_one_is_refused_and_loses_no_file() {
+    let files = MemFs::from_files([
+        ("/p/build/app.js", "new build"),
+        ("/p/out/build/app.js", "shipped build"),
+    ]);
+    let ws = SandboxWorkspace::over(files.clone());
+    let r = ws.shell("mv build out", opts(Path::new("/p"))).await;
+    let kept = files.read_to_string(Path::new("/p/out/build/app.js")).await;
+    assert_eq!(kept.as_deref().ok(), Some("shipped build"), "{r:?}");
+    assert_ne!(r.exit_code, 0, "{r:?}");
+    let moved = files.read_to_string(Path::new("/p/build/app.js")).await;
+    assert_eq!(moved.as_deref().ok(), Some("new build"), "{r:?}");
+}
+
 #[tokio::test]
 async fn a_hosts_reason_for_refusing_a_write_reaches_the_shells_output() {
     let mem = MemFs::default();

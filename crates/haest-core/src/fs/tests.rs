@@ -53,6 +53,85 @@ async fn memfs_refuses_a_dir_into_itself_and_removing_the_root() {
     assert!(fs.exists(Path::new("/a/x")).await);
 }
 
+/// Every path under `/` with its kind and, for a file, its text, walked as a
+/// reader sees the tree: through `read_dir` and `read`.
+async fn tree(fs: &MemFs) -> Vec<(PathBuf, Option<String>)> {
+    let mut out = Vec::new();
+    let mut dirs = vec![PathBuf::from("/")];
+    while let Some(dir) = dirs.pop() {
+        for e in fs.read_dir(&dir).await.unwrap() {
+            let p = dir.join(&e.name);
+            if e.kind == FileKind::Dir {
+                dirs.push(p.clone());
+                out.push((p, None));
+            } else {
+                let text = fs.read_to_string(&p).await.unwrap();
+                out.push((p, Some(text)));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// What rename(2) refuses, MemFs refuses, and nothing moves: a file onto a
+/// directory (EISDIR), a directory onto a file (ENOTDIR), a directory onto
+/// one with anything in it (ENOTEMPTY), `/` and its own parent included.
+/// It replaced whatever was at `to`: a directory moved onto a non-empty one
+/// merged the two, its files over the same-named ones there, and a file
+/// moved onto a directory left the directory's files under a file.
+#[tokio::test]
+async fn memfs_rename_refuses_what_rename_2_refuses_and_moves_nothing() {
+    use io::ErrorKind::{DirectoryNotEmpty, IsADirectory, NotADirectory};
+    let fs = MemFs::from_files([
+        ("/p/f.txt", "F"),
+        ("/p/d/x.txt", "X"),
+        ("/a/one.txt", "1"),
+        ("/a/two.txt", "from a"),
+        ("/b/two.txt", "from b"),
+    ]);
+    let before = tree(&fs).await;
+    for (from, to, want) in [
+        ("/p/f.txt", "/p/d", IsADirectory),
+        ("/p/f.txt", "/p", IsADirectory),
+        ("/p/f.txt", "/", IsADirectory),
+        ("/p/d", "/p/f.txt", NotADirectory),
+        ("/a", "/b", DirectoryNotEmpty),
+        ("/p/d", "/p", DirectoryNotEmpty),
+        ("/a", "/", DirectoryNotEmpty),
+    ] {
+        let got = fs.rename(Path::new(from), Path::new(to)).await;
+        assert_eq!(got.map_err(|e| e.kind()), Err(want), "{from} -> {to}");
+        assert_eq!(tree(&fs).await, before, "{from} -> {to} moved something");
+    }
+    let kept = fs.read_to_string(Path::new("/b/two.txt")).await.unwrap();
+    assert_eq!(kept, "from b");
+    assert!(fs.read_dir(Path::new("/p/d")).await.is_ok());
+}
+
+/// What rename(2) replaces, MemFs replaces: a file at `to` with a file, an
+/// empty directory with a directory. Onto itself, nothing changes.
+#[tokio::test]
+async fn memfs_rename_replaces_a_file_and_an_empty_dir_and_leaves_itself_alone() {
+    let fs = MemFs::from_files([("/f", "new"), ("/g", "old"), ("/d/x", "X")]);
+    fs.create_dir(Path::new("/empty")).await.unwrap();
+    fs.rename(Path::new("/f"), Path::new("/g")).await.unwrap();
+    fs.rename(Path::new("/d"), Path::new("/empty"))
+        .await
+        .unwrap();
+    let after = tree(&fs).await;
+    let want = [
+        (PathBuf::from("/empty"), None),
+        (PathBuf::from("/empty/x"), Some("X".to_string())),
+        (PathBuf::from("/g"), Some("new".to_string())),
+    ];
+    assert_eq!(after, want);
+    for p in ["/g", "/empty"] {
+        fs.rename(Path::new(p), Path::new(p)).await.unwrap();
+        assert_eq!(tree(&fs).await, after, "{p} onto itself");
+    }
+}
+
 /// The default `read_link`: a file system without links has none, and a
 /// missing path is still missing.
 #[tokio::test]

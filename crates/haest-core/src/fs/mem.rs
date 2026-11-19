@@ -289,14 +289,29 @@ impl Fs for MemFs {
     async fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
         let (from, to) = (normalize(from), normalize(to));
         let mut nodes = self.nodes();
-        if !nodes.contains_key(&from) {
+        let Some(moving) = nodes.get(&from) else {
             return Err(not_found(&from));
-        }
+        };
+        let moving_dir = matches!(moving, Node::Dir);
         // EINVAL, as rename(2): moved into itself it would be cut off from the tree.
         if to != from && to.starts_with(&from) {
             return Err(err(ErrorKind::InvalidInput, &to));
         }
         Self::parent_is_dir(&nodes, &to)?;
+        // What rename(2) says of what is at `to`: a file replaces a file and
+        // a directory an empty one; nothing else is replaced, so no tree is
+        // merged into another and no file is left under a file.
+        match nodes.get(&to) {
+            _ if to == from => return Ok(()),
+            Some(Node::Dir) if !moving_dir => return Err(err(ErrorKind::IsADirectory, &to)),
+            Some(Node::File { .. }) if moving_dir => {
+                return Err(err(ErrorKind::NotADirectory, &to));
+            }
+            Some(Node::Dir) if Self::children(&nodes, &to).next().is_some() => {
+                return Err(err(ErrorKind::DirectoryNotEmpty, &to));
+            }
+            _ => {}
+        }
         let moved: Vec<PathBuf> = std::iter::once(from.clone())
             .chain(Self::children(&nodes, &from).map(|(k, _)| k.clone()))
             .collect();
