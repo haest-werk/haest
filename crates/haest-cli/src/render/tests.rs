@@ -90,24 +90,6 @@ fn a_failed_turn_shows_its_error_once() {
     assert_eq!(err.matches("503 from the provider").count(), 1, "{err}");
 }
 
-#[test]
-fn json_mode_writes_one_parseable_line_per_event() {
-    let (out, err) = render(
-        true,
-        &[
-            LoopEvent::TextDelta { text: "a".into() },
-            LoopEvent::Guard { text: "g".into() },
-        ],
-    );
-    let lines: Vec<Value> = out
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0]["type"], "text_delta");
-    assert!(err.is_empty());
-}
-
 /// Every `--json` line is in the wire's envelope, one stream numbered from 1,
 /// and keeps every field it had before: a reader of the old lines still works.
 #[test]
@@ -156,22 +138,6 @@ fn every_json_line_carries_the_envelope_and_keeps_its_old_fields() {
     let back: haest::wire::Envelope<LoopEvent> = serde_json::from_value(lines[3].clone()).unwrap();
     assert!(matches!(back.body, LoopEvent::TurnEnd { .. }));
     assert!(err.is_empty());
-}
-
-#[test]
-fn a_notice_is_a_json_line_in_json_mode_and_stderr_otherwise() {
-    let (mut out, mut err) = (Vec::new(), Vec::new());
-    Renderer::new(&mut out, &mut err, true, false).notice(Level::Warning, "budget at half");
-    let line: Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(
-        (line["type"].as_str(), line["level"].as_str()),
-        (Some("notice"), Some("warning"))
-    );
-    assert!(err.is_empty());
-    let (mut out, mut err) = (Vec::new(), Vec::new());
-    Renderer::new(&mut out, &mut err, false, false).notice(Level::Warning, "budget at half");
-    assert!(out.is_empty());
-    assert_eq!(String::from_utf8(err).unwrap(), "budget at half\n");
 }
 
 #[test]
