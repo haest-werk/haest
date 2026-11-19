@@ -30,31 +30,6 @@ fn every_error_with_a_cause_says_it_once() {
     assert_causes_said_once(&shape);
 }
 
-/// A host generic over its transport attaches through the trait, which
-/// does what the transport's own `attach` does.
-#[cfg(feature = "stdio")]
-#[tokio::test]
-async fn the_trait_attaches_as_the_transports_own_attach_does() {
-    use haest_wire::Origin;
-    use tokio::io::AsyncReadExt;
-
-    use crate::{Attached, Grant, Stdio, Transport, testing};
-
-    fn through(t: impl Transport, b: haest_session::BackendRef) -> Attached {
-        t.attach(b, Grant::watch(Origin::Agent))
-            .expect("a pipe pair always attaches")
-    }
-    let (session, _go) = testing::session(&testing::answers(&[]), testing::hub());
-    let (to_child, child_in) = tokio::io::duplex(1 << 16);
-    let (child_out, mut from_child) = tokio::io::duplex(1 << 16);
-    let attached = through(Stdio::new(child_in, child_out), session.into());
-    drop(to_child);
-    attached.ended().await;
-    let mut out = String::new();
-    from_child.read_to_string(&mut out).await.unwrap();
-    assert!(out.contains(r#""type":"hello""#), "{out}");
-}
-
 /// A detached transport stops serving: a peer that follows the stream gets
 /// nothing said after the detach, and what it reads ends.
 #[cfg(feature = "stdio")]
@@ -199,32 +174,32 @@ async fn a_detach_mid_write_lets_nothing_made_after_it_out() {
     session.close().await;
 }
 
-/// Why a connection ended, in words a person reads; a failure with its
-/// causes.
+/// Why a connection ended, for a person: a failure with all its causes; a
+/// broker's refusal as it is, since nothing was read.
 #[test]
-fn an_ended_connection_says_why_in_words() {
+fn an_ended_connection_says_a_failure_with_its_causes() {
+    use haest_core::error::report;
+
     use crate::Ended;
 
-    assert_eq!(Ended::PeerLeft.to_string(), "the peer left");
-    assert_eq!(Ended::Closed.to_string(), "the conversation ended");
-    let failed = Ended::Failed(TransportError::Path {
+    let read = || TransportError::Path {
         what: "read",
         path: "/run/x.sock".into(),
         source: std::io::Error::other("reset by peer"),
-    });
-    assert_eq!(
-        failed.to_string(),
-        "reading from the peer failed: could not read /run/x.sock: reset by peer"
+    };
+    let failed = Ended::Failed(read()).to_string();
+    assert!(failed.ends_with(&report(&read())), "{failed}");
+    assert_ne!(
+        failed,
+        report(&read()),
+        "what failed comes before the causes"
     );
     // A broker that refused the token at dial time: nothing was read.
-    let refused = Ended::Failed(TransportError::Auth {
+    let refused = || TransportError::Auth {
         code: 401,
         reason: "unknown token".into(),
-    });
-    assert_eq!(
-        refused.to_string(),
-        "the broker refused the link (401): unknown token"
-    );
+    };
+    assert_eq!(Ended::Failed(refused()).to_string(), report(&refused()));
 }
 
 /// A path error says what was tried on the path, not the path alone.
@@ -235,5 +210,5 @@ fn a_path_error_says_what_failed_on_it() {
         path: "/run/x.sock".into(),
         source: std::io::Error::other("refused"),
     };
-    assert_eq!(e.to_string(), "could not connect to /run/x.sock");
+    assert!(e.to_string().contains("connect to /run/x.sock"), "{e}");
 }

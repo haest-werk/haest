@@ -252,12 +252,17 @@ async fn a_request_with_another_version_is_refused_with_its_id() {
     assert!(reply["error"].as_str().unwrap().contains('2'), "{reply}");
 
     // Not a request at all: refused, with no id to echo, and why (the
-    // parser's words after the wire's).
+    // decode error with the parser's cause).
     peer.send_raw("not json").await;
     let reply = peer.until(|f| ty(f) == "reply").await.pop().unwrap();
     assert_eq!((&reply["id"], &reply["ok"]), (&json!(""), &json!(false)));
     let why = reply["error"].as_str().unwrap();
-    assert!(why.starts_with("the frame is not JSON: expected"), "{why}");
+    let not_json = haest_wire::decode("not json").unwrap_err();
+    assert!(
+        matches!(not_json, haest_wire::DecodeError::Json(_)),
+        "{not_json:?}"
+    );
+    assert_eq!(why, haest_core::error::report(&not_json));
 
     // The connection goes on.
     peer.send(json!({"v": 1, "id": "s1", "type": "snapshot"}))
