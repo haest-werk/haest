@@ -450,6 +450,105 @@ async fn a_chain_of_moves_the_disk_will_not_finish_keeps_every_file() {
     assert_eq!(contents(&dir), pairs(&want), "{report:?}");
 }
 
+/// `: > app.log && rm -r build`, and the human's server appends to the log
+/// before the apply: the truncate is a conflict. An empty file carries no
+/// content, so it carries no empty file elsewhere: the delete of `build`,
+/// which holds an empty `.gitkeep`, goes on, as it does after a truncate
+/// that leaves content (`echo x > app.log`). It was held as a conflict.
+#[tokio::test]
+async fn an_empty_write_that_did_not_land_holds_no_delete_of_an_empty_file() {
+    for truncate in [": > app.log", "echo x > app.log"] {
+        let (_t, dir) = tempdir();
+        fs::write(dir.join("app.log"), "boot\n").unwrap();
+        fs::create_dir(dir.join("build")).unwrap();
+        fs::write(dir.join("build/.gitkeep"), "").unwrap();
+        fs::write(dir.join("build/out.o"), "obj\n").unwrap();
+        let ws = sandbox(&dir).await;
+        run(&ws, &dir, &format!("{truncate} && rm -r build")).await;
+        fs::write(dir.join("app.log"), "boot\nrequest\n").unwrap();
+        let report = changes(&ws).apply().await;
+        assert_eq!(
+            paths(&report.skipped),
+            ["/app.log"],
+            "{truncate}: {report:?}"
+        );
+        let want = [("app.log", "boot\nrequest\n")];
+        assert_eq!(contents(&dir), pairs(&want), "{truncate}: {report:?}");
+    }
+}
+
+/// The same truncate held the model's write into an empty
+/// `pkg/__init__.py`, put after it to be sure.
+#[tokio::test]
+async fn an_empty_write_that_did_not_land_holds_no_write_over_an_empty_file() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("app.log"), "boot\n").unwrap();
+    fs::create_dir(dir.join("pkg")).unwrap();
+    fs::write(dir.join("pkg/__init__.py"), "").unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, ": > app.log && echo 'x = 1' > pkg/__init__.py").await;
+    fs::write(dir.join("app.log"), "boot\nrequest\n").unwrap();
+    let report = changes(&ws).apply().await;
+    assert_eq!(paths(&report.skipped), ["/app.log"], "{report:?}");
+    let want = [
+        ("app.log", "boot\nrequest\n"),
+        ("pkg/__init__.py", "x = 1\n"),
+    ];
+    assert_eq!(contents(&dir), pairs(&want), "{report:?}");
+}
+
+/// An empty file still goes where the sandbox moved it: `mv .gitkeep
+/// locked/`, with `locked` read-only, keeps `.gitkeep` until the move
+/// lands. (As root nothing is read-only, and the move applies at once.)
+#[tokio::test]
+async fn a_move_of_an_empty_file_the_disk_will_not_write_keeps_it() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join(".gitkeep"), "").unwrap();
+    fs::create_dir(dir.join("locked")).unwrap();
+    let refused = lock(&dir.join("locked"));
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "mv .gitkeep locked/").await;
+    let first = changes(&ws).apply().await;
+    let kept = dir.join(".gitkeep").exists();
+    unlock(&dir.join("locked"));
+    if refused {
+        assert!(kept, "{first:?}");
+    }
+    let second = changes(&ws).apply().await;
+    assert_eq!(
+        contents(&dir),
+        pairs(&[("locked/.gitkeep", "")]),
+        "{second:?}"
+    );
+}
+
+/// `cat draft.md > notes.md && : > draft.md`, with `notes.md` empty on the
+/// disk and then made read-only by the human: emptying `draft.md` takes
+/// away what only the write of `notes.md` carries, so it waits for it. The
+/// empty file tied `notes.md` after `draft.md` too, and in that cycle
+/// `draft.md` went first, in path order, before the write it waits for
+/// had failed.
+#[tokio::test]
+async fn a_file_copied_over_an_empty_one_then_emptied_waits_for_the_copy() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("draft.md"), "draft\n").unwrap();
+    fs::write(dir.join("notes.md"), "").unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "cat draft.md > notes.md && : > draft.md").await;
+    fs::set_permissions(dir.join("notes.md"), fs::Permissions::from_mode(0o444)).unwrap();
+    let report = changes(&ws).apply().await;
+    let failed: Vec<_> = report
+        .failed
+        .iter()
+        .map(|f| f.change.path.as_str())
+        .collect();
+    assert_eq!(failed, ["/notes.md"], "{report:?}");
+    assert_eq!(paths(&report.skipped), ["/draft.md"], "{report:?}");
+    let want = [("draft.md", "draft\n"), ("notes.md", "")];
+    assert_eq!(contents(&dir), pairs(&want), "{report:?}");
+}
+
 /// `rm a && echo y >> b`, with `a` and `b` one file (a hard link): the
 /// writes go first, and `b`'s, in place, changes `a` too. That is the
 /// apply's own write, not the human's, so `a`'s delete goes on: it was

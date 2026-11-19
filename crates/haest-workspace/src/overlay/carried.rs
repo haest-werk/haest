@@ -11,7 +11,8 @@
 //!   sandbox made them (`mv a b && mv b c` carries `a` to `c`; an edit
 //!   after the move does not matter: `mv a b && echo x >> b`);
 //! - or by its content alone: the write would put a file with the content
-//!   of one the change takes away (`cat a > b && rm a`).
+//!   of one the change takes away (`cat a > b && rm a`). An empty file has
+//!   none, so it carries no other empty file.
 //!
 //! Else `mv src.md locked/`, with `locked` read-only, deleted `src.md` and
 //! failed to write `locked/src.md`: its content was in the sandbox alone.
@@ -103,10 +104,13 @@ pub(super) struct Waiting {
 
 impl Waiting {
     /// The write of `s` did not land; `len` is the length of the file it
-    /// would have put, where it puts one.
+    /// would have put, where it puts one. An empty file has no content to
+    /// carry: by content it would hold the take of every empty file.
     pub(super) fn add(&mut self, s: &Scanned, len: Option<u64>) {
         self.paths.insert(s.path.clone());
-        if let (Original::File(hash), Some(len)) = (s.mine, len) {
+        if let (Original::File(hash), Some(len)) = (s.mine, len)
+            && !s.mine.is_empty_file()
+        {
             self.files.insert((len, hash));
             self.lengths.insert(len);
         }
@@ -163,7 +167,11 @@ pub(super) fn in_order(takes: Vec<Scanned>, carried: &Carried) -> Vec<Scanned> {
         .collect();
     let mut by_content: HashMap<u64, Vec<usize>> = HashMap::new();
     for (i, s) in takes.iter().enumerate() {
-        if let Original::File(hash) = s.mine {
+        // An empty file carries nothing: tied by it, a take could go before
+        // the write that carries its content.
+        if let Original::File(hash) = s.mine
+            && !s.mine.is_empty_file()
+        {
             by_content.entry(hash).or_default().push(i);
         }
     }

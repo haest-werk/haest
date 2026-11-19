@@ -124,7 +124,8 @@ use state::{Original, state_of, walk};
 /// `mv src.md locked/` into a directory the disk will not write leaves
 /// `src.md` where it was. A write carries what the sandbox moved or copied
 /// to it (after `mv a b && echo x >> b` too), and any file with the content
-/// it puts. Each change's real path is read again right before it is put
+/// it puts; an empty file has none, so it carries no other empty file.
+/// Each change's real path is read again right before it is put
 /// on the disk, and so is each change listed under a directory removed
 /// whole. One that moved since the scan (the human saved or deleted it, or
 /// an earlier write of this apply landed there: the sandbox wrote both

@@ -17,6 +17,14 @@ pub(crate) enum Original {
     Absent,
 }
 
+impl Original {
+    /// Whether it is a file with nothing in it: no content a write could
+    /// carry elsewhere (`carried.rs`).
+    pub(crate) fn is_empty_file(self) -> bool {
+        self == Self::File(hash_of(&[]))
+    }
+}
+
 fn hash_of(bytes: &[u8]) -> u64 {
     let mut h = DefaultHasher::new();
     bytes.hash(&mut h);
