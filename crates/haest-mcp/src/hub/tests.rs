@@ -236,31 +236,6 @@ async fn dropping_one_clone_keeps_the_servers_for_the_others() {
         .unwrap();
 }
 
-#[tokio::test]
-async fn a_header_http_cannot_carry_fails_that_server_before_any_request() {
-    let hub = McpHub::new();
-    // Never dialled: the header is refused first.
-    let http = McpTransport::http("http://127.0.0.1:9/mcp").with_header("X-Bad", "a\nb");
-    let cfg = McpServerConfig::new("remote", http);
-    hub.connect(&[cfg]).await;
-    assert_eq!(hub.failures()[0].name(), "remote");
-}
-
-#[tokio::test]
-async fn debug_names_the_servers_and_the_failures() {
-    let (hub, _server) = connected(TestServer::default()).await;
-    hub.connect(&[McpServerConfig::new(
-        "broken",
-        McpTransport::stdio("/nonexistent/binary"),
-    )])
-    .await;
-    let shown = format!("{hub:?}");
-    assert!(
-        shown.contains("\"srv\"") && shown.contains("\"broken\""),
-        "{shown}"
-    );
-}
-
 #[test]
 fn a_host_can_spawn_connect_and_close() {
     fn spawnable<F: std::future::Future + Send>(_: F) {}

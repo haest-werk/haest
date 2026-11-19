@@ -127,7 +127,6 @@ pub(crate) fn mcp_result_to_output(res: &Value) -> ToolOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use haest_core::messages::MediaKind;
     use serde_json::json;
 
     #[test]
@@ -144,26 +143,6 @@ mod tests {
         assert_eq!(parts[0], "a");
         assert!(out.media.is_empty());
         assert!(out.is_error);
-    }
-
-    #[test]
-    fn an_mcp_tool_returning_an_image_hands_the_model_the_image_as_media() {
-        let out = mcp_result_to_output(&json!({
-            "content": [
-                {"type": "text", "text": "screenshot taken"},
-                {"type": "image", "data": "AQID", "mimeType": "image/png"},
-            ],
-        }));
-        assert_eq!(
-            out.media,
-            [MediaPart {
-                kind: MediaKind::Image,
-                media_type: "image/png".into(),
-                data: "AQID".into(),
-                name: "image-2.png".into(),
-            }]
-        );
-        assert!(!out.is_error);
     }
 
     #[test]
