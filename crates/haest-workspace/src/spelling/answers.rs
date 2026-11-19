@@ -10,7 +10,7 @@ use std::{
 
 use super::{
     disks,
-    folding::{Dir, Disk, Folding},
+    folding::{Asked, Dir, Disk, Folding},
 };
 
 /// How the disk answers a lookup's first questions: the system's own, but
@@ -84,9 +84,9 @@ pub(super) fn resolve(
     if found != real.join(inside) {
         return Resolved::Unsure;
     }
-    let mut at = real.to_path_buf();
+    let (mut at, mut asked) = (real.to_path_buf(), Asked::default());
     for name in inside {
-        if !keeps_name(answers, folding, &at, name) {
+        if !keeps_name(answers, folding, &mut asked, &at, name) {
             return Resolved::Unsure;
         }
         at.push(name);
@@ -106,13 +106,22 @@ pub(super) fn resolve(
 /// (`2024` and `00001` have none), or by such an entry of its listing
 /// (`Spelling::learn`). A flag is read again at each lookup where the
 /// system gives no birth time (musl): a directory made later under the same
-/// inode number may carry another, and reading it costs no listing.
-fn keeps_name(answers: Answers, folding: &Folding, dir: &Path, name: &OsStr) -> bool {
+/// inode number may carry another, and reading it costs no listing. A disk
+/// whose answer has `realpath` trusted is asked again once per lookup
+/// (`asked`): the disk under a device number may be another by the next one
+/// ([`Folding::disk`]).
+fn keeps_name(
+    answers: Answers,
+    folding: &Folding,
+    asked: &mut Asked,
+    dir: &Path,
+    name: &OsStr,
+) -> bool {
     let Ok(m) = std::fs::symlink_metadata(dir) else {
         return false;
     };
     let id = Dir::of(&m);
-    let disk = folding.disk(id, || (answers.disk)(dir));
+    let disk = folding.disk(id, asked, || (answers.disk)(dir));
     match disk {
         Disk::Stored => return true,
         Disk::Folds => return false,

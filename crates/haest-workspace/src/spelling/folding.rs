@@ -17,8 +17,11 @@ pub(super) enum Disk {
     /// `realpath` answers with the name a directory holds, in its case and
     /// Unicode form: APFS (either kind) and HFS+.
     #[cfg_attr(
-        not(target_os = "macos"),
-        expect(dead_code, reason = "only macOS has such a disk")
+        all(not(target_os = "macos"), not(test)),
+        expect(
+            dead_code,
+            reason = "only macOS has such a disk; a test makes one anywhere"
+        )
     )]
     Stored,
     /// Every directory reads two spellings of a name as one, and `realpath`
@@ -72,20 +75,48 @@ pub(super) struct Folding(Mutex<Known>);
 
 #[derive(Default)]
 struct Known {
-    /// By device.
+    /// What each device's disk said last.
     disks: HashMap<u64, Disk>,
     /// True where the directory reads two spellings as one.
     dirs: HashMap<Dir, bool>,
 }
 
+/// What each disk said within one lookup: asked once per device crossed.
+#[derive(Debug, Default)]
+pub(super) struct Asked(Vec<(u64, Disk)>);
+
 impl Folding {
-    /// What the disk `dir` is on says, asked of `ask` once per device.
-    pub(super) fn disk(&self, dir: Dir, ask: impl FnOnce() -> Disk) -> Disk {
-        if let Some(disk) = self.lock().disks.get(&dir.dev) {
+    /// What the disk `dir` is on says, asked of `ask`. A device number names
+    /// a disk only while it stays mounted, and macOS gives the next disk
+    /// attached the number of the one detached before it, whatever its kind:
+    /// so an answer that has `realpath` trusted ([`Disk::Stored`],
+    /// [`Disk::Flagged`]) is asked again once per lookup (`asked`), never
+    /// kept past it. One that sends a lookup to the listing or to each
+    /// directory ([`Disk::Folds`], [`Disk::Unknown`]) is kept: wrong after a
+    /// swap, it costs only time, and asking costs more there (`statfs` takes
+    /// about 60 µs on exFAT and FAT, a round trip on NFS or SMB). Where the
+    /// device's disk says other than it did before, what was known of its
+    /// directories is forgotten with it.
+    pub(super) fn disk(&self, dir: Dir, asked: &mut Asked, ask: impl FnOnce() -> Disk) -> Disk {
+        if let Some((_, disk)) = asked.0.iter().find(|(dev, _)| *dev == dir.dev) {
             return *disk;
         }
-        let disk = ask();
-        self.lock().disks.insert(dir.dev, disk);
+        let kept = self.lock().disks.get(&dir.dev).copied();
+        let disk = match kept {
+            Some(disk @ (Disk::Folds | Disk::Unknown)) => disk,
+            _ => ask(),
+        };
+        asked.0.push((dir.dev, disk));
+        if kept != Some(disk) {
+            let mut known = self.lock();
+            if known
+                .disks
+                .insert(dir.dev, disk)
+                .is_some_and(|was| was != disk)
+            {
+                known.dirs.retain(|d, _| d.dev != dir.dev);
+            }
+        }
         disk
     }
 
@@ -102,8 +133,8 @@ impl Folding {
         known.dirs.insert(dir, folds);
     }
 
-    /// Whether a name in `dir` may still tell if it folds names: its disk
-    /// was asked and leaves that to each directory, and nothing told yet.
+    /// Whether a name in `dir` may still tell if it folds names: its disk,
+    /// asked last, leaves that to each directory, and nothing told yet.
     pub(super) fn undecided(&self, dir: Dir) -> bool {
         let known = self.lock();
         let per_dir = matches!(

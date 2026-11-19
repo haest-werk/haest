@@ -477,12 +477,12 @@ write instead.
     wrong (a disk swapped under a running sandbox, a disk that reads both
     Unicode forms of a name as one, a listing kept too long), and then the
     sandbox showed one file on the disk under two names, `README.md` and
-    `readme.md`, and applying
-    `mv README.md readme.md` deleted the only file there was. Now each
-    name on the change's way must be one its directory lists, byte for
-    byte, and no other path the sandbox shows, but one the apply adds,
-    may be the same file (`lstat`'s device and inode number) or under it;
-    else the change is a conflict, and the disk keeps the file;
+    `readme.md`, and applying `mv README.md readme.md` deleted the only
+    file there was. Now each name on the change's way must be one its
+    directory lists, byte for byte, and no other path the sandbox shows,
+    but one the apply adds, may be the same file (`lstat`'s device and
+    inode number) or under it; else the change is a conflict, and the disk
+    keeps the file;
   - the change list reads a path's first state through the same lookups
     the sandbox reads the disk through. It read it apart, so where the
     sandbox showed no `notes.md` (a listing kept too long), Write told
@@ -496,7 +496,12 @@ write instead.
   first looked up by since the disk was mounted, and on vfat and in a
   case-folding directory on Linux the one asked, so there the
   directory's listing decides: a file is the entry that is the same
-  file, never realpath's spelling.
+  file, never realpath's spelling. Where the kind of disk a directory is
+  on (statfs) has realpath trusted, it is asked again at each lookup:
+  macOS gives the next disk attached the device number of the one
+  detached before it, and a sandbox open while the project's card or
+  stick was swapped took the exFAT or FAT disk for the APFS or HFS+ one
+  before it.
   The cost: in the sandbox, `cat README.md` does not find `readme.md`,
   where real bash on that disk would (see haest-workspace).
 - A file or directory the sandbox moved or copied landed on the disk at

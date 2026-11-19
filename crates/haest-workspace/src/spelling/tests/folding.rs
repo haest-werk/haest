@@ -1,7 +1,7 @@
 //! Whether a directory reads two spellings of a name as one: known once
 //! per directory, and never taken from a name that cannot tell.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 
@@ -35,12 +35,13 @@ async fn numbered_names_in_a_directory_that_tells_case_apart_read_no_listing_eac
     assert!(s.reads() <= 1, "{} listings read", s.reads());
 }
 
-/// The disk is asked once, and a directory once, however many names are
-/// looked up in it: `statfs` ran for each name of each lookup. (Where the
-/// system gives no birth time, a directory's flag is read at each lookup:
-/// its inode number alone may be another directory's by then.)
+/// A disk whose answer has `realpath` trusted is asked once a lookup, not
+/// once a name, and a directory once, however many names are looked up in
+/// it: `statfs` ran for each name of each lookup. (Where the system gives no
+/// birth time, a directory's flag is read at each lookup: its inode number
+/// alone may be another directory's by then.)
 #[tokio::test]
-async fn a_disk_and_a_directory_are_asked_once_for_every_name_in_them() {
+async fn a_disk_is_asked_once_a_lookup_and_a_directory_once() {
     static DISKS: AtomicUsize = AtomicUsize::new(0);
     static FLAGS: AtomicUsize = AtomicUsize::new(0);
     let t = tempfile::tempdir().unwrap();
@@ -65,7 +66,7 @@ async fn a_disk_and_a_directory_are_asked_once_for_every_name_in_them() {
         let asked = format!("/lib/{i:02}");
         assert_eq!(s.spelled(Path::new(&asked)).await, Spelled::AsAsked);
     }
-    assert_eq!(DISKS.load(Ordering::Relaxed), 1, "disks asked");
+    assert_eq!(DISKS.load(Ordering::Relaxed), 50, "disks asked");
     // The project directory's flag, and `lib`'s.
     let flags = FLAGS.load(Ordering::Relaxed);
     if fs::metadata(dir).unwrap().created().is_ok() {
@@ -73,6 +74,68 @@ async fn a_disk_and_a_directory_are_asked_once_for_every_name_in_them() {
     } else {
         assert_eq!(flags, 100, "flags read");
     }
+}
+
+/// A disk whose answer sends each lookup to the listing (exFAT, FAT) is
+/// asked once: `statfs` takes about 60 µs there, and asked at each lookup it
+/// made a lookup on exFAT cost a fifth more than it did.
+#[tokio::test]
+async fn a_disk_that_sends_lookups_to_the_listing_is_asked_once() {
+    static DISKS: AtomicUsize = AtomicUsize::new(0);
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    numbered(dir, 20);
+    let s = Spelling {
+        answers: Answers {
+            disk: |_| {
+                DISKS.fetch_add(1, Ordering::Relaxed);
+                Disk::Folds
+            },
+            ..Answers::SYSTEM
+        },
+        ..Spelling::of(dir)
+    };
+    for i in 0..20 {
+        let asked = format!("/{i:02}");
+        assert_eq!(s.spelled(Path::new(&asked)).await, Spelled::AsAsked);
+    }
+    assert_eq!(DISKS.load(Ordering::Relaxed), 1, "disks asked");
+}
+
+/// A disk's kind is its device number's only while it stays mounted, and
+/// macOS gives the next disk attached the number of the one detached before
+/// it. Kept for the sandbox's life, the first disk's "APFS" stood for an
+/// exFAT disk swapped in under its number, and `realpath`, which there
+/// gives back the spelling asked, was taken at its word: `readme.md` read
+/// as there beside the disk's `README.md`, and `mv README.md readme.md`
+/// deleted the only file on apply.
+#[tokio::test]
+async fn a_disk_swapped_for_another_kind_under_the_same_number_is_asked_again() {
+    static SWAPPED: AtomicBool = AtomicBool::new(false);
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    fs::write(dir.join("README.md"), "").unwrap();
+    let s = Spelling {
+        answers: Answers {
+            disk: |_| {
+                if SWAPPED.load(Ordering::Relaxed) {
+                    Disk::Folds
+                } else {
+                    Disk::Stored
+                }
+            },
+            ..echoing(dir).answers
+        },
+        ..Spelling::of(dir)
+    };
+    assert_eq!(s.spelled(Path::new("/README.md")).await, Spelled::AsAsked);
+    SWAPPED.store(true, Ordering::Relaxed);
+    let want = if dir.join("readme.md").exists() {
+        Spelled::Other(Some(PathBuf::from("/README.md")))
+    } else {
+        Spelled::AsAsked
+    };
+    assert_eq!(s.spelled(Path::new("/readme.md")).await, want);
 }
 
 /// Where nothing says how a directory spells (no flag, and only numbered
