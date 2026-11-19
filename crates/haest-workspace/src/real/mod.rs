@@ -24,7 +24,7 @@ use haest_core::{
 };
 
 pub use fs::RealFs;
-pub(crate) use replace::{Name, put_file};
+pub(crate) use replace::put_file;
 
 /// The real disk and the real `bash`: the workspace where the agent's edits
 /// land on disk at once and its commands are real programs.
@@ -35,8 +35,11 @@ pub(crate) use replace::{Name, put_file};
 ///   the new text goes into a new file beside it, which takes its
 ///   permission bits and is renamed over it, so a disk that fills up, or a
 ///   kill, partway leaves the human's file as it was, and the tool fails
-///   with the disk's error. The file keeps the name its directory lists,
-///   however the model spells it. The trade-offs are the overlay apply's:
+///   with the disk's error. On a disk that reads two spellings of a name
+///   as one (`readme.md` and `README.md` on macOS's default), the system
+///   decides which one the file goes by afterwards, as for any program that
+///   saves by renaming: APFS keeps the name it holds, HFS+, exFAT and FAT
+///   take the model's. The trade-offs are the overlay apply's:
 ///   the file does not keep its extended attributes or ACLs, and whatever
 ///   holds the old file keeps it (a process that has it open, as a log a
 ///   server appends to or `tail -f`, an inotify watch on it, a container

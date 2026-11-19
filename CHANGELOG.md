@@ -606,10 +606,12 @@ write instead.
   They now replace the file whole or not at all, as the apply does
   (`Fs::write_whole`): the new text goes into a new file beside it, which
   takes the file's permission bits and is renamed over it, and a disk
-  that fills up partway leaves the file as it was. The file keeps its
-  name: on a disk that reads `readme.md` as `README.md` (HFS+, exFAT and
-  FAT on macOS), the new file takes the name the directory lists, however
-  the model spells it. The apply's trade-offs come with it: a replaced
+  that fills up partway leaves the file as it was. On a disk that reads
+  `readme.md` as `README.md`, the system decides which name the file goes
+  by afterwards, as for any program that saves by renaming a new file over
+  the old: an Edit of `readme.md` renames the human's `README.md` to
+  `readme.md` on HFS+, exFAT and FAT on macOS, and keeps `README.md` on
+  APFS. The apply's trade-offs come with it: a replaced
   file does not keep its extended attributes or ACLs, whatever holds the
   old file keeps it (a process that has it open, as a log a server
   appends to, a database or `tail -f`, an inotify watch on it, a
@@ -2137,10 +2139,8 @@ Hosts write less (round two of the review, and what porting brain onto
   the bytes in place where a new file would not stand in for it. The
   apply goes through it, and so do Edit, Write over a file that is
   there, and GenerateImage over an image that is there, in the real
-  workspace (see Bug fixes). A tool's path is spelled as the model
-  spelled it, so the file it replaces keeps the name its directory's
-  listing gives; the apply's paths are the disk's own spelling, so it
-  reads no listing for them.
+  workspace (see Bug fixes). It renames the new file onto the path it was
+  given and reads no directory listing.
 
 ### haest-code
 

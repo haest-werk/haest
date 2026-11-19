@@ -204,18 +204,16 @@ async fn an_edit_the_full_disk_stops_leaves_the_humans_file_whole() {
     assert_eq!(names(&dir), ["src.rs"]);
 }
 
-/// On a disk that reads two spellings of a name as one and keeps the
-/// spelling a rename gives (HFS+, exFAT and FAT on macOS; a disk image
-/// `hdiutil` makes is HFS+ and reads `readme.md` as `README.md`), an Edit
-/// of `readme.md` renamed the human's `README.md` to `readme.md`, and so
-/// did a Write: the new file was renamed over the old one under the
-/// model's spelling. The file now keeps the name its directory lists, an
-/// empty one too (on exFAT and FAT it has no inode number of its own). On
-/// a disk that keeps the name it holds through a rename (APFS, vfat on
-/// Linux), or tells the spellings apart (ext4, tmpfs), it passes either
-/// way.
+/// On a disk that reads two spellings of a name as one, an Edit or a Write
+/// of `readme.md` goes to the human's `README.md`, an empty `TODO.md`
+/// too (on exFAT and FAT it has no inode number of its own). The system
+/// decides which name the file goes by afterwards, as for any program that
+/// saves by renaming (HFS+, exFAT and FAT on macOS take the model's, APFS
+/// and vfat on Linux keep the one held): one file, the new text, nothing
+/// beside it. On a disk that tells the spellings apart it passes without
+/// running.
 #[tokio::test]
-async fn an_edit_or_a_write_spelled_another_way_keeps_the_files_name() {
+async fn an_edit_or_a_write_spelled_another_way_keeps_one_file() {
     let Some(base) = small_disk() else {
         return;
     };
@@ -229,29 +227,30 @@ async fn an_edit_or_a_write_spelled_another_way_keeps_the_files_name() {
         return;
     }
     let ctx = ToolContext::new(&dir, RealWorkspace::new(ChildEnv::default()));
-    let held = ["README.md", "TODO.md"];
+    // The one file under either name, and what it holds.
+    let held = |upper: &str, lower: &str| {
+        let names = names(&dir);
+        let one = names.iter().filter(|n| *n == upper || *n == lower).count();
+        assert_eq!(one, 1, "{upper}: {names:?}");
+        assert_eq!(names.len(), 2, "{names:?}");
+        fs::read_to_string(dir.join(upper)).unwrap()
+    };
 
     let edit = json!({"file_path": asked, "old_string": "hello", "new_string": "HELLO"});
     EditTool::new().execute(input(&edit), &ctx).await.unwrap();
-    assert_eq!(names(&dir), held, "after the edit");
-    let on_disk = fs::read_to_string(dir.join("README.md")).unwrap();
-    assert_eq!(on_disk, "HELLO world\n");
+    assert_eq!(held("README.md", "readme.md"), "HELLO world\n");
 
     let overwrite = json!({"file_path": asked, "content": "rewritten\n"});
     WriteTool::new()
         .execute(input(&overwrite), &ctx)
         .await
         .unwrap();
-    assert_eq!(names(&dir), held, "after the write");
-    let on_disk = fs::read_to_string(dir.join("README.md")).unwrap();
-    assert_eq!(on_disk, "rewritten\n");
+    assert_eq!(held("README.md", "readme.md"), "rewritten\n");
 
     let fill_in = json!({"file_path": dir.join("todo.md"), "content": "a list\n"});
     WriteTool::new()
         .execute(input(&fill_in), &ctx)
         .await
         .unwrap();
-    assert_eq!(names(&dir), held, "after the write of the empty one");
-    let on_disk = fs::read_to_string(dir.join("TODO.md")).unwrap();
-    assert_eq!(on_disk, "a list\n");
+    assert_eq!(held("TODO.md", "todo.md"), "a list\n");
 }

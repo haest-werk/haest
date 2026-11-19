@@ -33,8 +33,9 @@ use tokio::io::AsyncReadExt;
 ///   gives it the file's permission bits and renames it over the file, so
 ///   a write the disk stops partway (a full disk, a kill) leaves the file
 ///   as it was. The overlay's apply and the tools that rewrite a file go
-///   through it. The file keeps the name its directory lists, however the
-///   path spells it. A file made read-only is refused. It writes in place,
+///   through it. On a disk that reads two spellings of a name as one, the
+///   system decides which one the file goes by afterwards, as for any
+///   program that saves by renaming. A file made read-only is refused. It writes in place,
 ///   as `write` does, where a new file would not stand in for the file
 ///   (another hard link to it, another owner or group, a symlink, a FIFO
 ///   or a device, which it opens once, as `write` does) or the disk will
@@ -158,7 +159,7 @@ impl Fs for RealFs {
     /// so a write the disk stops partway leaves it as it was; where a new
     /// file would not stand in for it, they go in place (`replace.rs`).
     async fn write_whole(&self, path: &Path, data: &[u8]) -> io::Result<()> {
-        super::replace::put_file(self, path, data, super::replace::Name::Asked).await
+        super::replace::put_file(self, path, data).await
     }
 
     async fn exists(&self, path: &Path) -> bool {

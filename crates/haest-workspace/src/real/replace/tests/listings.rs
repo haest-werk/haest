@@ -7,13 +7,11 @@ use haest_core::{
     workspace::ChangeSet,
 };
 
-use crate::{
-    RealFs, bridge::BashkitFsOverHaest, overlay::OverlayChanges, real::replace::listed::LISTED,
-};
+use crate::{RealFs, bridge::BashkitFsOverHaest, overlay::OverlayChanges};
 
 /// The sandbox rewrites each of `names`, files in one directory, and one
-/// apply puts them all on the disk: it reads that directory once at most,
-/// in its whole writes and its lookups together. `as_on_linux` takes the
+/// apply puts them all on the disk: its lookups read that directory once at
+/// most, and its whole writes read no listing at all. `as_on_linux` takes the
 /// disk's answers as Linux gives them (no disk answers `realpath` with the
 /// name it holds) over this one's.
 async fn apply_of_many_lists_the_directory_once_at_most(names: &[String], as_on_linux: bool) {
@@ -49,17 +47,8 @@ async fn apply_of_many_lists_the_directory_once_at_most(names: &[String], as_on_
             "the sandbox's\n"
         );
     }
-    let whole_writes = LISTED
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|d| *d == &root)
-        .count();
     let lookups = changes.listings_read();
-    assert!(
-        whole_writes + lookups <= 1,
-        "the whole writes listed it {whole_writes} times, the lookups {lookups}"
-    );
+    assert!(lookups <= 1, "the lookups listed it {lookups} times");
 }
 
 /// Each whole write of the apply listed its file's whole directory, to

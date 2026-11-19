@@ -80,10 +80,7 @@ use super::{
     shown::Shown,
     state::Original,
 };
-use crate::{
-    real::{Name, put_file},
-    spelling::Ways,
-};
+use crate::{real::put_file, spelling::Ways};
 
 /// Why one change was not applied: its code and the reason for the human.
 type Refusal = (ApplyFailureCode, String);
@@ -404,11 +401,8 @@ impl OverlayChanges {
             if let Some(parent) = real.parent() {
                 disk.create_dir_all(parent).await?;
             }
-            // `real` is the disk's own spelling: `put` has just read it so,
-            // and skips a path the disk holds under another. A file it
-            // replaces keeps that name with no listing read.
             let bytes = self.overlay.read(path).await?;
-            put_file(disk, &real, &bytes, Name::Listed).await?;
+            put_file(disk, &real, &bytes).await?;
         }
         self.carry_mode(path, s.change.kind, s.mine, &real).await?;
         Ok(took)

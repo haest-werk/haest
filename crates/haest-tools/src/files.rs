@@ -120,9 +120,10 @@ impl Tool for WriteTool {
 /// (haest-workspace's `RealWorkspace`), the text goes into a new file
 /// beside the file, which takes its permission bits and is renamed over
 /// it: a disk that fills up, or a kill, partway leaves the file as it
-/// was, and the tool fails with the disk's error. The file keeps the name
-/// its directory lists, however the model spells it. The new file does
-/// not keep the old one's extended attributes or ACLs, and whatever holds
+/// was, and the tool fails with the disk's error. On a disk that reads two
+/// spellings of a name as one, the system decides which one the file goes
+/// by afterwards, as for any program that saves by renaming. The new file
+/// does not keep the old one's extended attributes or ACLs, and whatever holds
 /// the old one keeps it: a process that has it open (a log a server
 /// appends to, `tail -f`), an inotify watch on it, a container it is
 /// bind-mounted into on its own. The disk needs room for the second copy,

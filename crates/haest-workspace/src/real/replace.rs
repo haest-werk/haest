@@ -3,12 +3,11 @@
 //! in the real workspace through [`RealFs`](crate::RealFs) (Edit, Write
 //! over a file that is there, `GenerateImage` over an image that is
 //! there), and the overlay's apply (`overlay/apply.rs`), over whatever disk
-//! the apply was handed. A file that is replaced keeps the name its
-//! directory lists it by: a tool's path is spelled as the model spelled it,
-//! so that name is read from the directory's listing first ([`as_listed`],
-//! `listed.rs`, [`Name::Asked`]); the apply's path is the disk's own
-//! spelling already, so it is renamed over as it is, with no listing read
-//! ([`Name::Listed`]).
+//! the apply was handed. The new file is renamed onto the path it was
+//! given. On a disk that reads two spellings of a name as one, the system
+//! decides which one the file then goes by, as it does for any program
+//! that saves a file by renaming a new one over it: APFS keeps the name it
+//! holds, HFS+, exFAT and FAT on macOS take the one given.
 //!
 //! The bytes go into a new file, in a directory of its own beside the real
 //! one that only its owner may enter from the moment it is made; a new file
@@ -23,8 +22,6 @@
 //! command's `/apply`, a host's timeout) removes the new file and its
 //! directory as it drops.
 
-mod listed;
-
 use std::{
     fs::Metadata,
     io,
@@ -34,7 +31,6 @@ use std::{
 };
 
 use haest_core::fs::Fs;
-use listed::as_listed;
 
 /// The permission bits a replaced file keeps: all but setuid and setgid,
 /// which a write into the file takes away as well.
@@ -58,17 +54,8 @@ const NAME_PART: usize = 64;
 /// make it its owner's alone, or move it over the real one
 /// ([`in_place_instead`]). Where the new file's bytes do not all go in (a
 /// full disk), the write fails and never falls back: in place they would
-/// not all go in either, and the human's file would be cut short. A file
-/// that is replaced keeps the name its directory lists it by: `real`'s own
-/// where `name` says that is it, or else the one [`as_listed`] reads from
-/// the directory, however `real` spells it; where that cannot be told, it
-/// is written in place, which keeps any name.
-pub(crate) async fn put_file(
-    disk: &dyn Fs,
-    real: &Path,
-    bytes: &[u8],
-    name: Name,
-) -> io::Result<()> {
+/// not all go in either, and the human's file would be cut short.
+pub(crate) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
     let old = if disk.exists(real).await {
         // What the `Fs` does not carry; None on a disk that is not the
         // host's own (nothing to keep, then).
@@ -86,30 +73,10 @@ pub(crate) async fn put_file(
     } else {
         None
     };
-    let real = match (&old, name) {
-        (Some(old), Name::Asked) => match as_listed(real, old).await {
-            Some(listed) => listed,
-            None => return disk.write(real, bytes).await,
-        },
-        (Some(_), Name::Listed) | (None, _) => real.to_path_buf(),
-    };
-    match put_new(disk, &real, old.as_ref(), bytes).await? {
+    match put_new(disk, real, old.as_ref(), bytes).await? {
         Put::Replaced => Ok(()),
-        Put::InPlace => disk.write(&real, bytes).await,
+        Put::InPlace => disk.write(real, bytes).await,
     }
-}
-
-/// How the path a whole write is given names the file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Name {
-    /// As its directory lists it: the apply's paths, each read as the disk
-    /// spells it right before it is written (`overlay/apply.rs`). Renamed
-    /// over as it is, with no listing read.
-    Listed,
-    /// As a caller asked for it (Edit, Write, `GenerateImage`, spelled as
-    /// the model spelled it): one that is replaced keeps the name its
-    /// directory lists ([`as_listed`]).
-    Asked,
 }
 
 /// What became of the new file, gone either way.
