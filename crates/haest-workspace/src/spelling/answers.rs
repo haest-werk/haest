@@ -110,6 +110,13 @@ pub(super) fn resolve(
 /// whose answer has `realpath` trusted is asked again once per lookup
 /// (`asked`): the disk under a device number may be another by the next one
 /// ([`Folding::disk`]).
+///
+/// A case swap says nothing of Unicode forms: a directory that tells case
+/// apart may still read `é` and `e\u{301}` as one (ZFS with normalization,
+/// a case-sensitive APFS volume shared into Linux). So on a disk nothing
+/// tells of, the swap's answer covers ASCII names alone, and the listing
+/// decides any other. A flag tells more: outside a case-folding directory,
+/// ext4, f2fs, tmpfs, btrfs and overlayfs keep each name's bytes.
 fn keeps_name(
     answers: Answers,
     folding: &Folding,
@@ -125,6 +132,7 @@ fn keeps_name(
     match disk {
         Disk::Stored => return true,
         Disk::Folds => return false,
+        Disk::Unknown if !name.as_bytes().is_ascii() => return false,
         Disk::Flagged | Disk::Unknown => {}
     }
     if let Some(folds) = folding.folds(id) {

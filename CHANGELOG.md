@@ -491,17 +491,22 @@ write instead.
     sandbox showed as absent is now absent at first touch, and a file
     found there later is a conflict.
   The disk's spelling of a name is the one its directory lists. realpath(3)
-  gives that only on APFS and HFS+, and in a directory that tells case
-  apart. On exFAT and FAT on macOS it gives the spelling the name was
-  first looked up by since the disk was mounted, and on vfat and in a
-  case-folding directory on Linux the one asked, so there the
-  directory's listing decides: a file is the entry that is the same
-  file, never realpath's spelling. Where the kind of disk a directory is
-  on (statfs) has realpath trusted, it is asked again at each lookup:
-  macOS gives the next disk attached the device number of the one
-  detached before it, and a sandbox open while the project's card or
-  stick was swapped took the exFAT or FAT disk for the APFS or HFS+ one
-  before it.
+  gives that only on APFS and HFS+, in a directory whose own flag says it
+  tells case apart (ext4, f2fs, tmpfs, btrfs, overlayfs), and, for a name
+  of ASCII characters alone, in one a case swap says tells case apart: a
+  case swap says nothing of Unicode forms, and a disk that tells case
+  apart may read `café` in both forms as one (ZFS with normalization, a
+  case-sensitive APFS volume shared into Linux), where `mv` from one form
+  to the other deleted the only file. On exFAT and FAT on macOS it gives
+  the spelling the name was first looked up by since the disk was
+  mounted, and on vfat and in a case-folding directory on Linux the one
+  asked. Everywhere else the directory's listing decides: a file is the
+  entry that is the same file, never realpath's spelling. Where the kind
+  of disk a directory is on (statfs) has realpath trusted, it is asked
+  again at each lookup: macOS gives the next disk attached the device
+  number of the one detached before it, and a sandbox open while the
+  project's card or stick was swapped took the exFAT or FAT disk for the
+  APFS or HFS+ one before it.
   The cost: in the sandbox, `cat README.md` does not find `readme.md`,
   where real bash on that disk would (see haest-workspace).
 - A file or directory the sandbox moved or copied landed on the disk at

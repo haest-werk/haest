@@ -12,7 +12,8 @@
 //! lists. One `realpath` answers that for most lookups, where it gives back
 //! each name as asked on a disk that answers with the name it holds (APFS,
 //! HFS+), or in directories that tell cases apart (`answers.rs`), each
-//! known as one once (`folding.rs`). Elsewhere (exFAT and FAT answer with
+//! known as one once (`folding.rs`); where only a case swap told that, for
+//! an ASCII name alone. Elsewhere (exFAT and FAT answer with
 //! the spelling a file was first looked up by, vfat and a case-folding
 //! directory on Linux with the one asked), in a directory not known yet,
 //! and where it spells a name another way (another spelling, or a symlink

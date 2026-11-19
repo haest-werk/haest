@@ -138,6 +138,45 @@ async fn a_disk_swapped_for_another_kind_under_the_same_number_is_asked_again() 
     assert_eq!(s.spelled(Path::new("/readme.md")).await, want);
 }
 
+/// A case swap says nothing of Unicode forms. A directory that tells case
+/// apart may still read both forms of a name as one (ZFS with
+/// normalization, a case-sensitive APFS volume shared into Linux), and
+/// there `realpath` gives back the form asked: the human's decomposed `한`
+/// and `café.txt` read as there in their composed forms too, and `mv` from
+/// one form to the other deleted the only file on apply. On a disk nothing
+/// tells of, a name with a character past ASCII is there only as listed.
+#[tokio::test]
+async fn a_name_past_ascii_where_a_case_swap_told_is_there_only_as_listed() {
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path();
+    let (hangul, cafe) = ("\u{1112}\u{1161}\u{11ab}", "cafe\u{301}.txt");
+    for name in [hangul, cafe, "README.md"] {
+        fs::write(dir.join(name), "").unwrap();
+    }
+    let s = Spelling {
+        answers: Answers {
+            disk: |_| Disk::Unknown,
+            ..echoing(dir).answers
+        },
+        ..Spelling::of(dir)
+    };
+    // What the case swap answers on ZFS: the directory tells case apart.
+    s.folding
+        .decide(Dir::of(&fs::metadata(dir).unwrap()), false);
+    for (asked, listed) in [("\u{d55c}", hangul), ("caf\u{e9}.txt", cafe)] {
+        let want = if dir.join(asked).exists() {
+            Spelled::Other(Some(Path::new("/").join(listed)))
+        } else {
+            Spelled::AsAsked
+        };
+        let got = s.spelled(&Path::new("/").join(asked)).await;
+        assert_eq!(got, want, "{asked}");
+    }
+    let reads = s.reads();
+    assert_eq!(s.spelled(Path::new("/README.md")).await, Spelled::AsAsked);
+    assert_eq!(s.reads(), reads, "an ASCII name keeps the case answer");
+}
+
 /// Where nothing says how a directory spells (no flag, and only numbered
 /// names asked in it), the one entry of its listing with an ASCII letter
 /// tells, once: the listing is read for the first lookup alone where the
