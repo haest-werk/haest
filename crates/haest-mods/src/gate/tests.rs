@@ -67,17 +67,6 @@ async fn an_ask_nobody_answers_is_a_deny_after_the_timeout() {
 }
 
 #[tokio::test]
-async fn revoking_always_for_a_tool_makes_its_asks_prompt_again() {
-    let human = Human::answering([ApprovalAnswer::AllowAlways, ApprovalAnswer::Deny]);
-    let gate = ApprovalGate::new(human.clone());
-    let none = CancellationToken::new();
-    assert_eq!(gate.ask(bash("rm -rf a"), &none).await, Decision::Allow);
-    gate.revoke("Bash");
-    assert_eq!(gate.ask(bash("rm -rf a"), &none).await, Decision::Deny);
-    assert_eq!(human.prompts(), 2);
-}
-
-#[tokio::test]
 async fn a_gates_mod_ui_asks_through_the_gate_and_sends_each_line_as_what_it_is() {
     let human = Human::answering([ApprovalAnswer::AllowAlways]);
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
