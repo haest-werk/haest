@@ -29,12 +29,10 @@ pub(crate) struct SpelledFs {
 }
 
 impl SpelledFs {
-    /// `inner`, the real directory `dir`, found only as the disk spells it.
-    pub(crate) fn new(inner: Arc<dyn FileSystem>, dir: &Path) -> Self {
-        Self {
-            inner,
-            spelling: Spelling::of(dir),
-        }
+    /// `inner`, a real directory, found only as `spelling`, the disk's
+    /// spelling of that directory, has it.
+    pub(crate) fn new(inner: Arc<dyn FileSystem>, spelling: Spelling) -> Self {
+        Self { inner, spelling }
     }
 
     async fn spelled(&self, path: &Path) -> bool {

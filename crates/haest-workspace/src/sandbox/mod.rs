@@ -28,7 +28,10 @@ use haest_core::{
 
 pub use mounts::{OpenSandboxError, SandboxMounts};
 
-use crate::bridge::{BashkitFsOverHaest, HaestFsOverBashkit};
+use crate::{
+    bridge::{BashkitFsOverHaest, HaestFsOverBashkit},
+    spelling::Spelling,
+};
 use exec::Shell;
 
 /// The commands every sandbox has beyond bashkit's builtins (`xan`). A host's
@@ -168,11 +171,33 @@ impl SandboxWorkspace {
     /// opened, is an empty path, or is relative and the current directory
     /// cannot be read: the [`OpenSandboxError`] names it.
     pub async fn open(mounts: SandboxMounts) -> Result<Self, OpenSandboxError> {
+        Self::open_spelled(mounts, |spelling| spelling).await
+    }
+
+    /// The same, the disk's spelling of the project as `spell` makes it
+    /// from the system's: in the tests, an answer made wrong on purpose.
+    async fn open_spelled(
+        mounts: SandboxMounts,
+        spell: impl FnOnce(Spelling) -> Spelling,
+    ) -> Result<Self, OpenSandboxError> {
         let mounts = mounts.absolute()?;
-        let changes = mounts::project_overlay(&mounts.cwd).await?;
+        let spelling = spell(Spelling::of(&mounts.cwd));
+        let changes = mounts::project_overlay(&mounts.cwd, spelling).await?;
         let shell_fs = mounts::sandbox_fs(&mounts, &changes).await?;
         let fs = FsRef::new(HaestFsOverBashkit::new(shell_fs.clone()));
         Ok(Self::from_parts(shell_fs, fs, Some(changes.into())))
+    }
+
+    /// The default sandbox over `cwd`, its every answer to how the disk
+    /// spells a path `told`'s where that gives one ([`Spelling::told`]).
+    #[cfg(test)]
+    pub(crate) async fn open_told(
+        cwd: &std::path::Path,
+        told: fn(&std::path::Path) -> Option<crate::spelling::Spelled>,
+    ) -> Self {
+        Self::open_spelled(SandboxMounts::new(cwd), |s| s.told(told))
+            .await
+            .expect("the sandbox opens")
     }
 
     /// A sandboxed bash over a host's own file system: the shell's whole world

@@ -470,7 +470,26 @@ write instead.
     on the disk: one that moved since the scan (an earlier write of the
     apply under another spelling, the new name of a rename whose delete
     failed, or the human saving or deleting it meanwhile) is skipped as a
-    conflict and stays listed.
+    conflict and stays listed;
+  - the apply no longer trusts the sandbox's reading of the disk's
+    spelling where a change takes away what the disk holds (a delete, a
+    file written over, a directory become a file). That reading has been
+    wrong (a disk swapped under a running sandbox, a disk that reads both
+    Unicode forms of a name as one, a listing kept too long), and then the
+    sandbox showed one file on the disk under two names, `README.md` and
+    `readme.md`, and applying
+    `mv README.md readme.md` deleted the only file there was. Now each
+    name on the change's way must be one its directory lists, byte for
+    byte, and no other path the sandbox shows, but one the apply adds,
+    may be the same file (`lstat`'s device and inode number) or under it;
+    else the change is a conflict, and the disk keeps the file;
+  - the change list reads a path's first state through the same lookups
+    the sandbox reads the disk through. It read it apart, so where the
+    sandbox showed no `notes.md` (a listing kept too long), Write told
+    the model it created the file, the list took the human's file there
+    for the one the model saw, and applying wrote over it. A path the
+    sandbox showed as absent is now absent at first touch, and a file
+    found there later is a conflict.
   The disk's spelling of a name is the one its directory lists. realpath(3)
   gives that only on APFS and HFS+, and in a directory that tells case
   apart. On exFAT and FAT on macOS it gives the spelling the name was

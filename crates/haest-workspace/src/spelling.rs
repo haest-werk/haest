@@ -61,6 +61,10 @@ pub(crate) struct Spelling {
     settled: Duration,
     /// How the disk answers before any listing is read.
     answers: Answers,
+    /// A test's answer for some paths, in place of the disk's: the answer
+    /// made wrong on purpose ([`Spelling::told`]).
+    #[cfg(test)]
+    told: Option<fn(&Path) -> Option<Spelled>>,
 }
 
 /// What [`Spelling::spelled_way`] found for each directory it asked: the
@@ -91,7 +95,18 @@ impl Spelling {
             folding: Arc::default(),
             settled: SETTLED,
             answers: Answers::SYSTEM,
+            #[cfg(test)]
+            told: None,
         }
+    }
+
+    /// Its answer for a path is `told`'s where that gives one: wrong on
+    /// purpose, "as asked" for a name the disk holds under another
+    /// spelling, or "another spelling" for one that is there as asked.
+    #[cfg(test)]
+    pub(crate) fn told(mut self, told: fn(&Path) -> Option<Spelled>) -> Self {
+        self.told = Some(told);
+        self
     }
 
     /// How the disk spells `path`, a project path (`/Lib/a.rs`). A path the
@@ -129,6 +144,10 @@ impl Spelling {
     /// How the disk spells `path`; None when nothing is there by any
     /// spelling.
     async fn find(&self, path: &Path) -> Option<Spelled> {
+        #[cfg(test)]
+        if let Some(told) = self.told.and_then(|told| told(path)) {
+            return Some(told);
+        }
         let Some((dir, real)) = &self.root else {
             return Some(Spelled::AsAsked);
         };

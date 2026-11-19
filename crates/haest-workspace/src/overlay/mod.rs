@@ -43,6 +43,9 @@ mod modes;
 mod recorder;
 mod removable;
 mod scan;
+mod shown;
+#[cfg(test)]
+mod spelling_lies;
 mod state;
 #[cfg(test)]
 mod testing;
@@ -62,7 +65,10 @@ use haest_core::{
     workspace::{ApplyReport, Change, ChangeKind, ChangeSet},
 };
 
-use crate::{bridge::HaestFsOverBashkit, spelling::Ways};
+use crate::{
+    bridge::HaestFsOverBashkit,
+    spelling::{Spelling, Ways},
+};
 use book::Book;
 use recorder::Recorder;
 use scan::{Found, Scanned, changes};
@@ -123,6 +129,13 @@ use state::{Original, state_of, walk};
 /// holds under another spelling (an earlier write of this apply: the sandbox
 /// wrote both `README.md` and `readme.md`; or the rename's delete failed), is
 /// skipped as a conflict and stays listed, and so is the directory above it.
+/// The same holds where the sandbox's reading of the disk's spelling is
+/// wrong, so that it shows one file on the disk under two names: a delete or
+/// a write of one would take the other along. Before a change takes away
+/// what the disk holds at its path, the apply asks, apart from that
+/// reading, that each name on the way is one its directory lists byte for
+/// byte, and that no other path the sandbox shows (but one this apply adds)
+/// is the same file, by device and inode number, or under it.
 ///
 /// `apply` never writes through a symlink: not one on the real disk on the
 /// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),
@@ -185,33 +198,51 @@ impl std::fmt::Debug for OverlayChanges {
 
 impl OverlayChanges {
     /// A change ledger over `overlay`, the copy-on-write layer over the project
-    /// directory `root` on `disk`, the real file system.
+    /// directory `root` on `disk`, the real file system, whose paths the
+    /// disk spells as `spelling` has it.
     ///
     /// Nothing is recorded until mutations go through
     /// [`recorder`](Self::recorder).
-    pub(crate) fn new(
+    fn spelled(
         overlay: Arc<dyn bashkit::FileSystem>,
         disk: Arc<dyn Fs>,
-        root: impl Into<PathBuf>,
+        root: PathBuf,
+        spelling: Spelling,
     ) -> Self {
         Self {
-            book: Arc::new(Book::new(disk, root.into())),
+            book: Arc::new(Book::new(disk, root, spelling)),
             overlay: HaestFsOverBashkit::new(overlay),
             cow: None,
         }
     }
 
+    /// The same, the disk spelling each path as the system says.
+    #[cfg(test)]
+    pub(crate) fn new(
+        overlay: Arc<dyn bashkit::FileSystem>,
+        disk: Arc<dyn Fs>,
+        root: impl Into<PathBuf>,
+    ) -> Self {
+        let root = root.into();
+        let spelling = Spelling::of(&root);
+        Self::spelled(overlay, disk, root, spelling)
+    }
+
     /// The same over bashkit's copy-on-write overlay of the project: once a
-    /// change is applied, the sandbox reads the disk there again.
+    /// change is applied, the sandbox reads the disk there again. The
+    /// overlay's lower layer finds each path as `spelling` has it, and so
+    /// does the ledger, with the same lookups: what the ledger takes for a
+    /// path's state at first touch is what the sandbox showed there.
     pub(crate) fn over_cow(
         overlay: Arc<bashkit::OverlayFs>,
         disk: Arc<dyn Fs>,
         root: impl Into<PathBuf>,
+        spelling: Spelling,
     ) -> Self {
         let cow = overlay.clone();
         Self {
             cow: Some(cow),
-            ..Self::new(overlay, disk, root)
+            ..Self::spelled(overlay, disk, root.into(), spelling)
         }
     }
 

@@ -95,15 +95,19 @@ impl Held {
 }
 
 impl Book {
-    /// An empty ledger over the project directory `root` on `disk`.
-    pub(super) fn new(disk: Arc<dyn Fs>, root: PathBuf) -> Self {
+    /// An empty ledger over the project directory `root` on `disk`, whose
+    /// paths the disk spells as `spelling` has it: the one the sandbox
+    /// reads the disk through, so a path's state at first touch is what
+    /// the sandbox showed there, never a lookup of its own that could say
+    /// otherwise.
+    pub(super) fn new(disk: Arc<dyn Fs>, root: PathBuf, spelling: Spelling) -> Self {
         Self {
             touched: Mutex::default(),
             wiped: Mutex::default(),
             modes: SetModes::default(),
             gate: RwLock::new(()),
             disk,
-            spelling: Spelling::of(&root),
+            spelling,
             root,
         }
     }

@@ -56,7 +56,9 @@
 //! that moved since the scan, or whose name or directory the disk now holds
 //! under another spelling, is skipped as a conflict. A directory removed
 //! whole is read again with each change listed under it: one of them that
-//! moved keeps the directory as a conflict too, never removed with it.
+//! moved keeps the directory as a conflict too, never removed with it. And
+//! one that would take away what the sandbox still shows at another path,
+//! asked apart from the sandbox's spelling (`shown.rs`), is a conflict too.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -70,7 +72,12 @@ use haest_core::{
 };
 
 use super::{
-    OverlayChanges, Scanned, links::Links, modes, removable, scan::under, state::Original,
+    OverlayChanges, Scanned,
+    links::Links,
+    modes, removable,
+    scan::{changes, under},
+    shown::Shown,
+    state::Original,
 };
 use crate::{
     real::{Name, put_file},
@@ -85,6 +92,9 @@ struct Run<'a> {
     /// The apply's one lookup of links on the real disk: each real path on
     /// the way is asked once, for the deletes and the writes.
     links: Links<'a>,
+    /// What the sandbox still shows, which no change takes away
+    /// (`shown.rs`).
+    shown: Shown,
     /// What the scan found at each path it listed: on the disk, then in the
     /// overlay.
     listed: BTreeMap<PathBuf, (Original, Original)>,
@@ -116,7 +126,20 @@ impl OverlayChanges {
         let wiped = self.book.wipes();
         // Read as the sandbox spells each path, a delete takes only its own
         // name and what is under it, never a write's: one scan serves both.
-        let scanned = self.scan().await;
+        let found = self.survey().await;
+        let mut shown: BTreeSet<PathBuf> = found
+            .iter()
+            .filter(|f| f.mine != Original::Absent)
+            .map(|f| f.path.clone())
+            .collect();
+        let scanned = changes(found);
+        // A path this apply adds is written after the deletes that free its
+        // name (a rename by case): those may take what is there now.
+        for s in &scanned {
+            if s.change.kind == ChangeKind::Added && !s.change.conflict {
+                shown.remove(&s.path);
+            }
+        }
         // Each change stays in the ledger until it is on the disk. What is
         // under a directory the sandbox made is found by walking it, so once
         // that directory is on the disk, a path under it not written yet
@@ -131,6 +154,7 @@ impl OverlayChanges {
         }
         let mut run = Run {
             links: Links::new(self.book.disk.as_ref(), &self.book.root),
+            shown: Shown::new(&self.book.root, shown.into_iter().collect()),
             listed: scanned
                 .iter()
                 .map(|s| (s.path.clone(), (s.now, s.mine)))
@@ -281,10 +305,20 @@ impl OverlayChanges {
         {
             return Ok(Put::Moved);
         }
-        self.write(s, again.state == s.mine)
+        // The answers above are the sandbox's spelling's. Where that is
+        // wrong, the disk holds one file the sandbox shows under two names,
+        // and a delete or a write of one takes the other along: asked
+        // apart from it (`shown.rs`).
+        let holds = again.state == s.mine;
+        if (deleted || !holds) && run.shown.would_take(path).await {
+            return Ok(Put::Moved);
+        }
+        let took = self
+            .write(s, holds)
             .await
-            .map(Put::Applied)
-            .map_err(|e| (ApplyFailureCode::WriteFailed, e.to_string()))
+            .map_err(|e| (ApplyFailureCode::WriteFailed, e.to_string()))?;
+        run.shown.put(path, deleted);
+        Ok(Put::Applied(took))
     }
 
     /// Whether a change `listed` under `dir` moved on the disk since the
