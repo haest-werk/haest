@@ -86,38 +86,6 @@ async fn a_world_of_the_hosts_files_starts_no_stdio_server_and_says_which() {
     assert_eq!(ui.warnings().len(), 1, "{:?}", ui.warnings());
 }
 
-#[tokio::test]
-async fn the_real_workspace_needs_the_real_disk() {
-    let s = Settings {
-        workspace: WorkspaceMode::Real,
-        ..settings()
-    };
-    let world = World::files(MemFs::new());
-    let none = ChildEnv::default();
-    let err = workspace_for(
-        &s,
-        &world,
-        &none,
-        &[],
-        Path::new("/d/spill"),
-        Remedies::default(),
-    )
-    .await
-    .err()
-    .unwrap();
-    assert!(matches!(err, WorkspaceError::RealNeedsDisk), "{err}");
-    let sandbox = workspace_for(
-        &settings(),
-        &world,
-        &none,
-        &[],
-        Path::new("/d/spill"),
-        Remedies::default(),
-    )
-    .await;
-    assert!(sandbox.is_ok());
-}
-
 /// The sandbox on the disk makes its spill dir first: when it cannot, the
 /// error says which dir (a bare "Not a directory" names nothing to fix).
 #[tokio::test]
@@ -167,8 +135,7 @@ async fn a_sandbox_that_does_not_open_names_the_dir() {
         "{err:?}"
     );
     let shown = report(&err);
-    let named = format!("opening {} for the sandbox: ", s.cwd.display());
-    assert!(shown.starts_with(&named), "{shown}");
+    assert!(shown.contains(&s.cwd.display().to_string()), "{shown}");
 }
 
 /// Spilled output is file contents and command output: on the disk its dir

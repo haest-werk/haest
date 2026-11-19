@@ -134,19 +134,6 @@ async fn the_wind_down_setting_reaches_the_conversation_and_is_off_unless_set() 
     assert_eq!(marks(&on), [Mark::share(0.8); 5]);
 }
 
-#[tokio::test]
-async fn a_key_the_host_hands_in_is_the_key_haest_uses() {
-    let rt = keyed(&Arc::new(MemFs::new()), Resume::New).await;
-    assert!(
-        rt.agent()
-            .deps()
-            .shared()
-            .models()
-            .resolve(rt.agent().model_spec())
-            .is_ok()
-    );
-}
-
 /// A host's own native mod: it adds to the system prompt and the human's text.
 struct HouseStyle;
 

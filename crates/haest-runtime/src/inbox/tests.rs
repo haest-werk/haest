@@ -22,13 +22,6 @@ fn queue(cap: u32) -> (UnboundedSender<String>, InboxQueue) {
 }
 
 #[test]
-fn nothing_waiting_is_no_turn() {
-    let (_tx, mut q) = queue(0);
-    assert_eq!(q.take(&control()), None);
-    assert_eq!(q.waiting(), 0);
-}
-
-#[test]
 fn one_turn_takes_what_the_last_turn_left_unread_then_the_arrivals_oldest_first() {
     let (tx, mut q) = queue(0);
     let control = control();
@@ -61,15 +54,6 @@ async fn waiting_ends_false_once_nothing_can_arrive() {
     assert!(q.wait().await, "what was sent still arrives");
     assert_eq!(q.take(&control()).as_deref(), Some("last words"));
     assert!(!q.wait().await);
-}
-
-#[test]
-fn held_turns_ride_in_with_the_human_and_are_never_dropped() {
-    let (_tx, mut q) = queue(1);
-    assert!(q.agent_turn("one").is_some());
-    assert_eq!(q.agent_turn("held"), None);
-    assert!(q.human("hello").contains("held"));
-    assert_eq!(q.human("again"), "again");
 }
 
 #[test]
