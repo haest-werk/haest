@@ -1,6 +1,6 @@
 use std::{fs, os::unix::fs::symlink};
 
-use super::*;
+use super::{folding::Disk, *};
 
 #[tokio::test]
 async fn a_path_reads_as_asked_only_by_the_disks_own_spelling() {
@@ -33,9 +33,11 @@ async fn a_path_reads_as_asked_only_by_the_disks_own_spelling() {
     }
 }
 
+mod folding;
+
 /// What exFAT and FAT answer on macOS (the spelling a file was first
-/// looked up by: on a fresh mount, the one asked) and every disk on Linux
-/// (the spelling asked): `realpath` gives back the last name as asked, and
+/// looked up by: on a fresh mount, the one asked) and vfat on Linux (the
+/// spelling asked): `realpath` gives back the last name as asked, and
 /// nothing tells whether the directory lists it so.
 fn echoing(dir: &Path) -> Spelling {
     fn echo(p: &Path) -> io::Result<PathBuf> {
@@ -46,7 +48,8 @@ fn echoing(dir: &Path) -> Spelling {
     Spelling {
         answers: Answers {
             realpath: echo,
-            keeps_name: |_, _| false,
+            disk: |_| Disk::Folds,
+            flag: |_| None,
         },
         ..Spelling::of(dir)
     }

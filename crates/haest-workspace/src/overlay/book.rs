@@ -108,6 +108,13 @@ impl Book {
         }
     }
 
+    /// Its lookups take the disk's answers as Linux's ext4 or tmpfs gives
+    /// them ([`Spelling::telling_case_apart`]).
+    #[cfg(test)]
+    pub(super) fn telling_case_apart(&mut self) {
+        self.spelling = self.spelling.clone().telling_case_apart();
+    }
+
     /// The directory listings its lookups read from the disk so far.
     #[cfg(test)]
     pub(super) fn listings_read(&self) -> usize {

@@ -310,6 +310,16 @@ impl OverlayChanges {
         changes(self.survey().await)
     }
 
+    /// The same, its lookups taking the disk's answers as Linux's ext4 or
+    /// tmpfs gives them; before anything shares the ledger.
+    #[cfg(test)]
+    pub(crate) fn telling_case_apart(mut self) -> Self {
+        Arc::get_mut(&mut self.book)
+            .expect("the ledger is not shared yet")
+            .telling_case_apart();
+        self
+    }
+
     /// The directory listings the ledger's lookups read from the disk so
     /// far.
     #[cfg(test)]

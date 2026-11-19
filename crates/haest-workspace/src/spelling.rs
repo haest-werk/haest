@@ -11,16 +11,20 @@
 //! A path is there as asked where each name in it is one its directory
 //! lists. One `realpath` answers that for most lookups, where it gives back
 //! each name as asked on a disk that answers with the name it holds (APFS,
-//! HFS+), or in directories that tell cases apart (`answers.rs`). Elsewhere
-//! (exFAT and FAT answer with the spelling a file was first looked up by,
-//! vfat on Linux with the one asked), and where it spells a name another
-//! way (another spelling, or a symlink on the way) or finds none for a name
-//! that is there (a symlink that dangles or loops), the directories'
-//! listings decide; each is kept, and read again only once its directory
-//! changed. The disk's other spelling of a name is the entry its directory
-//! lists for the same file ([`crate::listed`]), never `realpath`'s.
+//! HFS+), or in directories that tell cases apart (`answers.rs`), each
+//! known as one once (`folding.rs`). Elsewhere (exFAT and FAT answer with
+//! the spelling a file was first looked up by, vfat and a case-folding
+//! directory on Linux with the one asked), in a directory not known yet,
+//! and where it spells a name another way (another spelling, or a symlink
+//! on the way) or finds none for a name that is there (a symlink that
+//! dangles or loops), the directories' listings decide; each is kept, and
+//! read again only once its directory changed. The disk's other spelling
+//! of a name is the entry its directory lists for the same file
+//! ([`crate::listed`]), never `realpath`'s.
 
 mod answers;
+mod disks;
+mod folding;
 mod listings;
 
 use std::{
@@ -33,7 +37,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use answers::{Answers, Resolved, resolve};
+use answers::{Answers, Resolved, folds_by_case, has_letter, resolve};
+use folding::{Dir, Folding};
 use listings::{Listings, Names, SETTLED, Stamp};
 
 use crate::listed::{confirmed, pick};
@@ -48,6 +53,9 @@ pub(crate) struct Spelling {
     /// The listings read on the way to a path, kept while their directory
     /// stays as it was: a lookup reads each one again only once it changed.
     listings: Arc<Listings>,
+    /// The directories known to read two spellings of a name as one or
+    /// not, and what each disk said.
+    folding: Arc<Folding>,
     /// How long ago a directory must have last changed for its listing to
     /// be kept ([`SETTLED`]).
     settled: Duration,
@@ -80,6 +88,7 @@ impl Spelling {
         Self {
             root: real.map(|real| (dir.to_path_buf(), real)),
             listings: Arc::default(),
+            folding: Arc::default(),
             settled: SETTLED,
             answers: Answers::SYSTEM,
         }
@@ -123,31 +132,35 @@ impl Spelling {
         let Some((dir, real)) = &self.root else {
             return Some(Spelled::AsAsked);
         };
-        let rel = path.strip_prefix("/").unwrap_or(path);
+        let inside = path.strip_prefix("/").unwrap_or(path);
         // Overlay paths come normalized; anything else is the call's to answer.
-        if !rel.components().all(|c| matches!(c, Component::Normal(_))) {
+        if !inside
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)))
+        {
             return Some(Spelled::AsAsked);
         }
-        let (answers, at) = (self.answers, [dir.clone(), real.clone(), rel.to_path_buf()]);
+        let (answers, folding) = (self.answers, self.folding.clone());
+        let at = [dir.clone(), real.clone(), inside.to_path_buf()];
         let resolved = tokio::task::spawn_blocking(move || {
-            let [dir, real, rel] = &at;
-            resolve(answers, dir, real, rel)
+            let [dir, real, inside] = &at;
+            resolve(answers, &folding, dir, real, inside)
         })
         .await
         .unwrap_or(Resolved::Unknown);
         match resolved {
             Resolved::Absent => None,
             Resolved::Unknown | Resolved::Listed => Some(Spelled::AsAsked),
-            Resolved::Unsure if self.listed(dir, rel).await => Some(Spelled::AsAsked),
-            Resolved::Unsure => Some(Spelled::Other(self.listed_at(dir, rel).await)),
+            Resolved::Unsure if self.listed(dir, inside).await => Some(Spelled::AsAsked),
+            Resolved::Unsure => Some(Spelled::Other(self.listed_at(dir, inside).await)),
         }
     }
 
-    /// Whether each name in `rel` is one its directory lists, as written. A
-    /// directory that cannot be read leaves the answer to the call (true).
-    async fn listed(&self, dir: &Path, rel: &Path) -> bool {
+    /// Whether each name in `inside` is one its directory lists, as written.
+    /// A directory that cannot be read leaves the answer to the call (true).
+    async fn listed(&self, dir: &Path, inside: &Path) -> bool {
         let mut at = dir.to_path_buf();
-        for name in rel {
+        for name in inside {
             if !self.lists(&at, name).await {
                 return false;
             }
@@ -163,12 +176,12 @@ impl Spelling {
             .is_none_or(|names| names.contains_key(name))
     }
 
-    /// Where the disk holds `rel`, which is not listed as asked: each name
-    /// as its directory lists the same file, as a project path. None where
-    /// one cannot be told.
-    async fn listed_at(&self, dir: &Path, rel: &Path) -> Option<PathBuf> {
+    /// Where the disk holds `inside`, which is not listed as asked: each
+    /// name as its directory lists the same file, as a project path. None
+    /// where one cannot be told.
+    async fn listed_at(&self, dir: &Path, inside: &Path) -> Option<PathBuf> {
         let (mut at, mut out) = (dir.to_path_buf(), PathBuf::from("/"));
-        for name in rel {
+        for name in inside {
             let listed = self.listed_name(&at, name).await?;
             at.push(&listed);
             out.push(&listed);
@@ -189,6 +202,16 @@ impl Spelling {
         confirmed(dir, name, picked, (own.dev(), own.ino())).await
     }
 
+    /// As on Linux's ext4 or tmpfs: no disk answers `realpath` with the
+    /// name it holds, and each directory's own flag says it tells case
+    /// apart.
+    #[cfg(test)]
+    pub(crate) fn telling_case_apart(mut self) -> Self {
+        self.answers.disk = |_| folding::Disk::Flagged;
+        self.answers.flag = |_| Some(false);
+        self
+    }
+
     /// Listings read from the disk so far.
     #[cfg(test)]
     pub(crate) fn reads(&self) -> usize {
@@ -203,7 +226,8 @@ impl Spelling {
     /// costs N lookups, not N listings of N names.
     async fn listing(&self, dir: &Path) -> Option<Names> {
         let now = SystemTime::now();
-        let stamp = tokio::fs::metadata(dir).await.ok().map(|m| Stamp::of(&m))?;
+        let m = tokio::fs::metadata(dir).await.ok()?;
+        let stamp = Stamp::of(&m);
         if let Some(names) = self.listings.kept(dir, stamp) {
             return Some(names);
         }
@@ -211,7 +235,29 @@ impl Spelling {
         if stamp.settled(now, self.settled) {
             self.listings.keep(dir, stamp, names.clone());
         }
+        self.learn(dir, Dir::of(&m), &names).await;
         Some(names)
+    }
+
+    /// Whether `dir` (`id`) reads two spellings of a name as one, from one
+    /// entry of its listing `names` that has an ASCII letter, where nothing
+    /// told that yet: the names asked there had none (`00001`, `2024`).
+    /// With none listed either, it stays unknown, and its listing decides.
+    async fn learn(&self, dir: &Path, id: Dir, names: &Names) {
+        if !self.folding.undecided(id) {
+            return;
+        }
+        let Some(name) = names.keys().find(|n| has_letter(n)) else {
+            return;
+        };
+        let (dir, name) = (dir.to_path_buf(), name.clone());
+        let told = tokio::task::spawn_blocking(move || folds_by_case(&dir, &name))
+            .await
+            .ok()
+            .flatten();
+        if let Some(folds) = told {
+            self.folding.decide(id, folds);
+        }
     }
 }
 

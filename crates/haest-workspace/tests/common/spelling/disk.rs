@@ -74,8 +74,9 @@ impl Disk {
     }
 }
 
-/// The human's files, a rename the model makes by case, and what the disk
-/// holds once everything is applied, on a disk that folds names or not.
+/// The human's files, what the model does to them (a rename by case, most
+/// of all), and what the disk holds once everything is applied, on a disk
+/// that folds names or not.
 pub(crate) struct Renamed {
     pub(crate) files: &'static [(&'static str, &'static str)],
     pub(crate) command: &'static str,
@@ -126,6 +127,22 @@ pub(crate) const DIRECTORY: Renamed = Renamed {
     files: &[("lib/a.rs", "a\n"), ("lib/b.rs", "b\n")],
     command: "mv lib Lib",
     want: &[("Lib/a.rs", "a\n"), ("Lib/b.rs", "b\n")],
+};
+
+/// A rename by case of a name with no ASCII letter: Greek has case too,
+/// on a disk that folds more than ASCII.
+pub(crate) const RENAME_WITH_NO_ASCII_LETTER: Renamed = Renamed {
+    files: &[("\u{391}\u{392}\u{393}", "the human's\n")],
+    command: "mv \u{391}\u{392}\u{393} \u{3b1}\u{3b2}\u{3b3}",
+    want: &[("\u{3b1}\u{3b2}\u{3b3}", "the human's\n")],
+};
+
+/// A directory and files named by number alone, which no case swap can
+/// ask about: one edited, one added, one removed.
+pub(crate) const NUMBERED: Renamed = Renamed {
+    files: &[("2024/01", "one\n"), ("2024/02", "two\n")],
+    command: "echo more >> 2024/01 && echo three > 2024/03 && rm 2024/02",
+    want: &[("2024/01", "one\nmore\n"), ("2024/03", "three\n")],
 };
 
 /// The model copies `README.md` to `readme.md` and edits the copy. Where

@@ -69,7 +69,8 @@ fn own_commands() -> Vec<ShellCommandRef> {
 ///
 /// Over the project, on a disk that reads two spellings of a name as one
 /// (macOS's default reads `README.md` as `readme.md`; APFS, the
-/// case-sensitive kind too, reads `caf\u{e9}` and `cafe\u{301}` as one), a
+/// case-sensitive kind too, reads `caf\u{e9}` and `cafe\u{301}` as one; so
+/// do exFAT, FAT, and on Linux a case-folding directory, `chattr +F`), a
 /// path is found only as the disk spells it: `cat README.md` does not find
 /// `readme.md`, where real bash would find it, and `echo x > README.md`
 /// makes a second file beside it. The model reads the disk's spelling from
@@ -77,11 +78,10 @@ fn own_commands() -> Vec<ShellCommandRef> {
 /// in the sandbox and on the disk, and a write that would land on a name the
 /// disk holds under another spelling, a file or a directory on its way, is a
 /// conflict until a delete frees that name
-/// ([`OverlayChanges`](crate::OverlayChanges)). A case-folding directory on
-/// Linux (`chattr +F`) is not told apart: there, names read as the disk finds
-/// them. Nor are the names in a directory the sandbox may enter but not list
-/// (mode `0311`): asked under another spelling, or through a symlink, they
-/// read as the disk finds them too.
+/// ([`OverlayChanges`](crate::OverlayChanges)). The names in a directory the
+/// sandbox may enter but not list (mode `0311`) are not told apart: asked
+/// under another spelling, or through a symlink, they read as the disk finds
+/// them.
 ///
 /// # Examples
 ///

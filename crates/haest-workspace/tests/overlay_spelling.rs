@@ -18,7 +18,7 @@ use common::{
         apply_all, changes, contents,
         disk::{
             DIRECTORY, Disk, RENAME_AND_COPY, RENAME_THEN_EDIT, RENAME_TO_LOWER,
-            RENAME_TO_LOWER_THEN_EDIT, copy_by_case_then_edit,
+            RENAME_TO_LOWER_THEN_EDIT, RENAME_WITH_NO_ASCII_LETTER, copy_by_case_then_edit,
         },
         folds_case, pairs, paths, reads_as_one, run, writable_again,
     },
@@ -33,6 +33,7 @@ use common::{
 async fn a_rename_that_changes_only_the_case_keeps_the_file() {
     RENAME_AND_COPY.check(&Disk::temp()).await;
     RENAME_TO_LOWER.check(&Disk::temp()).await;
+    RENAME_WITH_NO_ASCII_LETTER.check(&Disk::temp()).await;
 }
 
 /// Where the disk reads both names as one, the edited new name was written

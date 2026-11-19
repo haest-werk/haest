@@ -8,21 +8,29 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// How the disk answers a lookup's first two questions: the system's own,
-/// but in the tests.
+use super::{
+    disks,
+    folding::{Dir, Disk, Folding},
+};
+
+/// How the disk answers a lookup's first questions: the system's own, but
+/// in the tests.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Answers {
     /// The path as `realpath(3)` resolves it.
     pub(super) realpath: fn(&Path) -> io::Result<PathBuf>,
-    /// Whether `dir` answers `realpath` with the name it lists for `name`,
-    /// a name there.
-    pub(super) keeps_name: fn(&Path, &OsStr) -> bool,
+    /// What the disk the directory `dir` is on says of the names it holds.
+    pub(super) disk: fn(&Path) -> Disk,
+    /// Whether the directory `dir` reads two spellings as one by its own
+    /// flag, on a [`Disk::Flagged`]; None where it cannot be read.
+    pub(super) flag: fn(&Path) -> Option<bool>,
 }
 
 impl Answers {
     pub(super) const SYSTEM: Self = Self {
         realpath: |p| std::fs::canonicalize(p),
-        keeps_name,
+        disk: disks::disk,
+        flag: disks::flag,
     };
 }
 
@@ -45,10 +53,17 @@ pub(super) enum Resolved {
     Unsure,
 }
 
-/// `rel` in the project `dir` (as mounted), whose real path is `real`, as
-/// the disk first answers it. It blocks: run it off the runtime's workers.
-pub(super) fn resolve(answers: Answers, dir: &Path, real: &Path, rel: &Path) -> Resolved {
-    let asked = dir.join(rel);
+/// `inside` the project `dir` (as mounted), whose real path is `real`, as
+/// the disk first answers it, and what `folding` knows. It blocks: run it
+/// off the runtime's workers.
+pub(super) fn resolve(
+    answers: Answers,
+    folding: &Folding,
+    dir: &Path,
+    real: &Path,
+    inside: &Path,
+) -> Resolved {
+    let asked = dir.join(inside);
     let found = match (answers.realpath)(&asked) {
         Ok(found) => found,
         Err(e) => {
@@ -66,12 +81,12 @@ pub(super) fn resolve(answers: Answers, dir: &Path, real: &Path, rel: &Path) -> 
             };
         }
     };
-    if found != real.join(rel) {
+    if found != real.join(inside) {
         return Resolved::Unsure;
     }
     let mut at = real.to_path_buf();
-    for name in rel {
-        if !(answers.keeps_name)(&at, name) {
+    for name in inside {
+        if !keeps_name(answers, folding, &at, name) {
             return Resolved::Unsure;
         }
         at.push(name);
@@ -79,20 +94,55 @@ pub(super) fn resolve(answers: Answers, dir: &Path, real: &Path, rel: &Path) -> 
     Resolved::Listed
 }
 
-/// Whether `dir` answers `realpath` with the name it lists for `name`: on
-/// a disk that answers with the name it holds (APFS, HFS+), or in a
-/// directory that tells cases apart, where `name` is found only as it is
-/// listed. Not one that reads `README.md` as `readme.md` and answers with
-/// the spelling asked, or first looked up (exFAT, FAT, vfat, a case-folding
-/// directory on Linux), nor where that cannot be told (`name` has no ASCII
-/// letter).
-fn keeps_name(dir: &Path, name: &OsStr) -> bool {
-    answers_with_the_stored_name(dir) || tells_case_apart(dir, name)
+/// Whether `dir` answers `realpath` with the name it lists for `name`, a
+/// name there: on a disk that answers with the name it holds (APFS, HFS+),
+/// or in a directory that tells cases apart, where `name` is found only as
+/// it is listed. Not one that reads `README.md` as `readme.md` and answers
+/// with the spelling asked, or first looked up (exFAT, FAT, vfat, a
+/// case-folding directory on Linux), nor one where that cannot be told yet.
+///
+/// A directory is asked once: by its flag where its disk keeps one, else by
+/// the first name asked in it that has an ASCII letter to swap the case of
+/// (`2024` and `00001` have none), or by such an entry of its listing
+/// (`Spelling::learn`). A flag is read again at each lookup where the
+/// system gives no birth time (musl): a directory made later under the same
+/// inode number may carry another, and reading it costs no listing.
+fn keeps_name(answers: Answers, folding: &Folding, dir: &Path, name: &OsStr) -> bool {
+    let Ok(m) = std::fs::symlink_metadata(dir) else {
+        return false;
+    };
+    let id = Dir::of(&m);
+    let disk = folding.disk(id, || (answers.disk)(dir));
+    match disk {
+        Disk::Stored => return true,
+        Disk::Folds => return false,
+        Disk::Flagged | Disk::Unknown => {}
+    }
+    if let Some(folds) = folding.folds(id) {
+        return !folds;
+    }
+    let flag = if disk == Disk::Flagged {
+        (answers.flag)(dir)
+    } else {
+        None
+    };
+    let told = flag.or_else(|| folds_by_case(dir, name));
+    if let Some(folds) = told
+        && (flag.is_none() || id.dated())
+    {
+        folding.decide(id, folds);
+    }
+    told == Some(false)
 }
 
-/// Whether `name`, its ASCII letters' case swapped, finds nothing in `dir`,
-/// or another file.
-fn tells_case_apart(dir: &Path, name: &OsStr) -> bool {
+/// Whether `dir` reads `name`, a name there, with its ASCII letters' case
+/// swapped as the same file; None where that cannot be told: `name` has no
+/// ASCII letter, a lookup fails, or `name` was replaced or removed meanwhile
+/// (each answer is kept for the whole directory).
+pub(super) fn folds_by_case(dir: &Path, name: &OsStr) -> Option<bool> {
+    if !has_letter(name) {
+        return None;
+    }
     let swapped: Vec<u8> = name
         .as_bytes()
         .iter()
@@ -104,46 +154,18 @@ fn tells_case_apart(dir: &Path, name: &OsStr) -> bool {
             }
         })
         .collect();
-    if swapped == name.as_bytes() {
-        return false;
-    }
-    match std::fs::symlink_metadata(dir.join(OsStr::from_bytes(&swapped))) {
-        Err(e) => e.kind() == io::ErrorKind::NotFound,
-        Ok(other) => std::fs::symlink_metadata(dir.join(name))
-            .is_ok_and(|own| (own.dev(), own.ino()) != (other.dev(), other.ino())),
-    }
-}
-
-/// Whether `dir` is on a disk whose `realpath` answers with the name a
-/// directory holds, in its case and Unicode form: APFS (either kind) and
-/// HFS+. exFAT and FAT answer with the spelling the file was first looked
-/// up by since the disk cached its name.
-#[cfg(target_os = "macos")]
-#[expect(unsafe_code, reason = "statfs(2) has no std wrapper")]
-fn answers_with_the_stored_name(dir: &Path) -> bool {
-    let Ok(c) = std::ffi::CString::new(dir.as_os_str().as_bytes()) else {
-        return false;
+    let id = |m: std::fs::Metadata| (m.dev(), m.ino());
+    let own = std::fs::symlink_metadata(dir.join(name)).ok().map(id)?;
+    let other = match std::fs::symlink_metadata(dir.join(OsStr::from_bytes(&swapped))) {
+        Ok(other) => Some(id(other)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(_) => return None,
     };
-    let mut fs = std::mem::MaybeUninit::<libc::statfs>::uninit();
-    // SAFETY: `c` is a NUL-terminated path that outlives the call, and
-    // statfs writes one `struct statfs` at the pointer, which has room for
-    // it.
-    if unsafe { libc::statfs(c.as_ptr(), fs.as_mut_ptr()) } != 0 {
-        return false;
-    }
-    // SAFETY: statfs succeeded, so it filled the struct in.
-    let fs = unsafe { fs.assume_init() };
-    let kind: Vec<u8> = fs
-        .f_fstypename
-        .iter()
-        .take_while(|c| **c != 0)
-        .map(|c| *c as u8)
-        .collect();
-    matches!(kind.as_slice(), b"apfs" | b"hfs")
+    let still = std::fs::symlink_metadata(dir.join(name)).ok().map(id)?;
+    (still == own).then_some(other == Some(own))
 }
 
-/// On Linux `realpath` answers with the spelling asked.
-#[cfg(not(target_os = "macos"))]
-fn answers_with_the_stored_name(_: &Path) -> bool {
-    false
+/// Whether `name` has an ASCII letter to swap the case of.
+pub(super) fn has_letter(name: &OsStr) -> bool {
+    name.as_bytes().iter().any(u8::is_ascii_alphabetic)
 }

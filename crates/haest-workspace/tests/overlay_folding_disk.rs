@@ -15,8 +15,8 @@
 mod common;
 
 use common::spelling::disk::{
-    DIRECTORY, Disk, RENAME_AND_COPY, RENAME_THEN_EDIT, RENAME_TO_LOWER, RENAME_TO_LOWER_THEN_EDIT,
-    Renamed, copy_by_case_then_edit,
+    DIRECTORY, Disk, NUMBERED, RENAME_AND_COPY, RENAME_THEN_EDIT, RENAME_TO_LOWER,
+    RENAME_TO_LOWER_THEN_EDIT, RENAME_WITH_NO_ASCII_LETTER, Renamed, copy_by_case_then_edit,
 };
 use tokio::sync::Mutex;
 
@@ -53,6 +53,15 @@ async fn a_rename_to_lower_case_then_an_edit_keeps_the_edit() {
 #[tokio::test]
 async fn a_directory_renamed_by_case_keeps_its_files() {
     on_the_folding_disk(&DIRECTORY).await;
+}
+
+/// A name with no ASCII letter has no case to ask it by, and the disk's
+/// listing still decides it: a Greek name renamed by case keeps its file,
+/// and numbered files take their edits.
+#[tokio::test]
+async fn names_with_no_ascii_letter_keep_their_files_and_edits() {
+    on_the_folding_disk(&RENAME_WITH_NO_ASCII_LETTER).await;
+    on_the_folding_disk(&NUMBERED).await;
 }
 
 /// The copy lands on the human's file: a conflict, and the file as it was.
