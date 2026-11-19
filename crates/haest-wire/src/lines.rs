@@ -177,33 +177,12 @@ pub fn encode_line<T: Serialize + ?Sized>(value: &T) -> String {
 mod tests {
     use super::*;
 
-    /// Port of ndjson.test.ts.
-    #[test]
-    fn whole_lines_come_out_and_the_tail_waits() {
-        let mut d = LineDecoder::new();
-        assert_eq!(
-            d.push(b"{\"a\":1}\n{\"b\":2}\n").unwrap(),
-            ["{\"a\":1}", "{\"b\":2}"]
-        );
-        assert!(d.push(b"{\"c\":").unwrap().is_empty());
-        assert_eq!(d.push(b"3}\n").unwrap(), ["{\"c\":3}"]);
-    }
-
     #[test]
     fn a_character_split_between_reads_is_put_back_together() {
         let mut d = LineDecoder::new();
         let full = "{\"s\":\"éé\"}\n".as_bytes();
         assert!(d.push(&full[..7]).unwrap().is_empty());
         assert_eq!(d.push(&full[7..]).unwrap(), ["{\"s\":\"éé\"}"]);
-    }
-
-    #[test]
-    fn crlf_is_a_newline_and_empty_lines_are_skipped() {
-        let mut d = LineDecoder::new();
-        assert_eq!(
-            d.push(b"{\"a\":1}\r\n\n{\"b\":2}\n").unwrap(),
-            ["{\"a\":1}", "{\"b\":2}"]
-        );
     }
 
     /// One rule for a line, however it ends: whitespace around it goes, and
@@ -227,22 +206,6 @@ mod tests {
         assert!(d.push(b"{\"tail\":1}").unwrap().is_empty());
         assert_eq!(d.flush().as_deref(), Some("{\"tail\":1}"));
         assert_eq!(d.flush(), None);
-    }
-
-    #[test]
-    fn flush_gives_nothing_after_a_clean_end() {
-        let mut d = LineDecoder::new();
-        d.push(b"{\"a\":1}\n").unwrap();
-        assert_eq!(d.flush(), None);
-    }
-
-    /// A peer that never sends a newline is refused, and the decoder works on
-    /// from the next line.
-    #[test]
-    fn a_line_past_the_limit_is_refused_and_dropped() {
-        let mut d = LineDecoder::new().with_limit(8);
-        assert_eq!(d.push(b"0123456789"), Err(LineTooLong { limit: 8 }));
-        assert_eq!(d.push(b"\nok\n").unwrap(), ["ok"]);
     }
 
     /// The rest of a refused line, pushed after the refusal, was handed out

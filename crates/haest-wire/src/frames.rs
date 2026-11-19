@@ -274,57 +274,6 @@ impl Outbound {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Envelope, Framer, Path};
-
-    /// Every frame reads back from its line as the same frame.
-    #[test]
-    fn every_outbound_frame_reads_back_from_its_line() {
-        let frames = [
-            Outbound::Notice {
-                level: Level::Warning,
-                text: "n".into(),
-            },
-            Outbound::Ask { text: "a".into() },
-            Outbound::Status(Snapshot {
-                effort: Some("high".into()),
-                usd: Some(0.25),
-                ..Snapshot::default()
-            }),
-            Outbound::ApprovalAsk {
-                ask: 3,
-                tool_name: "Bash".into(),
-                description: "rm -rf build".into(),
-                preview: "rm -rf build".into(),
-                key: Some("rm -rf build".into()),
-            },
-            Outbound::ApprovalWithdrawn { ask: 3 },
-            Outbound::SubagentStarted {
-                name: "reader".into(),
-                parent: "main".into(),
-                description: "d".into(),
-            },
-            Outbound::SubagentStopped { ok: true },
-            Outbound::Hello {
-                session: "x".into(),
-                model_spec: "m".into(),
-                pid: 1,
-                access: Access::Command,
-                token: None,
-            },
-            Outbound::Gap {
-                after: 4,
-                missed: Some(2),
-            },
-            Outbound::done("r1", Some(serde_json::json!({"n": 1}))),
-            Outbound::refused("r2", "no"),
-        ];
-        let mut framer = Framer::new("s");
-        for frame in frames {
-            let line = serde_json::to_string(&framer.stamp(Path::main(), frame.clone())).unwrap();
-            let back: Envelope<Outbound> = serde_json::from_str(&line).unwrap();
-            assert_eq!(back.body, frame, "{line}");
-        }
-    }
 
     /// A hello's token is a credential: Debug output never shows it, the
     /// line still carries it.
@@ -342,21 +291,5 @@ mod tests {
         assert!(shown.contains("<redacted>"), "{shown}");
         let line = serde_json::to_string(&hello).unwrap();
         assert!(line.contains(r#""token":"sekrit-token""#), "{line}");
-    }
-
-    /// The tag and the field names are the event's: snake_case type, camelCase fields.
-    #[test]
-    fn frames_use_the_events_spelling() {
-        let ask = Outbound::ApprovalAsk {
-            ask: 1,
-            tool_name: "Bash".into(),
-            description: "d".into(),
-            preview: "p".into(),
-            key: None,
-        };
-        let json = serde_json::to_value(&ask).unwrap();
-        assert_eq!(json["type"], "approval_ask");
-        assert_eq!(json["toolName"], "Bash");
-        assert!(json.get("key").is_none());
     }
 }

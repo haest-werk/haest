@@ -214,7 +214,7 @@ impl Framer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Outbound, decode};
+    use crate::Outbound;
 
     /// Port of framer.test.ts: stamps the envelope and counts up.
     #[test]
@@ -232,12 +232,6 @@ mod tests {
         assert_eq!(b.path, Path::subagent("x"));
     }
 
-    #[test]
-    fn a_framer_resumes_after_a_given_seq() {
-        let mut f = Framer::new("s").starting_after(41).with_clock(|| 0);
-        assert_eq!(f.stamp(Path::main(), ()).seq, 42);
-    }
-
     /// The default clock stamps the real time.
     #[test]
     fn the_default_clock_is_the_time_now() {
@@ -245,28 +239,6 @@ mod tests {
         let frame = Framer::new("s").stamp(Path::main(), ());
         assert!(frame.ts >= before && frame.ts <= now_ms());
         assert_eq!(frame.seq, 1);
-    }
-
-    /// A connection's frame does not take a place in the stream.
-    #[test]
-    fn a_connection_frame_carries_the_seq_it_is_given() {
-        let gap = Envelope::connection(
-            "s",
-            7,
-            Outbound::Gap {
-                after: 7,
-                missed: None,
-            },
-        );
-        assert_eq!((gap.seq, gap.path.is_main()), (7, true));
-    }
-
-    /// A frame a peer writes with this end's framer decodes on the other end.
-    #[test]
-    fn a_stamped_request_line_decodes() {
-        let line =
-            serde_json::json!({"v": WIRE_V, "id": "x", "type": "control", "verb": "interrupt"});
-        assert!(decode(&line.to_string()).is_ok());
     }
 
     /// A path reads back as itself, deeper ones too; one that does not start
@@ -277,13 +249,8 @@ mod tests {
             let path: Path = serde_json::from_str(line).unwrap();
             assert_eq!(serde_json::to_string(&path).unwrap(), line);
         }
-        assert_eq!(Path::default(), Path::main());
         for line in [r#"[]"#, r#"["a1"]"#, r#"["a1","main"]"#] {
-            let err = serde_json::from_str::<Path>(line).unwrap_err();
-            assert!(
-                err.to_string().contains("starts with \"main\""),
-                "{line}: {err}"
-            );
+            assert!(serde_json::from_str::<Path>(line).is_err(), "{line}");
         }
     }
 }

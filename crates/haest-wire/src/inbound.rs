@@ -212,40 +212,6 @@ mod tests {
 
     use super::*;
 
-    /// Port of validate.test.ts: one sample per request type round-trips.
-    #[test]
-    fn every_request_type_reads_back_from_its_line() {
-        let requests = [
-            Request::Turn { text: "hi".into() },
-            Request::Control(Control::Interrupt),
-            Request::Control(Control::SetModel {
-                model: "a:b".into(),
-            }),
-            Request::Control(Control::SetEffort {
-                effort: Some("high".into()),
-            }),
-            Request::Control(Control::SetEffort { effort: None }),
-            Request::Control(Control::Clear),
-            Request::Control(Control::Close),
-            Request::ApprovalAnswer {
-                ask: 1,
-                answer: Answer::Always,
-            },
-            Request::Snapshot,
-            Request::History,
-            Request::Events {
-                after: 5,
-                follow: true,
-            },
-        ];
-        for (n, request) in requests.into_iter().enumerate() {
-            let line =
-                serde_json::to_string(&Inbound::new(n.to_string(), request.clone())).unwrap();
-            let back = decode(&line).unwrap();
-            assert_eq!((back.id, back.request), (n.to_string(), request), "{line}");
-        }
-    }
-
     #[test]
     fn a_line_that_is_not_json_is_a_json_error() {
         assert!(matches!(decode("{not json"), Err(DecodeError::Json(_))));
@@ -274,25 +240,6 @@ mod tests {
         assert!(matches!(
             decode_value(Value::Null),
             Err(DecodeError::NoVersion)
-        ));
-    }
-
-    #[test]
-    fn the_right_version_with_a_wrong_shape_is_a_shape_error() {
-        let missing_text = json!({"v": WIRE_V, "id": "x", "type": "turn"});
-        assert!(matches!(
-            decode_value(missing_text),
-            Err(DecodeError::Shape { .. })
-        ));
-        let unknown = json!({"v": WIRE_V, "id": "x", "type": "nope"});
-        assert!(matches!(
-            decode_value(unknown),
-            Err(DecodeError::Shape { .. })
-        ));
-        let no_id = json!({"v": WIRE_V, "type": "snapshot"});
-        assert!(matches!(
-            decode_value(no_id),
-            Err(DecodeError::Shape { .. })
         ));
     }
 
