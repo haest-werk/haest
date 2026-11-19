@@ -49,8 +49,10 @@ type Id = (u64, u64);
 
 /// The paths the sandbox shows, which no change may take along, and what
 /// was read of the disk to tell. One serves an apply: its own changes are
-/// noted as it makes them ([`Shown::put`]); the human's meanwhile are a
-/// race the apply's own re-reads do not close either.
+/// noted as it makes them ([`Shown::put`]), and the disk is read again
+/// between its phases ([`Shown::refresh`]), so the deletes see what its
+/// writes put there; the human's changes meanwhile are a race the apply's
+/// own re-reads do not close either.
 pub(super) struct Shown(Arc<Mutex<State>>);
 
 struct State {
@@ -102,6 +104,14 @@ impl Shown {
         tokio::task::spawn_blocking(move || lock(&state).lands_elsewhere(&path, there))
             .await
             .unwrap_or(true)
+    }
+
+    /// Read the disk again from here: what this apply wrote is on it, the
+    /// sandbox's own files at their names.
+    pub(super) fn refresh(&self) {
+        let mut state = lock(&self.0);
+        state.names.clear();
+        state.found = None;
     }
 
     /// The change at `path` is on the disk now: a delete took its name, or
@@ -223,7 +233,7 @@ impl State {
         if self.found.is_none() {
             let mut found: HashMap<Id, Vec<PathBuf>> = HashMap::new();
             let mut indexed: HashSet<PathBuf> = HashSet::new();
-            for shown in std::mem::take(&mut self.paths) {
+            for shown in self.paths.clone() {
                 if self.listed_as_asked(&shown) {
                     continue;
                 }

@@ -239,6 +239,7 @@ impl FileSystem for Recorder {
         self.book.remember(from).await;
         self.book.remember(to).await;
         self.inner.rename(from, to).await?;
+        self.book.carry(from, to);
         let moved = self.moved(from, to).await;
         for (was, at, mode) in moved {
             self.bring(&was, &at, mode).await;
@@ -259,6 +260,7 @@ impl FileSystem for Recorder {
         let onto = self.file_mode(to).await;
         let source = self.file_mode(from).await;
         self.inner.copy(from, to).await?;
+        self.book.carry(from, to);
         match (onto, source) {
             (Some(_), _) => self.keep_mode(to, onto).await,
             (None, Some(mode)) => {

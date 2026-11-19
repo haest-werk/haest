@@ -24,6 +24,10 @@ pub(crate) struct Book {
     wiped: Mutex<Wiped>,
     /// The modes the sandbox set (`chmod`).
     pub(super) modes: SetModes,
+    /// Each move and copy the sandbox made, `(from, to)`, in the order it
+    /// made them: where what the disk holds went in the sandbox, so the
+    /// apply takes nothing away while a write that carries it waits.
+    carried: Mutex<Vec<(PathBuf, PathBuf)>>,
     /// Held shared by each change the recorder passes on, and alone by an
     /// apply: a sandbox write waits for the apply in progress, and the
     /// apply for the writes already under way, so none lands between the
@@ -56,6 +60,7 @@ impl Book {
             touched: Mutex::default(),
             wiped: Mutex::default(),
             modes: SetModes::default(),
+            carried: Mutex::default(),
             gate: RwLock::new(()),
             disk,
             root,
@@ -145,6 +150,34 @@ impl Book {
                 book.dirs.remove(&wipe.dir);
             }
         }
+    }
+
+    /// The moves and copies so far. Their lock is held only to read or
+    /// write them, like the ledger's.
+    fn carried_lock(&self) -> MutexGuard<'_, Vec<(PathBuf, PathBuf)>> {
+        self.carried
+            .lock()
+            .expect("the overlay's moves lock poisoned")
+    }
+
+    /// The sandbox moved or copied `from` to `to`.
+    pub(crate) fn carry(&self, from: &Path, to: &Path) {
+        self.carried_lock().push((normalize(from), normalize(to)));
+    }
+
+    /// Each move and copy the sandbox made, in the order it made them.
+    pub(super) fn carried(&self) -> Vec<(PathBuf, PathBuf)> {
+        self.carried_lock().clone()
+    }
+
+    /// Forget each move and copy that neither came from nor went to a path
+    /// still in the ledger, or one above or under such a path: nothing
+    /// still to apply depends on it.
+    pub(super) fn forget_carried(&self) {
+        let touched = self.snapshot();
+        let near = |p: &Path| touched.keys().any(|t| t.starts_with(p) || p.starts_with(t));
+        self.carried_lock()
+            .retain(|(from, to)| near(from) || near(to));
     }
 
     /// The sandbox set `path`'s mode to `mode`. The disk's mode there is

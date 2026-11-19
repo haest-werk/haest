@@ -9,7 +9,7 @@ use std::{fs, path::Path};
 
 use common::{
     drop_apply_partway, opts,
-    project::{apply_all, changes, contents, paths},
+    project::{apply_all, changes, contents, pairs, paths},
     sandbox, tempdir,
 };
 use haest_core::workspace::{ApplyFailureCode, Workspace};
@@ -291,4 +291,228 @@ async fn an_apply_dropped_partway_forgets_nothing() {
     apply_all(&ws).await;
     assert!(!dir.join("src").exists());
     assert_eq!(contents(&dir), want);
+}
+
+/// Makes `dir` read-only, and says whether the disk now refuses a new
+/// name there: not as root, for whom nothing is read-only.
+fn lock(dir: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o555)).unwrap();
+    let probe = dir.join(".probe");
+    let refused = fs::write(&probe, "").is_err();
+    let _ = fs::remove_file(probe);
+    refused
+}
+
+fn unlock(dir: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// A move the disk will not write (a read-only directory) deleted the file
+/// it moved: deletes went first, and its content was then only in the
+/// sandbox. It stays where it was until the write lands. (As root nothing
+/// is read-only, and the move applies at once.)
+#[tokio::test]
+async fn a_move_the_disk_will_not_write_keeps_the_file_it_moves() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("src.md"), "src\n").unwrap();
+    fs::create_dir(dir.join("locked")).unwrap();
+    let refused = lock(&dir.join("locked"));
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "mv src.md locked/").await;
+    let first = changes(&ws).apply().await;
+    let kept = fs::read_to_string(dir.join("src.md")).ok();
+    unlock(&dir.join("locked"));
+    if refused {
+        assert_eq!(kept.as_deref(), Some("src\n"), "{first:?}");
+    }
+    let second = changes(&ws).apply().await;
+    assert_eq!(
+        contents(&dir),
+        pairs(&[("locked/src.md", "src\n")]),
+        "{second:?}"
+    );
+}
+
+/// A move onto a path the human edited after the model wrote it: the write
+/// is a conflict, and the file it moves stays on the disk with it.
+#[tokio::test]
+async fn a_move_onto_a_conflict_keeps_the_file_it_moves() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("src.md"), "src\n").unwrap();
+    fs::write(dir.join("dest.md"), "dest\n").unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "echo model >> dest.md").await;
+    fs::write(dir.join("dest.md"), "dest\nhuman\n").unwrap();
+    run(&ws, &dir, "mv src.md dest.md").await;
+    let report = changes(&ws).apply().await;
+    let want = [("dest.md", "dest\nhuman\n"), ("src.md", "src\n")];
+    assert_eq!(contents(&dir), pairs(&want), "{report:?}");
+}
+
+/// The same where the moved file is edited after the move (`mv a b &&
+/// echo x >> b`), copied by its content alone and then removed (`cat a
+/// > b && rm a`), moved out of a directory then removed whole, or copied
+/// and then written over: the file the write would carry stays as it was
+/// until the write lands.
+#[tokio::test]
+async fn a_move_or_a_copy_the_disk_will_not_write_keeps_its_source() {
+    for (command, want) in [
+        (
+            "cp src.md locked/ && echo new > src.md",
+            &[("locked/src.md", "src\n"), ("src.md", "new\n")][..],
+        ),
+        (
+            "mv src.md locked/ && echo more >> locked/src.md",
+            &[("locked/src.md", "src\nmore\n")][..],
+        ),
+        (
+            "cat src.md > locked/copy.md && rm src.md",
+            &[("locked/copy.md", "src\n")][..],
+        ),
+        (
+            "mkdir lib && mv src.md lib/ && cp lib/src.md locked/ && rm -r lib",
+            &[("locked/src.md", "src\n")][..],
+        ),
+    ] {
+        let (_t, dir) = tempdir();
+        fs::write(dir.join("src.md"), "src\n").unwrap();
+        fs::create_dir(dir.join("locked")).unwrap();
+        let ws = sandbox(&dir).await;
+        run(&ws, &dir, command).await;
+        let refused = lock(&dir.join("locked"));
+        let first = changes(&ws).apply().await;
+        let kept = contents(&dir);
+        unlock(&dir.join("locked"));
+        if refused {
+            assert!(
+                kept.iter().any(|(_, text)| text == "src\n"),
+                "{command}: {kept:?}, {first:?}"
+            );
+        }
+        let second = changes(&ws).apply().await;
+        assert_eq!(contents(&dir), pairs(want), "{command}: {second:?}");
+    }
+}
+
+/// A directory become a file (`rm -r build && echo x > build`) after a
+/// file in it was moved where the disk will not write it: the directory
+/// stays, with the file, until the move lands.
+#[tokio::test]
+async fn a_directory_become_a_file_keeps_what_a_waiting_move_carries() {
+    let (_t, dir) = tempdir();
+    fs::create_dir(dir.join("build")).unwrap();
+    fs::write(dir.join("build/old.o"), "obj\n").unwrap();
+    fs::create_dir(dir.join("locked")).unwrap();
+    let ws = sandbox(&dir).await;
+    run(
+        &ws,
+        &dir,
+        "mv build/old.o locked/ && rm -r build && echo x > build",
+    )
+    .await;
+    let refused = lock(&dir.join("locked"));
+    let first = changes(&ws).apply().await;
+    let kept = contents(&dir);
+    unlock(&dir.join("locked"));
+    if refused {
+        assert_eq!(kept, pairs(&[("build/old.o", "obj\n")]), "{first:?}");
+    }
+    let second = changes(&ws).apply().await;
+    let want = [("build", "x\n"), ("locked/old.o", "obj\n")];
+    assert_eq!(contents(&dir), pairs(&want), "{second:?}");
+}
+
+/// `mv b c && mv a b` where the disk refuses `c` (the human made it
+/// read-only): `b` goes over its old content, which only `c`'s write
+/// carries, so it waits for it, and so does the delete of `a`, whose
+/// content only `b`'s write carries. Nothing is written; every file stays.
+#[tokio::test]
+async fn a_chain_of_moves_the_disk_will_not_finish_keeps_every_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_t, dir) = tempdir();
+    for (name, text) in [("a", "a\n"), ("b", "b\n"), ("c", "c\n")] {
+        fs::write(dir.join(name), text).unwrap();
+    }
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "mv b c && mv a b").await;
+    fs::set_permissions(dir.join("c"), fs::Permissions::from_mode(0o444)).unwrap();
+    let report = changes(&ws).apply().await;
+    let failed: Vec<_> = report
+        .failed
+        .iter()
+        .map(|f| f.change.path.as_str())
+        .collect();
+    assert_eq!(failed, ["/c"], "{report:?}");
+    assert!(report.applied.is_empty(), "{report:?}");
+    let want = [("a", "a\n"), ("b", "b\n"), ("c", "c\n")];
+    assert_eq!(contents(&dir), pairs(&want), "{report:?}");
+}
+
+/// `rm a && echo y >> b`, with `a` and `b` one file (a hard link): the
+/// writes go first, and `b`'s, in place, changes `a` too. That is the
+/// apply's own write, not the human's, so `a`'s delete goes on: it was
+/// taken for a change on the disk and held as a conflict, every time.
+#[tokio::test]
+async fn a_delete_of_a_hard_link_the_apply_wrote_through_goes_on() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("a"), "one\n").unwrap();
+    fs::hard_link(dir.join("a"), dir.join("b")).unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "rm a && echo y >> b").await;
+    apply_all(&ws).await;
+    assert_eq!(contents(&dir), pairs(&[("b", "one\ny\n")]));
+}
+
+/// The same, where the human edits the file after the model's change: both
+/// changes are held, and the file keeps the human's edit under both names.
+#[tokio::test]
+async fn a_delete_of_a_hard_link_the_human_wrote_through_is_held() {
+    let (_t, dir) = tempdir();
+    fs::write(dir.join("a"), "one\n").unwrap();
+    fs::hard_link(dir.join("a"), dir.join("b")).unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "rm a && echo y >> b").await;
+    fs::write(dir.join("a"), "human\n").unwrap();
+    let report = changes(&ws).apply().await;
+    assert!(report.applied.is_empty(), "{report:?}");
+    assert_eq!(paths(&report.skipped), ["/a", "/b"], "{report:?}");
+    let want = [("a", "human\n"), ("b", "human\n")];
+    assert_eq!(contents(&dir), pairs(&want), "{report:?}");
+}
+
+/// `mv lib src` where `lib` holds symlinks: applying makes no link, so each
+/// link's write fails, and the delete of `lib` took the human's links with
+/// it, left in the sandbox alone. `lib` stays, with every link, until the
+/// human makes them in `src`.
+#[tokio::test]
+async fn a_directory_moved_with_its_links_keeps_them() {
+    use std::os::unix::fs::symlink;
+    let (_t, dir) = tempdir();
+    fs::create_dir(dir.join("lib")).unwrap();
+    fs::write(dir.join("lib/a.rs"), "a\n").unwrap();
+    symlink("nowhere", dir.join("lib/d")).unwrap();
+    symlink("a.rs", dir.join("lib/rel")).unwrap();
+    let ws = sandbox(&dir).await;
+    run(&ws, &dir, "mv lib src").await;
+    let report = changes(&ws).apply().await;
+    let failed: Vec<_> = report
+        .failed
+        .iter()
+        .map(|f| (f.change.path.as_str(), f.code))
+        .collect();
+    let links = [
+        ("/src/d", ApplyFailureCode::Symlink),
+        ("/src/rel", ApplyFailureCode::Symlink),
+    ];
+    assert_eq!(failed, links, "{report:?}");
+    assert_eq!(paths(&report.skipped), ["/lib"], "{report:?}");
+    assert!(report.skipped.iter().all(|c| c.conflict), "{report:?}");
+    for link in ["d", "rel"] {
+        assert!(is_link(&dir.join("lib").join(link)), "{link}: {report:?}");
+    }
+    for file in ["lib/a.rs", "src/a.rs"] {
+        assert_eq!(fs::read_to_string(dir.join(file)).unwrap(), "a\n", "{file}");
+    }
 }

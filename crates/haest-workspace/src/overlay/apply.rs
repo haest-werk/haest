@@ -47,19 +47,30 @@
 //!   The name matches none of the file's own ignore patterns; `.*.haest-*`
 //!   matches every one.
 //!
-//! Deletes go first, then the writes. Each directory's mode goes on last,
-//! deepest first, so one made read-only still gets what was written into
-//! it. Each change's real path is read again right before it is put on the
-//! disk; one that moved since the scan is skipped as a conflict. A
-//! directory removed whole is read again with each change listed under it:
-//! one of them that moved keeps the directory as a conflict too, never
-//! removed with it. And one that would take along a file the sandbox shows
-//! under another name the disk reads as the same, or land under a name the
-//! disk lists another way (`shown.rs`), is a conflict too.
+//! The writes go first and the deletes last, so nothing is taken away
+//! before the write that carries it elsewhere has landed: first each write
+//! that takes nothing away (a new path, a change of mode alone), then each
+//! that does (a file written over, a directory become a file or the other
+//! way round) with what a file become a directory holds, then each delete.
+//! Each group goes in path order, but for the changes that take away: each
+//! of those goes after another whose write carries its content
+//! ([`in_order`]). One that takes away what a write of this
+//! apply that did not land carries elsewhere (a move, a copy, or the same
+//! content: `carried.rs`) is skipped as a conflict, and stays listed. Each
+//! directory's mode goes on last, deepest first, so one made read-only
+//! still gets what was written into it. Each change's real path is read
+//! again right before it is put on the disk; one that moved since the scan
+//! is skipped as a conflict. A directory removed whole is read again with
+//! each change listed under it: one of them that moved keeps the directory
+//! as a conflict too, never removed with it. And one that would take along
+//! a file the sandbox shows under another name the disk reads as the same,
+//! or land under a name the disk lists another way (`shown.rs`), is a
+//! conflict too.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     io,
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
 
@@ -70,11 +81,12 @@ use haest_core::{
 
 use super::{
     OverlayChanges, Scanned,
+    carried::{Carried, Waiting, in_order},
     links::Links,
     modes,
     scan::{changes, under},
     shown::Shown,
-    state::Original,
+    state::{Original, state_of, walk},
 };
 use crate::real::put_file;
 
@@ -92,6 +104,14 @@ struct Run<'a> {
     /// What the scan found at each path it listed: on the disk, then in the
     /// overlay.
     listed: BTreeMap<PathBuf, (Original, Original)>,
+    /// Where the sandbox moved and copied what the disk holds.
+    carried: Carried,
+    /// The writes so far that did not land.
+    waiting: Waiting,
+    /// Each file this apply wrote that has another name (a hard link), by
+    /// its device and inode number: what the scan found there, and what the
+    /// write put.
+    linked: HashMap<(u64, u64), (Original, Original)>,
     report: ApplyReport,
     /// Each directory put on the disk, by its place in `report.applied`:
     /// its mode goes on once everything under it is written.
@@ -103,14 +123,15 @@ enum Put {
     /// On the real disk now; with the names the disk held under a tree it
     /// removed (a directory deleted, or become a file).
     Applied(Vec<PathBuf>),
-    /// Its real path moved since the scan, or putting it would take along
-    /// another file the sandbox shows: not written, a conflict.
+    /// Its real path moved since the scan, putting it would take along
+    /// another file the sandbox shows, or it takes away what a write that
+    /// did not land carries: not written, a conflict.
     Moved,
 }
 
 impl OverlayChanges {
-    /// Every change that is not a conflict, onto the real disk: the deletes,
-    /// then the writes, each in path order.
+    /// Every change that is not a conflict, onto the real disk: the writes
+    /// that take nothing away, those that do, then the deletes.
     pub(super) async fn apply_all(&self) -> ApplyReport {
         // The sandbox's writes wait for the apply, and the apply for those
         // under way: between the scan and the end, the overlay holds still.
@@ -140,13 +161,36 @@ impl OverlayChanges {
                 .iter()
                 .map(|s| (s.path.clone(), (s.now, s.mine)))
                 .collect(),
+            carried: Carried::new(self.book.carried()),
+            waiting: Waiting::default(),
+            linked: HashMap::new(),
             report: ApplyReport::default(),
             dirs: Vec::new(),
         };
         let (deletes, writes): (Vec<_>, Vec<_>) = scanned
             .into_iter()
             .partition(|s| s.change.kind == ChangeKind::Deleted);
-        for s in deletes.into_iter().chain(writes) {
+        let (takes, plain): (Vec<_>, Vec<_>) = writes.into_iter().partition(Scanned::takes);
+        // What a file become a directory holds is written once it is one.
+        let made: BTreeSet<PathBuf> = takes
+            .iter()
+            .filter(|s| s.mine == Original::Dir)
+            .map(|s| s.path.clone())
+            .collect();
+        let (inside, plain): (Vec<_>, Vec<_>) = plain
+            .into_iter()
+            .partition(|s| s.path.ancestors().skip(1).any(|a| made.contains(a)));
+        for s in plain {
+            self.settle(s, &mut run).await;
+        }
+        // Each phase asks the disk as the writes before it left it: what
+        // this apply wrote is what the sandbox shows there too.
+        run.shown.refresh();
+        for s in in_order(takes, &run.carried).into_iter().chain(inside) {
+            self.settle(s, &mut run).await;
+        }
+        run.shown.refresh();
+        for s in deletes {
             self.settle(s, &mut run).await;
         }
         let mut report = run.report;
@@ -170,6 +214,7 @@ impl OverlayChanges {
             .collect();
         self.book
             .forget_wiped(wiped.iter().filter(|w| !left.contains(w.dir.as_path())));
+        self.book.forget_carried();
         report
     }
 
@@ -204,6 +249,14 @@ impl OverlayChanges {
                 Err(refusal) => Some(refusal),
             }
         };
+        // A write that did not land: what it carries stays where it is.
+        if s.change.kind != ChangeKind::Deleted {
+            let len = match s.mine {
+                Original::File(_) => self.overlay.stat(&s.path).await.ok().map(|st| st.size),
+                _ => None,
+            };
+            run.waiting.add(&s, len);
+        }
         // Still in the ledger (`apply_all`), so still listed.
         match refused {
             Some((code, reason)) => run
@@ -270,8 +323,14 @@ impl OverlayChanges {
         // sandbox's version (a file its directory's delete took along, a
         // change of mode alone) loses nothing, and is put without writing it
         // again.
+        // A delete of one name of a file this apply wrote under another (a
+        // hard link, written in place) finds that write there, not the
+        // human's: it takes a name, and the file stays under the other.
         let again = self.book.state(path).await;
-        if again != s.now && again != s.mine {
+        if again != s.now
+            && again != s.mine
+            && !(deleted && self.wrote(path, s.now, again, run).await)
+        {
             return Ok(Put::Moved);
         }
         // A directory removed whole takes along what is under it: a change
@@ -288,6 +347,11 @@ impl OverlayChanges {
         if (deleted || !holds) && run.shown.would_take(path).await {
             return Ok(Put::Moved);
         }
+        // It takes away what the disk holds: not while a write that did not
+        // land carries that elsewhere (`carried.rs`).
+        if !holds && again != Original::Absent && self.carries(path, again, run).await {
+            return Ok(Put::Moved);
+        }
         let there = again != Original::Absent;
         if !deleted && run.shown.lands_elsewhere(path, there).await {
             return Ok(Put::Moved);
@@ -297,7 +361,62 @@ impl OverlayChanges {
             .await
             .map_err(|e| (ApplyFailureCode::WriteFailed, e.to_string()))?;
         run.shown.put(path, deleted);
+        if matches!(s.mine, Original::File(_))
+            && let Ok(m) = tokio::fs::symlink_metadata(self.book.real(path)).await
+            && m.nlink() > 1
+        {
+            run.linked.insert((m.dev(), m.ino()), (s.now, s.mine));
+        }
         Ok(Put::Applied(took))
+    }
+
+    /// Whether the disk at `path` holds `again` where the scan found `now`
+    /// only because a write of this apply put it there under another name
+    /// of the same file (a hard link): that write found `now` and put
+    /// `again`.
+    async fn wrote(&self, path: &Path, now: Original, again: Original, run: &Run<'_>) -> bool {
+        if run.linked.is_empty() {
+            return false;
+        }
+        let Ok(m) = tokio::fs::symlink_metadata(self.book.real(path)).await else {
+            return false;
+        };
+        run.linked.get(&(m.dev(), m.ino())) == Some(&(now, again))
+    }
+
+    /// Whether a write of this apply that did not land carries what the
+    /// disk holds at `path` (`again`: a file, or a directory with all under
+    /// it) elsewhere: a move or a copy the sandbox made from there, or a
+    /// file with the same content.
+    async fn carries(&self, path: &Path, again: Original, run: &Run<'_>) -> bool {
+        if run.waiting.is_empty() {
+            return false;
+        }
+        if run.waiting.at_any(&run.carried.reached(path)) {
+            return true;
+        }
+        let disk = self.book.disk.as_ref();
+        let real = self.book.real(path);
+        let files = match again {
+            Original::File(_) => vec![real],
+            Original::Dir => walk(disk, &real).await,
+            _ => return false,
+        };
+        for file in files {
+            // Each file whose length a waiting write has, read to tell.
+            let Ok(st) = disk.stat(&file).await else {
+                continue;
+            };
+            if st.is_dir() || !run.waiting.may_hold(st.size) {
+                continue;
+            }
+            if let Original::File(hash) = state_of(disk, &file).await
+                && run.waiting.holds(st.size, hash)
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// Whether a change `listed` under `dir` moved on the disk since the

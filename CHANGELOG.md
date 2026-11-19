@@ -457,7 +457,7 @@ write instead.
     disk: one that moved since the scan (an earlier write of the apply
     under another name, or the human saving or deleting it meanwhile) is
     skipped;
-  - it runs every delete first, then the writes.
+  - it writes first and deletes last (see below).
   A change that fails one of these is skipped as a conflict and stays
   listed, and the disk keeps both names as the human left them. So on
   such a disk a rename by case or by Unicode form alone
@@ -465,6 +465,28 @@ write instead.
   by hand; nothing is lost. The cost: the change list does not ask the
   disk so, and shows such a change as no conflict until an apply skips it
   (see Behaviour changes).
+- Applying a sandbox's move could delete the file it moved, with its
+  content then only in the sandbox, lost when the session ended. Where
+  the move's write did not land (`mv src.md locked/` into a directory the
+  disk will not write; a move onto a file the human edited since the
+  model touched it, a conflict), the delete of `src.md` was applied all
+  the same. The same held for a copy then written over
+  (`cp a locked/ && echo new > a`), a file moved out of a directory then
+  removed whole, a directory become a file, and a directory moved with
+  symlinks in it: applying makes no link, so `mv lib src` deleted the
+  human's links in `lib`, and they stayed in the sandbox alone. Now `lib`
+  stays, with its links, as a conflict. `OverlayChanges::apply`
+  now writes first and takes away last: each write that takes nothing
+  away, then each that does (a file written over, a directory become a
+  file or the other way round), then each delete. A change that would take
+  away what a write of the same apply that did not land carries elsewhere
+  is skipped as a conflict and stays listed, until that write lands. A
+  write carries what the sandbox moved or copied to it, whatever it did to
+  it after (`mv a b && echo x >> b`), and a file with the content it puts
+  (`cat a > b && rm a`). Of the changes that take away, one whose content
+  goes to another is put after that one; a cycle of them (a swap,
+  `mv a t && mv b a && mv t b`) is put in path order, and where the second
+  write of it then fails, the first has already gone over its file.
 - A file or directory the sandbox moved or copied landed on the disk at
   the umask's mode, whatever mode it had. After `mv secret.key moved.key`
   or `cp secret.key copy.key` on a 0600 key, applying wrote the new file
@@ -595,8 +617,8 @@ write instead.
   cut short, but now reported, and later lists show it as a conflict.
 - An apply dropped partway lost the files of a tree the sandbox had moved.
   After `mv src gen`, the files under `gen` were listed only by walking
-  `gen`, and only until `gen` was on the disk; the apply deletes first, so
-  `src` was gone by then. An apply dropped after that (the `haest` command
+  `gen`, and only until `gen` was on the disk, while `src`'s delete stayed
+  listed for the next apply. An apply dropped after that (the `haest` command
   drops `/apply` 2 s after Ctrl+C; a host's timeout does the same) left
   each file of the tree it had not written yet in the sandbox alone: not
   listed, not applied by the next apply, not named by the warning on
@@ -811,9 +833,17 @@ write instead.
   human renamed by case since the model first looked (`Docs/new.md` after
   the human's `mv Docs docs`), which landed in `docs` before. Each was
   applied before, and the disk now keeps the human's files as they were.
-  A host that shows the list
+  So is a change that takes away
+  what a write of the same apply that did not land carries elsewhere: after
+  `mv src.md locked/` into a directory the disk will not write, the write
+  fails and the delete of `src.md` is skipped, and after `mv lib src` with
+  a symlink in `lib`, the link's write fails (applying makes no link) and
+  the delete of `lib` is skipped. A host that shows the list
   before an apply should read the report's `skipped` for what was held.
   Every change the report names as skipped has `conflict` set.
+- The sandbox's `apply` writes first and deletes last, where it went in
+  path order. `ApplyReport::applied` comes in that order: the writes that
+  take nothing away, those that do, then the deletes.
 
 ### The haest command
 
@@ -2057,11 +2087,17 @@ Hosts write less (round two of the review, and what porting brain onto
 - Fixed: a sandbox call dropped in flight (a Code run that timed out) left
   a task behind, asleep until the call's timeout, up to 10 minutes.
   Dropping the call now ends it.
-- `OverlayChanges::apply` runs every delete before any write, reads each
-  change's real path again right before putting it on the disk, and, on a
-  disk that reads two names of a file as one, skips as a conflict a change
-  that would take along a file the sandbox shows under another name or
-  land under a name the disk lists another way (see Security). The
+- `OverlayChanges::apply` writes first and deletes last, and skips as a
+  conflict a change that would take away what a write of the same apply
+  that did not land carries elsewhere (see Security). `ApplyReport::applied`
+  lists the writes that take nothing away, then those that do, then the
+  deletes, where it listed all in path order. Each group is in path order,
+  but for the writes that take away: one whose content another carries
+  goes after that one. It reads each change's real path again right before
+  putting it on the disk, and, on a disk that reads two names of a file as
+  one, skips as a conflict a change that would take along a file the
+  sandbox shows under another name or land under a name the disk lists
+  another way (see Security). The
   sandbox reads the project through the system, as real bash on that disk
   does: `cat README.md` finds `readme.md`, and `mkdir Lib` beside `lib`
   fails with "File exists". What it writes it keeps under the name it was

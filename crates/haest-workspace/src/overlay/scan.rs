@@ -121,4 +121,11 @@ impl Scanned {
     pub(super) fn removes_tree(&self) -> bool {
         self.now == Original::Dir && self.mine != Original::Dir
     }
+
+    /// Applied, it takes away what the disk held at its path when scanned:
+    /// a delete, a file written over, a directory become a file or the
+    /// other way round. Not an add, nor a change of mode alone.
+    pub(super) fn takes(&self) -> bool {
+        self.now != Original::Absent && self.now != self.mine
+    }
 }

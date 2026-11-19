@@ -66,7 +66,7 @@ pub(crate) fn contents(dir: &Path) -> Vec<(String, String)> {
     out
 }
 
-/// The changes' paths, sorted: apply reports the deletes first.
+/// The changes' paths, sorted: apply reports the deletes last.
 pub(crate) fn paths(changes: &[Change]) -> Vec<String> {
     let mut all: Vec<_> = changes.iter().map(|c| c.path.clone()).collect();
     all.sort();

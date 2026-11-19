@@ -699,8 +699,9 @@ async fn a_tree_beside_a_file_the_disk_reads_as_its_name_fails_as_in_bash() {
 /// A symlink that does not resolve (dangling, or one of a loop) in a
 /// directory renamed by case or Unicode form. Where the disk tells the
 /// names apart, each link is listed and refused like any link the sandbox
-/// made. Where it reads them as one, nothing is written or deleted, and
-/// the disk keeps every link and file as it was.
+/// made, and the old directory, which holds the links, stays as a
+/// conflict. Where it reads them as one, nothing is written or deleted,
+/// and the disk keeps every link and file as it was.
 #[tokio::test]
 async fn a_link_that_does_not_resolve_in_a_renamed_directory_is_kept() {
     use std::os::unix::fs::symlink;
@@ -747,6 +748,11 @@ async fn a_link_that_does_not_resolve_in_a_renamed_directory_is_kept() {
         failed.sort();
         assert_eq!(failed, links, "{command}: {report:?}");
         assert_eq!(report.failed.len(), 3, "{command}: {report:?}");
-        assert!(report.skipped.is_empty(), "{command}: {report:?}");
+        assert_eq!(paths(&report.skipped), [format!("/{old}")], "{report:?}");
+        assert!(report.skipped.iter().all(|c| c.conflict), "{report:?}");
+        for link in ["d", "l1", "l2"] {
+            let meta = fs::symlink_metadata(dir.join(old).join(link)).unwrap();
+            assert!(meta.file_type().is_symlink(), "{command}: {link}");
+        }
     }
 }

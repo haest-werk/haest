@@ -12,10 +12,12 @@
 //! write, so a move during the apply counts too. A directory the sandbox
 //! removes whole (deleted, or a file in its place) waits as a conflict too
 //! while a conflict waits under it: removing it would take the human's
-//! version along. Everything else is written (or
-//! deleted) on the real disk, deletes first, unless `apply.rs` refuses it: a
-//! symlink on the real disk on its way, or a symlink the sandbox made. A
-//! refused change is reported as failed with its code, and stays listed.
+//! version along. Everything else is written (or deleted) on the real disk,
+//! writes first and deletes last, unless `apply.rs` refuses it: a symlink on
+//! the real disk on its way, or a symlink the sandbox made. A refused change
+//! is reported as failed with its code, and stays listed. What a write that
+//! did not land carries elsewhere (a move, a copy, the same content) is
+//! taken away by no change of that apply (`carried.rs`).
 //! Once a change is on the disk, the sandbox reads the disk there again
 //! (`through.rs`).
 //!
@@ -35,6 +37,7 @@
 
 mod apply;
 mod book;
+mod carried;
 mod diff;
 mod links;
 mod modes;
@@ -112,13 +115,21 @@ use state::{Original, state_of, walk};
 /// renames it by hand; nothing is lost. `list` does not ask the disk so:
 /// such a change is listed as no conflict until an apply skips it.
 ///
-/// `apply` deletes first, then writes, each in path order. Each change's
-/// real path is read again right before it is put on the disk, and so is
-/// each change listed under a directory removed whole. One that moved since
-/// the scan (the human saved or deleted it, or an earlier write of this
-/// apply landed there: the sandbox wrote both `README.md` and `readme.md`)
-/// is skipped as a conflict and stays listed, and so is the directory above
-/// it.
+/// `apply` writes first and deletes last: each write that takes nothing
+/// away (a new path, a change of mode alone), then each that does (a file
+/// written over, a directory become a file or the other way round), then
+/// each delete, each group in path order. A change that would take away
+/// what a write of the same apply that did not land (skipped or failed)
+/// carries elsewhere waits: skipped as a conflict, and still listed, so
+/// `mv src.md locked/` into a directory the disk will not write leaves
+/// `src.md` where it was. A write carries what the sandbox moved or copied
+/// to it (after `mv a b && echo x >> b` too), and any file with the content
+/// it puts. Each change's real path is read again right before it is put
+/// on the disk, and so is each change listed under a directory removed
+/// whole. One that moved since the scan (the human saved or deleted it, or
+/// an earlier write of this apply landed there: the sandbox wrote both
+/// `README.md` and `readme.md`) is skipped as a conflict and stays listed,
+/// and so is the directory above it.
 ///
 /// `apply` never writes through a symlink: not one on the real disk on the
 /// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),
