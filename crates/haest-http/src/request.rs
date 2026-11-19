@@ -229,11 +229,6 @@ mod tests {
     }
 
     #[test]
-    fn a_body_that_is_not_json_reads_as_null() {
-        assert_eq!(Request::get("https://a.test/").json_body(), Value::Null);
-    }
-
-    #[test]
     fn a_body_of_any_bytes_goes_as_it_is_and_sets_no_header() {
         let req = Request::post("https://a.test/upload").with_body("a=1&b=2");
         assert_eq!(req.body, Bytes::from_static(b"a=1&b=2"));

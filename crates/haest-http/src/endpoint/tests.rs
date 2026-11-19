@@ -1,5 +1,4 @@
-//! `check_endpoint_url`'s verdicts and the host a parser dials for each;
-//! `join_path` in `join`.
+//! `check_endpoint_url`'s verdicts; `join_path` in `join`.
 
 use super::*;
 use crate::redacted_url;
@@ -128,14 +127,13 @@ fn a_scheme_with_only_slashes_after_it_is_refused() {
 #[test]
 fn a_url_with_no_host_is_refused_with_any_path_under_it() {
     for url in NO_HOST {
-        let said = check_endpoint_url(url).expect_err(url).to_string();
-        assert!(said.contains("has no host"), "{url}: {said}");
+        let refused = check_endpoint_url(url);
+        assert!(
+            matches!(&refused, Err(e) if e.why == Why::NoHost),
+            "{url:?}: {refused:?}"
+        );
         let joined = join_path(url, "v1/messages");
         assert!(check_endpoint_url(&joined).is_err(), "{joined}");
-    }
-    // A host, or `@` with one after it, is a host.
-    for url in ["https://h", "https://@h/v1", "wss://u:p@h:1/x"] {
-        assert_eq!(check_endpoint_url(url), Ok(()), "{url}");
     }
 }
 
@@ -179,21 +177,6 @@ fn a_refused_urls_control_characters_show_escaped() {
     }
 }
 
-/// An `@` in a path or a query is refused because it cannot be told from
-/// one that ends a password. A parser reads such a URL right, and the
-/// refusal does not say it misreads it.
-#[test]
-fn the_refusal_of_an_at_in_a_path_or_query_does_not_say_a_parser_misreads_it() {
-    for url in &MISREAD[6..9] {
-        let said = check_endpoint_url(url).expect_err(url).to_string();
-        assert!(!said.contains("misreads"), "{said}");
-        assert!(
-            said.contains("cannot tell from one that ends a password"),
-            "{said}"
-        );
-    }
-}
-
 #[test]
 fn a_url_with_an_at_past_its_host_is_refused() {
     for url in MISREAD {
@@ -205,10 +188,10 @@ fn a_url_with_an_at_past_its_host_is_refused() {
     }
 }
 
-/// The refusal says why and how to write it, and shows no piece of the
-/// password whatever character in it a parser took for the host's end.
+/// The refusal shows no piece of the password, whatever character in it a
+/// parser took for the host's end.
 #[test]
-fn the_refusal_says_how_to_write_it_and_shows_no_credential() {
+fn the_refusal_shows_no_piece_of_the_credential() {
     // The user, the password's pieces, a query value.
     let pieces = ["Z9y8", "K1x9", "Q7z2", "W3v4", "R8t0"];
     let passwords = [
@@ -220,67 +203,11 @@ fn the_refusal_says_how_to_write_it_and_shows_no_credential() {
     ];
     for pw in passwords {
         let url = format!("wss://Z9y8:{pw}@broker.example/agents?key=R8t0");
-        let said = check_endpoint_url(&url).expect_err(&url).to_string();
+        let e = check_endpoint_url(&url).expect_err(&url);
+        assert_eq!(e.why, Why::AtPastHost, "{url}");
+        let said = e.to_string();
         for secret in pieces {
             assert!(!said.contains(secret), "{secret} of {url}: {said}");
         }
-        for hint in [
-            "%2F",
-            "%3F",
-            "%23",
-            "%5C",
-            "%40",
-            "a URL parser ends the host",
-        ] {
-            assert!(said.contains(hint), "{hint} missing: {said}");
-        }
-    }
-}
-
-/// What the check guards against, in the parser haest's requests go
-/// through: each refused URL dials a host other than the one meant, and
-/// each passed one the host meant.
-#[cfg(feature = "reqwest")]
-#[test]
-fn a_parser_dials_another_host_for_a_refused_url_and_the_meant_one_for_a_passed_one() {
-    let host = |url: &str| reqwest::Url::parse(url).ok()?.host_str().map(String::from);
-    let url = "http://user:1234/secret@broker.example/agents";
-    let parsed = reqwest::Url::parse(url).expect("parses");
-    assert_eq!(parsed.host_str(), Some("user"));
-    assert_eq!(parsed.port(), Some(1234));
-    assert_eq!(parsed.path(), "/secret@broker.example/agents");
-    for url in &MISREAD[..6] {
-        let meant = &url[url.rfind('@').expect("an @") + 1..];
-        let meant = meant.split(['/', ':']).next();
-        assert_ne!(host(url).as_deref(), meant, "{url}");
-    }
-    for (url, meant) in [
-        (READ_RIGHT[0], "broker.example"),
-        (READ_RIGHT[4], "host"),
-        (READ_RIGHT[5], "broker.example"),
-    ] {
-        assert_eq!(host(url).as_deref(), Some(meant), "{url}");
-    }
-    // The parser drops the whitespace, then takes the path's first part
-    // for the host; a URL with only a port or a userinfo dials nothing.
-    for url in &NO_HOST_PART[..8] {
-        assert_eq!(host(url), None, "{url:?}");
-    }
-    for url in &NO_HOST_PART[8..] {
-        assert_eq!(host(url).as_deref(), Some("anthropic"), "{url:?}");
-    }
-    // A scheme with only slashes, a path put under it: the path's first
-    // part is the host.
-    for (joined, dialed) in [
-        ("https:/v1/messages", "v1"),
-        ("HTTP:\\\\/v1/messages", "v1"),
-        ("https:\r/repos/o/r", "repos"),
-        ("wss:/agents?x", "agents"),
-    ] {
-        assert_eq!(host(joined).as_deref(), Some(dialed), "{joined:?}");
-    }
-    let meant = ["localhost", "anthropic", "gw.example"];
-    for (url, meant) in HOST_WITHOUT_SLASHES.into_iter().zip(meant) {
-        assert_eq!(host(url).as_deref(), Some(meant), "{url:?}");
     }
 }

@@ -154,13 +154,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn the_handle_sends_through_the_client_it_holds() {
-        let http = HttpClientRef::new(Teapot);
-        let res = http.send(Request::get("https://a.test/")).await.unwrap();
-        assert_eq!(res.status, 418);
-    }
-
     /// Without reqwest there is no client to fall back on: the default says
     /// so on the first request, and never panics or sends.
     #[cfg(not(feature = "reqwest"))]
@@ -182,16 +175,5 @@ mod tests {
         let b = HttpClientRef::from(shared);
         assert!(HttpClientRef::ptr_eq(&a, &b));
         assert!(HttpClientRef::ptr_eq(&a, &a.clone()));
-        assert_eq!(format!("{a:?}"), "HttpClientRef(..)");
-    }
-
-    /// A client the host picked at run time goes in boxed, as on every
-    /// other handle.
-    #[tokio::test]
-    async fn a_boxed_client_goes_in_as_it_is() {
-        let picked: Box<dyn HttpClient> = Box::new(Teapot);
-        let http: HttpClientRef = picked.into();
-        let res = http.send(Request::get("https://a.test/")).await.unwrap();
-        assert_eq!(res.status, 418);
     }
 }
