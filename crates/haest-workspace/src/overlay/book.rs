@@ -108,6 +108,12 @@ impl Book {
         }
     }
 
+    /// The directory listings its lookups read from the disk so far.
+    #[cfg(test)]
+    pub(super) fn listings_read(&self) -> usize {
+        self.spelling.reads()
+    }
+
     pub(super) fn real(&self, path: &Path) -> PathBuf {
         self.root.join(path.strip_prefix("/").unwrap_or(path))
     }

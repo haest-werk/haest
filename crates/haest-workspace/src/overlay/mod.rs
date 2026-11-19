@@ -309,6 +309,13 @@ impl OverlayChanges {
     async fn scan(&self) -> Vec<Scanned> {
         changes(self.survey().await)
     }
+
+    /// The directory listings the ledger's lookups read from the disk so
+    /// far.
+    #[cfg(test)]
+    pub(crate) fn listings_read(&self) -> usize {
+        self.book.listings_read()
+    }
 }
 
 #[async_trait]

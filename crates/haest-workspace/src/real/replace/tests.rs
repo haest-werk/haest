@@ -4,6 +4,7 @@
 //! group on.
 
 mod faulty;
+mod listings;
 mod whole;
 
 use std::{

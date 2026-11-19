@@ -158,7 +158,7 @@ impl Fs for RealFs {
     /// so a write the disk stops partway leaves it as it was; where a new
     /// file would not stand in for it, they go in place (`replace.rs`).
     async fn write_whole(&self, path: &Path, data: &[u8]) -> io::Result<()> {
-        super::replace::put_file(self, path, data).await
+        super::replace::put_file(self, path, data, super::replace::Name::Asked).await
     }
 
     async fn exists(&self, path: &Path) -> bool {

@@ -50,10 +50,16 @@ const NAME_PART: usize = 64;
 /// ([`in_place_instead`]). Where the new file's bytes do not all go in (a
 /// full disk), the write fails and never falls back: in place they would
 /// not all go in either, and the human's file would be cut short. A file
-/// that is replaced keeps the name its directory lists it by, however
-/// `real` spells it; where that name cannot be told, it is written in
-/// place, which keeps any name ([`as_listed`]).
-pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Result<()> {
+/// that is replaced keeps the name its directory lists it by: `real`'s own
+/// where `name` says that is it, or else the one [`as_listed`] reads from
+/// the directory, however `real` spells it; where that cannot be told, it
+/// is written in place, which keeps any name.
+pub(crate) async fn put_file(
+    disk: &dyn Fs,
+    real: &Path,
+    bytes: &[u8],
+    name: Name,
+) -> io::Result<()> {
     let old = if disk.exists(real).await {
         // What the `Fs` does not carry; None on a disk that is not the
         // host's own (nothing to keep, then).
@@ -71,17 +77,30 @@ pub(super) async fn put_file(disk: &dyn Fs, real: &Path, bytes: &[u8]) -> io::Re
     } else {
         None
     };
-    let real = match &old {
-        Some(old) => match as_listed(real, old).await {
+    let real = match (&old, name) {
+        (Some(old), Name::Asked) => match as_listed(real, old).await {
             Some(listed) => listed,
             None => return disk.write(real, bytes).await,
         },
-        None => real.to_path_buf(),
+        (Some(_), Name::Listed) | (None, _) => real.to_path_buf(),
     };
     match put_new(disk, &real, old.as_ref(), bytes).await? {
         Put::Replaced => Ok(()),
         Put::InPlace => disk.write(&real, bytes).await,
     }
+}
+
+/// How the path a whole write is given names the file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Name {
+    /// As its directory lists it: the apply's paths, each read as the disk
+    /// spells it right before it is written (`overlay/apply.rs`). Renamed
+    /// over as it is, with no listing read.
+    Listed,
+    /// As a caller asked for it (Edit, Write, `GenerateImage`, spelled as
+    /// the model spelled it): one that is replaced keeps the name its
+    /// directory lists ([`as_listed`]).
+    Asked,
 }
 
 /// What became of the new file, gone either way.

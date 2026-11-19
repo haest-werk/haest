@@ -2084,7 +2084,10 @@ Hosts write less (round two of the review, and what porting brain onto
   the bytes in place where a new file would not stand in for it. The
   apply goes through it, and so do Edit, Write over a file that is
   there, and GenerateImage over an image that is there, in the real
-  workspace (see Bug fixes).
+  workspace (see Bug fixes). A tool's path is spelled as the model
+  spelled it, so the file it replaces keeps the name its directory's
+  listing gives; the apply's paths are the disk's own spelling, so it
+  reads no listing for them.
 
 ### haest-code
 

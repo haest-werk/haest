@@ -8,8 +8,8 @@
 //!   (`outside-project`): applying writes, creates and deletes only at
 //!   `root/path` itself, never through a link out of the project.
 //!
-//! A file goes on the disk whole or not at all, through the disk's
-//! `write_whole` (the real disk's is `real/replace.rs`): the
+//! A file goes on the disk whole or not at all, through the real disk's
+//! whole write (`real/replace.rs`), over the apply's disk: the
 //! sandbox's version is written to a new file in a directory of its own
 //! beside it that only its owner may enter from the moment it is made (a
 //! new file that replaces one is its owner's alone too, before the bytes
@@ -72,7 +72,10 @@ use haest_core::{
 use super::{
     OverlayChanges, Scanned, links::Links, modes, removable, scan::under, state::Original,
 };
-use crate::spelling::Ways;
+use crate::{
+    real::{Name, put_file},
+    spelling::Ways,
+};
 
 /// Why one change was not applied: its code and the reason for the human.
 type Refusal = (ApplyFailureCode, String);
@@ -366,8 +369,11 @@ impl OverlayChanges {
             if let Some(parent) = real.parent() {
                 disk.create_dir_all(parent).await?;
             }
-            disk.write_whole(&real, &self.overlay.read(path).await?)
-                .await?;
+            // `real` is the disk's own spelling: `put` has just read it so,
+            // and skips a path the disk holds under another. A file it
+            // replaces keeps that name with no listing read.
+            let bytes = self.overlay.read(path).await?;
+            put_file(disk, &real, &bytes, Name::Listed).await?;
         }
         self.carry_mode(path, s.change.kind, s.mine, &real).await?;
         Ok(took)

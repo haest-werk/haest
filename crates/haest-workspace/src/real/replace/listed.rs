@@ -10,6 +10,10 @@ use std::{
 
 use crate::listed::{Pick, confirmed, pick};
 
+/// Each directory [`as_listed`] listed, for the tests.
+#[cfg(test)]
+pub(super) static LISTED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
 /// `real`, one regular file that is there with no other link (`old`), as
 /// its directory lists it ([`crate::listed`]): under the asked name, or
 /// else under the entry `stat` agrees is this file. A disk that reads two
@@ -25,6 +29,8 @@ pub(super) async fn as_listed(real: &Path, old: &Metadata) -> Option<PathBuf> {
     let (Some(dir), Some(asked)) = (real.parent(), real.file_name()) else {
         return Some(real.to_path_buf());
     };
+    #[cfg(test)]
+    LISTED.lock().unwrap().push(dir.to_path_buf());
     let (listed, wanted, ino) = (dir.to_path_buf(), asked.to_os_string(), old.ino());
     let picked = tokio::task::spawn_blocking(move || {
         let listing = std::fs::read_dir(listed)?;
