@@ -1,15 +1,14 @@
-//! For the tests on a disk that reads some spellings of a name as one
-//! (macOS's default: case and Unicode normalization; case-sensitive APFS:
-//! normalization only): what the disk holds, and the sandbox's changes.
+//! What the disk holds under a project, and the sandbox's changes to it;
+//! on a disk that reads two names of a file as one (macOS's default: case
+//! and Unicode normalization; case-sensitive APFS: normalization only;
+//! exFAT, FAT, vfat) or not.
 
 use std::{ffi::OsString, fs, path::Path};
 
-use haest_core::workspace::{Change, ChangeSetRef, Workspace};
+use haest_core::workspace::{ApplyReport, Change, ChangeSetRef, Workspace};
 use haest_workspace::SandboxWorkspace;
 
 use super::opts;
-
-pub(crate) mod disk;
 
 /// Run `command` in the sandbox; it must succeed.
 pub(crate) async fn run(ws: &impl Workspace, dir: &Path, command: &str) {
@@ -99,4 +98,29 @@ pub(crate) async fn apply_all(ws: &SandboxWorkspace) {
     );
     let left = changes(ws).list().await;
     assert!(left.is_empty(), "left {left:?} after {report:?}");
+}
+
+/// After `report`: nothing failed, what was not applied was skipped as a
+/// conflict, what is still listed was skipped, and every file the sandbox
+/// shows is on the disk as the sandbox shows it, by its name or one the
+/// disk reads as it, or still listed.
+pub(crate) async fn nothing_lost(ws: &SandboxWorkspace, dir: &Path, report: &ApplyReport) {
+    assert!(report.failed.is_empty(), "{report:?}");
+    assert!(report.skipped.iter().all(|c| c.conflict), "{report:?}");
+    let left = paths(&changes(ws).list().await);
+    let skipped = paths(&report.skipped);
+    assert!(
+        left.iter().all(|p| skipped.contains(p)),
+        "left {left:?} after {report:?}"
+    );
+    let found = ws.shell("find . -type f", opts(dir)).await;
+    for file in found.stdout.lines() {
+        let rel = file.strip_prefix("./").unwrap_or(file);
+        let shown = ws.fs().read(&dir.join(rel)).await.unwrap();
+        let on_disk = fs::read(dir.join(rel)).is_ok_and(|held| held == shown);
+        assert!(
+            on_disk || left.contains(&format!("/{rel}")),
+            "{rel}, shown, is neither on the disk nor listed: {report:?}"
+        );
+    }
 }

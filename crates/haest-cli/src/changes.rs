@@ -23,7 +23,7 @@ fn line_of(c: &Change) -> String {
         ChangeKind::Deleted => '-',
     };
     let conflict = if c.conflict {
-        "  (CONFLICT: changed on disk since the sandbox read it, or waits on another spelling of its name)"
+        "  (CONFLICT: changed on disk since the sandbox read it, or the disk reads its name as another one the sandbox shows)"
     } else {
         ""
     };
@@ -136,7 +136,7 @@ fn apply_message(report: &ApplyReport, cwd: &Path) -> (String, bool) {
     };
     if !report.skipped.is_empty() {
         text.push_str(&format!(
-            "\n\nSkipped {} -- each changed on disk since the sandbox read it, or waits on a name the disk holds under another spelling (README.md for readme.md, or lib/ while Lib/ cannot be written), so applying would undo what the sandbox never saw or could not write:\n{}",
+            "\n\nSkipped {} -- each changed on disk since the sandbox read it, or the disk reads its name as another one the sandbox shows (README.md and readme.md on macOS), so applying would undo what the sandbox never saw or take along a file it still shows. A rename by case alone waits here; make it by hand:\n{}",
             report.skipped.len(),
             lines_of(&report.skipped)
         ));

@@ -6,9 +6,9 @@ mod common;
 use std::{fs, io};
 
 use common::{
-    opts, sandbox,
-    spelling::{apply_all, contents, pairs, run},
-    tempdir,
+    opts,
+    project::{apply_all, contents, pairs, run},
+    sandbox, tempdir,
 };
 use haest_core::{fs::ensure_dir, workspace::Workspace};
 

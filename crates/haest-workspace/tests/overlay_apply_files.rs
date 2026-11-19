@@ -13,9 +13,8 @@ use std::{
 };
 
 use common::{
-    sandbox,
-    spelling::{apply_all, changes, paths, run, writable_again},
-    tempdir,
+    project::{apply_all, changes, paths, run, writable_again},
+    sandbox, tempdir,
 };
 use haest_core::workspace::{ApplyFailureCode, Workspace};
 

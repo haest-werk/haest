@@ -12,7 +12,6 @@ use bashkit::{FileSystem, OverlayFs};
 use haest_core::workspace::{Change, ChangeKind};
 
 use super::{OverlayChanges, Scanned, state::Original, state::state_of};
-use crate::spelling::Ways;
 
 impl OverlayChanges {
     /// `s` is applied, and `took` are the names the disk held under what it
@@ -46,7 +45,6 @@ impl OverlayChanges {
             return;
         };
         let upper = cow.upper();
-        let mut ways = Ways::default();
         // In path order, reversed: a directory after those inside it.
         for c in applied
             .iter()
@@ -57,8 +55,7 @@ impl OverlayChanges {
             for dir in changed.ancestors().filter(|d| d.parent().is_some()) {
                 let none_of_its_own = upper.read_dir(dir).await.is_ok_and(|e| e.is_empty())
                     && self.book.modes.get(dir).is_none();
-                if none_of_its_own && self.book.on_disk(dir, &mut ways).await.state == Original::Dir
-                {
+                if none_of_its_own && self.book.state(dir).await == Original::Dir {
                     let _ = upper.remove(dir, false).await;
                 } else if dir != changed {
                     break;

@@ -254,8 +254,8 @@ write instead.
   sandbox command (`mkdir -p Vendor && echo x > Vendor/a`) put `a` in the
   link's target, while the change list showed `/Vendor/a`, a path inside
   the project. A link named `café` was reached the same way through `café`
-  spelled with a combining accent, on case-sensitive APFS too. Each path
-  on the way is now asked of the disk itself, by its own spelling, so the
+  written with a combining accent, on case-sensitive APFS too. Each path
+  on the way is now asked of the disk itself, by its own name, so the
   disk's own rules for names hold, and such a change fails as
   `OutsideProject`.
 - A URL's credentials showed in Debug output: haest-http's `Request`
@@ -426,96 +426,45 @@ write instead.
   directory (`chattr +F`), applying a sandbox's changes could delete or
   overwrite files, or a whole directory, in the real project while the
   report said every change was applied. The disk reads `readme.md` and
-  `README.md` as one name (and `café` in either Unicode spelling, on
+  `README.md` as one name (and `café` in either Unicode form, on
   case-sensitive APFS too). The sandbox's own files tell them apart, but
-  it read the project through the disk, so asked for `Lib` it found `lib`.
-  `mv readme.md README.md` listed only the old name's delete, and applying
-  it deleted the file; with an edit, the new name was written, then
-  deleted. `mv lib Lib` moved `lib` into itself as `Lib/lib`, so the model
-  saw every file twice, and applying it deleted the whole directory, as
-  did tidying the copy away (`rm -r Lib/lib`), after which the sandbox
-  showed the tree it meant. A sandbox that wrote both names
-  (`echo upper > README.md && echo lower > readme.md`) had the second
-  written over the first, and the first's content was lost, listed
-  nowhere. A write onto a name the disk held under another spelling, or
-  into a directory it held so, went into the disk's spelling and left the
-  change list as applied, even with the same content
-  (`cp readme.md README.md`, or `mkdir Lib && echo n > Lib/new.rs` beside
-  `lib`); removing the old spelling later (`rm readme.md`, `rm -r lib`)
-  then deleted it on apply too, while the sandbox still showed it. Now:
-  - the sandbox finds a project path only as the disk spells it, so
-    `mv lib Lib` is a rename, as in bash, and the change list shows a
-    rename by case or by Unicode spelling as one: `/readme.md` deleted and
-    `/README.md` added, `/lib` deleted and each `/Lib/...` file added, a
-    symlink that points nowhere included (apply leaves every link to the
-    human);
-  - `OverlayChanges::apply` runs every delete first, then the writes, so
-    such a rename keeps its files;
-  - a change that would land on a name the disk holds under another
-    spelling, the file itself or a directory on its way, is a conflict
-    whatever that holds, listed as one and skipped, unless the same apply
-    deletes that name;
-  - where such a change is a conflict, so is every delete and every
-    overwrite at or under the disk's spelling of that name: after
-    `mv lib Lib && mkdir lib`, `mkdir Lib && mv lib/* Lib/` or
-    `cp -r lib Lib && rm lib/a.rs`, every file stays in the disk's `lib`,
-    listed as a conflict until the human settles it, never deleted while
-    `Lib`'s copies wait;
-  - a directory whose delete frees such a name is deleted whole or not at
-    all: where a directory in it may not be emptied (read-only to haest's
-    process, sticky and not its own with another user's files in it, or
-    with an entry that cannot be read), the delete fails before anything
-    is removed, and the writes wait;
-  - the apply reads each change's real path again right before putting it
-    on the disk: one that moved since the scan (an earlier write of the
-    apply under another spelling, the new name of a rename whose delete
-    failed, or the human saving or deleting it meanwhile) is skipped as a
-    conflict and stays listed;
-  - the apply no longer trusts the sandbox's reading of the disk's
-    spelling where a change takes away what the disk holds (a delete, a
-    file written over, a directory become a file). That reading has been
-    wrong (a disk swapped under a running sandbox, a disk that reads both
-    Unicode forms of a name as one, a listing kept too long), and then the
-    sandbox showed one file on the disk under two names, `README.md` and
-    `readme.md`, and applying `mv README.md readme.md` deleted the only
-    file there was. Now each name on the change's way must be one its
-    directory lists, byte for byte, and no other path the sandbox changed
-    and still shows, but one the apply adds, may be the same file
-    (`lstat`'s device and inode number) or under it; else the change is a
-    conflict, and the disk keeps the file;
-  - the change list reads a path's first state through the same lookups
-    the sandbox reads the disk through. It read it apart, so where the
-    sandbox showed no `notes.md` (a listing kept too long), Write told
-    the model it created the file, the list took the human's file there
-    for the one the model saw, and applying wrote over it. A path the
-    sandbox showed as absent is now absent at first touch, and a file
-    found there later is a conflict.
-  The disk's spelling of a name is the one its directory lists. realpath(3)
-  gives that only on APFS and HFS+, in a directory whose own flag says it
-  tells case apart (ext4, f2fs, tmpfs, btrfs, overlayfs), and, for a name
-  of ASCII characters alone, in one a case swap says tells case apart: a
-  case swap says nothing of Unicode forms, and a disk that tells case
-  apart may read `café` in both forms as one (ZFS with normalization, a
-  case-sensitive APFS volume shared into Linux), where `mv` from one form
-  to the other deleted the only file. On exFAT and FAT on macOS it gives
-  the spelling the name was first looked up by since the disk was
-  mounted, and on vfat and in a case-folding directory on Linux the one
-  asked. Everywhere else the directory's listing decides: a file is the
-  entry that is the same file, never realpath's spelling. Where the kind
-  of disk a directory is on (statfs) has realpath trusted, it is asked
-  again at each lookup: macOS gives the next disk attached the device
-  number of the one detached before it, and a sandbox open while the
-  project's card or stick was swapped took the exFAT or FAT disk for the
-  APFS or HFS+ one before it.
-  A listing is kept while its directory's ctime stays as it was. The root
-  of an exFAT volume, of a FAT12 or FAT16 one on macOS and of a vfat one
-  on Linux keeps one ctime whatever is added there, so a file the human
-  made at the root of a card after the model first looked read as absent,
-  Write told the model it created the file, and applying replaced the
-  human's. The listing of the root of a mount now answers only for the
-  names it holds, and a name it lacks reads it again.
-  The cost: in the sandbox, `cat README.md` does not find `readme.md`,
-  where real bash on that disk would (see haest-workspace).
+  it reads the project through the disk, so asked for `Lib` it finds
+  `lib`. `mv readme.md README.md` listed only the old name's delete, and
+  applying it deleted the file; with an edit, the new name was written,
+  then deleted. `mv lib Lib` moved `lib` into itself as `Lib/lib`
+  (bashkit's `mv` moves into a directory that is there), so the model saw
+  every file twice, and applying it deleted the whole directory, as did
+  tidying the copy away (`rm -r Lib/lib`). A sandbox that wrote both
+  names (`echo upper > README.md && echo lower > readme.md`) had the
+  second written over the first, and the first's content was lost, listed
+  nowhere. A write onto a name the disk held under another one went into
+  the disk's name and left the change list as applied
+  (`cp readme.md README.md`); removing the old name later (`rm readme.md`)
+  then deleted it on apply too, while the sandbox still showed it. Now
+  `OverlayChanges::apply` asks the disk before each change, with
+  `read_dir` and `lstat` alone:
+  - before a change takes away what the disk holds at its path (a delete,
+    a file written over, a directory become a file): each name on its way
+    must be one its directory lists, byte for byte, and no other path the
+    sandbox shows (one it changed, or a directory on the way to one) may
+    be the same file (`lstat`'s device and inode number) as the path or a
+    directory on its way, or be under it;
+  - before a write: each name on its way that the disk holds must be one
+    its directory lists, and so must the path's own where the disk holds
+    it, so nothing the sandbox writes into its own `Lib` lands in the
+    disk's `lib`;
+  - it reads each change's real path again right before putting it on the
+    disk: one that moved since the scan (an earlier write of the apply
+    under another name, or the human saving or deleting it meanwhile) is
+    skipped;
+  - it runs every delete first, then the writes.
+  A change that fails one of these is skipped as a conflict and stays
+  listed, and the disk keeps both names as the human left them. So on
+  such a disk a rename by case or by Unicode form alone
+  (`mv README.md readme.md`, `mv lib Lib`) is held, and the human makes it
+  by hand; nothing is lost. The cost: the change list does not ask the
+  disk so, and shows such a change as no conflict until an apply skips it
+  (see Behaviour changes).
 - A file or directory the sandbox moved or copied landed on the disk at
   the umask's mode, whatever mode it had. After `mv secret.key moved.key`
   or `cp secret.key copy.key` on a 0600 key, applying wrote the new file
@@ -848,6 +797,23 @@ write instead.
   where a new session's lock file could not be made for a reason its own
   file then fails on too (no sessions dir, a full disk). On a host's own
   file system nothing changes unless it implements `Fs::try_lock`.
+- The sandbox's `apply` can skip, as a conflict, a change its `list`
+  showed as no conflict: on a disk that reads two names of a file as one
+  (macOS's default, any APFS for Unicode forms, exFAT, FAT, vfat), one that
+  would take along a file the sandbox shows under another name, or land
+  under a name the disk lists another way (see Security). A rename by case
+  or by Unicode form alone (`mv README.md readme.md`, `mv lib Lib`) is
+  such a change: it stays listed, and applying it again skips it again
+  until the human makes the rename by hand. So is what the sandbox writes
+  under the new name (`mv Docs docs && echo more >> docs/a.md`), a
+  directory replaced by a file whose name differs from it by case alone
+  (`rm -r Build && echo x > build`), and a write into a directory the
+  human renamed by case since the model first looked (`Docs/new.md` after
+  the human's `mv Docs docs`), which landed in `docs` before. Each was
+  applied before, and the disk now keeps the human's files as they were.
+  A host that shows the list
+  before an apply should read the report's `skipped` for what was held.
+  Every change the report names as skipped has `conflict` set.
 
 ### The haest command
 
@@ -917,11 +883,12 @@ write instead.
   comes back, and `-p` exits 130. Before, Ctrl+C did nothing while a
   command ran, and only a kill ended it.
 - `/changes` and `/apply` say a conflict is a change on disk, or a change
-  that waits on a name the disk holds under another spelling (`README.md`
-  for `readme.md`, or `lib/` while `Lib/` cannot be written). They called
-  every conflict a change on disk that applying would overwrite, so a
-  spelling conflict read as a human's edit, and a delete held so the disk
-  keeps the only copy read as one that would overwrite something.
+  whose name the disk reads as another one the sandbox shows (`README.md`
+  and `readme.md` on macOS), and `/apply` that a rename by case alone
+  waits there for the human to make by hand. They called every conflict a
+  change on disk that applying would overwrite, so a held rename read as
+  a human's edit, and a delete held so the disk keeps the only copy read
+  as one that would overwrite something.
 
 ### haest (the facade)
 
@@ -2085,35 +2052,26 @@ Hosts write less (round two of the review, and what porting brain onto
   executable. `b` now has `a`'s mode, as a POSIX rename gives it.
 - `OverlayChanges::apply` asks the disk about each real path on the way to
   its changes once; it listed each directory again for every change inside
-  it. It asks by the path itself, so a link spelled another way is still a
-  link (see Security).
+  it. It asks by the path itself, so a link under another name the disk
+  reads as its own is still a link (see Security).
 - Fixed: a sandbox call dropped in flight (a Code run that timed out) left
   a task behind, asleep until the call's timeout, up to 10 minutes.
   Dropping the call now ends it.
-- The sandbox reads the project, and `OverlayChanges` reads the disk, only
-  as the disk spells each path, and `apply` runs every delete before any
-  write (see Security). A rename by case or by Unicode spelling lists as
-  the old name deleted and the new one added and applies as bash leaves
-  it; a change that would land on a name the disk holds under another
-  spelling (the file itself, or a directory on its way), or whose real
-  path moved since the scan, is a conflict and is skipped
-  (`Change::conflict` says so). In the sandbox a name the disk spells
-  another way is not found, where real bash on that disk finds it:
-  `cat README.md` fails over `readme.md`, `echo x > README.md` makes a
-  second file beside it, and `rm -r lib && mkdir Lib` works (it failed
-  with "File exists"). Each read in the project looks its path up once
-  more. One through a symlink inside the project, or of a symlink that
-  points nowhere, also reads the listing of each directory on the way,
-  once: it is read again only after that directory changed. In a
-  directory the sandbox may enter but not list (mode `0311`), a name asked
-  under another spelling or through a symlink reads as the disk finds it.
-- Fixed: on Linux, a lookup that reads a directory's case-folding flag
-  opened the directory to read, and where a FIFO took its place between
-  the lookup's `lstat` and that open, the lookup and a blocking thread
-  waited until something wrote to the FIFO. The directory is opened as a
-  directory now, without waiting, so a FIFO fails at once. The flag's read
-  also has room for the `long` the request names, which a FUSE file system
-  before Linux 5.13 could write in full, 4 bytes past the `int` it had.
+- `OverlayChanges::apply` runs every delete before any write, reads each
+  change's real path again right before putting it on the disk, and, on a
+  disk that reads two names of a file as one, skips as a conflict a change
+  that would take along a file the sandbox shows under another name or
+  land under a name the disk lists another way (see Security). The
+  sandbox reads the project through the system, as real bash on that disk
+  does: `cat README.md` finds `readme.md`, and `mkdir Lib` beside `lib`
+  fails with "File exists". What it writes it keeps under the name it was
+  written by, so `echo x > README.md` beside the disk's `readme.md` shows
+  two files, and applying it is held. bashkit's `mv lib Lib` moves `lib`
+  into the `Lib` the system finds, so the sandbox shows `Lib/lib` beside
+  `lib`'s own files; applying it is held whole, and the disk keeps `lib`.
+  A rename by case alone lists as the old name deleted where the disk
+  reads both names as one (the new name is the old file, read through),
+  and as the old name deleted and the new one added where it does not.
 - Fixed: over the real workspace, a caller's own `on_output` that panicked
   in `shell_streaming` ended the pipe's reader: the panic was lost, and the
   command died of SIGPIPE (exit 141) on its next write. It is now called

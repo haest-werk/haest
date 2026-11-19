@@ -16,7 +16,6 @@
 mod commands;
 mod exec;
 mod mounts;
-mod spelled_fs;
 mod workspace;
 mod xan;
 
@@ -28,10 +27,7 @@ use haest_core::{
 
 pub use mounts::{OpenSandboxError, SandboxMounts};
 
-use crate::{
-    bridge::{BashkitFsOverHaest, HaestFsOverBashkit},
-    spelling::Spelling,
-};
+use crate::bridge::{BashkitFsOverHaest, HaestFsOverBashkit};
 use exec::Shell;
 
 /// The commands every sandbox has beyond bashkit's builtins (`xan`). A host's
@@ -70,21 +66,19 @@ fn own_commands() -> Vec<ShellCommandRef> {
 /// [`Workspace::prompt_note`] tells the model all of that, and, over the
 /// overlay, that its edits wait for the human to apply them.
 ///
-/// Over the project, on a disk that reads two spellings of a name as one
-/// (macOS's default reads `README.md` as `readme.md`; APFS, the
-/// case-sensitive kind too, reads `caf\u{e9}` and `cafe\u{301}` as one; so
-/// do exFAT, FAT, and on Linux a case-folding directory, `chattr +F`), a
-/// path is found only as the disk spells it: `cat README.md` does not find
-/// `readme.md`, where real bash would find it, and `echo x > README.md`
-/// makes a second file beside it. The model reads the disk's spelling from
-/// `ls`. So the sandbox shows what applying writes: `mv lib Lib` is a rename,
-/// in the sandbox and on the disk, and a write that would land on a name the
-/// disk holds under another spelling, a file or a directory on its way, is a
-/// conflict until a delete frees that name
-/// ([`OverlayChanges`](crate::OverlayChanges)). The names in a directory the
-/// sandbox may enter but not list (mode `0311`) are not told apart: asked
-/// under another spelling, or through a symlink, they read as the disk finds
-/// them.
+/// Over the project, the disk is read through the system, as real bash
+/// reads it: on a disk that reads two names of a file as one (macOS's
+/// default reads `README.md` as `readme.md`; APFS, the case-sensitive kind
+/// too, reads `caf\u{e9}` and `cafe\u{301}` as one; so do exFAT, FAT, and
+/// on Linux vfat and a case-folding directory), `cat README.md` finds
+/// `readme.md`, and `mkdir Lib` beside `lib` fails ("File exists"). What
+/// the sandbox writes is kept in memory under the name it was written by,
+/// so `echo x > README.md` there shows a second file beside the disk's
+/// `readme.md`, which the disk cannot hold: applying it would write over
+/// `readme.md`, so it is a conflict. So is a rename by case or Unicode form
+/// alone: `mv README.md readme.md`, and `mv lib Lib`, which moves `lib`
+/// into the `Lib` the system finds, as bashkit's `mv` does with a
+/// directory that is there ([`OverlayChanges`](crate::OverlayChanges)).
 ///
 /// # Examples
 ///
@@ -171,33 +165,11 @@ impl SandboxWorkspace {
     /// opened, is an empty path, or is relative and the current directory
     /// cannot be read: the [`OpenSandboxError`] names it.
     pub async fn open(mounts: SandboxMounts) -> Result<Self, OpenSandboxError> {
-        Self::open_spelled(mounts, |spelling| spelling).await
-    }
-
-    /// The same, the disk's spelling of the project as `spell` makes it
-    /// from the system's: in the tests, an answer made wrong on purpose.
-    async fn open_spelled(
-        mounts: SandboxMounts,
-        spell: impl FnOnce(Spelling) -> Spelling,
-    ) -> Result<Self, OpenSandboxError> {
         let mounts = mounts.absolute()?;
-        let spelling = spell(Spelling::of(&mounts.cwd));
-        let changes = mounts::project_overlay(&mounts.cwd, spelling).await?;
+        let changes = mounts::project_overlay(&mounts.cwd).await?;
         let shell_fs = mounts::sandbox_fs(&mounts, &changes).await?;
         let fs = FsRef::new(HaestFsOverBashkit::new(shell_fs.clone()));
         Ok(Self::from_parts(shell_fs, fs, Some(changes.into())))
-    }
-
-    /// The default sandbox over `cwd`, its every answer to how the disk
-    /// spells a path `told`'s where that gives one ([`Spelling::told`]).
-    #[cfg(test)]
-    pub(crate) async fn open_told(
-        cwd: &std::path::Path,
-        told: fn(&std::path::Path) -> Option<crate::spelling::Spelled>,
-    ) -> Self {
-        Self::open_spelled(SandboxMounts::new(cwd), |s| s.told(told))
-            .await
-            .expect("the sandbox opens")
     }
 
     /// A sandboxed bash over a host's own file system: the shell's whole world

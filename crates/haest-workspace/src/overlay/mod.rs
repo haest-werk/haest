@@ -14,18 +14,16 @@
 //! while a conflict waits under it: removing it would take the human's
 //! version along. Everything else is written (or
 //! deleted) on the real disk, deletes first, unless `apply.rs` refuses it: a
-//! symlink on the real disk on its way, a symlink the sandbox made, or a
-//! directory a rename by case must delete that could not go whole
-//! (`removable.rs`). A refused change
-//! is reported as failed with its code, and stays listed. Once a change is on
-//! the disk, the sandbox reads the disk there again (`through.rs`).
+//! symlink on the real disk on its way, or a symlink the sandbox made. A
+//! refused change is reported as failed with its code, and stays listed.
+//! Once a change is on the disk, the sandbox reads the disk there again
+//! (`through.rs`).
 //!
-//! The real disk is read as the sandbox spells each path (`book.rs`): on a
-//! disk that reads `Lib` as `lib`, `/Lib` is absent while `lib` is there. A
-//! write that would land on a name the disk holds under another spelling is a
-//! conflict too, unless the same apply deletes that name; and what would take
-//! something away under the disk's spelling then waits with it, a conflict as
-//! well, so the disk keeps what the sandbox could not write (`scan.rs`).
+//! The real disk is read through the system, as any program reads it
+//! (`book.rs`). Where the system reads two names as one file (`README.md`
+//! and `readme.md` on macOS's default disk), the sandbox may still show
+//! them as two; a change that would take away what the disk holds there,
+//! and so the other name's file too, is a conflict (`shown.rs`).
 //!
 //! Paths here are the overlay's own (`/src/a.ts`); `root` maps them to the disk.
 //! A symlink is compared as a link (`state.rs`), never as what it points to.
@@ -41,11 +39,8 @@ mod diff;
 mod links;
 mod modes;
 mod recorder;
-mod removable;
 mod scan;
 mod shown;
-#[cfg(test)]
-mod spelling_lies;
 mod state;
 #[cfg(test)]
 mod testing;
@@ -54,7 +49,7 @@ mod tests;
 mod through;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -65,10 +60,7 @@ use haest_core::{
     workspace::{ApplyReport, Change, ChangeKind, ChangeSet},
 };
 
-use crate::{
-    bridge::HaestFsOverBashkit,
-    spelling::{Spelling, Ways},
-};
+use crate::bridge::HaestFsOverBashkit;
 use book::Book;
 use recorder::Recorder;
 use scan::{Found, Scanned, changes};
@@ -89,8 +81,7 @@ use state::{Original, state_of, walk};
 /// - [`list`](ChangeSet::list): every touched path whose overlay version
 ///   differs from the real disk, by its path inside the project (`/src/a.ts`),
 ///   a directory before its files. A path whose real file changed since the
-///   first touch (the human edited it), or that would land on a name the
-///   disk holds under another spelling (below), is a
+///   first touch (the human edited it) is a
 ///   [`conflict`](haest_core::workspace::Change::conflict); so is a
 ///   directory the sandbox removes whole while a conflict waits under it,
 ///   which removing it would take along.
@@ -101,42 +92,33 @@ use state::{Original, state_of, walk};
 ///   one an apply dropped partway (a host's timeout, Ctrl+C) had not put on
 ///   the disk yet.
 ///
-/// On a disk that reads two spellings as one name (macOS's default:
-/// `readme.md` and `README.md`; any APFS: `caf\u{e9}` and `cafe\u{301}`), a
-/// path is read only as the disk spells it, as the sandbox reads it (see
-/// [`SandboxWorkspace`](crate::SandboxWorkspace)): `/README.md` is absent
-/// while the disk holds `readme.md`. So `mv readme.md README.md` lists
-/// `/readme.md` deleted and `/README.md` added, and `mv lib Lib` lists the
-/// same for the directory and each file in it. A change onto a name the disk
-/// holds under another spelling, or into a directory it holds so
-/// (`Lib/new.rs` beside the disk's `lib`), would land there: it is a
-/// conflict, whatever that holds, unless a delete in the list frees the name
-/// first (the rename). So the disk holds what the sandbox shows once the
-/// list is applied. Where such a change is a conflict, so is every change
-/// that would take something away at or under the disk's spelling of that
-/// name (a delete, an overwrite): after `mv lib Lib && mkdir lib`, every file
-/// stays in the disk's `lib` until the human settles it, never deleted while
-/// `Lib`'s copies wait.
+/// The real disk is read through the system, as any program reads it. On
+/// a disk that reads two names of a file as one (macOS's default:
+/// `readme.md` and `README.md`; any APFS: `caf\u{e9}` and `cafe\u{301}`;
+/// exFAT, FAT, vfat), the system decides what a name means, and the
+/// sandbox, whose own files tell every name apart, may show one file on
+/// the disk as two. Before a change takes away what the disk holds at its
+/// path (a delete, a file written over, a directory become a file), two
+/// things are asked of the disk: that each name on the way is one its
+/// directory lists byte for byte, and that no other path the sandbox shows
+/// (of those it changed, and the directories on their way) is the same
+/// file, by device and inode number, as the path or a directory on its
+/// way, or is under it. And a write lands only by names the disk lists, or
+/// on a path it does not hold. Else the change would take a file the
+/// sandbox shows along, or land where it does not show it: it is skipped
+/// as a conflict and stays listed, and the disk keeps both names as the
+/// human left them. So on such a disk a rename by case or Unicode form
+/// alone (`mv README.md readme.md`, `mv lib Lib`) is held, and the human
+/// renames it by hand; nothing is lost. `list` does not ask the disk so:
+/// such a change is listed as no conflict until an apply skips it.
 ///
-/// `apply` deletes first, then writes, each in path order, so a rename by
-/// case finds its new name free. A directory whose delete frees the name for
-/// such writes is deleted whole or not at all: where a directory at or under
-/// it may not be emptied (read-only to this process), it fails before
-/// anything is deleted, and its writes wait. Each change's real path is read
-/// again right before it is put on the disk, and so is each change listed
-/// under a directory removed whole. One that moved since the scan (the
-/// human saved or deleted it), or whose name or directory the disk now
-/// holds under another spelling (an earlier write of this apply: the sandbox
-/// wrote both `README.md` and `readme.md`; or the rename's delete failed), is
-/// skipped as a conflict and stays listed, and so is the directory above it.
-/// The same holds where the sandbox's reading of the disk's spelling is
-/// wrong, so that it shows one file on the disk under two names: a delete or
-/// a write of one would take the other along. Before a change takes away
-/// what the disk holds at its path, the apply asks, apart from that
-/// reading, that each name on the way is one its directory lists byte for
-/// byte, and that no other path the sandbox changed and still shows (but
-/// one this apply adds) is the same file, by device and inode number, or
-/// under it.
+/// `apply` deletes first, then writes, each in path order. Each change's
+/// real path is read again right before it is put on the disk, and so is
+/// each change listed under a directory removed whole. One that moved since
+/// the scan (the human saved or deleted it, or an earlier write of this
+/// apply landed there: the sandbox wrote both `README.md` and `readme.md`)
+/// is skipped as a conflict and stays listed, and so is the directory above
+/// it.
 ///
 /// `apply` never writes through a symlink: not one on the real disk on the
 /// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),
@@ -199,51 +181,33 @@ impl std::fmt::Debug for OverlayChanges {
 
 impl OverlayChanges {
     /// A change ledger over `overlay`, the copy-on-write layer over the project
-    /// directory `root` on `disk`, the real file system, whose paths the
-    /// disk spells as `spelling` has it.
+    /// directory `root` on `disk`, the real file system.
     ///
     /// Nothing is recorded until mutations go through
     /// [`recorder`](Self::recorder).
-    fn spelled(
-        overlay: Arc<dyn bashkit::FileSystem>,
-        disk: Arc<dyn Fs>,
-        root: PathBuf,
-        spelling: Spelling,
-    ) -> Self {
-        Self {
-            book: Arc::new(Book::new(disk, root, spelling)),
-            overlay: HaestFsOverBashkit::new(overlay),
-            cow: None,
-        }
-    }
-
-    /// The same, the disk spelling each path as the system says.
-    #[cfg(test)]
     pub(crate) fn new(
         overlay: Arc<dyn bashkit::FileSystem>,
         disk: Arc<dyn Fs>,
         root: impl Into<PathBuf>,
     ) -> Self {
-        let root = root.into();
-        let spelling = Spelling::of(&root);
-        Self::spelled(overlay, disk, root, spelling)
+        Self {
+            book: Arc::new(Book::new(disk, root.into())),
+            overlay: HaestFsOverBashkit::new(overlay),
+            cow: None,
+        }
     }
 
     /// The same over bashkit's copy-on-write overlay of the project: once a
-    /// change is applied, the sandbox reads the disk there again. The
-    /// overlay's lower layer finds each path as `spelling` has it, and so
-    /// does the ledger, with the same lookups: what the ledger takes for a
-    /// path's state at first touch is what the sandbox showed there.
+    /// change is applied, the sandbox reads the disk there again.
     pub(crate) fn over_cow(
         overlay: Arc<bashkit::OverlayFs>,
         disk: Arc<dyn Fs>,
         root: impl Into<PathBuf>,
-        spelling: Spelling,
     ) -> Self {
         let cow = overlay.clone();
         Self {
             cow: Some(cow),
-            ..Self::spelled(overlay, disk, root.into(), spelling)
+            ..Self::new(overlay, disk, root)
         }
     }
 
@@ -317,20 +281,13 @@ impl OverlayChanges {
     /// map is ordered): a directory before its files.
     async fn survey(&self) -> Vec<Found> {
         let mut out = Vec::new();
-        // The files of one new tree all ask how the disk spells the same
-        // directories above them: each is asked once per scan.
-        let mut ways = Ways::default();
         for (path, original) in self.candidates().await {
-            let (now, mine) = tokio::join!(
-                self.book.on_disk(&path, &mut ways),
-                state_of(&self.overlay, &path)
-            );
+            let (now, mine) = tokio::join!(self.book.state(&path), state_of(&self.overlay, &path));
             let mode = self.mode_change(&path, mine).await;
             out.push(Found {
                 path,
-                original: original.unwrap_or(now.state),
-                now: now.state,
-                held: now.held,
+                original: original.unwrap_or(now),
+                now,
                 mine,
                 mode,
             });
@@ -338,25 +295,42 @@ impl OverlayChanges {
         out
     }
 
+    /// Every change, each a conflict where the human changed its path
+    /// since the sandbox first read it, or where it removes a directory
+    /// with such a conflict under it.
     async fn scan(&self) -> Vec<Scanned> {
         changes(self.survey().await)
     }
 
-    /// The same, its lookups taking the disk's answers as Linux's ext4 or
-    /// tmpfs gives them; before anything shares the ledger.
-    #[cfg(test)]
-    pub(crate) fn telling_case_apart(mut self) -> Self {
-        Arc::get_mut(&mut self.book)
-            .expect("the ledger is not shared yet")
-            .telling_case_apart();
-        self
-    }
-
-    /// The directory listings the ledger's lookups read from the disk so
-    /// far.
-    #[cfg(test)]
-    pub(crate) fn listings_read(&self) -> usize {
-        self.book.listings_read()
+    /// What the sandbox shows of the paths `found` names, which an apply
+    /// takes nothing of (`shown.rs`): each one it holds, and each directory
+    /// on the way to any of them that it still holds (its own `Lib` around
+    /// a `Lib/lib` it removed again).
+    async fn shown(&self, found: &[Found]) -> Vec<PathBuf> {
+        let mut shown: BTreeSet<PathBuf> = BTreeSet::new();
+        let mut gone: BTreeSet<&Path> = BTreeSet::new();
+        for f in found {
+            let mut held = f.mine != Original::Absent;
+            for at in f.path.ancestors().filter(|a| a.parent().is_some()) {
+                if shown.contains(at) {
+                    // And each directory above it.
+                    break;
+                }
+                if !held && at != f.path {
+                    if gone.contains(at) {
+                        continue;
+                    }
+                    held = state_of(&self.overlay, at).await != Original::Absent;
+                    if !held {
+                        gone.insert(at);
+                    }
+                }
+                if held {
+                    shown.insert(at.to_path_buf());
+                }
+            }
+        }
+        shown.into_iter().collect()
     }
 }
 

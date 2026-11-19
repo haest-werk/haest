@@ -13,7 +13,8 @@ use std::{
 
 use haest_core::workspace::{ChangeSetRef, ExecOptions};
 
-pub(crate) mod spelling;
+pub(crate) mod disk;
+pub(crate) mod project;
 
 /// A temp dir by its real path: on macOS the temp root is a symlink, and the
 /// sandbox mounts real paths.

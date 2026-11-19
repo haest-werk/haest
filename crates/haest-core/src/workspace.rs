@@ -170,11 +170,11 @@ pub struct Change {
     pub kind: ChangeKind,
     /// Apply skips it and keeps it listed, because applying would go over
     /// what the sandbox never saw: the real file (or its mode) changed since
-    /// the sandbox first touched it (the human's edit), or the disk holds
-    /// the name under another spelling. A change that would take away what
-    /// such a write leaves on the disk under that spelling waits with it, a
-    /// conflict too, and so does one that removes a directory with a
-    /// conflict under it.
+    /// the sandbox first touched it (the human's edit). So does a change
+    /// that removes a directory with a conflict under it. A change set may
+    /// find more at the apply, and skip those as conflicts too (the
+    /// sandbox's finds a change that would take along a file it shows under
+    /// another name the disk reads as the same).
     pub conflict: bool,
 }
 

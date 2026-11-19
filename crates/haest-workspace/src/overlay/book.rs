@@ -1,9 +1,5 @@
-//! The first-touch ledger, and the real disk read as the sandbox spells a
-//! path: where the disk holds a name only under another spelling (`lib` for
-//! `/Lib`), the path is absent, and where a write to it would land instead
-//! is kept apart. A path that is not there lands in the nearest directory
-//! above it that is (`/Lib/new.rs` in `lib`), so that directory's spelling
-//! counts too.
+//! The first-touch ledger: what the real disk held at each path the
+//! sandbox touched, read through the system as any program reads it.
 
 use std::{
     collections::BTreeMap,
@@ -18,7 +14,6 @@ use super::{
     modes::{self, SetMode, SetModes},
     state::{Original, state_of, walk},
 };
-use crate::spelling::{Spelled, Spelling, Ways};
 
 /// The first-touch ledger the recorder writes and the scan reads.
 pub(crate) struct Book {
@@ -37,7 +32,6 @@ pub(crate) struct Book {
     pub(super) gate: RwLock<()>,
     pub(super) disk: Arc<dyn Fs>,
     pub(super) root: PathBuf,
-    spelling: Spelling,
 }
 
 /// The directories wiped, each with the count of the last wipe of it.
@@ -55,74 +49,17 @@ pub(super) struct Wipe {
     count: u64,
 }
 
-/// A project path on the real disk, read as the sandbox spells it.
-pub(super) struct OnDisk {
-    /// What is there: absent where the disk holds the name only under
-    /// another spelling.
-    pub(super) state: Original,
-    /// Where it does, or holds a directory on its way so: a write to the
-    /// path lands there, not where the sandbox shows it.
-    pub(super) held: Option<Held>,
-}
-
-/// Where the disk holds a path's name, or a directory on its way, under
-/// another spelling.
-pub(super) struct Held {
-    /// The disk's own spelling of the first name on the way it spells
-    /// differently, as a project path (`/lib` for `/Lib/a.rs`): a delete of
-    /// it frees the way. None when the entry its directory lists for that
-    /// name cannot be told.
-    pub(super) at: Option<PathBuf>,
-}
-
-impl Held {
-    /// `asked` (an overlay path) is held at `found`, the disk's own spelling
-    /// of it or of a directory above it.
-    fn new(asked: &Path, found: Option<PathBuf>) -> Self {
-        let at = found.map(|found| {
-            let mut asked = asked.iter();
-            let mut at = PathBuf::new();
-            for name in &found {
-                at.push(name);
-                if asked.next() != Some(name) {
-                    break;
-                }
-            }
-            at
-        });
-        Self { at }
-    }
-}
-
 impl Book {
-    /// An empty ledger over the project directory `root` on `disk`, whose
-    /// paths the disk spells as `spelling` has it: the one the sandbox
-    /// reads the disk through, so a path's state at first touch is what
-    /// the sandbox showed there, never a lookup of its own that could say
-    /// otherwise.
-    pub(super) fn new(disk: Arc<dyn Fs>, root: PathBuf, spelling: Spelling) -> Self {
+    /// An empty ledger over the project directory `root` on `disk`.
+    pub(super) fn new(disk: Arc<dyn Fs>, root: PathBuf) -> Self {
         Self {
             touched: Mutex::default(),
             wiped: Mutex::default(),
             modes: SetModes::default(),
             gate: RwLock::new(()),
             disk,
-            spelling,
             root,
         }
-    }
-
-    /// Its lookups take the disk's answers as Linux's ext4 or tmpfs gives
-    /// them ([`Spelling::telling_case_apart`]).
-    #[cfg(test)]
-    pub(super) fn telling_case_apart(&mut self) {
-        self.spelling = self.spelling.clone().telling_case_apart();
-    }
-
-    /// The directory listings its lookups read from the disk so far.
-    #[cfg(test)]
-    pub(super) fn listings_read(&self) -> usize {
-        self.spelling.reads()
     }
 
     pub(super) fn real(&self, path: &Path) -> PathBuf {
@@ -223,7 +160,7 @@ impl Book {
 
     /// Whether the sandbox's mode at `path` is the path's own, which `mv`
     /// and `cp` take along: one the sandbox set, or the disk's, where the
-    /// disk holds the path under any spelling. A path only the sandbox made
+    /// disk holds the path. A path only the sandbox made
     /// has bashkit's default mode, where bash gives the umask's: applying
     /// gives it the umask's. (One it made again after removing the disk's
     /// counts as the disk's: it lands 0644 at most. A directory the disk
@@ -246,48 +183,14 @@ impl Book {
         }
     }
 
-    /// The mode of `path` (an overlay path) on the real disk, as the sandbox
-    /// spells it: None where the disk holds it only under another spelling.
+    /// The mode of `path` (an overlay path) on the real disk; None where
+    /// nothing is there.
     pub(super) async fn disk_mode(&self, path: &Path) -> Option<u32> {
-        let mode = modes::on_disk(&self.real(path)).await?;
-        match self.spelling.spelled(path).await {
-            Spelled::AsAsked => Some(mode),
-            Spelled::Other(_) => None,
-        }
+        modes::on_disk(&self.real(path)).await
     }
 
-    /// What the sandbox reads at `path` (an overlay path) on the real disk:
-    /// absent where the disk holds it only under another spelling.
-    async fn state(&self, path: &Path) -> Original {
-        let found = state_of(self.disk.as_ref(), &self.real(path)).await;
-        if found == Original::Absent {
-            return found;
-        }
-        match self.spelling.spelled(path).await {
-            Spelled::AsAsked => found,
-            Spelled::Other(_) => Original::Absent,
-        }
-    }
-
-    /// `path` (an overlay path) on the real disk, as the sandbox spells it,
-    /// and where a write to it would land instead. `ways` keeps how the disk
-    /// spells the directories above a missing path, for one scan.
-    pub(super) async fn on_disk(&self, path: &Path, ways: &mut Ways) -> OnDisk {
-        let found = state_of(self.disk.as_ref(), &self.real(path)).await;
-        let spelled = if found == Original::Absent {
-            self.spelling.spelled_way(path, ways).await
-        } else {
-            self.spelling.spelled(path).await
-        };
-        match spelled {
-            Spelled::AsAsked => OnDisk {
-                state: found,
-                held: None,
-            },
-            Spelled::Other(at) => OnDisk {
-                state: Original::Absent,
-                held: Some(Held::new(path, at)),
-            },
-        }
+    /// What the real disk holds at `path` (an overlay path).
+    pub(super) async fn state(&self, path: &Path) -> Original {
+        state_of(self.disk.as_ref(), &self.real(path)).await
     }
 }

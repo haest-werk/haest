@@ -135,11 +135,9 @@ compile_error!(
 );
 
 mod bridge;
-mod listed;
 mod overlay;
 mod real;
 mod sandbox;
-mod spelling;
 
 pub use overlay::OverlayChanges;
 pub use real::{RealFs, RealWorkspace};

@@ -8,9 +8,9 @@ mod common;
 use std::{fs, os::unix::fs::PermissionsExt};
 
 use common::{
-    opts, sandbox,
-    spelling::{apply_all, changes, contents, pairs, paths, run},
-    tempdir,
+    opts,
+    project::{apply_all, changes, contents, pairs, paths, run},
+    sandbox, tempdir,
 };
 use haest_core::workspace::Workspace;
 

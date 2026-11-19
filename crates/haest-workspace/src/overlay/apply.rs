@@ -47,19 +47,15 @@
 //!   The name matches none of the file's own ignore patterns; `.*.haest-*`
 //!   matches every one.
 //!
-//! Deletes go first, then the writes: on a disk that reads two spellings as
-//! one name, a rename by case (`/readme.md` deleted, `/README.md` added)
-//! finds its new name free. Each directory's mode goes on last, deepest
-//! first, so one made read-only still gets what was written into it. A directory delete that frees such a name fails
-//! before it starts where it would stop partway (`removable.rs`). Each
-//! change's real path is read again right before it is put on the disk; one
-//! that moved since the scan, or whose name or directory the disk now holds
-//! under another spelling, is skipped as a conflict. A directory removed
-//! whole is read again with each change listed under it: one of them that
-//! moved keeps the directory as a conflict too, never removed with it. And
-//! one that would take away what the disk holds under another name, or
-//! another path the sandbox changed and still shows, asked apart from the
-//! sandbox's spelling (`shown.rs`), is a conflict too.
+//! Deletes go first, then the writes. Each directory's mode goes on last,
+//! deepest first, so one made read-only still gets what was written into
+//! it. Each change's real path is read again right before it is put on the
+//! disk; one that moved since the scan is skipped as a conflict. A
+//! directory removed whole is read again with each change listed under it:
+//! one of them that moved keeps the directory as a conflict too, never
+//! removed with it. And one that would take along a file the sandbox shows
+//! under another name the disk reads as the same, or land under a name the
+//! disk lists another way (`shown.rs`), is a conflict too.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -75,12 +71,12 @@ use haest_core::{
 use super::{
     OverlayChanges, Scanned,
     links::Links,
-    modes, removable,
+    modes,
     scan::{changes, under},
     shown::Shown,
     state::Original,
 };
-use crate::{real::put_file, spelling::Ways};
+use crate::real::put_file;
 
 /// Why one change was not applied: its code and the reason for the human.
 type Refusal = (ApplyFailureCode, String);
@@ -107,8 +103,8 @@ enum Put {
     /// On the real disk now; with the names the disk held under a tree it
     /// removed (a directory deleted, or become a file).
     Applied(Vec<PathBuf>),
-    /// Its real path moved since the scan, or the disk holds its name or a
-    /// directory on its way under another spelling: not written, a conflict.
+    /// Its real path moved since the scan, or putting it would take along
+    /// another file the sandbox shows: not written, a conflict.
     Moved,
 }
 
@@ -122,22 +118,9 @@ impl OverlayChanges {
         // The ones this scan compares under: a wipe made while the apply
         // runs, of one of these too, is not.
         let wiped = self.book.wipes();
-        // Read as the sandbox spells each path, a delete takes only its own
-        // name and what is under it, never a write's: one scan serves both.
         let found = self.survey().await;
-        let mut shown: BTreeSet<PathBuf> = found
-            .iter()
-            .filter(|f| f.mine != Original::Absent)
-            .map(|f| f.path.clone())
-            .collect();
+        let shown = self.shown(&found).await;
         let scanned = changes(found);
-        // A path this apply adds is written after the deletes that free its
-        // name (a rename by case): those may take what is there now.
-        for s in &scanned {
-            if s.change.kind == ChangeKind::Added && !s.change.conflict {
-                shown.remove(&s.path);
-            }
-        }
         // Each change stays in the ledger until it is on the disk. What is
         // under a directory the sandbox made is found by walking it, so once
         // that directory is on the disk, a path under it not written yet
@@ -152,7 +135,7 @@ impl OverlayChanges {
         }
         let mut run = Run {
             links: Links::new(self.book.disk.as_ref(), &self.book.root),
-            shown: Shown::new(&self.book.root, shown.into_iter().collect()),
+            shown: Shown::new(&self.book.root, shown),
             listed: scanned
                 .iter()
                 .map(|s| (s.path.clone(), (s.now, s.mine)))
@@ -281,34 +264,32 @@ impl OverlayChanges {
             ));
         }
         // Read again right before the write: the human may have changed it
-        // since the scan, and on a disk that reads two spellings as one name,
-        // the disk may hold it, or a directory on its way, under another
-        // spelling now (an earlier write of this apply, a delete that failed
-        // or was skipped), where the write or delete would land. A path that
-        // already holds the sandbox's version (a file its directory's delete
-        // took along, a change of mode alone) loses nothing, and is put
-        // without writing it again. Asked afresh: a directory this apply
-        // made changes the answer.
-        let again = self.book.on_disk(path, &mut Ways::default()).await;
-        let moved = again.state != s.now && again.state != s.mine;
-        if moved || again.held.is_some() {
+        // since the scan, or an earlier write of this apply landed there
+        // under another name the disk reads as this one (the sandbox wrote
+        // both `README.md` and `readme.md`). A path that already holds the
+        // sandbox's version (a file its directory's delete took along, a
+        // change of mode alone) loses nothing, and is put without writing it
+        // again.
+        let again = self.book.state(path).await;
+        if again != s.now && again != s.mine {
             return Ok(Put::Moved);
         }
         // A directory removed whole takes along what is under it: a change
         // listed there that moved since the scan would go too, while it is
         // reported skipped.
-        if again.state == Original::Dir
-            && s.removes_tree()
-            && self.moved_under(path, &run.listed).await
-        {
+        if again == Original::Dir && s.removes_tree() && self.moved_under(path, &run.listed).await {
             return Ok(Put::Moved);
         }
-        // The answers above are the sandbox's spelling's. Where that is
-        // wrong, the disk holds one file the sandbox shows under two names,
-        // and a delete or a write of one takes the other along: asked
-        // apart from it (`shown.rs`).
-        let holds = again.state == s.mine;
+        // Where the disk reads two names as one file, the sandbox may show
+        // it as two: a delete or a write of one takes the other along, and
+        // a write into the sandbox's own `Lib` lands in the disk's `lib`
+        // (`shown.rs`).
+        let holds = again == s.mine;
         if (deleted || !holds) && run.shown.would_take(path).await {
+            return Ok(Put::Moved);
+        }
+        let there = again != Original::Absent;
+        if !deleted && run.shown.lands_elsewhere(path, there).await {
             return Ok(Put::Moved);
         }
         let took = self
@@ -327,9 +308,8 @@ impl OverlayChanges {
         dir: &Path,
         listed: &BTreeMap<PathBuf, (Original, Original)>,
     ) -> bool {
-        let mut ways = Ways::default();
         for (path, &(now, mine)) in under(listed, dir) {
-            let again = self.book.on_disk(path, &mut ways).await.state;
+            let again = self.book.state(path).await;
             if again != now && again != mine {
                 return true;
             }
@@ -347,24 +327,6 @@ impl OverlayChanges {
         let real = self.book.real(path);
         let found = disk.stat(&real).await.ok();
         let was_dir = found.as_ref().is_some_and(FsStat::is_dir);
-        // A directory whose name this apply's writes land on under another
-        // spelling (a rename by case) goes whole or not at all: what a
-        // delete took before it stopped would otherwise be only in the
-        // sandbox, its writes waiting on the name.
-        if deleted
-            && s.frees
-            && was_dir
-            && let Some(blocker) = removable::blocker(&real).await
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!(
-                    "{} may not be emptied or changed, so the delete would stop partway; \
-                     nothing was deleted",
-                    blocker.display()
-                ),
-            ));
-        }
         // The names under a directory this change removes, which the
         // overlay hides until the apply has read through (`through.rs`).
         let dir = !deleted && self.overlay.stat(path).await?.is_dir();

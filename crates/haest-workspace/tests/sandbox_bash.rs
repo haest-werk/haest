@@ -6,9 +6,9 @@ mod common;
 use std::fs;
 
 use common::{
-    opts, sandbox,
-    spelling::{apply_all, contents, pairs, run},
-    tempdir,
+    opts,
+    project::{apply_all, changes, contents, nothing_lost, pairs, paths, reads_as_one, run},
+    sandbox, tempdir,
 };
 use haest_core::workspace::Workspace;
 
@@ -77,7 +77,9 @@ async fn mkdir_through_a_file_fails_as_in_bash() {
 /// file by writing the new name and removing the old one, so in the sandbox
 /// that removed the file, and applying deleted it from the disk. A loop
 /// that renames files to a name some of them already have (lowercasing,
-/// `${f// /_}`) took exactly those.
+/// `${f// /_}`) took exactly those. Where the disk reads `Todo.md` and
+/// `todo.md` as one, that rename by case is held as a conflict, and the
+/// disk keeps `Todo.md`.
 #[tokio::test]
 async fn a_move_onto_itself_keeps_the_file() {
     use std::os::unix::fs::PermissionsExt;
@@ -95,6 +97,7 @@ async fn a_move_onto_itself_keeps_the_file() {
     for (name, body) in want {
         fs::write(dir.join(name), body).unwrap();
     }
+    let one = reads_as_one(&dir, "Todo.md", "todo.md");
     let ws = sandbox(&dir).await;
     run(
         &ws,
@@ -112,7 +115,15 @@ async fn a_move_onto_itself_keeps_the_file() {
         )
         .await;
     assert_eq!(r.stdout, "a\nb\nc\nn\nt\nm\nk\n", "{r:?}");
-    apply_all(&ws).await;
+    let todo = if one {
+        let report = changes(&ws).apply().await;
+        nothing_lost(&ws, &dir, &report).await;
+        assert_eq!(paths(&report.skipped), ["/Todo.md"], "{report:?}");
+        "Todo.md"
+    } else {
+        apply_all(&ws).await;
+        "todo.md"
+    };
     let want = [
         ("a", "a\n"),
         ("d/b", "b\n"),
@@ -120,9 +131,11 @@ async fn a_move_onto_itself_keeps_the_file() {
         ("my_notes.txt", "m\n"),
         ("notes.md", "n\n"),
         ("secret.key", "k\n"),
-        ("todo.md", "t\n"),
+        (todo, "t\n"),
     ];
-    assert_eq!(contents(&dir), pairs(&want));
+    let mut want = pairs(&want);
+    want.sort();
+    assert_eq!(contents(&dir), want);
     let key = fs::metadata(dir.join("secret.key")).unwrap().permissions();
     assert_eq!(key.mode() & 0o7777, 0o600);
 }
