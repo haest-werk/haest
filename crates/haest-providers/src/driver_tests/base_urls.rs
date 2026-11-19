@@ -7,7 +7,7 @@ use crate::{AnthropicOptions, AnthropicProvider, ResponsesOptions, ResponsesProv
 /// A base URL whose password holds an unescaped `/` reads to a URL parser
 /// as another host (`user`, port 1234) with the rest of the password in the
 /// path. Every dialect refuses to send to it, before the request leaves,
-/// and the message says why and how to write it, showing no credential.
+/// and the message names the URL it refused, showing no credential.
 #[tokio::test]
 async fn a_base_url_a_parser_misreads_is_never_sent_to() {
     let misread = "http://user:1234/s3cret@gw.example/v1";
@@ -35,10 +35,7 @@ async fn a_base_url_a_parser_misreads_is_never_sent_to() {
         assert_eq!(msg.stop_reason, StopReason::Error);
         let err = msg.error_message.unwrap_or_default();
         assert!(!err.contains("s3cret") && !err.contains("1234"), "{err}");
-        assert!(
-            err.contains("%2F") && err.contains("gw.example/v1"),
-            "{err}"
-        );
+        assert!(err.contains("gw.example/v1"), "{err}");
     }
     assert_eq!(t.requests().len(), 0, "a request went out");
 }

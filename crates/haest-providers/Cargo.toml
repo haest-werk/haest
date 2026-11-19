@@ -36,7 +36,6 @@ async-stream = "0.3"
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
 
 [package.metadata.docs.rs]
 all-features = true

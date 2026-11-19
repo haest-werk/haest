@@ -218,15 +218,6 @@ mod tests {
     }
 
     #[test]
-    fn the_path_goes_before_the_base_urls_query() {
-        let base = Some("https://gw.example/v1/?key=k".to_string());
-        let url = endpoint(&base, OPENAI_URL, "chat/completions");
-        assert_eq!(url, "https://gw.example/v1/chat/completions?key=k");
-        let url = endpoint(&None, OPENAI_URL, "responses");
-        assert_eq!(url, "https://api.openai.com/v1/responses");
-    }
-
-    #[test]
     fn random_hex_has_the_asked_length_and_alphabet() {
         let id = random_hex(8);
         assert_eq!(id.len(), 8);

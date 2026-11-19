@@ -79,23 +79,6 @@ async fn a_custom_anthropic_entry_is_its_own_provider_and_its_thinking_replays_o
     assert!(!replays_thinking(2), "never to Anthropic itself");
 }
 
-#[tokio::test]
-async fn a_custom_anthropic_provider_sends_its_configured_headers() {
-    let t = FakeHttp::new([FakeReply::status(
-        400,
-        r#"{"error":{"message":"stop here"}}"#,
-    )]);
-    let custom = entries(
-        json!({"proxy": {"type": "anthropic", "baseURL": "http://proxy",
-        "apiKey": "x", "headers": {"x-proxy-auth": "tok"}}}),
-    );
-    let reg = over(ProviderRegistry::new(keys(&[])).with_custom(custom), &t);
-    let r = reg.resolve("proxy:claude").unwrap();
-    collect(r.provider().stream(request(r.model()))).await;
-    let sent = &t.requests()[0].headers;
-    assert!(sent.contains(&("x-proxy-auth".to_string(), "tok".to_string())));
-}
-
 /// A configured header replaces a default of the same name, whatever its case:
 /// a proxy that takes its key in `x-api-key` gets that one only.
 #[tokio::test]

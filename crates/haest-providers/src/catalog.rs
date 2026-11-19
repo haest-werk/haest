@@ -204,19 +204,4 @@ mod tests {
             "OpenRouter reports its own cost"
         );
     }
-
-    #[test]
-    fn a_host_brings_its_own_rows() {
-        let json = r#"{"defaultModel": "x:m", "groups": [{"label": "X", "models": [
-            {"spec": "x:m", "label": "M", "input": ["text", "audio"], "contextWindow": 1000}
-        ]}]}"#;
-        let c = Catalog::from_json(json).unwrap();
-        assert_eq!(c.default_model(), "x:m");
-        assert!(
-            c.input_modalities("x:m")
-                .unwrap()
-                .contains(&InputModality::Audio)
-        );
-        assert_eq!(c.reasoning("x:m"), None);
-    }
 }

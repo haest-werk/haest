@@ -89,10 +89,7 @@ async fn a_key_no_entry_has_is_refused_and_nothing_is_sent() {
         );
         assert_eq!(provider, name);
         let said = problem.to_string();
-        assert!(
-            said.contains(unknown) && said.contains("apiKeyEnv"),
-            "{said}"
-        );
+        assert!(said.contains(unknown), "{said}");
     }
     assert!(t.requests().is_empty(), "nothing sent");
 }

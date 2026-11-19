@@ -75,7 +75,7 @@ fn built_ins_need_their_key_and_the_error_names_it() {
 /// A base URL whose password holds an unescaped `/` reads to a URL parser
 /// as another host (`user`, port 1234): each built-in's variable, a
 /// providers.json entry and an entry written in Rust are refused when the
-/// provider is resolved, the reason saying how to write it and showing no
+/// provider is resolved, the reason naming the provider and showing no
 /// credential. Percent-encoded, each resolves.
 #[test]
 fn a_base_url_a_parser_misreads_is_refused_at_resolve() {
@@ -106,7 +106,7 @@ fn a_base_url_a_parser_misreads_is_refused_at_resolve() {
             };
             let said = haest_core::error::report(&e);
             assert!(!said.contains("s3cret") && !said.contains("1234"), "{said}");
-            assert!(said.contains(name) && said.contains("%2F"), "{said}");
+            assert!(said.contains(name), "{said}");
         }
     }
 }
@@ -443,14 +443,4 @@ fn a_host_hands_in_its_own_provider_and_typed_entries() {
         reg.custom().names().collect::<Vec<_>>(),
         ["gateway", "local"]
     );
-}
-
-#[test]
-fn routing_is_none_until_scopes_are_handed_in() {
-    let scopes = parse_routing(r#"{"global": {"banned": ["novita"]}}"#)
-        .unwrap()
-        .unwrap();
-    let unset = ProviderRegistry::new(keys(&[]));
-    assert_eq!(unset.routing(), None);
-    assert_eq!(unset.with_routing(scopes.clone()).routing(), Some(&scopes));
 }

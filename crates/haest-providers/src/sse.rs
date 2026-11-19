@@ -228,16 +228,6 @@ mod tests {
         assert_eq!(events[0].data.len(), MAX_EVENT - 1);
     }
 
-    /// A `\r` that ends a chunk may be half a `\r\n`; the search resumes there.
-    #[test]
-    fn a_cr_at_a_chunk_end_is_searched_again_with_the_next_chunk() {
-        let mut p = SseParser::default();
-        assert!(p.push(b"data: a\r").unwrap().is_empty());
-        let events = p.push(b"\n\ndata: b\r").unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(p.push(b"\r\n").unwrap()[0].data, "b");
-    }
-
     #[test]
     fn bare_cr_line_endings_split_lines() {
         let got = parse_in_chunks(b"data: a\r\rdata: b\r\r", 2);

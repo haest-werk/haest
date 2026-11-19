@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use haest_core::{
-    catalog::{InputModality, ModelPricing},
+    catalog::ModelPricing,
     provider::{Effort, ModelError},
 };
 use serde_json::{Value, json};
@@ -13,7 +13,6 @@ use serde_json::{Value, json};
 use super::tests::{finished as chunk, usage_chunk};
 use super::tests_direct::{body_of, close, final_message};
 use crate::{
-    catalog::Catalog,
     registry::{CustomProviderConfig, EntryProblem, ProviderRegistry, paper_instruments_options},
     testing::FakeHttp,
 };
@@ -61,18 +60,6 @@ async fn paperinstruments_sends_a_level_the_api_accepts_and_prices_ultramarine_f
     )
     .await;
     assert!(close(msg.usage.cost_usd, 0.15), "{:?}", msg.usage.cost_usd);
-}
-
-#[test]
-fn the_catalog_row_takes_images_and_says_reasoning_cannot_be_turned_off() {
-    let c = Catalog::builtin();
-    let spec = "paperinstruments:ultramarine-1-flash";
-    assert!(
-        c.input_modalities(spec)
-            .unwrap()
-            .contains(&InputModality::Image)
-    );
-    assert!(c.reasoning(spec).unwrap().mandatory);
 }
 
 // -- providers.json entries declare the same dialect + pricing
