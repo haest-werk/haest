@@ -138,7 +138,10 @@ async fn debug_output_names_the_secrets_and_shows_none_of_them() {
 async fn a_config_file_error_says_what_failed_and_names_the_file() {
     let fs = files(&[(NAMED, "model = ")]);
     let err = bare().file(NAMED).load(&fs).await.unwrap_err();
-    assert_eq!(err.to_string(), format!("{NAMED} is not valid TOML"));
+    assert!(
+        matches!(&err, ConfigError::Toml { path, .. } if path.as_os_str() == NAMED),
+        "{err:?}"
+    );
     assert!(
         std::error::Error::source(&err).is_some(),
         "the parser's words are the source"

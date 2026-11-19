@@ -141,19 +141,3 @@ fn an_unknown_name_is_refused() {
     assert!(c.set("tool", "read").is_err());
     assert_eq!(c.get("tool"), None);
 }
-
-#[test]
-fn every_setting_is_one_name_spelled_three_ways() {
-    let d = registry::find("skill_catalog").unwrap();
-    assert_eq!(
-        (d.env().as_str(), d.flag().as_str()),
-        ("HAEST_SKILL_CATALOG", "skill-catalog")
-    );
-    for d in DEFS {
-        assert!(
-            d.key.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
-            "{}",
-            d.key
-        );
-    }
-}

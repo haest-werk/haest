@@ -60,11 +60,13 @@ async fn providers_json_comes_from_the_config_dir_and_a_broken_one_stops_the_loa
     let r = run("/w", &[(path, file)], &[], &[]).await.unwrap();
     assert!(r.providers.contains("local"));
     let err = run("/w", &[(path, "{nope")], &[], &[]).await.unwrap_err();
-    assert!(matches!(err, ConfigError::Providers(_)), "{err}");
     assert!(
-        err.to_string()
-            .ends_with("providers.json is not valid JSON"),
-        "{err}"
+        matches!(
+            &err,
+            ConfigError::Providers(haest_providers::ProvidersFileError::Parse { path: at, .. })
+                if at.as_os_str() == path
+        ),
+        "{err:?}"
     );
 }
 

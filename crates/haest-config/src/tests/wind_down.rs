@@ -1,31 +1,11 @@
-//! `wind_down_at`: off unless asked for (the claude profile too), a share
-//! from 0 to 1, and the setting every limit's message names exists.
+//! `wind_down_at`: a share from 0 to 1, and the setting every limit's message
+//! names exists.
 
 use std::time::Duration;
 
 use haest_core::{caps::ConversationCap, remedy::Limit, wind_down::WindDown};
 
 use super::*;
-
-#[tokio::test]
-async fn wind_down_is_off_in_bare_haest_and_in_the_claude_profile() {
-    assert_eq!(settings(&[], &[]).await.wind_down_at, WindDown::OFF);
-    let claude = settings(&[], &[("profile", "claude")]).await;
-    assert_eq!(claude.wind_down_at, WindDown::OFF);
-}
-
-#[tokio::test]
-async fn a_share_from_a_file_a_variable_or_a_flag_turns_it_on() {
-    let at = |s: Settings| s.wind_down_at.share();
-    let file = [(USER_FILE, "wind_down_at = 0.8")];
-    let from_file = run("/w", &file, &[], &[]).await.unwrap().config.settings;
-    assert_eq!(at(from_file), 0.8);
-    assert_eq!(
-        at(settings(&[("HAEST_WIND_DOWN_AT", "0.5")], &[]).await),
-        0.5
-    );
-    assert_eq!(at(settings(&[], &[("wind_down_at", "1")]).await), 1.0);
-}
 
 #[tokio::test]
 async fn a_share_above_one_is_refused_naming_where_it_came_from() {

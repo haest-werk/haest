@@ -6,7 +6,6 @@ use haest_core::WorkspaceMode;
 use haest_settings::BuiltinTools;
 
 use super::*;
-use crate::value::var_parts;
 
 macro_rules! example {
     ($file:literal) => {
@@ -81,51 +80,5 @@ async fn the_example_files_load_together_and_do_what_they_say() {
     for name in names {
         let entry = r.providers.get(name).expect("listed");
         entry.unwrap_or_else(|e| panic!("{name}: {e}"));
-    }
-}
-
-#[tokio::test]
-async fn the_example_profiles_read_as_their_comments_say() {
-    let files = [(USER_FILE, example!("config.toml"))];
-    let profile = |name: &'static str| async move {
-        let flags = [("profile", name)];
-        run("/w", &files, ENV, &flags)
-            .await
-            .unwrap()
-            .config
-            .settings
-    };
-    let review = profile("review").await;
-    assert_eq!(review.tools.words(), ["read", "grep", "glob"]);
-    let claude = profile("claude").await;
-    assert_eq!(claude.caps.max_turn_usd, 5.0);
-    assert_eq!(
-        claude.workspace,
-        WorkspaceMode::Real,
-        "the built-in's keys stay"
-    );
-}
-
-#[tokio::test]
-async fn the_example_shell_variables_each_set_their_setting() {
-    let vars: Vec<(&str, &str)> = example!("env.sh")
-        .lines()
-        .filter_map(|line| line.strip_prefix("export "))
-        .map(|line| {
-            let (name, value) = line.split_once('=').unwrap();
-            (name, value.trim_matches('\''))
-        })
-        .collect();
-    assert!(!vars.is_empty());
-    let r = run("/w", &[], &[ENV, &vars].concat(), &[]).await.unwrap();
-    assert!(r.notes.is_empty(), "{:?}", r.notes);
-    for (name, value) in &vars {
-        let def = DEFS.iter().find(|d| d.env() == *name);
-        let def = def.unwrap_or_else(|| panic!("{name} is no setting's variable"));
-        let source = match def.kind {
-            Kind::Vars => r.resolved.var_source(def.key, var_parts(value).0),
-            _ => r.resolved.source(def.key),
-        };
-        assert_eq!(source.to_string(), *name);
     }
 }

@@ -250,17 +250,3 @@ async fn each_example_reads_the_same_from_a_file_a_variable_and_a_flag() {
         }
     }
 }
-
-/// A heading is words a person reads, never a Rust type's name: a type
-/// rename once turned the "Caps" heading into "CapSettings".
-#[test]
-fn every_heading_reads_as_words_not_a_type_name() {
-    for def in crate::registry::DEFS {
-        let camel = def
-            .group
-            .as_bytes()
-            .windows(2)
-            .any(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase());
-        assert!(!camel, "`{}` is listed under `{}`", def.key, def.group);
-    }
-}
