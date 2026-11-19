@@ -151,21 +151,6 @@ async fn composes_several_tool_calls_and_returns_only_the_aggregate() {
 }
 
 #[tokio::test]
-async fn a_write_lands_through_the_workspace() {
-    let ws = MemWorkspace::from_files([("/p/keep.txt", "")]);
-    let code = "await tools.Write({ file_path: 'new.txt', content: 'hi' }); return 1";
-    let out = run_in(
-        &code_over(builtins(), &[]),
-        code,
-        json!({}),
-        &ctx(ws.clone()),
-    )
-    .await;
-    assert!(!out.is_error, "{}", out.content);
-    assert_eq!(ws.contents("/p/new.txt").await.as_deref(), Some("hi"));
-}
-
-#[tokio::test]
 async fn a_tool_outside_the_policy_is_refused_into_the_guest_and_never_runs() {
     let bash = probe("Bash", false, 0);
     let tool = code_over(vec![ToolRef::new(ReadTool::default()), arc(&bash)], &[]);

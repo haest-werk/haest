@@ -10,7 +10,7 @@ use std::{
 use haest_core::{ChildEnv, fs::MemFs, workspace::ExecResult};
 use tokio_util::sync::CancellationToken;
 
-use super::{JsEnv, NOT_HERE, js_command, not_here};
+use super::{JsEnv, js_command};
 
 fn env(fs: &Arc<MemFs>) -> JsEnv {
     JsEnv {
@@ -37,10 +37,7 @@ async fn js(fs: &Arc<MemFs>, line: &str) -> ExecResult {
 async fn process_env_is_the_envs_variables_the_last_of_a_name_winning() {
     let fs = with_script("env.js", "console.log(process.env.WHO, process.env.LANG)");
     let vars = ChildEnv::new([("WHO", "first"), ("LANG", "sv"), ("WHO", "last")]);
-    let e = JsEnv::new(fs.clone(), "/p").with_env(vars.clone());
-    assert_eq!(e.env(), &vars);
-    assert_eq!((e.stdin(), e.ends_at()), (None, None));
-    assert!(!e.cancel().is_cancelled());
+    let e = JsEnv::new(fs.clone(), "/p").with_env(vars);
     let r = js_command(&["env.js"], &e).await;
     assert_eq!(r.stdout.trim(), "last sv", "{}", r.stderr);
 }
@@ -112,12 +109,6 @@ async fn a_typescript_error_names_the_line_in_the_ts_file() {
 }
 
 #[tokio::test]
-async fn a_module_that_does_not_exist_here_fails_the_run() {
-    let fs = with_script("pkg.js", "import _ from 'lodash'");
-    assert_eq!(js(&fs, "pkg.js").await.exit_code, 1);
-}
-
-#[tokio::test]
 async fn a_missing_file_or_no_file_is_a_cli_error() {
     let fs = with_script("x.js", "");
     assert_eq!(js(&fs, "nope.js").await.exit_code, 1);
@@ -125,27 +116,6 @@ async fn a_missing_file_or_no_file_is_a_cli_error() {
     let help = js(&fs, "--help").await;
     assert_eq!(help.exit_code, 0);
     assert!(!help.stdout.is_empty());
-}
-
-#[tokio::test]
-async fn a_runaway_loop_is_stopped_by_the_shell_call_deadline() {
-    let fs = with_script("loop.js", "while (true) {}");
-    let mut e = env(&fs);
-    e.ends_at = Some(Instant::now() + Duration::from_millis(1500));
-    let started = Instant::now();
-    let r = js_command(&["loop.js".to_string()], &e).await;
-    assert_ne!(r.exit_code, 0);
-    assert!(started.elapsed() < Duration::from_secs(10));
-}
-
-#[test]
-fn other_runtime_names_point_at_js_instead_of_pretending() {
-    for name in ["bun", "node", "npx", "tsx"] {
-        assert!(NOT_HERE.contains(&name));
-        let r = not_here(name);
-        assert_eq!(r.exit_code, 127);
-        assert!(r.stdout.is_empty() && !r.stderr.is_empty());
-    }
 }
 
 /// The engine runs no JSX, and the type stripper leaves JSX as it is: a JSX

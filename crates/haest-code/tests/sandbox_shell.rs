@@ -62,7 +62,12 @@ async fn node_points_at_js_and_the_prompt_says_js_is_there() {
         .await;
     assert_eq!(r.exit_code, 127);
     assert!(r.stderr.contains("js <file>"), "{}", r.stderr);
-    assert!(ws.prompt_note().contains("`js <file.js|file.ts> [args]`"));
+    let js_note = sandbox_commands()
+        .iter()
+        .find(|c| c.name() == "js")
+        .and_then(|c| c.note())
+        .expect("js tells the model it is there");
+    assert!(ws.prompt_note().contains(&js_note), "{}", ws.prompt_note());
 }
 
 #[tokio::test(flavor = "multi_thread")]
