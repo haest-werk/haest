@@ -24,6 +24,9 @@ pub(super) struct Answers {
     /// Whether the directory `dir` reads two spellings as one by its own
     /// flag, on a [`Disk::Flagged`]; None where it cannot be read.
     pub(super) flag: fn(&Path) -> Option<bool>,
+    /// Whether the directory `dir`, whose metadata is given, is the root of
+    /// a mount, whose stamp may never move.
+    pub(super) mount_root: fn(&Path, &std::fs::Metadata) -> bool,
 }
 
 impl Answers {
@@ -31,7 +34,20 @@ impl Answers {
         realpath: |p| std::fs::canonicalize(p),
         disk: disks::disk,
         flag: disks::flag,
+        mount_root,
     };
+}
+
+/// Whether the directory `dir`, whose metadata is `m`, is the root of a
+/// mount: its parent is on another device, or is itself (`/`). Asked of
+/// the system, never of the disk's kind or a list of names. It blocks.
+fn mount_root(dir: &Path, m: &std::fs::Metadata) -> bool {
+    match std::fs::symlink_metadata(dir.join("..")) {
+        Ok(up) => up.dev() != m.dev() || up.ino() == m.ino(),
+        // Nothing says its stamp moves: its listing answers only for the
+        // names it holds.
+        Err(_) => true,
+    }
 }
 
 /// What a lookup found before any listing is read.

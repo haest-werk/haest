@@ -19,7 +19,8 @@
 //! and where it spells a name another way (another spelling, or a symlink
 //! on the way) or finds none for a name that is there (a symlink that
 //! dangles or loops), the directories' listings decide; each is kept, and
-//! read again only once its directory changed. The disk's other spelling
+//! read again only once its directory changed, or, at the root of a mount,
+//! for a name it does not hold. The disk's other spelling
 //! of a name is the entry its directory lists for the same file
 //! ([`crate::listed`]), never `realpath`'s.
 
@@ -191,7 +192,7 @@ impl Spelling {
 
     /// Whether `dir` lists `name`.
     async fn lists(&self, dir: &Path, name: &OsStr) -> bool {
-        self.listing(dir)
+        self.listing(dir, name)
             .await
             .is_none_or(|names| names.contains_key(name))
     }
@@ -212,7 +213,7 @@ impl Spelling {
     /// The name `dir` lists the file asked for as `name` by: that one, or
     /// the entry `lstat` agrees is the same file ([`crate::listed`]).
     async fn listed_name(&self, dir: &Path, name: &OsStr) -> Option<OsString> {
-        let names = self.listing(dir).await?;
+        let names = self.listing(dir, name).await?;
         if names.contains_key(name) {
             return Some(name.to_os_string());
         }
@@ -240,27 +241,44 @@ impl Spelling {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// The names `dir` lists; None when it cannot be read. Read once, and
-    /// again only once the directory changed (its ctime moved, or the path
-    /// leads to another directory): so a tree of N files under a symlink
-    /// costs N lookups, not N listings of N names.
+    /// The names `dir` lists, asked for `name`; None when it cannot be
+    /// read. Read once, and again only once the directory changed (its
+    /// ctime moved, or the path leads to another directory): so a tree of N
+    /// files under a symlink costs N lookups, not N listings of N names.
     ///
-    /// Never kept for the root of a mount, whose stamp may never move: the
-    /// root of an exFAT, FAT or vfat volume keeps a ctime of 0 (exFAT on
-    /// macOS, vfat) or of its mount (FAT on macOS) whatever is added there.
-    async fn listing(&self, dir: &Path) -> Option<Names> {
+    /// At the root of a mount the stamp may never move: the root of an
+    /// exFAT, FAT or vfat volume keeps a ctime of 0 (exFAT on macOS, vfat)
+    /// or of its mount (FAT on macOS) whatever is added there. Its listing
+    /// answers only for the names it holds; a name it lacks, made there
+    /// since, reads it again. A name it holds that is gone is absent to
+    /// `lstat` before any listing is asked. One the human renamed there by
+    /// case or Unicode form alone reads as there by its old name until a
+    /// lookup reads the root again; the apply takes nothing by that name,
+    /// as its own check reads the listing afresh (`overlay/shown.rs`).
+    async fn listing(&self, dir: &Path, name: &OsStr) -> Option<Names> {
         let now = SystemTime::now();
         let m = tokio::fs::metadata(dir).await.ok()?;
         let stamp = Stamp::of(&m);
-        if let Some(names) = self.listings.kept(dir, stamp) {
+        if let Some(names) = self.listings.kept(dir, stamp, name) {
             return Some(names);
         }
         let names = self.listings.read(dir).await?;
-        if stamp.settled(now, self.settled) && !mount_root(dir, &m).await {
-            self.listings.keep(dir, stamp, names.clone());
+        if stamp.settled(now, self.settled) {
+            let complete = !self.mount_root(dir, &m).await;
+            self.listings.keep(dir, stamp, names.clone(), complete);
         }
         self.learn(dir, Dir::of(&m), &names).await;
         Some(names)
+    }
+
+    /// Whether the directory `dir`, whose metadata is `m`, is the root of a
+    /// mount ([`Answers::mount_root`]); asked off the runtime's workers.
+    async fn mount_root(&self, dir: &Path, m: &std::fs::Metadata) -> bool {
+        let (mount_root, dir, m) = (self.answers.mount_root, dir.to_path_buf(), m.clone());
+        tokio::task::spawn_blocking(move || mount_root(&dir, &m))
+            .await
+            // The answer was lost: nothing says its stamp moves.
+            .unwrap_or(true)
     }
 
     /// Whether `dir` (`id`) reads two spellings of a name as one, from one
@@ -282,17 +300,6 @@ impl Spelling {
         if let Some(folds) = told {
             self.folding.decide(id, folds);
         }
-    }
-}
-
-/// Whether the directory `dir`, whose metadata is `m`, is the root of a
-/// mount: its parent is on another device, or is itself (`/`). Asked of
-/// the system, never of the disk's kind or a list of names.
-async fn mount_root(dir: &Path, m: &std::fs::Metadata) -> bool {
-    match tokio::fs::symlink_metadata(dir.join("..")).await {
-        Ok(up) => up.dev() != m.dev() || up.ino() == m.ino(),
-        // Nothing says its stamp moves: its listing is only read again.
-        Err(_) => true,
     }
 }
 

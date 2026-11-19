@@ -3,7 +3,7 @@
 
 use std::{
     collections::HashMap,
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fmt,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
@@ -38,22 +38,41 @@ pub(super) struct Listings {
 struct Listing {
     stamp: Stamp,
     names: Names,
+    /// Whether its stamp moves with every change, so that a name it lacks
+    /// is not there. Not at the root of a mount, whose stamp may never move.
+    complete: bool,
 }
 
 impl Listings {
-    /// `dir`'s listing, if one is kept and `dir` is still as it was then.
-    pub(super) fn kept(&self, dir: &Path, now: Stamp) -> Option<Names> {
+    /// `dir`'s listing, if one is kept, `dir` is still as it was then, and
+    /// it answers for `name`: it holds `name`, or is complete.
+    pub(super) fn kept(&self, dir: &Path, now: Stamp, name: &OsStr) -> Option<Names> {
         let kept = self.lock();
         let listing = kept.get(dir)?;
-        (listing.stamp == now).then(|| listing.names.clone())
+        let answers = listing.complete || listing.names.contains_key(name);
+        (listing.stamp == now && answers).then(|| listing.names.clone())
     }
 
-    pub(super) fn keep(&self, dir: &Path, stamp: Stamp, names: Names) {
+    pub(super) fn keep(&self, dir: &Path, stamp: Stamp, names: Names, complete: bool) {
         let mut kept = self.lock();
         if kept.len() >= KEPT {
             kept.clear();
         }
-        kept.insert(dir.to_path_buf(), Listing { stamp, names });
+        let listing = Listing {
+            stamp,
+            names,
+            complete,
+        };
+        kept.insert(dir.to_path_buf(), listing);
+    }
+
+    /// `dir`'s kept listing, as if read from the directory at `stamp`: one
+    /// whose stamp never moves (the root of an exFAT volume).
+    #[cfg(test)]
+    pub(super) fn restamp(&self, dir: &Path, stamp: Stamp) {
+        if let Some(listing) = self.lock().get_mut(dir) {
+            listing.stamp = stamp;
+        }
     }
 
     /// Every name `dir` lists, from the disk; None when it cannot be read.

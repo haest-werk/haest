@@ -52,6 +52,7 @@ fn echoing(dir: &Path) -> Spelling {
             realpath: echo,
             disk: |_| Disk::Folds,
             flag: |_| None,
+            ..Answers::SYSTEM
         },
         ..Spelling::of(dir)
     }
@@ -198,28 +199,41 @@ async fn a_listing_is_kept_only_once_its_directory_settled() {
 /// The root of an exFAT, FAT or vfat volume never changes its ctime, so
 /// its first listing was kept for good: a file the human made there later
 /// read as absent, Write said it created it, and applying went over the
-/// human's. The root of any mount (its `..` on another device, or itself)
-/// is listed again at each lookup; a directory under it is kept as before.
+/// human's. Listed again at each lookup instead, a walk over N files at
+/// such a root read N listings of N names: `grep -r` over 2,000 files at
+/// a stick's root took minutes. The root's listing is kept, but answers
+/// only for the names it holds; a name it lacks reads it again.
 #[tokio::test]
-async fn a_mount_roots_listing_is_read_again_at_each_lookup() {
-    let s = Spelling {
-        settled: Duration::ZERO,
-        ..echoing(Path::new("/"))
-    };
-    for _ in 0..3 {
-        assert_eq!(s.spelled(Path::new("/usr")).await, Spelled::AsAsked);
-    }
-    assert_eq!(s.reads(), 3, "the root's listing");
+async fn a_mount_roots_listing_answers_only_for_the_names_it_holds() {
     let t = tempfile::tempdir().unwrap();
-    fs::write(t.path().join("a"), "").unwrap();
-    let s = Spelling {
+    let dir = t.path();
+    fs::write(dir.join("a"), "").unwrap();
+    let mut s = Spelling {
         settled: Duration::ZERO,
-        ..echoing(t.path())
+        ..echoing(dir)
     };
+    s.answers.mount_root = |_, _| true;
     for _ in 0..3 {
         assert_eq!(s.spelled(Path::new("/a")).await, Spelled::AsAsked);
     }
-    assert_eq!(s.reads(), 1, "a directory's listing");
+    assert_eq!(s.reads(), 1, "the root's listing, read once");
+    fs::write(dir.join("b"), "the human's\n").unwrap();
+    // Such a root keeps its stamp whatever is added there.
+    s.listings
+        .restamp(dir, Stamp::of(&fs::metadata(dir).unwrap()));
+    assert_eq!(s.spelled(Path::new("/b")).await, Spelled::AsAsked);
+    assert_eq!(s.reads(), 2, "read again for the name it lacked");
+}
+
+/// What tells the root of a mount: its `..` is on another device, or is
+/// itself.
+#[test]
+fn the_root_of_a_mount_is_told_by_its_parent() {
+    let mount_root = |dir: &Path| (Answers::SYSTEM.mount_root)(dir, &fs::metadata(dir).unwrap());
+    assert!(mount_root(Path::new("/")));
+    let t = tempfile::tempdir().unwrap();
+    fs::create_dir(t.path().join("d")).unwrap();
+    assert!(!mount_root(&t.path().join("d")));
 }
 
 /// A symlink that dangles or loops has no `realpath`; it is found by its
