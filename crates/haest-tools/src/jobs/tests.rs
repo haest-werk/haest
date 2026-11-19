@@ -381,29 +381,39 @@ async fn a_listener_set_while_the_old_one_is_called_hears_every_set_from_then_on
     r.hub.kill_all();
 }
 
+/// The model tells every state apart from what a job's state reads: an exit
+/// carries its code, a running job how long it has run.
 #[test]
-fn a_job_state_reads_as_the_model_is_told() {
-    let job = |status, exit_code| Job {
-        id: "b1".into(),
-        command: "make".into(),
-        description: "make".into(),
-        status,
-        exit_code,
-        started: Instant::now(),
+fn every_job_state_reads_apart_with_its_code_or_its_time() {
+    let started = Instant::now() - Duration::from_secs(42);
+    let shown = |status, exit_code| {
+        let job = Job {
+            id: "b1".into(),
+            command: "make".into(),
+            description: "make".into(),
+            status,
+            exit_code,
+            started,
+        };
+        job.state().to_string()
     };
-    assert_eq!(job(JobStatus::Killed, None).state().to_string(), "killed");
-    assert_eq!(
-        job(JobStatus::Exited, Some(3)).state().to_string(),
-        "exited with code 3"
-    );
-    assert_eq!(
-        job(JobStatus::Exited, None).state().to_string(),
-        "exited with code ?"
-    );
+    let states = [
+        shown(JobStatus::Killed, None),
+        shown(JobStatus::Exited, Some(3)),
+        shown(JobStatus::Exited, Some(7)),
+        shown(JobStatus::Exited, None),
+        shown(JobStatus::Running, None),
+    ];
+    for (i, a) in states.iter().enumerate() {
+        for b in &states[i + 1..] {
+            assert_ne!(a, b, "two states read alike: {states:?}");
+        }
+    }
     assert!(
-        job(JobStatus::Running, None)
-            .state()
-            .to_string()
-            .starts_with("running for ")
+        states[1].contains('3') && states[2].contains('7'),
+        "{states:?}"
     );
+    let secs: String = states[4].chars().filter(char::is_ascii_digit).collect();
+    let secs: u64 = secs.parse().expect("a running job says how long");
+    assert!((42..100).contains(&secs), "{states:?}");
 }

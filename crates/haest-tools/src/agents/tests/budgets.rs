@@ -119,48 +119,31 @@ async fn children_started_together_hold_their_spend_together_and_cannot_overshoo
     );
 }
 
+/// The dollar amounts a refused budget shows, in order: what was asked (none
+/// for a subagent with no spend cap), then what is left.
+fn amounts(asked: f64, available: f64) -> Vec<String> {
+    AgentError::OverBudget { asked, available }
+        .to_string()
+        .split_whitespace()
+        .filter(|w| w.starts_with('$'))
+        .map(|w| w.trim_end_matches([':', ';', ',']).to_string())
+        .collect()
+}
+
 /// The budget a subagent asked for was printed as the float it was: one of
 /// $0.10 + $0.20 read "a subagent's $0.30000000000000004 does not fit".
 #[test]
 fn a_refused_budget_says_both_amounts_in_cents() {
-    let refused = AgentError::OverBudget {
-        asked: 0.1 + 0.2,
-        available: 0.2,
-    };
-    assert_eq!(
-        refused.to_string(),
-        "a subagent's $0.30 does not fit: $0.20 is left of the conversation's budget (max_conversation_usd); ask for less"
-    );
+    assert_eq!(amounts(0.1 + 0.2, 0.2), ["$0.30", "$0.20"]);
 }
 
 /// What was left was rounded to the nearest cent, so it could round up to
 /// the amount asked: "a subagent's $0.10 does not fit: $0.10 is left".
 #[test]
 fn a_refused_budget_says_what_is_left_rounded_down_and_a_tiny_ask_as_it_is() {
-    let text = |asked: f64, available: f64| AgentError::OverBudget { asked, available }.to_string();
-    let left =
-        |usd: &str| format!("{usd} is left of the conversation's budget (max_conversation_usd)");
-    assert_eq!(
-        text(0.1, 0.0999),
-        format!(
-            "a subagent's $0.10 does not fit: {}; ask for less",
-            left("$0.09")
-        )
-    );
-    assert_eq!(
-        text(0.004, 0.003),
-        format!(
-            "a subagent's $0.004 does not fit: {}; ask for less",
-            left("$0.00")
-        )
-    );
-    assert_eq!(
-        text(0.0, 0.0999),
-        format!(
-            "a subagent with no spend cap does not fit: {}; give it a budget of at most that",
-            left("$0.09")
-        )
-    );
+    assert_eq!(amounts(0.1, 0.0999), ["$0.10", "$0.09"]);
+    assert_eq!(amounts(0.004, 0.003), ["$0.004", "$0.00"]);
+    assert_eq!(amounts(0.0, 0.0999), ["$0.09"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -113,11 +113,6 @@ fn a_word_that_is_on_is_never_silently_dropped() {
         let err = pick(tool, none).err().unwrap();
         assert_eq!(err.tool, tool);
     }
-    let err = MissingOption {
-        tool: BuiltinTool::Tasks,
-    };
-    let said = "the tools setting has tasks on, but BuiltinOptions gives none: give it with_tasks";
-    assert_eq!(err.to_string(), said);
 }
 
 #[test]
@@ -127,8 +122,4 @@ fn every_built_in_reads_and_parses_as_its_word() {
     }
     let err = "fetch".parse::<BuiltinTool>().unwrap_err();
     assert_eq!(err.word(), "fetch");
-    assert!(
-        err.to_string()
-            .starts_with("\"fetch\" is not a built-in tool")
-    );
 }

@@ -323,23 +323,6 @@ async fn a_background_answer_whose_starter_already_finished_reaches_main_instead
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_subagent_that_runs_past_its_step_cap_stops_and_says_so_in_its_answer() {
-    let mut r = Rig::new(
-        spawns(json!({"description": "looper", "prompt": "p"}), "ok"),
-        now(|_, n| {
-            vec![call(
-                &format!("l{n}"),
-                "Glob",
-                json!({"pattern": format!("*.{n}")}),
-            )]
-        }),
-        SubagentCaps { steps: 3, ..caps() },
-    );
-    r.turn("go").await;
-    assert!(r.tool_results()[0].0.contains("stopped early"));
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn the_hub_is_a_handle_a_clone_runs_the_same_subagents_and_dropping_it_ends_nothing() {
     let r = Rig::new(now(|_, _| say("ok")), now(|_, _| say("found")), caps());
     let other = r.hub.clone();

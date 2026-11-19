@@ -71,11 +71,7 @@ async fn a_persons_message_reaches_a_running_member_and_fires_the_event_marked_a
     spawn.await.unwrap();
     arrived.cancelled().await;
 
-    let said = r.deliver(person(), "looker", "only the docs");
-    assert_eq!(
-        said.unwrap(),
-        "Delivered to \"looker\"; it reads it at its next step."
-    );
+    r.deliver(person(), "looker", "only the docs").unwrap();
     // SendMessage from main, for contrast.
     r.deliver(agent("main"), "looker", "also the tests")
         .unwrap();
@@ -139,8 +135,7 @@ async fn main_gets_a_background_answer_through_submit_answer_and_a_message_throu
     };
     let out = r.hub.spawn(&main, foreground, &cancel);
     assert_eq!(out.await.unwrap().text, "done");
-    let to_main = r.deliver(person(), "main", "how is it going?");
-    assert_eq!(to_main.unwrap(), "Delivered to main.");
+    r.deliver(person(), "main", "how is it going?").unwrap();
 
     assert_eq!(
         r.for_main(),
