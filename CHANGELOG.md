@@ -507,6 +507,12 @@ write instead.
   number of the one detached before it, and a sandbox open while the
   project's card or stick was swapped took the exFAT or FAT disk for the
   APFS or HFS+ one before it.
+  A listing is kept while its directory's ctime stays as it was, but
+  never for the root of a mount: the root of an exFAT volume, of a FAT12
+  or FAT16 one on macOS and of a vfat one on Linux keeps one ctime
+  whatever is added there, so a file the human made at the root of a
+  card after the model first looked read as absent, Write told the model
+  it created the file, and applying replaced the human's.
   The cost: in the sandbox, `cat README.md` does not find `readme.md`,
   where real bash on that disk would (see haest-workspace).
 - A file or directory the sandbox moved or copied landed on the disk at

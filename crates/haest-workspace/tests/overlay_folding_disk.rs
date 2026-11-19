@@ -11,13 +11,23 @@
 //! with the one the directory lists. The sandbox took that answer for the
 //! disk's spelling: `mv README.md readme.md` read `readme.md` as a file the
 //! disk held, and applying deleted `README.md`, the only file there was.
+//!
+//! `HAEST_TEST_FOLDING_ROOT` names the root of such a volume, where one
+//! test writes `old.txt` and `notes.md` and removes them after; unset, it
+//! passes without running.
 
 mod common;
 
-use common::spelling::disk::{
-    DIRECTORY, Disk, NUMBERED, RENAME_AND_COPY, RENAME_THEN_EDIT, RENAME_TO_LOWER,
-    RENAME_TO_LOWER_THEN_EDIT, RENAME_WITH_NO_ASCII_LETTER, Renamed, copy_by_case_then_edit,
+use std::{fs, path::PathBuf, time::Duration};
+
+use common::spelling::{
+    disk::{
+        DIRECTORY, Disk, NUMBERED, RENAME_AND_COPY, RENAME_THEN_EDIT, RENAME_TO_LOWER,
+        RENAME_TO_LOWER_THEN_EDIT, RENAME_WITH_NO_ASCII_LETTER, Renamed, copy_by_case_then_edit,
+    },
+    run,
 };
+use haest_core::workspace::Workspace;
 use tokio::sync::Mutex;
 
 /// Held by each test: one remounts the disk the others are on.
@@ -71,4 +81,43 @@ async fn a_copy_by_case_then_an_edit_leaves_the_humans_file_as_it_was() {
     if let Some(disk) = Disk::folding() {
         copy_by_case_then_edit(&disk).await;
     }
+}
+
+/// Files a test made, removed when it ends, however it ends.
+struct Made(Vec<PathBuf>);
+
+impl Drop for Made {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+/// The root of an exFAT, FAT or vfat volume never changes its ctime, and
+/// the sandbox kept its first listing of it for good: a file the human
+/// made there after the model first looked read as absent, so Write told
+/// the model it created the file, and applying replaced the human's.
+#[tokio::test]
+async fn a_file_the_human_makes_at_a_volume_root_is_seen() {
+    let _disk = DISK.lock().await;
+    let Some(root) = std::env::var_os("HAEST_TEST_FOLDING_ROOT") else {
+        return;
+    };
+    let root = fs::canonicalize(root).unwrap();
+    let (old, notes) = (root.join("old.txt"), root.join("notes.md"));
+    let _made = Made(vec![old.clone(), notes.clone()]);
+    fs::write(&old, "old\n").unwrap();
+    // Each time past the time a listing waits for its directory to settle:
+    // FAT on macOS stamps its root with the time it was mounted.
+    let settle = Duration::from_millis(2200);
+    tokio::time::sleep(settle).await;
+    let ws = common::sandbox(&root).await;
+    run(&ws, &root, "cat old.txt").await;
+    tokio::time::sleep(settle).await;
+    fs::write(&notes, "the human's\n").unwrap();
+    // What Write asks to say "Created" or "Overwrote".
+    assert!(ws.fs().exists(&notes).await, "notes.md reads as absent");
+    let shown = ws.fs().read(&notes).await.unwrap();
+    assert_eq!(shown, b"the human's\n");
 }

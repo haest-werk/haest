@@ -244,6 +244,10 @@ impl Spelling {
     /// again only once the directory changed (its ctime moved, or the path
     /// leads to another directory): so a tree of N files under a symlink
     /// costs N lookups, not N listings of N names.
+    ///
+    /// Never kept for the root of a mount, whose stamp may never move: the
+    /// root of an exFAT, FAT or vfat volume keeps a ctime of 0 (exFAT on
+    /// macOS, vfat) or of its mount (FAT on macOS) whatever is added there.
     async fn listing(&self, dir: &Path) -> Option<Names> {
         let now = SystemTime::now();
         let m = tokio::fs::metadata(dir).await.ok()?;
@@ -252,7 +256,7 @@ impl Spelling {
             return Some(names);
         }
         let names = self.listings.read(dir).await?;
-        if stamp.settled(now, self.settled) {
+        if stamp.settled(now, self.settled) && !mount_root(dir, &m).await {
             self.listings.keep(dir, stamp, names.clone());
         }
         self.learn(dir, Dir::of(&m), &names).await;
@@ -278,6 +282,17 @@ impl Spelling {
         if let Some(folds) = told {
             self.folding.decide(id, folds);
         }
+    }
+}
+
+/// Whether the directory `dir`, whose metadata is `m`, is the root of a
+/// mount: its parent is on another device, or is itself (`/`). Asked of
+/// the system, never of the disk's kind or a list of names.
+async fn mount_root(dir: &Path, m: &std::fs::Metadata) -> bool {
+    match tokio::fs::symlink_metadata(dir.join("..")).await {
+        Ok(up) => up.dev() != m.dev() || up.ino() == m.ino(),
+        // Nothing says its stamp moves: its listing is only read again.
+        Err(_) => true,
     }
 }
 

@@ -193,6 +193,33 @@ async fn a_listing_is_kept_only_once_its_directory_settled() {
     assert_eq!(s.reads(), 6);
 }
 
+/// The root of an exFAT, FAT or vfat volume never changes its ctime, so
+/// its first listing was kept for good: a file the human made there later
+/// read as absent, Write said it created it, and applying went over the
+/// human's. The root of any mount (its `..` on another device, or itself)
+/// is listed again at each lookup; a directory under it is kept as before.
+#[tokio::test]
+async fn a_mount_roots_listing_is_read_again_at_each_lookup() {
+    let s = Spelling {
+        settled: Duration::ZERO,
+        ..echoing(Path::new("/"))
+    };
+    for _ in 0..3 {
+        assert_eq!(s.spelled(Path::new("/usr")).await, Spelled::AsAsked);
+    }
+    assert_eq!(s.reads(), 3, "the root's listing");
+    let t = tempfile::tempdir().unwrap();
+    fs::write(t.path().join("a"), "").unwrap();
+    let s = Spelling {
+        settled: Duration::ZERO,
+        ..echoing(t.path())
+    };
+    for _ in 0..3 {
+        assert_eq!(s.spelled(Path::new("/a")).await, Spelled::AsAsked);
+    }
+    assert_eq!(s.reads(), 1, "a directory's listing");
+}
+
 /// A symlink that dangles or loops has no `realpath`; it is found by its
 /// directory's listing, and its place by the entry that is the same link.
 #[tokio::test]
