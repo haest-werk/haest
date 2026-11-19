@@ -57,8 +57,9 @@
 //! under another spelling, is skipped as a conflict. A directory removed
 //! whole is read again with each change listed under it: one of them that
 //! moved keeps the directory as a conflict too, never removed with it. And
-//! one that would take away what the sandbox still shows at another path,
-//! asked apart from the sandbox's spelling (`shown.rs`), is a conflict too.
+//! one that would take away what the disk holds under another name, or
+//! another path the sandbox changed and still shows, asked apart from the
+//! sandbox's spelling (`shown.rs`), is a conflict too.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -92,8 +93,8 @@ struct Run<'a> {
     /// The apply's one lookup of links on the real disk: each real path on
     /// the way is asked once, for the deletes and the writes.
     links: Links<'a>,
-    /// What the sandbox still shows, which no change takes away
-    /// (`shown.rs`).
+    /// What the sandbox changed and still shows, which no change takes
+    /// away (`shown.rs`).
     shown: Shown,
     /// What the scan found at each path it listed: on the disk, then in the
     /// overlay.

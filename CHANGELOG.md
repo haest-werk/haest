@@ -479,10 +479,10 @@ write instead.
     sandbox showed one file on the disk under two names, `README.md` and
     `readme.md`, and applying `mv README.md readme.md` deleted the only
     file there was. Now each name on the change's way must be one its
-    directory lists, byte for byte, and no other path the sandbox shows,
-    but one the apply adds, may be the same file (`lstat`'s device and
-    inode number) or under it; else the change is a conflict, and the disk
-    keeps the file;
+    directory lists, byte for byte, and no other path the sandbox changed
+    and still shows, but one the apply adds, may be the same file
+    (`lstat`'s device and inode number) or under it; else the change is a
+    conflict, and the disk keeps the file;
   - the change list reads a path's first state through the same lookups
     the sandbox reads the disk through. It read it apart, so where the
     sandbox showed no `notes.md` (a listing kept too long), Write told

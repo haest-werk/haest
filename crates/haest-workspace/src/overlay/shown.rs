@@ -1,4 +1,4 @@
-//! WHAT THE SANDBOX STILL SHOWS, which no apply takes away.
+//! WHAT THE SANDBOX CHANGED AND STILL SHOWS, which no apply takes away.
 //!
 //! The apply reads each path as the sandbox spells it (`book.rs`), and that
 //! answer has been wrong: a disk's kind kept past a disk swap, a disk that
@@ -13,15 +13,16 @@
 //! that the spelling has no say in:
 //! - each name on the way is one its directory lists, byte for byte. Else
 //!   the disk finds the path under another name, and that one goes;
-//! - no other path the sandbox shows that this apply does not add is, now,
-//!   the same file, or a directory on its way: `lstat` of both gives the
-//!   same device and inode number (exFAT and FAT give an empty file one
-//!   number under both spellings, the same for each `lstat`). A path the
-//!   disk lists all the way as asked is an entry of its own, a hard link
-//!   included, so only one it does not is asked.
+//! - no other path the sandbox changed and still shows, that this apply
+//!   does not add, is now the same file, or a directory on its way: `lstat`
+//!   of both gives the same device and inode number (exFAT and FAT give an
+//!   empty file one number under both spellings, the same for each
+//!   `lstat`). A path the disk lists all the way as asked is an entry of
+//!   its own, a hard link included, so only one it does not is asked.
 //!
 //! Either way the change is a conflict: skipped, still listed, and the disk
-//! keeps both names as the human left them.
+//! keeps both names as the human left them. A path the sandbox shows but
+//! never changed is not asked: a change that takes it is one the list names.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -34,17 +35,18 @@ use std::{
 /// A device and inode number: one file.
 type Id = (u64, u64);
 
-/// The paths the sandbox shows that one apply must leave, and what it read
-/// of the disk to tell. One serves a whole apply: the apply's own changes
-/// are noted as it makes them ([`Shown::put`]); the human's meanwhile are a
-/// race the scan's own re-reads do not close either.
+/// The paths the sandbox changed and still shows, which one apply must
+/// leave, and what it read of the disk to tell. One serves a whole apply:
+/// the apply's own changes are noted as it makes them ([`Shown::put`]); the
+/// human's meanwhile are a race the scan's own re-reads do not close either.
 pub(super) struct Shown(Arc<Mutex<State>>);
 
 struct State {
     /// The project directory on the real disk.
     root: PathBuf,
-    /// Each path the sandbox shows (an overlay path) but for the ones this
-    /// apply adds: those a delete before them frees the name for.
+    /// Each path the sandbox changed and still shows (an overlay path) but
+    /// for the ones this apply adds: those a delete before them frees the
+    /// name for.
     paths: Vec<PathBuf>,
     /// Each real directory's names, as it lists them; None where it cannot
     /// be read, which leaves the change to the checks after.
@@ -67,8 +69,8 @@ impl Shown {
     }
 
     /// Whether putting a change at `path` (an overlay path) on the disk
-    /// would take away something the sandbox still shows elsewhere: the
-    /// disk finds `path` under another name, or another shown path is the
+    /// would take away something else: the disk finds `path` under another
+    /// name, or another path the sandbox changed and still shows is the
     /// same file, or under it. Nothing there takes nothing.
     pub(super) async fn would_take(&self, path: &Path) -> bool {
         let (state, path) = (self.0.clone(), path.to_path_buf());

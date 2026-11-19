@@ -134,8 +134,9 @@ use state::{Original, state_of, walk};
 /// a write of one would take the other along. Before a change takes away
 /// what the disk holds at its path, the apply asks, apart from that
 /// reading, that each name on the way is one its directory lists byte for
-/// byte, and that no other path the sandbox shows (but one this apply adds)
-/// is the same file, by device and inode number, or under it.
+/// byte, and that no other path the sandbox changed and still shows (but
+/// one this apply adds) is the same file, by device and inode number, or
+/// under it.
 ///
 /// `apply` never writes through a symlink: not one on the real disk on the
 /// way to the path ([`OutsideProject`](haest_core::workspace::ApplyFailureCode::OutsideProject)),
