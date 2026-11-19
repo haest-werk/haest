@@ -1,8 +1,17 @@
 //! The real disk's whole write ([`Fs::write_whole`]): a file put on the
-//! disk whole or not at all, by the overlay's apply and by the tools that
-//! rewrite a file in the real workspace (Edit, and Write over one). The
-//! bytes go into a new file, in a directory of its own beside the real one
-//! that only its owner may enter from the moment it is made; a new file
+//! disk whole or not at all. Its callers are the tools that rewrite a file
+//! in the real workspace through [`RealFs`](crate::RealFs) (Edit, Write
+//! over a file that is there, `GenerateImage` over an image that is
+//! there), and the overlay's apply (`overlay/apply.rs`), over whatever disk
+//! the apply was handed. A file that is replaced keeps the name its
+//! directory lists it by: a tool's path is spelled as the model spelled it,
+//! so that name is read from the directory's listing first ([`as_listed`],
+//! `listed.rs`, [`Name::Asked`]); the apply's path is the disk's own
+//! spelling already, so it is renamed over as it is, with no listing read
+//! ([`Name::Listed`]).
+//!
+//! The bytes go into a new file, in a directory of its own beside the real
+//! one that only its owner may enter from the moment it is made; a new file
 //! that replaces one is its owner's alone too before they go in. It then
 //! takes the real one's permission bits and is renamed over it, so a disk
 //! that fills up, or a kill, partway leaves the human's file as it was.
