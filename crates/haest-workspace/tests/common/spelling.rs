@@ -2,12 +2,14 @@
 //! (macOS's default: case and Unicode normalization; case-sensitive APFS:
 //! normalization only): what the disk holds, and the sandbox's changes.
 
-use std::{fs, path::Path};
+use std::{ffi::OsString, fs, path::Path};
 
 use haest_core::workspace::{Change, ChangeSetRef, Workspace};
 use haest_workspace::SandboxWorkspace;
 
 use super::opts;
+
+pub(crate) mod disk;
 
 /// Run `command` in the sandbox; it must succeed.
 pub(crate) async fn run(ws: &impl Workspace, dir: &Path, command: &str) {
@@ -35,13 +37,24 @@ pub(crate) fn folds_case(dir: &Path) -> bool {
 }
 
 /// Every file under `dir`, by its path inside it as the disk lists it, with
-/// its content.
+/// its content. Not the `._<name>` file macOS keeps beside a listed
+/// `<name>` on a disk with no extended attributes (exFAT, FAT): the
+/// system's own, which goes wherever its file goes.
 pub(crate) fn contents(dir: &Path) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut pending = vec![dir.to_path_buf()];
     while let Some(d) = pending.pop() {
-        for e in fs::read_dir(&d).unwrap() {
-            let p = e.unwrap().path();
+        let names: Vec<OsString> = fs::read_dir(&d)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        let companion = |n: &OsString| {
+            n.as_encoded_bytes()
+                .strip_prefix(b"._")
+                .is_some_and(|of| names.iter().any(|a| a.as_encoded_bytes() == of))
+        };
+        for name in names.iter().filter(|n| !companion(n)) {
+            let p = d.join(name);
             if p.is_dir() {
                 pending.push(p);
             } else {

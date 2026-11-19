@@ -15,7 +15,12 @@ use std::fs;
 use common::{
     sandbox,
     spelling::{
-        apply_all, changes, contents, folds_case, pairs, paths, reads_as_one, run, writable_again,
+        apply_all, changes, contents,
+        disk::{
+            DIRECTORY, Disk, RENAME_AND_COPY, RENAME_THEN_EDIT, RENAME_TO_LOWER,
+            RENAME_TO_LOWER_THEN_EDIT, copy_by_case_then_edit,
+        },
+        folds_case, pairs, paths, reads_as_one, run, writable_again,
     },
     tempdir,
 };
@@ -23,33 +28,19 @@ use common::{
 /// Where the disk reads both names as one, the new name read the same as the
 /// disk and was never listed: only the old name's delete was, and applying it
 /// deleted the file. On a disk that tells them apart it is a plain rename.
+/// (`overlay_folding_disk.rs` runs these renames on exFAT, FAT and vfat.)
 #[tokio::test]
 async fn a_rename_that_changes_only_the_case_keeps_the_file() {
-    let (_t, dir) = tempdir();
-    fs::write(dir.join("readme.md"), "kept\n").unwrap();
-    fs::write(dir.join("guide.md"), "guide\n").unwrap();
-    let ws = sandbox(&dir).await;
-    run(
-        &ws,
-        &dir,
-        "mv readme.md README.md && cp guide.md GUIDE.md && rm guide.md",
-    )
-    .await;
-    apply_all(&ws).await;
-    let want = [("GUIDE.md", "guide\n"), ("README.md", "kept\n")];
-    assert_eq!(contents(&dir), pairs(&want));
+    RENAME_AND_COPY.check(&Disk::temp()).await;
+    RENAME_TO_LOWER.check(&Disk::temp()).await;
 }
 
 /// Where the disk reads both names as one, the edited new name was written
 /// first (upper case sorts first), then the old name's delete took it away.
 #[tokio::test]
 async fn a_case_rename_with_an_edit_keeps_the_edit() {
-    let (_t, dir) = tempdir();
-    fs::write(dir.join("notes.md"), "notes\n").unwrap();
-    let ws = sandbox(&dir).await;
-    run(&ws, &dir, "mv notes.md NOTES.md && echo more >> NOTES.md").await;
-    apply_all(&ws).await;
-    assert_eq!(contents(&dir), pairs(&[("NOTES.md", "notes\nmore\n")]));
+    RENAME_THEN_EDIT.check(&Disk::temp()).await;
+    RENAME_TO_LOWER_THEN_EDIT.check(&Disk::temp()).await;
 }
 
 /// Where the disk reads `Lib` as `lib`, the sandbox's `mv` found the real
@@ -57,20 +48,14 @@ async fn a_case_rename_with_an_edit_keeps_the_edit() {
 /// a tree no shell makes. Real bash renames it, on either disk.
 #[tokio::test]
 async fn a_directory_renamed_by_case_keeps_its_files() {
-    let (_t, dir) = tempdir();
-    fs::create_dir(dir.join("lib")).unwrap();
-    fs::write(dir.join("lib/a.rs"), "a\n").unwrap();
-    fs::write(dir.join("lib/b.rs"), "b\n").unwrap();
-    let one = reads_as_one(&dir, "lib", "Lib");
-    let ws = sandbox(&dir).await;
-    run(&ws, &dir, "mv lib Lib").await;
-    apply_all(&ws).await;
-    let want = [("Lib/a.rs", "a\n"), ("Lib/b.rs", "b\n")];
-    assert_eq!(
-        contents(&dir),
-        pairs(&want),
-        "the disk reads one name: {one}"
-    );
+    DIRECTORY.check(&Disk::temp()).await;
+}
+
+/// A copy by case lands on the human's file where the disk reads both names
+/// as one: a conflict, never written over it.
+#[tokio::test]
+async fn a_copy_by_case_never_goes_over_the_humans_file() {
+    copy_by_case_then_edit(&Disk::temp()).await;
 }
 
 /// `caf\u{e9}` (one code point) and `cafe\u{301}` (e and a combining accent)

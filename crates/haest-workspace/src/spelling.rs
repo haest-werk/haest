@@ -2,37 +2,41 @@
 //!
 //! macOS's default disk reads `Lib` as the directory `lib`, and APFS, the
 //! case-sensitive kind too, reads `café` in either Unicode normalization as
-//! one name. The sandbox tells every spelling apart. Where the disk holds a
-//! name only under another spelling, the project overlay's lower layer
-//! (`sandbox/spelled_fs.rs`) and the change ledger (`overlay/book.rs`) read
-//! the path as absent, so the sandbox shows what applying writes.
+//! one name; so do exFAT and FAT, and vfat on Linux. The sandbox tells every
+//! spelling apart. Where the disk holds a name only under another spelling,
+//! the project overlay's lower layer (`sandbox/spelled_fs.rs`) and the
+//! change ledger (`overlay/book.rs`) read the path as absent, so the
+//! sandbox shows what applying writes.
 //!
-//! One `realpath` answers most lookups: on macOS it returns the disk's own
-//! spelling. Only when that differs (another spelling, or a symlink on the
-//! way), or there is none for a name that is there (a symlink that dangles
-//! or loops), are the directories' listings read; each is kept, and read
-//! again only once its directory changed. On Linux, `realpath` keeps the
-//! spelling it is given, so a case-folding directory there (`chattr +F`)
-//! still reads a name the way the disk finds it.
+//! A path is there as asked where each name in it is one its directory
+//! lists. One `realpath` answers that for most lookups, where it gives back
+//! each name as asked on a disk that answers with the name it holds (APFS,
+//! HFS+), or in directories that tell cases apart (`answers.rs`). Elsewhere
+//! (exFAT and FAT answer with the spelling a file was first looked up by,
+//! vfat on Linux with the one asked), and where it spells a name another
+//! way (another spelling, or a symlink on the way) or finds none for a name
+//! that is there (a symlink that dangles or loops), the directories'
+//! listings decide; each is kept, and read again only once its directory
+//! changed. The disk's other spelling of a name is the entry its directory
+//! lists for the same file ([`crate::listed`]), never `realpath`'s.
+
+mod answers;
+mod listings;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ffi::{OsStr, OsString},
-    fmt, io,
+    io,
     os::unix::fs::MetadataExt,
     path::{Component, Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::Arc,
+    time::{Duration, SystemTime},
 };
 
-/// How long ago a directory must have last changed for its listing to be
-/// kept. A disk stamps a change at its own clock's resolution (a whole
-/// second on HFS+, two on FAT, a few milliseconds on Linux's coarse clock),
-/// so a change right after a read can carry the very stamp the read saw.
-const SETTLED: Duration = Duration::from_secs(2);
+use answers::{Answers, Resolved, resolve};
+use listings::{Listings, Names, SETTLED, Stamp};
 
-/// Listings kept at most; past that every one is forgotten and read again.
-const KEPT: usize = 4096;
+use crate::listed::{confirmed, pick};
 
 /// A project directory on the real disk, asked how the disk spells a path
 /// inside it.
@@ -47,6 +51,8 @@ pub(crate) struct Spelling {
     /// How long ago a directory must have last changed for its listing to
     /// be kept ([`SETTLED`]).
     settled: Duration,
+    /// How the disk answers before any listing is read.
+    answers: Answers,
 }
 
 /// What [`Spelling::spelled_way`] found for each directory it asked: the
@@ -60,8 +66,9 @@ pub(crate) struct Ways(HashMap<PathBuf, Option<Spelled>>);
 pub(crate) enum Spelled {
     /// As asked, or the path is not there at all.
     AsAsked,
-    /// Under another spelling: that one, as a project path (`/lib/a.rs`), or
-    /// None when it resolves outside the project (through a symlink).
+    /// Under another spelling: that one, as a project path (`/lib/a.rs`),
+    /// each name as its directory lists it; None where a name's entry
+    /// cannot be told.
     Other(Option<PathBuf>),
 }
 
@@ -74,6 +81,7 @@ impl Spelling {
             root: real.map(|real| (dir.to_path_buf(), real)),
             listings: Arc::default(),
             settled: SETTLED,
+            answers: Answers::SYSTEM,
         }
     }
 
@@ -120,32 +128,19 @@ impl Spelling {
         if !rel.components().all(|c| matches!(c, Component::Normal(_))) {
             return Some(Spelled::AsAsked);
         }
-        let asked = dir.join(rel);
-        let found = match tokio::fs::canonicalize(&asked).await {
-            Ok(found) => found,
-            Err(e) => {
-                // A last name that does not resolve (a symlink that dangles,
-                // or one of a loop) is still a name its directory lists, by
-                // this spelling or not.
-                let Ok(link) = tokio::fs::symlink_metadata(&asked).await else {
-                    // Not there, or a file on the way: nothing is there.
-                    let gone = matches!(
-                        e.kind(),
-                        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-                    );
-                    return (!gone).then_some(Spelled::AsAsked);
-                };
-                if self.listed(dir, rel).await {
-                    return Some(Spelled::AsAsked);
-                }
-                return Some(Spelled::Other(link_at(real, &asked, &link).await));
-            }
-        };
-        if found == real.join(rel) || self.listed(dir, rel).await {
-            return Some(Spelled::AsAsked);
+        let (answers, at) = (self.answers, [dir.clone(), real.clone(), rel.to_path_buf()]);
+        let resolved = tokio::task::spawn_blocking(move || {
+            let [dir, real, rel] = &at;
+            resolve(answers, dir, real, rel)
+        })
+        .await
+        .unwrap_or(Resolved::Unknown);
+        match resolved {
+            Resolved::Absent => None,
+            Resolved::Unknown | Resolved::Listed => Some(Spelled::AsAsked),
+            Resolved::Unsure if self.listed(dir, rel).await => Some(Spelled::AsAsked),
+            Resolved::Unsure => Some(Spelled::Other(self.listed_at(dir, rel).await)),
         }
-        let inside = found.strip_prefix(real).ok();
-        Some(Spelled::Other(inside.map(|r| Path::new("/").join(r))))
     }
 
     /// Whether each name in `rel` is one its directory lists, as written. A
@@ -161,346 +156,64 @@ impl Spelling {
         true
     }
 
-    /// Whether `dir` lists `name`. Its listing is read once, and again only
-    /// once the directory changed (its ctime moved, or the path leads to
-    /// another directory): so a tree of N files under a symlink costs N
-    /// lookups, not N listings of N names.
+    /// Whether `dir` lists `name`.
     async fn lists(&self, dir: &Path, name: &OsStr) -> bool {
-        let now = SystemTime::now();
-        let Ok(stamp) = tokio::fs::metadata(dir).await.map(|m| Stamp::of(&m)) else {
-            return true;
-        };
-        if let Some(names) = self.listings.kept(dir, stamp) {
-            return names.contains(name);
-        }
-        let Some(names) = self.listings.read(dir).await else {
-            return true;
-        };
-        let listed = names.contains(name);
-        if stamp.settled(now, self.settled) {
-            self.listings.keep(dir, stamp, names);
-        }
-        listed
+        self.listing(dir)
+            .await
+            .is_none_or(|names| names.contains_key(name))
     }
-}
 
-/// The names one directory lists.
-type Names = Arc<HashSet<OsString>>;
+    /// Where the disk holds `rel`, which is not listed as asked: each name
+    /// as its directory lists the same file, as a project path. None where
+    /// one cannot be told.
+    async fn listed_at(&self, dir: &Path, rel: &Path) -> Option<PathBuf> {
+        let (mut at, mut out) = (dir.to_path_buf(), PathBuf::from("/"));
+        for name in rel {
+            let listed = self.listed_name(&at, name).await?;
+            at.push(&listed);
+            out.push(&listed);
+        }
+        Some(out)
+    }
 
-/// Directory listings, by the directory's path as asked.
-#[derive(Default)]
-struct Listings {
-    kept: Mutex<HashMap<PathBuf, Listing>>,
-    /// Listings read from the disk, for the tests.
+    /// The name `dir` lists the file asked for as `name` by: that one, or
+    /// the entry `lstat` agrees is the same file ([`crate::listed`]).
+    async fn listed_name(&self, dir: &Path, name: &OsStr) -> Option<OsString> {
+        let names = self.listing(dir).await?;
+        if names.contains_key(name) {
+            return Some(name.to_os_string());
+        }
+        let own = tokio::fs::symlink_metadata(dir.join(name)).await.ok()?;
+        let listing = names.iter().map(|(n, ino)| Ok::<_, io::Error>((n, *ino)));
+        let picked = pick(name, own.ino(), listing);
+        confirmed(dir, name, picked, (own.dev(), own.ino())).await
+    }
+
+    /// Listings read from the disk so far.
     #[cfg(test)]
-    reads: std::sync::atomic::AtomicUsize,
-}
-
-/// One directory's names, and the stamp of the directory they were read
-/// from.
-struct Listing {
-    stamp: Stamp,
-    names: Names,
-}
-
-impl Listings {
-    /// `dir`'s listing, if one is kept and `dir` is still as it was then.
-    fn kept(&self, dir: &Path, now: Stamp) -> Option<Names> {
-        let kept = self.lock();
-        let listing = kept.get(dir)?;
-        (listing.stamp == now).then(|| listing.names.clone())
+    pub(crate) fn reads(&self) -> usize {
+        self.listings
+            .reads
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    fn keep(&self, dir: &Path, stamp: Stamp, names: Names) {
-        let mut kept = self.lock();
-        if kept.len() >= KEPT {
-            kept.clear();
+    /// The names `dir` lists; None when it cannot be read. Read once, and
+    /// again only once the directory changed (its ctime moved, or the path
+    /// leads to another directory): so a tree of N files under a symlink
+    /// costs N lookups, not N listings of N names.
+    async fn listing(&self, dir: &Path) -> Option<Names> {
+        let now = SystemTime::now();
+        let stamp = tokio::fs::metadata(dir).await.ok().map(|m| Stamp::of(&m))?;
+        if let Some(names) = self.listings.kept(dir, stamp) {
+            return Some(names);
         }
-        kept.insert(dir.to_path_buf(), Listing { stamp, names });
-    }
-
-    /// Every name `dir` lists, from the disk; None when it cannot be read.
-    async fn read(&self, dir: &Path) -> Option<Names> {
-        #[cfg(test)]
-        self.reads
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let mut entries = tokio::fs::read_dir(dir).await.ok()?;
-        let mut names = HashSet::new();
-        while let Some(e) = entries.next_entry().await.ok()? {
-            names.insert(e.file_name());
+        let names = self.listings.read(dir).await?;
+        if stamp.settled(now, self.settled) {
+            self.listings.keep(dir, stamp, names.clone());
         }
-        Some(Arc::new(names))
+        Some(names)
     }
-
-    /// Held only to look up or keep a listing, never across an await, so a
-    /// poisoned one is a bug here.
-    fn lock(&self) -> MutexGuard<'_, HashMap<PathBuf, Listing>> {
-        self.kept
-            .lock()
-            .expect("the spelling's listings lock poisoned")
-    }
-}
-
-/// How many listings are kept; never the names.
-impl fmt::Debug for Listings {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let kept = self.kept.try_lock().map(|kept| kept.len());
-        let mut out = f.debug_struct("Listings");
-        match kept {
-            Ok(kept) => out.field("kept", &kept),
-            Err(_) => out.field("kept", &format_args!("<locked>")),
-        };
-        out.finish_non_exhaustive()
-    }
-}
-
-/// Which directory a path led to, and when it last changed: adding,
-/// removing or renaming an entry moves a directory's ctime, which no call
-/// can set back.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Stamp {
-    dev: u64,
-    ino: u64,
-    changed: (i64, i64),
-}
-
-impl Stamp {
-    fn of(m: &std::fs::Metadata) -> Self {
-        Self {
-            dev: m.dev(),
-            ino: m.ino(),
-            changed: (m.ctime(), m.ctime_nsec()),
-        }
-    }
-
-    /// Whether the directory last changed at least `settled` before `now`.
-    fn settled(&self, now: SystemTime, settled: Duration) -> bool {
-        let (Ok(secs), Ok(nanos)) = (u64::try_from(self.changed.0), u32::try_from(self.changed.1))
-        else {
-            return false;
-        };
-        let changed = UNIX_EPOCH.checked_add(Duration::new(secs, nanos));
-        changed.is_some_and(|c| now.duration_since(c).is_ok_and(|age| age >= settled))
-    }
-}
-
-/// Where the disk holds `asked`, a symlink that does not resolve, as a
-/// project path: its directory as `realpath` spells it, and its own name as
-/// that directory lists the same link. None when that cannot be told, or is
-/// outside the project `real`.
-async fn link_at(real: &Path, asked: &Path, link: &std::fs::Metadata) -> Option<PathBuf> {
-    let dir = tokio::fs::canonicalize(asked.parent()?).await.ok()?;
-    let mut entries = tokio::fs::read_dir(&dir).await.ok()?;
-    while let Some(e) = entries.next_entry().await.ok()? {
-        if e.ino() == link.ino() {
-            let inside = dir.strip_prefix(real).ok()?;
-            return Some(Path::new("/").join(inside).join(e.file_name()));
-        }
-    }
-    None
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn a_path_reads_as_asked_only_by_the_disks_own_spelling() {
-        let t = tempfile::tempdir().unwrap();
-        let dir = t.path();
-        std::fs::create_dir(dir.join("lib")).unwrap();
-        std::fs::write(dir.join("lib/caf\u{e9}"), "").unwrap();
-        std::os::unix::fs::symlink("lib", dir.join("link")).unwrap();
-        let s = Spelling::of(dir);
-        let asked_as_spelled = [
-            "/",
-            "/lib",
-            "/lib/caf\u{e9}",
-            "/link/caf\u{e9}",
-            "/nope",
-            "/lib/../x",
-        ];
-        for asked in asked_as_spelled {
-            let got = s.spelled(Path::new(asked)).await;
-            assert_eq!(got, Spelled::AsAsked, "{asked}");
-        }
-        // Each other spelling, where this disk reads it as the same name.
-        for asked in ["/LIB/caf\u{e9}", "/lib/cafe\u{301}"] {
-            let want = if dir.join(&asked[1..]).exists() {
-                Spelled::Other(Some(PathBuf::from("/lib/caf\u{e9}")))
-            } else {
-                Spelled::AsAsked
-            };
-            assert_eq!(s.spelled(Path::new(asked)).await, want, "{asked}");
-        }
-    }
-
-    impl Spelling {
-        /// Listings read from the disk so far.
-        fn reads(&self) -> usize {
-            self.listings
-                .reads
-                .load(std::sync::atomic::Ordering::Relaxed)
-        }
-    }
-
-    /// `store` with `n` files, and `vendor`, a symlink to it, in `dir`.
-    fn linked_store(dir: &Path, n: usize) {
-        std::fs::create_dir(dir.join("store")).unwrap();
-        for i in 0..n {
-            std::fs::write(dir.join(format!("store/f{i}")), "").unwrap();
-        }
-        std::os::unix::fs::symlink("store", dir.join("vendor")).unwrap();
-    }
-
-    /// Under a symlinked directory `realpath` never matches the path asked,
-    /// so a lookup reads the listings on its way. Each lookup read them all
-    /// again: `grep -r` over N files read N listings of N names, and over
-    /// 8,000 files took 26 s where 1 s would do.
-    #[tokio::test]
-    async fn lookups_under_a_symlink_read_each_listing_once_until_it_changes() {
-        let t = tempfile::tempdir().unwrap();
-        let dir = t.path();
-        linked_store(dir, 100);
-        // A disk with an exact clock: what was just made is kept at once.
-        let s = Spelling {
-            settled: Duration::ZERO,
-            ..Spelling::of(dir)
-        };
-        for i in 0..100 {
-            let asked = format!("/vendor/f{i}");
-            assert_eq!(s.spelled(Path::new(&asked)).await, Spelled::AsAsked);
-        }
-        // The project's and the store's.
-        assert_eq!(s.reads(), 2);
-        // A change in the store is seen: its listing is read again. (Past a
-        // coarse clock's tick first, so the change moves the stamp.)
-        std::thread::sleep(Duration::from_millis(50));
-        std::fs::rename(dir.join("store/f0"), dir.join("store/F0")).unwrap();
-        for asked in ["/vendor/F0", "/vendor/f1"] {
-            assert_eq!(
-                s.spelled(Path::new(asked)).await,
-                Spelled::AsAsked,
-                "{asked}"
-            );
-        }
-        assert_eq!(s.reads(), 3);
-    }
-
-    /// A directory changed within [`SETTLED`] of its listing's read may
-    /// change again with the same stamp: its listing is read at every
-    /// lookup until it settles.
-    #[tokio::test]
-    async fn a_listing_is_kept_only_once_its_directory_settled() {
-        let t = tempfile::tempdir().unwrap();
-        let dir = t.path();
-        linked_store(dir, 3);
-        let s = Spelling::of(dir);
-        for i in 0..3 {
-            let asked = format!("/vendor/f{i}");
-            assert_eq!(s.spelled(Path::new(&asked)).await, Spelled::AsAsked);
-        }
-        assert_eq!(s.reads(), 6);
-    }
-
-    /// A symlink that dangles or loops has no `realpath`; it is found by its
-    /// directory's listing, and its place by the entry that is the same link.
-    #[tokio::test]
-    async fn a_link_that_does_not_resolve_is_found_only_as_the_disk_spells_it() {
-        let t = tempfile::tempdir().unwrap();
-        let dir = t.path();
-        std::fs::create_dir(dir.join("lib")).unwrap();
-        std::os::unix::fs::symlink("nowhere", dir.join("lib/d")).unwrap();
-        std::os::unix::fs::symlink("l2", dir.join("lib/l1")).unwrap();
-        std::os::unix::fs::symlink("l1", dir.join("lib/l2")).unwrap();
-        let s = Spelling::of(dir);
-        for asked in ["/lib/d", "/lib/l1", "/lib/l2"] {
-            assert_eq!(
-                s.spelled(Path::new(asked)).await,
-                Spelled::AsAsked,
-                "{asked}"
-            );
-        }
-        for (asked, disk) in [
-            ("/LIB/d", "/lib/d"),
-            ("/lib/D", "/lib/d"),
-            ("/lib/L1", "/lib/l1"),
-        ] {
-            let folds = std::fs::symlink_metadata(dir.join(&asked[1..])).is_ok();
-            let want = if folds {
-                Spelled::Other(Some(PathBuf::from(disk)))
-            } else {
-                Spelled::AsAsked
-            };
-            assert_eq!(s.spelled(Path::new(asked)).await, want, "{asked}");
-        }
-    }
-
-    /// How the disk spells the way to `asked`, asked afresh.
-    async fn way(s: &Spelling, asked: &str) -> Spelled {
-        s.spelled_way(Path::new(asked), &mut Ways::default()).await
-    }
-
-    /// A path that is not there lands in the nearest directory above it that
-    /// is, as the disk spells that one.
-    #[tokio::test]
-    async fn the_way_to_a_missing_path_is_its_nearest_directory_there() {
-        let t = tempfile::tempdir().unwrap();
-        let dir = t.path();
-        std::fs::create_dir(dir.join("lib")).unwrap();
-        let s = Spelling::of(dir);
-        for asked in ["/lib/new.rs", "/lib/new/deeper/x.rs", "/nope/x.rs", "/x.rs"] {
-            assert_eq!(way(&s, asked).await, Spelled::AsAsked, "{asked}");
-        }
-        let want = if dir.join("LIB").exists() {
-            Spelled::Other(Some(PathBuf::from("/lib")))
-        } else {
-            Spelled::AsAsked
-        };
-        for asked in ["/LIB/new.rs", "/LIB/new/deeper/x.rs"] {
-            assert_eq!(way(&s, asked).await, want, "{asked}");
-        }
-    }
-
-    /// Below a file the disk spells another way (`/NOTES/x/y` beside the
-    /// file `notes`), the disk answers "not a directory" for `NOTES/x`: the
-    /// way goes on up to the file, and it ended there as asked.
-    #[tokio::test]
-    async fn the_way_below_a_file_spelled_another_way_is_that_file() {
-        let t = tempfile::tempdir().unwrap();
-        let dir = t.path();
-        std::fs::write(dir.join("notes"), "").unwrap();
-        let s = Spelling::of(dir);
-        let want = if dir.join("NOTES").exists() {
-            Spelled::Other(Some(PathBuf::from("/notes")))
-        } else {
-            Spelled::AsAsked
-        };
-        assert_eq!(way(&s, "/NOTES/x/y").await, want);
-        assert_eq!(way(&s, "/notes/x/y").await, Spelled::AsAsked);
-    }
-
-    /// Each new file asked its way up through the same new directories
-    /// again: one scan of a new tree asked each of them once per file.
-    #[tokio::test]
-    async fn the_files_of_one_new_tree_ask_their_way_once() {
-        let t = tempfile::tempdir().unwrap();
-        let dir = t.path();
-        std::fs::create_dir(dir.join("lib")).unwrap();
-        let s = Spelling::of(dir);
-        let mut ways = Ways::default();
-        for i in 0..20 {
-            let asked = format!("/lib/new/deeper/f{i}.rs");
-            let got = s.spelled_way(Path::new(&asked), &mut ways).await;
-            assert_eq!(got, Spelled::AsAsked, "{asked}");
-        }
-        // `/lib/new/deeper`, `/lib/new` and `/lib`.
-        assert_eq!(ways.0.len(), 3, "{ways:?}");
-    }
-
-    #[tokio::test]
-    async fn a_directory_that_does_not_resolve_reads_every_path_as_asked() {
-        let s = Spelling::of(Path::new("/no/such/dir"));
-        assert_eq!(s.spelled(Path::new("/LIB")).await, Spelled::AsAsked);
-    }
-}
+mod tests;

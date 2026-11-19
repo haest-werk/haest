@@ -70,7 +70,8 @@ pub(super) struct OnDisk {
 pub(super) struct Held {
     /// The disk's own spelling of the first name on the way it spells
     /// differently, as a project path (`/lib` for `/Lib/a.rs`): a delete of
-    /// it frees the way. None when the path resolves outside the project.
+    /// it frees the way. None when the entry its directory lists for that
+    /// name cannot be told.
     pub(super) at: Option<PathBuf>,
 }
 

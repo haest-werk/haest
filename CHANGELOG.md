@@ -422,9 +422,9 @@ write instead.
   another repository is dropped. An owner named `repos` is read as an
   owner: its issues in another repository were named by a bare number,
   which names one of this repository's.
-- On macOS, applying a sandbox's changes could delete or overwrite files,
-  or a whole directory, in the real project while the report said every
-  change was applied. The disk reads `readme.md` and `README.md` as one
+- On macOS, and on a FAT disk on Linux (vfat), applying a sandbox's
+  changes could delete or overwrite files, or a whole directory, in the
+  real project while the report said every change was applied. The disk reads `readme.md` and `README.md` as one
   name (and `café` in either Unicode spelling, on case-sensitive APFS
   too). The sandbox's own files tell them apart, but it read the project
   through the disk, so asked for `Lib` it found `lib`.
@@ -470,6 +470,12 @@ write instead.
     apply under another spelling, the new name of a rename whose delete
     failed, or the human saving or deleting it meanwhile) is skipped as a
     conflict and stays listed.
+  The disk's spelling of a name is the one its directory lists. realpath(3)
+  gives that only on APFS and HFS+, and in a directory that tells case
+  apart. On exFAT and FAT on macOS it gives the spelling the name was
+  first looked up by since the disk was mounted, and on Linux the one
+  asked, so there the directory's listing decides: a file is the entry
+  that is the same file, never realpath's spelling.
   The cost: in the sandbox, `cat README.md` does not find `readme.md`,
   where real bash on that disk would (see haest-workspace). A case-folding
   directory on Linux (`chattr +F`) is not told apart.
