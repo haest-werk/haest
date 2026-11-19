@@ -29,8 +29,9 @@ pub(crate) use replace::{Name, put_file};
 /// The real disk and the real `bash`: the workspace where the agent's edits
 /// land on disk at once and its commands are real programs.
 ///
-/// - A tool that rewrites a file that is there (Edit, and Write over one)
-///   replaces it whole or not at all ([`Fs::write_whole`] on [`RealFs`]):
+/// - A tool that rewrites a file that is there (Edit, Write over one, and
+///   GenerateImage over one at the path the model named) replaces it whole
+///   or not at all ([`Fs::write_whole`] on [`RealFs`]):
 ///   the new text goes into a new file beside it, which takes its
 ///   permission bits and is renamed over it, so a disk that fills up, or a
 ///   kill, partway leaves the human's file as it was, and the tool fails
@@ -42,11 +43,10 @@ pub(crate) use replace::{Name, put_file};
 ///   it is bind-mounted into on its own, whose reload then reads the old
 ///   text). The disk needs room for a second copy, and a kill partway can
 ///   leave `.<name>.haest-<pid>-<n>` beside it, which only its owner may
-///   reach. A
-///   file with another hard link, another owner or group, or a symlink, and
-///   one where the disk refuses to make the new file, set its mode or
-///   rename it (a share mounted for one fixed owner), is written in place:
-///   a full disk still cuts it short, and the tool says so.
+///   reach. A file with another hard link, another owner or group, or a
+///   symlink, and one where the disk refuses to make the new file, set its
+///   mode or rename it (a share mounted for one fixed owner), is written in
+///   place: a full disk still cuts it short, and the tool says so.
 /// - [`Workspace::shell`] runs `bash -c <command>`; [`Workspace::run`] runs a
 ///   program with its argv, no shell parsing. A bare program name is looked up
 ///   on the `PATH` in the [`ChildEnv`] (`/usr/bin:/bin` when it has none), a
