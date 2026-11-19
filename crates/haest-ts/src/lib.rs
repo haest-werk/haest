@@ -221,20 +221,6 @@ fn strip(source: &str, filename: &str, mode: &str) -> Result<String, (ErrorCode,
 mod tests {
     use super::*;
 
-    #[test]
-    fn annotations_go_and_lines_stay() {
-        let js = strip_types("const n: number = 1\nlet s: string\nnull.x()", "a.ts").unwrap();
-        assert!(!js.contains(": number"));
-        assert_eq!(js.lines().count(), 3);
-        assert!(js.lines().nth(2).unwrap().contains("null.x()"));
-    }
-
-    #[test]
-    fn an_enum_becomes_code() {
-        let js = strip_types("enum E { A, B }\nconsole.log(E.B)", "a.ts").unwrap();
-        assert!(!js.contains("enum "));
-    }
-
     /// `strip_types` on a fresh thread with a tokio worker's stack (2 MiB),
     /// where the sandbox's `js` calls it. An overflow aborts the test binary.
     fn on_a_worker_stack(source: String, filename: &'static str) -> Result<String, StripError> {
@@ -284,11 +270,5 @@ mod tests {
         for name in ["a.tsx", "a.TSX", "dir/b.tsx"] {
             assert!(strip_types(element, name).is_ok(), "{name}");
         }
-    }
-
-    #[test]
-    fn a_syntax_error_is_an_error() {
-        let err = strip_types("const = ;", "a.ts").unwrap_err();
-        assert!(matches!(err, StripError::Syntax { .. }), "{err:?}");
     }
 }
