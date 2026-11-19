@@ -52,13 +52,13 @@
 //! that takes nothing away (a new path, a change of mode alone), then each
 //! that does (a file written over, a directory become a file or the other
 //! way round) with what a file become a directory holds, then each delete.
-//! Each group goes in path order, but for the changes that take away: each
-//! of those goes after another whose write carries its content
-//! ([`in_order`]). One that takes away what a write of this
-//! apply that did not land carries elsewhere (a move, a copy, or the same
-//! content: `carried.rs`) is skipped as a conflict, and stays listed. Each
-//! directory's mode goes on last, deepest first, so one made read-only
-//! still gets what was written into it. Each change's real path is read
+//! Each group goes in path order, but the second: each of those goes after
+//! another of them whose write carries its content ([`in_order`]). One that
+//! takes away (a delete too) what a write of this apply that did not land
+//! carries elsewhere (a move, a copy, or the same content: `carried.rs`) is
+//! skipped as a conflict, and stays listed. Each directory's mode goes on
+//! last, deepest first, so one made read-only still gets what was written
+//! into it. Each change's real path is read
 //! again right before it is put on the disk; one that moved since the scan
 //! is skipped as a conflict. A directory removed whole is read again with
 //! each change listed under it: one of them that moved keeps the directory

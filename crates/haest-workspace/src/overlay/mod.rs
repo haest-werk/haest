@@ -118,7 +118,9 @@ use state::{Original, state_of, walk};
 /// `apply` writes first and deletes last: each write that takes nothing
 /// away (a new path, a change of mode alone), then each that does (a file
 /// written over, a directory become a file or the other way round), then
-/// each delete, each group in path order. A change that would take away
+/// each delete. Each group goes in path order, but the second: each of
+/// those goes after another of them whose write carries its content, so
+/// whether that write landed is known first. A change that would take away
 /// what a write of the same apply that did not land (skipped or failed)
 /// carries elsewhere waits: skipped as a conflict, and still listed, so
 /// `mv src.md locked/` into a directory the disk will not write leaves
@@ -378,11 +380,14 @@ impl ChangeSet for OverlayChanges {
         mode + &diff::unified(&c.path, &before, &after)
     }
 
-    /// Write every non-conflicting change to the real disk, the deletes
-    /// first, each skipped as a conflict if its real path moved since the
-    /// scan. Returns what was applied, what was skipped (a conflict), and
-    /// what failed, each with why (a symlink, a disk error). One that fails
-    /// stops nothing else, and stays listed like a conflict.
+    /// Write every non-conflicting change to the real disk: the writes that
+    /// take nothing away, then those that do, then the deletes. Each is
+    /// skipped as a conflict if its real path moved since the scan; one
+    /// that takes away is skipped too while a write of this apply that did
+    /// not land carries what it would take away. Returns what was applied,
+    /// what was skipped (a conflict), and what failed, each with why (a
+    /// symlink, a disk error). One that fails stops nothing else, and stays
+    /// listed like a conflict.
     async fn apply(&self) -> ApplyReport {
         self.apply_all().await
     }
