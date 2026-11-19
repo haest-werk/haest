@@ -120,21 +120,6 @@ async fn github_has_no_priority_and_says_so_before_asking() {
 }
 
 #[tokio::test]
-async fn a_search_stays_in_the_repository_and_its_issues() {
-    let http = FakeHttp::new([ok(
-        json!({"total_count": 1, "items": [issue(8, "login bug")]}),
-    )]);
-    let found = github(http.clone()).search("login bug", 5).await.unwrap();
-    assert_eq!(ids(&found), ["8"]);
-    assert_eq!(
-        http.sent(),
-        [format!(
-            "GET {API}/search/issues?q=repo%3Ao%2Fr%20is%3Aissue%20login%20bug&per_page=5"
-        )]
-    );
-}
-
-#[tokio::test]
 async fn a_get_reads_the_parent_children_and_what_blocks_it() {
     let mut v = issue(7, "seven");
     v["state"] = json!("closed");

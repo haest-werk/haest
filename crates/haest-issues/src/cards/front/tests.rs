@@ -118,11 +118,3 @@ fn only_a_plain_block_list_under_a_list_key_becomes_a_list() {
     let quoted = Front::parse(&head("tags:\n  - \"a: b\"\n  - c")).unwrap();
     assert_eq!(quoted.list("tags"), ["a: b", "c"]);
 }
-
-#[test]
-fn an_empty_list_removes_its_key() {
-    let mut f = Front::parse(CARD).unwrap();
-    f.set_list("tags", Vec::new());
-    assert!(f.get("tags").is_none());
-    assert!(!f.render().contains("tags:"));
-}

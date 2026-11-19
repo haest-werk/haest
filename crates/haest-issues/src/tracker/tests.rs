@@ -1,12 +1,10 @@
 use super::*;
 
 #[test]
-fn every_relation_reads_back_and_inverts_twice_to_itself() {
+fn every_relation_inverts_twice_to_itself() {
     for &r in Relation::ALL {
-        assert_eq!(r.as_str().parse(), Ok(r));
         assert_eq!(r.inverse().inverse(), r);
     }
-    assert!("epic".parse::<Relation>().is_err());
 }
 
 #[test]

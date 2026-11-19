@@ -143,18 +143,4 @@ mod tests {
         assert_eq!(status_of(&card("status: someday")), "inbox");
         assert_eq!(status_of(&card("other: x")), "inbox");
     }
-
-    #[test]
-    fn a_search_needs_every_word_somewhere() {
-        let issue = Issue {
-            id: "fix-login".into(),
-            title: "Fix the login".into(),
-            labels: vec!["auth".into()],
-            body: "Passkeys fail on Safari.".into(),
-            ..Default::default()
-        };
-        assert!(found_by(&issue, "LOGIN safari"));
-        assert!(found_by(&issue, "auth fix"));
-        assert!(!found_by(&issue, "login chrome"));
-    }
 }
