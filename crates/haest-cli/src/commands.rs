@@ -135,7 +135,9 @@ fn budget(rt: &mut Runtime, args: &str) {
         .trim_start_matches('$')
         .parse::<f64>()
         .ok()
-        .filter(|v| v.is_finite() && *v >= 0.0);
+        // Tokens are whole: a fraction is refused, never cut to a smaller
+        // cap (0.5 cut to 0 would remove it).
+        .filter(|v| v.is_finite() && *v >= 0.0 && (!tokens || v.fract() == 0.0));
     let Some(value) = value else {
         return rt.hooks().error(&format!(
             "\"{args}\" is not a budget. Usage: /budget (show), /budget <usd>, /budget tokens <n>. 0 removes the cap."
@@ -180,5 +182,73 @@ async fn skills(rt: &mut Runtime) {
         rt.hooks().info("No skills found.");
     } else {
         rt.hooks().info(&format!("Skills:\n{}", lines.join("\n")));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use haest::{
+        core::fs::MemFs,
+        runtime::{BuildOptions, RuntimeInputs, World, build},
+        session::{Body, Hub, SessionPrompter},
+        settings::Settings,
+        wire::{Level, Outbound},
+    };
+
+    use super::*;
+    use crate::term::TermUi;
+
+    /// A conversation over files of its own, its lines said into `hub`.
+    async fn runtime(hub: &Hub) -> Runtime {
+        let inputs = RuntimeInputs::new(Settings::bare("/w", "/h"), World::files(MemFs::new()))
+            .with_keys(|k: &str| (k == "OPENROUTER_API_KEY").then(|| "k".to_string()));
+        let ui = Arc::new(TermUi::with_hub(false, hub.clone()));
+        let asks = SessionPrompter::new(hub.clone());
+        build(inputs, ui, asks, BuildOptions::default())
+            .await
+            .unwrap()
+    }
+
+    /// The errors said into `hub` after frame `after`.
+    async fn errors_since(hub: &Hub, after: u64) -> Vec<String> {
+        let mut sub = hub.subscribe(after);
+        let mut said = Vec::new();
+        while !sub.caught_up() {
+            let Some(frame) = sub.recv().await else { break };
+            if let Body::Wire(Outbound::Notice {
+                level: Level::Error,
+                text,
+            }) = &frame.body
+            {
+                said.push(text.clone());
+            }
+        }
+        said
+    }
+
+    /// A token cap counts whole tokens: a fraction is refused, never cut to a
+    /// smaller cap. `0.5` cut to 0 removed the cap the human asked to tighten.
+    #[tokio::test]
+    async fn budget_tokens_refuses_a_fraction_and_keeps_the_cap() {
+        let hub = Hub::new("t");
+        let mut rt = runtime(&hub).await;
+        let ledger = rt.agent().deps().shared().ledger().cloned().unwrap();
+        let cancel = CancellationToken::new();
+        let before = ledger.caps();
+        for fraction in ["0.5", "1.5"] {
+            let after = hub.last_seq();
+            resolve(&mut rt, &format!("/budget tokens {fraction}"), &cancel).await;
+            assert_eq!(ledger.caps(), before, "/budget tokens {fraction}");
+            assert!(
+                !errors_since(&hub, after).await.is_empty(),
+                "/budget tokens {fraction} said no error"
+            );
+        }
+
+        // A whole number, in the doc's own spelling, is still a cap.
+        resolve(&mut rt, "/budget tokens 4e7", &cancel).await;
+        assert_eq!(ledger.caps().max_unpriced_tokens, 40_000_000);
     }
 }
