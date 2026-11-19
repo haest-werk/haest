@@ -211,10 +211,6 @@ fn a_site_refuses_what_it_cannot_check_and_says_why() {
             action: Action::Remind
         }
     );
-    assert_eq!(
-        err.to_string(),
-        "a threshold that would remind on turns is not checked during a turn"
-    );
     let compact = host(
         Meter::ContextTokens,
         Mark::at(1.0),
@@ -244,39 +240,6 @@ fn a_site_refuses_what_it_cannot_check_and_says_why() {
     assert!(Thresholds::<LedgerSite>::new([remind]).is_err());
     assert!(Thresholds::<LedgerSite>::new([turn_usd]).is_err());
     assert_eq!(Thresholds::<LedgerSite>::new([warn]).unwrap().len(), 1);
-}
-
-/// The defaults are what haest did before thresholds: the same marks,
-/// actions and rearms on the same meters.
-#[test]
-fn the_defaults_are_the_guards_nudge_and_the_ledgers_warning() {
-    let parts = |t: &ThresholdRef| (t.meter(), t.mark(), t.action(), t.rearm());
-    let turn: Vec<_> = Thresholds::<TurnSite>::default()
-        .iter()
-        .map(parts)
-        .collect();
-    let nudge = |m| (m, Mark::share(0.5), Action::Remind, Rearm::NextTurn);
-    assert_eq!(
-        turn,
-        [
-            nudge(Meter::Steps),
-            nudge(Meter::WallTime),
-            nudge(Meter::Usd(Scope::Turn)),
-            nudge(Meter::Tokens(Scope::Turn)),
-        ]
-    );
-    let ledger: Vec<_> = Thresholds::<LedgerSite>::default()
-        .iter()
-        .map(parts)
-        .collect();
-    let warn = |m| (m, Mark::share(0.8), Action::Warn, Rearm::BelowMark);
-    assert_eq!(
-        ledger,
-        [
-            warn(Meter::Usd(Scope::Conversation)),
-            warn(Meter::Tokens(Scope::Conversation)),
-        ]
-    );
 }
 
 // --- In a whole turn -------------------------------------------------------

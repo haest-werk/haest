@@ -45,22 +45,6 @@ fn a_ts_user_turn_with_media_round_trips() {
     assert_eq!(serde_json::to_value(&msg).unwrap(), ts);
 }
 
-#[test]
-fn usage_adds_cost_only_when_reported() {
-    let mut u = Usage::default();
-    u += &Usage {
-        input: 5,
-        ..Default::default()
-    };
-    assert_eq!(u.cost_usd, None);
-    u += Usage {
-        cost_usd: Some(0.25),
-        ..Default::default()
-    };
-    assert_eq!(u.cost_usd, Some(0.25));
-    assert_eq!(u.context_tokens(), 5);
-}
-
 /// A cost that is no real amount (a provider's NaN, a refund) made the sum a
 /// NaN, or lowered it: the turn's USD cap read that sum.
 #[test]

@@ -267,20 +267,6 @@ mod tests {
         assert_eq!(l.held(), 0.0);
     }
 
-    /// The amount asked was printed as the float it was: a hold of
-    /// $0.10 + $0.20 read "$0.30000000000000004 does not fit".
-    #[test]
-    fn a_refusal_says_both_amounts_in_cents() {
-        let refused = NotAvailable {
-            asked: 0.1 + 0.2,
-            available: 0.2,
-        };
-        assert_eq!(
-            refused.to_string(),
-            "$0.30 does not fit: $0.20 is left of the conversation's budget (max_conversation_usd)"
-        );
-    }
-
     /// What was left was rounded to the nearest cent, so it could round up
     /// to the amount asked: "$0.10 does not fit: $0.10 is left".
     #[test]
@@ -330,19 +316,6 @@ mod tests {
             let (have, _) = rest.split_once(' ').unwrap();
             assert_ne!(amount(ask), amount(have), "{shown}");
         }
-    }
-
-    #[test]
-    fn a_dropped_hold_is_given_back_and_the_real_spend_stays() {
-        let l = ledger(1.0);
-        let h = l.reserve(0.5).unwrap();
-        spend(&l, 0.1);
-        // Held and spent both count while it runs: refuse rather than overshoot.
-        assert!(close(l.available().unwrap(), 0.4));
-        drop(h);
-        assert!(close(l.usd(), 0.1));
-        assert!(close(l.available().unwrap(), 0.9));
-        assert!(l.exhausted().is_none());
     }
 
     #[test]

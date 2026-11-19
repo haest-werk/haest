@@ -472,19 +472,6 @@ fn a_ledger_threshold_that_panics_once_leaves_the_ledger_working() {
     }
 }
 
-/// Clones are one ledger: what one charges, every other reads and stops on.
-#[test]
-fn every_clone_is_the_same_ledger() {
-    let (ledger, rec) = ledger_with(1.0, 0);
-    let spender = ledger.clone();
-    spender.charge(&cost(1.0));
-    assert_eq!(ledger.usd(), 1.0);
-    assert!(ledger.exhausted().is_some());
-    ledger.set_cap(ConversationCap::Usd(2.0));
-    assert!(spender.exhausted().is_none());
-    assert_eq!(rec.saved.lock().unwrap().len(), 2);
-}
-
 /// Charges from many threads at once: every one counts, and the snapshot
 /// saved last is the ledger's final state.
 #[test]

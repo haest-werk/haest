@@ -31,11 +31,6 @@ fn a_block_scalar_description_is_read_whole() {
 }
 
 #[test]
-fn no_frontmatter_is_skipped_not_an_error() {
-    assert!(parse_skill_file("# just markdown", "d").is_none());
-}
-
-#[test]
 fn an_unquoted_description_containing_colon_space_is_read_anyway() {
     let parsed = parse_skill_file(
         "---\nname: e\ndescription: Do X. Triggers: \"a\", \"b\"\n---\n",

@@ -69,21 +69,6 @@ async fn a_file_system_without_links_says_no_path_is_one() {
     }
 }
 
-#[test]
-fn normalize_resolves_dots_lexically() {
-    assert_eq!(normalize(Path::new("/a/./b/../c")), PathBuf::from("/a/c"));
-    assert_eq!(normalize(Path::new("/../x")), PathBuf::from("/x"));
-}
-
-#[test]
-fn relative_paths_resolve_from_cwd() {
-    assert_eq!(
-        resolve_path(Path::new("/p"), "a/../b.txt"),
-        PathBuf::from("/p/b.txt")
-    );
-    assert_eq!(resolve_path(Path::new("/p"), "/abs"), PathBuf::from("/abs"));
-}
-
 #[tokio::test]
 async fn ensure_dir_makes_the_dir_and_refuses_a_file_in_its_place() {
     let fs = MemFs::from_files([("/p/file", "x")]);

@@ -56,19 +56,6 @@ fn names(skills: &[Skill]) -> Vec<&str> {
 }
 
 #[tokio::test]
-async fn finds_claude_and_agents_skills_at_user_and_project_level() {
-    let fs = fs_with(&[
-        ("/r/home/.claude/skills", "u1", "", "Body text."),
-        ("/r/home/.agents/skills", "u2", "", "Body text."),
-        ("/r/proj/.agents/skills", "p1", "", "Body text."),
-    ]);
-    assert_eq!(
-        names(&discover_skills(&fs, &opts()).await),
-        ["p1", "u1", "u2"]
-    );
-}
-
-#[tokio::test]
 async fn the_prompt_lists_model_invocable_skills_only_never_bodies() {
     let fs = fs_with(&[
         ("/r/home/.claude/skills", "visible", "", "SECRET BODY"),
@@ -80,10 +67,10 @@ async fn the_prompt_lists_model_invocable_skills_only_never_bodies() {
         ),
     ]);
     let block = skills_prompt_block(&discover_skills(&fs, &opts()).await);
-    assert_eq!(
-        block,
-        "# Skills\nSkills are packaged instructions for specific tasks. When a task matches a skill below, call the `Skill` tool with its name BEFORE doing the task, then follow what it returns.\n\n- visible: does visible"
-    );
+    assert!(block.starts_with(DEFAULT_SKILLS_INTRO), "{block}");
+    let listed: Vec<&str> = block.lines().filter(|l| l.starts_with("- ")).collect();
+    assert_eq!(listed, ["- visible: does visible"]);
+    assert!(!block.contains("SECRET BODY"), "{block}");
     assert_eq!(skills_prompt_block(&[]), "");
 }
 

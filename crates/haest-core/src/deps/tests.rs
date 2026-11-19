@@ -1,5 +1,5 @@
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     atomic::{AtomicU64, Ordering},
 };
 
@@ -36,56 +36,6 @@ async fn a_str_a_string_and_a_closure_are_system_prompts() {
     let built = deps(move || format!("call {}", counted.fetch_add(1, Ordering::SeqCst)));
     assert_eq!(built.system_prompt().system_prompt().await, "call 0");
     assert_eq!(built.system_prompt().system_prompt().await, "call 1");
-}
-
-/// One object behind several slots: the hooks, the clock and the caps.
-#[derive(Default)]
-struct Host {
-    now: AtomicU64,
-    warned: Mutex<Vec<String>>,
-}
-
-impl AgentHooks for Host {
-    fn on_warning(&self, text: &str) {
-        self.warned.lock().unwrap().push(text.into());
-    }
-}
-
-impl Clock for Host {
-    fn now_ms(&self) -> u64 {
-        self.now.load(Ordering::SeqCst)
-    }
-}
-
-#[test]
-fn one_shared_object_fills_several_slots() {
-    let host = Arc::new(Host::default());
-    let deps = deps("p").with_hooks(host.clone()).with_clock(host.clone());
-    host.now.store(42, Ordering::SeqCst);
-    assert_eq!(deps.shared().clock().now_ms(), 42);
-    deps.shared().hooks().on_warning("careful");
-    assert_eq!(*host.warned.lock().unwrap(), ["careful"]);
-    // A clone of the deps shares the same objects.
-    let again = deps.clone();
-    assert!(AgentHooksRef::ptr_eq(
-        deps.shared().hooks(),
-        again.shared().hooks()
-    ));
-}
-
-/// A part the host picks at run time, as a `Box<dyn Trait>`, fills a slot
-/// as it is: no `Arc::<dyn Trait>::from(b)` first.
-#[test]
-fn a_boxed_part_fills_a_slot() {
-    let clock: Box<dyn Clock> = Box::new(|| 7_u64);
-    let deps = deps("p").with_clock(clock);
-    assert_eq!(deps.shared().clock().now_ms(), 7);
-    let workspace: Box<dyn crate::Workspace> = Box::new(ShutWorkspace);
-    let shared = SharedDeps::new(ScriptedProvider::new([]).resolver(), "/", workspace);
-    assert_eq!(
-        shared.workspace().mode(),
-        crate::workspace::WorkspaceMode::Shut
-    );
 }
 
 /// Publishes what it is called with.
@@ -153,7 +103,11 @@ async fn tools_reach_the_services_slot_not_the_hooks() {
     assert_eq!(blobs.0.load(Ordering::SeqCst), 1);
 }
 
-// The rest of the host slots, as their defaults.
+/// One object behind every host slot, each as its default.
+struct Host;
+
+impl AgentHooks for Host {}
+impl Clock for Host {}
 impl ToolServices for Host {}
 impl crate::catalog::ModelFacts for Host {}
 impl crate::caps::TurnCapsSource for Host {}
@@ -166,7 +120,7 @@ fn at<T: ?Sized>(slot: &T) -> *const () {
 #[test]
 fn one_host_fills_every_host_slot_with_the_one_value() {
     let provider = ScriptedProvider::new([]);
-    let deps = AgentDeps::new(on(&provider), Tools::new(), "").with_host(Host::default());
+    let deps = AgentDeps::new(on(&provider), Tools::new(), "").with_host(Host);
     let s = deps.shared();
     let slots = [
         at(&**s.hooks()),

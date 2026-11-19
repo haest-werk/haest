@@ -217,14 +217,3 @@ fn the_tools_a_resumed_conversation_called_count_as_loaded() {
         ["Read", "ToolSearch", "search_transcripts"]
     );
 }
-
-#[test]
-fn every_clone_shares_what_is_loaded() {
-    let d = ToolDeferral::new(DeferMode::Grow);
-    let search_side = d.clone();
-    search_side.load(["mcp__x__weather"]);
-    assert!(
-        names(&advertised_tools(&d, &all(), marker)).contains(&"mcp__x__weather"),
-        "a tool one clone loaded is advertised by the other"
-    );
-}

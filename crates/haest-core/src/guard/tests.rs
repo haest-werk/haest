@@ -132,6 +132,30 @@ fn wall_time_on_the_hosts_clock_is_nudged_at_half_and_stopped_at_the_cap() {
     assert!(guard.stop(&u, l.as_ref()).is_some());
 }
 
+/// The guard's own nudge on a turn's spend: at half a USD cap, and at half
+/// a token cap, once a turn.
+#[test]
+fn spend_is_nudged_at_half_the_usd_or_the_token_cap_once_a_turn() {
+    let usd = |share| Usage {
+        cost_usd: Some(share),
+        ..Default::default()
+    };
+    let tokens = |share: f64| Usage {
+        input: (share * 1000.0) as u64,
+        ..Default::default()
+    };
+    let cases: [(TurnCaps, &dyn Fn(f64) -> Usage); 2] = [
+        (turn_caps(|l| l.max_turn_usd = 1.0), &usd),
+        (turn_caps(|l| l.max_turn_tokens = 1000), &tokens),
+    ];
+    for (caps, spent) in cases {
+        let mut guard = TurnGuard::new(Arc::new(TestHooks::default()), None, Remedies::default());
+        assert_eq!(guard.nudge(&spent(0.4), Some(&caps)), None, "{caps:?}");
+        assert!(guard.nudge(&spent(0.5), Some(&caps)).is_some(), "{caps:?}");
+        assert_eq!(guard.nudge(&spent(0.9), Some(&caps)), None, "{caps:?}");
+    }
+}
+
 #[tokio::test]
 async fn a_model_that_answers_without_tools_is_never_nudged() {
     let p = ScriptedProvider::new([text_answer("hi")]);

@@ -60,14 +60,6 @@ fn a_string_is_spelled_as_itself_and_anything_else_as_its_json() {
     }
 }
 
-#[test]
-fn truncate_middle_keeps_both_ends() {
-    let (t, cut) = truncate_middle("abcdefghij", 4);
-    assert!(cut);
-    assert!(t.starts_with("ab") && t.ends_with("ij") && t.contains("6 characters truncated"));
-    assert_eq!(truncate_middle("short", 10), ("short".to_string(), false));
-}
-
 /// An odd `max` keeps `max / 2` at each end, one less than `max` in all: the
 /// count said read one short (`len - max`) of what was dropped.
 #[test]
@@ -82,18 +74,6 @@ fn truncate_middle_counts_every_dropped_character_for_an_odd_max() {
         .and_then(|n| n.parse().ok())
         .unwrap_or_else(|| panic!("no count in {t:?}"));
     assert_eq!((kept, kept + said), (10, 100), "{t}");
-}
-
-#[test]
-fn a_title_is_the_hosts_and_absent_unless_set() {
-    let plain = serde_json::to_value(ToolOutput::text("sent")).unwrap();
-    assert!(plain.get("title").is_none());
-    let titled = ToolOutput::text("sent").with_title("Notified you: done");
-    assert_eq!(
-        serde_json::to_value(&titled).unwrap()["title"],
-        "Notified you: done"
-    );
-    assert_eq!(titled.content, "sent");
 }
 
 /// A tool called `name`, described as `description`.

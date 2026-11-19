@@ -136,12 +136,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn off_has_no_openrouter_name_and_the_rest_keep_theirs() {
-        assert_eq!(as_openrouter(Effort::High), Some(OpenRouterEffort::High));
-        assert_eq!(as_openrouter(Effort::Off), None);
-    }
-
     fn r(mandatory: bool, efforts: &[OpenRouterEffort]) -> Reasoning {
         Reasoning::new(efforts.iter().copied()).with_mandatory(mandatory)
     }

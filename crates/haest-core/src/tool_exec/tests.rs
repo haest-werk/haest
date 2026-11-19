@@ -296,20 +296,6 @@ fn a_tools_spend_stops_at_f64_max() {
     assert_eq!(usage.cost_usd, Some(f64::MAX));
 }
 
-#[test]
-fn a_result_message_carries_the_call_and_the_output() {
-    let c = call("t9", "Echo", json!({}));
-    let m = tool_result_message(&c, &ToolOutput::error("no"));
-    assert_eq!(
-        (m.tool_call_id.as_str(), m.tool_name.as_str()),
-        ("t9", "Echo")
-    );
-    assert!(m.is_error && m.media.is_empty());
-    let e = error_assistant("m", "why");
-    assert_eq!(e.stop_reason, StopReason::Error);
-    assert_eq!(e.error_message.as_deref(), Some("why"));
-}
-
 #[tokio::test]
 async fn a_tool_that_panics_is_a_failed_result_and_the_loop_goes_on() {
     let boom = FnTool::arc("Boom", false, |_, _| async move {

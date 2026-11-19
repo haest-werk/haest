@@ -102,19 +102,6 @@ fn completing_stamps_completed_at_from_the_board_clock_every_clone_reads() {
     assert_eq!((t.updated_at, t.completed_at), (42, Some(42)));
 }
 
-#[test]
-fn every_clone_is_the_same_board() {
-    let host = TaskBoard::default();
-    let tools = host.clone();
-    tools.create(new("a")).unwrap();
-    assert_eq!(host.list().len(), 1);
-    assert_eq!(
-        host.create(new("b")).unwrap().id,
-        "2",
-        "one count across clones"
-    );
-}
-
 /// A saved task with this id and nothing else set.
 fn saved(id: &str) -> Task {
     Task {

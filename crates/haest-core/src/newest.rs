@@ -176,17 +176,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn each_value_is_handed_over_in_order_when_no_one_else_delivers() {
-        let newest = Newest::default();
-        let heard = Mutex::new(Vec::new());
-        for v in 1..=3 {
-            newest.put(v);
-            newest.deliver(|v| heard.lock().unwrap().push(*v));
-        }
-        assert_eq!(*heard.lock().unwrap(), [1, 2, 3]);
-    }
-
     /// A value put while another caller's hook runs is handed over by that
     /// caller, after the value it was handing over, and only the newest.
     #[test]

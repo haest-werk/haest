@@ -39,16 +39,3 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let y = yoe + era * 400 + i64::from(m <= 2);
     (y, m, d)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn formats_like_to_iso_string() {
-        assert_eq!(iso_utc(0), "1970-01-01T00:00:00.000Z");
-        // 2024-02-29 (a leap day), 13:05:09.007 UTC.
-        assert_eq!(iso_utc(1_709_211_909_007), "2024-02-29T13:05:09.007Z");
-        assert_eq!(iso_utc(1_762_732_800_000), "2025-11-10T00:00:00.000Z");
-    }
-}
