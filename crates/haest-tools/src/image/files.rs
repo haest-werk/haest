@@ -1,5 +1,5 @@
-//! GenerateImage's files: the reference images it reads from the workspace,
-//! and the picture it writes back, publishes and shows.
+//! `GenerateImage`'s files: the reference images it reads from the
+//! workspace, and the picture it writes back, publishes and shows.
 
 use std::path::{Path, PathBuf};
 

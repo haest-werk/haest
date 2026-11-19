@@ -424,10 +424,11 @@ write instead.
   which names one of this repository's.
 - On macOS, and on a FAT disk on Linux (vfat), applying a sandbox's
   changes could delete or overwrite files, or a whole directory, in the
-  real project while the report said every change was applied. The disk reads `readme.md` and `README.md` as one
-  name (and `café` in either Unicode spelling, on case-sensitive APFS
-  too). The sandbox's own files tell them apart, but it read the project
-  through the disk, so asked for `Lib` it found `lib`.
+  real project while the report said every change was applied. The disk
+  reads `readme.md` and `README.md` as one name (and `café` in either
+  Unicode spelling, on case-sensitive APFS too). The sandbox's own files
+  tell them apart, but it read the project through the disk, so asked
+  for `Lib` it found `lib`.
   `mv readme.md README.md` listed only the old name's delete, and applying
   it deleted the file; with an edit, the new name was written, then
   deleted. `mv lib Lib` moved `lib` into itself as `Lib/lib`, so the model
