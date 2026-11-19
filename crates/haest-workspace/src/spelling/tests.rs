@@ -33,6 +33,8 @@ async fn a_path_reads_as_asked_only_by_the_disks_own_spelling() {
     }
 }
 
+#[cfg(target_os = "linux")]
+mod disks;
 mod folding;
 
 /// What exFAT and FAT answer on macOS (the spelling a file was first

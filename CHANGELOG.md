@@ -2104,6 +2104,13 @@ Hosts write less (round two of the review, and what porting brain onto
   once: it is read again only after that directory changed. In a
   directory the sandbox may enter but not list (mode `0311`), a name asked
   under another spelling or through a symlink reads as the disk finds it.
+- Fixed: on Linux, a lookup that reads a directory's case-folding flag
+  opened the directory to read, and where a FIFO took its place between
+  the lookup's `lstat` and that open, the lookup and a blocking thread
+  waited until something wrote to the FIFO. The directory is opened as a
+  directory now, without waiting, so a FIFO fails at once. The flag's read
+  also has room for the `long` the request names, which a FUSE file system
+  before Linux 5.13 could write in full, 4 bytes past the `int` it had.
 - Fixed: over the real workspace, a caller's own `on_output` that panicked
   in `shell_streaming` ended the pipe's reader: the panic was lost, and the
   command died of SIGPIPE (exit 141) on its next write. It is now called

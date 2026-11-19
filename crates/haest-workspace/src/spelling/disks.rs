@@ -88,19 +88,33 @@ pub(super) fn disk(_: &Path) -> Disk {
 /// Whether the directory `dir` reads two spellings of a name as one, by its
 /// own flag (`FS_CASEFOLD_FL`, set with `chattr +F`); None where its flags
 /// cannot be read.
+///
+/// Opened as a directory, without waiting: a FIFO put in its place after
+/// the lookup's `lstat` fails at once, where opening it to read would wait
+/// for a writer, and hold the lookup and a blocking thread while none came.
 #[cfg(target_os = "linux")]
 #[expect(unsafe_code, reason = "ioctl(2) has no std wrapper")]
 pub(super) fn flag(dir: &Path) -> Option<bool> {
-    use std::os::fd::AsRawFd;
+    use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
     /// `FS_CASEFOLD_FL` (linux/fs.h).
     const CASEFOLD: libc::c_int = 0x4000_0000;
-    let dir = std::fs::File::open(dir).ok()?;
-    let mut flags: libc::c_int = 0;
+    /// Room for what the request names (`_IOR('f', 1, long)`: a long), though
+    /// the kernel's own handlers write an int: one served by something else
+    /// (FUSE before Linux 5.13) may write all of it.
+    type Flags = [libc::c_int; 2];
+    const _: () = assert!(size_of::<Flags>() >= size_of::<libc::c_long>());
+    let dir = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NONBLOCK)
+        .open(dir)
+        .ok()?;
+    let mut flags: Flags = [0; 2];
     // SAFETY: the descriptor stays open for the call, and FS_IOC_GETFLAGS
-    // writes one int, the file's flags, at the pointer, which points at
-    // `flags` (the kernel's int, whatever the request's encoded size).
-    let done = unsafe { libc::ioctl(dir.as_raw_fd(), libc::FS_IOC_GETFLAGS, &raw mut flags) };
-    (done == 0).then_some(flags & CASEFOLD != 0)
+    // writes the file's flags at the pointer: an int from the kernel's own
+    // handlers, at most the long the request encodes from any other, and
+    // `flags` has room for either. The int is its first element.
+    let done = unsafe { libc::ioctl(dir.as_raw_fd(), libc::FS_IOC_GETFLAGS, flags.as_mut_ptr()) };
+    (done == 0).then_some(flags[0] & CASEFOLD != 0)
 }
 
 #[cfg(not(target_os = "linux"))]
