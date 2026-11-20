@@ -33,6 +33,7 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | `haest-settings` | the settings as plain typed values (`Settings::bare`), no files, no environment, no flags |
 | `haest-config` | the opt-in loader, a builder (`Loader`): TOML files, `HAEST_*` variables and flags in the order a host adds them, profiles, trust; plus what the runtime is handed beside the settings (keys, `providers.json`, `.mcp.json`, a child's environment) |
 | `haest-runtime` | a whole conversation built from what a host hands it, behind its `Ui`; what the CLI is made of |
+| `haest-prompt` | opt-in: the system prompt as the host's Jinja template, rendered by MiniJinja the way Hugging Face chat templates are; it sees haest's built sections, the model's catalog row (`family`, `tier`, `generation`), the tools and the host's own values |
 | `haest-wire` | the wire format another program reads and drives a conversation with: the envelope around its events (`v`, `sid`, `seq`, `ts`, `path`), the requests a peer sends, a replay ring with gaps, an NDJSON codec; serde only |
 | `haest-session` | a conversation another program watches and drives while it runs: the session driver (one turn at a time, input mid-turn steered in, the rest queued through the turn gate), its handle (`Backend`), a numbered stream every subscriber reads with catch-up and one `gap` when it falls behind, approval asks answered over it |
 | `haest-transport` | the session served to another program: one connection's rules (`hello`, a reply per request, the stream as asked for, the access check) over any line source and sink, and `Peer`, the asking side; `Stdio` for a parent process (feature `stdio`), `UnixSocket` for programs on this machine (feature `unix`), `Broker` to dial out to a broker (feature `broker`) |
@@ -68,6 +69,7 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `transport-stdio` | `haest::transport::Stdio` (a parent process drives the conversation over stdin and stdout) | no |
 | `transport-unix` | `haest::transport::UnixSocket` (programs on this machine watch or drive the conversation over a Unix socket) | no |
 | `transport-broker` | `haest::transport::Broker` (the conversation dials out to a broker over a WebSocket; pulls a WebSocket client on rustls) | no |
+| `prompt` | `haest::prompt` (the system prompt as the host's Jinja template); with `runtime`, `RuntimeInputs::with_prompt_template` renders it before every model call | no |
 
 ```toml
 [dependencies]

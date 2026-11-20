@@ -6,6 +6,59 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 `--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
 `HAEST_*` variables.
 
+## Unreleased
+
+A host can now write haest's system prompt as a Jinja template, opt-in
+through the new crate haest-prompt (feature `prompt`). Without it nothing
+changes: the built-in prompt is the one 0.3.0 built, but for the tool guide
+below.
+
+### Breaking changes
+
+- `haest_tools::tool_guide` is gone: each tool writes its own line
+  (`Tool::prompt_guide`), and `haest_core::context::tool_guide(&tools)`
+  gathers the lines of the tools a call offers. It takes the tools, not
+  their names: `tool_guide(&names)` -> `tool_guide(&tools)`.
+- The tool guide says one line per built-in tool, in the tools' order.
+  "Paths may be absolute or relative to the working directory" is no longer
+  in it: every file tool's schema says so.
+
+### Added
+
+- haest-prompt: `PromptTemplate` compiles a Jinja template once and renders
+  it for each model call with a `PromptContext`: haest's built sections
+  (`sections.identity`, `sections.tools`, `sections.environment`, ...), the
+  model's catalog row, the tools with their guide lines, and the
+  environment. MiniJinja is set up the way Hugging Face chat templates
+  expect (`trim_blocks`, `lstrip_blocks`, loop controls, Python string
+  methods, `tojson`, `raise_exception`). Host values come in with
+  `with_property` and `with_resolver`, a chain each name goes through before
+  haest's own.
+- haest-runtime, feature `prompt`: `RuntimeInputs::with_prompt_template`
+  renders the template before every model call, main's and each
+  subagent's. A render that fails gives that call the built-in prompt, and
+  the `Ui` is warned once for each new error.
+- `haest` facade: feature `prompt`, `haest::prompt`.
+- `Tool::prompt_guide`: the tool's line in the prompt's tool guide, default
+  none. `ToolWrapper` forwards it; `ToolOverride::with_prompt_guide` and
+  `without_prompt_guide` set it, and a renamed override has none until one
+  is set.
+- `ModelInfo::{family, tier, generation}` with their `with_*` setters: who
+  makes a model (`anthropic`), which one of its family it is (`opus`,
+  `flash`, `sol-pro`) and its version (`5.5`). Written in the catalog, never
+  read out of a model id; all 42 bundled rows have them, and
+  `scripts/gen-catalog.ts` keeps them across a refresh.
+- `ModelFacts::model_info`: a spec's whole catalog row, default none;
+  `input_modalities` and `reasoning` answer from it unless a host answers
+  them itself.
+- `PromptSections`: the system prompt's sections, built and named before
+  they are joined (`build_system_prompt` is `PromptSections::new(p).join()`).
+
+### Changed
+
+- The bundled catalog follows the TypeScript one's 2026-11-19 sweep: Claude
+  Fable 5.2 replaces 5.1, GLM-5.3 Flash serves 1048575 tokens.
+
 ## 0.3.0 (2026-11-20)
 
 Other programs can now watch and drive a running conversation, through three

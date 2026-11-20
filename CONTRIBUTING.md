@@ -93,6 +93,11 @@
   and `cargo test --workspace` all clean (the doctests are in it), and the docs
   build the way docs.rs builds them, without a warning:
   `RUSTDOCFLAGS="-D warnings --cfg docsrs" cargo +nightly doc --workspace --all-features --no-deps`.
+  Code behind a feature no workspace crate turns on runs only when asked:
+  `cargo clippy --workspace --all-targets --no-default-features -- -D warnings`,
+  `cargo test -p haest-http --features http`, `cargo test -p haest-http --no-default-features`,
+  and `cargo clippy -p haest-runtime --all-targets --features prompt -- -D warnings`
+  with `cargo test -p haest-runtime --features prompt`.
 - **Lints live in one place:** the root `Cargo.toml`'s `[workspace.lints]`,
   which every crate takes with `[lints] workspace = true` (a new crate too),
   and clippy's settings in `clippy.toml`. No crate sets a lint of its own.
