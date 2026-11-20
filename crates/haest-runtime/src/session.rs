@@ -92,9 +92,9 @@ impl<U: Ui + 'static> Driven for Runtime<U> {
         }
     }
 
-    /// A background subagent's answer is still due.
+    /// A subagent's answer is still due: between turns, a background one's.
     fn expecting(&self) -> bool {
-        self.subagents.answers_due() > 0
+        !self.subagents.idle()
     }
 
     fn history(&self) -> Vec<Message> {

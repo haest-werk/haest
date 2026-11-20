@@ -3,10 +3,7 @@
 
 use std::{
     fmt,
-    sync::{
-        Arc, Mutex, MutexGuard,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use async_trait::async_trait;
@@ -16,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     AgentDirectory, AgentError, AgentMessage, AgentRef, AgentToolOptions, MAIN_AGENT, MemberStart,
     SpawnInput, SpawnOutcome, SubagentCaps, SubagentEvent, SubagentParentRef, budget,
-    members::{Due, Members, Status, run_id},
+    members::{Members, Status, run_id},
     run::Run,
     tools::agent_tools,
 };
@@ -49,8 +46,9 @@ use settle::{Open, Work};
 ///   on, and its answer is steered into the subagent that started it, or
 ///   handed to the parent's [`submit_answer`](crate::Inbox::submit_answer)
 ///   when main started it or its starter has finished.
-///   [`answers_due`](Self::answers_due) counts the ones on their way;
-///   [`settled`](Self::settled) waits until nothing is in flight.
+///   [`idle`](Self::idle) says when nothing is in flight, every answer
+///   handed back (an agent leaves [`running`](Self::running) before that);
+///   [`settled`](Self::settled) waits for it.
 /// - A message ([`deliver`](AgentDirectory::deliver), an agent's or the person's, as
 ///   its [`Sender`](super::Sender) says) lands at the receiver's next step; one
 ///   for "main" goes to the parent's inbox. Messages that reach an agent after
@@ -137,8 +135,6 @@ struct Inner {
     /// The running set after the latest start or end, for the parent's
     /// `on_activity`.
     activity: Newest<Vec<String>>,
-    /// Background agents whose answer has not been handed back yet.
-    due: Arc<AtomicUsize>,
     /// Spawns in flight, for [`SubagentHub::idle`] and [`SubagentHub::settled`].
     work: Arc<Work>,
 }
@@ -153,18 +149,8 @@ impl SubagentHub {
             run_id: run_id(),
             members: Mutex::default(),
             activity: Newest::new(),
-            due: Arc::default(),
             work: Arc::default(),
         }))
-    }
-
-    /// Background agents whose answer has not reached its reader yet: running,
-    /// or finishing. A host that waits for background work (a one-shot run
-    /// before it exits) waits on this or [`Self::settled`], never on
-    /// [`Self::running`]: an agent leaves the running set BEFORE its answer is
-    /// handed back.
-    pub fn answers_due(&self) -> usize {
-        self.0.due.load(Ordering::SeqCst)
     }
 
     /// The members' table, held until the guard drops. Never held while the
@@ -317,12 +303,9 @@ impl AgentDirectory for SubagentHub {
             "Started agent \"{name}\" ({}) in the background. Its answer will arrive as a message; SendMessage reaches it while it runs.",
             agent.model_spec()
         );
-        let due = Due::owe(&self.0.due);
         tokio::spawn(async move {
-            // Dropped last: the answer is handed back before it stops being
-            // due, and the hub is idle only after that.
+            // Dropped last: the hub is idle only once the answer is handed back.
             let _open = open;
-            let _due = due;
             let parent = run.parent.clone();
             let out = hub.run_member(seat, run, agent, member, prompt, None).await;
             // Its USD is free again before its answer is read.

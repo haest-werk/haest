@@ -185,7 +185,7 @@ async fn a_member_stopped_while_its_run_starts_never_runs_and_its_end_says_stopp
     assert!(r.hub.stop("late"));
     wait.notify_one();
     spawn.await.unwrap().unwrap();
-    while r.hub.answers_due() > 0 && Instant::now() < until {
+    while !r.hub.idle() && Instant::now() < until {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     assert!(r.provider_sub_tools().is_empty(), "no model call");

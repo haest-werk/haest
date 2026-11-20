@@ -201,7 +201,6 @@ async fn settled_resolves_once_the_last_member_has_ended_and_its_answer_is_hande
     // The hub was busy while each answer was handed back: settled waits for it.
     let idle_then = r.parent.idle_at_answer.lock().unwrap().clone();
     assert_eq!(idle_then, [false, false]);
-    assert_eq!(r.hub.answers_due(), 0);
     assert!(r.hub.running().is_empty());
 }
 

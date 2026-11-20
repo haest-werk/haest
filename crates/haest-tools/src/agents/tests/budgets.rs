@@ -108,11 +108,8 @@ async fn children_started_together_hold_their_spend_together_and_cannot_overshoo
         assert!(l.usd() + l.held() <= 1.0, "held and spent fit the cap");
     }
     release.cancel();
-    r.settle(|r| {
-        r.hub.answers_due() == 0
-            && r.texts().iter().filter(|t| t.contains("finished]")).count() == 3
-    })
-    .await;
+    r.settle(|r| r.hub.idle() && r.texts().iter().filter(|t| t.contains("finished]")).count() == 3)
+        .await;
     let l = &r.parent.ledger;
     assert_eq!(l.held(), 0.0, "every hold released");
     assert!(
@@ -167,7 +164,7 @@ async fn a_hold_lasts_while_its_child_runs_and_at_its_end_only_the_real_spend_st
     r.turn("go").await;
     assert!(close(r.parent.ledger.held(), 0.3));
     release.cancel();
-    r.settle(|r| r.hub.answers_due() == 0).await;
+    r.settle(|r| r.hub.idle()).await;
     let l = &r.parent.ledger;
     assert_eq!(l.held(), 0.0);
     assert!(close(l.usd(), all_calls_usd(&r)));
@@ -301,5 +298,5 @@ async fn off_the_agent_tool_keeps_todays_schema_and_a_budget_changes_nothing() {
     assert_eq!(start.caps, MemberCaps::from(caps()));
     assert_eq!(r.parent.ledger.held(), 0.0, "nothing held");
     release.cancel();
-    r.settle(|r| r.hub.answers_due() == 0).await;
+    r.settle(|r| r.hub.idle()).await;
 }

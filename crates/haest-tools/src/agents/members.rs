@@ -3,10 +3,7 @@
 
 use std::{
     collections::HashSet,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use haest_core::{AgentControl, now_ms};
@@ -18,23 +15,6 @@ use super::{AgentError, AgentRef, MAIN_AGENT, SpawnInput, SubagentCaps};
 pub(super) fn run_id() -> String {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     format!("{:x}{:x}", now_ms(), SEQ.fetch_add(1, Ordering::Relaxed))
-}
-
-/// One background answer owed ([`super::SubagentHub::answers_due`]); paid
-/// when dropped, so a run that ends any way still settles.
-pub(super) struct Due(Arc<AtomicUsize>);
-
-impl Due {
-    pub(super) fn owe(count: &Arc<AtomicUsize>) -> Self {
-        count.fetch_add(1, Ordering::SeqCst);
-        Self(count.clone())
-    }
-}
-
-impl Drop for Due {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
