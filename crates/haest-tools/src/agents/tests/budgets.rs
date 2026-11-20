@@ -15,7 +15,9 @@ use super::{
     script::Script,
     support::{CALL_USD, Rig, call, now, say},
 };
-use crate::agents::{AgentError, AgentRef, MemberCaps, SpawnInput, SubagentBudget, SubagentCaps};
+use crate::agents::{
+    AgentDirectory, AgentError, AgentRef, MemberCaps, SpawnInput, SubagentBudget, SubagentCaps,
+};
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9

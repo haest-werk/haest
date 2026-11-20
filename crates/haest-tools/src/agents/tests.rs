@@ -17,7 +17,7 @@ use std::time::Duration;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use super::{AgentError, SubagentCaps};
+use super::{AgentDirectory, AgentError, SubagentCaps};
 use crate::jobs::tests::until;
 use fake::ActivityGate;
 use support::{ForMain, Rig, call, now, say, spawns};

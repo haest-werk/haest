@@ -1,6 +1,7 @@
 //! The [`Tracker`](crate::Tracker) calls on GitHub: REST requests, and the
 //! one GraphQL mutation (`deleteIssue`) REST has no endpoint for.
 
+use async_trait::async_trait;
 use haest_http::Method;
 use serde_json::{Map, Value, json};
 
@@ -10,8 +11,8 @@ use super::{
     wire::{is_issue, is_pull_request, label_names, state_fields, status_of},
 };
 use crate::tracker::{
-    Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, TrackerError,
-    TrackerInfo, forward_tracker, one_of,
+    Issue, IssueFilter, IssuePatch, Link, LinkChange, NewIssue, Relation, Tracker, TrackerError,
+    TrackerInfo, one_of,
 };
 
 /// The most pages a list reads looking for issues (pull requests are skipped).
@@ -48,14 +49,10 @@ fn search_words(query: &str) -> String {
     words.join(" ")
 }
 
-forward_tracker!(GithubTracker);
-
-/// The [`Tracker`](crate::Tracker) calls, inherent: each needs no trait
-/// import, and the trait's own forward here.
-impl GithubTracker {
-    /// What it is and accepts: the repository's issues, `open` and `closed`
-    /// ([`Tracker::info`](crate::Tracker::info)).
-    pub fn info(&self) -> TrackerInfo {
+#[async_trait]
+impl Tracker for GithubTracker {
+    /// What it is and accepts: the repository's issues, `open` and `closed`.
+    fn info(&self) -> TrackerInfo {
         TrackerInfo::new(
             format!("the GitHub issues of {}/{}", self.owner, self.repo),
             "the issue number, e.g. \"42\"",
@@ -70,14 +67,13 @@ impl GithubTracker {
         ])
     }
 
-    /// The issues `filter` picks, newest first, pull requests skipped
-    /// ([`Tracker::list`](crate::Tracker::list)).
+    /// The issues `filter` picks, newest first, pull requests skipped.
     ///
     /// # Errors
     ///
     /// As [`TrackerError`] says: a priority or a status it does not have is
     /// `Invalid`, no such repository `NotFound`, GitHub's refusal `Failed`.
-    pub async fn list(&self, filter: &IssueFilter) -> Result<Vec<Issue>, TrackerError> {
+    async fn list(&self, filter: &IssueFilter) -> Result<Vec<Issue>, TrackerError> {
         if let Some(p) = &filter.priority {
             one_of(p, &[], "priority")?;
         }
@@ -113,16 +109,15 @@ impl GithubTracker {
     }
 
     /// GitHub's search for the words in `query` in this repository's issues,
-    /// best first ([`Tracker::search`](crate::Tracker::search)). The words
-    /// are only words: what GitHub would read as its search syntax (a
-    /// qualifier's `:`, a phrase's `"`, a group's parentheses, a leading `-`,
-    /// the operators AND, OR and NOT) is taken out, so nothing in them
-    /// widens the search past this repository.
+    /// best first. The words are only words: what GitHub would read as its
+    /// search syntax (a qualifier's `:`, a phrase's `"`, a group's
+    /// parentheses, a leading `-`, the operators AND, OR and NOT) is taken
+    /// out, so nothing in them widens the search past this repository.
     ///
     /// # Errors
     ///
     /// `Failed` when GitHub refuses or does not answer.
-    pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<Issue>, TrackerError> {
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<Issue>, TrackerError> {
         let q = format!(
             "repo:{}/{} is:issue {}",
             self.owner,
@@ -148,14 +143,13 @@ impl GithubTracker {
             .collect())
     }
 
-    /// Issue `id` of this repository in full, its links included
-    /// ([`Tracker::get`](crate::Tracker::get)).
+    /// Issue `id` of this repository in full, its links included.
     ///
     /// # Errors
     ///
     /// `Invalid` for an id of another repository, `NotFound` for no such
     /// issue, `Failed` when GitHub refuses.
-    pub async fn get(&self, id: &str) -> Result<Issue, TrackerError> {
+    async fn get(&self, id: &str) -> Result<Issue, TrackerError> {
         let (r, v) = self.fetch(id).await?;
         let mut issue = self.issue_of(&v);
         issue.links.extend(self.more_links(&r, &v).await?);
@@ -163,13 +157,13 @@ impl GithubTracker {
     }
 
     /// A new issue in this repository, closed at once when `new.status` says
-    /// so ([`Tracker::create`](crate::Tracker::create)).
+    /// so.
     ///
     /// # Errors
     ///
     /// `Invalid` for a priority or a status it does not have, `Failed` when
     /// GitHub refuses.
-    pub async fn create(&self, new: NewIssue) -> Result<Issue, TrackerError> {
+    async fn create(&self, new: NewIssue) -> Result<Issue, TrackerError> {
         if let Some(p) = &new.priority {
             one_of(p, &[], "priority")?;
         }
@@ -194,15 +188,14 @@ impl GithubTracker {
         }
     }
 
-    /// Changes issue `id` of this repository and returns it as it now is
-    /// ([`Tracker::update`](crate::Tracker::update)).
+    /// Changes issue `id` of this repository and returns it as it now is.
     ///
     /// # Errors
     ///
     /// `Invalid` for an empty patch, a value it does not take or an id of
     /// another repository, `NotFound` for no such issue, `Failed` when GitHub
     /// refuses.
-    pub async fn update(&self, id: &str, patch: IssuePatch) -> Result<Issue, TrackerError> {
+    async fn update(&self, id: &str, patch: IssuePatch) -> Result<Issue, TrackerError> {
         if patch.is_empty() {
             return Err(TrackerError::Invalid("the update changes nothing".into()));
         }
@@ -246,13 +239,13 @@ impl GithubTracker {
     }
 
     /// Deletes issue `id` of this repository for good, as GitHub's
-    /// `deleteIssue` does ([`Tracker::delete`](crate::Tracker::delete)).
+    /// `deleteIssue` does.
     ///
     /// # Errors
     ///
     /// `Invalid` for an id of another repository, `NotFound` for no such
     /// issue, `Failed` when GitHub refuses (deleting needs admin rights).
-    pub async fn delete(&self, id: &str) -> Result<(), TrackerError> {
+    async fn delete(&self, id: &str) -> Result<(), TrackerError> {
         let (_, v) = self.fetch(id).await?;
         let node = v
             .get("node_id")
@@ -265,11 +258,10 @@ impl GithubTracker {
             .map(|_| ())
     }
 
-    /// Adds or removes `link` on issue `id` of this repository
-    /// ([`Tracker::link`](crate::Tracker::link)). The other end of a `child`
-    /// or `depends_on` link may be in any repository; that of a `parent` or
-    /// `blocks` link must be in this one, since GitHub keeps those on the
-    /// other end.
+    /// Adds or removes `link` on issue `id` of this repository. The other end
+    /// of a `child` or `depends_on` link may be in any repository; that of a
+    /// `parent` or `blocks` link must be in this one, since GitHub keeps
+    /// those on the other end.
     ///
     /// # Errors
     ///
@@ -277,12 +269,7 @@ impl GithubTracker {
     /// link to one, a new parent for an issue whose parent is another
     /// repository's, a name GitHub cannot have, or a relation GitHub has no
     /// place for; `NotFound` for no such issue; `Failed` when GitHub refuses.
-    pub async fn link(
-        &self,
-        id: &str,
-        link: &Link,
-        change: LinkChange,
-    ) -> Result<(), TrackerError> {
+    async fn link(&self, id: &str, link: &Link, change: LinkChange) -> Result<(), TrackerError> {
         self.change_link(id, link, change).await
     }
 }

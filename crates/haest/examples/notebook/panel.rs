@@ -13,7 +13,7 @@ use haest::{
     BoxError, ShutWorkspace, ToolContext, Tools,
     core::tool,
     serde_json::json,
-    tools::{AgentMessage, AgentRef, Ending, Sender, SubagentHub},
+    tools::{AgentDirectory, AgentMessage, AgentRef, Ending, Sender, SubagentHub},
 };
 
 use crate::{

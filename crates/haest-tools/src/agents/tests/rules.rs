@@ -15,7 +15,7 @@ use super::{
     caps,
     support::{CALL_USD, Rig, agent, now, say, spawns},
 };
-use crate::agents::{AgentError, AgentRef};
+use crate::agents::{AgentDirectory, AgentError, AgentRef};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_childs_spend_counts_in_the_parents_turn_and_is_charged_to_the_ledger_once() {

@@ -14,7 +14,9 @@ use super::{
     lifecycle::Lifecycle,
     support::{ForMain, Heard, Host, Rig, Script, agent, call, now, say},
 };
-use crate::agents::{AgentError, AgentRef, MemberCaps, MemberStart, Sender, SpawnInput};
+use crate::agents::{
+    AgentDirectory, AgentError, AgentRef, MemberCaps, MemberStart, Sender, SpawnInput,
+};
 
 fn user_texts(req: &ProviderRequest) -> Vec<String> {
     let texts = req.messages.iter().filter_map(|m| match m {

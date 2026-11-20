@@ -56,7 +56,7 @@ pub enum SubagentEvent {
         ok: bool,
     },
     /// A message reached an agent of the conversation: SendMessage, or the
-    /// person ([`SubagentHub::deliver`](super::SubagentHub::deliver)).
+    /// person (the hub's [`AgentDirectory::deliver`](super::AgentDirectory::deliver)).
     /// Keyed by the receiving subagent's id; one for main by the sending
     /// subagent's, and one from the person to main by [`MAIN_AGENT`](super::MAIN_AGENT).
     /// A refused message fires nothing.
@@ -71,8 +71,8 @@ pub enum SubagentEvent {
 ///
 /// SendMessage hands one from the agent that called it to
 /// [`AgentDirectory::deliver`](super::AgentDirectory::deliver); a host lets
-/// the person write to an agent with one from [`Sender::Person`]
-/// ([`SubagentHub::deliver`](super::SubagentHub::deliver)). The sender is a
+/// the person write to an agent with one from [`Sender::Person`] (the same
+/// call, on its [`SubagentHub`](super::SubagentHub)). The sender is a
 /// [`Sender`], so it cannot trade places with the receiver unseen. Built with
 /// [`new`](Self::new), so a part it gains later breaks no host; its fields
 /// read as they are.

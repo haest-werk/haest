@@ -70,7 +70,7 @@ use front::Front;
 ///
 /// ```
 /// use haest_core::{FsRef, MemFs};
-/// use haest_issues::{CardTracker, Link, LinkChange, NewIssue, Relation, TrackerError};
+/// use haest_issues::{CardTracker, Link, LinkChange, NewIssue, Relation, Tracker, TrackerError};
 ///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), TrackerError> {

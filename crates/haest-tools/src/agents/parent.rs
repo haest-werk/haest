@@ -97,8 +97,8 @@ pub trait SubagentParent: Inbox {
     ///     workspace::ShutWorkspace,
     /// };
     /// use haest_tools::{
-    ///     AgentError, AgentRef, Ending, Inbox, Member, MemberEnd, MemberRun, MemberStart,
-    ///     SpawnInput, SubagentHub, SubagentParent,
+    ///     AgentDirectory, AgentError, AgentRef, Ending, Inbox, Member, MemberEnd, MemberRun,
+    ///     MemberStart, SpawnInput, SubagentHub, SubagentParent,
     /// };
     /// use tokio_util::sync::CancellationToken;
     ///
@@ -195,7 +195,9 @@ pub trait SubagentParent: Inbox {
     ///     testing::{ScriptedProvider, text_answer},
     ///     workspace::ShutWorkspace,
     /// };
-    /// use haest_tools::{AgentRef, Inbox, MemberStart, SpawnInput, SubagentHub, SubagentParent};
+    /// use haest_tools::{
+    ///     AgentDirectory, AgentRef, Inbox, MemberStart, SpawnInput, SubagentHub, SubagentParent,
+    /// };
     /// use tokio_util::sync::CancellationToken;
     ///
     /// struct Parent(ScriptedProvider);

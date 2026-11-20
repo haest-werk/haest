@@ -77,7 +77,7 @@
 //! unique name. A message lands at the receiver's next step boundary
 //! ([`AgentControl::steer`]); one for main goes to the host's [`Inbox`]. The
 //! person writes to a running subagent through the hub
-//! ([`SubagentHub::deliver`], from a [`Sender::Person`]).
+//! (its [`AgentDirectory::deliver`], from a [`Sender::Person`]).
 //! Main is depth 0, an agent at the depth cap gets no Agent tool, and at
 //! most `max_concurrent` run at once across the whole tree. Wind-down
 //! (opt-in, [`haest_core::wind_down`]): once the caller's turn is past its

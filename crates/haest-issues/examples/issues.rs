@@ -23,7 +23,7 @@ use haest_core::{
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::{self, ToolContext},
 };
-use haest_issues::{CardTracker, GithubTracker, issue_tools};
+use haest_issues::{CardTracker, GithubTracker, Tracker, issue_tools};
 use haest_workspace::RealFs;
 use serde_json::json;
 

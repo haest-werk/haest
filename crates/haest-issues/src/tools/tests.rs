@@ -5,6 +5,7 @@ use serde_json::json;
 
 use super::*;
 use crate::{
+    Tracker,
     cards::CardTracker,
     testkit::{FakeHttp, ctx, github, input, issue, ok},
 };

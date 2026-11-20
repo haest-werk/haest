@@ -361,64 +361,6 @@ pub trait Tracker: Send + Sync {
     async fn link(&self, id: &str, link: &Link, change: LinkChange) -> Result<(), TrackerError>;
 }
 
-/// `impl Tracker for $ty`, every method the inherent one of its name: a
-/// tracker haest ships is called without importing the trait.
-macro_rules! forward_tracker {
-    ($ty:ty) => {
-        /// Every method is the inherent one of its name.
-        #[async_trait::async_trait]
-        impl $crate::tracker::Tracker for $ty {
-            fn info(&self) -> $crate::tracker::TrackerInfo {
-                <$ty>::info(self)
-            }
-            async fn list(
-                &self,
-                filter: &$crate::tracker::IssueFilter,
-            ) -> Result<Vec<$crate::tracker::Issue>, $crate::tracker::TrackerError> {
-                <$ty>::list(self, filter).await
-            }
-            async fn search(
-                &self,
-                query: &str,
-                limit: usize,
-            ) -> Result<Vec<$crate::tracker::Issue>, $crate::tracker::TrackerError> {
-                <$ty>::search(self, query, limit).await
-            }
-            async fn get(
-                &self,
-                id: &str,
-            ) -> Result<$crate::tracker::Issue, $crate::tracker::TrackerError> {
-                <$ty>::get(self, id).await
-            }
-            async fn create(
-                &self,
-                new: $crate::tracker::NewIssue,
-            ) -> Result<$crate::tracker::Issue, $crate::tracker::TrackerError> {
-                <$ty>::create(self, new).await
-            }
-            async fn update(
-                &self,
-                id: &str,
-                patch: $crate::tracker::IssuePatch,
-            ) -> Result<$crate::tracker::Issue, $crate::tracker::TrackerError> {
-                <$ty>::update(self, id, patch).await
-            }
-            async fn delete(&self, id: &str) -> Result<(), $crate::tracker::TrackerError> {
-                <$ty>::delete(self, id).await
-            }
-            async fn link(
-                &self,
-                id: &str,
-                link: &$crate::tracker::Link,
-                change: $crate::tracker::LinkChange,
-            ) -> Result<(), $crate::tracker::TrackerError> {
-                <$ty>::link(self, id, link, change).await
-            }
-        }
-    };
-}
-pub(crate) use forward_tracker;
-
 mod handle;
 pub use handle::TrackerRef;
 

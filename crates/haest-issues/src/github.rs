@@ -69,7 +69,7 @@ const API: &str = "https://api.github.com";
 ///
 /// ```
 /// use haest_issues::{
-///     GithubTracker, IssueFilter, TrackerError,
+///     GithubTracker, IssueFilter, Tracker, TrackerError,
 ///     http::{HttpClient, HttpError, Request, Response, async_trait},
 /// };
 /// use serde_json::json;

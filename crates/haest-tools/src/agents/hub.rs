@@ -14,8 +14,8 @@ use haest_core::{Tools, newest::Newest};
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AgentDirectory, AgentError, AgentMessage, AgentRef, AgentToolOptions, MemberStart, SpawnInput,
-    SpawnOutcome, SubagentCaps, SubagentParentRef, budget,
+    AgentDirectory, AgentError, AgentMessage, AgentRef, AgentToolOptions, MAIN_AGENT, MemberStart,
+    SpawnInput, SpawnOutcome, SubagentCaps, SubagentEvent, SubagentParentRef, budget,
     members::{Due, Members, Status, run_id},
     run::Run,
     tools::agent_tools,
@@ -51,7 +51,7 @@ use settle::{Open, Work};
 ///   when main started it or its starter has finished.
 ///   [`answers_due`](Self::answers_due) counts the ones on their way;
 ///   [`settled`](Self::settled) waits until nothing is in flight.
-/// - A message ([`deliver`](Self::deliver), an agent's or the person's, as
+/// - A message ([`deliver`](AgentDirectory::deliver), an agent's or the person's, as
 ///   its [`Sender`](super::Sender) says) lands at the receiver's next step; one
 ///   for "main" goes to the parent's inbox. Messages that reach an agent after
 ///   it finished are appended to its answer, unread.
@@ -78,7 +78,7 @@ use settle::{Open, Work};
 ///     testing::{ScriptedProvider, text_answer},
 ///     workspace::ShutWorkspace,
 /// };
-/// use haest_tools::{AgentRef, Inbox, SpawnInput, SubagentHub, SubagentParent};
+/// use haest_tools::{AgentDirectory, AgentRef, Inbox, SpawnInput, SubagentHub, SubagentParent};
 /// use tokio_util::sync::CancellationToken;
 ///
 /// struct Parent(ScriptedProvider);
@@ -205,9 +205,30 @@ impl SubagentHub {
         }
     }
 
+    /// A handle that does not keep the hub alive, for a test's parent that
+    /// looks at its own hub.
+    #[cfg(test)]
+    pub(crate) fn downgrade(&self) -> WeakHub {
+        WeakHub(Arc::downgrade(&self.0))
+    }
+}
+
+/// A [`SubagentHub`] that does not keep it alive ([`SubagentHub::downgrade`]).
+#[cfg(test)]
+pub(crate) struct WeakHub(std::sync::Weak<Inner>);
+
+#[cfg(test)]
+impl WeakHub {
+    pub(crate) fn upgrade(&self) -> Option<SubagentHub> {
+        self.0.upgrade().map(SubagentHub)
+    }
+}
+
+/// What the agent tools speak to.
+#[async_trait]
+impl AgentDirectory for SubagentHub {
     /// Agent: run a subagent for `from`. `cancel` is the caller's turn: a
-    /// foreground agent stops with it. What [`AgentDirectory::spawn`] does
-    /// for the agent tools.
+    /// foreground agent stops with it.
     ///
     /// Cancel safe: dropping the future (a host's timeout or `select!`)
     /// while the parent's start runs forgets the member, its name free
@@ -220,7 +241,7 @@ impl SubagentHub {
     /// An [`AgentError`] the model corrects: a cap ([`AgentError::TooDeep`],
     /// [`AgentError::TooMany`], [`AgentError::OverBudget`]), or the parent's
     /// refusal from [`start_member`](super::SubagentParent::start_member).
-    pub async fn spawn(
+    async fn spawn(
         &self,
         from: &AgentRef,
         input: SpawnInput,
@@ -317,8 +338,50 @@ impl SubagentHub {
         })
     }
 
+    /// Hand `message` to the agent it is for, main or a running subagent,
+    /// and say what to tell its sender. A subagent reads it at its next
+    /// step; one for main goes to the parent's
+    /// [`Inbox::submit`](crate::Inbox::submit). The receiver reads who wrote
+    /// above the text: SendMessage sends from
+    /// [`Sender::Agent`](super::Sender::Agent), and a host lets the person
+    /// write with [`Sender::Person`](super::Sender::Person).
+    ///
+    /// Every delivery tells the parent ([`SubagentEvent::Message`]); a
+    /// subagent that has finished, or never ran here, refuses the message and
+    /// nothing is told.
+    ///
+    /// # Errors
+    ///
+    /// [`AgentError::Finished`] or [`AgentError::UnknownAgent`], with who a
+    /// message can reach now.
+    fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
+        let AgentMessage { from, to, text } = &message;
+        let body = format!("{}\n\n{text}", from.header());
+        let (id, said) = if to == MAIN_AGENT {
+            self.0.parent.submit(body);
+            (self.id_of(from), "Delivered to main.".to_string())
+        } else {
+            let mut members = self.lock_members();
+            let Some(m) = members.get_mut(to).filter(|m| m.status == Status::Running) else {
+                let (name, running) = (to.to_string(), members.reachable());
+                return Err(if members.known(to) {
+                    AgentError::Finished { name, running }
+                } else {
+                    AgentError::UnknownAgent { name, running }
+                });
+            };
+            m.steer(body);
+            let said = format!("Delivered to \"{to}\"; it reads it at its next step.");
+            (m.id.clone(), said)
+        };
+        self.0
+            .parent
+            .on_subagent(&id, SubagentEvent::Message(message));
+        Ok(said)
+    }
+
     /// StopAgent: stop the subagent `name`; false when it is not running.
-    pub fn stop(&self, name: &str) -> bool {
+    fn stop(&self, name: &str) -> bool {
         let mut members = self.lock_members();
         match members.get_mut(name) {
             Some(m) if m.status == Status::Running => {
@@ -328,46 +391,6 @@ impl SubagentHub {
             }
             _ => false,
         }
-    }
-
-    /// A handle that does not keep the hub alive, for a test's parent that
-    /// looks at its own hub.
-    #[cfg(test)]
-    pub(crate) fn downgrade(&self) -> WeakHub {
-        WeakHub(Arc::downgrade(&self.0))
-    }
-}
-
-/// A [`SubagentHub`] that does not keep it alive ([`SubagentHub::downgrade`]).
-#[cfg(test)]
-pub(crate) struct WeakHub(std::sync::Weak<Inner>);
-
-#[cfg(test)]
-impl WeakHub {
-    pub(crate) fn upgrade(&self) -> Option<SubagentHub> {
-        self.0.upgrade().map(SubagentHub)
-    }
-}
-
-/// The agent tools speak to the hub through these; each forwards to the
-/// hub's own method of the same name.
-#[async_trait]
-impl AgentDirectory for SubagentHub {
-    async fn spawn(
-        &self,
-        from: &AgentRef,
-        input: SpawnInput,
-        cancel: &CancellationToken,
-    ) -> Result<SpawnOutcome, AgentError> {
-        SubagentHub::spawn(self, from, input, cancel).await
-    }
-
-    fn deliver(&self, message: AgentMessage) -> Result<String, AgentError> {
-        SubagentHub::deliver(self, message)
-    }
-
-    fn stop(&self, name: &str) -> bool {
-        SubagentHub::stop(self, name)
     }
 }
 

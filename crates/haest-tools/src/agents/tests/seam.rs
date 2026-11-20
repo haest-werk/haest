@@ -15,7 +15,9 @@ use super::{
     lifecycle::{Lifecycle, Step},
     support::{CALL_USD, Rig, call, now, say, spawns},
 };
-use crate::agents::{AgentError, AgentRef, Ending, MemberCaps, SpawnInput, SubagentCaps};
+use crate::agents::{
+    AgentDirectory, AgentError, AgentRef, Ending, MemberCaps, SpawnInput, SubagentCaps,
+};
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9

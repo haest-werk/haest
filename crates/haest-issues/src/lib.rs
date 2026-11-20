@@ -29,7 +29,7 @@
 //!     error::BoxError,
 //!     tool::{self, ToolError},
 //! };
-//! use haest_issues::{CardTracker, issue_tools};
+//! use haest_issues::{CardTracker, Tracker, issue_tools};
 //! use serde_json::json;
 //!
 //! # #[tokio::main(flavor = "current_thread")]

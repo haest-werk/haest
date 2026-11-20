@@ -18,8 +18,8 @@ pub(super) use super::fake::{FakeParent, ForMain, Heard, Host, explore_or_genera
 pub(super) use super::script::{CALL_USD, Script, call, now, say, spawns};
 use super::{
     super::{
-        AgentError, AgentMessage, AgentRef, Sender, SubagentCaps, SubagentHub, SubagentParent,
-        SubagentTypes,
+        AgentDirectory, AgentError, AgentMessage, AgentRef, Sender, SubagentCaps, SubagentHub,
+        SubagentParent, SubagentTypes,
     },
     lifecycle::Lifecycle,
     script::Roles,

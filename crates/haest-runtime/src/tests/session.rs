@@ -15,7 +15,7 @@ use haest_mods::{ApprovalRequest, Decision, ModUiRef};
 use haest_providers::http::{HttpClient, HttpClientRef, HttpError, Request, Response};
 use haest_session::{Body, Driven, Frame, Hub, Input, SessionPrompter, Subscription, start};
 use haest_settings::Settings;
-use haest_tools::{AgentRef, Inbox, JobHub, NoInbox, SpawnInput};
+use haest_tools::{AgentDirectory, AgentRef, Inbox, JobHub, NoInbox, SpawnInput};
 use haest_wire::{Answer, Level, Outbound, State};
 use haest_workspace::RealWorkspace;
 use rmcp::{
