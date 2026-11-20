@@ -8,8 +8,8 @@ use super::Job;
 pub enum JobOutput<'a> {
     /// Output as it arrived.
     Chunk(&'a str),
-    /// The job ended: nothing more will come. Not sent once
-    /// [`on_output`](JobEvents::on_output) panicked on this job's output.
+    /// The job ended: nothing more will come. Not sent when the job's run
+    /// panicked.
     Done,
 }
 
@@ -20,15 +20,16 @@ pub enum JobOutput<'a> {
 /// task), never while the hub's table is locked: a handler may call the hub
 /// back.
 ///
-/// A panic in a handler stops nothing: the job runs to its end with its own
-/// exit code and is reported ended (the running set,
-/// [`on_exit`](Self::on_exit), the model's notice through the inbox), one
-/// call's panic skipping none of the others. Then one panic goes on, the
-/// first: out of [`JobHub::start`](super::JobHub::start) when it was the
-/// start's [`on_change`](Self::on_change) (the job is started all the same),
-/// else on the job's own task. Once [`on_output`](Self::on_output) panicked,
-/// it hears no more of that job's output, [`JobOutput::Done`] included (the
-/// buffer still keeps it).
+/// A handler must not panic. One that panics on a job's output loses the rest
+/// of that output (BashOutput never sees it), and the job is reported ended
+/// with exit code -1 and no [`JobOutput::Done`]; one that panics on a job's
+/// end skips the events after it (the running set, [`on_exit`](Self::on_exit),
+/// the model's notice). The panic goes on, out of
+/// [`JobHub::start`](super::JobHub::start) for a start's
+/// [`on_change`](Self::on_change), else on the job's own task. What still
+/// holds: the hub's table changes before any handler runs, and no lock is held
+/// while one does, so a started job runs and is marked ended there, and
+/// BashOutput and KillShell read it as it is.
 pub trait JobEvents: Send + Sync {
     /// Every start and stop: the full set of running jobs, never a delta.
     /// One call at a time, and never an older set after a newer one: the
@@ -36,11 +37,12 @@ pub trait JobEvents: Send + Sync {
     /// newest. So the last set it hears is the hub's.
     fn on_change(&self, _running: &[Job]) {}
     /// Output as it arrives, then [`JobOutput::Done`] once when the job
-    /// ended; nothing more of a job once a call for it panicked.
+    /// ended.
     fn on_output(&self, _job: &Job, _output: JobOutput<'_>) {}
-    /// The job ended: exited on its own, or killed. A job that started and
-    /// ended while one [`on_change`](Self::on_change) call ran may be in no
-    /// set it hears: its sets were folded into the newest.
+    /// The job ended: exited on its own, or killed. A job that ends before
+    /// its start's set is handed over (while another
+    /// [`on_change`](Self::on_change) call runs, say) may be in no set it
+    /// hears: its sets were folded into the newest.
     fn on_exit(&self, _job: &Job) {}
 }
 
