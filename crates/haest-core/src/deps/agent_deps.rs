@@ -82,13 +82,6 @@ impl AgentDeps {
         self.system_prompt = system_prompt.into();
         self
     }
-
-    /// These deps on `shared`.
-    #[must_use]
-    pub fn with_shared(mut self, shared: SharedDeps) -> Self {
-        self.shared = shared;
-        self
-    }
 }
 
 // Every `SharedDeps` setter is on `AgentDeps` too, from the one list in

@@ -72,13 +72,6 @@ impl AgentOptions {
         }
     }
 
-    /// The same, on another model spec.
-    #[must_use]
-    pub fn with_model_spec(mut self, model_spec: impl Into<String>) -> Self {
-        self.model_spec = model_spec.into();
-        self
-    }
-
     /// The same, asking for `effort`. Without it none is sent, and the model
     /// uses its default.
     #[must_use]

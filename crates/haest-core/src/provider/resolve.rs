@@ -36,20 +36,6 @@ impl ResolvedModel {
         &self.model
     }
 
-    /// The same model on `provider`.
-    #[must_use]
-    pub fn with_provider(mut self, provider: impl Into<ProviderRef>) -> Self {
-        self.provider = provider.into();
-        self
-    }
-
-    /// Another model id on the same provider.
-    #[must_use]
-    pub fn with_model(mut self, model: impl Into<String>) -> Self {
-        self.model = model.into();
-        self
-    }
-
     /// This model's whole answer to `req`, for a call outside the loop (a
     /// title, a one-shot question). The request goes to this model: its
     /// `model` is set to [`model`](Self::model).
