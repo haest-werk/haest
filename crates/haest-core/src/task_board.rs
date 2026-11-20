@@ -43,7 +43,7 @@ mod task;
 mod tests;
 
 use std::{
-    fmt, mem,
+    fmt,
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -63,9 +63,8 @@ struct Shared {
     /// The list after the latest change, put under the state's lock and
     /// handed to `on_change` with it released, in change order.
     changes: Newest<Vec<Task>>,
-    /// Read with the state unlocked, and the handle cloned out first: a
-    /// host's clock may take its time.
-    clock: Mutex<ClockRef>,
+    /// Read with the state unlocked: a host's clock may take its time.
+    clock: ClockRef,
 }
 
 struct State {
@@ -147,6 +146,15 @@ impl TaskBoard {
     /// An empty board that hands every new snapshot to `on_change`; the clock
     /// is the [`WallClock`].
     pub fn new(on_change: impl Fn(&[Task]) + Send + Sync + 'static) -> Self {
+        Self::new_with_clock(on_change, WallClock)
+    }
+
+    /// The same, stamping `updated_at` from `clock` (a host's paused clock, a
+    /// test's fixed one; any `Fn() -> u64` is a [`Clock`](crate::deps::Clock)).
+    pub fn new_with_clock(
+        on_change: impl Fn(&[Task]) + Send + Sync + 'static,
+        clock: impl Into<ClockRef>,
+    ) -> Self {
         Self(Arc::new(Shared {
             state: Mutex::new(State {
                 tasks: Vec::new(),
@@ -154,39 +162,14 @@ impl TaskBoard {
             }),
             on_change: Box::new(on_change),
             changes: Newest::default(),
-            clock: Mutex::new(ClockRef::new(WallClock)),
+            clock: clock.into(),
         }))
-    }
-
-    /// The clock `updated_at` reads from now on (a host's paused clock, a
-    /// test's fixed one; any `Fn() -> u64` is a [`Clock`](crate::deps::Clock)),
-    /// for every clone of this board.
-    pub fn set_clock(&self, clock: impl Into<ClockRef>) {
-        let clock = clock.into();
-        let old = mem::replace(&mut *self.clock(), clock);
-        // Dropped with the lock released: a clock's drop is a host's code.
-        drop(old);
     }
 
     /// The board. Its lock is held only while this file's own code runs
     /// (never `on_change`, never the clock), so a poisoned one is a bug here.
     fn state(&self) -> MutexGuard<'_, State> {
         self.0.state.lock().expect("the task board's lock poisoned")
-    }
-
-    /// The board's clock slot. Its lock is held only to swap or clone the
-    /// handle, never while the clock runs, so a poisoned one is a bug here.
-    fn clock(&self) -> MutexGuard<'_, ClockRef> {
-        self.0
-            .clock
-            .lock()
-            .expect("the task board's clock lock poisoned")
-    }
-
-    /// The board's clock, read with no lock held.
-    fn now_ms(&self) -> u64 {
-        let clock = self.clock().clone();
-        clock.now_ms()
     }
 
     /// Every task, in the order they were created.
@@ -213,7 +196,7 @@ impl TaskBoard {
     /// out or restored: the board never hands out an id twice. Nothing
     /// changes and nothing fires.
     pub fn create(&self, input: NewTask) -> Result<Task, TaskError> {
-        let now = self.now_ms();
+        let now = self.0.clock.now_ms();
         let task = {
             let mut s = self.state();
             let id = s.next.ok_or(TaskError::IdsExhausted)?;
@@ -251,7 +234,7 @@ impl TaskBoard {
     /// before the first change: a refused patch changes nothing and fires
     /// nothing.
     pub fn update(&self, id: &str, mut patch: TaskPatch) -> Result<Option<Task>, TaskError> {
-        let now = self.now_ms();
+        let now = self.0.clock.now_ms();
         let blocked_by = std::mem::take(&mut patch.add_blocked_by);
         let blocks = std::mem::take(&mut patch.add_blocks);
         let out = {
