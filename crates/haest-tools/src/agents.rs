@@ -94,7 +94,7 @@ pub struct SpawnInput {
     /// subagent from that kind's tools ([`SubagentParent::subagent_tools`]).
     pub subagent_type: Option<String>,
     /// The call's `budget`, each value already clamped to the caps; None when
-    /// budgets are off ([`AgentToolOptions::budget_caps`]). The default hub
+    /// budgets are off ([`AgentToolOptions::with_budget_caps`]). The default hub
     /// runs the subagent under it and holds its USD on the conversation's
     /// ledger while it runs; a host's own directory applies it as it sees fit.
     pub budget: Option<SubagentBudget>,
@@ -237,24 +237,17 @@ impl SubagentTypes {
 /// PLUG POINT: what a host changes about the agent tools ([`agent_tools`]).
 ///
 /// The default: the Agent tool, haest's own `model` text, no kinds, no
-/// budgets.
+/// budgets. The `with_*` setters change each.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentToolOptions {
-    /// The caller may still start subagents: the Agent tool is there.
-    /// False at the depth cap (SendMessage and StopAgent stay).
-    /// [`SubagentHub::tools_for`] sets it from its caps.
-    pub can_spawn: bool,
-    /// The host's kinds of subagent: adds the `subagent_type` parameter.
-    pub types: Option<SubagentTypes>,
-    /// The `model` parameter's description, e.g. the models this host offers;
-    /// None = haest's own ("provider:model to run it on ...").
-    pub model_description: Option<String>,
-    /// Some = the Agent tool takes a `budget {usd, minutes}`, each value
-    /// clamped to these caps (it only tightens; an absent one is the cap), and
-    /// the time must fit what is left of the caller's turn. None = no such
-    /// parameter (Claude Code's schema). [`SubagentHub::tools_for`] sets it
-    /// from its caps when [`SubagentCaps::budgets`] is on, and clears it when off.
-    pub budget_caps: Option<SubagentBudget>,
+    /// The Agent tool is there.
+    can_spawn: bool,
+    /// Adds the `subagent_type` parameter.
+    types: Option<SubagentTypes>,
+    /// None = haest's own.
+    model_description: Option<String>,
+    /// None = no `budget` parameter.
+    budget_caps: Option<SubagentBudget>,
 }
 
 impl Default for AgentToolOptions {
@@ -265,6 +258,44 @@ impl Default for AgentToolOptions {
             model_description: None,
             budget_caps: None,
         }
+    }
+}
+
+impl AgentToolOptions {
+    /// Whether the caller may still start subagents: the Agent tool is there.
+    /// False at the depth cap (SendMessage and StopAgent stay). True by
+    /// default; [`SubagentHub::tools_for`] sets it from its caps.
+    #[must_use]
+    pub fn with_can_spawn(mut self, can_spawn: bool) -> Self {
+        self.can_spawn = can_spawn;
+        self
+    }
+
+    /// The host's kinds of subagent: adds the `subagent_type` parameter.
+    #[must_use]
+    pub fn with_types(mut self, types: SubagentTypes) -> Self {
+        self.types = Some(types);
+        self
+    }
+
+    /// The `model` parameter's description, e.g. the models this host
+    /// offers, in place of haest's own ("provider:model to run it on ...").
+    #[must_use]
+    pub fn with_model_description(mut self, description: impl Into<String>) -> Self {
+        self.model_description = Some(description.into());
+        self
+    }
+
+    /// The Agent tool takes a `budget {usd, minutes}`, each value clamped to
+    /// `caps` (it only tightens; an absent one is the cap), and the time must
+    /// fit what is left of the caller's turn. Without it there is no such
+    /// parameter (Claude Code's schema). [`SubagentHub::tools_for`] sets it
+    /// from its caps when [`SubagentCaps::budgets`] is on, and clears it when
+    /// off.
+    #[must_use]
+    pub fn with_budget_caps(mut self, caps: SubagentBudget) -> Self {
+        self.budget_caps = Some(caps);
+        self
     }
 }
 

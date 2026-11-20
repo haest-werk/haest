@@ -21,7 +21,7 @@ use super::{AgentError, run::wall_clock};
 /// # Examples
 ///
 /// A host's own directory gets the call's budget already within its caps
-/// ([`AgentToolOptions::budget_caps`](super::AgentToolOptions::budget_caps)).
+/// ([`AgentToolOptions::with_budget_caps`](super::AgentToolOptions::with_budget_caps)).
 ///
 /// ```
 /// use std::{sync::mpsc, time::Duration};
@@ -56,7 +56,7 @@ use super::{AgentError, run::wall_clock};
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// let (remote, budgets) = mpsc::channel();
 /// let caps = SubagentBudget { usd: 0.5, time: Duration::from_secs(300) };
-/// let opts = AgentToolOptions { budget_caps: Some(caps), ..Default::default() };
+/// let opts = AgentToolOptions::default().with_budget_caps(caps);
 /// let agent = agent_tools(Remote(remote), AgentRef::main(), opts)[0].clone();
 /// assert!(agent.parameters()["properties"].get("budget").is_some());
 ///

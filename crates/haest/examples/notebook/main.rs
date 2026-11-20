@@ -124,21 +124,18 @@ pub(crate) fn run_tools(
 
 /// The notebook's kinds of subagent (`explore` only reads) and the models it offers.
 pub(crate) fn agent_options() -> AgentToolOptions {
-    AgentToolOptions {
-        types: Some(
+    // The hub offers a budget from its own caps (subagent_budgets); the notebook's are off.
+    AgentToolOptions::default()
+        .with_types(
             SubagentTypes::new("explore")
                 .with_kinds(["explore", "general"])
                 .with_description(
                     "explore: only reads and searches (the cheap, safe choice for finding things). general: your tools, file changes included (staged like yours). Default explore.",
                 ),
-        ),
-        model_description: Some(format!(
+        )
+        .with_model_description(format!(
             "The model to run it on (optional; defaults to yours): {MODEL}"
-        )),
-        // The hub offers a budget from its own caps (subagent_budgets); the notebook's are off.
-        budget_caps: None,
-        ..Default::default()
-    }
+        ))
 }
 
 /// The notebook's search tool over two notes.

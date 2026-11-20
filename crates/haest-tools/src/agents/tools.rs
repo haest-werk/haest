@@ -213,7 +213,7 @@ impl Tool for StopAgentTool {
 
 /// The agent tools `me` gets, over `hub` (the directory itself, or an `Arc`
 /// of one the host keeps too): Agent only when it may still spawn
-/// ([`AgentToolOptions::can_spawn`]), SendMessage and StopAgent always. Each
+/// ([`AgentToolOptions::with_can_spawn`]), SendMessage and StopAgent always. Each
 /// is bound to `me`: it is the `from` of every spawn and message. `opts` adds
 /// the host's kinds of subagent, its `model` text and budgets.
 ///
