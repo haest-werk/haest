@@ -730,10 +730,6 @@ impl LineSink for Panics {
     async fn send_line(&mut self, _line: String) -> Result<(), crate::TransportError> {
         panic!("the host's sink has a bug");
     }
-
-    async fn keepalive(&mut self) -> Result<(), crate::TransportError> {
-        Ok(())
-    }
 }
 
 /// A panic in the host's sink reaches the host, as one in its source does,
@@ -756,7 +752,6 @@ async fn a_panic_in_the_hosts_sink_reaches_the_host() {
 
 mod cap;
 mod dropped;
-mod keepalive;
 mod order;
 mod panics;
 mod sources;

@@ -36,11 +36,6 @@ const OUT_BUFFER: usize = 1024;
 /// How long a connection that ends gets to write what it still holds.
 const FLUSH_GRACE: Duration = Duration::from_secs(1);
 
-/// How long the writer sends only lines after a keepalive that resolved at
-/// once ([`LineSink::keepalive`]): such a sink costs a keepalive this often,
-/// never a writer that does nothing else.
-const KEEPALIVE_REST: Duration = Duration::from_millis(100);
-
 /// Requests of one connection the session may hold (a turn's end, a history
 /// asked mid-turn): a request counts from its first poll to its answer, so
 /// one answered at once never does. The next line is read only once the
@@ -87,10 +82,10 @@ pub trait LineSink: Send + 'static {
     /// The contract:
     ///
     /// - It waits for a reason to send (a timer, a quiet link). It is asked
-    ///   again after every line and every keepalive, so one that is ready at
-    ///   once would be all the writer does. The writer guards against that:
-    ///   after a keepalive that never waited, it sends only lines for 100 ms
-    ///   before it asks again. Such a sink still sends a keepalive that often.
+    ///   again after every line and every keepalive, ahead of the next line,
+    ///   so one that never waits takes the writer over: no line goes out,
+    ///   and on a runtime of one thread nothing else runs either. Nothing is
+    ///   lost or half sent; the connection hangs.
     /// - It is cancel-safe: it is dropped at any await whenever a line comes
     ///   first, and starts over from the sink's state when asked again, so a
     ///   drop must leave no half-sent frame behind (a frame is handed to the
@@ -771,38 +766,15 @@ async fn write(
     detached: StopFlag,
 ) {
     let mut last = 0;
-    // After a keepalive that never waited: lines only, until then.
-    let mut rest: Option<tokio::time::Instant> = None;
     loop {
-        let out = if let Some(until) = rest {
-            tokio::select! {
-                out = rx.recv() => out,
-                () = tokio::time::sleep_until(until) => {
-                    rest = None;
-                    continue;
-                }
-            }
-        } else {
-            let mut keepalive = std::pin::pin!(sink.keepalive());
-            let mut waited = false;
-            let kept = std::future::poll_fn(|cx| {
-                let polled = keepalive.as_mut().poll(cx);
-                waited |= polled.is_pending();
-                polled.map(|kept| (kept, waited))
-            });
-            tokio::select! {
-                // First, so a stream that is never idle still has its keepalive.
-                biased;
-                kept = kept => match kept {
-                    (Ok(()), true) => continue,
-                    (Ok(()), false) => {
-                        rest = Some(tokio::time::Instant::now() + KEEPALIVE_REST);
-                        continue;
-                    }
-                    (Err(_), _) => return,
-                },
-                out = rx.recv() => out,
-            }
+        let out = tokio::select! {
+            // First, so a stream that is never idle still has its keepalive.
+            biased;
+            kept = sink.keepalive() => match kept {
+                Ok(()) => continue,
+                Err(_) => return,
+            },
+            out = rx.recv() => out,
         };
         let Some(out) = out else { return };
         let line = match out {
