@@ -1,6 +1,6 @@
 [package]
 name = "haest-tools"
-description = "haest's built-in tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, tasks, ToolSearch, Skill"
+description = "haest's built-in tools: Read, Write, Edit, Glob, Grep, Bash and its background jobs, WebFetch, tasks, ToolSearch, Skill, GenerateImage, and Agent with its subagent hub"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
