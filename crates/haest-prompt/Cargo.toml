@@ -1,0 +1,28 @@
+[package]
+name = "haest-prompt"
+description = "haest's opt-in system prompt templates: Jinja on MiniJinja, set up like Hugging Face chat templates, with haest's built sections, the model's catalog facts, the tools and the host's own values"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+haest-core = { workspace = true }
+# Set up as Hugging Face text-generation-inference renders chat templates:
+# loop controls, Python string methods (pycompat), tojson (json).
+minijinja = { version = "3.1", features = ["loop_controls", "json", "serde"] }
+minijinja-contrib = { version = "3.1", features = ["pycompat"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
