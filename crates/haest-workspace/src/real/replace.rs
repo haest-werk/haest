@@ -12,11 +12,12 @@
 //! The bytes go into a new file beside the real one, which `tempfile`
 //! makes under a name nothing on the disk has (`.haest-*`, `O_EXCL`), its
 //! owner's alone from the moment it is made where it is to replace a file.
-//! It then takes the real one's permission bits and is renamed over it, so
-//! a disk that fills up, or a kill, partway leaves the human's file as it
-//! was. Where a new file would not be the same file, or its directory
-//! takes no new name, the bytes are written in place, as a plain write puts
-//! them; anything else that stops the new file fails the write with the
+//! It then takes the real one's permission bits, owner and group and is
+//! renamed over it, so a disk that fills up, or a kill, partway leaves the
+//! human's file as it was. Where a new file would not be the same file, or
+//! its directory takes no new name, the bytes are written in place, as a
+//! plain write puts them; anything else that stops the new file (an owner
+//! or group the run may not give it among them) fails the write with the
 //! human's file as it was. A write dropped partway (Ctrl+C at the haest
 //! command's `/apply`, a host's timeout) removes the new file as it drops,
 //! and what the runtime still writes then goes into a file no name
@@ -46,9 +47,9 @@ const KEPT: u32 = 0o1777;
 /// A regular file must still take a write: one the human made read-only
 /// is refused as an in-place write is, never replaced. It is written in
 /// place, too, where its directory takes no new name (made read-only).
-/// Anything else that stops the new file (a full disk, a rename the disk
-/// refuses) fails the write, the new file removed and the real one as it
-/// was. The new file is removed on a drop as well.
+/// Anything else that stops the new file (a full disk, an owner or group
+/// the run may not give it, a rename the disk refuses) fails the write, the
+/// new file removed and the real one as it was. The new file is removed on a drop as well.
 pub(crate) async fn put_file(real: &Path, bytes: &[u8]) -> io::Result<()> {
     let old = match tokio::fs::symlink_metadata(real).await {
         Ok(m) if m.nlink() > 1 || !m.file_type().is_file() => {
@@ -82,19 +83,24 @@ pub(crate) async fn put_file(real: &Path, bytes: &[u8]) -> io::Result<()> {
         }
         Err(e) => return Err(e),
     };
-    let (data, mode) = (bytes.to_vec(), old.map(|m| m.mode() & KEPT));
-    blocking(move || fill(file, &data, mode)).await?;
+    let kept = old.map(|m| (m.mode() & KEPT, m.uid(), m.gid()));
+    let data = bytes.to_vec();
+    blocking(move || fill(file, &data, kept)).await?;
     let real = real.to_owned();
     blocking(move || path.persist(real).map_err(|e| e.error)).await
 }
 
-/// The sandbox's `bytes` into the new `file`, then `mode`, that of the file
-/// it is to replace, so the apply's own mode check (`carry_mode`) reads it
-/// as the disk's. Closed with close(2)'s answer (`write.rs`): an NFS server
-/// out of room says so only there.
-fn fill(mut file: File, bytes: &[u8], mode: Option<u32>) -> io::Result<()> {
+/// The sandbox's `bytes` into the new `file`, then the mode, owner and
+/// group of the file it is to replace (`kept`): the mode so the apply's own
+/// mode check (`carry_mode`) reads it as the disk's, the owner and group so
+/// the file stays whose it was. An owner or group the run may not give
+/// (another user's file, a group it is not in) fails the write. Closed with
+/// close(2)'s answer (`write.rs`): an NFS server out of room says so only
+/// there.
+fn fill(mut file: File, bytes: &[u8], kept: Option<(u32, u32, u32)>) -> io::Result<()> {
     file.write_all(bytes)?;
-    if let Some(mode) = mode {
+    if let Some((mode, uid, gid)) = kept {
+        std::os::unix::fs::fchown(&file, Some(uid), Some(gid))?;
         file.set_permissions(Permissions::from_mode(mode))?;
     }
     write::close(file)

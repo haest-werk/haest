@@ -30,24 +30,23 @@ use tokio::io::AsyncReadExt;
 ///   closes (no room on the server, a quota).
 /// - [`write_whole`](Fs::write_whole) puts the bytes in a new file beside
 ///   the file, its owner's alone until they are all in, gives it the
-///   file's permission bits and renames it over the file, so a write the
-///   disk stops partway (a full disk, a kill) leaves the file as it was.
-///   The overlay's apply and the tools that rewrite a file go through it.
-///   On a disk that reads two spellings of a name as one, the system
-///   decides which one the file goes by afterwards, as for any program
-///   that saves by renaming. A file made read-only is refused. It writes
-///   in place, as `write` does, where a new file would not stand in for
-///   the file (another hard link to it, a symlink, a FIFO or a device,
-///   which it opens once, as `write` does) or its directory takes no new
-///   name: there a full disk still cuts the file short, and says so. A
-///   replaced file takes the run's owner, and the group a new file gets in
-///   its directory, so another user's file the run may write becomes the
-///   run's own; a file that cannot be renamed over or given its mode (one
-///   file mounted on its own, a share that sets no modes) fails the write
-///   and stays as it was. A replaced file does not keep its extended
-///   attributes or ACLs, and
-///   whatever holds the old file keeps it: a process that has it open (a
-///   log a server appends to, `tail -f`), an inotify watch on it, a
+///   file's permission bits, owner and group (a run as root keeps a user's
+///   file theirs) and renames it over the file, so a write the disk stops
+///   partway (a full disk, a kill) leaves the file as it was. The overlay's
+///   apply and the tools that rewrite a file go through it. On a disk that
+///   reads two spellings of a name as one, the system decides which one
+///   the file goes by afterwards, as for any program that saves by
+///   renaming. A file made read-only is refused. It writes in place, as
+///   `write` does, where a new file would not stand in for the file
+///   (another hard link to it, a symlink, a FIFO or a device, which it
+///   opens once, as `write` does) or its directory takes no new name: there
+///   a full disk still cuts the file short, and says so. A file whose
+///   owner, group or mode the new one cannot take (another user's, a group
+///   the run is not in, a share that sets no modes), or that cannot be
+///   renamed over (one file mounted on its own), fails the write and stays
+///   as it was. A replaced file does not keep its extended attributes or
+///   ACLs, and whatever holds the old file keeps it: a process that has it
+///   open (a log a server appends to, `tail -f`), an inotify watch on it, a
 ///   container it is bind-mounted into on its own. The disk needs room for
 ///   the second copy, and a kill partway can leave a `.haest-*` file
 ///   beside it, no more open than the file.
