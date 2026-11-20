@@ -549,23 +549,9 @@ async fn a_file_copied_over_an_empty_one_then_emptied_waits_for_the_copy() {
     assert_eq!(contents(&dir), pairs(&want), "{report:?}");
 }
 
-/// `rm a && echo y >> b`, with `a` and `b` one file (a hard link): the
-/// writes go first, and `b`'s, in place, changes `a` too. That is the
-/// apply's own write, not the human's, so `a`'s delete goes on: it was
-/// taken for a change on the disk and held as a conflict, every time.
-#[tokio::test]
-async fn a_delete_of_a_hard_link_the_apply_wrote_through_goes_on() {
-    let (_t, dir) = tempdir();
-    fs::write(dir.join("a"), "one\n").unwrap();
-    fs::hard_link(dir.join("a"), dir.join("b")).unwrap();
-    let ws = sandbox(&dir).await;
-    run(&ws, &dir, "rm a && echo y >> b").await;
-    apply_all(&ws).await;
-    assert_eq!(contents(&dir), pairs(&[("b", "one\ny\n")]));
-}
-
-/// The same, where the human edits the file after the model's change: both
-/// changes are held, and the file keeps the human's edit under both names.
+/// `rm a && echo y >> b`, with `a` and `b` one file (a hard link), and the
+/// human edits the file after the model's change: both changes are held,
+/// and the file keeps the human's edit under both names.
 #[tokio::test]
 async fn a_delete_of_a_hard_link_the_human_wrote_through_is_held() {
     let (_t, dir) = tempdir();

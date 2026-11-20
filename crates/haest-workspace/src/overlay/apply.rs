@@ -44,9 +44,8 @@
 //! conflict too.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     io,
-    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
 
@@ -83,10 +82,6 @@ struct Run<'a> {
     carried: Carried,
     /// The writes so far that did not land.
     waiting: Waiting,
-    /// Each file this apply wrote that has another name (a hard link), by
-    /// its device and inode number: what the scan found there, and what the
-    /// write put.
-    linked: HashMap<(u64, u64), (Original, Original)>,
     report: ApplyReport,
     /// Each directory put on the disk, by its place in `report.applied`:
     /// its mode goes on once everything under it is written.
@@ -138,7 +133,6 @@ impl OverlayChanges {
                 .collect(),
             carried: Carried::new(self.book.carried()),
             waiting: Waiting::default(),
-            linked: HashMap::new(),
             report: ApplyReport::default(),
             dirs: Vec::new(),
         };
@@ -298,14 +292,8 @@ impl OverlayChanges {
         // sandbox's version (a file its directory's delete took along, a
         // change of mode alone) loses nothing, and is put without writing it
         // again.
-        // A delete of one name of a file this apply wrote under another (a
-        // hard link, written in place) finds that write there, not the
-        // human's: it takes a name, and the file stays under the other.
         let again = self.book.state(path).await;
-        if again != s.now
-            && again != s.mine
-            && !(deleted && self.wrote(path, s.now, again, run).await)
-        {
+        if again != s.now && again != s.mine {
             return Ok(Put::Moved);
         }
         // A directory removed whole takes along what is under it: a change
@@ -336,27 +324,7 @@ impl OverlayChanges {
             .await
             .map_err(|e| (ApplyFailureCode::WriteFailed, e.to_string()))?;
         run.shown.put(path, deleted);
-        if matches!(s.mine, Original::File(_))
-            && let Ok(m) = tokio::fs::symlink_metadata(self.book.real(path)).await
-            && m.nlink() > 1
-        {
-            run.linked.insert((m.dev(), m.ino()), (s.now, s.mine));
-        }
         Ok(Put::Applied(took))
-    }
-
-    /// Whether the disk at `path` holds `again` where the scan found `now`
-    /// only because a write of this apply put it there under another name
-    /// of the same file (a hard link): that write found `now` and put
-    /// `again`.
-    async fn wrote(&self, path: &Path, now: Original, again: Original, run: &Run<'_>) -> bool {
-        if run.linked.is_empty() {
-            return false;
-        }
-        let Ok(m) = tokio::fs::symlink_metadata(self.book.real(path)).await else {
-            return false;
-        };
-        run.linked.get(&(m.dev(), m.ino())) == Some(&(now, again))
     }
 
     /// Whether a write of this apply that did not land carries what the

@@ -388,6 +388,11 @@ impl ChangeSet for OverlayChanges {
     /// what was skipped (a conflict), and what failed, each with why (a
     /// symlink, a disk error). One that fails stops nothing else, and stays
     /// listed like a conflict.
+    ///
+    /// Where the sandbox deletes one name of a hard-linked file and edits
+    /// another (`rm a && echo y >> b`), the edit, written in place, changes
+    /// the deleted name too, so that delete is held as a conflict for the
+    /// human to settle; nothing is taken away.
     async fn apply(&self) -> ApplyReport {
         self.apply_all().await
     }
