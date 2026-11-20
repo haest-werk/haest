@@ -9,14 +9,15 @@
 //! An unknown tool name is a batch of one too -- it answers with an error anyway.
 //!
 //! The loop runs every model response's calls through [`run_tool_batches`],
-//! which delivers each [`Answer`] to an [`Answers`] in call order.
+//! which delivers each [`Answer`] to the turn's [`Delivery`] in call order.
 //! [`tool_batches`] is the split alone.
 
 use std::time::Instant;
 
-use futures::{StreamExt, future::BoxFuture, stream::FuturesOrdered};
+use futures::{StreamExt, stream::FuturesOrdered};
 
 use crate::{
+    agent::Delivery,
     messages::{ToolCall, Usage},
     session::INTERRUPTED,
     tool::{Attempt, OnResume, ToolContext, ToolOutput},
@@ -65,17 +66,6 @@ pub(crate) struct Answer {
     pub(crate) duration_ms: u64,
 }
 
-/// Where the answers of [`run_tool_batches`] go.
-pub(crate) trait Answers: Send {
-    /// Tokens the next batch may add to the context; read once per batch, after
-    /// every answer before it was delivered. None = uncapped.
-    fn room(&self) -> Option<u64>;
-    /// One answer, in CALL order; `usage` is the turn's, this answer's spend folded in.
-    fn answer(&mut self, answer: Answer, usage: &Usage);
-    /// Awaited before a batch that holds a call with side effects: the intent lands first.
-    fn before_effects(&mut self) -> BoxFuture<'_, ()>;
-}
-
 /// Whether `call` runs a tool with side effects: a tool `tools` knows that is
 /// not read-only. An unknown name runs nothing.
 fn has_effects(tools: &ToolIndex, call: &ToolCall) -> bool {
@@ -88,16 +78,16 @@ fn has_effects(tools: &ToolIndex, call: &ToolCall) -> bool {
 /// into `usage` as its answer is delivered.
 ///
 /// Each call gets a clone of `ctx` with its own call id and its share of
-/// [`Answers::room`]. Every call is answered, failures and panics included; a
+/// [`Delivery::room`]. Every call is answered, failures and panics included; a
 /// call that starts after `ctx.cancel()` fired is answered as interrupted
 /// without running. Before a batch that holds a call with side effects,
-/// [`Answers::before_effects`] is awaited.
+/// [`Delivery::before_effects`] is awaited.
 pub(crate) async fn run_tool_batches(
     calls: &[ToolCall],
     tools: &ToolIndex,
     ctx: &ToolContext,
     usage: &mut Usage,
-    to: &mut dyn Answers,
+    to: &mut Delivery<'_>,
 ) {
     for batch in tool_batches(calls, tools) {
         if batch.iter().any(|c| has_effects(tools, c)) {
@@ -146,7 +136,7 @@ pub(crate) async fn redo_calls(
     tools: &ToolIndex,
     ctx: &ToolContext,
     usage: &mut Usage,
-    to: &mut dyn Answers,
+    to: &mut Delivery<'_>,
 ) {
     for Redo { call, how } in redo {
         let started = Instant::now();

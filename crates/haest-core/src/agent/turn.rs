@@ -3,7 +3,6 @@
 
 use std::{path::Path, time::Instant};
 
-use futures::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -20,7 +19,7 @@ use crate::{
     run::Journal,
     session::{interrupted, split_pending},
     tool::{Attempt, ToolContext},
-    tool_batch::{Answer, Answers, Redo, redo_calls, run_tool_batches},
+    tool_batch::{Answer, Redo, redo_calls, run_tool_batches},
     tool_exec::{ToolIndex, error_assistant, tool_result_message},
 };
 
@@ -337,7 +336,7 @@ fn refuse(model: &str, error: &str, t: &mut Turn<'_>) -> AssistantMessage {
 
 /// Where the loop's tool answers land: the guard, history, the sink, and a
 /// durable run's journal.
-struct Delivery<'a> {
+pub(crate) struct Delivery<'a> {
     caps: Option<TurnCaps>,
     guard: &'a mut TurnGuard,
     messages: &'a mut Vec<Message>,
@@ -346,12 +345,15 @@ struct Delivery<'a> {
     sink: &'a mut dyn EventSink,
 }
 
-impl Answers for Delivery<'_> {
-    fn room(&self) -> Option<u64> {
+impl Delivery<'_> {
+    /// Tokens the next batch may add to the context; read once per batch, after
+    /// every answer before it was delivered. None = uncapped.
+    pub(crate) fn room(&self) -> Option<u64> {
         self.guard.room(self.caps.as_ref())
     }
 
-    fn answer(&mut self, a: Answer, usage: &Usage) {
+    /// One answer, in CALL order; `usage` is the turn's, this answer's spend folded in.
+    pub(crate) fn answer(&mut self, a: Answer, usage: &Usage) {
         self.guard.answered(&a.call, &a.output);
         let result = tool_result_message(&a.call, &a.output);
         append(
@@ -371,13 +373,12 @@ impl Answers for Delivery<'_> {
         });
     }
 
-    /// A durable run's records land first, then the host's own flush.
-    fn before_effects(&mut self) -> BoxFuture<'_, ()> {
-        Box::pin(async move {
-            if let Some(j) = self.journal {
-                j.flush().await;
-            }
-            self.hooks.before_effects().await;
-        })
+    /// Awaited before a batch that holds a call with side effects, so the
+    /// intent lands first: a durable run's records, then the host's own flush.
+    pub(crate) async fn before_effects(&mut self) {
+        if let Some(j) = self.journal {
+            j.flush().await;
+        }
+        self.hooks.before_effects().await;
     }
 }

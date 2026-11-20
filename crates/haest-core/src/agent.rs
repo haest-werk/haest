@@ -42,6 +42,7 @@ use crate::{
 
 pub use control::AgentControl;
 use control::Running;
+pub(crate) use turn::Delivery;
 use turn::Turn;
 
 /// How a new [`Agent`] starts: its model, its effort, and any history to resume.
