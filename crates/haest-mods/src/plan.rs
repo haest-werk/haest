@@ -24,9 +24,8 @@ use crate::api::{Before, Mod, ModEnv, ModToolCall};
 pub const PLAN_COMMAND: &str = "plan";
 
 /// The tools plan mode lets run though they are not read-only, unless a host
-/// names others ([`PlanMod::with_planning_tools`],
-/// [`ModOptions::with_planning_tools`](crate::ModOptions::with_planning_tools)): haest's
-/// task list, subagents and `ToolSearch`.
+/// names others ([`PlanMod::with_planning_tools`]): haest's task list,
+/// subagents and `ToolSearch`.
 pub const PLANNING_TOOLS: &[&str] = &[
     "TaskCreate",
     "TaskUpdate",
@@ -44,7 +43,7 @@ pub const PLANNING_TOOLS: &[&str] = &[
 pub const PLAN_PROMPT: &str = "# Plan mode is ON\nThe human wants a plan before any change. Explore with read-only tools (Read, Grep, Glob, WebFetch, subagents), then answer with the plan: the goal in a sentence, the files you would touch and why, the steps in order, the risks, and how you would verify it works. Record the steps with TaskCreate. Do NOT edit files or run commands -- those tools are refused until the human turns plan mode off (/plan off).";
 
 /// Told whenever plan mode turns on (`true`) or off (`false`).
-pub(crate) type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
+type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 
 /// PLAN MODE (built in): read-only planning until the human turns it off.
 ///
@@ -145,13 +144,8 @@ impl PlanMod {
     /// haest's state. `f` is called on the task that ran the command; keep it
     /// short.
     #[must_use]
-    pub fn with_listener(self, f: impl Fn(bool) + Send + Sync + 'static) -> Self {
-        self.listened_by(Some(Arc::new(f)))
-    }
-
-    /// Plan mode told through `listener`, or by nobody.
-    pub(crate) fn listened_by(mut self, listener: Option<PlanListener>) -> Self {
-        self.listener = listener;
+    pub fn with_listener(mut self, f: impl Fn(bool) + Send + Sync + 'static) -> Self {
+        self.listener = Some(Arc::new(f));
         self
     }
 

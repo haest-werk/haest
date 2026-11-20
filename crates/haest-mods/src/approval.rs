@@ -133,8 +133,7 @@ pub enum BashVerdict {
 /// or let a delete through that git can bring back.
 ///
 /// haest ships no judge (the TypeScript haest's is not ported); a host that
-/// has one hands it in through [`ApprovalMod::with_auto`] or
-/// [`ModOptions::with_auto`](crate::ModOptions::with_auto), and haest holds
+/// has one hands it in through [`ApprovalMod::with_auto`], and haest holds
 /// it in an [`AutoJudgeRef`].
 #[async_trait]
 pub trait AutoJudge: Send + Sync {
@@ -152,8 +151,7 @@ haest_core::plug_ref! {
 }
 
 /// The shell tools [`ApprovalMod`] judges, unless a host names others
-/// ([`ApprovalMod::with_shell_tools`],
-/// [`ModOptions::with_shell_tools`](crate::ModOptions::with_shell_tools)): haest's `Bash`.
+/// ([`ApprovalMod::with_shell_tools`]): haest's `Bash`.
 pub const SHELL_TOOLS: &[&str] = &["Bash"];
 
 /// THE APPROVAL MOD (built in): in the REAL workspace, a Bash command that can

@@ -133,8 +133,8 @@ async fn the_hosts_own_mods_load_last_in_order_mod_files_or_not() {
 async fn the_hosts_tool_names_reach_the_built_ins() {
     let ui = TestUi::answering([Decision::Deny]);
     let named = cfg(WorkspaceMode::Real)
-        .with_shell_tools(["Shell"])
-        .with_planning_tools(["Notes"]);
+        .with_approval(ApprovalMod::new().with_shell_tools(["Shell"]))
+        .with_plan(PlanMod::new().with_planning_tools(["Notes"]));
     let mods = load_mods(named, &MemFs::new(), ui.clone()).await;
     let (shell, notes) = (Probe::new("Shell"), Probe::new("Notes"));
     let tools = ModTools::wrap(&mods, Tools::from_iter([shell.clone(), notes.clone()]));

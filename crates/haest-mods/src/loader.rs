@@ -12,19 +12,15 @@
 //! A mod that fails to load is reported to the human and skipped; the rest
 //! still load.
 
-use std::{
-    fmt,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
 
 use haest_core::{error::report, fs::Fs, workspace::WorkspaceMode};
 
 use crate::{
     api::{ModEnv, ModRef, ModUiRef},
-    approval::{ApprovalMod, AutoJudgeRef, SHELL_TOOLS},
+    approval::ApprovalMod,
     js::{JsMod, ModCaps},
-    plan::{PLANNING_TOOLS, PlanListener, PlanMod},
+    plan::PlanMod,
     registry::Mods,
 };
 
@@ -37,54 +33,32 @@ use crate::{
 /// use std::path::PathBuf;
 ///
 /// use haest_core::workspace::WorkspaceMode;
-/// use haest_mods::ModOptions;
+/// use haest_mods::{ApprovalMod, ModOptions};
 ///
 /// let opts = ModOptions::new("/project", WorkspaceMode::Real, "/home/me/.config/haest")
 ///     .with_user_mods(true)
-///     .with_shell_tools(["Bash", "Shell"]);
+///     .with_approval(ApprovalMod::new().with_shell_tools(["Bash", "Shell"]));
 /// assert_eq!(opts.mod_dirs(), [PathBuf::from("/home/me/.config/haest/mods")]);
 /// ```
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct ModOptions {
     cwd: PathBuf,
     workspace: WorkspaceMode,
     config_dir: PathBuf,
     user_mods: bool,
     project_mods: bool,
-    approvals: bool,
-    auto: Option<AutoJudgeRef>,
-    shell_tools: Vec<String>,
-    plan_listener: Option<PlanListener>,
-    planning_tools: Vec<String>,
+    /// None = approvals off.
+    approval: Option<ApprovalMod>,
+    plan: PlanMod,
     caps: ModCaps,
     host_mods: Vec<ModRef>,
-}
-
-impl fmt::Debug for ModOptions {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ModOptions")
-            .field("cwd", &self.cwd)
-            .field("workspace", &self.workspace)
-            .field("config_dir", &self.config_dir)
-            .field("user_mods", &self.user_mods)
-            .field("project_mods", &self.project_mods)
-            .field("approvals", &self.approvals)
-            .field("auto", &self.auto)
-            .field("shell_tools", &self.shell_tools)
-            .field("plan_listener", &self.plan_listener.is_some())
-            .field("planning_tools", &self.planning_tools)
-            .field("caps", &self.caps)
-            .field("host_mods", &self.host_mods)
-            .finish()
-    }
 }
 
 impl ModOptions {
     /// The defaults for a conversation in `cwd`, whose agent's tools run in
     /// `workspace`, for a host whose own config directory is `config_dir`:
-    /// approvals on over [`SHELL_TOOLS`], no mod files, no auto mode, no plan
-    /// listener, the [`PLANNING_TOOLS`], the default [`ModCaps`], no mods of
-    /// the host's own.
+    /// the default [`ApprovalMod`] and [`PlanMod`], no mod files, the default
+    /// [`ModCaps`], no mods of the host's own.
     pub fn new(
         cwd: impl Into<PathBuf>,
         workspace: WorkspaceMode,
@@ -96,11 +70,8 @@ impl ModOptions {
             config_dir: config_dir.into(),
             user_mods: false,
             project_mods: false,
-            approvals: true,
-            auto: None,
-            shell_tools: SHELL_TOOLS.iter().map(|t| t.to_string()).collect(),
-            plan_listener: None,
-            planning_tools: PLANNING_TOOLS.iter().map(|t| t.to_string()).collect(),
+            approval: Some(ApprovalMod::new()),
+            plan: PlanMod::new(),
             caps: ModCaps::default(),
             host_mods: Vec::new(),
         }
@@ -128,42 +99,28 @@ impl ModOptions {
     /// default.
     #[must_use]
     pub fn with_approvals(mut self, on: bool) -> Self {
-        self.approvals = on;
+        self.approval = if on {
+            self.approval.or_else(|| Some(ApprovalMod::new()))
+        } else {
+            None
+        };
         self
     }
 
-    /// Auto mode's judge for the approval mod; without one, the irreversible
-    /// list alone decides.
+    /// The approval mod as the host configured it (its auto mode's judge,
+    /// its shell tools), in place of [`ApprovalMod::new`]; it turns
+    /// approvals on.
     #[must_use]
-    pub fn with_auto(mut self, judge: impl Into<AutoJudgeRef>) -> Self {
-        self.auto = Some(judge.into());
+    pub fn with_approval(mut self, approval: ApprovalMod) -> Self {
+        self.approval = Some(approval);
         self
     }
 
-    /// The shell tools the approval mod judges, by name, in place of
-    /// [`SHELL_TOOLS`] (`Bash`).
+    /// Plan mode as the host configured it (its listener, its planning
+    /// tools), in place of [`PlanMod::new`].
     #[must_use]
-    pub fn with_shell_tools(mut self, names: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.shell_tools = names.into_iter().map(Into::into).collect();
-        self
-    }
-
-    /// Told whenever plan mode turns on (`true`) or off (`false`), however it
-    /// was switched ([`PlanMod::with_listener`]).
-    #[must_use]
-    pub fn with_plan_listener(mut self, f: impl Fn(bool) + Send + Sync + 'static) -> Self {
-        self.plan_listener = Some(Arc::new(f));
-        self
-    }
-
-    /// The tools plan mode lets run though they are not read-only, by name,
-    /// in place of [`PLANNING_TOOLS`].
-    #[must_use]
-    pub fn with_planning_tools(
-        mut self,
-        names: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self {
-        self.planning_tools = names.into_iter().map(Into::into).collect();
+    pub fn with_plan(mut self, plan: PlanMod) -> Self {
+        self.plan = plan;
         self
     }
 
@@ -222,8 +179,8 @@ pub(crate) async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 /// Every mod for one conversation, in the order their events run.
 ///
 /// 1. Built in: the approval mod (unless [`ModOptions::with_approvals`] is off,
-///    with auto mode's judge when [`ModOptions::with_auto`] gave one), then
-///    plan mode, always.
+///    as [`ModOptions::with_approval`] configured it), then plan mode, always
+///    ([`ModOptions::with_plan`]).
 /// 2. The human's own mod files, `<config_dir>/mods/*`, with
 ///    [`ModOptions::with_user_mods`].
 /// 3. The project's, `<cwd>/.haest/mods/*`, with
@@ -249,20 +206,11 @@ pub(crate) async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 /// [`MemFs`](haest_core::MemFs) and put it around an agent.
 pub async fn load_mods(cfg: ModOptions, fs: &dyn Fs, ui: impl Into<ModUiRef>) -> Mods {
     let ui = ui.into();
-    let env = ModEnv::new(cfg.cwd.clone(), cfg.workspace, ui.clone());
-    let mut mods: Vec<ModRef> = Vec::new();
-    if cfg.approvals {
-        let mut approval = ApprovalMod::new().with_shell_tools(cfg.shell_tools.clone());
-        if let Some(auto) = cfg.auto.clone() {
-            approval = approval.with_auto(auto);
-        }
-        mods.push(approval.into());
-    }
-    let plan = PlanMod::new()
-        .listened_by(cfg.plan_listener.clone())
-        .with_planning_tools(cfg.planning_tools.clone());
-    mods.push(plan.into());
-    for dir in cfg.mod_dirs() {
+    let dirs = cfg.mod_dirs();
+    let env = ModEnv::new(cfg.cwd, cfg.workspace, ui.clone());
+    let mut mods: Vec<ModRef> = cfg.approval.into_iter().map(ModRef::new).collect();
+    mods.push(ModRef::new(cfg.plan));
+    for dir in dirs {
         for path in mod_files(fs, &dir).await {
             let loaded = match fs.read_to_string(&path).await {
                 Ok(source) => JsMod::load_with(&path, source, &env, cfg.caps)
