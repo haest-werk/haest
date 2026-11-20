@@ -3,10 +3,9 @@
 
 use std::{io, path::PathBuf};
 
-use crate::{
-    haest::{ModelError, core::session::InvalidSessionId},
-    world::WorkspaceError,
-};
+use haest_core::{ModelError, session::InvalidSessionId};
+
+use crate::world::WorkspaceError;
 
 /// Why [`build`](crate::build) failed. It fails before any MCP server or mod
 /// starts and before a new session's file is written, so there is nothing to

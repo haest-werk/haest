@@ -5,19 +5,19 @@
 
 use std::{path::Path, sync::Arc};
 
-use haest_core::testing::{ScriptedProvider, text_answer};
+use haest_core::{
+    Effort, LoopEvent, Message, ModelError, WorkspaceMode,
+    fs::{Fs, MemFs},
+    task_board::NewTask,
+    testing::{ScriptedProvider, text_answer},
+};
+use haest_mcp::{McpServerConfig, McpTransport};
 use haest_settings::Settings;
 
 use super::{hardcoded, keyed, keyed_with, openrouter_key, try_keyed};
 use crate::{
     BuildError, BuildOptions, OnResume, Prefer, Resume, Runtime, RuntimeInputs, SessionFileError,
     World, build,
-    haest::{
-        Effort, LoopEvent, Message, ModelError, WorkspaceMode,
-        core::fs::{Fs, MemFs},
-        core::task_board::NewTask,
-        mcp::{McpServerConfig, McpTransport},
-    },
     sessions::list_sessions,
     testkit::{Deny, Recorded},
     world::WorkspaceError,

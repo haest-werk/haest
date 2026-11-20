@@ -7,22 +7,22 @@
 
 use std::{fmt, sync::Arc};
 
+use haest_core::{
+    Agent, Effort, EventSink, ModelError, TurnOutcome,
+    compaction::CompactionError,
+    fs::FsRef,
+    now_ms,
+    session::{EffortChange, SessionRecord},
+    skills::{Skill, SkillScanRoots, Skills, skills_in},
+    task_board::TaskBoard,
+};
+use haest_mcp::McpHub;
+use haest_mods::{ApprovalGate, Mods};
+use haest_tools::{JobHub, SubagentHub};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     RuntimeHooks, SessionFileError,
-    haest::{
-        Agent, Effort, EventSink, ModelError, TurnOutcome,
-        core::compaction::CompactionError,
-        core::fs::FsRef,
-        core::session::{EffortChange, SessionRecord},
-        core::skills::{Skill, SkillScanRoots, Skills, skills_in},
-        core::task_board::TaskBoard,
-        mcp::McpHub,
-        mods::{ApprovalGate, Mods},
-        now_ms,
-        tools::{JobHub, SubagentHub},
-    },
     hooks::Compact,
     inbox::InboxQueue,
     store::{new_session, record_start},

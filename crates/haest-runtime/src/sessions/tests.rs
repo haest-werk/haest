@@ -12,13 +12,13 @@ use std::{
 };
 
 use async_trait::async_trait;
+use haest_core::{
+    fs::{DirEntry, FsStat, MemFs},
+    session::SessionHeader,
+};
+use haest_workspace::RealFs;
 
 use super::*;
-use crate::haest::{
-    core::fs::{DirEntry, FsStat, MemFs},
-    core::session::SessionHeader,
-    workspace::RealFs,
-};
 
 /// A MemFs that remembers every head read and refuses a whole-file read.
 #[derive(Default)]

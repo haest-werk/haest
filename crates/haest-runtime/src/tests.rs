@@ -9,16 +9,16 @@ use std::{
 
 use async_trait::async_trait;
 use futures::StreamExt;
+use haest_core::{
+    KeySourceRef, Message, ProviderEvent, ProviderRequest, ShutWorkspace, ToolContext,
+    fs::{Fs, MemFs},
+};
+use haest_providers::http::{HttpClient, HttpError, Request, Response};
 use haest_settings::{BuiltinTools, ContextSources, Settings};
 use serde_json::json;
 
 use crate::{
     BuildError, BuildOptions, Resume, Runtime, RuntimeInputs, World, build,
-    haest::{
-        KeySourceRef, Message, ProviderEvent, ProviderRequest, ShutWorkspace, ToolContext,
-        core::fs::{Fs, MemFs},
-        http::{HttpClient, HttpError, Request, Response},
-    },
     testkit::{Deny, Recorded},
 };
 
@@ -138,20 +138,20 @@ async fn the_wind_down_setting_reaches_the_conversation_and_is_off_unless_set() 
 struct HouseStyle;
 
 #[async_trait]
-impl crate::haest::mods::Mod for HouseStyle {
+impl haest_mods::Mod for HouseStyle {
     fn name(&self) -> &str {
         "house-style"
     }
     async fn system_prompt(
         &self,
-        _: &crate::haest::mods::ModEnv,
+        _: &haest_mods::ModEnv,
     ) -> Result<Option<String>, haest_core::error::BoxError> {
         Ok(Some("Use British spelling.".into()))
     }
     async fn prompt_submit(
         &self,
         text: &str,
-        _: &crate::haest::mods::ModEnv,
+        _: &haest_mods::ModEnv,
     ) -> Result<Option<String>, haest_core::error::BoxError> {
         Ok(Some(format!("{text} (house style)")))
     }

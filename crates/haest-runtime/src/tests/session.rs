@@ -5,9 +5,19 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use haest_core::{
+    LoopEvent, Message,
+    fs::{Fs, MemFs},
+    session::{EffortChange, SessionRecord},
+    tool::ToolContext,
+};
+use haest_mods::{ApprovalRequest, Decision, ModUiRef};
+use haest_providers::http::{HttpClient, HttpClientRef, HttpError, Request, Response};
 use haest_session::{Body, Driven, Frame, Hub, Input, SessionPrompter, Subscription, start};
 use haest_settings::Settings;
+use haest_tools::{AgentRef, Inbox, JobHub, NoInbox, SpawnInput};
 use haest_wire::{Answer, Level, Outbound, State};
+use haest_workspace::RealWorkspace;
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
     model::{
@@ -22,19 +32,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{Gateway, hardcoded, openrouter_key};
 use crate::{
-    BuildOptions, HubUi, Runtime, RuntimeInputs, World, build,
-    haest::{
-        LoopEvent, Message,
-        core::fs::{Fs, MemFs},
-        core::session::{EffortChange, SessionRecord},
-        core::tool::ToolContext,
-        http::{HttpClient, HttpClientRef, HttpError, Request, Response},
-        mods::{ApprovalRequest, Decision, ModUiRef},
-        tools::{AgentRef, Inbox, JobHub, NoInbox, SpawnInput},
-        workspace::RealWorkspace,
-    },
-    inbox::inbox,
-    testkit::Deny,
+    BuildOptions, HubUi, Runtime, RuntimeInputs, World, build, inbox::inbox, testkit::Deny,
 };
 
 /// A host's client whose requests never answer: a model call waits until it

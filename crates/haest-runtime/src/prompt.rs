@@ -3,23 +3,21 @@
 use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
-use haest_settings::Settings;
-
-use crate::{
-    RuntimeHooks,
-    haest::{
-        SystemPrompt, ToolSourceRef, Workspace,
-        core::context::{
-            InstructionOptions, PromptInputs, build_system_prompt, current_git_branch,
-            find_instruction_files,
-        },
-        core::fs::FsRef,
-        core::session::iso_utc,
-        core::skills::{SkillOptions, Skills},
-        now_ms,
-        tools::{tool_guide, touches_workspace},
+use haest_core::{
+    SystemPrompt, ToolSourceRef, Workspace,
+    context::{
+        InstructionOptions, PromptInputs, build_system_prompt, current_git_branch,
+        find_instruction_files,
     },
+    fs::FsRef,
+    now_ms,
+    session::iso_utc,
+    skills::{SkillOptions, Skills},
 };
+use haest_settings::Settings;
+use haest_tools::{tool_guide, touches_workspace};
+
+use crate::RuntimeHooks;
 
 /// Which instruction files the `context` setting asks for (AGENTS.md,
 /// CLAUDE.md and their kin), looked for from `cwd` and `home`: what
@@ -169,8 +167,10 @@ fn platform() -> String {
 
 #[cfg(test)]
 mod tests {
+    use haest_core::fs::MemFs;
+
     use super::*;
-    use crate::{haest::core::fs::MemFs, testkit::hooks};
+    use crate::testkit::hooks;
 
     #[tokio::test]
     async fn the_tool_guide_and_the_workspace_note_go_only_where_the_tools_reach() {

@@ -2,12 +2,10 @@
 
 use std::time::Duration;
 
-use haest_core::workspace::ExecOptions;
+use haest_core::{Workspace, fs::MemFs, workspace::ExecOptions};
+use haest_tools::NoInbox;
 
-use crate::{
-    haest::{Workspace, core::fs::MemFs, tools::NoInbox},
-    testkit::{hooks, settings},
-};
+use crate::testkit::{hooks, settings};
 
 use super::*;
 

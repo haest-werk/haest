@@ -3,18 +3,14 @@
 
 use std::sync::Arc;
 
+use haest_core::{
+    Message, deferred_tools::DeferMode, fs::MemFs, session::SessionRecord, testing::tool_answer,
+};
 use haest_settings::Settings;
 use serde_json::json;
 
 use super::{hardcoded, keyed_with};
-use crate::{
-    BuildOptions, Resume, Runtime,
-    haest::{
-        Message, core::deferred_tools::DeferMode, core::fs::MemFs, core::session::SessionRecord,
-        core::testing::tool_answer,
-    },
-    testkit::Recorded,
-};
+use crate::{BuildOptions, Resume, Runtime, testkit::Recorded};
 
 /// A mod file that adds a tool named as an MCP tool is: one that defers.
 const WEATHER_MOD: &str =

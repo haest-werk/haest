@@ -1,13 +1,9 @@
 //! [`mods_for`]: the conversation's mods.
 
-use crate::{
-    RuntimeHooks,
-    haest::{
-        core::fs::Fs,
-        core::tool::ToolServices,
-        mods::{ApprovalGate, ModLine, ModOptions, ModRef, Mods, load_mods},
-    },
-};
+use haest_core::{fs::Fs, tool::ToolServices};
+use haest_mods::{ApprovalGate, ModLine, ModOptions, ModRef, Mods, load_mods};
+
+use crate::RuntimeHooks;
 
 /// Every mod the settings turn on, read through `fs`, the human's answers
 /// through `gate`.

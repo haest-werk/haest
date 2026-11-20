@@ -6,21 +6,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_settings::Settings;
-
-use crate::{
-    RuntimeHooks,
-    haest::{
-        ChildEnv, ShutWorkspace, WorkspaceMode, WorkspaceRef,
-        code::sandbox_commands,
-        core::error::report,
-        core::fs::{Fs, FsRef, ensure_dir},
-        core::remedy::Remedies,
-        mcp::{McpHub, McpServerConfig, McpTransport},
-        tools::{InboxRef, JobHub},
-        workspace::{OpenSandboxError, RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace},
-    },
+use haest_code::sandbox_commands;
+use haest_core::{
+    ChildEnv, ShutWorkspace, WorkspaceMode, WorkspaceRef,
+    error::report,
+    fs::{Fs, FsRef, ensure_dir},
+    remedy::Remedies,
 };
+use haest_mcp::{McpHub, McpServerConfig, McpTransport};
+use haest_settings::Settings;
+use haest_tools::{InboxRef, JobHub};
+use haest_workspace::{OpenSandboxError, RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace};
+
+use crate::RuntimeHooks;
 
 /// Where the agent's files are and whether it may start real processes.
 ///

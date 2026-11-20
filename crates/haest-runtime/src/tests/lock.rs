@@ -10,16 +10,16 @@ use std::{
 };
 
 use async_trait::async_trait;
-use haest_core::testing::{ScriptedProvider, text_answer};
+use haest_core::{
+    LoopEvent,
+    fs::{DirEntry, Fs, FsLock, FsStat, MemFs},
+    session::session_id_of,
+    testing::{ScriptedProvider, text_answer},
+};
 
 use super::{hardcoded, lifecycle::said};
 use crate::{
     BuildError, BuildOptions, Resume, Runtime, RuntimeInputs, SessionFileError, World, build,
-    haest::{
-        LoopEvent,
-        core::fs::{DirEntry, Fs, FsLock, FsStat, MemFs},
-        core::session::session_id_of,
-    },
     testkit::{Deny, Recorded},
 };
 

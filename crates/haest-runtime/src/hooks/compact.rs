@@ -2,16 +2,16 @@
 //! and how ([`RuntimeHooks::compact_now`]), the spend of the summary calls
 //! included.
 
+use haest_core::{
+    Agent,
+    compaction::{CompactionError, CompactionOptions, compact},
+    error::report,
+    now_ms,
+    session::SessionRecord,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::RuntimeHooks;
-use crate::haest::{
-    Agent,
-    core::compaction::{CompactionError, CompactionOptions, compact},
-    core::error::report,
-    core::session::SessionRecord,
-    now_ms,
-};
 
 /// Who asks for a compaction ([`RuntimeHooks::compact_now`]): it decides
 /// whether a conversation with nothing to cut yet is told so.

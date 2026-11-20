@@ -9,12 +9,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_core::testing::ScriptedProvider;
+use haest_core::{ChildEnv, WorkspaceMode, testing::ScriptedProvider};
 use haest_settings::Settings;
 
 use crate::{
     BuildError, BuildOptions, Resume, Runtime, RuntimeInputs, SessionFileError, World, build,
-    haest::{ChildEnv, WorkspaceMode},
     testkit::{Deny, Recorded},
 };
 

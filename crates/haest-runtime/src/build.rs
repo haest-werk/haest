@@ -5,23 +5,23 @@
 
 use std::{path::Path, sync::Arc};
 
+use haest_core::{
+    Agent, AgentDeps, AgentOptions, ChildEnv, SharedDeps, ToolSourceRef, WorkspaceRef,
+    deferred_tools::ToolDeferral,
+    fs::FsRef,
+    ledger::Ledger,
+    now_ms,
+    session::SessionRecord,
+    skills::{SkillScanRoots, Skills, skills_in},
+    task_board::TaskBoard,
+    threshold::Thresholds,
+};
+use haest_mods::{ApprovalGate, ModSystemPrompt, Prompter};
+use haest_providers::ProviderRegistry;
+use haest_tools::DeferredTools;
+
 use crate::{
-    BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui,
-    haest::{
-        Agent, AgentDeps, AgentOptions, ChildEnv, SharedDeps, ToolSourceRef, WorkspaceRef,
-        core::deferred_tools::ToolDeferral,
-        core::fs::FsRef,
-        core::ledger::Ledger,
-        core::session::SessionRecord,
-        core::skills::{SkillScanRoots, Skills, skills_in},
-        core::task_board::TaskBoard,
-        core::threshold::Thresholds,
-        mods::{ApprovalGate, ModSystemPrompt, Prompter},
-        now_ms,
-        providers::ProviderRegistry,
-        tools::DeferredTools,
-    },
-    inbox, mods,
+    BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui, inbox, mods,
     parent::RuntimeParent,
     prompt::{AgentPrompt, RuntimePrompt, skill_options},
     store::{create, open_session, record_given, record_start, restore, start_on},

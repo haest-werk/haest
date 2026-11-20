@@ -1,12 +1,11 @@
 //! The inbox keeps everything until a turn takes it, oldest first, one turn's worth at a time.
 
+use haest_core::{
+    Agent, AgentDeps, AgentOptions, SharedDeps, ShutWorkspace, Tools, testing::ScriptedProvider,
+};
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::*;
-use crate::haest::{
-    Agent, AgentDeps, AgentOptions, SharedDeps, ShutWorkspace, core::testing::ScriptedProvider,
-};
-use haest_core::Tools;
 
 /// The control of an agent that never runs: what a test steers into it is
 /// what the last turn left unread.

@@ -13,28 +13,26 @@ use std::{
 };
 
 use async_trait::async_trait;
+use haest_core::{
+    Agent, AgentHooks, Effort,
+    caps::{TurnCaps, TurnCapsSource},
+    catalog::{InputModality, ModelFacts, Reasoning},
+    compaction::needs_compaction,
+    error::BoxError,
+    ledger::{LedgerHooks, LedgerSnapshot},
+    messages::MediaPart,
+    now_ms,
+    remedy::Remedies,
+    session::{JsonlSessionFile, SessionRecord, SessionSink},
+    tool::ToolServices,
+};
+use haest_providers::Catalog;
 use haest_settings::Settings;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) use self::compact::Compact;
 use self::compact::compaction_failed;
-use crate::{
-    Ui,
-    haest::{
-        Agent, AgentHooks, Effort,
-        core::caps::{TurnCaps, TurnCapsSource},
-        core::catalog::{InputModality, ModelFacts, Reasoning},
-        core::compaction::needs_compaction,
-        core::error::BoxError,
-        core::ledger::{LedgerHooks, LedgerSnapshot},
-        core::messages::MediaPart,
-        core::remedy::Remedies,
-        core::session::{JsonlSessionFile, SessionRecord, SessionSink},
-        core::tool::ToolServices,
-        now_ms,
-        providers::Catalog,
-    },
-};
+use crate::Ui;
 
 /// The runtime's hooks: what the agent loop, the ledger, the task list and
 /// the tools report to.
@@ -206,7 +204,7 @@ impl ToolServices for RuntimeHooks {
 
 #[async_trait]
 impl AgentHooks for RuntimeHooks {
-    fn on_message(&self, msg: &crate::haest::Message) {
+    fn on_message(&self, msg: &haest_core::Message) {
         self.append(&SessionRecord::Message {
             t: now_ms(),
             message: msg.clone(),

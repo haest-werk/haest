@@ -3,14 +3,11 @@
 
 use std::{collections::VecDeque, fmt};
 
-use crate::{
-    RuntimeHooks,
-    haest::{
-        AgentControl,
-        tools::{AgentTurnGate, Inbox},
-    },
-};
+use haest_core::AgentControl;
+use haest_tools::{AgentTurnGate, Inbox};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+
+use crate::RuntimeHooks;
 
 /// The sending end the jobs and the subagent hub hold: queues, and tells the human.
 ///

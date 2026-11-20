@@ -11,23 +11,22 @@ use std::{
     time::Duration,
 };
 
+use haest_core::{
+    Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message, ModelError,
+    Provider, ProviderEvent, ProviderRef, ProviderRequest, ResolvedModel, ShutWorkspace,
+    StopReason, Tools, TurnOutcome,
+    caps::ConversationCaps,
+    ledger::Ledger,
+    provider::ProviderStream,
+    testing::{ScriptedProvider, text_answer},
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     RuntimeHooks,
-    haest::{
-        Agent, AgentControl, AgentDeps, AgentOptions, AssistantMessage, LoopEvent, Message,
-        ModelError, Provider, ProviderEvent, ProviderRef, ProviderRequest, ResolvedModel,
-        ShutWorkspace, StopReason, TurnOutcome,
-        core::caps::ConversationCaps,
-        core::ledger::Ledger,
-        core::provider::ProviderStream,
-        core::testing::{ScriptedProvider, text_answer},
-    },
     hooks::Compact,
     testkit::{hooks, settings},
 };
-use haest_core::Tools;
 
 /// A conversation on `host` whose last request filled the window, so the
 /// next model call compacts first; its ledger has no cap.

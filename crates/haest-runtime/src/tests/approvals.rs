@@ -4,17 +4,12 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use haest_core::fs::MemFs;
+use haest_mods::{ApprovalAnswer, ApprovalRequest, Decision, Prompter};
 use tokio_util::sync::CancellationToken;
 
 use super::{hardcoded, openrouter_key};
-use crate::{
-    BuildOptions, RuntimeInputs, World, build,
-    haest::{
-        core::fs::MemFs,
-        mods::{ApprovalAnswer, ApprovalRequest, Decision, Prompter},
-    },
-    testkit::Recorded,
-};
+use crate::{BuildOptions, RuntimeInputs, World, build, testkit::Recorded};
 
 /// Answers in order, counting the prompts; out of answers = Deny.
 #[derive(Clone, Default)]

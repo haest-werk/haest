@@ -2,23 +2,18 @@
 
 use std::sync::Arc;
 
-use haest_settings::{BuiltinTools, Settings};
-
-use crate::haest::{
-    KeySource,
-    code::{CodeTool, code_tool_names},
-    core::__private::openrouter_base_url,
-    core::skills::Skills,
-    core::task_board::TaskBoard,
-    core::tool::ToolSource,
-    mcp::McpHub,
-    mods::{ModTools, Mods},
-    tools::{
-        AgentRef, BashOptions, BuiltinOptions, FILE_TOOLS, GenerateImageOptions, GenerateImageTool,
-        JobHub, SkillToolOptions, SubagentHub, builtin_tools_where,
-    },
+use haest_code::{CodeTool, code_tool_names};
+use haest_core::{
+    __private::openrouter_base_url, KeySource, Tools, skills::Skills, task_board::TaskBoard,
+    tool::ToolSource,
 };
-use haest_core::Tools;
+use haest_mcp::McpHub;
+use haest_mods::{ModTools, Mods};
+use haest_settings::{BuiltinTools, Settings};
+use haest_tools::{
+    AgentRef, BashOptions, BuiltinOptions, FILE_TOOLS, GenerateImageOptions, GenerateImageTool,
+    JobHub, SkillToolOptions, SubagentHub, builtin_tools_where,
+};
 
 /// Everything but MCP: the built-ins, task tools, Skill (over the host's Fs:
 /// a user skill lives outside any sandbox mount) and GenerateImage.
@@ -208,11 +203,10 @@ impl ToolSource for MainTools {
 mod tests {
     use std::collections::HashMap;
 
+    use haest_core::ToolRef;
+    use haest_tools::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS};
+
     use super::*;
-    use crate::haest::{
-        ToolRef,
-        tools::{DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS},
-    };
 
     fn names(tools: &[ToolRef]) -> Vec<String> {
         tools.iter().map(|t| t.name().to_string()).collect()
@@ -220,7 +214,7 @@ mod tests {
 
     /// The own tools `picked` names, with no jobs and no image.
     fn build(picked: &BuiltinTools) -> Tools {
-        let skills = Skills::new(crate::haest::MemFs::new());
+        let skills = Skills::new(haest_core::MemFs::new());
         own_tools(picked, TaskBoard::default(), skills, None, None)
     }
 
@@ -231,7 +225,7 @@ mod tests {
             assert!(!build(&one).is_empty(), "{word} picks nothing");
         }
         for tool in build(&BuiltinTools::ALL) {
-            let builtin = crate::haest::tools::BuiltinTool::of(tool.name());
+            let builtin = haest_tools::BuiltinTool::of(tool.name());
             assert!(
                 builtin.is_some_and(|b| BuiltinTools::WORDS.contains(&b.as_str())),
                 "{}",
@@ -272,10 +266,7 @@ mod tests {
         assert!(image_options(&off, &with_key).unwrap().is_none());
         assert_eq!(image_options(&on, &keys(&[])).unwrap_err(), NoImageKey);
         let opts = image_options(&on, &with_key).unwrap().unwrap();
-        assert_eq!(
-            opts.base_url(),
-            crate::haest::core::__private::OPENROUTER_URL
-        );
+        assert_eq!(opts.base_url(), haest_core::__private::OPENROUTER_URL);
         assert_eq!(opts.model(), DEFAULT_IMAGE_MODEL);
         assert_eq!(opts.models(), DEFAULT_IMAGE_MODELS);
         let local = keys(&[

@@ -8,21 +8,19 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use haest_core::{
+    Effort, SharedDeps, SystemPrompt, ToolRef, ToolSourceRef, Tools, deferred_tools::ToolDeferral,
+    tool::ToolSource,
+};
+use haest_mods::{ModSystemPrompt, Mods};
+use haest_tools::{DeferredTools, Inbox, SubagentEvent, SubagentHub, SubagentParent};
 
 use crate::{
     RuntimeHooks,
-    haest::{
-        Effort, SharedDeps, SystemPrompt,
-        core::deferred_tools::ToolDeferral,
-        core::tool::ToolSource,
-        mods::{ModSystemPrompt, Mods},
-        tools::{DeferredTools, Inbox, SubagentEvent, SubagentHub, SubagentParent},
-    },
     inbox::InboxSender,
     prompt::{AgentPrompt, RuntimePrompt},
     tools::WrappedTools,
 };
-use haest_core::{ToolRef, ToolSourceRef, Tools};
 
 /// The runtime's [`SubagentParent`]: what a conversation's subagents are
 /// made from, behind its [`SubagentHub`].

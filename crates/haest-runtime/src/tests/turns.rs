@@ -11,24 +11,24 @@ use std::{
 };
 
 use async_trait::async_trait;
-use haest_core::testing::{ScriptedProvider, text_answer, tool_answer};
+use haest_core::{
+    ChildEnv, LoopEvent, Message, WorkspaceMode,
+    error::BoxError,
+    fs::{DirEntry, Fs, FsStat, MemFs},
+    session::replay,
+    testing::{ScriptedProvider, text_answer, tool_answer},
+    tool::ToolContext,
+};
+use haest_mods::{Before, Mod, ModEnv, ModToolCall};
+use haest_providers::http::{HttpClient, HttpError, Request, Response};
 use haest_settings::{BuiltinTools, Settings};
+use haest_tools::Inbox;
+use haest_workspace::RealFs;
 use serde_json::json;
 
 use super::{hardcoded, openrouter_key};
 use crate::{
     BuildOptions, RuntimeInputs, ShutDown, World, build,
-    haest::{
-        ChildEnv, LoopEvent, Message, WorkspaceMode,
-        core::error::BoxError,
-        core::fs::{DirEntry, Fs, FsStat, MemFs},
-        core::session::replay,
-        core::tool::ToolContext,
-        http::{HttpClient, HttpError, Request, Response},
-        mods::{Before, Mod, ModEnv, ModToolCall},
-        tools::Inbox,
-        workspace::RealFs,
-    },
     inbox::inbox,
     list_sessions,
     testkit::{Deny, Recorded},
@@ -222,7 +222,7 @@ async fn shut_down_leaves_no_job_running_and_the_session_on_disk() {
         .cloned()
         .expect("Bash in the real workspace leaves jobs");
     let workspace = rt.agent().deps().shared().workspace().clone();
-    let ctx = crate::haest::core::tool::ToolContext::new(dir.clone(), workspace);
+    let ctx = ToolContext::new(dir.clone(), workspace);
     jobs.start(haest_tools::NewJob::new("sleep 30"), &ctx)
         .unwrap();
 

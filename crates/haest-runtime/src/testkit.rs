@@ -6,16 +6,11 @@ use std::{
 };
 
 use async_trait::async_trait;
+use haest_core::{fs::MemFs, session::JsonlSessionFile};
+use haest_mods::{ApprovalAnswer, ApprovalRequest, Prompter};
 use haest_settings::Settings;
 
-use crate::{
-    RuntimeHooks, Ui,
-    haest::{
-        core::fs::MemFs,
-        core::session::JsonlSessionFile,
-        mods::{ApprovalAnswer, ApprovalRequest, Prompter},
-    },
-};
+use crate::{RuntimeHooks, Ui};
 
 pub(crate) fn settings() -> Settings {
     Settings::bare("/w", "/h")

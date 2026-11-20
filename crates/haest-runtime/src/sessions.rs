@@ -8,11 +8,10 @@ use std::{
 };
 
 use futures::{StreamExt, stream};
-
-use crate::haest::{
+use haest_core::{
     Message,
-    core::fs::Fs,
-    core::session::{SessionRecord, session_file, session_id_of},
+    fs::Fs,
+    session::{SessionRecord, session_file, session_id_of},
 };
 
 /// The first read of a session file: the header and, nearly always, the first
