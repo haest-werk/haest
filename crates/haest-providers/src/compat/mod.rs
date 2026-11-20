@@ -62,8 +62,8 @@ pub enum CompatFlavor {
     /// and puts cache breakpoints in for Anthropic and Google models.
     OpenRouter,
     /// Any other server: the plain body. Effort goes out only as a top-level
-    /// `reasoning_effort`, when [`CompatOptions::reasoning_effort`] lists the
-    /// levels the server takes.
+    /// `reasoning_effort`, when [`CompatOptions::with_reasoning_effort`] lists
+    /// the levels the server takes.
     Generic,
 }
 
@@ -71,9 +71,8 @@ pub enum CompatFlavor {
 ///
 /// [`CompatOptions::new`] takes the two every provider needs and leaves the
 /// rest plain ([`CompatFlavor::Generic`], no extras); set the others with the
-/// `with_*` setters, and read each back with the getter of its name (the key
-/// is never read back). Its Debug output shows neither the key, nor a
-/// header's value, nor a `user:password@` in the base URL.
+/// `with_*` setters. Its Debug output shows neither the key, nor a header's
+/// value, nor a `user:password@` in the base URL.
 ///
 /// ```
 /// use haest_providers::{CompatFlavor, CompatOptions};
@@ -81,7 +80,6 @@ pub enum CompatFlavor {
 /// let opts = CompatOptions::new("openrouter", "sk-or-...")
 ///     .with_flavor(CompatFlavor::OpenRouter)
 ///     .with_base_url("https://gateway.example.com/v1");
-/// assert_eq!(opts.flavor(), CompatFlavor::OpenRouter);
 /// assert!(!format!("{opts:?}").contains("sk-or"));
 /// ```
 #[derive(Clone)]
@@ -120,43 +118,10 @@ impl CompatOptions {
         &self.id
     }
 
-    /// OpenRouter's extras, or the plain body ([`CompatFlavor::Generic`], the
-    /// default; [`with_flavor`](Self::with_flavor)).
-    pub fn flavor(&self) -> CompatFlavor {
-        self.flavor
-    }
-
     /// Where requests go: `<base_url>/chat/completions`; None =
     /// `https://api.openai.com/v1` ([`with_base_url`](Self::with_base_url)).
     pub fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
-    }
-
-    /// Sent on every request, after (and over) the defaults
-    /// ([`with_header`](Self::with_header)).
-    pub fn headers(&self) -> &[(String, String)] {
-        &self.headers
-    }
-
-    /// The levels a provider that takes a top-level `reasoning_effort`
-    /// accepts (haest's effort is fitted to the nearest; off only when it
-    /// lists `none`); None = no `reasoning_effort` is sent
-    /// ([`with_reasoning_effort`](Self::with_reasoning_effort)).
-    pub fn reasoning_effort(&self) -> Option<&Reasoning> {
-        self.reasoning_effort.as_ref()
-    }
-
-    /// Price per model id, for a provider whose API returns no cost
-    /// ([`with_pricing`](Self::with_pricing)).
-    pub fn pricing(&self) -> &HashMap<String, ModelPricing> {
-        &self.pricing
-    }
-
-    /// OpenRouter's provider routing, resolved per request against the
-    /// request's model; None = off, no `provider` object is sent (a host's
-    /// gateway may route itself; [`with_routing`](Self::with_routing)).
-    pub fn routing(&self) -> Option<&RoutingScopes> {
-        self.routing.as_ref()
     }
 
     /// These options with OpenRouter's extras, or the plain body.
@@ -191,7 +156,8 @@ impl CompatOptions {
     }
 
     /// These options sending a top-level `reasoning_effort`, fitted to the
-    /// levels `reasoning` lists.
+    /// nearest of the levels `reasoning` lists (off only when it lists
+    /// `none`). Without it no `reasoning_effort` is sent.
     #[must_use]
     pub fn with_reasoning_effort(mut self, reasoning: Reasoning) -> Self {
         self.reasoning_effort = Some(reasoning);
@@ -199,7 +165,7 @@ impl CompatOptions {
     }
 
     /// These options with `pricing` added, by model id, over the prices
-    /// already set.
+    /// already set: the cost of an answer from a server that reports none.
     #[must_use]
     pub fn with_pricing(
         mut self,
@@ -210,7 +176,9 @@ impl CompatOptions {
         self
     }
 
-    /// These options sending OpenRouter provider routing (OpenRouter only).
+    /// These options sending OpenRouter provider routing (OpenRouter only),
+    /// resolved per request against the request's model. Without it no
+    /// `provider` object is sent (a host's gateway may route itself).
     #[must_use]
     pub fn with_routing(mut self, routing: RoutingScopes) -> Self {
         self.routing = Some(routing);
@@ -242,7 +210,7 @@ impl fmt::Debug for CompatOptions {
 /// kept on the message and replayed to the same provider. A tool call the
 /// server sends without an id gets one (`call_<hex>`). The message's cost is
 /// the server's when it reports one (at or above zero: a cost below it is
-/// not taken), else the price in [`CompatOptions::pricing`], else none.
+/// not taken), else the price set by [`CompatOptions::with_pricing`], else none.
 ///
 /// # Examples
 ///
@@ -275,11 +243,6 @@ impl CompatProvider {
         }
     }
 
-    /// The options it was built from.
-    pub fn options(&self) -> &CompatOptions {
-        &self.opts
-    }
-
     /// The same provider with `retry` instead of the default policy.
     #[must_use]
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
@@ -294,22 +257,6 @@ impl CompatProvider {
     pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
         self.sender.headers_timeout = wait;
         self
-    }
-
-    /// How it retries ([`with_retry`](Self::with_retry)).
-    pub fn retry(&self) -> RetryPolicy {
-        self.sender.retry
-    }
-
-    /// How long each try waits for its status and headers
-    /// ([`with_headers_timeout`](Self::with_headers_timeout)).
-    pub fn headers_timeout(&self) -> Duration {
-        self.sender.headers_timeout
-    }
-
-    /// The client its requests go through.
-    pub fn http(&self) -> &HttpClientRef {
-        &self.sender.http
     }
 
     /// Its id, the options' `id`: what its answers carry as their provider.
@@ -345,7 +292,7 @@ impl CompatProvider {
 /// ([`to_chat_tools`], then the web search server tool when `req.web_search`
 /// is set and the flavor is OpenRouter), `max_tokens` when above 0, the
 /// flavor's extras ([`flavor_extras`])
-/// and a `reasoning_effort` fitted to [`CompatOptions::reasoning_effort`].
+/// and a `reasoning_effort` fitted to [`CompatOptions::with_reasoning_effort`].
 pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> Value {
     let mut tools = to_chat_tools(&req.tools);
     if opts.flavor == CompatFlavor::OpenRouter {

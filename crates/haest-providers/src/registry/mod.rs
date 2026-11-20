@@ -151,8 +151,7 @@ impl ProviderRegistry {
     /// `ReqwestClient`, or without the `reqwest` feature none), retries as the
     /// SDKs do, waits ten minutes for each try's status, sends no routing,
     /// and tells OpenRouter the app is `haest` (`X-Title`) with no URL;
-    /// change a part with its `with_*` setter, read it with the getter of its
-    /// name.
+    /// change a part with its `with_*` setter.
     ///
     /// Nothing is built, no key asked for and no client built until a spec is
     /// resolved: a host that brings its own client never pays for the shared one.
@@ -168,8 +167,6 @@ impl ProviderRegistry {
     ///     .with_retry(RetryPolicy::none())
     ///     .with_headers_timeout(Duration::from_secs(60))
     ///     .without_app_title();
-    /// assert_eq!(registry.app_title(), None);
-    /// assert_eq!(registry.retry().max_retries, 0);
     /// ```
     pub fn new(keys: impl Into<KeySourceRef>) -> Self {
         Self {
@@ -299,58 +296,6 @@ impl ProviderRegistry {
 
     fn shared_mut(&mut self) -> &mut Shared {
         &mut self.setup_mut().shared
-    }
-
-    /// Where the built-ins' keys come from.
-    pub fn keys(&self) -> &KeySourceRef {
-        &self.setup.keys
-    }
-
-    /// providers.json's entries ([`with_custom`](Self::with_custom),
-    /// [`with_custom_provider`](Self::with_custom_provider)).
-    pub fn custom(&self) -> &CustomProviders {
-        &self.setup.custom
-    }
-
-    /// The host's own providers by name, in name order
-    /// ([`with_provider`](Self::with_provider)).
-    pub fn providers(&self) -> impl Iterator<Item = (&str, &ProviderRef)> {
-        self.setup
-            .providers
-            .iter()
-            .map(|(name, provider)| (name.as_str(), provider))
-    }
-
-    /// How every provider's requests travel ([`with_http`](Self::with_http)).
-    pub fn http(&self) -> &HttpClientRef {
-        &self.setup.shared.http
-    }
-
-    /// How every provider retries ([`with_retry`](Self::with_retry)).
-    pub fn retry(&self) -> RetryPolicy {
-        self.setup.shared.retry
-    }
-
-    /// How long each try waits for its status and headers
-    /// ([`with_headers_timeout`](Self::with_headers_timeout)).
-    pub fn headers_timeout(&self) -> Duration {
-        self.setup.shared.headers_timeout
-    }
-
-    /// The OpenRouter provider routing sent; None = none
-    /// ([`with_routing`](Self::with_routing)).
-    pub fn routing(&self) -> Option<&RoutingScopes> {
-        self.setup.shared.routing.as_ref()
-    }
-
-    /// OpenRouter's `X-Title`; None = not sent ([`with_app_title`](Self::with_app_title)).
-    pub fn app_title(&self) -> Option<&str> {
-        self.setup.shared.app_title.as_deref()
-    }
-
-    /// OpenRouter's `HTTP-Referer`; None = not sent ([`with_app_url`](Self::with_app_url)).
-    pub fn app_url(&self) -> Option<&str> {
-        self.setup.shared.app_url.as_deref()
     }
 
     /// The provider and model id for `spec` (`openrouter:z-ai/glm-5` -> the

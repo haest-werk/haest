@@ -34,9 +34,8 @@ const API_VERSION: &str = "2023-06-01";
 /// Where an [`AnthropicProvider`] sends its requests, and with which key.
 ///
 /// [`AnthropicOptions::new`] takes the two every provider needs; set the
-/// others with the `with_*` setters, and read each back with the getter of
-/// its name (the key is never read back). Its Debug output shows neither the
-/// key, nor a header's value, nor a `user:password@` in the base URL.
+/// others with the `with_*` setters. Its Debug output shows neither the key,
+/// nor a header's value, nor a `user:password@` in the base URL.
 ///
 /// ```
 /// use haest_providers::AnthropicOptions;
@@ -79,11 +78,6 @@ impl AnthropicOptions {
     /// `https://api.anthropic.com` ([`with_base_url`](Self::with_base_url)).
     pub fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
-    }
-
-    /// Sent on every request, in order ([`with_header`](Self::with_header)).
-    pub fn headers(&self) -> &[(String, String)] {
-        &self.headers
     }
 
     /// These options sending to `url` (`<url>/v1/messages`, the path before
@@ -169,11 +163,6 @@ impl AnthropicProvider {
         }
     }
 
-    /// The options it was built from.
-    pub fn options(&self) -> &AnthropicOptions {
-        &self.opts
-    }
-
     /// The same provider with `retry` instead of the default policy.
     #[must_use]
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
@@ -190,22 +179,6 @@ impl AnthropicProvider {
     pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
         self.sender.headers_timeout = wait;
         self
-    }
-
-    /// How it retries ([`with_retry`](Self::with_retry)).
-    pub fn retry(&self) -> RetryPolicy {
-        self.sender.retry
-    }
-
-    /// How long each try waits for its status and headers
-    /// ([`with_headers_timeout`](Self::with_headers_timeout)).
-    pub fn headers_timeout(&self) -> Duration {
-        self.sender.headers_timeout
-    }
-
-    /// The client its requests go through.
-    pub fn http(&self) -> &HttpClientRef {
-        &self.sender.http
     }
 
     /// Its id, the options' `id`: what its answers carry as their provider.

@@ -138,10 +138,6 @@ async fn an_entry_without_a_key_has_none_and_its_provider_sends_a_placeholder() 
         ..CustomProviderConfig::default()
     };
     assert_eq!(named.key(host.as_ref()).as_deref(), Some("from-host"));
-    // The registry's own key source, borrowed from its handle.
-    let registry = ProviderRegistry::new(keys(&[("LOCAL_KEY", "from-host")]));
-    let held = registry.keys().as_ref();
-    assert_eq!(named.key(held).as_deref(), Some("from-host"));
     let bare = CustomProviderConfig::openai("http://localhost:1/v1");
     assert_eq!(bare.key(host.as_ref()), None);
 

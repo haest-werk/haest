@@ -437,10 +437,4 @@ fn a_host_hands_in_its_own_provider_and_typed_entries() {
             "bedrock"
         ]
     );
-    let own_names: Vec<&str> = reg.providers().map(|(name, _)| name).collect();
-    assert_eq!(own_names, ["bedrock", "gateway", "openrouter"]);
-    assert_eq!(
-        reg.custom().names().collect::<Vec<_>>(),
-        ["gateway", "local"]
-    );
 }

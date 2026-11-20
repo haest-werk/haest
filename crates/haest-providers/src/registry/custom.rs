@@ -65,7 +65,7 @@ pub enum Dialect ("provider type") {
 ///
 /// `reasoningEffort` and `pricing` apply to `type: "openai"` only.
 /// `reasoningEffort`: send a top-level `reasoning_effort`, fitted to the listed
-/// levels ([`CompatOptions::reasoning_effort`]). Absent = no effort is sent.
+/// levels ([`CompatOptions::with_reasoning_effort`]). Absent = no effort is sent.
 /// `pricing`: USD per 1M tokens per model id, for an API that returns no cost; a
 /// catalog row's `pricing` fills in for a model not listed here.
 ///
@@ -337,8 +337,8 @@ impl CustomProviderConfig {
     /// then sends a placeholder, as a local server takes any key: a custom
     /// provider never fails for want of one).
     ///
-    /// `keys` is any key source; one a registry holds is borrowed from its
-    /// handle with `as_ref` (`entry.key(registry.keys().as_ref())`: a
+    /// `keys` is any key source; one held in a [`KeySourceRef`](haest_core::KeySourceRef) is borrowed
+    /// from the handle with `as_ref` (`entry.key(keys.as_ref())`: a
     /// `&KeySourceRef` itself is refused, as the compiler tries the
     /// closure impl of [`KeySource`] on it first).
     pub fn key(&self, keys: &dyn KeySource) -> Option<String> {
