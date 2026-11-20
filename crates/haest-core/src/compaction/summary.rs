@@ -7,7 +7,7 @@ use super::{CompactionError, SummaryPath};
 use crate::{
     agent::Agent,
     messages::{AssistantMessage, Message, StopReason, Usage},
-    provider::{NO_RESPONSE, Provider, ProviderRequest, final_message},
+    provider::{ProviderRequest, ResolvedModel},
 };
 
 const SUMMARY_PROMPT: &str = "Summarize the conversation so far so work can continue without it. Include: the user's goals and constraints, decisions made, files read or changed (with paths), commands run and their outcomes, errors hit and how they were resolved, and exactly what remains to be done next. Be specific and complete; omit pleasantries. Reply with the summary only.";
@@ -56,17 +56,12 @@ fn summary_text(msg: &AssistantMessage, cancel: &CancellationToken) -> Result<St
     Ok(text)
 }
 
-async fn ask(provider: &dyn Provider, req: ProviderRequest) -> Summary {
+async fn ask(model: &ResolvedModel, req: ProviderRequest) -> Summary {
     let cancel = req.cancel.clone();
-    match final_message(provider.stream(req), |_| {}).await {
-        Some(msg) => Summary {
-            text: summary_text(&msg, &cancel),
-            usage: msg.usage,
-        },
-        None => Summary {
-            text: Err(NO_RESPONSE.into()),
-            usage: Usage::default(),
-        },
+    let msg = model.complete(req).await;
+    Summary {
+        text: summary_text(&msg, &cancel),
+        usage: msg.usage,
     }
 }
 
@@ -95,12 +90,12 @@ pub(super) async fn summarize(
         .models()
         .resolve(agent.model_spec())
         .map_err(CompactionError::Model)?;
-    let (provider, model) = (resolved.provider().as_ref(), resolved.model().to_string());
+    let model = resolved.model().to_string();
     let prefix = agent.request_prefix(&model).await;
     let mut messages = agent.sendable(agent.history(), &model);
     messages.push(Message::user(warm_instruction(kept)));
     let warm = ask(
-        provider,
+        &resolved,
         prefix.request(model.clone(), messages, cancel.clone()),
     )
     .await;
@@ -110,20 +105,10 @@ pub(super) async fn summarize(
     }
     let mut messages = agent.sendable(&agent.history()[..cut], &model);
     messages.push(Message::user(SUMMARY_PROMPT));
-    let mut cold = ask(
-        provider,
-        ProviderRequest {
-            model,
-            system: COLD_SYSTEM.into(),
-            messages,
-            tools: Vec::new(),
-            cancel: cancel.clone(),
-            effort: None,
-            max_tokens: None,
-            web_search: None,
-        },
-    )
-    .await;
+    let req = ProviderRequest::new(model, messages)
+        .with_system(COLD_SYSTEM)
+        .with_cancel(cancel.clone());
+    let mut cold = ask(&resolved, req).await;
     book(agent, &cold.usage);
     if let (Err(cold_why), Err(warm_why)) = (&mut cold.text, &warm.text) {
         *cold_why = format!("{cold_why} (the warm request: {warm_why})");
