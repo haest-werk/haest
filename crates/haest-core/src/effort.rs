@@ -11,6 +11,8 @@
 //! [`nearest_accepted_effort`] is for provider adapters (`haest-providers`)
 //! whose API refuses any level it does not list.
 
+use std::cmp::Reverse;
+
 use crate::{
     catalog::{ModelFacts, OpenRouterEffort, Reasoning},
     deps::AgentHooks,
@@ -116,18 +118,14 @@ pub fn nearest_accepted_effort(effort: Effort, accepted: &Reasoning) -> Option<O
     if listed(accepted, effort) {
         return as_openrouter(effort);
     }
-    let at = LEVELS.iter().position(|l| *l == effort).unwrap_or(0) as i32;
-    let mut best: Option<(usize, Effort)> = None;
-    for (i, level) in LEVELS.into_iter().enumerate() {
-        if !listed(accepted, level) {
-            continue;
-        }
-        let closer = best.is_none_or(|(b, _)| (i as i32 - at).abs() <= (b as i32 - at).abs());
-        if closer {
-            best = Some((i, level));
-        }
-    }
-    best.and_then(|(_, l)| as_openrouter(l))
+    let at = LEVELS.iter().position(|l| *l == effort).unwrap_or(0);
+    // The nearest listed level; on a tie, the higher one.
+    LEVELS
+        .into_iter()
+        .enumerate()
+        .filter(|(_, l)| listed(accepted, *l))
+        .min_by_key(|(i, _)| (i.abs_diff(at), Reverse(*i)))
+        .and_then(|(_, l)| as_openrouter(l))
 }
 
 #[cfg(test)]
