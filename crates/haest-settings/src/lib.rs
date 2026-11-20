@@ -89,7 +89,7 @@ mod settings;
 #[cfg(test)]
 mod tests;
 
-pub use caps::{CapSettings, SubagentCapSettings};
+pub use caps::CapSettings;
 pub use haest_core::{context::ContextSources, skills::SkillSources, words::WordSet};
 pub use sets::BuiltinTools;
 pub use settings::{DEFAULT_MODEL, Settings};

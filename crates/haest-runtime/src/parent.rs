@@ -54,7 +54,7 @@ impl RuntimeParent {
     /// The hub, capped by the settings' `subagents` (how deep they nest, how
     /// many run at once, each one's spend, steps and time).
     pub(crate) fn hub(self) -> SubagentHub {
-        let caps = self.hooks.settings().subagent_caps();
+        let caps = self.hooks.settings().subagents;
         SubagentHub::new(self, caps)
     }
 }

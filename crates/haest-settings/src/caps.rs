@@ -1,13 +1,9 @@
-//! [`CapSettings`] and [`SubagentCapSettings`], the caps as settings hold them, and
-//! the [`Settings`] methods that turn them into what the loop, the ledger and
-//! the subagent hub take.
+//! [`CapSettings`], the caps as settings hold them, and the [`Settings`]
+//! methods that turn them into what the loop and the ledger take.
 
 use std::time::Duration;
 
-use haest_core::{
-    caps::ConversationCaps,
-    caps::{SubagentCaps, TurnCaps},
-};
+use haest_core::caps::{ConversationCaps, TurnCaps};
 
 use crate::Settings;
 
@@ -72,42 +68,6 @@ impl Default for CapSettings {
     }
 }
 
-/// The subagent tree's caps as settings hold them: the `max_agent_depth`,
-/// `max_subagents`, `subagent_usd`, `subagent_steps`, `subagent_minutes` and
-/// `subagent_budgets` settings. [`Settings::subagent_caps`] turns them into haest-core's
-/// [`SubagentCaps`].
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SubagentCapSettings {
-    /// How deep agents may nest (main = 0); 0 = no Agent tool.
-    pub max_depth: u32,
-    /// Subagents running at once, across the tree; 0 = no Agent tool.
-    pub max_concurrent: usize,
-    /// One subagent's spend in USD.
-    pub usd: f64,
-    /// One subagent's model calls.
-    pub steps: u32,
-    /// One subagent's wall clock (the `subagent_minutes` setting).
-    pub time: Duration,
-    /// The model may give a subagent tighter caps (the Agent tool's
-    /// `budget`), held on the conversation's budget while it runs. Bare: off.
-    pub budgets: bool,
-}
-
-impl Default for SubagentCapSettings {
-    /// haest-core's [`SubagentCaps::default`].
-    fn default() -> Self {
-        let c = SubagentCaps::default();
-        Self {
-            max_depth: c.max_depth,
-            max_concurrent: c.max_concurrent,
-            usd: c.usd,
-            steps: c.steps,
-            time: c.time,
-            budgets: c.budgets,
-        }
-    }
-}
-
 impl Settings {
     /// The model's context window in tokens: [`CapSettings::context_window`] when
     /// set above 1000, else `catalog_window` (the catalog row's, for a model
@@ -156,20 +116,6 @@ impl Settings {
         ConversationCaps {
             max_usd: self.caps.max_conversation_usd,
             max_unpriced_tokens: self.caps.max_conversation_tokens,
-        }
-    }
-
-    /// The caps on the subagent tree, for haest-tools' hub: `subagents` as
-    /// they are.
-    pub fn subagent_caps(&self) -> SubagentCaps {
-        let s = &self.subagents;
-        SubagentCaps {
-            max_depth: s.max_depth,
-            max_concurrent: s.max_concurrent,
-            usd: s.usd,
-            steps: s.steps,
-            time: s.time,
-            budgets: s.budgets,
         }
     }
 }

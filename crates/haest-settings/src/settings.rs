@@ -7,13 +7,14 @@ use std::path::PathBuf;
 
 use haest_core::{
     Effort, WorkspaceMode,
+    caps::SubagentCaps,
     deferred_tools::DeferMode,
     provider::{WebSearchEngine, WebSearchOptions},
     skills::SkillSources,
     wind_down::WindDown,
 };
 
-use crate::{CapSettings, ContextSources, SubagentCapSettings, sets::BuiltinTools};
+use crate::{CapSettings, ContextSources, sets::BuiltinTools};
 
 /// The model a run uses when none is configured: [`Settings::bare`]'s `model_spec`.
 pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
@@ -26,12 +27,11 @@ pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
 /// setting of the same name, so `skill_catalog` is also the TOML key
 /// haest-config reads into it, `HAEST_SKILL_CATALOG` and `--skill-catalog`
 /// (`model_spec` is the `model` setting); the caps are grouped in
-/// [`CapSettings`] and [`SubagentCapSettings`].
+/// [`CapSettings`] and haest-core's [`SubagentCaps`].
 ///
 /// The helper methods turn fields into what the loop and the tools take:
 /// [`turn_caps_for`](Self::turn_caps_for), [`conversation_caps`](Self::conversation_caps),
-/// [`subagent_caps`](Self::subagent_caps), [`web_search_options`](Self::web_search_options)
-/// and [`spill_dir`](Self::spill_dir).
+/// [`web_search_options`](Self::web_search_options) and [`spill_dir`](Self::spill_dir).
 ///
 /// # Examples
 ///
@@ -119,9 +119,11 @@ pub struct Settings {
     /// Turns in a row a background job or an agent may start with no human
     /// message; past it haest holds them. 0 = no cap.
     pub max_agent_turns: u32,
-    /// The caps on the subagent tree: depth, how many at once, and each one's
-    /// budget ([`Settings::subagent_caps`] for haest-tools).
-    pub subagents: SubagentCapSettings,
+    /// The caps on the subagent tree, for haest-tools' hub: depth, how many
+    /// at once, and each one's budget (the `max_agent_depth`,
+    /// `max_subagents`, `subagent_usd`, `subagent_steps`, `subagent_minutes`
+    /// and `subagent_budgets` settings).
+    pub subagents: SubagentCaps,
     /// Where sessions, the REPL's history and spilled tool output go.
     pub data_dir: PathBuf,
     /// haest's own config dir; the human's mods are in `<config_dir>/mods`.
@@ -176,7 +178,7 @@ impl Settings {
             caps: CapSettings::default(),
             wind_down_at: WindDown::OFF,
             max_agent_turns: 30,
-            subagents: SubagentCapSettings::default(),
+            subagents: SubagentCaps::default(),
             data_dir: home.join(".local/share/haest"),
             config_dir: home.join(".config/haest"),
             debug: false,
