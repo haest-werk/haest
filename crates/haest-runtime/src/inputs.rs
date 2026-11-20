@@ -2,8 +2,6 @@
 //! inputs ([`RuntimeInputs`]) and what it decides per run ([`BuildOptions`],
 //! [`Resume`]).
 
-use std::fmt;
-
 use haest_settings::Settings;
 
 use crate::{
@@ -41,6 +39,7 @@ use crate::{
 /// assert_eq!(inputs.keys().key("OPENROUTER_API_KEY").as_deref(), Some("sk-or-example"));
 /// assert!(inputs.mcp_servers().is_empty());
 /// ```
+#[derive(Debug)]
 pub struct RuntimeInputs {
     pub(crate) settings: Settings,
     pub(crate) world: World,
@@ -233,24 +232,6 @@ impl RuntimeInputs {
     /// None = the built-in providers.
     pub fn models(&self) -> Option<&ModelResolverRef> {
         self.models.as_ref()
-    }
-}
-
-/// The custom providers by name only (their own Debug): an entry may hold a key.
-impl fmt::Debug for RuntimeInputs {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RuntimeInputs")
-            .field("settings", &self.settings)
-            .field("world", &self.world)
-            .field("passed_env", &self.passed_env)
-            .field("keys", &self.keys)
-            .field("providers", &self.providers)
-            .field("mcp_servers", &self.mcp_servers)
-            .field("routing", &self.routing)
-            .field("http", &self.http)
-            .field("host_mods", &self.host_mods)
-            .field("models", &self.models)
-            .finish()
     }
 }
 
