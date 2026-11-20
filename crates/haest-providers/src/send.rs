@@ -6,6 +6,8 @@
 //! Only the request is retried. Once the stream has started, a failure ends the
 //! message with `StopReason::Error`: a retry would replay text already shown.
 
+mod shell;
+
 use std::{
     collections::hash_map::RandomState,
     hash::{BuildHasher, Hasher},
@@ -21,6 +23,8 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::retry::{RetryPolicy, retry_after, should_retry};
+
+pub(crate) use shell::{endpoint_options, sender_provider};
 
 /// How long one try waits for its status and headers unless a provider is
 /// told otherwise (`with_headers_timeout`): ten minutes, as long as the SDKs
@@ -170,8 +174,8 @@ pub(crate) const OPENAI_URL: &str = "https://api.openai.com/v1";
 /// `path` under `base` (None = `default`), however many slashes its path
 /// ends in, and before its query: a gateway's key or an `api-version` there
 /// stays the query (haest-http's `join_path`).
-pub(crate) fn endpoint(base: &Option<String>, default: &str, path: &str) -> String {
-    join_path(base.as_deref().unwrap_or(default), path)
+pub(crate) fn endpoint(base: Option<&str>, default: &str, path: &str) -> String {
+    join_path(base.unwrap_or(default), path)
 }
 
 /// A model call to one of the OpenAI dialects: `body` POSTed as JSON to `url`

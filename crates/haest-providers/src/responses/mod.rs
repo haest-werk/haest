@@ -13,104 +13,42 @@ mod tests;
 #[cfg(test)]
 mod tests_convert;
 
-use std::{fmt, time::Duration};
-
-use haest_core::provider::{Provider, ProviderRequest, ProviderStream};
+use haest_core::provider::{ProviderRequest, ProviderStream};
 
 use convert::build_responses_body;
 
-use haest_http::{HttpClientRef, Request};
+use haest_http::Request;
 
 use crate::{
     driver::drive,
-    retry::RetryPolicy,
-    send::{HeaderNames, OPENAI_URL, REDACTED, Sender, UrlDebug, bearer_post, endpoint},
+    send::{OPENAI_URL, Sender, bearer_post, endpoint, endpoint_options, sender_provider},
 };
 
-/// Where a [`ResponsesProvider`] sends its requests, and with which key.
-///
-/// [`ResponsesOptions::new`] takes the two every provider needs; set the
-/// others with the `with_*` setters. Its Debug output shows neither the key,
-/// nor a header's value, nor a `user:password@` in the base URL.
-///
-/// ```
-/// use haest_providers::ResponsesOptions;
-///
-/// let opts = ResponsesOptions::new("openai", "sk-...").with_header("OpenAI-Project", "proj_1");
-/// assert_eq!(opts.id(), "openai");
-/// assert_eq!(opts.base_url(), None);
-/// ```
-#[derive(Clone)]
-pub struct ResponsesOptions {
-    pub(crate) id: String,
-    /// Sent as `Authorization: Bearer <api_key>`.
-    pub(crate) api_key: String,
-    pub(crate) base_url: Option<String>,
-    pub(crate) headers: Vec<(String, String)>,
-}
-
-impl ResponsesOptions {
-    /// The provider `id`, sending `api_key` to OpenAI's own API with no extra
-    /// headers.
-    pub fn new(id: impl Into<String>, api_key: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            api_key: api_key.into(),
-            base_url: None,
-            headers: Vec::new(),
-        }
-    }
-
-    /// The provider's name: its [`Provider::id`], stored on every message it
-    /// answers. Reasoning replays only to the provider whose id a message
-    /// carries.
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-
-    /// Where requests go: `<base_url>/responses`; None =
-    /// `https://api.openai.com/v1` ([`with_base_url`](Self::with_base_url)).
-    pub fn base_url(&self) -> Option<&str> {
-        self.base_url.as_deref()
-    }
-
-    /// These options sending to `url` (`<url>/responses`, the path before
-    /// `url`'s query) instead of OpenAI's own API. Its path shows in Debug
-    /// output and errors: a gateway's key goes in a header
-    /// ([`with_header`](Self::with_header)) or the query, never the path.
+endpoint_options! {
+    /// Where a [`ResponsesProvider`] sends its requests, and with which key
+    /// (sent as `Authorization: Bearer <api_key>`).
     ///
-    /// A URL with an `@` past its host, or with no host (`https:///v1`,
-    /// what an empty `${HOST}` makes), is never sent to: every request ends
-    /// as an error saying so (haest-http's `check_endpoint_url`). A
-    /// password holding an unescaped `/`, `?` or `#` ends the host a URL
-    /// parser reads there, so it goes in percent-encoded (`/` as `%2F`).
-    #[must_use]
-    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
-        self.base_url = Some(url.into());
-        self
-    }
-
-    /// These options sending `name: value` on every request, after the ones
-    /// before it.
-    #[must_use]
-    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        self.headers.push((name.into(), value.into()));
-        self
-    }
-}
-
-impl fmt::Debug for ResponsesOptions {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResponsesOptions")
-            .field("id", &self.id)
-            .field("api_key", &REDACTED)
-            .field("base_url", &self.base_url.as_deref().map(UrlDebug))
-            .field("headers", &HeaderNames(&self.headers))
-            .finish()
+    /// [`ResponsesOptions::new`] takes the two every provider needs; set the
+    /// others with the `with_*` setters. Its Debug output shows neither the key,
+    /// nor a header's value, nor a `user:password@` in the base URL.
+    ///
+    /// ```
+    /// use haest_providers::ResponsesOptions;
+    ///
+    /// let opts = ResponsesOptions::new("openai", "sk-...").with_header("OpenAI-Project", "proj_1");
+    /// assert_eq!(opts.id(), "openai");
+    /// assert_eq!(opts.base_url(), None);
+    /// ```
+    ResponsesOptions {
+        api: "OpenAI's own API",
+        url: "https://api.openai.com/v1",
+        path: "responses",
+        key: "authorization",
     }
 }
 
-/// OpenAI's Responses API as a [`Provider`]: the built-in `openai` provider.
+/// OpenAI's Responses API as a [`Provider`](haest_core::Provider): the
+/// built-in `openai` provider.
 ///
 /// It runs stateless (`store: false`): each request carries the whole
 /// history, and the model's reasoning survives between turns only as its
@@ -137,40 +75,12 @@ pub struct ResponsesProvider {
     sender: Sender,
 }
 
+sender_provider!(ResponsesProvider, ResponsesOptions);
+
 impl ResponsesProvider {
-    /// A provider sending over `http` (the client itself, or an `Arc` of one
-    /// the host shares) with the default [`RetryPolicy`]. Nothing is sent
-    /// until [`stream`](Self::stream).
-    pub fn new(opts: ResponsesOptions, http: impl Into<HttpClientRef>) -> Self {
-        Self {
-            opts,
-            sender: Sender::new(http.into()),
-        }
-    }
-
-    /// The same provider with `retry` instead of the default policy.
-    #[must_use]
-    pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
-        self.sender.retry = retry;
-        self
-    }
-
-    /// The same provider waiting at most `wait` for each try's status and
-    /// headers (default ten minutes); past it the try counts as unanswered,
-    /// as [`AnthropicProvider::with_headers_timeout`](crate::AnthropicProvider::with_headers_timeout) says.
-    #[must_use]
-    pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
-        self.sender.headers_timeout = wait;
-        self
-    }
-
-    /// Its id, the options' `id`: what its answers carry as their provider.
-    pub fn id(&self) -> &str {
-        &self.opts.id
-    }
-
-    /// Sends `req` and streams the answer (the [`Provider`] method, callable
-    /// without importing the trait).
+    /// Sends `req` and streams the answer (the
+    /// [`Provider`](haest_core::Provider) method, callable without importing
+    /// the trait).
     pub fn stream(&self, req: ProviderRequest) -> ProviderStream {
         let fold = stream::ResponsesFold::new(&self.opts.id, &req.model);
         drive(&self.sender, self.http_request(&req), req.cancel, fold)
@@ -178,21 +88,10 @@ impl ResponsesProvider {
 
     fn http_request(&self, req: &ProviderRequest) -> Request {
         bearer_post(
-            endpoint(&self.opts.base_url, OPENAI_URL, "responses"),
+            endpoint(self.opts.base_url(), OPENAI_URL, "responses"),
             &self.opts.api_key,
             &build_responses_body(&self.opts.id, req),
             &self.opts.headers,
         )
-    }
-}
-
-/// [`ResponsesProvider::id`] and [`ResponsesProvider::stream`].
-impl Provider for ResponsesProvider {
-    fn id(&self) -> &str {
-        ResponsesProvider::id(self)
-    }
-
-    fn stream(&self, req: ProviderRequest) -> ProviderStream {
-        ResponsesProvider::stream(self, req)
     }
 }

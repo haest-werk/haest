@@ -22,7 +22,7 @@ mod tests_search;
 #[cfg(test)]
 mod tests_stream;
 
-use std::{collections::HashMap, fmt, time::Duration};
+use std::{collections::HashMap, fmt};
 
 use haest_core::{
     catalog::{ModelPricing, Reasoning},
@@ -31,7 +31,7 @@ use haest_core::{
         ProviderEvent, ProviderRequest, ProviderStream, book_priced_cost, mark_stream_failed,
     },
 };
-use haest_http::{HttpClientRef, Request};
+use haest_http::Request;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -41,9 +41,10 @@ pub(crate) use stream::{StreamState, apply_chunk, finish_message};
 
 use crate::{
     driver::{Step, StreamFold, drive, openai_error},
-    retry::RetryPolicy,
     routing::RoutingScopes,
-    send::{HeaderNames, OPENAI_URL, REDACTED, Sender, UrlDebug, bearer_post, endpoint},
+    send::{
+        HeaderNames, OPENAI_URL, REDACTED, Sender, UrlDebug, bearer_post, endpoint, sender_provider,
+    },
     sse::SseEvent,
     web_search::web_search_tool,
 };
@@ -232,38 +233,9 @@ pub struct CompatProvider {
     sender: Sender,
 }
 
+sender_provider!(CompatProvider, CompatOptions);
+
 impl CompatProvider {
-    /// A provider sending over `http` (the client itself, or an `Arc` of one
-    /// the host shares) with the default [`RetryPolicy`]. Nothing is sent
-    /// until [`stream`](Self::stream).
-    pub fn new(opts: CompatOptions, http: impl Into<HttpClientRef>) -> Self {
-        Self {
-            opts,
-            sender: Sender::new(http.into()),
-        }
-    }
-
-    /// The same provider with `retry` instead of the default policy.
-    #[must_use]
-    pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
-        self.sender.retry = retry;
-        self
-    }
-
-    /// The same provider waiting at most `wait` for each try's status and
-    /// headers (default ten minutes); past it the try counts as unanswered,
-    /// as [`AnthropicProvider::with_headers_timeout`](crate::AnthropicProvider::with_headers_timeout) says.
-    #[must_use]
-    pub fn with_headers_timeout(mut self, wait: Duration) -> Self {
-        self.sender.headers_timeout = wait;
-        self
-    }
-
-    /// Its id, the options' `id`: what its answers carry as their provider.
-    pub fn id(&self) -> &str {
-        &self.opts.id
-    }
-
     /// Sends `req` and streams the answer (the
     /// [`Provider`](haest_core::Provider) method, callable without importing
     /// the trait).
@@ -278,7 +250,7 @@ impl CompatProvider {
 
     fn http_request(&self, req: &ProviderRequest) -> Request {
         bearer_post(
-            endpoint(&self.opts.base_url, OPENAI_URL, "chat/completions"),
+            endpoint(self.opts.base_url(), OPENAI_URL, "chat/completions"),
             &self.opts.api_key,
             &build_compat_body(&self.opts, req),
             &self.opts.headers,
@@ -360,16 +332,5 @@ impl StreamFold for CompatFold {
         }
         book_priced_cost(&mut self.msg.usage, self.price.as_ref());
         self.msg
-    }
-}
-
-/// [`CompatProvider::id`] and [`CompatProvider::stream`].
-impl haest_core::provider::Provider for CompatProvider {
-    fn id(&self) -> &str {
-        CompatProvider::id(self)
-    }
-
-    fn stream(&self, req: ProviderRequest) -> ProviderStream {
-        CompatProvider::stream(self, req)
     }
 }
