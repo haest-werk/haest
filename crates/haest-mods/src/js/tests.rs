@@ -24,7 +24,7 @@ export default function (haest: { on(event: string, fn: (call: Call) => Verdict)
 async fn with_mod(ui: Arc<TestUi>, file: &str, source: &str) -> Mods {
     let haest = env(ui, WorkspaceMode::Sandbox);
     let m = js(file, source, &haest).await.expect("the mod loads");
-    Mods::builder(haest).with(m).build()
+    Mods::new(haest, [m])
 }
 
 #[tokio::test]

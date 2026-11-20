@@ -250,18 +250,18 @@ pub(crate) async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 pub async fn load_mods(cfg: ModOptions, fs: &dyn Fs, ui: impl Into<ModUiRef>) -> Mods {
     let ui = ui.into();
     let env = ModEnv::new(cfg.cwd.clone(), cfg.workspace, ui.clone());
-    let mut mods = Mods::builder(env.clone());
+    let mut mods: Vec<ModRef> = Vec::new();
     if cfg.approvals {
         let mut approval = ApprovalMod::new().with_shell_tools(cfg.shell_tools.clone());
         if let Some(auto) = cfg.auto.clone() {
             approval = approval.with_auto(auto);
         }
-        mods = mods.with(approval);
+        mods.push(approval.into());
     }
     let plan = PlanMod::new()
         .listened_by(cfg.plan_listener.clone())
         .with_planning_tools(cfg.planning_tools.clone());
-    mods = mods.with(plan);
+    mods.push(plan.into());
     for dir in cfg.mod_dirs() {
         for path in mod_files(fs, &dir).await {
             let loaded = match fs.read_to_string(&path).await {
@@ -271,7 +271,7 @@ pub async fn load_mods(cfg: ModOptions, fs: &dyn Fs, ui: impl Into<ModUiRef>) ->
                 Err(e) => Err(e.to_string()),
             };
             match loaded {
-                Ok(m) => mods = mods.with(m),
+                Ok(m) => mods.push(m.into()),
                 Err(why) => ui.error(&format!(
                     "Mod {} failed to load and was skipped: {why}",
                     path.display()
@@ -279,7 +279,8 @@ pub async fn load_mods(cfg: ModOptions, fs: &dyn Fs, ui: impl Into<ModUiRef>) ->
             }
         }
     }
-    mods.with_all(cfg.host_mods).build()
+    mods.extend(cfg.host_mods);
+    Mods::new(env, mods)
 }
 
 #[cfg(test)]

@@ -160,7 +160,7 @@ impl ModEnv {
 ///
 /// A mod is put in a conversation with
 /// [`ModOptions::with_mod`](crate::ModOptions::with_mod) or
-/// [`ModsBuilder::with`](crate::ModsBuilder::with) (by
+/// [`Mods::new`](crate::Mods::new) (by
 /// value, or as an `Arc` the host keeps to look at it), and held in a
 /// [`ModRef`]; every event runs across the mods in the order they were added. An `Err` from an
 /// event (any error, or a line of text: `Err("why".into())`) is reported to

@@ -101,7 +101,7 @@ impl JsMod {
     /// [`load_mods`](crate::load_mods) calls this for every file in the mod
     /// directories; a host calls it to load one file of its own, then puts
     /// it in with [`ModOptions::with_mod`](crate::ModOptions::with_mod) or
-    /// [`ModsBuilder::with`](crate::ModsBuilder::with).
+    /// [`Mods::new`](crate::Mods::new).
     ///
     /// # Errors
     ///

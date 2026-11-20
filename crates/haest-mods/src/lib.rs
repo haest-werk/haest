@@ -34,7 +34,7 @@
 //! | [`Mod`] | a native mod: implement only the events it hooks |
 //! | [`JsMod`] | a `.js` / `.ts` mod file, and the `haest` API its default export gets; [`ModCaps`] bounds it, [`ModLoadError`] says why one did not load |
 //! | [`load_mods`] | the built-ins plus one conversation's mod files, as [`Mods`] |
-//! | [`Mods`], [`ModsBuilder`] | every loaded mod, in order, as a cheap handle that never changes once built; a host's own native mods go in with [`ModOptions::with_mod`] or [`ModsBuilder::with`] |
+//! | [`Mods`] | every loaded mod, in order, as a cheap handle that never changes once built; a host's own native mods go in with [`ModOptions::with_mod`] or [`Mods::new`] |
 //! | [`ModTools`], [`ModSystemPrompt`] | the wrappers a host puts around its tool source and its system prompt |
 //! | [`Mods::rewrite_prompt`], [`Mods::command`] | `prompt.submit` and slash commands, for the host's input path |
 //! | [`ModUi`] | PLUG POINT: how the host asks the human and shows them a line |
@@ -179,7 +179,7 @@
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), BoxError> {
 //! let env = ModEnv::new("/project", WorkspaceMode::Real, Terminal);
-//! let mods = Mods::builder(env).with(NoDotEnv).build();
+//! let mods = Mods::new(env, [NoDotEnv]);
 //! assert_eq!(mods.system_append().await, "Never print a .env file.");
 //!
 //! let tools = ModTools::wrap(&mods, Tools::new().with(Bash));
@@ -230,7 +230,7 @@
 //! # async fn main() -> Result<(), haest_core::error::BoxError> {
 //! let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Terminal);
 //! let standup = JsMod::load(Path::new("/mods/standup.ts"), STANDUP_TS.into(), &env).await?;
-//! let mods = Mods::builder(env).with(standup).build();
+//! let mods = Mods::new(env, [standup]);
 //!
 //! // The human types `/standup yesterday's commits`; the model gets the text.
 //! let sent = mods.command("/standup", "yesterday's commits").await;
@@ -293,4 +293,4 @@ pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter, Pro
 pub use js::{JsMod, ModCaps, ModLoadError};
 pub use loader::{ModOptions, load_mods};
 pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PLANNING_TOOLS, PlanMod};
-pub use registry::{CommandOutcome, Mods, ModsBuilder};
+pub use registry::{CommandOutcome, Mods};
