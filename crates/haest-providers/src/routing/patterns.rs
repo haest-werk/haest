@@ -1,44 +1,17 @@
 //! Override KEYS for OpenRouter provider routing: an exact model id
 //! (`z-ai/glm-4.6`), a glob family (`z-ai/glm-*`), or an author prefix (`z-ai/`).
-//! How a key matches a haest model, how specific it is, and why a key is refused.
+//! How a key matches a haest model, how specific it is, and which keys are refused.
 
-/// How many models an override pattern can match.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MatchKind {
-    /// One model id, exactly.
-    Model,
-    /// Several: a glob (`*`) or an author prefix (ending in `/`).
-    Family,
-}
-
-/// A pattern is a FAMILY when it can match more than one model.
-pub(crate) fn match_kind(pattern: &str) -> MatchKind {
-    if pattern.contains('*') || pattern.ends_with('/') {
-        MatchKind::Family
-    } else {
-        MatchKind::Model
-    }
-}
-
-/// Why a pattern cannot be an override key, or None when it can.
-pub(crate) fn pattern_refusal(pattern: &str) -> Option<&'static str> {
+/// Whether `pattern` can be an override key: an OpenRouter id with its
+/// author (no spaces, no `openrouter:` prefix or `:variant`), and never one
+/// that matches every model (that is the default rule).
+pub(crate) fn is_override_key(pattern: &str) -> bool {
     let p = pattern.trim();
-    if p.is_empty() {
-        return Some("Enter a model id or a family pattern");
-    }
-    if p.chars().any(char::is_whitespace) {
-        return Some("No spaces: a model id looks like z-ai/glm-4.6");
-    }
-    if p.contains(':') {
-        return Some("Use the OpenRouter model id without the openrouter: prefix or a :variant");
-    }
-    if !p.contains('/') {
-        return Some("Include the author: z-ai/ or z-ai/glm-*");
-    }
-    if p.chars().all(|c| c == '*' || c == '/') {
-        return Some("Too broad: that is the default rule");
-    }
-    None
+    !p.is_empty()
+        && !p.chars().any(char::is_whitespace)
+        && !p.contains(':')
+        && p.contains('/')
+        && !p.chars().all(|c| c == '*' || c == '/')
 }
 
 /// The haest model id stripped to what an override matches: no `openrouter:` spec prefix, no `:variant`.
@@ -83,11 +56,10 @@ pub(crate) fn pattern_matches(pattern: &str, model: &str) -> bool {
     id == pattern
 }
 
-/// Specificity rank: exact models first, then families by literal length (longer = narrower).
+/// Specificity rank: exact models first, then families (a glob or an author
+/// prefix, matching more than one model) by literal length (longer = narrower).
 pub(crate) fn specificity(pattern: &str) -> usize {
     let literal = pattern.chars().filter(|c| *c != '*').count();
-    match match_kind(pattern) {
-        MatchKind::Model => 1_000_000 + literal,
-        MatchKind::Family => literal,
-    }
+    let family = pattern.contains('*') || pattern.ends_with('/');
+    if family { literal } else { 1_000_000 + literal }
 }

@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::{
     ProjectRouting, ProviderRouting, RoutingOverride, RoutingPriority, RoutingRule, RoutingScopes,
-    patterns::pattern_refusal, unique,
+    patterns::is_override_key, unique,
 };
 
 fn slug_list(v: Option<&Value>) -> Vec<String> {
@@ -34,7 +34,7 @@ fn rule(v: Option<&Value>) -> RoutingRule {
 /// `{"global": {"banned": [...], "favorites": [...]}, "overrides": [{"match": "...", "banned": [...], "favorites": [...]}]}`.
 ///
 /// Never fails. Slugs are trimmed, blank ones dropped, repeats removed. An
-/// override whose pattern [`pattern_refusal`] refuses, or whose pattern came
+/// override whose pattern is no override key ([`is_override_key`]), or whose pattern came
 /// before, is skipped. Anything that is not the right shape reads as empty.
 pub(crate) fn normalize_routing(raw: &Value) -> ProviderRouting {
     let Some(r) = raw.as_object() else {
@@ -48,7 +48,7 @@ pub(crate) fn normalize_routing(raw: &Value) -> ProviderRouting {
         .flatten()
     {
         let pattern = o.get("match").and_then(Value::as_str).unwrap_or("").trim();
-        if pattern_refusal(pattern).is_some() || overrides.iter().any(|x| x.pattern == pattern) {
+        if !is_override_key(pattern) || overrides.iter().any(|x| x.pattern == pattern) {
             continue;
         }
         overrides.push(RoutingOverride {

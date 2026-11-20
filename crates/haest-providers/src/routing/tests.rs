@@ -2,7 +2,7 @@ use serde_json::json;
 
 use super::{
     normalize::{normalize_project_routing, normalize_routing},
-    patterns::{MatchKind, match_kind, pattern_matches, pattern_refusal},
+    patterns::{is_override_key, pattern_matches},
     *,
 };
 
@@ -229,10 +229,7 @@ fn each_priority_maps_to_its_openrouter_fields() {
 // -- patterns
 
 #[test]
-fn patterns_classify_and_match_models_globs_and_author_prefixes() {
-    assert_eq!(match_kind("z-ai/glm-4.6"), MatchKind::Model);
-    assert_eq!(match_kind("z-ai/glm-*"), MatchKind::Family);
-    assert_eq!(match_kind("z-ai/"), MatchKind::Family);
+fn patterns_match_models_globs_and_author_prefixes() {
     assert!(pattern_matches("z-ai/glm-*", "z-ai/glm-4.6"));
     assert!(!pattern_matches("z-ai/glm-*", "z-ai/gml-4.6"));
     assert!(pattern_matches("z-ai/", "z-ai/anything"));
@@ -246,10 +243,10 @@ fn patterns_classify_and_match_models_globs_and_author_prefixes() {
 #[test]
 fn patterns_that_are_not_override_keys_are_refused() {
     for bad in ["", "glm", "openrouter:z-ai/glm", "*", "*/", "z ai/glm"] {
-        assert!(pattern_refusal(bad).is_some(), "{bad:?}");
+        assert!(!is_override_key(bad), "{bad:?}");
     }
     for good in ["z-ai/", "z-ai/glm-*", "z-ai/glm-4.6"] {
-        assert_eq!(pattern_refusal(good), None, "{good:?}");
+        assert!(is_override_key(good), "{good:?}");
     }
 }
 
