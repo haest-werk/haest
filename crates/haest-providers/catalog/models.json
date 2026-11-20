@@ -5,8 +5,8 @@
       "label": "Anthropic",
       "models": [
         {
-          "spec": "openrouter:anthropic/claude-fable-5.1",
-          "label": "Claude Fable 5.1",
+          "spec": "openrouter:anthropic/claude-fable-5.2",
+          "label": "Claude Fable 5.2",
           "input": [
             "text",
             "image",
@@ -534,7 +534,7 @@
             "image",
             "video"
           ],
-          "contextWindow": 1048576,
+          "contextWindow": 1048575,
           "reasoning": {
             "mandatory": true,
             "efforts": [
