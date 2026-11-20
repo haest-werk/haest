@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 license = "MIT"
 rust-version = "1.88"
@@ -15,26 +15,26 @@ categories = ["development-tools"]
 # Shared by more than one crate. A dependency only one crate uses goes in that
 # crate's own Cargo.toml, so parallel work on two crates never edits this table.
 [workspace.dependencies]
-haest-core = { version = "0.4.0", path = "crates/haest-core" }
+haest-core = { version = "0.4.1", path = "crates/haest-core" }
 # No default features: reqwest (the default client) is each crate's to ask for
 # (`features = ["reqwest"]`), so a crate that only names the types builds none.
-haest-http = { version = "0.4.0", path = "crates/haest-http", default-features = false }
-haest-providers = { version = "0.4.0", path = "crates/haest-providers", default-features = false }
-haest-workspace = { version = "0.4.0", path = "crates/haest-workspace" }
-haest-tools = { version = "0.4.0", path = "crates/haest-tools" }
-haest-mcp = { version = "0.4.0", path = "crates/haest-mcp" }
-haest-code = { version = "0.4.0", path = "crates/haest-code" }
-haest-mods = { version = "0.4.0", path = "crates/haest-mods" }
-haest-ts = { version = "0.4.0", path = "crates/haest-ts" }
-haest-settings = { version = "0.4.0", path = "crates/haest-settings" }
+haest-http = { version = "0.4.1", path = "crates/haest-http", default-features = false }
+haest-providers = { version = "0.4.1", path = "crates/haest-providers", default-features = false }
+haest-workspace = { version = "0.4.1", path = "crates/haest-workspace" }
+haest-tools = { version = "0.4.1", path = "crates/haest-tools" }
+haest-mcp = { version = "0.4.1", path = "crates/haest-mcp" }
+haest-code = { version = "0.4.1", path = "crates/haest-code" }
+haest-mods = { version = "0.4.1", path = "crates/haest-mods" }
+haest-ts = { version = "0.4.1", path = "crates/haest-ts" }
+haest-settings = { version = "0.4.1", path = "crates/haest-settings" }
 # No default features: the facade's `mcp` turns on the loader's `mcp`.
-haest-config = { version = "0.4.0", path = "crates/haest-config", default-features = false }
-haest-runtime = { version = "0.4.0", path = "crates/haest-runtime" }
-haest = { version = "0.4.0", path = "crates/haest" }
-haest-wire = { version = "0.4.0", path = "crates/haest-wire" }
-haest-session = { version = "0.4.0", path = "crates/haest-session" }
-haest-transport = { version = "0.4.0", path = "crates/haest-transport" }
-haest-prompt = { version = "0.4.0", path = "crates/haest-prompt" }
+haest-config = { version = "0.4.1", path = "crates/haest-config", default-features = false }
+haest-runtime = { version = "0.4.1", path = "crates/haest-runtime" }
+haest = { version = "0.4.1", path = "crates/haest" }
+haest-wire = { version = "0.4.1", path = "crates/haest-wire" }
+haest-session = { version = "0.4.1", path = "crates/haest-session" }
+haest-transport = { version = "0.4.1", path = "crates/haest-transport" }
+haest-prompt = { version = "0.4.1", path = "crates/haest-prompt" }
 
 # No features here: each crate names the ones it uses (haest-core: a task and
 # channels, not the runtime).

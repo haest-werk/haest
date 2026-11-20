@@ -6,7 +6,9 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 `--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
 `HAEST_*` variables.
 
-## Unreleased
+## 0.4.1 (2026-11-20)
+
+haest-issues stays at 0.3.0: nothing in it changed.
 
 ### Fixed
 
