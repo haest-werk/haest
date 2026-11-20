@@ -1,14 +1,14 @@
 # haest in Rust: haest + the haest CLI
 
 **Goal.** One Rust agent loop and tool harness that every haest host embeds:
-the `haest` CLI, remote-claude's agent host, and brain. Today the loop is
-TypeScript (`remote-claude/src/haest-agent-host`, about 7.3k lines of core, providers
-and tools, plus 3.7k of tests), and brain runs a VENDORED copy of it that drifts (pinned at
-`797cc9746`, patched in place). One library removes the copy and the drift.
+the `haest` CLI, brain, and later remote-claude's agent host. The loop began
+as TypeScript (`remote-claude/src/haest-agent-host`, about 7.3k lines of core,
+providers and tools, plus 3.7k of tests), and brain ran a vendored copy of it
+that drifted. brain now links this library (D6), so the copy is gone.
 
-**The port's source of truth** is the TypeScript haest in
-remote-claude's `src/haest-agent-host/` (`core/`, `providers/`, `tools/`).
-Behaviour comes from there, file by file, tests included.
+**The port's source of truth** was the TypeScript haest in remote-claude's
+`src/haest-agent-host/` (`core/`, `providers/`, `tools/`). Behaviour came from
+there, file by file, tests included. Since 0.2.0 the Rust haest leads.
 
 ## Decisions
 
@@ -33,6 +33,10 @@ Behaviour comes from there, file by file, tests included.
 | D17 | `env_passthrough = none \| core \| all`, default `core`; the `claude` profile sets `all`. Same words and `core` list as Codex's `shell_environment_policy.inherit` (whose default is `all`). With no `PATH` handed in, a program is looked up on `/usr/bin:/bin`, as `execvp` does | A key in the human's shell stays with haest unless asked; `none` still runs bash |
 | D18 | The loader is a builder: `Loader::new(defaults)` then the layers in the order they win (`.xdg_dirs .user_file .file .project_file .profile .env .flags`), `.load(fs)` last. A layer not added is not read; `Loader::standard` is the CLI's chain. Built on our own registry, not `config` (config-rs) or figment: those replace only the merge (40 lines) and need serde on every settings type, where `flatten` cannot go with `deny_unknown_fields`, so a typo would pass | .NET's `ConfigurationBuilder` shape: the order is the code, readable, and a host takes only the sources it wants |
 | D20 | `env`: variables passed on purpose, docker's `-e` as `-E/--env NAME=VALUE` (or `NAME` for haest's own value), repeatable; `HAEST_ENV` holds one; a file's `[env]` table. One registry row of a new kind (`Kind::Vars`), so the flag, the variable and the key come from the same place; layers add name by name, each name keeping its own source. `${NAME}` / `${NAME:-default}` are filled in at load (the `.mcp.json` expander); one with no value and no default is not passed, with a note. Handed as `RuntimeInputs::passed_env`: real processes get it over `child_env`, the sandbox's shell gets it alone. `haest settings` and `get` show names only | A key reaches a tool under the name the tool wants without `env_passthrough = all`, and is never printed |
+| D21 | The 0.3 API shape: a plug point takes the value itself (`impl Into<XRef>`, a handle named after its trait, built from the value, an `Arc` or a `Box<dyn Trait>`); fields are private behind getters and `with_*` setters; a type that will grow is `#[non_exhaustive]` | A new part, field or variant is a minor release, not a break, and a host writes no `Arc` it does not need |
+| D22 | New behaviour is opt-in and off by default, the `claude` profile included: wind-down, subagent budgets, durable runs, sessions and transports | D9 for features: a host that turns nothing on gets the haest it had |
+| D23 | File names are the system's: no spelling layer of haest's own. The apply keeps one guard on std alone (`overlay/shown.rs`): a change whose name the directory does not list byte for byte, or that is the same file (device, inode) as another changed path, is held as a conflict. A rename by case or Unicode form alone on a disk that folds them is a documented limitation | Six review rounds spent on a layer that guessed what the disk does; std and the guard keep every file without it |
+| D24 | A rare case whose handling costs more than the case is worth is a documented limitation, not a workaround: the README's "Limitations" lists them, and the item's docs say what still keeps data safe | Workarounds for exotic disks and host panics were most of the code the last review cut |
 
 ## Crate map
 
@@ -50,8 +54,11 @@ Behaviour comes from there, file by file, tests included.
 | `haest-settings` | typed `Settings` (`Settings::bare`), `BuiltinTools` / `ContextSources` / `SkillSources` word sets; no I/O | new (D15) |
 | `haest-config` | the opt-in loader: the registry (one row per setting), TOML/env/flag layers with provenance, profiles, trust, `env_passthrough`; reads the keys, `providers.json`, routing and a trusted `.mcp.json` for the runtime | new (D8, D15) |
 | `haest-runtime` | the conversation built from `RuntimeInputs`: providers, workspace, tools, MCP, mods, subagents, inbox, session file, behind a `Ui` | the CLI's composition, moved (D14, D16); `host/runtime.ts` |
-| `haest-cli` | the `haest` binary on `haest-config` + `haest-runtime`: flags generated from the registry, `haest settings`, print mode, `--json` NDJSON events, a REPL, sessions + resume | new (the TS haest has no CLI; its host is the broker) |
-| `haest` | the one dependency a host takes; features `http`, `providers`, `workspace`, `tools`, `mcp`, `code`, `mods`, `settings` (default), `config`, `runtime` | -- |
+| `haest-wire` | the wire format: the envelope around a conversation's events (`v`, `sid`, `seq`, `ts`, `path`), the requests a peer sends, a replay ring with gaps, an NDJSON codec; serde only | new (0.3) |
+| `haest-session` | a conversation another program watches and drives while it runs: the session driver (one turn at a time, input mid-turn steered in), its `Backend` handle, a numbered stream with catch-up and one `gap` for a slow reader, approval asks over it | new (0.3) |
+| `haest-transport` | the session served to another program: one connection's rules over any line source and sink, `Peer`, and `Stdio`, `UnixSocket` and `Broker` behind their features | new (0.3) |
+| `haest-cli` | the `haest` binary on `haest-config` + `haest-runtime`: flags generated from the registry, `haest settings`, print mode, `--json` events in the wire's envelope, a REPL, sessions + resume, `--stdio`, the control socket and `haest ctl`, the broker link | new (the TS haest has no CLI; its host is the broker) |
+| `haest` | the one dependency a host takes; default features `providers`, `workspace`, `tools`, `mcp`, `code`, `mods`, `settings` and `reqwest` (`http` comes with them); opt-in `rmcp`, `config`, `runtime`, `testing`, `wire`, `session`, `transport`, `transport-stdio`, `transport-unix`, `transport-broker` | -- |
 | `haest-issues` | EXPERIMENTAL, an example of how to write tools: a `Tracker` trait, a GitHub Issues backend (REST, token handed in) and a board-card backend (markdown + frontmatter files, the board's own bytes), seven Issue* tools over either; not in the facade | new; the card format from remote-claude's `project-card-file.ts` |
 
 ## Brain's plug points (from its vendored patches, `brain/web/src/rooms/agent/haest/README.md`)
@@ -66,7 +73,7 @@ Behaviour comes from there, file by file, tests included.
 | Read: `createReadTool(intercept)` (brain media caps, `attachment:<id>`) | Read tool takes an optional intercept |
 | Bash without background jobs | jobs are an option of the Bash tool |
 | session-store: record types + replay only, the node writes the file | `SessionRecord` + `replay` are separate from the file writer (`SessionSink`) |
-| agent tools with brain's own hub (`subagent_type`, subagent runs on the node) | haest's `SubagentHub` over brain's `SubagentParent`: `start_member` starts each helper's node run (or refuses) and hands back its `MemberRun` (model spec, caps, deps), whose `end` closes it; `AgentToolOptions` (the `subagent_type` enum, the model text). `AgentDirectory` stays for a host with no use for haest's hub. Plan and the brain-to-haest table: `docs/plans/subagent-hub.md` |
+| agent tools with brain's own hub (`subagent_type`, subagent runs on the node) | haest's `SubagentHub` over brain's `SubagentParent`: `start_member` starts each helper's node run (or refuses) and hands back its `MemberRun` (model spec, caps, deps), whose `end` closes it; `AgentToolOptions` (the `subagent_type` enum, the model text). `AgentDirectory` stays for a host with no use for haest's hub |
 | brain decides each run's tools and caps itself | `settings::Settings` written out in Rust, one per kind of run (no loader, nothing read) + `tools::builtin_tools_where` |
 
 Beyond brain's patches: `ShellCommand` (haest-core) + `SandboxWorkspace::with_command`
@@ -95,6 +102,10 @@ steering instead is `crates/haest/tests/plug_in.rs`.
 | 7 | Cleanup pass (/simplify, then a review agent): word lists declared once on their type; `builtin_tools_where` no longer drops `tasks` + `skill` (bug); session listing reads 16 KB a file (doubling to 256 KB) and a resume stops at its match; haest-config parses a file into one `Layer`, `provider_routing` is a registry setting; one `FILE_TOOLS`, `now_ms`, OpenRouter URL; `build()` split (`store.rs`, `runtime.rs`), MCP and mods start beside file discovery, skill roots worked out once; `Runtime::{set_model_spec, set_effort, clear, rescan_skills}`. Review fixes: everything that can fail (workspace, prompt, the new session's file) runs before an MCP server or mod starts; the session header write is awaited, so `clear` either switches or changes nothing; listing ties come in id order; a config under a file counts as absent; `word_enum!` writes the serde spelling; one session path (`session_file`); checked live (print, resume, sessions, routing source, the REPL's /model /effort /clear /skills) | done |
 | 8 | `env` (D20): `-E/--env`, `HAEST_ENV`, `[env]` with `${NAME}` filled in; the sandbox shell takes variables (`SandboxWorkspace::with_env`); `.mcp.json` and `env` share one unset-variable note | done |
 | 9 | Settings docs: every registry row carries an example; `docs/settings.md` is written from the registry (a test fails when it drifts, `HAEST_BLESS=1` rewrites it) and each example reads the same as a file key, a variable and a flag; `docs/environment.md` (what haest reads, what a child gets, `-E`, `${NAME}`); `docs/examples/` loaded by tests | done |
+| 10 | 0.2.0: one word per concept, one path per item, typed errors, the HTTP client a plug point (`haest-http`) | done, published 2026-11-17 |
+| 11 | Sessions (D22): `haest-wire`, `haest-session`, `haest-transport`; `--json` in the envelope, `--stdio`, `control_socket` + `haest ctl`, `broker_url` | done |
+| 12 | Agent core (D22): durable runs (`Agent::run_durable` over a `RunStore`, `Tool::on_resume`), a subagent hub that runs a host's own members (`SubagentParent::start_member`), thresholds with wind-down, subagent budgets held on the ledger | done |
+| 13 | The 0.3 API (D21); review rounds until one found no regression, leak or data loss; the spelling layer removed (D23); a last cut of boilerplate and workarounds (D24) | done, 0.3.0 |
 
 ### Parity (2026-11-10)
 
@@ -116,6 +127,10 @@ after a closing newline.
 | G4 | `mv` of a directory across bashkit mounts fails |
 | G5 | A PDF returned by an MCP tool stays text; it does not become media |
 | G7 | The `claude` profile does not read Claude Code's agents, commands, hooks, permissions, user or plugin MCP servers, `@` imports, rules, memory or output styles (D11) |
+| G8 | Durable runs keep their records in memory only (`MemoryRunStore`): a store that outlives the process (JSONL, SQLite), durable subagents and resumable `parallel`/`pipeline` flows are not built, and there is no `durable` setting yet |
+| G9 | Tool costs (a price per tool call, charged when it starts and settled when it ends) are not built; adding them later breaks nothing |
+| G10 | Remote subagents, the controller side (haest driving another agent through a child or WebSocket backend) and a broker server are not built |
+| G11 | The cases haest leaves alone on purpose are the README's "Limitations" (D24) |
 
 Not in this plan (the consumers, each its own job once the library holds):
 remote-claude's broker-facing host in Rust (TS `host/`, 3.3k lines, 18 wire
