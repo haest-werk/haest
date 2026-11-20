@@ -106,11 +106,7 @@ fn instructions(files: &[InstructionFile]) -> String {
         .join("\n\n")
 }
 
-/// The system prompt text, sections in this order: identity, tool guide,
-/// environment, workspace note, instruction files, skills, channel guide,
-/// the host's addition. Empty sections are left out; sections are separated
-/// by a blank line.
-pub fn build_system_prompt(p: &PromptInputs) -> String {
+fn environment(p: &PromptInputs) -> String {
     let branch = match &p.git_branch {
         Some(b) => format!("- Git branch: {b}"),
         None => "- Not a git repository".into(),
@@ -120,7 +116,7 @@ pub fn build_system_prompt(p: &PromptInputs) -> String {
     } else {
         p.tool_names.join(", ")
     };
-    let env = [
+    [
         "# Environment".to_string(),
         format!("- Working directory: {}", p.cwd),
         format!("- Platform: {}", p.platform),
@@ -129,21 +125,90 @@ pub fn build_system_prompt(p: &PromptInputs) -> String {
         branch,
         format!("- Tools: {tools}"),
     ]
-    .join("\n");
-    let opt = |s: &Option<String>| s.clone().unwrap_or_default();
-    let identity = p.identity.clone().unwrap_or_else(|| IDENTITY.to_string());
-    [
-        identity,
-        opt(&p.tool_guide),
-        env,
-        opt(&p.workspace_note),
-        instructions(&p.instructions),
-        skills_prompt_block(&p.skills),
-        opt(&p.channel_guide),
-        opt(&p.append_system_prompt),
-    ]
-    .into_iter()
-    .filter(|s| !s.trim().is_empty())
-    .collect::<Vec<_>>()
-    .join("\n\n")
+    .join("\n")
+}
+
+/// The system prompt's sections, each one's text built, in the order the
+/// prompt says them. An empty section says nothing: [`join`](Self::join)
+/// leaves it out.
+///
+/// The parts a prompt template reorders, wraps or drops without copying
+/// haest's text: it serializes with these field names (`sections.tools`).
+///
+/// ```
+/// use haest_core::context::{PromptInputs, PromptSections, build_system_prompt};
+///
+/// let inputs = PromptInputs { cwd: "/work".into(), ..PromptInputs::default() };
+/// let sections = PromptSections::new(&inputs);
+/// assert!(sections.identity.starts_with("You are haest"));
+/// assert!(sections.environment.contains("- Working directory: /work"));
+/// assert_eq!(sections.workspace, "", "no note: the section is empty");
+/// assert_eq!(sections.join(), build_system_prompt(&inputs));
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[non_exhaustive]
+pub struct PromptSections {
+    /// Who the model is: haest's paragraph, or the host's
+    /// ([`PromptInputs::identity`]).
+    pub identity: String,
+    /// How to use the tools this call offers ([`PromptInputs::tool_guide`]).
+    pub tools: String,
+    /// `# Environment`: working directory, platform, date, model, git branch,
+    /// tool names.
+    pub environment: String,
+    /// What the workspace can and cannot do ([`PromptInputs::workspace_note`]).
+    pub workspace: String,
+    /// `# Instructions`: every instruction file, in reading order.
+    pub instructions: String,
+    /// The skills the model may load.
+    pub skills: String,
+    /// How to read and answer `<channel>` turns ([`PromptInputs::channel_guide`]).
+    pub channel: String,
+    /// The host's text at the very end ([`PromptInputs::append_system_prompt`]).
+    pub append: String,
+}
+
+impl PromptSections {
+    /// Every section of the prompt `p` describes.
+    pub fn new(p: &PromptInputs) -> Self {
+        let opt = |s: &Option<String>| s.clone().unwrap_or_default();
+        Self {
+            identity: p.identity.clone().unwrap_or_else(|| IDENTITY.to_string()),
+            tools: opt(&p.tool_guide),
+            environment: environment(p),
+            workspace: opt(&p.workspace_note),
+            instructions: instructions(&p.instructions),
+            skills: skills_prompt_block(&p.skills),
+            channel: opt(&p.channel_guide),
+            append: opt(&p.append_system_prompt),
+        }
+    }
+
+    /// The prompt text: the sections in order, the empty ones left out,
+    /// separated by a blank line.
+    pub fn join(&self) -> String {
+        [
+            &self.identity,
+            &self.tools,
+            &self.environment,
+            &self.workspace,
+            &self.instructions,
+            &self.skills,
+            &self.channel,
+            &self.append,
+        ]
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("\n\n")
+    }
+}
+
+/// The system prompt text, sections in this order: identity, tool guide,
+/// environment, workspace note, instruction files, skills, channel guide,
+/// the host's addition. Empty sections are left out; sections are separated
+/// by a blank line. [`PromptSections`] holds them before they are joined.
+pub fn build_system_prompt(p: &PromptInputs) -> String {
+    PromptSections::new(p).join()
 }

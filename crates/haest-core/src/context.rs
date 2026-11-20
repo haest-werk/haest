@@ -62,7 +62,7 @@ use std::{
 };
 
 pub use git::current_git_branch;
-pub use prompt::{PromptInputs, build_system_prompt, tool_guide};
+pub use prompt::{PromptInputs, PromptSections, build_system_prompt, tool_guide};
 
 use crate::fs::{Fs, normalize, read_lossy};
 
