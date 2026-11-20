@@ -23,9 +23,10 @@ async fn ends_with_the_panic(attached: Attached, dir: &Dir) {
     assert!(!dir.0.join("s1.sock").exists() && !dir.0.join("s1.json").exists());
 }
 
-/// A panic in the host's backend while it serves a connection: the request
-/// is refused, and the panic reaches the host from `ended`, never lost in
-/// the transport's task; the transport stops, and its files go.
+/// A panic in the host's backend while it serves a connection: the
+/// connection ends before the reply, and the panic reaches the host from
+/// `ended`, never lost in the transport's task; the transport stops, and its
+/// files go.
 #[tokio::test]
 async fn a_panic_in_the_hosts_backend_reaches_the_host() {
     let dir = Dir::new("panic");
@@ -37,11 +38,8 @@ async fn a_panic_in_the_hosts_backend_reaches_the_host() {
 
     let asked = peer.call(Request::History, |_| {});
     let asked = tokio::time::timeout(Duration::from_secs(2), asked).await;
-    let asked = asked.expect("the request was answered");
-    assert!(
-        matches!(asked, Err(TransportError::Refused(_))),
-        "{asked:?}"
-    );
+    let asked = asked.expect("the connection ended");
+    assert!(matches!(asked, Err(TransportError::Ended)), "{asked:?}");
 
     ends_with_the_panic(attached, &dir).await;
     s.close().await;
