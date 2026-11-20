@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use haest_core::{
     Agent, AgentHooks, Effort,
     caps::{TurnCaps, TurnCapsSource},
-    catalog::{InputModality, ModelFacts, Reasoning},
+    catalog::{InputModality, ModelFacts, ModelInfo, Reasoning},
     compaction::needs_compaction,
     error::BoxError,
     ledger::{LedgerHooks, LedgerSnapshot},
@@ -261,8 +261,13 @@ impl TurnCapsSource for RuntimeHooks {
     }
 }
 
-/// The inputs and reasoning are the built-in catalog's rows.
+/// The facts are the built-in catalog's rows.
 impl ModelFacts for RuntimeHooks {
+    fn model_info(&self, spec: &str) -> Option<ModelInfo> {
+        Catalog::builtin().model(spec).cloned()
+    }
+
+    // Answered from the catalog without cloning the whole row.
     fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
         Catalog::builtin().input_modalities(spec)
     }

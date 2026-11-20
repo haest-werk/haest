@@ -8,6 +8,11 @@
  *
  * The rows are copied, never translated: same keys, same order, same values, so a
  * catalog refresh on the TypeScript side is one run of this script.
+ *
+ * Three keys are haest's own and the TypeScript rows don't carry them: `family`,
+ * `tier` and `generation` (what a prompt template switches on). They are written
+ * by hand in models.json and kept by spec across a run; a TypeScript row that has
+ * one wins. The run names every row that has no `family`, so a new model gets one.
  */
 
 import { join, resolve } from 'node:path'
@@ -15,7 +20,14 @@ import { join, resolve } from 'node:path'
 const MODALITIES = new Set(['text', 'image', 'file', 'audio', 'video'])
 const EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
-interface Row {
+/** haest's own keys: written by hand in models.json, kept across a run. */
+interface Facts {
+  family?: string
+  tier?: string
+  generation?: number
+}
+
+interface Row extends Facts {
   spec: string
   label: string
   input: string[]
@@ -39,7 +51,32 @@ function problems(row: Row): string[] {
   if (row.reasoning && row.reasoning.efforts.some(e => !EFFORTS.has(e))) out.push('unknown effort')
   const p = row.pricing
   if (p && ![p.input, p.cachedInput, p.output].every(n => typeof n === 'number')) out.push('pricing')
+  for (const key of ['family', 'tier'] as const) {
+    if (row[key] !== undefined && (typeof row[key] !== 'string' || !row[key])) out.push(key)
+  }
+  if (row.generation !== undefined && !Number.isFinite(row.generation)) out.push('generation')
   return out
+}
+
+/** The hand-written facts of every row models.json has now, by spec. */
+async function keptFacts(path: string): Promise<Map<string, Facts>> {
+  const file = Bun.file(path)
+  if (!(await file.exists())) return new Map()
+  const { groups } = (await file.json()) as { groups: Group[] }
+  return new Map(
+    groups.flatMap(g => g.models).map(r => [r.spec, { family: r.family, tier: r.tier, generation: r.generation }]),
+  )
+}
+
+/** `row` with haest's facts after its label: the TypeScript row's, else the kept ones. */
+function withFacts(row: Row, kept: Facts | undefined): Row {
+  const { spec, label, family, tier, generation, ...rest } = row
+  const facts: Facts = {
+    family: family ?? kept?.family,
+    tier: tier ?? kept?.tier,
+    generation: generation ?? kept?.generation,
+  }
+  return { spec, label, ...facts, ...rest }
 }
 
 const source = process.argv[2]
@@ -49,12 +86,18 @@ if (!source) {
 }
 
 const mod = (await import(resolve(source))) as { HAEST_MODEL_GROUPS?: Group[]; HAEST_DEFAULT_MODEL?: string }
-const groups = mod.HAEST_MODEL_GROUPS
 const defaultModel = mod.HAEST_DEFAULT_MODEL
-if (!Array.isArray(groups) || typeof defaultModel !== 'string') {
+if (!Array.isArray(mod.HAEST_MODEL_GROUPS) || typeof defaultModel !== 'string') {
   console.error(`${source} does not export HAEST_MODEL_GROUPS and HAEST_DEFAULT_MODEL`)
   process.exit(1)
 }
+
+const out = join(import.meta.dir, '..', 'crates', 'haest-providers', 'catalog', 'models.json')
+const kept = await keptFacts(out)
+const groups: Group[] = mod.HAEST_MODEL_GROUPS.map(g => ({
+  label: g.label,
+  models: g.models.map(r => withFacts(r, kept.get(r.spec))),
+}))
 
 const rows = groups.flatMap(g => g.models)
 const bad = rows.flatMap(r => problems(r).map(p => `${r.spec}: ${p}`))
@@ -67,6 +110,9 @@ if (bad.length) {
   process.exit(1)
 }
 
-const out = join(import.meta.dir, '..', 'crates', 'haest-providers', 'catalog', 'models.json')
 await Bun.write(out, `${JSON.stringify({ defaultModel, groups }, null, 2)}\n`)
 console.log(`wrote ${rows.length} models in ${groups.length} groups to ${out}`)
+const unnamed = rows.filter(r => r.family === undefined).map(r => r.spec)
+if (unnamed.length) {
+  console.log(`no family, tier or generation yet (write them in models.json):\n  ${unnamed.join('\n  ')}`)
+}

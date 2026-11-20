@@ -1,5 +1,6 @@
-//! The shapes of a model catalog row: what a model takes as input, how it
-//! reasons, what it costs and how big its context is. The rows themselves live
+//! The shapes of a model catalog row: who makes a model and which one it is,
+//! what it takes as input, how it reasons, what it costs and how big its
+//! context is. The rows themselves live
 //! with the providers (`haest-providers`' `Catalog`, bundled from a JSON file);
 //! a host may bring its own rows in the same shape.
 //!
@@ -44,16 +45,23 @@ use serde::{Deserialize, Serialize};
 /// fitted effort) goes to [`AgentHooks`](crate::AgentHooks), and its caps
 /// per model are a [`TurnCapsSource`](crate::caps::TurnCapsSource).
 pub trait ModelFacts: Send + Sync {
+    /// The spec's whole catalog row; None = unknown. The other methods
+    /// answer from it unless the host answers them itself, so a host with a
+    /// catalog implements this one.
+    fn model_info(&self, _spec: &str) -> Option<ModelInfo> {
+        None
+    }
+
     /// What the spec takes as input; None = unknown, media sent untouched.
     /// Media a model does not take is replaced by a note before the call.
-    fn input_modalities(&self, _spec: &str) -> Option<HashSet<InputModality>> {
-        None
+    fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
+        self.model_info(spec).map(|m| m.input.into_iter().collect())
     }
 
     /// The spec's reasoning row (which efforts it takes); None = unknown,
     /// effort sent as asked.
-    fn reasoning(&self, _spec: &str) -> Option<Reasoning> {
-        None
+    fn reasoning(&self, spec: &str) -> Option<Reasoning> {
+        self.model_info(spec)?.reasoning
     }
 }
 
@@ -198,11 +206,15 @@ impl ModelPricing {
     }
 }
 
-/// One model as a catalog lists it: its spec, what it takes, and what is known
-/// about its reasoning and price.
+/// One model as a catalog lists it: its spec, who makes it and which one it
+/// is, what it takes, and what is known about its reasoning and price.
 ///
 /// Built with [`new`](Self::new) and the `with_*` setters, so a part it gains
 /// later breaks no host; its fields read as they are.
+///
+/// `family`, `tier` and `generation` are written in the catalog, never read
+/// out of the spec: model ids follow no shared pattern (`claude-opus-5-5`,
+/// `gpt-6.1-sol-pro`, `qwen3.8-max-0902`).
 ///
 /// ```
 /// use haest_core::{
@@ -210,11 +222,14 @@ impl ModelPricing {
 ///     catalog::{ModelInfo, ModelPricing},
 /// };
 ///
-/// let row = ModelInfo::new("openrouter:example/model-1", 200_000)
-///     .with_label("Example Model 1")
+/// let row = ModelInfo::new("openrouter:example/model-1-flash", 200_000)
+///     .with_label("Example Model 1 Flash")
+///     .with_family("example")
+///     .with_tier("flash")
+///     .with_generation(1.0)
 ///     .with_input([InputModality::Text, InputModality::Image])
 ///     .with_pricing(ModelPricing::new(3.0, 0.3, 15.0));
-/// assert_eq!(row.label, "Example Model 1");
+/// assert_eq!(row.label, "Example Model 1 Flash");
 /// assert_eq!(row.reasoning, None, "unknown: the effort is sent as asked");
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -225,6 +240,20 @@ pub struct ModelInfo {
     pub spec: String,
     /// The name a picker shows.
     pub label: String,
+    /// Who makes the model, as OpenRouter names its author (`anthropic`,
+    /// `openai`, `google`, `x-ai`); absent = unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
+    /// Which model of its family and generation it is: the words its label
+    /// adds, lowercase and joined by `-` (`opus`, `flash`, `sol-pro`);
+    /// absent = the label adds none, or unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
+    /// The version its label carries, as a number (`5.5` for Claude Opus 5.5,
+    /// `4` for Gemini 4 Argon); absent = unknown. It compares within one
+    /// family only, and a float has no `5.10` after `5.9`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<f64>,
     /// What the model accepts as input.
     pub input: Vec<InputModality>,
     /// Tokens the model actually serves (the best endpoint's cap, not the advertised one).
@@ -239,12 +268,16 @@ pub struct ModelInfo {
 
 impl ModelInfo {
     /// The model `spec` serving `context_window` tokens: labelled with its
-    /// spec, taking text only, its reasoning unknown and unpriced.
+    /// spec, taking text only, its family, tier, generation and reasoning
+    /// unknown, and unpriced.
     pub fn new(spec: impl Into<String>, context_window: u64) -> Self {
         let spec = spec.into();
         Self {
             label: spec.clone(),
             spec,
+            family: None,
+            tier: None,
+            generation: None,
             input: vec![InputModality::Text],
             context_window,
             reasoning: None,
@@ -256,6 +289,27 @@ impl ModelInfo {
     #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = label.into();
+        self
+    }
+
+    /// Who makes the model ([`family`](Self::family)).
+    #[must_use]
+    pub fn with_family(mut self, family: impl Into<String>) -> Self {
+        self.family = Some(family.into());
+        self
+    }
+
+    /// Which model of its family it is ([`tier`](Self::tier)).
+    #[must_use]
+    pub fn with_tier(mut self, tier: impl Into<String>) -> Self {
+        self.tier = Some(tier.into());
+        self
+    }
+
+    /// The version its label carries ([`generation`](Self::generation)).
+    #[must_use]
+    pub fn with_generation(mut self, generation: f64) -> Self {
+        self.generation = Some(generation);
         self
     }
 
@@ -300,5 +354,31 @@ impl ModelGroup {
             label: label.into(),
             models: models.into_iter().collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A host that knows its rows and nothing else.
+    struct Rows;
+    impl ModelFacts for Rows {
+        fn model_info(&self, spec: &str) -> Option<ModelInfo> {
+            (spec == "local:m").then(|| {
+                ModelInfo::new(spec, 8_000)
+                    .with_input([InputModality::Text, InputModality::Image])
+                    .with_reasoning(Reasoning::new([OpenRouterEffort::High]).with_mandatory(true))
+            })
+        }
+    }
+
+    #[test]
+    fn a_host_with_rows_answers_inputs_and_reasoning_from_them() {
+        let inputs = Rows.input_modalities("local:m").unwrap();
+        assert!(inputs.contains(&InputModality::Image));
+        assert!(Rows.reasoning("local:m").unwrap().mandatory);
+        assert_eq!(Rows.input_modalities("local:other"), None);
+        assert_eq!(Rows.reasoning("local:other"), None);
     }
 }

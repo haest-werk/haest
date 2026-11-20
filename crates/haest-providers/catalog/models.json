@@ -7,6 +7,9 @@
         {
           "spec": "openrouter:anthropic/claude-fable-5.2",
           "label": "Claude Fable 5.2",
+          "family": "anthropic",
+          "tier": "fable",
+          "generation": 5.2,
           "input": [
             "text",
             "image",
@@ -27,6 +30,9 @@
         {
           "spec": "openrouter:anthropic/claude-opus-5.5",
           "label": "Claude Opus 5.5",
+          "family": "anthropic",
+          "tier": "opus",
+          "generation": 5.5,
           "input": [
             "text",
             "image",
@@ -47,6 +53,9 @@
         {
           "spec": "openrouter:anthropic/claude-sonnet-5.5",
           "label": "Claude Sonnet 5.5",
+          "family": "anthropic",
+          "tier": "sonnet",
+          "generation": 5.5,
           "input": [
             "text",
             "image",
@@ -67,6 +76,9 @@
         {
           "spec": "openrouter:anthropic/claude-haiku-5.5",
           "label": "Claude Haiku 5.5",
+          "family": "anthropic",
+          "tier": "haiku",
+          "generation": 5.5,
           "input": [
             "text",
             "image",
@@ -93,6 +105,9 @@
         {
           "spec": "openrouter:openai/gpt-6-astra",
           "label": "GPT-6 Astra",
+          "family": "openai",
+          "tier": "astra",
+          "generation": 6,
           "input": [
             "text",
             "image",
@@ -113,6 +128,9 @@
         {
           "spec": "openrouter:openai/gpt-6.1-sol",
           "label": "GPT-6.1 Sol",
+          "family": "openai",
+          "tier": "sol",
+          "generation": 6.1,
           "input": [
             "text",
             "image",
@@ -133,6 +151,9 @@
         {
           "spec": "openrouter:openai/gpt-6.1-sol-pro",
           "label": "GPT-6.1 Sol Pro",
+          "family": "openai",
+          "tier": "sol-pro",
+          "generation": 6.1,
           "input": [
             "text",
             "image",
@@ -153,6 +174,9 @@
         {
           "spec": "openrouter:openai/gpt-6.1-terra",
           "label": "GPT-6.1 Terra",
+          "family": "openai",
+          "tier": "terra",
+          "generation": 6.1,
           "input": [
             "text",
             "image",
@@ -174,6 +198,9 @@
         {
           "spec": "openrouter:openai/gpt-6.1-terra-pro",
           "label": "GPT-6.1 Terra Pro",
+          "family": "openai",
+          "tier": "terra-pro",
+          "generation": 6.1,
           "input": [
             "text",
             "image",
@@ -194,6 +221,9 @@
         {
           "spec": "openrouter:openai/gpt-6-luna",
           "label": "GPT-6 Luna",
+          "family": "openai",
+          "tier": "luna",
+          "generation": 6,
           "input": [
             "text",
             "image",
@@ -220,6 +250,9 @@
         {
           "spec": "openrouter:google/gemini-4-argon",
           "label": "Gemini 4 Argon",
+          "family": "google",
+          "tier": "argon",
+          "generation": 4,
           "input": [
             "text",
             "image",
@@ -240,6 +273,9 @@
         {
           "spec": "openrouter:google/gemini-3.8-flash",
           "label": "Gemini 3.8 Flash",
+          "family": "google",
+          "tier": "flash",
+          "generation": 3.8,
           "input": [
             "text",
             "image",
@@ -265,6 +301,8 @@
         {
           "spec": "openrouter:x-ai/grok-4.7",
           "label": "Grok 4.7",
+          "family": "x-ai",
+          "generation": 4.7,
           "input": [
             "text",
             "image",
@@ -289,6 +327,9 @@
         {
           "spec": "openrouter:mistralai/mistral-large-4-0",
           "label": "Mistral Large 4",
+          "family": "mistralai",
+          "tier": "large",
+          "generation": 4,
           "input": [
             "text",
             "image"
@@ -310,6 +351,9 @@
         {
           "spec": "openrouter:sakana/fugu-ultra-v2",
           "label": "Fugu Ultra v2",
+          "family": "sakana",
+          "tier": "ultra",
+          "generation": 2,
           "input": [
             "text",
             "image",
@@ -328,6 +372,8 @@
         {
           "spec": "openrouter:sakana/fugu-max",
           "label": "Fugu Max",
+          "family": "sakana",
+          "tier": "max",
           "input": [
             "text",
             "image",
@@ -351,6 +397,7 @@
         {
           "spec": "openrouter:cohere/command-a-plus",
           "label": "Command A+",
+          "family": "cohere",
           "input": [
             "text",
             "image"
@@ -369,6 +416,8 @@
         {
           "spec": "openrouter:meta/muse-wonder",
           "label": "Muse Wonder",
+          "family": "meta",
+          "tier": "wonder",
           "input": [
             "text",
             "image",
@@ -392,6 +441,8 @@
         {
           "spec": "openrouter:meta/muse-spark-open",
           "label": "Muse Spark Open",
+          "family": "meta",
+          "tier": "spark-open",
           "input": [
             "text",
             "image",
@@ -413,6 +464,9 @@
         {
           "spec": "openrouter:meta/muse-spark-1.3",
           "label": "Muse Spark 1.3",
+          "family": "meta",
+          "tier": "spark",
+          "generation": 1.3,
           "input": [
             "text",
             "image",
@@ -440,6 +494,9 @@
         {
           "spec": "openrouter:deepseek/deepseek-v4-pro-0813",
           "label": "DeepSeek V4 Pro",
+          "family": "deepseek",
+          "tier": "pro",
+          "generation": 4,
           "input": [
             "text"
           ],
@@ -457,6 +514,9 @@
         {
           "spec": "openrouter:deepseek/deepseek-v4.1-flash",
           "label": "DeepSeek V4.1 Flash",
+          "family": "deepseek",
+          "tier": "flash",
+          "generation": 4.1,
           "input": [
             "text",
             "image"
@@ -475,6 +535,9 @@
         {
           "spec": "openrouter:deepseek/deepseek-v4-flash-0731",
           "label": "DeepSeek V4 Flash (0731)",
+          "family": "deepseek",
+          "tier": "flash",
+          "generation": 4,
           "input": [
             "text"
           ],
@@ -497,6 +560,9 @@
         {
           "spec": "openrouter:z-ai/glm-5.3-prime",
           "label": "GLM-5.3 Prime",
+          "family": "z-ai",
+          "tier": "prime",
+          "generation": 5.3,
           "input": [
             "text"
           ],
@@ -513,6 +579,8 @@
         {
           "spec": "openrouter:z-ai/glm-5.3",
           "label": "GLM-5.3",
+          "family": "z-ai",
+          "generation": 5.3,
           "input": [
             "text"
           ],
@@ -529,6 +597,9 @@
         {
           "spec": "openrouter:z-ai/glm-5.3-flash",
           "label": "GLM-5.3 Flash",
+          "family": "z-ai",
+          "tier": "flash",
+          "generation": 5.3,
           "input": [
             "text",
             "image",
@@ -552,6 +623,9 @@
         {
           "spec": "openrouter:moonshotai/kimi-k3.1-pro",
           "label": "Kimi K3.1 Pro",
+          "family": "moonshotai",
+          "tier": "pro",
+          "generation": 3.1,
           "input": [
             "text",
             "image",
@@ -571,6 +645,8 @@
         {
           "spec": "openrouter:moonshotai/kimi-k3",
           "label": "Kimi K3",
+          "family": "moonshotai",
+          "generation": 3,
           "input": [
             "text",
             "image",
@@ -595,6 +671,8 @@
         {
           "spec": "openrouter:fireworks/ember-1",
           "label": "Ember-1 (Kimi K3)",
+          "family": "fireworks",
+          "generation": 1,
           "input": [
             "text",
             "image"
@@ -618,6 +696,9 @@
         {
           "spec": "openrouter:qwen/qwen3.8-max-prime",
           "label": "Qwen3.8 Max Prime",
+          "family": "qwen",
+          "tier": "max-prime",
+          "generation": 3.8,
           "input": [
             "text",
             "image",
@@ -638,6 +719,9 @@
         {
           "spec": "openrouter:qwen/qwen3.8-max-0902",
           "label": "Qwen3.8 Max",
+          "family": "qwen",
+          "tier": "max",
+          "generation": 3.8,
           "input": [
             "text",
             "image",
@@ -658,6 +742,9 @@
         {
           "spec": "openrouter:qwen/qwen3.8-flash",
           "label": "Qwen3.8 Flash",
+          "family": "qwen",
+          "tier": "flash",
+          "generation": 3.8,
           "input": [
             "text",
             "image",
@@ -672,6 +759,9 @@
         {
           "spec": "openrouter:qwen/qwen3.8-omni-flash",
           "label": "Qwen3.8 Omni Flash",
+          "family": "qwen",
+          "tier": "omni-flash",
+          "generation": 3.8,
           "input": [
             "text",
             "image",
@@ -692,6 +782,8 @@
         {
           "spec": "openrouter:minimax/minimax-m3",
           "label": "MiniMax M3",
+          "family": "minimax",
+          "generation": 3,
           "input": [
             "text",
             "image",
@@ -711,6 +803,9 @@
         {
           "spec": "openrouter:xiaomi/mimo-v2.6-pro",
           "label": "MiMo-V2.6 Pro",
+          "family": "xiaomi",
+          "tier": "pro",
+          "generation": 2.6,
           "input": [
             "text",
             "image",
@@ -726,6 +821,9 @@
         {
           "spec": "openrouter:xiaomi/mimo-v2.6-flash",
           "label": "MiMo-V2.6 Flash",
+          "family": "xiaomi",
+          "tier": "flash",
+          "generation": 2.6,
           "input": [
             "text",
             "image",
@@ -746,6 +844,8 @@
         {
           "spec": "openrouter:stepfun/step-5-preview",
           "label": "Step 5 (preview)",
+          "family": "stepfun",
+          "generation": 5,
           "input": [
             "text",
             "image",
@@ -769,6 +869,9 @@
         {
           "spec": "anthropic:claude-opus-5-5",
           "label": "Anthropic -- Claude Opus 5.5",
+          "family": "anthropic",
+          "tier": "opus",
+          "generation": 5.5,
           "input": [
             "text",
             "image",
@@ -779,6 +882,9 @@
         {
           "spec": "anthropic:claude-sonnet-5-5",
           "label": "Anthropic -- Claude Sonnet 5.5",
+          "family": "anthropic",
+          "tier": "sonnet",
+          "generation": 5.5,
           "input": [
             "text",
             "image",
@@ -789,6 +895,9 @@
         {
           "spec": "openai:gpt-6.1-sol",
           "label": "OpenAI -- GPT-6.1 Sol",
+          "family": "openai",
+          "tier": "sol",
+          "generation": 6.1,
           "input": [
             "text",
             "image",
@@ -799,6 +908,9 @@
         {
           "spec": "openai:gpt-6-luna",
           "label": "OpenAI -- GPT-6 Luna",
+          "family": "openai",
+          "tier": "luna",
+          "generation": 6,
           "input": [
             "text",
             "image",
@@ -809,6 +921,9 @@
         {
           "spec": "paperinstruments:ultramarine-1-flash",
           "label": "Paper Instruments -- Ultramarine 1 Flash",
+          "family": "paperinstruments",
+          "tier": "flash",
+          "generation": 1,
           "input": [
             "text",
             "image"
