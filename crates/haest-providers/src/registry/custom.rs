@@ -25,10 +25,11 @@ use crate::{
 haest_core::word_enum! {
 /// The wire dialect of a custom provider: its providers.json `type`. More
 /// may come in a minor release.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum Dialect ("provider type") {
     /// Chat Completions (`"type": "openai"`, or no `type`).
+    #[default]
     OpenAi = "openai",
     /// The Messages API (`"type": "anthropic"`).
     Anthropic = "anthropic",
@@ -90,7 +91,7 @@ pub enum Dialect ("provider type") {
 /// let registry = ProviderRegistry::new(keys).with_custom_provider("gateway", gateway);
 /// assert!(registry.resolve("gateway:claude-opus-5-5").is_ok());
 /// ```
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Default)]
 pub struct CustomProviderConfig {
     /// `type`: the wire dialect.
     pub dialect: Dialect,
@@ -129,22 +130,6 @@ impl fmt::Debug for CustomProviderConfig {
             .field("reasoning_effort", &self.reasoning_effort)
             .field("pricing", &self.pricing)
             .finish()
-    }
-}
-
-/// An entry with no keys: Chat Completions at OpenAI's own API, no key of
-/// its own, no headers, no effort, no prices.
-impl Default for CustomProviderConfig {
-    fn default() -> Self {
-        Self {
-            dialect: Dialect::OpenAi,
-            base_url: None,
-            api_key: None,
-            api_key_env: None,
-            headers: Vec::new(),
-            reasoning_effort: None,
-            pricing: HashMap::new(),
-        }
     }
 }
 
