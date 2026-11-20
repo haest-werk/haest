@@ -8,44 +8,20 @@
 //!   (`outside-project`): applying writes, creates and deletes only at
 //!   `root/path` itself, never through a link out of the project.
 //!
-//! A file goes on the disk whole or not at all, through the real disk's
-//! whole write (`real/replace.rs`), over the apply's disk: the
-//! sandbox's version is written to a new file in a directory of its own
-//! beside it that only its owner may enter from the moment it is made (a
-//! new file that replaces one is its owner's alone too, before the bytes
-//! go in); the new file then takes the file's permission bits and is
-//! renamed over it. That directory's mode is never set after it is made,
-//! so where the file's directory passes its group on (setgid), the new
-//! file gets that group, as one made beside the file would, also for a
-//! run not in that group. A change the disk still
-//! refuses (permissions, a full disk, an NFS server out of room, which
-//! says so only as the new file closes) fails alone (`write-failed`) with
-//! the human's file as it was, still listed (not a conflict) for an apply
-//! once the disk takes it; the apply goes on with the rest. A file the human
-//! made read-only is refused, never replaced. Written in place, as before:
-//! a file a new one would not stand in for (one with another hard link,
-//! one whose owner or group a new file would not have), and one where the
-//! disk will not make the new file, make it its owner's alone, or move it
-//! there (a directory that takes no new name, a share mounted for one
-//! fixed owner the run is not, a path the longer name takes past the
-//! system's cap, a file that is a mount point of its own). A new file the
-//! disk has no room for fails the change: in place, the bytes would cut
-//! the file short. A file written in place that the disk stops partway (a
-//! full disk, an NFS server out of room) is still cut short: the change
-//! fails, and later lists show it as a conflict.
-//! The trade-offs of a file replaced so:
-//! - it does not keep its extended attributes or ACLs;
-//! - a process that holds it open to write (a log a server appends to, a
-//!   database) goes on writing to the old file: nothing it writes after
-//!   the apply shows at the path;
-//! - the disk needs room for a second copy of it while the new one fills;
-//!   a file written in place needs none;
-//! - a kill partway can leave the new file's directory,
-//!   `.<name>.haest-<pid>-<n>`, beside it, with the new file in it, which
-//!   only its owner may reach; never a file cut short. An apply dropped
-//!   just as the system starts making that directory can leave it empty.
-//!   The name matches none of the file's own ignore patterns; `.*.haest-*`
-//!   matches every one.
+//! A file goes on the disk whole or not at all, through the disk's whole
+//! write ([`Fs::write_whole`]): on the real disk, a new file beside it that
+//! takes its permission bits and is renamed over it (`RealFs`'s doc says
+//! where it writes in place instead, and what a file replaced so does not
+//! keep). A change the disk refuses (permissions, a full disk, an NFS
+//! server out of room, which says so only as the new file closes) fails
+//! alone (`write-failed`) with the human's file as it was, still listed
+//! (not a conflict) for an apply once the disk takes it; the apply goes on
+//! with the rest. A file the human made read-only is refused, never
+//! replaced. A file written in place that the disk stops partway (a full
+//! disk, an NFS server out of room) is still cut short: the change fails,
+//! and later lists show it as a conflict. A kill partway can leave the new
+//! file beside it, never a file cut short: its name, `.haest-*`, matches
+//! none of the file's own ignore patterns.
 //!
 //! The writes go first and the deletes last, so nothing is taken away
 //! before the write that carries it elsewhere has landed: first each write
@@ -88,7 +64,6 @@ use super::{
     shown::Shown,
     state::{Original, state_of, walk},
 };
-use crate::real::put_file;
 
 /// Why one change was not applied: its code and the reason for the human.
 type Refusal = (ApplyFailureCode, String);
@@ -483,7 +458,7 @@ impl OverlayChanges {
                 disk.create_dir_all(parent).await?;
             }
             let bytes = self.overlay.read(path).await?;
-            put_file(disk, &real, &bytes).await?;
+            disk.write_whole(&real, &bytes).await?;
         }
         self.carry_mode(path, s.change.kind, s.mine, &real).await?;
         Ok(took)

@@ -1,7 +1,6 @@
 use std::{
     io,
     path::{Path, PathBuf},
-    sync::Mutex,
 };
 
 use super::*;
@@ -234,99 +233,4 @@ async fn remove_tree_deletes_a_whole_tree_and_remove_does_not() {
     fs.remove_all(Path::new("/p/z")).await.unwrap();
     let gone = fs.remove_all(Path::new("/p/z")).await;
     assert_eq!(gone.map_err(|e| e.kind()), Err(io::ErrorKind::NotFound));
-}
-
-/// A host's store with modes, over a [`MemFs`]: it keeps each mode set,
-/// or refuses every one.
-struct Moded {
-    files: MemFs,
-    modes: Mutex<Vec<(PathBuf, u32)>>,
-    refuses: bool,
-}
-
-impl Moded {
-    fn new(refuses: bool) -> Self {
-        let files = MemFs::from_files([("/p/file", "x")]);
-        let modes = Mutex::new(Vec::new());
-        Self {
-            files,
-            modes,
-            refuses,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl Fs for Moded {
-    async fn read(&self, p: &Path) -> io::Result<Vec<u8>> {
-        self.files.read(p).await
-    }
-    async fn write(&self, p: &Path, d: &[u8]) -> io::Result<()> {
-        self.files.write(p, d).await
-    }
-    async fn append(&self, p: &Path, d: &[u8]) -> io::Result<()> {
-        self.files.append(p, d).await
-    }
-    async fn stat(&self, p: &Path) -> io::Result<FsStat> {
-        self.files.stat(p).await
-    }
-    async fn read_dir(&self, p: &Path) -> io::Result<Vec<DirEntry>> {
-        self.files.read_dir(p).await
-    }
-    async fn create_dir(&self, p: &Path) -> io::Result<()> {
-        self.files.create_dir(p).await
-    }
-    async fn remove(&self, p: &Path) -> io::Result<()> {
-        self.files.remove(p).await
-    }
-    async fn remove_all(&self, p: &Path) -> io::Result<()> {
-        self.files.remove_all(p).await
-    }
-    async fn rename(&self, a: &Path, b: &Path) -> io::Result<()> {
-        self.files.rename(a, b).await
-    }
-    async fn chmod(&self, p: &Path, mode: u32) -> io::Result<()> {
-        if self.refuses {
-            return Err(io::ErrorKind::PermissionDenied.into());
-        }
-        self.modes.lock().unwrap().push((p.to_path_buf(), mode));
-        Ok(())
-    }
-}
-
-/// The default `create_private_dir`: the directory made and given 0700,
-/// a name already taken refused; on a store with no modes, just made.
-#[tokio::test]
-async fn the_default_private_dir_is_made_owner_only() {
-    use io::ErrorKind::{AlreadyExists, NotFound};
-    let fs = Moded::new(false);
-    fs.create_private_dir(Path::new("/p/d")).await.unwrap();
-    assert!(fs.stat(Path::new("/p/d")).await.unwrap().is_dir());
-    let modes = fs.modes.lock().unwrap().clone();
-    assert_eq!(modes, [(PathBuf::from("/p/d"), 0o700)]);
-    for (p, want) in [("/p/d", AlreadyExists), ("/p/file", AlreadyExists)] {
-        let got = fs.create_private_dir(Path::new(p)).await.unwrap_err();
-        assert_eq!(got.kind(), want, "{p}");
-    }
-    let no_parent = fs.create_private_dir(Path::new("/q/d")).await;
-    assert_eq!(no_parent.map_err(|e| e.kind()), Err(NotFound));
-    assert_eq!(fs.modes.lock().unwrap().len(), 1, "only the one made");
-
-    let mem = MemFs::from_files([("/p/file", "x")]);
-    mem.create_private_dir(Path::new("/p/d")).await.unwrap();
-    assert!(mem.stat(Path::new("/p/d")).await.unwrap().is_dir());
-}
-
-/// A directory the store will not make private is not left behind open
-/// to others: the default removes it again and says why.
-#[tokio::test]
-async fn a_private_dir_the_store_cannot_make_private_is_removed_again() {
-    let fs = Moded::new(true);
-    let refused = fs.create_private_dir(Path::new("/p/d")).await;
-    assert_eq!(
-        refused.map_err(|e| e.kind()),
-        Err(io::ErrorKind::PermissionDenied)
-    );
-    assert!(!fs.exists(Path::new("/p/d")).await, "left behind");
-    assert!(fs.exists(Path::new("/p/file")).await);
 }

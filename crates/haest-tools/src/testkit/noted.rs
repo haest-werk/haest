@@ -75,9 +75,6 @@ impl Fs for Noted {
     async fn create_dir(&self, path: &Path) -> io::Result<()> {
         self.mem.create_dir(path).await
     }
-    async fn create_private_dir(&self, path: &Path) -> io::Result<()> {
-        self.mem.create_private_dir(path).await
-    }
     async fn create_dir_all(&self, path: &Path) -> io::Result<()> {
         self.mem.create_dir_all(path).await
     }

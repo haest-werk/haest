@@ -25,10 +25,11 @@ libc = "0.2"
 # xan (sandbox/xan): RFC 4180 CSV, and its =~ / match().
 csv = "1"
 regex = "1"
+# The real disk's whole write: a new file beside the old, renamed over it.
+tempfile = "3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
-tempfile = "3"
 
 [package.metadata.docs.rs]
 all-features = true

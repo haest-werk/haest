@@ -29,29 +29,26 @@ use tokio::io::AsyncReadExt;
 ///   file system refused, also one an NFS client reports only as the file
 ///   closes (no room on the server, a quota).
 /// - [`write_whole`](Fs::write_whole) puts the bytes in a new file beside
-///   the file, in a directory of its own that only its owner may enter,
-///   gives it the file's permission bits and renames it over the file, so
-///   a write the disk stops partway (a full disk, a kill) leaves the file
-///   as it was. The overlay's apply and the tools that rewrite a file go
-///   through it. On a disk that reads two spellings of a name as one, the
-///   system decides which one the file goes by afterwards, as for any
-///   program that saves by renaming. A file made read-only is refused. It writes in place,
-///   as `write` does, where a new file would not stand in for the file
-///   (another hard link to it, another owner or group, a symlink, a FIFO
-///   or a device, which it opens once, as `write` does) or the disk will
-///   not make one, make it its owner's alone or move it over (a share
-///   mounted for one fixed owner, a FUSE file system without setattr, a
-///   path just short of the system's cap): there a full disk still cuts
-///   the file short, and says so. A replaced file does not keep its
-///   extended attributes or ACLs, and whatever holds the old file keeps
-///   it: a process that has it open (a log a server appends to, `tail
-///   -f`), an inotify watch on it, a container it is bind-mounted into on
-///   its own. The disk needs room for the second copy, and a kill partway
-///   can leave `.<name>.haest-<pid>-<n>` beside it, which only its owner
-///   may reach.
+///   the file, its owner's alone until they are all in, gives it the
+///   file's permission bits and renames it over the file, so a write the
+///   disk stops partway (a full disk, a kill) leaves the file as it was.
+///   The overlay's apply and the tools that rewrite a file go through it.
+///   On a disk that reads two spellings of a name as one, the system
+///   decides which one the file goes by afterwards, as for any program
+///   that saves by renaming. A file made read-only is refused. It writes
+///   in place, as `write` does, where a new file would not stand in for
+///   the file (another hard link to it, another owner or group, a symlink,
+///   a FIFO or a device, which it opens once, as `write` does) or the disk
+///   will not make one or move it over (a directory that takes no new
+///   name, a path just short of the system's cap, one file mounted on its
+///   own): there a full disk still cuts the file short, and says so. A
+///   replaced file does not keep its extended attributes or ACLs, and
+///   whatever holds the old file keeps it: a process that has it open (a
+///   log a server appends to, `tail -f`), an inotify watch on it, a
+///   container it is bind-mounted into on its own. The disk needs room for
+///   the second copy, and a kill partway can leave a `.haest-*` file
+///   beside it, no more open than the file.
 /// - [`chmod`](Fs::chmod) sets Unix permission bits (a no-op elsewhere).
-/// - [`create_private_dir`](Fs::create_private_dir) makes the directory
-///   with its mode (0700) in one step, never setting it after.
 /// - [`try_lock`](Fs::try_lock) takes an exclusive `flock(2)`, which the
 ///   system drops with the process that held it. It opens the file to read
 ///   and write for it (an NFS client refuses an exclusive lock on a file
@@ -159,7 +156,7 @@ impl Fs for RealFs {
     /// so a write the disk stops partway leaves it as it was; where a new
     /// file would not stand in for it, they go in place (`replace.rs`).
     async fn write_whole(&self, path: &Path, data: &[u8]) -> io::Result<()> {
-        super::replace::put_file(self, path, data).await
+        super::replace::put_file(path, data).await
     }
 
     async fn exists(&self, path: &Path) -> bool {
@@ -197,13 +194,6 @@ impl Fs for RealFs {
 
     async fn create_dir(&self, path: &Path) -> io::Result<()> {
         tokio::fs::create_dir(path).await
-    }
-
-    /// Made with its mode, `mkdir(path, 0700)`, and never set after: on
-    /// Linux, one made in a directory that passes its group on (setgid)
-    /// keeps that group and the bit, also for a process not in the group.
-    async fn create_private_dir(&self, path: &Path) -> io::Result<()> {
-        tokio::fs::DirBuilder::new().mode(0o700).create(path).await
     }
 
     async fn create_dir_all(&self, path: &Path) -> io::Result<()> {

@@ -24,7 +24,6 @@ use haest_core::{
 };
 
 pub use fs::RealFs;
-pub(crate) use replace::put_file;
 
 /// The real disk and the real `bash`: the workspace where the agent's edits
 /// land on disk at once and its commands are real programs.
@@ -45,11 +44,10 @@ pub(crate) use replace::put_file;
 ///   server appends to or `tail -f`, an inotify watch on it, a container
 ///   it is bind-mounted into on its own, whose reload then reads the old
 ///   text). The disk needs room for a second copy, and a kill partway can
-///   leave `.<name>.haest-<pid>-<n>` beside it, which only its owner may
-///   reach. A file with another hard link, another owner or group, or a
-///   symlink, and one where the disk refuses to make the new file, set its
-///   mode or rename it (a share mounted for one fixed owner), is written in
-///   place: a full disk still cuts it short, and the tool says so.
+///   leave a `.haest-*` file beside it, no more open than the file. A file
+///   with another hard link, another owner or group, or a symlink, and one
+///   where the disk refuses to make the new file or rename it, is written
+///   in place: a full disk still cuts it short, and the tool says so.
 /// - [`Workspace::shell`] runs `bash -c <command>`; [`Workspace::run`] runs a
 ///   program with its argv, no shell parsing. A bare program name is looked up
 ///   on the `PATH` in the [`ChildEnv`] (`/usr/bin:/bin` when it has none), a

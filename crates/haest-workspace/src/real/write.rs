@@ -48,7 +48,7 @@ async fn write_closed(options: OpenOptions, path: &Path, data: &[u8]) -> io::Res
     unsafe_code,
     reason = "std ignores close(2)'s error, and only libc's close returns it"
 )]
-fn close(file: File) -> io::Result<()> {
+pub(super) fn close(file: File) -> io::Result<()> {
     let fd = file.into_raw_fd();
     // SAFETY: `fd` was the file's own descriptor; `into_raw_fd` took it
     // from the file, so nothing else closes it, and it is closed once, here.
@@ -75,9 +75,7 @@ mod tests {
         fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
     }
 
-    /// A write makes the file, or empties it first and keeps its mode (the
-    /// apply makes a new file that replaces one its owner's alone, then
-    /// fills it).
+    /// A write makes the file, or empties it first and keeps its mode.
     #[tokio::test]
     async fn a_write_makes_the_file_or_empties_it_and_keeps_its_mode() {
         let dir = tempfile::tempdir().unwrap();

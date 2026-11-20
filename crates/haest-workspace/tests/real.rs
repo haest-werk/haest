@@ -286,28 +286,3 @@ async fn chmod_sets_the_mode_on_the_disk_so_a_session_file_stays_private() {
     let mode = std::fs::metadata(&f).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o600);
 }
-
-/// A private directory is 0700 as it is made, its mode never set after:
-/// one made where the parent passes its group on (setgid) keeps the bit
-/// Linux gives it, so what is made in it gets the parent's group. A name
-/// already taken is refused, a dangling link included, never followed.
-#[tokio::test]
-async fn a_private_dir_is_owner_only_as_made_and_never_over_a_taken_name() {
-    use std::{fs, os::unix::fs::PermissionsExt};
-    let (_t, dir) = tempdir();
-    let mode = |p: &Path| fs::symlink_metadata(p).unwrap().permissions().mode() & 0o7777;
-    let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o2700));
-    let passes_on = cfg!(target_os = "linux") && mode(&dir) & 0o2000 != 0;
-    RealFs.create_private_dir(&dir.join("own")).await.unwrap();
-    let want = if passes_on { 0o2700 } else { 0o700 };
-    let got = mode(&dir.join("own"));
-    assert!(dir.join("own").is_dir() && got == want, "made at {got:o}");
-    fs::write(dir.join("file"), "x").unwrap();
-    std::os::unix::fs::symlink(dir.join("nowhere"), dir.join("dangling")).unwrap();
-    for name in ["own", "file", "dangling"] {
-        let taken = RealFs.create_private_dir(&dir.join(name)).await;
-        let taken = taken.map_err(|e| e.kind());
-        assert_eq!(taken, Err(std::io::ErrorKind::AlreadyExists), "{name}");
-    }
-    assert!(!dir.join("nowhere").exists(), "made through the link");
-}
