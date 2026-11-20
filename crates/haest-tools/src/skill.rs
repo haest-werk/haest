@@ -25,8 +25,7 @@ pub struct SkillToolOptions {
 
 impl SkillToolOptions {
     /// The skills of `set`, asked on every call: SKILL.md files the host
-    /// rescans ([`Skills`](haest_core::skills::Skills) or
-    /// [`DiskSkills`](haest_core::skills::DiskSkills), reading the bodies
+    /// rescans ([`Skills`](haest_core::skills::Skills), reading the bodies
     /// from the host's own fs: a user skill lives outside any sandbox mount),
     /// or a host's own (kept in a database, written inline).
     pub fn new(set: impl Into<SkillSetRef>) -> Self {
@@ -146,7 +145,7 @@ impl Tool for SkillTool {
 mod tests {
     use haest_core::{
         fs::MemFs,
-        skills::{DiskSkills, SkillOptions, SkillSources, discover_skills},
+        skills::{SkillOptions, SkillSources, Skills, discover_skills},
     };
 
     use super::*;
@@ -169,10 +168,10 @@ mod tests {
             claude_dir: "/h/.claude".into(),
             sources: SkillSources::ALL,
         };
-        let skills = discover_skills(&fs, &opts).await;
-        SkillTool::new(SkillToolOptions::new(DiskSkills::new(fs, move || {
-            skills.clone()
-        })))
+        let found = discover_skills(&fs, &opts).await;
+        let skills = Skills::new(fs);
+        skills.replace(found);
+        SkillTool::new(SkillToolOptions::new(skills))
     }
 
     #[tokio::test]

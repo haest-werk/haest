@@ -1,5 +1,5 @@
 //! A host's skills as haest's Skill tool and prompt block read them. Skills on
-//! disk (SKILL.md, [`DiskSkills`]) are one source; a host whose skills live
+//! disk (SKILL.md, [`Skills`]) are one source; a host whose skills live
 //! elsewhere (a database, a folder of its own, built into the binary) hands
 //! them over as [`InlineSkills`] or implements [`SkillSet`] itself.
 
@@ -59,7 +59,7 @@ impl SkillCard {
 
 /// Where the Skill tool and the prompt's list get a host's skills.
 ///
-/// haest has two: [`DiskSkills`] (SKILL.md files) and [`InlineSkills`] (held
+/// haest has two: [`Skills`] (SKILL.md files) and [`InlineSkills`] (held
 /// in memory). A host whose skills live elsewhere (a database) implements it.
 ///
 /// # Examples
@@ -120,75 +120,14 @@ pub(super) fn argument_line(args: Option<&str>) -> String {
     }
 }
 
-/// SKILL.md files (haest's discovery): the model-invocable ones, read from `fs` when loaded.
+/// A host's SKILL.md skills, held where every clone sees them: the host
+/// replaces the list after a rescan ([`Skills::replace`]), and the Skill tool
+/// and the prompt read it on their next call. A [`SkillSet`] over `fs`; cheap
+/// to clone.
 ///
 /// Offers only the skills the model may pick; a skill with
 /// `disable-model-invocation` cannot be loaded through it either. A load
-/// is [`load_skill_body`]. [`Skills`] is the same over a list the host
-/// replaces.
-pub struct DiskSkills {
-    fs: FsRef,
-    list: Box<dyn Fn() -> Vec<Skill> + Send + Sync>,
-}
-
-impl DiskSkills {
-    /// `fs` reads the bodies (the host's own: a user skill lives outside any
-    /// sandbox mount); `list` is asked on every call (a rescan shows at once).
-    pub fn new(
-        fs: impl Into<FsRef>,
-        list: impl Fn() -> Vec<Skill> + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            fs: fs.into(),
-            list: Box::new(list),
-        }
-    }
-}
-
-impl fmt::Debug for DiskSkills {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DiskSkills").finish_non_exhaustive()
-    }
-}
-
-/// The model-invocable skills of `skills`, as the model is offered them.
-fn offered_cards(skills: &[Skill]) -> Vec<SkillCard> {
-    skills
-        .iter()
-        .filter(|s| s.model_invocable)
-        .map(Skill::card)
-        .collect()
-}
-
-/// `name`'s body, read from `fs`, when `skills` offers it to the model.
-async fn load_offered(
-    fs: &FsRef,
-    skills: &[Skill],
-    name: &str,
-    args: Option<&str>,
-) -> io::Result<String> {
-    let skill = skills
-        .iter()
-        .find(|s| s.model_invocable && s.name == name)
-        .ok_or_else(|| not_found(name))?;
-    load_skill_body(&**fs, skill, args).await
-}
-
-#[async_trait]
-impl SkillSet for DiskSkills {
-    fn offered(&self) -> Vec<SkillCard> {
-        offered_cards(&(self.list)())
-    }
-
-    async fn load(&self, name: &str, args: Option<&str>) -> io::Result<String> {
-        load_offered(&self.fs, &(self.list)(), name, args).await
-    }
-}
-
-/// A host's SKILL.md skills, held where every clone sees them: the host
-/// replaces the list after a rescan ([`Skills::replace`]), and the Skill tool
-/// and the prompt read it on their next call. A [`SkillSet`] over `fs`, like
-/// [`DiskSkills`]; cheap to clone.
+/// is [`load_skill_body`].
 ///
 /// # Examples
 ///
@@ -272,11 +211,21 @@ impl fmt::Debug for Skills {
 #[async_trait]
 impl SkillSet for Skills {
     fn offered(&self) -> Vec<SkillCard> {
-        offered_cards(&self.list())
+        self.held()
+            .iter()
+            .filter(|s| s.model_invocable)
+            .map(Skill::card)
+            .collect()
     }
 
     async fn load(&self, name: &str, args: Option<&str>) -> io::Result<String> {
-        load_offered(&self.fs, &self.list(), name, args).await
+        let skill = self
+            .held()
+            .iter()
+            .find(|s| s.model_invocable && s.name == name)
+            .cloned();
+        let skill = skill.ok_or_else(|| not_found(name))?;
+        load_skill_body(&*self.fs, &skill, args).await
     }
 }
 

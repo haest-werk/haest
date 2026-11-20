@@ -156,29 +156,6 @@ fn one_list_of_inline_skills_is_the_merged_set_of_it() {
 }
 
 #[tokio::test]
-async fn disk_skills_offer_what_the_model_may_invoke_and_load_like_before() {
-    let fs = fs_with(&[
-        ("/r/home/.claude/skills", "visible", "", "THE BODY"),
-        (
-            "/r/home/.claude/skills",
-            "hidden",
-            "disable-model-invocation: true\n",
-            "NOPE",
-        ),
-    ]);
-    let skills = discover_skills(&fs, &opts()).await;
-    let set = DiskSkills::new(fs, move || skills.clone());
-    let offered: Vec<String> = set.offered().into_iter().map(|c| c.name).collect();
-    assert_eq!(offered, ["visible"]);
-    let body = set.load("visible", Some("a b")).await.unwrap();
-    assert!(
-        body.contains("THE BODY") && body.contains("ARGUMENTS: a b"),
-        "{body}"
-    );
-    assert!(set.load("hidden", None).await.is_err());
-}
-
-#[tokio::test]
 async fn every_clone_of_skills_sees_a_replaced_list_and_offers_only_what_the_model_may_pick() {
     let fs = fs_with(&[
         ("/r/home/.claude/skills", "visible", "", "THE BODY"),
