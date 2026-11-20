@@ -6,7 +6,7 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 `--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
 `HAEST_*` variables.
 
-## Unreleased
+## 0.4.0 (2026-11-20)
 
 A host can now write haest's system prompt as a Jinja template, opt-in
 through the new crate haest-prompt (feature `prompt`). Without it nothing
@@ -58,6 +58,10 @@ below.
 
 - The bundled catalog follows the TypeScript one's 2026-11-19 sweep: Claude
   Fable 5.2 replaces 5.1, GLM-5.3 Flash serves 1048575 tokens.
+
+### haest-issues 0.3.0 (versioned on its own)
+
+- Builds on haest-core 0.4. Nothing else changed.
 
 ## 0.3.0 (2026-11-20)
 

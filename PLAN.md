@@ -111,6 +111,7 @@ steering instead is `crates/haest/tests/plug_in.rs`.
 | 11 | Sessions (D22): `haest-wire`, `haest-session`, `haest-transport`; `--json` in the envelope, `--stdio`, `control_socket` + `haest ctl`, `broker_url` | done |
 | 12 | Agent core (D22): durable runs (`Agent::run_durable` over a `RunStore`, `Tool::on_resume`), a subagent hub that runs a host's own members (`SubagentParent::start_member`), thresholds with wind-down, subagent budgets held on the ledger | done |
 | 13 | The 0.3 API (D21); review rounds until one found no regression, leak or data loss; the spelling layer removed (D23); a last cut of boilerplate and workarounds (D24) | done, 0.3.0 |
+| 14 | The system prompt as a template (D25-D28): `haest-prompt` on MiniJinja, `Tool::prompt_guide`, catalog family/tier/generation, `PromptSections`, `RuntimeInputs::with_prompt_template` behind the `prompt` feature | done, 0.4.0 |
 
 ### Parity (2026-11-10)
 
