@@ -323,6 +323,11 @@ impl Reading {
 /// mark should move goes to its site again, in a new list. Its
 /// [`text`](Self::text) and [`closing`](Self::closing) run when it fires,
 /// under no lock of haest's.
+///
+/// A threshold's `Drop` must not panic: it may run while the agent holds its
+/// threshold list, and a panic there leaves every later turn of that agent
+/// panicking too. Nothing is lost: a threshold holds no conversation data, and
+/// history, the session file, the ledger and the journal stay as they were.
 pub trait Threshold: Send + Sync {
     /// What it reads.
     fn meter(&self) -> Meter;

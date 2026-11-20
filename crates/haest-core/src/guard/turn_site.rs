@@ -22,12 +22,6 @@ use crate::{
 
 /// An agent's thresholds and which have fired, across its turns: shared by
 /// the agent and its running turn's guard.
-///
-/// The lock is held only to copy the watch out or put it back, never while
-/// a host's threshold runs, so one that panics poisons nothing: a change
-/// works on a copy, unlocked, and puts it back. Only the running turn
-/// changes it, and an agent runs one turn at a time (a refused call never
-/// touches it), so no change lands between a copy and its put.
 #[derive(Clone, Default)]
 pub(crate) struct SharedWatch(Arc<Mutex<Watch<TurnSite>>>);
 
@@ -47,20 +41,14 @@ impl SharedWatch {
         self.lock().thresholds().clone()
     }
 
-    /// Change the watch: `f` runs on a copy with no lock held, and the copy
-    /// is put back. When `f` panics, the watch stays as it was. The watch
-    /// the copy replaces is dropped with the lock released: it may hold the
-    /// last handle to a host's threshold.
+    /// Change the watch.
     pub(crate) fn update<R>(&self, f: impl FnOnce(&mut Watch<TurnSite>) -> R) -> R {
-        let mut watch = self.get();
-        let out = f(&mut watch);
-        // The guard drops with this statement.
-        let old = std::mem::replace(&mut *self.lock(), watch);
-        drop(old);
-        out
+        f(&mut self.lock())
     }
 
-    /// Held only to clone or swap the watch, so a poisoned one is a bug here.
+    /// Held while haest reads or changes the watch. The only host code that
+    /// runs under it is the drop of a threshold the watch lets go of, which
+    /// must not panic ([`Threshold`](crate::threshold::Threshold)).
     fn lock(&self) -> MutexGuard<'_, Watch<TurnSite>> {
         self.0
             .lock()
@@ -307,55 +295,5 @@ impl TurnGuard {
             let past = thresholds.past(|m| readings.read(m), Action::WindDown)?;
             Some(WindingDown::of(&past, &remedies))
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::panic::{AssertUnwindSafe, catch_unwind};
-
-    use super::*;
-    use crate::threshold::{Mark, Rearm, Threshold, ThresholdRef};
-
-    /// A host's threshold whose drop panics.
-    struct PanicsOnDrop;
-
-    impl Threshold for PanicsOnDrop {
-        fn meter(&self) -> Meter {
-            Meter::Steps
-        }
-        fn mark(&self) -> Mark {
-            Mark::at(1.0)
-        }
-        fn action(&self) -> Action {
-            Action::Remind
-        }
-        fn rearm(&self) -> Rearm {
-            Rearm::NextTurn
-        }
-        fn text(&self, _: &Reading) -> String {
-            String::new()
-        }
-    }
-
-    impl Drop for PanicsOnDrop {
-        fn drop(&mut self) {
-            panic!("a host threshold's drop");
-        }
-    }
-
-    /// `update` put the changed copy back by assignment, so the watch it
-    /// replaced was dropped with the lock held. Where the change let go of
-    /// a host's threshold, that watch held its last handle: the threshold's
-    /// drop ran under the lock, and one that panicked poisoned it.
-    #[test]
-    fn update_drops_the_watch_it_replaces_unlocked() {
-        let list = Thresholds::new([ThresholdRef::new(PanicsOnDrop)]).unwrap();
-        let shared = SharedWatch::new(Watch::new(list));
-        let replaced = catch_unwind(AssertUnwindSafe(|| {
-            shared.update(|watch| *watch = Watch::new(Thresholds::none()));
-        }));
-        assert!(replaced.is_err(), "the drop's panic reaches the caller");
-        assert!(shared.get().thresholds().iter().next().is_none());
     }
 }

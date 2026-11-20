@@ -331,7 +331,7 @@ impl Agent {
     /// A fresh guard per turn: its caps and clock start over, and the
     /// thresholds that fire once a turn re-arm. Only for a turn that began.
     fn guard(&self) -> TurnGuard {
-        // A host's threshold runs here (`rearm`): on a copy, unlocked.
+        // A threshold the host took out of its list may drop here, locked.
         self.thresholds.update(|watch| {
             watch.follow(self.deps.shared().thresholds());
             watch.next_turn();
