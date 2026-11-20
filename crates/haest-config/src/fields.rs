@@ -11,9 +11,10 @@ use haest_core::provider::WebSearchEngine;
 use haest_providers::http::__private::UrlDebug;
 use haest_settings::Settings;
 
-use self::raw::Raw;
+pub(crate) use self::raw::Raw;
 use crate::{
     SetError,
+    registry::FIELDS,
     value::{var, var_parts},
 };
 
@@ -262,13 +263,14 @@ impl fmt::Debug for Config {
     }
 }
 
-type Get = fn(&Config) -> Option<String>;
-type Set = fn(&mut Config, &str) -> Result<(), String>;
+/// How [`Config::get`] reads one setting.
+pub(crate) type Get = fn(&Config) -> Option<String>;
+/// How [`Config::set`] writes one setting.
+pub(crate) type Set = fn(&mut Config, &str) -> Result<(), String>;
 
 /// `web_search`: `off` is a value (no search), not unset, so it does not go
 /// by the `Option` rule every other optional setting follows.
-const WEB_SEARCH: (&str, Get, Set) = (
-    "web_search",
+pub(crate) const WEB_SEARCH: (Get, Set) = (
     |c| {
         Some(
             c.settings
@@ -289,8 +291,7 @@ const WEB_SEARCH: (&str, Get, Set) = (
 /// `env`: a `NAME=VALUE` adds that variable to the ones set before it. It
 /// reads back as the names only: a value may be a key, and `haest settings`
 /// shows what [`Config::get`] gives.
-const ENV: (&str, Get, Set) = (
-    "env",
+pub(crate) const ENV: (Get, Set) = (
     |c| (!c.env.is_empty()).then(|| c.env.keys().cloned().collect::<Vec<_>>().join(",")),
     |c, raw| {
         let entry = var(raw)?;
@@ -300,104 +301,7 @@ const ENV: (&str, Get, Set) = (
     },
 );
 
-/// `key => the field it is`, read and written by its [`Raw`]; then the
-/// settings that have their own get and set.
-macro_rules! fields {
-    ($($key:literal => $($path:ident).+),+ $(,)?; $($own:expr),* $(,)?) => {
-        const FIELDS: &[(&str, Get, Set)] = &[$((
-            $key,
-            |c| Raw::to_raw(&c.$($path).+),
-            |c, raw| {
-                c.$($path).+ = Raw::from_raw(raw)?;
-                Ok(())
-            },
-        ),)+ $($own),*];
-
-        /// Whether `key`'s field is a count, and its largest value: what its
-        /// type says ([`Raw::WHOLE_UP_TO`]), so the check and the field agree.
-        pub(crate) fn whole_up_to(key: &str) -> Option<f64> {
-            fn of<T: Raw>(_: fn(&Config) -> &T) -> Option<f64> {
-                T::WHOLE_UP_TO
-            }
-            match key {
-                $($key => of(|c| &c.$($path).+),)+
-                _ => None,
-            }
-        }
-
-        /// The largest number `key`'s field takes, when its type has one
-        /// ([`Raw::UP_TO`]): a share is at most 1.
-        pub(crate) fn up_to(key: &str) -> Option<f64> {
-            fn of<T: Raw>(_: fn(&Config) -> &T) -> Option<f64> {
-                T::UP_TO
-            }
-            match key {
-                $($key => of(|c| &c.$($path).+),)+
-                _ => None,
-            }
-        }
-    };
-}
-
-fields! {
-    "profile" => profile,
-    "model" => settings.model_spec,
-    "effort" => settings.effort,
-    "system_prompt" => settings.system_prompt,
-    "append_system_prompt" => settings.append_system_prompt,
-    "provider_routing" => provider_routing,
-    "context" => settings.context,
-    "skills" => settings.skills,
-    "skill_catalog" => settings.skill_catalog,
-    "tools" => settings.tools,
-    "code" => settings.code,
-    "code_tools" => settings.code_tools,
-    "agents" => settings.agents,
-    "image" => settings.image,
-    "image_model" => settings.image_model,
-    "image_models" => settings.image_models,
-    "mcp" => mcp,
-    "deferred_tools" => settings.deferred_tools,
-    "workspace" => settings.workspace,
-    "env_passthrough" => env_passthrough,
-    "mods" => settings.mods,
-    "project_mods" => settings.project_mods,
-    "approvals" => settings.approvals,
-    "trusted_dirs" => trusted_dirs,
-    "max_turn_usd" => settings.caps.max_turn_usd,
-    "max_turn_tokens" => settings.caps.max_turn_tokens,
-    "max_request_tokens" => settings.caps.max_request_tokens,
-    "max_turn_steps" => settings.caps.max_turn_steps,
-    "max_turn_minutes" => settings.caps.max_turn_time,
-    "max_repeats" => settings.caps.max_repeats,
-    "max_conversation_usd" => settings.caps.max_conversation_usd,
-    "max_conversation_tokens" => settings.caps.max_conversation_tokens,
-    "wind_down_at" => settings.wind_down_at,
-    "context_window" => settings.caps.context_window,
-    "compact_at" => settings.caps.compact_at,
-    "max_agent_turns" => settings.max_agent_turns,
-    "max_agent_depth" => settings.subagents.max_depth,
-    "max_subagents" => settings.subagents.max_concurrent,
-    "subagent_usd" => settings.subagents.usd,
-    "subagent_steps" => settings.subagents.steps,
-    "subagent_minutes" => settings.subagents.time,
-    "subagent_budgets" => settings.subagents.budgets,
-    "event_ring" => event_ring,
-    "stdio" => stdio,
-    "control_socket" => control_socket,
-    "control_dir" => control_dir,
-    "broker_url" => broker_url,
-    "broker_access" => broker_access,
-    "data_dir" => settings.data_dir,
-    "config_dir" => settings.config_dir,
-    "debug" => settings.debug;
-    WEB_SEARCH,
-    ENV,
-}
-
+/// The setting `key`'s get and set, from the registry's one row for it.
 fn field(key: &str) -> Option<(Get, Set)> {
-    FIELDS
-        .iter()
-        .find(|(k, _, _)| *k == key)
-        .map(|(_, g, s)| (*g, *s))
+    FIELDS.iter().find(|(k, _)| *k == key).map(|(_, f)| *f)
 }

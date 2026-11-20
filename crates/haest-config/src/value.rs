@@ -11,10 +11,7 @@ use std::{
 use haest_core::{__private::is_var_name, fs::resolve_path};
 use haest_providers::http::check_endpoint_url;
 
-use crate::{
-    fields::{up_to, whole_up_to},
-    registry::{Def, Kind},
-};
+use crate::registry::{Def, Kind, up_to, whole_up_to};
 
 /// The variable `key`'s value in `env`, trimmed; None when it is unset or
 /// empty. How the loader reads every variable, for a host to read its own the

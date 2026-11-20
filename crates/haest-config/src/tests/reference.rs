@@ -10,9 +10,8 @@ use toml::Value;
 
 use super::*;
 use crate::{
-    fields::{up_to, whole_up_to},
     profiles::BUILTIN,
-    registry::{Def, Scope},
+    registry::{Def, Scope, up_to, whole_up_to},
     value::var_parts,
 };
 

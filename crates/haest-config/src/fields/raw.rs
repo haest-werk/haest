@@ -13,7 +13,7 @@ use super::{BrokerAccess, ControlSocket, EnvPassthrough};
 use crate::value::{number, parse_bool, split_list};
 
 /// A value in the checked spelling, and back. None = unset.
-pub(super) trait Raw: Sized {
+pub(crate) trait Raw: Sized {
     /// A count: a whole number up to this, never a fraction (`0.5` read as 0
     /// would turn a cap off). None = any number.
     const WHOLE_UP_TO: Option<f64> = None;

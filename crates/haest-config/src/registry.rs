@@ -1,15 +1,18 @@
-//! Every setting haest has, once. A setting has one name written three ways:
-//! `skill_catalog` in a TOML file, `HAEST_SKILL_CATALOG` in the environment,
-//! `--skill-catalog` on the command line. Its default is the bare value
-//! (`Config::bare`): every capability off until asked for, every brake on.
+//! Every setting haest has, once, with the [`Config`] field it is. A setting
+//! has one name written three ways: `skill_catalog` in a TOML file,
+//! `HAEST_SKILL_CATALOG` in the environment, `--skill-catalog` on the command
+//! line. Its default is the bare value (`Config::bare`): every capability off
+//! until asked for, every brake on.
 
 use haest_core::{Effort, deferred_tools::DeferMode, provider::WebSearchEngine};
 use haest_settings::{BuiltinTools, ContextSources, SkillSources};
 
-use crate::fields::{BrokerAccess, ControlSocket, EnvPassthrough};
+use crate::fields::{
+    BrokerAccess, Config, ControlSocket, ENV, EnvPassthrough, Get, Raw, Set, WEB_SEARCH,
+};
 
 /// `off`, then every engine.
-const WEB_SEARCH: [&str; WebSearchEngine::WORDS.len() + 1] = {
+const WEB_SEARCH_WORDS: [&str; WebSearchEngine::WORDS.len() + 1] = {
     let mut words = ["off"; WebSearchEngine::WORDS.len() + 1];
     let mut i = 0;
     while i < WebSearchEngine::WORDS.len() {
@@ -176,79 +179,141 @@ const PATHS: &str = "Paths";
 
 use Kind::{Bool, Choice, List, Number, Path, Text, Url, Vars};
 
-/// Every setting haest has, one row each, in the order `--help` and
-/// `haest settings` list them: key, heading, kind, an example value, help.
-///
-/// The one list: the loader checks every value against it, a host builds its
-/// flags from it, and
-/// [docs/settings.md](https://github.com/haest-werk/haest/blob/main/docs/settings.md)
-/// is written from it.
-#[rustfmt::skip]
-pub const DEFS: &[Def] = &[
-    def("profile", PROFILE, Text, "claude", "A named set of settings: claude (built in: everything Claude Code has that haest reads), or a [profiles.<name>] table in a config file"),
-    def("model", MODEL, Text, "anthropic:claude-opus-5-5", "provider:model").short('m'),
-    def("effort", MODEL, Choice(Effort::WORDS), "high", "Reasoning effort (unset: the model's own default)").short('e'),
-    def("system_prompt", MODEL, Text, "You are a terse code reviewer.", "Replaces haest's own identity text at the top of the system prompt"),
-    def("append_system_prompt", MODEL, Text, "Answer in British English.", "Text appended to the system prompt"),
-    def("provider_routing", MODEL, Text, r#"{"global": {"banned": ["novita"]}}"#, "OpenRouter's provider routing, as JSON: {\"global\": {\"banned\": [...], \"favorites\": [...]}, \"overrides\": ..., \"project\": ...}").scope(Scope::User),
-    def("context", CONTEXT, List(Some(ContextSources::WORDS)), "agents", "Instruction files: agents (AGENTS.md: ~/.agents/AGENTS.md, then every dir down to here), claude (CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md, ~/.claude/CLAUDE.md)"),
-    def("skills", CONTEXT, List(Some(SkillSources::WORDS)), "agents,claude", "Where skills come from: agents (~/.agents/skills, .agents/skills), claude (~/.claude/skills, .claude/skills), plugins (Claude Code's installed plugins); /<name> runs one"),
-    def("skill_catalog", CONTEXT, Bool, "true", "List the skills in the system prompt, so the model picks them on its own"),
-    def("tools", TOOLS, List(Some(BuiltinTools::WORDS)), "read,grep,glob,bash", "Built-in tools: read, write, edit, bash, grep, glob, web_fetch, tasks, skill (all = every one)"),
-    def("code", TOOLS, Bool, "true", "The Code tool: a JavaScript run that calls the other tools"),
-    def("code_tools", TOOLS, List(None), "Bash,mcp__github__*", "Extra tool names Code may call (exact, or prefix*)"),
-    def("agents", TOOLS, Bool, "true", "Agent, SendMessage and StopAgent: subagents"),
-    def("web_search", TOOLS, Choice(&WEB_SEARCH), "native", "The provider's web search, by engine"),
-    def("image", TOOLS, Bool, "true", "GenerateImage, over OpenRouter (needs OPENROUTER_API_KEY)"),
-    def("image_model", TOOLS, Text, "black-forest-labs/flux-3-image", "GenerateImage's default model"),
-    def("image_models", TOOLS, List(None), "openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image", "The other image models a call may pick"),
-    def("mcp", TOOLS, Bool, "true", "Start the project's MCP servers (.mcp.json); a trusted dir only"),
-    def("deferred_tools", TOOLS, Choice(DeferMode::WORDS), "grow", "How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off)")
+/// A row's field, put to one use: `get_set`, how [`Config`] reads and writes
+/// it by its [`Raw`]; or, with a function's name, what that function says of
+/// the field's type. `own(PAIR)` is a setting with a get and a set of its
+/// own, and no type.
+macro_rules! field {
+    (get_set, own($pair:ident)) => {
+        $pair
+    };
+    ($of:ident, own($pair:ident)) => {
+        None
+    };
+    (get_set, $($path:ident).+) => {
+        (
+            |c| Raw::to_raw(&c.$($path).+),
+            |c, raw| {
+                c.$($path).+ = Raw::from_raw(raw)?;
+                Ok(())
+            },
+        )
+    };
+    ($of:ident, $($path:ident).+) => {
+        $of(|c| &c.$($path).+)
+    };
+}
+
+/// Every setting, one row each: its key, the [`Config`] field it is (or
+/// `own(PAIR)`), and its [`Def`] but the key. Makes [`DEFS`], the fields
+/// [`Config::get`] and [`Config::set`] go by, and the bounds a number is
+/// checked against.
+macro_rules! settings {
+    ($($key:literal => $($field:ident).+ $(($own:ident))?: def($($arg:expr),+) $(.$with:ident($value:expr))*,)+) => {
+        /// Every setting haest has, one row each, in the order `--help` and
+        /// `haest settings` list them: key, heading, kind, an example value, help.
+        ///
+        /// The one list: the loader checks every value against it, a host builds its
+        /// flags from it, and
+        /// [docs/settings.md](https://github.com/haest-werk/haest/blob/main/docs/settings.md)
+        /// is written from it.
+        pub const DEFS: &[Def] = &[$(def($key, $($arg),+)$(.$with($value))*,)+];
+
+        /// Each setting's get and set, by its key.
+        pub(crate) const FIELDS: &[(&str, (Get, Set))] =
+            &[$(($key, field!(get_set, $($field).+ $(($own))?)),)+];
+
+        /// Whether `key`'s field is a count, and its largest value: what its
+        /// type says ([`Raw::WHOLE_UP_TO`]), so the check and the field agree.
+        pub(crate) fn whole_up_to(key: &str) -> Option<f64> {
+            fn of<T: Raw>(_: fn(&Config) -> &T) -> Option<f64> {
+                T::WHOLE_UP_TO
+            }
+            match key {
+                $($key => field!(of, $($field).+ $(($own))?),)+
+                _ => None,
+            }
+        }
+
+        /// The largest number `key`'s field takes, when its type has one
+        /// ([`Raw::UP_TO`]): a share is at most 1.
+        pub(crate) fn up_to(key: &str) -> Option<f64> {
+            fn of<T: Raw>(_: fn(&Config) -> &T) -> Option<f64> {
+                T::UP_TO
+            }
+            match key {
+                $($key => field!(of, $($field).+ $(($own))?),)+
+                _ => None,
+            }
+        }
+    };
+}
+
+settings! {
+    "profile" => profile: def(PROFILE, Text, "claude", "A named set of settings: claude (built in: everything Claude Code has that haest reads), or a [profiles.<name>] table in a config file"),
+    "model" => settings.model_spec: def(MODEL, Text, "anthropic:claude-opus-5-5", "provider:model").short('m'),
+    "effort" => settings.effort: def(MODEL, Choice(Effort::WORDS), "high", "Reasoning effort (unset: the model's own default)").short('e'),
+    "system_prompt" => settings.system_prompt: def(MODEL, Text, "You are a terse code reviewer.", "Replaces haest's own identity text at the top of the system prompt"),
+    "append_system_prompt" => settings.append_system_prompt: def(MODEL, Text, "Answer in British English.", "Text appended to the system prompt"),
+    "provider_routing" => provider_routing: def(MODEL, Text, r#"{"global": {"banned": ["novita"]}}"#, "OpenRouter's provider routing, as JSON: {\"global\": {\"banned\": [...], \"favorites\": [...]}, \"overrides\": ..., \"project\": ...}").scope(Scope::User),
+    "context" => settings.context: def(CONTEXT, List(Some(ContextSources::WORDS)), "agents", "Instruction files: agents (AGENTS.md: ~/.agents/AGENTS.md, then every dir down to here), claude (CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md, ~/.claude/CLAUDE.md)"),
+    "skills" => settings.skills: def(CONTEXT, List(Some(SkillSources::WORDS)), "agents,claude", "Where skills come from: agents (~/.agents/skills, .agents/skills), claude (~/.claude/skills, .claude/skills), plugins (Claude Code's installed plugins); /<name> runs one"),
+    "skill_catalog" => settings.skill_catalog: def(CONTEXT, Bool, "true", "List the skills in the system prompt, so the model picks them on its own"),
+    "tools" => settings.tools: def(TOOLS, List(Some(BuiltinTools::WORDS)), "read,grep,glob,bash", "Built-in tools: read, write, edit, bash, grep, glob, web_fetch, tasks, skill (all = every one)"),
+    "code" => settings.code: def(TOOLS, Bool, "true", "The Code tool: a JavaScript run that calls the other tools"),
+    "code_tools" => settings.code_tools: def(TOOLS, List(None), "Bash,mcp__github__*", "Extra tool names Code may call (exact, or prefix*)"),
+    "agents" => settings.agents: def(TOOLS, Bool, "true", "Agent, SendMessage and StopAgent: subagents"),
+    "web_search" => own(WEB_SEARCH): def(TOOLS, Choice(&WEB_SEARCH_WORDS), "native", "The provider's web search, by engine"),
+    "image" => settings.image: def(TOOLS, Bool, "true", "GenerateImage, over OpenRouter (needs OPENROUTER_API_KEY)"),
+    "image_model" => settings.image_model: def(TOOLS, Text, "black-forest-labs/flux-3-image", "GenerateImage's default model"),
+    "image_models" => settings.image_models: def(TOOLS, List(None), "openai/gpt-image-2.6-sunburst,black-forest-labs/flux-3-image", "The other image models a call may pick"),
+    "mcp" => mcp: def(TOOLS, Bool, "true", "Start the project's MCP servers (.mcp.json); a trusted dir only"),
+    "deferred_tools" => settings.deferred_tools: def(TOOLS, Choice(DeferMode::WORDS), "grow", "How MCP tools reach the model: behind ToolSearch (proxy, grow) or all up front (off)")
         .detail("ToolSearch lists each held-back tool with its description's first sentence. A host linking haest can hold back its own tools too, all but a list it names (`ToolDeferral::deferring_all_except`, `DeferredTools`); a held-back tool the model calls by name still runs, and loads."),
-    def("workspace", WORK, Choice(WORKSPACES), "real", "sandbox: a simulated bash over a copy-on-write overlay (nothing reaches the disk until /apply); real: the real disk and bash").short('w'),
-    def("env_passthrough", WORK, Choice(EnvPassthrough::WORDS), "none", "What a process haest starts (bash, a background job, an MCP server) gets of haest's environment: none, core (PATH, HOME, the user, the locale, the temp dirs), all (every variable, API keys included)"),
-    def("env", WORK, Vars, "GH_TOKEN=${GITHUB_TOKEN}", "A variable every process haest starts gets, the sandbox's shell included, over env_passthrough: NAME=VALUE, or NAME for haest's own value; repeat it for more. In a file: an [env] table. ${NAME} and ${NAME:-default} in a value are filled in from haest's environment").short('E'),
-    def("mods", WORK, Bool, "true", "Your mods in <config dir>/mods"),
-    def("project_mods", WORK, Bool, "true", "The project's mods in .haest/mods (its code runs; a trusted dir only)"),
-    def("approvals", WORK, Bool, "false", "The built-in approval mod: in the real workspace, asks before a shell command that cannot be undone (deleting recursively, rewriting git history or the remote, wiping a disk, killing processes by name, sudo); anything else runs without asking")
+    "workspace" => settings.workspace: def(WORK, Choice(WORKSPACES), "real", "sandbox: a simulated bash over a copy-on-write overlay (nothing reaches the disk until /apply); real: the real disk and bash").short('w'),
+    "env_passthrough" => env_passthrough: def(WORK, Choice(EnvPassthrough::WORDS), "none", "What a process haest starts (bash, a background job, an MCP server) gets of haest's environment: none, core (PATH, HOME, the user, the locale, the temp dirs), all (every variable, API keys included)"),
+    "env" => own(ENV): def(WORK, Vars, "GH_TOKEN=${GITHUB_TOKEN}", "A variable every process haest starts gets, the sandbox's shell included, over env_passthrough: NAME=VALUE, or NAME for haest's own value; repeat it for more. In a file: an [env] table. ${NAME} and ${NAME:-default} in a value are filled in from haest's environment").short('E'),
+    "mods" => settings.mods: def(WORK, Bool, "true", "Your mods in <config dir>/mods"),
+    "project_mods" => settings.project_mods: def(WORK, Bool, "true", "The project's mods in .haest/mods (its code runs; a trusted dir only)"),
+    "approvals" => settings.approvals: def(WORK, Bool, "false", "The built-in approval mod: in the real workspace, asks before a shell command that cannot be undone (deleting recursively, rewriting git history or the remote, wiping a disk, killing processes by name, sudo); anything else runs without asking")
         .detail("haest asks on a terminal only where the question can be seen and answered: stdin must be a terminal, and so must stderr, where the question shows (with --json it is a line on stdout, which must not be a regular file). Otherwise each approval is refused at once, and haest says why on stderr."),
-    def("trusted_dirs", WORK, List(None), "~/projects,~/work", "Dirs whose project files haest reads (.haest/config.toml, .mcp.json, .haest/mods), with every dir inside them").scope(Scope::User),
-    def("max_turn_usd", CAPS, Number, "5", "One turn's spend (0 = no cap)"),
-    def("max_turn_tokens", CAPS, Number, "2000000", "One turn's tokens (unset: 10x the model's window; 0 = no cap)"),
-    def("max_request_tokens", CAPS, Number, "150000", "One model call's input tokens (unset: 90% of the window; 0 = no cap)"),
-    def("max_turn_steps", CAPS, Number, "200", "Model calls in one turn (0 = no cap)"),
-    def("max_turn_minutes", CAPS, Number, "30", "One turn's wall clock (0 = no cap)"),
-    def("max_repeats", CAPS, Number, "10", "The same tool call in a row before the guard stops it (0 = no cap)"),
-    def("max_conversation_usd", CAPS, Number, "50", "The whole conversation's spend (0 = no cap)"),
-    def("max_conversation_tokens", CAPS, Number, "50000000", "Tokens of models with no price (0 = no cap)"),
-    def("wind_down_at", CAPS, Number, "0.8", "At this share of a cap, no new subagents and the model is told once to conclude (0 = off)")
+    "trusted_dirs" => trusted_dirs: def(WORK, List(None), "~/projects,~/work", "Dirs whose project files haest reads (.haest/config.toml, .mcp.json, .haest/mods), with every dir inside them").scope(Scope::User),
+    "max_turn_usd" => settings.caps.max_turn_usd: def(CAPS, Number, "5", "One turn's spend (0 = no cap)"),
+    "max_turn_tokens" => settings.caps.max_turn_tokens: def(CAPS, Number, "2000000", "One turn's tokens (unset: 10x the model's window; 0 = no cap)"),
+    "max_request_tokens" => settings.caps.max_request_tokens: def(CAPS, Number, "150000", "One model call's input tokens (unset: 90% of the window; 0 = no cap)"),
+    "max_turn_steps" => settings.caps.max_turn_steps: def(CAPS, Number, "200", "Model calls in one turn (0 = no cap)"),
+    "max_turn_minutes" => settings.caps.max_turn_time: def(CAPS, Number, "30", "One turn's wall clock (0 = no cap)"),
+    "max_repeats" => settings.caps.max_repeats: def(CAPS, Number, "10", "The same tool call in a row before the guard stops it (0 = no cap)"),
+    "max_conversation_usd" => settings.caps.max_conversation_usd: def(CAPS, Number, "50", "The whole conversation's spend (0 = no cap)"),
+    "max_conversation_tokens" => settings.caps.max_conversation_tokens: def(CAPS, Number, "50000000", "Tokens of models with no price (0 = no cap)"),
+    "wind_down_at" => settings.wind_down_at: def(CAPS, Number, "0.8", "At this share of a cap, no new subagents and the model is told once to conclude (0 = off)")
         .detail("Watches the conversation's USD and unpriced tokens, and the turn's USD, tokens and wall clock. A subagent watches the conversation's and its own (subagent_usd, subagent_minutes, max_turn_tokens) the same way, and winds down alone. One share for every cap. The guard's nudge at half a cap is separate and stays on."),
-    def("context_window", CAPS, Number, "1000000", "The model's window in tokens (unset: the catalog's, else 200000)"),
-    def("compact_at", CAPS, Number, "300000", "Compact the conversation past this many tokens (0 = at 80% of the window only)"),
-    def("max_agent_turns", AGENTS, Number, "10", "Turns in a row a job or an agent starts with no human message; past it haest holds them (0 = no cap)"),
-    def("max_agent_depth", AGENTS, Number, "1", "How deep agents nest, main = 0 (0 = no Agent tool)"),
-    def("max_subagents", AGENTS, Number, "8", "Subagents running at once, across the tree (0 = no Agent tool)"),
-    def("subagent_usd", AGENTS, Number, "0.5", "One subagent's spend"),
-    def("subagent_steps", AGENTS, Number, "25", "One subagent's model calls"),
-    def("subagent_minutes", AGENTS, Number, "5", "One subagent's wall clock"),
-    def("subagent_budgets", AGENTS, Bool, "true", "The Agent tool takes a budget {usd, minutes}: tighter caps for one subagent, its spend held on the conversation's budget while it runs, its time fitted to what is left of the turn")
+    "context_window" => settings.caps.context_window: def(CAPS, Number, "1000000", "The model's window in tokens (unset: the catalog's, else 200000)"),
+    "compact_at" => settings.caps.compact_at: def(CAPS, Number, "300000", "Compact the conversation past this many tokens (0 = at 80% of the window only)"),
+    "max_agent_turns" => settings.max_agent_turns: def(AGENTS, Number, "10", "Turns in a row a job or an agent starts with no human message; past it haest holds them (0 = no cap)"),
+    "max_agent_depth" => settings.subagents.max_depth: def(AGENTS, Number, "1", "How deep agents nest, main = 0 (0 = no Agent tool)"),
+    "max_subagents" => settings.subagents.max_concurrent: def(AGENTS, Number, "8", "Subagents running at once, across the tree (0 = no Agent tool)"),
+    "subagent_usd" => settings.subagents.usd: def(AGENTS, Number, "0.5", "One subagent's spend"),
+    "subagent_steps" => settings.subagents.steps: def(AGENTS, Number, "25", "One subagent's model calls"),
+    "subagent_minutes" => settings.subagents.time: def(AGENTS, Number, "5", "One subagent's wall clock"),
+    "subagent_budgets" => settings.subagents.budgets: def(AGENTS, Bool, "true", "The Agent tool takes a budget {usd, minutes}: tighter caps for one subagent, its spend held on the conversation's budget while it runs, its time fitted to what is left of the turn")
         .detail("Off, the Agent tool's parameters are Claude Code's. On, each value only tightens `subagent_usd` and `subagent_minutes` (an absent one is the cap); a spawn whose spend or time does not fit what is left is refused with what is left, so the model can ask for less. Subagents running at once hold their spend together, so they cannot overshoot `max_conversation_usd` together."),
-    def("event_ring", SESSION, Number, "5000", "Frames kept for a peer that catches up on the conversation's stream, besides the running turn"),
-    def("stdio", SESSION, Bool, "true", "Be driven by the parent process: requests in on stdin, frames out on stdout, no terminal")
+    "event_ring" => event_ring: def(SESSION, Number, "5000", "Frames kept for a peer that catches up on the conversation's stream, besides the running turn"),
+    "stdio" => stdio: def(SESSION, Bool, "true", "Be driven by the parent process: requests in on stdin, frames out on stdout, no terminal")
         .scope(Scope::Process)
         .detail("One JSON object per line both ways, in haest-wire's format: `hello` first, then every frame of the conversation from the start, and a `reply` to each request (a turn's at its end). The parent may do everything a terminal may: turns (a person's input), `interrupt`, model and effort changes, `clear`, `close`, and the answers to approval asks. haest runs until stdin closes, once what it was asked has finished, or until a `close`. Never from a file: a config file cannot turn a terminal into a pipe."),
-    def("control_socket", SESSION, Choice(ControlSocket::WORDS), "watch", "A Unix socket another program on this machine reaches the conversation through (haest ctl): off, watch (its stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too)")
+    "control_socket" => control_socket: def(SESSION, Choice(ControlSocket::WORDS), "watch", "A Unix socket another program on this machine reaches the conversation through (haest ctl): off, watch (its stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too)")
         .scope(Scope::User)
         .detail("The socket goes in `control_dir`, named after the conversation's stream id and readable by you only (the dir 0700, the socket 0600), with a discovery file beside it that `haest ctl list` reads; both go when haest exits. What arrives over a command socket is another program's input: it counts against `max_agent_turns`, and at an open prompt it waits for Enter. Never from a project's file: a repository cannot open a socket into your conversation."),
-    def("control_dir", SESSION, Path, "~/.haest/control", "Where control sockets and their discovery files go (unset: <data_dir>/control)").scope(Scope::User),
-    def("broker_url", SESSION, Url, "wss://broker.example/agents", "A broker the conversation links to over a WebSocket (ws:// or wss://), so a fleet view elsewhere watches it; its token is the key HAEST_BROKER_TOKEN")
+    "control_dir" => control_dir: def(SESSION, Path, "~/.haest/control", "Where control sockets and their discovery files go (unset: <data_dir>/control)").scope(Scope::User),
+    "broker_url" => broker_url: def(SESSION, Url, "wss://broker.example/agents", "A broker the conversation links to over a WebSocket (ws:// or wss://), so a fleet view elsewhere watches it; its token is the key HAEST_BROKER_TOKEN")
         .scope(Scope::User)
         .detail("haest dials out: the first frame is `hello` with the token in it (never in the URL), the broker answers with the last seq it holds, and the stream resumes there; a link that drops is dialed again, after a random wait that doubles each try (at most 30 s), and so is one the broker goes silent on (haest pings a broker it has not heard from in 20 s, and gives up on it after 60 s of silence). A broker that refuses the token (close 4401 or 4408, or a 401 or 403 handshake) is not dialed again, and haest says so. Never from a project's file: a repository cannot send your conversation somewhere."),
-    def("broker_access", SESSION, Choice(BrokerAccess::WORDS), "command", "What the broker may do: watch (the stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too)").scope(Scope::User),
-    def("data_dir", PATHS, Path, "~/.haest/data", "Sessions, history and spill files (unset: $XDG_DATA_HOME/haest, else ~/.local/share/haest)"),
-    def("config_dir", PATHS, Path, "~/dotfiles/haest", "config.toml, providers and mods (unset: $XDG_CONFIG_HOME/haest, else ~/.config/haest)").scope(Scope::Process),
-    def("debug", PATHS, Bool, "true", "Log what haest does under the hood"),
-];
+    "broker_access" => broker_access: def(SESSION, Choice(BrokerAccess::WORDS), "command", "What the broker may do: watch (the stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too)").scope(Scope::User),
+    "data_dir" => settings.data_dir: def(PATHS, Path, "~/.haest/data", "Sessions, history and spill files (unset: $XDG_DATA_HOME/haest, else ~/.local/share/haest)"),
+    "config_dir" => settings.config_dir: def(PATHS, Path, "~/dotfiles/haest", "config.toml, providers and mods (unset: $XDG_CONFIG_HOME/haest, else ~/.config/haest)").scope(Scope::Process),
+    "debug" => settings.debug: def(PATHS, Bool, "true", "Log what haest does under the hood"),
+}
 
 pub(crate) fn find(key: &str) -> Option<&'static Def> {
     DEFS.iter().find(|d| d.key == key)
