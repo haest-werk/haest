@@ -33,11 +33,15 @@ futures = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 haest-session = { workspace = true, optional = true, features = ["approvals"] }
 haest-wire = { workspace = true, optional = true }
+haest-prompt = { workspace = true, optional = true }
 
 [features]
 # The conversation behind a haest-session session: `Runtime` as its `Driven`,
 # and a `Ui` that tells the session's stream. Off by default.
 session = ["dep:haest-session", "dep:haest-wire"]
+# The system prompt from the host's Jinja template
+# (`RuntimeInputs::with_prompt_template`). Off by default.
+prompt = ["dep:haest-prompt"]
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }

@@ -45,6 +45,8 @@ pub struct RuntimeInputs {
     pub(crate) http: HttpClientRef,
     pub(crate) host_mods: Vec<ModRef>,
     pub(crate) models: Option<ModelResolverRef>,
+    #[cfg(feature = "prompt")]
+    pub(crate) prompt_template: Option<haest_prompt::PromptTemplate>,
 }
 
 impl RuntimeInputs {
@@ -69,6 +71,8 @@ impl RuntimeInputs {
             http: HttpClientRef::default(),
             host_mods: Vec::new(),
             models: None,
+            #[cfg(feature = "prompt")]
+            prompt_template: None,
         }
     }
 
@@ -175,6 +179,30 @@ impl RuntimeInputs {
     pub fn with_models(mut self, models: impl Into<ModelResolverRef>) -> Self {
         self.models = Some(models.into());
         self
+    }
+
+    /// The system prompt from `template`, rendered before every model call
+    /// (main's and each subagent's) in place of haest's built-in prompt.
+    /// The template sees the built-in prompt section by section, the model's
+    /// row in the built-in catalog and the call's tools
+    /// ([`PromptContext`](haest_prompt::PromptContext)).
+    ///
+    /// A render that fails gives that call the built-in prompt, and the
+    /// [`Ui`](crate::Ui) is warned (once for each new error).
+    #[cfg(feature = "prompt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "prompt")))]
+    #[must_use]
+    pub fn with_prompt_template(mut self, template: haest_prompt::PromptTemplate) -> Self {
+        self.prompt_template = Some(template);
+        self
+    }
+
+    /// The system prompt's template ([`with_prompt_template`](Self::with_prompt_template));
+    /// None = haest's built-in prompt.
+    #[cfg(feature = "prompt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "prompt")))]
+    pub fn prompt_template(&self) -> Option<&haest_prompt::PromptTemplate> {
+        self.prompt_template.as_ref()
     }
 
     /// The settings ([`with_settings`](Self::with_settings)).

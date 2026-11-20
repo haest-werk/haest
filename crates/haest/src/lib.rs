@@ -201,6 +201,7 @@
 //! | `transport-stdio` | `transport::Stdio`: a parent process drives the conversation over this one's stdin and stdout | no |
 //! | `transport-broker` | `transport::Broker`: the conversation dials out to a broker over a WebSocket (pulls a WebSocket client on rustls) | no |
 //! | `transport-unix` | `transport::UnixSocket`: programs on this machine watch (or drive) the conversation over a Unix socket; `transport::running_sessions` and `transport::connect_session` find and reach one | no |
+//! | `prompt` | [`prompt`]: the system prompt as the host's Jinja template, set up like Hugging Face chat templates; with `runtime`, `runtime::RuntimeInputs::with_prompt_template` renders it before every model call | no |
 //! | `testing` | [`core::testing`]: a scripted model and other fakes for tests | no |
 //!
 //! ```toml
@@ -289,6 +290,9 @@ pub use haest_mcp as mcp;
 #[cfg(feature = "mods")]
 #[doc(inline)]
 pub use haest_mods as mods;
+#[cfg(feature = "prompt")]
+#[doc(inline)]
+pub use haest_prompt as prompt;
 #[cfg(feature = "providers")]
 #[doc(inline)]
 pub use haest_providers as providers;

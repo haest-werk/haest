@@ -36,7 +36,7 @@ struct Found {
     skill_roots: SkillScanRoots,
     skills: Skills,
     workspace: WorkspaceRef,
-    prompt: Arc<RuntimePrompt>,
+    prompt: RuntimePrompt,
 }
 
 async fn find(
@@ -60,7 +60,7 @@ async fn find(
         skill_roots,
         skills,
         workspace,
-        prompt: Arc::new(prompt),
+        prompt,
     })
 }
 
@@ -139,6 +139,8 @@ where
         http,
         host_mods,
         models,
+        #[cfg(feature = "prompt")]
+        prompt_template,
     } = inputs;
     let fs = world.fs().clone();
     let session = open_session(&fs, &settings, &opts.resume, ui.clone()).await?;
@@ -165,6 +167,10 @@ where
     // files are found, then a new session is held and its file created. Then the MCP servers and the mods start,
     // together; from there on nothing fails.
     let found = find(&hooks, &world, &passed_env, &fs, &spill).await?;
+    let prompt = found.prompt;
+    #[cfg(feature = "prompt")]
+    let prompt = prompt.with_template(prompt_template);
+    let prompt = Arc::new(prompt);
     if session.saved.is_none() {
         create(&hooks.store(), &s.cwd, &*ui).await?;
     }
@@ -218,7 +224,7 @@ where
         hooks: hooks.clone(),
         deps: shared.clone(),
         tools: wrapped.clone(),
-        prompt: found.prompt.clone(),
+        prompt: prompt.clone(),
         mods: mods.clone(),
         inbox: sender,
     }
@@ -231,7 +237,7 @@ where
     let deferral = deferred.deferral().clone();
     let tools = ToolSourceRef::new(deferred);
     let main_prompt = AgentPrompt {
-        prompt: found.prompt,
+        prompt,
         model_spec: None,
         tools: tools.clone(),
     };

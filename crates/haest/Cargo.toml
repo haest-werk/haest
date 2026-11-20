@@ -64,6 +64,10 @@ transport-stdio = ["transport", "haest-transport/stdio"]
 transport-unix = ["transport", "haest-transport/unix"]
 # The conversation dials out to a broker over a WebSocket (pulls a WebSocket client on rustls).
 transport-broker = ["transport", "haest-transport/broker"]
+# The system prompt as the host's Jinja template, set up like Hugging Face chat
+# templates. With `runtime`, `RuntimeInputs::with_prompt_template` renders it
+# before every model call.
+prompt = ["dep:haest-prompt", "haest-runtime?/prompt"]
 # Fakes for a host's tests: a scripted model that records every request, and
 # (with the providers) a fake HTTP client and the providers' SSE bodies.
 testing = ["haest-core/testing", "haest-providers?/testing"]
@@ -87,6 +91,7 @@ haest-runtime = { workspace = true, optional = true }
 haest-wire = { workspace = true, optional = true }
 haest-session = { workspace = true, optional = true }
 haest-transport = { workspace = true, optional = true }
+haest-prompt = { workspace = true, optional = true }
 
 # The notebook example runs under `cargo test` too, so a change that breaks a
 # plug point it uses fails the suite, not only a `cargo run` nobody did.

@@ -69,6 +69,16 @@ pub(crate) struct RuntimePrompt {
     skills: Skills,
     /// Everything but the instructions, skills, tools and model, fixed for the process.
     base: PromptInputs,
+    /// The host's template, rendered in place of the built-in prompt.
+    #[cfg(feature = "prompt")]
+    template: Option<Template>,
+}
+
+/// The host's template, and the last render error the human was told.
+#[cfg(feature = "prompt")]
+struct Template {
+    template: haest_prompt::PromptTemplate,
+    warned: std::sync::Mutex<String>,
 }
 
 impl RuntimePrompt {
@@ -100,13 +110,59 @@ impl RuntimePrompt {
             hooks: hooks.clone(),
             skills: skills.clone(),
             base,
+            #[cfg(feature = "prompt")]
+            template: None,
         }
+    }
+
+    /// The same, rendering `template` (None: the built-in prompt).
+    #[cfg(feature = "prompt")]
+    pub(crate) fn with_template(mut self, template: Option<haest_prompt::PromptTemplate>) -> Self {
+        self.template = template.map(|template| Template {
+            template,
+            warned: std::sync::Mutex::default(),
+        });
+        self
+    }
+
+    /// The host's template rendered for `p` and `tools`; None without one,
+    /// or when the render failed (the human is told each new error).
+    #[cfg(feature = "prompt")]
+    fn render(&self, p: &PromptInputs, tools: &[ToolRef]) -> Option<String> {
+        use haest_core::catalog::ModelFacts;
+
+        let t = self.template.as_ref()?;
+        let model = self.hooks.model_info(&p.model_spec);
+        let context = haest_prompt::PromptContext::new(p, tools, model.as_ref());
+        let err = match t.template.render(&context) {
+            Ok(text) => return Some(text),
+            Err(e) => e.to_string(),
+        };
+        let fresh = {
+            // Held only to compare and store a string: nothing in it panics.
+            let mut warned = t
+                .warned
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let fresh = *warned != err;
+            if fresh {
+                warned.clone_from(&err);
+            }
+            fresh
+        };
+        if fresh {
+            self.hooks.warn(&format!(
+                "The system prompt template failed ({err}); haest's built-in prompt is used until it renders."
+            ));
+        }
+        None
     }
 
     /// The system prompt for an agent on `model` offered `tools`: the fixed
     /// parts, the tools' own guide lines, the workspace's note when a tool
     /// can touch it, the instruction files read again now, and the skill list
-    /// with `skill_catalog` on.
+    /// with `skill_catalog` on. With a template, the template's rendering of
+    /// them.
     pub(crate) async fn build(&self, model: String, tools: &[ToolRef]) -> String {
         let s = self.hooks.settings();
         let mut p = self.base.clone();
@@ -119,6 +175,10 @@ impl RuntimePrompt {
         p.instructions = find_instruction_files(self.fs.as_ref(), &instruction_options(s)).await;
         if s.skill_catalog {
             p.skills = self.skills.list();
+        }
+        #[cfg(feature = "prompt")]
+        if let Some(text) = self.render(&p, tools) {
+            return text;
         }
         build_system_prompt(&p)
     }
@@ -179,6 +239,8 @@ mod tests {
                 workspace_note: Some(NOTE.into()),
                 ..Default::default()
             },
+            #[cfg(feature = "prompt")]
+            template: None,
         };
         let all = builtin_tools(BuiltinOptions::default());
         let only = |name: &str| -> Vec<ToolRef> {
@@ -190,5 +252,36 @@ mod tests {
         assert!(with_files.contains(&guide) && with_files.contains(NOTE));
         let web = prompt.build("m".into(), &only("WebFetch")).await;
         assert!(!web.contains("Tool discipline") && !web.contains(NOTE));
+    }
+
+    #[cfg(feature = "prompt")]
+    #[tokio::test]
+    async fn a_template_renders_the_prompt_and_a_failed_render_falls_back_saying_so_once() {
+        use haest_prompt::PromptTemplate;
+
+        let (hooks, ui) = hooks(Settings::bare(PathBuf::from("/w"), PathBuf::from("/h")));
+        let fs = FsRef::new(MemFs::new());
+        let skills = Skills::new(MemFs::new());
+        let workspace = haest_core::ShutWorkspace;
+        let new = || RuntimePrompt::new(&hooks, &fs, &skills, &workspace);
+        let opus = "anthropic:claude-opus-5-5";
+
+        // The model's facts come from the built-in catalog.
+        let source = "{{ model.family }} {{ model.tier }} {{ model.generation }} in {{ cwd }}";
+        let template = PromptTemplate::new(source).unwrap();
+        let prompt = new().await.with_template(Some(template));
+        assert_eq!(
+            prompt.build(opus.into(), &[]).await,
+            "anthropic opus 5.5 in /w"
+        );
+
+        let broken = PromptTemplate::new("{{ nobody_set_this }}").unwrap();
+        let prompt = new().await.with_template(Some(broken));
+        let built = new().await.build(opus.into(), &[]).await;
+        assert_eq!(prompt.build(opus.into(), &[]).await, built);
+        assert_eq!(prompt.build(opus.into(), &[]).await, built);
+        let warned = ui.warnings();
+        assert_eq!(warned.len(), 1, "{warned:?}");
+        assert!(warned[0].contains("system prompt template failed"));
     }
 }

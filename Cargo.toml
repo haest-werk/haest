@@ -34,6 +34,7 @@ haest = { version = "0.3.0", path = "crates/haest" }
 haest-wire = { version = "0.3.0", path = "crates/haest-wire" }
 haest-session = { version = "0.3.0", path = "crates/haest-session" }
 haest-transport = { version = "0.3.0", path = "crates/haest-transport" }
+haest-prompt = { version = "0.3.0", path = "crates/haest-prompt" }
 
 # No features here: each crate names the ones it uses (haest-core: a task and
 # channels, not the runtime).
