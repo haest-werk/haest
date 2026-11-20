@@ -45,9 +45,9 @@ pub use fs::RealFs;
 ///   it is bind-mounted into on its own, whose reload then reads the old
 ///   text). The disk needs room for a second copy, and a kill partway can
 ///   leave a `.haest-*` file beside it, no more open than the file. A file
-///   with another hard link, another owner or group, or a symlink, and one
-///   where the disk refuses to make the new file or rename it, is written
-///   in place: a full disk still cuts it short, and the tool says so.
+///   with another hard link or a symlink, and one in a directory that takes
+///   no new name, is written in place: a full disk still cuts it short, and
+///   the tool says so. What it cannot replace is in [`RealFs`]'s doc.
 /// - [`Workspace::shell`] runs `bash -c <command>`; [`Workspace::run`] runs a
 ///   program with its argv, no shell parsing. A bare program name is looked up
 ///   on the `PATH` in the [`ChildEnv`] (`/usr/bin:/bin` when it has none), a

@@ -128,9 +128,9 @@ impl Tool for WriteTool {
 /// appends to, `tail -f`), an inotify watch on it, a container it is
 /// bind-mounted into on its own. The disk needs room for the second copy,
 /// and a kill partway can leave a `.haest-*` file beside it. A file with
-/// another hard link, another owner or group, or a symlink, and one where
-/// the disk refuses to make the new file or rename it, is written in
-/// place, where a full disk still cuts it short and the tool says so. In the default sandbox the edit stays in memory
+/// another hard link or a symlink, and one in a directory that takes no
+/// new name, is written in place, where a full disk still cuts it short
+/// and the tool says so. In the default sandbox the edit stays in memory
 /// until the human applies it, which writes the same way.
 #[derive(Debug, Default, Clone)]
 #[non_exhaustive]

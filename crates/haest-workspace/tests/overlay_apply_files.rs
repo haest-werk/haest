@@ -1,6 +1,6 @@
 //! What applying keeps of a file it writes over, where a new file put in
-//! its place would lose it: its other links, its group, the read-only mode
-//! the human gave it. And a file in a directory that takes no new file is
+//! its place would lose it: its other links, the read-only mode the human
+//! gave it. And a file in a directory that takes no new file is
 //! still written, and one an NFS server has no room for stays as it was.
 //! (Its mode: `an_edit_keeps_the_files_mode` in `overlay_modes.rs`.)
 
@@ -100,6 +100,7 @@ async fn a_writable_file_in_a_read_only_directory_is_still_written() {
 }
 
 /// The groups this process is in.
+#[cfg(target_os = "linux")]
 fn my_groups() -> Vec<u32> {
     let out = std::process::Command::new("id").arg("-G").output().unwrap();
     assert!(out.status.success(), "id -G: {out:?}");
@@ -107,28 +108,6 @@ fn my_groups() -> Vec<u32> {
         .split_whitespace()
         .map(|g| g.parse().unwrap())
         .collect()
-}
-
-/// `shared/a.txt` is in one group, `shared` in another, whose group a new
-/// file in it takes (setgid): the file keeps its own group once applied.
-/// Skipped where this process is in one group only.
-#[tokio::test]
-async fn a_file_keeps_its_group_where_its_directory_gives_another() {
-    let (_t, dir) = tempdir();
-    let shared = dir.join("shared");
-    fs::create_dir(&shared).unwrap();
-    fs::write(shared.join("a.txt"), "old\n").unwrap();
-    let own = fs::metadata(shared.join("a.txt")).unwrap().gid();
-    let Some(other) = my_groups().into_iter().find(|&g| g != own) else {
-        return;
-    };
-    std::os::unix::fs::chown(&shared, None, Some(other)).unwrap();
-    set_mode(&shared, 0o2775);
-    let ws = sandbox(&dir).await;
-    run(&ws, &dir, "echo new > shared/a.txt").await;
-    apply_all(&ws).await;
-    assert_eq!(read(&shared.join("a.txt")), "new\n");
-    assert_eq!(fs::metadata(shared.join("a.txt")).unwrap().gid(), own);
 }
 
 /// Names a directory that passes its group on (setgid) to a group this

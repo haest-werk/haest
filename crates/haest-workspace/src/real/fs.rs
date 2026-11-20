@@ -37,12 +37,15 @@ use tokio::io::AsyncReadExt;
 ///   decides which one the file goes by afterwards, as for any program
 ///   that saves by renaming. A file made read-only is refused. It writes
 ///   in place, as `write` does, where a new file would not stand in for
-///   the file (another hard link to it, another owner or group, a symlink,
-///   a FIFO or a device, which it opens once, as `write` does) or the disk
-///   will not make one or move it over (a directory that takes no new
-///   name, a path just short of the system's cap, one file mounted on its
-///   own): there a full disk still cuts the file short, and says so. A
-///   replaced file does not keep its extended attributes or ACLs, and
+///   the file (another hard link to it, a symlink, a FIFO or a device,
+///   which it opens once, as `write` does) or its directory takes no new
+///   name: there a full disk still cuts the file short, and says so. A
+///   replaced file takes the run's owner, and the group a new file gets in
+///   its directory, so another user's file the run may write becomes the
+///   run's own; a file that cannot be renamed over or given its mode (one
+///   file mounted on its own, a share that sets no modes) fails the write
+///   and stays as it was. A replaced file does not keep its extended
+///   attributes or ACLs, and
 ///   whatever holds the old file keeps it: a process that has it open (a
 ///   log a server appends to, `tail -f`), an inotify watch on it, a
 ///   container it is bind-mounted into on its own. The disk needs room for

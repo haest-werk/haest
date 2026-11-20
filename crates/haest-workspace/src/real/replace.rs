@@ -14,18 +14,18 @@
 //! owner's alone from the moment it is made where it is to replace a file.
 //! It then takes the real one's permission bits and is renamed over it, so
 //! a disk that fills up, or a kill, partway leaves the human's file as it
-//! was. Where a new file would not be the same file, or the disk will not
-//! make one or move it there, the bytes are written in place, as a plain
-//! write puts them; where the new file's bytes do not all go in, the write
-//! fails instead, since in place they would cut the human's file short. A
-//! write dropped partway (Ctrl+C at the haest command's `/apply`, a host's
-//! timeout) removes the new file as it drops: what the runtime still
-//! writes then goes into a file no name reaches.
+//! was. Where a new file would not be the same file, or its directory
+//! takes no new name, the bytes are written in place, as a plain write puts
+//! them; anything else that stops the new file fails the write with the
+//! human's file as it was. A write dropped partway (Ctrl+C at the haest
+//! command's `/apply`, a host's timeout) removes the new file as it drops,
+//! and what the runtime still writes then goes into a file no name
+//! reaches; dropped once the rename is under way, it lands whole.
 //!
 //! [`Fs::write_whole`]: haest_core::fs::Fs::write_whole
 
 use std::{
-    fs::{File, Metadata, Permissions},
+    fs::{File, Permissions},
     io::{self, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
@@ -45,13 +45,10 @@ const KEPT: u32 = 0o1777;
 /// opens it: a FIFO opened twice hands its reader an empty message first.
 /// A regular file must still take a write: one the human made read-only
 /// is refused as an in-place write is, never replaced. It is written in
-/// place, too, where the new file would have another owner or group
-/// (another user's file the human may write, a directory that gives new
-/// files its own group), or where the disk will not make the new file or
-/// move it over the real one ([`in_place_instead`]). Where the new file's
-/// bytes do not all go in (a full disk), the write fails and never falls
-/// back: in place they would not all go in either, and the human's file
-/// would be cut short.
+/// place, too, where its directory takes no new name (made read-only).
+/// Anything else that stops the new file (a full disk, a rename the disk
+/// refuses) fails the write, the new file removed and the real one as it
+/// was. The new file is removed on a drop as well.
 pub(crate) async fn put_file(real: &Path, bytes: &[u8]) -> io::Result<()> {
     let old = match tokio::fs::symlink_metadata(real).await {
         Ok(m) if m.nlink() > 1 || !m.file_type().is_file() => {
@@ -65,23 +62,6 @@ pub(crate) async fn put_file(real: &Path, bytes: &[u8]) -> io::Result<()> {
         }
         Err(_) => None,
     };
-    match put_new(real, old.as_ref(), bytes).await? {
-        Put::Replaced => Ok(()),
-        Put::InPlace => write::write(real, bytes).await,
-    }
-}
-
-/// What became of the new file, gone either way.
-enum Put {
-    /// Renamed over the real file.
-    Replaced,
-    /// Not put in its place: the real file is to take the bytes in place.
-    InPlace,
-}
-
-/// Put `bytes` in a new file beside `real`, which holds `old`, and rename
-/// it over it. The new file is removed whatever comes, a drop included.
-async fn put_new(real: &Path, old: Option<&Metadata>, bytes: &[u8]) -> io::Result<Put> {
     let dir = real.parent().unwrap_or(Path::new(".")).to_owned();
     let replaces = old.is_some();
     let made = blocking(move || {
@@ -95,55 +75,17 @@ async fn put_new(real: &Path, old: Option<&Metadata>, bytes: &[u8]) -> io::Resul
         new.tempfile_in(dir)
     })
     .await;
-    let new = match made {
-        Ok(new) => new,
-        Err(e) if in_place_instead(&e) => return Ok(Put::InPlace),
+    let (file, path) = match made {
+        Ok(new) => new.into_parts(),
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            return write::write(real, bytes).await;
+        }
         Err(e) => return Err(e),
     };
-    if let Some(old) = old {
-        let made = new.as_file().metadata()?;
-        if (made.uid(), made.gid()) != (old.uid(), old.gid()) {
-            return Ok(Put::InPlace);
-        }
-    }
-    let (file, path) = new.into_parts();
     let (data, mode) = (bytes.to_vec(), old.map(|m| m.mode() & KEPT));
     blocking(move || fill(file, &data, mode)).await?;
     let real = real.to_owned();
-    match blocking(move || path.persist(real).map_err(|e| e.error)).await {
-        Ok(()) => Ok(Put::Replaced),
-        Err(e) if in_place_instead(&e) => Ok(Put::InPlace),
-        Err(e) => Err(e),
-    }
-}
-
-/// Whether the disk's refusal to make the new file, or to move it over the
-/// real one, leaves the real file to take the bytes in place, which needs
-/// neither a new name nor a move:
-/// - `PermissionDenied`: a directory that takes no new name, or a rename
-///   an ACL or a security module forbids;
-/// - `InvalidFilename`: the new file's longer path, past the system's cap;
-/// - `ReadOnlyFilesystem`: a read-only mount around a file on a writable
-///   mount of its own;
-/// - `ResourceBusy`, `CrossesDevices`: a file that is a mount point of its
-///   own (one file bind-mounted into the project), which nothing can be
-///   renamed over;
-/// - `Unsupported`: a file system that has no such call at all (`ENOSYS`,
-///   `ENOTSUP`).
-///
-/// Anything else fails the write, a disk with no room above all: the
-/// bytes would not all go in in place either, and the human's file would
-/// be cut short.
-fn in_place_instead(e: &io::Error) -> bool {
-    matches!(
-        e.kind(),
-        io::ErrorKind::PermissionDenied
-            | io::ErrorKind::InvalidFilename
-            | io::ErrorKind::ReadOnlyFilesystem
-            | io::ErrorKind::ResourceBusy
-            | io::ErrorKind::CrossesDevices
-            | io::ErrorKind::Unsupported
-    )
+    blocking(move || path.persist(real).map_err(|e| e.error)).await
 }
 
 /// The sandbox's `bytes` into the new `file`, then `mode`, that of the file
