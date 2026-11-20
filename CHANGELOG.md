@@ -6,6 +6,15 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 `--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
 `HAEST_*` variables.
 
+## Unreleased
+
+### Fixed
+
+- haest-session: a request sent to a session just as it ended could wait
+  forever instead of reading `SessionError::Closed`. A `haest -p` run whose
+  conversation a peer closed during a tool call could hang this way on its
+  last request, the sandbox check, without saying what it dropped.
+
 ## 0.4.0 (2026-11-20)
 
 A host can now write haest's system prompt as a Jinja template, opt-in

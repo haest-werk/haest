@@ -111,18 +111,32 @@ impl<D: Driven> Driver<D> {
     /// The driver's life, then its end. Code on this task that panics (a
     /// host's `with` job, a [`Driven`] method, the rewriter) ends it as a
     /// close does: what waits is refused, [`Driven::close`] gets its chance
-    /// to stop what the conversation started and save, the stream ends; then
-    /// the panic goes on. The stream ends however the task ends, a panic in
-    /// `Driven::close` itself included.
+    /// to stop what the conversation started and save, the stream ends, the
+    /// requests still on their way are let go of; then the panic goes on.
+    /// The stream ends and the requests are let go of however the task ends,
+    /// a panic in `Driven::close` itself included.
     pub(crate) async fn run(mut self) {
         let _ends = EndsTheStream(self.hub.clone());
-        match AssertUnwindSafe(self.serve()).catch_unwind().await {
-            Ok(reply) => self.finish(reply).await,
-            Err(panic) => {
-                self.finish(None).await;
-                std::panic::resume_unwind(panic);
-            }
+        let (reply, panicked) = match AssertUnwindSafe(self.serve()).catch_unwind().await {
+            Ok(reply) => (reply, None),
+            Err(panic) => (None, Some(panic)),
+        };
+        let finished = AssertUnwindSafe(self.finish(reply)).catch_unwind().await;
+        self.let_go().await;
+        if let Some(panic) = panicked.or(finished.err()) {
+            std::panic::resume_unwind(panic);
         }
+    }
+
+    /// Every request still on its way here is let go of, so its caller
+    /// reads Closed: the channel is closed, so no more come, then read to
+    /// its end. Dropping the channel is not enough: tokio's keeps a message
+    /// whose send raced the drop until every sender is gone, and its caller
+    /// waits for good. Read after the close, it returns None only once every
+    /// send that began before the close has landed.
+    async fn let_go(&mut self) {
+        self.rx.close();
+        while self.rx.recv().await.is_some() {}
     }
 
     /// Requests between turns, turns when there is one to run, and a wait
@@ -335,7 +349,8 @@ impl<D: Driven> Driver<D> {
         if let Some(reply) = reply {
             let _ = reply.send(());
         }
-        // Anything still asked gets its reply dropped: the handle reads Closed.
+        // Anything still asked gets its reply dropped (`let_go`): the
+        // handle reads Closed.
     }
 }
 

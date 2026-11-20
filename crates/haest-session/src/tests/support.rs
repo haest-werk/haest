@@ -5,7 +5,7 @@
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -275,6 +275,40 @@ impl Driven for CountsArrival {
     }
     async fn clear(&mut self) -> Result<(), BoxError> {
         Ok(())
+    }
+}
+
+/// An agent whose `close` says it was called: the driver ends right after.
+pub(super) struct MarksItsClose {
+    pub agent: Agent,
+    pub closing: Arc<AtomicBool>,
+}
+
+#[async_trait]
+impl Driven for MarksItsClose {
+    fn control(&self) -> AgentControl {
+        self.agent.control()
+    }
+    async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
+        self.agent.run(input, sink).await
+    }
+    fn history(&self) -> Vec<Message> {
+        self.agent.history().to_vec()
+    }
+    fn status(&self) -> DrivenStatus {
+        Driven::status(&self.agent)
+    }
+    fn set_model_spec(&mut self, spec: &str) -> Result<(), BoxError> {
+        Driven::set_model_spec(&mut self.agent, spec)
+    }
+    fn set_effort(&mut self, effort: Option<Effort>) {
+        self.agent.set_effort(effort);
+    }
+    async fn clear(&mut self) -> Result<(), BoxError> {
+        Ok(())
+    }
+    async fn close(&mut self) {
+        self.closing.store(true, Ordering::Release);
     }
 }
 

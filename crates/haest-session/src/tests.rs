@@ -1039,6 +1039,70 @@ async fn a_close_that_panics_still_ends_the_stream() {
     stream_ends(&mut sub).await;
 }
 
+/// A request sent as the driver ended could go unanswered for good: the
+/// driver let go of its requests by dropping its channel, and tokio's
+/// channel keeps a message whose send raced that drop until every sender
+/// is gone, so its caller never read Closed. A `-p` run whose conversation
+/// a peer closed hung so in its last ask, with the sandbox's warning never
+/// said.
+///
+/// Each round sends one as the session ends, at the moment its channel
+/// closes: a send that came too late moves the next one sooner, one that
+/// got in moves it later. It is the channel's 33rd request, so the send
+/// also grows the channel by a block, the widest the race gets. On the old
+/// driver a request went unanswered about once in 1,500 rounds.
+#[test]
+fn a_request_sent_as_the_session_ends_reads_closed() {
+    const ROUNDS: usize = 20_000;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut delay = 0;
+    for round in 0..ROUNDS {
+        let closing = Arc::new(AtomicBool::new(false));
+        let (session, hold) = rt.block_on(async {
+            let agent = agent(&answers(&[]), Tools::new());
+            let closing = closing.clone();
+            let session = start(MarksItsClose { agent, closing }, hub());
+            // 31 requests before the close: a hold, then input it keeps
+            // from running.
+            let hold = session.hold().await.unwrap();
+            for _ in 0..30 {
+                session.submit(Input::human("queued")).unwrap();
+            }
+            (session, hold)
+        });
+        let closer = rt.spawn({
+            let session = session.clone();
+            async move { session.close().await }
+        });
+        while !closing.load(Ordering::Acquire) {
+            std::hint::spin_loop();
+        }
+        for _ in 0..delay + round % 7 {
+            std::hint::spin_loop();
+        }
+        let sent = session.send_input(Input::human("late"));
+        delay = if sent.is_ok() {
+            delay + 3
+        } else {
+            delay.saturating_sub(3)
+        };
+        if let Ok(turn) = sent {
+            let read =
+                rt.block_on(async { tokio::time::timeout(Duration::from_secs(5), turn).await });
+            assert!(
+                matches!(read, Ok(Err(SessionError::Closed))),
+                "round {round}: the request sent as the session ended read {read:?}"
+            );
+        }
+        rt.block_on(closer).unwrap();
+        drop(hold);
+    }
+}
+
 #[tokio::test]
 async fn a_failed_change_changes_nothing_and_says_why() {
     // A resolver that knows one provider only.
