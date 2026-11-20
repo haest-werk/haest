@@ -119,6 +119,16 @@
 //! no bashkit type is part of its API, so a bashkit upgrade is never a
 //! breaking change for a host.
 //!
+//! # Limitations
+//!
+//! Some cases are left alone on purpose, each with what still keeps a file
+//! safe: a rename a disk reads as no rename (`README.md` to `readme.md` on
+//! macOS), a swap through a temporary name, a save that lands during the
+//! apply, a power cut right after a write, a hard-linked file, and what a
+//! file written over does not keep (extended attributes, ACLs, a process
+//! that has it open). The list is in the
+//! [repository README](https://github.com/haest-werk/haest#limitations).
+//!
 //! Ported from the TS haest's `core/workspace-real.ts`, `workspace-sandbox.ts`
 //! and `overlay-changes.ts`.
 //!

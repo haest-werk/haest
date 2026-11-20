@@ -1,5 +1,5 @@
-//! SUBAGENT BUDGETS, opt-in (`subagent_budgets`; `docs/plans/budgets.md` S):
-//! the Agent tool's `budget {usd, minutes}`. Each value only tightens the
+//! Subagent budgets, opt-in (`subagent_budgets`): the Agent tool's
+//! `budget {usd, minutes}`. Each value only tightens the
 //! caps; the time must fit what is left of the caller's turn; the USD is held
 //! on the conversation's ledger while the subagent runs, so subagents running
 //! together fit the budget together. Every fit decision is here.

@@ -330,6 +330,80 @@ behind ToolSearch with a list that always loads (`DeferredTools`,
 [`crates/haest/tests/plug_in.rs`](https://github.com/haest-werk/haest/blob/main/crates/haest/tests/plug_in.rs), from
 outside the crate, the public API only.
 
+## Limitations
+
+haest leaves these cases alone on purpose: handling each would cost more
+code than the case is worth. Where a file is at stake, the line says what
+still keeps it safe.
+
+The sandbox and its apply:
+
+- On a disk that reads two names as one (macOS's default ignores case and
+  Unicode form; so do exFAT, FAT, Linux vfat and case-folding directories),
+  a rename by case or Unicode form alone (`mv README.md readme.md`), or a
+  new file beside one the disk reads as the same name, is held as a
+  conflict when applied. Nothing is overwritten; rename it on disk. The
+  change list does not ask the disk, so it shows such a change as no
+  conflict until an apply skips it.
+- A swap through a temporary name (`mv a t && mv b a && mv t b`) is applied
+  in path order. If the disk refuses its second write, the first has
+  already gone over its file; that file's old text is then only in the
+  sandbox, which keeps the change listed.
+- A 0700 directory the sandbox changed something under before moving or
+  copying it (`echo x > certs/new && mv certs keys`) lands at the umask's
+  mode (0755). A moved or copied file keeps its mode.
+- A save that lands between the apply's last look at a file and its
+  replace is lost. The window is the time it takes to write that one file;
+  Edit and Write in the real workspace have the same window.
+- Writing over a file (the apply, and Edit and Write in the real
+  workspace) renames a new file onto it. The new file keeps the mode,
+  owner and group, not extended attributes or ACLs, and whatever holds the
+  old file keeps the old one: a process that has it open (a log a server
+  appends to, `tail -f`), an inotify watch, a container it is bind-mounted
+  into on its own. A file whose owner or group the run may not give
+  (another user's, a group the run is not in), or whose mode the disk does
+  not keep, is not written: the write fails and the file stays as it was.
+- A file with a second name (a hard link), a symlink, a FIFO or a device
+  is written in place, so a full disk can cut it short; the write says so.
+  Where the sandbox deletes one name of a hard-linked file and edits
+  another (`rm a && echo y >> b`), the edit changes the deleted name too,
+  so that delete is held as a conflict. Nothing is removed.
+- A file written over by a rename survives a kill (the old file or the
+  whole new one stays), but is not synced before the rename: after a power cut, a disk that does
+  not flush data ahead of a rename (XFS) can hold an empty file.
+- The overlay lives in the process: edits not applied before it exits are
+  gone, and a resumed session starts from a clean overlay.
+
+Sessions:
+
+- Only the real disk locks a session file (`flock`). Over `MemFs`, or a
+  host `Fs` without `try_lock`, two runs resumed on one session both write
+  it.
+
+Code a host plugs in is trusted to keep its contract; haest does not
+guard against it:
+
+- A panic in a host's backend, line source or line sink ends a transport
+  connection at once and reaches the host. The peer sees the connection
+  close with no reply to that request, and catches up with
+  `events {after}` when it connects again.
+- A `JobEvents` handler must not panic. One that panics on a job's output
+  loses the rest of that output and the job is reported ended with exit
+  code -1; the job table stays right, so BashOutput and KillShell still
+  read it.
+- A `Threshold`'s `Drop` must not panic: it can run while the agent holds
+  its threshold list, and every later turn of that agent would panic too.
+  No conversation data is lost.
+- `LineSink::keepalive` must wait for a reason to send. One that returns
+  at once takes the writer over and the connection hangs; nothing is lost
+  or half sent.
+
+Elsewhere:
+
+- Unix only (macOS, Linux).
+- The `claude` profile reads part of Claude Code's setup, not all of it
+  (see [The `claude` profile](#the-claude-profile)).
+
 ## License
 
 MIT, see [LICENSE](https://github.com/haest-werk/haest/blob/main/LICENSE).
