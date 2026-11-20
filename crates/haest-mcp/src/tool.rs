@@ -191,11 +191,7 @@ impl Tool for McpTool {
             }
         };
         match res.map_err(|e| ToolError::Failed(call_error(e)))? {
-            CallToolResponse::Complete(result) => {
-                let raw = serde_json::to_value(&result)
-                    .map_err(|e| ToolError::Failed(format!("unreadable MCP result: {e}")))?;
-                Ok(mcp_result_to_output(&raw))
-            }
+            CallToolResponse::Complete(result) => Ok(mcp_result_to_output(result)),
             // haest answers no server-side input requests and polls no tasks.
             CallToolResponse::InputRequired(_) => Err(ToolError::Failed(
                 "the MCP server asked for input haest cannot give".into(),

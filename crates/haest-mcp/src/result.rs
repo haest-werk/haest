@@ -1,6 +1,4 @@
-//! An MCP `tools/call` result as a haest [`ToolOutput`]. Works on the JSON shape,
-//! not the SDK's types, so a part the SDK would refuse (an image with no data, a
-//! type it does not know) still becomes a line the model can read.
+//! An MCP `tools/call` result as a haest [`ToolOutput`].
 
 use base64::{
     Engine as _,
@@ -8,15 +6,7 @@ use base64::{
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
 };
 use haest_core::{media::media_from_bytes, messages::MediaPart, tool::ToolOutput};
-use serde_json::Value;
-
-fn field<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
-    p.get(key).and_then(Value::as_str)
-}
-
-fn part_type(p: &Value) -> &str {
-    field(p, "type").unwrap_or("unknown")
-}
+use rmcp::model::{CallToolResult, ContentBlock, ResourceContents};
 
 /// Base64 the way a lenient decoder reads it: padding optional, whitespace ignored.
 fn decode_base64(data: &str) -> Option<Vec<u8>> {
@@ -28,13 +18,12 @@ fn decode_base64(data: &str) -> Option<Vec<u8>> {
     engine.decode(compact).ok()
 }
 
-/// An MCP image/audio part becomes media (collected into `media`); the model reads one line in its place.
-fn mcp_media(p: &Value, index: usize, media: &mut Vec<MediaPart>) -> String {
-    let kind = part_type(p);
-    let given = |key| field(p, key).filter(|s| !s.is_empty());
-    let (Some(data), Some(mime)) = (given("data"), given("mimeType")) else {
+/// An MCP image or audio part (`kind`) becomes media (collected into
+/// `media`); the model reads one line in its place.
+fn attach(kind: &str, data: &str, mime: &str, index: usize, media: &mut Vec<MediaPart>) -> String {
+    if data.is_empty() || mime.is_empty() {
         return format!("[{kind} omitted: no data]");
-    };
+    }
     let ext = mime.split('/').nth(1).unwrap_or("bin");
     let name = format!("{kind}-{}.{ext}", index + 1);
     let Some(bytes) = decode_base64(data) else {
@@ -50,75 +39,45 @@ fn mcp_media(p: &Value, index: usize, media: &mut Vec<MediaPart>) -> String {
     }
 }
 
-fn part_text(p: &Value, index: usize, media: &mut Vec<MediaPart>) -> String {
-    match part_type(p) {
-        "text" => field(p, "text").unwrap_or("").to_string(),
-        "resource" => {
-            let resource = p.get("resource");
-            match resource.and_then(|r| field(r, "text")) {
-                Some(text) => text.to_string(),
-                None => {
-                    let uri = resource.and_then(|r| field(r, "uri")).unwrap_or("");
-                    format!("[resource {uri}]")
-                }
-            }
-        }
-        "image" | "audio" => mcp_media(p, index, media),
-        other => match field(p, "mimeType").filter(|m| !m.is_empty()) {
-            Some(mime) => format!("[{other} {mime} omitted]"),
-            None => format!("[{other} omitted]"),
+fn part_text(part: &ContentBlock, index: usize, media: &mut Vec<MediaPart>) -> String {
+    match part {
+        ContentBlock::Text(t) => t.text.clone(),
+        ContentBlock::Image(p) => attach("image", &p.data, &p.mime_type, index, media),
+        ContentBlock::Audio(p) => attach("audio", &p.data, &p.mime_type, index, media),
+        ContentBlock::Resource(r) => match &r.resource {
+            ResourceContents::TextResourceContents { text, .. } => text.clone(),
+            ResourceContents::BlobResourceContents { uri, .. } => format!("[resource {uri}]"),
+            _ => "[resource omitted]".into(),
         },
+        ContentBlock::ResourceLink(link) => format!("[resource_link {} omitted]", link.uri),
+        _ => "[a part haest does not know, omitted]".into(),
     }
 }
 
-/// JavaScript truthiness, for "is there structured content worth showing".
-fn truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan()),
-        Value::String(s) => !s.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
-}
-
-/// What the model reads of an MCP `tools/call` result (`res`, its JSON).
+/// What the model reads of an MCP `tools/call` result.
 ///
 /// Every part of `content` becomes one line or more, joined by newlines: a
 /// text part its text, a resource its text (or `[resource <uri>]` when it has
 /// none). An image or audio part haest can send becomes media on the output
 /// ([`ToolOutput::media`]) and a line saying it is attached; one with no data,
 /// data that is not base64 or a type haest cannot send is a line saying it was
-/// omitted, and so is a part of any other type. With no text at all, the
+/// omitted, and so is a part of any other kind. With no text at all, the
 /// output is the `structuredContent` as JSON, else `(no content)`. Only
 /// `isError: true` makes it an error output.
-///
-/// It reads the JSON, not rmcp's types, so a part rmcp would refuse still
-/// reaches the model as a line.
-pub(crate) fn mcp_result_to_output(res: &Value) -> ToolOutput {
-    let parts = res
-        .get("content")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
+pub(crate) fn mcp_result_to_output(res: CallToolResult) -> ToolOutput {
     let mut media = Vec::new();
-    let text = parts
-        .iter()
-        .enumerate()
+    let text = (res.content.iter().enumerate())
         .map(|(i, p)| part_text(p, i, &mut media))
         .collect::<Vec<_>>()
         .join("\n");
-    let content = if !text.is_empty() {
-        text
-    } else {
-        match res.get("structuredContent").filter(|v| truthy(v)) {
-            Some(structured) => structured.to_string(),
-            None => "(no content)".to_string(),
-        }
+    let content = match res.structured_content {
+        _ if !text.is_empty() => text,
+        Some(structured) if !structured.is_null() => structured.to_string(),
+        _ => "(no content)".to_string(),
     };
     ToolOutput {
         content,
-        is_error: res.get("isError") == Some(&Value::Bool(true)),
+        is_error: res.is_error == Some(true),
         media,
         ..Default::default()
     }
@@ -126,15 +85,21 @@ pub(crate) fn mcp_result_to_output(res: &Value) -> ToolOutput {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::{Value, json};
+
     use super::*;
-    use serde_json::json;
+
+    /// `res` as rmcp reads it off the wire.
+    fn output(res: Value) -> ToolOutput {
+        mcp_result_to_output(serde_json::from_value(res).unwrap())
+    }
 
     #[test]
     fn joins_text_parts_flags_errors_and_an_image_with_no_data_is_a_line_not_media() {
-        let out = mcp_result_to_output(&json!({
+        let out = output(json!({
             "content": [
                 {"type": "text", "text": "a"},
-                {"type": "image", "mimeType": "image/png"},
+                {"type": "image", "data": "", "mimeType": "image/png"},
             ],
             "isError": true,
         }));
@@ -147,7 +112,7 @@ mod tests {
 
     #[test]
     fn media_haest_cannot_send_is_a_line_not_media() {
-        let out = mcp_result_to_output(&json!({
+        let out = output(json!({
             "content": [{"type": "image", "data": "AQID", "mimeType": "image/tiff"}],
         }));
         assert!(out.media.is_empty());
@@ -155,8 +120,8 @@ mod tests {
     }
 
     #[test]
-    fn resources_show_their_text_and_unknown_parts_are_one_line_each() {
-        let out = mcp_result_to_output(&json!({
+    fn resources_show_their_text_and_links_are_one_line_each() {
+        let out = output(json!({
             "content": [
                 {"type": "resource", "resource": {"uri": "file:///a", "text": "body"}},
                 {"type": "resource", "resource": {"uri": "file:///b", "blob": "AQID"}},
@@ -172,12 +137,12 @@ mod tests {
 
     #[test]
     fn no_text_falls_back_to_structured_content_then_to_a_placeholder() {
-        let structured = mcp_result_to_output(&json!({"structuredContent": {"n": 1}}));
+        let structured = output(json!({"structuredContent": {"n": 1}}));
         assert_eq!(
             serde_json::from_str::<Value>(&structured.content).unwrap(),
             json!({"n": 1})
         );
-        let empty = mcp_result_to_output(&json!({"content": []}));
+        let empty = output(json!({"content": []}));
         assert!(!empty.content.is_empty());
         assert!(!empty.is_error);
     }
