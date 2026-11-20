@@ -6,3054 +6,741 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 `--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
 `HAEST_*` variables.
 
-## Unreleased
+## 0.3.0 (2026-11-20)
 
-Other programs can watch and drive a conversation while it runs: a parent
-process over stdio, a program on the same machine over a Unix socket, a
-fleet view elsewhere through a broker. Three new crates carry it:
-haest-wire (the format), haest-session (one stream, one driver) and
-haest-transport (the connections). All of it is opt-in: each is a facade
-feature outside `default`, every new setting is off by default, and the
-`claude` profile leaves them off.
+Other programs can now watch and drive a running conversation, through three
+new crates: haest-wire (the format), haest-session (one stream, one driver)
+and haest-transport (stdio, a Unix socket, a broker). haest also gains
+durable runs, a subagent hub that runs a host's own members, thresholds with
+an opt-in wind-down, and subagent budgets; each is opt-in, every new setting
+is off by default, and the `claude` profile leaves them off.
 
-Thresholds: a meter crossing a mark fires an action. The guard's nudge, the
-agent-turn gate's nudge, the ledger's warning and compaction are now
-default thresholds with the same numbers and behaviour, a host adds its own
-beside them, and wind-down (new, opt-in, off by default) is one of them.
-Breaking for a host that writes `TurnCaps` or `Settings` out in full;
-everything built with `::new`, `Default` or `..` compiles as before.
+0.3.0 also finishes the API work 0.2.0 started: plug points take the value
+itself instead of an `Arc<dyn Trait>`, fields sit behind getters and
+`with_*` setters, and types that will grow are `#[non_exhaustive]`, so most
+hosts need the edits below.
 
-No `Arc`, `Box` or `dyn` in haest-core's API: every plug point takes the
-value itself, and holds it in a handle named after its trait. The one
-`dyn` left is a borrow for the length of a call (`&dyn Fs`, the net
-guard's `&dyn Resolve`), which takes the value and its handle alike. Read
-"Upgrading" first.
+The cases haest leaves alone on purpose, and what still keeps a file safe in
+each, are listed under [Limitations](README.md#limitations) in the README.
 
-The workspace has a lint table (`[workspace.lints]` in the root
-`Cargo.toml`), and every crate takes it: docs and `Debug` on every public
-item, `pub` only where a host can reach it, no type a host gets but cannot
-name, and unsafe code denied except where a site claims it with a reason.
-Clippy's picks from its restriction and pedantic groups come with it: a
-library never prints or exits, a public function documents how it fails
-and when it panics, and every `with_*` setter is `#[must_use]`, so a host
-that drops the value a setter returned (`deps.with_hooks(h);`, which never
-set anything) now gets a warning. `env_var` and the `HashMap`
-`KeySource` take a map with any hasher, and `&Thresholds` iterates in a
-`for` loop.
+### Breaking changes
 
-### Upgrading
+Where a parameter now takes `impl Into<XRef>`, an `Arc` of the value or an
+`Arc<dyn Trait>` still goes in as it is; only what changed for such a call
+is listed. A `#[non_exhaustive]` enum needs a `_` arm in a `match`; a
+`#[non_exhaustive]` struct is built with `new` and `with_*` setters, and a
+pattern on it ends in `..`. Both let haest add a variant or a field in a
+minor release.
 
-1. Plug points take the value itself, or an `Arc` of one the host already
-   shares, and `AgentDeps::new` takes what the conversation runs on as one
-   `SharedDeps`: `AgentDeps::new(Arc::new(models), Arc::new(tools),
-   Arc::new("You are terse.".to_string()), cwd, Arc::new(workspace))` ->
-   `AgentDeps::new(SharedDeps::new(models, cwd, workspace), tools, "You are terse.")`.
-2. `AgentDeps` and `SharedDeps` keep their fields private: set a part with
-   its `with_*` setter (`deps.shared.hooks = Arc::new(host)` ->
-   `deps.with_hooks(host)`), read it with the getter of its name
-   (`deps.shared.cwd` -> `deps.shared().cwd()`).
-3. A tool list is `Tools`: `vec![Arc::new(Read) as Arc<dyn Tool>]` ->
-   `Tools::new().with(Read)`, and `Vec<Arc<dyn Tool>>` -> `Tools` in every
-   signature that took or returned one.
-4. `ToolServices` is a slot of its own, no longer a supertrait of
-   `AgentHooks`: delete `impl ToolServices for MyHooks {}`; hooks that do
-   publish, report or log go in both slots,
-   `.with_hooks(host.clone()).with_services(host)`.
-5. `ToolContext` keeps its fields private: read a part with the getter of
-   its name (`ctx.cwd` -> `ctx.cwd()`), build one with `ToolContext::new`
-   and a `with_*` setter per part (`ToolContext { cwd, cancel, .. }` ->
-   `ToolContext::new(cwd, workspace).with_cancel(cancel)`).
-6. A `Workspace` hands out handles: `fn fs(&self) -> Arc<dyn Fs>` ->
-   `fn fs(&self) -> FsRef` (`self.fs.clone().into()`). `Fs::mkdir` is
-   `create_dir` without the `recursive` flag, and `Fs::remove` loses its
-   flag: `fs.mkdir(dir, true)` -> `fs.create_dir_all(dir)`,
-   `fs.mkdir(dir, false)` -> `fs.create_dir(dir)`, `fs.remove(path, true)`
-   -> `fs.remove_all(path)`. An `Fs` implements `create_dir` (was `mkdir`)
-   and `remove_all` itself (`fs::remove_tree(self, path)` walks the tree).
-7. An `Fs` builds its answers with constructors:
-   `FsStat { kind, size, modified: Some(at) }` ->
-   `FsStat::new(kind, size).with_modified(at)` (no `with_modified` when
-   there is no time), and `DirEntry { name, kind }` ->
-   `DirEntry::new(name, kind)`.
-8. A host's skills are built with constructors:
-   `SkillCard { name, description, when, origin: Some(o) }` ->
-   `SkillCard::new(name, description).with_when(when).with_origin(o)`
-   (no `with_when` or `with_origin` for one not said), and
-   `InlineSkill { card, body }` -> `InlineSkill::new(card, body)`.
-9. A `Ledger`, a `TaskBoard` and a `ToolDeferral` are shared by cloning
-   them: `Arc<Mutex<Ledger>>` -> `Ledger`,
-   `ledger.lock().unwrap().usd()` -> `ledger.usd()`,
-   `deps.shared.ledger = Some(Arc::new(Mutex::new(ledger)))` ->
-   `deps.with_ledger(ledger.clone())`,
-   and `Arc<TaskBoard>` / `Arc<ToolDeferral>` -> `TaskBoard` /
-   `ToolDeferral`.
-10. `ProviderRequest`, `ExecOptions` and `ShellCall` are built with `new`
-    and `with_*`: `ExecOptions { cwd, cancel, timeout }` ->
-    `ExecOptions::new(cwd, timeout).with_cancel(cancel)`.
-11. A session's effort change is an `EffortChange`:
-    `SessionRecord::Config { effort: Some(Some(e)), .. }` ->
-    `effort: EffortChange::To(e)`, `Some(None)` -> `EffortChange::ModelDefault`,
-    `None` -> `EffortChange::Unchanged`, and
-    `replayed.effort.unwrap_or(current)` -> `replayed.effort.applied_to(current)`.
-12. Smaller renames: `total.add(&u)` -> `total += &u` (`Usage`),
-    `opt_bool(input, k)` -> `opt_bool(input, k)?`,
-    `TaskBoard::with_clock(on_change, clock)` ->
-    `let board = TaskBoard::new(on_change); board.set_clock(clock);`,
-    `ledger.with_remedies(r)` -> `ledger.set_remedies(r)`,
-    `board.create(task)` -> `board.create(task)?`, and
-    `ChildEnv::new([("K".into(), v)])` -> `ChildEnv::new([("K", v)])`.
-13. A flag setter takes a `bool`, and an optional field's setter takes the
-    value itself: `SkillToolOptions::over(set).with_name_enum()` ->
-    `SkillToolOptions::new(set).with_name_enum(true)`. In haest-core that
-    is `SharedDeps`/`AgentDeps` `with_spill_dir`, `with_ledger` and
-    `with_web_search`,
-    `AgentOptions::with_effort`, and the `ProviderRequest`, `ToolContext`
-    and `TurnOutcome` setters: `opts.effort = effort` ->
-    `if let Some(e) = effort { opts = opts.with_effort(e) }`, and
-    `deps.shared.web_search = on.then_some(search)` ->
-    `if on { deps = deps.with_web_search(search) }`.
-14. A `match` on an enum that will grow adds a `_` arm, in every crate:
-    haest-core's `LoopEvent`, `StopReason` and its other event and error
-    enums, `OpenRouterEffort`, `ApplyFailureCode`, `ConversationCap` and
-    `SkillSource`, haest-http's `HttpError` and `Method`, haest-providers'
-    `CompatFlavor`, haest-mcp's `McpTransport`, haest-mods'
-    `CommandOutcome` and `BashVerdict`, and haest-config's `ConfigError`
-    and `Source` among them:
-    `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b }`
-    -> `match cap { ConversationCap::Usd(v) => a, ConversationCap::UnpricedTokens(n) => b, _ => c }`.
-15. An `HttpClient` builds its `Response` with `new`:
-    `Ok(Response { status, headers, body: Body::from_stream(s) })` ->
-    `Ok(Response::new(status, Body::from_stream(s)).with_headers(headers))`,
-    and `let Request { method, url, headers, body } = req;` ends in `..`.
-16. The model registry is built by setters:
-    `ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions { http:
-    Arc::new(client), routing, ..Default::default() })` ->
-    `ProviderRegistry::new(keys).with_custom(custom).with_http(client)`,
-    then `.with_routing(scopes)` when there are any. A provider's options
-    keep their fields private: `opts.base_url = Some(url)` ->
-    `opts.with_base_url(url)`, `opts.base_url.as_deref()` ->
-    `opts.base_url()`. The routing types are at haest-providers' root:
-    `haest_providers::routing::parse_routing` -> `haest_providers::parse_routing`.
-17. haest's built-in tools are picked by `BuiltinTool` and built with
-    setters: `builtin_tools_where(|w| set.has(w), opts)` ->
-    `builtin_tools_where(|t| set.has(t.as_str()), opts)`,
-    `BuiltinOptions { tasks: Some(Arc::new(board)), ..Default::default() }`
-    -> `BuiltinOptions::new().with_tasks(board)`, and
-    `task_tools(Arc::new(board))` -> `task_tools(board)`.
-18. An MCP hub's log is set once: `McpHub::with_env(env).connect(&servers,
-    &|line| ..)` ->
-    `McpHub::new().with_env(env).with_log(|line| ..).connect(&servers)`.
-19. A host's own mods go in when the list is built, and `Mods` is held as
-    it is (clones share it):
-    `let mut m = Mods::new(env); m.add(Arc::new(NoDotEnv)); let m = Arc::new(m);`
-    -> `let m = Mods::builder(env).with(NoDotEnv).build();`. A `match` on a
-    `ModLine` (the lines of `ApprovalGate::mod_ui`) adds `ModLine::Warn`
-    and an arm for kinds to come: `ModLine::Info(t) => show(t)` ->
-    `other => show(other.text())`.
-20. Both wall-clock caps are a `Duration`:
-    `caps.max_turn_minutes = 1.5` -> `caps.max_turn_time = Duration::from_secs(90)`,
-    and `sub.minutes = 5` -> `sub.time = Duration::from_secs(300)`
-    (`SubagentCapSettings`).
-21. haest-config takes pairs by value and names a refused setting:
-    `Loader::standard(defaults, &env, &flags)` ->
-    `Loader::standard(defaults, &env, flags)`,
-    `loaded.keys["OPENROUTER_API_KEY"]` ->
-    `loaded.keys.get("OPENROUTER_API_KEY")`, and
-    `ConfigError::Invalid { at, why }` -> `Invalid { at, key, why }`, with an
-    unknown setting its own `UnknownSetting { at, key }`.
-22. A haest-runtime host hands in values and reads parts with getters:
-    `build(inputs, Arc::new(ui), prompter, opts)` ->
-    `build(inputs, ui, prompter, opts)`, `World::Fs(Arc::new(fs))` ->
-    `World::files(fs)`, `inputs.keys = Arc::new(keys)` ->
-    `RuntimeInputs::new(settings, world).with_keys(keys)`, and
-    `rt.hooks.flush()` -> `rt.hooks().flush()`.
-23. What a `ModelFacts` and a `ChangeSet` answer is built with
-    constructors: `Reasoning { mandatory, efforts }` ->
-    `Reasoning::new(efforts).with_mandatory(mandatory)` (no
-    `with_mandatory` for a model that may stop reasoning),
-    `Change { path, kind, conflict }` ->
-    `Change::new(path, kind).with_conflict(conflict)`, and
-    `FailedChange { change, code, reason }` ->
-    `FailedChange::new(change, code, reason)`.
-24. `compaction::compact` puts what its summary calls cost on the agent's
-    ledger itself: delete a host's own
-    `ledger.charge(&res.usage)` / `ledger.charge(&e.usage())` after it, or
-    the calls are counted twice. `usage` still reports the cost.
-25. A model catalog row built in code is built with constructors (rows
-    read from JSON are unchanged):
-    `ModelPricing { input, cached_input, output, cache_write: None }` ->
-    `ModelPricing::new(input, cached_input, output)` (and
-    `.with_cache_write(usd)` for a price of its own),
-    `ModelInfo { spec, label, input, context_window, reasoning, pricing }`
-    -> `ModelInfo::new(spec, context_window).with_label(label).with_input(input)`
-    (and `.with_reasoning(r)`, `.with_pricing(p)`), and
-    `ModelGroup { label, models }` -> `ModelGroup::new(label, models)`.
-26. A native mod's approval ask and a tracker's info are built with
-    constructors:
-    `ApprovalRequest { tool_name, description, input_preview, tool_use_id: None, key: Some(k) }`
-    -> `ApprovalRequest::new(tool_name, description).with_input_preview(input_preview).with_key(k)`
-    (and `.with_tool_use_id(id)` for an ask tied to a tool call), and
-    haest-issues'
-    `TrackerInfo { name, id_hint, statuses, open_statuses, priorities, relations }`
-    -> `TrackerInfo::new(name, id_hint, statuses).with_open_statuses(open_statuses).with_priorities(priorities).with_relations(relations)`
-    (no `with_open_statuses` when every status is open, no
-    `with_priorities` or `with_relations` for none). A pattern that names
-    every field of either ends in `..`:
-    `let ApprovalRequest { tool_name, description, input_preview, tool_use_id, key } = req;`
-    -> `let ApprovalRequest { tool_name, description, input_preview, .. } = req;`.
+#### Cargo features
 
-Every other breaking change is in its crate's section below, with what to
-write instead.
+- `haest`: `config` no longer turns on `mcp`. `default-features = false,
+  features = ["config"]` -> `["config", "mcp"]` to keep reading `.mcp.json`
+  (haest-config: the new default feature `mcp`). The loader builds no MCP
+  client unless asked.
+- `haest`, `haest-http`, `haest-providers`, `haest-issues`: `ReqwestClient`
+  and the default client are behind a new default feature, `reqwest`. With
+  `default-features = false`, add `reqwest` or hand in a client
+  (`ProviderRegistry::with_http`, `GithubTracker::with_http`); without one,
+  every request fails and says so. A host with its own client builds no
+  reqwest, rustls or ring.
+- `haest-mcp`: `McpHub::connect_transport` and the `rmcp` re-export need the
+  new feature `rmcp` (`haest/rmcp`), so rmcp's types are in the API only
+  when asked for.
 
-### Security
+#### haest-core
 
-- An approval shows the human all of the command that runs, nothing
-  printed before or while it waits can hide part of it, and only what the
-  human types once it is on the screen answers it. The approval mod cut
-  the command to 200 characters without saying so, and the haest command
-  printed that preview raw. A command padded past the cut with spaces, or
-  one with a carriage return and an erase-line in it, showed as
-  `rm -rf ./build` while a hidden `; touch ...` ran on "y". And the
-  terminal took whatever line was already waiting as the answer: a "y"
-  typed at text that only looked like a
-  question (the model's own words) or at an ask that was then withdrawn
-  approved the next real one, a `rm -rf` nobody had seen yet. The ask now
-  carries the whole command, and the haest command:
-  - writes nothing from the model, a tool's input, a server or a peer raw
-    to the terminal: control characters (but a newline and a tab), bidi
-    controls and zero-width characters show as escapes, in the answer
-    (unless stdout is a regular file, which gets its bytes; a pipe into
-    `tee` can end on the terminal), every notice and tool line, the
-    question, `haest ctl`, `haest sessions` and `haest settings`. An
-    escape sequence in the model's text could otherwise clear the screen
-    or set a scroll region just before the question;
-  - asks after the command, right above the answer, saying how much
-    command is above it, and shows nothing else until the question is
-    answered (or given up): a subagent's lines, a background job's
-    arrival and the main agent's answer text (when stdout is not a
-    regular file) wait and follow it, so none of them can scroll the
-    question away or draw one of its own;
-  - reads the answer only once the question is drawn, first dropping what
-    was typed before (a line, or keys with no Enter), and reads it from
-    the terminal a byte at a time, so no buffer keeps a key typed earlier;
-  - shows, in the command, a tab as `⟨tab⟩` (`\t` reads as a letter to
-    bash), any whitespace but a space and every character that draws as
-    blank or as nothing as its escape, more than 2 blank lines in a row,
-    more than 8 spaces or tabs inside a line, and indentation past 40
-    columns as their count, so padding cannot push a command's start or
-    the question off the screen; a script's indentation reads as written.
-  A host's own prompter should do the same with
-  `ApprovalRequest::input_preview` and with whatever it shows just before
-  it asks and while the human answers, and take as the answer only what
-  is typed once the question is shown.
-- On macOS, applying a sandbox's changes could write through a project
-  symlink to a directory outside the project. `OverlayChanges::apply`
-  looked for a link on the way by its exact name in the parent's listing,
-  but macOS's default disk matches names without case, and APFS without
-  Unicode normalization. With `vendor` a link out of the project, one
-  sandbox command (`mkdir -p Vendor && echo x > Vendor/a`) put `a` in the
-  link's target, while the change list showed `/Vendor/a`, a path inside
-  the project. A link named `café` was reached the same way through `café`
-  written with a combining accent, on case-sensitive APFS too. Each path
-  on the way is now asked of the disk itself, by its own name, so the
-  disk's own rules for names hold, and such a change fails as
-  `OutsideProject`.
-- A URL's credentials showed in Debug output: haest-http's `Request`
-  printed its URL as it was (and its `Authorization` header, and
-  `Response` its `set-cookie`); `AnthropicOptions`, `CompatOptions`,
-  `ResponsesOptions`, `CustomProviderConfig`, haest-tools'
-  `GenerateImageOptions` and haest-issues' `GithubTracker` their base URL
-  (a gateway that takes its credentials in the URL); and haest-mcp's
-  `HttpTransport` (and the `McpTransport` and `McpServerConfig` holding
-  one) its own, so
-  `https://user:s3cret@docs.example.com/mcp?api_key=k3y` showed the
-  password and the key. A URL in haest's Debug output now shows no
-  userinfo, no query value and no fragment
-  (`https://<redacted>@docs.example.com/mcp?api_key=<redacted>`), a header
-  its name without its value, and a request's body its length. It fails
-  safe for a password a parser misreads: an unescaped `/`, `?` or `#` in
-  it (a pasted base64 token; about half of them hold a `/`) ends the
-  authority a parser sees, so `wss://agent:abc/def@broker.example/agents`
-  reads as the host `agent` and a path. An unescaped `@` in the userinfo
-  may sit on either side of where a reader ends it (a URL parser takes the
-  last `@`, tungstenite's `Host` header the first). Everything between the
-  scheme and the last `@` is hidden, nothing past the scheme shows when a
-  `?` or `#` comes before that `@`, and the scheme shows only when it is
-  `http`, `https`, `ws` or `wss`. A URL with an `@` past its host shows
-  less than it could (`https://<redacted>@scope/pkg`), never a credential.
-  `redacted_url` and the `haest` command (`haest settings`, the "Broker
-  link" line) show a URL the same way, and so does GenerateImage's error
-  for a model the Image API does not list, which the model is shown and
-  which named the base URL as given.
-- `AnthropicOptions`, `CompatOptions`, `ResponsesOptions` and
-  `CustomProviderConfig` printed the API key and every header's value in
-  their Debug output, so a host that logged one with `{:?}` logged the
-  key. Debug now shows `<redacted>` for the key, and a header's name
-  without its value.
-- haest-mcp's `HttpTransport` printed every header's value in its Debug
-  output (an `Authorization` included), and `StdioTransport` every
-  variable's in `env` (a server's token), and so did the `McpTransport` and
-  `McpServerConfig` holding them. Debug now names each header and variable
-  and shows `<redacted>` for its value.
-- `StdioTransport` printed its arguments in its Debug output, where
-  `.mcp.json` puts a filled-in `${API_TOKEN}` (mcp-remote's `--header
-  "Authorization: Bearer ${API_TOKEN}"`), so `McpServerConfig`,
-  `ProjectMcp` and haest-config's `Loaded` showed the token. Debug now
-  shows how many arguments there are.
-- haest-config's `Loader` and `Loaded` printed the whole environment they
-  were given in their Debug output, API keys included, and `Loaded` every
-  providers.json entry's `apiKey`; `Config` printed each `env` variable's
-  value. A host that logged one with `{:?}` logged the keys. Debug now
-  names the variables, keys and entries and shows no value.
-- `ReqwestClient`'s errors held the request's whole URL, as reqwest gives
-  it, so a model call, a GitHub call or GenerateImage that failed to
-  connect, or ran into a redirect loop, showed a key in the URL's query
-  (`?key=...`) in its text and its Debug output. The URL in an
-  `HttpError`'s cause now has no query, no fragment and no userinfo; the
-  host and path still say where the request went, unless an `@` past the
-  host means they may hold a password a parser misread
-  (`https://user:12/34@host` reads as the host `user`, the port 12), and
-  then no URL is named.
-- An MCP server reached over HTTP with its key in the URL
-  (`https://mcp.example.com/mcp?api_key=...`) showed the key whenever a
-  request to it failed: in `McpStartError`'s cause (so in `report` and the
-  hub's log line), in the warning haest-runtime gives for a server that
-  did not start, which the `haest` command puts into the session stream
-  (`--json`, and `haest ctl` and the broker now),
-  and in a failed tool call's answer to the model. rmcp's HTTP client now
-  runs on a reqwest client whose errors name the URL without its query,
-  fragment or userinfo, and name none when an `@` past its host may end a
-  password.
-- A configured URL whose password held an unescaped `/`, `?` or `#` sent
-  the rest of that password to the wrong host. A URL parser ends the host
-  at the first of them, so a base URL
-  `http://user:1234/s3cret@gw.example/v1` (a gateway on a LAN) dialed the
-  host `user` on port 1234 and sent `/s3cret@gw.example/v1/...` as the
-  path, in the clear; a provider's base URL, an MCP server's URL,
-  GenerateImage's base URL and a GitHub Enterprise API root sent their key
-  or token header along with it. Over `https` the certificate check
-  stopped the request before it went out, but the name `user` was still
-  looked up. haest
-  now refuses a configured URL with an `@` past its host before anything
-  connects: a provider's base URL when the provider is resolved, naming
-  the variable or the providers.json key it came from
-  (`ANTHROPIC_BASE_URL`, `providers.json baseURL`), and again before each
-  request; an MCP server's URL when the server starts (that server fails,
-  the others start); GenerateImage and the GitHub tracker before they
-  send. The new broker link refuses such a URL too (see haest-transport
-  and haest-config). Each refusal shows the URL without its
-  credentials and says how to write it: percent-encode the password (`/`
-  as `%2F`, `?` as `%3F`, `#` as `%23`, `\` as `%5C`, `@` as `%40`). A
-  configured URL that needs a real `@` in its path or query cannot be used
-  as it is: `%40` there makes another URL (RFC 3986, section 2.2), which
-  the server may or may not read the same. A URL that WebFetch fetches is
-  not a configured one, and an `@` in its path still works.
-- A configured URL with no host sent its key to the host the first part of
-  its path named. `https://${GATEWAY_HOST}/anthropic` with the variable
-  empty makes `https:///anthropic`, and a URL parser skips the extra `/`
-  and takes `anthropic` for the host. Over `https` the certificate check
-  stopped it before the key went out; over `http` a name that resolved (a
-  search domain, a hosts entry) got the key header. A parser drops the
-  spaces and control characters around a URL and the tabs, CRs and LFs in
-  it, so a CRLF `.env` that keeps the `\r` of an empty `GATEWAY_HOST=` did
-  the same (`https://\r/anthropic`). So did a URL that is a scheme with
-  only slashes after it (`http:`, `http:/`): a parser skips them, so
-  `http:` with `/v1/messages` under it dialed the host `v1`. haest now
-  refuses such a URL wherever it refuses one with an `@` past its host
-  (above), saying it has no host; a host with no `//`
-  (`http:localhost:8080`) still works.
-  The GitHub tracker cut the `//` after the scheme with a root's trailing
-  `/`, so `http://${GHE_HOST}` with the variable empty became `http:`,
-  and its token went to `http:/repos/...`, which a parser reads as the
-  host `repos`. It keeps that `//` now, checks the root and each URL as it
-  would send it, and cuts an Enterprise Server root's `/v3` only from the
-  path (a root `http://v3` sent the token to the host `graphql`). Over
-  `https` the certificate check stopped both.
-- A providers.json entry with a misspelt key sent the entry's key, and the
-  conversation, to OpenAI's or Anthropic's own API. haest read each key by
-  its exact name and skipped any other, and an entry with no `baseURL` is
-  one for the dialect's own API. So `"baseUrl":
-  "https://llm-gateway.example.com"` in a `"type": "anthropic"` entry sent
-  the gateway's key, the system prompt and the first message to
-  `api.anthropic.com`, and the 401 came back only after that. A key an
-  entry does not have now fails that entry when its provider is resolved
-  (`EntryProblem::UnknownKeys`), naming every such key, and the key meant
-  when one is close (`baseUrl` and `base_url` for `baseURL`, `header` for
-  `headers`). Nothing is sent. An entry with a key of its own that the
-  TypeScript haest skipped (a `"_comment"`) fails too: delete the key.
-- A providers.json `baseURL` that was not a string read as no `baseURL`,
-  so the entry's key and the conversation went to OpenAI's or Anthropic's
-  own API the same way. `null` is what a generator writes for an unset
-  value (Python's `json.dump` of `os.environ.get("GATEWAY_URL")`). A
-  `baseURL`, `apiKey` or `apiKeyEnv` that is not a string, `null`
-  included, now fails that entry when its provider is resolved
-  (`EntryProblem::NotAString`), naming the key and the type, never the
-  value. Nothing is sent. An entry leaves `apiKey` or `apiKeyEnv` unset by
-  not having the key; one with no `baseURL` is one for the dialect's own
-  API, so the refusal of a `baseURL` says to write the server's URL.
-- haest-issues' `GithubTracker` read, changed, deleted and linked issues in
-  any repository the model named (`{"id": "victim/secret#1"}`), with the
-  host's token, though it is one repository's tracker. The issue a call
-  acts on must now be in its own repository, else the call is refused as
-  `Invalid` and nothing is sent. Only a link's other end may be elsewhere,
-  and only for a `child` or `depends_on` link: GitHub keeps a `parent` link
-  on the parent and a `blocks` link on the issue that waits, so one whose
-  other end is in another repository would change that repository's issue,
-  and is refused the same way. A name GitHub cannot give an owner or a
-  repository is refused too: `../..#9` sent the token to
-  `{api}/repos/../../issues/9`, which leaves `/repos/` (and a GitHub
-  Enterprise root's `/api/v3`). And every new parent was sent with
-  `replace_parent`, which takes the child off its old parent, an issue that
-  could be another repository's (a `child` link to `owner/other#9`, or a
-  `parent` link from this repository's issue whose parent is elsewhere). A
-  new parent now replaces an old one only when the old one is this
-  repository's, else the link is refused as `Invalid` before anything is
-  written; an issue with no parent is sent without `replace_parent`.
-- haest-issues' `GithubTracker` took GitHub's answer to be the issue it
-  asked for. GitHub answers 301 for an issue moved to another repository,
-  and with a host's client that follows it, `delete` deleted the issue in
-  its new repository, and a link or a label change acted on it. An issue
-  the tracker reads (a get, and the read before a delete, a label change
-  or a link) is now checked to be the one it asked for, else the call is
-  `NotFound` and nothing more is sent; a change answered with another
-  issue is `Failed`. And a search took the model's text as GitHub's search
-  syntax, where a `repo:`, an `org:` or an `OR` could widen it past the
-  repository: the text is searched as plain words now, and a result from
-  another repository is dropped. An owner named `repos` is read as an
-  owner: its issues in another repository were named by a bare number,
-  which names one of this repository's.
-- On macOS, and on Linux on a FAT disk (vfat) or in a case-folding
-  directory (`chattr +F`), applying a sandbox's changes could delete or
-  overwrite files, or a whole directory, in the real project while the
-  report said every change was applied. The disk reads `readme.md` and
-  `README.md` as one name (and `café` in either Unicode form, on
-  case-sensitive APFS too). The sandbox's own files tell them apart, but
-  it reads the project through the disk, so asked for `Lib` it finds
-  `lib`. `mv readme.md README.md` listed only the old name's delete, and
-  applying it deleted the file; with an edit, the new name was written,
-  then deleted. `mv lib Lib` moved `lib` into itself as `Lib/lib`
-  (bashkit's `mv` moves into a directory that is there), so the model saw
-  every file twice, and applying it deleted the whole directory, as did
-  tidying the copy away (`rm -r Lib/lib`). A sandbox that wrote both
-  names (`echo upper > README.md && echo lower > readme.md`) had the
-  second written over the first, and the first's content was lost, listed
-  nowhere. A write onto a name the disk held under another one went into
-  the disk's name and left the change list as applied
-  (`cp readme.md README.md`); removing the old name later (`rm readme.md`)
-  then deleted it on apply too, while the sandbox still showed it. Now
-  `OverlayChanges::apply` asks the disk before each change, with
-  `read_dir` and `lstat` alone:
-  - before a change takes away what the disk holds at its path (a delete,
-    a file written over, a directory become a file): each name on its way
-    must be one its directory lists, byte for byte, and no other path the
-    sandbox shows (one it changed, or a directory on the way to one) may
-    be the same file (`lstat`'s device and inode number) as the path or a
-    directory on its way, or be under it;
-  - before a write: each name on its way that the disk holds must be one
-    its directory lists, and so must the path's own where the disk holds
-    it, so nothing the sandbox writes into its own `Lib` lands in the
-    disk's `lib`;
-  - it reads each change's real path again right before putting it on the
-    disk: one that moved since the scan (an earlier write of the apply
-    under another name, or the human saving or deleting it meanwhile) is
-    skipped;
-  - it writes first and deletes last (see below).
-  A change that fails one of these is skipped as a conflict and stays
-  listed, and the disk keeps both names as the human left them. So on
-  such a disk a rename by case or by Unicode form alone
-  (`mv README.md readme.md`, `mv lib Lib`) is held, and the human makes it
-  by hand; nothing is lost. The cost: the change list does not ask the
-  disk so, and shows such a change as no conflict until an apply skips it
-  (see Behaviour changes).
-- Applying a sandbox's move could delete the file it moved, with its
-  content then only in the sandbox, lost when the session ended. Where
-  the move's write did not land (`mv src.md locked/` into a directory the
-  disk will not write; a move onto a file the human edited since the
-  model touched it, a conflict), the delete of `src.md` was applied all
-  the same. The same held for a copy then written over
-  (`cp a locked/ && echo new > a`), a file moved out of a directory then
-  removed whole, a directory become a file, and a directory moved with
-  symlinks in it: applying makes no link, so `mv lib src` deleted the
-  human's links in `lib`, and they stayed in the sandbox alone. Now `lib`
-  stays, with its links, as a conflict. `OverlayChanges::apply`
-  now writes first and takes away last: each write that takes nothing
-  away, then each that does (a file written over, a directory become a
-  file or the other way round), then each delete. A change that would take
-  away what a write of the same apply that did not land carries elsewhere
-  is skipped as a conflict and stays listed, until that write lands. A
-  write carries what the sandbox moved or copied to it, whatever it did to
-  it after (`mv a b && echo x >> b`), and a file with the content it puts
-  (`cat a > b && rm a`). Of the changes that take away, one whose content
-  goes to another is put after that one; a cycle of them (a swap,
-  `mv a t && mv b a && mv t b`) is put in path order, and where the second
-  write of it then fails, the first has already gone over its file.
-- A file or directory the sandbox moved or copied landed on the disk at
-  the umask's mode, whatever mode it had. After `mv secret.key moved.key`
-  or `cp secret.key copy.key` on a 0600 key, applying wrote the new file
-  0644, readable by every local account that can reach the project.
-  `mv certs keys` on a 0700 directory wrote `keys` 0755 and each file in
-  it 0644. A key moved onto an existing 0644 file stayed 0644. bash keeps
-  a path's mode through `mv`, and `cp` gives a new file its source's; the
-  sandbox now does the same, and applying puts that mode on as it puts on
-  a `chmod`: it adds nothing but execute. A file only the sandbox made
-  still lands at the umask's mode. One case is not fixed: a directory the
-  sandbox changed something under before moving or copying it. After
-  `echo x > certs/new` or `mkdir -p certs/sub`, the sandbox shows a 0700
-  `certs` as 0755, and each directory between it and the change too, so
-  `mv certs keys` or `cp -r certs copy` still lands 0755 under the usual
-  umask.
-
-### Bug fixes
-
-- The real workspace's timeout, interrupt or drop could SIGKILL an
-  unrelated process. It reaped bash as soon as bash exited, then waited
-  for the output; when a process that left bash's group (`setsid`, a
-  detached Node child) kept the output open, the later kill went to
-  bash's pid and group id, which the system may by then have handed to
-  another process. bash is now reaped last, so its pid stays its own until
-  the kill decision.
-- The sandbox lost what it made in a directory it had removed, and
-  applying left old files behind:
-  - After `rm -rf dist`, `mkdir -p dist/sub` (or the Write tool making a
-    file's parent) left `dist` removed. Every file written under it was
-    reported written, `cat` found none of them, and applying deleted
-    `dist` and wrote nothing. `echo x > dist/f`, `cp` and `ln -s` there
-    reported success the same way; they now fail, as in bash.
-  - A directory the sandbox removed or moved away and then made again
-    (`rm -r lib && mkdir lib`, `rm -rf dist && mv build dist`) had nothing
-    under it listed. Applying left its old files on the disk, never wrote
-    a tree moved onto it, and reported everything applied. Each path under
-    such a directory that differs, on the disk or in the sandbox, is now
-    listed and applied, also where the sandbox removes the directory again
-    while an apply runs. As for `rm -r`, an edit the human made in it
-    meanwhile is not a conflict.
-- Applying deleted a file the human saved after the sandbox had edited it
-  and then removed its directory whole (`echo x > lib/a.rs && rm -r lib`,
-  or `mv lib src`, or `lib` made a file). The report said the file was
-  skipped as a conflict, but it was gone from the disk, and from the list.
-  The directory's delete is now a conflict too, listed with the file, and
-  applying deletes only what under it is not a conflict. The same holds
-  for a save the human makes while the apply runs.
-- An apply the disk stopped partway (a full disk) had already emptied the
-  file it was writing: the human's version was gone, the change failed,
-  and since the disk then held neither version, every later list showed
-  it as a conflict and every apply skipped it. A kill during the write
-  left the same, unreported. A file now goes on the disk whole or not at
-  all: the sandbox's version is written to a new file in a directory of
-  its own beside it, which only its owner may enter from the moment it is
-  made (a new file that replaces one is its owner's alone too, before the
-  bytes go in), given the file's permission bits, and renamed over it.
-  That directory's mode is never set after it is made, so in a directory
-  that passes its group on (setgid) the new file gets that group, as a
-  file made there does, also for a run not in that group. A new file the
-  disk has no room for (a full disk, an NFS server out of room or over a
-  quota) leaves the human's file as it was and the change listed, to
-  apply once there is room; an apply now needs room for that second copy
-  of each file it replaces. A read-only file is still refused.
-  Written in place as before: a file with another hard link, one whose
-  owner or group a new file would not have, and one where the disk will
-  not make the new file, make it its owner's alone, or move it over the
-  old one (a directory that takes no new name, a share mounted for one
-  fixed owner the run is not, a file system that cannot set a mode at
-  all, as a FUSE one without setattr, a path just short of the system's
-  cap, a file that is a mount point of its own, as one bind-mounted into
-  a dev container). A replaced file does not keep its extended
-  attributes or ACLs, and whatever holds the old file keeps it: a process
-  that has it open (a log a server appends to, a database, `tail -f`), an
-  inotify watch on it, and a container it is bind-mounted into on its own
-  (`./server.conf:/etc/server.conf`, whose reload then reads the old
-  text). A kill partway can leave the new file's directory
-  (`.<name>.haest-<pid>-<n>`) beside it, owner-only, and an apply dropped
-  partway, rarely, that directory empty; `.*.haest-*` in an ignore file
-  matches it.
-- In the real workspace (`workspace = real`, or a host's
-  `RealWorkspace`), an Edit the disk had no room for emptied the human's
-  file (APFS, HFS+) or cut its tail off (ext4, tmpfs): the tool wrote the
-  edited text with a write that empties the file first. It reported "No
-  space left on device", but the model, which holds only the strings it
-  replaced, could not put the file back. A kill during the write left the
-  same, unreported. Write over a file that is there, and GenerateImage
-  over an image that is there, lost the human's version the same way.
-  They now replace the file whole or not at all, as the apply does
-  (`Fs::write_whole`): the new text goes into a new file beside it, which
-  takes the file's permission bits and is renamed over it, and a disk
-  that fills up partway leaves the file as it was. On a disk that reads
-  `readme.md` as `README.md`, the system decides which name the file goes
-  by afterwards, as for any program that saves by renaming a new file over
-  the old: an Edit of `readme.md` renames the human's `README.md` to
-  `readme.md` on HFS+, exFAT and FAT on macOS, and keeps `README.md` on
-  APFS. The apply's trade-offs come with it: a replaced
-  file does not keep its extended attributes or ACLs, whatever holds the
-  old file keeps it (a process that has it open, as a log a server
-  appends to, a database or `tail -f`, an inotify watch on it, a
-  container it is bind-mounted into on its own), the disk needs room for
-  a second copy, and a kill partway can leave `.<name>.haest-<pid>-<n>`
-  beside it, owner-only. Written in place as before, where a full disk
-  still cuts the file short and the tool says so: a file with another
-  hard link, one whose owner or group a new file would not have, a
-  symlink, and one where the disk will not make the new file, make it its
-  owner's alone, or move it over (a share mounted for one fixed owner the
-  run is not, a FUSE file system without setattr, a path just short of
-  the system's cap). A read-only file is still refused.
-- GenerateImage saves a picture under the extension its bytes have, and
-  went over whatever file had that name: asked for `art.png`, a JPEG
-  answer replaced the human's `art.jpg`; asked for a JPEG of `logo.png`,
-  passed as the reference, a PNG answer replaced `logo.png`. It now goes
-  over a file only at the very path the model named. Where the tool chose
-  the name (the default, or the model's with the extension switched) and
-  that name is taken, the picture goes to the first free
-  `<stem>-<n>.<ext>` beside it (`art-2.jpg`), and the model is told. It is
-  not refused: the picture is already paid for when its format is known.
-- On a network file system, a write the server refused (no room, a
-  quota) read as done. An NFS client reports it only as the file closes,
-  and `RealFs::write` and `RealFs::append` ignored what closing it said:
-  an apply renamed the cut-short new file over the human's file and
-  reported it applied, a file written in place was cut short without a
-  word, and a session record the server never took reached no error
-  handler (`JsonlSessionFile::new_with_error_handler`). Both now report
-  what close says as the write's error, and a lost record is reported.
-  The apply fails the change: a file it replaces stays whole and listed;
-  a file written in place (one with another hard link or owner) is still
-  cut short, but now reported, and later lists show it as a conflict.
-- An apply dropped partway lost the files of a tree the sandbox had moved.
-  After `mv src gen`, the files under `gen` were listed only by walking
-  `gen`, and only until `gen` was on the disk, while `src`'s delete stayed
-  listed for the next apply. An apply dropped after that (the `haest` command
-  drops `/apply` 2 s after Ctrl+C; a host's timeout does the same) left
-  each file of the tree it had not written yet in the sandbox alone: not
-  listed, not applied by the next apply, not named by the warning on
-  exit, and gone when the session ended. Each change the apply has not
-  put on the disk now stays listed.
-- After an apply, the sandbox went on reading its own copy of each file it
-  had changed, and nothing where it had deleted one, whatever the human
-  did on the disk since. Its next change there went over the human's edit,
-  or deleted a file the human had made again, with no conflict. The
-  `haest` command applies mid-session, so one edit between two applies was
-  enough. What is applied now reads through to the disk again: the sandbox
-  sees the human's edits, deletes and new files there, and its next change
-  is checked against them. A change the sandbox makes while an apply runs
-  (a background job's) waits for the apply to end, so none is lost or
-  left unlisted.
-- In the sandbox, `>>`, `tee -a` and `cat >> f <<EOF` onto a file that was
-  not there failed with "No such file or directory" in each directory the
-  sandbox had not written in yet, and after `rm f`, where bash makes the
-  file. A failed `tee -a` ended the whole script. They make the file now;
-  under a directory the sandbox removed they still fail, as in bash. The
-  fault is in bashkit's overlay (0.21.0 has it too), so the fix is in
-  haest.
-- In the sandbox, `mv` of a file onto its own path deleted it (`mv a ./a`,
-  `mv d/a d`, `mv d/a d/../d/a`), so a loop that renames files
-  (`mv "$f" "$(echo "$f" | tr A-Z a-z)"`, `mv "$f" "${f// /_}"`) deleted
-  each one whose name was already right. Each `mv` exited 0, the list
-  showed the file deleted, and applying deleted it from the disk. It now
-  stays, as in bash. The fault is in bashkit's overlay, which moves a file
-  by writing the new name and removing the old one, so the fix is in
-  haest.
-- A mode the sandbox set was never listed or applied: a script made
-  executable with `chmod +x` ran in the sandbox and landed on the disk
-  without its execute bits, and `chmod +x` on a file the disk held was not
-  listed at all. The sandbox also gave a file 0644 on each `>` or `>>`, so
-  a script it rewrote lost `+x` there. Now a mode the sandbox sets is
-  listed (`Modified`, if nothing else changed) and applied, a file it adds
-  keeps its execute bits, and a write keeps the file's mode. A directory's
-  mode goes on after everything under it is written, so a write into `out`
-  followed by `chmod 555 out` applies both; till then the directory stays
-  listed, so an apply dropped partway leaves its mode to the next one
-  (not yet for a directory that replaced a file: its mode is then listed
-  as a conflict, and the directory stays at the umask's mode).
-  Applying grants nothing but execute, and that only to whom may read the
-  file (`chmod 666` or a setuid bit is not applied); a mode the human
-  changed on the disk meanwhile is a conflict.
-- In the sandbox, `mkdir -p notes/x` beside a file `notes` succeeded: the
-  file was then gone there, and applying the listed directory failed. It
-  fails now with "Not a directory", as in bash.
-- A ledger hook that read the ledger it hears from (a warning shown with
-  the budget's summary beside it) hung the turn for good: the hooks ran
-  with the ledger locked. They run once it is unlocked; snapshots are still
-  persisted one at a time, never an older one after a newer one.
-- The caps settings are listed under "Caps" again, as 0.2.0 meant; the
-  `Limits` -> `CapSettings` type rename had renamed the heading to
-  "CapSettings" in `docs/settings.md` and `haest settings`.
-- A subagent stopped at its own USD, step or time cap handed the host's
-  remedy the turn cap's limit, so the `haest` command told the model to
-  raise `max_turn_usd`, `max_turn_steps` or `max_turn_minutes` for a cap
-  that `subagent_usd`, `subagent_steps` or `subagent_minutes` sets. The
-  guard now takes the limit from the caps (`TurnCaps::subagent`).
-- A huge `context_window` (any number up to `u64::MAX` is accepted)
-  overflowed the default turn caps that follow it: a debug build panicked,
-  a release build wrapped to a tiny cap. `max_turn_tokens` now stops at
-  `u64::MAX`, and `max_request_tokens` is still exactly 90% of the window.
-- The model providers' stream parser searched a line from its start again
-  on every chunk, so a server that sent one long line in small pieces cost
-  quadratic time on an executor thread (8 MiB in 1 KiB chunks: 16 s), and
-  it buffered a line of any length. Each byte is now searched once, and a
-  line or an event past 16 MiB ends the message with `StopReason::Error`,
-  saying so.
-- haest-ts parsed any file name ending in `x` as TSX (`box`, `index`), where
-  a `<number>x` cast is a syntax error. Only a `.tsx` extension, in any
-  case, is TSX now.
-- `ProviderRegistry::resolve` asked the key source for a new provider's
-  key with the registry locked, so a slow key source (a vault over the
-  network) held up every other resolve, of providers already built too,
-  and a key source that resolved a model itself locked the registry twice
-  (a deadlock or a panic, by std's `Mutex`). The key is now
-  asked with nothing locked.
-- Token counts and ids that come from outside were added without a check:
-  a session file's task id of 18446744073709551615 panicked the task board
-  on restore, and token counts near `u64::MAX` (a provider's usage, a
-  ledger snapshot) panicked `Usage::add`,
-  `Usage::context_tokens`, the ledger, the turn guard and the Chat
-  Completions and Responses usage readers. Each count now stops at
-  `u64::MAX`, and the task board refuses a new task once its ids have run
-  out (`TaskError::IdsExhausted`) instead of handing an id out twice.
-- haest-mods' `ModTools` over a source that keeps tools back (a
-  `DeferredTools`) let the model call only the advertised ones: a deferred
-  tool called by name was "Unknown tool". `ModTools::callable` now offers
-  every tool the source can run, each inside the mods' hooks.
-- A host that overrode a built-in tool the way the docs said, by adding its
-  own under the same name (`builtin_tools(opts).with(MyRead)`), sent the
-  model both: the request listed `Read` twice, which a provider may refuse.
-  A `Tools` list now holds one tool per name: `with`, `push`, `extend`,
-  `collect` and `From<Vec<ToolRef>>` put a tool in the place of the one of
-  its name, so the list the model is sent and the tool that runs agree.
-- A provider's base URL with a query (a gateway's key, which the
-  `with_base_url` docs put in a header or the query; Azure OpenAI's
-  `api-version`) sent every request to the base path, with the endpoint
-  glued onto the query: `https://gw.example/anthropic?key=k3y` went out as
-  the path `/anthropic` and the query `key=k3y/v1/messages`, so every
-  model call failed. GenerateImage built `/images` and `/images/models`
-  the same way, from the same `OPENROUTER_BASE_URL`. Both now put the path
-  after the base URL's path and before its query and fragment, through
-  one function. GenerateImage also takes a base
-  URL ending in `/` now (it sent `//images`), and its error for a model
-  the list does not name shows the list's URL as it was read.
-- `AnthropicProvider` sent a Claude 4.5 or older model a thinking budget
-  at or above the request's `max_tokens` (`with_max_tokens(4096)` with
-  high effort sent a budget of 16,384), and sent `max_tokens: 0` as
-  given: Anthropic refuses both with a 400, every call. The budget is now
-  kept below the cap, a cap of 1,024 or less (no room for the smallest
-  budget) sends no thinking, and a cap of 0 is the default 32,000, as the
-  other providers already read it.
-- The OpenAI-compatible provider took a server's `usage.cost` as it came,
-  so a cost below zero (a gateway's bug, a hostile server) was booked and
-  took spend off the ledger, lifting a USD cap by that much. A cost below
-  zero is no longer taken; the price in `CompatOptions::pricing` books the
-  call instead, as for a server that reports no cost.
-- haest-issues' `GithubTracker` sent GraphQL to `.../api/v3/graphql`, a
-  404 on the same host, for an Enterprise Server root with a CR after it
-  (a CRLF `.env`), a space after it, or written in upper case
-  (`HTTPS://GHE.EXAMPLE/API/V3`): the cut of `/v3` saw neither. The root
-  is now read as a URL parser reads it, and `/v3` is cut in any case.
-- A resume lost the first record it wrote when the session file's last
-  line was torn (a kill or a crash mid-write, or the `haest` command's
-  second Ctrl+C during a large record). Nothing ended the torn line, so
-  the record was appended onto it, and the next resume skipped both as one
-  torn line: the human's question was gone (or the model a resume was
-  given), and the history held two answers in a row.
-  `JsonlSessionFile::load` now ends a torn last line before the next
-  record.
-- A session lost a record it wrote once a full disk had room again. The
-  disk took part of a record and refused the rest (HFS+, Linux tmpfs, an
-  NFS server for a large write); the failure was reported, but the next
-  record was appended onto that part, with no error, and the next resume
-  skipped both as one torn line. Through the `haest` command, the human's
-  "go on" after a turn that filled the disk never reached the model again.
-  The record after a failed append now starts on a line of its own. And
-  where the lost record was an answer that called a tool, and the tool
-  freed room (`rm -rf target/`) so its result landed, every resume sent a
-  tool result with no call, which providers refuse: each turn of the
-  resumed conversation failed. Replay now drops a tool result that
-  answers no call of the answer it follows and counts it with the torn
-  lines (`ReplayedSession::corrupt_lines`, `ReplayedRun::corrupt_lines`),
-  as it already answers a call that has no result.
-- Two runs that resumed one session both wrote its file: `haest -r` in a
-  second terminal resumes the session the first one is writing. The
-  ledger record is a snapshot and the last one wins, so the run that wrote
-  last erased the other's spend, and every later resume counted the USD
-  cap from too low a number; the two conversations came back interleaved.
-  A run now holds its session for itself (see Behaviour changes).
-
-### Behaviour changes
-
-- Every `haest --json` line is in the wire's envelope:
-  `{"v":1,"sid":"<stream id>","seq":n,"ts":ms,"path":["main"],"type":...}`
-  followed by the fields it always had, so a reader of the old lines keeps
-  working. A `notice` and an `ask` line are numbered in the same stream as
-  the events. The stream also carries `status` frames (`idle`, `running`),
-  and a subagent's life comes as `subagent_started`, its loop events and
-  `subagent_stopped` under `["main", "<id>"]`, in place of `notice` lines
-  with its name.
-- A flag the model sends as `"yes"` or `1` (`replace_all`,
-  `run_in_background`, `allow_large`, Grep's switches, haest-issues'
-  `remove`) is an input error the model reads, where it was a silent
-  false. `"True"` and `"FALSE"` read as the flag they spell.
-- The `haest` command runs its conversation as a session: the terminal is
-  one subscriber of the stream, and what the human sees is as before.
-- A resume of a session another run is writing fails with
-  `SessionFileError::InUse` ("session "<id>" is in use by another run"),
-  where both runs wrote it. A run holds its session from the build (or a
-  /clear) until it is dropped, through a lock the system drops with the
-  process, so a crash leaves no session locked. `haest -r` in a second
-  terminal stops with that error while the first still runs. The lock is
-  on a file of its own beside the session, `<id>.lock` in the sessions
-  dir, which nothing reads or writes (a lock on the session file itself
-  refused the writer its own records where locks are mandatory, as on
-  SMB); these empty files stay after their session ends. A new session is
-  held before its file is written, so one in use leaves no file, and its
-  sessions dir is made private (0700) first, as its file needs, so a dir
-  its owner made read-only does not leave it unlocked. A saved session
-  whose lock file cannot be opened or made (another user's, as a run as
-  root leaves; a sessions dir that takes no new file; a quota or a full
-  disk) is held through the session file itself, as before the lock file.
-  Such a run and one that holds `<id>.lock` do not keep each other out,
-  which takes runs as two users, or a dir or disk that took a new file
-  again between them; and on SMB such a session refuses its writer its
-  own records, as every session did before the lock file. A data dir on
-  NFS takes the lock too. On a file system that takes none, a run goes on
-  without it and nothing is said; the real disk counts as that a lock it
-  does not support (`ENOLCK` too) and an NFS client's `EBADF` on a lock
-  file it could open only to read. On one where taking it fails otherwise
-  (any error but another holder) the run goes on unlocked and the human
-  is warned that another run could write the session too: for each
-  session it holds, so again at each /clear, and just before the error
-  where a new session's lock file could not be made for a reason its own
-  file then fails on too (no sessions dir, a full disk). On a host's own
-  file system nothing changes unless it implements `Fs::try_lock`.
-- The sandbox's `apply` can skip, as a conflict, a change its `list`
-  showed as no conflict: on a disk that reads two names of a file as one
-  (macOS's default, any APFS for Unicode forms, exFAT, FAT, vfat), one that
-  would take along a file the sandbox shows under another name, or land
-  under a name the disk lists another way (see Security). A rename by case
-  or by Unicode form alone (`mv README.md readme.md`, `mv lib Lib`) is
-  such a change: it stays listed, and applying it again skips it again
-  until the human makes the rename by hand. So is what the sandbox writes
-  under the new name (`mv Docs docs && echo more >> docs/a.md`), a
-  directory replaced by a file whose name differs from it by case alone
-  (`rm -r Build && echo x > build`), and a write into a directory the
-  human renamed by case since the model first looked (`Docs/new.md` after
-  the human's `mv Docs docs`), which landed in `docs` before. Each was
-  applied before, and the disk now keeps the human's files as they were.
-  So is a change that takes away
-  what a write of the same apply that did not land carries elsewhere: after
-  `mv src.md locked/` into a directory the disk will not write, the write
-  fails and the delete of `src.md` is skipped, and after `mv lib src` with
-  a symlink in `lib`, the link's write fails (applying makes no link) and
-  the delete of `lib` is skipped. A host that shows the list
-  before an apply should read the report's `skipped` for what was held.
-  Every change the report names as skipped has `conflict` set.
-- The sandbox's `apply` writes first and deletes last, where it went in
-  path order. `ApplyReport::applied` comes in that order: the writes that
-  take nothing away, those that do, then the deletes.
-
-### The haest command
-
-- `--stdio` (`HAEST_STDIO`, never a config file): driven by the parent
-  process, requests on stdin and frames on stdout, from the start of the
-  stream, with no terminal and no REPL. The parent has command access and
-  its turns are a person's. Approval asks are `approval_ask` frames it
-  answers (allow, always, deny), withdrawn on an interrupt. haest exits 0
-  when stdin closes (once what was asked has finished) or after a `close`,
-  and 1 when reading stdin fails. A prompt, `-p` or `--json` with it is a
-  usage error. The wire has no `/apply`, so a run that ends with changes
-  only in the sandbox says which, as `-p` does: a `notice` frame (a
-  warning) after the stream's last frame, and the same text on stderr.
-- `control_socket = "watch" | "command"` opens a control socket in
-  `control_dir` (default `<data_dir>/control`), and haest says how to follow
-  it. Input over it is another program's: the turn gate counts it, and at an
-  open prompt it waits for Enter. A socket that cannot open is a warning.
-- New `haest ctl` (Unix): `list`, `inspect <id>`, `events <id> [--after N]
-  [--follow]` (shown as the terminal shows it, each input as `> ...`),
-  `send <id> <text>` (waits for the turn it joins) and `interrupt <id>`;
-  `--json` where it reads. An id may be a prefix only one session has.
-- `broker_url` links the conversation to a broker over a WebSocket, its
-  token the key `HAEST_BROKER_TOKEN` (never a setting; like a provider's key
-  it stays with haest). `broker_access` is `watch` by default. haest says it
-  linked, and `haest settings` shows the URL, each without its userinfo,
-  query values or fragment; a broker that refuses the token is a warning
-  and is not dialed again; a closing run gives the link up to 2 seconds to
-  hand over the last frames.
-- `control_socket`, `control_dir`, `broker_url` and `broker_access` come from
-  your own file, a variable or a flag, never from a project's file or a
-  profile: a repository cannot open your conversation to anyone.
-- A peer with command access (over the control socket or the broker) may
-  `close` the conversation; it ends at once. The sandbox stays with haest
-  until it exits: at the prompt, haest says at once that the conversation
-  ended, and names the changes only in the sandbox; `/changes` and `/apply`
-  still work until the human leaves, and any other line, Enter or Ctrl+D
-  leaves, held back once while that would drop changes. A `-p` run a peer
-  closes still names them.
-- A watcher's terminal writes an answer whole when its streamed pieces were
-  not seen (replayed from the ring), shows approval asks and their
-  withdrawal as lines, and ends the line of a question another terminal
-  answers.
-- The `approvals` help (and docs/settings.md) says what the mod asks about:
-  a shell command that cannot be undone, in the real workspace. It said
-  "asks before a tool changes anything".
-- haest asks for approval on the terminal only when the question can be
-  seen: stdin must be a terminal, and so must stderr, where the question
-  shows; with `--json` it is a line on stdout, and stdout must not be a
-  regular file (a pipe still asks: `| jq` shows the line). With `2>log`,
-  `2>/dev/null` or `--json > out.jsonl` an ask is refused at once, as with
-  no terminal, and the line that says so names stderr or stdout; with
-  `--json` it goes to stderr too. Before, the question went into the file
-  and haest waited up to 10 minutes with nothing on the screen.
-- While the terminal's question waits, at most 2000 held lines wait with
-  it; past that the oldest go, and a note counts them. The answer's text
-  is never let go of, and into a regular file it is not held at all, so
-  `haest -p ... > out.md` keeps the whole answer.
-- The remedy for a cap names its setting through `Limit::setting()`, and
-  the three subagent caps have one.
-- A model haest cannot use ends with what to do about it: "Set its key"
-  only when the key is missing, "Fix the provider's configuration" for a
-  refused base URL or a bad providers.json entry, and "Pick another
-  model" for an unknown one. Every one of them said "Set its key".
-- Ctrl+C stops a slash command: it is told to stop and gets 2 seconds to
-  wind down (`/compact` books the summary call it stopped), then is given
-  up if it has not ended (a mod's whose promise never settles). The prompt
-  comes back, and `-p` exits 130. Before, Ctrl+C did nothing while a
-  command ran, and only a kill ended it.
-- `/changes` and `/apply` say a conflict is a change on disk, or a change
-  whose name the disk reads as another one the sandbox shows (`README.md`
-  and `readme.md` on macOS), and `/apply` that a rename by case alone
-  waits there for the human to make by hand. They called every conflict a
-  change on disk that applying would overwrite, so a held rename read as
-  a human's edit, and a delete held so the disk keeps the only copy read
-  as one that would overwrite something.
-
-### haest (the facade)
-
-- New `reqwest` feature, in `default`: the default client over reqwest and
-  rustls. A host that sends the model calls through its own client takes
-  `default-features = false, features = ["providers"]` and builds no
-  reqwest, rustls or ring (119 crates in the tree become 42); `tools` and
-  `mcp` still turn it on (WebFetch and rmcp run on reqwest).
-
-- `haest::CancellationToken` (tokio-util's, as `before_model_call`,
-  `ToolContext::cancel` and `ProviderRequest::cancel` hand it out) and
-  `haest::serde_json` are re-exported, and `haest::prelude` adds
-  `CancellationToken`, `Value` and `json!`: `use haest::prelude::*;` is the
-  only import an `impl Tool`, `impl Provider` (with `answer_stream`) or
-  `impl AgentHooks` (with `BoxError`) needs, and a host adds `tokio-util` or
-  `serde_json` to its own Cargo.toml only to use them itself.
-
-- Every example's `main` (and its test) returns a `Result` and uses `?`
-  where it used `unwrap`; the examples and `tests/plug_in.rs` take
-  `async_trait`, `serde_json` and `CancellationToken` from haest, and name
-  each item by one path: the root one (`haest::Tool`, `haest::BoxError`)
-  for what the prelude holds, the module one (`haest::core::run::RunKey`)
-  for the rest. The notebook's host takes its session sink as `impl
-  Into<SessionSinkRef>` and its gateway provider as a `ProviderRef`.
-
-- The README's "Embed it" opens with the front page's quickstart, and its
-  pins (and the front page's) say `0.3`. A test fails when the README's
-  quickstart and the compiled one in the docs differ.
-
-- The front page and every example build their deps the new way:
-  `ProviderRegistry::new(keys)`, `SharedDeps::new(models,
-  std::env::current_dir()?, RealWorkspace::new(env))` and
-  `AgentDeps::new(shared, builtin_tools(BuiltinOptions::default()), "You are
-  a careful engineer.")`, in a `main` that returns a `Result`. The plug-point table lists `Tools`,
-  `&'static str` and closures as prompts, and `ToolServices`.
-
-- New example `durable_run` (`cargo run -p haest --example durable_run`,
-  also under `cargo test`): the finished-run shortcut, and a kill and a
-  resume on the memory store.
-
-- The `notebook` example runs its helpers on haest's `SubagentHub` through
-  `SubagentParent::start_member`: each helper on a node run of its own (its
-  token, model spec and caps), closed by `MemberRun::end`. A new panel run
-  puts a helper in the background: the person writes to it (`deliver` with
-  an `AgentMessage`), the panel hears the same `AgentMessage` in
-  `SubagentEvent::Message`, its answer reaches main through
-  `Inbox::submit_answer`, the run waits on `SubagentHub::settled`, and every
-  helper reads the notebook's own note.
-
-- New features, none in `default`: `wire` (`haest::wire`), `session`
-  (`haest::session`; with `runtime`, the runtime behind a session; with
-  `mods`, approval asks answered over the session), `transport`
-  (`haest::transport`), `transport-stdio`, `transport-unix` and
-  `transport-broker` (pulls a WebSocket client on rustls).
-- New examples, each run by `cargo test`: `wire`, `session`, `stdio`,
-  `control_socket` and `broker`.
-- New feature `rmcp` (not in `default`; turns on `mcp`): haest-mcp's own
-  `rmcp` feature, so a host of the facade reaches `haest::mcp::rmcp` and
-  `McpHub::connect_transport` without depending on haest-mcp itself.
-- `runtime_inputs` builds the inputs with `RuntimeInputs`' setters; a host
-  in another world changes it on the result:
-  `inputs.world = World::Fs(fs)` -> `inputs.with_world(World::files(fs))`.
-- New examples, both run by `cargo test`: `threshold` (a host's own
-  thresholds: remind the model at 60% of the window, warn the human at the
-  third model call) and `wind_down` (`wind_down_at` with a host's
-  subagents).
-- Feature `testing` also turns on the providers' fakes when `providers` is
-  on: `haest::providers::testing::{FakeHttp, chat_sse, typed_sse}`.
-- `cargo test -p haest` builds with any set of features, not only the
-  default ones: the `notebook` and `wind_down` examples and the `plug_in`
-  test name the features they need (`required-features`), and the front
-  page's quickstart builds only with `providers`, `tools` and `workspace`.
-
-### haest-core
-
-Plug points without `Arc` (breaking):
-
-- New handles, one per plug point, named after the trait: `ToolRef`,
-  `ToolSourceRef`, `SystemPromptRef`, `ModelResolverRef`, `WorkspaceRef`,
-  `AgentHooksRef`, `ToolServicesRef`, `ModelFactsRef`, `TurnCapsSourceRef`,
-  `ClockRef`, `FsRef`, `ChangeSetRef`, `ProviderRef`, `KeySourceRef`,
-  `ledger::LedgerHooksRef`, `threshold::ThresholdRef`, `run::RunStoreRef`,
-  `session::SessionSinkRef`, `shell_command::ShellCommandRef` and
-  `skills::SkillSetRef`. Each is a cheap `Clone`, derefs to the trait
-  object, and is built `From` the value, an `Arc` of it or an
-  `Arc<dyn Trait>`, so one host object can fill several slots;
-  `XRef::new(value)` and `XRef::ptr_eq` besides.
-- `AgentDeps::new(shared, tools, system_prompt)` takes what the
-  conversation runs on as one `SharedDeps` (a subagent's deps from its
-  parent's are the same call), and `SharedDeps::new(models, cwd,
-  workspace)` takes each part as `impl Into<..Ref>` (`cwd` as
-  `impl Into<PathBuf>`), so no two string slots sit side by side to trade
-  places unseen (the prompt and the cwd both took a `&str`):
-  `AgentDeps::new(Arc::new(m), Arc::new(t), Arc::new(p), cwd, Arc::new(w))`
-  -> `AgentDeps::new(SharedDeps::new(m, cwd, w), t, p)`.
-- `AgentDeps`'s fields are private: `deps.tools` -> `deps.tools()` and
-  `with_tools(..)`, `deps.system_prompt` -> `system_prompt()` and
-  `with_system_prompt(..)`, `deps.shared` -> `shared()` and
-  `with_shared(..)`. Every `SharedDeps::with_*` is on `AgentDeps` too.
-- `SharedDeps`'s fields are private, read by a getter of the same name and
-  set by a consuming `with_*`: `shared.hooks = Arc::new(h)` ->
-  `shared.with_hooks(h)`. The setters: `with_models`, `with_cwd`,
-  `with_workspace`, `with_spill_dir`, `with_hooks`, `with_services`,
-  `with_facts`, `with_turn_caps`, `with_clock`, `with_ledger`,
-  `with_web_search`, `with_remedies`, `with_run_store`, `with_thresholds`.
-- `AgentHooks: ToolServices` -> `AgentHooks: Send + Sync`. What tools hand
-  the host is the new slot `SharedDeps::services` (`with_services`, default
-  `NoServices`): `impl ToolServices for Hooks {}` -> nothing.
-- New `Tools`: an agent's tool list. A cheap `Clone` (copy on write),
-  `Tools::new().with(tool)`, `push`, `FromIterator`, `Extend`,
-  `IntoIterator`; it derefs to `[ToolRef]` and is a `ToolSource`.
-  `Vec<Arc<dyn Tool>>` -> `Tools` and `&[Arc<dyn Tool>]` -> `&[ToolRef]`
-  everywhere: `ToolSource::tools`, `ToolSource::callable`,
-  `deferred_tools::search_tools`, `deferred_tools::advertised_tools` (which
-  takes `&Tools`). `impl ToolSource for Vec<Arc<dyn Tool>>` -> `Tools`.
-- `SystemPrompt` is implemented for `&'static str` and for closures
-  `Fn() -> String`, beside `String`.
-- `ToolContext`'s fields are private, read by a getter of the same name
-  (`ctx.cancel` -> `ctx.cancel()`, `ctx.tool_call_id` ->
-  `ctx.tool_call_id()`, an `Option<&str>`) and set by a consuming `with_*`
-  (`ctx.services = Arc::new(s)` -> `ctx.with_services(s)`).
-  `ToolContext::new(cwd, impl Into<WorkspaceRef>)`; `workspace()` returns a
-  `WorkspaceRef` and `services()` a `ToolServicesRef`.
-- `Workspace::fs` returns `FsRef` (was `Arc<dyn Fs>`), `Workspace::changes`
-  `Option<ChangeSetRef>` (was `Option<Arc<dyn ChangeSet>>`),
-  `RunStore::sink` `SessionSinkRef` (was `Arc<dyn SessionSink>`);
-  `ShellCall::fs` is an `FsRef`.
-- `OutputChunks` is a struct built from a closure:
-  `Arc::new(move |text: &str| ..)` -> `OutputChunks::from(move |text: &str| ..)`.
-- `JsonlSessionFile::new` and `JsonlSessionFile::new_with_error_handler` take
-  `fs: impl Into<FsRef>`. `DiskSkills::new(skills, fs)` ->
-  `DiskSkills::new(fs, skills)`, the closure last, `fs` as
-  `impl Into<FsRef>`.
-- `Ledger` is a cheap `Clone` whose clones are the one ledger, and every
-  method takes `&self` (`charge`, `set_cap`, `restore`, `reserve`):
-  `Arc<Mutex<Ledger>>` -> `Ledger`. `SharedDeps::with_ledger`
-  takes a `Ledger` and `SharedDeps::ledger` returns `Option<&Ledger>`.
-  `Ledger::new(caps, impl Into<LedgerHooksRef>)`:
-  `Ledger::new(caps, Arc::new(hooks))` -> `Ledger::new(caps, hooks)`.
-  `LedgerHooks` are called after the ledger is unlocked and may read it.
-  What changes every clone takes `&self` and says so:
-  `Ledger::new(caps, hooks).with_remedies(r)` ->
-  `let ledger = Ledger::new(caps, hooks); ledger.set_remedies(r);`.
-- `ResolvedModel`'s fields are private: `ResolvedModel { provider:
-  Arc::new(p), model: m.into() }` -> `ResolvedModel::new(p, m)`,
-  `resolved.provider` -> `resolved.provider()` (a `ProviderRef`),
-  `resolved.model` -> `resolved.model()` (a `&str`); `with_provider` and
-  `with_model` besides.
-- `testing::ScriptedProvider::new` returns the provider itself (was
-  `Arc<ScriptedProvider>`): a cheap `Clone` whose clones answer from one
-  script and record into one list, and `resolver(&self)`.
-  `&Arc<ScriptedProvider>` -> `&ScriptedProvider`.
-- New `skills::Skills`: a host's SKILL.md skills held where every clone sees
-  them; `replace` after a rescan and the Skill tool and the prompt read the
-  new list on their next call. A `SkillSet` over an `Fs`, like `DiskSkills`.
-- `task_board::TaskBoard` is a cheap `Clone` whose clones are the one
-  board: `Arc<TaskBoard>` -> `TaskBoard`, the host keeps one and the Task
-  tools get another. Its clock is the board's too:
-  `TaskBoard::with_clock(on_change, clock)` ->
-  `let board = TaskBoard::new(on_change); board.set_clock(clock);`, the
-  clock as `impl Into<ClockRef>`, and a clone made before reads it. The
-  clock it replaces is dropped once the board is unlocked, so a clock that
-  holds the board may use it as it drops.
-- `deferred_tools::ToolDeferral` is a cheap `Clone` whose clones share what
-  is loaded: `Arc<ToolDeferral>` -> `ToolDeferral`.
-
-`Fs` splits its flags (breaking):
-
-- `Fs::mkdir(path, recursive)` -> `Fs::create_dir(path)` and
-  `Fs::create_dir_all(path)`; `Fs::remove(path, recursive)` ->
-  `Fs::remove(path)` and `Fs::remove_all(path)`. An `Fs` implements
-  `create_dir`, `remove` and `remove_all`; `create_dir_all` has a default
-  built on `create_dir`. `remove_all` has none, so a store's own rules for
-  deleting a tree are never skipped by a default it did not know it got: a
-  store with none writes `fs::remove_tree(self, path).await`, which walks
-  the tree with `remove` and removes a link without walking into it.
-  `MemFs`, `ShutFs` and every `Fs` in the workspace implement all four.
-
-Room to grow (breaking):
-
-- `#[non_exhaustive]` on `LoopEvent`, `ProviderEvent`, `ToolError`,
-  `InnerCallEvent`, `ModelError`, `run::RunError`, `CompactionError`,
-  `MediaError`, `TaskError`, `SessionRecord` and `StopReason` (providers
-  keep adding stop words), and on the enums that grow with what models
-  and hosts do: `AssistantPart` (a new block kind), `MediaKind`,
-  `InputModality`, `Effort`, `WebSearchEngine`, `WorkspaceMode`,
-  `threshold::Meter` and `threshold::Action`. A `match` outside haest-core
-  adds `_ => ..`, and haest adds a variant in a minor release.
-- `TurnOutcome` is `#[non_exhaustive]` (it gained `limit` once already):
-  build one with `TurnOutcome::new` and `with_limit`; its fields stay
-  readable.
-- `AgentOptions` keeps its fields private: set them with `with_effort`
-  (an `Effort`), `with_history` and `with_model_spec`, read them with the
-  getter of the name:
-  `let mut opts = AgentOptions::new(spec); opts.effort = Some(Effort::High);
-  opts.history = saved.messages;` ->
-  `AgentOptions::new(spec).with_effort(Effort::High).with_history(saved.messages)`.
-- `ProviderRequest`, `ExecOptions` and `ShellCall` are `#[non_exhaustive]`
-  and built with `new` and a `with_*` per optional part; their fields stay
-  readable. `ProviderRequest { model, system, messages, tools: vec![],
-  cancel, effort: None, max_tokens: None, web_search: None }` ->
-  `ProviderRequest::new(model, messages).with_system(system).with_cancel(cancel)`
-  (also `with_tools`, `with_effort`, `with_max_tokens`, `with_web_search`).
-  `ExecOptions { cwd, cancel: CancellationToken::new(), timeout }` ->
-  `ExecOptions::new(cwd, timeout)` (`with_cancel`). `ShellCall { args, cwd,
-  env, stdin, fs, cancel, ends_at }` -> `ShellCall::new(args, cwd, fs,
-  ends_at)` (`with_env`, `with_stdin`, `with_cancel`).
-
-Turn endings and small idioms (breaking):
-
-- `TurnOutcome`, `run::RunEnd` and `run::RunOutcome` gain `limit:
-  Option<Limit>`, the cap that stopped the turn (a turn cap, the
-  conversation's budget, a request too big to send, a threshold that
-  stops): `if let Some(Limit::Conversation(_)) = end.limit` instead of
-  reading `error`. New `TurnOutcome::with_limit`. The `run_end` record does
-  not keep it, so a stored result has None. A literal adds `limit: None`.
-- `CompactionError::Failed(reason, usage)` ->
-  `CompactionError::Failed { reason, usage }`.
-- `error::BoxError` wherever the box was spelled out:
-  `ModelError::Unavailable`'s `source`, and the examples' hooks.
-- `Usage` adds up with `+=` (`&Usage` or `Usage`) and `Sum`:
-  `total.add(&u)` -> `total += &u`, `calls.iter().sum::<Usage>()`.
-  `Usage::add` is gone.
-- `tool::opt_bool` returns `Result<bool, ToolError>`, like `opt_num` and
-  `opt_str`: `if opt_bool(input, "all")` -> `if opt_bool(input, "all")?`.
-  Missing, `null` and `""` are false; `true`/`false` in any case, as a
-  boolean or a string, are the flag; anything else is `ToolError::Input`.
-- New `CompactionOptions::new(context_window)`: compact at `COMPACT_SHARE`
-  of the window, no ceiling, keep about the new `compaction::KEEP_RECENT`
-  (12) messages, which is what haest-runtime does. `CompactionOptions {
-  context_window, threshold: COMPACT_SHARE, ceiling: None, keep_recent: 12 }`
-  -> `CompactionOptions::new(context_window)`.
-
-Durable runs, opt-in: a host that hands no run store gets the haest it had.
-
-- New module `run`: `RunKey` (`new`, `as_str`, `child`, `effect_key`),
-  `EffectKey`, `input_hash`, `TurnState`, `RepeatCount`, `RunEnd`,
-  `RunOutcome`, `Served` (`Fresh`, `Resumed`, `Stored`), `RunError`
-  (`NoStore`, `InputMismatch`, `HistoryMismatch`, `TurnRunning`, `Store`),
-  `ReplayedRun`, `replay_run`.
-- New plug point `run::RunStore` (`sink(key)`, `load(key)`) and
-  `run::MemoryRunStore` (`new`, `lines`, `keys`), set with
-  `SharedDeps::with_run_store` (none by default). A subagent shares its
-  parent's store. haest deletes no run.
-- New `Agent::run_durable(&key, input, sink) -> Result<RunOutcome,
-  RunError>`: a finished run under the key returns its stored result (no
-  model call, no event), an unfinished one resumes, and another input
-  under the key is refused. `Agent::run` never touches a store.
-- `SessionRecord` gains `Run { t, key, input_hash, base }`,
-  `Turn { t, state }` and `RunEnd { t, key, end }`: the kinds `run`, `turn`
-  and `run_end` in the file. An exhaustive `match` adds them.
-  `session::replay` skips them, and so does any reader that does not know
-  them (the TypeScript haest included), so the conversation reads the same.
-- `ToolContext` gains `run_key()`, `attempt()` (the new `tool::Attempt`:
-  `First`, or `Resumed` when a resumed run runs the call again) and its
-  shorthand `resumed()`, all set by the loop (`with_run_key`,
-  `with_attempt`), and `effect_key()`. `ToolContext::new` has no run key
-  and is the first attempt.
-- New `Tool::on_resume() -> tool::OnResume` (`Rerun`, `Report`, `Lookup`;
-  default `Rerun` for a read-only tool, else `Report`): what a call that
-  may have run before the stop does on resume. A tool wrapper forwards it,
-  as `DeferredTools` does.
-- New `AgentHooks::before_effects()` (async, default returns at once),
-  awaited before a batch of tool calls that holds a tool that is not
-  read-only. A host that keeps its own session file flushes it there.
-- The turn guard's repeat key is a hash that is the same in every build
-  (FNV-1a), not `DefaultHasher`, whose output may change between Rust
-  releases: a run resumed by a binary built with another toolchain still
-  counts its repeats. Repeat detection within a turn is unchanged.
-
-- New `Ledger::{reserve, available, held}` and
-  `ledger::{Hold, NotAvailable}`: USD held on the conversation's budget.
-  Available is the cap less what is spent and held, floored at 0, `None`
-  with no USD cap. A `Hold` gives its USD back when it is dropped, to the
-  ledger that made it and no other, however its spender ends (cancelled on
-  the way too); it is `#[must_use]`. Holds live in memory: a snapshot does
-  not save them, a restore keeps the ones in flight. A refusal says both
-  amounts in cents ("$0.30 does not fit: $0.20 is left ..."), what is
-  left rounded down, since that is what fits (to the nearest cent it
-  could read "$0.10 does not fit: $0.10 is left"), and an ask under a
-  cent as it is ("$0.004"). When float dust under a millionth of a cent
-  would make the two cents read alike, both are said as they are ("$0.3
-  does not fit: $0.299999995 is left"). haest-tools'
-  `AgentError::OverBudget` says them the same way. A hold
-  past `f64::MAX` holds `f64::MAX`, what is held stops there, and dropping
-  one hold gives back only its own amount, however large the others are.
-- `caps::SubagentCaps` gains `budgets: bool` (default false); a literal
-  written out in full adds it.
-- `ToolContext` gains `turn_time_left() -> Option<Duration>`: what is left
-  of the turn's time cap on the host's clock, filled by the loop for every
-  tool call (`with_turn_time_left`); `None` with no time cap, and in
-  `ToolContext::new`.
-
-Thresholds; wind-down, opt-in:
-
-- New module `threshold`. A `Threshold` (a trait) is a `Meter` (context
-  tokens, steps, turns, wall time, USD, tokens; each in a turn's or the
-  conversation's `Scope`), a `Mark` (a share of the meter's cap, a value,
-  or whichever comes first), an `Action` (remind the model, warn the human,
-  wind down, compact, stop) and a `Rearm` (never, next turn, below the mark,
-  every check). A `Site` checks a `Thresholds<S>` list and remembers what
-  fired in a `Watch<S>`; a threshold a site cannot check is refused
-  (`NotServed`). Sites: `TurnSite` and `LedgerSite` here, haest-tools'
-  `AgentTurnSite`; compaction's threshold is `CompactionOptions`.
-- A threshold goes in as itself: `Thresholds::try_with(impl Into<ThresholdRef>)`
-  and `Thresholds::new(impl IntoIterator<Item = impl Into<ThresholdRef>>)`
-  (`.try_with(SaveNotes)?`); `Site::defaults`, `WindDown::thresholds` and
-  `Thresholds::iter` hand out `ThresholdRef`s. `Crossing`'s fields are
-  private: `crossing.threshold()`, `crossing.reading()`. A `Reading` a
-  host's own site hands `Watch::check` is built with
-  `Reading::new(meter, value)`, `with_cap` (0 is no cap) and `with_limit`;
-  it is `#[non_exhaustive]`, so a field it gains breaks no host.
-- New `SharedDeps::with_thresholds(Thresholds<TurnSite>)`: what a turn
-  checks, the guard's nudges unless set. Remind, warn and wind down at every step
-  boundary (a resumed durable run's too); stop before every model call.
-  Each agent keeps which fired for as long as it lives, and a durable run
-  records the turn's in `TurnState::nudged`, so a resumed turn does not
-  fire them again.
-- New `AgentHooks::on_warning(text)`, default nothing: a turn's warning
-  threshold fired, and the human must hear it. No new `LoopEvent`.
-- New `Ledger::set_thresholds(Thresholds<LedgerSite>)`: the ledger's
-  warning by default.
-- `CompactionOptions` implements `Threshold`; `needs_compaction` is its
-  check, unchanged. New `compaction::COMPACT_SHARE` (0.8).
-- `__private::NUDGE_SHARE` -> `threshold::NUDGE_SHARE`; new
-  `threshold::WARN_SHARE`.
-- `TurnCaps` gains `context_window: u64` (the cap `Meter::ContextTokens`
-  takes a share of; 0 = unknown) and `subagent: bool` (these are a
-  subagent's caps: a stop's remedy and a wind-down refusal name the
-  `subagent_*` setting).
-- New module `wind_down`: `WindDown` (`WindDown::at(share)`, 0 = off, the
-  default; `BadShare` outside 0 to 1), `Thresholds::<TurnSite>::wind_down(at)`
-  adds its thresholds (the conversation's USD and unpriced tokens, the
-  turn's USD, tokens and wall time, at one share). Past the mark a tool
-  that starts new work refuses, and the model is told once a turn to
-  conclude. `WindingDown` is what a refusal states, `WindDownWatch` what a
-  tool asks.
-- `ToolContext` gains `wind_down() -> &WindDownWatch` (never winding down
-  by default; `with_wind_down`). A tool that starts new work asks
-  `ctx.wind_down().check()`.
-- `remedy::Limit` gains `SubagentSteps`, `SubagentTime` and `SubagentUsd`,
-  and `Limit::setting()`, the plain name of the setting behind each limit.
-
-Good citizens:
-
-- Every public type has `Debug`: `Agent`, `AgentOptions` (`Clone` too),
-  `AgentControl`, `AgentDeps`, `SharedDeps`, `ToolContext`, `Ledger`,
-  `task_board::TaskBoard`, `deferred_tools::ToolDeferral`,
-  `run::MemoryRunStore`, `session::JsonlSessionFile`,
-  `shell_command::ShellCall` and `testing::ScriptedProvider`, so a host's
-  `#[derive(Debug)] struct Host { deps: AgentDeps }` compiles. `ShellCall`
-  shows its variables' names, never their values; `Agent` shows how long
-  its history is, not the history.
-- `TaskBoard::create` returns `Result<Task, TaskError>` and never hands an
-  id out twice: once a task has the id `u64::MAX` (restored from a
-  hand-edited session file, or the last one counted) it refuses with the
-  new `TaskError::IdsExhausted`. `board.create(task)` ->
-  `board.create(task)?`. The TaskCreate tool hands the refusal to the
-  model.
-- `ChildEnv::new` takes `(name, value)` pairs of anything that becomes a
-  `String`, and a `ChildEnv` collects from them too:
-  `ChildEnv::new([("PATH".to_string(), path)])` ->
-  `ChildEnv::new([("PATH", path)])`. A pair written `("PATH".into(), ..)`
-  no longer infers its type: drop the `.into()`.
-- `ToolDeferral::with_always_loaded` and `deferring_all_except` take names
-  of any `S: Into<String>`, as `load` does:
-  `.deferring_all_except(["Read".to_string()])` ->
-  `.deferring_all_except(["Read"])`.
-- `JsonlSessionFile::new` and `new_with_error_handler` take `data_dir: impl
-  AsRef<Path>`: `JsonlSessionFile::new(fs, Path::new("/data"), id)` ->
-  `JsonlSessionFile::new(fs, "/data", id)`.
-- New `answer_stream` (`provider::answer_stream`, in the prelude) and
-  `provider::Deltas`: a provider's stream written as an async block that
-  sends its deltas as they arrive (`deltas.text(..)`, `thinking`,
-  `tool_call_start`) and returns the answer, which the stream ends with as
-  its one `Done`. The `Provider` contract holds by construction, and the
-  provider needs no stream crate:
-  `Box::pin(stream::iter([.., ProviderEvent::Done(msg)]))` ->
-  `answer_stream(|deltas| async move { ..; msg })`.
-- New `tool::input(value) -> Result<JsonMap, ToolError>`: a tool's input
-  from a JSON value, for a test or a host that runs a tool itself;
-  `ToolError::Input` when it is not an object.
-  `json!(..).as_object().unwrap().clone()` -> `tool::input(json!(..))?`.
-- haest-core asks tokio for `rt` and `sync` only (a task and channels for
-  the session file), so a plug-in crate that depends on haest-core alone no
-  longer pulls in tokio's multi-thread runtime, macros and timers. The
-  workspace's tokio entry names no features; each crate names its own.
-- `BoxError` joins the prelude, so `haest_core::BoxError` (and
-  `haest::BoxError`) names it: an `impl AgentHooks` returns it from
-  `before_model_call`. `error::BoxError` still works.
-- Every doc example's `main` returns a `Result` and uses `?`, inside its
-  asserts too; `unwrap` and `expect` are left only on locks and where the
-  trait gives no way out (a `SessionSink`'s `append`). The docs name an item
-  the prelude holds by its root path (`haest_core::Agent`), everything else
-  by its module path (`haest_core::run::RunKey`). `Ledger::reserve`
-  documents its errors.
-
-Hosts write less (round two of the review, and what porting brain onto
-0.3 found):
-
-- New `Tools::get(name)`, `contains(name)` and `remove(name)`, and
-  `with_all(tools)` to chain a whole list on:
-  `tools.iter().find(|t| t.name() == "Read")` -> `tools.get("Read")`,
-  `let mut t = Tools::new().with(a); t.extend(more); t` ->
-  `Tools::new().with(a).with_all(more)`. They take the place of the
-  slice's `get` and `contains` (breaking): `tools.get(0)` -> `tools.first()`
-  or `tools[0]`.
-- A session file's header is built from a `SessionHeader` with named
-  fields, so the session's id and the conversation's cannot trade places
-  (breaking): `SessionRecord::header(sid, cid, cwd, ms)` ->
+- `AgentDeps::new(models, tools, prompt, cwd, workspace)` ->
+  `AgentDeps::new(SharedDeps::new(models, cwd, workspace), tools, prompt)`:
+  what agents share is one value, and the prompt and the cwd cannot swap
+  places unseen.
+- `AgentDeps`, `SharedDeps`, `ToolContext`, `AgentOptions` and
+  `ResolvedModel` keep their fields private; read a part with the getter of
+  its name and set it with `with_*`: `deps.shared.hooks = Arc::new(h)` ->
+  `deps.with_hooks(h)`, `deps.shared.cwd` -> `deps.shared().cwd()`,
+  `ctx.cwd` -> `ctx.cwd()`, `ToolContext { cwd, cancel, .. }` ->
+  `ToolContext::new(cwd, ws).with_cancel(cancel)`, `opts.effort = Some(e)`
+  -> `opts.with_effort(e)`, `ResolvedModel { provider, model }` ->
+  `ResolvedModel::new(p, m)`. A new part is then not a breaking change.
+- `AgentHooks: ToolServices` -> `AgentHooks: Send + Sync`. Tool services are
+  their own slot, `SharedDeps::with_services` (default `NoServices`;
+  `NoHooks` no longer implements `ToolServices`). Delete `impl ToolServices
+  for Hooks {}`; hooks that publish or log go in both slots,
+  `.with_hooks(h.clone()).with_services(h)`, or `.with_host(h)`.
+- `Vec<Arc<dyn Tool>>` -> `Tools` and `Arc<dyn Tool>` -> `ToolRef`, in
+  `ToolSource::tools` and `callable`, `deferred_tools::search_tools` and
+  `advertised_tools` (takes `&Tools`); `impl ToolSource for Vec<Arc<dyn
+  Tool>>` -> `Tools`. `vec![Arc::new(Read) as Arc<dyn Tool>]` ->
+  `Tools::new().with(Read)`. A `Tools` list holds one tool per name.
+- `Tools::get` and `Tools::contains` take a tool's name, shadowing the
+  slice's: `tools.get(0)` -> `tools.first()` or `tools[0]`.
+- `Workspace::fs() -> Arc<dyn Fs>` -> `FsRef`, `Workspace::changes()` ->
+  `Option<ChangeSetRef>`, and `ShellCall::fs` is an `FsRef`: an implementor
+  returns `self.fs.clone().into()`.
+- `OutputChunks` is a struct, not an `Arc<dyn Fn>` alias: `Arc::new(move |t:
+  &str| ..)` -> `OutputChunks::from(move |t: &str| ..)`.
+- `Fs::mkdir(path, recursive)` -> `create_dir(path)` /
+  `create_dir_all(path)`, `Fs::remove(path, recursive)` -> `remove(path)` /
+  `remove_all(path)`. An `Fs` implements `create_dir` and `remove_all`
+  itself (`fs::remove_tree(self, path)` walks a tree), so no default deletes
+  a tree past a store's own rules.
+- `FsStat { kind, size, modified }` -> `FsStat::new(kind,
+  size).with_modified(at)`, `DirEntry { name, kind }` ->
+  `DirEntry::new(name, kind)` (both `#[non_exhaustive]`).
+- `Arc<Mutex<Ledger>>` -> `Ledger`, a cheap clone whose methods take
+  `&self`: `ledger.lock().unwrap().usd()` -> `ledger.usd()`,
+  `Ledger::new(caps, Arc::new(h))` -> `Ledger::new(caps, h)`,
+  `ledger.with_remedies(r)` -> `ledger.set_remedies(r)`;
+  `SharedDeps::with_ledger` takes a `Ledger` and `ledger()` returns
+  `Option<&Ledger>`.
+- `Arc<TaskBoard>` -> `TaskBoard` (clones are one board);
+  `TaskBoard::with_clock(f, clock)` -> `TaskBoard::new_with_clock(f,
+  clock)`; `board.create(task)` returns `Result<Task, TaskError>`, refusing
+  with the new `TaskError::IdsExhausted` instead of handing out an id twice.
+- `Arc<ToolDeferral>` -> `ToolDeferral` (clones share what is loaded).
+- `MemFs::with_files(files)` -> `MemFs::from_files(files)`; `MemFs` clones
+  are one file system, so `Arc::new(MemFs::new())` -> `MemFs::new()`.
+- `testing::ScriptedProvider::new` returns the provider (was
+  `Arc<ScriptedProvider>`); `&Arc<ScriptedProvider>` -> `&ScriptedProvider`,
+  `resolver(&self)`.
+- `JsonlSessionFile::with_error_handler(..)` ->
+  `JsonlSessionFile::new_with_error_handler(..)`; both constructors take
+  `fs: impl Into<FsRef>`, and `create(cid, "/project", ms)` -> `create(cid,
+  Path::new("/project"), ms)`.
+- `SessionRecord::header(sid, cid, cwd, ms)` ->
   `SessionRecord::from(SessionHeader { session_id, conversation_id, cwd,
-  created_ms })`. `JsonlSessionFile::create` takes the cwd as a `&Path`:
-  `file.create(cid, "/project", ms)` ->
-  `file.create(cid, Path::new("/project"), ms)`.
-- New `tool::ToolWrapper`: a tool made from another. It names the tool it
-  wraps (`inner`) and implements only what it changes; every other `Tool`
-  method forwards to the wrapped tool, in one place, so a wrapper that
-  changes `execute` keeps the wrapped tool's `read_only`, `on_resume` and
-  `canonical_input`, and a method `Tool` gains later. Every `ToolWrapper`
-  is a `Tool`. The 8-method hand-written forwarder (which compiled with
-  `on_resume` left out) -> `impl ToolWrapper for Noted { fn inner(&self)
-  -> &ToolRef { &self.0 } async fn execute(..) { .. } }`. haest-mods'
-  tool wrapper and the deferred tools' are built on it.
-- New `ToolOverride` (in the prelude): a tool with its name, description
-  or parameter schema changed and the rest the wrapped tool's.
-  `ToolOverride::new(read).with_description("Read a notebook page.")`,
-  pushed onto a `Tools` list, takes `Read`'s place.
-- `OnResume` joins the prelude.
-- New `ToolError::message()` and `ToolError::map_message(f)`: the same
-  kind of error with its message changed, so a note added to every error
-  needs no `match` and no `Err(e) => Err(e)` arm for kinds added later.
-- New `SharedDeps::with_host(host)` (and on `AgentDeps`): one value in the
-  hooks, services, facts, turn caps and clock slots at once, behind one
-  `Arc` haest makes. `let h = Arc::new(host);
-  deps.with_hooks(h.clone()).with_facts(h.clone()).with_turn_caps(h.clone()).with_clock(h)`
-  -> `deps.with_host(host)`. `Clock::now_ms` (the wall clock) and
-  `TurnCapsSource::turn_caps` (no caps) have default bodies now, so the
-  slots a host has nothing to say in are an empty `impl`.
-- The `SharedDeps` setters and their `AgentDeps` twins are made from one
-  list, and every setter is `#[must_use]`. New `without_run_store()`.
-- A setter of a slot that may be empty takes the value and fills the slot;
-  the slot starts empty, so a host with an `Option` in hand sets it in an
-  `if let`. One rule for every such setter: `SharedDeps` and `AgentDeps`
-  `with_spill_dir(impl Into<PathBuf>)`, `with_ledger(Ledger)` and
-  `with_web_search(WebSearchOptions)`; `ToolContext` `with_spill_dir`,
-  `with_run_key(RunKey)` and `with_turn_time_left(Duration)`;
-  `ProviderRequest` `with_effort(Effort)`, `with_max_tokens(u32)` and
-  `with_web_search(WebSearchOptions)`; `AgentOptions::with_effort(Effort)`;
-  `TurnOutcome::with_limit(Limit)`. The run store's setter takes the store
-  itself too, and `without_run_store()` empties it.
-  `Agent::set_effort(Option<Effort>)` keeps its `Option`: `None` puts a
-  running agent back on the model's default.
-- A `ProviderRef` is a `ModelResolver` (one provider serves every spec,
-  the model being the part after the first colon), and so is a
-  `ResolvedModel` (always that model):
-  `move |_: &str| Ok::<_, ModelError>(ResolvedModel::new(p.clone(), m.clone()))`
-  -> `ResolvedModel::new(p, m)`, as the models of `SharedDeps::new`.
-- New `ResolvedModel::complete(req)` and `complete_streaming(req, on_delta)`:
-  a model's whole answer outside the loop, the request sent to that
-  model. `while let Some(ev) = stream.next().await { .. Done(m) => .. }`
-  -> `resolved.complete(req).await`. It never fails: a stream that ends
-  without its answer is an error answer, as the loop has always made one
-  (whose provider is now the provider's id, was `none`).
-- `LedgerHooks::persist` and `warn` have default bodies (nothing saved,
-  nothing said), and new `ledger::NoLedgerHooks` is a ledger that reports
-  nowhere: `struct Quiet; impl LedgerHooks for Quiet { fn persist(..) {}
-  fn warn(..) {} }` -> `Ledger::new(caps, NoLedgerHooks)`.
-- New `req_num(input, key)` (a required number) and
-  `opt_count(input, key) -> Option<u64>` (a limit, an offset, a timeout:
-  rounded down, held at `u64::MAX`, refused when negative), in the
-  prelude: `opt_num(&input, "a")?.ok_or_else(|| missing("a"))?` ->
-  `req_num(&input, "a")?`, and `(n.floor() as usize).max(1)` ->
-  `opt_count(&input, "limit")?`. Read's `offset` and `limit`, Bash's
-  `timeout` and Grep's `head_limit` and `context` read with it: a negative
-  one is an input error the model reads (was: Read from line 1, Bash the
-  shortest timeout, Grep a broken `-C`).
-- New `ExecResult::ok(stdout)` and `ExecResult::failed(stderr, exit_code)`:
-  `ExecResult { stdout, ..Default::default() }` -> `ExecResult::ok(stdout)`.
-- `skills::InlineSkills` is `FromIterator<InlineSkill>` and
-  `From<Vec<InlineSkill>>`, one list merged as `merged` merges it:
-  `InlineSkills::merged([list])` -> `InlineSkills::from(list)`.
-- `with_*` is a consuming setter that cannot fail, and nothing else
-  (breaking): a constructor, a merge and a fallible add are named for what
-  they do. `TurnOutcome::with_error(reason, why)` ->
-  `TurnOutcome::error(reason, why)`, `MemFs::with_files(files)` ->
-  `MemFs::from_files(files)`, `JsonlSessionFile::with_error_handler(..)` ->
-  `JsonlSessionFile::new_with_error_handler(..)`, `base.with(&over)` (a
-  `ChildEnv` merge) -> `base.overlaid(&over)`, and
-  `Thresholds::default().with(t)?` -> `Thresholds::default().try_with(t)?`.
-- `MemFs` is a cheap `Clone` whose clones are the one file system, so a
-  host keeps one and hands a workspace another:
-  `let fs = Arc::new(MemFs::new()); SandboxWorkspace::over(fs.clone())` ->
-  `let fs = MemFs::new(); SandboxWorkspace::over(fs.clone())`. The notebook
-  example and the plug-in test hold their own parts the same way (no
-  `Arc::new` left in either host), and the notebook's host fills its slots
-  with `with_host`.
-- `Agent::run` and `Agent::run_durable` take `sink: &mut (impl EventSink +
-  ?Sized)` (was `&mut dyn EventSink`): every caller compiles as before, a
-  `&mut dyn EventSink` included.
-- `TurnOutcome` is `#[must_use]`, so a turn that ended in an error is never
-  dropped unseen: `agent.run(text, &mut sink).await;` warns ->
-  `let end = agent.run(text, &mut sink).await;`. Every consuming setter
-  (`ToolContext::with_*`, `ToolOutput::with_title`, haest-tools'
-  `BuiltinOptions::with_*` and the rest) is `#[must_use]` too:
-  `ctx.with_cwd(dir);` without its result warns instead of changing nothing.
-- The do-nothing parts are all `Clone`, `Copy`, `PartialEq` and `Eq`:
-  `ShutWorkspace` and `ShutFs` gain all four, `NoHooks`, `NoServices`,
-  `NoFacts` and `WallClock` the last two.
-- Fixed: the ledger ran the host's remedy (`Ledger::set_remedies`) and a
-  threshold's text with its lock held, so a remedy that read the ledger it
-  is set on (one naming the spend so far) hung the first charge that
-  warned, for good. Both now run once the ledger is unlocked, for the
-  warning and for `Ledger::exhausted`, and `set_remedies` and
-  `set_thresholds` drop the remedies and thresholds they replace once it
-  is unlocked too, so one that holds the ledger may read it as it drops.
-- Fixed: two changes to a `TaskBoard` at once (main and a background
-  subagent share one) could hand `on_change` the newer list first and the
-  older one last, so the session's last `tasks` record, which a resume
-  restores, lost a task or set a status back. The lists now go out in
-  change order, one `on_change` call at a time and never under the
-  board's lock: a change made while `on_change` runs is handed over once
-  that call returns, and several made meanwhile as one call with the
-  newest list. `on_change` may now change the board it hears from too.
-- Fixed: one panic in host code under a haest lock broke what came after
-  it. A `LedgerHooks::persist` that panicked once poisoned the ledger:
-  every later charge added its spend and then panicked with "ledger lock
-  poisoned". A turn threshold whose `rearm` (or `meter`, `mark`, `action`)
-  panicked once poisoned its agent's thresholds, so every later turn of
-  that agent panicked before its first model call, and a ledger threshold's
-  poisoned the ledger the same way. None runs under a lock now: the ledger
-  persists through the same in-order hand-over as the task board (one
-  `persist` at a time, never an older snapshot after a newer one), and a
-  `Thresholds` list reads each threshold's `meter`, `mark`, `action` and
-  `rearm` once, when it takes it, so a site checks what it read and runs
-  only a threshold's `text` and `closing`, unlocked. A threshold whose mark
-  should move goes to its site again in a new list. The host's panic
-  still reaches the call that ran its code.
-- `threshold::Watch` is `Clone`.
-- Fixed: a request over `max_request_tokens` emitted `LoopEvent::ModelStart`
-  before it was refused, though it never went out; a spec with no provider
-  emitted none. Neither does now: the request is sized before the call is
-  announced, and the events doc names both. haest-tools' subagent spend no
-  longer counts the refused request as a model call.
-- Docs: `StopReason::MaxTokens` on a turn (`TurnOutcome`, `RunOutcome`) said
-  a turn cap or the conversation budget had stopped it, with `error` saying
-  which. It is also the model's own output limit cutting the last answer,
-  with `limit` and `error` None; a cap fills `limit`.
-- `#[non_exhaustive]` on what will grow (breaking for a `match`):
-  `catalog::OpenRouterEffort` (OpenRouter keeps adding levels),
-  `workspace::ApplyFailureCode`, `caps::ConversationCap`,
-  `skills::SkillSource`, `run::Served`, and the struct `run::RunOutcome`,
-  which a host reads and never builds.
-- `FsStat` and `DirEntry` are `#[non_exhaustive]`, built with
-  `FsStat::new(kind, size)` (and `with_modified(at)`) and
-  `DirEntry::new(name, kind)` (breaking for an `Fs` outside haest): a field
-  added later, such as a file's mode, breaks no `Fs`. Their fields still
-  read as before. The `Fs` docs count nine required methods (they said
-  eight) and name them.
-- Every plug-point handle (`WorkspaceRef`, `ToolRef`, `ClockRef`, ...) is
-  also built `From<Box<dyn Trait>>`, so a part the host picks at run time
-  fills a slot as it is: `SharedDeps::new(models, cwd,
-  Arc::<dyn Workspace>::from(boxed))` -> `SharedDeps::new(models, cwd, boxed)`.
-- `WebSearchOptions` is `Default` (`Auto`, 5 results a search, 15 a model
-  call, as `new` sets them), so a host that sets a field writes
-  `..WebSearchOptions::default()` and a setting added later breaks none.
-- New `session::EffortChange` (`Unchanged`, `ModelDefault`, `To(effort)`)
-  in place of `Option<Option<Effort>>` in `SessionRecord::Config::effort`
-  and `ReplayedSession::effort` (breaking). `applied_to(current)` gives
-  the effort after it, and `From<Option<Effort>>` turns what an agent holds
-  into a change. The session file's JSON is the same: no key, `null`, or
-  the level.
-- `skills::SkillCard` and `skills::InlineSkill` are `#[non_exhaustive]`,
-  built with `SkillCard::new(name, description)` (and `with_when`,
-  `with_origin`) and `InlineSkill::new(card, body)` (breaking for a host
-  whose skills are not SKILL.md files): a field the card gains later, such
-  as a skill's argument hint, breaks no host. Their fields still read as
-  before.
-- `Remedies` is `From` the closure that writes them, and
-  `SharedDeps`/`AgentDeps::with_remedies` and `Ledger::set_remedies` take
-  `impl Into<Remedies>`, so they take the closure itself, as every other
-  `with_*` setter takes its part: `.with_remedies(Remedies::new(|l| ..))`
-  -> `.with_remedies(|l: Limit| ..)` (the argument's type is named; `Into`
-  cannot infer it). Passing a `Remedies` works as before.
-- A `word_set!` struct (`SkillSources`, `ContextSources`, haest-settings'
-  `BuiltinTools`, a host's own) has `WORDS`, `has`, `turn_on`, `words`,
-  `is_empty` and `from_words` of its own, so calling them needs no
-  `WordSet` import: `use haest_settings::{BuiltinTools, WordSet};
-  tools.words()` -> `tools.words()`. An import kept for them now warns as
-  unused.
-- Fixed: a cost that is no real amount was counted as it came. A negative
-  one (a server's `usage.cost`, a tool's bill) lowered what the turn and
-  the conversation had spent, which raised their USD caps in effect; a NaN
-  (a host's provider or tool dividing by zero) switched both caps off,
-  the ledger's for the rest of the conversation, and the ledger's
-  snapshots then saved `"usd": null`, which a replay skips as corrupt, so
-  a resumed conversation lost its spend. A cost that is negative or not a
-  finite number is now no price wherever haest adds one up: `Usage`'s
-  `+=` and `Sum`, a tool's spend, `Ledger::charge` (which counts such a
-  call by its tokens, as one with no price) and `book_priced_cost`, which
-  books the configured price in its place. Every such sum stops at
-  `f64::MAX` (two huge real costs made `inf`, which the next sum counted
-  as no price), and a `Usage` whose own cost is no real amount counts it
-  as $0 when a cost is added to it.
-- New `newest::Newest<T>`: the newest value of something that changes,
-  handed to a hook in the order of the changes, one call at a time, with
-  no lock held. The owner `put`s each value under its own lock and
-  `deliver`s with it released. The ledger, the task board and haest-tools'
-  job and subagent hubs hand their hooks their state this way; a plug-in
-  with a hook of its own can too. A hook that panics poisons nothing and
-  skips no value: the caller it panicked in still hands over every value
-  waiting (one another caller put meanwhile too), then the first panic
-  goes on to it. `put` drops the value it replaces with no lock held, so a
-  plug-in's value may run code as it drops, `put` again included.
-- `catalog::Reasoning`, `workspace::Change` and `workspace::FailedChange`
-  are `#[non_exhaustive]` and built with `Reasoning::new(efforts)` and
-  `with_mandatory`, `Change::new(path, kind)` and `with_conflict`, and
-  `FailedChange::new(change, code, reason)` (breaking for a host that
-  answers `ModelFacts::reasoning` or has its own `ChangeSet`): a part one
-  gains later (a reasoning budget, a rename's source) breaks no host. Their
-  fields read as before, and their JSON is unchanged.
-- `compaction::compact` books each summary call's cost on the agent's
-  ledger as the call comes back, summary or not (breaking: a host that
-  charged `CompactionResult::usage` or `CompactionError::usage` itself now
-  counts it twice; drop that charge). The caller charged it once `compact`
-  returned, so a compaction dropped part way (a /compact given up with
-  Ctrl+C) booked none of the calls it had made and paid for. Dropped now,
-  it loses only the call still running; `usage` still reports what the
-  calls cost.
-- `catalog::ModelPricing`, `catalog::ModelInfo` and `catalog::ModelGroup`
-  are `#[non_exhaustive]` and built with `ModelPricing::new(input,
-  cached_input, output)` and `with_cache_write`, `ModelInfo::new(spec,
-  context_window)` (labelled with its spec, text only) and `with_label`,
-  `with_input`, `with_reasoning`, `with_pricing`, and
-  `ModelGroup::new(label, models)` (breaking for a host that builds a
-  catalog row in code; Upgrading 25): a price a row gains later (for
-  reasoning, for a search) breaks no host. Their fields read as before,
-  and their JSON is unchanged.
-- Fixed: a host that stopped `Agent::run` the usual async way, by dropping
-  it (`tokio::time::timeout`, `select!`) while a tool ran, left that tool
-  call in history with no result, and every later request sent it, which
-  every provider refuses. A turn now starts by answering each such call as
-  interrupted, as `session::replay` answers one in a log: the last
-  answer's are appended through `AgentHooks::on_message`, and an earlier
-  one, only in a history a host hands in (`AgentOptions::with_history`,
-  `Agent::replace_history`), is answered in place. A fresh
-  `Agent::run_durable` does the same; a resumed one still answers its own
-  calls by their tool's `OnResume`. `compaction::compact` answers them
-  first too: a /compact between the dropped turn and the next one sent the
-  call with no result in its warm request, and counted what it kept on a
-  history the session file did not replay to (the call came back with two
-  results).
-- New `Fs::try_lock` and `FsLock`, the guard it hands back: a file held
-  for one writer until the guard drops, never past the process that holds
-  it, and made empty by the store when it is not there. The default is
-  `Ok(None)`, a file system with no locks, which holds nothing, refuses
-  nothing and makes no file; a store more than one writer shares
-  overrides it. `JsonlSessionFile::try_lock` holds the session that way
-  until the value is dropped, through `<id>.lock` beside the session file
-  (for a new session it first makes the sessions dir private, 0700, and
-  makes it when missing, where it can, so it may come before `create`,
-  which reports a dir it cannot make); a second
-  writer's fails with `WouldBlock`. A saved session whose lock file fails
-  to open or be made with `PermissionDenied`, `ReadOnlyFilesystem`,
-  `QuotaExceeded` or `StorageFull` is held through the session file
-  itself; its docs give the trade-offs.
-- New `Fs::create_private_dir`: a directory its owner's alone (0700)
-  from the start, so no one else can open a file made in it at any
-  moment. The default makes it with `create_dir`, then sets the mode with
-  `chmod`, and removes it again where that fails. A disk that can make a
-  directory with its mode overrides it and never sets the mode after (on
-  Linux, a directory made in a setgid one gets the bit too, the chmod
-  drops it, and what is made inside then gets the process's group); an
-  `Fs` that wraps another forwards it.
-- New `Fs::write_whole`: replace what a file holds, whole or not at all
-  where the store can, so a write stopped partway (a full disk, a kill)
-  leaves the file as it was. Edit, Write over a file that is there,
-  GenerateImage over an image that is there, and the overlay's apply call
-  it. The default is `Fs::write`, right for a store whose write cannot
-  stop partway or that keeps writes its own way; a disk whose write
-  empties a file first overrides it, and an `Fs` that wraps another
-  forwards it (`#[warn(clippy::missing_trait_methods)]` on the wrapper's
-  impl names a method it left out).
+  created_ms })`, so the two ids cannot trade places.
+- `SessionRecord::Config::effort` and `ReplayedSession::effort`:
+  `Option<Option<Effort>>` -> `EffortChange` (`Some(Some(e))` -> `To(e)`,
+  `Some(None)` -> `ModelDefault`, `None` -> `Unchanged`; `.unwrap_or(cur)`
+  -> `.applied_to(cur)`). The session file's JSON is unchanged.
+- `SessionRecord` gains `Run`, `Turn` and `RunEnd` (durable runs;
+  `session::replay` skips them) and is `#[non_exhaustive]`.
+- `DiskSkills` is gone: `Skills` is the one set of SKILL.md skills, a list
+  the host replaces after a rescan: `DiskSkills::new(skills, fs)` -> `let s
+  = Skills::new(fs); s.replace(list);`.
+- `TurnOutcome` is `#[non_exhaustive]` and `#[must_use]`, and gains `limit:
+  Option<Limit>`, the cap that stopped the turn: `TurnOutcome::with_error(r,
+  why)` -> `TurnOutcome::error(r, why)`, a literal ->
+  `TurnOutcome::new(stop_reason)` (`with_limit`).
+- `ProviderRequest`, `ExecOptions` and `ShellCall` are `#[non_exhaustive]`:
+  `ProviderRequest { .. }` -> `ProviderRequest::new(model,
+  messages).with_system(s).with_cancel(c)` (`with_tools`, `with_effort`,
+  `with_max_tokens`, `with_web_search`), `ExecOptions { cwd, cancel, timeout
+  }` -> `ExecOptions::new(cwd, timeout).with_cancel(cancel)`, `ShellCall {
+  .. }` -> `ShellCall::new(args, cwd, fs, ends_at)` (`with_env`,
+  `with_stdin`, `with_cancel`).
+- Rows a host builds are `#[non_exhaustive]` with constructors (their JSON
+  is unchanged): `SkillCard::new(name, description)` (`with_when`,
+  `with_origin`), `InlineSkill::new(card, body)`, `Reasoning::new(efforts)`
+  (`with_mandatory`), `Change::new(path, kind)` (`with_conflict`),
+  `FailedChange::new(change, code, reason)`, `ModelPricing::new(input,
+  cached_input, output)` (`with_cache_write`), `ModelInfo::new(spec,
+  context_window)` (`with_label`, `with_input`, `with_reasoning`,
+  `with_pricing`), `ModelGroup::new(label, models)`.
+- `TurnCaps` gains `context_window` and `subagent`, `SubagentCaps` gains
+  `budgets`: a literal adds them or ends in `..`.
+- `CompactionError::Failed(reason, usage)` -> `CompactionError::Failed {
+  reason, usage }`.
+- `total.add(&u)` -> `total += &u` (`Usage` also implements `Sum`).
+- `tool::opt_bool(input, k)` returns `Result<bool, ToolError>`, like
+  `opt_num` and `opt_str`: add `?`.
+- `ChildEnv::new([("K".into(), v)])` -> `ChildEnv::new([("K", v)])` (pairs
+  of anything `Into<String>`; a pair spelled with `.into()` no longer
+  infers), and `base.with(&over)` -> `base.overlaid(&over)`.
+- `__private::NUDGE_SHARE` -> `threshold::NUDGE_SHARE`.
+- Now `#[non_exhaustive]`: `LoopEvent`, `ProviderEvent`, `StopReason`,
+  `ToolError`, `InnerCallEvent`, `ModelError`, `CompactionError`,
+  `MediaError`, `TaskError`, `AssistantPart`, `MediaKind`, `InputModality`,
+  `Effort`, `WebSearchEngine`, `WorkspaceMode`, `OpenRouterEffort`,
+  `ApplyFailureCode`, `ConversationCap`, `SkillSource`.
 
-### haest-http
+#### haest-http
 
-- New `HttpClientRef`, the handle a part that sends holds its client in, in
-  the shape of haest-core's handles: built from the client itself
-  (`ReqwestClient::new().into()`), an `Arc` of one, an
-  `Arc<dyn HttpClient>` or a `Box<dyn HttpClient>` (a client picked at run
-  time); cheap to clone, and it derefs to the client.
-- `Method` and `HttpError` are `#[non_exhaustive]` (breaking): a `match`
-  adds a `_` arm, and haest adds a method (`PUT`) or a variant in a minor
-  release.
-- `Method` implements `Display` and `FromStr` (the word on the wire,
-  case-sensitive; a word it does not name is a `ParseMethodError`), and
-  `Hash`.
-- New `reqwest` feature, on by default: `ReqwestClient`, `build_reqwest`,
-  `reqwest_builder` and the `reqwest` re-export (breaking for
-  `default-features = false`, which now builds no reqwest, rustls or ring:
-  105 crates in the tree become 25). `HttpClientRef` implements `Default`,
-  the client every part uses unless handed one: the shared `ReqwestClient`,
-  or without the feature a client that refuses every request
-  (`HttpError::Request`, "no HTTP client: ... hand one in").
-  haest-providers and haest-issues forward the feature as their own
-  `reqwest`, the facade as `haest/reqwest`. In the workspace's
-  `[workspace.dependencies]`, haest-http and haest-providers have default
-  features off; haest-tools and haest-mcp ask for `reqwest` themselves.
-- `ReqwestClient::send` is inherent: `client.send(req)` needs no `use
-  haest_http::HttpClient` (an `HttpClientRef` never did).
-- New `http` feature, off by default: conversions to and from the `http`
-  crate for a host whose stack speaks it (an axum router behind a gateway,
-  a hyper client). `http::Request<Bytes>: TryFrom<Request>` (an
-  `HttpError::Request` for a URL or header the wire cannot carry),
-  `Response: From<http::Response<B>>` for any `http_body::Body` (data
-  frames streamed, trailers skipped) and `http::Method: From<Method>`.
-  The 25 lines a gateway host wrote for it become `req.try_into()?` and
-  `Response::from(res)`. With `reqwest` on it adds no crate to the tree.
-- `Body` implements `Default` (empty) and `Request` implements `Eq`.
-- `Request` and `Response` are `#[non_exhaustive]` (breaking), so a field
-  (a response's URL after redirects, its HTTP version) is not a breaking
-  change: a client builds its answer with `new` and the new `with_headers`
-  (the headers as received, a name given twice kept twice), and a pattern
-  on either ends in `..`. Reading and moving a field is unchanged.
-  `Response { status, headers, body }` ->
-  `Response::new(status, body).with_headers(headers)`, and a request's
-  body that is not JSON goes in with the new `Request::with_body` (a form,
-  a file; its content type set with `with_header`):
+- `Request` and `Response` are `#[non_exhaustive]`: `Response { status,
+  headers, body }` -> `Response::new(status, body).with_headers(headers)`,
   `Request { body, ..Request::post(url) }` ->
   `Request::post(url).with_body(body)`.
-- New `redacted_url`: a URL as haest shows it in Debug output and errors,
-  without its userinfo, query values or fragment, for a host that shows a
-  URL it was given (the `haest` command's broker line uses it). It fails
-  safe for a password a parser misreads: everything between the scheme and
-  the last `@` is hidden, and nothing past the scheme when a `?` or `#`
-  comes before that `@`.
-- New `check_endpoint_url` and its `EndpointUrlError`: refuses a URL haest
-  is configured to dial when an `@` comes after the first `/`, `?`, `#` or
-  `\` past the scheme, where a URL parser ends the host, or when it has no
-  host: nothing between `scheme://` and the first of them, or only a
-  userinfo or a port (`wss://:8443/agents`, `https://u:p@/v1`), or a
-  scheme with only `/` or `\` after it (`https:`, `https:/`; a host with
-  no `//`, `http:localhost:8080`, passes). It reads
-  the URL as a parser does, without the spaces and control characters
-  around it and the tabs, CRs and LFs in it. The error shows the URL as
-  `redacted_url` does, with its control characters escaped (a CR as `\r`,
-  so a printed message keeps its line), and says how to write it. For a host's own
-  configured URLs too; never for a URL a tool fetches.
-- `HttpError::Timeout` says the wait as given (`no answer within 500ms`):
-  it said whole seconds, so a sub-second headers timeout read `0 s`.
+- Now `#[non_exhaustive]`: `Method`, `HttpError`.
 
-### haest-providers
+#### haest-providers
 
-- New `reqwest` feature, on by default: the default client (haest-http's
-  `HttpClientRef::default`). With `default-features = false` no reqwest,
-  rustls or ring is built (118 crates in the tree become 41), and a
-  provider or registry not handed a client ends each message as an error
-  saying to hand one in (breaking for `default-features = false`).
-- `ProviderRegistry::new` takes only the keys, as `impl Into<KeySourceRef>`
-  (an `Arc<dyn KeySource>` the host already shares still goes in as it is);
-  providers.json's entries and every option come by setter on the registry,
-  and `RegistryOptions` is gone (breaking):
-  `ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions { http:
-  Arc::new(client), routing, ..Default::default() })` ->
-  `ProviderRegistry::new(keys).with_custom(custom).with_http(client)`,
-  then `.with_routing(scopes)` when `routing` is `Some(scopes)` (also
-  `with_retry`, `with_headers_timeout`, `with_app_title`,
-  `without_app_title`, `with_app_url`), each read back with the getter of
-  its name. `with_routing` takes the scopes themselves, never an `Option`.
-- `ProviderRegistry::resolve` is inherent: `registry.resolve(spec)` needs no
-  `use haest_core::ModelResolver`. The registry is still a `ModelResolver`.
-  It is `Clone` and `Debug`: clones share what was built, so
-  `Arc::new(registry)` -> `registry.clone()`; a `with_*` setter starts a
-  cache of its own. Getters `keys()`, `custom()`.
-- `AnthropicProvider::new`, `CompatProvider::new` and
-  `ResponsesProvider::new` take `http: impl Into<HttpClientRef>` (breaking):
-  `CompatProvider::new(opts, Arc::new(ReqwestClient::new()))` ->
-  `CompatProvider::new(opts, ReqwestClient::new())`; an `Arc` of the host's
-  client still goes in as it is. The providers are `Clone` (a clone shares
-  the client) and `Debug`, with an `options()` getter.
+- `ProviderRegistry::new(Arc::new(keys), custom, RegistryOptions { http,
+  routing, .. })` ->
+  `ProviderRegistry::new(keys).with_custom(custom).with_http(client)`, then
+  `.with_routing(scopes)` when there are any (also `with_retry`,
+  `with_headers_timeout`, `with_app_title`, `without_app_title`,
+  `with_app_url`). `RegistryOptions` is gone: one setter per option.
 - `AnthropicOptions`, `CompatOptions` and `ResponsesOptions` keep their
-  fields private (breaking), so a new option is never a breaking change:
-  set one with its `with_*` setter (`with_base_url`, `with_header`, and on
-  `CompatOptions` `with_flavor`, `with_reasoning_effort`, `with_pricing`,
-  `with_routing`) and read it with the getter of its name (`id()`,
-  `base_url()`, `headers()`, `flavor()`, `reasoning_effort()`,
-  `pricing()`, `routing()`); the key is never read back.
-  `let mut opts = CompatOptions::new(id, key); opts.flavor =
-  CompatFlavor::OpenRouter; opts.base_url = Some(url.into());` ->
-  `CompatOptions::new(id, key).with_flavor(CompatFlavor::OpenRouter).with_base_url(url)`,
-  and `opts.base_url.as_deref()` -> `opts.base_url()`.
-  `CustomProviderConfig` keeps its public fields: it is a providers.json
-  entry's plain data, built over `Default` (`..CustomProviderConfig::anthropic(url)`).
-- `testing::FakeHttp::new` returns a `FakeHttp`, not an `Arc<FakeHttp>`
-  (breaking): it is `Clone`, the clones sharing the script and the record, so
-  a test hands `http.clone()` to a provider and reads `http.requests()`.
-- `#[non_exhaustive]` on `CompatFlavor`, `Dialect`, `RoutingPriority`,
-  `EntryProblem` and `ProvidersFileError` (breaking): a `match` adds a `_`
-  arm.
-- The `routing` module is private and its items are at the crate root, once
-  (breaking): `haest_providers::routing::parse_routing` ->
-  `haest_providers::parse_routing`, and likewise `RoutingRule`,
+  fields private: `opts.base_url = Some(u)` -> `opts.with_base_url(u)`,
+  `opts.flavor = f` -> `opts.with_flavor(f)`, `opts.base_url.as_deref()` ->
+  `opts.base_url()`. Only the base URL reads back; a host keeps the key, the
+  headers and the rest of what it set.
+- `haest_providers::routing::parse_routing` ->
+  `haest_providers::parse_routing`, and the same for `RoutingRule`,
   `RoutingOverride`, `ProviderRouting`, `ProjectRouting` and
-  `RoutingPriority`. The resolution rules are documented on `RoutingScopes`.
-- `ProvidersFileError::Read` says what failed: `cannot read
-  /x/providers.json` (was the bare path).
-- A host adds its own provider: `ProviderRegistry::with_provider(name,
-  provider)` takes any `impl Provider` (or a `ProviderRef`) and resolves
-  `name:<model>` to it, over a providers.json entry or a built-in of that
-  name; `providers()` lists them. Before, it wrapped the registry in a
-  `ModelResolver` of its own.
-- A providers.json entry is written in Rust: `CustomProviderConfig` has
-  `Default`, `openai(url)`, `anthropic(url)` and serde `Deserialize` (as
-  `from_json` reads it), and `ProviderRegistry::with_custom_provider(name,
-  config)` adds one. Before, the registry took only JSON. A refused base
-  URL of such an entry says the host gave it, not providers.json.
-- `CustomProviders` is a type of its own, not a `BTreeMap<String,
-  serde_json::Value>` (breaking). `serde_json::from_str` still reads a
-  providers.json text into one, each entry still checked when first
-  resolved. `CustomProviders::from([(name, json)])` ->
-  `serde_json::from_value(json!({name: json}))?` or
-  `CustomProviders::new().with_entry(name, config)`; `custom.contains_key(n)`
-  -> `custom.contains(n)`; `custom.keys()` -> `custom.names()`;
-  `CustomProviderConfig::from_json(&custom[n])` -> `custom.get(n)` (the
-  entry, checked). Its Debug output names the entries only.
-- `CustomProviderConfig::resolved_key(&keys) -> String` ->
-  `CustomProviderConfig::key(&keys) -> Option<String>` (breaking): None
-  where it returned `"none"`, the placeholder the provider still sends.
-  It takes `&dyn KeySource`; a registry's key source goes in as
-  `entry.key(registry.keys().as_ref())`.
-- `AnthropicProvider`, `CompatProvider` and `ResponsesProvider` have
-  inherent `id()` and `stream(req)`: `provider.stream(req)` needs no `use
-  haest_core::Provider`. Each gains the getters `retry()`,
-  `headers_timeout()` and `http()` beside its setters.
-- `RetryPolicy` is `Copy`, `Eq` and `Hash`, and
-  `ProviderRegistry::retry()` returns it by value.
-- `testing::FakeReply::header(&str, &str)` ->
-  `FakeReply::with_header(name, value)`, taking `impl Into<String>` as
-  `Response::with_header` does (breaking for tests).
-- `testing::FakeReply` and `testing::FakeEnd` are `#[non_exhaustive]`
-  (breaking for a test that matches on one): a `match` adds a `_` arm;
-  building one is unchanged.
-- An `EntryProblem`'s message says it is about providers.json
-  (`provider "local" cannot be used: the providers.json entry has an
-  unknown key "_comment"; ...`), where it named only the key or the field.
-  A host that reads an entry from a file of its own names that file around
-  the message, or maps the problem to its own words.
-- New `EntryProblem::UnknownKeys { keys }` and `EntryProblem::NotAString
-  { key, found }` (Security, above). Each of `keys` is the new public
-  `UnknownKey`: the key as written (`key`) and the entry key it is close
-  to (`meant`), shown as the key in quotes, then `(did you mean
-  "baseURL"?)` when one is close.
+  `RoutingPriority`; the `routing` module is private.
+- `CustomProviders` is a type of its own (was `BTreeMap<String, Value>`):
+  `CustomProviders::from([(n, json)])` -> `serde_json::from_value(json!({ n:
+  json }))?` or `CustomProviders::new().with_entry(n, config)`,
+  `custom.contains_key(n)` -> `custom.contains(n)`, `custom.keys()` ->
+  `custom.names()`, `CustomProviderConfig::from_json(&custom[n])` ->
+  `custom.get(n)`.
+- `CustomProviderConfig::resolved_key(&keys) -> String` -> `key(&keys) ->
+  Option<String>`: None where it returned `"none"`.
+- `testing::FakeHttp::new` returns a `FakeHttp` (clones share the script and
+  the record), and `FakeReply::header(n, v)` -> `FakeReply::with_header(n,
+  v)`.
+- Now `#[non_exhaustive]`: `CompatFlavor`, `Dialect`, `RoutingPriority`,
+  `EntryProblem`, `ProvidersFileError`, `testing::FakeReply`,
+  `testing::FakeEnd`.
 
-### haest-tools
+#### haest-tools
 
-- Tool lists are `haest_core::Tools` and single tools `ToolRef`:
-  `builtin_tools`, `builtin_tools_where`, `agent_tools`, `job_tools`,
-  `task_tools`, `SubagentHub::tools_for` and
-  `SubagentParent::{base_tools, subagent_tools}` return `Tools` (was
-  `Vec<Arc<dyn Tool>>`), `SubagentParent::tool_source` takes them, and
+- Every tool list is `Tools` (was `Vec<Arc<dyn Tool>>`): `builtin_tools`,
+  `builtin_tools_where`, `agent_tools`, `job_tools`, `task_tools`,
+  `SubagentHub::tools_for`, `SubagentParent::base_tools` and
+  `subagent_tools`. `SubagentParent::tool_source` takes `Tools` and returns
+  a `ToolSourceRef` (`Arc::new(s)` -> `s.into()`), and
   `SubagentParent::system_prompt` takes `&[ToolRef]`.
-- A subagent's lent services are their own wrapper (`ChildServices`), beside
-  its lent hooks, now that `ToolServices` is a slot of its own.
-- New `SubagentParent::start_member(&MemberStart, &CancellationToken)`,
-  default `Member::in_process()` (the member haest has always run). It runs
-  before a member's loop exists: an `Err` refuses the spawn (the name is
-  freed, nothing runs, no end follows), an `Ok` hands back the member, a
-  `Member` over the host's run (`Member::new(run)`).
-- New `MemberRun`, every method a default: `model_spec()`, `caps()`,
-  `deps() -> Option<SharedDeps>` (used as given, hooks included) and
-  `end(MemberEnd)`, awaited once after the member's turn and before its
-  answer goes back. New `Member`, `MemberStart`, `MemberEnd`,
-  `MemberCaps`, `Ending` and `Spend`; `MemberStart`, `MemberEnd`,
-  `MemberCaps` and `Ending` are `#[non_exhaustive]`, and a host builds a
-  `MemberCaps` with `MemberCaps::new(usd, steps, time)` (a `const fn`).
-- `subagent_note` takes the `&MemberStart` it writes the note for (was the
-  name, the parent's name, the description and `&SubagentCaps`, three
-  strings in a row): `subagent_note(name, parent, description, caps)` ->
-  `subagent_note(member)`.
-- A background spawn's reply names the member's model spec.
-- StopAgent on a member whose start has not returned: it never sends a
-  model call, and its end is `Ending::Stopped`.
-- Subagent budgets, opt-in (`subagent_budgets`): the Agent tool takes a
-  `budget {usd, minutes}` when `AgentToolOptions::budget_caps` is `Some`,
-  which `SubagentHub::tools_for` sets from its caps when
-  `SubagentCaps::budgets` is on. Each value only tightens the caps; a time
-  that does not fit what is left of the caller's turn is refused with what
-  is left. The hub holds the budget's USD on the ledger while the member
-  runs, so members running at once cannot overshoot the cap together.
-- `SpawnInput` gains `budget` and `AgentToolOptions` gains `budget_caps`,
-  both `Option<SubagentBudget>`. New `SubagentBudget { usd, time }`.
-- `SpawnInput`, `SpawnOutcome` and `JobStatus` are `#[non_exhaustive]`
-  (`SpawnInput` has grown twice): a host builds a spawn with
-  `SpawnInput::new(prompt)` and `with_description`, `with_name`,
-  `with_model_spec`, `with_subagent_type`, `with_budget` and
-  `with_background(bool)`, and an answer with
-  `SpawnOutcome::new(text, cost_usd)`; the fields stay readable. The
-  optional fields' setters take the value itself, so
-  `.with_subagent_type("explore")` compiles; a host holding an `Option`
-  sets what it has. `SpawnInput { description: "tidy".into(),
-  prompt: "Tidy up.".into(), ..Default::default() }` ->
-  `SpawnInput::new("Tidy up.").with_description("tidy")`, and
-  `SpawnOutcome { text, cost_usd }` -> `SpawnOutcome::new(text, cost_usd)`.
-- `AgentError` gains `OverBudget { asked, available }` and
-  `OverTime { asked, left, setting }`, and no longer derives `Eq`.
-- `AgentDirectory::deliver` and `SubagentHub::deliver` take an
-  `AgentMessage` (was three strings in a row, the sender's name first),
-  `#[non_exhaustive]` and built with `AgentMessage::new(from, to, text)`,
-  its sender a `Sender`: `hub.deliver("lead", "worker", "go")` ->
-  `hub.deliver(AgentMessage::new(Sender::Agent("lead".into()), "worker", "go"))`.
-  Its fields read as they are; a pattern ends in `..`
-  (`let AgentMessage { from, to, text, .. } = message;`).
-- New `Sender::{Agent, Person}` (`#[non_exhaustive]`): the person writes to
-  a running subagent, or to main, under "[Message from <name>, the person
-  you work for]". SendMessage is `Sender::Agent` and reads as before.
-- `SubagentEvent` gains `Message(AgentMessage)`, the message as delivered,
-  through `on_subagent` for every delivery (a refused one fires nothing).
-  `SubagentEvent` is `#[non_exhaustive]`: a `match` outside haest-tools
-  needs a `_` arm.
-- New `Inbox::submit_answer(text)`, default `submit`: the hub hands a
-  background answer for main to it, and a message for main to `submit`
-  (was: both to `submit`).
-- New `SubagentHub::idle()` and `SubagentHub::settled(timeout) -> bool`:
-  no spawn in flight, each counted from the call until its answer is back.
-  `settled` is true once idle, false when the timeout runs out.
-- New `SubagentParent::subagent_note(&MemberStart) -> String`, default
-  haest's `subagent_note`: the note under a member's system prompt, given
-  the model spec and caps its run names.
-- New `AgentTurnSite` and `AgentTurnGate::with_thresholds`: the gate's nudge
-  is its default threshold.
-- The Agent tool starts nothing while its turn winds down, whatever
-  `AgentDirectory` it speaks to, before it looks at a budget: new
-  `AgentError::WindingDown(WindingDown)`, which says what was spent of which
-  cap, then the host's remedy.
-- The hub runs its subagents on caps marked `subagent`.
-- `JobHub` is a cheap handle: clones share the jobs, and only dropping
-  the LAST clone kills the jobs still running (dropping one clone used to
-  kill them all). Hold it, not an `Arc<JobHub>`; `job_tools` takes it by
-  value.
-- `JobHub::new` takes the inbox itself (`impl Into<InboxRef>`), and
-  `set_events(&self)` sets the listener of every clone:
-  `JobHub::with_events(Arc::new(tx), Arc::new(events))` ->
-  `let hub = JobHub::new(tx); hub.set_events(events);`. New `InboxRef` and
-  `JobEventsRef`. The listener it replaces is dropped once the hub is
-  unlocked, so a listener that holds the hub may call it as it drops.
-- `JobHub::start` takes a `NewJob` (the command, and a description the
-  job list shows, the command when none is set) and the `&ToolContext` it
-  runs in:
-  `jobs.start(ctx.workspace().clone(), cmd, desc, ctx.cwd().into())` ->
-  `jobs.start(NewJob::new(cmd).with_description(desc), &ctx)`.
-- `JobEvents::on_output(job, chunk, done: bool)` ->
-  `on_output(job, JobOutput::Chunk(chunk) | JobOutput::Done)`.
-- `Job::state()` returns a `JobState` that implements `Display` (was
-  `String`): `format!("{}", job.state())` reads as before.
-- `BashOptions`' fields are private: `BashOptions { jobs: Some(hub), .. }`
-  -> `BashOptions::default().with_jobs(hub)`, and `with_default_timeout`;
-  read with `jobs()` and `default_timeout()`.
-- `Job`, `Taken` and `JobError` are `#[non_exhaustive]`; `BashTool`
-  implements `Debug` and `Clone`.
-- `SubagentHub` is a cheap handle: clones share the subagents, and
-  `SubagentHub::new` takes the parent itself (`impl Into<SubagentParentRef>`)
-  and returns the hub: `SubagentHub::new(Arc::new(parent), caps)` (an
-  `Arc<SubagentHub>`) -> `SubagentHub::new(parent, caps)`. Its `spawn`,
-  `deliver` and `stop` are inherent: no `AgentDirectory` import to call them.
-- One `agent_tools(hub, me, opts)`, over `impl Into<AgentDirectoryRef>`;
-  whether the caller may still spawn is `AgentToolOptions::can_spawn`
-  (default true): `agent_tools_with(Arc::new(dir), me, false, opts)` ->
-  `agent_tools(dir, me, AgentToolOptions { can_spawn: false, ..opts })`,
-  and `agent_tools(dir, me, true)` -> `agent_tools(dir, me,
-  AgentToolOptions::default())`. New `AgentDirectoryRef` and
-  `SubagentParentRef`.
-- `AgentDirectory::spawn` takes `&CancellationToken` (was by value).
-- `SubagentParent::start_member` returns `Result<Member, AgentError>`
-  (was `Box<dyn MemberRun>`): `Ok(Box::new(run))` -> `Ok(Member::new(run))`.
-  `SubagentParent::tool_source` returns a `ToolSourceRef`:
-  `Arc::new(source)` -> `source.into()`.
-- `SubagentTypes`' fields are private, and it is built from its default
-  kind, which is always one of the kinds, so building it cannot fail:
+- `builtin_tools_where(|w| set.has(w), o)` -> `builtin_tools_where(|t|
+  set.has(t.as_str()), o)`, `builtin_word(n) == Some("tasks")` ->
+  `BuiltinTool::of(n) == Some(BuiltinTool::Tasks)`, `MissingOption::word` ->
+  `MissingOption::tool` (a `BuiltinTool`).
+- `BuiltinOptions`, `BashOptions`, `GenerateImageOptions` and
+  `SubagentTypes` keep their fields private: `BuiltinOptions { tasks:
+  Some(Arc::new(b)), web_fetch: None, .. }` ->
+  `BuiltinOptions::new().with_tasks(b).without_web_fetch()`, `BashOptions {
+  jobs: Some(h), .. }` -> `BashOptions::default().with_jobs(h)`,
+  `GenerateImageOptions { base_url, http, ..GenerateImageOptions::new(key)
+  }` -> `GenerateImageOptions::new(key).with_base_url(u).with_http(c)`,
   `SubagentTypes { names, description, default }` ->
-  `SubagentTypes::new(default).with_kinds(names).with_description(description)`
-  (the default goes first when `names` leaves it out). Read with `names()`,
-  `default_kind()` and `description()`.
-- `AgentError` is `#[non_exhaustive]`; the agent tools implement `Debug`.
-- `BuiltinOptions`' fields are private; it is built with setters:
-  `BuiltinOptions { tasks: Some(Arc::new(board)), web_fetch: None,
+  `SubagentTypes::new(default).with_kinds(names).with_description(d)`.
+- `ReadTool::new(Some(Arc::new(i)))` -> `ReadTool::new().with_intercept(i)`;
+  `WriteTool`, `EditTool`, `GrepTool` and `GlobTool` are
+  `#[non_exhaustive]`: `WriteTool` -> `WriteTool::new()`.
+- `skill_tool(opts)` -> `SkillTool::new(opts)`; `SkillToolOptions::new(list,
+  Arc::new(fs))` -> `SkillToolOptions::new(skills)` with `skills` a
+  `Skills`, `SkillToolOptions::over(Arc::new(set))` ->
+  `SkillToolOptions::new(set)`, `.with_name_enum()` ->
+  `.with_name_enum(true)`.
+- `task_tools(Arc::new(board))` -> `task_tools(board)`,
+  `job_tools(Arc::new(hub))` -> `job_tools(hub)`.
+- `JobHub` is a cheap handle and only dropping its last clone kills the jobs
+  still running: `Arc<JobHub>` -> `JobHub`,
+  `JobHub::with_events(Arc::new(tx), Arc::new(ev))` -> `let hub =
+  JobHub::new(tx); hub.set_events(ev);`, `jobs.start(ws, cmd, desc, cwd)` ->
+  `jobs.start(NewJob::new(cmd).with_description(desc), &ctx)`.
+- `JobEvents::on_output(job, chunk, done)` -> `on_output(job,
+  JobOutput::Chunk(chunk) | JobOutput::Done)`; `Job::state()` returns a
+  `JobState` (it implements `Display`).
+- `SubagentHub::new(Arc::new(parent), caps)` returned an `Arc<SubagentHub>`
+  -> `SubagentHub::new(parent, caps)` returns the hub, a cheap handle;
+  `AgentDirectory::spawn` and `SubagentHub::spawn` take
+  `&CancellationToken`.
+- `AgentDirectory::deliver("lead", "worker", "go")` (and
+  `SubagentHub::deliver`) ->
+  `deliver(AgentMessage::new(Sender::Agent("lead".into()), "worker",
+  "go"))`: no three strings in a row.
+- `agent_tools(dir, me, can_spawn)` and `agent_tools_with(dir, me,
+  can_spawn, opts)` -> `agent_tools(dir, me,
+  opts.with_can_spawn(can_spawn))`. `AgentToolOptions` keeps its fields
+  private: `AgentToolOptions { types: Some(t), model_description: Some(d),
   ..Default::default() }` ->
-  `BuiltinOptions::new().with_tasks(board).without_web_fetch()`, and
-  `with_read_intercept`, `with_bash`, `with_web_fetch`, `with_skill`.
-- New `BuiltinTool` (`#[non_exhaustive]`), a built-in by its word: it
-  reads and parses as the word (`Display`, `FromStr` with
-  `ParseBuiltinToolError`), `BuiltinTool::ALL` lists them, and
-  `BuiltinTool::of(tool_name)` replaces `builtin_word`:
-  `builtin_word(name) == Some("tasks")` ->
-  `BuiltinTool::of(name) == Some(BuiltinTool::Tasks)`.
-  `builtin_tools_where` picks by it: `|w| set.has(w)` ->
-  `|t| set.has(t.as_str())`. `MissingOption` names the tool (`tool:
-  BuiltinTool`, was `word: &'static str`) and is `#[non_exhaustive]`.
-- `ReadTool::new()` takes nothing and the intercept is a setter:
-  `ReadTool::new(Some(Arc::new(i)))` -> `ReadTool::new().with_intercept(i)`.
-  New `ReadInterceptRef`.
-- `WriteTool`, `EditTool`, `GrepTool` and `GlobTool` are
-  `#[non_exhaustive]` with `new()`, `Default`, `Debug` and `Clone`:
-  `ToolRef::new(WriteTool)` -> `ToolRef::new(WriteTool::new())`.
-- `SkillTool` is public and `skill_tool` is gone: `skill_tool(opts)` ->
-  `SkillTool::new(opts)`. `SkillToolOptions::new` takes any `SkillSet`
-  and `over` is gone: `SkillToolOptions::new(move || list(), Arc::new(fs))`
-  -> `SkillToolOptions::new(DiskSkills::new(fs, move || list()))` (or
-  core's `Skills`), `SkillToolOptions::over(Arc::new(set))` ->
-  `SkillToolOptions::new(set)`.
-- `SkillToolOptions::with_name_enum` takes the flag, as every flag setter
-  does (breaking): `.with_name_enum()` -> `.with_name_enum(true)`.
-- `task_tools` takes the board itself, a handle:
-  `task_tools(Arc::new(board))` -> `task_tools(board)`.
-- `DeferredTools::new` takes `impl Into<ToolSourceRef>`, `deferral()`
-  returns `&ToolDeferral` (was `&Arc<ToolDeferral>`), and it is `Clone`
-  (clones share the deferral) and `Debug`.
-- `tool_guide` and `touches_workspace` take `&[impl AsRef<str>]`:
-  `tool_guide(&["Read", "Bash"])` needs no `String`s.
-- `UrlRefused` is `#[non_exhaustive]`; `AgentTurnGate`, `WebFetchNet`,
-  `WebFetchTool`, `SkillToolOptions` and `BuiltinOptions` implement
-  `Debug`.
-- `WebFetchNet::new` takes the resolver itself (`impl Into<ResolveRef>`)
-  and `unguarded` the client too (`impl Into<HttpClientRef>`):
-  `WebFetchNet::unguarded(Arc::new(dns), Arc::new(client))` ->
-  `WebFetchNet::unguarded(dns, client)`. New `ResolveRef`.
-- `GenerateImageOptions`' fields are private:
-  `GenerateImageOptions { base_url, http, ..GenerateImageOptions::new(key) }`
-  -> `GenerateImageOptions::new(key).with_base_url(base_url).with_http(http)`,
-  where `with_http` takes the client itself or a shared handle; read with
-  `base_url()`, `model()` and `models()`. `GenerateImageTool` implements
-  `Debug` and `Clone`.
-- The Image API's helpers are the tool's own: `call_image_api`,
-  `sniff_image_type`, `ImageCatalog`, `ImageError`, `ImageReply`,
-  `ModelSettings` and `SettingSpec` are no longer public. A host calls the
-  Image API through `GenerateImageTool`.
-- `assert_public_url` takes the URL as text, so a host needs no `url`
-  crate of its own: `assert_public_url(&Url::parse(s)?, &dns)` ->
-  `assert_public_url(s, &dns)`. Text that is not a URL is the new
-  `UrlRefused::Invalid`.
-- `NoInbox` and `NoJobEvents` are `Clone`, `Copy`, `PartialEq` and `Eq`,
-  as haest-core's do-nothing parts are.
-- `media_output` takes the bytes, the media type and the name in the order
-  `media_from_bytes` does, the context last:
-  `media_output(label, bytes, media_type, ctx)` ->
-  `media_output(bytes, media_type, label, ctx)`. Both text arguments are
-  `&str`, so an old call still compiles: swap them by hand.
-- `SubagentHub::spawn` gives a member's `max_concurrent` place back however
-  it stops. A host that dropped the spawn (a timeout, a `select!`) while its
-  `start_member` ran, a `start_member` that panicked, or a foreground spawn
-  dropped while its member ran left the member Running for good: every later
-  spawn in that conversation was refused with `TooMany`, and `running()`
-  listed an agent that did not exist. A foreground member now runs on a task
-  of its own, and dropping its spawn stops it as a cancelled caller does:
-  its `MemberRun::end` hears `Ending::CallerCancelled` with its spend. A
-  foreground spawn now needs a tokio runtime, as a background one did.
-- `AgentTurnGate::with_remedies` takes `impl Into<Remedies>`: the closure
-  itself too (`|l: Limit| ..`), as haest-core's setters do.
-- Fixed: `JobEvents::on_change` and `SubagentParent::on_activity` could
-  hear an older running set last. Two jobs (or subagents) that ended at
-  once each handed their set over from their own task, so a host whose
-  handler was slow for one (it rendered, it took a lock of its own) kept a
-  job or subagent on its roster that had ended. Both now hand their sets
-  over as the ledger and the task board do (haest-core's `Newest`): one
-  call at a time, never an older set after a newer one, and the sets that
-  change while one call runs are handed over next as one, the newest. Each
-  set goes to the listener in place when it is handed over, so one set with
-  `JobHub::set_events` while the old one is being called hears every set
-  from then on. A job or subagent that starts and ends while one call runs
-  can be in no set: its `on_exit` (or `on_subagent`) still names it.
-- Fixed: GenerateImage passed on an Image API `usage.cost` below 0 as the
-  call's cost, so the model read that the picture cost `$-1.500` and the
-  call carried a refund. Such a cost is now no price, as the loop counts it.
-- Fixed: a subagent StopAgent stopped no longer counted toward
-  `max_concurrent`, though it runs until its turn ends (a tool that ignores
-  its cancel keeps it going), so one more could start beside it. It counts
-  until its turn has ended.
-- Fixed: a host's `JobEvents::on_output` that panicked left a job over the
-  sandbox running for good, with no exit code, no `Done`, no `on_exit` and
-  no exit notice, counting toward `MAX_JOBS`; over the real workspace it
-  ended the pipe's reader, and the command died of SIGPIPE (exit 141) on
-  its next write. That handler now hears no more of the job's output (the
-  buffer still keeps it), the job runs to its end and is reported ended
-  with its own exit code, then the panic goes on, on the job's own task. A
-  workspace that panics ends its job the same way, with exit code -1.
-- Fixed: a job could still stay running for good, or end without the model
-  being told. A host's `JobEvents::on_change` that panicked in
-  `JobHub::start` left the job in the table as running, never run, and
-  after `MAX_JOBS` such starts every start was refused: the job is now
-  started all the same, then the panic goes on out of `start`. At a job's
-  end, a panic in `Done`, `on_change`, `on_exit` or the inbox skipped the
-  calls after it and the exit notice: each now runs whatever the others
-  do, and the first panic goes on once, on the job's task. A handler whose
-  `on_output` panicked hears no `Done` either, none of that job's output,
-  as `JobEvents` says.
-- Edit, Write over a file that is there, and GenerateImage over an image
-  that is there replace it with `Fs::write_whole`, whole or not at all
-  (see Bug fixes); a new file is still made with `Fs::write`.
+  `AgentToolOptions::default().with_types(t).with_model_description(d)`
+  (`with_budget_caps`, `with_can_spawn`).
+- `SubagentHub`'s `spawn`, `deliver` and `stop` are its `AgentDirectory`
+  impl's: `use haest::tools::AgentDirectory;` to call them.
+  `hub.answers_due() == 0` -> `hub.idle()` (or `settled(timeout)`).
+- `subagent_note(name, parent, description, caps)` ->
+  `subagent_note(&member_start)` (a `MemberStart`).
+- `SpawnInput` and `SpawnOutcome` are `#[non_exhaustive]`: `SpawnInput {
+  prompt, description, .. }` ->
+  `SpawnInput::new(prompt).with_description(d)` (`with_name`,
+  `with_model_spec`, `with_subagent_type`, `with_budget`,
+  `with_background(bool)`), `SpawnOutcome { text, cost_usd }` ->
+  `SpawnOutcome::new(text, cost_usd)`.
+- `AgentError` no longer implements `Eq` (its new `OverBudget` holds USD as
+  `f64`).
+- `media_output(label, bytes, media_type, ctx)` -> `media_output(bytes,
+  media_type, label, ctx)`, the order `media_from_bytes` takes. Both text
+  arguments are `&str`, so an old call still compiles: swap them by hand.
+- `assert_public_url(&Url::parse(s)?, &dns)` -> `assert_public_url(s,
+  &dns)`; text that is not a URL is the new `UrlRefused::Invalid`.
+- `DeferredTools::deferral()` returns `&ToolDeferral` (was
+  `&Arc<ToolDeferral>`).
+- The Image API helpers are no longer public (see Removed): call the Image
+  API through `GenerateImageTool`.
+- Now `#[non_exhaustive]`: `AgentError`, `SubagentEvent`, `JobStatus`,
+  `JobError`, `UrlRefused`, `Job`, `Taken`, `MissingOption`.
 
-### haest-workspace
+#### haest-workspace
 
-- `RealWorkspace::fs` and `SandboxWorkspace::fs` return `FsRef`, and
-  `SandboxWorkspace::changes` an `Option<ChangeSetRef>`, as `Workspace`
-  now has them. `RealFs` and the sandbox's file system implement
-  `create_dir`, `create_dir_all`, `remove` and `remove_all`.
-- `SandboxWorkspace::over` takes the files themselves, or a handle to them
-  (`impl Into<FsRef>`), and `with_command` the command itself
-  (`impl Into<ShellCommandRef>`):
-  `SandboxWorkspace::over(Arc::new(MemFs::new())).with_command(Arc::new(Shout))`
-  -> `SandboxWorkspace::over(MemFs::new()).with_command(Shout)`. A host that
-  reads the files afterwards keeps an `FsRef` and hands over a clone.
-- Removed `RealWorkspace::with_fs` and `SandboxWorkspace::overlay_changes`,
-  which nothing called: the real workspace is always over `RealFs`, and the
-  overlay's changes are `Workspace::changes()`.
-- `RealWorkspace`, `SandboxWorkspace` and `OverlayChanges` implement
-  `Debug` (a sandbox shows its commands and the names of its variables,
-  never their values).
-- `SandboxWorkspace::open` fails with an `OpenSandboxError`, which names
-  the dir that did not open (the project or a mount) and keeps the I/O
-  error as its source (breaking): `opening the sandbox: No such file or
-  directory` -> `opening /work/project for the sandbox: No such file or
-  directory`. `path()` and `kind()` read it, and `?` still turns it into
-  an `io::Error` of the same kind.
-- `SandboxWorkspace::with_commands` adds a list of commands in one call:
-  `sandbox_commands().into_iter().fold(ws, SandboxWorkspace::with_command)`
-  -> `ws.with_commands(sandbox_commands())`.
-- Fixed: `RealWorkspace` kept all of a command's output in memory, so one
-  the model ran that printed without end (`yes`, `cat /dev/urandom`) could
-  fill the host's memory before its timeout (Bash waits up to 10 minutes).
-  Each stream now keeps its first 64 MiB, the sandbox's cap, and drops the
-  rest; the child is still read to its end, so it never blocks on a full
-  pipe. Streamed output is handed over whole, as before.
-- `SandboxWorkspace::with_remedies` takes `impl Into<Remedies>`: the
-  closure itself too (`|l: Limit| ..`), as haest-core's setters do.
-- Fixed: `SandboxWorkspace` panicked ("overflow when adding duration to
-  instant") on a command whose timeout was `Duration::MAX`, the way a host
-  writes "no deadline", or any timeout past about 2^63 seconds. A sandbox
-  call stops at 10 minutes whatever its timeout, so a longer one is now
-  read as 10 minutes, and a host's command gets that as its deadline.
-- Fixed: `RealWorkspace` kept reading a call's output after the call
-  returned, when a process that left bash's group (`setsid cmd &`, a
-  detached child) held the pipes: what that process printed later reached
-  the call's `on_output` (a background job's output after its `Done`), and
-  up to 64 MiB per stream was kept for a call that had ended. A call that
-  ends without its pipes closing (a timeout, a cancel, a drop) now stops
-  reading them, and that process gets SIGPIPE if it writes to them again.
-  A server meant to outlive the call redirects its output.
-- Fixed: `SandboxWorkspace::open` took a relative directory three ways:
-  it read the project from the process's current directory, but mounted
-  it at `/` plus its path and applied changes to the path as it was.
-  `SandboxMounts::new(".")` put the project over the sandbox's root, so
-  the tools found nothing at the project's real path, and scratch writes
-  (`/tmp/notes.txt`) became changes that `apply` wrote into the project.
-  A relative writable or readable dir was opened at `/` plus its path
-  (`tmp` was `/tmp`). Every directory is now made absolute when the
-  sandbox opens, from the process's current directory, and that one path
-  is opened, mounted and applied to. Dots are resolved by the path alone,
-  as `cd ..` does in a shell: `link/..` is the directory that holds
-  `link`, wherever `link` points. An empty path fails with `InvalidInput`,
-  and the error says it was an empty path.
-- Fixed: over a host's `Fs` (`SandboxWorkspace::over`), `mv a b` kept
-  `b`'s remembered mode, so a plain file moved over a script read as
-  executable. `b` now has `a`'s mode, as a POSIX rename gives it.
-- `OverlayChanges::apply` asks the disk about each real path on the way to
-  its changes once; it listed each directory again for every change inside
-  it. It asks by the path itself, so a link under another name the disk
-  reads as its own is still a link (see Security).
-- Fixed: a sandbox call dropped in flight (a Code run that timed out) left
-  a task behind, asleep until the call's timeout, up to 10 minutes.
-  Dropping the call now ends it.
-- `OverlayChanges::apply` writes first and deletes last, and skips as a
-  conflict a change that would take away what a write of the same apply
-  that did not land carries elsewhere (see Security). `ApplyReport::applied`
-  lists the writes that take nothing away, then those that do, then the
-  deletes, where it listed all in path order. Each group is in path order,
-  but for the writes that take away: one whose content another carries
-  goes after that one. It reads each change's real path again right before
-  putting it on the disk, and, on a disk that reads two names of a file as
-  one, skips as a conflict a change that would take along a file the
-  sandbox shows under another name or land under a name the disk lists
-  another way (see Security). The
-  sandbox reads the project through the system, as real bash on that disk
-  does: `cat README.md` finds `readme.md`, and `mkdir Lib` beside `lib`
-  fails with "File exists". What it writes it keeps under the name it was
-  written by, so `echo x > README.md` beside the disk's `readme.md` shows
-  two files, and applying it is held. bashkit's `mv lib Lib` moves `lib`
-  into the `Lib` the system finds, so the sandbox shows `Lib/lib` beside
-  `lib`'s own files; applying it is held whole, and the disk keeps `lib`.
-  A rename by case alone lists as the old name deleted where the disk
-  reads both names as one (the new name is the old file, read through),
-  and as the old name deleted and the new one added where it does not.
-- Fixed: over the real workspace, a caller's own `on_output` that panicked
-  in `shell_streaming` ended the pipe's reader: the panic was lost, and the
-  command died of SIGPIPE (exit 141) on its next write. It is now called
-  no more, the pipes are still read to their end, and the panic reaches the
-  caller once the call has ended, as over the sandbox.
-- `OverlayChanges::diff` starts with a line `Mode /run.sh 644 -> 755`
-  where applying changes the file's mode (see Bug fixes); a change of mode
-  alone has that line and no hunk. A path the sandbox adds with a mode of
-  its own starts with `Mode /b.sh 755`, as git shows a new file's mode.
-- `RealFs::try_lock` takes an exclusive `flock(2)` on the file, which the
-  system drops with the process that held it; on a file system that takes
-  no such locks, or refuses one on this file, it is `Ok(None)`. It opens
-  the file to read and write for the lock, since an NFS client refuses an
-  exclusive lock on a file opened only to read, and only to read where the
-  file or its mount may not be written (a file made 0400, a read-only
-  mount). A file that is not there is made, empty and 0600.
-- `RealFs::create_private_dir` makes the directory with its mode,
-  `mkdir(path, 0700)`, in one step and never sets it after, so on Linux
-  one made in a directory that passes its group on (setgid) keeps that
-  group and the bit.
-- `RealFs::write_whole` is the apply's whole-or-nothing write, the one
-  implementation of it: a new file beside the file, renamed over it, or
-  the bytes in place where a new file would not stand in for it. The
-  apply goes through it, and so do Edit, Write over a file that is
-  there, and GenerateImage over an image that is there, in the real
-  workspace (see Bug fixes). It renames the new file onto the path it was
-  given and reads no directory listing.
+- `RealWorkspace::fs` and `SandboxWorkspace::fs` return an `FsRef`,
+  `SandboxWorkspace::changes` an `Option<ChangeSetRef>`, as `Workspace` now
+  has them.
+- `SandboxWorkspace::open` fails with an `OpenSandboxError` that names the
+  dir (was `io::Error`; `?` still turns it into an `io::Error` of the same
+  kind).
+- `RealWorkspace::with_fs` is gone (the real workspace is always over
+  `RealFs`), and `sandbox.overlay_changes()` -> `sandbox.changes()`.
 
-### haest-code
+#### haest-code
 
-- `code_tool_names` takes `&[ToolRef]` (was `&[Arc<dyn Tool>]`), and it
-  and `code_callable` take the allowed names as any strings
-  (`&[impl AsRef<str>]`, was `&[String]`): `&FILE_TOOLS` passes as is.
-- `CodeTool::new` takes the names as any strings and the tools themselves
-  (`impl Into<ToolSourceRef>`):
-  `CodeTool::new(names, Arc::new(tools))` -> `CodeTool::new(names, tools)`.
-- `JsEnv` is built with `JsEnv::new(fs, cwd)` and `with_env`,
-  `with_stdin`, `with_cancel` and `with_ends_at`; its fields are private,
-  read with `fs()` and `cwd()`:
-  `JsEnv { fs: Arc::new(mem), cwd, env, stdin: None, cancel, ends_at }` ->
-  `JsEnv::new(mem, cwd).with_ends_at(at)`. `js_command` and `run_js` take
-  their arguments as any strings.
-- `VmSpec` is built with `VmSpec::new()` and `with_prelude`, `with_value`,
-  `with_native_fn`, `with_modules` and `with_filename`; a native function
-  is a plain async closure, and `NativeFn` and `NativeFuture` are gone:
-  `spec.native_fns.insert(name, Arc::new(|args| async { .. }.boxed()))` ->
-  `VmSpec::new().with_native_fn(name, |args| async { .. })`.
-- `sandbox_commands` returns `Vec<ShellCommandRef>` (was
-  `Vec<Arc<dyn ShellCommand>>`).
-- `VmRun`, `VmBeat` and `VmStop` are `#[non_exhaustive]`; `CodeTool`,
-  `JsEnv` and `VmSpec` implement `Debug` (a `JsEnv` shows the names of its
-  variables, never their values).
-- The Code tool hands its caller's `turn_time_left` on to the calls it
-  makes.
-- A tool the Code tool calls sees the caller's wind-down.
-- `run_in_vm` takes no `dyn` and two fewer arguments (breaking): the caps
-  are part of the spec (`VmSpec::with_caps`, read with `caps()`; the
-  default is `VmCaps::default()`), and `on_beat` is any closure, `|_| {}`
-  for none: `run_in_vm(code, &spec, caps, &cancel, Some(&|b| log(b)))` ->
-  `run_in_vm(code, &spec.with_caps(caps), &cancel, |b| log(b))`, and
-  `run_in_vm(code, &spec, caps, &cancel, None)` ->
-  `run_in_vm(code, &spec.with_caps(caps), &cancel, |_| {})`. `VmSpec`'s
-  `with_*` setters are `#[must_use]`.
-- `JsEnv::with_env` takes a `ChildEnv`, as every other environment
-  parameter in haest does (breaking):
-  `.with_env(BTreeMap::from([("A".into(), "1".into())]))` ->
-  `.with_env(ChildEnv::new([("A", "1")]))`. A name listed twice has its
-  last value in `process.env`. `JsEnv` has a getter for each part it is
-  built with: `env()`, `stdin()`, `cancel()` and `ends_at()` beside `fs()`
-  and `cwd()`; its setters are `#[must_use]`.
-- Fixed: the Code tool added its calls' costs as they came. One call's NaN
-  made the run's whole spend a NaN, which the loop counts as no price (the
-  other calls' real spend with it), and a negative one lowered the spend.
-  A cost that is negative or not a finite number is now no price there
-  too; the others still count.
+- `code_tool_names(&[Arc<dyn Tool>], &[String])` ->
+  `code_tool_names(&[ToolRef], &[impl AsRef<str>])`; `code_callable` takes
+  the names as `&[impl AsRef<str>]`.
+- `JsEnv` keeps its fields private: `JsEnv { fs: Arc::new(mem), cwd, env,
+  stdin, cancel, ends_at }` -> `JsEnv::new(mem,
+  cwd).with_env(env).with_ends_at(at)` (`with_stdin`, `with_cancel`), and
+  `with_env` takes a `ChildEnv` (was a `BTreeMap`).
+- `VmSpec` keeps its fields private and a native function is a plain async
+  closure: `spec.native_fns.insert(name, Arc::new(|a| async { ..
+  }.boxed()))` -> `VmSpec::new().with_native_fn(name, |a| async { .. })`
+  (`with_prelude`, `with_value`, `with_modules`, `with_filename`,
+  `with_caps`). `NativeFn` and `NativeFuture` are gone.
+- `run_in_vm(code, &spec, caps, &cancel, Some(&|b| log(b)))` ->
+  `run_in_vm(code, &spec.with_caps(caps), &cancel, |b| log(b))`, and `None`
+  -> `|_| {}`.
+- `sandbox_commands()` returns `Vec<ShellCommandRef>`.
+- Now `#[non_exhaustive]`: `VmRun`, `VmBeat`, `VmStop`.
 
-### haest-mcp
+#### haest-mcp
 
-- `McpHub::tools` returns `haest_core::Tools` (was `Vec<Arc<dyn Tool>>`;
-  breaking).
-- `McpHub` is a cheap handle: clones share the servers and failures, and
-  the servers shut down when the last clone is dropped. Hold it, not an
-  `Arc<McpHub>`.
-- `McpHub::with_env` is a setter, and the log is set once with `with_log`
-  instead of on every connect (breaking):
-  `McpHub::with_env(env).connect(&servers, &|line| ..)` ->
-  `McpHub::new().with_env(env).with_log(|line| ..).connect(&servers)`.
-  Without a log the lines go nowhere; `failures()` has them either way.
-- `McpHub::connect_transport` and the `rmcp` re-export are behind the new
-  `rmcp` feature (off), so rmcp is not in haest-mcp's API unless a host
-  asks (breaking): `haest-mcp = { .., features = ["rmcp"] }`.
-  `hub.connect_transport(name, io, &|_| {})` -> `hub.connect_transport(name, io)`.
-- `StdioTransport::with_env` is `with_env_var` (breaking): it adds one
-  variable, and `with_env` means replacing a whole environment everywhere
-  else.
-- `McpServerConfig`, `HttpTransport` and `StdioTransport` are
-  `#[non_exhaustive]` (breaking for a struct literal), so a field
-  `.mcp.json` gains later breaks no host: `HttpTransport { url, headers }`
-  -> `McpTransport::http(url).with_header(..)`, and a pattern that names
-  every field ends in `..`. Their fields read as before.
-- `McpFailure`'s fields are private (breaking): `failure.name` ->
-  `failure.name()`, `report(&*failure.error)` -> `report(failure.error())`.
-- `load_project_mcp_config` takes the variables as any closure (was
-  `&dyn Fn`; breaking for a closure whose argument is not typed):
-  `load_project_mcp_config(fs, cwd, &|name| ..)` ->
+- `McpHub::with_env(env).connect(&servers, &|line| ..)` ->
+  `McpHub::new().with_env(env).with_log(|line| ..).connect(&servers)`: the
+  log is set once.
+- `hub.connect_transport(name, io, &|_| {})` -> `hub.connect_transport(name,
+  io)` (feature `rmcp`).
+- `McpHub::tools` returns `Tools`.
+- `StdioTransport::with_env(k, v)` -> `with_env_var(k, v)`: it adds one
+  variable, and `with_env` means a whole environment everywhere else.
+- `McpFailure` keeps its fields private: `failure.name` -> `failure.name()`,
+  `report(&*failure.error)` -> `report(failure.error())`.
+- `load_project_mcp_config(fs, cwd, &|name| ..)` ->
   `load_project_mcp_config(fs, cwd, |name: &str| ..)`.
-- `McpStartError`, `McpConfigError` and `ProjectMcp` are
-  `#[non_exhaustive]` (breaking): a `match` adds a `_` arm, and
-  `ProjectMcp { servers, ..Default::default() }` ->
-  `let mut p = ProjectMcp::default(); p.servers = servers;`. `McpHub`
-  implements `Debug` (servers and failures by name, the environment's
-  names but never its values).
-- `McpTransport` is `#[non_exhaustive]` (breaking): a `match` adds a `_`
-  arm, and haest adds a transport (`.mcp.json`'s `sse`) in a minor
-  release.
-- New `McpStartError::Url`: an HTTP server whose URL has an `@` past its
-  host, or no host (`https:///mcp`, what `https://${HOST}/mcp` makes of an
-  empty variable), fails before any request goes out, haest-http's
-  `EndpointUrlError` its source.
+- `McpServerConfig`, `HttpTransport`, `StdioTransport` and `ProjectMcp` are
+  `#[non_exhaustive]`: `HttpTransport { url, headers }` ->
+  `McpTransport::http(url).with_header(..)`, `ProjectMcp { servers,
+  ..Default::default() }` -> `let mut p = ProjectMcp::default(); p.servers =
+  servers;`.
+- Now `#[non_exhaustive]`: `McpTransport`, `McpStartError`,
+  `McpConfigError`.
 
-### haest-mods
+#### haest-mods
 
-- `Mod::tools`, `Mods::tools` and `ModTools::wrap` take and return
-  `haest_core::Tools` (was `Vec<Arc<dyn Tool>>`).
-- `ModTools` forwards the wrapped tool's `Tool::on_resume`.
-- `Mods` is a cheap handle whose list never changes once built: clones run
-  the same mods for good, so hold it, not an `Arc<Mods>`. It is built with
-  the new `ModsBuilder` (`Mods::builder`, `with`, `with_all`, `build`), and
-  `Mods::add` is gone: on a handle already handed out it changed that clone
-  only, so the runtime's tools and prompt never saw the mod.
-  `let mut m = Mods::new(env); m.add(Arc::new(NoDotEnv)); let m = Arc::new(m);`
-  -> `let m = Mods::builder(env).with(NoDotEnv).build();`. `with` takes
-  the mod itself or an `Arc` of it the host keeps; the mods are held as the
-  new `ModRef`. `Mods::new(env)` is a list of none.
-- `ModOptions::with_mod` puts a host's own native mod in what `load_mods`
-  loads: after the built-ins and the mod files, in the order added
-  (`host_mods()` reads them back). It was `load_mods(..).await` then
-  `Mods::add`.
-- `ModTools::new`, `ModTools::wrap` and `ModSystemPrompt::new` take `Mods`,
-  and the tool source and prompt themselves (`impl Into<ToolSourceRef>`,
-  `impl Into<SystemPromptRef>`):
-  `ModSystemPrompt::new(Arc::new(prompt), mods.clone())` ->
-  `ModSystemPrompt::new(prompt, mods.clone())`;
-  `ModTools::wrap(&Arc::new(mods), tools)` -> `ModTools::wrap(&mods, tools)`.
-- `ModEnv` takes the host's `ModUi` itself (`impl Into<ModUiRef>`) and its
-  fields are private, read with `cwd()`, `workspace()` and `ui()`:
-  `ModEnv::new(cwd, mode, Arc::new(Terminal))` ->
-  `ModEnv::new(cwd, mode, Terminal)`; `haest.workspace` ->
-  `haest.workspace()`. `load_mods` takes the `ModUi` the same way:
-  `load_mods(cfg, fs, Arc::new(ui))` -> `load_mods(cfg, fs, ui)`.
-- `ModOptions`' fields are private, set with `with_user_mods(bool)`,
-  `with_project_mods(bool)`, `with_approvals(bool)`, `with_auto`,
-  `with_shell_tools`, `with_plan_listener`, `with_planning_tools` and
-  `with_caps`, and read with getters of the same names:
-  `cfg.user_mods = true; cfg.auto = Some(Arc::new(judge));` ->
-  `ModOptions::new(..).with_user_mods(true).with_auto(judge)`, and
-  `cfg.approvals = s.approvals` -> `.with_approvals(s.approvals)`.
-- `ApprovalMod::new` takes nothing; auto mode's judge goes in with
-  `with_auto` (held as the new `AutoJudgeRef`):
-  `ApprovalMod::new(Some(Arc::new(judge)))` ->
-  `ApprovalMod::new().with_auto(judge)`.
-- `PlanMod::new` takes nothing and the `PlanListener` alias is gone; the
-  listener is a closure given to `with_listener`:
-  `PlanMod::new(Some(Arc::new(|on| ..)))` ->
-  `PlanMod::new().with_listener(|on| ..)`.
-- `ApprovalGate::with_lines` is `mod_ui` (`with_*` is only ever a setter),
-  and `ApprovalGate::new` takes the prompter or an `Arc` of it (held as the
-  new `PrompterRef`): `Arc::new(gate.with_lines(f))` -> `gate.mod_ui(f)`.
-- `Mods`, `ModEnv`, `ModOptions`, `ModTools`, `ModSystemPrompt`,
-  `ApprovalMod`, `ApprovalGate`, `PlanMod` and `JsMod` implement `Debug`
-  (`Mods` lists its mods by name; a closure shows only whether it is set);
-  `ApprovalMod`, `ModOptions`, `ModTools` and `ModSystemPrompt` are `Clone`.
-- `ModLoadError` is `#[non_exhaustive]`: a `match` on it adds a `_` arm.
-- A line to the human is info / warn / error / debug here too: new
-  `ModUi::warn` (default: an `info` line), `ModLine::Warn`, and `ModEnv`
-  forwards `warn`, `error` and `debug` beside `info`. `ModLine` is
-  `#[non_exhaustive]`, with `text()` for whatever kind it is (breaking):
-  a `match` in the function given to `ApprovalGate::mod_ui` adds an arm
-  that still shows the line, `other => show(other.text())`.
-- `CommandOutcome`, `BashVerdict` and `ApprovalAnswer` are
-  `#[non_exhaustive]` (breaking): a mod command may come to ask the host
-  for more, a judge to refuse outright, a human to allow for the session
-  only. A `match` adds a `_` arm; building one is unchanged.
-- `Mods::command` says what a command whose promise never settles does: it
-  never returns (`ModCaps` stops code that runs, not code that waits), and
-  a host bounds it by dropping the call, which is cancel-safe.
-- `ApprovalRequest` is `#[non_exhaustive]`, so a field (what the ask is
-  about beyond its tool) is not a breaking change; a native mod builds one
-  with the new `new(tool_name, description)` and `with_input_preview`,
-  `with_tool_use_id`, `with_key` (breaking): see Upgrading item 26. The
-  preview has a setter of its own, so it cannot be swapped with the
-  description, which is a string too. A mod file's `haest.ask(req)` reads
-  the same JSON. `ApprovalRequest` implements `Eq`.
-
-### haest-settings
-
-- `SubagentCapSettings` gains `budgets` (the `subagent_budgets` setting,
-  default off; the `claude` profile leaves it off), breaking for a struct
-  literal without `..`.
-- `Settings` gains `wind_down_at: WindDown` (bare: off), breaking for a
-  struct literal without `..`.
-- `turn_caps_for` fills `TurnCaps::context_window` with the window.
-- `CapSettings` implements `Default`: the bare caps, the ones
-  `Settings::bare` starts from. A host changing one cap writes
-  `CapSettings { max_turn_usd: 5.0, ..CapSettings::default() }`.
-- Both wall-clock caps are a `Duration`, the type haest-core's caps take
-  (breaking): `CapSettings::max_turn_minutes: f64` ->
-  `max_turn_time: Duration`, `SubagentCapSettings::minutes: u64` ->
-  `time: Duration`. `caps.max_turn_minutes = 1.5` ->
-  `caps.max_turn_time = Duration::from_secs(90)`. The settings keep their
-  names and read minutes (`max_turn_minutes`, `subagent_minutes`).
-
-### haest-config
-
-- New setting `subagent_budgets`: `HAEST_SUBAGENT_BUDGETS`,
-  `--subagent-budgets`, in docs/settings.md and docs/examples/config.toml.
-- New settings, each off or at its old behaviour by default: `event_ring`
-  (1000), `stdio`, `control_socket`, `control_dir`, `broker_url`,
-  `broker_access`. New `ControlSocket` and `BrokerAccess`
-  (`#[non_exhaustive]`: haest adds a level as the transport's grants grow,
-  and a `match` gives an unknown one the least access, as the `haest`
-  command's does) and `Config::control_dir()`. `Config` gains their
-  fields, breaking for a struct literal without `..`.
-- docs/settings.md: a process-scoped setting's "Set in" reads "its variable
-  or its flag only, never a config file".
-- New setting `wind_down_at` (`HAEST_WIND_DOWN_AT`, `--wind-down-at`): a
-  share from 0 to 1, 0 = off, the default; the `claude` profile leaves it
-  off. A value above 1 is refused at load, naming its source.
-- `Loader::env`, `Loader::flags` and `Loader::standard` take any pairs by
-  value, `impl IntoIterator<Item = (K, V)>` with both `Into<String>`
-  (breaking): a map moves in instead of being copied, and a literal needs
-  no map. `Loader::standard(defaults, &env, &flags)` ->
-  `Loader::standard(defaults, env, [("model", "x")])`; a
-  `&HashMap<String, String>` still goes in as it is, a `&Vec` of pairs
-  as `.iter().cloned()`. `Loader::xdg_dirs` takes pairs of anything
-  `AsRef<str>` and reads only the two XDG values. `Loader` is `Clone`.
-- `#[non_exhaustive]` on `ConfigError`, `SetError`, `Kind`, `Source`,
-  `Scope` and `EnvPassthrough` (breaking): a `match` adds a `_` arm, and
-  haest adds an error, a setting kind, a layer or a scope in a minor
-  release. `ProjectFile` stays exhaustive (none, read, skipped is the
-  whole set).
-- `ConfigError::Read` and `ConfigError::Toml` say what failed: `cannot read
-  /x/config.toml` and `/x/config.toml is not valid TOML` (was the bare
-  path), with where and why in the `source`.
-- `Loaded::keys` is a `Keys` (new), not a `HashMap<String, String>`
-  (breaking): a `KeySource` whose Debug output shows names only.
-  `loaded.keys["OPENROUTER_API_KEY"]` -> `loaded.keys.get("OPENROUTER_API_KEY")`
-  (an `Option<&str>`, None for an empty value); `.with_keys(loaded.keys)`
-  takes it as it is.
-- `Loaded` is `#[non_exhaustive]` (breaking): a host reads it and never
-  builds it, and a pattern names the fields it takes then `..`:
-  `let Loaded { config, resolved, child_env, passed_env, keys, routing,
-  providers, mcp_servers, notes } = loaded;` ->
-  `let Loaded { config, keys, .. } = loaded;`.
-- New `mcp` feature, in `default`: a trusted project's `.mcp.json`, read
-  into `Loaded::mcp_servers`. A settings loader with `default-features =
-  false` builds no MCP client, so no rmcp, reqwest, rustls or ring (147
-  crates in the tree become 49); `mcp = true` is then a note in
-  `Loaded::notes`, and `Loaded::mcp_servers` is not there. Through the
-  facade (breaking): `config` no longer turns on `mcp`, and the facade's
-  `mcp` turns on the loader's. `features = ["config"]` with
-  `default-features = false` -> `features = ["config", "mcp"]` to keep
-  reading `.mcp.json` (148 crates become 50 without it).
-- The crate docs show loading real files: `.load(&RealFs)` with
-  haest-workspace's disk, which every example before read from memory.
-- `subagent_minutes` takes a fraction, as `max_turn_minutes` does
-  (`2.5` is two and a half minutes; it was refused as not a whole number).
-  A time too long for a `Duration` is the longest there is.
-- A refused setting's error names the setting as a field, not only in its
-  text (breaking): `ConfigError::Invalid { at, why }` ->
-  `Invalid { at, key, why }`, and an unknown setting is its own variant,
-  `UnknownSetting { at, key }`. `key` is the setting as the layer gives
-  it, in a file its TOML path (`max_turn_steps`, `profiles.review.tools`,
-  `env.GH_TOKEN`), so an editor or a settings screen can point at it
-  without parsing the text.
-- New setting kind `Kind::Url`, which `broker_url` takes: a URL with an `@`
-  past its host, or with no host (`wss://:8443/agents`, what an empty
-  `${BROKER_HOST}` makes), is refused at load (haest-http's
-  `check_endpoint_url`).
-  docs/settings.md says what it refuses and why, and the `haest` command
-  names the flag's value `URL`.
-
-### haest-runtime
-
-- How the conversation is assembled is the runtime's own (breaking):
-  `RuntimeParent`, `WrappedTools`, `MainTools`, `RuntimePrompt`,
-  `AgentPrompt`, `InboxSender`, `NoImageKey`, `own_tools`,
-  `image_options`, `instruction_options`, `skill_options`,
-  `workspace_for`, `jobs_for`, `connect_mcp`, `mods_for`, `inbox` and
-  `session_usd` are crate-private. None worked without haest's session
-  file, so "the pieces" never served a host that owns some parts. `build`
-  is the way in, and the parts are read on the `Runtime`:
-  `mods_for(&hooks, &*fs, &gate).await` -> `build(inputs, ui, prompter,
-  opts).await?` then `rt.mods()`. A host that owns some parts builds its
-  own `AgentDeps`, with `builtin_tools_where(|t|
-  settings.tools.has(t.as_str()), ..)` for haest's tools.
-- `Runtime` keeps its fields private, each read with the getter of its
-  name (breaking): `rt.hooks.flush().await` -> `rt.hooks().flush().await`,
-  `rt.jobs.clone()` -> `rt.jobs().cloned()`, `rt.gate.revoke("Bash")` ->
-  `rt.gate().revoke("Bash")`. A host running its own turn loop over the
-  inbox takes `rt.inbox_mut()`. `Runtime` implements `Debug` (the host's
-  UI left out).
-- `build` takes the UI by value, as it takes the prompter (breaking):
-  `build(inputs, Arc::new(Lines), DenyAll, opts)` ->
-  `build(inputs, Lines, DenyAll, opts)`, and `rt.ui()` hands it back as
-  the host's own type. A host that keeps its UI as well hands in an `Arc`
-  of it: an `Arc` of a `Ui` is a `Ui`, and the runtime is then a
-  `Runtime<Arc<TermUi>>`.
-- `World` is a struct with two constructors (breaking):
-  `World::Disk { child_env }` -> `World::disk(child_env)`,
-  `World::Fs(Arc::new(MemFs::new()))` -> `World::files(MemFs::new())`.
-  `World::fs` returns `&FsRef`; it made a new `Arc` of the real disk on
-  every call. `World` implements `Debug`.
-- `RuntimeInputs` keeps its fields private and holds handles (breaking):
-  a part is set with its `with_*` setter and read with the getter of its
-  name. `inputs.keys = Arc::new(|name: &str| ..)` ->
-  `.with_keys(|name: &str| ..)`, `inputs.http = Arc::new(gateway)` ->
-  `.with_http(gateway)`, `inputs.mcp_servers = vec![server]` ->
-  `.with_mcp_servers([server])`, `inputs.routing = Some(scopes)` ->
-  `.with_routing(scopes)` (the scopes themselves; leave it off for none);
-  `keys()` is a `KeySourceRef` and
-  `http()` an `HttpClientRef` (were `Arc<dyn KeySource>` and
-  `Arc<dyn HttpClient>`). `RuntimeInputs` implements `Debug`, the custom
-  providers by name only (an entry may hold a key).
-- A runtime's services are handles, held by cloning them (breaking).
-  `RuntimeHooks` is a cheap `Clone` (it was shared as an
-  `Arc<RuntimeHooks>`), and the runtime holds `McpHub`, `SubagentHub`,
-  `Option<JobHub>`, `TaskBoard` and an `FsRef` where it held an `Arc` of
-  each: `let hooks: Arc<RuntimeHooks> = rt.hooks.clone()` ->
-  `let hooks = rt.hooks().clone()`.
-- The skills offered are core's `Skills` (was `Arc<Mutex<Vec<Skill>>>`):
-  `*rt.skills.lock().unwrap() = found` -> `rt.skills().replace(found)`,
-  and `rt.skills().list()` reads them.
-- `RuntimeHooks` keeps its fields private: `hooks.settings` ->
-  `hooks.settings()`. `hooks.ui` and `hooks.catalog` are gone (the host
-  has its own UI; the catalog is `Catalog::builtin()`), and `new`,
-  `store`, `remedies`, `window` and `compaction_for` are crate-private:
-  hooks come from `build`, the session's id from `rt.session_id()`.
-- `RuntimeHooks::compact_now` is crate-private, and its `auto: bool` an
-  enum inside (breaking): it needed main's `&mut Agent`, which no host
-  holds. `hooks.compact_now(&mut agent, &cancel, false)` ->
-  `rt.compact(&cancel)`, the human's /compact.
-- `#[non_exhaustive]` on `BuildError`, `SessionFileError`, `WorkspaceError`,
-  `ShutDown` and `SessionInfo` (breaking): a `match` adds a `_` arm, and a
-  host reads a `ShutDown` or a `SessionInfo` and never builds one.
-- `SessionInfo::cwd` is a `PathBuf` (was `String`):
-  `info.cwd == cwd.to_string_lossy()` -> `info.cwd == cwd`, and
-  `format!("{}", info.cwd)` -> `format!("{}", info.cwd.display())`.
-  `SessionInfo` implements `Eq`.
-- Every public type implements `Debug` (`Runtime`, `RuntimeInputs` and
-  `World` are new), and the crate warns on one that does not
-  (`missing_debug_implementations`).
-- Every doc example that can fail returns a `Result` and uses `?`; none
-  writes an `Arc::new` or an `unwrap`. `list_sessions`' example lists a
-  session it created, and `RuntimeInputs` has one of its own.
-- `RuntimeHooks::append` takes the record by reference, as
-  `SessionSink::append` does (breaking): `hooks.append(record)` ->
-  `hooks.append(&record)`. `RuntimeInputs`' `with_*` setters are
-  `#[must_use]`: a setter whose result is dropped set nothing.
-- The runtime hands `RuntimeHooks` to `SharedDeps::with_services` as well
-  as `with_hooks`; what tools publish, report and log reaches it as before.
-- Feature `session` (off; the facade's `session` turns it on with
-  `runtime`): `impl Driven for Runtime<U>`. The driver calls the runtime's
-  own `next_agent_turn`, `run` and `shut_down`, and its mods are the
-  driver's rewriter, so a session runs the turn loop a host without one
-  runs, and a person's input steered into a turn goes through the mods
-  too. New at the root: `HubUi` (a
-  `Ui` whose lines are `notice` frames) and `subagent_frame`.
-- `wind_down_at` reaches the conversation as wind-down thresholds, for main
-  and every subagent of its hub.
-- A turn's warning threshold reaches the human through `Ui::warn`.
-- `Runtime::mods` returns `Mods`, now a cheap handle (was `Arc<Mods>`):
-  `rt.mods().command(..)`.
-- The session file's error is `SessionFileError`, and `BuildError`'s
-  variant for it `SessionFile` (breaking), so the facade no longer has two
-  `SessionError`s (haest-session's is a running session's):
-  `BuildError::Session(SessionError::NotFound { .. })` ->
-  `BuildError::SessionFile(SessionFileError::NotFound { .. })`.
-  `Runtime::clear` returns it.
-- `World::child_env` is a getter, the environment the disk was made with
-  (breaking), and `World::starts_processes` says whether haest may start
-  processes at all: `world.child_env(&ChildEnv::default()).is_some()` ->
-  `world.starts_processes()`, and `world.child_env(&passed)` ->
-  `world.child_env().map(|env| env.overlaid(&passed))`.
-- `BuildOptions` says which model and effort a resume goes on with in an
-  `OnResume` of two `Prefer`s, where it had two bools (breaking):
-  `BuildOptions { resume, model_spec_given: true, effort_given: false }` ->
-  `BuildOptions { resume, on_resume: OnResume { model: Prefer::Settings, effort: Prefer::Saved } }`.
-  The session file is unchanged.
-- `WorkspaceError::Sandbox` holds haest-workspace's `OpenSandboxError`
-  (was an `io::Error`) and shows its message, so a sandbox that does not
-  open names the dir (breaking only for a `match` that read the
-  `io::Error`: `e.kind()` still works on it).
-- `RuntimeInputs::with_mod` puts a host's own native mod in the
-  conversation, after the built-ins and the mod files, whatever the `mods`
-  settings say; `host_mods()` reads them back. A host had no way to: the
-  `Mods` the runtime hands out was already shared, and a mod added to a
-  clone of it reached nothing.
-- `RuntimeInputs::with_models` takes the host's own `ModelResolver` (a
-  closure, a test's `ScriptedProvider::resolver()`) in place of the
-  built-in providers: every model spec resolves through it, so a test or
-  an offline host runs a whole conversation without a key or a faked
-  provider wire format. `models()` reads it back.
-- `HubUi::hub` returns the stream its lines go into, so a host's own `Ui`
-  wraps a `HubUi` for the lines and publishes its other frames beside them
-  (the `haest` command's terminal does).
-- `Resume` is `#[non_exhaustive]`: more ways to pick a session may come, so
-  a `match` on it adds a `_` arm. Building one is unchanged.
-- `InboxQueue::wait` returns whether anything can still arrive, and
-  returns at once when an arrival already waits, so a session driver never
-  takes an arrival it raced for "every sender is gone" (breaking, barely:
-  `q.wait().await;` -> `if !q.wait().await { /* nothing will come */ }`).
-- A /compact given up before it returned (`Runtime::compact` dropped: the
-  terminal's Ctrl+C) put none of its summary calls' cost on the
-  conversation's spend, though its docs said "either way": the runtime
-  charged the ledger once the compaction returned. Each call is booked as
-  it comes back now (haest-core's `compact` does it), so a drop loses only
-  the call still running, and `Runtime::compact` says so: to book that one
-  too, fire `cancel` and await it.
-- `RuntimeHooks` kept `AgentHooks::before_effects` at its default, which
-  returns at once, so a tool with side effects (Write, an MCP tool that
-  sends, a paid GenerateImage) started while the answer that called it
-  was still queued for the session file. A crash then lost the call but
-  not its effect, and the resume had nothing to answer as interrupted; on
-  a slow host file system even the human's message was not written yet.
-  It now waits for the session file there.
-- New `SessionFileError::InUse { id }`: the session to resume is held by
-  another run (see Behaviour changes).
-
-### haest-ts
-
-- `StripError` is `#[non_exhaustive]` (breaking): a `match` adds a `_` arm.
-
-### haest-wire (new)
-
-The format, serde only (no I/O, no tokio): `Envelope<B>` (`v`, `sid`,
-`seq`, `ts`, `path`, the body flattened in), `Framer`, `Path`, `WIRE_V`,
-`now_ms`; the wire's own frames `Outbound` (`Notice`, `Ask`, `Status`,
-`ApprovalAsk`, `ApprovalWithdrawn`, `SubagentStarted`, `SubagentStopped`,
-`Hello`, `Gap`, `Reply`) with `Access`, `Origin`, `Level`, `State` and
-`Snapshot`; requests `Inbound { v, id, request }` with `Request` (`Turn`,
-`Control`, `ApprovalAnswer`, `Snapshot`, `History`, `Events`), `Control`
-and `Answer`. `decode` and `decode_value` check `v` before the shape
-(`DecodeError`: `Json`, `Version`, `NoVersion`, `Shape`). `Ring` keeps
-`capacity` frames outside the running turn and the running turn whole,
-drops a model call's pieces once its answer is in, and reports a gap only
-for an eviction (`Classify`, `FrameKind`, `Replay`). `LineDecoder` and
-`encode_line` are NDJSON with a line cap (`LineTooLong`); the decoder
-looks at each byte once for a newline, however small the pieces a peer
-sends a long line in.
-
-Changed since the first cut of these crates on `main` (breaking for Rust
-code written against it). The JSON on the wire is unchanged, byte for byte:
-`tests/wire_bytes.rs` pins every request, frame and word as the first cut
-wrote them.
-
-- `Request::Control` holds a `Control`, one variant per verb carrying only
-  that verb's field, so `set_model` without a model or `interrupt` with an
-  effort cannot be built: `Request::Control { verb: Verb::SetModelSpec,
-  model_spec: Some(m), effort: None }` ->
-  `Request::Control(Control::SetModel { model: m })`. `Verb` is gone. A
-  `set_model` line without a `model` is refused as not a request
-  (``missing field `model` ``) instead of by the transport (`set_model
-  needs a model`); a field a verb does not use is still ignored.
-- `Request::commands()` -> `Request::needs_command()`.
-- `#[non_exhaustive]` on `Outbound`, `Request`, `Control`, `DecodeError`
-  and `Level`: a `match` adds a `_` arm, so a new frame type, request, verb
-  or level is additive in Rust as it already is on the wire.
-- `Access`, `Origin`, `Level`, `State` and `Answer` have `as_str`,
-  `Display` (a width pads it) and `FromStr`, and serde writes and reads the
-  same word from the same list. An unknown word is the new `UnknownWord`:
-  `unknown access "admin" (watch, command)`, also the cause of the
-  `DecodeError::Shape` for a request that sends one.
-- `Path` keeps its segments private: `path.0` -> `path.segments()` (`main`
-  first). Every path starts with `main` by construction, and a line whose
-  path does not is no longer read as a frame. `Path::main()` allocates
-  nothing, where it allocated a `Vec` and a `String` for every frame.
-- `Ring::push` takes the frame itself, or an `Arc` of one the caller also
-  hands out: `ring.push(Arc::new(frame))` -> `ring.push(frame)`. `new`,
-  `capacity`, `len`, `is_empty` and `since` no longer need `B: Classify`,
-  and the new `set_capacity` changes what a ring keeps (a smaller capacity
-  evicts at once, a gap like any eviction).
-- `LineDecoder::with_limit` is a setter:
-  `LineDecoder::with_limit(n)` -> `LineDecoder::new().with_limit(n)`;
-  `LineDecoder::DEFAULT_LIMIT` is the 64 MiB. Its docs say what the limit
-  bounds: the unfinished line kept between pushes, so a line that ends
-  inside one push may pass it by up to that push's size.
-- Every doc example returns a `Result` and uses `?`.
-- `Outbound::Hello`'s `token` is a `Token`, so a hello's `Debug` (and a
-  `Frame`'s, a `RunningSession`'s) no longer prints the broker's
-  credential: `token: Some("t".to_string())` -> `token: Some("t".into())`,
-  `token.as_deref()` -> `token.as_ref().map(Token::expose)`. On the wire it
-  is the same plain string.
-- `LineDecoder::limit` reads the limit back.
-- `State` and `Answer` are `#[non_exhaustive]`: more turn states and
-  approval answers may come, so a `match` adds a `_` arm (haest-session's
-  prompter denies an answer it does not know). The words on the wire are
-  unchanged.
-- `LineDecoder` gives a line one way however it ends: the whitespace around
-  it goes and a blank line is skipped, for a line ended by its newline as
-  for the last one `flush` gives. A pushed line kept its spaces, and a line
-  of spaces came out as a line, which then failed to parse as a frame.
-- After `LineTooLong`, `LineDecoder` drops the rest of the refused line up
-  to its newline. It handed that rest out as a line of its own, so a host
-  that read on after the error got a fragment of the long line as a frame.
-- `Control::SetModel` and `Control::SetEffort` say what haest-session does
-  with them: the change holds from the next turn on, and the running turn
-  ends on what it started with. They said "from the next model call on".
-
-### haest-session (new)
-
-- `Hub` (`HubOptions { ring, buffer }`): one numbered stream. `subscribe(after)`
-  gives a `Subscription`: the ring's catch-up, then live; one `gap` when it
-  falls behind, and the turn never waits on it. `Frame` is
-  `Envelope<Body>`, `Body` a loop event or a wire frame.
-- `start(driven, hub)` runs the driver and returns a `SessionHandle`: one
-  turn at a time; input that arrives mid-turn is steered into it; a person's
-  input steered in but never read runs next as a person's turn; model,
-  effort and clear wait for the running turn. `with`, `hold` (`Hold`),
-  `send_input` (`PendingTurn`), `idle`, `settled`.
-- `Backend` is the seam every transport serves: `meta`, `submit`, `turn`,
-  `control`, `answer`, `subscribe`, `snapshot`, `history`, `close`, with
-  `Input`, `Control` (`Interrupt`, `SetModelSpec`, `SetEffort`, `Clear`),
-  `Meta`, `History` and `SessionError` (`Closed`, `Held`, `NoSuchAsk`,
-  `Control`).
-- `Driven` is the plug point the driver runs: `run`, `human_turn`,
-  `next_agent_turn`, `take_unread`, `gate_agent`, `arrival`, `expecting`,
-  `history`, `status` (`DrivenStatus`), `set_model_spec`, `set_effort`,
-  `clear`, `close`. `impl Driven for Agent`. A change's error is a
-  `BoxError`.
-- Feature `approvals`: `SessionPrompter`, a `Prompter` whose asks are
-  `approval_ask` frames a peer answers, under the runtime's `ApprovalGate`.
-
-Changed since the first cut on `main` (breaking for Rust code written
-against it; the wire JSON is unchanged):
-
-- `Hub::new` takes the stream id alone, and a hub with options of its own
-  is `Hub::new_with_options`: `Hub::new("s1", HubOptions::default())` ->
-  `Hub::new("s1")`, and `Hub::new(sid, opts)` ->
-  `Hub::new_with_options(sid, opts)`. The options are fixed when the hub
-  is made, before any clone or subscriber exists; there is no setter that
-  changes them for every clone, or that a subscriber made a no-op.
-- `SessionHandle` drives itself: `turn`, `submit`, `control`, `answer`,
-  `subscribe`, `snapshot`, `history`, `close` and `meta` are its own
-  methods, and its `Backend` impl forwards to them, so a host no longer
-  writes `use haest_session::Backend`. `submit` and `answer` never wait, so
-  the handle's are not `async`: `session.answer(n, a).await` ->
-  `session.answer(n, a)`; `meta` lends (`&Meta`) where the trait's returns
-  one.
-- `SessionHandle::with` says why it takes a closure returning a
-  `BoxFuture`: an `AsyncFnOnce` cannot promise its future is `Send` on
-  stable Rust, and the job runs on the driver's task.
-- `#[non_exhaustive]` on `Control` and `SessionError`: a backend that
-  matches a `Control` refuses one it does not know with a `_` arm.
-- `Meta` and `History` are `#[non_exhaustive]`, and a host's own
-  `Backend` builds them with `new`:
-  `Meta { sid, pid, started_ms }` -> `Meta::new(sid, pid, started_ms)`,
-  and `History { seq, messages }` -> `History::new(seq, messages)`. Their
-  fields stay public to read.
-- `Input` is `#[non_exhaustive]`, so a part (an image, a file) is not a
-  breaking change, and has `Input::new(text, origin)` beside `human` and
-  `agent`: `Input { text, origin }` -> `Input::new(text, origin)`.
-- `SessionHandle` and `Hold` implement `Debug` (the handle shows its `Meta`
-  and whether the session still runs).
-- New `BackendRef`, the shared handle to a `Backend` (`plug_ref!`, as every
-  other plug point): built from the backend itself, an `Arc` of one, or an
-  `Arc<dyn Backend>`. Its `Debug` shows the stream's id.
-- New plug point `RewritePrompt` (`RewritePromptRef`) and the defaulted
-  `Driven::rewriter`: the driver runs every person's input through it,
-  the input that starts a turn and input steered into one alike.
-  `Driven::human_turn` now gets text the rewriter already ran on (breaking
-  for a `Driven` that rewrote in `human_turn`): move the rewrite to
-  `fn rewriter(&self) -> Option<RewritePromptRef> { Some(MyRewrite.into()) }`,
-  or steered input skips it.
-- `Hold` is `#[must_use]`: `session.hold().await?;` warns, since dropping
-  the hold at once lets go of it.
-- An approval ask after the hub closed is denied at once. It waited for
-  the gate's timeout (10 minutes by default) or an interrupt, with no frame
-  out for anyone to answer.
-- `SessionHandle::hold` is cancel-safe. A `hold()` dropped before it
-  resolved (raced against Ctrl-C or a timeout; it waits for a running turn
-  to end) still held the session, with no `Hold` left to release it: input
-  queued and no turn ran again. It now holds nothing.
-- `Hub::publish` turns the body into a `Body` before it takes the hub's
-  lock. A host's own `From<_> for Body` ran under it, and one that panicked
-  poisoned it: every frame after it panicked too, the driver's own included.
-- Code that panics on the session's task (a `with` job, a `Driven` method,
-  the rewriter) ends the session as a close does: what waits reads
-  `Closed`, `Driven::close` still runs (it stops what the conversation
-  started and saves), and the stream ends. The driver died with nothing
-  cleaned up: every subscriber, transport and peer waited on a dead session,
-  and the conversation was not saved. The stream now ends however the
-  driver ends, a panic in `Driven::close` itself included, and
-  `Hub::close` never panics.
-- `SessionHandle::with` is cancel-safe: a job whose caller gave up on it
-  (dropped the call: Ctrl-C, a timeout) is withdrawn. One that has not
-  started never runs; one that runs is dropped where it waits. It ran to
-  its end regardless, so a job that never ended (a mod's slash command
-  whose promise never settles) held the session for good: no turn ran
-  again and `close` never returned. `close` now stops a job that has not
-  ended the same way, and the job's caller reads `Closed`.
-- A snapshot is answered while a `with` job runs, as during a turn. It
-  waited for the job like every other request, so a peer's `hello` during a
-  long slash command (a /compact) went unanswered until it ended, and a
-  broker that waits for a hello in vain refused the link for good. A
-  snapshot's `queued` now also counts input sent during a job, which waits
-  for its end.
-- A rewriter that does not answer no longer wedges the session. The turn's
-  own rewrite ran before the driver read any request, and after a turn the
-  driver waited for every steered input's rewrite before it said the turn
-  ended: an interrupt, a snapshot, `close` and the turn's caller all
-  waited for good. Requests are now read while a rewrite runs: an
-  interrupt or a close drops it (that input never goes in, and a turn
-  stopped before it ran ends aborted with no model call), a snapshot is
-  answered, and a turn's caller hears it ended as soon as it does.
-  `RewritePrompt` says it should answer promptly and be cancel-safe.
-- A change a snapshot between turns sees goes out as a `status` frame
-  first. The snapshot took the conversation's status without publishing
-  it, so a change nothing else published (spend from a background
-  subagent) never reached the stream, and the next change was compared
-  against it: peers that follow the stream did not hear of it until the
-  next turn.
-- `Hub::subscribe(after)` with an `after` the stream never reached (a peer
-  that holds another run's frames under the same stream id, such as a
-  broker after a host restarted with a stable id) starts at the stream's
-  last seq with a `gap`. It skipped every new frame up to `after` as one
-  the peer already held, with no gap to say so.
-- `Backend`'s docs say a call takes its place in the conversation when it
-  is first polled, as `SessionHandle`'s do: a transport starts a peer's
-  requests in the order the peer sent them, each once the one before it
-  was first polled, so a backend that queues a call only later may see
-  them out of order.
-- The driver calls `Driven::arrival` only when it waits on it: between
-  turns, with no `Hold` held. While a `Hold` was held, it called
-  `arrival` once for each request it served and dropped the future
-  unpolled, so a host whose `arrival` does work in the call, outside its
-  future, did that work again on every request. `Driven::arrival` says
-  when it is called.
-
-### haest-transport (new)
-
-- `serve(backend, grant, start, source, sink)`: one connection's rules,
-  the same on every transport. `hello` first; a `reply` per request with its
-  `id`, a turn's when it ends and after its last frame; stream frames only as
-  asked for with `events {after, follow}`; a request of another version or
-  one the access forbids is refused with its `id`; a slow peer gets a `gap`,
-  never a wait. Once the session holds 32 of a connection's requests (a
-  turn's end, a history asked during a turn), one more that would wait is
-  refused, while an `interrupt`, a `close`, an approval answer, a
-  `snapshot` or an `events` is still served; with 64 in flight the
-  connection reads no more lines until one is answered, so a peer that
-  never reads makes no more work than that. A peer's requests reach the
-  session in the order it sent them, and a burst written in one go meets
-  the cap as requests sent one at a time do. `Grant` (`watch`, `command`), `Start`, `Ended`, the seams
-  `LineSource` and `LineSink`, `NdjsonSource` and `NdjsonSink`, the trait
-  `Transport` (`attach` returns an `Attached`: `ended`, `detach`; dropped is
-  detached), `Peer` (the asking side) and `TransportError`.
-- Feature `stdio`: `Stdio::new(read, write)` and `Stdio::process()` (stdin
-  read on a thread of its own, `ProcessStdin`, so a closed conversation
-  never waits on the parent at exit).
-- Feature `unix` (Unix only): `UnixSocket::new(dir)` serves
-  `<dir>/<stream id>.sock` with a discovery file beside it
-  (`SocketDiscovery`); the dir is 0700, the socket and the file 0600; a
-  crashed run's socket is replaced, a live one refused (`InUse`). A stream
-  id that is not a plain file name (empty, or with a `/` or a NUL) is
-  refused (`StreamId`), and nothing is made.
-  `running_sessions(dir)` lists the sessions that answer (`RunningSession`)
-  and removes a crashed run's files; `connect_session(dir, id)` reaches one
-  by id or unique prefix (`UnixPeer`). Both go only to the
-  `<stream id>.sock` beside a discovery file, and a file that names another
-  path is neither dialed nor listed; a session's files are removed only
-  when its connection was refused or its socket is gone, so a crafted
-  discovery file deletes nothing and a passing error (too many open files)
-  keeps a live session's socket.
-- Feature `broker`: `Broker::new(url).with_token(..).with_backoff(..)` dials out to a
-  `ws://` or `wss://` broker. The token rides in `hello`, never in the URL,
-  and nothing more goes until the broker's ack (`events` with the last seq
-  it holds); the stream resumes there, so a frame lost in a closing socket is
-  sent again, and a gap comes when the ring no longer holds what the broker
-  missed. A dropped link, or one the broker goes silent on for the silence
-  limit (60 s, pinged after 20 s of quiet), is dialed again after a
-  full-jitter `Backoff`
-  (500 ms doubling to 30 s); close 4401 or 4408 (`AUTH_CLOSE`), or a 401 or
-  403 handshake, ends it with `TransportError::Auth`. `Broker`'s Debug and
-  `TransportError::Url` show the URL without its userinfo, query values or
-  fragment, and the token never. `attach` refuses a URL with an `@` past
-  its host, or no host, with `TransportError::UrlRefused`, and one no dial
-  can reach with `TransportError::Undialable`: one that does not parse as
-  a request (a space or a control character in it or around it, a host
-  outside ASCII, a `\`), or whose port is past 65535 (tungstenite would
-  dial the scheme's default port). A refusal shows the URL with its
-  control characters escaped (a CR as `\r`). Nothing is
-  dialed then. The link dials the URL without its userinfo, so no part of
-  it goes out, and with `/` for its path when it has none.
-
-Changed since the first cut on `main` (breaking for Rust code written
-against it; the wire JSON is unchanged):
-
-- `Transport::attach` and `serve` take `impl Into<BackendRef>`, so a host
-  hands over its session as it is:
-  `let backend: Arc<dyn Backend> = Arc::new(session.clone());
-  UnixSocket::new(dir).attach(backend, grant)` ->
-  `UnixSocket::new(dir).attach(session.clone(), grant)`. An `Arc` of any
-  backend, or an `Arc<dyn Backend>`, still goes in as it is. A transport
-  keeps one `BackendRef` and clones it per connection.
-- Setters are `with_*`, as everywhere else in haest:
-  `Broker::new(url).token(Some(t)).backoff(b)` ->
-  `Broker::new(url).with_token(t).with_backoff(b)` (`with_token` takes a
-  `String`, a `&str` or a `Token`); `Stdio::starting(start)` ->
-  `Stdio::with_start(start)`. `Broker` has the getters `url`, `token` and
-  `backoff`, `Stdio` has `start`.
-- `Start::token` is an `Option<Token>` (haest-wire's), so `Start`,
-  `Broker` and the hello all keep it out of `Debug` the same way:
-  `token: Some("t".to_string())` -> `token: Some("t".into())`.
-- `#[non_exhaustive]` on `Ended`: a `match` adds a `_` arm.
-- `Grant` is `#[non_exhaustive]`, so a narrower scope is not a breaking
-  change, and has `Grant::new(access, origin)` beside `watch` and
-  `command`: `Grant { access, origin }` -> `Grant::new(access, origin)`.
-- `NdjsonSource`, `NdjsonSink`, `Peer` and `Stdio` implement `Debug`
-  (counts and the start, never the pipes or a line's text).
-- `TransportError::Path` says what failed on the path: it has a `what`
-  verb, and displays `could not bind /run/haest/s1.sock` where it said the
-  bare path. A request or discovery file that cannot be written as JSON is
-  the new `TransportError::Encode`, no longer `NotAFrame`.
-- `Peer::start`'s docs say `NotHello` for a first frame that is not a
-  `hello` (`NotAFrame` only when the line is not a frame at all).
-- `#![warn(missing_docs)]`, as the other crates have.
-- `Attached` is `#[must_use]`: `UnixSocket::new(&dir).attach(s, g)?;`
-  warns, since dropping it detaches the transport and removes the socket
-  at once.
-- `Stdio`, `UnixSocket` and `Broker` have `attach` of their own, so
-  attaching one needs no `use haest_transport::Transport` (the trait
-  forwards to them, for code generic over a transport). `Stdio::attach`
-  cannot fail and returns the `Attached` itself (breaking):
-  `let attached = Stdio::process().attach(s, g)?;` ->
-  `let attached = Stdio::process().attach(s, g);`.
-- `Ended` implements `Display` (`the peer left`, `the conversation ended`,
-  `reading from the peer failed: ` and the error with its causes, or a
-  broker's refusal of the token as it is: `the broker refused the link
-  (401): ...`), so a host shows why a connection ended without Debug text;
-  the `haest` command's "the connection ended" line uses it.
-- `NdjsonSource::with_limit` sets the longest line it takes (64 MiB by
-  default; `limit()` reads it), and the source keeps one read buffer
-  where it allocated 16 KiB on every `next_line`, even with a line
-  already waiting.
-- One failed `accept` no longer ends a `UnixSocket` transport. A process
-  out of file descriptors for a moment (EMFILE) dropped the listener and
-  removed the socket and its discovery file, so nobody could attach to
-  that conversation again after the pressure passed. The loop now pauses
-  100 ms and accepts again; only the conversation's end stops it.
-- `serve` returns when the conversation ends, also under a peer that
-  stopped reading. A turn's reply waits for the turn's frames to go out,
-  which such a peer never takes, so `serve` (and the broker link and stdio
-  over it) never returned, and a refusal sent into a full out buffer held
-  up the connection itself. Once the conversation ended, what is still in
-  flight gets about a second, and every reply goes out from a task of its
-  own.
-- The broker link checks that the broker is still there. A path that went
-  silent (the broker's host lost power, a NAT forgot the mapping, the
-  machine slept) sends no close and no reset, so an idle link stayed
-  "linked" to a broker that had long dropped it, and was never dialed
-  again. haest now pings a broker it has not heard from for a third of the
-  silence limit, and a link that hears nothing, not even the pong, for the
-  whole limit ends with the new `TransportError::Silent` and is dialed
-  again. The limit is 60 s by default (`Broker::SILENCE_LIMIT`): a ping
-  every 20 s of quiet also keeps a proxy that cuts idle links at 60 s from
-  cutting this one. `Broker::with_silence_limit(d)` sets it (a limit past
-  the clock's range, `Duration::MAX`, is no limit; it overflowed the clock
-  and panicked the link's task, and `Attached::ended` with it),
-  `without_silence_limit()` turns the check off, `silence_limit()` reads
-  it. The ping goes through `LineSink::keepalive`, a new method whose
-  default never resolves, so other sinks are unchanged. Its docs say what
-  a sink's own must do: wait for a reason to send, and be cancel-safe. A
-  keepalive that is ready at once had the writer do nothing else, so the
-  peer never even got its `hello` and the writer held a runtime thread;
-  after one that never waited, the writer now sends only lines for 100 ms.
-- The broker link ends with a WebSocket Close frame (1000, "the
-  conversation ended") when the conversation ends. It dropped the socket,
-  which the broker read as a connection reset, the same as a path that
-  died and will be dialed again.
-- A detached transport stops serving. `serve` writes to the peer and
-  follows the stream on tasks of its own, and nothing stopped them when
-  `serve` was dropped, which is how `Attached::detach`, a dropped
-  `Attached` and a host's own `select!` stop a connection: a peer that
-  followed the stream kept getting every frame, and a detached broker link
-  kept its socket open, streamed the conversation to the broker and pinged
-  it until the conversation ended. A dropped `serve` now stops both, so a
-  detached broker link closes its socket. The writer runs inside `serve`,
-  so a dropped `serve` calls the host's `LineSink` no more and drops it
-  there. Aborting a writer on a task of its own was not enough: an abort
-  lands at the task's next poll, so a writer busy on another worker went
-  on calling the sink after the host dropped `serve`, and the sink
-  outlived it. `Attached::detach` (or a dropped `Attached`) of the
-  transports here also writes nothing the conversation makes after it: a
-  connection in the middle of a step on another worker finished that step
-  before the abort landed, and could write the next frame first (the next
-  turn's input reached a Unix peer). An `Attached::new` around a host's own
-  task is stopped by the abort alone, and its docs say so.
-- `Attached::ended` given up on (raced against a timeout, or its task
-  aborted) stops the transport, as dropping the `Attached` does. It took
-  the transport's task out before it waited, so a dropped wait left the
-  transport serving with nothing left to stop it, and the session handle
-  the transport holds kept the conversation running after the host
-  dropped its own: `Driven::close` never ran.
-- A peer gone before its `hello` went out (its sink failed at once) ends
-  the connection with `Ended::PeerLeft`. `serve` said `Closed`, the
-  conversation ended, while it went on, and a transport that dials again
-  only after a peer left stopped for good: the broker link sent Close
-  1000 and never dialed again.
-- Every `events` request gets its catch-up and its reply. Its reply came
-  from the task that writes the catch-up, which the connection stopped
-  when the peer's input ended (one request piped into the control socket
-  got its reply about 1 time in 4) or when a later `events` replaced it
-  (that one never got a reply). It is now waited for like any other
-  request, and one a later `events` replaced is refused with its id.
-- A panic in a host's `LineSink` reaches the host once the connection has
-  stopped, as one in its `LineSource` does. `serve` reported it as
-  `Ended::PeerLeft`, so a host that dials again after a peer left dialed
-  its own bug again forever.
-- A connection's requests reach the session in the order the peer sent
-  them. Each request's backend call started on a task of its own, and on
-  a runtime of several threads (the `haest` command's `--stdio`, control
-  socket and broker link) the newest task usually ran first: a `clear`
-  written together with a `turn` cleared that turn, a `set_model` before
-  a `turn` ran the turn on the old model, and an `interrupt` sent right
-  after a `turn` was spent between turns while the turn ran on. The
-  connection now reads the next line once the call before it has been
-  polled the first time.
-- A peer at the request cap keeps its stop button. Once 32 requests
-  waited for their replies the connection read no more lines, and a turn
-  and every `history` asked during it wait for the turn's end: a
-  dashboard polling once a second hit the cap 31 seconds into a long
-  turn, and from then on its `interrupt` and its approval answers sat
-  unread until the turn ended (an approval ask the turn waited on was
-  denied at the gate's timeout). At the cap a request that would wait too
-  is now refused with its id, to send again once one is answered, while
-  `interrupt`, `close`, an approval answer, `snapshot` and `events` (the
-  stream's ring answers it) are still served. The cap counts what the
-  session holds, from a request's first poll to its answer, and the next
-  line is read only once the request before it has reached the session,
-  so a burst written in one go while a turn runs meets the cap as
-  requests sent one at a time do; a request already answered does not
-  count. With 64 requests in flight the connection stops reading, as it
-  did at 32.
-- A panic in a host's `Backend` while it serves a request reaches the
-  host once the connection has stopped, as one in its `LineSink` does,
-  and that request is refused with its id first; a panic in its
-  `subscribe` for an `events` request too. `serve` dropped a call's
-  panic: the peer waited for good for the reply, and the connection went
-  on; one in `subscribe` unwound `serve` at once, with no reply to the
-  `events`. The Unix socket transport now ends with a connection's panic,
-  which `Attached::ended` raises, also one met in the second its
-  connections get after the conversation ended; its accept loop dropped
-  it too.
-- A host's `LineSource` loses no line to `serve`. `serve` made a
-  `next_line` future on every pass of its loop, also while it waited for
-  the request read last to reach the session, and dropped it unpolled: a
-  source that takes its line when `next_line` is called (one written with
-  `std::future::ready`, as clippy's pedantic group rewrites an `async fn`
-  that never awaits) lost the line after each request that reaches the
-  session, so 13 of 20 `history` requests got no reply. It also dropped a
-  pending read whenever something else came first, so a source that reads
-  a line over several awaits (`BufReader::read_line`) lost a line that
-  arrived in two pieces. `serve` now calls `next_line` only when it takes
-  a line, keeps each read until it resolves, and drops one still pending
-  only with the source when the connection ends, so a source needs no
-  cancel-safety of its own; `LineSource::next_line` says so. The source
-  itself is kept until the connection ends too, also after it returned
-  None, while the requests still in flight are answered.
-- The broker link sends no part of its URL's userinfo, in the `Host`
-  header either. tungstenite writes `Host` from after the first `@` and
-  dials the host after the last, so a user or a password with an
-  unescaped `@` (`wss://me@corp.example:s3cret@broker.example/agents`)
-  went out as `Host: corp.example:s3cret@broker.example`, to the broker
-  and to every proxy in front of it that logs the header. The link now
-  dials the URL without its userinfo. tungstenite never sent it as a
-  credential: the broker's is the token, in the `hello`.
-- `UnixSocket::attach` refuses a stream id that is not a plain file name,
-  with the new `TransportError::StreamId`. The socket and the discovery
-  file are named after the id, which is the backend's (`Hub::new`,
-  `Meta::new`). An id with a `/` (a `..`, a dir, an absolute path) put both
-  outside the dir, renamed the discovery file over a `.json` file of that
-  name, and removed that file when the transport ended. An empty id and
-  `.` are refused too: `.` named `..json`, and `attach` failed as a write
-  to the dir's parent.
-- `Broker::attach` refuses a URL no dial can reach, with the new
-  `TransportError::Undialable`, and no longer dials it. Such a URL (a
-  space, a host outside ASCII, no host, a `\`) failed every dial before
-  any socket opened, the link dropped each error and dialed again for
-  good, and the `haest` command said "Broker link: <url>" as if it worked.
-  A port past 65535 was dialed as the scheme's default port. A URL with
-  no host is refused as `UrlRefused`: `wss:///agents`, and
-  `wss://:8443/agents` (what `wss://${BROKER_HOST}:8443/agents` makes of
-  an empty variable), which was attached and dialed in vain for good.
-  A URL with a space or a control character before it (` ws://...`) is
-  `Undialable` too, which names the cause; it was refused as `Url`, "not
-  a ws:// or wss:// URL".
-- The broker link dials a URL with a query right after the host
-  (`wss://h.example?team=x`) with `/` for its path. tungstenite wrote
-  `GET ?team=x HTTP/1.1`, which a broker refuses (RFC 6455, section 3), so
-  such a link never came up.
-
-### haest-issues
-
-- `issue_tools` and `issue_tools_named` return `haest_core::Tools` (was
-  `Vec<Arc<dyn Tool>>`; breaking).
-- `issue_tools` and `issue_tools_named` take the tracker itself, as
-  `impl Into<TrackerRef>` (new: the handle the tools hold a tracker in), and
-  `issue_tools_named` takes the noun first (breaking):
-  `issue_tools(Arc::new(github))` -> `issue_tools(github)`,
-  `issue_tools_named(Arc::new(board), "Card")` ->
-  `issue_tools_named("Card", board)`. An `Arc` of a tracker still goes in.
-- `CardTracker::new` takes the directory first and the file system as
-  `impl Into<FsRef>` (breaking), the dependency last like every constructor
-  in haest-providers: `CardTracker::new(Arc::new(fs), dir)` ->
-  `CardTracker::new(dir, fs)`. `CardTracker` is `Clone`, the clones sharing
-  one write lock, so `Arc<CardTracker>` -> `CardTracker` and `.clone()`; it
-  is `Debug`, and `with_clock` takes `impl Into<ClockRef>`. New getter
-  `dir()`.
-- `GithubTracker::with_http` takes `impl Into<HttpClientRef>` (breaking):
-  `.with_http(Arc::new(client))` -> `.with_http(client)`. `GithubTracker` is
+- `Mod::tools`, `Mods::tools` and `ModTools::wrap` take and return `Tools`.
+- `Mods::add` is gone and a list never changes once built: `let mut m =
+  Mods::new(env); m.add(Arc::new(NoDotEnv)); let m = Arc::new(m);` -> `let m
+  = Mods::new(env, [ModRef::new(NoDotEnv)]);`. Hold `Mods` (a cheap clone)
+  where `Arc<Mods>` was: `ModTools::new(source, mods)`,
+  `ModTools::wrap(&mods, tools)`, `ModSystemPrompt::new(prompt, mods)`. A
+  host's own mod for `load_mods` goes in with `ModOptions::with_mod`.
+- `ModEnv` and `ModOptions` keep their fields private: `env.workspace` ->
+  `env.workspace()`, `cfg.user_mods = true; cfg.auto = Some(Arc::new(j));`
+  -> `ModOptions::new(cwd, mode,
+  dir).with_user_mods(true).with_approval(ApprovalMod::new().with_auto(j))`
+  (`with_project_mods`, `with_approvals`, `with_caps`; the plan mod's
+  listener and tools go in as
+  `with_plan(PlanMod::new().with_listener(f).with_planning_tools(n))`, the
+  shell tools as `ApprovalMod::with_shell_tools`). `ModOptions` is no longer
   `Clone`.
-- `TrackerError` is `#[non_exhaustive]` (breaking): a `match` adds a `_` arm.
-- `Relation` is `#[non_exhaustive]` (breaking): a tracker that matches on
-  one refuses, in a `_` arm, a relation it does not keep, and haest adds
-  one (a duplicate) in a minor release. `LinkChange` stays exhaustive (add
-  and remove are the whole set).
-- New `reqwest` feature, on by default: the GitHub tracker's default client.
-  With `default-features = false` no reqwest, rustls or ring is built (115
-  crates in the tree become 38), and a tracker the host hands no client
-  (`with_http`) fails every call, saying so (breaking for
-  `default-features = false`).
-- `CardTracker` and `GithubTracker` have every `Tracker` method inherent
-  (`info`, `list`, `search`, `get`, `create`, `update`, `delete`, `link`):
-  `tracker.get("42").await` needs no `use haest_issues::Tracker`.
-- `GithubTracker::with_api_url` takes `impl Into<String>` like the other
-  setters (was `&str`), and the tracker has the getters `owner()`,
-  `repo()`, `api_url()`, `http()` and `has_token()` (the token itself is
-  never read back). `CardTracker` gains `fs()` and `clock()`.
-- The `issues` example's `main` returns a `Result` and uses `?` where it
-  unwrapped.
-- `TrackerInfo` is `#[non_exhaustive]`, so a field (milestones, issue
-  kinds) is not a breaking change; a host's tracker builds one with the new
-  `new(name, id_hint, statuses)` (every status open, no priorities, no
-  relations) and `with_open_statuses`, `with_priorities`,
-  `with_relations` (breaking): see Upgrading item 26.
+- `ApprovalMod::new(Some(Arc::new(judge)))` ->
+  `ApprovalMod::new().with_auto(judge)`; `PlanMod::new(Some(Arc::new(f)))`
+  -> `PlanMod::new().with_listener(f)` (`PlanListener` is gone).
+- `gate.with_lines(f)` -> `gate.mod_ui(f)`: `with_*` is only ever a setter.
+- `ModLine` gains `Warn` and is `#[non_exhaustive]`: `ModLine::Info(t) =>
+  show(t)` -> `other => show(other.text())`.
+- `ApprovalRequest` is `#[non_exhaustive]`: `ApprovalRequest { tool_name,
+  description, input_preview, tool_use_id: None, key: Some(k) }` ->
+  `ApprovalRequest::new(tool_name,
+  description).with_input_preview(p).with_key(k)` (`with_tool_use_id`).
+- Now `#[non_exhaustive]`: `ModLoadError`, `CommandOutcome`, `BashVerdict`,
+  `ApprovalAnswer`.
+
+#### haest-settings
+
+- `CapSettings::max_turn_minutes: f64` -> `max_turn_time: Duration`
+  (`caps.max_turn_minutes = 1.5` -> `caps.max_turn_time =
+  Duration::from_secs(90)`). The setting keeps its name and reads minutes.
+- `SubagentCapSettings` is gone: `Settings::subagents` is haest-core's
+  `SubagentCaps`, with the same field names except `minutes: u64` -> `time:
+  Duration` (the setting still reads minutes), and
+  `settings.subagent_caps()` -> `settings.subagents`.
+- `Settings` gains `wind_down_at`, and `subagents` gains `budgets`: a
+  literal adds them or ends in `..`.
+
+#### haest-config
+
+- `Loader::env`, `flags`, `standard` and `xdg_dirs` take pairs by value:
+  `Loader::standard(defaults, &env, &flags)` -> `Loader::standard(defaults,
+  env, flags)` (a `&HashMap` still goes in; a `&Vec` of pairs as
+  `.iter().cloned()`).
+- `Loaded::keys` is a `Keys` (was `HashMap<String, String>`):
+  `loaded.keys["K"]` -> `loaded.keys.get("K")`. `Loaded` is
+  `#[non_exhaustive]`: a pattern names its fields then `..`.
+- `ConfigError::Invalid { at, why }` -> `Invalid { at, key, why }`, and an
+  unknown setting is its own `ConfigError::UnknownSetting { at, key }`, so a
+  settings screen can point at the setting.
+- `Config` gains `event_ring`, `stdio`, `control_socket`, `control_dir`,
+  `broker_url` and `broker_access`: a literal ends in `..`.
+- Now `#[non_exhaustive]`: `ConfigError`, `SetError`, `Kind`, `Source`,
+  `Scope`, `EnvPassthrough`.
+
+#### haest-runtime
+
+- The assembly is the runtime's own: `RuntimeParent`, `WrappedTools`,
+  `MainTools`, `RuntimePrompt`, `AgentPrompt`, `InboxSender`, `NoImageKey`,
+  `own_tools`, `image_options`, `instruction_options`, `skill_options`,
+  `workspace_for`, `jobs_for`, `connect_mcp`, `mods_for`, `inbox` and
+  `session_usd` are private. Call `build` and read the parts on the
+  `Runtime` (`mods_for(..)` -> `rt.mods()`); a host that owns some parts
+  builds its own `AgentDeps`.
+- `build(inputs, Arc::new(ui), prompter, opts)` -> `build(inputs, ui,
+  prompter, opts)`, and `Runtime<U>` needs a sized `U`; a host that keeps
+  its UI too hands in an `Arc` of it.
+- `Runtime` keeps its fields private: `rt.hooks.flush()` ->
+  `rt.hooks().flush()`, `rt.jobs.clone()` -> `rt.jobs().cloned()`,
+  `rt.gate.revoke(t)` -> `rt.gate().revoke(t)`, `*rt.skills.lock().unwrap()
+  = found` -> `rt.skills().replace(found)`, `rt.inbox` -> `rt.inbox_mut()`.
+  Its services are handles: `Arc<RuntimeHooks>`, `Arc<McpHub>`,
+  `Arc<SubagentHub>`, `Arc<JobHub>`, `Arc<TaskBoard>`, `Arc<Mods>` -> the
+  value.
+- `RuntimeInputs` keeps its fields private: `RuntimeInputs { settings,
+  world, .. }` -> `RuntimeInputs::new(settings, world)`, `inputs.keys =
+  Arc::new(k)` -> `.with_keys(k)`, likewise `with_http`, `with_mcp_servers`,
+  `with_providers`, `with_passed_env`, `with_routing(scopes)` and
+  `with_world`; `keys()` is a `KeySourceRef`, `http()` an `HttpClientRef`. A
+  result of the facade's `runtime_inputs` is changed the same way.
+- `World::Disk { child_env }` -> `World::disk(child_env)`,
+  `World::Fs(Arc::new(fs))` -> `World::files(fs)`; `World::fs()` returns
+  `&FsRef`; `world.child_env(&ChildEnv::default()).is_some()` ->
+  `world.starts_processes()`, `world.child_env(&passed)` ->
+  `world.child_env().map(|e| e.overlaid(&passed))`.
+- `RuntimeHooks` keeps its fields private (`hooks.settings` ->
+  `hooks.settings()`); `hooks.ui` and `hooks.catalog` are gone
+  (`Catalog::builtin()`), and `new`, `store`, `remedies`, `window` and
+  `compaction_for` are private. `hooks.compact_now(&mut agent, &cancel,
+  false)` -> `rt.compact(&cancel)`, `hooks.append(record)` ->
+  `hooks.append(&record)`.
+- `SessionError` -> `SessionFileError` and `BuildError::Session(..)` ->
+  `BuildError::SessionFile(..)` (haest-session has a `SessionError` of its
+  own); `Runtime::clear` returns it.
+- `BuildOptions { resume, model_spec_given: true, effort_given: false }` ->
+  `BuildOptions { resume, on_resume: OnResume { model: Prefer::Settings,
+  effort: Prefer::Saved } }`.
+- `WorkspaceError::Sandbox` holds an `OpenSandboxError` (was `io::Error`;
+  `e.kind()` still works). `SessionInfo::cwd` is a `PathBuf` (was `String`).
+- `InboxQueue::wait()` returns whether anything can still arrive:
+  `q.wait().await;` -> `if !q.wait().await { .. }`.
+- Now `#[non_exhaustive]`: `BuildError`, `SessionFileError`,
+  `WorkspaceError`, `ShutDown`, `SessionInfo`, `Resume`.
+
+#### haest-ts
+
+- `StripError` is `#[non_exhaustive]`.
+
+#### haest-issues 0.2.0 (versioned on its own)
+
+- `CardTracker`'s and `GithubTracker`'s methods are their `Tracker` impl's:
+  `use haest_issues::Tracker;` to call them.
+- `issue_tools(Arc::new(t))` -> `issue_tools(t)`,
+  `issue_tools_named(Arc::new(t), "Card")` -> `issue_tools_named("Card",
+  t)`; both return `Tools`.
+- `CardTracker::new(Arc::new(fs), dir)` -> `CardTracker::new(dir, fs)`, and
+  `Arc<CardTracker>` -> `CardTracker` (clones share one write lock).
+- `TrackerInfo` is `#[non_exhaustive]`: `TrackerInfo { name, id_hint,
+  statuses, .. }` -> `TrackerInfo::new(name, id_hint, statuses)`
+  (`with_open_statuses`, `with_priorities`, `with_relations`).
+- Now `#[non_exhaustive]`: `TrackerError`, `Relation`.
+
+#### Behaviour a host must act on
+
+- `compaction::compact` books each summary call on the agent's ledger as it
+  comes back: delete a host's own `ledger.charge(&res.usage)` after it, or
+  the calls count twice.
+- A providers.json entry with a key it does not have (`baseUrl`,
+  `_comment`), or a `baseURL`, `apiKey` or `apiKeyEnv` that is not a string
+  (`null` included), fails when its provider is resolved
+  (`EntryProblem::UnknownKeys`, `NotAString`), and nothing is sent.
+- A configured URL (a provider's base URL, an MCP server's URL,
+  GenerateImage's base URL, a GitHub API root, `broker_url`) with an `@`
+  after its host, or with no host, is refused before anything connects.
+  Percent-encode the password (`/` as `%2F`, `@` as `%40`).
+- A resume of a session another run holds fails with
+  `SessionFileError::InUse`. A run holds its session through `<id>.lock`
+  beside the session file, which the system releases with the process.
+- `GithubTracker` acts only on issues in its own repository: another
+  repository's id is `Invalid`, and a search is plain words in this
+  repository.
+- `haest --json`: every line is in the wire's envelope (`v`, `sid`, `seq`,
+  `ts`, `path`) with its old fields beside it; a subagent's life comes as
+  `subagent_started`, its events and `subagent_stopped` under `["main",
+  "<id>"]`, in place of `notice` lines with its name.
+- A tool flag the model sends as `"yes"` or `1` is an input error the model
+  reads (was a silent false); `"True"` and `"FALSE"` read as the flag.
+- A foreground subagent spawn needs a tokio runtime, as a background one
+  did.
+- An apply, and Edit, Write and GenerateImage in the real workspace, write
+  over a file by renaming a new one onto it (they wrote in place). The file
+  keeps its mode, owner and group, not its extended attributes or ACLs, and
+  a process that has the old file open keeps the old one. A file whose owner
+  or group the run may not give (another user's, a group the run is not in)
+  is not written: the write fails and the file stays as it was. A
+  hard-linked file, a symlink, a FIFO and a device are still written in
+  place.
+- On a disk that reads two names as one, an apply holds a rename by case or
+  Unicode form alone (`mv README.md readme.md`) as a conflict: make it on
+  disk by hand. The change list shows it as no conflict until an apply skips
+  it.
+- The `haest` command asks for approval only where the question can be seen:
+  stdin and stderr must be terminals (with `--json`, stdout must not be a
+  regular file); otherwise an ask is refused at once.
+
+### Added
+
+- Sessions (facade features `wire`, `session`, `transport`,
+  `transport-stdio`, `transport-unix`, `transport-broker`, none in
+  `default`): haest-wire's `Envelope`, `Outbound`, `Inbound`, `Ring` and
+  `LineDecoder`; haest-session's `Hub`, `start` and `SessionHandle` (one
+  turn at a time, input mid-turn steered in, catch-up with gaps), the
+  `Backend` and `Driven` seams, and `SessionPrompter` for approval asks over
+  the session; haest-transport's `serve`, `Stdio`, `UnixSocket` (with
+  `running_sessions` and `connect_session`) and `Broker`. With `runtime`,
+  `impl Driven for Runtime` and `HubUi`. Examples `wire`, `session`,
+  `stdio`, `control_socket`, `broker`.
+- The `haest` command: `--stdio` (`HAEST_STDIO`), `control_socket = "watch"
+  | "command"` and `control_dir`, `haest ctl` (`list`, `inspect`, `events`,
+  `send`, `interrupt`), `broker_url` and `broker_access` with the token in
+  `HAEST_BROKER_TOKEN`, and `event_ring` (1000). The control and broker
+  settings come only from the user's own file, a variable or a flag, never
+  from a project's file.
+- Durable runs: `Agent::run_durable(&key, input, sink)` over a
+  `run::RunStore` (`SharedDeps::with_run_store`, `run::MemoryRunStore`): a
+  finished run returns its stored result, an unfinished one resumes.
+  `Tool::on_resume` (`Rerun`, `Report`, `Lookup`), `ToolContext::attempt`
+  and `effect_key`, `AgentHooks::before_effects`. Example `durable_run`.
+- A subagent hub that runs a host's own members:
+  `SubagentParent::start_member`, `Member`, `MemberRun`, `MemberStart`,
+  `MemberEnd`, `MemberCaps`, `Ending`, `Spend`; messages from the person
+  (`AgentMessage`, `Sender::Person`, `SubagentEvent::Message`),
+  `Inbox::submit_answer`, `SubagentHub::idle` and `settled`,
+  `SubagentParent::subagent_note`.
+- Subagent budgets (`subagent_budgets`, `SubagentCaps::budgets`): the Agent
+  tool takes a `budget {usd, minutes}` (`SubagentBudget`) that only tightens
+  the caps, held on the ledger while the member runs
+  (`AgentError::OverBudget`, `OverTime`).
+- Ledger holds: `Ledger::reserve`, `available` and `held`, `ledger::Hold`
+  (gives its USD back when dropped) and `NotAvailable`.
+- Thresholds (`threshold`): a `Meter` crossing a `Mark` fires an `Action`
+  (remind the model, warn the human, wind down, compact, stop). The guard's
+  nudge, the agent-turn gate's nudge, the ledger's warning and compaction
+  are default thresholds with their old numbers.
+  `SharedDeps::with_thresholds`, `Ledger::set_thresholds`,
+  `AgentTurnGate::with_thresholds`, `AgentHooks::on_warning` (the runtime
+  passes it to `Ui::warn`). Example `threshold`.
+- Wind-down (`wind_down_at`, `HAEST_WIND_DOWN_AT`, a share from 0 to 1, 0 =
+  off): past the mark, a tool that starts new work refuses and the model is
+  told to conclude. `WindDown::at`, `Thresholds::wind_down`,
+  `ToolContext::wind_down()`, `AgentError::WindingDown`. Example
+  `wind_down`.
+- `ToolContext::turn_time_left()`, and `remedy::Limit::{SubagentSteps,
+  SubagentTime, SubagentUsd}` with `Limit::setting()`.
+- Plug-point handles named after their trait (`ToolRef`, `FsRef`,
+  `WorkspaceRef`, `ProviderRef`, `HttpClientRef`, ...), built from the
+  value, an `Arc`, an `Arc<dyn Trait>` or a `Box<dyn Trait>`;
+  `SharedDeps::with_host` fills the hooks, services, facts, caps and clock
+  slots with one value. `SystemPrompt` is implemented for `&'static str` and
+  closures.
+- For tool and provider authors: `ToolWrapper`, `ToolOverride`,
+  `ToolError::message` and `map_message`, `tool::input`, `req_num`,
+  `opt_count`, `ExecResult::ok` and `failed`, `answer_stream` with
+  `provider::Deltas`, `ResolvedModel::complete` and `complete_streaming`; a
+  `ProviderRef` and a `ResolvedModel` are each a `ModelResolver`.
+- `Tools::get`, `contains`, `remove` and `with_all`; `skills::Skills` (a
+  skill list a rescan replaces); `ledger::NoLedgerHooks`, with default
+  bodies for `LedgerHooks`, `Clock::now_ms` and `TurnCapsSource::turn_caps`;
+  `newest::Newest<T>`.
+- `Fs::try_lock` and `FsLock`, `Fs::write_whole` (a write that replaces a
+  file whole or not at all).
+- `CompactionOptions::new(window)`, `compaction::COMPACT_SHARE` and
+  `KEEP_RECENT`, `threshold::WARN_SHARE`.
+- haest-http: `Request::with_body`, `Response::with_headers`,
+  `redacted_url`, `check_endpoint_url`; `Method` implements `Display` and
+  `FromStr`; feature `http` converts to and from the `http` crate.
+- haest-providers: `ProviderRegistry::with_provider` (a host's own provider
+  under `name:<model>`) and `with_custom_provider`;
+  `CustomProviderConfig::openai` and `anthropic`, and `Default` for
+  `CustomProviderConfig` and `Dialect` (`OpenAi`); inherent `resolve`, `id`
+  and `stream`. The facade's `testing` feature adds `FakeHttp`, `chat_sse`
+  and `typed_sse`.
+- haest-tools: `BuiltinTool`, a public `SkillTool`, `NewJob`, `JobOutput`,
+  `JobState`. haest-workspace: `SandboxWorkspace::with_commands`.
+  haest-mods: `ModOptions::with_mod`, `with_approval` and `with_plan`,
+  `ModUi::warn`. haest-config: `Keys`, `Kind::Url`.
+- haest-runtime: `RuntimeInputs::with_mod` (a host's own native mod) and
+  `with_models` (the host's own `ModelResolver` in place of the built-in
+  providers).
+- The facade re-exports `CancellationToken` and `serde_json`, and the
+  prelude adds `CancellationToken`, `Value`, `json!` and `BoxError`, so `use
+  haest::prelude::*;` is the only import an `impl Tool`, `impl Provider` or
+  `impl AgentHooks` needs.
+- Every public type implements `Debug`, and none shows a key, a token, a
+  header's value or a variable's value. Every `with_*` setter,
+  `TurnOutcome`, `Hold`, haest-transport's `Attached` and haest-session's
+  `Hold` are `#[must_use]`, so a dropped result warns.
+
+### Fixed
+
+Security:
+
+- An approval shows the human the whole command (the mod cut it at 200
+  characters), the `haest` command escapes control, bidi and zero-width
+  characters in everything it prints from the model, a tool, a server or a
+  peer, and it takes as the answer only what is typed after the question is
+  on the screen.
+- Debug output and errors show no credential: URLs lose their userinfo,
+  query values and fragment, API keys and header and variable values show as
+  `<redacted>`, and an MCP server's arguments as a count.
+- A configured URL whose password holds an unescaped `/`, `?`, `#` or `@`,
+  or that has no host (an empty variable), no longer sends its key to
+  another host.
+- A providers.json entry with a misspelt key or a `null` `baseURL` no longer
+  sends the entry's key and the conversation to OpenAI's or Anthropic's own
+  API.
+- `GithubTracker` no longer reads, changes or deletes issues in other
+  repositories with the host's token, follows a moved issue's redirect, or
+  widens a search with `repo:`.
+- A file or directory the sandbox moved or copied keeps its mode when
+  applied (a 0600 key no longer lands 0644).
+- On a disk that reads two names as one (macOS's default, exFAT), an apply
+  no longer writes into the disk's other name or deletes the human's file
+  under it: before each change it checks each name on the way with
+  `read_dir` and `lstat`, and holds what it cannot place as a conflict. The
+  sandbox reads the project as the system spells it, as bash does.
+- An apply no longer deletes a file it moved where the move's write did not
+  land (`mv src.md locked/` into a directory the disk will not write, or
+  onto a conflict): it writes first, takes away last, and holds a delete or
+  an overwrite as a conflict while a write that did not land carries its
+  content.
+
+Workspace and apply:
+
+- The real workspace's timeout, interrupt or drop can no longer kill an
+  unrelated process that reused bash's pid.
+- An apply writes each file whole or not at all: a full disk or a kill
+  leaves the human's version. Edit, Write and GenerateImage in the real
+  workspace do the same (`Fs::write_whole`), and a write an NFS server
+  refuses at close is reported.
+- An apply never deletes a file the human saved after the sandbox edited it
+  and removed its directory (it is a conflict), and an apply dropped partway
+  keeps every unwritten change listed.
+- After an apply, the sandbox sees the human's later edits, deletes and new
+  files, and a change made while an apply runs waits for it.
+- The sandbox keeps what it makes under a directory it removed and made
+  again, and lists and applies the old files there.
+- In the sandbox, `>>` and `tee -a` make a missing file, `mv a ./a` keeps
+  the file, `mkdir -p notes/x` beside a file `notes` fails, and `mv a b`
+  gives `b` the mode of `a`, as in bash.
+- A mode the sandbox sets is listed and applied (execute bits only, to who
+  may read the file), and `OverlayChanges::diff` shows a `Mode` line.
+- GenerateImage writes over a file only at the path the model named;
+  otherwise it picks a free `<stem>-<n>.<ext>`.
+- `RealWorkspace` keeps at most 64 MiB of each output stream and stops
+  reading a call's pipes once the call returns.
+- `SandboxWorkspace` no longer panics on a `Duration::MAX` timeout, opens a
+  relative directory as one absolute path, and ends a dropped call's task.
+- `MemFs::rename` refuses what rename(2) refuses (a directory onto a file, a
+  file onto a directory, onto a directory that is not empty) and then moves
+  nothing. It overwrote and merged, so `mv` in a sandbox over a `MemFs`
+  could lose files.
+
+Sessions and turns:
+
+- A resume after a torn last line or a failed append keeps the next record,
+  and replay drops a tool result that answers no call.
+- Two runs no longer write one session file (see Behaviour a host must act
+  on).
+- A turn after a dropped `Agent::run` answers the tool calls left without a
+  result as interrupted, so the next request is accepted;
+  `compaction::compact` does the same.
+- The runtime waits for the session file before a tool with side effects
+  starts (`before_effects`), so a crash cannot lose a call whose effect
+  happened.
+- A request over `max_request_tokens` no longer emits
+  `LoopEvent::ModelStart`.
+
+Providers and costs:
+
+- The stream parser looks at each byte once, and a line or event past 16 MiB
+  ends the message with `StopReason::Error`.
+- A base URL with a query (a gateway key, Azure's `api-version`) gets the
+  endpoint path before the query, for the providers and GenerateImage.
+- `AnthropicProvider` keeps the thinking budget below `max_tokens` and reads
+  `max_tokens: 0` as the default.
+- A negative or non-finite cost is no price anywhere haest adds costs up
+  (the ledger, `Usage`, the Code tool, GenerateImage, a server's
+  `usage.cost`), so it can no longer lift or switch off a USD cap.
+- Token counts and ids from outside stop at `u64::MAX` instead of panicking.
+- `ProviderRegistry::resolve` asks the key source with nothing locked, so a
+  slow key source no longer blocks other resolves.
+- `GithubTracker` sends GraphQL to the right URL for an Enterprise root with
+  a trailing CR, a space or upper case.
+
+Concurrency:
+
+- Ledger hooks, remedies and thresholds run with the ledger unlocked, so one
+  that reads the ledger no longer hangs the turn, and a panic in host code
+  no longer poisons the ledger or an agent's thresholds.
+- The task board, the job hub and the subagent hub hand their state to hooks
+  in change order, one call at a time.
+- A dropped or panicking spawn gives back its `max_concurrent` place, and a
+  stopped subagent counts until its turn has ended.
+- A job never stays running after a host's `JobEvents` handler panics.
+
+Other:
+
+- A subagent stopped at its own cap gets a remedy naming the `subagent_*`
+  setting.
+- A huge `context_window` no longer overflows the default turn caps.
+- A host that overrides a built-in tool by name no longer sends the model
+  two tools of that name.
+- `ModTools` over deferred tools lets the model call a deferred tool by
+  name.
+- An MCP tool's result is read through rmcp's own types: a resource link
+  shows the model its URI, and structured content of `false`, `0` or `""`
+  shows as JSON.
+- haest-ts parses only `.tsx` files as TSX.
+- The caps settings are listed under "Caps" again.
+- `HttpError::Timeout` shows sub-second waits.
+- The `haest` command: Ctrl+C stops a slash command (`-p` exits 130), a
+  model it cannot use says what to do instead of always "Set its key", and
+  `/budget tokens 0.5` is refused (it was cut to 0, which removed the cap).
+
+### Removed
+
+Each has its replacement under Breaking changes, or none:
+
+- haest-core: `Usage::add`, `TurnOutcome::with_error`, `MemFs::with_files`,
+  `ChildEnv::with`, `TaskBoard::with_clock`, `DiskSkills`,
+  `Ledger::with_remedies`, `JsonlSessionFile::with_error_handler`,
+  `SessionRecord::header`, `Fs::mkdir`, `impl ToolSource for Vec<Arc<dyn
+  Tool>>`.
+- haest-providers: `RegistryOptions`, the public `routing` module,
+  `CustomProviderConfig::resolved_key`, `FakeReply::header`.
+- haest-settings: `SubagentCapSettings`, `Settings::subagent_caps`.
+- haest-tools: `agent_tools_with`, `SubagentHub::answers_due`,
+  `builtin_word`, `skill_tool`, `SkillToolOptions::over`,
+  `JobHub::with_events`; with no replacement, the Image API helpers
+  `call_image_api`, `sniff_image_type`, `ImageCatalog`, `ImageError`,
+  `ImageReply`, `ModelSettings` and `SettingSpec`.
+- haest-workspace: `RealWorkspace::with_fs`,
+  `SandboxWorkspace::overlay_changes`. haest-code: `NativeFn`,
+  `NativeFuture`. haest-mods: `Mods::add`, `PlanListener`,
+  `ApprovalGate::with_lines`. haest-mcp: `StdioTransport::with_env`.
+- haest-runtime: `SessionError` (now `SessionFileError`), the assembly
+  pieces listed under Breaking changes, `RuntimeHooks::ui`, `catalog` and
+  `compact_now`.
 
 ## 0.2.0 (2026-11-17)
 
