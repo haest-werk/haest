@@ -235,6 +235,14 @@ pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
     /// What the tool does and when to use it, for the model.
     fn description(&self) -> String;
+    /// One line for the system prompt's tool guide: how to use this tool
+    /// well beside the others (`Use Edit for changes to existing files`).
+    /// The guide lists the line of every tool a call advertises, in the
+    /// list's order ([`tool_guide`](crate::context::tool_guide)). None, the
+    /// default, says nothing: the description is enough.
+    fn prompt_guide(&self) -> Option<String> {
+        None
+    }
     /// JSON Schema of the input object.
     fn parameters(&self) -> Value;
     /// Canonical kind, e.g. "file.read" or "mcp.server.tool".

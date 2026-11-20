@@ -14,6 +14,9 @@ impl Tool for Pay {
     fn description(&self) -> String {
         "Send a payment.".into()
     }
+    fn prompt_guide(&self) -> Option<String> {
+        Some("Use Pay only when the user asked for a payment.".into())
+    }
     fn parameters(&self) -> Value {
         json!({"type": "object", "properties": {"to": {"type": "string"}}})
     }
@@ -50,6 +53,7 @@ impl ToolWrapper for Bare {
 struct Parts {
     name: String,
     description: String,
+    prompt_guide: Option<String>,
     parameters: Value,
     kind: String,
     read_only: bool,
@@ -65,6 +69,7 @@ async fn parts(tool: &ToolRef) -> Parts {
     Parts {
         name: tool.name().into(),
         description: tool.description(),
+        prompt_guide: tool.prompt_guide(),
         parameters: tool.parameters(),
         kind: tool.kind().into(),
         read_only: tool.read_only(),
@@ -93,10 +98,23 @@ async fn an_override_changes_what_the_model_reads_and_nothing_else() {
     let want = Parts {
         name: "Transfer".into(),
         description: "Move money.".into(),
+        // Pay's line names Pay: a renamed tool has none until it is given one.
+        prompt_guide: None,
         parameters: schema,
         ..parts(&ToolRef::new(Pay)).await
     };
     assert_eq!(parts(&changed).await, want);
+    let guided = ToolRef::new(
+        ToolOverride::new(Pay)
+            .with_name("Transfer")
+            .with_prompt_guide("Use Transfer for payments."),
+    );
+    assert_eq!(
+        guided.prompt_guide().as_deref(),
+        Some("Use Transfer for payments.")
+    );
+    let quiet = ToolRef::new(ToolOverride::new(Pay).without_prompt_guide());
+    assert_eq!(quiet.prompt_guide(), None);
 }
 
 #[tokio::test]

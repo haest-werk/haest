@@ -76,6 +76,9 @@ impl Tool for WriteTool {
     fn description(&self) -> String {
         "Create or overwrite a file with the given content. Parent directories are created. Prefer Edit for changes to an existing file.".into()
     }
+    fn prompt_guide(&self) -> Option<String> {
+        Some("Use Write only for new files or full rewrites.".into())
+    }
     fn parameters(&self) -> Value {
         json!({
             "type": "object",
@@ -153,6 +156,9 @@ impl Tool for EditTool {
     }
     fn description(&self) -> String {
         "Replace an exact string in a file. old_string must match the file byte-for-byte (including indentation) and be unique unless replace_all is true. Include enough surrounding lines to make it unique.".into()
+    }
+    fn prompt_guide(&self) -> Option<String> {
+        Some("Use Edit for changes to existing files (exact old_string match).".into())
     }
     fn parameters(&self) -> Value {
         json!({

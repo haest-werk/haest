@@ -233,6 +233,9 @@ impl Tool for BashTool {
             MAX_TIMEOUT.as_secs()
         )
     }
+    fn prompt_guide(&self) -> Option<String> {
+        Some("Use Bash for builds, tests, git and anything else.".into())
+    }
     fn parameters(&self) -> Value {
         let mut p = json!({
             "type": "object",

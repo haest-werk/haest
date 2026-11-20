@@ -125,6 +125,9 @@ impl Tool for GrepTool {
     fn description(&self) -> String {
         "Search file contents with ripgrep (regex). output_mode: \"files_with_matches\" (default), \"content\" (matching lines with line numbers), or \"count\". Filter with glob (e.g. \"*.ts\") or type (e.g. \"py\").".into()
     }
+    fn prompt_guide(&self) -> Option<String> {
+        Some("Use Grep to search file contents.".into())
+    }
     fn parameters(&self) -> Value {
         json!({
             "type": "object",

@@ -82,6 +82,10 @@ pub trait ToolWrapper: Send + Sync {
     fn description(&self) -> String {
         self.inner().description()
     }
+    /// [`Tool::prompt_guide`]; default the wrapped tool's.
+    fn prompt_guide(&self) -> Option<String> {
+        self.inner().prompt_guide()
+    }
     /// [`Tool::parameters`]; default the wrapped tool's.
     fn parameters(&self) -> Value {
         self.inner().parameters()
@@ -119,6 +123,9 @@ impl<W: ToolWrapper> Tool for W {
     fn description(&self) -> String {
         ToolWrapper::description(self)
     }
+    fn prompt_guide(&self) -> Option<String> {
+        ToolWrapper::prompt_guide(self)
+    }
     fn parameters(&self) -> Value {
         ToolWrapper::parameters(self)
     }
@@ -139,9 +146,12 @@ impl<W: ToolWrapper> Tool for W {
     }
 }
 
-/// A tool with what the model reads changed: its name, its description or
-/// its parameter schema. Everything else (kind, `read_only`, `on_resume`,
-/// what a call does) is the wrapped tool's.
+/// A tool with what the model reads changed: its name, its description, its
+/// line in the prompt's tool guide or its parameter schema. Everything else
+/// (kind, `read_only`, `on_resume`, what a call does) is the wrapped tool's.
+///
+/// A renamed tool has no guide line until one is set: the wrapped tool's
+/// line names it by its old name.
 ///
 /// Put in a [`Tools`](super::Tools) list under the wrapped tool's name, it
 /// replaces that tool in its place.
@@ -175,7 +185,19 @@ pub struct ToolOverride {
     inner: ToolRef,
     name: Option<String>,
     description: Option<String>,
+    prompt_guide: Guide,
     parameters: Option<Value>,
+}
+
+/// An override's line in the tool guide.
+#[derive(Debug, Clone)]
+enum Guide {
+    /// The wrapped tool's, unless the override renames it.
+    Wrapped,
+    /// The host's line.
+    Line(String),
+    /// No line.
+    Silent,
 }
 
 impl ToolOverride {
@@ -185,8 +207,23 @@ impl ToolOverride {
             inner: tool.into(),
             name: None,
             description: None,
+            prompt_guide: Guide::Wrapped,
             parameters: None,
         }
+    }
+
+    /// The same, with `line` in the prompt's tool guide.
+    #[must_use]
+    pub fn with_prompt_guide(mut self, line: impl Into<String>) -> Self {
+        self.prompt_guide = Guide::Line(line.into());
+        self
+    }
+
+    /// The same, with no line in the prompt's tool guide.
+    #[must_use]
+    pub fn without_prompt_guide(mut self) -> Self {
+        self.prompt_guide = Guide::Silent;
+        self
     }
 
     /// The same, called by `name`.
@@ -224,6 +261,15 @@ impl ToolWrapper for ToolOverride {
         self.description
             .clone()
             .unwrap_or_else(|| self.inner.description())
+    }
+    fn prompt_guide(&self) -> Option<String> {
+        match &self.prompt_guide {
+            Guide::Line(line) => Some(line.clone()),
+            // The wrapped tool's line calls it by the name it no longer has.
+            Guide::Wrapped if self.name.is_some() => None,
+            Guide::Wrapped => self.inner.prompt_guide(),
+            Guide::Silent => None,
+        }
     }
     fn parameters(&self) -> Value {
         self.parameters

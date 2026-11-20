@@ -186,7 +186,7 @@ pub use builtins::{
     builtin_tools_where,
 };
 pub use files::{EditTool, WriteTool};
-pub use guide::{FILE_TOOLS, tool_guide, touches_workspace};
+pub use guide::{FILE_TOOLS, touches_workspace};
 pub use image::{
     DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODELS, GenerateImageOptions, GenerateImageTool,
 };

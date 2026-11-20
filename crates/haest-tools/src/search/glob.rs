@@ -48,6 +48,9 @@ impl Tool for GlobTool {
     fn description(&self) -> String {
         "Find files by glob pattern (e.g. \"src/**/*.ts\"). Returns paths sorted by modification time, newest first, capped at 200. Skips node_modules and .git.".into()
     }
+    fn prompt_guide(&self) -> Option<String> {
+        Some("Use Glob to find files by name.".into())
+    }
     fn parameters(&self) -> Value {
         json!({
             "type": "object",

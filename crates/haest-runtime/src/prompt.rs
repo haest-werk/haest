@@ -4,10 +4,10 @@ use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use haest_core::{
-    SystemPrompt, ToolSourceRef, Workspace,
+    SystemPrompt, ToolRef, ToolSourceRef, Workspace,
     context::{
         InstructionOptions, PromptInputs, build_system_prompt, current_git_branch,
-        find_instruction_files,
+        find_instruction_files, tool_guide,
     },
     fs::FsRef,
     now_ms,
@@ -15,7 +15,7 @@ use haest_core::{
     skills::{SkillOptions, Skills},
 };
 use haest_settings::Settings;
-use haest_tools::{tool_guide, touches_workspace};
+use haest_tools::touches_workspace;
 
 use crate::RuntimeHooks;
 
@@ -103,19 +103,19 @@ impl RuntimePrompt {
         }
     }
 
-    /// The system prompt for an agent on `model` offered `tool_names`: the
-    /// fixed parts, the guide to the built-ins among the tools, the
-    /// workspace's note when a tool can touch it, the instruction files read
-    /// again now, and the skill list with `skill_catalog` on.
-    pub(crate) async fn build(&self, model: String, tool_names: Vec<String>) -> String {
+    /// The system prompt for an agent on `model` offered `tools`: the fixed
+    /// parts, the tools' own guide lines, the workspace's note when a tool
+    /// can touch it, the instruction files read again now, and the skill list
+    /// with `skill_catalog` on.
+    pub(crate) async fn build(&self, model: String, tools: &[ToolRef]) -> String {
         let s = self.hooks.settings();
         let mut p = self.base.clone();
         p.model_spec = model;
-        p.tool_guide = tool_guide(&tool_names);
-        if !touches_workspace(&tool_names) {
+        p.tool_guide = tool_guide(tools);
+        p.tool_names = tools.iter().map(|t| t.name().to_string()).collect();
+        if !touches_workspace(&p.tool_names) {
             p.workspace_note = None;
         }
-        p.tool_names = tool_names;
         p.instructions = find_instruction_files(self.fs.as_ref(), &instruction_options(s)).await;
         if s.skill_catalog {
             p.skills = self.skills.list();
@@ -145,13 +145,7 @@ impl SystemPrompt for AgentPrompt {
             .model_spec
             .clone()
             .unwrap_or_else(|| self.prompt.hooks.model_spec());
-        let names = self
-            .tools
-            .tools()
-            .iter()
-            .map(|t| t.name().to_string())
-            .collect();
-        self.prompt.build(model, names).await
+        self.prompt.build(model, &self.tools.tools()).await
     }
 }
 
@@ -168,6 +162,7 @@ fn platform() -> String {
 #[cfg(test)]
 mod tests {
     use haest_core::fs::MemFs;
+    use haest_tools::{BuiltinOptions, builtin_tools};
 
     use super::*;
     use crate::testkit::hooks;
@@ -185,11 +180,15 @@ mod tests {
                 ..Default::default()
             },
         };
-        let read = vec!["Read".to_string()];
+        let all = builtin_tools(BuiltinOptions::default());
+        let only = |name: &str| -> Vec<ToolRef> {
+            all.iter().filter(|t| t.name() == name).cloned().collect()
+        };
+        let read = only("Read");
         let guide = tool_guide(&read).unwrap();
-        let with_files = prompt.build("m".into(), read).await;
+        let with_files = prompt.build("m".into(), &read).await;
         assert!(with_files.contains(&guide) && with_files.contains(NOTE));
-        let web = prompt.build("m".into(), vec!["WebFetch".into()]).await;
-        assert!(!web.contains(&guide) && !web.contains(NOTE));
+        let web = prompt.build("m".into(), &only("WebFetch")).await;
+        assert!(!web.contains("Tool discipline") && !web.contains(NOTE));
     }
 }

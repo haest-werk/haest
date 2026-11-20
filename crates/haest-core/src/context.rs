@@ -10,7 +10,8 @@
 //! dir, platform and date are the caller's.
 //!
 //! A host gathers [`PromptInputs`] ([`find_instruction_files`],
-//! [`current_git_branch`], the skills it loaded, the tool names) and builds
+//! [`current_git_branch`], the skills it loaded, the tool names and their
+//! [`tool_guide`]) and builds
 //! the text with [`build_system_prompt`], typically inside its
 //! [`SystemPrompt`](crate::SystemPrompt) so it is rebuilt before every call.
 //!
@@ -61,7 +62,7 @@ use std::{
 };
 
 pub use git::current_git_branch;
-pub use prompt::{PromptInputs, build_system_prompt};
+pub use prompt::{PromptInputs, build_system_prompt, tool_guide};
 
 use crate::fs::{Fs, normalize, read_lossy};
 

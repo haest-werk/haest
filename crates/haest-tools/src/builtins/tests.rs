@@ -36,7 +36,7 @@ fn the_builtin_list_has_every_tool_with_its_kind_and_web_fetch_is_optional() {
     assert!(!names(&offline).contains(&"WebFetch".to_string()));
 }
 
-/// The tool guide and haest-runtime's Code policy go by FILE_TOOLS: a
+/// `touches_workspace` and haest-runtime's Code policy go by FILE_TOOLS: a
 /// renamed tool here would drop out of both silently.
 #[test]
 fn every_file_tool_is_a_builtin() {

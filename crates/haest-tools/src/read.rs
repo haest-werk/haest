@@ -247,6 +247,9 @@ impl Tool for ReadTool {
     fn description(&self) -> String {
         "Read a file. Text comes back as lines prefixed with their 1-based line number and a tab; reads up to 2000 lines or ~25,000 tokens by default, use offset (1-based start line) and limit for larger files. Set allow_large only when you need the whole file in one call and the context has room. An image (png/jpg/gif/webp), PDF, audio or video file is attached so you see or hear it directly, when the current model accepts that kind of input.".into()
     }
+    fn prompt_guide(&self) -> Option<String> {
+        Some("Use Read to look at a file.".into())
+    }
     fn parameters(&self) -> Value {
         json!({
             "type": "object",

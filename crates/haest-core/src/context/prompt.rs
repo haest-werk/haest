@@ -3,7 +3,10 @@
 //! host appends. An empty section is left out.
 
 use super::InstructionFile;
-use crate::skills::{Skill, skills_prompt_block};
+use crate::{
+    ToolRef,
+    skills::{Skill, skills_prompt_block},
+};
 
 /// Everything the system prompt says, gathered by the caller.
 ///
@@ -30,8 +33,7 @@ pub struct PromptInputs {
     /// The names of the tools this call advertises, listed in the environment.
     pub tool_names: Vec<String>,
     /// How to use those tools, said right after the identity; None says
-    /// nothing. The tools' own crate writes it: haest-tools' `tool_guide`
-    /// for its built-ins.
+    /// nothing. [`tool_guide`] gathers it from the tools themselves.
     pub tool_guide: Option<String>,
     /// How to read and answer `<channel>` turns; None when there is no way to answer.
     pub channel_guide: Option<String>,
@@ -41,6 +43,47 @@ pub struct PromptInputs {
     pub workspace_note: Option<String>,
     /// Text the host adds at the very end.
     pub append_system_prompt: Option<String>,
+}
+
+/// The tool guide for a call offered `tools`
+/// ([`PromptInputs::tool_guide`]): each tool's
+/// [`prompt_guide`](crate::Tool::prompt_guide) line, in the list's order,
+/// under `Tool discipline:`. None when no tool has a line.
+///
+/// ```
+/// # use async_trait::async_trait;
+/// # use haest_core::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolRef};
+/// # use serde_json::{Value, json};
+/// use haest_core::{Tools, context::tool_guide};
+///
+/// struct Search;
+///
+/// #[async_trait]
+/// impl Tool for Search {
+///     fn name(&self) -> &str { "Search" }
+///     fn description(&self) -> String { "Search the notes.".into() }
+///     fn prompt_guide(&self) -> Option<String> {
+///         Some("Use Search before you answer from memory.".into())
+///     }
+/// #   fn parameters(&self) -> Value { json!({"type": "object"}) }
+/// #   fn kind(&self) -> &str { "notes.search" }
+/// #   async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
+/// #       Ok(ToolOutput::text(""))
+/// #   }
+/// }
+///
+/// let guide = tool_guide(&Tools::new().with(Search));
+/// assert_eq!(guide.as_deref(), Some("Tool discipline:\n- Use Search before you answer from memory."));
+/// assert_eq!(tool_guide(&Tools::new()), None);
+/// ```
+pub fn tool_guide(tools: &[ToolRef]) -> Option<String> {
+    let lines: Vec<String> = tools
+        .iter()
+        .filter_map(|t| t.prompt_guide())
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| format!("- {}", line.trim()))
+        .collect();
+    (!lines.is_empty()).then(|| format!("Tool discipline:\n{}", lines.join("\n")))
 }
 
 const IDENTITY: &str = "You are haest, a coding agent. You work inside the user's project through tools: read before you edit, verify what you change, and keep going until the task is done. Be direct and concise; lead with the answer. When you are unsure, investigate with tools instead of guessing.";
