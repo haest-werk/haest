@@ -74,11 +74,6 @@ impl BashOptions {
         self
     }
 
-    /// The timeout when a call names none, as set.
-    pub fn default_timeout(&self) -> Duration {
-        self.default_timeout
-    }
-
     /// The job hub, if any.
     pub fn jobs(&self) -> Option<&JobHub> {
         self.jobs.as_ref()
@@ -90,7 +85,7 @@ impl BashOptions {
 /// in the context's `cwd`.
 ///
 /// Input: `command`, and optional `description` and `timeout` (ms, clamped to
-/// 1 s..600 s; default [`BashOptions::default_timeout`]). With a job hub it
+/// 1 s..600 s; default 120 s, or [`BashOptions::with_default_timeout`]'s). With a job hub it
 /// also takes `run_in_background`, which starts a [`JobHub`] job and returns
 /// at once with its id.
 ///

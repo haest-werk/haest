@@ -103,36 +103,6 @@ impl JsEnv {
         self.ends_at = Some(ends_at);
         self
     }
-
-    /// The files the script works on.
-    pub fn fs(&self) -> &FsRef {
-        &self.fs
-    }
-
-    /// The working directory the script runs in.
-    pub fn cwd(&self) -> &Path {
-        &self.cwd
-    }
-
-    /// The script's `process.env`.
-    pub fn env(&self) -> &ChildEnv {
-        &self.env
-    }
-
-    /// What is piped into the command; None = nothing.
-    pub fn stdin(&self) -> Option<&str> {
-        self.stdin.as_deref()
-    }
-
-    /// The shell call's interrupt.
-    pub fn cancel(&self) -> &CancellationToken {
-        &self.cancel
-    }
-
-    /// The running shell call's end; None = [`JS_TIMEOUT`] from the start.
-    pub fn ends_at(&self) -> Option<Instant> {
-        self.ends_at
-    }
 }
 
 /// The variables by name only: a value may be a secret.

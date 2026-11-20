@@ -54,12 +54,11 @@ async fn the_hosts_limits_bound_every_mod_file_it_loads() {
         "export default () => new Promise(() => {})",
     )]);
     let ui = TestUi::new();
-    let quick = cfg(WorkspaceMode::Sandbox);
     let caps = ModCaps {
         load_timeout: Duration::from_millis(200),
-        ..quick.caps()
+        ..test_caps()
     };
-    let quick = quick.with_caps(caps);
+    let quick = cfg(WorkspaceMode::Sandbox).with_caps(caps);
     let started = Instant::now();
     let mods = load_mods(quick, &fs, ui.clone()).await;
     assert!(started.elapsed() < Duration::from_secs(5));
@@ -120,13 +119,6 @@ async fn the_hosts_own_mods_load_last_in_order_mod_files_or_not() {
     let with_files = cfg(WorkspaceMode::Real)
         .with_mod(Hosts("first"))
         .with_mod(Hosts("second"));
-    let hosts = |o: &ModOptions| {
-        o.host_mods()
-            .iter()
-            .map(|m| m.name().to_string())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(hosts(&with_files), ["first", "second"]);
     let mods = load_mods(with_files, &fs, TestUi::new()).await;
     let file = format!("{HOME_MODS}/file.js");
     assert_eq!(mods.names(), ["approval", "plan", &file, "first", "second"]);

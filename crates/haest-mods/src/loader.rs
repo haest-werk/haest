@@ -43,7 +43,6 @@ use crate::{
 ///     .with_user_mods(true)
 ///     .with_shell_tools(["Bash", "Shell"]);
 /// assert_eq!(opts.mod_dirs(), [PathBuf::from("/home/me/.config/haest/mods")]);
-/// assert!(opts.approvals());
 /// ```
 #[derive(Clone)]
 pub struct ModOptions {
@@ -184,58 +183,6 @@ impl ModOptions {
         self
     }
 
-    /// The conversation's working directory: the project's mods are in
-    /// `<cwd>/.haest/mods`, and every mod sees it as [`ModEnv::cwd`].
-    pub fn cwd(&self) -> &Path {
-        &self.cwd
-    }
-
-    /// The workspace the agent's tools run in; the approval mod asks only in
-    /// [`WorkspaceMode::Real`].
-    pub fn workspace(&self) -> WorkspaceMode {
-        self.workspace
-    }
-
-    /// The host's own config directory: the human's mods are in `<config_dir>/mods`.
-    pub fn config_dir(&self) -> &Path {
-        &self.config_dir
-    }
-
-    /// Whether `<config_dir>/mods` loads ([`with_user_mods`](Self::with_user_mods)).
-    pub fn user_mods(&self) -> bool {
-        self.user_mods
-    }
-
-    /// Whether `<cwd>/.haest/mods` loads ([`with_project_mods`](Self::with_project_mods)).
-    pub fn project_mods(&self) -> bool {
-        self.project_mods
-    }
-
-    /// Whether the approval mod loads ([`with_approvals`](Self::with_approvals)).
-    pub fn approvals(&self) -> bool {
-        self.approvals
-    }
-
-    /// The shell tools the approval mod judges.
-    pub fn shell_tools(&self) -> &[String] {
-        &self.shell_tools
-    }
-
-    /// The tools plan mode lets run though they are not read-only.
-    pub fn planning_tools(&self) -> &[String] {
-        &self.planning_tools
-    }
-
-    /// The bounds every mod file runs in.
-    pub fn caps(&self) -> ModCaps {
-        self.caps
-    }
-
-    /// The host's own native mods, in order ([`with_mod`](Self::with_mod)).
-    pub fn host_mods(&self) -> &[ModRef] {
-        &self.host_mods
-    }
-
     /// Where mod files are looked for, in load order: `<config_dir>/mods`
     /// with [`with_user_mods`](Self::with_user_mods), then `<cwd>/.haest/mods`
     /// with [`with_project_mods`](Self::with_project_mods). Empty by default.
@@ -285,7 +232,7 @@ pub(crate) async fn mod_files(fs: &dyn Fs, dir: &Path) -> Vec<PathBuf> {
 ///
 /// Each directory's `.ts`, `.js` and `.mjs` files (not `.d.ts`) load in name
 /// order (subdirectories are not searched); each one runs its default export
-/// now ([`JsMod::load_with`], within [`ModOptions::caps`]). A mod that fails
+/// now ([`JsMod::load_with`], within [`ModOptions::with_caps`]). A mod that fails
 /// to load is reported through [`ModUi::error`](crate::ModUi::error) and
 /// skipped; the rest still load, so this never fails. The [`Mods`] returned
 /// never changes.
