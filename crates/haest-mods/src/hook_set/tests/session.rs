@@ -40,8 +40,8 @@ impl Noting {
 }
 
 /// `hook` bound to `event`.
-fn bound(event: ModEvent, hook: Noting) -> Hooks {
-    let hooks = Hooks::new();
+fn bound(event: ModEvent, hook: Noting) -> HookSet {
+    let hooks = HookSet::new();
     match event {
         ModEvent::ToolBefore => hooks.on_tool_before(hook),
         ModEvent::ToolAfter => hooks.on_tool_after(hook),
@@ -88,7 +88,7 @@ async fn the_session_is_json_only_when_the_host_names_one() {
     let noting = Noting::default();
     let mods = Mods::new(
         env(TestUi::new(), WorkspaceMode::Sandbox),
-        [Hooks::new().on_system_prompt(noting.clone())],
+        [HookSet::new().on_system_prompt(noting.clone())],
     );
     mods.system_append().await;
     mods.env().set_session(session(1));
@@ -110,7 +110,7 @@ async fn the_session_is_json_only_when_the_host_names_one() {
             json!({ "id": "s-2" }),
         ]
     );
-    // A payload built outside `Hooks` names none: its JSON is as it was.
+    // A payload built outside a `HookSet` names none: its JSON is as it was.
     assert_eq!(
         serde_json::to_value(SystemPromptPayload::new()).unwrap(),
         json!({})
@@ -122,7 +122,7 @@ async fn a_hook_in_a_nested_mods_on_its_own_env_gets_the_outer_session() {
     let noting = Noting::default();
     let inner = Mods::new(
         env(TestUi::new(), WorkspaceMode::Sandbox),
-        [Hooks::new().on_system_prompt(noting.clone())],
+        [HookSet::new().on_system_prompt(noting.clone())],
     );
     let outer = env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1));
     let mods = Mods::new(outer, [ModRef::new(inner)]);
@@ -137,7 +137,7 @@ async fn a_nested_mods_two_conversations_take_turns_with_tells_the_second_none_o
     let noting = Noting::default();
     let shared = Mods::new(
         env(TestUi::new(), WorkspaceMode::Sandbox),
-        [Hooks::new().on_system_prompt(noting.clone())],
+        [HookSet::new().on_system_prompt(noting.clone())],
     );
     let a = env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1));
     let a = Mods::new(a, [ModRef::new(shared.clone())]);
@@ -161,7 +161,7 @@ async fn every_binding_of_one_event_gets_the_session_named_as_that_event_began()
         host.set_session(session(2));
         async { Ok::<Option<String>, BoxError>(None) }
     };
-    let hooks = Hooks::new()
+    let hooks = HookSet::new()
         .on_system_prompt(clears)
         .on_system_prompt(noting.clone());
     let mods = Mods::new(haest, [hooks]);

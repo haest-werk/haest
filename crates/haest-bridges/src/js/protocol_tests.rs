@@ -4,7 +4,7 @@
 //! types), reads them back, and a `.ts` handler receives exactly them, plus
 //! `session` when the env names one (session_tests.rs has the rest). And
 //! every decision a `.ts` handler returns takes the effect the same
-//! decision takes from a `Hooks` closure (haest-mods' decision cases).
+//! decision takes from a `HookSet` closure (haest-mods' decision cases).
 
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Effort, Message, NoHooks, SharedDeps, StopReason, ToolOutput,
@@ -15,9 +15,9 @@ use haest_core::{
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use haest_mods::{
-    Event, Hooks, Mod, ModEvent, ModRef, ModToolCall, ModelAfterPayload, ModelBeforePayload, Mods,
-    PromptSubmitPayload, SessionView, SystemPromptPayload, ToolAfterPayload, ToolBeforePayload,
-    TurnEndDecision, TurnEndPayload,
+    Event, HookSet, Mod, ModEvent, ModRef, ModToolCall, ModelAfterPayload, ModelBeforePayload,
+    Mods, PromptSubmitPayload, SessionView, SystemPromptPayload, ToolAfterPayload,
+    ToolBeforePayload, TurnEndDecision, TurnEndPayload,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -131,7 +131,7 @@ async fn every_payload_is_the_json_a_ts_handler_receives() {
     ended.error = Some("a cap".into());
 
     // Every event with no session named, then with one: the handler gets
-    // the payload's `session` as a `Hooks` binding's payload carries it.
+    // the payload's `session` as a `HookSet` binding's payload carries it.
     // The typed payloads are built bare (no session), as a host builds one.
     let named = SessionView::new("s-1").with_transcript_path("/t/s-1.jsonl");
     for session in [None, Some(named)] {
@@ -221,13 +221,13 @@ async fn a_ts_mod_and_a_rust_hook_see_the_same_answer_and_continued() {
     let ts = js("seen.ts", SEEN_TS, &haest).await.expect("the mod loads");
     let rust_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
     let log = rust_seen.clone();
-    let rust = Hooks::new().on_turn_end(move |p: TurnEndPayload, _: CancellationToken| {
+    let rust = HookSet::new().on_turn_end(move |p: TurnEndPayload, _: CancellationToken| {
         log.lock()
             .unwrap()
             .push(json!({ "answer": p.answer, "continued": p.continued }));
         async { Ok::<_, BoxError>(TurnEndDecision::default()) }
     });
-    let once = Hooks::new().on_turn_end(|p: TurnEndPayload, _: CancellationToken| async move {
+    let once = HookSet::new().on_turn_end(|p: TurnEndPayload, _: CancellationToken| async move {
         let decision = TurnEndDecision::default();
         Ok::<_, BoxError>(if p.continued {
             decision

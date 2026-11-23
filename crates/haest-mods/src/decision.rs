@@ -1,6 +1,6 @@
 //! What a hook answers: the decisions of the loop events, and the one place
-//! a decision takes effect. A file mod's handlers and
-//! [`Hooks`](crate::Hooks)' bindings are asked and folded in fold.rs,
+//! a decision takes effect. A file mod's handlers and a
+//! [`HookSet`](crate::HookSet)'s bindings are asked and folded in fold.rs,
 //! which applies their answers here; how each reads and writes as JSON is
 //! json.rs, the one decoder.
 

@@ -40,7 +40,7 @@ use super::{Dialect, HookFailure, Reply, Vars, blocked};
 /// and `transcript_path` when the host names the session (the payload's
 /// [`SessionView`](haest_mods::SessionView), which the conversation's
 /// `ModEnv::set_session` names as of each event: after the human's /clear,
-/// the new one; [`Hooks`](haest_mods::Hooks) sets it, and a host that calls
+/// the new one; [`HookSet`](haest_mods::HookSet) sets it, and a host that calls
 /// `Hook::run` itself sets the payload's `session` first, from
 /// `haest.session()`), and per event `tool_name`, `tool_input`, `tool_use_id`,
 /// `tool_response` (the output's text, as Claude Code sends a failed

@@ -1,7 +1,7 @@
 //! The kit for the hooks in another process, and the tests every event
 //! passes through each of them: a [`Remote`] is a hook script or a test
 //! server that writes down every input it gets and answers once, and the
-//! tests drive haest-mods' events through it as through a `Hooks` closure.
+//! tests drive haest-mods' events through it as through a `HookSet` closure.
 
 use std::{
     path::Path,
@@ -10,7 +10,7 @@ use std::{
 
 pub(crate) use haest_mods::testing::*;
 use haest_mods::{
-    Binding, Hook, Hooks, ModEvent, ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload,
+    Binding, Hook, HookSet, ModEvent, ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload,
     SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, TurnEndPayload,
 };
 use serde_json::Value;
@@ -23,10 +23,10 @@ mod every;
 #[cfg(feature = "http")]
 pub(crate) use haest_http::testing::{Respond, Server};
 
-/// A hook bound to `event`, in [`Hooks`] of its own. Every event of
+/// A hook bound to `event`, in a [`HookSet`] of its own. Every event of
 /// haest-mods is here: a new one panics, so the tests that drive every
 /// event through a shell and an HTTP hook fail until it is added.
-pub(crate) fn bound<H>(event: ModEvent, hook: H) -> Hooks
+pub(crate) fn bound<H>(event: ModEvent, hook: H) -> HookSet
 where
     H: Hook<ToolBeforePayload>
         + Hook<ToolAfterPayload>
@@ -36,7 +36,7 @@ where
         + Hook<ModelAfterPayload>
         + Hook<TurnEndPayload>,
 {
-    let hooks = Hooks::new();
+    let hooks = HookSet::new();
     match event {
         ModEvent::ToolBefore => hooks.on_tool_before(Binding::<ToolBeforePayload>::new(hook)),
         ModEvent::ToolAfter => hooks.on_tool_after(Binding::<ToolAfterPayload>::new(hook)),
@@ -65,7 +65,7 @@ pub(crate) fn claude_event(event: ModEvent) -> Option<&'static str> {
 }
 
 /// A hook in the Claude dialect bound to `event`, which Claude Code has.
-pub(crate) fn bound_claude<H>(event: ModEvent, hook: H) -> Hooks
+pub(crate) fn bound_claude<H>(event: ModEvent, hook: H) -> HookSet
 where
     H: Hook<ToolBeforePayload>
         + Hook<ToolAfterPayload>
@@ -73,7 +73,7 @@ where
         + Hook<SystemPromptPayload>
         + Hook<TurnEndPayload>,
 {
-    let hooks = Hooks::new();
+    let hooks = HookSet::new();
     match event {
         ModEvent::ToolBefore => hooks.on_tool_before(Binding::<ToolBeforePayload>::new(hook)),
         ModEvent::ToolAfter => hooks.on_tool_after(Binding::<ToolAfterPayload>::new(hook)),
@@ -190,7 +190,7 @@ impl Remote {
     }
 
     /// It, in haest's dialect, bound to `event`.
-    pub(crate) fn hooks(&self, event: ModEvent) -> Hooks {
+    pub(crate) fn hooks(&self, event: ModEvent) -> HookSet {
         match self.via {
             #[cfg(feature = "shell")]
             Via::Shell => bound(event, self.shell()),
@@ -200,7 +200,7 @@ impl Remote {
     }
 
     /// It, in Claude Code's dialect, bound to `event`.
-    pub(crate) fn claude_hooks(&self, event: ModEvent) -> Hooks {
+    pub(crate) fn claude_hooks(&self, event: ModEvent) -> HookSet {
         match self.via {
             #[cfg(feature = "shell")]
             Via::Shell => bound_claude(event, self.shell().with_dialect(Claude)),

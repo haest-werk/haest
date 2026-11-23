@@ -1,5 +1,5 @@
 //! One event's handlers, asked one at a time in order, and their answers
-//! folded by the rules every mod made of handlers follows. [`Hooks`]'
+//! folded by the rules every mod made of handlers follows. A [`HookSet`]'s
 //! bindings and a mod file's `haest.on` handlers (haest-bridges' `JsMod`)
 //! both fire through here, so an answer means the same from either:
 //!
@@ -20,7 +20,7 @@
 //! begins, so every handler of one event gets the same session whatever the
 //! host names meanwhile, and a binding and a mod file's handler get the same.
 //!
-//! [`Hooks`]: crate::Hooks
+//! [`HookSet`]: crate::HookSet
 
 use std::ops::ControlFlow;
 

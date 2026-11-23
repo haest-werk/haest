@@ -160,8 +160,8 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   decision per event (the mod files' own JSON), `Hook<E>` for one handler,
   `Binding` for its timeout, `OnError` and tool matcher (in a debug build,
   `with_matcher` stops at a matcher that is not haest's pattern), and
-  `Hooks`, a mod made of bindings. A Rust closure is a hook. Each payload a
-  `Hooks` binding or a mod file's handler gets names the conversation's
+  `HookSet`, a mod made of bindings. A Rust closure is a hook. Each payload a
+  `HookSet` binding or a mod file's handler gets names the conversation's
   session as of that event (`Event::session`, a `SessionView` of its id and
   transcript path), the one the host names on the env with
   `ModEnv::with_session` and, when a /clear starts a new one,
@@ -233,7 +233,7 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   there, beside `Binding` and `OnError`; a Rust host builds one with
   `HookSettings::with_entry` (`HookEntry::shell`, `HookEntry::http`), held
   to the rules a file is. haest-bridges: `HookHost`, whose `bind` makes
-  the entries one `Hooks` through its `shell` and `http` bridges.
+  the entries one `HookSet` through its `shell` and `http` bridges.
   haest-config: `Config::hooks`,
   `Loaded::hooks`; it depends on haest-mods, not haest-bridges, and the
   facade's `config` turns on `mods`, so `haest::mods::HookSettings` names

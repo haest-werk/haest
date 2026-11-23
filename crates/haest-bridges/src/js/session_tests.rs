@@ -1,6 +1,6 @@
 //! The session a mod file's handler is handed: the one the conversation's
 //! env names as the event begins, on every event, as its payload's
-//! `session` (`{ id, transcriptPath }`, the JSON a `Hooks` binding's payload
+//! `session` (`{ id, transcriptPath }`, the JSON a `HookSet` binding's payload
 //! carries and a shell or HTTP hook in haest's dialect reads), `undefined`
 //! when the host names none. A handler handed its payload spread gets it as
 //! the last argument; a loop event's one view has it as a field.
@@ -15,7 +15,7 @@ use haest_core::{
     tool::input,
     workspace::WorkspaceMode,
 };
-use haest_mods::{Event, Hook, Hooks, ModEvent, ModRef, Mods, SessionView};
+use haest_mods::{Event, Hook, HookSet, ModEvent, ModRef, Mods, SessionView};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -110,7 +110,7 @@ async fn a_ts_handler_gets_the_session_a_hooks_binding_gets_and_undefined_when_n
         .await
         .expect("the mod loads");
     let rust = Noting::default();
-    let hooks = Hooks::new()
+    let hooks = HookSet::new()
         .on_tool_before(rust.clone())
         .on_system_prompt(rust.clone())
         .on_turn_end(rust.clone());
@@ -138,7 +138,7 @@ async fn a_ts_handler_gets_the_session_a_hooks_binding_gets_and_undefined_when_n
     ]
     .concat();
     assert_eq!(noticed(&ui), expected, "the .ts handlers");
-    assert_eq!(*rust.0.lock().unwrap(), expected, "the Hooks bindings");
+    assert_eq!(*rust.0.lock().unwrap(), expected, "the HookSet bindings");
 }
 
 #[tokio::test]

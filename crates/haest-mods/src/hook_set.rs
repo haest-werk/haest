@@ -1,4 +1,4 @@
-//! [`Hooks`]: hooks bound per event, as one [`Mod`](crate::Mod). Each event
+//! [`HookSet`]: hooks bound per event, as one [`Mod`](crate::Mod). Each event
 //! runs its bindings in the order added (fire.rs) and folds their answers
 //! by the rules a mod file's handlers are folded by too (fold.rs);
 //! decisions take effect in decision.rs.
@@ -21,7 +21,7 @@ mod tests;
 
 /// Hooks bound per event, as one [`Mod`](crate::Mod): a
 /// [`Hook`](crate::Hook) is one handler for one event (a Rust closure, an
-/// `async fn`, a command, a URL), and `Hooks` puts each where its event
+/// `async fn`, a command, a URL), and `HookSet` puts each where its event
 /// fires. It goes into [`Mods`](crate::Mods) like any mod, so it runs in
 /// load order among them and its failures are reported the same way.
 ///
@@ -53,7 +53,7 @@ mod tests;
 /// event begins, so every binding of one event gets the same session, and
 /// a mod file's handler on the same event gets it too: both are folded by
 /// the same code. A host that runs a [`Hook`](crate::Hook) itself, outside
-/// `Hooks`, sets the payload's `session` itself (from [`ModEnv::session`]).
+/// `HookSet`, sets the payload's `session` itself (from [`ModEnv::session`]).
 ///
 /// # Examples
 ///
@@ -74,7 +74,7 @@ mod tests;
 ///     workspace::WorkspaceMode,
 /// };
 /// use haest_mods::{
-///     Before, Binding, Hooks, ModEnv, ModLoopHooks, ModTools, Mods, ToolBeforePayload,
+///     Before, Binding, HookSet, ModEnv, ModLoopHooks, ModTools, Mods, ToolBeforePayload,
 ///     TurnEndDecision, TurnEndPayload,
 /// };
 /// use serde_json::json;
@@ -121,7 +121,7 @@ mod tests;
 ///     }
 /// };
 ///
-/// let hooks = Hooks::new()
+/// let hooks = HookSet::new()
 ///     .on_tool_before(Binding::new(guard).with_matcher("Bash"))
 ///     .on_turn_end(check_once);
 /// let mods = Mods::new(ModEnv::new("/project", WorkspaceMode::Real, Terminal), [hooks]);
@@ -147,27 +147,27 @@ mod tests;
 /// # }
 /// ```
 #[derive(Clone)]
-pub struct Hooks {
+pub struct HookSet {
     name: String,
     pub(crate) slots: Slots,
 }
 
-impl Default for Hooks {
+impl Default for HookSet {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl fmt::Debug for Hooks {
+impl fmt::Debug for HookSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Hooks")
+        f.debug_struct("HookSet")
             .field("name", &self.name)
             .field("slots", &self.slots)
             .finish()
     }
 }
 
-impl Hooks {
+impl HookSet {
     /// No hooks yet, named `hooks` in reports.
     pub fn new() -> Self {
         Self {
@@ -230,7 +230,7 @@ impl Hooks {
 /// the call is passed over, and one that fails does what its
 /// [`OnError`] says.
 struct Bound<'a, E: Event> {
-    hooks: &'a Hooks,
+    hooks: &'a HookSet,
     bindings: &'a [Binding<E>],
     cancel: &'a CancellationToken,
     haest: &'a ModEnv,

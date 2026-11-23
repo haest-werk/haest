@@ -1,7 +1,7 @@
 //! Mods: code that changes how a haest agent behaves, without a change to haest itself.
 //!
-//! A mod is plain Rust (a [`Mod`]) or a set of [`Hooks`]: one handler per
-//! event, a Rust closure or anything else that implements [`Hook`]. A `.js`
+//! A mod is plain Rust (a [`Mod`]) or a [`HookSet`]: one handler per event,
+//! a Rust closure or anything else that implements [`Hook`]. A `.js`
 //! / `.ts` mod file is a mod too, through a bridge: haest-bridges (feature
 //! `js`) runs it in embedded QuickJS. All of them hook the same events of
 //! the agent loop --
@@ -44,9 +44,9 @@
 //! | Piece | What |
 //! |---|---|
 //! | [`Mod`] | a native mod: implement only the events it hooks |
-//! | [`Hooks`], [`Hook`], [`Binding`] | one handler per event as a mod: a closure, an `async fn` or any [`Hook`], each bound with a timeout, an [`OnError`] and (tool events) a tool-name matcher |
+//! | [`HookSet`], [`Hook`], [`Binding`] | one handler per event as a mod: a closure, an `async fn` or any [`Hook`], each bound with a timeout, an [`OnError`] and (tool events) a tool-name matcher |
 //! | [`Event`], [`ModEvent`] and the payload and decision types | the events' protocol: what a handler gets and answers, typed once, the mod files' own JSON |
-//! | [`HookSettings`], [`HookEntry`], [`HookDialect`] | the `hooks` setting: commands and URLs bound per event, read from a config file or built in Rust, and checked; haest-bridges' `HookHost::bind` makes them a [`Hooks`] |
+//! | [`HookSettings`], [`HookEntry`], [`HookDialect`] | the `hooks` setting: commands and URLs bound per event, read from a config file or built in Rust, and checked; haest-bridges' `HookHost::bind` makes them a [`HookSet`] |
 //! | [`load_mods`] | the built-ins plus the host's own mods, as [`Mods`] |
 //! | [`Mods`] | every loaded mod, in order, as a cheap handle that never changes once built; a host's own native mods go in with [`ModOptions::with_mod`] or [`Mods::new`]. A `Mods` is a [`Mod`] itself, so a set can run inside another in its place |
 //! | [`ModTools`], [`ModSystemPrompt`], [`ModLoopHooks`] | the wrappers a host puts around its tool source, its system prompt and its [`AgentHooks`](haest_core::AgentHooks) |
@@ -54,15 +54,15 @@
 //! | [`ModUi`] | PLUG POINT: how the host asks the human and shows them a line |
 //! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts; [`ApprovalGate::mod_ui`] makes it the host's whole [`ModUi`] |
 //! | [`ModRef`], [`ModUiRef`], [`AutoJudgeRef`], [`PrompterRef`] | the handles the plug points are held by; a parameter that takes `impl Into<..Ref>` takes the value itself, or an `Arc` of it |
-//! | `testing` (feature `testing`) | fakes for tests of mods, and the decision cases a bridge must answer the way [`Hooks`] does; for `dev-dependencies` only, and outside semver like every `testing` module in haest |
+//! | `testing` (feature `testing`) | fakes for tests of mods, and the decision cases a bridge must answer the way [`HookSet`] does; for `dev-dependencies` only, and outside semver like every `testing` module in haest |
 //!
 //! # Putting mods in the loop
 //!
 //! Load the mods, wrap the agent's tool source in [`ModTools`] and its system
 //! prompt in [`ModSystemPrompt`] (and its hooks in [`ModLoopHooks`], for
-//! the loop events: [`Hooks`' example](Hooks#examples) uses them), and pass
-//! the human's text through [`Mods::rewrite_prompt`] before it goes to the
-//! agent. The model here is scripted, so the example runs offline.
+//! the loop events: [`HookSet`'s example](HookSet#examples) uses them), and
+//! pass the human's text through [`Mods::rewrite_prompt`] before it goes to
+//! the agent. The model here is scripted, so the example runs offline.
 //!
 //! ```
 //! use haest_core::{
@@ -73,7 +73,7 @@
 //!     workspace::WorkspaceMode,
 //! };
 //! use haest_mods::{
-//!     Before, Binding, Hooks, ModOptions, ModSystemPrompt, ModTools, SystemPromptPayload,
+//!     Before, Binding, HookSet, ModOptions, ModSystemPrompt, ModTools, SystemPromptPayload,
 //!     ToolBeforePayload, load_mods,
 //! };
 //! use serde_json::json;
@@ -112,7 +112,7 @@
 //! let line = |_: SystemPromptPayload, _: CancellationToken| async {
 //!     Ok::<_, BoxError>(Some("Ask before deleting anything.".to_string()))
 //! };
-//! let tidy = Hooks::new()
+//! let tidy = HookSet::new()
 //!     .with_name("tidy")
 //!     .on_tool_before(Binding::new(guard).with_matcher("Bash"))
 //!     .on_system_prompt(line);
@@ -221,11 +221,11 @@
 //! # Hooks
 //!
 //! When a mod is only a few handlers, bind them per event instead:
-//! [`Hooks`] takes a closure (or any [`Hook`]) for each event, with a
+//! [`HookSet`] takes a closure (or any [`Hook`]) for each event, with a
 //! timeout, what its failure does ([`OnError`]) and, on a tool event, the
 //! tools it is for, and goes into [`Mods`] like any mod.
-//! [`Hooks`' example](Hooks#examples) guards Bash with a matcher and sends
-//! a turn back once.
+//! [`HookSet`'s example](HookSet#examples) guards Bash with a matcher and
+//! sends a turn back once.
 //!
 //! # Mod files
 //!
@@ -289,7 +289,8 @@ pub mod testing;
 #[doc(hidden)]
 pub mod __private {
     /// How a mod made of handlers asks them and folds their answers: a mod
-    /// file's (haest-bridges' `JsMod`) by the same code as [`Hooks`](crate::Hooks)'.
+    /// file's (haest-bridges' `JsMod`) by the same code as a
+    /// [`HookSet`](crate::HookSet)'s.
     pub mod fold {
         pub use crate::fold::*;
     }
@@ -306,7 +307,7 @@ pub use env::{ModEnv, ModUi, ModUiRef};
 pub use events::{Event, ModEvent, ToolEvent};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter, PrompterRef};
 pub use hook::{Binding, DEFAULT_HOOK_TIMEOUT, Hook, HookError, OnError};
-pub use hook_set::Hooks;
+pub use hook_set::HookSet;
 pub use hook_settings::{HookDialect, HookEntry, HookEntryError, HookSettings};
 pub use loader::{ModOptions, load_mods};
 pub use loop_hooks::ModLoopHooks;

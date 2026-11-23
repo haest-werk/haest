@@ -37,7 +37,7 @@ const MAX_ERROR_BODY: usize = 64 * 1024;
 /// `prompt.submit`, `system.prompt` and `turn.end`, as
 /// [`ModEvent::claude_code`](haest_mods::ModEvent::claude_code) lists them,
 /// and is told the session each event's payload names:
-/// [`Hooks`](haest_mods::Hooks) sets it from the conversation's
+/// [`HookSet`](haest_mods::HookSet) sets it from the conversation's
 /// [`ModEnv`](haest_mods::ModEnv), and a host that calls
 /// [`Hook::run`](haest_mods::Hook::run) itself sets the payload's `session`
 /// first (from `haest.session()`).
@@ -70,11 +70,11 @@ const MAX_ERROR_BODY: usize = 64 * 1024;
 /// use std::time::Duration;
 ///
 /// use haest_bridges::HttpHook;
-/// use haest_mods::{Binding, Hooks, OnError, TurnEndPayload};
+/// use haest_mods::{Binding, HookSet, OnError, TurnEndPayload};
 ///
 /// let review = HttpHook::new("https://review.internal/haest/turn-end")
 ///     .with_header("authorization", "Bearer t0k3n");
-/// let hooks = Hooks::new().on_turn_end(
+/// let hooks = HookSet::new().on_turn_end(
 ///     Binding::<TurnEndPayload>::new(review)
 ///         .with_timeout(Duration::from_secs(10))
 ///         .with_on_error(OnError::Continue),

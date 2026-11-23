@@ -4,7 +4,7 @@
 //!
 //! The same policy twice, and the same conversation for each:
 //!
-//! - a Rust hook (`Hooks::on_turn_end`), the form a host like brain uses;
+//! - a Rust hook (`HookSet::on_turn_end`), the form a host like brain uses;
 //! - the mod file `docs/examples/mods/auto-compact.ts`, loaded the way a CLI
 //!   loads a user's mod files (`ModFiles`, from its `mods/` directory).
 //!
@@ -28,7 +28,7 @@ use haest::{
         workspace::WorkspaceMode,
     },
     mods::{
-        ApprovalRequest, Compact, Decision, Hooks, ModEnv, ModLoopHooks, ModTools, ModUi, Mods,
+        ApprovalRequest, Compact, Decision, HookSet, ModEnv, ModLoopHooks, ModTools, ModUi, Mods,
         TurnEndDecision, TurnEndPayload,
     },
 };
@@ -44,8 +44,8 @@ const SHARE: f64 = 0.6;
 const KEEP: &str = "Keep the open tasks and every file path.";
 
 /// The Rust form: the mod file's policy as a closure.
-fn rust_hook() -> Hooks {
-    Hooks::new().on_turn_end(|turn: TurnEndPayload, _: CancellationToken| async move {
+fn rust_hook() -> HookSet {
+    HookSet::new().on_turn_end(|turn: TurnEndPayload, _: CancellationToken| async move {
         let view = turn.agent;
         let full = view
             .context_window

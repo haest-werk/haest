@@ -18,28 +18,28 @@ between forms without changing what it means.
 | [`Mod`](../crates/haest-mods/src/api.rs) (haest-mods) | behaviour added on top: guards, rewrites, tools, commands, loop rules | any number, run in load order as one `Mods` | is reported to the human and never takes the conversation down; what else it means depends on the event |
 
 A host writes `AgentHooks` once. Everything else goes in as a mod: the built-ins
-(`ApprovalMod`, `PlanMod`), the host's own native mods, a set of `Hooks`, and mod files.
+(`ApprovalMod`, `PlanMod`), the host's own native mods, a `HookSet`, and mod files.
 `ModLoopHooks` runs the mods' loop events after the host's own hooks.
 
 ## Every extension point
 
-| Point | Fires | Rust | Mod file (TypeScript) | Hook (`Hooks`, any form) |
+| Point | Fires | Rust | Mod file (TypeScript) | Hook (`HookSet`, any form) |
 |---|---|---|---|---|
-| `tool.before` | before every tool call | `Mod::tool_before` | `haest.on('tool.before', ..)` | `Hooks::on_tool_before` |
-| `tool.after` | after a call ran | `Mod::tool_after` | `haest.on('tool.after', ..)` | `Hooks::on_tool_after` |
-| `prompt.submit` | a human message, before the model sees it | `Mod::prompt_submit` | `haest.on('prompt.submit', ..)` | `Hooks::on_prompt_submit` |
-| `system.prompt` | before every model call | `Mod::system_prompt` | `haest.on('system.prompt', ..)` | `Hooks::on_system_prompt` |
-| `model.before` | before every model call, after `AgentHooks::before_model_call` | `Mod::model_before` | `haest.on('model.before', ..)` | `Hooks::on_model_before` |
-| `model.after` | an answer landed, its tool calls have not run | `Mod::model_after` | `haest.on('model.after', ..)` | `Hooks::on_model_after` |
-| `turn.end` | a turn is about to end on its own | `Mod::turn_end` | `haest.on('turn.end', ..)` | `Hooks::on_turn_end` |
+| `tool.before` | before every tool call | `Mod::tool_before` | `haest.on('tool.before', ..)` | `HookSet::on_tool_before` |
+| `tool.after` | after a call ran | `Mod::tool_after` | `haest.on('tool.after', ..)` | `HookSet::on_tool_after` |
+| `prompt.submit` | a human message, before the model sees it | `Mod::prompt_submit` | `haest.on('prompt.submit', ..)` | `HookSet::on_prompt_submit` |
+| `system.prompt` | before every model call | `Mod::system_prompt` | `haest.on('system.prompt', ..)` | `HookSet::on_system_prompt` |
+| `model.before` | before every model call, after `AgentHooks::before_model_call` | `Mod::model_before` | `haest.on('model.before', ..)` | `HookSet::on_model_before` |
+| `model.after` | an answer landed, its tool calls have not run | `Mod::model_after` | `haest.on('model.after', ..)` | `HookSet::on_model_after` |
+| `turn.end` | a turn is about to end on its own | `Mod::turn_end` | `haest.on('turn.end', ..)` | `HookSet::on_turn_end` |
 | tools | before every model call | `Mod::tools`, or a `LiveTools` the host holds | `haest.tool({..})`, `haest.removeTool(name)` | none: a tool is called, a hook is not |
 | hidden tools | before every model call | `Mod::disabled_tools` | `haest.disableTool(name)`, `haest.enableTool(name)` | none |
 | slash commands | the human types `/name` | `Mod::commands` + `Mod::command` | `haest.command(name, ..)` | none |
 | the host's loop | each step | `AgentHooks` | none: the host's own | none |
 
-The gates hold the lists equal: `JsMod` and `Hooks` implement every `Mod` method
+The gates hold the lists equal: `JsMod` and `HookSet` implement every `Mod` method
 (`clippy::missing_trait_methods`), and tests drive each event through a `.ts` mod, a
-`Hooks` binding, a `ShellHook` and an `HttpHook`. A new `Mod` event without its twins fails
+`HookSet` binding, a `ShellHook` and an `HttpHook`. A new `Mod` event without its twins fails
 the build's gates.
 
 ## What each event may decide
@@ -81,11 +81,11 @@ and a `system.prompt` answer of `false` (JavaScript's `cond && 'text'`). A value
 type (`{ stop: false }`, `{ steer: 42 }`, `{ compact: "yes" }`, a number from `prompt.submit`
 or `system.prompt`) is the hook's failure: a binding's `on_error` decides what that does, and
 in a mod file the event fails as a throw does. Nothing is turned into text. A mod file's handlers on one event
-are asked one at a time, by the same rules as a `Hooks` binding's, in the table's last column.
+are asked one at a time, by the same rules as a `HookSet` binding's, in the table's last column.
 
 ## Hooks: one handler per event
 
-`Hooks` is a mod made of bindings: a hook per event, each with
+`HookSet` is a mod made of bindings: a hook per event, each with
 
 - a timeout (`DEFAULT_HOOK_TIMEOUT`, 60 s, unless `Binding::with_timeout`),
 - what its failure or timeout does (`OnError::Block` or `Continue`; `block` for `tool.before`,
@@ -97,9 +97,9 @@ are asked one at a time, by the same rules as a `Hooks` binding's, in the table'
 A Rust closure or `async fn` taking the payload and a `CancellationToken` is a hook. So is any
 type that implements `Hook<E>`, which is how the bridges plug in. The table of what `block`
 does per event, and a worked example (a Bash guard with a matcher, a turn sent back once), are
-on [`Hooks`](../crates/haest-mods/src/hook_set.rs).
+on [`HookSet`](../crates/haest-mods/src/hook_set.rs).
 
-Pick `Hooks` for a few handlers, `Mod` for something with state across events, tools or
+Pick `HookSet` for a few handlers, `Mod` for something with state across events, tools or
 commands.
 
 ## Tools that change while the conversation runs
@@ -153,7 +153,7 @@ conversation's ledger. `turn.end` is the place to compact so the next turn start
 compact in `model.after` (the answer's tool results land after it).
 
 Compacting past a share of the window, in both forms:
-[auto-compact.ts](examples/mods/auto-compact.ts) as a mod file, and its Rust twin as a `Hooks`
+[auto-compact.ts](examples/mods/auto-compact.ts) as a mod file, and its Rust twin as a `HookSet`
 closure in [auto_compact.rs](../crates/haest/examples/auto_compact.rs), which runs both against a
 scripted model (`cargo run -p haest --example auto_compact`). Compacting on the cache's clock
 instead (before an idle conversation's cache expires) is `compact_before_expire`, below.
@@ -226,7 +226,7 @@ Every mod, native or file, runs with the host's full trust, sandbox or not.
 
 [`ShellHook`](../crates/haest-bridges/src/shell.rs) (haest-bridges feature `shell`, the
 facade's `bridge-shell`) and [`HttpHook`](../crates/haest-bridges/src/http.rs) (`http`,
-`bridge-http`) are hooks: bound per event in `Hooks` as a closure is, with the binding's
+`bridge-http`) are hooks: bound per event in a `HookSet` as a closure is, with the binding's
 timeout, `on_error` and matcher. Both are off by default.
 
 | | `ShellHook` | `HttpHook` |
@@ -267,7 +267,7 @@ and names the new one when the human's /clear starts it; hooks bound once follow
 ```rust
 let guard = ShellHook::new("sh .claude/hooks/no-rm-rf.sh").with_dialect(Claude);
 let env = ModEnv::new(project, WorkspaceMode::Real, ui).with_session(SessionView::new("s-1"));
-let mods = Mods::new(env, [Hooks::new().on_tool_before(Binding::new(guard).with_matcher("Bash"))]);
+let mods = Mods::new(env, [HookSet::new().on_tool_before(Binding::new(guard).with_matcher("Bash"))]);
 // The human's /clear:
 mods.env().set_session(SessionView::new("s-2"));
 ```
@@ -367,7 +367,7 @@ its haest name (`PreToolUse` is `tool.before`, `PostToolUse` `tool.after`, `User
 
 | You are | Use |
 |---|---|
-| a host embedding haest in Rust (brain) | `AgentHooks` for the host's own loop, native `Mod`s and `Hooks` for the rest. No bridge, no QuickJS |
+| a host embedding haest in Rust (brain) | `AgentHooks` for the host's own loop, native `Mod`s and a `HookSet` for the rest. No bridge, no QuickJS |
 | a human customizing the CLI | mod files in `~/.config/haest/mods/` |
 | a human with Claude Code hook scripts, a check in any language, or a review service, on the CLI | the [`hooks`](settings.md#hooks) setting |
 | a project shipping rules with its repo | mod files in `.haest/mods/`, which the human turns on with `project_mods` in a directory they trust |

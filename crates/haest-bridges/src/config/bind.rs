@@ -1,6 +1,6 @@
 //! The `hooks` setting bound: each entry a [`ShellHook`] or an [`HttpHook`]
 //! in a [`Binding`] with its matcher, timeout and `on_error`, all in one
-//! [`Hooks`], as a Rust host binds them by hand.
+//! [`HookSet`], as a Rust host binds them by hand.
 
 use std::{
     fmt,
@@ -12,9 +12,9 @@ use haest_core::{ChildEnv, error::BoxError};
 #[cfg(feature = "http")]
 use haest_http::HttpClientRef;
 use haest_mods::{
-    Binding, Event, Hook, HookDialect, HookEntry, HookSettings, Hooks, ModEvent, ModelAfterPayload,
-    ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload, ToolAfterPayload,
-    ToolBeforePayload, ToolEvent, TurnEndPayload,
+    Binding, Event, Hook, HookDialect, HookEntry, HookSet, HookSettings, ModEvent,
+    ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload,
+    ToolAfterPayload, ToolBeforePayload, ToolEvent, TurnEndPayload,
 };
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -28,9 +28,9 @@ use crate::{
     dialect::{Dialect, HookFailure, Reply, Vars},
 };
 
-/// What the [`Hooks`] are named in a report (`Mod [hooks] failed in
-/// tool.before: hook 2 on tool.before failed: ..`): the setting they come
-/// from.
+/// What the [`HookSet`] is named in a report (`Mod [hooks] failed in
+/// tool.before: hook 2 on tool.before failed: ..`): the setting its hooks
+/// come from.
 const NAME: &str = "[hooks]";
 
 /// What a host hands the hooks its `hooks` setting binds
@@ -101,7 +101,7 @@ impl fmt::Debug for HookHost {
 }
 
 impl HookHost {
-    /// Every entry of `settings` bound in one [`Hooks`], named `[hooks]` in
+    /// Every entry of `settings` bound in one [`HookSet`], named `[hooks]` in
     /// reports: a `command` as a [`ShellHook`], a `url` as an [`HttpHook`],
     /// each in the [`Binding`] of its event with its matcher, timeout and
     /// `on_error`, in the dialect it names. An event's entries bind in the
@@ -113,8 +113,8 @@ impl HookHost {
     /// value: a command where no process may start
     /// ([`with_env`](Self::with_env)), a command without this crate's
     /// `shell` feature, a URL without `http`.
-    pub fn bind(&self, settings: &HookSettings) -> (Option<Hooks>, Vec<String>) {
-        let mut hooks = Hooks::new().with_name(NAME);
+    pub fn bind(&self, settings: &HookSettings) -> (Option<HookSet>, Vec<String>) {
+        let mut hooks = HookSet::new().with_name(NAME);
         let (mut bound, mut notes) = (0, Vec::new());
         for (event, name, entry) in settings.named_entries() {
             match bind(hooks.clone(), event, entry, self) {
@@ -133,11 +133,11 @@ impl HookHost {
 /// Claude Code has takes either dialect; the others take haest's only, and
 /// the build holds each arm to haest-mods' `ModEvent::claude_code`.
 fn bind(
-    hooks: Hooks,
+    hooks: HookSet,
     event: ModEvent,
     entry: &HookEntry,
     host: &HookHost,
-) -> Result<Hooks, String> {
+) -> Result<HookSet, String> {
     let carried = carried(entry, host)?;
     let named = Named::of(entry.dialect());
     Ok(match event {

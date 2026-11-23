@@ -1,6 +1,6 @@
 //! The decision cases: every answer a hook may give to an event, and what
 //! it must have done. A bridge proves it speaks the protocol by taking the
-//! same effect as [`Hooks`] for each one ([`effect`] measures it).
+//! same effect as a [`HookSet`] for each one ([`effect`] measures it).
 
 use std::sync::{
     Arc,
@@ -20,7 +20,7 @@ use super::{Probe, ctx, looped, wrapped};
 use crate::{
     events::{Event, ModEvent},
     hook::Hook,
-    hook_set::Hooks,
+    hook_set::HookSet,
     registry::Mods,
 };
 
@@ -39,10 +39,10 @@ pub fn once<E: Event>(answer: Value) -> impl Hook<E> {
     }
 }
 
-/// [`Hooks`] answering `answer` once to `event`, bound through the event's
-/// own method. Named `hooks` in reports.
-pub fn hooks_answering(event: ModEvent, answer: Value) -> Hooks {
-    let hooks = Hooks::new();
+/// A [`HookSet`] answering `answer` once to `event`, bound through the
+/// event's own method. Named `hooks` in reports.
+pub fn hooks_answering(event: ModEvent, answer: Value) -> HookSet {
+    let hooks = HookSet::new();
     match event {
         ModEvent::ToolBefore => hooks.on_tool_before(once(answer)),
         ModEvent::ToolAfter => hooks.on_tool_after(once(answer)),

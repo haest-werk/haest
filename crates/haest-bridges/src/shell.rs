@@ -102,11 +102,11 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// use haest_bridges::ShellHook;
 /// use haest_core::{Tools, tool::input, workspace::WorkspaceMode};
-/// use haest_mods::{Binding, Hooks, ModEnv, ModTools, Mods, ToolBeforePayload};
+/// use haest_mods::{Binding, HookSet, ModEnv, ModTools, Mods, ToolBeforePayload};
 /// use serde_json::json;
 ///
 /// let guard = ShellHook::new(r#"grep -q 'rm -rf' && echo '{"deny": "not on this machine"}' || true"#);
-/// let hooks = Hooks::new().on_tool_before(Binding::<ToolBeforePayload>::new(guard).with_matcher("Bash"));
+/// let hooks = HookSet::new().on_tool_before(Binding::<ToolBeforePayload>::new(guard).with_matcher("Bash"));
 ///
 /// let project = std::env::temp_dir();
 /// let mods = Mods::new(ModEnv::new(&project, WorkspaceMode::Real, Terminal), [hooks]);
@@ -124,14 +124,14 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// The session it is told (`session_id`, `transcript_path`) is the one the
 /// conversation's [`ModEnv`](haest_mods::ModEnv) names at each event: the
 /// host names the new one at the human's /clear, and the hooks stay bound.
-/// That is [`Hooks`](haest_mods::Hooks)' doing: a host that calls
+/// That is the [`HookSet`](haest_mods::HookSet)'s doing: a host that calls
 /// [`Hook::run`](haest_mods::Hook::run) itself, in its own `Mod`, sets the
 /// payload's `session` first (from `haest.session()`).
 ///
 /// ```
 /// use haest_bridges::{Claude, ShellHook};
 /// use haest_core::workspace::WorkspaceMode;
-/// use haest_mods::{Binding, Hooks, ModEnv, Mods, SessionView, ToolBeforePayload};
+/// use haest_mods::{Binding, HookSet, ModEnv, Mods, SessionView, ToolBeforePayload};
 /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
 /// # struct Terminal;
 /// # #[async_trait::async_trait]
@@ -140,7 +140,7 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// #     fn info(&self, _: &str) {}
 /// # }
 ///
-/// let hooks = Hooks::new()
+/// let hooks = HookSet::new()
 ///     .on_tool_before(
 ///         Binding::<ToolBeforePayload>::new(
 ///             ShellHook::new("python3 .claude/hooks/guard.py").with_dialect(Claude),
@@ -160,9 +160,9 @@ const NO_DEADLINE: Duration = Duration::MAX;
 ///
 /// ```compile_fail
 /// use haest_bridges::{Claude, ShellHook};
-/// use haest_mods::Hooks;
+/// use haest_mods::HookSet;
 ///
-/// let hooks = Hooks::new().on_model_before(ShellHook::new("./x.sh").with_dialect(Claude));
+/// let hooks = HookSet::new().on_model_before(ShellHook::new("./x.sh").with_dialect(Claude));
 /// ```
 #[derive(Debug, Clone)]
 pub struct ShellHook<D = Haest> {

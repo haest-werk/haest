@@ -3,12 +3,12 @@
 //! answers.
 //!
 //! The table at the bottom has one row per event: its name, its payload, its
-//! decision, what a failing hook does by default, and its [`Hooks`] binding
+//! decision, what a failing hook does by default, and its [`HookSet`] binding
 //! (`on_*`). The rows write all of them, so an event cannot come without
 //! any. The rest of an event is held from the other side: `impl Mod` for
-//! [`Hooks`], for [`Mods`](crate::Mods) and for haest-bridges' `JsMod` name
+//! [`HookSet`], for [`Mods`](crate::Mods) and for haest-bridges' `JsMod` name
 //! every method (`clippy::missing_trait_methods`), so a `Mod` event without
-//! its mod-file twin or its `Hooks` run fails the gates; the JavaScript
+//! its mod-file twin or its `HookSet` run fails the gates; the JavaScript
 //! half of a mod file (bootstrap.js) is handed [`ModEvent::WORDS`] at load
 //! and refuses to start unless it handles exactly those; and the parity
 //! tests (`testing::decision_cases`, run by both crates)
@@ -23,7 +23,7 @@ use crate::{
     api::Before,
     decision::{ModelAfterDecision, ModelBeforeDecision, TurnEndDecision},
     hook::{Binding, Hook, OnError},
-    hook_set::Hooks,
+    hook_set::HookSet,
     payload::{
         ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SessionView,
         SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, TurnEndPayload,
@@ -85,8 +85,8 @@ pub trait Event:
     }
 
     /// The session the conversation is on as of this event, when its host
-    /// named one: [`Hooks`] hands every binding its payload, and a mod file
-    /// every handler, with the session the conversation's
+    /// named one: a [`HookSet`] hands every binding its payload, and a mod
+    /// file every handler, with the session the conversation's
     /// [`ModEnv`](crate::ModEnv) names as the event begins
     /// ([`ModEnv::set_session`](crate::ModEnv::set_session)).
     fn session(&self) -> Option<&SessionView>;
@@ -109,13 +109,13 @@ mod sealed {
     )]
     pub trait Sealed {
         /// The payload as of `session`: what the fold (fold.rs) sets before
-        /// a [`Hooks`](crate::Hooks) binding or a mod file's handler gets it.
+        /// a [`HookSet`](crate::HookSet) binding or a mod file's handler gets it.
         fn set_session(&mut self, session: Option<SessionView>);
     }
 }
 
 /// Writes, from one row per event: [`ModEvent`], each payload's [`Event`]
-/// impl, the bindings [`Hooks`] keeps, and each event's `on_*` method.
+/// impl, the bindings a [`HookSet`] keeps, and each event's `on_*` method.
 macro_rules! mod_events {
     ($(
         $(#[$doc:meta])*
@@ -170,7 +170,7 @@ macro_rules! mod_events {
             $(pub(crate) $bind: Vec<Binding<$payload>>,)+
         }
 
-        impl Hooks {
+        impl HookSet {
             $(
                 $(#[$bind_doc])*
                 ///

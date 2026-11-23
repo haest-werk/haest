@@ -1,4 +1,4 @@
-//! Where each event fires its bindings: [`Hooks`] as a [`Mod`]. The
+//! Where each event fires its bindings: [`HookSet`] as a [`Mod`]. The
 //! bindings are asked and their answers folded in fold.rs, the same code a
 //! mod file's handlers go through; what a failure does here is the
 //! binding's [`OnError`](crate::OnError).
@@ -11,7 +11,7 @@ use haest_core::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::Hooks;
+use super::HookSet;
 use crate::{
     api::{Before, Mod, ModToolCall, Step, TurnEnd},
     env::ModEnv,
@@ -29,10 +29,10 @@ fn stopped(e: HookError) -> Result<Step, BoxError> {
 }
 
 /// Every method is named: an event `Mod` gains fails the gates here until
-/// `Hooks` fires its bindings (events.rs writes the binding).
+/// `HookSet` fires its bindings (events.rs writes the binding).
 #[async_trait]
 #[warn(clippy::missing_trait_methods)]
-impl Mod for Hooks {
+impl Mod for HookSet {
     fn name(&self) -> &str {
         &self.name
     }

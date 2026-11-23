@@ -1,5 +1,5 @@
 //! [`Hook`]: one handler for one event. [`Binding`]: a hook with how
-//! [`Hooks`](crate::Hooks) runs it (a timeout, what its failure does, and
+//! [`HookSet`](crate::HookSet) runs it (a timeout, what its failure does, and
 //! for a tool event the tools it is for), and the one place a binding runs.
 
 use std::{fmt, future::Future, sync::Arc, time::Duration};
@@ -23,7 +23,7 @@ pub const DEFAULT_HOOK_TIMEOUT: Duration = Duration::from_secs(60);
 /// A closure or an `async fn` taking the payload and a
 /// [`CancellationToken`] is a hook; so is a type that implements this
 /// (a command to run, a URL to post to). Bind one with the
-/// [`Hooks`](crate::Hooks) method of its event.
+/// [`HookSet`](crate::HookSet) method of its event.
 ///
 /// ```
 /// use haest_core::error::BoxError;
@@ -80,7 +80,7 @@ haest_core::word_enum! {
     }
 }
 
-/// A [`Hook`] bound to its event `E`, with how [`Hooks`](crate::Hooks)
+/// A [`Hook`] bound to its event `E`, with how [`HookSet`](crate::HookSet)
 /// runs it: a timeout ([`DEFAULT_HOOK_TIMEOUT`] unless set), what a failure
 /// does ([`OnError`], the event's default unless set) and, on a tool event,
 /// which tools it is for (every tool unless set).
@@ -92,13 +92,13 @@ haest_core::word_enum! {
 /// use std::time::Duration;
 ///
 /// use haest_core::error::BoxError;
-/// use haest_mods::{Binding, Hooks, OnError, ToolAfterPayload, TurnEndDecision, TurnEndPayload};
+/// use haest_mods::{Binding, HookSet, OnError, ToolAfterPayload, TurnEndDecision, TurnEndPayload};
 /// use haest_core::tool::ToolOutput;
 /// use tokio_util::sync::CancellationToken;
 ///
 /// let log = |_call: ToolAfterPayload, _: CancellationToken| async { Ok::<Option<ToolOutput>, BoxError>(None) };
 /// let done = |_turn: TurnEndPayload, _: CancellationToken| async { Ok::<_, BoxError>(TurnEndDecision::default()) };
-/// let hooks = Hooks::new()
+/// let hooks = HookSet::new()
 ///     .on_tool_after(
 ///         Binding::new(log)
 ///             .with_matcher("mcp__github__*")

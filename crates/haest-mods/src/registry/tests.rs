@@ -289,7 +289,7 @@ impl haest_core::Tool for Billed {
 #[tokio::test]
 async fn a_tool_after_rewrite_keeps_what_the_tool_spent() {
     // The hook rewrites what the model reads; it cannot erase the bill.
-    let hooks = crate::Hooks::new().on_tool_after(
+    let hooks = crate::HookSet::new().on_tool_after(
         |_: crate::ToolAfterPayload, _: tokio_util::sync::CancellationToken| async {
             Ok::<_, BoxError>(Some(ToolOutput {
                 cost_usd: Some(0.0),

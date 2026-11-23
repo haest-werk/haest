@@ -2,8 +2,8 @@
 //! [`Hook`](crate::Hook) too, built from a [`Mod`](crate::Mod) event's
 //! arguments here and nowhere else. Each is camelCase JSON, byte for byte
 //! what a TypeScript handler has always received, plus `session`
-//! ([`SessionView`]) when a [`Hooks`](crate::Hooks) binding or a mod file's
-//! handler gets it in a conversation whose host named one.
+//! ([`SessionView`]) when a [`HookSet`](crate::HookSet) binding or a mod
+//! file's handler gets it in a conversation whose host named one.
 
 use std::path::PathBuf;
 
@@ -22,8 +22,8 @@ use crate::{api::ModToolCall, env::ModEnv, events::ToolEvent};
 ///
 /// The host names it on the conversation's [`ModEnv`]
 /// ([`ModEnv::set_session`]), and names the new one when the human's /clear
-/// starts it; every payload [`Hooks`](crate::Hooks) hands a binding, and a
-/// mod file hands a handler, carries the one named as of that event
+/// starts it; every payload a [`HookSet`](crate::HookSet) hands a binding,
+/// and a mod file hands a handler, carries the one named as of that event
 /// ([`Event::session`](crate::Event::session)), so a hook never holds on to
 /// a session of its own. haest-runtime names its
 /// session file's id and path.

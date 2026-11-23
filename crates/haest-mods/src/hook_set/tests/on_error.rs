@@ -79,7 +79,7 @@ fn answering<E: Event>(answer: Value) -> Binding<E> {
     })
 }
 
-fn with_ui(hooks: Hooks) -> (Mods, Arc<TestUi>) {
+fn with_ui(hooks: HookSet) -> (Mods, Arc<TestUi>) {
     let ui = TestUi::new();
     (Mods::new(env(ui.clone(), WorkspaceMode::Real), [hooks]), ui)
 }
@@ -87,7 +87,7 @@ fn with_ui(hooks: Hooks) -> (Mods, Arc<TestUi>) {
 #[tokio::test]
 async fn a_failed_tool_before_hook_refuses_the_call_unless_it_continues() {
     for (fails, on) in variants() {
-        let hooks = Hooks::new()
+        let hooks = HookSet::new()
             .on_tool_before(failing::<ToolBeforePayload>(fails, on))
             .on_tool_before(answering::<ToolBeforePayload>(
                 json!({ "input": { "v": "next" } }),
@@ -116,7 +116,7 @@ async fn a_failed_tool_before_hook_refuses_the_call_unless_it_continues() {
 #[tokio::test]
 async fn a_failed_tool_after_hook_keeps_the_output_or_the_hooks_before_it() {
     for (fails, on) in variants() {
-        let hooks = Hooks::new()
+        let hooks = HookSet::new()
             .on_tool_after(answering::<ToolAfterPayload>(json!({ "content": "first" })))
             .on_tool_after(failing::<ToolAfterPayload>(fails, on));
         let (mods, ui) = with_ui(hooks);
@@ -137,7 +137,7 @@ async fn a_failed_tool_after_hook_keeps_the_output_or_the_hooks_before_it() {
 #[tokio::test]
 async fn a_failed_prompt_or_system_hook_drops_or_keeps_what_the_hooks_before_it_did() {
     for (fails, on) in variants() {
-        let hooks = Hooks::new()
+        let hooks = HookSet::new()
             .on_prompt_submit(answering::<PromptSubmitPayload>(json!("first")))
             .on_prompt_submit(failing::<PromptSubmitPayload>(fails, on))
             .on_system_prompt(answering::<SystemPromptPayload>(json!("rule")))
@@ -158,7 +158,7 @@ async fn a_failed_prompt_or_system_hook_drops_or_keeps_what_the_hooks_before_it_
 
 /// One turn of a scripted agent with `hooks`: how it ended, how many
 /// model calls it made, how many failures the human saw.
-async fn turn(hooks: Hooks) -> (StopReason, Option<String>, usize, usize) {
+async fn turn(hooks: HookSet) -> (StopReason, Option<String>, usize, usize) {
     let (mods, ui) = with_ui(hooks);
     let p = ScriptedProvider::new(["one", "two", "three"].map(text_answer));
     let end = looped(&p, NoHooks, &mods, Tools::new())
@@ -177,9 +177,9 @@ async fn a_failed_model_hook_stops_the_turn_with_its_error_unless_it_continues()
     for (fails, on) in variants() {
         let case = format!("{fails:?} {on:?}");
         let before =
-            turn(Hooks::new().on_model_before(failing::<ModelBeforePayload>(fails, on))).await;
+            turn(HookSet::new().on_model_before(failing::<ModelBeforePayload>(fails, on))).await;
         let after =
-            turn(Hooks::new().on_model_after(failing::<ModelAfterPayload>(fails, on))).await;
+            turn(HookSet::new().on_model_after(failing::<ModelAfterPayload>(fails, on))).await;
         if blocks::<ModelBeforePayload>(on) {
             let (stop, error, calls, errors) = before;
             assert_eq!((stop, calls, errors), (StopReason::Error, 0, 0), "{case}");
@@ -202,7 +202,7 @@ async fn a_failed_model_hook_stops_the_turn_with_its_error_unless_it_continues()
 #[tokio::test]
 async fn a_failed_turn_end_hook_ends_the_turn_or_lets_the_next_keep_it_going() {
     for (fails, on) in variants() {
-        let hooks = Hooks::new()
+        let hooks = HookSet::new()
             .on_turn_end(failing::<TurnEndPayload>(fails, on))
             .on_turn_end(once::<TurnEndPayload>(json!({ "continue": "go on" })));
         let (stop, error, calls, errors) = turn(hooks).await;

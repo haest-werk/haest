@@ -1,7 +1,7 @@
 //! [`HookSettings`], the `hooks` setting: hooks in another process bound
 //! from a config file (or built in Rust), one `[[hooks."<event>"]]` entry
 //! each, read and checked here. haest-bridges' `HookHost::bind` makes them
-//! the one [`Hooks`](crate::Hooks) a conversation adds; this crate runs no
+//! the one [`HookSet`](crate::HookSet) a conversation adds; this crate runs no
 //! command and posts nothing.
 
 use std::{collections::BTreeMap, fmt, time::Duration};
@@ -74,7 +74,7 @@ const KEYS: &[&str] = &[
 /// The `hooks` setting: commands and URLs bound to events from a config
 /// file, so a CLI runs hook scripts and reaches hook services with no Rust.
 /// Each entry is one [`HookEntry`]; haest-bridges' `HookHost::bind` makes
-/// them the same [`Hooks`](crate::Hooks) a Rust host binds by hand.
+/// them the same [`HookSet`](crate::HookSet) a Rust host binds by hand.
 ///
 /// ```toml
 /// # A Claude Code PreToolUse script, as it is, on Bash calls.

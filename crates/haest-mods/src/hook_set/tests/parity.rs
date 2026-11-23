@@ -1,5 +1,5 @@
-//! PARITY: every event has its `Hooks` binding, and its `Mod` event on
-//! `Hooks` runs what is bound there.
+//! PARITY: every event has its `HookSet` binding, and its `Mod` event on
+//! `HookSet` runs what is bound there.
 
 use std::sync::Mutex;
 
@@ -30,12 +30,12 @@ fn noting<E: Event>(log: &Log) -> impl Hook<E> {
 
 /// A new event fails to compile below until it is bound through its own
 /// `on_*` method (which its row in events.rs writes) and fired through its
-/// `Mod` method; `impl Mod for Hooks` names every method, so a `Mod` event
-/// `Hooks` does not fire fails the gates there.
+/// `Mod` method; `impl Mod for HookSet` names every method, so a `Mod` event
+/// `HookSet` does not fire fails the gates there.
 #[tokio::test]
 async fn every_event_has_a_binding_and_its_mod_event_runs_it() {
     let log = Log::default();
-    let mut hooks = Hooks::new();
+    let mut hooks = HookSet::new();
     for event in ModEvent::ALL {
         hooks = match *event {
             ModEvent::ToolBefore => hooks.on_tool_before(noting::<ToolBeforePayload>(&log)),

@@ -11,7 +11,7 @@ use haest_core::{
     tool::input,
     workspace::{ShutWorkspace, WorkspaceMode},
 };
-use haest_mods::{Binding, Hooks, Mods, OnError, SystemPromptPayload, ToolBeforePayload};
+use haest_mods::{Binding, HookSet, Mods, OnError, SystemPromptPayload, ToolBeforePayload};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -35,7 +35,7 @@ fn script(body: &str) -> (tempfile::TempDir, ShellHook) {
 
 /// A `Bash` tool (a probe) behind `hooks`, and a call of it with `command`.
 async fn bash(
-    hooks: Hooks,
+    hooks: HookSet,
     ui: Arc<TestUi>,
     command: &str,
 ) -> (Result<ToolOutput, ToolError>, usize) {
@@ -43,7 +43,7 @@ async fn bash(
 }
 
 async fn bash_with(
-    hooks: Hooks,
+    hooks: HookSet,
     ui: Arc<TestUi>,
     command: &str,
     ctx: &ToolContext,
@@ -62,7 +62,7 @@ async fn the_claude_code_script_in_the_docs_refuses_rm_rf_with_a_permission_deci
     let hook = ShellHook::new(format!("sh '{NO_RM_RF_SH}'"))
         .with_cwd(env!("CARGO_MANIFEST_DIR"))
         .with_dialect(Claude);
-    let hooks = Hooks::new().on_tool_before(Binding::new(hook).with_matcher("Bash"));
+    let hooks = HookSet::new().on_tool_before(Binding::new(hook).with_matcher("Bash"));
 
     let (refused, ran) = bash(hooks.clone(), TestUi::new(), "rm -rf ~/projects").await;
     let refused = refused.unwrap_err().to_string();
@@ -78,7 +78,7 @@ async fn the_claude_code_script_in_the_docs_refuses_rm_rf_with_a_permission_deci
 async fn a_claude_code_script_that_exits_2_refuses_the_call_with_its_stderr() {
     let (_dir, hook) =
         script("if grep -q 'rm -rf'; then echo 'rm -rf is blocked by policy' >&2; exit 2; fi\n");
-    let hooks = Hooks::new().on_tool_before(
+    let hooks = HookSet::new().on_tool_before(
         Binding::<ToolBeforePayload>::new(hook.with_dialect(Claude)).with_matcher("Bash"),
     );
     let (refused, ran) = bash(hooks.clone(), TestUi::new(), "rm -rf /").await;
@@ -97,7 +97,7 @@ echo '{"decision": "block", "reason": "Run the tests before you stop."}'
     );
     let mods = Mods::new(
         env(TestUi::new(), WorkspaceMode::Real),
-        [Hooks::new().on_turn_end(hook.with_dialect(Claude))],
+        [HookSet::new().on_turn_end(hook.with_dialect(Claude))],
     );
     let p = ScriptedProvider::new(
         ["Done.", "Tests pass.", "Done again.", "Still pass."].map(text_answer),
@@ -123,8 +123,12 @@ async fn a_command_that_exits_1_or_prints_no_decision_follows_its_binding_on_err
         // tool.before's default is block: a guard that broke refuses the call.
         let (_dir, hook) = script(body);
         let ui = TestUi::new();
-        let (refused, ran) =
-            bash(Hooks::new().on_tool_before(hook.clone()), ui.clone(), "ls").await;
+        let (refused, ran) = bash(
+            HookSet::new().on_tool_before(hook.clone()),
+            ui.clone(),
+            "ls",
+        )
+        .await;
         let refused = refused.unwrap_err().to_string();
         assert!(refused.contains(says), "{body}: {refused}");
         assert_eq!(ran, 0, "{body}");
@@ -132,7 +136,7 @@ async fn a_command_that_exits_1_or_prints_no_decision_follows_its_binding_on_err
 
         // `continue`: the human sees it, the call runs.
         let ui = TestUi::new();
-        let hooks = Hooks::new().on_tool_before(
+        let hooks = HookSet::new().on_tool_before(
             Binding::<ToolBeforePayload>::new(hook).with_on_error(OnError::Continue),
         );
         let (ok, ran) = bash(hooks, ui.clone(), "ls").await;
@@ -180,7 +184,7 @@ async fn all_gone(pids: &[String; 2]) {
 #[tokio::test]
 async fn a_hanging_command_is_killed_with_its_children_when_its_binding_times_out() {
     let (dir, hook) = script(HANGS_SH);
-    let hooks = Hooks::new().on_tool_before(
+    let hooks = HookSet::new().on_tool_before(
         Binding::<ToolBeforePayload>::new(hook).with_timeout(Duration::from_millis(500)),
     );
     let (refused, ran) = bash(hooks, TestUi::new(), "ls").await;
@@ -193,7 +197,7 @@ async fn a_hanging_command_is_killed_with_its_children_when_its_binding_times_ou
 #[tokio::test]
 async fn a_hanging_command_is_killed_with_its_children_when_the_human_interrupts() {
     let (dir, hook) = script(HANGS_SH);
-    let hooks = Hooks::new().on_tool_before(hook);
+    let hooks = HookSet::new().on_tool_before(hook);
     let cancel = CancellationToken::new();
     let ctx = ToolContext::new(CWD, ShutWorkspace).with_cancel(cancel.clone());
     let path = dir.path().to_path_buf();
@@ -215,14 +219,14 @@ async fn a_hook_runs_in_the_conversations_dir_with_only_the_variables_it_was_han
     );
     let hook = hook.with_env(ChildEnv::new([("TOKEN", "t0k3n")]));
     let here = dir.path().canonicalize().unwrap();
-    let said = |hooks: Hooks| async move {
+    let said = |hooks: HookSet| async move {
         Mods::new(env(TestUi::new(), WorkspaceMode::Real), [hooks])
             .system_append()
             .await
     };
 
     // haest's dialect: the payload is all on stdin.
-    let hooks = Hooks::new().on_system_prompt(hook.clone());
+    let hooks = HookSet::new().on_system_prompt(hook.clone());
     assert_eq!(
         said(hooks).await,
         format!("pwd={} project=none token=t0k3n home=none", here.display())
@@ -230,7 +234,7 @@ async fn a_hook_runs_in_the_conversations_dir_with_only_the_variables_it_was_han
 
     // Claude's: the project dir too, plain text as context.
     let claude = hook.with_dialect(Claude);
-    let hooks = Hooks::new().on_system_prompt(Binding::<SystemPromptPayload>::new(claude));
+    let hooks = HookSet::new().on_system_prompt(Binding::<SystemPromptPayload>::new(claude));
     assert_eq!(
         said(hooks).await,
         format!(

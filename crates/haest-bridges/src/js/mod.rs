@@ -18,7 +18,7 @@
 //! handed to the JavaScript half (bootstrap.js) at load. Handlers of
 //! `tool.before`, `tool.after` and a tool's `execute` get
 //! `ctx = { cwd, toolCallId, signal }`, and every event's handler gets the
-//! session the conversation is on, as a `Hooks` binding does. `.ts` is
+//! session the conversation is on, as a `HookSet` binding does. `.ts` is
 //! type-stripped first. There
 //! is no `node:` API, no `import`, no timer, no network and no file access:
 //! a mod reaches the world through the `haest` API alone.
@@ -139,8 +139,8 @@ use tool::JsTool;
 /// `{ steer: 42 }`, `{ compact: 'yes' }`, a number from `prompt.submit`) is
 /// that handler's failure, never turned into text. `system.prompt`'s
 /// `false` is nothing, as `compact: false` is. Several handlers of one
-/// event run in the order they were added, by the rules
-/// [`Hooks`](haest_mods::Hooks)' bindings run by: the next one sees the
+/// event run in the order they were added, by the rules a
+/// [`HookSet`](haest_mods::HookSet)'s bindings run by: the next one sees the
 /// input, output or text the one before it left, and none is asked after
 /// the first deny, stop or continue. A loop event's steers are all kept and
 /// its first compact counts. `tool.before`, `tool.after`, the loop events,

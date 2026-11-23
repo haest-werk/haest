@@ -1,5 +1,5 @@
 //! Several handlers on one event in one mod file: they run in order by the
-//! rules a `Hooks` binding's do (haest-mods' fold), and the file is ONE
+//! rules a `HookSet` binding's do (haest-mods' fold), and the file is ONE
 //! mod, so a handler that fails fails the file's event whole.
 
 use std::sync::{
@@ -14,7 +14,7 @@ use haest_core::{
     tool::input,
     workspace::WorkspaceMode,
 };
-use haest_mods::{Hooks, ModelBeforeDecision, ModelBeforePayload, Mods};
+use haest_mods::{HookSet, ModelBeforeDecision, ModelBeforePayload, Mods};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -74,7 +74,7 @@ async fn a_mod_files_handlers_chain_and_none_is_asked_after_the_first_deny_or_st
 
 /// A handler that throws fails the file's event: what the handlers before
 /// it decided is dropped and the ones after it are not asked, where a
-/// `Hooks` binding that fails with `OnError::Continue` is reported and
+/// `HookSet` binding that fails with `OnError::Continue` is reported and
 /// skipped, the others' decisions kept.
 #[tokio::test]
 async fn a_later_handler_that_throws_drops_its_files_event_where_a_failed_binding_is_skipped() {
@@ -98,7 +98,7 @@ async fn a_later_handler_that_throws_drops_its_files_event_where_a_failed_bindin
 
     let asked = Arc::new(AtomicBool::new(false));
     let seen = asked.clone();
-    let hooks = Hooks::new()
+    let hooks = HookSet::new()
         .on_model_before(once::<ModelBeforePayload>(
             json!({ "steer": "from the first" }),
         ))

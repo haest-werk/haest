@@ -1,9 +1,9 @@
-//! [`Hooks`](super::Hooks): what a failed or late hook does under each
+//! [`HookSet`](super::HookSet): what a failed or late hook does under each
 //! `on_error` (on_error.rs); order, first wins, matchers and interrupts
 //! (order.rs); the parity guard (parity.rs); the session every hook is
 //! handed (session.rs); what `turn.end` hands a hook (turn_end.rs). That
 //! every decision takes the
-//! same effect from a `.ts` mod and from a `Hooks` closure is haest-bridges'
+//! same effect from a `.ts` mod and from a `HookSet` closure is haest-bridges'
 //! test, over the testing module's decision cases.
 
 use std::sync::Arc;
@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     events::{Event, ModEvent},
     hook::Hook,
-    hook_set::Hooks,
+    hook_set::HookSet,
     registry::Mods,
     testing::*,
 };

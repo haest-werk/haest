@@ -10,7 +10,7 @@ use haest_core::{
     tool::input,
     workspace::{ShutWorkspace, WorkspaceMode},
 };
-use haest_mods::{Binding, Hooks, Mods, OnError, ToolBeforePayload};
+use haest_mods::{Binding, HookSet, Mods, OnError, ToolBeforePayload};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -18,7 +18,7 @@ use crate::{HttpHook, hook_tests::*};
 
 /// A probe tool behind `hooks`, called once.
 async fn call(
-    hooks: Hooks,
+    hooks: HookSet,
     ui: Arc<TestUi>,
     ctx: &ToolContext,
 ) -> (Result<ToolOutput, ToolError>, usize) {
@@ -38,7 +38,7 @@ async fn each_event_is_a_post_of_json_with_the_headers_set() {
         .with_header("Authorization", "Bearer old")
         .with_header("authorization", "Bearer t0k3n")
         .with_header("x-team", "core");
-    let (refused, ran) = call(Hooks::new().on_tool_before(hook), TestUi::new(), &ctx()).await;
+    let (refused, ran) = call(HookSet::new().on_tool_before(hook), TestUi::new(), &ctx()).await;
     assert!(refused.unwrap_err().to_string().contains("Refused: no"));
     assert_eq!(ran, 0);
 
@@ -68,7 +68,7 @@ async fn a_status_that_is_not_2xx_or_an_answer_that_is_no_decision_follows_on_er
         let ui = TestUi::new();
         let hook = HttpHook::new(server.url("/hook"));
         let (refused, ran) = call(
-            Hooks::new().on_tool_before(hook.clone()),
+            HookSet::new().on_tool_before(hook.clone()),
             ui.clone(),
             &ctx(),
         )
@@ -80,7 +80,7 @@ async fn a_status_that_is_not_2xx_or_an_answer_that_is_no_decision_follows_on_er
         // `continue`: the human sees it, the call runs.
         let server = Server::start([respond]);
         let ui = TestUi::new();
-        let hooks = Hooks::new().on_tool_before(
+        let hooks = HookSet::new().on_tool_before(
             Binding::<ToolBeforePayload>::new(HttpHook::new(server.url("/hook")))
                 .with_on_error(OnError::Continue),
         );
@@ -98,7 +98,7 @@ async fn a_status_that_is_not_2xx_or_an_answer_that_is_no_decision_follows_on_er
 #[tokio::test]
 async fn a_server_that_never_answers_is_given_up_on_at_the_timeout_and_on_an_interrupt() {
     let server = Server::start([Respond::Never]);
-    let hooks = Hooks::new().on_tool_before(
+    let hooks = HookSet::new().on_tool_before(
         Binding::<ToolBeforePayload>::new(HttpHook::new(server.url("/hook")))
             .with_timeout(Duration::from_millis(300)),
     );
@@ -116,7 +116,7 @@ async fn a_server_that_never_answers_is_given_up_on_at_the_timeout_and_on_an_int
         server
     });
     let (out, ran) = call(
-        Hooks::new().on_tool_before(HttpHook::new(url)),
+        HookSet::new().on_tool_before(HttpHook::new(url)),
         TestUi::new(),
         &ctx,
     )

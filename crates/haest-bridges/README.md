@@ -84,14 +84,14 @@ async fn main() {
 ## Hooks in another process: `shell` and `http`
 
 `ShellHook` and `HttpHook` are `Hook<E>`s: bind one per event in
-haest-mods' `Hooks`, alone or in a `Binding` with its timeout (60 s by
+haest-mods' `HookSet`, alone or in a `Binding` with its timeout (60 s by
 default), `on_error` and tool matcher, as a Rust closure is bound.
 
 ```rust
 use haest_bridges::{Claude, HttpHook, ShellHook};
-use haest_mods::{Binding, Hooks};
+use haest_mods::{Binding, HookSet};
 
-let hooks = Hooks::new()
+let hooks = HookSet::new()
     // A Claude Code hook script, as it is, on Bash calls only.
     .on_tool_before(
         Binding::new(ShellHook::new("sh .claude/hooks/no-rm-rf.sh").with_dialect(Claude))
@@ -142,7 +142,7 @@ A CLI binds the same hooks with no Rust. haest-mods' `HookSettings` is the
 `command` or a `url` with its `dialect`, `matcher`, `timeout`, `on_error` and
 `headers`, checked when read (an error names the entry, never a header's
 value), or built in Rust with `HookSettings::with_entry`. `HookHost::bind`
-binds them, with `shell` or `http` on, in one `Hooks` named `[hooks]`: the
+binds them, with `shell` or `http` on, in one `HookSet` named `[hooks]`: the
 host is the conversation's directory, the environment a command gets (none:
 no command binds) and the HTTP client. haest-runtime does this in every
 conversation, and names its session on the mods' `ModEnv`;
@@ -177,8 +177,8 @@ let mods = Mods::new(env, [hooks]);
 mods.env().set_session(SessionView::new("s-2"));
 ```
 
-`Hooks` puts the session on each payload. A host that runs a `ShellHook` or an
-`HttpHook` with `Hook::run` in its own `Mod`, outside `Hooks`, sets the
+A `HookSet` puts the session on each payload. A host that runs a `ShellHook` or
+an `HttpHook` with `Hook::run` in its own `Mod`, outside a `HookSet`, sets the
 payload's `session` itself first, from `haest.session()`.
 
 `Claude` speaks Claude Code's hook JSON, so its hook scripts and HTTP hooks run

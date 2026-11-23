@@ -109,10 +109,10 @@ tools and hooks with them, and every tool call, model call and turn end passes t
 asked and a notice shown):
 
 ```rust
-use haest::mods::{Before, Binding, Hooks, ModEnv, ModLoopHooks, ModTools, Mods, ToolBeforePayload};
+use haest::mods::{Before, Binding, HookSet, ModEnv, ModLoopHooks, ModTools, Mods, ToolBeforePayload};
 use haest::{AgentDeps, NoHooks, core::workspace::WorkspaceMode};
 
-let guard = Hooks::new().on_tool_before(
+let guard = HookSet::new().on_tool_before(
     Binding::new(|call: ToolBeforePayload, _| async move {
         let command = call.call.input.get("command").and_then(|c| c.as_str());
         let rm = command.is_some_and(|c| c.contains("rm -rf"));

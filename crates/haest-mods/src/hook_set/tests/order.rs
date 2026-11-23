@@ -57,7 +57,7 @@ fn v(text: String) -> Before {
 #[tokio::test]
 async fn bindings_run_in_order_rewrites_chain_and_the_first_deny_wins() {
     let log = log();
-    let hooks = Hooks::new()
+    let hooks = HookSet::new()
         .on_tool_before(before(&log, "1", |x| v(format!("{x}a"))))
         .on_tool_before(before(&log, "2", |x| v(format!("{x}b"))));
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [hooks.clone()]);
@@ -108,7 +108,7 @@ async fn output_and_prompt_rewrites_chain_and_system_texts_join_in_order() {
             Ok::<_, BoxError>(Some(text.to_string()))
         }
     };
-    let hooks = Hooks::new()
+    let hooks = HookSet::new()
         .on_tool_after(shout)
         .on_tool_after(bang)
         .on_prompt_submit(add("a"))
@@ -146,7 +146,7 @@ async fn in_a_loop_event_steers_are_kept_and_the_first_stop_or_continue_wins() {
             }
         }
     };
-    let hooks = Hooks::new()
+    let hooks = HookSet::new()
         .on_model_after(once::<ModelAfterPayload>(json!({ "steer": "one" })))
         .on_model_after(once::<ModelAfterPayload>(json!({ "steer": "two" })))
         .on_turn_end(asked(&log, "first"))
@@ -174,7 +174,7 @@ async fn in_a_loop_event_steers_are_kept_and_the_first_stop_or_continue_wins() {
         noted(&log)
     );
 
-    let stops = Hooks::new()
+    let stops = HookSet::new()
         .on_model_before(|_: ModelBeforePayload, _: CancellationToken| async {
             Ok::<_, BoxError>(ModelBeforeDecision::default().with_stop("halt"))
         })
@@ -207,7 +207,7 @@ async fn the_first_compaction_asked_for_counts() {
             })
         }
     };
-    let hooks = Hooks::new()
+    let hooks = HookSet::new()
         .on_model_before(compacts("keep the paths"))
         .on_model_before(compacts("keep the dates"));
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [hooks]);
@@ -233,7 +233,7 @@ async fn a_matcher_asks_a_hook_only_about_the_tools_it_names() {
     let seen = |_: ToolAfterPayload, _: CancellationToken| async {
         Ok::<_, BoxError>(Some(ToolOutput::text("seen")))
     };
-    let hooks = Hooks::new()
+    let hooks = HookSet::new()
         .on_tool_before(Binding::new(deny("no bash")).with_matcher("Bash"))
         .on_tool_before(Binding::new(deny("no github")).with_matcher("mcp__github__*"))
         .on_tool_after(Binding::new(seen).with_matcher("Echo"));
@@ -293,7 +293,7 @@ async fn an_interrupt_while_a_hook_decides_is_no_failure_whatever_its_on_error()
             std::future::pending::<Result<Before, BoxError>>().await
         };
         let ui = TestUi::new();
-        let hooks = Hooks::new().on_tool_before(Binding::new(waits).with_on_error(on));
+        let hooks = HookSet::new().on_tool_before(Binding::new(waits).with_on_error(on));
         let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real), [hooks]);
         let echo = Probe::new("Echo");
         let tools = wrapped(mods, Tools::from_iter([echo.clone()]));

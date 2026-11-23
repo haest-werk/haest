@@ -4,7 +4,7 @@
 use haest_bridges::{HookHost, ModFileOptions, ModFiles};
 use haest_core::{ChildEnv, fs::FsRef, tool::ToolServices};
 use haest_mods::{
-    ApprovalGate, HookSettings, Hooks, ModEnv, ModLine, ModOptions, ModRef, ModUiRef, Mods,
+    ApprovalGate, HookSet, HookSettings, ModEnv, ModLine, ModOptions, ModRef, ModUiRef, Mods,
     SessionView, load_mods,
 };
 use haest_providers::http::HttpClientRef;
@@ -31,7 +31,7 @@ pub(crate) async fn mods_for(
     hooks: &RuntimeHooks,
     fs: FsRef,
     gate: &ApprovalGate,
-    config_hooks: Option<Hooks>,
+    config_hooks: Option<HookSet>,
     host_mods: Vec<ModRef>,
 ) -> Mods {
     let s = hooks.settings();
@@ -82,7 +82,7 @@ pub(crate) fn config_hooks(
     world: &World,
     passed_env: &ChildEnv,
     http: &HttpClientRef,
-) -> Option<Hooks> {
+) -> Option<HookSet> {
     if settings.is_empty() {
         return None;
     }

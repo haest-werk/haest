@@ -46,7 +46,7 @@ export default function (haest: any): void {
 }
 ```
 
-Rust: `Hooks::new().on_tool_before(Binding::new(closure).with_matcher("Bash"))`, the closure
+Rust: `HookSet::new().on_tool_before(Binding::new(closure).with_matcher("Bash"))`, the closure
 answering `Before::Pass`, `Before::Deny(reason)` or `Before::Input(map)`
 ([quickstart.md](quickstart.md#3-add-a-hook) has it whole). The script from Rust is
 `ShellHook::new("sh no-rm-rf.sh").with_dialect(Claude)` in that binding; its `session_id` is

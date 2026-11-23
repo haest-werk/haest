@@ -34,7 +34,7 @@ use haest::{
     },
     http::testing::{Respond, Server},
     mods::{
-        ApprovalRequest, Binding, Decision, Hooks, ModEnv, ModLoopHooks, ModTools, ModUi, Mods,
+        ApprovalRequest, Binding, Decision, HookSet, ModEnv, ModLoopHooks, ModTools, ModUi, Mods,
         SessionView,
     },
     serde_json::{Value, json},
@@ -122,7 +122,7 @@ async fn run() -> Result<(), BoxError> {
     // A service on every finished turn.
     let reviewer = reviewer();
     let review = HttpHook::new(reviewer.url("/turn-end"));
-    let hooks = Hooks::new()
+    let hooks = HookSet::new()
         .on_tool_before(Binding::new(guard).with_matcher("Bash"))
         .on_turn_end(review);
     // The session the conversation is on: each hook is told it at every

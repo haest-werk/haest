@@ -1,7 +1,7 @@
 //! Every event through each transport in haest's dialect: a hook in
 //! another process is handed the event's name and the very payload a Rust
 //! hook gets, and each of its answers takes the effect the same answer
-//! takes from a `Hooks` closure. Both tests drive every event of
+//! takes from a `HookSet` closure. Both tests drive every event of
 //! haest-mods, so an event added without shell and HTTP coverage fails
 //! them ([`bound`]).
 

@@ -20,9 +20,9 @@ fn seen(p: &TurnEndPayload) -> (String, bool) {
 }
 
 /// A `turn.end` hook that writes down what it was handed and passes.
-fn recorder(log: &Seen) -> Hooks {
+fn recorder(log: &Seen) -> HookSet {
     let log = log.clone();
-    Hooks::new().on_turn_end(move |p: TurnEndPayload, _: CancellationToken| {
+    HookSet::new().on_turn_end(move |p: TurnEndPayload, _: CancellationToken| {
         log.lock().unwrap().push(seen(&p));
         async { Ok::<_, BoxError>(TurnEndDecision::default()) }
     })
@@ -30,8 +30,8 @@ fn recorder(log: &Seen) -> Hooks {
 
 /// A `turn.end` hook that keeps a turn going once, as a Claude Code stop
 /// hook does with `stop_hook_active`: only when no decision did yet.
-fn once_per_turn() -> Hooks {
-    Hooks::new().on_turn_end(|p: TurnEndPayload, _: CancellationToken| async move {
+fn once_per_turn() -> HookSet {
+    HookSet::new().on_turn_end(|p: TurnEndPayload, _: CancellationToken| async move {
         let decision = TurnEndDecision::default();
         Ok::<_, BoxError>(if p.continued {
             decision

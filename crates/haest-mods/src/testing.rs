@@ -3,8 +3,8 @@
 //! ["testing"] }` in dev-dependencies): a host that records what reached
 //! the human ([`TestUi`]), a tool that records what it ran ([`Probe`]),
 //! mods around tools and in a loop ([`wrapped`], [`looped`]), and the
-//! decision cases every bridge must answer the way [`Hooks`](crate::Hooks)
-//! does ([`decision_cases`], [`effect`]).
+//! decision cases every bridge must answer the way
+//! [`HookSet`](crate::HookSet) does ([`decision_cases`], [`effect`]).
 //!
 //! Not part of the API and not covered by semver, like every `testing`
 //! module and feature in haest: it holds what haest's own crates test with,

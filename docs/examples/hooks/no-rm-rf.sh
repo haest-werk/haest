@@ -14,7 +14,7 @@
 #     matcher = "Bash"
 #
 #   haest (Rust):
-#     Hooks::new().on_tool_before(
+#     HookSet::new().on_tool_before(
 #         Binding::new(ShellHook::new("sh docs/examples/hooks/no-rm-rf.sh").with_dialect(Claude))
 #             .with_matcher("Bash"))
 #     (its session_id: the one the conversation's ModEnv names, `ModEnv::set_session`)

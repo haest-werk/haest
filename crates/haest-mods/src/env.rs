@@ -144,7 +144,7 @@ impl ModEnv {
     /// The conversation is on `session` from now on: the host names it when
     /// the conversation starts and again when the human's /clear starts a
     /// new one. Every clone of this env sees it, and every payload a
-    /// [`Hooks`](crate::Hooks) binding or a mod file's handler gets from the
+    /// [`HookSet`](crate::HookSet) binding or a mod file's handler gets from the
     /// next event on carries it ([`Event::session`](crate::Event::session)).
     pub fn set_session(&self, session: SessionView) {
         self.held().session = Some(session);
