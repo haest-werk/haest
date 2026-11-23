@@ -95,6 +95,21 @@ fn exit_2_refuses_a_call_stops_a_model_turn_and_keeps_a_turn_going_with_stderr()
 }
 
 #[test]
+fn exit_2_hands_the_model_no_more_of_stderr_than_of_a_tools_output() {
+    // A turn kept going with a megabyte of stderr would be a megabyte-long message.
+    let flood = "x".repeat(1_000_000);
+    let kept = Haest.decide(turn_end(false), exit2(&flood)).unwrap();
+    let Value::String(text) = serde_json::to_value(kept).unwrap()["continue"].take() else {
+        panic!("a continue");
+    };
+    assert!(
+        text.chars().count() <= haest_core::tool::TRUNCATE_CHARS + 200,
+        "{}",
+        text.len()
+    );
+}
+
+#[test]
 fn exit_2_on_an_event_with_no_blocking_answer_is_a_failure() {
     let d = Haest;
     let no = failed(d.decide(tool_after(), exit2("nope")));

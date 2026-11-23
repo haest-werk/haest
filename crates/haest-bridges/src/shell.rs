@@ -40,7 +40,7 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// | 0 | empty | a pass: the event goes on as it was |
 /// | 0 | the event's decision, in the dialect | that decision |
 /// | 0 | anything else | a failure |
-/// | 2 | (ignored) | the event's blocking answer, stderr its text: `tool.before` refuses the call, `model.before` and `model.after` stop the turn, `turn.end` keeps it going; on any other event, a failure |
+/// | 2 | (ignored) | the event's blocking answer, stderr its text (cut in the middle past [`TRUNCATE_CHARS`](haest_core::tool::TRUNCATE_CHARS), as a tool's output is): `tool.before` refuses the call, `model.before` and `model.after` stop the turn, `turn.end` keeps it going; on any other event, a failure |
 /// | any other | (ignored) | a failure, stderr in its report |
 ///
 /// A failure, a timeout and a command that cannot start all do what the

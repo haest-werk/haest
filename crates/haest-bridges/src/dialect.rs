@@ -17,7 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
-use haest_core::{ChildEnv, truncate_middle};
+use haest_core::{ChildEnv, tool::TRUNCATE_CHARS, truncate_middle};
 use haest_mods::{Event, ModEvent};
 use serde_json::{Value, json};
 
@@ -109,7 +109,8 @@ pub(crate) fn outgoing<E: Event, D: Dialect<E>>(
 /// the turn, `turn.end` keeps it going with `text`. Read as the
 /// protocol's own words (`{ deny }`, `{ stop }`, `{ continue }`), so it is
 /// what a mod file answering them does. Any other event has no blocking
-/// answer: a failure.
+/// answer: a failure. The model reads `text` as it reads a tool's output:
+/// its first and last [`TRUNCATE_CHARS`] at most.
 pub(crate) fn blocked<E: Event>(text: &str) -> Result<E::Decision, HookFailure> {
     let event = E::NAME;
     let word = match event {
@@ -124,8 +125,8 @@ pub(crate) fn blocked<E: Event>(text: &str) -> Result<E::Decision, HookFailure> 
         }
     };
     let text = match text.trim() {
-        "" => NO_REASON,
-        said => said,
+        "" => NO_REASON.to_string(),
+        said => truncate_middle(said, TRUNCATE_CHARS).0,
     };
     serde_json::from_value(json!({ word: text }))
         .map_err(|source| HookFailure::Answer { event, source })
