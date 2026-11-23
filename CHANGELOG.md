@@ -127,9 +127,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   (`contextTokens`, `contextWindow` in a mod file's JSON) has
   `context_tokens`, what the last answer's request held, and
   `context_window`. haest-core: `Agent::context_tokens` and
-  `Agent::context_window`, the window from the catalog's facts, else the
-  host's turn caps; a compaction a hook asks for, and the idle tick, read
-  it there. The example `auto_compact` and
+  `Agent::context_window`, the window from the host's turn caps (the
+  runtime's carry the `context_window` setting), else the catalog's facts;
+  a compaction a hook asks for, and the idle tick, read it there. The example `auto_compact` and
   [docs/examples/mods/auto-compact.ts](docs/examples/mods/auto-compact.ts)
   compact as a turn ends past 60% of it.
 - haest-workspace: `RealWorkspace::shell_with_stdin` hands a command its

@@ -60,7 +60,8 @@ prompt ("keep every file path"). Each payload's JSON shape is on its type in
 `{ call: { name, input, readOnly }, ctx: { cwd, toolCallId } }`, the loop events get
 `{ modelSpec, effort, historyLength, contextTokens, contextWindow }` (`contextTokens` is what
 the last answer's request held, the number to compact on; `contextWindow` is the model's
-window from the catalog, else the host's turn caps, and `null` when neither knows it) plus their own fields (`model.before`: `lastMessage`;
+window from the host's turn caps (the CLI's: the `context_window` setting, else the catalog's),
+else the catalog's, and `null` when neither knows it) plus their own fields (`model.before`: `lastMessage`;
 `model.after`: `answer`; `turn.end`: `stopReason`, `error`, `answer` and `continued`, whether a
 `turn.end` decision already kept this turn going).
 
