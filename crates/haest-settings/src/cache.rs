@@ -101,7 +101,10 @@ pub struct CacheSettings {
     pub compact_before_expire: CompactBeforeExpire,
     /// Overrides for the models whose spec matches the key (exact, or
     /// `prefix*`), the most specific last: an exact spec over any pattern,
-    /// a longer prefix over a shorter one. Each sets only what it names.
+    /// a longer prefix over a shorter one. Each sets only what it names. A
+    /// key that is neither (a regular expression, a `*` inside) would match
+    /// no model: reading one is refused.
+    #[serde(deserialize_with = "serde_impls::models")]
     pub models: BTreeMap<String, CacheOverride>,
 }
 

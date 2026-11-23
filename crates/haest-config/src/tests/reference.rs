@@ -67,6 +67,7 @@ fn takes(def: &Def) -> String {
         Kind::Choice(w) => format!("one of {}", words(w)),
         Kind::List(Some(w)) => format!("a list of {}; `all` (every one) or `none`", words(w)),
         Kind::List(None) => "a list: comma-separated, or a TOML array; `none` is empty".into(),
+        Kind::Patterns => "a list of names, each exact (`Bash`) or a prefix ending in `*` (`mcp__github__*`): comma-separated, or a TOML array; `none` is empty. A regular expression is refused (`Edit|Write` is two names), and so is a `*` anywhere but the end".into(),
         Kind::Vars => {
             "`NAME=VALUE`, or `NAME` for haest's own value; repeat the flag for more".into()
         }
@@ -152,7 +153,7 @@ fn toml_line(def: &Def) -> Option<String> {
     Some(match def.kind {
         _ if def.scope == Scope::Process => return None,
         Kind::Bool | Kind::Number => format!("{} = {raw}", def.key),
-        Kind::List(_) => {
+        Kind::List(_) | Kind::Patterns => {
             let items = raw.split(',').map(|s| Value::String(s.into())).collect();
             format!("{} = {}", def.key, Value::Array(items))
         }

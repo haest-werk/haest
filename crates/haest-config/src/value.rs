@@ -8,7 +8,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use haest_core::{__private::is_var_name, fs::resolve_path};
+use haest_core::{
+    __private::{check_pattern, is_var_name},
+    fs::resolve_path,
+};
 use haest_providers::http::check_endpoint_url;
 
 use crate::registry::{Def, Kind, up_to, whole_up_to};
@@ -101,6 +104,7 @@ pub(crate) fn check(def: &Def, raw: &str) -> Result<String, String> {
             .map(|w| w.to_string())
             .ok_or_else(|| format!("\"{word}\" must be one of {}", words.join(", "))),
         Kind::List(allowed) => list(word, allowed),
+        Kind::Patterns => patterns(word),
         // A variable's value keeps its spaces.
         Kind::Vars => var(raw),
         Kind::Table => crate::table::check(raw),
@@ -129,6 +133,22 @@ pub(crate) fn named_var(name: &str, value: &str) -> Result<String, String> {
 /// A checked `NAME=VALUE`, as its name and its value.
 pub(crate) fn var_parts(checked: &str) -> (&str, &str) {
     checked.split_once('=').unwrap_or((checked, ""))
+}
+
+/// A list of name patterns ([`Kind::Patterns`]), each checked by
+/// haest-core's one check: what a matcher would read as no name at all is
+/// refused here, where the human can see which setting holds it.
+fn patterns(raw: &str) -> Result<String, String> {
+    let checked = list(raw, None)?;
+    match split_list(&checked)
+        .into_iter()
+        .find(|p| check_pattern(p).is_err())
+    {
+        Some(item) => Err(format!(
+            "\"{item}\" is not haest's pattern: a name (`Bash`) or a prefix ending in `*` (`mcp__github__*`); a regular expression is not read (`Edit|Write` is two names), and `*` only ends a prefix"
+        )),
+        None => Ok(checked),
+    }
 }
 
 fn list(raw: &str, allowed: Option<&[&str]>) -> Result<String, String> {

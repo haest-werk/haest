@@ -225,8 +225,9 @@ pub mod __private {
     pub use crate::messages::usage::{add_cost, real_cost};
     pub use crate::panics::panic_message;
     /// The one name pattern settings take (exact, or `prefix*`): Code's
-    /// `code_tools`, hook matchers, per-model cache settings.
-    pub use crate::pattern::name_matches;
+    /// `code_tools`, hook matchers, per-model cache settings. `check_pattern`
+    /// is the one check that a text is one, wherever a setting takes it.
+    pub use crate::pattern::{BadPattern, check as check_pattern, name_matches};
     pub use crate::tool_exec::{ToolIndex, run_call, run_unspilled};
 }
 

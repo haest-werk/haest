@@ -264,6 +264,18 @@ async fn a_matcher_asks_a_hook_only_about_the_tools_it_names() {
     assert_eq!(got[3..], ["mcp__gitlab__search:x", "bashoutput:x"]);
 }
 
+/// A matcher that is no pattern (Claude Code's `Edit|Write`, a `*` inside)
+/// would match no tool, so a guard bound with it never fires: a debug build
+/// stops at the binding.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "is not haest's pattern")]
+fn a_matcher_that_is_no_pattern_stops_a_debug_build() {
+    let pass =
+        |_: ToolBeforePayload, _: CancellationToken| async { Ok::<_, BoxError>(Before::Pass) };
+    let _ = Binding::new(pass).with_matcher("Edit|Write");
+}
+
 #[tokio::test]
 async fn an_interrupt_while_a_hook_decides_is_no_failure_whatever_its_on_error() {
     for on in [OnError::Block, OnError::Continue] {

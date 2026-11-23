@@ -7,7 +7,7 @@
 use std::{collections::BTreeMap, fmt, time::Duration};
 
 use haest_core::{
-    __private::{expand_vars, unset_note},
+    __private::{BadPattern, check_pattern, expand_vars, unset_note},
     words::UnknownWord,
 };
 use haest_http::redacted_url;
@@ -494,7 +494,21 @@ impl HookEntry {
                     "`matcher` picks tools, on tool.before and tool.after only: {event} is not about a tool call"
                 ));
             }
-            check_matcher(pattern)?;
+            // haest's pattern: a regular expression (Claude Code's matchers
+            // are) would match no tool, and a guard that never fires is
+            // worse than an error.
+            match check_pattern(pattern) {
+                Ok(()) => {}
+                Err(BadPattern::Empty) => {
+                    return Err("`matcher` is empty: leave it out for every tool".into());
+                }
+                // Not a pattern, and a refusal newer than this match.
+                Err(_) => {
+                    return Err(format!(
+                        "`matcher = \"{pattern}\"` is not haest's pattern: a tool's name (`Bash`) or a prefix ending in `*` (`mcp__github__*`); Claude Code's regular expressions are not read (`Edit|Write` is two entries)"
+                    ));
+                }
+            }
         }
         if self.timeout.is_some_and(|t| t.is_zero()) {
             return Err(TIMEOUT.into());
@@ -531,27 +545,6 @@ fn check_url(url: &str) -> Result<(), String> {
     } else {
         Err("`url` must start with http:// or https://".into())
     }
-}
-
-/// haest's pattern: a tool's name, or a prefix ending in `*`. A regular
-/// expression (Claude Code's matchers are) is refused: it would match no
-/// tool, and a guard that never fires is worse than an error.
-fn check_matcher(pattern: &str) -> Result<(), String> {
-    const REGEX: &[char] = &['|', '(', ')', '[', ']', '{', '}', '^', '$', '+', '?', '\\'];
-    let stars = pattern.matches('*').count();
-    let regex = pattern.contains(REGEX)
-        || pattern.ends_with(".*")
-        || stars > 1
-        || (stars == 1 && !pattern.ends_with('*'));
-    if pattern.is_empty() {
-        return Err("`matcher` is empty: leave it out for every tool".into());
-    }
-    if regex {
-        return Err(format!(
-            "`matcher = \"{pattern}\"` is not haest's pattern: a tool's name (`Bash`) or a prefix ending in `*` (`mcp__github__*`); Claude Code's regular expressions are not read (`Edit|Write` is two entries)"
-        ));
-    }
-    Ok(())
 }
 
 /// What a `timeout` that is not one is refused with.

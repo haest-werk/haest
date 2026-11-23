@@ -85,7 +85,8 @@ are asked one at a time, by the same rules as a `Hooks` binding's, in the table'
 - what its failure or timeout does (`OnError::Block` or `Continue`; `block` for `tool.before`,
   `continue` for every other event),
 - for `tool.before` and `tool.after`, the tools it is for (`Binding::with_matcher`: an exact
-  name, or a prefix ending in `*`, the same pattern every haest setting takes).
+  name, or a prefix ending in `*`, the same pattern every haest setting takes; a debug build
+  stops at one that is not, such as Claude Code's `Edit|Write`, which would match no tool).
 
 A Rust closure or `async fn` taking the payload and a `CancellationToken` is a hook. So is any
 type that implements `Hook<E>`, which is how the bridges plug in. The table of what `block`

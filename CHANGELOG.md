@@ -84,8 +84,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   and `compact_before_expire = { min_context, instructions }` (compact an
   idle conversation over `min_context` tokens, or a share of the window,
   while its cache is still warm and only when that costs less). Per model
-  under `[cache.models."<spec or prefix*>"]`. A table setting kind in
-  haest-config carries it.
+  under `[cache.models."<spec or prefix*>"]`; a key that is neither (a
+  regular expression, a `*` inside) is refused when read. A table setting
+  kind in haest-config carries it.
 - haest-core: `Agent::warm_cache` sends the last request's prefix as a
   pre-warm (Anthropic `max_tokens: 0`; OpenRouter's Anthropic models
   `max_tokens: 1`, since OpenRouter does not honour 0) and books what it
@@ -128,8 +129,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   files get `haest.disableTool`, `haest.enableTool` and `haest.removeTool`.
 - haest-mods: the hook protocol, typed once: `Event` with a payload and a
   decision per event (the mod files' own JSON), `Hook<E>` for one handler,
-  `Binding` for its timeout, `OnError` and tool matcher, and `Hooks`, a
-  mod made of bindings. A Rust closure is a hook.
+  `Binding` for its timeout, `OnError` and tool matcher (in a debug build,
+  `with_matcher` stops at a matcher that is not haest's pattern), and
+  `Hooks`, a mod made of bindings. A Rust closure is a hook.
 - haest-runtime: a built conversation puts its mods' loop events in the
   loop.
 - haest-bridges, a new crate: the ways to hook haest from outside Rust,
@@ -201,6 +203,13 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 
 ### Fixed
 
+- haest-config: `code_tools` took a regular expression (`Edit|Write`) or a
+  `*` inside a name and quietly matched no tool. haest's pattern is an
+  exact name or a prefix ending in `*`, and anything else is now refused
+  at load, the error naming `code_tools`: a config file holding one no
+  longer loads. The setting is of a new kind, `Kind::Patterns`. Every
+  place that takes the pattern (`code_tools`, a hook's `matcher`, a
+  `[cache.models."<pattern>"]` key) runs the same check.
 - haest-mods: when a `tool.before` guard failed, the refusal the model
   read carried the guard's error but not its causes. It now carries both.
 - haest-mods: a `tool.after` hook that replaced a tool's output dropped what

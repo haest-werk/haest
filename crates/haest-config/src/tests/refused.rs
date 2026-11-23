@@ -124,6 +124,57 @@ async fn a_broker_url_a_parser_misreads_is_refused_where_it_is_given() {
     assert_eq!(r.unwrap().config.broker_url.as_deref(), Some(encoded));
 }
 
+/// A name pattern is an exact name or a prefix ending in `*`. One that is
+/// a regular expression, or has a `*` inside, would match nothing: refused
+/// where it is given, naming the setting, for `code_tools` and for a
+/// `[cache.models."<pattern>"]` key alike.
+#[tokio::test]
+async fn a_pattern_that_would_match_nothing_is_refused_naming_the_setting() {
+    let at = file(USER_FILE);
+    let cases = [
+        ("code_tools = [\"Edit|Write\"]", "code_tools", "Edit|Write"),
+        (
+            "code_tools = [\"Bash\", \"mcp__*__search\"]",
+            "code_tools",
+            "mcp__*__search",
+        ),
+        ("[cache.models.\"a*b\"]\nsystem = \"off\"", "cache", "a*b"),
+        (
+            "[cache.models.\"openrouter:(google|openai)/*\"]\nkeep_warm = true",
+            "cache",
+            "(google|openai)",
+        ),
+    ];
+    for (text, key, says) in cases {
+        let err = run("/w", &[(USER_FILE, text)], &[], &[]).await.unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::Invalid { .. }),
+            "{text}: {err:?}"
+        );
+        assert_eq!(refused(&err), Some((&at, key)), "{err}");
+        let shown = err.to_string();
+        assert!(
+            shown.contains(says) && shown.contains("prefix ending in `*`"),
+            "{shown}"
+        );
+    }
+    let flag = run("/w", &[], &[], &[("code_tools", "Edit|Write")]).await;
+    let flag_err = flag.unwrap_err();
+    let by_flag = Source::Flag("code-tools".into());
+    assert_eq!(
+        refused(&flag_err),
+        Some((&by_flag, "code_tools")),
+        "{flag_err}"
+    );
+    // An exact name, a prefix and `*` alone are patterns.
+    let good = [(
+        USER_FILE,
+        "code_tools = [\"Bash\", \"mcp__github__*\", \"*\"]\n[cache.models.\"openrouter:google/*\"]\nsystem = \"off\"",
+    )];
+    let s = run("/w", &good, &[], &[]).await.unwrap().config.settings;
+    assert_eq!(s.code_tools, ["Bash", "mcp__github__*", "*"]);
+}
+
 /// A count (steps, tokens) given a fraction must not quietly become a
 /// smaller one: `max_turn_steps = 0.5` read as 0 would turn the cap off. A
 /// time (`subagent_minutes`) takes the fraction as it is.

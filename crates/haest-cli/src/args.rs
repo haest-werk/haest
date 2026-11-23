@@ -169,7 +169,7 @@ fn setting_arg(def: &Def) -> Arg {
             .require_equals(true)
             .default_missing_value("true")
             .value_name("BOOL"),
-        Kind::List(_) => arg.value_name("LIST"),
+        Kind::List(_) | Kind::Patterns => arg.value_name("LIST"),
         Kind::Number => arg.value_name("N"),
         Kind::Path => arg.value_name("DIR"),
         Kind::Url => arg.value_name("URL"),

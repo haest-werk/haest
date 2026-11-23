@@ -5,7 +5,10 @@
 use std::{fmt, future::Future, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use haest_core::{__private::name_matches, error::BoxError};
+use haest_core::{
+    __private::{check_pattern, name_matches},
+    error::BoxError,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::events::{Event, ModEvent, ToolEvent};
@@ -232,10 +235,22 @@ impl<E: ToolEvent> Binding<E> {
     /// Ask the hook only about calls of the tools whose name matches
     /// `pattern`: the name itself (`Bash`), or a prefix ending in `*`
     /// (`mcp__github__*`).
+    ///
+    /// # Panics
+    ///
+    /// In a debug build, when `pattern` is not haest's pattern (a regular
+    /// expression such as Claude Code's `Edit|Write`, a `*` inside, the
+    /// empty text): it would match no tool, so the hook would never be
+    /// asked. The `hooks` setting refuses such a matcher when it is read.
     #[must_use]
     pub fn with_matcher(mut self, pattern: impl Into<String>) -> Self {
+        let pattern = pattern.into();
+        debug_assert!(
+            check_pattern(&pattern).is_ok(),
+            "`{pattern}` is not haest's pattern: a tool's name or a prefix ending in `*`"
+        );
         self.matcher = Some(Matcher {
-            pattern: pattern.into(),
+            pattern,
             tool_name: E::tool_name,
         });
         self

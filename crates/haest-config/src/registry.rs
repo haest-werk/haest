@@ -57,6 +57,11 @@ pub enum Kind {
     /// A comma list, or a TOML array. `Some` = only these words, plus `all`
     /// (every one of them) and `none` (an empty list).
     List(Option<&'static [&'static str]>),
+    /// A list of name patterns, written as a `List(None)` is: each an exact
+    /// name or a prefix ending in `*`. One that is neither (a regular
+    /// expression such as `Edit|Write`, a `*` inside) would match nothing,
+    /// and is refused.
+    Patterns,
     /// Variables, one `NAME=VALUE` each: a repeated flag, a TOML table. A
     /// value adds to the ones before it; a name set twice keeps the later value.
     Vars,
@@ -186,7 +191,7 @@ const AGENTS: &str = "Subagents";
 const SESSION: &str = "Watching and driving";
 const PATHS: &str = "Paths";
 
-use Kind::{Bool, Choice, List, Number, Path, Table, Text, Url, Vars};
+use Kind::{Bool, Choice, List, Number, Path, Patterns, Table, Text, Url, Vars};
 
 /// A row's field, put to one use: `get_set`, how [`Config`] reads and writes
 /// it by its [`Raw`]; or, with a function's name, what that function says of
@@ -263,7 +268,7 @@ settings! {
     "model" => settings.model_spec: def(MODEL, Text, "anthropic:claude-opus-5-5", "provider:model").short('m'),
     "effort" => settings.effort: def(MODEL, Choice(Effort::WORDS), "high", "Reasoning effort (unset: the model's own default)").short('e'),
     "cache" => settings.cache: def(MODEL, Table, r#"{ system = "1h", keep_warm = true }"#, "The prompt cache: which blocks carry a breakpoint and for how long (system, tools, history: off, 5m or 1h), and what an idle conversation does before its cache expires (keep_warm, keep_warm_for, compact_before_expire); per model under models.\"<spec or prefix*>\"")
-        .detail("`system`, `tools` and `history` (the newest message, which the next request reads the conversation before it from) each take `off`, `5m` or `1h`; the default is `5m` for all three. `1h` costs more to write (2x the input price against 1.25x on Anthropic) and pays when you often pause for longer than five minutes; a model that keeps no cache entry for an hour gets five minutes, and you are told. `keep_warm = true` sends a pre-warm a little before an idle conversation's cache expires, while the model's prices say the pings cost less than writing the cache again, for at most `keep_warm_for` minutes after the last turn (default 60); a ping that wrote instead of read stops it, and you are told. A model with no price, or a provider that takes no pre-warm (only Anthropic's API and OpenRouter's `anthropic/` models do), is never pinged. `compact_before_expire = { min_context = 120000, instructions = \"...\" }` (or `min_context = \"60%\"` of the window; default `\"off\"`) compacts an idle conversation that holds at least `min_context` while its cache is still warm, when the summary and the smaller next write cost less than writing the whole prompt again; when they would not, `keep_warm` still pings. Only a conversation that stays open between turns idles: the interactive prompt, or a session another program drives. `[cache.models.\"openrouter:google/*\"]` sets any of these for the models it matches (exact, or `prefix*`); the most specific wins."),
+        .detail("`system`, `tools` and `history` (the newest message, which the next request reads the conversation before it from) each take `off`, `5m` or `1h`; the default is `5m` for all three. `1h` costs more to write (2x the input price against 1.25x on Anthropic) and pays when you often pause for longer than five minutes; a model that keeps no cache entry for an hour gets five minutes, and you are told. `keep_warm = true` sends a pre-warm a little before an idle conversation's cache expires, while the model's prices say the pings cost less than writing the cache again, for at most `keep_warm_for` minutes after the last turn (default 60); a ping that wrote instead of read stops it, and you are told. A model with no price, or a provider that takes no pre-warm (only Anthropic's API and OpenRouter's `anthropic/` models do), is never pinged. `compact_before_expire = { min_context = 120000, instructions = \"...\" }` (or `min_context = \"60%\"` of the window; default `\"off\"`) compacts an idle conversation that holds at least `min_context` while its cache is still warm, when the summary and the smaller next write cost less than writing the whole prompt again; when they would not, `keep_warm` still pings. Only a conversation that stays open between turns idles: the interactive prompt, or a session another program drives. `[cache.models.\"openrouter:google/*\"]` sets any of these for the models it matches (exact, or `prefix*`); the most specific wins. A key that is neither (a regular expression, a `*` inside) would match no model, and is refused."),
     "system_prompt" => settings.system_prompt: def(MODEL, Text, "You are a terse code reviewer.", "Replaces haest's own identity text at the top of the system prompt"),
     "append_system_prompt" => settings.append_system_prompt: def(MODEL, Text, "Answer in British English.", "Text appended to the system prompt"),
     "provider_routing" => provider_routing: def(MODEL, Text, r#"{"global": {"banned": ["novita"]}}"#, "OpenRouter's provider routing, as JSON: {\"global\": {\"banned\": [...], \"favorites\": [...]}, \"overrides\": ..., \"project\": ...}").scope(Scope::User),
@@ -272,7 +277,7 @@ settings! {
     "skill_catalog" => settings.skill_catalog: def(CONTEXT, Bool, "true", "List the skills in the system prompt, so the model picks them on its own"),
     "tools" => settings.tools: def(TOOLS, List(Some(BuiltinTools::WORDS)), "read,grep,glob,bash", "Built-in tools: read, write, edit, bash, grep, glob, web_fetch, tasks, skill (all = every one)"),
     "code" => settings.code: def(TOOLS, Bool, "true", "The Code tool: a JavaScript run that calls the other tools"),
-    "code_tools" => settings.code_tools: def(TOOLS, List(None), "Bash,mcp__github__*", "Extra tool names Code may call (exact, or prefix*)"),
+    "code_tools" => settings.code_tools: def(TOOLS, Patterns, "Bash,mcp__github__*", "Extra tool names Code may call (exact, or prefix*)"),
     "agents" => settings.agents: def(TOOLS, Bool, "true", "Agent, SendMessage and StopAgent: subagents"),
     "web_search" => own(WEB_SEARCH): def(TOOLS, Choice(&WEB_SEARCH_WORDS), "native", "The provider's web search, by engine"),
     "image" => settings.image: def(TOOLS, Bool, "true", "GenerateImage, over OpenRouter (needs OPENROUTER_API_KEY)"),

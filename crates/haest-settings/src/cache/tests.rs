@@ -111,9 +111,20 @@ fn a_misspelt_key_or_a_value_it_does_not_take_is_refused() {
         "compact_before_expire = { min_context = -1 }",
         "compact_before_expire = { min_context = 100, when = \"idle\" }",
         "[models.\"anthropic:*\"]\nmodels = {}",
+        // A key that is no pattern would match no model.
+        "[models.\"a*b\"]\nsystem = \"off\"",
+        "[models.\"openrouter:(google|openai)/*\"]\nsystem = \"off\"",
+        "[models.\"\"]\nsystem = \"off\"",
     ] {
         assert!(read(wrong).is_err(), "{wrong}");
     }
+    let why = read("[models.\"a*b\"]\nsystem = \"off\"")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        why.contains("models.\"a*b\"") && why.contains("prefix ending in `*`"),
+        "{why}"
+    );
     assert_eq!(
         read("compact_before_expire = false")
             .unwrap()

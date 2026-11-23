@@ -3,15 +3,16 @@
 //! nothing; `keep_warm_for` in minutes; `compact_before_expire` as `"off"`
 //! or a table; `min_context` as tokens or `"60%"`.
 
-use std::{fmt, time::Duration};
+use std::{collections::BTreeMap, fmt, time::Duration};
 
+use haest_core::__private::{BadPattern, check_pattern};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, MapAccess, Visitor, value::MapAccessDeserializer},
     ser::SerializeMap,
 };
 
-use super::{CacheSettings, CompactBeforeExpire, MinContext};
+use super::{CacheOverride, CacheSettings, CompactBeforeExpire, MinContext};
 
 /// Every key that differs from the default, in the order the type lists them.
 impl Serialize for CacheSettings {
@@ -98,6 +99,32 @@ pub(super) mod minutes {
             super::deserialize(d).map(Some)
         }
     }
+}
+
+/// `[models."<pattern>"]`, each key haest's pattern: a model spec, or a
+/// prefix ending in `*`. One that is not would match no model, so the
+/// override would quietly do nothing.
+pub(super) fn models<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<BTreeMap<String, CacheOverride>, D::Error> {
+    let models = BTreeMap::<String, CacheOverride>::deserialize(d)?;
+    for key in models.keys() {
+        match check_pattern(key) {
+            Ok(()) => {}
+            Err(BadPattern::Empty) => {
+                return Err(de::Error::custom(
+                    "models.\"\": an empty pattern matches no model",
+                ));
+            }
+            // Not a pattern, and a refusal newer than this match.
+            Err(_) => {
+                return Err(de::Error::custom(format!(
+                    "models.\"{key}\" is not haest's pattern: a model spec (`anthropic:claude-opus-5-5`) or a prefix ending in `*` (`openrouter:google/*`); a regular expression is not read, and `*` only ends a prefix"
+                )));
+            }
+        }
+    }
+    Ok(models)
 }
 
 /// `"off"`, or the table of its conditions.
