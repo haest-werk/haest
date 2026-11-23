@@ -46,7 +46,7 @@ the build's gates.
 
 | Event | Decision (Rust) | As JSON | Several hooks |
 |---|---|---|---|
-| `tool.before` | `Before::{Pass, Deny, Input}` | `{ deny: reason }`, `{ input: {..} }`, anything else passes | rewrites chain; the first deny wins and refuses the call (the model reads the reason) |
+| `tool.before` | `Before::{Pass, Deny, Input}` | `{ deny: reason }`, `{ input: {..} }`; an answer with neither passes | rewrites chain; the first deny wins and refuses the call (the model reads the reason) |
 | `tool.after` | `Option<ToolOutput>` | `{ content, isError, .. }` or nothing | each sees the output the one before left; what the call spent stays the tool's |
 | `prompt.submit` | `Option<String>` | a string or nothing | rewrites chain |
 | `system.prompt` | `Option<String>` | a string, or nothing (`null` or `false`) | the texts are joined |

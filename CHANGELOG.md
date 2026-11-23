@@ -42,6 +42,18 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 - The session file gains a message kind, `"role": "tool_change"`, which
   the TypeScript haest does not read: a session that changed its tools on
   a model that takes tool changes resumes in this haest only.
+- Mod files: a handler's answer is read the way a shell hook's, an HTTP
+  hook's and a Rust closure's are (`Event::read_decision`), never turned
+  into text. A number, `true` or any other value that is not text, from
+  `prompt.submit`, from `system.prompt` or as a `deny` reason, is now that
+  handler's failure, reported to the human, where 0.4.1 made text of it
+  and acted on it (`{ deny: 42 }` refused with "42"; a `tool.before`
+  failure still refuses the call). `{ deny: null }` now passes, where it
+  refused with "null". `false` from `system.prompt` still adds nothing,
+  so `cond && 'text'` works. A later `tool.before` or `tool.after`
+  handler sees the input or output as haest read it (`isError` filled in),
+  and the new loop events read `steer`, `stop` and `continue` as text
+  only, `compact` as `true` or `{ instructions }` only (`"yes"` fails).
 
 ### Added
 
@@ -182,19 +194,6 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 - haest-cli: when a hook kept a turn going, the second answer was printed
   glued to the end of the first (`removed.No tests here.`). Each answer
   now ends its line.
-- haest-bridges: a mod file's answers were read by its own JavaScript
-  rather than the decoder every other hook goes through, so the same
-  answer did different things. `{ deny: null }` refused the call with the
-  reason "null", `{ stop: false }` stopped the turn with "false", and
-  `{ steer: 42 }`, `{ compact: "yes" }` or a number returned from
-  `prompt.submit` or `system.prompt` were turned into text and acted on.
-  A mod file's answer now means what it means from a shell hook, an HTTP
-  hook or a Rust closure: a `null` value counts as absent, and a value of
-  the wrong type is the handler's failure, reported to the human, never
-  turned into text. Several handlers of one event still run in order,
-  each seeing the input, output or text the one before left, and none is
-  asked after the first deny, stop or continue; a later `tool.after`
-  handler now sees the output as haest read it (`isError` filled in).
 
 ## 0.4.1 (2026-11-20)
 

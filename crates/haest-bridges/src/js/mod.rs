@@ -90,13 +90,13 @@ use tool::JsTool;
 ///
 /// | Event | Called with | Returns |
 /// |---|---|---|
-/// | `tool.before` | `call`, `ctx` | `{ deny: reason }` refuses, `{ input: {...} }` replaces the input for the handlers after it, anything else passes |
+/// | `tool.before` | `call`, `ctx` | `{ deny: reason }` refuses, `{ input: {...} }` replaces the input for the handlers after it; an answer with neither passes, and a `deny` that is not text or an `input` that is not an object fails |
 /// | `tool.after` | `call`, `output`, `ctx` | a new output (`{ content, isError }`), or nothing to keep it |
 /// | `prompt.submit` | `text` | the new text, or nothing |
 /// | `system.prompt` | nothing | text to append, or nothing (`undefined`, `null` or `false`, so `cond && 'text'` works) |
-/// | `model.before` | the agent, `lastMessage` | `{ stop: reason }` ends the turn, `{ steer: text }` steers it, `{ compact: true }` or `{ compact: { instructions } }` compacts it first; anything else passes |
-/// | `model.after` | the agent, `answer` | `{ stop: reason }` ends the turn and its calls do not run, `{ steer: text }` steers it; anything else passes |
-/// | `turn.end` | the agent, `stopReason`, `error`, `answer`, `continued` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; anything else passes |
+/// | `model.before` | the agent, `lastMessage` | `{ stop: reason }` ends the turn, `{ steer: text }` steers it, `{ compact: true }` or `{ compact: { instructions } }` compacts it first; an answer with none of these passes, and one whose `stop` or `steer` is not text, or whose `compact` is neither, fails |
+/// | `model.after` | the agent, `answer` | `{ stop: reason }` ends the turn and its calls do not run, `{ steer: text }` steers it; an answer with neither passes, and one whose `stop` or `steer` is not text fails |
+/// | `turn.end` | the agent, `stopReason`, `error`, `answer`, `continued` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; an answer with neither passes, and one whose `continue` is not text, or whose `compact` is neither `true` nor `{ instructions }`, fails |
 ///
 /// "The agent" is one object's fields, the same in every loop event
 /// ([`AgentView`](haest_mods::AgentView)): `modelSpec`, `effort`,
