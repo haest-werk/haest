@@ -2,7 +2,7 @@
 //! and only when the request goes on as it was sent (307, 308). Another
 //! origin is never sent the headers (an API key) or the body (a prompt).
 
-#![cfg(feature = "reqwest")]
+#![cfg(all(feature = "reqwest", feature = "testing"))]
 
 use haest_http::{
     Request, ReqwestClient,

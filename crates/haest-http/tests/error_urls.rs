@@ -3,7 +3,7 @@
 //! URL may carry a key in its query (`?api_key=`), a password in its
 //! userinfo, a token in its fragment.
 
-#![cfg(feature = "reqwest")]
+#![cfg(all(feature = "reqwest", feature = "testing"))]
 
 use std::{error::Error, net::TcpListener};
 

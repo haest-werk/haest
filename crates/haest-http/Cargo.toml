@@ -46,7 +46,10 @@ http-body = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
-# This crate's own `testing`, for its tests: the redirect tests' servers.
+# This crate's own `testing`, for its tests: every test in tests/ sends to
+# `testing::Server`. Path only, so `cargo package` drops it: each of those
+# files also needs `feature = "testing"`, and outside the workspace they build
+# empty unless `--features testing` is passed.
 haest-http = { path = ".", default-features = false, features = ["testing"] }
 
 [package.metadata.docs.rs]

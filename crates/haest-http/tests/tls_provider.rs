@@ -5,7 +5,7 @@
 //! A test binary of its own: it needs a process in which nothing has
 //! installed a provider yet.
 
-#![cfg(feature = "reqwest")]
+#![cfg(all(feature = "reqwest", feature = "testing"))]
 
 use std::time::Duration;
 
