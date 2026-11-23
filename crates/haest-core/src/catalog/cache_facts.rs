@@ -44,7 +44,9 @@ pub struct CacheFacts {
     /// The output cap a cache pre-warm goes out with
     /// ([`ProviderRequest::prewarm`](crate::ProviderRequest::prewarm)): 0 on
     /// Anthropic's own API, 1 on OpenRouter, which does not honour 0.
-    /// Absent = haest sends the model no pre-warm, so it is never kept warm.
+    /// Absent = not recorded. A record for policies to read: whether a
+    /// pre-warm is sent, and with what cap, is the provider's
+    /// ([`Provider::check_prewarm`](crate::Provider::check_prewarm)).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prewarm_max_tokens: Option<u32>,
     /// Whether the model takes tools added or removed mid-conversation
