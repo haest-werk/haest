@@ -6,6 +6,58 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 `--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
 `HAEST_*` variables.
 
+## Unreleased
+
+A host and its mods can change the agent while it runs: tools that come
+and go, hooks on every step of the loop, compaction from a hook, and
+control over the prompt cache's lifetime. Every extension point is Rust
+first; [docs/extending.md](docs/extending.md) maps them all.
+
+### Breaking changes
+
+- `Usage` gains `cache_write_1h` and `CompactionOptions` gains
+  `instructions`. A struct literal that names every field no longer
+  compiles: end it with `..Default::default()` (`Usage`) or
+  `..CompactionOptions::new(window)`.
+
+### Added
+
+- haest-core: `LiveTools`, a tool set the host changes while a
+  conversation runs (`set_tool`, `remove_tool`, `set_enabled`,
+  `set_tools`). A `ToolSource`: the loop reads it before each model call,
+  and a call already running finishes on the tool it started with.
+- haest-core: `AgentHooks::after_model_call` (an answer landed, its tool
+  calls have not run: steer, switch models, or end the turn) and
+  `AgentHooks::before_turn_end` (the stop hook: keep a turn going until a
+  check passes). `AgentHooks::on_compaction` reports every compaction,
+  whoever ran it, so a host that saves history can replay it.
+- haest-core: `CompactionOptions::instructions`, added to haest's own
+  summary prompt.
+- haest-core: the prompt cache's lifetime. `CacheTtl` and the setting
+  `cache_ttl` (`5m`, the default, or `1h`) go on every breakpoint haest
+  places; `Usage::cache_write_1h` counts hour-long writes, `ModelPricing`
+  has the 1h write price, and the catalog carries the cache prices of the
+  direct Anthropic and OpenAI rows, so direct calls are priced too.
+  `Agent::warm_cache` sends the last request's prefix as a pre-warm and
+  books what it cost.
+- haest-mods: the loop events `model.before`, `model.after` and
+  `turn.end`, on `Mod` and in mod files: stop the turn, steer it, keep it
+  going, or compact it (`{ compact: true }` or `{ compact: { instructions } }`
+  from a mod file). `ModHooks` runs them after the host's own hooks.
+- haest-mods: `Mod::disabled_tools` hides any tool, whoever added it; mod
+  files get `haest.disableTool`, `haest.enableTool` and `haest.removeTool`.
+- haest-mods: the hook protocol, typed once: `Event` with a payload and a
+  decision per event (the mod files' own JSON), `Hook<E>` for one handler,
+  `Binding` for its timeout, `OnError` and tool matcher, and `Hooks`, a
+  mod made of bindings. A Rust closure is a hook.
+- haest-runtime: a built conversation puts its mods' loop events in the
+  loop.
+
+### Fixed
+
+- haest-mods: when a `tool.before` guard failed, the refusal the model
+  read carried the guard's error but not its causes. It now carries both.
+
 ## 0.4.1 (2026-11-20)
 
 haest-issues stays at 0.3.0: nothing in it changed.
