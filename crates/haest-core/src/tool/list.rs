@@ -82,6 +82,12 @@ impl Tools {
         self
     }
 
+    /// `list` as it is, for a caller that keeps one tool per name already
+    /// ([`LiveTools`](super::LiveTools)): no tool's name is read.
+    pub(super) fn from_distinct(list: Vec<ToolRef>) -> Self {
+        Self(Arc::new(list))
+    }
+
     /// The tool called `name`.
     pub fn get(&self, name: &str) -> Option<&ToolRef> {
         self.0.iter().find(|t| t.name() == name)

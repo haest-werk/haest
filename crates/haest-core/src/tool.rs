@@ -7,7 +7,8 @@
 //!
 //! PLUG POINT: implement [`Tool`] to add a tool; implement [`ToolServices`] to receive
 //! what tools publish, report and log. A [`ToolSource`] (a [`Tools`] list is
-//! one) hands an agent its tools through
+//! one, [`LiveTools`] one the host changes while the conversation runs)
+//! hands an agent its tools through
 //! [`AgentDeps::tools`](crate::AgentDeps::tools). The loop holds each tool
 //! by a [`ToolRef`].
 //!
@@ -21,6 +22,7 @@ mod args;
 mod context;
 mod error;
 mod list;
+mod live;
 mod resume;
 #[cfg(test)]
 mod tests;
@@ -35,6 +37,7 @@ pub use args::{input, opt_bool, opt_count, opt_num, opt_str, req_num, req_str, s
 pub use context::ToolContext;
 pub use error::ToolError;
 pub use list::Tools;
+pub use live::LiveTools;
 pub use resume::{Attempt, OnResume};
 pub use truncate::{TRUNCATE_CHARS, truncate_middle};
 pub use wrap::{ToolOverride, ToolWrapper};
@@ -304,7 +307,8 @@ crate::plug_ref! {
 /// Where the loop gets its tools, asked again before every model call (deferred
 /// tools and MCP servers change the list mid-conversation).
 ///
-/// A [`Tools`] list is a fixed one, every tool advertised.
+/// A [`Tools`] list is a fixed one, every tool advertised; [`LiveTools`] is
+/// one the host changes while the conversation runs.
 pub trait ToolSource: Send + Sync {
     /// The tools the next model call advertises.
     fn tools(&self) -> Tools;

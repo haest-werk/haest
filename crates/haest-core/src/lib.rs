@@ -258,9 +258,10 @@ pub mod prelude {
         ProviderRequest, ProviderStream, ResolvedModel, answer_stream,
     };
     pub use crate::tool::{
-        InnerCallEvent, JsonMap, NoServices, OnResume, Tool, ToolContext, ToolError, ToolOutput,
-        ToolOverride, ToolRef, ToolServices, ToolServicesRef, ToolSource, ToolSourceRef, Tools,
-        opt_bool, opt_count, opt_num, opt_str, req_num, req_str, truncate_middle,
+        InnerCallEvent, JsonMap, LiveTools, NoServices, OnResume, Tool, ToolContext, ToolError,
+        ToolOutput, ToolOverride, ToolRef, ToolServices, ToolServicesRef, ToolSource,
+        ToolSourceRef, Tools, opt_bool, opt_count, opt_num, opt_str, req_num, req_str,
+        truncate_middle,
     };
     pub use crate::workspace::{
         ChangeSet, ChangeSetRef, ExecOptions, ExecResult, OutputChunks, ShutWorkspace, Workspace,
