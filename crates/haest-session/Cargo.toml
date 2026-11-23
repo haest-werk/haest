@@ -22,6 +22,7 @@ haest-core = { workspace = true }
 haest-wire = { workspace = true }
 haest-mods = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-util = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
@@ -29,6 +30,8 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }
+# The `[cache]` setting's policy, driven end to end in the idle tick tests.
+haest-settings = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
 

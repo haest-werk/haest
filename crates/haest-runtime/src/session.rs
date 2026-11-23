@@ -9,12 +9,15 @@
 //! reaches the inbox into the running turn and flushes the session file),
 //! and [`Runtime::shut_down`] at the end.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use haest_core::{Agent, AgentControl, Effort, EventSink, Message, TurnOutcome, error::BoxError};
 use haest_mods::Mods;
 use haest_session::{Driven, DrivenStatus, Hub, RewritePrompt, RewritePromptRef};
 use haest_tools::SubagentEvent;
 use haest_wire::{Level, Outbound, Path};
+use tokio_util::sync::CancellationToken;
 
 use crate::{Runtime, Ui};
 
@@ -95,6 +98,19 @@ impl<U: Ui + 'static> Driven for Runtime<U> {
     /// A subagent's answer is still due: between turns, a background one's.
     fn expecting(&self) -> bool {
         !self.subagents.idle()
+    }
+
+    /// Main's prompt cache's next tick ([`Agent::next_cache_tick`]).
+    fn next_idle_tick(&self) -> Option<Duration> {
+        Driven::next_idle_tick(self.agent())
+    }
+
+    /// Main's [`Agent::cache_tick`], as the `cache` setting says (keep it
+    /// warm, or compact before it expires); a compaction is in the session
+    /// file once it returns.
+    async fn idle_tick(&mut self, cancel: &CancellationToken) {
+        self.agent.cache_tick(cancel).await;
+        self.hooks.flush().await;
     }
 
     fn history(&self) -> Vec<Message> {

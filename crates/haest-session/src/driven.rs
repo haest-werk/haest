@@ -1,10 +1,13 @@
 //! [`Driven`]: what the session driver needs from the conversation it runs,
 //! and the plain implementation for a bare [`Agent`].
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use haest_core::{
     Agent, AgentControl, Effort, EventSink, Message, TurnOutcome, error::BoxError, ledger::Ledger,
 };
+use tokio_util::sync::CancellationToken;
 
 /// What the conversation says about itself between turns.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -51,8 +54,8 @@ haest_core::plug_ref! {
 ///
 /// Every method but [`control`](Self::control), [`run`](Self::run),
 /// [`history`](Self::history), [`status`](Self::status) and the three changes
-/// has a default that fits a bare agent: no rewrite, no gate, no inbox,
-/// nothing to close. haest-runtime's `Runtime` implements all of it with its
+/// has a default: no rewrite, no gate, no inbox, no idle tick, nothing to
+/// close. haest-runtime's `Runtime` implements all of it with its
 /// own methods (its `next_agent_turn`, `run` and `shut_down`; its mods as the
 /// [`rewriter`](Self::rewriter)), so the turn loop it documents is the one
 /// the driver runs.
@@ -184,6 +187,26 @@ pub trait Driven: Send + 'static {
         false
     }
 
+    /// How long from now until the next [`idle_tick`](Self::idle_tick) is
+    /// due, or None when none is. The driver asks each time it waits between
+    /// turns, a `Hold` held or not (a tick is not a turn), and sleeps that
+    /// long beside its requests. Default: never. An [`Agent`]:
+    /// [`Agent::next_cache_tick`], when its prompt cache is about to expire.
+    fn next_idle_tick(&self) -> Option<Duration> {
+        None
+    }
+
+    /// The idle tick that is due, between turns. `cancel` fires when a
+    /// request that needs the conversation comes (input, a change, a host's
+    /// job, a close) or every handle is gone: stop then, and tell nobody.
+    /// Meanwhile a snapshot is answered at once and other requests wait for
+    /// the tick's end; then what it changed is published. Default: nothing.
+    /// An [`Agent`]: [`Agent::cache_tick`], which pings the cache or
+    /// compacts as its cache policy says.
+    async fn idle_tick(&mut self, cancel: &CancellationToken) {
+        let _ = cancel;
+    }
+
     /// The messages, oldest first.
     fn history(&self) -> Vec<Message>;
 
@@ -218,7 +241,7 @@ pub trait Driven: Send + 'static {
 }
 
 /// A bare agent: no session file, no gate, nothing to close. Its spend is
-/// its ledger's, when it has one.
+/// its ledger's, when it has one. Its idle ticks are its prompt cache's.
 #[async_trait]
 impl Driven for Agent {
     fn control(&self) -> AgentControl {
@@ -227,6 +250,19 @@ impl Driven for Agent {
 
     async fn run(&mut self, input: &str, sink: &mut dyn EventSink) -> TurnOutcome {
         Agent::run(self, input, sink).await
+    }
+
+    /// [`Agent::next_cache_tick`], from its clock's now.
+    fn next_idle_tick(&self) -> Option<Duration> {
+        let at = self.next_cache_tick()?;
+        let now = self.deps().shared().clock().now_ms();
+        Some(Duration::from_millis(at.saturating_sub(now)))
+    }
+
+    /// [`Agent::cache_tick`]: what it did, the human was told through the
+    /// agent's hooks.
+    async fn idle_tick(&mut self, cancel: &CancellationToken) {
+        self.cache_tick(cancel).await;
     }
 
     fn history(&self) -> Vec<Message> {

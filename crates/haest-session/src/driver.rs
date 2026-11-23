@@ -1,6 +1,7 @@
 //! The session driver: owns the [`Driven`] on its own task, runs one turn at
 //! a time, makes changes between turns, and decides what runs next.
 
+mod idle;
 mod turn;
 
 use std::{collections::VecDeque, panic::AssertUnwindSafe, time::Duration};
@@ -140,8 +141,8 @@ impl<D: Driven> Driver<D> {
     }
 
     /// Requests between turns, turns when there is one to run, and a wait
-    /// for the next request or arrival, until a close (whose reply it
-    /// returns) or every handle is gone.
+    /// for the next request, arrival or idle tick, until a close (whose
+    /// reply it returns) or every handle is gone.
     async fn serve(&mut self) -> Option<oneshot::Sender<()>> {
         self.publish_status(State::Idle);
         loop {
@@ -165,6 +166,10 @@ impl<D: Driven> Driver<D> {
             }
             let poll = !self.settled.is_empty();
             let free = self.holds == 0;
+            // A hold keeps turns out, not ticks: a terminal holds the
+            // session the whole time its prompt waits for the human.
+            let tick = self.driven.next_idle_tick();
+            let mut tick_due = false;
             let driven = &mut self.driven;
             tokio::select! {
                 cmd = self.rx.recv() => match cmd {
@@ -175,6 +180,12 @@ impl<D: Driven> Driver<D> {
                 // polled: `select!` evaluates a disabled branch's expression.
                 () = async { driven.arrival().await }, if free => {}
                 () = tokio::time::sleep(SETTLE_POLL), if poll => {}
+                () = tokio::time::sleep(tick.unwrap_or_default()), if tick.is_some() => {
+                    tick_due = true;
+                }
+            }
+            if tick_due {
+                self.idle_tick().await;
             }
         }
     }
@@ -274,12 +285,8 @@ impl<D: Driven> Driver<D> {
                 biased;
                 () = &mut run => return,
                 cmd = self.rx.recv(), if !self.orphaned => match cmd {
-                    // What the stream last said: what the job changes is
-                    // published once it ends.
                     Some(Command::Snapshot(tx)) => {
-                        let queued = queued(&self.queue, &self.deferred);
-                        let now = snapshot(&self.status, State::Idle, queued, self.hub.last_seq());
-                        let _ = tx.send(now);
+                        let _ = tx.send(last_said(&self.status, &self.queue, &self.deferred, &self.hub));
                     }
                     Some(cmd) => {
                         let close = matches!(cmd, Command::Close(_));
@@ -377,6 +384,18 @@ fn snapshot(status: &DrivenStatus, state: State, queued: usize, last_seq: u64) -
         messages: status.messages,
         last_seq,
     }
+}
+
+/// What the stream last said, for a snapshot asked while the conversation is
+/// busy between turns (a host's job, an idle tick): what that changes is
+/// published once it ends.
+fn last_said<D>(
+    status: &DrivenStatus,
+    queue: &VecDeque<(Input, Vec<Waiter>)>,
+    deferred: &VecDeque<Command<D>>,
+    hub: &Hub,
+) -> Snapshot {
+    snapshot(status, State::Idle, queued(queue, deferred), hub.last_seq())
 }
 
 /// Inputs that wait for a turn of their own: those queued, and those sent

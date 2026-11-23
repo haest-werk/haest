@@ -318,6 +318,8 @@ async fn model_calls_and_generate_image_go_through_the_hosts_client() {
 mod approvals;
 mod compaction;
 mod deferral;
+#[cfg(feature = "session")]
+mod idle;
 mod lifecycle;
 mod lock;
 mod mods;

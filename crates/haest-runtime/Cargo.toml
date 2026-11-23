@@ -51,7 +51,10 @@ haest-core = { workspace = true, features = ["testing"] }
 haest-mcp = { workspace = true, features = ["rmcp"] }
 # server: the session tests close a real MCP server over an in-memory duplex.
 rmcp = { version = "3.9", default-features = false, features = ["client", "server"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
+# test-util: the idle tick test runs on paused time.
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "test-util"] }
+# testing: the idle tick test answers as Anthropic's API does, with FakeHttp.
+haest-providers = { workspace = true, features = ["testing"] }
 # The session lock tests fail a lock with a real errno (EIO).
 libc = "0.2"
 
