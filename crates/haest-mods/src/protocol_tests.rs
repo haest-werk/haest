@@ -57,9 +57,15 @@ fn the_agent_view_says_how_full_the_context_is() {
     let agent = Agent::new(deps, AgentOptions::new("scripted:m").with_history(history));
 
     let view = AgentView::new(&agent);
-    assert_eq!((view.context_tokens, view.context_window), (60_400, Some(200_000)));
+    assert_eq!(
+        (view.context_tokens, view.context_window),
+        (60_400, Some(200_000))
+    );
     let v = serde_json::to_value(&view).unwrap();
-    assert_eq!((v["contextTokens"].clone(), v["contextWindow"].clone()), (json!(60_400), json!(200_000)));
+    assert_eq!(
+        (v["contextTokens"].clone(), v["contextWindow"].clone()),
+        (json!(60_400), json!(200_000))
+    );
 }
 
 #[test]

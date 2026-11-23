@@ -59,8 +59,8 @@ prompt ("keep every file path"). Each payload's JSON shape is on its type in
 [payload.rs](../crates/haest-mods/src/payload.rs): `tool.before` gets
 `{ call: { name, input, readOnly }, ctx: { cwd, toolCallId } }`, the loop events get
 `{ modelSpec, effort, historyLength, contextTokens, contextWindow }` (`contextTokens` is what
-the last answer's request held, the number to compact on; `contextWindow` is `null` when the
-host does not know it) plus their own fields (`model.before`: `lastMessage`;
+the last answer's request held, the number to compact on; `contextWindow` is the model's
+window from the catalog, else the host's turn caps, and `null` when neither knows it) plus their own fields (`model.before`: `lastMessage`;
 `model.after`: `answer`; `turn.end`: `stopReason`, `error`, `answer` and `continued`, whether a
 `turn.end` decision already kept this turn going).
 
@@ -135,6 +135,12 @@ Every compaction, whoever ran it, reaches `AgentHooks::on_compaction`, so a host
 history records it. What the summary call costs counts toward the turn's caps and the
 conversation's ledger. `turn.end` is the place to compact so the next turn starts small; never
 compact in `model.after` (the answer's tool results land after it).
+
+Compacting past a share of the window, in both forms:
+[auto-compact.ts](examples/mods/auto-compact.ts) as a mod file, and its Rust twin as a `Hooks`
+closure in [auto_compact.rs](../crates/haest/examples/auto_compact.rs), which runs both against a
+scripted model (`cargo run -p haest --example auto_compact`). Compacting on the cache's clock
+instead (before an idle conversation's cache expires) is `compact_before_expire`, below.
 
 ## The prompt cache
 

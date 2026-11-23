@@ -254,13 +254,21 @@ impl Agent {
         crate::compaction::last_context_tokens(&self.history)
     }
 
-    /// The context window of the model the next call resolves, in tokens, as
-    /// the host's turn caps know it
-    /// ([`TurnCapsSource`](crate::TurnCapsSource)); None when they do not.
+    /// The context window of the model the next call resolves, in tokens:
+    /// the model's facts' ([`ModelFacts`](crate::ModelFacts), the catalog's
+    /// row), else the host's turn caps'
+    /// ([`TurnCapsSource`](crate::TurnCapsSource)); None when neither knows.
     pub fn context_window(&self) -> Option<u64> {
-        (self.deps().shared().turn_caps().turn_caps(&self.model_spec))
-            .map(|c| c.context_window)
-            .filter(|w| *w > 0)
+        let shared = self.deps().shared();
+        let known = |w: &u64| *w > 0;
+        (shared.facts().model_info(&self.model_spec))
+            .map(|m| m.context_window)
+            .filter(known)
+            .or_else(|| {
+                (shared.turn_caps().turn_caps(&self.model_spec))
+                    .map(|c| c.context_window)
+                    .filter(known)
+            })
     }
 
     /// A model call made for this conversation outside the loop (compaction's

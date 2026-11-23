@@ -128,3 +128,34 @@ async fn a_tool_the_source_keeps_back_runs_when_the_model_calls_it_by_name() {
         agent.history()
     );
 }
+
+/// A catalog that knows every model's window as `self.0`.
+struct Window(u64);
+impl crate::catalog::ModelFacts for Window {
+    fn model_info(&self, spec: &str) -> Option<crate::catalog::ModelInfo> {
+        Some(crate::catalog::ModelInfo::new(spec, self.0))
+    }
+}
+
+/// One window for every reader (a hook's compaction, the idle tick, the
+/// loop events' view): the catalog's, else the host's turn caps'.
+#[test]
+fn the_context_window_is_the_catalogs_else_the_turn_caps() {
+    let p = ScriptedProvider::new([]);
+    let (mut agent, _) = agent_with(&p, Opts::default());
+    assert_eq!(agent.context_window(), None, "neither knows it");
+    let caps = crate::caps::TurnCaps {
+        context_window: 100_000,
+        ..Default::default()
+    };
+    agent.map_deps(|d| d.with_turn_caps(caps));
+    assert_eq!(agent.context_window(), Some(100_000), "the turn caps alone");
+    agent.map_deps(|d| d.with_facts(Window(200_000)));
+    assert_eq!(agent.context_window(), Some(200_000), "the catalog first");
+    agent.map_deps(|d| d.with_facts(Window(0)));
+    assert_eq!(
+        agent.context_window(),
+        Some(100_000),
+        "a window of 0 is unknown"
+    );
+}

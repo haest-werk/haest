@@ -167,6 +167,14 @@ name = "cache_policy"
 path = "examples/cache_policy.rs"
 test = true
 
+# Compact as a turn ends past 60% of the window: a Rust hook and the mod file
+# docs/examples/mods/auto-compact.ts, the same conversation for each.
+[[example]]
+name = "auto_compact"
+path = "examples/auto_compact.rs"
+required-features = ["bridge-js"]
+test = true
+
 # Hooks in another process: a Claude Code hook script guarding Bash, a turn.end
 # server keeping the turn going once, against a scripted model.
 [[example]]

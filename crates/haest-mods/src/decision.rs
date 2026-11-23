@@ -250,10 +250,9 @@ async fn compact_now(
     cancel: &CancellationToken,
     asked: Compact,
 ) -> Result<(), BoxError> {
-    let facts = agent.deps().shared().facts().model_info(agent.model_spec());
     let cfg = CompactionOptions {
         instructions: asked.instructions,
-        ..CompactionOptions::new(facts.map_or(0, |m| m.context_window))
+        ..CompactionOptions::new(agent.context_window().unwrap_or(0))
     };
     compact(agent, cancel, &cfg).await?;
     Ok(())
