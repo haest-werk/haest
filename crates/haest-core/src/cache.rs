@@ -246,14 +246,22 @@ pub enum WarmError {
 /// ```
 pub fn ping_pays(pricing: Option<&ModelPricing>, ttl: CacheTtl, idle: Duration) -> bool {
     let Some(p) = pricing else { return false };
-    let write = match ttl {
-        CacheTtl::FiveMinutes => Some(p.cache_write.unwrap_or(p.input)),
-        CacheTtl::OneHour => p.cache_write_1h,
+    let Some(write) = write_price(p, ttl) else {
+        return false;
     };
-    let Some(write) = write else { return false };
     let read = p.cached_input;
     let nth = (idle.as_secs_f64() / ttl.ping_every().as_secs_f64())
         .round()
         .max(1.0);
     nth * read < write - read
+}
+
+/// What writing a token to the cache for `ttl` costs: the 5m write price,
+/// else the input price, for `5m`; the 1h write price for `1h`. None when
+/// the model has no price for it.
+fn write_price(p: &ModelPricing, ttl: CacheTtl) -> Option<f64> {
+    match ttl {
+        CacheTtl::FiveMinutes => Some(p.cache_write.unwrap_or(p.input)),
+        CacheTtl::OneHour => p.cache_write_1h,
+    }
 }

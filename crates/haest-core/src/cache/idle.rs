@@ -55,11 +55,9 @@ pub fn compact_pays(
     summary: u64,
 ) -> bool {
     let Some(p) = pricing else { return false };
-    let write = match ttl {
-        CacheTtl::FiveMinutes => Some(p.cache_write.unwrap_or(p.input)),
-        CacheTtl::OneHour => p.cache_write_1h,
+    let Some(write) = super::write_price(p, ttl) else {
+        return false;
     };
-    let Some(write) = write else { return false };
     let (prefix, next, summary) = (prefix as f64, next_prefix as f64, summary as f64);
     prefix * p.cached_input + summary * p.output + next * write < prefix * write
 }
