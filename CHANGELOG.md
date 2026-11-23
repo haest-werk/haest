@@ -259,6 +259,15 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 - haest-cli: when a hook kept a turn going, the second answer was printed
   glued to the end of the first (`removed.No tests here.`). Each answer
   now ends its line.
+- haest-code: a run given a timeout too long for the clock to hold
+  (`Duration::MAX`) panicked instead of running. Thirty years or more is
+  now no deadline, and the run ends with its value.
+- haest-code: a Code run out of memory could fail with `Uncaught null`
+  (QuickJS throws `null` when it has no room left to build the error). It
+  now says `InternalError: out of memory`.
+- haest-bridges: a mod file dropped while its code was stuck in a loop ran
+  on until its slice ended (10 s by default). Dropping it now stops the
+  code at once.
 
 ## 0.4.1 (2026-11-20)
 
