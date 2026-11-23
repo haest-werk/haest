@@ -30,7 +30,9 @@ impl Mods {
         }
     }
 
-    /// What one `model.before` or `model.after` answer means: Err ends the turn.
+    /// What one `model.before` or `model.after` answer means: Err ends the
+    /// turn. A [`Mods`] inside this one answers its own mod's stop as that
+    /// [`Stopped`], which ends the turn as it is.
     fn step(
         &self,
         m: &dyn Mod,
@@ -45,6 +47,7 @@ impl Mods {
                 reason,
             }
             .into()),
+            Err(e) if e.is::<Stopped>() => Err(e),
             Err(e) => {
                 self.failed(m, event, &e, cancel);
                 Ok(())

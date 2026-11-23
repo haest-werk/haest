@@ -3,25 +3,22 @@
 //! except a gate's ([`Mod::is_gate`], the approval mod), which judges after
 //! every other mod has had its say, on the call as it will run.
 
-use std::{ops::ControlFlow, sync::Arc};
+use std::sync::Arc;
 
-use haest_core::{
-    Tools,
-    error::{BoxError, report},
-    tool::{ToolContext, ToolError, ToolOutput},
-};
+use haest_core::{Tools, error::BoxError};
 
 use crate::{
-    api::{Mod, ModRef, ModToolCall},
+    api::{Mod, ModRef},
     decision::system_text,
     env::ModEnv,
     events::ModEvent,
 };
 
+mod call;
+mod nested;
 mod turn;
 
-/// What the model reads for a call the human interrupted while a mod was deciding.
-const INTERRUPTED: &str = "Interrupted by the user before this tool ran.";
+use nested::Reported;
 
 /// What [`Mods::command`] did with a slash command. More outcomes may come
 /// (a command that asks the host to act): a `match` has a `_` arm.
@@ -66,6 +63,11 @@ pub enum CommandOutcome {
 /// [`ModSystemPrompt`](crate::ModSystemPrompt),
 /// [`ModHooks`](crate::ModHooks) and the host's input path, and they all
 /// run the same mods for good.
+///
+/// A `Mods` is a [`Mod`] itself: inside another, its mods run in its place
+/// by these same rules. What changes while a conversation runs lives inside
+/// one mod that way (mod files that reload are a `Mods` their bridge swaps
+/// whole), and the conversation's own list stays as it was built.
 #[derive(Clone, Debug)]
 pub struct Mods(Arc<Loaded>);
 
@@ -138,59 +140,12 @@ impl Mods {
         out
     }
 
+    /// `m` failed in `event`: the human sees it, unless `m` is a [`Mods`]
+    /// whose own mod failed, which reported it already.
     fn report(&self, m: &dyn Mod, event: &str, e: &BoxError) {
-        self.env().report_failure(m.name(), event, &**e);
-    }
-
-    /// `tool.before` across every mod: the call to run, or why it must not run.
-    /// A mod that fails refuses the call -- a guard that broke must not wave
-    /// anything through.
-    pub(crate) async fn before(
-        &self,
-        mut call: ModToolCall,
-        ctx: &ToolContext,
-    ) -> Result<ModToolCall, ToolError> {
-        let (gates, rest): (Vec<_>, Vec<_>) = self.list().iter().partition(|m| m.is_gate());
-        for m in rest.into_iter().chain(gates) {
-            match m.tool_before(&call, ctx, self.env()).await {
-                Ok(decision) => {
-                    if let ControlFlow::Break(reason) = decision.apply_to(&mut call) {
-                        return Err(ToolError::Input(format!("Refused: {reason}")));
-                    }
-                }
-                Err(_) if ctx.cancel().is_cancelled() => {
-                    return Err(ToolError::Input(INTERRUPTED.into()));
-                }
-                Err(e) => {
-                    self.report(m.as_ref(), ModEvent::ToolBefore.as_str(), &e);
-                    return Err(ToolError::Failed(format!(
-                        "the mod {} failed before this call, so it did not run: {}",
-                        m.name(),
-                        report(&*e)
-                    )));
-                }
-            }
+        if !e.is::<Reported>() {
+            self.env().report_failure(m.name(), event, &**e);
         }
-        Ok(call)
-    }
-
-    /// `tool.after` across every mod. The tool DID run: a mod that fails leaves
-    /// the output as it was, so the model never retries a call that happened.
-    pub(crate) async fn after(
-        &self,
-        call: &ModToolCall,
-        mut output: ToolOutput,
-        ctx: &ToolContext,
-    ) -> ToolOutput {
-        for m in self.list() {
-            match m.tool_after(call, &output, ctx, self.env()).await {
-                Ok(Some(replaced)) => output = replaced,
-                Ok(None) => {}
-                Err(_) if ctx.cancel().is_cancelled() => {}
-                Err(e) => self.report(m.as_ref(), ModEvent::ToolAfter.as_str(), &e),
-            }
-        }
-        output
     }
 
     /// A human message after every `prompt.submit` hook, in load order, each
