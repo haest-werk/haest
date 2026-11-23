@@ -197,7 +197,7 @@
 //! | `bridge-http` | `bridges::HttpHook`: a hook behind a URL, a POST per event through [`http`], in the same two dialects; turns on `mods` and `http` | no |
 //! | `settings` | [`settings`]: every setting as a plain value a host writes out in Rust | yes |
 //! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags; with `mcp` too, it reads a trusted project's `.mcp.json` | no |
-//! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI | no |
+//! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI; turns on the three bridges (the `hooks` setting's commands and URLs) | no |
 //! | `wire` | [`wire`]: the envelope around a conversation's events, the requests a peer sends, a replay ring with gaps, an NDJSON codec | no |
 //! | `session` | [`session`]: a conversation another program watches and drives while it runs (input mid-turn, catch-up, approvals over it); with `runtime`, the whole conversation is one | no |
 //! | `transport` | [`transport`]: the session served to another program, one connection's rules over any line source and sink | no |
@@ -331,8 +331,8 @@ pub use haest_workspace as workspace;
 /// What the loader read, as the runtime's inputs on the real disk: the
 /// settings, the child environment and the variables passed on purpose, the
 /// provider keys (the loader's environment), providers.json, the trusted
-/// `.mcp.json` servers and the OpenRouter routing, sent over the default
-/// reqwest client.
+/// `.mcp.json` servers, the OpenRouter routing and the `hooks` setting's
+/// commands and URLs, sent over the default reqwest client.
 ///
 /// Show [`Loaded::notes`](config::Loaded::notes) to the human first: they are
 /// not part of the inputs. A host in another world sets its own
@@ -346,7 +346,8 @@ pub fn runtime_inputs(loaded: config::Loaded) -> runtime::RuntimeInputs {
         .with_passed_env(loaded.passed_env)
         .with_keys(loaded.keys)
         .with_providers(loaded.providers)
-        .with_mcp_servers(loaded.mcp_servers);
+        .with_mcp_servers(loaded.mcp_servers)
+        .with_hook_settings(loaded.hooks);
     match loaded.routing {
         Some(routing) => inputs.with_routing(routing),
         None => inputs,

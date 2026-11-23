@@ -56,7 +56,8 @@ settings = ["dep:haest-settings"]
 # too, a trusted project's .mcp.json).
 config = ["dep:haest-config", "settings", "providers"]
 # The whole conversation built from what a host hands in, behind its UI (the CLI's base).
-runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods", "bridge-js"]
+# The shell and HTTP bridges bind the `hooks` setting's commands and URLs.
+runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods", "bridge-js", "bridge-shell", "bridge-http"]
 # The wire format: the envelope around a conversation's events, requests, the
 # replay ring, the NDJSON line codec. serde only.
 wire = ["dep:haest-wire"]
