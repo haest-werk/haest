@@ -85,8 +85,9 @@ pub trait Event:
     }
 
     /// The session the conversation is on as of this event, when its host
-    /// named one: [`Hooks`] hands every binding its payload with the
-    /// session the conversation's [`ModEnv`](crate::ModEnv) names then
+    /// named one: [`Hooks`] hands every binding its payload, and a mod file
+    /// every handler, with the session the conversation's
+    /// [`ModEnv`](crate::ModEnv) names as the event begins
     /// ([`ModEnv::set_session`](crate::ModEnv::set_session)).
     fn session(&self) -> Option<&SessionView>;
 }
@@ -107,8 +108,8 @@ mod sealed {
         reason = "the seal of Event: public so it can bound Event, unnameable so no other crate implements it"
     )]
     pub trait Sealed {
-        /// The payload as of `session`: what [`Hooks`](crate::Hooks) sets
-        /// before a binding gets it.
+        /// The payload as of `session`: what the fold (fold.rs) sets before
+        /// a [`Hooks`](crate::Hooks) binding or a mod file's handler gets it.
         fn set_session(&mut self, session: Option<SessionView>);
     }
 }

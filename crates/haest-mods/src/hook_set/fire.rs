@@ -49,7 +49,7 @@ impl Mod for Hooks {
         haest: &ModEnv,
     ) -> Result<Before, BoxError> {
         let bound = self.bound(&self.slots.on_tool_before, ctx.cancel(), haest);
-        Ok(fold::tool_before(&bound, call, ctx).await?)
+        Ok(fold::tool_before(&bound, call, ctx, haest).await?)
     }
 
     async fn tool_after(
@@ -60,7 +60,7 @@ impl Mod for Hooks {
         haest: &ModEnv,
     ) -> Result<Option<ToolOutput>, BoxError> {
         let bound = self.bound(&self.slots.on_tool_after, ctx.cancel(), haest);
-        Ok(fold::tool_after(&bound, call, output, ctx).await?)
+        Ok(fold::tool_after(&bound, call, output, ctx, haest).await?)
     }
 
     /// `prompt.submit` cannot be interrupted: its hooks get a token that
@@ -68,14 +68,14 @@ impl Mod for Hooks {
     async fn prompt_submit(&self, text: &str, haest: &ModEnv) -> Result<Option<String>, BoxError> {
         let never = CancellationToken::new();
         let bound = self.bound(&self.slots.on_prompt_submit, &never, haest);
-        Ok(fold::prompt_submit(&bound, text).await?)
+        Ok(fold::prompt_submit(&bound, text, haest).await?)
     }
 
     /// `system.prompt` cannot be interrupted, as `prompt.submit`.
     async fn system_prompt(&self, haest: &ModEnv) -> Result<Option<String>, BoxError> {
         let never = CancellationToken::new();
         let bound = self.bound(&self.slots.on_system_prompt, &never, haest);
-        Ok(fold::system_prompt(&bound).await?)
+        Ok(fold::system_prompt(&bound, haest).await?)
     }
 
     async fn model_before(
@@ -85,7 +85,7 @@ impl Mod for Hooks {
         haest: &ModEnv,
     ) -> Result<Step, BoxError> {
         let bound = self.bound(&self.slots.on_model_before, cancel, haest);
-        let folded = fold::model_before(&bound, agent, cancel).await;
+        let folded = fold::model_before(&bound, agent, cancel, haest).await;
         folded.unwrap_or_else(stopped)
     }
 
@@ -97,7 +97,7 @@ impl Mod for Hooks {
         haest: &ModEnv,
     ) -> Result<Step, BoxError> {
         let bound = self.bound(&self.slots.on_model_after, cancel, haest);
-        fold::model_after(&bound, agent, answer)
+        fold::model_after(&bound, agent, answer, haest)
             .await
             .or_else(stopped)
     }

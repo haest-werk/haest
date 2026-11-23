@@ -17,7 +17,9 @@
 //! `haest.notice(text)`. The events are haest-mods' list (`ModEvent`),
 //! handed to the JavaScript half (bootstrap.js) at load. Handlers of
 //! `tool.before`, `tool.after` and a tool's `execute` get
-//! `ctx = { cwd, toolCallId, signal }`. `.ts` is type-stripped first. There
+//! `ctx = { cwd, toolCallId, signal }`, and every event's handler gets the
+//! session the conversation is on, as a `Hooks` binding does. `.ts` is
+//! type-stripped first. There
 //! is no `node:` API, no `import`, no timer, no network and no file access:
 //! a mod reaches the world through the `haest` API alone.
 //!
@@ -38,6 +40,8 @@ mod outbox;
 #[cfg(test)]
 mod protocol_tests;
 mod returns;
+#[cfg(test)]
+mod session_tests;
 #[cfg(test)]
 mod tests;
 mod thread;
@@ -92,23 +96,34 @@ use tool::JsTool;
 ///
 /// | Event | Called with | Returns |
 /// |---|---|---|
-/// | `tool.before` | `call`, `ctx` | `{ deny: reason }` refuses, `{ input: {...} }` replaces the input for the handlers after it; an answer with neither passes, and a `deny` that is not text or an `input` that is not an object fails |
-/// | `tool.after` | `call`, `output`, `ctx` | a new output (`{ content, isError }`), or nothing to keep it |
-/// | `prompt.submit` | `text` | the new text, or nothing |
-/// | `system.prompt` | nothing | text to append, or nothing (`undefined`, `null` or `false`, so `cond && 'text'` works) |
-/// | `model.before` | the agent, `lastMessage` | `{ stop: reason }` ends the turn, `{ steer: text }` steers it, `{ compact: true }` or `{ compact: { instructions } }` compacts it first; an answer with none of these passes, and one whose `stop` or `steer` is not text, or whose `compact` is neither, fails |
-/// | `model.after` | the agent, `answer` | `{ stop: reason }` ends the turn and its calls do not run, `{ steer: text }` steers it; an answer with neither passes, and one whose `stop` or `steer` is not text fails |
-/// | `turn.end` | the agent, `stopReason`, `error`, `answer`, `continued` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; an answer with neither passes, and one whose `continue` is not text, or whose `compact` is neither `true` nor `{ instructions }`, fails |
+/// | `tool.before` | `call`, `ctx`, `session` | `{ deny: reason }` refuses, `{ input: {...} }` replaces the input for the handlers after it; an answer with neither passes, and a `deny` that is not text or an `input` that is not an object fails |
+/// | `tool.after` | `call`, `output`, `ctx`, `session` | a new output (`{ content, isError }`), or nothing to keep it |
+/// | `prompt.submit` | `text`, `session` | the new text, or nothing |
+/// | `system.prompt` | `session` | text to append, or nothing (`undefined`, `null` or `false`, so `cond && 'text'` works) |
+/// | `model.before` | the agent, `lastMessage`, `session` | `{ stop: reason }` ends the turn, `{ steer: text }` steers it, `{ compact: true }` or `{ compact: { instructions } }` compacts it first; an answer with none of these passes, and one whose `stop` or `steer` is not text, or whose `compact` is neither, fails |
+/// | `model.after` | the agent, `answer`, `session` | `{ stop: reason }` ends the turn and its calls do not run, `{ steer: text }` steers it; an answer with neither passes, and one whose `stop` or `steer` is not text fails |
+/// | `turn.end` | the agent, `stopReason`, `error`, `answer`, `continued`, `session` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; an answer with neither passes, and one whose `continue` is not text, or whose `compact` is neither `true` nor `{ instructions }`, fails |
 ///
 /// "The agent" is one object's fields, the same in every loop event
 /// ([`AgentView`](haest_mods::AgentView)): `modelSpec`, `effort`,
 /// `historyLength`, `contextTokens` (what the last answer's request held)
-/// and `contextWindow` (`null` when the host does not know it).
+/// and `contextWindow` (`null` when the host does not know it). A loop
+/// event's handler gets that one object, its own fields and `session`
+/// among them (`turn.session`); the other events' handlers get their
+/// payload's fields as arguments, in the order above, `session` last.
+///
+/// `session` is the session the conversation is on as the event began,
+/// `{ id, transcriptPath }` ([`SessionView`](haest_mods::SessionView)), as
+/// its host names it on the [`ModEnv`] (`with_session`, and `set_session`
+/// when the human's /clear starts a new one). It is `undefined` when the
+/// host names none, and `transcriptPath` is when the host keeps no
+/// transcript.
 ///
 /// What a handler gets is its event's payload and what it returns is read
 /// as its event's decision, the types [`Event`] ties together
 /// ([haest-mods' docs](haest_mods) list them): a [`Hook`](haest_mods::Hook)
-/// in Rust or in another process gets and answers the same.
+/// in Rust or in another process gets and answers the same, `session`
+/// included.
 /// `call` is a [`ModToolCall`] and `output` a tool output, both in camelCase.
 /// `ctx` is `{ cwd, toolCallId, signal }`; a tool's `execute` gets it too,
 /// and returns a string or `{ content, isError }`. `lastMessage` and
@@ -195,9 +210,9 @@ impl Mod for JsMod {
         &self,
         call: &ModToolCall,
         ctx: &ToolContext,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<Before, BoxError> {
-        fold::tool_before(&self.handlers(Some(ctx.cancel())), call, ctx).await
+        fold::tool_before(&self.handlers(Some(ctx.cancel())), call, ctx, haest).await
     }
 
     async fn tool_after(
@@ -205,26 +220,27 @@ impl Mod for JsMod {
         call: &ModToolCall,
         output: &ToolOutput,
         ctx: &ToolContext,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<Option<ToolOutput>, BoxError> {
-        fold::tool_after(&self.handlers(Some(ctx.cancel())), call, output, ctx).await
+        let handlers = self.handlers(Some(ctx.cancel()));
+        fold::tool_after(&handlers, call, output, ctx, haest).await
     }
 
-    async fn prompt_submit(&self, text: &str, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
-        fold::prompt_submit(&self.handlers(None), text).await
+    async fn prompt_submit(&self, text: &str, haest: &ModEnv) -> Result<Option<String>, BoxError> {
+        fold::prompt_submit(&self.handlers(None), text, haest).await
     }
 
-    async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
-        fold::system_prompt(&self.handlers(None)).await
+    async fn system_prompt(&self, haest: &ModEnv) -> Result<Option<String>, BoxError> {
+        fold::system_prompt(&self.handlers(None), haest).await
     }
 
     async fn model_before(
         &self,
         agent: &mut Agent,
         cancel: &CancellationToken,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<Step, BoxError> {
-        fold::model_before(&self.handlers(Some(cancel)), agent, cancel).await?
+        fold::model_before(&self.handlers(Some(cancel)), agent, cancel, haest).await?
     }
 
     async fn model_after(
@@ -232,9 +248,9 @@ impl Mod for JsMod {
         agent: &mut Agent,
         answer: &AssistantMessage,
         cancel: &CancellationToken,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<Step, BoxError> {
-        fold::model_after(&self.handlers(Some(cancel)), agent, answer).await
+        fold::model_after(&self.handlers(Some(cancel)), agent, answer, haest).await
     }
 
     async fn turn_end(

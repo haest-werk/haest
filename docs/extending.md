@@ -63,10 +63,13 @@ the last answer's request held, the number to compact on; `contextWindow` is the
 window from the host's turn caps (the CLI's: the `context_window` setting, else the catalog's),
 else the catalog's, and `null` when neither knows it) plus their own fields (`model.before`: `lastMessage`;
 `model.after`: `answer`; `turn.end`: `stopReason`, `error`, `answer` and `continued`, whether a
-`turn.end` decision already kept this turn going). A hook bound in `Hooks` (a closure, a
-`ShellHook`, an `HttpHook`) also gets `session: { id, transcriptPath }` on every event: the
-session the conversation's `ModEnv` names as of that event, left out when the host names none
-(`transcriptPath` too). A mod file's handler does not get it.
+`turn.end` decision already kept this turn going). Every payload also has
+`session: { id, transcriptPath }`, in every form (a closure, a `ShellHook`, an `HttpHook`, a mod
+file's handler): the session the conversation's `ModEnv` names as the event begins, left out
+when the host names none (`transcriptPath` too). A mod file's handler gets a loop event's
+payload as one object (`turn.session`) and the other events' as arguments, `session` last:
+`(call, ctx, session)`, `(call, output, ctx, session)`, `(text, session)`, `(session)`;
+`undefined` when none is named.
 
 These are the mod files' own words, typed once in haest-mods (`Event` and its payload and
 decision types). A bridge only encodes the payload, carries it to the hook, and decodes the

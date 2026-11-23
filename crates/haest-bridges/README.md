@@ -28,7 +28,10 @@ writes its mods in Rust never links an engine.
   - Its handlers are asked one at a time and each answer is decoded on the
     Rust side by haest-mods, as a shell or HTTP hook's is: `{ deny: null }`
     passes, and `{ stop: false }` or a number where text goes is the
-    handler's failure, never turned into text.
+    handler's failure, never turned into text. Each handler gets its
+    event's payload as a shell or HTTP hook does, the conversation's
+    `session` included: the last argument (`(call, ctx, session)`), or
+    `turn.session` on a loop event.
   - `ModFiles` is a conversation's mod files as one mod: the human's
     (`<config dir>/mods`) and, only in a directory the human trusts, the
     project's (`.haest/mods`), loaded in name order and run by haest-mods'

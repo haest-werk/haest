@@ -13,7 +13,6 @@ use crate::{
     events::{Event, Slots},
     fold::Handlers,
     hook::{Binding, HookError, OnError},
-    payload::SessionView,
 };
 
 mod fire;
@@ -51,9 +50,10 @@ mod tests;
 /// as of that event, when its host named one on the [`ModEnv`]
 /// ([`ModEnv::set_session`]): a hook never keeps a session of its own, so
 /// after the human's /clear it reads the new one. It is read once as the
-/// event begins, so every binding of one event gets the same session. A
-/// host that runs a [`Hook`](crate::Hook) itself, outside `Hooks`, sets
-/// the payload's `session` itself (from [`ModEnv::session`]).
+/// event begins, so every binding of one event gets the same session, and
+/// a mod file's handler on the same event gets it too: both are folded by
+/// the same code. A host that runs a [`Hook`](crate::Hook) itself, outside
+/// `Hooks`, sets the payload's `session` itself (from [`ModEnv::session`]).
 ///
 /// # Examples
 ///
@@ -209,8 +209,8 @@ impl Hooks {
     }
 
     /// `bindings` as the folds (fold.rs) ask them, under `cancel`, for one
-    /// event: the session is read here, once, so every binding of the event
-    /// gets the one named as it began, whatever the host names meanwhile.
+    /// event. The payloads come from the fold with the session already on
+    /// them, read once as the event began.
     fn bound<'a, E: Event>(
         &'a self,
         bindings: &'a [Binding<E>],
@@ -222,7 +222,6 @@ impl Hooks {
             bindings,
             cancel,
             haest,
-            session: haest.session(),
         }
     }
 }
@@ -235,9 +234,6 @@ struct Bound<'a, E: Event> {
     bindings: &'a [Binding<E>],
     cancel: &'a CancellationToken,
     haest: &'a ModEnv,
-    /// The session the conversation was on as the event began: the one
-    /// place a binding's payload gets it.
-    session: Option<SessionView>,
 }
 
 #[async_trait]
@@ -248,12 +244,11 @@ impl<E: Event> Handlers<E> for Bound<'_, E> {
         self.bindings.len()
     }
 
-    async fn ask(&self, nth: usize, mut payload: E) -> Result<Option<E::Decision>, HookError> {
+    async fn ask(&self, nth: usize, payload: E) -> Result<Option<E::Decision>, HookError> {
         let binding = &self.bindings[nth - 1];
         if !binding.takes(&payload) {
             return Ok(None);
         }
-        payload.set_session(self.session.clone());
         let asked = self
             .hooks
             .ask(binding, nth, payload, self.cancel, self.haest);

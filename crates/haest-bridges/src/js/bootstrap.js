@@ -107,7 +107,9 @@
     })
 
   // The op of `event`: its handler `nth` (from 1) on `payload`, handed it as
-  // `args` spreads it, and the answer as `answer` lets it through.
+  // `args` spreads it, and the answer as `answer` lets it through. A spread
+  // ends with the payload's `session`, undefined when the host names none;
+  // a loop event's one view has it as a field.
   const handler =
     (event, args, answer = v => v) =>
     ({ nth, payload }) => {
@@ -129,10 +131,10 @@
       delete globalThis.__haestMod
       await main(api(env))
     },
-    'tool.before': handler('tool.before', ({ call, ctx }) => [call, ctx]),
-    'tool.after': handler('tool.after', ({ call, output, ctx }) => [call, output, ctx]),
-    'prompt.submit': handler('prompt.submit', ({ text }) => [text], now),
-    'system.prompt': handler('system.prompt', () => [], now),
+    'tool.before': handler('tool.before', ({ call, ctx, session }) => [call, ctx, session]),
+    'tool.after': handler('tool.after', ({ call, output, ctx, session }) => [call, output, ctx, session]),
+    'prompt.submit': handler('prompt.submit', ({ text, session }) => [text, session], now),
+    'system.prompt': handler('system.prompt', ({ session }) => [session], now),
     'model.before': handler('model.before', view => [view]),
     'model.after': handler('model.after', view => [view]),
     'turn.end': handler('turn.end', view => [view]),

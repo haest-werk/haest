@@ -1,7 +1,8 @@
 //! The protocol's payloads are the JSON a TypeScript handler receives: per
 //! event, the typed payload (haest-mods') writes the words the mod files
 //! have always been handed (written out here as they were before the
-//! types), reads them back, and a `.ts` handler receives exactly them. And
+//! types), reads them back, and a `.ts` handler receives exactly them, plus
+//! `session` when the env names one (session_tests.rs has the rest). And
 //! every decision a `.ts` handler returns takes the effect the same
 //! decision takes from a `Hooks` closure (haest-mods' decision cases).
 
@@ -15,8 +16,8 @@ use haest_core::{
 };
 use haest_mods::{
     Event, Hooks, Mod, ModEvent, ModRef, ModToolCall, ModelAfterPayload, ModelBeforePayload, Mods,
-    PromptSubmitPayload, SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, TurnEndDecision,
-    TurnEndPayload,
+    PromptSubmitPayload, SessionView, SystemPromptPayload, ToolAfterPayload, ToolBeforePayload,
+    TurnEndDecision, TurnEndPayload,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -46,9 +47,11 @@ fn writes<E: Event + PartialEq>(payload: &E, expected: &Value) {
 }
 
 /// A handler's arguments as the payload they were handed in: a tool
-/// event's `(call, [output,] ctx)` with the mod file's own `ctx.signal`
-/// left out, `prompt.submit`'s `(text)`, `system.prompt`'s `()`, and a loop
-/// event's one view.
+/// event's `(call, [output,] ctx, session)` with the mod file's own
+/// `ctx.signal` left out, `prompt.submit`'s `(text, session)`,
+/// `system.prompt`'s `(session)`, and a loop event's one view. A session
+/// the host does not name is `undefined`, `null` in the arguments' JSON:
+/// left out, as the payload's JSON leaves it out.
 fn handed(event: ModEvent, args: &Value) -> Value {
     let arg = |i: usize| args[i].clone();
     let ctx = |i: usize| {
@@ -56,16 +59,23 @@ fn handed(event: ModEvent, args: &Value) -> Value {
         c.as_object_mut().unwrap().remove("signal");
         c
     };
-    match event {
-        ModEvent::ToolBefore => json!({ "call": arg(0), "ctx": ctx(1) }),
-        ModEvent::ToolAfter => json!({ "call": arg(0), "output": arg(1), "ctx": ctx(2) }),
-        ModEvent::PromptSubmit => json!({ "text": arg(0) }),
-        ModEvent::SystemPrompt => json!({}),
-        ModEvent::ModelBefore | ModEvent::ModelAfter | ModEvent::TurnEnd => arg(0),
+    let (mut payload, session) = match event {
+        ModEvent::ToolBefore => (json!({ "call": arg(0), "ctx": ctx(1) }), arg(2)),
+        ModEvent::ToolAfter => (
+            json!({ "call": arg(0), "output": arg(1), "ctx": ctx(2) }),
+            arg(3),
+        ),
+        ModEvent::PromptSubmit => (json!({ "text": arg(0) }), arg(1)),
+        ModEvent::SystemPrompt => (json!({}), arg(0)),
+        ModEvent::ModelBefore | ModEvent::ModelAfter | ModEvent::TurnEnd => return arg(0),
         // `ModEvent` is non-exhaustive outside haest-mods: a new event fails
         // the tests below at run time, as every event is driven through.
         other => panic!("{other} is not driven through a mod file here"),
+    };
+    if !session.is_null() {
+        payload["session"] = session;
     }
+    payload
 }
 
 fn light_answer(answer: &impl Serialize) -> Value {
@@ -120,68 +130,80 @@ async fn every_payload_is_the_json_a_ts_handler_receives() {
     let mut ended = TurnOutcome::new(StopReason::EndTurn);
     ended.error = Some("a cap".into());
 
-    for event in ModEvent::ALL {
-        let expected = match *event {
-            ModEvent::ToolBefore => {
-                let expected = json!({ "call": call_json, "ctx": ctx_json });
-                writes(&ToolBeforePayload::new(&call, &ctx), &expected);
-                m.tool_before(&call, &ctx, &haest).await.unwrap();
-                expected
+    // Every event with no session named, then with one: the handler gets
+    // the payload's `session` as a `Hooks` binding's payload carries it.
+    // The typed payloads are built bare (no session), as a host builds one.
+    let named = SessionView::new("s-1").with_transcript_path("/t/s-1.jsonl");
+    for session in [None, Some(named)] {
+        if let Some(s) = &session {
+            haest.set_session(s.clone());
+        }
+        for event in ModEvent::ALL {
+            let mut expected = match *event {
+                ModEvent::ToolBefore => {
+                    let expected = json!({ "call": call_json, "ctx": ctx_json });
+                    writes(&ToolBeforePayload::new(&call, &ctx), &expected);
+                    m.tool_before(&call, &ctx, &haest).await.unwrap();
+                    expected
+                }
+                ModEvent::ToolAfter => {
+                    let out = serde_json::to_value(&output).unwrap();
+                    let expected = json!({ "call": call_json, "output": out, "ctx": ctx_json });
+                    writes(&ToolAfterPayload::new(&call, &output, &ctx), &expected);
+                    m.tool_after(&call, &output, &ctx, &haest).await.unwrap();
+                    expected
+                }
+                ModEvent::PromptSubmit => {
+                    let expected = json!({ "text": "hi" });
+                    writes(&PromptSubmitPayload::new("hi"), &expected);
+                    m.prompt_submit("hi", &haest).await.unwrap();
+                    expected
+                }
+                ModEvent::SystemPrompt => {
+                    let expected = json!({});
+                    writes(&SystemPromptPayload::new(), &expected);
+                    m.system_prompt(&haest).await.unwrap();
+                    expected
+                }
+                ModEvent::ModelBefore => {
+                    let expected = with("lastMessage", light_answer(&history[1]));
+                    writes(&ModelBeforePayload::new(&agent), &expected);
+                    m.model_before(&mut agent, &cancel, &haest).await.unwrap();
+                    expected
+                }
+                ModEvent::ModelAfter => {
+                    let expected = with("answer", light_answer(&answer));
+                    writes(&ModelAfterPayload::new(&agent, &answer), &expected);
+                    m.model_after(&mut agent, &answer, &cancel, &haest)
+                        .await
+                        .unwrap();
+                    expected
+                }
+                ModEvent::TurnEnd => {
+                    let mut expected = with("stopReason", json!("end_turn"));
+                    expected["error"] = json!("a cap");
+                    expected["answer"] = light_answer(&answer);
+                    expected["continued"] = json!(false);
+                    writes(
+                        &TurnEndPayload::new(&agent, &ended, &cancel, &haest),
+                        &expected,
+                    );
+                    m.turn_end(&mut agent, &ended, &cancel, &haest)
+                        .await
+                        .unwrap();
+                    expected
+                }
+                other => panic!("{other} is not driven through a mod file here"),
+            };
+            if session.is_some() {
+                expected["session"] = json!({ "id": "s-1", "transcriptPath": "/t/s-1.jsonl" });
             }
-            ModEvent::ToolAfter => {
-                let out = serde_json::to_value(&output).unwrap();
-                let expected = json!({ "call": call_json, "output": out, "ctx": ctx_json });
-                writes(&ToolAfterPayload::new(&call, &output, &ctx), &expected);
-                m.tool_after(&call, &output, &ctx, &haest).await.unwrap();
-                expected
-            }
-            ModEvent::PromptSubmit => {
-                let expected = json!({ "text": "hi" });
-                writes(&PromptSubmitPayload::new("hi"), &expected);
-                m.prompt_submit("hi", &haest).await.unwrap();
-                expected
-            }
-            ModEvent::SystemPrompt => {
-                let expected = json!({});
-                writes(&SystemPromptPayload::new(), &expected);
-                m.system_prompt(&haest).await.unwrap();
-                expected
-            }
-            ModEvent::ModelBefore => {
-                let expected = with("lastMessage", light_answer(&history[1]));
-                writes(&ModelBeforePayload::new(&agent), &expected);
-                m.model_before(&mut agent, &cancel, &haest).await.unwrap();
-                expected
-            }
-            ModEvent::ModelAfter => {
-                let expected = with("answer", light_answer(&answer));
-                writes(&ModelAfterPayload::new(&agent, &answer), &expected);
-                m.model_after(&mut agent, &answer, &cancel, &haest)
-                    .await
-                    .unwrap();
-                expected
-            }
-            ModEvent::TurnEnd => {
-                let mut expected = with("stopReason", json!("end_turn"));
-                expected["error"] = json!("a cap");
-                expected["answer"] = light_answer(&answer);
-                expected["continued"] = json!(false);
-                writes(
-                    &TurnEndPayload::new(&agent, &ended, &cancel, &haest),
-                    &expected,
-                );
-                m.turn_end(&mut agent, &ended, &cancel, &haest)
-                    .await
-                    .unwrap();
-                expected
-            }
-            other => panic!("{other} is not driven through a mod file here"),
-        };
-        let infos = ui.infos();
-        let seen: Value = parse(infos.last().expect("the handler ran"));
-        assert_eq!(handed(*event, &seen), expected, "{event}");
+            let infos = ui.infos();
+            let seen: Value = parse(infos.last().expect("the handler ran"));
+            assert_eq!(handed(*event, &seen), expected, "{event}, {session:?}");
+        }
     }
-    assert_eq!(ui.infos().len(), ModEvent::ALL.len());
+    assert_eq!(ui.infos().len(), 2 * ModEvent::ALL.len());
 }
 
 /// `turn.end`'s `answer` and `continued` are computed once, in haest-mods:

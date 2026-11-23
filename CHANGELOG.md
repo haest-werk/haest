@@ -161,16 +161,20 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   `Binding` for its timeout, `OnError` and tool matcher (in a debug build,
   `with_matcher` stops at a matcher that is not haest's pattern), and
   `Hooks`, a mod made of bindings. A Rust closure is a hook. Each payload a
-  `Hooks` binding gets names the conversation's session as of that event
-  (`Event::session`, a `SessionView` of its id and transcript path), the
-  one the host names on the env with `ModEnv::with_session` and, when a
-  /clear starts a new one, `ModEnv::set_session`. In the JSON it is
+  `Hooks` binding or a mod file's handler gets names the conversation's
+  session as of that event (`Event::session`, a `SessionView` of its id and
+  transcript path), the one the host names on the env with
+  `ModEnv::with_session` and, when a /clear starts a new one,
+  `ModEnv::set_session`. In the JSON it is
   `session: { id, transcriptPath }`, left out when the host names none, so
-  a payload's JSON is otherwise as it was; mod files' payloads do not have
-  it. Every binding of one event gets the session named as the event
-  began. A path that is not UTF-8 (`transcriptPath`, a tool event's
-  `ctx.cwd`) goes out with U+FFFD for the bytes JSON cannot hold, instead
-  of failing the payload. `ModEvent::claude_code` is each event's Claude Code event, if it has
+  a payload's JSON is otherwise as it was. A mod file's handler gets it as
+  its last argument (`(call, ctx, session)`, `(text, session)`,
+  `(session)` for `system.prompt`) or, on a loop event, as `turn.session`;
+  `undefined` when none is named. Every handler of one event gets the
+  session named as the event began. A path that is not UTF-8
+  (`transcriptPath`, a tool event's `ctx.cwd`) goes out with U+FFFD for
+  the bytes JSON cannot hold, instead of failing the payload.
+  `ModEvent::claude_code` is each event's Claude Code event, if it has
   one: the one list the config check and the `Claude` dialect read.
 - haest-runtime: a built conversation puts its mods' loop events in the
   loop, and names its session (the session file's id and path) on its
