@@ -25,6 +25,8 @@
 //! as they change, are one mod: [`ModFiles`] (files.rs).
 
 mod channel;
+#[cfg(test)]
+mod engine_tests;
 mod files;
 mod handlers;
 mod load;
