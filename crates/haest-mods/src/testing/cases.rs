@@ -26,7 +26,7 @@ use crate::{
 
 /// A hook that answers `answer` (read as its event's decision) the first
 /// time its event fires, and passes after.
-pub(crate) fn once<E: Event>(answer: Value) -> impl Hook<E> {
+pub fn once<E: Event>(answer: Value) -> impl Hook<E> {
     let first = Arc::new(AtomicBool::new(true));
     move |_: E, _: CancellationToken| {
         let given = first.swap(false, Ordering::SeqCst).then(|| answer.clone());

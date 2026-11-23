@@ -37,9 +37,7 @@ mod cases;
 #[cfg(test)]
 mod human;
 
-#[cfg(test)]
-pub(crate) use cases::once;
-pub use cases::{DecisionCase, decision_cases, effect, hooks_answering, user_text};
+pub use cases::{DecisionCase, decision_cases, effect, hooks_answering, once, user_text};
 #[cfg(test)]
 pub(crate) use human::Human;
 
