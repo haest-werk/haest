@@ -29,7 +29,7 @@ use crate::{
     ask::{ApprovalRequest, Decision},
     decorate::ModTools,
     env::{ModEnv, ModUi},
-    hooks::ModHooks,
+    loop_hooks::ModLoopHooks,
     registry::Mods,
 };
 
@@ -200,7 +200,7 @@ pub fn wrapped<T: Into<ToolRef>>(mods: Mods, tools: impl IntoIterator<Item = T>)
 }
 
 /// An agent on `p` as a host puts mods in its loop: `tools` in [`ModTools`],
-/// `host`'s hooks in [`ModHooks`], the model `scripted:m`, in [`CWD`].
+/// `host`'s hooks in [`ModLoopHooks`], the model `scripted:m`, in [`CWD`].
 pub fn looped(
     p: &ScriptedProvider,
     host: impl Into<AgentHooksRef>,
@@ -209,7 +209,7 @@ pub fn looped(
 ) -> Agent {
     let shared = SharedDeps::new(p.resolver(), CWD, ShutWorkspace);
     let deps = AgentDeps::new(shared, ModTools::new(tools, mods.clone()), "")
-        .with_hooks(ModHooks::new(host, mods.clone()));
+        .with_hooks(ModLoopHooks::new(host, mods.clone()));
     Agent::new(deps, AgentOptions::new("scripted:m"))
 }
 

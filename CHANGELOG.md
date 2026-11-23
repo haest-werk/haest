@@ -153,7 +153,7 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 - haest-mods: the loop events `model.before`, `model.after` and
   `turn.end`, on `Mod` and in mod files: stop the turn, steer it, keep it
   going, or compact it (`{ compact: true }` or `{ compact: { instructions } }`
-  from a mod file). `ModHooks` runs them after the host's own hooks.
+  from a mod file). `ModLoopHooks` runs them after the host's own hooks.
 - haest-mods: `Mod::disabled_tools` hides any tool, whoever added it; mod
   files get `haest.disableTool`, `haest.enableTool` and `haest.removeTool`.
 - haest-mods: the hook protocol, typed once: `Event` with a payload and a

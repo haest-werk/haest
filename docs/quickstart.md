@@ -109,7 +109,7 @@ tools and hooks with them, and every tool call, model call and turn end passes t
 asked and a notice shown):
 
 ```rust
-use haest::mods::{Before, Binding, Hooks, ModEnv, ModHooks, ModTools, Mods, ToolBeforePayload};
+use haest::mods::{Before, Binding, Hooks, ModEnv, ModLoopHooks, ModTools, Mods, ToolBeforePayload};
 use haest::{AgentDeps, NoHooks, core::workspace::WorkspaceMode};
 
 let guard = Hooks::new().on_tool_before(
@@ -126,7 +126,7 @@ let guard = Hooks::new().on_tool_before(
 );
 let mods = Mods::new(ModEnv::new(cwd, WorkspaceMode::Real, ui), [guard]);
 let deps = AgentDeps::new(shared, ModTools::new(tools, mods.clone()), "You fix code.")
-    .with_hooks(ModHooks::new(NoHooks, mods));
+    .with_hooks(ModLoopHooks::new(NoHooks, mods));
 ```
 
 Each payload carries the conversation's session (`call.session`, a Claude Code script's

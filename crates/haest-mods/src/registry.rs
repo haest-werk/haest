@@ -61,8 +61,8 @@ pub enum CommandOutcome {
 /// Once built, the list never changes. It is a cheap handle: give a clone
 /// each to [`ModTools`](crate::ModTools),
 /// [`ModSystemPrompt`](crate::ModSystemPrompt),
-/// [`ModHooks`](crate::ModHooks) and the host's input path, and they all
-/// run the same mods for good.
+/// [`ModLoopHooks`](crate::ModLoopHooks) and the host's input path, and they
+/// all run the same mods for good.
 ///
 /// A `Mods` and its clones belong to one conversation at a time: they share
 /// its [`ModEnv`] and what its turns left there (a `turn.end` that kept a

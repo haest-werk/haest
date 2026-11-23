@@ -28,7 +28,7 @@ use haest::{
         workspace::WorkspaceMode,
     },
     mods::{
-        ApprovalRequest, Compact, Decision, Hooks, ModEnv, ModHooks, ModTools, ModUi, Mods,
+        ApprovalRequest, Compact, Decision, Hooks, ModEnv, ModLoopHooks, ModTools, ModUi, Mods,
         TurnEndDecision, TurnEndPayload,
     },
 };
@@ -133,7 +133,7 @@ async fn conversation(
         ModTools::new(Tools::new(), mods.clone()),
         "You refactor code.",
     )
-    .with_hooks(ModHooks::new(NoHooks, mods));
+    .with_hooks(ModLoopHooks::new(NoHooks, mods));
     let opts = AgentOptions::new("scripted:coder").with_history(long_conversation());
     let mut agent = Agent::new(deps, opts);
 

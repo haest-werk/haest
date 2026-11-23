@@ -1,4 +1,4 @@
-//! [`ModHooks`]: the host's [`AgentHooks`] with the mods' loop events after
+//! [`ModLoopHooks`]: the host's [`AgentHooks`] with the mods' loop events after
 //! them.
 
 use async_trait::async_trait;
@@ -17,8 +17,8 @@ use crate::registry::Mods;
 /// [`Mod::model_after`], [`Mod::turn_end`]).
 ///
 /// Give it to the agent in place of the host's hooks
-/// (`AgentDeps::new(..).with_hooks(ModHooks::new(host, mods.clone()))`), the
-/// way [`ModTools`](crate::ModTools) goes in place of its tools. At each
+/// (`AgentDeps::new(..).with_hooks(ModLoopHooks::new(host, mods.clone()))`),
+/// the way [`ModTools`](crate::ModTools) goes in place of its tools. At each
 /// loop point the host's hook runs first, then the mods in load order:
 ///
 /// - before a model call, the host's
@@ -52,7 +52,7 @@ use crate::registry::Mods;
 ///     testing::{ScriptedProvider, text_answer},
 ///     workspace::WorkspaceMode,
 /// };
-/// use haest_mods::{Mod, ModEnv, ModHooks, Mods, TurnEnd};
+/// use haest_mods::{Mod, ModEnv, ModLoopHooks, Mods, TurnEnd};
 /// use tokio_util::sync::CancellationToken;
 /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
 /// # struct Terminal;
@@ -94,7 +94,7 @@ use crate::registry::Mods;
 /// let model = ScriptedProvider::new([text_answer("Half way."), text_answer("All DONE.")]);
 /// let shared = SharedDeps::new(model.resolver(), "/project", ShutWorkspace);
 /// // The host's own hooks (none here), with the mods after them.
-/// let deps = AgentDeps::new(shared, Tools::new(), "").with_hooks(ModHooks::new(NoHooks, mods));
+/// let deps = AgentDeps::new(shared, Tools::new(), "").with_hooks(ModLoopHooks::new(NoHooks, mods));
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 ///
 /// let end = agent.run("tidy the notes", &mut Vec::<LoopEvent>::new()).await;
@@ -110,12 +110,12 @@ use crate::registry::Mods;
 /// [`Mod::model_after`]: crate::Mod::model_after
 /// [`Mod::turn_end`]: crate::Mod::turn_end
 #[derive(Debug, Clone)]
-pub struct ModHooks {
+pub struct ModLoopHooks {
     inner: AgentHooksRef,
     mods: Mods,
 }
 
-impl ModHooks {
+impl ModLoopHooks {
     /// `inner`, the host's own hooks, with `mods`' loop events after them.
     pub fn new(inner: impl Into<AgentHooksRef>, mods: Mods) -> Self {
         Self {
@@ -127,7 +127,7 @@ impl ModHooks {
 
 #[async_trait]
 #[warn(clippy::missing_trait_methods)]
-impl AgentHooks for ModHooks {
+impl AgentHooks for ModLoopHooks {
     fn on_message(&self, msg: &Message) {
         self.inner.on_message(msg);
     }

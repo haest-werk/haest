@@ -16,7 +16,7 @@ use haest_core::{
     task_board::TaskBoard,
     threshold::Thresholds,
 };
-use haest_mods::{ApprovalGate, ModHooks, ModSystemPrompt, Prompter};
+use haest_mods::{ApprovalGate, ModLoopHooks, ModSystemPrompt, Prompter};
 use haest_providers::{CatalogFacts, ProviderRegistry};
 use haest_tools::DeferredTools;
 
@@ -91,7 +91,7 @@ fn task_board(hooks: &RuntimeHooks) -> TaskBoard {
 /// the tools, the subagent hub, the inbox and the agent over all of it. The
 /// session file then holds the model and effort the conversation starts on.
 /// The agent's hooks are the [`RuntimeHooks`] with the mods' loop events
-/// after them ([`ModHooks`]); a compaction a mod makes is saved like the
+/// after them ([`ModLoopHooks`]); a compaction a mod makes is saved like the
 /// runtime's own.
 ///
 /// What goes wrong after that start is told to `ui`, never returned: an MCP
@@ -218,7 +218,7 @@ where
     // a subagent's hooks never ask the conversation's loop hooks.
     let mut shared = SharedDeps::new(models, s.cwd.clone(), found.workspace)
         .with_spill_dir(spill)
-        .with_hooks(ModHooks::new(hooks.clone(), mods.clone()))
+        .with_hooks(ModLoopHooks::new(hooks.clone(), mods.clone()))
         .with_services(hooks.clone())
         .with_facts(hooks.clone())
         .with_turn_caps(hooks.clone())

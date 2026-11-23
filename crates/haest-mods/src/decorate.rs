@@ -2,8 +2,9 @@
 //!   - [`ModTools`]: a [`ToolSource`] whose every tool (the host's and the mods'
 //!     own) runs inside `tool.before` / `tool.after`, less those a mod hides;
 //!   - [`ModSystemPrompt`]: a [`SystemPrompt`] with what `system.prompt` appends;
-//!   - [`ModHooks`](crate::ModHooks) (hooks.rs): the host's `AgentHooks` with
-//!     `model.before`, `model.after` and `turn.end` after them;
+//!   - [`ModLoopHooks`](crate::ModLoopHooks) (loop_hooks.rs): the host's
+//!     `AgentHooks` with `model.before`, `model.after` and `turn.end` after
+//!     them;
 //!   - `prompt.submit` is [`Mods::rewrite_prompt`], called on the human's text
 //!     before it goes to `Agent::run`; commands are [`Mods::command`].
 

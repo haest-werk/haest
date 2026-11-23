@@ -19,7 +19,7 @@ between forms without changing what it means.
 
 A host writes `AgentHooks` once. Everything else goes in as a mod: the built-ins
 (`ApprovalMod`, `PlanMod`), the host's own native mods, a set of `Hooks`, and mod files.
-`ModHooks` runs the mods' loop events after the host's own hooks.
+`ModLoopHooks` runs the mods' loop events after the host's own hooks.
 
 ## Every extension point
 

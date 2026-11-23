@@ -49,7 +49,7 @@
 //! | [`HookSettings`], [`HookEntry`], [`HookDialect`] | the `hooks` setting: commands and URLs bound per event, read from a config file or built in Rust, and checked; haest-bridges' `HookHost::bind` makes them a [`Hooks`] |
 //! | [`load_mods`] | the built-ins plus the host's own mods, as [`Mods`] |
 //! | [`Mods`] | every loaded mod, in order, as a cheap handle that never changes once built; a host's own native mods go in with [`ModOptions::with_mod`] or [`Mods::new`]. A `Mods` is a [`Mod`] itself, so a set can run inside another in its place |
-//! | [`ModTools`], [`ModSystemPrompt`], [`ModHooks`] | the wrappers a host puts around its tool source, its system prompt and its [`AgentHooks`](haest_core::AgentHooks) |
+//! | [`ModTools`], [`ModSystemPrompt`], [`ModLoopHooks`] | the wrappers a host puts around its tool source, its system prompt and its [`AgentHooks`](haest_core::AgentHooks) |
 //! | [`Mods::rewrite_prompt`], [`Mods::command`] | `prompt.submit` and slash commands, for the host's input path |
 //! | [`ModUi`] | PLUG POINT: how the host asks the human and shows them a line |
 //! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts; [`ApprovalGate::mod_ui`] makes it the host's whole [`ModUi`] |
@@ -59,9 +59,9 @@
 //! # Putting mods in the loop
 //!
 //! Load the mods, wrap the agent's tool source in [`ModTools`] and its system
-//! prompt in [`ModSystemPrompt`] (and its hooks in [`ModHooks`], for the
-//! loop events: [`Hooks`' example](Hooks#examples) uses them), and pass the
-//! human's text through [`Mods::rewrite_prompt`] before it goes to the
+//! prompt in [`ModSystemPrompt`] (and its hooks in [`ModLoopHooks`], for
+//! the loop events: [`Hooks`' example](Hooks#examples) uses them), and pass
+//! the human's text through [`Mods::rewrite_prompt`] before it goes to the
 //! agent. The model here is scripted, so the example runs offline.
 //!
 //! ```
@@ -273,8 +273,8 @@ mod gate;
 mod hook;
 mod hook_set;
 mod hook_settings;
-mod hooks;
 mod loader;
+mod loop_hooks;
 mod payload;
 mod plan;
 #[cfg(test)]
@@ -308,8 +308,8 @@ pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter, Pro
 pub use hook::{Binding, DEFAULT_HOOK_TIMEOUT, Hook, HookError, OnError};
 pub use hook_set::Hooks;
 pub use hook_settings::{HookDialect, HookEntry, HookEntryError, HookSettings};
-pub use hooks::ModHooks;
 pub use loader::{ModOptions, load_mods};
+pub use loop_hooks::ModLoopHooks;
 pub use payload::{
     AgentView, ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SessionView,
     SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, ToolCallContext, TurnEndPayload,

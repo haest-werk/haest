@@ -34,7 +34,7 @@ use haest::{
     },
     http::testing::{Respond, Server},
     mods::{
-        ApprovalRequest, Binding, Decision, Hooks, ModEnv, ModHooks, ModTools, ModUi, Mods,
+        ApprovalRequest, Binding, Decision, Hooks, ModEnv, ModLoopHooks, ModTools, ModUi, Mods,
         SessionView,
     },
     serde_json::{Value, json},
@@ -142,7 +142,7 @@ async fn run() -> Result<(), BoxError> {
     let tools = Tools::new().with(bash.clone());
     let shared = SharedDeps::new(model.resolver(), project, ShutWorkspace);
     let deps = AgentDeps::new(shared, ModTools::new(tools, mods.clone()), "You fix code.")
-        .with_hooks(ModHooks::new(NoHooks, mods));
+        .with_hooks(ModLoopHooks::new(NoHooks, mods));
     let mut agent = Agent::new(deps, AgentOptions::new("scripted:coder"));
 
     let mut sink = |ev: LoopEvent| {

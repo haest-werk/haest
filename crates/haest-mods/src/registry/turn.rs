@@ -1,6 +1,6 @@
-//! The loop events across every mod, for [`ModHooks`](crate::ModHooks):
-//! `model.before`, `model.after` and `turn.end`. Load order is the order
-//! asked; the first stop, or the first mod that keeps a turn going, wins. A
+//! The loop events across every mod, for
+//! [`ModLoopHooks`](crate::ModLoopHooks): `model.before`, `model.after` and
+//! `turn.end`. Load order is the order asked; the first stop, or the first mod that keeps a turn going, wins. A
 //! mod that fails is reported and the next one is asked; nothing is asked
 //! once the turn is cancelled (it ends as aborted whatever a mod says).
 

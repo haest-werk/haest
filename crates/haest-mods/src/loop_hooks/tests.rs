@@ -1,4 +1,4 @@
-//! The loop events of native mods, through [`ModHooks`](super::ModHooks)
+//! The loop events of native mods, through [`ModLoopHooks`](super::ModLoopHooks)
 //! around a real agent loop: where each fires, and what a stop, a steer, a
 //! continue and a compaction do. Who is asked first: order.rs.
 

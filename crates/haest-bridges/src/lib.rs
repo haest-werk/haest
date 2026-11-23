@@ -112,7 +112,7 @@
 //! # A mod file in the loop
 //!
 //! The loop events run where the host put
-//! [`ModHooks`](haest_mods::ModHooks) around its hooks. This mod hides the
+//! [`ModLoopHooks`](haest_mods::ModLoopHooks) around its hooks. This mod hides the
 //! host's `Push` tool from the model, and holds every turn until the tests
 //! ran: `turn.end` keeps it going with a message.
 //!
@@ -158,7 +158,7 @@
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //!     workspace::WorkspaceMode,
 //! };
-//! use haest_mods::{ModEnv, ModHooks, ModTools, Mods};
+//! use haest_mods::{ModEnv, ModLoopHooks, ModTools, Mods};
 //! use serde_json::json;
 //!
 //! let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Terminal);
@@ -173,7 +173,7 @@
 //! let tools = Tools::new().with(Named("Test")).with(Named("Push"));
 //! let shared = SharedDeps::new(model.resolver(), "/project", ShutWorkspace);
 //! let deps = AgentDeps::new(shared, ModTools::new(tools, mods.clone()), "")
-//!     .with_hooks(ModHooks::new(NoHooks, mods));
+//!     .with_hooks(ModLoopHooks::new(NoHooks, mods));
 //! let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 //!
 //! let end = agent.run("fix the bug", &mut Vec::<LoopEvent>::new()).await;

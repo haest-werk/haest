@@ -74,7 +74,7 @@ mod tests;
 ///     workspace::WorkspaceMode,
 /// };
 /// use haest_mods::{
-///     Before, Binding, Hooks, ModEnv, ModHooks, ModTools, Mods, ToolBeforePayload,
+///     Before, Binding, Hooks, ModEnv, ModLoopHooks, ModTools, Mods, ToolBeforePayload,
 ///     TurnEndDecision, TurnEndPayload,
 /// };
 /// use serde_json::json;
@@ -133,7 +133,7 @@ mod tests;
 /// ]);
 /// let shared = SharedDeps::new(model.resolver(), "/project", ShutWorkspace);
 /// let deps = AgentDeps::new(shared, ModTools::new(Tools::new().with(Bash), mods.clone()), "")
-///     .with_hooks(ModHooks::new(NoHooks, mods));
+///     .with_hooks(ModLoopHooks::new(NoHooks, mods));
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
 /// let end = agent.run("show me the config", &mut Vec::<LoopEvent>::new()).await;
 /// assert_eq!(end.error, None);

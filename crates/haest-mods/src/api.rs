@@ -90,8 +90,8 @@ pub enum TurnEnd {
 /// failed loop event changes nothing and the turn goes on).
 ///
 /// The loop events (`model.before`, `model.after`, `turn.end`) run where the
-/// host put [`ModHooks`](crate::ModHooks) around its own hooks, after the
-/// host's, for the conversation's own agent (not its subagents). They get
+/// host put [`ModLoopHooks`](crate::ModLoopHooks) around its own hooks, after
+/// the host's, for the conversation's own agent (not its subagents). They get
 /// the running [`Agent`] itself, to read and change, and the turn's cancel
 /// token, to pass to any model call made there.
 ///
