@@ -11,6 +11,7 @@ use haest_core::{
     Message, NoHooks, Tools,
     error::BoxError,
     testing::{ScriptedProvider, text_answer},
+    tool::ToolError,
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -63,7 +64,8 @@ pub fn user_text(m: &Message) -> Option<String> {
 
 /// What `mods` did when `event` fired, in words that do not name the mod
 /// (`name` is how it signs a stopped turn): a tool event runs an `Echo`
-/// probe inside the mods, `prompt.submit` rewrites `hi`, `system.prompt`
+/// probe inside the mods (a call a failed hook refused is
+/// `{ "failed": true }`), `prompt.submit` rewrites `hi`, `system.prompt`
 /// is what the mods append, and a loop event runs a turn on a scripted
 /// model (whose first answer is `SUMMARY`, for a compaction) over two
 /// earlier exchanges.
@@ -74,6 +76,9 @@ pub async fn effect(event: ModEvent, mods: Mods, name: &str) -> Value {
             let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
             let out = match tools[0].execute(input(json!({"v": "hi"})), &ctx()).await {
                 Ok(o) => json!({ "content": o.content, "isError": o.is_error }),
+                // A hook that failed refuses the call in words that name its
+                // mod and its form: what counts is that it failed.
+                Err(ToolError::Failed(_)) => json!({ "failed": true }),
                 Err(e) => json!({ "refused": e.to_string() }),
             };
             json!({ "out": out, "ran": echo.ran() })
@@ -113,6 +118,12 @@ pub struct DecisionCase {
 
 fn has(v: &Value, text: &str) -> bool {
     v.to_string().contains(text)
+}
+
+/// A tool event's [`effect`] when its hook failed `tool.before`: the call
+/// was refused and did not run.
+fn failed(v: &Value) -> bool {
+    v["out"] == json!({ "failed": true }) && v["ran"] == json!([])
 }
 
 /// A loop event's [`effect`] when its hook changed nothing: one model call
@@ -183,6 +194,9 @@ pub fn decision_cases() -> Vec<DecisionCase> {
         case(E::ToolBefore, json!({ "deny": null }), |v| {
             v["out"]["content"] == "echo:hi"
         }),
+        case(E::ToolBefore, json!({ "deny": 42 }), failed),
+        case(E::ToolBefore, json!({ "deny": false }), failed),
+        case(E::ToolBefore, json!({ "input": "x" }), failed),
         case(E::PromptSubmit, json!(42), |v| *v == "hi"),
         case(E::SystemPrompt, json!(42), |v| *v == ""),
         // JavaScript's `cond && 'text'`: nothing to add, and no failure.
