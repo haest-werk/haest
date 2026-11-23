@@ -37,7 +37,9 @@ mod cases;
 #[cfg(test)]
 mod human;
 
-pub use cases::{DecisionCase, decision_cases, effect, hooks_answering, once, user_text};
+#[cfg(test)]
+pub(crate) use cases::once;
+pub use cases::{DecisionCase, decision_cases, effect, hooks_answering, user_text};
 #[cfg(test)]
 pub(crate) use human::Human;
 
@@ -162,7 +164,8 @@ impl Probe {
     }
 
     /// A read-only tool named `name`.
-    pub fn read_only(name: &str) -> Arc<Self> {
+    #[cfg(test)]
+    pub(crate) fn read_only(name: &str) -> Arc<Self> {
         Self::with(name, true)
     }
 
