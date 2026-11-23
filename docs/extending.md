@@ -121,17 +121,41 @@ compact in `model.after` (the answer's tool results land after it).
 ## Mod files
 
 A `.js`, `.mjs` or `.ts` file whose default export receives the `haest` API, run in embedded
-QuickJS (TypeScript types are stripped in Rust; no node, no bun). haest-runtime loads:
+QuickJS (TypeScript types are stripped in Rust; no node, no bun). Mod files are the first
+bridge: they live in haest-bridges behind its `js` feature (the facade's `bridge-js`, on by
+default), so haest-mods and a Rust-only host link no QuickJS.
 
-1. the human's own: `<config_dir>/mods/*`, with the `user_mods` setting,
+[`ModFiles`](../crates/haest-bridges/src/js/files.rs) is a conversation's mod files as ONE
+mod, added after the built-ins and before the host's own mods. haest-runtime loads:
+
+1. the human's own: `<config_dir>/mods/*`, with the `mods` setting,
 2. the project's: `<cwd>/.haest/mods/*`, ONLY with `project_mods`. A project's mod is code
    from that repo running with the host's full trust, so cloning a repo is never enough to
    run it.
 
 A mod file can do everything in the table above, plus ask the human (`haest.ask`, an Allow or
 Deny prompt) and show them a line (`haest.notice`). The whole API is on
-[`JsMod`](../crates/haest-mods/src/js/mod.rs); runnable examples are in the haest-mods crate
-docs.
+[`JsMod`](../crates/haest-bridges/src/js/mod.rs); runnable examples are in the haest-bridges
+crate docs.
+
+### Reloading mod files
+
+The [`mod_reload`](settings.md#mod_reload) setting (`off` by default, your own config only,
+never a project's) has `ModFiles` read every file again before each model call. No watcher:
+a change lands at the next step boundary.
+
+| On disk | `auto` | `ask` |
+|---|---|---|
+| a new or changed file | loads | loads on the human's Allow |
+| a deleted file | unloads, its tools leave the next request | the same, on the human's Allow |
+| a file that fails to load | the version before keeps running; reported once | the same |
+
+`ask` exists because in the real workspace the agent can write a mod file, and a mod runs with
+the host's trust: without it, the agent's own file would rewrite the human's next message one
+step later. A Deny keeps the running version and is not asked again for that content (or that
+deletion). The files swap as one `Mods`, so the next request has the new file's tools and
+hidden tools. Subagents see the swapped files but never trigger a reload themselves. Rust mods
+never reload.
 
 Every mod, native or file, runs with the host's full trust, sandbox or not.
 

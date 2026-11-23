@@ -19,6 +19,17 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   `instructions`. A struct literal that names every field no longer
   compiles: end it with `..Default::default()` (`Usage`) or
   `..CompactionOptions::new(window)`.
+- Mod files moved from haest-mods to the new crate haest-bridges (feature
+  `js`; the facade's `bridge-js`, on by default): `haest::mods::JsMod`,
+  `ModCaps` and `ModLoadError` are now `haest::bridges::*`. haest-mods links
+  no QuickJS.
+- `load_mods` loads the built-ins and the host's mods only, and is no
+  longer async: `load_mods(ModOptions::new(cwd, workspace), ui)`. The mod
+  directories, `with_user_mods`, `with_project_mods` and `with_caps` moved
+  to `haest_bridges::ModFileOptions`; the files go in as one mod,
+  `ModFiles`, with `ModOptions::with_mod`.
+- `Mods::names` lists the mod files as one entry, `mod files`;
+  `ModFiles::names` lists their paths.
 
 ### Added
 
@@ -52,6 +63,15 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   mod made of bindings. A Rust closure is a hook.
 - haest-runtime: a built conversation puts its mods' loop events in the
   loop.
+- haest-bridges, a new crate: the ways to hook haest from outside Rust,
+  one feature each. `js` is the mod files, as `ModFiles`.
+- Mod files reload as they change: the setting `mod_reload` (`off`, the
+  default; `ask`, where each new, changed or deleted file waits for the
+  human's Allow; `auto`) has `ModFiles` read them again before each model
+  call. A file that fails to load keeps the version that ran. Your own
+  config only, never a project's.
+- haest-mods: `Mods` is itself a `Mod`, so a set of mods runs inside
+  another; the feature `testing` is the kit a bridge tests its events with.
 
 ### Fixed
 
