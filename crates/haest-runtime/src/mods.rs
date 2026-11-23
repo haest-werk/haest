@@ -1,11 +1,11 @@
-//! [`mods_for`]: the conversation's mods, and [`config_hooks`]: the
-//! `hooks` setting bound for it.
+//! [`mods_for`]: the conversation's mods, [`config_hooks`]: the `hooks`
+//! setting bound for it, and [`name_session`]: the session they are told.
 
-use haest_bridges::{Claude, HookHost, ModFileOptions, ModFiles};
+use haest_bridges::{HookHost, ModFileOptions, ModFiles};
 use haest_core::{ChildEnv, fs::FsRef, tool::ToolServices};
 use haest_mods::{
     ApprovalGate, HookSettings, Hooks, ModEnv, ModLine, ModOptions, ModRef, ModUiRef, Mods,
-    load_mods,
+    SessionView, load_mods,
 };
 use haest_providers::http::HttpClientRef;
 
@@ -24,8 +24,9 @@ use crate::{RuntimeHooks, world::World};
 /// whatever the settings say. A mod's lines, and a file that does not load,
 /// go to the host's [`Ui`](crate::Ui). An approval ask goes through `gate`
 /// ([`ApprovalGate`]) to the host's prompter, which decides how a human
-/// answers; an ask nobody answers is a deny after its timeout. Never fails:
-/// the mods that loaded are the ones returned.
+/// answers; an ask nobody answers is a deny after its timeout. The mods are
+/// told the session the conversation starts on ([`name_session`]). Never
+/// fails: the mods that loaded are the ones returned.
 pub(crate) async fn mods_for(
     hooks: &RuntimeHooks,
     fs: FsRef,
@@ -53,15 +54,28 @@ pub(crate) async fn mods_for(
     }
     let cfg = config_hooks.into_iter().fold(cfg, ModOptions::with_mod);
     let cfg = host_mods.into_iter().fold(cfg, ModOptions::with_mod);
-    load_mods(cfg, mod_ui)
+    let mods = load_mods(cfg, mod_ui);
+    name_session(&mods, hooks);
+    mods
+}
+
+/// Tell `mods` the session the conversation is on now: the session file
+/// records go to, its id and its path. Every hook's payload names it from
+/// the next event on (a `claude` hook's `session_id` and
+/// `transcript_path`); [`Runtime::clear`](crate::Runtime::clear) calls this
+/// again for the new one.
+pub(crate) fn name_session(mods: &Mods, hooks: &RuntimeHooks) {
+    let store = hooks.store();
+    let session = SessionView::new(store.session_id()).with_transcript_path(store.path());
+    mods.env().set_session(session);
 }
 
 /// The `hooks` setting bound for this conversation: a command on the host
 /// in the settings' `cwd` with the environment every process haest starts
 /// gets (none bound in a world that starts no process), a URL through
-/// `http`, the `claude` dialect naming the session file records go to at
-/// each event. An entry that can't bind here is a warning. None when no
-/// entry binds.
+/// `http`. The session a hook is told comes with each event
+/// ([`name_session`]). An entry that can't bind here is a warning. None
+/// when no entry binds.
 pub(crate) fn config_hooks(
     settings: &HookSettings,
     hooks: &RuntimeHooks,
@@ -73,15 +87,7 @@ pub(crate) fn config_hooks(
         return None;
     }
     let s = hooks.settings();
-    let session = hooks.clone();
-    let mut host = HookHost::new(&s.cwd)
-        .with_client(http.clone())
-        .with_claude(move || {
-            let store = session.store();
-            Claude::new()
-                .with_session_id(store.session_id())
-                .with_transcript_path(store.path())
-        });
+    let mut host = HookHost::new(&s.cwd).with_client(http.clone());
     if let Some(env) = world.child_env_with(passed_env) {
         host = host.with_env(env);
     }

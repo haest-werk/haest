@@ -25,8 +25,8 @@ use crate::{
     hook::{Binding, Hook, OnError},
     hook_set::Hooks,
     payload::{
-        ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload,
-        ToolAfterPayload, ToolBeforePayload, TurnEndPayload,
+        ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SessionView,
+        SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, TurnEndPayload,
     },
 };
 
@@ -83,6 +83,12 @@ pub trait Event:
     fn read_decision(answer: serde_json::Value) -> Result<Self::Decision, serde_json::Error> {
         crate::decision::read_answer::<Self>(answer)
     }
+
+    /// The session the conversation is on as of this event, when its host
+    /// named one: [`Hooks`] hands every binding its payload with the
+    /// session the conversation's [`ModEnv`](crate::ModEnv) names then
+    /// ([`ModEnv::set_session`](crate::ModEnv::set_session)).
+    fn session(&self) -> Option<&SessionView>;
 }
 
 /// An event about one tool call (`tool.before`, `tool.after`): a binding
@@ -94,11 +100,17 @@ pub trait ToolEvent: Event {
 
 /// Seals [`Event`]: the events are haest's.
 mod sealed {
+    use crate::payload::SessionView;
+
     #[expect(
         unnameable_types,
         reason = "the seal of Event: public so it can bound Event, unnameable so no other crate implements it"
     )]
-    pub trait Sealed {}
+    pub trait Sealed {
+        /// The payload as of `session`: what [`Hooks`](crate::Hooks) sets
+        /// before a binding gets it.
+        fn set_session(&mut self, session: Option<SessionView>);
+    }
 }
 
 /// Writes, from one row per event: [`ModEvent`], each payload's [`Event`]
@@ -125,12 +137,20 @@ macro_rules! mod_events {
         }
 
         $(
-            impl sealed::Sealed for $payload {}
+            impl sealed::Sealed for $payload {
+                fn set_session(&mut self, session: Option<SessionView>) {
+                    self.session = session;
+                }
+            }
 
             impl Event for $payload {
                 const NAME: ModEvent = ModEvent::$variant;
                 const ON_ERROR: OnError = OnError::$on_error;
                 type Decision = $decision;
+
+                fn session(&self) -> Option<&SessionView> {
+                    self.session.as_ref()
+                }
             }
 
             // One per event, not one generic impl: another crate could

@@ -51,9 +51,10 @@ impl Error for Reported {
 /// stands, each event by the rules [`Mods`] has, so the outer `Mods` sees
 /// what it would see were they its own. A mod inside that fails is
 /// reported once, under its own name; one that stops the turn ends it in
-/// its own name. Inside, its mods get the [`ModEnv`] it was built with.
-/// It goes by `mods` in a report, and is no gate: its own gates judge last
-/// among its mods.
+/// its own name. Inside, its mods get the [`ModEnv`] it was built with,
+/// holding at each event what the outer one's does: whether a turn was
+/// kept going, and the session the conversation is on. It goes by `mods`
+/// in a report, and is no gate: its own gates judge last among its mods.
 #[async_trait]
 #[warn(clippy::missing_trait_methods)]
 impl Mod for Mods {
@@ -69,8 +70,9 @@ impl Mod for Mods {
         &self,
         call: &ModToolCall,
         ctx: &ToolContext,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<Before, BoxError> {
+        self.env().follow(haest);
         match self.judge(call.clone(), ctx).await {
             Judged::Run(run) if run.input == call.input => Ok(Before::Pass),
             Judged::Run(run) => Ok(Before::Input(run.input)),
@@ -86,16 +88,19 @@ impl Mod for Mods {
         call: &ModToolCall,
         output: &ToolOutput,
         ctx: &ToolContext,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<Option<ToolOutput>, BoxError> {
+        self.env().follow(haest);
         Ok(Some(self.after(call, output.clone(), ctx).await))
     }
 
-    async fn prompt_submit(&self, text: &str, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
+    async fn prompt_submit(&self, text: &str, haest: &ModEnv) -> Result<Option<String>, BoxError> {
+        self.env().follow(haest);
         Ok(Some(self.rewrite_prompt(text).await))
     }
 
-    async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
+    async fn system_prompt(&self, haest: &ModEnv) -> Result<Option<String>, BoxError> {
+        self.env().follow(haest);
         let added = self.system_append().await;
         Ok((!added.is_empty()).then_some(added))
     }
@@ -104,8 +109,9 @@ impl Mod for Mods {
         &self,
         agent: &mut Agent,
         cancel: &CancellationToken,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<Step, BoxError> {
+        self.env().follow(haest);
         Mods::model_before(self, agent, cancel).await?;
         Ok(Step::Pass)
     }
@@ -115,8 +121,9 @@ impl Mod for Mods {
         agent: &mut Agent,
         answer: &AssistantMessage,
         cancel: &CancellationToken,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<Step, BoxError> {
+        self.env().follow(haest);
         Mods::model_after(self, agent, answer, cancel).await?;
         Ok(Step::Pass)
     }

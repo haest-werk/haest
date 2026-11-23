@@ -63,7 +63,10 @@ the last answer's request held, the number to compact on; `contextWindow` is the
 window from the host's turn caps (the CLI's: the `context_window` setting, else the catalog's),
 else the catalog's, and `null` when neither knows it) plus their own fields (`model.before`: `lastMessage`;
 `model.after`: `answer`; `turn.end`: `stopReason`, `error`, `answer` and `continued`, whether a
-`turn.end` decision already kept this turn going).
+`turn.end` decision already kept this turn going). A hook bound in `Hooks` (a closure, a
+`ShellHook`, an `HttpHook`) also gets `session: { id, transcriptPath }` on every event: the
+session the conversation's `ModEnv` names as of that event, left out when the host names none
+(`transcriptPath` too). A mod file's handler does not get it.
 
 These are the mod files' own words, typed once in haest-mods (`Event` and its payload and
 decision types). A bridge only encodes the payload, carries it to the hook, and decodes the
@@ -239,8 +242,8 @@ Each speaks a dialect:
 
 | Dialect | The input | The answer | Events |
 |---|---|---|---|
-| `Haest`, the default | `{ "event": "<name>", ...payload }`: the payload above, with the event's name | the decision's JSON above | every one |
-| `Claude` | Claude Code's hook JSON (`hook_event_name`, `tool_name`, `tool_input`, `stop_hook_active`, ..), plus `CLAUDE_PROJECT_DIR` for a command | Claude Code's (`permissionDecision`, `updatedInput`, `updatedToolOutput`, `additionalContext`, `decision: "block"`) | `tool.before` (PreToolUse), `tool.after` (PostToolUse), `prompt.submit` (UserPromptSubmit), `system.prompt` (SessionStart), `turn.end` (Stop) |
+| `Haest`, the default | `{ "event": "<name>", ...payload }`: the payload above (its `session` too), with the event's name | the decision's JSON above | every one |
+| `Claude` | Claude Code's hook JSON (`hook_event_name`, `session_id`, `transcript_path`, `tool_name`, `tool_input`, `stop_hook_active`, ..), plus `CLAUDE_PROJECT_DIR` for a command | Claude Code's (`permissionDecision`, `updatedInput`, `updatedToolOutput`, `additionalContext`, `decision: "block"`) | `tool.before` (PreToolUse), `tool.after` (PostToolUse), `prompt.submit` (UserPromptSubmit), `system.prompt` (SessionStart), `turn.end` (Stop) |
 
 So a Claude Code hook script runs as it is. Where Claude Code can do more than haest's event
 (an `ask`, refusing a prompt, `continue: false`), haest refuses or ignores, and a `Claude` hook
@@ -250,6 +253,23 @@ on `model.before` or `model.after` does not compile; the mapping and that list a
 [`examples/hooks/no-rm-rf.sh`](examples/hooks/no-rm-rf.sh) is such a script, and
 [`external_hooks.rs`](../crates/haest/examples/external_hooks.rs) runs it beside an HTTP hook
 on `turn.end`.
+
+Neither dialect holds anything of the conversation: `Haest` and `Claude` are unit values, and
+the session comes with each event's payload. The host names it on the conversation's `ModEnv`
+and names the new one when the human's /clear starts it; hooks bound once follow it, a
+`Claude` hook as `session_id` and `transcript_path`:
+
+```rust
+let guard = ShellHook::new("sh .claude/hooks/no-rm-rf.sh").with_dialect(Claude);
+let env = ModEnv::new(project, WorkspaceMode::Real, ui).with_session(SessionView::new("s-1"));
+let mods = Mods::new(env, [Hooks::new().on_tool_before(Binding::new(guard).with_matcher("Bash"))]);
+// The human's /clear:
+mods.env().set_session(SessionView::new("s-2"));
+```
+
+Which events Claude Code has is written once, haest-mods' `ModEvent::claude_code`: the config
+check, the `hook_event_name` a hook is handed, and the events a `Claude` hook compiles on all
+read it.
 
 A hook runs with the host's full trust: it receives every tool input, and a command runs on
 the host whatever the workspace. Load a project's hooks only in a directory the human trusts,
@@ -324,8 +344,9 @@ How they run:
   A host whose world starts no process (haest-runtime's `World::files`) binds no command: it
   warns, and binds the rest.
 - A URL goes through the runtime's `HttpClient`, the one the model calls use.
-- In the `claude` dialect a hook gets the session's id and its file as Claude Code's
-  `session_id` and `transcript_path`, as of that event: after a /clear, the new session's.
+- haest-runtime names the conversation's session on its mods' env, and the new one at each
+  /clear: a hook gets the session's id and its file as of that event, in the `claude` dialect
+  as Claude Code's `session_id` and `transcript_path`, in `haest` as `session`.
 - A subagent's tool calls pass through the hooks, and its system prompt takes what
   `system.prompt` adds, as with every mod. `prompt.submit`, `model.before`, `model.after` and
   `turn.end` are the main conversation's: a subagent's turn is not the human's, and a check

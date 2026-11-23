@@ -1,7 +1,9 @@
 //! What every event carries: the payload a mod file's handler gets, and a
 //! [`Hook`](crate::Hook) too, built from a [`Mod`](crate::Mod) event's
 //! arguments here and nowhere else. Each is camelCase JSON, byte for byte
-//! what a TypeScript handler has always received.
+//! what a TypeScript handler has always received, plus `session`
+//! ([`SessionView`]) when [`Hooks`](crate::Hooks) hands it to a binding in
+//! a conversation whose host named one.
 
 use std::path::PathBuf;
 
@@ -14,6 +16,65 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::{api::ModToolCall, env::ModEnv, events::ToolEvent};
+
+/// The session a conversation is on, as its host names it: its id, and
+/// where the host keeps its transcript.
+///
+/// The host names it on the conversation's [`ModEnv`]
+/// ([`ModEnv::set_session`]), and names the new one when the human's /clear
+/// starts it; every payload [`Hooks`](crate::Hooks) hands a binding carries
+/// the one named as of that event ([`Event::session`](crate::Event::session)),
+/// so a hook never holds on to a session of its own. haest-runtime names its
+/// session file's id and path.
+///
+/// JSON: `{ id, transcriptPath }`, `transcriptPath` left out when the host
+/// keeps none.
+///
+/// ```
+/// use haest_core::workspace::WorkspaceMode;
+/// use haest_mods::{ModEnv, SessionView};
+/// # use haest_mods::{ApprovalRequest, Decision, ModUi};
+/// # struct Terminal;
+/// # #[async_trait::async_trait]
+/// # impl ModUi for Terminal {
+/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+/// #     fn info(&self, _: &str) {}
+/// # }
+///
+/// let env = ModEnv::new("/project", WorkspaceMode::Real, Terminal)
+///     .with_session(SessionView::new("s-1").with_transcript_path("/sessions/s-1.jsonl"));
+/// // The human's /clear: a new session, for every mod and hook from the next event on.
+/// env.set_session(SessionView::new("s-2").with_transcript_path("/sessions/s-2.jsonl"));
+/// assert_eq!(env.session().map(|s| s.id), Some("s-2".into()));
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct SessionView {
+    /// The session's id, as the host knows it.
+    pub id: String,
+    /// Where the host keeps the session's transcript; `None` when it keeps
+    /// none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_path: Option<PathBuf>,
+}
+
+impl SessionView {
+    /// The session `id`, with no transcript.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            transcript_path: None,
+        }
+    }
+
+    /// Its transcript is at `path`.
+    #[must_use]
+    pub fn with_transcript_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.transcript_path = Some(path.into());
+        self
+    }
+}
 
 /// Where a tool call runs, as a tool event's payload says it: a mod file's
 /// handler gets it as `ctx` (with its own `signal` added), and so does a mod
@@ -41,7 +102,8 @@ impl ToolCallContext {
 /// `tool.before`: a tool call about to run. A hook answers a
 /// [`Before`](crate::Before).
 ///
-/// JSON: `{ call: { name, input, readOnly }, ctx: { cwd, toolCallId } }`.
+/// JSON: `{ call: { name, input, readOnly }, ctx: { cwd, toolCallId } }`,
+/// and `session`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -50,14 +112,19 @@ pub struct ToolBeforePayload {
     pub call: ModToolCall,
     /// Where it runs.
     pub ctx: ToolCallContext,
+    /// The session the conversation is on ([`SessionView`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionView>,
 }
 
 impl ToolBeforePayload {
-    /// The payload of [`Mod::tool_before`](crate::Mod::tool_before)'s arguments.
+    /// The payload of [`Mod::tool_before`](crate::Mod::tool_before)'s
+    /// arguments, no session named yet.
     pub fn new(call: &ModToolCall, ctx: &ToolContext) -> Self {
         Self {
             call: call.clone(),
             ctx: ToolCallContext::new(ctx),
+            session: None,
         }
     }
 }
@@ -71,7 +138,7 @@ impl ToolEvent for ToolBeforePayload {
 /// `tool.after`: a tool call that ran. A hook answers the output that
 /// replaces this one, or `None` (`null`) to keep it.
 ///
-/// JSON: `{ call, output: { content, isError, .. }, ctx }`.
+/// JSON: `{ call, output: { content, isError, .. }, ctx }`, and `session`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -82,15 +149,20 @@ pub struct ToolAfterPayload {
     pub output: ToolOutput,
     /// Where it ran.
     pub ctx: ToolCallContext,
+    /// The session the conversation is on ([`SessionView`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionView>,
 }
 
 impl ToolAfterPayload {
-    /// The payload of [`Mod::tool_after`](crate::Mod::tool_after)'s arguments.
+    /// The payload of [`Mod::tool_after`](crate::Mod::tool_after)'s
+    /// arguments, no session named yet.
     pub fn new(call: &ModToolCall, output: &ToolOutput, ctx: &ToolContext) -> Self {
         Self {
             call: call.clone(),
             output: output.clone(),
             ctx: ToolCallContext::new(ctx),
+            session: None,
         }
     }
 }
@@ -104,34 +176,47 @@ impl ToolEvent for ToolAfterPayload {
 /// `prompt.submit`: the human's message before the model sees it. A hook
 /// answers the new text, or `None` (`null`) to keep it.
 ///
-/// JSON: `{ text }`.
+/// JSON: `{ text }`, and `session`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct PromptSubmitPayload {
     /// The message, as the hooks before this one left it.
     pub text: String,
+    /// The session the conversation is on ([`SessionView`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionView>,
 }
 
 impl PromptSubmitPayload {
-    /// The payload of [`Mod::prompt_submit`](crate::Mod::prompt_submit)'s text.
+    /// The payload of [`Mod::prompt_submit`](crate::Mod::prompt_submit)'s
+    /// text, no session named yet.
     pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into() }
+        Self {
+            text: text.into(),
+            session: None,
+        }
     }
 }
 
 /// `system.prompt`: a model call is about to be sent. A hook answers text
 /// to append to the system prompt, or `None` (`null`).
 ///
-/// JSON: `{}`.
+/// JSON: `{}`, and `session`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[non_exhaustive]
-pub struct SystemPromptPayload {}
+pub struct SystemPromptPayload {
+    /// The session the conversation is on ([`SessionView`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionView>,
+}
 
 impl SystemPromptPayload {
-    /// The (empty) payload of [`Mod::system_prompt`](crate::Mod::system_prompt).
+    /// The payload of [`Mod::system_prompt`](crate::Mod::system_prompt),
+    /// no session named yet.
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 
@@ -177,7 +262,7 @@ impl AgentView {
 /// `model.before`: a model call is about to be made. A hook answers a
 /// [`ModelBeforeDecision`](crate::ModelBeforeDecision).
 ///
-/// JSON: the [`AgentView`]'s fields, then `lastMessage`.
+/// JSON: the [`AgentView`]'s fields, then `lastMessage`, and `session`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -189,14 +274,19 @@ pub struct ModelBeforePayload {
     /// media bytes, thinking signatures and provider state; `null` in an
     /// empty history.
     pub last_message: Option<Value>,
+    /// The session the conversation is on ([`SessionView`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionView>,
 }
 
 impl ModelBeforePayload {
-    /// The payload of [`Mod::model_before`](crate::Mod::model_before)'s agent.
+    /// The payload of [`Mod::model_before`](crate::Mod::model_before)'s
+    /// agent, no session named yet.
     pub fn new(agent: &Agent) -> Self {
         Self {
             agent: AgentView::new(agent),
             last_message: agent.history().last().map(light),
+            session: None,
         }
     }
 }
@@ -204,7 +294,7 @@ impl ModelBeforePayload {
 /// `model.after`: an answer landed, its tool calls have not run. A hook
 /// answers a [`ModelAfterDecision`](crate::ModelAfterDecision).
 ///
-/// JSON: the [`AgentView`]'s fields, then `answer`.
+/// JSON: the [`AgentView`]'s fields, then `answer`, and `session`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -215,14 +305,19 @@ pub struct ModelAfterPayload {
     /// The answer, as a session file writes it less media bytes, thinking
     /// signatures and provider state.
     pub answer: Value,
+    /// The session the conversation is on ([`SessionView`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionView>,
 }
 
 impl ModelAfterPayload {
-    /// The payload of [`Mod::model_after`](crate::Mod::model_after)'s arguments.
+    /// The payload of [`Mod::model_after`](crate::Mod::model_after)'s
+    /// arguments, no session named yet.
     pub fn new(agent: &Agent, answer: &AssistantMessage) -> Self {
         Self {
             agent: AgentView::new(agent),
             answer: light(answer),
+            session: None,
         }
     }
 }
@@ -231,7 +326,7 @@ impl ModelAfterPayload {
 /// [`TurnEndDecision`](crate::TurnEndDecision).
 ///
 /// JSON: the [`AgentView`]'s fields, then `stopReason`, `error`, `answer`
-/// and `continued`.
+/// and `continued`, and `session`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -253,10 +348,14 @@ pub struct TurnEndPayload {
     /// [`before_turn_end`](haest_core::AgentHooks::before_turn_end) does not
     /// count.
     pub continued: bool,
+    /// The session the conversation is on ([`SessionView`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionView>,
 }
 
 impl TurnEndPayload {
-    /// The payload of [`Mod::turn_end`](crate::Mod::turn_end)'s arguments.
+    /// The payload of [`Mod::turn_end`](crate::Mod::turn_end)'s arguments,
+    /// no session named yet.
     pub fn new(
         agent: &Agent,
         outcome: &TurnOutcome,
@@ -273,6 +372,7 @@ impl TurnEndPayload {
             error: outcome.error.clone(),
             answer,
             continued: haest.continued(cancel),
+            session: None,
         }
     }
 }

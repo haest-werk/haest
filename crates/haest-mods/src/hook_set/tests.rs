@@ -1,7 +1,8 @@
 //! [`Hooks`](super::Hooks): what a failed or late hook does under each
 //! `on_error` (on_error.rs); order, first wins, matchers and interrupts
-//! (order.rs); the parity guard (parity.rs); what `turn.end` hands a hook
-//! (turn_end.rs). That every decision takes the
+//! (order.rs); the parity guard (parity.rs); the session every hook is
+//! handed (session.rs); what `turn.end` hands a hook (turn_end.rs). That
+//! every decision takes the
 //! same effect from a `.ts` mod and from a `Hooks` closure is haest-bridges'
 //! test, over the testing module's decision cases.
 
@@ -27,4 +28,5 @@ use crate::{
 mod on_error;
 mod order;
 mod parity;
+mod session;
 mod turn_end;

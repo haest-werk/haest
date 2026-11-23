@@ -89,7 +89,7 @@ use haest_mods::{Binding, Hooks};
 let hooks = Hooks::new()
     // A Claude Code hook script, as it is, on Bash calls only.
     .on_tool_before(
-        Binding::new(ShellHook::new("sh .claude/hooks/no-rm-rf.sh").with_dialect(Claude::new()))
+        Binding::new(ShellHook::new("sh .claude/hooks/no-rm-rf.sh").with_dialect(Claude))
             .with_matcher("Bash"),
     )
     // A service that sees every finished turn, in haest's own JSON.
@@ -139,8 +139,8 @@ A CLI binds the same hooks with no Rust. haest-mods' `HookSettings` is the
 value), or built in Rust with `HookSettings::with_entry`. `HookHost::bind`
 binds them, with `shell` or `http` on, in one `Hooks` named `[hooks]`: the
 host is the conversation's directory, the environment a command gets (none:
-no command binds), the HTTP client, and the session the `claude` dialect
-names at each event. haest-runtime does this in every conversation;
+no command binds) and the HTTP client. haest-runtime does this in every
+conversation, and names its session on the mods' `ModEnv`;
 [docs/extending.md](https://github.com/haest-werk/haest/blob/main/docs/extending.md#hooks-from-a-config-file)
 has the keys and the trust rules.
 
@@ -157,7 +157,20 @@ matcher = "Bash"
 event: the input is `{ "event": "tool.before", ...payload }` (the payload's own
 JSON, the event's name added), the answer is the decision's own JSON
 (`{ deny }`, `{ input }`, a tool output, text, `{ stop }`, `{ steer }`,
-`{ continue }`, `{ compact }`).
+`{ continue }`, `{ compact }`). When the host names the conversation's session,
+the payload has it too: `"session": { "id": "..", "transcriptPath": ".." }`.
+
+Neither dialect holds anything of the conversation: `Haest` and `Claude` are
+unit values, and each event's payload brings the session the conversation is on
+then. A host names it on the conversation's `ModEnv`, and names the new one when
+the human's /clear starts it; hooks bound once follow it:
+
+```rust
+let env = ModEnv::new(project, WorkspaceMode::Real, ui).with_session(SessionView::new("s-1"));
+let mods = Mods::new(env, [hooks]);
+// The human's /clear:
+mods.env().set_session(SessionView::new("s-2"));
+```
 
 `Claude` speaks Claude Code's hook JSON, so its hook scripts and HTTP hooks run
 as they are, on the events Claude Code has:
@@ -171,11 +184,13 @@ as they are, on the events Claude Code has:
 | `turn.end` | `Stop` | `decision: "block"` with its `reason`, or `additionalContext`, keeps the turn going with that text |
 
 The input has the fields Claude Code sends that haest has: `hook_event_name`,
-`cwd`, `session_id` and `transcript_path` when the host gives them
-(`Claude::with_session_id`, `Claude::with_transcript_path`), and per event
-`tool_name`, `tool_input`, `tool_use_id`, `tool_response` (the output's text),
-`prompt`, `stop_hook_active` and `last_assistant_message`. A command also gets
-`CLAUDE_PROJECT_DIR`.
+`cwd`, `session_id` and `transcript_path` when the host names the session (as
+of each event: after a /clear, the new one), and per event `tool_name`,
+`tool_input`, `tool_use_id`, `tool_response` (the output's text), `prompt`,
+`stop_hook_active` and `last_assistant_message`. A command also gets
+`CLAUDE_PROJECT_DIR`. Which events Claude Code has is haest-mods'
+`ModEvent::claude_code`: the config check, the names a hook is handed and the
+events a `Claude` hook compiles on all come from it.
 
 Where Claude Code can do more than haest's event, haest fails closed or
 ignores it:

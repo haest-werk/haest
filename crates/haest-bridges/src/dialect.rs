@@ -10,10 +10,18 @@
 //!   `{ input }`, `{ stop }`, `{ steer }`, `{ continue }`, `{ compact }`),
 //!   read by haest-mods' serde. Empty output passes. Every event.
 //! - [`Claude`]: Claude Code's hook JSON, so its hook scripts run as they
-//!   are (claude.rs has the mapping). The events Claude Code has.
+//!   are (claude.rs has the mapping). The events Claude Code has, as
+//!   haest-mods' `ModEvent::claude_code` names them.
 //!
-//! In both, a command's exit 2 is the event's blocking answer with stderr as
-//! its text ([`blocked`]).
+//! Neither holds anything: what a hook's input names of the conversation
+//! (its directory, the session it is on) comes with each event. In both, a
+//! command's exit 2 is the event's blocking answer with stderr as its text
+//! ([`blocked`]).
+//!
+//! A transport is a [`Hook<E>`](haest_mods::Hook) of every event its
+//! dialect is a [`Dialect<E>`] of, by one generic impl: so `ShellHook<Claude>`
+//! and `HttpHook<Claude>` are hooks of exactly the events claude.rs maps,
+//! and bound to another one they do not compile.
 
 use std::path::{Path, PathBuf};
 
@@ -56,8 +64,10 @@ pub(crate) trait Vars {
 }
 
 /// A dialect: what a hook in another process is handed for the event `E`,
-/// and how its answer reads as `E`'s decision.
-pub(crate) trait Dialect<E: Event>: Vars + Send + Sync {
+/// and how its answer reads as `E`'s decision. Which events a dialect
+/// speaks is which `Dialect<E>` it implements: a transport in it is a hook
+/// of those and no other.
+pub(crate) trait Dialect<E: Event>: Vars + Send + Sync + 'static {
     /// The hook's input for `payload`, whose own JSON is `json`, in a
     /// conversation in `dir`.
     fn input(&self, payload: &E, json: Value, dir: &Path) -> Result<Value, HookFailure>;
@@ -193,45 +203,6 @@ fn said(text: &str) -> String {
         format!(": {text}")
     }
 }
-
-/// Writes `Hook<E>` for a transport `$transport<D>` whose `ask` carries one
-/// event: every event in the [`Haest`] dialect, and in the [`Claude`]
-/// dialect the events Claude Code has (claude.rs maps each). `model.before`
-/// and `model.after` have none, so a `Claude` hook does not bind to them:
-/// it does not compile.
-macro_rules! hook_impls {
-    ($transport:ident) => {
-        #[async_trait::async_trait]
-        impl<E: haest_mods::Event> haest_mods::Hook<E> for $transport<$crate::dialect::Haest> {
-            async fn run(
-                &self,
-                payload: E,
-                cancel: &tokio_util::sync::CancellationToken,
-            ) -> Result<E::Decision, haest_core::error::BoxError> {
-                Ok(self.ask(payload, cancel).await?)
-            }
-        }
-        $crate::dialect::hook_impls!(@claude $transport:
-            ToolBeforePayload, ToolAfterPayload, PromptSubmitPayload, SystemPromptPayload,
-            TurnEndPayload);
-    };
-    (@claude $transport:ident: $($payload:ident),+) => {$(
-        #[async_trait::async_trait]
-        impl haest_mods::Hook<haest_mods::$payload> for $transport<$crate::dialect::Claude> {
-            async fn run(
-                &self,
-                payload: haest_mods::$payload,
-                cancel: &tokio_util::sync::CancellationToken,
-            ) -> Result<
-                <haest_mods::$payload as haest_mods::Event>::Decision,
-                haest_core::error::BoxError,
-            > {
-                Ok(self.ask(payload, cancel).await?)
-            }
-        }
-    )+};
-}
-pub(crate) use hook_impls;
 
 #[cfg(test)]
 mod tests;

@@ -149,9 +149,18 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   decision per event (the mod files' own JSON), `Hook<E>` for one handler,
   `Binding` for its timeout, `OnError` and tool matcher (in a debug build,
   `with_matcher` stops at a matcher that is not haest's pattern), and
-  `Hooks`, a mod made of bindings. A Rust closure is a hook.
+  `Hooks`, a mod made of bindings. A Rust closure is a hook. Each payload a
+  `Hooks` binding gets names the conversation's session as of that event
+  (`Event::session`, a `SessionView` of its id and transcript path), the
+  one the host names on the env with `ModEnv::with_session` and, when a
+  /clear starts a new one, `ModEnv::set_session`. In the JSON it is
+  `session: { id, transcriptPath }`, left out when the host names none, so
+  a payload's JSON is otherwise as it was; mod files' payloads do not have
+  it. `ModEvent::claude_code` is each event's Claude Code event, if it has
+  one: the one list the config check and the `Claude` dialect read.
 - haest-runtime: a built conversation puts its mods' loop events in the
-  loop.
+  loop, and names its session (the session file's id and path) on its
+  mods' env, the new one at each `Runtime::clear`.
 - haest-bridges, a new crate: the ways to hook haest from outside Rust,
   one feature each. `js` is the mod files, as `ModFiles`.
 - haest-bridges: hooks in another process. `shell` is `ShellHook`, a
@@ -161,7 +170,11 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   is `HttpHook`, a POST per event through haest-http's `HttpClient`. Both
   speak haest's own JSON (`Haest`, every event) or Claude Code's hook JSON
   (`Claude`: PreToolUse, PostToolUse, UserPromptSubmit, SessionStart and
-  Stop), so Claude Code hook scripts run as they are. The facade's
+  Stop), so Claude Code hook scripts run as they are. Both dialects are
+  unit values that hold nothing of the conversation: `Claude` reads
+  `session_id` and `transcript_path` from each payload's session, so a hook
+  bound once names the new session after a /clear. A `Claude` hook on
+  `model.before` or `model.after` does not compile. The facade's
   `bridge-shell` and `bridge-http`, off by default; the example
   `external_hooks` and [docs/extending.md](docs/extending.md#hooks-in-another-process).
 - haest-mods: `TurnEndPayload` has `answer` (the turn's last answer, as

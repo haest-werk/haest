@@ -7,8 +7,8 @@ use std::path::Path;
 use haest_core::{ToolOutput, testing::text_answer};
 use haest_mods::{
     Before, ModelAfterDecision, ModelAfterPayload, ModelBeforeDecision, ModelBeforePayload,
-    PromptSubmitPayload, SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, TurnEndDecision,
-    TurnEndPayload,
+    PromptSubmitPayload, SessionView, SystemPromptPayload, ToolAfterPayload, ToolBeforePayload,
+    TurnEndDecision, TurnEndPayload,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -163,7 +163,7 @@ fn the_haest_input_is_the_event_name_and_the_payload_and_nothing_in_the_environm
 
 #[test]
 fn the_claude_input_leaves_out_what_the_host_did_not_give_and_names_the_project_dir() {
-    let out = outgoing(&Claude::new(), &tool_before(), Some(Path::new("/c"))).unwrap();
+    let out = outgoing(&Claude, &tool_before(), Some(Path::new("/c"))).unwrap();
     let input: Value = serde_json::from_slice(&out.body).unwrap();
     assert_eq!(
         input,
@@ -176,12 +176,20 @@ fn the_claude_input_leaves_out_what_the_host_did_not_give_and_names_the_project_
         })
     );
     assert_eq!(
-        Claude::new().env(Path::new("/c")).get("CLAUDE_PROJECT_DIR"),
+        Claude.env(Path::new("/c")).get("CLAUDE_PROJECT_DIR"),
         Some("/c")
     );
 
+    // The payload's session: its id, and no transcript path the host keeps none of.
+    let mut named = tool_before();
+    named.session = Some(SessionView::new("s-1"));
+    let out = outgoing(&Claude, &named, Some(Path::new("/c"))).unwrap();
+    let input: Value = serde_json::from_slice(&out.body).unwrap();
+    assert_eq!(input["session_id"], "s-1");
+    assert!(input.get("transcript_path").is_none(), "{input}");
+
     let stop = |continued| {
-        let out = outgoing(&Claude::new(), &turn_end(continued), Some(Path::new("/c"))).unwrap();
+        let out = outgoing(&Claude, &turn_end(continued), Some(Path::new("/c"))).unwrap();
         serde_json::from_slice::<Value>(&out.body).unwrap()
     };
     assert_eq!(stop(false)["stop_hook_active"], false);
@@ -191,7 +199,7 @@ fn the_claude_input_leaves_out_what_the_host_did_not_give_and_names_the_project_
 
 #[test]
 fn a_claude_answer_haest_cannot_take_is_a_failure() {
-    let c = Claude::new();
+    let c = Claude;
     for (text, says) in [
         ("{not json", "not a decision"),
         (
@@ -220,7 +228,7 @@ fn a_claude_answer_haest_cannot_take_is_a_failure() {
 
 #[test]
 fn claude_answers_haest_has_no_decision_for_are_ignored() {
-    let c = Claude::new();
+    let c = Claude;
     let ignored =
         r#"{"continue":false,"stopReason":"x","systemMessage":"y","suppressOutput":true}"#;
     assert_eq!(
@@ -254,7 +262,7 @@ fn claude_answers_haest_has_no_decision_for_are_ignored() {
 
 #[test]
 fn a_claude_tool_output_replacement_is_a_new_output_and_an_object_is_its_json() {
-    let c = Claude::new();
+    let c = Claude;
     let replaced = c
         .decide(
             tool_after(),
@@ -274,7 +282,7 @@ fn a_claude_tool_output_replacement_is_a_new_output_and_an_object_is_its_json() 
 
 #[test]
 fn a_claude_deny_without_a_reason_still_gives_one() {
-    let c = Claude::new();
+    let c = Claude;
     let reason = |text: &str| match c.decide(tool_before(), answer(text)).unwrap() {
         Before::Deny(reason) => reason,
         other => panic!("{text}: expected a deny, got {other:?}"),

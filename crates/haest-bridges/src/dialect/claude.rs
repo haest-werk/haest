@@ -4,9 +4,11 @@
 //! is. Where Claude Code can do more than haest's event (ask the human,
 //! stop everything) haest fails closed or ignores it; `model.before` and
 //! `model.after` have no Claude Code event, so a `Claude` hook does not
-//! bind to them.
+//! bind to them. Which events Claude Code has is haest-mods'
+//! [`ModEvent::claude_code`]: a mapping here of one it names none for does
+//! not build.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use haest_core::{AssistantMessage, ChildEnv, tool::JsonMap};
 use haest_mods::{
@@ -31,13 +33,17 @@ use super::{Dialect, HookFailure, Reply, Vars, blocked};
 ///
 /// Its input has the fields Claude Code sends that haest has:
 /// `hook_event_name`, `cwd` (the conversation's directory), `session_id`
-/// and `transcript_path` when the host gave them ([`Claude::with_session_id`],
-/// [`Claude::with_transcript_path`]), and per event `tool_name`,
-/// `tool_input`, `tool_use_id`, `tool_response` (the output's text, as
-/// Claude Code sends a failed call's), `prompt`, and Stop's
-/// `stop_hook_active` (a `turn.end` answer already kept this turn going) and
-/// `last_assistant_message` (the answer's text). A command also gets
-/// `CLAUDE_PROJECT_DIR`, the conversation's directory.
+/// and `transcript_path` when the host names the session (the payload's
+/// [`SessionView`](haest_mods::SessionView), which the conversation's
+/// `ModEnv::set_session` names as of each event: after the human's /clear,
+/// the new one), and per event `tool_name`, `tool_input`, `tool_use_id`,
+/// `tool_response` (the output's text, as Claude Code sends a failed
+/// call's), `prompt`, and Stop's `stop_hook_active` (a `turn.end` answer
+/// already kept this turn going) and `last_assistant_message` (the answer's
+/// text). A command also gets `CLAUDE_PROJECT_DIR`, the conversation's
+/// directory. `transcript_path` names the host's own transcript (haest's
+/// session file), which is not Claude Code's format: a script that parses
+/// one reads the other wrong.
 ///
 /// Exit 2 is the event's blocking answer, its stderr the text: it refuses
 /// a `tool.before` call and keeps a `turn.end` going; on the other events it
@@ -47,47 +53,34 @@ use super::{Dialect, HookFailure, Reply, Vars, blocked};
 /// `stopReason`, `systemMessage` and `suppressOutput` have no haest
 /// decision and are ignored. Matchers are haest's (an exact name or a
 /// `prefix*`), never Claude Code's regular expressions.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Claude {
-    session_id: Option<String>,
-    transcript_path: Option<PathBuf>,
-}
+///
+/// Like [`Haest`](crate::Haest) it holds nothing: every fact a hook's input
+/// has comes with the event.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Claude;
 
-impl Claude {
-    /// The dialect, its input without a session id or a transcript path.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Hand the hook `session_id`: the conversation's id, as the host
-    /// knows it.
-    #[must_use]
-    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
-        self.session_id = Some(session_id.into());
-        self
-    }
-
-    /// Hand the hook `transcript_path`: where the host keeps the
-    /// conversation's transcript. haest's session file is not Claude Code's
-    /// transcript format: a script that parses one reads the other wrong.
-    #[must_use]
-    pub fn with_transcript_path(mut self, path: impl Into<PathBuf>) -> Self {
-        self.transcript_path = Some(path.into());
-        self
-    }
-
-    /// The fields every event's input has.
-    fn common(&self, hook_event_name: &str, dir: &Path) -> JsonMap {
-        let mut input = JsonMap::new();
-        if let Some(id) = &self.session_id {
-            input.insert("session_id".into(), id.as_str().into());
-        }
-        if let Some(path) = &self.transcript_path {
+/// The fields every event's input has: Claude Code's name for `E`, the
+/// conversation's directory, the session `payload` names.
+fn common<E: Event>(payload: &E, dir: &Path) -> JsonMap {
+    let hook_event_name = const { claude_code(E::NAME) };
+    let mut input = JsonMap::new();
+    if let Some(session) = payload.session() {
+        input.insert("session_id".into(), session.id.as_str().into());
+        if let Some(path) = &session.transcript_path {
             input.insert("transcript_path".into(), path_text(path).into());
         }
-        input.insert("cwd".into(), path_text(dir).into());
-        input.insert("hook_event_name".into(), hook_event_name.into());
-        input
+    }
+    input.insert("cwd".into(), path_text(dir).into());
+    input.insert("hook_event_name".into(), hook_event_name.into());
+    input
+}
+
+/// Claude Code's name for `event`, when the build evaluates it: a mapping
+/// of an event haest-mods names none for fails to build here.
+const fn claude_code(event: ModEvent) -> &'static str {
+    match event.claude_code() {
+        Some(name) => name,
+        None => panic!("the claude dialect maps an event Claude Code does not have"),
     }
 }
 
@@ -212,7 +205,7 @@ const ASKED: &str = "a hook asked for the human's approval, which a hook cannot 
 
 impl Dialect<ToolBeforePayload> for Claude {
     fn input(&self, p: &ToolBeforePayload, _: Value, dir: &Path) -> Result<Value, HookFailure> {
-        let mut input = self.common("PreToolUse", dir);
+        let mut input = common(p, dir);
         input.insert("tool_name".into(), p.call.name.as_str().into());
         input.insert("tool_input".into(), Value::Object(p.call.input.clone()));
         if let Some(id) = &p.ctx.tool_call_id {
@@ -253,7 +246,7 @@ impl Dialect<ToolBeforePayload> for Claude {
 
 impl Dialect<ToolAfterPayload> for Claude {
     fn input(&self, p: &ToolAfterPayload, _: Value, dir: &Path) -> Result<Value, HookFailure> {
-        let mut input = self.common("PostToolUse", dir);
+        let mut input = common(p, dir);
         input.insert("tool_name".into(), p.call.name.as_str().into());
         input.insert("tool_input".into(), Value::Object(p.call.input.clone()));
         input.insert("tool_response".into(), p.output.content.as_str().into());
@@ -303,7 +296,7 @@ impl Dialect<ToolAfterPayload> for Claude {
 
 impl Dialect<PromptSubmitPayload> for Claude {
     fn input(&self, p: &PromptSubmitPayload, _: Value, dir: &Path) -> Result<Value, HookFailure> {
-        let mut input = self.common("UserPromptSubmit", dir);
+        let mut input = common(p, dir);
         input.insert("prompt".into(), p.text.as_str().into());
         Ok(Value::Object(input))
     }
@@ -334,8 +327,8 @@ impl Dialect<PromptSubmitPayload> for Claude {
 }
 
 impl Dialect<SystemPromptPayload> for Claude {
-    fn input(&self, _: &SystemPromptPayload, _: Value, dir: &Path) -> Result<Value, HookFailure> {
-        Ok(Value::Object(self.common("SessionStart", dir)))
+    fn input(&self, p: &SystemPromptPayload, _: Value, dir: &Path) -> Result<Value, HookFailure> {
+        Ok(Value::Object(common(p, dir)))
     }
 
     fn decide(&self, _: SystemPromptPayload, reply: Reply) -> Result<Option<String>, HookFailure> {
@@ -353,7 +346,7 @@ impl Dialect<SystemPromptPayload> for Claude {
 
 impl Dialect<TurnEndPayload> for Claude {
     fn input(&self, p: &TurnEndPayload, _: Value, dir: &Path) -> Result<Value, HookFailure> {
-        let mut input = self.common("Stop", dir);
+        let mut input = common(p, dir);
         input.insert("stop_hook_active".into(), p.continued.into());
         let answer = p
             .answer

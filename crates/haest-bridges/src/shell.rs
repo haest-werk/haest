@@ -6,12 +6,13 @@ use std::{
     time::Duration,
 };
 
-use haest_core::{ChildEnv, workspace::ExecOptions};
-use haest_mods::Event;
+use async_trait::async_trait;
+use haest_core::{ChildEnv, error::BoxError, workspace::ExecOptions};
+use haest_mods::{Event, Hook};
 use haest_workspace::RealWorkspace;
 use tokio_util::sync::CancellationToken;
 
-use crate::dialect::{Dialect, Haest, HookFailure, Reply, hook_impls, outgoing, shown};
+use crate::dialect::{Dialect, Haest, HookFailure, Reply, outgoing, shown};
 
 #[cfg(test)]
 mod tests;
@@ -31,7 +32,8 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// (Claude Code's hook JSON, so its hook scripts run as they are;
 /// [`with_dialect`](Self::with_dialect)). A `ShellHook<Claude>` is a hook
 /// only of the events Claude Code has: bound to `model.before` or
-/// `model.after` it does not compile.
+/// `model.after` it does not compile. Neither dialect holds anything of the
+/// conversation: each event's payload brings it.
 ///
 /// # How a command answers
 ///
@@ -115,21 +117,37 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// # }
 /// ```
 ///
-/// A Claude Code hook script, as it is, on `tool.before` and `turn.end`:
+/// A Claude Code hook script, as it is, on `tool.before` and `turn.end`.
+/// The session it is told (`session_id`, `transcript_path`) is the one the
+/// conversation's [`ModEnv`](haest_mods::ModEnv) names at each event: the
+/// host names the new one at the human's /clear, and the hooks stay bound.
 ///
 /// ```
 /// use haest_bridges::{Claude, ShellHook};
-/// use haest_mods::{Binding, Hooks, ToolBeforePayload};
+/// use haest_core::workspace::WorkspaceMode;
+/// use haest_mods::{Binding, Hooks, ModEnv, Mods, SessionView, ToolBeforePayload};
+/// # use haest_mods::{ApprovalRequest, Decision, ModUi};
+/// # struct Terminal;
+/// # #[async_trait::async_trait]
+/// # impl ModUi for Terminal {
+/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+/// #     fn info(&self, _: &str) {}
+/// # }
 ///
-/// let claude = Claude::new().with_session_id("conversation-7");
 /// let hooks = Hooks::new()
 ///     .on_tool_before(
 ///         Binding::<ToolBeforePayload>::new(
-///             ShellHook::new("python3 .claude/hooks/guard.py").with_dialect(claude.clone()),
+///             ShellHook::new("python3 .claude/hooks/guard.py").with_dialect(Claude),
 ///         )
 ///         .with_matcher("Bash"),
 ///     )
-///     .on_turn_end(ShellHook::new(".claude/hooks/tests-pass.sh").with_dialect(claude));
+///     .on_turn_end(ShellHook::new(".claude/hooks/tests-pass.sh").with_dialect(Claude));
+/// let env = ModEnv::new("/project", WorkspaceMode::Real, Terminal)
+///     .with_session(SessionView::new("conversation-7"));
+/// let mods = Mods::new(env, [hooks]);
+///
+/// // The human's /clear: the hooks are told the new session from the next event on.
+/// mods.env().set_session(SessionView::new("conversation-8"));
 /// ```
 ///
 /// Claude Code has no `model.before`: a `Claude` hook there does not compile.
@@ -138,7 +156,7 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// use haest_bridges::{Claude, ShellHook};
 /// use haest_mods::Hooks;
 ///
-/// let hooks = Hooks::new().on_model_before(ShellHook::new("./x.sh").with_dialect(Claude::new()));
+/// let hooks = Hooks::new().on_model_before(ShellHook::new("./x.sh").with_dialect(Claude));
 /// ```
 #[derive(Debug, Clone)]
 pub struct ShellHook<D = Haest> {
@@ -235,4 +253,11 @@ impl<D> ShellHook<D> {
     }
 }
 
-hook_impls!(ShellHook);
+/// A hook of every event its dialect speaks: every one in [`Haest`], the
+/// ones Claude Code has in [`Claude`](crate::Claude).
+#[async_trait]
+impl<E: Event, D: Dialect<E>> Hook<E> for ShellHook<D> {
+    async fn run(&self, payload: E, cancel: &CancellationToken) -> Result<E::Decision, BoxError> {
+        Ok(self.ask(payload, cancel).await?)
+    }
+}

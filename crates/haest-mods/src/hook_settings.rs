@@ -33,22 +33,33 @@ haest_core::word_enum! {
         #[default]
         Haest = "haest",
         /// Claude Code's hook JSON, so its hook scripts run as they are, on
-        /// the events Claude Code has (haest-bridges' `Claude`).
+        /// the events Claude Code has ([`ModEvent::claude_code`];
+        /// haest-bridges' `Claude`).
         Claude = "claude",
     }
 }
 
-/// The events a `claude` entry binds: the ones Claude Code has (PreToolUse,
-/// PostToolUse, UserPromptSubmit, SessionStart, Stop). `model.before` and
-/// `model.after` have none (D42). haest-bridges' tests hold this to the
-/// events its `Claude` hook implements.
-const CLAUDE_EVENTS: &[ModEvent] = &[
-    ModEvent::ToolBefore,
-    ModEvent::ToolAfter,
-    ModEvent::PromptSubmit,
-    ModEvent::SystemPrompt,
-    ModEvent::TurnEnd,
-];
+impl ModEvent {
+    /// Claude Code's name for this event (`PreToolUse` for `tool.before`),
+    /// or none when Claude Code has no such event (`model.before`,
+    /// `model.after`).
+    ///
+    /// The one list of the events the `claude` dialect speaks: the `hooks`
+    /// setting refuses `dialect = "claude"` on any other, haest-bridges'
+    /// `Claude` hands a hook this name as `hook_event_name`, and a `Claude`
+    /// mapping of an event this names none for does not build. A new event
+    /// does not compile until it is decided here.
+    pub const fn claude_code(self) -> Option<&'static str> {
+        match self {
+            Self::ToolBefore => Some("PreToolUse"),
+            Self::ToolAfter => Some("PostToolUse"),
+            Self::PromptSubmit => Some("UserPromptSubmit"),
+            Self::SystemPrompt => Some("SessionStart"),
+            Self::TurnEnd => Some("Stop"),
+            Self::ModelBefore | Self::ModelAfter => None,
+        }
+    }
+}
 
 /// The events about one tool call, which a `matcher` narrows: the
 /// [`ToolEvent`](crate::ToolEvent)s. haest-bridges' tests hold this to the
@@ -484,8 +495,11 @@ impl HookEntry {
             Target::Url(url) => check_url(url)?,
             Target::Command(_) => {}
         }
-        if self.dialect == HookDialect::Claude && !CLAUDE_EVENTS.contains(&event) {
-            let has: Vec<&str> = CLAUDE_EVENTS.iter().map(|e| e.as_str()).collect();
+        if self.dialect == HookDialect::Claude && event.claude_code().is_none() {
+            let has: Vec<&str> = (ModEvent::ALL.iter())
+                .filter(|e| e.claude_code().is_some())
+                .map(|e| e.as_str())
+                .collect();
             return Err(format!(
                 "{event} has no Claude Code event, so `dialect = \"claude\"` can't bind it (it binds {})",
                 has.join(", ")

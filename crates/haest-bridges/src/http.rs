@@ -6,12 +6,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use haest_core::workspace::MAX_OUTPUT_BYTES;
+use async_trait::async_trait;
+use haest_core::{error::BoxError, workspace::MAX_OUTPUT_BYTES};
 use haest_http::{HttpClientRef, Request, redacted_url};
-use haest_mods::Event;
+use haest_mods::{Event, Hook};
 use tokio_util::sync::CancellationToken;
 
-use crate::dialect::{Dialect, Haest, HookFailure, Reply, hook_impls, outgoing, shown};
+use crate::dialect::{Dialect, Haest, HookFailure, Reply, outgoing, shown};
 
 #[cfg(test)]
 mod tests;
@@ -32,7 +33,8 @@ const MAX_ERROR_BODY: usize = 64 * 1024;
 /// (the default, every event) or [`Claude`](crate::Claude) (the JSON Claude
 /// Code's HTTP hooks get and answer, the same as its command hooks';
 /// [`with_dialect`](Self::with_dialect)). A `HttpHook<Claude>` is a hook only
-/// of the events Claude Code has.
+/// of the events Claude Code has, and is told the session each event's
+/// payload names.
 ///
 /// | Response | What it is |
 /// |---|---|
@@ -205,4 +207,11 @@ impl<D> HttpHook<D> {
     }
 }
 
-hook_impls!(HttpHook);
+/// A hook of every event its dialect speaks: every one in [`Haest`], the
+/// ones Claude Code has in [`Claude`](crate::Claude).
+#[async_trait]
+impl<E: Event, D: Dialect<E>> Hook<E> for HttpHook<D> {
+    async fn run(&self, payload: E, cancel: &CancellationToken) -> Result<E::Decision, BoxError> {
+        Ok(self.ask(payload, cancel).await?)
+    }
+}

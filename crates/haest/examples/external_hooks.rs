@@ -33,7 +33,10 @@ use haest::{
         workspace::WorkspaceMode,
     },
     http::testing::{Respond, Server},
-    mods::{ApprovalRequest, Binding, Decision, Hooks, ModEnv, ModHooks, ModTools, ModUi, Mods},
+    mods::{
+        ApprovalRequest, Binding, Decision, Hooks, ModEnv, ModHooks, ModTools, ModUi, Mods,
+        SessionView,
+    },
     serde_json::{Value, json},
 };
 
@@ -115,14 +118,19 @@ async fn run() -> Result<(), BoxError> {
     // A Claude Code hook script as it is, on Bash calls only.
     let guard = ShellHook::new(format!("sh '{NO_RM_RF_SH}'"))
         .with_cwd(project)
-        .with_dialect(Claude::new().with_session_id("example"));
+        .with_dialect(Claude);
     // A service on every finished turn.
     let reviewer = reviewer();
     let review = HttpHook::new(reviewer.url("/turn-end"));
     let hooks = Hooks::new()
         .on_tool_before(Binding::new(guard).with_matcher("Bash"))
         .on_turn_end(review);
-    let mods = Mods::new(ModEnv::new(project, WorkspaceMode::Real, Terminal), [hooks]);
+    // The session the conversation is on: each hook is told it at every
+    // event (the script as `session_id`, the reviewer as `session`), and a
+    // /clear names the new one with `mods.env().set_session(..)`.
+    let env = ModEnv::new(project, WorkspaceMode::Real, Terminal)
+        .with_session(SessionView::new("example"));
+    let mods = Mods::new(env, [hooks]);
 
     let model = ScriptedProvider::new([
         tool_answer(&[("a", "Bash", json!({"command": "rm -rf build"}))]),

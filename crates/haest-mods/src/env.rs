@@ -11,7 +11,10 @@ use async_trait::async_trait;
 use haest_core::{error::report, workspace::WorkspaceMode};
 use tokio_util::sync::CancellationToken;
 
-use crate::ask::{ApprovalRequest, Decision};
+use crate::{
+    ask::{ApprovalRequest, Decision},
+    payload::SessionView,
+};
 
 /// PLUG POINT: how mods reach the human, implemented by the host (a CLI, a
 /// control panel, a chat app).
@@ -58,56 +61,96 @@ haest_core::plug_ref! {
 /// One per conversation, shared by every mod in [`Mods`](crate::Mods); the
 /// events get it as their `haest` argument. Cheap to clone: a clone shares
 /// what the conversation's turns left in it (which turn a `turn.end`
-/// decision kept going, [`TurnEndPayload::continued`](crate::TurnEndPayload::continued)).
+/// decision kept going, [`TurnEndPayload::continued`](crate::TurnEndPayload::continued))
+/// and the session its host named ([`set_session`](Self::set_session)).
 #[derive(Debug, Clone)]
 pub struct ModEnv {
     cwd: PathBuf,
     workspace: WorkspaceMode,
     ui: ModUiRef,
+    /// What the conversation's turns and its host left here, for every clone.
+    shared: Arc<Mutex<Shared>>,
+}
+
+/// What every clone of one [`ModEnv`] shares.
+#[derive(Debug, Default)]
+struct Shared {
     /// The turn a `turn.end` decision last kept going, by its cancel token
     /// (a turn's own, the same for every event in it).
-    kept_going: Arc<Mutex<Option<CancellationToken>>>,
+    kept_going: Option<CancellationToken>,
+    /// The session the conversation is on, as its host last named it.
+    session: Option<SessionView>,
 }
 
 impl ModEnv {
     /// The environment for one conversation's mods: its working directory,
-    /// the workspace its tools run in, and the host's [`ModUi`].
+    /// the workspace its tools run in, and the host's [`ModUi`]. It names
+    /// no session until [`with_session`](Self::with_session) or
+    /// [`set_session`](Self::set_session).
     pub fn new(cwd: impl Into<PathBuf>, workspace: WorkspaceMode, ui: impl Into<ModUiRef>) -> Self {
         Self {
             cwd: cwd.into(),
             workspace,
             ui: ui.into(),
-            kept_going: Arc::default(),
+            shared: Arc::default(),
         }
     }
 
-    /// The turn a `turn.end` decision last kept going. Held only to read or
-    /// set the token, so a poisoned lock is a bug here.
-    fn kept(&self) -> MutexGuard<'_, Option<CancellationToken>> {
-        self.kept_going
-            .lock()
-            .expect("the mod env's turn lock poisoned")
+    /// What the clones share. Held only to read or set a field, so a
+    /// poisoned lock is a bug here.
+    fn held(&self) -> MutexGuard<'_, Shared> {
+        self.shared.lock().expect("the mod env's lock poisoned")
     }
 
     /// A `turn.end` decision kept `turn` (its cancel token) going.
     pub(crate) fn kept_going(&self, turn: &CancellationToken) {
-        *self.kept() = Some(turn.clone());
+        self.held().kept_going = Some(turn.clone());
     }
 
     /// Whether a `turn.end` decision already kept `turn` going.
     pub(crate) fn continued(&self, turn: &CancellationToken) -> bool {
-        self.kept().as_ref() == Some(turn)
+        self.held().kept_going.as_ref() == Some(turn)
     }
 
-    /// Take what `outer`'s turns left: a [`Mods`](crate::Mods) inside another
-    /// runs on its own env, and its mods must see what the outer one's
-    /// decided (a `turn.end` there kept the turn going).
+    /// Take what `outer` holds: a [`Mods`](crate::Mods) inside another runs
+    /// on its own env, and its mods must see what the outer one's decided
+    /// (a `turn.end` there kept the turn going) and the session the
+    /// conversation is on, when the outer env names one.
     pub(crate) fn follow(&self, outer: &ModEnv) {
-        if Arc::ptr_eq(&self.kept_going, &outer.kept_going) {
+        if Arc::ptr_eq(&self.shared, &outer.shared) {
             return;
         }
-        let kept = outer.kept().clone();
-        *self.kept() = kept;
+        let (kept, session) = {
+            let outer = outer.held();
+            (outer.kept_going.clone(), outer.session.clone())
+        };
+        let mut held = self.held();
+        held.kept_going = kept;
+        if session.is_some() {
+            held.session = session;
+        }
+    }
+
+    /// This env, the conversation on `session` from the start
+    /// ([`set_session`](Self::set_session)).
+    #[must_use]
+    pub fn with_session(self, session: SessionView) -> Self {
+        self.set_session(session);
+        self
+    }
+
+    /// The conversation is on `session` from now on: the host names it when
+    /// the conversation starts and again when the human's /clear starts a
+    /// new one. Every clone of this env sees it, and every payload a
+    /// [`Hooks`](crate::Hooks) binding gets from the next event on carries
+    /// it ([`Event::session`](crate::Event::session)).
+    pub fn set_session(&self, session: SessionView) {
+        self.held().session = Some(session);
+    }
+
+    /// The session the conversation is on, when its host named one.
+    pub fn session(&self) -> Option<SessionView> {
+        self.held().session.clone()
     }
 
     /// The conversation's working directory.

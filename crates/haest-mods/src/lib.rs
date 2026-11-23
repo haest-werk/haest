@@ -311,8 +311,8 @@ pub use hook_settings::{HookDialect, HookEntry, HookEntryError, HookSettings};
 pub use hooks::ModHooks;
 pub use loader::{ModOptions, load_mods};
 pub use payload::{
-    AgentView, ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload,
-    ToolAfterPayload, ToolBeforePayload, ToolCallContext, TurnEndPayload,
+    AgentView, ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SessionView,
+    SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, ToolCallContext, TurnEndPayload,
 };
 pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PLANNING_TOOLS, PlanMod};
 pub use registry::{CommandOutcome, Mods};

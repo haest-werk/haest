@@ -15,8 +15,9 @@
 #
 #   haest (Rust):
 #     Hooks::new().on_tool_before(
-#         Binding::new(ShellHook::new("sh docs/examples/hooks/no-rm-rf.sh").with_dialect(Claude::new()))
+#         Binding::new(ShellHook::new("sh docs/examples/hooks/no-rm-rf.sh").with_dialect(Claude))
 #             .with_matcher("Bash"))
+#     (its session_id: the one the conversation's ModEnv names, `ModEnv::set_session`)
 #
 # The call arrives as JSON on stdin ({ "tool_name": "Bash", "tool_input": { "command": .. }, .. }).
 # Printing nothing lets it run; this answer refuses it, and the model reads the reason.

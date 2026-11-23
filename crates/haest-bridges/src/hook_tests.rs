@@ -49,8 +49,9 @@ where
     }
 }
 
-/// The Claude Code event `event` is, or none: a new event panics, so its
-/// mapping (or that it has none) is decided before the tests pass.
+/// The Claude Code event `event` is, or none, as D42 writes it: the tests'
+/// own word for what `ModEvent::claude_code` says. A new event panics, so
+/// what it is to Claude Code is decided here too before the tests pass.
 pub(crate) fn claude_event(event: ModEvent) -> Option<&'static str> {
     match event {
         ModEvent::ToolBefore => Some("PreToolUse"),
@@ -202,13 +203,13 @@ impl Remote {
         }
     }
 
-    /// It, speaking `claude`, bound to `event`.
-    pub(crate) fn claude_hooks(&self, event: ModEvent, claude: Claude) -> Hooks {
+    /// It, in Claude Code's dialect, bound to `event`.
+    pub(crate) fn claude_hooks(&self, event: ModEvent) -> Hooks {
         match self.via {
             #[cfg(feature = "shell")]
-            Via::Shell => bound_claude(event, self.shell().with_dialect(claude)),
+            Via::Shell => bound_claude(event, self.shell().with_dialect(Claude)),
             #[cfg(feature = "http")]
-            Via::Http => bound_claude(event, self.http().with_dialect(claude)),
+            Via::Http => bound_claude(event, self.http().with_dialect(Claude)),
         }
     }
 

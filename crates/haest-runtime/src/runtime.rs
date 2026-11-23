@@ -25,6 +25,7 @@ use crate::{
     RuntimeHooks, SessionFileError,
     hooks::Compact,
     inbox::InboxQueue,
+    mods,
     store::{new_session, record_start},
     world::kill_jobs,
 };
@@ -294,6 +295,7 @@ impl<U> Runtime<U> {
         let ui = self.hooks.ui().clone();
         let store = new_session(&self.fs, self.hooks.settings(), ui).await?;
         self.hooks.swap_store(store);
+        mods::name_session(&self.mods, &self.hooks);
         self.agent.replace_history(Vec::new());
         self.board.restore(Vec::new());
         record_start(&self.hooks, &self.agent);

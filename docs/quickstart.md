@@ -129,6 +129,10 @@ let deps = AgentDeps::new(shared, ModTools::new(tools, mods.clone()), "You fix c
     .with_hooks(ModHooks::new(NoHooks, mods));
 ```
 
+Each payload carries the conversation's session (`call.session`, a Claude Code script's
+`session_id`) when the env names one: `ModEnv::new(..).with_session(SessionView::new(id))`,
+and `mods.env().set_session(..)` when a /clear starts a new session.
+
 Whole programs that compile and run under `cargo test`:
 [external_hooks.rs](../crates/haest/examples/external_hooks.rs) (a shell script and a service as
 hooks) and [auto_compact.rs](../crates/haest/examples/auto_compact.rs) (a Rust hook and a mod

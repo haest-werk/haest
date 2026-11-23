@@ -61,7 +61,7 @@ async fn bash_with(
 async fn the_claude_code_script_in_the_docs_refuses_rm_rf_with_a_permission_decision() {
     let hook = ShellHook::new(format!("sh '{NO_RM_RF_SH}'"))
         .with_cwd(env!("CARGO_MANIFEST_DIR"))
-        .with_dialect(Claude::new());
+        .with_dialect(Claude);
     let hooks = Hooks::new().on_tool_before(Binding::new(hook).with_matcher("Bash"));
 
     let (refused, ran) = bash(hooks.clone(), TestUi::new(), "rm -rf ~/projects").await;
@@ -79,7 +79,7 @@ async fn a_claude_code_script_that_exits_2_refuses_the_call_with_its_stderr() {
     let (_dir, hook) =
         script("if grep -q 'rm -rf'; then echo 'rm -rf is blocked by policy' >&2; exit 2; fi\n");
     let hooks = Hooks::new().on_tool_before(
-        Binding::<ToolBeforePayload>::new(hook.with_dialect(Claude::new())).with_matcher("Bash"),
+        Binding::<ToolBeforePayload>::new(hook.with_dialect(Claude)).with_matcher("Bash"),
     );
     let (refused, ran) = bash(hooks.clone(), TestUi::new(), "rm -rf /").await;
     let refused = refused.unwrap_err().to_string();
@@ -97,7 +97,7 @@ echo '{"decision": "block", "reason": "Run the tests before you stop."}'
     );
     let mods = Mods::new(
         env(TestUi::new(), WorkspaceMode::Real),
-        [Hooks::new().on_turn_end(hook.with_dialect(Claude::new()))],
+        [Hooks::new().on_turn_end(hook.with_dialect(Claude))],
     );
     let p = ScriptedProvider::new(
         ["Done.", "Tests pass.", "Done again.", "Still pass."].map(text_answer),
@@ -229,7 +229,7 @@ async fn a_hook_runs_in_the_conversations_dir_with_only_the_variables_it_was_han
     );
 
     // Claude's: the project dir too, plain text as context.
-    let claude = hook.with_dialect(Claude::new());
+    let claude = hook.with_dialect(Claude);
     let hooks = Hooks::new().on_system_prompt(Binding::<SystemPromptPayload>::new(claude));
     assert_eq!(
         said(hooks).await,

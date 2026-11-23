@@ -2,17 +2,14 @@
 //! dialect naming the session the conversation is on at each event, and an
 //! entry's matcher, timeout and `on_error` in its binding.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::Arc;
 
 use haest_core::{ChildEnv, workspace::WorkspaceMode};
-use haest_mods::{ModEvent, Mods};
+use haest_mods::{ModEvent, Mods, SessionView};
 use serde_json::{Value, json};
 
 use super::read;
-use crate::{Claude, HookHost, hook_tests::*};
+use crate::{HookHost, hook_tests::*};
 
 /// A host in `remote`'s directory that may start processes (with `PATH`).
 fn host(remote: &Remote) -> HookHost {
@@ -25,6 +22,11 @@ fn bound_mods(setting: Value, host: &HookHost, ui: Arc<TestUi>) -> Mods {
     let (hooks, notes) = host.bind(&read(setting).unwrap());
     assert_eq!(notes, Vec::<String>::new());
     Mods::new(env(ui, WorkspaceMode::Real), [hooks.expect("bound")])
+}
+
+/// The session `n`, its transcript beside it.
+fn session(n: u8) -> SessionView {
+    SessionView::new(format!("s-{n}")).with_transcript_path(format!("/sessions/s-{n}.jsonl"))
 }
 
 /// Every event of haest-mods binds from the config, through a command and a
@@ -44,29 +46,40 @@ async fn every_event_binds_from_the_config_through_each_bridge() {
     }
 }
 
-/// The claude dialect is made at each event: a hook names the session the
-/// conversation is on then, and a new one after a /clear.
+/// A claude entry names the session the conversation is on at each event,
+/// and the new one after a /clear; a haest entry gets it as `session`.
 #[tokio::test]
 async fn a_claude_entry_names_the_session_as_of_each_event() {
     for via in VIAS {
         let remote = Remote::answering(*via, "").await;
         let mut entry = remote.entry();
         entry["dialect"] = json!("claude");
-        let sessions = Arc::new(AtomicUsize::new(0));
-        let host = host(&remote).with_claude(move || {
-            let n = sessions.fetch_add(1, Ordering::SeqCst) + 1;
-            Claude::new()
-                .with_session_id(format!("s-{n}"))
-                .with_transcript_path(format!("/sessions/s-{n}.jsonl"))
-        });
-        let mods = bound_mods(json!({ "system.prompt": [entry] }), &host, TestUi::new());
+        let mods = bound_mods(
+            json!({ "system.prompt": [entry, remote.entry()] }),
+            &host(&remote),
+            TestUi::new(),
+        );
+        mods.env().set_session(session(1));
         mods.system_append().await;
+        mods.env().set_session(session(2));
         mods.system_append().await;
         let got = remote.received();
-        let ids: Vec<&Value> = got.iter().map(|input| &input["session_id"]).collect();
+        let (claude, haest): (Vec<&Value>, Vec<&Value>) = got
+            .iter()
+            .partition(|input| input.get("hook_event_name").is_some());
+        let ids: Vec<&Value> = claude.iter().map(|input| &input["session_id"]).collect();
         assert_eq!(ids, [&json!("s-1"), &json!("s-2")], "{via:?}");
-        assert_eq!(got[1]["transcript_path"], json!("/sessions/s-2.jsonl"));
-        assert_eq!(got[0]["hook_event_name"], json!("SessionStart"));
+        assert_eq!(claude[1]["transcript_path"], json!("/sessions/s-2.jsonl"));
+        assert_eq!(claude[0]["hook_event_name"], json!("SessionStart"));
+        let named: Vec<&Value> = haest.iter().map(|input| &input["session"]).collect();
+        assert_eq!(
+            named,
+            [
+                &json!({ "id": "s-1", "transcriptPath": "/sessions/s-1.jsonl" }),
+                &json!({ "id": "s-2", "transcriptPath": "/sessions/s-2.jsonl" }),
+            ],
+            "{via:?}"
+        );
     }
 }
 

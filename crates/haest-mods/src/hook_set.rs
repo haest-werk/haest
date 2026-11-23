@@ -46,6 +46,11 @@ mod tests;
 /// An interrupt while a hook decides is neither: the call or turn ends as
 /// interrupted, and nothing is reported.
 ///
+/// Every payload a binding gets carries the session the conversation is on
+/// as of that event, when its host named one on the [`ModEnv`]
+/// ([`ModEnv::set_session`]): a hook never keeps a session of its own, so
+/// after the human's /clear it reads the new one.
+///
 /// # Examples
 ///
 /// A guard on Bash that keeps secrets out of the transcript, and a turn
@@ -177,15 +182,18 @@ impl Hooks {
 
     /// The `nth` binding's answer to `payload`, after its [`OnError`]: an
     /// answer, `None` for a failure reported and passed over (`continue`),
-    /// or the error that ends the event (`block`, or an interrupt).
+    /// or the error that ends the event (`block`, or an interrupt). The
+    /// one place a binding runs, so every hook gets the session the
+    /// conversation is on as of this event.
     async fn ask<E: Event>(
         &self,
         binding: &Binding<E>,
         nth: usize,
-        payload: E,
+        mut payload: E,
         cancel: &CancellationToken,
         haest: &ModEnv,
     ) -> Result<Option<E::Decision>, HookError> {
+        payload.set_session(haest.session());
         match binding.run(payload, nth, cancel).await {
             Ok(decision) => Ok(Some(decision)),
             Err(e @ HookError::Interrupted { .. }) => Err(e),

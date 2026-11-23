@@ -168,8 +168,9 @@ impl RuntimeInputs {
     /// [`passed_env`](Self::with_passed_env)); a [`World::files`] starts
     /// none, so its command hooks are not bound and the [`Ui`](crate::Ui)
     /// is warned. A URL is POSTed through the [`http`](Self::with_http)
-    /// client. The `claude` dialect names the session file records go to
-    /// at that event: its id and its path, a new one after a /clear.
+    /// client. Each hook is told the session file records go to at that
+    /// event (its id and its path, a new one after a /clear): the `claude`
+    /// dialect as `session_id` and `transcript_path`, `haest` as `session`.
     ///
     /// A subagent's tool calls pass through them and its system prompt
     /// takes what `system.prompt` adds, as with every mod; `prompt.submit`,

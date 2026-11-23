@@ -3,7 +3,7 @@
 //! answer takes the effect of the haest decision D42 maps it to.
 
 use haest_core::workspace::WorkspaceMode;
-use haest_mods::Mods;
+use haest_mods::{Mods, SessionView};
 use serde_json::{Value, json};
 
 use super::*;
@@ -40,11 +40,13 @@ fn claude_input(event: ModEvent, dir: &Path) -> Value {
     input
 }
 
+/// The session `s-<n>`, its transcript beside it.
+fn session(n: u8) -> SessionView {
+    SessionView::new(format!("s-{n}")).with_transcript_path(format!("/t/s-{n}.jsonl"))
+}
+
 #[tokio::test]
 async fn every_claude_code_event_hands_a_shell_and_an_http_hook_claude_codes_input() {
-    let claude = Claude::new()
-        .with_session_id("s-1")
-        .with_transcript_path("/t/s-1.jsonl");
     for via in VIAS {
         for event in ModEvent::ALL {
             if claude_event(*event).is_none() {
@@ -52,8 +54,8 @@ async fn every_claude_code_event_hands_a_shell_and_an_http_hook_claude_codes_inp
             }
             let remote = Remote::answering(*via, "").await;
             let mods = Mods::new(
-                env(TestUi::new(), WorkspaceMode::Sandbox),
-                [remote.claude_hooks(*event, claude.clone())],
+                env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1)),
+                [remote.claude_hooks(*event)],
             );
             effect(*event, mods, "hooks").await;
             let received = remote.received();
@@ -64,6 +66,38 @@ async fn every_claude_code_event_hands_a_shell_and_an_http_hook_claude_codes_inp
                 "{via:?}: {event}"
             );
         }
+    }
+}
+
+/// A Rust host binds the dialect itself, with no `HookHost`, and names the
+/// session on the conversation's env: the hook is told it, and after the
+/// host's /clear the new one, though the hook was bound once.
+#[tokio::test]
+async fn a_claude_hook_a_rust_host_binds_names_the_new_session_after_a_clear() {
+    for via in VIAS {
+        let remote = Remote::answering(*via, "").await;
+        let env = env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1));
+        let mods = Mods::new(env, [remote.claude_hooks(ModEvent::SystemPrompt)]);
+        mods.system_append().await;
+        // The host's /clear: the same conversation, a new session.
+        mods.env().set_session(session(2));
+        mods.system_append().await;
+        let named: Vec<(Value, Value)> = (remote.received().iter())
+            .map(|input| {
+                (
+                    input["session_id"].clone(),
+                    input["transcript_path"].clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            named,
+            [
+                (json!("s-1"), json!("/t/s-1.jsonl")),
+                (json!("s-2"), json!("/t/s-2.jsonl"))
+            ],
+            "{via:?}"
+        );
     }
 }
 
@@ -179,7 +213,7 @@ async fn a_claude_code_answer_takes_the_effect_of_the_haest_decision_it_maps_to(
             let remote = Remote::answering(*via, claude).await;
             let mods = Mods::new(
                 env(TestUi::new(), WorkspaceMode::Sandbox),
-                [remote.claude_hooks(event, Claude::new())],
+                [remote.claude_hooks(event)],
             );
             let from = effect(event, mods, "hooks").await;
             assert_eq!(from, from_hooks, "{via:?}: {event} answering {claude}");
@@ -194,7 +228,7 @@ async fn a_refused_prompt_is_a_failure_the_human_sees_since_haest_cannot_refuse_
         let ui = TestUi::new();
         let mods = Mods::new(
             env(ui.clone(), WorkspaceMode::Sandbox),
-            [remote.claude_hooks(ModEvent::PromptSubmit, Claude::new())],
+            [remote.claude_hooks(ModEvent::PromptSubmit)],
         );
         assert_eq!(mods.rewrite_prompt("hi").await, "hi", "{via:?}");
         let errors = ui.errors().join("\n");
