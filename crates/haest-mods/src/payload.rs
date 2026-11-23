@@ -54,9 +54,37 @@ pub struct SessionView {
     /// The session's id, as the host knows it.
     pub id: String,
     /// Where the host keeps the session's transcript; `None` when it keeps
-    /// none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// none. In JSON a byte that is not UTF-8 is U+FFFD ([`Path::to_string_lossy`](std::path::Path::to_string_lossy)).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "lossy::some"
+    )]
     pub transcript_path: Option<PathBuf>,
+}
+
+/// A path as JSON text, every byte that is not UTF-8 replaced by U+FFFD
+/// ([`Path::to_string_lossy`](std::path::Path::to_string_lossy)): serde's own `PathBuf` refuses such a path,
+/// and a payload that does not encode fails every hook it goes to.
+mod lossy {
+    use std::path::{Path, PathBuf};
+
+    use serde::Serializer;
+
+    pub(super) fn path<S: Serializer>(path: &Path, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&path.to_string_lossy())
+    }
+
+    #[expect(
+        clippy::ref_option,
+        reason = "serde's serialize_with hands the field as it is"
+    )]
+    pub(super) fn some<S: Serializer>(path: &Option<PathBuf>, s: S) -> Result<S::Ok, S::Error> {
+        match path {
+            Some(path) => s.serialize_some(&path.to_string_lossy()),
+            None => s.serialize_none(),
+        }
+    }
 }
 
 impl SessionView {
@@ -83,7 +111,9 @@ impl SessionView {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct ToolCallContext {
-    /// The conversation's working directory.
+    /// The conversation's working directory. In JSON a byte that is not
+    /// UTF-8 is U+FFFD ([`Path::to_string_lossy`](std::path::Path::to_string_lossy)).
+    #[serde(serialize_with = "lossy::path")]
     pub cwd: PathBuf,
     /// The call's id, when the loop gave it one (`null` in JSON otherwise).
     pub tool_call_id: Option<String>,

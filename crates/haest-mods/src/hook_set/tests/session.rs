@@ -75,6 +75,7 @@ async fn every_event_hands_a_hook_the_session_the_env_names_as_of_that_event() {
         mods.env().set_session(session(2));
         effect(*event, mods, "hooks").await;
         let second = noting.ids();
+        assert!(!second.is_empty(), "{event} fired again");
         assert!(
             second.iter().all(|id| id.as_deref() == Some("s-2")),
             "{event}: {second:?}"
@@ -129,4 +130,44 @@ async fn a_hook_in_a_nested_mods_on_its_own_env_gets_the_outer_session() {
     mods.env().set_session(session(2));
     mods.system_append().await;
     assert_eq!(noting.ids(), [Some("s-1".into()), Some("s-2".into())]);
+}
+
+#[tokio::test]
+async fn a_nested_mods_two_conversations_take_turns_with_tells_the_second_none_of_the_first() {
+    let noting = Noting::default();
+    let shared = Mods::new(
+        env(TestUi::new(), WorkspaceMode::Sandbox),
+        [Hooks::new().on_system_prompt(noting.clone())],
+    );
+    let a = env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1));
+    let a = Mods::new(a, [ModRef::new(shared.clone())]);
+    let b = Mods::new(
+        env(TestUi::new(), WorkspaceMode::Sandbox),
+        [ModRef::new(shared)],
+    );
+    a.system_append().await;
+    // B's host names no session: B's hooks are told none, never A's.
+    b.system_append().await;
+    assert_eq!(noting.ids(), [Some("s-1".into()), None]);
+}
+
+#[tokio::test]
+async fn every_binding_of_one_event_gets_the_session_named_as_that_event_began() {
+    let noting = Noting::default();
+    let haest = env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1));
+    let host = haest.clone();
+    // The host names a new session while the event's first hook runs.
+    let clears = move |_: SystemPromptPayload, _: CancellationToken| {
+        host.set_session(session(2));
+        async { Ok::<Option<String>, BoxError>(None) }
+    };
+    let hooks = Hooks::new()
+        .on_system_prompt(clears)
+        .on_system_prompt(noting.clone());
+    let mods = Mods::new(haest, [hooks]);
+    mods.system_append().await;
+    assert_eq!(noting.ids(), [Some("s-1".into())]);
+    // The next event is on the new one.
+    mods.system_append().await;
+    assert_eq!(noting.ids(), [Some("s-2".into())]);
 }

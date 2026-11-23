@@ -172,6 +172,10 @@ let mods = Mods::new(env, [hooks]);
 mods.env().set_session(SessionView::new("s-2"));
 ```
 
+`Hooks` puts the session on each payload. A host that runs a `ShellHook` or an
+`HttpHook` with `Hook::run` in its own `Mod`, outside `Hooks`, sets the
+payload's `session` itself first, from `haest.session()`.
+
 `Claude` speaks Claude Code's hook JSON, so its hook scripts and HTTP hooks run
 as they are, on the events Claude Code has:
 

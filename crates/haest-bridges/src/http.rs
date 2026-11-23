@@ -33,8 +33,14 @@ const MAX_ERROR_BODY: usize = 64 * 1024;
 /// (the default, every event) or [`Claude`](crate::Claude) (the JSON Claude
 /// Code's HTTP hooks get and answer, the same as its command hooks';
 /// [`with_dialect`](Self::with_dialect)). A `HttpHook<Claude>` is a hook only
-/// of the events Claude Code has, and is told the session each event's
-/// payload names.
+/// of the events Claude Code has, `tool.before`, `tool.after`,
+/// `prompt.submit`, `system.prompt` and `turn.end`, as
+/// [`ModEvent::claude_code`](haest_mods::ModEvent::claude_code) lists them,
+/// and is told the session each event's payload names:
+/// [`Hooks`](haest_mods::Hooks) sets it from the conversation's
+/// [`ModEnv`](haest_mods::ModEnv), and a host that calls
+/// [`Hook::run`](haest_mods::Hook::run) itself sets the payload's `session`
+/// first (from `haest.session()`).
 ///
 /// | Response | What it is |
 /// |---|---|

@@ -156,7 +156,10 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   /clear starts a new one, `ModEnv::set_session`. In the JSON it is
   `session: { id, transcriptPath }`, left out when the host names none, so
   a payload's JSON is otherwise as it was; mod files' payloads do not have
-  it. `ModEvent::claude_code` is each event's Claude Code event, if it has
+  it. Every binding of one event gets the session named as the event
+  began. A path that is not UTF-8 (`transcriptPath`, a tool event's
+  `ctx.cwd`) goes out with U+FFFD for the bytes JSON cannot hold, instead
+  of failing the payload. `ModEvent::claude_code` is each event's Claude Code event, if it has
   one: the one list the config check and the `Claude` dialect read.
 - haest-runtime: a built conversation puts its mods' loop events in the
   loop, and names its session (the session file's id and path) on its

@@ -1,6 +1,7 @@
 //! What a loop event's payload carries of a message: never the media
-//! bytes, thinking signatures or provider state. That a mod file's handler
-//! receives exactly each payload's JSON is haest-bridges' test.
+//! bytes, thinking signatures or provider state. A path the OS allows but
+//! JSON cannot hold goes out as text. That a mod file's handler receives
+//! exactly each payload's JSON is haest-bridges' test.
 
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Message, SharedDeps, Tools, TurnCaps, Usage,
@@ -14,6 +15,31 @@ use crate::{
     payload::{AgentView, ModelAfterPayload, ModelBeforePayload},
     testing::CWD,
 };
+
+/// A session file or working dir whose name is not UTF-8 (Latin-1 `é`)
+/// would make every payload fail to encode, and every external hook with
+/// it: the bytes JSON cannot hold go out as U+FFFD.
+#[cfg(unix)]
+#[test]
+fn a_path_that_is_not_utf8_goes_out_with_its_bad_bytes_replaced() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::Path};
+
+    use haest_core::ToolContext;
+
+    use crate::payload::{SessionView, ToolCallContext};
+
+    let odd = Path::new(OsStr::from_bytes(b"/home/r\xe9sum\xe9"));
+    let session = SessionView::new("s-1").with_transcript_path(odd.join("s-1.jsonl"));
+    assert_eq!(
+        serde_json::to_value(session).unwrap(),
+        json!({ "id": "s-1", "transcriptPath": "/home/r\u{FFFD}sum\u{FFFD}/s-1.jsonl" })
+    );
+    let ctx = ToolCallContext::new(&ToolContext::new(odd, ShutWorkspace));
+    assert_eq!(
+        serde_json::to_value(ctx).unwrap(),
+        json!({ "cwd": "/home/r\u{FFFD}sum\u{FFFD}", "toolCallId": null })
+    );
+}
 
 fn agent_with(history: Vec<Message>) -> Agent {
     let p = ScriptedProvider::new([]);

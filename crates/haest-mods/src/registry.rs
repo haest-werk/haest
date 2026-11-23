@@ -64,10 +64,18 @@ pub enum CommandOutcome {
 /// [`ModHooks`](crate::ModHooks) and the host's input path, and they all
 /// run the same mods for good.
 ///
+/// A `Mods` and its clones belong to one conversation at a time: they share
+/// its [`ModEnv`] and what its turns left there (a `turn.end` that kept a
+/// turn going, the session the host named). Give each conversation its own.
+///
 /// A `Mods` is a [`Mod`] itself: inside another, its mods run in its place
-/// by these same rules. What changes while a conversation runs lives inside
+/// by these same rules, and at each event its env takes what the outer
+/// env holds. What changes while a conversation runs lives inside
 /// one mod that way (mod files that reload are a `Mods` their bridge swaps
-/// whole), and the conversation's own list stays as it was built.
+/// whole), and the conversation's own list stays as it was built. An inner
+/// `Mods` is one conversation's too: two that take turns with it hand its
+/// mods each one's own session, but two that run it at once race for its
+/// env.
 #[derive(Clone, Debug)]
 pub struct Mods(Arc<Loaded>);
 

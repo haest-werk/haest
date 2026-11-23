@@ -13,6 +13,7 @@ use crate::{
     events::{Event, Slots},
     fold::Handlers,
     hook::{Binding, HookError, OnError},
+    payload::SessionView,
 };
 
 mod fire;
@@ -49,7 +50,10 @@ mod tests;
 /// Every payload a binding gets carries the session the conversation is on
 /// as of that event, when its host named one on the [`ModEnv`]
 /// ([`ModEnv::set_session`]): a hook never keeps a session of its own, so
-/// after the human's /clear it reads the new one.
+/// after the human's /clear it reads the new one. It is read once as the
+/// event begins, so every binding of one event gets the same session. A
+/// host that runs a [`Hook`](crate::Hook) itself, outside `Hooks`, sets
+/// the payload's `session` itself (from [`ModEnv::session`]).
 ///
 /// # Examples
 ///
@@ -182,18 +186,15 @@ impl Hooks {
 
     /// The `nth` binding's answer to `payload`, after its [`OnError`]: an
     /// answer, `None` for a failure reported and passed over (`continue`),
-    /// or the error that ends the event (`block`, or an interrupt). The
-    /// one place a binding runs, so every hook gets the session the
-    /// conversation is on as of this event.
+    /// or the error that ends the event (`block`, or an interrupt).
     async fn ask<E: Event>(
         &self,
         binding: &Binding<E>,
         nth: usize,
-        mut payload: E,
+        payload: E,
         cancel: &CancellationToken,
         haest: &ModEnv,
     ) -> Result<Option<E::Decision>, HookError> {
-        payload.set_session(haest.session());
         match binding.run(payload, nth, cancel).await {
             Ok(decision) => Ok(Some(decision)),
             Err(e @ HookError::Interrupted { .. }) => Err(e),
@@ -207,7 +208,9 @@ impl Hooks {
         }
     }
 
-    /// `bindings` as the folds (fold.rs) ask them, under `cancel`.
+    /// `bindings` as the folds (fold.rs) ask them, under `cancel`, for one
+    /// event: the session is read here, once, so every binding of the event
+    /// gets the one named as it began, whatever the host names meanwhile.
     fn bound<'a, E: Event>(
         &'a self,
         bindings: &'a [Binding<E>],
@@ -219,6 +222,7 @@ impl Hooks {
             bindings,
             cancel,
             haest,
+            session: haest.session(),
         }
     }
 }
@@ -231,6 +235,9 @@ struct Bound<'a, E: Event> {
     bindings: &'a [Binding<E>],
     cancel: &'a CancellationToken,
     haest: &'a ModEnv,
+    /// The session the conversation was on as the event began: the one
+    /// place a binding's payload gets it.
+    session: Option<SessionView>,
 }
 
 #[async_trait]
@@ -241,11 +248,12 @@ impl<E: Event> Handlers<E> for Bound<'_, E> {
         self.bindings.len()
     }
 
-    async fn ask(&self, nth: usize, payload: E) -> Result<Option<E::Decision>, HookError> {
+    async fn ask(&self, nth: usize, mut payload: E) -> Result<Option<E::Decision>, HookError> {
         let binding = &self.bindings[nth - 1];
         if !binding.takes(&payload) {
             return Ok(None);
         }
+        payload.set_session(self.session.clone());
         let asked = self
             .hooks
             .ask(binding, nth, payload, self.cancel, self.haest);

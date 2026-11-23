@@ -31,9 +31,12 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// the decision's own JSON out, every event) or [`Claude`](crate::Claude)
 /// (Claude Code's hook JSON, so its hook scripts run as they are;
 /// [`with_dialect`](Self::with_dialect)). A `ShellHook<Claude>` is a hook
-/// only of the events Claude Code has: bound to `model.before` or
-/// `model.after` it does not compile. Neither dialect holds anything of the
-/// conversation: each event's payload brings it.
+/// only of the events Claude Code has, `tool.before`, `tool.after`,
+/// `prompt.submit`, `system.prompt` and `turn.end`, as
+/// [`ModEvent::claude_code`](haest_mods::ModEvent::claude_code) lists them:
+/// bound to `model.before` or `model.after` it does not compile. Neither
+/// dialect holds anything of the conversation: each event's payload brings
+/// it.
 ///
 /// # How a command answers
 ///
@@ -121,6 +124,9 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// The session it is told (`session_id`, `transcript_path`) is the one the
 /// conversation's [`ModEnv`](haest_mods::ModEnv) names at each event: the
 /// host names the new one at the human's /clear, and the hooks stay bound.
+/// That is [`Hooks`](haest_mods::Hooks)' doing: a host that calls
+/// [`Hook::run`](haest_mods::Hook::run) itself, in its own `Mod`, sets the
+/// payload's `session` first (from `haest.session()`).
 ///
 /// ```
 /// use haest_bridges::{Claude, ShellHook};

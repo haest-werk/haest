@@ -2,7 +2,8 @@
 //! by the rules of [`Mods`] (order, gates, the first deny, stop or continue
 //! wins), in its place. A bridge whose mods change while a conversation
 //! runs (mod files that reload) holds them in a `Mods` it swaps whole, and
-//! the conversation's own `Mods` never changes.
+//! the conversation's own `Mods` never changes. At each event the inner
+//! env takes the outer one's state whole ([`ModEnv::follow`]).
 
 use std::{error::Error, fmt};
 
@@ -53,8 +54,10 @@ impl Error for Reported {
 /// reported once, under its own name; one that stops the turn ends it in
 /// its own name. Inside, its mods get the [`ModEnv`] it was built with,
 /// holding at each event what the outer one's does: whether a turn was
-/// kept going, and the session the conversation is on. It goes by `mods`
-/// in a report, and is no gate: its own gates judge last among its mods.
+/// kept going, and the session the conversation is on (none when the outer
+/// env names none). That env is shared, so the inner `Mods` belongs to one
+/// conversation at a time ([`Mods`]). It goes by `mods` in a report, and is
+/// no gate: its own gates judge last among its mods.
 #[async_trait]
 #[warn(clippy::missing_trait_methods)]
 impl Mod for Mods {

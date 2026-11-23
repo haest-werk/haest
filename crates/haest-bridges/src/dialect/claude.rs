@@ -31,12 +31,18 @@ use super::{Dialect, HookFailure, Reply, Vars, blocked};
 /// | `system.prompt` | `SessionStart` | `additionalContext`, or plain text, is added to the system prompt |
 /// | `turn.end` | `Stop` | `decision: "block"` with its `reason`, or `additionalContext`, keeps the turn going with that text |
 ///
+/// These five are the events a `ShellHook<Claude>` or an `HttpHook<Claude>`
+/// hooks, as [`ModEvent::claude_code`] lists them; on `model.before` or
+/// `model.after` one does not compile.
+///
 /// Its input has the fields Claude Code sends that haest has:
 /// `hook_event_name`, `cwd` (the conversation's directory), `session_id`
 /// and `transcript_path` when the host names the session (the payload's
 /// [`SessionView`](haest_mods::SessionView), which the conversation's
 /// `ModEnv::set_session` names as of each event: after the human's /clear,
-/// the new one), and per event `tool_name`, `tool_input`, `tool_use_id`,
+/// the new one; [`Hooks`](haest_mods::Hooks) sets it, and a host that calls
+/// `Hook::run` itself sets the payload's `session` first, from
+/// `haest.session()`), and per event `tool_name`, `tool_input`, `tool_use_id`,
 /// `tool_response` (the output's text, as Claude Code sends a failed
 /// call's), `prompt`, and Stop's `stop_hook_active` (a `turn.end` answer
 /// already kept this turn going) and `last_assistant_message` (the answer's

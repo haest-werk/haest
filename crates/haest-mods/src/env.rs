@@ -63,6 +63,8 @@ haest_core::plug_ref! {
 /// what the conversation's turns left in it (which turn a `turn.end`
 /// decision kept going, [`TurnEndPayload::continued`](crate::TurnEndPayload::continued))
 /// and the session its host named ([`set_session`](Self::set_session)).
+/// So an env and its clones belong to one conversation at a time: two
+/// conversations on one env would read each other's session and turns.
 #[derive(Debug, Clone)]
 pub struct ModEnv {
     cwd: PathBuf,
@@ -112,10 +114,12 @@ impl ModEnv {
         self.held().kept_going.as_ref() == Some(turn)
     }
 
-    /// Take what `outer` holds: a [`Mods`](crate::Mods) inside another runs
-    /// on its own env, and its mods must see what the outer one's decided
-    /// (a `turn.end` there kept the turn going) and the session the
-    /// conversation is on, when the outer env names one.
+    /// Take what `outer` holds, all of it: a [`Mods`](crate::Mods) inside
+    /// another runs on its own env, and its mods must see what the outer
+    /// one's decided (a `turn.end` there kept the turn going) and the
+    /// session the conversation is on, none when the outer env names none.
+    /// Never what an earlier event left: an inner `Mods` that another
+    /// conversation ran before must not tell this one's hooks its session.
     pub(crate) fn follow(&self, outer: &ModEnv) {
         if Arc::ptr_eq(&self.shared, &outer.shared) {
             return;
@@ -126,9 +130,7 @@ impl ModEnv {
         };
         let mut held = self.held();
         held.kept_going = kept;
-        if session.is_some() {
-            held.session = session;
-        }
+        held.session = session;
     }
 
     /// This env, the conversation on `session` from the start
