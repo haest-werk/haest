@@ -24,7 +24,7 @@ js = ["dep:rquickjs", "dep:haest-ts", "dep:haest-settings"]
 shell = ["dep:haest-workspace"]
 # A POST per event (`HttpHook`) through haest-http's `HttpClient`, the host's
 # own or the default.
-http = ["dep:haest-http"]
+http = []
 # The `testing` module: an HTTP server on 127.0.0.1 for a test of HTTP hooks.
 # Turn it on in `dev-dependencies` only.
 testing = ["tokio/net", "tokio/io-util"]
@@ -32,6 +32,11 @@ testing = ["tokio/net", "tokio/io-util"]
 [dependencies]
 haest-core = { workspace = true }
 haest-mods = { workspace = true }
+# Its types only (no client without its `reqwest` feature): the `hooks`
+# setting's Debug hides a URL's credentials as `HttpHook`'s does
+# (`redacted_url`), and with `http` the request goes through the host's
+# HttpClient (no client of its own).
+haest-http = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -46,8 +51,6 @@ haest-ts = { workspace = true, optional = true }
 haest-settings = { workspace = true, optional = true }
 # shell: the real exec (process group, cancel, ChildEnv, output cap), given stdin.
 haest-workspace = { workspace = true, optional = true }
-# http: the request goes through the host's HttpClient (no client of its own).
-haest-http = { workspace = true, optional = true }
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }

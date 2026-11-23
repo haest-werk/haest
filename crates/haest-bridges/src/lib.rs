@@ -29,6 +29,12 @@
 //! as they are, on the events Claude Code has). Their pages hold the tables:
 //! what each answer and exit code does, and what fails closed.
 //!
+//! A config file binds the same hooks with no Rust: [`HookSettings`] is the
+//! `hooks` setting (`[[hooks."tool.before"]]` entries, each a `command` or a
+//! `url`), and with `shell` or `http` on it makes the one
+//! [`Hooks`](haest_mods::Hooks) a conversation adds as a mod
+//! ([`HookSettings::hooks`]). haest-config reads it, haest-runtime binds it.
+//!
 //! A bridge proves it takes every decision as a Rust
 //! [`Hooks`](haest_mods::Hooks) closure does with haest-mods' `testing`
 //! feature: `decision_cases` lists one answer per decision and what it must
@@ -184,6 +190,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+mod config;
 #[cfg(any(feature = "shell", feature = "http"))]
 mod dialect;
 #[cfg(all(test, any(feature = "shell", feature = "http")))]
@@ -200,6 +207,10 @@ pub mod testing;
 #[cfg(all(test, feature = "js"))]
 mod testkit;
 
+#[cfg(any(feature = "shell", feature = "http"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "shell", feature = "http"))))]
+pub use config::HookHost;
+pub use config::{HookDialect, HookEntry, HookSettings};
 #[cfg(any(feature = "shell", feature = "http"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "shell", feature = "http"))))]
 pub use dialect::{Claude, Haest};

@@ -181,6 +181,17 @@ impl Remote {
         self.server.as_ref().expect("an HTTP remote has a server")
     }
 
+    /// It as a `[[hooks."<event>"]]` entry of the `hooks` setting: a
+    /// `command` run in [`dir`](Self::dir), or the server's `url`.
+    pub(crate) fn entry(&self) -> Value {
+        match self.via {
+            #[cfg(feature = "shell")]
+            Via::Shell => serde_json::json!({ "command": "sh hook.sh" }),
+            #[cfg(feature = "http")]
+            Via::Http => serde_json::json!({ "url": self.server().url() }),
+        }
+    }
+
     /// It, in haest's dialect, bound to `event`.
     pub(crate) fn hooks(&self, event: ModEvent) -> Hooks {
         match self.via {
